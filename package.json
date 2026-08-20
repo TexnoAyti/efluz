@@ -15,6 +15,7 @@
     "validate:season-2026-27": "tsx src/server/tests/validateSeason202627.ts",
     "test:tournament": "tsx src/server/tests/runAllTests.ts",
     "test:adversarial": "tsx src/server/tests/adversarialTestSuite.ts",
+    "test:strict-proof": "tsx src/server/tests/strictVerificationProof.ts",
     "test:smoke": "tsx src/server/tests/productionSmokeTest.ts",
     "test:telegram-webapp": "tsx src/server/tests/telegramWebAppTest.ts",
     "test:vercel": "tsx src/server/tests/verifyVercelApiHandler.ts",

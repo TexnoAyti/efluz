@@ -120,13 +120,28 @@ competitionsRouter.get('/:id/participants', (req: Request, res: Response) => {
 
 competitionsRouter.post('/:id/generate-fixtures', requireAdmin, (req: Request, res: Response) => {
   try {
-    const result = CompetitionEngine.generateSchedule(req.params.id);
+    const force = req.body?.force !== undefined ? Boolean(req.body.force) : true;
+    const result = CompetitionEngine.generateSchedule(req.params.id, { force });
+    const roundsOrMatchdays = 'matchdays' in result ? result.matchdays : 'rounds' in result ? result.rounds : 0;
     res.json({
       success: true,
-      message: `Generated schedule successfully.`,
+      message: `Generated schedule successfully (${result.generated} fixtures across ${roundsOrMatchdays} matchdays/rounds).`,
       result,
     });
   } catch (err: any) {
     res.status(400).json({ error: 'Failed to generate schedule', message: err.message });
+  }
+});
+
+competitionsRouter.post('/:id/reset-fixtures', requireAdmin, (req: Request, res: Response) => {
+  try {
+    const result = CompetitionEngine.generateSchedule(req.params.id, { force: true });
+    res.json({
+      success: true,
+      message: `Reset and regenerated schedule successfully.`,
+      result,
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: 'Failed to reset schedule', message: err.message });
   }
 });

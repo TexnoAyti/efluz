@@ -261,8 +261,15 @@ export const api = {
     return request(url);
   },
 
-  async generateCompetitionFixtures(competitionId: string): Promise<{ success: boolean; message: string; result: any }> {
+  async generateCompetitionFixtures(competitionId: string, force = true): Promise<{ success: boolean; message: string; result: any }> {
     return request(`/api/competitions/${competitionId}/generate-fixtures`, {
+      method: 'POST',
+      body: JSON.stringify({ force }),
+    });
+  },
+
+  async resetCompetitionFixtures(competitionId: string): Promise<{ success: boolean; message: string; result: any }> {
+    return request(`/api/competitions/${competitionId}/reset-fixtures`, {
       method: 'POST',
     });
   },

@@ -22,6 +22,7 @@ export function generateKnockoutBracket(
     participants?: string[];
     singleLeg?: boolean;
     seedParticipants?: boolean;
+    force?: boolean;
   } = {}
 ): { generated: number; rounds: number } {
   return dbTransaction(() => {
@@ -36,7 +37,15 @@ export function generateKnockoutBracket(
       [competitionId]
     );
     if (existingFixtures && existingFixtures.cnt > 0) {
-      return { generated: existingFixtures.cnt, rounds: 0 };
+      if (options.force) {
+        queryRun(
+          'DELETE FROM result_submissions WHERE fixture_id IN (SELECT id FROM fixtures WHERE competition_id = ?)',
+          [competitionId]
+        );
+        queryRun('DELETE FROM fixtures WHERE competition_id = ?', [competitionId]);
+      } else {
+        return { generated: existingFixtures.cnt, rounds: 0 };
+      }
     }
 
     // 2. Fetch participating clubs

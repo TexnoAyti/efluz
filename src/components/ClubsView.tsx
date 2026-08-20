@@ -72,6 +72,11 @@ export const ClubsView: React.FC = () => {
 
   const handleClaimClub = async () => {
     if (!clubToClaim) return;
+    if (currentClub) {
+      showToast(t.alreadyHaveClubMessage, 'error');
+      setClubToClaim(null);
+      return;
+    }
     setIsClaiming(true);
     try {
       const res = await api.claimClub(clubToClaim.id, activeSeasonId);
@@ -133,12 +138,27 @@ export const ClubsView: React.FC = () => {
               }}
             />
             <div>
-              <div className="text-[10px] uppercase font-bold text-emerald-400">{t.myClub}</div>
+              <div className="text-[10px] uppercase font-bold text-emerald-400 flex items-center gap-1">
+                <Lock className="w-3 h-3" />
+                <span>{t.myClub} ({t.clubLocked})</span>
+              </div>
               <div className="text-xs font-bold text-white">{currentClub.name}</div>
             </div>
           </div>
         )}
       </div>
+
+      {/* Season Lock Notification Banner if club already chosen */}
+      {currentClub && (
+        <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 px-4 flex items-center gap-3 text-xs text-slate-300 shadow-sm">
+          <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+            <Lock className="w-4 h-4" />
+          </div>
+          <div>
+            <span className="font-bold text-emerald-300">{t.alreadyHaveClubMessage}</span>
+          </div>
+        </div>
+      )}
 
       {/* League Selection Tabs */}
       <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
@@ -308,6 +328,14 @@ export const ClubsView: React.FC = () => {
                         @{club.claimedByUsername || 'player'}
                       </span>
                     </div>
+                  ) : currentClub ? (
+                    <button
+                      disabled={true}
+                      className="w-full py-2 bg-slate-950 text-slate-500 font-bold text-xs rounded-xl border border-slate-800 flex items-center justify-center gap-1.5 cursor-not-allowed opacity-80"
+                    >
+                      <Lock className="w-3.5 h-3.5 text-slate-600" />
+                      <span>{t.clubLocked}</span>
+                    </button>
                   ) : (
                     <button
                       id={`btn-claim-club-${club.id}`}

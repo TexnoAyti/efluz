@@ -63,6 +63,8 @@ export interface Translations {
   claimed: string;
   claimedBy: string;
   claimClub: string;
+  clubLocked: string;
+  alreadyHaveClubMessage: string;
   claimConfirmationTitle: string;
   claimConfirmationDesc: string;
   claimSuccess: string;
@@ -229,6 +231,8 @@ export const translations: Record<Language, Translations> = {
     claimed: 'Band qilingan',
     claimedBy: 'Egasi',
     claimClub: 'Klubni tanlash',
+    clubLocked: 'Klub tanlovi qulflangan',
+    alreadyHaveClubMessage: 'Siz bu mavsum uchun klub tanlagansiz. Mavsum davomida klubni o‘zgartirish taqiqlanadi.',
     claimConfirmationTitle: 'Klubni band qilishni tasdiqlaysizmi?',
     claimConfirmationDesc: 'Ushbu klub butun mavsum davomida faqat sizga tegishli bo‘ladi.',
     claimSuccess: 'Klub muvaffaqiyatli band qilindi!',
@@ -387,6 +391,8 @@ export const translations: Record<Language, Translations> = {
     claimed: 'Занят',
     claimedBy: 'Владелец',
     claimClub: 'Выбрать этот клуб',
+    clubLocked: 'Выбор клуба заблокирован',
+    alreadyHaveClubMessage: 'Вы уже выбрали клуб на этот сезон. Смена клуба в течение сезона запрещена.',
     claimConfirmationTitle: 'Подтвердить выбор клуба?',
     claimConfirmationDesc: 'Этот клуб будет закреплен за вами на весь текущий сезон.',
     claimSuccess: 'Клуб успешно закреплен!',
@@ -545,6 +551,8 @@ export const translations: Record<Language, Translations> = {
     claimed: 'Claimed',
     claimedBy: 'Owner',
     claimClub: 'Claim Club',
+    clubLocked: 'Club Selection Locked',
+    alreadyHaveClubMessage: 'You already selected a club for this season. Club selection is locked for the entire season.',
     claimConfirmationTitle: 'Confirm Club Claim?',
     claimConfirmationDesc: 'This club will be assigned exclusively to your account for the entire season.',
     claimSuccess: 'Club successfully claimed!',

@@ -3,7 +3,7 @@ import { Fixture, ResultSubmission } from '../../types';
 import { generateRoundRobinSchedule, generateUCL24LeaguePhaseSchedule, calculateMatchdayDate } from '../tournament/fixtureEngine';
 import { generateKnockoutBracket } from '../tournament/knockoutEngine';
 
-export function generateCompetitionFixtures(competitionId: string): { generated: number; matchdays: number } {
+export function generateCompetitionFixtures(competitionId: string, options: { force?: boolean } = {}): { generated: number; matchdays: number } {
   return dbTransaction(() => {
     // 1. Fetch competition details
     const comp = queryGet<any>('SELECT * FROM competitions WHERE id = ?', [competitionId]);
@@ -12,7 +12,7 @@ export function generateCompetitionFixtures(competitionId: string): { generated:
     }
 
     if (comp.type === 'KNOCKOUT' || comp.type === 'SUPER_CUP' || comp.type === 'EUROPEAN_KNOCKOUT') {
-      const res = generateKnockoutBracket(competitionId);
+      const res = generateKnockoutBracket(competitionId, options);
       return { generated: res.generated, matchdays: res.rounds };
     }
 
@@ -29,11 +29,20 @@ export function generateCompetitionFixtures(competitionId: string): { generated:
     );
 
     if (existingCount && existingCount.cnt > 0) {
-      const maxMatchday = queryGet<{ max_md: number }>(
-        'SELECT MAX(matchday) as max_md FROM fixtures WHERE competition_id = ?',
-        [competitionId]
-      );
-      return { generated: existingCount.cnt, matchdays: maxMatchday?.max_md || 0 };
+      if (options.force) {
+        // Delete existing unconfirmed submissions and fixtures to regenerate clean schedule
+        queryRun(
+          'DELETE FROM result_submissions WHERE fixture_id IN (SELECT id FROM fixtures WHERE competition_id = ?)',
+          [competitionId]
+        );
+        queryRun('DELETE FROM fixtures WHERE competition_id = ?', [competitionId]);
+      } else {
+        const maxMatchday = queryGet<{ max_md: number }>(
+          'SELECT MAX(matchday) as max_md FROM fixtures WHERE competition_id = ?',
+          [competitionId]
+        );
+        return { generated: existingCount.cnt, matchdays: maxMatchday?.max_md || 0 };
+      }
     }
 
     const season = queryGet<any>('SELECT * FROM seasons WHERE id = ?', [comp.season_id]);
@@ -145,8 +154,8 @@ export function getFixtures(filter: {
            acm.user_id as away_owner_id
     FROM fixtures f
     JOIN competitions comp ON f.competition_id = comp.id
-    JOIN clubs hc ON f.home_club_id = hc.id
-    JOIN clubs ac ON f.away_club_id = ac.id
+    LEFT JOIN clubs hc ON f.home_club_id = hc.id
+    LEFT JOIN clubs ac ON f.away_club_id = ac.id
     LEFT JOIN club_memberships hcm ON hc.id = hcm.club_id AND hcm.season_id = f.season_id AND hcm.status = 'active'
     LEFT JOIN club_memberships acm ON ac.id = acm.club_id AND acm.season_id = f.season_id AND acm.status = 'active'
     WHERE 1=1
@@ -188,46 +197,51 @@ export function getFixtures(filter: {
 
   const rows = queryAll<any>(sql, params);
 
-  return rows.map((r) => ({
-    id: r.id,
-    seasonId: r.season_id,
-    competitionId: r.competition_id,
-    competitionName: r.competition_name,
-    matchday: r.matchday,
-    roundName: r.round_name,
-    homeClubId: r.home_club_id,
-    awayClubId: r.away_club_id,
-    homeClub: {
-      id: r.home_club_id,
-      name: r.home_name,
-      shortName: r.home_short,
-      country: '',
-      leagueId: '',
-      logoUrl: r.home_logo,
-      active: true,
-      createdAt: '',
-    },
-    awayClub: {
-      id: r.away_club_id,
-      name: r.away_name,
-      shortName: r.away_short,
-      country: '',
-      leagueId: '',
-      logoUrl: r.away_logo,
-      active: true,
-      createdAt: '',
-    },
-    homeOwnerId: r.home_owner_id || undefined,
-    awayOwnerId: r.away_owner_id || undefined,
-    scheduledAt: r.scheduled_at,
-    status: r.status,
-    homeScore: r.home_score,
-    awayScore: r.away_score,
-    winnerClubId: r.winner_club_id,
-    resultConfirmedAt: r.result_confirmed_at,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-  }));
+  return rows.map((r) => {
+    const isHomeTbd = !r.home_club_id || r.home_club_id === 'TBD';
+    const isAwayTbd = !r.away_club_id || r.away_club_id === 'TBD';
+
+    return {
+      id: r.id,
+      seasonId: r.season_id,
+      competitionId: r.competition_id,
+      competitionName: r.competition_name,
+      matchday: r.matchday,
+      roundName: r.round_name,
+      homeClubId: r.home_club_id,
+      awayClubId: r.away_club_id,
+      homeClub: {
+        id: r.home_club_id || 'TBD',
+        name: r.home_name || (isHomeTbd ? 'TBD' : r.home_club_id),
+        shortName: r.home_short || (isHomeTbd ? 'TBD' : r.home_club_id),
+        country: '',
+        leagueId: '',
+        logoUrl: r.home_logo || '',
+        active: true,
+        createdAt: '',
+      },
+      awayClub: {
+        id: r.away_club_id || 'TBD',
+        name: r.away_name || (isAwayTbd ? 'TBD' : r.away_club_id),
+        shortName: r.away_short || (isAwayTbd ? 'TBD' : r.away_club_id),
+        country: '',
+        leagueId: '',
+        logoUrl: r.away_logo || '',
+        active: true,
+        createdAt: '',
+      },
+      homeOwnerId: r.home_owner_id || undefined,
+      awayOwnerId: r.away_owner_id || undefined,
+      scheduledAt: r.scheduled_at,
+      status: r.status,
+      homeScore: r.home_score,
+      awayScore: r.away_score,
+      winnerClubId: r.winner_club_id,
+      resultConfirmedAt: r.result_confirmed_at,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+    };
+  });
 }
 
 export function getFixtureById(fixtureId: string, currentUserId?: string): Fixture | null {
@@ -240,8 +254,8 @@ export function getFixtureById(fixtureId: string, currentUserId?: string): Fixtu
             acm.user_id as away_owner_id
      FROM fixtures f
      JOIN competitions comp ON f.competition_id = comp.id
-     JOIN clubs hc ON f.home_club_id = hc.id
-     JOIN clubs ac ON f.away_club_id = ac.id
+     LEFT JOIN clubs hc ON f.home_club_id = hc.id
+     LEFT JOIN clubs ac ON f.away_club_id = ac.id
      LEFT JOIN club_memberships hcm ON hc.id = hcm.club_id AND hcm.season_id = f.season_id AND hcm.status = 'active'
      LEFT JOIN club_memberships acm ON ac.id = acm.club_id AND acm.season_id = f.season_id AND acm.status = 'active'
      WHERE f.id = ?`,
@@ -277,6 +291,9 @@ export function getFixtureById(fixtureId: string, currentUserId?: string): Fixtu
     }
   }
 
+  const isHomeTbd = !row.home_club_id || row.home_club_id === 'TBD';
+  const isAwayTbd = !row.away_club_id || row.away_club_id === 'TBD';
+
   return {
     id: row.id,
     seasonId: row.season_id,
@@ -287,22 +304,22 @@ export function getFixtureById(fixtureId: string, currentUserId?: string): Fixtu
     homeClubId: row.home_club_id,
     awayClubId: row.away_club_id,
     homeClub: {
-      id: row.home_club_id,
-      name: row.home_name,
-      shortName: row.home_short,
+      id: row.home_club_id || 'TBD',
+      name: row.home_name || (isHomeTbd ? 'TBD' : row.home_club_id),
+      shortName: row.home_short || (isHomeTbd ? 'TBD' : row.home_club_id),
       country: '',
       leagueId: '',
-      logoUrl: row.home_logo,
+      logoUrl: row.home_logo || '',
       active: true,
       createdAt: '',
     },
     awayClub: {
-      id: row.away_club_id,
-      name: row.away_name,
-      shortName: row.away_short,
+      id: row.away_club_id || 'TBD',
+      name: row.away_name || (isAwayTbd ? 'TBD' : row.away_club_id),
+      shortName: row.away_short || (isAwayTbd ? 'TBD' : row.away_club_id),
       country: '',
       leagueId: '',
-      logoUrl: row.away_logo,
+      logoUrl: row.away_logo || '',
       active: true,
       createdAt: '',
     },

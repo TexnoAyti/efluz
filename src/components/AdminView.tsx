@@ -122,11 +122,24 @@ export const AdminView: React.FC = () => {
   const handleGenerateCompetition = async (compId: string) => {
     setIsProcessing(true);
     try {
-      const res = await api.generateCompetitionFixtures(compId);
+      const res = await api.generateCompetitionFixtures(compId, true);
       showToast(res.message || 'Schedule generated successfully.', 'success');
       await loadAdminData();
     } catch (err: any) {
       showToast(err.message || 'Failed to generate schedule.', 'error');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleResetCompetition = async (compId: string) => {
+    setIsProcessing(true);
+    try {
+      const res = await api.resetCompetitionFixtures(compId);
+      showToast(res.message || 'Schedule reset and regenerated successfully.', 'success');
+      await loadAdminData();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to reset schedule.', 'error');
     } finally {
       setIsProcessing(false);
     }
@@ -515,20 +528,37 @@ export const AdminView: React.FC = () => {
               {competitions.map((comp) => (
                 <div
                   key={comp.id}
-                  className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 flex items-center justify-between gap-3"
+                  className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 flex flex-col justify-between gap-3 shadow-inner"
                 >
-                  <div>
-                    <div className="font-bold text-xs text-slate-200">{comp.name}</div>
-                    <span className="text-[10px] text-slate-500 uppercase">{comp.type} • {comp.totalTeams} Teams</span>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="font-bold text-xs text-slate-200">{comp.name}</div>
+                      <span className="text-[10px] text-slate-500 uppercase">{comp.type} • {comp.totalTeams} Teams</span>
+                    </div>
+                    <span className={`text-[9px] uppercase font-black px-2 py-0.5 rounded-full ${comp.status === 'active' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
+                      {comp.status}
+                    </span>
                   </div>
 
-                  <button
-                    disabled={isProcessing}
-                    onClick={() => handleGenerateCompetition(comp.id)}
-                    className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold text-xs rounded-xl border border-slate-700 transition-colors"
-                  >
-                    Generate
-                  </button>
+                  <div className="flex items-center gap-2 pt-2 border-t border-slate-800/80">
+                    <button
+                      disabled={isProcessing}
+                      onClick={() => handleGenerateCompetition(comp.id)}
+                      className="flex-1 py-1.5 bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 disabled:opacity-50 text-slate-950 font-black text-xs rounded-xl transition-all"
+                    >
+                      {comp.status === 'active' ? 'Regenerate' : 'Generate'}
+                    </button>
+                    {comp.status === 'active' && (
+                      <button
+                        disabled={isProcessing}
+                        onClick={() => handleResetCompetition(comp.id)}
+                        className="py-1.5 px-2.5 bg-rose-950/50 hover:bg-rose-900/80 active:bg-rose-800 text-rose-300 border border-rose-800/40 font-bold text-xs rounded-xl transition-all"
+                        title="Delete & Reset Fixtures"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

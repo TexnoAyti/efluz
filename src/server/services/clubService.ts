@@ -205,7 +205,9 @@ export function claimClubAtomic(userId: string, clubId: string, seasonId: string
         const fullClub = getClubById(clubId, seasonId)!;
         return { success: true, club: fullClub };
       }
-      throw new ClubConflictError(`You already own '${existingUserClub.name}' in this season.`);
+      throw new ClubConflictError(
+        `You have already selected '${existingUserClub.name}' for this season. Club selection is locked and cannot be changed.`
+      );
     }
 
     // 3. Check if club is already occupied in this season
