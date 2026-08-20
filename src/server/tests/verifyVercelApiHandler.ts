@@ -95,8 +95,16 @@ async function testVercelHandler() {
     }
     console.log(`✅ PASS: /api/competitions/.../standings -> HTTP 200, standings rows=${standings.data.standings.length}`);
 
-    // 9. Test /api/unknown-endpoint returns JSON 404 (NEVER HTML)
-    console.log('\n--- 9. Testing GET /api/unknown-nonexistent-route (JSON 404 Check) ---');
+    // 9. Test /api/auth/dev-profiles
+    console.log('\n--- 9. Testing GET /api/auth/dev-profiles ---');
+    const devProfiles = await fetchJson('/api/auth/dev-profiles');
+    if (devProfiles.status !== 200 || !Array.isArray(devProfiles.data.profiles) || devProfiles.data.profiles.length === 0) {
+      throw new Error(`/api/auth/dev-profiles failed: status=${devProfiles.status}, data=${JSON.stringify(devProfiles.data)}`);
+    }
+    console.log(`✅ PASS: /api/auth/dev-profiles -> HTTP 200, profiles count=${devProfiles.data.profiles.length}`);
+
+    // 10. Test /api/unknown-endpoint returns JSON 404 (NEVER HTML)
+    console.log('\n--- 10. Testing GET /api/unknown-nonexistent-route (JSON 404 Check) ---');
     const notFound = await fetchJson('/api/unknown-nonexistent-route');
     if (notFound.status !== 404 || notFound.data.error !== 'Endpoint not found') {
       throw new Error(`/api/unknown route failed: status=${notFound.status}, data=${JSON.stringify(notFound.data)}`);

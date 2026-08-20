@@ -9,8 +9,8 @@ async function runDeploymentSelfCheck() {
 
   const rootDir = process.cwd();
 
-  // --- CHECK 1: api/index.js exists and is non-empty ---
-  console.log('\n--- [CHECK 1] Serverless Entrypoint (api/index.js) ---');
+  // --- CHECK 1: api/index.js & sql-wasm.wasm exist and are non-empty ---
+  console.log('\n--- [CHECK 1] Serverless Entrypoint (api/index.js) & WASM Assets ---');
   const apiEntryPath = path.resolve(rootDir, 'api', 'index.js');
   if (!fs.existsSync(apiEntryPath)) {
     throw new Error('FAILED [CHECK 1]: api/index.js does not exist in project root!');
@@ -19,7 +19,17 @@ async function runDeploymentSelfCheck() {
   if (stat.size < 5000) {
     throw new Error(`FAILED [CHECK 1]: api/index.js is too small (${stat.size} bytes), bundle failed!`);
   }
-  console.log(`✅ PASS [CHECK 1]: api/index.js exists and is valid bundle (${(stat.size / 1024).toFixed(1)} KB).`);
+  console.log(`✅ PASS [CHECK 1.1]: api/index.js exists and is valid bundle (${(stat.size / 1024).toFixed(1)} KB).`);
+
+  const wasmPath = path.resolve(rootDir, 'api', 'sql-wasm.wasm');
+  if (!fs.existsSync(wasmPath)) {
+    throw new Error('FAILED [CHECK 1.2]: api/sql-wasm.wasm does not exist in api/ directory!');
+  }
+  const wasmStat = fs.statSync(wasmPath);
+  if (wasmStat.size < 500000) {
+    throw new Error(`FAILED [CHECK 1.2]: api/sql-wasm.wasm is too small (${wasmStat.size} bytes)!`);
+  }
+  console.log(`✅ PASS [CHECK 1.2]: api/sql-wasm.wasm exists and is valid (${(wasmStat.size / 1024).toFixed(1)} KB).`);
 
   // --- CHECK 2: vercel.json routing validation ---
   console.log('\n--- [CHECK 2] Vercel Configuration (vercel.json) ---');
@@ -129,15 +139,22 @@ async function runDeploymentSelfCheck() {
     }
     console.log('✅ PASS [CHECK 3.4]: GET /api/me returned HTTP 401 JSON (Clean 401, NOT HTML)');
 
-    // 3.5 /api/auth/telegram (empty body -> JSON 400, NEVER 405 HTML)
+    // 3.5 /api/auth/dev-profiles
+    const devProfiles = await testEndpoint('/api/auth/dev-profiles');
+    if (devProfiles.status !== 200 || !devProfiles.isJson || !Array.isArray(devProfiles.json?.profiles)) {
+      throw new Error(`FAILED [CHECK 3.5]: /api/auth/dev-profiles failed -> HTTP ${devProfiles.status}, text="${devProfiles.text}"`);
+    }
+    console.log(`✅ PASS [CHECK 3.5]: GET /api/auth/dev-profiles returned HTTP 200 JSON (${devProfiles.json.profiles.length} profiles)`);
+
+    // 3.6 /api/auth/telegram (empty body -> JSON 400, NEVER 405 HTML)
     const authTest = await testEndpoint('/api/auth/telegram', {
       method: 'POST',
       body: JSON.stringify({ initData: '' }),
     });
     if (authTest.status !== 400 || !authTest.isJson || authTest.text.includes('<!doctype html>')) {
-      throw new Error(`FAILED [CHECK 3.5]: POST /api/auth/telegram returned HTTP ${authTest.status} (expected JSON 400, got text="${authTest.text.slice(0, 80)}")`);
+      throw new Error(`FAILED [CHECK 3.6]: POST /api/auth/telegram returned HTTP ${authTest.status} (expected JSON 400, got text="${authTest.text.slice(0, 80)}")`);
     }
-    console.log('✅ PASS [CHECK 3.5]: POST /api/auth/telegram returned HTTP 400 JSON (Clean JSON error, NOT HTML)');
+    console.log('✅ PASS [CHECK 3.6]: POST /api/auth/telegram returned HTTP 400 JSON (Clean JSON error, NOT HTML)');
   } finally {
     server.close();
   }

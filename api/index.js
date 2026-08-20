@@ -4,7 +4,23 @@ import express from "express";
 // src/server/db/index.ts
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
 import initSqlJs from "sql.js";
+function getModuleDir() {
+  try {
+    if (typeof __dirname !== "undefined" && __dirname) {
+      return __dirname;
+    }
+  } catch {
+  }
+  try {
+    if (typeof import.meta !== "undefined" && import.meta.url) {
+      return path.dirname(fileURLToPath(import.meta.url));
+    }
+  } catch {
+  }
+  return process.cwd();
+}
 var dbInstance = null;
 var IS_SERVERLESS = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_TASK_ROOT);
 var DEFAULT_DATA_DIR = IS_SERVERLESS ? "/tmp/data" : path.resolve(process.cwd(), "data");
@@ -13,6 +29,65 @@ var DB_FILE = process.env.DB_FILE || path.join(DATA_DIR, "efootball.sqlite");
 var SCHEMA_FILE = path.resolve(process.cwd(), "src", "server", "db", "schema.sql");
 function getDbFilePath() {
   return DB_FILE;
+}
+function resolveSqlWasmPath() {
+  const modDir = getModuleDir();
+  const candidates = [
+    // 1. In same directory as compiled serverless handler (e.g., /var/task/api/sql-wasm.wasm)
+    path.join(modDir, "sql-wasm.wasm"),
+    // 2. In api/ folder relative to project root / task root
+    path.resolve(process.cwd(), "api", "sql-wasm.wasm"),
+    // 3. In parent directory (e.g. if modDir is /var/task/api, check /var/task/sql-wasm.wasm)
+    path.join(modDir, "..", "sql-wasm.wasm"),
+    path.join(modDir, "..", "api", "sql-wasm.wasm"),
+    path.resolve(process.cwd(), "sql-wasm.wasm"),
+    // 4. In dist/ folder
+    path.resolve(process.cwd(), "dist", "sql-wasm.wasm"),
+    path.join(modDir, "..", "dist", "sql-wasm.wasm"),
+    // 5. In public/ folder
+    path.resolve(process.cwd(), "public", "sql-wasm.wasm"),
+    // 6. In node_modules fallback (local dev or standard node environment)
+    path.resolve(process.cwd(), "node_modules", "sql.js", "dist", "sql-wasm.wasm"),
+    path.join(modDir, "..", "node_modules", "sql.js", "dist", "sql-wasm.wasm")
+  ];
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) {
+        const stats = fs.statSync(candidate);
+        if (stats.isFile() && stats.size > 1e4) {
+          return candidate;
+        }
+      }
+    } catch {
+    }
+  }
+  throw new Error(
+    `[DB] Could not locate sql-wasm.wasm in any expected location. Checked:
+` + candidates.map((c) => ` - ${c}`).join("\n")
+  );
+}
+function resolveBundledDbPath() {
+  const modDir = getModuleDir();
+  const candidates = [
+    path.resolve(process.cwd(), "data", "efootball.sqlite"),
+    path.join(modDir, "data", "efootball.sqlite"),
+    path.join(modDir, "..", "data", "efootball.sqlite"),
+    path.resolve(process.cwd(), "api", "data", "efootball.sqlite"),
+    path.resolve(process.cwd(), "api", "efootball.sqlite"),
+    path.join(modDir, "efootball.sqlite")
+  ];
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) {
+        const stats = fs.statSync(candidate);
+        if (stats.isFile() && stats.size > 1e3) {
+          return candidate;
+        }
+      }
+    } catch {
+    }
+  }
+  return null;
 }
 async function initDatabase() {
   if (dbInstance) {
@@ -26,17 +101,22 @@ async function initDatabase() {
     console.warn(` [DB] Could not create DATA_DIR ${DATA_DIR}, falling back to /tmp/data:`, err);
   }
   if (IS_SERVERLESS && !fs.existsSync(DB_FILE)) {
-    const bundledDbPath = path.resolve(process.cwd(), "data", "efootball.sqlite");
-    if (fs.existsSync(bundledDbPath)) {
+    const bundledDbPath = resolveBundledDbPath();
+    if (bundledDbPath && fs.existsSync(bundledDbPath)) {
       try {
         fs.copyFileSync(bundledDbPath, DB_FILE);
-        console.log(` [DB] Copied bundled database to serverless location: ${DB_FILE}`);
+        console.log(` [DB] Copied bundled database from ${bundledDbPath} to serverless location: ${DB_FILE}`);
       } catch (err) {
         console.warn(" [DB] Could not copy bundled DB to serverless path:", err);
       }
     }
   }
-  const SQL = await initSqlJs();
+  const wasmPath = resolveSqlWasmPath();
+  const wasmBinary = fs.readFileSync(wasmPath);
+  const SQL = await initSqlJs({
+    locateFile: () => wasmPath,
+    wasmBinary
+  });
   if (fs.existsSync(DB_FILE)) {
     try {
       const fileBuffer = fs.readFileSync(DB_FILE);
@@ -61,8 +141,8 @@ async function initDatabase() {
       console.log(" [DB] initialized=true (recreated)");
     }
   } else {
-    const bundledDbPath = path.resolve(process.cwd(), "data", "efootball.sqlite");
-    if (fs.existsSync(bundledDbPath)) {
+    const bundledDbPath = resolveBundledDbPath();
+    if (bundledDbPath && fs.existsSync(bundledDbPath)) {
       try {
         const fileBuffer = fs.readFileSync(bundledDbPath);
         dbInstance = new SQL.Database(fileBuffer);

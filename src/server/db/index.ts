@@ -1,6 +1,21 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import initSqlJs, { Database, SqlValue } from 'sql.js';
+
+function getModuleDir(): string {
+  try {
+    if (typeof __dirname !== 'undefined' && __dirname) {
+      return __dirname;
+    }
+  } catch {}
+  try {
+    if (typeof import.meta !== 'undefined' && import.meta.url) {
+      return path.dirname(fileURLToPath(import.meta.url));
+    }
+  } catch {}
+  return process.cwd();
+}
 
 let dbInstance: Database | null = null;
 const IS_SERVERLESS = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_TASK_ROOT);
@@ -15,6 +30,68 @@ export function getDbFilePath(): string {
 
 let isSaving = false;
 let needsSave = false;
+
+export function resolveSqlWasmPath(): string {
+  const modDir = getModuleDir();
+  const candidates = [
+    // 1. In same directory as compiled serverless handler (e.g., /var/task/api/sql-wasm.wasm)
+    path.join(modDir, 'sql-wasm.wasm'),
+    // 2. In api/ folder relative to project root / task root
+    path.resolve(process.cwd(), 'api', 'sql-wasm.wasm'),
+    // 3. In parent directory (e.g. if modDir is /var/task/api, check /var/task/sql-wasm.wasm)
+    path.join(modDir, '..', 'sql-wasm.wasm'),
+    path.join(modDir, '..', 'api', 'sql-wasm.wasm'),
+    path.resolve(process.cwd(), 'sql-wasm.wasm'),
+    // 4. In dist/ folder
+    path.resolve(process.cwd(), 'dist', 'sql-wasm.wasm'),
+    path.join(modDir, '..', 'dist', 'sql-wasm.wasm'),
+    // 5. In public/ folder
+    path.resolve(process.cwd(), 'public', 'sql-wasm.wasm'),
+    // 6. In node_modules fallback (local dev or standard node environment)
+    path.resolve(process.cwd(), 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm'),
+    path.join(modDir, '..', 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm'),
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) {
+        const stats = fs.statSync(candidate);
+        if (stats.isFile() && stats.size > 10000) {
+          return candidate;
+        }
+      }
+    } catch {}
+  }
+
+  throw new Error(
+    `[DB] Could not locate sql-wasm.wasm in any expected location. Checked:\n` +
+      candidates.map((c) => ` - ${c}`).join('\n')
+  );
+}
+
+export function resolveBundledDbPath(): string | null {
+  const modDir = getModuleDir();
+  const candidates = [
+    path.resolve(process.cwd(), 'data', 'efootball.sqlite'),
+    path.join(modDir, 'data', 'efootball.sqlite'),
+    path.join(modDir, '..', 'data', 'efootball.sqlite'),
+    path.resolve(process.cwd(), 'api', 'data', 'efootball.sqlite'),
+    path.resolve(process.cwd(), 'api', 'efootball.sqlite'),
+    path.join(modDir, 'efootball.sqlite'),
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) {
+        const stats = fs.statSync(candidate);
+        if (stats.isFile() && stats.size > 1000) {
+          return candidate;
+        }
+      }
+    } catch {}
+  }
+  return null;
+}
 
 export async function initDatabase(): Promise<Database> {
   if (dbInstance) {
@@ -31,18 +108,23 @@ export async function initDatabase(): Promise<Database> {
 
   // If running on serverless and target DB_FILE does not exist in /tmp/data, copy pre-seeded SQLite from repo
   if (IS_SERVERLESS && !fs.existsSync(DB_FILE)) {
-    const bundledDbPath = path.resolve(process.cwd(), 'data', 'efootball.sqlite');
-    if (fs.existsSync(bundledDbPath)) {
+    const bundledDbPath = resolveBundledDbPath();
+    if (bundledDbPath && fs.existsSync(bundledDbPath)) {
       try {
         fs.copyFileSync(bundledDbPath, DB_FILE);
-        console.log(` [DB] Copied bundled database to serverless location: ${DB_FILE}`);
+        console.log(` [DB] Copied bundled database from ${bundledDbPath} to serverless location: ${DB_FILE}`);
       } catch (err) {
         console.warn(' [DB] Could not copy bundled DB to serverless path:', err);
       }
     }
   }
 
-  const SQL = await initSqlJs();
+  const wasmPath = resolveSqlWasmPath();
+  const wasmBinary = fs.readFileSync(wasmPath);
+  const SQL = await initSqlJs({
+    locateFile: () => wasmPath,
+    wasmBinary,
+  });
 
   if (fs.existsSync(DB_FILE)) {
     try {
@@ -69,8 +151,8 @@ export async function initDatabase(): Promise<Database> {
     }
   } else {
     // If DB_FILE does not exist, check if bundled repo sqlite file can be loaded directly
-    const bundledDbPath = path.resolve(process.cwd(), 'data', 'efootball.sqlite');
-    if (fs.existsSync(bundledDbPath)) {
+    const bundledDbPath = resolveBundledDbPath();
+    if (bundledDbPath && fs.existsSync(bundledDbPath)) {
       try {
         const fileBuffer = fs.readFileSync(bundledDbPath);
         dbInstance = new SQL.Database(fileBuffer);
