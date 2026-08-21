@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import express from 'express';
 import { initDatabase, queryGet, queryAll, getDbFilePath } from '../db';
 import { seedDatabase, repairSeason202627Roster } from '../db/seed';
+import { ensureDbReady } from '../app';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { healthRouter } from '../routes/health.routes';
 import { authRouter } from '../routes/auth.routes';
@@ -96,9 +97,7 @@ async function runProductionSmokeTest() {
   console.log('=============================================================');
 
   // 1. Database boot
-  await initDatabase();
-  seedDatabase();
-  repairSeason202627Roster();
+  await ensureDbReady();
 
   const dbPath = getDbFilePath();
   console.log(`[BOOT] Database path: ${dbPath}`);

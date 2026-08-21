@@ -40,6 +40,7 @@ export const AdminView: React.FC = () => {
   const [manualAwayScore, setManualAwayScore] = useState<number>(0);
   const [resolutionNotes, setResolutionNotes] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [generatingCompId, setGeneratingCompId] = useState<string | null>(null);
 
   // Fixture reopen state
   const [fixtureIdToReopen, setFixtureIdToReopen] = useState<string>('');
@@ -120,20 +121,20 @@ export const AdminView: React.FC = () => {
   };
 
   const handleGenerateCompetition = async (compId: string) => {
-    setIsProcessing(true);
+    setGeneratingCompId(compId);
     try {
       const res = await api.generateCompetitionFixtures(compId, true);
-      showToast(res.message || 'Schedule generated successfully.', 'success');
+      showToast(res.message || 'Schedule generated and persisted in Firestore.', 'success');
       await loadAdminData();
     } catch (err: any) {
       showToast(err.message || 'Failed to generate schedule.', 'error');
     } finally {
-      setIsProcessing(false);
+      setGeneratingCompId(null);
     }
   };
 
   const handleResetCompetition = async (compId: string) => {
-    setIsProcessing(true);
+    setGeneratingCompId(compId);
     try {
       const res = await api.resetCompetitionFixtures(compId);
       showToast(res.message || 'Schedule reset and regenerated successfully.', 'success');
@@ -141,7 +142,7 @@ export const AdminView: React.FC = () => {
     } catch (err: any) {
       showToast(err.message || 'Failed to reset schedule.', 'error');
     } finally {
-      setIsProcessing(false);
+      setGeneratingCompId(null);
     }
   };
 
@@ -542,17 +543,21 @@ export const AdminView: React.FC = () => {
 
                   <div className="flex items-center gap-2 pt-2 border-t border-slate-800/80">
                     <button
-                      disabled={isProcessing}
+                      disabled={isProcessing || generatingCompId !== null}
                       onClick={() => handleGenerateCompetition(comp.id)}
                       className="flex-1 py-1.5 bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 disabled:opacity-50 text-slate-950 font-black text-xs rounded-xl transition-all"
                     >
-                      {comp.status === 'active' ? 'Regenerate' : 'Generate'}
+                      {generatingCompId === comp.id
+                        ? 'Generating...'
+                        : comp.hasFixtures
+                        ? 'Regenerate'
+                        : 'Generate'}
                     </button>
-                    {comp.status === 'active' && (
+                    {comp.hasFixtures && (
                       <button
-                        disabled={isProcessing}
+                        disabled={isProcessing || generatingCompId !== null}
                         onClick={() => handleResetCompetition(comp.id)}
-                        className="py-1.5 px-2.5 bg-rose-950/50 hover:bg-rose-900/80 active:bg-rose-800 text-rose-300 border border-rose-800/40 font-bold text-xs rounded-xl transition-all"
+                        className="py-1.5 px-2.5 bg-rose-950/50 hover:bg-rose-900/80 active:bg-rose-800 disabled:opacity-50 text-rose-300 border border-rose-800/40 font-bold text-xs rounded-xl transition-all"
                         title="Delete & Reset Fixtures"
                       >
                         <RefreshCw className="w-3.5 h-3.5" />

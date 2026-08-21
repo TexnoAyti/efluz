@@ -59,11 +59,14 @@ export interface Club {
   shortName: string;
   country: string;
   leagueId: string;
+  leagueName?: string;
   logoUrl: string;
   active: boolean;
+  isTaken?: boolean;
   stadium?: string;
   claimedByUserId?: string | null;
   claimedByUsername?: string | null;
+  managerUsername?: string;
   owner?: {
     userId: string;
     username: string;
@@ -91,6 +94,8 @@ export interface Competition {
   scheduleMode: ScheduleMode;
   status: 'upcoming' | 'active' | 'completed';
   totalTeams?: number;
+  hasFixtures?: boolean;
+  fixturesCount?: number;
   formatConfig: {
     rounds?: number;
     homeAndAway?: boolean;
@@ -122,18 +127,21 @@ export interface Fixture {
   homeScore?: number | null;
   awayScore?: number | null;
   winnerClubId?: string | null;
+  proofUrl?: string | null;
   resultConfirmedAt?: string | null;
+  submittedByUserId?: string | null;
   submissionsCount?: number;
-  userSubmission?: ResultSubmission | null;
-  opponentSubmission?: ResultSubmission | null;
+  userSubmission?: MatchSubmission | ResultSubmission;
+  opponentSubmission?: MatchSubmission | ResultSubmission;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface ResultSubmission {
+export interface MatchSubmission {
   id: string;
   fixtureId: string;
-  submittedByUserId: string;
+  userId?: string;
+  submittedByUserId?: string;
   clubId: string;
   homeScore: number;
   awayScore: number;
@@ -144,35 +152,23 @@ export interface ResultSubmission {
 export interface Dispute {
   id: string;
   fixtureId: string;
-  seasonId: string;
+  seasonId?: string;
+  status: 'OPEN' | 'RESOLVED' | 'DISMISSED';
+  homeSubmission?: MatchSubmission;
+  awaySubmission?: MatchSubmission;
   fixture?: Fixture;
-  homeSubmission?: ResultSubmission;
-  awaySubmission?: ResultSubmission;
-  status: 'OPEN' | 'RESOLVED' | 'CANCELLED';
+  resolutionType?: string;
+  resolvedByAdminId?: string;
   resolvedByUserId?: string;
-  resolutionNotes?: string;
   resolvedAt?: string;
+  resolutionNotes?: string;
   createdAt: string;
 }
 
-export interface Notification {
-  id: string;
-  userId: string;
-  type: string;
-  title: string;
-  message: string;
-  fixtureId?: string;
-  data?: Record<string, unknown>;
-  isRead: boolean;
-  createdAt: string;
-}
-
-export interface StandingsRow {
-  position: number;
+export interface StandingEntry {
+  rank: number;
   clubId: string;
-  clubName: string;
-  shortName: string;
-  logoUrl: string;
+  club: Club;
   played: number;
   won: number;
   drawn: number;
@@ -181,28 +177,77 @@ export interface StandingsRow {
   goalsAgainst: number;
   goalDifference: number;
   points: number;
+  form: Array<'W' | 'D' | 'L'>;
+}
+
+export interface StandingsRow {
+  position: number;
+  clubId: string;
+  clubName: string;
+  shortName: string;
+  logoUrl?: string;
   managerUsername?: string;
-  form?: Array<'W' | 'D' | 'L'>;
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  goalsFor: number;
+  goalsAgainst: number;
+  goalDifference: number;
+  points: number;
+  form: Array<'W' | 'D' | 'L'>;
+}
+
+export interface ResultSubmission {
+  id: string;
+  fixtureId: string;
+  userId?: string;
+  submittedByUserId?: string;
+  clubId: string;
+  homeScore: number;
+  awayScore: number;
+  proofUrl?: string | null;
+  createdAt: string;
+}
+
+export interface Notification {
+  id: string;
+  userId: string;
+  title: string;
+  message: string;
+  type: 'MATCH_SCHEDULED' | 'RESULT_SUBMITTED' | 'RESULT_CONFIRMED' | 'DISPUTE_OPENED' | 'DISPUTE_RESOLVED' | 'SYSTEM';
+  entityType?: string;
+  entityId?: string;
+  fixtureId?: string;
+  isRead: boolean;
+  createdAt: string;
 }
 
 export interface AuditLog {
   id: string;
+  actorId?: string;
   actorUserId?: string;
   actorUsername?: string;
-  actorId?: string;
   action: string;
-  entityType?: string;
-  entityId?: string;
   targetType?: string;
   targetId?: string;
-  oldValue?: string;
-  newValue?: string;
-  notes?: string;
+  entityType?: string;
+  entityId?: string;
+  oldValue?: any;
+  newValue?: any;
   ipAddress?: string;
+  notes?: string;
   createdAt: string;
 }
 
-export interface TelegramAuthPayload {
-  initData?: string;
-  devUserId?: string;
+export interface UserStats {
+  matchesPlayed: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  goalsScored: number;
+  goalsConceded: number;
+  points: number;
+  trophies: number;
+  leaguePosition: number;
 }

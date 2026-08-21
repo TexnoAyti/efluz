@@ -1,35 +1,40 @@
 import { Router, Request, Response } from 'express';
-import { queryAll, queryGet } from '../db';
-import { Season } from '../../types';
+import { getAllSeasonsFirestore, getActiveSeasonFirestore } from '../firebase/firestoreStore';
 
 export const seasonsRouter = Router();
 
-seasonsRouter.get('/', (req: Request, res: Response) => {
-  const rows = queryAll<any>('SELECT * FROM seasons ORDER BY start_date DESC');
-  const seasons: Season[] = rows.map((r) => ({
-    id: r.id,
-    name: r.name,
-    status: r.status,
-    startDate: r.start_date,
-    endDate: r.end_date,
-    createdAt: r.created_at,
-  }));
-  res.json({ seasons });
+seasonsRouter.get('/', async (req: Request, res: Response) => {
+  try {
+    const seasons = await getAllSeasonsFirestore();
+    res.json({ seasons });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to fetch seasons', message: err.message });
+  }
 });
 
-seasonsRouter.get('/:id', (req: Request, res: Response) => {
-  const row = queryGet<any>('SELECT * FROM seasons WHERE id = ?', [req.params.id]);
-  if (!row) {
-    res.status(404).json({ error: 'Season not found' });
-    return;
+seasonsRouter.get('/active', async (req: Request, res: Response) => {
+  try {
+    const season = await getActiveSeasonFirestore();
+    if (!season) {
+      res.status(404).json({ error: 'Active season not found' });
+      return;
+    }
+    res.json({ season });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to fetch active season', message: err.message });
   }
-  const season: Season = {
-    id: row.id,
-    name: row.name,
-    status: row.status,
-    startDate: row.start_date,
-    endDate: row.end_date,
-    createdAt: row.created_at,
-  };
-  res.json({ season });
+});
+
+seasonsRouter.get('/:id', async (req: Request, res: Response) => {
+  try {
+    const seasons = await getAllSeasonsFirestore();
+    const season = seasons.find((s) => s.id === req.params.id);
+    if (!season) {
+      res.status(404).json({ error: 'Season not found' });
+      return;
+    }
+    res.json({ season });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to fetch season', message: err.message });
+  }
 });

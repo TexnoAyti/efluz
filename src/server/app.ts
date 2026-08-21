@@ -2,6 +2,9 @@ import express from 'express';
 import { initDatabase, queryGet, getDbFilePath } from './db';
 import { seedDatabase, repairSeason202627Roster } from './db/seed';
 import { authMiddleware } from './middleware/authMiddleware';
+import { isFirebaseConfigured, getFirestoreDb, getFirebaseStatus } from './firebase/admin';
+import { migrateSqliteToFirestore } from './firebase/migrateSqliteToFirestore';
+import { COLLECTIONS } from './firebase/collections';
 
 // Route imports
 import { healthRouter } from './routes/health.routes';
@@ -20,23 +23,32 @@ export async function ensureDbReady(): Promise<void> {
   if (!dbInitPromise) {
     dbInitPromise = (async () => {
       try {
+        // 1. Initialize SQLite for seed data & baseline
         await initDatabase();
         seedDatabase();
         repairSeason202627Roster();
 
-        console.log(`[BOOT] Database path: ${getDbFilePath()}`);
-        console.log('[BOOT] Active season: season-2026-27');
+        console.log(`[BOOT] SQLite baseline loaded from: ${getDbFilePath()}`);
 
-        const plCount = queryGet<any>(`SELECT COUNT(*) as c FROM season_league_clubs WHERE season_id = 'season-2026-27' AND league_id = 'league-premier-league' AND is_active = 1`)?.c || 0;
-        const llCount = queryGet<any>(`SELECT COUNT(*) as c FROM season_league_clubs WHERE season_id = 'season-2026-27' AND league_id = 'league-la-liga' AND is_active = 1`)?.c || 0;
-        const saCount = queryGet<any>(`SELECT COUNT(*) as c FROM season_league_clubs WHERE season_id = 'season-2026-27' AND league_id = 'league-serie-a' AND is_active = 1`)?.c || 0;
-        const blCount = queryGet<any>(`SELECT COUNT(*) as c FROM season_league_clubs WHERE season_id = 'season-2026-27' AND league_id = 'league-bundesliga' AND is_active = 1`)?.c || 0;
-        const l1Count = queryGet<any>(`SELECT COUNT(*) as c FROM season_league_clubs WHERE season_id = 'season-2026-27' AND league_id = 'league-ligue-1' AND is_active = 1`)?.c || 0;
-        const totalActive = Number(plCount) + Number(llCount) + Number(saCount) + Number(blCount) + Number(l1Count);
-
-        console.log(`[BOOT] 96 clubs verified (${plCount}/${llCount}/${saCount}/${blCount}/${l1Count}, total: ${totalActive})`);
+        // 2. Initialize Firestore if configured
+        const fbStatus = getFirebaseStatus();
+        if (fbStatus.isConfigured) {
+          try {
+            const db = getFirestoreDb();
+            const clubsSnap = await db.collection(COLLECTIONS.CLUBS).limit(1).get();
+            if (clubsSnap.empty) {
+              console.log('[BOOT] Firestore is empty. Auto-seeding from SQLite...');
+              await migrateSqliteToFirestore();
+              console.log('[BOOT] Firestore auto-seeding completed.');
+            } else {
+              console.log(`[BOOT] Connected to Firestore database: ${fbStatus.databaseId}`);
+            }
+          } catch (fbErr: any) {
+            console.warn('[BOOT] Firestore connection warning:', fbErr.message);
+          }
+        }
       } catch (err) {
-        console.error('[BOOT] Error initializing database:', err);
+        console.error('[BOOT] Error during system initialization:', err);
         throw err;
       }
     })();

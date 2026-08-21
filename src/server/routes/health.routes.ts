@@ -1,19 +1,36 @@
 import { Router, Request, Response } from 'express';
-import { getDb } from '../db';
+import { getFirebaseStatus, isFirebaseConfigured, getFirestoreDb } from '../firebase/admin';
 
 export const healthRouter = Router();
 
-healthRouter.get('/', (req: Request, res: Response) => {
+healthRouter.get('/', async (req: Request, res: Response) => {
+  const status = getFirebaseStatus();
+
+  let isConnected = false;
+  let connectionWarning: string | null = null;
+
   try {
-    const db = getDb();
-    const result = db.exec('SELECT 1 as alive;');
-    res.json({
-      status: 'ok',
-      timestamp: new Date().toISOString(),
-      database: result.length > 0 ? 'connected' : 'error',
-      version: '1.0.0',
-    });
+    const db = getFirestoreDb();
+    if (db) {
+      // Execute an actual Firestore operation to verify connectivity
+      await db.collection('seasons').limit(1).get();
+      isConnected = true;
+    }
   } catch (err: any) {
-    res.status(500).json({ status: 'error', message: err.message });
+    connectionWarning = err.message;
+    isConnected = false;
   }
+
+  res.json({
+    status: 'ok',
+    database: 'firestore',
+    connected: isConnected,
+    firebaseConfigured: status.isConfigured,
+    projectId: status.projectId,
+    databaseId: status.databaseId,
+    authMode: status.authMode,
+    warning: connectionWarning || undefined,
+    timestamp: new Date().toISOString(),
+    version: '2.0.0-firestore-production',
+  });
 });

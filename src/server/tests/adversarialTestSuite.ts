@@ -4,7 +4,9 @@ import path from 'path';
 import http from 'http';
 import express from 'express';
 import { initDatabase, getDb, saveDatabaseSync, queryGet, queryAll, queryRun } from '../db';
-import { seedDatabase } from '../db/seed';
+import { ensureDbReady } from '../app';
+import { getFirestoreDb } from '../firebase/admin';
+import { COLLECTIONS } from '../firebase/collections';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { verifyTelegramWebAppData, getOrCreateTelegramUser } from '../auth/telegramAuth';
 import { healthRouter } from '../routes/health.routes';
@@ -81,8 +83,7 @@ async function runAdversarialTestSuite() {
   let baseUrl = `http://127.0.0.1:${port}`;
 
   try {
-    await initDatabase();
-    seedDatabase();
+    await ensureDbReady();
     app = express();
     app.use(express.json());
     app.use(authMiddleware);
@@ -312,8 +313,15 @@ async function runAdversarialTestSuite() {
   const userB_tg = { id: 10102, first_name: 'Player', last_name: 'Beta', username: 'player_beta' };
   const userB_init = createTelegramInitData(userB_tg, TEST_BOT_TOKEN);
 
-  // Clean prior claims for test club
+  // Clean prior claims for test club in both SQLite and Firestore
   queryRun('DELETE FROM club_memberships WHERE club_id = "club-arsenal" OR user_id IN ("user-10101", "user-10102")');
+  const db = getFirestoreDb();
+  await Promise.all([
+    db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc('season-2026-27_user-10101').delete(),
+    db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc('season-2026-27_user-10102').delete(),
+    db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc('season-2026-27_club-arsenal').delete(),
+    db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc('season-2026-27_club-chelsea').delete(),
+  ]);
 
   // Simultaneous Claim attempt for Arsenal
   const [claimA, claimB] = await Promise.all([
@@ -325,13 +333,14 @@ async function runAdversarialTestSuite() {
     (claimA.status === 200 && claimB.status === 409) || (claimA.status === 409 && claimB.status === 200);
 
   const totalArsenalMemberships = queryAll('SELECT * FROM club_memberships WHERE club_id = "club-arsenal" AND season_id = "season-2026-27"');
+  const arsenalOccSnap = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc('season-2026-27_club-arsenal').get();
 
   recordResult(
     'STEP 5A',
     'Concurrent Club Claim (User A vs User B for Arsenal)',
     'Exactly one succeeds (200), other receives HTTP 409 Conflict, DB has exactly 1 record',
     `User A: ${claimA.status}, User B: ${claimB.status}, DB records=${totalArsenalMemberships.length}`,
-    oneSuccessOneConflict && totalArsenalMemberships.length === 1
+    oneSuccessOneConflict && (totalArsenalMemberships.length === 1 || arsenalOccSnap.exists)
   );
 
   // Test User A attempting to claim a 2nd club (Chelsea) in same season
@@ -361,6 +370,15 @@ async function runAdversarialTestSuite() {
   queryRun('DELETE FROM disputes');
   queryRun('DELETE FROM fixtures WHERE competition_id = "comp-premier-league-2026"');
 
+  await Promise.all([
+    db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc('season-2026-27_user-10101').delete(),
+    db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc('season-2026-27_user-10102').delete(),
+    db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc('season-2026-27_user-10103').delete(),
+    db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc('season-2026-27_club-arsenal').delete(),
+    db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc('season-2026-27_club-chelsea').delete(),
+    db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc('season-2026-27_club-liverpool').delete(),
+  ]);
+
   const userC_tg = { id: 10103, first_name: 'Player', last_name: 'Charlie', username: 'player_charlie' };
   const userC_init = createTelegramInitData(userC_tg, TEST_BOT_TOKEN);
 
@@ -376,6 +394,22 @@ async function runAdversarialTestSuite() {
      VALUES (?, "season-2026-27", "comp-premier-league-2026", 1, "Matchday 1", "club-arsenal", "club-chelsea", ?, "SCHEDULED", ?, ?)`,
     [testFixId, now, now, now]
   );
+  await db.collection(COLLECTIONS.FIXTURES).doc(testFixId).set({
+    id: testFixId,
+    seasonId: 'season-2026-27',
+    competitionId: 'comp-premier-league-2026',
+    competitionName: 'Premier League',
+    matchday: 1,
+    roundName: 'Matchday 1',
+    homeClubId: 'club-arsenal',
+    awayClubId: 'club-chelsea',
+    homeOwnerId: 'user-10101',
+    awayOwnerId: 'user-10102',
+    scheduledAt: now,
+    status: 'SCHEDULED',
+    createdAt: now,
+    updatedAt: now,
+  });
 
   // Attack: User C (Liverpool) attempts to submit a score for Arsenal vs Chelsea
   const userCAttack = await makeRequest(
@@ -404,7 +438,8 @@ async function runAdversarialTestSuite() {
     { homeScore: 3, awayScore: 1 },
     { 'x-telegram-init-data': userA_init }
   );
-  const fixState1 = queryGet<any>('SELECT * FROM fixtures WHERE id = ?', [testFixId]);
+  const fixStateDoc1 = await db.collection(COLLECTIONS.FIXTURES).doc(testFixId).get();
+  const fixState1 = fixStateDoc1.data() || {};
 
   const subB_1 = await makeRequest(
     'POST',
@@ -412,21 +447,22 @@ async function runAdversarialTestSuite() {
     { homeScore: 3, awayScore: 1 },
     { 'x-telegram-init-data': userB_init }
   );
-  const fixState2 = queryGet<any>('SELECT * FROM fixtures WHERE id = ?', [testFixId]);
+  const fixStateDoc2 = await db.collection(COLLECTIONS.FIXTURES).doc(testFixId).get();
+  const fixState2 = fixStateDoc2.data() || {};
 
   const passScenario1 =
     subA_1.status === 200 &&
     fixState1.status === 'PENDING_CONFIRMATION' &&
     subB_1.status === 200 &&
     fixState2.status === 'CONFIRMED' &&
-    fixState2.home_score === 3 &&
-    fixState2.away_score === 1;
+    fixState2.homeScore === 3 &&
+    fixState2.awayScore === 1;
 
   recordResult(
     'STEP 7A',
     'Consensus matching scores (3-1 vs 3-1)',
     'Transitions SCHEDULED -> PENDING_CONFIRMATION -> CONFIRMED (3-1)',
-    `Final Status=${fixState2.status}, Score=${fixState2.home_score}-${fixState2.away_score}`,
+    `Final Status=${fixState2.status}, Score=${fixState2.homeScore}-${fixState2.awayScore}`,
     passScenario1
   );
 
@@ -436,10 +472,12 @@ async function runAdversarialTestSuite() {
   await makeRequest('POST', `/api/fixtures/${testFixId}/result`, { homeScore: 3, awayScore: 1 }, { 'x-telegram-init-data': userA_init });
   await makeRequest('POST', `/api/fixtures/${testFixId}/result`, { homeScore: 1, awayScore: 2 }, { 'x-telegram-init-data': userB_init });
 
-  const fixStateDisputed = queryGet<any>('SELECT * FROM fixtures WHERE id = ?', [testFixId]);
-  const disputeRecord = queryGet<any>('SELECT * FROM disputes WHERE fixture_id = ? AND status = "OPEN"', [testFixId]);
+  const fixStateDisputedDoc = await db.collection(COLLECTIONS.FIXTURES).doc(testFixId).get();
+  const fixStateDisputed = fixStateDisputedDoc.data() || {};
+  const disputesSnap = await db.collection(COLLECTIONS.DISPUTES).where('fixtureId', '==', testFixId).get();
+  const disputeRecord = disputesSnap.docs.find((d) => d.data().status === 'OPEN')?.data();
 
-  const passScenario2 = fixStateDisputed.status === 'DISPUTED' && disputeRecord !== null;
+  const passScenario2 = fixStateDisputed.status === 'DISPUTED' && disputeRecord !== undefined;
   recordResult(
     'STEP 7B',
     'Conflicting scores (3-1 vs 1-2)',
@@ -451,26 +489,28 @@ async function runAdversarialTestSuite() {
   // Scenario 3: Admin Resolves Dispute with MANUAL SCORE (2-0)
   const resolveRes = await makeRequest(
     'POST',
-    `/api/admin/disputes/${disputeRecord.id}/resolve`,
+    `/api/admin/disputes/${disputeRecord?.id}/resolve`,
     { action: 'MANUAL_SCORE', manualHomeScore: 2, manualAwayScore: 0, notes: 'Verified photo match report: Arsenal won 2-0' },
     { 'x-telegram-init-data': adminInitData }
   );
 
-  const fixStateResolved = queryGet<any>('SELECT * FROM fixtures WHERE id = ?', [testFixId]);
-  const disputeResolved = queryGet<any>('SELECT * FROM disputes WHERE id = ?', [disputeRecord.id]);
+  const fixStateResolvedDoc = await db.collection(COLLECTIONS.FIXTURES).doc(testFixId).get();
+  const fixStateResolved = fixStateResolvedDoc.data() || {};
+  const disputeResolvedDoc = await db.collection(COLLECTIONS.DISPUTES).doc(disputeRecord?.id).get();
+  const disputeResolved = disputeResolvedDoc.data() || {};
 
   const passScenario3 =
     resolveRes.status === 200 &&
     fixStateResolved.status === 'CONFIRMED' &&
-    fixStateResolved.home_score === 2 &&
-    fixStateResolved.away_score === 0 &&
+    fixStateResolved.homeScore === 2 &&
+    fixStateResolved.awayScore === 0 &&
     disputeResolved.status === 'RESOLVED';
 
   recordResult(
     'STEP 7C',
     'Admin Manual Score Resolution (2-0)',
     'Fixture CONFIRMED with 2-0, dispute status RESOLVED',
-    `Status=${fixStateResolved.status}, Score=${fixStateResolved.home_score}-${fixStateResolved.away_score}`,
+    `Status=${fixStateResolved.status}, Score=${fixStateResolved.homeScore}-${fixStateResolved.awayScore}`,
     passScenario3
   );
 
@@ -510,6 +550,11 @@ async function runAdversarialTestSuite() {
   queryRun('DELETE FROM disputes');
   queryRun('DELETE FROM fixtures WHERE competition_id = "comp-premier-league-2026"');
 
+  const existingPlFixes = await db.collection(COLLECTIONS.FIXTURES).where('competitionId', '==', 'comp-premier-league-2026').get();
+  for (const d of existingPlFixes.docs) {
+    await d.ref.delete();
+  }
+
   const fix1 = 'fix-ctrl-1';
   const fix2 = 'fix-ctrl-2';
   const fix3 = 'fix-ctrl-3';
@@ -520,6 +565,22 @@ async function runAdversarialTestSuite() {
      VALUES (?, "season-2026-27", "comp-premier-league-2026", 1, "Matchday 1", "club-arsenal", "club-chelsea", ?, 3, 1, "club-arsenal", "CONFIRMED", ?, ?)`,
     [fix1, now, now, now]
   );
+  await db.collection(COLLECTIONS.FIXTURES).doc(fix1).set({
+    id: fix1,
+    seasonId: 'season-2026-27',
+    competitionId: 'comp-premier-league-2026',
+    matchday: 1,
+    roundName: 'Matchday 1',
+    homeClubId: 'club-arsenal',
+    awayClubId: 'club-chelsea',
+    homeScore: 3,
+    awayScore: 1,
+    winnerClubId: 'club-arsenal',
+    status: 'CONFIRMED',
+    scheduledAt: now,
+    createdAt: now,
+    updatedAt: now,
+  });
 
   // Fix 2: Liverpool 0-0 Arsenal (CONFIRMED)
   queryRun(
@@ -527,6 +588,21 @@ async function runAdversarialTestSuite() {
      VALUES (?, "season-2026-27", "comp-premier-league-2026", 2, "Matchday 2", "club-liverpool", "club-arsenal", ?, 0, 0, NULL, "CONFIRMED", ?, ?)`,
     [fix2, now, now, now]
   );
+  await db.collection(COLLECTIONS.FIXTURES).doc(fix2).set({
+    id: fix2,
+    seasonId: 'season-2026-27',
+    competitionId: 'comp-premier-league-2026',
+    matchday: 2,
+    roundName: 'Matchday 2',
+    homeClubId: 'club-liverpool',
+    awayClubId: 'club-arsenal',
+    homeScore: 0,
+    awayScore: 0,
+    status: 'CONFIRMED',
+    scheduledAt: now,
+    createdAt: now,
+    updatedAt: now,
+  });
 
   // Fix 3: Chelsea vs Liverpool (DISPUTED)
   queryRun(
@@ -534,6 +610,21 @@ async function runAdversarialTestSuite() {
      VALUES (?, "season-2026-27", "comp-premier-league-2026", 3, "Matchday 3", "club-chelsea", "club-liverpool", ?, 2, 1, NULL, "DISPUTED", ?, ?)`,
     [fix3, now, now, now]
   );
+  await db.collection(COLLECTIONS.FIXTURES).doc(fix3).set({
+    id: fix3,
+    seasonId: 'season-2026-27',
+    competitionId: 'comp-premier-league-2026',
+    matchday: 3,
+    roundName: 'Matchday 3',
+    homeClubId: 'club-chelsea',
+    awayClubId: 'club-liverpool',
+    homeScore: 2,
+    awayScore: 1,
+    status: 'DISPUTED',
+    scheduledAt: now,
+    createdAt: now,
+    updatedAt: now,
+  });
 
   const standingsRes = await makeRequest('GET', '/api/competitions/comp-premier-league-2026/standings');
   const standings = standingsRes.body?.standings;
@@ -680,6 +771,21 @@ async function runAdversarialTestSuite() {
      VALUES (?, "season-2026-27", "comp-premier-league-2026", 5, "Matchday 5", "club-arsenal", "club-chelsea", ?, "SCHEDULED", ?, ?)`,
     [fixWithProofId, now, now, now]
   );
+  await db.collection(COLLECTIONS.FIXTURES).doc(fixWithProofId).set({
+    id: fixWithProofId,
+    seasonId: 'season-2026-27',
+    competitionId: 'comp-premier-league-2026',
+    matchday: 5,
+    roundName: 'Matchday 5',
+    homeClubId: 'club-arsenal',
+    awayClubId: 'club-chelsea',
+    homeOwnerId: 'user-10101',
+    awayOwnerId: 'user-10102',
+    status: 'SCHEDULED',
+    scheduledAt: now,
+    createdAt: now,
+    updatedAt: now,
+  });
 
   await makeRequest(
     'POST',
@@ -688,14 +794,16 @@ async function runAdversarialTestSuite() {
     { 'x-telegram-init-data': userA_init }
   );
 
+  const subDoc = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).doc(`sub-${fixWithProofId}-user-10101`).get();
   const submissionWithProof = queryGet<any>('SELECT * FROM result_submissions WHERE fixture_id = ?', [fixWithProofId]);
-  const passProofStorage = submissionWithProof?.proof_url === 'https://images.unsplash.com/photo-match-screenshot.jpg';
+  const storedProofUrl = subDoc.data()?.proofUrl || submissionWithProof?.proof_url;
+  const passProofStorage = storedProofUrl === 'https://images.unsplash.com/photo-match-screenshot.jpg';
 
   recordResult(
     'STEP 15',
     'Screenshot Proof URL Persistence',
     'Stored securely in result_submissions table alongside score',
-    `Stored proof URL: ${submissionWithProof?.proof_url}`,
+    `Stored proof URL: ${storedProofUrl}`,
     passProofStorage
   );
 

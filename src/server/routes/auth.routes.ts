@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { validateBody } from '../middleware/validationMiddleware';
 import { verifyTelegramWebAppData, getOrCreateTelegramUser, getOrCreateDevUser, DEV_PROFILES } from '../auth/telegramAuth';
-import { getUserActiveClub } from '../services/clubService';
+import { getUserActiveClubFirestore } from '../firebase/firestoreStore';
 
 export const authRouter = Router();
 
@@ -14,7 +14,7 @@ const devAuthSchema = z.object({
   devUserId: z.string().min(1, 'devUserId is required'),
 });
 
-authRouter.post('/telegram', validateBody(telegramAuthSchema), (req: Request, res: Response) => {
+authRouter.post('/telegram', validateBody(telegramAuthSchema), async (req: Request, res: Response) => {
   const { initData } = req.body;
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
 
@@ -25,8 +25,8 @@ authRouter.post('/telegram', validateBody(telegramAuthSchema), (req: Request, re
         const urlParams = new URLSearchParams(initData);
         const userRaw = urlParams.get('user');
         if (userRaw) {
-          const user = getOrCreateTelegramUser(JSON.parse(userRaw));
-          const currentClub = getUserActiveClub(user.id, 'season-2026-27');
+          const user = await getOrCreateTelegramUser(JSON.parse(userRaw));
+          const currentClub = await getUserActiveClubFirestore(user.id, 'season-2026-27');
           console.log(`[TELEGRAM AUTH - DEV SANDBOX] user=${user.username} (id: ${user.telegramId}), isAdmin=${user.isAdmin}`);
           res.json({ success: true, user, currentClub });
           return;
@@ -46,11 +46,11 @@ authRouter.post('/telegram', validateBody(telegramAuthSchema), (req: Request, re
     return;
   }
 
-  const user = getOrCreateTelegramUser(verifyResult.user);
-  const currentClub = getUserActiveClub(user.id, 'season-2026-27');
+  try {
+    const user = await getOrCreateTelegramUser(verifyResult.user);
+    const currentClub = await getUserActiveClubFirestore(user.id, 'season-2026-27');
 
-  // Safe structured logging
-  console.log(`[TELEGRAM AUTH]
+    console.log(`[TELEGRAM AUTH]
 initData received: YES
 parsed user id: ${verifyResult.user.id}
 username: ${verifyResult.user.username || '(none)'}
@@ -59,10 +59,13 @@ HMAC valid: YES
 internal user: ${user.id}
 isAdmin: ${user.isAdmin ? 'YES' : 'NO'}`);
 
-  res.json({ success: true, user, currentClub });
+    res.json({ success: true, user, currentClub });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Authentication failed', message: err.message });
+  }
 });
 
-authRouter.post('/dev', validateBody(devAuthSchema), (req: Request, res: Response) => {
+authRouter.post('/dev', validateBody(devAuthSchema), async (req: Request, res: Response) => {
   const isDev = process.env.ENABLE_DEV_AUTH === 'true' || process.env.NODE_ENV !== 'production';
   if (!isDev) {
     res.status(403).json({ error: 'Dev auth is disabled in production.' });
@@ -70,8 +73,8 @@ authRouter.post('/dev', validateBody(devAuthSchema), (req: Request, res: Respons
   }
 
   try {
-    const user = getOrCreateDevUser(req.body.devUserId);
-    const currentClub = getUserActiveClub(user.id, 'season-2026-27');
+    const user = await getOrCreateDevUser(req.body.devUserId);
+    const currentClub = await getUserActiveClubFirestore(user.id, 'season-2026-27');
     res.json({ success: true, user, currentClub });
   } catch (err: any) {
     res.status(400).json({ error: err.message });

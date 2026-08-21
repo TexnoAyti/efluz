@@ -22,16 +22,16 @@ async function runAllTests() {
 
   // TEST 2: Create User A
   console.log('\n--- TEST 2: Create User A ---');
-  const userA = getOrCreateDevUser('user-dev-a');
+  const userA = await getOrCreateDevUser('user-dev-a');
   console.log(`✅ User A created/loaded: ID=${userA.id}, Username=@${userA.username}`);
 
   // TEST 3: Create User B
   console.log('\n--- TEST 3: Create User B ---');
-  const userB = getOrCreateDevUser('user-dev-b');
+  const userB = await getOrCreateDevUser('user-dev-b');
   console.log(`✅ User B created/loaded: ID=${userB.id}, Username=@${userB.username}`);
 
   // Also create Admin User
-  const adminUser = getOrCreateDevUser('user-dev-admin');
+  const adminUser = await getOrCreateDevUser('user-dev-admin');
   console.log(`✅ Admin User created/loaded: ID=${adminUser.id}, IsAdmin=${adminUser.isAdmin}`);
 
   // TEST 4: User A claims Arsenal

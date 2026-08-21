@@ -31,9 +31,9 @@ async function runVerification() {
   if (clubs.length < 96) throw new Error('Expected at least 96 clubs');
 
   // 2. Auth verification
-  const devUser1 = getOrCreateDevUser('user-dev-a');
-  const devUser2 = getOrCreateDevUser('user-dev-b');
-  const adminUser = getOrCreateDevUser('user-dev-admin');
+  const devUser1 = await getOrCreateDevUser('user-dev-a');
+  const devUser2 = await getOrCreateDevUser('user-dev-b');
+  const adminUser = await getOrCreateDevUser('user-dev-admin');
   console.log(' Dev Auth Users verified:', { devUser1: devUser1.username, devUser2: devUser2.username, admin: adminUser.username, isAdmin: adminUser.isAdmin });
 
   // 3. Atomic Club Claiming Verification

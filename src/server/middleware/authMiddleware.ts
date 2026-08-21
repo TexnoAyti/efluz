@@ -10,7 +10,7 @@ declare global {
   }
 }
 
-export function authMiddleware(req: Request, res: Response, next: NextFunction): void {
+export async function authMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
   const isDev = process.env.ENABLE_DEV_AUTH === 'true' || process.env.NODE_ENV !== 'production';
 
   // 1. Check Telegram InitData header or query FIRST (authoritative production auth)
@@ -21,8 +21,12 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
     if (botToken) {
       const verifyResult = verifyTelegramWebAppData(initData, botToken);
       if (verifyResult.isValid && verifyResult.user) {
-        req.user = getOrCreateTelegramUser(verifyResult.user);
-        return next();
+        try {
+          req.user = await getOrCreateTelegramUser(verifyResult.user);
+          return next();
+        } catch (err: any) {
+          console.warn('Telegram user retrieval error:', err.message);
+        }
       }
     } else if (isDev) {
       // In dev sandbox mode without a token, parse user object if available
@@ -31,7 +35,7 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
         const userRaw = urlParams.get('user');
         if (userRaw) {
           const parsed = JSON.parse(userRaw);
-          req.user = getOrCreateTelegramUser(parsed);
+          req.user = await getOrCreateTelegramUser(parsed);
           return next();
         }
       } catch {
@@ -44,7 +48,7 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
   const devUserId = req.headers['x-dev-user-id'] as string;
   if (isDev && devUserId) {
     try {
-      const user = getOrCreateDevUser(devUserId);
+      const user = await getOrCreateDevUser(devUserId);
       req.user = user;
       return next();
     } catch (err: any) {

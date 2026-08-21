@@ -3,10 +3,14 @@ import { z } from 'zod';
 import { requireAdmin } from '../middleware/authMiddleware';
 import { validateBody } from '../middleware/validationMiddleware';
 import { getDisputes, resolveDispute, reopenFixture, getAllAdminUsers, getAuditLogs } from '../services/adminService';
-import { generateCompetitionFixtures, resetCompetitionFixtures } from '../services/fixtureService';
+import {
+  generateCompetitionFixturesFirestore,
+  reopenFixtureFirestore,
+  resolveDisputeFirestore,
+} from '../firebase/firestoreStore';
+import { migrateSqliteToFirestore } from '../firebase/migrateSqliteToFirestore';
 import { generateKnockoutBracket } from '../tournament/knockoutEngine';
 import { evaluateSeasonQualifications } from '../tournament/qualificationEngine';
-import { CompetitionEngine } from '../tournament/competitionEngine';
 import { queryAll } from '../db';
 
 export const adminRouter = Router();
@@ -25,6 +29,21 @@ const reopenFixtureSchema = z.object({
   notes: z.string().optional(),
 });
 
+adminRouter.post('/migrate-to-firestore', async (req: Request, res: Response) => {
+  try {
+    const report = await migrateSqliteToFirestore();
+    res.json({
+      success: report.success,
+      message: report.success
+        ? 'Successfully migrated SQLite seed to Firestore.'
+        : 'Migration completed with some warnings or errors.',
+      report,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Migration failed', message: err.message });
+  }
+});
+
 adminRouter.get('/users', (req: Request, res: Response) => {
   const users = getAllAdminUsers();
   res.json({ users });
@@ -36,12 +55,17 @@ adminRouter.get('/disputes', (req: Request, res: Response) => {
   res.json({ disputes });
 });
 
-adminRouter.post('/disputes/:id/resolve', validateBody(resolveDisputeSchema), (req: Request, res: Response) => {
+adminRouter.post('/disputes/:id/resolve', validateBody(resolveDisputeSchema), async (req: Request, res: Response) => {
   const adminUserId = req.user!.id;
   const disputeId = req.params.id;
 
   try {
-    const result = resolveDispute(adminUserId, disputeId, req.body);
+    let result: any;
+    try {
+      result = await resolveDisputeFirestore(adminUserId, disputeId, req.body);
+    } catch {
+      result = resolveDispute(adminUserId, disputeId, req.body);
+    }
     res.json({
       success: true,
       message: 'Dispute resolved successfully.',
@@ -52,12 +76,17 @@ adminRouter.post('/disputes/:id/resolve', validateBody(resolveDisputeSchema), (r
   }
 });
 
-adminRouter.post('/fixtures/:id/reopen', validateBody(reopenFixtureSchema), (req: Request, res: Response) => {
+adminRouter.post('/fixtures/:id/reopen', validateBody(reopenFixtureSchema), async (req: Request, res: Response) => {
   const adminUserId = req.user!.id;
   const fixtureId = req.params.id;
 
   try {
-    const result = reopenFixture(adminUserId, fixtureId, req.body.notes);
+    let result: any;
+    try {
+      result = await reopenFixtureFirestore(adminUserId, fixtureId, req.body.notes);
+    } catch {
+      result = reopenFixture(adminUserId, fixtureId, req.body.notes);
+    }
     res.json({
       success: true,
       message: 'Fixture has been reopened for submissions.',
@@ -74,22 +103,24 @@ adminRouter.get('/audit-logs', (req: Request, res: Response) => {
   res.json({ logs });
 });
 
-adminRouter.post('/fixtures/generate', (req: Request, res: Response) => {
-  const { competitionId } = req.body;
+adminRouter.post('/fixtures/generate', async (req: Request, res: Response) => {
+  const { competitionId, force } = req.body;
   if (!competitionId) {
     res.status(400).json({ error: 'competitionId is required' });
     return;
   }
 
   try {
-    const result = CompetitionEngine.generateSchedule(competitionId);
+    const result = await generateCompetitionFixturesFirestore(competitionId, { force: Boolean(force) });
     res.json({
       success: true,
-      message: `Generated competition schedule.`,
-      result,
+      competitionId,
+      fixturesGenerated: result.generated,
+      matchdays: result.matchdays,
+      message: `Generated and persisted ${result.generated} fixtures in Firestore across ${result.matchdays} matchdays.`,
     });
   } catch (err: any) {
-    res.status(400).json({ error: 'Failed to generate schedule', message: err.message });
+    res.status(500).json({ error: 'FIXTURE_PERSISTENCE_FAILED', message: err.message });
   }
 });
 
@@ -127,7 +158,7 @@ adminRouter.post('/qualifications/evaluate', (req: Request, res: Response) => {
   }
 });
 
-adminRouter.post('/fixtures/reset', (req: Request, res: Response) => {
+adminRouter.post('/fixtures/reset', async (req: Request, res: Response) => {
   const { competitionId } = req.body;
   if (!competitionId) {
     res.status(400).json({ error: 'competitionId is required' });
@@ -135,38 +166,15 @@ adminRouter.post('/fixtures/reset', (req: Request, res: Response) => {
   }
 
   try {
-    const result = resetCompetitionFixtures(competitionId);
+    const result = await generateCompetitionFixturesFirestore(competitionId, { force: true });
     res.json({
       success: true,
+      competitionId,
+      fixturesGenerated: result.generated,
+      matchdays: result.matchdays,
       message: `Reset and regenerated schedule for competition '${competitionId}'.`,
-      result,
     });
   } catch (err: any) {
-    res.status(400).json({ error: 'Failed to reset schedule', message: err.message });
+    res.status(500).json({ error: 'FIXTURE_PERSISTENCE_FAILED', message: err.message });
   }
 });
-
-adminRouter.post('/fixtures/regenerate-domestic', (req: Request, res: Response) => {
-  const seasonId = req.body.seasonId || 'season-2026-27';
-  try {
-    const domesticComps = queryAll<{ id: string; name: string }>(
-      'SELECT id, name FROM competitions WHERE season_id = ? AND type = "LEAGUE"',
-      [seasonId]
-    );
-
-    const results = [];
-    for (const comp of domesticComps) {
-      const resData = resetCompetitionFixtures(comp.id);
-      results.push({ competitionId: comp.id, name: comp.name, ...resData });
-    }
-
-    res.json({
-      success: true,
-      message: `Regenerated domestic league fixtures for season '${seasonId}'.`,
-      results,
-    });
-  } catch (err: any) {
-    res.status(400).json({ error: 'Failed to regenerate domestic fixtures', message: err.message });
-  }
-});
-

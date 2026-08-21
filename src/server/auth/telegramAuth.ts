@@ -1,6 +1,6 @@
 import crypto from 'crypto';
-import { queryGet, queryRun } from '../db';
 import { User } from '../../types';
+import { getOrCreateTelegramUserFirestore, getOrCreateDevUserFirestore } from '../firebase/firestoreStore';
 
 export interface TelegramUserParsed {
   id: number | string;
@@ -74,56 +74,8 @@ export function verifyTelegramWebAppData(
   }
 }
 
-export function getOrCreateTelegramUser(tgUser: TelegramUserParsed): User {
-  const telegramId = String(tgUser.id);
-  const username = tgUser.username || `tg_${telegramId}`;
-  const firstName = tgUser.first_name || 'Player';
-  const lastName = tgUser.last_name || '';
-  const photoUrl = tgUser.photo_url || '';
-
-  // Check admin telegram IDs
-  const adminIds = (process.env.ADMIN_TELEGRAM_IDS || '')
-    .split(',')
-    .map((s) => s.trim().replace(/^@/, '').toLowerCase())
-    .filter(Boolean);
-  const isAdmin =
-    adminIds.includes(telegramId.toLowerCase()) ||
-    (Boolean(username) && adminIds.includes(username.toLowerCase()))
-      ? 1
-      : 0;
-
-  const now = new Date().toISOString();
-
-  let existing = queryGet<any>('SELECT * FROM users WHERE telegram_id = ?', [telegramId]);
-
-  if (!existing) {
-    const newId = `user-${telegramId}`;
-    queryRun(
-      'INSERT INTO users (id, telegram_id, username, first_name, last_name, photo_url, is_admin, is_suspended, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)',
-      [newId, telegramId, username, firstName, lastName, photoUrl, isAdmin, now, now]
-    );
-    existing = queryGet<any>('SELECT * FROM users WHERE telegram_id = ?', [telegramId]);
-  } else {
-    // Update profile info
-    queryRun(
-      'UPDATE users SET username = ?, first_name = ?, last_name = ?, photo_url = ?, is_admin = CASE WHEN is_admin = 1 THEN 1 ELSE ? END, updated_at = ? WHERE telegram_id = ?',
-      [username, firstName, lastName, photoUrl, isAdmin, now, telegramId]
-    );
-    existing = queryGet<any>('SELECT * FROM users WHERE telegram_id = ?', [telegramId]);
-  }
-
-  return {
-    id: existing.id,
-    telegramId: existing.telegram_id,
-    username: existing.username,
-    firstName: existing.first_name,
-    lastName: existing.last_name,
-    photoUrl: existing.photo_url,
-    isAdmin: Boolean(existing.is_admin),
-    isSuspended: Boolean(existing.is_suspended),
-    createdAt: existing.created_at,
-    updatedAt: existing.updated_at,
-  };
+export async function getOrCreateTelegramUser(tgUser: TelegramUserParsed): Promise<User> {
+  return await getOrCreateTelegramUserFirestore(tgUser);
 }
 
 export const DEV_PROFILES = [
@@ -153,35 +105,6 @@ export const DEV_PROFILES = [
   },
 ];
 
-export function getOrCreateDevUser(devUserId: string): User {
-  const isDevAuthEnabled = process.env.ENABLE_DEV_AUTH === 'true' || process.env.NODE_ENV !== 'production';
-  if (!isDevAuthEnabled) {
-    throw new Error('Development sandbox authentication is disabled in production.');
-  }
-
-  const profile = DEV_PROFILES.find((p) => p.id === devUserId || p.username === devUserId) || DEV_PROFILES[0];
-  const now = new Date().toISOString();
-
-  let existing = queryGet<any>('SELECT * FROM users WHERE telegram_id = ?', [profile.telegramId]);
-
-  if (!existing) {
-    queryRun(
-      'INSERT INTO users (id, telegram_id, username, first_name, last_name, photo_url, is_admin, is_suspended, created_at, updated_at) VALUES (?, ?, ?, ?, ?, "", ?, 0, ?, ?)',
-      [profile.id, profile.telegramId, profile.username, profile.firstName, profile.lastName, profile.isAdmin ? 1 : 0, now, now]
-    );
-    existing = queryGet<any>('SELECT * FROM users WHERE telegram_id = ?', [profile.telegramId]);
-  }
-
-  return {
-    id: existing.id,
-    telegramId: existing.telegram_id,
-    username: existing.username,
-    firstName: existing.first_name,
-    lastName: existing.last_name,
-    photoUrl: existing.photo_url,
-    isAdmin: Boolean(existing.is_admin),
-    isSuspended: Boolean(existing.is_suspended),
-    createdAt: existing.created_at,
-    updatedAt: existing.updated_at,
-  };
+export async function getOrCreateDevUser(devUserId: string): Promise<User> {
+  return await getOrCreateDevUserFirestore(devUserId);
 }
