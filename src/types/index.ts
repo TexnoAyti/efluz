@@ -53,6 +53,12 @@ export interface League {
   createdAt: string;
 }
 
+export interface ClubOccupancy {
+  status: 'occupied' | 'owned' | 'available';
+  userId?: string;
+  username?: string;
+}
+
 export interface Club {
   id: string;
   name: string;
@@ -63,6 +69,8 @@ export interface Club {
   logoUrl: string;
   active: boolean;
   isTaken?: boolean;
+  isCurrentUserClub?: boolean;
+  occupancy?: ClubOccupancy;
   stadium?: string;
   claimedByUserId?: string | null;
   claimedByUsername?: string | null;
@@ -95,7 +103,9 @@ export interface Competition {
   status: 'upcoming' | 'active' | 'completed';
   totalTeams?: number;
   hasFixtures?: boolean;
+  fixtureCount?: number;
   fixturesCount?: number;
+  generationStatus?: 'not_generated' | 'generated';
   formatConfig: {
     rounds?: number;
     homeAndAway?: boolean;

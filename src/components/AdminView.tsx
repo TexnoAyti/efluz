@@ -526,46 +526,69 @@ export const AdminView: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {competitions.map((comp) => (
-                <div
-                  key={comp.id}
-                  className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 flex flex-col justify-between gap-3 shadow-inner"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <div className="font-bold text-xs text-slate-200">{comp.name}</div>
-                      <span className="text-[10px] text-slate-500 uppercase">{comp.type} • {comp.totalTeams} Teams</span>
-                    </div>
-                    <span className={`text-[9px] uppercase font-black px-2 py-0.5 rounded-full ${comp.status === 'active' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
-                      {comp.status}
-                    </span>
-                  </div>
+              {competitions.map((comp) => {
+                const hasGeneratedFixtures = Boolean(
+                  comp.hasFixtures ||
+                  (comp.fixtureCount && comp.fixtureCount > 0) ||
+                  (comp.fixturesCount && comp.fixturesCount > 0) ||
+                  comp.generationStatus === 'generated'
+                );
+                const fixtureCount = comp.fixtureCount || comp.fixturesCount || 0;
 
-                  <div className="flex items-center gap-2 pt-2 border-t border-slate-800/80">
-                    <button
-                      disabled={isProcessing || generatingCompId !== null}
-                      onClick={() => handleGenerateCompetition(comp.id)}
-                      className="flex-1 py-1.5 bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 disabled:opacity-50 text-slate-950 font-black text-xs rounded-xl transition-all"
-                    >
-                      {generatingCompId === comp.id
-                        ? 'Generating...'
-                        : comp.hasFixtures
-                        ? 'Regenerate'
-                        : 'Generate'}
-                    </button>
-                    {comp.hasFixtures && (
+                return (
+                  <div
+                    key={comp.id}
+                    className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 flex flex-col justify-between gap-3 shadow-inner"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="font-bold text-xs text-slate-200">{comp.name}</div>
+                        <span className="text-[10px] text-slate-400 uppercase">
+                          {comp.type} • {comp.totalTeams ?? 0} Teams
+                          {hasGeneratedFixtures && ` • ${fixtureCount} fixtures`}
+                        </span>
+                      </div>
+                      <span
+                        className={`text-[9px] uppercase font-black px-2 py-0.5 rounded-full ${
+                          hasGeneratedFixtures
+                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                            : 'bg-slate-800 text-slate-400 border border-slate-700'
+                        }`}
+                      >
+                        {hasGeneratedFixtures ? 'Generated' : 'Unscheduled'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-2 border-t border-slate-800/80">
                       <button
                         disabled={isProcessing || generatingCompId !== null}
-                        onClick={() => handleResetCompetition(comp.id)}
-                        className="py-1.5 px-2.5 bg-rose-950/50 hover:bg-rose-900/80 active:bg-rose-800 disabled:opacity-50 text-rose-300 border border-rose-800/40 font-bold text-xs rounded-xl transition-all"
-                        title="Delete & Reset Fixtures"
+                        onClick={() => handleGenerateCompetition(comp.id)}
+                        className={`flex-1 py-1.5 font-black text-xs rounded-xl transition-all disabled:opacity-50 ${
+                          hasGeneratedFixtures
+                            ? 'bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-200 border border-slate-700'
+                            : 'bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-slate-950 shadow-md shadow-emerald-500/10'
+                        }`}
                       >
-                        <RefreshCw className="w-3.5 h-3.5" />
+                        {generatingCompId === comp.id
+                          ? 'Generating...'
+                          : hasGeneratedFixtures
+                          ? 'Regenerate'
+                          : 'Generate'}
                       </button>
-                    )}
+                      {hasGeneratedFixtures && (
+                        <button
+                          disabled={isProcessing || generatingCompId !== null}
+                          onClick={() => handleResetCompetition(comp.id)}
+                          className="py-1.5 px-2.5 bg-rose-950/50 hover:bg-rose-900/80 active:bg-rose-800 disabled:opacity-50 text-rose-300 border border-rose-800/40 font-bold text-xs rounded-xl transition-all"
+                          title="Delete & Reset Fixtures"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>

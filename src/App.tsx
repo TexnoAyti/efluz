@@ -155,7 +155,7 @@ const AppContent: React.FC = () => {
         )}
         {currentTab === 'my-club' && <MyClubView onNavigateTab={setActiveTab} />}
         {currentTab === 'my-matches' && (
-          <MyMatchesView initialSelectedFixture={selectedFixture} />
+          <MyMatchesView initialSelectedFixture={selectedFixture} onNavigateTab={setActiveTab} />
         )}
         {currentTab === 'leagues' && <ClubsView />}
         {currentTab === 'cups' && <CupBracketsView />}

@@ -68,9 +68,9 @@ export const Navigation: React.FC<NavigationProps> = ({
   return (
     <>
       {/* Desktop Navigation Tabs (Horizontal Top Bar under Header) */}
-      <nav className="hidden lg:block bg-slate-900/95 backdrop-blur-md border-b border-slate-800/80 sticky top-[73px] z-30 shadow-lg">
+      <nav className="hidden lg:block bg-[#0a0e16]/80 backdrop-blur-xl border-b border-white/[0.08] sticky top-[61px] z-30 shadow-lg">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="flex items-center space-x-1 py-2 overflow-x-auto scrollbar-none">
+          <div className="flex items-center space-x-1.5 py-2 overflow-x-auto scrollbar-none">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = currentTab === item.id;
@@ -81,17 +81,17 @@ export const Navigation: React.FC<NavigationProps> = ({
                   key={item.id}
                   id={`nav-tab-${item.id}`}
                   onClick={() => onTabChange(item.id)}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
+                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
                     isActive
-                      ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/25 font-black'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/80'
+                      ? 'btn-glass-primary shadow-emerald-500/20 font-black'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.06]'
                   }`}
                 >
                   <Icon className={`w-4 h-4 ${isActive ? 'text-slate-950' : 'text-slate-400'}`} />
                   <span>{item.label}</span>
                   {hasBadge && (
                     <span
-                      className={`flex items-center justify-center px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none ${
+                      className={`flex items-center justify-center px-1.5 py-0.5 rounded-full text-[9px] font-black leading-none ${
                         item.id === 'admin'
                           ? 'bg-amber-500 text-slate-950 animate-pulse'
                           : 'bg-rose-500 text-white'
@@ -108,7 +108,7 @@ export const Navigation: React.FC<NavigationProps> = ({
       </nav>
 
       {/* Mobile Bottom Navigation Bar (Telegram Mini App Native Experience) */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-slate-950/95 backdrop-blur-xl border-t border-slate-800/80 pb-safe shadow-2xl">
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#07090e]/85 backdrop-blur-2xl border-t border-white/[0.08] pb-safe shadow-2xl">
         <div className="flex items-center justify-around px-1 py-1.5 overflow-x-auto scrollbar-none">
           {navItems.map((item) => {
             const Icon = item.icon;
@@ -135,7 +135,7 @@ export const Navigation: React.FC<NavigationProps> = ({
                       className={`absolute -top-1.5 -right-2 min-w-[15px] h-[15px] px-1 rounded-full text-[9px] font-black flex items-center justify-center leading-none ${
                         item.id === 'admin'
                           ? 'bg-amber-500 text-slate-950 animate-pulse'
-                          : 'bg-rose-500 text-white'
+                          : 'bg-rose-500 text-white shadow-[0_0_6px_rgba(244,63,94,0.5)]'
                       }`}
                     >
                       {item.badge}

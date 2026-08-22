@@ -99,7 +99,12 @@ async function runAdversarialTestSuite() {
     app.use('/api/admin', adminRouter);
 
     await new Promise<void>((resolve) => {
-      server = app.listen(port, '127.0.0.1', () => resolve());
+      server = app.listen(0, '127.0.0.1', () => {
+        const addr = server.address() as any;
+        port = addr.port;
+        baseUrl = `http://127.0.0.1:${port}`;
+        resolve();
+      });
     });
 
     const healthRes = await fetch(`${baseUrl}/api/health`);
@@ -321,6 +326,8 @@ async function runAdversarialTestSuite() {
     db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc('season-2026-27_user-10102').delete(),
     db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc('season-2026-27_club-arsenal').delete(),
     db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc('season-2026-27_club-chelsea').delete(),
+    db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).doc('season-2026-27_club-arsenal').delete(),
+    db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).doc('season-2026-27_club-chelsea').delete(),
   ]);
 
   // Simultaneous Claim attempt for Arsenal
@@ -377,6 +384,9 @@ async function runAdversarialTestSuite() {
     db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc('season-2026-27_club-arsenal').delete(),
     db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc('season-2026-27_club-chelsea').delete(),
     db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc('season-2026-27_club-liverpool').delete(),
+    db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).doc('season-2026-27_club-arsenal').delete(),
+    db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).doc('season-2026-27_club-chelsea').delete(),
+    db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).doc('season-2026-27_club-liverpool').delete(),
   ]);
 
   const userC_tg = { id: 10103, first_name: 'Player', last_name: 'Charlie', username: 'player_charlie' };
@@ -825,6 +835,21 @@ async function runAdversarialTestSuite() {
     `HTTP ${invalidScoreRes.status}, error=${invalidScoreRes.body?.error}`,
     passInputValidation
   );
+
+  // Clean up test documents
+  await Promise.all([
+    db.collection(COLLECTIONS.FIXTURES).doc(testFixId).delete(),
+    db.collection(COLLECTIONS.FIXTURES).doc(fixWithProofId).delete(),
+    db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc('season-2026-27_user-10101').delete(),
+    db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc('season-2026-27_user-10102').delete(),
+    db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc('season-2026-27_user-10103').delete(),
+    db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc('season-2026-27_club-arsenal').delete(),
+    db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc('season-2026-27_club-chelsea').delete(),
+    db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc('season-2026-27_club-liverpool').delete(),
+    db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).doc('season-2026-27_club-arsenal').delete(),
+    db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).doc('season-2026-27_club-chelsea').delete(),
+    db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).doc('season-2026-27_club-liverpool').delete(),
+  ]);
 
   // Close server
   server.close();

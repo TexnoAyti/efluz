@@ -100,25 +100,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     switch (status) {
       case 'CONFIRMED':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
             <CheckCircle2 className="w-3 h-3" /> {t.matchStatusConfirmed}
           </span>
         );
       case 'PENDING_CONFIRMATION':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 animate-pulse">
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500/15 text-amber-400 border border-amber-500/30 animate-pulse">
             <Clock className="w-3 h-3" /> {t.matchStatusPending}
           </span>
         );
       case 'DISPUTED':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30">
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-500/15 text-rose-400 border border-rose-500/30">
             <AlertTriangle className="w-3 h-3" /> {t.matchStatusDisputed}
           </span>
         );
       default:
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold text-slate-300 glass-pill">
             <Calendar className="w-3 h-3" /> {t.matchStatusUpcoming}
           </span>
         );
@@ -126,10 +126,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-300 pb-20">
+    <div className="space-y-5 animate-in fade-in duration-300 pb-20">
       {/* Auth Error Banner (if Telegram auth rejected) */}
       {authStatus === 'AUTH_ERROR' && (
-        <div className="p-4 rounded-2xl bg-rose-950/60 border border-rose-500/40 text-rose-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xl">
+        <div className="p-4 glass-panel bg-rose-950/40 border-rose-500/40 text-rose-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xl">
           <div className="flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
             <div>
@@ -143,7 +143,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <button
               id="btn-open-diagnostics-error"
               onClick={onOpenDiagnostics}
-              className="px-3 py-1.5 rounded-xl bg-rose-800 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1.5 shrink-0 transition-colors"
+              className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center gap-1.5 shrink-0 transition-colors shadow-md"
             >
               <Terminal className="w-3.5 h-3.5" />
               <span>View Diagnostics</span>
@@ -154,23 +154,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       {/* Club Claim Promo Banner (if user has no club yet) */}
       {!currentClub && (
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-emerald-600 via-teal-700 to-indigo-800 p-6 sm:p-8 text-white shadow-2xl">
+        <div className="relative overflow-hidden glass-panel bg-gradient-to-r from-emerald-950/60 via-slate-900/80 to-teal-950/60 border-emerald-500/30 p-6 sm:p-8 text-white shadow-2xl">
+          <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/15 rounded-full blur-3xl pointer-events-none" />
           <div className="relative z-10 max-w-xl">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/20 text-white text-xs font-black uppercase tracking-wider mb-3 backdrop-blur-sm">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-xs font-black uppercase tracking-wider mb-3 backdrop-blur-sm">
               <Sparkles className="w-3.5 h-3.5" /> 2026/27 Registration Open
             </div>
             <h2 className="text-xl sm:text-3xl font-black tracking-tight mb-2">
               {t.selectYourClub}
             </h2>
-            <p className="text-xs sm:text-sm text-emerald-100 mb-5 leading-relaxed">
+            <p className="text-xs sm:text-sm text-slate-300 mb-5 leading-relaxed">
               Choose from 96 authentic European clubs across Premier League, La Liga, Serie A, Bundesliga, and Ligue 1 to compete in the active season.
             </p>
             <button
               id="btn-claim-club-banner"
               onClick={() => onNavigateTab('leagues')}
-              className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-white text-slate-950 font-black text-xs sm:text-sm shadow-xl hover:bg-slate-100 active:scale-95 transition-all"
+              className="inline-flex items-center gap-2 px-5 py-2.5 btn-glass-primary text-slate-950 font-black text-xs sm:text-sm shadow-xl"
             >
-              <Shield className="w-4 h-4 text-emerald-600" />
+              <Shield className="w-4 h-4 text-slate-950" />
               <span>{t.allClubs}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
@@ -180,13 +181,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       {/* Main Club & Player Status Card (when claimed) */}
       {currentClub && (
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-7 shadow-2xl relative overflow-hidden">
+        <div className="glass-panel p-5 sm:p-6 shadow-2xl relative overflow-hidden border-emerald-500/25">
           <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
 
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-5 relative z-10">
             {/* Club identity */}
             <div className="flex items-center gap-4">
-              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-slate-950 p-3 border-2 border-slate-700/80 flex items-center justify-center shadow-xl shrink-0">
+              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-slate-950/80 p-2.5 border border-white/[0.1] flex items-center justify-center shadow-2xl shrink-0">
                 <img
                   src={currentClub.logoUrl}
                   alt={currentClub.name}
@@ -199,12 +200,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                  <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
                     {currentClub.leagueId ? currentClub.leagueId.replace('league-', '').replace('-', ' ').toUpperCase() : 'DOMESTIC LEAGUE'}
                   </span>
                   <span className="text-xs text-slate-400 font-medium">@{user?.username}</span>
                 </div>
-                <h2 className="text-xl sm:text-3xl font-black text-white tracking-tight mt-1">
+                <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight mt-1">
                   {currentClub.name}
                 </h2>
                 <p className="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
@@ -216,27 +217,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
 
             {/* Quick stats badges */}
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5 sm:gap-3 bg-slate-950/80 p-3 rounded-2xl border border-slate-800">
-              <div className="text-center">
-                <div className="text-[10px] uppercase font-bold text-slate-400">{t.pos}</div>
-                <div className="text-base sm:text-xl font-black text-amber-400 flex items-center justify-center gap-0.5">
-                  <Trophy className="w-4 h-4 text-amber-400" />
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 sm:gap-2.5 glass-card p-2.5 rounded-xl border-white/[0.08]">
+              <div className="text-center px-2">
+                <div className="text-[9px] uppercase font-black tracking-wider text-slate-400">{t.pos}</div>
+                <div className="text-sm sm:text-lg font-black text-amber-400 flex items-center justify-center gap-0.5 mt-0.5">
+                  <Trophy className="w-3.5 h-3.5 text-amber-400" />
                   <span>#{stats?.leaguePosition || 1}</span>
                 </div>
               </div>
-              <div className="text-center">
-                <div className="text-[10px] uppercase font-bold text-slate-400">{t.pts}</div>
-                <div className="text-base sm:text-xl font-black text-white">{stats?.points || 0}</div>
+              <div className="text-center px-2">
+                <div className="text-[9px] uppercase font-black tracking-wider text-slate-400">{t.pts}</div>
+                <div className="text-sm sm:text-lg font-black text-white mt-0.5">{stats?.points || 0}</div>
               </div>
-              <div className="text-center">
-                <div className="text-[10px] uppercase font-bold text-slate-400">W-D-L</div>
+              <div className="text-center px-2">
+                <div className="text-[9px] uppercase font-black tracking-wider text-slate-400">W-D-L</div>
                 <div className="text-xs sm:text-sm font-bold text-emerald-400 mt-1">
                   {stats?.wins || 0}-{stats?.draws || 0}-{stats?.losses || 0}
                 </div>
               </div>
-              <div className="text-center hidden sm:block">
-                <div className="text-[10px] uppercase font-bold text-slate-400">{t.gd}</div>
-                <div className="text-base sm:text-xl font-black text-slate-200">
+              <div className="text-center px-2 hidden sm:block">
+                <div className="text-[9px] uppercase font-black tracking-wider text-slate-400">{t.gd}</div>
+                <div className="text-sm sm:text-lg font-black text-slate-200 mt-0.5">
                   {((stats?.goalsScored || 0) - (stats?.goalsConceded || 0)) > 0
                     ? `+${(stats?.goalsScored || 0) - (stats?.goalsConceded || 0)}`
                     : (stats?.goalsScored || 0) - (stats?.goalsConceded || 0)}
@@ -248,10 +249,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       )}
 
       {/* Next Match & Latest Result Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
         {/* Next Match */}
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div className="glass-panel p-5 shadow-xl space-y-3.5">
+          <div className="flex items-center justify-between border-b border-white/[0.06] pb-2.5">
             <div className="flex items-center gap-2">
               <Flame className="w-4 h-4 text-amber-400" />
               <h3 className="text-xs font-black uppercase tracking-wider text-slate-300">
@@ -262,15 +263,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           {nextMatch ? (
-            <div className="space-y-4">
-              <div className="text-xs text-slate-400 font-medium">
+            <div className="space-y-3.5">
+              <div className="text-[11px] text-slate-400 font-medium">
                 {nextMatch.competitionName} • {nextMatch.roundName || `${t.matchday} ${nextMatch.matchday}`}
               </div>
 
               <div className="grid grid-cols-7 items-center gap-2 text-center py-2">
                 {/* Home */}
                 <div className="col-span-3 flex flex-col items-center">
-                  <div className="w-12 h-12 rounded-2xl bg-slate-950 p-2 border border-slate-800 flex items-center justify-center mb-1 shadow-inner">
+                  <div className="w-12 h-12 rounded-xl bg-slate-950/80 p-2 border border-white/[0.08] flex items-center justify-center mb-1 shadow-inner">
                     <img
                       src={nextMatch.homeClub?.logoUrl}
                       alt={nextMatch.homeClub?.name}
@@ -290,14 +291,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
                 {/* VS */}
                 <div className="col-span-1 flex items-center justify-center">
-                  <span className="w-8 h-8 rounded-full bg-slate-950 border border-slate-800 flex items-center justify-center text-[10px] font-black text-slate-400">
+                  <span className="w-7 h-7 rounded-full glass-card flex items-center justify-center text-[10px] font-black text-slate-400">
                     VS
                   </span>
                 </div>
 
                 {/* Away */}
                 <div className="col-span-3 flex flex-col items-center">
-                  <div className="w-12 h-12 rounded-2xl bg-slate-950 p-2 border border-slate-800 flex items-center justify-center mb-1 shadow-inner">
+                  <div className="w-12 h-12 rounded-xl bg-slate-950/80 p-2 border border-white/[0.08] flex items-center justify-center mb-1 shadow-inner">
                     <img
                       src={nextMatch.awayClub?.logoUrl}
                       alt={nextMatch.awayClub?.name}
@@ -321,7 +322,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   if (onSelectFixtureForMatchCenter) onSelectFixtureForMatchCenter(nextMatch);
                   onNavigateTab('my-matches');
                 }}
-                className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow-md shadow-emerald-500/20 active:scale-95 transition-all flex items-center justify-center gap-1.5"
+                className="w-full py-2.5 btn-glass-primary font-black text-xs flex items-center justify-center gap-1.5"
               >
                 <Swords className="w-3.5 h-3.5" />
                 <span>{t.openMatchCenter}</span>
@@ -335,8 +336,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
         {/* Latest Result & Current Form */}
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div className="glass-panel p-5 shadow-xl space-y-3.5">
+          <div className="flex items-center justify-between border-b border-white/[0.06] pb-2.5">
             <div className="flex items-center gap-2">
               <Trophy className="w-4 h-4 text-emerald-400" />
               <h3 className="text-xs font-black uppercase tracking-wider text-slate-300">
@@ -351,8 +352,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           {latestFinishedMatch ? (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-3.5 bg-slate-950 rounded-2xl border border-slate-800">
+            <div className="space-y-3.5">
+              <div className="flex items-center justify-between p-3 glass-card border-white/[0.08]">
                 <div className="flex items-center gap-2">
                   <img
                     src={latestFinishedMatch.homeClub?.logoUrl}
@@ -367,7 +368,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </span>
                 </div>
 
-                <div className="px-3 py-1 bg-slate-900 border border-slate-800 rounded-xl font-black text-sm text-white">
+                <div className="px-3 py-1 glass-card border-white/[0.1] font-black text-sm text-white">
                   {latestFinishedMatch.homeScore} : {latestFinishedMatch.awayScore}
                 </div>
 
@@ -388,14 +389,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
               {/* Form Guide */}
               <div>
-                <div className="text-[11px] font-bold text-slate-400 mb-2">{t.recentForm}</div>
-                <div className="flex items-center gap-2">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">{t.recentForm}</div>
+                <div className="flex items-center gap-1.5">
                   {recentFinishedMatches.map((fix) => {
                     const outcome = calculateForm(fix);
                     return (
                       <span
                         key={fix.id}
-                        className={`w-7 h-7 rounded-xl flex items-center justify-center font-black text-xs ${
+                        className={`w-6 h-6 rounded-lg flex items-center justify-center font-black text-[11px] ${
                           outcome === 'W'
                             ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
                             : outcome === 'D'
@@ -419,39 +420,39 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       </div>
 
       {/* Quick Navigation Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
         <button
           onClick={() => onNavigateTab('standings')}
-          className="p-4 bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl text-left transition-all shadow-md group"
+          className="p-3.5 glass-card glass-card-interactive text-left transition-all shadow-md group"
         >
-          <Trophy className="w-5 h-5 text-emerald-400 mb-2 group-hover:scale-110 transition-transform" />
+          <Trophy className="w-5 h-5 text-emerald-400 mb-1.5 group-hover:scale-110 transition-transform" />
           <div className="text-xs font-bold text-white">{t.leagueStandings}</div>
           <div className="text-[10px] text-slate-400 mt-0.5">Live tables & points</div>
         </button>
 
         <button
           onClick={() => onNavigateTab('cups')}
-          className="p-4 bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl text-left transition-all shadow-md group"
+          className="p-3.5 glass-card glass-card-interactive text-left transition-all shadow-md group"
         >
-          <Award className="w-5 h-5 text-indigo-400 mb-2 group-hover:scale-110 transition-transform" />
+          <Award className="w-5 h-5 text-indigo-400 mb-1.5 group-hover:scale-110 transition-transform" />
           <div className="text-xs font-bold text-white">{t.navCups}</div>
           <div className="text-[10px] text-slate-400 mt-0.5">Domestic elimination</div>
         </button>
 
         <button
           onClick={() => onNavigateTab('champions-league')}
-          className="p-4 bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl text-left transition-all shadow-md group"
+          className="p-3.5 glass-card glass-card-interactive text-left transition-all shadow-md group"
         >
-          <Globe2 className="w-5 h-5 text-sky-400 mb-2 group-hover:scale-110 transition-transform" />
+          <Globe2 className="w-5 h-5 text-sky-400 mb-1.5 group-hover:scale-110 transition-transform" />
           <div className="text-xs font-bold text-white">{t.navChampionsLeague}</div>
           <div className="text-[10px] text-slate-400 mt-0.5">UEFA tournament</div>
         </button>
 
         <button
           onClick={() => onNavigateTab('leagues')}
-          className="p-4 bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl text-left transition-all shadow-md group"
+          className="p-3.5 glass-card glass-card-interactive text-left transition-all shadow-md group"
         >
-          <Shield className="w-5 h-5 text-amber-400 mb-2 group-hover:scale-110 transition-transform" />
+          <Shield className="w-5 h-5 text-amber-400 mb-1.5 group-hover:scale-110 transition-transform" />
           <div className="text-xs font-bold text-white">{t.allClubs}</div>
           <div className="text-[10px] text-slate-400 mt-0.5">Top 5 European leagues</div>
         </button>

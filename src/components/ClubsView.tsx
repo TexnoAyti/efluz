@@ -96,6 +96,9 @@ export const ClubsView: React.FC = () => {
     }
   };
 
+  const isClubTaken = (c: typeof clubs[0]) =>
+    Boolean(c.isTaken || c.claimedByUserId || c.occupancy?.status === 'occupied' || c.occupancy?.status === 'owned');
+
   const filteredClubs = clubs.filter((c) => {
     const matchesSearch =
       c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -104,13 +107,13 @@ export const ClubsView: React.FC = () => {
 
     if (!matchesSearch) return false;
 
-    if (filterMode === 'AVAILABLE') return !c.claimedByUserId;
-    if (filterMode === 'CLAIMED') return !!c.claimedByUserId;
+    if (filterMode === 'AVAILABLE') return !isClubTaken(c);
+    if (filterMode === 'CLAIMED') return isClubTaken(c);
     return true;
   });
 
-  const availableCount = clubs.filter((c) => !c.claimedByUserId).length;
-  const claimedCount = clubs.filter((c) => !!c.claimedByUserId).length;
+  const availableCount = clubs.filter((c) => !isClubTaken(c)).length;
+  const claimedCount = clubs.filter((c) => isClubTaken(c)).length;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300 pb-20">
@@ -259,8 +262,13 @@ export const ClubsView: React.FC = () => {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filteredClubs.map((club) => {
-            const isUserClub = club.claimedByUserId === user?.id || (currentClub && currentClub.id === club.id);
-            const isClaimedByOther = !!club.claimedByUserId && !isUserClub;
+            const isUserClub =
+              club.isCurrentUserClub ||
+              club.claimedByUserId === user?.id ||
+              club.occupancy?.status === 'owned' ||
+              (currentClub && currentClub.id === club.id);
+            const isClaimedByOther = isClubTaken(club) && !isUserClub;
+            const managerName = club.claimedByUsername || club.managerUsername || club.occupancy?.username || 'player';
 
             return (
               <div
@@ -325,7 +333,7 @@ export const ClubsView: React.FC = () => {
                     <div className="flex items-center justify-between text-[11px] text-slate-400 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/60">
                       <span className="text-[10px] uppercase font-bold text-slate-500">{t.manager}:</span>
                       <span className="font-semibold text-slate-300 truncate">
-                        @{club.claimedByUsername || 'player'}
+                        @{managerName}
                       </span>
                     </div>
                   ) : currentClub ? (

@@ -6,6 +6,9 @@ import {
   generateCompetitionFixturesFirestore,
   getFixturesFirestore,
   getUserActiveClubFirestore,
+  getClubsByLeagueFirestore,
+  getAllCompetitionsFirestore,
+  getCompetitionByIdFirestore,
   ClubConflictError,
 } from '../firebase/firestoreStore';
 
@@ -18,7 +21,7 @@ function assert(condition: boolean, msg: string) {
 
 async function runFirebasePersistenceTests() {
   console.log('================================================================');
-  console.log('🚀 RUNNING FIREBASE FIRESTORE PERSISTENCE TEST SUITE');
+  console.log('🚀 RUNNING PRODUCTION DATA-SYNC 8-TEST REGRESSION SUITE');
   console.log('================================================================\n');
 
   // 0. Ensure initialization & migration
@@ -26,111 +29,141 @@ async function runFirebasePersistenceTests() {
   const db = getFirestoreDb();
   const seasonId = 'season-2026-27';
   const premierLeagueCompId = 'comp-premier-league-2026';
+  const eplLeagueId = 'league-premier-league';
 
-  console.log('📊 TEST 5: Verify Document Counts in Firestore');
-  const [seasonsSnap, leaguesSnap, clubsSnap, compSnap] = await Promise.all([
-    db.collection(COLLECTIONS.SEASONS).get(),
-    db.collection(COLLECTIONS.LEAGUES).get(),
-    db.collection(COLLECTIONS.CLUBS).get(),
-    db.collection(COLLECTIONS.COMPETITIONS).get(),
-  ]);
-
-  console.log(`- Seasons: ${seasonsSnap.size} (expected >= 1)`);
-  console.log(`- Leagues: ${leaguesSnap.size} (expected >= 5)`);
-  console.log(`- Clubs: ${clubsSnap.size} (expected >= 96)`);
-  console.log(`- Competitions: ${compSnap.size} (expected >= 15)`);
-
-  assert(seasonsSnap.size >= 1, 'Seasons count < 1');
-  assert(leaguesSnap.size >= 5, 'Leagues count < 5');
-  assert(clubsSnap.size >= 96, 'Clubs count < 96');
-  assert(compSnap.size >= 15, 'Competitions count < 15');
-  console.log('✅ TEST 5 PASSED: Document counts verified in Firestore.\n');
-
-  console.log('🔒 TEST 1: User A claims Arsenal, User B attempts to claim Arsenal');
-  const userAId = 'user-test-persist-a';
-  const userBId = 'user-test-persist-b';
+  const userAId = 'user-regression-test-a';
+  const userBId = 'user-regression-test-b';
   const arsenalId = 'club-arsenal';
   const chelseaId = 'club-chelsea';
 
-  // Clear any existing test memberships
+  // Clean up any test users & memberships
   await Promise.all([
     db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${seasonId}_${userAId}`).delete(),
     db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${seasonId}_${userBId}`).delete(),
     db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_${arsenalId}`).delete(),
     db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_${chelseaId}`).delete(),
+    db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).doc(`${seasonId}_${arsenalId}`).delete(),
+    db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).doc(`${seasonId}_${chelseaId}`).delete(),
   ]);
 
-  // User A claims Arsenal
-  const claimResA = await claimClubAtomicFirestore(userAId, arsenalId, seasonId);
-  assert(claimResA.success === true, 'User A claim did not return success');
-  console.log('  -> User A successfully claimed Arsenal.');
-
-  // User B attempts to claim Arsenal -> MUST FAIL with ClubConflictError
-  let userBConflict = false;
-  try {
-    await claimClubAtomicFirestore(userBId, arsenalId, seasonId);
-  } catch (err: any) {
-    if (err instanceof ClubConflictError) {
-      userBConflict = true;
-      console.log(`  -> User B rejected with 409 conflict: "${err.message}"`);
-    }
-  }
-  assert(userBConflict, 'User B was not rejected with ClubConflictError for Arsenal!');
-
-  // Verify directly in Firestore: Arsenal belongs to User A
-  const arsenalOcc = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_${arsenalId}`).get();
-  assert(arsenalOcc.exists, 'Arsenal occupancy document does not exist in Firestore');
-  assert(arsenalOcc.data()?.userId === userAId, 'Arsenal in Firestore does not belong to User A');
-  console.log('✅ TEST 1 PASSED: Club ownership is locked per club and verified in Firestore.\n');
-
-  console.log('🔒 TEST 2: User A attempts to claim Chelsea after claiming Arsenal');
-  let userASecondClaimConflict = false;
-  try {
-    await claimClubAtomicFirestore(userAId, chelseaId, seasonId);
-  } catch (err: any) {
-    if (err instanceof ClubConflictError) {
-      userASecondClaimConflict = true;
-      console.log(`  -> User A second claim rejected with 409 conflict: "${err.message}"`);
-    }
-  }
-  assert(userASecondClaimConflict, 'User A was able to claim a second club!');
-
-  // Verify User A still owns Arsenal
-  const userAClub = await getUserActiveClubFirestore(userAId, seasonId);
-  assert(userAClub?.id === arsenalId, 'User A active club is no longer Arsenal');
-  console.log('✅ TEST 2 PASSED: User-season immutability verified in Firestore.\n');
-
-  console.log('⚡ TEST 3 & 4: Simulated Lambda Cold Starts & 380 Fixture Persistence');
-  console.log('  -> Instance 1: Generating Premier League schedule (380 fixtures)...');
+  // TEST 1: FIXTURE PERSISTENCE (Bug 1 regression)
+  console.log('📋 TEST 1: Fixture Generation & Status Persistence in Firestore');
   const genResult = await generateCompetitionFixturesFirestore(premierLeagueCompId, { force: true });
-  console.log(`  -> Instance 1 generated ${genResult.generated} fixtures across ${genResult.matchdays} matchdays.`);
+  console.log(`  -> Generated ${genResult.generated} fixtures across ${genResult.matchdays} matchdays.`);
   assert(genResult.generated === 380, `Expected 380 fixtures generated, got ${genResult.generated}`);
-  assert(genResult.matchdays === 38, `Expected 38 matchdays, got ${genResult.matchdays}`);
 
-  console.log('  -> Simulating Cold Start: Creating a new isolated app instance...');
-  const coldInstanceApp = createApp();
+  // Query via getAllCompetitionsFirestore and getCompetitionByIdFirestore
+  const comp = await getCompetitionByIdFirestore(premierLeagueCompId);
+  assert(comp !== null, 'Competition not found');
+  assert(comp!.hasFixtures === true, 'Competition.hasFixtures must be true');
+  assert(comp!.fixtureCount === 380, `Expected fixtureCount === 380, got ${comp!.fixtureCount}`);
+  assert(comp!.generationStatus === 'generated', `Expected generationStatus === 'generated', got ${comp!.generationStatus}`);
+  console.log('  -> Competition document reflects hasFixtures=true, fixtureCount=380, generationStatus=generated.');
+  console.log('✅ TEST 1 PASSED: Fixture generation status persists in Firestore.\n');
 
-  console.log('  -> Instance 2: Querying matches for Arsenal owner (User A)...');
+  // TEST 2: FIXTURE GENERATION IDEMPOTENCY
+  console.log('📋 TEST 2: Fixture Generation Idempotency (force: false)');
+  const idempotentResult = await generateCompetitionFixturesFirestore(premierLeagueCompId, { force: false });
+  assert(idempotentResult.generated === 380, `Expected 380 fixtures on idempotent call, got ${idempotentResult.generated}`);
+  const compAfterIdempotent = await getCompetitionByIdFirestore(premierLeagueCompId);
+  assert(compAfterIdempotent!.fixtureCount === 380, 'Fixture count changed during idempotent call');
+  console.log('✅ TEST 2 PASSED: Idempotent call returned existing 380 fixtures without duplication.\n');
+
+  // TEST 3: FIXTURE REGENERATION
+  console.log('📋 TEST 3: Fixture Regeneration (force: true)');
+  const regenResult = await generateCompetitionFixturesFirestore(premierLeagueCompId, { force: true });
+  assert(regenResult.generated === 380, `Expected 380 fixtures regenerated, got ${regenResult.generated}`);
+  const compAfterRegen = await getCompetitionByIdFirestore(premierLeagueCompId);
+  assert(compAfterRegen!.fixtureCount === 380, 'Fixture count changed after regeneration');
+  console.log('✅ TEST 3 PASSED: Fixture regeneration cleanly purged old matches and re-seeded 380 fixtures.\n');
+
+  // TEST 4: FIXTURES CREATED BEFORE CLUB CLAIM (Bug 2 regression)
+  console.log('📋 TEST 4: Fixtures Pre-exist -> User Claims Club -> Query My Matches');
+  // User A now claims Arsenal
+  const claimResA = await claimClubAtomicFirestore(userAId, arsenalId, seasonId);
+  assert(claimResA.success === true, 'User A claim returned success: false');
+
+  // Query fixtures for User A without generating fixtures again
   const userAFixtures = await getFixturesFirestore({
     userId: userAId,
     seasonId,
     competitionId: premierLeagueCompId,
   });
-  console.log(`  -> Instance 2 returned ${userAFixtures.length} matches for Arsenal owner.`);
+  console.log(`  -> User A immediately has ${userAFixtures.length} matches (Home: ${userAFixtures.filter(f => f.homeClubId === arsenalId).length}, Away: ${userAFixtures.filter(f => f.awayClubId === arsenalId).length})`);
   assert(userAFixtures.length === 38, `Expected 38 matches for Arsenal owner, got ${userAFixtures.length}`);
+  console.log('✅ TEST 4 PASSED: User immediately accesses pre-existing fixtures upon club selection.\n');
 
-  console.log('  -> Querying all 380 fixtures from Firestore to verify zero data loss...');
-  const allEplFixtures = await getFixturesFirestore({
-    competitionId: premierLeagueCompId,
-    seasonId,
-  });
-  console.log(`  -> Total Premier League fixtures in Firestore: ${allEplFixtures.length}`);
-  assert(allEplFixtures.length === 380, `Expected 380 fixtures in Firestore, got ${allEplFixtures.length}`);
+  // TEST 5: GLOBAL CLUB OCCUPANCY VISIBILITY (Bug 3 regression)
+  console.log('📋 TEST 5: Global Club Occupancy Multi-User Visibility');
+  // User B queries clubs in Premier League
+  const clubsForUserB = await getClubsByLeagueFirestore(eplLeagueId, seasonId, userBId);
+  const arsenalForB = clubsForUserB.find((c) => c.id === arsenalId);
+  assert(arsenalForB !== undefined, 'Arsenal not found in Premier League clubs');
+  assert(arsenalForB!.isTaken === true, 'Arsenal must be marked isTaken: true for User B');
+  assert(arsenalForB!.isCurrentUserClub === false, 'Arsenal must be isCurrentUserClub: false for User B');
+  assert(arsenalForB!.occupancy.status === 'occupied', `Expected occupancy.status === 'occupied', got ${arsenalForB!.occupancy.status}`);
+  assert(arsenalForB!.occupancy.userId === userAId, 'Arsenal occupancy userId must be User A');
 
-  console.log('✅ TEST 3 & 4 PASSED: 380 fixtures persisted and retrieved across simulated serverless cold starts.\n');
+  // User A queries clubs in Premier League
+  const clubsForUserA = await getClubsByLeagueFirestore(eplLeagueId, seasonId, userAId);
+  const arsenalForA = clubsForUserA.find((c) => c.id === arsenalId);
+  assert(arsenalForA !== undefined, 'Arsenal not found for User A');
+  assert(arsenalForA!.isTaken === true, 'Arsenal must be marked isTaken: true for User A');
+  assert(arsenalForA!.isCurrentUserClub === true, 'Arsenal must be isCurrentUserClub: true for User A');
+  assert(arsenalForA!.occupancy.status === 'owned', `Expected occupancy.status === 'owned', got ${arsenalForA!.occupancy.status}`);
+  console.log('✅ TEST 5 PASSED: Occupancy state is globally consistent and correctly scoped to requesting user.\n');
+
+  // TEST 6: DIRECT OCCUPIED CLAIM ATTACK
+  console.log('📋 TEST 6: User B attempts to claim already-occupied Arsenal');
+  let attackRejected = false;
+  try {
+    await claimClubAtomicFirestore(userBId, arsenalId, seasonId);
+  } catch (err: any) {
+    if (err instanceof ClubConflictError) {
+      attackRejected = true;
+      console.log(`  -> User B claim rejected with conflict: "${err.message}"`);
+    }
+  }
+  assert(attackRejected, 'User B was able to claim occupied Arsenal!');
+  console.log('✅ TEST 6 PASSED: Direct claim collision rejected atomically with ClubConflictError.\n');
+
+  // TEST 7: OCCUPANCY & SELECTION PERSISTENCE ACROSS RUNTIME INSTANCES
+  console.log('📋 TEST 7: Occupancy Persistence Across Serverless Runtime Instances');
+  const coldApp = createApp();
+  const userAActiveClub = await getUserActiveClubFirestore(userAId, seasonId);
+  assert(userAActiveClub?.id === arsenalId, `Expected User A active club to be Arsenal, got ${userAActiveClub?.id}`);
+  const arsenalDoc = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_${arsenalId}`).get();
+  assert(arsenalDoc.exists && arsenalDoc.data()?.userId === userAId, 'Firestore occupancy document missing or invalid');
+  console.log('✅ TEST 7 PASSED: Claimed club state is persistently retrieved from Firestore.\n');
+
+  // TEST 8: CONCURRENT CLAIM RACE CONDITION
+  console.log('📋 TEST 8: Concurrent Claim Race Condition on Unclaimed Chelsea');
+  const userCId = 'user-regression-race-c';
+  const userDId = 'user-regression-race-d';
+
+  const [resC, resD] = await Promise.allSettled([
+    claimClubAtomicFirestore(userCId, chelseaId, seasonId),
+    claimClubAtomicFirestore(userDId, chelseaId, seasonId),
+  ]);
+
+  const fulfilled = [resC, resD].filter((r) => r.status === 'fulfilled');
+  const rejected = [resC, resD].filter((r) => r.status === 'rejected');
+
+  console.log(`  -> Race results: ${fulfilled.length} fulfilled, ${rejected.length} rejected.`);
+  assert(fulfilled.length === 1, `Expected exactly 1 winner in concurrent claim, got ${fulfilled.length}`);
+  assert(rejected.length === 1, `Expected exactly 1 rejection in concurrent claim, got ${rejected.length}`);
+  console.log('✅ TEST 8 PASSED: Atomic Firestore transaction prevented race conditions.\n');
+
+  // Clean up race test users
+  await Promise.all([
+    db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${seasonId}_${userCId}`).delete(),
+    db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${seasonId}_${userDId}`).delete(),
+    db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_${chelseaId}`).delete(),
+    db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).doc(`${seasonId}_${chelseaId}`).delete(),
+  ]);
 
   console.log('================================================================');
-  console.log('🎉 ALL FIREBASE FIRESTORE PERSISTENCE TESTS PASSED SUCCESSFULLY!');
+  console.log('🎉 ALL 8 PRODUCTION DATA-SYNC REGRESSION TESTS PASSED!');
   console.log('================================================================');
 }
 

@@ -112,11 +112,33 @@ async function initDatabase() {
     }
   }
   const wasmPath = resolveSqlWasmPath();
-  const wasmBinary = fs.readFileSync(wasmPath);
-  const SQL = await initSqlJs({
-    locateFile: () => wasmPath,
-    wasmBinary
-  });
+  let SQL;
+  try {
+    const wasmBuffer = fs.readFileSync(wasmPath);
+    const wasmBinary = wasmBuffer.buffer.slice(
+      wasmBuffer.byteOffset,
+      wasmBuffer.byteOffset + wasmBuffer.byteLength
+    );
+    SQL = await initSqlJs({
+      locateFile: () => wasmPath,
+      wasmBinary
+    });
+  } catch (err1) {
+    try {
+      SQL = await initSqlJs({
+        locateFile: () => wasmPath
+      });
+    } catch (err2) {
+      try {
+        const wasmBuffer = fs.readFileSync(wasmPath);
+        SQL = await initSqlJs({
+          wasmBinary: new Uint8Array(wasmBuffer)
+        });
+      } catch (err3) {
+        SQL = await initSqlJs({});
+      }
+    }
+  }
   if (fs.existsSync(DB_FILE)) {
     try {
       const fileBuffer = fs.readFileSync(DB_FILE);
@@ -878,6 +900,1385 @@ function repairSeason202627Roster() {
 
 // src/server/auth/telegramAuth.ts
 import crypto from "crypto";
+
+// src/server/firebase/admin.ts
+import { initializeApp, getApps, cert } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore";
+import fs2 from "fs";
+import path2 from "path";
+var cachedDb = null;
+var cachedInfo = null;
+var initError = null;
+function loadAppletConfig() {
+  try {
+    const configPath = path2.join(process.cwd(), "firebase-applet-config.json");
+    if (fs2.existsSync(configPath)) {
+      const raw = fs2.readFileSync(configPath, "utf-8");
+      return JSON.parse(raw);
+    }
+  } catch {
+  }
+  return {};
+}
+function initializeFirebaseAdmin() {
+  if (cachedDb && cachedInfo) {
+    return {
+      db: cachedDb,
+      info: cachedInfo
+    };
+  }
+  const appletConfig = loadAppletConfig();
+  const projectId = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || appletConfig.projectId || "gen-lang-client-0195097895";
+  const databaseId = process.env.FIRESTORE_DATABASE_ID || process.env.FIREBASE_DATABASE_ID || appletConfig.firestoreDatabaseId || "(default)";
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+  let privateKey = process.env.FIREBASE_PRIVATE_KEY;
+  const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  if (privateKey) {
+    privateKey = privateKey.replace(/\\n/g, "\n");
+  }
+  const hasCredentials = Boolean(serviceAccountJson) || Boolean(clientEmail) && Boolean(privateKey);
+  if (!hasCredentials && process.env.NODE_ENV !== "production") {
+    const memoryDb = createMemoryFirestore();
+    cachedDb = memoryDb;
+    cachedInfo = {
+      isConfigured: true,
+      projectId,
+      databaseId,
+      authMode: "local_fallback"
+    };
+    return {
+      db: cachedDb,
+      info: cachedInfo
+    };
+  }
+  let app2;
+  try {
+    const apps = getApps();
+    if (apps.length === 0) {
+      if (serviceAccountJson) {
+        const parsed = JSON.parse(serviceAccountJson);
+        app2 = initializeApp({
+          credential: cert(parsed),
+          projectId: parsed.project_id || projectId
+        });
+      } else if (clientEmail && privateKey) {
+        app2 = initializeApp({
+          credential: cert({
+            projectId,
+            clientEmail,
+            privateKey
+          }),
+          projectId
+        });
+      } else {
+        const memoryDb = createMemoryFirestore();
+        cachedDb = memoryDb;
+        cachedInfo = {
+          isConfigured: true,
+          projectId,
+          databaseId,
+          authMode: "local_fallback"
+        };
+        return {
+          db: cachedDb,
+          info: cachedInfo
+        };
+      }
+    } else {
+      app2 = apps[0];
+    }
+    cachedDb = databaseId && databaseId !== "(default)" ? getFirestore(app2, databaseId) : getFirestore(app2);
+    initError = null;
+    cachedInfo = {
+      isConfigured: true,
+      projectId,
+      databaseId,
+      authMode: serviceAccountJson || clientEmail && privateKey ? "credentials" : "application_default"
+    };
+    return {
+      db: cachedDb,
+      info: cachedInfo
+    };
+  } catch (err) {
+    initError = err.message || "Firebase Admin initialization failed";
+    if (process.env.NODE_ENV !== "production") {
+      const memoryDb = createMemoryFirestore();
+      cachedDb = memoryDb;
+      cachedInfo = {
+        isConfigured: true,
+        projectId,
+        databaseId,
+        authMode: "local_fallback"
+      };
+      return {
+        db: cachedDb,
+        info: cachedInfo
+      };
+    }
+    cachedInfo = {
+      isConfigured: false,
+      projectId,
+      databaseId,
+      authMode: "not_configured",
+      error: initError || void 0
+    };
+    return {
+      db: null,
+      info: cachedInfo
+    };
+  }
+}
+function getFirestoreDb() {
+  const { db, info } = initializeFirebaseAdmin();
+  if (!db) {
+    throw new Error(
+      `Firestore is not initialized. Please ensure Firebase environment variables (FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY) are configured. Details: ${info.error || "Unknown error"}`
+    );
+  }
+  return db;
+}
+function getFirebaseStatus() {
+  const { info } = initializeFirebaseAdmin();
+  return info;
+}
+function createMemoryFirestore() {
+  const store = {};
+  function getCol(colName) {
+    if (!store[colName]) store[colName] = {};
+    return store[colName];
+  }
+  class MemDocRef {
+    constructor(colName, docId) {
+      this.colName = colName;
+      this.docId = docId;
+    }
+    get id() {
+      return this.docId;
+    }
+    async get() {
+      const col = getCol(this.colName);
+      const data = col[this.docId];
+      return {
+        id: this.docId,
+        exists: data !== void 0,
+        data: () => data !== void 0 ? JSON.parse(JSON.stringify(data)) : void 0
+      };
+    }
+    async set(data, options) {
+      const col = getCol(this.colName);
+      if (options?.merge && col[this.docId]) {
+        col[this.docId] = { ...col[this.docId], ...data };
+      } else {
+        col[this.docId] = JSON.parse(JSON.stringify(data));
+      }
+    }
+    async update(data) {
+      const col = getCol(this.colName);
+      if (!col[this.docId]) {
+        throw new Error(`NOT_FOUND: No document to update: ${this.colName}/${this.docId}`);
+      }
+      col[this.docId] = { ...col[this.docId], ...data };
+    }
+    async delete() {
+      const col = getCol(this.colName);
+      delete col[this.docId];
+    }
+  }
+  class MemQuery {
+    constructor(colName) {
+      this.colName = colName;
+      this.filters = [];
+      this.orderBys = [];
+      this.limitVal = null;
+    }
+    where(field, op, val) {
+      const q = new MemQuery(this.colName);
+      q.filters = [...this.filters, { field, op, val }];
+      q.orderBys = [...this.orderBys];
+      q.limitVal = this.limitVal;
+      return q;
+    }
+    orderBy(field, dir = "asc") {
+      const q = new MemQuery(this.colName);
+      q.filters = [...this.filters];
+      q.orderBys = [...this.orderBys, { field, dir }];
+      q.limitVal = this.limitVal;
+      return q;
+    }
+    limit(n) {
+      const q = new MemQuery(this.colName);
+      q.filters = [...this.filters];
+      q.orderBys = [...this.orderBys];
+      q.limitVal = n;
+      return q;
+    }
+    async get() {
+      const col = getCol(this.colName);
+      let docs = Object.entries(col).map(([id, data]) => ({
+        id,
+        ref: new MemDocRef(this.colName, id),
+        exists: true,
+        data: () => JSON.parse(JSON.stringify(data))
+      }));
+      for (const f of this.filters) {
+        docs = docs.filter((d) => {
+          const val = d.data()[f.field];
+          if (f.op === "==" || f.op === "===") return val === f.val;
+          if (f.op === "!=") return val !== f.val;
+          if (f.op === ">") return val > f.val;
+          if (f.op === ">=") return val >= f.val;
+          if (f.op === "<") return val < f.val;
+          if (f.op === "<=") return val <= f.val;
+          if (f.op === "in") return Array.isArray(f.val) && f.val.includes(val);
+          return true;
+        });
+      }
+      for (const o of this.orderBys) {
+        docs.sort((a, b) => {
+          const vA = a.data()[o.field];
+          const vB = b.data()[o.field];
+          if (vA < vB) return o.dir === "asc" ? -1 : 1;
+          if (vA > vB) return o.dir === "asc" ? 1 : -1;
+          return 0;
+        });
+      }
+      if (this.limitVal !== null) {
+        docs = docs.slice(0, this.limitVal);
+      }
+      return {
+        docs,
+        size: docs.length,
+        empty: docs.length === 0
+      };
+    }
+  }
+  class MemCollectionRef extends MemQuery {
+    doc(id) {
+      const docId = id || `doc_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      return new MemDocRef(this.colName, docId);
+    }
+    async add(data) {
+      const docId = `doc_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      const docRef = new MemDocRef(this.colName, docId);
+      await docRef.set(data);
+      return docRef;
+    }
+  }
+  class MemBatch {
+    constructor() {
+      this.operations = [];
+    }
+    set(docRef, data, options) {
+      this.operations.push(() => docRef.set(data, options));
+      return this;
+    }
+    update(docRef, data) {
+      this.operations.push(() => docRef.update(data));
+      return this;
+    }
+    delete(docRef) {
+      this.operations.push(() => docRef.delete());
+      return this;
+    }
+    async commit() {
+      for (const op of this.operations) {
+        await op();
+      }
+    }
+  }
+  return {
+    collection(name) {
+      return new MemCollectionRef(name);
+    },
+    batch() {
+      return new MemBatch();
+    },
+    async runTransaction(updateFunction) {
+      const tx = {
+        async get(docRef) {
+          return docRef.get();
+        },
+        set(docRef, data, options) {
+          docRef.set(data, options);
+          return tx;
+        },
+        update(docRef, data) {
+          docRef.update(data);
+          return tx;
+        },
+        delete(docRef) {
+          docRef.delete();
+          return tx;
+        }
+      };
+      return await updateFunction(tx);
+    },
+    async listCollections() {
+      return Object.keys(store).map((name) => new MemCollectionRef(name));
+    }
+  };
+}
+
+// src/server/firebase/collections.ts
+var COLLECTIONS = {
+  USERS: "users",
+  SEASONS: "seasons",
+  LEAGUES: "leagues",
+  CLUBS: "clubs",
+  SEASON_LEAGUE_CLUBS: "season_league_clubs",
+  CLUB_MEMBERSHIPS: "club_memberships",
+  CLUB_OCCUPANCIES: "club_occupancies",
+  USER_MEMBERSHIPS: "user_memberships",
+  COMPETITIONS: "competitions",
+  COMPETITION_PARTICIPANTS: "competition_participants",
+  FIXTURES: "fixtures",
+  RESULT_SUBMISSIONS: "result_submissions",
+  DISPUTES: "disputes",
+  STANDINGS: "standings",
+  NOTIFICATIONS: "notifications",
+  AUDIT_LOGS: "audit_logs"
+};
+
+// src/server/firebase/firestoreStore.ts
+var ClubConflictError = class extends Error {
+  constructor(message, code = "CLUB_CONFLICT") {
+    super(message);
+    this.name = "ClubConflictError";
+    this.code = code;
+  }
+};
+var ClubNotFoundError = class extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "ClubNotFoundError";
+  }
+};
+async function getActiveSeasonFirestore() {
+  const db = getFirestoreDb();
+  const snap = await db.collection(COLLECTIONS.SEASONS).where("status", "==", "ACTIVE").limit(1).get();
+  if (snap.empty) {
+    const doc2 = await db.collection(COLLECTIONS.SEASONS).doc("season-2026-27").get();
+    if (doc2.exists) {
+      const data2 = doc2.data();
+      return {
+        id: doc2.id,
+        name: data2.name,
+        status: data2.status?.toLowerCase() || "active",
+        startDate: data2.startDate,
+        endDate: data2.endDate,
+        createdAt: data2.createdAt
+      };
+    }
+    return null;
+  }
+  const doc = snap.docs[0];
+  const data = doc.data();
+  return {
+    id: doc.id,
+    name: data.name,
+    status: data.status?.toLowerCase() || "active",
+    startDate: data.startDate,
+    endDate: data.endDate,
+    createdAt: data.createdAt
+  };
+}
+async function getAllSeasonsFirestore() {
+  const db = getFirestoreDb();
+  const snap = await db.collection(COLLECTIONS.SEASONS).get();
+  return snap.docs.map((doc) => {
+    const data = doc.data();
+    return {
+      id: doc.id,
+      name: data.name,
+      status: data.status?.toLowerCase() || "active",
+      startDate: data.startDate,
+      endDate: data.endDate,
+      createdAt: data.createdAt
+    };
+  });
+}
+async function getAllLeaguesFirestore() {
+  const db = getFirestoreDb();
+  const snap = await db.collection(COLLECTIONS.LEAGUES).orderBy("tier", "asc").get();
+  return snap.docs.map((doc) => {
+    const data = doc.data();
+    return {
+      id: doc.id,
+      name: data.name,
+      country: data.country,
+      tier: data.tier,
+      logoUrl: data.logo,
+      createdAt: data.createdAt
+    };
+  });
+}
+async function getClubsByLeagueFirestore(leagueId, seasonId = "season-2026-27", currentUserId) {
+  const db = getFirestoreDb();
+  const clubsSnap = await db.collection(COLLECTIONS.CLUBS).where("leagueId", "==", leagueId).where("isActive", "==", true).get();
+  const [occupanciesSnap, membershipsSnap] = await Promise.all([
+    db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where("seasonId", "==", seasonId).where("status", "==", "active").get(),
+    db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).where("seasonId", "==", seasonId).where("status", "==", "active").get()
+  ]);
+  const clubOccupancyMap = /* @__PURE__ */ new Map();
+  for (const doc of occupanciesSnap.docs) {
+    const data = doc.data();
+    if (data.clubId && data.userId) {
+      clubOccupancyMap.set(data.clubId, { userId: data.userId });
+    }
+  }
+  for (const doc of membershipsSnap.docs) {
+    const m = doc.data();
+    if (m.clubId && m.userId && !clubOccupancyMap.has(m.clubId)) {
+      clubOccupancyMap.set(m.clubId, { userId: m.userId });
+    }
+  }
+  const userIds = Array.from(new Set(Array.from(clubOccupancyMap.values()).map((o) => o.userId)));
+  const usernameMap = /* @__PURE__ */ new Map();
+  if (userIds.length > 0) {
+    const usersSnap = await db.collection(COLLECTIONS.USERS).where("id", "in", userIds.slice(0, 30)).get();
+    for (const uDoc of usersSnap.docs) {
+      const uData = uDoc.data();
+      usernameMap.set(uData.id, uData.username);
+    }
+  }
+  const clubs = clubsSnap.docs.map((doc) => {
+    const data = doc.data();
+    const occupancy = clubOccupancyMap.get(doc.id);
+    const isTaken = Boolean(occupancy);
+    const isCurrentUserClub = Boolean(currentUserId && occupancy && occupancy.userId === currentUserId);
+    const managerUsername = occupancy ? usernameMap.get(occupancy.userId) : void 0;
+    const claimedByUserId = occupancy ? occupancy.userId : null;
+    const claimedByUsername = managerUsername || null;
+    const occupancyStatus = isCurrentUserClub ? "owned" : isTaken ? "occupied" : "available";
+    return {
+      id: doc.id,
+      name: data.name,
+      shortName: data.shortName,
+      leagueId: data.leagueId,
+      country: data.country,
+      logoUrl: data.logo,
+      active: data.isActive,
+      createdAt: data.createdAt,
+      isTaken,
+      isCurrentUserClub,
+      claimedByUserId,
+      claimedByUsername,
+      managerUsername,
+      occupancy: {
+        status: occupancyStatus,
+        userId: occupancy ? occupancy.userId : void 0,
+        username: managerUsername
+      }
+    };
+  });
+  return clubs.sort((a, b) => a.name.localeCompare(b.name));
+}
+async function getClubByIdFirestore(clubId, seasonId = "season-2026-27", currentUserId) {
+  const db = getFirestoreDb();
+  const doc = await db.collection(COLLECTIONS.CLUBS).doc(clubId).get();
+  if (!doc.exists) return null;
+  const data = doc.data();
+  let occUserId = null;
+  const occDoc = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_${clubId}`).get();
+  if (occDoc.exists && occDoc.data()?.status === "active") {
+    occUserId = occDoc.data().userId;
+  } else {
+    const memDoc = await db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).doc(`${seasonId}_${clubId}`).get();
+    if (memDoc.exists && memDoc.data()?.status === "active") {
+      occUserId = memDoc.data().userId;
+    }
+  }
+  let isTaken = false;
+  let managerUsername;
+  let isCurrentUserClub = false;
+  if (occUserId) {
+    isTaken = true;
+    isCurrentUserClub = Boolean(currentUserId && currentUserId === occUserId);
+    const userDoc = await db.collection(COLLECTIONS.USERS).doc(occUserId).get();
+    if (userDoc.exists) {
+      managerUsername = userDoc.data().username;
+    }
+  }
+  const occupancyStatus = isCurrentUserClub ? "owned" : isTaken ? "occupied" : "available";
+  return {
+    id: doc.id,
+    name: data.name,
+    shortName: data.shortName,
+    leagueId: data.leagueId,
+    country: data.country,
+    logoUrl: data.logo,
+    active: data.isActive,
+    createdAt: data.createdAt,
+    isTaken,
+    isCurrentUserClub,
+    claimedByUserId: occUserId,
+    claimedByUsername: managerUsername || null,
+    managerUsername,
+    occupancy: {
+      status: occupancyStatus,
+      userId: occUserId || void 0,
+      username: managerUsername
+    }
+  };
+}
+async function getUserActiveClubFirestore(userId, seasonId = "season-2026-27") {
+  const db = getFirestoreDb();
+  const userMemDoc = await db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${seasonId}_${userId}`).get();
+  if (userMemDoc.exists && userMemDoc.data()?.status === "active") {
+    const clubId = userMemDoc.data().clubId;
+    return getClubByIdFirestore(clubId, seasonId, userId);
+  }
+  const occSnap = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where("userId", "==", userId).where("seasonId", "==", seasonId).where("status", "==", "active").limit(1).get();
+  if (!occSnap.empty) {
+    const clubId = occSnap.docs[0].data().clubId;
+    return getClubByIdFirestore(clubId, seasonId, userId);
+  }
+  const memSnap = await db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).where("userId", "==", userId).where("seasonId", "==", seasonId).where("status", "==", "active").limit(1).get();
+  if (!memSnap.empty) {
+    const clubId = memSnap.docs[0].data().clubId;
+    return getClubByIdFirestore(clubId, seasonId, userId);
+  }
+  const clubSnap = await db.collection(COLLECTIONS.CLUBS).where("claimedByUserId", "==", userId).limit(1).get();
+  if (!clubSnap.empty) {
+    return getClubByIdFirestore(clubSnap.docs[0].id, seasonId, userId);
+  }
+  return null;
+}
+async function claimClubAtomicFirestore(userId, clubId, seasonId = "season-2026-27") {
+  const db = getFirestoreDb();
+  return await db.runTransaction(async (transaction) => {
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const userMemRef = db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${seasonId}_${userId}`);
+    const clubOccRef = db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_${clubId}`);
+    const membershipRef = db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).doc(`${seasonId}_${clubId}`);
+    const clubRef = db.collection(COLLECTIONS.CLUBS).doc(clubId);
+    const clubDoc = await transaction.get(clubRef);
+    if (!clubDoc.exists) {
+      throw new ClubNotFoundError(`Club with ID '${clubId}' does not exist.`);
+    }
+    const clubData = clubDoc.data();
+    const userMemDoc = await transaction.get(userMemRef);
+    if (userMemDoc.exists) {
+      const userMemData = userMemDoc.data();
+      if (userMemData && userMemData.status === "active") {
+        if (userMemData.clubId === clubId) {
+          return {
+            success: true,
+            club: {
+              id: clubDoc.id,
+              name: clubData.name,
+              shortName: clubData.shortName,
+              leagueId: clubData.leagueId,
+              country: clubData.country,
+              logoUrl: clubData.logo,
+              active: clubData.isActive,
+              createdAt: clubData.createdAt,
+              isTaken: true,
+              isCurrentUserClub: true,
+              claimedByUserId: userId,
+              occupancy: {
+                status: "owned",
+                userId
+              }
+            }
+          };
+        }
+        throw new ClubConflictError(
+          `Your club selection is locked for this season. You have already claimed another club.`,
+          "CLUB_SELECTION_LOCKED"
+        );
+      }
+    }
+    const clubOccDoc = await transaction.get(clubOccRef);
+    if (clubOccDoc.exists) {
+      const clubOccData = clubOccDoc.data();
+      if (clubOccData && clubOccData.status === "active" && clubOccData.userId !== userId) {
+        throw new ClubConflictError(
+          `This club has already been selected by another player for this season.`,
+          "CLUB_OCCUPIED"
+        );
+      }
+    }
+    const membershipPayload = {
+      id: `cm-${seasonId}-${clubId}`,
+      seasonId,
+      clubId,
+      userId,
+      claimedAt: now,
+      status: "active",
+      updatedAt: now
+    };
+    transaction.set(userMemRef, {
+      userId,
+      clubId,
+      seasonId,
+      status: "active",
+      claimedAt: now,
+      updatedAt: now
+    });
+    transaction.set(clubOccRef, {
+      clubId,
+      userId,
+      seasonId,
+      status: "active",
+      claimedAt: now,
+      updatedAt: now
+    });
+    transaction.set(membershipRef, membershipPayload);
+    transaction.update(clubRef, {
+      isTaken: true,
+      claimedByUserId: userId
+    });
+    return {
+      success: true,
+      club: {
+        id: clubDoc.id,
+        name: clubData.name,
+        shortName: clubData.shortName,
+        leagueId: clubData.leagueId,
+        country: clubData.country,
+        logoUrl: clubData.logo,
+        active: clubData.isActive,
+        createdAt: clubData.createdAt,
+        isTaken: true,
+        isCurrentUserClub: true,
+        claimedByUserId: userId,
+        occupancy: {
+          status: "owned",
+          userId
+        }
+      }
+    };
+  });
+}
+async function getAllCompetitionsFirestore(seasonId = "season-2026-27") {
+  const db = getFirestoreDb();
+  let snap = await db.collection(COLLECTIONS.COMPETITIONS).where("seasonId", "==", seasonId).get();
+  if (snap.empty) {
+    snap = await db.collection(COLLECTIONS.COMPETITIONS).get();
+  }
+  const competitions = await Promise.all(
+    snap.docs.map(async (doc) => {
+      const data = doc.data();
+      const fixturesSnap = await db.collection(COLLECTIONS.FIXTURES).where("competitionId", "==", doc.id).get();
+      const fixturesCount = fixturesSnap.size;
+      const hasFixtures = fixturesCount > 0;
+      const generationStatus = hasFixtures ? "generated" : "not_generated";
+      let totalTeams = 0;
+      if (data.leagueId) {
+        const clubsInLeagueSnap = await db.collection(COLLECTIONS.CLUBS).where("leagueId", "==", data.leagueId).where("isActive", "==", true).get();
+        totalTeams = clubsInLeagueSnap.size;
+      } else {
+        const participantsSnap = await db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where("competitionId", "==", doc.id).get();
+        totalTeams = participantsSnap.size || data.formatConfig?.maxTeams || 0;
+      }
+      return {
+        id: doc.id,
+        seasonId: data.seasonId,
+        leagueId: data.leagueId,
+        name: data.name,
+        type: data.type,
+        scheduleMode: data.scheduleMode,
+        status: hasFixtures ? "active" : data.status,
+        totalTeams,
+        hasFixtures,
+        fixtureCount: fixturesCount,
+        fixturesCount,
+        generationStatus,
+        formatConfig: data.formatConfig || {},
+        createdAt: data.createdAt
+      };
+    })
+  );
+  return competitions;
+}
+async function getCompetitionByIdFirestore(competitionId) {
+  const db = getFirestoreDb();
+  const doc = await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get();
+  if (!doc.exists) return null;
+  const data = doc.data();
+  const fixturesSnap = await db.collection(COLLECTIONS.FIXTURES).where("competitionId", "==", doc.id).get();
+  const fixturesCount = fixturesSnap.size;
+  const hasFixtures = fixturesCount > 0;
+  const generationStatus = hasFixtures ? "generated" : "not_generated";
+  let totalTeams = 0;
+  if (data.leagueId) {
+    const clubsInLeagueSnap = await db.collection(COLLECTIONS.CLUBS).where("leagueId", "==", data.leagueId).where("isActive", "==", true).get();
+    totalTeams = clubsInLeagueSnap.size;
+  } else {
+    const participantsSnap = await db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where("competitionId", "==", doc.id).get();
+    totalTeams = participantsSnap.size || data.formatConfig?.maxTeams || 0;
+  }
+  return {
+    id: doc.id,
+    seasonId: data.seasonId,
+    leagueId: data.leagueId,
+    name: data.name,
+    type: data.type,
+    scheduleMode: data.scheduleMode,
+    status: hasFixtures ? "active" : data.status,
+    totalTeams,
+    hasFixtures,
+    fixtureCount: fixturesCount,
+    fixturesCount,
+    generationStatus,
+    formatConfig: data.formatConfig || {},
+    createdAt: data.createdAt
+  };
+}
+async function getFixturesFirestore(filter) {
+  const db = getFirestoreDb();
+  const seasonId = filter.seasonId || "season-2026-27";
+  let targetClubId = filter.clubId;
+  if (filter.userId && !targetClubId) {
+    const activeClub = await getUserActiveClubFirestore(filter.userId, seasonId);
+    if (!activeClub) {
+      return [];
+    }
+    targetClubId = activeClub.id;
+  }
+  let docs = [];
+  if (targetClubId) {
+    const [homeSnap, awaySnap] = await Promise.all([
+      db.collection(COLLECTIONS.FIXTURES).where("homeClubId", "==", targetClubId).get(),
+      db.collection(COLLECTIONS.FIXTURES).where("awayClubId", "==", targetClubId).get()
+    ]);
+    const docMap = /* @__PURE__ */ new Map();
+    homeSnap.docs.forEach((d) => docMap.set(d.id, d.data()));
+    awaySnap.docs.forEach((d) => docMap.set(d.id, d.data()));
+    docs = Array.from(docMap.values());
+    if (filter.competitionId) {
+      docs = docs.filter((f) => f.competitionId === filter.competitionId);
+    }
+    if (filter.seasonId) {
+      docs = docs.filter((f) => !f.seasonId || f.seasonId === filter.seasonId);
+    }
+    if (filter.matchday) {
+      docs = docs.filter((f) => f.matchday === filter.matchday);
+    }
+    if (filter.status) {
+      docs = docs.filter((f) => f.status === filter.status);
+    }
+  } else {
+    let query = db.collection(COLLECTIONS.FIXTURES);
+    if (filter.competitionId) {
+      query = query.where("competitionId", "==", filter.competitionId);
+    } else if (filter.seasonId) {
+      query = query.where("seasonId", "==", filter.seasonId);
+    }
+    if (filter.matchday) {
+      query = query.where("matchday", "==", filter.matchday);
+    }
+    if (filter.status) {
+      query = query.where("status", "==", filter.status);
+    }
+    const snap = await query.get();
+    docs = snap.docs.map((d) => d.data());
+  }
+  docs.sort((a, b) => a.matchday - b.matchday || new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
+  if (filter.limit && filter.limit > 0) {
+    docs = docs.slice(0, filter.limit);
+  }
+  const clubIds = /* @__PURE__ */ new Set();
+  for (const f of docs) {
+    if (f.homeClubId && f.homeClubId !== "TBD") clubIds.add(f.homeClubId);
+    if (f.awayClubId && f.awayClubId !== "TBD") clubIds.add(f.awayClubId);
+  }
+  const clubMap = /* @__PURE__ */ new Map();
+  if (clubIds.size > 0) {
+    const clubsSnap = await db.collection(COLLECTIONS.CLUBS).get();
+    for (const cDoc of clubsSnap.docs) {
+      if (clubIds.has(cDoc.id)) {
+        clubMap.set(cDoc.id, cDoc.data());
+      }
+    }
+  }
+  return docs.map((r) => {
+    const homeClubData = clubMap.get(r.homeClubId);
+    const awayClubData = clubMap.get(r.awayClubId);
+    return {
+      id: r.id,
+      seasonId: r.seasonId,
+      competitionId: r.competitionId,
+      competitionName: r.competitionName || r.competitionId,
+      matchday: r.matchday,
+      roundName: r.roundName,
+      homeClubId: r.homeClubId,
+      awayClubId: r.awayClubId,
+      homeClub: {
+        id: r.homeClubId || "TBD",
+        name: homeClubData?.name || (r.homeClubId === "TBD" ? "TBD" : r.homeClubId),
+        shortName: homeClubData?.shortName || (r.homeClubId === "TBD" ? "TBD" : r.homeClubId),
+        country: homeClubData?.country || "",
+        leagueId: homeClubData?.leagueId || "",
+        logoUrl: homeClubData?.logo || "",
+        active: true,
+        createdAt: ""
+      },
+      awayClub: {
+        id: r.awayClubId || "TBD",
+        name: awayClubData?.name || (r.awayClubId === "TBD" ? "TBD" : r.awayClubId),
+        shortName: awayClubData?.shortName || (r.awayClubId === "TBD" ? "TBD" : r.awayClubId),
+        country: awayClubData?.country || "",
+        leagueId: awayClubData?.leagueId || "",
+        logoUrl: awayClubData?.logo || "",
+        active: true,
+        createdAt: ""
+      },
+      homeOwnerId: r.homeOwnerId,
+      awayOwnerId: r.awayOwnerId,
+      scheduledAt: r.scheduledAt,
+      status: r.status,
+      homeScore: r.homeScore ?? void 0,
+      awayScore: r.awayScore ?? void 0,
+      winnerClubId: r.winnerClubId ?? void 0,
+      resultConfirmedAt: r.resultConfirmedAt ?? void 0,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt
+    };
+  });
+}
+async function getFixtureByIdFirestore(fixtureId, currentUserId) {
+  const db = getFirestoreDb();
+  const doc = await db.collection(COLLECTIONS.FIXTURES).doc(fixtureId).get();
+  if (!doc.exists) return null;
+  const r = doc.data();
+  const homeDoc = await db.collection(COLLECTIONS.CLUBS).doc(r.homeClubId).get();
+  const awayDoc = await db.collection(COLLECTIONS.CLUBS).doc(r.awayClubId).get();
+  const homeClubData = homeDoc.exists ? homeDoc.data() : null;
+  const awayClubData = awayDoc.exists ? awayDoc.data() : null;
+  return {
+    id: r.id,
+    seasonId: r.seasonId,
+    competitionId: r.competitionId,
+    competitionName: r.competitionName || r.competitionId,
+    matchday: r.matchday,
+    roundName: r.roundName,
+    homeClubId: r.homeClubId,
+    awayClubId: r.awayClubId,
+    homeClub: {
+      id: r.homeClubId || "TBD",
+      name: homeClubData?.name || r.homeClubId,
+      shortName: homeClubData?.shortName || r.homeClubId,
+      country: homeClubData?.country || "",
+      leagueId: homeClubData?.leagueId || "",
+      logoUrl: homeClubData?.logo || "",
+      active: true,
+      createdAt: ""
+    },
+    awayClub: {
+      id: r.awayClubId || "TBD",
+      name: awayClubData?.name || r.awayClubId,
+      shortName: awayClubData?.shortName || r.awayClubId,
+      country: awayClubData?.country || "",
+      leagueId: awayClubData?.leagueId || "",
+      logoUrl: awayClubData?.logo || "",
+      active: true,
+      createdAt: ""
+    },
+    homeOwnerId: r.homeOwnerId,
+    awayOwnerId: r.awayOwnerId,
+    scheduledAt: r.scheduledAt,
+    status: r.status,
+    homeScore: r.homeScore ?? void 0,
+    awayScore: r.awayScore ?? void 0,
+    winnerClubId: r.winnerClubId ?? void 0,
+    resultConfirmedAt: r.resultConfirmedAt ?? void 0,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt
+  };
+}
+async function generateCompetitionFixturesFirestore(competitionId, options = {}) {
+  const db = getFirestoreDb();
+  const compDoc = await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get();
+  if (!compDoc.exists) {
+    throw new Error(`Competition '${competitionId}' not found.`);
+  }
+  const comp = compDoc.data();
+  const existingSnap = await db.collection(COLLECTIONS.FIXTURES).where("competitionId", "==", competitionId).get();
+  if (!existingSnap.empty && !options.force) {
+    const matchdays = new Set(existingSnap.docs.map((d) => d.data().matchday)).size;
+    return { generated: existingSnap.size, matchdays };
+  }
+  let clubIds = [];
+  const partSnap = await db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where("competitionId", "==", competitionId).orderBy("seedNumber", "asc").get();
+  if (!partSnap.empty) {
+    clubIds = partSnap.docs.map((d) => d.data().clubId);
+  } else if (comp.leagueId) {
+    const leagueClubsSnap = await db.collection(COLLECTIONS.CLUBS).where("leagueId", "==", comp.leagueId).where("isActive", "==", true).get();
+    clubIds = leagueClubsSnap.docs.map((d) => d.id).sort();
+  }
+  if (clubIds.length < 2) {
+    throw new Error(`Not enough clubs (${clubIds.length}) to generate fixtures for ${comp.name}.`);
+  }
+  const teams = [...clubIds];
+  if (teams.length % 2 !== 0) {
+    teams.push("BYE");
+  }
+  const numTeams = teams.length;
+  const numRounds = numTeams - 1;
+  const halfSize = numTeams / 2;
+  const generatedFixtures = [];
+  const startDate = /* @__PURE__ */ new Date("2026-08-15T15:00:00.000Z");
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  for (let round = 0; round < numRounds; round++) {
+    const matchday = round + 1;
+    const matchDate = new Date(startDate.getTime() + round * 7 * 24 * 60 * 60 * 1e3).toISOString();
+    for (let i = 0; i < halfSize; i++) {
+      const home = teams[i];
+      const away = teams[numTeams - 1 - i];
+      if (home !== "BYE" && away !== "BYE") {
+        const isAlternate = (round + i) % 2 === 1;
+        const actualHome = isAlternate ? away : home;
+        const actualAway = isAlternate ? home : away;
+        const homeSlug = actualHome.replace("club-", "");
+        const awaySlug = actualAway.replace("club-", "");
+        const id = `fix-${competitionId}-md${matchday}-${homeSlug}-vs-${awaySlug}`;
+        generatedFixtures.push({
+          id,
+          competitionId,
+          competitionName: comp.name,
+          seasonId: comp.seasonId,
+          matchday,
+          roundName: `Matchday ${matchday}`,
+          homeClubId: actualHome,
+          awayClubId: actualAway,
+          scheduledAt: matchDate,
+          status: "SCHEDULED",
+          createdAt: now,
+          updatedAt: now
+        });
+      }
+    }
+    teams.splice(1, 0, teams.pop());
+  }
+  const totalRounds = numRounds * 2;
+  for (let round = 0; round < numRounds; round++) {
+    const matchday = numRounds + round + 1;
+    const matchDate = new Date(startDate.getTime() + (numRounds + round) * 7 * 24 * 60 * 60 * 1e3).toISOString();
+    const leg1Matches = generatedFixtures.filter((f) => f.matchday === round + 1);
+    for (const leg1 of leg1Matches) {
+      const homeSlug = leg1.awayClubId.replace("club-", "");
+      const awaySlug = leg1.homeClubId.replace("club-", "");
+      const id = `fix-${competitionId}-md${matchday}-${homeSlug}-vs-${awaySlug}`;
+      generatedFixtures.push({
+        id,
+        competitionId,
+        competitionName: comp.name,
+        seasonId: comp.seasonId,
+        matchday,
+        roundName: `Matchday ${matchday}`,
+        homeClubId: leg1.awayClubId,
+        // Reversed
+        awayClubId: leg1.homeClubId,
+        // Reversed
+        scheduledAt: matchDate,
+        status: "SCHEDULED",
+        createdAt: now,
+        updatedAt: now
+      });
+    }
+  }
+  const toDeleteSnap = await db.collection(COLLECTIONS.FIXTURES).where("competitionId", "==", competitionId).get();
+  if (!toDeleteSnap.empty) {
+    const batchSize2 = 400;
+    for (let i = 0; i < toDeleteSnap.docs.length; i += batchSize2) {
+      const chunk = toDeleteSnap.docs.slice(i, i + batchSize2);
+      const batch = db.batch();
+      chunk.forEach((doc) => batch.delete(doc.ref));
+      await batch.commit();
+    }
+  }
+  const batchSize = 400;
+  for (let i = 0; i < generatedFixtures.length; i += batchSize) {
+    const chunk = generatedFixtures.slice(i, i + batchSize);
+    const batch = db.batch();
+    for (const fix of chunk) {
+      const ref = db.collection(COLLECTIONS.FIXTURES).doc(fix.id);
+      batch.set(ref, fix);
+    }
+    await batch.commit();
+  }
+  let verifySnap = await db.collection(COLLECTIONS.FIXTURES).where("competitionId", "==", competitionId).get();
+  if (verifySnap.size !== generatedFixtures.length) {
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    verifySnap = await db.collection(COLLECTIONS.FIXTURES).where("competitionId", "==", competitionId).get();
+  }
+  if (verifySnap.size !== generatedFixtures.length) {
+    throw new Error(
+      `FIXTURE_PERSISTENCE_FAILED: Expected ${generatedFixtures.length} fixtures, but Firestore has ${verifySnap.size}.`
+    );
+  }
+  await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).update({
+    status: "active",
+    hasFixtures: true,
+    fixtureCount: verifySnap.size,
+    fixturesCount: verifySnap.size,
+    generationStatus: "generated",
+    updatedAt: now
+  });
+  return { generated: verifySnap.size, matchdays: totalRounds };
+}
+async function calculateCompetitionStandingsFirestore(competitionId) {
+  const db = getFirestoreDb();
+  const compDoc = await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get();
+  if (!compDoc.exists) return [];
+  const comp = compDoc.data();
+  const formatConfig = comp.formatConfig || {};
+  const pointsForWin = formatConfig.pointsForWin ?? 3;
+  const pointsForDraw = formatConfig.pointsForDraw ?? 1;
+  const pointsForLoss = formatConfig.pointsForLoss ?? 0;
+  const tieBreakers = formatConfig.tieBreakers ?? ["points", "goalDifference", "goalsFor", "headToHead"];
+  let clubs = [];
+  const partSnap = await db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where("competitionId", "==", competitionId).get();
+  if (!partSnap.empty) {
+    const clubIds = partSnap.docs.map((d) => d.data().clubId);
+    const clubsSnap = await db.collection(COLLECTIONS.CLUBS).where("id", "in", clubIds.slice(0, 30)).get();
+    clubs = clubsSnap.docs.map((d) => {
+      const c = d.data();
+      return { id: d.id, name: c.name, shortName: c.shortName, logoUrl: c.logo };
+    });
+  } else if (comp.leagueId) {
+    const clubsSnap = await db.collection(COLLECTIONS.CLUBS).where("leagueId", "==", comp.leagueId).where("isActive", "==", true).get();
+    clubs = clubsSnap.docs.map((d) => {
+      const c = d.data();
+      return { id: d.id, name: c.name, shortName: c.shortName, logoUrl: c.logo };
+    });
+  }
+  const fixSnap = await db.collection(COLLECTIONS.FIXTURES).where("competitionId", "==", competitionId).where("status", "==", "CONFIRMED").get();
+  const confirmedFixtures = fixSnap.docs.map((d) => d.data());
+  const statsMap = /* @__PURE__ */ new Map();
+  for (const c of clubs) {
+    statsMap.set(c.id, {
+      clubId: c.id,
+      clubName: c.name,
+      shortName: c.shortName,
+      logoUrl: c.logoUrl,
+      managerUsername: c.managerUsername,
+      played: 0,
+      won: 0,
+      drawn: 0,
+      lost: 0,
+      goalsFor: 0,
+      goalsAgainst: 0,
+      goalDifference: 0,
+      points: 0,
+      form: []
+    });
+  }
+  for (const fix of confirmedFixtures) {
+    const home = statsMap.get(fix.homeClubId);
+    const away = statsMap.get(fix.awayClubId);
+    const hScore = fix.homeScore ?? 0;
+    const aScore = fix.awayScore ?? 0;
+    if (home) {
+      home.played += 1;
+      home.goalsFor += hScore;
+      home.goalsAgainst += aScore;
+      if (hScore > aScore) {
+        home.won += 1;
+        home.points += pointsForWin;
+        home.form.push("W");
+      } else if (hScore === aScore) {
+        home.drawn += 1;
+        home.points += pointsForDraw;
+        home.form.push("D");
+      } else {
+        home.lost += 1;
+        home.points += pointsForLoss;
+        home.form.push("L");
+      }
+    }
+    if (away) {
+      away.played += 1;
+      away.goalsFor += aScore;
+      away.goalsAgainst += hScore;
+      if (aScore > hScore) {
+        away.won += 1;
+        away.points += pointsForWin;
+        away.form.push("W");
+      } else if (aScore === hScore) {
+        away.drawn += 1;
+        away.points += pointsForDraw;
+        away.form.push("D");
+      } else {
+        away.lost += 1;
+        away.points += pointsForLoss;
+        away.form.push("L");
+      }
+    }
+  }
+  const rows = Array.from(statsMap.values()).map((row) => {
+    row.goalDifference = row.goalsFor - row.goalsAgainst;
+    row.form = row.form.slice(-5);
+    return row;
+  });
+  rows.sort((a, b) => {
+    if (b.points !== a.points) return b.points - a.points;
+    if (b.goalDifference !== a.goalDifference) return b.goalDifference - a.goalDifference;
+    if (b.goalsFor !== a.goalsFor) return b.goalsFor - a.goalsFor;
+    return a.clubName.localeCompare(b.clubName);
+  });
+  return rows.map((r, index) => ({
+    position: index + 1,
+    clubId: r.clubId,
+    clubName: r.clubName,
+    shortName: r.shortName,
+    logoUrl: r.logoUrl,
+    managerUsername: r.managerUsername,
+    played: r.played,
+    won: r.won,
+    drawn: r.drawn,
+    lost: r.lost,
+    goalsFor: r.goalsFor,
+    goalsAgainst: r.goalsAgainst,
+    goalDifference: r.goalDifference,
+    points: r.points,
+    form: r.form
+  }));
+}
+async function submitFixtureResultFirestore(userId, fixtureId, homeScore, awayScore, proofUrl) {
+  const db = getFirestoreDb();
+  if (!Number.isInteger(homeScore) || homeScore < 0 || !Number.isInteger(awayScore) || awayScore < 0) {
+    throw new Error("Scores must be non-negative integers.");
+  }
+  const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
+  const fixDoc = await fixRef.get();
+  if (!fixDoc.exists) {
+    throw new Error(`Fixture with ID '${fixtureId}' not found.`);
+  }
+  const fixture = fixDoc.data();
+  if (fixture.status === "CONFIRMED") {
+    throw new Error("This match result is already CONFIRMED and cannot be modified.");
+  }
+  const userMemDoc = await db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${fixture.seasonId}_${userId}`).get();
+  if (!userMemDoc.exists || userMemDoc.data()?.status !== "active") {
+    throw new Error("You do not own either the home or away club in this fixture.");
+  }
+  const userClubId = userMemDoc.data().clubId;
+  const isHome = userClubId === fixture.homeClubId;
+  const isAway = userClubId === fixture.awayClubId;
+  if (!isHome && !isAway) {
+    throw new Error("You do not own either the home or away club in this fixture.");
+  }
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const submissionId = `sub-${fixtureId}-${userId}`;
+  const subRef = db.collection(COLLECTIONS.RESULT_SUBMISSIONS).doc(submissionId);
+  await subRef.set({
+    id: submissionId,
+    fixtureId,
+    submittedByUserId: userId,
+    clubId: userClubId,
+    homeScore,
+    awayScore,
+    proofUrl: proofUrl || null,
+    createdAt: now
+  });
+  const allSubsSnap = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where("fixtureId", "==", fixtureId).get();
+  const allSubs = allSubsSnap.docs.map((d) => d.data());
+  let newStatus = "AWAITING_RESULT";
+  let confirmedHomeScore = null;
+  let confirmedAwayScore = null;
+  let winnerClubId = null;
+  let confirmedAt = null;
+  if (allSubs.length >= 2) {
+    const [sub1, sub2] = allSubs;
+    if (sub1.homeScore === sub2.homeScore && sub1.awayScore === sub2.awayScore) {
+      newStatus = "CONFIRMED";
+      confirmedHomeScore = sub1.homeScore;
+      confirmedAwayScore = sub1.awayScore;
+      confirmedAt = now;
+      if (confirmedHomeScore > confirmedAwayScore) winnerClubId = fixture.homeClubId;
+      else if (confirmedAwayScore > confirmedHomeScore) winnerClubId = fixture.awayClubId;
+    } else {
+      newStatus = "DISPUTED";
+      const disputeRef = db.collection(COLLECTIONS.DISPUTES).doc(`disp-${fixtureId}`);
+      await disputeRef.set({
+        id: `disp-${fixtureId}`,
+        fixtureId,
+        seasonId: fixture.seasonId,
+        homeSubmissionId: sub1.id,
+        awaySubmissionId: sub2.id,
+        status: "OPEN",
+        createdAt: now
+      });
+    }
+  } else {
+    newStatus = "PENDING_CONFIRMATION";
+  }
+  await fixRef.update({
+    status: newStatus,
+    homeScore: confirmedHomeScore,
+    awayScore: confirmedAwayScore,
+    winnerClubId,
+    resultConfirmedAt: confirmedAt,
+    updatedAt: now
+  });
+  return await getFixtureByIdFirestore(fixtureId, userId);
+}
+async function getOrCreateTelegramUserFirestore(tgUser) {
+  const db = getFirestoreDb();
+  const telegramId = String(tgUser.id);
+  const username = tgUser.username || `tg_${telegramId}`;
+  const firstName = tgUser.first_name || "Player";
+  const lastName = tgUser.last_name || "";
+  const photoUrl = tgUser.photo_url || "";
+  const adminIds = (process.env.ADMIN_TELEGRAM_IDS || "").split(",").map((s) => s.trim().replace(/^@/, "").toLowerCase()).filter(Boolean);
+  const isAdmin = adminIds.includes(telegramId.toLowerCase()) || adminIds.includes(username.toLowerCase());
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const userDocRef = db.collection(COLLECTIONS.USERS).doc(`user-${telegramId}`);
+  const userDoc = await userDocRef.get();
+  if (!userDoc.exists) {
+    const newUser = {
+      id: `user-${telegramId}`,
+      telegramId,
+      username,
+      firstName,
+      lastName,
+      photoUrl,
+      isAdmin,
+      isSuspended: false,
+      createdAt: now,
+      updatedAt: now
+    };
+    await userDocRef.set(newUser);
+    return newUser;
+  }
+  const existing = userDoc.data();
+  const updatedAdmin = existing.isAdmin || isAdmin;
+  await userDocRef.update({
+    username,
+    firstName,
+    lastName,
+    photoUrl: photoUrl || existing.photoUrl || "",
+    isAdmin: updatedAdmin,
+    updatedAt: now
+  });
+  return {
+    ...existing,
+    username,
+    firstName,
+    lastName,
+    photoUrl: photoUrl || existing.photoUrl,
+    isAdmin: updatedAdmin,
+    updatedAt: now
+  };
+}
+async function getOrCreateDevUserFirestore(devUserId) {
+  const db = getFirestoreDb();
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const docRef = db.collection(COLLECTIONS.USERS).doc(devUserId);
+  const doc = await docRef.get();
+  if (doc.exists) {
+    return doc.data();
+  }
+  const isAdmin = devUserId.includes("admin");
+  const newUser = {
+    id: devUserId,
+    telegramId: devUserId.replace(/\D/g, "") || "999",
+    username: devUserId.replace("user-", ""),
+    firstName: devUserId.includes("admin") ? "Admin" : "Dev User",
+    lastName: "Tester",
+    photoUrl: "",
+    isAdmin,
+    isSuspended: false,
+    createdAt: now,
+    updatedAt: now
+  };
+  await docRef.set(newUser);
+  return newUser;
+}
+async function reopenFixtureFirestore(adminUserId, fixtureId, notes) {
+  const db = getFirestoreDb();
+  const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
+  const fixDoc = await fixRef.get();
+  if (!fixDoc.exists) {
+    throw new Error(`Fixture '${fixtureId}' not found.`);
+  }
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  await fixRef.update({
+    status: "SCHEDULED",
+    homeScore: null,
+    awayScore: null,
+    winnerClubId: null,
+    resultConfirmedAt: null,
+    updatedAt: now
+  });
+  const subsSnap = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where("fixtureId", "==", fixtureId).get();
+  const deleteBatch = db.batch();
+  for (const doc of subsSnap.docs) {
+    deleteBatch.delete(doc.ref);
+  }
+  const dispSnap = await db.collection(COLLECTIONS.DISPUTES).where("fixtureId", "==", fixtureId).get();
+  for (const doc of dispSnap.docs) {
+    deleteBatch.delete(doc.ref);
+  }
+  await deleteBatch.commit();
+  await db.collection(COLLECTIONS.AUDIT_LOGS).add({
+    actorUserId: adminUserId,
+    action: "REOPEN_FIXTURE",
+    entityType: "fixture",
+    entityId: fixtureId,
+    notes: notes || null,
+    createdAt: now
+  });
+  return { success: true, fixtureId };
+}
+async function resolveDisputeFirestore(adminUserId, disputeId, params) {
+  const db = getFirestoreDb();
+  const disputeRef = db.collection(COLLECTIONS.DISPUTES).doc(disputeId);
+  const disputeDoc = await disputeRef.get();
+  if (!disputeDoc.exists) {
+    throw new Error(`Dispute '${disputeId}' not found.`);
+  }
+  const dispData = disputeDoc.data();
+  const fixtureRef = db.collection(COLLECTIONS.FIXTURES).doc(dispData.fixtureId);
+  const fixtureDoc = await fixtureRef.get();
+  if (!fixtureDoc.exists) {
+    throw new Error(`Fixture '${dispData.fixtureId}' not found.`);
+  }
+  const fixture = fixtureDoc.data();
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  let newHomeScore = null;
+  let newAwayScore = null;
+  let winnerClubId = null;
+  let newStatus = "CONFIRMED";
+  if (params.action === "MANUAL_SCORE") {
+    newHomeScore = params.manualHomeScore ?? 0;
+    newAwayScore = params.manualAwayScore ?? 0;
+    if (newHomeScore > newAwayScore) winnerClubId = fixture.homeClubId;
+    else if (newAwayScore > newHomeScore) winnerClubId = fixture.awayClubId;
+  } else if (params.action === "CANCEL_MATCH") {
+    newStatus = "POSTPONED";
+  }
+  await fixtureRef.update({
+    status: newStatus,
+    homeScore: newHomeScore,
+    awayScore: newAwayScore,
+    winnerClubId,
+    resultConfirmedAt: now,
+    updatedAt: now
+  });
+  const updatedDispute = {
+    ...dispData,
+    status: "RESOLVED",
+    resolvedByUserId: adminUserId,
+    resolutionNotes: params.notes || null,
+    resolvedAt: now
+  };
+  await disputeRef.update(updatedDispute);
+  await db.collection(COLLECTIONS.AUDIT_LOGS).add({
+    actorUserId: adminUserId,
+    action: "RESOLVE_DISPUTE",
+    entityType: "dispute",
+    entityId: disputeId,
+    notes: params.notes || null,
+    createdAt: now
+  });
+  return { success: true, dispute: updatedDispute };
+}
+
+// src/server/auth/telegramAuth.ts
 function verifyTelegramWebAppData(initData, botToken, maxAgeSeconds = 86400) {
   if (!initData || !botToken) {
     return { isValid: false, error: "Missing initData or botToken" };
@@ -922,42 +2323,8 @@ function verifyTelegramWebAppData(initData, botToken, maxAgeSeconds = 86400) {
     return { isValid: false, error: err.message || "Telegram verification failed" };
   }
 }
-function getOrCreateTelegramUser(tgUser) {
-  const telegramId = String(tgUser.id);
-  const username = tgUser.username || `tg_${telegramId}`;
-  const firstName = tgUser.first_name || "Player";
-  const lastName = tgUser.last_name || "";
-  const photoUrl = tgUser.photo_url || "";
-  const adminIds = (process.env.ADMIN_TELEGRAM_IDS || "").split(",").map((s) => s.trim().replace(/^@/, "").toLowerCase()).filter(Boolean);
-  const isAdmin = adminIds.includes(telegramId.toLowerCase()) || Boolean(username) && adminIds.includes(username.toLowerCase()) ? 1 : 0;
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  let existing = queryGet("SELECT * FROM users WHERE telegram_id = ?", [telegramId]);
-  if (!existing) {
-    const newId = `user-${telegramId}`;
-    queryRun(
-      "INSERT INTO users (id, telegram_id, username, first_name, last_name, photo_url, is_admin, is_suspended, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)",
-      [newId, telegramId, username, firstName, lastName, photoUrl, isAdmin, now, now]
-    );
-    existing = queryGet("SELECT * FROM users WHERE telegram_id = ?", [telegramId]);
-  } else {
-    queryRun(
-      "UPDATE users SET username = ?, first_name = ?, last_name = ?, photo_url = ?, is_admin = CASE WHEN is_admin = 1 THEN 1 ELSE ? END, updated_at = ? WHERE telegram_id = ?",
-      [username, firstName, lastName, photoUrl, isAdmin, now, telegramId]
-    );
-    existing = queryGet("SELECT * FROM users WHERE telegram_id = ?", [telegramId]);
-  }
-  return {
-    id: existing.id,
-    telegramId: existing.telegram_id,
-    username: existing.username,
-    firstName: existing.first_name,
-    lastName: existing.last_name,
-    photoUrl: existing.photo_url,
-    isAdmin: Boolean(existing.is_admin),
-    isSuspended: Boolean(existing.is_suspended),
-    createdAt: existing.created_at,
-    updatedAt: existing.updated_at
-  };
+async function getOrCreateTelegramUser(tgUser) {
+  return await getOrCreateTelegramUserFirestore(tgUser);
 }
 var DEV_PROFILES = [
   {
@@ -985,37 +2352,12 @@ var DEV_PROFILES = [
     isAdmin: true
   }
 ];
-function getOrCreateDevUser(devUserId) {
-  const isDevAuthEnabled = process.env.ENABLE_DEV_AUTH === "true" || process.env.NODE_ENV !== "production";
-  if (!isDevAuthEnabled) {
-    throw new Error("Development sandbox authentication is disabled in production.");
-  }
-  const profile = DEV_PROFILES.find((p) => p.id === devUserId || p.username === devUserId) || DEV_PROFILES[0];
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  let existing = queryGet("SELECT * FROM users WHERE telegram_id = ?", [profile.telegramId]);
-  if (!existing) {
-    queryRun(
-      'INSERT INTO users (id, telegram_id, username, first_name, last_name, photo_url, is_admin, is_suspended, created_at, updated_at) VALUES (?, ?, ?, ?, ?, "", ?, 0, ?, ?)',
-      [profile.id, profile.telegramId, profile.username, profile.firstName, profile.lastName, profile.isAdmin ? 1 : 0, now, now]
-    );
-    existing = queryGet("SELECT * FROM users WHERE telegram_id = ?", [profile.telegramId]);
-  }
-  return {
-    id: existing.id,
-    telegramId: existing.telegram_id,
-    username: existing.username,
-    firstName: existing.first_name,
-    lastName: existing.last_name,
-    photoUrl: existing.photo_url,
-    isAdmin: Boolean(existing.is_admin),
-    isSuspended: Boolean(existing.is_suspended),
-    createdAt: existing.created_at,
-    updatedAt: existing.updated_at
-  };
+async function getOrCreateDevUser(devUserId) {
+  return await getOrCreateDevUserFirestore(devUserId);
 }
 
 // src/server/middleware/authMiddleware.ts
-function authMiddleware(req, res, next) {
+async function authMiddleware(req, res, next) {
   const isDev = process.env.ENABLE_DEV_AUTH === "true" || process.env.NODE_ENV !== "production";
   const initData = req.headers["x-telegram-init-data"] || req.query.initData;
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -1023,8 +2365,12 @@ function authMiddleware(req, res, next) {
     if (botToken) {
       const verifyResult = verifyTelegramWebAppData(initData, botToken);
       if (verifyResult.isValid && verifyResult.user) {
-        req.user = getOrCreateTelegramUser(verifyResult.user);
-        return next();
+        try {
+          req.user = await getOrCreateTelegramUser(verifyResult.user);
+          return next();
+        } catch (err) {
+          console.warn("Telegram user retrieval error:", err.message);
+        }
       }
     } else if (isDev) {
       try {
@@ -1032,7 +2378,7 @@ function authMiddleware(req, res, next) {
         const userRaw = urlParams.get("user");
         if (userRaw) {
           const parsed = JSON.parse(userRaw);
-          req.user = getOrCreateTelegramUser(parsed);
+          req.user = await getOrCreateTelegramUser(parsed);
           return next();
         }
       } catch {
@@ -1042,7 +2388,7 @@ function authMiddleware(req, res, next) {
   const devUserId = req.headers["x-dev-user-id"];
   if (isDev && devUserId) {
     try {
-      const user = getOrCreateDevUser(devUserId);
+      const user = await getOrCreateDevUser(devUserId);
       req.user = user;
       return next();
     } catch (err) {
@@ -1086,22 +2432,248 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+// src/server/firebase/migrateSqliteToFirestore.ts
+async function migrateSqliteToFirestore() {
+  const db = getFirestoreDb();
+  const errors = [];
+  const sqliteCounts = {
+    users: queryGet("SELECT count(*) as count FROM users")?.count || 0,
+    seasons: queryGet("SELECT count(*) as count FROM seasons")?.count || 0,
+    leagues: queryGet("SELECT count(*) as count FROM leagues")?.count || 0,
+    clubs: queryGet("SELECT count(*) as count FROM clubs")?.count || 0,
+    competitions: queryGet("SELECT count(*) as count FROM competitions")?.count || 0,
+    competition_participants: queryGet("SELECT count(*) as count FROM competition_participants")?.count || 0,
+    club_memberships: queryGet("SELECT count(*) as count FROM club_memberships")?.count || 0,
+    fixtures: queryGet("SELECT count(*) as count FROM fixtures")?.count || 0
+  };
+  console.log("[Migration] Starting SQLite to Firestore migration...");
+  console.log("[Migration] Source SQLite counts:", JSON.stringify(sqliteCounts, null, 2));
+  try {
+    const seasons = queryAll("SELECT * FROM seasons");
+    const batch = db.batch();
+    for (const s of seasons) {
+      const ref = db.collection(COLLECTIONS.SEASONS).doc(s.id);
+      batch.set(ref, {
+        id: s.id,
+        name: s.name,
+        status: s.status,
+        startDate: s.start_date || null,
+        endDate: s.end_date || null,
+        createdAt: s.created_at || (/* @__PURE__ */ new Date()).toISOString()
+      });
+    }
+    await batch.commit();
+  } catch (err) {
+    errors.push(`Seasons migration error: ${err.message}`);
+  }
+  try {
+    const leagues = queryAll("SELECT * FROM leagues");
+    const batch = db.batch();
+    for (const l of leagues) {
+      const ref = db.collection(COLLECTIONS.LEAGUES).doc(l.id);
+      batch.set(ref, {
+        id: l.id,
+        name: l.name,
+        country: l.country,
+        tier: l.tier,
+        logo: l.logo_url,
+        createdAt: l.created_at || (/* @__PURE__ */ new Date()).toISOString()
+      });
+    }
+    await batch.commit();
+  } catch (err) {
+    errors.push(`Leagues migration error: ${err.message}`);
+  }
+  try {
+    const clubs = queryAll("SELECT * FROM clubs");
+    const chunkSize = 400;
+    for (let i = 0; i < clubs.length; i += chunkSize) {
+      const chunk = clubs.slice(i, i + chunkSize);
+      const batch = db.batch();
+      for (const c of chunk) {
+        const ref = db.collection(COLLECTIONS.CLUBS).doc(c.id);
+        batch.set(ref, {
+          id: c.id,
+          name: c.name,
+          shortName: c.short_name,
+          leagueId: c.league_id,
+          country: c.country,
+          logo: c.logo_url,
+          isActive: c.active !== void 0 ? Boolean(c.active) : c.is_active !== void 0 ? Boolean(c.is_active) : true,
+          createdAt: c.created_at || (/* @__PURE__ */ new Date()).toISOString()
+        });
+      }
+      await batch.commit();
+    }
+  } catch (err) {
+    errors.push(`Clubs migration error: ${err.message}`);
+  }
+  try {
+    const competitions = queryAll("SELECT * FROM competitions");
+    const batch = db.batch();
+    for (const comp of competitions) {
+      const ref = db.collection(COLLECTIONS.COMPETITIONS).doc(comp.id);
+      batch.set(ref, {
+        id: comp.id,
+        seasonId: comp.season_id,
+        leagueId: comp.league_id || null,
+        name: comp.name,
+        type: comp.type,
+        scheduleMode: comp.schedule_mode,
+        status: comp.status,
+        formatConfig: comp.format_config_json ? JSON.parse(comp.format_config_json) : {},
+        createdAt: comp.created_at || (/* @__PURE__ */ new Date()).toISOString()
+      });
+    }
+    await batch.commit();
+  } catch (err) {
+    errors.push(`Competitions migration error: ${err.message}`);
+  }
+  try {
+    const participants = queryAll("SELECT * FROM competition_participants");
+    const chunkSize = 400;
+    for (let i = 0; i < participants.length; i += chunkSize) {
+      const chunk = participants.slice(i, i + chunkSize);
+      const batch = db.batch();
+      for (const p of chunk) {
+        const ref = db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).doc(p.id);
+        batch.set(ref, {
+          id: p.id,
+          competitionId: p.competition_id,
+          clubId: p.club_id,
+          seasonId: p.season_id,
+          ownerUserId: p.owner_user_id || null,
+          ownerUsername: p.owner_username || null,
+          sourceCompetitionId: p.source_competition_id || null,
+          sourceCompetitionName: p.source_competition_name || null,
+          sourcePosition: p.source_position || null,
+          qualificationReason: p.qualification_reason || null,
+          qualificationTimestamp: p.qualification_timestamp || null,
+          seedNumber: p.seed_number || null,
+          createdAt: p.created_at || (/* @__PURE__ */ new Date()).toISOString()
+        });
+      }
+      await batch.commit();
+    }
+  } catch (err) {
+    errors.push(`Competition participants migration error: ${err.message}`);
+  }
+  try {
+    const memberships = queryAll("SELECT * FROM club_memberships");
+    const batch = db.batch();
+    for (const m of memberships) {
+      const ref = db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).doc(m.id);
+      batch.set(ref, {
+        id: m.id,
+        seasonId: m.season_id,
+        clubId: m.club_id,
+        userId: m.user_id,
+        status: m.status,
+        claimedAt: m.claimed_at,
+        updatedAt: m.updated_at || m.claimed_at
+      });
+      if (m.status === "active") {
+        const userMemRef = db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${m.season_id}_${m.user_id}`);
+        const clubOccRef = db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${m.season_id}_${m.club_id}`);
+        batch.set(userMemRef, { userId: m.user_id, clubId: m.club_id, seasonId: m.season_id, status: "active" });
+        batch.set(clubOccRef, { clubId: m.club_id, userId: m.user_id, seasonId: m.season_id, status: "active" });
+      }
+    }
+    await batch.commit();
+  } catch (err) {
+    errors.push(`Memberships migration error: ${err.message}`);
+  }
+  try {
+    const fixtures = queryAll("SELECT * FROM fixtures");
+    const chunkSize = 400;
+    for (let i = 0; i < fixtures.length; i += chunkSize) {
+      const chunk = fixtures.slice(i, i + chunkSize);
+      const batch = db.batch();
+      for (const f of chunk) {
+        const ref = db.collection(COLLECTIONS.FIXTURES).doc(f.id);
+        batch.set(ref, {
+          id: f.id,
+          competitionId: f.competition_id,
+          seasonId: f.season_id,
+          matchday: f.matchday,
+          roundName: f.round_name,
+          homeClubId: f.home_club_id,
+          awayClubId: f.away_club_id,
+          scheduledAt: f.scheduled_at,
+          status: f.status,
+          homeScore: f.home_score !== null ? f.home_score : null,
+          awayScore: f.away_score !== null ? f.away_score : null,
+          winnerClubId: f.winner_club_id || null,
+          resultConfirmedAt: f.result_confirmed_at || null,
+          createdAt: f.created_at || (/* @__PURE__ */ new Date()).toISOString(),
+          updatedAt: f.updated_at || (/* @__PURE__ */ new Date()).toISOString()
+        });
+      }
+      await batch.commit();
+    }
+  } catch (err) {
+    errors.push(`Fixtures migration error: ${err.message}`);
+  }
+  const [seasonsSnap, leaguesSnap, clubsSnap, compSnap, partSnap, memSnap, fixSnap] = await Promise.all([
+    db.collection(COLLECTIONS.SEASONS).get(),
+    db.collection(COLLECTIONS.LEAGUES).get(),
+    db.collection(COLLECTIONS.CLUBS).get(),
+    db.collection(COLLECTIONS.COMPETITIONS).get(),
+    db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).get(),
+    db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).get(),
+    db.collection(COLLECTIONS.FIXTURES).get()
+  ]);
+  const firestoreCounts = {
+    seasons: seasonsSnap.size,
+    leagues: leaguesSnap.size,
+    clubs: clubsSnap.size,
+    competitions: compSnap.size,
+    competition_participants: partSnap.size,
+    club_memberships: memSnap.size,
+    fixtures: fixSnap.size
+  };
+  console.log("[Migration] Target Firestore counts:", JSON.stringify(firestoreCounts, null, 2));
+  const success = errors.length === 0 && firestoreCounts.clubs >= sqliteCounts.clubs && firestoreCounts.leagues >= sqliteCounts.leagues && firestoreCounts.competitions >= sqliteCounts.competitions;
+  return {
+    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+    source: "sqlite",
+    target: "firestore",
+    sqliteCounts,
+    firestoreCounts,
+    success,
+    errors
+  };
+}
+
 // src/server/routes/health.routes.ts
 import { Router } from "express";
 var healthRouter = Router();
-healthRouter.get("/", (req, res) => {
+healthRouter.get("/", async (req, res) => {
+  const status = getFirebaseStatus();
+  let isConnected = false;
+  let connectionWarning = null;
   try {
-    const db = getDb();
-    const result = db.exec("SELECT 1 as alive;");
-    res.json({
-      status: "ok",
-      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-      database: result.length > 0 ? "connected" : "error",
-      version: "1.0.0"
-    });
+    const db = getFirestoreDb();
+    if (db) {
+      await db.collection("seasons").limit(1).get();
+      isConnected = true;
+    }
   } catch (err) {
-    res.status(500).json({ status: "error", message: err.message });
+    connectionWarning = err.message;
+    isConnected = false;
   }
+  res.json({
+    status: "ok",
+    database: "firestore",
+    connected: isConnected,
+    firebaseConfigured: status.isConfigured,
+    projectId: status.projectId,
+    databaseId: status.databaseId,
+    authMode: status.authMode,
+    warning: connectionWarning || void 0,
+    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+    version: "2.0.0-firestore-production"
+  });
 });
 
 // src/server/routes/auth.routes.ts
@@ -1131,169 +2703,6 @@ function validateBody(schema) {
   };
 }
 
-// src/server/services/clubService.ts
-var ClubConflictError = class extends Error {
-  constructor(message) {
-    super(message);
-    this.name = "ClubConflictError";
-  }
-};
-var ClubNotFoundError = class extends Error {
-  constructor(message) {
-    super(message);
-    this.name = "ClubNotFoundError";
-  }
-};
-function getClubsByLeague(leagueId, seasonId) {
-  const clubs = queryAll(
-    `SELECT
-        c.*,
-        l.id AS league_id,
-        l.name AS league_name,
-        slc.season_id,
-        slc.is_active,
-        u.username AS owner_username,
-        u.first_name AS owner_first_name,
-        cm.user_id AS owner_user_id,
-        cm.claimed_at
-    FROM season_league_clubs slc
-    JOIN clubs c
-        ON c.id = slc.club_id
-    JOIN leagues l
-        ON l.id = slc.league_id
-    LEFT JOIN club_memberships cm
-        ON cm.club_id = c.id
-        AND cm.season_id = slc.season_id
-        AND cm.status = 'active'
-    LEFT JOIN users u
-        ON u.id = cm.user_id
-    WHERE
-        slc.season_id = ?
-        AND slc.league_id = ?
-        AND slc.is_active = 1
-    ORDER BY c.name;`,
-    [seasonId, leagueId]
-  );
-  return clubs.map((c) => ({
-    id: c.id,
-    name: c.name,
-    shortName: c.short_name,
-    country: c.country,
-    leagueId: c.league_id,
-    leagueName: c.league_name,
-    logoUrl: c.logo_url,
-    active: Boolean(c.active),
-    claimedByUserId: c.owner_user_id || null,
-    claimedByUsername: c.owner_username || null,
-    owner: c.owner_user_id ? {
-      userId: c.owner_user_id,
-      username: c.owner_username || "Unknown",
-      firstName: c.owner_first_name || "Player",
-      claimedAt: c.claimed_at
-    } : null,
-    createdAt: c.created_at
-  }));
-}
-function getClubById(clubId, seasonId) {
-  const c = queryGet(
-    `SELECT c.*,
-            l.id as league_id,
-            l.name as league_name,
-            cm.user_id as owner_user_id,
-            u.username as owner_username,
-            u.first_name as owner_first_name,
-            cm.claimed_at
-     FROM clubs c
-     LEFT JOIN leagues l ON c.league_id = l.id
-     LEFT JOIN club_memberships cm ON c.id = cm.club_id AND cm.season_id = ? AND cm.status = 'active'
-     LEFT JOIN users u ON cm.user_id = u.id
-     WHERE c.id = ?`,
-    [seasonId, clubId]
-  );
-  if (!c) return null;
-  return {
-    id: c.id,
-    name: c.name,
-    shortName: c.short_name,
-    country: c.country,
-    leagueId: c.league_id,
-    logoUrl: c.logo_url,
-    active: Boolean(c.active),
-    claimedByUserId: c.owner_user_id || null,
-    claimedByUsername: c.owner_username || null,
-    owner: c.owner_user_id ? {
-      userId: c.owner_user_id,
-      username: c.owner_username || "Unknown",
-      firstName: c.owner_first_name || "Player",
-      claimedAt: c.claimed_at
-    } : null,
-    createdAt: c.created_at
-  };
-}
-function getUserActiveClub(userId, seasonId) {
-  const membership = queryGet(
-    'SELECT club_id FROM club_memberships WHERE user_id = ? AND season_id = ? AND status = "active"',
-    [userId, seasonId]
-  );
-  if (!membership) return null;
-  return getClubById(membership.club_id, seasonId);
-}
-function claimClubAtomic(userId, clubId, seasonId) {
-  return dbTransaction(() => {
-    const club = queryGet(
-      `SELECT c.id, c.name 
-       FROM season_league_clubs slc
-       JOIN clubs c ON slc.club_id = c.id
-       WHERE slc.club_id = ? AND slc.season_id = ? AND slc.is_active = 1`,
-      [clubId, seasonId]
-    );
-    if (!club) {
-      throw new ClubNotFoundError(`Club with ID '${clubId}' is not an active top-flight club in season '${seasonId}'.`);
-    }
-    const existingUserClub = queryGet(
-      `SELECT cm.club_id, c.name
-       FROM club_memberships cm
-       JOIN clubs c ON cm.club_id = c.id
-       WHERE cm.user_id = ? AND cm.season_id = ? AND cm.status = 'active'`,
-      [userId, seasonId]
-    );
-    if (existingUserClub) {
-      if (existingUserClub.club_id === clubId) {
-        const fullClub2 = getClubById(clubId, seasonId);
-        return { success: true, club: fullClub2 };
-      }
-      throw new ClubConflictError(`You already own '${existingUserClub.name}' in this season.`);
-    }
-    const existingOwner = queryGet(
-      `SELECT cm.user_id, u.username
-       FROM club_memberships cm
-       JOIN users u ON cm.user_id = u.id
-       WHERE cm.club_id = ? AND cm.season_id = ? AND cm.status = 'active'`,
-      [clubId, seasonId]
-    );
-    if (existingOwner) {
-      throw new ClubConflictError(
-        `'${club.name}' has already been claimed by @${existingOwner.username || "another player"}.`
-      );
-    }
-    const membershipId = `cm-${seasonId}-${clubId}`;
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    try {
-      queryRun(
-        'INSERT INTO club_memberships (id, season_id, club_id, user_id, claimed_at, status) VALUES (?, ?, ?, ?, ?, "active")',
-        [membershipId, seasonId, clubId, userId, now]
-      );
-    } catch (err) {
-      if (err.message && err.message.includes("UNIQUE constraint failed")) {
-        throw new ClubConflictError(`'${club.name}' has just been claimed by another player.`);
-      }
-      throw err;
-    }
-    const fullClub = getClubById(clubId, seasonId);
-    return { success: true, club: fullClub };
-  });
-}
-
 // src/server/routes/auth.routes.ts
 var authRouter = Router2();
 var telegramAuthSchema = z.object({
@@ -1302,7 +2711,7 @@ var telegramAuthSchema = z.object({
 var devAuthSchema = z.object({
   devUserId: z.string().min(1, "devUserId is required")
 });
-authRouter.post("/telegram", validateBody(telegramAuthSchema), (req, res) => {
+authRouter.post("/telegram", validateBody(telegramAuthSchema), async (req, res) => {
   const { initData } = req.body;
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   if (!botToken) {
@@ -1311,10 +2720,10 @@ authRouter.post("/telegram", validateBody(telegramAuthSchema), (req, res) => {
         const urlParams = new URLSearchParams(initData);
         const userRaw = urlParams.get("user");
         if (userRaw) {
-          const user2 = getOrCreateTelegramUser(JSON.parse(userRaw));
-          const currentClub2 = getUserActiveClub(user2.id, "season-2026-27");
-          console.log(`[TELEGRAM AUTH - DEV SANDBOX] user=${user2.username} (id: ${user2.telegramId}), isAdmin=${user2.isAdmin}`);
-          res.json({ success: true, user: user2, currentClub: currentClub2 });
+          const user = await getOrCreateTelegramUser(JSON.parse(userRaw));
+          const currentClub = await getUserActiveClubFirestore(user.id, "season-2026-27");
+          console.log(`[TELEGRAM AUTH - DEV SANDBOX] user=${user.username} (id: ${user.telegramId}), isAdmin=${user.isAdmin}`);
+          res.json({ success: true, user, currentClub });
           return;
         }
       } catch {
@@ -1329,9 +2738,10 @@ authRouter.post("/telegram", validateBody(telegramAuthSchema), (req, res) => {
     res.status(401).json({ error: "Invalid Telegram WebApp authentication", details: verifyResult.error });
     return;
   }
-  const user = getOrCreateTelegramUser(verifyResult.user);
-  const currentClub = getUserActiveClub(user.id, "season-2026-27");
-  console.log(`[TELEGRAM AUTH]
+  try {
+    const user = await getOrCreateTelegramUser(verifyResult.user);
+    const currentClub = await getUserActiveClubFirestore(user.id, "season-2026-27");
+    console.log(`[TELEGRAM AUTH]
 initData received: YES
 parsed user id: ${verifyResult.user.id}
 username: ${verifyResult.user.username || "(none)"}
@@ -1339,17 +2749,20 @@ auth_date valid: ${verifyResult.authDate ? "YES" : "NO"}
 HMAC valid: YES
 internal user: ${user.id}
 isAdmin: ${user.isAdmin ? "YES" : "NO"}`);
-  res.json({ success: true, user, currentClub });
+    res.json({ success: true, user, currentClub });
+  } catch (err) {
+    res.status(500).json({ error: "Authentication failed", message: err.message });
+  }
 });
-authRouter.post("/dev", validateBody(devAuthSchema), (req, res) => {
+authRouter.post("/dev", validateBody(devAuthSchema), async (req, res) => {
   const isDev = process.env.ENABLE_DEV_AUTH === "true" || process.env.NODE_ENV !== "production";
   if (!isDev) {
     res.status(403).json({ error: "Dev auth is disabled in production." });
     return;
   }
   try {
-    const user = getOrCreateDevUser(req.body.devUserId);
-    const currentClub = getUserActiveClub(user.id, "season-2026-27");
+    const user = await getOrCreateDevUser(req.body.devUserId);
+    const currentClub = await getUserActiveClubFirestore(user.id, "season-2026-27");
     res.json({ success: true, user, currentClub });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -1367,59 +2780,43 @@ authRouter.get("/dev-profiles", (req, res) => {
 // src/server/routes/seasons.routes.ts
 import { Router as Router3 } from "express";
 var seasonsRouter = Router3();
-seasonsRouter.get("/", (req, res) => {
-  const rows = queryAll("SELECT * FROM seasons ORDER BY start_date DESC");
-  const seasons = rows.map((r) => ({
-    id: r.id,
-    name: r.name,
-    status: r.status,
-    startDate: r.start_date,
-    endDate: r.end_date,
-    createdAt: r.created_at
-  }));
-  res.json({ seasons });
-});
-seasonsRouter.get("/:id", (req, res) => {
-  const row = queryGet("SELECT * FROM seasons WHERE id = ?", [req.params.id]);
-  if (!row) {
-    res.status(404).json({ error: "Season not found" });
-    return;
+seasonsRouter.get("/", async (req, res) => {
+  try {
+    const seasons = await getAllSeasonsFirestore();
+    res.json({ seasons });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch seasons", message: err.message });
   }
-  const season = {
-    id: row.id,
-    name: row.name,
-    status: row.status,
-    startDate: row.start_date,
-    endDate: row.end_date,
-    createdAt: row.created_at
-  };
-  res.json({ season });
+});
+seasonsRouter.get("/active", async (req, res) => {
+  try {
+    const season = await getActiveSeasonFirestore();
+    if (!season) {
+      res.status(404).json({ error: "Active season not found" });
+      return;
+    }
+    res.json({ season });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch active season", message: err.message });
+  }
+});
+seasonsRouter.get("/:id", async (req, res) => {
+  try {
+    const seasons = await getAllSeasonsFirestore();
+    const season = seasons.find((s) => s.id === req.params.id);
+    if (!season) {
+      res.status(404).json({ error: "Season not found" });
+      return;
+    }
+    res.json({ season });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch season", message: err.message });
+  }
 });
 
 // src/server/routes/leagues.routes.ts
 import { Router as Router4 } from "express";
 var leaguesRouter = Router4();
-leaguesRouter.get("/", (req, res) => {
-  const seasonId = req.query.seasonId || "season-2026-27";
-  const rows = queryAll(
-    `SELECT l.*, COUNT(slc.club_id) as total_clubs
-     FROM leagues l
-     LEFT JOIN season_league_clubs slc ON l.id = slc.league_id AND slc.season_id = ? AND slc.is_active = 1
-     GROUP BY l.id
-     ORDER BY l.tier ASC, l.name ASC`,
-    [seasonId]
-  );
-  const leagues = rows.map((r) => ({
-    id: r.id,
-    name: r.name,
-    country: r.country,
-    tier: r.tier,
-    logoUrl: r.logo_url,
-    totalClubs: Number(r.total_clubs) || 0,
-    createdAt: r.created_at
-  }));
-  res.json({ leagues });
-});
 var LEAGUE_ID_ALIASES = {
   "league-epl": "league-premier-league",
   "league-laliga": "league-la-liga",
@@ -1429,52 +2826,62 @@ var LEAGUE_ID_ALIASES = {
 function resolveLeagueId(id) {
   return LEAGUE_ID_ALIASES[id] || id;
 }
-leaguesRouter.get("/:id", (req, res) => {
-  const leagueId = resolveLeagueId(req.params.id);
-  const row = queryGet("SELECT * FROM leagues WHERE id = ?", [leagueId]);
-  if (!row) {
-    res.status(404).json({ error: "League not found" });
-    return;
+leaguesRouter.get("/", async (req, res) => {
+  try {
+    const leagues = await getAllLeaguesFirestore();
+    res.json({ leagues });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch leagues", message: err.message });
   }
-  const league = {
-    id: row.id,
-    name: row.name,
-    country: row.country,
-    tier: row.tier,
-    logoUrl: row.logo_url,
-    createdAt: row.created_at
-  };
-  res.json({ league });
 });
-leaguesRouter.get("/:id/clubs", (req, res) => {
+leaguesRouter.get("/:id", async (req, res) => {
+  try {
+    const leagueId = resolveLeagueId(req.params.id);
+    const leagues = await getAllLeaguesFirestore();
+    const league = leagues.find((l) => l.id === leagueId);
+    if (!league) {
+      res.status(404).json({ error: "League not found" });
+      return;
+    }
+    res.json({ league });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch league", message: err.message });
+  }
+});
+leaguesRouter.get("/:id/clubs", async (req, res) => {
   const seasonId = req.query.seasonId || "season-2026-27";
   const leagueId = resolveLeagueId(req.params.id);
-  const clubs = getClubsByLeague(leagueId, seasonId);
-  console.log(`[LEAGUE CLUBS]`);
-  console.log(`season=${seasonId}`);
-  console.log(`league=${leagueId}`);
-  console.log(`count=${clubs.length}`);
-  res.json({ clubs });
+  const currentUserId = req.user?.id;
+  try {
+    const clubs = await getClubsByLeagueFirestore(leagueId, seasonId, currentUserId);
+    res.json({ clubs });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch league clubs", message: err.message });
+  }
 });
 
 // src/server/routes/clubs.routes.ts
 import { Router as Router5 } from "express";
 var clubsRouter = Router5();
-clubsRouter.get("/:id", (req, res) => {
+clubsRouter.get("/:id", async (req, res) => {
   const seasonId = req.query.seasonId || "season-2026-27";
-  const club = getClubById(req.params.id, seasonId);
-  if (!club) {
-    res.status(404).json({ error: "Club not found" });
-    return;
+  try {
+    const club = await getClubByIdFirestore(req.params.id, seasonId);
+    if (!club) {
+      res.status(404).json({ error: "Club not found" });
+      return;
+    }
+    res.json({ club });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch club", message: err.message });
   }
-  res.json({ club });
 });
-clubsRouter.post("/:id/claim", requireAuth, (req, res) => {
+clubsRouter.post("/:id/claim", requireAuth, async (req, res) => {
   const seasonId = req.body.seasonId || "season-2026-27";
   const userId = req.user.id;
   const clubId = req.params.id;
   try {
-    const result = claimClubAtomic(userId, clubId, seasonId);
+    const result = await claimClubAtomicFirestore(userId, clubId, seasonId);
     res.json({
       success: true,
       message: `Successfully claimed ${result.club.name}!`,
@@ -1483,310 +2890,254 @@ clubsRouter.post("/:id/claim", requireAuth, (req, res) => {
   } catch (err) {
     if (err instanceof ClubConflictError) {
       res.status(409).json({
-        error: "Conflict",
+        error: err.code || "CLUB_CONFLICT",
         message: err.message
       });
       return;
     }
     if (err instanceof ClubNotFoundError) {
       res.status(404).json({
-        error: "Not Found",
+        error: "CLUB_NOT_FOUND",
         message: err.message
       });
       return;
     }
-    console.error("Error claiming club:", err);
-    res.status(500).json({ error: "Internal Server Error", message: "Failed to claim club." });
+    console.error("Error claiming club in Firestore:", err);
+    res.status(500).json({ error: "Internal Server Error", message: err.message || "Failed to claim club." });
   }
 });
 
 // src/server/routes/competitions.routes.ts
 import { Router as Router6 } from "express";
-
-// src/server/tournament/standingsEngine.ts
-function calculateCompetitionStandings(competitionId) {
-  const comp = queryGet(
-    "SELECT season_id, format_config_json FROM competitions WHERE id = ?",
-    [competitionId]
-  );
-  const seasonId = comp?.season_id || "season-2026-27";
-  let formatConfig = {};
-  if (comp?.format_config_json) {
-    try {
-      formatConfig = JSON.parse(comp.format_config_json);
-    } catch {
-      formatConfig = {};
+var competitionsRouter = Router6();
+competitionsRouter.get("/", async (req, res) => {
+  const seasonId = req.query.seasonId || "season-2026-27";
+  try {
+    const competitions = await getAllCompetitionsFirestore(seasonId);
+    res.json({ competitions });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch competitions", message: err.message });
+  }
+});
+competitionsRouter.get("/:id", async (req, res) => {
+  try {
+    const competition = await getCompetitionByIdFirestore(req.params.id);
+    if (!competition) {
+      res.status(404).json({ error: "Competition not found" });
+      return;
     }
+    res.json({ competition });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch competition", message: err.message });
   }
-  const pointsForWin = formatConfig.pointsForWin ?? 3;
-  const pointsForDraw = formatConfig.pointsForDraw ?? 1;
-  const pointsForLoss = formatConfig.pointsForLoss ?? 0;
-  const tieBreakers = formatConfig.tieBreakers ?? ["points", "goalDifference", "goalsFor", "headToHead"];
-  const clubs = queryAll(
-    `SELECT c.id, c.name, c.short_name, c.logo_url, u.username as manager_username
-     FROM competition_participants cp
-     JOIN clubs c ON cp.club_id = c.id
-     LEFT JOIN club_memberships cm ON c.id = cm.club_id AND cm.season_id = ? AND cm.status = 'active'
-     LEFT JOIN users u ON cm.user_id = u.id
-     WHERE cp.competition_id = ?
-     ORDER BY c.name ASC`,
-    [seasonId, competitionId]
-  );
-  let clubList = clubs;
-  if (clubList.length === 0) {
-    clubList = queryAll(
-      `SELECT c.id, c.name, c.short_name, c.logo_url, u.username as manager_username
-       FROM competitions comp
-       JOIN season_league_clubs slc ON comp.league_id = slc.league_id AND comp.season_id = slc.season_id AND slc.is_active = 1
-       JOIN clubs c ON slc.club_id = c.id
-       LEFT JOIN club_memberships cm ON c.id = cm.club_id AND cm.season_id = comp.season_id AND cm.status = 'active'
-       LEFT JOIN users u ON cm.user_id = u.id
-       WHERE comp.id = ?
-       ORDER BY c.name ASC`,
-      [competitionId]
-    );
+});
+competitionsRouter.get("/:id/standings", async (req, res) => {
+  try {
+    const standings = await calculateCompetitionStandingsFirestore(req.params.id);
+    res.json({ standings });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to calculate standings", message: err.message });
   }
-  const confirmedFixtures = queryAll(
-    `SELECT id, matchday, home_club_id, away_club_id, home_score, away_score, result_confirmed_at
-     FROM fixtures
-     WHERE competition_id = ? AND status = 'CONFIRMED' AND home_score IS NOT NULL AND away_score IS NOT NULL
-     ORDER BY matchday ASC, result_confirmed_at ASC`,
-    [competitionId]
-  );
-  const statsMap = /* @__PURE__ */ new Map();
-  for (const c of clubList) {
-    statsMap.set(c.id, {
-      clubId: c.id,
-      clubName: c.name,
-      shortName: c.short_name,
-      logoUrl: c.logo_url,
-      managerUsername: c.manager_username || void 0,
-      played: 0,
-      won: 0,
-      drawn: 0,
-      lost: 0,
-      goalsFor: 0,
-      goalsAgainst: 0,
-      goalDifference: 0,
+});
+competitionsRouter.get("/:id/fixtures", async (req, res) => {
+  const matchday = req.query.matchday ? parseInt(req.query.matchday, 10) : void 0;
+  const status = req.query.status;
+  try {
+    const fixtures = await getFixturesFirestore({
+      competitionId: req.params.id,
+      matchday,
+      status
+    });
+    res.json({ fixtures });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch fixtures", message: err.message });
+  }
+});
+competitionsRouter.post("/:id/generate-fixtures", requireAdmin, async (req, res) => {
+  try {
+    const force = req.body?.force !== void 0 ? Boolean(req.body.force) : true;
+    const result = await generateCompetitionFixturesFirestore(req.params.id, { force });
+    res.json({
+      success: true,
+      competitionId: req.params.id,
+      fixturesGenerated: result.generated,
+      matchdays: result.matchdays,
+      message: `Persisted ${result.generated} fixtures in Firestore successfully across ${result.matchdays} matchdays.`
+    });
+  } catch (err) {
+    console.error("Fixture generation error:", err);
+    res.status(500).json({
+      error: "FIXTURE_PERSISTENCE_FAILED",
+      message: err.message || "Failed to generate and persist fixtures in Firestore."
+    });
+  }
+});
+competitionsRouter.post("/:id/reset-fixtures", requireAdmin, async (req, res) => {
+  try {
+    const result = await generateCompetitionFixturesFirestore(req.params.id, { force: true });
+    res.json({
+      success: true,
+      competitionId: req.params.id,
+      fixturesGenerated: result.generated,
+      matchdays: result.matchdays,
+      message: `Reset and persisted ${result.generated} fixtures in Firestore.`
+    });
+  } catch (err) {
+    res.status(500).json({
+      error: "FIXTURE_PERSISTENCE_FAILED",
+      message: err.message || "Failed to reset fixtures in Firestore."
+    });
+  }
+});
+
+// src/server/routes/fixtures.routes.ts
+import { Router as Router7 } from "express";
+import { z as z2 } from "zod";
+var fixturesRouter = Router7();
+var resultSubmissionSchema = z2.object({
+  homeScore: z2.number().int().min(0, "Home score must be >= 0"),
+  awayScore: z2.number().int().min(0, "Away score must be >= 0"),
+  proofUrl: z2.string().optional()
+});
+fixturesRouter.get("/:id", async (req, res) => {
+  const currentUserId = req.user?.id;
+  try {
+    const fixture = await getFixtureByIdFirestore(req.params.id, currentUserId);
+    if (!fixture) {
+      res.status(404).json({ error: "Fixture not found" });
+      return;
+    }
+    res.json({ fixture });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch fixture", message: err.message });
+  }
+});
+fixturesRouter.post("/:id/result", requireAuth, validateBody(resultSubmissionSchema), async (req, res) => {
+  const userId = req.user.id;
+  const fixtureId = req.params.id;
+  const { homeScore, awayScore, proofUrl } = req.body;
+  try {
+    const updatedFixture = await submitFixtureResultFirestore(userId, fixtureId, homeScore, awayScore, proofUrl);
+    res.json({
+      success: true,
+      message: updatedFixture.status === "CONFIRMED" ? "Match result confirmed!" : updatedFixture.status === "DISPUTED" ? "Scores differ! Match has been marked DISPUTED and sent to admin." : "Score submitted! Awaiting opponent confirmation.",
+      fixture: updatedFixture
+    });
+  } catch (err) {
+    res.status(400).json({ error: "Bad Request", message: err.message });
+  }
+});
+
+// src/server/routes/me.routes.ts
+import { Router as Router8 } from "express";
+var meRouter = Router8();
+meRouter.get("/", requireAuth, async (req, res) => {
+  const user = req.user;
+  const seasonId = req.query.seasonId || "season-2026-27";
+  try {
+    const currentClub = await getUserActiveClubFirestore(user.id, seasonId);
+    let stats = {
+      matchesPlayed: 0,
+      wins: 0,
+      draws: 0,
+      losses: 0,
+      goalsScored: 0,
+      goalsConceded: 0,
       points: 0,
-      form: []
+      trophies: 0,
+      leaguePosition: 0
+    };
+    if (currentClub) {
+      const db = getFirestoreDb();
+      const fixturesSnap = await db.collection(COLLECTIONS.FIXTURES).where("seasonId", "==", seasonId).where("status", "==", "CONFIRMED").get();
+      for (const doc of fixturesSnap.docs) {
+        const m = doc.data();
+        const isHome = m.homeClubId === currentClub.id;
+        const isAway = m.awayClubId === currentClub.id;
+        if (isHome || isAway) {
+          stats.matchesPlayed++;
+          const myScore = isHome ? m.homeScore ?? 0 : m.awayScore ?? 0;
+          const oppScore = isHome ? m.awayScore ?? 0 : m.homeScore ?? 0;
+          stats.goalsScored += myScore;
+          stats.goalsConceded += oppScore;
+          if (myScore > oppScore) {
+            stats.wins++;
+            stats.points += 3;
+          } else if (myScore === oppScore) {
+            stats.draws++;
+            stats.points += 1;
+          } else {
+            stats.losses++;
+          }
+        }
+      }
+    }
+    res.json({
+      authenticated: true,
+      user,
+      currentClub,
+      stats
     });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch user profile", message: err.message });
   }
-  for (const fix of confirmedFixtures) {
-    const home = statsMap.get(fix.home_club_id);
-    const away = statsMap.get(fix.away_club_id);
-    if (home) {
-      home.played += 1;
-      home.goalsFor += fix.home_score;
-      home.goalsAgainst += fix.away_score;
-      if (fix.home_score > fix.away_score) {
-        home.won += 1;
-        home.points += pointsForWin;
-        home.form.push("W");
-      } else if (fix.home_score === fix.away_score) {
-        home.drawn += 1;
-        home.points += pointsForDraw;
-        home.form.push("D");
-      } else {
-        home.lost += 1;
-        home.points += pointsForLoss;
-        home.form.push("L");
-      }
-    }
-    if (away) {
-      away.played += 1;
-      away.goalsFor += fix.away_score;
-      away.goalsAgainst += fix.home_score;
-      if (fix.away_score > fix.home_score) {
-        away.won += 1;
-        away.points += pointsForWin;
-        away.form.push("W");
-      } else if (fix.away_score === fix.home_score) {
-        away.drawn += 1;
-        away.points += pointsForDraw;
-        away.form.push("D");
-      } else {
-        away.lost += 1;
-        away.points += pointsForLoss;
-        away.form.push("L");
-      }
-    }
+});
+meRouter.get("/matches", requireAuth, async (req, res) => {
+  const userId = req.user.id;
+  const seasonId = req.query.seasonId || "season-2026-27";
+  const status = req.query.status;
+  try {
+    const fixtures = await getFixturesFirestore({
+      userId,
+      seasonId,
+      status
+    });
+    res.json({ fixtures });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch user matches", message: err.message });
   }
-  const rows = Array.from(statsMap.values()).map((row) => {
-    row.goalDifference = row.goalsFor - row.goalsAgainst;
-    row.form = row.form.slice(-5);
-    return row;
-  });
-  function getH2HPoints(clubAId, clubBId) {
-    let pts = 0;
-    for (const f of confirmedFixtures) {
-      if (f.home_club_id === clubAId && f.away_club_id === clubBId) {
-        if (f.home_score > f.away_score) pts += pointsForWin;
-        else if (f.home_score === f.away_score) pts += pointsForDraw;
-      } else if (f.home_club_id === clubBId && f.away_club_id === clubAId) {
-        if (f.away_score > f.home_score) pts += pointsForWin;
-        else if (f.away_score === f.home_score) pts += pointsForDraw;
-      }
-    }
-    return pts;
+});
+meRouter.get("/notifications", requireAuth, async (req, res) => {
+  const userId = req.user.id;
+  try {
+    const db = getFirestoreDb();
+    const snap = await db.collection(COLLECTIONS.NOTIFICATIONS).where("userId", "==", userId).orderBy("createdAt", "desc").limit(30).get();
+    const notifications = snap.docs.map((d) => {
+      const data = d.data();
+      return {
+        id: d.id,
+        userId: data.userId,
+        type: data.type,
+        title: data.title,
+        message: data.message,
+        isRead: data.isRead,
+        createdAt: data.createdAt
+      };
+    });
+    res.json({ notifications });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch notifications", message: err.message });
   }
-  rows.sort((a, b) => {
-    if (b.points !== a.points) {
-      return b.points - a.points;
+});
+meRouter.post("/notifications/read", requireAuth, async (req, res) => {
+  const userId = req.user.id;
+  try {
+    const db = getFirestoreDb();
+    const snap = await db.collection(COLLECTIONS.NOTIFICATIONS).where("userId", "==", userId).where("isRead", "==", false).get();
+    if (!snap.empty) {
+      const batch = db.batch();
+      snap.docs.forEach((d) => batch.update(d.ref, { isRead: true }));
+      await batch.commit();
     }
-    for (const criteria of tieBreakers) {
-      if (criteria === "goalDifference") {
-        if (b.goalDifference !== a.goalDifference) {
-          return b.goalDifference - a.goalDifference;
-        }
-      } else if (criteria === "goalsFor") {
-        if (b.goalsFor !== a.goalsFor) {
-          return b.goalsFor - a.goalsFor;
-        }
-      } else if (criteria === "headToHead") {
-        const h2hA = getH2HPoints(a.clubId, b.clubId);
-        const h2hB = getH2HPoints(b.clubId, a.clubId);
-        if (h2hB !== h2hA) {
-          return h2hB - h2hA;
-        }
-      }
-    }
-    return a.clubName.localeCompare(b.clubName);
-  });
-  return rows.map((r, index) => ({
-    position: index + 1,
-    clubId: r.clubId,
-    clubName: r.clubName,
-    shortName: r.shortName,
-    logoUrl: r.logoUrl,
-    managerUsername: r.managerUsername,
-    played: r.played,
-    won: r.won,
-    drawn: r.drawn,
-    lost: r.lost,
-    goalsFor: r.goalsFor,
-    goalsAgainst: r.goalsAgainst,
-    goalDifference: r.goalDifference,
-    points: r.points,
-    form: r.form
-  }));
-}
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to update notifications", message: err.message });
+  }
+});
 
-// src/server/tournament/fixtureEngine.ts
-function generateRoundRobinSchedule(clubIds, options = {}) {
-  const homeAndAway = options.homeAndAway !== false;
-  const list = [...clubIds];
-  let hasBye = false;
-  if (list.length % 2 !== 0) {
-    list.push("__BYE__");
-    hasBye = true;
-  }
-  const n = list.length;
-  const numRounds = n - 1;
-  const matchesPerRound = n / 2;
-  const firstLegMatchups = [];
-  const rotatingTeams = list.slice(1);
-  for (let round = 0; round < numRounds; round++) {
-    const matchday = round + 1;
-    const roundTeams = [list[0], ...rotatingTeams];
-    for (let match = 0; match < matchesPerRound; match++) {
-      let teamA = roundTeams[match];
-      let teamB = roundTeams[n - 1 - match];
-      if (teamA === "__BYE__" || teamB === "__BYE__") {
-        continue;
-      }
-      let home = teamA;
-      let away = teamB;
-      if (match === 0) {
-        if (round % 2 === 1) {
-          home = teamB;
-          away = teamA;
-        }
-      } else {
-        if ((round + match) % 2 === 1) {
-          home = teamB;
-          away = teamA;
-        }
-      }
-      firstLegMatchups.push({
-        matchday,
-        homeClubId: home,
-        awayClubId: away
-      });
-    }
-    const last = rotatingTeams.pop();
-    rotatingTeams.unshift(last);
-  }
-  if (!homeAndAway) {
-    return firstLegMatchups;
-  }
-  const secondLegMatchups = [];
-  for (const match of firstLegMatchups) {
-    secondLegMatchups.push({
-      matchday: match.matchday + numRounds,
-      homeClubId: match.awayClubId,
-      // Invert home/away
-      awayClubId: match.homeClubId
-    });
-  }
-  return [...firstLegMatchups, ...secondLegMatchups];
-}
-function generateUCL24LeaguePhaseSchedule(clubIds, options = {}) {
-  if (clubIds.length !== 24) {
-    throw new Error(`UCL 24-team league phase requires exactly 24 clubs (received ${clubIds.length}).`);
-  }
-  const n = 24;
-  const numRounds = 8;
-  const roundPairs = [];
-  for (let r = 0; r < numRounds; r++) {
-    const pairs = [];
-    pairs.push([23, r]);
-    for (let i = 1; i <= 11; i++) {
-      const u = (r + i) % 23;
-      const v = (r - i + 23) % 23;
-      pairs.push([u, v]);
-    }
-    roundPairs.push(pairs);
-  }
-  const homeCount = new Array(n).fill(0);
-  const matchups = [];
-  for (let r = 0; r < numRounds; r++) {
-    const pairs = roundPairs[r];
-    for (let m = 0; m < pairs.length; m++) {
-      const [u, v] = pairs[m];
-      let uIsHome;
-      if (homeCount[u] >= 4 && homeCount[v] < 4) {
-        uIsHome = false;
-      } else if (homeCount[v] >= 4 && homeCount[u] < 4) {
-        uIsHome = true;
-      } else if (homeCount[u] < homeCount[v]) {
-        uIsHome = true;
-      } else if (homeCount[v] < homeCount[u]) {
-        uIsHome = false;
-      } else {
-        uIsHome = (r + m) % 2 === 0;
-      }
-      const homeIdx = uIsHome ? u : v;
-      const awayIdx = uIsHome ? v : u;
-      homeCount[homeIdx]++;
-      matchups.push({
-        matchday: r + 1,
-        homeClubId: clubIds[homeIdx],
-        awayClubId: clubIds[awayIdx]
-      });
-    }
-  }
-  return matchups;
-}
-function calculateMatchdayDate(seasonStartDate, matchday, daysInterval = 7) {
-  const base = new Date(seasonStartDate);
-  if (isNaN(base.getTime())) {
-    return (/* @__PURE__ */ new Date()).toISOString();
-  }
-  const matchDate = new Date(base.getTime() + (matchday - 1) * daysInterval * 24 * 60 * 60 * 1e3);
-  matchDate.setUTCHours(15, 0, 0, 0);
-  return matchDate.toISOString();
-}
+// src/server/routes/admin.routes.ts
+import { Router as Router9 } from "express";
+import { z as z3 } from "zod";
 
 // src/server/services/notificationService.ts
 function createNotification(userId, type, title, message, data) {
@@ -1798,24 +3149,290 @@ function createNotification(userId, type, title, message, data) {
     [id, userId, type, title, message, dataJson, now]
   );
 }
-function getUserNotifications(userId, limit = 20) {
-  const rows = queryAll(
-    "SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
-    [userId, limit]
-  );
-  return rows.map((r) => ({
-    id: r.id,
-    userId: r.user_id,
-    type: r.type,
-    title: r.title,
-    message: r.message,
-    data: r.data_json ? JSON.parse(r.data_json) : void 0,
-    isRead: Boolean(r.is_read),
-    createdAt: r.created_at
-  }));
+
+// src/server/tournament/knockoutEngine.ts
+function generateKnockoutBracket(competitionId, options = {}) {
+  return dbTransaction(() => {
+    const comp = queryGet("SELECT * FROM competitions WHERE id = ?", [competitionId]);
+    if (!comp) {
+      throw new Error(`Competition '${competitionId}' not found.`);
+    }
+    const existingFixtures = queryGet(
+      "SELECT COUNT(*) as cnt FROM fixtures WHERE competition_id = ?",
+      [competitionId]
+    );
+    if (existingFixtures && existingFixtures.cnt > 0) {
+      if (options.force) {
+        queryRun(
+          "DELETE FROM result_submissions WHERE fixture_id IN (SELECT id FROM fixtures WHERE competition_id = ?)",
+          [competitionId]
+        );
+        queryRun("DELETE FROM fixtures WHERE competition_id = ?", [competitionId]);
+      } else {
+        return { generated: existingFixtures.cnt, rounds: 0 };
+      }
+    }
+    let clubIds = options.participants;
+    if (!clubIds || clubIds.length === 0) {
+      const parts = queryAll(
+        "SELECT club_id FROM competition_participants WHERE competition_id = ? ORDER BY seed_number ASC",
+        [competitionId]
+      );
+      clubIds = parts.map((p) => p.club_id);
+    }
+    if (clubIds.length === 0 && comp.league_id) {
+      const leagueClubs = queryAll(
+        `SELECT slc.club_id 
+         FROM season_league_clubs slc 
+         JOIN clubs c ON slc.club_id = c.id
+         WHERE slc.league_id = ? AND slc.season_id = ? AND slc.is_active = 1 
+         ORDER BY c.name ASC`,
+        [comp.league_id, comp.season_id]
+      );
+      clubIds = leagueClubs.map((c) => c.club_id);
+    }
+    if (clubIds.length < 2) {
+      throw new Error(`Cannot generate knockout bracket with fewer than 2 teams (found ${clubIds.length}).`);
+    }
+    let bracketSize = 2;
+    while (bracketSize < clubIds.length) {
+      bracketSize *= 2;
+    }
+    const totalRounds = Math.log2(bracketSize);
+    const getRoundName = (roundNum) => {
+      const remainingTeams = Math.pow(2, totalRounds - roundNum + 1);
+      if (remainingTeams === 2) return "Final";
+      if (remainingTeams === 4) return "Semi-Finals";
+      if (remainingTeams === 8) return "Quarter-Finals";
+      if (remainingTeams === 16) return "Round of 16";
+      if (remainingTeams === 32) return "Round of 32";
+      return `Round of ${remainingTeams}`;
+    };
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    let totalGenerated = 0;
+    const firstRoundMatches = bracketSize / 2;
+    for (let i = 0; i < firstRoundMatches; i++) {
+      const homeClubId = clubIds[i * 2] || null;
+      const awayClubId = clubIds[i * 2 + 1] || null;
+      const fixtureId = `fix-${competitionId}-r1-m${i}`;
+      const roundName = getRoundName(1);
+      queryRun(
+        `INSERT INTO fixtures (
+          id, season_id, competition_id, matchday, round_name,
+          home_club_id, away_club_id, scheduled_at, status,
+          home_score, away_score, winner_club_id, result_confirmed_at,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, 1, ?, ?, ?, ?, 'SCHEDULED', NULL, NULL, NULL, NULL, ?, ?)`,
+        [
+          fixtureId,
+          comp.season_id,
+          competitionId,
+          roundName,
+          homeClubId || "TBD",
+          awayClubId || "TBD",
+          now,
+          now,
+          now
+        ]
+      );
+      totalGenerated++;
+    }
+    for (let round = 2; round <= totalRounds; round++) {
+      const matchesInRound = Math.pow(2, totalRounds - round);
+      const roundName = getRoundName(round);
+      for (let m = 0; m < matchesInRound; m++) {
+        const fixtureId = `fix-${competitionId}-r${round}-m${m}`;
+        queryRun(
+          `INSERT INTO fixtures (
+            id, season_id, competition_id, matchday, round_name,
+            home_club_id, away_club_id, scheduled_at, status,
+            home_score, away_score, winner_club_id, result_confirmed_at,
+            created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, 'TBD', 'TBD', ?, 'SCHEDULED', NULL, NULL, NULL, NULL, ?, ?)`,
+          [
+            fixtureId,
+            comp.season_id,
+            competitionId,
+            round,
+            roundName,
+            now,
+            now,
+            now
+          ]
+        );
+        totalGenerated++;
+      }
+    }
+    queryRun('UPDATE competitions SET status = "active" WHERE id = ?', [competitionId]);
+    return { generated: totalGenerated, rounds: totalRounds };
+  });
 }
-function markNotificationsAsRead(userId) {
-  queryRun("UPDATE notifications SET is_read = 1 WHERE user_id = ?", [userId]);
+function advanceKnockoutWinner(fixtureId) {
+  return dbTransaction(() => {
+    const fixture = queryGet("SELECT * FROM fixtures WHERE id = ?", [fixtureId]);
+    if (!fixture || fixture.status !== "CONFIRMED" || !fixture.winner_club_id) {
+      return { advanced: false };
+    }
+    const comp = queryGet("SELECT * FROM competitions WHERE id = ?", [fixture.competition_id]);
+    if (!comp || comp.type !== "KNOCKOUT" && comp.type !== "SUPER_CUP" && comp.type !== "EUROPEAN_KNOCKOUT") {
+      return { advanced: false };
+    }
+    const match = fixture.id.match(/-r(\d+)-m(\d+)$/);
+    if (!match) {
+      return { advanced: false };
+    }
+    const currentRound = parseInt(match[1], 10);
+    const currentMatchIndex = parseInt(match[2], 10);
+    const nextRound = currentRound + 1;
+    const nextMatchIndex = Math.floor(currentMatchIndex / 2);
+    const isHomeSlot = currentMatchIndex % 2 === 0;
+    const nextFixtureId = `fix-${comp.id}-r${nextRound}-m${nextMatchIndex}`;
+    const nextFixture = queryGet("SELECT * FROM fixtures WHERE id = ?", [nextFixtureId]);
+    if (!nextFixture) {
+      const championClub = queryGet("SELECT * FROM clubs WHERE id = ?", [fixture.winner_club_id]);
+      if (championClub) {
+        createAuditLog(
+          "system",
+          "TOURNAMENT_CHAMPION_CROWNED",
+          "competitions",
+          comp.id,
+          null,
+          { championClubId: championClub.id, championName: championClub.name }
+        );
+        const owner = queryGet(
+          'SELECT user_id FROM club_memberships WHERE club_id = ? AND season_id = ? AND status = "active"',
+          [championClub.id, comp.season_id]
+        );
+        if (owner) {
+          createNotification(
+            owner.user_id,
+            "TOURNAMENT_CHAMPION",
+            `\u{1F3C6} Champion of ${comp.name}!`,
+            `Congratulations! ${championClub.name} has won the ${comp.name} title!`
+          );
+        }
+      }
+      return { advanced: true, winnerClubId: fixture.winner_club_id };
+    }
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const updateColumn = isHomeSlot ? "home_club_id" : "away_club_id";
+    queryRun(
+      `UPDATE fixtures SET ${updateColumn} = ?, updated_at = ? WHERE id = ?`,
+      [fixture.winner_club_id, now, nextFixtureId]
+    );
+    const updatedNext = queryGet("SELECT * FROM fixtures WHERE id = ?", [nextFixtureId]);
+    if (updatedNext.home_club_id !== "TBD" && updatedNext.away_club_id !== "TBD") {
+      const homeOwner = queryGet(
+        'SELECT user_id FROM club_memberships WHERE club_id = ? AND season_id = ? AND status = "active"',
+        [updatedNext.home_club_id, comp.season_id]
+      );
+      const awayOwner = queryGet(
+        'SELECT user_id FROM club_memberships WHERE club_id = ? AND season_id = ? AND status = "active"',
+        [updatedNext.away_club_id, comp.season_id]
+      );
+      const notifMsg = `Your next match in ${comp.name} (${updatedNext.round_name}) is scheduled!`;
+      if (homeOwner) createNotification(homeOwner.user_id, "NEXT_ROUND_MATCH", `Next Round in ${comp.name}`, notifMsg);
+      if (awayOwner) createNotification(awayOwner.user_id, "NEXT_ROUND_MATCH", `Next Round in ${comp.name}`, notifMsg);
+    }
+    createAuditLog(
+      "system",
+      "KNOCKOUT_ADVANCE",
+      "fixtures",
+      nextFixtureId,
+      { previousFixtureId: fixture.id },
+      { round: nextRound, slot: isHomeSlot ? "HOME" : "AWAY", advancedClubId: fixture.winner_club_id }
+    );
+    return { advanced: true, targetFixtureId: nextFixtureId, winnerClubId: fixture.winner_club_id };
+  });
+}
+
+// src/server/services/fixtureService.ts
+function getFixtureById(fixtureId, currentUserId) {
+  const row = queryGet(
+    `SELECT f.*,
+            comp.name as competition_name,
+            hc.name as home_name, hc.short_name as home_short, hc.logo_url as home_logo,
+            ac.name as away_name, ac.short_name as away_short, ac.logo_url as away_logo,
+            hcm.user_id as home_owner_id,
+            acm.user_id as away_owner_id
+     FROM fixtures f
+     JOIN competitions comp ON f.competition_id = comp.id
+     LEFT JOIN clubs hc ON f.home_club_id = hc.id
+     LEFT JOIN clubs ac ON f.away_club_id = ac.id
+     LEFT JOIN club_memberships hcm ON hc.id = hcm.club_id AND hcm.season_id = f.season_id AND hcm.status = 'active'
+     LEFT JOIN club_memberships acm ON ac.id = acm.club_id AND acm.season_id = f.season_id AND acm.status = 'active'
+     WHERE f.id = ?`,
+    [fixtureId]
+  );
+  if (!row) return null;
+  const submissions = queryAll(
+    "SELECT * FROM result_submissions WHERE fixture_id = ?",
+    [fixtureId]
+  );
+  let userSub = null;
+  let opponentSub = null;
+  for (const s of submissions) {
+    const formatted = {
+      id: s.id,
+      fixtureId: s.fixture_id,
+      submittedByUserId: s.submitted_by_user_id,
+      clubId: s.club_id,
+      homeScore: s.home_score,
+      awayScore: s.away_score,
+      proofUrl: s.proof_url || void 0,
+      createdAt: s.created_at
+    };
+    if (currentUserId && s.submitted_by_user_id === currentUserId) {
+      userSub = formatted;
+    } else {
+      opponentSub = formatted;
+    }
+  }
+  const isHomeTbd = !row.home_club_id || row.home_club_id === "TBD";
+  const isAwayTbd = !row.away_club_id || row.away_club_id === "TBD";
+  return {
+    id: row.id,
+    seasonId: row.season_id,
+    competitionId: row.competition_id,
+    competitionName: row.competition_name,
+    matchday: row.matchday,
+    roundName: row.round_name,
+    homeClubId: row.home_club_id,
+    awayClubId: row.away_club_id,
+    homeClub: {
+      id: row.home_club_id || "TBD",
+      name: row.home_name || (isHomeTbd ? "TBD" : row.home_club_id),
+      shortName: row.home_short || (isHomeTbd ? "TBD" : row.home_club_id),
+      country: "",
+      leagueId: "",
+      logoUrl: row.home_logo || "",
+      active: true,
+      createdAt: ""
+    },
+    awayClub: {
+      id: row.away_club_id || "TBD",
+      name: row.away_name || (isAwayTbd ? "TBD" : row.away_club_id),
+      shortName: row.away_short || (isAwayTbd ? "TBD" : row.away_club_id),
+      country: "",
+      leagueId: "",
+      logoUrl: row.away_logo || "",
+      active: true,
+      createdAt: ""
+    },
+    homeOwnerId: row.home_owner_id || void 0,
+    awayOwnerId: row.away_owner_id || void 0,
+    scheduledAt: row.scheduled_at,
+    status: row.status,
+    homeScore: row.home_score,
+    awayScore: row.away_score,
+    winnerClubId: row.winner_club_id,
+    resultConfirmedAt: row.result_confirmed_at,
+    submissionsCount: submissions.length,
+    userSubmission: userSub,
+    opponentSubmission: opponentSub,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
 }
 
 // src/server/services/adminService.ts
@@ -2035,465 +3652,173 @@ function getAuditLogs(limit = 50) {
   }));
 }
 
-// src/server/tournament/knockoutEngine.ts
-function generateKnockoutBracket(competitionId, options = {}) {
-  return dbTransaction(() => {
-    const comp = queryGet("SELECT * FROM competitions WHERE id = ?", [competitionId]);
-    if (!comp) {
-      throw new Error(`Competition '${competitionId}' not found.`);
+// src/server/tournament/standingsEngine.ts
+function calculateCompetitionStandings(competitionId) {
+  const comp = queryGet(
+    "SELECT season_id, format_config_json FROM competitions WHERE id = ?",
+    [competitionId]
+  );
+  const seasonId = comp?.season_id || "season-2026-27";
+  let formatConfig = {};
+  if (comp?.format_config_json) {
+    try {
+      formatConfig = JSON.parse(comp.format_config_json);
+    } catch {
+      formatConfig = {};
     }
-    const existingFixtures = queryGet(
-      "SELECT COUNT(*) as cnt FROM fixtures WHERE competition_id = ?",
+  }
+  const pointsForWin = formatConfig.pointsForWin ?? 3;
+  const pointsForDraw = formatConfig.pointsForDraw ?? 1;
+  const pointsForLoss = formatConfig.pointsForLoss ?? 0;
+  const tieBreakers = formatConfig.tieBreakers ?? ["points", "goalDifference", "goalsFor", "headToHead"];
+  const clubs = queryAll(
+    `SELECT c.id, c.name, c.short_name, c.logo_url, u.username as manager_username
+     FROM competition_participants cp
+     JOIN clubs c ON cp.club_id = c.id
+     LEFT JOIN club_memberships cm ON c.id = cm.club_id AND cm.season_id = ? AND cm.status = 'active'
+     LEFT JOIN users u ON cm.user_id = u.id
+     WHERE cp.competition_id = ?
+     ORDER BY c.name ASC`,
+    [seasonId, competitionId]
+  );
+  let clubList = clubs;
+  if (clubList.length === 0) {
+    clubList = queryAll(
+      `SELECT c.id, c.name, c.short_name, c.logo_url, u.username as manager_username
+       FROM competitions comp
+       JOIN season_league_clubs slc ON comp.league_id = slc.league_id AND comp.season_id = slc.season_id AND slc.is_active = 1
+       JOIN clubs c ON slc.club_id = c.id
+       LEFT JOIN club_memberships cm ON c.id = cm.club_id AND cm.season_id = comp.season_id AND cm.status = 'active'
+       LEFT JOIN users u ON cm.user_id = u.id
+       WHERE comp.id = ?
+       ORDER BY c.name ASC`,
       [competitionId]
     );
-    if (existingFixtures && existingFixtures.cnt > 0) {
-      return { generated: existingFixtures.cnt, rounds: 0 };
-    }
-    let clubIds = options.participants;
-    if (!clubIds || clubIds.length === 0) {
-      const parts = queryAll(
-        "SELECT club_id FROM competition_participants WHERE competition_id = ? ORDER BY seed_number ASC",
-        [competitionId]
-      );
-      clubIds = parts.map((p) => p.club_id);
-    }
-    if (clubIds.length === 0 && comp.league_id) {
-      const leagueClubs = queryAll(
-        `SELECT slc.club_id 
-         FROM season_league_clubs slc 
-         JOIN clubs c ON slc.club_id = c.id
-         WHERE slc.league_id = ? AND slc.season_id = ? AND slc.is_active = 1 
-         ORDER BY c.name ASC`,
-        [comp.league_id, comp.season_id]
-      );
-      clubIds = leagueClubs.map((c) => c.club_id);
-    }
-    if (clubIds.length < 2) {
-      throw new Error(`Cannot generate knockout bracket with fewer than 2 teams (found ${clubIds.length}).`);
-    }
-    let bracketSize = 2;
-    while (bracketSize < clubIds.length) {
-      bracketSize *= 2;
-    }
-    const totalRounds = Math.log2(bracketSize);
-    const getRoundName = (roundNum) => {
-      const remainingTeams = Math.pow(2, totalRounds - roundNum + 1);
-      if (remainingTeams === 2) return "Final";
-      if (remainingTeams === 4) return "Semi-Finals";
-      if (remainingTeams === 8) return "Quarter-Finals";
-      if (remainingTeams === 16) return "Round of 16";
-      if (remainingTeams === 32) return "Round of 32";
-      return `Round of ${remainingTeams}`;
-    };
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    let totalGenerated = 0;
-    const firstRoundMatches = bracketSize / 2;
-    for (let i = 0; i < firstRoundMatches; i++) {
-      const homeClubId = clubIds[i * 2] || null;
-      const awayClubId = clubIds[i * 2 + 1] || null;
-      const fixtureId = `fix-${competitionId}-r1-m${i}`;
-      const roundName = getRoundName(1);
-      queryRun(
-        `INSERT INTO fixtures (
-          id, season_id, competition_id, matchday, round_name,
-          home_club_id, away_club_id, scheduled_at, status,
-          home_score, away_score, winner_club_id, result_confirmed_at,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, 1, ?, ?, ?, ?, 'SCHEDULED', NULL, NULL, NULL, NULL, ?, ?)`,
-        [
-          fixtureId,
-          comp.season_id,
-          competitionId,
-          roundName,
-          homeClubId || "TBD",
-          awayClubId || "TBD",
-          now,
-          now,
-          now
-        ]
-      );
-      totalGenerated++;
-    }
-    for (let round = 2; round <= totalRounds; round++) {
-      const matchesInRound = Math.pow(2, totalRounds - round);
-      const roundName = getRoundName(round);
-      for (let m = 0; m < matchesInRound; m++) {
-        const fixtureId = `fix-${competitionId}-r${round}-m${m}`;
-        queryRun(
-          `INSERT INTO fixtures (
-            id, season_id, competition_id, matchday, round_name,
-            home_club_id, away_club_id, scheduled_at, status,
-            home_score, away_score, winner_club_id, result_confirmed_at,
-            created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, 'TBD', 'TBD', ?, 'SCHEDULED', NULL, NULL, NULL, NULL, ?, ?)`,
-          [
-            fixtureId,
-            comp.season_id,
-            competitionId,
-            round,
-            roundName,
-            now,
-            now,
-            now
-          ]
-        );
-        totalGenerated++;
+  }
+  const confirmedFixtures = queryAll(
+    `SELECT id, matchday, home_club_id, away_club_id, home_score, away_score, result_confirmed_at
+     FROM fixtures
+     WHERE competition_id = ? AND status = 'CONFIRMED' AND home_score IS NOT NULL AND away_score IS NOT NULL
+     ORDER BY matchday ASC, result_confirmed_at ASC`,
+    [competitionId]
+  );
+  const statsMap = /* @__PURE__ */ new Map();
+  for (const c of clubList) {
+    statsMap.set(c.id, {
+      clubId: c.id,
+      clubName: c.name,
+      shortName: c.short_name,
+      logoUrl: c.logo_url,
+      managerUsername: c.manager_username || void 0,
+      played: 0,
+      won: 0,
+      drawn: 0,
+      lost: 0,
+      goalsFor: 0,
+      goalsAgainst: 0,
+      goalDifference: 0,
+      points: 0,
+      form: []
+    });
+  }
+  for (const fix of confirmedFixtures) {
+    const home = statsMap.get(fix.home_club_id);
+    const away = statsMap.get(fix.away_club_id);
+    if (home) {
+      home.played += 1;
+      home.goalsFor += fix.home_score;
+      home.goalsAgainst += fix.away_score;
+      if (fix.home_score > fix.away_score) {
+        home.won += 1;
+        home.points += pointsForWin;
+        home.form.push("W");
+      } else if (fix.home_score === fix.away_score) {
+        home.drawn += 1;
+        home.points += pointsForDraw;
+        home.form.push("D");
+      } else {
+        home.lost += 1;
+        home.points += pointsForLoss;
+        home.form.push("L");
       }
     }
-    queryRun('UPDATE competitions SET status = "active" WHERE id = ?', [competitionId]);
-    return { generated: totalGenerated, rounds: totalRounds };
+    if (away) {
+      away.played += 1;
+      away.goalsFor += fix.away_score;
+      away.goalsAgainst += fix.home_score;
+      if (fix.away_score > fix.home_score) {
+        away.won += 1;
+        away.points += pointsForWin;
+        away.form.push("W");
+      } else if (fix.away_score === fix.home_score) {
+        away.drawn += 1;
+        away.points += pointsForDraw;
+        away.form.push("D");
+      } else {
+        away.lost += 1;
+        away.points += pointsForLoss;
+        away.form.push("L");
+      }
+    }
+  }
+  const rows = Array.from(statsMap.values()).map((row) => {
+    row.goalDifference = row.goalsFor - row.goalsAgainst;
+    row.form = row.form.slice(-5);
+    return row;
   });
-}
-function advanceKnockoutWinner(fixtureId) {
-  return dbTransaction(() => {
-    const fixture = queryGet("SELECT * FROM fixtures WHERE id = ?", [fixtureId]);
-    if (!fixture || fixture.status !== "CONFIRMED" || !fixture.winner_club_id) {
-      return { advanced: false };
+  function getH2HPoints(clubAId, clubBId) {
+    let pts = 0;
+    for (const f of confirmedFixtures) {
+      if (f.home_club_id === clubAId && f.away_club_id === clubBId) {
+        if (f.home_score > f.away_score) pts += pointsForWin;
+        else if (f.home_score === f.away_score) pts += pointsForDraw;
+      } else if (f.home_club_id === clubBId && f.away_club_id === clubAId) {
+        if (f.away_score > f.home_score) pts += pointsForWin;
+        else if (f.away_score === f.home_score) pts += pointsForDraw;
+      }
     }
-    const comp = queryGet("SELECT * FROM competitions WHERE id = ?", [fixture.competition_id]);
-    if (!comp || comp.type !== "KNOCKOUT" && comp.type !== "SUPER_CUP" && comp.type !== "EUROPEAN_KNOCKOUT") {
-      return { advanced: false };
+    return pts;
+  }
+  rows.sort((a, b) => {
+    if (b.points !== a.points) {
+      return b.points - a.points;
     }
-    const match = fixture.id.match(/-r(\d+)-m(\d+)$/);
-    if (!match) {
-      return { advanced: false };
-    }
-    const currentRound = parseInt(match[1], 10);
-    const currentMatchIndex = parseInt(match[2], 10);
-    const nextRound = currentRound + 1;
-    const nextMatchIndex = Math.floor(currentMatchIndex / 2);
-    const isHomeSlot = currentMatchIndex % 2 === 0;
-    const nextFixtureId = `fix-${comp.id}-r${nextRound}-m${nextMatchIndex}`;
-    const nextFixture = queryGet("SELECT * FROM fixtures WHERE id = ?", [nextFixtureId]);
-    if (!nextFixture) {
-      const championClub = queryGet("SELECT * FROM clubs WHERE id = ?", [fixture.winner_club_id]);
-      if (championClub) {
-        createAuditLog(
-          "system",
-          "TOURNAMENT_CHAMPION_CROWNED",
-          "competitions",
-          comp.id,
-          null,
-          { championClubId: championClub.id, championName: championClub.name }
-        );
-        const owner = queryGet(
-          'SELECT user_id FROM club_memberships WHERE club_id = ? AND season_id = ? AND status = "active"',
-          [championClub.id, comp.season_id]
-        );
-        if (owner) {
-          createNotification(
-            owner.user_id,
-            "TOURNAMENT_CHAMPION",
-            `\u{1F3C6} Champion of ${comp.name}!`,
-            `Congratulations! ${championClub.name} has won the ${comp.name} title!`
-          );
+    for (const criteria of tieBreakers) {
+      if (criteria === "goalDifference") {
+        if (b.goalDifference !== a.goalDifference) {
+          return b.goalDifference - a.goalDifference;
+        }
+      } else if (criteria === "goalsFor") {
+        if (b.goalsFor !== a.goalsFor) {
+          return b.goalsFor - a.goalsFor;
+        }
+      } else if (criteria === "headToHead") {
+        const h2hA = getH2HPoints(a.clubId, b.clubId);
+        const h2hB = getH2HPoints(b.clubId, a.clubId);
+        if (h2hB !== h2hA) {
+          return h2hB - h2hA;
         }
       }
-      return { advanced: true, winnerClubId: fixture.winner_club_id };
     }
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    const updateColumn = isHomeSlot ? "home_club_id" : "away_club_id";
-    queryRun(
-      `UPDATE fixtures SET ${updateColumn} = ?, updated_at = ? WHERE id = ?`,
-      [fixture.winner_club_id, now, nextFixtureId]
-    );
-    const updatedNext = queryGet("SELECT * FROM fixtures WHERE id = ?", [nextFixtureId]);
-    if (updatedNext.home_club_id !== "TBD" && updatedNext.away_club_id !== "TBD") {
-      const homeOwner = queryGet(
-        'SELECT user_id FROM club_memberships WHERE club_id = ? AND season_id = ? AND status = "active"',
-        [updatedNext.home_club_id, comp.season_id]
-      );
-      const awayOwner = queryGet(
-        'SELECT user_id FROM club_memberships WHERE club_id = ? AND season_id = ? AND status = "active"',
-        [updatedNext.away_club_id, comp.season_id]
-      );
-      const notifMsg = `Your next match in ${comp.name} (${updatedNext.round_name}) is scheduled!`;
-      if (homeOwner) createNotification(homeOwner.user_id, "NEXT_ROUND_MATCH", `Next Round in ${comp.name}`, notifMsg);
-      if (awayOwner) createNotification(awayOwner.user_id, "NEXT_ROUND_MATCH", `Next Round in ${comp.name}`, notifMsg);
-    }
-    createAuditLog(
-      "system",
-      "KNOCKOUT_ADVANCE",
-      "fixtures",
-      nextFixtureId,
-      { previousFixtureId: fixture.id },
-      { round: nextRound, slot: isHomeSlot ? "HOME" : "AWAY", advancedClubId: fixture.winner_club_id }
-    );
-    return { advanced: true, targetFixtureId: nextFixtureId, winnerClubId: fixture.winner_club_id };
+    return a.clubName.localeCompare(b.clubName);
   });
-}
-
-// src/server/services/fixtureService.ts
-function generateCompetitionFixtures(competitionId) {
-  return dbTransaction(() => {
-    const comp = queryGet("SELECT * FROM competitions WHERE id = ?", [competitionId]);
-    if (!comp) {
-      throw new Error(`Competition '${competitionId}' not found.`);
-    }
-    if (comp.type === "KNOCKOUT" || comp.type === "SUPER_CUP" || comp.type === "EUROPEAN_KNOCKOUT") {
-      const res = generateKnockoutBracket(competitionId);
-      return { generated: res.generated, matchdays: res.rounds };
-    }
-    if (comp.schedule_mode === "OFFICIAL_IMPORT") {
-      throw new Error(
-        `Competition '${comp.name}' (${comp.id}) is configured for OFFICIAL_IMPORT. Please import official fixtures.`
-      );
-    }
-    const existingCount = queryGet(
-      "SELECT COUNT(*) as cnt FROM fixtures WHERE competition_id = ?",
-      [competitionId]
-    );
-    if (existingCount && existingCount.cnt > 0) {
-      const maxMatchday2 = queryGet(
-        "SELECT MAX(matchday) as max_md FROM fixtures WHERE competition_id = ?",
-        [competitionId]
-      );
-      return { generated: existingCount.cnt, matchdays: maxMatchday2?.max_md || 0 };
-    }
-    const season = queryGet("SELECT * FROM seasons WHERE id = ?", [comp.season_id]);
-    const seasonStartDate = season?.start_date || (/* @__PURE__ */ new Date()).toISOString();
-    let clubs = queryAll(
-      "SELECT club_id FROM competition_participants WHERE competition_id = ? ORDER BY seed_number ASC",
-      [competitionId]
-    );
-    if (clubs.length === 0 && comp.league_id) {
-      const leagueClubs = queryAll(
-        `SELECT slc.club_id 
-         FROM season_league_clubs slc 
-         JOIN clubs c ON slc.club_id = c.id
-         WHERE slc.league_id = ? AND slc.season_id = ? AND slc.is_active = 1 
-         ORDER BY c.name ASC`,
-        [comp.league_id, comp.season_id]
-      );
-      clubs = leagueClubs;
-    }
-    const clubIds = clubs.map((c) => c.club_id);
-    if (clubIds.length < 2) {
-      throw new Error(`Competition needs at least 2 clubs to generate fixtures (found ${clubIds.length}).`);
-    }
-    let matchups;
-    if (comp.type === "EUROPEAN_LEAGUE_PHASE" && clubIds.length === 24) {
-      matchups = generateUCL24LeaguePhaseSchedule(clubIds);
-    } else {
-      matchups = generateRoundRobinSchedule(clubIds, { homeAndAway: true });
-    }
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    let maxMatchday = 0;
-    for (const m of matchups) {
-      const fixtureId = `fix-${comp.id}-md${m.matchday}-${m.homeClubId.replace("club-", "")}-vs-${m.awayClubId.replace("club-", "")}`;
-      const scheduledDate = calculateMatchdayDate(seasonStartDate, m.matchday, 7);
-      if (m.matchday > maxMatchday) {
-        maxMatchday = m.matchday;
-      }
-      queryRun(
-        `INSERT INTO fixtures (
-          id, season_id, competition_id, matchday, round_name,
-          home_club_id, away_club_id, scheduled_at, status,
-          home_score, away_score, winner_club_id, result_confirmed_at,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'SCHEDULED', NULL, NULL, NULL, NULL, ?, ?)`,
-        [
-          fixtureId,
-          comp.season_id,
-          comp.id,
-          m.matchday,
-          `Matchday ${m.matchday}`,
-          m.homeClubId,
-          m.awayClubId,
-          scheduledDate,
-          now,
-          now
-        ]
-      );
-    }
-    queryRun('UPDATE competitions SET status = "active" WHERE id = ?', [competitionId]);
-    return { generated: matchups.length, matchdays: maxMatchday };
-  });
-}
-function resetCompetitionFixtures(competitionId) {
-  return dbTransaction(() => {
-    queryRun(
-      "DELETE FROM result_submissions WHERE fixture_id IN (SELECT id FROM fixtures WHERE competition_id = ?)",
-      [competitionId]
-    );
-    const delRes = queryRun("DELETE FROM fixtures WHERE competition_id = ?", [competitionId]);
-    queryRun('UPDATE competitions SET status = "upcoming" WHERE id = ?', [competitionId]);
-    const genRes = generateCompetitionFixtures(competitionId);
-    return { deleted: delRes.changes, generated: genRes.generated, matchdays: genRes.matchdays };
-  });
-}
-function getFixtures(filter) {
-  let sql = `
-    SELECT f.*,
-           comp.name as competition_name,
-           hc.name as home_name, hc.short_name as home_short, hc.logo_url as home_logo,
-           ac.name as away_name, ac.short_name as away_short, ac.logo_url as away_logo,
-           hcm.user_id as home_owner_id,
-           acm.user_id as away_owner_id
-    FROM fixtures f
-    JOIN competitions comp ON f.competition_id = comp.id
-    JOIN clubs hc ON f.home_club_id = hc.id
-    JOIN clubs ac ON f.away_club_id = ac.id
-    LEFT JOIN club_memberships hcm ON hc.id = hcm.club_id AND hcm.season_id = f.season_id AND hcm.status = 'active'
-    LEFT JOIN club_memberships acm ON ac.id = acm.club_id AND acm.season_id = f.season_id AND acm.status = 'active'
-    WHERE 1=1
-  `;
-  const params = [];
-  if (filter.competitionId) {
-    sql += " AND f.competition_id = ?";
-    params.push(filter.competitionId);
-  }
-  if (filter.seasonId) {
-    sql += " AND f.season_id = ?";
-    params.push(filter.seasonId);
-  }
-  if (filter.matchday) {
-    sql += " AND f.matchday = ?";
-    params.push(filter.matchday);
-  }
-  if (filter.status) {
-    sql += " AND f.status = ?";
-    params.push(filter.status);
-  }
-  if (filter.clubId) {
-    sql += " AND (f.home_club_id = ? OR f.away_club_id = ?)";
-    params.push(filter.clubId, filter.clubId);
-  }
-  if (filter.userId) {
-    sql += " AND (hcm.user_id = ? OR acm.user_id = ?)";
-    params.push(filter.userId, filter.userId);
-  }
-  sql += " ORDER BY f.matchday ASC, f.scheduled_at ASC";
-  if (filter.limit) {
-    sql += " LIMIT ?";
-    params.push(filter.limit);
-  }
-  const rows = queryAll(sql, params);
-  return rows.map((r) => ({
-    id: r.id,
-    seasonId: r.season_id,
-    competitionId: r.competition_id,
-    competitionName: r.competition_name,
-    matchday: r.matchday,
-    roundName: r.round_name,
-    homeClubId: r.home_club_id,
-    awayClubId: r.away_club_id,
-    homeClub: {
-      id: r.home_club_id,
-      name: r.home_name,
-      shortName: r.home_short,
-      country: "",
-      leagueId: "",
-      logoUrl: r.home_logo,
-      active: true,
-      createdAt: ""
-    },
-    awayClub: {
-      id: r.away_club_id,
-      name: r.away_name,
-      shortName: r.away_short,
-      country: "",
-      leagueId: "",
-      logoUrl: r.away_logo,
-      active: true,
-      createdAt: ""
-    },
-    homeOwnerId: r.home_owner_id || void 0,
-    awayOwnerId: r.away_owner_id || void 0,
-    scheduledAt: r.scheduled_at,
-    status: r.status,
-    homeScore: r.home_score,
-    awayScore: r.away_score,
-    winnerClubId: r.winner_club_id,
-    resultConfirmedAt: r.result_confirmed_at,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at
+  return rows.map((r, index) => ({
+    position: index + 1,
+    clubId: r.clubId,
+    clubName: r.clubName,
+    shortName: r.shortName,
+    logoUrl: r.logoUrl,
+    managerUsername: r.managerUsername,
+    played: r.played,
+    won: r.won,
+    drawn: r.drawn,
+    lost: r.lost,
+    goalsFor: r.goalsFor,
+    goalsAgainst: r.goalsAgainst,
+    goalDifference: r.goalDifference,
+    points: r.points,
+    form: r.form
   }));
-}
-function getFixtureById(fixtureId, currentUserId) {
-  const row = queryGet(
-    `SELECT f.*,
-            comp.name as competition_name,
-            hc.name as home_name, hc.short_name as home_short, hc.logo_url as home_logo,
-            ac.name as away_name, ac.short_name as away_short, ac.logo_url as away_logo,
-            hcm.user_id as home_owner_id,
-            acm.user_id as away_owner_id
-     FROM fixtures f
-     JOIN competitions comp ON f.competition_id = comp.id
-     JOIN clubs hc ON f.home_club_id = hc.id
-     JOIN clubs ac ON f.away_club_id = ac.id
-     LEFT JOIN club_memberships hcm ON hc.id = hcm.club_id AND hcm.season_id = f.season_id AND hcm.status = 'active'
-     LEFT JOIN club_memberships acm ON ac.id = acm.club_id AND acm.season_id = f.season_id AND acm.status = 'active'
-     WHERE f.id = ?`,
-    [fixtureId]
-  );
-  if (!row) return null;
-  const submissions = queryAll(
-    "SELECT * FROM result_submissions WHERE fixture_id = ?",
-    [fixtureId]
-  );
-  let userSub = null;
-  let opponentSub = null;
-  for (const s of submissions) {
-    const formatted = {
-      id: s.id,
-      fixtureId: s.fixture_id,
-      submittedByUserId: s.submitted_by_user_id,
-      clubId: s.club_id,
-      homeScore: s.home_score,
-      awayScore: s.away_score,
-      proofUrl: s.proof_url || void 0,
-      createdAt: s.created_at
-    };
-    if (currentUserId && s.submitted_by_user_id === currentUserId) {
-      userSub = formatted;
-    } else {
-      opponentSub = formatted;
-    }
-  }
-  return {
-    id: row.id,
-    seasonId: row.season_id,
-    competitionId: row.competition_id,
-    competitionName: row.competition_name,
-    matchday: row.matchday,
-    roundName: row.round_name,
-    homeClubId: row.home_club_id,
-    awayClubId: row.away_club_id,
-    homeClub: {
-      id: row.home_club_id,
-      name: row.home_name,
-      shortName: row.home_short,
-      country: "",
-      leagueId: "",
-      logoUrl: row.home_logo,
-      active: true,
-      createdAt: ""
-    },
-    awayClub: {
-      id: row.away_club_id,
-      name: row.away_name,
-      shortName: row.away_short,
-      country: "",
-      leagueId: "",
-      logoUrl: row.away_logo,
-      active: true,
-      createdAt: ""
-    },
-    homeOwnerId: row.home_owner_id || void 0,
-    awayOwnerId: row.away_owner_id || void 0,
-    scheduledAt: row.scheduled_at,
-    status: row.status,
-    homeScore: row.home_score,
-    awayScore: row.away_score,
-    winnerClubId: row.winner_club_id,
-    resultConfirmedAt: row.result_confirmed_at,
-    submissionsCount: submissions.length,
-    userSubmission: userSub,
-    opponentSubmission: opponentSub,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at
-  };
 }
 
 // src/server/tournament/qualificationEngine.ts
@@ -2722,442 +4047,7 @@ function evaluateSeasonQualifications(seasonId) {
   });
 }
 
-// src/server/tournament/competitionEngine.ts
-var CompetitionEngine = class {
-  /**
-   * Generates fixtures for any competition type (LEAGUE, KNOCKOUT, SUPER_CUP, EUROPEAN)
-   */
-  static generateSchedule(competitionId) {
-    const comp = queryGet("SELECT * FROM competitions WHERE id = ?", [competitionId]);
-    if (!comp) {
-      throw new Error(`Competition '${competitionId}' not found.`);
-    }
-    if (comp.type === "LEAGUE" || comp.type === "EUROPEAN_LEAGUE_PHASE") {
-      return generateCompetitionFixtures(competitionId);
-    } else if (comp.type === "KNOCKOUT" || comp.type === "SUPER_CUP" || comp.type === "EUROPEAN_KNOCKOUT") {
-      return generateKnockoutBracket(competitionId);
-    } else {
-      throw new Error(`Unsupported competition type '${comp.type}'`);
-    }
-  }
-  /**
-   * Retrieves or computes official standings for a competition
-   */
-  static getStandings(competitionId) {
-    return calculateCompetitionStandings(competitionId);
-  }
-  /**
-   * Advances tournament state upon match confirmation
-   */
-  static handleMatchConfirmed(fixtureId) {
-    return advanceKnockoutWinner(fixtureId);
-  }
-  /**
-   * Evaluates end-of-season European qualifications and supercup participants
-   */
-  static evaluateQualifications(seasonId) {
-    return evaluateSeasonQualifications(seasonId);
-  }
-};
-
-// src/server/routes/competitions.routes.ts
-var competitionsRouter = Router6();
-competitionsRouter.get("/", (req, res) => {
-  const seasonId = req.query.seasonId || "season-2026-27";
-  const rows = queryAll(
-    "SELECT * FROM competitions WHERE season_id = ? ORDER BY type ASC, name ASC",
-    [seasonId]
-  );
-  const competitions = rows.map((r) => ({
-    id: r.id,
-    seasonId: r.season_id,
-    leagueId: r.league_id || void 0,
-    name: r.name,
-    type: r.type,
-    scheduleMode: r.schedule_mode,
-    status: r.status,
-    formatConfig: r.format_config_json ? JSON.parse(r.format_config_json) : {},
-    createdAt: r.created_at
-  }));
-  res.json({ competitions });
-});
-competitionsRouter.get("/:id", (req, res) => {
-  const row = queryGet("SELECT * FROM competitions WHERE id = ?", [req.params.id]);
-  if (!row) {
-    res.status(404).json({ error: "Competition not found" });
-    return;
-  }
-  const competition = {
-    id: row.id,
-    seasonId: row.season_id,
-    leagueId: row.league_id || void 0,
-    name: row.name,
-    type: row.type,
-    scheduleMode: row.schedule_mode,
-    status: row.status,
-    formatConfig: row.format_config_json ? JSON.parse(row.format_config_json) : {},
-    createdAt: row.created_at
-  };
-  res.json({ competition });
-});
-competitionsRouter.get("/:id/standings", (req, res) => {
-  try {
-    const standings = calculateCompetitionStandings(req.params.id);
-    res.json({ standings });
-  } catch (err) {
-    res.status(500).json({ error: "Failed to calculate standings", message: err.message });
-  }
-});
-competitionsRouter.get("/:id/fixtures", (req, res) => {
-  const matchday = req.query.matchday ? parseInt(req.query.matchday, 10) : void 0;
-  const status = req.query.status;
-  const fixtures = getFixtures({
-    competitionId: req.params.id,
-    matchday,
-    status
-  });
-  res.json({ fixtures });
-});
-competitionsRouter.get("/:id/participants", (req, res) => {
-  try {
-    const rows = queryAll(
-      `SELECT 
-        cp.*,
-        c.name as club_name,
-        c.short_name as club_short_name,
-        c.logo_url as club_logo_url,
-        u.username as owner_username,
-        sc.name as source_competition_name
-       FROM competition_participants cp
-       JOIN clubs c ON cp.club_id = c.id
-       LEFT JOIN users u ON cp.owner_user_id = u.id
-       LEFT JOIN competitions sc ON cp.source_competition_id = sc.id
-       WHERE cp.competition_id = ?
-       ORDER BY cp.seed_number ASC, cp.created_at ASC`,
-      [req.params.id]
-    );
-    const participants = rows.map((r) => ({
-      id: r.id,
-      competitionId: r.competition_id,
-      clubId: r.club_id,
-      clubName: r.club_name,
-      clubShortName: r.club_short_name,
-      clubLogoUrl: r.club_logo_url,
-      seasonId: r.season_id,
-      ownerUserId: r.owner_user_id,
-      ownerUsername: r.owner_username,
-      sourceCompetitionId: r.source_competition_id,
-      sourceCompetitionName: r.source_competition_name,
-      sourcePosition: r.source_position,
-      qualificationReason: r.qualification_reason,
-      qualificationTimestamp: r.qualification_timestamp,
-      seedNumber: r.seed_number,
-      createdAt: r.created_at
-    }));
-    res.json({ participants });
-  } catch (err) {
-    res.status(500).json({ error: "Failed to fetch participants", message: err.message });
-  }
-});
-competitionsRouter.post("/:id/generate-fixtures", requireAdmin, (req, res) => {
-  try {
-    const result = CompetitionEngine.generateSchedule(req.params.id);
-    res.json({
-      success: true,
-      message: `Generated schedule successfully.`,
-      result
-    });
-  } catch (err) {
-    res.status(400).json({ error: "Failed to generate schedule", message: err.message });
-  }
-});
-
-// src/server/routes/fixtures.routes.ts
-import { Router as Router7 } from "express";
-import { z as z2 } from "zod";
-
-// src/server/services/resultService.ts
-var ResultSubmissionError = class extends Error {
-  constructor(message) {
-    super(message);
-    this.name = "ResultSubmissionError";
-  }
-};
-function submitFixtureResult(userId, fixtureId, homeScore, awayScore, proofUrl) {
-  return dbTransaction(() => {
-    if (!Number.isInteger(homeScore) || homeScore < 0 || !Number.isInteger(awayScore) || awayScore < 0) {
-      throw new ResultSubmissionError("Scores must be non-negative integers.");
-    }
-    const fixture = queryGet("SELECT * FROM fixtures WHERE id = ?", [fixtureId]);
-    if (!fixture) {
-      throw new ResultSubmissionError(`Fixture with ID '${fixtureId}' not found.`);
-    }
-    if (fixture.status === "CONFIRMED") {
-      throw new ResultSubmissionError("This match result is already CONFIRMED and cannot be modified.");
-    }
-    const userMemberships = queryAll(
-      'SELECT club_id FROM club_memberships WHERE user_id = ? AND season_id = ? AND status = "active"',
-      [userId, fixture.season_id]
-    );
-    const userClubIds = userMemberships.map((m) => m.club_id);
-    const isHome = userClubIds.includes(fixture.home_club_id);
-    const isAway = userClubIds.includes(fixture.away_club_id);
-    if (!isHome && !isAway) {
-      throw new ResultSubmissionError("You do not own either the home or away club in this fixture.");
-    }
-    const userClubId = isHome ? fixture.home_club_id : fixture.away_club_id;
-    const opponentClubId = isHome ? fixture.away_club_id : fixture.home_club_id;
-    const existingSubmission = queryGet(
-      "SELECT id FROM result_submissions WHERE fixture_id = ? AND submitted_by_user_id = ?",
-      [fixtureId, userId]
-    );
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    if (existingSubmission) {
-      queryRun(
-        "UPDATE result_submissions SET home_score = ?, away_score = ?, proof_url = ?, created_at = ? WHERE id = ?",
-        [homeScore, awayScore, proofUrl || null, now, existingSubmission.id]
-      );
-    } else {
-      const submissionId = `sub-${fixtureId}-${userId}`;
-      queryRun(
-        "INSERT INTO result_submissions (id, fixture_id, submitted_by_user_id, club_id, home_score, away_score, proof_url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        [submissionId, fixtureId, userId, userClubId, homeScore, awayScore, proofUrl || null, now]
-      );
-    }
-    const allSubmissions = queryAll(
-      "SELECT * FROM result_submissions WHERE fixture_id = ?",
-      [fixtureId]
-    );
-    const opponentMembership = queryGet(
-      'SELECT user_id FROM club_memberships WHERE club_id = ? AND season_id = ? AND status = "active"',
-      [opponentClubId, fixture.season_id]
-    );
-    const opponentUserId = opponentMembership?.user_id;
-    let newStatus = "AWAITING_RESULT";
-    let confirmedHomeScore = null;
-    let confirmedAwayScore = null;
-    let winnerClubId = null;
-    let confirmedAt = null;
-    if (allSubmissions.length >= 2) {
-      const [sub1, sub2] = allSubmissions;
-      const scoresMatch = sub1.home_score === sub2.home_score && sub1.away_score === sub2.away_score;
-      if (scoresMatch) {
-        newStatus = "CONFIRMED";
-        confirmedHomeScore = sub1.home_score;
-        confirmedAwayScore = sub1.away_score;
-        confirmedAt = now;
-        if (confirmedHomeScore > confirmedAwayScore) {
-          winnerClubId = fixture.home_club_id;
-        } else if (confirmedAwayScore > confirmedHomeScore) {
-          winnerClubId = fixture.away_club_id;
-        }
-        queryRun(
-          'UPDATE disputes SET status = "RESOLVED", resolution_notes = "Auto-resolved by identical submissions", resolved_at = ? WHERE fixture_id = ?',
-          [now, fixtureId]
-        );
-        createNotification(
-          userId,
-          "RESULT_CONFIRMED",
-          "Match Result Confirmed!",
-          `Your match result (${confirmedHomeScore} - ${confirmedAwayScore}) has been verified and confirmed.`
-        );
-        if (opponentUserId) {
-          createNotification(
-            opponentUserId,
-            "RESULT_CONFIRMED",
-            "Match Result Confirmed!",
-            `Your match result (${confirmedHomeScore} - ${confirmedAwayScore}) has been verified and confirmed.`
-          );
-        }
-      } else {
-        newStatus = "DISPUTED";
-        const disputeId = `disp-${fixtureId}`;
-        const existingDispute = queryGet("SELECT id FROM disputes WHERE fixture_id = ?", [fixtureId]);
-        const homeSub = allSubmissions.find((s) => s.club_id === fixture.home_club_id);
-        const awaySub = allSubmissions.find((s) => s.club_id === fixture.away_club_id);
-        if (!existingDispute) {
-          queryRun(
-            'INSERT INTO disputes (id, fixture_id, season_id, home_submission_id, away_submission_id, status, created_at) VALUES (?, ?, ?, ?, ?, "OPEN", ?)',
-            [disputeId, fixtureId, fixture.season_id, homeSub?.id || sub1.id, awaySub?.id || sub2.id, now]
-          );
-        } else {
-          queryRun(
-            'UPDATE disputes SET home_submission_id = ?, away_submission_id = ?, status = "OPEN" WHERE id = ?',
-            [homeSub?.id || sub1.id, awaySub?.id || sub2.id, existingDispute.id]
-          );
-        }
-        createNotification(
-          userId,
-          "RESULT_DISPUTED",
-          "Score Mismatch / Disputed Match",
-          `Your submitted score differs from your opponent's (${sub1.home_score}-${sub1.away_score} vs ${sub2.home_score}-${sub2.away_score}). An admin will review the proofs.`
-        );
-        if (opponentUserId) {
-          createNotification(
-            opponentUserId,
-            "RESULT_DISPUTED",
-            "Score Mismatch / Disputed Match",
-            `Your submitted score differs from your opponent's (${sub1.home_score}-${sub1.away_score} vs ${sub2.home_score}-${sub2.away_score}). An admin will review the proofs.`
-          );
-        }
-      }
-    } else {
-      newStatus = "PENDING_CONFIRMATION";
-      if (opponentUserId) {
-        createNotification(
-          opponentUserId,
-          "RESULT_AWAITING_OPPONENT",
-          "Opponent Submitted Match Score",
-          `Your opponent has submitted a match result. Please submit your score to confirm the result.`
-        );
-      }
-    }
-    queryRun(
-      `UPDATE fixtures SET
-        status = ?,
-        home_score = ?,
-        away_score = ?,
-        winner_club_id = ?,
-        result_confirmed_at = ?,
-        updated_at = ?
-       WHERE id = ?`,
-      [newStatus, confirmedHomeScore, confirmedAwayScore, winnerClubId, confirmedAt, now, fixtureId]
-    );
-    if (newStatus === "CONFIRMED") {
-      createAuditLog(
-        userId,
-        "RESULT_CONFIRMED",
-        "fixtures",
-        fixtureId,
-        { status: fixture.status },
-        { status: "CONFIRMED", homeScore: confirmedHomeScore, awayScore: confirmedAwayScore, winnerClubId }
-      );
-      advanceKnockoutWinner(fixtureId);
-    } else if (newStatus === "DISPUTED") {
-      createAuditLog(
-        userId,
-        "RESULT_DISPUTED",
-        "fixtures",
-        fixtureId,
-        { status: fixture.status },
-        { status: "DISPUTED", allSubmissions }
-      );
-    }
-    return getFixtureById(fixtureId, userId);
-  });
-}
-
-// src/server/routes/fixtures.routes.ts
-var fixturesRouter = Router7();
-var resultSubmissionSchema = z2.object({
-  homeScore: z2.number().int().min(0, "Home score must be >= 0"),
-  awayScore: z2.number().int().min(0, "Away score must be >= 0"),
-  proofUrl: z2.string().optional()
-});
-fixturesRouter.get("/:id", (req, res) => {
-  const currentUserId = req.user?.id;
-  const fixture = getFixtureById(req.params.id, currentUserId);
-  if (!fixture) {
-    res.status(404).json({ error: "Fixture not found" });
-    return;
-  }
-  res.json({ fixture });
-});
-fixturesRouter.post("/:id/result", requireAuth, validateBody(resultSubmissionSchema), (req, res) => {
-  const userId = req.user.id;
-  const fixtureId = req.params.id;
-  const { homeScore, awayScore, proofUrl } = req.body;
-  try {
-    const updatedFixture = submitFixtureResult(userId, fixtureId, homeScore, awayScore, proofUrl);
-    res.json({
-      success: true,
-      message: updatedFixture.status === "CONFIRMED" ? "Match result confirmed!" : updatedFixture.status === "DISPUTED" ? "Scores differ! Match has been marked DISPUTED and sent to admin." : "Score submitted! Awaiting opponent confirmation.",
-      fixture: updatedFixture
-    });
-  } catch (err) {
-    if (err instanceof ResultSubmissionError) {
-      res.status(400).json({ error: "Bad Request", message: err.message });
-      return;
-    }
-    console.error("Error submitting result:", err);
-    res.status(500).json({ error: "Internal Server Error", message: "Failed to submit result." });
-  }
-});
-
-// src/server/routes/me.routes.ts
-import { Router as Router8 } from "express";
-var meRouter = Router8();
-meRouter.get("/", requireAuth, (req, res) => {
-  const user = req.user;
-  const seasonId = req.query.seasonId || "season-2026-27";
-  const currentClub = getUserActiveClub(user.id, seasonId);
-  let stats = {
-    matchesPlayed: 0,
-    wins: 0,
-    draws: 0,
-    losses: 0,
-    goalsScored: 0,
-    goalsConceded: 0,
-    points: 0,
-    trophies: 0,
-    leaguePosition: 0
-  };
-  if (currentClub) {
-    const confirmedMatches = queryAll(
-      `SELECT f.* FROM fixtures f
-       WHERE (f.home_club_id = ? OR f.away_club_id = ?) AND f.status = 'CONFIRMED' AND f.season_id = ?`,
-      [currentClub.id, currentClub.id, seasonId]
-    );
-    for (const m of confirmedMatches) {
-      stats.matchesPlayed++;
-      const isHome = m.home_club_id === currentClub.id;
-      const myScore = isHome ? m.home_score : m.away_score;
-      const oppScore = isHome ? m.away_score : m.home_score;
-      stats.goalsScored += myScore;
-      stats.goalsConceded += oppScore;
-      if (myScore > oppScore) {
-        stats.wins++;
-        stats.points += 3;
-      } else if (myScore === oppScore) {
-        stats.draws++;
-        stats.points += 1;
-      } else {
-        stats.losses++;
-      }
-    }
-  }
-  res.json({
-    authenticated: true,
-    user,
-    currentClub,
-    stats
-  });
-});
-meRouter.get("/matches", requireAuth, (req, res) => {
-  const userId = req.user.id;
-  const seasonId = req.query.seasonId || "season-2026-27";
-  const status = req.query.status;
-  const fixtures = getFixtures({
-    userId,
-    seasonId,
-    status
-  });
-  res.json({ fixtures });
-});
-meRouter.get("/notifications", requireAuth, (req, res) => {
-  const userId = req.user.id;
-  const notifications = getUserNotifications(userId, 30);
-  res.json({ notifications });
-});
-meRouter.post("/notifications/read", requireAuth, (req, res) => {
-  const userId = req.user.id;
-  markNotificationsAsRead(userId);
-  res.json({ success: true });
-});
-
 // src/server/routes/admin.routes.ts
-import { Router as Router9 } from "express";
-import { z as z3 } from "zod";
 var adminRouter = Router9();
 adminRouter.use(requireAdmin);
 var resolveDisputeSchema = z3.object({
@@ -3169,6 +4059,18 @@ var resolveDisputeSchema = z3.object({
 var reopenFixtureSchema = z3.object({
   notes: z3.string().optional()
 });
+adminRouter.post("/migrate-to-firestore", async (req, res) => {
+  try {
+    const report = await migrateSqliteToFirestore();
+    res.json({
+      success: report.success,
+      message: report.success ? "Successfully migrated SQLite seed to Firestore." : "Migration completed with some warnings or errors.",
+      report
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Migration failed", message: err.message });
+  }
+});
 adminRouter.get("/users", (req, res) => {
   const users = getAllAdminUsers();
   res.json({ users });
@@ -3178,11 +4080,16 @@ adminRouter.get("/disputes", (req, res) => {
   const disputes = getDisputes(status);
   res.json({ disputes });
 });
-adminRouter.post("/disputes/:id/resolve", validateBody(resolveDisputeSchema), (req, res) => {
+adminRouter.post("/disputes/:id/resolve", validateBody(resolveDisputeSchema), async (req, res) => {
   const adminUserId = req.user.id;
   const disputeId = req.params.id;
   try {
-    const result = resolveDispute(adminUserId, disputeId, req.body);
+    let result;
+    try {
+      result = await resolveDisputeFirestore(adminUserId, disputeId, req.body);
+    } catch {
+      result = resolveDispute(adminUserId, disputeId, req.body);
+    }
     res.json({
       success: true,
       message: "Dispute resolved successfully.",
@@ -3192,11 +4099,16 @@ adminRouter.post("/disputes/:id/resolve", validateBody(resolveDisputeSchema), (r
     res.status(400).json({ error: "Failed to resolve dispute", message: err.message });
   }
 });
-adminRouter.post("/fixtures/:id/reopen", validateBody(reopenFixtureSchema), (req, res) => {
+adminRouter.post("/fixtures/:id/reopen", validateBody(reopenFixtureSchema), async (req, res) => {
   const adminUserId = req.user.id;
   const fixtureId = req.params.id;
   try {
-    const result = reopenFixture(adminUserId, fixtureId, req.body.notes);
+    let result;
+    try {
+      result = await reopenFixtureFirestore(adminUserId, fixtureId, req.body.notes);
+    } catch {
+      result = reopenFixture(adminUserId, fixtureId, req.body.notes);
+    }
     res.json({
       success: true,
       message: "Fixture has been reopened for submissions.",
@@ -3211,21 +4123,23 @@ adminRouter.get("/audit-logs", (req, res) => {
   const logs = getAuditLogs(limit);
   res.json({ logs });
 });
-adminRouter.post("/fixtures/generate", (req, res) => {
-  const { competitionId } = req.body;
+adminRouter.post("/fixtures/generate", async (req, res) => {
+  const { competitionId, force } = req.body;
   if (!competitionId) {
     res.status(400).json({ error: "competitionId is required" });
     return;
   }
   try {
-    const result = CompetitionEngine.generateSchedule(competitionId);
+    const result = await generateCompetitionFixturesFirestore(competitionId, { force: Boolean(force) });
     res.json({
       success: true,
-      message: `Generated competition schedule.`,
-      result
+      competitionId,
+      fixturesGenerated: result.generated,
+      matchdays: result.matchdays,
+      message: `Generated and persisted ${result.generated} fixtures in Firestore across ${result.matchdays} matchdays.`
     });
   } catch (err) {
-    res.status(400).json({ error: "Failed to generate schedule", message: err.message });
+    res.status(500).json({ error: "FIXTURE_PERSISTENCE_FAILED", message: err.message });
   }
 });
 adminRouter.post("/knockouts/generate", (req, res) => {
@@ -3258,42 +4172,23 @@ adminRouter.post("/qualifications/evaluate", (req, res) => {
     res.status(400).json({ error: "Failed to evaluate qualifications", message: err.message });
   }
 });
-adminRouter.post("/fixtures/reset", (req, res) => {
+adminRouter.post("/fixtures/reset", async (req, res) => {
   const { competitionId } = req.body;
   if (!competitionId) {
     res.status(400).json({ error: "competitionId is required" });
     return;
   }
   try {
-    const result = resetCompetitionFixtures(competitionId);
+    const result = await generateCompetitionFixturesFirestore(competitionId, { force: true });
     res.json({
       success: true,
-      message: `Reset and regenerated schedule for competition '${competitionId}'.`,
-      result
+      competitionId,
+      fixturesGenerated: result.generated,
+      matchdays: result.matchdays,
+      message: `Reset and regenerated schedule for competition '${competitionId}'.`
     });
   } catch (err) {
-    res.status(400).json({ error: "Failed to reset schedule", message: err.message });
-  }
-});
-adminRouter.post("/fixtures/regenerate-domestic", (req, res) => {
-  const seasonId = req.body.seasonId || "season-2026-27";
-  try {
-    const domesticComps = queryAll(
-      'SELECT id, name FROM competitions WHERE season_id = ? AND type = "LEAGUE"',
-      [seasonId]
-    );
-    const results = [];
-    for (const comp of domesticComps) {
-      const resData = resetCompetitionFixtures(comp.id);
-      results.push({ competitionId: comp.id, name: comp.name, ...resData });
-    }
-    res.json({
-      success: true,
-      message: `Regenerated domestic league fixtures for season '${seasonId}'.`,
-      results
-    });
-  } catch (err) {
-    res.status(400).json({ error: "Failed to regenerate domestic fixtures", message: err.message });
+    res.status(500).json({ error: "FIXTURE_PERSISTENCE_FAILED", message: err.message });
   }
 });
 
@@ -3306,17 +4201,25 @@ async function ensureDbReady() {
         await initDatabase();
         seedDatabase();
         repairSeason202627Roster();
-        console.log(`[BOOT] Database path: ${getDbFilePath()}`);
-        console.log("[BOOT] Active season: season-2026-27");
-        const plCount = queryGet(`SELECT COUNT(*) as c FROM season_league_clubs WHERE season_id = 'season-2026-27' AND league_id = 'league-premier-league' AND is_active = 1`)?.c || 0;
-        const llCount = queryGet(`SELECT COUNT(*) as c FROM season_league_clubs WHERE season_id = 'season-2026-27' AND league_id = 'league-la-liga' AND is_active = 1`)?.c || 0;
-        const saCount = queryGet(`SELECT COUNT(*) as c FROM season_league_clubs WHERE season_id = 'season-2026-27' AND league_id = 'league-serie-a' AND is_active = 1`)?.c || 0;
-        const blCount = queryGet(`SELECT COUNT(*) as c FROM season_league_clubs WHERE season_id = 'season-2026-27' AND league_id = 'league-bundesliga' AND is_active = 1`)?.c || 0;
-        const l1Count = queryGet(`SELECT COUNT(*) as c FROM season_league_clubs WHERE season_id = 'season-2026-27' AND league_id = 'league-ligue-1' AND is_active = 1`)?.c || 0;
-        const totalActive = Number(plCount) + Number(llCount) + Number(saCount) + Number(blCount) + Number(l1Count);
-        console.log(`[BOOT] 96 clubs verified (${plCount}/${llCount}/${saCount}/${blCount}/${l1Count}, total: ${totalActive})`);
+        console.log(`[BOOT] SQLite baseline loaded from: ${getDbFilePath()}`);
+        const fbStatus = getFirebaseStatus();
+        if (fbStatus.isConfigured) {
+          try {
+            const db = getFirestoreDb();
+            const clubsSnap = await db.collection(COLLECTIONS.CLUBS).limit(1).get();
+            if (clubsSnap.empty) {
+              console.log("[BOOT] Firestore is empty. Auto-seeding from SQLite...");
+              await migrateSqliteToFirestore();
+              console.log("[BOOT] Firestore auto-seeding completed.");
+            } else {
+              console.log(`[BOOT] Connected to Firestore database: ${fbStatus.databaseId}`);
+            }
+          } catch (fbErr) {
+            console.warn("[BOOT] Firestore connection warning:", fbErr.message);
+          }
+        }
       } catch (err) {
-        console.error("[BOOT] Error initializing database:", err);
+        console.error("[BOOT] Error during system initialization:", err);
         throw err;
       }
     })();
