@@ -48,33 +48,38 @@ export function initializeFirebaseAdmin(): { db: Firestore | null; info: Firebas
     process.env.FIRESTORE_DATABASE_ID ||
     process.env.FIREBASE_DATABASE_ID ||
     appletConfig.firestoreDatabaseId ||
-    '(default)';
+    'ai-studio-efluz-4c6c88a6-697e-4fdf-82ed-45fec68ca34d';
+
+  // Check all possible service account credentials formats
+  let serviceAccountJson =
+    process.env.FIREBASE_SERVICE_ACCOUNT_JSON ||
+    process.env.FIREBASE_SERVICE_ACCOUNT_KEY ||
+    process.env.FIREBASE_SERVICE_ACCOUNT;
+
+  if (!serviceAccountJson && process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+    if (credPath.trim().startsWith('{')) {
+      serviceAccountJson = credPath;
+    } else if (fs.existsSync(credPath)) {
+      try {
+        serviceAccountJson = fs.readFileSync(credPath, 'utf-8');
+      } catch {
+        // continue
+      }
+    }
+  }
 
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   let privateKey = process.env.FIREBASE_PRIVATE_KEY;
-  const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
 
   if (privateKey) {
     privateKey = privateKey.replace(/\\n/g, '\n');
   }
 
-  const hasCredentials = Boolean(serviceAccountJson) || (Boolean(clientEmail) && Boolean(privateKey));
-
-  if (!hasCredentials && process.env.NODE_ENV !== 'production') {
-    // In local non-production environments without service account credentials, use the in-memory fallback
-    const memoryDb = createMemoryFirestore();
-    cachedDb = memoryDb as unknown as Firestore;
-    cachedInfo = {
-      isConfigured: true,
-      projectId,
-      databaseId,
-      authMode: 'local_fallback',
-    };
-    return {
-      db: cachedDb,
-      info: cachedInfo,
-    };
-  }
+  const isProduction =
+    process.env.NODE_ENV === 'production' ||
+    process.env.VERCEL === '1' ||
+    process.env.AWS_LAMBDA_FUNCTION_NAME !== undefined;
 
   let app: App;
 
@@ -97,18 +102,43 @@ export function initializeFirebaseAdmin(): { db: Firestore | null; info: Firebas
           projectId,
         });
       } else {
-        const memoryDb = createMemoryFirestore();
-        cachedDb = memoryDb as unknown as Firestore;
-        cachedInfo = {
-          isConfigured: true,
-          projectId,
-          databaseId,
-          authMode: 'local_fallback',
-        };
-        return {
-          db: cachedDb,
-          info: cachedInfo,
-        };
+        // In Cloud Run / GCP, use Application Default Credentials (ADC)
+        try {
+          app = initializeApp({
+            credential: applicationDefault(),
+            projectId,
+          });
+        } catch (adcErr: any) {
+          if (isProduction) {
+            console.error('[CRITICAL] Production Firebase initialization failed. Service account credentials required.', adcErr);
+            initError = adcErr.message || 'Missing Firebase credentials in production';
+            cachedInfo = {
+              isConfigured: false,
+              projectId,
+              databaseId,
+              authMode: 'not_configured',
+              error: initError,
+            };
+            return {
+              db: null,
+              info: cachedInfo,
+            };
+          }
+
+          // In local development only, fall back to in-memory store
+          const memoryDb = createMemoryFirestore();
+          cachedDb = memoryDb as unknown as Firestore;
+          cachedInfo = {
+            isConfigured: true,
+            projectId,
+            databaseId,
+            authMode: 'local_fallback',
+          };
+          return {
+            db: cachedDb,
+            info: cachedInfo,
+          };
+        }
       }
     } else {
       app = apps[0];
@@ -130,31 +160,33 @@ export function initializeFirebaseAdmin(): { db: Firestore | null; info: Firebas
   } catch (err: any) {
     initError = err.message || 'Firebase Admin initialization failed';
 
-    if (process.env.NODE_ENV !== 'production') {
-      const memoryDb = createMemoryFirestore();
-      cachedDb = memoryDb as unknown as Firestore;
+    if (isProduction) {
+      console.error('[CRITICAL] Firebase Admin production initialization failed:', err);
       cachedInfo = {
-        isConfigured: true,
+        isConfigured: false,
         projectId,
         databaseId,
-        authMode: 'local_fallback',
+        authMode: 'not_configured',
+        error: initError,
       };
       return {
-        db: cachedDb,
+        db: null,
         info: cachedInfo,
       };
     }
 
+    const memoryDb = createMemoryFirestore();
+    cachedDb = memoryDb as unknown as Firestore;
     cachedInfo = {
-      isConfigured: false,
+      isConfigured: true,
       projectId,
       databaseId,
-      authMode: 'not_configured',
-      error: initError || undefined,
+      authMode: 'local_fallback',
+      error: initError,
     };
 
     return {
-      db: null,
+      db: cachedDb,
       info: cachedInfo,
     };
   }

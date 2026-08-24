@@ -163,14 +163,17 @@ export async function getClubsByLeagueFirestore(
     }
   }
 
-  // 3. Look up user details for manager usernames
+  // 3. Look up user details for manager usernames directly by document ID
   const userIds = Array.from(new Set(Array.from(clubOccupancyMap.values()).map((o) => o.userId)));
   const usernameMap = new Map<string, string>();
   if (userIds.length > 0) {
-    const usersSnap = await db.collection(COLLECTIONS.USERS).where('id', 'in', userIds.slice(0, 30)).get();
-    for (const uDoc of usersSnap.docs) {
-      const uData = uDoc.data() as FirestoreUserDoc;
-      usernameMap.set(uData.id, uData.username);
+    const userDocPromises = userIds.map((uid) => db.collection(COLLECTIONS.USERS).doc(uid).get());
+    const userDocs = await Promise.all(userDocPromises);
+    for (const uDoc of userDocs) {
+      if (uDoc.exists) {
+        const uData = uDoc.data() as FirestoreUserDoc;
+        usernameMap.set(uDoc.id, uData.username || uData.firstName || uDoc.id);
+      }
     }
   }
 
@@ -411,7 +414,7 @@ export async function claimClubAtomicFirestore(
 ): Promise<{ success: boolean; club: Club }> {
   const db = getFirestoreDb();
 
-  return await db.runTransaction(async (transaction) => {
+  const claimResult = await db.runTransaction(async (transaction) => {
     const now = new Date().toISOString();
     const userMemRef = db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${seasonId}_${userId}`);
     const clubOccRef = db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_${clubId}`);
@@ -447,7 +450,7 @@ export async function claimClubAtomicFirestore(
               isCurrentUserClub: true,
               claimedByUserId: userId,
               occupancy: {
-                status: 'owned',
+                status: 'owned' as const,
                 userId,
               },
             },
@@ -524,12 +527,20 @@ export async function claimClubAtomicFirestore(
         isCurrentUserClub: true,
         claimedByUserId: userId,
         occupancy: {
-          status: 'owned',
+          status: 'owned' as const,
           userId,
         },
       },
     };
   });
+
+  // Verify occupancy persistence directly in Firestore
+  const verifyOcc = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_${clubId}`).get();
+  if (!verifyOcc.exists || verifyOcc.data()?.status !== 'active') {
+    throw new Error(`OCCUPANCY_PERSISTENCE_FAILED: Failed to verify club occupancy record at '${COLLECTIONS.CLUB_OCCUPANCIES}/${seasonId}_${clubId}'.`);
+  }
+
+  return claimResult;
 }
 
 // ----------------------------------------------------
@@ -1303,6 +1314,7 @@ export async function getOrCreateTelegramUserFirestore(tgUser: {
 }): Promise<User> {
   const db = getFirestoreDb();
   const telegramId = String(tgUser.id);
+  const docId = `user-${telegramId}`;
   const username = tgUser.username || `tg_${telegramId}`;
   const firstName = tgUser.first_name || 'Player';
   const lastName = tgUser.last_name || '';
@@ -1316,12 +1328,12 @@ export async function getOrCreateTelegramUserFirestore(tgUser: {
   const isAdmin = adminIds.includes(telegramId.toLowerCase()) || adminIds.includes(username.toLowerCase());
   const now = new Date().toISOString();
 
-  const userDocRef = db.collection(COLLECTIONS.USERS).doc(`user-${telegramId}`);
+  const userDocRef = db.collection(COLLECTIONS.USERS).doc(docId);
   const userDoc = await userDocRef.get();
 
   if (!userDoc.exists) {
     const newUser: FirestoreUserDoc = {
-      id: `user-${telegramId}`,
+      id: docId,
       telegramId,
       username,
       firstName,
@@ -1333,29 +1345,57 @@ export async function getOrCreateTelegramUserFirestore(tgUser: {
       updatedAt: now,
     };
     await userDocRef.set(newUser);
-    return newUser;
+  } else {
+    const existing = userDoc.data() as FirestoreUserDoc;
+    const updatedAdmin = existing.isAdmin || isAdmin;
+
+    await userDocRef.update({
+      username,
+      firstName,
+      lastName,
+      photoUrl: photoUrl || existing.photoUrl || '',
+      isAdmin: updatedAdmin,
+      updatedAt: now,
+    });
   }
 
-  const existing = userDoc.data() as FirestoreUserDoc;
-  const updatedAdmin = existing.isAdmin || isAdmin;
+  // Read-after-write verification to guarantee persistence in Firestore
+  const verifyDoc = await userDocRef.get();
+  if (!verifyDoc.exists) {
+    throw new Error(`USER_PERSISTENCE_FAILED: Failed to verify persisted user document at '${COLLECTIONS.USERS}/${docId}' in Firestore.`);
+  }
 
-  await userDocRef.update({
-    username,
-    firstName,
-    lastName,
-    photoUrl: photoUrl || existing.photoUrl || '',
-    isAdmin: updatedAdmin,
-    updatedAt: now,
-  });
-
+  const persisted = verifyDoc.data() as FirestoreUserDoc;
   return {
-    ...existing,
-    username,
-    firstName,
-    lastName,
-    photoUrl: photoUrl || existing.photoUrl,
-    isAdmin: updatedAdmin,
-    updatedAt: now,
+    id: persisted.id || docId,
+    telegramId: persisted.telegramId || telegramId,
+    username: persisted.username || username,
+    firstName: persisted.firstName || firstName,
+    lastName: persisted.lastName || lastName,
+    photoUrl: persisted.photoUrl || photoUrl,
+    isAdmin: Boolean(persisted.isAdmin),
+    isSuspended: Boolean(persisted.isSuspended),
+    createdAt: persisted.createdAt || now,
+    updatedAt: persisted.updatedAt || now,
+  };
+}
+
+export async function getUserByIdFirestore(userId: string): Promise<User | null> {
+  const db = getFirestoreDb();
+  const doc = await db.collection(COLLECTIONS.USERS).doc(userId).get();
+  if (!doc.exists) return null;
+  const data = doc.data() as FirestoreUserDoc;
+  return {
+    id: doc.id,
+    telegramId: data.telegramId || '',
+    username: data.username || '',
+    firstName: data.firstName || '',
+    lastName: data.lastName || '',
+    photoUrl: data.photoUrl || '',
+    isAdmin: Boolean(data.isAdmin),
+    isSuspended: Boolean(data.isSuspended),
+    createdAt: data.createdAt || '',
+    updatedAt: data.updatedAt || '',
   };
 }
 

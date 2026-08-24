@@ -892,7 +892,7 @@ function repairSeason202627Roster() {
 import crypto from "crypto";
 
 // src/server/firebase/admin.ts
-import { initializeApp, getApps, cert } from "firebase-admin/app";
+import { initializeApp, getApps, cert, applicationDefault } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import fs2 from "fs";
 import path2 from "path";
@@ -919,28 +919,25 @@ function initializeFirebaseAdmin() {
   }
   const appletConfig = loadAppletConfig();
   const projectId = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || appletConfig.projectId || "gen-lang-client-0195097895";
-  const databaseId = process.env.FIRESTORE_DATABASE_ID || process.env.FIREBASE_DATABASE_ID || appletConfig.firestoreDatabaseId || "(default)";
+  const databaseId = process.env.FIRESTORE_DATABASE_ID || process.env.FIREBASE_DATABASE_ID || appletConfig.firestoreDatabaseId || "ai-studio-efluz-4c6c88a6-697e-4fdf-82ed-45fec68ca34d";
+  let serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.FIREBASE_SERVICE_ACCOUNT_KEY || process.env.FIREBASE_SERVICE_ACCOUNT;
+  if (!serviceAccountJson && process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+    if (credPath.trim().startsWith("{")) {
+      serviceAccountJson = credPath;
+    } else if (fs2.existsSync(credPath)) {
+      try {
+        serviceAccountJson = fs2.readFileSync(credPath, "utf-8");
+      } catch {
+      }
+    }
+  }
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   let privateKey = process.env.FIREBASE_PRIVATE_KEY;
-  const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
   if (privateKey) {
     privateKey = privateKey.replace(/\\n/g, "\n");
   }
-  const hasCredentials = Boolean(serviceAccountJson) || Boolean(clientEmail) && Boolean(privateKey);
-  if (!hasCredentials && process.env.NODE_ENV !== "production") {
-    const memoryDb = createMemoryFirestore();
-    cachedDb = memoryDb;
-    cachedInfo = {
-      isConfigured: true,
-      projectId,
-      databaseId,
-      authMode: "local_fallback"
-    };
-    return {
-      db: cachedDb,
-      info: cachedInfo
-    };
-  }
+  const isProduction = process.env.NODE_ENV === "production" || process.env.VERCEL === "1" || process.env.AWS_LAMBDA_FUNCTION_NAME !== void 0;
   let app2;
   try {
     const apps = getApps();
@@ -961,18 +958,40 @@ function initializeFirebaseAdmin() {
           projectId
         });
       } else {
-        const memoryDb = createMemoryFirestore();
-        cachedDb = memoryDb;
-        cachedInfo = {
-          isConfigured: true,
-          projectId,
-          databaseId,
-          authMode: "local_fallback"
-        };
-        return {
-          db: cachedDb,
-          info: cachedInfo
-        };
+        try {
+          app2 = initializeApp({
+            credential: applicationDefault(),
+            projectId
+          });
+        } catch (adcErr) {
+          if (isProduction) {
+            console.error("[CRITICAL] Production Firebase initialization failed. Service account credentials required.", adcErr);
+            initError = adcErr.message || "Missing Firebase credentials in production";
+            cachedInfo = {
+              isConfigured: false,
+              projectId,
+              databaseId,
+              authMode: "not_configured",
+              error: initError
+            };
+            return {
+              db: null,
+              info: cachedInfo
+            };
+          }
+          const memoryDb = createMemoryFirestore();
+          cachedDb = memoryDb;
+          cachedInfo = {
+            isConfigured: true,
+            projectId,
+            databaseId,
+            authMode: "local_fallback"
+          };
+          return {
+            db: cachedDb,
+            info: cachedInfo
+          };
+        }
       }
     } else {
       app2 = apps[0];
@@ -991,29 +1010,31 @@ function initializeFirebaseAdmin() {
     };
   } catch (err) {
     initError = err.message || "Firebase Admin initialization failed";
-    if (process.env.NODE_ENV !== "production") {
-      const memoryDb = createMemoryFirestore();
-      cachedDb = memoryDb;
+    if (isProduction) {
+      console.error("[CRITICAL] Firebase Admin production initialization failed:", err);
       cachedInfo = {
-        isConfigured: true,
+        isConfigured: false,
         projectId,
         databaseId,
-        authMode: "local_fallback"
+        authMode: "not_configured",
+        error: initError
       };
       return {
-        db: cachedDb,
+        db: null,
         info: cachedInfo
       };
     }
+    const memoryDb = createMemoryFirestore();
+    cachedDb = memoryDb;
     cachedInfo = {
-      isConfigured: false,
+      isConfigured: true,
       projectId,
       databaseId,
-      authMode: "not_configured",
-      error: initError || void 0
+      authMode: "local_fallback",
+      error: initError
     };
     return {
-      db: null,
+      db: cachedDb,
       info: cachedInfo
     };
   }
@@ -1325,10 +1346,13 @@ async function getClubsByLeagueFirestore(leagueId, seasonId = "season-2026-27", 
   const userIds = Array.from(new Set(Array.from(clubOccupancyMap.values()).map((o) => o.userId)));
   const usernameMap = /* @__PURE__ */ new Map();
   if (userIds.length > 0) {
-    const usersSnap = await db.collection(COLLECTIONS.USERS).where("id", "in", userIds.slice(0, 30)).get();
-    for (const uDoc of usersSnap.docs) {
-      const uData = uDoc.data();
-      usernameMap.set(uData.id, uData.username);
+    const userDocPromises = userIds.map((uid) => db.collection(COLLECTIONS.USERS).doc(uid).get());
+    const userDocs = await Promise.all(userDocPromises);
+    for (const uDoc of userDocs) {
+      if (uDoc.exists) {
+        const uData = uDoc.data();
+        usernameMap.set(uDoc.id, uData.username || uData.firstName || uDoc.id);
+      }
     }
   }
   const clubs = clubsSnap.docs.map((doc) => {
@@ -1376,6 +1400,11 @@ async function getClubByIdFirestore(clubId, seasonId = "season-2026-27", current
     const memDoc = await db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).doc(`${seasonId}_${clubId}`).get();
     if (memDoc.exists && memDoc.data()?.status === "active") {
       occUserId = memDoc.data().userId;
+    } else {
+      const userMemSnap = await db.collection(COLLECTIONS.USER_MEMBERSHIPS).where("seasonId", "==", seasonId).where("clubId", "==", clubId).where("status", "==", "active").limit(1).get();
+      if (!userMemSnap.empty) {
+        occUserId = userMemSnap.docs[0].data().userId;
+      }
     }
   }
   let isTaken = false;
@@ -1436,7 +1465,7 @@ async function getUserActiveClubFirestore(userId, seasonId = "season-2026-27") {
 }
 async function claimClubAtomicFirestore(userId, clubId, seasonId = "season-2026-27") {
   const db = getFirestoreDb();
-  return await db.runTransaction(async (transaction) => {
+  const claimResult = await db.runTransaction(async (transaction) => {
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const userMemRef = db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${seasonId}_${userId}`);
     const clubOccRef = db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_${clubId}`);
@@ -1540,6 +1569,11 @@ async function claimClubAtomicFirestore(userId, clubId, seasonId = "season-2026-
       }
     };
   });
+  const verifyOcc = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_${clubId}`).get();
+  if (!verifyOcc.exists || verifyOcc.data()?.status !== "active") {
+    throw new Error(`OCCUPANCY_PERSISTENCE_FAILED: Failed to verify club occupancy record at '${COLLECTIONS.CLUB_OCCUPANCIES}/${seasonId}_${clubId}'.`);
+  }
+  return claimResult;
 }
 async function getAllCompetitionsFirestore(seasonId = "season-2026-27") {
   const db = getFirestoreDb();
@@ -2109,6 +2143,7 @@ async function submitFixtureResultFirestore(userId, fixtureId, homeScore, awaySc
 async function getOrCreateTelegramUserFirestore(tgUser) {
   const db = getFirestoreDb();
   const telegramId = String(tgUser.id);
+  const docId = `user-${telegramId}`;
   const username = tgUser.username || `tg_${telegramId}`;
   const firstName = tgUser.first_name || "Player";
   const lastName = tgUser.last_name || "";
@@ -2116,11 +2151,11 @@ async function getOrCreateTelegramUserFirestore(tgUser) {
   const adminIds = (process.env.ADMIN_TELEGRAM_IDS || "").split(",").map((s) => s.trim().replace(/^@/, "").toLowerCase()).filter(Boolean);
   const isAdmin = adminIds.includes(telegramId.toLowerCase()) || adminIds.includes(username.toLowerCase());
   const now = (/* @__PURE__ */ new Date()).toISOString();
-  const userDocRef = db.collection(COLLECTIONS.USERS).doc(`user-${telegramId}`);
+  const userDocRef = db.collection(COLLECTIONS.USERS).doc(docId);
   const userDoc = await userDocRef.get();
   if (!userDoc.exists) {
     const newUser = {
-      id: `user-${telegramId}`,
+      id: docId,
       telegramId,
       username,
       firstName,
@@ -2132,26 +2167,34 @@ async function getOrCreateTelegramUserFirestore(tgUser) {
       updatedAt: now
     };
     await userDocRef.set(newUser);
-    return newUser;
+  } else {
+    const existing = userDoc.data();
+    const updatedAdmin = existing.isAdmin || isAdmin;
+    await userDocRef.update({
+      username,
+      firstName,
+      lastName,
+      photoUrl: photoUrl || existing.photoUrl || "",
+      isAdmin: updatedAdmin,
+      updatedAt: now
+    });
   }
-  const existing = userDoc.data();
-  const updatedAdmin = existing.isAdmin || isAdmin;
-  await userDocRef.update({
-    username,
-    firstName,
-    lastName,
-    photoUrl: photoUrl || existing.photoUrl || "",
-    isAdmin: updatedAdmin,
-    updatedAt: now
-  });
+  const verifyDoc = await userDocRef.get();
+  if (!verifyDoc.exists) {
+    throw new Error(`USER_PERSISTENCE_FAILED: Failed to verify persisted user document at '${COLLECTIONS.USERS}/${docId}' in Firestore.`);
+  }
+  const persisted = verifyDoc.data();
   return {
-    ...existing,
-    username,
-    firstName,
-    lastName,
-    photoUrl: photoUrl || existing.photoUrl,
-    isAdmin: updatedAdmin,
-    updatedAt: now
+    id: persisted.id || docId,
+    telegramId: persisted.telegramId || telegramId,
+    username: persisted.username || username,
+    firstName: persisted.firstName || firstName,
+    lastName: persisted.lastName || lastName,
+    photoUrl: persisted.photoUrl || photoUrl,
+    isAdmin: Boolean(persisted.isAdmin),
+    isSuspended: Boolean(persisted.isSuspended),
+    createdAt: persisted.createdAt || now,
+    updatedAt: persisted.updatedAt || now
   };
 }
 async function getOrCreateDevUserFirestore(devUserId) {
@@ -2747,10 +2790,23 @@ healthRouter.get("/", async (req, res) => {
   const status = getFirebaseStatus();
   let isConnected = false;
   let connectionWarning = null;
+  let usersCount = 0;
+  let occupanciesCount = 0;
+  let membershipsCount = 0;
+  let fixturesCount = 0;
   try {
     const db = getFirestoreDb();
     if (db) {
-      await db.collection("seasons").limit(1).get();
+      const [usersSnap, occSnap, memSnap, fixSnap] = await Promise.all([
+        db.collection(COLLECTIONS.USERS).get(),
+        db.collection(COLLECTIONS.CLUB_OCCUPANCIES).get(),
+        db.collection(COLLECTIONS.USER_MEMBERSHIPS).get(),
+        db.collection(COLLECTIONS.FIXTURES).get()
+      ]);
+      usersCount = usersSnap.size;
+      occupanciesCount = occSnap.size;
+      membershipsCount = memSnap.size;
+      fixturesCount = fixSnap.size;
       isConnected = true;
     }
   } catch (err) {
@@ -2758,13 +2814,18 @@ healthRouter.get("/", async (req, res) => {
     isConnected = false;
   }
   res.json({
-    status: "ok",
+    status: isConnected ? "ok" : "degraded",
     database: "firestore",
     connected: isConnected,
     firebaseConfigured: status.isConfigured,
     projectId: status.projectId,
+    firestoreDatabaseId: status.databaseId,
     databaseId: status.databaseId,
     authMode: status.authMode,
+    usersCollectionCount: usersCount,
+    clubOccupanciesCollectionCount: occupanciesCount,
+    userMembershipsCollectionCount: membershipsCount,
+    fixturesCollectionCount: fixturesCount,
     warning: connectionWarning || void 0,
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     version: "2.0.0-firestore-production"
@@ -3240,12 +3301,6 @@ async function createAuditLog(actorUserId, action, entityType, entityId, oldValu
 }
 async function getDisputes(status = "OPEN") {
   return await getDisputesFirestore(status);
-}
-async function resolveDispute(adminUserId, disputeId, params) {
-  return await resolveDisputeFirestore(adminUserId, disputeId, params);
-}
-async function reopenFixture(adminUserId, fixtureId, notes) {
-  return await reopenFixtureFirestore(adminUserId, fixtureId, notes);
 }
 async function getAllAdminUsers() {
   return await getAllUsersFirestore();
@@ -3817,12 +3872,7 @@ adminRouter.post("/disputes/:id/resolve", validateBody(resolveDisputeSchema), as
   const adminUserId = req.user.id;
   const disputeId = req.params.id;
   try {
-    let result;
-    try {
-      result = await resolveDisputeFirestore(adminUserId, disputeId, req.body);
-    } catch {
-      result = resolveDispute(adminUserId, disputeId, req.body);
-    }
+    const result = await resolveDisputeFirestore(adminUserId, disputeId, req.body);
     res.json({
       success: true,
       message: "Dispute resolved successfully.",
@@ -3836,12 +3886,7 @@ adminRouter.post("/fixtures/:id/reopen", validateBody(reopenFixtureSchema), asyn
   const adminUserId = req.user.id;
   const fixtureId = req.params.id;
   try {
-    let result;
-    try {
-      result = await reopenFixtureFirestore(adminUserId, fixtureId, req.body.notes);
-    } catch {
-      result = reopenFixture(adminUserId, fixtureId, req.body.notes);
-    }
+    const result = await reopenFixtureFirestore(adminUserId, fixtureId, req.body.notes);
     res.json({
       success: true,
       message: "Fixture has been reopened for submissions.",
