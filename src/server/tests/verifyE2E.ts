@@ -41,16 +41,16 @@ async function runVerification() {
   // Clear any existing test memberships
   queryRun('DELETE FROM club_memberships WHERE season_id = "season-2026-27"');
 
-  const claim1 = claimClubAtomic(devUser1.id, 'club-arsenal', 'season-2026-27');
+  const claim1 = await claimClubAtomic(devUser1.id, 'club-arsenal', 'season-2026-27');
   console.log(` User 1 claimed: ${claim1.club.name} (Success: ${claim1.success})`);
 
-  const activeClub = getUserActiveClub(devUser1.id, 'season-2026-27');
+  const activeClub = await getUserActiveClub(devUser1.id, 'season-2026-27');
   if (activeClub?.id !== 'club-arsenal') throw new Error('User active club mismatch');
 
   // Test race condition / conflict: User 2 tries to claim Arsenal
   let conflictCaught = false;
   try {
-    claimClubAtomic(devUser2.id, 'club-arsenal', 'season-2026-27');
+    await claimClubAtomic(devUser2.id, 'club-arsenal', 'season-2026-27');
   } catch (err: any) {
     conflictCaught = true;
     console.log(' Atomic constraint successfully prevented duplicate claim:', err.message);
@@ -58,7 +58,7 @@ async function runVerification() {
   if (!conflictCaught) throw new Error('Expected conflict error when claiming already owned club');
 
   // User 2 claims Man City
-  const claim2 = claimClubAtomic(devUser2.id, 'club-man-city', 'season-2026-27');
+  const claim2 = await claimClubAtomic(devUser2.id, 'club-man-city', 'season-2026-27');
   console.log(` User 2 claimed: ${claim2.club.name} (Success: ${claim2.success})`);
 
   // 4. Fixture & Match Separation
@@ -86,12 +86,12 @@ async function runVerification() {
   // 5. Result Submission & Consensus Verification
   console.log('\n--- VERIFYING TWO-PARTY CONSENSUS RESULT SUBMISSION ---');
   // User 1 submits 3 - 1
-  const sub1 = submitFixtureResult(devUser1.id, arsenalManCityFixture.id, 3, 1, 'https://storage.example.com/proof-arsenal.jpg');
+  const sub1 = await submitFixtureResult(devUser1.id, arsenalManCityFixture.id, 3, 1, 'https://storage.example.com/proof-arsenal.jpg');
   console.log(` User 1 submitted 3-1 -> Fixture Status: ${sub1.status}`);
   if (sub1.status !== 'PENDING_CONFIRMATION') throw new Error('Expected PENDING_CONFIRMATION after 1 submission');
 
   // User 2 submits matching 3 - 1
-  const sub2 = submitFixtureResult(devUser2.id, arsenalManCityFixture.id, 3, 1, 'https://storage.example.com/proof-city.jpg');
+  const sub2 = await submitFixtureResult(devUser2.id, arsenalManCityFixture.id, 3, 1, 'https://storage.example.com/proof-city.jpg');
   console.log(` User 2 submitted 3-1 -> Fixture Status: ${sub2.status} (Score: ${sub2.homeScore}-${sub2.awayScore}, Winner: ${sub2.winnerClubId})`);
   if (sub2.status !== 'CONFIRMED' || sub2.winnerClubId !== 'club-arsenal') throw new Error('Expected CONFIRMED match result and Arsenal winner');
 
@@ -116,25 +116,25 @@ async function runVerification() {
     'SELECT * FROM fixtures WHERE competition_id = "comp-premier-league-2026" AND home_club_id = "club-man-city" AND away_club_id = "club-arsenal"'
   );
   // User 2 submits 2 - 0
-  submitFixtureResult(devUser2.id, fixture2.id, 2, 0);
+  await submitFixtureResult(devUser2.id, fixture2.id, 2, 0);
   // User 1 submits 1 - 2 (Mismatch!)
-  const disputedFixture = submitFixtureResult(devUser1.id, fixture2.id, 1, 2);
+  const disputedFixture = await submitFixtureResult(devUser1.id, fixture2.id, 1, 2);
   console.log(` Mismatched submissions -> Fixture Status: ${disputedFixture.status}`);
   if (disputedFixture.status !== 'DISPUTED') throw new Error('Expected DISPUTED status on mismatch');
 
-  const openDisputes = getDisputes('OPEN');
+  const openDisputes = await getDisputes('OPEN');
   console.log(` Open disputes found: ${openDisputes.length}`);
   const matchDispute = openDisputes.find((d) => d.fixtureId === fixture2.id);
   if (!matchDispute) throw new Error('Dispute record not found');
 
   // Admin resolves dispute in favor of Home submission
-  const resolveResult = resolveDispute(adminUser.id, matchDispute.id, {
+  const resolveResult = await resolveDispute(adminUser.id, matchDispute.id, {
     action: 'CONFIRM_HOME_SUBMISSION',
     notes: 'Verified photo match report: Man City won 2-0',
   });
   console.log(' Admin resolved dispute:', { success: resolveResult.success, notes: resolveResult.dispute.resolutionNotes });
 
-  const updatedFixture2 = getFixtureById(fixture2.id);
+  const updatedFixture2 = await getFixtureById(fixture2.id);
   if (updatedFixture2?.status !== 'CONFIRMED' || updatedFixture2.homeScore !== 2 || updatedFixture2.awayScore !== 0) {
     throw new Error('Admin dispute resolution did not update fixture correctly');
   }
@@ -169,11 +169,11 @@ async function runVerification() {
 
   // 10. Audit Logs & Notifications Verification
   console.log('\n--- VERIFYING AUDIT LOGS & NOTIFICATIONS ---');
-  const auditLogs = getAuditLogs(10);
+  const auditLogs = await getAuditLogs(10);
   console.log(` Audit log records: ${auditLogs.length} entries. Latest: [${auditLogs[0]?.action}] by ${auditLogs[0]?.actorUsername}`);
   if (auditLogs.length === 0) throw new Error('Expected audit logs to be recorded');
 
-  const notifications = getUserNotifications(devUser1.id, 10);
+  const notifications = await getUserNotifications(devUser1.id, 10);
   console.log(` Notifications for User 1: ${notifications.length} alerts. Latest: "${notifications[0]?.title}"`);
   if (notifications.length === 0) throw new Error('Expected notifications for User 1');
 

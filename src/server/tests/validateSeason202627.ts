@@ -181,7 +181,7 @@ async function runValidation() {
     const meta = expectedLeagueCounts[comp.leagueId];
 
     // Reset and regenerate fixtures
-    const res = resetCompetitionFixtures(comp.id);
+    const res = await resetCompetitionFixtures(comp.id);
 
     assert(
       res.generated === meta.totalFixtures,

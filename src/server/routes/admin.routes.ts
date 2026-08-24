@@ -44,15 +44,23 @@ adminRouter.post('/migrate-to-firestore', async (req: Request, res: Response) =>
   }
 });
 
-adminRouter.get('/users', (req: Request, res: Response) => {
-  const users = getAllAdminUsers();
-  res.json({ users });
+adminRouter.get('/users', async (req: Request, res: Response) => {
+  try {
+    const users = await getAllAdminUsers();
+    res.json({ users });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to fetch users', message: err.message });
+  }
 });
 
-adminRouter.get('/disputes', (req: Request, res: Response) => {
+adminRouter.get('/disputes', async (req: Request, res: Response) => {
   const status = (req.query.status as string) || 'OPEN';
-  const disputes = getDisputes(status);
-  res.json({ disputes });
+  try {
+    const disputes = await getDisputes(status);
+    res.json({ disputes });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to fetch disputes', message: err.message });
+  }
 });
 
 adminRouter.post('/disputes/:id/resolve', validateBody(resolveDisputeSchema), async (req: Request, res: Response) => {
@@ -97,10 +105,14 @@ adminRouter.post('/fixtures/:id/reopen', validateBody(reopenFixtureSchema), asyn
   }
 });
 
-adminRouter.get('/audit-logs', (req: Request, res: Response) => {
+adminRouter.get('/audit-logs', async (req: Request, res: Response) => {
   const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
-  const logs = getAuditLogs(limit);
-  res.json({ logs });
+  try {
+    const logs = await getAuditLogs(limit);
+    res.json({ logs });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to fetch audit logs', message: err.message });
+  }
 });
 
 adminRouter.post('/fixtures/generate', async (req: Request, res: Response) => {

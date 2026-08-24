@@ -33,17 +33,15 @@ async function runAllTests() {
   // Also create Admin User
   const adminUser = await getOrCreateDevUser('user-dev-admin');
   console.log(`✅ Admin User created/loaded: ID=${adminUser.id}, IsAdmin=${adminUser.isAdmin}`);
-
-  // TEST 4: User A claims Arsenal
   console.log('\n--- TEST 4: User A claims Arsenal ---');
   const seasonId = 'season-2026-27';
-  const claimA = claimClubAtomic(userA.id, 'club-arsenal', seasonId);
+  const claimA = await claimClubAtomic(userA.id, 'club-arsenal', seasonId);
   console.log(`✅ User A claimed: ${claimA.club.name} (Owner: @${claimA.club.owner?.username})`);
 
   // TEST 5: User B attempts Arsenal (Expected: Conflict rejection)
   console.log('\n--- TEST 5: User B attempts Arsenal (Atomic Race Condition Check) ---');
   try {
-    claimClubAtomic(userB.id, 'club-arsenal', seasonId);
+    await claimClubAtomic(userB.id, 'club-arsenal', seasonId);
     console.error('❌ FAIL: User B should have been rejected for Arsenal!');
     process.exit(1);
   } catch (err: any) {
@@ -57,13 +55,13 @@ async function runAllTests() {
 
   // TEST 6: User B claims Chelsea
   console.log('\n--- TEST 6: User B claims Chelsea ---');
-  const claimB = claimClubAtomic(userB.id, 'club-chelsea', seasonId);
+  const claimB = await claimClubAtomic(userB.id, 'club-chelsea', seasonId);
   console.log(`✅ User B claimed: ${claimB.club.name} (Owner: @${claimB.club.owner?.username})`);
 
   // TEST 7: Generate Premier League Fixtures
   console.log('\n--- TEST 7: Generate Premier League Fixtures (Berger Round-Robin) ---');
   const compId = 'comp-premier-league-2026';
-  const genResult = generateCompetitionFixtures(compId);
+  const genResult = await generateCompetitionFixtures(compId);
   console.log(`✅ Fixtures generated: ${genResult.generated} fixtures across ${genResult.matchdays} matchdays.`);
 
   if (genResult.generated !== 380 || genResult.matchdays !== 38) {
@@ -72,7 +70,7 @@ async function runAllTests() {
   }
 
   // Verify pairings: 20 clubs, each meets every other club twice (1 home, 1 away)
-  const allFixtures = getFixtures({ competitionId: compId });
+  const allFixtures = await getFixtures({ competitionId: compId });
   const pairingsMap = new Map<string, number>();
   for (const f of allFixtures) {
     const key = `${f.homeClubId} -> ${f.awayClubId}`;
@@ -99,7 +97,7 @@ async function runAllTests() {
 
   // User A submits 3-1
   console.log('User A (@arsenal_pro) submits score 3 - 1...');
-  const subA = submitFixtureResult(userA.id, arsenalVsChelsea.id, 3, 1);
+  const subA = await submitFixtureResult(userA.id, arsenalVsChelsea.id, 3, 1);
   console.log(`Status after User A submission: ${subA.status} (Submissions: ${subA.submissionsCount})`);
 
   if (subA.status !== 'PENDING_CONFIRMATION' && subA.status !== 'AWAITING_RESULT') {
@@ -109,7 +107,7 @@ async function runAllTests() {
 
   // User B submits 3-1 (Matching Score)
   console.log('User B (@chelsea_king) submits matching score 3 - 1...');
-  const subB = submitFixtureResult(userB.id, arsenalVsChelsea.id, 3, 1);
+  const subB = await submitFixtureResult(userB.id, arsenalVsChelsea.id, 3, 1);
   console.log(`Status after User B submission: ${subB.status} (Confirmed Score: ${subB.homeScore}-${subB.awayScore})`);
 
   if (subB.status !== 'CONFIRMED' || subB.homeScore !== 3 || subB.awayScore !== 1) {
@@ -140,11 +138,11 @@ async function runAllTests() {
 
   // User B (Chelsea home) submits 2-1
   console.log('User B submits Chelsea 2 - 1 Arsenal...');
-  submitFixtureResult(userB.id, chelseaVsArsenal.id, 2, 1);
+  await submitFixtureResult(userB.id, chelseaVsArsenal.id, 2, 1);
 
   // User A (Arsenal away) submits 1-3 (meaning Chelsea 1 - 3 Arsenal)
   console.log('User A submits conflicting score Chelsea 1 - 3 Arsenal...');
-  const disputedFixture = submitFixtureResult(userA.id, chelseaVsArsenal.id, 1, 3);
+  const disputedFixture = await submitFixtureResult(userA.id, chelseaVsArsenal.id, 1, 3);
 
   console.log(`Fixture Status: ${disputedFixture.status}`);
   if (disputedFixture.status !== 'DISPUTED') {
@@ -152,19 +150,19 @@ async function runAllTests() {
     process.exit(1);
   }
 
-  const openDisputes = getDisputes('OPEN');
+  const openDisputes = await getDisputes('OPEN');
   const thisDispute = openDisputes.find((d) => d.fixtureId === chelseaVsArsenal.id);
   console.log(`✅ Dispute created in Dispute Center: ID=${thisDispute?.id}, Status=${thisDispute?.status}`);
 
   // TEST 10: Admin Resolves Dispute
   console.log('\n--- TEST 10: Admin Dispute Resolution & Audit Logging ---');
-  const resolveResult = resolveDispute(adminUser.id, thisDispute!.id, {
+  const resolveResult = await resolveDispute(adminUser.id, thisDispute!.id, {
     action: 'CONFIRM_AWAY_SUBMISSION', // Admin confirms User A's proof: 1-3
     notes: 'Reviewed high-res screenshot proof uploaded by User A.',
   });
 
   console.log(`Dispute Resolved: ${resolveResult.success}, New Status: ${resolveResult.dispute.status}`);
-  const resolvedFixture = getFixtureById(chelseaVsArsenal.id)!;
+  const resolvedFixture = (await getFixtureById(chelseaVsArsenal.id))!;
   console.log(`Fixture after admin resolution: Status=${resolvedFixture.status}, Score=${resolvedFixture.homeScore}-${resolvedFixture.awayScore}`);
 
   if (resolvedFixture.status !== 'CONFIRMED' || resolvedFixture.homeScore !== 1 || resolvedFixture.awayScore !== 3) {
@@ -172,7 +170,7 @@ async function runAllTests() {
     process.exit(1);
   }
 
-  const auditLogs = getAuditLogs(5);
+  const auditLogs = await getAuditLogs(5);
   const disputeAudit = auditLogs.find((l) => l.action === 'RESOLVE_DISPUTE');
   console.log(`✅ Audit Log recorded: Actor=@${disputeAudit?.actorUsername}, Action=${disputeAudit?.action}, EntityID=${disputeAudit?.entityId}`);
 

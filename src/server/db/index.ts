@@ -122,11 +122,8 @@ export async function initDatabase(): Promise<Database> {
   const wasmPath = resolveSqlWasmPath();
   let SQL: any;
   try {
-    const wasmBuffer = fs.readFileSync(wasmPath);
-    const wasmBinary = wasmBuffer.buffer.slice(
-      wasmBuffer.byteOffset,
-      wasmBuffer.byteOffset + wasmBuffer.byteLength
-    );
+    const wasmFileBuffer = fs.readFileSync(wasmPath);
+    const wasmBinary = new Uint8Array(wasmFileBuffer);
     SQL = await initSqlJs({
       locateFile: () => wasmPath,
       wasmBinary,
@@ -137,14 +134,7 @@ export async function initDatabase(): Promise<Database> {
         locateFile: () => wasmPath,
       });
     } catch (err2) {
-      try {
-        const wasmBuffer = fs.readFileSync(wasmPath);
-        SQL = await initSqlJs({
-          wasmBinary: new Uint8Array(wasmBuffer),
-        });
-      } catch (err3) {
-        SQL = await initSqlJs({});
-      }
+      SQL = await initSqlJs({});
     }
   }
 

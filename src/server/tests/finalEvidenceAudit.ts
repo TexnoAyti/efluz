@@ -121,7 +121,7 @@ async function runAudit() {
   });
 
   console.log('\n=== SECTION 5: OWNERSHIP API VERIFICATION ===');
-  const plClubs = getClubsByLeague('league-premier-league', 'season-2026-27');
+  const plClubs = await getClubsByLeague('league-premier-league', 'season-2026-27');
   const arsenal = plClubs.find(c => c.id === 'club-arsenal');
   console.log('Arsenal Club Object from API:', JSON.stringify(arsenal, null, 2));
 }

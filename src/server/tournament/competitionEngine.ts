@@ -9,14 +9,14 @@ export class CompetitionEngine {
   /**
    * Generates fixtures for any competition type (LEAGUE, KNOCKOUT, SUPER_CUP, EUROPEAN)
    */
-  static generateSchedule(competitionId: string, options: { force?: boolean } = {}) {
+  static async generateSchedule(competitionId: string, options: { force?: boolean } = {}) {
     const comp = queryGet<any>('SELECT * FROM competitions WHERE id = ?', [competitionId]);
     if (!comp) {
       throw new Error(`Competition '${competitionId}' not found.`);
     }
 
     if (comp.type === 'LEAGUE' || comp.type === 'EUROPEAN_LEAGUE_PHASE') {
-      return generateCompetitionFixtures(competitionId, options);
+      return await generateCompetitionFixtures(competitionId, options);
     } else if (comp.type === 'KNOCKOUT' || comp.type === 'SUPER_CUP' || comp.type === 'EUROPEAN_KNOCKOUT') {
       return generateKnockoutBracket(competitionId, options);
     } else {

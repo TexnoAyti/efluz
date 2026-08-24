@@ -214,6 +214,65 @@ export async function getClubsByLeagueFirestore(
   return clubs.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+export async function getAvailableClubsFirestore(
+  seasonId = 'season-2026-27',
+  currentUserId?: string
+): Promise<Club[]> {
+  const db = getFirestoreDb();
+
+  // 1. Fetch all active clubs
+  const clubsSnap = await db.collection(COLLECTIONS.CLUBS).where('isActive', '==', true).get();
+
+  // 2. Fetch all active occupancies
+  const [occupanciesSnap, membershipsSnap] = await Promise.all([
+    db
+      .collection(COLLECTIONS.CLUB_OCCUPANCIES)
+      .where('seasonId', '==', seasonId)
+      .where('status', '==', 'active')
+      .get(),
+    db
+      .collection(COLLECTIONS.CLUB_MEMBERSHIPS)
+      .where('seasonId', '==', seasonId)
+      .where('status', '==', 'active')
+      .get(),
+  ]);
+
+  const occupiedClubIds = new Set<string>();
+  for (const doc of occupanciesSnap.docs) {
+    const data = doc.data();
+    if (data.clubId) occupiedClubIds.add(data.clubId);
+  }
+  for (const doc of membershipsSnap.docs) {
+    const data = doc.data();
+    if (data.clubId) occupiedClubIds.add(data.clubId);
+  }
+
+  // Filter for unoccupied clubs
+  const availableClubs: Club[] = [];
+  for (const doc of clubsSnap.docs) {
+    if (!occupiedClubIds.has(doc.id)) {
+      const data = doc.data() as FirestoreClubDoc;
+      availableClubs.push({
+        id: doc.id,
+        name: data.name,
+        shortName: data.shortName,
+        leagueId: data.leagueId,
+        country: data.country,
+        logoUrl: data.logo,
+        active: data.isActive,
+        createdAt: data.createdAt,
+        isTaken: false,
+        isCurrentUserClub: false,
+        occupancy: {
+          status: 'available',
+        },
+      });
+    }
+  }
+
+  return availableClubs.sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export async function getClubByIdFirestore(
   clubId: string,
   seasonId = 'season-2026-27',
@@ -1176,7 +1235,7 @@ export async function submitFixtureResultFirestore(
   const allSubsSnap = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where('fixtureId', '==', fixtureId).get();
   const allSubs = allSubsSnap.docs.map((d) => d.data() as FirestoreResultSubmissionDoc);
 
-  let newStatus = 'AWAITING_RESULT';
+  let newStatus = allSubs.length === 1 ? 'PENDING_CONFIRMATION' : 'AWAITING_RESULT';
   let confirmedHomeScore: number | null = null;
   let confirmedAwayScore: number | null = null;
   let winnerClubId: string | null = null;
@@ -1444,3 +1503,185 @@ export async function resolveDisputeFirestore(
 
   return { success: true, dispute: updatedDispute };
 }
+
+export async function getDisputesFirestore(status = 'OPEN'): Promise<Dispute[]> {
+  const db = getFirestoreDb();
+  let query: FirebaseFirestore.Query = db.collection(COLLECTIONS.DISPUTES);
+  if (status) {
+    query = query.where('status', '==', status);
+  }
+  const snap = await query.get();
+  const disputes: Dispute[] = [];
+
+  for (const doc of snap.docs) {
+    const data = doc.data() as FirestoreDisputeDoc;
+    const fixture = await getFixtureByIdFirestore(data.fixtureId);
+    let mappedStatus: 'OPEN' | 'RESOLVED' | 'DISMISSED' = 'OPEN';
+    if (data.status === 'RESOLVED') mappedStatus = 'RESOLVED';
+    else if (data.status === 'CANCELLED') mappedStatus = 'DISMISSED';
+
+    disputes.push({
+      id: doc.id,
+      fixtureId: data.fixtureId,
+      seasonId: data.seasonId,
+      status: mappedStatus,
+      resolvedByUserId: data.resolvedByUserId,
+      resolutionNotes: data.resolutionNotes,
+      resolvedAt: data.resolvedAt,
+      createdAt: data.createdAt,
+      fixture: fixture || undefined,
+    });
+  }
+
+  return disputes;
+}
+
+export async function getAllUsersFirestore(): Promise<User[]> {
+  const db = getFirestoreDb();
+  const snap = await db.collection(COLLECTIONS.USERS).orderBy('createdAt', 'desc').get();
+  return snap.docs.map((d) => {
+    const data = d.data() as FirestoreUserDoc;
+    return {
+      id: d.id,
+      telegramId: data.telegramId,
+      username: data.username,
+      firstName: data.firstName,
+      lastName: data.lastName,
+      photoUrl: data.photoUrl,
+      isAdmin: data.isAdmin,
+      isSuspended: data.isSuspended,
+      createdAt: data.createdAt,
+      updatedAt: data.updatedAt,
+    };
+  });
+}
+
+export async function getAuditLogsFirestore(limit = 50): Promise<AuditLog[]> {
+  const db = getFirestoreDb();
+  const snap = await db
+    .collection(COLLECTIONS.AUDIT_LOGS)
+    .orderBy('createdAt', 'desc')
+    .limit(limit)
+    .get();
+
+  return snap.docs.map((d) => {
+    const data = d.data() as FirestoreAuditLogDoc;
+    let parsedOld: any = undefined;
+    let parsedNew: any = undefined;
+    try {
+      if (data.oldValueJson) parsedOld = JSON.parse(data.oldValueJson);
+    } catch {
+      parsedOld = data.oldValueJson;
+    }
+    try {
+      if (data.newValueJson) parsedNew = JSON.parse(data.newValueJson);
+    } catch {
+      parsedNew = data.newValueJson;
+    }
+
+    return {
+      id: d.id,
+      actorUserId: data.actorUserId,
+      actorUsername: data.actorUsername,
+      action: data.action,
+      entityType: data.entityType,
+      entityId: data.entityId,
+      oldValue: parsedOld,
+      newValue: parsedNew,
+      ipAddress: data.ipAddress || undefined,
+      createdAt: data.createdAt,
+    };
+  });
+}
+
+export async function createAuditLogFirestore(
+  actorUserId: string,
+  action: string,
+  entityType: string,
+  entityId: string,
+  oldValue?: any,
+  newValue?: any,
+  ipAddress?: string
+): Promise<void> {
+  const db = getFirestoreDb();
+  const now = new Date().toISOString();
+  await db.collection(COLLECTIONS.AUDIT_LOGS).add({
+    actorUserId,
+    action,
+    entityType,
+    entityId,
+    oldValueJson: oldValue ? JSON.stringify(oldValue) : null,
+    newValueJson: newValue ? JSON.stringify(newValue) : null,
+    ipAddress: ipAddress || null,
+    createdAt: now,
+  });
+}
+
+export async function createNotificationFirestore(
+  userId: string,
+  type: string,
+  title: string,
+  message: string,
+  data?: Record<string, unknown>
+): Promise<void> {
+  const db = getFirestoreDb();
+  const now = new Date().toISOString();
+  await db.collection(COLLECTIONS.NOTIFICATIONS).add({
+    userId,
+    type,
+    title,
+    message,
+    data: data || null,
+    isRead: false,
+    createdAt: now,
+  });
+}
+
+export async function getUserNotificationsFirestore(userId: string, limit = 20): Promise<Notification[]> {
+  const db = getFirestoreDb();
+  const snap = await db
+    .collection(COLLECTIONS.NOTIFICATIONS)
+    .where('userId', '==', userId)
+    .orderBy('createdAt', 'desc')
+    .limit(limit)
+    .get();
+
+  const validTypes: Array<Notification['type']> = [
+    'MATCH_SCHEDULED',
+    'RESULT_SUBMITTED',
+    'RESULT_CONFIRMED',
+    'DISPUTE_OPENED',
+    'DISPUTE_RESOLVED',
+    'SYSTEM',
+  ];
+
+  return snap.docs.map((d) => {
+    const data = d.data() as FirestoreNotificationDoc;
+    const notifType = validTypes.includes(data.type as any) ? (data.type as Notification['type']) : 'SYSTEM';
+    return {
+      id: d.id,
+      userId: data.userId,
+      type: notifType,
+      title: data.title,
+      message: data.message,
+      isRead: data.isRead,
+      createdAt: data.createdAt,
+    };
+  });
+}
+
+export async function markNotificationsReadFirestore(userId: string): Promise<void> {
+  const db = getFirestoreDb();
+  const snap = await db
+    .collection(COLLECTIONS.NOTIFICATIONS)
+    .where('userId', '==', userId)
+    .where('isRead', '==', false)
+    .get();
+
+  if (!snap.empty) {
+    const batch = db.batch();
+    snap.docs.forEach((doc) => batch.update(doc.ref, { isRead: true }));
+    await batch.commit();
+  }
+}
+

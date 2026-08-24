@@ -399,6 +399,16 @@ async function runAdversarialTestSuite() {
   // Generate Fixture for Arsenal vs Chelsea
   const now = new Date().toISOString();
   const testFixId = 'fix-test-arsenal-chelsea';
+
+  const oldSubs = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where('fixtureId', '==', testFixId).get();
+  for (const d of oldSubs.docs) {
+    await d.ref.delete();
+  }
+  const oldDisps = await db.collection(COLLECTIONS.DISPUTES).where('fixtureId', '==', testFixId).get();
+  for (const d of oldDisps.docs) {
+    await d.ref.delete();
+  }
+
   queryRun(
     `INSERT INTO fixtures (id, season_id, competition_id, matchday, round_name, home_club_id, away_club_id, scheduled_at, status, created_at, updated_at)
      VALUES (?, "season-2026-27", "comp-premier-league-2026", 1, "Matchday 1", "club-arsenal", "club-chelsea", ?, "SCHEDULED", ?, ?)`,

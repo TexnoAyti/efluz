@@ -53,7 +53,7 @@ async function runStrictVerification() {
 
   // 4. Run real generation flow
   console.log('\n[ACTION]: Generating schedule with force=true...');
-  const genResult = CompetitionEngine.generateSchedule(testCompId, { force: true });
+  const genResult = await CompetitionEngine.generateSchedule(testCompId, { force: true });
   const mdCount = 'matchdays' in genResult ? genResult.matchdays : 0;
   console.log(`[GENERATION RESULT]: generated=${genResult.generated}, matchdays=${mdCount}`);
 
@@ -99,7 +99,7 @@ async function runStrictVerification() {
 
   // 9. Run generation second time WITHOUT reset/force -> MUST NOT create duplicates
   console.log('\n[ACTION]: Running generation a 2nd time WITHOUT force/reset...');
-  const secondGenResult = CompetitionEngine.generateSchedule(testCompId, { force: false });
+  const secondGenResult = await CompetitionEngine.generateSchedule(testCompId, { force: false });
   console.log(`[2ND GEN RESULT]: generated=${secondGenResult.generated}`);
 
   const secondCount = queryGet<{ cnt: number }>(
@@ -114,7 +114,7 @@ async function runStrictVerification() {
 
   // 10. Run explicit regeneration/reset operation
   console.log('\n[ACTION]: Running explicit regeneration/reset (force=true)...');
-  const regenResult = CompetitionEngine.generateSchedule(testCompId, { force: true });
+  const regenResult = await CompetitionEngine.generateSchedule(testCompId, { force: true });
   const regenMd = 'matchdays' in regenResult ? regenResult.matchdays : 0;
   console.log(`[REGENERATION RESULT]: generated=${regenResult.generated}, matchdays=${regenMd}`);
 
@@ -130,7 +130,7 @@ async function runStrictVerification() {
   // Also test Knockout Cup schedule generation (FA Cup)
   const faCupId = 'comp-fa-cup-2026';
   console.log(`\n[ACTION]: Generating Knockout tournament schedule for FA Cup (${faCupId})...`);
-  const faCupGen = CompetitionEngine.generateSchedule(faCupId, { force: true });
+  const faCupGen = await CompetitionEngine.generateSchedule(faCupId, { force: true });
   const faRounds = 'rounds' in faCupGen ? faCupGen.rounds : 0;
   console.log(`[FA CUP GEN RESULT]: generated=${faCupGen.generated}, rounds=${faRounds}`);
 
@@ -166,7 +166,7 @@ async function runStrictVerification() {
 
   // 2. Assign Club A
   console.log(`\n2. Assigning Club A (${clubAId}) to user ${testUserId}...`);
-  const claimAResult = claimClubAtomic(testUserId, clubAId, testSeasonId);
+  const claimAResult = await claimClubAtomic(testUserId, clubAId, testSeasonId);
   console.log(`[CLAIM A RESULT]: success=${claimAResult.success}, club=${claimAResult.club.name}`);
 
   // 3. Verify database contains Club A
