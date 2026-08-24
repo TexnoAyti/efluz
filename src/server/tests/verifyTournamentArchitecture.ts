@@ -112,7 +112,7 @@ export async function runTournamentArchitectureTests() {
   console.log('\n--- [TEST 2] Testing Domestic vs UCL Fixture Separation ---');
 
   // Verify that calling generateCompetitionFixtures on domestic leagues generates 380 fixtures
-  const domesticGen = await generateCompetitionFixtures('comp-premier-league-2026');
+  const domesticGen = await generateCompetitionFixtures('comp-premier-league-2026', { force: true });
   assert(
     'Section 2: Algorithmic Double Round-Robin Generation for Domestic Leagues',
     'Generates 380 fixtures for 20-team league',
@@ -239,20 +239,18 @@ export async function runTournamentArchitectureTests() {
     match1 = plFixtures.find((f) => f.homeClubId === 'club-arsenal') || plFixtures[0];
   }
 
-  // If match was previously confirmed in earlier run, reset it
-  if (match1.status === 'CONFIRMED') {
-    const db = (await import('../firebase/admin')).getFirestoreDb();
-    await db.collection('fixtures').doc(match1.id).update({
-      status: 'SCHEDULED',
-      homeScore: null,
-      awayScore: null,
-      winnerClubId: null,
-      resultConfirmedAt: null,
-    });
-    const subsSnap = await db.collection('result_submissions').where('fixtureId', '==', match1.id).get();
-    for (const d of subsSnap.docs) {
-      await d.ref.delete();
-    }
+  // Ensure match1 is cleanly in SCHEDULED state with 0 submissions before testing
+  const db = (await import('../firebase/admin')).getFirestoreDb();
+  await db.collection('fixtures').doc(match1.id).update({
+    status: 'SCHEDULED',
+    homeScore: null,
+    awayScore: null,
+    winnerClubId: null,
+    resultConfirmedAt: null,
+  });
+  const subsSnap = await db.collection('result_submissions').where('fixtureId', '==', match1.id).get();
+  for (const d of subsSnap.docs) {
+    await d.ref.delete();
   }
 
   // Both managers submit matching results (home: 3, away: 1)
@@ -361,7 +359,6 @@ export async function runTournamentArchitectureTests() {
     [awayManagerId, '200002', 'cup_manager_away', 'CupAway', 0, now, now]
   );
 
-  const db = (await import('../firebase/admin')).getFirestoreDb();
   await db.collection('user_memberships').doc(`season-2026-27_${homeManagerId}`).set({
     id: `season-2026-27_${homeManagerId}`,
     userId: homeManagerId,

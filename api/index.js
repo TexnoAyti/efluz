@@ -33,22 +33,22 @@ function getDbFilePath() {
 function resolveSqlWasmPath() {
   const modDir = getModuleDir();
   const candidates = [
-    // 1. In same directory as compiled serverless handler (e.g., /var/task/api/sql-wasm.wasm)
+    // 1. In node_modules (local dev, tsx, standard node environment)
+    path.resolve(process.cwd(), "node_modules", "sql.js", "dist", "sql-wasm.wasm"),
+    path.join(modDir, "..", "node_modules", "sql.js", "dist", "sql-wasm.wasm"),
+    // 2. In same directory as compiled serverless handler (e.g., /var/task/api/sql-wasm.wasm)
     path.join(modDir, "sql-wasm.wasm"),
-    // 2. In api/ folder relative to project root / task root
+    // 3. In api/ folder relative to project root / task root
     path.resolve(process.cwd(), "api", "sql-wasm.wasm"),
-    // 3. In parent directory (e.g. if modDir is /var/task/api, check /var/task/sql-wasm.wasm)
+    // 4. In parent directory (e.g. if modDir is /var/task/api, check /var/task/sql-wasm.wasm)
     path.join(modDir, "..", "sql-wasm.wasm"),
     path.join(modDir, "..", "api", "sql-wasm.wasm"),
     path.resolve(process.cwd(), "sql-wasm.wasm"),
-    // 4. In dist/ folder
+    // 5. In dist/ folder
     path.resolve(process.cwd(), "dist", "sql-wasm.wasm"),
     path.join(modDir, "..", "dist", "sql-wasm.wasm"),
-    // 5. In public/ folder
-    path.resolve(process.cwd(), "public", "sql-wasm.wasm"),
-    // 6. In node_modules fallback (local dev or standard node environment)
-    path.resolve(process.cwd(), "node_modules", "sql.js", "dist", "sql-wasm.wasm"),
-    path.join(modDir, "..", "node_modules", "sql.js", "dist", "sql-wasm.wasm")
+    // 6. In public/ folder
+    path.resolve(process.cwd(), "public", "sql-wasm.wasm")
   ];
   for (const candidate of candidates) {
     try {
@@ -114,11 +114,8 @@ async function initDatabase() {
   const wasmPath = resolveSqlWasmPath();
   let SQL;
   try {
-    const wasmBuffer = fs.readFileSync(wasmPath);
-    const wasmBinary = wasmBuffer.buffer.slice(
-      wasmBuffer.byteOffset,
-      wasmBuffer.byteOffset + wasmBuffer.byteLength
-    );
+    const wasmFileBuffer = fs.readFileSync(wasmPath);
+    const wasmBinary = new Uint8Array(wasmFileBuffer);
     SQL = await initSqlJs({
       locateFile: () => wasmPath,
       wasmBinary
@@ -129,14 +126,7 @@ async function initDatabase() {
         locateFile: () => wasmPath
       });
     } catch (err2) {
-      try {
-        const wasmBuffer = fs.readFileSync(wasmPath);
-        SQL = await initSqlJs({
-          wasmBinary: new Uint8Array(wasmBuffer)
-        });
-      } catch (err3) {
-        SQL = await initSqlJs({});
-      }
+      SQL = await initSqlJs({});
     }
   }
   if (fs.existsSync(DB_FILE)) {
@@ -2076,7 +2066,7 @@ async function submitFixtureResultFirestore(userId, fixtureId, homeScore, awaySc
   });
   const allSubsSnap = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where("fixtureId", "==", fixtureId).get();
   const allSubs = allSubsSnap.docs.map((d) => d.data());
-  let newStatus = "AWAITING_RESULT";
+  let newStatus = allSubs.length === 1 ? "PENDING_CONFIRMATION" : "AWAITING_RESULT";
   let confirmedHomeScore = null;
   let confirmedAwayScore = null;
   let winnerClubId = null;
@@ -2276,6 +2266,111 @@ async function resolveDisputeFirestore(adminUserId, disputeId, params) {
     createdAt: now
   });
   return { success: true, dispute: updatedDispute };
+}
+async function getDisputesFirestore(status = "OPEN") {
+  const db = getFirestoreDb();
+  let query = db.collection(COLLECTIONS.DISPUTES);
+  if (status) {
+    query = query.where("status", "==", status);
+  }
+  const snap = await query.get();
+  const disputes = [];
+  for (const doc of snap.docs) {
+    const data = doc.data();
+    const fixture = await getFixtureByIdFirestore(data.fixtureId);
+    let mappedStatus = "OPEN";
+    if (data.status === "RESOLVED") mappedStatus = "RESOLVED";
+    else if (data.status === "CANCELLED") mappedStatus = "DISMISSED";
+    disputes.push({
+      id: doc.id,
+      fixtureId: data.fixtureId,
+      seasonId: data.seasonId,
+      status: mappedStatus,
+      resolvedByUserId: data.resolvedByUserId,
+      resolutionNotes: data.resolutionNotes,
+      resolvedAt: data.resolvedAt,
+      createdAt: data.createdAt,
+      fixture: fixture || void 0
+    });
+  }
+  return disputes;
+}
+async function getAllUsersFirestore() {
+  const db = getFirestoreDb();
+  const snap = await db.collection(COLLECTIONS.USERS).orderBy("createdAt", "desc").get();
+  return snap.docs.map((d) => {
+    const data = d.data();
+    return {
+      id: d.id,
+      telegramId: data.telegramId,
+      username: data.username,
+      firstName: data.firstName,
+      lastName: data.lastName,
+      photoUrl: data.photoUrl,
+      isAdmin: data.isAdmin,
+      isSuspended: data.isSuspended,
+      createdAt: data.createdAt,
+      updatedAt: data.updatedAt
+    };
+  });
+}
+async function getAuditLogsFirestore(limit = 50) {
+  const db = getFirestoreDb();
+  const snap = await db.collection(COLLECTIONS.AUDIT_LOGS).orderBy("createdAt", "desc").limit(limit).get();
+  return snap.docs.map((d) => {
+    const data = d.data();
+    let parsedOld = void 0;
+    let parsedNew = void 0;
+    try {
+      if (data.oldValueJson) parsedOld = JSON.parse(data.oldValueJson);
+    } catch {
+      parsedOld = data.oldValueJson;
+    }
+    try {
+      if (data.newValueJson) parsedNew = JSON.parse(data.newValueJson);
+    } catch {
+      parsedNew = data.newValueJson;
+    }
+    return {
+      id: d.id,
+      actorUserId: data.actorUserId,
+      actorUsername: data.actorUsername,
+      action: data.action,
+      entityType: data.entityType,
+      entityId: data.entityId,
+      oldValue: parsedOld,
+      newValue: parsedNew,
+      ipAddress: data.ipAddress || void 0,
+      createdAt: data.createdAt
+    };
+  });
+}
+async function createAuditLogFirestore(actorUserId, action, entityType, entityId, oldValue, newValue, ipAddress) {
+  const db = getFirestoreDb();
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  await db.collection(COLLECTIONS.AUDIT_LOGS).add({
+    actorUserId,
+    action,
+    entityType,
+    entityId,
+    oldValueJson: oldValue ? JSON.stringify(oldValue) : null,
+    newValueJson: newValue ? JSON.stringify(newValue) : null,
+    ipAddress: ipAddress || null,
+    createdAt: now
+  });
+}
+async function createNotificationFirestore(userId, type, title, message, data) {
+  const db = getFirestoreDb();
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  await db.collection(COLLECTIONS.NOTIFICATIONS).add({
+    userId,
+    type,
+    title,
+    message,
+    data: data || null,
+    isRead: false,
+    createdAt: now
+  });
 }
 
 // src/server/auth/telegramAuth.ts
@@ -3139,15 +3234,29 @@ meRouter.post("/notifications/read", requireAuth, async (req, res) => {
 import { Router as Router9 } from "express";
 import { z as z3 } from "zod";
 
+// src/server/services/adminService.ts
+async function createAuditLog(actorUserId, action, entityType, entityId, oldValue, newValue, ipAddress) {
+  await createAuditLogFirestore(actorUserId, action, entityType, entityId, oldValue, newValue, ipAddress);
+}
+async function getDisputes(status = "OPEN") {
+  return await getDisputesFirestore(status);
+}
+async function resolveDispute(adminUserId, disputeId, params) {
+  return await resolveDisputeFirestore(adminUserId, disputeId, params);
+}
+async function reopenFixture(adminUserId, fixtureId, notes) {
+  return await reopenFixtureFirestore(adminUserId, fixtureId, notes);
+}
+async function getAllAdminUsers() {
+  return await getAllUsersFirestore();
+}
+async function getAuditLogs(limit = 50) {
+  return await getAuditLogsFirestore(limit);
+}
+
 // src/server/services/notificationService.ts
-function createNotification(userId, type, title, message, data) {
-  const id = `notif-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const dataJson = data ? JSON.stringify(data) : null;
-  queryRun(
-    "INSERT INTO notifications (id, user_id, type, title, message, data_json, is_read, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?)",
-    [id, userId, type, title, message, dataJson, now]
-  );
+async function createNotification(userId, type, title, message, data) {
+  await createNotificationFirestore(userId, type, title, message, data);
 }
 
 // src/server/tournament/knockoutEngine.ts
@@ -3266,390 +3375,6 @@ function generateKnockoutBracket(competitionId, options = {}) {
     queryRun('UPDATE competitions SET status = "active" WHERE id = ?', [competitionId]);
     return { generated: totalGenerated, rounds: totalRounds };
   });
-}
-function advanceKnockoutWinner(fixtureId) {
-  return dbTransaction(() => {
-    const fixture = queryGet("SELECT * FROM fixtures WHERE id = ?", [fixtureId]);
-    if (!fixture || fixture.status !== "CONFIRMED" || !fixture.winner_club_id) {
-      return { advanced: false };
-    }
-    const comp = queryGet("SELECT * FROM competitions WHERE id = ?", [fixture.competition_id]);
-    if (!comp || comp.type !== "KNOCKOUT" && comp.type !== "SUPER_CUP" && comp.type !== "EUROPEAN_KNOCKOUT") {
-      return { advanced: false };
-    }
-    const match = fixture.id.match(/-r(\d+)-m(\d+)$/);
-    if (!match) {
-      return { advanced: false };
-    }
-    const currentRound = parseInt(match[1], 10);
-    const currentMatchIndex = parseInt(match[2], 10);
-    const nextRound = currentRound + 1;
-    const nextMatchIndex = Math.floor(currentMatchIndex / 2);
-    const isHomeSlot = currentMatchIndex % 2 === 0;
-    const nextFixtureId = `fix-${comp.id}-r${nextRound}-m${nextMatchIndex}`;
-    const nextFixture = queryGet("SELECT * FROM fixtures WHERE id = ?", [nextFixtureId]);
-    if (!nextFixture) {
-      const championClub = queryGet("SELECT * FROM clubs WHERE id = ?", [fixture.winner_club_id]);
-      if (championClub) {
-        createAuditLog(
-          "system",
-          "TOURNAMENT_CHAMPION_CROWNED",
-          "competitions",
-          comp.id,
-          null,
-          { championClubId: championClub.id, championName: championClub.name }
-        );
-        const owner = queryGet(
-          'SELECT user_id FROM club_memberships WHERE club_id = ? AND season_id = ? AND status = "active"',
-          [championClub.id, comp.season_id]
-        );
-        if (owner) {
-          createNotification(
-            owner.user_id,
-            "TOURNAMENT_CHAMPION",
-            `\u{1F3C6} Champion of ${comp.name}!`,
-            `Congratulations! ${championClub.name} has won the ${comp.name} title!`
-          );
-        }
-      }
-      return { advanced: true, winnerClubId: fixture.winner_club_id };
-    }
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    const updateColumn = isHomeSlot ? "home_club_id" : "away_club_id";
-    queryRun(
-      `UPDATE fixtures SET ${updateColumn} = ?, updated_at = ? WHERE id = ?`,
-      [fixture.winner_club_id, now, nextFixtureId]
-    );
-    const updatedNext = queryGet("SELECT * FROM fixtures WHERE id = ?", [nextFixtureId]);
-    if (updatedNext.home_club_id !== "TBD" && updatedNext.away_club_id !== "TBD") {
-      const homeOwner = queryGet(
-        'SELECT user_id FROM club_memberships WHERE club_id = ? AND season_id = ? AND status = "active"',
-        [updatedNext.home_club_id, comp.season_id]
-      );
-      const awayOwner = queryGet(
-        'SELECT user_id FROM club_memberships WHERE club_id = ? AND season_id = ? AND status = "active"',
-        [updatedNext.away_club_id, comp.season_id]
-      );
-      const notifMsg = `Your next match in ${comp.name} (${updatedNext.round_name}) is scheduled!`;
-      if (homeOwner) createNotification(homeOwner.user_id, "NEXT_ROUND_MATCH", `Next Round in ${comp.name}`, notifMsg);
-      if (awayOwner) createNotification(awayOwner.user_id, "NEXT_ROUND_MATCH", `Next Round in ${comp.name}`, notifMsg);
-    }
-    createAuditLog(
-      "system",
-      "KNOCKOUT_ADVANCE",
-      "fixtures",
-      nextFixtureId,
-      { previousFixtureId: fixture.id },
-      { round: nextRound, slot: isHomeSlot ? "HOME" : "AWAY", advancedClubId: fixture.winner_club_id }
-    );
-    return { advanced: true, targetFixtureId: nextFixtureId, winnerClubId: fixture.winner_club_id };
-  });
-}
-
-// src/server/services/fixtureService.ts
-function getFixtureById(fixtureId, currentUserId) {
-  const row = queryGet(
-    `SELECT f.*,
-            comp.name as competition_name,
-            hc.name as home_name, hc.short_name as home_short, hc.logo_url as home_logo,
-            ac.name as away_name, ac.short_name as away_short, ac.logo_url as away_logo,
-            hcm.user_id as home_owner_id,
-            acm.user_id as away_owner_id
-     FROM fixtures f
-     JOIN competitions comp ON f.competition_id = comp.id
-     LEFT JOIN clubs hc ON f.home_club_id = hc.id
-     LEFT JOIN clubs ac ON f.away_club_id = ac.id
-     LEFT JOIN club_memberships hcm ON hc.id = hcm.club_id AND hcm.season_id = f.season_id AND hcm.status = 'active'
-     LEFT JOIN club_memberships acm ON ac.id = acm.club_id AND acm.season_id = f.season_id AND acm.status = 'active'
-     WHERE f.id = ?`,
-    [fixtureId]
-  );
-  if (!row) return null;
-  const submissions = queryAll(
-    "SELECT * FROM result_submissions WHERE fixture_id = ?",
-    [fixtureId]
-  );
-  let userSub = null;
-  let opponentSub = null;
-  for (const s of submissions) {
-    const formatted = {
-      id: s.id,
-      fixtureId: s.fixture_id,
-      submittedByUserId: s.submitted_by_user_id,
-      clubId: s.club_id,
-      homeScore: s.home_score,
-      awayScore: s.away_score,
-      proofUrl: s.proof_url || void 0,
-      createdAt: s.created_at
-    };
-    if (currentUserId && s.submitted_by_user_id === currentUserId) {
-      userSub = formatted;
-    } else {
-      opponentSub = formatted;
-    }
-  }
-  const isHomeTbd = !row.home_club_id || row.home_club_id === "TBD";
-  const isAwayTbd = !row.away_club_id || row.away_club_id === "TBD";
-  return {
-    id: row.id,
-    seasonId: row.season_id,
-    competitionId: row.competition_id,
-    competitionName: row.competition_name,
-    matchday: row.matchday,
-    roundName: row.round_name,
-    homeClubId: row.home_club_id,
-    awayClubId: row.away_club_id,
-    homeClub: {
-      id: row.home_club_id || "TBD",
-      name: row.home_name || (isHomeTbd ? "TBD" : row.home_club_id),
-      shortName: row.home_short || (isHomeTbd ? "TBD" : row.home_club_id),
-      country: "",
-      leagueId: "",
-      logoUrl: row.home_logo || "",
-      active: true,
-      createdAt: ""
-    },
-    awayClub: {
-      id: row.away_club_id || "TBD",
-      name: row.away_name || (isAwayTbd ? "TBD" : row.away_club_id),
-      shortName: row.away_short || (isAwayTbd ? "TBD" : row.away_club_id),
-      country: "",
-      leagueId: "",
-      logoUrl: row.away_logo || "",
-      active: true,
-      createdAt: ""
-    },
-    homeOwnerId: row.home_owner_id || void 0,
-    awayOwnerId: row.away_owner_id || void 0,
-    scheduledAt: row.scheduled_at,
-    status: row.status,
-    homeScore: row.home_score,
-    awayScore: row.away_score,
-    winnerClubId: row.winner_club_id,
-    resultConfirmedAt: row.result_confirmed_at,
-    submissionsCount: submissions.length,
-    userSubmission: userSub,
-    opponentSubmission: opponentSub,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at
-  };
-}
-
-// src/server/services/adminService.ts
-function createAuditLog(actorUserId, action, entityType, entityId, oldValue, newValue, ipAddress) {
-  const actor = queryGet("SELECT username FROM users WHERE id = ?", [actorUserId]);
-  const actorUsername = actor?.username || "admin";
-  const id = `audit-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  queryRun(
-    `INSERT INTO audit_logs (id, actor_user_id, actor_username, action, entity_type, entity_id, old_value_json, new_value_json, ip_address, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      id,
-      actorUserId,
-      actorUsername,
-      action,
-      entityType,
-      entityId,
-      oldValue ? JSON.stringify(oldValue) : null,
-      newValue ? JSON.stringify(newValue) : null,
-      ipAddress || null,
-      now
-    ]
-  );
-}
-function getDisputes(status = "OPEN") {
-  const rows = queryAll(
-    `SELECT d.*,
-            f.competition_id, f.matchday, f.home_club_id, f.away_club_id, f.scheduled_at, f.status as fixture_status,
-            hs.id as hs_id, hs.home_score as hs_home, hs.away_score as hs_away, hs.proof_url as hs_proof, hs.submitted_by_user_id as hs_user_id, hs.created_at as hs_created,
-            asub.id as as_id, asub.home_score as as_home, asub.away_score as as_away, asub.proof_url as as_proof, asub.submitted_by_user_id as as_user_id, asub.created_at as as_created
-     FROM disputes d
-     JOIN fixtures f ON d.fixture_id = f.id
-     LEFT JOIN result_submissions hs ON d.home_submission_id = hs.id
-     LEFT JOIN result_submissions asub ON d.away_submission_id = asub.id
-     WHERE d.status = ?
-     ORDER BY d.created_at DESC`,
-    [status]
-  );
-  return rows.map((r) => ({
-    id: r.id,
-    fixtureId: r.fixture_id,
-    seasonId: r.season_id,
-    status: r.status,
-    resolvedByUserId: r.resolved_by_user_id || void 0,
-    resolutionNotes: r.resolution_notes || void 0,
-    resolvedAt: r.resolved_at || void 0,
-    createdAt: r.created_at,
-    fixture: getFixtureById(r.fixture_id) || void 0,
-    homeSubmission: r.hs_id ? {
-      id: r.hs_id,
-      fixtureId: r.fixture_id,
-      submittedByUserId: r.hs_user_id,
-      clubId: r.home_club_id,
-      homeScore: r.hs_home,
-      awayScore: r.hs_away,
-      proofUrl: r.hs_proof || void 0,
-      createdAt: r.hs_created
-    } : void 0,
-    awaySubmission: r.as_id ? {
-      id: r.as_id,
-      fixtureId: r.fixture_id,
-      submittedByUserId: r.as_user_id,
-      clubId: r.away_club_id,
-      homeScore: r.as_home,
-      awayScore: r.as_away,
-      proofUrl: r.as_proof || void 0,
-      createdAt: r.as_created
-    } : void 0
-  }));
-}
-function resolveDispute(adminUserId, disputeId, params) {
-  return dbTransaction(() => {
-    const dispute = queryGet("SELECT * FROM disputes WHERE id = ?", [disputeId]);
-    if (!dispute) {
-      throw new Error(`Dispute with ID '${disputeId}' not found.`);
-    }
-    const fixture = queryGet("SELECT * FROM fixtures WHERE id = ?", [dispute.fixture_id]);
-    if (!fixture) {
-      throw new Error(`Fixture '${dispute.fixture_id}' not found.`);
-    }
-    const submissions = queryAll("SELECT * FROM result_submissions WHERE fixture_id = ?", [dispute.fixture_id]);
-    const homeSub = submissions.find((s) => s.club_id === fixture.home_club_id);
-    const awaySub = submissions.find((s) => s.club_id === fixture.away_club_id);
-    let finalHomeScore = 0;
-    let finalAwayScore = 0;
-    let finalStatus = "CONFIRMED";
-    let winnerClubId = null;
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    if (params.action === "CONFIRM_HOME_SUBMISSION") {
-      if (!homeSub) throw new Error("Home submission not found.");
-      finalHomeScore = homeSub.home_score;
-      finalAwayScore = homeSub.away_score;
-    } else if (params.action === "CONFIRM_AWAY_SUBMISSION") {
-      if (!awaySub) throw new Error("Away submission not found.");
-      finalHomeScore = awaySub.home_score;
-      finalAwayScore = awaySub.away_score;
-    } else if (params.action === "MANUAL_SCORE") {
-      if (params.manualHomeScore === void 0 || params.manualAwayScore === void 0) {
-        throw new Error("Manual scores must be provided.");
-      }
-      finalHomeScore = params.manualHomeScore;
-      finalAwayScore = params.manualAwayScore;
-    } else if (params.action === "CANCEL_MATCH") {
-      finalStatus = "CANCELLED";
-    }
-    if (finalStatus === "CONFIRMED") {
-      if (finalHomeScore > finalAwayScore) winnerClubId = fixture.home_club_id;
-      else if (finalAwayScore > finalHomeScore) winnerClubId = fixture.away_club_id;
-    }
-    queryRun(
-      `UPDATE fixtures SET
-        status = ?,
-        home_score = ?,
-        away_score = ?,
-        winner_club_id = ?,
-        result_confirmed_at = ?,
-        updated_at = ?
-       WHERE id = ?`,
-      [
-        finalStatus,
-        finalStatus === "CONFIRMED" ? finalHomeScore : null,
-        finalStatus === "CONFIRMED" ? finalAwayScore : null,
-        winnerClubId,
-        finalStatus === "CONFIRMED" ? now : null,
-        now,
-        fixture.id
-      ]
-    );
-    queryRun(
-      `UPDATE disputes SET
-        status = 'RESOLVED',
-        resolved_by_user_id = ?,
-        resolution_notes = ?,
-        resolved_at = ?
-       WHERE id = ?`,
-      [adminUserId, params.notes || `Resolved via ${params.action}`, now, disputeId]
-    );
-    createAuditLog(
-      adminUserId,
-      "RESOLVE_DISPUTE",
-      "fixtures",
-      fixture.id,
-      { status: fixture.status, homeScore: fixture.home_score, awayScore: fixture.away_score },
-      { status: finalStatus, homeScore: finalHomeScore, awayScore: finalAwayScore, action: params.action, notes: params.notes }
-    );
-    const homeOwner = queryGet(
-      'SELECT user_id FROM club_memberships WHERE club_id = ? AND season_id = ? AND status = "active"',
-      [fixture.home_club_id, fixture.season_id]
-    );
-    const awayOwner = queryGet(
-      'SELECT user_id FROM club_memberships WHERE club_id = ? AND season_id = ? AND status = "active"',
-      [fixture.away_club_id, fixture.season_id]
-    );
-    const message = `Admin resolved match dispute. Final Score: ${finalHomeScore} - ${finalAwayScore}. Status: ${finalStatus}.`;
-    if (homeOwner) createNotification(homeOwner.user_id, "DISPUTE_RESOLVED", "Dispute Resolved by Admin", message);
-    if (awayOwner) createNotification(awayOwner.user_id, "DISPUTE_RESOLVED", "Dispute Resolved by Admin", message);
-    if (finalStatus === "CONFIRMED") {
-      advanceKnockoutWinner(fixture.id);
-    }
-    return {
-      success: true,
-      dispute: getDisputes("RESOLVED").find((d) => d.id === disputeId) || {}
-    };
-  });
-}
-function reopenFixture(adminUserId, fixtureId, notes) {
-  return dbTransaction(() => {
-    const fixture = queryGet("SELECT * FROM fixtures WHERE id = ?", [fixtureId]);
-    if (!fixture) throw new Error(`Fixture '${fixtureId}' not found.`);
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    queryRun(
-      `UPDATE fixtures SET
-        status = 'SCHEDULED',
-        home_score = NULL,
-        away_score = NULL,
-        winner_club_id = NULL,
-        result_confirmed_at = NULL,
-        updated_at = ?
-       WHERE id = ?`,
-      [now, fixtureId]
-    );
-    queryRun("DELETE FROM result_submissions WHERE fixture_id = ?", [fixtureId]);
-    queryRun('UPDATE disputes SET status = "CANCELLED", resolution_notes = "Fixture reopened by admin" WHERE fixture_id = ?', [fixtureId]);
-    createAuditLog(adminUserId, "REOPEN_FIXTURE", "fixtures", fixtureId, fixture, { status: "SCHEDULED", notes });
-    return { success: true };
-  });
-}
-function getAllAdminUsers() {
-  const rows = queryAll("SELECT * FROM users ORDER BY created_at DESC");
-  return rows.map((r) => ({
-    id: r.id,
-    telegramId: r.telegram_id,
-    username: r.username,
-    firstName: r.first_name,
-    lastName: r.last_name,
-    photoUrl: r.photo_url,
-    isAdmin: Boolean(r.is_admin),
-    isSuspended: Boolean(r.is_suspended),
-    createdAt: r.created_at,
-    updatedAt: r.updated_at
-  }));
-}
-function getAuditLogs(limit = 50) {
-  const rows = queryAll("SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT ?", [limit]);
-  return rows.map((r) => ({
-    id: r.id,
-    actorUserId: r.actor_user_id,
-    actorUsername: r.actor_username,
-    action: r.action,
-    entityType: r.entity_type,
-    entityId: r.entity_id,
-    oldValue: r.old_value_json,
-    newValue: r.new_value_json,
-    ipAddress: r.ip_address,
-    createdAt: r.created_at
-  }));
 }
 
 // src/server/tournament/standingsEngine.ts
@@ -4071,14 +3796,22 @@ adminRouter.post("/migrate-to-firestore", async (req, res) => {
     res.status(500).json({ error: "Migration failed", message: err.message });
   }
 });
-adminRouter.get("/users", (req, res) => {
-  const users = getAllAdminUsers();
-  res.json({ users });
+adminRouter.get("/users", async (req, res) => {
+  try {
+    const users = await getAllAdminUsers();
+    res.json({ users });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch users", message: err.message });
+  }
 });
-adminRouter.get("/disputes", (req, res) => {
+adminRouter.get("/disputes", async (req, res) => {
   const status = req.query.status || "OPEN";
-  const disputes = getDisputes(status);
-  res.json({ disputes });
+  try {
+    const disputes = await getDisputes(status);
+    res.json({ disputes });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch disputes", message: err.message });
+  }
 });
 adminRouter.post("/disputes/:id/resolve", validateBody(resolveDisputeSchema), async (req, res) => {
   const adminUserId = req.user.id;
@@ -4118,10 +3851,14 @@ adminRouter.post("/fixtures/:id/reopen", validateBody(reopenFixtureSchema), asyn
     res.status(400).json({ error: "Failed to reopen fixture", message: err.message });
   }
 });
-adminRouter.get("/audit-logs", (req, res) => {
+adminRouter.get("/audit-logs", async (req, res) => {
   const limit = req.query.limit ? parseInt(req.query.limit, 10) : 50;
-  const logs = getAuditLogs(limit);
-  res.json({ logs });
+  try {
+    const logs = await getAuditLogs(limit);
+    res.json({ logs });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch audit logs", message: err.message });
+  }
 });
 adminRouter.post("/fixtures/generate", async (req, res) => {
   const { competitionId, force } = req.body;

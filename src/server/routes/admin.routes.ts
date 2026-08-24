@@ -68,12 +68,7 @@ adminRouter.post('/disputes/:id/resolve', validateBody(resolveDisputeSchema), as
   const disputeId = req.params.id;
 
   try {
-    let result: any;
-    try {
-      result = await resolveDisputeFirestore(adminUserId, disputeId, req.body);
-    } catch {
-      result = resolveDispute(adminUserId, disputeId, req.body);
-    }
+    const result = await resolveDisputeFirestore(adminUserId, disputeId, req.body);
     res.json({
       success: true,
       message: 'Dispute resolved successfully.',
@@ -89,12 +84,7 @@ adminRouter.post('/fixtures/:id/reopen', validateBody(reopenFixtureSchema), asyn
   const fixtureId = req.params.id;
 
   try {
-    let result: any;
-    try {
-      result = await reopenFixtureFirestore(adminUserId, fixtureId, req.body.notes);
-    } catch {
-      result = reopenFixture(adminUserId, fixtureId, req.body.notes);
-    }
+    const result = await reopenFixtureFirestore(adminUserId, fixtureId, req.body.notes);
     res.json({
       success: true,
       message: 'Fixture has been reopened for submissions.',

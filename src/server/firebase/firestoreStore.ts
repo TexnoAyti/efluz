@@ -293,6 +293,17 @@ export async function getClubByIdFirestore(
     const memDoc = await db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).doc(`${seasonId}_${clubId}`).get();
     if (memDoc.exists && memDoc.data()?.status === 'active') {
       occUserId = memDoc.data()!.userId;
+    } else {
+      const userMemSnap = await db
+        .collection(COLLECTIONS.USER_MEMBERSHIPS)
+        .where('seasonId', '==', seasonId)
+        .where('clubId', '==', clubId)
+        .where('status', '==', 'active')
+        .limit(1)
+        .get();
+      if (!userMemSnap.empty) {
+        occUserId = userMemSnap.docs[0].data().userId;
+      }
     }
   }
 

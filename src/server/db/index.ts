@@ -34,22 +34,22 @@ let needsSave = false;
 export function resolveSqlWasmPath(): string {
   const modDir = getModuleDir();
   const candidates = [
-    // 1. In same directory as compiled serverless handler (e.g., /var/task/api/sql-wasm.wasm)
+    // 1. In node_modules (local dev, tsx, standard node environment)
+    path.resolve(process.cwd(), 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm'),
+    path.join(modDir, '..', 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm'),
+    // 2. In same directory as compiled serverless handler (e.g., /var/task/api/sql-wasm.wasm)
     path.join(modDir, 'sql-wasm.wasm'),
-    // 2. In api/ folder relative to project root / task root
+    // 3. In api/ folder relative to project root / task root
     path.resolve(process.cwd(), 'api', 'sql-wasm.wasm'),
-    // 3. In parent directory (e.g. if modDir is /var/task/api, check /var/task/sql-wasm.wasm)
+    // 4. In parent directory (e.g. if modDir is /var/task/api, check /var/task/sql-wasm.wasm)
     path.join(modDir, '..', 'sql-wasm.wasm'),
     path.join(modDir, '..', 'api', 'sql-wasm.wasm'),
     path.resolve(process.cwd(), 'sql-wasm.wasm'),
-    // 4. In dist/ folder
+    // 5. In dist/ folder
     path.resolve(process.cwd(), 'dist', 'sql-wasm.wasm'),
     path.join(modDir, '..', 'dist', 'sql-wasm.wasm'),
-    // 5. In public/ folder
+    // 6. In public/ folder
     path.resolve(process.cwd(), 'public', 'sql-wasm.wasm'),
-    // 6. In node_modules fallback (local dev or standard node environment)
-    path.resolve(process.cwd(), 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm'),
-    path.join(modDir, '..', 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm'),
   ];
 
   for (const candidate of candidates) {

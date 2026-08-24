@@ -867,6 +867,15 @@ async function runAdversarialTestSuite() {
   console.log('\n===============================================================');
   console.log(`  ALL ${testResults.length} ADVERSARIAL TESTS COMPLETED`);
   console.log('===============================================================\n');
+
+  const failedTests = testResults.filter((r) => !r.passed);
+  if (failedTests.length > 0) {
+    console.error(`❌ ${failedTests.length} adversarial tests failed.`);
+    process.exit(1);
+  } else {
+    console.log('✅ ALL ADVERSARIAL TESTS PASSED!');
+    process.exit(0);
+  }
 }
 
 runAdversarialTestSuite().catch((err) => {
