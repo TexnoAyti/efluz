@@ -20,6 +20,9 @@
     "test:telegram-webapp": "tsx src/server/tests/telegramWebAppTest.ts",
     "test:vercel": "tsx src/server/tests/verifyVercelApiHandler.ts",
     "test:firebase-persistence": "tsx src/server/tests/firebasePersistenceTest.ts",
+    "test:production-data-consistency": "tsx src/server/tests/productionDataConsistencyTest.ts",
+    "test:full-production-firestore-audit": "tsx src/server/tests/fullProductionFirestoreAudit.ts",
+    "test:tournament-architecture": "tsx src/server/tests/verifyTournamentArchitecture.ts",
     "test:deployment-selfcheck": "tsx src/server/tests/deploymentSelfCheck.ts"
   },
   "dependencies": {

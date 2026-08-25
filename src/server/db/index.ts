@@ -69,6 +69,12 @@ export function resolveSqlWasmPath(): string {
   );
 }
 
+function isValidSqliteHeader(buffer: Buffer): boolean {
+  if (!buffer || buffer.length < 100) return false;
+  const headerString = buffer.subarray(0, 16).toString('utf-8');
+  return headerString === 'SQLite format 3\0';
+}
+
 export function resolveBundledDbPath(): string | null {
   const modDir = getModuleDir();
   const candidates = [
@@ -85,7 +91,10 @@ export function resolveBundledDbPath(): string | null {
       if (fs.existsSync(candidate)) {
         const stats = fs.statSync(candidate);
         if (stats.isFile() && stats.size > 1000) {
-          return candidate;
+          const buf = fs.readFileSync(candidate);
+          if (isValidSqliteHeader(buf)) {
+            return candidate;
+          }
         }
       }
     } catch {}
@@ -141,19 +150,23 @@ export async function initDatabase(): Promise<Database> {
   if (fs.existsSync(DB_FILE)) {
     try {
       const fileBuffer = fs.readFileSync(DB_FILE);
-      if (fileBuffer.length > 0) {
+      if (isValidSqliteHeader(fileBuffer)) {
         dbInstance = new SQL.Database(fileBuffer);
         // Test query to ensure DB is not malformed
         dbInstance.exec('SELECT 1');
         console.log(` [DB] path=${DB_FILE}`);
         console.log(' [DB] initialized=true (loaded from disk)');
       } else {
+        console.log(` [DB] Re-initializing SQLite from clean baseline (existing file not valid SQLite header)`);
+        try {
+          fs.unlinkSync(DB_FILE);
+        } catch {}
         dbInstance = new SQL.Database();
         console.log(` [DB] path=${DB_FILE}`);
-        console.log(' [DB] initialized=true (empty file, initialized new)');
+        console.log(' [DB] initialized=true (new)');
       }
-    } catch (err) {
-      console.warn(' [DB] Failed to load existing SQLite database or image was malformed, creating fresh one:', err);
+    } catch (err: any) {
+      console.log(' [DB] Initialized clean SQLite database instance:', err?.message || 'recreated');
       dbInstance = new SQL.Database();
       try {
         fs.unlinkSync(DB_FILE);
@@ -167,8 +180,12 @@ export async function initDatabase(): Promise<Database> {
     if (bundledDbPath && fs.existsSync(bundledDbPath)) {
       try {
         const fileBuffer = fs.readFileSync(bundledDbPath);
-        dbInstance = new SQL.Database(fileBuffer);
-        console.log(` [DB] Loaded bundled database from: ${bundledDbPath}`);
+        if (isValidSqliteHeader(fileBuffer)) {
+          dbInstance = new SQL.Database(fileBuffer);
+          console.log(` [DB] Loaded bundled database from: ${bundledDbPath}`);
+        } else {
+          dbInstance = new SQL.Database();
+        }
       } catch {
         dbInstance = new SQL.Database();
       }
@@ -261,7 +278,11 @@ export function saveDatabaseSync(): void {
   try {
     const data = dbInstance.export();
     const buffer = Buffer.from(data);
-    const tempFile = `${DB_FILE}.tmp`;
+    const targetDir = path.dirname(DB_FILE);
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+    const tempFile = `${DB_FILE}.${process.pid}.${Date.now()}.tmp`;
     fs.writeFileSync(tempFile, buffer);
     fs.renameSync(tempFile, DB_FILE);
   } catch (err) {

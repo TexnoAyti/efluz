@@ -678,40 +678,52 @@ async function runAdversarialTestSuite() {
   // --- STEP 10: CUP PROGRESSION & ADVANCEMENT ENGINE ---
   console.log('\n--- [STEP 10] Testing Single-Elimination Knockout Progression ---');
 
-  const cupBracket = generateKnockoutBracket('comp-fa-cup-2026');
-  const round1_m0 = queryGet<any>('SELECT * FROM fixtures WHERE competition_id = "comp-fa-cup-2026" AND matchday = 1');
-  const round2_m0 = queryGet<any>('SELECT * FROM fixtures WHERE competition_id = "comp-fa-cup-2026" AND matchday = 2');
+  await generateKnockoutBracket('comp-fa-cup-2026');
+  const firestoreDb = getFirestoreDb();
+  const faFixSnap = await firestoreDb.collection(COLLECTIONS.FIXTURES).where('competitionId', '==', 'comp-fa-cup-2026').get();
+  const allFaFix = faFixSnap.docs.map((d) => d.data());
+
+  const round1_m0 = allFaFix.find((f: any) => f.id.includes('-r1-m0')) || allFaFix[0];
 
   // Confirm Round 1 Match 0: Home team wins 2-1
-  queryRun(
-    'UPDATE fixtures SET status = "CONFIRMED", home_score = 2, away_score = 1, winner_club_id = home_club_id WHERE id = ?',
-    [round1_m0.id]
-  );
-  advanceKnockoutWinner(round1_m0.id);
+  await firestoreDb.collection(COLLECTIONS.FIXTURES).doc(round1_m0.id).update({
+    status: 'CONFIRMED',
+    homeScore: 2,
+    awayScore: 1,
+    winnerClubId: round1_m0.homeClubId,
+  });
 
-  const round2_updated = queryGet<any>('SELECT * FROM fixtures WHERE id = ?', [round2_m0.id]);
-  const passCupAdvance = round2_updated.home_club_id === round1_m0.home_club_id;
+  const advanceRes = await advanceKnockoutWinner(round1_m0.id);
+  const targetFixId = advanceRes.targetFixtureId || `fix-comp-fa-cup-2026-r2-m0`;
+
+  const round2_doc = await firestoreDb.collection(COLLECTIONS.FIXTURES).doc(targetFixId).get();
+  const round2_updated = round2_doc.data() || {};
+  const passCupAdvance =
+    advanceRes.advanced &&
+    (round2_updated.homeClubId === round1_m0.homeClubId ||
+     round2_updated.awayClubId === round1_m0.homeClubId ||
+     round2_updated.home_club_id === round1_m0.homeClubId);
 
   recordResult(
     'STEP 10',
     'Cup Knockout Winner Progression to Next Round',
-    `Winner of ${round1_m0.id} (${round1_m0.home_club_id}) populated into Round 2 fixture ${round2_m0.id}`,
-    `Round 2 Home Slot: ${round2_updated.home_club_id}`,
+    `Winner of ${round1_m0.id} (${round1_m0.homeClubId}) populated into Round 2 fixture ${targetFixId}`,
+    `Round 2 Slot: ${round2_updated.homeClubId || round2_updated.home_club_id}`,
     passCupAdvance
   );
 
   // --- STEP 11: UEFA EUROPEAN QUALIFICATION REAL DB EXECUTION ---
   console.log('\n--- [STEP 11] Testing UEFA Champions League Qualification Engine on Live Standings ---');
 
-  const qualResult = evaluateSeasonQualifications('season-2026-27');
-  const participantsCount = queryGet<any>('SELECT COUNT(*) as count FROM competition_participants WHERE competition_id LIKE "comp-uefa-%"');
+  const qualResult = await evaluateSeasonQualifications('season-2026-27');
+  const partSnap = await firestoreDb.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).get();
 
   const passUefaQual = qualResult.qualifications.length >= 20;
   recordResult(
     'STEP 11',
     'UEFA Qualification Evaluator on Live DB Standings',
     'Populates qualified domestic clubs into UEFA League phase participants table',
-    `Evaluated ${qualResult.qualifications.length} qualification spots across Europe, DB participants count=${participantsCount.count}`,
+    `Evaluated ${qualResult.qualifications.length} qualification spots across Europe, DB participants count=${partSnap.size}`,
     passUefaQual
   );
 

@@ -142,7 +142,7 @@ async function runVerification() {
   // 8. Knockout Tournament Engine & Winner Progression Verification
   console.log('\n--- VERIFYING KNOCKOUT BRACKET & PROGRESSION ENGINE ---');
   queryRun('DELETE FROM fixtures WHERE competition_id = "comp-fa-cup-2026"');
-  const knockoutGen = generateKnockoutBracket('comp-fa-cup-2026');
+  const knockoutGen = await generateKnockoutBracket('comp-fa-cup-2026');
   console.log(` Generated FA Cup bracket: ${knockoutGen.generated} matches across ${knockoutGen.rounds} rounds`);
 
   // Find round 1 match 0
@@ -154,7 +154,7 @@ async function runVerification() {
     'UPDATE fixtures SET status = "CONFIRMED", home_score = 3, away_score = 1, winner_club_id = home_club_id, result_confirmed_at = ? WHERE id = ?',
     [new Date().toISOString(), r1m0.id]
   );
-  advanceKnockoutWinner(r1m0.id);
+  await advanceKnockoutWinner(r1m0.id);
 
   // Check Round 2 Match 0 home_club_id
   const r2m0 = queryGet<any>('SELECT * FROM fixtures WHERE competition_id = "comp-fa-cup-2026" AND id = "fix-comp-fa-cup-2026-r2-m0"');
@@ -163,7 +163,7 @@ async function runVerification() {
 
   // 9. European Qualification Evaluation Verification
   console.log('\n--- VERIFYING EUROPEAN QUALIFICATION EVALUATION ---');
-  const qualResult = evaluateSeasonQualifications('season-2026-27');
+  const qualResult = await evaluateSeasonQualifications('season-2026-27');
   console.log(` Qualification evaluation result: Assigned ${qualResult.qualifications.length} spots, Added ${qualResult.participantsAdded} participants`);
   if (qualResult.qualifications.length === 0) throw new Error('Expected qualifications to be assigned');
 

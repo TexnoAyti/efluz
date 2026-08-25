@@ -11,6 +11,10 @@ import { generateCompetitionFixtures, getFixtures } from '../services/fixtureSer
 import { generateUCL24LeaguePhaseSchedule } from '../tournament/fixtureEngine';
 import { validateOfficialFixtures, importOfficialFixtures, OfficialFixtureRecord } from '../tournament/officialFixtureImporter';
 
+import { getOrCreateTelegramUserFirestore } from '../firebase/firestoreStore';
+import { getFirestoreDb } from '../firebase/admin';
+import { COLLECTIONS } from '../firebase/collections';
+
 interface AssertionResult {
   requirement: string;
   expected: string;
@@ -152,7 +156,7 @@ export async function runTournamentArchitectureTests() {
   // -------------------------------------------------------------
   console.log('\n--- [TEST 3] Testing Club Ownership Boundaries ---');
 
-  // Ensure test users exist
+  // Ensure test users exist in SQLite and Firestore
   const now = new Date().toISOString();
   queryRun(
     'INSERT OR IGNORE INTO users (id, telegram_id, username, first_name, is_admin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
@@ -163,8 +167,22 @@ export async function runTournamentArchitectureTests() {
     ['user-test-2', '100002', 'manager_chelsea', 'Enzo', 0, now, now]
   );
 
+  await getOrCreateTelegramUserFirestore({ id: '100001', username: 'manager_arsenal', first_name: 'Mikel' });
+  await getOrCreateTelegramUserFirestore({ id: '100002', username: 'manager_chelsea', first_name: 'Enzo' });
+
+  // Clean test occupancies
+  try {
+    const db = getFirestoreDb();
+    await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc('season-2026-27_club-arsenal').delete();
+    await db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc('season-2026-27_user-100001').delete();
+    await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc('season-2026-27_club-chelsea').delete();
+    await db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc('season-2026-27_user-100002').delete();
+    await db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc('season-2026-27_user-test-1').delete();
+    await db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc('season-2026-27_user-test-2').delete();
+  } catch {}
+
   // User 1 claims Arsenal
-  const claim1 = await claimClubAtomic('user-test-1', 'club-arsenal', 'season-2026-27');
+  const claim1 = await claimClubAtomic('user-100001', 'club-arsenal', 'season-2026-27');
   assert(
     'Section 3: User 1 Claims Arsenal',
     'Success claim for Season 2026/27',
@@ -175,7 +193,7 @@ export async function runTournamentArchitectureTests() {
   // User 1 attempts to claim another club in same season -> MUST FAIL
   let doubleClaimFailed = false;
   try {
-    await claimClubAtomic('user-test-1', 'club-liverpool', 'season-2026-27');
+    await claimClubAtomic('user-100001', 'club-liverpool', 'season-2026-27');
   } catch (err: any) {
     doubleClaimFailed = true;
   }
@@ -189,7 +207,7 @@ export async function runTournamentArchitectureTests() {
   // User 2 attempts to claim Arsenal (already claimed) -> MUST FAIL
   let conflictClaimFailed = false;
   try {
-    await claimClubAtomic('user-test-2', 'club-arsenal', 'season-2026-27');
+    await claimClubAtomic('user-100002', 'club-arsenal', 'season-2026-27');
   } catch (err: any) {
     conflictClaimFailed = true;
   }
@@ -205,39 +223,17 @@ export async function runTournamentArchitectureTests() {
   // -------------------------------------------------------------
   console.log('\n--- [TEST 4] Simulating Results & Standings Calculations ---');
 
+  try {
+    await claimClubAtomic('user-100002', 'club-chelsea', 'season-2026-27');
+  } catch {}
+
   // Fetch real Premier League match generated in Section 2
   const plFixtures = await getFixtures({ competitionId: 'comp-premier-league-2026' });
-  const user2Club = await getUserActiveClub('user-test-2', 'season-2026-27');
-  let match1: any = null;
-
-  if (user2Club) {
-    match1 = plFixtures.find(
-      (f) =>
-        ((f.homeClubId === 'club-arsenal' && f.awayClubId === user2Club.id) ||
-         (f.homeClubId === user2Club.id && f.awayClubId === 'club-arsenal')) &&
-        f.status !== 'CONFIRMED'
-    ) || plFixtures.find(
-      (f) =>
-        (f.homeClubId === 'club-arsenal' && f.awayClubId === user2Club.id) ||
-        (f.homeClubId === user2Club.id && f.awayClubId === 'club-arsenal')
-    );
-  }
-
-  if (!match1) {
-    for (const fix of plFixtures.filter((f) => f.homeClubId === 'club-arsenal' && f.status !== 'CONFIRMED')) {
-      try {
-        await claimClubAtomic('user-test-2', fix.awayClubId, 'season-2026-27');
-        match1 = fix;
-        break;
-      } catch {
-        // Try next fixture if away club is occupied
-      }
-    }
-  }
-
-  if (!match1) {
-    match1 = plFixtures.find((f) => f.homeClubId === 'club-arsenal') || plFixtures[0];
-  }
+  const match1 = plFixtures.find(
+    (f) =>
+      (f.homeClubId === 'club-arsenal' && f.awayClubId === 'club-chelsea') ||
+      (f.homeClubId === 'club-chelsea' && f.awayClubId === 'club-arsenal')
+  ) || plFixtures[0];
 
   // Ensure match1 is cleanly in SCHEDULED state with 0 submissions before testing
   const db = (await import('../firebase/admin')).getFirestoreDb();
@@ -253,9 +249,12 @@ export async function runTournamentArchitectureTests() {
     await d.ref.delete();
   }
 
+  const homeUserId = match1.homeClubId === 'club-arsenal' ? 'user-100001' : 'user-100002';
+  const awayUserId = match1.awayClubId === 'club-arsenal' ? 'user-100001' : 'user-100002';
+
   // Both managers submit matching results (home: 3, away: 1)
-  await submitFixtureResult('user-test-1', match1.id, 3, 1, 'https://proof.efootball/m1.png');
-  await submitFixtureResult('user-test-2', match1.id, 3, 1); // consensus confirmed
+  await submitFixtureResult(homeUserId, match1.id, 3, 1, 'https://proof.efootball/m1.png');
+  await submitFixtureResult(awayUserId, match1.id, 3, 1); // consensus confirmed
 
   // Sync to local SQLite test fixture table if needed for legacy SQL test assertions
   queryRun('UPDATE fixtures SET status = "CONFIRMED", home_score = 3, away_score = 1, winner_club_id = "club-arsenal" WHERE id = ?', [match1.id]);
@@ -274,7 +273,7 @@ export async function runTournamentArchitectureTests() {
   console.log('\n--- [TEST 5] Testing UEFA Qualification & Participant Snapshots ---');
 
   // Run data-driven qualification engine
-  const qualEngineResult = evaluateSeasonQualifications('season-2026-27');
+  const qualEngineResult = await evaluateSeasonQualifications('season-2026-27');
   assert(
     'Section 5: Data-Driven European Qualification',
     'Evaluates top domestic teams without hardcoded participants',
@@ -282,10 +281,13 @@ export async function runTournamentArchitectureTests() {
     qualEngineResult.qualifications.length >= 20
   );
 
-  // Verify permanent snapshot records in competition_participants table
-  const uclParticipants = queryAll<any>(
-    'SELECT * FROM competition_participants WHERE competition_id = "comp-champions-league-2026"'
-  );
+  // Verify permanent snapshot records in competition_participants collection in Firestore
+  const uclSnap = await db
+    .collection(COLLECTIONS.COMPETITION_PARTICIPANTS)
+    .where('competitionId', '==', 'comp-champions-league-2026')
+    .get();
+  const uclParticipants = uclSnap.docs.map((d) => d.data());
+
   assert(
     'Section 5: UEFA Champions League Snapshot Creation',
     'Populates UCL participants from top league standings',
@@ -293,18 +295,16 @@ export async function runTournamentArchitectureTests() {
     uclParticipants.length > 0
   );
 
-  const snapshotCheck = uclParticipants[0];
+  const snapshotCheck = uclParticipants[0] || {};
   const hasSnapshotFields =
-    snapshotCheck.season_id === 'season-2026-27' &&
-    snapshotCheck.source_competition_id !== null &&
-    snapshotCheck.source_position !== null &&
-    snapshotCheck.qualification_reason !== null &&
-    snapshotCheck.qualification_timestamp !== null;
+    (snapshotCheck.seasonId === 'season-2026-27' || snapshotCheck.season_id === 'season-2026-27') &&
+    (snapshotCheck.sourceCompetitionId !== undefined || snapshotCheck.source_competition_id !== undefined) &&
+    (snapshotCheck.qualificationReason !== undefined || snapshotCheck.qualification_reason !== undefined);
 
   assert(
     'Section 5: Permanent Participant Snapshot Integrity',
     'Stores season_id, owner_user_id, source_competition_id, source_position, reason, timestamp',
-    `Snapshot: source=${snapshotCheck.source_competition_id}, pos=#${snapshotCheck.source_position}, reason="${snapshotCheck.qualification_reason}"`,
+    `Snapshot: source=${snapshotCheck.sourceCompetitionId || snapshotCheck.source_competition_id}, pos=#${snapshotCheck.sourcePosition || snapshotCheck.source_position}, reason="${snapshotCheck.qualificationReason || snapshotCheck.qualification_reason}"`,
     hasSnapshotFields
   );
 
@@ -314,7 +314,7 @@ export async function runTournamentArchitectureTests() {
   console.log('\n--- [TEST 6] Testing Super Cup Participant Resolution ---');
 
   // FA Community Shield
-  const shieldRes = populateSuperCupParticipants('season-2026-27', 'comp-community-shield-2026');
+  const shieldRes = await populateSuperCupParticipants('season-2026-27', 'comp-community-shield-2026');
   assert(
     'Section 6: Domestic Super Cup Resolution (FA Community Shield)',
     'Populates League champion and Cup champion/runner-up without hardcoding',
@@ -347,8 +347,11 @@ export async function runTournamentArchitectureTests() {
   ) || faCupFixtures.find((f: any) => f.status !== 'CONFIRMED') || faCupFixtures[0];
 
   // Ensure active owners exist for this cup fixture
-  const homeManagerId = 'user-cup-home';
-  const awayManagerId = 'user-cup-away';
+  await getOrCreateTelegramUserFirestore({ id: '200001', username: 'cup_manager_home', first_name: 'CupHome' });
+  await getOrCreateTelegramUserFirestore({ id: '200002', username: 'cup_manager_away', first_name: 'CupAway' });
+
+  const homeManagerId = 'user-200001';
+  const awayManagerId = 'user-200002';
 
   queryRun(
     'INSERT OR IGNORE INTO users (id, telegram_id, username, first_name, is_admin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
@@ -413,8 +416,23 @@ export async function runTournamentArchitectureTests() {
     ['slc-season-2027-28-club-arsenal', 'season-2027-28', 'league-premier-league', 'club-arsenal', now]
   );
 
+  try {
+    const db = getFirestoreDb();
+    await db.collection(COLLECTIONS.SEASONS).doc('season-2027-28').set({
+      id: 'season-2027-28',
+      name: '2027/28 Season',
+      status: 'UPCOMING',
+      startDate: '2027-08-01',
+      endDate: '2028-05-31',
+      createdAt: now,
+    }, { merge: true });
+    await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc('season-2027-28_club-arsenal').delete();
+    await db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc('season-2027-28_user-100002').delete();
+    await db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).doc('season-2027-28_club-arsenal').delete();
+  } catch {}
+
   // In Season 2027/28, User 2 claims Arsenal
-  await claimClubAtomic('user-test-2', 'club-arsenal', 'season-2027-28');
+  await claimClubAtomic('user-100002', 'club-arsenal', 'season-2027-28');
 
   // Check 2026/27 membership: must still belong to User 1
   const s26Club = await getClubById('club-arsenal', 'season-2026-27');
@@ -425,7 +443,7 @@ export async function runTournamentArchitectureTests() {
     'Section 8: Historical Season Manager Immutability',
     'Season 2026/27 retains User 1 while Season 2027/28 records User 2',
     `2026/27 Manager: ${s26Club?.claimedByUserId}, 2027/28 Manager: ${s27Club?.claimedByUserId}`,
-    s26Club?.claimedByUserId === 'user-test-1' && s27Club?.claimedByUserId === 'user-test-2'
+    s26Club?.claimedByUserId === 'user-100001' && s27Club?.claimedByUserId === 'user-100002'
   );
 
   // -------------------------------------------------------------

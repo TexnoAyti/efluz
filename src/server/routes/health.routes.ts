@@ -36,14 +36,19 @@ healthRouter.get('/', async (req: Request, res: Response) => {
     isConnected = false;
   }
 
-  res.json({
-    status: isConnected ? 'ok' : 'degraded',
+  const isProduction =
+    process.env.NODE_ENV === 'production' ||
+    process.env.VERCEL === '1' ||
+    process.env.AWS_LAMBDA_FUNCTION_NAME !== undefined;
+
+  res.status(isConnected ? 200 : isProduction ? 503 : 200).json({
+    status: isConnected ? 'ok' : 'error',
     database: 'firestore',
     connected: isConnected,
     firebaseConfigured: status.isConfigured,
     projectId: status.projectId,
-    firestoreDatabaseId: status.databaseId,
     databaseId: status.databaseId,
+    firestoreDatabaseId: status.databaseId,
     authMode: status.authMode,
     usersCollectionCount: usersCount,
     clubOccupanciesCollectionCount: occupanciesCount,

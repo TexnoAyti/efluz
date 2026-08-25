@@ -12,11 +12,46 @@ import { migrateSqliteToFirestore } from '../firebase/migrateSqliteToFirestore';
 import { generateKnockoutBracket } from '../tournament/knockoutEngine';
 import { evaluateSeasonQualifications } from '../tournament/qualificationEngine';
 import { queryAll } from '../db';
+import { getFirebaseStatus, getFirestoreDb } from '../firebase/admin';
+import { COLLECTIONS } from '../firebase/collections';
 
 export const adminRouter = Router();
 
 // Protect ALL admin routes with server-side requireAdmin
 adminRouter.use(requireAdmin);
+
+adminRouter.get('/firestore-diagnostics', async (req: Request, res: Response) => {
+  try {
+    const status = getFirebaseStatus();
+    const db = getFirestoreDb();
+
+    const [usersSnap, clubsSnap, occSnap, memSnap, fixSnap, compSnap] = await Promise.all([
+      db.collection(COLLECTIONS.USERS).get(),
+      db.collection(COLLECTIONS.CLUBS).get(),
+      db.collection(COLLECTIONS.CLUB_OCCUPANCIES).get(),
+      db.collection(COLLECTIONS.USER_MEMBERSHIPS).get(),
+      db.collection(COLLECTIONS.FIXTURES).get(),
+      db.collection(COLLECTIONS.COMPETITIONS).get(),
+    ]);
+
+    res.json({
+      projectId: status.projectId,
+      databaseId: status.databaseId,
+      connected: true,
+      authMode: status.authMode,
+      collections: {
+        users: usersSnap.size,
+        clubs: clubsSnap.size,
+        club_occupancies: occSnap.size,
+        user_memberships: memSnap.size,
+        fixtures: fixSnap.size,
+        competitions: compSnap.size,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to retrieve diagnostics', message: err.message });
+  }
+});
 
 const resolveDisputeSchema = z.object({
   action: z.enum(['CONFIRM_HOME_SUBMISSION', 'CONFIRM_AWAY_SUBMISSION', 'MANUAL_SCORE', 'CANCEL_MATCH']),
@@ -126,7 +161,7 @@ adminRouter.post('/fixtures/generate', async (req: Request, res: Response) => {
   }
 });
 
-adminRouter.post('/knockouts/generate', (req: Request, res: Response) => {
+adminRouter.post('/knockouts/generate', async (req: Request, res: Response) => {
   const { competitionId } = req.body;
   if (!competitionId) {
     res.status(400).json({ error: 'competitionId is required' });
@@ -134,7 +169,7 @@ adminRouter.post('/knockouts/generate', (req: Request, res: Response) => {
   }
 
   try {
-    const result = generateKnockoutBracket(competitionId);
+    const result = await generateKnockoutBracket(competitionId);
     res.json({
       success: true,
       message: `Generated ${result.generated} knockout matches across ${result.rounds} rounds.`,
@@ -145,11 +180,11 @@ adminRouter.post('/knockouts/generate', (req: Request, res: Response) => {
   }
 });
 
-adminRouter.post('/qualifications/evaluate', (req: Request, res: Response) => {
+adminRouter.post('/qualifications/evaluate', async (req: Request, res: Response) => {
   const seasonId = req.body.seasonId || 'season-2026-27';
 
   try {
-    const result = evaluateSeasonQualifications(seasonId);
+    const result = await evaluateSeasonQualifications(seasonId);
     res.json({
       success: true,
       message: `Evaluated European qualifications: ${result.qualifications.length} spots assigned, ${result.participantsAdded} participants registered.`,

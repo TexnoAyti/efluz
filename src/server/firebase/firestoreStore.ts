@@ -1298,12 +1298,79 @@ export async function submitFixtureResultFirestore(
     updatedAt: now,
   });
 
+  if (newStatus === 'CONFIRMED' && winnerClubId) {
+    try {
+      const { advanceKnockoutWinnerFirestore } = await import('../tournament/knockoutEngine');
+      await advanceKnockoutWinnerFirestore(fixtureId);
+    } catch (err) {
+      console.warn('[KNOCKOUT_ADVANCE] Non-blocking advance error:', err);
+    }
+  }
+
   return (await getFixtureByIdFirestore(fixtureId, userId))!;
 }
 
 // ----------------------------------------------------
 // USERS & TELEGRAM AUTH (FIRESTORE)
 // ----------------------------------------------------
+
+export function getCanonicalTelegramUserId(telegramId: string | number): string {
+  const raw = String(telegramId).trim();
+  const cleanId = raw.startsWith('user-') ? raw.slice(5) : raw;
+  return `user-${cleanId}`;
+}
+
+export async function verifyUserClubConsistency(
+  userId: string,
+  seasonId = 'season-2026-27'
+): Promise<{
+  isConsistent: boolean;
+  userMembershipClubId: string | null;
+  clubOccupancyUserId: string | null;
+  error?: string;
+}> {
+  const db = getFirestoreDb();
+  const userMemRef = db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${seasonId}_${userId}`);
+  const userMemDoc = await userMemRef.get();
+
+  let userMembershipClubId: string | null = null;
+  if (userMemDoc.exists && userMemDoc.data()?.status === 'active') {
+    userMembershipClubId = userMemDoc.data()!.clubId;
+  }
+
+  if (!userMembershipClubId) {
+    return {
+      isConsistent: true,
+      userMembershipClubId: null,
+      clubOccupancyUserId: null,
+    };
+  }
+
+  const clubOccRef = db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_${userMembershipClubId}`);
+  const clubOccDoc = await clubOccRef.get();
+
+  let clubOccupancyUserId: string | null = null;
+  if (clubOccDoc.exists && clubOccDoc.data()?.status === 'active') {
+    clubOccupancyUserId = clubOccDoc.data()!.userId;
+  }
+
+  if (clubOccupancyUserId !== userId) {
+    const error = `DATA_INTEGRITY_MISMATCH: user_memberships/${seasonId}_${userId} claims club '${userMembershipClubId}', but club_occupancies/${seasonId}_${userMembershipClubId} has userId '${clubOccupancyUserId}'.`;
+    console.warn(`[INTEGRITY] ${error}`);
+    return {
+      isConsistent: false,
+      userMembershipClubId,
+      clubOccupancyUserId,
+      error,
+    };
+  }
+
+  return {
+    isConsistent: true,
+    userMembershipClubId,
+    clubOccupancyUserId,
+  };
+}
 
 export async function getOrCreateTelegramUserFirestore(tgUser: {
   id: number | string;
@@ -1313,8 +1380,9 @@ export async function getOrCreateTelegramUserFirestore(tgUser: {
   photo_url?: string;
 }): Promise<User> {
   const db = getFirestoreDb();
-  const telegramId = String(tgUser.id);
-  const docId = `user-${telegramId}`;
+  const rawId = String(tgUser.id).trim();
+  const telegramId = rawId.startsWith('user-') ? rawId.slice(5) : rawId;
+  const docId = getCanonicalTelegramUserId(telegramId);
   const username = tgUser.username || `tg_${telegramId}`;
   const firstName = tgUser.first_name || 'Player';
   const lastName = tgUser.last_name || '';
@@ -1532,6 +1600,15 @@ export async function resolveDisputeFirestore(
     resultConfirmedAt: now,
     updatedAt: now,
   });
+
+  if (newStatus === 'CONFIRMED' && winnerClubId) {
+    try {
+      const { advanceKnockoutWinnerFirestore } = await import('../tournament/knockoutEngine');
+      await advanceKnockoutWinnerFirestore(dispData.fixtureId);
+    } catch (err) {
+      console.warn('[KNOCKOUT_ADVANCE] Non-blocking advance error on dispute resolution:', err);
+    }
+  }
 
   const updatedDispute = {
     ...dispData,

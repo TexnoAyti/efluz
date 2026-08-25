@@ -44,7 +44,7 @@ async function runAudit() {
   queryRun('INSERT INTO club_memberships (id, user_id, club_id, season_id, status, claimed_at) VALUES ("mem-aud-2", "user-aud-2", "club-liverpool", "season-2026-27", "active", ?)', [now]);
   queryRun('INSERT INTO club_memberships (id, user_id, club_id, season_id, status, claimed_at) VALUES ("mem-aud-3", "user-aud-3", "club-real-madrid", "season-2026-27", "active", ?)', [now]);
 
-  const qualRes = evaluateSeasonQualifications('season-2026-27');
+  const qualRes = await evaluateSeasonQualifications('season-2026-27');
   console.log(`Evaluated ${qualRes.qualifications.length} total spots. Added ${qualRes.participantsAdded} participants.`);
   const uclSpots = qualRes.qualifications.filter(e => e.targetCompetitionId === 'comp-champions-league-2026');
   console.log(`UCL spots count: ${uclSpots.length} (Expected 24: PL 5, LL 5, SA 5, BL 5, L1 4)`);
@@ -105,7 +105,7 @@ async function runAudit() {
 
   console.log('\n=== SECTION 4: UCL KNOCKOUT SEEDING VERIFICATION ===');
   queryRun('DELETE FROM fixtures WHERE competition_id = "comp-champions-league-2026" AND matchday >= 9');
-  const koRes = generateUCLKnockoutBracket('comp-champions-league-2026', uclClubIds);
+  const koRes = await generateUCLKnockoutBracket('comp-champions-league-2026', uclClubIds);
   console.log(`Knockout generated: ${koRes.generated} fixtures (Play-offs: ${koRes.playoffFixtures}, R16: ${koRes.r16Fixtures})`);
 
   const playoffFixtures = queryAll<any>('SELECT * FROM fixtures WHERE competition_id = "comp-champions-league-2026" AND matchday = 9');

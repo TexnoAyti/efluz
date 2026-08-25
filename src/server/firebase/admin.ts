@@ -13,6 +13,7 @@ export interface FirebaseConfigInfo {
   databaseId?: string;
   authMode: 'service_account' | 'credentials' | 'application_default' | 'local_fallback' | 'not_configured';
   error?: string;
+  verifiedAt?: string;
 }
 
 function loadAppletConfig(): { projectId?: string; firestoreDatabaseId?: string } {
@@ -29,7 +30,7 @@ function loadAppletConfig(): { projectId?: string; firestoreDatabaseId?: string 
 }
 
 export function initializeFirebaseAdmin(): { db: Firestore | null; info: FirebaseConfigInfo } {
-  if (cachedDb && cachedInfo) {
+  if (cachedDb && cachedInfo && cachedInfo.isConfigured) {
     return {
       db: cachedDb,
       info: cachedInfo,
@@ -87,7 +88,7 @@ export function initializeFirebaseAdmin(): { db: Firestore | null; info: Firebas
     const apps = getApps();
     if (apps.length === 0) {
       if (serviceAccountJson) {
-        const parsed = JSON.parse(serviceAccountJson);
+        const parsed = typeof serviceAccountJson === 'string' ? JSON.parse(serviceAccountJson) : serviceAccountJson;
         app = initializeApp({
           credential: cert(parsed),
           projectId: parsed.project_id || projectId,
@@ -102,7 +103,7 @@ export function initializeFirebaseAdmin(): { db: Firestore | null; info: Firebas
           projectId,
         });
       } else {
-        // In Cloud Run / GCP, use Application Default Credentials (ADC)
+        // In Cloud Run / GCP / production, try Application Default Credentials (ADC)
         try {
           app = initializeApp({
             credential: applicationDefault(),
@@ -153,6 +154,8 @@ export function initializeFirebaseAdmin(): { db: Firestore | null; info: Firebas
       authMode: serviceAccountJson || (clientEmail && privateKey) ? 'credentials' : 'application_default',
     };
 
+    console.log(`[FIREBASE AUTH] Initialized Firebase Admin successfully: projectId=${projectId}, databaseId=${databaseId}, authMode=${cachedInfo.authMode}`);
+
     return {
       db: cachedDb,
       info: cachedInfo,
@@ -190,6 +193,12 @@ export function initializeFirebaseAdmin(): { db: Firestore | null; info: Firebas
       info: cachedInfo,
     };
   }
+}
+
+export function resetFirebaseAdminCache(): void {
+  cachedDb = null;
+  cachedInfo = null;
+  initError = null;
 }
 
 export function getFirestoreDb(): Firestore {

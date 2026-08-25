@@ -1,4 +1,5 @@
-import { queryAll, queryGet, queryRun, dbTransaction } from '../db';
+import { getFirestoreDb } from '../firebase/admin';
+import { COLLECTIONS, FirestoreCompetitionDoc, FirestoreFixtureDoc, FirestoreCompetitionParticipantDoc, FirestoreClubDoc } from '../firebase/collections';
 import { createNotification } from '../services/notificationService';
 import { createAuditLog } from '../services/adminService';
 
@@ -14,9 +15,9 @@ export interface KnockoutMatchNode {
 
 /**
  * Generates an initial knockout bracket structure (R32, R16, QF, SF, Final)
- * with deterministic seeding and round indices.
+ * with deterministic seeding and round indices directly in Cloud Firestore.
  */
-export function generateKnockoutBracket(
+export async function generateKnockoutBracket(
   competitionId: string,
   options: {
     participants?: string[];
@@ -24,349 +25,440 @@ export function generateKnockoutBracket(
     seedParticipants?: boolean;
     force?: boolean;
   } = {}
-): { generated: number; rounds: number } {
-  return dbTransaction(() => {
-    // 1. Fetch competition & season
-    const comp = queryGet<any>('SELECT * FROM competitions WHERE id = ?', [competitionId]);
-    if (!comp) {
-      throw new Error(`Competition '${competitionId}' not found.`);
-    }
+): Promise<{ generated: number; rounds: number }> {
+  const db = getFirestoreDb();
 
-    const existingFixtures = queryGet<{ cnt: number }>(
-      'SELECT COUNT(*) as cnt FROM fixtures WHERE competition_id = ?',
-      [competitionId]
-    );
-    if (existingFixtures && existingFixtures.cnt > 0) {
-      if (options.force) {
-        queryRun(
-          'DELETE FROM result_submissions WHERE fixture_id IN (SELECT id FROM fixtures WHERE competition_id = ?)',
-          [competitionId]
-        );
-        queryRun('DELETE FROM fixtures WHERE competition_id = ?', [competitionId]);
-      } else {
-        return { generated: existingFixtures.cnt, rounds: 0 };
+  // 1. Fetch competition & season
+  const compDoc = await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get();
+  if (!compDoc.exists) {
+    throw new Error(`Competition '${competitionId}' not found.`);
+  }
+  const comp = compDoc.data() as FirestoreCompetitionDoc;
+
+  // Check existing fixtures
+  const existingFixSnap = await db.collection(COLLECTIONS.FIXTURES).where('competitionId', '==', competitionId).get();
+  if (!existingFixSnap.empty) {
+    if (options.force) {
+      const deleteBatch = db.batch();
+      for (const fix of existingFixSnap.docs) {
+        deleteBatch.delete(fix.ref);
       }
+      await deleteBatch.commit();
+    } else {
+      return { generated: existingFixSnap.size, rounds: 0 };
     }
+  }
 
-    // 2. Fetch participating clubs
-    let clubIds = options.participants;
-    if (!clubIds || clubIds.length === 0) {
-      const parts = queryAll<{ club_id: string }>(
-        'SELECT club_id FROM competition_participants WHERE competition_id = ? ORDER BY seed_number ASC',
-        [competitionId]
-      );
-      clubIds = parts.map((p) => p.club_id);
+  // 2. Fetch participating clubs
+  let clubIds = options.participants ? [...options.participants] : [];
+  if (clubIds.length === 0) {
+    const partSnap = await db
+      .collection(COLLECTIONS.COMPETITION_PARTICIPANTS)
+      .where('competitionId', '==', competitionId)
+      .get();
+    
+    if (!partSnap.empty) {
+      const sortedParts = partSnap.docs
+        .map((d) => d.data() as FirestoreCompetitionParticipantDoc)
+        .sort((a, b) => (a.seedNumber ?? 0) - (b.seedNumber ?? 0));
+      clubIds = sortedParts.map((p) => p.clubId);
     }
+  }
 
-    // Fallback: If no participants registered, fetch from associated league
-    if (clubIds.length === 0 && comp.league_id) {
-      const leagueClubs = queryAll<{ club_id: string }>(
-        `SELECT slc.club_id 
-         FROM season_league_clubs slc 
-         JOIN clubs c ON slc.club_id = c.id
-         WHERE slc.league_id = ? AND slc.season_id = ? AND slc.is_active = 1 
-         ORDER BY c.name ASC`,
-        [comp.league_id, comp.season_id]
-      );
-      clubIds = leagueClubs.map((c) => c.club_id);
-    }
+  // Fallback: If no participants registered, fetch from associated league clubs
+  if (clubIds.length === 0 && comp.leagueId) {
+    const leagueClubsSnap = await db
+      .collection(COLLECTIONS.CLUBS)
+      .where('leagueId', '==', comp.leagueId)
+      .where('isActive', '==', true)
+      .get();
+    const sorted = leagueClubsSnap.docs
+      .map((d) => d.data() as FirestoreClubDoc)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    clubIds = sorted.map((c) => c.id);
+  }
 
-    if (clubIds.length < 2) {
-      throw new Error(`Cannot generate knockout bracket with fewer than 2 teams (found ${clubIds.length}).`);
-    }
+  if (clubIds.length < 2) {
+    throw new Error(`Cannot generate knockout bracket with fewer than 2 teams (found ${clubIds.length}).`);
+  }
 
-    // Calculate nearest power of 2 (e.g. 2, 4, 8, 16, 32)
-    let bracketSize = 2;
-    while (bracketSize < clubIds.length) {
-      bracketSize *= 2;
-    }
+  // Calculate nearest power of 2 (e.g. 2, 4, 8, 16, 32)
+  let bracketSize = 2;
+  while (bracketSize < clubIds.length) {
+    bracketSize *= 2;
+  }
 
-    // Determine round names
-    const totalRounds = Math.log2(bracketSize);
-    const getRoundName = (roundNum: number): string => {
-      const remainingTeams = Math.pow(2, totalRounds - roundNum + 1);
-      if (remainingTeams === 2) return 'Final';
-      if (remainingTeams === 4) return 'Semi-Finals';
-      if (remainingTeams === 8) return 'Quarter-Finals';
-      if (remainingTeams === 16) return 'Round of 16';
-      if (remainingTeams === 32) return 'Round of 32';
-      return `Round of ${remainingTeams}`;
-    };
+  const totalRounds = Math.log2(bracketSize);
+  const getRoundName = (roundNum: number): string => {
+    const remainingTeams = Math.pow(2, totalRounds - roundNum + 1);
+    if (remainingTeams === 2) return 'Final';
+    if (remainingTeams === 4) return 'Semi-Finals';
+    if (remainingTeams === 8) return 'Quarter-Finals';
+    if (remainingTeams === 16) return 'Round of 16';
+    if (remainingTeams === 32) return 'Round of 32';
+    return `Round of ${remainingTeams}`;
+  };
 
-    const now = new Date().toISOString();
-    let totalGenerated = 0;
+  const now = new Date().toISOString();
+  let totalGenerated = 0;
+  const batch = db.batch();
 
-    // First round matches
-    const firstRoundMatches = bracketSize / 2;
-    for (let i = 0; i < firstRoundMatches; i++) {
-      const homeClubId = clubIds[i * 2] || null;
-      const awayClubId = clubIds[i * 2 + 1] || null;
-      const fixtureId = `fix-${competitionId}-r1-m${i}`;
-      const roundName = getRoundName(1);
+  // First round matches
+  const firstRoundMatches = bracketSize / 2;
+  for (let i = 0; i < firstRoundMatches; i++) {
+    const homeClubId = clubIds[i * 2] || 'TBD';
+    const awayClubId = clubIds[i * 2 + 1] || 'TBD';
+    const fixtureId = `fix-${competitionId}-r1-m${i}`;
+    const roundName = getRoundName(1);
 
-      queryRun(
-        `INSERT INTO fixtures (
-          id, season_id, competition_id, matchday, round_name,
-          home_club_id, away_club_id, scheduled_at, status,
-          home_score, away_score, winner_club_id, result_confirmed_at,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, 1, ?, ?, ?, ?, 'SCHEDULED', NULL, NULL, NULL, NULL, ?, ?)`,
-        [
-          fixtureId,
-          comp.season_id,
-          competitionId,
-          roundName,
-          homeClubId || 'TBD',
-          awayClubId || 'TBD',
-          now,
-          now,
-          now,
-        ]
-      );
+    const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
+    batch.set(fixRef, {
+      id: fixtureId,
+      seasonId: comp.seasonId,
+      competitionId,
+      competitionName: comp.name,
+      matchday: 1,
+      roundName,
+      homeClubId,
+      awayClubId,
+      scheduledAt: now,
+      status: 'SCHEDULED',
+      homeScore: null,
+      awayScore: null,
+      winnerClubId: null,
+      resultConfirmedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    totalGenerated++;
+  }
+
+  // Subsequent rounds (QF, SF, Final) with TBD placeholders
+  for (let round = 2; round <= totalRounds; round++) {
+    const matchesInRound = Math.pow(2, totalRounds - round);
+    const roundName = getRoundName(round);
+
+    for (let m = 0; m < matchesInRound; m++) {
+      const fixtureId = `fix-${competitionId}-r${round}-m${m}`;
+      const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
+      batch.set(fixRef, {
+        id: fixtureId,
+        seasonId: comp.seasonId,
+        competitionId,
+        competitionName: comp.name,
+        matchday: round,
+        roundName,
+        homeClubId: 'TBD',
+        awayClubId: 'TBD',
+        scheduledAt: now,
+        status: 'SCHEDULED',
+        homeScore: null,
+        awayScore: null,
+        winnerClubId: null,
+        resultConfirmedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      });
       totalGenerated++;
     }
+  }
 
-    // Subsequent rounds (QF, SF, Final) with TBD placeholders
-    for (let round = 2; round <= totalRounds; round++) {
-      const matchesInRound = Math.pow(2, totalRounds - round);
-      const roundName = getRoundName(round);
-
-      for (let m = 0; m < matchesInRound; m++) {
-        const fixtureId = `fix-${competitionId}-r${round}-m${m}`;
-        queryRun(
-          `INSERT INTO fixtures (
-            id, season_id, competition_id, matchday, round_name,
-            home_club_id, away_club_id, scheduled_at, status,
-            home_score, away_score, winner_club_id, result_confirmed_at,
-            created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, 'TBD', 'TBD', ?, 'SCHEDULED', NULL, NULL, NULL, NULL, ?, ?)`,
-          [
-            fixtureId,
-            comp.season_id,
-            competitionId,
-            round,
-            roundName,
-            now,
-            now,
-            now,
-          ]
-        );
-        totalGenerated++;
-      }
-    }
-
-    queryRun('UPDATE competitions SET status = "active" WHERE id = ?', [competitionId]);
-
-    return { generated: totalGenerated, rounds: totalRounds };
+  // Update competition metadata
+  const compRef = db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId);
+  batch.update(compRef, {
+    status: 'active',
+    hasFixtures: true,
+    fixtureCount: totalGenerated,
+    fixturesCount: totalGenerated,
+    generationStatus: 'generated',
+    updatedAt: now,
   });
+
+  await batch.commit();
+  return { generated: totalGenerated, rounds: totalRounds };
 }
+
+export const generateKnockoutBracketFirestore = generateKnockoutBracket;
 
 /**
  * Generates UEFA Champions League Knockout Phase (Play-offs -> R16 -> QF -> SF -> Final)
- * based on the 24-team single league table standings.
+ * based on the 24-team single league table standings directly in Firestore.
  */
-export function generateUCLKnockoutBracket(
+export async function generateUCLKnockoutBracket(
   competitionId: string,
   rankedClubIds: string[]
-): { generated: number; playoffFixtures: number; r16Fixtures: number } {
-  return dbTransaction(() => {
-    if (rankedClubIds.length < 24) {
-      throw new Error(`UCL Knockout Phase requires 24 ranked clubs (found ${rankedClubIds.length}).`);
-    }
+): Promise<{ generated: number; playoffFixtures: number; r16Fixtures: number }> {
+  if (rankedClubIds.length < 24) {
+    throw new Error(`UCL Knockout Phase requires 24 ranked clubs (found ${rankedClubIds.length}).`);
+  }
 
-    const comp = queryGet<any>('SELECT * FROM competitions WHERE id = ?', [competitionId]);
-    if (!comp) {
-      throw new Error(`Competition '${competitionId}' not found.`);
-    }
+  const db = getFirestoreDb();
+  const compDoc = await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get();
+  if (!compDoc.exists) {
+    throw new Error(`Competition '${competitionId}' not found.`);
+  }
+  const comp = compDoc.data() as FirestoreCompetitionDoc;
 
-    const now = new Date().toISOString();
-    let totalGenerated = 0;
+  const now = new Date().toISOString();
+  let totalGenerated = 0;
+  const batch = db.batch();
 
-    // Direct qualifiers: Top 8 (indices 0..7)
-    const directQualifiers = rankedClubIds.slice(0, 8);
-    // Playoff qualifiers: Rank 9..24 (indices 8..23)
-    const playoffClubs = rankedClubIds.slice(8, 24);
+  const directQualifiers = rankedClubIds.slice(0, 8);
+  const playoffClubs = rankedClubIds.slice(8, 24);
 
-    // 1. Generate 8 Play-off Matches (Matchday / Round 9)
-    // 9v24, 10v23, 11v22, 12v21, 13v20, 14v19, 15v18, 16v17
-    for (let i = 0; i < 8; i++) {
-      const seededClubId = playoffClubs[i]; // rank 9+i
-      const unseededClubId = playoffClubs[15 - i]; // rank 24-i
-      const fixtureId = `fix-${competitionId}-po-m${i}`;
+  // 1. Generate 8 Play-off Matches (Matchday 9)
+  for (let i = 0; i < 8; i++) {
+    const seededClubId = playoffClubs[i];
+    const unseededClubId = playoffClubs[15 - i];
+    const fixtureId = `fix-${competitionId}-po-m${i}`;
+    const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
 
-      queryRun(
-        `INSERT INTO fixtures (
-          id, season_id, competition_id, matchday, round_name,
-          home_club_id, away_club_id, scheduled_at, status,
-          home_score, away_score, winner_club_id, result_confirmed_at,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, 9, 'Knockout Play-offs', ?, ?, ?, 'SCHEDULED', NULL, NULL, NULL, NULL, ?, ?)`,
-        [fixtureId, comp.season_id, competitionId, unseededClubId, seededClubId, now, now, now]
-      );
-      totalGenerated++;
-    }
-
-    // 2. Generate Round of 16 Matches (Round 10)
-    // Seeded direct qualifiers vs TBD playoff winners
-    for (let i = 0; i < 8; i++) {
-      const directClubId = directQualifiers[i];
-      const fixtureId = `fix-${competitionId}-r16-m${i}`;
-
-      queryRun(
-        `INSERT INTO fixtures (
-          id, season_id, competition_id, matchday, round_name,
-          home_club_id, away_club_id, scheduled_at, status,
-          home_score, away_score, winner_club_id, result_confirmed_at,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, 10, 'Round of 16', ?, 'TBD', ?, 'SCHEDULED', NULL, NULL, NULL, NULL, ?, ?)`,
-        [fixtureId, comp.season_id, competitionId, directClubId, now, now, now]
-      );
-      totalGenerated++;
-    }
-
-    // 3. Generate Quarter-Finals (Round 11)
-    for (let i = 0; i < 4; i++) {
-      const fixtureId = `fix-${competitionId}-qf-m${i}`;
-      queryRun(
-        `INSERT INTO fixtures (
-          id, season_id, competition_id, matchday, round_name,
-          home_club_id, away_club_id, scheduled_at, status,
-          home_score, away_score, winner_club_id, result_confirmed_at,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, 11, 'Quarter-Finals', 'TBD', 'TBD', ?, 'SCHEDULED', NULL, NULL, NULL, NULL, ?, ?)`,
-        [fixtureId, comp.season_id, competitionId, now, now, now]
-      );
-      totalGenerated++;
-    }
-
-    // 4. Generate Semi-Finals (Round 12)
-    for (let i = 0; i < 2; i++) {
-      const fixtureId = `fix-${competitionId}-sf-m${i}`;
-      queryRun(
-        `INSERT INTO fixtures (
-          id, season_id, competition_id, matchday, round_name,
-          home_club_id, away_club_id, scheduled_at, status,
-          home_score, away_score, winner_club_id, result_confirmed_at,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, 12, 'Semi-Finals', 'TBD', 'TBD', ?, 'SCHEDULED', NULL, NULL, NULL, NULL, ?, ?)`,
-        [fixtureId, comp.season_id, competitionId, now, now, now]
-      );
-      totalGenerated++;
-    }
-
-    // 5. Generate Final (Round 13)
-    const finalFixtureId = `fix-${competitionId}-final-m0`;
-    queryRun(
-      `INSERT INTO fixtures (
-        id, season_id, competition_id, matchday, round_name,
-        home_club_id, away_club_id, scheduled_at, status,
-        home_score, away_score, winner_club_id, result_confirmed_at,
-        created_at, updated_at
-      ) VALUES (?, ?, ?, 13, 'Final', 'TBD', 'TBD', ?, 'SCHEDULED', NULL, NULL, NULL, NULL, ?, ?)`,
-      [finalFixtureId, comp.season_id, competitionId, now, now, now]
-    );
+    batch.set(fixRef, {
+      id: fixtureId,
+      seasonId: comp.seasonId,
+      competitionId,
+      competitionName: comp.name,
+      matchday: 9,
+      roundName: 'Knockout Play-offs',
+      homeClubId: unseededClubId,
+      awayClubId: seededClubId,
+      scheduledAt: now,
+      status: 'SCHEDULED',
+      homeScore: null,
+      awayScore: null,
+      winnerClubId: null,
+      resultConfirmedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    });
     totalGenerated++;
+  }
 
-    return { generated: totalGenerated, playoffFixtures: 8, r16Fixtures: 8 };
+  // 2. Generate Round of 16 Matches (Matchday 10)
+  for (let i = 0; i < 8; i++) {
+    const directClubId = directQualifiers[i];
+    const fixtureId = `fix-${competitionId}-r16-m${i}`;
+    const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
+
+    batch.set(fixRef, {
+      id: fixtureId,
+      seasonId: comp.seasonId,
+      competitionId,
+      competitionName: comp.name,
+      matchday: 10,
+      roundName: 'Round of 16',
+      homeClubId: directClubId,
+      awayClubId: 'TBD',
+      scheduledAt: now,
+      status: 'SCHEDULED',
+      homeScore: null,
+      awayScore: null,
+      winnerClubId: null,
+      resultConfirmedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    totalGenerated++;
+  }
+
+  // 3. Generate Quarter-Finals (Matchday 11)
+  for (let i = 0; i < 4; i++) {
+    const fixtureId = `fix-${competitionId}-qf-m${i}`;
+    const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
+
+    batch.set(fixRef, {
+      id: fixtureId,
+      seasonId: comp.seasonId,
+      competitionId,
+      competitionName: comp.name,
+      matchday: 11,
+      roundName: 'Quarter-Finals',
+      homeClubId: 'TBD',
+      awayClubId: 'TBD',
+      scheduledAt: now,
+      status: 'SCHEDULED',
+      homeScore: null,
+      awayScore: null,
+      winnerClubId: null,
+      resultConfirmedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    totalGenerated++;
+  }
+
+  // 4. Generate Semi-Finals (Matchday 12)
+  for (let i = 0; i < 2; i++) {
+    const fixtureId = `fix-${competitionId}-sf-m${i}`;
+    const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
+
+    batch.set(fixRef, {
+      id: fixtureId,
+      seasonId: comp.seasonId,
+      competitionId,
+      competitionName: comp.name,
+      matchday: 12,
+      roundName: 'Semi-Finals',
+      homeClubId: 'TBD',
+      awayClubId: 'TBD',
+      scheduledAt: now,
+      status: 'SCHEDULED',
+      homeScore: null,
+      awayScore: null,
+      winnerClubId: null,
+      resultConfirmedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    totalGenerated++;
+  }
+
+  // 5. Generate Final (Matchday 13)
+  const finalFixtureId = `fix-${competitionId}-final-m0`;
+  const finalRef = db.collection(COLLECTIONS.FIXTURES).doc(finalFixtureId);
+  batch.set(finalRef, {
+    id: finalFixtureId,
+    seasonId: comp.seasonId,
+    competitionId,
+    competitionName: comp.name,
+    matchday: 13,
+    roundName: 'Final',
+    homeClubId: 'TBD',
+    awayClubId: 'TBD',
+    scheduledAt: now,
+    status: 'SCHEDULED',
+    homeScore: null,
+    awayScore: null,
+    winnerClubId: null,
+    resultConfirmedAt: null,
+    createdAt: now,
+    updatedAt: now,
   });
+  totalGenerated++;
+
+  const compRef = db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId);
+  batch.update(compRef, {
+    status: 'active',
+    hasFixtures: true,
+    fixtureCount: totalGenerated,
+    fixturesCount: totalGenerated,
+    generationStatus: 'generated',
+    updatedAt: now,
+  });
+
+  await batch.commit();
+  return { generated: totalGenerated, playoffFixtures: 8, r16Fixtures: 8 };
 }
+
+export const generateUCLKnockoutBracketFirestore = generateUCLKnockoutBracket;
 
 /**
- * Automatically advances winner of a confirmed knockout fixture to the next bracket round
+ * Automatically advances winner of a confirmed knockout fixture to the next bracket round in Firestore.
  */
-export function advanceKnockoutWinner(fixtureId: string): { advanced: boolean; targetFixtureId?: string; winnerClubId?: string } {
-  return dbTransaction(() => {
-    const fixture = queryGet<any>('SELECT * FROM fixtures WHERE id = ?', [fixtureId]);
-    if (!fixture || fixture.status !== 'CONFIRMED' || !fixture.winner_club_id) {
-      return { advanced: false };
-    }
+export async function advanceKnockoutWinner(fixtureId: string): Promise<{ advanced: boolean; targetFixtureId?: string; winnerClubId?: string }> {
+  const db = getFirestoreDb();
+  const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
+  const fixDoc = await fixRef.get();
 
-    const comp = queryGet<any>('SELECT * FROM competitions WHERE id = ?', [fixture.competition_id]);
-    if (!comp || (comp.type !== 'KNOCKOUT' && comp.type !== 'SUPER_CUP' && comp.type !== 'EUROPEAN_KNOCKOUT')) {
-      return { advanced: false };
-    }
+  if (!fixDoc.exists) return { advanced: false };
+  const fixture = fixDoc.data() as FirestoreFixtureDoc;
 
-    // Parse round and match index from fixture ID or matchday
-    // Typical ID pattern: fix-{comp}-r{round}-m{matchIndex}
-    const match = fixture.id.match(/-r(\d+)-m(\d+)$/);
-    if (!match) {
-      return { advanced: false };
-    }
+  if (fixture.status !== 'CONFIRMED' || !fixture.winnerClubId) {
+    return { advanced: false };
+  }
 
-    const currentRound = parseInt(match[1], 10);
-    const currentMatchIndex = parseInt(match[2], 10);
-    const nextRound = currentRound + 1;
-    const nextMatchIndex = Math.floor(currentMatchIndex / 2);
-    const isHomeSlot = currentMatchIndex % 2 === 0;
+  const compDoc = await db.collection(COLLECTIONS.COMPETITIONS).doc(fixture.competitionId).get();
+  if (!compDoc.exists) return { advanced: false };
+  const comp = compDoc.data() as FirestoreCompetitionDoc;
 
-    const nextFixtureId = `fix-${comp.id}-r${nextRound}-m${nextMatchIndex}`;
-    const nextFixture = queryGet<any>('SELECT * FROM fixtures WHERE id = ?', [nextFixtureId]);
+  if (comp.type !== 'KNOCKOUT' && comp.type !== 'SUPER_CUP' && comp.type !== 'EUROPEAN_KNOCKOUT') {
+    return { advanced: false };
+  }
 
-    if (!nextFixture) {
-      // This was the Final! We have crowned the champion!
-      const championClub = queryGet<any>('SELECT * FROM clubs WHERE id = ?', [fixture.winner_club_id]);
-      if (championClub) {
-        createAuditLog(
-          'system',
-          'TOURNAMENT_CHAMPION_CROWNED',
-          'competitions',
-          comp.id,
-          null,
-          { championClubId: championClub.id, championName: championClub.name }
+  // Parse round and match index from fixture ID (e.g. fix-{comp}-r{round}-m{matchIndex})
+  const match = fixture.id.match(/-r(\d+)-m(\d+)$/);
+  if (!match) {
+    return { advanced: false };
+  }
+
+  const currentRound = parseInt(match[1], 10);
+  const currentMatchIndex = parseInt(match[2], 10);
+  const nextRound = currentRound + 1;
+  const nextMatchIndex = Math.floor(currentMatchIndex / 2);
+  const isHomeSlot = currentMatchIndex % 2 === 0;
+
+  const nextFixtureId = `fix-${comp.id}-r${nextRound}-m${nextMatchIndex}`;
+  const nextFixRef = db.collection(COLLECTIONS.FIXTURES).doc(nextFixtureId);
+  const nextFixDoc = await nextFixRef.get();
+
+  if (!nextFixDoc.exists) {
+    // This was the Final! Crown tournament champion!
+    const championClubDoc = await db.collection(COLLECTIONS.CLUBS).doc(fixture.winnerClubId).get();
+    const championClub = championClubDoc.exists ? (championClubDoc.data() as FirestoreClubDoc) : null;
+
+    if (championClub) {
+      await createAuditLog(
+        'system',
+        'TOURNAMENT_CHAMPION_CROWNED',
+        'competitions',
+        comp.id,
+        null,
+        { championClubId: championClub.id, championName: championClub.name }
+      );
+
+      // Notify champion club owner
+      const occDoc = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${comp.seasonId}_${championClub.id}`).get();
+      if (occDoc.exists && occDoc.data()?.userId) {
+        await createNotification(
+          occDoc.data()!.userId,
+          'TOURNAMENT_CHAMPION',
+          `🏆 Champion of ${comp.name}!`,
+          `Congratulations! ${championClub.name} has won the ${comp.name} title!`
         );
-
-        // Notify champion club owner
-        const owner = queryGet<{ user_id: string }>(
-          'SELECT user_id FROM club_memberships WHERE club_id = ? AND season_id = ? AND status = "active"',
-          [championClub.id, comp.season_id]
-        );
-        if (owner) {
-          createNotification(
-            owner.user_id,
-            'TOURNAMENT_CHAMPION',
-            `🏆 Champion of ${comp.name}!`,
-            `Congratulations! ${championClub.name} has won the ${comp.name} title!`
-          );
-        }
       }
-      return { advanced: true, winnerClubId: fixture.winner_club_id };
     }
+    return { advanced: true, winnerClubId: fixture.winnerClubId };
+  }
 
-    const now = new Date().toISOString();
-    const updateColumn = isHomeSlot ? 'home_club_id' : 'away_club_id';
+  const now = new Date().toISOString();
+  const updateData: Partial<FirestoreFixtureDoc> = {
+    updatedAt: now,
+  };
+  if (isHomeSlot) {
+    updateData.homeClubId = fixture.winnerClubId;
+  } else {
+    updateData.awayClubId = fixture.winnerClubId;
+  }
 
-    queryRun(
-      `UPDATE fixtures SET ${updateColumn} = ?, updated_at = ? WHERE id = ?`,
-      [fixture.winner_club_id, now, nextFixtureId]
-    );
+  await nextFixRef.update(updateData);
 
-    // Check if next fixture now has both teams ready
-    const updatedNext = queryGet<any>('SELECT * FROM fixtures WHERE id = ?', [nextFixtureId]);
-    if (updatedNext.home_club_id !== 'TBD' && updatedNext.away_club_id !== 'TBD') {
-      // Notify both participants
-      const homeOwner = queryGet<{ user_id: string }>(
-        'SELECT user_id FROM club_memberships WHERE club_id = ? AND season_id = ? AND status = "active"',
-        [updatedNext.home_club_id, comp.season_id]
-      );
-      const awayOwner = queryGet<{ user_id: string }>(
-        'SELECT user_id FROM club_memberships WHERE club_id = ? AND season_id = ? AND status = "active"',
-        [updatedNext.away_club_id, comp.season_id]
-      );
+  // Check if both teams in next fixture are ready
+  const updatedNextDoc = await nextFixRef.get();
+  const updatedNext = updatedNextDoc.data() as FirestoreFixtureDoc;
 
-      const notifMsg = `Your next match in ${comp.name} (${updatedNext.round_name}) is scheduled!`;
-      if (homeOwner) createNotification(homeOwner.user_id, 'NEXT_ROUND_MATCH', `Next Round in ${comp.name}`, notifMsg);
-      if (awayOwner) createNotification(awayOwner.user_id, 'NEXT_ROUND_MATCH', `Next Round in ${comp.name}`, notifMsg);
+  if (updatedNext.homeClubId && updatedNext.homeClubId !== 'TBD' && updatedNext.awayClubId && updatedNext.awayClubId !== 'TBD') {
+    const homeOccDoc = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${comp.seasonId}_${updatedNext.homeClubId}`).get();
+    const awayOccDoc = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${comp.seasonId}_${updatedNext.awayClubId}`).get();
+
+    const notifMsg = `Your next match in ${comp.name} (${updatedNext.roundName}) is scheduled!`;
+    if (homeOccDoc.exists && homeOccDoc.data()?.userId) {
+      await createNotification(homeOccDoc.data()!.userId, 'NEXT_ROUND_MATCH', `Next Round in ${comp.name}`, notifMsg);
     }
+    if (awayOccDoc.exists && awayOccDoc.data()?.userId) {
+      await createNotification(awayOccDoc.data()!.userId, 'NEXT_ROUND_MATCH', `Next Round in ${comp.name}`, notifMsg);
+    }
+  }
 
-    createAuditLog(
-      'system',
-      'KNOCKOUT_ADVANCE',
-      'fixtures',
-      nextFixtureId,
-      { previousFixtureId: fixture.id },
-      { round: nextRound, slot: isHomeSlot ? 'HOME' : 'AWAY', advancedClubId: fixture.winner_club_id }
-    );
+  await createAuditLog(
+    'system',
+    'KNOCKOUT_ADVANCE',
+    'fixtures',
+    nextFixtureId,
+    { previousFixtureId: fixture.id },
+    { round: nextRound, slot: isHomeSlot ? 'HOME' : 'AWAY', advancedClubId: fixture.winnerClubId }
+  );
 
-    return { advanced: true, targetFixtureId: nextFixtureId, winnerClubId: fixture.winner_club_id };
-  });
+  return { advanced: true, targetFixtureId: nextFixtureId, winnerClubId: fixture.winnerClubId };
 }
+
+export const advanceKnockoutWinnerFirestore = advanceKnockoutWinner;

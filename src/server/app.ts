@@ -23,28 +23,50 @@ export async function ensureDbReady(): Promise<void> {
   if (!dbInitPromise) {
     dbInitPromise = (async () => {
       try {
-        // 1. Initialize SQLite for seed data & baseline
+        const isProd = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
+        const fbStatus = getFirebaseStatus();
+
+        if (isProd && fbStatus.isConfigured) {
+          // Production / Serverless cold start: direct Firestore connectivity
+          try {
+            const db = getFirestoreDb();
+            const clubsSnap = await db.collection(COLLECTIONS.CLUBS).limit(1).get();
+            if (clubsSnap.empty) {
+              console.log('[BOOT-PROD] Firestore is empty. Initializing SQLite baseline for one-time migration...');
+              await initDatabase();
+              seedDatabase();
+              repairSeason202627Roster();
+              await migrateSqliteToFirestore();
+              console.log('[BOOT-PROD] Firestore baseline migration completed.');
+            } else {
+              console.log(`[BOOT-PROD] Authoritative Firestore ready (${fbStatus.databaseId}). Skipped SQLite initialization.`);
+            }
+            return;
+          } catch (fbErr: any) {
+            console.warn('[BOOT-PROD] Firestore primary connection warning, checking SQLite fallback:', fbErr.message);
+          }
+        }
+
+        // Local development & test environments: initialize SQLite baseline
         await initDatabase();
         seedDatabase();
         repairSeason202627Roster();
+        console.log(`[BOOT-DEV] SQLite baseline loaded from: ${getDbFilePath()}`);
 
-        console.log(`[BOOT] SQLite baseline loaded from: ${getDbFilePath()}`);
-
-        // 2. Initialize Firestore if configured
-        const fbStatus = getFirebaseStatus();
+        // If Firestore is also configured in dev/test, verify/seed it
         if (fbStatus.isConfigured) {
           try {
             const db = getFirestoreDb();
             const clubsSnap = await db.collection(COLLECTIONS.CLUBS).limit(1).get();
             if (clubsSnap.empty) {
-              console.log('[BOOT] Firestore is empty. Auto-seeding from SQLite...');
+              console.log('[BOOT-DEV] Firestore is empty. Auto-seeding from SQLite baseline...');
               await migrateSqliteToFirestore();
-              console.log('[BOOT] Firestore auto-seeding completed.');
+              console.log('[BOOT-DEV] Firestore auto-seeding completed.');
             } else {
-              console.log(`[BOOT] Connected to Firestore database: ${fbStatus.databaseId}`);
+              console.log(`[BOOT-DEV] Connected to Firestore database: ${fbStatus.databaseId}`);
             }
           } catch (fbErr: any) {
-            console.warn('[BOOT] Firestore connection warning:', fbErr.message);
+            console.warn('[BOOT-DEV] Firestore connection warning:', fbErr.message);
           }
         }
       } catch (err) {
