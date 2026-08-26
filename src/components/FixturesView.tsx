@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { api } from '../lib/api';
+import { api, invalidateClientCache } from '../lib/api';
 import { Competition, Fixture } from '../types';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
 import {
@@ -16,6 +16,7 @@ import {
   Loader2,
   Sparkles,
   Search,
+  RefreshCw,
 } from 'lucide-react';
 
 export const FixturesView: React.FC = () => {
@@ -26,6 +27,7 @@ export const FixturesView: React.FC = () => {
   const [selectedMatchday, setSelectedMatchday] = useState<number>(1);
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [filterMode, setFilterMode] = useState<'ALL' | 'MY_MATCHES' | 'PENDING' | 'DISPUTED' | 'CONFIRMED'>('ALL');
   const [selectedFixtureForSubmit, setSelectedFixtureForSubmit] = useState<Fixture | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -37,7 +39,6 @@ export const FixturesView: React.FC = () => {
         const res = await api.getCompetitions(activeSeasonId);
         setCompetitions(res.competitions);
         if (res.competitions.length > 0) {
-          // Select EPL by default or first
           const defaultComp = res.competitions.find((c) => c.type === 'LEAGUE') || res.competitions[0];
           setSelectedCompetitionId(defaultComp.id);
         }
@@ -51,15 +52,17 @@ export const FixturesView: React.FC = () => {
   const activeComp = competitions.find((c) => c.id === selectedCompetitionId);
   const totalMatchdays = activeComp?.type === 'LEAGUE' ? (activeComp.totalTeams === 18 ? 34 : 38) : 1;
 
-  const loadFixtures = async () => {
+  const loadFixtures = async (skipCache = false) => {
     if (!selectedCompetitionId) return;
     setIsLoading(true);
+    setError(null);
     try {
       const matchdayParam = activeComp?.type === 'LEAGUE' ? selectedMatchday : undefined;
-      const res = await api.getCompetitionFixtures(selectedCompetitionId, matchdayParam);
+      const res = await api.getCompetitionFixtures(selectedCompetitionId, matchdayParam, undefined, skipCache);
       setFixtures(res.fixtures);
     } catch (err: any) {
       console.error('Failed to load fixtures:', err);
+      setError(err.message || 'Failed to load fixtures. Please check your connection.');
     } finally {
       setIsLoading(false);
     }
@@ -75,7 +78,9 @@ export const FixturesView: React.FC = () => {
     try {
       const res = await api.generateCompetitionFixtures(selectedCompetitionId);
       showToast(res.message || 'Berger round-robin schedule generated!', 'success');
-      await loadFixtures();
+      invalidateClientCache('/api/competitions');
+      invalidateClientCache('/api/fixtures');
+      await loadFixtures(true);
     } catch (err: any) {
       showToast(err.message || 'Failed to generate schedule.', 'error');
     } finally {
@@ -286,6 +291,23 @@ export const FixturesView: React.FC = () => {
         )}
       </div>
 
+      {/* Error State */}
+      {error && !isLoading && (
+        <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-between gap-3 text-rose-300 text-xs">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+            <span>{error}</span>
+          </div>
+          <button
+            onClick={() => loadFixtures(true)}
+            className="px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 font-bold flex items-center gap-1 shrink-0"
+          >
+            <RefreshCw className="w-3 h-3" />
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Fixtures List */}
       {isLoading ? (
         <div className="py-20 flex flex-col items-center justify-center text-slate-400">
@@ -451,7 +473,9 @@ export const FixturesView: React.FC = () => {
           isOpen={true}
           onClose={() => setSelectedFixtureForSubmit(null)}
           onSuccess={() => {
-            loadFixtures();
+            invalidateClientCache('/api/fixtures');
+            invalidateClientCache('/api/standings');
+            loadFixtures(true);
           }}
         />
       )}

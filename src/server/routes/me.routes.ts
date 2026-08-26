@@ -3,9 +3,9 @@ import { requireAuth } from '../middleware/authMiddleware';
 import {
   getUserActiveClubFirestore,
   getFixturesFirestore,
+  getUserNotificationsFirestore,
+  markNotificationsReadFirestore,
 } from '../firebase/firestoreStore';
-import { getFirestoreDb } from '../firebase/admin';
-import { COLLECTIONS, FirestoreFixtureDoc, FirestoreNotificationDoc } from '../firebase/collections';
 
 export const meRouter = Router();
 
@@ -16,7 +16,7 @@ meRouter.get('/', requireAuth, async (req: Request, res: Response) => {
   try {
     const currentClub = await getUserActiveClubFirestore(user.id, seasonId);
 
-    let stats = {
+    const stats = {
       matchesPlayed: 0,
       wins: 0,
       draws: 0,
@@ -29,15 +29,13 @@ meRouter.get('/', requireAuth, async (req: Request, res: Response) => {
     };
 
     if (currentClub) {
-      const db = getFirestoreDb();
-      const fixturesSnap = await db
-        .collection(COLLECTIONS.FIXTURES)
-        .where('seasonId', '==', seasonId)
-        .where('status', '==', 'CONFIRMED')
-        .get();
+      const confirmedMatches = await getFixturesFirestore({
+        clubId: currentClub.id,
+        seasonId,
+        status: 'CONFIRMED',
+      });
 
-      for (const doc of fixturesSnap.docs) {
-        const m = doc.data() as FirestoreFixtureDoc;
+      for (const m of confirmedMatches) {
         const isHome = m.homeClubId === currentClub.id;
         const isAway = m.awayClubId === currentClub.id;
 
@@ -69,6 +67,7 @@ meRouter.get('/', requireAuth, async (req: Request, res: Response) => {
       stats,
     });
   } catch (err: any) {
+    console.error('Error fetching dashboard me data:', err);
     res.status(500).json({ error: 'Failed to fetch user profile', message: err.message });
   }
 });
@@ -94,27 +93,7 @@ meRouter.get('/matches', requireAuth, async (req: Request, res: Response) => {
 meRouter.get('/notifications', requireAuth, async (req: Request, res: Response) => {
   const userId = req.user!.id;
   try {
-    const db = getFirestoreDb();
-    const snap = await db
-      .collection(COLLECTIONS.NOTIFICATIONS)
-      .where('userId', '==', userId)
-      .orderBy('createdAt', 'desc')
-      .limit(30)
-      .get();
-
-    const notifications = snap.docs.map((d) => {
-      const data = d.data() as FirestoreNotificationDoc;
-      return {
-        id: d.id,
-        userId: data.userId,
-        type: data.type,
-        title: data.title,
-        message: data.message,
-        isRead: data.isRead,
-        createdAt: data.createdAt,
-      };
-    });
-
+    const notifications = await getUserNotificationsFirestore(userId, 30);
     res.json({ notifications });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to fetch notifications', message: err.message });
@@ -124,20 +103,10 @@ meRouter.get('/notifications', requireAuth, async (req: Request, res: Response) 
 meRouter.post('/notifications/read', requireAuth, async (req: Request, res: Response) => {
   const userId = req.user!.id;
   try {
-    const db = getFirestoreDb();
-    const snap = await db
-      .collection(COLLECTIONS.NOTIFICATIONS)
-      .where('userId', '==', userId)
-      .where('isRead', '==', false)
-      .get();
-
-    if (!snap.empty) {
-      const batch = db.batch();
-      snap.docs.forEach((d) => batch.update(d.ref, { isRead: true }));
-      await batch.commit();
-    }
+    await markNotificationsReadFirestore(userId);
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to update notifications', message: err.message });
   }
 });
+

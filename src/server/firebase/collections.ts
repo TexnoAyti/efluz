@@ -156,6 +156,15 @@ export interface FirestoreNotificationDoc {
   createdAt: string;
 }
 
+export interface FirestoreStandingsDoc {
+  competitionId: string;
+  seasonId?: string;
+  updatedAt: string;
+  rows: import('../../types').StandingsRow[];
+  confirmedFixtureIds?: string[];
+  totalPlayed?: number;
+}
+
 export interface FirestoreAuditLogDoc {
   id: string;
   actorUserId: string;

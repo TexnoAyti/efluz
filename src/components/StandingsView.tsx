@@ -10,6 +10,8 @@ import {
   TrendingUp,
   Award,
   Globe2,
+  AlertTriangle,
+  RefreshCw,
 } from 'lucide-react';
 
 export const StandingsView: React.FC = () => {
@@ -20,6 +22,7 @@ export const StandingsView: React.FC = () => {
   const [selectedCompetitionId, setSelectedCompetitionId] = useState<string>('comp-premier-league-2026');
   const [standings, setStandings] = useState<StandingsRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadComps() {
@@ -38,14 +41,16 @@ export const StandingsView: React.FC = () => {
     loadComps();
   }, [activeSeasonId]);
 
-  const loadStandings = async () => {
+  const loadStandings = async (skipCache = false) => {
     if (!selectedCompetitionId) return;
     setIsLoading(true);
+    setError(null);
     try {
-      const res = await api.getCompetitionStandings(selectedCompetitionId);
+      const res = await api.getCompetitionStandings(selectedCompetitionId, skipCache);
       setStandings(res.standings);
     } catch (err: any) {
       console.error('Failed to load standings:', err);
+      setError(err.message || 'Failed to load standings.');
     } finally {
       setIsLoading(false);
     }
@@ -156,6 +161,22 @@ export const StandingsView: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {error && !isLoading && (
+          <div className="m-4 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-between gap-3 text-rose-300 text-xs">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+              <span>{error}</span>
+            </div>
+            <button
+              onClick={() => loadStandings(true)}
+              className="px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 font-bold flex items-center gap-1 shrink-0"
+            >
+              <RefreshCw className="w-3 h-3" />
+              Retry
+            </button>
+          </div>
+        )}
 
         {isLoading ? (
           <div className="py-20 flex flex-col items-center justify-center text-slate-400">

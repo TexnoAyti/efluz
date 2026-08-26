@@ -17,6 +17,7 @@ function resolveLeagueId(id: string): string {
 leaguesRouter.get('/', async (req: Request, res: Response) => {
   try {
     const leagues = await getAllLeaguesFirestore();
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
     res.json({ leagues });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to fetch leagues', message: err.message });

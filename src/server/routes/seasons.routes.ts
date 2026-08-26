@@ -6,6 +6,7 @@ export const seasonsRouter = Router();
 seasonsRouter.get('/', async (req: Request, res: Response) => {
   try {
     const seasons = await getAllSeasonsFirestore();
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
     res.json({ seasons });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to fetch seasons', message: err.message });
@@ -19,6 +20,7 @@ seasonsRouter.get('/active', async (req: Request, res: Response) => {
       res.status(404).json({ error: 'Active season not found' });
       return;
     }
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
     res.json({ season });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to fetch active season', message: err.message });
