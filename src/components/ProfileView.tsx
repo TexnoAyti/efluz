@@ -33,13 +33,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigateTab }) => {
   ];
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-300 pb-20 max-w-4xl mx-auto">
+    <div className="space-y-5 animate-in fade-in duration-300 pb-20 max-w-4xl mx-auto">
       {/* Profile Card */}
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
+      <div className="glass-panel p-6 sm:p-8 shadow-2xl relative overflow-hidden">
         <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
 
         <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 relative z-10 text-center sm:text-left">
-          <div className="w-24 h-24 rounded-3xl bg-slate-950 p-2 border-2 border-slate-700/80 flex items-center justify-center text-slate-300 font-bold text-2xl shadow-xl shrink-0 overflow-hidden">
+          <div className="w-24 h-24 rounded-3xl bg-slate-950/80 p-2 border border-white/[0.08] flex items-center justify-center text-slate-300 font-bold text-2xl shadow-xl shrink-0 overflow-hidden">
             {user?.photoUrl ? (
               <img src={user.photoUrl} alt={user.username} className="w-full h-full object-cover" />
             ) : (
@@ -64,7 +64,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigateTab }) => {
             {currentClub ? (
               <div
                 onClick={() => onNavigateTab('my-club')}
-                className="mt-4 inline-flex items-center gap-3 p-2.5 px-4 bg-slate-950/80 hover:bg-slate-950 border border-slate-800 rounded-2xl cursor-pointer transition-all shadow-md group"
+                className="mt-4 inline-flex items-center gap-3 p-2.5 px-4 glass-card cursor-pointer transition-all shadow-md group"
               >
                 <img
                   src={currentClub.logoUrl}
@@ -98,7 +98,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigateTab }) => {
       </div>
 
       {/* Language Selector Card */}
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+      <div className="glass-panel p-6 shadow-xl space-y-4">
         <div className="flex items-center gap-2 text-white font-bold text-sm">
           <Languages className="w-5 h-5 text-emerald-400" />
           <span>{t.changeLanguage}</span>
@@ -113,8 +113,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigateTab }) => {
                 onClick={() => setLanguage(item.code)}
                 className={`flex flex-col items-center justify-center p-3.5 rounded-2xl border transition-all ${
                   isSelected
-                    ? 'bg-emerald-500/15 border-emerald-500 text-emerald-300 font-black shadow-lg shadow-emerald-500/10'
-                    : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800/60'
+                    ? 'bg-emerald-500/15 border-emerald-500/60 text-emerald-300 font-black shadow-lg shadow-emerald-500/10'
+                    : 'glass-card text-slate-300 hover:border-white/[0.15]'
                 }`}
               >
                 <span className="text-2xl mb-1">{item.flag}</span>
@@ -128,7 +128,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigateTab }) => {
 
       {/* Sandbox Test Account Switcher (For Multiplayer & Dispute Simulation) */}
       {isDevMode && (
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+        <div className="glass-panel p-6 shadow-xl space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-white font-bold text-sm">
               <Sparkles className="w-5 h-5 text-amber-400" />
@@ -156,8 +156,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigateTab }) => {
                     onClick={() => switchDevUser(prof.id)}
                     className={`flex items-center justify-between p-3.5 rounded-2xl border text-left text-xs transition-all ${
                       isSelected
-                        ? 'bg-emerald-500/15 border-emerald-500 text-emerald-300 font-black shadow-md'
-                        : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800/80'
+                        ? 'bg-emerald-500/15 border-emerald-500/60 text-emerald-300 font-black shadow-md'
+                        : 'glass-card text-slate-300 hover:border-white/[0.15]'
                     }`}
                   >
                     <div className="flex items-center gap-3">

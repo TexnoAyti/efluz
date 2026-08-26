@@ -89,12 +89,14 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden text-white flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="glass-modal w-full max-w-lg shadow-2xl overflow-hidden text-white flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-800/40">
-          <div className="flex items-center gap-2">
-            <Shield className="w-5 h-5 text-emerald-400" />
+        <div className="px-5 py-4 border-b border-white/[0.08] flex items-center justify-between bg-white/[0.02]">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+              <Shield className="w-4 h-4" />
+            </div>
             <div>
               <h3 className="font-bold text-sm sm:text-base text-slate-100">Submit Match Result</h3>
               <p className="text-[11px] text-slate-400">
@@ -104,20 +106,20 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            className="p-1.5 rounded-xl text-slate-400 hover:text-white glass-button transition-colors"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Content Body */}
-        <form onSubmit={handleSubmit} className="p-5 overflow-y-auto space-y-5">
+        <form onSubmit={handleSubmit} className="p-5 overflow-y-auto space-y-4">
           {/* Match Teams Banner */}
-          <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-4">
+          <div className="glass-card p-4">
             <div className="grid grid-cols-5 items-center gap-2 text-center">
               {/* Home Team */}
               <div className="col-span-2 flex flex-col items-center">
-                <div className="w-14 h-14 rounded-full bg-slate-800/80 p-2 border border-slate-700 flex items-center justify-center mb-2 shadow-inner">
+                <div className="w-14 h-14 rounded-2xl bg-slate-950/80 p-2 border border-white/[0.08] flex items-center justify-center mb-2 shadow-inner">
                   <img
                     src={fixture.homeClub?.logoUrl}
                     alt={fixture.homeClub?.name}
@@ -127,7 +129,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
                     }}
                   />
                 </div>
-                <div className="font-black text-sm text-slate-100">{fixture.homeClub?.name}</div>
+                <div className="font-black text-xs sm:text-sm text-slate-100 truncate max-w-full">{fixture.homeClub?.name}</div>
                 <span className="text-[10px] text-emerald-400 font-semibold mt-0.5">
                   {isHomeOwner ? '(You)' : fixture.homeOwnerId ? 'Claimed' : 'Unclaimed'}
                 </span>
@@ -135,14 +137,14 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
 
               {/* VS Divider */}
               <div className="col-span-1 flex flex-col items-center justify-center">
-                <div className="w-8 h-8 rounded-full bg-slate-800/90 text-slate-400 font-black text-xs flex items-center justify-center border border-slate-700">
+                <div className="w-8 h-8 rounded-full glass-card text-slate-400 font-black text-xs flex items-center justify-center">
                   VS
                 </div>
               </div>
 
               {/* Away Team */}
               <div className="col-span-2 flex flex-col items-center">
-                <div className="w-14 h-14 rounded-full bg-slate-800/80 p-2 border border-slate-700 flex items-center justify-center mb-2 shadow-inner">
+                <div className="w-14 h-14 rounded-2xl bg-slate-950/80 p-2 border border-white/[0.08] flex items-center justify-center mb-2 shadow-inner">
                   <img
                     src={fixture.awayClub?.logoUrl}
                     alt={fixture.awayClub?.name}
@@ -152,7 +154,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
                     }}
                   />
                 </div>
-                <div className="font-black text-sm text-slate-100">{fixture.awayClub?.name}</div>
+                <div className="font-black text-xs sm:text-sm text-slate-100 truncate max-w-full">{fixture.awayClub?.name}</div>
                 <span className="text-[10px] text-emerald-400 font-semibold mt-0.5">
                   {isAwayOwner ? '(You)' : fixture.awayOwnerId ? 'Claimed' : 'Unclaimed'}
                 </span>
@@ -162,37 +164,33 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
 
           {/* Opponent Submission Status Notification */}
           {fixture.opponentSubmission && (
-            <div className="p-3 bg-indigo-950/40 border border-indigo-500/30 rounded-xl text-xs flex items-start gap-2.5">
-              <Clock className="w-4 h-4 text-indigo-400 mt-0.5 shrink-0" />
-              <div>
-                <div className="font-bold text-indigo-300">Opponent Submitted Result:</div>
-                <div className="text-slate-300 mt-0.5">
-                  Your opponent submitted{' '}
-                  <strong className="text-white">
-                    {fixture.opponentSubmission.homeScore} - {fixture.opponentSubmission.awayScore}
-                  </strong>
-                  . If you submit the same score, the match will be <strong>instant-confirmed</strong>!
-                </div>
+            <div className="glass-card bg-indigo-950/25 border-indigo-500/30 p-3.5 text-xs space-y-1.5">
+              <div className="flex items-center gap-2 font-bold text-indigo-300">
+                <Clock className="w-4 h-4 text-indigo-400 shrink-0" />
+                <span>Opponent Submitted: {fixture.opponentSubmission.homeScore} - {fixture.opponentSubmission.awayScore}</span>
               </div>
+              <p className="text-slate-300 text-[11px] leading-relaxed">
+                If you submit this exact score, the match will be verified and league standings updated immediately.
+              </p>
             </div>
           )}
 
           {/* Interactive Score Stepper Controls */}
           <div>
-            <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2 text-center">
+            <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-2 text-center">
               Official Match Score
             </label>
-            <div className="grid grid-cols-2 gap-4 bg-slate-950/40 p-4 rounded-xl border border-slate-800/80">
+            <div className="grid grid-cols-2 gap-3 glass-panel p-4">
               {/* Home Score Stepper */}
               <div className="flex flex-col items-center">
-                <span className="text-xs font-semibold text-slate-300 mb-2 truncate max-w-full">
+                <span className="text-xs font-bold text-slate-300 mb-2 truncate max-w-full">
                   {fixture.homeClub?.shortName || 'HOME'}
                 </span>
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() => handleScoreAdjust('home', -1)}
-                    className="w-9 h-9 rounded-lg bg-slate-800 hover:bg-slate-700 active:bg-slate-600 font-bold text-lg text-slate-200 border border-slate-700 flex items-center justify-center select-none"
+                    className="w-10 h-10 glass-button font-bold text-lg text-slate-200 flex items-center justify-center select-none"
                   >
                     -
                   </button>
@@ -202,12 +200,12 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
                     max="99"
                     value={homeScore}
                     onChange={(e) => setHomeScore(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                    className="w-16 h-12 bg-slate-900 border border-slate-700 rounded-xl text-center text-2xl font-black text-white focus:outline-none focus:border-emerald-500"
+                    className="w-16 h-12 glass-input rounded-xl text-center text-2xl font-black text-white focus:outline-none"
                   />
                   <button
                     type="button"
                     onClick={() => handleScoreAdjust('home', 1)}
-                    className="w-9 h-9 rounded-lg bg-slate-800 hover:bg-slate-700 active:bg-slate-600 font-bold text-lg text-slate-200 border border-slate-700 flex items-center justify-center select-none"
+                    className="w-10 h-10 glass-button font-bold text-lg text-slate-200 flex items-center justify-center select-none"
                   >
                     +
                   </button>
@@ -216,14 +214,14 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
 
               {/* Away Score Stepper */}
               <div className="flex flex-col items-center">
-                <span className="text-xs font-semibold text-slate-300 mb-2 truncate max-w-full">
+                <span className="text-xs font-bold text-slate-300 mb-2 truncate max-w-full">
                   {fixture.awayClub?.shortName || 'AWAY'}
                 </span>
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() => handleScoreAdjust('away', -1)}
-                    className="w-9 h-9 rounded-lg bg-slate-800 hover:bg-slate-700 active:bg-slate-600 font-bold text-lg text-slate-200 border border-slate-700 flex items-center justify-center select-none"
+                    className="w-10 h-10 glass-button font-bold text-lg text-slate-200 flex items-center justify-center select-none"
                   >
                     -
                   </button>
@@ -233,12 +231,12 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
                     max="99"
                     value={awayScore}
                     onChange={(e) => setAwayScore(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                    className="w-16 h-12 bg-slate-900 border border-slate-700 rounded-xl text-center text-2xl font-black text-white focus:outline-none focus:border-emerald-500"
+                    className="w-16 h-12 glass-input rounded-xl text-center text-2xl font-black text-white focus:outline-none"
                   />
                   <button
                     type="button"
                     onClick={() => handleScoreAdjust('away', 1)}
-                    className="w-9 h-9 rounded-lg bg-slate-800 hover:bg-slate-700 active:bg-slate-600 font-bold text-lg text-slate-200 border border-slate-700 flex items-center justify-center select-none"
+                    className="w-10 h-10 glass-button font-bold text-lg text-slate-200 flex items-center justify-center select-none"
                   >
                     +
                   </button>
@@ -258,24 +256,11 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
               placeholder="e.g. https://imgur.com/screenshot.png or cloud drive link"
               value={proofUrl}
               onChange={(e) => setProofUrl(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+              className="w-full px-3 py-2 glass-input rounded-xl text-xs text-slate-200 placeholder-slate-500 focus:outline-none"
             />
             <p className="text-[11px] text-slate-500 mt-1">
               Providing end-game screenshot proof ensures faster resolution if your opponent inputs a wrong score.
             </p>
-          </div>
-
-          {/* Consensus Explainer Box */}
-          <div className="bg-slate-950/50 border border-slate-800/80 rounded-xl p-3 text-[11px] text-slate-400 space-y-1.5">
-            <div className="font-semibold text-slate-300 flex items-center gap-1">
-              <HelpCircle className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Two-Party Consensus Verification</span>
-            </div>
-            <ul className="list-disc list-inside space-y-0.5 text-slate-400">
-              <li>Both players independently submit match scores.</li>
-              <li>When scores match, the result is <strong>instantly confirmed</strong> and updates the league table.</li>
-              <li>If scores differ, the match is flagged as <strong>DISPUTED</strong> for Admin Review.</li>
-            </ul>
           </div>
 
           {/* Error Message */}
@@ -291,7 +276,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-semibold text-xs transition-colors"
+              className="flex-1 py-2.5 px-4 glass-button text-slate-300 font-semibold text-xs transition-colors"
             >
               Cancel
             </button>
@@ -299,7 +284,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
               type="submit"
               disabled={isSubmitting}
               id="btn-confirm-score-submit"
-              className="flex-1 py-2.5 px-4 bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 disabled:opacity-50 text-slate-950 font-black rounded-xl text-xs shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-1.5 transition-all"
+              className="flex-1 py-2.5 px-4 btn-glass-primary font-black text-xs flex items-center justify-center gap-1.5"
             >
               {isSubmitting ? (
                 <>
