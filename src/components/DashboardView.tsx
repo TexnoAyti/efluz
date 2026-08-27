@@ -249,13 +249,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       )}
 
       {/* Next Match & Latest Result Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Next Match */}
-        <div className="glass-panel p-5 shadow-xl space-y-3.5">
+        <div className="glass-panel p-4 sm:p-5 shadow-xl space-y-3 min-w-0">
           <div className="flex items-center justify-between border-b border-white/[0.06] pb-2.5">
-            <div className="flex items-center gap-2">
-              <Flame className="w-4 h-4 text-amber-400" />
-              <h3 className="text-xs font-black uppercase tracking-wider text-slate-300">
+            <div className="flex items-center gap-2 min-w-0">
+              <Flame className="w-4 h-4 text-amber-400 shrink-0" />
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-300 truncate">
                 {t.nextMatch}
               </h3>
             </div>
@@ -263,55 +263,55 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           {nextMatch ? (
-            <div className="space-y-3.5">
-              <div className="text-[11px] text-slate-400 font-medium">
+            <div className="space-y-3 min-w-0">
+              <div className="text-[11px] text-slate-400 font-medium truncate">
                 {nextMatch.competitionName} • {nextMatch.roundName || `${t.matchday} ${nextMatch.matchday}`}
               </div>
 
-              <div className="grid grid-cols-7 items-center gap-2 text-center py-2">
+              <div className="flex items-center justify-between gap-2 py-2 px-1">
                 {/* Home */}
-                <div className="col-span-3 flex flex-col items-center">
-                  <div className="w-12 h-12 rounded-xl bg-slate-950/80 p-2 border border-white/[0.08] flex items-center justify-center mb-1 shadow-inner">
+                <div className="flex-1 min-w-0 flex flex-col items-center text-center">
+                  <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-slate-950/80 p-1.5 border border-white/[0.08] flex items-center justify-center mb-1 shadow-inner shrink-0">
                     <img
                       src={nextMatch.homeClub?.logoUrl}
                       alt={nextMatch.homeClub?.name}
-                      className="w-8 h-8 object-contain"
+                      className="w-7 h-7 object-contain"
                       onError={(e) => {
                         (e.target as HTMLElement).style.display = 'none';
                       }}
                     />
                   </div>
-                  <span className="font-bold text-xs text-slate-100 truncate max-w-full">
-                    {nextMatch.homeClub?.name}
+                  <span className="font-bold text-xs text-slate-100 truncate w-full">
+                    {nextMatch.homeClub?.shortName || nextMatch.homeClub?.name}
                   </span>
-                  <span className="text-[10px] text-slate-400">
+                  <span className="text-[10px] text-slate-400 truncate w-full">
                     {nextMatch.homeOwnerId === user?.id ? `(${t.myClub})` : `@${nextMatch.homeClub?.claimedByUsername || 'open'}`}
                   </span>
                 </div>
 
-                {/* VS */}
-                <div className="col-span-1 flex items-center justify-center">
-                  <span className="w-7 h-7 rounded-full glass-card flex items-center justify-center text-[10px] font-black text-slate-400">
+                {/* VS Badge */}
+                <div className="shrink-0 px-2 flex flex-col items-center">
+                  <span className="w-8 h-8 rounded-full glass-card flex items-center justify-center text-[10px] font-black text-emerald-400 border-emerald-500/20">
                     VS
                   </span>
                 </div>
 
                 {/* Away */}
-                <div className="col-span-3 flex flex-col items-center">
-                  <div className="w-12 h-12 rounded-xl bg-slate-950/80 p-2 border border-white/[0.08] flex items-center justify-center mb-1 shadow-inner">
+                <div className="flex-1 min-w-0 flex flex-col items-center text-center">
+                  <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-slate-950/80 p-1.5 border border-white/[0.08] flex items-center justify-center mb-1 shadow-inner shrink-0">
                     <img
                       src={nextMatch.awayClub?.logoUrl}
                       alt={nextMatch.awayClub?.name}
-                      className="w-8 h-8 object-contain"
+                      className="w-7 h-7 object-contain"
                       onError={(e) => {
                         (e.target as HTMLElement).style.display = 'none';
                       }}
                     />
                   </div>
-                  <span className="font-bold text-xs text-slate-100 truncate max-w-full">
-                    {nextMatch.awayClub?.name}
+                  <span className="font-bold text-xs text-slate-100 truncate w-full">
+                    {nextMatch.awayClub?.shortName || nextMatch.awayClub?.name}
                   </span>
-                  <span className="text-[10px] text-slate-400">
+                  <span className="text-[10px] text-slate-400 truncate w-full">
                     {nextMatch.awayOwnerId === user?.id ? `(${t.myClub})` : `@${nextMatch.awayClub?.claimedByUsername || 'open'}`}
                   </span>
                 </div>
@@ -322,64 +322,64 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   if (onSelectFixtureForMatchCenter) onSelectFixtureForMatchCenter(nextMatch);
                   onNavigateTab('my-matches');
                 }}
-                className="w-full py-2.5 btn-glass-primary font-black text-xs flex items-center justify-center gap-1.5"
+                className="w-full py-2.5 btn-glass-primary font-black text-xs flex items-center justify-center gap-1.5 min-h-[44px] touch-manipulation"
               >
                 <Swords className="w-3.5 h-3.5" />
                 <span>{t.openMatchCenter}</span>
               </button>
             </div>
           ) : (
-            <div className="py-8 text-center text-xs text-slate-400">
+            <div className="py-6 text-center text-xs text-slate-400">
               {t.noUpcomingMatches}
             </div>
           )}
         </div>
 
         {/* Latest Result & Current Form */}
-        <div className="glass-panel p-5 shadow-xl space-y-3.5">
+        <div className="glass-panel p-4 sm:p-5 shadow-xl space-y-3 min-w-0">
           <div className="flex items-center justify-between border-b border-white/[0.06] pb-2.5">
-            <div className="flex items-center gap-2">
-              <Trophy className="w-4 h-4 text-emerald-400" />
-              <h3 className="text-xs font-black uppercase tracking-wider text-slate-300">
-                {t.latestResult} & {t.recentForm}
+            <div className="flex items-center gap-2 min-w-0">
+              <Trophy className="w-4 h-4 text-emerald-400 shrink-0" />
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-300 truncate">
+                {t.latestResult}
               </h3>
             </div>
             {latestFinishedMatch && (
-              <span className="text-[10px] font-bold text-slate-400">
+              <span className="text-[10px] font-bold text-slate-400 truncate max-w-[120px]">
                 {latestFinishedMatch.competitionName}
               </span>
             )}
           </div>
 
           {latestFinishedMatch ? (
-            <div className="space-y-3.5">
-              <div className="flex items-center justify-between p-3 glass-card border-white/[0.08]">
-                <div className="flex items-center gap-2">
+            <div className="space-y-3 min-w-0">
+              <div className="flex items-center justify-between p-2.5 glass-card border-white/[0.08] gap-2">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
                   <img
                     src={latestFinishedMatch.homeClub?.logoUrl}
                     alt={latestFinishedMatch.homeClub?.name}
-                    className="w-6 h-6 object-contain"
+                    className="w-5 h-5 object-contain shrink-0"
                     onError={(e) => {
                       (e.target as HTMLElement).style.display = 'none';
                     }}
                   />
-                  <span className="font-bold text-xs text-white">
-                    {latestFinishedMatch.homeClub?.name}
+                  <span className="font-bold text-xs text-white truncate">
+                    {latestFinishedMatch.homeClub?.shortName || latestFinishedMatch.homeClub?.name}
                   </span>
                 </div>
 
-                <div className="px-3 py-1 glass-card border-white/[0.1] font-black text-sm text-white">
+                <div className="px-2.5 py-1 glass-card border-white/[0.1] font-black text-xs sm:text-sm text-white shrink-0">
                   {latestFinishedMatch.homeScore} : {latestFinishedMatch.awayScore}
                 </div>
 
-                <div className="flex items-center gap-2 text-right">
-                  <span className="font-bold text-xs text-white">
-                    {latestFinishedMatch.awayClub?.name}
+                <div className="flex items-center gap-2 min-w-0 flex-1 justify-end">
+                  <span className="font-bold text-xs text-white truncate text-right">
+                    {latestFinishedMatch.awayClub?.shortName || latestFinishedMatch.awayClub?.name}
                   </span>
                   <img
                     src={latestFinishedMatch.awayClub?.logoUrl}
                     alt={latestFinishedMatch.awayClub?.name}
-                    className="w-6 h-6 object-contain"
+                    className="w-5 h-5 object-contain shrink-0"
                     onError={(e) => {
                       (e.target as HTMLElement).style.display = 'none';
                     }}
@@ -390,13 +390,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               {/* Form Guide */}
               <div>
                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">{t.recentForm}</div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-0.5">
                   {recentFinishedMatches.map((fix) => {
                     const outcome = calculateForm(fix);
                     return (
                       <span
                         key={fix.id}
-                        className={`w-6 h-6 rounded-lg flex items-center justify-center font-black text-[11px] ${
+                        className={`w-6 h-6 rounded-lg flex items-center justify-center font-black text-[11px] shrink-0 ${
                           outcome === 'W'
                             ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
                             : outcome === 'D'
@@ -412,8 +412,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </div>
             </div>
           ) : (
-            <div className="py-8 text-center text-xs text-slate-400">
-              No completed matches yet. Results and form will appear here after matches are played and confirmed.
+            <div className="py-6 text-center text-xs text-slate-400">
+              No completed matches yet.
             </div>
           )}
         </div>

@@ -132,6 +132,7 @@ const AppContent: React.FC = () => {
       <Header
         onOpenNotifications={() => setIsNotificationOpen(true)}
         onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
+        onOpenProfile={() => setActiveTab('profile')}
       />
 
       {/* Desktop & Mobile Navigation */}
@@ -141,8 +142,8 @@ const AppContent: React.FC = () => {
         openDisputesCount={openDisputesCount}
       />
 
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6">
+      {/* Main Content Area - Mobile Optimized (12-16px padding on mobile, no horizontal overflow) */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-4 md:px-6 py-4 sm:py-6 min-w-0">
         {(currentTab === 'dashboard' || currentTab === 'home') && (
           <DashboardView
             onNavigateTab={setActiveTab}
@@ -157,9 +158,9 @@ const AppContent: React.FC = () => {
         {currentTab === 'my-matches' && (
           <MyMatchesView initialSelectedFixture={selectedFixture} onNavigateTab={setActiveTab} />
         )}
-        {currentTab === 'leagues' && <ClubsView />}
-        {currentTab === 'cups' && <CupBracketsView />}
-        {currentTab === 'champions-league' && <ChampionsLeagueView />}
+        {currentTab === 'leagues' && <ClubsView onNavigateTab={setActiveTab} />}
+        {currentTab === 'cups' && <CupBracketsView onNavigateTab={setActiveTab} />}
+        {currentTab === 'champions-league' && <ChampionsLeagueView onNavigateTab={setActiveTab} />}
         {currentTab === 'standings' && <StandingsView />}
         {currentTab === 'notifications' && (
           <NotificationsView onNavigateTab={setActiveTab} />
@@ -168,8 +169,8 @@ const AppContent: React.FC = () => {
         {currentTab === 'admin' && <AdminView />}
       </main>
 
-      {/* App Footer with Origin & Version Information */}
-      <footer className="border-t border-slate-900 bg-slate-950/80 px-4 py-3 text-[11px] text-slate-400">
+      {/* App Footer with Origin & Version Information (Safe margin for bottom nav) */}
+      <footer className="border-t border-slate-900 bg-slate-950/80 px-4 py-3 pb-24 lg:pb-3 text-[11px] text-slate-400">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <span className="font-bold text-slate-300">EFL UZ</span>

@@ -129,14 +129,14 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
         </div>
 
         {/* Filter Pills */}
-        <div className="flex flex-wrap items-center gap-1.5 glass-card p-1.5 rounded-xl border-white/[0.08] self-start sm:self-auto">
+        <div className="flex items-center gap-1 glass-card p-1 rounded-xl border-white/[0.08] overflow-x-auto scrollbar-none w-full sm:w-auto max-w-full">
           {(['ALL', 'PENDING', 'CONFIRMED', 'DISPUTED'] as const).map((filterKey) => (
             <button
               key={filterKey}
               onClick={() => setActiveFilter(filterKey)}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 transition-all ${
                 activeFilter === filterKey
-                  ? 'btn-glass-primary text-slate-950 font-black'
+                  ? 'btn-glass-primary text-slate-950 font-black shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >

@@ -65,35 +65,36 @@ export const Navigation: React.FC<NavigationProps> = ({
     });
   }
 
-  // Mobile 5-Item SofaScore-style Bottom Navigation Bar
+  // Mobile STRICT 5-Item SofaScore-style Bottom Navigation Bar
+  // Exactly 5 destinations: HOME, MATCHES, LEAGUES, TABLE, PROFILE
   const mobileNavItems = [
     {
       id: 'dashboard' as TabType,
-      label: t.navHome,
+      label: t.navHome || 'Home',
       icon: Home,
       isActive: currentTab === 'dashboard',
     },
     {
       id: 'my-matches' as TabType,
-      label: t.navMyMatches,
+      label: t.navMyMatches || 'Matches',
       icon: Swords,
       isActive: currentTab === 'my-matches',
     },
     {
       id: 'leagues' as TabType,
-      label: t.navLeagues,
+      label: t.navLeagues || 'Leagues',
       icon: Layers,
       isActive: currentTab === 'leagues' || currentTab === 'cups' || currentTab === 'champions-league',
     },
     {
       id: 'standings' as TabType,
-      label: t.navStandings,
+      label: t.navStandings || 'Table',
       icon: Trophy,
       isActive: currentTab === 'standings',
     },
     {
       id: 'profile' as TabType,
-      label: t.navProfile,
+      label: t.navProfile || 'Profile',
       icon: User,
       isActive: currentTab === 'profile' || currentTab === 'my-club' || currentTab === 'admin' || currentTab === 'notifications',
       badge: (user?.isAdmin && openDisputesCount > 0) ? openDisputesCount : (unreadNotificationCount > 0 ? unreadNotificationCount : 0),
@@ -116,7 +117,7 @@ export const Navigation: React.FC<NavigationProps> = ({
                   key={item.id}
                   id={`nav-tab-${item.id}`}
                   onClick={() => onTabChange(item.id)}
-                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
+                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 min-h-[38px] ${
                     isActive
                       ? 'btn-glass-primary shadow-emerald-500/25 font-black scale-[1.02]'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.06]'
@@ -142,9 +143,13 @@ export const Navigation: React.FC<NavigationProps> = ({
         </div>
       </nav>
 
-      {/* Mobile 5-Item Fixed Liquid Glass Bottom Navigation Bar */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 glass-nav-bottom bottom-nav-safe">
-        <div className="flex items-center justify-around px-2 py-1 max-w-lg mx-auto">
+      {/* Mobile EXACT 5-Item Fixed Liquid Glass Bottom Navigation Bar */}
+      {/* Optimized for 360px+ viewports without horizontal scroll */}
+      <nav
+        aria-label="Mobile Navigation"
+        className="lg:hidden fixed bottom-0 left-0 right-0 z-50 glass-nav-bottom bottom-nav-safe"
+      >
+        <div className="grid grid-cols-5 items-center w-full max-w-md mx-auto px-1 py-1">
           {mobileNavItems.map((item) => {
             const Icon = item.icon;
             const hasBadge = (item.badge || 0) > 0;
@@ -154,29 +159,33 @@ export const Navigation: React.FC<NavigationProps> = ({
                 key={item.id}
                 id={`mobile-tab-${item.id}`}
                 onClick={() => onTabChange(item.id)}
-                className={`relative flex flex-col items-center justify-center py-1.5 px-2 rounded-2xl transition-all flex-1 min-h-[48px] ${
+                className={`relative flex flex-col items-center justify-center py-1 px-1 rounded-xl transition-all min-h-[48px] touch-manipulation select-none ${
                   item.isActive
                     ? 'text-emerald-400 font-black'
-                    : 'text-slate-400 hover:text-slate-200'
+                    : 'text-slate-400 active:text-slate-200'
                 }`}
               >
-                <div className="relative">
+                <div className="relative flex items-center justify-center">
                   <div
-                    className={`p-1 rounded-xl transition-all ${
+                    className={`p-1 rounded-xl transition-all duration-150 ${
                       item.isActive
-                        ? 'bg-emerald-500/15 text-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.3)] scale-110'
+                        ? 'bg-emerald-500/15 text-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.35)] scale-110'
                         : 'text-slate-400'
                     }`}
                   >
                     <Icon className="w-5 h-5 stroke-[2.2]" />
                   </div>
                   {hasBadge && (
-                    <span className="absolute -top-1 -right-1 min-w-[15px] h-[15px] px-1 rounded-full text-[9px] font-black bg-rose-500 text-white flex items-center justify-center shadow-[0_0_8px_rgba(244,63,94,0.6)] animate-pulse">
+                    <span className="absolute -top-1 -right-1.5 min-w-[15px] h-[15px] px-1 rounded-full text-[9px] font-black bg-rose-500 text-white flex items-center justify-center shadow-[0_0_8px_rgba(244,63,94,0.6)] animate-pulse">
                       {item.badge}
                     </span>
                   )}
                 </div>
-                <span className={`text-[10px] mt-0.5 tracking-tight font-bold truncate max-w-[64px] ${item.isActive ? 'text-emerald-400' : 'text-slate-400'}`}>
+                <span
+                  className={`text-[10px] mt-0.5 tracking-tight truncate max-w-[58px] leading-tight ${
+                    item.isActive ? 'text-emerald-400 font-black' : 'text-slate-400 font-medium'
+                  }`}
+                >
                   {item.label}
                 </span>
               </button>

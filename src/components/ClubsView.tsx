@@ -150,24 +150,24 @@ export const ClubsView: React.FC = () => {
   return (
     <div className="space-y-6 animate-in fade-in duration-300 pb-20">
       {/* Title & Info Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 glass-panel p-4 sm:p-5 shadow-xl">
         <div>
-          <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
-            <Shield className="w-6 h-6 text-emerald-400" />
+          <h2 className="text-base sm:text-xl font-black text-white tracking-tight flex items-center gap-2">
+            <Shield className="w-5 h-5 text-emerald-400" />
             <span>{t.topLeagues}</span>
           </h2>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5">
             {t.claimConfirmationDesc}
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           {/* Refresh Button */}
           <button
             id="btn-refresh-clubs-view"
             onClick={() => loadClubsForLeague(selectedLeagueId)}
             disabled={isLoading}
-            className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-slate-300 font-bold text-xs flex items-center gap-1.5 transition-colors shadow-sm disabled:opacity-50"
+            className="px-3 py-1.5 glass-card glass-card-interactive text-slate-300 font-bold text-xs flex items-center gap-1.5 transition-colors disabled:opacity-50 min-h-[38px]"
             title="Refresh Clubs from Firestore"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-emerald-400' : ''}`} />
@@ -176,21 +176,21 @@ export const ClubsView: React.FC = () => {
 
           {/* User Active Club Badge */}
           {currentClub && (
-            <div className="flex items-center gap-3 bg-emerald-950/40 border border-emerald-500/30 rounded-2xl p-2.5 px-4 shadow-md">
+            <div className="flex items-center gap-2.5 glass-card bg-emerald-950/40 border-emerald-500/30 p-2 px-3 shadow-md">
               <img
                 src={currentClub.logoUrl}
                 alt={currentClub.name}
-                className="w-7 h-7 object-contain"
+                className="w-6 h-6 object-contain shrink-0"
                 onError={(e) => {
                   (e.target as HTMLElement).style.display = 'none';
                 }}
               />
-              <div>
-                <div className="text-[10px] uppercase font-bold text-emerald-400 flex items-center gap-1">
-                  <Lock className="w-3 h-3" />
+              <div className="min-w-0">
+                <div className="text-[9px] uppercase font-black text-emerald-400 flex items-center gap-1">
+                  <Lock className="w-2.5 h-2.5" />
                   <span>{t.myClub} ({t.clubLocked})</span>
                 </div>
-                <div className="text-xs font-bold text-white">{currentClub.name}</div>
+                <div className="text-xs font-bold text-white truncate max-w-[120px]">{currentClub.name}</div>
               </div>
             </div>
           )}
@@ -199,9 +199,9 @@ export const ClubsView: React.FC = () => {
 
       {/* Season Lock Notification Banner if club already chosen */}
       {currentClub && (
-        <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 px-4 flex items-center gap-3 text-xs text-slate-300 shadow-sm">
-          <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
-            <Lock className="w-4 h-4" />
+        <div className="glass-card bg-slate-900/90 border-emerald-500/20 p-3 px-4 flex items-center gap-2.5 text-xs text-slate-300 shadow-sm">
+          <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+            <Lock className="w-3.5 h-3.5" />
           </div>
           <div>
             <span className="font-bold text-emerald-300">{t.alreadyHaveClubMessage}</span>
@@ -211,7 +211,7 @@ export const ClubsView: React.FC = () => {
 
       {/* League Selection Tabs */}
       {leagues.length > 0 && (
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
           {leagues.map((league) => {
             const isSelected = selectedLeagueId === league.id;
             return (
@@ -219,10 +219,10 @@ export const ClubsView: React.FC = () => {
                 key={league.id}
                 id={`btn-league-${league.id}`}
                 onClick={() => handleSelectLeague(league.id)}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl font-bold text-xs shrink-0 transition-all ${
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold text-xs shrink-0 transition-all min-h-[38px] ${
                   isSelected
-                    ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20 scale-[1.02] font-black'
-                    : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800'
+                    ? 'btn-glass-primary text-slate-950 font-black shadow-md'
+                    : 'glass-card text-slate-300 hover:text-white'
                 }`}
               >
                 <span>{league.country === 'England' ? '🏴󠁧󠁢󠁥󠁮󠁧󠁿' : league.country === 'Spain' ? '🇪🇸' : league.country === 'Italy' ? '🇮🇹' : league.country === 'Germany' ? '🇩🇪' : '🇫🇷'}</span>
@@ -237,7 +237,7 @@ export const ClubsView: React.FC = () => {
       )}
 
       {/* Search & Filter Toolbar */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-md">
+      <div className="glass-panel p-3 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-md">
         {/* Search Bar */}
         <div className="relative w-full sm:w-72">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -246,15 +246,15 @@ export const ClubsView: React.FC = () => {
             placeholder={t.search}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-700/80 rounded-xl text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+            className="w-full pl-9 pr-3 py-2 glass-input rounded-xl text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500 min-h-[38px]"
           />
         </div>
 
         {/* Filter Chips */}
-        <div className="flex items-center gap-1.5 w-full sm:w-auto justify-end">
+        <div className="flex items-center gap-1.5 w-full sm:w-auto justify-end overflow-x-auto scrollbar-none">
           <button
             onClick={() => setFilterMode('ALL')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-colors min-h-[36px] ${
               filterMode === 'ALL'
                 ? 'bg-slate-800 text-white border border-slate-600'
                 : 'text-slate-400 hover:text-slate-200'
@@ -264,9 +264,9 @@ export const ClubsView: React.FC = () => {
           </button>
           <button
             onClick={() => setFilterMode('AVAILABLE')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-colors min-h-[36px] ${
               filterMode === 'AVAILABLE'
-                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-bold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -274,9 +274,9 @@ export const ClubsView: React.FC = () => {
           </button>
           <button
             onClick={() => setFilterMode('CLAIMED')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-colors min-h-[36px] ${
               filterMode === 'CLAIMED'
-                ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/40'
+                ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/40 font-bold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -319,7 +319,7 @@ export const ClubsView: React.FC = () => {
           <h4 className="text-sm font-bold text-slate-200">No clubs found</h4>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
           {filteredClubs.map((club) => {
             const isUserClub =
               club.isCurrentUserClub ||
@@ -332,22 +332,22 @@ export const ClubsView: React.FC = () => {
             return (
               <div
                 key={club.id}
-                className={`bg-slate-900 border rounded-3xl p-5 flex flex-col justify-between shadow-lg transition-all relative overflow-hidden ${
+                className={`glass-panel p-4 flex flex-col justify-between shadow-lg transition-all relative overflow-hidden ${
                   isUserClub
-                    ? 'border-emerald-500/50 bg-gradient-to-b from-slate-900 to-emerald-950/20 shadow-emerald-500/10'
+                    ? 'border-emerald-500/60 bg-emerald-950/20 shadow-emerald-500/10'
                     : isClaimedByOther
-                    ? 'border-slate-800/80 opacity-90'
-                    : 'border-slate-800 hover:border-slate-700 hover:shadow-xl'
+                    ? 'opacity-85'
+                    : 'hover:border-white/[0.2] hover:shadow-xl'
                 }`}
               >
                 {/* Top Row: Club Crest & Short code */}
                 <div>
-                  <div className="flex items-start justify-between gap-3 mb-3">
-                    <div className="w-14 h-14 rounded-2xl bg-slate-950 p-2.5 border border-slate-800 flex items-center justify-center shadow-inner shrink-0">
+                  <div className="flex items-start justify-between gap-3 mb-2.5">
+                    <div className="w-12 h-12 rounded-xl bg-slate-950/80 p-2 border border-white/[0.08] flex items-center justify-center shadow-inner shrink-0">
                       <img
                         src={club.logoUrl}
                         alt={club.name}
-                        className="w-10 h-10 object-contain"
+                        className="w-8 h-8 object-contain"
                         onError={(e) => {
                           (e.target as HTMLElement).style.display = 'none';
                         }}
@@ -355,7 +355,7 @@ export const ClubsView: React.FC = () => {
                     </div>
 
                     <div className="text-right">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-slate-800 text-slate-300 border border-slate-700">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider glass-card text-slate-300">
                         {club.shortName}
                       </span>
                       {isUserClub ? (
@@ -363,7 +363,7 @@ export const ClubsView: React.FC = () => {
                           <CheckCircle2 className="w-3 h-3" /> {t.myClub}
                         </div>
                       ) : isClaimedByOther ? (
-                        <div className="mt-1.5 flex items-center gap-1 text-[10px] font-semibold text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full border border-slate-700">
+                        <div className="mt-1.5 flex items-center gap-1 text-[10px] font-semibold text-slate-400 glass-card px-2 py-0.5 rounded-full">
                           <Lock className="w-3 h-3 text-slate-400" /> {t.claimed}
                         </div>
                       ) : (
@@ -375,21 +375,21 @@ export const ClubsView: React.FC = () => {
                   </div>
 
                   {/* Club Info */}
-                  <h3 className="font-black text-sm text-slate-100 line-clamp-1 mb-1">{club.name}</h3>
-                  <div className="text-[11px] text-slate-400 flex items-center gap-1.5 mb-3">
+                  <h3 className="font-black text-xs sm:text-sm text-slate-100 line-clamp-1 mb-0.5">{club.name}</h3>
+                  <div className="text-[11px] text-slate-400 flex items-center gap-1.5 mb-2.5">
                     <MapPin className="w-3 h-3 text-slate-500 shrink-0" />
                     <span className="truncate">{club.stadium || 'Home Stadium'}</span>
                   </div>
                 </div>
 
                 {/* Bottom Row: Manager Status or Claim Button */}
-                <div className="pt-3 border-t border-slate-800/80 mt-2">
+                <div className="pt-2.5 border-t border-white/[0.06] mt-1">
                   {isUserClub ? (
-                    <div className="text-[11px] font-bold text-emerald-400 text-center py-1.5 bg-emerald-500/10 rounded-xl">
+                    <div className="text-[11px] font-bold text-emerald-400 text-center py-1.5 bg-emerald-500/10 rounded-xl border border-emerald-500/20">
                       {t.manager}: @{user?.username}
                     </div>
                   ) : isClaimedByOther ? (
-                    <div className="flex items-center justify-between text-[11px] text-slate-400 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/60">
+                    <div className="flex items-center justify-between text-[11px] text-slate-400 glass-card p-2 rounded-xl">
                       <span className="text-[10px] uppercase font-bold text-slate-500">{t.manager}:</span>
                       <span className="font-semibold text-slate-300 truncate">
                         @{managerName}
@@ -398,7 +398,7 @@ export const ClubsView: React.FC = () => {
                   ) : currentClub ? (
                     <button
                       disabled={true}
-                      className="w-full py-2 bg-slate-950 text-slate-500 font-bold text-xs rounded-xl border border-slate-800 flex items-center justify-center gap-1.5 cursor-not-allowed opacity-80"
+                      className="w-full py-2 glass-card text-slate-500 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-not-allowed opacity-75 min-h-[38px]"
                     >
                       <Lock className="w-3.5 h-3.5 text-slate-600" />
                       <span>{t.clubLocked}</span>
@@ -407,9 +407,9 @@ export const ClubsView: React.FC = () => {
                     <button
                       id={`btn-claim-club-${club.id}`}
                       onClick={() => setClubToClaim(club)}
-                      className="w-full py-2 bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-slate-950 font-black text-xs rounded-xl shadow-md shadow-emerald-500/10 flex items-center justify-center gap-1.5 transition-all"
+                      className="w-full py-2 btn-glass-primary text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 min-h-[40px] touch-manipulation"
                     >
-                      <Shield className="w-3.5 h-3.5" />
+                      <Shield className="w-3.5 h-3.5 text-slate-950" />
                       <span>{t.claimClub}</span>
                     </button>
                   )}
@@ -422,13 +422,13 @@ export const ClubsView: React.FC = () => {
 
       {/* Claim Confirmation Modal */}
       {clubToClaim && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-md shadow-2xl p-6 text-white text-center">
-            <div className="w-16 h-16 rounded-2xl bg-slate-950 p-2.5 border border-slate-700 mx-auto mb-3 flex items-center justify-center shadow-lg">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="glass-panel w-full max-w-md shadow-2xl p-6 text-white text-center border-emerald-500/30">
+            <div className="w-16 h-16 rounded-2xl bg-slate-950/90 p-2.5 border border-white/[0.1] mx-auto mb-3 flex items-center justify-center shadow-lg">
               <img
                 src={clubToClaim.logoUrl}
                 alt={clubToClaim.name}
-                className="w-12 h-12 object-contain"
+                className="w-11 h-11 object-contain"
                 onError={(e) => {
                   (e.target as HTMLElement).style.display = 'none';
                 }}
@@ -444,7 +444,7 @@ export const ClubsView: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setClubToClaim(null)}
-                className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl text-xs transition-colors"
+                className="flex-1 py-2.5 glass-card glass-card-interactive text-slate-300 font-semibold text-xs min-h-[44px] touch-manipulation"
               >
                 {t.cancel}
               </button>
@@ -453,16 +453,16 @@ export const ClubsView: React.FC = () => {
                 id="btn-confirm-claim-action"
                 disabled={isClaiming}
                 onClick={handleClaimClub}
-                className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 disabled:opacity-50 text-slate-950 font-black rounded-xl text-xs shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-1.5 transition-all"
+                className="flex-1 py-2.5 btn-glass-primary disabled:opacity-50 text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 min-h-[44px] touch-manipulation"
               >
                 {isClaiming ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
                     <span>{t.loading}</span>
                   </>
                 ) : (
                   <>
-                    <CheckCircle2 className="w-4 h-4" />
+                    <CheckCircle2 className="w-4 h-4 text-slate-950" />
                     <span>{t.confirm}</span>
                   </>
                 )}

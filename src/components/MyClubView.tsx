@@ -79,17 +79,17 @@ export const MyClubView: React.FC<MyClubViewProps> = ({
 
   if (!currentClub) {
     return (
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 text-center max-w-xl mx-auto my-12 shadow-2xl">
-        <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mx-auto mb-4 text-amber-400">
-          <Shield className="w-8 h-8" />
+      <div className="glass-panel p-6 sm:p-8 text-center max-w-xl mx-auto my-8 sm:my-12 shadow-2xl">
+        <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mx-auto mb-4 text-amber-400">
+          <Shield className="w-7 h-7 sm:w-8 sm:h-8" />
         </div>
-        <h2 className="text-xl font-black text-white mb-2">{t.noClubSelected}</h2>
+        <h2 className="text-lg sm:text-xl font-black text-white mb-2">{t.noClubSelected}</h2>
         <p className="text-xs text-slate-400 mb-6 leading-relaxed">
           {t.claimConfirmationDesc}
         </p>
         <button
           onClick={() => onNavigateTab('leagues')}
-          className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm shadow-lg shadow-emerald-500/20 active:scale-95 transition-all"
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl btn-glass-primary text-slate-950 font-black text-xs sm:text-sm shadow-lg shadow-emerald-500/20 active:scale-95 transition-all min-h-[42px] touch-manipulation"
         >
           <Shield className="w-4 h-4" />
           <span>{t.selectYourClub}</span>

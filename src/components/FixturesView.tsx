@@ -137,20 +137,20 @@ export const FixturesView: React.FC = () => {
   return (
     <div className="space-y-6 animate-in fade-in duration-300 pb-16">
       {/* Top Header & Competition Picker */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 glass-panel p-4 sm:p-5 shadow-xl">
         <div>
-          <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
-            <Calendar className="w-6 h-6 text-emerald-400" />
+          <h2 className="text-base sm:text-xl font-black text-white tracking-tight flex items-center gap-2">
+            <Calendar className="w-5 h-5 text-emerald-400" />
             <span>Fixtures & Results</span>
           </h2>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5">
             Browse match schedules, submit match scores, and verify results.
           </p>
         </div>
 
         {/* Competition Dropdown */}
         <div className="w-full sm:w-72">
-          <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">
             Select Competition
           </label>
           <select
@@ -160,10 +160,10 @@ export const FixturesView: React.FC = () => {
               setSelectedCompetitionId(e.target.value);
               setSelectedMatchday(1);
             }}
-            className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs font-bold text-white focus:outline-none focus:border-emerald-500"
+            className="w-full px-3 py-2 glass-input rounded-xl text-xs font-bold text-white focus:outline-none focus:border-emerald-500 min-h-[38px]"
           >
             {competitions.map((comp) => (
-              <option key={comp.id} value={comp.id}>
+              <option key={comp.id} value={comp.id} className="bg-slate-900 text-white">
                 {comp.name} ({comp.type})
               </option>
             ))}
@@ -173,19 +173,19 @@ export const FixturesView: React.FC = () => {
 
       {/* Matchday Stepper (For League competitions) */}
       {activeComp?.type === 'LEAGUE' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
+        <div className="glass-panel p-3 sm:p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
           <div className="flex items-center gap-2">
             <button
               onClick={() => setSelectedMatchday((prev) => Math.max(1, prev - 1))}
               disabled={selectedMatchday <= 1}
-              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-white transition-colors"
+              className="p-2 rounded-xl glass-card text-white disabled:opacity-30 transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center touch-manipulation"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
 
-            <div className="text-center px-4">
-              <span className="text-[10px] uppercase font-bold text-slate-400 block">Matchday</span>
-              <span className="text-base sm:text-lg font-black text-white">
+            <div className="text-center px-3">
+              <span className="text-[9px] uppercase font-black text-slate-400 block">Matchday</span>
+              <span className="text-sm sm:text-base font-black text-white">
                 {selectedMatchday} <span className="text-slate-500 font-normal text-xs">/ {totalMatchdays}</span>
               </span>
             </div>
@@ -193,7 +193,7 @@ export const FixturesView: React.FC = () => {
             <button
               onClick={() => setSelectedMatchday((prev) => Math.min(totalMatchdays, prev + 1))}
               disabled={selectedMatchday >= totalMatchdays}
-              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-white transition-colors"
+              className="p-2 rounded-xl glass-card text-white disabled:opacity-30 transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center touch-manipulation"
             >
               <ChevronRight className="w-4 h-4" />
             </button>
@@ -208,10 +208,10 @@ export const FixturesView: React.FC = () => {
                 <button
                   key={md}
                   onClick={() => setSelectedMatchday(md)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all shrink-0 ${
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all shrink-0 min-h-[32px] ${
                     isSelected
-                      ? 'bg-emerald-500 text-slate-950 font-black'
-                      : 'bg-slate-950/60 hover:bg-slate-800 text-slate-400 border border-slate-800'
+                      ? 'btn-glass-primary text-slate-950 font-black'
+                      : 'glass-card text-slate-400 hover:text-white'
                   }`}
                 >
                   MD {md}
@@ -227,7 +227,7 @@ export const FixturesView: React.FC = () => {
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
           <button
             onClick={() => setFilterMode('ALL')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all min-h-[36px] ${
               filterMode === 'ALL'
                 ? 'bg-slate-800 text-white border border-slate-600'
                 : 'text-slate-400 hover:text-slate-200'
@@ -237,9 +237,9 @@ export const FixturesView: React.FC = () => {
           </button>
           <button
             onClick={() => setFilterMode('MY_MATCHES')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all min-h-[36px] ${
               filterMode === 'MY_MATCHES'
-                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-bold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -247,9 +247,9 @@ export const FixturesView: React.FC = () => {
           </button>
           <button
             onClick={() => setFilterMode('PENDING')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all min-h-[36px] ${
               filterMode === 'PENDING'
-                ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
+                ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40 font-bold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -257,9 +257,9 @@ export const FixturesView: React.FC = () => {
           </button>
           <button
             onClick={() => setFilterMode('DISPUTED')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all min-h-[36px] ${
               filterMode === 'DISPUTED'
-                ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40'
+                ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40 font-bold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -267,9 +267,9 @@ export const FixturesView: React.FC = () => {
           </button>
           <button
             onClick={() => setFilterMode('CONFIRMED')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all min-h-[36px] ${
               filterMode === 'CONFIRMED'
-                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -282,16 +282,16 @@ export const FixturesView: React.FC = () => {
           <button
             disabled={isGenerating}
             onClick={handleGenerateFixtures}
-            className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow-md flex items-center gap-1.5"
+            className="px-4 py-2 rounded-xl btn-glass-primary text-slate-950 font-black text-xs shadow-md flex items-center gap-1.5 min-h-[38px] touch-manipulation"
           >
             {isGenerating ? (
               <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-950" />
                 <span>Generating...</span>
               </>
             ) : (
               <>
-                <Sparkles className="w-3.5 h-3.5" />
+                <Sparkles className="w-3.5 h-3.5 text-slate-950" />
                 <span>Generate Official Berger Schedule</span>
               </>
             )}
@@ -323,7 +323,7 @@ export const FixturesView: React.FC = () => {
           <span className="text-xs">Loading fixtures & match states...</span>
         </div>
       ) : filteredFixtures.length === 0 ? (
-        <div className="py-16 text-center bg-slate-900 border border-slate-800 rounded-2xl">
+        <div className="py-16 text-center glass-panel shadow-xl">
           <Calendar className="w-12 h-12 text-slate-600 mx-auto mb-2 opacity-60" />
           <h4 className="text-sm font-bold text-slate-200">No fixtures found</h4>
           <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
@@ -331,7 +331,7 @@ export const FixturesView: React.FC = () => {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
           {filteredFixtures.map((fixture) => {
             const isHomeUser = fixture.homeOwnerId === user?.id || fixture.homeClubId === currentClub?.id;
             const isAwayUser = fixture.awayOwnerId === user?.id || fixture.awayClubId === currentClub?.id;
@@ -340,39 +340,39 @@ export const FixturesView: React.FC = () => {
             return (
               <div
                 key={fixture.id}
-                className={`bg-slate-900 border rounded-2xl p-4 flex flex-col justify-between shadow-lg transition-all ${
+                className={`glass-panel p-3.5 sm:p-4 flex flex-col justify-between shadow-lg transition-all ${
                   isUserParticipant
-                    ? 'border-emerald-500/40 bg-slate-900/90 shadow-emerald-500/5'
-                    : 'border-slate-800 hover:border-slate-700'
+                    ? 'border-emerald-500/50 bg-emerald-950/20 shadow-emerald-500/10'
+                    : 'hover:border-white/[0.15]'
                 }`}
               >
                 {/* Header status */}
                 <div>
-                  <div className="flex items-center justify-between border-b border-slate-800 pb-2.5 mb-3 text-xs">
-                    <span className="font-semibold text-slate-400">
+                  <div className="flex items-center justify-between border-b border-white/[0.06] pb-2 mb-2.5 text-xs">
+                    <span className="font-semibold text-slate-400 text-[11px]">
                       {fixture.roundName || `Matchday ${fixture.matchday}`}
                     </span>
                     {getStatusBadge(fixture.status)}
                   </div>
 
                   {/* Matchup row */}
-                  <div className="grid grid-cols-7 items-center gap-2 text-center py-2">
+                  <div className="grid grid-cols-7 items-center gap-2 text-center py-1.5">
                     {/* Home Club */}
-                    <div className="col-span-3 flex flex-col items-center">
-                      <div className="w-12 h-12 rounded-xl bg-slate-950 p-2 border border-slate-800 flex items-center justify-center mb-1 shadow-inner">
+                    <div className="col-span-3 flex flex-col items-center min-w-0">
+                      <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-slate-950/80 p-1.5 border border-white/[0.08] flex items-center justify-center mb-1 shadow-inner shrink-0">
                         <img
                           src={fixture.homeClub?.logoUrl}
                           alt={fixture.homeClub?.name}
-                          className="w-8 h-8 object-contain"
+                          className="w-7 h-7 object-contain"
                           onError={(e) => {
                             (e.target as HTMLElement).style.display = 'none';
                           }}
                         />
                       </div>
-                      <span className={`font-bold text-xs line-clamp-1 ${isHomeUser ? 'text-emerald-400 font-black' : 'text-slate-200'}`}>
+                      <span className={`font-bold text-xs truncate max-w-full ${isHomeUser ? 'text-emerald-400 font-black' : 'text-slate-200'}`}>
                         {fixture.homeClub?.name}
                       </span>
-                      <span className="text-[10px] text-slate-500">
+                      <span className="text-[10px] text-slate-500 truncate max-w-full">
                         {isHomeUser ? '(You)' : `@${fixture.homeClub?.claimedByUsername || 'unclaimed'}`}
                       </span>
                     </div>
@@ -380,36 +380,36 @@ export const FixturesView: React.FC = () => {
                     {/* Score / VS Center */}
                     <div className="col-span-1 flex flex-col items-center justify-center">
                       {fixture.status === 'CONFIRMED' ? (
-                        <div className="text-xl sm:text-2xl font-black text-emerald-400 tracking-tight">
+                        <div className="text-lg sm:text-xl font-black text-emerald-400 tracking-tight">
                           {fixture.homeScore} - {fixture.awayScore}
                         </div>
                       ) : fixture.status === 'DISPUTED' ? (
-                        <div className="text-xs font-black text-rose-400 bg-rose-500/10 px-2 py-1 rounded-lg border border-rose-500/30">
+                        <div className="text-[10px] font-black text-rose-400 bg-rose-500/15 px-2 py-0.5 rounded-lg border border-rose-500/30">
                           DISPUTE
                         </div>
                       ) : (
-                        <div className="w-8 h-8 rounded-full bg-slate-800 text-slate-400 text-xs font-black flex items-center justify-center border border-slate-700">
+                        <div className="w-7 h-7 rounded-full glass-card text-slate-400 text-[10px] font-black flex items-center justify-center">
                           VS
                         </div>
                       )}
                     </div>
 
                     {/* Away Club */}
-                    <div className="col-span-3 flex flex-col items-center">
-                      <div className="w-12 h-12 rounded-xl bg-slate-950 p-2 border border-slate-800 flex items-center justify-center mb-1 shadow-inner">
+                    <div className="col-span-3 flex flex-col items-center min-w-0">
+                      <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-slate-950/80 p-1.5 border border-white/[0.08] flex items-center justify-center mb-1 shadow-inner shrink-0">
                         <img
                           src={fixture.awayClub?.logoUrl}
                           alt={fixture.awayClub?.name}
-                          className="w-8 h-8 object-contain"
+                          className="w-7 h-7 object-contain"
                           onError={(e) => {
                             (e.target as HTMLElement).style.display = 'none';
                           }}
                         />
                       </div>
-                      <span className={`font-bold text-xs line-clamp-1 ${isAwayUser ? 'text-emerald-400 font-black' : 'text-slate-200'}`}>
+                      <span className={`font-bold text-xs truncate max-w-full ${isAwayUser ? 'text-emerald-400 font-black' : 'text-slate-200'}`}>
                         {fixture.awayClub?.name}
                       </span>
-                      <span className="text-[10px] text-slate-500">
+                      <span className="text-[10px] text-slate-500 truncate max-w-full">
                         {isAwayUser ? '(You)' : `@${fixture.awayClub?.claimedByUsername || 'unclaimed'}`}
                       </span>
                     </div>
@@ -417,7 +417,7 @@ export const FixturesView: React.FC = () => {
 
                   {/* Submission details banner if pending */}
                   {fixture.status === 'PENDING_CONFIRMATION' && (
-                    <div className="mt-2.5 p-2 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[11px] text-amber-300 flex items-center justify-between">
+                    <div className="mt-2 p-2 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[10px] text-amber-300 flex items-center justify-between">
                       <div className="flex items-center gap-1.5">
                         <Clock className="w-3.5 h-3.5 shrink-0" />
                         <span>1 manager submitted. Waiting for 2nd submission.</span>
@@ -427,7 +427,7 @@ export const FixturesView: React.FC = () => {
 
                   {/* Dispute warning if disputed */}
                   {fixture.status === 'DISPUTED' && (
-                    <div className="mt-2.5 p-2 bg-rose-500/10 border border-rose-500/20 rounded-xl text-[11px] text-rose-300 flex items-center justify-between">
+                    <div className="mt-2 p-2 bg-rose-500/10 border border-rose-500/20 rounded-xl text-[10px] text-rose-300 flex items-center justify-between">
                       <div className="flex items-center gap-1.5">
                         <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
                         <span>Score discrepancy detected. Admin review in progress.</span>
@@ -437,34 +437,34 @@ export const FixturesView: React.FC = () => {
                 </div>
 
                 {/* Bottom CTA Action Button */}
-                <div className="pt-3 border-t border-slate-800/80 mt-3 flex items-center justify-between gap-2">
-                  <div className="text-[10px] text-slate-500">
+                <div className="pt-2.5 border-t border-white/[0.06] mt-2.5 flex items-center justify-between gap-2">
+                  <div className="text-[10px] text-slate-500 truncate">
                     {fixture.status === 'CONFIRMED'
-                      ? 'Result Verified & Standings Updated'
+                      ? 'Verified & Saved'
                       : fixture.userSubmission
                       ? `Your input: ${fixture.userSubmission.homeScore}-${fixture.userSubmission.awayScore}`
-                      : 'Not submitted yet'}
+                      : 'Pending Score'}
                   </div>
 
                   {/* Anyone or participant can submit in sandbox/prod */}
                   <button
                     id={`btn-fixture-submit-${fixture.id}`}
                     onClick={() => setSelectedFixtureForSubmit(fixture)}
-                    className={`px-3.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all ${
+                    className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all min-h-[34px] touch-manipulation shrink-0 ${
                       fixture.status === 'CONFIRMED'
-                        ? 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                        ? 'glass-card text-slate-300'
                         : isUserParticipant
-                        ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black shadow-md shadow-emerald-500/10'
-                        : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
+                        ? 'btn-glass-primary text-slate-950 font-black'
+                        : 'glass-card text-slate-200'
                     }`}
                   >
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     <span>
                       {fixture.status === 'CONFIRMED'
-                        ? 'View Details'
+                        ? 'Details'
                         : fixture.userSubmission
-                        ? 'Update Score'
-                        : 'Submit Score'}
+                        ? 'Update'
+                        : 'Submit'}
                     </span>
                   </button>
                 </div>
