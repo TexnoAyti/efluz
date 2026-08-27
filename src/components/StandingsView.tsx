@@ -145,11 +145,9 @@ export const StandingsView: React.FC = () => {
       {/* Standings Table Container */}
       <div className="glass-panel shadow-xl overflow-hidden max-w-full">
         {/* Table Title Bar */}
-        <div className="p-3.5 sm:p-4 border-b border-white/[0.06] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-white/[0.02]">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 font-bold text-xs shrink-0">
-              🏆
-            </div>
+        <div className="p-3 sm:p-3.5 border-b border-white/[0.06] flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-[#090e18]">
+          <div className="flex items-center gap-2 min-w-0">
+            <Trophy className="w-4 h-4 text-amber-400 shrink-0" />
             <div className="min-w-0">
               <h3 className="font-bold text-xs sm:text-sm text-slate-100 truncate">{activeComp?.name || 'League Table'}</h3>
               <p className="text-[10px] text-slate-400">Season 2026/27 • Double Round-Robin</p>
@@ -157,15 +155,15 @@ export const StandingsView: React.FC = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 text-[10px]">
-            <div className="flex items-center gap-1 text-slate-300">
+            <div className="flex items-center gap-1.5 text-slate-300">
               <span className="w-2 h-2 rounded-full bg-blue-500" />
               <span>{t.uclZone} (1-4)</span>
             </div>
-            <div className="flex items-center gap-1 text-slate-300">
+            <div className="flex items-center gap-1.5 text-slate-300">
               <span className="w-2 h-2 rounded-full bg-indigo-500" />
               <span>{t.uelZone} (5)</span>
             </div>
-            <div className="flex items-center gap-1 text-slate-300">
+            <div className="flex items-center gap-1.5 text-slate-300">
               <span className="w-2 h-2 rounded-full bg-rose-500" />
               <span>{t.relegationZone}</span>
             </div>
@@ -201,21 +199,21 @@ export const StandingsView: React.FC = () => {
           <div className="overflow-x-auto scrollbar-thin">
             <table className="w-full text-left text-xs border-collapse min-w-[320px]">
               <thead>
-                <tr className="bg-slate-950/70 border-b border-white/[0.06] text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                  <th className="py-2.5 px-2 w-8 text-center">{t.pos}</th>
-                  <th className="py-2.5 px-2 min-w-[120px] sm:min-w-[160px]">{t.club}</th>
-                  <th className="py-2.5 px-1.5 text-center w-8">{t.p}</th>
-                  <th className="py-2.5 px-1.5 text-center w-8 hidden sm:table-cell">{t.w}</th>
-                  <th className="py-2.5 px-1.5 text-center w-8 hidden sm:table-cell">{t.d}</th>
-                  <th className="py-2.5 px-1.5 text-center w-8 hidden sm:table-cell">{t.l}</th>
-                  <th className="py-2.5 px-1.5 text-center w-9 hidden md:table-cell">{t.gf}</th>
-                  <th className="py-2.5 px-1.5 text-center w-9 hidden md:table-cell">{t.ga}</th>
-                  <th className="py-2.5 px-1.5 text-center w-10">{t.gd}</th>
-                  <th className="py-2.5 px-2.5 text-center w-12 font-black text-emerald-400">{t.pts}</th>
-                  <th className="py-2.5 px-3 min-w-[100px] hidden lg:table-cell text-center">{t.recentForm}</th>
+                <tr className="bg-[#0b101c] border-b border-white/[0.06] text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  <th className="py-2 px-2 w-7 text-center">#</th>
+                  <th className="py-2 px-2 min-w-[120px] sm:min-w-[160px]">TEAM</th>
+                  <th className="py-2 px-1 text-center w-7">P</th>
+                  <th className="py-2 px-1 text-center w-7 hidden sm:table-cell">W</th>
+                  <th className="py-2 px-1 text-center w-7 hidden sm:table-cell">D</th>
+                  <th className="py-2 px-1 text-center w-7 hidden sm:table-cell">L</th>
+                  <th className="py-2 px-1 text-center w-8 hidden md:table-cell">GF</th>
+                  <th className="py-2 px-1 text-center w-8 hidden md:table-cell">GA</th>
+                  <th className="py-2 px-1.5 text-center w-9">GD</th>
+                  <th className="py-2 px-2 text-center w-10 font-bold text-emerald-400">PTS</th>
+                  <th className="py-2 px-2.5 min-w-[90px] hidden lg:table-cell text-center">FORM</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/[0.04] font-semibold tabular-nums">
+              <tbody className="divide-y divide-white/[0.04] tabular-nums text-xs">
                 {standings.map((row) => {
                   const isUserClub = row.clubId === currentClub?.id;
                   const posStyle = getPositionStyle(row.position, standings.length);
@@ -223,26 +221,22 @@ export const StandingsView: React.FC = () => {
                   return (
                     <tr
                       key={row.clubId}
-                      className={`hover:bg-white/[0.04] transition-colors ${
-                        isUserClub ? 'bg-emerald-500/10 font-bold' : ''
+                      className={`hover:bg-white/[0.03] transition-colors ${
+                        isUserClub ? 'bg-emerald-500/[0.08]' : ''
                       }`}
                     >
                       {/* Pos */}
-                      <td className="py-2.5 px-2 text-center relative">
-                        <div className={`w-1 absolute left-0 top-0 bottom-0 ${posStyle.barColor}`} />
-                        <span
-                          className={`inline-flex items-center justify-center w-5 h-5 rounded-md text-[10px] font-black border ${
-                            posStyle.badgeColor
-                          }`}
-                        >
+                      <td className="py-2 px-2 text-center relative font-bold text-[11px]">
+                        <div className={`w-0.5 absolute left-0 top-0 bottom-0 ${posStyle.barColor}`} />
+                        <span className={`text-slate-300 ${row.position <= 4 ? 'text-blue-400 font-black' : row.position === 5 ? 'text-indigo-400' : ''}`}>
                           {row.position}
                         </span>
                       </td>
 
-                      {/* Club Name & Manager */}
-                      <td className="py-2.5 px-2">
+                      {/* Club Name & Badge */}
+                      <td className="py-2 px-2">
                         <div className="flex items-center gap-2">
-                          <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-md bg-slate-950/80 p-0.5 border border-white/[0.08] flex items-center justify-center shrink-0">
+                          <div className="w-5 h-5 rounded bg-slate-950/80 p-0.5 border border-white/[0.06] flex items-center justify-center shrink-0">
                             <img
                               src={row.clubLogoUrl}
                               alt={row.clubName}
@@ -254,16 +248,16 @@ export const StandingsView: React.FC = () => {
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-1.5">
-                              <span className={`font-bold truncate text-slate-100 text-xs ${isUserClub ? 'text-emerald-400 font-black' : ''}`}>
+                              <span className={`font-semibold truncate text-slate-100 text-xs ${isUserClub ? 'text-emerald-400 font-bold' : ''}`}>
                                 {row.clubName}
                               </span>
                               {isUserClub && (
-                                <span className="px-1 py-0.2 rounded text-[8px] font-black uppercase tracking-wider bg-emerald-500 text-slate-950 shrink-0">
+                                <span className="px-1 py-0.2 rounded text-[8px] font-black uppercase bg-emerald-500 text-slate-950 shrink-0">
                                   YOU
                                 </span>
                               )}
                             </div>
-                            <div className="text-[10px] text-slate-400 font-medium truncate">
+                            <div className="text-[10px] text-slate-400 truncate">
                               @{row.managerUsername || 'open'}
                             </div>
                           </div>
@@ -271,29 +265,29 @@ export const StandingsView: React.FC = () => {
                       </td>
 
                       {/* P */}
-                      <td className="py-2.5 px-1.5 text-center text-slate-300 text-xs">{row.played}</td>
+                      <td className="py-2 px-1 text-center text-slate-300">{row.played}</td>
                       
                       {/* W, D, L */}
-                      <td className="py-2.5 px-1.5 text-center text-emerald-400 font-bold hidden sm:table-cell text-xs">{row.won}</td>
-                      <td className="py-2.5 px-1.5 text-center text-amber-400 font-bold hidden sm:table-cell text-xs">{row.drawn}</td>
-                      <td className="py-2.5 px-1.5 text-center text-rose-400 font-bold hidden sm:table-cell text-xs">{row.lost}</td>
+                      <td className="py-2 px-1 text-center text-slate-300 hidden sm:table-cell">{row.won}</td>
+                      <td className="py-2 px-1 text-center text-slate-400 hidden sm:table-cell">{row.drawn}</td>
+                      <td className="py-2 px-1 text-center text-slate-400 hidden sm:table-cell">{row.lost}</td>
 
                       {/* GF, GA */}
-                      <td className="py-2.5 px-1.5 text-center text-slate-400 hidden md:table-cell text-xs">{row.goalsFor}</td>
-                      <td className="py-2.5 px-1.5 text-center text-slate-400 hidden md:table-cell text-xs">{row.goalsAgainst}</td>
+                      <td className="py-2 px-1 text-center text-slate-400 hidden md:table-cell">{row.goalsFor}</td>
+                      <td className="py-2 px-1 text-center text-slate-400 hidden md:table-cell">{row.goalsAgainst}</td>
 
                       {/* GD */}
-                      <td className="py-2.5 px-1.5 text-center text-slate-200 text-xs font-bold">
+                      <td className="py-2 px-1.5 text-center text-slate-200 font-medium">
                         {row.goalDifference > 0 ? `+${row.goalDifference}` : row.goalDifference}
                       </td>
 
                       {/* Points */}
-                      <td className="py-2.5 px-2.5 text-center font-black text-xs text-emerald-400 bg-emerald-500/5">
+                      <td className="py-2 px-2 text-center font-black text-emerald-400 bg-emerald-500/[0.04]">
                         {row.points}
                       </td>
 
                       {/* Form */}
-                      <td className="py-2.5 px-3 hidden lg:table-cell text-center">
+                      <td className="py-2 px-2.5 hidden lg:table-cell text-center">
                         <div className="flex items-center justify-center gap-1">
                           {row.recentForm && row.recentForm.length > 0 ? (
                             row.recentForm.split('').map((char, i) => (
@@ -301,7 +295,7 @@ export const StandingsView: React.FC = () => {
                                 key={i}
                                 className={`w-3.5 h-3.5 rounded text-[8px] font-black flex items-center justify-center ${
                                   char === 'W'
-                                    ? 'bg-emerald-500 text-slate-950 shadow-[0_0_6px_rgba(16,185,129,0.3)]'
+                                    ? 'bg-emerald-500 text-slate-950'
                                     : char === 'D'
                                     ? 'bg-amber-500 text-slate-950'
                                     : 'bg-rose-500 text-white'

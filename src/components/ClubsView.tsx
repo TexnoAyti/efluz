@@ -237,7 +237,7 @@ export const ClubsView: React.FC = () => {
       )}
 
       {/* Search & Filter Toolbar */}
-      <div className="glass-panel p-3 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-md">
+      <div className="glass-panel p-3 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-md bg-[#0b101c]">
         {/* Search Bar */}
         <div className="relative w-full sm:w-72">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -246,7 +246,7 @@ export const ClubsView: React.FC = () => {
             placeholder={t.search}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 glass-input rounded-xl text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500 min-h-[38px]"
+            className="w-full pl-9 pr-3 py-2 glass-input rounded-lg text-xs text-slate-200 placeholder-slate-500 min-h-[38px]"
           />
         </div>
 
@@ -254,7 +254,7 @@ export const ClubsView: React.FC = () => {
         <div className="flex items-center gap-1.5 w-full sm:w-auto justify-end overflow-x-auto scrollbar-none">
           <button
             onClick={() => setFilterMode('ALL')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-colors min-h-[36px] ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors min-h-[36px] ${
               filterMode === 'ALL'
                 ? 'bg-slate-800 text-white border border-slate-600'
                 : 'text-slate-400 hover:text-slate-200'
@@ -264,9 +264,9 @@ export const ClubsView: React.FC = () => {
           </button>
           <button
             onClick={() => setFilterMode('AVAILABLE')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-colors min-h-[36px] ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors min-h-[36px] ${
               filterMode === 'AVAILABLE'
-                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-bold'
+                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -274,9 +274,9 @@ export const ClubsView: React.FC = () => {
           </button>
           <button
             onClick={() => setFilterMode('CLAIMED')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-colors min-h-[36px] ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors min-h-[36px] ${
               filterMode === 'CLAIMED'
-                ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/40 font-bold'
+                ? 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >

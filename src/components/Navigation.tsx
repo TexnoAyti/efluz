@@ -143,7 +143,7 @@ export const Navigation: React.FC<NavigationProps> = ({
         </div>
       </nav>
 
-      {/* Mobile EXACT 5-Item Fixed Liquid Glass Bottom Navigation Bar */}
+      {/* Mobile EXACT 5-Item Fixed Clean Bottom Navigation Bar */}
       {/* Optimized for 360px+ viewports without horizontal scroll */}
       <nav
         aria-label="Mobile Navigation"
@@ -159,31 +159,31 @@ export const Navigation: React.FC<NavigationProps> = ({
                 key={item.id}
                 id={`mobile-tab-${item.id}`}
                 onClick={() => onTabChange(item.id)}
-                className={`relative flex flex-col items-center justify-center py-1 px-1 rounded-xl transition-all min-h-[48px] touch-manipulation select-none ${
+                className={`relative flex flex-col items-center justify-center py-1 px-1 rounded-lg transition-colors min-h-[46px] touch-manipulation select-none ${
                   item.isActive
-                    ? 'text-emerald-400 font-black'
+                    ? 'text-emerald-400 font-bold'
                     : 'text-slate-400 active:text-slate-200'
                 }`}
               >
                 <div className="relative flex items-center justify-center">
                   <div
-                    className={`p-1 rounded-xl transition-all duration-150 ${
+                    className={`p-1 rounded-md transition-colors duration-150 ${
                       item.isActive
-                        ? 'bg-emerald-500/15 text-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.35)] scale-110'
+                        ? 'text-emerald-400 bg-emerald-500/10'
                         : 'text-slate-400'
                     }`}
                   >
-                    <Icon className="w-5 h-5 stroke-[2.2]" />
+                    <Icon className="w-5 h-5 stroke-[2]" />
                   </div>
                   {hasBadge && (
-                    <span className="absolute -top-1 -right-1.5 min-w-[15px] h-[15px] px-1 rounded-full text-[9px] font-black bg-rose-500 text-white flex items-center justify-center shadow-[0_0_8px_rgba(244,63,94,0.6)] animate-pulse">
+                    <span className="absolute -top-0.5 -right-1 min-w-[14px] h-[14px] px-1 rounded-full text-[8px] font-black bg-rose-500 text-white flex items-center justify-center">
                       {item.badge}
                     </span>
                   )}
                 </div>
                 <span
                   className={`text-[10px] mt-0.5 tracking-tight truncate max-w-[58px] leading-tight ${
-                    item.isActive ? 'text-emerald-400 font-black' : 'text-slate-400 font-medium'
+                    item.isActive ? 'text-emerald-400 font-bold' : 'text-slate-400 font-normal'
                   }`}
                 >
                   {item.label}

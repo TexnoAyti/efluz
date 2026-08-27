@@ -152,28 +152,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       )}
 
-      {/* Club Claim Promo Banner (if user has no club yet) */}
+      {/* Club Claim Banner (if user has no club yet) */}
       {!currentClub && (
-        <div className="relative overflow-hidden glass-panel bg-gradient-to-r from-emerald-950/60 via-slate-900/80 to-teal-950/60 border-emerald-500/30 p-6 sm:p-8 text-white shadow-2xl">
-          <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/15 rounded-full blur-3xl pointer-events-none" />
-          <div className="relative z-10 max-w-xl">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-xs font-black uppercase tracking-wider mb-3 backdrop-blur-sm">
-              <Sparkles className="w-3.5 h-3.5" /> 2026/27 Registration Open
+        <div className="glass-panel p-5 sm:p-6 text-white shadow-xl">
+          <div className="max-w-xl">
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 mb-2.5">
+              <Sparkles className="w-3 h-3" /> Season 2026/27 Active
             </div>
-            <h2 className="text-xl sm:text-3xl font-black tracking-tight mb-2">
+            <h2 className="text-lg sm:text-2xl font-black tracking-tight mb-1.5">
               {t.selectYourClub}
             </h2>
-            <p className="text-xs sm:text-sm text-slate-300 mb-5 leading-relaxed">
-              Choose from 96 authentic European clubs across Premier League, La Liga, Serie A, Bundesliga, and Ligue 1 to compete in the active season.
+            <p className="text-xs sm:text-sm text-slate-300 mb-4 leading-relaxed">
+              Select your club from Premier League, La Liga, Serie A, Bundesliga, or Ligue 1 to participate in matchdays and league tables.
             </p>
             <button
               id="btn-claim-club-banner"
               onClick={() => onNavigateTab('leagues')}
-              className="inline-flex items-center gap-2 px-5 py-2.5 btn-glass-primary text-slate-950 font-black text-xs sm:text-sm shadow-xl"
+              className="inline-flex items-center gap-2 px-4 py-2 btn-glass-primary text-slate-950 font-black text-xs sm:text-sm shadow-md"
             >
-              <Shield className="w-4 h-4 text-slate-950" />
+              <Shield className="w-3.5 h-3.5 text-slate-950" />
               <span>{t.allClubs}</span>
-              <ArrowRight className="w-4 h-4" />
+              <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
@@ -181,34 +180,32 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       {/* Main Club & Player Status Card (when claimed) */}
       {currentClub && (
-        <div className="glass-panel p-5 sm:p-6 shadow-2xl relative overflow-hidden border-emerald-500/25">
-          <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
-
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-5 relative z-10">
+        <div className="glass-panel p-4 sm:p-5 shadow-xl">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             {/* Club identity */}
-            <div className="flex items-center gap-4">
-              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-slate-950/80 p-2.5 border border-white/[0.1] flex items-center justify-center shadow-2xl shrink-0">
+            <div className="flex items-center gap-3.5">
+              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl bg-slate-950/90 p-2 border border-white/[0.08] flex items-center justify-center shrink-0">
                 <img
                   src={currentClub.logoUrl}
                   alt={currentClub.name}
-                  className="w-full h-full object-contain drop-shadow"
+                  className="w-full h-full object-contain"
                   onError={(e) => {
                     (e.target as HTMLElement).style.display = 'none';
                   }}
                 />
               </div>
 
-              <div>
+              <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                    {currentClub.leagueId ? currentClub.leagueId.replace('league-', '').replace('-', ' ').toUpperCase() : 'DOMESTIC LEAGUE'}
+                  <span className="px-2 py-0.2 rounded text-[9px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    {currentClub.leagueId ? currentClub.leagueId.replace('league-', '').replace('-', ' ').toUpperCase() : 'LEAGUE'}
                   </span>
                   <span className="text-xs text-slate-400 font-medium">@{user?.username}</span>
                 </div>
-                <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight mt-1">
+                <h2 className="text-lg sm:text-xl font-black text-white tracking-tight mt-0.5 truncate">
                   {currentClub.name}
                 </h2>
-                <p className="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
+                <p className="text-xs text-slate-400 flex items-center gap-2 mt-0.5 truncate">
                   <span>{currentClub.stadium || 'Home Stadium'}</span>
                   <span>•</span>
                   <span className="text-emerald-400 font-bold">{currentClub.shortName}</span>
@@ -216,28 +213,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </div>
             </div>
 
-            {/* Quick stats badges */}
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 sm:gap-2.5 glass-card p-2.5 rounded-xl border-white/[0.08]">
+            {/* Quick stats badges - Tabular Numbers */}
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 glass-card p-2 rounded-lg border-white/[0.06] tabular-nums">
               <div className="text-center px-2">
-                <div className="text-[9px] uppercase font-black tracking-wider text-slate-400">{t.pos}</div>
-                <div className="text-sm sm:text-lg font-black text-amber-400 flex items-center justify-center gap-0.5 mt-0.5">
-                  <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                <div className="text-[9px] uppercase font-bold text-slate-400">{t.pos}</div>
+                <div className="text-sm sm:text-base font-black text-amber-400 flex items-center justify-center gap-0.5 mt-0.5">
+                  <Trophy className="w-3 h-3 text-amber-400" />
                   <span>#{stats?.leaguePosition || 1}</span>
                 </div>
               </div>
               <div className="text-center px-2">
-                <div className="text-[9px] uppercase font-black tracking-wider text-slate-400">{t.pts}</div>
-                <div className="text-sm sm:text-lg font-black text-white mt-0.5">{stats?.points || 0}</div>
+                <div className="text-[9px] uppercase font-bold text-slate-400">{t.pts}</div>
+                <div className="text-sm sm:text-base font-black text-white mt-0.5">{stats?.points || 0}</div>
               </div>
               <div className="text-center px-2">
-                <div className="text-[9px] uppercase font-black tracking-wider text-slate-400">W-D-L</div>
-                <div className="text-xs sm:text-sm font-bold text-emerald-400 mt-1">
+                <div className="text-[9px] uppercase font-bold text-slate-400">W-D-L</div>
+                <div className="text-xs sm:text-sm font-bold text-emerald-400 mt-0.5">
                   {stats?.wins || 0}-{stats?.draws || 0}-{stats?.losses || 0}
                 </div>
               </div>
               <div className="text-center px-2 hidden sm:block">
-                <div className="text-[9px] uppercase font-black tracking-wider text-slate-400">{t.gd}</div>
-                <div className="text-sm sm:text-lg font-black text-slate-200 mt-0.5">
+                <div className="text-[9px] uppercase font-bold text-slate-400">{t.gd}</div>
+                <div className="text-sm sm:text-base font-bold text-slate-200 mt-0.5">
                   {((stats?.goalsScored || 0) - (stats?.goalsConceded || 0)) > 0
                     ? `+${(stats?.goalsScored || 0) - (stats?.goalsConceded || 0)}`
                     : (stats?.goalsScored || 0) - (stats?.goalsConceded || 0)}

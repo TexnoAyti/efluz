@@ -86,36 +86,31 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNotifications, onOpenDiagn
         </div>
       )}
 
-      {/* Main App Bar - Strictly 56px-64px on Mobile, Zero Horizontal Overflow */}
-      <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 h-14 sm:h-16 flex items-center justify-between gap-2 sm:gap-4">
+      {/* Main App Bar - Strictly Clean Mobile Target (EFL UZ | Bell | Avatar) */}
+      <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 h-13 sm:h-15 flex items-center justify-between gap-2 sm:gap-4">
         {/* Brand & Logo */}
-        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-emerald-500 via-teal-400 to-emerald-300 flex items-center justify-center shadow-lg shadow-emerald-500/25 text-slate-950 font-black text-lg sm:text-xl tracking-tighter border border-white/20 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-emerald-500 flex items-center justify-center text-slate-950 font-black text-base sm:text-lg tracking-tighter shrink-0">
             eF
           </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="font-black text-base sm:text-lg tracking-tight bg-gradient-to-r from-white via-slate-100 to-slate-300 bg-clip-text text-transparent truncate">
-                EFL UZ
-              </span>
-              <span className="hidden sm:inline-block px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                PRO LEAGUE
-              </span>
-            </div>
-            <p className="hidden sm:block text-[11px] text-slate-400 font-medium truncate">
-              Official 2026/27 European Competitions
-            </p>
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="font-black text-base sm:text-lg tracking-tight text-white truncate">
+              EFL UZ
+            </span>
+            <span className="hidden sm:inline-block px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              PRO LEAGUE
+            </span>
           </div>
         </div>
 
-        {/* Center/Right Controls */}
+        {/* Right Controls */}
         <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
           {/* Season Selector (Desktop only) */}
           <div className="relative hidden md:block">
             <button
               id="btn-season-select"
               onClick={() => setShowSeasonMenu(!showSeasonMenu)}
-              className="flex items-center gap-2 px-3 py-1.5 glass-button text-xs font-bold text-slate-200 min-h-[36px]"
+              className="flex items-center gap-2 px-3 py-1.5 glass-button text-xs font-bold text-slate-200 min-h-[34px]"
             >
               <Trophy className="w-3.5 h-3.5 text-amber-400" />
               <span>{activeSeason?.name || '2026/27'}</span>
@@ -132,7 +127,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNotifications, onOpenDiagn
                       setShowSeasonMenu(false);
                     }}
                     className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-white/[0.06] transition-colors ${
-                      s.id === activeSeasonId ? 'text-emerald-400 font-black bg-emerald-500/10' : 'text-slate-300'
+                      s.id === activeSeasonId ? 'text-emerald-400 font-bold bg-emerald-500/10' : 'text-slate-300'
                     }`}
                   >
                     <span>{s.name}</span>
@@ -145,34 +140,29 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNotifications, onOpenDiagn
             )}
           </div>
 
-          {/* User Club Badge (Compact on mobile) */}
-          {currentClub ? (
-            <div className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-2.5 py-1 glass-card border-white/[0.08] bg-slate-900/60 max-w-[120px] sm:max-w-[150px] min-h-[36px]">
+          {/* User Club Badge (Desktop/Tablet only to keep mobile header minimal) */}
+          {currentClub && (
+            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 glass-card border-white/[0.08] max-w-[150px] min-h-[34px]">
               <img
                 src={currentClub.logoUrl}
                 alt={currentClub.name}
-                className="w-4 h-4 sm:w-5 sm:h-5 object-contain shrink-0"
+                className="w-4 h-4 object-contain shrink-0"
                 onError={(e) => {
                   (e.target as HTMLElement).style.display = 'none';
                 }}
               />
-              <span className="text-[11px] sm:text-xs font-bold text-slate-200 truncate">
+              <span className="text-xs font-bold text-slate-200 truncate">
                 {currentClub.shortName || currentClub.name}
               </span>
             </div>
-          ) : (
-            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-400 text-xs font-bold min-h-[36px]">
-              <Shield className="w-3.5 h-3.5" />
-              <span>No Club</span>
-            </div>
           )}
 
-          {/* Telegram Diagnostics Launcher (Desktop / Large Tablet only) */}
+          {/* Telegram Diagnostics Launcher (Desktop only) */}
           {onOpenDiagnostics && (
             <button
               id="btn-open-diagnostics"
               onClick={onOpenDiagnostics}
-              className="hidden md:flex p-2 glass-button text-slate-300 items-center justify-center min-w-[36px] min-h-[36px]"
+              className="hidden md:flex p-2 glass-button text-slate-300 items-center justify-center min-w-[34px] min-h-[34px]"
               title="Telegram WebApp Diagnostics"
             >
               <Terminal className="w-4 h-4 text-indigo-400" />
@@ -183,23 +173,21 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNotifications, onOpenDiagn
           <button
             id="btn-notifications"
             onClick={onOpenNotifications}
-            className="relative p-2 sm:p-2.5 glass-button text-slate-300 flex items-center justify-center min-w-[40px] min-h-[40px] touch-manipulation active:scale-95"
+            className="relative p-2 glass-button text-slate-300 flex items-center justify-center min-w-[38px] min-h-[38px] touch-manipulation active:scale-95"
             title="Tournament Notifications"
           >
             <Bell className="w-4 h-4" />
             {unreadNotificationCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-rose-500 text-white rounded-full text-[10px] font-black flex items-center justify-center shadow-lg shadow-rose-500/50 animate-bounce">
-                {unreadNotificationCount}
-              </span>
+              <span className="absolute top-1 right-1 w-2 h-2 bg-rose-500 rounded-full shadow-[0_0_6px_#f43f5e]" />
             )}
           </button>
 
-          {/* User Profile Avatar Pill */}
+          {/* User Profile Avatar */}
           <div
             onClick={onOpenProfile}
-            className="flex items-center gap-2 pl-1 sm:pl-2 border-l border-white/[0.08] cursor-pointer"
+            className="flex items-center gap-2 cursor-pointer touch-manipulation active:scale-95"
           >
-            <div className="w-8 h-8 rounded-full glass-card border-white/[0.12] flex items-center justify-center text-slate-300 font-bold text-xs overflow-hidden shadow-inner shrink-0 min-w-[32px] min-h-[32px]">
+            <div className="w-8 h-8 rounded-full bg-[#141c2e] border border-white/[0.12] flex items-center justify-center text-slate-300 font-bold text-xs overflow-hidden shrink-0">
               {user?.photoUrl ? (
                 <img src={user.photoUrl} alt={user.username} className="w-full h-full object-cover" />
               ) : (
@@ -208,7 +196,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNotifications, onOpenDiagn
             </div>
             <div className="hidden lg:block text-left">
               <div className="text-xs font-bold text-slate-200 leading-tight">@{user?.username}</div>
-              <div className="text-[10px] text-emerald-400/80 font-medium">
+              <div className="text-[10px] text-emerald-400 font-medium">
                 {user?.isAdmin ? 'Admin' : 'Player'}
               </div>
             </div>
