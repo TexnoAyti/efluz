@@ -2,18 +2,19 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { requireAdmin } from '../middleware/authMiddleware';
 import { validateBody } from '../middleware/validationMiddleware';
-import { getDisputes, resolveDispute, reopenFixture, getAllAdminUsers, getAuditLogs } from '../services/adminService';
+import { getDisputes, getAllAdminUsers, getAuditLogs } from '../services/adminService';
 import {
   generateCompetitionFixturesFirestore,
   reopenFixtureFirestore,
   resolveDisputeFirestore,
+  rebuildCompetitionStandingsFirestore,
 } from '../firebase/firestoreStore';
 import { migrateSqliteToFirestore } from '../firebase/migrateSqliteToFirestore';
 import { generateKnockoutBracket } from '../tournament/knockoutEngine';
 import { evaluateSeasonQualifications } from '../tournament/qualificationEngine';
-import { queryAll } from '../db';
 import { getFirebaseStatus, getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS } from '../firebase/collections';
+import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
 
 export const adminRouter = Router();
 
@@ -49,7 +50,7 @@ adminRouter.get('/firestore-diagnostics', async (req: Request, res: Response) =>
       },
     });
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to retrieve diagnostics', message: err.message });
+    handleFirestoreError(res, err, 'GET /api/admin/firestore-diagnostics');
   }
 });
 
@@ -75,7 +76,7 @@ adminRouter.post('/migrate-to-firestore', async (req: Request, res: Response) =>
       report,
     });
   } catch (err: any) {
-    res.status(500).json({ error: 'Migration failed', message: err.message });
+    handleFirestoreError(res, err, 'POST /api/admin/migrate-to-firestore');
   }
 });
 
@@ -84,7 +85,7 @@ adminRouter.get('/users', async (req: Request, res: Response) => {
     const users = await getAllAdminUsers();
     res.json({ users });
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to fetch users', message: err.message });
+    handleFirestoreError(res, err, 'GET /api/admin/users');
   }
 });
 
@@ -94,7 +95,7 @@ adminRouter.get('/disputes', async (req: Request, res: Response) => {
     const disputes = await getDisputes(status);
     res.json({ disputes });
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to fetch disputes', message: err.message });
+    handleFirestoreError(res, err, 'GET /api/admin/disputes');
   }
 });
 
@@ -110,7 +111,7 @@ adminRouter.post('/disputes/:id/resolve', validateBody(resolveDisputeSchema), as
       dispute: result.dispute,
     });
   } catch (err: any) {
-    res.status(400).json({ error: 'Failed to resolve dispute', message: err.message });
+    handleFirestoreError(res, err, `POST /api/admin/disputes/${disputeId}/resolve`);
   }
 });
 
@@ -126,7 +127,7 @@ adminRouter.post('/fixtures/:id/reopen', validateBody(reopenFixtureSchema), asyn
       result,
     });
   } catch (err: any) {
-    res.status(400).json({ error: 'Failed to reopen fixture', message: err.message });
+    handleFirestoreError(res, err, `POST /api/admin/fixtures/${fixtureId}/reopen`);
   }
 });
 
@@ -136,14 +137,14 @@ adminRouter.get('/audit-logs', async (req: Request, res: Response) => {
     const logs = await getAuditLogs(limit);
     res.json({ logs });
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to fetch audit logs', message: err.message });
+    handleFirestoreError(res, err, 'GET /api/admin/audit-logs');
   }
 });
 
 adminRouter.post('/fixtures/generate', async (req: Request, res: Response) => {
   const { competitionId, force } = req.body;
   if (!competitionId) {
-    res.status(400).json({ error: 'competitionId is required' });
+    res.status(400).json({ error: 'competitionId is required', code: 'BAD_REQUEST', message: 'competitionId is required' });
     return;
   }
 
@@ -157,14 +158,14 @@ adminRouter.post('/fixtures/generate', async (req: Request, res: Response) => {
       message: `Generated and persisted ${result.generated} fixtures in Firestore across ${result.matchdays} matchdays.`,
     });
   } catch (err: any) {
-    res.status(500).json({ error: 'FIXTURE_PERSISTENCE_FAILED', message: err.message });
+    handleFirestoreError(res, err, 'POST /api/admin/fixtures/generate');
   }
 });
 
 adminRouter.post('/knockouts/generate', async (req: Request, res: Response) => {
   const { competitionId } = req.body;
   if (!competitionId) {
-    res.status(400).json({ error: 'competitionId is required' });
+    res.status(400).json({ error: 'competitionId is required', code: 'BAD_REQUEST', message: 'competitionId is required' });
     return;
   }
 
@@ -176,7 +177,7 @@ adminRouter.post('/knockouts/generate', async (req: Request, res: Response) => {
       result,
     });
   } catch (err: any) {
-    res.status(400).json({ error: 'Failed to generate knockout bracket', message: err.message });
+    handleFirestoreError(res, err, 'POST /api/admin/knockouts/generate');
   }
 });
 
@@ -191,14 +192,14 @@ adminRouter.post('/qualifications/evaluate', async (req: Request, res: Response)
       result,
     });
   } catch (err: any) {
-    res.status(400).json({ error: 'Failed to evaluate qualifications', message: err.message });
+    handleFirestoreError(res, err, 'POST /api/admin/qualifications/evaluate');
   }
 });
 
 adminRouter.post('/fixtures/reset', async (req: Request, res: Response) => {
   const { competitionId } = req.body;
   if (!competitionId) {
-    res.status(400).json({ error: 'competitionId is required' });
+    res.status(400).json({ error: 'competitionId is required', code: 'BAD_REQUEST', message: 'competitionId is required' });
     return;
   }
 
@@ -212,6 +213,22 @@ adminRouter.post('/fixtures/reset', async (req: Request, res: Response) => {
       message: `Reset and regenerated schedule for competition '${competitionId}'.`,
     });
   } catch (err: any) {
-    res.status(500).json({ error: 'FIXTURE_PERSISTENCE_FAILED', message: err.message });
+    handleFirestoreError(res, err, 'POST /api/admin/fixtures/reset');
+  }
+});
+
+adminRouter.post('/competitions/:id/rebuild-standings', async (req: Request, res: Response) => {
+  const competitionId = req.params.id;
+  try {
+    const standings = await rebuildCompetitionStandingsFirestore(competitionId);
+    res.json({
+      success: true,
+      competitionId,
+      standings,
+      totalClubs: standings.length,
+      message: `Rebuilt and persisted materialized standings for competition '${competitionId}'.`,
+    });
+  } catch (err: any) {
+    handleFirestoreError(res, err, `POST /api/admin/competitions/${competitionId}/rebuild-standings`);
   }
 });

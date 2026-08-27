@@ -4,9 +4,11 @@ import {
   getAllCompetitionsFirestore,
   getCompetitionByIdFirestore,
   calculateCompetitionStandingsFirestore,
+  rebuildCompetitionStandingsFirestore,
   getFixturesFirestore,
   generateCompetitionFixturesFirestore,
 } from '../firebase/firestoreStore';
+import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
 
 export const competitionsRouter = Router();
 
@@ -16,7 +18,7 @@ competitionsRouter.get('/', async (req: Request, res: Response) => {
     const competitions = await getAllCompetitionsFirestore(seasonId);
     res.json({ competitions });
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to fetch competitions', message: err.message });
+    handleFirestoreError(res, err, 'GET /api/competitions');
   }
 });
 
@@ -24,12 +26,12 @@ competitionsRouter.get('/:id', async (req: Request, res: Response) => {
   try {
     const competition = await getCompetitionByIdFirestore(req.params.id);
     if (!competition) {
-      res.status(404).json({ error: 'Competition not found' });
+      res.status(404).json({ error: 'Competition not found', code: 'NOT_FOUND', message: `Competition '${req.params.id}' not found` });
       return;
     }
     res.json({ competition });
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to fetch competition', message: err.message });
+    handleFirestoreError(res, err, `GET /api/competitions/${req.params.id}`);
   }
 });
 
@@ -38,7 +40,7 @@ competitionsRouter.get('/:id/standings', async (req: Request, res: Response) => 
     const standings = await calculateCompetitionStandingsFirestore(req.params.id);
     res.json({ standings });
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to calculate standings', message: err.message });
+    handleFirestoreError(res, err, `GET /api/competitions/${req.params.id}/standings`);
   }
 });
 
@@ -54,7 +56,7 @@ competitionsRouter.get('/:id/fixtures', async (req: Request, res: Response) => {
     });
     res.json({ fixtures });
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to fetch fixtures', message: err.message });
+    handleFirestoreError(res, err, `GET /api/competitions/${req.params.id}/fixtures`);
   }
 });
 
@@ -71,11 +73,7 @@ competitionsRouter.post('/:id/generate-fixtures', requireAdmin, async (req: Requ
       message: `Persisted ${result.generated} fixtures in Firestore successfully across ${result.matchdays} matchdays.`,
     });
   } catch (err: any) {
-    console.error('Fixture generation error:', err);
-    res.status(500).json({
-      error: 'FIXTURE_PERSISTENCE_FAILED',
-      message: err.message || 'Failed to generate and persist fixtures in Firestore.',
-    });
+    handleFirestoreError(res, err, `POST /api/competitions/${req.params.id}/generate-fixtures`);
   }
 });
 
@@ -90,9 +88,21 @@ competitionsRouter.post('/:id/reset-fixtures', requireAdmin, async (req: Request
       message: `Reset and persisted ${result.generated} fixtures in Firestore.`,
     });
   } catch (err: any) {
-    res.status(500).json({
-      error: 'FIXTURE_PERSISTENCE_FAILED',
-      message: err.message || 'Failed to reset fixtures in Firestore.',
+    handleFirestoreError(res, err, `POST /api/competitions/${req.params.id}/reset-fixtures`);
+  }
+});
+
+competitionsRouter.post('/:id/rebuild-standings', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const standings = await rebuildCompetitionStandingsFirestore(req.params.id);
+    res.json({
+      success: true,
+      competitionId: req.params.id,
+      standings,
+      totalClubs: standings.length,
+      message: `Rebuilt and persisted materialized standings for competition '${req.params.id}' successfully.`,
     });
+  } catch (err: any) {
+    handleFirestoreError(res, err, `POST /api/competitions/${req.params.id}/rebuild-standings`);
   }
 });

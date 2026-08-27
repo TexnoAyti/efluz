@@ -23,6 +23,7 @@
     "test:production-data-consistency": "tsx src/server/tests/productionDataConsistencyTest.ts",
     "test:full-production-firestore-audit": "tsx src/server/tests/fullProductionFirestoreAudit.ts",
     "test:tournament-architecture": "tsx src/server/tests/verifyTournamentArchitecture.ts",
+    "test:standings": "tsx src/server/tests/standingsPreaggregationTest.ts",
     "test:deployment-selfcheck": "tsx src/server/tests/deploymentSelfCheck.ts"
   },
   "dependencies": {

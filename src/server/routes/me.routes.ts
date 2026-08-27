@@ -6,6 +6,7 @@ import {
   getUserNotificationsFirestore,
   markNotificationsReadFirestore,
 } from '../firebase/firestoreStore';
+import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
 
 export const meRouter = Router();
 
@@ -67,8 +68,7 @@ meRouter.get('/', requireAuth, async (req: Request, res: Response) => {
       stats,
     });
   } catch (err: any) {
-    console.error('Error fetching dashboard me data:', err);
-    res.status(500).json({ error: 'Failed to fetch user profile', message: err.message });
+    handleFirestoreError(res, err, 'GET /api/me');
   }
 });
 
@@ -86,7 +86,7 @@ meRouter.get('/matches', requireAuth, async (req: Request, res: Response) => {
 
     res.json({ fixtures });
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to fetch user matches', message: err.message });
+    handleFirestoreError(res, err, 'GET /api/me/matches');
   }
 });
 
@@ -96,7 +96,7 @@ meRouter.get('/notifications', requireAuth, async (req: Request, res: Response) 
     const notifications = await getUserNotificationsFirestore(userId, 30);
     res.json({ notifications });
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to fetch notifications', message: err.message });
+    handleFirestoreError(res, err, 'GET /api/me/notifications');
   }
 });
 
@@ -106,7 +106,6 @@ meRouter.post('/notifications/read', requireAuth, async (req: Request, res: Resp
     await markNotificationsReadFirestore(userId);
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to update notifications', message: err.message });
+    handleFirestoreError(res, err, 'POST /api/me/notifications/read');
   }
 });
-

@@ -6,6 +6,7 @@ import {
   getFixtureByIdFirestore,
   submitFixtureResultFirestore,
 } from '../firebase/firestoreStore';
+import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
 
 export const fixturesRouter = Router();
 
@@ -20,12 +21,12 @@ fixturesRouter.get('/:id', async (req: Request, res: Response) => {
   try {
     const fixture = await getFixtureByIdFirestore(req.params.id, currentUserId);
     if (!fixture) {
-      res.status(404).json({ error: 'Fixture not found' });
+      res.status(404).json({ error: 'Fixture not found', code: 'NOT_FOUND', message: `Fixture '${req.params.id}' not found` });
       return;
     }
     res.json({ fixture });
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to fetch fixture', message: err.message });
+    handleFirestoreError(res, err, `GET /api/fixtures/${req.params.id}`);
   }
 });
 
@@ -47,6 +48,6 @@ fixturesRouter.post('/:id/result', requireAuth, validateBody(resultSubmissionSch
       fixture: updatedFixture,
     });
   } catch (err: any) {
-    res.status(400).json({ error: 'Bad Request', message: err.message });
+    handleFirestoreError(res, err, `POST /api/fixtures/${fixtureId}/result`);
   }
 });

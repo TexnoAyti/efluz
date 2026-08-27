@@ -35,15 +35,20 @@ export const FixturesView: React.FC = () => {
   // Load competitions
   useEffect(() => {
     async function loadComps() {
+      setIsLoading(true);
       try {
         const res = await api.getCompetitions(activeSeasonId);
-        setCompetitions(res.competitions);
-        if (res.competitions.length > 0) {
+        setCompetitions(res.competitions || []);
+        if (res.competitions && res.competitions.length > 0) {
           const defaultComp = res.competitions.find((c) => c.type === 'LEAGUE') || res.competitions[0];
           setSelectedCompetitionId(defaultComp.id);
+        } else {
+          setIsLoading(false);
         }
       } catch (err: any) {
         console.error('Failed to load competitions:', err);
+        setError(err.message || 'Failed to load competitions.');
+        setIsLoading(false);
       }
     }
     loadComps();
@@ -53,13 +58,16 @@ export const FixturesView: React.FC = () => {
   const totalMatchdays = activeComp?.type === 'LEAGUE' ? (activeComp.totalTeams === 18 ? 34 : 38) : 1;
 
   const loadFixtures = async (skipCache = false) => {
-    if (!selectedCompetitionId) return;
+    if (!selectedCompetitionId) {
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     setError(null);
     try {
       const matchdayParam = activeComp?.type === 'LEAGUE' ? selectedMatchday : undefined;
       const res = await api.getCompetitionFixtures(selectedCompetitionId, matchdayParam, undefined, skipCache);
-      setFixtures(res.fixtures);
+      setFixtures(res.fixtures || []);
     } catch (err: any) {
       console.error('Failed to load fixtures:', err);
       setError(err.message || 'Failed to load fixtures. Please check your connection.');

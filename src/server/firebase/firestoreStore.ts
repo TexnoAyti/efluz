@@ -15,6 +15,7 @@ import {
   FirestoreUserDoc,
   FirestoreDisputeDoc,
   FirestoreAuditLogDoc,
+  FirestoreStandingsDoc,
 } from './collections';
 import {
   Club,
@@ -1547,7 +1548,7 @@ export async function generateCompetitionFixturesFirestore(
 // STANDINGS CALCULATION & PRE-AGGREGATION (FIRESTORE)
 // ----------------------------------------------------
 
-function computeAndSortStandings(
+export function computeAndSortStandings(
   clubs: Array<{ id: string; name: string; shortName: string; logoUrl?: string; managerUsername?: string }>,
   confirmedFixtures: Array<{ homeClubId: string; awayClubId: string; homeScore: number; awayScore: number }>,
   formatConfig: any
@@ -1668,7 +1669,7 @@ function computeAndSortStandings(
     clubName: r.clubName,
     shortName: r.shortName,
     logoUrl: r.logoUrl,
-    managerUsername: r.managerUsername,
+    managerUsername: r.managerUsername || null,
     played: r.played,
     won: r.won,
     drawn: r.drawn,
@@ -1966,6 +1967,14 @@ export async function submitFixtureResultFirestore(
       await advanceKnockoutWinnerFirestore(fixtureId);
     } catch (err) {
       console.warn('[KNOCKOUT_ADVANCE] Non-blocking advance error:', err);
+    }
+  }
+
+  if (newStatus === 'CONFIRMED' && fixture.competitionId) {
+    try {
+      await rebuildCompetitionStandingsFirestore(fixture.competitionId);
+    } catch (standingsErr) {
+      console.warn('[STANDINGS_UPDATE] Non-blocking standings update error on confirmation:', standingsErr);
     }
   }
 
@@ -2290,6 +2299,15 @@ export async function reopenFixtureFirestore(
 
   await deleteBatch.commit();
 
+  // Rebuild standings if fixture belonged to a competition
+  if (fixDoc.data()?.competitionId) {
+    try {
+      await rebuildCompetitionStandingsFirestore(fixDoc.data()!.competitionId);
+    } catch (standingsErr) {
+      console.warn('[STANDINGS_UPDATE] Non-blocking standings update error on reopen:', standingsErr);
+    }
+  }
+
   // Audit log
   await db.collection(COLLECTIONS.AUDIT_LOGS).add({
     actorUserId: adminUserId,
@@ -2359,6 +2377,14 @@ export async function resolveDisputeFirestore(
       await advanceKnockoutWinnerFirestore(dispData.fixtureId);
     } catch (err) {
       console.warn('[KNOCKOUT_ADVANCE] Non-blocking advance error on dispute resolution:', err);
+    }
+  }
+
+  if (fixture.competitionId) {
+    try {
+      await rebuildCompetitionStandingsFirestore(fixture.competitionId);
+    } catch (standingsErr) {
+      console.warn('[STANDINGS_UPDATE] Non-blocking standings update error on dispute resolution:', standingsErr);
     }
   }
 

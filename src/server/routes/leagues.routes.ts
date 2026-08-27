@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { getAllLeaguesFirestore, getClubsByLeagueFirestore } from '../firebase/firestoreStore';
+import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
 
 export const leaguesRouter = Router();
 
@@ -20,7 +21,7 @@ leaguesRouter.get('/', async (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
     res.json({ leagues });
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to fetch leagues', message: err.message });
+    handleFirestoreError(res, err, 'GET /api/leagues');
   }
 });
 
@@ -30,12 +31,12 @@ leaguesRouter.get('/:id', async (req: Request, res: Response) => {
     const leagues = await getAllLeaguesFirestore();
     const league = leagues.find((l) => l.id === leagueId);
     if (!league) {
-      res.status(404).json({ error: 'League not found' });
+      res.status(404).json({ error: 'League not found', code: 'NOT_FOUND', message: `League '${leagueId}' not found.` });
       return;
     }
     res.json({ league });
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to fetch league', message: err.message });
+    handleFirestoreError(res, err, `GET /api/leagues/${req.params.id}`);
   }
 });
 
@@ -48,6 +49,6 @@ leaguesRouter.get('/:id/clubs', async (req: Request, res: Response) => {
     const clubs = await getClubsByLeagueFirestore(leagueId, seasonId, currentUserId);
     res.json({ clubs });
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to fetch league clubs', message: err.message });
+    handleFirestoreError(res, err, `GET /api/leagues/${req.params.id}/clubs`);
   }
 });

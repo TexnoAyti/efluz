@@ -146,6 +146,11 @@ export function initializeFirebaseAdmin(): { db: Firestore | null; info: Firebas
     }
 
     cachedDb = databaseId && databaseId !== '(default)' ? getFirestore(app, databaseId) : getFirestore(app);
+    try {
+      cachedDb.settings({ ignoreUndefinedProperties: true });
+    } catch {
+      // Ignore if already initialized with settings
+    }
     initError = null;
     cachedInfo = {
       isConfigured: true,

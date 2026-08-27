@@ -26,28 +26,38 @@ export const StandingsView: React.FC = () => {
 
   useEffect(() => {
     async function loadComps() {
+      setIsLoading(true);
       try {
         const res = await api.getCompetitions(activeSeasonId);
         // Prioritize leagues
-        const leagues = res.competitions.filter((c) => c.type === 'LEAGUE');
-        setCompetitions(leagues.length > 0 ? leagues : res.competitions);
+        const leagues = (res.competitions || []).filter((c) => c.type === 'LEAGUE');
+        setCompetitions(leagues.length > 0 ? leagues : res.competitions || []);
         if (leagues.length > 0) {
           setSelectedCompetitionId(leagues[0].id);
+        } else if (res.competitions && res.competitions.length > 0) {
+          setSelectedCompetitionId(res.competitions[0].id);
+        } else {
+          setIsLoading(false);
         }
       } catch (err: any) {
         console.error('Failed to load competitions:', err);
+        setError(err.message || 'Failed to load competitions.');
+        setIsLoading(false);
       }
     }
     loadComps();
   }, [activeSeasonId]);
 
   const loadStandings = async (skipCache = false) => {
-    if (!selectedCompetitionId) return;
+    if (!selectedCompetitionId) {
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     setError(null);
     try {
       const res = await api.getCompetitionStandings(selectedCompetitionId, skipCache);
-      setStandings(res.standings);
+      setStandings(res.standings || []);
     } catch (err: any) {
       console.error('Failed to load standings:', err);
       setError(err.message || 'Failed to load standings.');

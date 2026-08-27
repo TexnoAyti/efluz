@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n';
-import { api } from '../lib/api';
+import { api, ApiError } from '../lib/api';
 import { League, Club } from '../types';
 import confetti from 'canvas-confetti';
 import {
@@ -12,6 +12,8 @@ import {
   MapPin,
   Sparkles,
   Loader2,
+  RefreshCw,
+  AlertTriangle,
 } from 'lucide-react';
 
 export const ClubsView: React.FC = () => {
@@ -22,7 +24,7 @@ export const ClubsView: React.FC = () => {
   const [selectedLeagueId, setSelectedLeagueId] = useState<string>('league-premier-league');
   const [clubs, setClubs] = useState<Club[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string; isQuota?: boolean } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterMode, setFilterMode] = useState<'ALL' | 'AVAILABLE' | 'CLAIMED'>('ALL');
 
@@ -30,45 +32,74 @@ export const ClubsView: React.FC = () => {
   const [clubToClaim, setClubToClaim] = useState<Club | null>(null);
   const [isClaiming, setIsClaiming] = useState(false);
 
-  useEffect(() => {
-    async function loadLeagues() {
-      try {
-        const res = await api.getLeagues();
-        setLeagues(res.leagues);
-        if (res.leagues.length > 0) {
-          setSelectedLeagueId((prev) => {
-            const exists = res.leagues.some((l) => l.id === prev);
-            return exists ? prev : res.leagues[0].id;
-          });
-        }
-      } catch (err: any) {
-        console.error('Failed to load leagues:', err);
-        setError('Failed to load leagues');
-      }
+  const loadClubsForLeague = useCallback(async (leagueId: string) => {
+    if (!leagueId) {
+      setIsLoading(false);
+      return;
     }
-    loadLeagues();
-  }, []);
-
-  const loadClubs = async (leagueId: string) => {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await api.getLeagueClubs(leagueId, activeSeasonId);
+      const res = await api.getLeagueClubs(leagueId, activeSeasonId, true);
       setClubs(res.clubs || []);
     } catch (err: any) {
       console.error('Failed to load clubs:', err);
-      setError(err.message || 'Failed to load clubs');
+      const isQuota =
+        err?.httpStatus === 429 ||
+        err?.data?.error === 'RESOURCE_EXHAUSTED' ||
+        err?.message?.includes('quota') ||
+        err?.message?.includes('RESOURCE_EXHAUSTED');
+
+      setError({
+        message: err.message || 'Failed to load clubs from Firestore database',
+        isQuota,
+      });
       setClubs([]);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [activeSeasonId]);
+
+  const loadLeagues = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const res = await api.getLeagues();
+      setLeagues(res.leagues || []);
+      if (res.leagues && res.leagues.length > 0) {
+        setSelectedLeagueId((prev) => {
+          const exists = res.leagues.some((l) => l.id === prev);
+          const target = exists ? prev : res.leagues[0].id;
+          loadClubsForLeague(target);
+          return target;
+        });
+      } else {
+        setIsLoading(false);
+      }
+    } catch (err: any) {
+      console.error('Failed to load leagues:', err);
+      const isQuota =
+        err?.httpStatus === 429 ||
+        err?.data?.error === 'RESOURCE_EXHAUSTED' ||
+        err?.message?.includes('quota') ||
+        err?.message?.includes('RESOURCE_EXHAUSTED');
+
+      setError({
+        message: err.message || 'Failed to load leagues from Firestore database',
+        isQuota,
+      });
+      setIsLoading(false);
+    }
+  }, [loadClubsForLeague]);
 
   useEffect(() => {
-    if (selectedLeagueId) {
-      loadClubs(selectedLeagueId);
-    }
-  }, [selectedLeagueId, activeSeasonId]);
+    loadLeagues();
+  }, [loadLeagues]);
+
+  const handleSelectLeague = (leagueId: string) => {
+    setSelectedLeagueId(leagueId);
+    loadClubsForLeague(leagueId);
+  };
 
   const handleClaimClub = async () => {
     if (!clubToClaim) return;
@@ -85,12 +116,13 @@ export const ClubsView: React.FC = () => {
         spread: 80,
         origin: { y: 0.6 },
       });
-      showToast(t.claimSuccess, 'success');
+      showToast(res.message || t.claimSuccess, 'success');
       setClubToClaim(null);
       await refreshUserData();
-      await loadClubs(selectedLeagueId);
+      await loadClubsForLeague(selectedLeagueId);
     } catch (err: any) {
-      showToast(err.message || 'Failed to claim club.', 'error');
+      const msg = err.data?.message || err.message || 'Failed to claim club.';
+      showToast(msg, 'error');
     } finally {
       setIsClaiming(false);
     }
@@ -129,26 +161,40 @@ export const ClubsView: React.FC = () => {
           </p>
         </div>
 
-        {/* User Active Club Badge */}
-        {currentClub && (
-          <div className="flex items-center gap-3 bg-emerald-950/40 border border-emerald-500/30 rounded-2xl p-2.5 px-4 shadow-md">
-            <img
-              src={currentClub.logoUrl}
-              alt={currentClub.name}
-              className="w-7 h-7 object-contain"
-              onError={(e) => {
-                (e.target as HTMLElement).style.display = 'none';
-              }}
-            />
-            <div>
-              <div className="text-[10px] uppercase font-bold text-emerald-400 flex items-center gap-1">
-                <Lock className="w-3 h-3" />
-                <span>{t.myClub} ({t.clubLocked})</span>
+        <div className="flex items-center gap-3">
+          {/* Refresh Button */}
+          <button
+            id="btn-refresh-clubs-view"
+            onClick={() => loadClubsForLeague(selectedLeagueId)}
+            disabled={isLoading}
+            className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-slate-300 font-bold text-xs flex items-center gap-1.5 transition-colors shadow-sm disabled:opacity-50"
+            title="Refresh Clubs from Firestore"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-emerald-400' : ''}`} />
+            <span>Refresh</span>
+          </button>
+
+          {/* User Active Club Badge */}
+          {currentClub && (
+            <div className="flex items-center gap-3 bg-emerald-950/40 border border-emerald-500/30 rounded-2xl p-2.5 px-4 shadow-md">
+              <img
+                src={currentClub.logoUrl}
+                alt={currentClub.name}
+                className="w-7 h-7 object-contain"
+                onError={(e) => {
+                  (e.target as HTMLElement).style.display = 'none';
+                }}
+              />
+              <div>
+                <div className="text-[10px] uppercase font-bold text-emerald-400 flex items-center gap-1">
+                  <Lock className="w-3 h-3" />
+                  <span>{t.myClub} ({t.clubLocked})</span>
+                </div>
+                <div className="text-xs font-bold text-white">{currentClub.name}</div>
               </div>
-              <div className="text-xs font-bold text-white">{currentClub.name}</div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Season Lock Notification Banner if club already chosen */}
@@ -164,29 +210,31 @@ export const ClubsView: React.FC = () => {
       )}
 
       {/* League Selection Tabs */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
-        {leagues.map((league) => {
-          const isSelected = selectedLeagueId === league.id;
-          return (
-            <button
-              key={league.id}
-              id={`btn-league-${league.id}`}
-              onClick={() => setSelectedLeagueId(league.id)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl font-bold text-xs shrink-0 transition-all ${
-                isSelected
-                  ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20 scale-[1.02] font-black'
-                  : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800'
-              }`}
-            >
-              <span>{league.country === 'England' ? '🏴󠁧󠁢󠁥󠁮󠁧󠁿' : league.country === 'Spain' ? '🇪🇸' : league.country === 'Italy' ? '🇮🇹' : league.country === 'Germany' ? '🇩🇪' : '🇫🇷'}</span>
-              <span>{league.name}</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded font-black ${isSelected ? 'bg-slate-950/20 text-slate-950' : 'bg-slate-800 text-slate-400'}`}>
-                {league.totalClubs}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      {leagues.length > 0 && (
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+          {leagues.map((league) => {
+            const isSelected = selectedLeagueId === league.id;
+            return (
+              <button
+                key={league.id}
+                id={`btn-league-${league.id}`}
+                onClick={() => handleSelectLeague(league.id)}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl font-bold text-xs shrink-0 transition-all ${
+                  isSelected
+                    ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20 scale-[1.02] font-black'
+                    : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800'
+                }`}
+              >
+                <span>{league.country === 'England' ? '🏴󠁧󠁢󠁥󠁮󠁧󠁿' : league.country === 'Spain' ? '🇪🇸' : league.country === 'Italy' ? '🇮🇹' : league.country === 'Germany' ? '🇩🇪' : '🇫🇷'}</span>
+                <span>{league.name}</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded font-black ${isSelected ? 'bg-slate-950/20 text-slate-950' : 'bg-slate-800 text-slate-400'}`}>
+                  {league.totalClubs}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Search & Filter Toolbar */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-md">
@@ -237,21 +285,32 @@ export const ClubsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Clubs Grid */}
+      {/* Clubs Grid / Loading / Error */}
       {isLoading ? (
         <div className="py-20 flex flex-col items-center justify-center text-slate-400">
           <Loader2 className="w-8 h-8 animate-spin text-emerald-400 mb-2" />
           <span className="text-xs">{t.loading}</span>
         </div>
       ) : error ? (
-        <div className="py-12 px-6 text-center bg-rose-950/20 border border-rose-800/40 rounded-3xl">
-          <Shield className="w-10 h-10 text-rose-500 mx-auto mb-2 opacity-80" />
-          <h4 className="text-sm font-bold text-rose-200">{error}</h4>
+        <div className={`py-10 px-6 text-center border rounded-3xl ${error.isQuota ? 'bg-amber-950/20 border-amber-800/40' : 'bg-rose-950/20 border-rose-800/40'}`}>
+          <AlertTriangle className={`w-10 h-10 mx-auto mb-2 opacity-90 ${error.isQuota ? 'text-amber-400' : 'text-rose-500'}`} />
+          <h4 className="text-sm font-bold text-white mb-1">
+            {error.isQuota ? 'Firestore Quota Exceeded (RESOURCE_EXHAUSTED)' : 'Failed to Load Data'}
+          </h4>
+          <p className="text-xs text-slate-300 max-w-md mx-auto mb-4">
+            {error.message}
+          </p>
           <button
-            onClick={() => loadClubs(selectedLeagueId)}
-            className="mt-4 px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all"
+            onClick={() => {
+              if (leagues.length === 0) {
+                loadLeagues();
+              } else {
+                loadClubsForLeague(selectedLeagueId);
+              }
+            }}
+            className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl text-xs font-black transition-all shadow-md"
           >
-            Retry
+            Retry Loading
           </button>
         </div>
       ) : filteredClubs.length === 0 ? (
