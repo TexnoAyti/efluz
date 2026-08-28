@@ -32,7 +32,9 @@ export const CupBracketsView: React.FC = () => {
       setIsLoading(true);
       try {
         const res = await api.getCompetitions(activeSeasonId);
-        const cups = (res.competitions || []).filter((c) => c.type !== 'LEAGUE');
+        const cups = (res.competitions || []).filter(
+          (c) => c.type === 'KNOCKOUT' || c.type === 'SUPER_CUP' || (c.type !== 'LEAGUE' && c.type !== 'EUROPEAN_LEAGUE_PHASE')
+        );
         setCupCompetitions(cups);
         if (cups.length > 0) {
           const domesticCup = cups.find((c) => c.type === 'KNOCKOUT') || cups[0];

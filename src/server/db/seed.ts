@@ -41,35 +41,35 @@ export const SEED_LEAGUES: SeedLeague[] = [
     name: 'Premier League',
     country: 'England',
     tier: 1,
-    logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/leagues/premier-league.svg',
+    logoUrl: 'https://crests.football-data.org/PL.png',
   },
   {
     id: 'league-la-liga',
     name: 'La Liga',
     country: 'Spain',
     tier: 1,
-    logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/leagues/laliga.svg',
+    logoUrl: 'https://crests.football-data.org/PD.png',
   },
   {
     id: 'league-serie-a',
     name: 'Serie A',
     country: 'Italy',
     tier: 1,
-    logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/leagues/serie-a.svg',
+    logoUrl: 'https://crests.football-data.org/SA.png',
   },
   {
     id: 'league-bundesliga',
     name: 'Bundesliga',
     country: 'Germany',
     tier: 1,
-    logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/leagues/bundesliga.svg',
+    logoUrl: 'https://crests.football-data.org/BL1.png',
   },
   {
     id: 'league-ligue-1',
     name: 'Ligue 1',
     country: 'France',
     tier: 1,
-    logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/leagues/ligue-1.svg',
+    logoUrl: 'https://crests.football-data.org/FL1.png',
   },
 ];
 
@@ -81,7 +81,7 @@ export const SEED_CLUBS: SeedClub[] = [
   { id: 'club-brentford', name: 'Brentford', shortName: 'BRE', country: 'England', leagueId: 'league-premier-league', logoUrl: 'https://resources.premierleague.com/premierleague/badges/t94.svg' },
   { id: 'club-brighton', name: 'Brighton & Hove Albion', shortName: 'BHA', country: 'England', leagueId: 'league-premier-league', logoUrl: 'https://resources.premierleague.com/premierleague/badges/t36.svg' },
   { id: 'club-chelsea', name: 'Chelsea', shortName: 'CHE', country: 'England', leagueId: 'league-premier-league', logoUrl: 'https://resources.premierleague.com/premierleague/badges/t8.svg' },
-  { id: 'club-coventry', name: 'Coventry City', shortName: 'COV', country: 'England', leagueId: 'league-premier-league', logoUrl: 'https://resources.premierleague.com/premierleague/badges/t83.svg' },
+  { id: 'club-coventry', name: 'Coventry City', shortName: 'COV', country: 'England', leagueId: 'league-premier-league', logoUrl: 'https://crests.football-data.org/1076.png' },
   { id: 'club-crystal-palace', name: 'Crystal Palace', shortName: 'CRY', country: 'England', leagueId: 'league-premier-league', logoUrl: 'https://resources.premierleague.com/premierleague/badges/t31.svg' },
   { id: 'club-everton', name: 'Everton', shortName: 'EVE', country: 'England', leagueId: 'league-premier-league', logoUrl: 'https://resources.premierleague.com/premierleague/badges/t11.svg' },
   { id: 'club-fulham', name: 'Fulham', shortName: 'FUL', country: 'England', leagueId: 'league-premier-league', logoUrl: 'https://resources.premierleague.com/premierleague/badges/t54.svg' },
@@ -97,88 +97,88 @@ export const SEED_CLUBS: SeedClub[] = [
   { id: 'club-tottenham', name: 'Tottenham Hotspur', shortName: 'TOT', country: 'England', leagueId: 'league-premier-league', logoUrl: 'https://resources.premierleague.com/premierleague/badges/t6.svg' },
 
   // --- LA LIGA (20 CLUBS - 2026/27) ---
-  { id: 'club-alaves', name: 'Deportivo Alavés', shortName: 'ALA', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/alaves.svg' },
-  { id: 'club-athletic-club', name: 'Athletic Club', shortName: 'ATH', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/athletic-club.svg' },
-  { id: 'club-atletico-madrid', name: 'Atlético de Madrid', shortName: 'ATM', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/atletico-madrid.svg' },
-  { id: 'club-barcelona', name: 'FC Barcelona', shortName: 'BAR', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/barcelona.svg' },
-  { id: 'club-celta-vigo', name: 'RC Celta', shortName: 'CEL', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/celta.svg' },
-  { id: 'club-deportivo-la-coruna', name: 'Deportivo La Coruña', shortName: 'DEP', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/deportivo-la-coruna.svg' },
-  { id: 'club-getafe', name: 'Getafe CF', shortName: 'GET', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/getafe.svg' },
-  { id: 'club-girona', name: 'Girona FC', shortName: 'GIR', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/girona.svg' },
-  { id: 'club-las-palmas', name: 'UD Las Palmas', shortName: 'LPA', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/las-palmas.svg' },
-  { id: 'club-malaga', name: 'Málaga CF', shortName: 'MCF', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/malaga.svg' },
-  { id: 'club-mallorca', name: 'RCD Mallorca', shortName: 'MLL', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/mallorca.svg' },
-  { id: 'club-osasuna', name: 'CA Osasuna', shortName: 'OSA', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/osasuna.svg' },
-  { id: 'club-racing-santander', name: 'Racing Santander', shortName: 'RAC', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/racing-santander.svg' },
-  { id: 'club-rayo-vallecano', name: 'Rayo Vallecano', shortName: 'RAY', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/rayo-vallecano.svg' },
-  { id: 'club-real-betis', name: 'Real Betis', shortName: 'BET', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/real-betis.svg' },
-  { id: 'club-real-madrid', name: 'Real Madrid', shortName: 'RMA', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/real-madrid.svg' },
-  { id: 'club-real-sociedad', name: 'Real Sociedad', shortName: 'RSO', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/real-sociedad.svg' },
-  { id: 'club-sevilla', name: 'Sevilla FC', shortName: 'SEV', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/sevilla.svg' },
-  { id: 'club-valencia', name: 'Valencia CF', shortName: 'VAL', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/valencia.svg' },
-  { id: 'club-villarreal', name: 'Villarreal CF', shortName: 'VIL', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/villarreal.svg' },
+  { id: 'club-alaves', name: 'Deportivo Alavés', shortName: 'ALA', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://crests.football-data.org/263.png' },
+  { id: 'club-athletic-club', name: 'Athletic Club', shortName: 'ATH', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://crests.football-data.org/77.png' },
+  { id: 'club-atletico-madrid', name: 'Atlético de Madrid', shortName: 'ATM', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://crests.football-data.org/78.png' },
+  { id: 'club-barcelona', name: 'FC Barcelona', shortName: 'BAR', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://crests.football-data.org/81.png' },
+  { id: 'club-celta-vigo', name: 'RC Celta', shortName: 'CEL', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://crests.football-data.org/558.png' },
+  { id: 'club-deportivo-la-coruna', name: 'Deportivo La Coruña', shortName: 'DEP', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://crests.football-data.org/560.png' },
+  { id: 'club-getafe', name: 'Getafe CF', shortName: 'GET', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://crests.football-data.org/82.png' },
+  { id: 'club-girona', name: 'Girona FC', shortName: 'GIR', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://crests.football-data.org/298.png' },
+  { id: 'club-las-palmas', name: 'UD Las Palmas', shortName: 'LPA', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://crests.football-data.org/275.png' },
+  { id: 'club-malaga', name: 'Málaga CF', shortName: 'MCF', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://crests.football-data.org/84.png' },
+  { id: 'club-mallorca', name: 'RCD Mallorca', shortName: 'MLL', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://crests.football-data.org/89.png' },
+  { id: 'club-osasuna', name: 'CA Osasuna', shortName: 'OSA', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://crests.football-data.org/79.png' },
+  { id: 'club-racing-santander', name: 'Racing Santander', shortName: 'RAC', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://crests.football-data.org/742.png' },
+  { id: 'club-rayo-vallecano', name: 'Rayo Vallecano', shortName: 'RAY', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://crests.football-data.org/87.png' },
+  { id: 'club-real-betis', name: 'Real Betis', shortName: 'BET', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://crests.football-data.org/90.png' },
+  { id: 'club-real-madrid', name: 'Real Madrid', shortName: 'RMA', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://crests.football-data.org/86.png' },
+  { id: 'club-real-sociedad', name: 'Real Sociedad', shortName: 'RSO', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://crests.football-data.org/92.png' },
+  { id: 'club-sevilla', name: 'Sevilla FC', shortName: 'SEV', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://crests.football-data.org/559.png' },
+  { id: 'club-valencia', name: 'Valencia CF', shortName: 'VAL', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://crests.football-data.org/95.png' },
+  { id: 'club-villarreal', name: 'Villarreal CF', shortName: 'VIL', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://crests.football-data.org/94.png' },
 
   // --- SERIE A (20 CLUBS - 2026/27) ---
-  { id: 'club-atalanta', name: 'Atalanta', shortName: 'ATA', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/atalanta.svg' },
-  { id: 'club-bologna', name: 'Bologna FC', shortName: 'BOL', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/bologna.svg' },
-  { id: 'club-cagliari', name: 'Cagliari Calcio', shortName: 'CAG', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/cagliari.svg' },
-  { id: 'club-empoli', name: 'Empoli FC', shortName: 'EMP', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/empoli.svg' },
-  { id: 'club-fiorentina', name: 'ACF Fiorentina', shortName: 'FIO', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/fiorentina.svg' },
-  { id: 'club-frosinone', name: 'Frosinone', shortName: 'FRO', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/frosinone.svg' },
-  { id: 'club-genoa', name: 'Genoa CFC', shortName: 'GEN', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/genoa.svg' },
-  { id: 'club-inter', name: 'Inter Milan', shortName: 'INT', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/inter.svg' },
-  { id: 'club-juventus', name: 'Juventus', shortName: 'JUV', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/juventus.svg' },
-  { id: 'club-lazio', name: 'SS Lazio', shortName: 'LAZ', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/lazio.svg' },
-  { id: 'club-lecce', name: 'US Lecce', shortName: 'LEC', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/lecce.svg' },
-  { id: 'club-milan', name: 'AC Milan', shortName: 'MIL', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/milan.svg' },
-  { id: 'club-monza', name: 'Monza', shortName: 'MON', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/monza.svg' },
-  { id: 'club-napoli', name: 'SSC Napoli', shortName: 'NAP', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/napoli.svg' },
-  { id: 'club-parma', name: 'Parma Calcio', shortName: 'PAR', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/parma.svg' },
-  { id: 'club-roma', name: 'AS Roma', shortName: 'ROM', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/roma.svg' },
-  { id: 'club-torino', name: 'Torino FC', shortName: 'TOR', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/torino.svg' },
-  { id: 'club-udinese', name: 'Udinese Calcio', shortName: 'UDI', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/udinese.svg' },
-  { id: 'club-venezia', name: 'Venezia', shortName: 'VEN', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/venezia.svg' },
-  { id: 'club-verona', name: 'Hellas Verona', shortName: 'VER', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/verona.svg' },
+  { id: 'club-atalanta', name: 'Atalanta', shortName: 'ATA', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://crests.football-data.org/102.png' },
+  { id: 'club-bologna', name: 'Bologna FC', shortName: 'BOL', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://crests.football-data.org/103.png' },
+  { id: 'club-cagliari', name: 'Cagliari Calcio', shortName: 'CAG', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://crests.football-data.org/104.png' },
+  { id: 'club-empoli', name: 'Empoli FC', shortName: 'EMP', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://crests.football-data.org/445.png' },
+  { id: 'club-fiorentina', name: 'ACF Fiorentina', shortName: 'FIO', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://crests.football-data.org/99.png' },
+  { id: 'club-frosinone', name: 'Frosinone', shortName: 'FRO', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://crests.football-data.org/470.png' },
+  { id: 'club-genoa', name: 'Genoa CFC', shortName: 'GEN', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://crests.football-data.org/107.png' },
+  { id: 'club-inter', name: 'Inter Milan', shortName: 'INT', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://crests.football-data.org/108.png' },
+  { id: 'club-juventus', name: 'Juventus', shortName: 'JUV', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://crests.football-data.org/109.png' },
+  { id: 'club-lazio', name: 'SS Lazio', shortName: 'LAZ', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://crests.football-data.org/110.png' },
+  { id: 'club-lecce', name: 'US Lecce', shortName: 'LEC', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://crests.football-data.org/5890.png' },
+  { id: 'club-milan', name: 'AC Milan', shortName: 'MIL', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://crests.football-data.org/98.png' },
+  { id: 'club-monza', name: 'Monza', shortName: 'MON', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://crests.football-data.org/5911.png' },
+  { id: 'club-napoli', name: 'SSC Napoli', shortName: 'NAP', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://crests.football-data.org/113.png' },
+  { id: 'club-parma', name: 'Parma Calcio', shortName: 'PAR', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://crests.football-data.org/112.png' },
+  { id: 'club-roma', name: 'AS Roma', shortName: 'ROM', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://crests.football-data.org/100.png' },
+  { id: 'club-torino', name: 'Torino FC', shortName: 'TOR', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://crests.football-data.org/586.png' },
+  { id: 'club-udinese', name: 'Udinese Calcio', shortName: 'UDI', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://crests.football-data.org/115.png' },
+  { id: 'club-venezia', name: 'Venezia', shortName: 'VEN', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://crests.football-data.org/454.png' },
+  { id: 'club-verona', name: 'Hellas Verona', shortName: 'VER', country: 'Italy', leagueId: 'league-serie-a', logoUrl: 'https://crests.football-data.org/450.png' },
 
   // --- BUNDESLIGA (18 CLUBS - 2026/27) ---
-  { id: 'club-augsburg', name: 'FC Augsburg', shortName: 'FCA', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/augsburg.svg' },
-  { id: 'club-bayern', name: 'FC Bayern München', shortName: 'FCB', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/bayern.svg' },
-  { id: 'club-bochum', name: 'VfL Bochum', shortName: 'BOC', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/bochum.svg' },
-  { id: 'club-dortmund', name: 'Borussia Dortmund', shortName: 'BVB', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/dortmund.svg' },
-  { id: 'club-eintracht-frankfurt', name: 'Eintracht Frankfurt', shortName: 'SGE', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/frankfurt.svg' },
-  { id: 'club-freiburg', name: 'SC Freiburg', shortName: 'SCF', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/freiburg.svg' },
-  { id: 'club-gladbach', name: 'Borussia Mönchengladbach', shortName: 'BMG', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/gladbach.svg' },
-  { id: 'club-heidenheim', name: '1. FC Heidenheim', shortName: 'HDH', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/heidenheim.svg' },
-  { id: 'club-hoffenheim', name: 'TSG Hoffenheim', shortName: 'TSG', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/hoffenheim.svg' },
-  { id: 'club-holstein-kiel', name: 'Holstein Kiel', shortName: 'KSV', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/holstein-kiel.svg' },
-  { id: 'club-leipzig', name: 'RB Leipzig', shortName: 'RBL', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/leipzig.svg' },
-  { id: 'club-leverkusen', name: 'Bayer 04 Leverkusen', shortName: 'B04', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/leverkusen.svg' },
-  { id: 'club-mainz', name: '1. FSV Mainz 05', shortName: 'M05', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/mainz.svg' },
-  { id: 'club-st-pauli', name: 'FC St. Pauli', shortName: 'STP', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/st-pauli.svg' },
-  { id: 'club-stuttgart', name: 'VfB Stuttgart', shortName: 'VFB', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/stuttgart.svg' },
-  { id: 'club-union-berlin', name: '1. FC Union Berlin', shortName: 'FCU', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/union-berlin.svg' },
-  { id: 'club-werder-bremen', name: 'SV Werder Bremen', shortName: 'SVW', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/bremen.svg' },
-  { id: 'club-wolfsburg', name: 'VfL Wolfsburg', shortName: 'WOB', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/wolfsburg.svg' },
+  { id: 'club-augsburg', name: 'FC Augsburg', shortName: 'FCA', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://crests.football-data.org/16.png' },
+  { id: 'club-bayern', name: 'FC Bayern München', shortName: 'FCB', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://crests.football-data.org/5.png' },
+  { id: 'club-bochum', name: 'VfL Bochum', shortName: 'BOC', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://crests.football-data.org/36.png' },
+  { id: 'club-dortmund', name: 'Borussia Dortmund', shortName: 'BVB', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://crests.football-data.org/4.png' },
+  { id: 'club-eintracht-frankfurt', name: 'Eintracht Frankfurt', shortName: 'SGE', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://crests.football-data.org/19.png' },
+  { id: 'club-freiburg', name: 'SC Freiburg', shortName: 'SCF', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://crests.football-data.org/17.png' },
+  { id: 'club-gladbach', name: 'Borussia Mönchengladbach', shortName: 'BMG', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://crests.football-data.org/18.png' },
+  { id: 'club-heidenheim', name: '1. FC Heidenheim', shortName: 'HDH', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://crests.football-data.org/44.png' },
+  { id: 'club-hoffenheim', name: 'TSG Hoffenheim', shortName: 'TSG', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://crests.football-data.org/2.png' },
+  { id: 'club-holstein-kiel', name: 'Holstein Kiel', shortName: 'KSV', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://crests.football-data.org/720.png' },
+  { id: 'club-leipzig', name: 'RB Leipzig', shortName: 'RBL', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://crests.football-data.org/721.png' },
+  { id: 'club-leverkusen', name: 'Bayer 04 Leverkusen', shortName: 'B04', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://crests.football-data.org/3.png' },
+  { id: 'club-mainz', name: '1. FSV Mainz 05', shortName: 'M05', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://crests.football-data.org/15.png' },
+  { id: 'club-st-pauli', name: 'FC St. Pauli', shortName: 'STP', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://crests.football-data.org/37.png' },
+  { id: 'club-stuttgart', name: 'VfB Stuttgart', shortName: 'VFB', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://crests.football-data.org/10.png' },
+  { id: 'club-union-berlin', name: '1. FC Union Berlin', shortName: 'FCU', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://crests.football-data.org/28.png' },
+  { id: 'club-werder-bremen', name: 'SV Werder Bremen', shortName: 'SVW', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://crests.football-data.org/12.png' },
+  { id: 'club-wolfsburg', name: 'VfL Wolfsburg', shortName: 'WOB', country: 'Germany', leagueId: 'league-bundesliga', logoUrl: 'https://crests.football-data.org/11.png' },
 
   // --- LIGUE 1 (18 CLUBS - 2026/27) ---
-  { id: 'club-auxerre', name: 'AJ Auxerre', shortName: 'AJA', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/auxerre.svg' },
-  { id: 'club-brest', name: 'Stade Brestois 29', shortName: 'SB29', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/brest.svg' },
-  { id: 'club-le-mans', name: 'Le Mans FC', shortName: 'LMFC', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/le-mans.svg' },
-  { id: 'club-lens', name: 'RC Lens', shortName: 'RCL', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/lens.svg' },
-  { id: 'club-lille', name: 'LOSC Lille', shortName: 'LOSC', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/lille.svg' },
-  { id: 'club-lyon', name: 'Olympique Lyonnais', shortName: 'OL', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/lyon.svg' },
-  { id: 'club-marseille', name: 'Olympique de Marseille', shortName: 'OM', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/marseille.svg' },
-  { id: 'club-monaco', name: 'AS Monaco', shortName: 'ASM', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/monaco.svg' },
-  { id: 'club-montpellier', name: 'Montpellier HSC', shortName: 'MHSC', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/montpellier.svg' },
-  { id: 'club-nantes', name: 'FC Nantes', shortName: 'FCN', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/nantes.svg' },
-  { id: 'club-nice', name: 'OGC Nice', shortName: 'OGCN', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/nice.svg' },
-  { id: 'club-paris-fc', name: 'Paris FC', shortName: 'PFC', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/paris-fc.svg' },
-  { id: 'club-psg', name: 'Paris Saint-Germain', shortName: 'PSG', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/psg.svg' },
-  { id: 'club-reims', name: 'Stade de Reims', shortName: 'SDR', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/reims.svg' },
-  { id: 'club-rennes', name: 'Stade Rennais FC', shortName: 'SRFC', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/rennes.svg' },
-  { id: 'club-strasbourg', name: 'RC Strasbourg Alsace', shortName: 'RCSA', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/strasbourg.svg' },
-  { id: 'club-toulouse', name: 'Toulouse FC', shortName: 'TFC', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/toulouse.svg' },
-  { id: 'club-troyes', name: 'ESTAC Troyes', shortName: 'TRO', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://cdn.jsdelivr.net/gh/footbally/assets/logos/teams/troyes.svg' },
+  { id: 'club-auxerre', name: 'AJ Auxerre', shortName: 'AJA', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://crests.football-data.org/519.png' },
+  { id: 'club-brest', name: 'Stade Brestois 29', shortName: 'SB29', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://crests.football-data.org/512.png' },
+  { id: 'club-le-mans', name: 'Le Mans FC', shortName: 'LMFC', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://crests.football-data.org/540.png' },
+  { id: 'club-lens', name: 'RC Lens', shortName: 'RCL', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://crests.football-data.org/546.png' },
+  { id: 'club-lille', name: 'LOSC Lille', shortName: 'LOSC', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://crests.football-data.org/521.png' },
+  { id: 'club-lyon', name: 'Olympique Lyonnais', shortName: 'OL', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://crests.football-data.org/523.png' },
+  { id: 'club-marseille', name: 'Olympique de Marseille', shortName: 'OM', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://crests.football-data.org/516.png' },
+  { id: 'club-monaco', name: 'AS Monaco', shortName: 'ASM', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://crests.football-data.org/548.png' },
+  { id: 'club-montpellier', name: 'Montpellier HSC', shortName: 'MHSC', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://crests.football-data.org/518.png' },
+  { id: 'club-nantes', name: 'FC Nantes', shortName: 'FCN', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://crests.football-data.org/543.png' },
+  { id: 'club-nice', name: 'OGC Nice', shortName: 'OGCN', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://crests.football-data.org/522.png' },
+  { id: 'club-paris-fc', name: 'Paris FC', shortName: 'PFC', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://crests.football-data.org/533.png' },
+  { id: 'club-psg', name: 'Paris Saint-Germain', shortName: 'PSG', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://crests.football-data.org/524.png' },
+  { id: 'club-reims', name: 'Stade de Reims', shortName: 'SDR', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://crests.football-data.org/547.png' },
+  { id: 'club-rennes', name: 'Stade Rennais FC', shortName: 'SRFC', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://crests.football-data.org/529.png' },
+  { id: 'club-strasbourg', name: 'RC Strasbourg Alsace', shortName: 'RCSA', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://crests.football-data.org/576.png' },
+  { id: 'club-toulouse', name: 'Toulouse FC', shortName: 'TFC', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://crests.football-data.org/511.png' },
+  { id: 'club-troyes', name: 'ESTAC Troyes', shortName: 'TRO', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://crests.football-data.org/531.png' },
 ];
 
 export const SEED_COMPETITIONS: SeedCompetition[] = [
@@ -318,15 +318,6 @@ export const SEED_COMPETITIONS: SeedCompetition[] = [
     seasonId: 'season-2026-27',
     leagueId: 'league-bundesliga',
     name: 'DFL-Supercup',
-    type: 'SUPER_CUP',
-    scheduleMode: 'GENERATED_SCHEDULE',
-    formatConfig: { teams: 2, singleLeg: true },
-  },
-  {
-    id: 'comp-trophee-des-champions-2026',
-    seasonId: 'season-2026-27',
-    leagueId: 'league-ligue-1',
-    name: 'Trophée des Champions',
     type: 'SUPER_CUP',
     scheduleMode: 'GENERATED_SCHEDULE',
     formatConfig: { teams: 2, singleLeg: true },
@@ -547,6 +538,22 @@ export function repairSeason202627Roster(): {
     const now = new Date().toISOString();
     const activeClubIds = new Set(SEED_CLUBS.map((c) => c.id));
 
+    // 0. Ensure domestic leagues have official metadata and working crests
+    for (const league of SEED_LEAGUES) {
+      const existing = queryGet('SELECT id FROM leagues WHERE id = ?', [league.id]);
+      if (!existing) {
+        queryRun(
+          'INSERT INTO leagues (id, name, country, tier, logo_url, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+          [league.id, league.name, league.country, league.tier, league.logoUrl, now]
+        );
+      } else {
+        queryRun(
+          'UPDATE leagues SET name = ?, country = ?, tier = ?, logo_url = ? WHERE id = ?',
+          [league.name, league.country, league.tier, league.logoUrl, league.id]
+        );
+      }
+    }
+
     // 1. Ensure all 2026/27 clubs exist in global clubs table and are active = 1
     let activatedClubs = 0;
     for (const club of SEED_CLUBS) {
@@ -641,6 +648,19 @@ export function repairSeason202627Roster(): {
       for (const compId of compsToReset) {
         queryRun('DELETE FROM result_submissions WHERE fixture_id IN (SELECT id FROM fixtures WHERE competition_id = ?)', [compId]);
         queryRun('DELETE FROM fixtures WHERE competition_id = ?', [compId]);
+      }
+    }
+
+    // 6. Explicitly remove obsolete/unsupported competitions (e.g., Trophee des Champions)
+    const validCompIds = new Set(SEED_COMPETITIONS.map((c) => c.id));
+    const allDbComps = queryAll<{ id: string }>('SELECT id FROM competitions WHERE season_id = ?', [seasonId]);
+    for (const dbComp of allDbComps) {
+      if (!validCompIds.has(dbComp.id)) {
+        console.log(` [REPAIR] Purging obsolete competition: ${dbComp.id}`);
+        queryRun('DELETE FROM result_submissions WHERE fixture_id IN (SELECT id FROM fixtures WHERE competition_id = ?)', [dbComp.id]);
+        queryRun('DELETE FROM fixtures WHERE competition_id = ?', [dbComp.id]);
+        queryRun('DELETE FROM competition_participants WHERE competition_id = ?', [dbComp.id]);
+        queryRun('DELETE FROM competitions WHERE id = ?', [dbComp.id]);
       }
     }
 
