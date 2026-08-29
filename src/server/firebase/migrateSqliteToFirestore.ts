@@ -58,14 +58,18 @@ export async function migrateSqliteToFirestore(): Promise<MigrationReport> {
     const batch = db.batch();
     for (const l of leagues) {
       const ref = db.collection(COLLECTIONS.LEAGUES).doc(l.id);
-      batch.set(ref, {
-        id: l.id,
-        name: l.name,
-        country: l.country,
-        tier: l.tier,
-        logo: l.logo_url,
-        createdAt: l.created_at || new Date().toISOString(),
-      });
+      batch.set(
+        ref,
+        {
+          id: l.id,
+          name: l.name,
+          country: l.country,
+          tier: l.tier,
+          logo: l.logo_url,
+          createdAt: l.created_at || new Date().toISOString(),
+        },
+        { merge: true }
+      );
     }
     await batch.commit();
   } catch (err: any) {
@@ -81,16 +85,20 @@ export async function migrateSqliteToFirestore(): Promise<MigrationReport> {
       const batch = db.batch();
       for (const c of chunk) {
         const ref = db.collection(COLLECTIONS.CLUBS).doc(c.id);
-        batch.set(ref, {
-          id: c.id,
-          name: c.name,
-          shortName: c.short_name,
-          leagueId: c.league_id,
-          country: c.country,
-          logo: c.logo_url,
-          isActive: c.active !== undefined ? Boolean(c.active) : (c.is_active !== undefined ? Boolean(c.is_active) : true),
-          createdAt: c.created_at || new Date().toISOString(),
-        });
+        batch.set(
+          ref,
+          {
+            id: c.id,
+            name: c.name,
+            shortName: c.short_name,
+            leagueId: c.league_id,
+            country: c.country,
+            logo: c.logo_url,
+            isActive: c.active !== undefined ? Boolean(c.active) : (c.is_active !== undefined ? Boolean(c.is_active) : true),
+            createdAt: c.created_at || new Date().toISOString(),
+          },
+          { merge: true }
+        );
       }
       await batch.commit();
     }

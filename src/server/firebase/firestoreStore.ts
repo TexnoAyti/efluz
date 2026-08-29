@@ -1,6 +1,7 @@
 import { Firestore, FieldValue } from 'firebase-admin/firestore';
 import { getFirestoreDb } from './admin';
 import { queryAll, queryGet, queryRun, dbTransaction } from '../db';
+import { SEED_CLUBS, SEED_LEAGUES } from '../db/seed';
 import {
   COLLECTIONS,
   FirestoreClubDoc,
@@ -2639,4 +2640,78 @@ export async function markNotificationsReadFirestore(userId: string): Promise<vo
     queryRun(`UPDATE notifications SET is_read = 1 WHERE user_id = ?`, [userId]);
   }
 }
+
+/**
+ * Synchronizes canonical 2026/27 club crest URLs and league logos to Firestore.
+ * Performs a safe non-destructive merge to preserve ownership, occupancies, and memberships.
+ */
+export async function syncFirestoreClubCrests(): Promise<{
+  updatedClubs: number;
+  updatedLeagues: number;
+  totalClubs: number;
+}> {
+  try {
+    const db = getFirestoreDb();
+    let updatedClubs = 0;
+    let updatedLeagues = 0;
+
+    // 1. Sync Leagues in batch
+    const leagueBatch = db.batch();
+    for (const league of SEED_LEAGUES) {
+      const ref = db.collection(COLLECTIONS.LEAGUES).doc(league.id);
+      leagueBatch.set(
+        ref,
+        {
+          id: league.id,
+          name: league.name,
+          country: league.country,
+          tier: league.tier,
+          logo: league.logoUrl,
+          logoUrl: league.logoUrl,
+        },
+        { merge: true }
+      );
+      updatedLeagues++;
+    }
+    await leagueBatch.commit();
+
+    // 2. Sync 96 Clubs in batches of 400 with safe merge
+    const chunkSize = 400;
+    for (let i = 0; i < SEED_CLUBS.length; i += chunkSize) {
+      const chunk = SEED_CLUBS.slice(i, i + chunkSize);
+      const batch = db.batch();
+      for (const club of chunk) {
+        const ref = db.collection(COLLECTIONS.CLUBS).doc(club.id);
+        batch.set(
+          ref,
+          {
+            id: club.id,
+            name: club.name,
+            shortName: club.shortName,
+            country: club.country,
+            leagueId: club.leagueId,
+            logo: club.logoUrl,
+            logoUrl: club.logoUrl,
+            isActive: true,
+          },
+          { merge: true }
+        );
+        updatedClubs++;
+      }
+      await batch.commit();
+    }
+
+    // 3. Invalidate server in-memory TTL cache
+    invalidateFirestoreCache();
+
+    console.log(
+      `[FIRESTORE SYNC] Synchronized ${updatedClubs} club crests and ${updatedLeagues} league logos to Firestore.`
+    );
+    return { updatedClubs, updatedLeagues, totalClubs: SEED_CLUBS.length };
+  } catch (err: any) {
+    console.error('[FIRESTORE SYNC ERROR] Failed to sync club crests to Firestore:', err.message);
+    throw err;
+  }
+}
+
 
