@@ -67,6 +67,16 @@ function generateFallbackSvgBadge(name: string, shortName?: string): string {
   </svg>`;
 }
 
+// Helper to wrap raster image (PNG, WebP, JPG) into an SVG container with embedded base64 data URI
+function wrapRasterImageInSvg(buffer: Buffer, mimeType: string): Buffer {
+  const base64Data = buffer.toString('base64');
+  const cleanMime = mimeType.split(';')[0].trim() || 'image/png';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" preserveAspectRatio="xMidYMid meet">
+  <image href="data:${cleanMime};base64,${base64Data}" width="256" height="256" preserveAspectRatio="xMidYMid meet"/>
+</svg>`;
+  return Buffer.from(svg, 'utf-8');
+}
+
 async function fetchAndServeImage(imageUrl: string, res: Response, fallbackName = 'FC', fallbackShortName = 'FC') {
   const now = Date.now();
   const cached = imageCache.get(imageUrl);
@@ -91,21 +101,33 @@ async function fetchAndServeImage(imageUrl: string, res: Response, fallbackName 
     clearTimeout(timeoutId);
 
     if (response.ok) {
-      const contentType = response.headers.get('content-type') || 'image/png';
+      const rawContentType = response.headers.get('content-type') || 'image/png';
       const arrayBuffer = await response.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
+      const rawBuffer = Buffer.from(arrayBuffer);
+
+      let finalBuffer: Buffer;
+      let finalContentType: string;
+
+      const isSvg = rawContentType.includes('svg') || imageUrl.toLowerCase().endsWith('.svg');
+      if (isSvg) {
+        finalBuffer = rawBuffer;
+        finalContentType = 'image/svg+xml; charset=utf-8';
+      } else {
+        finalBuffer = wrapRasterImageInSvg(rawBuffer, rawContentType);
+        finalContentType = 'image/svg+xml; charset=utf-8';
+      }
 
       // Cache for 7 days
       imageCache.set(imageUrl, {
-        buffer,
-        contentType,
+        buffer: finalBuffer,
+        contentType: finalContentType,
         expiry: now + 7 * 24 * 60 * 60 * 1000,
       });
 
-      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Type', finalContentType);
       res.setHeader('Cache-Control', 'public, max-age=604800, s-maxage=2592000, immutable');
       res.setHeader('Access-Control-Allow-Origin', '*');
-      res.send(buffer);
+      res.send(finalBuffer);
       return;
     }
   } catch (e) {
