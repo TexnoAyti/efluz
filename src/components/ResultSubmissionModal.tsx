@@ -3,6 +3,7 @@ import { Fixture } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
 import confetti from 'canvas-confetti';
+import { ClubCrest } from './ClubCrest';
 import {
   X,
   CheckCircle2,
@@ -120,13 +121,13 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
               {/* Home Team */}
               <div className="col-span-2 flex flex-col items-center">
                 <div className="w-14 h-14 rounded-2xl bg-slate-950/80 p-2 border border-white/[0.08] flex items-center justify-center mb-2 shadow-inner">
-                  <img
-                    src={fixture.homeClub?.logoUrl}
-                    alt={fixture.homeClub?.name}
-                    className="w-10 h-10 object-contain"
-                    onError={(e) => {
-                      (e.target as HTMLElement).style.display = 'none';
-                    }}
+                  <ClubCrest
+                    clubId={fixture.homeClub?.id}
+                    logoUrl={fixture.homeClub?.logoUrl}
+                    name={fixture.homeClub?.name}
+                    shortName={fixture.homeClub?.shortName}
+                    size="lg"
+                    className="w-10 h-10"
                   />
                 </div>
                 <div className="font-black text-xs sm:text-sm text-slate-100 truncate max-w-full">{fixture.homeClub?.name}</div>
@@ -145,13 +146,13 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
               {/* Away Team */}
               <div className="col-span-2 flex flex-col items-center">
                 <div className="w-14 h-14 rounded-2xl bg-slate-950/80 p-2 border border-white/[0.08] flex items-center justify-center mb-2 shadow-inner">
-                  <img
-                    src={fixture.awayClub?.logoUrl}
-                    alt={fixture.awayClub?.name}
-                    className="w-10 h-10 object-contain"
-                    onError={(e) => {
-                      (e.target as HTMLElement).style.display = 'none';
-                    }}
+                  <ClubCrest
+                    clubId={fixture.awayClub?.id}
+                    logoUrl={fixture.awayClub?.logoUrl}
+                    name={fixture.awayClub?.name}
+                    shortName={fixture.awayClub?.shortName}
+                    size="lg"
+                    className="w-10 h-10"
                   />
                 </div>
                 <div className="font-black text-xs sm:text-sm text-slate-100 truncate max-w-full">{fixture.awayClub?.name}</div>

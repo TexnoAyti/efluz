@@ -11,6 +11,92 @@ import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
 
 export const clubsRouter = Router();
 
+// In-memory image cache for fast asset serving
+interface CachedImage {
+  buffer: Buffer;
+  contentType: string;
+  expiry: number;
+}
+const imageCache = new Map<string, CachedImage>();
+
+// Helper to generate dynamic fallback SVG badge
+function generateFallbackSvgBadge(name: string, shortName?: string): string {
+  const text = (shortName || name.slice(0, 3)).toUpperCase();
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+    <defs>
+      <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#1e293b" />
+        <stop offset="100%" stop-color="#0f172a" />
+      </linearGradient>
+    </defs>
+    <path d="M50 5 L85 20 L85 55 C85 75 50 95 50 95 C50 95 15 75 15 55 L15 20 Z" fill="url(#bgGrad)" stroke="#38bdf8" stroke-width="3"/>
+    <text x="50" y="58" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="24" font-weight="900" fill="#f8fafc" text-anchor="middle" letter-spacing="1">${text}</text>
+  </svg>`;
+}
+
+async function fetchAndServeImage(imageUrl: string, res: Response, fallbackName = 'FC', fallbackShortName = 'FC') {
+  const now = Date.now();
+  const cached = imageCache.get(imageUrl);
+  if (cached && cached.expiry > now) {
+    res.setHeader('Content-Type', cached.contentType);
+    res.setHeader('Cache-Control', 'public, max-age=604800, s-maxage=2592000, immutable');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.send(cached.buffer);
+    return;
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const response = await fetch(imageUrl, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+      },
+    });
+    clearTimeout(timeoutId);
+
+    if (response.ok) {
+      const contentType = response.headers.get('content-type') || 'image/png';
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      // Cache for 7 days
+      imageCache.set(imageUrl, {
+        buffer,
+        contentType,
+        expiry: now + 7 * 24 * 60 * 60 * 1000,
+      });
+
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'public, max-age=604800, s-maxage=2592000, immutable');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.send(buffer);
+      return;
+    }
+  } catch (e) {
+    // Upstream fetch failed, proceed to fallback SVG
+  }
+
+  // Render SVG fallback
+  const svg = generateFallbackSvgBadge(fallbackName, fallbackShortName);
+  res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.send(Buffer.from(svg, 'utf-8'));
+}
+
+// 0. Generic Crest Proxy endpoint (for any whitelisted club crest URL)
+clubsRouter.get('/crest-proxy', async (req: Request, res: Response) => {
+  const url = req.query.url as string;
+  if (!url || !url.startsWith('http')) {
+    res.status(400).json({ error: 'Valid image URL is required' });
+    return;
+  }
+  await fetchAndServeImage(url, res);
+});
+
 // 1. Available clubs endpoint (must be BEFORE /:id to prevent matching 'available' as an ID)
 clubsRouter.get('/available', async (req: Request, res: Response) => {
   const seasonId = (req.query.seasonId as string) || 'season-2026-27';
@@ -23,7 +109,32 @@ clubsRouter.get('/available', async (req: Request, res: Response) => {
   }
 });
 
-// 2. Club by ID endpoint
+// 2. Club Crest Asset Endpoint (serves reliable proxy/cache with dynamic SVG fallback)
+clubsRouter.get('/:id/crest', async (req: Request, res: Response) => {
+  const clubId = req.params.id;
+  const seasonId = (req.query.seasonId as string) || 'season-2026-27';
+  try {
+    const club = await getClubByIdFirestore(clubId, seasonId);
+    if (!club || !club.logoUrl) {
+      const svg = generateFallbackSvgBadge(club?.name || clubId, club?.shortName);
+      res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.send(Buffer.from(svg, 'utf-8'));
+      return;
+    }
+
+    await fetchAndServeImage(club.logoUrl, res, club.name, club.shortName);
+  } catch (err) {
+    const svg = generateFallbackSvgBadge(clubId);
+    res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.send(Buffer.from(svg, 'utf-8'));
+  }
+});
+
+// 3. Club by ID endpoint
 clubsRouter.get('/:id', async (req: Request, res: Response) => {
   const seasonId = (req.query.seasonId as string) || 'season-2026-27';
   const currentUserId = req.user?.id;

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Shield, Bell, UserCircle, ChevronDown, CheckCircle2, Trophy, Sparkles, Terminal } from 'lucide-react';
+import { ClubCrest } from './ClubCrest';
 
 interface HeaderProps {
   onOpenNotifications: () => void;
@@ -143,13 +144,13 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNotifications, onOpenDiagn
           {/* User Club Badge (Desktop/Tablet only to keep mobile header minimal) */}
           {currentClub && (
             <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 glass-card border-white/[0.08] max-w-[150px] min-h-[34px]">
-              <img
-                src={currentClub.logoUrl}
-                alt={currentClub.name}
-                className="w-4 h-4 object-contain shrink-0"
-                onError={(e) => {
-                  (e.target as HTMLElement).style.display = 'none';
-                }}
+              <ClubCrest
+                clubId={currentClub.id}
+                logoUrl={currentClub.logoUrl}
+                name={currentClub.name}
+                shortName={currentClub.shortName}
+                size="xs"
+                className="w-4 h-4 shrink-0"
               />
               <span className="text-xs font-bold text-slate-200 truncate">
                 {currentClub.shortName || currentClub.name}

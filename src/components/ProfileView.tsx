@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n, Language } from '../i18n';
+import { ClubCrest } from './ClubCrest';
 import {
   User,
   Shield,
@@ -66,13 +67,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigateTab }) => {
                 onClick={() => onNavigateTab('my-club')}
                 className="mt-4 inline-flex items-center gap-3 p-2.5 px-4 glass-card cursor-pointer transition-all shadow-md group"
               >
-                <img
-                  src={currentClub.logoUrl}
-                  alt={currentClub.name}
-                  className="w-6 h-6 object-contain"
-                  onError={(e) => {
-                    (e.target as HTMLElement).style.display = 'none';
-                  }}
+                <ClubCrest
+                  clubId={currentClub.id}
+                  logoUrl={currentClub.logoUrl}
+                  name={currentClub.name}
+                  shortName={currentClub.shortName}
+                  size="sm"
+                  className="w-6 h-6"
                 />
                 <div className="text-left">
                   <div className="text-xs font-bold text-white group-hover:text-emerald-400 transition-colors">

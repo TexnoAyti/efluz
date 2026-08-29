@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n';
 import { api } from '../lib/api';
 import { Competition, StandingsRow } from '../types';
+import { ClubCrest } from './ClubCrest';
 import {
   Trophy,
   Shield,
@@ -237,13 +238,12 @@ export const StandingsView: React.FC = () => {
                       <td className="py-2 px-2">
                         <div className="flex items-center gap-2">
                           <div className="w-5 h-5 rounded bg-slate-950/80 p-0.5 border border-white/[0.06] flex items-center justify-center shrink-0">
-                            <img
-                              src={row.clubLogoUrl}
-                              alt={row.clubName}
-                              className="w-4 h-4 object-contain"
-                              onError={(e) => {
-                                (e.target as HTMLElement).style.display = 'none';
-                              }}
+                            <ClubCrest
+                              clubId={row.clubId}
+                              logoUrl={row.clubLogoUrl}
+                              name={row.clubName}
+                              size="xs"
+                              className="w-4 h-4"
                             />
                           </div>
                           <div className="min-w-0 flex-1">

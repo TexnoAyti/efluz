@@ -4,6 +4,7 @@ import { useI18n } from '../i18n';
 import { api } from '../lib/api';
 import { Fixture, Club } from '../types';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
+import { ClubCrest } from './ClubCrest';
 import {
   Shield,
   Trophy,
@@ -185,13 +186,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             {/* Club identity */}
             <div className="flex items-center gap-3.5">
               <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl bg-slate-950/90 p-2 border border-white/[0.08] flex items-center justify-center shrink-0">
-                <img
-                  src={currentClub.logoUrl}
-                  alt={currentClub.name}
-                  className="w-full h-full object-contain"
-                  onError={(e) => {
-                    (e.target as HTMLElement).style.display = 'none';
-                  }}
+                <ClubCrest
+                  clubId={currentClub.id}
+                  logoUrl={currentClub.logoUrl}
+                  name={currentClub.name}
+                  shortName={currentClub.shortName}
+                  size="xl"
+                  className="w-full h-full"
                 />
               </div>
 
@@ -269,13 +270,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 {/* Home */}
                 <div className="flex-1 min-w-0 flex flex-col items-center text-center">
                   <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-slate-950/80 p-1.5 border border-white/[0.08] flex items-center justify-center mb-1 shadow-inner shrink-0">
-                    <img
-                      src={nextMatch.homeClub?.logoUrl}
-                      alt={nextMatch.homeClub?.name}
-                      className="w-7 h-7 object-contain"
-                      onError={(e) => {
-                        (e.target as HTMLElement).style.display = 'none';
-                      }}
+                    <ClubCrest
+                      clubId={nextMatch.homeClub?.id}
+                      logoUrl={nextMatch.homeClub?.logoUrl}
+                      name={nextMatch.homeClub?.name}
+                      shortName={nextMatch.homeClub?.shortName}
+                      size="md"
+                      className="w-7 h-7"
                     />
                   </div>
                   <span className="font-bold text-xs text-slate-100 truncate w-full">
@@ -296,13 +297,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 {/* Away */}
                 <div className="flex-1 min-w-0 flex flex-col items-center text-center">
                   <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-slate-950/80 p-1.5 border border-white/[0.08] flex items-center justify-center mb-1 shadow-inner shrink-0">
-                    <img
-                      src={nextMatch.awayClub?.logoUrl}
-                      alt={nextMatch.awayClub?.name}
-                      className="w-7 h-7 object-contain"
-                      onError={(e) => {
-                        (e.target as HTMLElement).style.display = 'none';
-                      }}
+                    <ClubCrest
+                      clubId={nextMatch.awayClub?.id}
+                      logoUrl={nextMatch.awayClub?.logoUrl}
+                      name={nextMatch.awayClub?.name}
+                      shortName={nextMatch.awayClub?.shortName}
+                      size="md"
+                      className="w-7 h-7"
                     />
                   </div>
                   <span className="font-bold text-xs text-slate-100 truncate w-full">
@@ -352,13 +353,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div className="space-y-3 min-w-0">
               <div className="flex items-center justify-between p-2.5 glass-card border-white/[0.08] gap-2">
                 <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <img
-                    src={latestFinishedMatch.homeClub?.logoUrl}
-                    alt={latestFinishedMatch.homeClub?.name}
-                    className="w-5 h-5 object-contain shrink-0"
-                    onError={(e) => {
-                      (e.target as HTMLElement).style.display = 'none';
-                    }}
+                  <ClubCrest
+                    clubId={latestFinishedMatch.homeClub?.id}
+                    logoUrl={latestFinishedMatch.homeClub?.logoUrl}
+                    name={latestFinishedMatch.homeClub?.name}
+                    shortName={latestFinishedMatch.homeClub?.shortName}
+                    size="xs"
+                    className="w-5 h-5"
                   />
                   <span className="font-bold text-xs text-white truncate">
                     {latestFinishedMatch.homeClub?.shortName || latestFinishedMatch.homeClub?.name}
@@ -373,13 +374,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <span className="font-bold text-xs text-white truncate text-right">
                     {latestFinishedMatch.awayClub?.shortName || latestFinishedMatch.awayClub?.name}
                   </span>
-                  <img
-                    src={latestFinishedMatch.awayClub?.logoUrl}
-                    alt={latestFinishedMatch.awayClub?.name}
-                    className="w-5 h-5 object-contain shrink-0"
-                    onError={(e) => {
-                      (e.target as HTMLElement).style.display = 'none';
-                    }}
+                  <ClubCrest
+                    clubId={latestFinishedMatch.awayClub?.id}
+                    logoUrl={latestFinishedMatch.awayClub?.logoUrl}
+                    name={latestFinishedMatch.awayClub?.name}
+                    shortName={latestFinishedMatch.awayClub?.shortName}
+                    size="xs"
+                    className="w-5 h-5"
                   />
                 </div>
               </div>

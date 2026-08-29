@@ -4,6 +4,7 @@ import { useI18n } from '../i18n';
 import { api } from '../lib/api';
 import { Competition, Fixture } from '../types';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
+import { ClubCrest } from './ClubCrest';
 import {
   Award,
   Trophy,
@@ -17,7 +18,11 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 
-export const CupBracketsView: React.FC = () => {
+interface CupBracketsViewProps {
+  onNavigateTab?: (tab: any) => void;
+}
+
+export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab }) => {
   const { user, currentClub, activeSeasonId } = useAuth();
   const { t } = useI18n();
 
@@ -115,6 +120,32 @@ export const CupBracketsView: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300 pb-20">
+      {/* Category Quick Switcher Hub */}
+      {onNavigateTab && (
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+          <button
+            onClick={() => onNavigateTab('leagues')}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold glass-card text-slate-300 hover:text-white min-h-[36px]"
+          >
+            <Shield className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Domestic Leagues</span>
+          </button>
+          <button
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-black bg-amber-500 text-slate-950 shadow-md min-h-[36px]"
+          >
+            <Trophy className="w-3.5 h-3.5" />
+            <span>National Cups</span>
+          </button>
+          <button
+            onClick={() => onNavigateTab('champions-league')}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold glass-card text-slate-300 hover:text-white min-h-[36px]"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+            <span>Champions League</span>
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 glass-panel p-4 sm:p-5 shadow-xl">
         <div>
@@ -208,13 +239,13 @@ export const CupBracketsView: React.FC = () => {
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2 min-w-0">
                             <div className="w-6 h-6 rounded-lg bg-slate-950/80 p-1 border border-white/[0.08] flex items-center justify-center shrink-0">
-                              <img
-                                src={homeLogo}
-                                alt={homeName}
-                                className="w-full h-full object-contain"
-                                onError={(e) => {
-                                  (e.target as HTMLElement).style.display = 'none';
-                                }}
+                              <ClubCrest
+                                clubId={fixture.homeClub?.id}
+                                logoUrl={homeLogo}
+                                name={homeName}
+                                shortName={fixture.homeClub?.shortName}
+                                size="xs"
+                                className="w-full h-full"
                               />
                             </div>
                             <span className={`text-xs font-bold truncate ${isHome ? 'text-amber-400' : 'text-slate-200'}`}>
@@ -233,13 +264,13 @@ export const CupBracketsView: React.FC = () => {
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2 min-w-0">
                             <div className="w-6 h-6 rounded-lg bg-slate-950/80 p-1 border border-white/[0.08] flex items-center justify-center shrink-0">
-                              <img
-                                src={awayLogo}
-                                alt={awayName}
-                                className="w-full h-full object-contain"
-                                onError={(e) => {
-                                  (e.target as HTMLElement).style.display = 'none';
-                                }}
+                              <ClubCrest
+                                clubId={fixture.awayClub?.id}
+                                logoUrl={awayLogo}
+                                name={awayName}
+                                shortName={fixture.awayClub?.shortName}
+                                size="xs"
+                                className="w-full h-full"
                               />
                             </div>
                             <span className={`text-xs font-bold truncate ${isAway ? 'text-amber-400' : 'text-slate-200'}`}>

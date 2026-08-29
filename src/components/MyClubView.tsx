@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n';
 import { api } from '../lib/api';
 import { Fixture, Competition } from '../types';
+import { ClubCrest } from './ClubCrest';
 import {
   Shield,
   Trophy,
@@ -109,13 +110,13 @@ export const MyClubView: React.FC<MyClubViewProps> = ({
         <div className="flex flex-col md:flex-row items-center md:items-start justify-between gap-6 relative z-10 text-center md:text-left">
           <div className="flex flex-col md:flex-row items-center gap-5">
             <div className="w-24 h-24 rounded-3xl bg-slate-950/80 p-3 border border-white/[0.08] flex items-center justify-center shadow-xl shrink-0">
-              <img
-                src={currentClub.logoUrl}
-                alt={currentClub.name}
-                className="w-full h-full object-contain drop-shadow-md"
-                onError={(e) => {
-                  (e.target as HTMLElement).style.display = 'none';
-                }}
+              <ClubCrest
+                clubId={currentClub.id}
+                logoUrl={currentClub.logoUrl}
+                name={currentClub.name}
+                shortName={currentClub.shortName}
+                size="2xl"
+                className="w-full h-full"
               />
             </div>
 
@@ -329,13 +330,13 @@ export const MyClubView: React.FC<MyClubViewProps> = ({
               >
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                   <div className="w-10 h-10 rounded-xl bg-slate-950/80 p-2 border border-white/[0.08] flex items-center justify-center shrink-0">
-                    <img
-                      src={fix.homeClub?.logoUrl}
-                      alt={fix.homeClub?.name}
-                      className="w-full h-full object-contain"
-                      onError={(e) => {
-                        (e.target as HTMLElement).style.display = 'none';
-                      }}
+                    <ClubCrest
+                      clubId={fix.homeClub?.id}
+                      logoUrl={fix.homeClub?.logoUrl}
+                      name={fix.homeClub?.name}
+                      shortName={fix.homeClub?.shortName}
+                      size="md"
+                      className="w-full h-full"
                     />
                   </div>
                   <div className="truncate">

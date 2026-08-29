@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n';
 import { api } from '../lib/api';
 import { Competition, StandingsRow, Fixture } from '../types';
+import { ClubCrest } from './ClubCrest';
 import {
   Globe2,
   Trophy,
@@ -15,7 +16,11 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 
-export const ChampionsLeagueView: React.FC = () => {
+interface ChampionsLeagueViewProps {
+  onNavigateTab?: (tab: any) => void;
+}
+
+export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavigateTab }) => {
   const { activeSeasonId } = useAuth();
   const { t } = useI18n();
 
@@ -91,6 +96,32 @@ export const ChampionsLeagueView: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300 pb-20">
+      {/* Category Quick Switcher Hub */}
+      {onNavigateTab && (
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+          <button
+            onClick={() => onNavigateTab('leagues')}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold glass-card text-slate-300 hover:text-white min-h-[36px]"
+          >
+            <Shield className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Domestic Leagues</span>
+          </button>
+          <button
+            onClick={() => onNavigateTab('cups')}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold glass-card text-slate-300 hover:text-white min-h-[36px]"
+          >
+            <Trophy className="w-3.5 h-3.5 text-amber-400" />
+            <span>National Cups</span>
+          </button>
+          <button
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-black bg-blue-600 text-white shadow-md min-h-[36px]"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Champions League</span>
+          </button>
+        </div>
+      )}
+
       {/* Header Banner */}
       <div className="relative overflow-hidden glass-panel p-5 sm:p-7 shadow-2xl border-blue-500/30">
         <div className="absolute top-0 right-0 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -242,13 +273,12 @@ export const ChampionsLeagueView: React.FC = () => {
                           </td>
                           <td className="py-2.5 px-2.5">
                             <div className="flex items-center gap-2 min-w-0">
-                              <img
-                                src={row.clubLogoUrl}
-                                alt={row.clubName}
-                                className="w-4 h-4 sm:w-5 sm:h-5 object-contain shrink-0"
-                                onError={(e) => {
-                                  (e.target as HTMLElement).style.display = 'none';
-                                }}
+                              <ClubCrest
+                                clubId={row.clubId}
+                                logoUrl={row.clubLogoUrl}
+                                name={row.clubName}
+                                size="xs"
+                                className="w-4 h-4 sm:w-5 sm:h-5"
                               />
                               <span className="font-bold text-white truncate max-w-[120px] sm:max-w-[200px]">
                                 {row.clubName}
@@ -292,13 +322,12 @@ export const ChampionsLeagueView: React.FC = () => {
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
                       <div className="w-8 h-8 rounded-xl bg-slate-950/80 border border-white/[0.08] p-1.5 flex items-center justify-center shrink-0">
-                        <img
-                          src={p.clubLogoUrl}
-                          alt={p.clubName}
-                          className="w-full h-full object-contain"
-                          onError={(e) => {
-                            (e.target as HTMLElement).style.display = 'none';
-                          }}
+                        <ClubCrest
+                          clubId={p.clubId}
+                          logoUrl={p.clubLogoUrl}
+                          name={p.clubName}
+                          size="xs"
+                          className="w-full h-full"
                         />
                       </div>
                       <div className="min-w-0">
@@ -355,13 +384,13 @@ export const ChampionsLeagueView: React.FC = () => {
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2 min-w-0">
-                            <img
-                              src={f.homeClub?.logoUrl}
-                              alt={f.homeClub?.name || 'Home Club'}
-                              className="w-4 h-4 sm:w-5 sm:h-5 object-contain"
-                              onError={(e) => {
-                                (e.target as HTMLElement).style.display = 'none';
-                              }}
+                            <ClubCrest
+                              clubId={f.homeClub?.id}
+                              logoUrl={f.homeClub?.logoUrl}
+                              name={f.homeClub?.name || 'Home Club'}
+                              shortName={f.homeClub?.shortName}
+                              size="xs"
+                              className="w-4 h-4 sm:w-5 sm:h-5"
                             />
                             <span className="font-bold text-slate-200 truncate">{f.homeClub?.name || 'Home Club'}</span>
                           </div>
@@ -372,13 +401,13 @@ export const ChampionsLeagueView: React.FC = () => {
 
                         <div className="flex items-center justify-between border-t border-white/[0.06] pt-2">
                           <div className="flex items-center gap-2 min-w-0">
-                            <img
-                              src={f.awayClub?.logoUrl}
-                              alt={f.awayClub?.name || 'Away Club'}
-                              className="w-4 h-4 sm:w-5 sm:h-5 object-contain"
-                              onError={(e) => {
-                                (e.target as HTMLElement).style.display = 'none';
-                              }}
+                            <ClubCrest
+                              clubId={f.awayClub?.id}
+                              logoUrl={f.awayClub?.logoUrl}
+                              name={f.awayClub?.name || 'Away Club'}
+                              shortName={f.awayClub?.shortName}
+                              size="xs"
+                              className="w-4 h-4 sm:w-5 sm:h-5"
                             />
                             <span className="font-bold text-slate-200 truncate">{f.awayClub?.name || 'Away Club'}</span>
                           </div>

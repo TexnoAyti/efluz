@@ -100,6 +100,12 @@ export async function migrateSqliteToFirestore(): Promise<MigrationReport> {
 
   // 5. Migrate Competitions
   try {
+    // Purge obsolete competitions if they exist in Firestore
+    const obsoleteIds = ['comp-trophee-des-champions-2026', 'comp-trophee-des-champions'];
+    for (const obsId of obsoleteIds) {
+      await db.collection(COLLECTIONS.COMPETITIONS).doc(obsId).delete().catch(() => {});
+    }
+
     const competitions = queryAll<any>('SELECT * FROM competitions');
     const batch = db.batch();
     for (const comp of competitions) {

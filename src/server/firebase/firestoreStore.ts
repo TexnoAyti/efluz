@@ -839,8 +839,22 @@ export async function getAllCompetitionsFirestore(seasonId = 'season-2026-27'): 
       snap = await db.collection(COLLECTIONS.COMPETITIONS).get();
     }
 
+    const validDocs = snap.docs.filter((doc) => {
+      const data = doc.data() as FirestoreCompetitionDoc;
+      const isObsolete =
+        doc.id.includes('trophee-des-champions') ||
+        data.name?.toLowerCase().includes('trophée des champions') ||
+        data.name?.toLowerCase().includes('trophee des champions');
+
+      if (isObsolete) {
+        doc.ref.delete().catch(() => {});
+        return false;
+      }
+      return true;
+    });
+
     const competitions = await Promise.all(
-      snap.docs.map(async (doc) => {
+      validDocs.map(async (doc) => {
         const data = doc.data() as FirestoreCompetitionDoc;
         const fixturesSnap = await db
           .collection(COLLECTIONS.FIXTURES)

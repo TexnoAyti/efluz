@@ -4,6 +4,7 @@ import { useI18n } from '../i18n';
 import { api } from '../lib/api';
 import { Fixture } from '../types';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
+import { ClubCrest } from './ClubCrest';
 import {
   Swords,
   Calendar,
@@ -176,13 +177,13 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                 {/* Home Club */}
                 <div className="col-span-3 flex flex-col items-center text-center">
                   <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-slate-950/80 p-2.5 border border-white/[0.08] flex items-center justify-center mb-2 shadow-inner">
-                    <img
-                      src={focusedFixture.homeClub?.logoUrl}
-                      alt={focusedFixture.homeClub?.name}
-                      className="w-full h-full object-contain"
-                      onError={(e) => {
-                        (e.target as HTMLElement).style.display = 'none';
-                      }}
+                    <ClubCrest
+                      clubId={focusedFixture.homeClub?.id}
+                      logoUrl={focusedFixture.homeClub?.logoUrl}
+                      name={focusedFixture.homeClub?.name}
+                      shortName={focusedFixture.homeClub?.shortName}
+                      size="xl"
+                      className="w-full h-full"
                     />
                   </div>
                   <h4 className="font-black text-xs sm:text-sm text-white truncate max-w-full">
@@ -213,13 +214,13 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                 {/* Away Club */}
                 <div className="col-span-3 flex flex-col items-center text-center">
                   <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-slate-950/80 p-2.5 border border-white/[0.08] flex items-center justify-center mb-2 shadow-inner">
-                    <img
-                      src={focusedFixture.awayClub?.logoUrl}
-                      alt={focusedFixture.awayClub?.name}
-                      className="w-full h-full object-contain"
-                      onError={(e) => {
-                        (e.target as HTMLElement).style.display = 'none';
-                      }}
+                    <ClubCrest
+                      clubId={focusedFixture.awayClub?.id}
+                      logoUrl={focusedFixture.awayClub?.logoUrl}
+                      name={focusedFixture.awayClub?.name}
+                      shortName={focusedFixture.awayClub?.shortName}
+                      size="xl"
+                      className="w-full h-full"
                     />
                   </div>
                   <h4 className="font-black text-xs sm:text-sm text-white truncate max-w-full">
@@ -353,13 +354,13 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                   <div className="flex items-center justify-between gap-2">
                     {/* Home Team */}
                     <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <img
-                        src={fixture.homeClub?.logoUrl}
-                        alt={fixture.homeClub?.name}
-                        className="w-4 h-4 object-contain shrink-0"
-                        onError={(e) => {
-                          (e.target as HTMLElement).style.display = 'none';
-                        }}
+                      <ClubCrest
+                        clubId={fixture.homeClub?.id}
+                        logoUrl={fixture.homeClub?.logoUrl}
+                        name={fixture.homeClub?.name}
+                        shortName={fixture.homeClub?.shortName}
+                        size="xs"
+                        className="w-4 h-4"
                       />
                       <span className="text-xs font-bold text-slate-200 truncate">
                         {fixture.homeClub?.name}
@@ -380,13 +381,13 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                       <span className="text-xs font-bold text-slate-200 truncate">
                         {fixture.awayClub?.name}
                       </span>
-                      <img
-                        src={fixture.awayClub?.logoUrl}
-                        alt={fixture.awayClub?.name}
-                        className="w-4 h-4 object-contain shrink-0"
-                        onError={(e) => {
-                          (e.target as HTMLElement).style.display = 'none';
-                        }}
+                      <ClubCrest
+                        clubId={fixture.awayClub?.id}
+                        logoUrl={fixture.awayClub?.logoUrl}
+                        name={fixture.awayClub?.name}
+                        shortName={fixture.awayClub?.shortName}
+                        size="xs"
+                        className="w-4 h-4"
                       />
                     </div>
                   </div>
