@@ -88,16 +88,13 @@ export const ClubCrest: React.FC<ClubCrestProps> = ({
     : null;
   const isBlockedDomain = directUrl?.includes('football-data.org');
 
-  // Build candidate URL sequence
+  // Build candidate URL sequence (Always same-origin proxy first; no direct third-party requests)
   const candidates: string[] = [];
-  if (priorityProxy || isBlockedDomain) {
-    if (clubCrestProxyUrl && !candidates.includes(clubCrestProxyUrl)) candidates.push(clubCrestProxyUrl);
-    if (genericCrestProxyUrl && !candidates.includes(genericCrestProxyUrl)) candidates.push(genericCrestProxyUrl);
-    if (directUrl && !candidates.includes(directUrl)) candidates.push(directUrl);
-  } else {
-    if (directUrl && !candidates.includes(directUrl)) candidates.push(directUrl);
-    if (clubCrestProxyUrl && !candidates.includes(clubCrestProxyUrl)) candidates.push(clubCrestProxyUrl);
-    if (genericCrestProxyUrl && !candidates.includes(genericCrestProxyUrl)) candidates.push(genericCrestProxyUrl);
+  if (clubCrestProxyUrl) {
+    candidates.push(clubCrestProxyUrl);
+  }
+  if (genericCrestProxyUrl && !candidates.includes(genericCrestProxyUrl)) {
+    candidates.push(genericCrestProxyUrl);
   }
 
   // Reset attempt when inputs change
@@ -140,8 +137,7 @@ export const ClubCrest: React.FC<ClubCrestProps> = ({
         src={currentSrc}
         alt={alt || name || shortName || 'Club Crest'}
         referrerPolicy="no-referrer"
-        loading="lazy"
-        decoding="async"
+        loading="eager"
         onError={handleError}
         className={`w-full h-full object-contain pointer-events-none transition-opacity duration-200 ${imgClassName}`}
       />
