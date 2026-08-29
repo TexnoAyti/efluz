@@ -1,5 +1,4 @@
-import React, { useState } from 'react';
-import { Shield } from 'lucide-react';
+import React from 'react';
 
 export interface ClubCrestProps {
   clubId?: string;
@@ -78,43 +77,22 @@ export const ClubCrest: React.FC<ClubCrestProps> = ({
   alt,
   priorityProxy = false,
 }) => {
-  // Retry state machine: index into candidateUrls list
-  const [attemptIndex, setAttemptIndex] = useState<number>(0);
-
   const directUrl = logoUrl?.trim() || null;
   const clubCrestProxyUrl = clubId ? `/api/clubs/${clubId}/crest` : null;
   const genericCrestProxyUrl = directUrl
     ? `/api/clubs/crest-proxy?url=${encodeURIComponent(directUrl)}`
     : null;
-  const isBlockedDomain = directUrl?.includes('football-data.org');
 
-  // Build candidate URL sequence (Always same-origin proxy first; no direct third-party requests)
-  const candidates: string[] = [];
-  if (clubCrestProxyUrl) {
-    candidates.push(clubCrestProxyUrl);
-  }
-  if (genericCrestProxyUrl && !candidates.includes(genericCrestProxyUrl)) {
-    candidates.push(genericCrestProxyUrl);
-  }
-
-  // Reset attempt when inputs change
-  React.useEffect(() => {
-    setAttemptIndex(0);
-  }, [clubId, logoUrl]);
-
-  const currentSrc = attemptIndex < candidates.length ? candidates[attemptIndex] : null;
+  // Same-origin URL only; no direct third-party CDN requests
+  const currentSrc = clubCrestProxyUrl || genericCrestProxyUrl || null;
 
   const containerSizeClass = SIZE_CONTAINER_CLASSES[size] || SIZE_CONTAINER_CLASSES.md;
   const textSizeClass = SIZE_TEXT_CLASSES[size] || SIZE_TEXT_CLASSES.md;
   const initials = getClubInitials(shortName, name);
   const colorScheme = getClubColorHash(shortName || name);
 
-  const handleError = () => {
-    setAttemptIndex((prev) => prev + 1);
-  };
-
-  // If no URL available or all image attempts failed -> render fallback shield
-  if (!currentSrc || attemptIndex >= candidates.length) {
+  // If no URL available -> render monogram fallback shield
+  if (!currentSrc) {
     return (
       <div
         className={`relative inline-flex items-center justify-center shrink-0 rounded-lg bg-gradient-to-br ${colorScheme} border shadow-inner select-none overflow-hidden ${containerSizeClass} ${className}`}
@@ -128,18 +106,22 @@ export const ClubCrest: React.FC<ClubCrestProps> = ({
     );
   }
 
+  // Primary rendering via same-origin CSS background-image
   return (
     <div
       className={`relative inline-flex items-center justify-center shrink-0 overflow-hidden ${containerSizeClass} ${className}`}
+      title={name || shortName || 'Club Crest'}
+      aria-label={alt || name || shortName || 'Club Crest'}
+      role="img"
     >
-      <img
-        key={currentSrc}
-        src={currentSrc}
-        alt={alt || name || shortName || 'Club Crest'}
-        referrerPolicy="no-referrer"
-        loading="eager"
-        onError={handleError}
-        className={`w-full h-full object-contain pointer-events-none transition-opacity duration-200 ${imgClassName}`}
+      <div
+        className={`w-full h-full pointer-events-none ${imgClassName}`}
+        style={{
+          backgroundImage: `url("${currentSrc}")`,
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+          backgroundSize: 'contain',
+        }}
       />
     </div>
   );
