@@ -7,9 +7,42 @@ import {
   ClubConflictError,
   ClubNotFoundError,
 } from '../firebase/firestoreStore';
+import { SEED_CLUBS } from '../db/seed';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
 
 export const clubsRouter = Router();
+
+// Helper to resolve canonical club from canonical id or numeric/external id
+function resolveCanonicalClub(id: string) {
+  if (!id) return null;
+  const trimmed = id.trim();
+  const normalized = trimmed.toLowerCase();
+
+  // 1. Direct canonical id in seed
+  let found = SEED_CLUBS.find((c) => c.id === trimmed || c.id.toLowerCase() === normalized);
+  if (found) return found;
+
+  // 2. club- prefix
+  found = SEED_CLUBS.find((c) => c.id === `club-${normalized}` || c.id.toLowerCase() === `club-${normalized}`);
+  if (found) return found;
+
+  // 3. Logo URL filename match (/86.png, /t3.svg, 86, t3, 3)
+  found = SEED_CLUBS.find((c) => {
+    const url = c.logoUrl;
+    if (url.endsWith(`/${normalized}.png`) || url.endsWith(`/${normalized}.svg`)) return true;
+    if (url.endsWith(`/t${normalized}.svg`)) return true;
+    const match = url.match(/\/([a-zA-Z0-9_-]+)\.(png|svg|webp|jpg)$/i);
+    if (match && match[1].toLowerCase() === normalized) return true;
+    return false;
+  });
+  if (found) return found;
+
+  // 4. Shortname or Name match
+  found = SEED_CLUBS.find(
+    (c) => c.shortName.toLowerCase() === normalized || c.name.toLowerCase() === normalized
+  );
+  return found || null;
+}
 
 // In-memory image cache for fast asset serving
 interface CachedImage {
@@ -111,12 +144,26 @@ clubsRouter.get('/available', async (req: Request, res: Response) => {
 
 // 2. Club Crest Asset Endpoint (serves reliable proxy/cache with dynamic SVG fallback)
 clubsRouter.get('/:id/crest', async (req: Request, res: Response) => {
-  const clubId = req.params.id;
+  const requestedId = req.params.id;
   const seasonId = (req.query.seasonId as string) || 'season-2026-27';
   try {
-    const club = await getClubByIdFirestore(clubId, seasonId);
-    if (!club || !club.logoUrl) {
-      const svg = generateFallbackSvgBadge(club?.name || clubId, club?.shortName);
+    // 1. Resolve canonical club from canonical id or numeric/external id
+    const resolvedSeedClub = resolveCanonicalClub(requestedId);
+    const canonicalId = resolvedSeedClub?.id || requestedId;
+
+    // 2. Lookup club in Firestore with canonicalId first, then requestedId
+    let club = await getClubByIdFirestore(canonicalId, seasonId);
+    if (!club && canonicalId !== requestedId) {
+      club = await getClubByIdFirestore(requestedId, seasonId);
+    }
+
+    // 3. Determine logoUrl from Firestore or resolved seed metadata
+    const finalLogoUrl = club?.logoUrl || resolvedSeedClub?.logoUrl;
+    const finalName = club?.name || resolvedSeedClub?.name || requestedId;
+    const finalShortName = club?.shortName || resolvedSeedClub?.shortName;
+
+    if (!finalLogoUrl) {
+      const svg = generateFallbackSvgBadge(finalName, finalShortName);
       res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
       res.setHeader('Cache-Control', 'public, max-age=86400');
       res.setHeader('Access-Control-Allow-Origin', '*');
@@ -124,9 +171,14 @@ clubsRouter.get('/:id/crest', async (req: Request, res: Response) => {
       return;
     }
 
-    await fetchAndServeImage(club.logoUrl, res, club.name, club.shortName);
+    await fetchAndServeImage(finalLogoUrl, res, finalName, finalShortName);
   } catch (err) {
-    const svg = generateFallbackSvgBadge(clubId);
+    const resolvedSeedClub = resolveCanonicalClub(requestedId);
+    if (resolvedSeedClub?.logoUrl) {
+      await fetchAndServeImage(resolvedSeedClub.logoUrl, res, resolvedSeedClub.name, resolvedSeedClub.shortName);
+      return;
+    }
+    const svg = generateFallbackSvgBadge(requestedId);
     res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
     res.setHeader('Cache-Control', 'public, max-age=86400');
     res.setHeader('Access-Control-Allow-Origin', '*');

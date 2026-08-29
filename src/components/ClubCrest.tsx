@@ -78,32 +78,34 @@ export const ClubCrest: React.FC<ClubCrestProps> = ({
   alt,
   priorityProxy = false,
 }) => {
-  // Retry state machine: 0 = primary src, 1 = proxy src, 2 = fallback UI
-  const [attempt, setAttempt] = useState<number>(0);
+  // Retry state machine: index into candidateUrls list
+  const [attemptIndex, setAttemptIndex] = useState<number>(0);
 
-  // Compute image URLs
   const directUrl = logoUrl?.trim() || null;
-  const proxyUrl = clubId
-    ? `/api/clubs/${clubId}/crest`
-    : directUrl
+  const clubCrestProxyUrl = clubId ? `/api/clubs/${clubId}/crest` : null;
+  const genericCrestProxyUrl = directUrl
     ? `/api/clubs/crest-proxy?url=${encodeURIComponent(directUrl)}`
     : null;
-
-  // Determine initial URL based on priorityProxy or known blocked hostnames
   const isBlockedDomain = directUrl?.includes('football-data.org');
-  let currentSrc: string | null = null;
 
-  if (attempt === 0) {
-    if (priorityProxy || isBlockedDomain) {
-      currentSrc = proxyUrl || directUrl;
-    } else {
-      currentSrc = directUrl || proxyUrl;
-    }
-  } else if (attempt === 1) {
-    currentSrc = attempt === 1 && currentSrc !== proxyUrl && proxyUrl ? proxyUrl : null;
+  // Build candidate URL sequence
+  const candidates: string[] = [];
+  if (priorityProxy || isBlockedDomain) {
+    if (clubCrestProxyUrl && !candidates.includes(clubCrestProxyUrl)) candidates.push(clubCrestProxyUrl);
+    if (genericCrestProxyUrl && !candidates.includes(genericCrestProxyUrl)) candidates.push(genericCrestProxyUrl);
+    if (directUrl && !candidates.includes(directUrl)) candidates.push(directUrl);
   } else {
-    currentSrc = null;
+    if (directUrl && !candidates.includes(directUrl)) candidates.push(directUrl);
+    if (clubCrestProxyUrl && !candidates.includes(clubCrestProxyUrl)) candidates.push(clubCrestProxyUrl);
+    if (genericCrestProxyUrl && !candidates.includes(genericCrestProxyUrl)) candidates.push(genericCrestProxyUrl);
   }
+
+  // Reset attempt when inputs change
+  React.useEffect(() => {
+    setAttemptIndex(0);
+  }, [clubId, logoUrl]);
+
+  const currentSrc = attemptIndex < candidates.length ? candidates[attemptIndex] : null;
 
   const containerSizeClass = SIZE_CONTAINER_CLASSES[size] || SIZE_CONTAINER_CLASSES.md;
   const textSizeClass = SIZE_TEXT_CLASSES[size] || SIZE_TEXT_CLASSES.md;
@@ -111,17 +113,11 @@ export const ClubCrest: React.FC<ClubCrestProps> = ({
   const colorScheme = getClubColorHash(shortName || name);
 
   const handleError = () => {
-    if (attempt === 0 && proxyUrl && currentSrc !== proxyUrl) {
-      // Try proxy fallback
-      setAttempt(1);
-    } else {
-      // Fallback to stylized initials badge
-      setAttempt(2);
-    }
+    setAttemptIndex((prev) => prev + 1);
   };
 
   // If no URL available or all image attempts failed -> render fallback shield
-  if (!currentSrc || attempt >= 2) {
+  if (!currentSrc || attemptIndex >= candidates.length) {
     return (
       <div
         className={`relative inline-flex items-center justify-center shrink-0 rounded-lg bg-gradient-to-br ${colorScheme} border shadow-inner select-none overflow-hidden ${containerSizeClass} ${className}`}
@@ -140,6 +136,7 @@ export const ClubCrest: React.FC<ClubCrestProps> = ({
       className={`relative inline-flex items-center justify-center shrink-0 overflow-hidden ${containerSizeClass} ${className}`}
     >
       <img
+        key={currentSrc}
         src={currentSrc}
         alt={alt || name || shortName || 'Club Crest'}
         referrerPolicy="no-referrer"
