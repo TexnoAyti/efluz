@@ -51,7 +51,6 @@ export const Navigation: React.FC<NavigationProps> = ({
     { id: 'leagues' as TabType, label: t.navLeagues, icon: Layers },
     { id: 'cups' as TabType, label: t.navCups, icon: Award },
     { id: 'champions-league' as TabType, label: t.navChampionsLeague, icon: Globe2 },
-    { id: 'standings' as TabType, label: t.navStandings, icon: Trophy },
     { id: 'notifications' as TabType, label: t.navNotifications, icon: Bell, badge: unreadNotificationCount },
     { id: 'profile' as TabType, label: t.navProfile, icon: User },
   ];
@@ -65,8 +64,7 @@ export const Navigation: React.FC<NavigationProps> = ({
     });
   }
 
-  // Mobile STRICT 5-Item SofaScore-style Bottom Navigation Bar
-  // Exactly 5 destinations: HOME, MATCHES, LEAGUES, TABLE, PROFILE
+  // Mobile 4-Item Bottom Navigation Bar: Home | Matches | Leagues | Profile
   const mobileNavItems = [
     {
       id: 'dashboard' as TabType,
@@ -84,13 +82,7 @@ export const Navigation: React.FC<NavigationProps> = ({
       id: 'leagues' as TabType,
       label: t.navLeagues || 'Leagues',
       icon: Layers,
-      isActive: currentTab === 'leagues' || currentTab === 'cups' || currentTab === 'champions-league',
-    },
-    {
-      id: 'standings' as TabType,
-      label: t.navStandings || 'Table',
-      icon: Trophy,
-      isActive: currentTab === 'standings',
+      isActive: currentTab === 'leagues' || currentTab === 'cups' || currentTab === 'champions-league' || currentTab === 'standings',
     },
     {
       id: 'profile' as TabType,
@@ -143,13 +135,13 @@ export const Navigation: React.FC<NavigationProps> = ({
         </div>
       </nav>
 
-      {/* Mobile EXACT 5-Item Fixed Clean Bottom Navigation Bar */}
+      {/* Mobile 4-Item Fixed Clean Bottom Navigation Bar */}
       {/* Optimized for 360px+ viewports without horizontal scroll */}
       <nav
         aria-label="Mobile Navigation"
         className="lg:hidden fixed bottom-0 left-0 right-0 z-50 glass-nav-bottom bottom-nav-safe"
       >
-        <div className="grid grid-cols-5 items-center w-full max-w-md mx-auto px-1 py-1">
+        <div className="grid grid-cols-4 items-center w-full max-w-md mx-auto px-1 py-1">
           {mobileNavItems.map((item) => {
             const Icon = item.icon;
             const hasBadge = (item.badge || 0) > 0;
