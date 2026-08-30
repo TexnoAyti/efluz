@@ -42,7 +42,6 @@ export async function ensureDbReady(): Promise<void> {
               console.log('[BOOT] Firestore auto-seeding completed.');
             } else {
               console.log(`[BOOT] Connected to authoritative Firestore database: ${fbStatus.databaseId}`);
-              await syncFirestoreClubCrests();
             }
           } catch (fbErr: any) {
             console.warn('[BOOT] Firestore connection warning, operating with resilient SQLite fallback:', fbErr.message);

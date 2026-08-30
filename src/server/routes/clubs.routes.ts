@@ -171,6 +171,16 @@ clubsRouter.get('/:id/crest', async (req: Request, res: Response) => {
   try {
     // 1. Resolve canonical club from canonical id or numeric/external id
     const resolvedSeedClub = resolveCanonicalClub(requestedId);
+    if (resolvedSeedClub?.logoUrl) {
+      await fetchAndServeImage(
+        resolvedSeedClub.logoUrl,
+        res,
+        resolvedSeedClub.name,
+        resolvedSeedClub.shortName
+      );
+      return;
+    }
+
     const canonicalId = resolvedSeedClub?.id || requestedId;
 
     // 2. Lookup club in Firestore with canonicalId first, then requestedId

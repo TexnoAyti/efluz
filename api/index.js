@@ -1865,6 +1865,22 @@ async function getAllLeaguesFirestore() {
   }
 }
 async function getClubsByLeagueFirestore(leagueId, seasonId = "season-2026-27", currentUserId) {
+  const cacheKey = `firestore:clubs:league:${leagueId}:${seasonId}`;
+  const cached = getFromCache(cacheKey);
+  if (cached && cached.length > 0) {
+    return cached.map((c) => {
+      const isCurrentUserClub = Boolean(currentUserId && c.claimedByUserId === currentUserId);
+      const isTaken = c.isTaken;
+      return {
+        ...c,
+        isCurrentUserClub,
+        occupancy: {
+          ...c.occupancy,
+          status: isCurrentUserClub ? "owned" : isTaken ? "occupied" : "available"
+        }
+      };
+    });
+  }
   try {
     const db = getFirestoreDb();
     const clubsSnap = await db.collection(COLLECTIONS.CLUBS).where("leagueId", "==", leagueId).where("isActive", "==", true).get();
@@ -1888,10 +1904,12 @@ async function getClubsByLeagueFirestore(leagueId, seasonId = "season-2026-27", 
     const userIds = Array.from(new Set(Array.from(clubOccupancyMap.values()).map((o) => o.userId)));
     const usernameMap = /* @__PURE__ */ new Map();
     if (userIds.length > 0) {
-      const userDocPromises = userIds.map((uid) => db.collection(COLLECTIONS.USERS).doc(uid).get());
+      const userDocPromises = userIds.map(
+        (uid) => db.collection(COLLECTIONS.USERS).doc(uid).get().catch(() => null)
+      );
       const userDocs = await Promise.all(userDocPromises);
       for (const uDoc of userDocs) {
-        if (uDoc.exists) {
+        if (uDoc && uDoc.exists) {
           const uData = uDoc.data();
           usernameMap.set(uDoc.id, uData.username || uData.firstName || uDoc.id);
         }
@@ -1927,7 +1945,11 @@ async function getClubsByLeagueFirestore(leagueId, seasonId = "season-2026-27", 
         }
       };
     });
-    return clubs.sort((a, b) => a.name.localeCompare(b.name));
+    const sortedClubs = clubs.sort((a, b) => a.name.localeCompare(b.name));
+    if (sortedClubs.length > 0) {
+      setInCache(cacheKey, sortedClubs, 45e3);
+    }
+    return sortedClubs;
   } catch (err) {
     console.warn("[FIRESTORE FALLBACK] getClubsByLeagueFirestore:", err.message);
     const rows = queryAll(
@@ -1939,7 +1961,7 @@ async function getClubsByLeagueFirestore(leagueId, seasonId = "season-2026-27", 
        ORDER BY c.name ASC`,
       [seasonId, leagueId]
     );
-    return rows.map((r) => {
+    const fallbackClubs = rows.map((r) => {
       const isTaken = Boolean(r.claimed_by_user_id);
       const isCurrentUserClub = Boolean(currentUserId && r.claimed_by_user_id === currentUserId);
       return {
@@ -1963,9 +1985,16 @@ async function getClubsByLeagueFirestore(leagueId, seasonId = "season-2026-27", 
         }
       };
     });
+    if (fallbackClubs.length > 0) {
+      setInCache(cacheKey, fallbackClubs, 45e3);
+    }
+    return fallbackClubs;
   }
 }
 async function getAvailableClubsFirestore(seasonId = "season-2026-27", currentUserId) {
+  const cacheKey = `firestore:clubs:available:${seasonId}`;
+  const cached = getFromCache(cacheKey);
+  if (cached && cached.length > 0) return cached;
   try {
     const db = getFirestoreDb();
     const clubsSnap = await db.collection(COLLECTIONS.CLUBS).where("isActive", "==", true).get();
@@ -2003,7 +2032,11 @@ async function getAvailableClubsFirestore(seasonId = "season-2026-27", currentUs
         });
       }
     }
-    return availableClubs.sort((a, b) => a.name.localeCompare(b.name));
+    const sortedClubs = availableClubs.sort((a, b) => a.name.localeCompare(b.name));
+    if (sortedClubs.length > 0) {
+      setInCache(cacheKey, sortedClubs, 45e3);
+    }
+    return sortedClubs;
   } catch (err) {
     console.warn("[FIRESTORE FALLBACK] getAvailableClubsFirestore:", err.message);
     const rows = queryAll(
@@ -2013,7 +2046,7 @@ async function getAvailableClubsFirestore(seasonId = "season-2026-27", currentUs
        ORDER BY c.name ASC`,
       [seasonId]
     );
-    return rows.map((r) => ({
+    const fallbackClubs = rows.map((r) => ({
       id: r.id,
       name: r.name,
       shortName: r.short_name,
@@ -2028,25 +2061,42 @@ async function getAvailableClubsFirestore(seasonId = "season-2026-27", currentUs
         status: "available"
       }
     }));
+    if (fallbackClubs.length > 0) {
+      setInCache(cacheKey, fallbackClubs, 45e3);
+    }
+    return fallbackClubs;
   }
 }
 async function getClubByIdFirestore(clubId, seasonId = "season-2026-27", currentUserId) {
+  const cacheKey = `firestore:club:${clubId}:${seasonId}`;
+  const cached = getFromCache(cacheKey);
+  if (cached) {
+    const isCurrentUserClub2 = Boolean(currentUserId && cached.claimedByUserId === currentUserId);
+    return {
+      ...cached,
+      isCurrentUserClub: isCurrentUserClub2,
+      occupancy: {
+        ...cached.occupancy,
+        status: isCurrentUserClub2 ? "owned" : cached.isTaken ? "occupied" : "available"
+      }
+    };
+  }
   try {
     const db = getFirestoreDb();
     const doc = await db.collection(COLLECTIONS.CLUBS).doc(clubId).get();
     if (doc.exists) {
       const data = doc.data();
       let occUserId = null;
-      const occDoc = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_${clubId}`).get();
-      if (occDoc.exists && occDoc.data()?.status === "active") {
+      const occDoc = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_${clubId}`).get().catch(() => null);
+      if (occDoc && occDoc.exists && occDoc.data()?.status === "active") {
         occUserId = occDoc.data().userId;
       } else {
-        const memDoc = await db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).doc(`${seasonId}_${clubId}`).get();
-        if (memDoc.exists && memDoc.data()?.status === "active") {
+        const memDoc = await db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).doc(`${seasonId}_${clubId}`).get().catch(() => null);
+        if (memDoc && memDoc.exists && memDoc.data()?.status === "active") {
           occUserId = memDoc.data().userId;
         } else {
-          const userMemSnap = await db.collection(COLLECTIONS.USER_MEMBERSHIPS).where("seasonId", "==", seasonId).where("clubId", "==", clubId).where("status", "==", "active").limit(1).get();
-          if (!userMemSnap.empty) {
+          const userMemSnap = await db.collection(COLLECTIONS.USER_MEMBERSHIPS).where("seasonId", "==", seasonId).where("clubId", "==", clubId).where("status", "==", "active").limit(1).get().catch(() => null);
+          if (userMemSnap && !userMemSnap.empty) {
             occUserId = userMemSnap.docs[0].data().userId;
           }
         }
@@ -2057,13 +2107,13 @@ async function getClubByIdFirestore(clubId, seasonId = "season-2026-27", current
       if (occUserId) {
         isTaken2 = true;
         isCurrentUserClub2 = Boolean(currentUserId && currentUserId === occUserId);
-        const userDoc = await db.collection(COLLECTIONS.USERS).doc(occUserId).get();
-        if (userDoc.exists) {
+        const userDoc = await db.collection(COLLECTIONS.USERS).doc(occUserId).get().catch(() => null);
+        if (userDoc && userDoc.exists) {
           managerUsername = userDoc.data().username;
         }
       }
       const occupancyStatus = isCurrentUserClub2 ? "owned" : isTaken2 ? "occupied" : "available";
-      return {
+      const clubRes = {
         id: doc.id,
         name: data.name,
         shortName: data.shortName,
@@ -2083,6 +2133,8 @@ async function getClubByIdFirestore(clubId, seasonId = "season-2026-27", current
           username: managerUsername
         }
       };
+      setInCache(cacheKey, clubRes, 45e3);
+      return clubRes;
     }
   } catch (err) {
     console.warn("[FIRESTORE FALLBACK] getClubByIdFirestore:", err.message);
@@ -2098,7 +2150,7 @@ async function getClubByIdFirestore(clubId, seasonId = "season-2026-27", current
   if (!r) return null;
   const isTaken = Boolean(r.claimed_by_user_id);
   const isCurrentUserClub = Boolean(currentUserId && r.claimed_by_user_id === currentUserId);
-  return {
+  const fallbackRes = {
     id: r.id,
     name: r.name,
     shortName: r.short_name,
@@ -2118,28 +2170,49 @@ async function getClubByIdFirestore(clubId, seasonId = "season-2026-27", current
       username: r.manager_username || void 0
     }
   };
+  setInCache(cacheKey, fallbackRes, 45e3);
+  return fallbackRes;
 }
 async function getUserActiveClubFirestore(userId, seasonId = "season-2026-27") {
+  const cacheKey = `firestore:user_active_club:${userId}:${seasonId}`;
+  const cached = getFromCache(cacheKey);
+  if (cached) return cached;
   try {
     const db = getFirestoreDb();
-    const userMemDoc = await db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${seasonId}_${userId}`).get();
-    if (userMemDoc.exists && userMemDoc.data()?.status === "active") {
+    const userMemDoc = await db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${seasonId}_${userId}`).get().catch(() => null);
+    if (userMemDoc && userMemDoc.exists && userMemDoc.data()?.status === "active") {
       const clubId = userMemDoc.data().clubId;
-      return getClubByIdFirestore(clubId, seasonId, userId);
+      const c = await getClubByIdFirestore(clubId, seasonId, userId);
+      if (c) {
+        setInCache(cacheKey, c, 45e3);
+        return c;
+      }
     }
-    const occSnap = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where("userId", "==", userId).where("seasonId", "==", seasonId).where("status", "==", "active").limit(1).get();
-    if (!occSnap.empty) {
+    const occSnap = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where("userId", "==", userId).where("seasonId", "==", seasonId).where("status", "==", "active").limit(1).get().catch(() => null);
+    if (occSnap && !occSnap.empty) {
       const clubId = occSnap.docs[0].data().clubId;
-      return getClubByIdFirestore(clubId, seasonId, userId);
+      const c = await getClubByIdFirestore(clubId, seasonId, userId);
+      if (c) {
+        setInCache(cacheKey, c, 45e3);
+        return c;
+      }
     }
-    const memSnap = await db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).where("userId", "==", userId).where("seasonId", "==", seasonId).where("status", "==", "active").limit(1).get();
-    if (!memSnap.empty) {
+    const memSnap = await db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).where("userId", "==", userId).where("seasonId", "==", seasonId).where("status", "==", "active").limit(1).get().catch(() => null);
+    if (memSnap && !memSnap.empty) {
       const clubId = memSnap.docs[0].data().clubId;
-      return getClubByIdFirestore(clubId, seasonId, userId);
+      const c = await getClubByIdFirestore(clubId, seasonId, userId);
+      if (c) {
+        setInCache(cacheKey, c, 45e3);
+        return c;
+      }
     }
-    const clubSnap = await db.collection(COLLECTIONS.CLUBS).where("claimedByUserId", "==", userId).limit(1).get();
-    if (!clubSnap.empty) {
-      return getClubByIdFirestore(clubSnap.docs[0].id, seasonId, userId);
+    const clubSnap = await db.collection(COLLECTIONS.CLUBS).where("claimedByUserId", "==", userId).limit(1).get().catch(() => null);
+    if (clubSnap && !clubSnap.empty) {
+      const c = await getClubByIdFirestore(clubSnap.docs[0].id, seasonId, userId);
+      if (c) {
+        setInCache(cacheKey, c, 45e3);
+        return c;
+      }
     }
   } catch (err) {
     console.warn("[FIRESTORE FALLBACK] getUserActiveClubFirestore:", err.message);
@@ -2149,7 +2222,11 @@ async function getUserActiveClubFirestore(userId, seasonId = "season-2026-27") {
     [userId, seasonId]
   );
   if (mem) {
-    return getClubByIdFirestore(mem.club_id, seasonId, userId);
+    const c = await getClubByIdFirestore(mem.club_id, seasonId, userId);
+    if (c) {
+      setInCache(cacheKey, c, 45e3);
+      return c;
+    }
   }
   return null;
 }
@@ -2315,7 +2392,7 @@ async function claimClubAtomicFirestore(userId, clubId, seasonId = "season-2026-
 async function getAllCompetitionsFirestore(seasonId = "season-2026-27") {
   const cacheKey = `firestore:competitions:${seasonId}`;
   const cached = getFromCache(cacheKey);
-  if (cached) return cached;
+  if (cached && cached.length > 0) return cached;
   try {
     const db = getFirestoreDb();
     let snap = await db.collection(COLLECTIONS.COMPETITIONS).where("seasonId", "==", seasonId).get();
@@ -2335,17 +2412,20 @@ async function getAllCompetitionsFirestore(seasonId = "season-2026-27") {
     const competitions = await Promise.all(
       validDocs.map(async (doc) => {
         const data = doc.data();
-        const fixturesSnap = await db.collection(COLLECTIONS.FIXTURES).where("competitionId", "==", doc.id).get();
-        const fixturesCount = fixturesSnap.size;
+        let fixturesCount = 0;
+        try {
+          const fixturesSnap = await db.collection(COLLECTIONS.FIXTURES).where("competitionId", "==", doc.id).get();
+          fixturesCount = fixturesSnap.size;
+        } catch {
+          fixturesCount = 0;
+        }
         const hasFixtures = fixturesCount > 0;
         const generationStatus = hasFixtures ? "generated" : "not_generated";
         let totalTeams = 0;
         if (data.leagueId) {
-          const clubsInLeagueSnap = await db.collection(COLLECTIONS.CLUBS).where("leagueId", "==", data.leagueId).where("isActive", "==", true).get();
-          totalTeams = clubsInLeagueSnap.size;
+          totalTeams = SEED_CLUBS.filter((c) => c.leagueId === data.leagueId).length || 20;
         } else {
-          const participantsSnap = await db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where("competitionId", "==", doc.id).get();
-          totalTeams = participantsSnap.size || data.formatConfig?.maxTeams || 0;
+          totalTeams = data.formatConfig?.maxTeams || 32;
         }
         return {
           id: doc.id,
@@ -2365,7 +2445,9 @@ async function getAllCompetitionsFirestore(seasonId = "season-2026-27") {
         };
       })
     );
-    setInCache(cacheKey, competitions, 3e4);
+    if (competitions.length > 0) {
+      setInCache(cacheKey, competitions, 3e4);
+    }
     return competitions;
   } catch (err) {
     console.warn("[FIRESTORE FALLBACK] getAllCompetitionsFirestore:", err.message);
@@ -2386,7 +2468,7 @@ async function getAllCompetitionsFirestore(seasonId = "season-2026-27") {
         type: r.type,
         scheduleMode: r.schedule_mode,
         status: hasFixtures ? "active" : r.status,
-        totalTeams: formatConfig.totalTeams || 20,
+        totalTeams: formatConfig.totalTeams || (r.league_id ? SEED_CLUBS.filter((c) => c.leagueId === r.league_id).length : 20),
         hasFixtures,
         fixtureCount: fixtures.length,
         fixturesCount: fixtures.length,
@@ -2395,7 +2477,9 @@ async function getAllCompetitionsFirestore(seasonId = "season-2026-27") {
         createdAt: r.created_at
       };
     });
-    setInCache(cacheKey, competitions, 3e4);
+    if (competitions.length > 0) {
+      setInCache(cacheKey, competitions, 3e4);
+    }
     return competitions;
   }
 }
@@ -2408,17 +2492,20 @@ async function getCompetitionByIdFirestore(competitionId) {
     const doc = await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get();
     if (!doc.exists) return null;
     const data = doc.data();
-    const fixturesSnap = await db.collection(COLLECTIONS.FIXTURES).where("competitionId", "==", doc.id).get();
-    const fixturesCount = fixturesSnap.size;
+    let fixturesCount = 0;
+    try {
+      const fixturesSnap = await db.collection(COLLECTIONS.FIXTURES).where("competitionId", "==", doc.id).get();
+      fixturesCount = fixturesSnap.size;
+    } catch {
+      fixturesCount = 0;
+    }
     const hasFixtures = fixturesCount > 0;
     const generationStatus = hasFixtures ? "generated" : "not_generated";
     let totalTeams = 0;
     if (data.leagueId) {
-      const clubsInLeagueSnap = await db.collection(COLLECTIONS.CLUBS).where("leagueId", "==", data.leagueId).where("isActive", "==", true).get();
-      totalTeams = clubsInLeagueSnap.size;
+      totalTeams = SEED_CLUBS.filter((c) => c.leagueId === data.leagueId).length || 20;
     } else {
-      const participantsSnap = await db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where("competitionId", "==", doc.id).get();
-      totalTeams = participantsSnap.size || data.formatConfig?.maxTeams || 0;
+      totalTeams = data.formatConfig?.maxTeams || 32;
     }
     const result = {
       id: doc.id,
@@ -2457,7 +2544,7 @@ async function getCompetitionByIdFirestore(competitionId) {
       type: r.type,
       scheduleMode: r.schedule_mode,
       status: hasFixtures ? "active" : r.status,
-      totalTeams: formatConfig.totalTeams || 20,
+      totalTeams: formatConfig.totalTeams || (r.league_id ? SEED_CLUBS.filter((c) => c.leagueId === r.league_id).length : 20),
       hasFixtures,
       fixtureCount: fixtures.length,
       fixturesCount: fixtures.length,
@@ -2478,6 +2565,12 @@ async function getFixturesFirestore(filter) {
       return [];
     }
     targetClubId = activeClub.id;
+  }
+  const isCacheableCompQuery = Boolean(filter.competitionId) && !targetClubId && !filter.userId;
+  const cacheKey = isCacheableCompQuery ? `firestore:fixtures:comp:${filter.competitionId}:md${filter.matchday || "all"}:st${filter.status || "all"}:lim${filter.limit || "all"}` : null;
+  if (cacheKey) {
+    const cached = getFromCache(cacheKey);
+    if (cached) return cached;
   }
   try {
     const db = getFirestoreDb();
@@ -2523,23 +2616,9 @@ async function getFixturesFirestore(filter) {
     if (filter.limit && filter.limit > 0) {
       docs = docs.slice(0, filter.limit);
     }
-    const clubIds = /* @__PURE__ */ new Set();
-    for (const f of docs) {
-      if (f.homeClubId && f.homeClubId !== "TBD") clubIds.add(f.homeClubId);
-      if (f.awayClubId && f.awayClubId !== "TBD") clubIds.add(f.awayClubId);
-    }
-    const clubMap = /* @__PURE__ */ new Map();
-    if (clubIds.size > 0) {
-      const clubsSnap = await db.collection(COLLECTIONS.CLUBS).get();
-      for (const cDoc of clubsSnap.docs) {
-        if (clubIds.has(cDoc.id)) {
-          clubMap.set(cDoc.id, cDoc.data());
-        }
-      }
-    }
-    return docs.map((r) => {
-      const homeClubData = clubMap.get(r.homeClubId);
-      const awayClubData = clubMap.get(r.awayClubId);
+    const fixtures = docs.map((r) => {
+      const homeSeed = SEED_CLUB_MAP.get(r.homeClubId);
+      const awaySeed = SEED_CLUB_MAP.get(r.awayClubId);
       return {
         id: r.id,
         seasonId: r.seasonId,
@@ -2551,21 +2630,21 @@ async function getFixturesFirestore(filter) {
         awayClubId: r.awayClubId,
         homeClub: {
           id: r.homeClubId || "TBD",
-          name: homeClubData?.name || (r.homeClubId === "TBD" ? "TBD" : r.homeClubId),
-          shortName: homeClubData?.shortName || (r.homeClubId === "TBD" ? "TBD" : r.homeClubId),
-          country: homeClubData?.country || "",
-          leagueId: homeClubData?.leagueId || "",
-          logoUrl: homeClubData?.logo || "",
+          name: homeSeed?.name || (r.homeClubId === "TBD" ? "TBD" : r.homeClubId),
+          shortName: homeSeed?.shortName || (r.homeClubId === "TBD" ? "TBD" : r.homeClubId),
+          country: homeSeed?.country || "",
+          leagueId: homeSeed?.leagueId || "",
+          logoUrl: homeSeed?.logoUrl || "",
           active: true,
           createdAt: ""
         },
         awayClub: {
           id: r.awayClubId || "TBD",
-          name: awayClubData?.name || (r.awayClubId === "TBD" ? "TBD" : r.awayClubId),
-          shortName: awayClubData?.shortName || (r.awayClubId === "TBD" ? "TBD" : r.awayClubId),
-          country: awayClubData?.country || "",
-          leagueId: awayClubData?.leagueId || "",
-          logoUrl: awayClubData?.logo || "",
+          name: awaySeed?.name || (r.awayClubId === "TBD" ? "TBD" : r.awayClubId),
+          shortName: awaySeed?.shortName || (r.awayClubId === "TBD" ? "TBD" : r.awayClubId),
+          country: awaySeed?.country || "",
+          leagueId: awaySeed?.leagueId || "",
+          logoUrl: awaySeed?.logoUrl || "",
           active: true,
           createdAt: ""
         },
@@ -2581,6 +2660,10 @@ async function getFixturesFirestore(filter) {
         updatedAt: r.updatedAt
       };
     });
+    if (cacheKey && fixtures.length > 0) {
+      setInCache(cacheKey, fixtures, 3e4);
+    }
+    return fixtures;
   } catch (err) {
     console.warn("[FIRESTORE FALLBACK] getFixturesFirestore:", err.message);
     let sql = `
@@ -2619,7 +2702,7 @@ async function getFixturesFirestore(filter) {
       params.push(filter.limit);
     }
     const rows = queryAll(sql, params);
-    return rows.map((r) => ({
+    const fallbackFixtures = rows.map((r) => ({
       id: r.id,
       seasonId: r.season_id,
       competitionId: r.competition_id,
@@ -2659,6 +2742,10 @@ async function getFixturesFirestore(filter) {
       createdAt: r.created_at,
       updatedAt: r.updated_at
     }));
+    if (cacheKey && fallbackFixtures.length > 0) {
+      setInCache(cacheKey, fallbackFixtures, 3e4);
+    }
+    return fallbackFixtures;
   }
 }
 async function getFixtureByIdFirestore(fixtureId, currentUserId) {
@@ -3689,70 +3776,16 @@ async function markNotificationsReadFirestore(userId) {
     queryRun(`UPDATE notifications SET is_read = 1 WHERE user_id = ?`, [userId]);
   }
 }
-async function syncFirestoreClubCrests() {
-  try {
-    const db = getFirestoreDb();
-    let updatedClubs = 0;
-    let updatedLeagues = 0;
-    const leagueBatch = db.batch();
-    for (const league of SEED_LEAGUES) {
-      const ref = db.collection(COLLECTIONS.LEAGUES).doc(league.id);
-      leagueBatch.set(
-        ref,
-        {
-          id: league.id,
-          name: league.name,
-          country: league.country,
-          tier: league.tier,
-          logo: league.logoUrl,
-          logoUrl: league.logoUrl
-        },
-        { merge: true }
-      );
-      updatedLeagues++;
-    }
-    await leagueBatch.commit();
-    const chunkSize = 400;
-    for (let i = 0; i < SEED_CLUBS.length; i += chunkSize) {
-      const chunk = SEED_CLUBS.slice(i, i + chunkSize);
-      const batch = db.batch();
-      for (const club of chunk) {
-        const ref = db.collection(COLLECTIONS.CLUBS).doc(club.id);
-        batch.set(
-          ref,
-          {
-            id: club.id,
-            name: club.name,
-            shortName: club.shortName,
-            country: club.country,
-            leagueId: club.leagueId,
-            logo: club.logoUrl,
-            logoUrl: club.logoUrl,
-            isActive: true
-          },
-          { merge: true }
-        );
-        updatedClubs++;
-      }
-      await batch.commit();
-    }
-    invalidateFirestoreCache();
-    console.log(
-      `[FIRESTORE SYNC] Synchronized ${updatedClubs} club crests and ${updatedLeagues} league logos to Firestore.`
-    );
-    return { updatedClubs, updatedLeagues, totalClubs: SEED_CLUBS.length };
-  } catch (err) {
-    console.error("[FIRESTORE SYNC ERROR] Failed to sync club crests to Firestore:", err.message);
-    throw err;
-  }
-}
-var ClubConflictError, ClubNotFoundError, serverCache;
+var SEED_CLUB_MAP, ClubConflictError, ClubNotFoundError, serverCache;
 var init_firestoreStore = __esm({
   "src/server/firebase/firestoreStore.ts"() {
     init_admin();
     init_db();
     init_seed();
     init_collections();
+    SEED_CLUB_MAP = new Map(
+      SEED_CLUBS.map((c) => [c.id, c])
+    );
     ClubConflictError = class extends Error {
       constructor(message, code = "CLUB_CONFLICT") {
         super(message);
@@ -4164,7 +4197,6 @@ async function migrateSqliteToFirestore() {
 }
 
 // src/server/app.ts
-init_firestoreStore();
 init_collections();
 
 // src/server/routes/health.routes.ts
@@ -4611,6 +4643,15 @@ clubsRouter.get("/:id/crest", async (req, res) => {
   const seasonId = req.query.seasonId || "season-2026-27";
   try {
     const resolvedSeedClub = resolveCanonicalClub(requestedId);
+    if (resolvedSeedClub?.logoUrl) {
+      await fetchAndServeImage(
+        resolvedSeedClub.logoUrl,
+        res,
+        resolvedSeedClub.name,
+        resolvedSeedClub.shortName
+      );
+      return;
+    }
     const canonicalId = resolvedSeedClub?.id || requestedId;
     let club = await getClubByIdFirestore(canonicalId, seasonId);
     if (!club && canonicalId !== requestedId) {
@@ -5340,7 +5381,6 @@ async function ensureDbReady() {
               console.log("[BOOT] Firestore auto-seeding completed.");
             } else {
               console.log(`[BOOT] Connected to authoritative Firestore database: ${fbStatus.databaseId}`);
-              await syncFirestoreClubCrests();
             }
           } catch (fbErr) {
             console.warn("[BOOT] Firestore connection warning, operating with resilient SQLite fallback:", fbErr.message);
