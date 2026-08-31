@@ -32,9 +32,32 @@ import {
   Info,
   Sliders,
   Check,
+  UserMinus,
+  UserPlus,
+  ExternalLink,
+  FileCheck,
+  X,
+  Flame,
+  ArrowRight,
+  Lock,
+  Unlock,
 } from 'lucide-react';
 
-type AdminTab = 'overview' | 'matches' | 'clubs' | 'competitions' | 'users' | 'system';
+type AdminTab = 'overview' | 'clubs' | 'matches' | 'results' | 'competitions' | 'users' | 'system';
+
+interface PendingFixtureItem extends Fixture {
+  submissions?: {
+    id: string;
+    submittedByUserId: string;
+    submitterUsername: string;
+    submitterName: string;
+    clubId: string;
+    homeScore: number;
+    awayScore: number;
+    proofUrl?: string;
+    createdAt: string;
+  }[];
+}
 
 export const AdminView: React.FC = () => {
   const { user, activeSeasonId, showToast } = useAuth();
@@ -47,6 +70,7 @@ export const AdminView: React.FC = () => {
   // Core Data
   const [overviewData, setOverviewData] = useState<any>(null);
   const [disputes, setDisputes] = useState<Dispute[]>([]);
+  const [pendingResults, setPendingResults] = useState<PendingFixtureItem[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [competitions, setCompetitions] = useState<Competition[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -54,19 +78,38 @@ export const AdminView: React.FC = () => {
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
   const [diagnostics, setDiagnostics] = useState<any>(null);
 
-  // Filter States
+  // Filter States - Matches
   const [matchCompFilter, setMatchCompFilter] = useState<string>('ALL');
   const [matchStatusFilter, setMatchStatusFilter] = useState<string>('ALL');
   const [matchSearch, setMatchSearch] = useState<string>('');
 
+  // Filter States - Clubs
   const [clubLeagueFilter, setClubLeagueFilter] = useState<string>('ALL');
   const [clubOccupancyFilter, setClubOccupancyFilter] = useState<string>('ALL');
   const [clubSearch, setClubSearch] = useState<string>('');
 
+  // Filter States - Users
   const [userSearch, setUserSearch] = useState<string>('');
   const [userRoleFilter, setUserRoleFilter] = useState<string>('ALL');
 
-  // Resolution Modal State
+  // Club Ownership Management Modals
+  const [selectedClubForAssign, setSelectedClubForAssign] = useState<Club | null>(null);
+  const [assignTargetUserId, setAssignTargetUserId] = useState<string>('');
+  const [assignUserSearch, setAssignUserSearch] = useState<string>('');
+  const [selectedClubForRelease, setSelectedClubForRelease] = useState<Club | null>(null);
+
+  // Results Management Modals
+  const [selectedPendingForApprove, setSelectedPendingForApprove] = useState<PendingFixtureItem | null>(null);
+  const [approveHomeScore, setApproveHomeScore] = useState<number>(0);
+  const [approveAwayScore, setApproveAwayScore] = useState<number>(0);
+  const [approveNotes, setApproveNotes] = useState<string>('');
+
+  const [selectedPendingForReject, setSelectedPendingForReject] = useState<PendingFixtureItem | null>(null);
+  const [rejectNotes, setRejectNotes] = useState<string>('');
+
+  const [selectedPendingForInspect, setSelectedPendingForInspect] = useState<PendingFixtureItem | null>(null);
+
+  // Dispute Resolution Modal State
   const [selectedDisputeForResolve, setSelectedDisputeForResolve] = useState<Dispute | null>(null);
   const [manualHomeScore, setManualHomeScore] = useState<number>(0);
   const [manualAwayScore, setManualAwayScore] = useState<number>(0);
@@ -78,7 +121,7 @@ export const AdminView: React.FC = () => {
   const [reopenNotes, setReopenNotes] = useState<string>('');
   const [selectedFixtureForInspect, setSelectedFixtureForInspect] = useState<Fixture | null>(null);
 
-  // Generator State
+  // Competition Action State
   const [generatingCompId, setGeneratingCompId] = useState<string | null>(null);
   const [rebuildingStandingsCompId, setRebuildingStandingsCompId] = useState<string | null>(null);
 
@@ -94,6 +137,7 @@ export const AdminView: React.FC = () => {
       const [
         overviewRes,
         disputesRes,
+        pendingRes,
         auditRes,
         compsRes,
         usersRes,
@@ -103,16 +147,18 @@ export const AdminView: React.FC = () => {
       ] = await Promise.all([
         api.getAdminOverview(activeSeasonId, skipCache).catch(() => null),
         api.getAdminDisputes('OPEN', skipCache).catch(() => ({ disputes: [] })),
-        api.getAdminAuditLogs(40, skipCache).catch(() => ({ logs: [] })),
+        api.getAdminPendingResults(activeSeasonId, skipCache).catch(() => ({ pendingFixtures: [], total: 0 })),
+        api.getAdminAuditLogs(50, skipCache).catch(() => ({ logs: [] })),
         api.getCompetitions(activeSeasonId, skipCache).catch(() => ({ competitions: [] })),
         api.getAdminUsers(skipCache).catch(() => ({ users: [] })),
         api.getAdminClubs(activeSeasonId, undefined, skipCache).catch(() => ({ clubs: [], total: 0 })),
-        api.getAdminFixtures(activeSeasonId, undefined, undefined, undefined, 120, skipCache).catch(() => ({ fixtures: [], total: 0 })),
+        api.getAdminFixtures(activeSeasonId, undefined, undefined, undefined, 200, skipCache).catch(() => ({ fixtures: [], total: 0 })),
         api.getAdminDiagnostics().catch(() => null),
       ]);
 
       if (overviewRes) setOverviewData(overviewRes);
       if (disputesRes?.disputes) setDisputes(disputesRes.disputes);
+      if (pendingRes?.pendingFixtures) setPendingResults(pendingRes.pendingFixtures as any);
       if (auditRes?.logs) setAuditLogs(auditRes.logs);
       if (compsRes?.competitions) setCompetitions(compsRes.competitions);
       if (usersRes?.users) setUsers(usersRes.users);
@@ -134,6 +180,84 @@ export const AdminView: React.FC = () => {
       setIsLoading(false);
     }
   }, [activeSeasonId, user?.isAdmin]);
+
+  // =========================================================================
+  // CLUB OWNERSHIP ACTIONS
+  // =========================================================================
+  const handleAssignClub = async () => {
+    if (!selectedClubForAssign || !assignTargetUserId) return;
+    setIsProcessing(true);
+    try {
+      const res = await api.adminAssignClub(selectedClubForAssign.id, assignTargetUserId, activeSeasonId);
+      showToast(res.message || `Club '${selectedClubForAssign.name}' successfully assigned.`, 'success');
+      setSelectedClubForAssign(null);
+      setAssignTargetUserId('');
+      setAssignUserSearch('');
+      await loadAllAdminData(true);
+    } catch (err: any) {
+      showToast(err.message || 'Failed to assign club.', 'error');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleReleaseClub = async () => {
+    if (!selectedClubForRelease) return;
+    setIsProcessing(true);
+    try {
+      const res = await api.adminReleaseClub(selectedClubForRelease.id, activeSeasonId);
+      showToast(res.message || `Club '${selectedClubForRelease.name}' has been released.`, 'success');
+      setSelectedClubForRelease(null);
+      await loadAllAdminData(true);
+    } catch (err: any) {
+      showToast(err.message || 'Failed to release club.', 'error');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // =========================================================================
+  // RESULTS & APPROVAL ACTIONS
+  // =========================================================================
+  const handleApproveResult = async () => {
+    if (!selectedPendingForApprove) return;
+    setIsProcessing(true);
+    try {
+      const res = await api.adminApproveResult(
+        selectedPendingForApprove.id,
+        approveHomeScore,
+        approveAwayScore,
+        approveNotes || 'Result approved and confirmed by competition administrator.'
+      );
+      showToast(res.message || 'Result confirmed and standings updated.', 'success');
+      setSelectedPendingForApprove(null);
+      setApproveNotes('');
+      await loadAllAdminData(true);
+    } catch (err: any) {
+      showToast(err.message || 'Failed to approve match result.', 'error');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleRejectResult = async () => {
+    if (!selectedPendingForReject) return;
+    setIsProcessing(true);
+    try {
+      const res = await api.adminRejectResult(
+        selectedPendingForReject.id,
+        rejectNotes || 'Submission rejected by tournament admin. Please re-enter correct score.'
+      );
+      showToast(res.message || 'Match reopened for fresh submission.', 'success');
+      setSelectedPendingForReject(null);
+      setRejectNotes('');
+      await loadAllAdminData(true);
+    } catch (err: any) {
+      showToast(err.message || 'Failed to reject result.', 'error');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
   // Dispute Resolution Action
   const handleResolveDispute = async (
@@ -175,7 +299,7 @@ export const AdminView: React.FC = () => {
     }
   };
 
-  // Schedule Generation Actions
+  // Competition Actions
   const handleGenerateCompetition = async (compId: string) => {
     setGeneratingCompId(compId);
     try {
@@ -184,19 +308,6 @@ export const AdminView: React.FC = () => {
       await loadAllAdminData(true);
     } catch (err: any) {
       showToast(err.message || 'Failed to generate schedule.', 'error');
-    } finally {
-      setGeneratingCompId(null);
-    }
-  };
-
-  const handleResetCompetition = async (compId: string) => {
-    setGeneratingCompId(compId);
-    try {
-      const res = await api.resetCompetitionFixtures(compId);
-      showToast(res.message || 'Schedule reset and regenerated successfully.', 'success');
-      await loadAllAdminData(true);
-    } catch (err: any) {
-      showToast(err.message || 'Failed to reset schedule.', 'error');
     } finally {
       setGeneratingCompId(null);
     }
@@ -228,7 +339,9 @@ export const AdminView: React.FC = () => {
     }
   };
 
-  // Filtered Matches
+  // =========================================================================
+  // FILTERED DATASETS
+  // =========================================================================
   const filteredFixtures = useMemo(() => {
     return fixtures.filter((f) => {
       if (matchCompFilter !== 'ALL' && f.competitionId !== matchCompFilter) return false;
@@ -245,7 +358,6 @@ export const AdminView: React.FC = () => {
     });
   }, [fixtures, matchCompFilter, matchStatusFilter, matchSearch]);
 
-  // Filtered Clubs
   const filteredClubs = useMemo(() => {
     return clubs.filter((c) => {
       if (clubLeagueFilter !== 'ALL' && c.leagueId !== clubLeagueFilter) return false;
@@ -261,7 +373,6 @@ export const AdminView: React.FC = () => {
     });
   }, [clubs, clubLeagueFilter, clubOccupancyFilter, clubSearch]);
 
-  // Filtered Users
   const filteredUsers = useMemo(() => {
     return users.filter((u) => {
       if (userRoleFilter === 'ADMIN' && !u.isAdmin) return false;
@@ -278,26 +389,81 @@ export const AdminView: React.FC = () => {
     });
   }, [users, userRoleFilter, userSearch]);
 
-  // Grouped Competitions
+  const assignableUsers = useMemo(() => {
+    if (!assignUserSearch.trim()) return users.slice(0, 15);
+    const q = assignUserSearch.toLowerCase();
+    return users
+      .filter((u) => {
+        return (
+          u.username?.toLowerCase().includes(q) ||
+          `${u.firstName || ''} ${u.lastName || ''}`.toLowerCase().includes(q) ||
+          u.telegramId?.includes(q) ||
+          u.id.toLowerCase().includes(q)
+        );
+      })
+      .slice(0, 20);
+  }, [users, assignUserSearch]);
+
+  // Clean, official 19 competition categorization
   const groupedCompetitions = useMemo(() => {
-    const domesticLeagues = competitions.filter((c) => c.type === 'LEAGUE' || (c.type as string) === 'league');
+    // 1. Domestic Leagues (5)
+    const domesticLeagues = competitions.filter(
+      (c) =>
+        c.type === 'LEAGUE' ||
+        c.type === 'league' ||
+        c.id.includes('premier-league') ||
+        c.id.includes('la-liga') ||
+        c.id.includes('serie-a') ||
+        c.id.includes('bundesliga') ||
+        c.id.includes('ligue-1')
+    );
+
+    // 2. Domestic Cups (6)
     const domesticCups = competitions.filter(
-      (c) => c.type === 'KNOCKOUT' || (c.type as string) === 'cup'
+      (c) =>
+        c.id.includes('fa-cup') ||
+        c.id.includes('efl-cup') ||
+        c.id.includes('copa-del-rey') ||
+        c.id.includes('coppa-italia') ||
+        c.id.includes('dfb-pokal') ||
+        c.id.includes('coupe-de-france')
     );
+
+    // 3. Super Cups (5) - strictly exclude Trophée des Champions
     const superCups = competitions.filter(
-      (c) => (c.type === 'SUPER_CUP' || (c.type as string) === 'super_cup') && c.id !== 'comp-trophee-des-champions'
+      (c) =>
+        (c.id.includes('community-shield') ||
+          c.id.includes('supercopa-espana') ||
+          c.id.includes('supercoppa-italiana') ||
+          c.id.includes('dfl-supercup') ||
+          c.id.includes('uefa-super-cup')) &&
+        !c.id.includes('trophee-des-champions')
     );
+
+    // 4. European Competitions (3)
     const european = competitions.filter(
       (c) =>
-        c.type === 'EUROPEAN_LEAGUE_PHASE' ||
-        c.type === 'EUROPEAN_KNOCKOUT' ||
-        (c.type as string) === 'champions_league' ||
-        (c.type as string) === 'europa_league' ||
-        (c.type as string) === 'conference_league'
+        (c.id.includes('champions-league') ||
+          c.id.includes('europa-league') ||
+          c.id.includes('conference-league')) &&
+        !c.id.includes('uefa-super-cup')
     );
 
     return { domesticLeagues, domesticCups, superCups, european };
   }, [competitions]);
+
+  // Match Status Metrics
+  const matchMetrics = useMemo(() => {
+    const upcoming = fixtures.filter((f) => f.status === 'SCHEDULED' || f.status === 'AWAITING_RESULT').length;
+    const completed = fixtures.filter((f) => f.status === 'CONFIRMED').length;
+    const pendingConfirm = fixtures.filter((f) => f.status === 'PENDING_CONFIRMATION').length;
+    const disputed = fixtures.filter((f) => f.status === 'DISPUTED').length;
+    const postponed = fixtures.filter((f) => f.status === 'POSTPONED').length;
+    return { upcoming, completed, pendingConfirm, disputed, postponed };
+  }, [fixtures]);
+
+  const occupiedClubsCount = clubs.filter((c) => c.isTaken || c.claimedByUserId).length;
+  const availableClubsCount = Math.max(0, (clubs.length || 96) - occupiedClubsCount);
 
   // Unauthorized Screen
   if (!user?.isAdmin) {
@@ -314,29 +480,29 @@ export const AdminView: React.FC = () => {
     );
   }
 
-  const occupiedClubsCount = clubs.filter((c) => c.isTaken || c.claimedByUserId).length;
-  const availableClubsCount = Math.max(0, clubs.length - occupiedClubsCount);
-
   return (
-    <div className="space-y-5 animate-in fade-in duration-300 pb-20 max-w-7xl mx-auto">
-      {/* Top Header & Fast Action Bar */}
+    <div className="space-y-5 animate-in fade-in duration-300 pb-24 max-w-7xl mx-auto">
+      {/* ========================================================================= */}
+      {/* TOP HEADER & SYSTEM BANNER */}
+      {/* ========================================================================= */}
       <div className="glass-panel p-4 sm:p-6 shadow-2xl relative overflow-hidden border-slate-800">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
           <div className="space-y-1">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                Football Competition Control Center
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center gap-1">
+                <Shield className="w-3 h-3" />
+                Tournament Control Dashboard
               </span>
               <span className="text-[11px] font-semibold text-slate-400">
                 Officer: <strong className="text-emerald-400">@{user?.username}</strong> ({user?.id})
               </span>
-              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/15 text-emerald-300 border border-emerald-500/20">
-                Season 2026/27 Active
+              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/15 text-emerald-300 border border-emerald-500/20 font-mono">
+                Season 2026/27 ACTIVE
               </span>
             </div>
             <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2.5">
               <SlidersHorizontal className="w-6 h-6 text-amber-400 shrink-0" />
-              <span>Tournament Administration & Match Engine</span>
+              <span>EFL UZ Competition Management System</span>
             </h1>
           </div>
 
@@ -370,8 +536,11 @@ export const AdminView: React.FC = () => {
         )}
       </div>
 
-      {/* Sub-Navigation Tabs - Horizontal Scroller for mobile */}
+      {/* ========================================================================= */}
+      {/* SECTION TABS (HIGH DENSITY NAVIGATION) */}
+      {/* ========================================================================= */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+        {/* 1. OVERVIEW */}
         <button
           id="tab-admin-overview"
           onClick={() => setActiveAdminTab('overview')}
@@ -383,29 +552,14 @@ export const AdminView: React.FC = () => {
         >
           <Activity className="w-4 h-4" />
           <span>Overview</span>
-          {disputes.length > 0 && (
-            <span className="px-1.5 py-0.2 bg-rose-500 text-white rounded-full font-black text-[10px] animate-pulse">
-              {disputes.length}
+          {pendingResults.length > 0 && (
+            <span className="px-1.5 py-0.2 bg-amber-600 text-slate-950 rounded-full font-black text-[10px]">
+              {pendingResults.length}
             </span>
           )}
         </button>
 
-        <button
-          id="tab-admin-matches"
-          onClick={() => setActiveAdminTab('matches')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all min-h-[40px] ${
-            activeAdminTab === 'matches'
-              ? 'btn-glass-primary text-slate-950 font-black shadow-lg shadow-emerald-500/25 scale-[1.02]'
-              : 'glass-card text-slate-300 hover:text-white'
-          }`}
-        >
-          <Calendar className="w-4 h-4" />
-          <span>Match Management</span>
-          {fixtures.length > 0 && (
-            <span className="text-[10px] text-slate-400 opacity-80 font-mono">({fixtures.length})</span>
-          )}
-        </button>
-
+        {/* 2. CLUBS */}
         <button
           id="tab-admin-clubs"
           onClick={() => setActiveAdminTab('clubs')}
@@ -416,9 +570,43 @@ export const AdminView: React.FC = () => {
           }`}
         >
           <Shield className="w-4 h-4" />
-          <span>96 Clubs ({clubs.length || 96})</span>
+          <span>Clubs ({clubs.length || 96})</span>
         </button>
 
+        {/* 3. MATCHES */}
+        <button
+          id="tab-admin-matches"
+          onClick={() => setActiveAdminTab('matches')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all min-h-[40px] ${
+            activeAdminTab === 'matches'
+              ? 'btn-glass-primary text-slate-950 font-black shadow-lg shadow-emerald-500/25 scale-[1.02]'
+              : 'glass-card text-slate-300 hover:text-white'
+          }`}
+        >
+          <Calendar className="w-4 h-4" />
+          <span>Matches ({fixtures.length})</span>
+        </button>
+
+        {/* 4. RESULTS */}
+        <button
+          id="tab-admin-results"
+          onClick={() => setActiveAdminTab('results')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all min-h-[40px] ${
+            activeAdminTab === 'results'
+              ? 'bg-rose-500 text-slate-950 font-black shadow-lg shadow-rose-500/25 scale-[1.02]'
+              : 'glass-card text-slate-300 hover:text-white'
+          }`}
+        >
+          <FileCheck className="w-4 h-4" />
+          <span>Results & Review</span>
+          {(pendingResults.length > 0 || disputes.length > 0) && (
+            <span className="px-1.5 py-0.2 bg-rose-600 text-white rounded-full font-black text-[10px] animate-pulse">
+              {pendingResults.length + disputes.length}
+            </span>
+          )}
+        </button>
+
+        {/* 5. COMPETITIONS */}
         <button
           id="tab-admin-competitions"
           onClick={() => setActiveAdminTab('competitions')}
@@ -429,9 +617,10 @@ export const AdminView: React.FC = () => {
           }`}
         >
           <Trophy className="w-4 h-4" />
-          <span>Competitions ({competitions.length})</span>
+          <span>19 Competitions</span>
         </button>
 
+        {/* 6. PLAYERS */}
         <button
           id="tab-admin-users"
           onClick={() => setActiveAdminTab('users')}
@@ -445,6 +634,7 @@ export const AdminView: React.FC = () => {
           <span>Players ({users.length})</span>
         </button>
 
+        {/* 7. SYSTEM & AUDIT */}
         <button
           id="tab-admin-system"
           onClick={() => setActiveAdminTab('system')}
@@ -455,640 +645,391 @@ export const AdminView: React.FC = () => {
           }`}
         >
           <Database className="w-4 h-4" />
-          <span>System & Audit</span>
+          <span>System Diagnostics</span>
         </button>
       </div>
 
       {/* ========================================================================= */}
-      {/* 1. OVERVIEW TAB */}
+      {/* 1. OVERVIEW SECTION */}
       {/* ========================================================================= */}
       {activeAdminTab === 'overview' && (
         <div className="space-y-6">
+          {/* Top KPI Metrics Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {/* Active Season */}
+            <div className="glass-card p-4 rounded-2xl relative overflow-hidden border-emerald-500/30">
+              <div className="text-[10px] font-black text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5" />
+                Active Season
+              </div>
+              <div className="text-xl sm:text-2xl font-black text-white mt-1">2026/27</div>
+              <div className="text-[10px] text-emerald-400 font-semibold mt-0.5">Status: ACTIVE • 5 Leagues</div>
+            </div>
+
+            {/* Total Users */}
+            <div className="glass-card p-4 rounded-2xl relative overflow-hidden border-slate-800">
+              <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                <UserCheck className="w-3.5 h-3.5" />
+                Registered Users
+              </div>
+              <div className="text-xl sm:text-2xl font-black text-white mt-1 tabular-nums">
+                {overviewData?.counts?.totalUsers || users.length || 0}
+              </div>
+              <div className="text-[10px] text-slate-400 mt-0.5">Telegram Verified Players</div>
+            </div>
+
+            {/* Registered Clubs (96) */}
+            <div className="glass-card p-4 rounded-2xl relative overflow-hidden border-slate-800">
+              <div className="text-[10px] font-black text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Shield className="w-3.5 h-3.5" />
+                Registered Clubs
+              </div>
+              <div className="text-xl sm:text-2xl font-black text-white mt-1 tabular-nums">96</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">
+                <span className="text-emerald-400 font-bold">{occupiedClubsCount} Occupied</span> •{' '}
+                <span className="text-amber-400 font-bold">{availableClubsCount} Available</span>
+              </div>
+            </div>
+
+            {/* Active Competitions */}
+            <div className="glass-card p-4 rounded-2xl relative overflow-hidden border-amber-500/30">
+              <div className="text-[10px] font-black text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Trophy className="w-3.5 h-3.5" />
+                Active Competitions
+              </div>
+              <div className="text-xl sm:text-2xl font-black text-white mt-1 tabular-nums">19</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">5 Leagues • 6 Cups • 5 Super • 3 UEFA</div>
+            </div>
+          </div>
+
+          {/* Match & Result KPI Row */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {/* Upcoming Matches */}
+            <div className="glass-card p-4 rounded-2xl border-slate-800">
+              <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Upcoming Matches</div>
+              <div className="text-xl font-black text-white mt-1 tabular-nums">{matchMetrics.upcoming}</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">Scheduled & In-Play</div>
+            </div>
+
+            {/* Completed Matches */}
+            <div className="glass-card p-4 rounded-2xl border-slate-800">
+              <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Completed Matches</div>
+              <div className="text-xl font-black text-emerald-400 mt-1 tabular-nums">{matchMetrics.completed}</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">Confirmed & In Standings</div>
+            </div>
+
+            {/* Pending Confirmations */}
+            <div className="glass-card p-4 rounded-2xl border-amber-500/30 bg-amber-950/10">
+              <div className="text-[10px] font-black text-amber-400 uppercase tracking-wider flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                Pending Confirmations
+              </div>
+              <div className="text-xl font-black text-amber-300 mt-1 tabular-nums">{pendingResults.length}</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">Awaiting Review or Consensus</div>
+            </div>
+
+            {/* Open Disputes */}
+            <div className="glass-card p-4 rounded-2xl border-rose-500/30 bg-rose-950/10">
+              <div className="text-[10px] font-black text-rose-400 uppercase tracking-wider flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" />
+                Open Conflicts
+              </div>
+              <div className="text-xl font-black text-rose-300 mt-1 tabular-nums">{disputes.length}</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">Score Mismatches</div>
+            </div>
+          </div>
+
           {/* ACTION CENTER / NEEDS ATTENTION */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-black uppercase tracking-wider text-slate-300 flex items-center gap-2">
-                <AlertTriangle className={`w-4 h-4 ${disputes.length > 0 ? 'text-rose-400 animate-bounce' : 'text-emerald-400'}`} />
-                <span>Action Center & Urgent Attention</span>
+              <h2 className="text-xs font-black uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                <Flame className="w-4 h-4 text-amber-400" />
+                <span>Action Center • Urgent Reviews ({pendingResults.length + disputes.length})</span>
               </h2>
-              <span className="text-xs font-semibold text-slate-400">
-                {disputes.length} Active Conflict{disputes.length === 1 ? '' : 's'}
-              </span>
+              <button
+                onClick={() => setActiveAdminTab('results')}
+                className="text-xs text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1"
+              >
+                <span>View Results Center</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
             </div>
 
-            {disputes.length === 0 ? (
-              <div className="glass-panel p-6 sm:p-8 text-center border-emerald-500/30 bg-emerald-950/10 shadow-xl">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 mx-auto mb-3">
-                  <CheckCircle2 className="w-6 h-6" />
+            {pendingResults.length === 0 && disputes.length === 0 ? (
+              <div className="glass-panel p-6 text-center border-emerald-500/30 bg-emerald-950/10 shadow-xl">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 mx-auto mb-2">
+                  <CheckCircle2 className="w-5 h-5" />
                 </div>
-                <h3 className="text-base font-bold text-white">All systems clear — No pending disputes or unresolved fixtures</h3>
-                <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
-                  All tournament matches, submitted scores, and standings are currently synchronized and verified.
+                <h3 className="text-sm font-bold text-white">All Tournament Matches Clear</h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  No pending score submissions or unresolved match disputes require administrator attention.
                 </p>
               </div>
             ) : (
-              <div className="space-y-3">
-                {disputes.map((dispute) => {
-                  const fix = dispute.fixture;
-                  return (
-                    <div
-                      key={dispute.id}
-                      className="glass-panel border-rose-500/40 p-4 sm:p-5 shadow-2xl space-y-3 bg-rose-950/15"
-                    >
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/[0.08] pb-3">
-                        <div className="flex items-center gap-2">
-                          <span className="px-2.5 py-0.5 rounded text-[10px] font-black uppercase bg-rose-500/20 text-rose-400 border border-rose-500/30">
-                            Score Conflict
-                          </span>
-                          <span className="text-xs font-black text-white">
-                            {fix?.competitionName || 'Tournament'} • Matchday {fix?.matchday}
-                          </span>
-                          <span className="text-[10px] font-mono text-slate-400 hidden sm:inline">
-                            (Dispute ID: {dispute.id.slice(0, 8)})
-                          </span>
-                        </div>
-                        <span className="text-[11px] text-slate-400 font-mono">
-                          {new Date(dispute.createdAt).toLocaleString()}
-                        </span>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {/* Pending Results Preview */}
+                {pendingResults.slice(0, 4).map((fix) => (
+                  <div key={fix.id} className="glass-card p-4 rounded-xl border-amber-500/30 space-y-2">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-bold text-amber-400 uppercase tracking-wide">
+                        {fix.competitionName || 'Tournament'} • MD {fix.matchday}
+                      </span>
+                      <span className="px-2 py-0.5 rounded text-[9px] font-black bg-amber-500/20 text-amber-300">
+                        {fix.status}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs py-1">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <ClubCrest clubId={fix.homeClubId} logoUrl={fix.homeClub?.logoUrl} name={fix.homeClub?.name} size="xs" />
+                        <span className="font-bold text-white truncate">{fix.homeClub?.name}</span>
                       </div>
-
-                      {/* Submissions side-by-side */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {/* Home entry */}
-                        <div className="glass-card p-3 rounded-xl">
-                          <div className="flex items-center justify-between mb-1.5">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <ClubCrest
-                                clubId={fix?.homeClub?.id}
-                                logoUrl={fix?.homeClub?.logoUrl}
-                                name={fix?.homeClub?.name}
-                                shortName={fix?.homeClub?.shortName}
-                                size="xs"
-                                className="w-5 h-5 shrink-0"
-                              />
-                              <span className="text-xs font-bold text-slate-200 truncate">
-                                {fix?.homeClub?.name} (@{fix?.homeClub?.claimedByUsername || 'player'})
-                              </span>
-                            </div>
-                            <span className="text-[9px] uppercase font-black text-slate-400">Home Claim</span>
-                          </div>
-                          {dispute.homeSubmission ? (
-                            <div className="flex items-center justify-between bg-slate-950/80 p-2 rounded-lg border border-white/[0.06]">
-                              <span className="text-base font-black text-emerald-400">
-                                {dispute.homeSubmission.homeScore} - {dispute.homeSubmission.awayScore}
-                              </span>
-                              {dispute.homeSubmission.proofUrl && (
-                                <a
-                                  href={dispute.homeSubmission.proofUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-[11px] text-indigo-400 hover:underline flex items-center gap-1"
-                                >
-                                  <Link className="w-3 h-3" />
-                                  <span>Proof</span>
-                                </a>
-                              )}
-                            </div>
-                          ) : (
-                            <div className="text-xs text-slate-500 italic">No entry submitted</div>
-                          )}
-                        </div>
-
-                        {/* Away entry */}
-                        <div className="glass-card p-3 rounded-xl">
-                          <div className="flex items-center justify-between mb-1.5">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <ClubCrest
-                                clubId={fix?.awayClub?.id}
-                                logoUrl={fix?.awayClub?.logoUrl}
-                                name={fix?.awayClub?.name}
-                                shortName={fix?.awayClub?.shortName}
-                                size="xs"
-                                className="w-5 h-5 shrink-0"
-                              />
-                              <span className="text-xs font-bold text-slate-200 truncate">
-                                {fix?.awayClub?.name} (@{fix?.awayClub?.claimedByUsername || 'player'})
-                              </span>
-                            </div>
-                            <span className="text-[9px] uppercase font-black text-slate-400">Away Claim</span>
-                          </div>
-                          {dispute.awaySubmission ? (
-                            <div className="flex items-center justify-between bg-slate-950/80 p-2 rounded-lg border border-white/[0.06]">
-                              <span className="text-base font-black text-rose-400">
-                                {dispute.awaySubmission.homeScore} - {dispute.awaySubmission.awayScore}
-                              </span>
-                              {dispute.awaySubmission.proofUrl && (
-                                <a
-                                  href={dispute.awaySubmission.proofUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-[11px] text-indigo-400 hover:underline flex items-center gap-1"
-                                >
-                                  <Link className="w-3 h-3" />
-                                  <span>Proof</span>
-                                </a>
-                              )}
-                            </div>
-                          ) : (
-                            <div className="text-xs text-slate-500 italic">No entry submitted</div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* 1-Click Fast Resolution Bar */}
-                      <div className="pt-2 flex flex-wrap items-center justify-end gap-2">
-                        {dispute.homeSubmission && (
-                          <button
-                            disabled={isProcessing}
-                            onClick={() => {
-                              setSelectedDisputeForResolve(dispute);
-                              handleResolveDispute('CONFIRM_HOME_SUBMISSION');
-                            }}
-                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow transition-all min-h-[36px]"
-                          >
-                            Accept Home ({dispute.homeSubmission.homeScore}-{dispute.homeSubmission.awayScore})
-                          </button>
-                        )}
-
-                        {dispute.awaySubmission && (
-                          <button
-                            disabled={isProcessing}
-                            onClick={() => {
-                              setSelectedDisputeForResolve(dispute);
-                              handleResolveDispute('CONFIRM_AWAY_SUBMISSION');
-                            }}
-                            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow transition-all min-h-[36px]"
-                          >
-                            Accept Away ({dispute.awaySubmission.homeScore}-{dispute.awaySubmission.awayScore})
-                          </button>
-                        )}
-
-                        <button
-                          onClick={() => {
-                            setSelectedDisputeForResolve(dispute);
-                            setManualHomeScore(dispute.homeSubmission?.homeScore || 0);
-                            setManualAwayScore(dispute.awaySubmission?.awayScore || 0);
-                          }}
-                          className="px-3 py-1.5 glass-card text-slate-200 font-bold text-xs rounded-xl transition-all min-h-[36px]"
-                        >
-                          Custom Score Ruling
-                        </button>
-
-                        <button
-                          disabled={isProcessing}
-                          onClick={() => {
-                            setSelectedDisputeForResolve(dispute);
-                            handleResolveDispute('CANCEL_MATCH');
-                          }}
-                          className="px-3 py-1.5 bg-rose-950/60 hover:bg-rose-800 text-rose-200 font-bold text-xs rounded-xl border border-rose-700/50 transition-all min-h-[36px]"
-                        >
-                          Void Match
-                        </button>
+                      <span className="font-black text-slate-400 px-2">vs</span>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="font-bold text-white truncate">{fix.awayClub?.name}</span>
+                        <ClubCrest clubId={fix.awayClubId} logoUrl={fix.awayClub?.logoUrl} name={fix.awayClub?.name} size="xs" />
                       </div>
                     </div>
-                  );
-                })}
+
+                    {fix.submissions && fix.submissions.length > 0 && (
+                      <div className="text-[11px] text-slate-400 bg-slate-950/60 p-2 rounded-lg border border-white/[0.05]">
+                        Claimed: <strong className="text-emerald-400 font-mono">{fix.submissions[0].homeScore} - {fix.submissions[0].awayScore}</strong> by @{fix.submissions[0].submitterUsername}
+                      </div>
+                    )}
+
+                    <button
+                      onClick={() => {
+                        setSelectedPendingForApprove(fix);
+                        setApproveHomeScore(fix.submissions?.[0]?.homeScore ?? 0);
+                        setApproveAwayScore(fix.submissions?.[0]?.awayScore ?? 0);
+                      }}
+                      className="w-full py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-xs font-black transition-all shadow"
+                    >
+                      Review & Confirm
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
           </div>
 
-          {/* COMPETITION STATUS GRID */}
-          <div className="space-y-3">
-            <h2 className="text-sm font-black uppercase tracking-wider text-slate-300 flex items-center gap-2">
-              <Trophy className="w-4 h-4 text-amber-400" />
-              <span>Tournament & Competition Status</span>
-            </h2>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-              <div className="glass-panel p-3.5 shadow-lg space-y-1">
-                <span className="text-[10px] uppercase font-bold text-slate-400">Active Season</span>
-                <div className="text-lg font-black text-white">2026/27</div>
-                <span className="text-[9px] font-black text-emerald-400 bg-emerald-500/15 px-1.5 py-0.5 rounded">
-                  OFFICIAL ACTIVE
+          {/* Quick Shortcuts Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+            <button
+              onClick={() => setActiveAdminTab('clubs')}
+              className="glass-card p-4 rounded-xl text-left hover:border-emerald-500/40 transition-all space-y-1 group"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <Shield className="w-4 h-4 text-emerald-400" />
+                  Manage 96 Clubs
                 </span>
+                <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-emerald-400 transition-colors" />
               </div>
+              <p className="text-[11px] text-slate-400">
+                Inspect club owners, availability, assign new players or release occupied teams.
+              </p>
+            </button>
 
-              <div className="glass-panel p-3.5 shadow-lg space-y-1">
-                <span className="text-[10px] uppercase font-bold text-slate-400">Domestic Leagues</span>
-                <div className="text-lg font-black text-white">5 Leagues</div>
-                <span className="text-[9px] font-semibold text-slate-400">ENG, ESP, ITA, GER, FRA</span>
-              </div>
-
-              <div className="glass-panel p-3.5 shadow-lg space-y-1">
-                <span className="text-[10px] uppercase font-bold text-slate-400">Total Clubs</span>
-                <div className="text-lg font-black text-white">{clubs.length || 96} Clubs</div>
-                <span className="text-[9px] font-semibold text-emerald-400">
-                  {occupiedClubsCount} Claimed • {availableClubsCount} Open
+            <button
+              onClick={() => setActiveAdminTab('matches')}
+              className="glass-card p-4 rounded-xl text-left hover:border-emerald-500/40 transition-all space-y-1 group"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4 text-emerald-400" />
+                  Match Engine
                 </span>
+                <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-emerald-400 transition-colors" />
               </div>
+              <p className="text-[11px] text-slate-400">
+                Inspect schedule across all 19 tournaments, check scores, reopen matches if needed.
+              </p>
+            </button>
 
-              <div className="glass-panel p-3.5 shadow-lg space-y-1">
-                <span className="text-[10px] uppercase font-bold text-slate-400">Registered Players</span>
-                <div className="text-lg font-black text-white">{users.length} Users</div>
-                <span className="text-[9px] font-semibold text-slate-400">Telegram Verified</span>
-              </div>
-
-              <div className="glass-panel p-3.5 shadow-lg space-y-1">
-                <span className="text-[10px] uppercase font-bold text-slate-400">Scheduled Matches</span>
-                <div className="text-lg font-black text-white">{fixtures.length} Fixtures</div>
-                <span className="text-[9px] font-semibold text-indigo-400">Across Competitions</span>
-              </div>
-
-              <div className="glass-panel p-3.5 shadow-lg space-y-1">
-                <span className="text-[10px] uppercase font-bold text-slate-400">System Disputes</span>
-                <div className={`text-lg font-black ${disputes.length > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
-                  {disputes.length} Open
-                </div>
-                <span className="text-[9px] font-semibold text-slate-400">
-                  {disputes.length === 0 ? 'Synchronized' : 'Requires Ruling'}
+            <button
+              onClick={handleEvaluateQualifications}
+              disabled={isProcessing}
+              className="glass-card p-4 rounded-xl text-left hover:border-emerald-500/40 transition-all space-y-1 group"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-amber-400" />
+                  European Qualifications
                 </span>
+                <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-amber-400 transition-colors" />
               </div>
-            </div>
-          </div>
-
-          {/* SYSTEM HEALTH & PERSISTENCE PANEL */}
-          <div className="glass-panel p-5 sm:p-6 shadow-xl space-y-4 border-slate-800">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/[0.06] pb-3">
-              <div className="flex items-center gap-2">
-                <Database className="w-4 h-4 text-emerald-400" />
-                <h3 className="text-sm font-bold text-white">Database & Multi-Tier Cache Health</h3>
-              </div>
-              <span className="text-[11px] text-slate-400">
-                Last checked: {new Date().toLocaleTimeString()}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="glass-card p-3.5 rounded-xl space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-white">Cloud Firestore</span>
-                  <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-emerald-500/20 text-emerald-400">
-                    Connected
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-400 font-mono">
-                  Project: {diagnostics?.projectId || 'efl-uz-prod'} • DB: {diagnostics?.databaseId || '(default)'}
-                </p>
-              </div>
-
-              <div className="glass-card p-3.5 rounded-xl space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-white">In-Memory TTL Cache</span>
-                  <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-emerald-500/20 text-emerald-400">
-                    Active (Quota Guard)
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-400">
-                  Protects Firestore read quotas with smart TTL and invalidation hooks.
-                </p>
-              </div>
-
-              <div className="glass-card p-3.5 rounded-xl space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-white">SQLite Fallback Store</span>
-                  <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-emerald-500/20 text-emerald-400">
-                    Ready
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-400">
-                  Instant offline persistence fallback layer operational.
-                </p>
-              </div>
-            </div>
+              <p className="text-[11px] text-slate-400">
+                Calculate UEFA Champions League, Europa League, and Conference League allocations.
+              </p>
+            </button>
           </div>
         </div>
       )}
 
       {/* ========================================================================= */}
-      {/* 2. MATCH MANAGEMENT TAB */}
-      {/* ========================================================================= */}
-      {activeAdminTab === 'matches' && (
-        <div className="space-y-4">
-          {/* Filter Bar */}
-          <div className="glass-panel p-4 shadow-xl space-y-3">
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-              <div className="relative flex-1">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder="Search club name, competition, or fixture ID..."
-                  value={matchSearch}
-                  onChange={(e) => setMatchSearch(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 glass-input rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 min-h-[38px]"
-                />
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <select
-                  value={matchCompFilter}
-                  onChange={(e) => setMatchCompFilter(e.target.value)}
-                  className="px-3 py-2 glass-input rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500 min-h-[38px] bg-slate-900"
-                >
-                  <option value="ALL">All Competitions ({competitions.length})</option>
-                  {competitions.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  value={matchStatusFilter}
-                  onChange={(e) => setMatchStatusFilter(e.target.value)}
-                  className="px-3 py-2 glass-input rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500 min-h-[38px] bg-slate-900"
-                >
-                  <option value="ALL">All Statuses</option>
-                  <option value="SCHEDULED">Scheduled</option>
-                  <option value="PENDING_CONFIRMATION">Pending Confirmation</option>
-                  <option value="CONFIRMED">Confirmed</option>
-                  <option value="DISPUTED">Disputed</option>
-                  <option value="CANCELLED">Cancelled</option>
-                  <option value="POSTPONED">Postponed</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-white/[0.04]">
-              <span>Showing {filteredFixtures.length} of {fixtures.length} matches</span>
-              {(matchSearch || matchCompFilter !== 'ALL' || matchStatusFilter !== 'ALL') && (
-                <button
-                  onClick={() => {
-                    setMatchSearch('');
-                    setMatchCompFilter('ALL');
-                    setMatchStatusFilter('ALL');
-                  }}
-                  className="text-emerald-400 hover:underline text-[11px] font-bold"
-                >
-                  Clear Filters
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Fixture List / Cards */}
-          {isLoading ? (
-            <div className="py-20 text-center text-slate-400">
-              <Loader2 className="w-8 h-8 animate-spin text-emerald-400 mx-auto mb-2" />
-              <span className="text-xs">{t.loading}</span>
-            </div>
-          ) : filteredFixtures.length === 0 ? (
-            <div className="glass-panel p-12 text-center text-slate-400">
-              <Info className="w-8 h-8 text-slate-500 mx-auto mb-2" />
-              <p className="text-xs font-semibold">No fixtures match your search or filter criteria.</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {filteredFixtures.map((fix) => {
-                const isDisputed = fix.status === 'DISPUTED';
-                const isConfirmed = fix.status === 'CONFIRMED';
-                const isPending = fix.status === 'PENDING_CONFIRMATION';
-
-                return (
-                  <div
-                    key={fix.id}
-                    className={`glass-panel p-4 shadow-lg transition-all ${
-                      isDisputed ? 'border-rose-500/40 bg-rose-950/10' : 'hover:border-slate-700'
-                    }`}
-                  >
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-                      {/* Match Meta & Teams */}
-                      <div className="space-y-2 flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-slate-800 text-slate-300">
-                            {fix.competitionName || 'Match'} • MD {fix.matchday}
-                          </span>
-                          <span
-                            className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
-                              isConfirmed
-                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                                : isDisputed
-                                ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                                : isPending
-                                ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                                : 'bg-slate-800 text-slate-400'
-                            }`}
-                          >
-                            {fix.status}
-                          </span>
-                          <span className="text-[10px] text-slate-500 font-mono truncate hidden sm:inline">
-                            ID: {fix.id}
-                          </span>
-                        </div>
-
-                        {/* Match Row */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          {/* Home Club */}
-                          <div className="flex items-center gap-2.5">
-                            <ClubCrest
-                              clubId={fix.homeClub?.id}
-                              logoUrl={fix.homeClub?.logoUrl}
-                              name={fix.homeClub?.name}
-                              shortName={fix.homeClub?.shortName}
-                              size="sm"
-                              className="w-6 h-6 shrink-0"
-                            />
-                            <div className="min-w-0">
-                              <div className="text-xs font-bold text-white truncate">
-                                {fix.homeClub?.name || 'Home Club'}
-                              </div>
-                              <div className="text-[10px] text-slate-400">
-                                @{fix.homeClub?.claimedByUsername || fix.homeClub?.managerUsername || 'available'}
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Away Club */}
-                          <div className="flex items-center gap-2.5">
-                            <ClubCrest
-                              clubId={fix.awayClub?.id}
-                              logoUrl={fix.awayClub?.logoUrl}
-                              name={fix.awayClub?.name}
-                              shortName={fix.awayClub?.shortName}
-                              size="sm"
-                              className="w-6 h-6 shrink-0"
-                            />
-                            <div className="min-w-0">
-                              <div className="text-xs font-bold text-white truncate">
-                                {fix.awayClub?.name || 'Away Club'}
-                              </div>
-                              <div className="text-[10px] text-slate-400">
-                                @{fix.awayClub?.claimedByUsername || fix.awayClub?.managerUsername || 'available'}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Score & Action Controls */}
-                      <div className="flex items-center justify-between md:justify-end gap-3 pt-2 md:pt-0 border-t md:border-t-0 border-white/[0.04] shrink-0">
-                        {/* Score Display */}
-                        <div className="px-3 py-1.5 bg-slate-950/80 rounded-xl border border-white/[0.08] text-center min-w-[70px]">
-                          <span className="text-base font-black text-white">
-                            {fix.homeScore !== undefined && fix.homeScore !== null ? fix.homeScore : '-'} :{' '}
-                            {fix.awayScore !== undefined && fix.awayScore !== null ? fix.awayScore : '-'}
-                          </span>
-                        </div>
-
-                        {/* Action Buttons */}
-                        <div className="flex items-center gap-1.5">
-                          {isDisputed && (
-                            <button
-                              onClick={() => {
-                                const found = disputes.find((d) => d.fixtureId === fix.id);
-                                if (found) {
-                                  setSelectedDisputeForResolve(found);
-                                  setManualHomeScore(found.homeSubmission?.homeScore || 0);
-                                  setManualAwayScore(found.awaySubmission?.awayScore || 0);
-                                } else {
-                                  showToast('Dispute record not found in active list.', 'error');
-                                }
-                              }}
-                              className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl shadow transition-all min-h-[36px]"
-                            >
-                              Arbitrate
-                            </button>
-                          )}
-
-                          <button
-                            onClick={() => setSelectedFixtureForInspect(fix)}
-                            className="px-2.5 py-1.5 glass-card hover:border-slate-600 text-slate-300 text-xs font-bold rounded-xl transition-all min-h-[36px] flex items-center gap-1"
-                            title="View match details"
-                          >
-                            <Eye className="w-3.5 h-3.5 text-slate-400" />
-                            <span className="hidden sm:inline">Details</span>
-                          </button>
-
-                          {(isConfirmed || isDisputed || isPending) && (
-                            <button
-                              onClick={() => setSelectedFixtureForReopen(fix)}
-                              className="px-2.5 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-xs font-bold rounded-xl transition-all min-h-[36px] flex items-center gap-1"
-                              title="Reopen match for resubmission"
-                            >
-                              <RotateCcw className="w-3.5 h-3.5" />
-                              <span className="hidden sm:inline">Reopen</span>
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* 3. CLUBS MANAGEMENT TAB */}
+      {/* 2. CLUBS SECTION */}
       {/* ========================================================================= */}
       {activeAdminTab === 'clubs' && (
         <div className="space-y-4">
-          {/* Search & Filters */}
-          <div className="glass-panel p-4 shadow-xl space-y-3">
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-              <div className="relative flex-1">
+          {/* Controls Bar */}
+          <div className="glass-panel p-4 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-black text-white flex items-center gap-2">
+                  <Shield className="w-4 h-4 text-emerald-400" />
+                  <span>96 Official European Clubs</span>
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Safely manage club occupancy, assign registered users, or release clubs. Deletion is protected.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 text-xs font-bold">
+                <span className="px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/20">
+                  {occupiedClubsCount} Occupied
+                </span>
+                <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300">
+                  {availableClubsCount} Available
+                </span>
+              </div>
+            </div>
+
+            {/* Filter Row */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-white/[0.06]">
+              {/* Search */}
+              <div className="relative">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
-                  placeholder="Search club name, short code, or manager..."
                   value={clubSearch}
                   onChange={(e) => setClubSearch(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 glass-input rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 min-h-[38px]"
+                  placeholder="Search club name or owner..."
+                  className="w-full pl-9 pr-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500"
                 />
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <select
-                  value={clubLeagueFilter}
-                  onChange={(e) => setClubLeagueFilter(e.target.value)}
-                  className="px-3 py-2 glass-input rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500 min-h-[38px] bg-slate-900"
-                >
-                  <option value="ALL">All Domestic Leagues (5)</option>
-                  <option value="league-premier-league">Premier League (20)</option>
-                  <option value="league-la-liga">La Liga (20)</option>
-                  <option value="league-serie-a">Serie A (20)</option>
-                  <option value="league-bundesliga">Bundesliga (18)</option>
-                  <option value="league-ligue-1">Ligue 1 (18)</option>
-                </select>
+              {/* League Filter */}
+              <select
+                value={clubLeagueFilter}
+                onChange={(e) => setClubLeagueFilter(e.target.value)}
+                className="px-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-semibold"
+              >
+                <option value="ALL">All Leagues (96 Clubs)</option>
+                <option value="league-premier-league">Premier League (20)</option>
+                <option value="league-la-liga">La Liga (20)</option>
+                <option value="league-serie-a">Serie A (20)</option>
+                <option value="league-bundesliga">Bundesliga (18)</option>
+                <option value="league-ligue-1">Ligue 1 (18)</option>
+              </select>
 
-                <select
-                  value={clubOccupancyFilter}
-                  onChange={(e) => setClubOccupancyFilter(e.target.value)}
-                  className="px-3 py-2 glass-input rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500 min-h-[38px] bg-slate-900"
-                >
-                  <option value="ALL">All Statuses ({clubs.length})</option>
-                  <option value="OCCUPIED">Occupied ({occupiedClubsCount})</option>
-                  <option value="AVAILABLE">Available ({availableClubsCount})</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-white/[0.04]">
-              <span>
-                Showing {filteredClubs.length} of {clubs.length} Clubs (96 Total Official European Clubs)
-              </span>
-              {(clubSearch || clubLeagueFilter !== 'ALL' || clubOccupancyFilter !== 'ALL') && (
-                <button
-                  onClick={() => {
-                    setClubSearch('');
-                    setClubLeagueFilter('ALL');
-                    setClubOccupancyFilter('ALL');
-                  }}
-                  className="text-emerald-400 hover:underline text-[11px] font-bold"
-                >
-                  Clear Filters
-                </button>
-              )}
+              {/* Occupancy Filter */}
+              <select
+                value={clubOccupancyFilter}
+                onChange={(e) => setClubOccupancyFilter(e.target.value)}
+                className="px-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-semibold"
+              >
+                <option value="ALL">All Availability</option>
+                <option value="OCCUPIED">Occupied Only</option>
+                <option value="AVAILABLE">Available Only</option>
+              </select>
             </div>
           </div>
 
-          {/* Club Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {filteredClubs.map((c) => {
-              const isClaimed = Boolean(c.isTaken || c.claimedByUserId);
-              const leagueDisplay = c.leagueId
-                ? c.leagueId.replace('league-', '').replace('-', ' ').toUpperCase()
-                : 'LEAGUE';
-
+          {/* Clubs Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            {filteredClubs.map((club) => {
+              const isOccupied = club.isTaken || Boolean(club.claimedByUserId);
               return (
                 <div
-                  key={c.id}
-                  className="glass-panel p-4 shadow-lg flex items-center justify-between gap-3 hover:border-slate-700 transition-all"
+                  key={club.id}
+                  className={`glass-card p-3.5 rounded-2xl flex flex-col justify-between space-y-3 transition-all border ${
+                    isOccupied ? 'border-emerald-500/30' : 'border-slate-800/80'
+                  }`}
                 >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <ClubCrest
-                      clubId={c.id}
-                      logoUrl={c.logoUrl}
-                      name={c.name}
-                      shortName={c.shortName}
-                      size="md"
-                      className="w-9 h-9 shrink-0"
-                    />
-                    <div className="min-w-0">
-                      <div className="font-bold text-xs text-white truncate">{c.name}</div>
-                      <div className="text-[10px] text-slate-400 font-medium">
-                        {leagueDisplay} • {c.country}
+                  <div className="space-y-2">
+                    {/* Crest & Header */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <ClubCrest
+                          clubId={club.id}
+                          logoUrl={club.logoUrl}
+                          name={club.name}
+                          shortName={club.shortName}
+                          size="md"
+                          className="shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <h3 className="text-xs font-black text-white truncate leading-tight">{club.name}</h3>
+                          <span className="text-[10px] text-slate-400 font-mono font-bold">{club.shortName} • {club.country}</span>
+                        </div>
                       </div>
-                      <div className="text-[11px] font-semibold mt-0.5 truncate">
-                        {isClaimed ? (
-                          <span className="text-emerald-400">@{c.claimedByUsername || c.managerUsername || 'claimed'}</span>
-                        ) : (
-                          <span className="text-slate-500 italic">Available to claim</span>
-                        )}
-                      </div>
+
+                      <span
+                        className={`px-2 py-0.5 rounded text-[9px] font-black uppercase shrink-0 ${
+                          isOccupied
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                            : 'bg-slate-800 text-slate-400'
+                        }`}
+                      >
+                        {isOccupied ? 'Occupied' : 'Free'}
+                      </span>
+                    </div>
+
+                    {/* Owner details */}
+                    <div className="bg-slate-950/70 p-2.5 rounded-xl border border-white/[0.05] space-y-1">
+                      <div className="text-[9px] uppercase font-black text-slate-500">Current Manager</div>
+                      {isOccupied ? (
+                        <div className="space-y-0.5">
+                          <div className="text-xs font-black text-emerald-400 truncate flex items-center gap-1">
+                            <UserCheck className="w-3 h-3 shrink-0" />
+                            <span>@{club.claimedByUsername || club.managerUsername || 'player'}</span>
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-mono truncate">
+                            ID: {club.claimedByUserId || club.managerUserId || '—'}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-[11px] text-slate-500 italic font-semibold">Available for assignment</div>
+                      )}
                     </div>
                   </div>
 
-                  <span
-                    className={`px-2 py-0.5 rounded text-[9px] font-black uppercase shrink-0 ${
-                      isClaimed
-                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                        : 'bg-slate-800 text-slate-400 border border-slate-700'
-                    }`}
-                  >
-                    {isClaimed ? 'Occupied' : 'Open'}
-                  </span>
+                  {/* Actions Bar */}
+                  <div className="pt-2 border-t border-white/[0.06] flex items-center gap-2">
+                    {isOccupied ? (
+                      <>
+                        <button
+                          onClick={() => setSelectedClubForRelease(club)}
+                          className="flex-1 py-1.5 px-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-lg text-[11px] font-black flex items-center justify-center gap-1 transition-all"
+                        >
+                          <UserMinus className="w-3 h-3" />
+                          <span>Release</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedClubForAssign(club);
+                            setAssignTargetUserId(club.claimedByUserId || '');
+                          }}
+                          className="flex-1 py-1.5 px-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 transition-all"
+                        >
+                          <UserPlus className="w-3 h-3" />
+                          <span>Reassign</span>
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setSelectedClubForAssign(club);
+                          setAssignTargetUserId('');
+                        }}
+                        className="w-full py-1.5 px-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-lg text-[11px] font-black flex items-center justify-center gap-1.5 transition-all shadow"
+                      >
+                        <UserPlus className="w-3 h-3" />
+                        <span>Assign Player</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -1097,118 +1038,531 @@ export const AdminView: React.FC = () => {
       )}
 
       {/* ========================================================================= */}
-      {/* 4. COMPETITIONS & SCHEDULING TAB */}
+      {/* 3. MATCHES SECTION */}
+      {/* ========================================================================= */}
+      {activeAdminTab === 'matches' && (
+        <div className="space-y-4">
+          {/* Filters Bar */}
+          <div className="glass-panel p-4 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-black text-white flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-emerald-400" />
+                  <span>Fixture Management & Schedule Inspector</span>
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Inspect results, review status, identify postponed/problematic matches, or reopen for corrections.
+                </p>
+              </div>
+
+              <div className="text-xs font-bold text-slate-400 font-mono">
+                Showing <strong className="text-emerald-400">{filteredFixtures.length}</strong> matches
+              </div>
+            </div>
+
+            {/* Filter Controls */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-white/[0.06]">
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={matchSearch}
+                  onChange={(e) => setMatchSearch(e.target.value)}
+                  placeholder="Search club or fixture ID..."
+                  className="w-full pl-9 pr-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              {/* Competition Filter */}
+              <select
+                value={matchCompFilter}
+                onChange={(e) => setMatchCompFilter(e.target.value)}
+                className="px-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-semibold"
+              >
+                <option value="ALL">All Competitions (19)</option>
+                {competitions.map((comp) => (
+                  <option key={comp.id} value={comp.id}>
+                    {comp.name}
+                  </option>
+                ))}
+              </select>
+
+              {/* Status Filter */}
+              <select
+                value={matchStatusFilter}
+                onChange={(e) => setMatchStatusFilter(e.target.value)}
+                className="px-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-semibold"
+              >
+                <option value="ALL">All Match Statuses</option>
+                <option value="SCHEDULED">SCHEDULED (Upcoming)</option>
+                <option value="AWAITING_RESULT">AWAITING_RESULT (In Play)</option>
+                <option value="PENDING_CONFIRMATION">PENDING_CONFIRMATION (1 Submission)</option>
+                <option value="CONFIRMED">CONFIRMED (Final)</option>
+                <option value="DISPUTED">DISPUTED (Conflict)</option>
+                <option value="POSTPONED">POSTPONED</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Fixtures List */}
+          <div className="space-y-2.5">
+            {filteredFixtures.length === 0 ? (
+              <div className="glass-panel p-8 text-center border-slate-800 text-slate-400 text-xs">
+                No fixtures matched the selected filters.
+              </div>
+            ) : (
+              filteredFixtures.map((fix) => {
+                const isConfirmed = fix.status === 'CONFIRMED';
+                const isDisputed = fix.status === 'DISPUTED';
+                const isPending = fix.status === 'PENDING_CONFIRMATION';
+
+                return (
+                  <div
+                    key={fix.id}
+                    className={`glass-card p-3 sm:p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 border ${
+                      isDisputed
+                        ? 'border-rose-500/40 bg-rose-950/10'
+                        : isPending
+                        ? 'border-amber-500/40 bg-amber-950/10'
+                        : 'border-slate-800/80'
+                    }`}
+                  >
+                    {/* Left: Tournament Badge & Teams */}
+                    <div className="space-y-1.5 flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black uppercase text-amber-400 bg-amber-500/15 px-2 py-0.5 rounded">
+                          {fix.competitionName || fix.competitionId}
+                        </span>
+                        {fix.matchday && (
+                          <span className="text-[10px] font-bold text-slate-400 font-mono">
+                            Matchday {fix.matchday}
+                          </span>
+                        )}
+                        {fix.roundName && (
+                          <span className="text-[10px] font-bold text-slate-400">
+                            • {fix.roundName}
+                          </span>
+                        )}
+                        <span
+                          className={`px-2 py-0.2 text-[9px] font-black uppercase rounded ${
+                            isConfirmed
+                              ? 'bg-emerald-500/20 text-emerald-300'
+                              : isDisputed
+                              ? 'bg-rose-500/20 text-rose-400'
+                              : isPending
+                              ? 'bg-amber-500/20 text-amber-300'
+                              : 'bg-slate-800 text-slate-400'
+                          }`}
+                        >
+                          {fix.status}
+                        </span>
+                      </div>
+
+                      {/* Scoreline */}
+                      <div className="flex items-center gap-3 text-xs sm:text-sm font-bold text-white">
+                        <div className="flex items-center gap-2 flex-1 justify-end min-w-0">
+                          <span className="truncate">{fix.homeClub?.name || fix.homeClubId}</span>
+                          <ClubCrest
+                            clubId={fix.homeClubId}
+                            logoUrl={fix.homeClub?.logoUrl}
+                            name={fix.homeClub?.name}
+                            size="xs"
+                            className="shrink-0"
+                          />
+                        </div>
+
+                        {/* Middle Score / Time */}
+                        <div className="px-3 py-1 bg-slate-950/80 rounded-lg border border-white/[0.08] font-mono font-black text-center min-w-[54px]">
+                          {isConfirmed ? (
+                            <span className="text-emerald-400">
+                              {fix.homeScore} - {fix.awayScore}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 text-xs">VS</span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 flex-1 justify-start min-w-0">
+                          <ClubCrest
+                            clubId={fix.awayClubId}
+                            logoUrl={fix.awayClub?.logoUrl}
+                            name={fix.awayClub?.name}
+                            size="xs"
+                            className="shrink-0"
+                          />
+                          <span className="truncate">{fix.awayClub?.name || fix.awayClubId}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right: Actions */}
+                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                      <button
+                        onClick={() => setSelectedFixtureForInspect(fix)}
+                        className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-bold flex items-center gap-1"
+                      >
+                        <Eye className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Inspect</span>
+                      </button>
+
+                      {isConfirmed && (
+                        <button
+                          onClick={() => setSelectedFixtureForReopen(fix)}
+                          className="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-lg text-xs font-bold flex items-center gap-1"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Reopen</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 4. RESULTS SECTION (DEDICATED PENDING REVIEW WORKFLOW) */}
+      {/* ========================================================================= */}
+      {activeAdminTab === 'results' && (
+        <div className="space-y-4">
+          <div className="glass-panel p-4 space-y-1">
+            <h2 className="text-sm font-black text-white flex items-center gap-2">
+              <FileCheck className="w-4 h-4 text-amber-400" />
+              <span>Pending Results Review & Arbitration Workflow</span>
+            </h2>
+            <p className="text-xs text-slate-400">
+              Matches with single submissions or conflicting claims. Administrator approval immediately updates official standings and tournament knockout progressions.
+            </p>
+          </div>
+
+          {/* Pending Submissions List */}
+          <div className="space-y-3">
+            {pendingResults.length === 0 && disputes.length === 0 ? (
+              <div className="glass-panel p-10 text-center border-emerald-500/30 bg-emerald-950/10">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 mx-auto mb-3">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+                <h3 className="text-base font-bold text-white">No Pending Result Confirmations</h3>
+                <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
+                  All match submissions have either achieved two-player consensus or been confirmed by tournament officials.
+                </p>
+              </div>
+            ) : (
+              pendingResults.map((fix) => {
+                const sub = fix.submissions?.[0];
+                return (
+                  <div
+                    key={fix.id}
+                    className="glass-panel p-4 sm:p-5 rounded-2xl border-amber-500/40 shadow-xl space-y-3 bg-amber-950/10"
+                  >
+                    {/* Header */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/[0.08] pb-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                          {fix.status}
+                        </span>
+                        <span className="text-xs font-black text-white">
+                          {fix.competitionName || 'Tournament'} • Matchday {fix.matchday}
+                        </span>
+                        <span className="text-[10px] font-mono text-slate-400">({fix.id})</span>
+                      </div>
+
+                      {sub && (
+                        <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5 text-slate-500" />
+                          <span>Submitted: {new Date(sub.createdAt).toLocaleString()}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Clubs and Score Claim */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-center">
+                      {/* Match Matchup */}
+                      <div className="flex items-center justify-between bg-slate-950/70 p-3 rounded-xl border border-white/[0.06]">
+                        <div className="flex items-center gap-2">
+                          <ClubCrest clubId={fix.homeClubId} logoUrl={fix.homeClub?.logoUrl} name={fix.homeClub?.name} size="sm" />
+                          <div>
+                            <div className="text-xs font-bold text-white">{fix.homeClub?.name}</div>
+                            <div className="text-[10px] text-slate-400">@{fix.homeClub?.claimedByUsername || 'player'}</div>
+                          </div>
+                        </div>
+                        <span className="text-xs font-black text-slate-500 px-2">VS</span>
+                        <div className="flex items-center gap-2 text-right">
+                          <div>
+                            <div className="text-xs font-bold text-white">{fix.awayClub?.name}</div>
+                            <div className="text-[10px] text-slate-400">@{fix.awayClub?.claimedByUsername || 'player'}</div>
+                          </div>
+                          <ClubCrest clubId={fix.awayClubId} logoUrl={fix.awayClub?.logoUrl} name={fix.awayClub?.name} size="sm" />
+                        </div>
+                      </div>
+
+                      {/* Submitted Score Details */}
+                      <div className="bg-slate-950/70 p-3 rounded-xl border border-white/[0.06] flex items-center justify-between">
+                        <div>
+                          <span className="text-[10px] uppercase font-black text-slate-500 block">Submitted Score Claim</span>
+                          <span className="text-lg font-black text-emerald-400 font-mono">
+                            {sub ? `${sub.homeScore} - ${sub.awayScore}` : 'Pending entry'}
+                          </span>
+                          <span className="text-[10px] text-slate-400 block">
+                            By @{sub?.submitterUsername || 'player'}
+                          </span>
+                        </div>
+
+                        {sub?.proofUrl && (
+                          <a
+                            href={sub.proofUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-3 py-1.5 bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30 rounded-lg text-xs font-bold flex items-center gap-1.5"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>Proof Screenshot</span>
+                          </a>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Admin Action Bar */}
+                    <div className="pt-2 flex flex-wrap items-center justify-end gap-2">
+                      <button
+                        onClick={() => setSelectedPendingForInspect(fix)}
+                        className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold flex items-center gap-1.5"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>Inspect Full Record</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setSelectedPendingForReject(fix);
+                          setRejectNotes('');
+                        }}
+                        className="px-3.5 py-2 bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 rounded-xl text-xs font-bold flex items-center gap-1.5"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        <span>Reject & Reopen</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setSelectedPendingForApprove(fix);
+                          setApproveHomeScore(sub?.homeScore ?? 0);
+                          setApproveAwayScore(sub?.awayScore ?? 0);
+                          setApproveNotes('');
+                        }}
+                        className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-lg shadow-emerald-500/20"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Approve Result</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 5. COMPETITIONS SECTION */}
       {/* ========================================================================= */}
       {activeAdminTab === 'competitions' && (
         <div className="space-y-6">
-          {/* UEFA European Qualification Tool */}
-          <div className="glass-panel p-5 sm:p-6 shadow-xl border-blue-500/30 bg-blue-950/15 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <Globe2 className="w-5 h-5 text-blue-400" />
-                  <h3 className="text-sm font-black text-white">UEFA European Qualification Engine</h3>
-                </div>
+          <div className="glass-panel p-4 space-y-1">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-black text-white flex items-center gap-2">
+                  <Trophy className="w-4 h-4 text-amber-400" />
+                  <span>19 Official Tournament Competitions</span>
+                </h2>
                 <p className="text-xs text-slate-400">
-                  Calculates final league table positions and domestic cup winners to seed the 2026/27 UEFA Champions League, Europa League, and Conference League brackets.
+                  Separated into Domestic Leagues, National Cups, Super Cups, and European Competitions.
                 </p>
               </div>
 
               <button
-                disabled={isProcessing}
                 onClick={handleEvaluateQualifications}
-                className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-black text-xs rounded-xl shadow-lg shadow-blue-600/30 transition-all shrink-0 min-h-[40px] touch-manipulation flex items-center gap-2"
+                disabled={isProcessing}
+                className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-black flex items-center gap-1.5 shadow"
               >
-                <Sparkles className="w-4 h-4" />
-                <span>{isProcessing ? 'Evaluating...' : 'Evaluate & Seed European Cups'}</span>
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Evaluate European Spots</span>
               </button>
             </div>
           </div>
 
-          {/* Group 1: Domestic Leagues (5) */}
+          {/* 1. DOMESTIC LEAGUES (5) */}
           <div className="space-y-3">
-            <h3 className="text-xs font-black uppercase tracking-wider text-slate-300 flex items-center gap-2">
-              <Layers className="w-4 h-4 text-emerald-400" />
-              <span>Domestic Leagues (5 Major Leagues • 96 Clubs)</span>
+            <h3 className="text-xs font-black uppercase tracking-wider text-emerald-400 flex items-center gap-2">
+              <Globe2 className="w-3.5 h-3.5" />
+              <span>Domestic Leagues (5) • Premier League, La Liga, Serie A, Bundesliga, Ligue 1</span>
             </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {groupedCompetitions.domesticLeagues.map((comp) => (
-                <CompetitionCard
-                  key={comp.id}
-                  competition={comp}
-                  generatingCompId={generatingCompId}
-                  rebuildingStandingsCompId={rebuildingStandingsCompId}
-                  onGenerate={handleGenerateCompetition}
-                  onReset={handleResetCompetition}
-                  onRebuildStandings={handleRebuildStandings}
-                />
+                <div key={comp.id} className="glass-card p-4 rounded-2xl border-slate-800 space-y-3 flex flex-col justify-between">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-white">{comp.name}</span>
+                      <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-emerald-500/15 text-emerald-300">
+                        {comp.type}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      Format: {comp.formatConfig?.rounds || 38} Matchdays • {comp.formatConfig?.qualificationSpots || 4} European Qualification Spots
+                    </p>
+                  </div>
+
+                  <div className="pt-2 border-t border-white/[0.06] flex items-center gap-2">
+                    <button
+                      onClick={() => handleRebuildStandings(comp.id)}
+                      disabled={rebuildingStandingsCompId === comp.id}
+                      className="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-bold flex items-center justify-center gap-1"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${rebuildingStandingsCompId === comp.id ? 'animate-spin' : ''}`} />
+                      <span>Rebuild Table</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setMatchCompFilter(comp.id);
+                        setActiveAdminTab('matches');
+                      }}
+                      className="px-3 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 rounded-lg text-xs font-bold flex items-center gap-1"
+                    >
+                      <Eye className="w-3 h-3" />
+                      <span>Fixtures</span>
+                    </button>
+                  </div>
+                </div>
               ))}
             </div>
           </div>
 
-          {/* Group 2: Domestic Cups (6) */}
-          <div className="space-y-3">
-            <h3 className="text-xs font-black uppercase tracking-wider text-slate-300 flex items-center gap-2">
-              <Award className="w-4 h-4 text-amber-400" />
-              <span>Domestic Cups (6 Knockout Tournaments)</span>
+          {/* 2. DOMESTIC CUPS (6) */}
+          <div className="space-y-3 pt-2">
+            <h3 className="text-xs font-black uppercase tracking-wider text-amber-400 flex items-center gap-2">
+              <Trophy className="w-3.5 h-3.5" />
+              <span>National Cups (6) • FA Cup, EFL Cup, Copa del Rey, Coppa Italia, DFB-Pokal, Coupe de France</span>
             </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {groupedCompetitions.domesticCups.map((comp) => (
-                <CompetitionCard
-                  key={comp.id}
-                  competition={comp}
-                  generatingCompId={generatingCompId}
-                  rebuildingStandingsCompId={rebuildingStandingsCompId}
-                  onGenerate={handleGenerateCompetition}
-                  onReset={handleResetCompetition}
-                  onRebuildStandings={handleRebuildStandings}
-                />
+                <div key={comp.id} className="glass-card p-4 rounded-2xl border-slate-800 space-y-3 flex flex-col justify-between">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-white">{comp.name}</span>
+                      <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-amber-500/15 text-amber-300">
+                        Knockout Cup
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      Single Leg Elimination with Extra Time & Penalties
+                    </p>
+                  </div>
+
+                  <div className="pt-2 border-t border-white/[0.06] flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setMatchCompFilter(comp.id);
+                        setActiveAdminTab('matches');
+                      }}
+                      className="w-full py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-bold flex items-center justify-center gap-1"
+                    >
+                      <Eye className="w-3 h-3" />
+                      <span>Inspect Brackets & Fixtures</span>
+                    </button>
+                  </div>
+                </div>
               ))}
             </div>
           </div>
 
-          {/* Group 3: Super Cups (5) */}
-          <div className="space-y-3">
-            <h3 className="text-xs font-black uppercase tracking-wider text-slate-300 flex items-center gap-2">
-              <Trophy className="w-4 h-4 text-purple-400" />
-              <span>Super Cups (5 Official Matchups)</span>
+          {/* 3. SUPER CUPS (5) */}
+          <div className="space-y-3 pt-2">
+            <h3 className="text-xs font-black uppercase tracking-wider text-indigo-400 flex items-center gap-2">
+              <Award className="w-3.5 h-3.5" />
+              <span>Super Cups (5) • FA Community Shield, Supercopa de España, Supercoppa Italiana, DFL-Supercup, UEFA Super Cup</span>
             </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {groupedCompetitions.superCups.map((comp) => (
-                <CompetitionCard
-                  key={comp.id}
-                  competition={comp}
-                  generatingCompId={generatingCompId}
-                  rebuildingStandingsCompId={rebuildingStandingsCompId}
-                  onGenerate={handleGenerateCompetition}
-                  onReset={handleResetCompetition}
-                  onRebuildStandings={handleRebuildStandings}
-                />
+                <div key={comp.id} className="glass-card p-4 rounded-2xl border-slate-800 space-y-3 flex flex-col justify-between">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-white">{comp.name}</span>
+                      <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-indigo-500/15 text-indigo-300">
+                        Super Cup
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      Season Opener Showcase Match
+                    </p>
+                  </div>
+
+                  <div className="pt-2 border-t border-white/[0.06] flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setMatchCompFilter(comp.id);
+                        setActiveAdminTab('matches');
+                      }}
+                      className="w-full py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-bold flex items-center justify-center gap-1"
+                    >
+                      <Eye className="w-3 h-3" />
+                      <span>View Match</span>
+                    </button>
+                  </div>
+                </div>
               ))}
             </div>
           </div>
 
-          {/* Group 4: European Competitions (3) */}
-          <div className="space-y-3">
-            <h3 className="text-xs font-black uppercase tracking-wider text-slate-300 flex items-center gap-2">
-              <Globe2 className="w-4 h-4 text-blue-400" />
-              <span>UEFA European Competitions</span>
+          {/* 4. EUROPEAN COMPETITIONS (3) */}
+          <div className="space-y-3 pt-2">
+            <h3 className="text-xs font-black uppercase tracking-wider text-rose-400 flex items-center gap-2">
+              <Globe2 className="w-3.5 h-3.5" />
+              <span>European Competitions (3) • UEFA Champions League, Europa League, Conference League</span>
             </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               {groupedCompetitions.european.map((comp) => (
-                <CompetitionCard
-                  key={comp.id}
-                  competition={comp}
-                  generatingCompId={generatingCompId}
-                  rebuildingStandingsCompId={rebuildingStandingsCompId}
-                  onGenerate={handleGenerateCompetition}
-                  onReset={handleResetCompetition}
-                  onRebuildStandings={handleRebuildStandings}
-                />
+                <div key={comp.id} className="glass-card p-4 rounded-2xl border-slate-800 space-y-3 flex flex-col justify-between">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-white">{comp.name}</span>
+                      <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-rose-500/15 text-rose-300">
+                        Swiss League Phase
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      36-Team Single Table League Phase + Knockout Stage
+                    </p>
+                  </div>
+
+                  <div className="pt-2 border-t border-white/[0.06] flex items-center gap-2">
+                    <button
+                      onClick={() => handleRebuildStandings(comp.id)}
+                      disabled={rebuildingStandingsCompId === comp.id}
+                      className="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-bold flex items-center justify-center gap-1"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${rebuildingStandingsCompId === comp.id ? 'animate-spin' : ''}`} />
+                      <span>Rebuild Table</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setMatchCompFilter(comp.id);
+                        setActiveAdminTab('matches');
+                      }}
+                      className="px-3 py-1.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 rounded-lg text-xs font-bold flex items-center gap-1"
+                    >
+                      <Eye className="w-3 h-3" />
+                      <span>Fixtures</span>
+                    </button>
+                  </div>
+                </div>
               ))}
             </div>
           </div>
@@ -1216,244 +1570,264 @@ export const AdminView: React.FC = () => {
       )}
 
       {/* ========================================================================= */}
-      {/* 5. USERS / PLAYERS TAB */}
+      {/* 6. PLAYERS & ROSTER SECTION */}
       {/* ========================================================================= */}
       {activeAdminTab === 'users' && (
-        <div className="glass-panel shadow-2xl overflow-hidden border-slate-800">
-          <div className="p-4 sm:p-5 border-b border-white/[0.06] space-y-3">
+        <div className="space-y-4">
+          <div className="glass-panel p-4 space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <h3 className="font-bold text-sm text-white">Registered Telegram Players</h3>
-                <p className="text-xs text-slate-400">Authentic Telegram accounts logged into EFL UZ 2026/27</p>
+                <h2 className="text-sm font-black text-white flex items-center gap-2">
+                  <UserCheck className="w-4 h-4 text-emerald-400" />
+                  <span>Registered Telegram Players ({users.length})</span>
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Inspect telegram user authentication, claimed clubs, and role permissions.
+                </p>
               </div>
-              <span className="px-3 py-1 bg-slate-900 rounded-xl text-xs font-black text-slate-300 border border-slate-800 self-start sm:self-auto">
-                {filteredUsers.length} Players Listed
-              </span>
             </div>
 
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-1">
-              <div className="relative flex-1">
+            {/* Filter */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-white/[0.06]">
+              <div className="relative">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
-                  placeholder="Search by username, full name, or Telegram ID..."
                   value={userSearch}
                   onChange={(e) => setUserSearch(e.target.value)}
-                  className="w-full pl-9 pr-3 py-1.5 glass-input rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 min-h-[36px]"
+                  placeholder="Search player username or ID..."
+                  className="w-full pl-9 pr-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500"
                 />
               </div>
 
               <select
                 value={userRoleFilter}
                 onChange={(e) => setUserRoleFilter(e.target.value)}
-                className="px-3 py-1.5 glass-input rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500 min-h-[36px] bg-slate-900"
+                className="px-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-semibold"
               >
-                <option value="ALL">All Users</option>
-                <option value="ADMIN">Admins Only</option>
+                <option value="ALL">All Roles</option>
+                <option value="ADMIN">Administrators</option>
                 <option value="PLAYER">Standard Players</option>
-                <option value="SUSPENDED">Suspended Accounts</option>
               </select>
             </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse min-w-[500px]">
-              <thead>
-                <tr className="border-b border-white/[0.06] text-[10px] font-black text-slate-400 uppercase bg-slate-950/40">
-                  <th className="py-3 px-4">User</th>
-                  <th className="py-3 px-4">Telegram ID</th>
-                  <th className="py-3 px-4">Role</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4">Joined Date</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/[0.04]">
-                {filteredUsers.map((u) => (
-                  <tr key={u.id} className="hover:bg-white/[0.02] transition-colors">
-                    <td className="py-3 px-4">
-                      <div className="font-bold text-white flex items-center gap-2">
-                        <span>@{u.username}</span>
-                        {u.isAdmin && (
-                          <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                            Admin
+          {/* Users Table */}
+          <div className="glass-panel overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-white/[0.08] text-[10px] uppercase font-black text-slate-400 bg-slate-950/40">
+                    <th className="p-3">Player</th>
+                    <th className="p-3">Telegram ID</th>
+                    <th className="p-3">Role</th>
+                    <th className="p-3">Status</th>
+                    <th className="p-3">Joined</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/[0.04]">
+                  {filteredUsers.map((u) => (
+                    <tr key={u.id} className="hover:bg-white/[0.02] transition-colors">
+                      <td className="p-3">
+                        <div className="font-bold text-white">@{u.username || 'unknown'}</div>
+                        <div className="text-[10px] text-slate-400">
+                          {u.firstName} {u.lastName}
+                        </div>
+                      </td>
+                      <td className="p-3 font-mono text-slate-400">{u.telegramId || u.id}</td>
+                      <td className="p-3">
+                        {u.isAdmin ? (
+                          <span className="px-2 py-0.5 rounded text-[9px] font-black bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                            ADMIN
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-slate-800 text-slate-400">
+                            PLAYER
                           </span>
                         )}
-                      </div>
-                      <div className="text-[11px] text-slate-400">
-                        {u.firstName} {u.lastName || ''}
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 text-slate-300 font-mono text-[11px]">{u.telegramId}</td>
-                    <td className="py-3 px-4">
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          u.isAdmin
-                            ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                            : 'bg-slate-800 text-slate-300'
-                        }`}
-                      >
-                        {u.isAdmin ? 'Administrator' : 'Manager'}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      {u.isSuspended ? (
-                        <span className="text-rose-400 font-bold">Suspended</span>
-                      ) : (
-                        <span className="text-emerald-400 font-bold flex items-center gap-1">
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Active</span>
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-slate-400 text-[11px]">
-                      {new Date(u.createdAt).toLocaleDateString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      </td>
+                      <td className="p-3">
+                        {u.isSuspended ? (
+                          <span className="text-rose-400 font-bold">Suspended</span>
+                        ) : (
+                          <span className="text-emerald-400 font-bold">Active</span>
+                        )}
+                      </td>
+                      <td className="p-3 text-slate-400 font-mono text-[11px]">
+                        {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
 
       {/* ========================================================================= */}
-      {/* 6. SYSTEM & AUDIT LOGS TAB */}
+      {/* 7. SYSTEM & AUDIT SECTION */}
       {/* ========================================================================= */}
       {activeAdminTab === 'system' && (
-        <div className="space-y-5">
-          {/* Firestore Diagnostics Data */}
-          <div className="glass-panel p-5 sm:p-6 shadow-xl space-y-4 border-slate-800">
-            <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
-              <div className="flex items-center gap-2">
-                <Database className="w-4 h-4 text-emerald-400" />
-                <h3 className="text-sm font-bold text-white">Firestore Collection Record Counts</h3>
-              </div>
-              <span className="text-[11px] font-mono text-emerald-400">ONLINE</span>
-            </div>
+        <div className="space-y-4">
+          {/* Health & DB Status */}
+          <div className="glass-panel p-4 space-y-3">
+            <h2 className="text-sm font-black text-white flex items-center gap-2">
+              <Database className="w-4 h-4 text-emerald-400" />
+              <span>Firestore System Health & Diagnostics</span>
+            </h2>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-              {diagnostics?.collections &&
-                Object.entries(diagnostics.collections).map(([key, val]: [string, any]) => (
-                  <div key={key} className="glass-card p-3 rounded-xl space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 truncate block">
-                      {key.replace('_', ' ')}
-                    </span>
-                    <div className="text-lg font-black text-white">{val} docs</div>
-                  </div>
-                ))}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+              <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
+                <div className="text-[10px] uppercase font-black text-slate-500">Database Connection</div>
+                <div className="text-xs font-black text-emerald-400 mt-1 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>CONNECTED</span>
+                </div>
+              </div>
+
+              <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
+                <div className="text-[10px] uppercase font-black text-slate-500">Project ID</div>
+                <div className="text-xs font-mono font-bold text-white mt-1 truncate">
+                  {diagnostics?.projectId || overviewData?.systemHealth?.projectId || 'Default Project'}
+                </div>
+              </div>
+
+              <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
+                <div className="text-[10px] uppercase font-black text-slate-500">Total Audit Logs</div>
+                <div className="text-xs font-black text-white mt-1">{auditLogs.length} Records</div>
+              </div>
+
+              <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
+                <div className="text-[10px] uppercase font-black text-slate-500">Auth Mode</div>
+                <div className="text-xs font-mono font-bold text-emerald-400 mt-1">Telegram HMAC Verified</div>
+              </div>
             </div>
           </div>
 
-          {/* Audit Logs */}
-          <div className="glass-panel shadow-2xl overflow-hidden border-slate-800">
-            <div className="p-4 sm:p-5 border-b border-white/[0.06] flex items-center justify-between">
-              <div>
-                <h3 className="font-bold text-sm text-white">Administrative Action Audit Trail</h3>
-                <p className="text-xs text-slate-400">Security logged operations across tournament life cycle</p>
-              </div>
-              <span className="text-xs text-slate-400 font-mono">{auditLogs.length} Records</span>
-            </div>
+          {/* Audit Logs Table */}
+          <div className="glass-panel p-4 space-y-3">
+            <h3 className="text-xs font-black uppercase tracking-wider text-slate-300 flex items-center gap-2">
+              <FileText className="w-4 h-4 text-amber-400" />
+              <span>Tamper-Evident Administrative Audit Log</span>
+            </h3>
 
-            <div className="divide-y divide-white/[0.04] max-h-[600px] overflow-y-auto">
-              {auditLogs.length === 0 ? (
-                <div className="py-12 text-center text-slate-500 text-xs">No audit logs recorded yet.</div>
-              ) : (
-                auditLogs.map((log) => (
-                  <div key={log.id} className="p-4 hover:bg-white/[0.02] transition-colors space-y-1 text-xs">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono font-bold text-indigo-400 bg-indigo-950/60 px-2 py-0.5 rounded border border-indigo-500/30 text-[10px]">
-                        {log.action}
-                      </span>
-                      <span className="text-[11px] text-slate-400 font-mono">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-white/[0.08] text-[10px] uppercase font-black text-slate-400 bg-slate-950/40">
+                    <th className="p-2.5">Time</th>
+                    <th className="p-2.5">Actor</th>
+                    <th className="p-2.5">Action</th>
+                    <th className="p-2.5">Target Entity</th>
+                    <th className="p-2.5">Notes</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/[0.04]">
+                  {auditLogs.slice(0, 30).map((log) => (
+                    <tr key={log.id} className="hover:bg-white/[0.02]">
+                      <td className="p-2.5 text-slate-400 font-mono text-[10px] whitespace-nowrap">
                         {new Date(log.createdAt).toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="text-slate-300">
-                      Entity: <strong className="text-white">{log.targetType || log.entityType} ({log.targetId || log.entityId})</strong> • Actor: <span className="text-emerald-400 font-mono">{log.actorId || log.actorUsername || 'Admin'}</span>
-                    </div>
-                    {log.notes && (
-                      <p className="text-[11px] text-slate-400 italic bg-slate-950/40 p-2 rounded-lg border border-white/[0.04]">
-                        {log.notes}
-                      </p>
-                    )}
-                  </div>
-                ))
-              )}
+                      </td>
+                      <td className="p-2.5 font-bold text-emerald-400">{log.actorUserId}</td>
+                      <td className="p-2.5">
+                        <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-slate-800 text-slate-300 font-mono">
+                          {log.action}
+                        </span>
+                      </td>
+                      <td className="p-2.5 text-slate-300 font-mono text-[11px]">
+                        {log.entityType}:{log.entityId}
+                      </td>
+                      <td className="p-2.5 text-slate-400 text-[11px] max-w-xs truncate">{log.notes || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL 1: CUSTOM SCORE DISPUTE RESOLUTION */}
+      {/* MODAL: ASSIGN CLUB */}
       {/* ========================================================================= */}
-      {selectedDisputeForResolve && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="glass-modal w-full max-w-md shadow-2xl p-6 text-white space-y-4">
+      {selectedClubForAssign && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-panel p-5 max-w-md w-full rounded-2xl border-emerald-500/40 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
-              <h3 className="font-bold text-base text-white">Dispute Arbitration Ruling</h3>
+              <div className="flex items-center gap-2">
+                <ClubCrest
+                  clubId={selectedClubForAssign.id}
+                  logoUrl={selectedClubForAssign.logoUrl}
+                  name={selectedClubForAssign.name}
+                  size="sm"
+                />
+                <div>
+                  <h3 className="text-sm font-black text-white">Assign Club Manager</h3>
+                  <p className="text-[10px] text-slate-400">{selectedClubForAssign.name}</p>
+                </div>
+              </div>
               <button
-                onClick={() => setSelectedDisputeForResolve(null)}
-                className="text-slate-400 hover:text-white p-1"
+                onClick={() => setSelectedClubForAssign(null)}
+                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1 truncate">
-                  {selectedDisputeForResolve.fixture?.homeClub?.name || 'Home'} Score
-                </label>
+            <div className="space-y-3">
+              <label className="text-xs font-bold text-slate-300 block">Select Registered Player</label>
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
-                  type="number"
-                  min="0"
-                  value={manualHomeScore}
-                  onChange={(e) => setManualHomeScore(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                  className="w-full px-3 py-2 glass-input rounded-xl text-center text-xl font-black"
+                  type="text"
+                  value={assignUserSearch}
+                  onChange={(e) => setAssignUserSearch(e.target.value)}
+                  placeholder="Filter by username or Telegram ID..."
+                  className="w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500"
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1 truncate">
-                  {selectedDisputeForResolve.fixture?.awayClub?.name || 'Away'} Score
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  value={manualAwayScore}
-                  onChange={(e) => setManualAwayScore(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                  className="w-full px-3 py-2 glass-input rounded-xl text-center text-xl font-black"
-                />
+              <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
+                {assignableUsers.map((u) => {
+                  const isSelected = assignTargetUserId === u.id;
+                  return (
+                    <button
+                      key={u.id}
+                      type="button"
+                      onClick={() => setAssignTargetUserId(u.id)}
+                      className={`w-full p-2.5 rounded-xl text-left text-xs transition-all flex items-center justify-between ${
+                        isSelected
+                          ? 'bg-emerald-500/20 border border-emerald-500/40 text-white font-bold'
+                          : 'bg-slate-900/60 hover:bg-slate-800 text-slate-300'
+                      }`}
+                    >
+                      <div>
+                        <div className="font-bold text-white">@{u.username || 'unknown'}</div>
+                        <div className="text-[10px] text-slate-400 font-mono">ID: {u.telegramId || u.id}</div>
+                      </div>
+                      {isSelected && <Check className="w-4 h-4 text-emerald-400" />}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Admin Ruling Justification / Notes
-              </label>
-              <textarea
-                placeholder="e.g. Verified by official match video evidence."
-                value={resolutionNotes}
-                onChange={(e) => setResolutionNotes(e.target.value)}
-                rows={2}
-                className="w-full px-3 py-2 glass-input rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500"
-              />
-            </div>
-
-            <div className="flex items-center gap-3 pt-2">
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.08]">
               <button
-                onClick={() => setSelectedDisputeForResolve(null)}
-                className="flex-1 py-2.5 glass-card text-slate-300 font-semibold rounded-xl text-xs"
+                type="button"
+                onClick={() => setSelectedClubForAssign(null)}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold"
               >
                 Cancel
               </button>
               <button
-                disabled={isProcessing}
-                onClick={() => handleResolveDispute('MANUAL_SCORE')}
-                className="flex-1 py-2.5 btn-glass-primary text-slate-950 font-black rounded-xl text-xs shadow-lg"
+                type="button"
+                onClick={handleAssignClub}
+                disabled={!assignTargetUserId || isProcessing}
+                className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl text-xs font-black shadow transition-all disabled:opacity-50"
               >
-                {isProcessing ? 'Applying Ruling...' : 'Confirm Score Ruling'}
+                {isProcessing ? 'Assigning...' : 'Confirm Assignment'}
               </button>
             </div>
           </div>
@@ -1461,51 +1835,199 @@ export const AdminView: React.FC = () => {
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL 2: REOPEN FIXTURE */}
+      {/* MODAL: RELEASE CLUB */}
       {/* ========================================================================= */}
-      {selectedFixtureForReopen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="glass-modal w-full max-w-md shadow-2xl p-6 text-white space-y-4">
-            <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
-              <h3 className="font-bold text-base text-white">Reopen Fixture for Resubmission</h3>
+      {selectedClubForRelease && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-panel p-5 max-w-md w-full rounded-2xl border-rose-500/40 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 shrink-0">
+                <UserMinus className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-white">Release Club Ownership</h3>
+                <p className="text-xs text-slate-400">{selectedClubForRelease.name}</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed bg-slate-950/60 p-3 rounded-xl border border-white/[0.06]">
+              Are you sure you want to release ownership of <strong>{selectedClubForRelease.name}</strong> from user{' '}
+              <strong className="text-rose-400">@{selectedClubForRelease.claimedByUsername || selectedClubForRelease.claimedByUserId}</strong>?
+              The club will immediately become available for other players.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.08]">
               <button
-                onClick={() => setSelectedFixtureForReopen(null)}
-                className="text-slate-400 hover:text-white p-1"
+                type="button"
+                onClick={() => setSelectedClubForRelease(null)}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold"
               >
-                ✕
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleReleaseClub}
+                disabled={isProcessing}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-black shadow transition-all disabled:opacity-50"
+              >
+                {isProcessing ? 'Releasing...' : 'Confirm Release'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: APPROVE RESULT */}
+      {/* ========================================================================= */}
+      {selectedPendingForApprove && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-panel p-5 max-w-md w-full rounded-2xl border-emerald-500/40 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+              <div className="flex items-center gap-2">
+                <FileCheck className="w-5 h-5 text-emerald-400" />
+                <div>
+                  <h3 className="text-sm font-black text-white">Approve Match Result</h3>
+                  <p className="text-[10px] text-slate-400">
+                    {selectedPendingForApprove.competitionName} • Matchday {selectedPendingForApprove.matchday}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedPendingForApprove(null)}
+                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            <p className="text-xs text-slate-300 leading-relaxed">
-              This action will reset the fixture between <strong className="text-white">{selectedFixtureForReopen.homeClub?.name}</strong> and <strong className="text-white">{selectedFixtureForReopen.awayClub?.name}</strong> back to <code className="text-amber-400 font-mono">SCHEDULED</code> state and remove previous conflicting submissions so players can submit afresh.
+            {/* Score Inputs */}
+            <div className="bg-slate-950/70 p-4 rounded-xl border border-white/[0.06] space-y-3">
+              <div className="grid grid-cols-2 gap-4 text-center">
+                <div>
+                  <ClubCrest
+                    clubId={selectedPendingForApprove.homeClubId}
+                    logoUrl={selectedPendingForApprove.homeClub?.logoUrl}
+                    name={selectedPendingForApprove.homeClub?.name}
+                    size="sm"
+                    className="mx-auto mb-1"
+                  />
+                  <div className="text-xs font-bold text-white truncate">{selectedPendingForApprove.homeClub?.name}</div>
+                  <input
+                    type="number"
+                    min={0}
+                    value={approveHomeScore}
+                    onChange={(e) => setApproveHomeScore(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                    className="w-16 py-2 text-center text-lg font-black bg-slate-900 border border-slate-700 rounded-xl text-emerald-400 mt-2 focus:outline-none focus:border-emerald-500 font-mono"
+                  />
+                </div>
+
+                <div>
+                  <ClubCrest
+                    clubId={selectedPendingForApprove.awayClubId}
+                    logoUrl={selectedPendingForApprove.awayClub?.logoUrl}
+                    name={selectedPendingForApprove.awayClub?.name}
+                    size="sm"
+                    className="mx-auto mb-1"
+                  />
+                  <div className="text-xs font-bold text-white truncate">{selectedPendingForApprove.awayClub?.name}</div>
+                  <input
+                    type="number"
+                    min={0}
+                    value={approveAwayScore}
+                    onChange={(e) => setApproveAwayScore(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                    className="w-16 py-2 text-center text-lg font-black bg-slate-900 border border-slate-700 rounded-xl text-emerald-400 mt-2 focus:outline-none focus:border-emerald-500 font-mono"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[11px] font-bold text-slate-300 block mb-1">Administrative Note</label>
+              <input
+                type="text"
+                value={approveNotes}
+                onChange={(e) => setApproveNotes(e.target.value)}
+                placeholder="Optional confirmation note..."
+                className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.08]">
+              <button
+                type="button"
+                onClick={() => setSelectedPendingForApprove(null)}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleApproveResult}
+                disabled={isProcessing}
+                className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl text-xs font-black shadow transition-all disabled:opacity-50"
+              >
+                {isProcessing ? 'Confirming...' : 'Confirm & Update Standings'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: REJECT RESULT */}
+      {/* ========================================================================= */}
+      {selectedPendingForReject && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-panel p-5 max-w-md w-full rounded-2xl border-rose-500/40 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+              <div className="flex items-center gap-2">
+                <XCircle className="w-5 h-5 text-rose-400" />
+                <div>
+                  <h3 className="text-sm font-black text-white">Reject Result Submission</h3>
+                  <p className="text-[10px] text-slate-400">
+                    {selectedPendingForReject.homeClub?.name} vs {selectedPendingForReject.awayClub?.name}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedPendingForReject(null)}
+                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300">
+              Rejecting this result will discard the pending submission and reopen the fixture so both players can re-submit their score.
             </p>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Reason / Note for Audit Log
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Players requested rematch due to network disconnect"
-                value={reopenNotes}
-                onChange={(e) => setReopenNotes(e.target.value)}
-                className="w-full px-3 py-2 glass-input rounded-xl text-xs text-white focus:outline-none focus:border-amber-500"
+              <label className="text-[11px] font-bold text-slate-300 block mb-1">Reason / Note to Players</label>
+              <textarea
+                rows={2}
+                value={rejectNotes}
+                onChange={(e) => setRejectNotes(e.target.value)}
+                placeholder="e.g. Incorrect score claimed or invalid screenshot..."
+                className="w-full p-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-rose-500 resize-none"
               />
             </div>
 
-            <div className="flex items-center gap-3 pt-2">
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.08]">
               <button
-                onClick={() => setSelectedFixtureForReopen(null)}
-                className="flex-1 py-2.5 glass-card text-slate-300 font-semibold rounded-xl text-xs"
+                type="button"
+                onClick={() => setSelectedPendingForReject(null)}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold"
               >
                 Cancel
               </button>
               <button
+                type="button"
+                onClick={handleRejectResult}
                 disabled={isProcessing}
-                onClick={() => handleReopenFixture(selectedFixtureForReopen.id, reopenNotes)}
-                className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs shadow-lg"
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-black shadow transition-all disabled:opacity-50"
               >
-                {isProcessing ? 'Reopening...' : 'Confirm Reopen'}
+                {isProcessing ? 'Rejecting...' : 'Reject & Reopen Match'}
               </button>
             </div>
           </div>
@@ -1513,174 +2035,155 @@ export const AdminView: React.FC = () => {
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL 3: MATCH DETAILS & SCREENSHOT INSPECTOR */}
+      {/* MODAL: INSPECT FIXTURE */}
       {/* ========================================================================= */}
-      {selectedFixtureForInspect && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="glass-modal w-full max-w-lg shadow-2xl p-6 text-white space-y-4">
-            <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+      {(selectedFixtureForInspect || selectedPendingForInspect) && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-panel p-5 max-w-lg w-full rounded-2xl border-slate-800 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150">
+            {(() => {
+              const fix = selectedFixtureForInspect || selectedPendingForInspect!;
+              return (
+                <>
+                  <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+                    <div className="flex items-center gap-2">
+                      <Eye className="w-5 h-5 text-indigo-400" />
+                      <div>
+                        <h3 className="text-sm font-black text-white">Match Inspector Record</h3>
+                        <p className="text-[10px] text-slate-400 font-mono">Fixture ID: {fix.id}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setSelectedFixtureForInspect(null);
+                        setSelectedPendingForInspect(null);
+                      }}
+                      className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Metadata Grid */}
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="bg-slate-950/60 p-2.5 rounded-xl border border-white/[0.05]">
+                      <span className="text-[9px] uppercase font-black text-slate-500 block">Competition</span>
+                      <span className="font-bold text-white">{fix.competitionName || fix.competitionId}</span>
+                    </div>
+                    <div className="bg-slate-950/60 p-2.5 rounded-xl border border-white/[0.05]">
+                      <span className="text-[9px] uppercase font-black text-slate-500 block">Status</span>
+                      <span className="font-bold text-emerald-400 font-mono">{fix.status}</span>
+                    </div>
+                    <div className="bg-slate-950/60 p-2.5 rounded-xl border border-white/[0.05]">
+                      <span className="text-[9px] uppercase font-black text-slate-500 block">Home Team</span>
+                      <span className="font-bold text-white">{fix.homeClub?.name}</span>
+                    </div>
+                    <div className="bg-slate-950/60 p-2.5 rounded-xl border border-white/[0.05]">
+                      <span className="text-[9px] uppercase font-black text-slate-500 block">Away Team</span>
+                      <span className="font-bold text-white">{fix.awayClub?.name}</span>
+                    </div>
+                  </div>
+
+                  {/* Submissions if any */}
+                  {(fix as any).submissions && (fix as any).submissions.length > 0 && (
+                    <div className="space-y-2">
+                      <span className="text-[10px] uppercase font-black text-slate-400 block">Raw Player Submissions</span>
+                      <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                        {(fix as any).submissions.map((sub: any, idx: number) => (
+                          <div key={idx} className="bg-slate-950/80 p-2.5 rounded-xl border border-white/[0.05] text-xs flex items-center justify-between">
+                            <div>
+                              <div className="font-bold text-emerald-400">@{sub.submitterUsername}</div>
+                              <div className="text-[10px] text-slate-400 font-mono">
+                                Claimed: {sub.homeScore} - {sub.awayScore} • {new Date(sub.createdAt).toLocaleTimeString()}
+                              </div>
+                            </div>
+                            {sub.proofUrl && (
+                              <a
+                                href={sub.proofUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-[11px] text-indigo-400 hover:underline flex items-center gap-1"
+                              >
+                                <ExternalLink className="w-3 h-3" />
+                                <span>Proof</span>
+                              </a>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="pt-2 border-t border-white/[0.08] flex justify-end">
+                    <button
+                      onClick={() => {
+                        setSelectedFixtureForInspect(null);
+                        setSelectedPendingForInspect(null);
+                      }}
+                      className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: REOPEN FIXTURE */}
+      {/* ========================================================================= */}
+      {selectedFixtureForReopen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-panel p-5 max-w-md w-full rounded-2xl border-rose-500/40 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 shrink-0">
+                <RotateCcw className="w-5 h-5" />
+              </div>
               <div>
-                <h3 className="font-bold text-base text-white">Match Inspector</h3>
-                <span className="text-[11px] text-slate-400 font-mono">ID: {selectedFixtureForInspect.id}</span>
+                <h3 className="text-sm font-black text-white">Reopen Confirmed Fixture</h3>
+                <p className="text-xs text-slate-400">
+                  {selectedFixtureForReopen.homeClub?.name} vs {selectedFixtureForReopen.awayClub?.name}
+                </p>
               </div>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Reopening will remove the confirmed score from official standings and reset the fixture status to <strong>AWAITING_RESULT</strong> so that a corrected score can be submitted.
+            </p>
+
+            <div>
+              <label className="text-[11px] font-bold text-slate-300 block mb-1">Reason for Reopening</label>
+              <input
+                type="text"
+                value={reopenNotes}
+                onChange={(e) => setReopenNotes(e.target.value)}
+                placeholder="e.g. Disputed score entry or accidental submission..."
+                className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-rose-500"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.08]">
               <button
-                onClick={() => setSelectedFixtureForInspect(null)}
-                className="text-slate-400 hover:text-white p-1"
+                type="button"
+                onClick={() => setSelectedFixtureForReopen(null)}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold"
               >
-                ✕
+                Cancel
               </button>
-            </div>
-
-            <div className="glass-card p-4 rounded-xl space-y-3">
-              <div className="flex items-center justify-between text-xs text-slate-400">
-                <span>{selectedFixtureForInspect.competitionName || 'Tournament'}</span>
-                <span>Matchday {selectedFixtureForInspect.matchday}</span>
-              </div>
-
-              <div className="flex items-center justify-between py-2">
-                <div className="flex items-center gap-2">
-                  <ClubCrest
-                    clubId={selectedFixtureForInspect.homeClub?.id}
-                    logoUrl={selectedFixtureForInspect.homeClub?.logoUrl}
-                    name={selectedFixtureForInspect.homeClub?.name}
-                    shortName={selectedFixtureForInspect.homeClub?.shortName}
-                    size="sm"
-                    className="w-7 h-7"
-                  />
-                  <span className="font-bold text-xs">{selectedFixtureForInspect.homeClub?.name}</span>
-                </div>
-
-                <div className="text-lg font-black text-emerald-400">
-                  {selectedFixtureForInspect.homeScore ?? '-'} : {selectedFixtureForInspect.awayScore ?? '-'}
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-xs">{selectedFixtureForInspect.awayClub?.name}</span>
-                  <ClubCrest
-                    clubId={selectedFixtureForInspect.awayClub?.id}
-                    logoUrl={selectedFixtureForInspect.awayClub?.logoUrl}
-                    name={selectedFixtureForInspect.awayClub?.name}
-                    shortName={selectedFixtureForInspect.awayClub?.shortName}
-                    size="sm"
-                    className="w-7 h-7"
-                  />
-                </div>
-              </div>
-
-              {selectedFixtureForInspect.proofUrl && (
-                <div className="pt-2 border-t border-white/[0.06]">
-                  <span className="text-[11px] text-slate-400 block mb-1">Submitted Proof Screenshot:</span>
-                  <a
-                    href={selectedFixtureForInspect.proofUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1.5 text-xs text-indigo-400 hover:underline"
-                  >
-                    <Link className="w-3.5 h-3.5" />
-                    <span>Open Verified Match Screenshot</span>
-                  </a>
-                </div>
-              )}
-            </div>
-
-            <div className="flex justify-end pt-2">
               <button
-                onClick={() => setSelectedFixtureForInspect(null)}
-                className="px-5 py-2 btn-glass-primary text-slate-950 font-black rounded-xl text-xs"
+                type="button"
+                onClick={() => handleReopenFixture(selectedFixtureForReopen.id, reopenNotes)}
+                disabled={isProcessing}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-black shadow transition-all disabled:opacity-50"
               >
-                Close Inspector
+                {isProcessing ? 'Reopening...' : 'Confirm & Reopen'}
               </button>
             </div>
           </div>
         </div>
       )}
-    </div>
-  );
-};
-
-interface CompetitionCardProps {
-  competition: Competition;
-  generatingCompId: string | null;
-  rebuildingStandingsCompId: string | null;
-  onGenerate: (id: string) => void;
-  onReset: (id: string) => void;
-  onRebuildStandings: (id: string) => void;
-}
-
-const CompetitionCard: React.FC<CompetitionCardProps> = ({
-  competition,
-  generatingCompId,
-  rebuildingStandingsCompId,
-  onGenerate,
-  onReset,
-  onRebuildStandings,
-}) => {
-  const hasGeneratedFixtures = Boolean(
-    competition.hasFixtures ||
-      (competition.fixtureCount && competition.fixtureCount > 0) ||
-      (competition.fixturesCount && competition.fixturesCount > 0) ||
-      competition.generationStatus === 'generated'
-  );
-  const fixtureCount = competition.fixtureCount || competition.fixturesCount || 0;
-
-  return (
-    <div className="glass-panel p-4 rounded-2xl flex flex-col justify-between gap-3 shadow-lg hover:border-slate-700 transition-all">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="font-bold text-xs text-white truncate">{competition.name}</div>
-          <span className="text-[10px] text-slate-400 uppercase font-semibold block mt-0.5">
-            {competition.type} • {competition.totalTeams ?? 0} Teams
-            {hasGeneratedFixtures && ` • ${fixtureCount} Matches`}
-          </span>
-        </div>
-        <span
-          className={`text-[9px] uppercase font-black px-2 py-0.5 rounded-full shrink-0 ${
-            hasGeneratedFixtures
-              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-              : 'bg-slate-800 text-slate-400 border border-slate-700'
-          }`}
-        >
-          {hasGeneratedFixtures ? 'Scheduled' : 'Open'}
-        </span>
-      </div>
-
-      <div className="flex items-center gap-1.5 pt-2 border-t border-white/[0.06]">
-        <button
-          disabled={generatingCompId !== null || rebuildingStandingsCompId !== null}
-          onClick={() => onGenerate(competition.id)}
-          className={`flex-1 py-1.5 px-2 font-black text-[11px] rounded-xl transition-all disabled:opacity-50 min-h-[34px] touch-manipulation ${
-            hasGeneratedFixtures ? 'glass-card text-slate-200 hover:text-white' : 'btn-glass-primary text-slate-950'
-          }`}
-        >
-          {generatingCompId === competition.id
-            ? 'Generating...'
-            : hasGeneratedFixtures
-            ? 'Regenerate'
-            : 'Generate'}
-        </button>
-
-        {hasGeneratedFixtures && (
-          <button
-            disabled={generatingCompId !== null || rebuildingStandingsCompId !== null}
-            onClick={() => onRebuildStandings(competition.id)}
-            className="py-1.5 px-2 glass-card hover:border-emerald-500/50 text-emerald-300 font-bold text-[11px] rounded-xl transition-all disabled:opacity-50 min-h-[34px]"
-            title="Recalculate and persist standings"
-          >
-            {rebuildingStandingsCompId === competition.id ? 'Rebuilding...' : 'Standings'}
-          </button>
-        )}
-
-        {hasGeneratedFixtures && (
-          <button
-            disabled={generatingCompId !== null || rebuildingStandingsCompId !== null}
-            onClick={() => onReset(competition.id)}
-            className="py-1.5 px-2 bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/40 font-bold text-xs rounded-xl transition-all disabled:opacity-50 min-h-[34px]"
-            title="Delete and reset schedule"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-          </button>
-        )}
-      </div>
     </div>
   );
 };

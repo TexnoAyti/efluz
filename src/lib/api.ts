@@ -435,13 +435,17 @@ export const api = {
     season: { id: string; name: string; status: string };
     counts: {
       totalClubs: number;
+      occupiedClubs?: number;
+      availableClubs?: number;
       domesticLeaguesCount: number;
       domesticCupsCount: number;
       europeanCompetitionsCount: number;
       totalCompetitions: number;
+      totalUsers?: number;
       registeredUsers: number;
       activeOccupancies: number;
       openDisputes: number;
+      pendingResultConfirmations?: number;
       recentAuditLogs: number;
     };
     systemHealth: {
@@ -452,8 +456,61 @@ export const api = {
       timestamp: string;
     };
     openDisputes: Dispute[];
+    pendingFixturesPreview?: any[];
   }> {
     return request(`/api/admin/overview?seasonId=${seasonId}`, { cacheTtlMs: 15000, skipCache });
+  },
+
+  async adminReleaseClub(clubId: string, seasonId = 'season-2026-27'): Promise<{ success: boolean; message: string; club: Club }> {
+    const res = await request<{ success: boolean; message: string; club: Club }>(`/api/admin/clubs/${clubId}/release`, {
+      method: 'POST',
+      body: JSON.stringify({ seasonId }),
+    });
+    invalidateClientCache('/api/admin/clubs');
+    invalidateClientCache('/api/clubs');
+    invalidateClientCache('/api/admin/overview');
+    return res;
+  },
+
+  async adminAssignClub(clubId: string, targetUserId: string, seasonId = 'season-2026-27'): Promise<{ success: boolean; message: string; club: Club }> {
+    const res = await request<{ success: boolean; message: string; club: Club }>(`/api/admin/clubs/${clubId}/assign`, {
+      method: 'POST',
+      body: JSON.stringify({ targetUserId, seasonId }),
+    });
+    invalidateClientCache('/api/admin/clubs');
+    invalidateClientCache('/api/clubs');
+    invalidateClientCache('/api/admin/overview');
+    return res;
+  },
+
+  async getAdminPendingResults(seasonId = 'season-2026-27', skipCache = false): Promise<{
+    pendingFixtures: (Fixture & { submissions: any[] })[];
+    total: number;
+  }> {
+    return request(`/api/admin/results/pending?seasonId=${seasonId}`, { cacheTtlMs: 10000, skipCache });
+  },
+
+  async adminApproveResult(
+    fixtureId: string,
+    homeScore: number,
+    awayScore: number,
+    notes?: string
+  ): Promise<{ success: boolean; message: string; fixture: Fixture }> {
+    const res = await request<{ success: boolean; message: string; fixture: Fixture }>(`/api/admin/results/${fixtureId}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ homeScore, awayScore, notes }),
+    });
+    invalidateClientCache();
+    return res;
+  },
+
+  async adminRejectResult(fixtureId: string, notes?: string): Promise<{ success: boolean; message: string }> {
+    const res = await request<{ success: boolean; message: string }>(`/api/admin/results/${fixtureId}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ notes }),
+    });
+    invalidateClientCache();
+    return res;
   },
 
   async getAdminClubs(seasonId = 'season-2026-27', leagueId?: string, skipCache = false): Promise<{ clubs: Club[]; total: number }> {

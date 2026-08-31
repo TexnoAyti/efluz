@@ -11,6 +11,10 @@ import {
   getAllCompetitionsFirestore,
   getClubsByLeagueFirestore,
   getFixturesFirestore,
+  adminReleaseClubFirestore,
+  adminAssignClubFirestore,
+  adminApproveFixtureResultFirestore,
+  getPendingResultsFirestore,
 } from '../firebase/firestoreStore';
 import { SEED_CLUBS, SEED_LEAGUES } from '../db/seed';
 import { migrateSqliteToFirestore } from '../firebase/migrateSqliteToFirestore';
@@ -29,11 +33,12 @@ adminRouter.get('/overview', async (req: Request, res: Response) => {
   const seasonId = (req.query.seasonId as string) || 'season-2026-27';
   try {
     const status = getFirebaseStatus();
-    const [users, competitions, disputes, auditLogs] = await Promise.all([
+    const [users, competitions, disputes, auditLogs, pendingData] = await Promise.all([
       getAllAdminUsers().catch(() => []),
       getAllCompetitionsFirestore(seasonId).catch(() => []),
       getDisputes('OPEN').catch(() => []),
       getAuditLogs(10).catch(() => []),
+      getPendingResultsFirestore(seasonId).catch(() => ({ pendingFixtures: [], total: 0 })),
     ]);
 
     const domesticLeagues = competitions.filter((c) => c.type === 'league');
@@ -58,18 +63,22 @@ adminRouter.get('/overview', async (req: Request, res: Response) => {
     res.json({
       season: {
         id: seasonId,
-        name: '2026/27',
+        name: '2026/27 Season',
         status: 'ACTIVE',
       },
       counts: {
         totalClubs: 96,
+        occupiedClubs: activeOccupancies,
+        availableClubs: Math.max(0, 96 - activeOccupancies),
         domesticLeaguesCount: 5,
         domesticCupsCount: domesticCups.length,
         europeanCompetitionsCount: europeanComps.length,
         totalCompetitions: competitions.length,
+        totalUsers: users.length,
         registeredUsers: users.length,
         activeOccupancies,
         openDisputes: disputes.length,
+        pendingResultConfirmations: pendingData.total,
         recentAuditLogs: auditLogs.length,
       },
       systemHealth: {
@@ -80,6 +89,7 @@ adminRouter.get('/overview', async (req: Request, res: Response) => {
         timestamp: new Date().toISOString(),
       },
       openDisputes: disputes.slice(0, 10),
+      pendingFixturesPreview: pendingData.pendingFixtures.slice(0, 5),
     });
   } catch (err: any) {
     handleFirestoreError(res, err, 'GET /api/admin/overview');
@@ -336,3 +346,83 @@ adminRouter.post('/competitions/:id/rebuild-standings', async (req: Request, res
     handleFirestoreError(res, err, `POST /api/admin/competitions/${competitionId}/rebuild-standings`);
   }
 });
+
+// Club Management Endpoints
+adminRouter.post('/clubs/:id/release', async (req: Request, res: Response) => {
+  const adminUserId = req.user!.id;
+  const clubId = req.params.id;
+  const seasonId = (req.body.seasonId as string) || 'season-2026-27';
+
+  try {
+    const result = await adminReleaseClubFirestore(adminUserId, clubId, seasonId);
+    res.json(result);
+  } catch (err: any) {
+    handleFirestoreError(res, err, `POST /api/admin/clubs/${clubId}/release`);
+  }
+});
+
+adminRouter.post('/clubs/:id/assign', async (req: Request, res: Response) => {
+  const adminUserId = req.user!.id;
+  const clubId = req.params.id;
+  const { targetUserId, seasonId = 'season-2026-27' } = req.body;
+
+  if (!targetUserId) {
+    res.status(400).json({ error: 'targetUserId is required', code: 'BAD_REQUEST', message: 'targetUserId is required' });
+    return;
+  }
+
+  try {
+    const result = await adminAssignClubFirestore(adminUserId, clubId, targetUserId, seasonId);
+    res.json(result);
+  } catch (err: any) {
+    handleFirestoreError(res, err, `POST /api/admin/clubs/${clubId}/assign`);
+  }
+});
+
+// Results & Pending Workflow Endpoints
+adminRouter.get('/results/pending', async (req: Request, res: Response) => {
+  const seasonId = (req.query.seasonId as string) || 'season-2026-27';
+  try {
+    const result = await getPendingResultsFirestore(seasonId);
+    res.json(result);
+  } catch (err: any) {
+    handleFirestoreError(res, err, 'GET /api/admin/results/pending');
+  }
+});
+
+const approveResultSchema = z.object({
+  homeScore: z.number().int().min(0),
+  awayScore: z.number().int().min(0),
+  notes: z.string().optional(),
+});
+
+adminRouter.post('/results/:fixtureId/approve', validateBody(approveResultSchema), async (req: Request, res: Response) => {
+  const adminUserId = req.user!.id;
+  const fixtureId = req.params.fixtureId;
+  const { homeScore, awayScore, notes } = req.body;
+
+  try {
+    const result = await adminApproveFixtureResultFirestore(adminUserId, fixtureId, homeScore, awayScore, notes);
+    res.json(result);
+  } catch (err: any) {
+    handleFirestoreError(res, err, `POST /api/admin/results/${fixtureId}/approve`);
+  }
+});
+
+adminRouter.post('/results/:fixtureId/reject', validateBody(reopenFixtureSchema), async (req: Request, res: Response) => {
+  const adminUserId = req.user!.id;
+  const fixtureId = req.params.fixtureId;
+  const { notes } = req.body;
+
+  try {
+    const result = await reopenFixtureFirestore(adminUserId, fixtureId, notes || 'Rejected by tournament administrator');
+    res.json({
+      success: true,
+      message: 'Pending result rejected and match reopened for re-submission.',
+      result,
+    });
+  } catch (err: any) {
+    handleFirestoreError(res, err, `POST /api/admin/results/${fixtureId}/reject`);
+  }
+});
+

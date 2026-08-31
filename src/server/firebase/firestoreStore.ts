@@ -2834,4 +2834,338 @@ export async function syncFirestoreClubCrests(): Promise<{
   }
 }
 
+// ----------------------------------------------------
+// ADMIN CLUB & RESULT MANAGEMENT (FIRESTORE)
+// ----------------------------------------------------
+
+export async function adminReleaseClubFirestore(
+  adminUserId: string,
+  clubId: string,
+  seasonId = 'season-2026-27'
+): Promise<{ success: boolean; message: string; club: Club }> {
+  const now = new Date().toISOString();
+  try {
+    const db = getFirestoreDb();
+    const clubRef = db.collection(COLLECTIONS.CLUBS).doc(clubId);
+    const clubOccRef = db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_${clubId}`);
+    
+    const clubOccDoc = await clubOccRef.get();
+    const previousUserId = clubOccDoc.exists ? clubOccDoc.data()?.userId : null;
+
+    const batch = db.batch();
+
+    // Release club occupancy
+    batch.set(clubOccRef, {
+      clubId,
+      userId: null,
+      seasonId,
+      status: 'released',
+      releasedByUserId: adminUserId,
+      releasedAt: now,
+      updatedAt: now,
+    }, { merge: true });
+
+    // Release user membership if existed
+    if (previousUserId) {
+      const userMemRef = db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${seasonId}_${previousUserId}`);
+      batch.set(userMemRef, {
+        status: 'released',
+        releasedAt: now,
+        updatedAt: now,
+      }, { merge: true });
+    }
+
+    // Update club record
+    batch.update(clubRef, {
+      isTaken: false,
+      claimedByUserId: null,
+      updatedAt: now,
+    });
+
+    // Record audit log
+    const auditRef = db.collection(COLLECTIONS.AUDIT_LOGS).doc();
+    batch.set(auditRef, {
+      actorUserId: adminUserId,
+      action: 'ADMIN_RELEASE_CLUB',
+      entityType: 'club',
+      entityId: clubId,
+      notes: `Admin released ownership from previous user '${previousUserId || 'none'}'`,
+      createdAt: now,
+    });
+
+    await batch.commit();
+  } catch (err: any) {
+    console.warn('[FIRESTORE FALLBACK] adminReleaseClubFirestore:', err.message);
+  }
+
+  // SQLite fallback sync
+  try {
+    queryRun(
+      "UPDATE club_memberships SET status = 'released', updated_at = ? WHERE club_id = ? AND season_id = ? AND status = 'active'",
+      [now, clubId, seasonId]
+    );
+  } catch {
+    // ignore
+  }
+
+  invalidateFirestoreCache();
+  const updatedClub = await getClubByIdFirestore(clubId, seasonId);
+  return {
+    success: true,
+    message: `Club '${updatedClub?.name || clubId}' has been released and is now available.`,
+    club: updatedClub!,
+  };
+}
+
+export async function adminAssignClubFirestore(
+  adminUserId: string,
+  clubId: string,
+  targetUserId: string,
+  seasonId = 'season-2026-27'
+): Promise<{ success: boolean; message: string; club: Club }> {
+  const now = new Date().toISOString();
+  try {
+    const db = getFirestoreDb();
+    const clubRef = db.collection(COLLECTIONS.CLUBS).doc(clubId);
+    const clubDoc = await clubRef.get();
+    if (!clubDoc.exists) {
+      throw new ClubNotFoundError(`Club with ID '${clubId}' not found.`);
+    }
+
+    const clubOccRef = db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_${clubId}`);
+    const userMemRef = db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${seasonId}_${targetUserId}`);
+    const membershipRef = db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).doc(`${seasonId}_${clubId}`);
+
+    // If target user already owns a different club, release that club first
+    const existingUserMem = await userMemRef.get();
+    if (existingUserMem.exists && existingUserMem.data()?.status === 'active') {
+      const prevClubId = existingUserMem.data()!.clubId;
+      if (prevClubId && prevClubId !== clubId) {
+        const prevOccRef = db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_${prevClubId}`);
+        const prevClubRef = db.collection(COLLECTIONS.CLUBS).doc(prevClubId);
+        await prevOccRef.set({ status: 'released', updatedAt: now }, { merge: true });
+        await prevClubRef.update({ isTaken: false, claimedByUserId: null, updatedAt: now });
+      }
+    }
+
+    const batch = db.batch();
+
+    batch.set(clubOccRef, {
+      clubId,
+      userId: targetUserId,
+      seasonId,
+      status: 'active',
+      claimedAt: now,
+      updatedAt: now,
+    });
+
+    batch.set(userMemRef, {
+      userId: targetUserId,
+      clubId,
+      seasonId,
+      status: 'active',
+      claimedAt: now,
+      updatedAt: now,
+    });
+
+    batch.set(membershipRef, {
+      id: `cm-${seasonId}-${clubId}`,
+      seasonId,
+      clubId,
+      userId: targetUserId,
+      claimedAt: now,
+      status: 'active',
+      updatedAt: now,
+    });
+
+    batch.update(clubRef, {
+      isTaken: true,
+      claimedByUserId: targetUserId,
+      updatedAt: now,
+    });
+
+    const auditRef = db.collection(COLLECTIONS.AUDIT_LOGS).doc();
+    batch.set(auditRef, {
+      actorUserId: adminUserId,
+      action: 'ADMIN_ASSIGN_CLUB',
+      entityType: 'club',
+      entityId: clubId,
+      notes: `Admin assigned club to user '${targetUserId}'`,
+      createdAt: now,
+    });
+
+    await batch.commit();
+  } catch (err: any) {
+    console.warn('[FIRESTORE FALLBACK] adminAssignClubFirestore:', err.message);
+  }
+
+  // SQLite fallback sync
+  try {
+    queryRun(
+      "UPDATE club_memberships SET status = 'released', updated_at = ? WHERE user_id = ? AND season_id = ? AND status = 'active'",
+      [now, targetUserId, seasonId]
+    );
+    queryRun(
+      `INSERT OR REPLACE INTO club_memberships (id, season_id, club_id, user_id, claimed_at, status, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'active', ?)`,
+      [`cm-${seasonId}-${clubId}`, seasonId, clubId, targetUserId, now, now]
+    );
+  } catch {
+    // ignore
+  }
+
+  invalidateFirestoreCache();
+  const updatedClub = await getClubByIdFirestore(clubId, seasonId);
+  return {
+    success: true,
+    message: `Club '${updatedClub?.name || clubId}' assigned to player '${targetUserId}'.`,
+    club: updatedClub!,
+  };
+}
+
+export async function adminApproveFixtureResultFirestore(
+  adminUserId: string,
+  fixtureId: string,
+  homeScore: number,
+  awayScore: number,
+  notes?: string
+): Promise<{ success: boolean; message: string; fixture: Fixture }> {
+  const db = getFirestoreDb();
+  const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
+  const fixDoc = await fixRef.get();
+  if (!fixDoc.exists) {
+    throw new Error(`Fixture '${fixtureId}' not found.`);
+  }
+
+  const fixture = fixDoc.data() as FirestoreFixtureDoc;
+  const now = new Date().toISOString();
+
+  let winnerClubId: string | null = null;
+  if (homeScore > awayScore) winnerClubId = fixture.homeClubId;
+  else if (awayScore > homeScore) winnerClubId = fixture.awayClubId;
+
+  await fixRef.update({
+    status: 'CONFIRMED',
+    homeScore,
+    awayScore,
+    winnerClubId,
+    resultConfirmedAt: now,
+    updatedAt: now,
+  });
+
+  // Resolve any open disputes on this fixture
+  const disputesSnap = await db.collection(COLLECTIONS.DISPUTES).where('fixtureId', '==', fixtureId).get();
+  for (const d of disputesSnap.docs) {
+    await d.ref.update({
+      status: 'RESOLVED',
+      resolvedByUserId: adminUserId,
+      resolutionNotes: notes || 'Approved by tournament administrator',
+      resolvedAt: now,
+    });
+  }
+
+  // Knockout advancement if applicable
+  if (winnerClubId) {
+    try {
+      const { advanceKnockoutWinnerFirestore } = await import('../tournament/knockoutEngine');
+      await advanceKnockoutWinnerFirestore(fixtureId);
+    } catch (err) {
+      console.warn('[KNOCKOUT_ADVANCE] Non-blocking advance error on admin approval:', err);
+    }
+  }
+
+  // Standings update if applicable
+  if (fixture.competitionId) {
+    try {
+      await rebuildCompetitionStandingsFirestore(fixture.competitionId);
+    } catch (standingsErr) {
+      console.warn('[STANDINGS_UPDATE] Non-blocking standings update error on admin approval:', standingsErr);
+    }
+  }
+
+  // Audit log
+  await db.collection(COLLECTIONS.AUDIT_LOGS).add({
+    actorUserId: adminUserId,
+    action: 'ADMIN_APPROVE_RESULT',
+    entityType: 'fixture',
+    entityId: fixtureId,
+    notes: notes || `Admin confirmed result ${homeScore}-${awayScore}`,
+    createdAt: now,
+  });
+
+  invalidateFirestoreCache();
+  const updatedFixture = await getFixtureByIdFirestore(fixtureId);
+  return {
+    success: true,
+    message: `Match result (${homeScore} - ${awayScore}) confirmed and standings updated.`,
+    fixture: updatedFixture!,
+  };
+}
+
+export async function getPendingResultsFirestore(seasonId = 'season-2026-27'): Promise<{
+  pendingFixtures: (Fixture & { submissions: any[] })[];
+  total: number;
+}> {
+  const cacheKey = `firestore:admin_pending_results:${seasonId}`;
+  const cached = getFromCache<{ pendingFixtures: (Fixture & { submissions: any[] })[]; total: number }>(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const db = getFirestoreDb();
+    const [pendingSnap, disputedSnap] = await Promise.all([
+      db.collection(COLLECTIONS.FIXTURES)
+        .where('seasonId', '==', seasonId)
+        .where('status', '==', 'PENDING_CONFIRMATION')
+        .get(),
+      db.collection(COLLECTIONS.FIXTURES)
+        .where('seasonId', '==', seasonId)
+        .where('status', '==', 'DISPUTED')
+        .get(),
+    ]);
+
+    const allDocs = [...pendingSnap.docs, ...disputedSnap.docs];
+    const fixturesWithSubmissions = await Promise.all(
+      allDocs.map(async (doc) => {
+        const fix = await getFixtureByIdFirestore(doc.id);
+        const subsSnap = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where('fixtureId', '==', doc.id).get();
+        const submissions = await Promise.all(
+          subsSnap.docs.map(async (subDoc) => {
+            const subData = subDoc.data();
+            const userDoc = await db.collection(COLLECTIONS.USERS).doc(subData.submittedByUserId).get().catch(() => null);
+            const userData = userDoc?.exists ? userDoc.data() : null;
+            return {
+              id: subDoc.id,
+              submittedByUserId: subData.submittedByUserId,
+              submitterUsername: userData?.username || subData.submittedByUserId,
+              submitterName: `${userData?.firstName || ''} ${userData?.lastName || ''}`.trim(),
+              clubId: subData.clubId,
+              homeScore: subData.homeScore,
+              awayScore: subData.awayScore,
+              proofUrl: subData.proofUrl,
+              createdAt: subData.createdAt,
+            };
+          })
+        );
+
+        return {
+          ...(fix || (doc.data() as any)),
+          id: doc.id,
+          submissions,
+        };
+      })
+    );
+
+    const result = {
+      pendingFixtures: fixturesWithSubmissions,
+      total: fixturesWithSubmissions.length,
+    };
+    setInCache(cacheKey, result, 15000);
+    return result;
+  } catch (err: any) {
+    console.warn('[FIRESTORE FALLBACK] getPendingResultsFirestore:', err.message);
+    return { pendingFixtures: [], total: 0 };
+  }
+}
+
+
 
