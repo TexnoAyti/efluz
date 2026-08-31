@@ -125,7 +125,9 @@ export const AdminView: React.FC = () => {
   const [generatingCompId, setGeneratingCompId] = useState<string | null>(null);
   const [rebuildingStandingsCompId, setRebuildingStandingsCompId] = useState<string | null>(null);
 
-  const loadAllAdminData = async (skipCache = false) => {
+  const [loadedTabs, setLoadedTabs] = useState<Set<string>>(new Set());
+
+  const loadTabData = async (tab: AdminTab, skipCache = false) => {
     if (!user?.isAdmin) {
       setIsLoading(false);
       return;
@@ -134,52 +136,69 @@ export const AdminView: React.FC = () => {
     setError(null);
 
     try {
-      const [
-        overviewRes,
-        disputesRes,
-        pendingRes,
-        auditRes,
-        compsRes,
-        usersRes,
-        clubsRes,
-        fixturesRes,
-        diagRes,
-      ] = await Promise.all([
-        api.getAdminOverview(activeSeasonId, skipCache).catch(() => null),
-        api.getAdminDisputes('OPEN', skipCache).catch(() => ({ disputes: [] })),
-        api.getAdminPendingResults(activeSeasonId, skipCache).catch(() => ({ pendingFixtures: [], total: 0 })),
-        api.getAdminAuditLogs(50, skipCache).catch(() => ({ logs: [] })),
-        api.getCompetitions(activeSeasonId, skipCache).catch(() => ({ competitions: [] })),
-        api.getAdminUsers(skipCache).catch(() => ({ users: [] })),
-        api.getAdminClubs(activeSeasonId, undefined, skipCache).catch(() => ({ clubs: [], total: 0 })),
-        api.getAdminFixtures(activeSeasonId, undefined, undefined, undefined, 200, skipCache).catch(() => ({ fixtures: [], total: 0 })),
-        api.getAdminDiagnostics().catch(() => null),
-      ]);
+      if (tab === 'overview') {
+        const [overviewRes, disputesRes, pendingRes, auditRes] = await Promise.all([
+          api.getAdminOverview(activeSeasonId, skipCache).catch(() => null),
+          api.getAdminDisputes('OPEN', skipCache).catch(() => ({ disputes: [] })),
+          api.getAdminPendingResults(activeSeasonId, skipCache).catch(() => ({ pendingFixtures: [], total: 0 })),
+          api.getAdminAuditLogs(10, skipCache).catch(() => ({ logs: [] })),
+        ]);
+        if (overviewRes) setOverviewData(overviewRes);
+        if (disputesRes?.disputes) setDisputes(disputesRes.disputes);
+        if (pendingRes?.pendingFixtures) setPendingResults(pendingRes.pendingFixtures as any);
+        if (auditRes?.logs) setAuditLogs(auditRes.logs);
+      } else if (tab === 'clubs') {
+        const [clubsRes, usersRes] = await Promise.all([
+          api.getAdminClubs(activeSeasonId, undefined, skipCache).catch(() => ({ clubs: [], total: 0 })),
+          users.length === 0 ? api.getAdminUsers(skipCache).catch(() => ({ users: [] })) : Promise.resolve(null),
+        ]);
+        if (clubsRes?.clubs) setClubs(clubsRes.clubs);
+        if (usersRes?.users) setUsers(usersRes.users);
+      } else if (tab === 'matches') {
+        const [fixturesRes, compsRes] = await Promise.all([
+          api.getAdminFixtures(activeSeasonId, undefined, undefined, undefined, 200, skipCache).catch(() => ({ fixtures: [], total: 0 })),
+          competitions.length === 0 ? api.getCompetitions(activeSeasonId, skipCache).catch(() => ({ competitions: [] })) : Promise.resolve(null),
+        ]);
+        if (fixturesRes?.fixtures) setFixtures(fixturesRes.fixtures);
+        if (compsRes?.competitions) setCompetitions(compsRes.competitions);
+      } else if (tab === 'results') {
+        const [pendingRes, disputesRes] = await Promise.all([
+          api.getAdminPendingResults(activeSeasonId, skipCache).catch(() => ({ pendingFixtures: [], total: 0 })),
+          api.getAdminDisputes('OPEN', skipCache).catch(() => ({ disputes: [] })),
+        ]);
+        if (pendingRes?.pendingFixtures) setPendingResults(pendingRes.pendingFixtures as any);
+        if (disputesRes?.disputes) setDisputes(disputesRes.disputes);
+      } else if (tab === 'competitions') {
+        const compsRes = await api.getCompetitions(activeSeasonId, skipCache).catch(() => ({ competitions: [] }));
+        if (compsRes?.competitions) setCompetitions(compsRes.competitions);
+      } else if (tab === 'users') {
+        const usersRes = await api.getAdminUsers(skipCache).catch(() => ({ users: [] }));
+        if (usersRes?.users) setUsers(usersRes.users);
+      } else if (tab === 'system') {
+        const diagRes = await api.getAdminDiagnostics().catch(() => null);
+        if (diagRes) setDiagnostics(diagRes);
+      }
 
-      if (overviewRes) setOverviewData(overviewRes);
-      if (disputesRes?.disputes) setDisputes(disputesRes.disputes);
-      if (pendingRes?.pendingFixtures) setPendingResults(pendingRes.pendingFixtures as any);
-      if (auditRes?.logs) setAuditLogs(auditRes.logs);
-      if (compsRes?.competitions) setCompetitions(compsRes.competitions);
-      if (usersRes?.users) setUsers(usersRes.users);
-      if (clubsRes?.clubs) setClubs(clubsRes.clubs);
-      if (fixturesRes?.fixtures) setFixtures(fixturesRes.fixtures);
-      if (diagRes) setDiagnostics(diagRes);
+      setLoadedTabs((prev) => new Set(prev).add(tab));
     } catch (err: any) {
-      console.error('Failed to load admin data:', err);
+      console.error(`Failed to load admin data for ${tab}:`, err);
       setError("Couldn't load some administrative records. Please click refresh.");
     } finally {
       setIsLoading(false);
     }
   };
 
+  const loadAllAdminData = async (skipCache = false) => {
+    await loadTabData(activeAdminTab, skipCache);
+  };
+
   useEffect(() => {
     if (user?.isAdmin) {
-      loadAllAdminData();
+      loadTabData(activeAdminTab, false);
     } else {
       setIsLoading(false);
     }
-  }, [activeSeasonId, user?.isAdmin]);
+  }, [activeAdminTab, activeSeasonId, user?.isAdmin]);
 
   // =========================================================================
   // CLUB OWNERSHIP ACTIONS

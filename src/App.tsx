@@ -85,7 +85,7 @@ const AppContent: React.FC = () => {
     }
     if (user?.isAdmin) {
       checkDisputes();
-      const interval = setInterval(checkDisputes, 15000);
+      const interval = setInterval(checkDisputes, 60000);
       return () => clearInterval(interval);
     }
   }, [user?.isAdmin]);

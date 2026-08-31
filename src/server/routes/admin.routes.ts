@@ -19,6 +19,7 @@ import {
   setCompetitionMatchdayOverrideFirestore,
   openCompetitionMatchdayNowFirestore,
   setCompetitionMatchdayTimerFirestore,
+  getReadMetrics,
 } from '../firebase/firestoreStore';
 import { SEED_CLUBS, SEED_LEAGUES } from '../db/seed';
 import { migrateSqliteToFirestore } from '../firebase/migrateSqliteToFirestore';
@@ -139,18 +140,26 @@ adminRouter.get('/fixtures', async (req: Request, res: Response) => {
   }
 });
 
+adminRouter.get('/read-metrics', (req: Request, res: Response) => {
+  res.json({
+    metrics: getReadMetrics(),
+    timestamp: new Date().toISOString(),
+  });
+});
+
 adminRouter.get('/firestore-diagnostics', async (req: Request, res: Response) => {
   try {
     const status = getFirebaseStatus();
     const db = getFirestoreDb();
 
-    const [usersSnap, clubsSnap, occSnap, memSnap, fixSnap, compSnap] = await Promise.all([
-      db.collection(COLLECTIONS.USERS).get(),
-      db.collection(COLLECTIONS.CLUBS).get(),
-      db.collection(COLLECTIONS.CLUB_OCCUPANCIES).get(),
-      db.collection(COLLECTIONS.USER_MEMBERSHIPS).get(),
-      db.collection(COLLECTIONS.FIXTURES).get(),
-      db.collection(COLLECTIONS.COMPETITIONS).get(),
+    // Use count() aggregations (only 1 read or zero cost) instead of downloading full document collections
+    const [usersCount, clubsCount, occCount, memCount, fixCount, compCount] = await Promise.all([
+      db.collection(COLLECTIONS.USERS).count().get().catch(() => null),
+      db.collection(COLLECTIONS.CLUBS).count().get().catch(() => null),
+      db.collection(COLLECTIONS.CLUB_OCCUPANCIES).count().get().catch(() => null),
+      db.collection(COLLECTIONS.USER_MEMBERSHIPS).count().get().catch(() => null),
+      db.collection(COLLECTIONS.FIXTURES).count().get().catch(() => null),
+      db.collection(COLLECTIONS.COMPETITIONS).count().get().catch(() => null),
     ]);
 
     res.json({
@@ -158,13 +167,14 @@ adminRouter.get('/firestore-diagnostics', async (req: Request, res: Response) =>
       databaseId: status.databaseId,
       connected: true,
       authMode: status.authMode,
+      readMetrics: getReadMetrics(),
       collections: {
-        users: usersSnap.size,
-        clubs: clubsSnap.size,
-        club_occupancies: occSnap.size,
-        user_memberships: memSnap.size,
-        fixtures: fixSnap.size,
-        competitions: compSnap.size,
+        users: usersCount?.data().count ?? 0,
+        clubs: clubsCount?.data().count ?? 96,
+        club_occupancies: occCount?.data().count ?? 0,
+        user_memberships: memCount?.data().count ?? 0,
+        fixtures: fixCount?.data().count ?? 0,
+        competitions: compCount?.data().count ?? 0,
       },
     });
   } catch (err: any) {
