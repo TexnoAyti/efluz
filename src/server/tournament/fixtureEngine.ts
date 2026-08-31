@@ -96,6 +96,80 @@ export function generateRoundRobinSchedule(
 }
 
 /**
+ * Deterministic 32-Club European League Phase Schedule Generator (UCL & Europa League)
+ * Generates exactly 8 matchdays (16 matches per matchday, 128 total matches).
+ * Each club plays exactly 8 matches (4 Home, 4 Away) against 8 DIFFERENT opponents.
+ */
+export function generateEuropean32LeaguePhaseSchedule(
+  clubIds: string[],
+  options: {
+    startDate?: string;
+    daysBetweenMatchdays?: number;
+  } = {}
+): RoundMatchup[] {
+  if (clubIds.length !== 32) {
+    if (clubIds.length === 24) {
+      return generateUCL24LeaguePhaseSchedule(clubIds, options);
+    }
+    throw new Error(`European 32-team league phase requires exactly 32 clubs (received ${clubIds.length}).`);
+  }
+
+  const n = 32;
+  const numRounds = 8;
+
+  // Standard 1-factorization of K_32 (indices 0..31 with prime modulus 31)
+  const roundPairs: Array<Array<[number, number]>> = [];
+  for (let r = 0; r < numRounds; r++) {
+    const pairs: Array<[number, number]> = [];
+    // Fixed team 31 plays team r
+    pairs.push([31, r]);
+    for (let i = 1; i <= 15; i++) {
+      const u = (r + i) % 31;
+      const v = (r - i + 31) % 31;
+      pairs.push([u, v]);
+    }
+    roundPairs.push(pairs);
+  }
+
+  // Home / Away assignments: greedy balancing so each team gets exactly 4 home and 4 away matches
+  const homeCount = new Array(n).fill(0);
+  const matchups: RoundMatchup[] = [];
+
+  for (let r = 0; r < numRounds; r++) {
+    const pairs = roundPairs[r];
+    for (let m = 0; m < pairs.length; m++) {
+      const [u, v] = pairs[m];
+      let uIsHome: boolean;
+
+      if (homeCount[u] >= 4 && homeCount[v] < 4) {
+        uIsHome = false;
+      } else if (homeCount[v] >= 4 && homeCount[u] < 4) {
+        uIsHome = true;
+      } else if (homeCount[u] < homeCount[v]) {
+        uIsHome = true;
+      } else if (homeCount[v] < homeCount[u]) {
+        uIsHome = false;
+      } else {
+        uIsHome = (r + m) % 2 === 0;
+      }
+
+      const homeIdx = uIsHome ? u : v;
+      const awayIdx = uIsHome ? v : u;
+
+      homeCount[homeIdx]++;
+
+      matchups.push({
+        matchday: r + 1,
+        homeClubId: clubIds[homeIdx],
+        awayClubId: clubIds[awayIdx],
+      });
+    }
+  }
+
+  return matchups;
+}
+
+/**
  * Deterministic 24-Club UEFA Champions League Phase Schedule Generator
  * Generates exactly 8 matchdays (12 matches per matchday, 96 total matches).
  * Each club plays exactly 8 matches (4 Home, 4 Away) against 8 DIFFERENT opponents.

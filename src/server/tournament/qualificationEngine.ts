@@ -63,9 +63,6 @@ export async function evaluateSeasonQualifications(seasonId = 'season-2026-27'):
   const uelComp = allComps.find(
     (c) => c.type === 'EUROPEAN_LEAGUE_PHASE' && (c.name.toLowerCase().includes('europa league') || c.id.includes('uel'))
   );
-  const ueclComp = allComps.find(
-    (c) => c.type === 'EUROPEAN_LEAGUE_PHASE' && (c.name.toLowerCase().includes('conference league') || c.id.includes('uecl'))
-  );
 
   const newParticipants: FirestoreCompetitionParticipantDoc[] = [];
   const notificationsToSend: Array<{ userId: string; title: string; message: string }> = [];
@@ -74,13 +71,21 @@ export async function evaluateSeasonQualifications(seasonId = 'season-2026-27'):
     const standings = await calculateCompetitionStandingsFirestore(league.id);
     if (standings.length === 0) continue;
 
-    const formatConfig = league.formatConfig || {};
-    const isLigue1 = league.id.includes('ligue-1') || league.name.toLowerCase().includes('ligue 1');
-    const uclSpots = isLigue1 ? 4 : (formatConfig.qualificationSpots || 5);
-    const uelSpots = 1;
-    const ueclSpots = 1;
+    const leagueIdLower = (league.id || '').toLowerCase();
+    const leagueNameLower = (league.name || '').toLowerCase();
 
-    // 1. Qualify top N for UEFA Champions League
+    let uclSpots = 7;
+    let uelSpots = 7;
+
+    if (leagueIdLower.includes('bundesliga') || leagueNameLower.includes('bundesliga')) {
+      uclSpots = 6;
+      uelSpots = 6;
+    } else if (leagueIdLower.includes('ligue-1') || leagueNameLower.includes('ligue 1')) {
+      uclSpots = 5;
+      uelSpots = 5;
+    }
+
+    // 1. Qualify top N for UEFA Champions League (32 Total)
     if (uclComp) {
       for (let i = 0; i < Math.min(uclSpots, standings.length); i++) {
         const row = standings[i];
@@ -130,7 +135,7 @@ export async function evaluateSeasonQualifications(seasonId = 'season-2026-27'):
       }
     }
 
-    // 2. Qualify next M for UEFA Europa League
+    // 2. Qualify next M for UEFA Europa League (32 Total)
     if (uelComp) {
       for (let i = uclSpots; i < Math.min(uclSpots + uelSpots, standings.length); i++) {
         const row = standings[i];
@@ -174,56 +179,6 @@ export async function evaluateSeasonQualifications(seasonId = 'season-2026-27'):
               userId: ownerUserId,
               title: 'Qualified for UEFA Europa League',
               message: `Congratulations! ${row.clubName} finished #${row.position} in ${league.name} and qualified for the UEFA Europa League!`,
-            });
-          }
-        }
-      }
-    }
-
-    // 3. Qualify next K for UEFA Conference League
-    if (ueclComp) {
-      for (let i = uclSpots + uelSpots; i < Math.min(uclSpots + uelSpots + ueclSpots, standings.length); i++) {
-        const row = standings[i];
-        const ownerUserId = occupancyMap.get(row.clubId) || null;
-        const reason = `${league.name} Rank #${row.position} (UECL Spot)`;
-
-        qualifications.push({
-          seasonId,
-          sourceCompetitionId: league.id,
-          sourceCompetitionName: league.name,
-          targetCompetitionId: ueclComp.id,
-          targetCompetitionName: ueclComp.name,
-          clubId: row.clubId,
-          clubName: row.clubName,
-          ownerUserId,
-          rank: row.position,
-          reason,
-        });
-
-        const partId = `part-${ueclComp.id}-${row.clubId}`;
-        if (!existingPartIds.has(partId)) {
-          newParticipants.push({
-            id: partId,
-            competitionId: ueclComp.id,
-            clubId: row.clubId,
-            seasonId,
-            ownerUserId: ownerUserId || undefined,
-            sourceCompetitionId: league.id,
-            sourceCompetitionName: league.name,
-            sourcePosition: row.position,
-            qualificationReason: reason,
-            qualificationTimestamp: now,
-            seedNumber: qualifications.length,
-            createdAt: now,
-          });
-          existingPartIds.add(partId);
-          participantsAdded++;
-
-          if (ownerUserId) {
-            notificationsToSend.push({
-              userId: ownerUserId,
-              title: 'Qualified for UEFA Conference League',
-              message: `Congratulations! ${row.clubName} finished #${row.position} in ${league.name} and qualified for the UEFA Conference League!`,
             });
           }
         }

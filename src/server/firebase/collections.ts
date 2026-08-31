@@ -81,6 +81,17 @@ export interface FirestoreCompetitionDoc {
   scheduleMode: string;
   status: string;
   formatConfig?: any;
+  hasFixtures?: boolean;
+  fixtureCount?: number;
+  fixturesCount?: number;
+  generationStatus?: string;
+  currentMatchday?: number;
+  totalMatchdays?: number;
+  isMatchdayOpen?: boolean;
+  matchdayOpenedAt?: string;
+  matchdayDurationHours?: number;
+  nextMatchdayOpenAt?: string;
+  adminOverrideStatus?: 'AUTO' | 'FORCE_OPEN' | 'FORCE_LOCKED' | 'PAUSED';
   createdAt: string;
   updatedAt?: string;
 }

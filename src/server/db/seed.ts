@@ -182,7 +182,7 @@ export const SEED_CLUBS: SeedClub[] = [
 ];
 
 export const SEED_COMPETITIONS: SeedCompetition[] = [
-  // --- DOMESTIC LEAGUES ---
+  // --- DOMESTIC LEAGUES (Single Round-Robin Format) ---
   {
     id: 'comp-premier-league-2026',
     seasonId: 'season-2026-27',
@@ -190,7 +190,7 @@ export const SEED_COMPETITIONS: SeedCompetition[] = [
     name: 'Premier League',
     type: 'LEAGUE',
     scheduleMode: 'GENERATED_SCHEDULE',
-    formatConfig: { rounds: 38, homeAndAway: true, pointsForWin: 3, pointsForDraw: 1, pointsForLoss: 0, tieBreakers: ['points', 'goalDifference', 'goalsFor', 'headToHead'], qualificationSpots: 5 },
+    formatConfig: { rounds: 19, homeAndAway: false, pointsForWin: 3, pointsForDraw: 1, pointsForLoss: 0, tieBreakers: ['points', 'goalDifference', 'goalsFor', 'headToHead'], qualificationSpots: 7 },
   },
   {
     id: 'comp-la-liga-2026',
@@ -199,7 +199,7 @@ export const SEED_COMPETITIONS: SeedCompetition[] = [
     name: 'La Liga',
     type: 'LEAGUE',
     scheduleMode: 'GENERATED_SCHEDULE',
-    formatConfig: { rounds: 38, homeAndAway: true, pointsForWin: 3, pointsForDraw: 1, pointsForLoss: 0, tieBreakers: ['points', 'headToHead', 'goalDifference', 'goalsFor'], qualificationSpots: 5 },
+    formatConfig: { rounds: 19, homeAndAway: false, pointsForWin: 3, pointsForDraw: 1, pointsForLoss: 0, tieBreakers: ['points', 'headToHead', 'goalDifference', 'goalsFor'], qualificationSpots: 7 },
   },
   {
     id: 'comp-serie-a-2026',
@@ -208,7 +208,7 @@ export const SEED_COMPETITIONS: SeedCompetition[] = [
     name: 'Serie A',
     type: 'LEAGUE',
     scheduleMode: 'GENERATED_SCHEDULE',
-    formatConfig: { rounds: 38, homeAndAway: true, pointsForWin: 3, pointsForDraw: 1, pointsForLoss: 0, tieBreakers: ['points', 'headToHead', 'goalDifference', 'goalsFor'], qualificationSpots: 5 },
+    formatConfig: { rounds: 19, homeAndAway: false, pointsForWin: 3, pointsForDraw: 1, pointsForLoss: 0, tieBreakers: ['points', 'headToHead', 'goalDifference', 'goalsFor'], qualificationSpots: 7 },
   },
   {
     id: 'comp-bundesliga-2026',
@@ -217,7 +217,7 @@ export const SEED_COMPETITIONS: SeedCompetition[] = [
     name: 'Bundesliga',
     type: 'LEAGUE',
     scheduleMode: 'GENERATED_SCHEDULE',
-    formatConfig: { rounds: 34, homeAndAway: true, pointsForWin: 3, pointsForDraw: 1, pointsForLoss: 0, tieBreakers: ['points', 'goalDifference', 'goalsFor', 'headToHead'], qualificationSpots: 5 },
+    formatConfig: { rounds: 17, homeAndAway: false, pointsForWin: 3, pointsForDraw: 1, pointsForLoss: 0, tieBreakers: ['points', 'goalDifference', 'goalsFor', 'headToHead'], qualificationSpots: 6 },
   },
   {
     id: 'comp-ligue-1-2026',
@@ -226,7 +226,7 @@ export const SEED_COMPETITIONS: SeedCompetition[] = [
     name: 'Ligue 1',
     type: 'LEAGUE',
     scheduleMode: 'GENERATED_SCHEDULE',
-    formatConfig: { rounds: 34, homeAndAway: true, pointsForWin: 3, pointsForDraw: 1, pointsForLoss: 0, tieBreakers: ['points', 'goalDifference', 'goalsFor', 'headToHead'], qualificationSpots: 4 },
+    formatConfig: { rounds: 17, homeAndAway: false, pointsForWin: 3, pointsForDraw: 1, pointsForLoss: 0, tieBreakers: ['points', 'goalDifference', 'goalsFor', 'headToHead'], qualificationSpots: 5 },
   },
 
   // --- NATIONAL CUPS ---
@@ -323,14 +323,14 @@ export const SEED_COMPETITIONS: SeedCompetition[] = [
     formatConfig: { teams: 2, singleLeg: true },
   },
 
-  // --- EUROPEAN COMPETITIONS ---
+  // --- EUROPEAN COMPETITIONS (32 Clubs Each) ---
   {
     id: 'comp-champions-league-2026',
     seasonId: 'season-2026-27',
     name: 'UEFA Champions League',
     type: 'EUROPEAN_LEAGUE_PHASE',
     scheduleMode: 'GENERATED_SCHEDULE',
-    formatConfig: { leaguePhaseTeams: 24, matchesPerTeam: 8, directQualifiers: 8, playoffTeams: 16, knockoutTeams: 16 },
+    formatConfig: { leaguePhaseTeams: 32, matchesPerTeam: 8, directQualifiers: 8, playoffTeams: 16, knockoutTeams: 16 },
   },
   {
     id: 'comp-europa-league-2026',
@@ -338,15 +338,7 @@ export const SEED_COMPETITIONS: SeedCompetition[] = [
     name: 'UEFA Europa League',
     type: 'EUROPEAN_LEAGUE_PHASE',
     scheduleMode: 'GENERATED_SCHEDULE',
-    formatConfig: { leaguePhaseTeams: 36, matchesPerTeam: 8, knockoutTeams: 16 },
-  },
-  {
-    id: 'comp-conference-league-2026',
-    seasonId: 'season-2026-27',
-    name: 'UEFA Conference League',
-    type: 'EUROPEAN_LEAGUE_PHASE',
-    scheduleMode: 'GENERATED_SCHEDULE',
-    formatConfig: { leaguePhaseTeams: 36, matchesPerTeam: 6, knockoutTeams: 16 },
+    formatConfig: { leaguePhaseTeams: 32, matchesPerTeam: 8, directQualifiers: 8, playoffTeams: 16, knockoutTeams: 16 },
   },
   {
     id: 'comp-uefa-super-cup-2026',

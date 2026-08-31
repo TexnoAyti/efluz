@@ -339,6 +339,46 @@ export const AdminView: React.FC = () => {
     }
   };
 
+  const handleAdvanceMatchday = async (compId: string) => {
+    setIsProcessing(true);
+    try {
+      const res = await api.advanceCompetitionMatchday(compId, 30);
+      showToast(`Matchday advanced to MD ${res.currentMatchday} of ${res.totalMatchdays}! Timer set to 30h.`, 'success');
+      await loadAllAdminData(true);
+    } catch (err: any) {
+      showToast(err.message || 'Failed to advance matchday.', 'error');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleToggleMatchdayOverride = async (compId: string, currentOverride?: string) => {
+    setIsProcessing(true);
+    try {
+      const nextStatus = currentOverride === 'FORCE_LOCKED' ? 'FORCE_OPEN' : currentOverride === 'FORCE_OPEN' ? 'AUTO' : 'FORCE_LOCKED';
+      const res = await api.overrideCompetitionMatchday(compId, nextStatus as any);
+      showToast(`Matchday override updated to ${res.adminOverrideStatus}!`, 'success');
+      await loadAllAdminData(true);
+    } catch (err: any) {
+      showToast(err.message || 'Failed to update matchday override.', 'error');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleOpenMatchdayNow = async (compId: string) => {
+    setIsProcessing(true);
+    try {
+      const res = await api.openCompetitionMatchdayNow(compId, 30);
+      showToast(`Matchday unlocked for 30 hours!`, 'success');
+      await loadAllAdminData(true);
+    } catch (err: any) {
+      showToast(err.message || 'Failed to open matchday.', 'error');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   // =========================================================================
   // FILTERED DATASETS
   // =========================================================================
@@ -440,12 +480,12 @@ export const AdminView: React.FC = () => {
         !c.id.includes('trophee-des-champions')
     );
 
-    // 4. European Competitions (3)
+    // 4. European Competitions (2: UCL & UEL)
     const european = competitions.filter(
       (c) =>
-        (c.id.includes('champions-league') ||
-          c.id.includes('europa-league') ||
-          c.id.includes('conference-league')) &&
+        (c.id.includes('champions-league') || c.id.includes('europa-league') || c.id.includes('ucl') || c.id.includes('uel')) &&
+        !c.id.includes('conference-league') &&
+        !c.id.includes('uecl') &&
         !c.id.includes('uefa-super-cup')
     );
 
@@ -1377,10 +1417,10 @@ export const AdminView: React.FC = () => {
               <div>
                 <h2 className="text-sm font-black text-white flex items-center gap-2">
                   <Trophy className="w-4 h-4 text-amber-400" />
-                  <span>19 Official Tournament Competitions</span>
+                  <span>18 Official Tournament Competitions</span>
                 </h2>
                 <p className="text-xs text-slate-400">
-                  Separated into Domestic Leagues, National Cups, Super Cups, and European Competitions.
+                  5 Single Round-Robin Domestic Leagues, 6 National Cups, 5 Super Cups, and 2 32-Team European Competitions.
                 </p>
               </div>
 
@@ -1399,46 +1439,99 @@ export const AdminView: React.FC = () => {
           <div className="space-y-3">
             <h3 className="text-xs font-black uppercase tracking-wider text-emerald-400 flex items-center gap-2">
               <Globe2 className="w-3.5 h-3.5" />
-              <span>Domestic Leagues (5) • Premier League, La Liga, Serie A, Bundesliga, Ligue 1</span>
+              <span>Domestic Leagues (5) • Single Round-Robin (19 MDs for 20 teams, 17 MDs for 18 teams)</span>
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {groupedCompetitions.domesticLeagues.map((comp) => (
-                <div key={comp.id} className="glass-card p-4 rounded-2xl border-slate-800 space-y-3 flex flex-col justify-between">
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-black text-white">{comp.name}</span>
-                      <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-emerald-500/15 text-emerald-300">
-                        {comp.type}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-400">
-                      Format: {comp.formatConfig?.rounds || 38} Matchdays • {comp.formatConfig?.qualificationSpots || 4} European Qualification Spots
-                    </p>
-                  </div>
+              {groupedCompetitions.domesticLeagues.map((comp) => {
+                const totalMds = comp.totalMatchdays || (comp.leagueId?.includes('bundesliga') || comp.leagueId?.includes('ligue-1') ? 17 : 19);
+                const currentMd = comp.currentMatchday || 1;
+                const override = comp.adminOverrideStatus || 'AUTO';
+                const isOpen = override === 'FORCE_OPEN' || (override !== 'FORCE_LOCKED' && comp.isMatchdayOpen);
 
-                  <div className="pt-2 border-t border-white/[0.06] flex items-center gap-2">
-                    <button
-                      onClick={() => handleRebuildStandings(comp.id)}
-                      disabled={rebuildingStandingsCompId === comp.id}
-                      className="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-bold flex items-center justify-center gap-1"
-                    >
-                      <RefreshCw className={`w-3 h-3 ${rebuildingStandingsCompId === comp.id ? 'animate-spin' : ''}`} />
-                      <span>Rebuild Table</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        setMatchCompFilter(comp.id);
-                        setActiveAdminTab('matches');
-                      }}
-                      className="px-3 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 rounded-lg text-xs font-bold flex items-center gap-1"
-                    >
-                      <Eye className="w-3 h-3" />
-                      <span>Fixtures</span>
-                    </button>
+                return (
+                  <div key={comp.id} className="glass-card p-4 rounded-2xl border-slate-800 space-y-3 flex flex-col justify-between">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black text-white">{comp.name}</span>
+                        <div className="flex items-center gap-1">
+                          <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${
+                            override === 'FORCE_OPEN'
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                              : override === 'FORCE_LOCKED'
+                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                              : isOpen
+                              ? 'bg-emerald-500/15 text-emerald-300'
+                              : 'bg-slate-700 text-slate-300'
+                          }`}>
+                            {override !== 'AUTO' ? override : isOpen ? 'MD Open (30h)' : 'MD Locked'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] text-slate-400 bg-slate-900/60 p-2 rounded-xl border border-white/[0.04]">
+                        <span className="font-bold text-white">Matchday {currentMd} / {totalMds}</span>
+                        <span>{comp.formatConfig?.qualificationSpots || 4} European Spots</span>
+                      </div>
+
+                      {comp.nextMatchdayOpenAt && (
+                        <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-slate-500" />
+                          <span>Timer: {new Date(comp.nextMatchdayOpenAt).toLocaleString()}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-2 border-t border-white/[0.06] space-y-2">
+                      {/* Matchday Admin Controls */}
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          onClick={() => handleAdvanceMatchday(comp.id)}
+                          disabled={isProcessing}
+                          className="py-1.5 px-2 bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1"
+                        >
+                          <ChevronRight className="w-3 h-3" />
+                          <span>Advance +1 MD</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleToggleMatchdayOverride(comp.id, override)}
+                          disabled={isProcessing}
+                          className={`py-1.5 px-2 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 border ${
+                            override === 'FORCE_LOCKED'
+                              ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/30'
+                              : 'bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border-rose-500/30'
+                          }`}
+                        >
+                          {override === 'FORCE_LOCKED' ? <Unlock className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
+                          <span>{override === 'FORCE_LOCKED' ? 'Unlock MD' : 'Lock MD'}</span>
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => handleRebuildStandings(comp.id)}
+                          disabled={rebuildingStandingsCompId === comp.id}
+                          className="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-bold flex items-center justify-center gap-1"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${rebuildingStandingsCompId === comp.id ? 'animate-spin' : ''}`} />
+                          <span>Rebuild Table</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setMatchCompFilter(comp.id);
+                            setActiveAdminTab('matches');
+                          }}
+                          className="px-3 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 rounded-lg text-xs font-bold flex items-center gap-1"
+                        >
+                          <Eye className="w-3 h-3" />
+                          <span>Fixtures</span>
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -1520,50 +1613,101 @@ export const AdminView: React.FC = () => {
             </div>
           </div>
 
-          {/* 4. EUROPEAN COMPETITIONS (3) */}
+          {/* 4. EUROPEAN COMPETITIONS (2: UCL & UEL) */}
           <div className="space-y-3 pt-2">
             <h3 className="text-xs font-black uppercase tracking-wider text-rose-400 flex items-center gap-2">
               <Globe2 className="w-3.5 h-3.5" />
-              <span>European Competitions (3) • UEFA Champions League, Europa League, Conference League</span>
+              <span>European Competitions (2) • UEFA Champions League & UEFA Europa League</span>
             </h3>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {groupedCompetitions.european.map((comp) => (
-                <div key={comp.id} className="glass-card p-4 rounded-2xl border-slate-800 space-y-3 flex flex-col justify-between">
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-black text-white">{comp.name}</span>
-                      <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-rose-500/15 text-rose-300">
-                        Swiss League Phase
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-400">
-                      36-Team Single Table League Phase + Knockout Stage
-                    </p>
-                  </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {groupedCompetitions.european.map((comp) => {
+                const totalMds = comp.totalMatchdays || 8;
+                const currentMd = comp.currentMatchday || 1;
+                const override = comp.adminOverrideStatus || 'AUTO';
+                const isOpen = override === 'FORCE_OPEN' || (override !== 'FORCE_LOCKED' && comp.isMatchdayOpen);
 
-                  <div className="pt-2 border-t border-white/[0.06] flex items-center gap-2">
-                    <button
-                      onClick={() => handleRebuildStandings(comp.id)}
-                      disabled={rebuildingStandingsCompId === comp.id}
-                      className="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-bold flex items-center justify-center gap-1"
-                    >
-                      <RefreshCw className={`w-3 h-3 ${rebuildingStandingsCompId === comp.id ? 'animate-spin' : ''}`} />
-                      <span>Rebuild Table</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        setMatchCompFilter(comp.id);
-                        setActiveAdminTab('matches');
-                      }}
-                      className="px-3 py-1.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 rounded-lg text-xs font-bold flex items-center gap-1"
-                    >
-                      <Eye className="w-3 h-3" />
-                      <span>Fixtures</span>
-                    </button>
+                return (
+                  <div key={comp.id} className="glass-card p-4 rounded-2xl border-slate-800 space-y-3 flex flex-col justify-between">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black text-white">{comp.name}</span>
+                        <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${
+                          override === 'FORCE_OPEN'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                            : override === 'FORCE_LOCKED'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                            : isOpen
+                            ? 'bg-rose-500/15 text-rose-300'
+                            : 'bg-slate-700 text-slate-300'
+                        }`}>
+                          {override !== 'AUTO' ? override : isOpen ? 'MD Open (30h)' : 'MD Locked'}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] text-slate-400 bg-slate-900/60 p-2 rounded-xl border border-white/[0.04]">
+                        <span className="font-bold text-white">Matchday {currentMd} / {totalMds}</span>
+                        <span>32 Teams • 8 Rounds (4H / 4A)</span>
+                      </div>
+
+                      {comp.nextMatchdayOpenAt && (
+                        <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-slate-500" />
+                          <span>Timer: {new Date(comp.nextMatchdayOpenAt).toLocaleString()}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-2 border-t border-white/[0.06] space-y-2">
+                      {/* Matchday Admin Controls */}
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          onClick={() => handleAdvanceMatchday(comp.id)}
+                          disabled={isProcessing}
+                          className="py-1.5 px-2 bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1"
+                        >
+                          <ChevronRight className="w-3 h-3" />
+                          <span>Advance +1 MD</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleToggleMatchdayOverride(comp.id, override)}
+                          disabled={isProcessing}
+                          className={`py-1.5 px-2 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 border ${
+                            override === 'FORCE_LOCKED'
+                              ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/30'
+                              : 'bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border-rose-500/30'
+                          }`}
+                        >
+                          {override === 'FORCE_LOCKED' ? <Unlock className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
+                          <span>{override === 'FORCE_LOCKED' ? 'Unlock MD' : 'Lock MD'}</span>
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => handleRebuildStandings(comp.id)}
+                          disabled={rebuildingStandingsCompId === comp.id}
+                          className="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-bold flex items-center justify-center gap-1"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${rebuildingStandingsCompId === comp.id ? 'animate-spin' : ''}`} />
+                          <span>Rebuild Table</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setMatchCompFilter(comp.id);
+                            setActiveAdminTab('matches');
+                          }}
+                          className="px-3 py-1.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 rounded-lg text-xs font-bold flex items-center gap-1"
+                        >
+                          <Eye className="w-3 h-3" />
+                          <span>Fixtures</span>
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>

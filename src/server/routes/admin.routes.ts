@@ -15,6 +15,10 @@ import {
   adminAssignClubFirestore,
   adminApproveFixtureResultFirestore,
   getPendingResultsFirestore,
+  advanceCompetitionMatchdayFirestore,
+  setCompetitionMatchdayOverrideFirestore,
+  openCompetitionMatchdayNowFirestore,
+  setCompetitionMatchdayTimerFirestore,
 } from '../firebase/firestoreStore';
 import { SEED_CLUBS, SEED_LEAGUES } from '../db/seed';
 import { migrateSqliteToFirestore } from '../firebase/migrateSqliteToFirestore';
@@ -425,4 +429,63 @@ adminRouter.post('/results/:fixtureId/reject', validateBody(reopenFixtureSchema)
     handleFirestoreError(res, err, `POST /api/admin/results/${fixtureId}/reject`);
   }
 });
+
+// Competition Matchday Controls
+adminRouter.post('/competitions/:id/matchday/override', async (req: Request, res: Response) => {
+  const competitionId = req.params.id;
+  const { overrideStatus } = req.body;
+  if (!overrideStatus || !['AUTO', 'FORCE_OPEN', 'FORCE_LOCKED', 'PAUSED'].includes(overrideStatus)) {
+    res.status(400).json({ error: 'Valid overrideStatus is required (AUTO, FORCE_OPEN, FORCE_LOCKED, PAUSED)', code: 'BAD_REQUEST' });
+    return;
+  }
+
+  try {
+    const result = await setCompetitionMatchdayOverrideFirestore(competitionId, overrideStatus);
+    res.json(result);
+  } catch (err: any) {
+    handleFirestoreError(res, err, `POST /api/admin/competitions/${competitionId}/matchday/override`);
+  }
+});
+
+adminRouter.post('/competitions/:id/matchday/advance', async (req: Request, res: Response) => {
+  const competitionId = req.params.id;
+  const { durationHours } = req.body;
+
+  try {
+    const result = await advanceCompetitionMatchdayFirestore(competitionId, { durationHours });
+    res.json(result);
+  } catch (err: any) {
+    handleFirestoreError(res, err, `POST /api/admin/competitions/${competitionId}/matchday/advance`);
+  }
+});
+
+adminRouter.post('/competitions/:id/matchday/open-now', async (req: Request, res: Response) => {
+  const competitionId = req.params.id;
+  const { durationHours = 30 } = req.body;
+
+  try {
+    const result = await openCompetitionMatchdayNowFirestore(competitionId, durationHours);
+    res.json(result);
+  } catch (err: any) {
+    handleFirestoreError(res, err, `POST /api/admin/competitions/${competitionId}/matchday/open-now`);
+  }
+});
+
+adminRouter.post('/competitions/:id/matchday/set-timer', async (req: Request, res: Response) => {
+  const competitionId = req.params.id;
+  const { currentMatchday, durationHours, nextOpenAt, overrideStatus } = req.body;
+
+  try {
+    const result = await setCompetitionMatchdayTimerFirestore(competitionId, {
+      currentMatchday,
+      durationHours,
+      nextOpenAt,
+      overrideStatus,
+    });
+    res.json(result);
+  } catch (err: any) {
+    handleFirestoreError(res, err, `POST /api/admin/competitions/${competitionId}/matchday/set-timer`);
+  }
+});
+
 

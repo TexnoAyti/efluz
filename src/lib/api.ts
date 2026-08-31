@@ -617,5 +617,65 @@ export const api = {
     invalidateClientCache();
     return res;
   },
+
+  async overrideCompetitionMatchday(
+    competitionId: string,
+    overrideStatus: 'AUTO' | 'FORCE_OPEN' | 'FORCE_LOCKED' | 'PAUSED'
+  ): Promise<{ success: boolean; adminOverrideStatus: string; isMatchdayOpen: boolean }> {
+    const res = await request<{ success: boolean; adminOverrideStatus: string; isMatchdayOpen: boolean }>(
+      `/api/admin/competitions/${competitionId}/matchday/override`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ overrideStatus }),
+      }
+    );
+    invalidateClientCache();
+    return res;
+  },
+
+  async advanceCompetitionMatchday(
+    competitionId: string,
+    durationHours?: number
+  ): Promise<{ success: boolean; currentMatchday: number; totalMatchdays: number; isMatchdayOpen: boolean; nextMatchdayOpenAt: string }> {
+    const res = await request<{ success: boolean; currentMatchday: number; totalMatchdays: number; isMatchdayOpen: boolean; nextMatchdayOpenAt: string }>(
+      `/api/admin/competitions/${competitionId}/matchday/advance`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ durationHours }),
+      }
+    );
+    invalidateClientCache();
+    return res;
+  },
+
+  async openCompetitionMatchdayNow(
+    competitionId: string,
+    durationHours = 30
+  ): Promise<{ success: boolean; currentMatchday: number; isMatchdayOpen: boolean; nextMatchdayOpenAt: string }> {
+    const res = await request<{ success: boolean; currentMatchday: number; isMatchdayOpen: boolean; nextMatchdayOpenAt: string }>(
+      `/api/admin/competitions/${competitionId}/matchday/open-now`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ durationHours }),
+      }
+    );
+    invalidateClientCache();
+    return res;
+  },
+
+  async setCompetitionMatchdayTimer(
+    competitionId: string,
+    params: { currentMatchday?: number; durationHours?: number; nextOpenAt?: string; overrideStatus?: 'AUTO' | 'FORCE_OPEN' | 'FORCE_LOCKED' | 'PAUSED' }
+  ): Promise<{ success: boolean; competitionId: string }> {
+    const res = await request<{ success: boolean; competitionId: string }>(
+      `/api/admin/competitions/${competitionId}/matchday/set-timer`,
+      {
+        method: 'POST',
+        body: JSON.stringify(params),
+      }
+    );
+    invalidateClientCache();
+    return res;
+  },
 };
 

@@ -41,11 +41,14 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
       const compsRes = await api.getCompetitions(activeSeasonId);
       const uefaComps = (compsRes.competitions || []).filter(
         (c) =>
-          c.type === 'EUROPEAN_LEAGUE_PHASE' ||
-          c.type === 'EUROPEAN_KNOCKOUT' ||
-          c.id.includes('champions') ||
-          c.id.includes('europa') ||
-          c.id.includes('conference')
+          ((c.type === 'EUROPEAN_LEAGUE_PHASE' ||
+            c.type === 'EUROPEAN_KNOCKOUT' ||
+            c.id.includes('champions') ||
+            c.id.includes('europa') ||
+            c.id.includes('ucl') ||
+            c.id.includes('uel')) &&
+          !c.id.includes('conference') &&
+          !c.id.includes('uecl'))
       );
       setTournaments(uefaComps);
 
@@ -470,33 +473,27 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
             <span>European Allocation Formula</span>
           </h3>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4 text-xs text-slate-300">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 text-xs text-slate-300">
             <div className="glass-card p-4 border-blue-500/30 space-y-2">
-              <div className="font-black text-blue-400 text-sm">UEFA Champions League</div>
+              <div className="font-black text-blue-400 text-sm">UEFA Champions League (32 Clubs)</div>
               <ul className="space-y-1.5 text-slate-400 text-xs">
-                <li>• Premier League: Top 4 clubs</li>
-                <li>• La Liga: Top 4 clubs</li>
-                <li>• Serie A: Top 4 clubs</li>
-                <li>• Bundesliga: Top 4 clubs</li>
-                <li>• Ligue 1: Top 3 clubs</li>
+                <li>• Premier League: Top 4 clubs (1st – 4th)</li>
+                <li>• La Liga: Top 4 clubs (1st – 4th)</li>
+                <li>• Serie A: Top 4 clubs (1st – 4th)</li>
+                <li>• Bundesliga: Top 4 clubs (1st – 4th)</li>
+                <li>• Ligue 1: Top 3 clubs (1st – 3rd)</li>
+                <li>• Defending Champions & League Phase Qualifiers</li>
+                <li>• Format: 32-Team Single League Phase, 8 Matchdays (4H / 4A)</li>
               </ul>
             </div>
 
             <div className="glass-card p-4 border-indigo-500/30 space-y-2">
-              <div className="font-black text-indigo-400 text-sm">UEFA Europa League</div>
+              <div className="font-black text-indigo-400 text-sm">UEFA Europa League (32 Clubs)</div>
               <ul className="space-y-1.5 text-slate-400 text-xs">
-                <li>• Domestic Cup Winners (FA Cup, Copa del Rey, etc.)</li>
-                <li>• 5th & 6th Place in Premier League, La Liga, Serie A, Bundesliga</li>
-                <li>• 4th Place in Ligue 1</li>
-              </ul>
-            </div>
-
-            <div className="glass-card p-4 border-teal-500/30 space-y-2">
-              <div className="font-black text-teal-400 text-sm">UEFA Conference League</div>
-              <ul className="space-y-1.5 text-slate-400 text-xs">
-                <li>• 7th Place in top leagues</li>
-                <li>• 5th Place in Ligue 1</li>
-                <li>• Domestic qualification play-off spots</li>
+                <li>• Domestic Cup Winners (FA Cup, Copa del Rey, Coppa Italia, DFB-Pokal, Coupe de France)</li>
+                <li>• 5th, 6th & 7th Place in Premier League, La Liga, Serie A, Bundesliga</li>
+                <li>• 4th & 5th Place in Ligue 1</li>
+                <li>• Format: 32-Team Single League Phase, 8 Matchdays (4H / 4A)</li>
               </ul>
             </div>
           </div>

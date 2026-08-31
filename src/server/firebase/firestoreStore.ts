@@ -6,6 +6,7 @@ import { SEED_CLUBS, SEED_LEAGUES } from '../db/seed';
 const SEED_CLUB_MAP = new Map<string, (typeof SEED_CLUBS)[0]>(
   SEED_CLUBS.map((c) => [c.id, c])
 );
+import { generateEuropean32LeaguePhaseSchedule } from '../tournament/fixtureEngine';
 import {
   COLLECTIONS,
   FirestoreClubDoc,
@@ -939,6 +940,9 @@ export async function getAllCompetitionsFirestore(seasonId = 'season-2026-27'): 
       const data = doc.data() as FirestoreCompetitionDoc;
       const isObsolete =
         doc.id.includes('trophee-des-champions') ||
+        doc.id.includes('conference-league') ||
+        doc.id.includes('uecl') ||
+        data.name?.toLowerCase().includes('conference league') ||
         data.name?.toLowerCase().includes('trophée des champions') ||
         data.name?.toLowerCase().includes('trophee des champions');
 
@@ -949,49 +953,45 @@ export async function getAllCompetitionsFirestore(seasonId = 'season-2026-27'): 
       return true;
     });
 
-    const competitions = await Promise.all(
-      validDocs.map(async (doc) => {
-        const data = doc.data() as FirestoreCompetitionDoc;
-        let fixturesCount = 0;
-        try {
-          const fixturesSnap = await db
-            .collection(COLLECTIONS.FIXTURES)
-            .where('competitionId', '==', doc.id)
-            .get();
-          fixturesCount = fixturesSnap.size;
-        } catch {
-          // resilient fallback on quota exhaustion
-          fixturesCount = 0;
-        }
+    const competitions: Competition[] = validDocs.map((doc) => {
+      const data = doc.data() as FirestoreCompetitionDoc;
+      const fixturesCount = data.fixturesCount ?? data.fixtureCount ?? (data.hasFixtures ? 1 : 0);
+      const hasFixtures = Boolean(data.hasFixtures || fixturesCount > 0);
+      const generationStatus: 'generated' | 'not_generated' = hasFixtures ? 'generated' : 'not_generated';
 
-        const hasFixtures = fixturesCount > 0;
-        const generationStatus: 'generated' | 'not_generated' = hasFixtures ? 'generated' : 'not_generated';
+      let totalTeams = 0;
+      if (data.leagueId) {
+        totalTeams = SEED_CLUBS.filter((c) => c.leagueId === data.leagueId).length || 20;
+      } else {
+        totalTeams = data.formatConfig?.maxTeams || 32;
+      }
 
-        let totalTeams = 0;
-        if (data.leagueId) {
-          totalTeams = SEED_CLUBS.filter((c) => c.leagueId === data.leagueId).length || 20;
-        } else {
-          totalTeams = data.formatConfig?.maxTeams || 32;
-        }
+      const totalMatchdays = data.totalMatchdays || (data.leagueId ? (data.leagueId.includes('bundesliga') || data.leagueId.includes('ligue-1') ? 17 : 19) : 8);
 
-        return {
-          id: doc.id,
-          seasonId: data.seasonId,
-          leagueId: data.leagueId,
-          name: data.name,
-          type: data.type as any,
-          scheduleMode: data.scheduleMode as any,
-          status: (hasFixtures ? 'active' : data.status) as any,
-          totalTeams,
-          hasFixtures,
-          fixtureCount: fixturesCount,
-          fixturesCount,
-          generationStatus,
-          formatConfig: data.formatConfig || {},
-          createdAt: data.createdAt,
-        };
-      })
-    );
+      return {
+        id: doc.id,
+        seasonId: data.seasonId,
+        leagueId: data.leagueId,
+        name: data.name,
+        type: data.type as any,
+        scheduleMode: data.scheduleMode as any,
+        status: (hasFixtures ? 'active' : data.status) as any,
+        totalTeams,
+        hasFixtures,
+        fixtureCount: fixturesCount,
+        fixturesCount,
+        generationStatus,
+        formatConfig: data.formatConfig || {},
+        currentMatchday: data.currentMatchday || 1,
+        totalMatchdays,
+        isMatchdayOpen: data.isMatchdayOpen !== false,
+        matchdayOpenedAt: data.matchdayOpenedAt,
+        matchdayDurationHours: data.matchdayDurationHours || 30,
+        nextMatchdayOpenAt: data.nextMatchdayOpenAt,
+        adminOverrideStatus: data.adminOverrideStatus || 'AUTO',
+        createdAt: data.createdAt,
+      };
+    });
 
     if (competitions.length > 0) {
       setInCache(cacheKey, competitions, 30000);
@@ -1000,30 +1000,37 @@ export async function getAllCompetitionsFirestore(seasonId = 'season-2026-27'): 
   } catch (err: any) {
     console.warn('[FIRESTORE FALLBACK] getAllCompetitionsFirestore:', err.message);
     const rows = queryAll<any>('SELECT * FROM competitions WHERE season_id = ?', [seasonId]);
-    const competitions: Competition[] = rows.map((r) => {
-      let formatConfig: any = {};
-      try {
-        formatConfig = JSON.parse(r.format_config_json || '{}');
-      } catch {}
-      const fixtures = queryAll<any>('SELECT id FROM fixtures WHERE competition_id = ?', [r.id]);
-      const hasFixtures = fixtures.length > 0;
-      return {
-        id: r.id,
-        seasonId: r.season_id,
-        leagueId: r.league_id,
-        name: r.name,
-        type: r.type,
-        scheduleMode: r.schedule_mode,
-        status: hasFixtures ? 'active' : r.status,
-        totalTeams: formatConfig.totalTeams || (r.league_id ? SEED_CLUBS.filter((c) => c.leagueId === r.league_id).length : 20),
-        hasFixtures,
-        fixtureCount: fixtures.length,
-        fixturesCount: fixtures.length,
-        generationStatus: hasFixtures ? 'generated' : 'not_generated',
-        formatConfig,
-        createdAt: r.created_at,
-      };
-    });
+    const competitions: Competition[] = rows
+      .filter((r) => !r.id.includes('conference-league') && !r.id.includes('trophee'))
+      .map((r) => {
+        let formatConfig: any = {};
+        try {
+          formatConfig = JSON.parse(r.format_config_json || '{}');
+        } catch {}
+        const fixtures = queryAll<any>('SELECT id FROM fixtures WHERE competition_id = ?', [r.id]);
+        const hasFixtures = fixtures.length > 0;
+        return {
+          id: r.id,
+          seasonId: r.season_id,
+          leagueId: r.league_id,
+          name: r.name,
+          type: r.type,
+          scheduleMode: r.schedule_mode,
+          status: hasFixtures ? 'active' : r.status,
+          totalTeams: formatConfig.totalTeams || (r.league_id ? SEED_CLUBS.filter((c) => c.leagueId === r.league_id).length : 20),
+          hasFixtures,
+          fixtureCount: fixtures.length,
+          fixturesCount: fixtures.length,
+          generationStatus: hasFixtures ? 'generated' : 'not_generated',
+          formatConfig,
+          currentMatchday: 1,
+          totalMatchdays: r.league_id ? (r.league_id.includes('bundesliga') || r.league_id.includes('ligue-1') ? 17 : 19) : 8,
+          isMatchdayOpen: true,
+          matchdayDurationHours: 30,
+          adminOverrideStatus: 'AUTO',
+          createdAt: r.created_at,
+        };
+      });
     if (competitions.length > 0) {
       setInCache(cacheKey, competitions, 30000);
     }
@@ -1042,18 +1049,8 @@ export async function getCompetitionByIdFirestore(competitionId: string): Promis
     if (!doc.exists) return null;
     const data = doc.data() as FirestoreCompetitionDoc;
 
-    let fixturesCount = 0;
-    try {
-      const fixturesSnap = await db
-        .collection(COLLECTIONS.FIXTURES)
-        .where('competitionId', '==', doc.id)
-        .get();
-      fixturesCount = fixturesSnap.size;
-    } catch {
-      fixturesCount = 0;
-    }
-
-    const hasFixtures = fixturesCount > 0;
+    const fixturesCount = data.fixturesCount ?? data.fixtureCount ?? (data.hasFixtures ? 1 : 0);
+    const hasFixtures = Boolean(data.hasFixtures || fixturesCount > 0);
     const generationStatus: 'generated' | 'not_generated' = hasFixtures ? 'generated' : 'not_generated';
 
     let totalTeams = 0;
@@ -1062,6 +1059,8 @@ export async function getCompetitionByIdFirestore(competitionId: string): Promis
     } else {
       totalTeams = data.formatConfig?.maxTeams || 32;
     }
+
+    const totalMatchdays = data.totalMatchdays || (data.leagueId ? (data.leagueId.includes('bundesliga') || data.leagueId.includes('ligue-1') ? 17 : 19) : 8);
 
     const result: Competition = {
       id: doc.id,
@@ -1077,6 +1076,13 @@ export async function getCompetitionByIdFirestore(competitionId: string): Promis
       fixturesCount,
       generationStatus,
       formatConfig: data.formatConfig || {},
+      currentMatchday: data.currentMatchday || 1,
+      totalMatchdays,
+      isMatchdayOpen: data.isMatchdayOpen !== false,
+      matchdayOpenedAt: data.matchdayOpenedAt,
+      matchdayDurationHours: data.matchdayDurationHours || 30,
+      nextMatchdayOpenAt: data.nextMatchdayOpenAt,
+      adminOverrideStatus: data.adminOverrideStatus || 'AUTO',
       createdAt: data.createdAt,
     };
 
@@ -1106,6 +1112,11 @@ export async function getCompetitionByIdFirestore(competitionId: string): Promis
       fixturesCount: fixtures.length,
       generationStatus: hasFixtures ? 'generated' : 'not_generated',
       formatConfig,
+      currentMatchday: 1,
+      totalMatchdays: r.league_id ? (r.league_id.includes('bundesliga') || r.league_id.includes('ligue-1') ? 17 : 19) : 8,
+      isMatchdayOpen: true,
+      matchdayDurationHours: 30,
+      adminOverrideStatus: 'AUTO',
       createdAt: r.created_at,
     };
     setInCache(cacheKey, result, 30000);
@@ -1509,16 +1520,6 @@ export async function generateCompetitionFixturesFirestore(
     throw new Error(`Not enough clubs (${clubIds.length}) to generate fixtures for ${comp.name}.`);
   }
 
-  // 2. Generate Berger Round Robin Matches
-  const teams = [...clubIds];
-  if (teams.length % 2 !== 0) {
-    teams.push('BYE');
-  }
-
-  const numTeams = teams.length;
-  const numRounds = numTeams - 1;
-  const halfSize = numTeams / 2;
-
   const generatedFixtures: Array<{
     id: string;
     competitionId: string;
@@ -1536,72 +1537,82 @@ export async function generateCompetitionFixturesFirestore(
 
   const startDate = new Date('2026-08-15T15:00:00.000Z');
   const now = new Date().toISOString();
+  let totalRounds = 0;
 
-  // Leg 1 (Matchdays 1 to numRounds)
-  for (let round = 0; round < numRounds; round++) {
-    const matchday = round + 1;
-    const matchDate = new Date(startDate.getTime() + round * 7 * 24 * 60 * 60 * 1000).toISOString();
+  if (comp.type === 'EUROPEAN_LEAGUE_PHASE' || competitionId.includes('ucl') || competitionId.includes('uel')) {
+    // 32-Team Swiss-Style 8-Matchday League Phase Schedule
+    const europeanSchedule = generateEuropean32LeaguePhaseSchedule(clubIds);
+    totalRounds = 8;
 
-    for (let i = 0; i < halfSize; i++) {
-      const home = teams[i];
-      const away = teams[numTeams - 1 - i];
-
-      if (home !== 'BYE' && away !== 'BYE') {
-        const isAlternate = (round + i) % 2 === 1;
-        const actualHome = isAlternate ? away : home;
-        const actualAway = isAlternate ? home : away;
-
-        const homeSlug = actualHome.replace('club-', '');
-        const awaySlug = actualAway.replace('club-', '');
-        const id = `fix-${competitionId}-md${matchday}-${homeSlug}-vs-${awaySlug}`;
-
-        generatedFixtures.push({
-          id,
-          competitionId,
-          competitionName: comp.name,
-          seasonId: comp.seasonId,
-          matchday,
-          roundName: `Matchday ${matchday}`,
-          homeClubId: actualHome,
-          awayClubId: actualAway,
-          scheduledAt: matchDate,
-          status: 'SCHEDULED',
-          createdAt: now,
-          updatedAt: now,
-        });
-      }
-    }
-
-    // Rotate teams (keep index 0 fixed)
-    teams.splice(1, 0, teams.pop()!);
-  }
-
-  // Leg 2 (Return Fixtures: Reverse Home/Away)
-  const totalRounds = numRounds * 2;
-  for (let round = 0; round < numRounds; round++) {
-    const matchday = numRounds + round + 1;
-    const matchDate = new Date(startDate.getTime() + (numRounds + round) * 7 * 24 * 60 * 60 * 1000).toISOString();
-
-    const leg1Matches = generatedFixtures.filter((f) => f.matchday === round + 1);
-    for (const leg1 of leg1Matches) {
-      const homeSlug = leg1.awayClubId.replace('club-', '');
-      const awaySlug = leg1.homeClubId.replace('club-', '');
-      const id = `fix-${competitionId}-md${matchday}-${homeSlug}-vs-${awaySlug}`;
+    for (const match of europeanSchedule) {
+      const matchDate = new Date(startDate.getTime() + (match.matchday - 1) * 7 * 24 * 60 * 60 * 1000).toISOString();
+      const homeSlug = match.homeClubId.replace('club-', '');
+      const awaySlug = match.awayClubId.replace('club-', '');
+      const id = `fix-${competitionId}-md${match.matchday}-${homeSlug}-vs-${awaySlug}`;
 
       generatedFixtures.push({
         id,
         competitionId,
         competitionName: comp.name,
         seasonId: comp.seasonId,
-        matchday,
-        roundName: `Matchday ${matchday}`,
-        homeClubId: leg1.awayClubId, // Reversed
-        awayClubId: leg1.homeClubId, // Reversed
+        matchday: match.matchday,
+        roundName: `Matchday ${match.matchday}`,
+        homeClubId: match.homeClubId,
+        awayClubId: match.awayClubId,
         scheduledAt: matchDate,
         status: 'SCHEDULED',
         createdAt: now,
         updatedAt: now,
       });
+    }
+  } else {
+    // Single Round Robin for Domestic Leagues (19 matchdays for 20 teams, 17 matchdays for 18 teams)
+    const teams = [...clubIds];
+    if (teams.length % 2 !== 0) {
+      teams.push('BYE');
+    }
+
+    const numTeams = teams.length;
+    const numRounds = numTeams - 1;
+    const halfSize = numTeams / 2;
+    totalRounds = numRounds;
+
+    for (let round = 0; round < numRounds; round++) {
+      const matchday = round + 1;
+      const matchDate = new Date(startDate.getTime() + round * 7 * 24 * 60 * 60 * 1000).toISOString();
+
+      for (let i = 0; i < halfSize; i++) {
+        const home = teams[i];
+        const away = teams[numTeams - 1 - i];
+
+        if (home !== 'BYE' && away !== 'BYE') {
+          const isAlternate = (round + i) % 2 === 1;
+          const actualHome = isAlternate ? away : home;
+          const actualAway = isAlternate ? home : away;
+
+          const homeSlug = actualHome.replace('club-', '');
+          const awaySlug = actualAway.replace('club-', '');
+          const id = `fix-${competitionId}-md${matchday}-${homeSlug}-vs-${awaySlug}`;
+
+          generatedFixtures.push({
+            id,
+            competitionId,
+            competitionName: comp.name,
+            seasonId: comp.seasonId,
+            matchday,
+            roundName: `Matchday ${matchday}`,
+            homeClubId: actualHome,
+            awayClubId: actualAway,
+            scheduledAt: matchDate,
+            status: 'SCHEDULED',
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+      }
+
+      // Rotate teams (keep index 0 fixed)
+      teams.splice(1, 0, teams.pop()!);
     }
   }
 
@@ -1632,7 +1643,6 @@ export async function generateCompetitionFixturesFirestore(
   // 5. Verification step: verify count persisted in Firestore
   let verifySnap = await db.collection(COLLECTIONS.FIXTURES).where('competitionId', '==', competitionId).get();
   if (verifySnap.size !== generatedFixtures.length) {
-    // Allow Firestore collection index to settle
     await new Promise((resolve) => setTimeout(resolve, 600));
     verifySnap = await db.collection(COLLECTIONS.FIXTURES).where('competitionId', '==', competitionId).get();
   }
@@ -1642,18 +1652,184 @@ export async function generateCompetitionFixturesFirestore(
     );
   }
 
-  // 6. Update competition document in Firestore with persistent status
+  // 6. Update competition document in Firestore with matchday timer & persistent status
+  const nextOpenAt = new Date(Date.now() + 30 * 3600 * 1000).toISOString();
   await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).update({
     status: 'active',
     hasFixtures: true,
     fixtureCount: verifySnap.size,
     fixturesCount: verifySnap.size,
     generationStatus: 'generated',
+    currentMatchday: 1,
+    totalMatchdays: totalRounds,
+    isMatchdayOpen: true,
+    matchdayOpenedAt: now,
+    matchdayDurationHours: 30,
+    nextMatchdayOpenAt: nextOpenAt,
+    adminOverrideStatus: 'AUTO',
+    updatedAt: now,
+  });
+
+  // Also sync to SQLite for offline resilience
+  try {
+    for (const fix of generatedFixtures) {
+      queryRun(
+        `INSERT OR REPLACE INTO fixtures (id, competition_id, season_id, matchday, round_name, home_club_id, away_club_id, scheduled_at, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          fix.id,
+          fix.competitionId,
+          fix.seasonId,
+          fix.matchday,
+          fix.roundName,
+          fix.homeClubId,
+          fix.awayClubId,
+          fix.scheduledAt,
+          fix.status,
+          fix.createdAt,
+          fix.updatedAt,
+        ]
+      );
+    }
+  } catch (sqliteErr) {
+    console.warn('[SQLITE SYNC] Fixtures sync warning:', sqliteErr);
+  }
+
+  invalidateFirestoreCache('firestore:comp');
+  return { generated: verifySnap.size, matchdays: totalRounds };
+}
+
+// ----------------------------------------------------
+// COMPETITION MATCHDAY MANAGEMENT
+// ----------------------------------------------------
+
+export async function advanceCompetitionMatchdayFirestore(
+  competitionId: string,
+  options: { durationHours?: number } = {}
+): Promise<{ success: boolean; currentMatchday: number; totalMatchdays: number; isMatchdayOpen: boolean; nextMatchdayOpenAt: string }> {
+  const db = getFirestoreDb();
+  const compRef = db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId);
+  const compDoc = await compRef.get();
+  if (!compDoc.exists) {
+    throw new Error(`Competition '${competitionId}' not found.`);
+  }
+
+  const comp = compDoc.data() as FirestoreCompetitionDoc;
+  const currentMd = comp.currentMatchday || 1;
+  const totalMd = comp.totalMatchdays || 19;
+  const nextMd = Math.min(totalMd, currentMd + 1);
+  const durationHours = options.durationHours || comp.matchdayDurationHours || 30;
+  const now = new Date().toISOString();
+  const nextOpenAt = new Date(Date.now() + durationHours * 3600 * 1000).toISOString();
+
+  await compRef.update({
+    currentMatchday: nextMd,
+    isMatchdayOpen: true,
+    matchdayOpenedAt: now,
+    matchdayDurationHours: durationHours,
+    nextMatchdayOpenAt: nextOpenAt,
+    adminOverrideStatus: 'AUTO',
     updatedAt: now,
   });
 
   invalidateFirestoreCache('firestore:comp');
-  return { generated: verifySnap.size, matchdays: totalRounds };
+  return {
+    success: true,
+    currentMatchday: nextMd,
+    totalMatchdays: totalMd,
+    isMatchdayOpen: true,
+    nextMatchdayOpenAt: nextOpenAt,
+  };
+}
+
+export async function setCompetitionMatchdayOverrideFirestore(
+  competitionId: string,
+  overrideStatus: 'AUTO' | 'FORCE_OPEN' | 'FORCE_LOCKED' | 'PAUSED'
+): Promise<{ success: boolean; adminOverrideStatus: string; isMatchdayOpen: boolean }> {
+  const db = getFirestoreDb();
+  const compRef = db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId);
+  const compDoc = await compRef.get();
+  if (!compDoc.exists) {
+    throw new Error(`Competition '${competitionId}' not found.`);
+  }
+
+  const now = new Date().toISOString();
+  const isMatchdayOpen = overrideStatus === 'FORCE_OPEN' || overrideStatus === 'AUTO';
+
+  await compRef.update({
+    adminOverrideStatus: overrideStatus,
+    isMatchdayOpen,
+    updatedAt: now,
+  });
+
+  invalidateFirestoreCache('firestore:comp');
+  return {
+    success: true,
+    adminOverrideStatus: overrideStatus,
+    isMatchdayOpen,
+  };
+}
+
+export async function openCompetitionMatchdayNowFirestore(
+  competitionId: string,
+  durationHours = 30
+): Promise<{ success: boolean; currentMatchday: number; isMatchdayOpen: boolean; nextMatchdayOpenAt: string }> {
+  const db = getFirestoreDb();
+  const compRef = db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId);
+  const compDoc = await compRef.get();
+  if (!compDoc.exists) {
+    throw new Error(`Competition '${competitionId}' not found.`);
+  }
+
+  const comp = compDoc.data() as FirestoreCompetitionDoc;
+  const now = new Date().toISOString();
+  const nextOpenAt = new Date(Date.now() + durationHours * 3600 * 1000).toISOString();
+
+  await compRef.update({
+    isMatchdayOpen: true,
+    matchdayOpenedAt: now,
+    matchdayDurationHours: durationHours,
+    nextMatchdayOpenAt: nextOpenAt,
+    adminOverrideStatus: 'AUTO',
+    updatedAt: now,
+  });
+
+  invalidateFirestoreCache('firestore:comp');
+  return {
+    success: true,
+    currentMatchday: comp.currentMatchday || 1,
+    isMatchdayOpen: true,
+    nextMatchdayOpenAt: nextOpenAt,
+  };
+}
+
+export async function setCompetitionMatchdayTimerFirestore(
+  competitionId: string,
+  params: { currentMatchday?: number; durationHours?: number; nextOpenAt?: string; overrideStatus?: 'AUTO' | 'FORCE_OPEN' | 'FORCE_LOCKED' | 'PAUSED' }
+): Promise<{ success: boolean; competitionId: string }> {
+  const db = getFirestoreDb();
+  const compRef = db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId);
+  const compDoc = await compRef.get();
+  if (!compDoc.exists) {
+    throw new Error(`Competition '${competitionId}' not found.`);
+  }
+
+  const now = new Date().toISOString();
+  const updates: Partial<FirestoreCompetitionDoc> = {
+    updatedAt: now,
+  };
+
+  if (params.currentMatchday !== undefined) updates.currentMatchday = params.currentMatchday;
+  if (params.durationHours !== undefined) updates.matchdayDurationHours = params.durationHours;
+  if (params.nextOpenAt !== undefined) updates.nextMatchdayOpenAt = params.nextOpenAt;
+  if (params.overrideStatus !== undefined) {
+    updates.adminOverrideStatus = params.overrideStatus;
+    updates.isMatchdayOpen = params.overrideStatus === 'FORCE_OPEN' || params.overrideStatus === 'AUTO';
+  }
+
+  await compRef.update(updates);
+  invalidateFirestoreCache('firestore:comp');
+  return { success: true, competitionId };
 }
 
 // ----------------------------------------------------
@@ -1997,6 +2173,34 @@ export async function submitFixtureResultFirestore(
   const fixture = fixDoc.data() as FirestoreFixtureDoc;
   if (fixture.status === 'CONFIRMED') {
     throw new Error('This match result is already CONFIRMED and cannot be modified.');
+  }
+
+  // Enforce Competition Matchday Timer Lock
+  if (fixture.competitionId && fixture.matchday) {
+    const compDoc = await db.collection(COLLECTIONS.COMPETITIONS).doc(fixture.competitionId).get().catch(() => null);
+    if (compDoc && compDoc.exists) {
+      const compData = compDoc.data() as FirestoreCompetitionDoc;
+      const currentMd = compData.currentMatchday || 1;
+      const override = compData.adminOverrideStatus || 'AUTO';
+
+      if (override === 'FORCE_LOCKED' || override === 'PAUSED') {
+        throw new Error(`Matchday submissions for ${compData.name} are currently paused or locked by tournament administration.`);
+      }
+
+      if (override !== 'FORCE_OPEN') {
+        if (fixture.matchday > currentMd) {
+          const nextOpen = compData.nextMatchdayOpenAt ? new Date(compData.nextMatchdayOpenAt) : null;
+          let unlockMsg = '';
+          if (nextOpen && nextOpen.getTime() > Date.now()) {
+            const diffMin = Math.round((nextOpen.getTime() - Date.now()) / (60 * 1000));
+            const hours = Math.floor(diffMin / 60);
+            const mins = diffMin % 60;
+            unlockMsg = ` Unlocks in ${hours > 0 ? `${hours}h ` : ''}${mins}m.`;
+          }
+          throw new Error(`Matchday ${fixture.matchday} is locked. Current active matchday is Matchday ${currentMd}.${unlockMsg}`);
+        }
+      }
+    }
   }
 
   // Verify ownership

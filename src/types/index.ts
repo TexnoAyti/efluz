@@ -106,6 +106,13 @@ export interface Competition {
   fixtureCount?: number;
   fixturesCount?: number;
   generationStatus?: 'not_generated' | 'generated';
+  currentMatchday?: number;
+  totalMatchdays?: number;
+  isMatchdayOpen?: boolean;
+  matchdayOpenedAt?: string;
+  matchdayDurationHours?: number;
+  nextMatchdayOpenAt?: string;
+  adminOverrideStatus?: 'AUTO' | 'FORCE_OPEN' | 'FORCE_LOCKED' | 'PAUSED';
   formatConfig: {
     rounds?: number;
     homeAndAway?: boolean;
