@@ -130,7 +130,7 @@ const AppContent: React.FC = () => {
 
       {/* Top Header Bar */}
       <Header
-        onOpenNotifications={() => setIsNotificationOpen(true)}
+        onOpenNotifications={() => setActiveTab('notifications')}
         onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
         onOpenProfile={() => setActiveTab('profile')}
       />

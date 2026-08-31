@@ -171,29 +171,33 @@ export const StandingsView: React.FC = () => {
           </div>
         </div>
 
-        {error && !isLoading && (
-          <div className="m-3 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-between gap-2 text-rose-300 text-xs">
-            <div className="flex items-center gap-2 min-w-0">
-              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-              <span className="truncate">{error}</span>
+        {error && standings.length === 0 && !isLoading && (
+          <div className="m-4 p-6 rounded-2xl glass-panel border-rose-500/30 bg-rose-950/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-rose-200 text-xs shadow-xl">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
+              <div>
+                <div className="font-bold text-sm text-white">Couldn't load data</div>
+                <div className="text-xs text-rose-300/80 mt-0.5">Please try again.</div>
+              </div>
             </div>
             <button
               onClick={() => loadStandings(true)}
-              className="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 font-bold text-xs flex items-center gap-1 shrink-0"
+              className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold flex items-center gap-1.5 shrink-0 shadow-md transition-colors"
             >
-              <RefreshCw className="w-3 h-3" />
-              Retry
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Retry</span>
             </button>
           </div>
         )}
 
-        {isLoading ? (
-          <div className="py-16 flex flex-col items-center justify-center text-slate-400">
-            <Loader2 className="w-7 h-7 animate-spin text-emerald-400 mb-2" />
-            <span className="text-xs">{t.loading}</span>
+        {isLoading && standings.length === 0 ? (
+          <div className="p-4 space-y-2 animate-pulse">
+            {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+              <div key={i} className="h-9 rounded-xl bg-white/[0.04] border border-white/[0.04]" />
+            ))}
           </div>
         ) : standings.length === 0 ? (
-          <div className="py-12 text-center text-slate-500 text-xs">
+          <div className="py-12 text-center text-slate-400 text-xs">
             No standings data recorded for this tournament yet.
           </div>
         ) : (

@@ -47,34 +47,38 @@ export const MyClubView: React.FC<MyClubViewProps> = ({
   const [upcomingFixtures, setUpcomingFixtures] = useState<Fixture[]>([]);
   const [recentFixtures, setRecentFixtures] = useState<Fixture[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadClubData = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const [meRes, matchesRes, compsRes] = await Promise.all([
+        api.getMe(activeSeasonId).catch(() => ({ stats: null })),
+        api.getMyMatches(activeSeasonId).catch(() => ({ fixtures: [] })),
+        api.getCompetitions(activeSeasonId).catch(() => ({ competitions: [] })),
+      ]);
+
+      if (meRes.stats) setStats(meRes.stats);
+      if (compsRes.competitions) setCompetitions(compsRes.competitions);
+
+      const matches = matchesRes.fixtures || [];
+      const pending = matches.filter(
+        (m: Fixture) => m.status !== 'CONFIRMED' && m.status !== 'CANCELLED'
+      );
+      const finished = matches.filter((m: Fixture) => m.status === 'CONFIRMED');
+
+      setUpcomingFixtures(pending.slice(0, 5));
+      setRecentFixtures(finished.slice(0, 5));
+    } catch (err: any) {
+      console.error('Failed to load club data:', err);
+      setError("Couldn't load data. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    async function loadClubData() {
-      setIsLoading(true);
-      try {
-        const [meRes, matchesRes, compsRes] = await Promise.all([
-          api.getMe(activeSeasonId),
-          api.getMyMatches(activeSeasonId),
-          api.getCompetitions(activeSeasonId),
-        ]);
-
-        setStats(meRes.stats);
-        setCompetitions(compsRes.competitions);
-
-        const pending = matchesRes.fixtures.filter(
-          (m) => m.status !== 'CONFIRMED' && m.status !== 'CANCELLED'
-        );
-        const finished = matchesRes.fixtures.filter((m) => m.status === 'CONFIRMED');
-
-        setUpcomingFixtures(pending.slice(0, 5));
-        setRecentFixtures(finished.slice(0, 5));
-      } catch (err: any) {
-        console.error('Failed to load club data:', err);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-
     loadClubData();
   }, [activeSeasonId, currentClub?.id]);
 

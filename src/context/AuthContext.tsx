@@ -41,7 +41,11 @@ interface AuthContextType {
   refreshUserData: () => Promise<void>;
   notifications: Notification[];
   unreadNotificationCount: number;
-  markNotificationsAsRead: () => Promise<void>;
+  isNotificationsLoading: boolean;
+  notificationsError: string | null;
+  markNotificationsAsRead: (notificationId?: string) => Promise<void>;
+  markNotificationAsRead: (notificationId: string) => Promise<void>;
+  refreshNotifications: (skipCache?: boolean) => Promise<void>;
   toastMessage: { text: string; type: 'success' | 'error' | 'info' } | null;
   showToast: (text: string, type?: 'success' | 'error' | 'info') => void;
 }
@@ -116,6 +120,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isDevMode, setIsDevMode] = useState<boolean>(false);
   const [devProfiles, setDevProfiles] = useState<Array<{ id: string; username: string; firstName: string; isAdmin: boolean }>>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [isNotificationsLoading, setIsNotificationsLoading] = useState<boolean>(false);
+  const [notificationsError, setNotificationsError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   const [telegramDiagnostics, setTelegramDiagnostics] = useState<TelegramDiagnosticsInfo>({
@@ -143,6 +149,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, 4500);
   }, []);
 
+  const refreshNotifications = useCallback(async (skipCache = true) => {
+    setIsNotificationsLoading(true);
+    setNotificationsError(null);
+    try {
+      const notifRes = await api.getMyNotifications(skipCache);
+      setNotifications(notifRes.notifications || []);
+    } catch (err: any) {
+      console.warn('Failed to load notifications:', err.message);
+      setNotificationsError(err.message || 'Failed to load notifications');
+    } finally {
+      setIsNotificationsLoading(false);
+    }
+  }, []);
+
   const fetchUserData = useCallback(async (seasonId: string) => {
     try {
       const meRes = await api.getMe(seasonId);
@@ -158,16 +178,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }));
 
       // fetch notifications
-      try {
-        const notifRes = await api.getMyNotifications();
-        setNotifications(notifRes.notifications);
-      } catch {
-        // ignore notif error
-      }
+      await refreshNotifications(false);
     } catch (err: any) {
       console.warn('Failed to load user info:', err.message);
     }
-  }, []);
+  }, [refreshNotifications]);
 
   // Initialize App & Telegram SDK with deterministic state transitions
   useEffect(() => {
@@ -379,10 +394,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await fetchUserData(activeSeasonId);
   };
 
-  const markNotificationsAsRead = async () => {
+  const markNotificationAsRead = async (notificationId: string) => {
+    // Optimistic UI update: immediately mark specific notification as read
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === notificationId ? { ...n, isRead: true } : n))
+    );
+    try {
+      await api.markNotificationsRead(notificationId);
+    } catch (err: any) {
+      console.error('Failed to mark notification as read:', err);
+    }
+  };
+
+  const markNotificationsAsRead = async (notificationId?: string) => {
+    if (notificationId) {
+      await markNotificationAsRead(notificationId);
+      return;
+    }
+    // Optimistic UI update: mark all as read
+    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
     try {
       await api.markNotificationsRead();
-      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
     } catch (err: any) {
       console.error('Failed to mark notifications read:', err);
     }
@@ -409,7 +441,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         refreshUserData,
         notifications,
         unreadNotificationCount,
+        isNotificationsLoading,
+        notificationsError,
         markNotificationsAsRead,
+        markNotificationAsRead,
+        refreshNotifications,
         toastMessage,
         showToast,
       }}

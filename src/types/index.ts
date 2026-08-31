@@ -225,7 +225,17 @@ export interface Notification {
   userId: string;
   title: string;
   message: string;
-  type: 'MATCH_SCHEDULED' | 'RESULT_SUBMITTED' | 'RESULT_CONFIRMED' | 'DISPUTE_OPENED' | 'DISPUTE_RESOLVED' | 'SYSTEM';
+  type:
+    | 'MATCH_SCHEDULED'
+    | 'RESULT_SUBMITTED'
+    | 'RESULT_CONFIRMED'
+    | 'DISPUTE_OPENED'
+    | 'DISPUTE_RESOLVED'
+    | 'CLUB_ASSIGNED'
+    | 'NEXT_ROUND_MATCH'
+    | 'QUALIFICATION_CONFIRMED'
+    | 'COMPETITION_UPDATE'
+    | 'SYSTEM';
   entityType?: string;
   entityId?: string;
   fixtureId?: string;

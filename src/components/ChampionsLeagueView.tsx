@@ -14,6 +14,7 @@ import {
   ChevronRight,
   Info,
   CheckCircle2,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface ChampionsLeagueViewProps {
@@ -31,34 +32,37 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
   const [activeTab, setActiveTab] = useState<'STANDINGS' | 'BRACKET' | 'QUALIFICATION'>('STANDINGS');
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadEuropeanData = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const compsRes = await api.getCompetitions(activeSeasonId);
+      const uefaComps = (compsRes.competitions || []).filter(
+        (c) =>
+          c.type === 'EUROPEAN_LEAGUE_PHASE' ||
+          c.type === 'EUROPEAN_KNOCKOUT' ||
+          c.id.includes('champions') ||
+          c.id.includes('europa') ||
+          c.id.includes('conference')
+      );
+      setTournaments(uefaComps);
+
+      if (uefaComps.length > 0) {
+        const defaultComp = uefaComps.find((c) => c.id.includes('champions')) || uefaComps[0];
+        setSelectedTournament(defaultComp);
+        loadTournamentDetails(defaultComp.id);
+      }
+    } catch (err: any) {
+      console.error('Failed to load European tournament data:', err);
+      setError("Couldn't load data. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    async function loadEuropeanData() {
-      setIsLoading(true);
-      try {
-        const compsRes = await api.getCompetitions(activeSeasonId);
-        const uefaComps = compsRes.competitions.filter(
-          (c) =>
-            c.type === 'EUROPEAN_LEAGUE_PHASE' ||
-            c.type === 'EUROPEAN_KNOCKOUT' ||
-            c.id.includes('champions') ||
-            c.id.includes('europa') ||
-            c.id.includes('conference')
-        );
-        setTournaments(uefaComps);
-
-        if (uefaComps.length > 0) {
-          const defaultComp = uefaComps.find((c) => c.id.includes('champions')) || uefaComps[0];
-          setSelectedTournament(defaultComp);
-          loadTournamentDetails(defaultComp.id);
-        }
-      } catch (err: any) {
-        console.error('Failed to load European tournament data:', err);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-
     loadEuropeanData();
   }, [activeSeasonId]);
 
@@ -164,38 +168,64 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
       </div>
 
       {/* Sub-navigation Tabs */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-        <button
-          onClick={() => setActiveTab('STANDINGS')}
-          className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all min-h-[38px] ${
-            activeTab === 'STANDINGS'
-              ? 'bg-blue-600 text-white shadow-md font-black'
-              : 'glass-card text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          {t.leaguePhase} ({participants.length > 0 ? `${participants.length} Clubs` : 'Overview'})
-        </button>
-        <button
-          onClick={() => setActiveTab('BRACKET')}
-          className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all min-h-[38px] ${
-            activeTab === 'BRACKET'
-              ? 'bg-blue-600 text-white shadow-md font-black'
-              : 'glass-card text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          {t.knockoutBracket} {fixtures.length > 0 ? `(${fixtures.length})` : ''}
-        </button>
-        <button
-          onClick={() => setActiveTab('QUALIFICATION')}
-          className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all min-h-[38px] ${
-            activeTab === 'QUALIFICATION'
-              ? 'bg-blue-600 text-white shadow-md font-black'
-              : 'glass-card text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          Qualification Rules
-        </button>
-      </div>
+      {/* Error State */}
+      {error && tournaments.length === 0 && !isLoading && (
+        <div className="p-6 rounded-2xl glass-panel border-rose-500/30 bg-rose-950/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-rose-200 text-xs shadow-xl">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
+            <div>
+              <div className="font-bold text-sm text-white">Couldn't load data</div>
+              <div className="text-xs text-rose-300/80 mt-0.5">Please try again.</div>
+            </div>
+          </div>
+          <button
+            onClick={loadEuropeanData}
+            className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold flex items-center gap-1.5 shrink-0 shadow-md transition-colors"
+          >
+            <span>Retry</span>
+          </button>
+        </div>
+      )}
+
+      {isLoading && tournaments.length === 0 ? (
+        <div className="space-y-4 animate-pulse">
+          <div className="h-10 rounded-xl bg-white/[0.04] w-1/3" />
+          <div className="h-64 rounded-2xl bg-white/[0.04] border border-white/[0.06]" />
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+            <button
+              onClick={() => setActiveTab('STANDINGS')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all min-h-[38px] ${
+                activeTab === 'STANDINGS'
+                  ? 'bg-blue-600 text-white shadow-md font-black'
+                  : 'glass-card text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {t.leaguePhase} ({participants.length > 0 ? `${participants.length} Clubs` : 'Overview'})
+            </button>
+            <button
+              onClick={() => setActiveTab('BRACKET')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all min-h-[38px] ${
+                activeTab === 'BRACKET'
+                  ? 'bg-blue-600 text-white shadow-md font-black'
+                  : 'glass-card text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {t.knockoutBracket} {fixtures.length > 0 ? `(${fixtures.length})` : ''}
+            </button>
+            <button
+              onClick={() => setActiveTab('QUALIFICATION')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all min-h-[38px] ${
+                activeTab === 'QUALIFICATION'
+                  ? 'bg-blue-600 text-white shadow-md font-black'
+                  : 'glass-card text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Qualification Rules
+            </button>
+          </div>
 
       {/* TAB 1: League Phase Table & Participants */}
       {activeTab === 'STANDINGS' && (
@@ -471,6 +501,8 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

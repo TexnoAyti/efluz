@@ -301,34 +301,38 @@ export const FixturesView: React.FC = () => {
       </div>
 
       {/* Error State */}
-      {error && !isLoading && (
-        <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-between gap-3 text-rose-300 text-xs">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-            <span>{error}</span>
+      {error && fixtures.length === 0 && !isLoading && (
+        <div className="p-6 rounded-2xl glass-panel border-rose-500/30 bg-rose-950/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-rose-200 text-xs shadow-xl">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
+            <div>
+              <div className="font-bold text-sm text-white">Couldn't load data</div>
+              <div className="text-xs text-rose-300/80 mt-0.5">Please try again.</div>
+            </div>
           </div>
           <button
             onClick={() => loadFixtures(true)}
-            className="px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 font-bold flex items-center gap-1 shrink-0"
+            className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold flex items-center gap-1.5 shrink-0 shadow-md transition-colors"
           >
-            <RefreshCw className="w-3 h-3" />
-            Retry
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Retry</span>
           </button>
         </div>
       )}
 
       {/* Fixtures List */}
-      {isLoading ? (
-        <div className="py-20 flex flex-col items-center justify-center text-slate-400">
-          <Loader2 className="w-8 h-8 animate-spin text-emerald-400 mb-2" />
-          <span className="text-xs">Loading fixtures & match states...</span>
+      {isLoading && fixtures.length === 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 animate-pulse">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={i} className="h-36 rounded-2xl bg-white/[0.04] border border-white/[0.06]" />
+          ))}
         </div>
       ) : filteredFixtures.length === 0 ? (
-        <div className="py-16 text-center glass-panel shadow-xl">
-          <Calendar className="w-12 h-12 text-slate-600 mx-auto mb-2 opacity-60" />
+        <div className="py-16 text-center glass-panel shadow-xl rounded-2xl border border-white/[0.06]">
+          <Calendar className="w-10 h-10 text-slate-500 mx-auto mb-2 opacity-60" />
           <h4 className="text-sm font-bold text-slate-200">No fixtures found</h4>
-          <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-            No fixtures match this filter. Click below to generate the Berger round-robin schedule if empty.
+          <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+            No fixtures match this filter.
           </p>
         </div>
       ) : (

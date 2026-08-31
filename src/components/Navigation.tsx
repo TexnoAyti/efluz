@@ -119,13 +119,13 @@ export const Navigation: React.FC<NavigationProps> = ({
                   <span>{item.label}</span>
                   {hasBadge && (
                     <span
-                      className={`flex items-center justify-center px-1.5 py-0.5 rounded-full text-[9px] font-black leading-none ${
+                      className={`flex items-center justify-center min-w-[17px] h-[17px] px-1 rounded-full text-[9px] font-black leading-none ${
                         item.id === 'admin'
                           ? 'bg-amber-500 text-slate-950 animate-pulse'
                           : 'bg-rose-500 text-white'
                       }`}
                     >
-                      {item.badge}
+                      {item.badge && item.badge > 9 ? '9+' : item.badge}
                     </span>
                   )}
                 </button>

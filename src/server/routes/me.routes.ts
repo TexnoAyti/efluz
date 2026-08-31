@@ -5,6 +5,7 @@ import {
   getFixturesFirestore,
   getUserNotificationsFirestore,
   markNotificationsReadFirestore,
+  markSingleNotificationReadFirestore,
 } from '../firebase/firestoreStore';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
 
@@ -102,8 +103,13 @@ meRouter.get('/notifications', requireAuth, async (req: Request, res: Response) 
 
 meRouter.post('/notifications/read', requireAuth, async (req: Request, res: Response) => {
   const userId = req.user!.id;
+  const { notificationId } = req.body || {};
   try {
-    await markNotificationsReadFirestore(userId);
+    if (notificationId && typeof notificationId === 'string') {
+      await markSingleNotificationReadFirestore(userId, notificationId);
+    } else {
+      await markNotificationsReadFirestore(userId);
+    }
     res.json({ success: true });
   } catch (err: any) {
     handleFirestoreError(res, err, 'POST /api/me/notifications/read');

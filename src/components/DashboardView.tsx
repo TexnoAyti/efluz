@@ -61,18 +61,36 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [myMatches, setMyMatches] = useState<Fixture[]>([]);
   const [selectedFixtureForSubmit, setSelectedFixtureForSubmit] = useState<Fixture | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const loadDashboardData = async () => {
     setIsLoading(true);
+    setError(null);
     try {
       const [meRes, matchesRes] = await Promise.all([
-        api.getMe(activeSeasonId),
-        api.getMyMatches(activeSeasonId),
+        api.getMe(activeSeasonId).catch((err) => {
+          console.warn('Dashboard getMe failed:', err);
+          return null;
+        }),
+        api.getMyMatches(activeSeasonId).catch((err) => {
+          console.warn('Dashboard getMyMatches failed:', err);
+          return null;
+        }),
       ]);
-      setStats(meRes.stats);
-      setMyMatches(matchesRes.fixtures);
+
+      if (meRes?.stats) {
+        setStats(meRes.stats);
+      }
+      if (matchesRes?.fixtures) {
+        setMyMatches(matchesRes.fixtures);
+      }
+
+      if (!meRes && !matchesRes) {
+        setError("Couldn't load data. Please try again.");
+      }
     } catch (err: any) {
       console.error('Failed to load dashboard data:', err);
+      setError("Couldn't load data. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -153,8 +171,39 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       )}
 
+      {/* Data Error Banner with Retry */}
+      {error && !stats && myMatches.length === 0 && (
+        <div className="p-4 rounded-2xl glass-panel border-rose-500/30 bg-rose-950/30 text-rose-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xl">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
+            <div>
+              <div className="font-bold text-xs sm:text-sm text-white">Couldn't load data</div>
+              <div className="text-xs text-rose-300/80 mt-0.5">Please try again.</div>
+            </div>
+          </div>
+          <button
+            onClick={() => loadDashboardData()}
+            className="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center gap-1.5 shrink-0 shadow-md transition-colors"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Retry</span>
+          </button>
+        </div>
+      )}
+
+      {/* Loading Skeletons */}
+      {isLoading && !stats && myMatches.length === 0 && (
+        <div className="space-y-4 animate-pulse">
+          <div className="h-28 rounded-2xl bg-white/[0.04] border border-white/[0.06]" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="h-44 rounded-2xl bg-white/[0.04] border border-white/[0.06]" />
+            <div className="h-44 rounded-2xl bg-white/[0.04] border border-white/[0.06]" />
+          </div>
+        </div>
+      )}
+
       {/* Club Claim Banner (if user has no club yet) */}
-      {!currentClub && (
+      {!isLoading && !currentClub && (
         <div className="glass-panel p-5 sm:p-6 text-white shadow-xl">
           <div className="max-w-xl">
             <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 mb-2.5">

@@ -2665,13 +2665,17 @@ export async function createNotificationFirestore(
   }
 }
 
-export async function getUserNotificationsFirestore(userId: string, limit = 20): Promise<Notification[]> {
+export async function getUserNotificationsFirestore(userId: string, limit = 30): Promise<Notification[]> {
   const validTypes: Array<Notification['type']> = [
     'MATCH_SCHEDULED',
     'RESULT_SUBMITTED',
     'RESULT_CONFIRMED',
     'DISPUTE_OPENED',
     'DISPUTE_RESOLVED',
+    'CLUB_ASSIGNED',
+    'NEXT_ROUND_MATCH',
+    'QUALIFICATION_CONFIRMED',
+    'COMPETITION_UPDATE',
     'SYSTEM',
   ];
 
@@ -2685,15 +2689,19 @@ export async function getUserNotificationsFirestore(userId: string, limit = 20):
       .get();
 
     return snap.docs.map((d) => {
-      const data = d.data() as FirestoreNotificationDoc;
-      const notifType = validTypes.includes(data.type as any) ? (data.type as Notification['type']) : 'SYSTEM';
+      const data = d.data() as any;
+      const notifData = data.data || {};
+      const notifType = validTypes.includes(data.type) ? data.type : (data.type || 'SYSTEM');
       return {
         id: d.id,
         userId: data.userId,
         type: notifType,
         title: data.title,
         message: data.message,
-        isRead: data.isRead,
+        fixtureId: data.fixtureId || notifData.fixtureId || undefined,
+        entityType: data.entityType || notifData.entityType || undefined,
+        entityId: data.entityId || notifData.entityId || undefined,
+        isRead: Boolean(data.isRead),
         createdAt: data.createdAt,
       };
     });
@@ -2704,17 +2712,32 @@ export async function getUserNotificationsFirestore(userId: string, limit = 20):
       [userId, limit]
     );
     return rows.map((r) => {
-      const notifType = validTypes.includes(r.type as any) ? (r.type as Notification['type']) : 'SYSTEM';
+      const notifType = validTypes.includes(r.type) ? r.type : (r.type || 'SYSTEM');
       return {
         id: r.id,
         userId: r.user_id,
         type: notifType,
         title: r.title,
         message: r.message,
+        fixtureId: r.fixture_id || undefined,
         isRead: Boolean(r.is_read),
         createdAt: r.created_at,
       };
     });
+  }
+}
+
+export async function markSingleNotificationReadFirestore(userId: string, notificationId: string): Promise<void> {
+  try {
+    const db = getFirestoreDb();
+    const docRef = db.collection(COLLECTIONS.NOTIFICATIONS).doc(notificationId);
+    const doc = await docRef.get();
+    if (doc.exists && doc.data()?.userId === userId) {
+      await docRef.update({ isRead: true });
+    }
+  } catch (err: any) {
+    console.warn('[FIRESTORE FALLBACK] markSingleNotificationReadFirestore:', err.message);
+    queryRun(`UPDATE notifications SET is_read = 1 WHERE user_id = ? AND id = ?`, [userId, notificationId]);
   }
 }
 

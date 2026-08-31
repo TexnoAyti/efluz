@@ -8,7 +8,11 @@ import {
   reopenFixtureFirestore,
   resolveDisputeFirestore,
   rebuildCompetitionStandingsFirestore,
+  getAllCompetitionsFirestore,
+  getClubsByLeagueFirestore,
+  getFixturesFirestore,
 } from '../firebase/firestoreStore';
+import { SEED_CLUBS, SEED_LEAGUES } from '../db/seed';
 import { migrateSqliteToFirestore } from '../firebase/migrateSqliteToFirestore';
 import { generateKnockoutBracket } from '../tournament/knockoutEngine';
 import { evaluateSeasonQualifications } from '../tournament/qualificationEngine';
@@ -20,6 +24,106 @@ export const adminRouter = Router();
 
 // Protect ALL admin routes with server-side requireAdmin
 adminRouter.use(requireAdmin);
+
+adminRouter.get('/overview', async (req: Request, res: Response) => {
+  const seasonId = (req.query.seasonId as string) || 'season-2026-27';
+  try {
+    const status = getFirebaseStatus();
+    const [users, competitions, disputes, auditLogs] = await Promise.all([
+      getAllAdminUsers().catch(() => []),
+      getAllCompetitionsFirestore(seasonId).catch(() => []),
+      getDisputes('OPEN').catch(() => []),
+      getAuditLogs(10).catch(() => []),
+    ]);
+
+    const domesticLeagues = competitions.filter((c) => c.type === 'league');
+    const domesticCups = competitions.filter((c) => c.type === 'cup');
+    const europeanComps = competitions.filter(
+      (c) => c.type === 'champions_league' || c.type === 'europa_league' || c.type === 'conference_league'
+    );
+
+    let activeOccupancies = 0;
+    try {
+      const db = getFirestoreDb();
+      const occSnap = await db
+        .collection(COLLECTIONS.CLUB_OCCUPANCIES)
+        .where('seasonId', '==', seasonId)
+        .where('status', '==', 'active')
+        .get();
+      activeOccupancies = occSnap.size;
+    } catch {
+      activeOccupancies = 0;
+    }
+
+    res.json({
+      season: {
+        id: seasonId,
+        name: '2026/27',
+        status: 'ACTIVE',
+      },
+      counts: {
+        totalClubs: 96,
+        domesticLeaguesCount: 5,
+        domesticCupsCount: domesticCups.length,
+        europeanCompetitionsCount: europeanComps.length,
+        totalCompetitions: competitions.length,
+        registeredUsers: users.length,
+        activeOccupancies,
+        openDisputes: disputes.length,
+        recentAuditLogs: auditLogs.length,
+      },
+      systemHealth: {
+        projectId: status.projectId,
+        databaseId: status.databaseId,
+        connected: true,
+        authMode: status.authMode,
+        timestamp: new Date().toISOString(),
+      },
+      openDisputes: disputes.slice(0, 10),
+    });
+  } catch (err: any) {
+    handleFirestoreError(res, err, 'GET /api/admin/overview');
+  }
+});
+
+adminRouter.get('/clubs', async (req: Request, res: Response) => {
+  const seasonId = (req.query.seasonId as string) || 'season-2026-27';
+  const leagueId = req.query.leagueId as string | undefined;
+  try {
+    let targetLeagues = SEED_LEAGUES;
+    if (leagueId && leagueId !== 'ALL') {
+      targetLeagues = SEED_LEAGUES.filter((l) => l.id === leagueId);
+    }
+    const clubsByLeague = await Promise.all(
+      targetLeagues.map((l) => getClubsByLeagueFirestore(l.id, seasonId))
+    );
+    const clubs = clubsByLeague.flat();
+    res.json({ clubs, total: clubs.length });
+  } catch (err: any) {
+    handleFirestoreError(res, err, 'GET /api/admin/clubs');
+  }
+});
+
+adminRouter.get('/fixtures', async (req: Request, res: Response) => {
+  const seasonId = (req.query.seasonId as string) || 'season-2026-27';
+  const competitionId = req.query.competitionId as string | undefined;
+  const status = req.query.status as string | undefined;
+  const matchday = req.query.matchday ? parseInt(req.query.matchday as string, 10) : undefined;
+  const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 150;
+
+  try {
+    const fixtures = await getFixturesFirestore({
+      seasonId,
+      competitionId: competitionId === 'ALL' ? undefined : competitionId,
+      status: status === 'ALL' ? undefined : status,
+      matchday: matchday || undefined,
+      limit,
+    });
+    res.json({ fixtures, total: fixtures.length });
+  } catch (err: any) {
+    handleFirestoreError(res, err, 'GET /api/admin/fixtures');
+  }
+});
 
 adminRouter.get('/firestore-diagnostics', async (req: Request, res: Response) => {
   try {

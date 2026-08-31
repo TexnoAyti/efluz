@@ -176,10 +176,13 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNotifications, onOpenDiagn
             onClick={onOpenNotifications}
             className="relative p-2 glass-button text-slate-300 flex items-center justify-center min-w-[38px] min-h-[38px] touch-manipulation active:scale-95"
             title="Tournament Notifications"
+            aria-label={`Notifications${unreadNotificationCount > 0 ? ` (${unreadNotificationCount} unread)` : ''}`}
           >
             <Bell className="w-4 h-4" />
             {unreadNotificationCount > 0 && (
-              <span className="absolute top-1 right-1 w-2 h-2 bg-rose-500 rounded-full shadow-[0_0_6px_#f43f5e]" />
+              <span className="absolute -top-1 -right-1 min-w-[17px] h-[17px] px-1 bg-rose-500 text-white text-[9px] font-black rounded-full flex items-center justify-center shadow-[0_0_8px_rgba(244,63,94,0.6)] leading-none border border-[#06090e]">
+                {unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}
+              </span>
             )}
           </button>
 

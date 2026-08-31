@@ -91,12 +91,29 @@ export function getTelegramInitData(): string {
 export class ApiError extends Error {
   httpStatus: number;
   data?: any;
+  isQuota?: boolean;
 
   constructor(message: string, httpStatus: number, data?: any) {
-    super(message);
+    // Sanitize technical or Firestore quota messages for user-friendly UI display
+    let cleanMessage = message;
+    const isQuota =
+      httpStatus === 429 ||
+      Boolean(data?.error === 'RESOURCE_EXHAUSTED') ||
+      message.includes('RESOURCE_EXHAUSTED') ||
+      message.includes('Quota limit exceeded') ||
+      message.includes('Quota exceeded');
+
+    if (isQuota) {
+      cleanMessage = "Couldn't load data. Please try again.";
+    } else if (message.includes('Failed to fetch') || message.includes('NetworkError') || message.includes('abort')) {
+      cleanMessage = "Couldn't connect to server. Please try again.";
+    }
+
+    super(cleanMessage);
     this.name = 'ApiError';
     this.httpStatus = httpStatus;
     this.data = data;
+    this.isQuota = isQuota;
   }
 }
 
@@ -128,12 +145,14 @@ interface RequestOptions extends RequestInit {
   cacheTtlMs?: number; // 0 means no cache
   skipCache?: boolean;
   retries?: number;
+  timeoutMs?: number;
 }
 
 async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
   const method = (options.method || 'GET').toUpperCase();
   const isGet = method === 'GET';
   const cacheTtl = options.cacheTtlMs ?? (isGet ? 15000 : 0); // Default 15s cache for GETs to conserve free-tier quota
+  const timeoutMs = options.timeoutMs ?? 14000; // 14s timeout prevents indefinite hangs on slow mobile/Telegram connections
 
   const cacheKey = `${endpoint}::${getDevUserId() || ''}::${getTelegramInitData().slice(0, 32)}`;
 
@@ -151,11 +170,16 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
   }
 
   const executionPromise = (async () => {
-    const maxRetries = options.retries ?? (isGet ? 2 : 0);
+    const maxRetries = options.retries ?? (isGet ? 1 : 0);
     let attempt = 0;
 
     while (true) {
       attempt++;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        controller.abort();
+      }, timeoutMs);
+
       try {
         const headers: Record<string, string> = {
           'Content-Type': 'application/json',
@@ -175,13 +199,16 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
         const response = await fetch(endpoint, {
           ...options,
           headers,
+          signal: controller.signal,
         });
+
+        clearTimeout(timeoutId);
 
         const rawText = await response.text();
 
         if (!rawText || !rawText.trim()) {
           throw new ApiError(
-            `Empty response body: HTTP ${response.status} (${response.statusText || 'No status text'})`,
+            `Empty response body: HTTP ${response.status}`,
             response.status
           );
         }
@@ -191,7 +218,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
           data = JSON.parse(rawText);
         } catch {
           throw new ApiError(
-            `Invalid JSON response: HTTP ${response.status} - "${rawText.slice(0, 80)}"`,
+            `Invalid JSON response: HTTP ${response.status}`,
             response.status
           );
         }
@@ -212,14 +239,30 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
 
         return data as T;
       } catch (err: any) {
-        const isNetworkOr5xx = !err.httpStatus || err.httpStatus >= 500;
+        clearTimeout(timeoutId);
+
+        // Stale cache preservation: If we have existing cached data for this GET request,
+        // preserve and return it on network timeout or quota exhaustion rather than crashing the view
+        if (isGet) {
+          const staleCached = memoryCache.get(cacheKey);
+          if (staleCached && staleCached.data) {
+            console.warn(`[API CACHE PRESERVED] Returning cached data for ${endpoint} due to error:`, err.message);
+            return staleCached.data as T;
+          }
+        }
+
+        const isNetworkOr5xx = !err.httpStatus || err.httpStatus >= 500 || err.name === 'AbortError';
         if (attempt <= maxRetries && isNetworkOr5xx) {
-          const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 3000);
+          const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 2500);
           console.warn(`[API RETRY ${attempt}/${maxRetries}] ${endpoint} failed (${err.message}). Retrying in ${backoffMs}ms...`);
           await new Promise((r) => setTimeout(r, backoffMs));
           continue;
         }
-        throw err;
+
+        if (err instanceof ApiError) {
+          throw err;
+        }
+        throw new ApiError(err?.message || "Couldn't load data. Please try again.", err?.httpStatus || 0);
       }
     }
   })();
@@ -283,13 +326,16 @@ export const api = {
     return request(url, { cacheTtlMs: 15000, skipCache });
   },
 
-  async getMyNotifications(): Promise<{ notifications: Notification[] }> {
-    return request('/api/me/notifications', { cacheTtlMs: 20000 });
+  async getMyNotifications(skipCache = false): Promise<{ notifications: Notification[] }> {
+    return request('/api/me/notifications', { cacheTtlMs: 15000, skipCache });
   },
 
-  async markNotificationsRead(): Promise<{ success: boolean }> {
+  async markNotificationsRead(notificationId?: string): Promise<{ success: boolean }> {
     invalidateClientCache('/api/me/notifications');
-    return request('/api/me/notifications/read', { method: 'POST' });
+    return request('/api/me/notifications/read', {
+      method: 'POST',
+      body: JSON.stringify(notificationId ? { notificationId } : {}),
+    });
   },
 
   // Seasons & Leagues (Catalog Data - Longer TTL to reduce database reads)
@@ -385,6 +431,89 @@ export const api = {
   },
 
   // Admin
+  async getAdminOverview(seasonId = 'season-2026-27', skipCache = false): Promise<{
+    season: { id: string; name: string; status: string };
+    counts: {
+      totalClubs: number;
+      domesticLeaguesCount: number;
+      domesticCupsCount: number;
+      europeanCompetitionsCount: number;
+      totalCompetitions: number;
+      registeredUsers: number;
+      activeOccupancies: number;
+      openDisputes: number;
+      recentAuditLogs: number;
+    };
+    systemHealth: {
+      projectId: string;
+      databaseId: string;
+      connected: boolean;
+      authMode: string;
+      timestamp: string;
+    };
+    openDisputes: Dispute[];
+  }> {
+    return request(`/api/admin/overview?seasonId=${seasonId}`, { cacheTtlMs: 15000, skipCache });
+  },
+
+  async getAdminClubs(seasonId = 'season-2026-27', leagueId?: string, skipCache = false): Promise<{ clubs: Club[]; total: number }> {
+    const url = `/api/admin/clubs?seasonId=${seasonId}${leagueId ? `&leagueId=${leagueId}` : ''}`;
+    return request(url, { cacheTtlMs: 20000, skipCache });
+  },
+
+  async getAdminFixtures(
+    seasonId = 'season-2026-27',
+    competitionId?: string,
+    status?: string,
+    matchday?: number,
+    limit = 100,
+    skipCache = false
+  ): Promise<{ fixtures: Fixture[]; total: number }> {
+    let url = `/api/admin/fixtures?seasonId=${seasonId}&limit=${limit}`;
+    if (competitionId && competitionId !== 'ALL') url += `&competitionId=${competitionId}`;
+    if (status && status !== 'ALL') url += `&status=${status}`;
+    if (matchday) url += `&matchday=${matchday}`;
+    return request(url, { cacheTtlMs: 15000, skipCache });
+  },
+
+  async getAdminDiagnostics(): Promise<{
+    projectId: string;
+    databaseId: string;
+    connected: boolean;
+    authMode: string;
+    collections: Record<string, number>;
+  }> {
+    return request('/api/admin/firestore-diagnostics', { skipCache: true });
+  },
+
+  async rebuildStandings(competitionId: string): Promise<{ success: boolean; message: string; standings: any[] }> {
+    const res = await request<{ success: boolean; message: string; standings: any[] }>(
+      `/api/admin/competitions/${competitionId}/rebuild-standings`,
+      {
+        method: 'POST',
+      }
+    );
+    invalidateClientCache();
+    return res;
+  },
+
+  async generateKnockoutBracket(competitionId: string): Promise<{ success: boolean; message: string; result: any }> {
+    const res = await request<{ success: boolean; message: string; result: any }>('/api/admin/knockouts/generate', {
+      method: 'POST',
+      body: JSON.stringify({ competitionId }),
+    });
+    invalidateClientCache();
+    return res;
+  },
+
+  async migrateSqliteToFirestore(): Promise<{ success: boolean; message: string; report: any }> {
+    const res = await request<{ success: boolean; message: string; report: any }>('/api/admin/migrate-to-firestore', {
+      method: 'POST',
+    });
+    invalidateClientCache();
+    return res;
+  },
+
   async getAdminDisputes(status = 'OPEN', skipCache = false): Promise<{ disputes: Dispute[] }> {
     return request(`/api/admin/disputes?status=${status}`, { cacheTtlMs: 15000, skipCache });
   },

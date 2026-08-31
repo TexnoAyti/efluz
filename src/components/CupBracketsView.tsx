@@ -30,11 +30,13 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
   const [selectedCupId, setSelectedCupId] = useState<string>('');
   const [cupFixtures, setCupFixtures] = useState<Fixture[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedFixtureForSubmit, setSelectedFixtureForSubmit] = useState<Fixture | null>(null);
 
   useEffect(() => {
     async function loadCups() {
       setIsLoading(true);
+      setError(null);
       try {
         const res = await api.getCompetitions(activeSeasonId);
         const cups = (res.competitions || []).filter(
@@ -49,6 +51,7 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
         }
       } catch (err: any) {
         console.error('Failed to load cups:', err);
+        setError("Couldn't load data. Please try again.");
         setIsLoading(false);
       }
     }
@@ -61,11 +64,13 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
       return;
     }
     setIsLoading(true);
+    setError(null);
     try {
       const res = await api.getCompetitionFixtures(selectedCupId);
       setCupFixtures(res.fixtures || []);
     } catch (err: any) {
       console.error('Failed to load cup fixtures:', err);
+      setError("Couldn't load data. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -182,14 +187,34 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
         )}
       </div>
 
-      {isLoading ? (
-        <div className="py-20 flex flex-col items-center justify-center text-slate-400">
-          <Loader2 className="w-8 h-8 animate-spin text-amber-400 mb-2" />
-          <span className="text-xs">{t.loading}</span>
+      {/* Error State */}
+      {error && cupFixtures.length === 0 && !isLoading && (
+        <div className="p-6 rounded-2xl glass-panel border-rose-500/30 bg-rose-950/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-rose-200 text-xs shadow-xl">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
+            <div>
+              <div className="font-bold text-sm text-white">Couldn't load data</div>
+              <div className="text-xs text-rose-300/80 mt-0.5">Please try again.</div>
+            </div>
+          </div>
+          <button
+            onClick={loadCupFixtures}
+            className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold flex items-center gap-1.5 shrink-0 shadow-md transition-colors"
+          >
+            <span>Retry</span>
+          </button>
+        </div>
+      )}
+
+      {isLoading && cupFixtures.length === 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 animate-pulse">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="h-32 rounded-2xl bg-white/[0.04] border border-white/[0.06]" />
+          ))}
         </div>
       ) : cupFixtures.length === 0 ? (
-        <div className="py-16 text-center glass-panel shadow-xl">
-          <Award className="w-12 h-12 text-slate-600 mx-auto mb-2 opacity-60" />
+        <div className="py-16 text-center glass-panel shadow-xl rounded-2xl border border-white/[0.06]">
+          <Award className="w-10 h-10 text-slate-500 mx-auto mb-2 opacity-60" />
           <h4 className="text-sm font-bold text-slate-200">No cup fixtures scheduled yet</h4>
           <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
             Cup brackets and knockout rounds will be seeded and scheduled as the season progresses.

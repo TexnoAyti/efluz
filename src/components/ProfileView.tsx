@@ -15,6 +15,7 @@ import {
   Flame,
   Award,
   Globe2,
+  SlidersHorizontal,
 } from 'lucide-react';
 
 interface ProfileViewProps {
@@ -97,6 +98,40 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigateTab }) => {
           </div>
         </div>
       </div>
+
+      {/* Admin Panel Quick Access (Visible only to authorized admins) */}
+      {user?.isAdmin && (
+        <div
+          id="card-admin-access"
+          onClick={() => onNavigateTab('admin')}
+          className="glass-panel p-5 sm:p-6 shadow-xl border-amber-500/30 bg-gradient-to-r from-amber-950/20 via-slate-900/40 to-slate-900/80 cursor-pointer hover:border-amber-500/50 transition-all group"
+        >
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5 min-w-0">
+              <div className="w-11 h-11 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0 shadow-lg group-hover:scale-105 transition-transform">
+                <SlidersHorizontal className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-black text-white group-hover:text-amber-300 transition-colors">
+                    Tournament Admin Panel
+                  </span>
+                  <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                    Control Center
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 truncate mt-0.5">
+                  Manage fixtures, arbitrate disputes, monitor 96 clubs, and verify tournament status.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 text-amber-400 font-bold text-xs shrink-0">
+              <span className="hidden sm:inline">Open Control Center</span>
+              <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Language Selector Card */}
       <div className="glass-panel p-6 shadow-xl space-y-4">

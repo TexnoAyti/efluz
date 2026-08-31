@@ -60,24 +60,29 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
     setError(null);
     try {
       const res = await api.getLeagueClubs(leagueId, activeSeasonId, true);
-      setClubs(res.clubs || []);
+      if (res.clubs && res.clubs.length > 0) {
+        setClubs(res.clubs);
+      } else if (clubs.length === 0) {
+        setClubs([]);
+      }
     } catch (err: any) {
       console.error('Failed to load clubs:', err);
       const isQuota =
         err?.httpStatus === 429 ||
         err?.data?.error === 'RESOURCE_EXHAUSTED' ||
+        err?.isQuota ||
         err?.message?.includes('quota') ||
         err?.message?.includes('RESOURCE_EXHAUSTED');
 
       setError({
-        message: err.message || 'Failed to load clubs from database',
+        message: "Couldn't load data. Please try again.",
         isQuota,
       });
-      setClubs([]);
+      // Do not wipe out existing clubs if we have them cached
     } finally {
       setIsLoadingClubs(false);
     }
-  }, [activeSeasonId]);
+  }, [activeSeasonId, clubs.length]);
 
   // 2. Load fixtures & standings for selected league
   const loadLeagueCompetitionData = useCallback(async (leagueId: string, compsList?: Competition[]) => {
@@ -89,7 +94,9 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
     setIsLoadingStandings(true);
     try {
       const standRes = await api.getCompetitionStandings(matchingComp.id);
-      setLeagueStandings(standRes.standings || []);
+      if (standRes.standings && standRes.standings.length > 0) {
+        setLeagueStandings(standRes.standings);
+      }
     } catch (err) {
       console.error('Failed to load league standings:', err);
     } finally {
@@ -100,7 +107,9 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
     setIsLoadingFixtures(true);
     try {
       const fixRes = await api.getCompetitionFixtures(matchingComp.id);
-      setLeagueFixtures(fixRes.fixtures || []);
+      if (fixRes.fixtures && fixRes.fixtures.length > 0) {
+        setLeagueFixtures(fixRes.fixtures);
+      }
     } catch (err) {
       console.error('Failed to load league fixtures:', err);
     } finally {
@@ -118,8 +127,12 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
       ]);
 
       const domesticLeagues = leaguesRes.leagues || [];
-      setLeagues(domesticLeagues);
-      setLeagueCompetitions(compsRes.competitions || []);
+      if (domesticLeagues.length > 0) {
+        setLeagues(domesticLeagues);
+      }
+      if (compsRes.competitions && compsRes.competitions.length > 0) {
+        setLeagueCompetitions(compsRes.competitions);
+      }
 
       if (domesticLeagues.length > 0) {
         setSelectedLeagueId((prev) => {
@@ -135,14 +148,14 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
       const isQuota =
         err?.httpStatus === 429 ||
         err?.data?.error === 'RESOURCE_EXHAUSTED' ||
+        err?.isQuota ||
         err?.message?.includes('quota') ||
         err?.message?.includes('RESOURCE_EXHAUSTED');
 
       setError({
-        message: err.message || 'Failed to load leagues from database',
+        message: "Couldn't load data. Please try again.",
         isQuota,
       });
-      setIsLoadingClubs(false);
     }
   }, [activeSeasonId, loadClubsForLeague, loadLeagueCompetitionData]);
 
@@ -504,35 +517,30 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
           </div>
 
           {/* Clubs Grid */}
-          {isLoadingClubs ? (
-            <div className="py-20 flex flex-col items-center justify-center text-slate-400">
-              <Loader2 className="w-8 h-8 animate-spin text-emerald-400 mb-2" />
-              <span className="text-xs">{t.loading}</span>
+          {isLoadingClubs && clubs.length === 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 animate-pulse">
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                <div key={i} className="h-44 rounded-2xl bg-white/[0.04] border border-white/[0.06]" />
+              ))}
             </div>
-          ) : error ? (
-            <div
-              className={`py-10 px-6 text-center border rounded-3xl ${
-                error.isQuota ? 'bg-amber-950/20 border-amber-800/40' : 'bg-rose-950/20 border-rose-800/40'
-              }`}
-            >
-              <AlertTriangle
-                className={`w-10 h-10 mx-auto mb-2 opacity-90 ${error.isQuota ? 'text-amber-400' : 'text-rose-500'}`}
-              />
-              <h4 className="text-sm font-bold text-white mb-1">
-                {error.isQuota ? 'Database Connection Error' : 'Failed to Load Data'}
-              </h4>
-              <p className="text-xs text-slate-300 max-w-md mx-auto mb-4">{error.message}</p>
+          ) : error && clubs.length === 0 ? (
+            <div className="p-8 text-center glass-panel border-rose-500/30 bg-rose-950/30 rounded-3xl max-w-md mx-auto my-6 shadow-xl">
+              <AlertTriangle className="w-10 h-10 mx-auto mb-3 text-rose-400" />
+              <h4 className="text-sm font-bold text-white mb-1">Couldn't load data</h4>
+              <p className="text-xs text-rose-200/80 mb-5">Please try again.</p>
               <button
                 onClick={() => loadClubsForLeague(selectedLeagueId)}
-                className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl text-xs font-black transition-all shadow-md"
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all shadow-md inline-flex items-center gap-2"
               >
-                Retry Loading
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Retry</span>
               </button>
             </div>
           ) : filteredClubs.length === 0 ? (
-            <div className="py-16 text-center bg-slate-900 border border-slate-800 rounded-3xl">
-              <Shield className="w-12 h-12 text-slate-600 mx-auto mb-2 opacity-60" />
+            <div className="py-16 text-center glass-panel rounded-3xl border border-white/[0.06]">
+              <Shield className="w-10 h-10 text-slate-500 mx-auto mb-2 opacity-60" />
               <h4 className="text-sm font-bold text-slate-200">No clubs found</h4>
+              <p className="text-xs text-slate-400 mt-1">Try adjusting your search or filters.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
@@ -660,13 +668,14 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
           )}
 
           {/* Fixtures List */}
-          {isLoadingFixtures ? (
-            <div className="py-16 flex flex-col items-center justify-center text-slate-400">
-              <Loader2 className="w-8 h-8 animate-spin text-emerald-400 mb-2" />
-              <span className="text-xs">{t.loading}</span>
+          {isLoadingFixtures && leagueFixtures.length === 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 animate-pulse">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="h-28 rounded-2xl bg-white/[0.04] border border-white/[0.06]" />
+              ))}
             </div>
           ) : currentMatchdayFixtures.length === 0 ? (
-            <div className="py-12 text-center bg-slate-900 border border-slate-800 rounded-2xl text-slate-400 text-xs">
+            <div className="py-12 text-center glass-panel rounded-2xl border border-white/[0.06] text-slate-400 text-xs">
               No fixtures scheduled for this matchday.
             </div>
           ) : (
@@ -737,14 +746,15 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
       {/* TAB C: STANDINGS TABLE */}
       {activeLeagueTab === 'STANDINGS' && (
         <div className="space-y-4">
-          {isLoadingStandings ? (
-            <div className="py-16 flex flex-col items-center justify-center text-slate-400">
-              <Loader2 className="w-8 h-8 animate-spin text-emerald-400 mb-2" />
-              <span className="text-xs">{t.loading}</span>
+          {isLoadingStandings && leagueStandings.length === 0 ? (
+            <div className="glass-panel p-4 space-y-3 animate-pulse">
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className="h-10 rounded-xl bg-white/[0.04] border border-white/[0.04]" />
+              ))}
             </div>
           ) : leagueStandings.length === 0 ? (
-            <div className="py-12 text-center bg-slate-900 border border-slate-800 rounded-2xl text-slate-400 text-xs">
-              No standings records calculated yet.
+            <div className="py-12 text-center glass-panel rounded-2xl border border-white/[0.06] text-slate-400 text-xs">
+              Standings are not available yet.
             </div>
           ) : (
             <div className="glass-panel overflow-hidden shadow-2xl border-white/[0.08]">
