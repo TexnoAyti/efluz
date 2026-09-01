@@ -1472,15 +1472,58 @@ export async function generateCompetitionFixturesFirestore(
     }
   }
 
-  // 3. Purge all existing fixtures for this competition before writing new ones
+  // 3. Purge all existing fixtures for this competition before writing new ones (while preserving confirmed results)
   const toDeleteSnap = await db.collection(COLLECTIONS.FIXTURES).where('competitionId', '==', competitionId).get();
+  const confirmedMap = new Map<
+    string,
+    {
+      homeScore: number;
+      awayScore: number;
+      winnerClubId?: string | null;
+      resultConfirmedAt?: string | null;
+    }
+  >();
+
   if (!toDeleteSnap.empty) {
+    for (const doc of toDeleteSnap.docs) {
+      const data = doc.data() as FirestoreFixtureDoc;
+      if (data.status === 'CONFIRMED' && data.homeScore !== null && data.homeScore !== undefined) {
+        confirmedMap.set(`${data.homeClubId}->${data.awayClubId}`, {
+          homeScore: data.homeScore,
+          awayScore: data.awayScore ?? 0,
+          winnerClubId: data.winnerClubId,
+          resultConfirmedAt: data.resultConfirmedAt,
+        });
+      }
+    }
+
     const batchSize = 400;
     for (let i = 0; i < toDeleteSnap.docs.length; i += batchSize) {
       const chunk = toDeleteSnap.docs.slice(i, i + batchSize);
       const batch = db.batch();
       chunk.forEach((doc) => batch.delete(doc.ref));
       await batch.commit();
+    }
+  }
+
+  // If any confirmed match existed between the two clubs, preserve the confirmed score
+  for (const fix of generatedFixtures) {
+    const key = `${fix.homeClubId}->${fix.awayClubId}`;
+    const revKey = `${fix.awayClubId}->${fix.homeClubId}`;
+    if (confirmedMap.has(key)) {
+      const match = confirmedMap.get(key)!;
+      (fix as any).status = 'CONFIRMED';
+      (fix as any).homeScore = match.homeScore;
+      (fix as any).awayScore = match.awayScore;
+      (fix as any).winnerClubId = match.winnerClubId;
+      (fix as any).resultConfirmedAt = match.resultConfirmedAt;
+    } else if (confirmedMap.has(revKey)) {
+      const match = confirmedMap.get(revKey)!;
+      (fix as any).status = 'CONFIRMED';
+      (fix as any).homeScore = match.awayScore;
+      (fix as any).awayScore = match.homeScore;
+      (fix as any).winnerClubId = match.winnerClubId;
+      (fix as any).resultConfirmedAt = match.resultConfirmedAt;
     }
   }
 
@@ -1991,144 +2034,377 @@ export async function submitFixtureResultFirestore(
   awayScore: number,
   proofUrl?: string
 ): Promise<Fixture> {
-  const db = getFirestoreDb();
-
   if (!Number.isInteger(homeScore) || homeScore < 0 || !Number.isInteger(awayScore) || awayScore < 0) {
     throw new Error('Scores must be non-negative integers.');
   }
 
-  const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
-  const fixDoc = await fixRef.get();
-  if (!fixDoc.exists) {
-    throw new Error(`Fixture with ID '${fixtureId}' not found.`);
-  }
+  const db = getFirestoreDb();
+  const now = new Date().toISOString();
+  const submissionId = `sub-${fixtureId}-${userId}`;
 
-  const fixture = fixDoc.data() as FirestoreFixtureDoc;
-  if (fixture.status === 'CONFIRMED') {
-    throw new Error('This match result is already CONFIRMED and cannot be modified.');
-  }
+  try {
+    const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
+    trackFirestoreRead(COLLECTIONS.FIXTURES, 1, 'submitFixtureResultFirestore:fixture');
+    const fixDoc = await fixRef.get();
+    if (!fixDoc.exists) {
+      throw new Error(`Fixture with ID '${fixtureId}' not found.`);
+    }
 
-  // Enforce Competition Matchday Timer Lock
-  if (fixture.competitionId && fixture.matchday) {
-    const compDoc = await db.collection(COLLECTIONS.COMPETITIONS).doc(fixture.competitionId).get().catch(() => null);
-    if (compDoc && compDoc.exists) {
-      const compData = compDoc.data() as FirestoreCompetitionDoc;
-      const currentMd = compData.currentMatchday || 1;
-      const override = compData.adminOverrideStatus || 'AUTO';
+    const fixture = fixDoc.data() as FirestoreFixtureDoc;
+    if (fixture.status === 'CONFIRMED') {
+      throw new Error('This match result is already CONFIRMED and cannot be modified.');
+    }
 
-      if (override === 'FORCE_LOCKED' || override === 'PAUSED') {
-        throw new Error(`Matchday submissions for ${compData.name} are currently paused or locked by tournament administration.`);
-      }
-
-      if (override !== 'FORCE_OPEN') {
-        if (fixture.matchday > currentMd) {
-          const nextOpen = compData.nextMatchdayOpenAt ? new Date(compData.nextMatchdayOpenAt) : null;
-          let unlockMsg = '';
-          if (nextOpen && nextOpen.getTime() > Date.now()) {
-            const diffMin = Math.round((nextOpen.getTime() - Date.now()) / (60 * 1000));
-            const hours = Math.floor(diffMin / 60);
-            const mins = diffMin % 60;
-            unlockMsg = ` Unlocks in ${hours > 0 ? `${hours}h ` : ''}${mins}m.`;
-          }
-          throw new Error(`Matchday ${fixture.matchday} is locked. Current active matchday is Matchday ${currentMd}.${unlockMsg}`);
+    // Matchday Lock Check
+    if (fixture.competitionId && fixture.matchday) {
+      const override = compOverrideMap.get(fixture.competitionId);
+      if (override) {
+        if (override.adminOverrideStatus === 'FORCE_LOCKED' || override.adminOverrideStatus === 'PAUSED') {
+          throw new Error(`Matchday submissions for this competition are currently paused or locked by tournament administration.`);
+        }
+        if (override.adminOverrideStatus !== 'FORCE_OPEN' && override.currentMatchday && fixture.matchday > override.currentMatchday) {
+          throw new Error(`Matchday ${fixture.matchday} is locked. Current active matchday is Matchday ${override.currentMatchday}.`);
         }
       }
     }
-  }
 
-  // Verify ownership
-  const userMemDoc = await db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${fixture.seasonId}_${userId}`).get();
-  if (!userMemDoc.exists || userMemDoc.data()?.status !== 'active') {
-    throw new Error('You do not own either the home or away club in this fixture.');
-  }
+    // Verify ownership
+    trackFirestoreRead(COLLECTIONS.USER_MEMBERSHIPS, 1, 'submitFixtureResultFirestore:membership');
+    const userMemDoc = await db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${fixture.seasonId}_${userId}`).get();
+    if (!userMemDoc.exists || userMemDoc.data()?.status !== 'active') {
+      throw new Error('You do not own either the home or away club in this fixture.');
+    }
 
-  const userClubId = userMemDoc.data()!.clubId;
-  const isHome = userClubId === fixture.homeClubId;
-  const isAway = userClubId === fixture.awayClubId;
+    const userClubId = userMemDoc.data()!.clubId;
+    const isHome = userClubId === fixture.homeClubId;
+    const isAway = userClubId === fixture.awayClubId;
 
-  if (!isHome && !isAway) {
-    throw new Error('You do not own either the home or away club in this fixture.');
-  }
+    if (!isHome && !isAway) {
+      throw new Error('You do not own either the home or away club in this fixture.');
+    }
 
-  const now = new Date().toISOString();
-  const submissionId = `sub-${fixtureId}-${userId}`;
-  const subRef = db.collection(COLLECTIONS.RESULT_SUBMISSIONS).doc(submissionId);
+    // Write submission idempotently
+    const subRef = db.collection(COLLECTIONS.RESULT_SUBMISSIONS).doc(submissionId);
+    trackFirestoreWrite(COLLECTIONS.RESULT_SUBMISSIONS, 1, 'submitFixtureResultFirestore:setSubmission');
+    await subRef.set({
+      id: submissionId,
+      fixtureId,
+      submittedByUserId: userId,
+      clubId: userClubId,
+      homeScore,
+      awayScore,
+      proofUrl: proofUrl || null,
+      createdAt: now,
+    });
 
-  await subRef.set({
-    id: submissionId,
-    fixtureId,
-    submittedByUserId: userId,
-    clubId: userClubId,
-    homeScore,
-    awayScore,
-    proofUrl: proofUrl || null,
-    createdAt: now,
-  });
+    // Evaluate all submissions for fixture
+    trackFirestoreRead(COLLECTIONS.RESULT_SUBMISSIONS, 1, 'submitFixtureResultFirestore:allSubs');
+    const allSubsSnap = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where('fixtureId', '==', fixtureId).get();
+    const allSubs = allSubsSnap.docs.map((d) => d.data() as FirestoreResultSubmissionDoc);
 
-  // Evaluate all submissions for fixture
-  const allSubsSnap = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where('fixtureId', '==', fixtureId).get();
-  const allSubs = allSubsSnap.docs.map((d) => d.data() as FirestoreResultSubmissionDoc);
+    let newStatus = allSubs.length === 1 ? 'PENDING_CONFIRMATION' : 'AWAITING_RESULT';
+    let confirmedHomeScore: number | null = null;
+    let confirmedAwayScore: number | null = null;
+    let winnerClubId: string | null = null;
+    let confirmedAt: string | null = null;
 
-  let newStatus = allSubs.length === 1 ? 'PENDING_CONFIRMATION' : 'AWAITING_RESULT';
-  let confirmedHomeScore: number | null = null;
-  let confirmedAwayScore: number | null = null;
-  let winnerClubId: string | null = null;
-  let confirmedAt: string | null = null;
-
-  if (allSubs.length >= 2) {
-    const [sub1, sub2] = allSubs;
-    if (sub1.homeScore === sub2.homeScore && sub1.awayScore === sub2.awayScore) {
-      newStatus = 'CONFIRMED';
-      confirmedHomeScore = sub1.homeScore;
-      confirmedAwayScore = sub1.awayScore;
-      confirmedAt = now;
-      if (confirmedHomeScore > confirmedAwayScore) winnerClubId = fixture.homeClubId;
-      else if (confirmedAwayScore > confirmedHomeScore) winnerClubId = fixture.awayClubId;
+    if (allSubs.length >= 2) {
+      const [sub1, sub2] = allSubs;
+      if (sub1.homeScore === sub2.homeScore && sub1.awayScore === sub2.awayScore) {
+        newStatus = 'CONFIRMED';
+        confirmedHomeScore = sub1.homeScore;
+        confirmedAwayScore = sub1.awayScore;
+        confirmedAt = now;
+        if (confirmedHomeScore > confirmedAwayScore) winnerClubId = fixture.homeClubId;
+        else if (confirmedAwayScore > confirmedHomeScore) winnerClubId = fixture.awayClubId;
+      } else {
+        newStatus = 'DISPUTED';
+        const disputeRef = db.collection(COLLECTIONS.DISPUTES).doc(`disp-${fixtureId}`);
+        trackFirestoreWrite(COLLECTIONS.DISPUTES, 1, 'submitFixtureResultFirestore:dispute');
+        await disputeRef.set({
+          id: `disp-${fixtureId}`,
+          fixtureId,
+          seasonId: fixture.seasonId,
+          homeSubmissionId: sub1.id,
+          awaySubmissionId: sub2.id,
+          status: 'OPEN',
+          createdAt: now,
+        });
+      }
     } else {
-      newStatus = 'DISPUTED';
-      const disputeRef = db.collection(COLLECTIONS.DISPUTES).doc(`disp-${fixtureId}`);
-      await disputeRef.set({
-        id: `disp-${fixtureId}`,
-        fixtureId,
-        seasonId: fixture.seasonId,
-        homeSubmissionId: sub1.id,
-        awaySubmissionId: sub2.id,
-        status: 'OPEN',
-        createdAt: now,
-      });
+      newStatus = 'PENDING_CONFIRMATION';
     }
-  } else {
-    newStatus = 'PENDING_CONFIRMATION';
-  }
 
-  await fixRef.update({
-    status: newStatus,
-    homeScore: confirmedHomeScore,
-    awayScore: confirmedAwayScore,
-    winnerClubId,
-    resultConfirmedAt: confirmedAt,
-    updatedAt: now,
-  });
+    trackFirestoreWrite(COLLECTIONS.FIXTURES, 1, 'submitFixtureResultFirestore:updateStatus');
+    await fixRef.update({
+      status: newStatus,
+      homeScore: confirmedHomeScore,
+      awayScore: confirmedAwayScore,
+      winnerClubId,
+      resultConfirmedAt: confirmedAt,
+      updatedAt: now,
+    });
 
-  if (newStatus === 'CONFIRMED' && winnerClubId) {
+    // Also persist in SQLite for offline resilience
     try {
-      const { advanceKnockoutWinnerFirestore } = await import('../tournament/knockoutEngine');
-      await advanceKnockoutWinnerFirestore(fixtureId);
-    } catch (err) {
-      console.warn('[KNOCKOUT_ADVANCE] Non-blocking advance error:', err);
+      queryRun(
+        `INSERT OR REPLACE INTO result_submissions (id, fixture_id, submitted_by_user_id, club_id, home_score, away_score, proof_url, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [submissionId, fixtureId, userId, userClubId, homeScore, awayScore, proofUrl || null, now]
+      );
+      queryRun(
+        `UPDATE fixtures SET status = ?, home_score = ?, away_score = ?, winner_club_id = ?, result_confirmed_at = ?, updated_at = ? WHERE id = ?`,
+        [newStatus, confirmedHomeScore, confirmedAwayScore, winnerClubId, confirmedAt, now, fixtureId]
+      );
+    } catch (sqliteErr) {
+      console.warn('[SQLITE_SYNC] Non-blocking SQLite sync error on result submit:', sqliteErr);
     }
-  }
 
-  if (newStatus === 'CONFIRMED' && fixture.competitionId) {
+    if (newStatus === 'CONFIRMED' && winnerClubId) {
+      try {
+        const { advanceKnockoutWinnerFirestore } = await import('../tournament/knockoutEngine');
+        await advanceKnockoutWinnerFirestore(fixtureId);
+      } catch (err) {
+        console.warn('[KNOCKOUT_ADVANCE] Non-blocking advance error:', err);
+      }
+    }
+
+    if (newStatus === 'CONFIRMED' && fixture.competitionId) {
+      try {
+        await rebuildCompetitionStandingsFirestore(fixture.competitionId);
+      } catch (standingsErr) {
+        console.warn('[STANDINGS_UPDATE] Non-blocking standings update error on confirmation:', standingsErr);
+      }
+    }
+
+    invalidateFirestoreCache('firestore:fixtures');
+    invalidateFirestoreCache('firestore:comp');
+
+    return (await getFixtureByIdFirestore(fixtureId, userId))!;
+  } catch (firestoreErr: any) {
+    const errMsg = firestoreErr?.message || String(firestoreErr);
+    console.error(`[RESULT_SUBMISSION] Firestore operation failed: ${errMsg}`);
+
+    // If error is user-validation error, rethrow directly
+    if (
+      errMsg.includes('not found') ||
+      errMsg.includes('already CONFIRMED') ||
+      errMsg.includes('locked') ||
+      errMsg.includes('paused') ||
+      errMsg.includes('do not own') ||
+      errMsg.includes('Scores must be')
+    ) {
+      throw firestoreErr;
+    }
+
+    // For quota, network, or server-level Firestore failure: execute resilient SQLite fallback
     try {
-      await rebuildCompetitionStandingsFirestore(fixture.competitionId);
-    } catch (standingsErr) {
-      console.warn('[STANDINGS_UPDATE] Non-blocking standings update error on confirmation:', standingsErr);
+      console.log('[RESULT_SUBMISSION_FALLBACK] Executing SQLite fallback persistence for fixture:', fixtureId);
+      const row = queryGet<any>('SELECT * FROM fixtures WHERE id = ?', [fixtureId]);
+      if (!row) {
+        throw firestoreErr;
+      }
+
+      const memRow =
+        queryGet<any>('SELECT * FROM club_memberships WHERE user_id = ? AND season_id = ? AND status = "active"', [
+          userId,
+          row.season_id,
+        ]) ||
+        queryGet<any>('SELECT * FROM season_league_clubs WHERE owner_user_id = ? AND season_id = ?', [
+          userId,
+          row.season_id,
+        ]);
+
+      const userClubId = memRow?.club_id || memRow?.clubId;
+      if (!userClubId || (userClubId !== row.home_club_id && userClubId !== row.away_club_id)) {
+        throw firestoreErr;
+      }
+
+      queryRun(
+        `INSERT OR REPLACE INTO result_submissions (id, fixture_id, submitted_by_user_id, club_id, home_score, away_score, proof_url, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [submissionId, fixtureId, userId, userClubId, homeScore, awayScore, proofUrl || null, now]
+      );
+
+      const existingSubs = queryAll<any>('SELECT * FROM result_submissions WHERE fixture_id = ?', [fixtureId]);
+      let newStatus = existingSubs.length === 1 ? 'PENDING_CONFIRMATION' : 'AWAITING_RESULT';
+      let confirmedHomeScore: number | null = null;
+      let confirmedAwayScore: number | null = null;
+      let winnerClubId: string | null = null;
+      let confirmedAt: string | null = null;
+
+      if (existingSubs.length >= 2) {
+        const [sub1, sub2] = existingSubs;
+        if (sub1.home_score === sub2.home_score && sub1.away_score === sub2.away_score) {
+          newStatus = 'CONFIRMED';
+          confirmedHomeScore = sub1.home_score;
+          confirmedAwayScore = sub1.away_score;
+          confirmedAt = now;
+          if (confirmedHomeScore > confirmedAwayScore) winnerClubId = row.home_club_id;
+          else if (confirmedAwayScore > confirmedHomeScore) winnerClubId = row.away_club_id;
+        } else {
+          newStatus = 'DISPUTED';
+        }
+      }
+
+      queryRun(
+        `UPDATE fixtures SET status = ?, home_score = ?, away_score = ?, winner_club_id = ?, result_confirmed_at = ?, updated_at = ? WHERE id = ?`,
+        [newStatus, confirmedHomeScore, confirmedAwayScore, winnerClubId, confirmedAt, now, fixtureId]
+      );
+
+      invalidateFirestoreCache('firestore:fixtures');
+      return (await getFixtureByIdFirestore(fixtureId, userId))!;
+    } catch (fallbackErr: any) {
+      console.error('[RESULT_SUBMISSION_FALLBACK] SQLite fallback failed:', fallbackErr);
+      throw firestoreErr;
     }
   }
+}
 
-  invalidateFirestoreCache('firestore:comp');
-  return (await getFixtureByIdFirestore(fixtureId, userId))!;
+export interface DomesticFixtureValidation {
+  leagueId: string;
+  competitionId: string;
+  name: string;
+  clubCount: number;
+  expectedMatchdays: number;
+  actualMatchdays: number;
+  expectedFixtureCount: number;
+  actualFixtureCount: number;
+  duplicatePairCount: number;
+  reverseFixtureCount: number;
+  invalidMatchdays: number;
+  confirmedResultsCount: number;
+  pendingResultsCount: number;
+  isValid: boolean;
+  issues: string[];
+}
+
+export interface FixtureValidationReport {
+  timestamp: string;
+  allValid: boolean;
+  leagues: DomesticFixtureValidation[];
+  summary: {
+    totalClubs: number;
+    expectedTotalFixtures: number;
+    actualTotalFixtures: number;
+    totalConfirmed: number;
+    totalPending: number;
+  };
+}
+
+export async function validateDomesticFixturesFirestore(seasonId = 'season-2026-27'): Promise<FixtureValidationReport> {
+  const domesticComps = [
+    { competitionId: 'comp-premier-league-2026', leagueId: 'league-premier-league', name: 'Premier League', expectedTeams: 20, expectedMDs: 19, expectedFixtures: 190 },
+    { competitionId: 'comp-la-liga-2026', leagueId: 'league-la-liga', name: 'La Liga', expectedTeams: 20, expectedMDs: 19, expectedFixtures: 190 },
+    { competitionId: 'comp-serie-a-2026', leagueId: 'league-serie-a', name: 'Serie A', expectedTeams: 20, expectedMDs: 19, expectedFixtures: 190 },
+    { competitionId: 'comp-bundesliga-2026', leagueId: 'league-bundesliga', name: 'Bundesliga', expectedTeams: 18, expectedMDs: 17, expectedFixtures: 153 },
+    { competitionId: 'comp-ligue-1-2026', leagueId: 'league-ligue-1', name: 'Ligue 1', expectedTeams: 18, expectedMDs: 17, expectedFixtures: 153 },
+  ];
+
+  const results: DomesticFixtureValidation[] = [];
+  let allValid = true;
+  let totalConfirmed = 0;
+  let totalPending = 0;
+  let actualTotalFixtures = 0;
+  let expectedTotalFixtures = 0;
+  let totalClubs = 0;
+
+  for (const item of domesticComps) {
+    const clubCount = SEED_CLUBS.filter((c) => c.leagueId === item.leagueId).length || item.expectedTeams;
+    totalClubs += clubCount;
+    expectedTotalFixtures += item.expectedFixtures;
+
+    const fixtures = await getFixturesFirestore({ competitionId: item.competitionId, seasonId });
+    actualTotalFixtures += fixtures.length;
+
+    const matchdaySet = new Set<number>();
+    const directedPairs = new Set<string>();
+    const undirectedPairs = new Set<string>();
+    let duplicatePairCount = 0;
+    let reverseFixtureCount = 0;
+    let invalidMatchdays = 0;
+    let confirmedCount = 0;
+    let pendingCount = 0;
+    const issues: string[] = [];
+
+    for (const f of fixtures) {
+      if (f.matchday < 1 || f.matchday > item.expectedMDs) {
+        invalidMatchdays++;
+      }
+      matchdaySet.add(f.matchday);
+
+      const directedKey = `${f.homeClubId}->${f.awayClubId}`;
+      const undirectedKey = [f.homeClubId, f.awayClubId].sort().join(' <-> ');
+
+      if (directedPairs.has(directedKey)) {
+        duplicatePairCount++;
+      } else {
+        directedPairs.add(directedKey);
+      }
+
+      if (undirectedPairs.has(undirectedKey)) {
+        reverseFixtureCount++;
+      } else {
+        undirectedPairs.add(undirectedKey);
+      }
+
+      if (f.status === 'CONFIRMED') confirmedCount++;
+      else if (f.status === 'PENDING_CONFIRMATION' || f.status === 'AWAITING_RESULT') pendingCount++;
+    }
+
+    totalConfirmed += confirmedCount;
+    totalPending += pendingCount;
+
+    if (fixtures.length !== item.expectedFixtures) {
+      issues.push(`Expected ${item.expectedFixtures} fixtures, found ${fixtures.length}.`);
+    }
+    if (matchdaySet.size !== item.expectedMDs && fixtures.length > 0) {
+      issues.push(`Expected ${item.expectedMDs} matchdays, found ${matchdaySet.size}.`);
+    }
+    if (duplicatePairCount > 0) {
+      issues.push(`Found ${duplicatePairCount} duplicate fixture pairs.`);
+    }
+    if (reverseFixtureCount > 0) {
+      issues.push(`Found ${reverseFixtureCount} reverse fixture pairs (double round-robin).`);
+    }
+    if (invalidMatchdays > 0) {
+      issues.push(`Found ${invalidMatchdays} fixtures with invalid matchdays (outside 1..${item.expectedMDs}).`);
+    }
+
+    const isValid = issues.length === 0 && fixtures.length === item.expectedFixtures;
+    if (!isValid) allValid = false;
+
+    results.push({
+      leagueId: item.leagueId,
+      competitionId: item.competitionId,
+      name: item.name,
+      clubCount,
+      expectedMatchdays: item.expectedMDs,
+      actualMatchdays: matchdaySet.size,
+      expectedFixtureCount: item.expectedFixtures,
+      actualFixtureCount: fixtures.length,
+      duplicatePairCount,
+      reverseFixtureCount,
+      invalidMatchdays,
+      confirmedResultsCount: confirmedCount,
+      pendingResultsCount: pendingCount,
+      isValid,
+      issues,
+    });
+  }
+
+  return {
+    timestamp: new Date().toISOString(),
+    allValid,
+    leagues: results,
+    summary: {
+      totalClubs,
+      expectedTotalFixtures,
+      actualTotalFixtures,
+      totalConfirmed,
+      totalPending,
+    },
+  };
 }
 
 // ----------------------------------------------------

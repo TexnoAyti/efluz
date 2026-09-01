@@ -19,6 +19,7 @@ import {
   setCompetitionMatchdayOverrideFirestore,
   openCompetitionMatchdayNowFirestore,
   setCompetitionMatchdayTimerFirestore,
+  validateDomesticFixturesFirestore,
   getReadMetrics,
 } from '../firebase/firestoreStore';
 import { SEED_CLUBS, SEED_LEAGUES } from '../db/seed';
@@ -488,6 +489,16 @@ adminRouter.post('/competitions/:id/matchday/set-timer', async (req: Request, re
     res.json(result);
   } catch (err: any) {
     handleFirestoreError(res, err, `POST /api/admin/competitions/${competitionId}/matchday/set-timer`);
+  }
+});
+
+adminRouter.get('/fixtures/validation', async (req: Request, res: Response) => {
+  const seasonId = (req.query.seasonId as string) || 'season-2026-27';
+  try {
+    const report = await validateDomesticFixturesFirestore(seasonId);
+    res.json(report);
+  } catch (err: any) {
+    handleFirestoreError(res, err, `GET /api/admin/fixtures/validation`);
   }
 });
 

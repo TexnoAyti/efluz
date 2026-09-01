@@ -125,6 +125,11 @@ export const AdminView: React.FC = () => {
   const [generatingCompId, setGeneratingCompId] = useState<string | null>(null);
   const [rebuildingStandingsCompId, setRebuildingStandingsCompId] = useState<string | null>(null);
 
+  // Fixture Validation Diagnostic State
+  const [fixtureValidationReport, setFixtureValidationReport] = useState<any>(null);
+  const [isValidatingFixtures, setIsValidatingFixtures] = useState(false);
+  const [showValidationModal, setShowValidationModal] = useState(false);
+
   const [loadedTabs, setLoadedTabs] = useState<Set<string>>(new Set());
 
   const loadTabData = async (tab: AdminTab, skipCache = false) => {
@@ -355,6 +360,24 @@ export const AdminView: React.FC = () => {
       showToast(err.message || 'Failed to evaluate qualifications.', 'error');
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const handleRunFixtureValidation = async () => {
+    setIsValidatingFixtures(true);
+    try {
+      const report = await api.getFixtureValidationReport(activeSeasonId);
+      setFixtureValidationReport(report);
+      setShowValidationModal(true);
+      if (report.allValid) {
+        showToast('All 5 domestic leagues verified! 100% single round-robin compliance.', 'success');
+      } else {
+        showToast('Fixture validation finished with issues. See details.', 'info');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to run fixture validation.', 'error');
+    } finally {
+      setIsValidatingFixtures(false);
     }
   };
 
@@ -1443,14 +1466,25 @@ export const AdminView: React.FC = () => {
                 </p>
               </div>
 
-              <button
-                onClick={handleEvaluateQualifications}
-                disabled={isProcessing}
-                className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-black flex items-center gap-1.5 shadow"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Evaluate European Spots</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleRunFixtureValidation}
+                  disabled={isValidatingFixtures}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow transition-all disabled:opacity-50"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>{isValidatingFixtures ? 'Validating...' : 'Validate 19/17 MD Formats'}</span>
+                </button>
+
+                <button
+                  onClick={handleEvaluateQualifications}
+                  disabled={isProcessing}
+                  className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-black flex items-center gap-1.5 shadow"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Evaluate European Spots</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -2397,6 +2431,131 @@ export const AdminView: React.FC = () => {
                 className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-black shadow transition-all disabled:opacity-50"
               >
                 {isProcessing ? 'Reopening...' : 'Confirm & Reopen'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: FIXTURE VALIDATION DIAGNOSTIC */}
+      {/* ========================================================================= */}
+      {showValidationModal && fixtureValidationReport && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-panel p-6 max-w-3xl w-full rounded-2xl border-emerald-500/40 shadow-2xl space-y-5 animate-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-white/[0.08] pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-white">Domestic League Single Round-Robin Diagnostic</h3>
+                  <p className="text-xs text-slate-400">
+                    Target: 20 clubs → 19 MD (190 matches) | 18 clubs → 17 MD (153 matches)
+                  </p>
+                </div>
+              </div>
+              <span
+                className={`px-3 py-1 rounded-full text-xs font-black uppercase ${
+                  fixtureValidationReport.allValid
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                    : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                }`}
+              >
+                {fixtureValidationReport.allValid ? '100% Valid' : 'Needs Generation'}
+              </span>
+            </div>
+
+            {/* Summary KPI Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-slate-900/60 p-3 rounded-xl border border-white/[0.04] text-center">
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">Total Clubs</span>
+                <span className="text-base font-black text-white">{fixtureValidationReport.summary?.totalClubs || 96}</span>
+              </div>
+              <div className="bg-slate-900/60 p-3 rounded-xl border border-white/[0.04] text-center">
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">Expected Matches</span>
+                <span className="text-base font-black text-white">{fixtureValidationReport.summary?.expectedTotalFixtures || 876}</span>
+              </div>
+              <div className="bg-slate-900/60 p-3 rounded-xl border border-white/[0.04] text-center">
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">Actual Matches</span>
+                <span className="text-base font-black text-emerald-400">{fixtureValidationReport.summary?.actualTotalFixtures || 0}</span>
+              </div>
+              <div className="bg-slate-900/60 p-3 rounded-xl border border-white/[0.04] text-center">
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">Confirmed Results</span>
+                <span className="text-base font-black text-amber-400">{fixtureValidationReport.summary?.totalConfirmed || 0}</span>
+              </div>
+            </div>
+
+            {/* Per League Diagnostic Table */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-black uppercase text-slate-300">League Breakdown</h4>
+              <div className="space-y-2">
+                {fixtureValidationReport.leagues?.map((l: any) => (
+                  <div
+                    key={l.competitionId}
+                    className={`p-3 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                      l.isValid
+                        ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-200'
+                        : 'bg-amber-950/20 border-amber-500/30 text-amber-200'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-black text-white">{l.name}</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-slate-900 font-bold text-slate-300">
+                          {l.clubCount} Clubs
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-400 mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <span>Matchdays: <strong className="text-white">{l.actualMatchdays} / {l.expectedMatchdays}</strong></span>
+                        <span>Matches: <strong className="text-white">{l.actualFixtureCount} / {l.expectedFixtureCount}</strong></span>
+                        <span>Duplicates: <strong className="text-white">{l.duplicatePairCount}</strong></span>
+                        <span>Reverse (H/A): <strong className="text-white">{l.reverseFixtureCount}</strong></span>
+                      </div>
+                      {l.issues?.length > 0 && (
+                        <div className="text-[11px] text-amber-400 mt-1.5 space-y-0.5">
+                          {l.issues.map((issue: string, idx: number) => (
+                            <div key={idx} className="flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3 shrink-0" />
+                              <span>{issue}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      {l.isValid ? (
+                        <span className="px-3 py-1 rounded-lg text-xs font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5" /> Perfect 19/17 MD
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setShowValidationModal(false);
+                            handleGenerateCompetition(l.competitionId);
+                          }}
+                          className="px-3 py-1.5 rounded-lg text-xs font-black bg-amber-500 hover:bg-amber-400 text-slate-950 shadow"
+                        >
+                          Generate {l.expectedMatchdays} MDs
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-3 border-t border-white/[0.08]">
+              <span className="text-[11px] text-slate-500">
+                Diagnostic generated at: {new Date(fixtureValidationReport.timestamp).toLocaleTimeString()}
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowValidationModal(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold"
+              >
+                Close Diagnostic
               </button>
             </div>
           </div>

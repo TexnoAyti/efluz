@@ -56,7 +56,15 @@ export const FixturesView: React.FC = () => {
   }, [activeSeasonId]);
 
   const activeComp = competitions.find((c) => c.id === selectedCompetitionId);
-  const totalMatchdays = activeComp?.type === 'LEAGUE' ? (activeComp.totalTeams === 18 ? 34 : 38) : 1;
+  const totalMatchdays =
+    activeComp?.totalMatchdays ||
+    (activeComp?.type === 'LEAGUE'
+      ? activeComp.totalTeams === 18 || activeComp.leagueId?.includes('bundesliga') || activeComp.leagueId?.includes('ligue-1')
+        ? 17
+        : 19
+      : activeComp?.type === 'EUROPEAN_LEAGUE_PHASE'
+      ? 8
+      : 1);
 
   const loadFixtures = async (skipCache = false) => {
     if (!selectedCompetitionId) {
@@ -202,8 +210,7 @@ export const FixturesView: React.FC = () => {
 
           {/* Quick Matchday Pills Selector */}
           <div className="flex items-center gap-1.5 overflow-x-auto max-w-full pb-1 sm:pb-0 scrollbar-none">
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 19, 20, 38].map((md) => {
-              if (md > totalMatchdays) return null;
+            {Array.from({ length: totalMatchdays }, (_, i) => i + 1).map((md) => {
               const isSelected = selectedMatchday === md;
               return (
                 <button

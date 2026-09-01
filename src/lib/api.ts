@@ -677,5 +677,12 @@ export const api = {
     invalidateClientCache();
     return res;
   },
+
+  async getFixtureValidationReport(seasonId = 'season-2026-27'): Promise<any> {
+    return request<any>(`/api/admin/fixtures/validation?seasonId=${seasonId}`, {
+      method: 'GET',
+      headers: { 'Cache-Control': 'no-cache' },
+    });
+  },
 };
 
