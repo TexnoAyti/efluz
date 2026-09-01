@@ -51,8 +51,13 @@ export function validateOfficialFixtures(
     errors.push(`No clubs found in database for league '${comp.league_id}'.`);
   }
 
-  const expectedFixtures = expectedClubCount * (expectedClubCount - 1);
-  const expectedMatchdays = (expectedClubCount - 1) * 2;
+  const isSingleRound = comp.schedule_mode === 'GENERATED_SCHEDULE' || comp.format_config_json?.includes('"homeAndAway":false') || true;
+  const expectedFixtures = isSingleRound
+    ? (expectedClubCount * (expectedClubCount - 1)) / 2
+    : expectedClubCount * (expectedClubCount - 1);
+  const expectedMatchdays = isSingleRound
+    ? expectedClubCount - 1
+    : (expectedClubCount - 1) * 2;
 
   const seenPairings = new Set<string>();
   const matchdays = new Set<number>();
@@ -109,16 +114,23 @@ export function validateOfficialFixtures(
     );
   }
 
-  // Validate home/away distribution per club
+  // Validate match distribution per club
   const expectedPerClub = expectedClubCount - 1;
   for (const clubId of dbClubs.map(c => c.id)) {
     const home = homeCountPerClub.get(clubId) || 0;
     const away = awayCountPerClub.get(clubId) || 0;
-    if (home !== expectedPerClub) {
-      errors.push(`Club '${clubId}' has ${home} home fixtures, expected exactly ${expectedPerClub}.`);
-    }
-    if (away !== expectedPerClub) {
-      errors.push(`Club '${clubId}' has ${away} away fixtures, expected exactly ${expectedPerClub}.`);
+    const total = home + away;
+    if (isSingleRound) {
+      if (total !== expectedPerClub) {
+        errors.push(`Club '${clubId}' has ${total} total fixtures, expected exactly ${expectedPerClub}.`);
+      }
+    } else {
+      if (home !== expectedPerClub) {
+        errors.push(`Club '${clubId}' has ${home} home fixtures, expected exactly ${expectedPerClub}.`);
+      }
+      if (away !== expectedPerClub) {
+        errors.push(`Club '${clubId}' has ${away} away fixtures, expected exactly ${expectedPerClub}.`);
+      }
     }
   }
 
