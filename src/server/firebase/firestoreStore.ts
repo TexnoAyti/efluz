@@ -1,7 +1,7 @@
 import { Firestore, FieldValue } from 'firebase-admin/firestore';
 import { getFirestoreDb } from './admin';
 import { queryAll, queryGet, queryRun, dbTransaction } from '../db';
-import { SEED_CLUBS, SEED_LEAGUES } from '../db/seed';
+import { SEED_CLUBS, SEED_LEAGUES, SEED_COMPETITIONS, SEED_SEASONS, SEED_SEASON } from '../db/seed';
 
 const SEED_CLUB_MAP = new Map<string, (typeof SEED_CLUBS)[0]>(
   SEED_CLUBS.map((c) => [c.id, c])
@@ -71,6 +71,21 @@ export interface ReadMetrics {
   readsByFunction: Record<string, number>;
   cacheHits: number;
   cacheMisses: number;
+  fallbackCount: number;
+  classifications: {
+    STATIC: number;
+    DYNAMIC: number;
+    MUTATION: number;
+    ADMIN: number;
+  };
+  endpointMetrics: Record<
+    string,
+    {
+      requestCount: number;
+      category: 'STATIC' | 'DYNAMIC' | 'MUTATION' | 'ADMIN';
+      estimatedReads: number;
+    }
+  >;
   startedAt: string;
 }
 
@@ -80,6 +95,14 @@ const readMetrics: ReadMetrics = {
   readsByFunction: {},
   cacheHits: 0,
   cacheMisses: 0,
+  fallbackCount: 0,
+  classifications: {
+    STATIC: 0,
+    DYNAMIC: 0,
+    MUTATION: 0,
+    ADMIN: 0,
+  },
+  endpointMetrics: {},
   startedAt: new Date().toISOString(),
 };
 
@@ -89,6 +112,27 @@ export function trackFirestoreRead(collectionName: string, count = 1, caller = '
   readMetrics.readsByFunction[caller] = (readMetrics.readsByFunction[caller] || 0) + count;
 }
 
+export function recordEndpointCall(
+  endpoint: string,
+  category: 'STATIC' | 'DYNAMIC' | 'MUTATION' | 'ADMIN',
+  estimatedReads = 0
+) {
+  readMetrics.classifications[category] = (readMetrics.classifications[category] || 0) + 1;
+  if (!readMetrics.endpointMetrics[endpoint]) {
+    readMetrics.endpointMetrics[endpoint] = {
+      requestCount: 0,
+      category,
+      estimatedReads: 0,
+    };
+  }
+  readMetrics.endpointMetrics[endpoint].requestCount += 1;
+  readMetrics.endpointMetrics[endpoint].estimatedReads += estimatedReads;
+}
+
+export function recordFallbackUsage() {
+  readMetrics.fallbackCount += 1;
+}
+
 export function getReadMetrics(): ReadMetrics {
   return {
     sessionReads: readMetrics.sessionReads,
@@ -96,6 +140,9 @@ export function getReadMetrics(): ReadMetrics {
     readsByFunction: { ...readMetrics.readsByFunction },
     cacheHits: readMetrics.cacheHits,
     cacheMisses: readMetrics.cacheMisses,
+    fallbackCount: readMetrics.fallbackCount,
+    classifications: { ...readMetrics.classifications },
+    endpointMetrics: { ...readMetrics.endpointMetrics },
     startedAt: readMetrics.startedAt,
   };
 }
@@ -106,6 +153,14 @@ export function resetReadMetrics(): void {
   readMetrics.readsByFunction = {};
   readMetrics.cacheHits = 0;
   readMetrics.cacheMisses = 0;
+  readMetrics.fallbackCount = 0;
+  readMetrics.classifications = {
+    STATIC: 0,
+    DYNAMIC: 0,
+    MUTATION: 0,
+    ADMIN: 0,
+  };
+  readMetrics.endpointMetrics = {};
   readMetrics.startedAt = new Date().toISOString();
 }
 
@@ -140,104 +195,30 @@ function setInCache<T>(key: string, data: T, ttlMs = 60000) {
 }
 
 // ----------------------------------------------------
-// SEASONS & LEAGUES
+// SEASONS & LEAGUES (ZERO FIRESTORE READS)
 // ----------------------------------------------------
 
 export async function getActiveSeasonFirestore(): Promise<Season | null> {
-  const cacheKey = 'firestore:active_season';
-  const cached = getFromCache<Season>(cacheKey);
-  if (cached) return cached;
-
-  try {
-    const db = getFirestoreDb();
-    trackFirestoreRead(COLLECTIONS.SEASONS, 1, 'getActiveSeasonFirestore');
-    const snap = await db.collection(COLLECTIONS.SEASONS).where('status', '==', 'ACTIVE').limit(1).get();
-    if (snap.empty) {
-      // Fallback: search season-2026-27
-      trackFirestoreRead(COLLECTIONS.SEASONS, 1, 'getActiveSeasonFirestore');
-      const doc = await db.collection(COLLECTIONS.SEASONS).doc('season-2026-27').get();
-      if (doc.exists) {
-        const data = doc.data() as FirestoreSeasonDoc;
-        const res: Season = {
-          id: doc.id,
-          name: data.name,
-          status: (data.status?.toLowerCase() as SeasonStatus) || 'active',
-          startDate: data.startDate,
-          endDate: data.endDate,
-          createdAt: data.createdAt,
-        };
-        setInCache(cacheKey, res, 600000); // 10 min cache
-        return res;
-      }
-      return null;
-    }
-    const doc = snap.docs[0];
-    const data = doc.data() as FirestoreSeasonDoc;
-    const res: Season = {
-      id: doc.id,
-      name: data.name,
-      status: (data.status?.toLowerCase() as SeasonStatus) || 'active',
-      startDate: data.startDate,
-      endDate: data.endDate,
-      createdAt: data.createdAt,
-    };
-    setInCache(cacheKey, res, 600000);
-    return res;
-  } catch (err: any) {
-    console.warn('[FIRESTORE FALLBACK] getActiveSeasonFirestore:', err.message);
-    const row = queryGet<any>("SELECT * FROM seasons WHERE status = 'active' OR id = 'season-2026-27' LIMIT 1");
-    if (row) {
-      const res: Season = {
-        id: row.id,
-        name: row.name,
-        status: (row.status?.toLowerCase() as SeasonStatus) || 'active',
-        startDate: row.start_date,
-        endDate: row.end_date,
-        createdAt: row.created_at,
-      };
-      setInCache(cacheKey, res, 600000);
-      return res;
-    }
-    return null;
-  }
+  const active = SEED_SEASONS.find((s) => s.status === 'active') || SEED_SEASON;
+  return {
+    id: active.id,
+    name: active.name,
+    status: (active.status?.toLowerCase() as SeasonStatus) || 'active',
+    startDate: active.startDate,
+    endDate: active.endDate,
+    createdAt: '',
+  };
 }
 
 export async function getAllSeasonsFirestore(): Promise<Season[]> {
-  const cacheKey = 'firestore:all_seasons';
-  const cached = getFromCache<Season[]>(cacheKey);
-  if (cached) return cached;
-
-  try {
-    const db = getFirestoreDb();
-    trackFirestoreRead(COLLECTIONS.SEASONS, 1, 'getAllSeasonsFirestore');
-    const snap = await db.collection(COLLECTIONS.SEASONS).get();
-    const res = snap.docs.map((doc) => {
-      const data = doc.data() as FirestoreSeasonDoc;
-      return {
-        id: doc.id,
-        name: data.name,
-        status: (data.status?.toLowerCase() as SeasonStatus) || 'active',
-        startDate: data.startDate,
-        endDate: data.endDate,
-        createdAt: data.createdAt,
-      };
-    });
-    setInCache(cacheKey, res, 600000);
-    return res;
-  } catch (err: any) {
-    console.warn('[FIRESTORE FALLBACK] getAllSeasonsFirestore:', err.message);
-    const rows = queryAll<any>('SELECT * FROM seasons');
-    const res: Season[] = rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      status: (row.status?.toLowerCase() as SeasonStatus) || 'active',
-      startDate: row.start_date,
-      endDate: row.end_date,
-      createdAt: row.created_at,
-    }));
-    setInCache(cacheKey, res, 600000);
-    return res;
-  }
+  return SEED_SEASONS.map((s) => ({
+    id: s.id,
+    name: s.name,
+    status: (s.status?.toLowerCase() as SeasonStatus) || 'active',
+    startDate: s.startDate,
+    endDate: s.endDate,
+    createdAt: '',
+  }));
 }
 
 export async function getAllLeaguesFirestore(): Promise<League[]> {
@@ -245,7 +226,7 @@ export async function getAllLeaguesFirestore(): Promise<League[]> {
   const cached = getFromCache<League[]>(cacheKey);
   if (cached) return cached;
 
-  // Use canonical SEED_LEAGUES directly to avoid burning Firestore read quota on static metadata
+  // Use canonical SEED_LEAGUES directly to achieve ZERO Firestore reads
   const res: League[] = SEED_LEAGUES.map((l) => ({
     id: l.id,
     name: l.name,
@@ -877,205 +858,66 @@ export async function claimClubAtomicFirestore(
 // COMPETITIONS & FIXTURES
 // ----------------------------------------------------
 
+const compOverrideMap = new Map<string, Partial<FirestoreCompetitionDoc>>();
+
 export async function getAllCompetitionsFirestore(seasonId = 'season-2026-27'): Promise<Competition[]> {
   const cacheKey = `firestore:competitions:${seasonId}`;
   const cached = getFromCache<Competition[]>(cacheKey);
   if (cached && cached.length > 0) return cached;
 
-  try {
-    const db = getFirestoreDb();
-    trackFirestoreRead(COLLECTIONS.COMPETITIONS, 1, 'getAllCompetitionsFirestore');
-    let snap = await db
-      .collection(COLLECTIONS.COMPETITIONS)
-      .where('seasonId', '==', seasonId)
-      .get();
+  // Serve static competitions from SEED_COMPETITIONS (ZERO Firestore reads)
+  const validComps = SEED_COMPETITIONS.filter((c) => {
+    return !c.id.includes('trophee-des-champions') && !c.id.includes('conference-league') && !c.id.includes('uecl');
+  });
 
-    if (snap.empty) {
-      snap = await db.collection(COLLECTIONS.COMPETITIONS).get();
-    }
-
-    const validDocs = snap.docs.filter((doc) => {
-      const data = doc.data() as FirestoreCompetitionDoc;
-      const isObsolete =
-        doc.id.includes('trophee-des-champions') ||
-        doc.id.includes('conference-league') ||
-        doc.id.includes('uecl') ||
-        data.name?.toLowerCase().includes('conference league') ||
-        data.name?.toLowerCase().includes('trophée des champions') ||
-        data.name?.toLowerCase().includes('trophee des champions');
-
-      return !isObsolete;
-    });
-
-    const competitions: Competition[] = validDocs.map((doc) => {
-      const data = doc.data() as FirestoreCompetitionDoc;
-      const fixturesCount = data.fixturesCount ?? data.fixtureCount ?? (data.hasFixtures ? 1 : 0);
-      const hasFixtures = Boolean(data.hasFixtures || fixturesCount > 0);
-      const generationStatus: 'generated' | 'not_generated' = hasFixtures ? 'generated' : 'not_generated';
-
-      let totalTeams = 0;
-      if (data.leagueId) {
-        totalTeams = SEED_CLUBS.filter((c) => c.leagueId === data.leagueId).length || 20;
-      } else {
-        totalTeams = data.formatConfig?.maxTeams || 32;
-      }
-
-      const totalMatchdays = data.totalMatchdays || (data.leagueId ? (data.leagueId.includes('bundesliga') || data.leagueId.includes('ligue-1') ? 17 : 19) : 8);
-
-      return {
-        id: doc.id,
-        seasonId: data.seasonId,
-        leagueId: data.leagueId,
-        name: data.name,
-        type: data.type as any,
-        scheduleMode: data.scheduleMode as any,
-        status: (hasFixtures ? 'active' : data.status) as any,
-        totalTeams,
-        hasFixtures,
-        fixtureCount: fixturesCount,
-        fixturesCount,
-        generationStatus,
-        formatConfig: data.formatConfig || {},
-        currentMatchday: data.currentMatchday || 1,
-        totalMatchdays,
-        isMatchdayOpen: data.isMatchdayOpen !== false,
-        matchdayOpenedAt: data.matchdayOpenedAt,
-        matchdayDurationHours: data.matchdayDurationHours || 30,
-        nextMatchdayOpenAt: data.nextMatchdayOpenAt,
-        adminOverrideStatus: data.adminOverrideStatus || 'AUTO',
-        createdAt: data.createdAt,
-      };
-    });
-
-    if (competitions.length > 0) {
-      setInCache(cacheKey, competitions, 60000);
-    }
-    return competitions;
-  } catch (err: any) {
-    console.warn('[FIRESTORE FALLBACK] getAllCompetitionsFirestore:', err.message);
-    const rows = queryAll<any>('SELECT * FROM competitions WHERE season_id = ?', [seasonId]);
-    const competitions: Competition[] = rows
-      .filter((r) => !r.id.includes('conference-league') && !r.id.includes('trophee'))
-      .map((r) => {
-        let formatConfig: any = {};
-        try {
-          formatConfig = JSON.parse(r.format_config_json || '{}');
-        } catch {}
-        const fixtures = queryAll<any>('SELECT id FROM fixtures WHERE competition_id = ?', [r.id]);
-        const hasFixtures = fixtures.length > 0;
-        return {
-          id: r.id,
-          seasonId: r.season_id,
-          leagueId: r.league_id,
-          name: r.name,
-          type: r.type,
-          scheduleMode: r.schedule_mode,
-          status: hasFixtures ? 'active' : r.status,
-          totalTeams: formatConfig.totalTeams || (r.league_id ? SEED_CLUBS.filter((c) => c.leagueId === r.league_id).length : 20),
-          hasFixtures,
-          fixtureCount: fixtures.length,
-          fixturesCount: fixtures.length,
-          generationStatus: hasFixtures ? 'generated' : 'not_generated',
-          formatConfig,
-          currentMatchday: 1,
-          totalMatchdays: r.league_id ? (r.league_id.includes('bundesliga') || r.league_id.includes('ligue-1') ? 17 : 19) : 8,
-          isMatchdayOpen: true,
-          matchdayDurationHours: 30,
-          adminOverrideStatus: 'AUTO',
-          createdAt: r.created_at,
-        };
-      });
-    if (competitions.length > 0) {
-      setInCache(cacheKey, competitions, 60000);
-    }
-    return competitions;
-  }
-}
-
-export async function getCompetitionByIdFirestore(competitionId: string): Promise<Competition | null> {
-  const cacheKey = `firestore:comp_id:${competitionId}`;
-  const cached = getFromCache<Competition>(cacheKey);
-  if (cached) return cached;
-
-  try {
-    const db = getFirestoreDb();
-    const doc = await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get();
-    if (!doc.exists) return null;
-    const data = doc.data() as FirestoreCompetitionDoc;
-
-    const fixturesCount = data.fixturesCount ?? data.fixtureCount ?? (data.hasFixtures ? 1 : 0);
-    const hasFixtures = Boolean(data.hasFixtures || fixturesCount > 0);
+  const competitions: Competition[] = validComps.map((seed) => {
+    const override = compOverrideMap.get(seed.id) || {};
+    const fixturesCount = override.fixturesCount ?? override.fixtureCount ?? (override.hasFixtures ? 1 : 0);
+    const hasFixtures = Boolean(override.hasFixtures || fixturesCount > 0);
     const generationStatus: 'generated' | 'not_generated' = hasFixtures ? 'generated' : 'not_generated';
 
     let totalTeams = 0;
-    if (data.leagueId) {
-      totalTeams = SEED_CLUBS.filter((c) => c.leagueId === data.leagueId).length || 20;
+    if (seed.leagueId) {
+      totalTeams = SEED_CLUBS.filter((c) => c.leagueId === seed.leagueId).length || 20;
     } else {
-      totalTeams = data.formatConfig?.maxTeams || 32;
+      totalTeams = (seed.formatConfig as any)?.maxTeams || 32;
     }
 
-    const totalMatchdays = data.totalMatchdays || (data.leagueId ? (data.leagueId.includes('bundesliga') || data.leagueId.includes('ligue-1') ? 17 : 19) : 8);
+    const totalMatchdays = override.totalMatchdays || (seed.leagueId ? (seed.leagueId.includes('bundesliga') || seed.leagueId.includes('ligue-1') ? 17 : 19) : 8);
 
-    const result: Competition = {
-      id: doc.id,
-      seasonId: data.seasonId,
-      leagueId: data.leagueId,
-      name: data.name,
-      type: data.type as any,
-      scheduleMode: data.scheduleMode as any,
-      status: (hasFixtures ? 'active' : data.status) as any,
+    return {
+      id: seed.id,
+      seasonId: seed.seasonId || seasonId,
+      leagueId: seed.leagueId,
+      name: seed.name,
+      type: seed.type as any,
+      scheduleMode: seed.scheduleMode as any,
+      status: (hasFixtures ? 'active' : 'active') as any,
       totalTeams,
       hasFixtures,
       fixtureCount: fixturesCount,
       fixturesCount,
       generationStatus,
-      formatConfig: data.formatConfig || {},
-      currentMatchday: data.currentMatchday || 1,
+      formatConfig: seed.formatConfig || {},
+      currentMatchday: override.currentMatchday || 1,
       totalMatchdays,
-      isMatchdayOpen: data.isMatchdayOpen !== false,
-      matchdayOpenedAt: data.matchdayOpenedAt,
-      matchdayDurationHours: data.matchdayDurationHours || 30,
-      nextMatchdayOpenAt: data.nextMatchdayOpenAt,
-      adminOverrideStatus: data.adminOverrideStatus || 'AUTO',
-      createdAt: data.createdAt,
+      isMatchdayOpen: override.isMatchdayOpen !== false,
+      matchdayOpenedAt: override.matchdayOpenedAt,
+      matchdayDurationHours: override.matchdayDurationHours || 30,
+      nextMatchdayOpenAt: override.nextMatchdayOpenAt,
+      adminOverrideStatus: override.adminOverrideStatus || 'AUTO',
+      createdAt: '',
     };
+  });
 
-    setInCache(cacheKey, result, 30000);
-    return result;
-  } catch (err: any) {
-    console.warn('[FIRESTORE FALLBACK] getCompetitionByIdFirestore:', err.message);
-    const r = queryGet<any>('SELECT * FROM competitions WHERE id = ?', [competitionId]);
-    if (!r) return null;
-    let formatConfig: any = {};
-    try {
-      formatConfig = JSON.parse(r.format_config_json || '{}');
-    } catch {}
-    const fixtures = queryAll<any>('SELECT id FROM fixtures WHERE competition_id = ?', [r.id]);
-    const hasFixtures = fixtures.length > 0;
-    const result: Competition = {
-      id: r.id,
-      seasonId: r.season_id,
-      leagueId: r.league_id,
-      name: r.name,
-      type: r.type,
-      scheduleMode: r.schedule_mode,
-      status: hasFixtures ? 'active' : r.status,
-      totalTeams: formatConfig.totalTeams || (r.league_id ? SEED_CLUBS.filter((c) => c.leagueId === r.league_id).length : 20),
-      hasFixtures,
-      fixtureCount: fixtures.length,
-      fixturesCount: fixtures.length,
-      generationStatus: hasFixtures ? 'generated' : 'not_generated',
-      formatConfig,
-      currentMatchday: 1,
-      totalMatchdays: r.league_id ? (r.league_id.includes('bundesliga') || r.league_id.includes('ligue-1') ? 17 : 19) : 8,
-      isMatchdayOpen: true,
-      matchdayDurationHours: 30,
-      adminOverrideStatus: 'AUTO',
-      createdAt: r.created_at,
-    };
-    setInCache(cacheKey, result, 30000);
-    return result;
-  }
+  setInCache(cacheKey, competitions, 300000); // 5 min cache
+  return competitions;
+}
+
+export async function getCompetitionByIdFirestore(competitionId: string): Promise<Competition | null> {
+  const all = await getAllCompetitionsFirestore();
+  const comp = all.find((c) => c.id === competitionId);
+  return comp || null;
 }
 
 export async function getFixturesFirestore(filter: {
@@ -1100,9 +942,9 @@ export async function getFixturesFirestore(filter: {
     targetClubId = activeClub.id;
   }
 
-  const isCacheableCompQuery =
-    Boolean(filter.competitionId) && !targetClubId && !filter.userId;
-  const cacheKey = isCacheableCompQuery
+  const cacheKey = targetClubId
+    ? `firestore:fixtures:club:${targetClubId}:md${filter.matchday || 'all'}:st${filter.status || 'all'}:comp${filter.competitionId || 'all'}`
+    : filter.competitionId
     ? `firestore:fixtures:comp:${filter.competitionId}:md${filter.matchday || 'all'}:st${filter.status || 'all'}:lim${filter.limit || 'all'}`
     : null;
 
@@ -1116,6 +958,7 @@ export async function getFixturesFirestore(filter: {
     let docs: FirestoreFixtureDoc[] = [];
 
     if (targetClubId) {
+      trackFirestoreRead(COLLECTIONS.FIXTURES, 2, 'getFixturesFirestore:club');
       // Perform parallel queries for home and away fixtures
       const [homeSnap, awaySnap] = await Promise.all([
         db
@@ -1164,6 +1007,7 @@ export async function getFixturesFirestore(filter: {
         query = query.where('status', '==', filter.status);
       }
 
+      trackFirestoreRead(COLLECTIONS.FIXTURES, 1, 'getFixturesFirestore:query');
       const snap = await query.get();
       docs = snap.docs.map((d) => d.data() as FirestoreFixtureDoc);
     }
@@ -1990,25 +1834,27 @@ export async function getCompetitionStandingsFirestore(
 
   try {
     const db = getFirestoreDb();
+    trackFirestoreRead(COLLECTIONS.STANDINGS, 1, 'getCompetitionStandingsFirestore');
     const docRef = db.collection(COLLECTIONS.STANDINGS).doc(competitionId);
     const docSnap = await docRef.get();
 
     if (docSnap.exists) {
       const data = docSnap.data() as FirestoreStandingsDoc;
       if (Array.isArray(data.rows) && data.rows.length > 0) {
-        setInCache(cacheKey, data.rows, 60000);
+        setInCache(cacheKey, data.rows, 300000); // 5 min cache
         return data.rows;
       }
     }
 
-    // Materialized document does not exist yet -> rebuild it
-    const rows = await rebuildCompetitionStandingsFirestore(competitionId);
-    setInCache(cacheKey, rows, 60000);
+    // Materialized document does not exist yet -> return default initial standings (0 extra Firestore reads)
+    // Standings are materialized only on match confirmation or explicit admin rebuild
+    const rows = fallbackCalculateStandings(competitionId);
+    setInCache(cacheKey, rows, 300000);
     return rows;
   } catch (err: any) {
     console.warn('[FIRESTORE FALLBACK] getCompetitionStandingsFirestore:', err.message);
     const rows = fallbackCalculateStandings(competitionId);
-    setInCache(cacheKey, rows, 60000);
+    setInCache(cacheKey, rows, 300000);
     return rows;
   }
 }
@@ -2017,50 +1863,15 @@ export async function rebuildCompetitionStandingsFirestore(competitionId: string
   const cacheKey = `firestore:standings:${competitionId}`;
   try {
     const db = getFirestoreDb();
-    const compDoc = await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get();
-    if (!compDoc.exists) {
-      return fallbackCalculateStandings(competitionId);
-    }
+    const seedComp = SEED_COMPETITIONS.find((c) => c.id === competitionId);
+    const formatConfig = seedComp?.formatConfig || {};
+    const leagueId = seedComp?.leagueId;
 
-    const comp = compDoc.data() as FirestoreCompetitionDoc;
-    const seasonId = comp.seasonId || 'season-2026-27';
-    const formatConfig = comp.formatConfig || {};
+    // Resolve participating clubs from SEED_CLUBS (0 Firestore reads)
+    const seedClubs = leagueId ? SEED_CLUBS.filter((c) => c.leagueId === leagueId) : SEED_CLUBS;
 
-    // 1. Fetch participating clubs
-    let clubs: Array<{ id: string; name: string; shortName: string; logoUrl: string; managerUsername?: string }> = [];
-
-    const partSnap = await db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where('competitionId', '==', competitionId).get();
-    if (!partSnap.empty) {
-      const parts = partSnap.docs.map((d) => d.data() as FirestoreCompetitionParticipantDoc);
-      const clubIds = parts.map((p) => p.clubId);
-      const clubsSnap = await db.collection(COLLECTIONS.CLUBS).where('id', 'in', clubIds.slice(0, 30)).get();
-      const clubMap = new Map(clubsSnap.docs.map((d) => [d.id, d.data() as FirestoreClubDoc]));
-
-      clubs = parts.map((p) => {
-        const c = clubMap.get(p.clubId);
-        return {
-          id: p.clubId,
-          name: c?.name || p.clubId,
-          shortName: c?.shortName || p.clubId.substring(0, 4).toUpperCase(),
-          logoUrl: c?.logo || '',
-          managerUsername: p.ownerUsername || c?.managerUsername,
-        };
-      });
-    } else if (comp.leagueId) {
-      const clubsSnap = await db.collection(COLLECTIONS.CLUBS).where('leagueId', '==', comp.leagueId).where('isActive', '==', true).get();
-      clubs = clubsSnap.docs.map((d) => {
-        const c = d.data() as FirestoreClubDoc;
-        return {
-          id: d.id,
-          name: c.name,
-          shortName: c.shortName,
-          logoUrl: c.logo,
-          managerUsername: c.managerUsername,
-        };
-      });
-    }
-
-    // 2. Fetch confirmed fixtures
+    // 1. Fetch only CONFIRMED fixtures for this competition
+    trackFirestoreRead(COLLECTIONS.FIXTURES, 1, 'rebuildCompetitionStandingsFirestore');
     const fixSnap = await db
       .collection(COLLECTIONS.FIXTURES)
       .where('competitionId', '==', competitionId)
@@ -2077,12 +1888,22 @@ export async function rebuildCompetitionStandingsFirestore(competitionId: string
         awayScore: f.awayScore ?? 0,
       }));
 
-    const rankedRows = computeAndSortStandings(clubs, confirmedFixtures, formatConfig);
+    const rankedRows = computeAndSortStandings(
+      seedClubs.map((c) => ({
+        id: c.id,
+        name: c.name,
+        shortName: c.shortName,
+        logoUrl: c.logoUrl,
+        managerUsername: undefined,
+      })),
+      confirmedFixtures,
+      formatConfig
+    );
 
     const now = new Date().toISOString();
     const standingsDoc: FirestoreStandingsDoc = {
       competitionId,
-      seasonId,
+      seasonId: seedComp?.seasonId || 'season-2026-27',
       updatedAt: now,
       rows: rankedRows,
       confirmedFixtureIds: fixSnap.docs.map((d) => d.id),
@@ -2093,12 +1914,12 @@ export async function rebuildCompetitionStandingsFirestore(competitionId: string
     await db.collection(COLLECTIONS.STANDINGS).doc(competitionId).set(standingsDoc);
 
     // Update in-memory cache
-    setInCache(cacheKey, rankedRows, 60000);
+    setInCache(cacheKey, rankedRows, 300000);
     return rankedRows;
   } catch (err: any) {
     console.warn('[FIRESTORE FALLBACK] rebuildCompetitionStandingsFirestore:', err.message);
     const rows = fallbackCalculateStandings(competitionId);
-    setInCache(cacheKey, rows, 60000);
+    setInCache(cacheKey, rows, 300000);
     return rows;
   }
 }

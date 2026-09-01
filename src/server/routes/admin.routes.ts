@@ -38,32 +38,25 @@ adminRouter.get('/overview', async (req: Request, res: Response) => {
   const seasonId = (req.query.seasonId as string) || 'season-2026-27';
   try {
     const status = getFirebaseStatus();
-    const [users, competitions, disputes, auditLogs, pendingData] = await Promise.all([
-      getAllAdminUsers().catch(() => []),
+    const db = getFirestoreDb();
+
+    const [usersCountSnap, occCountSnap, competitions, disputes, auditLogs, pendingData] = await Promise.all([
+      db.collection(COLLECTIONS.USERS).count().get().catch(() => null),
+      db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where('seasonId', '==', seasonId).where('status', '==', 'active').count().get().catch(() => null),
       getAllCompetitionsFirestore(seasonId).catch(() => []),
       getDisputes('OPEN').catch(() => []),
       getAuditLogs(10).catch(() => []),
       getPendingResultsFirestore(seasonId).catch(() => ({ pendingFixtures: [], total: 0 })),
     ]);
 
+    const registeredUsers = usersCountSnap?.data().count ?? 0;
+    const activeOccupancies = occCountSnap?.data().count ?? 0;
+
     const domesticLeagues = competitions.filter((c) => c.type === 'league');
     const domesticCups = competitions.filter((c) => c.type === 'cup');
     const europeanComps = competitions.filter(
       (c) => c.type === 'champions_league' || c.type === 'europa_league' || c.type === 'conference_league'
     );
-
-    let activeOccupancies = 0;
-    try {
-      const db = getFirestoreDb();
-      const occSnap = await db
-        .collection(COLLECTIONS.CLUB_OCCUPANCIES)
-        .where('seasonId', '==', seasonId)
-        .where('status', '==', 'active')
-        .get();
-      activeOccupancies = occSnap.size;
-    } catch {
-      activeOccupancies = 0;
-    }
 
     res.json({
       season: {
@@ -79,8 +72,8 @@ adminRouter.get('/overview', async (req: Request, res: Response) => {
         domesticCupsCount: domesticCups.length,
         europeanCompetitionsCount: europeanComps.length,
         totalCompetitions: competitions.length,
-        totalUsers: users.length,
-        registeredUsers: users.length,
+        totalUsers: registeredUsers,
+        registeredUsers,
         activeOccupancies,
         openDisputes: disputes.length,
         pendingResultConfirmations: pendingData.total,

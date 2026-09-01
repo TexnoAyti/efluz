@@ -35,6 +35,10 @@ export const SEED_SEASON = {
   endDate: '2027-05-30',
 };
 
+export const SEED_SEASONS = [
+  SEED_SEASON,
+];
+
 export const SEED_LEAGUES: SeedLeague[] = [
   {
     id: 'league-premier-league',

@@ -338,22 +338,22 @@ export const api = {
     });
   },
 
-  // Seasons & Leagues (Catalog Data - Longer TTL to reduce database reads)
+  // Seasons & Leagues (Catalog Data - Static TTL 30 minutes to eliminate repetitive reads)
   async getSeasons(): Promise<{ seasons: Season[] }> {
-    return request('/api/seasons', { cacheTtlMs: 120000 });
+    return request('/api/seasons', { cacheTtlMs: 1800000 });
   },
 
   async getLeagues(): Promise<{ leagues: League[] }> {
-    return request('/api/leagues', { cacheTtlMs: 120000 });
+    return request('/api/leagues', { cacheTtlMs: 1800000 });
   },
 
   async getLeagueClubs(leagueId: string, seasonId = 'season-2026-27', skipCache = false): Promise<{ clubs: Club[] }> {
-    return request(`/api/leagues/${leagueId}/clubs?seasonId=${seasonId}`, { cacheTtlMs: 30000, skipCache });
+    return request(`/api/leagues/${leagueId}/clubs?seasonId=${seasonId}`, { cacheTtlMs: 120000, skipCache });
   },
 
   // Clubs
   async getClub(clubId: string, seasonId = 'season-2026-27', skipCache = false): Promise<{ club: Club }> {
-    return request(`/api/clubs/${clubId}?seasonId=${seasonId}`, { cacheTtlMs: 30000, skipCache });
+    return request(`/api/clubs/${clubId}?seasonId=${seasonId}`, { cacheTtlMs: 120000, skipCache });
   },
 
   async claimClub(clubId: string, seasonId = 'season-2026-27'): Promise<{ success: boolean; message: string; club: Club }> {
@@ -361,31 +361,31 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ seasonId }),
     });
-    // Invalidate club, league and user caches
+    // Invalidate ONLY affected club, league and user caches
     invalidateClientCache('/api/clubs');
     invalidateClientCache('/api/leagues');
     invalidateClientCache('/api/me');
     return res;
   },
 
-  // Competitions
+  // Competitions (Static Catalog - 30 minutes TTL)
   async getCompetitions(seasonId = 'season-2026-27', skipCache = false): Promise<{ competitions: Competition[] }> {
-    return request(`/api/competitions?seasonId=${seasonId}`, { cacheTtlMs: 60000, skipCache });
+    return request(`/api/competitions?seasonId=${seasonId}`, { cacheTtlMs: 1800000, skipCache });
   },
 
   async getCompetitionStandings(competitionId: string, skipCache = false): Promise<{ standings: StandingsRow[] }> {
-    return request(`/api/competitions/${competitionId}/standings`, { cacheTtlMs: 20000, skipCache });
+    return request(`/api/competitions/${competitionId}/standings`, { cacheTtlMs: 120000, skipCache });
   },
 
   async getCompetitionParticipants(competitionId: string, skipCache = false): Promise<{ participants: any[] }> {
-    return request(`/api/competitions/${competitionId}/participants`, { cacheTtlMs: 60000, skipCache });
+    return request(`/api/competitions/${competitionId}/participants`, { cacheTtlMs: 1800000, skipCache });
   },
 
   async getCompetitionFixtures(competitionId: string, matchday?: number, status?: string, skipCache = false): Promise<{ fixtures: Fixture[] }> {
     let url = `/api/competitions/${competitionId}/fixtures?`;
     if (matchday) url += `matchday=${matchday}&`;
     if (status) url += `status=${status}&`;
-    return request(url, { cacheTtlMs: 15000, skipCache });
+    return request(url, { cacheTtlMs: 60000, skipCache });
   },
 
   async generateCompetitionFixtures(competitionId: string, force = true): Promise<{ success: boolean; message: string; result: any }> {
@@ -411,7 +411,7 @@ export const api = {
 
   // Fixtures & Results
   async getFixture(fixtureId: string, skipCache = false): Promise<{ fixture: Fixture }> {
-    return request(`/api/fixtures/${fixtureId}`, { cacheTtlMs: 10000, skipCache });
+    return request(`/api/fixtures/${fixtureId}`, { cacheTtlMs: 30000, skipCache });
   },
 
   async submitFixtureResult(
