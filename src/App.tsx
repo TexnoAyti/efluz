@@ -73,9 +73,10 @@ const AppContent: React.FC = () => {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // Poll open disputes count periodically for admins
+  // Check open disputes count for admins (active admin tab only with visibility check, no continuous polling for passive users)
   useEffect(() => {
     async function checkDisputes() {
+      if (document.hidden) return;
       try {
         const res = await api.getAdminDisputes('OPEN');
         setOpenDisputesCount(res.disputes.length);
@@ -85,10 +86,13 @@ const AppContent: React.FC = () => {
     }
     if (user?.isAdmin) {
       checkDisputes();
-      const interval = setInterval(checkDisputes, 60000);
-      return () => clearInterval(interval);
+      // Only set a background timer if administrator is currently inside the admin panel
+      if (activeTab === 'admin') {
+        const interval = setInterval(checkDisputes, 180000); // 3 minutes interval
+        return () => clearInterval(interval);
+      }
     }
-  }, [user?.isAdmin]);
+  }, [user?.isAdmin, activeTab]);
 
   if (isLoading) {
     return (

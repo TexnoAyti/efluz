@@ -54,12 +54,12 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
   const [isClaiming, setIsClaiming] = useState(false);
 
   // 1. Load clubs for selected league
-  const loadClubsForLeague = useCallback(async (leagueId: string) => {
+  const loadClubsForLeague = useCallback(async (leagueId: string, forceRefresh = false) => {
     if (!leagueId) return;
     setIsLoadingClubs(true);
     setError(null);
     try {
-      const res = await api.getLeagueClubs(leagueId, activeSeasonId, true);
+      const res = await api.getLeagueClubs(leagueId, activeSeasonId, forceRefresh);
       if (res.clubs && res.clubs.length > 0) {
         setClubs(res.clubs);
       } else if (clubs.length === 0) {
@@ -297,7 +297,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
           <button
             id="btn-refresh-clubs-view"
             onClick={() => {
-              loadClubsForLeague(selectedLeagueId);
+              loadClubsForLeague(selectedLeagueId, true);
               loadLeagueCompetitionData(selectedLeagueId);
             }}
             disabled={isLoadingClubs}
@@ -529,7 +529,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
               <h4 className="text-sm font-bold text-white mb-1">Couldn't load data</h4>
               <p className="text-xs text-rose-200/80 mb-5">Please try again.</p>
               <button
-                onClick={() => loadClubsForLeague(selectedLeagueId)}
+                onClick={() => loadClubsForLeague(selectedLeagueId, true)}
                 className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all shadow-md inline-flex items-center gap-2"
               >
                 <RefreshCw className="w-3.5 h-3.5" />

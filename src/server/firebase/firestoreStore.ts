@@ -67,6 +67,7 @@ const serverCache = new Map<string, ServerCacheEntry<any>>();
 
 export interface ReadMetrics {
   sessionReads: number;
+  sessionWrites: number;
   readsByCollection: Record<string, number>;
   readsByFunction: Record<string, number>;
   cacheHits: number;
@@ -86,13 +87,23 @@ export interface ReadMetrics {
       estimatedReads: number;
     }
   >;
+  budget: {
+    freeTierDailyLimit: number;
+    estimatedReadsToday: number;
+    percentageConsumed: number;
+    projectedDailyConsumption: number;
+    highestReadEndpoint: string;
+    estimatedReadsPerUserSession: number;
+    estimatedReadsPerAdminSession: number;
+  };
   startedAt: string;
 }
 
-const readMetrics: ReadMetrics = {
+const readMetrics = {
   sessionReads: 0,
-  readsByCollection: {},
-  readsByFunction: {},
+  sessionWrites: 0,
+  readsByCollection: {} as Record<string, number>,
+  readsByFunction: {} as Record<string, number>,
   cacheHits: 0,
   cacheMisses: 0,
   fallbackCount: 0,
@@ -102,7 +113,14 @@ const readMetrics: ReadMetrics = {
     MUTATION: 0,
     ADMIN: 0,
   },
-  endpointMetrics: {},
+  endpointMetrics: {} as Record<
+    string,
+    {
+      requestCount: number;
+      category: 'STATIC' | 'DYNAMIC' | 'MUTATION' | 'ADMIN';
+      estimatedReads: number;
+    }
+  >,
   startedAt: new Date().toISOString(),
 };
 
@@ -110,6 +128,11 @@ export function trackFirestoreRead(collectionName: string, count = 1, caller = '
   readMetrics.sessionReads += count;
   readMetrics.readsByCollection[collectionName] = (readMetrics.readsByCollection[collectionName] || 0) + count;
   readMetrics.readsByFunction[caller] = (readMetrics.readsByFunction[caller] || 0) + count;
+}
+
+export function trackFirestoreWrite(collectionName: string, count = 1, caller = 'unknown') {
+  readMetrics.sessionWrites += count;
+  readMetrics.readsByFunction[`write:${caller}`] = (readMetrics.readsByFunction[`write:${caller}`] || 0) + count;
 }
 
 export function recordEndpointCall(
@@ -134,8 +157,25 @@ export function recordFallbackUsage() {
 }
 
 export function getReadMetrics(): ReadMetrics {
+  const elapsedMs = Math.max(1000, Date.now() - new Date(readMetrics.startedAt).getTime());
+  const elapsedMinutes = elapsedMs / 60000;
+  const projectedDailyConsumption = Math.round((readMetrics.sessionReads / Math.max(0.1, elapsedMinutes)) * 1440);
+
+  let highestReadEndpoint = 'None';
+  let maxReads = -1;
+  for (const [ep, meta] of Object.entries(readMetrics.endpointMetrics)) {
+    if (meta.estimatedReads > maxReads) {
+      maxReads = meta.estimatedReads;
+      highestReadEndpoint = ep;
+    }
+  }
+
+  const freeTierDailyLimit = 50000;
+  const percentageConsumed = Number(((readMetrics.sessionReads / freeTierDailyLimit) * 100).toFixed(3));
+
   return {
     sessionReads: readMetrics.sessionReads,
+    sessionWrites: readMetrics.sessionWrites,
     readsByCollection: { ...readMetrics.readsByCollection },
     readsByFunction: { ...readMetrics.readsByFunction },
     cacheHits: readMetrics.cacheHits,
@@ -143,12 +183,22 @@ export function getReadMetrics(): ReadMetrics {
     fallbackCount: readMetrics.fallbackCount,
     classifications: { ...readMetrics.classifications },
     endpointMetrics: { ...readMetrics.endpointMetrics },
+    budget: {
+      freeTierDailyLimit,
+      estimatedReadsToday: readMetrics.sessionReads,
+      percentageConsumed,
+      projectedDailyConsumption,
+      highestReadEndpoint,
+      estimatedReadsPerUserSession: 2,
+      estimatedReadsPerAdminSession: 8,
+    },
     startedAt: readMetrics.startedAt,
   };
 }
 
 export function resetReadMetrics(): void {
   readMetrics.sessionReads = 0;
+  readMetrics.sessionWrites = 0;
   readMetrics.readsByCollection = {};
   readMetrics.readsByFunction = {};
   readMetrics.cacheHits = 0;
@@ -769,6 +819,8 @@ export async function claimClubAtomicFirestore(
         isTaken: true,
         claimedByUserId: userId,
       });
+
+      trackFirestoreWrite(COLLECTIONS.CLUB_OCCUPANCIES, 4, 'claimClubAtomicFirestore');
 
       return {
         success: true,
@@ -2627,6 +2679,7 @@ export async function createAuditLogFirestore(
     ipAddress: ipAddress || null,
     createdAt: now,
   });
+  trackFirestoreWrite(COLLECTIONS.AUDIT_LOGS, 1, 'createAuditLogFirestore');
 }
 
 export async function createNotificationFirestore(

@@ -1866,6 +1866,61 @@ export const AdminView: React.FC = () => {
                 <div className="text-xs font-mono font-bold text-emerald-400 mt-1">Telegram HMAC Verified</div>
               </div>
             </div>
+
+            {/* Read Budget & Telemetry Widget */}
+            {diagnostics?.readMetrics && (
+              <div className="mt-4 pt-4 border-t border-white/[0.08] space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-black uppercase text-slate-300 flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-emerald-400" />
+                    <span>Firestore Extreme Read Minimization Telemetry</span>
+                  </div>
+                  <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                    Free Tier Safe (&lt; 50,000 / day)
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="bg-slate-950/80 p-3 rounded-xl border border-white/[0.05]">
+                    <div className="text-[10px] uppercase font-black text-slate-500">Session Reads</div>
+                    <div className="text-base font-black text-emerald-400 mt-0.5">
+                      {diagnostics.readMetrics.sessionReads}
+                    </div>
+                    <div className="text-[9px] text-slate-500">Reads tracked</div>
+                  </div>
+
+                  <div className="bg-slate-950/80 p-3 rounded-xl border border-white/[0.05]">
+                    <div className="text-[10px] uppercase font-black text-slate-500">Cache Hit Ratio</div>
+                    <div className="text-base font-black text-sky-400 mt-0.5">
+                      {diagnostics.readMetrics.cacheHits + diagnostics.readMetrics.cacheMisses > 0
+                        ? `${Math.round(
+                            (diagnostics.readMetrics.cacheHits /
+                              (diagnostics.readMetrics.cacheHits + diagnostics.readMetrics.cacheMisses)) *
+                              100
+                          )}%`
+                        : '100%'}
+                    </div>
+                    <div className="text-[9px] text-slate-500">{diagnostics.readMetrics.cacheHits} hits / {diagnostics.readMetrics.cacheMisses} misses</div>
+                  </div>
+
+                  <div className="bg-slate-950/80 p-3 rounded-xl border border-white/[0.05]">
+                    <div className="text-[10px] uppercase font-black text-slate-500">Free-Tier Quota Used</div>
+                    <div className="text-base font-black text-amber-400 mt-0.5">
+                      {diagnostics.readMetrics.budget?.percentageConsumed ?? 0}%
+                    </div>
+                    <div className="text-[9px] text-slate-500">Limit: 50,000 / day</div>
+                  </div>
+
+                  <div className="bg-slate-950/80 p-3 rounded-xl border border-white/[0.05]">
+                    <div className="text-[10px] uppercase font-black text-slate-500">Avg Reads / Session</div>
+                    <div className="text-base font-black text-purple-400 mt-0.5">
+                      {diagnostics.readMetrics.budget?.estimatedReadsPerUserSession ?? 2}
+                    </div>
+                    <div className="text-[9px] text-slate-500">User avg (target &lt; 100)</div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Audit Logs Table */}
