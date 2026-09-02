@@ -77,12 +77,15 @@ export async function evaluateSeasonQualifications(seasonId = 'season-2026-27'):
     let uclSpots = 7;
     let uelSpots = 7;
 
-    if (leagueIdLower.includes('bundesliga') || leagueNameLower.includes('bundesliga')) {
+    if (leagueIdLower.includes('serie-a') || leagueNameLower.includes('serie a')) {
+      uclSpots = 6;
+      uelSpots = 6;
+    } else if (leagueIdLower.includes('bundesliga') || leagueNameLower.includes('bundesliga')) {
       uclSpots = 6;
       uelSpots = 6;
     } else if (leagueIdLower.includes('ligue-1') || leagueNameLower.includes('ligue 1')) {
-      uclSpots = 5;
-      uelSpots = 5;
+      uclSpots = 6;
+      uelSpots = 6;
     }
 
     // 1. Qualify top N for UEFA Champions League (32 Total)

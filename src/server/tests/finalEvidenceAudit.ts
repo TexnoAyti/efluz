@@ -1,7 +1,7 @@
 import { initDatabase, queryAll, queryGet, queryRun, dbTransaction, getDb } from '../db';
 import { seedDatabase } from '../db/seed';
 import { generateCompetitionFixtures } from '../services/fixtureService';
-import { generateRoundRobinSchedule, generateUCL24LeaguePhaseSchedule } from '../tournament/fixtureEngine';
+import { generateRoundRobinSchedule, generateEuropean32LeaguePhaseSchedule } from '../tournament/fixtureEngine';
 import { evaluateSeasonQualifications } from '../tournament/qualificationEngine';
 import { generateUCLKnockoutBracket } from '../tournament/knockoutEngine';
 import { calculateCompetitionStandings } from '../tournament/standingsEngine';
@@ -47,7 +47,7 @@ async function runAudit() {
   const qualRes = await evaluateSeasonQualifications('season-2026-27');
   console.log(`Evaluated ${qualRes.qualifications.length} total spots. Added ${qualRes.participantsAdded} participants.`);
   const uclSpots = qualRes.qualifications.filter(e => e.targetCompetitionId === 'comp-champions-league-2026');
-  console.log(`UCL spots count: ${uclSpots.length} (Expected 24: PL 5, LL 5, SA 5, BL 5, L1 4)`);
+  console.log(`UCL spots count: ${uclSpots.length} (Expected 32: PL 7, LL 7, SA 6, BL 6, L1 6)`);
   
   const plSpots = uclSpots.filter(e => e.sourceCompetitionId === 'comp-premier-league-2026');
   const llSpots = uclSpots.filter(e => e.sourceCompetitionId === 'comp-la-liga-2026');
@@ -65,15 +65,15 @@ async function runAudit() {
      ORDER BY cp.source_competition_id, cp.source_position`
   );
 
-  console.log('\n--- 24 UCL PARTICIPANTS FROM DATABASE SNAPSHOT ---');
+  console.log('\n--- 32 UCL PARTICIPANTS FROM DATABASE SNAPSHOT ---');
   uclParticipants.forEach((p, idx) => {
     console.log(`${idx + 1}. [${p.source_competition_id}] Pos #${p.source_position} | Club: ${p.club_name} (${p.club_id}) | Owner: ${p.owner_username || 'NULL'} | Status: ${p.owner_user_id ? 'ACTIVE' : 'INACTIVE'}`);
   });
 
-  console.log('\n=== SECTION 3: UCL 24-TEAM LEAGUE PHASE SCHEDULE GENERATION & AUDIT ===');
+  console.log('\n=== SECTION 3: UCL 32-TEAM LEAGUE PHASE SCHEDULE GENERATION & AUDIT ===');
   const uclClubIds = uclParticipants.map(p => p.club_id);
-  const uclSchedule = generateUCL24LeaguePhaseSchedule(uclClubIds);
-  console.log(`Total UCL League Phase Fixtures: ${uclSchedule.length} (Expected 96: 24 clubs * 8 matches / 2)`);
+  const uclSchedule = generateEuropean32LeaguePhaseSchedule(uclClubIds);
+  console.log(`Total UCL League Phase Fixtures: ${uclSchedule.length} (Expected 128: 32 clubs * 8 matches / 2)`);
 
   let allClubsValid = true;
   for (const clubId of uclClubIds) {
@@ -92,7 +92,7 @@ async function runAudit() {
     }
   }
   if (allClubsValid) {
-    console.log('✅ ALL 24 CLUBS HAVE EXACTLY 8 MATCHES (4 HOME, 4 AWAY) AGAINST 8 DISTINCT OPPONENTS.');
+    console.log('✅ ALL 32 CLUBS HAVE EXACTLY 8 MATCHES (4 HOME, 4 AWAY) AGAINST 8 DISTINCT OPPONENTS.');
   }
 
   // Print sample for Arsenal

@@ -22,6 +22,23 @@ export function parseFirestoreError(err: any): FormattedFirestoreError {
   const rawMsg = err.message || String(err);
   const strCode = String(rawCode).toUpperCase();
 
+  // Matchday Lock / Authorization check
+  if (
+    strCode === 'MATCHDAY_LOCKED' ||
+    strCode.includes('MATCHDAY_LOCKED') ||
+    rawMsg.includes('MATCHDAY_LOCKED') ||
+    err.code === 'MATCHDAY_LOCKED' ||
+    err.statusCode === 403
+  ) {
+    return {
+      error: 'MATCHDAY_LOCKED',
+      code: 'MATCHDAY_LOCKED',
+      message: rawMsg.replace(/^MATCHDAY_LOCKED:\s*/, ''),
+      httpStatus: 403,
+      details: err.details || rawMsg,
+    };
+  }
+
   // Check gRPC numeric codes or string names
   // 8 = RESOURCE_EXHAUSTED
   if (

@@ -181,15 +181,18 @@ export async function generateKnockoutBracket(
 export const generateKnockoutBracketFirestore = generateKnockoutBracket;
 
 /**
- * Generates UEFA Champions League Knockout Phase (Play-offs -> R16 -> QF -> SF -> Final)
- * based on the 24-team single league table standings directly in Firestore.
+ * Generates UEFA Champions League / Europa League Knockout Phase (Play-offs -> R16 -> QF -> SF -> Final)
+ * based on the 32-team single league table standings directly in Firestore.
+ * Positions 1-8: Direct to Round of 16
+ * Positions 9-24: Knockout Play-offs (16 teams -> 8 winners advance to Round of 16)
+ * Positions 25-32: Eliminated
  */
 export async function generateUCLKnockoutBracket(
   competitionId: string,
   rankedClubIds: string[]
 ): Promise<{ generated: number; playoffFixtures: number; r16Fixtures: number }> {
   if (rankedClubIds.length < 24) {
-    throw new Error(`UCL Knockout Phase requires 24 ranked clubs (found ${rankedClubIds.length}).`);
+    throw new Error(`European Knockout Phase requires at least 24 ranked clubs (found ${rankedClubIds.length}).`);
   }
 
   const db = getFirestoreDb();

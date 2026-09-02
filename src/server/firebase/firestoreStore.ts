@@ -1703,6 +1703,14 @@ export async function advanceCompetitionMatchdayFirestore(
     updatedAt: now,
   });
 
+  const existingOverride = compOverrideMap.get(competitionId) || {};
+  compOverrideMap.set(competitionId, {
+    ...existingOverride,
+    currentMatchday: nextMd,
+    isMatchdayOpen: true,
+    adminOverrideStatus: 'AUTO',
+  });
+
   invalidateFirestoreCache('firestore:comp');
   return {
     success: true,
@@ -1731,6 +1739,13 @@ export async function setCompetitionMatchdayOverrideFirestore(
     adminOverrideStatus: overrideStatus,
     isMatchdayOpen,
     updatedAt: now,
+  });
+
+  const existingOverride = compOverrideMap.get(competitionId) || {};
+  compOverrideMap.set(competitionId, {
+    ...existingOverride,
+    adminOverrideStatus: overrideStatus,
+    isMatchdayOpen,
   });
 
   invalidateFirestoreCache('firestore:comp');
@@ -1763,6 +1778,13 @@ export async function openCompetitionMatchdayNowFirestore(
     nextMatchdayOpenAt: nextOpenAt,
     adminOverrideStatus: 'AUTO',
     updatedAt: now,
+  });
+
+  const existingOverride = compOverrideMap.get(competitionId) || {};
+  compOverrideMap.set(competitionId, {
+    ...existingOverride,
+    isMatchdayOpen: true,
+    adminOverrideStatus: 'AUTO',
   });
 
   invalidateFirestoreCache('firestore:comp');
@@ -1799,6 +1821,13 @@ export async function setCompetitionMatchdayTimerFirestore(
   }
 
   await compRef.update(updates);
+
+  const existingOverride = compOverrideMap.get(competitionId) || {};
+  compOverrideMap.set(competitionId, {
+    ...existingOverride,
+    ...updates,
+  });
+
   invalidateFirestoreCache('firestore:comp');
   return { success: true, competitionId };
 }
@@ -2131,15 +2160,44 @@ export async function submitFixtureResultFirestore(
       throw new Error('This match result is already CONFIRMED and cannot be modified.');
     }
 
-    // Matchday Lock Check
+    // Authoritative Server-Side Matchday Lock Check
     if (fixture.competitionId && fixture.matchday) {
-      const override = compOverrideMap.get(fixture.competitionId);
-      if (override) {
-        if (override.adminOverrideStatus === 'FORCE_LOCKED' || override.adminOverrideStatus === 'PAUSED') {
-          throw new Error(`Matchday submissions for this competition are currently paused or locked by tournament administration.`);
+      let override = compOverrideMap.get(fixture.competitionId);
+      if (!override) {
+        trackFirestoreRead(COLLECTIONS.COMPETITIONS, 1, 'submitFixtureResultFirestore:compLockCheck');
+        const compDoc = await db.collection(COLLECTIONS.COMPETITIONS).doc(fixture.competitionId).get();
+        if (compDoc.exists) {
+          override = compDoc.data() as FirestoreCompetitionDoc;
+          compOverrideMap.set(fixture.competitionId, override);
         }
-        if (override.adminOverrideStatus !== 'FORCE_OPEN' && override.currentMatchday && fixture.matchday > override.currentMatchday) {
-          throw new Error(`Matchday ${fixture.matchday} is locked. Current active matchday is Matchday ${override.currentMatchday}.`);
+      }
+
+      if (override) {
+        const activeMatchday = override.currentMatchday || 1;
+        const adminStatus = override.adminOverrideStatus || 'AUTO';
+        const isMatchdayOpen = override.isMatchdayOpen !== false;
+
+        if (adminStatus === 'FORCE_LOCKED' || adminStatus === 'PAUSED') {
+          const err: any = new Error(`MATCHDAY_LOCKED: Matchday submissions for this competition are currently locked by tournament administration.`);
+          err.code = 'MATCHDAY_LOCKED';
+          err.statusCode = 403;
+          throw err;
+        }
+
+        if (adminStatus !== 'FORCE_OPEN') {
+          if (!isMatchdayOpen) {
+            const err: any = new Error(`MATCHDAY_LOCKED: Matchday ${activeMatchday} is currently closed.`);
+            err.code = 'MATCHDAY_LOCKED';
+            err.statusCode = 403;
+            throw err;
+          }
+
+          if (fixture.matchday !== activeMatchday) {
+            const err: any = new Error(`MATCHDAY_LOCKED: Matchday ${fixture.matchday} is locked. Only active Matchday ${activeMatchday} is open for submissions.`);
+            err.code = 'MATCHDAY_LOCKED';
+            err.statusCode = 403;
+            throw err;
+          }
         }
       }
     }

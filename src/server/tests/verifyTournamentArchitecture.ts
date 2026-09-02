@@ -8,7 +8,7 @@ import { calculateCompetitionStandings } from '../tournament/standingsEngine';
 import { evaluateSeasonQualifications, populateSuperCupParticipants } from '../tournament/qualificationEngine';
 import { generateKnockoutBracket, advanceKnockoutWinner } from '../tournament/knockoutEngine';
 import { generateCompetitionFixtures, getFixtures } from '../services/fixtureService';
-import { generateUCL24LeaguePhaseSchedule } from '../tournament/fixtureEngine';
+import { generateEuropean32LeaguePhaseSchedule } from '../tournament/fixtureEngine';
 import { validateOfficialFixtures, importOfficialFixtures, OfficialFixtureRecord } from '../tournament/officialFixtureImporter';
 
 import { getOrCreateTelegramUserFirestore } from '../firebase/firestoreStore';
@@ -124,14 +124,14 @@ export async function runTournamentArchitectureTests() {
     domesticGen.generated === 380 && domesticGen.matchdays === 38
   );
 
-  // Verify Custom UCL 24-team generator
-  const uclClubIds = totalClubs ? queryAll<any>('SELECT id FROM clubs LIMIT 24').map(c => c.id) : [];
-  const uclSchedule = generateUCL24LeaguePhaseSchedule(uclClubIds);
+  // Verify Custom European 32-team generator
+  const uclClubIds = totalClubs ? queryAll<any>('SELECT id FROM clubs LIMIT 32').map(c => c.id) : [];
+  const uclSchedule = generateEuropean32LeaguePhaseSchedule(uclClubIds);
   assert(
-    'Section 2: UCL 24-Team League Phase Generator',
-    '96 matches (8 matchdays x 12 matches)',
+    'Section 2: European 32-Team League Phase Generator',
+    '128 matches (8 matchdays x 16 matches)',
     `${uclSchedule.length} matches`,
-    uclSchedule.length === 96
+    uclSchedule.length === 128
   );
 
   // Verify UCL 8 distinct opponents per club
@@ -145,7 +145,7 @@ export async function runTournamentArchitectureTests() {
     if (opps.size !== 8) uclDistinctOpponents = false;
   }
   assert(
-    'Section 2: UCL Distinct Opponent Distribution',
+    'Section 2: European Distinct Opponent Distribution',
     'Each club plays exactly 8 distinct opponents',
     uclDistinctOpponents ? '8 distinct opponents verified' : 'Failed opponent uniqueness',
     uclDistinctOpponents

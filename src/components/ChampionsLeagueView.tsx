@@ -485,30 +485,33 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
         <div className="glass-panel p-4 sm:p-6 shadow-xl space-y-4">
           <h3 className="text-sm sm:text-base font-black text-white flex items-center gap-2">
             <Info className="w-4 h-4 text-blue-400" />
-            <span>European Allocation Formula</span>
+            <span>European Allocation Formula (32-Team Single League Phase)</span>
           </h3>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 text-xs text-slate-300">
             <div className="glass-card p-4 border-blue-500/30 space-y-2">
-              <div className="font-black text-blue-400 text-sm">UEFA Champions League (32 Clubs)</div>
+              <div className="font-black text-blue-400 text-sm">UEFA Champions League (32 Clubs Total)</div>
               <ul className="space-y-1.5 text-slate-400 text-xs">
-                <li>• Premier League: Top 4 clubs (1st – 4th)</li>
-                <li>• La Liga: Top 4 clubs (1st – 4th)</li>
-                <li>• Serie A: Top 4 clubs (1st – 4th)</li>
-                <li>• Bundesliga: Top 4 clubs (1st – 4th)</li>
-                <li>• Ligue 1: Top 3 clubs (1st – 3rd)</li>
-                <li>• Defending Champions & League Phase Qualifiers</li>
+                <li>• Premier League: 7 spots (1st – 7th)</li>
+                <li>• La Liga: 7 spots (1st – 7th)</li>
+                <li>• Serie A: 6 spots (1st – 6th)</li>
+                <li>• Bundesliga: 6 spots (1st – 6th)</li>
+                <li>• Ligue 1: 6 spots (1st – 6th)</li>
                 <li>• Format: 32-Team Single League Phase, 8 Matchdays (4H / 4A)</li>
+                <li>• Top 8: Direct to Round of 16 | 9th–24th: Knockout Play-offs | 25th–32nd: Eliminated</li>
               </ul>
             </div>
 
             <div className="glass-card p-4 border-indigo-500/30 space-y-2">
-              <div className="font-black text-indigo-400 text-sm">UEFA Europa League (32 Clubs)</div>
+              <div className="font-black text-indigo-400 text-sm">UEFA Europa League (32 Clubs Total)</div>
               <ul className="space-y-1.5 text-slate-400 text-xs">
-                <li>• Domestic Cup Winners (FA Cup, Copa del Rey, Coppa Italia, DFB-Pokal, Coupe de France)</li>
-                <li>• 5th, 6th & 7th Place in Premier League, La Liga, Serie A, Bundesliga</li>
-                <li>• 4th & 5th Place in Ligue 1</li>
+                <li>• Premier League: 7 spots (8th – 14th)</li>
+                <li>• La Liga: 7 spots (8th – 14th)</li>
+                <li>• Serie A: 6 spots (7th – 12th)</li>
+                <li>• Bundesliga: 6 spots (7th – 12th)</li>
+                <li>• Ligue 1: 6 spots (7th – 12th)</li>
                 <li>• Format: 32-Team Single League Phase, 8 Matchdays (4H / 4A)</li>
+                <li>• Top 8: Direct to Round of 16 | 9th–24th: Knockout Play-offs | 25th–32nd: Eliminated</li>
               </ul>
             </div>
           </div>
