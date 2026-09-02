@@ -226,7 +226,7 @@ export function invalidateFirestoreCache(prefix?: string) {
   }
 }
 
-function getFromCache<T>(key: string): T | null {
+export function getFromCache<T>(key: string): T | null {
   const entry = serverCache.get(key);
   if (entry && Date.now() - entry.timestamp < entry.ttlMs) {
     readMetrics.cacheHits++;
@@ -236,7 +236,7 @@ function getFromCache<T>(key: string): T | null {
   return null;
 }
 
-function setInCache<T>(key: string, data: T, ttlMs = 60000) {
+export function setInCache<T>(key: string, data: T, ttlMs = 60000) {
   serverCache.set(key, {
     data,
     timestamp: Date.now(),
@@ -2845,11 +2845,16 @@ export async function resolveDisputeFirestore(
 }
 
 export async function getDisputesFirestore(status = 'OPEN'): Promise<Dispute[]> {
+  const cacheKey = `firestore:disputes:${status}`;
+  const cached = getFromCache<Dispute[]>(cacheKey);
+  if (cached) return cached;
+
   const db = getFirestoreDb();
   let query: FirebaseFirestore.Query = db.collection(COLLECTIONS.DISPUTES);
   if (status) {
     query = query.where('status', '==', status);
   }
+  trackFirestoreRead(COLLECTIONS.DISPUTES, 1, 'getDisputesFirestore');
   const snap = await query.get();
   const disputes: Dispute[] = [];
 
@@ -2873,13 +2878,19 @@ export async function getDisputesFirestore(status = 'OPEN'): Promise<Dispute[]> 
     });
   }
 
+  setInCache(cacheKey, disputes, 20000); // 20s cache
   return disputes;
 }
 
 export async function getAllUsersFirestore(): Promise<User[]> {
+  const cacheKey = 'firestore:all_users';
+  const cached = getFromCache<User[]>(cacheKey);
+  if (cached) return cached;
+
   const db = getFirestoreDb();
+  trackFirestoreRead(COLLECTIONS.USERS, 1, 'getAllUsersFirestore');
   const snap = await db.collection(COLLECTIONS.USERS).orderBy('createdAt', 'desc').get();
-  return snap.docs.map((d) => {
+  const users = snap.docs.map((d) => {
     const data = d.data() as FirestoreUserDoc;
     return {
       id: d.id,
@@ -2894,17 +2905,24 @@ export async function getAllUsersFirestore(): Promise<User[]> {
       updatedAt: data.updatedAt,
     };
   });
+  setInCache(cacheKey, users, 30000); // 30s cache
+  return users;
 }
 
 export async function getAuditLogsFirestore(limit = 50): Promise<AuditLog[]> {
+  const cacheKey = `firestore:audit_logs:${limit}`;
+  const cached = getFromCache<AuditLog[]>(cacheKey);
+  if (cached) return cached;
+
   const db = getFirestoreDb();
+  trackFirestoreRead(COLLECTIONS.AUDIT_LOGS, 1, 'getAuditLogsFirestore');
   const snap = await db
     .collection(COLLECTIONS.AUDIT_LOGS)
     .orderBy('createdAt', 'desc')
     .limit(limit)
     .get();
 
-  return snap.docs.map((d) => {
+  const logs = snap.docs.map((d) => {
     const data = d.data() as FirestoreAuditLogDoc;
     let parsedOld: any = undefined;
     let parsedNew: any = undefined;
@@ -2932,6 +2950,9 @@ export async function getAuditLogsFirestore(limit = 50): Promise<AuditLog[]> {
       createdAt: data.createdAt,
     };
   });
+
+  setInCache(cacheKey, logs, 20000); // 20s cache
+  return logs;
 }
 
 export async function createAuditLogFirestore(

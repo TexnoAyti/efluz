@@ -684,5 +684,15 @@ export const api = {
       headers: { 'Cache-Control': 'no-cache' },
     });
   },
+
+  async getReadMetrics(): Promise<any> {
+    return request<any>('/api/admin/read-metrics', { skipCache: true });
+  },
+
+  async resetReadMetrics(): Promise<{ success: boolean; message: string }> {
+    return request<{ success: boolean; message: string }>('/api/admin/read-metrics/reset', {
+      method: 'POST',
+    });
+  },
 };
 

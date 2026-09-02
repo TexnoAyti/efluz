@@ -84,13 +84,10 @@ const AppContent: React.FC = () => {
         // ignore if not admin
       }
     }
-    if (user?.isAdmin) {
+    if (user?.isAdmin && activeTab === 'admin') {
       checkDisputes();
-      // Only set a background timer if administrator is currently inside the admin panel
-      if (activeTab === 'admin') {
-        const interval = setInterval(checkDisputes, 180000); // 3 minutes interval
-        return () => clearInterval(interval);
-      }
+      const interval = setInterval(checkDisputes, 300000); // 5 minutes interval strictly inside admin panel
+      return () => clearInterval(interval);
     }
   }, [user?.isAdmin, activeTab]);
 

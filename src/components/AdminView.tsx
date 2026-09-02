@@ -137,21 +137,21 @@ export const AdminView: React.FC = () => {
       setIsLoading(false);
       return;
     }
+    if (!skipCache && loadedTabs.has(tab)) {
+      // Warm tab navigation: preserve already fetched state with 0 reads
+      return;
+    }
     setIsLoading(true);
     setError(null);
 
     try {
       if (tab === 'overview') {
-        const [overviewRes, disputesRes, pendingRes, auditRes] = await Promise.all([
-          api.getAdminOverview(activeSeasonId, skipCache).catch(() => null),
-          api.getAdminDisputes('OPEN', skipCache).catch(() => ({ disputes: [] })),
-          api.getAdminPendingResults(activeSeasonId, skipCache).catch(() => ({ pendingFixtures: [], total: 0 })),
-          api.getAdminAuditLogs(10, skipCache).catch(() => ({ logs: [] })),
-        ]);
-        if (overviewRes) setOverviewData(overviewRes);
-        if (disputesRes?.disputes) setDisputes(disputesRes.disputes);
-        if (pendingRes?.pendingFixtures) setPendingResults(pendingRes.pendingFixtures as any);
-        if (auditRes?.logs) setAuditLogs(auditRes.logs);
+        const overviewRes = await api.getAdminOverview(activeSeasonId, skipCache).catch(() => null);
+        if (overviewRes) {
+          setOverviewData(overviewRes);
+          if (overviewRes.openDisputes) setDisputes(overviewRes.openDisputes);
+          if (overviewRes.pendingFixturesPreview) setPendingResults(overviewRes.pendingFixturesPreview as any);
+        }
       } else if (tab === 'clubs') {
         const [clubsRes, usersRes] = await Promise.all([
           api.getAdminClubs(activeSeasonId, undefined, skipCache).catch(() => ({ clubs: [], total: 0 })),

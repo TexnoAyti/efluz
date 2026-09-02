@@ -21,6 +21,10 @@ import {
   setCompetitionMatchdayTimerFirestore,
   validateDomesticFixturesFirestore,
   getReadMetrics,
+  resetReadMetrics,
+  getFromCache,
+  setInCache,
+  recordEndpointCall,
 } from '../firebase/firestoreStore';
 import { SEED_CLUBS, SEED_LEAGUES } from '../db/seed';
 import { migrateSqliteToFirestore } from '../firebase/migrateSqliteToFirestore';
@@ -37,6 +41,15 @@ adminRouter.use(requireAdmin);
 
 adminRouter.get('/overview', async (req: Request, res: Response) => {
   const seasonId = (req.query.seasonId as string) || 'season-2026-27';
+  recordEndpointCall('/api/admin/overview', 'ADMIN', 3);
+
+  const cacheKey = `firestore:admin_overview:${seasonId}`;
+  const cached = getFromCache<any>(cacheKey);
+  if (cached) {
+    res.json(cached);
+    return;
+  }
+
   try {
     const status = getFirebaseStatus();
     const db = getFirestoreDb();
@@ -59,7 +72,7 @@ adminRouter.get('/overview', async (req: Request, res: Response) => {
       (c) => c.type === 'champions_league' || c.type === 'europa_league' || c.type === 'conference_league'
     );
 
-    res.json({
+    const payload = {
       season: {
         id: seasonId,
         name: '2026/27 Season',
@@ -89,7 +102,10 @@ adminRouter.get('/overview', async (req: Request, res: Response) => {
       },
       openDisputes: disputes.slice(0, 10),
       pendingFixturesPreview: pendingData.pendingFixtures.slice(0, 5),
-    });
+    };
+
+    setInCache(cacheKey, payload, 15000); // 15s cache
+    res.json(payload);
   } catch (err: any) {
     handleFirestoreError(res, err, 'GET /api/admin/overview');
   }
@@ -500,6 +516,15 @@ adminRouter.get('/fixtures/validation', async (req: Request, res: Response) => {
   } catch (err: any) {
     handleFirestoreError(res, err, `GET /api/admin/fixtures/validation`);
   }
+});
+
+adminRouter.get('/read-metrics', async (_req: Request, res: Response) => {
+  res.json(getReadMetrics());
+});
+
+adminRouter.post('/read-metrics/reset', async (_req: Request, res: Response) => {
+  resetReadMetrics();
+  res.json({ success: true, message: 'Firestore read metrics have been reset.' });
 });
 
 
