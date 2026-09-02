@@ -84,13 +84,12 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
     }
   }, [activeSeasonId, clubs.length]);
 
-  // 2. Load fixtures & standings for selected league
-  const loadLeagueCompetitionData = useCallback(async (leagueId: string, compsList?: Competition[]) => {
+  // 2. Load fixtures & standings for selected league on demand
+  const loadLeagueStandings = useCallback(async (leagueId: string, compsList?: Competition[]) => {
     const list = compsList || leagueCompetitions;
     const matchingComp = list.find((c) => c.leagueId === leagueId && c.type === 'LEAGUE');
     if (!matchingComp) return;
 
-    // Load Standings
     setIsLoadingStandings(true);
     try {
       const standRes = await api.getCompetitionStandings(matchingComp.id);
@@ -102,12 +101,18 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
     } finally {
       setIsLoadingStandings(false);
     }
+  }, [leagueCompetitions]);
 
-    // Load Fixtures
+  const loadLeagueFixtures = useCallback(async (leagueId: string, matchday?: number, compsList?: Competition[]) => {
+    const list = compsList || leagueCompetitions;
+    const matchingComp = list.find((c) => c.leagueId === leagueId && c.type === 'LEAGUE');
+    if (!matchingComp) return;
+
     setIsLoadingFixtures(true);
     try {
-      const fixRes = await api.getCompetitionFixtures(matchingComp.id);
-      if (fixRes.fixtures && fixRes.fixtures.length > 0) {
+      const targetMd = matchday ?? selectedMatchday;
+      const fixRes = await api.getCompetitionFixtures(matchingComp.id, targetMd);
+      if (fixRes.fixtures) {
         setLeagueFixtures(fixRes.fixtures);
       }
     } catch (err) {
@@ -115,7 +120,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
     } finally {
       setIsLoadingFixtures(false);
     }
-  }, [leagueCompetitions]);
+  }, [leagueCompetitions, selectedMatchday]);
 
   // 3. Load all 5 domestic leagues & competitions list
   const loadLeaguesAndComps = useCallback(async () => {
@@ -139,7 +144,6 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
           const exists = domesticLeagues.some((l) => l.id === prev);
           const target = exists ? prev : domesticLeagues[0].id;
           loadClubsForLeague(target);
-          loadLeagueCompetitionData(target, compsRes.competitions);
           return target;
         });
       }
@@ -157,16 +161,29 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
         isQuota,
       });
     }
-  }, [activeSeasonId, loadClubsForLeague, loadLeagueCompetitionData]);
+  }, [activeSeasonId, loadClubsForLeague]);
 
   useEffect(() => {
     loadLeaguesAndComps();
   }, [loadLeaguesAndComps]);
 
+  // Load tab-specific data when tab or league changes
+  useEffect(() => {
+    if (activeLeagueTab === 'MATCHES') {
+      loadLeagueFixtures(selectedLeagueId, selectedMatchday);
+    } else if (activeLeagueTab === 'STANDINGS') {
+      loadLeagueStandings(selectedLeagueId);
+    }
+  }, [activeLeagueTab, selectedLeagueId, selectedMatchday, loadLeagueFixtures, loadLeagueStandings]);
+
   const handleSelectLeague = (leagueId: string) => {
     setSelectedLeagueId(leagueId);
     loadClubsForLeague(leagueId);
-    loadLeagueCompetitionData(leagueId);
+    if (activeLeagueTab === 'MATCHES') {
+      loadLeagueFixtures(leagueId, selectedMatchday);
+    } else if (activeLeagueTab === 'STANDINGS') {
+      loadLeagueStandings(leagueId);
+    }
   };
 
   const handleClaimClub = async () => {
@@ -218,7 +235,9 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
   const currentLeague = leagues.find((l) => l.id === selectedLeagueId) || leagues[0];
 
   // Group fixtures by matchday
-  const matchdays: number[] = Array.from(new Set<number>(leagueFixtures.map((f) => Number(f.matchday) || 1))).sort((a, b) => a - b);
+  const currentComp = leagueCompetitions.find((c) => c.leagueId === selectedLeagueId && c.type === 'LEAGUE');
+  const totalLeagueMatchdays = currentComp?.totalMatchdays || (selectedLeagueId.includes('bundesliga') || selectedLeagueId.includes('ligue-1') ? 17 : 19);
+  const matchdays: number[] = Array.from({ length: totalLeagueMatchdays }, (_, i) => i + 1);
   const currentMatchdayFixtures = leagueFixtures.filter((f) => (Number(f.matchday) || 1) === selectedMatchday);
 
   const getPositionStyle = (position: number, totalTeams: number) => {
@@ -298,7 +317,11 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
             id="btn-refresh-clubs-view"
             onClick={() => {
               loadClubsForLeague(selectedLeagueId, true);
-              loadLeagueCompetitionData(selectedLeagueId);
+              if (activeLeagueTab === 'MATCHES') {
+                loadLeagueFixtures(selectedLeagueId, selectedMatchday);
+              } else if (activeLeagueTab === 'STANDINGS') {
+                loadLeagueStandings(selectedLeagueId);
+              }
             }}
             disabled={isLoadingClubs}
             className="px-2.5 py-1 glass-card glass-card-interactive text-slate-300 font-bold text-[11px] flex items-center gap-1 transition-colors disabled:opacity-50 min-h-[32px]"

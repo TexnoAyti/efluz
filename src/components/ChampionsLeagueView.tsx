@@ -69,16 +69,22 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
     loadEuropeanData();
   }, [activeSeasonId]);
 
-  const loadTournamentDetails = async (compId: string) => {
+  const loadTournamentDetails = async (compId: string, loadFix = false) => {
     try {
-      const [standRes, partRes, fixRes] = await Promise.all([
+      const promises: Promise<any>[] = [
         api.getCompetitionStandings(compId).catch(() => ({ standings: [] })),
         api.getCompetitionParticipants(compId).catch(() => ({ participants: [] })),
-        api.getCompetitionFixtures(compId).catch(() => ({ fixtures: [] })),
-      ]);
-      setStandings(standRes.standings || []);
-      setParticipants(partRes.participants || []);
-      setFixtures(fixRes.fixtures || []);
+      ];
+      if (loadFix || activeTab === 'BRACKET') {
+        promises.push(api.getCompetitionFixtures(compId).catch(() => ({ fixtures: [] })));
+      }
+
+      const results = await Promise.all(promises);
+      setStandings(results[0]?.standings || []);
+      setParticipants(results[1]?.participants || []);
+      if (results[2]) {
+        setFixtures(results[2]?.fixtures || []);
+      }
     } catch (err: any) {
       console.error('Error fetching tournament details:', err);
     }
@@ -86,7 +92,16 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
 
   const handleSelectTournament = (comp: Competition) => {
     setSelectedTournament(comp);
-    loadTournamentDetails(comp.id);
+    loadTournamentDetails(comp.id, activeTab === 'BRACKET');
+  };
+
+  const handleTabChange = (tab: 'STANDINGS' | 'BRACKET') => {
+    setActiveTab(tab);
+    if (tab === 'BRACKET' && selectedTournament && fixtures.length === 0) {
+      api.getCompetitionFixtures(selectedTournament.id)
+        .then((res) => setFixtures(res.fixtures || []))
+        .catch((err) => console.error('Error loading bracket fixtures:', err));
+    }
   };
 
   // Group fixtures by roundName
@@ -199,7 +214,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
         <>
           <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
             <button
-              onClick={() => setActiveTab('STANDINGS')}
+              onClick={() => handleTabChange('STANDINGS')}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all min-h-[38px] ${
                 activeTab === 'STANDINGS'
                   ? 'bg-blue-600 text-white shadow-md font-black'
@@ -209,7 +224,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
               {t.leaguePhase} ({participants.length > 0 ? `${participants.length} Clubs` : 'Overview'})
             </button>
             <button
-              onClick={() => setActiveTab('BRACKET')}
+              onClick={() => handleTabChange('BRACKET')}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all min-h-[38px] ${
                 activeTab === 'BRACKET'
                   ? 'bg-blue-600 text-white shadow-md font-black'

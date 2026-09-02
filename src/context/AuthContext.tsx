@@ -149,7 +149,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, 4500);
   }, []);
 
-  const refreshNotifications = useCallback(async (skipCache = true) => {
+  const refreshNotifications = useCallback(async (skipCache = false) => {
     setIsNotificationsLoading(true);
     setNotificationsError(null);
     try {

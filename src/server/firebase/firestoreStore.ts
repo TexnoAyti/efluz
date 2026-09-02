@@ -293,6 +293,115 @@ export async function getAllLeaguesFirestore(): Promise<League[]> {
 // CLUBS & MEMBERSHIPS (ATOMIC CLAIMING)
 // ----------------------------------------------------
 
+export interface SeasonOccupancyInfo {
+  clubOccupancyMap: Map<string, { userId: string }>;
+  usernameMap: Map<string, string>;
+}
+
+export async function getActiveOccupanciesForSeason(
+  seasonId = 'season-2026-27'
+): Promise<SeasonOccupancyInfo> {
+  const cacheKey = `firestore:occupancies:${seasonId}`;
+  const cached = getFromCache<SeasonOccupancyInfo>(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const db = getFirestoreDb();
+    const occupanciesSnap = await db
+      .collection(COLLECTIONS.CLUB_OCCUPANCIES)
+      .where('seasonId', '==', seasonId)
+      .where('status', '==', 'active')
+      .get();
+
+    trackFirestoreRead(
+      COLLECTIONS.CLUB_OCCUPANCIES,
+      occupanciesSnap.empty ? 1 : occupanciesSnap.docs.length,
+      'getActiveOccupanciesForSeason'
+    );
+
+    const clubOccupancyMap = new Map<string, { userId: string }>();
+    for (const doc of occupanciesSnap.docs) {
+      const data = doc.data();
+      if (data.clubId && data.userId) {
+        clubOccupancyMap.set(data.clubId, { userId: data.userId });
+      }
+    }
+
+    const userIds = Array.from(new Set(Array.from(clubOccupancyMap.values()).map((o) => o.userId)));
+    const usernameMap = new Map<string, string>();
+    if (userIds.length > 0) {
+      const missingUserIds: string[] = [];
+      for (const uid of userIds) {
+        const cachedUser = getFromCache<User>(`firestore:user:${uid}`);
+        if (cachedUser) {
+          usernameMap.set(uid, cachedUser.username || cachedUser.firstName || uid);
+        } else {
+          missingUserIds.push(uid);
+        }
+      }
+
+      if (missingUserIds.length > 0) {
+        for (let i = 0; i < missingUserIds.length; i += 30) {
+          const chunk = missingUserIds.slice(i, i + 30);
+          const usersSnap = await db.collection(COLLECTIONS.USERS).where('id', 'in', chunk).get().catch(() => null);
+          if (usersSnap) {
+            trackFirestoreRead(
+              COLLECTIONS.USERS,
+              usersSnap.empty ? 1 : usersSnap.docs.length,
+              'getActiveOccupanciesForSeason:users'
+            );
+            for (const uDoc of usersSnap.docs) {
+              const uData = uDoc.data() as FirestoreUserDoc;
+              const uname = uData.username || uData.firstName || uDoc.id;
+              usernameMap.set(uDoc.id, uname);
+              setInCache(
+                `firestore:user:${uDoc.id}`,
+                {
+                  id: uDoc.id,
+                  telegramId: uData.telegramId || '',
+                  username: uData.username || '',
+                  firstName: uData.firstName || '',
+                  lastName: uData.lastName || '',
+                  photoUrl: uData.photoUrl || '',
+                  isAdmin: Boolean(uData.isAdmin),
+                  isSuspended: Boolean(uData.isSuspended),
+                  createdAt: uData.createdAt || '',
+                  updatedAt: uData.updatedAt || '',
+                },
+                300000
+              );
+            }
+          }
+        }
+      }
+    }
+
+    const result: SeasonOccupancyInfo = { clubOccupancyMap, usernameMap };
+    setInCache(cacheKey, result, 60000); // 60s shared occupancy cache
+    return result;
+  } catch (err: any) {
+    console.warn('[FIRESTORE FALLBACK] getActiveOccupanciesForSeason:', err.message);
+    const rows = queryAll<any>(
+      `SELECT cm.club_id, cm.user_id, u.username as manager_username
+       FROM club_memberships cm
+       LEFT JOIN users u ON cm.user_id = u.id
+       WHERE cm.season_id = ? AND cm.status = 'active'`,
+      [seasonId]
+    );
+    const clubOccupancyMap = new Map<string, { userId: string }>();
+    const usernameMap = new Map<string, string>();
+    for (const r of rows) {
+      clubOccupancyMap.set(r.club_id, { userId: r.user_id });
+      if (r.manager_username) {
+        usernameMap.set(r.user_id, r.manager_username);
+      }
+    }
+    const result: SeasonOccupancyInfo = { clubOccupancyMap, usernameMap };
+    setInCache(cacheKey, result, 60000);
+    return result;
+  }
+}
+
 export async function getClubsByLeagueFirestore(
   leagueId: string,
   seasonId = 'season-2026-27',
@@ -316,70 +425,11 @@ export async function getClubsByLeagueFirestore(
   }
 
   try {
-    const db = getFirestoreDb();
-
     // 1. Get static clubs for this league from SEED_CLUBS (zero Firestore reads!)
     const staticLeagueClubs = SEED_CLUBS.filter((c) => c.leagueId === leagueId);
 
-    // 2. Fetch all active occupancies for this season in ONE single query (1 read)
-    trackFirestoreRead(COLLECTIONS.CLUB_OCCUPANCIES, 1, 'getClubsByLeagueFirestore');
-    const occupanciesSnap = await db
-      .collection(COLLECTIONS.CLUB_OCCUPANCIES)
-      .where('seasonId', '==', seasonId)
-      .where('status', '==', 'active')
-      .get();
-
-    const clubOccupancyMap = new Map<string, { userId: string }>();
-    for (const doc of occupanciesSnap.docs) {
-      const data = doc.data();
-      if (data.clubId && data.userId) {
-        clubOccupancyMap.set(data.clubId, { userId: data.userId });
-      }
-    }
-
-    // 3. Batch user display names from cached user map or batch read (0 N+1 reads)
-    const userIds = Array.from(new Set(Array.from(clubOccupancyMap.values()).map((o) => o.userId)));
-    const usernameMap = new Map<string, string>();
-    if (userIds.length > 0) {
-      // Check cached user profiles first
-      const missingUserIds: string[] = [];
-      for (const uid of userIds) {
-        const cachedUser = getFromCache<User>(`firestore:user:${uid}`);
-        if (cachedUser) {
-          usernameMap.set(uid, cachedUser.username || cachedUser.firstName || uid);
-        } else {
-          missingUserIds.push(uid);
-        }
-      }
-
-      if (missingUserIds.length > 0) {
-        // Batch query missing users in chunks of 30
-        for (let i = 0; i < missingUserIds.length; i += 30) {
-          const chunk = missingUserIds.slice(i, i + 30);
-          trackFirestoreRead(COLLECTIONS.USERS, 1, 'getClubsByLeagueFirestore:users');
-          const usersSnap = await db.collection(COLLECTIONS.USERS).where('id', 'in', chunk).get().catch(() => null);
-          if (usersSnap) {
-            for (const uDoc of usersSnap.docs) {
-              const uData = uDoc.data() as FirestoreUserDoc;
-              const uname = uData.username || uData.firstName || uDoc.id;
-              usernameMap.set(uDoc.id, uname);
-              setInCache(`firestore:user:${uDoc.id}`, {
-                id: uDoc.id,
-                telegramId: uData.telegramId || '',
-                username: uData.username || '',
-                firstName: uData.firstName || '',
-                lastName: uData.lastName || '',
-                photoUrl: uData.photoUrl || '',
-                isAdmin: Boolean(uData.isAdmin),
-                isSuspended: Boolean(uData.isSuspended),
-                createdAt: uData.createdAt || '',
-                updatedAt: uData.updatedAt || '',
-              }, 300000);
-            }
-          }
-        }
-      }
-    }
+    // 2. Fetch or reuse shared active occupancies for this season (0-1 Firestore query across all leagues)
+    const { clubOccupancyMap, usernameMap } = await getActiveOccupanciesForSeason(seasonId);
 
     const clubs: Club[] = staticLeagueClubs.map((seed) => {
       const occupancy = clubOccupancyMap.get(seed.id);
@@ -475,22 +525,10 @@ export async function getAvailableClubsFirestore(
   if (cached && cached.length > 0) return cached;
 
   try {
-    const db = getFirestoreDb();
-    trackFirestoreRead(COLLECTIONS.CLUB_OCCUPANCIES, 1, 'getAvailableClubsFirestore');
-    const occupanciesSnap = await db
-      .collection(COLLECTIONS.CLUB_OCCUPANCIES)
-      .where('seasonId', '==', seasonId)
-      .where('status', '==', 'active')
-      .get();
-
-    const occupiedClubIds = new Set<string>();
-    for (const doc of occupanciesSnap.docs) {
-      const data = doc.data();
-      if (data.clubId) occupiedClubIds.add(data.clubId);
-    }
+    const { clubOccupancyMap } = await getActiveOccupanciesForSeason(seasonId);
 
     // Filter from SEED_CLUBS directly (0 extra reads)
-    const availableClubs: Club[] = SEED_CLUBS.filter((c) => !occupiedClubIds.has(c.id)).map((seed) => ({
+    const availableClubs: Club[] = SEED_CLUBS.filter((c) => !clubOccupancyMap.has(c.id)).map((seed) => ({
       id: seed.id,
       name: seed.name,
       shortName: seed.shortName,
@@ -655,8 +693,11 @@ export async function getClubByIdFirestore(
 
 export async function getUserActiveClubFirestore(userId: string, seasonId = 'season-2026-27'): Promise<Club | null> {
   const cacheKey = `firestore:user_active_club:${userId}:${seasonId}`;
-  const cached = getFromCache<Club>(cacheKey);
-  if (cached) return cached;
+  const cached = getFromCache<Club | { noClub: true }>(cacheKey);
+  if (cached) {
+    if ('noClub' in cached) return null;
+    return cached as Club;
+  }
 
   try {
     const db = getFirestoreDb();
@@ -690,6 +731,10 @@ export async function getUserActiveClubFirestore(userId: string, seasonId = 'sea
       };
       setInCache(cacheKey, c, 60000);
       return c;
+    } else {
+      // User has no active club - cache negative response
+      setInCache(cacheKey, { noClub: true }, 60000);
+      return null;
     }
   } catch (err: any) {
     console.warn('[FIRESTORE FALLBACK] getUserActiveClubFirestore:', err.message);
@@ -707,6 +752,7 @@ export async function getUserActiveClubFirestore(userId: string, seasonId = 'sea
       return c;
     }
   }
+  setInCache(cacheKey, { noClub: true }, 60000);
   return null;
 }
 
@@ -972,6 +1018,44 @@ export async function getCompetitionByIdFirestore(competitionId: string): Promis
   return comp || null;
 }
 
+export async function getRawClubFixturesFirestore(
+  clubId: string,
+  seasonId = 'season-2026-27'
+): Promise<FirestoreFixtureDoc[]> {
+  const cacheKey = `firestore:club_raw_fixtures:${seasonId}:${clubId}`;
+  const cached = getFromCache<FirestoreFixtureDoc[]>(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const db = getFirestoreDb();
+    const [homeSnap, awaySnap] = await Promise.all([
+      db
+        .collection(COLLECTIONS.FIXTURES)
+        .where('homeClubId', '==', clubId)
+        .get(),
+      db
+        .collection(COLLECTIONS.FIXTURES)
+        .where('awayClubId', '==', clubId)
+        .get(),
+    ]);
+
+    const reads =
+      (homeSnap.empty ? 1 : homeSnap.docs.length) + (awaySnap.empty ? 1 : awaySnap.docs.length);
+    trackFirestoreRead(COLLECTIONS.FIXTURES, reads, 'getRawClubFixturesFirestore');
+
+    const docMap = new Map<string, FirestoreFixtureDoc>();
+    homeSnap.docs.forEach((d) => docMap.set(d.id, d.data() as FirestoreFixtureDoc));
+    awaySnap.docs.forEach((d) => docMap.set(d.id, d.data() as FirestoreFixtureDoc));
+
+    const docs = Array.from(docMap.values());
+    setInCache(cacheKey, docs, 30000); // 30s cache
+    return docs;
+  } catch (err: any) {
+    console.warn('[FIRESTORE FALLBACK] getRawClubFixturesFirestore:', err.message);
+    return [];
+  }
+}
+
 export async function getFixturesFirestore(filter: {
   competitionId?: string;
   seasonId?: string;
@@ -1010,24 +1094,8 @@ export async function getFixturesFirestore(filter: {
     let docs: FirestoreFixtureDoc[] = [];
 
     if (targetClubId) {
-      trackFirestoreRead(COLLECTIONS.FIXTURES, 2, 'getFixturesFirestore:club');
-      // Perform parallel queries for home and away fixtures
-      const [homeSnap, awaySnap] = await Promise.all([
-        db
-          .collection(COLLECTIONS.FIXTURES)
-          .where('homeClubId', '==', targetClubId)
-          .get(),
-        db
-          .collection(COLLECTIONS.FIXTURES)
-          .where('awayClubId', '==', targetClubId)
-          .get(),
-      ]);
-
-      const docMap = new Map<string, FirestoreFixtureDoc>();
-      homeSnap.docs.forEach((d) => docMap.set(d.id, d.data() as FirestoreFixtureDoc));
-      awaySnap.docs.forEach((d) => docMap.set(d.id, d.data() as FirestoreFixtureDoc));
-
-      docs = Array.from(docMap.values());
+      // Fetch or reuse raw club fixtures (0-38 actual reads across /api/me and /api/me/matches)
+      docs = await getRawClubFixturesFirestore(targetClubId, seasonId);
 
       // In-memory filters for targetClubId matches
       if (filter.competitionId) {
@@ -1059,8 +1127,12 @@ export async function getFixturesFirestore(filter: {
         query = query.where('status', '==', filter.status);
       }
 
-      trackFirestoreRead(COLLECTIONS.FIXTURES, 1, 'getFixturesFirestore:query');
       const snap = await query.get();
+      trackFirestoreRead(
+        COLLECTIONS.FIXTURES,
+        snap.empty ? 1 : snap.docs.length,
+        'getFixturesFirestore:query'
+      );
       docs = snap.docs.map((d) => d.data() as FirestoreFixtureDoc);
     }
 
@@ -1118,7 +1190,7 @@ export async function getFixturesFirestore(filter: {
       };
     });
 
-    if (cacheKey && fixtures.length > 0) {
+    if (cacheKey) {
       setInCache(cacheKey, fixtures, 30000);
     }
     return fixtures;
@@ -1205,7 +1277,7 @@ export async function getFixturesFirestore(filter: {
       updatedAt: r.updated_at,
     }));
 
-    if (cacheKey && fallbackFixtures.length > 0) {
+    if (cacheKey) {
       setInCache(cacheKey, fallbackFixtures, 30000);
     }
     return fallbackFixtures;
@@ -1966,12 +2038,16 @@ export async function rebuildCompetitionStandingsFirestore(competitionId: string
     const seedClubs = leagueId ? SEED_CLUBS.filter((c) => c.leagueId === leagueId) : SEED_CLUBS;
 
     // 1. Fetch only CONFIRMED fixtures for this competition
-    trackFirestoreRead(COLLECTIONS.FIXTURES, 1, 'rebuildCompetitionStandingsFirestore');
     const fixSnap = await db
       .collection(COLLECTIONS.FIXTURES)
       .where('competitionId', '==', competitionId)
       .where('status', '==', 'CONFIRMED')
       .get();
+    trackFirestoreRead(
+      COLLECTIONS.FIXTURES,
+      fixSnap.empty ? 1 : fixSnap.docs.length,
+      'rebuildCompetitionStandingsFirestore'
+    );
 
     const confirmedFixtures = fixSnap.docs
       .map((d) => d.data() as FirestoreFixtureDoc)
@@ -2854,8 +2930,12 @@ export async function getDisputesFirestore(status = 'OPEN'): Promise<Dispute[]> 
   if (status) {
     query = query.where('status', '==', status);
   }
-  trackFirestoreRead(COLLECTIONS.DISPUTES, 1, 'getDisputesFirestore');
   const snap = await query.get();
+  trackFirestoreRead(
+    COLLECTIONS.DISPUTES,
+    snap.empty ? 1 : snap.docs.length,
+    'getDisputesFirestore'
+  );
   const disputes: Dispute[] = [];
 
   for (const doc of snap.docs) {
@@ -2888,8 +2968,12 @@ export async function getAllUsersFirestore(): Promise<User[]> {
   if (cached) return cached;
 
   const db = getFirestoreDb();
-  trackFirestoreRead(COLLECTIONS.USERS, 1, 'getAllUsersFirestore');
   const snap = await db.collection(COLLECTIONS.USERS).orderBy('createdAt', 'desc').get();
+  trackFirestoreRead(
+    COLLECTIONS.USERS,
+    snap.empty ? 1 : snap.docs.length,
+    'getAllUsersFirestore'
+  );
   const users = snap.docs.map((d) => {
     const data = d.data() as FirestoreUserDoc;
     return {
@@ -2915,12 +2999,17 @@ export async function getAuditLogsFirestore(limit = 50): Promise<AuditLog[]> {
   if (cached) return cached;
 
   const db = getFirestoreDb();
-  trackFirestoreRead(COLLECTIONS.AUDIT_LOGS, 1, 'getAuditLogsFirestore');
   const snap = await db
     .collection(COLLECTIONS.AUDIT_LOGS)
     .orderBy('createdAt', 'desc')
     .limit(limit)
     .get();
+
+  trackFirestoreRead(
+    COLLECTIONS.AUDIT_LOGS,
+    snap.empty ? 1 : snap.docs.length,
+    'getAuditLogsFirestore'
+  );
 
   const logs = snap.docs.map((d) => {
     const data = d.data() as FirestoreAuditLogDoc;
@@ -3010,6 +3099,10 @@ export async function createNotificationFirestore(
 }
 
 export async function getUserNotificationsFirestore(userId: string, limit = 30): Promise<Notification[]> {
+  const cacheKey = `firestore:notifications:${userId}:${limit}`;
+  const cached = getFromCache<Notification[]>(cacheKey);
+  if (cached) return cached;
+
   const validTypes: Array<Notification['type']> = [
     'MATCH_SCHEDULED',
     'RESULT_SUBMITTED',
@@ -3032,7 +3125,13 @@ export async function getUserNotificationsFirestore(userId: string, limit = 30):
       .limit(limit)
       .get();
 
-    return snap.docs.map((d) => {
+    trackFirestoreRead(
+      COLLECTIONS.NOTIFICATIONS,
+      snap.empty ? 1 : snap.docs.length,
+      'getUserNotificationsFirestore'
+    );
+
+    const notifications: Notification[] = snap.docs.map((d) => {
       const data = d.data() as any;
       const notifData = data.data || {};
       const notifType = validTypes.includes(data.type) ? data.type : (data.type || 'SYSTEM');
@@ -3049,13 +3148,16 @@ export async function getUserNotificationsFirestore(userId: string, limit = 30):
         createdAt: data.createdAt,
       };
     });
+
+    setInCache(cacheKey, notifications, 30000);
+    return notifications;
   } catch (err: any) {
     console.warn('[FIRESTORE FALLBACK] getUserNotificationsFirestore:', err.message);
     const rows = queryAll<any>(
       `SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT ?`,
       [userId, limit]
     );
-    return rows.map((r) => {
+    const fallbackNotifs: Notification[] = rows.map((r) => {
       const notifType = validTypes.includes(r.type) ? r.type : (r.type || 'SYSTEM');
       return {
         id: r.id,
@@ -3068,6 +3170,8 @@ export async function getUserNotificationsFirestore(userId: string, limit = 30):
         createdAt: r.created_at,
       };
     });
+    setInCache(cacheKey, fallbackNotifs, 30000);
+    return fallbackNotifs;
   }
 }
 
@@ -3456,7 +3560,6 @@ export async function getPendingResultsFirestore(seasonId = 'season-2026-27'): P
 
   try {
     const db = getFirestoreDb();
-    trackFirestoreRead(COLLECTIONS.FIXTURES, 2, 'getPendingResultsFirestore:fixtures');
     const [pendingSnap, disputedSnap] = await Promise.all([
       db.collection(COLLECTIONS.FIXTURES)
         .where('seasonId', '==', seasonId)
@@ -3467,6 +3570,11 @@ export async function getPendingResultsFirestore(seasonId = 'season-2026-27'): P
         .where('status', '==', 'DISPUTED')
         .get(),
     ]);
+
+    const fixReads =
+      (pendingSnap.empty ? 1 : pendingSnap.docs.length) +
+      (disputedSnap.empty ? 1 : disputedSnap.docs.length);
+    trackFirestoreRead(COLLECTIONS.FIXTURES, fixReads, 'getPendingResultsFirestore:fixtures');
 
     const allDocs = [...pendingSnap.docs, ...disputedSnap.docs];
     if (allDocs.length === 0) {
@@ -3481,8 +3589,12 @@ export async function getPendingResultsFirestore(seasonId = 'season-2026-27'): P
     // Batch query submissions in chunks of 30 fixtureIds
     for (let i = 0; i < fixtureIds.length; i += 30) {
       const chunk = fixtureIds.slice(i, i + 30);
-      trackFirestoreRead(COLLECTIONS.RESULT_SUBMISSIONS, 1, 'getPendingResultsFirestore:submissions');
       const subsSnap = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where('fixtureId', 'in', chunk).get();
+      trackFirestoreRead(
+        COLLECTIONS.RESULT_SUBMISSIONS,
+        subsSnap.empty ? 1 : subsSnap.docs.length,
+        'getPendingResultsFirestore:submissions'
+      );
       for (const subDoc of subsSnap.docs) {
         const subData = subDoc.data();
         const arr = submissionsMap.get(subData.fixtureId) || [];
