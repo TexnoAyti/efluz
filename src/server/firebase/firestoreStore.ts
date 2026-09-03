@@ -1403,6 +1403,82 @@ export async function getFixtureByIdFirestore(fixtureId: string, currentUserId?:
 }
 
 // ----------------------------------------------------
+// COMPETITION PARTICIPANTS
+// ----------------------------------------------------
+
+export async function getCompetitionParticipantsFirestore(competitionId: string): Promise<any[]> {
+  const cacheKey = `firestore:participants:${competitionId}`;
+  const cached = getFromCache<any[]>(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const db = getFirestoreDb();
+    trackFirestoreRead(COLLECTIONS.COMPETITION_PARTICIPANTS, 1, 'getCompetitionParticipantsFirestore');
+    const snap = await db
+      .collection(COLLECTIONS.COMPETITION_PARTICIPANTS)
+      .where('competitionId', '==', competitionId)
+      .orderBy('seedNumber', 'asc')
+      .get();
+
+    if (!snap.empty) {
+      const participants = snap.docs.map((d) => {
+        const data = d.data() as FirestoreCompetitionParticipantDoc;
+        const club = SEED_CLUBS.find((c) => c.id === data.clubId);
+        return {
+          id: d.id,
+          competitionId: data.competitionId,
+          clubId: data.clubId,
+          clubName: club?.name || data.clubId,
+          shortName: club?.shortName || data.clubId,
+          clubLogoUrl: club?.logoUrl || '',
+          ownerUserId: data.ownerUserId,
+          ownerUsername: data.ownerUsername,
+          sourceCompetitionId: data.sourceCompetitionId,
+          sourceCompetitionName: data.sourceCompetitionName,
+          sourcePosition: data.sourcePosition,
+          qualificationReason: data.qualificationReason,
+          seedNumber: data.seedNumber,
+          createdAt: data.createdAt,
+        };
+      });
+      setInCache(cacheKey, participants, 300000);
+      return participants;
+    }
+
+    // Fallback: check SQLite competition_participants
+    const sqliteParts = queryAll<any>(
+      `SELECT cp.*, c.name as club_name, c.short_name, c.logo_url
+       FROM competition_participants cp
+       JOIN clubs c ON cp.club_id = c.id
+       WHERE cp.competition_id = ?
+       ORDER BY cp.seed_number ASC`,
+      [competitionId]
+    );
+
+    const parts = sqliteParts.map((p) => ({
+      id: p.id,
+      competitionId: p.competition_id,
+      clubId: p.club_id,
+      clubName: p.club_name,
+      shortName: p.short_name,
+      clubLogoUrl: p.logo_url,
+      ownerUserId: p.owner_user_id,
+      sourceCompetitionId: p.source_competition_id,
+      sourcePosition: p.source_position,
+      qualificationReason: p.qualification_reason,
+      seedNumber: p.seed_number,
+      createdAt: p.created_at,
+    }));
+
+    setInCache(cacheKey, parts, 300000);
+    return parts;
+  } catch (err: any) {
+    console.warn('[FIRESTORE] getCompetitionParticipantsFirestore error:', err.message);
+    return [];
+  }
+}
+
+// ----------------------------------------------------
 // PERSISTENT FIXTURE GENERATION
 // ----------------------------------------------------
 
@@ -2063,8 +2139,47 @@ export async function rebuildCompetitionStandingsFirestore(competitionId: string
     const formatConfig = seedComp?.formatConfig || {};
     const leagueId = seedComp?.leagueId;
 
-    // Resolve participating clubs from SEED_CLUBS (0 Firestore reads)
-    const seedClubs = leagueId ? SEED_CLUBS.filter((c) => c.leagueId === leagueId) : SEED_CLUBS;
+    let seedClubs: any[] = [];
+    if (leagueId) {
+      seedClubs = SEED_CLUBS.filter((c) => c.leagueId === leagueId);
+    } else {
+      // European or Cup tournament: resolve from competition_participants
+      const partSnap = await db
+        .collection(COLLECTIONS.COMPETITION_PARTICIPANTS)
+        .where('competitionId', '==', competitionId)
+        .orderBy('seedNumber', 'asc')
+        .get();
+
+      if (!partSnap.empty) {
+        const participantClubIds = partSnap.docs.map(
+          (d) => (d.data() as FirestoreCompetitionParticipantDoc).clubId
+        );
+        seedClubs = participantClubIds.map((cid) => {
+          const club = SEED_CLUBS.find((c) => c.id === cid);
+          return club || { id: cid, name: cid, shortName: cid, logoUrl: '' };
+        });
+      } else {
+        // Fallback: check SQLite competition_participants
+        const sqlParts = queryAll<any>(
+          `SELECT cp.club_id, c.name, c.short_name, c.logo_url
+           FROM competition_participants cp
+           JOIN clubs c ON cp.club_id = c.id
+           WHERE cp.competition_id = ?
+           ORDER BY cp.seed_number ASC`,
+          [competitionId]
+        );
+        if (sqlParts.length > 0) {
+          seedClubs = sqlParts.map((p) => ({
+            id: p.club_id,
+            name: p.name,
+            shortName: p.short_name,
+            logoUrl: p.logo_url,
+          }));
+        } else {
+          seedClubs = SEED_CLUBS;
+        }
+      }
+    }
 
     // 1. Fetch only CONFIRMED fixtures for this competition
     const fixSnap = await db

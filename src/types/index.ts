@@ -122,6 +122,16 @@ export interface Competition {
     tieBreakers?: Array<'points' | 'goalDifference' | 'goalsFor' | 'headToHead'>;
     maxTeams?: number;
     qualificationSpots?: number;
+    leaguePhaseTeams?: number;
+    matchesPerTeam?: number;
+    directQualifiers?: number;
+    playoffTeams?: number;
+    knockoutTeams?: number;
+    totalClubs?: number;
+    teams?: number;
+    singleLeg?: boolean;
+    extraTime?: boolean;
+    penalties?: boolean;
   };
   createdAt: string;
 }

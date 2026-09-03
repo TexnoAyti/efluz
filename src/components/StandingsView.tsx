@@ -73,26 +73,24 @@ export const StandingsView: React.FC = () => {
 
   const activeComp = competitions.find((c) => c.id === selectedCompetitionId);
 
+  const isPLOrLL = selectedCompetitionId.includes('premier-league') || selectedCompetitionId.includes('la-liga');
+  const uclThreshold = isPLOrLL ? 7 : 6;
+  const uelThreshold = isPLOrLL ? 14 : 12;
+  const totalMatchdays = standings.length === 20 ? 19 : standings.length === 18 ? 17 : activeComp?.formatConfig?.rounds || 19;
+
   const getPositionStyle = (position: number, totalTeams: number) => {
-    if (position <= 4) {
+    if (position <= uclThreshold) {
       return {
         badgeColor: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
         barColor: 'bg-blue-500',
         label: t.uclZone,
       };
     }
-    if (position === 5) {
+    if (position <= uelThreshold) {
       return {
         badgeColor: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30',
         barColor: 'bg-indigo-500',
         label: t.uelZone,
-      };
-    }
-    if (position === 6) {
-      return {
-        badgeColor: 'bg-teal-500/20 text-teal-400 border-teal-500/30',
-        barColor: 'bg-teal-500',
-        label: t.ueclZone,
       };
     }
     if (position > totalTeams - 3) {
@@ -151,22 +149,22 @@ export const StandingsView: React.FC = () => {
             <Trophy className="w-4 h-4 text-amber-400 shrink-0" />
             <div className="min-w-0">
               <h3 className="font-bold text-xs sm:text-sm text-slate-100 truncate">{activeComp?.name || 'League Table'}</h3>
-              <p className="text-[10px] text-slate-400">Season 2026/27 • Double Round-Robin</p>
+              <p className="text-[10px] text-slate-400">Season 2026/27 • Single Round-Robin ({totalMatchdays} Matchdays)</p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 text-[10px]">
             <div className="flex items-center gap-1.5 text-slate-300">
               <span className="w-2 h-2 rounded-full bg-blue-500" />
-              <span>{t.uclZone} (1-4)</span>
+              <span>{t.uclZone} (1-{uclThreshold})</span>
             </div>
             <div className="flex items-center gap-1.5 text-slate-300">
               <span className="w-2 h-2 rounded-full bg-indigo-500" />
-              <span>{t.uelZone} (5)</span>
+              <span>{t.uelZone} ({uclThreshold + 1}-{uelThreshold})</span>
             </div>
             <div className="flex items-center gap-1.5 text-slate-300">
               <span className="w-2 h-2 rounded-full bg-rose-500" />
-              <span>{t.relegationZone}</span>
+              <span>{t.relegationZone} ({standings.length ? standings.length - 2 : 18}-{standings.length || 20})</span>
             </div>
           </div>
         </div>

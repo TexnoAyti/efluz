@@ -6,9 +6,10 @@ import {
   FirestoreFixtureDoc,
   FirestoreClubDoc,
 } from '../firebase/collections';
-import { calculateCompetitionStandingsFirestore } from '../firebase/firestoreStore';
+import { calculateCompetitionStandingsFirestore, rebuildCompetitionStandingsFirestore } from '../firebase/firestoreStore';
 import { createAuditLog } from '../services/adminService';
 import { createNotification } from '../services/notificationService';
+import { queryRun } from '../db';
 
 export interface QualificationResult {
   seasonId: string;
@@ -109,31 +110,28 @@ export async function evaluateSeasonQualifications(seasonId = 'season-2026-27'):
         });
 
         const partId = `part-${uclComp.id}-${row.clubId}`;
-        if (!existingPartIds.has(partId)) {
-          newParticipants.push({
-            id: partId,
-            competitionId: uclComp.id,
-            clubId: row.clubId,
-            seasonId,
-            ownerUserId: ownerUserId || undefined,
-            sourceCompetitionId: league.id,
-            sourceCompetitionName: league.name,
-            sourcePosition: row.position,
-            qualificationReason: reason,
-            qualificationTimestamp: now,
-            seedNumber: qualifications.length,
-            createdAt: now,
-          });
-          existingPartIds.add(partId);
-          participantsAdded++;
+        newParticipants.push({
+          id: partId,
+          competitionId: uclComp.id,
+          clubId: row.clubId,
+          seasonId,
+          ownerUserId: ownerUserId || undefined,
+          sourceCompetitionId: league.id,
+          sourceCompetitionName: league.name,
+          sourcePosition: row.position,
+          qualificationReason: reason,
+          qualificationTimestamp: now,
+          seedNumber: newParticipants.filter((p) => p.competitionId === uclComp.id).length + 1,
+          createdAt: now,
+        });
+        participantsAdded++;
 
-          if (ownerUserId) {
-            notificationsToSend.push({
-              userId: ownerUserId,
-              title: '🏆 Qualified for UEFA Champions League!',
-              message: `Congratulations! ${row.clubName} finished #${row.position} in ${league.name} and qualified for the UEFA Champions League!`,
-            });
-          }
+        if (ownerUserId) {
+          notificationsToSend.push({
+            userId: ownerUserId,
+            title: '🏆 Qualified for UEFA Champions League!',
+            message: `Congratulations! ${row.clubName} finished #${row.position} in ${league.name} and qualified for the UEFA Champions League!`,
+          });
         }
       }
     }
@@ -159,37 +157,65 @@ export async function evaluateSeasonQualifications(seasonId = 'season-2026-27'):
         });
 
         const partId = `part-${uelComp.id}-${row.clubId}`;
-        if (!existingPartIds.has(partId)) {
-          newParticipants.push({
-            id: partId,
-            competitionId: uelComp.id,
-            clubId: row.clubId,
-            seasonId,
-            ownerUserId: ownerUserId || undefined,
-            sourceCompetitionId: league.id,
-            sourceCompetitionName: league.name,
-            sourcePosition: row.position,
-            qualificationReason: reason,
-            qualificationTimestamp: now,
-            seedNumber: qualifications.length,
-            createdAt: now,
-          });
-          existingPartIds.add(partId);
-          participantsAdded++;
+        newParticipants.push({
+          id: partId,
+          competitionId: uelComp.id,
+          clubId: row.clubId,
+          seasonId,
+          ownerUserId: ownerUserId || undefined,
+          sourceCompetitionId: league.id,
+          sourceCompetitionName: league.name,
+          sourcePosition: row.position,
+          qualificationReason: reason,
+          qualificationTimestamp: now,
+          seedNumber: newParticipants.filter((p) => p.competitionId === uelComp.id).length + 1,
+          createdAt: now,
+        });
+        participantsAdded++;
 
-          if (ownerUserId) {
-            notificationsToSend.push({
-              userId: ownerUserId,
-              title: 'Qualified for UEFA Europa League',
-              message: `Congratulations! ${row.clubName} finished #${row.position} in ${league.name} and qualified for the UEFA Europa League!`,
-            });
-          }
+        if (ownerUserId) {
+          notificationsToSend.push({
+            userId: ownerUserId,
+            title: 'Qualified for UEFA Europa League',
+            message: `Congratulations! ${row.clubName} finished #${row.position} in ${league.name} and qualified for the UEFA Europa League!`,
+          });
         }
       }
     }
   }
 
-  // Batch write all new participants
+  // Purge any existing/stale European participants to guarantee strictly 32 qualified clubs
+  if (uclComp) {
+    const existingUclParts = await db
+      .collection(COLLECTIONS.COMPETITION_PARTICIPANTS)
+      .where('competitionId', '==', uclComp.id)
+      .get();
+    if (!existingUclParts.empty) {
+      const batchDelete = db.batch();
+      existingUclParts.docs.forEach((doc) => batchDelete.delete(doc.ref));
+      await batchDelete.commit();
+    }
+    try {
+      queryRun('DELETE FROM competition_participants WHERE competition_id = ?', [uclComp.id]);
+    } catch {}
+  }
+
+  if (uelComp) {
+    const existingUelParts = await db
+      .collection(COLLECTIONS.COMPETITION_PARTICIPANTS)
+      .where('competitionId', '==', uelComp.id)
+      .get();
+    if (!existingUelParts.empty) {
+      const batchDelete = db.batch();
+      existingUelParts.docs.forEach((doc) => batchDelete.delete(doc.ref));
+      await batchDelete.commit();
+    }
+    try {
+      queryRun('DELETE FROM competition_participants WHERE competition_id = ?', [uelComp.id]);
+    } catch {}
+  }
+
+  // Batch write all new participants to Firestore and SQLite
   if (newParticipants.length > 0) {
     const batch = db.batch();
     for (const part of newParticipants) {
@@ -197,6 +223,65 @@ export async function evaluateSeasonQualifications(seasonId = 'season-2026-27'):
       batch.set(ref, part);
     }
     await batch.commit();
+
+    for (const part of newParticipants) {
+      try {
+        queryRun(
+          `INSERT OR REPLACE INTO competition_participants 
+           (id, competition_id, club_id, season_id, owner_user_id, source_competition_id, source_position, qualification_reason, seed_number, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            part.id,
+            part.competitionId,
+            part.clubId,
+            part.seasonId,
+            part.ownerUserId || null,
+            part.sourceCompetitionId || null,
+            part.sourcePosition || null,
+            part.qualificationReason || null,
+            part.seedNumber || null,
+            part.createdAt,
+          ]
+        );
+      } catch {}
+    }
+  }
+
+  // Ensure formatConfig for UCL and UEL is strictly 32 teams in Firestore & SQLite
+  const formatConfig32 = {
+    leaguePhaseTeams: 32,
+    matchesPerTeam: 8,
+    directQualifiers: 8,
+    playoffTeams: 16,
+    knockoutTeams: 16,
+  };
+
+  if (uclComp) {
+    await db.collection(COLLECTIONS.COMPETITIONS).doc(uclComp.id).set(
+      { formatConfig: formatConfig32 },
+      { merge: true }
+    );
+    try {
+      queryRun('UPDATE competitions SET format_config_json = ? WHERE id = ?', [
+        JSON.stringify(formatConfig32),
+        uclComp.id,
+      ]);
+    } catch {}
+    await rebuildCompetitionStandingsFirestore(uclComp.id).catch(() => {});
+  }
+
+  if (uelComp) {
+    await db.collection(COLLECTIONS.COMPETITIONS).doc(uelComp.id).set(
+      { formatConfig: formatConfig32 },
+      { merge: true }
+    );
+    try {
+      queryRun('UPDATE competitions SET format_config_json = ? WHERE id = ?', [
+        JSON.stringify(formatConfig32),
+        uelComp.id,
+      ]);
+    } catch {}
+    await rebuildCompetitionStandingsFirestore(uelComp.id).catch(() => {});
   }
 
   // Send notifications in parallel

@@ -3,6 +3,7 @@ import { requireAdmin } from '../middleware/authMiddleware';
 import {
   getAllCompetitionsFirestore,
   getCompetitionByIdFirestore,
+  getCompetitionParticipantsFirestore,
   calculateCompetitionStandingsFirestore,
   rebuildCompetitionStandingsFirestore,
   getFixturesFirestore,
@@ -32,6 +33,15 @@ competitionsRouter.get('/:id', async (req: Request, res: Response) => {
     res.json({ competition });
   } catch (err: any) {
     handleFirestoreError(res, err, `GET /api/competitions/${req.params.id}`);
+  }
+});
+
+competitionsRouter.get('/:id/participants', async (req: Request, res: Response) => {
+  try {
+    const participants = await getCompetitionParticipantsFirestore(req.params.id);
+    res.json({ participants });
+  } catch (err: any) {
+    handleFirestoreError(res, err, `GET /api/competitions/${req.params.id}/participants`);
   }
 });
 
