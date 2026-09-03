@@ -678,6 +678,30 @@ export const api = {
     return res;
   },
 
+  async getUserProfile(userId: string, seasonId = 'season-2026-27'): Promise<{
+    user: {
+      id: string;
+      username: string;
+      firstName: string;
+      lastName?: string;
+      photoUrl?: string;
+      isAdmin?: boolean;
+      createdAt?: string;
+    };
+    currentClub?: any;
+    stats: {
+      matchesPlayed: number;
+      wins: number;
+      draws: number;
+      losses: number;
+      goalsScored: number;
+      goalsConceded: number;
+      points: number;
+    };
+  }> {
+    return request(`/api/users/${userId}?seasonId=${seasonId}`, { cacheTtlMs: 30000 });
+  },
+
   async getFixtureValidationReport(seasonId = 'season-2026-27'): Promise<any> {
     return request<any>(`/api/admin/fixtures/validation?seasonId=${seasonId}`, {
       method: 'GET',

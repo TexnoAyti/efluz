@@ -16,6 +16,7 @@ import { clubsRouter } from './routes/clubs.routes';
 import { competitionsRouter } from './routes/competitions.routes';
 import { fixturesRouter } from './routes/fixtures.routes';
 import { meRouter } from './routes/me.routes';
+import { usersRouter } from './routes/users.routes';
 import { adminRouter } from './routes/admin.routes';
 
 let dbInitPromise: Promise<void> | null = null;
@@ -95,6 +96,7 @@ export function createApp() {
   app.use('/api/competitions', competitionsRouter);
   app.use('/api/fixtures', fixturesRouter);
   app.use('/api/me', meRouter);
+  app.use('/api/users', usersRouter);
   app.use('/api/admin', adminRouter);
 
   // 404 JSON fallback for any unhandled /api/* route

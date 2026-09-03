@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useUserProfile } from '../context/UserProfileContext';
 import { useI18n } from '../i18n';
 import { api } from '../lib/api';
 import { Fixture } from '../types';
@@ -19,6 +20,7 @@ import {
   Sparkles,
   ChevronRight,
   Info,
+  Lock,
 } from 'lucide-react';
 
 interface MyMatchesViewProps {
@@ -28,6 +30,7 @@ interface MyMatchesViewProps {
 
 export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFixture, onNavigateTab }) => {
   const { user, currentClub, activeSeasonId, showToast } = useAuth();
+  const { openUserProfile } = useUserProfile();
   const { t } = useI18n();
 
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
@@ -217,11 +220,33 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                   <h4 className="font-black text-xs sm:text-sm text-white truncate max-w-full">
                     {focusedFixture.homeClub?.name}
                   </h4>
-                  <span className="text-[10px] text-emerald-400 font-medium mt-0.5">
-                    {focusedFixture.homeOwnerId === user?.id
-                      ? `(${t.myClub})`
-                      : `@${focusedFixture.homeClub?.claimedByUsername || 'open'}`}
-                  </span>
+                  {focusedFixture.homeOwnerId === user?.id || focusedFixture.homeClub?.claimedByUserId === user?.id ? (
+                    <span className="text-[10px] text-emerald-400 font-bold mt-1">
+                      ({t.myClub})
+                    </span>
+                  ) : (focusedFixture.homeUser?.username || focusedFixture.homeClub?.claimedByUsername) ? (
+                    <div className="flex flex-col items-center gap-1 mt-1">
+                      <span className="text-[11px] text-slate-300 font-bold truncate max-w-[130px]">
+                        @{focusedFixture.homeUser?.username || focusedFixture.homeClub?.claimedByUsername}
+                      </span>
+                      {(focusedFixture.homeUser?.id || focusedFixture.homeClub?.claimedByUserId) && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openUserProfile(focusedFixture.homeUser?.id || focusedFixture.homeClub?.claimedByUserId!);
+                          }}
+                          className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 transition-colors"
+                        >
+                          Profilni ko‘rish
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-[10px] text-slate-500 italic mt-1">
+                      User qo‘yilmagan
+                    </span>
+                  )}
                 </div>
 
                 {/* Score / VS Center */}
@@ -254,11 +279,33 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                   <h4 className="font-black text-xs sm:text-sm text-white truncate max-w-full">
                     {focusedFixture.awayClub?.name}
                   </h4>
-                  <span className="text-[10px] text-emerald-400 font-medium mt-0.5">
-                    {focusedFixture.awayOwnerId === user?.id
-                      ? `(${t.myClub})`
-                      : `@${focusedFixture.awayClub?.claimedByUsername || 'open'}`}
-                  </span>
+                  {focusedFixture.awayOwnerId === user?.id || focusedFixture.awayClub?.claimedByUserId === user?.id ? (
+                    <span className="text-[10px] text-emerald-400 font-bold mt-1">
+                      ({t.myClub})
+                    </span>
+                  ) : (focusedFixture.awayUser?.username || focusedFixture.awayClub?.claimedByUsername) ? (
+                    <div className="flex flex-col items-center gap-1 mt-1">
+                      <span className="text-[11px] text-slate-300 font-bold truncate max-w-[130px]">
+                        @{focusedFixture.awayUser?.username || focusedFixture.awayClub?.claimedByUsername}
+                      </span>
+                      {(focusedFixture.awayUser?.id || focusedFixture.awayClub?.claimedByUserId) && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openUserProfile(focusedFixture.awayUser?.id || focusedFixture.awayClub?.claimedByUserId!);
+                          }}
+                          className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 transition-colors"
+                        >
+                          Profilni ko‘rish
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-[10px] text-slate-500 italic mt-1">
+                      User qo‘yilmagan
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -310,14 +357,45 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                 </p>
               </div>
 
+              {/* Matchday Locked Notice */}
+              {focusedFixture.isPlayable === false && focusedFixture.status !== 'CONFIRMED' && (
+                <div className="glass-card bg-rose-950/20 border-rose-500/30 p-3.5 flex items-start sm:items-center gap-3 text-xs">
+                  <div className="w-8 h-8 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 shrink-0 mt-0.5 sm:mt-0">
+                    <Lock className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-rose-300">
+                      Matchday {focusedFixture.matchday} Qulflangan
+                    </div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">
+                      Faqat hozirgi faol tur o‘yinlarini o‘ynash va natija kiritish mumkin. Keyingi turlar admin tomonidan ochilgandan so‘ng o‘ynaladi.
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Primary Action Button */}
               {focusedFixture.status !== 'CONFIRMED' && (
                 <button
+                  disabled={focusedFixture.isPlayable === false}
                   onClick={() => setSelectedFixtureForModal(focusedFixture)}
-                  className="w-full py-3 btn-glass-primary font-black text-xs flex items-center justify-center gap-2"
+                  className={`w-full py-3 rounded-xl font-black text-xs flex items-center justify-center gap-2 transition-all ${
+                    focusedFixture.isPlayable === false
+                      ? 'bg-slate-800/70 text-slate-500 border border-slate-700/60 cursor-not-allowed shadow-none'
+                      : 'btn-glass-primary'
+                  }`}
                 >
-                  <Swords className="w-4 h-4" />
-                  <span>{focusedFixture.userSubmission ? 'Update / Re-Submit Result' : t.submitResult}</span>
+                  {focusedFixture.isPlayable === false ? (
+                    <>
+                      <Lock className="w-4 h-4 text-slate-500" />
+                      <span>Matchday {focusedFixture.matchday} Qulflangan</span>
+                    </>
+                  ) : (
+                    <>
+                      <Swords className="w-4 h-4" />
+                      <span>{focusedFixture.userSubmission ? 'Update / Re-Submit Result' : t.submitResult}</span>
+                    </>
+                  )}
                 </button>
               )}
             </div>
@@ -373,10 +451,17 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                   }`}
                 >
                   <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1.5">
-                    <span className="font-semibold text-slate-300 truncate max-w-[180px]">
-                      {fixture.competitionName}
+                    <span className="font-semibold text-slate-300 truncate max-w-[150px]">
+                      {fixture.competitionName} • MD {fixture.matchday}
                     </span>
-                    {getStatusBadge(fixture.status)}
+                    <div className="flex items-center gap-1.5">
+                      {fixture.isPlayable === false && fixture.status !== 'CONFIRMED' && (
+                        <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-rose-400 px-1.5 py-0.5 rounded bg-rose-500/10 border border-rose-500/20">
+                          <Lock className="w-2.5 h-2.5" /> Qulflangan
+                        </span>
+                      )}
+                      {getStatusBadge(fixture.status)}
+                    </div>
                   </div>
 
                   <div className="flex items-center justify-between gap-2">

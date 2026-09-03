@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { UserProfileProvider } from './context/UserProfileContext';
 import { I18nProvider, useI18n } from './i18n';
 import { Header } from './components/Header';
 import { Navigation, TabType } from './components/Navigation';
@@ -217,7 +218,9 @@ export default function App() {
   return (
     <I18nProvider>
       <AuthProvider>
-        <AppContent />
+        <UserProfileProvider>
+          <AppContent />
+        </UserProfileProvider>
       </AuthProvider>
     </I18nProvider>
   );

@@ -136,6 +136,12 @@ export interface Competition {
   createdAt: string;
 }
 
+export interface FixtureUserInfo {
+  id: string;
+  username: string;
+  displayName: string;
+}
+
 export interface Fixture {
   id: string;
   seasonId: string;
@@ -147,6 +153,10 @@ export interface Fixture {
   awayClubId: string;
   homeClub?: Club;
   awayClub?: Club;
+  homeUser?: FixtureUserInfo | null;
+  awayUser?: FixtureUserInfo | null;
+  activeMatchday?: number;
+  isPlayable?: boolean;
   homeOwnerId?: string;
   awayOwnerId?: string;
   scheduledAt: string;
@@ -213,6 +223,7 @@ export interface StandingsRow {
   clubName: string;
   shortName: string;
   logoUrl?: string;
+  managerUserId?: string;
   managerUsername?: string;
   played: number;
   won: number;

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useUserProfile } from '../context/UserProfileContext';
 import { useI18n } from '../i18n';
 import { api } from '../lib/api';
 import { Competition, StandingsRow } from '../types';
@@ -17,6 +18,7 @@ import {
 
 export const StandingsView: React.FC = () => {
   const { currentClub, activeSeasonId } = useAuth();
+  const { openUserProfile } = useUserProfile();
   const { t } = useI18n();
 
   const [competitions, setCompetitions] = useState<Competition[]>([]);
@@ -259,8 +261,25 @@ export const StandingsView: React.FC = () => {
                                 </span>
                               )}
                             </div>
-                            <div className="text-[10px] text-slate-400 truncate">
-                              @{row.managerUsername || 'open'}
+                            <div className="text-[10px] truncate">
+                              {row.managerUsername ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (row.managerUserId) {
+                                      openUserProfile(row.managerUserId);
+                                    }
+                                  }}
+                                  className={`font-semibold hover:text-emerald-400 transition-colors ${
+                                    isUserClub ? 'text-emerald-300' : 'text-slate-400'
+                                  }`}
+                                >
+                                  @{row.managerUsername}
+                                </button>
+                              ) : (
+                                <span className="text-slate-500 italic">User qo‘yilmagan</span>
+                              )}
                             </div>
                           </div>
                         </div>

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useUserProfile } from '../context/UserProfileContext';
 import { useI18n } from '../i18n';
 import { api } from '../lib/api';
 import { Fixture, Club } from '../types';
@@ -44,6 +45,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     refreshUserData,
     showToast,
   } = useAuth();
+  const { openUserProfile } = useUserProfile();
   const { t } = useI18n();
 
   const [stats, setStats] = useState<{
@@ -331,9 +333,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <span className="font-bold text-xs text-slate-100 truncate w-full">
                     {nextMatch.homeClub?.shortName || nextMatch.homeClub?.name}
                   </span>
-                  <span className="text-[10px] text-slate-400 truncate w-full">
-                    {nextMatch.homeOwnerId === user?.id ? `(${t.myClub})` : `@${nextMatch.homeClub?.claimedByUsername || 'open'}`}
-                  </span>
+                  {nextMatch.homeOwnerId === user?.id || nextMatch.homeClub?.claimedByUserId === user?.id ? (
+                    <span className="text-[10px] text-emerald-400 font-bold mt-0.5 truncate w-full">
+                      ({t.myClub})
+                    </span>
+                  ) : (nextMatch.homeUser?.username || nextMatch.homeClub?.claimedByUsername) ? (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const uid = nextMatch.homeUser?.id || nextMatch.homeClub?.claimedByUserId;
+                        if (uid) openUserProfile(uid);
+                      }}
+                      className="text-[10px] text-slate-300 hover:text-emerald-400 font-bold truncate w-full transition-colors underline decoration-emerald-500/30 underline-offset-2"
+                    >
+                      @{nextMatch.homeUser?.username || nextMatch.homeClub?.claimedByUsername}
+                    </button>
+                  ) : (
+                    <span className="text-[10px] text-slate-500 italic mt-0.5 truncate w-full">
+                      User qo‘yilmagan
+                    </span>
+                  )}
                 </div>
 
                 {/* VS Badge */}
@@ -358,9 +378,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <span className="font-bold text-xs text-slate-100 truncate w-full">
                     {nextMatch.awayClub?.shortName || nextMatch.awayClub?.name}
                   </span>
-                  <span className="text-[10px] text-slate-400 truncate w-full">
-                    {nextMatch.awayOwnerId === user?.id ? `(${t.myClub})` : `@${nextMatch.awayClub?.claimedByUsername || 'open'}`}
-                  </span>
+                  {nextMatch.awayOwnerId === user?.id || nextMatch.awayClub?.claimedByUserId === user?.id ? (
+                    <span className="text-[10px] text-emerald-400 font-bold mt-0.5 truncate w-full">
+                      ({t.myClub})
+                    </span>
+                  ) : (nextMatch.awayUser?.username || nextMatch.awayClub?.claimedByUsername) ? (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const uid = nextMatch.awayUser?.id || nextMatch.awayClub?.claimedByUserId;
+                        if (uid) openUserProfile(uid);
+                      }}
+                      className="text-[10px] text-slate-300 hover:text-emerald-400 font-bold truncate w-full transition-colors underline decoration-emerald-500/30 underline-offset-2"
+                    >
+                      @{nextMatch.awayUser?.username || nextMatch.awayClub?.claimedByUsername}
+                    </button>
+                  ) : (
+                    <span className="text-[10px] text-slate-500 italic mt-0.5 truncate w-full">
+                      User qo‘yilmagan
+                    </span>
+                  )}
                 </div>
               </div>
 

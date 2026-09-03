@@ -296,6 +296,7 @@ export async function getAllLeaguesFirestore(): Promise<League[]> {
 export interface SeasonOccupancyInfo {
   clubOccupancyMap: Map<string, { userId: string }>;
   usernameMap: Map<string, string>;
+  userMap: Map<string, { id: string; username: string; displayName: string }>;
 }
 
 export async function getActiveOccupanciesForSeason(
@@ -329,12 +330,16 @@ export async function getActiveOccupanciesForSeason(
 
     const userIds = Array.from(new Set(Array.from(clubOccupancyMap.values()).map((o) => o.userId)));
     const usernameMap = new Map<string, string>();
+    const userMap = new Map<string, { id: string; username: string; displayName: string }>();
     if (userIds.length > 0) {
       const missingUserIds: string[] = [];
       for (const uid of userIds) {
         const cachedUser = getFromCache<User>(`firestore:user:${uid}`);
         if (cachedUser) {
-          usernameMap.set(uid, cachedUser.username || cachedUser.firstName || uid);
+          const uname = cachedUser.username || cachedUser.firstName || uid;
+          usernameMap.set(uid, uname);
+          const displayName = `${cachedUser.firstName || ''} ${cachedUser.lastName || ''}`.trim() || cachedUser.username || uid;
+          userMap.set(uid, { id: uid, username: cachedUser.username || '', displayName });
         } else {
           missingUserIds.push(uid);
         }
@@ -354,6 +359,8 @@ export async function getActiveOccupanciesForSeason(
               const uData = uDoc.data() as FirestoreUserDoc;
               const uname = uData.username || uData.firstName || uDoc.id;
               usernameMap.set(uDoc.id, uname);
+              const displayName = `${uData.firstName || ''} ${uData.lastName || ''}`.trim() || uData.username || uDoc.id;
+              userMap.set(uDoc.id, { id: uDoc.id, username: uData.username || '', displayName });
               setInCache(
                 `firestore:user:${uDoc.id}`,
                 {
@@ -376,13 +383,13 @@ export async function getActiveOccupanciesForSeason(
       }
     }
 
-    const result: SeasonOccupancyInfo = { clubOccupancyMap, usernameMap };
+    const result: SeasonOccupancyInfo = { clubOccupancyMap, usernameMap, userMap };
     setInCache(cacheKey, result, 60000); // 60s shared occupancy cache
     return result;
   } catch (err: any) {
     console.warn('[FIRESTORE FALLBACK] getActiveOccupanciesForSeason:', err.message);
     const rows = queryAll<any>(
-      `SELECT cm.club_id, cm.user_id, u.username as manager_username
+      `SELECT cm.club_id, cm.user_id, u.username as manager_username, u.first_name, u.last_name
        FROM club_memberships cm
        LEFT JOIN users u ON cm.user_id = u.id
        WHERE cm.season_id = ? AND cm.status = 'active'`,
@@ -390,13 +397,16 @@ export async function getActiveOccupanciesForSeason(
     );
     const clubOccupancyMap = new Map<string, { userId: string }>();
     const usernameMap = new Map<string, string>();
+    const userMap = new Map<string, { id: string; username: string; displayName: string }>();
     for (const r of rows) {
       clubOccupancyMap.set(r.club_id, { userId: r.user_id });
       if (r.manager_username) {
         usernameMap.set(r.user_id, r.manager_username);
       }
+      const displayName = `${r.first_name || ''} ${r.last_name || ''}`.trim() || r.manager_username || r.user_id;
+      userMap.set(r.user_id, { id: r.user_id, username: r.manager_username || '', displayName });
     }
-    const result: SeasonOccupancyInfo = { clubOccupancyMap, usernameMap };
+    const result: SeasonOccupancyInfo = { clubOccupancyMap, usernameMap, userMap };
     setInCache(cacheKey, result, 60000);
     return result;
   }
@@ -981,7 +991,11 @@ export async function getAllCompetitionsFirestore(seasonId = 'season-2026-27'): 
       totalTeams = (seed.formatConfig as any)?.maxTeams || 32;
     }
 
-    const totalMatchdays = override.totalMatchdays || (seed.leagueId ? (seed.leagueId.includes('bundesliga') || seed.leagueId.includes('ligue-1') ? 17 : 19) : 8);
+    const totalMatchdays = seed.leagueId
+      ? seed.leagueId.includes('bundesliga') || seed.leagueId.includes('ligue-1')
+        ? 17
+        : 19
+      : override.totalMatchdays || 8;
 
     return {
       id: seed.id,
@@ -1143,10 +1157,73 @@ export async function getFixturesFirestore(filter: {
       docs = docs.slice(0, filter.limit);
     }
 
-    // Map club data using SEED_CLUB_MAP instantly
+    // Map club data using SEED_CLUB_MAP and dynamic occupancy data
+    const { clubOccupancyMap, usernameMap, userMap } = await getActiveOccupanciesForSeason(filter.seasonId || 'season-2026-27');
+
+    // Pre-cache competition override info
+    const compMap = new Map<string, any>();
+    for (const compId of new Set(docs.map((d) => d.competitionId).filter(Boolean))) {
+      let comp = compOverrideMap.get(compId);
+      if (!comp) {
+        try {
+          const compDoc = await db.collection(COLLECTIONS.COMPETITIONS).doc(compId).get();
+          if (compDoc.exists) {
+            comp = compDoc.data() as FirestoreCompetitionDoc;
+            compOverrideMap.set(compId, comp);
+          }
+        } catch {}
+      }
+      if (comp) compMap.set(compId, comp);
+    }
+
+    // Batch query submissions if userId filter provided (for MyMatchesView)
+    const submissionsMap = new Map<string, any[]>();
+    if (filter.userId && docs.length > 0) {
+      const fixtureIds = docs.map((d) => d.id);
+      for (let i = 0; i < fixtureIds.length; i += 30) {
+        const chunk = fixtureIds.slice(i, i + 30);
+        try {
+          const subsSnap = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where('fixtureId', 'in', chunk).get();
+          for (const subDoc of subsSnap.docs) {
+            const subData = subDoc.data();
+            const arr = submissionsMap.get(subData.fixtureId) || [];
+            arr.push({
+              id: subDoc.id,
+              fixtureId: subData.fixtureId,
+              userId: subData.submittedByUserId,
+              submittedByUserId: subData.submittedByUserId,
+              clubId: subData.clubId,
+              homeScore: subData.homeScore,
+              awayScore: subData.awayScore,
+              proofUrl: subData.proofUrl || null,
+              createdAt: subData.createdAt,
+            });
+            submissionsMap.set(subData.fixtureId, arr);
+          }
+        } catch {}
+      }
+    }
+
     const fixtures: Fixture[] = docs.map((r) => {
       const homeSeed = SEED_CLUB_MAP.get(r.homeClubId);
       const awaySeed = SEED_CLUB_MAP.get(r.awayClubId);
+
+      const comp = compMap.get(r.competitionId);
+      const activeMatchday = comp?.currentMatchday || 1;
+      const adminStatus = comp?.adminOverrideStatus || 'AUTO';
+      const isMatchdayOpen = comp?.isMatchdayOpen !== false;
+      const isPlayableMatchday = adminStatus === 'FORCE_OPEN' || (isMatchdayOpen && r.matchday === activeMatchday);
+      const isPlayable = isPlayableMatchday && adminStatus !== 'FORCE_LOCKED' && adminStatus !== 'PAUSED' && r.status !== 'CONFIRMED';
+
+      const homeOcc = clubOccupancyMap.get(r.homeClubId);
+      const homeUser = homeOcc ? (userMap?.get(homeOcc.userId) || { id: homeOcc.userId, username: usernameMap.get(homeOcc.userId) || '', displayName: usernameMap.get(homeOcc.userId) || '' }) : null;
+
+      const awayOcc = clubOccupancyMap.get(r.awayClubId);
+      const awayUser = awayOcc ? (userMap?.get(awayOcc.userId) || { id: awayOcc.userId, username: usernameMap.get(awayOcc.userId) || '', displayName: usernameMap.get(awayOcc.userId) || '' }) : null;
+
+      const fixtureSubs = submissionsMap.get(r.id) || [];
+      const userSubmission = filter.userId ? fixtureSubs.find((s) => s.submittedByUserId === filter.userId) : undefined;
+      const opponentSubmission = filter.userId ? fixtureSubs.find((s) => s.submittedByUserId !== filter.userId) : undefined;
 
       return {
         id: r.id,
@@ -1165,6 +1242,9 @@ export async function getFixturesFirestore(filter: {
           leagueId: homeSeed?.leagueId || '',
           logoUrl: homeSeed?.logoUrl || '',
           active: true,
+          isTaken: Boolean(homeOcc),
+          claimedByUserId: homeOcc ? homeOcc.userId : null,
+          claimedByUsername: homeOcc ? (usernameMap.get(homeOcc.userId) || null) : null,
           createdAt: '',
         },
         awayClub: {
@@ -1175,10 +1255,19 @@ export async function getFixturesFirestore(filter: {
           leagueId: awaySeed?.leagueId || '',
           logoUrl: awaySeed?.logoUrl || '',
           active: true,
+          isTaken: Boolean(awayOcc),
+          claimedByUserId: awayOcc ? awayOcc.userId : null,
+          claimedByUsername: awayOcc ? (usernameMap.get(awayOcc.userId) || null) : null,
           createdAt: '',
         },
-        homeOwnerId: r.homeOwnerId,
-        awayOwnerId: r.awayOwnerId,
+        homeOwnerId: homeOcc ? homeOcc.userId : r.homeOwnerId,
+        awayOwnerId: awayOcc ? awayOcc.userId : r.awayOwnerId,
+        homeUser,
+        awayUser,
+        activeMatchday,
+        isPlayable,
+        userSubmission,
+        opponentSubmission,
         scheduledAt: r.scheduledAt,
         status: r.status as any,
         homeScore: r.homeScore ?? undefined,
@@ -1235,47 +1324,73 @@ export async function getFixturesFirestore(filter: {
       params.push(filter.limit);
     }
 
+    const { clubOccupancyMap, usernameMap, userMap } = await getActiveOccupanciesForSeason(filter.seasonId || 'season-2026-27');
     const rows = queryAll<any>(sql, params);
-    const fallbackFixtures = rows.map((r) => ({
-      id: r.id,
-      seasonId: r.season_id,
-      competitionId: r.competition_id,
-      competitionName: r.competition_name || r.competition_id,
-      matchday: r.matchday,
-      roundName: r.round_name,
-      homeClubId: r.home_club_id,
-      awayClubId: r.away_club_id,
-      homeClub: {
-        id: r.home_club_id || 'TBD',
-        name: r.home_name || r.home_club_id,
-        shortName: r.home_short || r.home_club_id,
-        country: r.home_country || '',
-        leagueId: r.home_league || '',
-        logoUrl: r.home_logo || '',
-        active: true,
-        createdAt: '',
-      },
-      awayClub: {
-        id: r.away_club_id || 'TBD',
-        name: r.away_name || r.away_club_id,
-        shortName: r.away_short || r.away_club_id,
-        country: r.away_country || '',
-        leagueId: r.away_league || '',
-        logoUrl: r.away_logo || '',
-        active: true,
-        createdAt: '',
-      },
-      homeOwnerId: r.home_owner_id,
-      awayOwnerId: r.away_owner_id,
-      scheduledAt: r.scheduled_at,
-      status: r.status,
-      homeScore: r.home_score !== null && r.home_score !== undefined ? r.home_score : undefined,
-      awayScore: r.away_score !== null && r.away_score !== undefined ? r.away_score : undefined,
-      winnerClubId: r.winner_club_id || undefined,
-      resultConfirmedAt: r.result_confirmed_at || undefined,
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
-    }));
+    const fallbackFixtures = rows.map((r) => {
+      const comp = compOverrideMap.get(r.competition_id);
+      const activeMatchday = comp?.currentMatchday || 1;
+      const adminStatus = comp?.adminOverrideStatus || 'AUTO';
+      const isMatchdayOpen = comp?.isMatchdayOpen !== false;
+      const isPlayableMatchday = adminStatus === 'FORCE_OPEN' || (isMatchdayOpen && r.matchday === activeMatchday);
+      const isPlayable = isPlayableMatchday && adminStatus !== 'FORCE_LOCKED' && adminStatus !== 'PAUSED' && r.status !== 'CONFIRMED';
+
+      const homeOcc = clubOccupancyMap.get(r.home_club_id);
+      const homeUser = homeOcc ? (userMap?.get(homeOcc.userId) || { id: homeOcc.userId, username: usernameMap.get(homeOcc.userId) || '', displayName: usernameMap.get(homeOcc.userId) || '' }) : null;
+
+      const awayOcc = clubOccupancyMap.get(r.away_club_id);
+      const awayUser = awayOcc ? (userMap?.get(awayOcc.userId) || { id: awayOcc.userId, username: usernameMap.get(awayOcc.userId) || '', displayName: usernameMap.get(awayOcc.userId) || '' }) : null;
+
+      return {
+        id: r.id,
+        seasonId: r.season_id,
+        competitionId: r.competition_id,
+        competitionName: r.competition_name || r.competition_id,
+        matchday: r.matchday,
+        roundName: r.round_name,
+        homeClubId: r.home_club_id,
+        awayClubId: r.away_club_id,
+        homeClub: {
+          id: r.home_club_id || 'TBD',
+          name: r.home_name || r.home_club_id,
+          shortName: r.home_short || r.home_club_id,
+          country: r.home_country || '',
+          leagueId: r.home_league || '',
+          logoUrl: r.home_logo || '',
+          active: true,
+          isTaken: Boolean(homeOcc),
+          claimedByUserId: homeOcc ? homeOcc.userId : null,
+          claimedByUsername: homeOcc ? (usernameMap.get(homeOcc.userId) || null) : null,
+          createdAt: '',
+        },
+        awayClub: {
+          id: r.away_club_id || 'TBD',
+          name: r.away_name || r.away_club_id,
+          shortName: r.away_short || r.away_club_id,
+          country: r.away_country || '',
+          leagueId: r.away_league || '',
+          logoUrl: r.away_logo || '',
+          active: true,
+          isTaken: Boolean(awayOcc),
+          claimedByUserId: awayOcc ? awayOcc.userId : null,
+          claimedByUsername: awayOcc ? (usernameMap.get(awayOcc.userId) || null) : null,
+          createdAt: '',
+        },
+        homeOwnerId: homeOcc ? homeOcc.userId : r.home_owner_id,
+        awayOwnerId: awayOcc ? awayOcc.userId : r.away_owner_id,
+        homeUser,
+        awayUser,
+        activeMatchday,
+        isPlayable,
+        scheduledAt: r.scheduled_at,
+        status: r.status,
+        homeScore: r.home_score !== null && r.home_score !== undefined ? r.home_score : undefined,
+        awayScore: r.away_score !== null && r.away_score !== undefined ? r.away_score : undefined,
+        winnerClubId: r.winner_club_id || undefined,
+        resultConfirmedAt: r.result_confirmed_at || undefined,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+      };
+    });
 
     if (cacheKey) {
       setInCache(cacheKey, fallbackFixtures, 30000);
@@ -1285,7 +1400,7 @@ export async function getFixturesFirestore(filter: {
 }
 
 export async function getFixtureByIdFirestore(fixtureId: string, currentUserId?: string): Promise<Fixture | null> {
-  const cacheKey = `firestore:fixture:${fixtureId}`;
+  const cacheKey = `firestore:fixture:${fixtureId}:${currentUserId || 'anon'}`;
   const cached = getFromCache<Fixture>(cacheKey);
   if (cached) return cached;
 
@@ -1299,6 +1414,57 @@ export async function getFixtureByIdFirestore(fixtureId: string, currentUserId?:
       // Enrich with home and away clubs using SEED_CLUB_MAP (0 Firestore reads!)
       const homeSeed = SEED_CLUB_MAP.get(r.homeClubId);
       const awaySeed = SEED_CLUB_MAP.get(r.awayClubId);
+
+      const { clubOccupancyMap, usernameMap, userMap } = await getActiveOccupanciesForSeason(r.seasonId || 'season-2026-27');
+      const homeOcc = clubOccupancyMap.get(r.homeClubId);
+      const homeUser = homeOcc ? (userMap?.get(homeOcc.userId) || { id: homeOcc.userId, username: usernameMap.get(homeOcc.userId) || '', displayName: usernameMap.get(homeOcc.userId) || '' }) : null;
+      const awayOcc = clubOccupancyMap.get(r.awayClubId);
+      const awayUser = awayOcc ? (userMap?.get(awayOcc.userId) || { id: awayOcc.userId, username: usernameMap.get(awayOcc.userId) || '', displayName: usernameMap.get(awayOcc.userId) || '' }) : null;
+
+      let comp = compOverrideMap.get(r.competitionId);
+      if (!comp && r.competitionId) {
+        try {
+          const compDoc = await db.collection(COLLECTIONS.COMPETITIONS).doc(r.competitionId).get();
+          if (compDoc.exists) {
+            comp = compDoc.data() as FirestoreCompetitionDoc;
+            compOverrideMap.set(r.competitionId, comp);
+          }
+        } catch {}
+      }
+
+      const activeMatchday = comp?.currentMatchday || 1;
+      const adminStatus = comp?.adminOverrideStatus || 'AUTO';
+      const isMatchdayOpen = comp?.isMatchdayOpen !== false;
+      const isPlayableMatchday = adminStatus === 'FORCE_OPEN' || (isMatchdayOpen && r.matchday === activeMatchday);
+      const isPlayable = isPlayableMatchday && adminStatus !== 'FORCE_LOCKED' && adminStatus !== 'PAUSED' && r.status !== 'CONFIRMED';
+
+      // Fetch user/opponent submissions if currentUserId is provided
+      let userSubmission: any = undefined;
+      let opponentSubmission: any = undefined;
+      try {
+        const subsSnap = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where('fixtureId', '==', fixtureId).get();
+        if (!subsSnap.empty) {
+          for (const sDoc of subsSnap.docs) {
+            const sData = sDoc.data();
+            const subObj = {
+              id: sDoc.id,
+              fixtureId: sData.fixtureId,
+              userId: sData.submittedByUserId,
+              submittedByUserId: sData.submittedByUserId,
+              clubId: sData.clubId,
+              homeScore: sData.homeScore,
+              awayScore: sData.awayScore,
+              proofUrl: sData.proofUrl || null,
+              createdAt: sData.createdAt,
+            };
+            if (currentUserId && sData.submittedByUserId === currentUserId) {
+              userSubmission = subObj;
+            } else if (currentUserId) {
+              opponentSubmission = subObj;
+            }
+          }
+        }
+      } catch {}
 
       const fix: Fixture = {
         id: r.id,
@@ -1317,6 +1483,9 @@ export async function getFixtureByIdFirestore(fixtureId: string, currentUserId?:
           leagueId: homeSeed?.leagueId || '',
           logoUrl: homeSeed?.logoUrl || '',
           active: true,
+          isTaken: Boolean(homeOcc),
+          claimedByUserId: homeOcc ? homeOcc.userId : null,
+          claimedByUsername: homeOcc ? (usernameMap.get(homeOcc.userId) || null) : null,
           createdAt: '',
         },
         awayClub: {
@@ -1327,10 +1496,19 @@ export async function getFixtureByIdFirestore(fixtureId: string, currentUserId?:
           leagueId: awaySeed?.leagueId || '',
           logoUrl: awaySeed?.logoUrl || '',
           active: true,
+          isTaken: Boolean(awayOcc),
+          claimedByUserId: awayOcc ? awayOcc.userId : null,
+          claimedByUsername: awayOcc ? (usernameMap.get(awayOcc.userId) || null) : null,
           createdAt: '',
         },
-        homeOwnerId: r.homeOwnerId,
-        awayOwnerId: r.awayOwnerId,
+        homeOwnerId: homeOcc ? homeOcc.userId : r.homeOwnerId,
+        awayOwnerId: awayOcc ? awayOcc.userId : r.awayOwnerId,
+        homeUser,
+        awayUser,
+        activeMatchday,
+        isPlayable,
+        userSubmission,
+        opponentSubmission,
         scheduledAt: r.scheduledAt,
         status: r.status as any,
         homeScore: r.homeScore ?? undefined,
