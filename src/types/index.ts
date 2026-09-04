@@ -157,6 +157,8 @@ export interface Fixture {
   awayUser?: FixtureUserInfo | null;
   activeMatchday?: number;
   isPlayable?: boolean;
+  nextMatchdayOpenAt?: string | null;
+  matchdayOpenedAt?: string | null;
   homeOwnerId?: string;
   awayOwnerId?: string;
   scheduledAt: string;

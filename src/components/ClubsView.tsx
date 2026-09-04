@@ -242,29 +242,27 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
   const matchdays: number[] = Array.from({ length: totalLeagueMatchdays }, (_, i) => i + 1);
   const currentMatchdayFixtures = leagueFixtures.filter((f) => (Number(f.matchday) || 1) === selectedMatchday);
 
-  const getPositionStyle = (position: number, totalTeams: number) => {
-    if (position <= 4) {
+  const isPLOrLL = selectedLeagueId.includes('premier-league') || selectedLeagueId.includes('la-liga');
+  const uclThreshold = isPLOrLL ? 7 : 6;
+  const uelThreshold = isPLOrLL ? 14 : 12;
+  const relThreshold = selectedLeagueId.includes('bundesliga') || selectedLeagueId.includes('ligue-1') ? 16 : 18;
+
+  const getPositionStyle = (position: number) => {
+    if (position <= uclThreshold) {
       return {
         badgeColor: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
         barColor: 'bg-blue-500',
         label: t.uclZone,
       };
     }
-    if (position === 5) {
+    if (position <= uelThreshold) {
       return {
         badgeColor: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30',
         barColor: 'bg-indigo-500',
         label: t.uelZone,
       };
     }
-    if (position === 6) {
-      return {
-        badgeColor: 'bg-teal-500/20 text-teal-400 border-teal-500/30',
-        barColor: 'bg-teal-500',
-        label: t.ueclZone,
-      };
-    }
-    if (position > totalTeams - 3) {
+    if (position >= relThreshold) {
       return {
         badgeColor: 'bg-rose-500/20 text-rose-400 border-rose-500/30',
         barColor: 'bg-rose-500',
@@ -616,14 +614,29 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                               <Lock className="w-3 h-3 text-slate-400" /> {t.claimed}
                             </div>
                           ) : (
-                            <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/30">
-                              <Sparkles className="w-3 h-3" /> {t.available}
+                            <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/30">
+                              <Sparkles className="w-3 h-3 text-amber-400" /> User kerak
                             </div>
                           )}
                         </div>
                       </div>
 
                       <h3 className="font-black text-xs sm:text-sm text-slate-100 line-clamp-1 mb-0.5">{club.name}</h3>
+                      <div className="mb-2">
+                        {isUserClub ? (
+                          <span className="text-[11px] font-bold text-emerald-400 truncate block">
+                            @{user?.username || 'siz'}
+                          </span>
+                        ) : isClaimedByOther && managerName ? (
+                          <span className="text-[11px] font-semibold text-slate-300 truncate block">
+                            @{managerName}
+                          </span>
+                        ) : (
+                          <span className="text-[11px] font-bold text-amber-400/90 truncate block">
+                            User kerak
+                          </span>
+                        )}
+                      </div>
                       <div className="text-[11px] text-slate-400 flex items-center gap-1.5 mb-2.5">
                         <MapPin className="w-3 h-3 text-slate-500 shrink-0" />
                         <span className="truncate">{club.stadium || 'Home Stadium'}</span>
@@ -797,6 +810,25 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
             </div>
           ) : (
             <div className="glass-panel overflow-hidden shadow-2xl border-white/[0.08]">
+              <div className="flex flex-wrap items-center justify-between gap-2.5 p-3 bg-slate-950/70 border-b border-white/[0.08] text-[10px]">
+                <div className="font-bold text-slate-300">
+                  {currentComp?.name || 'League Table'} • {totalLeagueMatchdays} Tur
+                </div>
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <div className="flex items-center gap-1.5 text-slate-300">
+                    <span className="w-2 h-2 rounded-full bg-blue-500" />
+                    <span>{t.uclZone} (1–{uclThreshold})</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-slate-300">
+                    <span className="w-2 h-2 rounded-full bg-indigo-500" />
+                    <span>{t.uelZone} ({uclThreshold + 1}–{uelThreshold})</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-slate-300">
+                    <span className="w-2 h-2 rounded-full bg-rose-500" />
+                    <span>{t.relegationZone} ({relThreshold}–{relThreshold === 16 ? 18 : 20})</span>
+                  </div>
+                </div>
+              </div>
               <div className="overflow-x-auto scrollbar-none">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
@@ -815,7 +847,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                   </thead>
                   <tbody className="divide-y divide-white/[0.04]">
                     {leagueStandings.map((row) => {
-                      const posStyle = getPositionStyle(row.position, leagueStandings.length);
+                      const posStyle = getPositionStyle(row.position);
                       const isMyClub = currentClub && currentClub.id === row.clubId;
 
                       return (

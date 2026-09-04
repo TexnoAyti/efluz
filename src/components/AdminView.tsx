@@ -942,7 +942,7 @@ export const AdminView: React.FC = () => {
                 <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-amber-400 transition-colors" />
               </div>
               <p className="text-[11px] text-slate-400">
-                Calculate UEFA Champions League, Europa League, and Conference League allocations.
+                Calculate UEFA Champions League and Europa League (32-team format) allocations.
               </p>
             </button>
           </div>

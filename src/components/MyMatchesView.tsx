@@ -6,6 +6,8 @@ import { api } from '../lib/api';
 import { Fixture } from '../types';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
 import { ClubCrest } from './ClubCrest';
+import { MatchdayCountdown } from './MatchdayCountdown';
+import { openTelegramChat } from '../lib/telegramUtils';
 import {
   Swords,
   Calendar,
@@ -21,6 +23,7 @@ import {
   ChevronRight,
   Info,
   Lock,
+  Send,
 } from 'lucide-react';
 
 interface MyMatchesViewProps {
@@ -225,26 +228,39 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                       ({t.myClub})
                     </span>
                   ) : (focusedFixture.homeUser?.username || focusedFixture.homeClub?.claimedByUsername) ? (
-                    <div className="flex flex-col items-center gap-1 mt-1">
+                    <div className="flex flex-col items-center gap-1.5 mt-1">
                       <span className="text-[11px] text-slate-300 font-bold truncate max-w-[130px]">
                         @{focusedFixture.homeUser?.username || focusedFixture.homeClub?.claimedByUsername}
                       </span>
-                      {(focusedFixture.homeUser?.id || focusedFixture.homeClub?.claimedByUserId) && (
+                      <div className="flex items-center gap-1.5">
+                        {(focusedFixture.homeUser?.id || focusedFixture.homeClub?.claimedByUserId) && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openUserProfile(focusedFixture.homeUser?.id || focusedFixture.homeClub?.claimedByUserId!);
+                            }}
+                            className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 transition-colors"
+                          >
+                            Profil
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            openUserProfile(focusedFixture.homeUser?.id || focusedFixture.homeClub?.claimedByUserId!);
+                            openTelegramChat(focusedFixture.homeUser?.username || focusedFixture.homeClub?.claimedByUsername);
                           }}
-                          className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 transition-colors"
+                          className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-500/30 transition-colors flex items-center gap-1"
                         >
-                          Profilni ko‘rish
+                          <Send className="w-2.5 h-2.5" />
+                          <span>Telegram</span>
                         </button>
-                      )}
+                      </div>
                     </div>
                   ) : (
-                    <span className="text-[10px] text-slate-500 italic mt-1">
-                      User qo‘yilmagan
+                    <span className="text-[10px] text-amber-400/90 font-bold mt-1">
+                      User kerak
                     </span>
                   )}
                 </div>
@@ -284,26 +300,39 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                       ({t.myClub})
                     </span>
                   ) : (focusedFixture.awayUser?.username || focusedFixture.awayClub?.claimedByUsername) ? (
-                    <div className="flex flex-col items-center gap-1 mt-1">
+                    <div className="flex flex-col items-center gap-1.5 mt-1">
                       <span className="text-[11px] text-slate-300 font-bold truncate max-w-[130px]">
                         @{focusedFixture.awayUser?.username || focusedFixture.awayClub?.claimedByUsername}
                       </span>
-                      {(focusedFixture.awayUser?.id || focusedFixture.awayClub?.claimedByUserId) && (
+                      <div className="flex items-center gap-1.5">
+                        {(focusedFixture.awayUser?.id || focusedFixture.awayClub?.claimedByUserId) && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openUserProfile(focusedFixture.awayUser?.id || focusedFixture.awayClub?.claimedByUserId!);
+                            }}
+                            className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 transition-colors"
+                          >
+                            Profil
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            openUserProfile(focusedFixture.awayUser?.id || focusedFixture.awayClub?.claimedByUserId!);
+                            openTelegramChat(focusedFixture.awayUser?.username || focusedFixture.awayClub?.claimedByUsername);
                           }}
-                          className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 transition-colors"
+                          className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-500/30 transition-colors flex items-center gap-1"
                         >
-                          Profilni ko‘rish
+                          <Send className="w-2.5 h-2.5" />
+                          <span>Telegram</span>
                         </button>
-                      )}
+                      </div>
                     </div>
                   ) : (
-                    <span className="text-[10px] text-slate-500 italic mt-1">
-                      User qo‘yilmagan
+                    <span className="text-[10px] text-amber-400/90 font-bold mt-1">
+                      User kerak
                     </span>
                   )}
                 </div>
@@ -359,18 +388,31 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
 
               {/* Matchday Locked Notice */}
               {focusedFixture.isPlayable === false && focusedFixture.status !== 'CONFIRMED' && (
-                <div className="glass-card bg-rose-950/20 border-rose-500/30 p-3.5 flex items-start sm:items-center gap-3 text-xs">
-                  <div className="w-8 h-8 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 shrink-0 mt-0.5 sm:mt-0">
-                    <Lock className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <div className="font-bold text-rose-300">
-                      Matchday {focusedFixture.matchday} Qulflangan
+                <div className="glass-card bg-rose-950/20 border-rose-500/30 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <div className="flex items-start sm:items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 shrink-0 mt-0.5 sm:mt-0">
+                      <Lock className="w-4 h-4" />
                     </div>
-                    <div className="text-[11px] text-slate-400 mt-0.5">
-                      Faqat hozirgi faol tur o‘yinlarini o‘ynash va natija kiritish mumkin. Keyingi turlar admin tomonidan ochilgandan so‘ng o‘ynaladi.
+                    <div>
+                      <div className="font-bold text-rose-300 flex items-center gap-2">
+                        <span>Matchday {focusedFixture.matchday} Qulflangan</span>
+                        <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                          LOCKED
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">
+                        Faqat hozirgi faol tur o‘yinlarini o‘ynash va natija kiritish mumkin.
+                      </div>
                     </div>
                   </div>
+                  {focusedFixture.nextMatchdayOpenAt && (
+                    <div className="sm:text-right pl-11 sm:pl-0">
+                      <span className="text-[10px] text-slate-400 uppercase font-black block">Ochilish vaqti</span>
+                      <span className="text-xs font-mono font-bold text-amber-300">
+                        <MatchdayCountdown targetIso={focusedFixture.nextMatchdayOpenAt} onExpire={() => loadMatches()} />
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
 

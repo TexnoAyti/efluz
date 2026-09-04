@@ -4,6 +4,7 @@ import { useI18n } from '../i18n';
 import { api } from '../lib/api';
 import { Competition, StandingsRow, Fixture } from '../types';
 import { ClubCrest } from './ClubCrest';
+import { TournamentBracket } from './TournamentBracket';
 import {
   Globe2,
   Trophy,
@@ -22,7 +23,7 @@ interface ChampionsLeagueViewProps {
 }
 
 export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavigateTab }) => {
-  const { activeSeasonId } = useAuth();
+  const { user, currentClub, activeSeasonId } = useAuth();
   const { t } = useI18n();
 
   const [tournaments, setTournaments] = useState<Competition[]>([]);
@@ -249,14 +250,30 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
       {activeTab === 'STANDINGS' && (
         <div className="space-y-6">
           <div className="glass-panel p-4 sm:p-6 shadow-xl space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs sm:text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
-                <Globe2 className="w-4 h-4 text-blue-400" />
-                <span>{selectedTournament?.name || 'Champions League'} - {t.leaguePhase}</span>
-              </h3>
-              <span className="text-[10px] sm:text-xs text-slate-400">
-                Top 8 advance to R16 directly
-              </span>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/[0.06] pb-3">
+              <div>
+                <h3 className="text-xs sm:text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
+                  <Globe2 className="w-4 h-4 text-blue-400" />
+                  <span>{selectedTournament?.name || 'Champions League'} - {t.leaguePhase}</span>
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  32 jamoa • 8 tur (4 Uy / 4 Mehmon) • Yakka umumiy liga jadvali
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-[10px]">
+                <div className="flex items-center gap-1 text-slate-300">
+                  <span className="w-2 h-2 rounded-full bg-blue-500" />
+                  <span>1–8: Nimchorak final</span>
+                </div>
+                <div className="flex items-center gap-1 text-slate-300">
+                  <span className="w-2 h-2 rounded-full bg-indigo-500" />
+                  <span>9–24: O‘tish pley-offi</span>
+                </div>
+                <div className="flex items-center gap-1 text-slate-300">
+                  <span className="w-2 h-2 rounded-full bg-rose-500" />
+                  <span>25–32: Chiqib ketadi</span>
+                </div>
+              </div>
             </div>
 
             {standings.length === 0 ? (
@@ -293,6 +310,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
                     {standings.map((row, idx) => {
                       const isDirectRO16 = idx < 8;
                       const isPlayoff = idx >= 8 && idx < 24;
+                      const isEliminated = idx >= 24;
 
                       return (
                         <tr
@@ -302,6 +320,8 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
                               ? 'bg-blue-500/10'
                               : isPlayoff
                               ? 'bg-indigo-500/5'
+                              : isEliminated
+                              ? 'bg-rose-500/5'
                               : ''
                           }`}
                         >
@@ -313,7 +333,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
                                     ? 'bg-blue-400'
                                     : isPlayoff
                                     ? 'bg-indigo-400'
-                                    : 'bg-transparent'
+                                    : 'bg-rose-400'
                                 }`}
                               />
                               <span className="font-bold text-slate-200 text-xs">{row.position}</span>
@@ -401,82 +421,12 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
 
       {/* TAB 2: Knockout Bracket & Matches */}
       {activeTab === 'BRACKET' && (
-        <div className="glass-panel p-4 sm:p-6 shadow-xl space-y-5">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xs sm:text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
-              <Trophy className="w-4 h-4 text-amber-400" />
-              <span>Knockout Elimination Rounds</span>
-            </h3>
-            <span className="text-[10px] sm:text-xs text-slate-400">Play-offs → R16 → QF → SF → Final</span>
-          </div>
-
-          {fixtures.length === 0 ? (
-            <div className="py-12 text-center text-slate-400 text-xs">
-              <p className="font-semibold text-slate-300 mb-1">Knockout bracket has not commenced</p>
-              <p className="text-slate-500">
-                Knockout pairings will be generated upon completion of the league phase or qualification draw.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-5">
-              {rounds.map((round) => (
-                <div key={round} className="space-y-3">
-                  <div className="text-xs font-black uppercase text-blue-400 tracking-wider px-1">
-                    {round}
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {fixturesByRound[round].map((f) => (
-                      <div
-                        key={f.id}
-                        className="p-3.5 glass-card space-y-2 text-xs"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <ClubCrest
-                              clubId={f.homeClub?.id}
-                              logoUrl={f.homeClub?.logoUrl}
-                              name={f.homeClub?.name || 'Home Club'}
-                              shortName={f.homeClub?.shortName}
-                              size="xs"
-                              className="w-4 h-4 sm:w-5 sm:h-5"
-                            />
-                            <span className="font-bold text-slate-200 truncate">{f.homeClub?.name || 'Home Club'}</span>
-                          </div>
-                          <span className="font-black text-white text-xs sm:text-sm ml-2">
-                            {f.status === 'CONFIRMED' ? f.homeScore : '-'}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center justify-between border-t border-white/[0.06] pt-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <ClubCrest
-                              clubId={f.awayClub?.id}
-                              logoUrl={f.awayClub?.logoUrl}
-                              name={f.awayClub?.name || 'Away Club'}
-                              shortName={f.awayClub?.shortName}
-                              size="xs"
-                              className="w-4 h-4 sm:w-5 sm:h-5"
-                            />
-                            <span className="font-bold text-slate-200 truncate">{f.awayClub?.name || 'Away Club'}</span>
-                          </div>
-                          <span className="font-black text-white text-xs sm:text-sm ml-2">
-                            {f.status === 'CONFIRMED' ? f.awayScore : '-'}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center justify-between pt-1 text-[10px] text-slate-500">
-                          <span>Status: {f.status}</span>
-                          {f.winnerClubId && (
-                            <span className="text-emerald-400 font-bold">Winner Confirmed</span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+        <div className="space-y-4">
+          <TournamentBracket
+            fixtures={fixtures}
+            currentClubId={currentClub?.id}
+            userId={user?.id}
+          />
         </div>
       )}
 
