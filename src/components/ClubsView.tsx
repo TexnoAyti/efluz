@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useUserProfile } from '../context/UserProfileContext';
 import { useI18n } from '../i18n';
 import { api } from '../lib/api';
 import { League, Club, Fixture, StandingsRow, Competition } from '../types';
@@ -25,6 +26,7 @@ interface ClubsViewProps {
 
 export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
   const { user, currentClub, activeSeasonId, refreshUserData, showToast } = useAuth();
+  const { openUserProfile } = useUserProfile();
   const { t } = useI18n();
 
   // League & Data states
@@ -636,7 +638,21 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                       ) : isClaimedByOther ? (
                         <div className="flex items-center justify-between text-[11px] text-slate-400 glass-card p-2 rounded-xl">
                           <span className="text-[10px] uppercase font-bold text-slate-500">{t.manager}:</span>
-                          <span className="font-semibold text-slate-300 truncate">@{managerName}</span>
+                          {club.claimedByUserId || club.managerUserId || club.occupancy?.userId ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const uid = club.claimedByUserId || club.managerUserId || club.occupancy?.userId;
+                                if (uid) openUserProfile(uid);
+                              }}
+                              className="font-semibold text-slate-300 hover:text-emerald-400 transition-colors truncate underline decoration-slate-600 hover:decoration-emerald-500 underline-offset-2 max-w-[140px]"
+                            >
+                              @{managerName}
+                            </button>
+                          ) : (
+                            <span className="font-semibold text-slate-300 truncate">@{managerName}</span>
+                          )}
                         </div>
                       ) : currentClub ? (
                         <button

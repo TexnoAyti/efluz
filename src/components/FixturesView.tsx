@@ -23,6 +23,7 @@ import {
 
 export const FixturesView: React.FC = () => {
   const { user, currentClub, activeSeasonId, showToast } = useAuth();
+  const { openUserProfile } = useUserProfile();
 
   const [competitions, setCompetitions] = useState<Competition[]>([]);
   const [selectedCompetitionId, setSelectedCompetitionId] = useState<string>('comp-premier-league-2026');
@@ -385,9 +386,27 @@ export const FixturesView: React.FC = () => {
                       <span className={`font-bold text-xs truncate max-w-full ${isHomeUser ? 'text-emerald-400 font-black' : 'text-slate-200'}`}>
                         {fixture.homeClub?.name}
                       </span>
-                      <span className="text-[10px] text-slate-500 truncate max-w-full">
-                        {isHomeUser ? '(You)' : `@${fixture.homeClub?.claimedByUsername || 'unclaimed'}`}
-                      </span>
+                      {isHomeUser ? (
+                        <span className="text-[10px] text-emerald-400 font-bold truncate max-w-full">
+                          (You)
+                        </span>
+                      ) : (fixture.homeUser?.username || fixture.homeClub?.claimedByUsername) ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const uid = fixture.homeUser?.id || fixture.homeClub?.claimedByUserId;
+                            if (uid) openUserProfile(uid);
+                          }}
+                          className="text-[10px] text-slate-400 hover:text-emerald-400 font-medium truncate max-w-full transition-colors underline decoration-slate-600 hover:decoration-emerald-500 underline-offset-2"
+                        >
+                          @{fixture.homeUser?.username || fixture.homeClub?.claimedByUsername}
+                        </button>
+                      ) : (
+                        <span className="text-[10px] text-slate-500 italic truncate max-w-full">
+                          User qo‘yilmagan
+                        </span>
+                      )}
                     </div>
 
                     {/* Score / VS Center */}
@@ -422,9 +441,27 @@ export const FixturesView: React.FC = () => {
                       <span className={`font-bold text-xs truncate max-w-full ${isAwayUser ? 'text-emerald-400 font-black' : 'text-slate-200'}`}>
                         {fixture.awayClub?.name}
                       </span>
-                      <span className="text-[10px] text-slate-500 truncate max-w-full">
-                        {isAwayUser ? '(You)' : `@${fixture.awayClub?.claimedByUsername || 'unclaimed'}`}
-                      </span>
+                      {isAwayUser ? (
+                        <span className="text-[10px] text-emerald-400 font-bold truncate max-w-full">
+                          (You)
+                        </span>
+                      ) : (fixture.awayUser?.username || fixture.awayClub?.claimedByUsername) ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const uid = fixture.awayUser?.id || fixture.awayClub?.claimedByUserId;
+                            if (uid) openUserProfile(uid);
+                          }}
+                          className="text-[10px] text-slate-400 hover:text-emerald-400 font-medium truncate max-w-full transition-colors underline decoration-slate-600 hover:decoration-emerald-500 underline-offset-2"
+                        >
+                          @{fixture.awayUser?.username || fixture.awayClub?.claimedByUsername}
+                        </button>
+                      ) : (
+                        <span className="text-[10px] text-slate-500 italic truncate max-w-full">
+                          User qo‘yilmagan
+                        </span>
+                      )}
                     </div>
                   </div>
 
