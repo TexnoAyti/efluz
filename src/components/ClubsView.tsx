@@ -760,11 +760,21 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                           name={fix.homeClub?.name}
                           shortName={fix.homeClub?.shortName}
                           size="sm"
-                          className="w-6 h-6"
+                          className="w-6 h-6 shrink-0"
                         />
-                        <span className="text-xs font-bold text-white truncate">
-                          {fix.homeClub?.shortName || fix.homeClub?.name}
-                        </span>
+                        <div className="min-w-0">
+                          <span className="text-xs font-bold text-white truncate block">
+                            {fix.homeClub?.shortName || fix.homeClub?.name}
+                          </span>
+                          {(() => {
+                            const homeOwner = fix.homeUser?.username || fix.homeClub?.claimedByUsername || fix.homeClub?.managerUsername;
+                            return (
+                              <span className={`text-[10px] truncate block ${homeOwner ? 'text-slate-400 font-medium' : 'text-amber-400/90 font-bold'}`}>
+                                {homeOwner ? `@${homeOwner}` : 'User kerak'}
+                              </span>
+                            );
+                          })()}
+                        </div>
                       </div>
 
                       {/* Score / VS */}
@@ -773,17 +783,27 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                       </div>
 
                       {/* Away */}
-                      <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
-                        <span className="text-xs font-bold text-white truncate text-right">
-                          {fix.awayClub?.shortName || fix.awayClub?.name}
-                        </span>
+                      <div className="flex items-center gap-2 flex-1 min-w-0 justify-end text-right">
+                        <div className="min-w-0 text-right">
+                          <span className="text-xs font-bold text-white truncate block">
+                            {fix.awayClub?.shortName || fix.awayClub?.name}
+                          </span>
+                          {(() => {
+                            const awayOwner = fix.awayUser?.username || fix.awayClub?.claimedByUsername || fix.awayClub?.managerUsername;
+                            return (
+                              <span className={`text-[10px] truncate block ${awayOwner ? 'text-slate-400 font-medium' : 'text-amber-400/90 font-bold'}`}>
+                                {awayOwner ? `@${awayOwner}` : 'User kerak'}
+                              </span>
+                            );
+                          })()}
+                        </div>
                         <ClubCrest
                           clubId={fix.awayClub?.id}
                           logoUrl={fix.awayClub?.logoUrl}
                           name={fix.awayClub?.name}
                           shortName={fix.awayClub?.shortName}
                           size="sm"
-                          className="w-6 h-6"
+                          className="w-6 h-6 shrink-0"
                         />
                       </div>
                     </div>
@@ -874,16 +894,25 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                                 logoUrl={row.clubLogoUrl}
                                 name={row.clubName}
                                 size="xs"
-                                className="w-5 h-5"
+                                className="w-5 h-5 shrink-0"
                               />
-                              <span className="font-bold text-white text-xs truncate max-w-[160px]">
-                                {row.clubName}
-                              </span>
-                              {isMyClub && (
-                                <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-emerald-500 text-slate-950 uppercase">
-                                  You
+                              <div className="flex flex-col min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-bold text-white text-xs truncate max-w-[160px]">
+                                    {row.clubName}
+                                  </span>
+                                  {isMyClub && (
+                                    <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-emerald-500 text-slate-950 uppercase">
+                                      You
+                                    </span>
+                                  )}
+                                </div>
+                                <span className={`text-[10px] truncate max-w-[140px] ${
+                                  row.managerUsername ? 'text-slate-400 font-medium' : 'text-amber-400/90 font-bold'
+                                }`}>
+                                  {row.managerUsername ? `@${row.managerUsername}` : 'User kerak'}
                                 </span>
-                              )}
+                              </div>
                             </div>
                           </td>
 

@@ -5,6 +5,7 @@ import { api } from '../lib/api';
 import { Competition, Fixture } from '../types';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
 import { ClubCrest } from './ClubCrest';
+import { openTelegramChat, isValidTelegramUsername } from '../lib/telegramUtils';
 import {
   Award,
   Trophy,
@@ -16,6 +17,7 @@ import {
   Loader2,
   Swords,
   AlertTriangle,
+  Send,
 } from 'lucide-react';
 
 interface CupBracketsViewProps {
@@ -276,8 +278,10 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
                             <span className={`text-xs font-bold truncate ${isHome ? 'text-amber-400' : 'text-slate-200'}`}>
                               {homeName}
                             </span>
-                            {homeManager && (
+                            {homeManager ? (
                               <span className="text-[10px] text-slate-400 truncate">@{homeManager}</span>
+                            ) : (
+                              <span className="text-[10px] text-amber-400/90 font-bold truncate">User kerak</span>
                             )}
                           </div>
                           <span className="text-xs font-black text-white px-2 py-0.5 glass-card shrink-0 ml-2">
@@ -301,8 +305,10 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
                             <span className={`text-xs font-bold truncate ${isAway ? 'text-amber-400' : 'text-slate-200'}`}>
                               {awayName}
                             </span>
-                            {awayManager && (
+                            {awayManager ? (
                               <span className="text-[10px] text-slate-400 truncate">@{awayManager}</span>
+                            ) : (
+                              <span className="text-[10px] text-amber-400/90 font-bold truncate">User kerak</span>
                             )}
                           </div>
                           <span className="text-xs font-black text-white px-2 py-0.5 glass-card shrink-0 ml-2">
@@ -312,14 +318,35 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
                       </div>
 
                       {/* Action Button for participant */}
-                      {isUserInvolved && fixture.status !== 'CONFIRMED' && (
-                        <button
-                          onClick={() => setSelectedFixtureForSubmit(fixture)}
-                          className="w-full py-2 bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 font-black text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 min-h-[38px] touch-manipulation"
-                        >
-                          <Swords className="w-3.5 h-3.5 text-slate-950" />
-                          <span>{t.submitResult}</span>
-                        </button>
+                      {isUserInvolved && (
+                        <div className="flex flex-col sm:flex-row gap-2 pt-1 border-t border-white/[0.06]">
+                          {(() => {
+                            const oppManager = isHome ? awayManager : homeManager;
+                            const hasOppTg = isValidTelegramUsername(oppManager);
+                            return hasOppTg ? (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openTelegramChat(oppManager);
+                                }}
+                                className="flex-1 py-1.5 px-2.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-md min-h-[36px] touch-manipulation"
+                              >
+                                <Send className="w-3 h-3" />
+                                <span>Raqibga yozish</span>
+                              </button>
+                            ) : null;
+                          })()}
+                          {fixture.status !== 'CONFIRMED' && (
+                            <button
+                              onClick={() => setSelectedFixtureForSubmit(fixture)}
+                              className="flex-1 py-1.5 px-2.5 bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 font-black text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 min-h-[36px] touch-manipulation"
+                            >
+                              <Swords className="w-3.5 h-3.5 text-slate-950" />
+                              <span>{t.submitResult}</span>
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   );

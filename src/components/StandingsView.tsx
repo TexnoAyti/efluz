@@ -278,7 +278,7 @@ export const StandingsView: React.FC = () => {
                                   @{row.managerUsername}
                                 </button>
                               ) : (
-                                <span className="text-slate-500 italic">User qo‘yilmagan</span>
+                                <span className="text-amber-400/90 font-bold">User kerak</span>
                               )}
                             </div>
                           </div>

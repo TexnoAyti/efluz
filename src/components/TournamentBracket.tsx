@@ -1,9 +1,9 @@
 import React from 'react';
 import { Fixture } from '../types';
 import { ClubCrest } from './ClubCrest';
-import { Trophy, Swords, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Trophy, Swords, Sparkles, CheckCircle2, Send } from 'lucide-react';
 import { useUserProfile } from '../context/UserProfileContext';
-import { openTelegramChat } from '../lib/telegramUtils';
+import { openTelegramChat, isValidTelegramUsername } from '../lib/telegramUtils';
 
 interface TournamentBracketProps {
   fixtures: Fixture[];
@@ -94,10 +94,17 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
         fixture.awayScore !== null &&
         fixture.awayScore! > fixture.homeScore!;
 
+    const homeOwner = fixture.homeUser?.username || fixture.homeClub?.claimedByUsername;
+    const awayOwner = fixture.awayUser?.username || fixture.awayClub?.claimedByUsername;
+
+    const isHomeUser = (currentClubId && fixture.homeClubId === currentClubId) || (userId && fixture.homeOwnerId === userId);
+    const isAwayUser = (currentClubId && fixture.awayClubId === currentClubId) || (userId && fixture.awayOwnerId === userId);
+    const opponentTg = isHomeUser ? awayOwner : isAwayUser ? homeOwner : null;
+
     return (
       <div
         onClick={() => onSelectFixture?.(fixture)}
-        className={`w-56 glass-panel p-2.5 rounded-xl transition-all shadow-md cursor-pointer group ${
+        className={`w-60 glass-panel p-2.5 rounded-xl transition-all shadow-md cursor-pointer group ${
           isUserMatch
             ? 'border-amber-400/60 bg-amber-950/20 shadow-amber-500/10'
             : isCenter
@@ -123,13 +130,22 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
               size="xs"
               className="w-4 h-4 shrink-0"
             />
-            <span
-              className={`text-xs truncate ${
-                isHomeWinner ? 'font-black text-emerald-400' : 'font-semibold text-slate-200'
-              }`}
-            >
-              {fixture.homeClub?.name || 'Home'}
-            </span>
+            <div className="min-w-0 flex-1">
+              <span
+                className={`text-xs truncate block ${
+                  isHomeWinner ? 'font-black text-emerald-400' : 'font-semibold text-slate-200'
+                }`}
+              >
+                {fixture.homeClub?.name || 'Home'}
+              </span>
+              <span
+                className={`text-[9px] truncate block ${
+                  homeOwner ? 'text-slate-400 font-medium' : 'text-amber-400/90 font-bold'
+                }`}
+              >
+                {homeOwner ? `@${homeOwner}` : 'User kerak'}
+              </span>
+            </div>
           </div>
           <span
             className={`text-xs px-1.5 py-0.5 rounded font-mono font-black shrink-0 ${
@@ -151,13 +167,22 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
               size="xs"
               className="w-4 h-4 shrink-0"
             />
-            <span
-              className={`text-xs truncate ${
-                isAwayWinner ? 'font-black text-emerald-400' : 'font-semibold text-slate-200'
-              }`}
-            >
-              {fixture.awayClub?.name || 'Away'}
-            </span>
+            <div className="min-w-0 flex-1">
+              <span
+                className={`text-xs truncate block ${
+                  isAwayWinner ? 'font-black text-emerald-400' : 'font-semibold text-slate-200'
+                }`}
+              >
+                {fixture.awayClub?.name || 'Away'}
+              </span>
+              <span
+                className={`text-[9px] truncate block ${
+                  awayOwner ? 'text-slate-400 font-medium' : 'text-amber-400/90 font-bold'
+                }`}
+              >
+                {awayOwner ? `@${awayOwner}` : 'User kerak'}
+              </span>
+            </div>
           </div>
           <span
             className={`text-xs px-1.5 py-0.5 rounded font-mono font-black shrink-0 ${
@@ -167,6 +192,23 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
             {fixture.awayScore !== null && fixture.awayScore !== undefined ? fixture.awayScore : '-'}
           </span>
         </div>
+
+        {/* Telegram Action if Opponent has valid Telegram username */}
+        {isUserMatch && isValidTelegramUsername(opponentTg) && (
+          <div className="pt-1.5 border-t border-white/[0.06] mt-1 flex justify-end">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                openTelegramChat(opponentTg);
+              }}
+              className="text-[9px] font-bold px-2 py-0.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 transition-colors flex items-center gap-1 shadow-sm"
+            >
+              <Send className="w-2.5 h-2.5" />
+              <span>Raqibga yozish</span>
+            </button>
+          </div>
+        )}
       </div>
     );
   };

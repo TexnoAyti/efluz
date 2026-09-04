@@ -6,7 +6,7 @@ import { Competition, Fixture } from '../types';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
 import { ClubCrest } from './ClubCrest';
 import { MatchdayCountdown } from './MatchdayCountdown';
-import { openTelegramChat } from '../lib/telegramUtils';
+import { openTelegramChat, isValidTelegramUsername } from '../lib/telegramUtils';
 import {
   Calendar,
   Trophy,
@@ -412,34 +412,21 @@ export const FixturesView: React.FC = () => {
                         {fixture.homeClub?.name}
                       </span>
                       {isHomeUser ? (
-                        <span className="text-[10px] text-emerald-400 font-bold truncate max-w-full">
+                        <span className="text-[10px] text-emerald-400 font-bold truncate max-w-full mt-0.5">
                           (You)
                         </span>
                       ) : (fixture.homeUser?.username || fixture.homeClub?.claimedByUsername) ? (
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const uid = fixture.homeUser?.id || fixture.homeClub?.claimedByUserId;
-                              if (uid) openUserProfile(uid);
-                            }}
-                            className="text-[10px] text-slate-300 hover:text-emerald-400 font-bold truncate max-w-[100px] transition-colors underline decoration-slate-600 hover:decoration-emerald-500 underline-offset-2"
-                          >
-                            @{fixture.homeUser?.username || fixture.homeClub?.claimedByUsername}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openTelegramChat(fixture.homeUser?.username || fixture.homeClub?.claimedByUsername);
-                            }}
-                            title="Telegram orqali yozish"
-                            className="p-1 rounded-md bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 border border-blue-500/30 transition-colors"
-                          >
-                            <Send className="w-2.5 h-2.5" />
-                          </button>
-                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const uid = fixture.homeUser?.id || fixture.homeClub?.claimedByUserId;
+                            if (uid) openUserProfile(uid);
+                          }}
+                          className="text-[10px] text-slate-300 hover:text-emerald-400 font-bold truncate max-w-[120px] transition-colors mt-0.5 underline decoration-slate-600 hover:decoration-emerald-500 underline-offset-2"
+                        >
+                          @{fixture.homeUser?.username || fixture.homeClub?.claimedByUsername}
+                        </button>
                       ) : (
                         <span className="text-[10px] text-amber-400/90 font-bold truncate max-w-full mt-0.5">
                           User kerak
@@ -480,34 +467,21 @@ export const FixturesView: React.FC = () => {
                         {fixture.awayClub?.name}
                       </span>
                       {isAwayUser ? (
-                        <span className="text-[10px] text-emerald-400 font-bold truncate max-w-full">
+                        <span className="text-[10px] text-emerald-400 font-bold truncate max-w-full mt-0.5">
                           (You)
                         </span>
                       ) : (fixture.awayUser?.username || fixture.awayClub?.claimedByUsername) ? (
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const uid = fixture.awayUser?.id || fixture.awayClub?.claimedByUserId;
-                              if (uid) openUserProfile(uid);
-                            }}
-                            className="text-[10px] text-slate-300 hover:text-emerald-400 font-bold truncate max-w-[100px] transition-colors underline decoration-slate-600 hover:decoration-emerald-500 underline-offset-2"
-                          >
-                            @{fixture.awayUser?.username || fixture.awayClub?.claimedByUsername}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openTelegramChat(fixture.awayUser?.username || fixture.awayClub?.claimedByUsername);
-                            }}
-                            title="Telegram orqali yozish"
-                            className="p-1 rounded-md bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 border border-blue-500/30 transition-colors"
-                          >
-                            <Send className="w-2.5 h-2.5" />
-                          </button>
-                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const uid = fixture.awayUser?.id || fixture.awayClub?.claimedByUserId;
+                            if (uid) openUserProfile(uid);
+                          }}
+                          className="text-[10px] text-slate-300 hover:text-emerald-400 font-bold truncate max-w-[120px] transition-colors mt-0.5 underline decoration-slate-600 hover:decoration-emerald-500 underline-offset-2"
+                        >
+                          @{fixture.awayUser?.username || fixture.awayClub?.claimedByUsername}
+                        </button>
                       ) : (
                         <span className="text-[10px] text-amber-400/90 font-bold truncate max-w-full mt-0.5">
                           User kerak
@@ -549,37 +523,60 @@ export const FixturesView: React.FC = () => {
                       : 'Pending Score'}
                   </div>
 
-                  {fixture.status === 'CONFIRMED' ? (
-                    <button
-                      id={`btn-fixture-details-${fixture.id}`}
-                      onClick={() => setSelectedFixtureForSubmit(fixture)}
-                      className="px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all min-h-[34px] touch-manipulation shrink-0 glass-card text-slate-300"
-                    >
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Details</span>
-                    </button>
-                  ) : fixture.isPlayable === false ? (
-                    <button
-                      disabled={true}
-                      className="px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all min-h-[34px] touch-manipulation shrink-0 bg-slate-800/70 text-slate-500 border border-slate-700/60 cursor-not-allowed"
-                    >
-                      <Lock className="w-3.5 h-3.5 text-slate-500" />
-                      <span>Qulflangan</span>
-                    </button>
-                  ) : (
-                    <button
-                      id={`btn-fixture-submit-${fixture.id}`}
-                      onClick={() => setSelectedFixtureForSubmit(fixture)}
-                      className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all min-h-[34px] touch-manipulation shrink-0 ${
-                        isUserParticipant
-                          ? 'btn-glass-primary text-slate-950 font-black'
-                          : 'glass-card text-slate-200'
-                      }`}
-                    >
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>{fixture.userSubmission ? 'Update' : 'Submit'}</span>
-                    </button>
-                  )}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {(() => {
+                      if (!isUserParticipant) return null;
+                      const oppUsername = isHomeUser
+                        ? (fixture.awayUser?.username || fixture.awayClub?.claimedByUsername)
+                        : (fixture.homeUser?.username || fixture.homeClub?.claimedByUsername);
+                      if (!isValidTelegramUsername(oppUsername)) return null;
+                      return (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openTelegramChat(oppUsername);
+                          }}
+                          className="px-2.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all min-h-[34px] touch-manipulation bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 shadow-sm"
+                        >
+                          <Send className="w-3 h-3" />
+                          <span>Raqibga yozish</span>
+                        </button>
+                      );
+                    })()}
+
+                    {fixture.status === 'CONFIRMED' ? (
+                      <button
+                        id={`btn-fixture-details-${fixture.id}`}
+                        onClick={() => setSelectedFixtureForSubmit(fixture)}
+                        className="px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all min-h-[34px] touch-manipulation shrink-0 glass-card text-slate-300"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Details</span>
+                      </button>
+                    ) : fixture.isPlayable === false ? (
+                      <button
+                        disabled={true}
+                        className="px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all min-h-[34px] touch-manipulation shrink-0 bg-slate-800/70 text-slate-500 border border-slate-700/60 cursor-not-allowed"
+                      >
+                        <Lock className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Qulflangan</span>
+                      </button>
+                    ) : (
+                      <button
+                        id={`btn-fixture-submit-${fixture.id}`}
+                        onClick={() => setSelectedFixtureForSubmit(fixture)}
+                        className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all min-h-[34px] touch-manipulation shrink-0 ${
+                          isUserParticipant
+                            ? 'btn-glass-primary text-slate-950 font-black'
+                            : 'glass-card text-slate-200'
+                        }`}
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>{fixture.userSubmission ? 'Update' : 'Submit'}</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             );

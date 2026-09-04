@@ -313,59 +313,81 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
                       const isEliminated = idx >= 24;
 
                       return (
-                        <tr
-                          key={row.clubId}
-                          className={`hover:bg-white/[0.03] transition-colors ${
-                            isDirectRO16
-                              ? 'bg-blue-500/10'
-                              : isPlayoff
-                              ? 'bg-indigo-500/5'
-                              : isEliminated
-                              ? 'bg-rose-500/5'
-                              : ''
-                          }`}
-                        >
-                          <td className="py-2.5 px-2.5">
-                            <div className="flex items-center gap-1">
-                              <span
-                                className={`w-1 h-3.5 rounded-full ${
-                                  isDirectRO16
-                                    ? 'bg-blue-400'
-                                    : isPlayoff
-                                    ? 'bg-indigo-400'
-                                    : 'bg-rose-400'
-                                }`}
-                              />
-                              <span className="font-bold text-slate-200 text-xs">{row.position}</span>
-                            </div>
-                          </td>
-                          <td className="py-2.5 px-2.5">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <ClubCrest
-                                clubId={row.clubId}
-                                logoUrl={row.clubLogoUrl}
-                                name={row.clubName}
-                                size="xs"
-                                className="w-4 h-4 sm:w-5 sm:h-5"
-                              />
-                              <span className="font-bold text-white truncate max-w-[120px] sm:max-w-[200px]">
-                                {row.clubName}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="py-2.5 px-2 text-center text-slate-400 text-xs">{row.played}</td>
-                          <td className="py-2.5 px-2 text-center text-emerald-400 text-xs">{row.won}</td>
-                          <td className="py-2.5 px-2 text-center text-amber-400 text-xs hidden sm:table-cell">{row.drawn}</td>
-                          <td className="py-2.5 px-2 text-center text-rose-400 text-xs hidden sm:table-cell">{row.lost}</td>
-                          <td className="py-2.5 px-2 text-center text-slate-400 text-xs hidden md:table-cell">{row.goalsFor}</td>
-                          <td className="py-2.5 px-2 text-center text-slate-400 text-xs hidden md:table-cell">{row.goalsAgainst}</td>
-                          <td className="py-2.5 px-2 text-center font-bold text-xs">
-                            {row.goalDifference > 0 ? `+${row.goalDifference}` : row.goalDifference}
-                          </td>
-                          <td className="py-2.5 px-2.5 text-center font-black text-blue-400 text-xs sm:text-sm">
-                            {row.points}
-                          </td>
-                        </tr>
+                        <React.Fragment key={row.clubId}>
+                          {idx === 8 && (
+                            <tr key="divider-playoffs">
+                              <td colSpan={10} className="py-1.5 px-3 bg-indigo-500/15 border-y border-indigo-500/30 text-[10px] font-black text-indigo-300 tracking-wide">
+                                9–24: O‘tish pley-off bosqichi (Knockout Play-offs)
+                              </td>
+                            </tr>
+                          )}
+                          {idx === 24 && (
+                            <tr key="divider-eliminated">
+                              <td colSpan={10} className="py-1.5 px-3 bg-rose-500/15 border-y border-rose-500/30 text-[10px] font-black text-rose-300 tracking-wide">
+                                25–32: Chiqib ketadi (Turnirni tark etadi)
+                              </td>
+                            </tr>
+                          )}
+                          <tr
+                            className={`hover:bg-white/[0.03] transition-colors ${
+                              isDirectRO16
+                                ? 'bg-blue-500/10'
+                                : isPlayoff
+                                ? 'bg-indigo-500/5'
+                                : isEliminated
+                                ? 'bg-rose-500/5'
+                                : ''
+                            }`}
+                          >
+                            <td className="py-2.5 px-2.5">
+                              <div className="flex items-center gap-1">
+                                <span
+                                  className={`w-1 h-3.5 rounded-full ${
+                                    isDirectRO16
+                                      ? 'bg-blue-400'
+                                      : isPlayoff
+                                      ? 'bg-indigo-400'
+                                      : 'bg-rose-400'
+                                  }`}
+                                />
+                                <span className="font-bold text-slate-200 text-xs">{row.position}</span>
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-2.5">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <ClubCrest
+                                  clubId={row.clubId}
+                                  logoUrl={row.clubLogoUrl}
+                                  name={row.clubName}
+                                  size="xs"
+                                  className="w-4 h-4 sm:w-5 sm:h-5 shrink-0"
+                                />
+                                <div className="flex flex-col min-w-0">
+                                  <span className="font-bold text-white truncate max-w-[120px] sm:max-w-[200px]">
+                                    {row.clubName}
+                                  </span>
+                                  <span className={`text-[10px] truncate max-w-[110px] sm:max-w-[180px] ${
+                                    row.managerUsername ? 'text-slate-400 font-medium' : 'text-amber-400/90 font-bold'
+                                  }`}>
+                                    {row.managerUsername ? `@${row.managerUsername}` : 'User kerak'}
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-2 text-center text-slate-400 text-xs">{row.played}</td>
+                            <td className="py-2.5 px-2 text-center text-emerald-400 text-xs">{row.won}</td>
+                            <td className="py-2.5 px-2 text-center text-amber-400 text-xs hidden sm:table-cell">{row.drawn}</td>
+                            <td className="py-2.5 px-2 text-center text-rose-400 text-xs hidden sm:table-cell">{row.lost}</td>
+                            <td className="py-2.5 px-2 text-center text-slate-400 text-xs hidden md:table-cell">{row.goalsFor}</td>
+                            <td className="py-2.5 px-2 text-center text-slate-400 text-xs hidden md:table-cell">{row.goalsAgainst}</td>
+                            <td className="py-2.5 px-2 text-center font-bold text-xs">
+                              {row.goalDifference > 0 ? `+${row.goalDifference}` : row.goalDifference}
+                            </td>
+                            <td className="py-2.5 px-2.5 text-center font-black text-blue-400 text-xs sm:text-sm">
+                              {row.points}
+                            </td>
+                          </tr>
+                        </React.Fragment>
                       );
                     })}
                   </tbody>

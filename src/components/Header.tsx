@@ -1,15 +1,14 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Shield, Bell, UserCircle, ChevronDown, CheckCircle2, Trophy, Sparkles, Terminal } from 'lucide-react';
+import { Shield, Bell, UserCircle, ChevronDown, CheckCircle2, Trophy, Sparkles } from 'lucide-react';
 import { ClubCrest } from './ClubCrest';
 
 interface HeaderProps {
   onOpenNotifications: () => void;
-  onOpenDiagnostics?: () => void;
   onOpenProfile?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onOpenNotifications, onOpenDiagnostics, onOpenProfile }) => {
+export const Header: React.FC<HeaderProps> = ({ onOpenNotifications, onOpenProfile }) => {
   const {
     user,
     currentClub,
@@ -156,18 +155,6 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNotifications, onOpenDiagn
                 {currentClub.shortName || currentClub.name}
               </span>
             </div>
-          )}
-
-          {/* Telegram Diagnostics Launcher (Desktop only) */}
-          {onOpenDiagnostics && (
-            <button
-              id="btn-open-diagnostics"
-              onClick={onOpenDiagnostics}
-              className="hidden md:flex p-2 glass-button text-slate-300 items-center justify-center min-w-[34px] min-h-[34px]"
-              title="Telegram WebApp Diagnostics"
-            >
-              <Terminal className="w-4 h-4 text-indigo-400" />
-            </button>
           )}
 
           {/* Notifications Button */}

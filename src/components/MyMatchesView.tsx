@@ -7,7 +7,7 @@ import { Fixture } from '../types';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
 import { ClubCrest } from './ClubCrest';
 import { MatchdayCountdown } from './MatchdayCountdown';
-import { openTelegramChat } from '../lib/telegramUtils';
+import { openTelegramChat, isValidTelegramUsername } from '../lib/telegramUtils';
 import {
   Swords,
   Calendar,
@@ -229,10 +229,15 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                     </span>
                   ) : (focusedFixture.homeUser?.username || focusedFixture.homeClub?.claimedByUsername) ? (
                     <div className="flex flex-col items-center gap-1.5 mt-1">
-                      <span className="text-[11px] text-slate-300 font-bold truncate max-w-[130px]">
-                        @{focusedFixture.homeUser?.username || focusedFixture.homeClub?.claimedByUsername}
-                      </span>
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1">
+                        <span className="text-[11px] text-slate-300 font-bold truncate max-w-[120px]">
+                          @{focusedFixture.homeUser?.username || focusedFixture.homeClub?.claimedByUsername}
+                        </span>
+                        <span className="text-[9px] font-black text-amber-400 bg-amber-500/15 border border-amber-500/30 px-1 py-0.2 rounded">
+                          Raqib
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap justify-center">
                         {(focusedFixture.homeUser?.id || focusedFixture.homeClub?.claimedByUserId) && (
                           <button
                             type="button"
@@ -245,17 +250,22 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                             Profil
                           </button>
                         )}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openTelegramChat(focusedFixture.homeUser?.username || focusedFixture.homeClub?.claimedByUsername);
-                          }}
-                          className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-500/30 transition-colors flex items-center gap-1"
-                        >
-                          <Send className="w-2.5 h-2.5" />
-                          <span>Telegram</span>
-                        </button>
+                        {(() => {
+                          const homeTg = focusedFixture.homeUser?.username || focusedFixture.homeClub?.claimedByUsername;
+                          return isValidTelegramUsername(homeTg) ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openTelegramChat(homeTg);
+                              }}
+                              className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 transition-colors flex items-center gap-1 shadow-sm"
+                            >
+                              <Send className="w-2.5 h-2.5" />
+                              <span>Raqibga yozish</span>
+                            </button>
+                          ) : null;
+                        })()}
                       </div>
                     </div>
                   ) : (
@@ -301,10 +311,15 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                     </span>
                   ) : (focusedFixture.awayUser?.username || focusedFixture.awayClub?.claimedByUsername) ? (
                     <div className="flex flex-col items-center gap-1.5 mt-1">
-                      <span className="text-[11px] text-slate-300 font-bold truncate max-w-[130px]">
-                        @{focusedFixture.awayUser?.username || focusedFixture.awayClub?.claimedByUsername}
-                      </span>
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1">
+                        <span className="text-[11px] text-slate-300 font-bold truncate max-w-[120px]">
+                          @{focusedFixture.awayUser?.username || focusedFixture.awayClub?.claimedByUsername}
+                        </span>
+                        <span className="text-[9px] font-black text-amber-400 bg-amber-500/15 border border-amber-500/30 px-1 py-0.2 rounded">
+                          Raqib
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap justify-center">
                         {(focusedFixture.awayUser?.id || focusedFixture.awayClub?.claimedByUserId) && (
                           <button
                             type="button"
@@ -317,17 +332,22 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                             Profil
                           </button>
                         )}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openTelegramChat(focusedFixture.awayUser?.username || focusedFixture.awayClub?.claimedByUsername);
-                          }}
-                          className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-500/30 transition-colors flex items-center gap-1"
-                        >
-                          <Send className="w-2.5 h-2.5" />
-                          <span>Telegram</span>
-                        </button>
+                        {(() => {
+                          const awayTg = focusedFixture.awayUser?.username || focusedFixture.awayClub?.claimedByUsername;
+                          return isValidTelegramUsername(awayTg) ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openTelegramChat(awayTg);
+                              }}
+                              className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 transition-colors flex items-center gap-1 shadow-sm"
+                            >
+                              <Send className="w-2.5 h-2.5" />
+                              <span>Raqibga yozish</span>
+                            </button>
+                          ) : null;
+                        })()}
                       </div>
                     </div>
                   ) : (
@@ -508,22 +528,38 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
 
                   <div className="flex items-center justify-between gap-2">
                     {/* Home Team */}
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <ClubCrest
-                        clubId={fixture.homeClub?.id}
-                        logoUrl={fixture.homeClub?.logoUrl}
-                        name={fixture.homeClub?.name}
-                        shortName={fixture.homeClub?.shortName}
-                        size="xs"
-                        className="w-4 h-4"
-                      />
-                      <span className="text-xs font-bold text-slate-200 truncate">
-                        {fixture.homeClub?.name}
-                      </span>
-                    </div>
+                    {(() => {
+                      const isHomeUser = fixture.homeOwnerId === user?.id || fixture.homeClub?.claimedByUserId === user?.id;
+                      const homeOwner = fixture.homeUser?.username || fixture.homeClub?.claimedByUsername;
+                      return (
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <ClubCrest
+                            clubId={fixture.homeClub?.id}
+                            logoUrl={fixture.homeClub?.logoUrl}
+                            name={fixture.homeClub?.name}
+                            shortName={fixture.homeClub?.shortName}
+                            size="xs"
+                            className="w-5 h-5 shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs font-bold text-slate-200 truncate">
+                                {fixture.homeClub?.name}
+                              </span>
+                              {isHomeUser && (
+                                <span className="text-[8px] font-black text-emerald-400 bg-emerald-500/15 px-1 rounded">Siz</span>
+                              )}
+                            </div>
+                            <span className={`text-[10px] truncate block ${homeOwner ? 'text-slate-400' : 'text-amber-400/90 font-bold'}`}>
+                              {homeOwner ? `@${homeOwner}` : 'User kerak'}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {/* Score / VS */}
-                    <div className="px-2 py-0.5 rounded-lg glass-card text-[11px] font-black shrink-0">
+                    <div className="px-2.5 py-1 rounded-lg glass-card text-[11px] font-black shrink-0">
                       {fixture.status === 'CONFIRMED' ? (
                         <span>{fixture.homeScore} - {fixture.awayScore}</span>
                       ) : (
@@ -532,19 +568,35 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                     </div>
 
                     {/* Away Team */}
-                    <div className="flex items-center justify-end gap-2 flex-1 min-w-0 text-right">
-                      <span className="text-xs font-bold text-slate-200 truncate">
-                        {fixture.awayClub?.name}
-                      </span>
-                      <ClubCrest
-                        clubId={fixture.awayClub?.id}
-                        logoUrl={fixture.awayClub?.logoUrl}
-                        name={fixture.awayClub?.name}
-                        shortName={fixture.awayClub?.shortName}
-                        size="xs"
-                        className="w-4 h-4"
-                      />
-                    </div>
+                    {(() => {
+                      const isAwayUser = fixture.awayOwnerId === user?.id || fixture.awayClub?.claimedByUserId === user?.id;
+                      const awayOwner = fixture.awayUser?.username || fixture.awayClub?.claimedByUsername;
+                      return (
+                        <div className="flex items-center justify-end gap-2 flex-1 min-w-0 text-right">
+                          <div className="min-w-0 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              {isAwayUser && (
+                                <span className="text-[8px] font-black text-emerald-400 bg-emerald-500/15 px-1 rounded">Siz</span>
+                              )}
+                              <span className="text-xs font-bold text-slate-200 truncate">
+                                {fixture.awayClub?.name}
+                              </span>
+                            </div>
+                            <span className={`text-[10px] truncate block ${awayOwner ? 'text-slate-400' : 'text-amber-400/90 font-bold'}`}>
+                              {awayOwner ? `@${awayOwner}` : 'User kerak'}
+                            </span>
+                          </div>
+                          <ClubCrest
+                            clubId={fixture.awayClub?.id}
+                            logoUrl={fixture.awayClub?.logoUrl}
+                            name={fixture.awayClub?.name}
+                            shortName={fixture.awayClub?.shortName}
+                            size="xs"
+                            className="w-5 h-5 shrink-0"
+                          />
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               );

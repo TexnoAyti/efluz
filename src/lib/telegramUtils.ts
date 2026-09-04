@@ -1,3 +1,9 @@
+export function isValidTelegramUsername(username?: string | null): boolean {
+  if (!username) return false;
+  const clean = username.replace(/^@+/, '').trim();
+  return /^[a-zA-Z0-9_]{3,32}$/.test(clean);
+}
+
 /**
  * Safely opens a user's Telegram profile/chat.
  * Adheres strictly to Telegram WebApp SDK and security rules:
@@ -6,13 +12,11 @@
  * - Falls back to safe window.open with noopener,noreferrer.
  */
 export function openTelegramChat(username?: string | null): void {
-  if (!username) return;
-  const clean = username.replace(/^@+/, '').trim();
-  if (!clean || !/^[a-zA-Z0-9_]{3,32}$/.test(clean)) {
+  if (!isValidTelegramUsername(username)) {
     console.warn('Invalid Telegram username provided for chat opening:', username);
     return;
   }
-
+  const clean = username!.replace(/^@+/, '').trim();
   const url = `https://t.me/${clean}`;
   const tgWebApp = typeof window !== 'undefined' ? (window as any).Telegram?.WebApp : null;
 

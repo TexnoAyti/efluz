@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import { Fixture, Club } from '../types';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
 import { ClubCrest } from './ClubCrest';
+import { openTelegramChat, isValidTelegramUsername } from '../lib/telegramUtils';
 import {
   Shield,
   Trophy,
@@ -20,20 +21,18 @@ import {
   Swords,
   Globe2,
   Award,
-  Terminal,
   RefreshCw,
+  Send,
 } from 'lucide-react';
 
 interface DashboardViewProps {
   onNavigateTab: (tab: any) => void;
   onSelectFixtureForMatchCenter?: (fixture: Fixture) => void;
-  onOpenDiagnostics?: () => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
   onNavigateTab,
   onSelectFixtureForMatchCenter,
-  onOpenDiagnostics,
 }) => {
   const {
     user,
@@ -160,16 +159,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </div>
             </div>
           </div>
-          {onOpenDiagnostics && (
-            <button
-              id="btn-open-diagnostics-error"
-              onClick={onOpenDiagnostics}
-              className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center gap-1.5 shrink-0 transition-colors shadow-md"
-            >
-              <Terminal className="w-3.5 h-3.5" />
-              <span>View Diagnostics</span>
-            </button>
-          )}
         </div>
       )}
 
@@ -350,8 +339,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       @{nextMatch.homeUser?.username || nextMatch.homeClub?.claimedByUsername}
                     </button>
                   ) : (
-                    <span className="text-[10px] text-slate-500 italic mt-0.5 truncate w-full">
-                      User qo‘yilmagan
+                    <span className="text-[10px] text-amber-400/90 font-bold mt-0.5 truncate w-full">
+                      User kerak
                     </span>
                   )}
                 </div>
@@ -395,23 +384,48 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       @{nextMatch.awayUser?.username || nextMatch.awayClub?.claimedByUsername}
                     </button>
                   ) : (
-                    <span className="text-[10px] text-slate-500 italic mt-0.5 truncate w-full">
-                      User qo‘yilmagan
+                    <span className="text-[10px] text-amber-400/90 font-bold mt-0.5 truncate w-full">
+                      User kerak
                     </span>
                   )}
                 </div>
               </div>
 
-              <button
-                onClick={() => {
-                  if (onSelectFixtureForMatchCenter) onSelectFixtureForMatchCenter(nextMatch);
-                  onNavigateTab('my-matches');
-                }}
-                className="w-full py-2.5 btn-glass-primary font-black text-xs flex items-center justify-center gap-1.5 min-h-[44px] touch-manipulation"
-              >
-                <Swords className="w-3.5 h-3.5" />
-                <span>{t.openMatchCenter}</span>
-              </button>
+              {(() => {
+                const isHome = nextMatch.homeOwnerId === user?.id || nextMatch.homeClub?.claimedByUserId === user?.id;
+                const oppTg = isHome
+                  ? (nextMatch.awayUser?.username || nextMatch.awayClub?.claimedByUsername)
+                  : (nextMatch.homeUser?.username || nextMatch.homeClub?.claimedByUsername);
+                const hasOpponentTg = isValidTelegramUsername(oppTg);
+
+                return (
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    {hasOpponentTg && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openTelegramChat(oppTg);
+                        }}
+                        className="flex-1 py-2.5 px-3 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-md min-h-[44px] touch-manipulation"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        <span>Raqibga yozish</span>
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        if (onSelectFixtureForMatchCenter) onSelectFixtureForMatchCenter(nextMatch);
+                        onNavigateTab('my-matches');
+                      }}
+                      className="flex-1 py-2.5 btn-glass-primary font-black text-xs flex items-center justify-center gap-1.5 min-h-[44px] touch-manipulation"
+                    >
+                      <Swords className="w-3.5 h-3.5" />
+                      <span>{t.openMatchCenter}</span>
+                    </button>
+                  </div>
+                );
+              })()}
             </div>
           ) : (
             <div className="py-6 text-center text-xs text-slate-400">

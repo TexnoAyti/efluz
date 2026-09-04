@@ -19,7 +19,7 @@ import { TelegramDiagnosticsModal } from './components/TelegramDiagnosticsModal'
 import { APP_BUILD_ID } from './context/AuthContext';
 import { Fixture } from './types';
 import { api } from './lib/api';
-import { Loader2, CheckCircle2, AlertCircle, Info, Terminal } from 'lucide-react';
+import { Loader2, CheckCircle2, AlertCircle, Info } from 'lucide-react';
 
 function getInitialTab(): TabType {
   if (typeof window !== 'undefined') {
@@ -133,7 +133,6 @@ const AppContent: React.FC = () => {
       {/* Top Header Bar */}
       <Header
         onOpenNotifications={() => setActiveTab('notifications')}
-        onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
         onOpenProfile={() => setActiveTab('profile')}
       />
 
@@ -153,7 +152,6 @@ const AppContent: React.FC = () => {
               setSelectedFixture(fix);
               setActiveTab('my-matches');
             }}
-            onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
           />
         )}
         {currentTab === 'my-club' && <MyClubView onNavigateTab={setActiveTab} />}
@@ -186,14 +184,6 @@ const AppContent: React.FC = () => {
             <span className="font-mono text-slate-400 truncate max-w-[220px]">
               {typeof window !== 'undefined' ? window.location.origin : ''}
             </span>
-            <button
-              id="btn-footer-diagnostics"
-              onClick={() => setIsDiagnosticsOpen(true)}
-              className="flex items-center gap-1 px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 text-indigo-300 border border-slate-800 transition-colors font-medium"
-            >
-              <Terminal className="w-3 h-3" />
-              <span>Diagnostics</span>
-            </button>
           </div>
         </div>
       </footer>
