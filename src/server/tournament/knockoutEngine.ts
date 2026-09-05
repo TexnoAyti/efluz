@@ -82,72 +82,122 @@ export async function generateKnockoutBracket(
     throw new Error(`Cannot generate knockout bracket with fewer than 2 teams (found ${clubIds.length}).`);
   }
 
-  // Calculate nearest power of 2 (e.g. 2, 4, 8, 16, 32)
-  let bracketSize = 2;
-  while (bracketSize < clubIds.length) {
-    bracketSize *= 2;
+  // Handle European 32-team League Phase transitions (Champions League / Europa League)
+  if (
+    comp.type === 'EUROPEAN_LEAGUE_PHASE' ||
+    comp.type === 'EUROPEAN_KNOCKOUT' ||
+    competitionId.includes('champions') ||
+    competitionId.includes('europa') ||
+    competitionId.includes('ucl') ||
+    competitionId.includes('uel')
+  ) {
+    if (clubIds.length >= 24) {
+      const standingsSnap = await db
+        .collection(COLLECTIONS.STANDINGS)
+        .where('competitionId', '==', competitionId)
+        .get();
+      let ranked = clubIds;
+      if (!standingsSnap.empty) {
+        const sortedStandings = standingsSnap.docs
+          .map((d) => d.data())
+          .sort((a: any, b: any) => {
+            if ((b.points || 0) !== (a.points || 0)) return (b.points || 0) - (a.points || 0);
+            return (b.goalDifference || 0) - (a.goalDifference || 0);
+          });
+        ranked = sortedStandings.map((s: any) => s.clubId);
+      }
+      const uclRes = await generateUCLKnockoutBracket(competitionId, ranked);
+      return { generated: uclRes.generated, rounds: 5 };
+    }
   }
-
-  const totalRounds = Math.log2(bracketSize);
-  const getRoundName = (roundNum: number): string => {
-    const remainingTeams = Math.pow(2, totalRounds - roundNum + 1);
-    if (remainingTeams === 2) return 'Final';
-    if (remainingTeams === 4) return 'Semi-Finals';
-    if (remainingTeams === 8) return 'Quarter-Finals';
-    if (remainingTeams === 16) return 'Round of 16';
-    if (remainingTeams === 32) return 'Round of 32';
-    return `Round of ${remainingTeams}`;
-  };
 
   const now = new Date().toISOString();
   let totalGenerated = 0;
+  let totalRounds = 0;
   const batch = db.batch();
 
-  // First round matches
-  const firstRoundMatches = bracketSize / 2;
-  for (let i = 0; i < firstRoundMatches; i++) {
-    const homeClubId = clubIds[i * 2] || 'TBD';
-    const awayClubId = clubIds[i * 2 + 1] || 'TBD';
-    const fixtureId = `fix-${competitionId}-r1-m${i}`;
-    const roundName = getRoundName(1);
+  // Handle 18-team (Bundesliga / Ligue 1) and 20-team (Premier League / La Liga / Serie A) domestic cups
+  if (clubIds.length > 16 && clubIds.length < 32) {
+    totalRounds = 5;
+    const totalTeams = clubIds.length;
+    const prelimMatches = totalTeams - 16; // 4 for 20 teams, 2 for 18 teams
+    const prelimTeamsCount = prelimMatches * 2; // 8 for 20 teams, 4 for 18 teams
+    const byeTeamsCount = totalTeams - prelimTeamsCount; // 12 for 20 teams, 14 for 18 teams
+    const prelimPairs = Math.ceil(prelimMatches / 2); // 2 for 20 teams, 1 for 18 teams
 
-    const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
-    batch.set(fixRef, {
-      id: fixtureId,
-      seasonId: comp.seasonId,
-      competitionId,
-      competitionName: comp.name,
-      matchday: 1,
-      roundName,
-      homeClubId,
-      awayClubId,
-      scheduledAt: now,
-      status: 'SCHEDULED',
-      homeScore: null,
-      awayScore: null,
-      winnerClubId: null,
-      resultConfirmedAt: null,
-      createdAt: now,
-      updatedAt: now,
-    });
-    totalGenerated++;
-  }
+    // Round 1: Preliminary / Play-in Round (4 matches for 20 teams, 2 matches for 18 teams)
+    for (let i = 0; i < prelimMatches; i++) {
+      const fixtureId = `fix-${competitionId}-r1-m${i}`;
+      const homeClubId = clubIds[byeTeamsCount + i * 2] || 'TBD';
+      const awayClubId = clubIds[byeTeamsCount + i * 2 + 1] || 'TBD';
+      const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
 
-  // Subsequent rounds (QF, SF, Final) with TBD placeholders
-  for (let round = 2; round <= totalRounds; round++) {
-    const matchesInRound = Math.pow(2, totalRounds - round);
-    const roundName = getRoundName(round);
+      batch.set(fixRef, {
+        id: fixtureId,
+        seasonId: comp.seasonId,
+        competitionId,
+        competitionName: comp.name,
+        matchday: 1,
+        roundName: 'Preliminary Round',
+        homeClubId,
+        awayClubId,
+        scheduledAt: now,
+        status: 'SCHEDULED',
+        homeScore: null,
+        awayScore: null,
+        winnerClubId: null,
+        resultConfirmedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      });
+      totalGenerated++;
+    }
 
-    for (let m = 0; m < matchesInRound; m++) {
-      const fixtureId = `fix-${competitionId}-r${round}-m${m}`;
+    // Round 2: Round of 16 (8 matches)
+    for (let i = 0; i < 8; i++) {
+      const fixtureId = `fix-${competitionId}-r2-m${i}`;
+      let homeClubId = 'TBD';
+      let awayClubId = 'TBD';
+
+      if (i >= prelimPairs) {
+        const byeIdx = (i - prelimPairs) * 2;
+        homeClubId = clubIds[byeIdx] || 'TBD';
+        awayClubId = clubIds[byeIdx + 1] || 'TBD';
+      }
+
       const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
       batch.set(fixRef, {
         id: fixtureId,
         seasonId: comp.seasonId,
         competitionId,
         competitionName: comp.name,
-        matchday: round,
-        roundName,
+        matchday: 2,
+        roundName: 'Round of 16',
+        homeClubId,
+        awayClubId,
+        scheduledAt: now,
+        status: 'SCHEDULED',
+        homeScore: null,
+        awayScore: null,
+        winnerClubId: null,
+        resultConfirmedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      });
+      totalGenerated++;
+    }
+
+    // Round 3: Quarter-Finals (4 matches)
+    for (let m = 0; m < 4; m++) {
+      const fixtureId = `fix-${competitionId}-r3-m${m}`;
+      const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
+      batch.set(fixRef, {
+        id: fixtureId,
+        seasonId: comp.seasonId,
+        competitionId,
+        competitionName: comp.name,
+        matchday: 3,
+        roundName: 'Quarter-Finals',
         homeClubId: 'TBD',
         awayClubId: 'TBD',
         scheduledAt: now,
@@ -160,6 +210,131 @@ export async function generateKnockoutBracket(
         updatedAt: now,
       });
       totalGenerated++;
+    }
+
+    // Round 4: Semi-Finals (2 matches)
+    for (let m = 0; m < 2; m++) {
+      const fixtureId = `fix-${competitionId}-r4-m${m}`;
+      const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
+      batch.set(fixRef, {
+        id: fixtureId,
+        seasonId: comp.seasonId,
+        competitionId,
+        competitionName: comp.name,
+        matchday: 4,
+        roundName: 'Semi-Finals',
+        homeClubId: 'TBD',
+        awayClubId: 'TBD',
+        scheduledAt: now,
+        status: 'SCHEDULED',
+        homeScore: null,
+        awayScore: null,
+        winnerClubId: null,
+        resultConfirmedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      });
+      totalGenerated++;
+    }
+
+    // Round 5: Final (1 match)
+    const finalFixtureId = `fix-${competitionId}-r5-m0`;
+    const finalRef = db.collection(COLLECTIONS.FIXTURES).doc(finalFixtureId);
+    batch.set(finalRef, {
+      id: finalFixtureId,
+      seasonId: comp.seasonId,
+      competitionId,
+      competitionName: comp.name,
+      matchday: 5,
+      roundName: 'Final',
+      homeClubId: 'TBD',
+      awayClubId: 'TBD',
+      scheduledAt: now,
+      status: 'SCHEDULED',
+      homeScore: null,
+      awayScore: null,
+      winnerClubId: null,
+      resultConfirmedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    totalGenerated++;
+  } else {
+    // Standard power-of-2 bracket (2, 4, 8, 16, 32)
+    let bracketSize = 2;
+    while (bracketSize < clubIds.length) {
+      bracketSize *= 2;
+    }
+
+    totalRounds = Math.log2(bracketSize);
+    const getRoundName = (roundNum: number): string => {
+      const remainingTeams = Math.pow(2, totalRounds - roundNum + 1);
+      if (remainingTeams === 2) return 'Final';
+      if (remainingTeams === 4) return 'Semi-Finals';
+      if (remainingTeams === 8) return 'Quarter-Finals';
+      if (remainingTeams === 16) return 'Round of 16';
+      if (remainingTeams === 32) return 'Round of 32';
+      return `Round of ${remainingTeams}`;
+    };
+
+    // First round matches
+    const firstRoundMatches = bracketSize / 2;
+    for (let i = 0; i < firstRoundMatches; i++) {
+      const homeClubId = clubIds[i * 2] || 'TBD';
+      const awayClubId = clubIds[i * 2 + 1] || 'TBD';
+      const fixtureId = `fix-${competitionId}-r1-m${i}`;
+      const roundName = getRoundName(1);
+
+      const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
+      batch.set(fixRef, {
+        id: fixtureId,
+        seasonId: comp.seasonId,
+        competitionId,
+        competitionName: comp.name,
+        matchday: 1,
+        roundName,
+        homeClubId,
+        awayClubId,
+        scheduledAt: now,
+        status: 'SCHEDULED',
+        homeScore: null,
+        awayScore: null,
+        winnerClubId: null,
+        resultConfirmedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      });
+      totalGenerated++;
+    }
+
+    // Subsequent rounds (QF, SF, Final) with TBD placeholders
+    for (let round = 2; round <= totalRounds; round++) {
+      const matchesInRound = Math.pow(2, totalRounds - round);
+      const roundName = getRoundName(round);
+
+      for (let m = 0; m < matchesInRound; m++) {
+        const fixtureId = `fix-${competitionId}-r${round}-m${m}`;
+        const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
+        batch.set(fixRef, {
+          id: fixtureId,
+          seasonId: comp.seasonId,
+          competitionId,
+          competitionName: comp.name,
+          matchday: round,
+          roundName,
+          homeClubId: 'TBD',
+          awayClubId: 'TBD',
+          scheduledAt: now,
+          status: 'SCHEDULED',
+          homeScore: null,
+          awayScore: null,
+          winnerClubId: null,
+          resultConfirmedAt: null,
+          createdAt: now,
+          updatedAt: now,
+        });
+        totalGenerated++;
+      }
     }
   }
 
@@ -373,28 +548,74 @@ export async function advanceKnockoutWinner(fixtureId: string): Promise<{ advanc
   const compDoc = await db.collection(COLLECTIONS.COMPETITIONS).doc(fixture.competitionId).get();
   if (!compDoc.exists) return { advanced: false };
   const comp = compDoc.data() as FirestoreCompetitionDoc;
+  const compId = comp.id || fixture.competitionId;
 
-  if (comp.type !== 'KNOCKOUT' && comp.type !== 'SUPER_CUP' && comp.type !== 'EUROPEAN_KNOCKOUT') {
+  if (
+    comp.type !== 'KNOCKOUT' &&
+    comp.type !== 'SUPER_CUP' &&
+    comp.type !== 'EUROPEAN_KNOCKOUT' &&
+    comp.type !== 'EUROPEAN_LEAGUE_PHASE'
+  ) {
     return { advanced: false };
   }
 
-  // Parse round and match index from fixture ID (e.g. fix-{comp}-r{round}-m{matchIndex})
-  const match = fixture.id.match(/-r(\d+)-m(\d+)$/);
-  if (!match) {
-    return { advanced: false };
+  // Parse target next round and match index from fixture ID
+  let nextFixtureId = '';
+  let isHomeSlot = true;
+  let nextRound = 0;
+
+  // 1. Check UCL / European Knockout IDs (Play-offs -> R16 -> QF -> SF -> Final)
+  const uclPoMatch = fixture.id.match(/-po-m(\d+)$/);
+  const uclR16Match = fixture.id.match(/-r16-m(\d+)$/);
+  const uclQfMatch = fixture.id.match(/-qf-m(\d+)$/);
+  const uclSfMatch = fixture.id.match(/-sf-m(\d+)$/);
+  const uclFinalMatch = fixture.id.match(/-final-m(\d+)$/);
+
+  if (uclPoMatch) {
+    const poIndex = parseInt(uclPoMatch[1], 10);
+    nextFixtureId = `fix-${compId}-r16-m${poIndex}`;
+    isHomeSlot = false; // Away slot, direct top-8 qualifier is Home
+    nextRound = 10;
+  } else if (uclR16Match) {
+    const r16Index = parseInt(uclR16Match[1], 10);
+    const qfIndex = Math.floor(r16Index / 2);
+    nextFixtureId = `fix-${compId}-qf-m${qfIndex}`;
+    isHomeSlot = r16Index % 2 === 0;
+    nextRound = 11;
+  } else if (uclQfMatch) {
+    const qfIndex = parseInt(uclQfMatch[1], 10);
+    const sfIndex = Math.floor(qfIndex / 2);
+    nextFixtureId = `fix-${compId}-sf-m${sfIndex}`;
+    isHomeSlot = qfIndex % 2 === 0;
+    nextRound = 12;
+  } else if (uclSfMatch) {
+    const sfIndex = parseInt(uclSfMatch[1], 10);
+    nextFixtureId = `fix-${compId}-final-m0`;
+    isHomeSlot = sfIndex === 0;
+    nextRound = 13;
+  } else if (uclFinalMatch) {
+    // This was the European Final!
+    nextFixtureId = '';
+  } else {
+    // Standard round format (e.g. fix-{comp}-r{round}-m{matchIndex})
+    const match = fixture.id.match(/-r(\d+)-m(\d+)$/);
+    if (!match) {
+      return { advanced: false };
+    }
+
+    const currentRound = parseInt(match[1], 10);
+    const currentMatchIndex = parseInt(match[2], 10);
+    nextRound = currentRound + 1;
+    const nextMatchIndex = Math.floor(currentMatchIndex / 2);
+    isHomeSlot = currentMatchIndex % 2 === 0;
+
+    nextFixtureId = `fix-${compId}-r${nextRound}-m${nextMatchIndex}`;
   }
 
-  const currentRound = parseInt(match[1], 10);
-  const currentMatchIndex = parseInt(match[2], 10);
-  const nextRound = currentRound + 1;
-  const nextMatchIndex = Math.floor(currentMatchIndex / 2);
-  const isHomeSlot = currentMatchIndex % 2 === 0;
+  const nextFixRef = nextFixtureId ? db.collection(COLLECTIONS.FIXTURES).doc(nextFixtureId) : null;
+  const nextFixDoc = nextFixRef ? await nextFixRef.get() : null;
 
-  const nextFixtureId = `fix-${comp.id}-r${nextRound}-m${nextMatchIndex}`;
-  const nextFixRef = db.collection(COLLECTIONS.FIXTURES).doc(nextFixtureId);
-  const nextFixDoc = await nextFixRef.get();
-
-  if (!nextFixDoc.exists) {
+  if (!nextFixDoc || !nextFixDoc.exists) {
     // This was the Final! Crown tournament champion!
     const championClubDoc = await db.collection(COLLECTIONS.CLUBS).doc(fixture.winnerClubId).get();
     const championClub = championClubDoc.exists ? (championClubDoc.data() as FirestoreClubDoc) : null;

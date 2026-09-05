@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import { Competition, StandingsRow, Fixture } from '../types';
 import { ClubCrest } from './ClubCrest';
 import { TournamentBracket } from './TournamentBracket';
+import { ResultSubmissionModal } from './ResultSubmissionModal';
 import { getClubOwnerDisplay } from '../lib/ownerUtils';
 import {
   Globe2,
@@ -37,6 +38,21 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
   const [activeTab, setActiveTab] = useState<'STANDINGS' | 'BRACKET' | 'QUALIFICATION'>('STANDINGS');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedFixtureForSubmit, setSelectedFixtureForSubmit] = useState<Fixture | null>(null);
+  const [isGeneratingKnockouts, setIsGeneratingKnockouts] = useState(false);
+
+  const handleGenerateKnockouts = async () => {
+    if (!selectedTournament) return;
+    setIsGeneratingKnockouts(true);
+    try {
+      await api.generateKnockoutBracket(selectedTournament.id);
+      await loadTournamentDetails(selectedTournament.id, true);
+    } catch (err: any) {
+      console.error('Failed to generate knockouts:', err);
+    } finally {
+      setIsGeneratingKnockouts(false);
+    }
+  };
 
   const loadEuropeanData = async () => {
     setIsLoading(true);
@@ -481,8 +497,52 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
             fixtures={fixtures}
             currentClubId={currentClub?.id}
             userId={user?.id}
+            onSelectFixture={(f) => setSelectedFixtureForSubmit(f)}
+            competition={selectedTournament}
           />
+
+          {fixtures.filter(
+            (f) =>
+              f.id.includes('-po-') ||
+              f.id.includes('-r16-') ||
+              f.id.includes('-qf-') ||
+              f.id.includes('-sf-') ||
+              f.id.includes('-final-')
+          ).length === 0 && (
+            <div className="glass-panel p-5 rounded-2xl border-indigo-500/30 bg-indigo-950/20 text-center space-y-3">
+              <Sparkles className="w-8 h-8 text-indigo-400 mx-auto" />
+              <h4 className="text-sm font-bold text-white">Knockout bosqichi kutilmoqda</h4>
+              <p className="text-xs text-slate-300 max-w-md mx-auto">
+                32 jamoalik Liga bosqichi yakunlangach, 1–8-o‘rinlar to‘g‘ridan-to‘g‘ri Nimchorak finalga yo‘l oladi,
+                9–24-o‘rinlar esa 8 ta Play-off juftligida bellashadi.
+              </p>
+              {user?.isAdmin && (
+                <button
+                  type="button"
+                  onClick={handleGenerateKnockouts}
+                  disabled={isGeneratingKnockouts}
+                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-md transition-all disabled:opacity-50 inline-flex items-center gap-2"
+                >
+                  <Trophy className="w-3.5 h-3.5" />
+                  <span>{isGeneratingKnockouts ? 'Generatsiya qilinmoqda...' : 'Knockout to‘rini generatsiya qilish'}</span>
+                </button>
+              )}
+            </div>
+          )}
         </div>
+      )}
+
+      {selectedFixtureForSubmit && (
+        <ResultSubmissionModal
+          fixture={selectedFixtureForSubmit}
+          onClose={() => setSelectedFixtureForSubmit(null)}
+          onSuccess={() => {
+            setSelectedFixtureForSubmit(null);
+            if (selectedTournament) {
+              loadTournamentDetails(selectedTournament.id, true);
+            }
+          }}
+        />
       )}
 
       {/* TAB 3: European Qualification Breakdown */}

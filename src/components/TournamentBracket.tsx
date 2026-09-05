@@ -1,7 +1,20 @@
-import React, { useRef } from 'react';
-import { Fixture } from '../types';
+import React, { useRef, useState, useMemo } from 'react';
+import { Fixture, Competition } from '../types';
 import { ClubCrest } from './ClubCrest';
-import { Trophy, Swords, Sparkles, CheckCircle2, Send, ChevronRight, ChevronLeft } from 'lucide-react';
+import {
+  Trophy,
+  Swords,
+  Sparkles,
+  CheckCircle2,
+  Send,
+  ChevronRight,
+  ChevronLeft,
+  Calendar,
+  Clock,
+  Shield,
+  Layers,
+  LayoutGrid,
+} from 'lucide-react';
 import { useUserProfile } from '../context/UserProfileContext';
 import { useI18n } from '../i18n';
 import { getClubOwnerDisplay } from '../lib/ownerUtils';
@@ -12,6 +25,66 @@ interface TournamentBracketProps {
   currentClubId?: string;
   userId?: string;
   onSelectFixture?: (fixture: Fixture) => void;
+  competition?: Competition | null;
+}
+
+// Classifier for fixture rounds
+function classifyFixtureRound(f: Fixture): 'PRELIM' | 'PLAYOFF' | 'R16' | 'QF' | 'SF' | 'FINAL' | 'UNKNOWN' {
+  const rn = (f.roundName || '').toLowerCase();
+  const id = (f.id || '').toLowerCase();
+
+  if (
+    rn.includes('prelim') ||
+    rn.includes('dastlabki') ||
+    rn.includes('saralash') ||
+    (id.includes('-r1-m') && f.matchday === 1)
+  ) {
+    return 'PRELIM';
+  }
+  if (rn.includes('playoff') || rn.includes('play-off') || id.includes('-po-m')) {
+    return 'PLAYOFF';
+  }
+  if (
+    rn.includes('16') ||
+    rn.includes('nimchorak') ||
+    rn.includes('1/8') ||
+    id.includes('-r16-m') ||
+    (id.includes('-r2-m') && f.matchday === 2)
+  ) {
+    return 'R16';
+  }
+  if (
+    rn.includes('quarter') ||
+    rn.includes('chorak') ||
+    rn.includes('1/4') ||
+    id.includes('-qf-m') ||
+    (id.includes('-r3-m') && f.matchday === 3)
+  ) {
+    return 'QF';
+  }
+  if (
+    (rn.includes('semi') ||
+      rn.includes('yarim') ||
+      rn.includes('1/2') ||
+      id.includes('-sf-m') ||
+      (id.includes('-r4-m') && f.matchday === 4)) &&
+    !rn.includes('quarter')
+  ) {
+    return 'SF';
+  }
+  if (
+    rn.includes('final') &&
+    !rn.includes('semi') &&
+    !rn.includes('quarter') &&
+    !rn.includes('16') &&
+    !rn.includes('nimchorak')
+  ) {
+    return 'FINAL';
+  }
+  if (id.includes('-r5-m0') || id.includes('-final-m0')) {
+    return 'FINAL';
+  }
+  return 'UNKNOWN';
 }
 
 export const TournamentBracket: React.FC<TournamentBracketProps> = ({
@@ -19,113 +92,86 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
   currentClubId,
   userId,
   onSelectFixture,
+  competition,
 }) => {
   const { openUserProfile } = useUserProfile();
   const { t } = useI18n();
 
-  const bracketContainerRef = useRef<HTMLDivElement>(null);
-  const leftR16Ref = useRef<HTMLDivElement>(null);
-  const leftQfRef = useRef<HTMLDivElement>(null);
-  const finalRef = useRef<HTMLDivElement>(null);
-  const rightQfRef = useRef<HTMLDivElement>(null);
-  const rightR16Ref = useRef<HTMLDivElement>(null);
+  const [viewMode, setViewMode] = useState<'tree' | 'arena'>('tree');
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  const scrollToRef = (targetRef: React.RefObject<HTMLDivElement>) => {
-    if (targetRef.current) {
-      targetRef.current.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  // Categorize and sort fixtures
+  const { prelimFixtures, playoffFixtures, r16Fixtures, qfFixtures, sfFixtures, finalFixture } = useMemo(() => {
+    const prelim: Fixture[] = [];
+    const playoff: Fixture[] = [];
+    const r16: Fixture[] = [];
+    const qf: Fixture[] = [];
+    const sf: Fixture[] = [];
+    let finalMatch: Fixture | null = null;
+
+    fixtures.forEach((f) => {
+      const type = classifyFixtureRound(f);
+      if (type === 'PRELIM') prelim.push(f);
+      else if (type === 'PLAYOFF') playoff.push(f);
+      else if (type === 'R16') r16.push(f);
+      else if (type === 'QF') qf.push(f);
+      else if (type === 'SF') sf.push(f);
+      else if (type === 'FINAL') finalMatch = f;
+    });
+
+    const sortFn = (a: Fixture, b: Fixture) => {
+      const aIdx = parseInt(a.id.split('-m')[1] || '0', 10);
+      const bIdx = parseInt(b.id.split('-m')[1] || '0', 10);
+      return aIdx - bIdx;
+    };
+
+    return {
+      prelimFixtures: prelim.sort(sortFn),
+      playoffFixtures: playoff.sort(sortFn),
+      r16Fixtures: r16.sort(sortFn),
+      qfFixtures: qf.sort(sortFn),
+      sfFixtures: sf.sort(sortFn),
+      finalFixture: finalMatch,
+    };
+  }, [fixtures]);
+
+  const hasPrelim = prelimFixtures.length > 0;
+  const hasPlayoff = playoffFixtures.length > 0;
+  const hasR16 = r16Fixtures.length > 0;
+  const hasQF = qfFixtures.length > 0;
+  const hasSF = sfFixtures.length > 0;
+
+  const scrollToRound = (id: string) => {
+    const el = document.getElementById(id);
+    if (el && scrollContainerRef.current) {
+      el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
     }
   };
 
-  // Categorize fixtures by explicit round metadata
-  const r16Fixtures = fixtures.filter((f) => {
-    const rn = f.roundName?.toLowerCase() || '';
-    return rn.includes('16') || rn.includes('nimchorak') || rn.includes('1/8') || rn.includes('r16');
-  });
-
-  const qfFixtures = fixtures.filter((f) => {
-    const rn = f.roundName?.toLowerCase() || '';
-    return rn.includes('quarter') || rn.includes('chorak') || rn.includes('qf') || rn.includes('1/4');
-  });
-
-  const sfFixtures = fixtures.filter((f) => {
-    const rn = f.roundName?.toLowerCase() || '';
-    return (
-      (rn.includes('semi') || rn.includes('yarim') || rn.includes('sf') || rn.includes('1/2')) &&
-      !rn.includes('quarter')
-    );
-  });
-
-  const finalFixtures = fixtures.filter((f) => {
-    const rn = f.roundName?.toLowerCase() || '';
-    return (
-      (rn.includes('final') || rn.includes('finali')) &&
-      !rn.includes('semi') &&
-      !rn.includes('quarter') &&
-      !rn.includes('16') &&
-      !rn.includes('nimchorak')
-    );
-  });
-
-  const playoffFixtures = fixtures.filter((f) => {
-    const rn = f.roundName?.toLowerCase() || '';
-    return rn.includes('playoff') || rn.includes('play-off') || rn.includes('saralash') || rn.includes('preliminary');
-  });
-
-  // Non-playoff knockout fixtures fallback
-  const knockoutFixtures = fixtures.filter((f) => !playoffFixtures.includes(f));
-
-  // Determine if tournament has explicit rounds or fallback sequentially without legacy matchday assumptions
-  const hasExplicitRounds =
-    r16Fixtures.length > 0 || qfFixtures.length > 0 || sfFixtures.length > 0 || finalFixtures.length > 0;
-
-  let effectiveR16: (Fixture | null)[] = [];
-  let effectiveQF: (Fixture | null)[] = [];
-  let effectiveSF: (Fixture | null)[] = [];
-  let effectiveFinal: Fixture | null = null;
-
-  if (hasExplicitRounds) {
-    effectiveR16 = r16Fixtures;
-    effectiveQF = qfFixtures;
-    effectiveSF = sfFixtures;
-    effectiveFinal = finalFixtures[0] || null;
-  } else {
-    // Sequential fallback without legacy matchday assumptions
-    if (knockoutFixtures.length >= 15) {
-      effectiveR16 = knockoutFixtures.slice(0, 8);
-      effectiveQF = knockoutFixtures.slice(8, 12);
-      effectiveSF = knockoutFixtures.slice(12, 14);
-      effectiveFinal = knockoutFixtures[14] || null;
-    } else if (knockoutFixtures.length >= 7) {
-      effectiveQF = knockoutFixtures.slice(0, 4);
-      effectiveSF = knockoutFixtures.slice(4, 6);
-      effectiveFinal = knockoutFixtures[6] || null;
-    } else if (knockoutFixtures.length >= 3) {
-      effectiveSF = knockoutFixtures.slice(0, 2);
-      effectiveFinal = knockoutFixtures[2] || null;
-    } else if (knockoutFixtures.length >= 1) {
-      effectiveFinal = knockoutFixtures[0] || null;
+  // Champion calculation
+  const championClub = useMemo(() => {
+    if (!finalFixture || finalFixture.status !== 'CONFIRMED' || !finalFixture.winnerClubId) {
+      return null;
     }
-  }
+    if (finalFixture.winnerClubId === finalFixture.homeClubId) {
+      return finalFixture.homeClub;
+    }
+    if (finalFixture.winnerClubId === finalFixture.awayClubId) {
+      return finalFixture.awayClub;
+    }
+    return null;
+  }, [finalFixture]);
 
-  const showR16 = effectiveR16.length > 0;
-
-  // Split Left and Right halves
-  const leftR16 = Array.from({ length: 4 }).map((_, idx) => effectiveR16[idx] || null);
-  const rightR16 = Array.from({ length: 4 }).map((_, idx) => effectiveR16[idx + 4] || null);
-  const leftQF = Array.from({ length: 2 }).map((_, idx) => effectiveQF[idx] || null);
-  const rightQF = Array.from({ length: 2 }).map((_, idx) => effectiveQF[idx + 2] || null);
-  const leftSF = effectiveSF[0] || null;
-  const rightSF = effectiveSF[1] || null;
-
-  const renderMatchCard = (fixture: Fixture | null, matchLabel: string, isCenter = false) => {
+  // Render individual Match Card
+  const renderMatchCard = (fixture: Fixture | null, matchLabel: string, isCenterFinal = false) => {
     if (!fixture) {
       return (
-        <div className="w-56 sm:w-60 glass-card p-3 rounded-2xl border border-white/[0.06] opacity-60 flex flex-col justify-center min-h-[84px] shadow-sm">
-          <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1 flex items-center justify-between">
+        <div className="w-[260px] sm:w-[280px] bg-slate-900/60 p-3.5 rounded-2xl border border-white/[0.06] flex flex-col justify-center min-h-[96px] shadow-sm select-none">
+          <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1.5 flex items-center justify-between">
             <span>{matchLabel}</span>
-            <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/[0.05] text-slate-500 font-semibold">TBD</span>
+            <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/[0.04] text-slate-500 font-mono">TBD</span>
           </div>
-          <div className="text-xs text-slate-400 italic">Kutilmoqda / TBD</div>
+          <div className="text-xs text-slate-500 italic">Kutilmoqda / TBD</div>
         </div>
       );
     }
@@ -139,6 +185,7 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
       : fixture.homeScore !== null &&
         fixture.awayScore !== null &&
         fixture.homeScore! > fixture.awayScore!;
+
     const isAwayWinner = fixture.winnerClubId
       ? fixture.winnerClubId === fixture.awayClubId
       : fixture.homeScore !== null &&
@@ -150,8 +197,8 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
     const isAwayUser =
       (currentClubId && fixture.awayClubId === currentClubId) || (userId && fixture.awayOwnerId === userId);
 
-    const isHomeTbd = !fixture.homeClubId || fixture.homeClub?.name === 'TBD';
-    const isAwayTbd = !fixture.awayClubId || fixture.awayClub?.name === 'TBD';
+    const isHomeTbd = !fixture.homeClubId || fixture.homeClubId === 'TBD' || fixture.homeClub?.name === 'TBD';
+    const isAwayTbd = !fixture.awayClubId || fixture.awayClubId === 'TBD' || fixture.awayClub?.name === 'TBD';
 
     const homeOwnerInfo = isHomeTbd
       ? null
@@ -165,31 +212,34 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
 
     return (
       <div
+        id={fixture.id}
         onClick={() => onSelectFixture?.(fixture)}
-        className={`w-56 sm:w-60 glass-panel p-3 rounded-2xl transition-all shadow-md cursor-pointer group ${
+        className={`w-[260px] sm:w-[280px] bg-slate-900/95 p-3 sm:p-3.5 rounded-2xl border transition-all duration-200 shadow-lg cursor-pointer group hover:scale-[1.01] ${
           isUserMatch
-            ? 'border-amber-400/70 bg-amber-950/25 shadow-amber-500/10 ring-1 ring-amber-400/30'
-            : isCenter
-            ? 'border-blue-400/50 bg-blue-950/30 shadow-blue-500/10'
-            : 'hover:border-white/[0.25]'
+            ? 'border-amber-400/80 bg-amber-950/25 ring-1 ring-amber-400/40 shadow-amber-500/10'
+            : isCenterFinal
+            ? 'border-amber-500/50 bg-amber-950/30 shadow-amber-500/10'
+            : 'border-white/[0.12] hover:border-white/[0.30] bg-[#0c1322]'
         }`}
       >
-        <div className="flex items-center justify-between text-[10px] text-slate-400 mb-2 pb-1 border-b border-white/[0.06]">
-          <span className="font-bold text-slate-300 truncate max-w-[120px]">{matchLabel}</span>
+        {/* Match Header Bar */}
+        <div className="flex items-center justify-between text-[10px] mb-2 pb-1.5 border-b border-white/[0.06]">
+          <span className="font-bold text-slate-300 truncate max-w-[140px] tracking-tight">{matchLabel}</span>
           <span
-            className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${
+            className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-1 ${
               fixture.status === 'CONFIRMED'
-                ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                 : fixture.status === 'DISPUTED'
-                ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
-                : 'bg-white/[0.05] text-slate-400'
+                ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                : 'bg-white/[0.06] text-slate-400'
             }`}
           >
+            {fixture.status === 'CONFIRMED' && <CheckCircle2 className="w-2.5 h-2.5" />}
             {fixture.status === 'CONFIRMED' ? 'Tugagan' : fixture.status === 'DISPUTED' ? 'Nizo' : 'Kutilmoqda'}
           </span>
         </div>
 
-        {/* Home Team */}
+        {/* Home Team Row */}
         <div className="flex items-center justify-between py-1">
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <ClubCrest
@@ -204,13 +254,19 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
               <div className="flex items-center gap-1">
                 <span
                   className={`text-xs truncate block ${
-                    isHomeWinner ? 'font-black text-emerald-400' : 'font-bold text-slate-200'
+                    isHomeWinner
+                      ? 'font-black text-emerald-400'
+                      : isHomeTbd
+                      ? 'font-medium text-slate-500 italic'
+                      : 'font-bold text-slate-100'
                   }`}
                 >
                   {isHomeTbd ? 'TBD / Aniqlanmoqda' : fixture.homeClub?.name || 'Home'}
                 </span>
                 {isHomeUser && (
-                  <span className="text-[8px] font-black text-emerald-400 bg-emerald-500/15 px-1 rounded">Siz</span>
+                  <span className="text-[8px] font-black text-emerald-400 bg-emerald-500/20 border border-emerald-500/30 px-1 py-0.2 rounded shrink-0">
+                    Siz
+                  </span>
                 )}
               </div>
               {isHomeTbd ? (
@@ -223,12 +279,12 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
                       e.stopPropagation();
                       openUserProfile(homeOwnerInfo.userId!);
                     }}
-                    className="text-[9px] text-slate-400 hover:text-emerald-400 truncate block text-left transition-colors"
+                    className="text-[9px] text-slate-400 hover:text-emerald-400 truncate block text-left transition-colors font-medium"
                   >
                     {homeOwnerInfo.displayText}
                   </button>
                 ) : (
-                  <span className="text-[9px] text-slate-400 truncate block">
+                  <span className="text-[9px] text-slate-400 truncate block font-medium">
                     {homeOwnerInfo.displayText}
                   </span>
                 )
@@ -241,15 +297,20 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
           </div>
           <span
             className={`text-xs px-2 py-0.5 rounded-lg font-mono font-black shrink-0 ml-1.5 ${
-              isHomeWinner ? 'bg-emerald-500/20 text-emerald-300' : 'bg-white/[0.05] text-slate-300'
+              isHomeWinner
+                ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/30'
+                : 'bg-white/[0.06] text-slate-200'
             }`}
           >
             {fixture.homeScore !== null && fixture.homeScore !== undefined ? fixture.homeScore : '-'}
           </span>
         </div>
 
-        {/* Away Team */}
-        <div className="flex items-center justify-between py-1 border-t border-white/[0.04]">
+        {/* Subtle separator */}
+        <div className="my-1 border-t border-white/[0.04]" />
+
+        {/* Away Team Row */}
+        <div className="flex items-center justify-between py-1">
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <ClubCrest
               clubId={fixture.awayClub?.id}
@@ -263,13 +324,19 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
               <div className="flex items-center gap-1">
                 <span
                   className={`text-xs truncate block ${
-                    isAwayWinner ? 'font-black text-emerald-400' : 'font-bold text-slate-200'
+                    isAwayWinner
+                      ? 'font-black text-emerald-400'
+                      : isAwayTbd
+                      ? 'font-medium text-slate-500 italic'
+                      : 'font-bold text-slate-100'
                   }`}
                 >
                   {isAwayTbd ? 'TBD / Aniqlanmoqda' : fixture.awayClub?.name || 'Away'}
                 </span>
                 {isAwayUser && (
-                  <span className="text-[8px] font-black text-emerald-400 bg-emerald-500/15 px-1 rounded">Siz</span>
+                  <span className="text-[8px] font-black text-emerald-400 bg-emerald-500/20 border border-emerald-500/30 px-1 py-0.2 rounded shrink-0">
+                    Siz
+                  </span>
                 )}
               </div>
               {isAwayTbd ? (
@@ -282,12 +349,12 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
                       e.stopPropagation();
                       openUserProfile(awayOwnerInfo.userId!);
                     }}
-                    className="text-[9px] text-slate-400 hover:text-emerald-400 truncate block text-left transition-colors"
+                    className="text-[9px] text-slate-400 hover:text-emerald-400 truncate block text-left transition-colors font-medium"
                   >
                     {awayOwnerInfo.displayText}
                   </button>
                 ) : (
-                  <span className="text-[9px] text-slate-400 truncate block">
+                  <span className="text-[9px] text-slate-400 truncate block font-medium">
                     {awayOwnerInfo.displayText}
                   </span>
                 )
@@ -300,14 +367,16 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
           </div>
           <span
             className={`text-xs px-2 py-0.5 rounded-lg font-mono font-black shrink-0 ml-1.5 ${
-              isAwayWinner ? 'bg-emerald-500/20 text-emerald-300' : 'bg-white/[0.05] text-slate-300'
+              isAwayWinner
+                ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/30'
+                : 'bg-white/[0.06] text-slate-200'
             }`}
           >
             {fixture.awayScore !== null && fixture.awayScore !== undefined ? fixture.awayScore : '-'}
           </span>
         </div>
 
-        {/* Opponent Telegram Contact Button */}
+        {/* Opponent Telegram Contact Button if user's match */}
         {isUserMatch && hasOppTg && oppOwnerInfo?.username && (
           <div className="pt-2 border-t border-white/[0.06] mt-1.5 flex justify-end">
             <button
@@ -316,10 +385,10 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
                 e.stopPropagation();
                 openTelegramChat(oppOwnerInfo.username!);
               }}
-              className="text-xs font-bold px-2.5 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 transition-all flex items-center gap-1.5 shadow-sm min-h-[36px] touch-manipulation"
+              className="text-[10px] font-bold px-2.5 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 transition-all flex items-center gap-1.5 shadow-sm min-h-[32px] touch-manipulation"
             >
               <Send className="w-3 h-3" />
-              <span>Raqibga yozish</span>
+              <span>Raqibga yozish (@{oppOwnerInfo.username})</span>
             </button>
           </div>
         )}
@@ -328,169 +397,331 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
   };
 
   return (
-    <div className="space-y-5">
-      {/* Play-offs banner if applicable */}
-      {playoffFixtures.length > 0 && (
-        <div className="glass-panel p-4 rounded-2xl shadow-xl space-y-3 border-indigo-500/30">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
-              <h4 className="text-xs font-black uppercase text-white tracking-wider">
-                Knockout Play-offs (9th–24th Seeds)
-              </h4>
-            </div>
-            <span className="text-[11px] text-indigo-300 font-semibold">
-              G‘oliblar Nimchorak finalga yo‘l oladi
-            </span>
-          </div>
+    <div className="space-y-4">
+      {/* Top Toolbar: View switch & Quick Jump */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900/60 p-3 rounded-2xl border border-white/[0.06]">
+        {/* Quick jump round pills */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none text-xs font-bold">
+          {hasPrelim && (
+            <button
+              type="button"
+              onClick={() => scrollToRound('col-prelim')}
+              className="px-2.5 py-1 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] text-slate-300 transition-colors shrink-0"
+            >
+              Dastlabki saralash
+            </button>
+          )}
+          {hasPlayoff && (
+            <button
+              type="button"
+              onClick={() => scrollToRound('col-playoff')}
+              className="px-2.5 py-1 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 transition-colors shrink-0"
+            >
+              Play-offs (9–24)
+            </button>
+          )}
+          {hasR16 && (
+            <button
+              type="button"
+              onClick={() => scrollToRound('col-r16')}
+              className="px-2.5 py-1 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] text-slate-300 transition-colors shrink-0"
+            >
+              Nimchorak final
+            </button>
+          )}
+          {hasQF && (
+            <button
+              type="button"
+              onClick={() => scrollToRound('col-qf')}
+              className="px-2.5 py-1 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] text-slate-300 transition-colors shrink-0"
+            >
+              Chorak final
+            </button>
+          )}
+          {hasSF && (
+            <button
+              type="button"
+              onClick={() => scrollToRound('col-sf')}
+              className="px-2.5 py-1 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] text-slate-300 transition-colors shrink-0"
+            >
+              Yarim final
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => scrollToRound('col-final')}
+            className="px-3 py-1 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 transition-colors shrink-0 flex items-center gap-1 font-black"
+          >
+            <Trophy className="w-3.5 h-3.5" />
+            <span>Katta Final</span>
+          </button>
+        </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-            {playoffFixtures.map((f, i) => (
-              <div key={f.id}>{renderMatchCard(f, `Play-off #${i + 1}`)}</div>
-            ))}
+        {/* View Mode Switcher */}
+        <div className="flex items-center gap-1 shrink-0 bg-slate-950/60 p-1 rounded-xl border border-white/[0.08] self-end sm:self-auto">
+          <button
+            type="button"
+            onClick={() => setViewMode('tree')}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+              viewMode === 'tree'
+                ? 'bg-amber-500 text-slate-950 font-black shadow-sm'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>Bosqichlar (Tree)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('arena')}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+              viewMode === 'arena'
+                ? 'bg-amber-500 text-slate-950 font-black shadow-sm'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <LayoutGrid className="w-3.5 h-3.5" />
+            <span>Klassik Arena</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Champion Celebration Banner if crowned */}
+      {championClub && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-amber-500/20 via-amber-500/10 to-amber-500/20 border border-amber-400/50 shadow-xl flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-400/50 flex items-center justify-center shadow-inner shrink-0">
+              <Trophy className="w-6 h-6 text-amber-400" />
+            </div>
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-wider text-amber-400">
+                Turnir Chempioni Cownasi
+              </div>
+              <div className="text-base sm:text-lg font-black text-white flex items-center gap-2">
+                <ClubCrest
+                  clubId={championClub.id}
+                  logoUrl={championClub.logoUrl}
+                  name={championClub.name}
+                  size="sm"
+                  className="w-5 h-5 inline-block"
+                />
+                <span>{championClub.name}</span>
+              </div>
+            </div>
+          </div>
+          <span className="text-xs font-black px-3 py-1.5 rounded-xl bg-amber-500 text-slate-950 shadow-md">
+            G‘OLIB
+          </span>
+        </div>
+      )}
+
+      {/* VIEW 1: HORIZONTAL PROGRESSIVE TREE BRACKET */}
+      {viewMode === 'tree' && (
+        <div
+          ref={scrollContainerRef}
+          className="bg-slate-950/80 p-4 sm:p-6 rounded-3xl border border-white/[0.08] shadow-2xl overflow-x-auto scrollbar-thin scroll-smooth"
+        >
+          <div className="inline-flex gap-8 min-w-full pb-4">
+            {/* 1. Preliminary Round (for 18/20-team domestic cups) */}
+            {hasPrelim && (
+              <div id="col-prelim" className="flex flex-col space-y-4 shrink-0">
+                <div className="text-center pb-2 border-b border-white/[0.08]">
+                  <div className="text-xs font-black uppercase text-amber-400 tracking-wider">
+                    Dastlabki Saralash
+                  </div>
+                  <div className="text-[10px] text-slate-400 font-semibold">
+                    {prelimFixtures.length} ta o‘yin
+                  </div>
+                </div>
+                <div className="flex flex-col justify-around gap-6 flex-1">
+                  {prelimFixtures.map((f, i) => (
+                    <div key={f.id}>{renderMatchCard(f, `Saralash #${i + 1}`)}</div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 2. Play-offs (for UCL / UEL 9th-24th seeds) */}
+            {hasPlayoff && (
+              <div id="col-playoff" className="flex flex-col space-y-4 shrink-0">
+                <div className="text-center pb-2 border-b border-indigo-500/30">
+                  <div className="text-xs font-black uppercase text-indigo-400 tracking-wider">
+                    Knockout Play-offs
+                  </div>
+                  <div className="text-[10px] text-indigo-300/80 font-semibold">
+                    9–24-o‘rinlar ({playoffFixtures.length} ta o‘yin)
+                  </div>
+                </div>
+                <div className="flex flex-col justify-around gap-4 flex-1">
+                  {playoffFixtures.map((f, i) => (
+                    <div key={f.id}>{renderMatchCard(f, `Play-off #${i + 1}`)}</div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 3. Round of 16 */}
+            {hasR16 && (
+              <div id="col-r16" className="flex flex-col space-y-4 shrink-0">
+                <div className="text-center pb-2 border-b border-white/[0.08]">
+                  <div className="text-xs font-black uppercase text-slate-200 tracking-wider">
+                    Nimchorak Final
+                  </div>
+                  <div className="text-[10px] text-slate-400 font-semibold">
+                    Round of 16 ({r16Fixtures.length} ta o‘yin)
+                  </div>
+                </div>
+                <div className="flex flex-col justify-around gap-6 flex-1">
+                  {r16Fixtures.map((f, i) => (
+                    <div key={f.id}>{renderMatchCard(f, `R16 #${i + 1}`)}</div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 4. Quarter-Finals */}
+            {hasQF && (
+              <div id="col-qf" className="flex flex-col space-y-4 shrink-0">
+                <div className="text-center pb-2 border-b border-white/[0.08]">
+                  <div className="text-xs font-black uppercase text-slate-200 tracking-wider">
+                    Chorak Final
+                  </div>
+                  <div className="text-[10px] text-slate-400 font-semibold">
+                    Quarter-Finals ({qfFixtures.length} ta o‘yin)
+                  </div>
+                </div>
+                <div className="flex flex-col justify-around gap-8 flex-1">
+                  {qfFixtures.map((f, i) => (
+                    <div key={f.id}>{renderMatchCard(f, `Chorak #${i + 1}`)}</div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 5. Semi-Finals */}
+            {hasSF && (
+              <div id="col-sf" className="flex flex-col space-y-4 shrink-0">
+                <div className="text-center pb-2 border-b border-white/[0.08]">
+                  <div className="text-xs font-black uppercase text-slate-200 tracking-wider">
+                    Yarim Final
+                  </div>
+                  <div className="text-[10px] text-slate-400 font-semibold">
+                    Semi-Finals ({sfFixtures.length} ta o‘yin)
+                  </div>
+                </div>
+                <div className="flex flex-col justify-around gap-12 flex-1">
+                  {sfFixtures.map((f, i) => (
+                    <div key={f.id}>{renderMatchCard(f, `Yarim Final #${i + 1}`)}</div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 6. Grand Final */}
+            <div id="col-final" className="flex flex-col space-y-4 shrink-0">
+              <div className="text-center pb-2 border-b border-amber-500/40">
+                <div className="text-xs font-black uppercase text-amber-400 tracking-wider flex items-center justify-center gap-1.5">
+                  <Trophy className="w-3.5 h-3.5" />
+                  <span>Katta Final</span>
+                </div>
+                <div className="text-[10px] text-amber-300/80 font-semibold">
+                  Grand Final (1 ta o‘yin)
+                </div>
+              </div>
+              <div className="flex flex-col justify-center items-center flex-1 py-8">
+                <div className="w-14 h-14 rounded-full bg-amber-500/20 border-2 border-amber-400/50 flex items-center justify-center mb-4 shadow-lg shadow-amber-500/20">
+                  <Trophy className="w-7 h-7 text-amber-400" />
+                </div>
+                <div className="text-xs font-black uppercase tracking-widest text-amber-300 mb-3">
+                  Kubok Sohibi Uchun Jang
+                </div>
+                {renderMatchCard(finalFixture, 'GRAND FINAL', true)}
+              </div>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Mobile Navigation Pills */}
-      <div className="flex items-center justify-between gap-1.5 overflow-x-auto pb-1 text-xs font-bold sm:hidden">
-        {showR16 && (
-          <button
-            type="button"
-            onClick={() => scrollToRef(leftR16Ref)}
-            className="px-3 py-1.5 rounded-xl glass-card text-slate-300 active:text-white shrink-0 min-h-[36px] touch-manipulation"
-          >
-            R16 (Chap)
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={() => scrollToRef(leftQfRef)}
-          className="px-3 py-1.5 rounded-xl glass-card text-slate-300 active:text-white shrink-0 min-h-[36px] touch-manipulation"
+      {/* VIEW 2: CLASSIC ARENA SYMMETRIC BRACKET (CONVERGING IN THE CENTER) */}
+      {viewMode === 'arena' && (
+        <div
+          ref={scrollContainerRef}
+          className="bg-slate-950/80 p-4 sm:p-6 rounded-3xl border border-white/[0.08] shadow-2xl overflow-x-auto scrollbar-thin scroll-smooth"
         >
-          Chorak
-        </button>
-        <button
-          type="button"
-          onClick={() => scrollToRef(finalRef)}
-          className="px-3.5 py-1.5 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 active:text-amber-200 shrink-0 flex items-center gap-1 min-h-[36px] touch-manipulation"
-        >
-          <Trophy className="w-3.5 h-3.5" />
-          <span>Final</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => scrollToRef(rightQfRef)}
-          className="px-3 py-1.5 rounded-xl glass-card text-slate-300 active:text-white shrink-0 min-h-[36px] touch-manipulation"
-        >
-          Chorak
-        </button>
-        {showR16 && (
-          <button
-            type="button"
-            onClick={() => scrollToRef(rightR16Ref)}
-            className="px-3 py-1.5 rounded-xl glass-card text-slate-300 active:text-white shrink-0 min-h-[36px] touch-manipulation"
-          >
-            R16 (O‘ng)
-          </button>
-        )}
-      </div>
-
-      {/* Main Tournament Bracket with Left and Right Halves meeting in Center */}
-      <div
-        ref={bracketContainerRef}
-        className="glass-panel p-4 sm:p-6 shadow-2xl overflow-x-auto scrollbar-thin scroll-smooth"
-      >
-        <div className={`${showR16 ? 'min-w-[1020px]' : 'min-w-[760px]'} pb-4`}>
           {/* Header Row */}
-          <div
-            className={`grid ${
-              showR16 ? 'grid-cols-7' : 'grid-cols-5'
-            } gap-3 mb-6 px-2 text-center text-xs font-black uppercase tracking-wider text-slate-400`}
-          >
-            {showR16 && <div className="text-left">Nimchorak (R16)</div>}
-            <div>Chorak Final (QF)</div>
-            <div>Yarim Final (SF)</div>
+          <div className="grid grid-cols-5 gap-4 mb-6 px-2 text-center text-xs font-black uppercase tracking-wider text-slate-400 min-w-[1000px]">
+            <div className="text-left">Chorak Final (Chap)</div>
+            <div>Yarim Final 1</div>
             <div className="text-amber-400 flex items-center justify-center gap-1.5">
               <Trophy className="w-4 h-4 text-amber-400" />
-              <span>FINAL</span>
+              <span>GRAND FINAL</span>
             </div>
-            <div>Yarim Final (SF)</div>
-            <div>Chorak Final (QF)</div>
-            {showR16 && <div className="text-right">Nimchorak (R16)</div>}
+            <div>Yarim Final 2</div>
+            <div className="text-right">Chorak Final (O‘ng)</div>
           </div>
 
-          <div
-            className={`grid ${
-              showR16 ? 'grid-cols-7' : 'grid-cols-5'
-            } gap-3 items-center`}
-          >
-            {/* 1. LEFT R16 (4 Matches) */}
-            {showR16 && (
-              <div ref={leftR16Ref} className="flex flex-col justify-around gap-4">
-                {Array.from({ length: 4 }).map((_, idx) => (
-                  <div key={`left-r16-${idx}`}>
-                    {renderMatchCard(leftR16[idx] || null, `R16 Match ${idx + 1}`)}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* 2. LEFT QF (2 Matches) */}
-            <div ref={leftQfRef} className="flex flex-col justify-around gap-12">
-              {Array.from({ length: 2 }).map((_, idx) => (
-                <div key={`left-qf-${idx}`}>
-                  {renderMatchCard(leftQF[idx] || null, `Chorak #${idx + 1}`)}
-                </div>
-              ))}
+          {/* Symmetrical Grid */}
+          <div className="grid grid-cols-5 gap-4 items-center min-w-[1000px]">
+            {/* Left QF (2 matches) */}
+            <div className="flex flex-col justify-around gap-12">
+              <div>{renderMatchCard(qfFixtures[0] || null, 'Chorak #1')}</div>
+              <div>{renderMatchCard(qfFixtures[1] || null, 'Chorak #2')}</div>
             </div>
 
-            {/* 3. LEFT SF (1 Match) */}
+            {/* Left SF (1 match) */}
             <div className="flex flex-col justify-center">
-              <div>{renderMatchCard(leftSF, 'Yarim Final 1')}</div>
+              <div>{renderMatchCard(sfFixtures[0] || null, 'Yarim Final 1')}</div>
             </div>
 
-            {/* 4. CENTER: THE GRAND FINAL */}
-            <div
-              ref={finalRef}
-              className="flex flex-col items-center justify-center p-3 rounded-2xl glass-panel border-amber-400/40 bg-amber-950/20 shadow-xl shadow-amber-500/10"
-            >
-              <div className="w-12 h-12 rounded-full bg-amber-500/20 border border-amber-400/40 flex items-center justify-center mb-2 shadow-inner">
-                <Trophy className="w-6 h-6 text-amber-400" />
+            {/* Center Final */}
+            <div className="flex flex-col items-center justify-center p-4 rounded-3xl bg-amber-950/20 border-2 border-amber-400/40 shadow-2xl shadow-amber-500/10">
+              <div className="w-14 h-14 rounded-full bg-amber-500/20 border border-amber-400/50 flex items-center justify-center mb-3 shadow-inner">
+                <Trophy className="w-7 h-7 text-amber-400" />
               </div>
-              <div className="text-[11px] font-black uppercase text-amber-300 tracking-wider mb-2">
+              <div className="text-xs font-black uppercase text-amber-300 tracking-wider mb-2">
                 Grand Final
               </div>
-              {renderMatchCard(effectiveFinal, 'UEFA FINAL', true)}
+              {renderMatchCard(finalFixture, 'KATTA FINAL', true)}
             </div>
 
-            {/* 5. RIGHT SF (1 Match) */}
+            {/* Right SF (1 match) */}
             <div className="flex flex-col justify-center">
-              <div>{renderMatchCard(rightSF, 'Yarim Final 2')}</div>
+              <div>{renderMatchCard(sfFixtures[1] || null, 'Yarim Final 2')}</div>
             </div>
 
-            {/* 6. RIGHT QF (2 Matches) */}
-            <div ref={rightQfRef} className="flex flex-col justify-around gap-12">
-              {Array.from({ length: 2 }).map((_, idx) => (
-                <div key={`right-qf-${idx}`}>
-                  {renderMatchCard(rightQF[idx] || null, `Chorak #${idx + 3}`)}
-                </div>
-              ))}
+            {/* Right QF (2 matches) */}
+            <div className="flex flex-col justify-around gap-12">
+              <div>{renderMatchCard(qfFixtures[2] || null, 'Chorak #3')}</div>
+              <div>{renderMatchCard(qfFixtures[3] || null, 'Chorak #4')}</div>
             </div>
+          </div>
 
-            {/* 7. RIGHT R16 (4 Matches) */}
-            {showR16 && (
-              <div ref={rightR16Ref} className="flex flex-col justify-around gap-4">
-                {Array.from({ length: 4 }).map((_, idx) => (
-                  <div key={`right-r16-${idx}`}>
-                    {renderMatchCard(rightR16[idx] || null, `R16 Match ${idx + 5}`)}
-                  </div>
+          {/* Bottom R16 / Play-off collapsible drawer for completeness */}
+          {(hasR16 || hasPlayoff || hasPrelim) && (
+            <div className="mt-8 pt-6 border-t border-white/[0.08] min-w-[1000px]">
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-xs font-black uppercase tracking-wider text-slate-300">
+                  Oldingi Saralash & Nimchorak Bosqichlari
+                </span>
+                <span className="text-[11px] text-slate-400">
+                  Barcha o‘yinlar to‘liq saralangan
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {prelimFixtures.map((f, i) => (
+                  <div key={f.id}>{renderMatchCard(f, `Saralash #${i + 1}`)}</div>
+                ))}
+                {playoffFixtures.map((f, i) => (
+                  <div key={f.id}>{renderMatchCard(f, `Play-off #${i + 1}`)}</div>
+                ))}
+                {r16Fixtures.map((f, i) => (
+                  <div key={f.id}>{renderMatchCard(f, `R16 #${i + 1}`)}</div>
                 ))}
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
-      </div>
+      )}
     </div>
   );
 };

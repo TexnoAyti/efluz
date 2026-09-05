@@ -1,25 +1,20 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../context/UserProfileContext';
 import { useI18n } from '../i18n';
 import { api } from '../lib/api';
 import { Competition, Fixture } from '../types';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
-import { ClubCrest } from './ClubCrest';
-import { getClubOwnerDisplay } from '../lib/ownerUtils';
-import { openTelegramChat, isValidTelegramUsername } from '../lib/telegramUtils';
+import { TournamentBracket } from './TournamentBracket';
 import {
   Award,
   Trophy,
   Shield,
-  Calendar,
-  CheckCircle2,
-  Clock,
   Sparkles,
   Loader2,
-  Swords,
   AlertTriangle,
-  Send,
+  Users,
+  Info,
 } from 'lucide-react';
 
 interface CupBracketsViewProps {
@@ -28,7 +23,6 @@ interface CupBracketsViewProps {
 
 export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab }) => {
   const { user, currentClub, activeSeasonId } = useAuth();
-  const { openUserProfile } = useUserProfile();
   const { t } = useI18n();
 
   const [cupCompetitions, setCupCompetitions] = useState<Competition[]>([]);
@@ -45,7 +39,10 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
       try {
         const res = await api.getCompetitions(activeSeasonId);
         const cups = (res.competitions || []).filter(
-          (c) => c.type === 'KNOCKOUT' || c.type === 'SUPER_CUP' || (c.type !== 'LEAGUE' && c.type !== 'EUROPEAN_LEAGUE_PHASE')
+          (c) =>
+            c.type === 'KNOCKOUT' ||
+            c.type === 'SUPER_CUP' ||
+            (c.type !== 'LEAGUE' && c.type !== 'EUROPEAN_LEAGUE_PHASE')
         );
         setCupCompetitions(cups);
         if (cups.length > 0) {
@@ -89,44 +86,30 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
 
   const activeCup = cupCompetitions.find((c) => c.id === selectedCupId);
 
-  // Group fixtures by roundName
-  const fixturesByRound: Record<string, Fixture[]> = {};
-  cupFixtures.forEach((f) => {
-    const round = f.roundName || 'Knockout Stage';
-    if (!fixturesByRound[round]) {
-      fixturesByRound[round] = [];
-    }
-    fixturesByRound[round].push(f);
-  });
+  // Dynamic domestic cup participant count derived from the active competition
+  const distinctClubsCount = useMemo(() => {
+    const ids = new Set<string>();
+    cupFixtures.forEach((f) => {
+      if (f.homeClubId && f.homeClubId !== 'TBD') ids.add(f.homeClubId);
+      if (f.awayClubId && f.awayClubId !== 'TBD') ids.add(f.awayClubId);
+    });
+    return ids.size;
+  }, [cupFixtures]);
 
-  const getStatusBadge = (status: Fixture['status']) => {
-    switch (status) {
-      case 'CONFIRMED':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-            <CheckCircle2 className="w-3 h-3" /> {t.matchStatusConfirmed}
-          </span>
-        );
-      case 'PENDING_CONFIRMATION':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500/15 text-amber-400 border border-amber-500/30 animate-pulse">
-            <Clock className="w-3 h-3" /> {t.matchStatusPending}
-          </span>
-        );
-      case 'DISPUTED':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-500/15 text-rose-400 border border-rose-500/30">
-            <AlertTriangle className="w-3 h-3" /> {t.matchStatusDisputed}
-          </span>
-        );
-      default:
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold text-slate-300 bg-slate-800 border border-slate-700">
-            <Calendar className="w-3 h-3" /> {t.matchStatusUpcoming}
-          </span>
-        );
+  const leagueDefaultCount = useMemo(() => {
+    if (!activeCup) return 20;
+    const name = (activeCup.name || '').toLowerCase();
+    const id = (activeCup.id || '').toLowerCase();
+    if (id.includes('bundesliga') || id.includes('dfb') || name.includes('dfb') || name.includes('pokal')) {
+      return 18;
     }
-  };
+    if (id.includes('ligue-1') || id.includes('coupe-de-france') || name.includes('coupe de france')) {
+      return 18;
+    }
+    return 20;
+  }, [activeCup]);
+
+  const totalParticipantCount = distinctClubsCount > 0 ? distinctClubsCount : leagueDefaultCount;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300 pb-20">
@@ -140,9 +123,7 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
             <Shield className="w-3.5 h-3.5 text-emerald-400" />
             <span>Domestic Leagues</span>
           </button>
-          <button
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-black bg-amber-500 text-slate-950 shadow-md min-h-[36px]"
-          >
+          <button className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-black bg-amber-500 text-slate-950 shadow-md min-h-[36px]">
             <Trophy className="w-3.5 h-3.5" />
             <span>National Cups</span>
           </button>
@@ -156,7 +137,7 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
         </div>
       )}
 
-      {/* Header */}
+      {/* Header & Cup Selector */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 glass-panel p-4 sm:p-5 shadow-xl">
         <div>
           <h2 className="text-base sm:text-xl font-black text-white tracking-tight flex items-center gap-2">
@@ -192,6 +173,43 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
         )}
       </div>
 
+      {/* Competition Info Ribbon: Dynamic Participant Count */}
+      {activeCup && (
+        <div className="glass-panel p-3.5 sm:p-4 border-amber-500/30 bg-amber-950/15 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center shrink-0">
+              <Trophy className="w-5 h-5 text-amber-400" />
+            </div>
+            <div>
+              <div className="text-sm font-black text-white flex items-center gap-2">
+                <span>{activeCup.name}</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                  {totalParticipantCount} Jamoa
+                </span>
+              </div>
+              <div className="text-[11px] text-slate-300 mt-0.5 flex items-center gap-2 flex-wrap">
+                {totalParticipantCount === 20 ? (
+                  <span>
+                    Format: 4 ta jamoa Dastlabki saralashda + 12 ta jamoa to‘g‘ridan-to‘g‘ri Nimchorak finalda
+                  </span>
+                ) : totalParticipantCount === 18 ? (
+                  <span>
+                    Format: 2 ta jamoa Dastlabki saralashda + 14 ta jamoa to‘g‘ridan-to‘g‘ri Nimchorak finalda
+                  </span>
+                ) : (
+                  <span>Format: To‘g‘ridan-to‘g‘ri olimpiada tizimi ({totalParticipantCount} ishtirokchi)</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-start sm:self-auto text-xs font-bold text-slate-400">
+            <Users className="w-4 h-4 text-slate-400" />
+            <span>Ishtirokchilar: <strong className="text-white">{totalParticipantCount}</strong></span>
+          </div>
+        </div>
+      )}
+
       {/* Error State */}
       {error && cupFixtures.length === 0 && !isLoading && (
         <div className="p-6 rounded-2xl glass-panel border-rose-500/30 bg-rose-950/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-rose-200 text-xs shadow-xl">
@@ -211,10 +229,11 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
         </div>
       )}
 
+      {/* Loading Skeleton */}
       {isLoading && cupFixtures.length === 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 animate-pulse">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 animate-pulse">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-32 rounded-2xl bg-white/[0.04] border border-white/[0.06]" />
+            <div key={i} className="h-44 rounded-2xl bg-white/[0.04] border border-white/[0.06]" />
           ))}
         </div>
       ) : cupFixtures.length === 0 ? (
@@ -226,174 +245,17 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
           </p>
         </div>
       ) : (
-        <div className="space-y-6">
-          {Object.entries(fixturesByRound).map(([roundName, fixtures]) => (
-            <div key={roundName} className="space-y-3">
-              <div className="flex items-center gap-2 px-1">
-                <span className="w-2 h-2 rounded-full bg-amber-400" />
-                <h3 className="font-black text-xs uppercase tracking-wider text-slate-200">{roundName}</h3>
-                <span className="text-[11px] font-semibold text-slate-400">({fixtures.length} matches)</span>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {fixtures.map((fixture) => {
-                  const isHome = fixture.homeOwnerId === user?.id || fixture.homeClubId === currentClub?.id;
-                  const isAway = fixture.awayOwnerId === user?.id || fixture.awayClubId === currentClub?.id;
-                  const isUserInvolved = isHome || isAway;
-                  const homeName = fixture.homeClub?.name || 'Home Club';
-                  const awayName = fixture.awayClub?.name || 'Away Club';
-                  const homeLogo = fixture.homeClub?.logoUrl;
-                  const awayLogo = fixture.awayClub?.logoUrl;
-                  const homeOwnerInfo = getClubOwnerDisplay(fixture.homeClub, fixture.homeUser, fixture.homeOwnerId, t.userNeeded);
-                  const awayOwnerInfo = getClubOwnerDisplay(fixture.awayClub, fixture.awayUser, fixture.awayOwnerId, t.userNeeded);
-
-                  return (
-                    <div
-                      key={fixture.id}
-                      className={`glass-panel p-3.5 flex flex-col justify-between shadow-md transition-all ${
-                        isUserInvolved
-                          ? 'border-amber-500/50 bg-amber-950/20'
-                          : ''
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2 mb-2.5">
-                        <span className="text-[10px] font-bold text-slate-400">
-                          Match #{fixture.id.slice(-4)}
-                        </span>
-                        {getStatusBadge(fixture.status)}
-                      </div>
-
-                      {/* Teams & Scores */}
-                      <div className="space-y-2 mb-2.5">
-                        {/* Home Team */}
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div className="w-6 h-6 rounded-lg bg-slate-950/80 p-1 border border-white/[0.08] flex items-center justify-center shrink-0">
-                              <ClubCrest
-                                clubId={fixture.homeClub?.id}
-                                logoUrl={homeLogo}
-                                name={homeName}
-                                shortName={fixture.homeClub?.shortName}
-                                size="xs"
-                                className="w-full h-full"
-                              />
-                            </div>
-                            <span className={`text-xs font-bold truncate ${isHome ? 'text-amber-400' : 'text-slate-200'}`}>
-                              {homeName}
-                            </span>
-                            {homeOwnerInfo.isClaimed ? (
-                              homeOwnerInfo.userId ? (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openUserProfile(homeOwnerInfo.userId!);
-                                  }}
-                                  className="text-[10px] text-slate-400 hover:text-emerald-400 truncate text-left transition-colors"
-                                >
-                                  {homeOwnerInfo.displayText}
-                                </button>
-                              ) : (
-                                <span className="text-[10px] text-slate-400 truncate">
-                                  {homeOwnerInfo.displayText}
-                                </span>
-                              )
-                            ) : (
-                              <span className="text-[10px] text-amber-400/90 font-bold truncate">
-                                {t.userNeeded}
-                              </span>
-                            )}
-                          </div>
-                          <span className="text-xs font-black text-white px-2 py-0.5 glass-card shrink-0 ml-2">
-                            {fixture.homeScore !== null && fixture.homeScore !== undefined ? fixture.homeScore : '-'}
-                          </span>
-                        </div>
-
-                        {/* Away Team */}
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div className="w-6 h-6 rounded-lg bg-slate-950/80 p-1 border border-white/[0.08] flex items-center justify-center shrink-0">
-                              <ClubCrest
-                                clubId={fixture.awayClub?.id}
-                                logoUrl={awayLogo}
-                                name={awayName}
-                                shortName={fixture.awayClub?.shortName}
-                                size="xs"
-                                className="w-full h-full"
-                              />
-                            </div>
-                            <span className={`text-xs font-bold truncate ${isAway ? 'text-amber-400' : 'text-slate-200'}`}>
-                              {awayName}
-                            </span>
-                            {awayOwnerInfo.isClaimed ? (
-                              awayOwnerInfo.userId ? (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openUserProfile(awayOwnerInfo.userId!);
-                                  }}
-                                  className="text-[10px] text-slate-400 hover:text-emerald-400 truncate text-left transition-colors"
-                                >
-                                  {awayOwnerInfo.displayText}
-                                </button>
-                              ) : (
-                                <span className="text-[10px] text-slate-400 truncate">
-                                  {awayOwnerInfo.displayText}
-                                </span>
-                              )
-                            ) : (
-                              <span className="text-[10px] text-amber-400/90 font-bold truncate">
-                                {t.userNeeded}
-                              </span>
-                            )}
-                          </div>
-                          <span className="text-xs font-black text-white px-2 py-0.5 glass-card shrink-0 ml-2">
-                            {fixture.awayScore !== null && fixture.awayScore !== undefined ? fixture.awayScore : '-'}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Action Button for participant */}
-                      {isUserInvolved && (
-                        <div className="flex flex-col sm:flex-row gap-2 pt-1 border-t border-white/[0.06]">
-                          {(() => {
-                            const oppOwnerInfo = isHome ? awayOwnerInfo : homeOwnerInfo;
-                            const hasOppTg = isValidTelegramUsername(oppOwnerInfo.username);
-                            return hasOppTg && oppOwnerInfo.username ? (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openTelegramChat(oppOwnerInfo.username!);
-                                }}
-                                className="flex-1 py-1.5 px-2.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-md min-h-[36px] touch-manipulation"
-                              >
-                                <Send className="w-3 h-3" />
-                                <span>Raqibga yozish</span>
-                              </button>
-                            ) : null;
-                          })()}
-                          {fixture.status !== 'CONFIRMED' && (
-                            <button
-                              onClick={() => setSelectedFixtureForSubmit(fixture)}
-                              className="flex-1 py-1.5 px-2.5 bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 font-black text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 min-h-[36px] touch-manipulation"
-                            >
-                              <Swords className="w-3.5 h-3.5 text-slate-950" />
-                              <span>{t.submitResult}</span>
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
+        /* Real Tournament Bracket Layout */
+        <TournamentBracket
+          fixtures={cupFixtures}
+          currentClubId={currentClub?.id}
+          userId={user?.id}
+          onSelectFixture={(f) => setSelectedFixtureForSubmit(f)}
+          competition={activeCup}
+        />
       )}
 
+      {/* Modal for match result submission / viewing */}
       {selectedFixtureForSubmit && (
         <ResultSubmissionModal
           fixture={selectedFixtureForSubmit}
