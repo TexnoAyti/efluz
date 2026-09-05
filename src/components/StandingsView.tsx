@@ -5,6 +5,7 @@ import { useI18n } from '../i18n';
 import { api } from '../lib/api';
 import { Competition, StandingsRow } from '../types';
 import { ClubCrest } from './ClubCrest';
+import { getClubOwnerDisplay } from '../lib/ownerUtils';
 import {
   Trophy,
   Shield,
@@ -262,24 +263,41 @@ export const StandingsView: React.FC = () => {
                               )}
                             </div>
                             <div className="text-[10px] truncate">
-                              {row.managerUsername ? (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (row.managerUserId) {
-                                      openUserProfile(row.managerUserId);
-                                    }
-                                  }}
-                                  className={`font-semibold hover:text-emerald-400 transition-colors ${
-                                    isUserClub ? 'text-emerald-300' : 'text-slate-400'
-                                  }`}
-                                >
-                                  @{row.managerUsername}
-                                </button>
-                              ) : (
-                                <span className="text-amber-400/90 font-bold">User kerak</span>
-                              )}
+                              {(() => {
+                                const ownerInfo = getClubOwnerDisplay(
+                                  {
+                                    claimedByUserId: row.managerUserId,
+                                    claimedByUsername: row.managerUsername,
+                                    managerUsername: row.managerUsername,
+                                  },
+                                  undefined,
+                                  row.managerUserId,
+                                  t.userNeeded
+                                );
+
+                                if (ownerInfo.isClaimed) {
+                                  return (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (ownerInfo.userId) {
+                                          openUserProfile(ownerInfo.userId);
+                                        }
+                                      }}
+                                      className={`font-semibold hover:text-emerald-400 transition-colors ${
+                                        isUserClub ? 'text-emerald-300' : 'text-slate-400'
+                                      }`}
+                                    >
+                                      {ownerInfo.displayText}
+                                    </button>
+                                  );
+                                }
+
+                                return (
+                                  <span className="text-amber-400/90 font-bold">{t.userNeeded}</span>
+                                );
+                              })()}
                             </div>
                           </div>
                         </div>

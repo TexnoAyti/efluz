@@ -5,6 +5,7 @@ import { useI18n } from '../i18n';
 import { api } from '../lib/api';
 import { League, Club, Fixture, StandingsRow, Competition } from '../types';
 import { ClubCrest } from './ClubCrest';
+import { getClubOwnerDisplay } from '../lib/ownerUtils';
 import confetti from 'canvas-confetti';
 import {
   Shield,
@@ -568,14 +569,13 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
               {filteredClubs.map((club) => {
+                const ownerInfo = getClubOwnerDisplay(club, undefined, club.claimedByUserId, t.userNeeded);
                 const isUserClub =
                   club.isCurrentUserClub ||
                   club.claimedByUserId === user?.id ||
                   club.occupancy?.status === 'owned' ||
                   (currentClub && currentClub.id === club.id);
-                const isClaimedByOther = isClubTaken(club) && !isUserClub;
-                const managerName =
-                  club.claimedByUsername || club.managerUsername || club.occupancy?.username || 'player';
+                const isClaimedByOther = (isClubTaken(club) || ownerInfo.isClaimed) && !isUserClub;
 
                 return (
                   <div
@@ -615,7 +615,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                             </div>
                           ) : (
                             <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/30">
-                              <Sparkles className="w-3 h-3 text-amber-400" /> User kerak
+                              <Sparkles className="w-3 h-3 text-amber-400" /> {t.userNeeded}
                             </div>
                           )}
                         </div>
@@ -627,13 +627,26 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                           <span className="text-[11px] font-bold text-emerald-400 truncate block">
                             @{user?.username || 'siz'}
                           </span>
-                        ) : isClaimedByOther && managerName ? (
-                          <span className="text-[11px] font-semibold text-slate-300 truncate block">
-                            @{managerName}
-                          </span>
+                        ) : isClaimedByOther ? (
+                          ownerInfo.userId ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openUserProfile(ownerInfo.userId!);
+                              }}
+                              className="text-[11px] font-semibold text-slate-300 hover:text-emerald-400 transition-colors truncate block text-left"
+                            >
+                              {ownerInfo.displayText}
+                            </button>
+                          ) : (
+                            <span className="text-[11px] font-semibold text-slate-300 truncate block">
+                              {ownerInfo.displayText}
+                            </span>
+                          )
                         ) : (
                           <span className="text-[11px] font-bold text-amber-400/90 truncate block">
-                            User kerak
+                            {t.userNeeded}
                           </span>
                         )}
                       </div>
@@ -651,20 +664,19 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                       ) : isClaimedByOther ? (
                         <div className="flex items-center justify-between text-[11px] text-slate-400 glass-card p-2 rounded-xl">
                           <span className="text-[10px] uppercase font-bold text-slate-500">{t.manager}:</span>
-                          {club.claimedByUserId || club.managerUserId || club.occupancy?.userId ? (
+                          {ownerInfo.userId ? (
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                const uid = club.claimedByUserId || club.managerUserId || club.occupancy?.userId;
-                                if (uid) openUserProfile(uid);
+                                openUserProfile(ownerInfo.userId!);
                               }}
                               className="font-semibold text-slate-300 hover:text-emerald-400 transition-colors truncate underline decoration-slate-600 hover:decoration-emerald-500 underline-offset-2 max-w-[140px]"
                             >
-                              @{managerName}
+                              {ownerInfo.displayText}
                             </button>
                           ) : (
-                            <span className="font-semibold text-slate-300 truncate">@{managerName}</span>
+                            <span className="font-semibold text-slate-300 truncate">{ownerInfo.displayText}</span>
                           )}
                         </div>
                       ) : currentClub ? (
@@ -767,10 +779,28 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                             {fix.homeClub?.shortName || fix.homeClub?.name}
                           </span>
                           {(() => {
-                            const homeOwner = fix.homeUser?.username || fix.homeClub?.claimedByUsername || fix.homeClub?.managerUsername;
+                            const homeOwnerInfo = getClubOwnerDisplay(fix.homeClub, fix.homeUser, fix.homeOwnerId, t.userNeeded);
+                            if (homeOwnerInfo.isClaimed) {
+                              return homeOwnerInfo.userId ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openUserProfile(homeOwnerInfo.userId!);
+                                  }}
+                                  className="text-[10px] text-slate-400 hover:text-emerald-400 transition-colors font-medium truncate block text-left"
+                                >
+                                  {homeOwnerInfo.displayText}
+                                </button>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 font-medium truncate block">
+                                  {homeOwnerInfo.displayText}
+                                </span>
+                              );
+                            }
                             return (
-                              <span className={`text-[10px] truncate block ${homeOwner ? 'text-slate-400 font-medium' : 'text-amber-400/90 font-bold'}`}>
-                                {homeOwner ? `@${homeOwner}` : 'User kerak'}
+                              <span className="text-[10px] text-amber-400/90 font-bold truncate block">
+                                {t.userNeeded}
                               </span>
                             );
                           })()}
@@ -789,10 +819,28 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                             {fix.awayClub?.shortName || fix.awayClub?.name}
                           </span>
                           {(() => {
-                            const awayOwner = fix.awayUser?.username || fix.awayClub?.claimedByUsername || fix.awayClub?.managerUsername;
+                            const awayOwnerInfo = getClubOwnerDisplay(fix.awayClub, fix.awayUser, fix.awayOwnerId, t.userNeeded);
+                            if (awayOwnerInfo.isClaimed) {
+                              return awayOwnerInfo.userId ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openUserProfile(awayOwnerInfo.userId!);
+                                  }}
+                                  className="text-[10px] text-slate-400 hover:text-emerald-400 transition-colors font-medium truncate block text-right ml-auto"
+                                >
+                                  {awayOwnerInfo.displayText}
+                                </button>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 font-medium truncate block text-right">
+                                  {awayOwnerInfo.displayText}
+                                </span>
+                              );
+                            }
                             return (
-                              <span className={`text-[10px] truncate block ${awayOwner ? 'text-slate-400 font-medium' : 'text-amber-400/90 font-bold'}`}>
-                                {awayOwner ? `@${awayOwner}` : 'User kerak'}
+                              <span className="text-[10px] text-amber-400/90 font-bold truncate block text-right">
+                                {t.userNeeded}
                               </span>
                             );
                           })()}
@@ -907,11 +955,41 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                                     </span>
                                   )}
                                 </div>
-                                <span className={`text-[10px] truncate max-w-[140px] ${
-                                  row.managerUsername ? 'text-slate-400 font-medium' : 'text-amber-400/90 font-bold'
-                                }`}>
-                                  {row.managerUsername ? `@${row.managerUsername}` : 'User kerak'}
-                                </span>
+                                {(() => {
+                                  const rowOwnerInfo = getClubOwnerDisplay(
+                                    {
+                                      claimedByUserId: row.managerUserId,
+                                      claimedByUsername: row.managerUsername,
+                                      managerUsername: row.managerUsername,
+                                    },
+                                    undefined,
+                                    row.managerUserId,
+                                    t.userNeeded
+                                  );
+                                  if (rowOwnerInfo.isClaimed) {
+                                    return rowOwnerInfo.userId ? (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          openUserProfile(rowOwnerInfo.userId!);
+                                        }}
+                                        className="text-[10px] text-slate-400 hover:text-emerald-400 font-medium truncate max-w-[140px] text-left transition-colors"
+                                      >
+                                        {rowOwnerInfo.displayText}
+                                      </button>
+                                    ) : (
+                                      <span className="text-[10px] text-slate-400 font-medium truncate max-w-[140px]">
+                                        {rowOwnerInfo.displayText}
+                                      </span>
+                                    );
+                                  }
+                                  return (
+                                    <span className="text-[10px] text-amber-400/90 font-bold truncate max-w-[140px]">
+                                      {t.userNeeded}
+                                    </span>
+                                  );
+                                })()}
                               </div>
                             </div>
                           </td>

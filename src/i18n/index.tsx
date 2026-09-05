@@ -171,6 +171,33 @@ export interface Translations {
   generateSchedule: string;
   evaluateQualifications: string;
   auditLogs: string;
+
+  // Additional tournament & UI labels
+  domesticLeagues: string;
+  nationalCups: string;
+  championsLeague: string;
+  qualificationRules: string;
+  uefaClubCompetitions: string;
+  uefaSubtitle: string;
+  noEuropeanParticipants: string;
+  matchesBeingScheduled: string;
+  retry: string;
+  knockoutPlayoffs: string;
+  r16Match: string;
+  quarterFinal: string;
+  semiFinal: string;
+  grandFinal: string;
+  uefaFinal: string;
+  playoff: string;
+  writeToOpponent: string;
+  userNeeded: string;
+  matchFinished: string;
+  matchInProgress: string;
+  matchTBD: string;
+  viewOpponentProfile: string;
+  opponentBadge: string;
+  profile: string;
+  finalRound: string;
 }
 
 export const translations: Record<Language, Translations> = {
@@ -333,6 +360,32 @@ export const translations: Record<Language, Translations> = {
     generateSchedule: 'Berger round-robin jadvalini yaratish',
     evaluateQualifications: 'Yevrokubok yo‘llanmalarini hisoblash',
     auditLogs: 'Tizim xavfsizlik va audit jurnali',
+
+    domesticLeagues: 'Ichki chempionatlar',
+    nationalCups: 'Milliy kuboklar',
+    championsLeague: 'Chempionlar Ligasi',
+    qualificationRules: 'Saralash qoidalari',
+    uefaClubCompetitions: 'UEFA Klub Musobaqalari 2026/27',
+    uefaSubtitle: 'Yevropaning nufuzli klublar musobaqasi: 32 ta eng kuchli jamoa va yagona liga bosqichi',
+    noEuropeanParticipants: 'Hozircha Yevrokubok ishtirokchilari aniqlanmagan',
+    matchesBeingScheduled: 'Saralangan klublar uchun o‘yinlar rejalashtirilmoqda...',
+    retry: 'Qayta urinish',
+    knockoutPlayoffs: 'O‘tish pley-offi',
+    r16Match: 'Nimchorak final',
+    quarterFinal: 'Chorak final',
+    semiFinal: 'Yarim final',
+    grandFinal: 'Grand Final',
+    uefaFinal: 'UEFA Final',
+    playoff: 'Pley-off',
+    writeToOpponent: 'Raqibga yozish',
+    userNeeded: 'User kerak',
+    matchFinished: 'Tugagan',
+    matchInProgress: 'Jarayonda',
+    matchTBD: 'Kutilmoqda / TBD',
+    viewOpponentProfile: 'Raqib profili',
+    opponentBadge: 'Raqib',
+    profile: 'Profil',
+    finalRound: 'Final',
   },
   ru: {
     navHome: 'Главная',
@@ -493,6 +546,32 @@ export const translations: Record<Language, Translations> = {
     generateSchedule: 'Сгенерировать сетку по системе Бергера',
     evaluateQualifications: 'Рассчитать еврокубковые путевки',
     auditLogs: 'Журнал аудита и безопасности',
+
+    domesticLeagues: 'Внутренние чемпионаты',
+    nationalCups: 'Национальные кубки',
+    championsLeague: 'Лига Чемпионов',
+    qualificationRules: 'Правила квалификации',
+    uefaClubCompetitions: 'Клубные турниры УЕФА 2026/27',
+    uefaSubtitle: 'Главный клубный турнир Европы: 32 сильнейшие команды и единая лига',
+    noEuropeanParticipants: 'Участники еврокубков пока не определены',
+    matchesBeingScheduled: 'Расписание для квалифицированных клубов формируется...',
+    retry: 'Повторить',
+    knockoutPlayoffs: 'Стыковые матчи плей-офф',
+    r16Match: '1/8 финала',
+    quarterFinal: '1/4 финала',
+    semiFinal: '1/2 финала',
+    grandFinal: 'Гранд-финал',
+    uefaFinal: 'Финал УЕФА',
+    playoff: 'Плей-офф',
+    writeToOpponent: 'Написать сопернику',
+    userNeeded: 'Нужен игрок',
+    matchFinished: 'Завершён',
+    matchInProgress: 'В процессе',
+    matchTBD: 'Ожидается / TBD',
+    viewOpponentProfile: 'Профиль соперника',
+    opponentBadge: 'Соперник',
+    profile: 'Профиль',
+    finalRound: 'Финал',
   },
   en: {
     navHome: 'Home',
@@ -653,6 +732,32 @@ export const translations: Record<Language, Translations> = {
     generateSchedule: 'Generate Berger Round-Robin Schedule',
     evaluateQualifications: 'Calculate European Qualifications',
     auditLogs: 'Audit & Security Logs',
+
+    domesticLeagues: 'Domestic Leagues',
+    nationalCups: 'National Cups',
+    championsLeague: 'Champions League',
+    qualificationRules: 'Qualification Rules',
+    uefaClubCompetitions: 'UEFA Club Competitions 2026/27',
+    uefaSubtitle: "Europe's premier club competition: 32 elite clubs in a single league phase",
+    noEuropeanParticipants: 'No European participants qualified yet',
+    matchesBeingScheduled: 'Matches are being scheduled for qualified clubs...',
+    retry: 'Retry',
+    knockoutPlayoffs: 'Knockout Play-offs',
+    r16Match: 'Round of 16',
+    quarterFinal: 'Quarter-finals',
+    semiFinal: 'Semi-finals',
+    grandFinal: 'Grand Final',
+    uefaFinal: 'UEFA Final',
+    playoff: 'Play-off',
+    writeToOpponent: 'Contact Opponent',
+    userNeeded: 'Player needed',
+    matchFinished: 'Finished',
+    matchInProgress: 'In progress',
+    matchTBD: 'Pending / TBD',
+    viewOpponentProfile: 'Opponent Profile',
+    opponentBadge: 'Opponent',
+    profile: 'Profile',
+    finalRound: 'Final',
   },
 };
 

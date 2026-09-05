@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useUserProfile } from '../context/UserProfileContext';
 import { useI18n } from '../i18n';
 import { api } from '../lib/api';
 import { Competition, StandingsRow, Fixture } from '../types';
 import { ClubCrest } from './ClubCrest';
 import { TournamentBracket } from './TournamentBracket';
+import { getClubOwnerDisplay } from '../lib/ownerUtils';
 import {
   Globe2,
   Trophy,
@@ -24,6 +26,7 @@ interface ChampionsLeagueViewProps {
 
 export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavigateTab }) => {
   const { user, currentClub, activeSeasonId } = useAuth();
+  const { openUserProfile } = useUserProfile();
   const { t } = useI18n();
 
   const [tournaments, setTournaments] = useState<Competition[]>([]);
@@ -366,11 +369,41 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
                                   <span className="font-bold text-white truncate max-w-[120px] sm:max-w-[200px]">
                                     {row.clubName}
                                   </span>
-                                  <span className={`text-[10px] truncate max-w-[110px] sm:max-w-[180px] ${
-                                    row.managerUsername ? 'text-slate-400 font-medium' : 'text-amber-400/90 font-bold'
-                                  }`}>
-                                    {row.managerUsername ? `@${row.managerUsername}` : 'User kerak'}
-                                  </span>
+                                  {(() => {
+                                    const ownerInfo = getClubOwnerDisplay(
+                                      {
+                                        claimedByUserId: row.managerUserId,
+                                        claimedByUsername: row.managerUsername,
+                                        managerUsername: row.managerUsername,
+                                      },
+                                      undefined,
+                                      row.managerUserId,
+                                      t.userNeeded
+                                    );
+                                    if (ownerInfo.isClaimed) {
+                                      return ownerInfo.userId ? (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            openUserProfile(ownerInfo.userId!);
+                                          }}
+                                          className="text-[10px] text-slate-400 hover:text-emerald-400 font-medium truncate max-w-[110px] sm:max-w-[180px] text-left transition-colors"
+                                        >
+                                          {ownerInfo.displayText}
+                                        </button>
+                                      ) : (
+                                        <span className="text-[10px] text-slate-400 font-medium truncate max-w-[110px] sm:max-w-[180px]">
+                                          {ownerInfo.displayText}
+                                        </span>
+                                      );
+                                    }
+                                    return (
+                                      <span className="text-[10px] text-amber-400/90 font-bold truncate max-w-[110px] sm:max-w-[180px]">
+                                        {t.userNeeded}
+                                      </span>
+                                    );
+                                  })()}
                                 </div>
                               </div>
                             </td>

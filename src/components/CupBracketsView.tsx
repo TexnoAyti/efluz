@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useUserProfile } from '../context/UserProfileContext';
 import { useI18n } from '../i18n';
 import { api } from '../lib/api';
 import { Competition, Fixture } from '../types';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
 import { ClubCrest } from './ClubCrest';
+import { getClubOwnerDisplay } from '../lib/ownerUtils';
 import { openTelegramChat, isValidTelegramUsername } from '../lib/telegramUtils';
 import {
   Award,
@@ -26,6 +28,7 @@ interface CupBracketsViewProps {
 
 export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab }) => {
   const { user, currentClub, activeSeasonId } = useAuth();
+  const { openUserProfile } = useUserProfile();
   const { t } = useI18n();
 
   const [cupCompetitions, setCupCompetitions] = useState<Competition[]>([]);
@@ -241,8 +244,8 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
                   const awayName = fixture.awayClub?.name || 'Away Club';
                   const homeLogo = fixture.homeClub?.logoUrl;
                   const awayLogo = fixture.awayClub?.logoUrl;
-                  const homeManager = fixture.homeClub?.claimedByUsername || fixture.homeClub?.managerUsername;
-                  const awayManager = fixture.awayClub?.claimedByUsername || fixture.awayClub?.managerUsername;
+                  const homeOwnerInfo = getClubOwnerDisplay(fixture.homeClub, fixture.homeUser, fixture.homeOwnerId, t.userNeeded);
+                  const awayOwnerInfo = getClubOwnerDisplay(fixture.awayClub, fixture.awayUser, fixture.awayOwnerId, t.userNeeded);
 
                   return (
                     <div
@@ -278,10 +281,27 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
                             <span className={`text-xs font-bold truncate ${isHome ? 'text-amber-400' : 'text-slate-200'}`}>
                               {homeName}
                             </span>
-                            {homeManager ? (
-                              <span className="text-[10px] text-slate-400 truncate">@{homeManager}</span>
+                            {homeOwnerInfo.isClaimed ? (
+                              homeOwnerInfo.userId ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openUserProfile(homeOwnerInfo.userId!);
+                                  }}
+                                  className="text-[10px] text-slate-400 hover:text-emerald-400 truncate text-left transition-colors"
+                                >
+                                  {homeOwnerInfo.displayText}
+                                </button>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 truncate">
+                                  {homeOwnerInfo.displayText}
+                                </span>
+                              )
                             ) : (
-                              <span className="text-[10px] text-amber-400/90 font-bold truncate">User kerak</span>
+                              <span className="text-[10px] text-amber-400/90 font-bold truncate">
+                                {t.userNeeded}
+                              </span>
                             )}
                           </div>
                           <span className="text-xs font-black text-white px-2 py-0.5 glass-card shrink-0 ml-2">
@@ -305,10 +325,27 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
                             <span className={`text-xs font-bold truncate ${isAway ? 'text-amber-400' : 'text-slate-200'}`}>
                               {awayName}
                             </span>
-                            {awayManager ? (
-                              <span className="text-[10px] text-slate-400 truncate">@{awayManager}</span>
+                            {awayOwnerInfo.isClaimed ? (
+                              awayOwnerInfo.userId ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openUserProfile(awayOwnerInfo.userId!);
+                                  }}
+                                  className="text-[10px] text-slate-400 hover:text-emerald-400 truncate text-left transition-colors"
+                                >
+                                  {awayOwnerInfo.displayText}
+                                </button>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 truncate">
+                                  {awayOwnerInfo.displayText}
+                                </span>
+                              )
                             ) : (
-                              <span className="text-[10px] text-amber-400/90 font-bold truncate">User kerak</span>
+                              <span className="text-[10px] text-amber-400/90 font-bold truncate">
+                                {t.userNeeded}
+                              </span>
                             )}
                           </div>
                           <span className="text-xs font-black text-white px-2 py-0.5 glass-card shrink-0 ml-2">
@@ -321,14 +358,14 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
                       {isUserInvolved && (
                         <div className="flex flex-col sm:flex-row gap-2 pt-1 border-t border-white/[0.06]">
                           {(() => {
-                            const oppManager = isHome ? awayManager : homeManager;
-                            const hasOppTg = isValidTelegramUsername(oppManager);
-                            return hasOppTg ? (
+                            const oppOwnerInfo = isHome ? awayOwnerInfo : homeOwnerInfo;
+                            const hasOppTg = isValidTelegramUsername(oppOwnerInfo.username);
+                            return hasOppTg && oppOwnerInfo.username ? (
                               <button
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  openTelegramChat(oppManager);
+                                  openTelegramChat(oppOwnerInfo.username!);
                                 }}
                                 className="flex-1 py-1.5 px-2.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-md min-h-[36px] touch-manipulation"
                               >

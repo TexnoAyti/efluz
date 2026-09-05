@@ -169,21 +169,17 @@ const AppContent: React.FC = () => {
         {currentTab === 'admin' && <AdminView />}
       </main>
 
-      {/* App Footer with Origin & Version Information (Safe margin for bottom nav) */}
+      {/* App Footer (Safe margin for bottom nav) */}
       <footer className="border-t border-slate-900 bg-slate-950/80 px-4 py-3 pb-24 lg:pb-3 text-[11px] text-slate-400">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <span className="font-bold text-slate-300">EFL UZ</span>
             <span className="text-slate-600">•</span>
             <span>Official 2026/27 European Competitions</span>
-            <span className="text-slate-600">•</span>
-            <span className="font-mono text-emerald-400 font-semibold">{APP_BUILD_ID}</span>
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="font-mono text-slate-400 truncate max-w-[220px]">
-              {typeof window !== 'undefined' ? window.location.origin : ''}
-            </span>
+            <span className="font-mono text-emerald-400 font-semibold">{APP_BUILD_ID}</span>
           </div>
         </div>
       </footer>
@@ -194,12 +190,14 @@ const AppContent: React.FC = () => {
         onClose={() => setIsNotificationOpen(false)}
       />
 
-      {/* Telegram Diagnostics Modal */}
-      <TelegramDiagnosticsModal
-        isOpen={isDiagnosticsOpen}
-        onClose={() => setIsDiagnosticsOpen(false)}
-        currentRoute={activeTab}
-      />
+      {/* Telegram Diagnostics Modal - strictly admin only */}
+      {user?.isAdmin && (
+        <TelegramDiagnosticsModal
+          isOpen={isDiagnosticsOpen}
+          onClose={() => setIsDiagnosticsOpen(false)}
+          currentRoute={activeTab}
+        />
+      )}
     </div>
   );
 };

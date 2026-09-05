@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../context/UserProfileContext';
+import { useI18n } from '../i18n';
 import { api, invalidateClientCache } from '../lib/api';
 import { Competition, Fixture } from '../types';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
 import { ClubCrest } from './ClubCrest';
 import { MatchdayCountdown } from './MatchdayCountdown';
+import { getClubOwnerDisplay } from '../lib/ownerUtils';
 import { openTelegramChat, isValidTelegramUsername } from '../lib/telegramUtils';
 import {
   Calendar,
@@ -28,6 +30,7 @@ import {
 export const FixturesView: React.FC = () => {
   const { user, currentClub, activeSeasonId, showToast } = useAuth();
   const { openUserProfile } = useUserProfile();
+  const { t } = useI18n();
 
   const [competitions, setCompetitions] = useState<Competition[]>([]);
   const [selectedCompetitionId, setSelectedCompetitionId] = useState<string>('comp-premier-league-2026');
@@ -415,23 +418,32 @@ export const FixturesView: React.FC = () => {
                         <span className="text-[10px] text-emerald-400 font-bold truncate max-w-full mt-0.5">
                           (You)
                         </span>
-                      ) : (fixture.homeUser?.username || fixture.homeClub?.claimedByUsername) ? (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const uid = fixture.homeUser?.id || fixture.homeClub?.claimedByUserId;
-                            if (uid) openUserProfile(uid);
-                          }}
-                          className="text-[10px] text-slate-300 hover:text-emerald-400 font-bold truncate max-w-[120px] transition-colors mt-0.5 underline decoration-slate-600 hover:decoration-emerald-500 underline-offset-2"
-                        >
-                          @{fixture.homeUser?.username || fixture.homeClub?.claimedByUsername}
-                        </button>
-                      ) : (
-                        <span className="text-[10px] text-amber-400/90 font-bold truncate max-w-full mt-0.5">
-                          User kerak
-                        </span>
-                      )}
+                      ) : (() => {
+                        const homeOwnerInfo = getClubOwnerDisplay(fixture.homeClub, fixture.homeUser, fixture.homeOwnerId, t.userNeeded);
+                        if (homeOwnerInfo.isClaimed) {
+                          return homeOwnerInfo.userId ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openUserProfile(homeOwnerInfo.userId!);
+                              }}
+                              className="text-[10px] text-slate-300 hover:text-emerald-400 font-bold truncate max-w-[120px] transition-colors mt-0.5 underline decoration-slate-600 hover:decoration-emerald-500 underline-offset-2"
+                            >
+                              {homeOwnerInfo.displayText}
+                            </button>
+                          ) : (
+                            <span className="text-[10px] text-slate-300 font-bold truncate max-w-[120px] mt-0.5">
+                              {homeOwnerInfo.displayText}
+                            </span>
+                          );
+                        }
+                        return (
+                          <span className="text-[10px] text-amber-400/90 font-bold truncate max-w-full mt-0.5">
+                            {t.userNeeded}
+                          </span>
+                        );
+                      })()}
                     </div>
 
                     {/* Score / VS Center */}
@@ -470,23 +482,32 @@ export const FixturesView: React.FC = () => {
                         <span className="text-[10px] text-emerald-400 font-bold truncate max-w-full mt-0.5">
                           (You)
                         </span>
-                      ) : (fixture.awayUser?.username || fixture.awayClub?.claimedByUsername) ? (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const uid = fixture.awayUser?.id || fixture.awayClub?.claimedByUserId;
-                            if (uid) openUserProfile(uid);
-                          }}
-                          className="text-[10px] text-slate-300 hover:text-emerald-400 font-bold truncate max-w-[120px] transition-colors mt-0.5 underline decoration-slate-600 hover:decoration-emerald-500 underline-offset-2"
-                        >
-                          @{fixture.awayUser?.username || fixture.awayClub?.claimedByUsername}
-                        </button>
-                      ) : (
-                        <span className="text-[10px] text-amber-400/90 font-bold truncate max-w-full mt-0.5">
-                          User kerak
-                        </span>
-                      )}
+                      ) : (() => {
+                        const awayOwnerInfo = getClubOwnerDisplay(fixture.awayClub, fixture.awayUser, fixture.awayOwnerId, t.userNeeded);
+                        if (awayOwnerInfo.isClaimed) {
+                          return awayOwnerInfo.userId ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openUserProfile(awayOwnerInfo.userId!);
+                              }}
+                              className="text-[10px] text-slate-300 hover:text-emerald-400 font-bold truncate max-w-[120px] transition-colors mt-0.5 underline decoration-slate-600 hover:decoration-emerald-500 underline-offset-2"
+                            >
+                              {awayOwnerInfo.displayText}
+                            </button>
+                          ) : (
+                            <span className="text-[10px] text-slate-300 font-bold truncate max-w-[120px] mt-0.5">
+                              {awayOwnerInfo.displayText}
+                            </span>
+                          );
+                        }
+                        return (
+                          <span className="text-[10px] text-amber-400/90 font-bold truncate max-w-full mt-0.5">
+                            {t.userNeeded}
+                          </span>
+                        );
+                      })()}
                     </div>
                   </div>
 

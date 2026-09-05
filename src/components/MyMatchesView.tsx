@@ -7,6 +7,7 @@ import { Fixture } from '../types';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
 import { ClubCrest } from './ClubCrest';
 import { MatchdayCountdown } from './MatchdayCountdown';
+import { getClubOwnerDisplay } from '../lib/ownerUtils';
 import { openTelegramChat, isValidTelegramUsername } from '../lib/telegramUtils';
 import {
   Swords,
@@ -227,52 +228,60 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                     <span className="text-[10px] text-emerald-400 font-bold mt-1">
                       ({t.myClub})
                     </span>
-                  ) : (focusedFixture.homeUser?.username || focusedFixture.homeClub?.claimedByUsername) ? (
-                    <div className="flex flex-col items-center gap-1.5 mt-1">
-                      <div className="flex items-center gap-1">
-                        <span className="text-[11px] text-slate-300 font-bold truncate max-w-[120px]">
-                          @{focusedFixture.homeUser?.username || focusedFixture.homeClub?.claimedByUsername}
-                        </span>
-                        <span className="text-[9px] font-black text-amber-400 bg-amber-500/15 border border-amber-500/30 px-1 py-0.2 rounded">
-                          Raqib
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5 flex-wrap justify-center">
-                        {(focusedFixture.homeUser?.id || focusedFixture.homeClub?.claimedByUserId) && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openUserProfile(focusedFixture.homeUser?.id || focusedFixture.homeClub?.claimedByUserId!);
-                            }}
-                            className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 transition-colors"
-                          >
-                            Profil
-                          </button>
-                        )}
-                        {(() => {
-                          const homeTg = focusedFixture.homeUser?.username || focusedFixture.homeClub?.claimedByUsername;
-                          return isValidTelegramUsername(homeTg) ? (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openTelegramChat(homeTg);
-                              }}
-                              className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 transition-colors flex items-center gap-1 shadow-sm"
-                            >
-                              <Send className="w-2.5 h-2.5" />
-                              <span>Raqibga yozish</span>
-                            </button>
-                          ) : null;
-                        })()}
-                      </div>
-                    </div>
-                  ) : (
-                    <span className="text-[10px] text-amber-400/90 font-bold mt-1">
-                      User kerak
-                    </span>
-                  )}
+                  ) : (() => {
+                    const homeOwnerInfo = getClubOwnerDisplay(
+                      focusedFixture.homeClub,
+                      focusedFixture.homeUser,
+                      focusedFixture.homeOwnerId,
+                      t.userNeeded
+                    );
+                    if (homeOwnerInfo.isClaimed) {
+                      return (
+                        <div className="flex flex-col items-center gap-1.5 mt-1">
+                          <div className="flex items-center gap-1">
+                            <span className="text-[11px] text-slate-300 font-bold truncate max-w-[120px]">
+                              {homeOwnerInfo.displayText}
+                            </span>
+                            <span className="text-[9px] font-black text-amber-400 bg-amber-500/15 border border-amber-500/30 px-1 py-0.2 rounded">
+                              {t.opponentBadge}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-wrap justify-center">
+                            {homeOwnerInfo.userId && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openUserProfile(homeOwnerInfo.userId!);
+                                }}
+                                className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 transition-colors"
+                              >
+                                {t.profile}
+                              </button>
+                            )}
+                            {homeOwnerInfo.hasValidTelegram && homeOwnerInfo.username && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openTelegramChat(homeOwnerInfo.username!);
+                                }}
+                                className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 transition-colors flex items-center gap-1 shadow-sm"
+                              >
+                                <Send className="w-2.5 h-2.5" />
+                                <span>{t.writeToOpponent}</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    }
+                    return (
+                      <span className="text-[10px] text-amber-400/90 font-bold mt-1">
+                        {t.userNeeded}
+                      </span>
+                    );
+                  })()}
                 </div>
 
                 {/* Score / VS Center */}
@@ -309,52 +318,60 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                     <span className="text-[10px] text-emerald-400 font-bold mt-1">
                       ({t.myClub})
                     </span>
-                  ) : (focusedFixture.awayUser?.username || focusedFixture.awayClub?.claimedByUsername) ? (
-                    <div className="flex flex-col items-center gap-1.5 mt-1">
-                      <div className="flex items-center gap-1">
-                        <span className="text-[11px] text-slate-300 font-bold truncate max-w-[120px]">
-                          @{focusedFixture.awayUser?.username || focusedFixture.awayClub?.claimedByUsername}
-                        </span>
-                        <span className="text-[9px] font-black text-amber-400 bg-amber-500/15 border border-amber-500/30 px-1 py-0.2 rounded">
-                          Raqib
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5 flex-wrap justify-center">
-                        {(focusedFixture.awayUser?.id || focusedFixture.awayClub?.claimedByUserId) && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openUserProfile(focusedFixture.awayUser?.id || focusedFixture.awayClub?.claimedByUserId!);
-                            }}
-                            className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 transition-colors"
-                          >
-                            Profil
-                          </button>
-                        )}
-                        {(() => {
-                          const awayTg = focusedFixture.awayUser?.username || focusedFixture.awayClub?.claimedByUsername;
-                          return isValidTelegramUsername(awayTg) ? (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openTelegramChat(awayTg);
-                              }}
-                              className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 transition-colors flex items-center gap-1 shadow-sm"
-                            >
-                              <Send className="w-2.5 h-2.5" />
-                              <span>Raqibga yozish</span>
-                            </button>
-                          ) : null;
-                        })()}
-                      </div>
-                    </div>
-                  ) : (
-                    <span className="text-[10px] text-amber-400/90 font-bold mt-1">
-                      User kerak
-                    </span>
-                  )}
+                  ) : (() => {
+                    const awayOwnerInfo = getClubOwnerDisplay(
+                      focusedFixture.awayClub,
+                      focusedFixture.awayUser,
+                      focusedFixture.awayOwnerId,
+                      t.userNeeded
+                    );
+                    if (awayOwnerInfo.isClaimed) {
+                      return (
+                        <div className="flex flex-col items-center gap-1.5 mt-1">
+                          <div className="flex items-center gap-1">
+                            <span className="text-[11px] text-slate-300 font-bold truncate max-w-[120px]">
+                              {awayOwnerInfo.displayText}
+                            </span>
+                            <span className="text-[9px] font-black text-amber-400 bg-amber-500/15 border border-amber-500/30 px-1 py-0.2 rounded">
+                              {t.opponentBadge}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-wrap justify-center">
+                            {awayOwnerInfo.userId && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openUserProfile(awayOwnerInfo.userId!);
+                                }}
+                                className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 transition-colors"
+                              >
+                                {t.profile}
+                              </button>
+                            )}
+                            {awayOwnerInfo.hasValidTelegram && awayOwnerInfo.username && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openTelegramChat(awayOwnerInfo.username!);
+                                }}
+                                className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 transition-colors flex items-center gap-1 shadow-sm"
+                              >
+                                <Send className="w-2.5 h-2.5" />
+                                <span>{t.writeToOpponent}</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    }
+                    return (
+                      <span className="text-[10px] text-amber-400/90 font-bold mt-1">
+                        {t.userNeeded}
+                      </span>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -530,7 +547,7 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                     {/* Home Team */}
                     {(() => {
                       const isHomeUser = fixture.homeOwnerId === user?.id || fixture.homeClub?.claimedByUserId === user?.id;
-                      const homeOwner = fixture.homeUser?.username || fixture.homeClub?.claimedByUsername;
+                      const homeOwnerInfo = getClubOwnerDisplay(fixture.homeClub, fixture.homeUser, fixture.homeOwnerId, t.userNeeded);
                       return (
                         <div className="flex items-center gap-2 flex-1 min-w-0">
                           <ClubCrest
@@ -550,9 +567,28 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                                 <span className="text-[8px] font-black text-emerald-400 bg-emerald-500/15 px-1 rounded">Siz</span>
                               )}
                             </div>
-                            <span className={`text-[10px] truncate block ${homeOwner ? 'text-slate-400' : 'text-amber-400/90 font-bold'}`}>
-                              {homeOwner ? `@${homeOwner}` : 'User kerak'}
-                            </span>
+                            {homeOwnerInfo.isClaimed ? (
+                              homeOwnerInfo.userId ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openUserProfile(homeOwnerInfo.userId!);
+                                  }}
+                                  className="text-[10px] text-slate-400 hover:text-emerald-400 transition-colors truncate block text-left"
+                                >
+                                  {homeOwnerInfo.displayText}
+                                </button>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 truncate block">
+                                  {homeOwnerInfo.displayText}
+                                </span>
+                              )
+                            ) : (
+                              <span className="text-[10px] text-amber-400/90 font-bold truncate block">
+                                {t.userNeeded}
+                              </span>
+                            )}
                           </div>
                         </div>
                       );
@@ -570,7 +606,7 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                     {/* Away Team */}
                     {(() => {
                       const isAwayUser = fixture.awayOwnerId === user?.id || fixture.awayClub?.claimedByUserId === user?.id;
-                      const awayOwner = fixture.awayUser?.username || fixture.awayClub?.claimedByUsername;
+                      const awayOwnerInfo = getClubOwnerDisplay(fixture.awayClub, fixture.awayUser, fixture.awayOwnerId, t.userNeeded);
                       return (
                         <div className="flex items-center justify-end gap-2 flex-1 min-w-0 text-right">
                           <div className="min-w-0 text-right">
@@ -582,9 +618,28 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                                 {fixture.awayClub?.name}
                               </span>
                             </div>
-                            <span className={`text-[10px] truncate block ${awayOwner ? 'text-slate-400' : 'text-amber-400/90 font-bold'}`}>
-                              {awayOwner ? `@${awayOwner}` : 'User kerak'}
-                            </span>
+                            {awayOwnerInfo.isClaimed ? (
+                              awayOwnerInfo.userId ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openUserProfile(awayOwnerInfo.userId!);
+                                  }}
+                                  className="text-[10px] text-slate-400 hover:text-emerald-400 transition-colors truncate block text-right ml-auto"
+                                >
+                                  {awayOwnerInfo.displayText}
+                                </button>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 truncate block text-right">
+                                  {awayOwnerInfo.displayText}
+                                </span>
+                              )
+                            ) : (
+                              <span className="text-[10px] text-amber-400/90 font-bold truncate block text-right">
+                                {t.userNeeded}
+                              </span>
+                            )}
                           </div>
                           <ClubCrest
                             clubId={fixture.awayClub?.id}

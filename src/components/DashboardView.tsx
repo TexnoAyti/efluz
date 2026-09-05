@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import { Fixture, Club } from '../types';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
 import { ClubCrest } from './ClubCrest';
+import { getClubOwnerDisplay } from '../lib/ownerUtils';
 import { openTelegramChat, isValidTelegramUsername } from '../lib/telegramUtils';
 import {
   Shield,
@@ -326,23 +327,32 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <span className="text-[10px] text-emerald-400 font-bold mt-0.5 truncate w-full">
                       ({t.myClub})
                     </span>
-                  ) : (nextMatch.homeUser?.username || nextMatch.homeClub?.claimedByUsername) ? (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const uid = nextMatch.homeUser?.id || nextMatch.homeClub?.claimedByUserId;
-                        if (uid) openUserProfile(uid);
-                      }}
-                      className="text-[10px] text-slate-300 hover:text-emerald-400 font-bold truncate w-full transition-colors underline decoration-emerald-500/30 underline-offset-2"
-                    >
-                      @{nextMatch.homeUser?.username || nextMatch.homeClub?.claimedByUsername}
-                    </button>
-                  ) : (
-                    <span className="text-[10px] text-amber-400/90 font-bold mt-0.5 truncate w-full">
-                      User kerak
-                    </span>
-                  )}
+                  ) : (() => {
+                    const homeOwnerInfo = getClubOwnerDisplay(nextMatch.homeClub, nextMatch.homeUser, nextMatch.homeOwnerId, t.userNeeded);
+                    if (homeOwnerInfo.isClaimed) {
+                      return homeOwnerInfo.userId ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openUserProfile(homeOwnerInfo.userId!);
+                          }}
+                          className="text-[10px] text-slate-300 hover:text-emerald-400 font-bold truncate w-full transition-colors underline decoration-emerald-500/30 underline-offset-2"
+                        >
+                          {homeOwnerInfo.displayText}
+                        </button>
+                      ) : (
+                        <span className="text-[10px] text-slate-300 font-bold truncate w-full">
+                          {homeOwnerInfo.displayText}
+                        </span>
+                      );
+                    }
+                    return (
+                      <span className="text-[10px] text-amber-400/90 font-bold mt-0.5 truncate w-full">
+                        {t.userNeeded}
+                      </span>
+                    );
+                  })()}
                 </div>
 
                 {/* VS Badge */}
@@ -371,23 +381,32 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <span className="text-[10px] text-emerald-400 font-bold mt-0.5 truncate w-full">
                       ({t.myClub})
                     </span>
-                  ) : (nextMatch.awayUser?.username || nextMatch.awayClub?.claimedByUsername) ? (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const uid = nextMatch.awayUser?.id || nextMatch.awayClub?.claimedByUserId;
-                        if (uid) openUserProfile(uid);
-                      }}
-                      className="text-[10px] text-slate-300 hover:text-emerald-400 font-bold truncate w-full transition-colors underline decoration-emerald-500/30 underline-offset-2"
-                    >
-                      @{nextMatch.awayUser?.username || nextMatch.awayClub?.claimedByUsername}
-                    </button>
-                  ) : (
-                    <span className="text-[10px] text-amber-400/90 font-bold mt-0.5 truncate w-full">
-                      User kerak
-                    </span>
-                  )}
+                  ) : (() => {
+                    const awayOwnerInfo = getClubOwnerDisplay(nextMatch.awayClub, nextMatch.awayUser, nextMatch.awayOwnerId, t.userNeeded);
+                    if (awayOwnerInfo.isClaimed) {
+                      return awayOwnerInfo.userId ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openUserProfile(awayOwnerInfo.userId!);
+                          }}
+                          className="text-[10px] text-slate-300 hover:text-emerald-400 font-bold truncate w-full transition-colors underline decoration-emerald-500/30 underline-offset-2"
+                        >
+                          {awayOwnerInfo.displayText}
+                        </button>
+                      ) : (
+                        <span className="text-[10px] text-slate-300 font-bold truncate w-full">
+                          {awayOwnerInfo.displayText}
+                        </span>
+                      );
+                    }
+                    return (
+                      <span className="text-[10px] text-amber-400/90 font-bold mt-0.5 truncate w-full">
+                        {t.userNeeded}
+                      </span>
+                    );
+                  })()}
                 </div>
               </div>
 
