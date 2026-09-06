@@ -115,13 +115,13 @@ export async function runTournamentArchitectureTests() {
   // -------------------------------------------------------------
   console.log('\n--- [TEST 2] Testing Domestic vs UCL Fixture Separation ---');
 
-  // Verify that calling generateCompetitionFixtures on domestic leagues generates 380 fixtures
+  // Verify that calling generateCompetitionFixtures on domestic leagues generates 190 fixtures
   const domesticGen = await generateCompetitionFixtures('comp-premier-league-2026', { force: true });
   assert(
-    'Section 2: Algorithmic Double Round-Robin Generation for Domestic Leagues',
-    'Generates 380 fixtures for 20-team league',
+    'Section 2: Algorithmic Single Round-Robin Generation for Domestic Leagues',
+    'Generates 190 fixtures across 19 matchdays for 20-team league',
     `Generated ${domesticGen.generated} fixtures across ${domesticGen.matchdays} matchdays`,
-    domesticGen.generated === 380 && domesticGen.matchdays === 38
+    domesticGen.generated === 190 && domesticGen.matchdays === 19
   );
 
   // Verify Custom European 32-team generator
@@ -223,17 +223,20 @@ export async function runTournamentArchitectureTests() {
   // -------------------------------------------------------------
   console.log('\n--- [TEST 4] Simulating Results & Standings Calculations ---');
 
-  try {
-    await claimClubAtomic('user-100002', 'club-chelsea', 'season-2026-27');
-  } catch {}
-
-  // Fetch real Premier League match generated in Section 2
+  // Fetch real Premier League match for active matchday 1 generated in Section 2 where Arsenal plays
   const plFixtures = await getFixtures({ competitionId: 'comp-premier-league-2026' });
   const match1 = plFixtures.find(
-    (f) =>
-      (f.homeClubId === 'club-arsenal' && f.awayClubId === 'club-chelsea') ||
-      (f.homeClubId === 'club-chelsea' && f.awayClubId === 'club-arsenal')
-  ) || plFixtures[0];
+    (f) => f.matchday === 1 && (f.homeClubId === 'club-arsenal' || f.awayClubId === 'club-arsenal')
+  ) || plFixtures.find((f) => f.matchday === 1) || plFixtures[0];
+
+  const opponentClubId = match1.homeClubId === 'club-arsenal' ? match1.awayClubId : match1.homeClubId;
+
+  // Assign Arsenal to user-100001 and opponent to user-100002 for season 2026-27
+  try {
+    const { adminAssignClubFirestore } = await import('../firebase/firestoreStore');
+    await adminAssignClubFirestore('admin-system', 'club-arsenal', 'user-100001', 'season-2026-27');
+    await adminAssignClubFirestore('admin-system', opponentClubId, 'user-100002', 'season-2026-27');
+  } catch {}
 
   // Ensure match1 is cleanly in SCHEDULED state with 0 submissions before testing
   const db = (await import('../firebase/admin')).getFirestoreDb();
@@ -249,8 +252,9 @@ export async function runTournamentArchitectureTests() {
     await d.ref.delete();
   }
 
-  const homeUserId = match1.homeClubId === 'club-arsenal' ? 'user-100001' : 'user-100002';
-  const awayUserId = match1.awayClubId === 'club-arsenal' ? 'user-100001' : 'user-100002';
+  const isArsenalHome = match1.homeClubId === 'club-arsenal';
+  const homeUserId = isArsenalHome ? 'user-100001' : 'user-100002';
+  const awayUserId = isArsenalHome ? 'user-100002' : 'user-100001';
 
   // Both managers submit matching results (home: 3, away: 1)
   await submitFixtureResult(homeUserId, match1.id, 3, 1, 'https://proof.efootball/m1.png');

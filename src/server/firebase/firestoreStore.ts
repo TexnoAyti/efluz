@@ -229,6 +229,8 @@ export function getReadMetrics(): ReadMetrics {
   };
 }
 
+export const getFirestoreTelemetry = getReadMetrics;
+
 export function resetReadMetrics(): void {
   readMetrics.sessionReads = 0;
   readMetrics.sessionWrites = 0;
@@ -3518,56 +3520,92 @@ export async function reopenFixtureFirestore(
   fixtureId: string,
   notes?: string
 ): Promise<{ success: boolean; fixtureId: string }> {
-  const db = getFirestoreDb();
-  const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
-  const fixDoc = await fixRef.get();
-  if (!fixDoc.exists) {
-    throw new Error(`Fixture '${fixtureId}' not found.`);
-  }
-
   const now = new Date().toISOString();
 
-  // Reset fixture to SCHEDULED
-  await fixRef.update({
-    status: 'SCHEDULED',
-    homeScore: null,
-    awayScore: null,
-    winnerClubId: null,
-    resultConfirmedAt: null,
-    updatedAt: now,
-  });
-
-  // Delete all result submissions for this fixture
-  const subsSnap = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where('fixtureId', '==', fixtureId).get();
-  const deleteBatch = db.batch();
-  for (const doc of subsSnap.docs) {
-    deleteBatch.delete(doc.ref);
-  }
-
-  // Resolve or delete disputes
-  const dispSnap = await db.collection(COLLECTIONS.DISPUTES).where('fixtureId', '==', fixtureId).get();
-  for (const doc of dispSnap.docs) {
-    deleteBatch.delete(doc.ref);
-  }
-
-  await deleteBatch.commit();
-
-  // Rebuild standings if fixture belonged to a competition
-  if (fixDoc.data()?.competitionId) {
+  if (firestoreCircuitBreaker.canExecute()) {
     try {
-      await rebuildCompetitionStandingsFirestore(fixDoc.data()!.competitionId);
-    } catch (standingsErr) {
-      console.warn('[STANDINGS_UPDATE] Non-blocking standings update error on reopen:', standingsErr);
+      const db = getFirestoreDb();
+      const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
+      const fixDoc = await fixRef.get();
+      if (!fixDoc.exists) {
+        throw new Error(`Fixture '${fixtureId}' not found.`);
+      }
+
+      // Reset fixture to SCHEDULED
+      await fixRef.update({
+        status: 'SCHEDULED',
+        homeScore: null,
+        awayScore: null,
+        winnerClubId: null,
+        resultConfirmedAt: null,
+        updatedAt: now,
+      });
+
+      // Delete all result submissions for this fixture
+      const subsSnap = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where('fixtureId', '==', fixtureId).get();
+      const deleteBatch = db.batch();
+      for (const doc of subsSnap.docs) {
+        deleteBatch.delete(doc.ref);
+      }
+
+      // Resolve or delete disputes
+      const dispSnap = await db.collection(COLLECTIONS.DISPUTES).where('fixtureId', '==', fixtureId).get();
+      for (const doc of dispSnap.docs) {
+        deleteBatch.delete(doc.ref);
+      }
+
+      await deleteBatch.commit();
+
+      // Rebuild standings if fixture belonged to a competition
+      if (fixDoc.data()?.competitionId) {
+        try {
+          await rebuildCompetitionStandingsFirestore(fixDoc.data()!.competitionId);
+        } catch (standingsErr) {
+          console.warn('[STANDINGS_UPDATE] Non-blocking standings update error on reopen:', standingsErr);
+        }
+      }
+
+      // Audit log
+      await db.collection(COLLECTIONS.AUDIT_LOGS).add({
+        actorUserId: adminUserId,
+        action: 'REOPEN_FIXTURE',
+        entityType: 'fixture',
+        entityId: fixtureId,
+        notes: notes || null,
+        createdAt: now,
+      });
+
+      invalidateFirestoreCache();
+      return { success: true, fixtureId };
+    } catch (err: any) {
+      firestoreCircuitBreaker.recordFailure(err);
+      recordFallbackUsage();
+      console.warn('[FIRESTORE FALLBACK] reopenFixtureFirestore:', err.message);
     }
+  } else {
+    recordFallbackUsage();
   }
 
-  // Audit log
-  await db.collection(COLLECTIONS.AUDIT_LOGS).add({
-    actorUserId: adminUserId,
-    action: 'REOPEN_FIXTURE',
-    entityType: 'fixture',
+  // SQLite Fallback & Mutation Queue
+  queryRun(
+    `UPDATE fixtures 
+     SET status = 'SCHEDULED', home_score = NULL, away_score = NULL, winner_club_id = NULL, result_confirmed_at = NULL, updated_at = ? 
+     WHERE id = ?`,
+    [now, fixtureId]
+  );
+  queryRun('DELETE FROM result_submissions WHERE fixture_id = ?', [fixtureId]);
+  queryRun('DELETE FROM disputes WHERE fixture_id = ?', [fixtureId]);
+
+  enqueueMutation({
+    mutationId: `admin_reject_${fixtureId}`,
+    entityType: 'ADMIN_DECISION',
     entityId: fixtureId,
-    notes: notes || null,
+    operation: 'ADMIN_REJECT_RESULT',
+    payload: {
+      adminUserId,
+      fixtureId,
+      notes: notes || 'Rejected by tournament administrator (offline queued)',
+    },
     createdAt: now,
   });
 
@@ -4214,6 +4252,88 @@ export async function adminAssignClubFirestore(
   };
 }
 
+function getLocalPendingResults(seasonId: string): {
+  pendingFixtures: (Fixture & { submissions: any[] })[];
+  total: number;
+} {
+  try {
+    const rows = queryAll<any>(
+      `SELECT * FROM fixtures WHERE season_id = ? AND status IN ('PENDING_CONFIRMATION', 'DISPUTED') ORDER BY matchday ASC`,
+      [seasonId]
+    );
+    const fixturesWithSubmissions = rows.map((r) => {
+      const homeSeed = SEED_CLUB_MAP.get(r.home_club_id);
+      const awaySeed = SEED_CLUB_MAP.get(r.away_club_id);
+      const subRows = queryAll<any>(
+        `SELECT * FROM result_submissions WHERE fixture_id = ? ORDER BY created_at ASC`,
+        [r.id]
+      );
+      const submissions = subRows.map((s) => ({
+        id: s.id,
+        submittedByUserId: s.submitted_by_user_id,
+        submitterUsername: s.submitted_by_user_id,
+        submitterName: s.submitted_by_user_id,
+        clubId: s.club_id,
+        homeScore: s.home_score,
+        awayScore: s.away_score,
+        proofUrl: s.proof_url,
+        createdAt: s.created_at,
+        status: 'PENDING_SYNC',
+      }));
+
+      return {
+        id: r.id,
+        seasonId: r.season_id,
+        competitionId: r.competition_id,
+        competitionName: r.competition_id,
+        matchday: r.matchday,
+        roundName: r.round_name,
+        homeClubId: r.home_club_id,
+        awayClubId: r.away_club_id,
+        homeClub: {
+          id: r.home_club_id || 'TBD',
+          name: homeSeed?.name || r.home_club_id,
+          shortName: homeSeed?.shortName || r.home_club_id,
+          country: homeSeed?.country || '',
+          leagueId: homeSeed?.leagueId || '',
+          logoUrl: homeSeed?.logoUrl || '',
+          active: true,
+          createdAt: '',
+        },
+        awayClub: {
+          id: r.away_club_id || 'TBD',
+          name: awaySeed?.name || r.away_club_id,
+          shortName: awaySeed?.shortName || r.away_club_id,
+          country: awaySeed?.country || '',
+          leagueId: awaySeed?.leagueId || '',
+          logoUrl: awaySeed?.logoUrl || '',
+          active: true,
+          createdAt: '',
+        },
+        homeOwnerId: r.home_owner_id,
+        awayOwnerId: r.away_owner_id,
+        scheduledAt: r.scheduled_at,
+        status: r.status as any,
+        homeScore: r.home_score ?? undefined,
+        awayScore: r.away_score ?? undefined,
+        winnerClubId: r.winner_club_id ?? undefined,
+        resultConfirmedAt: r.result_confirmed_at ?? undefined,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+        submissions,
+      };
+    });
+
+    return {
+      pendingFixtures: fixturesWithSubmissions,
+      total: fixturesWithSubmissions.length,
+    };
+  } catch (err: any) {
+    console.warn('[LOCAL_PENDING_FALLBACK] Error loading local pending fixtures:', err.message);
+    return { pendingFixtures: [], total: 0 };
+  }
+}
+
 export async function adminApproveFixtureResultFirestore(
   adminUserId: string,
   fixtureId: string,
@@ -4221,74 +4341,129 @@ export async function adminApproveFixtureResultFirestore(
   awayScore: number,
   notes?: string
 ): Promise<{ success: boolean; message: string; fixture: Fixture }> {
-  const db = getFirestoreDb();
-  const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
-  const fixDoc = await fixRef.get();
-  if (!fixDoc.exists) {
-    throw new Error(`Fixture '${fixtureId}' not found.`);
-  }
-
-  const fixture = fixDoc.data() as FirestoreFixtureDoc;
   const now = new Date().toISOString();
-
   let winnerClubId: string | null = null;
-  if (homeScore > awayScore) winnerClubId = fixture.homeClubId;
-  else if (awayScore > homeScore) winnerClubId = fixture.awayClubId;
 
-  await fixRef.update({
-    status: 'CONFIRMED',
-    homeScore,
-    awayScore,
-    winnerClubId,
-    resultConfirmedAt: now,
-    updatedAt: now,
-  });
-
-  // Resolve any open disputes on this fixture
-  const disputesSnap = await db.collection(COLLECTIONS.DISPUTES).where('fixtureId', '==', fixtureId).get();
-  for (const d of disputesSnap.docs) {
-    await d.ref.update({
-      status: 'RESOLVED',
-      resolvedByUserId: adminUserId,
-      resolutionNotes: notes || 'Approved by tournament administrator',
-      resolvedAt: now,
-    });
-  }
-
-  // Knockout advancement if applicable
-  if (winnerClubId) {
+  if (firestoreCircuitBreaker.canExecute()) {
     try {
-      const { advanceKnockoutWinnerFirestore } = await import('../tournament/knockoutEngine');
-      await advanceKnockoutWinnerFirestore(fixtureId);
-    } catch (err) {
-      console.warn('[KNOCKOUT_ADVANCE] Non-blocking advance error on admin approval:', err);
+      const db = getFirestoreDb();
+      const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
+      const fixDoc = await fixRef.get();
+      if (!fixDoc.exists) {
+        throw new Error(`Fixture '${fixtureId}' not found.`);
+      }
+
+      const fixture = fixDoc.data() as FirestoreFixtureDoc;
+      if (homeScore > awayScore) winnerClubId = fixture.homeClubId;
+      else if (awayScore > homeScore) winnerClubId = fixture.awayClubId;
+
+      await fixRef.update({
+        status: 'CONFIRMED',
+        homeScore,
+        awayScore,
+        winnerClubId,
+        resultConfirmedAt: now,
+        updatedAt: now,
+      });
+
+      // Resolve any open disputes on this fixture
+      const disputesSnap = await db.collection(COLLECTIONS.DISPUTES).where('fixtureId', '==', fixtureId).get();
+      for (const d of disputesSnap.docs) {
+        await d.ref.update({
+          status: 'RESOLVED',
+          resolvedByUserId: adminUserId,
+          resolutionNotes: notes || 'Approved by tournament administrator',
+          resolvedAt: now,
+        });
+      }
+
+      // Knockout advancement if applicable
+      if (winnerClubId) {
+        try {
+          const { advanceKnockoutWinnerFirestore } = await import('../tournament/knockoutEngine');
+          await advanceKnockoutWinnerFirestore(fixtureId);
+        } catch (err) {
+          console.warn('[KNOCKOUT_ADVANCE] Non-blocking advance error on admin approval:', err);
+        }
+      }
+
+      // Standings update if applicable
+      if (fixture.competitionId) {
+        try {
+          await rebuildCompetitionStandingsFirestore(fixture.competitionId);
+        } catch (standingsErr) {
+          console.warn('[STANDINGS_UPDATE] Non-blocking standings update error on admin approval:', standingsErr);
+        }
+      }
+
+      // Audit log
+      await db.collection(COLLECTIONS.AUDIT_LOGS).add({
+        actorUserId: adminUserId,
+        action: 'ADMIN_APPROVE_RESULT',
+        entityType: 'fixture',
+        entityId: fixtureId,
+        notes: notes || `Admin confirmed result ${homeScore}-${awayScore}`,
+        createdAt: now,
+      });
+
+      invalidateFirestoreCache();
+      const updatedFixture = await getFixtureByIdFirestore(fixtureId);
+      return {
+        success: true,
+        message: `Match result (${homeScore} - ${awayScore}) confirmed and standings updated.`,
+        fixture: updatedFixture!,
+      };
+    } catch (err: any) {
+      firestoreCircuitBreaker.recordFailure(err);
+      recordFallbackUsage();
+      console.warn('[FIRESTORE FALLBACK] adminApproveFixtureResultFirestore:', err.message);
     }
+  } else {
+    recordFallbackUsage();
   }
 
-  // Standings update if applicable
-  if (fixture.competitionId) {
-    try {
-      await rebuildCompetitionStandingsFirestore(fixture.competitionId);
-    } catch (standingsErr) {
-      console.warn('[STANDINGS_UPDATE] Non-blocking standings update error on admin approval:', standingsErr);
-    }
+  // SQLite Fallback & Mutation Queueing
+  const localFix = queryGet<any>('SELECT * FROM fixtures WHERE id = ?', [fixtureId]);
+  if (!localFix) {
+    throw new Error(`Fixture '${fixtureId}' not found in local database.`);
   }
 
-  // Audit log
-  await db.collection(COLLECTIONS.AUDIT_LOGS).add({
-    actorUserId: adminUserId,
-    action: 'ADMIN_APPROVE_RESULT',
-    entityType: 'fixture',
+  if (homeScore > awayScore) winnerClubId = localFix.home_club_id;
+  else if (awayScore > homeScore) winnerClubId = localFix.away_club_id;
+
+  queryRun(
+    `UPDATE fixtures 
+     SET status = 'CONFIRMED', home_score = ?, away_score = ?, winner_club_id = ?, result_confirmed_at = ?, updated_at = ? 
+     WHERE id = ?`,
+    [homeScore, awayScore, winnerClubId, now, now, fixtureId]
+  );
+
+  queryRun(
+    `UPDATE disputes 
+     SET status = 'RESOLVED', resolved_by_user_id = ?, resolution_notes = ?, resolved_at = ? 
+     WHERE fixture_id = ?`,
+    [adminUserId, notes || 'Approved by tournament administrator (offline queued)', now, fixtureId]
+  );
+
+  enqueueMutation({
+    mutationId: `admin_approve_${fixtureId}`,
+    entityType: 'ADMIN_DECISION',
     entityId: fixtureId,
-    notes: notes || `Admin confirmed result ${homeScore}-${awayScore}`,
+    operation: 'ADMIN_APPROVE_RESULT',
+    payload: {
+      adminUserId,
+      fixtureId,
+      homeScore,
+      awayScore,
+      notes: notes || 'Approved by tournament administrator (offline queued)',
+    },
     createdAt: now,
   });
 
-  invalidateFirestoreCache();
   const updatedFixture = await getFixtureByIdFirestore(fixtureId);
   return {
     success: true,
-    message: `Match result (${homeScore} - ${awayScore}) confirmed and standings updated.`,
+    message: `Match result (${homeScore} - ${awayScore}) confirmed locally (queued for background sync).`,
     fixture: updatedFixture!,
   };
 }
@@ -4300,6 +4475,11 @@ export async function getPendingResultsFirestore(seasonId = 'season-2026-27'): P
   const cacheKey = `firestore:admin_pending_results:${seasonId}`;
   const cached = getFromCache<{ pendingFixtures: (Fixture & { submissions: any[] })[]; total: number }>(cacheKey);
   if (cached) return cached;
+
+  if (!firestoreCircuitBreaker.canExecute()) {
+    recordFallbackUsage();
+    return getLocalPendingResults(seasonId);
+  }
 
   try {
     const db = getFirestoreDb();
@@ -4412,8 +4592,10 @@ export async function getPendingResultsFirestore(seasonId = 'season-2026-27'): P
     setInCache(cacheKey, result, 30000);
     return result;
   } catch (err: any) {
+    firestoreCircuitBreaker.recordFailure(err);
+    recordFallbackUsage();
     console.warn('[FIRESTORE FALLBACK] getPendingResultsFirestore:', err.message);
-    return { pendingFixtures: [], total: 0 };
+    return getLocalPendingResults(seasonId);
   }
 }
 

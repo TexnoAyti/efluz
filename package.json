@@ -25,7 +25,8 @@
     "test:tournament-architecture": "tsx src/server/tests/verifyTournamentArchitecture.ts",
     "test:standings": "tsx src/server/tests/standingsPreaggregationTest.ts",
     "test:ucl32-locking": "tsx src/server/tests/verifyUCL32AndMatchdayLocking.ts",
-    "test:deployment-selfcheck": "tsx src/server/tests/deploymentSelfCheck.ts"
+    "test:deployment-selfcheck": "tsx src/server/tests/deploymentSelfCheck.ts",
+    "test:quota-audit": "tsx src/server/tests/verifyQuotaResilienceAudit.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

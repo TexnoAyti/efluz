@@ -92,7 +92,7 @@ export function getLocalOccupancySnapshot(seasonId = 'season-2026-27'): Occupanc
 
     // Baseline fallback: check club_memberships directly
     const memRows = queryAll<any>(
-      `SELECT cm.club_id, cm.season_id, cm.user_id, u.username, u.first_name, u.last_name, cm.updated_at
+      `SELECT cm.club_id, cm.season_id, cm.user_id, u.username, u.first_name, u.last_name, cm.claimed_at as updated_at
        FROM club_memberships cm
        LEFT JOIN users u ON cm.user_id = u.id
        WHERE cm.season_id = ? AND cm.status = 'active'`,
