@@ -4,8 +4,11 @@ import { seedDatabase, repairSeason202627Roster } from './db/seed';
 import { authMiddleware } from './middleware/authMiddleware';
 import { isFirebaseConfigured, getFirestoreDb, getFirebaseStatus } from './firebase/admin';
 import { migrateSqliteToFirestore } from './firebase/migrateSqliteToFirestore';
-import { syncFirestoreClubCrests } from './firebase/firestoreStore';
+import { syncFirestoreClubCrests, getActiveOccupanciesForSeason } from './firebase/firestoreStore';
 import { COLLECTIONS } from './firebase/collections';
+import { firestoreCircuitBreaker } from './firebase/circuitBreaker';
+import { loadSnapshotFromFile } from './firebase/occupancySnapshot';
+import { processPendingMutations } from './sync/mutationQueue';
 
 // Route imports
 import { healthRouter } from './routes/health.routes';
@@ -20,6 +23,32 @@ import { usersRouter } from './routes/users.routes';
 import { adminRouter } from './routes/admin.routes';
 
 let dbInitPromise: Promise<void> | null = null;
+let syncWorkerStarted = false;
+
+function startBackgroundReconciliation(): void {
+  if (syncWorkerStarted) return;
+  syncWorkerStarted = true;
+
+  // Run initial mutation sync after 4 seconds to let startup settle
+  setTimeout(() => {
+    if (firestoreCircuitBreaker.canExecute()) {
+      processPendingMutations().catch((err) => {
+        console.warn('[RECONCILIATION] Startup mutation sync notice:', err.message);
+      });
+    }
+  }, 4000);
+
+  // Periodic reconciliation every 60 seconds
+  const interval = setInterval(() => {
+    if (firestoreCircuitBreaker.canExecute()) {
+      processPendingMutations().catch((err) => {
+        console.warn('[RECONCILIATION] Periodic mutation sync notice:', err.message);
+      });
+    }
+  }, 60000);
+
+  if (interval.unref) interval.unref();
+}
 
 export async function ensureDbReady(): Promise<void> {
   if (!dbInitPromise) {
@@ -33,6 +62,9 @@ export async function ensureDbReady(): Promise<void> {
         repairSeason202627Roster();
         console.log(`[BOOT] SQLite baseline ready from: ${getDbFilePath()}`);
 
+        // Restore occupancy snapshot from disk if available
+        loadSnapshotFromFile();
+
         if (fbStatus.isConfigured) {
           try {
             const db = getFirestoreDb();
@@ -43,11 +75,16 @@ export async function ensureDbReady(): Promise<void> {
               console.log('[BOOT] Firestore auto-seeding completed.');
             } else {
               console.log(`[BOOT] Connected to authoritative Firestore database: ${fbStatus.databaseId}`);
+              // Hydrate occupancy snapshot in background for 0-latency club status checks
+              getActiveOccupanciesForSeason('season-2026-27').catch(() => {});
             }
           } catch (fbErr: any) {
             console.warn('[BOOT] Firestore connection warning, operating with resilient SQLite fallback:', fbErr.message);
           }
         }
+
+        // Start background mutation reconciliation worker
+        startBackgroundReconciliation();
       } catch (err) {
         console.error('[BOOT] Error during system initialization:', err);
         throw err;

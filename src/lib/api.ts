@@ -718,5 +718,29 @@ export const api = {
       method: 'POST',
     });
   },
+
+  async getResilienceStatus(): Promise<{
+    status: string;
+    isOffline: boolean;
+    circuitBreaker: {
+      status: 'CLOSED' | 'OPEN' | 'HALF_OPEN';
+      failureCount: number;
+      fallbackRequestCount: number;
+      consecutiveSuccesses: number;
+    };
+    queueStats: {
+      total: number;
+      pending: number;
+      syncing: number;
+      synced: number;
+      failed: number;
+    };
+  }> {
+    return request('/api/health/resilience', { cacheTtlMs: 10000 });
+  },
+
+  async triggerSync(): Promise<{ success: boolean; result: any }> {
+    return request('/api/health/sync', { method: 'POST', skipCache: true });
+  },
 };
 

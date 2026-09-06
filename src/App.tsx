@@ -16,6 +16,7 @@ import { ProfileView } from './components/ProfileView';
 import { AdminView } from './components/AdminView';
 import { NotificationModal } from './components/NotificationModal';
 import { TelegramDiagnosticsModal } from './components/TelegramDiagnosticsModal';
+import { OfflineSyncBanner } from './components/OfflineSyncBanner';
 import { APP_BUILD_ID } from './context/AuthContext';
 import { Fixture } from './types';
 import { api } from './lib/api';
@@ -142,6 +143,9 @@ const AppContent: React.FC = () => {
         onTabChange={setActiveTab}
         openDisputesCount={openDisputesCount}
       />
+
+      {/* Offline & Mutation Sync Notice Banner */}
+      <OfflineSyncBanner />
 
       {/* Main Content Area - Mobile Optimized (12-16px padding on mobile, no horizontal overflow) */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-4 md:px-6 py-4 sm:py-6 min-w-0">

@@ -202,6 +202,30 @@ CREATE TABLE IF NOT EXISTS system_settings (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS pending_mutations (
+    mutation_id TEXT PRIMARY KEY,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'PENDING',
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS active_occupancies_cache (
+    club_id TEXT NOT NULL,
+    season_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    username TEXT,
+    display_name TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (season_id, club_id)
+);
+
 -- INDEXES FOR MAXIMUM QUERY SPEED & INTEGRITY
 CREATE INDEX IF NOT EXISTS idx_club_memberships_user ON club_memberships(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_club_memberships_season ON club_memberships(season_id, status);

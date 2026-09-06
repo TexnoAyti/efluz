@@ -96,19 +96,14 @@ export const StandingsView: React.FC = () => {
         label: t.uelZone,
       };
     }
-    if (position > totalTeams - 3) {
-      return {
-        badgeColor: 'bg-rose-500/20 text-rose-400 border-rose-500/30',
-        barColor: 'bg-rose-500',
-        label: t.relegationZone,
-      };
-    }
     return {
-      badgeColor: 'bg-slate-800 text-slate-400 border-slate-700',
-      barColor: 'bg-transparent',
-      label: '',
+      badgeColor: 'bg-slate-800/60 text-slate-400 border-slate-700/50',
+      barColor: 'bg-slate-600',
+      label: 'Faqat ichki liga',
     };
   };
+
+  const totalClubsInLeague = standings.length || (isPLOrLL || selectedCompetitionId.includes('serie-a') ? 20 : 18);
 
   return (
     <div className="space-y-4 animate-in fade-in duration-300 pb-20 max-w-full">
@@ -159,15 +154,15 @@ export const StandingsView: React.FC = () => {
           <div className="flex flex-wrap items-center gap-2.5 text-[10px]">
             <div className="flex items-center gap-1.5 text-slate-300">
               <span className="w-2 h-2 rounded-full bg-blue-500" />
-              <span>{t.uclZone} (1-{uclThreshold})</span>
+              <span>{t.uclZone} (1–{uclThreshold})</span>
             </div>
             <div className="flex items-center gap-1.5 text-slate-300">
               <span className="w-2 h-2 rounded-full bg-indigo-500" />
-              <span>{t.uelZone} ({uclThreshold + 1}-{uelThreshold})</span>
+              <span>{t.uelZone} ({uclThreshold + 1}–{uelThreshold})</span>
             </div>
             <div className="flex items-center gap-1.5 text-slate-300">
-              <span className="w-2 h-2 rounded-full bg-rose-500" />
-              <span>{t.relegationZone} ({standings.length ? standings.length - 2 : 18}-{standings.length || 20})</span>
+              <span className="w-2 h-2 rounded-full bg-slate-500" />
+              <span>Faqat ichki liga ({uelThreshold + 1}–{totalClubsInLeague})</span>
             </div>
           </div>
         </div>
@@ -234,7 +229,7 @@ export const StandingsView: React.FC = () => {
                       {/* Pos */}
                       <td className="py-2 px-2 text-center relative font-bold text-[11px]">
                         <div className={`w-0.5 absolute left-0 top-0 bottom-0 ${posStyle.barColor}`} />
-                        <span className={`text-slate-300 ${row.position <= 4 ? 'text-blue-400 font-black' : row.position === 5 ? 'text-indigo-400' : ''}`}>
+                        <span className={`text-slate-300 ${row.position <= uclThreshold ? 'text-blue-400 font-black' : row.position <= uelThreshold ? 'text-indigo-400 font-bold' : ''}`}>
                           {row.position}
                         </span>
                       </td>

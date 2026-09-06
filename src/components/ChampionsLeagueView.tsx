@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../context/UserProfileContext';
 import { useI18n } from '../i18n';
@@ -136,6 +136,46 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
 
   const rounds = Object.keys(fixturesByRound);
 
+  // Authoritative 32-team European Standings mapping
+  const displayStandings = useMemo(() => {
+    if (standings.length >= 32) return standings;
+    if (participants.length > 0) {
+      const existingMap = new Map(standings.map((s) => [s.clubId, s]));
+      const fullRows: StandingsRow[] = participants.map((p, idx) => {
+        const existing = existingMap.get(p.clubId);
+        if (existing) return existing;
+        return {
+          position: p.seedNumber || idx + 1,
+          clubId: p.clubId,
+          clubName: p.clubName,
+          clubLogoUrl: p.clubLogoUrl,
+          shortName: p.shortName,
+          managerUsername: p.managerUsername,
+          managerUserId: p.managerUserId,
+          played: 0,
+          won: 0,
+          drawn: 0,
+          lost: 0,
+          goalsFor: 0,
+          goalsAgainst: 0,
+          goalDifference: 0,
+          points: 0,
+          recentForm: '',
+        };
+      });
+
+      return fullRows
+        .sort((a, b) => {
+          if (b.points !== a.points) return b.points - a.points;
+          if (b.goalDifference !== a.goalDifference) return b.goalDifference - a.goalDifference;
+          if (b.goalsFor !== a.goalsFor) return b.goalsFor - a.goalsFor;
+          return (a.position || 0) - (b.position || 0);
+        })
+        .map((r, i) => ({ ...r, position: i + 1 }));
+    }
+    return standings;
+  }, [standings, participants]);
+
   return (
     <div className="space-y-6 animate-in fade-in duration-300 pb-20">
       {/* Category Quick Switcher Hub */}
@@ -241,7 +281,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
                   : 'glass-card text-slate-400 hover:text-slate-200'
               }`}
             >
-              {t.leaguePhase} ({participants.length > 0 ? `${participants.length} Clubs` : 'Overview'})
+              {t.leaguePhase} (32 jamoa)
             </button>
             <button
               onClick={() => handleTabChange('BRACKET')}
