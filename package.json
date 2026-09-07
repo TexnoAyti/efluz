@@ -30,7 +30,8 @@
     "test:firestore-guard": "tsx src/server/tests/firestoreReadGuardTest.ts",
     "test:sqlite-standings-fallback": "tsx src/server/tests/sqliteStandingsFallbackTest.ts",
     "test:recovery-probe": "tsx src/server/tests/recoveryProbeTest.ts",
-    "test:offline-resilience": "tsx src/server/tests/offlineResilienceTest.ts"
+    "test:offline-resilience": "tsx src/server/tests/offlineResilienceTest.ts",
+    "test:fixture-generation-safety": "tsx src/server/tests/fixtureGenerationSafetyTest.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
