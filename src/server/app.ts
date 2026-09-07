@@ -20,6 +20,7 @@ import { competitionsRouter } from './routes/competitions.routes';
 import { fixturesRouter } from './routes/fixtures.routes';
 import { meRouter } from './routes/me.routes';
 import { usersRouter } from './routes/users.routes';
+import { adminFixtureSafetyRouter } from './routes/adminFixtureSafety.routes';
 import { adminResilientRouter } from './routes/adminResilient.routes';
 import { adminRouter } from './routes/admin.routes';
 
@@ -135,7 +136,9 @@ export function createApp() {
   app.use('/api/fixtures', fixturesRouter);
   app.use('/api/me', meRouter);
   app.use('/api/users', usersRouter);
-  // Local-first admin read paths MUST run before legacy Firestore-backed handlers.
+  // Production safety gate MUST run before legacy admin handlers.
+  app.use('/api/admin', adminFixtureSafetyRouter);
+  // Local-first admin read/mutation paths MUST run before legacy Firestore-backed handlers.
   app.use('/api/admin', adminResilientRouter);
   app.use('/api/admin', adminRouter);
 
