@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { requireAdmin } from '../middleware/authMiddleware';
+import { queryGet } from '../db';
 import {
   getAllCompetitionsFirestore,
   getCompetitionByIdFirestore,
@@ -71,35 +72,46 @@ competitionsRouter.get('/:id/fixtures', async (req: Request, res: Response) => {
 });
 
 competitionsRouter.post('/:id/generate-fixtures', requireAdmin, async (req: Request, res: Response) => {
-  try {
-    const force = req.body?.force !== undefined ? Boolean(req.body.force) : true;
-    const result = await generateCompetitionFixturesFirestore(req.params.id, { force });
+  const competitionId = req.params.id;
+  const existingCount = Number(queryGet<any>('SELECT COUNT(*) AS count FROM fixtures WHERE competition_id = ?', [competitionId])?.count ?? 0);
+  if (existingCount > 0) {
+    res.status(409).json({
+      error: 'Fixtures already exist; generation is non-destructive and will not replace them.',
+      code: 'FIXTURES_ALREADY_EXIST',
+      competitionId,
+      existingFixtures: existingCount,
+    });
+    return;
+  }
 
+  try {
+    // Force is deliberately ignored for first-time generation: there is nothing to reset.
+    const result = await generateCompetitionFixturesFirestore(competitionId, { force: false });
     res.json({
       success: true,
-      competitionId: req.params.id,
+      competitionId,
       fixturesGenerated: result.generated,
       matchdays: result.matchdays,
       message: `Persisted ${result.generated} fixtures in Firestore successfully across ${result.matchdays} matchdays.`,
     });
   } catch (err: any) {
-    handleFirestoreError(res, err, `POST /api/competitions/${req.params.id}/generate-fixtures`);
+    handleFirestoreError(res, err, `POST /api/competitions/${competitionId}/generate-fixtures`);
   }
 });
 
 competitionsRouter.post('/:id/reset-fixtures', requireAdmin, async (req: Request, res: Response) => {
-  try {
-    const result = await generateCompetitionFixturesFirestore(req.params.id, { force: true });
-    res.json({
-      success: true,
-      competitionId: req.params.id,
-      fixturesGenerated: result.generated,
-      matchdays: result.matchdays,
-      message: `Reset and persisted ${result.generated} fixtures in Firestore.`,
-    });
-  } catch (err: any) {
-    handleFirestoreError(res, err, `POST /api/competitions/${req.params.id}/reset-fixtures`);
-  }
+  const competitionId = req.params.id;
+  const existingCount = Number(queryGet<any>('SELECT COUNT(*) AS count FROM fixtures WHERE competition_id = ?', [competitionId])?.count ?? 0);
+
+  res.status(409).json({
+    error: 'Destructive fixture reset is disabled in production.',
+    code: 'NON_DESTRUCTIVE_FIXTURE_POLICY',
+    competitionId,
+    existingFixtures: existingCount,
+    message: existingCount > 0
+      ? 'Existing fixture IDs, results, and history are protected. Use targeted admin corrections instead of regeneration.'
+      : 'No destructive reset is permitted; first-time generation should use /generate-fixtures.',
+  });
 });
 
 competitionsRouter.post('/:id/rebuild-standings', requireAdmin, async (req: Request, res: Response) => {
