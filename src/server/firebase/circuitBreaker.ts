@@ -19,7 +19,8 @@ export interface CircuitBreakerStatus {
   trackedReadDocuments: number;
 }
 
-const DEFAULT_COOLDOWN_MS = 60000;
+// Recovery should be fast enough for normal operation while still preventing retry storms.
+const DEFAULT_COOLDOWN_MS = Number(process.env.FIRESTORE_RECOVERY_COOLDOWN_MS) || 5000;
 const CONSECUTIVE_FAILURES_THRESHOLD = 3;
 export const FIRESTORE_READ_SOFT_LIMIT = Number(process.env.FIRESTORE_READ_SOFT_LIMIT) || 35000;
 
@@ -112,10 +113,7 @@ class FirestoreCircuitBreaker {
     this.skippedReadsCount += count;
   }
 
-  /**
-   * Eligibility check only. This method MUST NOT reserve the HALF_OPEN probe.
-   * The actual Firestore read reserves it through authorizeRead().
-   */
+  /** Eligibility check only; HALF_OPEN reservation is performed by authorizeRead(). */
   public canExecute(): boolean {
     const now = Date.now();
 
@@ -150,7 +148,7 @@ class FirestoreCircuitBreaker {
     return false;
   }
 
-  /** Atomically reserves the one real Firestore read allowed in HALF_OPEN. */
+  /** Atomically reserves the single real Firestore read allowed in HALF_OPEN. */
   public authorizeRead(): boolean {
     const now = Date.now();
 
