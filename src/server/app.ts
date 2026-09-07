@@ -15,6 +15,7 @@ import { attemptFirestoreRecoveryProbe } from './firebase/recoveryProbe';
 import { healthRouter } from './routes/health.routes';
 import { authRouter } from './routes/auth.routes';
 import { seasonsRouter } from './routes/seasons.routes';
+import { readOptimizedRouter } from './routes/readOptimized.routes';
 import { leaguesRouter } from './routes/leagues.routes';
 import { clubsRouter } from './routes/clubs.routes';
 import { competitionsRouter } from './routes/competitions.routes';
@@ -122,6 +123,11 @@ export function createApp() {
   app.use('/api/health', healthRouter);
   app.use('/api/auth', authRouter);
   app.use('/api/seasons', seasonsRouter);
+
+  // Hot read paths are deliberately mounted before their legacy Firestore-first
+  // counterparts. POST/mutation endpoints continue through the existing routers.
+  app.use('/api', readOptimizedRouter);
+
   app.use('/api/leagues', leaguesRouter);
   app.use('/api/clubs', clubsRouter);
   app.use('/api/competitions', competitionsRouter);
