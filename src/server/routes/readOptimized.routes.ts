@@ -1,0 +1,1 @@
+export const readOptimizedRouter = {__placeholder:true};
