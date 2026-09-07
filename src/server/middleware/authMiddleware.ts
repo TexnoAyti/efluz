@@ -10,6 +10,31 @@ declare global {
   }
 }
 
+interface AuthCacheEntry {
+  user: User;
+  expiresAt: number;
+}
+
+// Authentication is still cryptographically verified on every request, but the
+// Firestore/SQLite user lookup is cached to avoid turning normal navigation into
+// repeated database reads. Keep the cache short enough for admin suspension changes.
+const AUTH_CACHE_TTL_MS = Number(process.env.AUTH_USER_CACHE_TTL_MS) || 60000;
+const authCache = new Map<string, AuthCacheEntry>();
+
+function getCachedUser(key: string): User | null {
+  const entry = authCache.get(key);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    authCache.delete(key);
+    return null;
+  }
+  return entry.user;
+}
+
+function setCachedUser(key: string, user: User): void {
+  authCache.set(key, { user, expiresAt: Date.now() + AUTH_CACHE_TTL_MS });
+}
+
 export async function authMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
   const isDev = process.env.ENABLE_DEV_AUTH === 'true' || process.env.NODE_ENV !== 'production';
 
@@ -22,7 +47,15 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
       const verifyResult = verifyTelegramWebAppData(initData, botToken);
       if (verifyResult.isValid && verifyResult.user) {
         try {
+          const cacheKey = `telegram:${String(verifyResult.user.id)}`;
+          const cachedUser = getCachedUser(cacheKey);
+          if (cachedUser) {
+            req.user = cachedUser;
+            return next();
+          }
+
           req.user = await getOrCreateTelegramUser(verifyResult.user);
+          setCachedUser(cacheKey, req.user);
           return next();
         } catch (err: any) {
           console.warn('Telegram user retrieval error:', err.message);
@@ -35,7 +68,15 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
         const userRaw = urlParams.get('user');
         if (userRaw) {
           const parsed = JSON.parse(userRaw);
+          const cacheKey = `telegram-dev:${String(parsed.id)}`;
+          const cachedUser = getCachedUser(cacheKey);
+          if (cachedUser) {
+            req.user = cachedUser;
+            return next();
+          }
+
           req.user = await getOrCreateTelegramUser(parsed);
+          setCachedUser(cacheKey, req.user);
           return next();
         }
       } catch {
@@ -48,8 +89,16 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
   const devUserId = req.headers['x-dev-user-id'] as string;
   if (isDev && devUserId) {
     try {
+      const cacheKey = `dev:${devUserId}`;
+      const cachedUser = getCachedUser(cacheKey);
+      if (cachedUser) {
+        req.user = cachedUser;
+        return next();
+      }
+
       const user = await getOrCreateDevUser(devUserId);
       req.user = user;
+      setCachedUser(cacheKey, user);
       return next();
     } catch (err: any) {
       console.warn('Dev auth error:', err.message);
