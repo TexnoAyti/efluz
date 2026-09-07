@@ -3,6 +3,7 @@ import { requireAdmin } from '../middleware/authMiddleware';
 import { queryGet } from '../db';
 import { generateCompetitionFixturesFirestore } from '../firebase/firestoreStore';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
+import { assertNonDestructiveFixtureGeneration } from '../firebase/fixtureGenerationSafety';
 
 /**
  * Production safety gate for admin fixture generation.
@@ -18,6 +19,8 @@ adminFixtureSafetyRouter.post('/fixtures/generate', async (req: Request, res: Re
     res.status(400).json({ error: 'competitionId is required', code: 'BAD_REQUEST' });
     return;
   }
+
+  assertNonDestructiveFixtureGeneration({ force: false });
 
   const existingCount = Number(queryGet<any>(
     'SELECT COUNT(*) AS count FROM fixtures WHERE competition_id = ?',
