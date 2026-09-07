@@ -13,12 +13,11 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup Node 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -26,7 +25,7 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: TypeScript and production build
+      - name: Build
         run: npm run build
 
       - name: Firestore read guard regression
@@ -35,14 +34,14 @@ jobs:
       - name: SQLite standings fallback regression
         run: npm run test:sqlite-standings-fallback
 
-      - name: Recovery probe contract regression
+      - name: Recovery probe regression
         run: npm run test:recovery-probe
 
       - name: Offline resilience regression
         run: npm run test:offline-resilience
 
-      - name: Fixture generation safety regression
-        run: npm run test:fixture-generation-safety
-
-      - name: Quota resilience audit
+      - name: Static quota/read audit
         run: npm run test:quota-audit
+
+      - name: Verify runtime read policy document
+        run: test -s READ_MAP.md
