@@ -4,18 +4,9 @@ const WRAPPED = Symbol('efluz.firestore.readGuard.wrapped');
 const GUARDED_ERROR = 'FIRESTORE_READ_BLOCKED_BY_CIRCUIT_BREAKER';
 
 const QUERY_CHAIN_METHODS = new Set([
-  'where',
-  'orderBy',
-  'limit',
-  'offset',
-  'select',
-  'startAt',
-  'startAfter',
-  'endAt',
-  'endBefore',
-  'withConverter',
-  'count',
-  'aggregate',
+  'where', 'orderBy', 'limit', 'offset', 'select',
+  'startAt', 'startAfter', 'endAt', 'endBefore', 'withConverter',
+  'count', 'aggregate',
 ]);
 
 const READ_METHODS = new Set(['get', 'stream', 'onSnapshot']);
@@ -28,24 +19,14 @@ function blockedReadError(): Error & { code: string } {
 
 function countReturnedDocuments(result: any): number | null {
   if (!result) return null;
-
-  if (Array.isArray(result)) {
-    return result.length;
-  }
-
-  if (Array.isArray(result.docs)) {
-    return result.docs.length;
-  }
-
-  if (typeof result.exists === 'boolean') {
-    return result.exists ? 1 : 0;
-  }
-
+  if (Array.isArray(result)) return result.length;
+  if (Array.isArray(result.docs)) return result.docs.length;
+  if (typeof result.exists === 'boolean') return result.exists ? 1 : 0;
   return null;
 }
 
 async function guardedRead<T>(operation: () => Promise<T>): Promise<T> {
-  if (!firestoreCircuitBreaker.canExecute()) {
+  if (!firestoreCircuitBreaker.authorizeRead()) {
     throw blockedReadError();
   }
 
@@ -72,12 +53,10 @@ function wrapQueryLike<T extends object>(target: T): T {
   const proxy = new Proxy(target, {
     get(obj, prop, receiver) {
       if (prop === WRAPPED) return true;
-
       const original = Reflect.get(obj, prop, receiver);
       if (typeof original !== 'function') return original;
 
       const propName = String(prop);
-
       if (READ_METHODS.has(propName)) {
         return (...args: any[]) => guardedRead(() => Reflect.apply(original, obj, args));
       }
@@ -103,24 +82,15 @@ function wrapFirestoreInstance<T extends object>(target: T): T {
   const proxy = new Proxy(target, {
     get(obj, prop, receiver) {
       if (prop === WRAPPED) return true;
-
       const original = Reflect.get(obj, prop, receiver);
       if (typeof original !== 'function') return original;
 
       const propName = String(prop);
-
       if (propName === 'collection') {
-        return (...args: any[]) => {
-          const result = Reflect.apply(original, obj, args);
-          return wrapQueryLike(result);
-        };
+        return (...args: any[]) => wrapQueryLike(Reflect.apply(original, obj, args));
       }
 
-      if (propName === 'getAll') {
-        return (...args: any[]) => guardedRead(() => Reflect.apply(original, obj, args));
-      }
-
-      if (propName === 'listCollections') {
+      if (propName === 'getAll' || propName === 'listCollections') {
         return (...args: any[]) => guardedRead(() => Reflect.apply(original, obj, args));
       }
 
@@ -160,23 +130,13 @@ function wrapFirestoreInstance<T extends object>(target: T): T {
 
 let installed = false;
 
-/**
- * Installs a process-local guard around Firestore read execution.
- * This is intentionally fail-closed: once the circuit breaker is OPEN,
- * direct Firestore reads throw before making a network request.
- */
 export function installFirestoreReadGuard(): void {
   if (installed) return;
   installed = true;
-
   const globalAny = globalThis as any;
-  globalAny.__EFLUZ_FIRESTORE_READ_GUARD__ = {
-    wrapFirestoreInstance,
-    blockedReadError,
-  };
+  globalAny.__EFLUZ_FIRESTORE_READ_GUARD__ = { wrapFirestoreInstance, blockedReadError };
 }
 
-/** Wrap a real Firestore instance returned by getFirestoreDb(). */
 export function guardFirestoreDb<T extends object>(db: T): T {
   installFirestoreReadGuard();
   return wrapFirestoreInstance(db);
