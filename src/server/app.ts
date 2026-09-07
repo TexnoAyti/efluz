@@ -1,6 +1,7 @@
 import express from 'express';
 import { initDatabase, queryGet, getDbFilePath } from './db';
 import { seedDatabase, repairSeason202627Roster } from './db/seed';
+import { cleanupLegacyTestData } from './db/legacyTestDataCleanup';
 import { authMiddleware } from './middleware/authMiddleware';
 import { getFirestoreDb, getFirebaseStatus } from './firebase/admin';
 import { migrateSqliteToFirestore } from './firebase/migrateSqliteToFirestore';
@@ -59,6 +60,18 @@ export async function ensureDbReady(): Promise<void> {
         await initDatabase();
         seedDatabase();
         repairSeason202627Roster();
+
+        // Purge only deterministic legacy test data. This is local SQLite-only and therefore
+        // does not consume Firestore reads. It also runs before any occupancy hydration so stale
+        // developer accounts/results cannot leak back into the UI from the local runtime DB.
+        try {
+          const cleanup = cleanupLegacyTestData();
+          const removed = cleanup.removedUsers + cleanup.removedResultSubmissions + cleanup.removedTestFixtures + cleanup.resetOfficialFixtures;
+          if (removed > 0) console.log('[BOOT] Legacy test data cleanup:', cleanup);
+        } catch (cleanupErr: any) {
+          console.warn('[BOOT] Legacy test data cleanup warning:', cleanupErr?.message || String(cleanupErr));
+        }
+
         console.log(`[BOOT] SQLite baseline ready from: ${getDbFilePath()}`);
         loadSnapshotFromFile();
 
