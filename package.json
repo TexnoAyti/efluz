@@ -31,7 +31,8 @@
     "test:sqlite-standings-fallback": "tsx src/server/tests/sqliteStandingsFallbackTest.ts",
     "test:recovery-probe": "tsx src/server/tests/recoveryProbeTest.ts",
     "test:offline-resilience": "tsx src/server/tests/offlineResilienceTest.ts",
-    "test:fixture-generation-safety": "tsx src/server/tests/fixtureGenerationSafetyTest.ts"
+    "test:fixture-generation-safety": "tsx src/server/tests/fixtureGenerationSafetyTest.ts",
+    "test:dev-data-safety": "tsx src/server/tests/devDataSafetyTest.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
