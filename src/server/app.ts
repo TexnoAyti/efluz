@@ -18,6 +18,7 @@ import { seasonsRouter } from './routes/seasons.routes';
 import { leaguesRouter } from './routes/leagues.routes';
 import { clubsRouter } from './routes/clubs.routes';
 import { competitionsRouter } from './routes/competitions.routes';
+import { fixturesResilientRouter } from './routes/fixturesResilient.routes';
 import { fixturesRouter } from './routes/fixtures.routes';
 import { meRouter } from './routes/me.routes';
 import { usersRouter } from './routes/users.routes';
@@ -143,6 +144,8 @@ export function createApp() {
   app.use('/api/leagues', leaguesRouter);
   app.use('/api/clubs', clubsRouter);
   app.use('/api/competitions', competitionsRouter);
+  // Local-first fixture reads/result submission MUST run before legacy Firestore handlers.
+  app.use('/api/fixtures', fixturesResilientRouter);
   app.use('/api/fixtures', fixturesRouter);
   app.use('/api/me', meRouter);
   app.use('/api/users', usersRouter);
