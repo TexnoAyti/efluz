@@ -4,6 +4,7 @@ import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
 /** Structural regression checks for the recovery contract. */
 assert.equal(typeof firestoreCircuitBreaker.getStatus, 'function');
 assert.equal(typeof firestoreCircuitBreaker.canExecute, 'function');
+assert.equal(typeof firestoreCircuitBreaker.authorizeRead, 'function');
 assert.equal(typeof firestoreCircuitBreaker.recordSuccess, 'function');
 assert.equal(typeof firestoreCircuitBreaker.recordFailure, 'function');
 
@@ -12,6 +13,7 @@ firestoreCircuitBreaker.forceState('OPEN');
 const status = firestoreCircuitBreaker.getStatus();
 assert.equal(status.state, 'OPEN');
 assert.ok(status.cooldownRemainingMs >= 0);
+assert.ok(status.cooldownMs <= 10000, `Recovery cooldown is too long: ${status.cooldownMs}ms`);
 
 firestoreCircuitBreaker.reset();
 assert.equal(firestoreCircuitBreaker.getStatus().state, 'CLOSED');
