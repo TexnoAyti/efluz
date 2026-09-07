@@ -16,6 +16,7 @@ export interface CircuitBreakerStatus {
   skippedReadsCount: number;
   softLimitExceeded: boolean;
   softLimitThreshold: number;
+  trackedReadDocuments: number;
 }
 
 // Configurable parameters
@@ -36,6 +37,7 @@ class FirestoreCircuitBreaker {
   private halfOpenProbeInFlight = false;
   private skippedReadsCount = 0;
   private softLimitExceeded = false;
+  private trackedReadDocuments = 0;
 
   constructor(cooldownMs = DEFAULT_COOLDOWN_MS) {
     this.cooldownMs = cooldownMs;
@@ -52,6 +54,7 @@ class FirestoreCircuitBreaker {
   }
 
   public checkSoftLimit(currentReads: number): boolean {
+    this.trackedReadDocuments = Math.max(this.trackedReadDocuments, currentReads);
     if (currentReads >= FIRESTORE_READ_SOFT_LIMIT) {
       if (!this.softLimitExceeded) {
         this.softLimitExceeded = true;
@@ -62,8 +65,20 @@ class FirestoreCircuitBreaker {
     return false;
   }
 
+  /** Record actual documents returned by a guarded Firestore read. */
+  public recordReadDocuments(count = 0): boolean {
+    if (!Number.isFinite(count) || count < 0) count = 0;
+    this.trackedReadDocuments += count;
+    return this.checkSoftLimit(this.trackedReadDocuments);
+  }
+
+  public getTrackedReadDocuments(): number {
+    return this.trackedReadDocuments;
+  }
+
   public resetSoftLimit(): void {
     this.softLimitExceeded = false;
+    this.trackedReadDocuments = 0;
   }
 
   public setCooldown(ms: number) {
@@ -220,6 +235,8 @@ class FirestoreCircuitBreaker {
   public reset() {
     this.forceState('CLOSED');
     this.lastError = null;
+    this.resetSoftLimit();
+    this.skippedReadsCount = 0;
   }
 
   public getStatus(): CircuitBreakerStatus {
@@ -244,6 +261,7 @@ class FirestoreCircuitBreaker {
       skippedReadsCount: this.skippedReadsCount,
       softLimitExceeded: this.softLimitExceeded,
       softLimitThreshold: FIRESTORE_READ_SOFT_LIMIT,
+      trackedReadDocuments: this.trackedReadDocuments,
     };
   }
 
