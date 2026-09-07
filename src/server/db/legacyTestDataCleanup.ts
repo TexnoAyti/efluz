@@ -49,7 +49,9 @@ export function cleanupLegacyTestData(): LegacyTestDataCleanupSummary {
           OR lower(coalesce(fixture_source, '')) = 'offline_test'`
     );
     const explicitFixtureIds = new Set<string>(
-      markedFixtures.filter((row) => isExplicitTestFixtureId(row.id) || isTestFixtureSource(row.fixtureSource)).map((row) => String(row.id))
+      markedFixtures
+        .filter((row) => isExplicitTestFixtureId(row.id) || isTestFixtureSource(row.fixtureSource))
+        .map((row) => String(row.id))
     );
 
     const fakeSubmissionFixtures = userIds.length > 0
@@ -64,6 +66,12 @@ export function cleanupLegacyTestData(): LegacyTestDataCleanupSummary {
     for (const row of fakeSubmissionFixtures) {
       const fixtureId = String(row.fixtureId || '');
       if (fixtureId && !explicitFixtureIds.has(fixtureId)) officialFixturesToReset.add(fixtureId);
+    }
+
+    // Remove disputes first because they can reference result submission rows.
+    const disputeFixtureIds = new Set<string>([...explicitFixtureIds, ...officialFixturesToReset]);
+    for (const fixtureId of disputeFixtureIds) {
+      summary.removedDisputes += queryRun('DELETE FROM disputes WHERE fixture_id = ?', [fixtureId]).changes;
     }
 
     if (userIds.length > 0) {
@@ -102,7 +110,6 @@ export function cleanupLegacyTestData(): LegacyTestDataCleanupSummary {
     }
 
     for (const fixtureId of explicitFixtureIds) {
-      summary.removedDisputes += queryRun('DELETE FROM disputes WHERE fixture_id = ?', [fixtureId]).changes;
       summary.removedResultSubmissions += queryRun('DELETE FROM result_submissions WHERE fixture_id = ?', [fixtureId]).changes;
       summary.removedPendingMutations += queryRun('DELETE FROM pending_mutations WHERE entity_id = ?', [fixtureId]).changes;
       summary.removedTestFixtures += queryRun('DELETE FROM fixtures WHERE id = ?', [fixtureId]).changes;
@@ -117,7 +124,6 @@ export function cleanupLegacyTestData(): LegacyTestDataCleanupSummary {
             WHERE id = ? AND lower(coalesce(fixture_source, 'official_2026_27')) NOT LIKE '%test%'`,
           [new Date().toISOString(), fixtureId]
         ).changes;
-        summary.removedDisputes += queryRun('DELETE FROM disputes WHERE fixture_id = ?', [fixtureId]).changes;
       }
     }
   });
