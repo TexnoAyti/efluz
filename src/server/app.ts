@@ -9,6 +9,7 @@ import { COLLECTIONS } from './firebase/collections';
 import { firestoreCircuitBreaker } from './firebase/circuitBreaker';
 import { loadSnapshotFromFile } from './firebase/occupancySnapshot';
 import { processPendingMutations } from './sync/mutationQueue';
+import { processPendingMatchdayMutations } from './sync/matchdayMutationSync';
 import { attemptFirestoreRecoveryProbe } from './firebase/recoveryProbe';
 
 import { healthRouter } from './routes/health.routes';
@@ -33,6 +34,7 @@ async function runReconciliationCycle(label: string): Promise<void> {
   try {
     const recovered = await attemptFirestoreRecoveryProbe();
     if (!recovered) return;
+    await processPendingMatchdayMutations();
     await processPendingMutations();
   } catch (err: any) {
     console.warn(`[RECONCILIATION] ${label} cycle notice:`, err?.message || String(err));
