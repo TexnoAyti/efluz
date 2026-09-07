@@ -140,11 +140,25 @@ async function runDeploymentSelfCheck() {
     console.log('✅ PASS [CHECK 3.4]: GET /api/me returned HTTP 401 JSON (Clean 401, NOT HTML)');
 
     // 3.5 /api/auth/dev-profiles
+    // Hosted/production runtimes must keep dev auth disabled. HTTP 403 JSON is the
+    // expected secure response there. Local development may still expose 200 profiles.
     const devProfiles = await testEndpoint('/api/auth/dev-profiles');
-    if (devProfiles.status !== 200 || !devProfiles.isJson || !Array.isArray(devProfiles.json?.profiles)) {
-      throw new Error(`FAILED [CHECK 3.5]: /api/auth/dev-profiles failed -> HTTP ${devProfiles.status}, text="${devProfiles.text}"`);
+    const devAuthDisabled = devProfiles.status === 403
+      && devProfiles.isJson
+      && devProfiles.json?.error === 'Dev auth is disabled outside local development.';
+    const devProfilesEnabled = devProfiles.status === 200
+      && devProfiles.isJson
+      && Array.isArray(devProfiles.json?.profiles);
+
+    if (!devAuthDisabled && !devProfilesEnabled) {
+      throw new Error(`FAILED [CHECK 3.5]: /api/auth/dev-profiles returned unexpected response -> HTTP ${devProfiles.status}, text="${devProfiles.text}"`);
     }
-    console.log(`✅ PASS [CHECK 3.5]: GET /api/auth/dev-profiles returned HTTP 200 JSON (${devProfiles.json.profiles.length} profiles)`);
+
+    if (devAuthDisabled) {
+      console.log('✅ PASS [CHECK 3.5]: GET /api/auth/dev-profiles returned HTTP 403 JSON (dev auth correctly disabled in hosted/production runtime)');
+    } else {
+      console.log(`✅ PASS [CHECK 3.5]: GET /api/auth/dev-profiles returned HTTP 200 JSON (${devProfiles.json.profiles.length} profiles) in local development runtime`);
+    }
 
     // 3.6 /api/auth/telegram (empty body -> JSON 400, NEVER 405 HTML)
     const authTest = await testEndpoint('/api/auth/telegram', {
