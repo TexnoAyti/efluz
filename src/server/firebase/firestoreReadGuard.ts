@@ -26,6 +26,24 @@ function blockedReadError(): Error & { code: string } {
   return err;
 }
 
+function countReturnedDocuments(result: any): number | null {
+  if (!result) return null;
+
+  if (Array.isArray(result)) {
+    return result.length;
+  }
+
+  if (Array.isArray(result.docs)) {
+    return result.docs.length;
+  }
+
+  if (typeof result.exists === 'boolean') {
+    return result.exists ? 1 : 0;
+  }
+
+  return null;
+}
+
 async function guardedRead<T>(operation: () => Promise<T>): Promise<T> {
   if (!firestoreCircuitBreaker.canExecute()) {
     throw blockedReadError();
@@ -34,6 +52,12 @@ async function guardedRead<T>(operation: () => Promise<T>): Promise<T> {
   try {
     const result = await operation();
     firestoreCircuitBreaker.recordSuccess();
+
+    const documentCount = countReturnedDocuments(result);
+    if (documentCount !== null) {
+      firestoreCircuitBreaker.recordReadDocuments(documentCount);
+    }
+
     return result;
   } catch (err: any) {
     firestoreCircuitBreaker.recordFailure(err);
