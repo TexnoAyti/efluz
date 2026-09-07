@@ -2,20 +2,20 @@ import express from 'express';
 import { initDatabase, queryGet, getDbFilePath } from './db';
 import { seedDatabase, repairSeason202627Roster } from './db/seed';
 import { authMiddleware } from './middleware/authMiddleware';
-import { isFirebaseConfigured, getFirestoreDb, getFirebaseStatus } from './firebase/admin';
+import { getFirestoreDb, getFirebaseStatus } from './firebase/admin';
 import { migrateSqliteToFirestore } from './firebase/migrateSqliteToFirestore';
-import { syncFirestoreClubCrests, getActiveOccupanciesForSeason } from './firebase/firestoreStore';
+import { getActiveOccupanciesForSeason } from './firebase/firestoreStore';
 import { COLLECTIONS } from './firebase/collections';
 import { firestoreCircuitBreaker } from './firebase/circuitBreaker';
 import { loadSnapshotFromFile } from './firebase/occupancySnapshot';
 import { processPendingMutations } from './sync/mutationQueue';
 import { processPendingMatchdayMutations } from './sync/matchdayMutationSync';
 import { attemptFirestoreRecoveryProbe } from './firebase/recoveryProbe';
-
 import { healthRouter } from './routes/health.routes';
 import { authRouter } from './routes/auth.routes';
 import { seasonsRouter } from './routes/seasons.routes';
 import { readOptimizedRouter } from './routes/readOptimized.routes';
+import { notificationsReadResilientRouter } from './routes/notificationsReadResilient.routes';
 import { leaguesRouter } from './routes/leagues.routes';
 import { clubsRouter } from './routes/clubs.routes';
 import { competitionsRouter } from './routes/competitions.routes';
@@ -46,12 +46,8 @@ async function runReconciliationCycle(label: string): Promise<void> {
 function startBackgroundReconciliation(): void {
   if (syncWorkerStarted) return;
   syncWorkerStarted = true;
-  setTimeout(() => {
-    void runReconciliationCycle('startup');
-  }, 4000);
-  const interval = setInterval(() => {
-    void runReconciliationCycle('periodic');
-  }, 60000);
+  setTimeout(() => { void runReconciliationCycle('startup'); }, 4000);
+  const interval = setInterval(() => { void runReconciliationCycle('periodic'); }, 60000);
   if (interval.unref) interval.unref();
 }
 
@@ -103,31 +99,20 @@ export function createApp() {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-dev-user-id, x-telegram-init-data');
-    if (req.method === 'OPTIONS') {
-      res.sendStatus(204);
-      return;
-    }
+    if (req.method === 'OPTIONS') { res.sendStatus(204); return; }
     next();
   });
   app.use(express.json());
   app.use(async (req, res, next) => {
-    try {
-      await ensureDbReady();
-      next();
-    } catch (err: any) {
-      console.error('[SERVER] Database initialization failed on request:', err);
-      res.status(500).json({ error: 'Database initialization failed', details: err.message });
-    }
+    try { await ensureDbReady(); next(); }
+    catch (err: any) { res.status(500).json({ error: 'Database initialization failed', details: err.message }); }
   });
   app.use(authMiddleware);
   app.use('/api/health', healthRouter);
   app.use('/api/auth', authRouter);
   app.use('/api/seasons', seasonsRouter);
-
-  // Hot read paths are deliberately mounted before their legacy Firestore-first
-  // counterparts. POST/mutation endpoints continue through the existing routers.
   app.use('/api', readOptimizedRouter);
-
+  app.use('/api/me', notificationsReadResilientRouter);
   app.use('/api/leagues', leaguesRouter);
   app.use('/api/clubs', clubsRouter);
   app.use('/api/competitions', competitionsRouter);
@@ -140,9 +125,7 @@ export function createApp() {
   app.use('/api/admin', adminOfflineControlsRouter);
   app.use('/api/admin', adminResilientRouter);
   app.use('/api/admin', adminRouter);
-  app.use('/api/*', (req, res) => {
-    res.status(404).json({ error: 'Endpoint not found', path: req.originalUrl });
-  });
+  app.use('/api/*', (req, res) => res.status(404).json({ error: 'Endpoint not found', path: req.originalUrl }));
   app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
     console.error('[SERVER] Unhandled error:', err);
     res.status(err.status || 500).json({ error: err.message || 'Internal Server Error', status: err.status || 500 });
