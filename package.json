@@ -27,7 +27,8 @@
     "test:ucl32-locking": "tsx src/server/tests/verifyUCL32AndMatchdayLocking.ts",
     "test:deployment-selfcheck": "tsx src/server/tests/deploymentSelfCheck.ts",
     "test:quota-audit": "tsx src/server/tests/verifyQuotaResilienceAudit.ts",
-    "test:firestore-guard": "tsx src/server/tests/firestoreReadGuardTest.ts"
+    "test:firestore-guard": "tsx src/server/tests/firestoreReadGuardTest.ts",
+    "test:sqlite-standings-fallback": "tsx src/server/tests/sqliteStandingsFallbackTest.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
