@@ -20,6 +20,7 @@ import { clubsRouter } from './routes/clubs.routes';
 import { competitionsRouter } from './routes/competitions.routes';
 import { fixturesResilientRouter } from './routes/fixturesResilient.routes';
 import { fixturesRouter } from './routes/fixtures.routes';
+import { meResilientRouter } from './routes/meResilient.routes';
 import { meRouter } from './routes/me.routes';
 import { usersRouter } from './routes/users.routes';
 import { adminFixtureSafetyRouter } from './routes/adminFixtureSafety.routes';
@@ -126,6 +127,7 @@ export function createApp() {
   app.use('/api/competitions', competitionsRouter);
   app.use('/api/fixtures', fixturesResilientRouter);
   app.use('/api/fixtures', fixturesRouter);
+  app.use('/api/me', meResilientRouter);
   app.use('/api/me', meRouter);
   app.use('/api/users', usersRouter);
   app.use('/api/admin', adminFixtureSafetyRouter);
