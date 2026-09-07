@@ -11,6 +11,7 @@ import {
 } from '../firebase/firestoreStore';
 import { getResilientCompetitionStandings } from '../services/standingsReadService';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
+import { assertNonDestructiveFixtureGeneration } from '../firebase/fixtureGenerationSafety';
 
 export const competitionsRouter = Router();
 
@@ -73,6 +74,7 @@ competitionsRouter.get('/:id/fixtures', async (req: Request, res: Response) => {
 
 competitionsRouter.post('/:id/generate-fixtures', requireAdmin, async (req: Request, res: Response) => {
   const competitionId = req.params.id;
+  assertNonDestructiveFixtureGeneration({ force: req.body?.force });
   const existingCount = Number(queryGet<any>('SELECT COUNT(*) AS count FROM fixtures WHERE competition_id = ?', [competitionId])?.count ?? 0);
   if (existingCount > 0) {
     res.status(409).json({
