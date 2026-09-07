@@ -38,5 +38,8 @@ jobs:
       - name: Recovery probe contract regression
         run: npm run test:recovery-probe
 
+      - name: Offline resilience regression
+        run: npm run test:offline-resilience
+
       - name: Quota resilience audit
         run: npm run test:quota-audit
