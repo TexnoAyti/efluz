@@ -63,6 +63,18 @@ async function main() {
   );
   assert.equal(networkReads, beforeBlocked, 'OPEN breaker must prevent the network read');
 
+  // Force the cooldown to expire, then verify that a caller may perform a
+  // non-consuming eligibility check before the guarded read reserves the
+  // single HALF_OPEN probe.
+  firestoreCircuitBreaker.setCooldown(1);
+  firestoreCircuitBreaker.forceState('OPEN');
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(firestoreCircuitBreaker.canExecute(), true, 'Expired OPEN breaker should become probe-eligible');
+  const beforeProbe = networkReads;
+  await guarded.collection('fixtures').doc('fixture-probe').get();
+  assert.equal(networkReads, beforeProbe + 1, 'Exactly one HALF_OPEN probe read should reach the network');
+  assert.equal(firestoreCircuitBreaker.getStatus().state, 'CLOSED', 'Successful HALF_OPEN probe should close the breaker');
+
   firestoreCircuitBreaker.reset();
   firestoreCircuitBreaker.recordReadDocuments(FIRESTORE_READ_SOFT_LIMIT);
   assert.equal(firestoreCircuitBreaker.getStatus().softLimitExceeded, true);
