@@ -9,6 +9,7 @@ import { COLLECTIONS } from './firebase/collections';
 import { firestoreCircuitBreaker } from './firebase/circuitBreaker';
 import { loadSnapshotFromFile } from './firebase/occupancySnapshot';
 import { processPendingMutations } from './sync/mutationQueue';
+import { attemptFirestoreRecoveryProbe } from './firebase/recoveryProbe';
 
 // Route imports
 import { healthRouter } from './routes/health.routes';
@@ -27,26 +28,30 @@ import { adminRouter } from './routes/admin.routes';
 let dbInitPromise: Promise<void> | null = null;
 let syncWorkerStarted = false;
 
+async function runReconciliationCycle(label: string): Promise<void> {
+  try {
+    const recovered = await attemptFirestoreRecoveryProbe();
+    if (!recovered) return;
+
+    await processPendingMutations();
+  } catch (err: any) {
+    console.warn(`[RECONCILIATION] ${label} cycle notice:`, err?.message || String(err));
+  }
+}
+
 function startBackgroundReconciliation(): void {
   if (syncWorkerStarted) return;
   syncWorkerStarted = true;
 
-  // Run initial mutation sync after 4 seconds to let startup settle
+  // Run one controlled probe/sync after startup settles.
   setTimeout(() => {
-    if (firestoreCircuitBreaker.canExecute()) {
-      processPendingMutations().catch((err) => {
-        console.warn('[RECONCILIATION] Startup mutation sync notice:', err.message);
-      });
-    }
+    void runReconciliationCycle('startup');
   }, 4000);
 
-  // Periodic reconciliation every 60 seconds
+  // Periodic reconciliation. Recovery probe is attempted only after the
+  // circuit cooldown has elapsed, preventing normal-read storms.
   const interval = setInterval(() => {
-    if (firestoreCircuitBreaker.canExecute()) {
-      processPendingMutations().catch((err) => {
-        console.warn('[RECONCILIATION] Periodic mutation sync notice:', err.message);
-      });
-    }
+    void runReconciliationCycle('periodic');
   }, 60000);
 
   if (interval.unref) interval.unref();
@@ -70,17 +75,22 @@ export async function ensureDbReady(): Promise<void> {
         if (fbStatus.isConfigured) {
           try {
             const db = getFirestoreDb();
-            const clubsSnap = await db.collection(COLLECTIONS.CLUBS).limit(1).get();
-            if (clubsSnap.empty) {
-              console.log('[BOOT] Firestore is empty. Auto-seeding from SQLite baseline...');
-              await migrateSqliteToFirestore();
-              console.log('[BOOT] Firestore auto-seeding completed.');
+            if (firestoreCircuitBreaker.canExecute()) {
+              const clubsSnap = await db.collection(COLLECTIONS.CLUBS).limit(1).get();
+              if (clubsSnap.empty) {
+                console.log('[BOOT] Firestore is empty. Auto-seeding from SQLite baseline...');
+                await migrateSqliteToFirestore();
+                console.log('[BOOT] Firestore auto-seeding completed.');
+              } else {
+                console.log(`[BOOT] Connected to authoritative Firestore database: ${fbStatus.databaseId}`);
+                // Hydrate occupancy snapshot in background for 0-latency club status checks
+                getActiveOccupanciesForSeason('season-2026-27').catch(() => {});
+              }
             } else {
-              console.log(`[BOOT] Connected to authoritative Firestore database: ${fbStatus.databaseId}`);
-              // Hydrate occupancy snapshot in background for 0-latency club status checks
-              getActiveOccupanciesForSeason('season-2026-27').catch(() => {});
+              console.log('[BOOT] Firestore read gate is closed; starting in SQLite fallback mode.');
             }
           } catch (fbErr: any) {
+            firestoreCircuitBreaker.recordFailure(fbErr);
             console.warn('[BOOT] Firestore connection warning, operating with resilient SQLite fallback:', fbErr.message);
           }
         }
