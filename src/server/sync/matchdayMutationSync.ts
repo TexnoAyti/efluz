@@ -85,7 +85,8 @@ export async function processPendingMatchdayMutations(): Promise<{
         continue;
       }
 
-      await ref.get();
+      // The local SQLite mutation is already authoritative. Do not spend a
+      // Firestore read just to verify the competition document before updating it.
       await ref.update(updates);
       updateMutationStatus(item.mutationId, 'SYNCED');
       firestoreCircuitBreaker.recordSuccess();
