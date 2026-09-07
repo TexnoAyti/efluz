@@ -41,5 +41,8 @@ jobs:
       - name: Offline resilience regression
         run: npm run test:offline-resilience
 
+      - name: Fixture generation safety regression
+        run: npm run test:fixture-generation-safety
+
       - name: Quota resilience audit
         run: npm run test:quota-audit
