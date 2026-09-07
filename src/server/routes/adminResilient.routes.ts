@@ -64,7 +64,7 @@ adminResilientRouter.get('/firestore-diagnostics', async (_req: Request, res: Re
   const count = (table: string) => Number(queryGet<any>(`SELECT COUNT(*) AS count FROM ${table}`)?.count ?? 0);
 
   res.json({
-    connected: status.state === 'CLOSED',
+    connected: status.operationMode === 'FIRESTORE_PRIMARY',
     databaseMode: status.operationMode,
     circuitBreaker: status,
     readMetrics: getReadMetrics(),
@@ -86,6 +86,35 @@ adminResilientRouter.get('/users', async (_req: Request, res: Response) => {
     'SELECT id, telegram_id AS telegramId, username, first_name AS firstName, last_name AS lastName, photo_url AS photoUrl, is_admin AS isAdmin, is_suspended AS isSuspended, created_at AS createdAt, updated_at AS updatedAt FROM users ORDER BY created_at DESC'
   );
   res.json({ users });
+});
+
+adminResilientRouter.get('/clubs', async (req: Request, res: Response) => {
+  const leagueId = req.query.leagueId as string | undefined;
+  const seasonId = (req.query.seasonId as string) || 'season-2026-27';
+  const target = leagueId && leagueId !== 'ALL'
+    ? SEED_CLUBS.filter((club) => club.leagueId === leagueId)
+    : SEED_CLUBS;
+
+  const clubs = target.map((club) => {
+    const occupancy = queryGet<any>(
+      "SELECT user_id AS userId FROM club_memberships WHERE season_id = ? AND club_id = ? AND status = 'active' LIMIT 1",
+      [seasonId, club.id]
+    );
+    return {
+      id: club.id,
+      name: club.name,
+      shortName: club.shortName,
+      country: club.country,
+      leagueId: club.leagueId,
+      logoUrl: club.logoUrl,
+      active: true,
+      isTaken: Boolean(occupancy),
+      claimedByUserId: occupancy?.userId,
+      seasonId,
+    };
+  });
+
+  res.json({ clubs, total: clubs.length });
 });
 
 adminResilientRouter.get('/disputes', async (req: Request, res: Response) => {
