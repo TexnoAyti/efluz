@@ -2,6 +2,7 @@ import { initializeApp, getApps, cert, applicationDefault, App } from 'firebase-
 import { getFirestore, Firestore } from 'firebase-admin/firestore';
 import fs from 'fs';
 import path from 'path';
+import { guardFirestoreDb } from './firestoreReadGuard';
 
 let cachedDb: Firestore | null = null;
 let cachedInfo: FirebaseConfigInfo | null = null;
@@ -213,7 +214,7 @@ export function getFirestoreDb(): Firestore {
       `Firestore is not initialized. Please ensure Firebase environment variables (FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY) are configured. Details: ${info.error || 'Unknown error'}`
     );
   }
-  return db;
+  return guardFirestoreDb(db);
 }
 
 export function isFirebaseConfigured(): boolean {

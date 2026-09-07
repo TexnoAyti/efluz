@@ -1,0 +1,45 @@
+name: Quota Resilience Verification
+
+on:
+  push:
+    branches:
+      - main
+      - fix/quota-resilience-hardening-implementation
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: TypeScript and production build
+        run: npm run build
+
+      - name: Firestore read guard regression
+        run: npm run test:firestore-guard
+
+      - name: SQLite standings fallback regression
+        run: npm run test:sqlite-standings-fallback
+
+      - name: Recovery probe contract regression
+        run: npm run test:recovery-probe
+
+      - name: Offline resilience regression
+        run: npm run test:offline-resilience
+
+      - name: Quota resilience audit
+        run: npm run test:quota-audit

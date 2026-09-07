@@ -1,4 +1,7 @@
 import app, { ensureDbReady } from './app';
+import { installFirestoreReadGuard } from './firebase/firestoreReadGuard';
+
+installFirestoreReadGuard();
 
 export default async function handler(req: any, res: any) {
   try {
