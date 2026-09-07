@@ -82,12 +82,6 @@ export function cleanupLegacyTestData(): LegacyTestDataCleanupSummary {
       summary.removedAuditLogs += queryRun(
         `DELETE FROM audit_logs WHERE actor_user_id IN (${placeholders(userIds.length)})`, userIds
       ).changes;
-      summary.removedPendingMutations += queryRun(
-        `DELETE FROM pending_mutations
-          WHERE entity_id IN (${placeholders(userIds.length)})
-             OR ${placeholders(userIds.length)} LIKE '%' || ''`,
-        [...userIds, ...userIds]
-      ).changes;
       summary.clearedParticipants += queryRun(
         `UPDATE competition_participants SET owner_user_id = NULL
           WHERE owner_user_id IN (${placeholders(userIds.length)})`, userIds
@@ -97,15 +91,14 @@ export function cleanupLegacyTestData(): LegacyTestDataCleanupSummary {
       ).changes;
     }
 
-    // Remove any pending mutations whose payload still contains a legacy test identity.
-    if (userIds.length > 0) {
-      const pendingRows = queryAll<any>('SELECT mutation_id, payload FROM pending_mutations');
-      for (const row of pendingRows) {
-        const payload = String(row.payload || '');
-        if (userIds.some((id) => payload.includes(id)) || String(row.mutation_id).toLowerCase().includes('test')) {
-          summary.removedPendingMutations += queryRun('DELETE FROM pending_mutations WHERE mutation_id = ?', [row.mutation_id]).changes;
-        }
-      }
+    // Remove queued test work by deterministic IDs/payload markers.
+    const pendingRows = queryAll<any>('SELECT mutation_id, entity_id, payload FROM pending_mutations');
+    for (const row of pendingRows) {
+      const mutationId = String(row.mutation_id || '').toLowerCase();
+      const entityId = String(row.entity_id || '').toLowerCase();
+      const payload = String(row.payload || '');
+      const isTestMutation = mutationId.includes('test') || isExplicitTestFixtureId(entityId) || userIds.some((id) => payload.includes(id));
+      if (isTestMutation) summary.removedPendingMutations += queryRun('DELETE FROM pending_mutations WHERE mutation_id = ?', [row.mutation_id]).changes;
     }
 
     for (const fixtureId of explicitFixtureIds) {
