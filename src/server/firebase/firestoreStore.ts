@@ -87,6 +87,7 @@ export const lastKnownGoodStandings = new Map<string, StandingsRow[]>();
 export const lastKnownGoodFixtures = new Map<string, Fixture[]>();
 
 export interface ReadMetrics {
+  totalReads?: number;
   sessionReads: number;
   sessionWrites: number;
   readsByCollection: Record<string, number>;
@@ -202,6 +203,7 @@ export function getReadMetrics(): ReadMetrics {
   const circuit = firestoreCircuitBreaker.getStatus();
 
   return {
+    totalReads: readMetrics.sessionReads,
     sessionReads: readMetrics.sessionReads,
     sessionWrites: readMetrics.sessionWrites,
     readsByCollection: { ...readMetrics.readsByCollection },
@@ -2806,7 +2808,7 @@ export async function submitFixtureResultFirestore(
 
     // Verify ownership via snapshot or SQLite
     let userClubId: string | null = null;
-    const localOccClubId = getUserOccupiedClubIdLocally(userId, row.season_id || 'season-2026-27');
+    const localOccClubId = getUserOccupiedClubIdLocally(row.season_id || 'season-2026-27', userId);
     if (localOccClubId && (localOccClubId === row.home_club_id || localOccClubId === row.away_club_id)) {
       userClubId = localOccClubId;
     } else {
@@ -2860,7 +2862,7 @@ export async function submitFixtureResultFirestore(
 
     // Enqueue durable mutation for background reconciliation when Firestore is restored
     enqueueMutation({
-      mutationId: `sub_${fixtureId}_${userId}_${Date.now()}`,
+      mutationId: `sub_${fixtureId}_${userId}`,
       entityType: 'RESULT_SUBMISSION',
       entityId: fixtureId,
       operation: 'SUBMIT_RESULT',
@@ -2879,7 +2881,11 @@ export async function submitFixtureResultFirestore(
 
     invalidateFirestoreCache('firestore:fixtures');
     invalidateFirestoreCache('firestore:comp');
-    return (await getFixtureByIdFirestore(fixtureId, userId))!;
+    const fallbackFixture = (await getFixtureByIdFirestore(fixtureId, userId))!;
+    if (fallbackFixture) {
+      (fallbackFixture as any).pendingSync = true;
+    }
+    return fallbackFixture;
   };
 
   if (!firestoreCircuitBreaker.canExecute()) {

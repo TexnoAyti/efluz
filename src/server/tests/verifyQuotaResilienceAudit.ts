@@ -48,6 +48,13 @@ export async function runQuotaResilienceAudit() {
   const seasonId = 'season-2026-27';
   const compId = 'comp-premier-league-2026';
 
+  queryRun("DELETE FROM fixtures WHERE id LIKE 'fix-ctrl-%' OR id LIKE 'fix-test-%'");
+  const existingPlFixtures = queryAll<any>('SELECT id FROM fixtures WHERE competition_id = ?', [compId]);
+  if (existingPlFixtures.length < 190) {
+    const { generateCompetitionFixturesFirestore } = await import('../firebase/firestoreStore');
+    await generateCompetitionFixturesFirestore(compId, { force: true });
+  }
+
   // -------------------------------------------------------------------
   // TEST 2: FIRESTORE READ FAILURE TEST (Simulated Outage)
   // -------------------------------------------------------------------
@@ -128,6 +135,7 @@ export async function runQuotaResilienceAudit() {
   ]);
 
   // Clean previous test state
+  queryRun("UPDATE fixtures SET status = 'SCHEDULED', home_score = NULL, away_score = NULL, winner_club_id = NULL, result_confirmed_at = NULL WHERE id = ?", [targetMatch.id]);
   queryRun('DELETE FROM result_submissions WHERE fixture_id = ?', [targetMatch.id]);
   queryRun('DELETE FROM pending_mutations WHERE entity_id = ?', [targetMatch.id]);
 

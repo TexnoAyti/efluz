@@ -14,9 +14,14 @@ export interface PendingMutation<T = any> {
     | 'CLUB_CLAIM'
     | 'ADMIN_APPROVE_RESULT'
     | 'ADMIN_REJECT_RESULT'
+    | 'ADMIN_DECISION'
     | 'ADMIN_ASSIGN_CLUB'
     | 'ADMIN_RELEASE_CLUB'
-    | 'MATCHDAY_OVERRIDE';
+    | 'MATCHDAY_OVERRIDE'
+    | 'DISPUTE_CREATION'
+    | 'DISPUTE_RESOLUTION'
+    | 'USER_CREATE'
+    | string;
   entityId: string;
   operation: string;
   payload: T;
@@ -462,6 +467,23 @@ async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: 
       // payload: { competitionId, overrideStatus }
       const { setCompetitionMatchdayOverrideFirestore } = await import('../firebase/firestoreStore');
       await setCompetitionMatchdayOverrideFirestore(payload.competitionId, payload.overrideStatus);
+      break;
+    }
+
+    case 'ADMIN_DECISION': {
+      if (item.operation === 'ADMIN_APPROVE_RESULT') {
+        const { adminApproveFixtureResultFirestore } = await import('../firebase/firestoreStore');
+        await adminApproveFixtureResultFirestore(payload.adminUserId, payload.fixtureId, payload.homeScore, payload.awayScore, payload.notes);
+      } else if (item.operation === 'ADMIN_REJECT_RESULT') {
+        const { reopenFixtureFirestore } = await import('../firebase/firestoreStore');
+        await reopenFixtureFirestore(payload.adminUserId, payload.fixtureId, payload.notes);
+      }
+      break;
+    }
+
+    case 'USER_CREATE': {
+      const { getOrCreateTelegramUserFirestore } = await import('../firebase/firestoreStore');
+      await getOrCreateTelegramUserFirestore(payload);
       break;
     }
 

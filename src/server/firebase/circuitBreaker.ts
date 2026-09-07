@@ -1,7 +1,9 @@
 export type CircuitState = 'CLOSED' | 'OPEN' | 'HALF_OPEN';
+export type DatabaseOperationMode = 'FIRESTORE_PRIMARY' | 'SQLITE_FALLBACK' | 'RECOVERING';
 
 export interface CircuitBreakerStatus {
   state: CircuitState;
+  operationMode: DatabaseOperationMode;
   lastFailureTime: number | null;
   lastError: string | null;
   resourceExhaustedCount: number;
@@ -11,11 +13,15 @@ export interface CircuitBreakerStatus {
   cooldownMs: number;
   cooldownRemainingMs: number;
   healthySince: string | null;
+  skippedReadsCount: number;
+  softLimitExceeded: boolean;
+  softLimitThreshold: number;
 }
 
 // Configurable parameters
 const DEFAULT_COOLDOWN_MS = 60000; // 60 seconds cooldown on quota exhaustion
 const CONSECUTIVE_FAILURES_THRESHOLD = 3; // 3 consecutive general errors trip circuit
+export const FIRESTORE_READ_SOFT_LIMIT = Number(process.env.FIRESTORE_READ_SOFT_LIMIT) || 35000;
 
 class FirestoreCircuitBreaker {
   private state: CircuitState = 'CLOSED';
@@ -28,9 +34,36 @@ class FirestoreCircuitBreaker {
   private cooldownMs = DEFAULT_COOLDOWN_MS;
   private healthySince: string | null = new Date().toISOString();
   private halfOpenProbeInFlight = false;
+  private skippedReadsCount = 0;
+  private softLimitExceeded = false;
 
   constructor(cooldownMs = DEFAULT_COOLDOWN_MS) {
     this.cooldownMs = cooldownMs;
+  }
+
+  public getOperationMode(): DatabaseOperationMode {
+    if (this.state === 'CLOSED') {
+      return this.softLimitExceeded ? 'SQLITE_FALLBACK' : 'FIRESTORE_PRIMARY';
+    }
+    if (this.state === 'OPEN') {
+      return 'SQLITE_FALLBACK';
+    }
+    return 'RECOVERING';
+  }
+
+  public checkSoftLimit(currentReads: number): boolean {
+    if (currentReads >= FIRESTORE_READ_SOFT_LIMIT) {
+      if (!this.softLimitExceeded) {
+        this.softLimitExceeded = true;
+        console.warn(`[CIRCUIT_BREAKER] Daily read soft limit reached (${currentReads} >= ${FIRESTORE_READ_SOFT_LIMIT}). Switching to conservative SQLITE_FALLBACK mode.`);
+      }
+      return true;
+    }
+    return false;
+  }
+
+  public resetSoftLimit(): void {
+    this.softLimitExceeded = false;
   }
 
   public setCooldown(ms: number) {
@@ -79,8 +112,17 @@ class FirestoreCircuitBreaker {
     );
   }
 
+  public recordSkippedRead(count = 1) {
+    this.skippedReadsCount += count;
+  }
+
   public canExecute(): boolean {
     const now = Date.now();
+
+    if (this.softLimitExceeded) {
+      this.skippedReadsCount++;
+      return false;
+    }
 
     if (this.state === 'CLOSED') {
       return true;
@@ -96,18 +138,21 @@ class FirestoreCircuitBreaker {
         return true;
       }
       // Still in cooldown period - short circuit
+      this.skippedReadsCount++;
       return false;
     }
 
     if (this.state === 'HALF_OPEN') {
       // Allow only one probe in flight during half-open
       if (this.halfOpenProbeInFlight) {
+        this.skippedReadsCount++;
         return false;
       }
       this.halfOpenProbeInFlight = true;
       return true;
     }
 
+    this.skippedReadsCount++;
     return false;
   }
 
@@ -186,6 +231,7 @@ class FirestoreCircuitBreaker {
 
     return {
       state: this.state,
+      operationMode: this.getOperationMode(),
       lastFailureTime: this.lastFailureTime,
       lastError: this.lastError,
       resourceExhaustedCount: this.resourceExhaustedCount,
@@ -195,6 +241,9 @@ class FirestoreCircuitBreaker {
       cooldownMs: this.cooldownMs,
       cooldownRemainingMs,
       healthySince: this.healthySince,
+      skippedReadsCount: this.skippedReadsCount,
+      softLimitExceeded: this.softLimitExceeded,
+      softLimitThreshold: FIRESTORE_READ_SOFT_LIMIT,
     };
   }
 

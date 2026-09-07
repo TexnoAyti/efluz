@@ -291,6 +291,32 @@ export async function initDatabase(): Promise<Database> {
       );
     `);
   } catch {}
+  try {
+    dbInstance.exec(`
+      CREATE TABLE IF NOT EXISTS competition_standings (
+        competition_id TEXT NOT NULL,
+        club_id TEXT NOT NULL,
+        rank INTEGER NOT NULL,
+        club_name TEXT NOT NULL,
+        short_name TEXT NOT NULL,
+        logo_url TEXT,
+        played INTEGER NOT NULL DEFAULT 0,
+        won INTEGER NOT NULL DEFAULT 0,
+        drawn INTEGER NOT NULL DEFAULT 0,
+        lost INTEGER NOT NULL DEFAULT 0,
+        goals_for INTEGER NOT NULL DEFAULT 0,
+        goals_against INTEGER NOT NULL DEFAULT 0,
+        goal_difference INTEGER NOT NULL DEFAULT 0,
+        points INTEGER NOT NULL DEFAULT 0,
+        form_json TEXT,
+        qualification_status TEXT,
+        manager_username TEXT,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (competition_id, club_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_competition_standings_rank ON competition_standings(competition_id, rank);
+    `);
+  } catch {}
 
   saveDatabaseSync();
   return dbInstance;
