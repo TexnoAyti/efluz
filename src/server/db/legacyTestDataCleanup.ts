@@ -27,9 +27,39 @@ function isExplicitTestFixtureId(id: unknown): boolean {
 
 function placeholders(count: number): string { return new Array(count).fill('?').join(', '); }
 
+function isKnownTestUserId(id: unknown): boolean {
+  const value = String(id || '').toLowerCase();
+  return userIdsForPredicate.has(value)
+    || value.startsWith('user-lock-test-')
+    || value.startsWith('user_a_')
+    || value.startsWith('user_b_');
+}
+
+const userIdsForPredicate = new Set<string>([
+  ...LEGACY_TEST_USER_IDS,
+  'user-test-1',
+  'user-test-2',
+  'user-100001',
+  'user-100002',
+  'user-200001',
+  'user-200002',
+  'admin_test_user',
+  'offline-test-user',
+].map((v) => v.toLowerCase()));
+
 /** Removes only known dev identities and explicitly marked test fixtures. Safe and idempotent. */
 export function cleanupLegacyTestData(): LegacyTestDataCleanupSummary {
-  const userIds = Array.from(LEGACY_TEST_USER_IDS);
+  const userIds = Array.from(new Set<string>([
+    ...LEGACY_TEST_USER_IDS,
+    'user-test-1',
+    'user-test-2',
+    'user-100001',
+    'user-100002',
+    'user-200001',
+    'user-200002',
+    'admin_test_user',
+    'offline-test-user',
+  ]));
   const summary: LegacyTestDataCleanupSummary = {
     removedUsers: 0, removedMemberships: 0, removedOccupancies: 0,
     removedNotifications: 0, removedAuditLogs: 0, removedResultSubmissions: 0,
@@ -53,6 +83,11 @@ export function cleanupLegacyTestData(): LegacyTestDataCleanupSummary {
         .filter((row) => isExplicitTestFixtureId(row.id) || isTestFixtureSource(row.fixtureSource))
         .map((row) => String(row.id))
     );
+
+    const dynamicTestUsers = queryAll<any>('SELECT id FROM users')
+      .map((r) => String(r.id || ''))
+      .filter((id) => isKnownTestUserId(id));
+    for (const id of dynamicTestUsers) if (!userIds.includes(id)) userIds.push(id);
 
     const fakeSubmissionFixtures = userIds.length > 0
       ? queryAll<any>(
