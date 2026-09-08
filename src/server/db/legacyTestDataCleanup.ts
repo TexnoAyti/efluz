@@ -1,5 +1,6 @@
 import { dbTransaction, queryAll, queryRun, saveDatabaseSync } from './index';
 import { LEGACY_TEST_USER_IDS } from '../auth/telegramAuth';
+import { refreshMaterializedStandingsForCompetition } from './sqliteStandings';
 
 export interface LegacyTestDataCleanupSummary {
   removedUsers: number;
@@ -66,6 +67,8 @@ export function cleanupLegacyTestData(): LegacyTestDataCleanupSummary {
     removedDisputes: 0, removedPendingMutations: 0, removedTestFixtures: 0,
     resetOfficialFixtures: 0, clearedParticipants: 0,
   };
+
+  const affectedCompetitionIds = new Set<string>();
 
   dbTransaction(() => {
     const markedFixtures = queryAll<any>(
@@ -145,12 +148,16 @@ export function cleanupLegacyTestData(): LegacyTestDataCleanupSummary {
     }
 
     for (const fixtureId of explicitFixtureIds) {
+      const fixture = queryAll<any>('SELECT competition_id AS competitionId FROM fixtures WHERE id = ? LIMIT 1', [fixtureId])[0];
+      if (fixture?.competitionId) affectedCompetitionIds.add(String(fixture.competitionId));
       summary.removedResultSubmissions += queryRun('DELETE FROM result_submissions WHERE fixture_id = ?', [fixtureId]).changes;
       summary.removedPendingMutations += queryRun('DELETE FROM pending_mutations WHERE entity_id = ?', [fixtureId]).changes;
       summary.removedTestFixtures += queryRun('DELETE FROM fixtures WHERE id = ?', [fixtureId]).changes;
     }
 
     for (const fixtureId of officialFixturesToReset) {
+      const fixture = queryAll<any>('SELECT competition_id AS competitionId FROM fixtures WHERE id = ? LIMIT 1', [fixtureId])[0];
+      if (fixture?.competitionId) affectedCompetitionIds.add(String(fixture.competitionId));
       const remaining = queryAll<any>('SELECT id FROM result_submissions WHERE fixture_id = ? LIMIT 1', [fixtureId]);
       if (remaining.length === 0) {
         summary.resetOfficialFixtures += queryRun(
@@ -162,6 +169,19 @@ export function cleanupLegacyTestData(): LegacyTestDataCleanupSummary {
       }
     }
   });
+
+  for (const competitionId of affectedCompetitionIds) {
+    try { refreshMaterializedStandingsForCompetition(competitionId); } catch {}
+  }
+
+  // Remove deterministic future test season left by historical verification suites.
+  // Never touch the real active season-2026-27.
+  try {
+    queryRun("DELETE FROM season_league_clubs WHERE season_id = 'season-2027-28'");
+    queryRun("DELETE FROM club_memberships WHERE season_id = 'season-2027-28'");
+    queryRun("DELETE FROM competitions WHERE season_id = 'season-2027-28'");
+    queryRun("DELETE FROM seasons WHERE id = 'season-2027-28'");
+  } catch {}
 
   saveDatabaseSync();
   return summary;
