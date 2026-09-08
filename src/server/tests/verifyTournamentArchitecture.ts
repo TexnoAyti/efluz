@@ -30,7 +30,19 @@ function assert(requirement: string, expected: string, actual: string, condition
   console.log(`${status} | ${requirement} -> ${actual}`);
 }
 
+function assertSafeTestFirestoreRuntime(): void {
+  const hosted = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1' || Boolean(process.env.K_SERVICE);
+  const explicitlyAllowed = process.env.EFLUZ_ALLOW_REMOTE_TEST_WRITES === 'true';
+  if (hosted || !explicitlyAllowed) {
+    throw new Error(
+      'REMOTE_TEST_WRITES_BLOCKED: Tournament architecture tests may write test users/results to Firestore. ' +
+      'Run only against an isolated test project with EFLUZ_ALLOW_REMOTE_TEST_WRITES=true.'
+    );
+  }
+}
+
 export async function runTournamentArchitectureTests() {
+  assertSafeTestFirestoreRuntime();
   console.log('\n================================================================');
   console.log('  STARTING TOURNAMENT ARCHITECTURE COMPREHENSIVE VERIFICATION  ');
   console.log('================================================================\n');
