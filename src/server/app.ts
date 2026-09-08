@@ -121,7 +121,7 @@ export function createApp() {
     catch (err: any) { next(err); }
   });
   app.use(authMiddleware);
-  app.use('/api', healthRouter);
+  app.use('/api/health', healthRouter);
   app.use('/api', authRouter);
   app.use('/api', seasonsRouter);
   app.use('/api', readOptimizedRouter);
