@@ -3,8 +3,7 @@ import { initDatabase, queryGet, getDbFilePath } from './db';
 import { seedDatabase, repairSeason202627Roster } from './db/seed';
 import { cleanupLegacyTestData } from './db/legacyTestDataCleanup';
 import { authMiddleware } from './middleware/authMiddleware';
-import { getFirestoreDb, getFirebaseStatus } from './firebase/admin';
-import { migrateSqliteToFirestore } from './firebase/migrateSqliteToFirestore';
+import { getFirebaseStatus } from './firebase/admin';
 import { getActiveOccupanciesForSeason } from './firebase/firestoreStore';
 import { COLLECTIONS } from './firebase/collections';
 import { firestoreCircuitBreaker } from './firebase/circuitBreaker';
@@ -12,6 +11,7 @@ import { loadSnapshotFromFile } from './firebase/occupancySnapshot';
 import { processPendingMutations } from './sync/mutationQueue';
 import { processPendingMatchdayMutations } from './sync/matchdayMutationSync';
 import { attemptFirestoreRecoveryProbe } from './firebase/recoveryProbe';
+import { hydrateSqliteFromFirestoreSafely } from './firebase/sqliteHydration';
 import { healthRouter } from './routes/health.routes';
 import { authRouter } from './routes/auth.routes';
 import { seasonsRouter } from './routes/seasons.routes';
@@ -61,9 +61,6 @@ export async function ensureDbReady(): Promise<void> {
         seedDatabase();
         repairSeason202627Roster();
 
-        // Purge only deterministic legacy test data. This is local SQLite-only and therefore
-        // does not consume Firestore reads. It also runs before any occupancy hydration so stale
-        // developer accounts/results cannot leak back into the UI from the local runtime DB.
         try {
           const cleanup = cleanupLegacyTestData();
           const removed = cleanup.removedUsers + cleanup.removedResultSubmissions + cleanup.removedTestFixtures + cleanup.resetOfficialFixtures;
@@ -75,26 +72,20 @@ export async function ensureDbReady(): Promise<void> {
         console.log(`[BOOT] SQLite baseline ready from: ${getDbFilePath()}`);
         loadSnapshotFromFile();
 
-        if (fbStatus.isConfigured) {
+        if (fbStatus.isConfigured && firestoreCircuitBreaker.canExecute()) {
           try {
-            const db = getFirestoreDb();
-            if (firestoreCircuitBreaker.canExecute()) {
-              const clubsSnap = await db.collection(COLLECTIONS.CLUBS).limit(1).get();
-              if (clubsSnap.empty) {
-                console.log('[BOOT] Firestore is empty. Auto-seeding from SQLite baseline...');
-                await migrateSqliteToFirestore();
-                console.log('[BOOT] Firestore auto-seeding completed.');
-              } else {
-                console.log(`[BOOT] Connected to authoritative Firestore database: ${fbStatus.databaseId}`);
-                getActiveOccupanciesForSeason('season-2026-27').catch(() => {});
-              }
+            const hydrated = await hydrateSqliteFromFirestoreSafely();
+            if (hydrated) {
+              console.log('[BOOT] SQLite cache hydrated from authoritative Firestore.');
             } else {
-              console.log('[BOOT] Firestore read gate is closed; starting in SQLite fallback mode.');
+              console.log('[BOOT] Firestore hydration skipped/aborted; preserving safe local baseline.');
             }
           } catch (fbErr: any) {
             firestoreCircuitBreaker.recordFailure(fbErr);
-            console.warn('[BOOT] Firestore connection warning, operating with resilient SQLite fallback:', fbErr.message);
+            console.warn('[BOOT] Firestore hydration warning, operating with resilient SQLite fallback:', fbErr.message);
           }
+        } else if (fbStatus.isConfigured) {
+          console.log('[BOOT] Firestore read gate is closed; starting in SQLite fallback mode.');
         }
         startBackgroundReconciliation();
       } catch (err) {
@@ -118,33 +109,34 @@ export function createApp() {
   app.use(express.json());
   app.use(async (req, res, next) => {
     try { await ensureDbReady(); next(); }
-    catch (err: any) { res.status(500).json({ error: 'Database initialization failed', details: err.message }); }
+    catch (err: any) { next(err); }
   });
   app.use(authMiddleware);
-  app.use('/api/health', healthRouter);
-  app.use('/api/auth', authRouter);
-  app.use('/api/seasons', seasonsRouter);
+  app.use('/api', healthRouter);
+  app.use('/api', authRouter);
+  app.use('/api', seasonsRouter);
   app.use('/api', readOptimizedRouter);
-  app.use('/api/me', notificationsReadResilientRouter);
-  app.use('/api/leagues', leaguesRouter);
-  app.use('/api/clubs', clubsRouter);
-  app.use('/api/competitions', competitionsRouter);
-  app.use('/api/fixtures', fixturesResilientRouter);
-  app.use('/api/fixtures', fixturesRouter);
-  app.use('/api/me', meResilientRouter);
-  app.use('/api/me', meRouter);
-  app.use('/api/users', usersRouter);
-  app.use('/api/admin', adminFixtureSafetyRouter);
-  app.use('/api/admin', adminOfflineControlsRouter);
-  app.use('/api/admin', adminResilientRouter);
-  app.use('/api/admin', adminRouter);
-  app.use('/api/*', (req, res) => res.status(404).json({ error: 'Endpoint not found', path: req.originalUrl }));
-  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-    console.error('[SERVER] Unhandled error:', err);
-    res.status(err.status || 500).json({ error: err.message || 'Internal Server Error', status: err.status || 500 });
+  app.use('/api', notificationsReadResilientRouter);
+  app.use('/api', leaguesRouter);
+  app.use('/api', clubsRouter);
+  app.use('/api', competitionsRouter);
+  app.use('/api', fixturesResilientRouter);
+  app.use('/api', fixturesRouter);
+  app.use('/api', meResilientRouter);
+  app.use('/api', meRouter);
+  app.use('/api', usersRouter);
+  app.use('/api', adminFixtureSafetyRouter);
+  app.use('/api', adminOfflineControlsRouter);
+  app.use('/api', adminResilientRouter);
+  app.use('/api', adminRouter);
+
+  app.use((err: any, _req: any, res: any, _next: any) => {
+    console.error('[API ERROR]', err);
+    if (res.headersSent) return;
+    res.status(err?.status || err?.statusCode || 500).json({ error: err?.message || 'Internal server error' });
   });
   return app;
 }
 
-export const app = createApp();
+const app = createApp();
 export default app;
