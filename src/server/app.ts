@@ -77,6 +77,15 @@ export async function ensureDbReady(): Promise<void> {
             const hydrated = await hydrateSqliteFromFirestoreSafely();
             if (hydrated) {
               console.log('[BOOT] SQLite cache hydrated from authoritative Firestore.');
+              // Firestore may still contain legacy test artifacts created by old verification suites.
+              // Purge them again AFTER hydration so they can never reappear in runtime/UI.
+              try {
+                const cleanup = cleanupLegacyTestData();
+                const removed = cleanup.removedUsers + cleanup.removedResultSubmissions + cleanup.removedTestFixtures + cleanup.resetOfficialFixtures;
+                if (removed > 0) console.log('[BOOT] Post-hydration legacy test data cleanup:', cleanup);
+              } catch (cleanupErr: any) {
+                console.warn('[BOOT] Post-hydration legacy test data cleanup warning:', cleanupErr?.message || String(cleanupErr));
+              }
             } else {
               console.log('[BOOT] Firestore hydration skipped/aborted; preserving safe local baseline.');
             }
