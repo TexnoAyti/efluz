@@ -70,7 +70,29 @@ export async function hydrateSqliteFromFirestoreSafely(): Promise<boolean> {
     const seasons = snapshots[COLLECTIONS.SEASONS]?.docs || [];
     const leagues = snapshots[COLLECTIONS.LEAGUES]?.docs || [];
     const clubs = snapshots[COLLECTIONS.CLUBS]?.docs || [];
-    const users = snapshots[COLLECTIONS.USERS]?.docs || [];
+    const rawUsers = snapshots[COLLECTIONS.USERS]?.docs || [];
+    // Legacy tests created duplicate user documents with the same Telegram ID.
+    // SQLite enforces telegram_id UNIQUE, so normalize the remote snapshot before
+    // touching local tables. Prefer the newest document for each telegramId.
+    const usersByTelegramId = new Map<string, any>();
+    const usersWithoutTelegramId: any[] = [];
+    for (const d of rawUsers) {
+      const x = d.data() || {};
+      const telegramId = String(x.telegramId ?? '').trim();
+      if (!telegramId) {
+        usersWithoutTelegramId.push(d);
+        continue;
+      }
+      const existing = usersByTelegramId.get(telegramId);
+      if (!existing) {
+        usersByTelegramId.set(telegramId, d);
+        continue;
+      }
+      const existingTs = Date.parse(iso(existing.data()?.updatedAt, iso(existing.data()?.createdAt))) || 0;
+      const currentTs = Date.parse(iso(x.updatedAt, iso(x.createdAt))) || 0;
+      if (currentTs >= existingTs) usersByTelegramId.set(telegramId, d);
+    }
+    const users = [...usersByTelegramId.values(), ...usersWithoutTelegramId];
     const competitions = snapshots[COLLECTIONS.COMPETITIONS]?.docs || [];
     const fixtures = snapshots[COLLECTIONS.FIXTURES]?.docs || [];
 
