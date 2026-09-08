@@ -2,10 +2,19 @@ import { getFirestoreDb } from './admin';
 import { COLLECTIONS } from './collections';
 import { firestoreCircuitBreaker } from './circuitBreaker';
 import { dbTransaction, queryGet, queryRun } from '../db';
-import { trackFirestoreRead } from './firestoreStore';
 
 const TARGET_SEASON_ID = 'season-2026-27';
 const MIN_CLUB_COUNT = 80;
+
+function isHostedProduction(): boolean {
+  return Boolean(
+    process.env.NODE_ENV === 'production' ||
+    process.env.VERCEL === '1' ||
+    process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    process.env.LAMBDA_TASK_ROOT ||
+    process.env.K_SERVICE
+  );
+}
 
 function iso(value: any, fallback = ''): string {
   if (!value) return fallback;
@@ -26,41 +35,36 @@ function json(value: any): string {
 }
 
 /**
- * Serverless-safe cache hydration.
- * Firestore remains the source of truth; bundled SQLite is only a disposable bootstrap cache.
- * Hydration is aborted unless the remote snapshot passes sanity checks.
+ * Hydrate the disposable SQLite runtime cache from authoritative Firestore.
+ * The remote snapshot is validated before any local tables are replaced.
  */
 export async function hydrateSqliteFromFirestoreSafely(): Promise<boolean> {
-  if (!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_TASK_ROOT)) {
-    return false;
-  }
+  if (!isHostedProduction()) return false;
   if (process.env.EFLUZ_FIRESTORE_HYDRATION === 'off') return false;
   if (!firestoreCircuitBreaker.canExecute()) return false;
 
-  const db = getFirestoreDb();
-  const names = [
-    COLLECTIONS.USERS,
-    COLLECTIONS.SEASONS,
-    COLLECTIONS.LEAGUES,
-    COLLECTIONS.CLUBS,
-    COLLECTIONS.SEASON_LEAGUE_CLUBS,
-    COLLECTIONS.CLUB_MEMBERSHIPS,
-    COLLECTIONS.COMPETITIONS,
-    COLLECTIONS.COMPETITION_PARTICIPANTS,
-    COLLECTIONS.FIXTURES,
-    COLLECTIONS.RESULT_SUBMISSIONS,
-    COLLECTIONS.DISPUTES,
-    COLLECTIONS.STANDINGS,
-    COLLECTIONS.NOTIFICATIONS,
-    COLLECTIONS.AUDIT_LOGS,
-  ];
-
   try {
+    const firestore = getFirestoreDb();
+    const names = [
+      COLLECTIONS.USERS,
+      COLLECTIONS.SEASONS,
+      COLLECTIONS.LEAGUES,
+      COLLECTIONS.CLUBS,
+      COLLECTIONS.SEASON_LEAGUE_CLUBS,
+      COLLECTIONS.CLUB_MEMBERSHIPS,
+      COLLECTIONS.COMPETITIONS,
+      COLLECTIONS.COMPETITION_PARTICIPANTS,
+      COLLECTIONS.FIXTURES,
+      COLLECTIONS.RESULT_SUBMISSIONS,
+      COLLECTIONS.DISPUTES,
+      COLLECTIONS.STANDINGS,
+      COLLECTIONS.NOTIFICATIONS,
+      COLLECTIONS.AUDIT_LOGS,
+    ];
+
     const snapshots: Record<string, any> = {};
     for (const name of names) {
-      const snap = await db.collection(name).get();
-      snapshots[name] = snap;
-      trackFirestoreRead(name, snap.empty ? 1 : snap.docs.length, `hydrateSqliteFromFirestoreSafely:${name}`);
+      snapshots[name] = await firestore.collection(name).get();
     }
 
     const seasons = snapshots[COLLECTIONS.SEASONS]?.docs || [];
@@ -136,8 +140,9 @@ export async function hydrateSqliteFromFirestoreSafely(): Promise<boolean> {
 
       for (const d of snapshots[COLLECTIONS.CLUB_MEMBERSHIPS]?.docs || []) {
         const x = d.data();
-        queryRun(`INSERT INTO club_memberships (id, season_id, club_id, user_id, claimed_at, status) VALUES (?, ?, ?, ?, ?, ?)`, [x.id || d.id, String(x.seasonId ?? ''), String(x.clubId ?? ''), String(x.userId ?? ''), iso(x.claimedAt), String(x.status ?? 'active').toLowerCase() === 'active' ? 'active' : 'released']);
-        if (String(x.status ?? 'active').toLowerCase() === 'active') {
+        const status = String(x.status ?? 'active').toLowerCase();
+        queryRun(`INSERT INTO club_memberships (id, season_id, club_id, user_id, claimed_at, status) VALUES (?, ?, ?, ?, ?, ?)`, [x.id || d.id, String(x.seasonId ?? ''), String(x.clubId ?? ''), String(x.userId ?? ''), iso(x.claimedAt), status === 'active' ? 'active' : 'released']);
+        if (status === 'active') {
           const u = users.find((ud: any) => (ud.data()?.id || ud.id) === x.userId)?.data() || {};
           queryRun(`INSERT OR REPLACE INTO active_occupancies_cache (club_id, season_id, user_id, username, display_name, status, updated_at) VALUES (?, ?, ?, ?, ?, 'active', ?)`, [String(x.clubId ?? ''), String(x.seasonId ?? ''), String(x.userId ?? ''), String(u.username ?? x.ownerUsername ?? ''), `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || String(u.username ?? ''), iso(x.updatedAt, iso(x.claimedAt))]);
         }
@@ -145,12 +150,7 @@ export async function hydrateSqliteFromFirestoreSafely(): Promise<boolean> {
 
       for (const d of competitions) {
         const x = d.data();
-        const fixtureCount = Number(x.fixtureCount ?? x.fixturesCount ?? 0);
         queryRun(`INSERT INTO competitions (id, season_id, league_id, name, type, schedule_mode, status, format_config_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [x.id || d.id, String(x.seasonId ?? ''), x.leagueId ? String(x.leagueId) : null, String(x.name ?? ''), String(x.type ?? 'LEAGUE'), String(x.scheduleMode ?? 'GENERATED_SCHEDULE'), String(x.status ?? 'upcoming'), json(x.formatConfig), iso(x.createdAt)]);
-        if (fixtureCount === 0) {
-          const count = fixtures.filter((fd: any) => (fd.data()?.competitionId || '') === (x.id || d.id)).length;
-          if (count > 0) queryRun('UPDATE competitions SET status = status WHERE id = ?', [x.id || d.id]);
-        }
       }
 
       for (const d of snapshots[COLLECTIONS.COMPETITION_PARTICIPANTS]?.docs || []) {
@@ -199,7 +199,7 @@ export async function hydrateSqliteFromFirestoreSafely(): Promise<boolean> {
     return true;
   } catch (error: any) {
     firestoreCircuitBreaker.recordFailure(error);
-    console.warn('[DB HYDRATION] Hydration failed; preserving existing SQLite baseline.', error?.message || error);
+    console.warn('[DB HYDRATION] Hydration failed; preserving local SQLite baseline.', error?.message || error);
     return false;
   }
 }
