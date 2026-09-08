@@ -28,6 +28,7 @@ import {
 } from '../firebase/firestoreStore';
 import { SEED_CLUBS, SEED_LEAGUES } from '../db/seed';
 import { migrateSqliteToFirestore } from '../firebase/migrateSqliteToFirestore';
+import { processPendingMutations } from '../sync/mutationQueue';
 import { generateKnockoutBracket } from '../tournament/knockoutEngine';
 import { evaluateSeasonQualifications } from '../tournament/qualificationEngine';
 import { getFirebaseStatus, getFirestoreDb } from '../firebase/admin';
@@ -526,5 +527,22 @@ adminRouter.post('/read-metrics/reset', async (_req: Request, res: Response) => 
   resetReadMetrics();
   res.json({ success: true, message: 'Firestore read metrics have been reset.' });
 });
+
+adminRouter.post('/sync', async (_req: Request, res: Response) => {
+  try {
+    const result = await processPendingMutations();
+    res.status(200).json({
+      success: true,
+      result,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
+
 
 

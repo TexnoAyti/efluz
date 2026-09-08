@@ -3963,37 +3963,77 @@ export async function getUserNotificationsFirestore(userId: string, limit = 30):
 }
 
 export async function markSingleNotificationReadFirestore(userId: string, notificationId: string): Promise<void> {
+  const now = new Date().toISOString();
+  invalidateFirestoreCache(`firestore:notifications:${userId}`);
+
   try {
-    const db = getFirestoreDb();
-    const docRef = db.collection(COLLECTIONS.NOTIFICATIONS).doc(notificationId);
-    const doc = await docRef.get();
-    if (doc.exists && doc.data()?.userId === userId) {
-      await docRef.update({ isRead: true });
-    }
-  } catch (err: any) {
-    console.warn('[FIRESTORE FALLBACK] markSingleNotificationReadFirestore:', err.message);
     queryRun(`UPDATE notifications SET is_read = 1 WHERE user_id = ? AND id = ?`, [userId, notificationId]);
+  } catch {}
+
+  if (firestoreCircuitBreaker.canExecute()) {
+    try {
+      const db = getFirestoreDb();
+      const docRef = db.collection(COLLECTIONS.NOTIFICATIONS).doc(notificationId);
+      const doc = await docRef.get();
+      if (doc.exists && doc.data()?.userId === userId) {
+        await docRef.update({ isRead: true, readAt: now });
+        firestoreCircuitBreaker.recordSuccess();
+        return;
+      }
+    } catch (err: any) {
+      console.warn('[FIRESTORE FALLBACK] markSingleNotificationReadFirestore:', err.message);
+      firestoreCircuitBreaker.recordFailure(err);
+    }
   }
+
+  enqueueMutation({
+    mutationId: `notif_read_${notificationId}_${userId}`,
+    entityType: 'NOTIFICATION_READ',
+    entityId: notificationId,
+    operation: 'MARK_READ',
+    payload: { userId, notificationId, readAt: now },
+    createdAt: now,
+  });
 }
 
 export async function markNotificationsReadFirestore(userId: string): Promise<void> {
-  try {
-    const db = getFirestoreDb();
-    const snap = await db
-      .collection(COLLECTIONS.NOTIFICATIONS)
-      .where('userId', '==', userId)
-      .where('isRead', '==', false)
-      .get();
+  const now = new Date().toISOString();
+  invalidateFirestoreCache(`firestore:notifications:${userId}`);
 
-    if (!snap.empty) {
-      const batch = db.batch();
-      snap.docs.forEach((doc) => batch.update(doc.ref, { isRead: true }));
-      await batch.commit();
-    }
-  } catch (err: any) {
-    console.warn('[FIRESTORE FALLBACK] markNotificationsReadFirestore:', err.message);
+  try {
     queryRun(`UPDATE notifications SET is_read = 1 WHERE user_id = ?`, [userId]);
+  } catch {}
+
+  if (firestoreCircuitBreaker.canExecute()) {
+    try {
+      const db = getFirestoreDb();
+      const snap = await db
+        .collection(COLLECTIONS.NOTIFICATIONS)
+        .where('userId', '==', userId)
+        .where('isRead', '==', false)
+        .get();
+
+      if (!snap.empty) {
+        const batch = db.batch();
+        snap.docs.forEach((doc) => batch.update(doc.ref, { isRead: true, readAt: now }));
+        await batch.commit();
+        firestoreCircuitBreaker.recordSuccess();
+        return;
+      }
+    } catch (err: any) {
+      console.warn('[FIRESTORE FALLBACK] markNotificationsReadFirestore:', err.message);
+      firestoreCircuitBreaker.recordFailure(err);
+    }
   }
+
+  enqueueMutation({
+    mutationId: `notif_read_all_${userId}_${Date.now()}`,
+    entityType: 'NOTIFICATION_READ_ALL',
+    entityId: userId,
+    operation: 'MARK_ALL_READ',
+    payload: { userId, readAt: now },
+    createdAt: now,
+  });
 }
 
 /**

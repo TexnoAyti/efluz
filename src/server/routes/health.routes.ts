@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { requireAdmin } from '../middleware/authMiddleware';
 import { getFirebaseStatus, getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS } from '../firebase/collections';
 import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
@@ -72,7 +73,7 @@ healthRouter.get('/resilience', (req: Request, res: Response) => {
   });
 });
 
-healthRouter.post('/sync', async (req: Request, res: Response) => {
+healthRouter.post('/sync', requireAdmin, async (req: Request, res: Response) => {
   try {
     const result = await processPendingMutations();
     res.status(200).json({

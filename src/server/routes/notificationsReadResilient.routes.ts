@@ -1,29 +1,45 @@
 import { Router, Request, Response } from 'express';
 import { requireAuth } from '../middleware/authMiddleware';
-import { queryAll } from '../db';
+import {
+  getUserNotificationsFirestore,
+  markNotificationsReadFirestore,
+  markSingleNotificationReadFirestore,
+} from '../firebase/firestoreStore';
+import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
 
 export const notificationsReadResilientRouter = Router();
-notificationsReadResilientRouter.use(requireAuth);
 
-notificationsReadResilientRouter.get('/notifications', (req: Request, res: Response) => {
+// Apply strict non-public caching headers to all notification endpoints
+notificationsReadResilientRouter.use((req: Request, res: Response, next) => {
+  res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+});
+
+// GET /api/me/notifications
+notificationsReadResilientRouter.get('/notifications', requireAuth, async (req: Request, res: Response) => {
   const userId = req.user!.id;
-  const rows = queryAll<any>(
-    'SELECT id, user_id, type, title, message, is_read, created_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 30',
-    [userId]
-  );
+  try {
+    const notifications = await getUserNotificationsFirestore(userId, 30);
+    res.json({ notifications });
+  } catch (err: any) {
+    handleFirestoreError(res, err, 'GET /api/me/notifications');
+  }
+});
 
-  res.setHeader('Cache-Control', 'private, max-age=15, stale-while-revalidate=60');
-  res.setHeader('X-EFLUZ-READ-SOURCE', 'SQLITE_LOCAL');
-  res.json({
-    notifications: rows.map((r) => ({
-      id: r.id,
-      userId: r.user_id,
-      type: r.type,
-      title: r.title,
-      message: r.message,
-      isRead: Boolean(r.is_read),
-      createdAt: r.created_at,
-    })),
-    source: 'SQLITE',
-  });
+// POST /api/me/notifications/read
+notificationsReadResilientRouter.post('/notifications/read', requireAuth, async (req: Request, res: Response) => {
+  const userId = req.user!.id;
+  const { notificationId } = req.body || {};
+  try {
+    if (notificationId && typeof notificationId === 'string') {
+      await markSingleNotificationReadFirestore(userId, notificationId);
+    } else {
+      await markNotificationsReadFirestore(userId);
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    handleFirestoreError(res, err, 'POST /api/me/notifications/read');
+  }
 });

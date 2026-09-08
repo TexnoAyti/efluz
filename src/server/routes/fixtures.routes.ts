@@ -9,6 +9,7 @@ import {
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
 
 export const fixturesRouter = Router();
+export const fixturesResilientRouter = fixturesRouter;
 
 const resultSubmissionSchema = z.object({
   homeScore: z.number().int().min(0, 'Home score must be >= 0'),

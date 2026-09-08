@@ -11,18 +11,21 @@ import { loadSnapshotFromFile } from './firebase/occupancySnapshot';
 import { processPendingMutations } from './sync/mutationQueue';
 
 // Route imports
+import { readOptimizedRouter } from './routes/readOptimized.routes';
 import { healthRouter } from './routes/health.routes';
 import { authRouter } from './routes/auth.routes';
 import { seasonsRouter } from './routes/seasons.routes';
 import { leaguesRouter } from './routes/leagues.routes';
 import { clubsRouter } from './routes/clubs.routes';
 import { competitionsRouter } from './routes/competitions.routes';
-import { fixturesRouter } from './routes/fixtures.routes';
-import { meRouter } from './routes/me.routes';
+import { fixturesRouter, fixturesResilientRouter } from './routes/fixtures.routes';
+import { notificationsReadResilientRouter } from './routes/notificationsReadResilient.routes';
+import { meRouter, meResilientRouter } from './routes/me.routes';
 import { usersRouter } from './routes/users.routes';
 import { adminRouter } from './routes/admin.routes';
 
 let dbInitPromise: Promise<void> | null = null;
+let dbReady = false;
 let syncWorkerStarted = false;
 
 function startBackgroundReconciliation(): void {
@@ -51,6 +54,7 @@ function startBackgroundReconciliation(): void {
 }
 
 export async function ensureDbReady(): Promise<void> {
+  if (dbReady) return;
   if (!dbInitPromise) {
     dbInitPromise = (async () => {
       try {
@@ -85,7 +89,9 @@ export async function ensureDbReady(): Promise<void> {
 
         // Start background mutation reconciliation worker
         startBackgroundReconciliation();
+        dbReady = true;
       } catch (err) {
+        dbInitPromise = null;
         console.error('[BOOT] Error during system initialization:', err);
         throw err;
       }
@@ -124,6 +130,9 @@ export function createApp() {
 
   app.use(authMiddleware);
 
+  // Mount optimized read routes at /api before legacy endpoints
+  app.use('/api', readOptimizedRouter);
+
   // Mount API routes
   app.use('/api/health', healthRouter);
   app.use('/api/auth', authRouter);
@@ -131,7 +140,10 @@ export function createApp() {
   app.use('/api/leagues', leaguesRouter);
   app.use('/api/clubs', clubsRouter);
   app.use('/api/competitions', competitionsRouter);
+  app.use('/api/fixtures', fixturesResilientRouter);
   app.use('/api/fixtures', fixturesRouter);
+  app.use('/api/me', notificationsReadResilientRouter);
+  app.use('/api/me', meResilientRouter);
   app.use('/api/me', meRouter);
   app.use('/api/users', usersRouter);
   app.use('/api/admin', adminRouter);

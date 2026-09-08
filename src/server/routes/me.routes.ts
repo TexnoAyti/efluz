@@ -10,6 +10,15 @@ import {
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
 
 export const meRouter = Router();
+export const meResilientRouter = meRouter;
+
+// Ensure all personalized /api/me responses are never cached publicly
+meRouter.use((req: Request, res: Response, next) => {
+  res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+});
 
 meRouter.get('/', requireAuth, async (req: Request, res: Response) => {
   const user = req.user!;

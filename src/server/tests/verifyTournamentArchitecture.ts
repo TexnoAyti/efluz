@@ -509,3 +509,10 @@ export async function runTournamentArchitectureTests() {
     return false;
   }
 }
+
+if (process.argv[1] && (process.argv[1].endsWith('verifyTournamentArchitecture.ts') || process.argv[1].includes('verifyTournamentArchitecture'))) {
+  runTournamentArchitectureTests().then((ok) => process.exit(ok ? 0 : 1)).catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

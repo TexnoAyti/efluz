@@ -487,6 +487,30 @@ async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: 
       break;
     }
 
+    case 'NOTIFICATION_READ': {
+      const notifRef = db.collection(COLLECTIONS.NOTIFICATIONS).doc(entityId);
+      const notifDoc = await notifRef.get();
+      if (notifDoc.exists) {
+        await notifRef.update({ isRead: true, readAt: payload.readAt || new Date().toISOString() });
+      }
+      break;
+    }
+
+    case 'NOTIFICATION_READ_ALL': {
+      const notifsSnap = await db
+        .collection(COLLECTIONS.NOTIFICATIONS)
+        .where('userId', '==', entityId)
+        .where('isRead', '==', false)
+        .get();
+      if (!notifsSnap.empty) {
+        const b = db.batch();
+        const readAt = payload.readAt || new Date().toISOString();
+        notifsSnap.docs.forEach((d) => b.update(d.ref, { isRead: true, readAt }));
+        await b.commit();
+      }
+      break;
+    }
+
     default:
       console.warn(`[MUTATION_QUEUE] Unknown mutation entityType: ${entityType}`);
   }
