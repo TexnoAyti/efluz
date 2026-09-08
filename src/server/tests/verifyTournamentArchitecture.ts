@@ -341,14 +341,13 @@ export async function runTournamentArchitectureTests() {
     faCupFixtures.length > 0
   );
 
-  // Find a cup fixture in Round 1 that does not involve Arsenal (to preserve user-test-1 ownership)
+  // Find a cup fixture in Round 1 (matchday 1) that does not involve Arsenal (to preserve user-test-1 ownership)
   const r1Match = faCupFixtures.find(
     (f: any) =>
       f.homeClubId !== 'club-arsenal' &&
       f.awayClubId !== 'club-arsenal' &&
-      f.status !== 'CONFIRMED' &&
-      (f.roundName === 'Round of 32' || f.matchday === 1)
-  ) || faCupFixtures.find((f: any) => f.status !== 'CONFIRMED') || faCupFixtures[0];
+      Number(f.matchday) === 1
+  ) || faCupFixtures.find((f: any) => Number(f.matchday) === 1) || faCupFixtures[0];
 
   // Ensure active owners exist for this cup fixture
   await getOrCreateTelegramUserFirestore({ id: '200001', username: 'cup_manager_home', first_name: 'CupHome' });
@@ -390,6 +389,10 @@ export async function runTournamentArchitectureTests() {
     winnerClubId: null,
     resultConfirmedAt: null,
   });
+  queryRun(
+    `UPDATE fixtures SET status = 'SCHEDULED', home_score = NULL, away_score = NULL, winner_club_id = NULL, result_confirmed_at = NULL WHERE id = ?`,
+    [r1Match.id]
+  );
   const cupSubsSnap = await db.collection('result_submissions').where('fixtureId', '==', r1Match.id).get();
   for (const d of cupSubsSnap.docs) {
     await d.ref.delete();

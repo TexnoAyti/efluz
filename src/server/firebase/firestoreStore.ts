@@ -901,8 +901,9 @@ export async function getUserActiveClubFirestore(userId: string, seasonId = 'sea
 export async function claimClubAtomicFirestore(
   userId: string,
   clubId: string,
-  seasonId = 'season-2026-27'
-): Promise<{ success: boolean; club: Club }> {
+  seasonId = 'season-2026-27',
+  options?: { authoritativeOnly?: boolean }
+): Promise<{ success: boolean; club: Club; authoritative?: boolean; isFallback?: boolean }> {
   const now = new Date().toISOString();
 
   if (firestoreCircuitBreaker.canExecute()) {
@@ -1056,9 +1057,16 @@ export async function claimClubAtomicFirestore(
       } catch {}
 
       invalidateFirestoreCache();
-      return claimResult;
+      return {
+        ...claimResult,
+        authoritative: true,
+        isFallback: false,
+      };
     } catch (err: any) {
       if (err instanceof ClubConflictError || err instanceof ClubNotFoundError) {
+        throw err;
+      }
+      if (options?.authoritativeOnly) {
         throw err;
       }
       firestoreCircuitBreaker.recordFailure(err);
@@ -1066,6 +1074,9 @@ export async function claimClubAtomicFirestore(
       console.warn('[FIRESTORE FALLBACK] claimClubAtomicFirestore:', err.message);
     }
   } else {
+    if (options?.authoritativeOnly) {
+      throw new Error('CIRCUIT_OPEN: Firestore circuit breaker is OPEN. Authoritative write cannot execute.');
+    }
     recordFallbackUsage();
   }
 
@@ -1084,7 +1095,7 @@ export async function claimClubAtomicFirestore(
     if (existingMem) {
       if (existingMem.club_id === clubId) {
         const c = getClubByIdFirestore(clubId, seasonId, userId);
-        return { success: true, club: c as any };
+        return { success: true, club: c as any, authoritative: false, isFallback: true };
       }
       throw new ClubConflictError(
         'Your club selection is locked for this season. You have already claimed another club.',
@@ -1158,7 +1169,7 @@ export async function claimClubAtomicFirestore(
       },
     };
 
-    return { success: true, club: claimedClub };
+    return { success: true, club: claimedClub, authoritative: false, isFallback: true };
   });
 }
 
@@ -2552,6 +2563,14 @@ export function computeAndSortStandings(
 }
 
 function fallbackCalculateStandings(competitionId: string): StandingsRow[] {
+  try {
+    const { refreshMaterializedStandingsForCompetition } = require('../db/sqliteStandings');
+    const standings = refreshMaterializedStandingsForCompetition(competitionId);
+    if (standings && standings.length > 0) {
+      return standings;
+    }
+  } catch {}
+
   const comp = queryGet<any>('SELECT * FROM competitions WHERE id = ?', [competitionId]);
   if (!comp) return [];
 
@@ -3524,8 +3543,9 @@ export async function getOrCreateDevUserFirestore(devUserId: string): Promise<Us
 export async function reopenFixtureFirestore(
   adminUserId: string,
   fixtureId: string,
-  notes?: string
-): Promise<{ success: boolean; fixtureId: string }> {
+  notes?: string,
+  options?: { authoritativeOnly?: boolean }
+): Promise<{ success: boolean; fixtureId: string; authoritative?: boolean; isFallback?: boolean }> {
   const now = new Date().toISOString();
 
   if (firestoreCircuitBreaker.canExecute()) {
@@ -3582,13 +3602,19 @@ export async function reopenFixtureFirestore(
       });
 
       invalidateFirestoreCache();
-      return { success: true, fixtureId };
+      return { success: true, fixtureId, authoritative: true, isFallback: false };
     } catch (err: any) {
+      if (options?.authoritativeOnly) {
+        throw err;
+      }
       firestoreCircuitBreaker.recordFailure(err);
       recordFallbackUsage();
       console.warn('[FIRESTORE FALLBACK] reopenFixtureFirestore:', err.message);
     }
   } else {
+    if (options?.authoritativeOnly) {
+      throw new Error('CIRCUIT_OPEN: Firestore circuit breaker is OPEN. Authoritative write cannot execute.');
+    }
     recordFallbackUsage();
   }
 
@@ -3615,7 +3641,7 @@ export async function reopenFixtureFirestore(
     createdAt: now,
   });
 
-  return { success: true, fixtureId };
+  return { success: true, fixtureId, authoritative: false, isFallback: true };
 }
 
 export async function resolveDisputeFirestore(
@@ -3966,25 +3992,42 @@ export async function markSingleNotificationReadFirestore(userId: string, notifi
   const now = new Date().toISOString();
   invalidateFirestoreCache(`firestore:notifications:${userId}`);
 
-  try {
-    queryRun(`UPDATE notifications SET is_read = 1 WHERE user_id = ? AND id = ?`, [userId, notificationId]);
-  } catch {}
+  // 1. Verify ownership locally if notification exists in SQLite
+  const localNotif = queryGet<{ user_id: string }>('SELECT user_id FROM notifications WHERE id = ?', [notificationId]);
+  if (localNotif && localNotif.user_id !== userId) {
+    throw new Error(`OWNERSHIP_MISMATCH: User '${userId}' does not own notification '${notificationId}'.`);
+  }
 
+  // 2. Check and update Firestore authoritatively if accessible
   if (firestoreCircuitBreaker.canExecute()) {
     try {
       const db = getFirestoreDb();
       const docRef = db.collection(COLLECTIONS.NOTIFICATIONS).doc(notificationId);
       const doc = await docRef.get();
-      if (doc.exists && doc.data()?.userId === userId) {
+      if (doc.exists) {
+        if (doc.data()?.userId !== userId) {
+          throw new Error(`OWNERSHIP_MISMATCH: User '${userId}' does not own notification '${notificationId}'.`);
+        }
         await docRef.update({ isRead: true, readAt: now });
+        try {
+          queryRun(`UPDATE notifications SET is_read = 1 WHERE user_id = ? AND id = ?`, [userId, notificationId]);
+        } catch {}
         firestoreCircuitBreaker.recordSuccess();
         return;
       }
     } catch (err: any) {
+      if (err.message?.includes('OWNERSHIP_MISMATCH')) {
+        throw err;
+      }
       console.warn('[FIRESTORE FALLBACK] markSingleNotificationReadFirestore:', err.message);
       firestoreCircuitBreaker.recordFailure(err);
     }
   }
+
+  // 3. Fallback: update local SQLite only for matching user and enqueue mutation
+  try {
+    queryRun(`UPDATE notifications SET is_read = 1 WHERE user_id = ? AND id = ?`, [userId, notificationId]);
+  } catch {}
 
   enqueueMutation({
     mutationId: `notif_read_${notificationId}_${userId}`,
@@ -4116,8 +4159,9 @@ export async function syncFirestoreClubCrests(): Promise<{
 export async function adminReleaseClubFirestore(
   adminUserId: string,
   clubId: string,
-  seasonId = 'season-2026-27'
-): Promise<{ success: boolean; message: string; club: Club }> {
+  seasonId = 'season-2026-27',
+  options?: { authoritativeOnly?: boolean }
+): Promise<{ success: boolean; message: string; club: Club; authoritative?: boolean; isFallback?: boolean }> {
   const now = new Date().toISOString();
   try {
     const db = getFirestoreDb();
@@ -4169,7 +4213,20 @@ export async function adminReleaseClubFirestore(
     });
 
     await batch.commit();
+
+    invalidateFirestoreCache();
+    const updatedClub = await getClubByIdFirestore(clubId, seasonId);
+    return {
+      success: true,
+      message: `Club '${updatedClub?.name || clubId}' has been released and is now available.`,
+      club: updatedClub!,
+      authoritative: true,
+      isFallback: false,
+    };
   } catch (err: any) {
+    if (options?.authoritativeOnly) {
+      throw err;
+    }
     console.warn('[FIRESTORE FALLBACK] adminReleaseClubFirestore:', err.message);
   }
 
@@ -4189,6 +4246,8 @@ export async function adminReleaseClubFirestore(
     success: true,
     message: `Club '${updatedClub?.name || clubId}' has been released and is now available.`,
     club: updatedClub!,
+    authoritative: false,
+    isFallback: true,
   };
 }
 
@@ -4196,8 +4255,9 @@ export async function adminAssignClubFirestore(
   adminUserId: string,
   clubId: string,
   targetUserId: string,
-  seasonId = 'season-2026-27'
-): Promise<{ success: boolean; message: string; club: Club }> {
+  seasonId = 'season-2026-27',
+  options?: { authoritativeOnly?: boolean }
+): Promise<{ success: boolean; message: string; club: Club; authoritative?: boolean; isFallback?: boolean }> {
   const now = new Date().toISOString();
   try {
     const db = getFirestoreDb();
@@ -4270,7 +4330,20 @@ export async function adminAssignClubFirestore(
     });
 
     await batch.commit();
+
+    invalidateFirestoreCache();
+    const updatedClub = await getClubByIdFirestore(clubId, seasonId);
+    return {
+      success: true,
+      message: `Club '${updatedClub?.name || clubId}' assigned to player '${targetUserId}'.`,
+      club: updatedClub!,
+      authoritative: true,
+      isFallback: false,
+    };
   } catch (err: any) {
+    if (options?.authoritativeOnly) {
+      throw err;
+    }
     console.warn('[FIRESTORE FALLBACK] adminAssignClubFirestore:', err.message);
   }
 
@@ -4295,6 +4368,8 @@ export async function adminAssignClubFirestore(
     success: true,
     message: `Club '${updatedClub?.name || clubId}' assigned to player '${targetUserId}'.`,
     club: updatedClub!,
+    authoritative: false,
+    isFallback: true,
   };
 }
 
@@ -4385,8 +4460,9 @@ export async function adminApproveFixtureResultFirestore(
   fixtureId: string,
   homeScore: number,
   awayScore: number,
-  notes?: string
-): Promise<{ success: boolean; message: string; fixture: Fixture }> {
+  notes?: string,
+  options?: { authoritativeOnly?: boolean }
+): Promise<{ success: boolean; message: string; fixture: Fixture; authoritative?: boolean; isFallback?: boolean }> {
   const now = new Date().toISOString();
   let winnerClubId: string | null = null;
 
@@ -4458,13 +4534,21 @@ export async function adminApproveFixtureResultFirestore(
         success: true,
         message: `Match result (${homeScore} - ${awayScore}) confirmed and standings updated.`,
         fixture: updatedFixture!,
+        authoritative: true,
+        isFallback: false,
       };
     } catch (err: any) {
+      if (options?.authoritativeOnly) {
+        throw err;
+      }
       firestoreCircuitBreaker.recordFailure(err);
       recordFallbackUsage();
       console.warn('[FIRESTORE FALLBACK] adminApproveFixtureResultFirestore:', err.message);
     }
   } else {
+    if (options?.authoritativeOnly) {
+      throw new Error('CIRCUIT_OPEN: Firestore circuit breaker is OPEN. Authoritative write cannot execute.');
+    }
     recordFallbackUsage();
   }
 
@@ -4511,6 +4595,8 @@ export async function adminApproveFixtureResultFirestore(
     success: true,
     message: `Match result (${homeScore} - ${awayScore}) confirmed locally (queued for background sync).`,
     fixture: updatedFixture!,
+    authoritative: false,
+    isFallback: true,
   };
 }
 

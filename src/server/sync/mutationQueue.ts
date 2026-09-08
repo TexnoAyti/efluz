@@ -263,9 +263,14 @@ export async function processPendingMutations(): Promise<SyncResult> {
         console.log(`[MUTATION_QUEUE] Successfully synced mutation ${item.mutationId} (${item.entityType})`);
       } catch (err: any) {
         const isQuota = firestoreCircuitBreaker.isQuotaExhaustedError(err);
+        const isOwnershipMismatch = err.message?.includes('OWNERSHIP_MISMATCH');
+        const isTerminalError = isOwnershipMismatch;
         firestoreCircuitBreaker.recordFailure(err);
 
-        updateMutationStatus(item.mutationId, isQuota ? 'PENDING' : 'FAILED', err.message);
+        // Failed or fallback-only replay must remain PENDING for retry.
+        // Terminal permission/ownership mismatches must be marked FAILED.
+        const nextStatus: MutationStatus = isTerminalError ? 'FAILED' : 'PENDING';
+        updateMutationStatus(item.mutationId, nextStatus, err.message);
         failed++;
         errors.push({ mutationId: item.mutationId, error: err.message });
         console.error(`[MUTATION_QUEUE] Failed syncing mutation ${item.mutationId}:`, err.message);
@@ -445,21 +450,30 @@ async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: 
     case 'CLUB_CLAIM': {
       // payload: { clubId, seasonId, userId, claimedAt }
       const { claimClubAtomicFirestore } = await import('../firebase/firestoreStore');
-      await claimClubAtomicFirestore(payload.userId, payload.clubId, payload.seasonId);
+      const res = await claimClubAtomicFirestore(payload.userId, payload.clubId, payload.seasonId, { authoritativeOnly: true });
+      if (!res || !res.authoritative || (res as any).isFallback) {
+        throw new Error('AUTHORITATIVE_WRITE_FAILED: Remote claim write did not succeed.');
+      }
       break;
     }
 
     case 'ADMIN_ASSIGN_CLUB': {
       // payload: { clubId, targetUserId, seasonId, notes }
       const { adminAssignClubFirestore } = await import('../firebase/firestoreStore');
-      await adminAssignClubFirestore(payload.adminUserId || 'system', payload.clubId, payload.targetUserId, payload.seasonId);
+      const res = await adminAssignClubFirestore(payload.adminUserId || 'system', payload.clubId, payload.targetUserId, payload.seasonId, { authoritativeOnly: true });
+      if (!res || !res.authoritative || (res as any).isFallback) {
+        throw new Error('AUTHORITATIVE_WRITE_FAILED: Remote admin assign club did not succeed.');
+      }
       break;
     }
 
     case 'ADMIN_RELEASE_CLUB': {
       // payload: { clubId, seasonId, notes }
       const { adminReleaseClubFirestore } = await import('../firebase/firestoreStore');
-      await adminReleaseClubFirestore(payload.adminUserId || 'system', payload.clubId, payload.seasonId);
+      const res = await adminReleaseClubFirestore(payload.adminUserId || 'system', payload.clubId, payload.seasonId, { authoritativeOnly: true });
+      if (!res || !res.authoritative || (res as any).isFallback) {
+        throw new Error('AUTHORITATIVE_WRITE_FAILED: Remote admin release club did not succeed.');
+      }
       break;
     }
 
@@ -473,10 +487,28 @@ async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: 
     case 'ADMIN_DECISION': {
       if (item.operation === 'ADMIN_APPROVE_RESULT') {
         const { adminApproveFixtureResultFirestore } = await import('../firebase/firestoreStore');
-        await adminApproveFixtureResultFirestore(payload.adminUserId, payload.fixtureId, payload.homeScore, payload.awayScore, payload.notes);
+        const res = await adminApproveFixtureResultFirestore(
+          payload.adminUserId,
+          payload.fixtureId,
+          payload.homeScore,
+          payload.awayScore,
+          payload.notes,
+          { authoritativeOnly: true }
+        );
+        if (!res || !res.authoritative || (res as any).isFallback) {
+          throw new Error('AUTHORITATIVE_WRITE_FAILED: Remote admin approve write did not succeed.');
+        }
       } else if (item.operation === 'ADMIN_REJECT_RESULT') {
         const { reopenFixtureFirestore } = await import('../firebase/firestoreStore');
-        await reopenFixtureFirestore(payload.adminUserId, payload.fixtureId, payload.notes);
+        const res = await reopenFixtureFirestore(
+          payload.adminUserId,
+          payload.fixtureId,
+          payload.notes,
+          { authoritativeOnly: true }
+        );
+        if (!res || !res.authoritative || (res as any).isFallback) {
+          throw new Error('AUTHORITATIVE_WRITE_FAILED: Remote reopen write did not succeed.');
+        }
       }
       break;
     }
@@ -490,16 +522,23 @@ async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: 
     case 'NOTIFICATION_READ': {
       const notifRef = db.collection(COLLECTIONS.NOTIFICATIONS).doc(entityId);
       const notifDoc = await notifRef.get();
-      if (notifDoc.exists) {
-        await notifRef.update({ isRead: true, readAt: payload.readAt || new Date().toISOString() });
+      if (!notifDoc.exists) {
+        console.warn(`[MUTATION_QUEUE] Notification ${entityId} not found in Firestore during sync replay. Skipping.`);
+        break;
       }
+      const notifData = notifDoc.data();
+      if (payload.userId && notifData?.userId !== payload.userId) {
+        throw new Error(`OWNERSHIP_MISMATCH: Notification ${entityId} belongs to user '${notifData?.userId}', not '${payload.userId}'.`);
+      }
+      await notifRef.update({ isRead: true, readAt: payload.readAt || new Date().toISOString() });
       break;
     }
 
     case 'NOTIFICATION_READ_ALL': {
+      const targetUserId = payload.userId || entityId;
       const notifsSnap = await db
         .collection(COLLECTIONS.NOTIFICATIONS)
-        .where('userId', '==', entityId)
+        .where('userId', '==', targetUserId)
         .where('isRead', '==', false)
         .get();
       if (!notifsSnap.empty) {
