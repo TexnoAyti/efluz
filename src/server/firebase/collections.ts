@@ -15,6 +15,7 @@ export const COLLECTIONS = {
   STANDINGS: 'standings',
   NOTIFICATIONS: 'notifications',
   AUDIT_LOGS: 'audit_logs',
+  MATCHDAY_LOCKS: 'matchday_locks',
 } as const;
 
 export interface FirestoreUserDoc {
@@ -94,6 +95,22 @@ export interface FirestoreCompetitionDoc {
   adminOverrideStatus?: 'AUTO' | 'FORCE_OPEN' | 'FORCE_LOCKED' | 'PAUSED';
   createdAt: string;
   updatedAt?: string;
+}
+
+export interface FirestoreMatchdayLockDoc {
+  id: string; // Formatted strictly as: `${seasonId}*${competitionId}*${matchday}`
+  seasonId: string;
+  competitionId: string;
+  matchday: number;
+  isLocked: boolean;
+  isOpen: boolean;
+  overrideStatus: 'AUTO' | 'FORCE_OPEN' | 'FORCE_LOCKED' | 'PAUSED';
+  openedAt?: string;
+  lockedAt?: string;
+  expiresAt?: string;
+  durationHours?: number;
+  updatedAt: string;
+  updatedByUserId?: string;
 }
 
 export interface FirestoreCompetitionParticipantDoc {

@@ -13,6 +13,7 @@ import {
   getOrCreateTelegramUserFirestore,
   ClubConflictError,
 } from '../firebase/firestoreStore';
+import { assertTestEnvironmentSafe } from '../utils/testGuard';
 
 function assert(condition: boolean, msg: string) {
   if (!condition) {
@@ -49,6 +50,8 @@ function createMockTelegramInitData(user: {
 }
 
 async function runProduction12StepVerification() {
+  assertTestEnvironmentSafe('firebasePersistenceTest');
+
   console.log('================================================================');
   console.log('🚀 MANDATORY 12-STEP PRODUCTION VERIFICATION TEST SUITE');
   console.log('================================================================\n');

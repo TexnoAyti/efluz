@@ -25,6 +25,7 @@ import { generateCompetitionFixtures } from '../services/fixtureService';
 import { calculateCompetitionStandings } from '../tournament/standingsEngine';
 import { generateKnockoutBracket, advanceKnockoutWinner } from '../tournament/knockoutEngine';
 import { evaluateSeasonQualifications } from '../tournament/qualificationEngine';
+import { assertTestEnvironmentSafe } from '../utils/testGuard';
 
 interface TestResult {
   step: string;
@@ -67,6 +68,8 @@ function createTelegramInitData(
 }
 
 async function runAdversarialTestSuite() {
+  assertTestEnvironmentSafe('adversarialTestSuite');
+
   console.log('\n===============================================================');
   console.log('  STARTING ADVERSARIAL SECURITY & INTEGRATION TEST SUITE');
   console.log('===============================================================\n');

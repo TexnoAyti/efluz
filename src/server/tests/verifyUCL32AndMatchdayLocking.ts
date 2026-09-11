@@ -11,8 +11,11 @@ import {
 } from '../firebase/firestoreStore';
 import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS } from '../firebase/collections';
+import { assertTestEnvironmentSafe } from '../utils/testGuard';
 
 export async function runUCL32AndLockingTests() {
+  assertTestEnvironmentSafe('verifyUCL32AndMatchdayLocking');
+
   console.log('\n================================================================');
   console.log('  STARTING UCL 32-TEAM FORMAT & MATCHDAY LOCKING TEST SUITE    ');
   console.log('================================================================\n');

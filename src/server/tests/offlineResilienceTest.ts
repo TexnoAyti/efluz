@@ -11,8 +11,11 @@ import {
 import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS } from '../firebase/collections';
 import { markSingleNotificationReadFirestore } from '../firebase/firestoreStore';
+import { assertTestEnvironmentSafe } from '../utils/testGuard';
 
 async function main() {
+  assertTestEnvironmentSafe('offlineResilienceTest');
+
   await initDatabase();
   seedDatabase();
 

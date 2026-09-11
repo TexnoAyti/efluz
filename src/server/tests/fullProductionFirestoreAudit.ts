@@ -20,8 +20,11 @@ import { generateKnockoutBracket, advanceKnockoutWinner } from '../tournament/kn
 import { evaluateSeasonQualifications } from '../tournament/qualificationEngine';
 import { COLLECTIONS } from '../firebase/collections';
 import { ensureDbReady } from '../app';
+import { assertTestEnvironmentSafe } from '../utils/testGuard';
 
 export async function runFullProductionFirestoreAudit() {
+  assertTestEnvironmentSafe('fullProductionFirestoreAudit');
+
   console.log('================================================================');
   console.log('🏛️ FULL PRODUCTION FIRESTORE PERSISTENCE & TOURNAMENT AUDIT');
   console.log('================================================================');

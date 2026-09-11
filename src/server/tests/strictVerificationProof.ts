@@ -6,8 +6,11 @@ import { seedDatabase } from '../db/seed';
 import { CompetitionEngine } from '../tournament/competitionEngine';
 import { claimClubAtomic, ClubConflictError, getClubById } from '../services/clubService';
 import { generateCompetitionFixtures } from '../services/fixtureService';
+import { assertTestEnvironmentSafe } from '../utils/testGuard';
 
 async function runStrictVerification() {
+  assertTestEnvironmentSafe('strictVerificationProof');
+
   console.log('================================================================');
   console.log('       STRICT VERIFICATION & DATABASE PROOF EXECUTION           ');
   console.log('================================================================\n');

@@ -17,8 +17,11 @@ import {
 } from '../firebase/firestoreStore';
 import { COLLECTIONS } from '../firebase/collections';
 import { ensureDbReady } from '../app';
+import { assertTestEnvironmentSafe } from '../utils/testGuard';
 
 async function runProductionDataConsistencyTest() {
+  assertTestEnvironmentSafe('productionDataConsistencyTest');
+
   console.log('================================================================');
   console.log('🚀 EFL UZ AUTHORITATIVE PRODUCTION DATA CONSISTENCY TEST SUITE');
   console.log('================================================================');

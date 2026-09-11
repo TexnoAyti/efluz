@@ -9,8 +9,11 @@ import { generateKnockoutBracket, advanceKnockoutWinner } from '../tournament/kn
 import { evaluateSeasonQualifications } from '../tournament/qualificationEngine';
 import { getUserNotifications } from '../services/notificationService';
 import { verifyTelegramWebAppData, getOrCreateDevUser } from '../auth/telegramAuth';
+import { assertTestEnvironmentSafe } from '../utils/testGuard';
 
 async function runVerification() {
+  assertTestEnvironmentSafe('verifyE2E');
+
   console.log('--- STARTING E2E BACKEND VERIFICATION ---');
 
   // 1. Init DB and seed

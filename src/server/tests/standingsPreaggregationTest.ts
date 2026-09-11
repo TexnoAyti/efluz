@@ -9,8 +9,11 @@ import {
 } from '../firebase/firestoreStore';
 import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS } from '../firebase/collections';
+import { assertTestEnvironmentSafe } from '../utils/testGuard';
 
 async function runStandingsTests() {
+  assertTestEnvironmentSafe('standingsPreaggregationTest');
+
   console.log('=============================================================');
   console.log('       STANDINGS PRE-AGGREGATION & ATOMICITY TEST SUITE       ');
   console.log('=============================================================');

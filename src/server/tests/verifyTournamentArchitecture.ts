@@ -14,6 +14,7 @@ import { validateOfficialFixtures, importOfficialFixtures, OfficialFixtureRecord
 import { getOrCreateTelegramUserFirestore } from '../firebase/firestoreStore';
 import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS } from '../firebase/collections';
+import { assertTestEnvironmentSafe } from '../utils/testGuard';
 
 interface AssertionResult {
   requirement: string;
@@ -31,6 +32,8 @@ function assert(requirement: string, expected: string, actual: string, condition
 }
 
 export async function runTournamentArchitectureTests() {
+  assertTestEnvironmentSafe('verifyTournamentArchitecture');
+
   console.log('\n================================================================');
   console.log('  STARTING TOURNAMENT ARCHITECTURE COMPREHENSIVE VERIFICATION  ');
   console.log('================================================================\n');

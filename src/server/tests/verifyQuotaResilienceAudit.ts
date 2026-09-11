@@ -20,6 +20,7 @@ import {
   getQueueStats,
 } from '../sync/mutationQueue';
 import { getDbFilePath } from '../db';
+import { assertTestEnvironmentSafe } from '../utils/testGuard';
 
 interface AuditResult {
   section: string;
@@ -37,6 +38,8 @@ function recordAudit(section: string, name: string, passed: boolean, details: st
 }
 
 export async function runQuotaResilienceAudit() {
+  assertTestEnvironmentSafe('verifyQuotaResilienceAudit');
+
   console.log('\n================================================================');
   console.log('    STRICT EFL UZ FIRESTORE QUOTA & RESILIENCE TEST SUITE      ');
   console.log('================================================================\n');
