@@ -519,18 +519,183 @@ export const api = {
   },
 
   async getAdminFixtures(
-    seasonId = 'season-2026-27',
-    competitionId?: string,
-    status?: string,
-    matchday?: number,
-    limit = 100,
-    skipCache = false
-  ): Promise<{ fixtures: Fixture[]; total: number }> {
-    let url = `/api/admin/fixtures?seasonId=${seasonId}&limit=${limit}`;
-    if (competitionId && competitionId !== 'ALL') url += `&competitionId=${competitionId}`;
-    if (status && status !== 'ALL') url += `&status=${status}`;
-    if (matchday) url += `&matchday=${matchday}`;
+    filterOrSeason:
+      | {
+          seasonId?: string;
+          competitionId?: string;
+          status?: string;
+          matchday?: number;
+          clubId?: string;
+          userId?: string;
+          search?: string;
+          page?: number;
+          limit?: number;
+        }
+      | string = 'season-2026-27',
+    competitionIdParam?: string | boolean,
+    statusParam?: string,
+    matchdayParam?: number,
+    limitParam = 100,
+    skipCacheParam = false
+  ): Promise<{ fixtures: Fixture[]; total: number; page?: number; totalPages?: number; limit?: number }> {
+    let url = '/api/admin/fixtures';
+    let skipCache = false;
+
+    if (typeof filterOrSeason === 'object') {
+      const p = new URLSearchParams();
+      if (filterOrSeason.seasonId) p.set('seasonId', filterOrSeason.seasonId);
+      if (filterOrSeason.competitionId && filterOrSeason.competitionId !== 'ALL') p.set('competitionId', filterOrSeason.competitionId);
+      if (filterOrSeason.status && filterOrSeason.status !== 'ALL') p.set('status', filterOrSeason.status);
+      if (filterOrSeason.matchday) p.set('matchday', String(filterOrSeason.matchday));
+      if (filterOrSeason.clubId) p.set('clubId', filterOrSeason.clubId);
+      if (filterOrSeason.userId) p.set('userId', filterOrSeason.userId);
+      if (filterOrSeason.search) p.set('search', filterOrSeason.search);
+      if (filterOrSeason.page) p.set('page', String(filterOrSeason.page));
+      if (filterOrSeason.limit !== undefined) p.set('limit', String(filterOrSeason.limit));
+      url += `?${p.toString()}`;
+      skipCache = Boolean(competitionIdParam);
+    } else {
+      const seasonId = filterOrSeason || 'season-2026-27';
+      const competitionId = competitionIdParam as string | undefined;
+      let q = `seasonId=${seasonId}&limit=${limitParam}`;
+      if (competitionId && competitionId !== 'ALL') q += `&competitionId=${competitionId}`;
+      if (statusParam && statusParam !== 'ALL') q += `&status=${statusParam}`;
+      if (matchdayParam) q += `&matchday=${matchdayParam}`;
+      url += `?${q}`;
+      skipCache = skipCacheParam;
+    }
+
     return request(url, { cacheTtlMs: 15000, skipCache });
+  },
+
+  async adminEditFixtureResult(
+    fixtureId: string,
+    params: {
+      homeScore: number;
+      awayScore: number;
+      status?: string;
+      notes?: string;
+    }
+  ): Promise<{ success: boolean; message: string; fixture: Fixture }> {
+    const res = await request<{ success: boolean; message: string; fixture: Fixture }>(
+      `/api/admin/fixtures/${fixtureId}/result`,
+      {
+        method: 'POST',
+        body: JSON.stringify(params),
+      }
+    );
+    invalidateClientCache();
+    return res;
+  },
+
+  async adminDeleteFixtureResult(
+    fixtureId: string,
+    options?: {
+      deleteSubmissions?: boolean;
+      notes?: string;
+    }
+  ): Promise<{ success: boolean; message: string; fixture: Fixture }> {
+    const res = await request<{ success: boolean; message: string; fixture: Fixture }>(
+      `/api/admin/fixtures/${fixtureId}/delete-result`,
+      {
+        method: 'POST',
+        body: JSON.stringify(options || {}),
+      }
+    );
+    invalidateClientCache();
+    return res;
+  },
+
+  async adminDeleteFixture(
+    fixtureId: string,
+    reason: string
+  ): Promise<{ success: boolean; message: string }> {
+    const res = await request<{ success: boolean; message: string }>(
+      `/api/admin/fixtures/${fixtureId}`,
+      {
+        method: 'DELETE',
+        body: JSON.stringify({ reason }),
+      }
+    );
+    invalidateClientCache();
+    return res;
+  },
+
+  async adminGetUserDetail(userId: string): Promise<any> {
+    return request(`/api/admin/users/${userId}/detail`, { cacheTtlMs: 10000, skipCache: true });
+  },
+
+  async adminSetUserRole(
+    userId: string,
+    isAdmin: boolean
+  ): Promise<{ success: boolean; message: string; user: User }> {
+    const res = await request<{ success: boolean; message: string; user: User }>(
+      `/api/admin/users/${userId}/role`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ isAdmin }),
+      }
+    );
+    invalidateClientCache();
+    return res;
+  },
+
+  async adminSetUserSuspension(
+    userId: string,
+    isSuspended: boolean,
+    reason?: string
+  ): Promise<{ success: boolean; message: string; user: User }> {
+    const res = await request<{ success: boolean; message: string; user: User }>(
+      `/api/admin/users/${userId}/suspend`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ isSuspended, reason }),
+      }
+    );
+    invalidateClientCache();
+    return res;
+  },
+
+  async adminDeleteUser(
+    userId: string,
+    reason?: string
+  ): Promise<{ success: boolean; message: string }> {
+    const res = await request<{ success: boolean; message: string }>(
+      `/api/admin/users/${userId}`,
+      {
+        method: 'DELETE',
+        body: JSON.stringify({ reason }),
+      }
+    );
+    invalidateClientCache();
+    return res;
+  },
+
+  async adminGetSubmissions(params?: {
+    fixtureId?: string;
+    userId?: string;
+    limit?: number;
+  }): Promise<{ submissions: any[]; total: number }> {
+    const q = new URLSearchParams();
+    if (params?.fixtureId) q.set('fixtureId', params.fixtureId);
+    if (params?.userId) q.set('userId', params.userId);
+    if (params?.limit) q.set('limit', String(params.limit));
+    return request(`/api/admin/submissions?${q.toString()}`, { cacheTtlMs: 10000, skipCache: true });
+  },
+
+  async adminDeleteSubmission(
+    submissionId: string,
+    notes?: string
+  ): Promise<{ success: boolean; message: string }> {
+    const res = await request<{ success: boolean; message: string }>(
+      `/api/admin/submissions/${submissionId}`,
+      {
+        method: 'DELETE',
+        body: JSON.stringify({ notes }),
+      }
+    );
+    invalidateClientCache();
+    return res;
   },
 
   async getAdminDiagnostics(): Promise<{

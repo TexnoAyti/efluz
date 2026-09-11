@@ -2,7 +2,20 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { requireAdmin } from '../middleware/authMiddleware';
 import { validateBody } from '../middleware/validationMiddleware';
-import { getDisputes, getAllAdminUsers, getAuditLogs } from '../services/adminService';
+import {
+  getDisputes,
+  getAllAdminUsers,
+  getAuditLogs,
+  editFixtureResult,
+  deleteFixtureResult,
+  deleteFixture,
+  getUserDetail,
+  setUserAdminRole,
+  setUserSuspension,
+  deleteUser,
+  getResultSubmissions,
+  deleteResultSubmission,
+} from '../services/adminService';
 import {
   generateCompetitionFixturesFirestore,
   reopenFixtureFirestore,
@@ -135,19 +148,208 @@ adminRouter.get('/fixtures', async (req: Request, res: Response) => {
   const competitionId = req.query.competitionId as string | undefined;
   const status = req.query.status as string | undefined;
   const matchday = req.query.matchday ? parseInt(req.query.matchday as string, 10) : undefined;
-  const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 150;
+  const clubId = req.query.clubId as string | undefined;
+  const userId = req.query.userId as string | undefined;
+  const search = (req.query.search as string)?.trim().toLowerCase();
+  const page = req.query.page ? Math.max(1, parseInt(req.query.page as string, 10)) : 1;
+  const limit = req.query.limit !== undefined ? parseInt(req.query.limit as string, 10) : 50;
 
   try {
-    const fixtures = await getFixturesFirestore({
+    let fixtures = await getFixturesFirestore({
       seasonId,
       competitionId: competitionId === 'ALL' ? undefined : competitionId,
       status: status === 'ALL' ? undefined : status,
       matchday: matchday || undefined,
+      clubId: clubId || undefined,
+      userId: userId || undefined,
+      limit: 0,
+    });
+
+    if (search) {
+      fixtures = fixtures.filter((f) => {
+        const homeName = (f.homeClub?.name || f.homeClubId || '').toLowerCase();
+        const awayName = (f.awayClub?.name || f.awayClubId || '').toLowerCase();
+        const compName = (f.competitionName || f.competitionId || '').toLowerCase();
+        return (
+          f.id.toLowerCase().includes(search) ||
+          homeName.includes(search) ||
+          awayName.includes(search) ||
+          compName.includes(search)
+        );
+      });
+    }
+
+    const total = fixtures.length;
+    let paginatedFixtures = fixtures;
+    let totalPages = 1;
+
+    if (limit > 0) {
+      totalPages = Math.ceil(total / limit) || 1;
+      const startIndex = (page - 1) * limit;
+      paginatedFixtures = fixtures.slice(startIndex, startIndex + limit);
+    }
+
+    res.json({
+      fixtures: paginatedFixtures,
+      total,
+      page,
+      totalPages,
       limit,
     });
-    res.json({ fixtures, total: fixtures.length });
   } catch (err: any) {
     handleFirestoreError(res, err, 'GET /api/admin/fixtures');
+  }
+});
+
+// Admin manually enter or edit fixture result
+const adminEditResultSchema = z.object({
+  homeScore: z.number().int().min(0, 'Home score must be >= 0'),
+  awayScore: z.number().int().min(0, 'Away score must be >= 0'),
+  status: z.enum(['CONFIRMED', 'AWAITING_RESULT', 'SCHEDULED']).optional(),
+  notes: z.string().optional(),
+});
+
+adminRouter.post('/fixtures/:id/result', validateBody(adminEditResultSchema), async (req: Request, res: Response) => {
+  const adminUserId = req.user!.id;
+  const adminUsername = req.user!.username || 'admin';
+  const fixtureId = req.params.id;
+
+  try {
+    const result = await editFixtureResult(adminUserId, adminUsername, fixtureId, req.body);
+    res.json(result);
+  } catch (err: any) {
+    handleFirestoreError(res, err, `POST /api/admin/fixtures/${fixtureId}/result`);
+  }
+});
+
+// Admin delete fixture result (reset score and status back to SCHEDULED)
+const adminDeleteResultSchema = z.object({
+  deleteSubmissions: z.boolean().optional(),
+  notes: z.string().optional(),
+});
+
+adminRouter.post('/fixtures/:id/delete-result', validateBody(adminDeleteResultSchema), async (req: Request, res: Response) => {
+  const adminUserId = req.user!.id;
+  const adminUsername = req.user!.username || 'admin';
+  const fixtureId = req.params.id;
+
+  try {
+    const result = await deleteFixtureResult(adminUserId, adminUsername, fixtureId, req.body);
+    res.json(result);
+  } catch (err: any) {
+    handleFirestoreError(res, err, `POST /api/admin/fixtures/${fixtureId}/delete-result`);
+  }
+});
+
+// Admin delete fixture
+const adminDeleteFixtureSchema = z.object({
+  reason: z.string().min(3, 'Reason must be at least 3 characters'),
+});
+
+adminRouter.delete('/fixtures/:id', validateBody(adminDeleteFixtureSchema), async (req: Request, res: Response) => {
+  const adminUserId = req.user!.id;
+  const adminUsername = req.user!.username || 'admin';
+  const fixtureId = req.params.id;
+
+  try {
+    const result = await deleteFixture(adminUserId, adminUsername, fixtureId, req.body.reason);
+    res.json(result);
+  } catch (err: any) {
+    handleFirestoreError(res, err, `DELETE /api/admin/fixtures/${fixtureId}`);
+  }
+});
+
+// Submissions management
+adminRouter.get('/submissions', async (req: Request, res: Response) => {
+  const fixtureId = req.query.fixtureId as string | undefined;
+  const userId = req.query.userId as string | undefined;
+  const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 100;
+
+  try {
+    const submissions = await getResultSubmissions({ fixtureId, userId, limit });
+    res.json({ submissions, total: submissions.length });
+  } catch (err: any) {
+    handleFirestoreError(res, err, 'GET /api/admin/submissions');
+  }
+});
+
+adminRouter.delete('/submissions/:id', async (req: Request, res: Response) => {
+  const adminUserId = req.user!.id;
+  const adminUsername = req.user!.username || 'admin';
+  const submissionId = req.params.id;
+  const notes = req.body?.notes as string | undefined;
+
+  try {
+    const result = await deleteResultSubmission(adminUserId, adminUsername, submissionId, notes);
+    res.json(result);
+  } catch (err: any) {
+    handleFirestoreError(res, err, `DELETE /api/admin/submissions/${submissionId}`);
+  }
+});
+
+// User detailed inspect
+adminRouter.get('/users/:id/detail', async (req: Request, res: Response) => {
+  const targetUserId = req.params.id;
+  try {
+    const detail = await getUserDetail(targetUserId);
+    res.json(detail);
+  } catch (err: any) {
+    handleFirestoreError(res, err, `GET /api/admin/users/${targetUserId}/detail`);
+  }
+});
+
+// User role management (Make/Remove Admin)
+const adminSetRoleSchema = z.object({
+  isAdmin: z.boolean(),
+});
+
+adminRouter.post('/users/:id/role', validateBody(adminSetRoleSchema), async (req: Request, res: Response) => {
+  const adminUserId = req.user!.id;
+  const adminUsername = req.user!.username || 'admin';
+  const targetUserId = req.params.id;
+
+  try {
+    const result = await setUserAdminRole(adminUserId, adminUsername, targetUserId, req.body.isAdmin);
+    res.json(result);
+  } catch (err: any) {
+    handleFirestoreError(res, err, `POST /api/admin/users/${targetUserId}/role`);
+  }
+});
+
+// User suspension management
+const adminSetSuspensionSchema = z.object({
+  isSuspended: z.boolean(),
+  reason: z.string().optional(),
+});
+
+adminRouter.post('/users/:id/suspend', validateBody(adminSetSuspensionSchema), async (req: Request, res: Response) => {
+  const adminUserId = req.user!.id;
+  const adminUsername = req.user!.username || 'admin';
+  const targetUserId = req.params.id;
+
+  try {
+    const result = await setUserSuspension(adminUserId, adminUsername, targetUserId, req.body.isSuspended, req.body.reason);
+    res.json(result);
+  } catch (err: any) {
+    handleFirestoreError(res, err, `POST /api/admin/users/${targetUserId}/suspend`);
+  }
+});
+
+// Safe User deletion
+const adminDeleteUserSchema = z.object({
+  reason: z.string().optional(),
+});
+
+adminRouter.delete('/users/:id', validateBody(adminDeleteUserSchema), async (req: Request, res: Response) => {
+  const adminUserId = req.user!.id;
+  const adminUsername = req.user!.username || 'admin';
+  const targetUserId = req.params.id;
+
+  try {
+    const result = await deleteUser(adminUserId, adminUsername, targetUserId, req.body.reason);
+    res.json(result);
+  } catch (err: any) {
+    handleFirestoreError(res, err, `DELETE /api/admin/users/${targetUserId}`);
   }
 });
 

@@ -139,12 +139,14 @@ async function runDeploymentSelfCheck() {
     }
     console.log('✅ PASS [CHECK 3.4]: GET /api/me returned HTTP 401 JSON (Clean 401, NOT HTML)');
 
-    // 3.5 /api/auth/dev-profiles
+    // 3.5 /api/auth/dev-profiles (200 in dev, 403 in production - both MUST be clean JSON, NEVER HTML)
     const devProfiles = await testEndpoint('/api/auth/dev-profiles');
-    if (devProfiles.status !== 200 || !devProfiles.isJson || !Array.isArray(devProfiles.json?.profiles)) {
-      throw new Error(`FAILED [CHECK 3.5]: /api/auth/dev-profiles failed -> HTTP ${devProfiles.status}, text="${devProfiles.text}"`);
+    const isDevAllowed = devProfiles.status === 200 && devProfiles.isJson && Array.isArray(devProfiles.json?.profiles);
+    const isProdBlocked = devProfiles.status === 403 && devProfiles.isJson && !devProfiles.text.includes('<!doctype html>');
+    if (!isDevAllowed && !isProdBlocked) {
+      throw new Error(`FAILED [CHECK 3.5]: /api/auth/dev-profiles failed -> HTTP ${devProfiles.status}, text="${devProfiles.text.slice(0, 100)}"`);
     }
-    console.log(`✅ PASS [CHECK 3.5]: GET /api/auth/dev-profiles returned HTTP 200 JSON (${devProfiles.json.profiles.length} profiles)`);
+    console.log(`✅ PASS [CHECK 3.5]: GET /api/auth/dev-profiles returned HTTP ${devProfiles.status} JSON (dev=${isDevAllowed}, prod=${isProdBlocked})`);
 
     // 3.6 /api/auth/telegram (empty body -> JSON 400, NEVER 405 HTML)
     const authTest = await testEndpoint('/api/auth/telegram', {

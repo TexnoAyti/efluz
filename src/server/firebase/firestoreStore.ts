@@ -3849,6 +3849,7 @@ export async function getAuditLogsFirestore(limit = 50): Promise<AuditLog[]> {
       oldValue: parsedOld,
       newValue: parsedNew,
       ipAddress: data.ipAddress || undefined,
+      notes: (data as any).notes || undefined,
       createdAt: data.createdAt,
     };
   });
@@ -3864,21 +3865,52 @@ export async function createAuditLogFirestore(
   entityId: string,
   oldValue?: any,
   newValue?: any,
-  ipAddress?: string
+  ipAddress?: string,
+  actorUsername?: string,
+  notes?: string
 ): Promise<void> {
   const db = getFirestoreDb();
   const now = new Date().toISOString();
-  await db.collection(COLLECTIONS.AUDIT_LOGS).add({
-    actorUserId,
-    action,
-    entityType,
-    entityId,
-    oldValueJson: oldValue ? JSON.stringify(oldValue) : null,
-    newValueJson: newValue ? JSON.stringify(newValue) : null,
-    ipAddress: ipAddress || null,
-    createdAt: now,
-  });
-  trackFirestoreWrite(COLLECTIONS.AUDIT_LOGS, 1, 'createAuditLogFirestore');
+  const auditId = `audit-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  try {
+    await db.collection(COLLECTIONS.AUDIT_LOGS).add({
+      actorUserId,
+      actorUsername: actorUsername || null,
+      action,
+      entityType,
+      entityId,
+      oldValueJson: oldValue ? JSON.stringify(oldValue) : null,
+      newValueJson: newValue ? JSON.stringify(newValue) : null,
+      ipAddress: ipAddress || null,
+      notes: notes || null,
+      createdAt: now,
+    });
+    trackFirestoreWrite(COLLECTIONS.AUDIT_LOGS, 1, 'createAuditLogFirestore');
+  } catch (err: any) {
+    console.warn('[FIRESTORE AUDIT LOG WARN]:', err.message);
+  }
+
+  // Also log to SQLite for local consistency
+  try {
+    queryRun(
+      `INSERT INTO audit_logs (id, actor_user_id, actor_username, action, entity_type, entity_id, old_value_json, new_value_json, ip_address, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        auditId,
+        actorUserId,
+        actorUsername || '',
+        action,
+        entityType,
+        entityId,
+        oldValue ? JSON.stringify(oldValue) : null,
+        newValue ? JSON.stringify(newValue) : null,
+        ipAddress || null,
+        now,
+      ]
+    );
+  } catch {
+    // ignore
+  }
 }
 
 export async function createNotificationFirestore(
@@ -4731,5 +4763,662 @@ export async function getPendingResultsFirestore(seasonId = 'season-2026-27'): P
   }
 }
 
+// ----------------------------------------------------
+// PRODUCTION CONSOLE: ADMIN MATCH & USER MANAGEMENT
+// ----------------------------------------------------
 
+export async function adminEditFixtureResultFirestore(
+  adminUserId: string,
+  adminUsername: string,
+  fixtureId: string,
+  params: {
+    homeScore: number;
+    awayScore: number;
+    status?: string;
+    notes?: string;
+  }
+): Promise<{ success: boolean; message: string; fixture: Fixture }> {
+  if (params.homeScore < 0 || params.awayScore < 0) {
+    throw new Error('Scores must be non-negative integers.');
+  }
+  const now = new Date().toISOString();
+  const db = getFirestoreDb();
+  const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
+  const fixDoc = await fixRef.get();
+  if (!fixDoc.exists) {
+    throw new Error(`Fixture '${fixtureId}' not found.`);
+  }
 
+  const existing = fixDoc.data() as FirestoreFixtureDoc;
+  const oldScore = {
+    homeScore: existing.homeScore,
+    awayScore: existing.awayScore,
+    status: existing.status,
+    winnerClubId: existing.winnerClubId,
+  };
+
+  let winnerClubId: string | null = null;
+  if (params.homeScore > params.awayScore) winnerClubId = existing.homeClubId;
+  else if (params.awayScore > params.homeScore) winnerClubId = existing.awayClubId;
+
+  const targetStatus = params.status || 'CONFIRMED';
+
+  await fixRef.update({
+    status: targetStatus,
+    homeScore: params.homeScore,
+    awayScore: params.awayScore,
+    winnerClubId,
+    resultConfirmedAt: targetStatus === 'CONFIRMED' ? now : null,
+    updatedAt: now,
+  });
+
+  // Also update SQLite
+  try {
+    queryRun(
+      `UPDATE fixtures 
+       SET status = ?, home_score = ?, away_score = ?, winner_club_id = ?, result_confirmed_at = ?, updated_at = ? 
+       WHERE id = ?`,
+      [
+        targetStatus,
+        params.homeScore,
+        params.awayScore,
+        winnerClubId,
+        targetStatus === 'CONFIRMED' ? now : null,
+        now,
+        fixtureId,
+      ]
+    );
+  } catch (err: any) {
+    console.warn('[SQLITE UPDATE FIXTURE]:', err.message);
+  }
+
+  // Knockout advancement if applicable
+  if (winnerClubId && targetStatus === 'CONFIRMED') {
+    try {
+      const { advanceKnockoutWinnerFirestore } = await import('../tournament/knockoutEngine');
+      await advanceKnockoutWinnerFirestore(fixtureId);
+    } catch (err) {
+      console.warn('[KNOCKOUT_ADVANCE]:', err);
+    }
+  }
+
+  // Rebuild standings
+  if (existing.competitionId) {
+    try {
+      await rebuildCompetitionStandingsFirestore(existing.competitionId);
+    } catch (err) {
+      console.warn('[STANDINGS_REBUILD]:', err);
+    }
+  }
+
+  // Audit log
+  const actionName = (existing.status === 'CONFIRMED' || existing.homeScore != null)
+    ? 'ADMIN_EDIT_RESULT'
+    : 'ADMIN_SET_RESULT';
+
+  await createAuditLogFirestore(
+    adminUserId,
+    actionName,
+    'fixture',
+    fixtureId,
+    oldScore,
+    { homeScore: params.homeScore, awayScore: params.awayScore, winnerClubId, status: targetStatus },
+    undefined,
+    adminUsername,
+    params.notes || `Admin set result ${params.homeScore}-${params.awayScore}`
+  );
+
+  invalidateFirestoreCache();
+  const updated = await getFixtureByIdFirestore(fixtureId);
+  return {
+    success: true,
+    message: `Result updated to ${params.homeScore}-${params.awayScore} (${targetStatus}) and standings recalculated.`,
+    fixture: updated!,
+  };
+}
+
+export async function adminDeleteFixtureResultFirestore(
+  adminUserId: string,
+  adminUsername: string,
+  fixtureId: string,
+  options?: {
+    deleteSubmissions?: boolean;
+    notes?: string;
+  }
+): Promise<{ success: boolean; message: string; fixture: Fixture }> {
+  const now = new Date().toISOString();
+  const db = getFirestoreDb();
+  const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
+  const fixDoc = await fixRef.get();
+  if (!fixDoc.exists) {
+    throw new Error(`Fixture '${fixtureId}' not found.`);
+  }
+
+  const existing = fixDoc.data() as FirestoreFixtureDoc;
+  const oldScore = {
+    homeScore: existing.homeScore,
+    awayScore: existing.awayScore,
+    status: existing.status,
+    winnerClubId: existing.winnerClubId,
+  };
+
+  await fixRef.update({
+    status: 'SCHEDULED',
+    homeScore: null,
+    awayScore: null,
+    winnerClubId: null,
+    resultConfirmedAt: null,
+    updatedAt: now,
+  });
+
+  // Update SQLite
+  try {
+    queryRun(
+      `UPDATE fixtures 
+       SET status = 'SCHEDULED', home_score = NULL, away_score = NULL, winner_club_id = NULL, result_confirmed_at = NULL, updated_at = ? 
+       WHERE id = ?`,
+      [now, fixtureId]
+    );
+  } catch (err: any) {
+    console.warn('[SQLITE DELETE RESULT]:', err.message);
+  }
+
+  // Delete submissions if requested
+  if (options?.deleteSubmissions) {
+    try {
+      const subsSnap = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where('fixtureId', '==', fixtureId).get();
+      const batch = db.batch();
+      subsSnap.docs.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+      queryRun('DELETE FROM result_submissions WHERE fixture_id = ?', [fixtureId]);
+    } catch (err: any) {
+      console.warn('[DELETE SUBMISSIONS]:', err.message);
+    }
+  }
+
+  // Rebuild standings
+  if (existing.competitionId) {
+    try {
+      await rebuildCompetitionStandingsFirestore(existing.competitionId);
+    } catch (err) {
+      console.warn('[STANDINGS_REBUILD]:', err);
+    }
+  }
+
+  await createAuditLogFirestore(
+    adminUserId,
+    'ADMIN_DELETE_RESULT',
+    'fixture',
+    fixtureId,
+    oldScore,
+    { status: 'SCHEDULED', homeScore: null, awayScore: null },
+    undefined,
+    adminUsername,
+    options?.notes || 'Admin deleted match result and reset status to SCHEDULED'
+  );
+
+  invalidateFirestoreCache();
+  const updated = await getFixtureByIdFirestore(fixtureId);
+  return {
+    success: true,
+    message: 'Match result deleted and status reset to SCHEDULED. Standings recalculated.',
+    fixture: updated!,
+  };
+}
+
+export async function adminDeleteFixtureFirestore(
+  adminUserId: string,
+  adminUsername: string,
+  fixtureId: string,
+  reason: string
+): Promise<{ success: boolean; message: string }> {
+  if (!reason || reason.trim().length < 3) {
+    throw new Error('A reason of at least 3 characters is required to delete a fixture.');
+  }
+  const db = getFirestoreDb();
+  const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
+  const fixDoc = await fixRef.get();
+  if (!fixDoc.exists) {
+    throw new Error(`Fixture '${fixtureId}' not found.`);
+  }
+
+  const existing = fixDoc.data() as FirestoreFixtureDoc;
+  const snapshot = { ...existing, id: fixtureId };
+
+  // Delete fixture document
+  await fixRef.delete();
+
+  // Delete associated submissions and disputes
+  try {
+    const [subsSnap, dispSnap] = await Promise.all([
+      db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where('fixtureId', '==', fixtureId).get(),
+      db.collection(COLLECTIONS.DISPUTES).where('fixtureId', '==', fixtureId).get(),
+    ]);
+    const batch = db.batch();
+    subsSnap.docs.forEach((d) => batch.delete(d.ref));
+    dispSnap.docs.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+  } catch (err: any) {
+    console.warn('[DELETE SUBMISSIONS/DISPUTES]:', err.message);
+  }
+
+  // SQLite delete
+  try {
+    queryRun('DELETE FROM fixtures WHERE id = ?', [fixtureId]);
+    queryRun('DELETE FROM result_submissions WHERE fixture_id = ?', [fixtureId]);
+    queryRun('DELETE FROM disputes WHERE fixture_id = ?', [fixtureId]);
+  } catch (err: any) {
+    console.warn('[SQLITE DELETE FIXTURE]:', err.message);
+  }
+
+  // Rebuild standings if was confirmed
+  if (existing.competitionId && existing.status === 'CONFIRMED') {
+    try {
+      await rebuildCompetitionStandingsFirestore(existing.competitionId);
+    } catch (err) {
+      console.warn('[STANDINGS_REBUILD]:', err);
+    }
+  }
+
+  await createAuditLogFirestore(
+    adminUserId,
+    'ADMIN_DELETE_FIXTURE',
+    'fixture',
+    fixtureId,
+    snapshot,
+    null,
+    undefined,
+    adminUsername,
+    reason
+  );
+
+  invalidateFirestoreCache();
+  return {
+    success: true,
+    message: `Fixture '${fixtureId}' deleted successfully.`,
+  };
+}
+
+export async function adminSetUserAdminFirestore(
+  adminUserId: string,
+  adminUsername: string,
+  targetUserId: string,
+  isAdmin: boolean
+): Promise<{ success: boolean; message: string; user: User }> {
+  const db = getFirestoreDb();
+  const userRef = db.collection(COLLECTIONS.USERS).doc(targetUserId);
+  const userDoc = await userRef.get();
+  if (!userDoc.exists) {
+    throw new Error(`User '${targetUserId}' not found.`);
+  }
+
+  const userData = userDoc.data() as FirestoreUserDoc;
+
+  // Protection: Prevent removing the last admin
+  if (!isAdmin) {
+    const allUsers = await getAllUsersFirestore();
+    const adminCount = allUsers.filter((u) => u.isAdmin).length;
+    if (adminCount <= 1 && userData.isAdmin) {
+      throw new Error('PROTECTION_ERROR: Cannot remove the last administrator from the system.');
+    }
+  }
+
+  const now = new Date().toISOString();
+  await userRef.update({
+    isAdmin,
+    updatedAt: now,
+  });
+
+  // Update SQLite
+  try {
+    queryRun('UPDATE users SET is_admin = ?, updated_at = ? WHERE id = ?', [isAdmin ? 1 : 0, now, targetUserId]);
+  } catch (err: any) {
+    console.warn('[SQLITE USER ADMIN UPDATE]:', err.message);
+  }
+
+  await createAuditLogFirestore(
+    adminUserId,
+    isAdmin ? 'ADMIN_MAKE_ADMIN' : 'ADMIN_REMOVE_ADMIN',
+    'user',
+    targetUserId,
+    { isAdmin: userData.isAdmin },
+    { isAdmin },
+    undefined,
+    adminUsername,
+    `Admin changed role of @${userData.username || targetUserId} to ${isAdmin ? 'ADMIN' : 'PLAYER'}`
+  );
+
+  invalidateFirestoreCache();
+
+  const updatedUser: User = {
+    id: targetUserId,
+    telegramId: userData.telegramId,
+    username: userData.username,
+    firstName: userData.firstName,
+    lastName: userData.lastName,
+    photoUrl: userData.photoUrl,
+    isAdmin,
+    isSuspended: Boolean(userData.isSuspended),
+    createdAt: userData.createdAt,
+    updatedAt: now,
+  };
+
+  return {
+    success: true,
+    message: `@${userData.username || targetUserId} is now ${isAdmin ? 'an Administrator' : 'a Standard Player'}.`,
+    user: updatedUser,
+  };
+}
+
+export async function adminSetUserSuspensionFirestore(
+  adminUserId: string,
+  adminUsername: string,
+  targetUserId: string,
+  isSuspended: boolean,
+  reason?: string
+): Promise<{ success: boolean; message: string; user: User }> {
+  const db = getFirestoreDb();
+  const userRef = db.collection(COLLECTIONS.USERS).doc(targetUserId);
+  const userDoc = await userRef.get();
+  if (!userDoc.exists) {
+    throw new Error(`User '${targetUserId}' not found.`);
+  }
+
+  const userData = userDoc.data() as FirestoreUserDoc;
+
+  // Cannot suspend oneself
+  if (targetUserId === adminUserId && isSuspended) {
+    throw new Error('PROTECTION_ERROR: You cannot suspend your own administrative account.');
+  }
+
+  const now = new Date().toISOString();
+  await userRef.update({
+    isSuspended,
+    updatedAt: now,
+  });
+
+  // Update SQLite
+  try {
+    queryRun('UPDATE users SET is_suspended = ?, updated_at = ? WHERE id = ?', [isSuspended ? 1 : 0, now, targetUserId]);
+  } catch (err: any) {
+    console.warn('[SQLITE USER SUSPEND UPDATE]:', err.message);
+  }
+
+  await createAuditLogFirestore(
+    adminUserId,
+    isSuspended ? 'ADMIN_SUSPEND_USER' : 'ADMIN_UNSUSPEND_USER',
+    'user',
+    targetUserId,
+    { isSuspended: Boolean(userData.isSuspended) },
+    { isSuspended },
+    undefined,
+    adminUsername,
+    reason || (isSuspended ? 'User account suspended by administrator' : 'User account reinstated')
+  );
+
+  invalidateFirestoreCache();
+
+  const updatedUser: User = {
+    id: targetUserId,
+    telegramId: userData.telegramId,
+    username: userData.username,
+    firstName: userData.firstName,
+    lastName: userData.lastName,
+    photoUrl: userData.photoUrl,
+    isAdmin: Boolean(userData.isAdmin),
+    isSuspended,
+    createdAt: userData.createdAt,
+    updatedAt: now,
+  };
+
+  return {
+    success: true,
+    message: `@${userData.username || targetUserId} has been ${isSuspended ? 'suspended' : 'unsuspended'}.`,
+    user: updatedUser,
+  };
+}
+
+export async function adminDeleteUserFirestore(
+  adminUserId: string,
+  adminUsername: string,
+  targetUserId: string,
+  reason?: string
+): Promise<{ success: boolean; message: string }> {
+  const db = getFirestoreDb();
+  const userRef = db.collection(COLLECTIONS.USERS).doc(targetUserId);
+  const userDoc = await userRef.get();
+  if (!userDoc.exists) {
+    throw new Error(`User '${targetUserId}' not found.`);
+  }
+
+  const userData = userDoc.data() as FirestoreUserDoc;
+
+  // Protection: Cannot delete yourself or the last admin
+  if (targetUserId === adminUserId) {
+    throw new Error('PROTECTION_ERROR: You cannot delete your own administrative account.');
+  }
+  if (userData.isAdmin) {
+    const allUsers = await getAllUsersFirestore();
+    const adminCount = allUsers.filter((u) => u.isAdmin).length;
+    if (adminCount <= 1) {
+      throw new Error('PROTECTION_ERROR: Cannot delete the last administrator.');
+    }
+  }
+
+  const now = new Date().toISOString();
+  const userSnapshot = { ...userData, id: targetUserId };
+
+  // 1. Release active club occupancies
+  try {
+    const occSnap = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where('userId', '==', targetUserId).get();
+    const batch = db.batch();
+    for (const d of occSnap.docs) {
+      const data = d.data();
+      batch.update(d.ref, {
+        userId: null,
+        status: 'released',
+        releasedAt: now,
+        releasedByUserId: adminUserId,
+        updatedAt: now,
+      });
+      if (data.clubId) {
+        const clubRef = db.collection(COLLECTIONS.CLUBS).doc(data.clubId);
+        batch.update(clubRef, {
+          isTaken: false,
+          claimedByUserId: null,
+          updatedAt: now,
+        });
+      }
+    }
+
+    // Release memberships
+    const memSnap = await db.collection(COLLECTIONS.USER_MEMBERSHIPS).where('userId', '==', targetUserId).get();
+    for (const d of memSnap.docs) {
+      batch.update(d.ref, {
+        status: 'released',
+        releasedAt: now,
+        updatedAt: now,
+      });
+    }
+
+    // Delete personal notifications
+    const notifSnap = await db.collection(COLLECTIONS.NOTIFICATIONS).where('userId', '==', targetUserId).get();
+    for (const d of notifSnap.docs) {
+      batch.delete(d.ref);
+    }
+
+    // Delete user document
+    batch.delete(userRef);
+    await batch.commit();
+  } catch (err: any) {
+    console.warn('[DELETE USER FIRESTORE BATCH]:', err.message);
+  }
+
+  // SQLite updates
+  try {
+    queryRun("UPDATE club_memberships SET status = 'released', updated_at = ? WHERE user_id = ?", [now, targetUserId]);
+    queryRun('DELETE FROM notifications WHERE user_id = ?', [targetUserId]);
+    queryRun('DELETE FROM users WHERE id = ?', [targetUserId]);
+  } catch (err: any) {
+    console.warn('[SQLITE DELETE USER]:', err.message);
+  }
+
+  // Record audit log
+  await createAuditLogFirestore(
+    adminUserId,
+    'ADMIN_DELETE_USER',
+    'user',
+    targetUserId,
+    userSnapshot,
+    null,
+    undefined,
+    adminUsername,
+    reason || `User @${userData.username || targetUserId} deleted safely`
+  );
+
+  invalidateFirestoreCache();
+
+  return {
+    success: true,
+    message: `User @${userData.username || targetUserId} deleted safely. Historical fixtures and results remain intact.`,
+  };
+}
+
+export async function adminGetUserDetailFirestore(targetUserId: string): Promise<any> {
+  const db = getFirestoreDb();
+  const user = await getUserByIdFirestore(targetUserId);
+  if (!user) {
+    throw new Error(`User '${targetUserId}' not found.`);
+  }
+
+  const activeClub = await getUserActiveClubFirestore(targetUserId, 'season-2026-27');
+
+  // Fetch memberships
+  let memberships: any[] = [];
+  try {
+    const memSnap = await db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).where('userId', '==', targetUserId).get();
+    memberships = memSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  } catch {
+    try {
+      memberships = queryAll<any>('SELECT * FROM club_memberships WHERE user_id = ?', [targetUserId]);
+    } catch {}
+  }
+
+  // Fetch submissions
+  let submissions: any[] = [];
+  try {
+    const subSnap = await db
+      .collection(COLLECTIONS.RESULT_SUBMISSIONS)
+      .where('submittedByUserId', '==', targetUserId)
+      .limit(30)
+      .get();
+    submissions = subSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  } catch {
+    try {
+      submissions = queryAll<any>('SELECT * FROM result_submissions WHERE user_id = ? LIMIT 30', [targetUserId]);
+    } catch {}
+  }
+
+  // Fetch recent audit logs for this user
+  let auditLogs: any[] = [];
+  try {
+    const auditSnap = await db
+      .collection(COLLECTIONS.AUDIT_LOGS)
+      .where('entityId', '==', targetUserId)
+      .limit(20)
+      .get();
+    auditLogs = auditSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  } catch {}
+
+  // Fetch user notifications count
+  let notificationsCount = 0;
+  try {
+    const notifCountSnap = await db
+      .collection(COLLECTIONS.NOTIFICATIONS)
+      .where('userId', '==', targetUserId)
+      .count()
+      .get();
+    notificationsCount = notifCountSnap.data().count;
+  } catch {}
+
+  return {
+    user,
+    activeClub,
+    memberships,
+    submissionsCount: submissions.length,
+    recentSubmissions: submissions,
+    auditLogs,
+    notificationsCount,
+  };
+}
+
+export async function adminGetResultSubmissionsFirestore(filter?: {
+  fixtureId?: string;
+  userId?: string;
+  limit?: number;
+}): Promise<any[]> {
+  const db = getFirestoreDb();
+  let query: FirebaseFirestore.Query = db.collection(COLLECTIONS.RESULT_SUBMISSIONS);
+  if (filter?.fixtureId) {
+    query = query.where('fixtureId', '==', filter.fixtureId);
+  }
+  if (filter?.userId) {
+    query = query.where('submittedByUserId', '==', filter.userId);
+  }
+  query = query.limit(filter?.limit || 100);
+
+  const snap = await query.get();
+  const submissions: any[] = [];
+  for (const doc of snap.docs) {
+    const data = doc.data();
+    submissions.push({
+      id: doc.id,
+      fixtureId: data.fixtureId,
+      submittedByUserId: data.submittedByUserId || data.userId,
+      clubId: data.clubId,
+      homeScore: data.homeScore,
+      awayScore: data.awayScore,
+      proofUrl: data.proofUrl || null,
+      createdAt: data.createdAt,
+    });
+  }
+  return submissions;
+}
+
+export async function adminDeleteResultSubmissionFirestore(
+  adminUserId: string,
+  adminUsername: string,
+  submissionId: string,
+  notes?: string
+): Promise<{ success: boolean; message: string }> {
+  const db = getFirestoreDb();
+  const subRef = db.collection(COLLECTIONS.RESULT_SUBMISSIONS).doc(submissionId);
+  const subDoc = await subRef.get();
+  if (!subDoc.exists) {
+    throw new Error(`Submission '${submissionId}' not found.`);
+  }
+
+  const subData = subDoc.data();
+  await subRef.delete();
+
+  try {
+    queryRun('DELETE FROM result_submissions WHERE id = ?', [submissionId]);
+  } catch {}
+
+  await createAuditLogFirestore(
+    adminUserId,
+    'ADMIN_DELETE_SUBMISSION',
+    'submission',
+    submissionId,
+    subData,
+    null,
+    undefined,
+    adminUsername,
+    notes || 'Admin deleted invalid score submission'
+  );
+
+  return {
+    success: true,
+    message: `Result submission '${submissionId}' has been deleted.`,
+  };
+}

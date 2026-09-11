@@ -5,6 +5,18 @@ import { api } from '../lib/api';
 import { Dispute, AuditLog, Competition, User, Club, Fixture } from '../types';
 import { ClubCrest } from './ClubCrest';
 import {
+  AdminEditResultModal,
+  AdminDeleteResultModal,
+  AdminDeleteFixtureModal,
+} from './admin/AdminMatchModals';
+import {
+  AdminUserDetailModal,
+  AdminSetRoleModal,
+  AdminSuspendModal,
+  AdminDeleteUserModal,
+} from './admin/AdminUserModals';
+import { AdminSubmissionsSection } from './admin/AdminSubmissionsSection';
+import {
   SlidersHorizontal,
   AlertTriangle,
   CheckCircle2,
@@ -29,6 +41,7 @@ import {
   Activity,
   RotateCcw,
   ChevronRight,
+  ChevronLeft,
   Info,
   Sliders,
   Check,
@@ -41,6 +54,12 @@ import {
   ArrowRight,
   Lock,
   Unlock,
+  Trash2,
+  Edit3,
+  ShieldAlert,
+  ShieldCheck,
+  Ban,
+  UserX,
 } from 'lucide-react';
 
 type AdminTab = 'overview' | 'clubs' | 'matches' | 'results' | 'competitions' | 'users' | 'system';
@@ -81,7 +100,25 @@ export const AdminView: React.FC = () => {
   // Filter States - Matches
   const [matchCompFilter, setMatchCompFilter] = useState<string>('ALL');
   const [matchStatusFilter, setMatchStatusFilter] = useState<string>('ALL');
+  const [matchClubFilter, setMatchClubFilter] = useState<string>('ALL');
+  const [matchdayFilter, setMatchdayFilter] = useState<string>('ALL');
   const [matchSearch, setMatchSearch] = useState<string>('');
+  const [matchPage, setMatchPage] = useState<number>(1);
+  const [matchPageSize, setMatchPageSize] = useState<number>(50);
+
+  // Match Action Modals
+  const [selectedFixtureForEditResult, setSelectedFixtureForEditResult] = useState<Fixture | null>(null);
+  const [selectedFixtureForDeleteResult, setSelectedFixtureForDeleteResult] = useState<Fixture | null>(null);
+  const [selectedFixtureForDelete, setSelectedFixtureForDelete] = useState<Fixture | null>(null);
+
+  // User Management Modals
+  const [selectedUserForDetail, setSelectedUserForDetail] = useState<User | null>(null);
+  const [selectedUserForRole, setSelectedUserForRole] = useState<User | null>(null);
+  const [selectedUserForSuspend, setSelectedUserForSuspend] = useState<User | null>(null);
+  const [selectedUserForDelete, setSelectedUserForDelete] = useState<User | null>(null);
+
+  // Results Sub-tabs ('pending' | 'disputes' | 'submissions')
+  const [resultsSubTab, setResultsSubTab] = useState<'pending' | 'disputes' | 'submissions'>('pending');
 
   // Filter States - Clubs
   const [clubLeagueFilter, setClubLeagueFilter] = useState<string>('ALL');
@@ -160,12 +197,14 @@ export const AdminView: React.FC = () => {
         if (clubsRes?.clubs) setClubs(clubsRes.clubs);
         if (usersRes?.users) setUsers(usersRes.users);
       } else if (tab === 'matches') {
-        const [fixturesRes, compsRes] = await Promise.all([
-          api.getAdminFixtures(activeSeasonId, undefined, undefined, undefined, 200, skipCache).catch(() => ({ fixtures: [], total: 0 })),
+        const [fixturesRes, compsRes, clubsRes] = await Promise.all([
+          api.getAdminFixtures({ seasonId: activeSeasonId, limit: 0 }, undefined, undefined, undefined, 0, skipCache).catch(() => ({ fixtures: [], total: 0 })),
           competitions.length === 0 ? api.getCompetitions(activeSeasonId, skipCache).catch(() => ({ competitions: [] })) : Promise.resolve(null),
+          clubs.length === 0 ? api.getAdminClubs(activeSeasonId, undefined, skipCache).catch(() => ({ clubs: [] })) : Promise.resolve(null),
         ]);
         if (fixturesRes?.fixtures) setFixtures(fixturesRes.fixtures);
         if (compsRes?.competitions) setCompetitions(compsRes.competitions);
+        if (clubsRes?.clubs) setClubs(clubsRes.clubs);
       } else if (tab === 'results') {
         const [pendingRes, disputesRes] = await Promise.all([
           api.getAdminPendingResults(activeSeasonId, skipCache).catch(() => ({ pendingFixtures: [], total: 0 })),
@@ -421,6 +460,98 @@ export const AdminView: React.FC = () => {
     }
   };
 
+  const handleSaveFixtureResult = async (params: { homeScore: number; awayScore: number; status?: string; notes?: string }) => {
+    if (!selectedFixtureForEditResult) return;
+    try {
+      const res = await api.adminEditFixtureResult(selectedFixtureForEditResult.id, params);
+      if (res.success) {
+        showToast(res.message || 'Fixture result updated and standings recalculated.', 'success');
+        setFixtures((prev) =>
+          prev.map((f) => (f.id === res.fixture.id ? { ...f, ...res.fixture } : f))
+        );
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to update fixture result.', 'error');
+      throw err;
+    }
+  };
+
+  const handleDeleteFixtureResult = async (options: { deleteSubmissions: boolean; notes?: string }) => {
+    if (!selectedFixtureForDeleteResult) return;
+    try {
+      const res = await api.adminDeleteFixtureResult(selectedFixtureForDeleteResult.id, options);
+      if (res.success) {
+        showToast(res.message || 'Fixture result reset to SCHEDULED.', 'success');
+        setFixtures((prev) =>
+          prev.map((f) => (f.id === res.fixture.id ? { ...f, ...res.fixture } : f))
+        );
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to reset fixture result.', 'error');
+      throw err;
+    }
+  };
+
+  const handleDeleteFixture = async (reason: string) => {
+    if (!selectedFixtureForDelete) return;
+    try {
+      const res = await api.adminDeleteFixture(selectedFixtureForDelete.id, reason);
+      if (res.success) {
+        showToast(res.message || 'Fixture deleted.', 'success');
+        setFixtures((prev) => prev.filter((f) => f.id !== selectedFixtureForDelete.id));
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to delete fixture.', 'error');
+      throw err;
+    }
+  };
+
+  const handleSetUserRole = async (isAdmin: boolean) => {
+    if (!selectedUserForRole) return;
+    try {
+      const res = await api.adminSetUserRole(selectedUserForRole.id, isAdmin);
+      if (res.success) {
+        showToast(res.message || 'User role updated.', 'success');
+        setUsers((prev) =>
+          prev.map((u) => (u.id === res.user.id ? { ...u, isAdmin: res.user.isAdmin } : u))
+        );
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to change user role.', 'error');
+      throw err;
+    }
+  };
+
+  const handleSetUserSuspension = async (isSuspended: boolean, reason?: string) => {
+    if (!selectedUserForSuspend) return;
+    try {
+      const res = await api.adminSetUserSuspension(selectedUserForSuspend.id, isSuspended, reason);
+      if (res.success) {
+        showToast(res.message || 'User suspension status updated.', 'success');
+        setUsers((prev) =>
+          prev.map((u) => (u.id === res.user.id ? { ...u, isSuspended: res.user.isSuspended } : u))
+        );
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to update user suspension.', 'error');
+      throw err;
+    }
+  };
+
+  const handleDeleteUser = async (reason?: string) => {
+    if (!selectedUserForDelete) return;
+    try {
+      const res = await api.adminDeleteUser(selectedUserForDelete.id, reason);
+      if (res.success) {
+        showToast(res.message || 'User safely deleted.', 'success');
+        setUsers((prev) => prev.filter((u) => u.id !== selectedUserForDelete.id));
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to delete user.', 'error');
+      throw err;
+    }
+  };
+
   // =========================================================================
   // FILTERED DATASETS
   // =========================================================================
@@ -428,17 +559,38 @@ export const AdminView: React.FC = () => {
     return fixtures.filter((f) => {
       if (matchCompFilter !== 'ALL' && f.competitionId !== matchCompFilter) return false;
       if (matchStatusFilter !== 'ALL' && f.status !== matchStatusFilter) return false;
+      if (matchClubFilter !== 'ALL' && f.homeClubId !== matchClubFilter && f.awayClubId !== matchClubFilter) return false;
+      if (matchdayFilter !== 'ALL' && String(f.matchday) !== matchdayFilter) return false;
       if (matchSearch.trim()) {
         const q = matchSearch.toLowerCase();
-        const homeMatch = f.homeClub?.name?.toLowerCase().includes(q) || f.homeClub?.shortName?.toLowerCase().includes(q);
-        const awayMatch = f.awayClub?.name?.toLowerCase().includes(q) || f.awayClub?.shortName?.toLowerCase().includes(q);
-        const compMatch = f.competitionName?.toLowerCase().includes(q);
+        const homeMatch =
+          f.homeClub?.name?.toLowerCase().includes(q) ||
+          f.homeClub?.shortName?.toLowerCase().includes(q) ||
+          f.homeClubId.toLowerCase().includes(q);
+        const awayMatch =
+          f.awayClub?.name?.toLowerCase().includes(q) ||
+          f.awayClub?.shortName?.toLowerCase().includes(q) ||
+          f.awayClubId.toLowerCase().includes(q);
+        const compMatch =
+          f.competitionName?.toLowerCase().includes(q) ||
+          f.competitionId?.toLowerCase().includes(q);
         const idMatch = f.id.toLowerCase().includes(q);
         if (!homeMatch && !awayMatch && !compMatch && !idMatch) return false;
       }
       return true;
     });
-  }, [fixtures, matchCompFilter, matchStatusFilter, matchSearch]);
+  }, [fixtures, matchCompFilter, matchStatusFilter, matchClubFilter, matchdayFilter, matchSearch]);
+
+  const totalMatchPages = useMemo(() => {
+    if (matchPageSize <= 0) return 1;
+    return Math.ceil(filteredFixtures.length / matchPageSize) || 1;
+  }, [filteredFixtures.length, matchPageSize]);
+
+  const paginatedFixtures = useMemo(() => {
+    if (matchPageSize <= 0) return filteredFixtures;
+    const start = (matchPage - 1) * matchPageSize;
+    return filteredFixtures.slice(start, start + matchPageSize);
+  }, [filteredFixtures, matchPage, matchPageSize]);
 
   const filteredClubs = useMemo(() => {
     return clubs.filter((c) => {
@@ -1143,13 +1295,16 @@ export const AdminView: React.FC = () => {
             </div>
 
             {/* Filter Controls */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-white/[0.06]">
-              <div className="relative">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 pt-2 border-t border-white/[0.06]">
+              <div className="relative lg:col-span-1">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   value={matchSearch}
-                  onChange={(e) => setMatchSearch(e.target.value)}
+                  onChange={(e) => {
+                    setMatchSearch(e.target.value);
+                    setMatchPage(1);
+                  }}
                   placeholder="Search club or fixture ID..."
                   className="w-full pl-9 pr-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500"
                 />
@@ -1158,10 +1313,13 @@ export const AdminView: React.FC = () => {
               {/* Competition Filter */}
               <select
                 value={matchCompFilter}
-                onChange={(e) => setMatchCompFilter(e.target.value)}
+                onChange={(e) => {
+                  setMatchCompFilter(e.target.value);
+                  setMatchPage(1);
+                }}
                 className="px-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-semibold"
               >
-                <option value="ALL">All Competitions (19)</option>
+                <option value="ALL">All Competitions ({competitions.length || 19})</option>
                 {competitions.map((comp) => (
                   <option key={comp.id} value={comp.id}>
                     {comp.name}
@@ -1172,7 +1330,10 @@ export const AdminView: React.FC = () => {
               {/* Status Filter */}
               <select
                 value={matchStatusFilter}
-                onChange={(e) => setMatchStatusFilter(e.target.value)}
+                onChange={(e) => {
+                  setMatchStatusFilter(e.target.value);
+                  setMatchPage(1);
+                }}
                 className="px-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-semibold"
               >
                 <option value="ALL">All Match Statuses</option>
@@ -1183,35 +1344,119 @@ export const AdminView: React.FC = () => {
                 <option value="DISPUTED">DISPUTED (Conflict)</option>
                 <option value="POSTPONED">POSTPONED</option>
               </select>
+
+              {/* Club Filter */}
+              <select
+                value={matchClubFilter}
+                onChange={(e) => {
+                  setMatchClubFilter(e.target.value);
+                  setMatchPage(1);
+                }}
+                className="px-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-semibold"
+              >
+                <option value="ALL">All Clubs ({clubs.length || 96})</option>
+                {clubs.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+
+              {/* Matchday Filter */}
+              <select
+                value={matchdayFilter}
+                onChange={(e) => {
+                  setMatchdayFilter(e.target.value);
+                  setMatchPage(1);
+                }}
+                className="px-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-semibold"
+              >
+                <option value="ALL">All Matchdays</option>
+                {Array.from({ length: 38 }, (_, i) => i + 1).map((md) => (
+                  <option key={md} value={String(md)}>
+                    Matchday {md}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Pagination & Page Size Toolbar */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/[0.04] text-xs">
+              <div className="flex items-center gap-2">
+                <span className="text-slate-400 text-[11px]">Show per page:</span>
+                <select
+                  value={matchPageSize}
+                  onChange={(e) => {
+                    setMatchPageSize(parseInt(e.target.value, 10));
+                    setMatchPage(1);
+                  }}
+                  className="px-2 py-1 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-300 font-bold"
+                >
+                  <option value="25">25</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                  <option value="0">All</option>
+                </select>
+                <span className="text-slate-500 font-mono text-[11px]">
+                  Showing {paginatedFixtures.length} of {filteredFixtures.length} matches
+                </span>
+              </div>
+
+              {totalMatchPages > 1 && (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setMatchPage((p) => Math.max(1, p - 1))}
+                    disabled={matchPage <= 1}
+                    className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-30 text-slate-300 border border-slate-800"
+                    title="Previous page"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="text-xs font-mono font-bold text-slate-300 px-2">
+                    Page {matchPage} of {totalMatchPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setMatchPage((p) => Math.min(totalMatchPages, p + 1))}
+                    disabled={matchPage >= totalMatchPages}
+                    className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-30 text-slate-300 border border-slate-800"
+                    title="Next page"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
           {/* Fixtures List */}
           <div className="space-y-2.5">
-            {filteredFixtures.length === 0 ? (
+            {paginatedFixtures.length === 0 ? (
               <div className="glass-panel p-8 text-center border-slate-800 text-slate-400 text-xs">
                 No fixtures matched the selected filters.
               </div>
             ) : (
-              filteredFixtures.map((fix) => {
+              paginatedFixtures.map((fix) => {
                 const isConfirmed = fix.status === 'CONFIRMED';
                 const isDisputed = fix.status === 'DISPUTED';
                 const isPending = fix.status === 'PENDING_CONFIRMATION';
+                const hasScore = fix.homeScore !== undefined && fix.homeScore !== null;
 
                 return (
                   <div
                     key={fix.id}
-                    className={`glass-card p-3 sm:p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 border ${
+                    className={`glass-card p-3 sm:p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 border transition-all ${
                       isDisputed
                         ? 'border-rose-500/40 bg-rose-950/10'
                         : isPending
                         ? 'border-amber-500/40 bg-amber-950/10'
-                        : 'border-slate-800/80'
+                        : 'border-slate-800/80 hover:border-slate-700'
                     }`}
                   >
                     {/* Left: Tournament Badge & Teams */}
                     <div className="space-y-1.5 flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-[10px] font-black uppercase text-amber-400 bg-amber-500/15 px-2 py-0.5 rounded">
                           {fix.competitionName || fix.competitionId}
                         </span>
@@ -1238,6 +1483,9 @@ export const AdminView: React.FC = () => {
                         >
                           {fix.status}
                         </span>
+                        <span className="text-[10px] font-mono text-slate-500 ml-auto hidden sm:inline">
+                          ID: {fix.id}
+                        </span>
                       </div>
 
                       {/* Scoreline */}
@@ -1254,8 +1502,8 @@ export const AdminView: React.FC = () => {
                         </div>
 
                         {/* Middle Score / Time */}
-                        <div className="px-3 py-1 bg-slate-950/80 rounded-lg border border-white/[0.08] font-mono font-black text-center min-w-[54px]">
-                          {isConfirmed ? (
+                        <div className="px-3 py-1 bg-slate-950/80 rounded-lg border border-white/[0.08] font-mono font-black text-center min-w-[58px]">
+                          {hasScore ? (
                             <span className="text-emerald-400">
                               {fix.homeScore} - {fix.awayScore}
                             </span>
@@ -1278,30 +1526,79 @@ export const AdminView: React.FC = () => {
                     </div>
 
                     {/* Right: Actions */}
-                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                    <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center flex-wrap">
                       <button
                         onClick={() => setSelectedFixtureForInspect(fix)}
-                        className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-bold flex items-center gap-1"
+                        className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors"
+                        title="Inspect fixture details"
                       >
                         <Eye className="w-3.5 h-3.5 text-slate-400" />
                         <span>Inspect</span>
                       </button>
 
-                      {isConfirmed && (
+                      {/* Edit Result Button */}
+                      <button
+                        onClick={() => setSelectedFixtureForEditResult(fix)}
+                        className="px-2.5 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors"
+                        title="Enter or edit match result"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>{hasScore ? 'Edit Score' : 'Set Score'}</span>
+                      </button>
+
+                      {/* Reset Result Button (if scored or confirmed) */}
+                      {(hasScore || isConfirmed) && (
                         <button
-                          onClick={() => setSelectedFixtureForReopen(fix)}
-                          className="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-lg text-xs font-bold flex items-center gap-1"
+                          onClick={() => setSelectedFixtureForDeleteResult(fix)}
+                          className="px-2.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors"
+                          title="Reset score and return match to scheduled"
                         >
                           <RotateCcw className="w-3.5 h-3.5" />
-                          <span>Reopen</span>
+                          <span>Reset</span>
                         </button>
                       )}
+
+                      {/* Delete Match Fixture */}
+                      <button
+                        onClick={() => setSelectedFixtureForDelete(fix)}
+                        className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg transition-colors"
+                        title="Permanently delete fixture"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
                 );
               })
             )}
           </div>
+
+          {/* Bottom Pagination */}
+          {totalMatchPages > 1 && (
+            <div className="flex items-center justify-between p-3 glass-panel border-white/[0.04] text-xs">
+              <span className="text-slate-400 font-mono">
+                Showing page {matchPage} of {totalMatchPages} ({filteredFixtures.length} total fixtures)
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMatchPage((p) => Math.max(1, p - 1))}
+                  disabled={matchPage <= 1}
+                  className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-30 text-slate-300 border border-slate-800 font-bold"
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMatchPage((p) => Math.min(totalMatchPages, p + 1))}
+                  disabled={matchPage >= totalMatchPages}
+                  className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-30 text-slate-300 border border-slate-800 font-bold"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1313,52 +1610,132 @@ export const AdminView: React.FC = () => {
           <div className="glass-panel p-4 space-y-1">
             <h2 className="text-sm font-black text-white flex items-center gap-2">
               <FileCheck className="w-4 h-4 text-amber-400" />
-              <span>Pending Results Review & Arbitration Workflow</span>
+              <span>Results Review & Submissions Management</span>
             </h2>
             <p className="text-xs text-slate-400">
-              Matches with single submissions or conflicting claims. Administrator approval immediately updates official standings and tournament knockout progressions.
+              Arbitrate conflicting player claims, approve pending match submissions, or manage the score submission archive.
             </p>
           </div>
 
-          {/* Pending Submissions List */}
-          <div className="space-y-3">
-            {pendingResults.length === 0 && disputes.length === 0 ? (
-              <div className="glass-panel p-10 text-center border-emerald-500/30 bg-emerald-950/10">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 mx-auto mb-3">
-                  <CheckCircle2 className="w-6 h-6" />
-                </div>
-                <h3 className="text-base font-bold text-white">No Pending Result Confirmations</h3>
-                <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
-                  All match submissions have either achieved two-player consensus or been confirmed by tournament officials.
-                </p>
-              </div>
-            ) : (
-              pendingResults.map((fix) => {
-                const sub = fix.submissions?.[0];
-                return (
-                  <div
-                    key={fix.id}
-                    className="glass-panel p-4 sm:p-5 rounded-2xl border-amber-500/40 shadow-xl space-y-3 bg-amber-950/10"
-                  >
-                    {/* Header */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/[0.08] pb-2.5">
-                      <div className="flex items-center gap-2">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                          {fix.status}
-                        </span>
-                        <span className="text-xs font-black text-white">
-                          {fix.competitionName || 'Tournament'} • Matchday {fix.matchday}
-                        </span>
-                        <span className="text-[10px] font-mono text-slate-400">({fix.id})</span>
-                      </div>
+          {/* Sub Navigation */}
+          <div className="flex items-center gap-2 border-b border-white/[0.08] pb-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setResultsSubTab('pending')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-black transition-colors ${
+                resultsSubTab === 'pending'
+                  ? 'bg-amber-500 text-slate-950 shadow'
+                  : 'bg-slate-900 text-slate-400 hover:text-white'
+              }`}
+            >
+              Pending Submissions ({pendingResults.length})
+            </button>
 
-                      {sub && (
-                        <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
-                          <Clock className="w-3.5 h-3.5 text-slate-500" />
-                          <span>Submitted: {new Date(sub.createdAt).toLocaleString()}</span>
-                        </div>
-                      )}
+            <button
+              type="button"
+              onClick={() => setResultsSubTab('disputes')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-black transition-colors ${
+                resultsSubTab === 'disputes'
+                  ? 'bg-rose-500 text-white shadow'
+                  : 'bg-slate-900 text-slate-400 hover:text-white'
+              }`}
+            >
+              Open Disputes ({disputes.length})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setResultsSubTab('submissions')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-black transition-colors ${
+                resultsSubTab === 'submissions'
+                  ? 'bg-emerald-500 text-slate-950 shadow'
+                  : 'bg-slate-900 text-slate-400 hover:text-white'
+              }`}
+            >
+              Submissions Archive
+            </button>
+          </div>
+
+          {resultsSubTab === 'submissions' ? (
+            <AdminSubmissionsSection
+              showToast={(type, msg) => showToast(msg, type === 'error' ? 'error' : 'success')}
+              onSubmissionDeleted={() => loadAllAdminData(true)}
+            />
+          ) : resultsSubTab === 'disputes' ? (
+            /* Disputes List */
+            <div className="space-y-3">
+              {disputes.length === 0 ? (
+                <div className="glass-panel p-8 text-center border-emerald-500/30 bg-emerald-950/10 text-slate-400 text-xs">
+                  No unresolved disputes currently logged.
+                </div>
+              ) : (
+                disputes.map((disp) => (
+                  <div key={disp.id} className="glass-card p-4 rounded-2xl border-rose-500/40 bg-rose-950/10 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-rose-400 uppercase">
+                        Dispute: {disp.fixtureId}
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        {new Date(disp.createdAt).toLocaleString()}
+                      </span>
                     </div>
+                    <p className="text-xs text-slate-300">
+                      Disputed by: <strong className="text-white font-mono">{disp.reportedByUserId}</strong>
+                    </p>
+                    <p className="text-xs text-slate-400 italic">"{disp.reason || 'Conflicting score reports'}"</p>
+                    <div className="flex justify-end gap-2 pt-2 border-t border-white/[0.06]">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDisputeForResolve(disp)}
+                        className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-bold"
+                      >
+                        Resolve Dispute
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          ) : (
+            /* Pending Submissions List */
+            <div className="space-y-3">
+              {pendingResults.length === 0 ? (
+                <div className="glass-panel p-10 text-center border-emerald-500/30 bg-emerald-950/10">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 mx-auto mb-3">
+                    <CheckCircle2 className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-base font-bold text-white">No Pending Result Confirmations</h3>
+                  <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
+                    All match submissions have either achieved two-player consensus or been confirmed by tournament officials.
+                  </p>
+                </div>
+              ) : (
+                pendingResults.map((fix) => {
+                  const sub = fix.submissions?.[0];
+                  return (
+                    <div
+                      key={fix.id}
+                      className="glass-panel p-4 sm:p-5 rounded-2xl border-amber-500/40 shadow-xl space-y-3 bg-amber-950/10"
+                    >
+                      {/* Header */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/[0.08] pb-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                            {fix.status}
+                          </span>
+                          <span className="text-xs font-black text-white">
+                            {fix.competitionName || 'Tournament'} • Matchday {fix.matchday}
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-400">({fix.id})</span>
+                        </div>
+
+                        {sub && (
+                          <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-slate-500" />
+                            <span>Submitted: {new Date(sub.createdAt).toLocaleString()}</span>
+                          </div>
+                        )}
+                      </div>
 
                     {/* Clubs and Score Claim */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-center">
@@ -1446,6 +1823,7 @@ export const AdminView: React.FC = () => {
               })
             )}
           </div>
+          )}
         </div>
       )}
 
@@ -1802,9 +2180,10 @@ export const AdminView: React.FC = () => {
                 onChange={(e) => setUserRoleFilter(e.target.value)}
                 className="px-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-semibold"
               >
-                <option value="ALL">All Roles</option>
+                <option value="ALL">All Roles ({users.length})</option>
                 <option value="ADMIN">Administrators</option>
                 <option value="PLAYER">Standard Players</option>
+                <option value="SUSPENDED">Suspended Accounts</option>
               </select>
             </div>
           </div>
@@ -1820,6 +2199,7 @@ export const AdminView: React.FC = () => {
                     <th className="p-3">Role</th>
                     <th className="p-3">Status</th>
                     <th className="p-3">Joined</th>
+                    <th className="p-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/[0.04]">
@@ -1833,25 +2213,74 @@ export const AdminView: React.FC = () => {
                       </td>
                       <td className="p-3 font-mono text-slate-400">{u.telegramId || u.id}</td>
                       <td className="p-3">
-                        {u.isAdmin ? (
-                          <span className="px-2 py-0.5 rounded text-[9px] font-black bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                            ADMIN
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-slate-800 text-slate-400">
-                            PLAYER
-                          </span>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedUserForRole(u)}
+                          className={`px-2 py-0.5 rounded text-[9px] font-black uppercase transition-colors border ${
+                            u.isAdmin
+                              ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30'
+                              : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+                          }`}
+                          title="Click to change role"
+                        >
+                          {u.isAdmin ? 'ADMIN' : 'PLAYER'}
+                        </button>
                       </td>
                       <td className="p-3">
-                        {u.isSuspended ? (
-                          <span className="text-rose-400 font-bold">Suspended</span>
-                        ) : (
-                          <span className="text-emerald-400 font-bold">Active</span>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedUserForSuspend(u)}
+                          className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase transition-colors border ${
+                            u.isSuspended
+                              ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 hover:bg-rose-500/30'
+                              : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
+                          }`}
+                          title="Click to toggle suspension"
+                        >
+                          {u.isSuspended ? 'SUSPENDED' : 'ACTIVE'}
+                        </button>
                       </td>
                       <td className="p-3 text-slate-400 font-mono text-[11px]">
                         {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}
+                      </td>
+                      <td className="p-3 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedUserForDetail(u)}
+                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+                            title="Inspect user details and history"
+                          >
+                            <Eye className="w-3.5 h-3.5 text-slate-400" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setSelectedUserForRole(u)}
+                            className="p-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 transition-colors"
+                            title={u.isAdmin ? 'Demote admin' : 'Promote to admin'}
+                          >
+                            <Shield className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setSelectedUserForSuspend(u)}
+                            className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 transition-colors"
+                            title={u.isSuspended ? 'Lift suspension' : 'Suspend player'}
+                          >
+                            <Ban className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setSelectedUserForDelete(u)}
+                            className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 transition-colors"
+                            title="Safely delete user account"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -2560,6 +2989,73 @@ export const AdminView: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* ADMIN PRODUCTION MANAGEMENT MODALS */}
+      {/* ========================================================================= */}
+      {selectedFixtureForEditResult && (
+        <AdminEditResultModal
+          fixture={selectedFixtureForEditResult}
+          isOpen={!!selectedFixtureForEditResult}
+          onClose={() => setSelectedFixtureForEditResult(null)}
+          onSave={handleSaveFixtureResult}
+        />
+      )}
+
+      {selectedFixtureForDeleteResult && (
+        <AdminDeleteResultModal
+          fixture={selectedFixtureForDeleteResult}
+          isOpen={!!selectedFixtureForDeleteResult}
+          onClose={() => setSelectedFixtureForDeleteResult(null)}
+          onConfirm={handleDeleteFixtureResult}
+        />
+      )}
+
+      {selectedFixtureForDelete && (
+        <AdminDeleteFixtureModal
+          fixture={selectedFixtureForDelete}
+          isOpen={!!selectedFixtureForDelete}
+          onClose={() => setSelectedFixtureForDelete(null)}
+          onConfirm={handleDeleteFixture}
+        />
+      )}
+
+      {selectedUserForDetail && (
+        <AdminUserDetailModal
+          user={selectedUserForDetail}
+          isOpen={!!selectedUserForDetail}
+          onClose={() => setSelectedUserForDetail(null)}
+          onToggleAdmin={(u) => setSelectedUserForRole(u)}
+          onToggleSuspend={(u) => setSelectedUserForSuspend(u)}
+        />
+      )}
+
+      {selectedUserForRole && (
+        <AdminSetRoleModal
+          user={selectedUserForRole}
+          isOpen={!!selectedUserForRole}
+          onClose={() => setSelectedUserForRole(null)}
+          onConfirm={handleSetUserRole}
+        />
+      )}
+
+      {selectedUserForSuspend && (
+        <AdminSuspendModal
+          user={selectedUserForSuspend}
+          isOpen={!!selectedUserForSuspend}
+          onClose={() => setSelectedUserForSuspend(null)}
+          onConfirm={handleSetUserSuspension}
+        />
+      )}
+
+      {selectedUserForDelete && (
+        <AdminDeleteUserModal
+          user={selectedUserForDelete}
+          isOpen={!!selectedUserForDelete}
+          onClose={() => setSelectedUserForDelete(null)}
+          onConfirm={handleDeleteUser}
+        />
       )}
     </div>
   );
