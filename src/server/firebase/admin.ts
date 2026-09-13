@@ -30,6 +30,54 @@ function loadAppletConfig(): { projectId?: string; firestoreDatabaseId?: string 
 }
 
 export function initializeFirebaseAdmin(): { db: Firestore | null; info: FirebaseConfigInfo } {
+  const isRealProduction =
+    process.env.VERCEL === '1' ||
+    process.env.AWS_LAMBDA_FUNCTION_NAME !== undefined ||
+    process.env.NODE_ENV === 'production';
+
+  // Support an explicit test-only environment variable: FIREBASE_FORCE_LOCAL_FALLBACK=true
+  // This fallback must never activate when VERCEL === "1", AWS_LAMBDA_FUNCTION_NAME exists,
+  // or the application is running in a real production environment.
+  const isForceLocalFallback =
+    process.env.FIREBASE_FORCE_LOCAL_FALLBACK === 'true' && !isRealProduction;
+
+  if (isForceLocalFallback) {
+    if (!cachedDb || cachedInfo?.authMode !== 'local_fallback') {
+      const appletConfig = loadAppletConfig();
+      const fallbackProjectId =
+        process.env.FIREBASE_PROJECT_ID ||
+        process.env.GCLOUD_PROJECT ||
+        process.env.GOOGLE_CLOUD_PROJECT ||
+        appletConfig.projectId ||
+        'gen-lang-client-0195097895';
+      const fallbackDatabaseId =
+        process.env.FIRESTORE_DATABASE_ID ||
+        process.env.FIREBASE_DATABASE_ID ||
+        appletConfig.firestoreDatabaseId ||
+        'ai-studio-efluz-4c6c88a6-697e-4fdf-82ed-45fec68ca34d';
+
+      const memoryDb = createMemoryFirestore();
+      cachedDb = memoryDb as unknown as Firestore;
+      cachedInfo = {
+        isConfigured: true,
+        projectId: fallbackProjectId,
+        databaseId: fallbackDatabaseId,
+        authMode: 'local_fallback',
+      };
+      console.log(`[FIREBASE AUTH] Using forced local in-memory fallback (FIREBASE_FORCE_LOCAL_FALLBACK=true): projectId=${fallbackProjectId}, databaseId=${fallbackDatabaseId}`);
+    }
+    return {
+      db: cachedDb,
+      info: cachedInfo,
+    };
+  }
+
+  // Clear stale local fallback cache if running outside forced fallback mode
+  if (!isForceLocalFallback && cachedInfo?.authMode === 'local_fallback') {
+    cachedDb = null;
+    cachedInfo = null;
+  }
+
   if (cachedDb && cachedInfo && cachedInfo.isConfigured) {
     return {
       db: cachedDb,

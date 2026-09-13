@@ -24,9 +24,15 @@ jobs:
         run: bun run lint
 
       - name: Run Build
+        env:
+          FIREBASE_FORCE_LOCAL_FALLBACK: "true"
+          NODE_ENV: "test"
         run: bun run build
 
       - name: Run Vercel Self-Check & Verification Suites
+        env:
+          FIREBASE_FORCE_LOCAL_FALLBACK: "true"
+          NODE_ENV: "test"
         run: |
           bun run test:deployment-selfcheck
           bun run test:tournament-architecture

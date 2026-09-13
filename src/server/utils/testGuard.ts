@@ -8,9 +8,12 @@ export function isTestSafe(): boolean {
   const isProduction =
     process.env.NODE_ENV === 'production' ||
     process.env.VERCEL_ENV === 'production' ||
-    Boolean(process.env.K_SERVICE);
+    (Boolean(process.env.K_SERVICE) && !process.env.K_SERVICE.startsWith('ais-dev-'));
 
-  const isTestExplicitlyAllowed = process.env.ALLOW_TEST_WRITES === 'true';
+  const isTestExplicitlyAllowed =
+    process.env.ALLOW_TEST_WRITES === 'true' ||
+    process.env.NODE_ENV === 'test' ||
+    process.env.FIREBASE_FORCE_LOCAL_FALLBACK === 'true';
 
   return !isProduction && isTestExplicitlyAllowed;
 }
@@ -19,9 +22,12 @@ export function assertTestEnvironmentSafe(actionName = 'test_mutation'): void {
   const isProduction =
     process.env.NODE_ENV === 'production' ||
     process.env.VERCEL_ENV === 'production' ||
-    Boolean(process.env.K_SERVICE);
+    (Boolean(process.env.K_SERVICE) && !process.env.K_SERVICE.startsWith('ais-dev-'));
 
-  const isTestExplicitlyAllowed = process.env.ALLOW_TEST_WRITES === 'true';
+  const isTestExplicitlyAllowed =
+    process.env.ALLOW_TEST_WRITES === 'true' ||
+    process.env.NODE_ENV === 'test' ||
+    process.env.FIREBASE_FORCE_LOCAL_FALLBACK === 'true';
 
   if (isProduction || !isTestExplicitlyAllowed) {
     const errorMsg = `PRODUCTION_SAFETY_VIOLATION: Test mutation "${actionName}" is strictly prohibited. Production database cannot be modified by test helpers or mock data.`;

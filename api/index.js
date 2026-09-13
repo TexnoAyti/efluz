@@ -1025,6 +1025,32 @@ function loadAppletConfig() {
   return {};
 }
 function initializeFirebaseAdmin() {
+  const isRealProduction = process.env.VERCEL === "1" || process.env.AWS_LAMBDA_FUNCTION_NAME !== void 0 || process.env.NODE_ENV === "production";
+  const isForceLocalFallback = process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true" && !isRealProduction;
+  if (isForceLocalFallback) {
+    if (!cachedDb || cachedInfo?.authMode !== "local_fallback") {
+      const appletConfig2 = loadAppletConfig();
+      const fallbackProjectId = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || appletConfig2.projectId || "gen-lang-client-0195097895";
+      const fallbackDatabaseId = process.env.FIRESTORE_DATABASE_ID || process.env.FIREBASE_DATABASE_ID || appletConfig2.firestoreDatabaseId || "ai-studio-efluz-4c6c88a6-697e-4fdf-82ed-45fec68ca34d";
+      const memoryDb = createMemoryFirestore();
+      cachedDb = memoryDb;
+      cachedInfo = {
+        isConfigured: true,
+        projectId: fallbackProjectId,
+        databaseId: fallbackDatabaseId,
+        authMode: "local_fallback"
+      };
+      console.log(`[FIREBASE AUTH] Using forced local in-memory fallback (FIREBASE_FORCE_LOCAL_FALLBACK=true): projectId=${fallbackProjectId}, databaseId=${fallbackDatabaseId}`);
+    }
+    return {
+      db: cachedDb,
+      info: cachedInfo
+    };
+  }
+  if (!isForceLocalFallback && cachedInfo?.authMode === "local_fallback") {
+    cachedDb = null;
+    cachedInfo = null;
+  }
   if (cachedDb && cachedInfo && cachedInfo.isConfigured) {
     return {
       db: cachedDb,
@@ -2189,8 +2215,8 @@ var init_fixtureEngine = __esm({
 
 // src/server/utils/testGuard.ts
 function assertTestEnvironmentSafe(actionName = "test_mutation") {
-  const isProduction = process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production" || Boolean(process.env.K_SERVICE);
-  const isTestExplicitlyAllowed = process.env.ALLOW_TEST_WRITES === "true";
+  const isProduction = process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production" || Boolean(process.env.K_SERVICE) && !process.env.K_SERVICE.startsWith("ais-dev-");
+  const isTestExplicitlyAllowed = process.env.ALLOW_TEST_WRITES === "true" || process.env.NODE_ENV === "test" || process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true";
   if (isProduction || !isTestExplicitlyAllowed) {
     const errorMsg = `PRODUCTION_SAFETY_VIOLATION: Test mutation "${actionName}" is strictly prohibited. Production database cannot be modified by test helpers or mock data.`;
     console.error(`[CRITICAL PRODUCTION BLOCKED] ${errorMsg}`);
@@ -8780,16 +8806,22 @@ init_firestoreStore();
 init_seed();
 
 // src/server/services/telegramBotService.ts
+var POSITIVE_MEMBERSHIP_CACHE_TTL_MS = 5 * 60 * 1e3;
+var NEGATIVE_MEMBERSHIP_CACHE_TTL_MS = 20 * 1e3;
 var membershipCache = /* @__PURE__ */ new Map();
-var MEMBERSHIP_CACHE_TTL_MS = 5 * 60 * 1e3;
-async function verifyTelegramGroupMembership(telegramUserId) {
+async function verifyTelegramGroupMembership(telegramUserId, forceRefresh) {
   const userIdStr = String(telegramUserId).trim();
   if (!userIdStr) {
     return { isMember: false, status: "empty_user_id" };
   }
-  const cached = membershipCache.get(userIdStr);
-  if (cached && Date.now() - cached.timestamp < MEMBERSHIP_CACHE_TTL_MS) {
-    return { isMember: cached.isMember, status: cached.status, cached: true };
+  if (!forceRefresh) {
+    const cached = membershipCache.get(userIdStr);
+    if (cached) {
+      const ttl = cached.isMember ? POSITIVE_MEMBERSHIP_CACHE_TTL_MS : NEGATIVE_MEMBERSHIP_CACHE_TTL_MS;
+      if (Date.now() - cached.timestamp < ttl) {
+        return { isMember: cached.isMember, status: cached.status, cached: true };
+      }
+    }
   }
   const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
   const groupUsername = (process.env.TELEGRAM_GROUP_USERNAME || "@efleagueuz").trim();
@@ -10437,13 +10469,13 @@ telegramRouter.get("/status", (req, res) => {
     webAppUrl
   });
 });
-telegramRouter.post("/check-membership", async (req, res) => {
-  const userId = req.body.userId || req.user?.telegramId;
-  if (!userId) {
-    res.status(400).json({ error: "Missing userId or user authentication" });
+telegramRouter.post("/check-membership", requireAuth, async (req, res) => {
+  const telegramId = req.user?.telegramId;
+  if (!telegramId) {
+    res.status(400).json({ error: "Authenticated user does not have a linked Telegram account" });
     return;
   }
-  const result = await verifyTelegramGroupMembership(userId);
+  const result = await verifyTelegramGroupMembership(telegramId, true);
   res.json(result);
 });
 
