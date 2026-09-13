@@ -23,6 +23,7 @@ import { notificationsReadResilientRouter } from './routes/notificationsReadResi
 import { meRouter, meResilientRouter } from './routes/me.routes';
 import { usersRouter } from './routes/users.routes';
 import { adminRouter } from './routes/admin.routes';
+import { telegramRouter } from './routes/telegram.routes';
 
 let dbInitPromise: Promise<void> | null = null;
 let dbReady = false;
@@ -147,6 +148,7 @@ export function createApp() {
   app.use('/api/me', meRouter);
   app.use('/api/users', usersRouter);
   app.use('/api/admin', adminRouter);
+  app.use('/api/telegram', telegramRouter);
 
   // 404 JSON fallback for any unhandled /api/* route
   app.use('/api/*', (req, res) => {

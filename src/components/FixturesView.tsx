@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../context/UserProfileContext';
 import { useI18n } from '../i18n';
@@ -41,6 +41,40 @@ export const FixturesView: React.FC = () => {
   const [filterMode, setFilterMode] = useState<'ALL' | 'MY_MATCHES' | 'PENDING' | 'DISPUTED' | 'CONFIRMED'>('ALL');
   const [selectedFixtureForSubmit, setSelectedFixtureForSubmit] = useState<Fixture | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [lockStates, setLockStates] = useState<Record<string, Record<number, { isOpen: boolean; isLocked: boolean; overrideStatus: string }>>>({});
+
+  // Reset selected matchday to active competition's currentMatchday when switching competitions
+  const prevCompIdRef = useRef<string>(selectedCompetitionId);
+  useEffect(() => {
+    if (selectedCompetitionId && selectedCompetitionId !== prevCompIdRef.current) {
+      prevCompIdRef.current = selectedCompetitionId;
+      const comp = competitions.find((c) => c.id === selectedCompetitionId);
+      if (comp) {
+        setSelectedMatchday(comp.currentMatchday || 1);
+      }
+    }
+  }, [selectedCompetitionId, competitions]);
+
+  // Fetch isolated locks for selected competition
+  useEffect(() => {
+    if (!selectedCompetitionId) return;
+    let isMounted = true;
+    api.getCompetitionLocks(selectedCompetitionId, activeSeasonId)
+      .then((res) => {
+        if (isMounted && res.locks) {
+          setLockStates((prev) => ({
+            ...prev,
+            [selectedCompetitionId]: res.locks,
+          }));
+        }
+      })
+      .catch((err) => {
+        console.warn('Failed to load competition locks:', err);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedCompetitionId, activeSeasonId]);
 
   // Load competitions
   useEffect(() => {
@@ -74,6 +108,20 @@ export const FixturesView: React.FC = () => {
       : activeComp?.type === 'EUROPEAN_LEAGUE_PHASE'
       ? 8
       : 1);
+
+  const isMatchdayLocked = (md: number): boolean => {
+    if (!activeComp) return false;
+    const compLocks = lockStates[selectedCompetitionId];
+    if (compLocks && compLocks[md]) {
+      const lock = compLocks[md];
+      if (lock.overrideStatus === 'FORCE_OPEN' || lock.isOpen === true) return false;
+      if (lock.overrideStatus === 'FORCE_LOCKED' || lock.overrideStatus === 'PAUSED' || lock.isLocked || lock.isOpen === false) return true;
+    }
+    if (activeComp.adminOverrideStatus === 'FORCE_LOCKED' || activeComp.adminOverrideStatus === 'PAUSED') return true;
+    if (activeComp.adminOverrideStatus === 'FORCE_OPEN') return md !== (activeComp.currentMatchday || 1);
+    if (activeComp.isMatchdayOpen === false) return true;
+    return md !== (activeComp.currentMatchday || 1);
+  };
 
   const loadFixtures = async (skipCache = false) => {
     if (!selectedCompetitionId) {
@@ -204,7 +252,7 @@ export const FixturesView: React.FC = () => {
             <div className="text-center px-3 min-w-[130px]">
               <div className="flex items-center justify-center gap-1.5 mb-0.5">
                 <span className="text-[9px] uppercase font-black text-slate-400">Matchday</span>
-                {selectedMatchday <= (activeComp.currentMatchday || 1) ? (
+                {!isMatchdayLocked(selectedMatchday) ? (
                   <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                     OPEN
                   </span>
@@ -218,7 +266,7 @@ export const FixturesView: React.FC = () => {
               <span className="text-sm sm:text-base font-black text-white">
                 {selectedMatchday} <span className="text-slate-500 font-normal text-xs">/ {totalMatchdays}</span>
               </span>
-              {selectedMatchday > (activeComp.currentMatchday || 1) && activeComp.nextMatchdayOpenAt && (
+              {isMatchdayLocked(selectedMatchday) && activeComp.nextMatchdayOpenAt && (
                 <div className="text-[10px] text-amber-300 font-mono mt-0.5 flex items-center justify-center gap-1">
                   <MatchdayCountdown targetIso={activeComp.nextMatchdayOpenAt} />
                 </div>
@@ -238,7 +286,7 @@ export const FixturesView: React.FC = () => {
           <div className="flex items-center gap-1.5 overflow-x-auto max-w-full pb-1 sm:pb-0 scrollbar-none">
             {Array.from({ length: totalMatchdays }, (_, i) => i + 1).map((md) => {
               const isSelected = selectedMatchday === md;
-              const isLocked = md > (activeComp.currentMatchday || 1);
+              const isLocked = isMatchdayLocked(md);
               return (
                 <button
                   key={md}
@@ -575,7 +623,7 @@ export const FixturesView: React.FC = () => {
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         <span>Details</span>
                       </button>
-                    ) : fixture.isPlayable === false ? (
+                    ) : (fixture.isPlayable === false || isMatchdayLocked(fixture.matchday)) ? (
                       <button
                         disabled={true}
                         className="px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all min-h-[34px] touch-manipulation shrink-0 bg-slate-800/70 text-slate-500 border border-slate-700/60 cursor-not-allowed"

@@ -2268,15 +2268,31 @@ export async function generateCompetitionFixturesFirestore(
 
 // ----------------------------------------------------
 // MATCHDAY LOCK ISOLATION ENGINE
-// Key Format: `${seasonId}*${competitionId}*${matchday}`
+// Key Format: `${seasonId}:${competitionId}:${matchday}`
 // Strictly isolates lock state per competition and per matchday
 // ----------------------------------------------------
 
 export function getMatchdayLockKey(seasonId: string, competitionId: string, matchday: number): string {
-  return `${seasonId}*${competitionId}*${matchday}`;
+  return `${seasonId}:${competitionId}:${matchday}`;
 }
 
 const matchdayLocksCache = new Map<string, FirestoreMatchdayLockDoc>();
+
+export function invalidateMatchdayLockCache(seasonId: string, competitionId: string, matchday?: number): void {
+  if (matchday !== undefined) {
+    const key = getMatchdayLockKey(seasonId, competitionId, matchday);
+    matchdayLocksCache.delete(key);
+    serverCache.delete(`lock:${key}`);
+  } else {
+    const prefix = `${seasonId}:${competitionId}:`;
+    for (const k of Array.from(matchdayLocksCache.keys())) {
+      if (k.startsWith(prefix)) {
+        matchdayLocksCache.delete(k);
+        serverCache.delete(`lock:${k}`);
+      }
+    }
+  }
+}
 
 function ensureMatchdayLocksTable(): void {
   try {
@@ -2300,6 +2316,38 @@ function ensureMatchdayLocksTable(): void {
 }
 ensureMatchdayLocksTable();
 
+export async function getCompetitionMatchdayLocksFirestore(
+  seasonId: string,
+  competitionId: string
+): Promise<Record<number, FirestoreMatchdayLockDoc>> {
+  const result: Record<number, FirestoreMatchdayLockDoc> = {};
+  try {
+    const rows = queryAll<any>(
+      'SELECT * FROM matchday_locks WHERE season_id = ? AND competition_id = ? ORDER BY matchday ASC',
+      [seasonId, competitionId]
+    );
+    for (const row of rows) {
+      const lockDoc: FirestoreMatchdayLockDoc = {
+        id: row.id,
+        seasonId: row.season_id,
+        competitionId: row.competition_id,
+        matchday: row.matchday,
+        overrideStatus: row.override_status,
+        isOpen: Boolean(row.is_open),
+        isLocked: Boolean(row.is_locked),
+        durationHours: row.duration_hours || undefined,
+        openedAt: row.opened_at || undefined,
+        lockedAt: row.locked_at || undefined,
+        expiresAt: row.expires_at || undefined,
+        updatedAt: row.updated_at,
+      };
+      result[row.matchday] = lockDoc;
+      matchdayLocksCache.set(row.id, lockDoc);
+    }
+  } catch {}
+  return result;
+}
+
 export async function getMatchdayLockFirestore(
   seasonId: string,
   competitionId: string,
@@ -2322,9 +2370,12 @@ export async function getMatchdayLockFirestore(
     }
   } catch {}
 
-  // Check SQLite
+  // Check SQLite strictly scoped to seasonId, competitionId, and matchday
   try {
-    const row = queryGet<any>('SELECT * FROM matchday_locks WHERE id = ?', [key]);
+    const row = queryGet<any>(
+      'SELECT * FROM matchday_locks WHERE season_id = ? AND competition_id = ? AND matchday = ?',
+      [seasonId, competitionId, matchday]
+    );
     if (row) {
       const data: FirestoreMatchdayLockDoc = {
         id: row.id,
@@ -2384,7 +2435,7 @@ export async function setMatchdayLockFirestore(
     updatedByUserId: params.adminUserId,
   };
 
-  // 1. Update in-memory cache
+  // 1. Update in-memory cache strictly for this lock key
   matchdayLocksCache.set(key, lockDoc);
 
   // 2. Persist in Firestore
@@ -2395,7 +2446,7 @@ export async function setMatchdayLockFirestore(
     console.warn('[FIRESTORE FALLBACK] setMatchdayLockFirestore:', err.message);
   }
 
-  // 3. Persist in SQLite
+  // 3. Persist in SQLite strictly scoped
   try {
     queryRun(
       `INSERT INTO matchday_locks (id, season_id, competition_id, matchday, override_status, is_open, is_locked, duration_hours, opened_at, locked_at, expires_at, updated_at)
@@ -2408,7 +2459,10 @@ export async function setMatchdayLockFirestore(
          opened_at = excluded.opened_at,
          locked_at = excluded.locked_at,
          expires_at = excluded.expires_at,
-         updated_at = excluded.updated_at`,
+         updated_at = excluded.updated_at
+       WHERE matchday_locks.season_id = excluded.season_id
+         AND matchday_locks.competition_id = excluded.competition_id
+         AND matchday_locks.matchday = excluded.matchday`,
       [
         key,
         seasonId,
@@ -2445,8 +2499,11 @@ export async function setMatchdayLockFirestore(
     }
   } catch {}
 
-  invalidateFirestoreCache('firestore:comp');
-  invalidateFirestoreCache('firestore:fixtures');
+  // Invalidate ONLY this modified competition/matchday lock and cache
+  invalidateMatchdayLockCache(seasonId, competitionId, matchday);
+  serverCache.delete(`firestore:comp:${competitionId}`);
+  serverCache.delete(`firestore:competitions:${seasonId}`);
+  serverCache.delete(`firestore:fixtures:${competitionId}`);
   return lockDoc;
 }
 
@@ -2485,13 +2542,13 @@ export async function assertMatchdayPlayableFirestore(
   const lock = await getMatchdayLockFirestore(seasonId, competitionId, matchday);
 
   if (lock) {
-    if (lock.overrideStatus === 'FORCE_LOCKED' || lock.overrideStatus === 'PAUSED' || lock.isLocked) {
+    if (lock.overrideStatus === 'FORCE_LOCKED' || lock.overrideStatus === 'PAUSED' || lock.isLocked || lock.isOpen === false) {
       const err: any = new Error(`MATCHDAY_LOCKED: Matchday ${matchday} for competition '${competitionId}' is locked by tournament administration.`);
       err.code = 'MATCHDAY_LOCKED';
       err.statusCode = 403;
       throw err;
     }
-    if (lock.overrideStatus === 'FORCE_OPEN' || lock.isOpen) {
+    if (lock.overrideStatus === 'FORCE_OPEN' || lock.isOpen === true) {
       return; // Allowed!
     }
   }
@@ -2521,7 +2578,13 @@ export async function assertMatchdayPlayableFirestore(
   }
 
   if (adminStatus === 'FORCE_OPEN') {
-    return;
+    if (matchday === activeMatchday) {
+      return;
+    }
+    const err: any = new Error(`MATCHDAY_LOCKED: Matchday ${matchday} is locked. Admin open is active only for Matchday ${activeMatchday} in competition '${competitionId}'.`);
+    err.code = 'MATCHDAY_LOCKED';
+    err.statusCode = 403;
+    throw err;
   }
 
   if (!isMatchdayOpen) {
@@ -2615,7 +2678,7 @@ export async function setCompetitionMatchdayOverrideFirestore(
   const now = new Date().toISOString();
   const isMatchdayOpen = overrideStatus === 'FORCE_OPEN' || overrideStatus === 'AUTO';
 
-  // Set the isolated matchday lock for this exact `${seasonId}*${competitionId}*${targetMatchday}`
+  // Set the isolated matchday lock for this exact `${seasonId}:${competitionId}:${targetMatchday}`
   const lockDoc = await setMatchdayLockFirestore(seasonId, competitionId, targetMatchday, {
     overrideStatus,
     durationHours: options?.durationHours,
@@ -2638,7 +2701,11 @@ export async function setCompetitionMatchdayOverrideFirestore(
     });
   }
 
-  invalidateFirestoreCache('firestore:comp');
+  // Invalidate ONLY this modified competition/matchday lock
+  invalidateMatchdayLockCache(seasonId, competitionId, targetMatchday);
+  serverCache.delete(`firestore:comp:${competitionId}`);
+  serverCache.delete(`firestore:competitions:${seasonId}`);
+  serverCache.delete(`firestore:fixtures:${competitionId}`);
   return {
     success: true,
     adminOverrideStatus: overrideStatus,

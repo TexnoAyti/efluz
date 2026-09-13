@@ -19,6 +19,8 @@ import {
   AlertTriangle,
   Trophy,
   Swords,
+  ExternalLink,
+  Users,
 } from 'lucide-react';
 
 interface ClubsViewProps {
@@ -55,6 +57,12 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
   // Claim modal state
   const [clubToClaim, setClubToClaim] = useState<Club | null>(null);
   const [isClaiming, setIsClaiming] = useState(false);
+  const [membershipModal, setMembershipModal] = useState<{
+    open: boolean;
+    groupUsername: string;
+    groupUrl: string;
+    message?: string;
+  } | null>(null);
 
   // 1. Load clubs for selected league
   const loadClubsForLeague = useCallback(async (leagueId: string, forceRefresh = false) => {
@@ -209,6 +217,19 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
       await refreshUserData();
       await loadClubsForLeague(selectedLeagueId);
     } catch (err: any) {
+      if (err.data?.code === 'TELEGRAM_GROUP_MEMBERSHIP_REQUIRED' || err.code === 'TELEGRAM_GROUP_MEMBERSHIP_REQUIRED') {
+        const groupUsername = err.data?.groupUsername || '@efleagueuz';
+        const groupUrl = err.data?.groupUrl || 'https://t.me/efleagueuz';
+        const msg = err.data?.message || err.message || "Klub tanlash uchun avval @efleagueuz Telegram guruhiga a'zo bo'lishingiz lozim.";
+        setMembershipModal({
+          open: true,
+          groupUsername,
+          groupUrl,
+          message: msg,
+        });
+        showToast(msg, 'error');
+        return;
+      }
       const msg = err.data?.message || err.message || 'Failed to claim club.';
       showToast(msg, 'error');
     } finally {
@@ -1064,6 +1085,59 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                   </>
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Telegram Group Membership Required Modal */}
+      {membershipModal?.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="glass-panel w-full max-w-md shadow-2xl p-6 text-white text-center border-amber-500/40">
+            <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 mx-auto mb-3 flex items-center justify-center shadow-lg text-amber-400">
+              <Users className="w-8 h-8" />
+            </div>
+
+            <h3 className="text-lg font-black text-white">Guruhga A'zo Bo'ling</h3>
+            <p className="text-xs text-slate-300 mt-2 mb-4 leading-relaxed">
+              Klub tanlash va ligada ishtirok etish uchun rasmiy{' '}
+              <span className="text-amber-400 font-bold">{membershipModal.groupUsername}</span> Telegram guruhimizga
+              a'zo bo'lishingiz lozim.
+            </p>
+
+            <div className="space-y-2">
+              <a
+                href={membershipModal.groupUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="w-full py-3 btn-glass-primary text-slate-950 font-black text-xs flex items-center justify-center gap-2 rounded-xl touch-manipulation shadow-md"
+              >
+                <Users className="w-4 h-4 text-slate-950" />
+                <span>{membershipModal.groupUsername} guruhiga qo'shilish</span>
+                <ExternalLink className="w-3.5 h-3.5 text-slate-950" />
+              </a>
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setMembershipModal(null)}
+                  className="flex-1 py-2.5 glass-card glass-card-interactive text-slate-300 font-semibold text-xs min-h-[44px] touch-manipulation"
+                >
+                  Yopish
+                </button>
+                <button
+                  type="button"
+                  disabled={isClaiming}
+                  onClick={async () => {
+                    setMembershipModal(null);
+                    await handleClaimClub();
+                  }}
+                  className="flex-1 py-2.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 min-h-[44px] touch-manipulation"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isClaiming ? 'animate-spin' : ''}`} />
+                  <span>Qayta tekshirish</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

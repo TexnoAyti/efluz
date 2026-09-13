@@ -785,17 +785,32 @@ export const api = {
 
   async overrideCompetitionMatchday(
     competitionId: string,
-    overrideStatus: 'AUTO' | 'FORCE_OPEN' | 'FORCE_LOCKED' | 'PAUSED'
-  ): Promise<{ success: boolean; adminOverrideStatus: string; isMatchdayOpen: boolean }> {
-    const res = await request<{ success: boolean; adminOverrideStatus: string; isMatchdayOpen: boolean }>(
+    overrideStatus: 'AUTO' | 'FORCE_OPEN' | 'FORCE_LOCKED' | 'PAUSED',
+    options?: { matchday?: number; seasonId?: string; durationHours?: number }
+  ): Promise<{ success: boolean; adminOverrideStatus: string; isMatchdayOpen: boolean; matchdayLock?: any }> {
+    const res = await request<{ success: boolean; adminOverrideStatus: string; isMatchdayOpen: boolean; matchdayLock?: any }>(
       `/api/admin/competitions/${competitionId}/matchday/override`,
       {
         method: 'POST',
-        body: JSON.stringify({ overrideStatus }),
+        body: JSON.stringify({
+          overrideStatus,
+          matchday: options?.matchday,
+          seasonId: options?.seasonId,
+          durationHours: options?.durationHours,
+        }),
       }
     );
     invalidateClientCache();
     return res;
+  },
+
+  async getCompetitionLocks(
+    competitionId: string,
+    seasonId = 'season-2026-27'
+  ): Promise<{ locks: Record<number, any> }> {
+    return await request<{ locks: Record<number, any> }>(
+      `/api/competitions/${competitionId}/locks?seasonId=${encodeURIComponent(seasonId)}`
+    );
   },
 
   async advanceCompetitionMatchday(

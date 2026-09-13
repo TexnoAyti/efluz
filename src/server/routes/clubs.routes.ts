@@ -9,6 +9,7 @@ import {
 } from '../firebase/firestoreStore';
 import { SEED_CLUBS } from '../db/seed';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
+import { verifyTelegramGroupMembership } from '../services/telegramBotService';
 
 export const clubsRouter = Router();
 
@@ -239,6 +240,22 @@ clubsRouter.post('/:id/claim', requireAuth, async (req: Request, res: Response) 
   const seasonId = (req.body.seasonId as string) || 'season-2026-27';
   const userId = req.user!.id;
   const clubId = req.params.id;
+  const telegramId = req.user!.telegramId;
+
+  // Enforce Telegram group membership verification (@efleagueuz) ONLY when claiming
+  if (telegramId) {
+    const membership = await verifyTelegramGroupMembership(telegramId);
+    if (!membership.isMember) {
+      res.status(403).json({
+        error: 'TELEGRAM_GROUP_MEMBERSHIP_REQUIRED',
+        code: 'TELEGRAM_GROUP_MEMBERSHIP_REQUIRED',
+        message: "Klub tanlash uchun avval @efleagueuz Telegram guruhiga a'zo bo'lishingiz lozim.",
+        groupUsername: '@efleagueuz',
+        groupUrl: 'https://t.me/efleagueuz',
+      });
+      return;
+    }
+  }
 
   try {
     const result = await claimClubAtomicFirestore(userId, clubId, seasonId);

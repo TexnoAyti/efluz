@@ -8,6 +8,7 @@ import {
   rebuildCompetitionStandingsFirestore,
   getFixturesFirestore,
   generateCompetitionFixturesFirestore,
+  getCompetitionMatchdayLocksFirestore,
 } from '../firebase/firestoreStore';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
 
@@ -114,5 +115,15 @@ competitionsRouter.post('/:id/rebuild-standings', requireAdmin, async (req: Requ
     });
   } catch (err: any) {
     handleFirestoreError(res, err, `POST /api/competitions/${req.params.id}/rebuild-standings`);
+  }
+});
+
+competitionsRouter.get('/:id/locks', async (req: Request, res: Response) => {
+  const seasonId = (req.query.seasonId as string) || 'season-2026-27';
+  try {
+    const locks = await getCompetitionMatchdayLocksFirestore(seasonId, req.params.id);
+    res.json({ locks });
+  } catch (err: any) {
+    handleFirestoreError(res, err, `GET /api/competitions/${req.params.id}/locks`);
   }
 });

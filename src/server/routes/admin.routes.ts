@@ -656,14 +656,19 @@ adminRouter.post('/results/:fixtureId/reject', validateBody(reopenFixtureSchema)
 // Competition Matchday Controls
 adminRouter.post('/competitions/:id/matchday/override', async (req: Request, res: Response) => {
   const competitionId = req.params.id;
-  const { overrideStatus } = req.body;
+  const { overrideStatus, matchday, durationHours, seasonId } = req.body;
   if (!overrideStatus || !['AUTO', 'FORCE_OPEN', 'FORCE_LOCKED', 'PAUSED'].includes(overrideStatus)) {
     res.status(400).json({ error: 'Valid overrideStatus is required (AUTO, FORCE_OPEN, FORCE_LOCKED, PAUSED)', code: 'BAD_REQUEST' });
     return;
   }
 
   try {
-    const result = await setCompetitionMatchdayOverrideFirestore(competitionId, overrideStatus);
+    const result = await setCompetitionMatchdayOverrideFirestore(competitionId, overrideStatus, {
+      matchday: typeof matchday === 'number' ? matchday : undefined,
+      durationHours: typeof durationHours === 'number' ? durationHours : undefined,
+      seasonId: typeof seasonId === 'string' ? seasonId : undefined,
+      adminUserId: req.user?.id,
+    });
     res.json(result);
   } catch (err: any) {
     handleFirestoreError(res, err, `POST /api/admin/competitions/${competitionId}/matchday/override`);
@@ -684,10 +689,15 @@ adminRouter.post('/competitions/:id/matchday/advance', async (req: Request, res:
 
 adminRouter.post('/competitions/:id/matchday/open-now', async (req: Request, res: Response) => {
   const competitionId = req.params.id;
-  const { durationHours = 30 } = req.body;
+  const { durationHours = 30, matchday, seasonId } = req.body;
 
   try {
-    const result = await openCompetitionMatchdayNowFirestore(competitionId, durationHours);
+    const result = await openCompetitionMatchdayNowFirestore(
+      competitionId,
+      durationHours,
+      typeof matchday === 'number' ? matchday : undefined,
+      typeof seasonId === 'string' ? seasonId : undefined
+    );
     res.json(result);
   } catch (err: any) {
     handleFirestoreError(res, err, `POST /api/admin/competitions/${competitionId}/matchday/open-now`);
