@@ -111,6 +111,10 @@ export const FixturesView: React.FC = () => {
 
   const isMatchdayLocked = (md: number): boolean => {
     if (!activeComp) return false;
+    const isKnockout =
+      activeComp.type === 'KNOCKOUT' ||
+      activeComp.type === 'SUPER_CUP' ||
+      activeComp.type === 'EUROPEAN_KNOCKOUT';
     const compLocks = lockStates[selectedCompetitionId];
     if (compLocks && compLocks[md]) {
       const lock = compLocks[md];
@@ -118,8 +122,9 @@ export const FixturesView: React.FC = () => {
       if (lock.overrideStatus === 'FORCE_LOCKED' || lock.overrideStatus === 'PAUSED' || lock.isLocked || lock.isOpen === false) return true;
     }
     if (activeComp.adminOverrideStatus === 'FORCE_LOCKED' || activeComp.adminOverrideStatus === 'PAUSED') return true;
-    if (activeComp.adminOverrideStatus === 'FORCE_OPEN') return md !== (activeComp.currentMatchday || 1);
+    if (activeComp.adminOverrideStatus === 'FORCE_OPEN') return isKnockout ? false : md !== (activeComp.currentMatchday || 1);
     if (activeComp.isMatchdayOpen === false) return true;
+    if (isKnockout) return false;
     return md !== (activeComp.currentMatchday || 1);
   };
 

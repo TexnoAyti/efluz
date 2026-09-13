@@ -4,6 +4,7 @@ import {
   verifyTelegramGroupMembership,
   TelegramMembershipResult,
 } from '../services/telegramBotService';
+import { requireAuth } from '../middleware/authMiddleware';
 
 export const telegramRouter = Router();
 
@@ -65,15 +66,17 @@ telegramRouter.get('/status', (req: Request, res: Response) => {
 });
 
 /**
- * Verification endpoint for group membership
+ * Verification endpoint for group membership.
+ * Uses authenticated Telegram user ID (never trusts arbitrary req.body.userId).
+ * Always calls verifyTelegramGroupMembership with forceRefresh: true.
  */
-telegramRouter.post('/check-membership', async (req: Request, res: Response) => {
-  const userId = req.body.userId || req.user?.telegramId;
-  if (!userId) {
-    res.status(400).json({ error: 'Missing userId or user authentication' });
+telegramRouter.post('/check-membership', requireAuth, async (req: Request, res: Response) => {
+  const telegramId = req.user?.telegramId;
+  if (!telegramId) {
+    res.status(400).json({ error: 'Authenticated user does not have a linked Telegram account' });
     return;
   }
 
-  const result: TelegramMembershipResult = await verifyTelegramGroupMembership(userId);
+  const result: TelegramMembershipResult = await verifyTelegramGroupMembership(telegramId, true);
   res.json(result);
 });

@@ -57,11 +57,13 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
   // Claim modal state
   const [clubToClaim, setClubToClaim] = useState<Club | null>(null);
   const [isClaiming, setIsClaiming] = useState(false);
+  const [isCheckingMembership, setIsCheckingMembership] = useState(false);
   const [membershipModal, setMembershipModal] = useState<{
     open: boolean;
     groupUsername: string;
     groupUrl: string;
     message?: string;
+    pendingClub?: Club;
   } | null>(null);
 
   // 1. Load clubs for selected league
@@ -197,8 +199,9 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
     }
   };
 
-  const handleClaimClub = async () => {
-    if (!clubToClaim) return;
+  const handleClaimClub = async (targetClub?: Club) => {
+    const club = targetClub || clubToClaim;
+    if (!club) return;
     if (currentClub) {
       showToast(t.alreadyHaveClubMessage, 'error');
       setClubToClaim(null);
@@ -206,7 +209,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
     }
     setIsClaiming(true);
     try {
-      const res = await api.claimClub(clubToClaim.id, activeSeasonId);
+      const res = await api.claimClub(club.id, activeSeasonId);
       confetti({
         particleCount: 100,
         spread: 80,
@@ -214,6 +217,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
       });
       showToast(res.message || t.claimSuccess, 'success');
       setClubToClaim(null);
+      setMembershipModal(null);
       await refreshUserData();
       await loadClubsForLeague(selectedLeagueId);
     } catch (err: any) {
@@ -226,6 +230,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
           groupUsername,
           groupUrl,
           message: msg,
+          pendingClub: club,
         });
         showToast(msg, 'error');
         return;
@@ -234,6 +239,31 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
       showToast(msg, 'error');
     } finally {
       setIsClaiming(false);
+    }
+  };
+
+  const handleCheckMembershipAndClaim = async () => {
+    const targetClub = membershipModal?.pendingClub || clubToClaim;
+    setIsCheckingMembership(true);
+    try {
+      // 1. Force fresh Telegram check
+      const checkRes = await api.checkTelegramMembership();
+      if (checkRes.isMember) {
+        // 2. When fresh result becomes member, automatically retry the original pending club claim
+        setMembershipModal(null);
+        if (targetClub) {
+          await handleClaimClub(targetClub);
+        } else {
+          showToast("A'zolik tasdiqlandi! Endi klubingizni tanlashingiz mumkin.", 'success');
+        }
+      } else {
+        showToast("Siz hali @efleagueuz guruhiga a'zo bo'lmadingiz. Iltimos, avval guruhga a'zo bo'ling va yana tekshiring.", 'error');
+      }
+    } catch (err: any) {
+      const msg = err.data?.message || err.message || "A'zolikni tekshirishda xatolik yuz berdi.";
+      showToast(msg, 'error');
+    } finally {
+      setIsCheckingMembership(false);
     }
   };
 
@@ -1127,15 +1157,19 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                 </button>
                 <button
                   type="button"
-                  disabled={isClaiming}
-                  onClick={async () => {
-                    setMembershipModal(null);
-                    await handleClaimClub();
-                  }}
-                  className="flex-1 py-2.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 min-h-[44px] touch-manipulation"
+                  id="btn-verify-telegram-membership"
+                  disabled={isCheckingMembership || isClaiming}
+                  onClick={handleCheckMembershipAndClaim}
+                  className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-slate-950 font-black text-xs rounded-xl flex items-center justify-center gap-1.5 min-h-[44px] touch-manipulation shadow-md transition-colors"
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isClaiming ? 'animate-spin' : ''}`} />
-                  <span>Qayta tekshirish</span>
+                  {isCheckingMembership || isClaiming ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-950" />
+                      <span>Tekshirilmoqda...</span>
+                    </>
+                  ) : (
+                    <span>✅ Tekshirish</span>
+                  )}
                 </button>
               </div>
             </div>

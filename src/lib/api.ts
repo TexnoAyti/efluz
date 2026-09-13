@@ -302,6 +302,13 @@ export const api = {
     return request('/api/auth/dev-profiles', { cacheTtlMs: 60000 });
   },
 
+  async checkTelegramMembership(): Promise<{ isMember: boolean; status?: string; error?: string; cached?: boolean }> {
+    return request('/api/telegram/check-membership', {
+      method: 'POST',
+      skipCache: true,
+    });
+  },
+
   // Me
   async getMe(seasonId = 'season-2026-27', skipCache = false): Promise<{
     user: User;

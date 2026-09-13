@@ -12,9 +12,13 @@ export interface TelegramMembershipResult {
   cached?: boolean;
 }
 
-// 5-minute server-side cache for membership checks to avoid spamming Telegram API
+// Cache configuration:
+// - Positive member cache: ~5 minutes to prevent spamming Telegram API
+// - Negative non-member cache: 20 seconds (15-30s) so newly joined users can quickly re-check
+const POSITIVE_MEMBERSHIP_CACHE_TTL_MS = 5 * 60 * 1000;
+const NEGATIVE_MEMBERSHIP_CACHE_TTL_MS = 20 * 1000;
+
 const membershipCache = new Map<string, { isMember: boolean; status: string; timestamp: number }>();
-const MEMBERSHIP_CACHE_TTL_MS = 5 * 60 * 1000;
 
 export function clearTelegramMembershipCache(telegramUserId?: string | number): void {
   if (telegramUserId !== undefined) {
@@ -33,19 +37,28 @@ export function clearTelegramMembershipCache(telegramUserId?: string | number): 
  * - 'restricted' (with is_member: true) -> member
  * - 'left', 'kicked', 'restricted' (is_member: false), or 'user not found' -> NOT a member
  * - Temporary network/server failure -> fail-open (DO NOT falsely label user as non-member)
+ *
+ * @param telegramUserId User's Telegram ID
+ * @param forceRefresh When true, bypasses the cache and queries Telegram getChatMember immediately
  */
 export async function verifyTelegramGroupMembership(
-  telegramUserId: string | number
+  telegramUserId: string | number,
+  forceRefresh?: boolean
 ): Promise<TelegramMembershipResult> {
   const userIdStr = String(telegramUserId).trim();
   if (!userIdStr) {
     return { isMember: false, status: 'empty_user_id' };
   }
 
-  // Check cache first
-  const cached = membershipCache.get(userIdStr);
-  if (cached && Date.now() - cached.timestamp < MEMBERSHIP_CACHE_TTL_MS) {
-    return { isMember: cached.isMember, status: cached.status, cached: true };
+  // Check cache only if forceRefresh is not requested
+  if (!forceRefresh) {
+    const cached = membershipCache.get(userIdStr);
+    if (cached) {
+      const ttl = cached.isMember ? POSITIVE_MEMBERSHIP_CACHE_TTL_MS : NEGATIVE_MEMBERSHIP_CACHE_TTL_MS;
+      if (Date.now() - cached.timestamp < ttl) {
+        return { isMember: cached.isMember, status: cached.status, cached: true };
+      }
+    }
   }
 
   const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();

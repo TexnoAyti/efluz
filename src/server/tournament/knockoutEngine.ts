@@ -682,6 +682,26 @@ export async function advanceKnockoutWinner(fixtureId: string): Promise<{ advanc
     { round: nextRound, slot: isHomeSlot ? 'HOME' : 'AWAY', advancedClubId: fixture.winnerClubId }
   );
 
+  // Check if current round is complete and update competition currentMatchday
+  try {
+    const curMd = fixture.matchday || 1;
+    const roundSnap = await db
+      .collection(COLLECTIONS.FIXTURES)
+      .where('competitionId', '==', comp.id)
+      .where('matchday', '==', curMd)
+      .get();
+    const allRoundConfirmed = !roundSnap.empty && roundSnap.docs.every((d) => (d.data() as FirestoreFixtureDoc)?.status === 'CONFIRMED');
+    if (allRoundConfirmed) {
+      const nextMatchday = curMd + 1;
+      await db.collection(COLLECTIONS.COMPETITIONS).doc(comp.id).update({
+        currentMatchday: nextMatchday,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  } catch (roundErr) {
+    console.warn('[KNOCKOUT_ADVANCE] Could not check round completion:', roundErr);
+  }
+
   return { advanced: true, targetFixtureId: nextFixtureId, winnerClubId: fixture.winnerClubId };
 }
 
