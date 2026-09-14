@@ -26,7 +26,8 @@
     "test:standings": "tsx src/server/tests/standingsPreaggregationTest.ts",
     "test:ucl32-locking": "tsx src/server/tests/verifyUCL32AndMatchdayLocking.ts",
     "test:deployment-selfcheck": "tsx src/server/tests/deploymentSelfCheck.ts",
-    "test:quota-audit": "tsx src/server/tests/verifyQuotaResilienceAudit.ts"
+    "test:quota-audit": "tsx src/server/tests/verifyQuotaResilienceAudit.ts",
+    "audit:contamination:readonly": "tsx src/server/scripts/productionContaminationAudit.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

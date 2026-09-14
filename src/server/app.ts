@@ -59,8 +59,6 @@ export async function ensureDbReady(): Promise<void> {
   if (!dbInitPromise) {
     dbInitPromise = (async () => {
       try {
-        const fbStatus = getFirebaseStatus();
-
         // Always initialize SQLite baseline so the application is 100% resilient
         await initDatabase();
         seedDatabase();
@@ -70,26 +68,15 @@ export async function ensureDbReady(): Promise<void> {
         // Restore occupancy snapshot from disk if available
         loadSnapshotFromFile();
 
-        if (fbStatus.isConfigured) {
-          try {
-            const db = getFirestoreDb();
-            const clubsSnap = await db.collection(COLLECTIONS.CLUBS).limit(1).get();
-            if (clubsSnap.empty) {
-              console.log('[BOOT] Firestore is empty. Auto-seeding from SQLite baseline...');
-              await migrateSqliteToFirestore();
-              console.log('[BOOT] Firestore auto-seeding completed.');
-            } else {
-              console.log(`[BOOT] Connected to authoritative Firestore database: ${fbStatus.databaseId}`);
-              // Hydrate occupancy snapshot in background for 0-latency club status checks
-              getActiveOccupanciesForSeason('season-2026-27').catch(() => {});
-            }
-          } catch (fbErr: any) {
-            console.warn('[BOOT] Firestore connection warning, operating with resilient SQLite fallback:', fbErr.message);
-          }
+        // Cold start requirement: ZERO Firestore reads on boot.
+        // Seeding, migrating, and occupancy hydration must NOT run during cold start.
+
+        // Only start long-running background intervals in non-serverless environments
+        const isServerless = process.env.VERCEL === '1' || Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME);
+        if (!isServerless) {
+          startBackgroundReconciliation();
         }
 
-        // Start background mutation reconciliation worker
-        startBackgroundReconciliation();
         dbReady = true;
       } catch (err) {
         dbInitPromise = null;

@@ -252,6 +252,12 @@ async function initDatabase() {
   }
   try {
     dbInstance.exec(`
+      ALTER TABLE club_memberships ADD COLUMN updated_at TEXT;
+    `);
+  } catch {
+  }
+  try {
+    dbInstance.exec(`
       CREATE TABLE IF NOT EXISTS season_league_clubs (
         id TEXT PRIMARY KEY,
         season_id TEXT NOT NULL,
@@ -1026,12 +1032,13 @@ function loadAppletConfig() {
 }
 function initializeFirebaseAdmin() {
   const isRealProduction = process.env.VERCEL === "1" || process.env.AWS_LAMBDA_FUNCTION_NAME !== void 0 || process.env.NODE_ENV === "production";
-  const isForceLocalFallback = process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true" && !isRealProduction;
-  if (isForceLocalFallback) {
+  if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true") {
+    if (isRealProduction) {
+      throw new Error("FATAL_SAFETY_VIOLATION: FIREBASE_FORCE_LOCAL_FALLBACK cannot be enabled in a production environment.");
+    }
     if (!cachedDb || cachedInfo?.authMode !== "local_fallback") {
-      const appletConfig2 = loadAppletConfig();
-      const fallbackProjectId = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || appletConfig2.projectId || "gen-lang-client-0195097895";
-      const fallbackDatabaseId = process.env.FIRESTORE_DATABASE_ID || process.env.FIREBASE_DATABASE_ID || appletConfig2.firestoreDatabaseId || "ai-studio-efluz-4c6c88a6-697e-4fdf-82ed-45fec68ca34d";
+      const fallbackProjectId = "test-local-fallback";
+      const fallbackDatabaseId = "test-local-db";
       const memoryDb = createMemoryFirestore();
       cachedDb = memoryDb;
       cachedInfo = {
@@ -1047,7 +1054,7 @@ function initializeFirebaseAdmin() {
       info: cachedInfo
     };
   }
-  if (!isForceLocalFallback && cachedInfo?.authMode === "local_fallback") {
+  if (cachedInfo?.authMode === "local_fallback") {
     cachedDb = null;
     cachedInfo = null;
   }
@@ -1714,6 +1721,112 @@ var init_collections = __esm({
   }
 });
 
+// src/server/utils/testGuard.ts
+function isHostedEnvironment() {
+  return Boolean(
+    process.env.K_SERVICE && process.env.K_SERVICE.trim() !== "" || process.env.VERCEL || process.env.VERCEL_ENV || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NODE_ENV === "production"
+  );
+}
+function isConnectedToProductionFirestore() {
+  if (isHostedEnvironment()) {
+    return true;
+  }
+  const status = getFirebaseStatus();
+  if (status.authMode === "local_fallback" || process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true") {
+    return false;
+  }
+  if (process.env.FIRESTORE_EMULATOR_HOST && (status.projectId?.startsWith("demo-") || status.projectId?.startsWith("test-"))) {
+    return false;
+  }
+  return true;
+}
+function isTargetingProductionProjectOrDb() {
+  const status = getFirebaseStatus();
+  const envProjectId = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT;
+  const envDbId = process.env.FIRESTORE_DATABASE_ID || process.env.FIREBASE_DATABASE_ID;
+  if (status.projectId === PROD_PROJECT_ID || status.databaseId === PROD_DATABASE_ID || envProjectId === PROD_PROJECT_ID || envDbId === PROD_DATABASE_ID) {
+    return true;
+  }
+  return false;
+}
+function isSyntheticIdentifier(id) {
+  if (!id || typeof id !== "string") return false;
+  const lower = id.toLowerCase();
+  return SYNTHETIC_ID_PATTERNS.some((pattern) => lower.includes(pattern));
+}
+function isTestSafe() {
+  if (isHostedEnvironment()) {
+    return false;
+  }
+  if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true") {
+    const { info } = initializeFirebaseAdmin();
+    if (info.authMode === "local_fallback") {
+      return true;
+    }
+  }
+  if (process.env.FIRESTORE_EMULATOR_HOST) {
+    const projId = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || "";
+    if (projId.startsWith("demo-") || projId.startsWith("test-")) {
+      return true;
+    }
+  }
+  return false;
+}
+function assertTestEnvironmentSafe(actionName = "test_mutation") {
+  if (!isTestSafe()) {
+    const reasons = [];
+    if (isHostedEnvironment()) reasons.push("hosted environment detected (K_SERVICE/VERCEL/NODE_ENV=production)");
+    if (isTargetingProductionProjectOrDb()) reasons.push("production project/database targeted");
+    if (process.env.ALLOW_TEST_WRITES === "true") reasons.push("ALLOW_TEST_WRITES is deprecated and cannot authorize writes");
+    if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK !== "true" && !process.env.FIRESTORE_EMULATOR_HOST) {
+      reasons.push("neither FIREBASE_FORCE_LOCAL_FALLBACK=true nor FIRESTORE_EMULATOR_HOST is configured");
+    }
+    const errorMsg = `PRODUCTION_SAFETY_VIOLATION: Test mutation "${actionName}" is strictly prohibited. Production database cannot be modified by test helpers or mock data. Violations: [${reasons.join("; ")}]`;
+    console.error(`[CRITICAL PRODUCTION BLOCKED] ${errorMsg}`);
+    throw new Error(errorMsg);
+  }
+}
+function guardAgainstTestEntityCreation(entityType, entityId, entityNameOrUsername) {
+  if (isSyntheticIdentifier(entityId) || isSyntheticIdentifier(entityNameOrUsername)) {
+    assertTestEnvironmentSafe(`create_${entityType}:${entityId}`);
+  }
+}
+function assertNoSyntheticIdsInProduction(actionName, ids) {
+  if (!isConnectedToProductionFirestore()) {
+    return;
+  }
+  for (const id of ids) {
+    if (isSyntheticIdentifier(id)) {
+      const errorMsg = `PRODUCTION_SAFETY_VIOLATION: Synthetic identifier "${id}" rejected in production/hosted environment during "${actionName}". Mutation blocked before persistence.`;
+      console.error(`[CRITICAL PRODUCTION BLOCKED] ${errorMsg}`);
+      throw new Error(errorMsg);
+    }
+  }
+}
+var PROD_PROJECT_ID, PROD_DATABASE_ID, SYNTHETIC_ID_PATTERNS;
+var init_testGuard = __esm({
+  "src/server/utils/testGuard.ts"() {
+    init_admin();
+    PROD_PROJECT_ID = "gen-lang-client-0195097895";
+    PROD_DATABASE_ID = "ai-studio-efluz-4c6c88a6-697e-4fdf-82ed-45fec68ca34d";
+    SYNTHETIC_ID_PATTERNS = [
+      "audit-",
+      "test-",
+      "test_",
+      "admin_test",
+      "admin-test",
+      "admin-offline",
+      "admin-audit",
+      "offline-test",
+      "fix-retry-test",
+      "user_a_",
+      "user_b_",
+      "notif_b_",
+      "spoofed_"
+    ];
+  }
+});
+
 // src/server/sync/mutationQueue.ts
 import fs3 from "fs";
 import path3 from "path";
@@ -1926,6 +2039,17 @@ async function processPendingMutations() {
 }
 async function executeSingleMutationSync(db, item) {
   const { entityType, entityId, payload } = item;
+  assertNoSyntheticIdsInProduction(`mutation_queue_replay:${entityType}`, [
+    item.mutationId,
+    entityId,
+    payload?.adminUserId,
+    payload?.userId,
+    payload?.targetUserId,
+    payload?.submittedByUserId,
+    payload?.fixtureId,
+    payload?.clubId,
+    payload?.submissionId
+  ]);
   switch (entityType) {
     case "RESULT_SUBMISSION": {
       const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(entityId);
@@ -2152,6 +2276,7 @@ var init_mutationQueue = __esm({
     init_circuitBreaker();
     init_admin();
     init_collections();
+    init_testGuard();
     memoryQueue = /* @__PURE__ */ new Map();
     isSyncInProgress = false;
     IS_SERVERLESS2 = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_TASK_ROOT);
@@ -2210,28 +2335,6 @@ function generateEuropean32LeaguePhaseSchedule(clubIds, options = {}) {
 }
 var init_fixtureEngine = __esm({
   "src/server/tournament/fixtureEngine.ts"() {
-  }
-});
-
-// src/server/utils/testGuard.ts
-function assertTestEnvironmentSafe(actionName = "test_mutation") {
-  const isProduction = process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production" || Boolean(process.env.K_SERVICE) && !process.env.K_SERVICE.startsWith("ais-dev-");
-  const isTestExplicitlyAllowed = process.env.ALLOW_TEST_WRITES === "true" || process.env.NODE_ENV === "test" || process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true";
-  if (isProduction || !isTestExplicitlyAllowed) {
-    const errorMsg = `PRODUCTION_SAFETY_VIOLATION: Test mutation "${actionName}" is strictly prohibited. Production database cannot be modified by test helpers or mock data.`;
-    console.error(`[CRITICAL PRODUCTION BLOCKED] ${errorMsg}`);
-    throw new Error(errorMsg);
-  }
-}
-function guardAgainstTestEntityCreation(entityType, entityId, entityNameOrUsername) {
-  const isTestId = entityId.startsWith("test-") || entityId.startsWith("test_") || entityId.startsWith("audit-player-") || entityId.startsWith("user-persistence-test") || entityId.startsWith("user-lock-test") || entityId.startsWith("user-1010") || entityId.includes("test_fixture") || entityId.includes("mock_");
-  const isTestName = entityNameOrUsername && (entityNameOrUsername.startsWith("test_") || entityNameOrUsername.startsWith("tester_") || entityNameOrUsername.includes("mock_user"));
-  if (isTestId || isTestName) {
-    assertTestEnvironmentSafe(`create_${entityType}:${entityId}`);
-  }
-}
-var init_testGuard = __esm({
-  "src/server/utils/testGuard.ts"() {
   }
 });
 
@@ -3132,6 +3235,7 @@ __export(firestoreStore_exports, {
   adminSetUserSuspensionFirestore: () => adminSetUserSuspensionFirestore,
   advanceCompetitionMatchdayFirestore: () => advanceCompetitionMatchdayFirestore,
   assertMatchdayPlayableFirestore: () => assertMatchdayPlayableFirestore,
+  assertNoSyntheticIdsInProduction: () => assertNoSyntheticIdsInProduction,
   assertTestEnvironmentSafe: () => assertTestEnvironmentSafe,
   calculateCompetitionStandingsFirestore: () => calculateCompetitionStandingsFirestore,
   claimClubAtomicFirestore: () => claimClubAtomicFirestore,
@@ -3139,9 +3243,11 @@ __export(firestoreStore_exports, {
   createAuditLogFirestore: () => createAuditLogFirestore,
   createNotificationFirestore: () => createNotificationFirestore,
   enrichStandingsWithActiveOwners: () => enrichStandingsWithActiveOwners,
+  executeAdminFixturesPagedFallback: () => executeAdminFixturesPagedFallback,
   generateCompetitionFixturesFirestore: () => generateCompetitionFixturesFirestore,
   getActiveOccupanciesForSeason: () => getActiveOccupanciesForSeason,
   getActiveSeasonFirestore: () => getActiveSeasonFirestore,
+  getAdminFixturesPagedFirestore: () => getAdminFixturesPagedFirestore,
   getAllCompetitionsFirestore: () => getAllCompetitionsFirestore,
   getAllLeaguesFirestore: () => getAllLeaguesFirestore,
   getAllSeasonsFirestore: () => getAllSeasonsFirestore,
@@ -3161,6 +3267,9 @@ __export(firestoreStore_exports, {
   getFixtureByIdFirestore: () => getFixtureByIdFirestore,
   getFixturesFirestore: () => getFixturesFirestore,
   getFromCache: () => getFromCache,
+  getLocalDisputes: () => getLocalDisputes,
+  getLocalPendingResults: () => getLocalPendingResults,
+  getLocalSubmissions: () => getLocalSubmissions,
   getMatchdayLockFirestore: () => getMatchdayLockFirestore,
   getMatchdayLockKey: () => getMatchdayLockKey,
   getOrCreateDevUserFirestore: () => getOrCreateDevUserFirestore,
@@ -3822,6 +3931,7 @@ async function getUserActiveClubFirestore(userId, seasonId = "season-2026-27") {
   return null;
 }
 async function claimClubAtomicFirestore(userId, clubId, seasonId = "season-2026-27", options) {
+  assertNoSyntheticIdsInProduction("claimClubAtomicFirestore", [userId, clubId, seasonId]);
   const now = (/* @__PURE__ */ new Date()).toISOString();
   if (firestoreCircuitBreaker.canExecute()) {
     try {
@@ -4499,6 +4609,216 @@ async function executeFixturesFallback(filter, targetClubId, cacheKey) {
     lastKnownGoodFixtures.set(cacheKey, fallbackFixtures);
   }
   return fallbackFixtures;
+}
+function executeAdminFixturesPagedFallback(options, pageSize) {
+  const conditions = ["1=1"];
+  const params = [];
+  if (options.competitionId) {
+    conditions.push("f.competition_id = ?");
+    params.push(options.competitionId);
+  } else if (options.seasonId) {
+    conditions.push("f.season_id = ?");
+    params.push(options.seasonId);
+  }
+  if (options.status) {
+    conditions.push("f.status = ?");
+    params.push(options.status);
+  }
+  if (options.matchday) {
+    conditions.push("f.matchday = ?");
+    params.push(options.matchday);
+  }
+  const whereStr = conditions.join(" AND ");
+  const countRow = queryGet(`SELECT COUNT(*) as count FROM fixtures f WHERE ${whereStr}`, params);
+  const total = countRow?.count || 0;
+  let querySql = `
+    SELECT f.*,
+           hc.name as home_name, hc.short_name as home_short, hc.country as home_country, hc.league_id as home_league, hc.logo_url as home_logo,
+           ac.name as away_name, ac.short_name as away_short, ac.country as away_country, ac.league_id as away_league, ac.logo_url as away_logo
+    FROM fixtures f
+    LEFT JOIN clubs hc ON f.home_club_id = hc.id
+    LEFT JOIN clubs ac ON f.away_club_id = ac.id
+    WHERE ${whereStr}
+  `;
+  const queryParams = [...params];
+  if (options.cursor) {
+    querySql += " AND f.id > ?";
+    queryParams.push(options.cursor);
+  }
+  querySql += " ORDER BY f.id ASC LIMIT ?";
+  queryParams.push(pageSize + 1);
+  const rows = queryAll(querySql, queryParams);
+  const hasMore = rows.length > pageSize;
+  const pageRows = rows.slice(0, pageSize);
+  const nextCursor = hasMore && pageRows.length > 0 ? pageRows[pageRows.length - 1].id : void 0;
+  const fixtures = pageRows.map((r) => ({
+    id: r.id,
+    competitionId: r.competition_id,
+    seasonId: r.season_id,
+    matchday: r.matchday,
+    homeClubId: r.home_club_id,
+    awayClubId: r.away_club_id,
+    homeScore: r.home_score,
+    awayScore: r.away_score,
+    status: r.status,
+    scheduledAt: r.scheduled_at,
+    homeClub: {
+      id: r.home_club_id,
+      name: r.home_name || r.home_club_id,
+      shortName: r.home_short || r.home_club_id.substring(0, 3).toUpperCase(),
+      country: r.home_country || "England",
+      leagueId: r.home_league || "league-premier-league",
+      logoUrl: r.home_logo || "",
+      active: true,
+      createdAt: r.created_at || (/* @__PURE__ */ new Date()).toISOString()
+    },
+    awayClub: {
+      id: r.away_club_id,
+      name: r.away_name || r.away_club_id,
+      shortName: r.away_short || r.away_club_id.substring(0, 3).toUpperCase(),
+      country: r.away_country || "England",
+      leagueId: r.away_league || "league-premier-league",
+      logoUrl: r.away_logo || "",
+      active: true,
+      createdAt: r.created_at || (/* @__PURE__ */ new Date()).toISOString()
+    },
+    createdAt: r.created_at || (/* @__PURE__ */ new Date()).toISOString(),
+    updatedAt: r.updated_at || (/* @__PURE__ */ new Date()).toISOString()
+  }));
+  return {
+    fixtures,
+    total,
+    hasMore,
+    nextCursor,
+    limit: pageSize,
+    source: "sqlite",
+    degraded: true,
+    stale: true,
+    generatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+}
+async function getAdminFixturesPagedFirestore(options = {}) {
+  const pageSize = Math.min(Math.max(options.limit || 25, 1), 100);
+  const cacheKey = `firestore:admin_paged_fixtures:${options.seasonId || "all"}:${options.competitionId || "all"}:${options.status || "all"}:${options.matchday || "all"}:${options.cursor || "start"}:${pageSize}`;
+  const cached = getFromCache(cacheKey);
+  if (cached) return cached;
+  if (!firestoreCircuitBreaker.canExecute()) {
+    recordFallbackUsage();
+    return executeAdminFixturesPagedFallback(options, pageSize);
+  }
+  try {
+    const db = getFirestoreDb();
+    let query = db.collection(COLLECTIONS.FIXTURES);
+    if (options.competitionId) {
+      query = query.where("competitionId", "==", options.competitionId);
+    } else if (options.seasonId) {
+      query = query.where("seasonId", "==", options.seasonId);
+    }
+    if (options.status) {
+      query = query.where("status", "==", options.status);
+    }
+    if (options.matchday) {
+      query = query.where("matchday", "==", options.matchday);
+    }
+    query = query.orderBy(FirebaseFirestore.FieldPath.documentId());
+    if (options.cursor) {
+      query = query.startAfter(options.cursor);
+    }
+    query = query.limit(pageSize + 1);
+    const snap = await query.get();
+    firestoreCircuitBreaker.recordSuccess();
+    trackFirestoreRead(
+      COLLECTIONS.FIXTURES,
+      snap.empty ? 1 : snap.docs.length,
+      "getAdminFixturesPagedFirestore"
+    );
+    const hasMore = snap.docs.length > pageSize;
+    const docsToUse = snap.docs.slice(0, pageSize);
+    const nextCursor = hasMore && docsToUse.length > 0 ? docsToUse[docsToUse.length - 1].id : void 0;
+    const countFilter = [];
+    let countSql = "SELECT COUNT(*) as count FROM fixtures WHERE 1=1";
+    if (options.competitionId) {
+      countSql += " AND competition_id = ?";
+      countFilter.push(options.competitionId);
+    } else if (options.seasonId) {
+      countSql += " AND season_id = ?";
+      countFilter.push(options.seasonId);
+    }
+    if (options.status) {
+      countSql += " AND status = ?";
+      countFilter.push(options.status);
+    }
+    if (options.matchday) {
+      countSql += " AND matchday = ?";
+      countFilter.push(options.matchday);
+    }
+    const countRow = queryGet(countSql, countFilter);
+    const total = countRow?.count || docsToUse.length;
+    const fixtureDocs = docsToUse.map((d) => d.data());
+    const { clubOccupancyMap, usernameMap, userMap } = await getActiveOccupanciesForSeason(options.seasonId || "season-2026-27");
+    const mappedFixtures = fixtureDocs.map((doc) => {
+      const homeClubSeed = SEED_CLUB_MAP.get(doc.homeClubId);
+      const awayClubSeed = SEED_CLUB_MAP.get(doc.awayClubId);
+      const homeClub = {
+        id: doc.homeClubId,
+        name: homeClubSeed?.name || doc.homeClubId,
+        shortName: homeClubSeed?.shortName || doc.homeClubId.substring(0, 3).toUpperCase(),
+        country: homeClubSeed?.country || "England",
+        leagueId: homeClubSeed?.leagueId || "league-premier-league",
+        logoUrl: homeClubSeed?.logoUrl || "",
+        active: true,
+        createdAt: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      const awayClub = {
+        id: doc.awayClubId,
+        name: awayClubSeed?.name || doc.awayClubId,
+        shortName: awayClubSeed?.shortName || doc.awayClubId.substring(0, 3).toUpperCase(),
+        country: awayClubSeed?.country || "England",
+        leagueId: awayClubSeed?.leagueId || "league-premier-league",
+        logoUrl: awayClubSeed?.logoUrl || "",
+        active: true,
+        createdAt: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      const homeOwnerId = doc.homeOwnerId || clubOccupancyMap.get(doc.homeClubId)?.userId || void 0;
+      const awayOwnerId = doc.awayOwnerId || clubOccupancyMap.get(doc.awayClubId)?.userId || void 0;
+      return {
+        id: doc.id,
+        competitionId: doc.competitionId,
+        competitionName: doc.competitionName,
+        seasonId: doc.seasonId,
+        matchday: doc.matchday,
+        roundName: doc.roundName,
+        homeClubId: doc.homeClubId,
+        awayClubId: doc.awayClubId,
+        homeScore: doc.homeScore,
+        awayScore: doc.awayScore,
+        status: doc.status,
+        scheduledAt: doc.scheduledAt,
+        homeClub,
+        awayClub,
+        homeOwnerId,
+        awayOwnerId,
+        createdAt: doc.createdAt || (/* @__PURE__ */ new Date()).toISOString(),
+        updatedAt: doc.updatedAt || (/* @__PURE__ */ new Date()).toISOString()
+      };
+    });
+    const result = {
+      fixtures: mappedFixtures,
+      total,
+      hasMore,
+      nextCursor,
+      limit: pageSize,
+      source: "firestore",
+      degraded: false,
+      stale: false,
+      generatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    setInCache(cacheKey, result, 3e4);
+    return result;
+  } catch (err) {
+    firestoreCircuitBreaker.recordFailure(err);
+    return executeAdminFixturesPagedFallback(options, pageSize);
+  }
 }
 async function getFixtureByIdFirestore(fixtureId, currentUserId) {
   const cacheKey = `firestore:fixture:${fixtureId}:${currentUserId || "anon"}`;
@@ -5848,6 +6168,7 @@ async function calculateCompetitionStandingsFirestore(competitionId) {
   return getCompetitionStandingsFirestore(competitionId);
 }
 async function submitFixtureResultFirestore(userId, fixtureId, homeScore, awayScore, proofUrl) {
+  assertNoSyntheticIdsInProduction("submitFixtureResultFirestore", [userId, fixtureId]);
   guardAgainstTestEntityCreation("submission", fixtureId, userId);
   if (!Number.isInteger(homeScore) || homeScore < 0 || !Number.isInteger(awayScore) || awayScore < 0) {
     throw new Error("Scores must be non-negative integers.");
@@ -5861,6 +6182,7 @@ async function submitFixtureResultFirestore(userId, fixtureId, homeScore, awaySc
     if (!row) {
       throw new Error(`Fixture with ID '${fixtureId}' not found.`);
     }
+    await assertMatchdayPlayableFirestore(row.season_id || "season-2026-27", row.competition_id, row.matchday);
     if (row.status === "CONFIRMED") {
       throw new Error("This match result is already CONFIRMED and cannot be modified.");
     }
@@ -5870,7 +6192,6 @@ async function submitFixtureResultFirestore(userId, fixtureId, homeScore, awaySc
       err.statusCode = 400;
       throw err;
     }
-    await assertMatchdayPlayableFirestore(row.season_id || "season-2026-27", row.competition_id, row.matchday);
     let userClubId = null;
     const localOccClubId = getUserOccupiedClubIdLocally(row.season_id || "season-2026-27", userId);
     if (localOccClubId && (localOccClubId === row.home_club_id || localOccClubId === row.away_club_id)) {
@@ -5953,6 +6274,13 @@ async function submitFixtureResultFirestore(userId, fixtureId, homeScore, awaySc
       throw new Error(`Fixture with ID '${fixtureId}' not found.`);
     }
     const fixture = fixDoc.data();
+    if (fixture.competitionId && fixture.matchday) {
+      await assertMatchdayPlayableFirestore(
+        fixture.seasonId || "season-2026-27",
+        fixture.competitionId,
+        fixture.matchday
+      );
+    }
     if (fixture.status === "CONFIRMED") {
       throw new Error("This match result is already CONFIRMED and cannot be modified.");
     }
@@ -5961,13 +6289,6 @@ async function submitFixtureResultFirestore(userId, fixtureId, homeScore, awaySc
       err.code = "FIXTURE_NOT_READY";
       err.statusCode = 400;
       throw err;
-    }
-    if (fixture.competitionId && fixture.matchday) {
-      await assertMatchdayPlayableFirestore(
-        fixture.seasonId || "season-2026-27",
-        fixture.competitionId,
-        fixture.matchday
-      );
     }
     trackFirestoreRead(COLLECTIONS.USER_MEMBERSHIPS, 1, "submitFixtureResultFirestore:membership");
     const userMemDoc = await db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${fixture.seasonId}_${userId}`).get();
@@ -6235,6 +6556,7 @@ async function getOrCreateTelegramUserFirestore(tgUser) {
     const db = getFirestoreDb();
     const userDocRef = db.collection(COLLECTIONS.USERS).doc(docId);
     const userDoc = await userDocRef.get();
+    trackFirestoreRead(COLLECTIONS.USERS, 1, "getOrCreateTelegramUserFirestore");
     if (!userDoc.exists) {
       const newUser = {
         id: docId,
@@ -6249,33 +6571,50 @@ async function getOrCreateTelegramUserFirestore(tgUser) {
         updatedAt: now
       };
       await userDocRef.set(newUser);
-    } else {
-      const existing = userDoc.data();
-      const updatedAdmin = existing.isAdmin || isAdmin;
-      await userDocRef.update({
+      trackFirestoreWrite(COLLECTIONS.USERS, 1, "getOrCreateTelegramUserFirestore:create");
+      const createdUser = {
+        id: docId,
+        telegramId,
         username,
         firstName,
         lastName,
-        photoUrl: photoUrl || existing.photoUrl || "",
-        isAdmin: updatedAdmin,
+        photoUrl,
+        isAdmin,
+        isSuspended: false,
+        createdAt: now,
         updatedAt: now
-      });
-    }
-    const verifyDoc = await userDocRef.get();
-    if (verifyDoc.exists) {
-      const persisted = verifyDoc.data();
-      return {
-        id: persisted.id || docId,
-        telegramId: persisted.telegramId || telegramId,
-        username: persisted.username || username,
-        firstName: persisted.firstName || firstName,
-        lastName: persisted.lastName || lastName,
-        photoUrl: persisted.photoUrl || photoUrl,
-        isAdmin: Boolean(persisted.isAdmin),
-        isSuspended: Boolean(persisted.isSuspended),
-        createdAt: persisted.createdAt || now,
-        updatedAt: persisted.updatedAt || now
       };
+      setInCache(`firestore:user:${docId}`, createdUser, 3e5);
+      return createdUser;
+    } else {
+      const existing = userDoc.data();
+      const updatedAdmin = Boolean(existing.isAdmin || isAdmin);
+      const changed = existing.username !== username || existing.firstName !== firstName || lastName && (existing.lastName || "") !== lastName || photoUrl && (existing.photoUrl || "") !== photoUrl || Boolean(existing.isAdmin) !== updatedAdmin;
+      if (changed) {
+        await userDocRef.update({
+          username,
+          firstName,
+          lastName: lastName || existing.lastName || "",
+          photoUrl: photoUrl || existing.photoUrl || "",
+          isAdmin: updatedAdmin,
+          updatedAt: now
+        });
+        trackFirestoreWrite(COLLECTIONS.USERS, 1, "getOrCreateTelegramUserFirestore:update");
+      }
+      const returnedUser = {
+        id: existing.id || docId,
+        telegramId: existing.telegramId || telegramId,
+        username: changed ? username : existing.username || username,
+        firstName: changed ? firstName : existing.firstName || firstName,
+        lastName: changed ? lastName || existing.lastName || "" : existing.lastName || "",
+        photoUrl: changed ? photoUrl || existing.photoUrl || "" : existing.photoUrl || "",
+        isAdmin: updatedAdmin,
+        isSuspended: Boolean(existing.isSuspended),
+        createdAt: existing.createdAt || now,
+        updatedAt: changed ? now : existing.updatedAt || now
+      };
+      setInCache(`firestore:user:${docId}`, returnedUser, 3e5);
+      return returnedUser;
     }
   } catch (err) {
     console.warn("[FIRESTORE FALLBACK] getOrCreateTelegramUserFirestore:", err.message);
@@ -6413,6 +6752,7 @@ async function getOrCreateDevUserFirestore(devUserId) {
   }
 }
 async function reopenFixtureFirestore(adminUserId, fixtureId, notes, options) {
+  assertNoSyntheticIdsInProduction("reopenFixtureFirestore", [adminUserId, fixtureId]);
   const now = (/* @__PURE__ */ new Date()).toISOString();
   if (firestoreCircuitBreaker.canExecute()) {
     try {
@@ -6561,42 +6901,132 @@ async function resolveDisputeFirestore(adminUserId, disputeId, params) {
   });
   return { success: true, dispute: updatedDispute };
 }
-async function getDisputesFirestore(status = "OPEN") {
-  const cacheKey = `firestore:disputes:${status}`;
+function getLocalDisputes(status = "OPEN", limitCount = 50) {
+  try {
+    let sql = "SELECT * FROM disputes";
+    const params = [];
+    if (status) {
+      sql += " WHERE status = ?";
+      params.push(status);
+    }
+    sql += " ORDER BY created_at DESC LIMIT ?";
+    params.push(limitCount);
+    const rows = queryAll(sql, params);
+    return rows.map((r) => ({
+      id: r.id,
+      fixtureId: r.fixture_id,
+      seasonId: r.season_id,
+      status: r.status,
+      resolvedByUserId: r.resolved_by_user_id || void 0,
+      resolutionNotes: r.resolution_notes || void 0,
+      resolvedAt: r.resolved_at || void 0,
+      createdAt: r.created_at
+    }));
+  } catch {
+    return [];
+  }
+}
+async function getDisputesFirestore(status = "OPEN", limitCount = 50) {
+  const cacheKey = `firestore:disputes:${status}:${limitCount}`;
   const cached = getFromCache(cacheKey);
   if (cached) return cached;
-  const db = getFirestoreDb();
-  let query = db.collection(COLLECTIONS.DISPUTES);
-  if (status) {
-    query = query.where("status", "==", status);
+  if (!firestoreCircuitBreaker.canExecute()) {
+    recordFallbackUsage();
+    return getLocalDisputes(status, limitCount);
   }
-  const snap = await query.get();
-  trackFirestoreRead(
-    COLLECTIONS.DISPUTES,
-    snap.empty ? 1 : snap.docs.length,
-    "getDisputesFirestore"
-  );
-  const disputes = [];
-  for (const doc of snap.docs) {
-    const data = doc.data();
-    const fixture = await getFixtureByIdFirestore(data.fixtureId);
-    let mappedStatus = "OPEN";
-    if (data.status === "RESOLVED") mappedStatus = "RESOLVED";
-    else if (data.status === "CANCELLED") mappedStatus = "DISMISSED";
-    disputes.push({
-      id: doc.id,
-      fixtureId: data.fixtureId,
-      seasonId: data.seasonId,
-      status: mappedStatus,
-      resolvedByUserId: data.resolvedByUserId,
-      resolutionNotes: data.resolutionNotes,
-      resolvedAt: data.resolvedAt,
-      createdAt: data.createdAt,
-      fixture: fixture || void 0
-    });
+  try {
+    const db = getFirestoreDb();
+    let query = db.collection(COLLECTIONS.DISPUTES);
+    if (status) {
+      query = query.where("status", "==", status);
+    }
+    if (limitCount > 0) {
+      query = query.limit(limitCount);
+    }
+    const snap = await query.get();
+    trackFirestoreRead(
+      COLLECTIONS.DISPUTES,
+      snap.empty ? 1 : snap.docs.length,
+      "getDisputesFirestore"
+    );
+    firestoreCircuitBreaker.recordSuccess();
+    const disputes = [];
+    const fixtureIds = Array.from(new Set(snap.docs.map((d) => d.data().fixtureId).filter(Boolean)));
+    const fixturesMap = /* @__PURE__ */ new Map();
+    for (let i = 0; i < fixtureIds.length; i += 30) {
+      const chunk = fixtureIds.slice(i, i + 30);
+      try {
+        const fSnap = await db.collection(COLLECTIONS.FIXTURES).where(FirebaseFirestore.FieldPath.documentId(), "in", chunk).get();
+        trackFirestoreRead(COLLECTIONS.FIXTURES, fSnap.empty ? 1 : fSnap.docs.length, "getDisputesFirestore:fixturesBatch");
+        for (const doc of fSnap.docs) {
+          const fData = doc.data();
+          const homeClubSeed = SEED_CLUB_MAP.get(fData.homeClubId);
+          const awayClubSeed = SEED_CLUB_MAP.get(fData.awayClubId);
+          const homeClub = {
+            id: fData.homeClubId,
+            name: homeClubSeed?.name || fData.homeClubId,
+            shortName: homeClubSeed?.shortName || fData.homeClubId.substring(0, 3).toUpperCase(),
+            country: homeClubSeed?.country || "England",
+            leagueId: homeClubSeed?.leagueId || "league-premier-league",
+            logoUrl: homeClubSeed?.logoUrl || "",
+            active: true,
+            createdAt: (/* @__PURE__ */ new Date()).toISOString()
+          };
+          const awayClub = {
+            id: fData.awayClubId,
+            name: awayClubSeed?.name || fData.awayClubId,
+            shortName: awayClubSeed?.shortName || fData.awayClubId.substring(0, 3).toUpperCase(),
+            country: awayClubSeed?.country || "England",
+            leagueId: awayClubSeed?.leagueId || "league-premier-league",
+            logoUrl: awayClubSeed?.logoUrl || "",
+            active: true,
+            createdAt: (/* @__PURE__ */ new Date()).toISOString()
+          };
+          fixturesMap.set(doc.id, {
+            id: doc.id,
+            competitionId: fData.competitionId,
+            seasonId: fData.seasonId,
+            matchday: fData.matchday,
+            homeClubId: fData.homeClubId,
+            awayClubId: fData.awayClubId,
+            homeScore: fData.homeScore,
+            awayScore: fData.awayScore,
+            status: fData.status,
+            scheduledAt: fData.scheduledAt,
+            homeClub,
+            awayClub,
+            createdAt: fData.createdAt || (/* @__PURE__ */ new Date()).toISOString(),
+            updatedAt: fData.updatedAt || (/* @__PURE__ */ new Date()).toISOString()
+          });
+        }
+      } catch (err) {
+        console.warn("Batch fixture fetch error in getDisputesFirestore:", err.message);
+      }
+    }
+    for (const doc of snap.docs) {
+      const data = doc.data();
+      const fixture = fixturesMap.get(data.fixtureId);
+      let mappedStatus = "OPEN";
+      if (data.status === "RESOLVED") mappedStatus = "RESOLVED";
+      else if (data.status === "CANCELLED") mappedStatus = "DISMISSED";
+      disputes.push({
+        id: doc.id,
+        fixtureId: data.fixtureId,
+        seasonId: data.seasonId,
+        status: mappedStatus,
+        resolvedByUserId: data.resolvedByUserId,
+        resolutionNotes: data.resolutionNotes,
+        resolvedAt: data.resolvedAt,
+        createdAt: data.createdAt,
+        fixture: fixture || void 0
+      });
+    }
+    setInCache(cacheKey, disputes, 3e4);
+    return disputes;
+  } catch (err) {
+    firestoreCircuitBreaker.recordFailure(err);
+    return getLocalDisputes(status, limitCount);
   }
-  setInCache(cacheKey, disputes, 2e4);
-  return disputes;
 }
 async function getAllUsersFirestore() {
   const cacheKey = "firestore:all_users";
@@ -6934,6 +7364,7 @@ async function syncFirestoreClubCrests() {
   }
 }
 async function adminReleaseClubFirestore(adminUserId, clubId, seasonId = "season-2026-27", options) {
+  assertNoSyntheticIdsInProduction("adminReleaseClubFirestore", [adminUserId, clubId, seasonId]);
   const now = (/* @__PURE__ */ new Date()).toISOString();
   try {
     const db = getFirestoreDb();
@@ -7007,6 +7438,7 @@ async function adminReleaseClubFirestore(adminUserId, clubId, seasonId = "season
   };
 }
 async function adminAssignClubFirestore(adminUserId, clubId, targetUserId, seasonId = "season-2026-27", options) {
+  assertNoSyntheticIdsInProduction("adminAssignClubFirestore", [adminUserId, clubId, targetUserId, seasonId]);
   const now = (/* @__PURE__ */ new Date()).toISOString();
   try {
     const db = getFirestoreDb();
@@ -7106,11 +7538,11 @@ async function adminAssignClubFirestore(adminUserId, clubId, targetUserId, seaso
     isFallback: true
   };
 }
-function getLocalPendingResults(seasonId) {
+function getLocalPendingResults(seasonId, limitCount = 50) {
   try {
     const rows = queryAll(
-      `SELECT * FROM fixtures WHERE season_id = ? AND status IN ('PENDING_CONFIRMATION', 'DISPUTED') ORDER BY matchday ASC`,
-      [seasonId]
+      `SELECT * FROM fixtures WHERE season_id = ? AND status IN ('PENDING_CONFIRMATION', 'DISPUTED') ORDER BY matchday ASC LIMIT ?`,
+      [seasonId, limitCount]
     );
     const fixturesWithSubmissions = rows.map((r) => {
       const homeSeed = SEED_CLUB_MAP.get(r.home_club_id);
@@ -7183,6 +7615,7 @@ function getLocalPendingResults(seasonId) {
   }
 }
 async function adminApproveFixtureResultFirestore(adminUserId, fixtureId, homeScore, awayScore, notes, options) {
+  assertNoSyntheticIdsInProduction("adminApproveFixtureResultFirestore", [adminUserId, fixtureId]);
   const now = (/* @__PURE__ */ new Date()).toISOString();
   let winnerClubId = null;
   if (firestoreCircuitBreaker.canExecute()) {
@@ -7806,17 +8239,71 @@ async function adminDeleteUserFirestore(adminUserId, adminUsername, targetUserId
     message: `User @${userData.username || targetUserId} deleted safely. Historical fixtures and results remain intact.`
   };
 }
+function getLocalSubmissions(filter) {
+  try {
+    let sql = "SELECT * FROM result_submissions WHERE 1=1";
+    const params = [];
+    if (filter?.fixtureId) {
+      sql += " AND fixture_id = ?";
+      params.push(filter.fixtureId);
+    }
+    if (filter?.userId) {
+      sql += " AND submitted_by_user_id = ?";
+      params.push(filter.userId);
+    }
+    sql += " ORDER BY created_at DESC LIMIT ?";
+    params.push(filter?.limit || 100);
+    const rows = queryAll(sql, params);
+    return rows.map((r) => ({
+      id: r.id,
+      fixtureId: r.fixture_id,
+      submittedByUserId: r.submitted_by_user_id,
+      clubId: r.club_id,
+      homeScore: r.home_score,
+      awayScore: r.away_score,
+      proofUrl: r.proof_url || null,
+      createdAt: r.created_at
+    }));
+  } catch {
+    return [];
+  }
+}
 async function adminGetUserDetailFirestore(targetUserId) {
-  const db = getFirestoreDb();
-  const user = await getUserByIdFirestore(targetUserId);
+  let user = null;
+  try {
+    user = await getUserByIdFirestore(targetUserId);
+  } catch {
+  }
+  if (!user) {
+    const localUser = queryGet("SELECT * FROM users WHERE id = ?", [targetUserId]);
+    if (localUser) {
+      user = {
+        id: localUser.id,
+        telegramId: localUser.telegram_id,
+        username: localUser.username,
+        firstName: localUser.first_name,
+        lastName: localUser.last_name || "",
+        photoUrl: localUser.photo_url || "",
+        isAdmin: Boolean(localUser.is_admin),
+        isSuspended: Boolean(localUser.is_suspended),
+        createdAt: localUser.created_at,
+        updatedAt: localUser.updated_at
+      };
+    }
+  }
   if (!user) {
     throw new Error(`User '${targetUserId}' not found.`);
   }
   const activeClub = await getUserActiveClubFirestore(targetUserId, "season-2026-27");
   let memberships = [];
   try {
-    const memSnap = await db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).where("userId", "==", targetUserId).get();
-    memberships = memSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    if (firestoreCircuitBreaker.canExecute()) {
+      const db = getFirestoreDb();
+      const memSnap = await db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).where("userId", "==", targetUserId).get();
+      memberships = memSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    } else {
+      memberships = queryAll("SELECT * FROM club_memberships WHERE user_id = ?", [targetUserId]);
+    }
   } catch {
     try {
       memberships = queryAll("SELECT * FROM club_memberships WHERE user_id = ?", [targetUserId]);
@@ -7825,24 +8312,16 @@ async function adminGetUserDetailFirestore(targetUserId) {
   }
   let submissions = [];
   try {
-    const subSnap = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where("submittedByUserId", "==", targetUserId).limit(30).get();
-    submissions = subSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    submissions = await adminGetResultSubmissionsFirestore({ userId: targetUserId, limit: 30 });
   } catch {
-    try {
-      submissions = queryAll("SELECT * FROM result_submissions WHERE user_id = ? LIMIT 30", [targetUserId]);
-    } catch {
-    }
   }
   let auditLogs = [];
   try {
-    const auditSnap = await db.collection(COLLECTIONS.AUDIT_LOGS).where("entityId", "==", targetUserId).limit(20).get();
-    auditLogs = auditSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  } catch {
-  }
-  let notificationsCount = 0;
-  try {
-    const notifCountSnap = await db.collection(COLLECTIONS.NOTIFICATIONS).where("userId", "==", targetUserId).count().get();
-    notificationsCount = notifCountSnap.data().count;
+    if (firestoreCircuitBreaker.canExecute()) {
+      const db = getFirestoreDb();
+      const auditSnap = await db.collection(COLLECTIONS.AUDIT_LOGS).where("entityId", "==", targetUserId).limit(20).get();
+      auditLogs = auditSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    }
   } catch {
   }
   return {
@@ -7852,35 +8331,48 @@ async function adminGetUserDetailFirestore(targetUserId) {
     submissionsCount: submissions.length,
     recentSubmissions: submissions,
     auditLogs,
-    notificationsCount
+    notificationsCount: 0
   };
 }
 async function adminGetResultSubmissionsFirestore(filter) {
-  const db = getFirestoreDb();
-  let query = db.collection(COLLECTIONS.RESULT_SUBMISSIONS);
-  if (filter?.fixtureId) {
-    query = query.where("fixtureId", "==", filter.fixtureId);
+  if (!firestoreCircuitBreaker.canExecute()) {
+    return getLocalSubmissions(filter);
   }
-  if (filter?.userId) {
-    query = query.where("submittedByUserId", "==", filter.userId);
+  try {
+    const db = getFirestoreDb();
+    let query = db.collection(COLLECTIONS.RESULT_SUBMISSIONS);
+    if (filter?.fixtureId) {
+      query = query.where("fixtureId", "==", filter.fixtureId);
+    }
+    if (filter?.userId) {
+      query = query.where("submittedByUserId", "==", filter.userId);
+    }
+    query = query.limit(filter?.limit || 100);
+    const snap = await query.get();
+    trackFirestoreRead(
+      COLLECTIONS.RESULT_SUBMISSIONS,
+      snap.empty ? 1 : snap.docs.length,
+      "adminGetResultSubmissionsFirestore"
+    );
+    const submissions = [];
+    for (const doc of snap.docs) {
+      const data = doc.data();
+      submissions.push({
+        id: doc.id,
+        fixtureId: data.fixtureId,
+        submittedByUserId: data.submittedByUserId || data.userId,
+        clubId: data.clubId,
+        homeScore: data.homeScore,
+        awayScore: data.awayScore,
+        proofUrl: data.proofUrl || null,
+        createdAt: data.createdAt
+      });
+    }
+    return submissions;
+  } catch (err) {
+    firestoreCircuitBreaker.recordFailure(err);
+    return getLocalSubmissions(filter);
   }
-  query = query.limit(filter?.limit || 100);
-  const snap = await query.get();
-  const submissions = [];
-  for (const doc of snap.docs) {
-    const data = doc.data();
-    submissions.push({
-      id: doc.id,
-      fixtureId: data.fixtureId,
-      submittedByUserId: data.submittedByUserId || data.userId,
-      clubId: data.clubId,
-      homeScore: data.homeScore,
-      awayScore: data.awayScore,
-      proofUrl: data.proofUrl || null,
-      createdAt: data.createdAt
-    });
-  }
-  return submissions;
 }
 async function adminDeleteResultSubmissionFirestore(adminUserId, adminUsername, submissionId, notes) {
   const db = getFirestoreDb();
@@ -7973,7 +8465,73 @@ import express from "express";
 
 // src/server/auth/telegramAuth.ts
 init_firestoreStore();
+import crypto2 from "crypto";
+
+// src/server/auth/sessionToken.ts
 import crypto from "crypto";
+function getSessionSecret() {
+  return process.env.SESSION_SECRET || process.env.TELEGRAM_BOT_TOKEN || "efl-uz-secure-session-key-production-2026";
+}
+function base64UrlEncode(str) {
+  return Buffer.from(str).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function base64UrlDecode(str) {
+  let base64 = str.replace(/-/g, "+").replace(/_/g, "/");
+  while (base64.length % 4) {
+    base64 += "=";
+  }
+  return Buffer.from(base64, "base64").toString("utf8");
+}
+function createSessionToken(user, expiresInSeconds = 86400) {
+  const now = Math.floor(Date.now() / 1e3);
+  const claims = {
+    id: user.id,
+    telegramId: user.telegramId,
+    username: user.username,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    photoUrl: user.photoUrl,
+    isAdmin: Boolean(user.isAdmin),
+    isSuspended: Boolean(user.isSuspended),
+    iat: now,
+    exp: now + expiresInSeconds
+  };
+  const header = { alg: "HS256", typ: "JWT" };
+  const encodedHeader = base64UrlEncode(JSON.stringify(header));
+  const encodedPayload = base64UrlEncode(JSON.stringify(claims));
+  const data = `${encodedHeader}.${encodedPayload}`;
+  const signature = crypto.createHmac("sha256", getSessionSecret()).update(data).digest("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return `${data}.${signature}`;
+}
+function verifySessionToken(token) {
+  if (!token || typeof token !== "string") {
+    return { isValid: false, error: "Missing token" };
+  }
+  const parts = token.trim().split(".");
+  if (parts.length !== 3) {
+    return { isValid: false, error: "Malformed token structure" };
+  }
+  const [encodedHeader, encodedPayload, receivedSig] = parts;
+  const data = `${encodedHeader}.${encodedPayload}`;
+  const expectedSig = crypto.createHmac("sha256", getSessionSecret()).update(data).digest("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const expectedBuf = Buffer.from(expectedSig);
+  const receivedBuf = Buffer.from(receivedSig);
+  if (expectedBuf.length !== receivedBuf.length || !crypto.timingSafeEqual(expectedBuf, receivedBuf)) {
+    return { isValid: false, error: "Invalid token signature" };
+  }
+  try {
+    const claims = JSON.parse(base64UrlDecode(encodedPayload));
+    const now = Math.floor(Date.now() / 1e3);
+    if (claims.exp && claims.exp < now) {
+      return { isValid: false, error: "Token expired" };
+    }
+    return { isValid: true, claims };
+  } catch (err) {
+    return { isValid: false, error: "Invalid token claims" };
+  }
+}
+
+// src/server/auth/telegramAuth.ts
 function verifyTelegramWebAppData(initData, botToken, maxAgeSeconds = 86400) {
   if (!initData || !botToken) {
     return { isValid: false, error: "Missing initData or botToken" };
@@ -7993,11 +8551,11 @@ function verifyTelegramWebAppData(initData, botToken, maxAgeSeconds = 86400) {
     });
     paramsList.sort();
     const dataCheckString = paramsList.join("\n");
-    const secretKey = crypto.createHmac("sha256", "WebAppData").update(cleanToken).digest();
-    const calculatedHash = crypto.createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
+    const secretKey = crypto2.createHmac("sha256", "WebAppData").update(cleanToken).digest();
+    const calculatedHash = crypto2.createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
     const calculatedHashBuf = Buffer.from(calculatedHash, "hex");
     const receivedHashBuf = Buffer.from(hash, "hex");
-    if (calculatedHashBuf.length !== receivedHashBuf.length || !crypto.timingSafeEqual(calculatedHashBuf, receivedHashBuf)) {
+    if (calculatedHashBuf.length !== receivedHashBuf.length || !crypto2.timingSafeEqual(calculatedHashBuf, receivedHashBuf)) {
       return { isValid: false, error: "Invalid HMAC signature" };
     }
     const authDateStr = urlParams.get("auth_date");
@@ -8052,16 +8610,52 @@ async function getOrCreateDevUser(devUserId) {
 }
 
 // src/server/middleware/authMiddleware.ts
+var cachedUserByTelegramId = /* @__PURE__ */ new Map();
+var cachedUserByDevId = /* @__PURE__ */ new Map();
 async function authMiddleware(req, res, next) {
   const isDev = process.env.ENABLE_DEV_AUTH === "true" || process.env.NODE_ENV !== "production";
+  const authHeader = req.headers.authorization;
+  const sessionTokenHeader = req.headers["x-session-token"];
+  let token;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    token = authHeader.slice(7).trim();
+  } else if (sessionTokenHeader) {
+    token = sessionTokenHeader.trim();
+  }
+  if (token) {
+    const verified = verifySessionToken(token);
+    if (verified.isValid && verified.claims) {
+      req.user = {
+        id: verified.claims.id,
+        telegramId: verified.claims.telegramId,
+        username: verified.claims.username,
+        firstName: verified.claims.firstName,
+        lastName: verified.claims.lastName,
+        photoUrl: verified.claims.photoUrl,
+        isAdmin: Boolean(verified.claims.isAdmin),
+        isSuspended: Boolean(verified.claims.isSuspended),
+        createdAt: "",
+        updatedAt: ""
+      };
+      return next();
+    }
+  }
   const initData = req.headers["x-telegram-init-data"] || req.query.initData;
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   if (initData) {
     if (botToken) {
       const verifyResult = verifyTelegramWebAppData(initData, botToken);
       if (verifyResult.isValid && verifyResult.user) {
+        const tgId = String(verifyResult.user.id);
+        const cached = cachedUserByTelegramId.get(tgId);
+        if (cached && cached.expiresAt > Date.now()) {
+          req.user = cached.user;
+          return next();
+        }
         try {
-          req.user = await getOrCreateTelegramUser(verifyResult.user);
+          const user = await getOrCreateTelegramUser(verifyResult.user);
+          cachedUserByTelegramId.set(tgId, { user, expiresAt: Date.now() + 3e5 });
+          req.user = user;
           return next();
         } catch (err) {
           console.warn("Telegram user retrieval error:", err.message);
@@ -8073,7 +8667,15 @@ async function authMiddleware(req, res, next) {
         const userRaw = urlParams.get("user");
         if (userRaw) {
           const parsed = JSON.parse(userRaw);
-          req.user = await getOrCreateTelegramUser(parsed);
+          const tgId = String(parsed.id);
+          const cached = cachedUserByTelegramId.get(tgId);
+          if (cached && cached.expiresAt > Date.now()) {
+            req.user = cached.user;
+            return next();
+          }
+          const user = await getOrCreateTelegramUser(parsed);
+          cachedUserByTelegramId.set(tgId, { user, expiresAt: Date.now() + 3e5 });
+          req.user = user;
           return next();
         }
       } catch {
@@ -8082,8 +8684,14 @@ async function authMiddleware(req, res, next) {
   }
   const devUserId = req.headers["x-dev-user-id"];
   if (isDev && devUserId) {
+    const cachedDev = cachedUserByDevId.get(devUserId);
+    if (cachedDev && cachedDev.expiresAt > Date.now()) {
+      req.user = cachedDev.user;
+      return next();
+    }
     try {
       const user = await getOrCreateDevUser(devUserId);
+      cachedUserByDevId.set(devUserId, { user, expiresAt: Date.now() + 3e5 });
       req.user = user;
       return next();
     } catch (err) {
@@ -8128,240 +8736,6 @@ function requireAdmin(req, res, next) {
 }
 
 // src/server/app.ts
-init_admin();
-
-// src/server/firebase/migrateSqliteToFirestore.ts
-init_admin();
-init_collections();
-init_db();
-async function migrateSqliteToFirestore() {
-  const db = getFirestoreDb();
-  const errors = [];
-  const sqliteCounts = {
-    users: queryGet("SELECT count(*) as count FROM users")?.count || 0,
-    seasons: queryGet("SELECT count(*) as count FROM seasons")?.count || 0,
-    leagues: queryGet("SELECT count(*) as count FROM leagues")?.count || 0,
-    clubs: queryGet("SELECT count(*) as count FROM clubs")?.count || 0,
-    competitions: queryGet("SELECT count(*) as count FROM competitions")?.count || 0,
-    competition_participants: queryGet("SELECT count(*) as count FROM competition_participants")?.count || 0,
-    club_memberships: queryGet("SELECT count(*) as count FROM club_memberships")?.count || 0,
-    fixtures: queryGet("SELECT count(*) as count FROM fixtures")?.count || 0
-  };
-  console.log("[Migration] Starting SQLite to Firestore migration...");
-  console.log("[Migration] Source SQLite counts:", JSON.stringify(sqliteCounts, null, 2));
-  try {
-    const seasons = queryAll("SELECT * FROM seasons");
-    const batch = db.batch();
-    for (const s of seasons) {
-      const ref = db.collection(COLLECTIONS.SEASONS).doc(s.id);
-      batch.set(ref, {
-        id: s.id,
-        name: s.name,
-        status: s.status,
-        startDate: s.start_date || null,
-        endDate: s.end_date || null,
-        createdAt: s.created_at || (/* @__PURE__ */ new Date()).toISOString()
-      });
-    }
-    await batch.commit();
-  } catch (err) {
-    errors.push(`Seasons migration error: ${err.message}`);
-  }
-  try {
-    const leagues = queryAll("SELECT * FROM leagues");
-    const batch = db.batch();
-    for (const l of leagues) {
-      const ref = db.collection(COLLECTIONS.LEAGUES).doc(l.id);
-      batch.set(
-        ref,
-        {
-          id: l.id,
-          name: l.name,
-          country: l.country,
-          tier: l.tier,
-          logo: l.logo_url,
-          createdAt: l.created_at || (/* @__PURE__ */ new Date()).toISOString()
-        },
-        { merge: true }
-      );
-    }
-    await batch.commit();
-  } catch (err) {
-    errors.push(`Leagues migration error: ${err.message}`);
-  }
-  try {
-    const clubs = queryAll("SELECT * FROM clubs");
-    const chunkSize = 400;
-    for (let i = 0; i < clubs.length; i += chunkSize) {
-      const chunk = clubs.slice(i, i + chunkSize);
-      const batch = db.batch();
-      for (const c of chunk) {
-        const ref = db.collection(COLLECTIONS.CLUBS).doc(c.id);
-        batch.set(
-          ref,
-          {
-            id: c.id,
-            name: c.name,
-            shortName: c.short_name,
-            leagueId: c.league_id,
-            country: c.country,
-            logo: c.logo_url,
-            isActive: c.active !== void 0 ? Boolean(c.active) : c.is_active !== void 0 ? Boolean(c.is_active) : true,
-            createdAt: c.created_at || (/* @__PURE__ */ new Date()).toISOString()
-          },
-          { merge: true }
-        );
-      }
-      await batch.commit();
-    }
-  } catch (err) {
-    errors.push(`Clubs migration error: ${err.message}`);
-  }
-  try {
-    const obsoleteIds = ["comp-trophee-des-champions-2026", "comp-trophee-des-champions"];
-    for (const obsId of obsoleteIds) {
-      await db.collection(COLLECTIONS.COMPETITIONS).doc(obsId).delete().catch(() => {
-      });
-    }
-    const competitions = queryAll("SELECT * FROM competitions");
-    const batch = db.batch();
-    for (const comp of competitions) {
-      const ref = db.collection(COLLECTIONS.COMPETITIONS).doc(comp.id);
-      batch.set(ref, {
-        id: comp.id,
-        seasonId: comp.season_id,
-        leagueId: comp.league_id || null,
-        name: comp.name,
-        type: comp.type,
-        scheduleMode: comp.schedule_mode,
-        status: comp.status,
-        formatConfig: comp.format_config_json ? JSON.parse(comp.format_config_json) : {},
-        createdAt: comp.created_at || (/* @__PURE__ */ new Date()).toISOString()
-      });
-    }
-    await batch.commit();
-  } catch (err) {
-    errors.push(`Competitions migration error: ${err.message}`);
-  }
-  try {
-    const participants = queryAll("SELECT * FROM competition_participants");
-    const chunkSize = 400;
-    for (let i = 0; i < participants.length; i += chunkSize) {
-      const chunk = participants.slice(i, i + chunkSize);
-      const batch = db.batch();
-      for (const p of chunk) {
-        const ref = db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).doc(p.id);
-        batch.set(ref, {
-          id: p.id,
-          competitionId: p.competition_id,
-          clubId: p.club_id,
-          seasonId: p.season_id,
-          ownerUserId: p.owner_user_id || null,
-          ownerUsername: p.owner_username || null,
-          sourceCompetitionId: p.source_competition_id || null,
-          sourceCompetitionName: p.source_competition_name || null,
-          sourcePosition: p.source_position || null,
-          qualificationReason: p.qualification_reason || null,
-          qualificationTimestamp: p.qualification_timestamp || null,
-          seedNumber: p.seed_number || null,
-          createdAt: p.created_at || (/* @__PURE__ */ new Date()).toISOString()
-        });
-      }
-      await batch.commit();
-    }
-  } catch (err) {
-    errors.push(`Competition participants migration error: ${err.message}`);
-  }
-  try {
-    const memberships = queryAll("SELECT * FROM club_memberships");
-    const batch = db.batch();
-    for (const m of memberships) {
-      const ref = db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).doc(m.id);
-      batch.set(ref, {
-        id: m.id,
-        seasonId: m.season_id,
-        clubId: m.club_id,
-        userId: m.user_id,
-        status: m.status,
-        claimedAt: m.claimed_at,
-        updatedAt: m.updated_at || m.claimed_at
-      });
-      if (m.status === "active") {
-        const userMemRef = db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${m.season_id}_${m.user_id}`);
-        const clubOccRef = db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${m.season_id}_${m.club_id}`);
-        batch.set(userMemRef, { userId: m.user_id, clubId: m.club_id, seasonId: m.season_id, status: "active" });
-        batch.set(clubOccRef, { clubId: m.club_id, userId: m.user_id, seasonId: m.season_id, status: "active" });
-      }
-    }
-    await batch.commit();
-  } catch (err) {
-    errors.push(`Memberships migration error: ${err.message}`);
-  }
-  try {
-    const fixtures = queryAll("SELECT * FROM fixtures");
-    const chunkSize = 400;
-    for (let i = 0; i < fixtures.length; i += chunkSize) {
-      const chunk = fixtures.slice(i, i + chunkSize);
-      const batch = db.batch();
-      for (const f of chunk) {
-        const ref = db.collection(COLLECTIONS.FIXTURES).doc(f.id);
-        batch.set(ref, {
-          id: f.id,
-          competitionId: f.competition_id,
-          seasonId: f.season_id,
-          matchday: f.matchday,
-          roundName: f.round_name,
-          homeClubId: f.home_club_id,
-          awayClubId: f.away_club_id,
-          scheduledAt: f.scheduled_at,
-          status: f.status,
-          homeScore: f.home_score !== null ? f.home_score : null,
-          awayScore: f.away_score !== null ? f.away_score : null,
-          winnerClubId: f.winner_club_id || null,
-          resultConfirmedAt: f.result_confirmed_at || null,
-          createdAt: f.created_at || (/* @__PURE__ */ new Date()).toISOString(),
-          updatedAt: f.updated_at || (/* @__PURE__ */ new Date()).toISOString()
-        });
-      }
-      await batch.commit();
-    }
-  } catch (err) {
-    errors.push(`Fixtures migration error: ${err.message}`);
-  }
-  const [seasonsSnap, leaguesSnap, clubsSnap, compSnap, partSnap, memSnap, fixSnap] = await Promise.all([
-    db.collection(COLLECTIONS.SEASONS).get(),
-    db.collection(COLLECTIONS.LEAGUES).get(),
-    db.collection(COLLECTIONS.CLUBS).get(),
-    db.collection(COLLECTIONS.COMPETITIONS).get(),
-    db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).get(),
-    db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).get(),
-    db.collection(COLLECTIONS.FIXTURES).get()
-  ]);
-  const firestoreCounts = {
-    seasons: seasonsSnap.size,
-    leagues: leaguesSnap.size,
-    clubs: clubsSnap.size,
-    competitions: compSnap.size,
-    competition_participants: partSnap.size,
-    club_memberships: memSnap.size,
-    fixtures: fixSnap.size
-  };
-  console.log("[Migration] Target Firestore counts:", JSON.stringify(firestoreCounts, null, 2));
-  const success = errors.length === 0 && firestoreCounts.clubs >= sqliteCounts.clubs && firestoreCounts.leagues >= sqliteCounts.leagues && firestoreCounts.competitions >= sqliteCounts.competitions;
-  return {
-    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-    source: "sqlite",
-    target: "firestore",
-    sqliteCounts,
-    firestoreCounts,
-    success,
-    errors
-  };
-}
-
-// src/server/app.ts
-init_firestoreStore();
-init_collections();
 init_circuitBreaker();
 init_occupancySnapshot();
 init_mutationQueue();
@@ -8433,31 +8807,14 @@ init_collections();
 init_circuitBreaker();
 init_mutationQueue();
 var healthRouter = Router2();
+var lastManualProbeTime = 0;
+var MANUAL_PROBE_COOLDOWN_MS = 6e4;
 healthRouter.get("/", async (req, res) => {
   const status = getFirebaseStatus();
   const cbStatus = firestoreCircuitBreaker.getStatus();
   const queue = getQueueStats();
-  let isConnected = false;
-  let connectionWarning = null;
-  if (firestoreCircuitBreaker.canExecute()) {
-    try {
-      const db = getFirestoreDb();
-      if (db && status.isConfigured) {
-        await db.collection(COLLECTIONS.SEASONS).limit(1).get();
-        isConnected = true;
-        firestoreCircuitBreaker.recordSuccess();
-      } else {
-        isConnected = true;
-      }
-    } catch (err) {
-      connectionWarning = err.message;
-      firestoreCircuitBreaker.recordFailure(err);
-      isConnected = false;
-    }
-  } else {
-    connectionWarning = "Firestore circuit breaker is open (fallback mode active)";
-    isConnected = false;
-  }
+  const isConnected = Boolean(status.isConfigured && firestoreCircuitBreaker.canExecute());
+  const connectionWarning = !firestoreCircuitBreaker.canExecute() ? "Firestore circuit breaker is open (fallback mode active)" : !status.isConfigured ? "Firebase credentials not configured" : null;
   res.status(200).json({
     status: "ok",
     database: "firestore",
@@ -8481,6 +8838,35 @@ healthRouter.get("/", async (req, res) => {
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     version: "2.0.0-firestore-production"
   });
+});
+healthRouter.post("/probe", async (req, res) => {
+  const now = Date.now();
+  if (now - lastManualProbeTime < MANUAL_PROBE_COOLDOWN_MS) {
+    const waitSec = Math.ceil((MANUAL_PROBE_COOLDOWN_MS - (now - lastManualProbeTime)) / 1e3);
+    res.status(429).json({
+      error: "Probe in cooldown",
+      message: `Please wait ${waitSec}s before probing Firestore again.`
+    });
+    return;
+  }
+  lastManualProbeTime = now;
+  try {
+    const db = getFirestoreDb();
+    await db.collection(COLLECTIONS.SEASONS).limit(1).get();
+    firestoreCircuitBreaker.recordSuccess();
+    res.status(200).json({
+      success: true,
+      message: "Firestore active probe succeeded",
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
+    });
+  } catch (err) {
+    firestoreCircuitBreaker.recordFailure(err);
+    res.status(503).json({
+      success: false,
+      error: err.message,
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
+    });
+  }
 });
 healthRouter.get("/resilience", (req, res) => {
   const cbStatus = firestoreCircuitBreaker.getStatus();
@@ -8556,8 +8942,9 @@ authRouter.post("/telegram", validateBody(telegramAuthSchema), async (req, res) 
         if (userRaw) {
           const user = await getOrCreateTelegramUser(JSON.parse(userRaw));
           const currentClub = await getUserActiveClubFirestore(user.id, "season-2026-27");
+          const token = createSessionToken(user);
           console.log(`[TELEGRAM AUTH - DEV SANDBOX] user=${user.username} (id: ${user.telegramId}), isAdmin=${user.isAdmin}`);
-          res.json({ success: true, user, currentClub });
+          res.json({ success: true, user, currentClub, token });
           return;
         }
       } catch {
@@ -8575,6 +8962,7 @@ authRouter.post("/telegram", validateBody(telegramAuthSchema), async (req, res) 
   try {
     const user = await getOrCreateTelegramUser(verifyResult.user);
     const currentClub = await getUserActiveClubFirestore(user.id, "season-2026-27");
+    const token = createSessionToken(user);
     console.log(`[TELEGRAM AUTH]
 initData received: YES
 parsed user id: ${verifyResult.user.id}
@@ -8583,7 +8971,7 @@ auth_date valid: ${verifyResult.authDate ? "YES" : "NO"}
 HMAC valid: YES
 internal user: ${user.id}
 isAdmin: ${user.isAdmin ? "YES" : "NO"}`);
-    res.json({ success: true, user, currentClub });
+    res.json({ success: true, user, currentClub, token });
   } catch (err) {
     res.status(500).json({ error: "Authentication failed", message: err.message });
   }
@@ -8597,7 +8985,8 @@ authRouter.post("/dev", validateBody(devAuthSchema), async (req, res) => {
   try {
     const user = await getOrCreateDevUser(req.body.devUserId);
     const currentClub = await getUserActiveClubFirestore(user.id, "season-2026-27");
-    res.json({ success: true, user, currentClub });
+    const token = createSessionToken(user);
+    res.json({ success: true, user, currentClub, token });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -9566,6 +9955,237 @@ import { z as z3 } from "zod";
 init_adminService();
 init_firestoreStore();
 init_seed();
+
+// src/server/firebase/migrateSqliteToFirestore.ts
+init_admin();
+init_collections();
+init_db();
+async function migrateSqliteToFirestore() {
+  const db = getFirestoreDb();
+  const errors = [];
+  const sqliteCounts = {
+    users: queryGet("SELECT count(*) as count FROM users")?.count || 0,
+    seasons: queryGet("SELECT count(*) as count FROM seasons")?.count || 0,
+    leagues: queryGet("SELECT count(*) as count FROM leagues")?.count || 0,
+    clubs: queryGet("SELECT count(*) as count FROM clubs")?.count || 0,
+    competitions: queryGet("SELECT count(*) as count FROM competitions")?.count || 0,
+    competition_participants: queryGet("SELECT count(*) as count FROM competition_participants")?.count || 0,
+    club_memberships: queryGet("SELECT count(*) as count FROM club_memberships")?.count || 0,
+    fixtures: queryGet("SELECT count(*) as count FROM fixtures")?.count || 0
+  };
+  console.log("[Migration] Starting SQLite to Firestore migration...");
+  console.log("[Migration] Source SQLite counts:", JSON.stringify(sqliteCounts, null, 2));
+  try {
+    const seasons = queryAll("SELECT * FROM seasons");
+    const batch = db.batch();
+    for (const s of seasons) {
+      const ref = db.collection(COLLECTIONS.SEASONS).doc(s.id);
+      batch.set(ref, {
+        id: s.id,
+        name: s.name,
+        status: s.status,
+        startDate: s.start_date || null,
+        endDate: s.end_date || null,
+        createdAt: s.created_at || (/* @__PURE__ */ new Date()).toISOString()
+      });
+    }
+    await batch.commit();
+  } catch (err) {
+    errors.push(`Seasons migration error: ${err.message}`);
+  }
+  try {
+    const leagues = queryAll("SELECT * FROM leagues");
+    const batch = db.batch();
+    for (const l of leagues) {
+      const ref = db.collection(COLLECTIONS.LEAGUES).doc(l.id);
+      batch.set(
+        ref,
+        {
+          id: l.id,
+          name: l.name,
+          country: l.country,
+          tier: l.tier,
+          logo: l.logo_url,
+          createdAt: l.created_at || (/* @__PURE__ */ new Date()).toISOString()
+        },
+        { merge: true }
+      );
+    }
+    await batch.commit();
+  } catch (err) {
+    errors.push(`Leagues migration error: ${err.message}`);
+  }
+  try {
+    const clubs = queryAll("SELECT * FROM clubs");
+    const chunkSize = 400;
+    for (let i = 0; i < clubs.length; i += chunkSize) {
+      const chunk = clubs.slice(i, i + chunkSize);
+      const batch = db.batch();
+      for (const c of chunk) {
+        const ref = db.collection(COLLECTIONS.CLUBS).doc(c.id);
+        batch.set(
+          ref,
+          {
+            id: c.id,
+            name: c.name,
+            shortName: c.short_name,
+            leagueId: c.league_id,
+            country: c.country,
+            logo: c.logo_url,
+            isActive: c.active !== void 0 ? Boolean(c.active) : c.is_active !== void 0 ? Boolean(c.is_active) : true,
+            createdAt: c.created_at || (/* @__PURE__ */ new Date()).toISOString()
+          },
+          { merge: true }
+        );
+      }
+      await batch.commit();
+    }
+  } catch (err) {
+    errors.push(`Clubs migration error: ${err.message}`);
+  }
+  try {
+    const obsoleteIds = ["comp-trophee-des-champions-2026", "comp-trophee-des-champions"];
+    for (const obsId of obsoleteIds) {
+      await db.collection(COLLECTIONS.COMPETITIONS).doc(obsId).delete().catch(() => {
+      });
+    }
+    const competitions = queryAll("SELECT * FROM competitions");
+    const batch = db.batch();
+    for (const comp of competitions) {
+      const ref = db.collection(COLLECTIONS.COMPETITIONS).doc(comp.id);
+      batch.set(ref, {
+        id: comp.id,
+        seasonId: comp.season_id,
+        leagueId: comp.league_id || null,
+        name: comp.name,
+        type: comp.type,
+        scheduleMode: comp.schedule_mode,
+        status: comp.status,
+        formatConfig: comp.format_config_json ? JSON.parse(comp.format_config_json) : {},
+        createdAt: comp.created_at || (/* @__PURE__ */ new Date()).toISOString()
+      });
+    }
+    await batch.commit();
+  } catch (err) {
+    errors.push(`Competitions migration error: ${err.message}`);
+  }
+  try {
+    const participants = queryAll("SELECT * FROM competition_participants");
+    const chunkSize = 400;
+    for (let i = 0; i < participants.length; i += chunkSize) {
+      const chunk = participants.slice(i, i + chunkSize);
+      const batch = db.batch();
+      for (const p of chunk) {
+        const ref = db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).doc(p.id);
+        batch.set(ref, {
+          id: p.id,
+          competitionId: p.competition_id,
+          clubId: p.club_id,
+          seasonId: p.season_id,
+          ownerUserId: p.owner_user_id || null,
+          ownerUsername: p.owner_username || null,
+          sourceCompetitionId: p.source_competition_id || null,
+          sourceCompetitionName: p.source_competition_name || null,
+          sourcePosition: p.source_position || null,
+          qualificationReason: p.qualification_reason || null,
+          qualificationTimestamp: p.qualification_timestamp || null,
+          seedNumber: p.seed_number || null,
+          createdAt: p.created_at || (/* @__PURE__ */ new Date()).toISOString()
+        });
+      }
+      await batch.commit();
+    }
+  } catch (err) {
+    errors.push(`Competition participants migration error: ${err.message}`);
+  }
+  try {
+    const memberships = queryAll("SELECT * FROM club_memberships");
+    const batch = db.batch();
+    for (const m of memberships) {
+      const ref = db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).doc(m.id);
+      batch.set(ref, {
+        id: m.id,
+        seasonId: m.season_id,
+        clubId: m.club_id,
+        userId: m.user_id,
+        status: m.status,
+        claimedAt: m.claimed_at,
+        updatedAt: m.updated_at || m.claimed_at
+      });
+      if (m.status === "active") {
+        const userMemRef = db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${m.season_id}_${m.user_id}`);
+        const clubOccRef = db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${m.season_id}_${m.club_id}`);
+        batch.set(userMemRef, { userId: m.user_id, clubId: m.club_id, seasonId: m.season_id, status: "active" });
+        batch.set(clubOccRef, { clubId: m.club_id, userId: m.user_id, seasonId: m.season_id, status: "active" });
+      }
+    }
+    await batch.commit();
+  } catch (err) {
+    errors.push(`Memberships migration error: ${err.message}`);
+  }
+  try {
+    const fixtures = queryAll("SELECT * FROM fixtures");
+    const chunkSize = 400;
+    for (let i = 0; i < fixtures.length; i += chunkSize) {
+      const chunk = fixtures.slice(i, i + chunkSize);
+      const batch = db.batch();
+      for (const f of chunk) {
+        const ref = db.collection(COLLECTIONS.FIXTURES).doc(f.id);
+        batch.set(ref, {
+          id: f.id,
+          competitionId: f.competition_id,
+          seasonId: f.season_id,
+          matchday: f.matchday,
+          roundName: f.round_name,
+          homeClubId: f.home_club_id,
+          awayClubId: f.away_club_id,
+          scheduledAt: f.scheduled_at,
+          status: f.status,
+          homeScore: f.home_score !== null ? f.home_score : null,
+          awayScore: f.away_score !== null ? f.away_score : null,
+          winnerClubId: f.winner_club_id || null,
+          resultConfirmedAt: f.result_confirmed_at || null,
+          createdAt: f.created_at || (/* @__PURE__ */ new Date()).toISOString(),
+          updatedAt: f.updated_at || (/* @__PURE__ */ new Date()).toISOString()
+        });
+      }
+      await batch.commit();
+    }
+  } catch (err) {
+    errors.push(`Fixtures migration error: ${err.message}`);
+  }
+  const [seasonsSnap, leaguesSnap, clubsSnap, compSnap, partSnap, memSnap, fixSnap] = await Promise.all([
+    db.collection(COLLECTIONS.SEASONS).get(),
+    db.collection(COLLECTIONS.LEAGUES).get(),
+    db.collection(COLLECTIONS.CLUBS).get(),
+    db.collection(COLLECTIONS.COMPETITIONS).get(),
+    db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).get(),
+    db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).get(),
+    db.collection(COLLECTIONS.FIXTURES).get()
+  ]);
+  const firestoreCounts = {
+    seasons: seasonsSnap.size,
+    leagues: leaguesSnap.size,
+    clubs: clubsSnap.size,
+    competitions: compSnap.size,
+    competition_participants: partSnap.size,
+    club_memberships: memSnap.size,
+    fixtures: fixSnap.size
+  };
+  console.log("[Migration] Target Firestore counts:", JSON.stringify(firestoreCounts, null, 2));
+  const success = errors.length === 0 && firestoreCounts.clubs >= sqliteCounts.clubs && firestoreCounts.leagues >= sqliteCounts.leagues && firestoreCounts.competitions >= sqliteCounts.competitions;
+  return {
+    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+    source: "sqlite",
+    target: "firestore",
+    sqliteCounts,
+    firestoreCounts,
+    success,
+    errors
+  };
+}
+
+// src/server/routes/admin.routes.ts
 init_mutationQueue();
 init_knockoutEngine();
 
@@ -9821,15 +10441,78 @@ async function evaluateSeasonQualifications(seasonId = "season-2026-27") {
 // src/server/routes/admin.routes.ts
 init_admin();
 init_collections();
+init_circuitBreaker();
+init_db();
 var adminRouter = Router12();
 adminRouter.use(requireAdmin);
+function getFallbackAdminOverview(seasonId) {
+  const status = getFirebaseStatus();
+  const occRow = queryGet("SELECT COUNT(*) as count FROM club_memberships WHERE season_id = ? AND status = 'active'", [seasonId]);
+  const userRow = queryGet("SELECT COUNT(*) as count FROM users", []);
+  const disputeRow = queryGet("SELECT COUNT(*) as count FROM disputes WHERE status = 'OPEN'", []);
+  const pendingRow = queryGet("SELECT COUNT(*) as count FROM fixtures WHERE status = 'PENDING_CONFIRMATION'", []);
+  const auditRow = queryGet("SELECT COUNT(*) as count FROM audit_logs", []);
+  const compRows = queryAll("SELECT * FROM competitions WHERE season_id = ?", [seasonId]);
+  const activeOccupancies = occRow?.count ?? 0;
+  const registeredUsers = userRow?.count ?? 0;
+  const openDisputes = disputeRow?.count ?? 0;
+  const pendingCount = pendingRow?.count ?? 0;
+  const auditLogsCount = auditRow?.count ?? 0;
+  const domesticCups = compRows.filter((c) => c.type === "cup");
+  const europeanComps = compRows.filter(
+    (c) => c.type === "champions_league" || c.type === "europa_league" || c.type === "conference_league"
+  );
+  const disputes = getLocalDisputes("OPEN", 10);
+  const pendingData = getLocalPendingResults(seasonId, 5);
+  return {
+    season: {
+      id: seasonId,
+      name: "2026/27 Season",
+      status: "ACTIVE"
+    },
+    counts: {
+      totalClubs: 96,
+      occupiedClubs: activeOccupancies,
+      availableClubs: Math.max(0, 96 - activeOccupancies),
+      domesticLeaguesCount: 5,
+      domesticCupsCount: domesticCups.length,
+      europeanCompetitionsCount: europeanComps.length,
+      totalCompetitions: compRows.length || 8,
+      totalUsers: registeredUsers,
+      registeredUsers,
+      activeOccupancies,
+      openDisputes,
+      pendingResultConfirmations: pendingCount,
+      recentAuditLogs: auditLogsCount
+    },
+    systemHealth: {
+      projectId: status.projectId,
+      databaseId: status.databaseId,
+      connected: false,
+      authMode: status.authMode,
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
+    },
+    openDisputes: disputes.slice(0, 10),
+    pendingFixturesPreview: pendingData.pendingFixtures.slice(0, 5),
+    source: "sqlite",
+    degraded: true,
+    stale: true,
+    generatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+}
 adminRouter.get("/overview", async (req, res) => {
   const seasonId = req.query.seasonId || "season-2026-27";
-  recordEndpointCall("/api/admin/overview", "ADMIN", 3);
+  recordEndpointCall("/api/admin/overview", "ADMIN", 1);
   const cacheKey = `firestore:admin_overview:${seasonId}`;
   const cached = getFromCache(cacheKey);
   if (cached) {
     res.json(cached);
+    return;
+  }
+  if (!firestoreCircuitBreaker.canExecute()) {
+    const fallback = getFallbackAdminOverview(seasonId);
+    setInCache(cacheKey, fallback, 6e4);
+    res.json(fallback);
     return;
   }
   try {
@@ -9879,29 +10562,57 @@ adminRouter.get("/overview", async (req, res) => {
         timestamp: (/* @__PURE__ */ new Date()).toISOString()
       },
       openDisputes: disputes.slice(0, 10),
-      pendingFixturesPreview: pendingData.pendingFixtures.slice(0, 5)
+      pendingFixturesPreview: pendingData.pendingFixtures.slice(0, 5),
+      source: "firestore",
+      degraded: false,
+      stale: false,
+      generatedAt: (/* @__PURE__ */ new Date()).toISOString()
     };
-    setInCache(cacheKey, payload, 15e3);
+    setInCache(cacheKey, payload, 6e4);
     res.json(payload);
   } catch (err) {
-    handleFirestoreError(res, err, "GET /api/admin/overview");
+    firestoreCircuitBreaker.recordFailure(err);
+    const fallback = getFallbackAdminOverview(seasonId);
+    setInCache(cacheKey, fallback, 6e4);
+    res.status(200).json(fallback);
   }
 });
 adminRouter.get("/clubs", async (req, res) => {
   const seasonId = req.query.seasonId || "season-2026-27";
   const leagueId = req.query.leagueId;
+  let targetLeagues = SEED_LEAGUES;
+  if (leagueId && leagueId !== "ALL") {
+    targetLeagues = SEED_LEAGUES.filter((l) => l.id === leagueId);
+  }
+  if (!firestoreCircuitBreaker.canExecute()) {
+    const clubs = targetLeagues.flatMap(
+      (l) => SEED_CLUBS.filter((c) => c.leagueId === l.id).map((c) => ({
+        ...c,
+        seasonId,
+        isOccupied: false,
+        occupiedByUserId: null
+      }))
+    );
+    res.json({ clubs, total: clubs.length, source: "sqlite", degraded: true, stale: true });
+    return;
+  }
   try {
-    let targetLeagues = SEED_LEAGUES;
-    if (leagueId && leagueId !== "ALL") {
-      targetLeagues = SEED_LEAGUES.filter((l) => l.id === leagueId);
-    }
     const clubsByLeague = await Promise.all(
       targetLeagues.map((l) => getClubsByLeagueFirestore(l.id, seasonId))
     );
     const clubs = clubsByLeague.flat();
-    res.json({ clubs, total: clubs.length });
+    res.json({ clubs, total: clubs.length, source: "firestore", degraded: false, stale: false });
   } catch (err) {
-    handleFirestoreError(res, err, "GET /api/admin/clubs");
+    firestoreCircuitBreaker.recordFailure(err);
+    const clubs = targetLeagues.flatMap(
+      (l) => SEED_CLUBS.filter((c) => c.leagueId === l.id).map((c) => ({
+        ...c,
+        seasonId,
+        isOccupied: false,
+        occupiedByUserId: null
+      }))
+    );
+    res.json({ clubs, total: clubs.length, source: "sqlite", degraded: true, stale: true });
   }
 });
 adminRouter.get("/fixtures", async (req, res) => {
@@ -9912,43 +10623,57 @@ adminRouter.get("/fixtures", async (req, res) => {
   const clubId = req.query.clubId;
   const userId = req.query.userId;
   const search = req.query.search?.trim().toLowerCase();
+  const cursor = req.query.cursor || void 0;
+  const limit = req.query.limit !== void 0 ? Math.min(Math.max(parseInt(req.query.limit, 10), 1), 100) : 25;
   const page = req.query.page ? Math.max(1, parseInt(req.query.page, 10)) : 1;
-  const limit = req.query.limit !== void 0 ? parseInt(req.query.limit, 10) : 50;
   try {
-    let fixtures = await getFixturesFirestore({
+    const result = await getAdminFixturesPagedFirestore({
       seasonId,
       competitionId: competitionId === "ALL" ? void 0 : competitionId,
       status: status === "ALL" ? void 0 : status,
       matchday: matchday || void 0,
       clubId: clubId || void 0,
       userId: userId || void 0,
-      limit: 0
-    });
-    if (search) {
-      fixtures = fixtures.filter((f) => {
-        const homeName = (f.homeClub?.name || f.homeClubId || "").toLowerCase();
-        const awayName = (f.awayClub?.name || f.awayClubId || "").toLowerCase();
-        const compName = (f.competitionName || f.competitionId || "").toLowerCase();
-        return f.id.toLowerCase().includes(search) || homeName.includes(search) || awayName.includes(search) || compName.includes(search);
-      });
-    }
-    const total = fixtures.length;
-    let paginatedFixtures = fixtures;
-    let totalPages = 1;
-    if (limit > 0) {
-      totalPages = Math.ceil(total / limit) || 1;
-      const startIndex = (page - 1) * limit;
-      paginatedFixtures = fixtures.slice(startIndex, startIndex + limit);
-    }
-    res.json({
-      fixtures: paginatedFixtures,
-      total,
-      page,
-      totalPages,
+      search,
+      cursor,
       limit
     });
+    res.json({
+      fixtures: result.fixtures,
+      total: result.total,
+      hasMore: result.hasMore,
+      nextCursor: result.nextCursor,
+      page,
+      totalPages: Math.ceil(result.total / limit) || 1,
+      limit,
+      source: result.source,
+      degraded: result.degraded,
+      stale: result.stale,
+      generatedAt: result.generatedAt
+    });
   } catch (err) {
-    handleFirestoreError(res, err, "GET /api/admin/fixtures");
+    firestoreCircuitBreaker.recordFailure(err);
+    const fallback = executeAdminFixturesPagedFallback({
+      seasonId,
+      competitionId: competitionId === "ALL" ? void 0 : competitionId,
+      status: status === "ALL" ? void 0 : status,
+      matchday: matchday || void 0,
+      cursor,
+      limit
+    }, limit);
+    res.status(200).json({
+      fixtures: fallback.fixtures,
+      total: fallback.total,
+      hasMore: fallback.hasMore,
+      nextCursor: fallback.nextCursor,
+      page,
+      totalPages: Math.ceil(fallback.total / limit) || 1,
+      limit,
+      source: "sqlite",
+      degraded: true,
+      stale: true,
+      generatedAt: fallback.generatedAt
+    });
   }
 });
 var adminEditResultSchema = z3.object({
@@ -10003,9 +10728,11 @@ adminRouter.get("/submissions", async (req, res) => {
   const limit = req.query.limit ? parseInt(req.query.limit, 10) : 100;
   try {
     const submissions = await getResultSubmissions({ fixtureId, userId, limit });
-    res.json({ submissions, total: submissions.length });
+    res.json({ submissions, total: submissions.length, source: "firestore", degraded: false, stale: false });
   } catch (err) {
-    handleFirestoreError(res, err, "GET /api/admin/submissions");
+    firestoreCircuitBreaker.recordFailure(err);
+    const submissions = getLocalSubmissions({ fixtureId, userId, limit });
+    res.json({ submissions, total: submissions.length, source: "sqlite", degraded: true, stale: true });
   }
 });
 adminRouter.delete("/submissions/:id", async (req, res) => {
@@ -10024,9 +10751,39 @@ adminRouter.get("/users/:id/detail", async (req, res) => {
   const targetUserId = req.params.id;
   try {
     const detail = await getUserDetail(targetUserId);
-    res.json(detail);
+    res.json({ ...detail, source: "firestore", degraded: false, stale: false });
   } catch (err) {
-    handleFirestoreError(res, err, `GET /api/admin/users/${targetUserId}/detail`);
+    firestoreCircuitBreaker.recordFailure(err);
+    const localUser = queryGet("SELECT * FROM users WHERE id = ?", [targetUserId]);
+    if (!localUser) {
+      res.status(404).json({ error: `User '${targetUserId}' not found.` });
+      return;
+    }
+    const memberships = queryAll("SELECT * FROM club_memberships WHERE user_id = ?", [targetUserId]);
+    const submissions = getLocalSubmissions({ userId: targetUserId, limit: 30 });
+    res.json({
+      user: {
+        id: localUser.id,
+        telegramId: localUser.telegram_id,
+        username: localUser.username,
+        firstName: localUser.first_name,
+        lastName: localUser.last_name || "",
+        photoUrl: localUser.photo_url || "",
+        isAdmin: Boolean(localUser.is_admin),
+        isSuspended: Boolean(localUser.is_suspended),
+        createdAt: localUser.created_at,
+        updatedAt: localUser.updated_at
+      },
+      activeClub: null,
+      memberships,
+      submissionsCount: submissions.length,
+      recentSubmissions: submissions,
+      auditLogs: [],
+      notificationsCount: 0,
+      source: "sqlite",
+      degraded: true,
+      stale: true
+    });
   }
 });
 var adminSetRoleSchema = z3.object({
@@ -10079,6 +10836,40 @@ adminRouter.get("/read-metrics", (req, res) => {
   });
 });
 adminRouter.get("/firestore-diagnostics", async (req, res) => {
+  const isRefresh = req.query.refresh === "true";
+  const cacheKey = "firestore:admin_diagnostics";
+  const cached = getFromCache(cacheKey);
+  if (!isRefresh && cached) {
+    res.json(cached);
+    return;
+  }
+  if (!firestoreCircuitBreaker.canExecute()) {
+    const usersCount = queryGet("SELECT COUNT(*) as count FROM users")?.count || 0;
+    const clubsCount = queryGet("SELECT COUNT(*) as count FROM clubs")?.count || 96;
+    const occCount = queryGet("SELECT COUNT(*) as count FROM club_memberships WHERE status = 'active'")?.count || 0;
+    const fixCount = queryGet("SELECT COUNT(*) as count FROM fixtures")?.count || 0;
+    const compCount = queryGet("SELECT COUNT(*) as count FROM competitions")?.count || 0;
+    const fallbackResult = {
+      projectId: "sqlite-fallback",
+      databaseId: "(default)",
+      connected: false,
+      authMode: "LOCAL_SQLITE",
+      readMetrics: getReadMetrics(),
+      source: "sqlite",
+      degraded: true,
+      stale: true,
+      collections: {
+        users: usersCount,
+        clubs: clubsCount,
+        club_occupancies: occCount,
+        user_memberships: occCount,
+        fixtures: fixCount,
+        competitions: compCount
+      }
+    };
+    res.json(fallbackResult);
+    return;
+  }
   try {
     const status = getFirebaseStatus();
     const db = getFirestoreDb();
@@ -10090,12 +10881,15 @@ adminRouter.get("/firestore-diagnostics", async (req, res) => {
       db.collection(COLLECTIONS.FIXTURES).count().get().catch(() => null),
       db.collection(COLLECTIONS.COMPETITIONS).count().get().catch(() => null)
     ]);
-    res.json({
+    const result = {
       projectId: status.projectId,
       databaseId: status.databaseId,
       connected: true,
       authMode: status.authMode,
       readMetrics: getReadMetrics(),
+      source: "firestore",
+      degraded: false,
+      stale: false,
       collections: {
         users: usersCount?.data().count ?? 0,
         clubs: clubsCount?.data().count ?? 96,
@@ -10104,9 +10898,34 @@ adminRouter.get("/firestore-diagnostics", async (req, res) => {
         fixtures: fixCount?.data().count ?? 0,
         competitions: compCount?.data().count ?? 0
       }
-    });
+    };
+    setInCache(cacheKey, result, 6e5);
+    res.json(result);
   } catch (err) {
-    handleFirestoreError(res, err, "GET /api/admin/firestore-diagnostics");
+    firestoreCircuitBreaker.recordFailure(err);
+    const usersCount = queryGet("SELECT COUNT(*) as count FROM users")?.count || 0;
+    const clubsCount = queryGet("SELECT COUNT(*) as count FROM clubs")?.count || 96;
+    const occCount = queryGet("SELECT COUNT(*) as count FROM club_memberships WHERE status = 'active'")?.count || 0;
+    const fixCount = queryGet("SELECT COUNT(*) as count FROM fixtures")?.count || 0;
+    const compCount = queryGet("SELECT COUNT(*) as count FROM competitions")?.count || 0;
+    res.status(200).json({
+      projectId: "sqlite-fallback",
+      databaseId: "(default)",
+      connected: false,
+      authMode: "LOCAL_SQLITE",
+      readMetrics: getReadMetrics(),
+      source: "sqlite",
+      degraded: true,
+      stale: true,
+      collections: {
+        users: usersCount,
+        clubs: clubsCount,
+        club_occupancies: occCount,
+        user_memberships: occCount,
+        fixtures: fixCount,
+        competitions: compCount
+      }
+    });
   }
 });
 var resolveDisputeSchema = z3.object({
@@ -10131,20 +10950,67 @@ adminRouter.post("/migrate-to-firestore", async (req, res) => {
   }
 });
 adminRouter.get("/users", async (req, res) => {
+  if (!firestoreCircuitBreaker.canExecute()) {
+    const rows = queryAll("SELECT * FROM users ORDER BY created_at DESC");
+    res.json({
+      users: rows.map((r) => ({
+        id: r.id,
+        telegramId: r.telegram_id,
+        username: r.username,
+        firstName: r.first_name,
+        lastName: r.last_name || "",
+        photoUrl: r.photo_url || "",
+        isAdmin: Boolean(r.is_admin),
+        isSuspended: Boolean(r.is_suspended),
+        createdAt: r.created_at,
+        updatedAt: r.updated_at
+      })),
+      source: "sqlite",
+      degraded: true,
+      stale: true
+    });
+    return;
+  }
   try {
     const users = await getAllAdminUsers();
-    res.json({ users });
+    res.json({ users, source: "firestore", degraded: false, stale: false });
   } catch (err) {
-    handleFirestoreError(res, err, "GET /api/admin/users");
+    firestoreCircuitBreaker.recordFailure(err);
+    const rows = queryAll("SELECT * FROM users ORDER BY created_at DESC");
+    res.json({
+      users: rows.map((r) => ({
+        id: r.id,
+        telegramId: r.telegram_id,
+        username: r.username,
+        firstName: r.first_name,
+        lastName: r.last_name || "",
+        photoUrl: r.photo_url || "",
+        isAdmin: Boolean(r.is_admin),
+        isSuspended: Boolean(r.is_suspended),
+        createdAt: r.created_at,
+        updatedAt: r.updated_at
+      })),
+      source: "sqlite",
+      degraded: true,
+      stale: true
+    });
   }
 });
 adminRouter.get("/disputes", async (req, res) => {
   const status = req.query.status || "OPEN";
+  const limit = req.query.limit ? parseInt(req.query.limit, 10) : 50;
+  if (!firestoreCircuitBreaker.canExecute()) {
+    const disputes = getLocalDisputes(status, limit);
+    res.json({ disputes, source: "sqlite", degraded: true, stale: true });
+    return;
+  }
   try {
     const disputes = await getDisputes(status);
-    res.json({ disputes });
+    res.json({ disputes, source: "firestore", degraded: false, stale: false });
   } catch (err) {
-    handleFirestoreError(res, err, "GET /api/admin/disputes");
+    firestoreCircuitBreaker.recordFailure(err);
+    const disputes = getLocalDisputes(status, limit);
+    res.json({ disputes, source: "sqlite", degraded: true, stale: true });
   }
 });
 adminRouter.post("/disputes/:id/resolve", validateBody(resolveDisputeSchema), async (req, res) => {
@@ -10177,11 +11043,52 @@ adminRouter.post("/fixtures/:id/reopen", validateBody(reopenFixtureSchema), asyn
 });
 adminRouter.get("/audit-logs", async (req, res) => {
   const limit = req.query.limit ? parseInt(req.query.limit, 10) : 50;
+  if (!firestoreCircuitBreaker.canExecute()) {
+    const rows = queryAll("SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT ?", [limit]);
+    res.json({
+      logs: rows.map((r) => ({
+        id: r.id,
+        actorUserId: r.actor_user_id,
+        action: r.action,
+        entityType: r.entity_type,
+        entityId: r.entity_id,
+        oldValue: r.old_value ? JSON.parse(r.old_value) : null,
+        newValue: r.new_value ? JSON.parse(r.new_value) : null,
+        ipAddress: r.ip_address,
+        actorUsername: r.actor_username,
+        notes: r.notes,
+        createdAt: r.created_at
+      })),
+      source: "sqlite",
+      degraded: true,
+      stale: true
+    });
+    return;
+  }
   try {
     const logs = await getAuditLogs(limit);
-    res.json({ logs });
+    res.json({ logs, source: "firestore", degraded: false, stale: false });
   } catch (err) {
-    handleFirestoreError(res, err, "GET /api/admin/audit-logs");
+    firestoreCircuitBreaker.recordFailure(err);
+    const rows = queryAll("SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT ?", [limit]);
+    res.json({
+      logs: rows.map((r) => ({
+        id: r.id,
+        actorUserId: r.actor_user_id,
+        action: r.action,
+        entityType: r.entity_type,
+        entityId: r.entity_id,
+        oldValue: r.old_value ? JSON.parse(r.old_value) : null,
+        newValue: r.new_value ? JSON.parse(r.new_value) : null,
+        ipAddress: r.ip_address,
+        actorUsername: r.actor_username,
+        notes: r.notes,
+        createdAt: r.created_at
+      })),
+      source: "sqlite",
+      degraded: true,
+      stale: true
+    });
   }
 });
 adminRouter.post("/fixtures/generate", async (req, res) => {
@@ -10295,11 +11202,19 @@ adminRouter.post("/clubs/:id/assign", async (req, res) => {
 });
 adminRouter.get("/results/pending", async (req, res) => {
   const seasonId = req.query.seasonId || "season-2026-27";
+  const limit = req.query.limit ? parseInt(req.query.limit, 10) : 50;
+  if (!firestoreCircuitBreaker.canExecute()) {
+    const result = getLocalPendingResults(seasonId, limit);
+    res.json({ ...result, source: "sqlite", degraded: true, stale: true });
+    return;
+  }
   try {
     const result = await getPendingResultsFirestore(seasonId);
-    res.json(result);
+    res.json({ ...result, source: "firestore", degraded: false, stale: false });
   } catch (err) {
-    handleFirestoreError(res, err, "GET /api/admin/results/pending");
+    firestoreCircuitBreaker.recordFailure(err);
+    const result = getLocalPendingResults(seasonId, limit);
+    res.json({ ...result, source: "sqlite", degraded: true, stale: true });
   }
 });
 var approveResultSchema = z3.object({
@@ -10507,30 +11422,15 @@ async function ensureDbReady() {
   if (!dbInitPromise) {
     dbInitPromise = (async () => {
       try {
-        const fbStatus = getFirebaseStatus();
         await initDatabase();
         seedDatabase();
         repairSeason202627Roster();
         console.log(`[BOOT] SQLite baseline ready from: ${getDbFilePath()}`);
         loadSnapshotFromFile();
-        if (fbStatus.isConfigured) {
-          try {
-            const db = getFirestoreDb();
-            const clubsSnap = await db.collection(COLLECTIONS.CLUBS).limit(1).get();
-            if (clubsSnap.empty) {
-              console.log("[BOOT] Firestore is empty. Auto-seeding from SQLite baseline...");
-              await migrateSqliteToFirestore();
-              console.log("[BOOT] Firestore auto-seeding completed.");
-            } else {
-              console.log(`[BOOT] Connected to authoritative Firestore database: ${fbStatus.databaseId}`);
-              getActiveOccupanciesForSeason("season-2026-27").catch(() => {
-              });
-            }
-          } catch (fbErr) {
-            console.warn("[BOOT] Firestore connection warning, operating with resilient SQLite fallback:", fbErr.message);
-          }
+        const isServerless = process.env.VERCEL === "1" || Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME);
+        if (!isServerless) {
+          startBackgroundReconciliation();
         }
-        startBackgroundReconciliation();
         dbReady = true;
       } catch (err) {
         dbInitPromise = null;

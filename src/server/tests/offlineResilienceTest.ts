@@ -14,6 +14,13 @@ import { markSingleNotificationReadFirestore } from '../firebase/firestoreStore'
 import { assertTestEnvironmentSafe } from '../utils/testGuard';
 
 async function main() {
+  const isLocalFallback = process.env.FIREBASE_FORCE_LOCAL_FALLBACK === 'true';
+  const isEmulator = Boolean(process.env.FIRESTORE_EMULATOR_HOST);
+  if (!isLocalFallback && !isEmulator) {
+    throw new Error(
+      'SAFETY_VIOLATION: offlineResilienceTest requires FIREBASE_FORCE_LOCAL_FALLBACK="true" or a verified FIRESTORE_EMULATOR_HOST before process startup. Aborting to prevent production Firestore contamination.'
+    );
+  }
   assertTestEnvironmentSafe('offlineResilienceTest');
 
   await initDatabase();

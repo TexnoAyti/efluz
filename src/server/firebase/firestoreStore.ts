@@ -41,9 +41,9 @@ import {
   FirestoreStandingsDoc,
   FirestoreMatchdayLockDoc,
 } from './collections';
-import { assertTestEnvironmentSafe, guardAgainstTestEntityCreation } from '../utils/testGuard';
+import { assertTestEnvironmentSafe, guardAgainstTestEntityCreation, assertNoSyntheticIdsInProduction } from '../utils/testGuard';
 
-export { assertTestEnvironmentSafe, guardAgainstTestEntityCreation };
+export { assertTestEnvironmentSafe, guardAgainstTestEntityCreation, assertNoSyntheticIdsInProduction };
 import {
   Club,
   Competition,
@@ -908,6 +908,7 @@ export async function claimClubAtomicFirestore(
   seasonId = 'season-2026-27',
   options?: { authoritativeOnly?: boolean }
 ): Promise<{ success: boolean; club: Club; authoritative?: boolean; isFallback?: boolean }> {
+  assertNoSyntheticIdsInProduction('claimClubAtomicFirestore', [userId, clubId, seasonId]);
   const now = new Date().toISOString();
 
   if (firestoreCircuitBreaker.canExecute()) {
@@ -1752,6 +1753,275 @@ async function executeFixturesFallback(
     lastKnownGoodFixtures.set(cacheKey, fallbackFixtures);
   }
   return fallbackFixtures;
+}
+
+export interface AdminFixturesQueryOptions {
+  seasonId?: string;
+  competitionId?: string;
+  status?: string;
+  matchday?: number;
+  clubId?: string;
+  userId?: string;
+  search?: string;
+  limit?: number; // default 25
+  cursor?: string; // fixture doc id of last item from previous page
+}
+
+export interface AdminFixturesPageResult {
+  fixtures: Fixture[];
+  total: number;
+  hasMore: boolean;
+  nextCursor?: string;
+  limit: number;
+  source: 'firestore' | 'cache' | 'sqlite';
+  degraded: boolean;
+  stale: boolean;
+  generatedAt: string;
+}
+
+export function executeAdminFixturesPagedFallback(options: AdminFixturesQueryOptions, pageSize: number): AdminFixturesPageResult {
+  const conditions: string[] = ['1=1'];
+  const params: any[] = [];
+
+  if (options.competitionId) {
+    conditions.push('f.competition_id = ?');
+    params.push(options.competitionId);
+  } else if (options.seasonId) {
+    conditions.push('f.season_id = ?');
+    params.push(options.seasonId);
+  }
+  if (options.status) {
+    conditions.push('f.status = ?');
+    params.push(options.status);
+  }
+  if (options.matchday) {
+    conditions.push('f.matchday = ?');
+    params.push(options.matchday);
+  }
+
+  const whereStr = conditions.join(' AND ');
+  const countRow = queryGet<{ count: number }>(`SELECT COUNT(*) as count FROM fixtures f WHERE ${whereStr}`, params);
+  const total = countRow?.count || 0;
+
+  let querySql = `
+    SELECT f.*,
+           hc.name as home_name, hc.short_name as home_short, hc.country as home_country, hc.league_id as home_league, hc.logo_url as home_logo,
+           ac.name as away_name, ac.short_name as away_short, ac.country as away_country, ac.league_id as away_league, ac.logo_url as away_logo
+    FROM fixtures f
+    LEFT JOIN clubs hc ON f.home_club_id = hc.id
+    LEFT JOIN clubs ac ON f.away_club_id = ac.id
+    WHERE ${whereStr}
+  `;
+  const queryParams = [...params];
+
+  if (options.cursor) {
+    querySql += ' AND f.id > ?';
+    queryParams.push(options.cursor);
+  }
+
+  querySql += ' ORDER BY f.id ASC LIMIT ?';
+  queryParams.push(pageSize + 1);
+
+  const rows = queryAll<any>(querySql, queryParams);
+  const hasMore = rows.length > pageSize;
+  const pageRows = rows.slice(0, pageSize);
+  const nextCursor = hasMore && pageRows.length > 0 ? pageRows[pageRows.length - 1].id : undefined;
+
+  const fixtures: Fixture[] = pageRows.map((r) => ({
+    id: r.id,
+    competitionId: r.competition_id,
+    seasonId: r.season_id,
+    matchday: r.matchday,
+    homeClubId: r.home_club_id,
+    awayClubId: r.away_club_id,
+    homeScore: r.home_score,
+    awayScore: r.away_score,
+    status: r.status as MatchStatus,
+    scheduledAt: r.scheduled_at,
+    homeClub: {
+      id: r.home_club_id,
+      name: r.home_name || r.home_club_id,
+      shortName: r.home_short || r.home_club_id.substring(0, 3).toUpperCase(),
+      country: r.home_country || 'England',
+      leagueId: r.home_league || 'league-premier-league',
+      logoUrl: r.home_logo || '',
+      active: true,
+      createdAt: r.created_at || new Date().toISOString(),
+    },
+    awayClub: {
+      id: r.away_club_id,
+      name: r.away_name || r.away_club_id,
+      shortName: r.away_short || r.away_club_id.substring(0, 3).toUpperCase(),
+      country: r.away_country || 'England',
+      leagueId: r.away_league || 'league-premier-league',
+      logoUrl: r.away_logo || '',
+      active: true,
+      createdAt: r.created_at || new Date().toISOString(),
+    },
+    createdAt: r.created_at || new Date().toISOString(),
+    updatedAt: r.updated_at || new Date().toISOString(),
+  }));
+
+  return {
+    fixtures,
+    total,
+    hasMore,
+    nextCursor,
+    limit: pageSize,
+    source: 'sqlite',
+    degraded: true,
+    stale: true,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+export async function getAdminFixturesPagedFirestore(options: AdminFixturesQueryOptions = {}): Promise<AdminFixturesPageResult> {
+  const pageSize = Math.min(Math.max(options.limit || 25, 1), 100);
+  const cacheKey = `firestore:admin_paged_fixtures:${options.seasonId || 'all'}:${options.competitionId || 'all'}:${options.status || 'all'}:${options.matchday || 'all'}:${options.cursor || 'start'}:${pageSize}`;
+
+  const cached = getFromCache<AdminFixturesPageResult>(cacheKey);
+  if (cached) return cached;
+
+  if (!firestoreCircuitBreaker.canExecute()) {
+    recordFallbackUsage();
+    return executeAdminFixturesPagedFallback(options, pageSize);
+  }
+
+  try {
+    const db = getFirestoreDb();
+    let query: FirebaseFirestore.Query = db.collection(COLLECTIONS.FIXTURES);
+
+    if (options.competitionId) {
+      query = query.where('competitionId', '==', options.competitionId);
+    } else if (options.seasonId) {
+      query = query.where('seasonId', '==', options.seasonId);
+    }
+
+    if (options.status) {
+      query = query.where('status', '==', options.status);
+    }
+
+    if (options.matchday) {
+      query = query.where('matchday', '==', options.matchday);
+    }
+
+    // Stable cursor ordering by document ID
+    query = query.orderBy(FirebaseFirestore.FieldPath.documentId());
+
+    if (options.cursor) {
+      query = query.startAfter(options.cursor);
+    }
+
+    // Fetch pageSize + 1 to detect hasMore with 0 extra count queries
+    query = query.limit(pageSize + 1);
+
+    const snap = await query.get();
+    firestoreCircuitBreaker.recordSuccess();
+    trackFirestoreRead(
+      COLLECTIONS.FIXTURES,
+      snap.empty ? 1 : snap.docs.length,
+      'getAdminFixturesPagedFirestore'
+    );
+
+    const hasMore = snap.docs.length > pageSize;
+    const docsToUse = snap.docs.slice(0, pageSize);
+    const nextCursor = hasMore && docsToUse.length > 0 ? docsToUse[docsToUse.length - 1].id : undefined;
+
+    // Fast bounded count: check SQLite count for the filter so we don't scan full Firestore collection
+    const countFilter: any[] = [];
+    let countSql = 'SELECT COUNT(*) as count FROM fixtures WHERE 1=1';
+    if (options.competitionId) {
+      countSql += ' AND competition_id = ?';
+      countFilter.push(options.competitionId);
+    } else if (options.seasonId) {
+      countSql += ' AND season_id = ?';
+      countFilter.push(options.seasonId);
+    }
+    if (options.status) {
+      countSql += ' AND status = ?';
+      countFilter.push(options.status);
+    }
+    if (options.matchday) {
+      countSql += ' AND matchday = ?';
+      countFilter.push(options.matchday);
+    }
+    const countRow = queryGet<{ count: number }>(countSql, countFilter);
+    const total = countRow?.count || docsToUse.length;
+
+    const fixtureDocs = docsToUse.map((d) => d.data() as FirestoreFixtureDoc);
+
+    // Map club occupancy (uses in-memory 5-min cache, 0 reads)
+    const { clubOccupancyMap, usernameMap, userMap } = await getActiveOccupanciesForSeason(options.seasonId || 'season-2026-27');
+
+    const mappedFixtures: Fixture[] = fixtureDocs.map((doc) => {
+      const homeClubSeed = SEED_CLUB_MAP.get(doc.homeClubId);
+      const awayClubSeed = SEED_CLUB_MAP.get(doc.awayClubId);
+
+      const homeClub: Club = {
+        id: doc.homeClubId,
+        name: homeClubSeed?.name || doc.homeClubId,
+        shortName: homeClubSeed?.shortName || doc.homeClubId.substring(0, 3).toUpperCase(),
+        country: homeClubSeed?.country || 'England',
+        leagueId: homeClubSeed?.leagueId || 'league-premier-league',
+        logoUrl: homeClubSeed?.logoUrl || '',
+        active: true,
+        createdAt: new Date().toISOString(),
+      };
+
+      const awayClub: Club = {
+        id: doc.awayClubId,
+        name: awayClubSeed?.name || doc.awayClubId,
+        shortName: awayClubSeed?.shortName || doc.awayClubId.substring(0, 3).toUpperCase(),
+        country: awayClubSeed?.country || 'England',
+        leagueId: awayClubSeed?.leagueId || 'league-premier-league',
+        logoUrl: awayClubSeed?.logoUrl || '',
+        active: true,
+        createdAt: new Date().toISOString(),
+      };
+
+      const homeOwnerId = doc.homeOwnerId || clubOccupancyMap.get(doc.homeClubId)?.userId || undefined;
+      const awayOwnerId = doc.awayOwnerId || clubOccupancyMap.get(doc.awayClubId)?.userId || undefined;
+
+      return {
+        id: doc.id,
+        competitionId: doc.competitionId,
+        competitionName: doc.competitionName,
+        seasonId: doc.seasonId,
+        matchday: doc.matchday,
+        roundName: doc.roundName,
+        homeClubId: doc.homeClubId,
+        awayClubId: doc.awayClubId,
+        homeScore: doc.homeScore,
+        awayScore: doc.awayScore,
+        status: doc.status as MatchStatus,
+        scheduledAt: doc.scheduledAt,
+        homeClub,
+        awayClub,
+        homeOwnerId,
+        awayOwnerId,
+        createdAt: doc.createdAt || new Date().toISOString(),
+        updatedAt: doc.updatedAt || new Date().toISOString(),
+      };
+    });
+
+    const result: AdminFixturesPageResult = {
+      fixtures: mappedFixtures,
+      total,
+      hasMore,
+      nextCursor,
+      limit: pageSize,
+      source: 'firestore',
+      degraded: false,
+      stale: false,
+      generatedAt: new Date().toISOString(),
+    };
+
+    setInCache(cacheKey, result, 30000); // 30s cache
+    return result;
+  } catch (err: any) {
+    firestoreCircuitBreaker.recordFailure(err);
+    return executeAdminFixturesPagedFallback(options, pageSize);
+  }
 }
 
 export async function getFixtureByIdFirestore(fixtureId: string, currentUserId?: string): Promise<Fixture | null> {
@@ -3439,6 +3709,7 @@ export async function submitFixtureResultFirestore(
   awayScore: number,
   proofUrl?: string
 ): Promise<Fixture> {
+  assertNoSyntheticIdsInProduction('submitFixtureResultFirestore', [userId, fixtureId]);
   guardAgainstTestEntityCreation('submission', fixtureId, userId);
 
   if (!Number.isInteger(homeScore) || homeScore < 0 || !Number.isInteger(awayScore) || awayScore < 0) {
@@ -3455,6 +3726,10 @@ export async function submitFixtureResultFirestore(
     if (!row) {
       throw new Error(`Fixture with ID '${fixtureId}' not found.`);
     }
+
+    // Isolated competition-specific matchday lock check FIRST
+    await assertMatchdayPlayableFirestore(row.season_id || 'season-2026-27', row.competition_id, row.matchday);
+
     if (row.status === 'CONFIRMED') {
       throw new Error('This match result is already CONFIRMED and cannot be modified.');
     }
@@ -3464,9 +3739,6 @@ export async function submitFixtureResultFirestore(
       err.statusCode = 400;
       throw err;
     }
-
-    // Isolated competition-specific matchday lock check
-    await assertMatchdayPlayableFirestore(row.season_id || 'season-2026-27', row.competition_id, row.matchday);
 
     // Verify ownership via snapshot or SQLite
     let userClubId: string | null = null;
@@ -3564,6 +3836,16 @@ export async function submitFixtureResultFirestore(
     }
 
     const fixture = fixDoc.data() as FirestoreFixtureDoc;
+
+    // Authoritative Server-Side Isolated Matchday Lock Check FIRST
+    if (fixture.competitionId && fixture.matchday) {
+      await assertMatchdayPlayableFirestore(
+        fixture.seasonId || 'season-2026-27',
+        fixture.competitionId,
+        fixture.matchday
+      );
+    }
+
     if (fixture.status === 'CONFIRMED') {
       throw new Error('This match result is already CONFIRMED and cannot be modified.');
     }
@@ -3572,15 +3854,6 @@ export async function submitFixtureResultFirestore(
       err.code = 'FIXTURE_NOT_READY';
       err.statusCode = 400;
       throw err;
-    }
-
-    // Authoritative Server-Side Isolated Matchday Lock Check
-    if (fixture.competitionId && fixture.matchday) {
-      await assertMatchdayPlayableFirestore(
-        fixture.seasonId || 'season-2026-27',
-        fixture.competitionId,
-        fixture.matchday
-      );
     }
 
     // Verify ownership
@@ -3958,6 +4231,7 @@ export async function getOrCreateTelegramUserFirestore(tgUser: {
     const db = getFirestoreDb();
     const userDocRef = db.collection(COLLECTIONS.USERS).doc(docId);
     const userDoc = await userDocRef.get();
+    trackFirestoreRead(COLLECTIONS.USERS, 1, 'getOrCreateTelegramUserFirestore');
 
     if (!userDoc.exists) {
       const newUser: FirestoreUserDoc = {
@@ -3973,36 +4247,58 @@ export async function getOrCreateTelegramUserFirestore(tgUser: {
         updatedAt: now,
       };
       await userDocRef.set(newUser);
-    } else {
-      const existing = userDoc.data() as FirestoreUserDoc;
-      const updatedAdmin = existing.isAdmin || isAdmin;
-
-      await userDocRef.update({
+      trackFirestoreWrite(COLLECTIONS.USERS, 1, 'getOrCreateTelegramUserFirestore:create');
+      
+      const createdUser: User = {
+        id: docId,
+        telegramId,
         username,
         firstName,
         lastName,
-        photoUrl: photoUrl || existing.photoUrl || '',
-        isAdmin: updatedAdmin,
+        photoUrl,
+        isAdmin,
+        isSuspended: false,
+        createdAt: now,
         updatedAt: now,
-      });
-    }
-
-    // Read-after-write verification to guarantee persistence in Firestore
-    const verifyDoc = await userDocRef.get();
-    if (verifyDoc.exists) {
-      const persisted = verifyDoc.data() as FirestoreUserDoc;
-      return {
-        id: persisted.id || docId,
-        telegramId: persisted.telegramId || telegramId,
-        username: persisted.username || username,
-        firstName: persisted.firstName || firstName,
-        lastName: persisted.lastName || lastName,
-        photoUrl: persisted.photoUrl || photoUrl,
-        isAdmin: Boolean(persisted.isAdmin),
-        isSuspended: Boolean(persisted.isSuspended),
-        createdAt: persisted.createdAt || now,
-        updatedAt: persisted.updatedAt || now,
       };
+      setInCache(`firestore:user:${docId}`, createdUser, 300000);
+      return createdUser;
+    } else {
+      const existing = userDoc.data() as FirestoreUserDoc;
+      const updatedAdmin = Boolean(existing.isAdmin || isAdmin);
+      const changed =
+        existing.username !== username ||
+        existing.firstName !== firstName ||
+        (lastName && (existing.lastName || '') !== lastName) ||
+        (photoUrl && (existing.photoUrl || '') !== photoUrl) ||
+        Boolean(existing.isAdmin) !== updatedAdmin;
+
+      if (changed) {
+        await userDocRef.update({
+          username,
+          firstName,
+          lastName: lastName || existing.lastName || '',
+          photoUrl: photoUrl || existing.photoUrl || '',
+          isAdmin: updatedAdmin,
+          updatedAt: now,
+        });
+        trackFirestoreWrite(COLLECTIONS.USERS, 1, 'getOrCreateTelegramUserFirestore:update');
+      }
+
+      const returnedUser: User = {
+        id: existing.id || docId,
+        telegramId: existing.telegramId || telegramId,
+        username: changed ? username : (existing.username || username),
+        firstName: changed ? firstName : (existing.firstName || firstName),
+        lastName: changed ? (lastName || existing.lastName || '') : (existing.lastName || ''),
+        photoUrl: changed ? (photoUrl || existing.photoUrl || '') : (existing.photoUrl || ''),
+        isAdmin: updatedAdmin,
+        isSuspended: Boolean(existing.isSuspended),
+        createdAt: existing.createdAt || now,
+        updatedAt: changed ? now : (existing.updatedAt || now),
+      };
+      setInCache(`firestore:user:${docId}`, returnedUser, 300000);
+      return returnedUser;
     }
   } catch (err: any) {
     console.warn('[FIRESTORE FALLBACK] getOrCreateTelegramUserFirestore:', err.message);
@@ -4162,6 +4458,7 @@ export async function reopenFixtureFirestore(
   notes?: string,
   options?: { authoritativeOnly?: boolean }
 ): Promise<{ success: boolean; fixtureId: string; authoritative?: boolean; isFallback?: boolean }> {
+  assertNoSyntheticIdsInProduction('reopenFixtureFirestore', [adminUserId, fixtureId]);
   const now = new Date().toISOString();
 
   if (firestoreCircuitBreaker.canExecute()) {
@@ -4349,46 +4646,144 @@ export async function resolveDisputeFirestore(
   return { success: true, dispute: updatedDispute };
 }
 
-export async function getDisputesFirestore(status = 'OPEN'): Promise<Dispute[]> {
-  const cacheKey = `firestore:disputes:${status}`;
+export function getLocalDisputes(status = 'OPEN', limitCount = 50): Dispute[] {
+  try {
+    let sql = 'SELECT * FROM disputes';
+    const params: any[] = [];
+    if (status) {
+      sql += ' WHERE status = ?';
+      params.push(status);
+    }
+    sql += ' ORDER BY created_at DESC LIMIT ?';
+    params.push(limitCount);
+    const rows = queryAll<any>(sql, params);
+    return rows.map((r) => ({
+      id: r.id,
+      fixtureId: r.fixture_id,
+      seasonId: r.season_id,
+      status: r.status as any,
+      resolvedByUserId: r.resolved_by_user_id || undefined,
+      resolutionNotes: r.resolution_notes || undefined,
+      resolvedAt: r.resolved_at || undefined,
+      createdAt: r.created_at,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function getDisputesFirestore(status = 'OPEN', limitCount = 50): Promise<Dispute[]> {
+  const cacheKey = `firestore:disputes:${status}:${limitCount}`;
   const cached = getFromCache<Dispute[]>(cacheKey);
   if (cached) return cached;
 
-  const db = getFirestoreDb();
-  let query: FirebaseFirestore.Query = db.collection(COLLECTIONS.DISPUTES);
-  if (status) {
-    query = query.where('status', '==', status);
-  }
-  const snap = await query.get();
-  trackFirestoreRead(
-    COLLECTIONS.DISPUTES,
-    snap.empty ? 1 : snap.docs.length,
-    'getDisputesFirestore'
-  );
-  const disputes: Dispute[] = [];
-
-  for (const doc of snap.docs) {
-    const data = doc.data() as FirestoreDisputeDoc;
-    const fixture = await getFixtureByIdFirestore(data.fixtureId);
-    let mappedStatus: 'OPEN' | 'RESOLVED' | 'DISMISSED' = 'OPEN';
-    if (data.status === 'RESOLVED') mappedStatus = 'RESOLVED';
-    else if (data.status === 'CANCELLED') mappedStatus = 'DISMISSED';
-
-    disputes.push({
-      id: doc.id,
-      fixtureId: data.fixtureId,
-      seasonId: data.seasonId,
-      status: mappedStatus,
-      resolvedByUserId: data.resolvedByUserId,
-      resolutionNotes: data.resolutionNotes,
-      resolvedAt: data.resolvedAt,
-      createdAt: data.createdAt,
-      fixture: fixture || undefined,
-    });
+  if (!firestoreCircuitBreaker.canExecute()) {
+    recordFallbackUsage();
+    return getLocalDisputes(status, limitCount);
   }
 
-  setInCache(cacheKey, disputes, 20000); // 20s cache
-  return disputes;
+  try {
+    const db = getFirestoreDb();
+    let query: FirebaseFirestore.Query = db.collection(COLLECTIONS.DISPUTES);
+    if (status) {
+      query = query.where('status', '==', status);
+    }
+    if (limitCount > 0) {
+      query = query.limit(limitCount);
+    }
+    const snap = await query.get();
+    trackFirestoreRead(
+      COLLECTIONS.DISPUTES,
+      snap.empty ? 1 : snap.docs.length,
+      'getDisputesFirestore'
+    );
+    firestoreCircuitBreaker.recordSuccess();
+
+    const disputes: Dispute[] = [];
+    const fixtureIds = Array.from(new Set(snap.docs.map((d) => (d.data() as FirestoreDisputeDoc).fixtureId).filter(Boolean)));
+    const fixturesMap = new Map<string, Fixture>();
+
+    // BATCH fetch referenced fixtures in chunks of 30 instead of N+1 individual queries
+    for (let i = 0; i < fixtureIds.length; i += 30) {
+      const chunk = fixtureIds.slice(i, i + 30);
+      try {
+        const fSnap = await db.collection(COLLECTIONS.FIXTURES).where(FirebaseFirestore.FieldPath.documentId(), 'in', chunk).get();
+        trackFirestoreRead(COLLECTIONS.FIXTURES, fSnap.empty ? 1 : fSnap.docs.length, 'getDisputesFirestore:fixturesBatch');
+        for (const doc of fSnap.docs) {
+          const fData = doc.data() as FirestoreFixtureDoc;
+          const homeClubSeed = SEED_CLUB_MAP.get(fData.homeClubId);
+          const awayClubSeed = SEED_CLUB_MAP.get(fData.awayClubId);
+
+          const homeClub: Club = {
+            id: fData.homeClubId,
+            name: homeClubSeed?.name || fData.homeClubId,
+            shortName: homeClubSeed?.shortName || fData.homeClubId.substring(0, 3).toUpperCase(),
+            country: homeClubSeed?.country || 'England',
+            leagueId: homeClubSeed?.leagueId || 'league-premier-league',
+            logoUrl: homeClubSeed?.logoUrl || '',
+            active: true,
+            createdAt: new Date().toISOString(),
+          };
+
+          const awayClub: Club = {
+            id: fData.awayClubId,
+            name: awayClubSeed?.name || fData.awayClubId,
+            shortName: awayClubSeed?.shortName || fData.awayClubId.substring(0, 3).toUpperCase(),
+            country: awayClubSeed?.country || 'England',
+            leagueId: awayClubSeed?.leagueId || 'league-premier-league',
+            logoUrl: awayClubSeed?.logoUrl || '',
+            active: true,
+            createdAt: new Date().toISOString(),
+          };
+
+          fixturesMap.set(doc.id, {
+            id: doc.id,
+            competitionId: fData.competitionId,
+            seasonId: fData.seasonId,
+            matchday: fData.matchday,
+            homeClubId: fData.homeClubId,
+            awayClubId: fData.awayClubId,
+            homeScore: fData.homeScore,
+            awayScore: fData.awayScore,
+            status: fData.status as MatchStatus,
+            scheduledAt: fData.scheduledAt,
+            homeClub,
+            awayClub,
+            createdAt: fData.createdAt || new Date().toISOString(),
+            updatedAt: fData.updatedAt || new Date().toISOString(),
+          });
+        }
+      } catch (err: any) {
+        console.warn('Batch fixture fetch error in getDisputesFirestore:', err.message);
+      }
+    }
+
+    for (const doc of snap.docs) {
+      const data = doc.data() as FirestoreDisputeDoc;
+      const fixture = fixturesMap.get(data.fixtureId);
+      let mappedStatus: 'OPEN' | 'RESOLVED' | 'DISMISSED' = 'OPEN';
+      if (data.status === 'RESOLVED') mappedStatus = 'RESOLVED';
+      else if (data.status === 'CANCELLED') mappedStatus = 'DISMISSED';
+
+      disputes.push({
+        id: doc.id,
+        fixtureId: data.fixtureId,
+        seasonId: data.seasonId,
+        status: mappedStatus,
+        resolvedByUserId: data.resolvedByUserId,
+        resolutionNotes: data.resolutionNotes,
+        resolvedAt: data.resolvedAt,
+        createdAt: data.createdAt,
+        fixture: fixture || undefined,
+      });
+    }
+
+    setInCache(cacheKey, disputes, 30000); // 30s cache
+    return disputes;
+  } catch (err: any) {
+    firestoreCircuitBreaker.recordFailure(err);
+    return getLocalDisputes(status, limitCount);
+  }
 }
 
 export async function getAllUsersFirestore(): Promise<User[]> {
@@ -4810,6 +5205,7 @@ export async function adminReleaseClubFirestore(
   seasonId = 'season-2026-27',
   options?: { authoritativeOnly?: boolean }
 ): Promise<{ success: boolean; message: string; club: Club; authoritative?: boolean; isFallback?: boolean }> {
+  assertNoSyntheticIdsInProduction('adminReleaseClubFirestore', [adminUserId, clubId, seasonId]);
   const now = new Date().toISOString();
   try {
     const db = getFirestoreDb();
@@ -4906,6 +5302,7 @@ export async function adminAssignClubFirestore(
   seasonId = 'season-2026-27',
   options?: { authoritativeOnly?: boolean }
 ): Promise<{ success: boolean; message: string; club: Club; authoritative?: boolean; isFallback?: boolean }> {
+  assertNoSyntheticIdsInProduction('adminAssignClubFirestore', [adminUserId, clubId, targetUserId, seasonId]);
   const now = new Date().toISOString();
   try {
     const db = getFirestoreDb();
@@ -5021,14 +5418,14 @@ export async function adminAssignClubFirestore(
   };
 }
 
-function getLocalPendingResults(seasonId: string): {
+export function getLocalPendingResults(seasonId: string, limitCount = 50): {
   pendingFixtures: (Fixture & { submissions: any[] })[];
   total: number;
 } {
   try {
     const rows = queryAll<any>(
-      `SELECT * FROM fixtures WHERE season_id = ? AND status IN ('PENDING_CONFIRMATION', 'DISPUTED') ORDER BY matchday ASC`,
-      [seasonId]
+      `SELECT * FROM fixtures WHERE season_id = ? AND status IN ('PENDING_CONFIRMATION', 'DISPUTED') ORDER BY matchday ASC LIMIT ?`,
+      [seasonId, limitCount]
     );
     const fixturesWithSubmissions = rows.map((r) => {
       const homeSeed = SEED_CLUB_MAP.get(r.home_club_id);
@@ -5111,6 +5508,7 @@ export async function adminApproveFixtureResultFirestore(
   notes?: string,
   options?: { authoritativeOnly?: boolean }
 ): Promise<{ success: boolean; message: string; fixture: Fixture; authoritative?: boolean; isFallback?: boolean }> {
+  assertNoSyntheticIdsInProduction('adminApproveFixtureResultFirestore', [adminUserId, fixtureId]);
   const now = new Date().toISOString();
   let winnerClubId: string | null = null;
 
@@ -5900,9 +6298,59 @@ export async function adminDeleteUserFirestore(
   };
 }
 
+export function getLocalSubmissions(filter?: { fixtureId?: string; userId?: string; limit?: number }): any[] {
+  try {
+    let sql = 'SELECT * FROM result_submissions WHERE 1=1';
+    const params: any[] = [];
+    if (filter?.fixtureId) {
+      sql += ' AND fixture_id = ?';
+      params.push(filter.fixtureId);
+    }
+    if (filter?.userId) {
+      sql += ' AND submitted_by_user_id = ?';
+      params.push(filter.userId);
+    }
+    sql += ' ORDER BY created_at DESC LIMIT ?';
+    params.push(filter?.limit || 100);
+    const rows = queryAll<any>(sql, params);
+    return rows.map((r) => ({
+      id: r.id,
+      fixtureId: r.fixture_id,
+      submittedByUserId: r.submitted_by_user_id,
+      clubId: r.club_id,
+      homeScore: r.home_score,
+      awayScore: r.away_score,
+      proofUrl: r.proof_url || null,
+      createdAt: r.created_at,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 export async function adminGetUserDetailFirestore(targetUserId: string): Promise<any> {
-  const db = getFirestoreDb();
-  const user = await getUserByIdFirestore(targetUserId);
+  let user: User | null = null;
+  try {
+    user = await getUserByIdFirestore(targetUserId);
+  } catch {}
+
+  if (!user) {
+    const localUser = queryGet<any>('SELECT * FROM users WHERE id = ?', [targetUserId]);
+    if (localUser) {
+      user = {
+        id: localUser.id,
+        telegramId: localUser.telegram_id,
+        username: localUser.username,
+        firstName: localUser.first_name,
+        lastName: localUser.last_name || '',
+        photoUrl: localUser.photo_url || '',
+        isAdmin: Boolean(localUser.is_admin),
+        isSuspended: Boolean(localUser.is_suspended),
+        createdAt: localUser.created_at,
+        updatedAt: localUser.updated_at,
+      };
+    }
+  }
   if (!user) {
     throw new Error(`User '${targetUserId}' not found.`);
   }
@@ -5912,8 +6360,13 @@ export async function adminGetUserDetailFirestore(targetUserId: string): Promise
   // Fetch memberships
   let memberships: any[] = [];
   try {
-    const memSnap = await db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).where('userId', '==', targetUserId).get();
-    memberships = memSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    if (firestoreCircuitBreaker.canExecute()) {
+      const db = getFirestoreDb();
+      const memSnap = await db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).where('userId', '==', targetUserId).get();
+      memberships = memSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    } else {
+      memberships = queryAll<any>('SELECT * FROM club_memberships WHERE user_id = ?', [targetUserId]);
+    }
   } catch {
     try {
       memberships = queryAll<any>('SELECT * FROM club_memberships WHERE user_id = ?', [targetUserId]);
@@ -5923,38 +6376,21 @@ export async function adminGetUserDetailFirestore(targetUserId: string): Promise
   // Fetch submissions
   let submissions: any[] = [];
   try {
-    const subSnap = await db
-      .collection(COLLECTIONS.RESULT_SUBMISSIONS)
-      .where('submittedByUserId', '==', targetUserId)
-      .limit(30)
-      .get();
-    submissions = subSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  } catch {
-    try {
-      submissions = queryAll<any>('SELECT * FROM result_submissions WHERE user_id = ? LIMIT 30', [targetUserId]);
-    } catch {}
-  }
+    submissions = await adminGetResultSubmissionsFirestore({ userId: targetUserId, limit: 30 });
+  } catch {}
 
   // Fetch recent audit logs for this user
   let auditLogs: any[] = [];
   try {
-    const auditSnap = await db
-      .collection(COLLECTIONS.AUDIT_LOGS)
-      .where('entityId', '==', targetUserId)
-      .limit(20)
-      .get();
-    auditLogs = auditSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  } catch {}
-
-  // Fetch user notifications count
-  let notificationsCount = 0;
-  try {
-    const notifCountSnap = await db
-      .collection(COLLECTIONS.NOTIFICATIONS)
-      .where('userId', '==', targetUserId)
-      .count()
-      .get();
-    notificationsCount = notifCountSnap.data().count;
+    if (firestoreCircuitBreaker.canExecute()) {
+      const db = getFirestoreDb();
+      const auditSnap = await db
+        .collection(COLLECTIONS.AUDIT_LOGS)
+        .where('entityId', '==', targetUserId)
+        .limit(20)
+        .get();
+      auditLogs = auditSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    }
   } catch {}
 
   return {
@@ -5964,7 +6400,7 @@ export async function adminGetUserDetailFirestore(targetUserId: string): Promise
     submissionsCount: submissions.length,
     recentSubmissions: submissions,
     auditLogs,
-    notificationsCount,
+    notificationsCount: 0,
   };
 }
 
@@ -5973,32 +6409,46 @@ export async function adminGetResultSubmissionsFirestore(filter?: {
   userId?: string;
   limit?: number;
 }): Promise<any[]> {
-  const db = getFirestoreDb();
-  let query: FirebaseFirestore.Query = db.collection(COLLECTIONS.RESULT_SUBMISSIONS);
-  if (filter?.fixtureId) {
-    query = query.where('fixtureId', '==', filter.fixtureId);
+  if (!firestoreCircuitBreaker.canExecute()) {
+    return getLocalSubmissions(filter);
   }
-  if (filter?.userId) {
-    query = query.where('submittedByUserId', '==', filter.userId);
-  }
-  query = query.limit(filter?.limit || 100);
 
-  const snap = await query.get();
-  const submissions: any[] = [];
-  for (const doc of snap.docs) {
-    const data = doc.data();
-    submissions.push({
-      id: doc.id,
-      fixtureId: data.fixtureId,
-      submittedByUserId: data.submittedByUserId || data.userId,
-      clubId: data.clubId,
-      homeScore: data.homeScore,
-      awayScore: data.awayScore,
-      proofUrl: data.proofUrl || null,
-      createdAt: data.createdAt,
-    });
+  try {
+    const db = getFirestoreDb();
+    let query: FirebaseFirestore.Query = db.collection(COLLECTIONS.RESULT_SUBMISSIONS);
+    if (filter?.fixtureId) {
+      query = query.where('fixtureId', '==', filter.fixtureId);
+    }
+    if (filter?.userId) {
+      query = query.where('submittedByUserId', '==', filter.userId);
+    }
+    query = query.limit(filter?.limit || 100);
+
+    const snap = await query.get();
+    trackFirestoreRead(
+      COLLECTIONS.RESULT_SUBMISSIONS,
+      snap.empty ? 1 : snap.docs.length,
+      'adminGetResultSubmissionsFirestore'
+    );
+    const submissions: any[] = [];
+    for (const doc of snap.docs) {
+      const data = doc.data();
+      submissions.push({
+        id: doc.id,
+        fixtureId: data.fixtureId,
+        submittedByUserId: data.submittedByUserId || data.userId,
+        clubId: data.clubId,
+        homeScore: data.homeScore,
+        awayScore: data.awayScore,
+        proofUrl: data.proofUrl || null,
+        createdAt: data.createdAt,
+      });
+    }
+    return submissions;
+  } catch (err: any) {
+    firestoreCircuitBreaker.recordFailure(err);
+    return getLocalSubmissions(filter);
   }
-  return submissions;
 }
 
 export async function adminDeleteResultSubmissionFirestore(

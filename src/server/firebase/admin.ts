@@ -36,25 +36,16 @@ export function initializeFirebaseAdmin(): { db: Firestore | null; info: Firebas
     process.env.NODE_ENV === 'production';
 
   // Support an explicit test-only environment variable: FIREBASE_FORCE_LOCAL_FALLBACK=true
-  // This fallback must never activate when VERCEL === "1", AWS_LAMBDA_FUNCTION_NAME exists,
-  // or the application is running in a real production environment.
-  const isForceLocalFallback =
-    process.env.FIREBASE_FORCE_LOCAL_FALLBACK === 'true' && !isRealProduction;
-
-  if (isForceLocalFallback) {
+  // This fallback must never activate when running in a real production environment.
+  // When enabled, it is guaranteed to return the isolated in-memory implementation and
+  // CANNOT initialize real Firebase Admin credentials under any circumstances.
+  if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === 'true') {
+    if (isRealProduction) {
+      throw new Error('FATAL_SAFETY_VIOLATION: FIREBASE_FORCE_LOCAL_FALLBACK cannot be enabled in a production environment.');
+    }
     if (!cachedDb || cachedInfo?.authMode !== 'local_fallback') {
-      const appletConfig = loadAppletConfig();
-      const fallbackProjectId =
-        process.env.FIREBASE_PROJECT_ID ||
-        process.env.GCLOUD_PROJECT ||
-        process.env.GOOGLE_CLOUD_PROJECT ||
-        appletConfig.projectId ||
-        'gen-lang-client-0195097895';
-      const fallbackDatabaseId =
-        process.env.FIRESTORE_DATABASE_ID ||
-        process.env.FIREBASE_DATABASE_ID ||
-        appletConfig.firestoreDatabaseId ||
-        'ai-studio-efluz-4c6c88a6-697e-4fdf-82ed-45fec68ca34d';
+      const fallbackProjectId = 'test-local-fallback';
+      const fallbackDatabaseId = 'test-local-db';
 
       const memoryDb = createMemoryFirestore();
       cachedDb = memoryDb as unknown as Firestore;
@@ -73,7 +64,7 @@ export function initializeFirebaseAdmin(): { db: Firestore | null; info: Firebas
   }
 
   // Clear stale local fallback cache if running outside forced fallback mode
-  if (!isForceLocalFallback && cachedInfo?.authMode === 'local_fallback') {
+  if (cachedInfo?.authMode === 'local_fallback') {
     cachedDb = null;
     cachedInfo = null;
   }

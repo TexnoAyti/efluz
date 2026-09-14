@@ -7,34 +7,21 @@ import { getQueueStats, processPendingMutations } from '../sync/mutationQueue';
 
 export const healthRouter = Router();
 
+let lastManualProbeTime = 0;
+const MANUAL_PROBE_COOLDOWN_MS = 60000;
+
 healthRouter.get('/', async (req: Request, res: Response) => {
   const status = getFirebaseStatus();
   const cbStatus = firestoreCircuitBreaker.getStatus();
   const queue = getQueueStats();
 
-  let isConnected = false;
-  let connectionWarning: string | null = null;
-
-  if (firestoreCircuitBreaker.canExecute()) {
-    try {
-      const db = getFirestoreDb();
-      if (db && status.isConfigured) {
-        // Lightweight single-document probe to verify Firestore connection without exhausting free-tier read quota
-        await db.collection(COLLECTIONS.SEASONS).limit(1).get();
-        isConnected = true;
-        firestoreCircuitBreaker.recordSuccess();
-      } else {
-        isConnected = true;
-      }
-    } catch (err: any) {
-      connectionWarning = err.message;
-      firestoreCircuitBreaker.recordFailure(err);
-      isConnected = false;
-    }
-  } else {
-    connectionWarning = 'Firestore circuit breaker is open (fallback mode active)';
-    isConnected = false;
-  }
+  // Passive health status: do NOT execute Firestore read operations on standard health checks
+  const isConnected = Boolean(status.isConfigured && firestoreCircuitBreaker.canExecute());
+  const connectionWarning = !firestoreCircuitBreaker.canExecute()
+    ? 'Firestore circuit breaker is open (fallback mode active)'
+    : !status.isConfigured
+    ? 'Firebase credentials not configured'
+    : null;
 
   res.status(200).json({
     status: 'ok',
@@ -59,6 +46,38 @@ healthRouter.get('/', async (req: Request, res: Response) => {
     timestamp: new Date().toISOString(),
     version: '2.0.0-firestore-production',
   });
+});
+
+// Explicit diagnostic probe with cooldown (60s)
+healthRouter.post('/probe', async (req: Request, res: Response) => {
+  const now = Date.now();
+  if (now - lastManualProbeTime < MANUAL_PROBE_COOLDOWN_MS) {
+    const waitSec = Math.ceil((MANUAL_PROBE_COOLDOWN_MS - (now - lastManualProbeTime)) / 1000);
+    res.status(429).json({
+      error: 'Probe in cooldown',
+      message: `Please wait ${waitSec}s before probing Firestore again.`,
+    });
+    return;
+  }
+
+  lastManualProbeTime = now;
+  try {
+    const db = getFirestoreDb();
+    await db.collection(COLLECTIONS.SEASONS).limit(1).get();
+    firestoreCircuitBreaker.recordSuccess();
+    res.status(200).json({
+      success: true,
+      message: 'Firestore active probe succeeded',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    firestoreCircuitBreaker.recordFailure(err);
+    res.status(503).json({
+      success: false,
+      error: err.message,
+      timestamp: new Date().toISOString(),
+    });
+  }
 });
 
 healthRouter.get('/resilience', (req: Request, res: Response) => {

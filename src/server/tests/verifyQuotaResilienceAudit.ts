@@ -39,8 +39,13 @@ function recordAudit(section: string, name: string, passed: boolean, details: st
 }
 
 export async function runQuotaResilienceAudit() {
-  if (process.env.NODE_ENV !== 'production' && !process.env.ALLOW_TEST_WRITES) {
-    process.env.ALLOW_TEST_WRITES = 'true';
+  // Must fail immediately unless local fallback or a verified Firebase emulator was explicitly configured before process startup
+  const isLocalFallback = process.env.FIREBASE_FORCE_LOCAL_FALLBACK === 'true';
+  const isEmulator = Boolean(process.env.FIRESTORE_EMULATOR_HOST);
+  if (!isLocalFallback && !isEmulator) {
+    throw new Error(
+      'SAFETY_VIOLATION: verifyQuotaResilienceAudit requires FIREBASE_FORCE_LOCAL_FALLBACK="true" or a verified FIRESTORE_EMULATOR_HOST before process startup. Aborting to prevent production Firestore contamination.'
+    );
   }
   assertTestEnvironmentSafe('verifyQuotaResilienceAudit');
 
@@ -55,11 +60,46 @@ export async function runQuotaResilienceAudit() {
   const seasonId = 'season-2026-27';
   const compId = 'comp-premier-league-2026';
 
-  queryRun("DELETE FROM fixtures WHERE id LIKE 'fix-ctrl-%' OR id LIKE 'fix-test-%'");
+  queryRun("DELETE FROM fixtures WHERE id LIKE 'fix-ctrl-%' OR id LIKE 'fix-test-%' OR id LIKE 'offline-test-%'");
   const existingPlFixtures = queryAll<any>('SELECT id FROM fixtures WHERE competition_id = ?', [compId]);
   if (existingPlFixtures.length < 190) {
     const { generateCompetitionFixturesFirestore } = await import('../firebase/firestoreStore');
     await generateCompetitionFixturesFirestore(compId, { force: true });
+  }
+
+  // Under isolated local fallback, populate in-memory Firestore from local SQLite
+  if (isLocalFallback) {
+    const { getFirestoreDb } = await import('../firebase/admin');
+    const { COLLECTIONS } = await import('../firebase/collections');
+    const db = getFirestoreDb();
+
+    const sqliteClubs = queryAll<any>('SELECT * FROM clubs');
+    for (const c of sqliteClubs) {
+      await db.collection(COLLECTIONS.CLUBS).doc(c.id).set({
+        id: c.id,
+        name: c.name,
+        shortName: c.short_name,
+        leagueId: c.league_id,
+        claimedByUserId: c.claimed_by_user_id || null,
+        claimedAt: c.claimed_at || null,
+      });
+    }
+
+    const sqliteFixtures = queryAll<any>('SELECT * FROM fixtures WHERE competition_id = ?', [compId]);
+    for (const f of sqliteFixtures) {
+      await db.collection(COLLECTIONS.FIXTURES).doc(f.id).set({
+        id: f.id,
+        competitionId: f.competition_id,
+        seasonId: f.season_id,
+        matchday: f.matchday,
+        homeClubId: f.home_club_id,
+        awayClubId: f.away_club_id,
+        status: f.status || 'SCHEDULED',
+        homeScore: f.home_score ?? null,
+        awayScore: f.away_score ?? null,
+        scheduledDate: f.scheduled_date,
+      });
+    }
   }
 
   // -------------------------------------------------------------------

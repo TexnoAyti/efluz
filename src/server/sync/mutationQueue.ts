@@ -4,6 +4,7 @@ import { queryAll, queryGet, queryRun } from '../db';
 import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
 import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS } from '../firebase/collections';
+import { assertNoSyntheticIdsInProduction } from '../utils/testGuard';
 
 export type MutationStatus = 'PENDING' | 'SYNCING' | 'SYNCED' | 'FAILED';
 
@@ -297,6 +298,19 @@ export async function processPendingMutations(): Promise<SyncResult> {
 
 async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: PendingMutation): Promise<void> {
   const { entityType, entityId, payload } = item;
+
+  // Reject synthetic actor IDs or entity IDs before any mutation replay in production
+  assertNoSyntheticIdsInProduction(`mutation_queue_replay:${entityType}`, [
+    item.mutationId,
+    entityId,
+    payload?.adminUserId,
+    payload?.userId,
+    payload?.targetUserId,
+    payload?.submittedByUserId,
+    payload?.fixtureId,
+    payload?.clubId,
+    payload?.submissionId,
+  ]);
 
   switch (entityType) {
     case 'RESULT_SUBMISSION': {

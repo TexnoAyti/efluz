@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS club_memberships (
     user_id TEXT NOT NULL,
     claimed_at TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'active', -- 'active', 'released', 'archived'
+    updated_at TEXT,
     FOREIGN KEY(season_id) REFERENCES seasons(id),
     FOREIGN KEY(club_id) REFERENCES clubs(id),
     FOREIGN KEY(user_id) REFERENCES users(id),

@@ -24,6 +24,11 @@ import {
   getAllCompetitionsFirestore,
   getClubsByLeagueFirestore,
   getFixturesFirestore,
+  getAdminFixturesPagedFirestore,
+  executeAdminFixturesPagedFallback,
+  getLocalDisputes,
+  getLocalPendingResults,
+  getLocalSubmissions,
   adminReleaseClubFirestore,
   adminAssignClubFirestore,
   adminApproveFixtureResultFirestore,
@@ -47,15 +52,77 @@ import { evaluateSeasonQualifications } from '../tournament/qualificationEngine'
 import { getFirebaseStatus, getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS } from '../firebase/collections';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
+import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
+import { queryAll, queryGet } from '../db/index';
 
 export const adminRouter = Router();
 
 // Protect ALL admin routes with server-side requireAdmin
 adminRouter.use(requireAdmin);
 
+function getFallbackAdminOverview(seasonId: string) {
+  const status = getFirebaseStatus();
+  const occRow = queryGet<{ count: number }>("SELECT COUNT(*) as count FROM club_memberships WHERE season_id = ? AND status = 'active'", [seasonId]);
+  const userRow = queryGet<{ count: number }>("SELECT COUNT(*) as count FROM users", []);
+  const disputeRow = queryGet<{ count: number }>("SELECT COUNT(*) as count FROM disputes WHERE status = 'OPEN'", []);
+  const pendingRow = queryGet<{ count: number }>("SELECT COUNT(*) as count FROM fixtures WHERE status = 'PENDING_CONFIRMATION'", []);
+  const auditRow = queryGet<{ count: number }>("SELECT COUNT(*) as count FROM audit_logs", []);
+  const compRows = queryAll<any>("SELECT * FROM competitions WHERE season_id = ?", [seasonId]);
+
+  const activeOccupancies = occRow?.count ?? 0;
+  const registeredUsers = userRow?.count ?? 0;
+  const openDisputes = disputeRow?.count ?? 0;
+  const pendingCount = pendingRow?.count ?? 0;
+  const auditLogsCount = auditRow?.count ?? 0;
+
+  const domesticCups = compRows.filter((c) => c.type === 'cup');
+  const europeanComps = compRows.filter(
+    (c) => c.type === 'champions_league' || c.type === 'europa_league' || c.type === 'conference_league'
+  );
+
+  const disputes = getLocalDisputes('OPEN', 10);
+  const pendingData = getLocalPendingResults(seasonId, 5);
+
+  return {
+    season: {
+      id: seasonId,
+      name: '2026/27 Season',
+      status: 'ACTIVE',
+    },
+    counts: {
+      totalClubs: 96,
+      occupiedClubs: activeOccupancies,
+      availableClubs: Math.max(0, 96 - activeOccupancies),
+      domesticLeaguesCount: 5,
+      domesticCupsCount: domesticCups.length,
+      europeanCompetitionsCount: europeanComps.length,
+      totalCompetitions: compRows.length || 8,
+      totalUsers: registeredUsers,
+      registeredUsers,
+      activeOccupancies,
+      openDisputes,
+      pendingResultConfirmations: pendingCount,
+      recentAuditLogs: auditLogsCount,
+    },
+    systemHealth: {
+      projectId: status.projectId,
+      databaseId: status.databaseId,
+      connected: false,
+      authMode: status.authMode,
+      timestamp: new Date().toISOString(),
+    },
+    openDisputes: disputes.slice(0, 10),
+    pendingFixturesPreview: pendingData.pendingFixtures.slice(0, 5),
+    source: 'sqlite',
+    degraded: true,
+    stale: true,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
 adminRouter.get('/overview', async (req: Request, res: Response) => {
   const seasonId = (req.query.seasonId as string) || 'season-2026-27';
-  recordEndpointCall('/api/admin/overview', 'ADMIN', 3);
+  recordEndpointCall('/api/admin/overview', 'ADMIN', 1);
 
   const cacheKey = `firestore:admin_overview:${seasonId}`;
   const cached = getFromCache<any>(cacheKey);
@@ -64,10 +131,18 @@ adminRouter.get('/overview', async (req: Request, res: Response) => {
     return;
   }
 
+  if (!firestoreCircuitBreaker.canExecute()) {
+    const fallback = getFallbackAdminOverview(seasonId);
+    setInCache(cacheKey, fallback, 60000);
+    res.json(fallback);
+    return;
+  }
+
   try {
     const status = getFirebaseStatus();
     const db = getFirestoreDb();
 
+    // Bounded queries with limits
     const [usersCountSnap, occCountSnap, competitions, disputes, auditLogs, pendingData] = await Promise.all([
       db.collection(COLLECTIONS.USERS).count().get().catch(() => null),
       db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where('seasonId', '==', seasonId).where('status', '==', 'active').count().get().catch(() => null),
@@ -116,30 +191,61 @@ adminRouter.get('/overview', async (req: Request, res: Response) => {
       },
       openDisputes: disputes.slice(0, 10),
       pendingFixturesPreview: pendingData.pendingFixtures.slice(0, 5),
+      source: 'firestore',
+      degraded: false,
+      stale: false,
+      generatedAt: new Date().toISOString(),
     };
 
-    setInCache(cacheKey, payload, 15000); // 15s cache
+    setInCache(cacheKey, payload, 60000); // 60s cache
     res.json(payload);
   } catch (err: any) {
-    handleFirestoreError(res, err, 'GET /api/admin/overview');
+    firestoreCircuitBreaker.recordFailure(err);
+    const fallback = getFallbackAdminOverview(seasonId);
+    setInCache(cacheKey, fallback, 60000);
+    res.status(200).json(fallback);
   }
 });
 
 adminRouter.get('/clubs', async (req: Request, res: Response) => {
   const seasonId = (req.query.seasonId as string) || 'season-2026-27';
   const leagueId = req.query.leagueId as string | undefined;
+
+  let targetLeagues = SEED_LEAGUES;
+  if (leagueId && leagueId !== 'ALL') {
+    targetLeagues = SEED_LEAGUES.filter((l) => l.id === leagueId);
+  }
+
+  if (!firestoreCircuitBreaker.canExecute()) {
+    const clubs = targetLeagues.flatMap((l) =>
+      SEED_CLUBS.filter((c) => c.leagueId === l.id).map((c) => ({
+        ...c,
+        seasonId,
+        isOccupied: false,
+        occupiedByUserId: null,
+      }))
+    );
+    res.json({ clubs, total: clubs.length, source: 'sqlite', degraded: true, stale: true });
+    return;
+  }
+
   try {
-    let targetLeagues = SEED_LEAGUES;
-    if (leagueId && leagueId !== 'ALL') {
-      targetLeagues = SEED_LEAGUES.filter((l) => l.id === leagueId);
-    }
     const clubsByLeague = await Promise.all(
       targetLeagues.map((l) => getClubsByLeagueFirestore(l.id, seasonId))
     );
     const clubs = clubsByLeague.flat();
-    res.json({ clubs, total: clubs.length });
+    res.json({ clubs, total: clubs.length, source: 'firestore', degraded: false, stale: false });
   } catch (err: any) {
-    handleFirestoreError(res, err, 'GET /api/admin/clubs');
+    firestoreCircuitBreaker.recordFailure(err);
+    const clubs = targetLeagues.flatMap((l) =>
+      SEED_CLUBS.filter((c) => c.leagueId === l.id).map((c) => ({
+        ...c,
+        seasonId,
+        isOccupied: false,
+        occupiedByUserId: null,
+      }))
+    );
+    res.json({ clubs, total: clubs.length, source: 'sqlite', degraded: true, stale: true });
   }
 });
 
@@ -151,53 +257,59 @@ adminRouter.get('/fixtures', async (req: Request, res: Response) => {
   const clubId = req.query.clubId as string | undefined;
   const userId = req.query.userId as string | undefined;
   const search = (req.query.search as string)?.trim().toLowerCase();
+  const cursor = (req.query.cursor as string) || undefined;
+  const limit = req.query.limit !== undefined ? Math.min(Math.max(parseInt(req.query.limit as string, 10), 1), 100) : 25;
   const page = req.query.page ? Math.max(1, parseInt(req.query.page as string, 10)) : 1;
-  const limit = req.query.limit !== undefined ? parseInt(req.query.limit as string, 10) : 50;
 
   try {
-    let fixtures = await getFixturesFirestore({
+    const result = await getAdminFixturesPagedFirestore({
       seasonId,
       competitionId: competitionId === 'ALL' ? undefined : competitionId,
       status: status === 'ALL' ? undefined : status,
       matchday: matchday || undefined,
       clubId: clubId || undefined,
       userId: userId || undefined,
-      limit: 0,
-    });
-
-    if (search) {
-      fixtures = fixtures.filter((f) => {
-        const homeName = (f.homeClub?.name || f.homeClubId || '').toLowerCase();
-        const awayName = (f.awayClub?.name || f.awayClubId || '').toLowerCase();
-        const compName = (f.competitionName || f.competitionId || '').toLowerCase();
-        return (
-          f.id.toLowerCase().includes(search) ||
-          homeName.includes(search) ||
-          awayName.includes(search) ||
-          compName.includes(search)
-        );
-      });
-    }
-
-    const total = fixtures.length;
-    let paginatedFixtures = fixtures;
-    let totalPages = 1;
-
-    if (limit > 0) {
-      totalPages = Math.ceil(total / limit) || 1;
-      const startIndex = (page - 1) * limit;
-      paginatedFixtures = fixtures.slice(startIndex, startIndex + limit);
-    }
-
-    res.json({
-      fixtures: paginatedFixtures,
-      total,
-      page,
-      totalPages,
+      search,
+      cursor,
       limit,
     });
+
+    res.json({
+      fixtures: result.fixtures,
+      total: result.total,
+      hasMore: result.hasMore,
+      nextCursor: result.nextCursor,
+      page,
+      totalPages: Math.ceil(result.total / limit) || 1,
+      limit,
+      source: result.source,
+      degraded: result.degraded,
+      stale: result.stale,
+      generatedAt: result.generatedAt,
+    });
   } catch (err: any) {
-    handleFirestoreError(res, err, 'GET /api/admin/fixtures');
+    firestoreCircuitBreaker.recordFailure(err);
+    const fallback = executeAdminFixturesPagedFallback({
+      seasonId,
+      competitionId: competitionId === 'ALL' ? undefined : competitionId,
+      status: status === 'ALL' ? undefined : status,
+      matchday: matchday || undefined,
+      cursor,
+      limit,
+    }, limit);
+    res.status(200).json({
+      fixtures: fallback.fixtures,
+      total: fallback.total,
+      hasMore: fallback.hasMore,
+      nextCursor: fallback.nextCursor,
+      page,
+      totalPages: Math.ceil(fallback.total / limit) || 1,
+      limit,
+      source: 'sqlite',
+      degraded: true,
+      stale: true,
+      generatedAt: fallback.generatedAt,
+    });
   }
 });
 
@@ -267,9 +379,11 @@ adminRouter.get('/submissions', async (req: Request, res: Response) => {
 
   try {
     const submissions = await getResultSubmissions({ fixtureId, userId, limit });
-    res.json({ submissions, total: submissions.length });
+    res.json({ submissions, total: submissions.length, source: 'firestore', degraded: false, stale: false });
   } catch (err: any) {
-    handleFirestoreError(res, err, 'GET /api/admin/submissions');
+    firestoreCircuitBreaker.recordFailure(err);
+    const submissions = getLocalSubmissions({ fixtureId, userId, limit });
+    res.json({ submissions, total: submissions.length, source: 'sqlite', degraded: true, stale: true });
   }
 });
 
@@ -292,9 +406,39 @@ adminRouter.get('/users/:id/detail', async (req: Request, res: Response) => {
   const targetUserId = req.params.id;
   try {
     const detail = await getUserDetail(targetUserId);
-    res.json(detail);
+    res.json({ ...detail, source: 'firestore', degraded: false, stale: false });
   } catch (err: any) {
-    handleFirestoreError(res, err, `GET /api/admin/users/${targetUserId}/detail`);
+    firestoreCircuitBreaker.recordFailure(err);
+    const localUser = queryGet<any>('SELECT * FROM users WHERE id = ?', [targetUserId]);
+    if (!localUser) {
+      res.status(404).json({ error: `User '${targetUserId}' not found.` });
+      return;
+    }
+    const memberships = queryAll<any>('SELECT * FROM club_memberships WHERE user_id = ?', [targetUserId]);
+    const submissions = getLocalSubmissions({ userId: targetUserId, limit: 30 });
+    res.json({
+      user: {
+        id: localUser.id,
+        telegramId: localUser.telegram_id,
+        username: localUser.username,
+        firstName: localUser.first_name,
+        lastName: localUser.last_name || '',
+        photoUrl: localUser.photo_url || '',
+        isAdmin: Boolean(localUser.is_admin),
+        isSuspended: Boolean(localUser.is_suspended),
+        createdAt: localUser.created_at,
+        updatedAt: localUser.updated_at,
+      },
+      activeClub: null,
+      memberships,
+      submissionsCount: submissions.length,
+      recentSubmissions: submissions,
+      auditLogs: [],
+      notificationsCount: 0,
+      source: 'sqlite',
+      degraded: true,
+      stale: true,
+    });
   }
 });
 
@@ -361,6 +505,44 @@ adminRouter.get('/read-metrics', (req: Request, res: Response) => {
 });
 
 adminRouter.get('/firestore-diagnostics', async (req: Request, res: Response) => {
+  const isRefresh = req.query.refresh === 'true';
+  const cacheKey = 'firestore:admin_diagnostics';
+  const cached = getFromCache<any>(cacheKey);
+
+  if (!isRefresh && cached) {
+    res.json(cached);
+    return;
+  }
+
+  if (!firestoreCircuitBreaker.canExecute()) {
+    const usersCount = queryGet<{ count: number }>('SELECT COUNT(*) as count FROM users')?.count || 0;
+    const clubsCount = queryGet<{ count: number }>('SELECT COUNT(*) as count FROM clubs')?.count || 96;
+    const occCount = queryGet<{ count: number }>("SELECT COUNT(*) as count FROM club_memberships WHERE status = 'active'")?.count || 0;
+    const fixCount = queryGet<{ count: number }>('SELECT COUNT(*) as count FROM fixtures')?.count || 0;
+    const compCount = queryGet<{ count: number }>('SELECT COUNT(*) as count FROM competitions')?.count || 0;
+
+    const fallbackResult = {
+      projectId: 'sqlite-fallback',
+      databaseId: '(default)',
+      connected: false,
+      authMode: 'LOCAL_SQLITE',
+      readMetrics: getReadMetrics(),
+      source: 'sqlite',
+      degraded: true,
+      stale: true,
+      collections: {
+        users: usersCount,
+        clubs: clubsCount,
+        club_occupancies: occCount,
+        user_memberships: occCount,
+        fixtures: fixCount,
+        competitions: compCount,
+      },
+    };
+    res.json(fallbackResult);
+    return;
+  }
+
   try {
     const status = getFirebaseStatus();
     const db = getFirestoreDb();
@@ -375,12 +557,15 @@ adminRouter.get('/firestore-diagnostics', async (req: Request, res: Response) =>
       db.collection(COLLECTIONS.COMPETITIONS).count().get().catch(() => null),
     ]);
 
-    res.json({
+    const result = {
       projectId: status.projectId,
       databaseId: status.databaseId,
       connected: true,
       authMode: status.authMode,
       readMetrics: getReadMetrics(),
+      source: 'firestore',
+      degraded: false,
+      stale: false,
       collections: {
         users: usersCount?.data().count ?? 0,
         clubs: clubsCount?.data().count ?? 96,
@@ -389,9 +574,36 @@ adminRouter.get('/firestore-diagnostics', async (req: Request, res: Response) =>
         fixtures: fixCount?.data().count ?? 0,
         competitions: compCount?.data().count ?? 0,
       },
-    });
+    };
+
+    setInCache(cacheKey, result, 600000); // 10 minutes cache
+    res.json(result);
   } catch (err: any) {
-    handleFirestoreError(res, err, 'GET /api/admin/firestore-diagnostics');
+    firestoreCircuitBreaker.recordFailure(err);
+    const usersCount = queryGet<{ count: number }>('SELECT COUNT(*) as count FROM users')?.count || 0;
+    const clubsCount = queryGet<{ count: number }>('SELECT COUNT(*) as count FROM clubs')?.count || 96;
+    const occCount = queryGet<{ count: number }>("SELECT COUNT(*) as count FROM club_memberships WHERE status = 'active'")?.count || 0;
+    const fixCount = queryGet<{ count: number }>('SELECT COUNT(*) as count FROM fixtures')?.count || 0;
+    const compCount = queryGet<{ count: number }>('SELECT COUNT(*) as count FROM competitions')?.count || 0;
+
+    res.status(200).json({
+      projectId: 'sqlite-fallback',
+      databaseId: '(default)',
+      connected: false,
+      authMode: 'LOCAL_SQLITE',
+      readMetrics: getReadMetrics(),
+      source: 'sqlite',
+      degraded: true,
+      stale: true,
+      collections: {
+        users: usersCount,
+        clubs: clubsCount,
+        club_occupancies: occCount,
+        user_memberships: occCount,
+        fixtures: fixCount,
+        competitions: compCount,
+      },
+    });
   }
 });
 
@@ -422,21 +634,71 @@ adminRouter.post('/migrate-to-firestore', async (req: Request, res: Response) =>
 });
 
 adminRouter.get('/users', async (req: Request, res: Response) => {
+  if (!firestoreCircuitBreaker.canExecute()) {
+    const rows = queryAll<any>('SELECT * FROM users ORDER BY created_at DESC');
+    res.json({
+      users: rows.map((r) => ({
+        id: r.id,
+        telegramId: r.telegram_id,
+        username: r.username,
+        firstName: r.first_name,
+        lastName: r.last_name || '',
+        photoUrl: r.photo_url || '',
+        isAdmin: Boolean(r.is_admin),
+        isSuspended: Boolean(r.is_suspended),
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+      })),
+      source: 'sqlite',
+      degraded: true,
+      stale: true,
+    });
+    return;
+  }
+
   try {
     const users = await getAllAdminUsers();
-    res.json({ users });
+    res.json({ users, source: 'firestore', degraded: false, stale: false });
   } catch (err: any) {
-    handleFirestoreError(res, err, 'GET /api/admin/users');
+    firestoreCircuitBreaker.recordFailure(err);
+    const rows = queryAll<any>('SELECT * FROM users ORDER BY created_at DESC');
+    res.json({
+      users: rows.map((r) => ({
+        id: r.id,
+        telegramId: r.telegram_id,
+        username: r.username,
+        firstName: r.first_name,
+        lastName: r.last_name || '',
+        photoUrl: r.photo_url || '',
+        isAdmin: Boolean(r.is_admin),
+        isSuspended: Boolean(r.is_suspended),
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+      })),
+      source: 'sqlite',
+      degraded: true,
+      stale: true,
+    });
   }
 });
 
 adminRouter.get('/disputes', async (req: Request, res: Response) => {
   const status = (req.query.status as string) || 'OPEN';
+  const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+
+  if (!firestoreCircuitBreaker.canExecute()) {
+    const disputes = getLocalDisputes(status, limit);
+    res.json({ disputes, source: 'sqlite', degraded: true, stale: true });
+    return;
+  }
+
   try {
     const disputes = await getDisputes(status);
-    res.json({ disputes });
+    res.json({ disputes, source: 'firestore', degraded: false, stale: false });
   } catch (err: any) {
-    handleFirestoreError(res, err, 'GET /api/admin/disputes');
+    firestoreCircuitBreaker.recordFailure(err);
+    const disputes = getLocalDisputes(status, limit);
+    res.json({ disputes, source: 'sqlite', degraded: true, stale: true });
   }
 });
 
@@ -474,11 +736,54 @@ adminRouter.post('/fixtures/:id/reopen', validateBody(reopenFixtureSchema), asyn
 
 adminRouter.get('/audit-logs', async (req: Request, res: Response) => {
   const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+
+  if (!firestoreCircuitBreaker.canExecute()) {
+    const rows = queryAll<any>('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT ?', [limit]);
+    res.json({
+      logs: rows.map((r) => ({
+        id: r.id,
+        actorUserId: r.actor_user_id,
+        action: r.action,
+        entityType: r.entity_type,
+        entityId: r.entity_id,
+        oldValue: r.old_value ? JSON.parse(r.old_value) : null,
+        newValue: r.new_value ? JSON.parse(r.new_value) : null,
+        ipAddress: r.ip_address,
+        actorUsername: r.actor_username,
+        notes: r.notes,
+        createdAt: r.created_at,
+      })),
+      source: 'sqlite',
+      degraded: true,
+      stale: true,
+    });
+    return;
+  }
+
   try {
     const logs = await getAuditLogs(limit);
-    res.json({ logs });
+    res.json({ logs, source: 'firestore', degraded: false, stale: false });
   } catch (err: any) {
-    handleFirestoreError(res, err, 'GET /api/admin/audit-logs');
+    firestoreCircuitBreaker.recordFailure(err);
+    const rows = queryAll<any>('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT ?', [limit]);
+    res.json({
+      logs: rows.map((r) => ({
+        id: r.id,
+        actorUserId: r.actor_user_id,
+        action: r.action,
+        entityType: r.entity_type,
+        entityId: r.entity_id,
+        oldValue: r.old_value ? JSON.parse(r.old_value) : null,
+        newValue: r.new_value ? JSON.parse(r.new_value) : null,
+        ipAddress: r.ip_address,
+        actorUsername: r.actor_username,
+        notes: r.notes,
+        createdAt: r.created_at,
+      })),
+      source: 'sqlite',
+      degraded: true,
+      stale: true,
+    });
   }
 });
 
@@ -609,11 +914,21 @@ adminRouter.post('/clubs/:id/assign', async (req: Request, res: Response) => {
 // Results & Pending Workflow Endpoints
 adminRouter.get('/results/pending', async (req: Request, res: Response) => {
   const seasonId = (req.query.seasonId as string) || 'season-2026-27';
+  const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+
+  if (!firestoreCircuitBreaker.canExecute()) {
+    const result = getLocalPendingResults(seasonId, limit);
+    res.json({ ...result, source: 'sqlite', degraded: true, stale: true });
+    return;
+  }
+
   try {
     const result = await getPendingResultsFirestore(seasonId);
-    res.json(result);
+    res.json({ ...result, source: 'firestore', degraded: false, stale: false });
   } catch (err: any) {
-    handleFirestoreError(res, err, 'GET /api/admin/results/pending');
+    firestoreCircuitBreaker.recordFailure(err);
+    const result = getLocalPendingResults(seasonId, limit);
+    res.json({ ...result, source: 'sqlite', degraded: true, stale: true });
   }
 });
 

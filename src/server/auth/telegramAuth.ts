@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { User } from '../../types';
 import { getOrCreateTelegramUserFirestore, getOrCreateDevUserFirestore } from '../firebase/firestoreStore';
+export { createSessionToken, verifySessionToken, type SessionClaims } from './sessionToken';
 
 export interface TelegramUserParsed {
   id: number | string;

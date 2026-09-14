@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { verifyTelegramWebAppData, getOrCreateTelegramUser, getOrCreateDevUser } from '../auth/telegramAuth';
+import { verifyTelegramWebAppData, getOrCreateTelegramUser, getOrCreateDevUser, verifySessionToken } from '../auth/telegramAuth';
 import { User } from '../../types';
 
 declare global {
@@ -10,10 +10,49 @@ declare global {
   }
 }
 
+// In-memory cache to prevent redundant Firestore lookups if a caller supplies initData or dev headers
+const cachedUserByTelegramId = new Map<string, { user: User; expiresAt: number }>();
+const cachedUserByDevId = new Map<string, { user: User; expiresAt: number }>();
+
+export function clearAuthMiddlewareCache(): void {
+  cachedUserByTelegramId.clear();
+  cachedUserByDevId.clear();
+}
+
 export async function authMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
   const isDev = process.env.ENABLE_DEV_AUTH === 'true' || process.env.NODE_ENV !== 'production';
 
-  // 1. Check Telegram InitData header or query FIRST (authoritative production auth)
+  // 1. Signed session token check (authoritative, 0 Firestore reads / 0 Firestore writes)
+  const authHeader = req.headers.authorization;
+  const sessionTokenHeader = req.headers['x-session-token'] as string;
+  let token: string | undefined;
+
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.slice(7).trim();
+  } else if (sessionTokenHeader) {
+    token = sessionTokenHeader.trim();
+  }
+
+  if (token) {
+    const verified = verifySessionToken(token);
+    if (verified.isValid && verified.claims) {
+      req.user = {
+        id: verified.claims.id,
+        telegramId: verified.claims.telegramId,
+        username: verified.claims.username,
+        firstName: verified.claims.firstName,
+        lastName: verified.claims.lastName,
+        photoUrl: verified.claims.photoUrl,
+        isAdmin: Boolean(verified.claims.isAdmin),
+        isSuspended: Boolean(verified.claims.isSuspended),
+        createdAt: '',
+        updatedAt: '',
+      };
+      return next();
+    }
+  }
+
+  // 2. Check Telegram InitData header or query
   const initData = (req.headers['x-telegram-init-data'] || req.query.initData) as string;
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
 
@@ -21,8 +60,17 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
     if (botToken) {
       const verifyResult = verifyTelegramWebAppData(initData, botToken);
       if (verifyResult.isValid && verifyResult.user) {
+        const tgId = String(verifyResult.user.id);
+        const cached = cachedUserByTelegramId.get(tgId);
+        if (cached && cached.expiresAt > Date.now()) {
+          req.user = cached.user;
+          return next();
+        }
+
         try {
-          req.user = await getOrCreateTelegramUser(verifyResult.user);
+          const user = await getOrCreateTelegramUser(verifyResult.user);
+          cachedUserByTelegramId.set(tgId, { user, expiresAt: Date.now() + 300000 }); // 5 min cache
+          req.user = user;
           return next();
         } catch (err: any) {
           console.warn('Telegram user retrieval error:', err.message);
@@ -35,7 +83,15 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
         const userRaw = urlParams.get('user');
         if (userRaw) {
           const parsed = JSON.parse(userRaw);
-          req.user = await getOrCreateTelegramUser(parsed);
+          const tgId = String(parsed.id);
+          const cached = cachedUserByTelegramId.get(tgId);
+          if (cached && cached.expiresAt > Date.now()) {
+            req.user = cached.user;
+            return next();
+          }
+          const user = await getOrCreateTelegramUser(parsed);
+          cachedUserByTelegramId.set(tgId, { user, expiresAt: Date.now() + 300000 });
+          req.user = user;
           return next();
         }
       } catch {
@@ -44,11 +100,18 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
     }
   }
 
-  // 2. Check Dev User header only in dev mode if Telegram auth wasn't present
+  // 3. Check Dev User header only in dev mode if Telegram auth wasn't present
   const devUserId = req.headers['x-dev-user-id'] as string;
   if (isDev && devUserId) {
+    const cachedDev = cachedUserByDevId.get(devUserId);
+    if (cachedDev && cachedDev.expiresAt > Date.now()) {
+      req.user = cachedDev.user;
+      return next();
+    }
+
     try {
       const user = await getOrCreateDevUser(devUserId);
+      cachedUserByDevId.set(devUserId, { user, expiresAt: Date.now() + 300000 });
       req.user = user;
       return next();
     } catch (err: any) {

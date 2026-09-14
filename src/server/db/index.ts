@@ -247,6 +247,11 @@ export async function initDatabase(): Promise<Database> {
   } catch {}
   try {
     dbInstance.exec(`
+      ALTER TABLE club_memberships ADD COLUMN updated_at TEXT;
+    `);
+  } catch {}
+  try {
+    dbInstance.exec(`
       CREATE TABLE IF NOT EXISTS season_league_clubs (
         id TEXT PRIMARY KEY,
         season_id TEXT NOT NULL,
