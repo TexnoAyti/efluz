@@ -42,6 +42,7 @@ import {
   RotateCcw,
   ChevronRight,
   ChevronLeft,
+  ChevronDown,
   Info,
   Sliders,
   Check,
@@ -104,7 +105,12 @@ export const AdminView: React.FC = () => {
   const [matchdayFilter, setMatchdayFilter] = useState<string>('ALL');
   const [matchSearch, setMatchSearch] = useState<string>('');
   const [matchPage, setMatchPage] = useState<number>(1);
-  const [matchPageSize, setMatchPageSize] = useState<number>(50);
+  const [matchPageSize, setMatchPageSize] = useState<number>(25);
+  const [fixturesTotal, setFixturesTotal] = useState<number>(0);
+  const [fixturesNextCursor, setFixturesNextCursor] = useState<string | undefined>(undefined);
+  const [fixturesHasMore, setFixturesHasMore] = useState<boolean>(false);
+  const [pageCursors, setPageCursors] = useState<{ [page: number]: string | undefined }>({ 1: undefined });
+  const [isMatchesLoading, setIsMatchesLoading] = useState<boolean>(false);
 
   // Match Action Modals
   const [selectedFixtureForEditResult, setSelectedFixtureForEditResult] = useState<Fixture | null>(null);
@@ -198,11 +204,34 @@ export const AdminView: React.FC = () => {
         if (usersRes?.users) setUsers(usersRes.users);
       } else if (tab === 'matches') {
         const [fixturesRes, compsRes, clubsRes] = await Promise.all([
-          api.getAdminFixtures({ seasonId: activeSeasonId, limit: 0 }, undefined, undefined, undefined, 0, skipCache).catch(() => ({ fixtures: [], total: 0 })),
+          api.getAdminFixtures(
+            {
+              seasonId: activeSeasonId,
+              competitionId: matchCompFilter !== 'ALL' ? matchCompFilter : undefined,
+              status: matchStatusFilter !== 'ALL' ? matchStatusFilter : undefined,
+              clubId: matchClubFilter !== 'ALL' ? matchClubFilter : undefined,
+              matchday: matchdayFilter !== 'ALL' ? parseInt(matchdayFilter, 10) : undefined,
+              search: matchSearch.trim() || undefined,
+              limit: matchPageSize,
+              page: 1,
+            },
+            undefined,
+            undefined,
+            undefined,
+            matchPageSize,
+            skipCache
+          ).catch(() => ({ fixtures: [], total: 0, hasMore: false, nextCursor: undefined })),
           competitions.length === 0 ? api.getCompetitions(activeSeasonId, skipCache).catch(() => ({ competitions: [] })) : Promise.resolve(null),
           clubs.length === 0 ? api.getAdminClubs(activeSeasonId, undefined, skipCache).catch(() => ({ clubs: [] })) : Promise.resolve(null),
         ]);
-        if (fixturesRes?.fixtures) setFixtures(fixturesRes.fixtures);
+        if (fixturesRes?.fixtures) {
+          setFixtures(fixturesRes.fixtures);
+          setFixturesTotal(fixturesRes.total ?? fixturesRes.fixtures.length);
+          setFixturesNextCursor(fixturesRes.nextCursor);
+          setFixturesHasMore(Boolean(fixturesRes.hasMore));
+          setMatchPage(1);
+          setPageCursors({ 1: undefined, 2: fixturesRes.nextCursor });
+        }
         if (compsRes?.competitions) setCompetitions(compsRes.competitions);
         if (clubsRes?.clubs) setClubs(clubsRes.clubs);
       } else if (tab === 'results') {
@@ -243,6 +272,59 @@ export const AdminView: React.FC = () => {
       setIsLoading(false);
     }
   }, [activeAdminTab, activeSeasonId, user?.isAdmin]);
+
+  const fetchAdminMatches = async (targetPage = 1, cursor?: string, append = false, skipCache = false) => {
+    setIsMatchesLoading(true);
+    try {
+      const res = await api.getAdminFixtures(
+        {
+          seasonId: activeSeasonId,
+          competitionId: matchCompFilter !== 'ALL' ? matchCompFilter : undefined,
+          status: matchStatusFilter !== 'ALL' ? matchStatusFilter : undefined,
+          clubId: matchClubFilter !== 'ALL' ? matchClubFilter : undefined,
+          matchday: matchdayFilter !== 'ALL' ? parseInt(matchdayFilter, 10) : undefined,
+          search: matchSearch.trim() || undefined,
+          cursor,
+          page: targetPage,
+          limit: matchPageSize,
+        },
+        undefined,
+        undefined,
+        undefined,
+        matchPageSize,
+        skipCache
+      );
+
+      if (append) {
+        setFixtures((prev) => [...prev, ...(res.fixtures || [])]);
+      } else {
+        setFixtures(res.fixtures || []);
+      }
+      setFixturesTotal(res.total ?? (res.fixtures?.length || 0));
+      setFixturesNextCursor(res.nextCursor);
+      setFixturesHasMore(Boolean(res.hasMore));
+      setMatchPage(targetPage);
+      if (res.nextCursor) {
+        setPageCursors((prev) => ({ ...prev, [targetPage + 1]: res.nextCursor }));
+      }
+    } catch (err: any) {
+      console.error('Failed to fetch admin matches:', err);
+      showToast('Failed to load fixtures for the selected criteria.', 'error');
+    } finally {
+      setIsMatchesLoading(false);
+    }
+  };
+
+  // Reset pagination and fetch page 1 when any match filter changes
+  useEffect(() => {
+    if (activeAdminTab === 'matches' && loadedTabs.has('matches')) {
+      const timer = setTimeout(() => {
+        setPageCursors({ 1: undefined });
+        fetchAdminMatches(1, undefined, false, true);
+      }, 250);
+      return () => clearTimeout(timer);
+    }
+  }, [matchCompFilter, matchStatusFilter, matchClubFilter, matchdayFilter, matchSearch, matchPageSize]);
 
   // =========================================================================
   // CLUB OWNERSHIP ACTIONS
@@ -555,42 +637,13 @@ export const AdminView: React.FC = () => {
   // =========================================================================
   // FILTERED DATASETS
   // =========================================================================
-  const filteredFixtures = useMemo(() => {
-    return fixtures.filter((f) => {
-      if (matchCompFilter !== 'ALL' && f.competitionId !== matchCompFilter) return false;
-      if (matchStatusFilter !== 'ALL' && f.status !== matchStatusFilter) return false;
-      if (matchClubFilter !== 'ALL' && f.homeClubId !== matchClubFilter && f.awayClubId !== matchClubFilter) return false;
-      if (matchdayFilter !== 'ALL' && String(f.matchday) !== matchdayFilter) return false;
-      if (matchSearch.trim()) {
-        const q = matchSearch.toLowerCase();
-        const homeMatch =
-          f.homeClub?.name?.toLowerCase().includes(q) ||
-          f.homeClub?.shortName?.toLowerCase().includes(q) ||
-          f.homeClubId.toLowerCase().includes(q);
-        const awayMatch =
-          f.awayClub?.name?.toLowerCase().includes(q) ||
-          f.awayClub?.shortName?.toLowerCase().includes(q) ||
-          f.awayClubId.toLowerCase().includes(q);
-        const compMatch =
-          f.competitionName?.toLowerCase().includes(q) ||
-          f.competitionId?.toLowerCase().includes(q);
-        const idMatch = f.id.toLowerCase().includes(q);
-        if (!homeMatch && !awayMatch && !compMatch && !idMatch) return false;
-      }
-      return true;
-    });
-  }, [fixtures, matchCompFilter, matchStatusFilter, matchClubFilter, matchdayFilter, matchSearch]);
-
   const totalMatchPages = useMemo(() => {
     if (matchPageSize <= 0) return 1;
-    return Math.ceil(filteredFixtures.length / matchPageSize) || 1;
-  }, [filteredFixtures.length, matchPageSize]);
+    return Math.ceil(fixturesTotal / matchPageSize) || 1;
+  }, [fixturesTotal, matchPageSize]);
 
-  const paginatedFixtures = useMemo(() => {
-    if (matchPageSize <= 0) return filteredFixtures;
-    const start = (matchPage - 1) * matchPageSize;
-    return filteredFixtures.slice(start, start + matchPageSize);
-  }, [filteredFixtures, matchPage, matchPageSize]);
+  // Server-side cursor pagination: paginatedFixtures is directly the server paged fixtures
+  const paginatedFixtures = fixtures;
 
   const filteredClubs = useMemo(() => {
     return clubs.filter((c) => {
@@ -818,7 +871,7 @@ export const AdminView: React.FC = () => {
           }`}
         >
           <Calendar className="w-4 h-4" />
-          <span>Matches ({fixtures.length})</span>
+          <span>Matches ({fixturesTotal || fixtures.length})</span>
         </button>
 
         {/* 4. RESULTS */}
@@ -1290,7 +1343,7 @@ export const AdminView: React.FC = () => {
               </div>
 
               <div className="text-xs font-bold text-slate-400 font-mono">
-                Showing <strong className="text-emerald-400">{filteredFixtures.length}</strong> matches
+                Showing <strong className="text-emerald-400">{fixtures.length}</strong> of <strong className="text-white">{fixturesTotal}</strong> matches
               </div>
             </div>
 
@@ -1387,7 +1440,8 @@ export const AdminView: React.FC = () => {
                 <select
                   value={matchPageSize}
                   onChange={(e) => {
-                    setMatchPageSize(parseInt(e.target.value, 10));
+                    const newSize = parseInt(e.target.value, 10) || 25;
+                    setMatchPageSize(newSize);
                     setMatchPage(1);
                   }}
                   className="px-2 py-1 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-300 font-bold"
@@ -1395,19 +1449,19 @@ export const AdminView: React.FC = () => {
                   <option value="25">25</option>
                   <option value="50">50</option>
                   <option value="100">100</option>
-                  <option value="0">All</option>
                 </select>
                 <span className="text-slate-500 font-mono text-[11px]">
-                  Showing {paginatedFixtures.length} of {filteredFixtures.length} matches
+                  Showing {fixtures.length} of {fixturesTotal} matches
                 </span>
+                {isMatchesLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-400" />}
               </div>
 
-              {totalMatchPages > 1 && (
+              {(totalMatchPages > 1 || fixturesHasMore || matchPage > 1) && (
                 <div className="flex items-center gap-1.5">
                   <button
                     type="button"
-                    onClick={() => setMatchPage((p) => Math.max(1, p - 1))}
-                    disabled={matchPage <= 1}
+                    onClick={() => fetchAdminMatches(matchPage - 1, pageCursors[matchPage - 1])}
+                    disabled={matchPage <= 1 || isMatchesLoading}
                     className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-30 text-slate-300 border border-slate-800"
                     title="Previous page"
                   >
@@ -1418,8 +1472,8 @@ export const AdminView: React.FC = () => {
                   </span>
                   <button
                     type="button"
-                    onClick={() => setMatchPage((p) => Math.min(totalMatchPages, p + 1))}
-                    disabled={matchPage >= totalMatchPages}
+                    onClick={() => fetchAdminMatches(matchPage + 1, fixturesNextCursor)}
+                    disabled={!fixturesHasMore || isMatchesLoading}
                     className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-30 text-slate-300 border border-slate-800"
                     title="Next page"
                   >
@@ -1573,27 +1627,44 @@ export const AdminView: React.FC = () => {
             )}
           </div>
 
+          {/* Load More Button */}
+          {fixturesHasMore && (
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => fetchAdminMatches(matchPage + 1, fixturesNextCursor, true)}
+                disabled={isMatchesLoading}
+                className="w-full py-3 px-4 rounded-xl border border-slate-800 bg-slate-900/80 hover:bg-slate-800 disabled:opacity-50 text-slate-200 font-bold text-xs transition-colors flex items-center justify-center gap-2"
+              >
+                {isMatchesLoading ? <Loader2 className="w-4 h-4 animate-spin text-emerald-400" /> : <ChevronDown className="w-4 h-4 text-emerald-400" />}
+                <span>Load More Matches</span>
+              </button>
+            </div>
+          )}
+
           {/* Bottom Pagination */}
-          {totalMatchPages > 1 && (
+          {(totalMatchPages > 1 || fixturesHasMore || matchPage > 1) && (
             <div className="flex items-center justify-between p-3 glass-panel border-white/[0.04] text-xs">
               <span className="text-slate-400 font-mono">
-                Showing page {matchPage} of {totalMatchPages} ({filteredFixtures.length} total fixtures)
+                Showing page {matchPage} of {totalMatchPages} ({fixturesTotal} total fixtures)
               </span>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setMatchPage((p) => Math.max(1, p - 1))}
-                  disabled={matchPage <= 1}
-                  className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-30 text-slate-300 border border-slate-800 font-bold"
+                  onClick={() => fetchAdminMatches(matchPage - 1, pageCursors[matchPage - 1])}
+                  disabled={matchPage <= 1 || isMatchesLoading}
+                  className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-30 text-slate-300 border border-slate-800 font-bold flex items-center gap-1"
                 >
+                  {isMatchesLoading && <Loader2 className="w-3 h-3 animate-spin" />}
                   Previous
                 </button>
                 <button
                   type="button"
-                  onClick={() => setMatchPage((p) => Math.min(totalMatchPages, p + 1))}
-                  disabled={matchPage >= totalMatchPages}
-                  className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-30 text-slate-300 border border-slate-800 font-bold"
+                  onClick={() => fetchAdminMatches(matchPage + 1, fixturesNextCursor)}
+                  disabled={!fixturesHasMore || isMatchesLoading}
+                  className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-30 text-slate-300 border border-slate-800 font-bold flex items-center gap-1"
                 >
+                  {isMatchesLoading && <Loader2 className="w-3 h-3 animate-spin" />}
                   Next
                 </button>
               </div>

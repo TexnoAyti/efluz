@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { getAllLeaguesFirestore, getClubsByLeagueFirestore } from '../firebase/firestoreStore';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
+import { setOwnershipSensitiveHeaders } from '../middleware/ownershipCacheControl';
 
 export const leaguesRouter = Router();
 
@@ -41,6 +42,7 @@ leaguesRouter.get('/:id', async (req: Request, res: Response) => {
 });
 
 leaguesRouter.get('/:id/clubs', async (req: Request, res: Response) => {
+  setOwnershipSensitiveHeaders(res);
   const seasonId = (req.query.seasonId as string) || 'season-2026-27';
   const leagueId = resolveLeagueId(req.params.id);
   const currentUserId = req.user?.id;

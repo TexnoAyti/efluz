@@ -114,6 +114,17 @@ export async function runRecovery() {
   const db = getFirestoreDb();
   const now = new Date().toISOString();
 
+  // Guard: If recovery audit record gKupceWRkMdnVauUyXba already exists, abort --apply
+  const auditSnap = await db.collection(COLLECTIONS.AUDIT_LOGS).doc('gKupceWRkMdnVauUyXba').get();
+  if (auditSnap.exists) {
+    console.error('❌ RECOVERY_ALREADY_APPLIED: Recovery audit record gKupceWRkMdnVauUyXba already exists.');
+    console.error('The old full recovery script must never execute twice.');
+    console.error('Only the new status-correction script (correctRecoveredOccupancyStatuses.ts) may repair the status values.');
+    if (isApplyMode) {
+      process.exit(1);
+    }
+  }
+
   // 1. Inspect Arsenal and Sunderland Candidates
   console.log('\n[PHASE 1] Inspecting Ownership Candidates for Arsenal and Sunderland...');
   const candUserIds = ['user-100001', 'user-7460059265', 'user-100002', 'user-6128910148'];
@@ -233,7 +244,7 @@ export async function runRecovery() {
       seasonId: SEASON_ID,
       clubId: 'club-alaves',
       userId: 'user-1238738998',
-      status: 'occupied',
+      status: 'active',
       statusSeason: `active_${SEASON_ID}`,
       claimedAt: alavesLegitClaimedAt,
       recoveredAt: now,
@@ -296,7 +307,7 @@ export async function runRecovery() {
       seasonId: SEASON_ID,
       clubId: 'club-barcelona',
       userId: 'user-8117945434',
-      status: 'occupied',
+      status: 'active',
       statusSeason: `active_${SEASON_ID}`,
       claimedAt: barcaLegitClaimedAt,
       recoveredAt: now,
@@ -408,7 +419,7 @@ export async function runRecovery() {
       seasonId: SEASON_ID,
       clubId: 'club-arsenal',
       userId: 'user-7460059265',
-      status: 'occupied',
+      status: 'active',
       statusSeason: `active_${SEASON_ID}`,
       claimedAt: arsenalClaimedAt,
       recoveredAt: now,
@@ -453,7 +464,7 @@ export async function runRecovery() {
       seasonId: SEASON_ID,
       clubId: 'club-sunderland',
       userId: 'user-6128910148',
-      status: 'occupied',
+      status: 'active',
       statusSeason: `active_${SEASON_ID}`,
       claimedAt: sunderlandClaimedAt,
       recoveredAt: now,

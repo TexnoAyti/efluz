@@ -18,6 +18,8 @@ export const COLLECTIONS = {
   MATCHDAY_LOCKS: 'matchday_locks',
 } as const;
 
+export const ACTIVE_MEMBERSHIP_STATUS = 'active' as const;
+
 export interface FirestoreUserDoc {
   id: string;
   telegramId: string;

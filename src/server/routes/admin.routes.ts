@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { requireAdmin } from '../middleware/authMiddleware';
+import { setOwnershipSensitiveHeaders } from '../middleware/ownershipCacheControl';
 import { validateBody } from '../middleware/validationMiddleware';
 import {
   getDisputes,
@@ -208,6 +209,7 @@ adminRouter.get('/overview', async (req: Request, res: Response) => {
 });
 
 adminRouter.get('/clubs', async (req: Request, res: Response) => {
+  setOwnershipSensitiveHeaders(res);
   const seasonId = (req.query.seasonId as string) || 'season-2026-27';
   const leagueId = req.query.leagueId as string | undefined;
 
@@ -250,6 +252,7 @@ adminRouter.get('/clubs', async (req: Request, res: Response) => {
 });
 
 adminRouter.get('/fixtures', async (req: Request, res: Response) => {
+  setOwnershipSensitiveHeaders(res);
   const seasonId = (req.query.seasonId as string) || 'season-2026-27';
   const competitionId = req.query.competitionId as string | undefined;
   const status = req.query.status as string | undefined;

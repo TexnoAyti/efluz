@@ -267,6 +267,14 @@ export function invalidateFirestoreCache(prefix?: string) {
   }
 }
 
+export function invalidateOwnershipCache(seasonId = 'season-2026-27', clubId?: string) {
+  invalidateFirestoreCache(`firestore:occupancies:${seasonId}`);
+  invalidateFirestoreCache('firestore:clubs:league:');
+  invalidateFirestoreCache(clubId ? `firestore:club:${clubId}` : 'firestore:club:');
+  invalidateFirestoreCache('firestore:admin_paged_fixtures:');
+  invalidateFirestoreCache('firestore:admin_fixtures_count:');
+}
+
 export function getFromCache<T>(key: string): T | null {
   const entry = serverCache.get(key);
   if (entry && Date.now() - entry.timestamp < entry.ttlMs) {
@@ -575,7 +583,15 @@ export async function getClubsByLeagueFirestore(
 
     const sortedClubs = clubs.sort((a, b) => a.name.localeCompare(b.name));
     if (sortedClubs.length > 0) {
-      setInCache(cacheKey, sortedClubs, 60000); // 60s cache
+      const neutralClubsForCache = sortedClubs.map((c) => ({
+        ...c,
+        isCurrentUserClub: false,
+        occupancy: {
+          ...c.occupancy,
+          status: (c.isTaken ? 'occupied' : 'available') as 'occupied' | 'available',
+        },
+      }));
+      setInCache(cacheKey, neutralClubsForCache, 60000); // 60s cache
     }
     return sortedClubs;
   } catch (err: any) {
@@ -1878,7 +1894,7 @@ export function executeAdminFixturesPagedFallback(options: AdminFixturesQueryOpt
 
 export async function getAdminFixturesPagedFirestore(options: AdminFixturesQueryOptions = {}): Promise<AdminFixturesPageResult> {
   const pageSize = Math.min(Math.max(options.limit || 25, 1), 100);
-  const cacheKey = `firestore:admin_paged_fixtures:${options.seasonId || 'all'}:${options.competitionId || 'all'}:${options.status || 'all'}:${options.matchday || 'all'}:${options.cursor || 'start'}:${pageSize}`;
+  const cacheKey = `firestore:admin_paged_fixtures:${options.seasonId || 'all'}:${options.competitionId || 'all'}:${options.status || 'all'}:${options.matchday || 'all'}:${options.search || 'none'}:${options.cursor || 'start'}:${pageSize}`;
 
   const cached = getFromCache<AdminFixturesPageResult>(cacheKey);
   if (cached) return cached;

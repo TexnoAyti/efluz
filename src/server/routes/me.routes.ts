@@ -8,15 +8,14 @@ import {
   markSingleNotificationReadFirestore,
 } from '../firebase/firestoreStore';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
+import { setOwnershipSensitiveHeaders } from '../middleware/ownershipCacheControl';
 
 export const meRouter = Router();
 export const meResilientRouter = meRouter;
 
 // Ensure all personalized /api/me responses are never cached publicly
 meRouter.use((req: Request, res: Response, next) => {
-  res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '0');
+  setOwnershipSensitiveHeaders(res);
   next();
 });
 

@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { requireAuth } from '../middleware/authMiddleware';
+import { setOwnershipSensitiveHeaders } from '../middleware/ownershipCacheControl';
 import {
   getClubByIdFirestore,
   getAvailableClubsFirestore,
@@ -155,6 +156,7 @@ clubsRouter.get('/crest-proxy', async (req: Request, res: Response) => {
 
 // 1. Available clubs endpoint (must be BEFORE /:id to prevent matching 'available' as an ID)
 clubsRouter.get('/available', async (req: Request, res: Response) => {
+  setOwnershipSensitiveHeaders(res);
   const seasonId = (req.query.seasonId as string) || 'season-2026-27';
   const currentUserId = req.user?.id;
   try {
@@ -221,6 +223,7 @@ clubsRouter.get('/:id/crest', async (req: Request, res: Response) => {
 
 // 3. Club by ID endpoint
 clubsRouter.get('/:id', async (req: Request, res: Response) => {
+  setOwnershipSensitiveHeaders(res);
   const seasonId = (req.query.seasonId as string) || 'season-2026-27';
   const currentUserId = req.user?.id;
   try {

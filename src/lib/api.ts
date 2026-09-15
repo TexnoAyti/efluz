@@ -538,6 +538,7 @@ export const api = {
           clubId?: string;
           userId?: string;
           search?: string;
+          cursor?: string;
           page?: number;
           limit?: number;
         }
@@ -545,9 +546,9 @@ export const api = {
     competitionIdParam?: string | boolean,
     statusParam?: string,
     matchdayParam?: number,
-    limitParam = 100,
+    limitParam = 25,
     skipCacheParam = false
-  ): Promise<{ fixtures: Fixture[]; total: number; page?: number; totalPages?: number; limit?: number }> {
+  ): Promise<{ fixtures: Fixture[]; total: number; hasMore?: boolean; nextCursor?: string; page?: number; totalPages?: number; limit?: number }> {
     let url = '/api/admin/fixtures';
     let skipCache = false;
 
@@ -560,14 +561,18 @@ export const api = {
       if (filterOrSeason.clubId) p.set('clubId', filterOrSeason.clubId);
       if (filterOrSeason.userId) p.set('userId', filterOrSeason.userId);
       if (filterOrSeason.search) p.set('search', filterOrSeason.search);
+      if (filterOrSeason.cursor) p.set('cursor', filterOrSeason.cursor);
       if (filterOrSeason.page) p.set('page', String(filterOrSeason.page));
-      if (filterOrSeason.limit !== undefined) p.set('limit', String(filterOrSeason.limit));
+      // Never request limit: 0, default to 25
+      const safeLimit = Math.max(filterOrSeason.limit && filterOrSeason.limit > 0 ? filterOrSeason.limit : 25, 1);
+      p.set('limit', String(safeLimit));
       url += `?${p.toString()}`;
       skipCache = Boolean(competitionIdParam);
     } else {
       const seasonId = filterOrSeason || 'season-2026-27';
       const competitionId = competitionIdParam as string | undefined;
-      let q = `seasonId=${seasonId}&limit=${limitParam}`;
+      const safeLimit = Math.max(limitParam > 0 ? limitParam : 25, 1);
+      let q = `seasonId=${seasonId}&limit=${safeLimit}`;
       if (competitionId && competitionId !== 'ALL') q += `&competitionId=${competitionId}`;
       if (statusParam && statusParam !== 'ALL') q += `&status=${statusParam}`;
       if (matchdayParam) q += `&matchday=${matchdayParam}`;

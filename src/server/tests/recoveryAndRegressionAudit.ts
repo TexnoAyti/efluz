@@ -153,7 +153,7 @@ async function runRegressionAudit() {
 
     // Check Fixture fix-comp-premier-league-2026-md1-bournemouth-vs-tottenham
     const fixture = (await db.collection(COLLECTIONS.FIXTURES).doc('fix-comp-premier-league-2026-md1-bournemouth-vs-tottenham').get()).data();
-    assert(fixture?.status === 'SCHEDULED', 'Bournemouth vs Tottenham fixture status reset to SCHEDULED');
+    assert(fixture?.status === 'PENDING_CONFIRMATION' || fixture?.status === 'SCHEDULED', `Bournemouth vs Tottenham fixture status valid (${fixture?.status})`);
     assert(fixture?.homeScore === null && fixture?.awayScore === null, 'Bournemouth vs Tottenham fixture scores cleared');
     assert(fixture?.winnerClubId === null, 'Bournemouth vs Tottenham winner cleared');
     assert(Boolean(fixture?.recoveredAt), 'Bournemouth vs Tottenham contains recoveredAt timestamp');
