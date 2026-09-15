@@ -27,7 +27,10 @@
     "test:ucl32-locking": "tsx src/server/tests/verifyUCL32AndMatchdayLocking.ts",
     "test:deployment-selfcheck": "tsx src/server/tests/deploymentSelfCheck.ts",
     "test:quota-audit": "tsx src/server/tests/verifyQuotaResilienceAudit.ts",
-    "audit:contamination:readonly": "tsx src/server/scripts/productionContaminationAudit.ts"
+    "audit:contamination:readonly": "tsx src/server/scripts/productionContaminationAudit.ts",
+    "recovery:contamination:plan": "tsx src/server/scripts/applyProductionContaminationRecovery.ts --plan",
+    "recovery:contamination:apply": "tsx src/server/scripts/applyProductionContaminationRecovery.ts --apply",
+    "test:recovery-audit": "tsx src/server/tests/recoveryAndRegressionAudit.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

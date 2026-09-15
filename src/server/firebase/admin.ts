@@ -317,9 +317,10 @@ function createMemoryFirestore() {
   }
 
   class MemQuery {
-    private filters: Array<{ field: string; op: string; val: any }> = [];
-    private orderBys: Array<{ field: string; dir: 'asc' | 'desc' }> = [];
-    private limitVal: number | null = null;
+    protected filters: Array<{ field: string; op: string; val: any }> = [];
+    protected orderBys: Array<{ field: any; dir: 'asc' | 'desc' }> = [];
+    protected limitVal: number | null = null;
+    protected cursorVal: string | null = null;
 
     constructor(public colName: string) {}
 
@@ -328,14 +329,25 @@ function createMemoryFirestore() {
       q.filters = [...this.filters, { field, op, val }];
       q.orderBys = [...this.orderBys];
       q.limitVal = this.limitVal;
+      q.cursorVal = this.cursorVal;
       return q;
     }
 
-    orderBy(field: string, dir: 'asc' | 'desc' = 'asc') {
+    orderBy(field: any, dir: 'asc' | 'desc' = 'asc') {
       const q = new MemQuery(this.colName);
       q.filters = [...this.filters];
       q.orderBys = [...this.orderBys, { field, dir }];
       q.limitVal = this.limitVal;
+      q.cursorVal = this.cursorVal;
+      return q;
+    }
+
+    startAfter(cursor: string) {
+      const q = new MemQuery(this.colName);
+      q.filters = [...this.filters];
+      q.orderBys = [...this.orderBys];
+      q.limitVal = this.limitVal;
+      q.cursorVal = cursor;
       return q;
     }
 
@@ -344,7 +356,19 @@ function createMemoryFirestore() {
       q.filters = [...this.filters];
       q.orderBys = [...this.orderBys];
       q.limitVal = n;
+      q.cursorVal = this.cursorVal;
       return q;
+    }
+
+    count() {
+      return {
+        get: async () => {
+          const res = await this.get();
+          return {
+            data: () => ({ count: res.size }),
+          };
+        },
+      };
     }
 
     async get() {
@@ -374,12 +398,24 @@ function createMemoryFirestore() {
       // Apply orderBy
       for (const o of this.orderBys) {
         docs.sort((a, b) => {
-          const vA = a.data()[o.field];
-          const vB = b.data()[o.field];
+          const isDocIdField =
+            o.field === '__name__' ||
+            (typeof o.field === 'object' && o.field !== null) ||
+            String(o.field).includes('documentId');
+          const vA = isDocIdField ? a.id : a.data()[o.field];
+          const vB = isDocIdField ? b.id : b.data()[o.field];
           if (vA < vB) return o.dir === 'asc' ? -1 : 1;
           if (vA > vB) return o.dir === 'asc' ? 1 : -1;
           return 0;
         });
+      }
+
+      // Apply startAfter cursor
+      if (this.cursorVal) {
+        const idx = docs.findIndex((d) => d.id === this.cursorVal);
+        if (idx !== -1) {
+          docs = docs.slice(idx + 1);
+        }
       }
 
       // Apply limit

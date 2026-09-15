@@ -285,30 +285,32 @@ adminRouter.get('/fixtures', async (req: Request, res: Response) => {
       source: result.source,
       degraded: result.degraded,
       stale: result.stale,
+      errorCode: result.errorCode,
       generatedAt: result.generatedAt,
     });
   } catch (err: any) {
-    firestoreCircuitBreaker.recordFailure(err);
-    const fallback = executeAdminFixturesPagedFallback({
+    console.error('[ADMIN_FIXTURES_FIRESTORE_FAILED]', {
+      message: err?.message,
+      code: err?.code,
       seasonId,
-      competitionId: competitionId === 'ALL' ? undefined : competitionId,
-      status: status === 'ALL' ? undefined : status,
-      matchday: matchday || undefined,
-      cursor,
-      limit,
-    }, limit);
+      competitionId,
+      status,
+      matchday,
+    });
+    firestoreCircuitBreaker.recordFailure(err);
     res.status(200).json({
-      fixtures: fallback.fixtures,
-      total: fallback.total,
-      hasMore: fallback.hasMore,
-      nextCursor: fallback.nextCursor,
+      fixtures: [],
+      total: 0,
+      hasMore: false,
+      nextCursor: undefined,
       page,
-      totalPages: Math.ceil(fallback.total / limit) || 1,
+      totalPages: 1,
       limit,
       source: 'sqlite',
       degraded: true,
       stale: true,
-      generatedAt: fallback.generatedAt,
+      errorCode: 'ADMIN_FIXTURES_DEGRADED',
+      generatedAt: new Date().toISOString(),
     });
   }
 });

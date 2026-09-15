@@ -1,4 +1,4 @@
-import { Firestore, FieldValue } from 'firebase-admin/firestore';
+import { Firestore, FieldValue, FieldPath } from 'firebase-admin/firestore';
 import { getFirestoreDb } from './admin';
 import { queryAll, queryGet, queryRun, dbTransaction } from '../db';
 import { SEED_CLUBS, SEED_LEAGUES, SEED_COMPETITIONS, SEED_SEASONS, SEED_SEASON } from '../db/seed';
@@ -1776,6 +1776,7 @@ export interface AdminFixturesPageResult {
   source: 'firestore' | 'cache' | 'sqlite';
   degraded: boolean;
   stale: boolean;
+  errorCode?: string;
   generatedAt: string;
 }
 
@@ -1884,7 +1885,17 @@ export async function getAdminFixturesPagedFirestore(options: AdminFixturesQuery
 
   if (!firestoreCircuitBreaker.canExecute()) {
     recordFallbackUsage();
-    return executeAdminFixturesPagedFallback(options, pageSize);
+    return {
+      fixtures: [],
+      total: 0,
+      hasMore: false,
+      limit: pageSize,
+      source: 'sqlite',
+      degraded: true,
+      stale: true,
+      errorCode: 'ADMIN_FIXTURES_DEGRADED',
+      generatedAt: new Date().toISOString(),
+    };
   }
 
   try {
@@ -1905,8 +1916,8 @@ export async function getAdminFixturesPagedFirestore(options: AdminFixturesQuery
       query = query.where('matchday', '==', options.matchday);
     }
 
-    // Stable cursor ordering by document ID
-    query = query.orderBy(FirebaseFirestore.FieldPath.documentId());
+    // Stable cursor ordering by document ID using imported FieldPath
+    query = query.orderBy(FieldPath.documentId());
 
     if (options.cursor) {
       query = query.startAfter(options.cursor);
@@ -1927,33 +1938,39 @@ export async function getAdminFixturesPagedFirestore(options: AdminFixturesQuery
     const docsToUse = snap.docs.slice(0, pageSize);
     const nextCursor = hasMore && docsToUse.length > 0 ? docsToUse[docsToUse.length - 1].id : undefined;
 
-    // Fast bounded count: check SQLite count for the filter so we don't scan full Firestore collection
-    const countFilter: any[] = [];
-    let countSql = 'SELECT COUNT(*) as count FROM fixtures WHERE 1=1';
+    // Calculate filtered total using a bounded Firestore aggregation count query based on the same filters.
+    // Cache that count for 5 minutes. Do not derive the authoritative total from ephemeral Vercel SQLite.
+    let countQuery: FirebaseFirestore.Query = db.collection(COLLECTIONS.FIXTURES);
     if (options.competitionId) {
-      countSql += ' AND competition_id = ?';
-      countFilter.push(options.competitionId);
+      countQuery = countQuery.where('competitionId', '==', options.competitionId);
     } else if (options.seasonId) {
-      countSql += ' AND season_id = ?';
-      countFilter.push(options.seasonId);
+      countQuery = countQuery.where('seasonId', '==', options.seasonId);
     }
     if (options.status) {
-      countSql += ' AND status = ?';
-      countFilter.push(options.status);
+      countQuery = countQuery.where('status', '==', options.status);
     }
     if (options.matchday) {
-      countSql += ' AND matchday = ?';
-      countFilter.push(options.matchday);
+      countQuery = countQuery.where('matchday', '==', options.matchday);
     }
-    const countRow = queryGet<{ count: number }>(countSql, countFilter);
-    const total = countRow?.count || docsToUse.length;
 
-    const fixtureDocs = docsToUse.map((d) => d.data() as FirestoreFixtureDoc);
+    const countCacheKey = `firestore:admin_fixtures_count:${options.seasonId || 'all'}:${options.competitionId || 'all'}:${options.status || 'all'}:${options.matchday || 'all'}`;
+    let total = getFromCache<number>(countCacheKey);
+    if (typeof total !== 'number') {
+      try {
+        const countSnap = await countQuery.count().get();
+        total = countSnap.data().count;
+        setInCache(countCacheKey, total, 300000); // 5 minutes cache
+      } catch (countErr) {
+        total = hasMore ? pageSize + 1 : docsToUse.length;
+      }
+    }
 
     // Map club occupancy (uses in-memory 5-min cache, 0 reads)
     const { clubOccupancyMap, usernameMap, userMap } = await getActiveOccupanciesForSeason(options.seasonId || 'season-2026-27');
 
-    const mappedFixtures: Fixture[] = fixtureDocs.map((doc) => {
+    const mappedFixtures: Fixture[] = docsToUse.map((documentSnapshot) => {
+      const doc = documentSnapshot.data() as FirestoreFixtureDoc;
+      const fixtureId = doc.id || documentSnapshot.id;
       const homeClubSeed = SEED_CLUB_MAP.get(doc.homeClubId);
       const awayClubSeed = SEED_CLUB_MAP.get(doc.awayClubId);
 
@@ -1983,7 +2000,7 @@ export async function getAdminFixturesPagedFirestore(options: AdminFixturesQuery
       const awayOwnerId = doc.awayOwnerId || clubOccupancyMap.get(doc.awayClubId)?.userId || undefined;
 
       return {
-        id: doc.id,
+        id: fixtureId,
         competitionId: doc.competitionId,
         competitionName: doc.competitionName,
         seasonId: doc.seasonId,
@@ -2019,8 +2036,26 @@ export async function getAdminFixturesPagedFirestore(options: AdminFixturesQuery
     setInCache(cacheKey, result, 30000); // 30s cache
     return result;
   } catch (err: any) {
+    console.error('[ADMIN_FIXTURES_FIRESTORE_FAILED]', {
+      message: err?.message,
+      code: err?.code,
+      seasonId: options.seasonId,
+      competitionId: options.competitionId,
+      status: options.status,
+      matchday: options.matchday,
+    });
     firestoreCircuitBreaker.recordFailure(err);
-    return executeAdminFixturesPagedFallback(options, pageSize);
+    return {
+      fixtures: [],
+      total: 0,
+      hasMore: false,
+      limit: pageSize,
+      source: 'sqlite',
+      degraded: true,
+      stale: true,
+      errorCode: 'ADMIN_FIXTURES_DEGRADED',
+      generatedAt: new Date().toISOString(),
+    };
   }
 }
 

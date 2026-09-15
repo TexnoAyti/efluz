@@ -201,7 +201,15 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
 
   const handleClaimClub = async (targetClub?: Club) => {
     const club = targetClub || clubToClaim;
-    if (!club) return;
+    const clubId = club?.id;
+    if (!club || !clubId || clubId === 'undefined' || clubId === 'null' || !clubId.startsWith('club-')) {
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('[ClubsView] Attempted to claim club with invalid ID:', clubId, club);
+      }
+      showToast('Yaroqsiz klub tanlandi. Iltimos, qaytadan urinib ko‘ring.', 'error');
+      setClubToClaim(null);
+      return;
+    }
     if (currentClub) {
       showToast(t.alreadyHaveClubMessage, 'error');
       setClubToClaim(null);
@@ -209,7 +217,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
     }
     setIsClaiming(true);
     try {
-      const res = await api.claimClub(club.id, activeSeasonId);
+      const res = await api.claimClub(clubId, activeSeasonId);
       confetti({
         particleCount: 100,
         spread: 80,
@@ -741,7 +749,11 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                       ) : (
                         <button
                           id={`btn-claim-club-${club.id}`}
-                          onClick={() => setClubToClaim(club)}
+                          onClick={() => {
+                            if (club && club.id && club.id !== 'undefined' && club.id !== 'null' && club.id.startsWith('club-')) {
+                              setClubToClaim(club);
+                            }
+                          }}
                           className="w-full py-2 btn-glass-primary text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 min-h-[40px] touch-manipulation"
                         >
                           <Shield className="w-3.5 h-3.5 text-slate-950" />
@@ -1099,8 +1111,8 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
               <button
                 type="button"
                 id="btn-confirm-claim-action"
-                disabled={isClaiming}
-                onClick={handleClaimClub}
+                disabled={isClaiming || !clubToClaim || !clubToClaim.id || clubToClaim.id === 'undefined' || clubToClaim.id === 'null' || !clubToClaim.id.startsWith('club-')}
+                onClick={() => handleClaimClub()}
                 className="flex-1 py-2.5 btn-glass-primary disabled:opacity-50 text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 min-h-[44px] touch-manipulation"
               >
                 {isClaiming ? (

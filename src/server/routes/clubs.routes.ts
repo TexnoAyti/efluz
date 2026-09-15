@@ -237,9 +237,20 @@ clubsRouter.get('/:id', async (req: Request, res: Response) => {
 
 // 3. Club claim endpoint
 clubsRouter.post('/:id/claim', requireAuth, async (req: Request, res: Response) => {
+  const clubId = req.params.id;
+
+  // Reject invalid params before any database operation
+  if (!clubId || clubId === 'undefined' || clubId === 'null' || !clubId.startsWith('club-')) {
+    res.status(400).json({
+      error: 'INVALID_CLUB_ID',
+      code: 'INVALID_CLUB_ID',
+      message: 'Invalid club ID provided.',
+    });
+    return;
+  }
+
   const seasonId = (req.body.seasonId as string) || 'season-2026-27';
   const userId = req.user!.id;
-  const clubId = req.params.id;
   const telegramId = req.user!.telegramId;
 
   // Enforce Telegram group membership verification (@efleagueuz) ONLY when claiming

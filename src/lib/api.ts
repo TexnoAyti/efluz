@@ -364,6 +364,9 @@ export const api = {
   },
 
   async claimClub(clubId: string, seasonId = 'season-2026-27'): Promise<{ success: boolean; message: string; club: Club }> {
+    if (!clubId || clubId === 'undefined' || clubId === 'null' || !clubId.startsWith('club-')) {
+      throw new Error('INVALID_CLUB_ID: Invalid club identifier provided.');
+    }
     const res = await request<{ success: boolean; message: string; club: Club }>(`/api/clubs/${clubId}/claim`, {
       method: 'POST',
       body: JSON.stringify({ seasonId }),
