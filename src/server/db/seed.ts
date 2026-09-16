@@ -244,15 +244,6 @@ export const SEED_COMPETITIONS: SeedCompetition[] = [
     formatConfig: { rounds: 6, singleLeg: true, extraTime: true, penalties: true },
   },
   {
-    id: 'comp-efl-cup-2026',
-    seasonId: 'season-2026-27',
-    leagueId: 'league-premier-league',
-    name: 'EFL Cup',
-    type: 'KNOCKOUT',
-    scheduleMode: 'GENERATED_SCHEDULE',
-    formatConfig: { rounds: 5, singleLeg: true, extraTime: true, penalties: true },
-  },
-  {
     id: 'comp-copa-del-rey-2026',
     seasonId: 'season-2026-27',
     leagueId: 'league-la-liga',

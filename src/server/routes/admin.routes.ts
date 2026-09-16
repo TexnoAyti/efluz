@@ -55,6 +55,16 @@ import { COLLECTIONS } from '../firebase/collections';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
 import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
 import { queryAll, queryGet } from '../db/index';
+import {
+  rebuildAllReadModels,
+  getReadModelHealthStatus,
+  invalidateClubReadModels,
+  invalidateFixtureReadModels,
+  invalidateStandingsReadModels,
+  invalidateCompetitionReadModels,
+  invalidateUserMembershipReadModel,
+  ReadModelNotWarmedError,
+} from '../readModel/readModelStore';
 
 export const adminRouter = Router();
 
@@ -292,7 +302,15 @@ adminRouter.get('/fixtures', async (req: Request, res: Response) => {
       generatedAt: result.generatedAt,
     });
   } catch (err: any) {
-    console.error('[ADMIN_FIXTURES_FIRESTORE_FAILED]', {
+    if (err instanceof ReadModelNotWarmedError || err?.errorCode === 'READ_MODEL_NOT_WARMED') {
+      res.status(503).json({
+        errorCode: 'READ_MODEL_NOT_WARMED',
+        message: 'Read model is not warmed and authoritative database is unreachable.',
+        generatedAt: new Date().toISOString(),
+      });
+      return;
+    }
+    console.error('[ADMIN_FIXTURES_FAILED]', {
       message: err?.message,
       code: err?.code,
       seasonId,
@@ -300,19 +318,9 @@ adminRouter.get('/fixtures', async (req: Request, res: Response) => {
       status,
       matchday,
     });
-    firestoreCircuitBreaker.recordFailure(err);
-    res.status(200).json({
-      fixtures: [],
-      total: 0,
-      hasMore: false,
-      nextCursor: undefined,
-      page,
-      totalPages: 1,
-      limit,
-      source: 'sqlite',
-      degraded: true,
-      stale: true,
-      errorCode: 'ADMIN_FIXTURES_DEGRADED',
+    res.status(503).json({
+      errorCode: 'READ_MODEL_ERROR',
+      message: err.message || 'Failed to retrieve admin fixtures read model',
       generatedAt: new Date().toISOString(),
     });
   }
@@ -892,6 +900,7 @@ adminRouter.post('/clubs/:id/release', async (req: Request, res: Response) => {
 
   try {
     const result = await adminReleaseClubFirestore(adminUserId, clubId, seasonId);
+    await invalidateClubReadModels(seasonId).catch(() => {});
     res.json(result);
   } catch (err: any) {
     handleFirestoreError(res, err, `POST /api/admin/clubs/${clubId}/release`);
@@ -910,6 +919,8 @@ adminRouter.post('/clubs/:id/assign', async (req: Request, res: Response) => {
 
   try {
     const result = await adminAssignClubFirestore(adminUserId, clubId, targetUserId, seasonId);
+    await invalidateClubReadModels(seasonId).catch(() => {});
+    await invalidateUserMembershipReadModel(targetUserId, seasonId).catch(() => {});
     res.json(result);
   } catch (err: any) {
     handleFirestoreError(res, err, `POST /api/admin/clubs/${clubId}/assign`);
@@ -950,6 +961,12 @@ adminRouter.post('/results/:fixtureId/approve', validateBody(approveResultSchema
 
   try {
     const result = await adminApproveFixtureResultFirestore(adminUserId, fixtureId, homeScore, awayScore, notes);
+    const compId = (result as any)?.fixture?.competitionId || '';
+    if (compId) {
+      await invalidateFixtureReadModels(compId, 'season-2026-27').catch(() => {});
+      await invalidateStandingsReadModels(compId, 'season-2026-27').catch(() => {});
+    }
+    await invalidateFixtureReadModels('', 'season-2026-27').catch(() => {});
     res.json(result);
   } catch (err: any) {
     handleFirestoreError(res, err, `POST /api/admin/results/${fixtureId}/approve`);
@@ -963,6 +980,7 @@ adminRouter.post('/results/:fixtureId/reject', validateBody(reopenFixtureSchema)
 
   try {
     const result = await reopenFixtureFirestore(adminUserId, fixtureId, notes || 'Rejected by tournament administrator');
+    await invalidateFixtureReadModels('', 'season-2026-27').catch(() => {});
     res.json({
       success: true,
       message: 'Pending result rejected and match reopened for re-submission.',
@@ -1072,6 +1090,38 @@ adminRouter.post('/sync', async (_req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: err.message,
+    });
+  }
+});
+
+// ----------------------------------------------------
+// READ MODEL REBUILD & HEALTH ENDPOINTS
+// ----------------------------------------------------
+
+adminRouter.post('/read-model/rebuild', async (req: Request, res: Response) => {
+  const seasonId = (req.body?.seasonId as string) || (req.query?.seasonId as string) || 'season-2026-27';
+  try {
+    const result = await rebuildAllReadModels(seasonId);
+    res.json(result);
+  } catch (err: any) {
+    console.error('[ADMIN_READ_MODEL_REBUILD_ERROR]', err);
+    res.status(500).json({
+      success: false,
+      error: err.message || 'Failed to rebuild read model snapshots',
+      generatedAt: new Date().toISOString(),
+    });
+  }
+});
+
+adminRouter.get('/read-model/health', async (req: Request, res: Response) => {
+  const seasonId = (req.query?.seasonId as string) || 'season-2026-27';
+  try {
+    const health = await getReadModelHealthStatus(seasonId);
+    res.json(health);
+  } catch (err: any) {
+    console.error('[ADMIN_READ_MODEL_HEALTH_ERROR]', err);
+    res.status(500).json({
+      error: err.message || 'Failed to get read model health',
     });
   }
 });

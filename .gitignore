@@ -10,6 +10,3 @@ artifacts/
 /recovery_backups/
 *recovery-backup*.json
 *status_correction*.json
-/recovery_backups/
-*recovery-backup*.json
-*status_correction*.json

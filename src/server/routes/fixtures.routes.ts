@@ -7,6 +7,7 @@ import {
   submitFixtureResultFirestore,
 } from '../firebase/firestoreStore';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
+import { invalidateFixtureReadModels, invalidateStandingsReadModels } from '../readModel/readModelStore';
 
 export const fixturesRouter = Router();
 export const fixturesResilientRouter = fixturesRouter;
@@ -38,6 +39,11 @@ fixturesRouter.post('/:id/result', requireAuth, validateBody(resultSubmissionSch
 
   try {
     const updatedFixture = await submitFixtureResultFirestore(userId, fixtureId, homeScore, awayScore, proofUrl);
+    if (updatedFixture?.competitionId) {
+      await invalidateFixtureReadModels(updatedFixture.competitionId, updatedFixture.seasonId || 'season-2026-27').catch(() => {});
+      await invalidateStandingsReadModels(updatedFixture.competitionId, updatedFixture.seasonId || 'season-2026-27').catch(() => {});
+    }
+    await invalidateFixtureReadModels('', updatedFixture.seasonId || 'season-2026-27').catch(() => {});
     res.json({
       success: true,
       message:

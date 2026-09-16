@@ -24,6 +24,7 @@ const SEED_CLUB_MAP = new Map<string, (typeof SEED_CLUBS)[0]>(
   SEED_CLUBS.map((c) => [c.id, c])
 );
 import { generateEuropean32LeaguePhaseSchedule } from '../tournament/fixtureEngine';
+import { getAdminFixturesFromReadModel } from '../readModel/readModelStore';
 import {
   COLLECTIONS,
   FirestoreClubDoc,
@@ -1207,7 +1208,14 @@ export async function getAllCompetitionsFirestore(seasonId = 'season-2026-27'): 
 
   // Serve static competitions from SEED_COMPETITIONS (ZERO Firestore reads)
   const validComps = SEED_COMPETITIONS.filter((c) => {
-    return !c.id.includes('trophee-des-champions') && !c.id.includes('conference-league') && !c.id.includes('uecl');
+    return (
+      !c.id.includes('trophee-des-champions') &&
+      !c.id.includes('conference-league') &&
+      !c.id.includes('uecl') &&
+      !c.id.includes('efl-cup') &&
+      (c as any).status !== 'inactive' &&
+      !(c as any).hidden
+    );
   });
 
   const competitions: Competition[] = validComps.map((seed) => {
@@ -1789,7 +1797,7 @@ export interface AdminFixturesPageResult {
   hasMore: boolean;
   nextCursor?: string;
   limit: number;
-  source: 'firestore' | 'cache' | 'sqlite';
+  source: 'firestore' | 'cache' | 'sqlite' | 'redis_fresh' | 'redis_stale' | 'memory' | string;
   degraded: boolean;
   stale: boolean;
   errorCode?: string;
@@ -1893,186 +1901,30 @@ export function executeAdminFixturesPagedFallback(options: AdminFixturesQueryOpt
 }
 
 export async function getAdminFixturesPagedFirestore(options: AdminFixturesQueryOptions = {}): Promise<AdminFixturesPageResult> {
-  const pageSize = Math.min(Math.max(options.limit || 25, 1), 100);
-  const cacheKey = `firestore:admin_paged_fixtures:${options.seasonId || 'all'}:${options.competitionId || 'all'}:${options.status || 'all'}:${options.matchday || 'all'}:${options.search || 'none'}:${options.cursor || 'start'}:${pageSize}`;
+  const result = await getAdminFixturesFromReadModel({
+    seasonId: options.seasonId,
+    competitionId: options.competitionId,
+    status: options.status,
+    matchday: options.matchday,
+    clubId: options.clubId,
+    userId: options.userId,
+    search: options.search,
+    cursor: options.cursor,
+    limit: options.limit,
+  });
 
-  const cached = getFromCache<AdminFixturesPageResult>(cacheKey);
-  if (cached) return cached;
-
-  if (!firestoreCircuitBreaker.canExecute()) {
-    recordFallbackUsage();
-    return {
-      fixtures: [],
-      total: 0,
-      hasMore: false,
-      limit: pageSize,
-      source: 'sqlite',
-      degraded: true,
-      stale: true,
-      errorCode: 'ADMIN_FIXTURES_DEGRADED',
-      generatedAt: new Date().toISOString(),
-    };
-  }
-
-  try {
-    const db = getFirestoreDb();
-    let query: FirebaseFirestore.Query = db.collection(COLLECTIONS.FIXTURES);
-
-    if (options.competitionId) {
-      query = query.where('competitionId', '==', options.competitionId);
-    } else if (options.seasonId) {
-      query = query.where('seasonId', '==', options.seasonId);
-    }
-
-    if (options.status) {
-      query = query.where('status', '==', options.status);
-    }
-
-    if (options.matchday) {
-      query = query.where('matchday', '==', options.matchday);
-    }
-
-    // Stable cursor ordering by document ID using imported FieldPath
-    query = query.orderBy(FieldPath.documentId());
-
-    if (options.cursor) {
-      query = query.startAfter(options.cursor);
-    }
-
-    // Fetch pageSize + 1 to detect hasMore with 0 extra count queries
-    query = query.limit(pageSize + 1);
-
-    const snap = await query.get();
-    firestoreCircuitBreaker.recordSuccess();
-    trackFirestoreRead(
-      COLLECTIONS.FIXTURES,
-      snap.empty ? 1 : snap.docs.length,
-      'getAdminFixturesPagedFirestore'
-    );
-
-    const hasMore = snap.docs.length > pageSize;
-    const docsToUse = snap.docs.slice(0, pageSize);
-    const nextCursor = hasMore && docsToUse.length > 0 ? docsToUse[docsToUse.length - 1].id : undefined;
-
-    // Calculate filtered total using a bounded Firestore aggregation count query based on the same filters.
-    // Cache that count for 5 minutes. Do not derive the authoritative total from ephemeral Vercel SQLite.
-    let countQuery: FirebaseFirestore.Query = db.collection(COLLECTIONS.FIXTURES);
-    if (options.competitionId) {
-      countQuery = countQuery.where('competitionId', '==', options.competitionId);
-    } else if (options.seasonId) {
-      countQuery = countQuery.where('seasonId', '==', options.seasonId);
-    }
-    if (options.status) {
-      countQuery = countQuery.where('status', '==', options.status);
-    }
-    if (options.matchday) {
-      countQuery = countQuery.where('matchday', '==', options.matchday);
-    }
-
-    const countCacheKey = `firestore:admin_fixtures_count:${options.seasonId || 'all'}:${options.competitionId || 'all'}:${options.status || 'all'}:${options.matchday || 'all'}`;
-    let total = getFromCache<number>(countCacheKey);
-    if (typeof total !== 'number') {
-      try {
-        const countSnap = await countQuery.count().get();
-        total = countSnap.data().count;
-        setInCache(countCacheKey, total, 300000); // 5 minutes cache
-      } catch (countErr) {
-        total = hasMore ? pageSize + 1 : docsToUse.length;
-      }
-    }
-
-    // Map club occupancy (uses in-memory 5-min cache, 0 reads)
-    const { clubOccupancyMap, usernameMap, userMap } = await getActiveOccupanciesForSeason(options.seasonId || 'season-2026-27');
-
-    const mappedFixtures: Fixture[] = docsToUse.map((documentSnapshot) => {
-      const doc = documentSnapshot.data() as FirestoreFixtureDoc;
-      const fixtureId = doc.id || documentSnapshot.id;
-      const homeClubSeed = SEED_CLUB_MAP.get(doc.homeClubId);
-      const awayClubSeed = SEED_CLUB_MAP.get(doc.awayClubId);
-
-      const homeClub: Club = {
-        id: doc.homeClubId,
-        name: homeClubSeed?.name || doc.homeClubId,
-        shortName: homeClubSeed?.shortName || doc.homeClubId.substring(0, 3).toUpperCase(),
-        country: homeClubSeed?.country || 'England',
-        leagueId: homeClubSeed?.leagueId || 'league-premier-league',
-        logoUrl: homeClubSeed?.logoUrl || '',
-        active: true,
-        createdAt: new Date().toISOString(),
-      };
-
-      const awayClub: Club = {
-        id: doc.awayClubId,
-        name: awayClubSeed?.name || doc.awayClubId,
-        shortName: awayClubSeed?.shortName || doc.awayClubId.substring(0, 3).toUpperCase(),
-        country: awayClubSeed?.country || 'England',
-        leagueId: awayClubSeed?.leagueId || 'league-premier-league',
-        logoUrl: awayClubSeed?.logoUrl || '',
-        active: true,
-        createdAt: new Date().toISOString(),
-      };
-
-      const homeOwnerId = doc.homeOwnerId || clubOccupancyMap.get(doc.homeClubId)?.userId || undefined;
-      const awayOwnerId = doc.awayOwnerId || clubOccupancyMap.get(doc.awayClubId)?.userId || undefined;
-
-      return {
-        id: fixtureId,
-        competitionId: doc.competitionId,
-        competitionName: doc.competitionName,
-        seasonId: doc.seasonId,
-        matchday: doc.matchday,
-        roundName: doc.roundName,
-        homeClubId: doc.homeClubId,
-        awayClubId: doc.awayClubId,
-        homeScore: doc.homeScore,
-        awayScore: doc.awayScore,
-        status: doc.status as MatchStatus,
-        scheduledAt: doc.scheduledAt,
-        homeClub,
-        awayClub,
-        homeOwnerId,
-        awayOwnerId,
-        createdAt: doc.createdAt || new Date().toISOString(),
-        updatedAt: doc.updatedAt || new Date().toISOString(),
-      };
-    });
-
-    const result: AdminFixturesPageResult = {
-      fixtures: mappedFixtures,
-      total,
-      hasMore,
-      nextCursor,
-      limit: pageSize,
-      source: 'firestore',
-      degraded: false,
-      stale: false,
-      generatedAt: new Date().toISOString(),
-    };
-
-    setInCache(cacheKey, result, 30000); // 30s cache
-    return result;
-  } catch (err: any) {
-    console.error('[ADMIN_FIXTURES_FIRESTORE_FAILED]', {
-      message: err?.message,
-      code: err?.code,
-      seasonId: options.seasonId,
-      competitionId: options.competitionId,
-      status: options.status,
-      matchday: options.matchday,
-    });
-    firestoreCircuitBreaker.recordFailure(err);
-    return {
-      fixtures: [],
-      total: 0,
-      hasMore: false,
-      limit: pageSize,
-      source: 'sqlite',
-      degraded: true,
-      stale: true,
-      errorCode: 'ADMIN_FIXTURES_DEGRADED',
-      generatedAt: new Date().toISOString(),
-    };
-  }
+  return {
+    fixtures: result.fixtures,
+    total: result.total,
+    hasMore: result.hasMore,
+    nextCursor: result.nextCursor,
+    limit: result.limit,
+    source: result.source,
+    degraded: result.degraded,
+    stale: result.stale,
+    errorCode: result.degraded ? 'ADMIN_FIXTURES_DEGRADED' : undefined,
+    generatedAt: result.generatedAt,
+  };
 }
 
 export async function getFixtureByIdFirestore(fixtureId: string, currentUserId?: string): Promise<Fixture | null> {

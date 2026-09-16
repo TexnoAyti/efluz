@@ -11,6 +11,7 @@ import {
 import { SEED_CLUBS } from '../db/seed';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
 import { verifyTelegramGroupMembership } from '../services/telegramBotService';
+import { invalidateClubReadModels, invalidateUserMembershipReadModel } from '../readModel/readModelStore';
 
 export const clubsRouter = Router();
 
@@ -273,6 +274,8 @@ clubsRouter.post('/:id/claim', requireAuth, async (req: Request, res: Response) 
 
   try {
     const result = await claimClubAtomicFirestore(userId, clubId, seasonId);
+    await invalidateClubReadModels(seasonId).catch(() => {});
+    await invalidateUserMembershipReadModel(userId, seasonId).catch(() => {});
     res.json({
       success: true,
       message: `Successfully claimed ${result.club.name}!`,

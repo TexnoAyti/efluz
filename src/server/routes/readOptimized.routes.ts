@@ -6,6 +6,7 @@ import {
   calculateCompetitionStandingsFirestore,
   getFixturesFirestore,
 } from '../firebase/firestoreStore';
+import { ReadModelNotWarmedError } from '../readModel/readModelStore';
 
 export const readOptimizedRouter = Router();
 
@@ -16,6 +17,10 @@ readOptimizedRouter.get('/leagues', async (req: Request, res: Response, next: Ne
     res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=600');
     res.json({ leagues });
   } catch (err: any) {
+    if (err instanceof ReadModelNotWarmedError || err?.errorCode === 'READ_MODEL_NOT_WARMED') {
+      res.status(503).json({ errorCode: 'READ_MODEL_NOT_WARMED', message: 'Read model is not warmed and database is unreachable' });
+      return;
+    }
     next(err);
   }
 });
@@ -28,6 +33,10 @@ readOptimizedRouter.get('/competitions', async (req: Request, res: Response, nex
     res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=600');
     res.json({ competitions });
   } catch (err: any) {
+    if (err instanceof ReadModelNotWarmedError || err?.errorCode === 'READ_MODEL_NOT_WARMED') {
+      res.status(503).json({ errorCode: 'READ_MODEL_NOT_WARMED', message: 'Read model is not warmed and database is unreachable' });
+      return;
+    }
     next(err);
   }
 });
@@ -42,6 +51,10 @@ readOptimizedRouter.get('/competitions/:id', async (req: Request, res: Response,
     res.setHeader('Cache-Control', 'public, max-age=30, s-maxage=120, stale-while-revalidate=300');
     res.json({ competition });
   } catch (err: any) {
+    if (err instanceof ReadModelNotWarmedError || err?.errorCode === 'READ_MODEL_NOT_WARMED') {
+      res.status(503).json({ errorCode: 'READ_MODEL_NOT_WARMED', message: 'Read model is not warmed and database is unreachable' });
+      return;
+    }
     next(err);
   }
 });
@@ -53,6 +66,10 @@ readOptimizedRouter.get('/competitions/:id/standings', async (req: Request, res:
     res.setHeader('Cache-Control', 'public, max-age=30, s-maxage=120, stale-while-revalidate=300');
     res.json({ standings });
   } catch (err: any) {
+    if (err instanceof ReadModelNotWarmedError || err?.errorCode === 'READ_MODEL_NOT_WARMED') {
+      res.status(503).json({ errorCode: 'READ_MODEL_NOT_WARMED', message: 'Read model is not warmed and database is unreachable' });
+      return;
+    }
     next(err);
   }
 });
@@ -70,6 +87,10 @@ readOptimizedRouter.get('/competitions/:id/fixtures', async (req: Request, res: 
     res.setHeader('Cache-Control', 'public, max-age=30, s-maxage=60, stale-while-revalidate=180');
     res.json({ fixtures });
   } catch (err: any) {
+    if (err instanceof ReadModelNotWarmedError || err?.errorCode === 'READ_MODEL_NOT_WARMED') {
+      res.status(503).json({ errorCode: 'READ_MODEL_NOT_WARMED', message: 'Read model is not warmed and database is unreachable' });
+      return;
+    }
     next(err);
   }
 });

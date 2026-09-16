@@ -705,11 +705,10 @@ export const AdminView: React.FC = () => {
         c.id.includes('ligue-1')
     );
 
-    // 2. Domestic Cups (6)
+    // 2. Domestic Cups (5)
     const domesticCups = competitions.filter(
       (c) =>
         c.id.includes('fa-cup') ||
-        c.id.includes('efl-cup') ||
         c.id.includes('copa-del-rey') ||
         c.id.includes('coppa-italia') ||
         c.id.includes('dfb-pokal') ||
@@ -2037,11 +2036,11 @@ export const AdminView: React.FC = () => {
             </div>
           </div>
 
-          {/* 2. DOMESTIC CUPS (6) */}
+          {/* 2. DOMESTIC CUPS (5) */}
           <div className="space-y-3 pt-2">
             <h3 className="text-xs font-black uppercase tracking-wider text-amber-400 flex items-center gap-2">
               <Trophy className="w-3.5 h-3.5" />
-              <span>National Cups (6) • FA Cup, EFL Cup, Copa del Rey, Coppa Italia, DFB-Pokal, Coupe de France</span>
+              <span>National Cups (5) • FA Cup, Copa del Rey, Coppa Italia, DFB-Pokal, Coupe de France</span>
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">

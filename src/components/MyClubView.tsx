@@ -252,7 +252,7 @@ export const MyClubView: React.FC<MyClubViewProps> = ({
               </div>
               <h4 className="text-base font-black text-white mb-1">
                 {currentClub.leagueId?.includes('premier')
-                  ? 'FA Cup & EFL Cup'
+                  ? 'FA Cup'
                   : currentClub.leagueId?.includes('la-liga')
                   ? 'Copa del Rey'
                   : currentClub.leagueId?.includes('serie-a')

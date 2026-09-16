@@ -26,6 +26,7 @@
     "test:standings": "tsx src/server/tests/standingsPreaggregationTest.ts",
     "test:ucl32-locking": "tsx src/server/tests/verifyUCL32AndMatchdayLocking.ts",
     "test:deployment-selfcheck": "tsx src/server/tests/deploymentSelfCheck.ts",
+    "test:read-model": "tsx src/server/tests/readModelAndSortingTest.ts",
     "test:quota-audit": "tsx src/server/tests/verifyQuotaResilienceAudit.ts",
     "audit:contamination:readonly": "tsx src/server/scripts/productionContaminationAudit.ts",
     "recovery:contamination:plan": "tsx src/server/scripts/applyProductionContaminationRecovery.ts --plan",
@@ -35,6 +36,7 @@
   "dependencies": {
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.1.14",
+    "@upstash/redis": "^1.38.4",
     "@vercel/analytics": "^2.0.1",
     "@vitejs/plugin-react": "^5.0.4",
     "canvas-confetti": "^1.9.4",
