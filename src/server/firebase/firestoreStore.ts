@@ -2,6 +2,7 @@ import { Firestore, FieldValue, FieldPath } from 'firebase-admin/firestore';
 import { getFirestoreDb } from './admin';
 import { queryAll, queryGet, queryRun, dbTransaction } from '../db';
 import { SEED_CLUBS, SEED_LEAGUES, SEED_COMPETITIONS, SEED_SEASONS, SEED_SEASON } from '../db/seed';
+export { firestoreCircuitBreaker, CircuitBreakerStatus } from './circuitBreaker';
 import { firestoreCircuitBreaker, CircuitBreakerStatus } from './circuitBreaker';
 import {
   updateOccupancyRecord,

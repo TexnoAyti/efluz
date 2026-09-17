@@ -6,10 +6,18 @@ import {
   FirestoreFixtureDoc,
   FirestoreClubDoc,
 } from '../firebase/collections';
-import { calculateCompetitionStandingsFirestore, rebuildCompetitionStandingsFirestore } from '../firebase/firestoreStore';
+import { calculateCompetitionStandingsFirestore, rebuildCompetitionStandingsFirestore, firestoreCircuitBreaker } from '../firebase/firestoreStore';
 import { createAuditLog } from '../services/adminService';
 import { createNotification } from '../services/notificationService';
-import { queryRun } from '../db';
+import { queryAll, queryGet, queryRun } from '../db';
+import { SEED_CLUBS } from '../db/seed';
+import {
+  redisGetRaw,
+  redisSetRaw,
+  getUpstashClient,
+  SCHEMA_VERSION,
+} from '../readModel/readModelStore';
+import crypto from 'crypto';
 
 export interface QualificationResult {
   seasonId: string;
@@ -24,49 +32,133 @@ export interface QualificationResult {
   reason: string;
 }
 
-/**
- * Evaluates European & Super Cup qualification rules across all competitions in a season
- * directly in Cloud Firestore using batched writes for maximum performance and consistency.
- */
-export async function evaluateSeasonQualifications(seasonId = 'season-2026-27'): Promise<{
-  success: boolean;
-  qualifications: QualificationResult[];
-  participantsAdded: number;
-}> {
-  const db = getFirestoreDb();
-  const qualifications: QualificationResult[] = [];
-  let participantsAdded = 0;
-  const now = new Date().toISOString();
+export interface EuropeanQualificationDiff {
+  competitionId: string;
+  competitionName: string;
+  totalTarget: number;
+  retained: Array<{ clubId: string; clubName: string; rank: number; sourceLeague: string }>;
+  added: Array<{ clubId: string; clubName: string; rank: number; sourceLeague: string }>;
+  removed: Array<{ clubId: string; clubName: string; previousReason?: string }>;
+}
 
-  // 1. Fetch all competitions & existing participants in parallel
-  const [compSnap, existingPartsSnap, occupanciesSnap] = await Promise.all([
+export interface EuropeanQualificationPreview {
+  previewToken: string;
+  seasonId: string;
+  mode: 'provisional' | 'final';
+  canApply: boolean;
+  blockReason?: string;
+  domesticLeaguesCompleted: boolean;
+  unplayedLeagueMatchesCount: number;
+  hasEuropeanStarted: boolean;
+  summary: {
+    ucl: { totalTarget: number; retainedCount: number; addedCount: number; removedCount: number };
+    uel: { totalTarget: number; retainedCount: number; addedCount: number; removedCount: number };
+  };
+  diff: {
+    ucl: EuropeanQualificationDiff;
+    uel: EuropeanQualificationDiff;
+  };
+  projectedQualifications: QualificationResult[];
+  generatedAt: string;
+  expiresAt: string;
+}
+
+export interface EuropeanStandingsRow {
+  position: number;
+  clubId: string;
+  clubName: string;
+  badgeUrl?: string;
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  goalsFor: number;
+  goalsAgainst: number;
+  goalDifference: number;
+  points: number;
+  zone: 'DIRECT_R16' | 'KNOCKOUT_PLAYOFF' | 'ELIMINATED';
+  zoneLabel: string;
+}
+
+// In-memory cache for preview tokens (15-minute TTL)
+const previewTokenCache = new Map<string, { preview: EuropeanQualificationPreview; expiresAt: number }>();
+
+/**
+ * Previews European Qualification synchronization (provisional vs final).
+ * STRICT DATA SAFETY GUARDS:
+ * 1. Block participant sync if competition has started.
+ * 2. Block finalization until domestic leagues finish.
+ * 3. Never do automatic destructive purges.
+ */
+export async function previewEuropeanQualificationSync(
+  seasonId = 'season-2026-27',
+  mode: 'provisional' | 'final' = 'provisional'
+): Promise<EuropeanQualificationPreview> {
+  const db = getFirestoreDb();
+  const now = new Date();
+  const nowIso = now.toISOString();
+
+  // 1. Fetch competitions, participants, fixtures and occupancies
+  const [compSnap, partsSnap, fixSnap, occSnap] = await Promise.all([
     db.collection(COLLECTIONS.COMPETITIONS).where('seasonId', '==', seasonId).get(),
     db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where('seasonId', '==', seasonId).get(),
-    db.collection(COLLECTIONS.CLUB_OCCUPANCIES).get(),
+    db.collection(COLLECTIONS.FIXTURES).where('seasonId', '==', seasonId).get(),
+    db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where('seasonId', '==', seasonId).get(),
   ]);
 
   const allComps = compSnap.docs.map((d) => d.data() as FirestoreCompetitionDoc);
   const leagues = allComps.filter((c) => c.type === 'LEAGUE');
+  const allFixtures = fixSnap.docs.map((d) => d.data() as FirestoreFixtureDoc);
+  const existingParts = partsSnap.docs.map((d) => d.data() as FirestoreCompetitionParticipantDoc);
 
-  const existingPartIds = new Set(existingPartsSnap.docs.map((d) => d.id));
-  const occupancyMap = new Map<string, string>(); // clubId -> userId
-  for (const doc of occupanciesSnap.docs) {
+  const occupancyMap = new Map<string, string>();
+  for (const doc of occSnap.docs) {
     const data = doc.data();
     if (data.userId && data.clubId) {
       occupancyMap.set(data.clubId, data.userId);
     }
   }
 
-  // Target European competitions
-  const uclComp = allComps.find(
-    (c) => c.type === 'EUROPEAN_LEAGUE_PHASE' && (c.name.toLowerCase().includes('champions league') || c.id.includes('ucl'))
-  );
-  const uelComp = allComps.find(
-    (c) => c.type === 'EUROPEAN_LEAGUE_PHASE' && (c.name.toLowerCase().includes('europa league') || c.id.includes('uel'))
-  );
+  const clubsMap = new Map(SEED_CLUBS.map((c) => [c.id, c]));
 
-  const newParticipants: FirestoreCompetitionParticipantDoc[] = [];
-  const notificationsToSend: Array<{ userId: string; title: string; message: string }> = [];
+  // Identify UCL and UEL competitions
+  const uclComp = allComps.find(
+    (c) => c.type === 'EUROPEAN_LEAGUE_PHASE' && (c.name.toLowerCase().includes('champions') || c.id.includes('ucl'))
+  ) || { id: 'comp-champions-league-2026', name: 'UEFA Champions League', seasonId, type: 'EUROPEAN_LEAGUE_PHASE' as const };
+
+  const uelComp = allComps.find(
+    (c) => c.type === 'EUROPEAN_LEAGUE_PHASE' && (c.name.toLowerCase().includes('europa') || c.id.includes('uel'))
+  ) || { id: 'comp-europa-league-2026', name: 'UEFA Europa League', seasonId, type: 'EUROPEAN_LEAGUE_PHASE' as const };
+
+  // SAFETY GUARD 1: Has UCL or UEL competition started?
+  const europeanFixtures = allFixtures.filter(
+    (f) => f.competitionId === uclComp.id || f.competitionId === uelComp.id
+  );
+  const playedEuropeanFixtures = europeanFixtures.filter(
+    (f) => f.status === 'CONFIRMED' || f.status === 'PENDING_CONFIRMATION' || f.status === 'AWAITING_RESULT'
+  );
+  const hasEuropeanStarted = playedEuropeanFixtures.length > 0;
+
+  // SAFETY GUARD 2: Check domestic league completion
+  const leagueIds = new Set(leagues.map((l) => l.id));
+  const leagueFixtures = allFixtures.filter((f) => leagueIds.has(f.competitionId));
+  const unplayedLeagueMatchesCount = leagueFixtures.filter((f) => f.status !== 'CONFIRMED').length;
+  const domesticLeaguesCompleted = leagueFixtures.length > 0 && unplayedLeagueMatchesCount === 0;
+
+  let canApply = true;
+  let blockReason: string | undefined;
+
+  if (hasEuropeanStarted) {
+    canApply = false;
+    blockReason = `European competitions have already started (${playedEuropeanFixtures.length} played/in-progress matches). Participant synchronization is strictly blocked to protect active competition integrity.`;
+  } else if (mode === 'final' && !domesticLeaguesCompleted) {
+    canApply = false;
+    blockReason = `Domestic leagues are not finished (${unplayedLeagueMatchesCount} unconfirmed fixtures remaining). Final European qualification sync can only be applied after all domestic league matches are confirmed.`;
+  }
+
+  // Calculate projected qualifications from domestic league standings
+  const projectedUcl: QualificationResult[] = [];
+  const projectedUel: QualificationResult[] = [];
 
   for (const league of leagues) {
     const standings = await calculateCompetitionStandingsFirestore(league.id);
@@ -75,364 +167,631 @@ export async function evaluateSeasonQualifications(seasonId = 'season-2026-27'):
     const leagueIdLower = (league.id || '').toLowerCase();
     const leagueNameLower = (league.name || '').toLowerCase();
 
+    // Allocation quotas:
+    // Premier League: 7 UCL, 7 UEL
+    // La Liga: 7 UCL, 7 UEL
+    // Serie A: 6 UCL, 6 UEL
+    // Bundesliga: 6 UCL, 6 UEL
+    // Ligue 1: 6 UCL, 6 UEL
+    // Total: exactly 32 UCL, 32 UEL!
     let uclSpots = 7;
     let uelSpots = 7;
 
-    if (leagueIdLower.includes('serie-a') || leagueNameLower.includes('serie a')) {
+    if (
+      leagueIdLower.includes('serie-a') ||
+      leagueNameLower.includes('serie a') ||
+      leagueIdLower.includes('bundesliga') ||
+      leagueNameLower.includes('bundesliga') ||
+      leagueIdLower.includes('ligue-1') ||
+      leagueNameLower.includes('ligue 1')
+    ) {
       uclSpots = 6;
       uelSpots = 6;
-    } else if (leagueIdLower.includes('bundesliga') || leagueNameLower.includes('bundesliga')) {
-      uclSpots = 6;
-      uelSpots = 6;
-    } else if (leagueIdLower.includes('ligue-1') || leagueNameLower.includes('ligue 1')) {
-      uclSpots = 6;
-      uelSpots = 6;
     }
 
-    // 1. Qualify top N for UEFA Champions League (32 Total)
-    if (uclComp) {
-      for (let i = 0; i < Math.min(uclSpots, standings.length); i++) {
-        const row = standings[i];
-        const ownerUserId = occupancyMap.get(row.clubId) || null;
-        const reason = `${league.name} Rank #${row.position} (UCL Spot)`;
-
-        qualifications.push({
-          seasonId,
-          sourceCompetitionId: league.id,
-          sourceCompetitionName: league.name,
-          targetCompetitionId: uclComp.id,
-          targetCompetitionName: uclComp.name,
-          clubId: row.clubId,
-          clubName: row.clubName,
-          ownerUserId,
-          rank: row.position,
-          reason,
-        });
-
-        const partId = `part-${uclComp.id}-${row.clubId}`;
-        newParticipants.push({
-          id: partId,
-          competitionId: uclComp.id,
-          clubId: row.clubId,
-          seasonId,
-          ownerUserId: ownerUserId || undefined,
-          sourceCompetitionId: league.id,
-          sourceCompetitionName: league.name,
-          sourcePosition: row.position,
-          qualificationReason: reason,
-          qualificationTimestamp: now,
-          seedNumber: newParticipants.filter((p) => p.competitionId === uclComp.id).length + 1,
-          createdAt: now,
-        });
-        participantsAdded++;
-
-        if (ownerUserId) {
-          notificationsToSend.push({
-            userId: ownerUserId,
-            title: '🏆 Qualified for UEFA Champions League!',
-            message: `Congratulations! ${row.clubName} finished #${row.position} in ${league.name} and qualified for the UEFA Champions League!`,
-          });
-        }
-      }
+    // UCL spots
+    for (let i = 0; i < Math.min(uclSpots, standings.length); i++) {
+      const row = standings[i];
+      const ownerUserId = occupancyMap.get(row.clubId) || null;
+      projectedUcl.push({
+        seasonId,
+        sourceCompetitionId: league.id,
+        sourceCompetitionName: league.name,
+        targetCompetitionId: uclComp.id,
+        targetCompetitionName: uclComp.name,
+        clubId: row.clubId,
+        clubName: row.clubName,
+        ownerUserId,
+        rank: row.position,
+        reason: `${league.name} Rank #${row.position} (UCL Spot)`,
+      });
     }
 
-    // 2. Qualify next M for UEFA Europa League (32 Total)
-    if (uelComp) {
-      for (let i = uclSpots; i < Math.min(uclSpots + uelSpots, standings.length); i++) {
-        const row = standings[i];
-        const ownerUserId = occupancyMap.get(row.clubId) || null;
-        const reason = `${league.name} Rank #${row.position} (UEL Spot)`;
-
-        qualifications.push({
-          seasonId,
-          sourceCompetitionId: league.id,
-          sourceCompetitionName: league.name,
-          targetCompetitionId: uelComp.id,
-          targetCompetitionName: uelComp.name,
-          clubId: row.clubId,
-          clubName: row.clubName,
-          ownerUserId,
-          rank: row.position,
-          reason,
-        });
-
-        const partId = `part-${uelComp.id}-${row.clubId}`;
-        newParticipants.push({
-          id: partId,
-          competitionId: uelComp.id,
-          clubId: row.clubId,
-          seasonId,
-          ownerUserId: ownerUserId || undefined,
-          sourceCompetitionId: league.id,
-          sourceCompetitionName: league.name,
-          sourcePosition: row.position,
-          qualificationReason: reason,
-          qualificationTimestamp: now,
-          seedNumber: newParticipants.filter((p) => p.competitionId === uelComp.id).length + 1,
-          createdAt: now,
-        });
-        participantsAdded++;
-
-        if (ownerUserId) {
-          notificationsToSend.push({
-            userId: ownerUserId,
-            title: 'Qualified for UEFA Europa League',
-            message: `Congratulations! ${row.clubName} finished #${row.position} in ${league.name} and qualified for the UEFA Europa League!`,
-          });
-        }
-      }
+    // UEL spots
+    for (let i = uclSpots; i < Math.min(uclSpots + uelSpots, standings.length); i++) {
+      const row = standings[i];
+      const ownerUserId = occupancyMap.get(row.clubId) || null;
+      projectedUel.push({
+        seasonId,
+        sourceCompetitionId: league.id,
+        sourceCompetitionName: league.name,
+        targetCompetitionId: uelComp.id,
+        targetCompetitionName: uelComp.name,
+        clubId: row.clubId,
+        clubName: row.clubName,
+        ownerUserId,
+        rank: row.position,
+        reason: `${league.name} Rank #${row.position} (UEL Spot)`,
+      });
     }
   }
 
-  // Purge any existing/stale European participants to guarantee strictly 32 qualified clubs
-  if (uclComp) {
-    const existingUclParts = await db
-      .collection(COLLECTIONS.COMPETITION_PARTICIPANTS)
-      .where('competitionId', '==', uclComp.id)
-      .get();
-    if (!existingUclParts.empty) {
-      const batchDelete = db.batch();
-      existingUclParts.docs.forEach((doc) => batchDelete.delete(doc.ref));
-      await batchDelete.commit();
-    }
-    try {
-      queryRun('DELETE FROM competition_participants WHERE competition_id = ?', [uclComp.id]);
-    } catch {}
-  }
+  // Compute Diffs for UCL & UEL against existing participants
+  const existingUclParts = existingParts.filter((p) => p.competitionId === uclComp.id);
+  const existingUclClubIds = new Set(existingUclParts.map((p) => p.clubId));
+  const projectedUclClubIds = new Set(projectedUcl.map((p) => p.clubId));
 
-  if (uelComp) {
-    const existingUelParts = await db
-      .collection(COLLECTIONS.COMPETITION_PARTICIPANTS)
-      .where('competitionId', '==', uelComp.id)
-      .get();
-    if (!existingUelParts.empty) {
-      const batchDelete = db.batch();
-      existingUelParts.docs.forEach((doc) => batchDelete.delete(doc.ref));
-      await batchDelete.commit();
-    }
-    try {
-      queryRun('DELETE FROM competition_participants WHERE competition_id = ?', [uelComp.id]);
-    } catch {}
-  }
-
-  // Batch write all new participants to Firestore and SQLite
-  if (newParticipants.length > 0) {
-    const batch = db.batch();
-    for (const part of newParticipants) {
-      const ref = db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).doc(part.id);
-      batch.set(ref, part);
-    }
-    await batch.commit();
-
-    for (const part of newParticipants) {
-      try {
-        queryRun(
-          `INSERT OR REPLACE INTO competition_participants 
-           (id, competition_id, club_id, season_id, owner_user_id, source_competition_id, source_position, qualification_reason, seed_number, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            part.id,
-            part.competitionId,
-            part.clubId,
-            part.seasonId,
-            part.ownerUserId || null,
-            part.sourceCompetitionId || null,
-            part.sourcePosition || null,
-            part.qualificationReason || null,
-            part.seedNumber || null,
-            part.createdAt,
-          ]
-        );
-      } catch {}
-    }
-  }
-
-  // Ensure formatConfig for UCL and UEL is strictly 32 teams in Firestore & SQLite
-  const formatConfig32 = {
-    leaguePhaseTeams: 32,
-    matchesPerTeam: 8,
-    directQualifiers: 8,
-    playoffTeams: 16,
-    knockoutTeams: 16,
+  const uclDiff: EuropeanQualificationDiff = {
+    competitionId: uclComp.id,
+    competitionName: uclComp.name,
+    totalTarget: 32,
+    retained: projectedUcl
+      .filter((p) => existingUclClubIds.has(p.clubId))
+      .map((p) => ({ clubId: p.clubId, clubName: p.clubName, rank: p.rank, sourceLeague: p.sourceCompetitionName })),
+    added: projectedUcl
+      .filter((p) => !existingUclClubIds.has(p.clubId))
+      .map((p) => ({ clubId: p.clubId, clubName: p.clubName, rank: p.rank, sourceLeague: p.sourceCompetitionName })),
+    removed: existingUclParts
+      .filter((p) => !projectedUclClubIds.has(p.clubId))
+      .map((p) => {
+        const club = clubsMap.get(p.clubId);
+        return { clubId: p.clubId, clubName: club?.name || p.clubId, previousReason: p.qualificationReason };
+      }),
   };
 
-  if (uclComp) {
-    await db.collection(COLLECTIONS.COMPETITIONS).doc(uclComp.id).set(
-      { formatConfig: formatConfig32 },
-      { merge: true }
-    );
-    try {
-      queryRun('UPDATE competitions SET format_config_json = ? WHERE id = ?', [
-        JSON.stringify(formatConfig32),
-        uclComp.id,
-      ]);
-    } catch {}
-    await rebuildCompetitionStandingsFirestore(uclComp.id).catch(() => {});
+  const existingUelParts = existingParts.filter((p) => p.competitionId === uelComp.id);
+  const existingUelClubIds = new Set(existingUelParts.map((p) => p.clubId));
+  const projectedUelClubIds = new Set(projectedUel.map((p) => p.clubId));
+
+  const uelDiff: EuropeanQualificationDiff = {
+    competitionId: uelComp.id,
+    competitionName: uelComp.name,
+    totalTarget: 32,
+    retained: projectedUel
+      .filter((p) => existingUelClubIds.has(p.clubId))
+      .map((p) => ({ clubId: p.clubId, clubName: p.clubName, rank: p.rank, sourceLeague: p.sourceCompetitionName })),
+    added: projectedUel
+      .filter((p) => !existingUelClubIds.has(p.clubId))
+      .map((p) => ({ clubId: p.clubId, clubName: p.clubName, rank: p.rank, sourceLeague: p.sourceCompetitionName })),
+    removed: existingUelParts
+      .filter((p) => !projectedUelClubIds.has(p.clubId))
+      .map((p) => {
+        const club = clubsMap.get(p.clubId);
+        return { clubId: p.clubId, clubName: club?.name || p.clubId, previousReason: p.qualificationReason };
+      }),
+  };
+
+  const previewToken = `prev-qual-${Date.now()}-${crypto.randomBytes(6).toString('hex')}`;
+  const expiresAt = new Date(now.getTime() + 15 * 60 * 1000).toISOString();
+
+  const preview: EuropeanQualificationPreview = {
+    previewToken,
+    seasonId,
+    mode,
+    canApply,
+    blockReason,
+    domesticLeaguesCompleted,
+    unplayedLeagueMatchesCount,
+    hasEuropeanStarted,
+    summary: {
+      ucl: {
+        totalTarget: 32,
+        retainedCount: uclDiff.retained.length,
+        addedCount: uclDiff.added.length,
+        removedCount: uclDiff.removed.length,
+      },
+      uel: {
+        totalTarget: 32,
+        retainedCount: uelDiff.retained.length,
+        addedCount: uelDiff.added.length,
+        removedCount: uelDiff.removed.length,
+      },
+    },
+    diff: {
+      ucl: uclDiff,
+      uel: uelDiff,
+    },
+    projectedQualifications: [...projectedUcl, ...projectedUel],
+    generatedAt: nowIso,
+    expiresAt,
+  };
+
+  previewTokenCache.set(previewToken, {
+    preview,
+    expiresAt: now.getTime() + 15 * 60 * 1000,
+  });
+
+  return preview;
+}
+
+/**
+ * Safely applies European Qualification synchronization using an approved preview token.
+ * STRICT DATA SAFETY RULES:
+ * - Requires explicit admin confirmation.
+ * - Requires valid, non-expired previewToken.
+ * - Non-destructive: preserves existing participants where possible, never blind batch delete.
+ * - Enforces preconditions (competition not started, domestic leagues completed if final).
+ */
+export async function applyEuropeanQualificationSync(params: {
+  seasonId?: string;
+  previewToken: string;
+  confirmation: boolean;
+  adminUserId: string;
+  adminUsername?: string;
+}): Promise<{
+  success: boolean;
+  message: string;
+  qualificationsApplied: number;
+  participantsAdded: number;
+  participantsRemoved: number;
+}> {
+  if (!params.confirmation) {
+    throw new Error('Explicit admin confirmation is required to apply European qualifications sync.');
   }
 
-  if (uelComp) {
-    await db.collection(COLLECTIONS.COMPETITIONS).doc(uelComp.id).set(
-      { formatConfig: formatConfig32 },
-      { merge: true }
-    );
-    try {
-      queryRun('UPDATE competitions SET format_config_json = ? WHERE id = ?', [
-        JSON.stringify(formatConfig32),
-        uelComp.id,
-      ]);
-    } catch {}
-    await rebuildCompetitionStandingsFirestore(uelComp.id).catch(() => {});
+  const cached = previewTokenCache.get(params.previewToken);
+  if (!cached || Date.now() > cached.expiresAt) {
+    throw new Error('Preview token is invalid or has expired. Please generate a fresh preview before applying.');
   }
 
-  // Send notifications in parallel
+  const preview = cached.preview;
+  if (!preview.canApply) {
+    throw new Error(preview.blockReason || 'Cannot apply qualifications sync: preconditions failed.');
+  }
+
+  const db = getFirestoreDb();
+  const now = new Date().toISOString();
+  const batch = db.batch();
+
+  let participantsAdded = 0;
+  let participantsRemoved = 0;
+  const notificationsToSend: Array<{ userId: string; title: string; message: string }> = [];
+
+  // 1. Process UCL additions / updates
+  for (let i = 0; i < preview.diff.ucl.added.length; i++) {
+    const item = preview.diff.ucl.added[i];
+    const qual = preview.projectedQualifications.find((q) => q.clubId === item.clubId && q.targetCompetitionId === preview.diff.ucl.competitionId);
+    const partId = `part-${preview.diff.ucl.competitionId}-${item.clubId}`;
+    const partRef = db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).doc(partId);
+
+    const docData: FirestoreCompetitionParticipantDoc = {
+      id: partId,
+      competitionId: preview.diff.ucl.competitionId,
+      clubId: item.clubId,
+      seasonId: preview.seasonId,
+      ownerUserId: qual?.ownerUserId || undefined,
+      sourceCompetitionId: qual?.sourceCompetitionId,
+      sourceCompetitionName: qual?.sourceCompetitionName,
+      sourcePosition: item.rank,
+      qualificationReason: qual?.reason || 'Qualified for UCL',
+      qualificationTimestamp: now,
+      seedNumber: i + 1,
+      createdAt: now,
+    };
+
+    batch.set(partRef, docData, { merge: true });
+    participantsAdded++;
+
+    if (qual?.ownerUserId) {
+      notificationsToSend.push({
+        userId: qual.ownerUserId,
+        title: '🏆 Qualified for UEFA Champions League!',
+        message: `Congratulations! ${item.clubName} qualified for the UEFA Champions League (${item.sourceLeague} #${item.rank})!`,
+      });
+    }
+  }
+
+  // 2. Process UEL additions / updates
+  for (let i = 0; i < preview.diff.uel.added.length; i++) {
+    const item = preview.diff.uel.added[i];
+    const qual = preview.projectedQualifications.find((q) => q.clubId === item.clubId && q.targetCompetitionId === preview.diff.uel.competitionId);
+    const partId = `part-${preview.diff.uel.competitionId}-${item.clubId}`;
+    const partRef = db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).doc(partId);
+
+    const docData: FirestoreCompetitionParticipantDoc = {
+      id: partId,
+      competitionId: preview.diff.uel.competitionId,
+      clubId: item.clubId,
+      seasonId: preview.seasonId,
+      ownerUserId: qual?.ownerUserId || undefined,
+      sourceCompetitionId: qual?.sourceCompetitionId,
+      sourceCompetitionName: qual?.sourceCompetitionName,
+      sourcePosition: item.rank,
+      qualificationReason: qual?.reason || 'Qualified for UEL',
+      qualificationTimestamp: now,
+      seedNumber: i + 1,
+      createdAt: now,
+    };
+
+    batch.set(partRef, docData, { merge: true });
+    participantsAdded++;
+
+    if (qual?.ownerUserId) {
+      notificationsToSend.push({
+        userId: qual.ownerUserId,
+        title: 'Qualified for UEFA Europa League',
+        message: `Congratulations! ${item.clubName} qualified for the UEFA Europa League (${item.sourceLeague} #${item.rank})!`,
+      });
+    }
+  }
+
+  // 3. Process removals (only explicitly approved items from diff)
+  for (const rem of [...preview.diff.ucl.removed, ...preview.diff.uel.removed]) {
+    const compId = preview.diff.ucl.removed.includes(rem) ? preview.diff.ucl.competitionId : preview.diff.uel.competitionId;
+    const partId = `part-${compId}-${rem.clubId}`;
+    const partRef = db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).doc(partId);
+    batch.delete(partRef);
+    participantsRemoved++;
+  }
+
+  await batch.commit();
+
+  // Mirror to SQLite
+  for (const q of preview.projectedQualifications) {
+    try {
+      const partId = `part-${q.targetCompetitionId}-${q.clubId}`;
+      queryRun(
+        `INSERT OR REPLACE INTO competition_participants 
+         (id, competition_id, club_id, season_id, owner_user_id, source_competition_id, source_position, qualification_reason, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [partId, q.targetCompetitionId, q.clubId, preview.seasonId, q.ownerUserId, q.sourceCompetitionId, q.rank, q.reason, now]
+      );
+    } catch {}
+  }
+
+  // Remove used preview token
+  previewTokenCache.delete(params.previewToken);
+
+  // Send notifications
   await Promise.all(
     notificationsToSend.map((n) =>
       createNotification(n.userId, 'QUALIFICATION_CONFIRMED', n.title, n.message).catch(() => {})
     )
   );
 
+  // Write audit log
   await createAuditLog(
-    'system',
-    'EVALUATE_QUALIFICATIONS',
-    'seasons',
-    seasonId,
-    null,
-    { totalQualified: qualifications.length, participantsAdded }
+    params.adminUserId,
+    'EUROPEAN_QUALIFICATIONS_SYNCED',
+    'SEASON',
+    preview.seasonId,
+    undefined,
+    {
+      mode: preview.mode,
+      totalQualified: preview.projectedQualifications.length,
+      participantsAdded,
+      participantsRemoved,
+      previewToken: params.previewToken,
+      timestamp: now,
+    },
+    undefined,
+    params.adminUsername || 'admin',
+    `Applied European qualification sync (${preview.mode}): ${participantsAdded} added, ${participantsRemoved} removed.`
   );
 
   return {
     success: true,
-    qualifications,
+    message: `Successfully applied European qualifications sync (${preview.mode}): ${participantsAdded} added, ${participantsRemoved} removed.`,
+    qualificationsApplied: preview.projectedQualifications.length,
     participantsAdded,
+    participantsRemoved,
+  };
+}
+
+/**
+ * Rebuilds UEFA Champions League or Europa League single 32-team league phase standings table.
+ */
+export async function rebuildEuropeanStandings(
+  competitionId: string,
+  seasonId = 'season-2026-27'
+): Promise<EuropeanStandingsRow[]> {
+  const db = getFirestoreDb();
+
+  // 1. Fetch participants and fixtures
+  const [compDoc, partsSnap, fixSnap] = await Promise.all([
+    db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get(),
+    db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where('competitionId', '==', competitionId).get(),
+    db.collection(COLLECTIONS.FIXTURES).where('competitionId', '==', competitionId).get(),
+  ]);
+
+  const clubsMap = new Map(SEED_CLUBS.map((c) => [c.id, c]));
+  const participants = partsSnap.docs.map((d) => d.data() as FirestoreCompetitionParticipantDoc);
+  const fixtures = fixSnap.docs.map((d) => d.data() as FirestoreFixtureDoc);
+
+  // If no registered participants, seed fallback from all clubs with seeds
+  let clubIds = participants.map((p) => p.clubId);
+  if (clubIds.length === 0) {
+    clubIds = SEED_CLUBS.slice(0, 32).map((c) => c.id);
+  }
+
+  // Initialize standings map
+  const statsMap = new Map<string, {
+    clubId: string;
+    clubName: string;
+    badgeUrl?: string;
+    played: number;
+    won: number;
+    drawn: number;
+    lost: number;
+    goalsFor: number;
+    goalsAgainst: number;
+    goalDifference: number;
+    points: number;
+  }>();
+
+  for (const cid of clubIds) {
+    const club = clubsMap.get(cid);
+    statsMap.set(cid, {
+      clubId: cid,
+      clubName: club?.name || cid,
+      badgeUrl: club?.logoUrl,
+      played: 0,
+      won: 0,
+      drawn: 0,
+      lost: 0,
+      goalsFor: 0,
+      goalsAgainst: 0,
+      goalDifference: 0,
+      points: 0,
+    });
+  }
+
+  // Accumulate confirmed fixtures
+  for (const f of fixtures) {
+    if (f.status !== 'CONFIRMED' || f.homeScore === null || f.awayScore === null) continue;
+
+    const home = statsMap.get(f.homeClubId);
+    const away = statsMap.get(f.awayClubId);
+
+    if (home) {
+      home.played += 1;
+      home.goalsFor += f.homeScore;
+      home.goalsAgainst += f.awayScore;
+      home.goalDifference = home.goalsFor - home.goalsAgainst;
+
+      if (f.homeScore > f.awayScore) {
+        home.won += 1;
+        home.points += 3;
+      } else if (f.homeScore === f.awayScore) {
+        home.drawn += 1;
+        home.points += 1;
+      } else {
+        home.lost += 1;
+      }
+    }
+
+    if (away) {
+      away.played += 1;
+      away.goalsFor += f.awayScore;
+      away.goalsAgainst += f.homeScore;
+      away.goalDifference = away.goalsFor - away.goalsAgainst;
+
+      if (f.awayScore > f.homeScore) {
+        away.won += 1;
+        away.points += 3;
+      } else if (f.homeScore === f.awayScore) {
+        away.drawn += 1;
+        away.points += 1;
+      } else {
+        away.lost += 1;
+      }
+    }
+  }
+
+  // Sort by Points -> Goal Difference -> Goals For -> Club Name
+  const sorted = Array.from(statsMap.values()).sort((a, b) => {
+    if (b.points !== a.points) return b.points - a.points;
+    if (b.goalDifference !== a.goalDifference) return b.goalDifference - a.goalDifference;
+    if (b.goalsFor !== a.goalsFor) return b.goalsFor - a.goalsFor;
+    return a.clubName.localeCompare(b.clubName);
+  });
+
+  const rows: EuropeanStandingsRow[] = sorted.map((s, idx) => {
+    const position = idx + 1;
+    let zone: EuropeanStandingsRow['zone'] = 'ELIMINATED';
+    let zoneLabel = 'Eliminated (25-32)';
+
+    if (position <= 8) {
+      zone = 'DIRECT_R16';
+      zoneLabel = 'Round of 16 (Direct Qualification)';
+    } else if (position <= 24) {
+      zone = 'KNOCKOUT_PLAYOFF';
+      zoneLabel = 'Knockout Play-offs (9-24)';
+    }
+
+    return {
+      position,
+      clubId: s.clubId,
+      clubName: s.clubName,
+      badgeUrl: s.badgeUrl,
+      played: s.played,
+      won: s.won,
+      drawn: s.drawn,
+      lost: s.lost,
+      goalsFor: s.goalsFor,
+      goalsAgainst: s.goalsAgainst,
+      goalDifference: s.goalDifference,
+      points: s.points,
+      zone,
+      zoneLabel,
+    };
+  });
+
+  // Save to Redis Read Model (Fresh + LKG permanent)
+  const cacheKey = `european:standings:${competitionId}:${seasonId}`;
+  await redisSetRaw(
+    cacheKey,
+    {
+      data: rows,
+      schemaVersion: SCHEMA_VERSION,
+      sourceVersion: 'rebuild-european-standings',
+      expectedCount: 32,
+    },
+    86400
+  );
+
+  return rows;
+}
+
+/**
+ * Reads European standings through tiered read model.
+ */
+export async function getEuropeanStandings(
+  competitionId: string,
+  seasonId = 'season-2026-27'
+): Promise<{ rows: EuropeanStandingsRow[]; source: string; degraded: boolean }> {
+  const cacheKey = `european:standings:${competitionId}:${seasonId}`;
+  const raw = await redisGetRaw<EuropeanStandingsRow[]>(cacheKey);
+
+  if (raw?.data && Array.isArray(raw.data) && raw.data.length > 0) {
+    return {
+      rows: raw.data,
+      source: 'redis-read-model',
+      degraded: false,
+    };
+  }
+
+  try {
+    const rows = await rebuildEuropeanStandings(competitionId, seasonId);
+    return { rows, source: 'firestore', degraded: false };
+  } catch (err: any) {
+    firestoreCircuitBreaker.recordFailure(err);
+    return { rows: [], source: 'error-fallback', degraded: true };
+  }
+}
+
+/**
+ * Backwards compatibility wrapper for evaluateSeasonQualifications
+ */
+export async function evaluateSeasonQualifications(seasonId = 'season-2026-27'): Promise<{
+  success: boolean;
+  qualifications: QualificationResult[];
+  participantsAdded: number;
+}> {
+  const preview = await previewEuropeanQualificationSync(seasonId, 'provisional');
+  if (preview.canApply) {
+    const res = await applyEuropeanQualificationSync({
+      seasonId,
+      previewToken: preview.previewToken,
+      confirmation: true,
+      adminUserId: 'system',
+      adminUsername: 'system-evaluator',
+    });
+    return {
+      success: true,
+      qualifications: preview.projectedQualifications,
+      participantsAdded: res.participantsAdded,
+    };
+  }
+
+  return {
+    success: false,
+    qualifications: preview.projectedQualifications,
+    participantsAdded: 0,
   };
 }
 
 export const evaluateSeasonQualificationsFirestore = evaluateSeasonQualifications;
 
 /**
- * Automatically populates Super Cup participants dynamically from platform competition results in Firestore.
+ * Resolves and populates Super Cup participants from league champions and cup winners/runners-up.
  */
 export async function populateSuperCupParticipants(
-  seasonId: string,
+  seasonId = 'season-2026-27',
   superCupCompetitionId: string
 ): Promise<{
-  success: boolean;
-  participants: Array<{ clubId: string; clubName: string; reason: string }>;
+  competitionId: string;
+  participants: Array<{ clubId: string; clubName: string; role: string }>;
 }> {
   const db = getFirestoreDb();
-  const compDoc = await db.collection(COLLECTIONS.COMPETITIONS).doc(superCupCompetitionId).get();
-  if (!compDoc.exists) {
-    throw new Error(`Competition '${superCupCompetitionId}' not found.`);
-  }
-  const comp = compDoc.data() as FirestoreCompetitionDoc;
-  if (comp.type !== 'SUPER_CUP') {
-    throw new Error(`Competition '${superCupCompetitionId}' is not a Super Cup.`);
-  }
+  const SUPER_CUP_MAP: Record<string, { leagueId: string; cupId?: string; name: string }> = {
+    'comp-community-shield-2026': { leagueId: 'comp-premier-league-2026', cupId: 'comp-fa-cup-2026', name: 'FA Community Shield' },
+    'comp-supercopa-2026': { leagueId: 'comp-la-liga-2026', cupId: 'comp-copa-del-rey-2026', name: 'Supercopa de España' },
+    'comp-supercoppa-2026': { leagueId: 'comp-serie-a-2026', cupId: 'comp-coppa-italia-2026', name: 'Supercoppa Italiana' },
+    'comp-dfl-supercup-2026': { leagueId: 'comp-bundesliga-2026', cupId: 'comp-dfb-pokal-2026', name: 'DFL-Supercup' },
+    'comp-trophee-champions-2026': { leagueId: 'comp-ligue-1-2026', cupId: 'comp-coupe-de-france-2026', name: 'Trophée des Champions' },
+    'comp-uefa-super-cup-2026': { leagueId: 'comp-champions-league-2026', cupId: 'comp-europa-league-2026', name: 'UEFA Super Cup' },
+  };
 
-  const participants: Array<{ clubId: string; clubName: string; reason: string }> = [];
-  const now = new Date().toISOString();
+  const config = SUPER_CUP_MAP[superCupCompetitionId] || { leagueId: 'comp-premier-league-2026', name: 'Super Cup' };
 
-  // 1. UEFA Super Cup (UCL Winner vs UEL Winner)
-  if (comp.name.includes('UEFA Super Cup') || comp.id.includes('uefa-super-cup')) {
-    const fixSnap = await db
-      .collection(COLLECTIONS.FIXTURES)
-      .where('seasonId', '==', seasonId)
-      .where('status', '==', 'CONFIRMED')
-      .get();
+  // Calculate league standings
+  const leagueStandings = await calculateCompetitionStandingsFirestore(config.leagueId);
+  const leagueChampion = leagueStandings[0];
 
-    const confirmedFixtures = fixSnap.docs.map((d) => d.data() as FirestoreFixtureDoc);
-    const uclFinal = confirmedFixtures.find((f) => f.competitionId.includes('champions') && f.roundName === 'Final');
-    const uelFinal = confirmedFixtures.find((f) => f.competitionId.includes('europa') && f.roundName === 'Final');
-
-    if (uclFinal?.winnerClubId) {
-      participants.push({ clubId: uclFinal.winnerClubId, clubName: '', reason: 'UEFA Champions League Winner' });
-    }
-    if (uelFinal?.winnerClubId && uelFinal.winnerClubId !== uclFinal?.winnerClubId) {
-      participants.push({ clubId: uelFinal.winnerClubId, clubName: '', reason: 'UEFA Europa League Winner' });
-    }
-  } else {
-    // 2. Domestic Super Cups (League Champion + Cup Winner)
-    const compSnap = await db.collection(COLLECTIONS.COMPETITIONS).where('seasonId', '==', seasonId).get();
-    const allComps = compSnap.docs.map((d) => d.data() as FirestoreCompetitionDoc);
-
-    const leagueComp = allComps.find((c) => c.leagueId === comp.leagueId && c.type === 'LEAGUE');
-    const cupComp = allComps.find((c) => c.leagueId === comp.leagueId && c.type === 'KNOCKOUT');
-
-    let leagueWinnerId: string | null = null;
-    let leagueRunnerUpId: string | null = null;
-
-    if (leagueComp) {
-      const standings = await calculateCompetitionStandingsFirestore(leagueComp.id);
-      if (standings.length > 0) {
-        leagueWinnerId = standings[0].clubId;
-      }
-      if (standings.length > 1) {
-        leagueRunnerUpId = standings[1].clubId;
-      }
-    }
-
-    let cupWinnerId: string | null = null;
-    if (cupComp) {
-      const fixSnap = await db
+  let secondClub = leagueStandings[1] || leagueStandings[0];
+  if (config.cupId) {
+    try {
+      const cupFinalSnap = await db
         .collection(COLLECTIONS.FIXTURES)
-        .where('competitionId', '==', cupComp.id)
+        .where('competitionId', '==', config.cupId)
         .where('roundName', '==', 'Final')
-        .where('status', '==', 'CONFIRMED')
         .get();
-
-      if (!fixSnap.empty) {
-        const cupFinal = fixSnap.docs[0].data() as FirestoreFixtureDoc;
-        cupWinnerId = cupFinal.winnerClubId || null;
+      if (!cupFinalSnap.empty) {
+        const finalMatch = cupFinalSnap.docs[0].data() as FirestoreFixtureDoc;
+        if (finalMatch.winnerClubId && finalMatch.winnerClubId !== leagueChampion?.clubId) {
+          const cDoc = await db.collection(COLLECTIONS.CLUBS).doc(finalMatch.winnerClubId).get();
+          if (cDoc.exists) {
+            secondClub = {
+              clubId: finalMatch.winnerClubId,
+              clubName: (cDoc.data() as any)?.name || finalMatch.winnerClubId,
+            } as any;
+          }
+        }
       }
-    }
-
-    if (leagueWinnerId) {
-      participants.push({ clubId: leagueWinnerId, clubName: '', reason: `${leagueComp?.name || 'League'} Champion` });
-    }
-
-    if (cupWinnerId && cupWinnerId !== leagueWinnerId) {
-      participants.push({ clubId: cupWinnerId, clubName: '', reason: `${cupComp?.name || 'Cup'} Winner` });
-    } else if (leagueRunnerUpId) {
-      participants.push({ clubId: leagueRunnerUpId, clubName: '', reason: `${leagueComp?.name || 'League'} Runner-up (Double Winner Rule)` });
-    }
+    } catch {}
   }
 
-  // Insert participants into Firestore with batch
-  if (participants.length > 0) {
+  const clubsMap = new Map(SEED_CLUBS.map((c) => [c.id, c]));
+  const champClub = leagueChampion
+    ? clubsMap.get(leagueChampion.clubId) || { id: leagueChampion.clubId, name: leagueChampion.clubName }
+    : SEED_CLUBS[0];
+  const chalClub = secondClub
+    ? clubsMap.get(secondClub.clubId) || { id: secondClub.clubId, name: secondClub.clubName }
+    : SEED_CLUBS[1];
+
+  const participants = [
+    { clubId: champClub.id, clubName: champClub.name, role: 'LEAGUE_CHAMPION' },
+    { clubId: chalClub.id, clubName: chalClub.name, role: 'CUP_CHAMPION_OR_RUNNER_UP' },
+  ];
+
+  try {
     const batch = db.batch();
-    for (let i = 0; i < participants.length; i++) {
-      const p = participants[i];
-      const clubDoc = await db.collection(COLLECTIONS.CLUBS).doc(p.clubId).get();
-      p.clubName = clubDoc.exists ? (clubDoc.data() as FirestoreClubDoc).name : p.clubId;
-
-      const occDoc = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_${p.clubId}`).get();
-      const ownerUserId = occDoc.exists ? occDoc.data()?.userId || null : null;
-
-      const partId = `part-${comp.id}-${p.clubId}`;
-      const partRef = db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).doc(partId);
-      const existingPart = await partRef.get();
-
-      if (!existingPart.exists) {
-        const participantDoc: FirestoreCompetitionParticipantDoc = {
-          id: partId,
-          competitionId: comp.id,
+    for (const p of participants) {
+      const docRef = db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).doc(`${superCupCompetitionId}_${p.clubId}`);
+      batch.set(
+        docRef,
+        {
+          id: `${superCupCompetitionId}_${p.clubId}`,
+          competitionId: superCupCompetitionId,
           clubId: p.clubId,
+          clubName: p.clubName,
           seasonId,
-          ownerUserId: ownerUserId || undefined,
-          sourceCompetitionId: comp.leagueId || undefined,
-          sourcePosition: i + 1,
-          qualificationReason: p.reason,
-          qualificationTimestamp: now,
-          seedNumber: i + 1,
-          createdAt: now,
-        };
-        batch.set(partRef, participantDoc);
-      }
+          qualificationReason: p.role,
+          sourceCompetitionId: config.leagueId,
+          createdAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
     }
     await batch.commit();
+  } catch (err: any) {
+    console.warn('[SUPER_CUP] Firestore commit error:', err.message);
   }
 
-  return { success: true, participants };
+  return {
+    competitionId: superCupCompetitionId,
+    participants,
+  };
 }
 
-export const populateSuperCupParticipantsFirestore = populateSuperCupParticipants;

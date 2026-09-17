@@ -61,9 +61,13 @@ import {
   ShieldCheck,
   Ban,
   UserX,
+  Send,
 } from 'lucide-react';
+import { AdminDomesticCupsTab } from './admin/AdminDomesticCupsTab';
+import { AdminEuropeanTab } from './admin/AdminEuropeanTab';
+import { AdminTelegramTab } from './admin/AdminTelegramTab';
 
-type AdminTab = 'overview' | 'clubs' | 'matches' | 'results' | 'competitions' | 'users' | 'system';
+type AdminTab = 'overview' | 'clubs' | 'matches' | 'results' | 'competitions' | 'domestic_cups' | 'european' | 'telegram' | 'users' | 'system';
 
 interface PendingFixtureItem extends Fixture {
   submissions?: {
@@ -932,6 +936,48 @@ export const AdminView: React.FC = () => {
         >
           <Trophy className="w-4 h-4" />
           <span>19 Competitions</span>
+        </button>
+
+        {/* 5A. DOMESTIC CUPS */}
+        <button
+          id="tab-admin-domestic-cups"
+          onClick={() => setActiveAdminTab('domestic_cups')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all min-h-[40px] ${
+            activeAdminTab === 'domestic_cups'
+              ? 'bg-amber-500 text-slate-950 font-black shadow-lg shadow-amber-500/25 scale-[1.02]'
+              : 'glass-card text-slate-300 hover:text-white'
+          }`}
+        >
+          <Trophy className="w-4 h-4 text-amber-400" />
+          <span>Domestic Cups (5)</span>
+        </button>
+
+        {/* 5B. EUROPEAN (UCL & UEL) */}
+        <button
+          id="tab-admin-european"
+          onClick={() => setActiveAdminTab('european')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all min-h-[40px] ${
+            activeAdminTab === 'european'
+              ? 'bg-blue-600 text-white font-black shadow-lg shadow-blue-600/25 scale-[1.02]'
+              : 'glass-card text-slate-300 hover:text-white'
+          }`}
+        >
+          <Globe2 className="w-4 h-4 text-blue-300" />
+          <span>UCL & UEL (32)</span>
+        </button>
+
+        {/* 5C. TELEGRAM NOTIFICATIONS */}
+        <button
+          id="tab-admin-telegram"
+          onClick={() => setActiveAdminTab('telegram')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all min-h-[40px] ${
+            activeAdminTab === 'telegram'
+              ? 'bg-sky-500 text-slate-950 font-black shadow-lg shadow-sky-500/25 scale-[1.02]'
+              : 'glass-card text-slate-300 hover:text-white'
+          }`}
+        >
+          <Send className="w-4 h-4 text-sky-400" />
+          <span>Telegram Bot</span>
         </button>
 
         {/* 6. PLAYERS */}
@@ -2241,6 +2287,21 @@ export const AdminView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ========================================================================= */}
+      {/* 5A. DOMESTIC CUPS SECTION */}
+      {/* ========================================================================= */}
+      {activeAdminTab === 'domestic_cups' && <AdminDomesticCupsTab />}
+
+      {/* ========================================================================= */}
+      {/* 5B. UCL / UEL STANDINGS & QUALIFICATIONS SECTION */}
+      {/* ========================================================================= */}
+      {activeAdminTab === 'european' && <AdminEuropeanTab />}
+
+      {/* ========================================================================= */}
+      {/* 5C. TELEGRAM NOTIFICATIONS SECTION */}
+      {/* ========================================================================= */}
+      {activeAdminTab === 'telegram' && <AdminTelegramTab />}
 
       {/* ========================================================================= */}
       {/* 6. PLAYERS & ROSTER SECTION */}

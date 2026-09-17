@@ -175,7 +175,7 @@ const inFlightLoaders = new Map<string, Promise<any>>();
 // Track last snapshot generation timestamp
 let globalLastSnapshotAt: string | null = null;
 
-function getUpstashClient(): Redis | null {
+export function getUpstashClient(): Redis | null {
   if (upstashClient) return upstashClient;
   const url = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;

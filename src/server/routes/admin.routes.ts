@@ -49,7 +49,27 @@ import { SEED_CLUBS, SEED_LEAGUES } from '../db/seed';
 import { migrateSqliteToFirestore } from '../firebase/migrateSqliteToFirestore';
 import { processPendingMutations } from '../sync/mutationQueue';
 import { generateKnockoutBracket } from '../tournament/knockoutEngine';
-import { evaluateSeasonQualifications } from '../tournament/qualificationEngine';
+import {
+  evaluateSeasonQualifications,
+  previewEuropeanQualificationSync,
+  applyEuropeanQualificationSync,
+  rebuildEuropeanStandings,
+  getEuropeanStandings,
+} from '../tournament/qualificationEngine';
+import {
+  DOMESTIC_CUPS,
+  getDomesticCupDetails,
+  previewDomesticCupBracket,
+  generateDomesticCupBracketSafe,
+  advanceDomesticCupWinnerSafe,
+} from '../tournament/domesticCupService';
+import {
+  getSafeEligibleRecipients,
+  enqueueTelegramBroadcast,
+  processNotificationQueue,
+  getBroadcastHistory,
+  getBroadcastDetails,
+} from '../services/telegramNotificationQueue';
 import { getFirebaseStatus, getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS } from '../firebase/collections';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
@@ -1108,6 +1128,243 @@ adminRouter.get('/read-model/health', async (req: Request, res: Response) => {
     });
   }
 });
+
+// ----------------------------------------------------
+// 1. DOMESTIC CUP ADMINISTRATION ENDPOINTS
+// ----------------------------------------------------
+
+adminRouter.get('/cups', async (req: Request, res: Response) => {
+  try {
+    const cups = Object.values(DOMESTIC_CUPS);
+    res.json({ cups });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+adminRouter.get('/cups/:cupId', async (req: Request, res: Response) => {
+  const cupId = req.params.cupId;
+  const seasonId = (req.query.seasonId as string) || 'season-2026-27';
+
+  try {
+    const details = await getDomesticCupDetails(cupId, seasonId);
+    res.json(details);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+adminRouter.post('/cups/:cupId/bracket/preview', async (req: Request, res: Response) => {
+  const cupId = req.params.cupId;
+  const seasonId = (req.body.seasonId as string) || 'season-2026-27';
+
+  try {
+    const preview = await previewDomesticCupBracket(cupId, seasonId);
+    res.json(preview);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+adminRouter.post('/cups/:cupId/bracket/generate', async (req: Request, res: Response) => {
+  const cupId = req.params.cupId;
+  const adminUserId = req.user!.id;
+  const adminUsername = req.user?.username || 'admin';
+  const confirmation = Boolean(req.body.confirmation);
+  const seasonId = req.body.seasonId || 'season-2026-27';
+
+  try {
+    const result = await generateDomesticCupBracketSafe(cupId, {
+      adminUserId,
+      adminUsername,
+      confirmation,
+      seasonId,
+    });
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+adminRouter.post('/cups/matches/:fixtureId/advance', async (req: Request, res: Response) => {
+  const fixtureId = req.params.fixtureId;
+  const adminUserId = req.user!.id;
+  const adminUsername = req.user?.username || 'admin';
+
+  try {
+    const result = await advanceDomesticCupWinnerSafe(fixtureId, {
+      adminUserId,
+      adminUsername,
+    });
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// ----------------------------------------------------
+// 2. UCL/UEL STANDINGS & QUALIFICATION PROJECTIONS
+// ----------------------------------------------------
+
+adminRouter.get('/european/standings', async (req: Request, res: Response) => {
+  const competitionId = (req.query.competitionId as string) || 'comp-champions-league-2026';
+  const seasonId = (req.query.seasonId as string) || 'season-2026-27';
+
+  try {
+    const result = await getEuropeanStandings(competitionId, seasonId);
+    res.json({
+      competitionId,
+      seasonId,
+      standings: result.rows,
+      source: result.source,
+      degraded: result.degraded,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+adminRouter.post('/european/standings/rebuild', async (req: Request, res: Response) => {
+  const competitionId = req.body.competitionId || 'comp-champions-league-2026';
+  const seasonId = req.body.seasonId || 'season-2026-27';
+
+  try {
+    const rows = await rebuildEuropeanStandings(competitionId, seasonId);
+    res.json({
+      success: true,
+      competitionId,
+      seasonId,
+      totalTeams: rows.length,
+      standings: rows,
+      message: `Rebuilt 32-team standings for ${competitionId}.`,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+adminRouter.get('/european/qualification/preview', async (req: Request, res: Response) => {
+  const seasonId = (req.query.seasonId as string) || 'season-2026-27';
+  const mode = (req.query.mode as 'provisional' | 'final') || 'provisional';
+
+  try {
+    const preview = await previewEuropeanQualificationSync(seasonId, mode);
+    res.json(preview);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+adminRouter.post('/european/qualification/apply', async (req: Request, res: Response) => {
+  const adminUserId = req.user!.id;
+  const adminUsername = req.user?.username || 'admin';
+  const { previewToken, confirmation, seasonId } = req.body;
+
+  if (!previewToken) {
+    res.status(400).json({ error: 'previewToken is required' });
+    return;
+  }
+
+  try {
+    const result = await applyEuropeanQualificationSync({
+      seasonId,
+      previewToken,
+      confirmation: Boolean(confirmation),
+      adminUserId,
+      adminUsername,
+    });
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// ----------------------------------------------------
+// 3. ADMIN-SELECTED TELEGRAM BOT NOTIFICATIONS
+// ----------------------------------------------------
+
+adminRouter.get('/telegram-notifications/recipients', async (req: Request, res: Response) => {
+  const audience = req.query.audience as string | undefined;
+  const leagueId = req.query.leagueId as string | undefined;
+  const seasonId = (req.query.seasonId as string) || 'season-2026-27';
+
+  try {
+    // STRICT DATA SAFETY RULE: telegramId is completely omitted in response!
+    const recipients = await getSafeEligibleRecipients({ audience, leagueId }, seasonId);
+    res.json({
+      total: recipients.length,
+      recipients,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+adminRouter.post('/telegram-notifications/broadcast', async (req: Request, res: Response) => {
+  const adminUserId = req.user!.id;
+  const adminUsername = req.user?.username || 'admin';
+  const { title, body, type, targetAudience, targetLeagueId, selectedUserIds, seasonId } = req.body;
+
+  if (!title || !body) {
+    res.status(400).json({ error: 'Title and message body are required' });
+    return;
+  }
+
+  try {
+    const record = await enqueueTelegramBroadcast({
+      adminUserId,
+      adminUsername,
+      title,
+      body,
+      type: type || 'CUSTOM_ALERT',
+      targetAudience: targetAudience || 'ALL_USERS',
+      targetLeagueId,
+      selectedUserIds,
+      seasonId,
+    });
+
+    res.json({
+      success: true,
+      message: `Enqueued broadcast '${title}' for ${record.metrics.totalRecipients} recipients.`,
+      broadcast: record,
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+adminRouter.get('/telegram-notifications/broadcasts', async (req: Request, res: Response) => {
+  const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
+  try {
+    const broadcasts = await getBroadcastHistory(limit);
+    res.json({ broadcasts });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+adminRouter.get('/telegram-notifications/broadcasts/:id', async (req: Request, res: Response) => {
+  try {
+    const broadcast = await getBroadcastDetails(req.params.id);
+    if (!broadcast) {
+      res.status(404).json({ error: 'Broadcast not found' });
+      return;
+    }
+    res.json({ broadcast });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+adminRouter.post('/telegram-notifications/process-queue', async (req: Request, res: Response) => {
+  try {
+    const result = await processNotificationQueue(50);
+    res.json({ success: true, result });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 
 

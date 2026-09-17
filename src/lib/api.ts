@@ -949,5 +949,137 @@ export const api = {
       skipCache: true,
     });
   },
+
+  // --------------------------------------------------------------------------
+  // DOMESTIC CUP ADMINISTRATION
+  // --------------------------------------------------------------------------
+  async getDomesticCups(): Promise<{ cups: Array<{ id: string; name: string; country: string; leagueId: string; expectedTeams: number }> }> {
+    return request('/api/admin/cups', { cacheTtlMs: 30000 });
+  },
+
+  async getDomesticCupDetails(cupId: string, seasonId = 'season-2026-27'): Promise<any> {
+    return request(`/api/admin/cups/${cupId}?seasonId=${seasonId}`, { skipCache: true });
+  },
+
+  async previewDomesticCupBracket(cupId: string, seasonId = 'season-2026-27'): Promise<any> {
+    return request(`/api/admin/cups/${cupId}/bracket/preview`, {
+      method: 'POST',
+      body: JSON.stringify({ seasonId }),
+      skipCache: true,
+    });
+  },
+
+  async generateDomesticCupBracket(cupId: string, confirmation: boolean, seasonId = 'season-2026-27'): Promise<any> {
+    const res = await request(`/api/admin/cups/${cupId}/bracket/generate`, {
+      method: 'POST',
+      body: JSON.stringify({ confirmation, seasonId }),
+      skipCache: true,
+    });
+    invalidateClientCache();
+    return res;
+  },
+
+  async advanceDomesticCupWinner(fixtureId: string): Promise<any> {
+    const res = await request(`/api/admin/cups/matches/${fixtureId}/advance`, {
+      method: 'POST',
+      skipCache: true,
+    });
+    invalidateClientCache();
+    return res;
+  },
+
+  // --------------------------------------------------------------------------
+  // EUROPEAN STANDINGS & QUALIFICATION PROJECTIONS
+  // --------------------------------------------------------------------------
+  async getEuropeanStandings(competitionId = 'comp-champions-league-2026', seasonId = 'season-2026-27'): Promise<{
+    competitionId: string;
+    seasonId: string;
+    standings: any[];
+    source: string;
+    degraded: boolean;
+  }> {
+    return request(`/api/admin/european/standings?competitionId=${competitionId}&seasonId=${seasonId}`, {
+      skipCache: true,
+    });
+  },
+
+  async rebuildEuropeanStandings(competitionId = 'comp-champions-league-2026', seasonId = 'season-2026-27'): Promise<any> {
+    const res = await request('/api/admin/european/standings/rebuild', {
+      method: 'POST',
+      body: JSON.stringify({ competitionId, seasonId }),
+      skipCache: true,
+    });
+    invalidateClientCache();
+    return res;
+  },
+
+  async previewEuropeanQualification(seasonId = 'season-2026-27', mode: 'provisional' | 'final' = 'provisional'): Promise<any> {
+    return request(`/api/admin/european/qualification/preview?seasonId=${seasonId}&mode=${mode}`, {
+      skipCache: true,
+    });
+  },
+
+  async applyEuropeanQualification(params: { previewToken: string; confirmation: boolean; seasonId?: string }): Promise<any> {
+    const res = await request('/api/admin/european/qualification/apply', {
+      method: 'POST',
+      body: JSON.stringify(params),
+      skipCache: true,
+    });
+    invalidateClientCache();
+    return res;
+  },
+
+  // --------------------------------------------------------------------------
+  // ADMIN TELEGRAM BOT NOTIFICATIONS
+  // --------------------------------------------------------------------------
+  async getNotificationRecipients(params?: { audience?: string; leagueId?: string; seasonId?: string }): Promise<{
+    total: number;
+    recipients: Array<{
+      userId: string;
+      username: string;
+      displayName: string;
+      clubId?: string;
+      clubName?: string;
+      leagueId?: string;
+      leagueName?: string;
+      hasTelegram: boolean;
+      messageable: boolean;
+    }>;
+  }> {
+    const query = new URLSearchParams();
+    if (params?.audience) query.set('audience', params.audience);
+    if (params?.leagueId) query.set('leagueId', params.leagueId);
+    if (params?.seasonId) query.set('seasonId', params.seasonId);
+
+    return request(`/api/admin/telegram-notifications/recipients?${query.toString()}`, { skipCache: true });
+  },
+
+  async sendTelegramBroadcast(params: {
+    title: string;
+    body: string;
+    type: string;
+    targetAudience: string;
+    targetLeagueId?: string;
+    selectedUserIds?: string[];
+    seasonId?: string;
+  }): Promise<{ success: boolean; message: string; broadcast: any }> {
+    return request('/api/admin/telegram-notifications/broadcast', {
+      method: 'POST',
+      body: JSON.stringify(params),
+      skipCache: true,
+    });
+  },
+
+  async getTelegramBroadcasts(limit = 20): Promise<{ broadcasts: any[] }> {
+    return request(`/api/admin/telegram-notifications/broadcasts?limit=${limit}`, { skipCache: true });
+  },
+
+  async getTelegramBroadcastDetails(broadcastId: string): Promise<{ broadcast: any }> {
+    return request(`/api/admin/telegram-notifications/broadcasts/${broadcastId}`, { skipCache: true });
+  },
+
+  async processTelegramQueue(): Promise<any> {
+    return request('/api/admin/telegram-notifications/process-queue', { method: 'POST', skipCache: true });
+  },
 };
 
