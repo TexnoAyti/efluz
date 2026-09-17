@@ -9,6 +9,7 @@ import {
 } from '../firebase/firestoreStore';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
 import { setOwnershipSensitiveHeaders } from '../middleware/ownershipCacheControl';
+import { getUserActiveClubFromReadModel } from '../readModel/readModelStore';
 
 export const meRouter = Router();
 export const meResilientRouter = meRouter;
@@ -24,7 +25,7 @@ meRouter.get('/', requireAuth, async (req: Request, res: Response) => {
   const seasonId = (req.query.seasonId as string) || 'season-2026-27';
 
   try {
-    const currentClub = await getUserActiveClubFirestore(user.id, seasonId);
+    const currentClub = (await getUserActiveClubFromReadModel(user.id, seasonId)) || (await getUserActiveClubFirestore(user.id, seasonId));
 
     const stats = {
       matchesPlayed: 0,

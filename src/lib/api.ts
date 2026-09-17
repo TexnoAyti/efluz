@@ -937,5 +937,17 @@ export const api = {
   async triggerSync(): Promise<{ success: boolean; result: any }> {
     return request('/api/health/sync', { method: 'POST', skipCache: true });
   },
+
+  async getReadModelHealth(seasonId = 'season-2026-27'): Promise<any> {
+    return request<any>(`/api/admin/read-model/health?seasonId=${seasonId}`, { skipCache: true });
+  },
+
+  async rebuildReadModels(seasonId = 'season-2026-27'): Promise<any> {
+    return request<any>('/api/admin/read-model/rebuild', {
+      method: 'POST',
+      body: JSON.stringify({ seasonId }),
+      skipCache: true,
+    });
+  },
 };
 

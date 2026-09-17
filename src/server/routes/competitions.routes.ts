@@ -11,14 +11,25 @@ import {
   getCompetitionMatchdayLocksFirestore,
 } from '../firebase/firestoreStore';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
+import {
+  getCompetitionsFromReadModel,
+  getCompetitionStandingsFromReadModel,
+  getCompetitionFixturesFromReadModel,
+} from '../readModel/readModelStore';
 
 export const competitionsRouter = Router();
 
 competitionsRouter.get('/', async (req: Request, res: Response) => {
   const seasonId = (req.query.seasonId as string) || 'season-2026-27';
   try {
-    const competitions = await getAllCompetitionsFirestore(seasonId);
-    res.json({ competitions });
+    const result = await getCompetitionsFromReadModel(seasonId);
+    res.json({
+      competitions: result.competitions,
+      source: result.source,
+      stale: result.stale,
+      degraded: result.degraded,
+      snapshotAt: result.snapshotAt,
+    });
   } catch (err: any) {
     handleFirestoreError(res, err, 'GET /api/competitions');
   }
@@ -47,9 +58,16 @@ competitionsRouter.get('/:id/participants', async (req: Request, res: Response) 
 });
 
 competitionsRouter.get('/:id/standings', async (req: Request, res: Response) => {
+  const seasonId = (req.query.seasonId as string) || 'season-2026-27';
   try {
-    const standings = await calculateCompetitionStandingsFirestore(req.params.id);
-    res.json({ standings });
+    const result = await getCompetitionStandingsFromReadModel(req.params.id, seasonId);
+    res.json({
+      standings: result.standings,
+      source: result.source,
+      stale: result.stale,
+      degraded: result.degraded,
+      snapshotAt: result.snapshotAt,
+    });
   } catch (err: any) {
     handleFirestoreError(res, err, `GET /api/competitions/${req.params.id}/standings`);
   }
@@ -58,14 +76,21 @@ competitionsRouter.get('/:id/standings', async (req: Request, res: Response) => 
 competitionsRouter.get('/:id/fixtures', async (req: Request, res: Response) => {
   const matchday = req.query.matchday ? parseInt(req.query.matchday as string, 10) : undefined;
   const status = req.query.status as string | undefined;
+  const seasonId = (req.query.seasonId as string) || 'season-2026-27';
 
   try {
-    const fixtures = await getFixturesFirestore({
-      competitionId: req.params.id,
+    const result = await getCompetitionFixturesFromReadModel(req.params.id, {
       matchday,
       status,
+      seasonId,
     });
-    res.json({ fixtures });
+    res.json({
+      fixtures: result.fixtures,
+      source: result.source,
+      stale: result.stale,
+      degraded: result.degraded,
+      snapshotAt: result.snapshotAt,
+    });
   } catch (err: any) {
     handleFirestoreError(res, err, `GET /api/competitions/${req.params.id}/fixtures`);
   }

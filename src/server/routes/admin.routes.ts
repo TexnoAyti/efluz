@@ -58,6 +58,7 @@ import { queryAll, queryGet } from '../db/index';
 import {
   rebuildAllReadModels,
   getReadModelHealthStatus,
+  getAdminClubsFromReadModel,
   invalidateClubReadModels,
   invalidateFixtureReadModels,
   invalidateStandingsReadModels,
@@ -223,41 +224,23 @@ adminRouter.get('/clubs', async (req: Request, res: Response) => {
   const seasonId = (req.query.seasonId as string) || 'season-2026-27';
   const leagueId = req.query.leagueId as string | undefined;
 
-  let targetLeagues = SEED_LEAGUES;
-  if (leagueId && leagueId !== 'ALL') {
-    targetLeagues = SEED_LEAGUES.filter((l) => l.id === leagueId);
-  }
-
-  if (!firestoreCircuitBreaker.canExecute()) {
-    const clubs = targetLeagues.flatMap((l) =>
-      SEED_CLUBS.filter((c) => c.leagueId === l.id).map((c) => ({
-        ...c,
-        seasonId,
-        isOccupied: false,
-        occupiedByUserId: null,
-      }))
-    );
-    res.json({ clubs, total: clubs.length, source: 'sqlite', degraded: true, stale: true });
-    return;
-  }
-
   try {
-    const clubsByLeague = await Promise.all(
-      targetLeagues.map((l) => getClubsByLeagueFirestore(l.id, seasonId))
-    );
-    const clubs = clubsByLeague.flat();
-    res.json({ clubs, total: clubs.length, source: 'firestore', degraded: false, stale: false });
+    const result = await getAdminClubsFromReadModel(seasonId, leagueId);
+    res.json({
+      clubs: result.clubs,
+      total: result.total,
+      source: result.source,
+      degraded: result.degraded,
+      stale: result.stale,
+      generatedAt: result.snapshotAt,
+    });
   } catch (err: any) {
-    firestoreCircuitBreaker.recordFailure(err);
-    const clubs = targetLeagues.flatMap((l) =>
-      SEED_CLUBS.filter((c) => c.leagueId === l.id).map((c) => ({
-        ...c,
-        seasonId,
-        isOccupied: false,
-        occupiedByUserId: null,
-      }))
-    );
-    res.json({ clubs, total: clubs.length, source: 'sqlite', degraded: true, stale: true });
+    console.error('[ADMIN_CLUBS_ERROR]', err);
+    res.status(503).json({
+      errorCode: 'READ_MODEL_ERROR',
+      message: err.message || 'Failed to retrieve admin clubs read model',
+      generatedAt: new Date().toISOString(),
+    });
   }
 });
 

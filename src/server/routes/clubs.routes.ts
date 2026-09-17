@@ -11,7 +11,12 @@ import {
 import { SEED_CLUBS } from '../db/seed';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
 import { verifyTelegramGroupMembership } from '../services/telegramBotService';
-import { invalidateClubReadModels, invalidateUserMembershipReadModel } from '../readModel/readModelStore';
+import {
+  invalidateClubReadModels,
+  invalidateUserMembershipReadModel,
+  getAvailableClubsFromReadModel,
+  getClubByIdFromReadModel,
+} from '../readModel/readModelStore';
 
 export const clubsRouter = Router();
 
@@ -161,8 +166,14 @@ clubsRouter.get('/available', async (req: Request, res: Response) => {
   const seasonId = (req.query.seasonId as string) || 'season-2026-27';
   const currentUserId = req.user?.id;
   try {
-    const clubs = await getAvailableClubsFirestore(seasonId, currentUserId);
-    res.json({ clubs });
+    const result = await getAvailableClubsFromReadModel(seasonId, currentUserId);
+    res.json({
+      clubs: result.clubs,
+      source: result.source,
+      stale: result.stale,
+      degraded: result.degraded,
+      snapshotAt: result.snapshotAt,
+    });
   } catch (err: any) {
     handleFirestoreError(res, err, 'GET /api/clubs/available');
   }
@@ -228,12 +239,17 @@ clubsRouter.get('/:id', async (req: Request, res: Response) => {
   const seasonId = (req.query.seasonId as string) || 'season-2026-27';
   const currentUserId = req.user?.id;
   try {
-    const club = await getClubByIdFirestore(req.params.id, seasonId, currentUserId);
-    if (!club) {
+    const result = await getClubByIdFromReadModel(req.params.id, seasonId, currentUserId);
+    if (!result.club) {
       res.status(404).json({ error: 'Club not found', code: 'NOT_FOUND', message: `Club '${req.params.id}' not found.` });
       return;
     }
-    res.json({ club });
+    res.json({
+      club: result.club,
+      source: result.source,
+      stale: result.stale,
+      degraded: result.degraded,
+    });
   } catch (err: any) {
     handleFirestoreError(res, err, `GET /api/clubs/${req.params.id}`);
   }

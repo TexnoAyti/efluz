@@ -1,7 +1,8 @@
 import { Router, Request, Response } from 'express';
-import { getAllLeaguesFirestore, getClubsByLeagueFirestore } from '../firebase/firestoreStore';
+import { getAllLeaguesFirestore } from '../firebase/firestoreStore';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
 import { setOwnershipSensitiveHeaders } from '../middleware/ownershipCacheControl';
+import { getLeagueClubsFromReadModel } from '../readModel/readModelStore';
 
 export const leaguesRouter = Router();
 
@@ -48,8 +49,14 @@ leaguesRouter.get('/:id/clubs', async (req: Request, res: Response) => {
   const currentUserId = req.user?.id;
 
   try {
-    const clubs = await getClubsByLeagueFirestore(leagueId, seasonId, currentUserId);
-    res.json({ clubs });
+    const result = await getLeagueClubsFromReadModel(leagueId, seasonId, currentUserId);
+    res.json({
+      clubs: result.clubs,
+      source: result.source,
+      stale: result.stale,
+      degraded: result.degraded,
+      snapshotAt: result.snapshotAt,
+    });
   } catch (err: any) {
     handleFirestoreError(res, err, `GET /api/leagues/${req.params.id}/clubs`);
   }

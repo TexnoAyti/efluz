@@ -173,6 +173,11 @@ export const AdminView: React.FC = () => {
   const [isValidatingFixtures, setIsValidatingFixtures] = useState(false);
   const [showValidationModal, setShowValidationModal] = useState(false);
 
+  // Read Model Health & Rebuild State
+  const [readModelHealth, setReadModelHealth] = useState<any>(null);
+  const [isRebuildingReadModels, setIsRebuildingReadModels] = useState(false);
+  const [readModelRebuildMsg, setReadModelRebuildMsg] = useState<string | null>(null);
+
   const [loadedTabs, setLoadedTabs] = useState<Set<string>>(new Set());
 
   const loadTabData = async (tab: AdminTab, skipCache = false) => {
@@ -248,8 +253,12 @@ export const AdminView: React.FC = () => {
         const usersRes = await api.getAdminUsers(skipCache).catch(() => ({ users: [] }));
         if (usersRes?.users) setUsers(usersRes.users);
       } else if (tab === 'system') {
-        const diagRes = await api.getAdminDiagnostics().catch(() => null);
+        const [diagRes, rmHealthRes] = await Promise.all([
+          api.getAdminDiagnostics().catch(() => null),
+          api.getReadModelHealth(activeSeasonId).catch(() => null),
+        ]);
         if (diagRes) setDiagnostics(diagRes);
+        if (rmHealthRes) setReadModelHealth(rmHealthRes);
       }
 
       setLoadedTabs((prev) => new Set(prev).add(tab));
@@ -258,6 +267,25 @@ export const AdminView: React.FC = () => {
       setError("Couldn't load some administrative records. Please click refresh.");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleRebuildReadModels = async () => {
+    setIsRebuildingReadModels(true);
+    setReadModelRebuildMsg(null);
+    try {
+      const res = await api.rebuildReadModels(activeSeasonId);
+      if (res?.success) {
+        setReadModelRebuildMsg(`Rebuilt ${res.rebuiltKeys?.length || 0} models successfully in ${res.durationMs || 0}ms.`);
+        const updatedHealth = await api.getReadModelHealth(activeSeasonId).catch(() => null);
+        if (updatedHealth) setReadModelHealth(updatedHealth);
+      } else {
+        setReadModelRebuildMsg(`Rebuild failed: ${res?.error || 'Unknown error'}`);
+      }
+    } catch (err: any) {
+      setReadModelRebuildMsg(`Rebuild failed: ${err.message}`);
+    } finally {
+      setIsRebuildingReadModels(false);
     }
   };
 
@@ -2453,6 +2481,188 @@ export const AdminView: React.FC = () => {
                   </div>
                 </div>
               </div>
+            )}
+          </div>
+
+          {/* Redis Read-Model Health & Rebuild Panel */}
+          <div className="glass-panel p-4 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/[0.08] pb-3">
+              <div>
+                <h2 className="text-sm font-black text-white flex items-center gap-2">
+                  <Database className="w-4 h-4 text-sky-400" />
+                  <span>Redis Read-Model Health &amp; Snapshots</span>
+                </h2>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Inspect dual-key Redis read models (fresh with TTL + permanent LKG fallback) and trigger on-demand rebuilds.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => loadTabData('system', true)}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all"
+                  title="Refresh read model health"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Refresh</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRebuildReadModels}
+                  disabled={isRebuildingReadModels}
+                  className="px-3.5 py-1.5 bg-sky-500 hover:bg-sky-400 text-slate-950 rounded-xl text-xs font-black shadow flex items-center gap-1.5 transition-all disabled:opacity-50"
+                  title="Rebuild all Redis read models from Firestore"
+                >
+                  {isRebuildingReadModels ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Rebuilding...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Rebuild Read Models</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {readModelRebuildMsg && (
+              <div className="p-3 rounded-xl bg-sky-500/10 border border-sky-500/30 text-xs text-sky-300 flex items-center gap-2">
+                <Info className="w-4 h-4 shrink-0 text-sky-400" />
+                <span>{readModelRebuildMsg}</span>
+              </div>
+            )}
+
+            {readModelHealth ? (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
+                    <div className="text-[10px] uppercase font-black text-slate-500">Read-Model Status</div>
+                    <div className="text-xs font-black mt-1 flex items-center gap-1.5">
+                      {readModelHealth.status === 'HEALTHY' ? (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                          <span className="text-emerald-400">HEALTHY</span>
+                        </>
+                      ) : readModelHealth.status === 'DEGRADED' ? (
+                        <>
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                          <span className="text-amber-400">DEGRADED</span>
+                        </>
+                      ) : (
+                        <>
+                          <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                          <span className="text-rose-400">DOWN</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
+                    <div className="text-[10px] uppercase font-black text-slate-500">Redis Connectivity</div>
+                    <div className="text-xs font-black mt-1">
+                      {readModelHealth.redisConnected ? (
+                        <span className="text-emerald-400">CONNECTED</span>
+                      ) : (
+                        <span className="text-rose-400">DISCONNECTED</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
+                    <div className="text-[10px] uppercase font-black text-slate-500">Total Datasets</div>
+                    <div className="text-xs font-black text-white mt-1">
+                      {readModelHealth.totalKeys ?? readModelHealth.datasets?.length ?? 0} Models
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
+                    <div className="text-[10px] uppercase font-black text-slate-500">Last Rebuild</div>
+                    <div className="text-xs font-mono font-bold text-slate-300 mt-1 truncate">
+                      {readModelHealth.lastRebuildAt
+                        ? new Date(readModelHealth.lastRebuildAt).toLocaleTimeString()
+                        : 'Never'}
+                    </div>
+                  </div>
+                </div>
+
+                {readModelHealth.recommendation && (
+                  <div className="text-[11px] text-slate-400 bg-slate-950/40 px-3 py-2 rounded-lg border border-white/[0.04]">
+                    <span className="font-bold text-slate-300">Recommendation:</span> {readModelHealth.recommendation}
+                  </div>
+                )}
+
+                <div className="overflow-x-auto rounded-xl border border-white/[0.06]">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-white/[0.08] text-[10px] uppercase font-black text-slate-400 bg-slate-950/60">
+                        <th className="p-2.5">Dataset</th>
+                        <th className="p-2.5">Redis Key</th>
+                        <th className="p-2.5">Fresh Cache</th>
+                        <th className="p-2.5">LKG Snapshot</th>
+                        <th className="p-2.5">Memory</th>
+                        <th className="p-2.5">State</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/[0.04] bg-slate-950/30 font-mono text-[11px]">
+                      {readModelHealth.datasets?.map((ds: any) => (
+                        <tr key={ds.key} className="hover:bg-white/[0.02]">
+                          <td className="p-2.5 font-bold text-white font-sans">{ds.name}</td>
+                          <td className="p-2.5 text-slate-400">{ds.key}</td>
+                          <td className="p-2.5">
+                            {ds.hasFresh ? (
+                              <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                                TTL: {ds.freshTtlSeconds}s
+                              </span>
+                            ) : (
+                              <span className="text-slate-600 text-[10px]">expired</span>
+                            )}
+                          </td>
+                          <td className="p-2.5">
+                            {ds.hasLkg ? (
+                              <span className="text-sky-400 font-bold">
+                                YES <span className="text-slate-500 text-[10px]">({Math.round(ds.lkgSizeBytes / 1024)} KB)</span>
+                              </span>
+                            ) : (
+                              <span className="text-rose-400 text-[10px]">MISSING</span>
+                            )}
+                          </td>
+                          <td className="p-2.5">
+                            {ds.inMemory ? (
+                              <span className="text-emerald-400 font-bold">CACHED</span>
+                            ) : (
+                              <span className="text-slate-600">cold</span>
+                            )}
+                          </td>
+                          <td className="p-2.5">
+                            {ds.isDirty ? (
+                              <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                                DIRTY
+                              </span>
+                            ) : ds.hasFresh ? (
+                              <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                                FRESH
+                              </span>
+                            ) : ds.hasLkg ? (
+                              <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-sky-500/10 text-sky-400 border border-sky-500/30">
+                                LKG STALE
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/30">
+                                UNWARMED
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              <div className="text-xs text-slate-500 py-4 text-center">Loading read-model status...</div>
             )}
           </div>
 
