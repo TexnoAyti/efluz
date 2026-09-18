@@ -14,7 +14,9 @@ import { SEED_CLUBS } from '../db/seed';
 import {
   redisGetRaw,
   redisSetRaw,
+  redisDelRaw,
   getUpstashClient,
+  ReadModelKeys,
   SCHEMA_VERSION,
 } from '../readModel/readModelStore';
 import crypto from 'crypto';
@@ -80,8 +82,66 @@ export interface EuropeanStandingsRow {
   zoneLabel: string;
 }
 
-// In-memory cache for preview tokens (15-minute TTL)
+// ----------------------------------------------------
+// REDIS PREVIEW TOKEN STORE (15-Minute TTL)
+// ----------------------------------------------------
+const PREVIEW_TOKEN_REDIS_PREFIX = 'qualification:preview:';
+const PREVIEW_TOKEN_TTL_SECONDS = 900; // 15 minutes
 const previewTokenCache = new Map<string, { preview: EuropeanQualificationPreview; expiresAt: number }>();
+
+export async function saveQualificationPreviewToken(
+  token: string,
+  preview: EuropeanQualificationPreview
+): Promise<void> {
+  const key = `${PREVIEW_TOKEN_REDIS_PREFIX}${token}`;
+  const payload = {
+    preview,
+    token,
+    expiresAt: Date.now() + PREVIEW_TOKEN_TTL_SECONDS * 1000,
+  };
+  const client = getUpstashClient();
+  if (client) {
+    try {
+      await client.set(key, payload, { ex: PREVIEW_TOKEN_TTL_SECONDS });
+    } catch (err: any) {
+      console.warn(`[QUALIFICATION] Failed to write preview token to Upstash Redis:`, err?.message || err);
+    }
+  }
+  previewTokenCache.set(token, payload);
+}
+
+export async function getQualificationPreviewToken(
+  token: string
+): Promise<EuropeanQualificationPreview | null> {
+  const key = `${PREVIEW_TOKEN_REDIS_PREFIX}${token}`;
+  const client = getUpstashClient();
+  if (client) {
+    try {
+      const data = await client.get<any>(key);
+      if (data && data.preview) {
+        return data.preview;
+      }
+    } catch (err: any) {
+      console.warn(`[QUALIFICATION] Failed to read preview token from Upstash Redis:`, err?.message || err);
+    }
+  }
+  const mem = previewTokenCache.get(token);
+  if (mem && Date.now() <= mem.expiresAt) {
+    return mem.preview;
+  }
+  return null;
+}
+
+export async function deleteQualificationPreviewToken(token: string): Promise<void> {
+  const key = `${PREVIEW_TOKEN_REDIS_PREFIX}${token}`;
+  previewTokenCache.delete(token);
+  const client = getUpstashClient();
+  if (client) {
+    try {
+      await client.del(key);
+    } catch {}
+  }
+}
 
 /**
  * Previews European Qualification synchronization (provisional vs final).
@@ -306,10 +366,7 @@ export async function previewEuropeanQualificationSync(
     expiresAt,
   };
 
-  previewTokenCache.set(previewToken, {
-    preview,
-    expiresAt: now.getTime() + 15 * 60 * 1000,
-  });
+  await saveQualificationPreviewToken(previewToken, preview);
 
   return preview;
 }
@@ -318,9 +375,9 @@ export async function previewEuropeanQualificationSync(
  * Safely applies European Qualification synchronization using an approved preview token.
  * STRICT DATA SAFETY RULES:
  * - Requires explicit admin confirmation.
- * - Requires valid, non-expired previewToken.
+ * - Requires valid, non-expired previewToken stored in Redis.
  * - Non-destructive: preserves existing participants where possible, never blind batch delete.
- * - Enforces preconditions (competition not started, domestic leagues completed if final).
+ * - Enforces strict apply-time preconditions (competition not started, domestic leagues completed if final).
  */
 export async function applyEuropeanQualificationSync(params: {
   seasonId?: string;
@@ -339,17 +396,56 @@ export async function applyEuropeanQualificationSync(params: {
     throw new Error('Explicit admin confirmation is required to apply European qualifications sync.');
   }
 
-  const cached = previewTokenCache.get(params.previewToken);
-  if (!cached || Date.now() > cached.expiresAt) {
-    throw new Error('Preview token is invalid or has expired. Please generate a fresh preview before applying.');
+  const preview = await getQualificationPreviewToken(params.previewToken);
+  if (!preview) {
+    throw new Error('Preview token is invalid, expired, or was already applied. Please generate a fresh preview before applying.');
   }
 
-  const preview = cached.preview;
   if (!preview.canApply) {
     throw new Error(preview.blockReason || 'Cannot apply qualifications sync: preconditions failed.');
   }
 
   const db = getFirestoreDb();
+
+  // STRICT APPLY-TIME VALIDATION:
+  // 1. Re-check European competitions have not started (played or in-progress fixtures)
+  const activeEuropeanFixSnap = await db
+    .collection(COLLECTIONS.FIXTURES)
+    .where('competitionId', 'in', [preview.diff.ucl.competitionId, preview.diff.uel.competitionId])
+    .where('status', 'in', ['CONFIRMED', 'PLAYING'])
+    .limit(1)
+    .get();
+
+  if (!activeEuropeanFixSnap.empty) {
+    throw new Error(
+      'Precondition Failed: European competitions have already started with active or confirmed matches. Modifying participants is strictly prohibited.'
+    );
+  }
+
+  // 2. If mode is final, re-verify all domestic league matches are completed
+  if (preview.mode === 'final') {
+    const unplayedLeaguesSnap = await db
+      .collection(COLLECTIONS.FIXTURES)
+      .where('seasonId', '==', preview.seasonId)
+      .where('status', '==', 'SCHEDULED')
+      .get();
+    const leagueIds = [
+      'comp-premier-league-2026',
+      'comp-la-liga-2026',
+      'comp-serie-a-2026',
+      'comp-bundesliga-2026',
+      'comp-ligue-1-2026',
+    ];
+    const unplayedLeagueMatches = unplayedLeaguesSnap.docs.filter((d) =>
+      leagueIds.includes(d.data().competitionId)
+    ).length;
+    if (unplayedLeagueMatches > 0) {
+      throw new Error(
+        `Precondition Failed: Domestic leagues still have ${unplayedLeagueMatches} unplayed scheduled matches. Final qualification sync cannot be applied.`
+      );
+    }
+  }
+
   const now = new Date().toISOString();
   const batch = db.batch();
 
@@ -449,8 +545,15 @@ export async function applyEuropeanQualificationSync(params: {
     } catch {}
   }
 
-  // Remove used preview token
-  previewTokenCache.delete(params.previewToken);
+  // Remove used preview token from Redis and memory
+  await deleteQualificationPreviewToken(params.previewToken);
+
+  // Invalidate competition participants and table caches
+  await redisDelRaw(ReadModelKeys.competitions(preview.seasonId)).catch(() => {});
+  for (const compId of [preview.diff.ucl.competitionId, preview.diff.uel.competitionId]) {
+    await redisDelRaw(ReadModelKeys.standings(compId, preview.seasonId)).catch(() => {});
+    await redisDelRaw(ReadModelKeys.competitionFixtures(compId, preview.seasonId)).catch(() => {});
+  }
 
   // Send notifications
   await Promise.all(

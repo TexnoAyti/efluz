@@ -10,6 +10,7 @@ import { createAuditLog } from '../services/adminService';
 import {
   redisGetRaw,
   redisSetRaw,
+  redisDelRaw,
   getLkgKey,
   ReadModelKeys,
   ReadModelSnapshot,
@@ -84,6 +85,7 @@ export function validateDomesticCupId(competitionId: string): DomesticCupConfig 
 }
 
 export interface CupBracketNode {
+  id: string; // Alias for fixtureId
   fixtureId: string;
   matchday: number;
   roundName: string;
@@ -96,6 +98,8 @@ export interface CupBracketNode {
   status: string;
   homeScore: number | null;
   awayScore: number | null;
+  homePenaltyScore?: number | null;
+  awayPenaltyScore?: number | null;
   winnerClubId: string | null;
   winnerClubName?: string;
   scheduledAt: string;
@@ -106,6 +110,11 @@ export interface CupBracketRound {
   roundNumber: number;
   roundName: string;
   matches: CupBracketNode[];
+  fixtures: CupBracketNode[]; // Alias for matches
+  matchesCount: number;
+  totalMatches: number; // Alias for matchesCount
+  completedCount: number;
+  completedMatches: number; // Alias for completedCount
 }
 
 export interface DomesticCupDetails {
@@ -117,12 +126,16 @@ export interface DomesticCupDetails {
     status: string;
     hasFixtures: boolean;
     fixtureCount: number;
+    fixturesCount: number; // Alias
     currentMatchday: number;
     isMatchdayOpen: boolean;
     nextMatchdayOpenAt?: string;
     matchdayOverrideStatus?: string;
   };
   totalTeams: number;
+  totalParticipants: number; // Alias
+  participantsCount: number; // Alias
+  expectedTeams: number; // Alias
   participants: Array<{
     clubId: string;
     clubName: string;
@@ -133,7 +146,15 @@ export interface DomesticCupDetails {
   }>;
   rounds: CupBracketRound[];
   fixturesCount: number;
+  totalFixtures: number; // Alias
   completedFixturesCount: number;
+  completedFixtures: number; // Alias
+  totalMatches: number; // Alias
+  completedMatches: number; // Alias
+  bracketStatus: 'NOT_GENERATED' | 'IN_PROGRESS' | 'COMPLETED';
+  currentRound?: number;
+  currentRoundName?: string;
+  isMatchdayLocked?: boolean;
   source: 'firestore' | 'redis-lkg' | 'sqlite';
   degraded: boolean;
 }
@@ -147,19 +168,37 @@ export interface BracketPreviewMatch {
   homeClubName: string;
   awayClubId: string;
   awayClubName: string;
+  homeClub?: { id: string; name: string };
+  awayClub?: { id: string; name: string };
+}
+
+export interface BracketPreviewRound {
+  roundNumber: number;
+  roundName: string;
+  matchesCount: number;
+  totalMatches: number;
+  pairings: Array<{
+    homeClub: { id: string; name: string };
+    awayClub: { id: string; name: string };
+    fixtureId?: string;
+  }>;
+  matches: BracketPreviewMatch[];
 }
 
 export interface BracketPreviewResult {
   competitionId: string;
   competitionName: string;
   totalTeams: number;
+  totalParticipants: number; // Alias
   prelimMatches: number;
   byeTeamsCount: number;
   totalRounds: number;
+  roundsCount: number; // Alias
   existingFixturesCount: number;
   canGenerate: boolean;
   blockReason?: string;
   previewMatches: BracketPreviewMatch[];
+  rounds: BracketPreviewRound[];
 }
 
 /**
@@ -255,6 +294,7 @@ export async function getDomesticCupDetails(
       const winnerClub = f.winnerClubId ? clubsMap.get(f.winnerClubId) : null;
 
       const node: CupBracketNode = {
+        id: f.id,
         fixtureId: f.id,
         matchday: md,
         roundName: f.roundName || getRoundTitle(md, maxMatchday),
@@ -267,6 +307,8 @@ export async function getDomesticCupDetails(
         status: f.status,
         homeScore: f.homeScore,
         awayScore: f.awayScore,
+        homePenaltyScore: (f as any).homePenaltyScore ?? null,
+        awayPenaltyScore: (f as any).awayPenaltyScore ?? null,
         winnerClubId: f.winnerClubId,
         winnerClubName: winnerClub?.name,
         scheduledAt: f.scheduledAt,
@@ -281,11 +323,25 @@ export async function getDomesticCupDetails(
 
     const rounds: CupBracketRound[] = Array.from(roundMap.entries())
       .sort(([a], [b]) => a - b)
-      .map(([roundNumber, matches]) => ({
-        roundNumber,
-        roundName: matches[0]?.roundName || `Round ${roundNumber}`,
-        matches: matches.sort((a, b) => a.fixtureId.localeCompare(b.fixtureId)),
-      }));
+      .map(([roundNumber, matches]) => {
+        const sortedMatches = matches.sort((a, b) => a.fixtureId.localeCompare(b.fixtureId));
+        const completedCount = sortedMatches.filter((m) => m.status === 'CONFIRMED').length;
+        return {
+          roundNumber,
+          roundName: sortedMatches[0]?.roundName || `Round ${roundNumber}`,
+          matches: sortedMatches,
+          fixtures: sortedMatches,
+          matchesCount: sortedMatches.length,
+          totalMatches: sortedMatches.length,
+          completedCount,
+          completedMatches: completedCount,
+        };
+      });
+
+    const completedCount = fixtures.filter((f) => f.status === 'CONFIRMED').length;
+    const bracketStatus = fixtures.length === 0
+      ? 'NOT_GENERATED'
+      : (completedCount === fixtures.length ? 'COMPLETED' : 'IN_PROGRESS');
 
     const result: DomesticCupDetails = {
       competition: {
@@ -296,16 +352,28 @@ export async function getDomesticCupDetails(
         status: compData?.status || 'active',
         hasFixtures: fixtures.length > 0,
         fixtureCount: fixtures.length,
+        fixturesCount: fixtures.length,
         currentMatchday: compData?.currentMatchday || 1,
         isMatchdayOpen: compData?.isMatchdayOpen ?? true,
         nextMatchdayOpenAt: compData?.nextMatchdayOpenAt,
         matchdayOverrideStatus: compData?.adminOverrideStatus,
       },
       totalTeams: participants.length,
+      totalParticipants: participants.length,
+      participantsCount: participants.length,
+      expectedTeams: cupConfig.expectedTeams,
       participants,
       rounds,
       fixturesCount: fixtures.length,
-      completedFixturesCount: fixtures.filter((f) => f.status === 'CONFIRMED').length,
+      totalFixtures: fixtures.length,
+      completedFixturesCount: completedCount,
+      completedFixtures: completedCount,
+      totalMatches: fixtures.length,
+      completedMatches: completedCount,
+      bracketStatus,
+      currentRound: compData?.currentMatchday || 1,
+      currentRoundName: rounds.find((r) => r.roundNumber === (compData?.currentMatchday || 1))?.roundName || 'Round 1',
+      isMatchdayLocked: !(compData?.isMatchdayOpen ?? true),
       source: 'firestore',
       degraded: false,
     };
@@ -343,6 +411,7 @@ export async function getDomesticCupDetails(
       const winnerClub = f.winner_club_id ? clubsMap.get(f.winner_club_id) : null;
 
       const node: CupBracketNode = {
+        id: f.id,
         fixtureId: f.id,
         matchday: md,
         roundName: f.round_name || `Round ${md}`,
@@ -355,6 +424,8 @@ export async function getDomesticCupDetails(
         status: f.status,
         homeScore: f.home_score,
         awayScore: f.away_score,
+        homePenaltyScore: f.home_penalty_score ?? null,
+        awayPenaltyScore: f.away_penalty_score ?? null,
         winnerClubId: f.winner_club_id,
         winnerClubName: winnerClub?.name,
         scheduledAt: f.scheduled_at,
@@ -367,11 +438,25 @@ export async function getDomesticCupDetails(
 
     const rounds: CupBracketRound[] = Array.from(roundMap.entries())
       .sort(([a], [b]) => a - b)
-      .map(([roundNumber, matches]) => ({
-        roundNumber,
-        roundName: matches[0]?.roundName || `Round ${roundNumber}`,
-        matches,
-      }));
+      .map(([roundNumber, matches]) => {
+        const sorted = matches.sort((a, b) => a.fixtureId.localeCompare(b.fixtureId));
+        const completed = sorted.filter((m) => m.status === 'CONFIRMED').length;
+        return {
+          roundNumber,
+          roundName: sorted[0]?.roundName || `Round ${roundNumber}`,
+          matches: sorted,
+          fixtures: sorted,
+          matchesCount: sorted.length,
+          totalMatches: sorted.length,
+          completedCount: completed,
+          completedMatches: completed,
+        };
+      });
+
+    const completedCount = fixRows.filter((f) => f.status === 'CONFIRMED').length;
+    const bracketStatus = fixRows.length === 0
+      ? 'NOT_GENERATED'
+      : (completedCount === fixRows.length ? 'COMPLETED' : 'IN_PROGRESS');
 
     return {
       competition: {
@@ -382,12 +467,16 @@ export async function getDomesticCupDetails(
         status: compRow?.status || 'active',
         hasFixtures: fixRows.length > 0,
         fixtureCount: fixRows.length,
+        fixturesCount: fixRows.length,
         currentMatchday: compRow?.current_matchday || 1,
         isMatchdayOpen: Boolean(compRow?.is_matchday_open ?? 1),
         nextMatchdayOpenAt: compRow?.next_matchday_open_at,
         matchdayOverrideStatus: compRow?.matchday_override_status,
       },
       totalTeams: cupConfig.expectedTeams,
+      totalParticipants: cupConfig.expectedTeams,
+      participantsCount: cupConfig.expectedTeams,
+      expectedTeams: cupConfig.expectedTeams,
       participants: SEED_CLUBS.filter((c) => c.leagueId === cupConfig.leagueId).map((c) => ({
         clubId: c.id,
         clubName: c.name,
@@ -395,7 +484,15 @@ export async function getDomesticCupDetails(
       })),
       rounds,
       fixturesCount: fixRows.length,
-      completedFixturesCount: fixRows.filter((f) => f.status === 'CONFIRMED').length,
+      totalFixtures: fixRows.length,
+      completedFixturesCount: completedCount,
+      completedFixtures: completedCount,
+      totalMatches: fixRows.length,
+      completedMatches: completedCount,
+      bracketStatus,
+      currentRound: compRow?.current_matchday || 1,
+      currentRoundName: rounds.find((r) => r.roundNumber === (compRow?.current_matchday || 1))?.roundName || 'Round 1',
+      isMatchdayLocked: !Boolean(compRow?.is_matchday_open ?? 1),
       source: 'sqlite',
       degraded: true,
     };
@@ -429,16 +526,19 @@ export async function previewDomesticCupBracket(
 
   const prelimMatches = totalTeams > 16 ? totalTeams - 16 : 0; // 4 for 20 teams, 2 for 18 teams
   const byeTeamsCount = totalTeams - prelimMatches * 2; // 12 for 20 teams, 14 for 18 teams
+  const pureByeMatches = totalTeams > 16 ? (byeTeamsCount - prelimMatches) / 2 : 8; // 4 for 20 teams, 6 for 18 teams, 8 for 16 teams
   const totalRounds = totalTeams > 16 ? 5 : 4;
 
   const previewMatches: BracketPreviewMatch[] = [];
+  const roundsStructured: BracketPreviewRound[] = [];
 
   if (totalTeams > 16) {
     // Round 1 (Preliminary / Play-in)
+    const r1Matches: BracketPreviewMatch[] = [];
     for (let i = 0; i < prelimMatches; i++) {
       const homeClub = leagueClubs[byeTeamsCount + i * 2];
       const awayClub = leagueClubs[byeTeamsCount + i * 2 + 1];
-      previewMatches.push({
+      const m: BracketPreviewMatch = {
         roundNumber: 1,
         roundName: 'Preliminary Round',
         matchIndex: i,
@@ -447,31 +547,48 @@ export async function previewDomesticCupBracket(
         homeClubName: homeClub?.name || 'TBD',
         awayClubId: awayClub?.id || 'TBD',
         awayClubName: awayClub?.name || 'TBD',
-      });
+        homeClub: { id: homeClub?.id || 'TBD', name: homeClub?.name || 'TBD' },
+        awayClub: { id: awayClub?.id || 'TBD', name: awayClub?.name || 'TBD' },
+      };
+      previewMatches.push(m);
+      r1Matches.push(m);
     }
+    roundsStructured.push({
+      roundNumber: 1,
+      roundName: 'Preliminary Round',
+      matchesCount: r1Matches.length,
+      totalMatches: r1Matches.length,
+      pairings: r1Matches.map((m) => ({
+        homeClub: m.homeClub!,
+        awayClub: m.awayClub!,
+        fixtureId: m.fixtureId,
+      })),
+      matches: r1Matches,
+    });
 
-    // Round 2 (Round of 16)
+    // Round 2 (Round of 16 - 8 matches)
+    const r2Matches: BracketPreviewMatch[] = [];
     for (let i = 0; i < 8; i++) {
-      let homeName = 'TBD';
-      let awayName = 'TBD';
       let homeId = 'TBD';
+      let homeName = 'TBD';
       let awayId = 'TBD';
+      let awayName = 'TBD';
 
-      if (i < Math.floor(byeTeamsCount / 2)) {
+      if (i < pureByeMatches) {
         homeId = leagueClubs[i * 2]?.id || 'TBD';
         homeName = leagueClubs[i * 2]?.name || 'TBD';
         awayId = leagueClubs[i * 2 + 1]?.id || 'TBD';
         awayName = leagueClubs[i * 2 + 1]?.name || 'TBD';
       } else {
-        const remainingByeIndex = Math.floor(byeTeamsCount / 2) * 2 + (i - Math.floor(byeTeamsCount / 2));
-        if (remainingByeIndex < byeTeamsCount) {
-          homeId = leagueClubs[remainingByeIndex]?.id || 'TBD';
-          homeName = leagueClubs[remainingByeIndex]?.name || 'TBD';
-        }
-        awayName = `Winner R1-M${i - Math.floor(byeTeamsCount / 2)}`;
+        const k = i - pureByeMatches;
+        const byeClub = leagueClubs[pureByeMatches * 2 + k];
+        homeId = byeClub?.id || 'TBD';
+        homeName = byeClub?.name || 'TBD';
+        awayId = 'TBD';
+        awayName = `Winner R1-M${k}`;
       }
 
-      previewMatches.push({
+      const m: BracketPreviewMatch = {
         roundNumber: 2,
         roundName: 'Round of 16',
         matchIndex: i,
@@ -480,8 +597,24 @@ export async function previewDomesticCupBracket(
         homeClubName: homeName,
         awayClubId: awayId,
         awayClubName: awayName,
-      });
+        homeClub: { id: homeId, name: homeName },
+        awayClub: { id: awayId, name: awayName },
+      };
+      previewMatches.push(m);
+      r2Matches.push(m);
     }
+    roundsStructured.push({
+      roundNumber: 2,
+      roundName: 'Round of 16',
+      matchesCount: r2Matches.length,
+      totalMatches: r2Matches.length,
+      pairings: r2Matches.map((m) => ({
+        homeClub: m.homeClub!,
+        awayClub: m.awayClub!,
+        fixtureId: m.fixtureId,
+      })),
+      matches: r2Matches,
+    });
 
     // Subsequent rounds (QF, SF, Final)
     const subsequent = [
@@ -490,18 +623,97 @@ export async function previewDomesticCupBracket(
       { roundNumber: 5, name: 'Final', count: 1 },
     ];
     for (const s of subsequent) {
-      for (let m = 0; m < s.count; m++) {
-        previewMatches.push({
+      const subMatches: BracketPreviewMatch[] = [];
+      for (let mIdx = 0; mIdx < s.count; mIdx++) {
+        const m: BracketPreviewMatch = {
           roundNumber: s.roundNumber,
           roundName: s.name,
-          matchIndex: m,
-          fixtureId: `fix-${competitionId}-r${s.roundNumber}-m${m}`,
+          matchIndex: mIdx,
+          fixtureId: `fix-${competitionId}-r${s.roundNumber}-m${mIdx}`,
           homeClubId: 'TBD',
           homeClubName: 'TBD',
           awayClubId: 'TBD',
           awayClubName: 'TBD',
-        });
+          homeClub: { id: 'TBD', name: 'TBD' },
+          awayClub: { id: 'TBD', name: 'TBD' },
+        };
+        previewMatches.push(m);
+        subMatches.push(m);
       }
+      roundsStructured.push({
+        roundNumber: s.roundNumber,
+        roundName: s.name,
+        matchesCount: subMatches.length,
+        totalMatches: subMatches.length,
+        pairings: subMatches.map((m) => ({
+          homeClub: m.homeClub!,
+          awayClub: m.awayClub!,
+          fixtureId: m.fixtureId,
+        })),
+        matches: subMatches,
+      });
+    }
+  } else {
+    // 16-Team direct knockout
+    const r1Matches: BracketPreviewMatch[] = [];
+    for (let i = 0; i < 8; i++) {
+      const homeClub = leagueClubs[i * 2];
+      const awayClub = leagueClubs[i * 2 + 1];
+      const m: BracketPreviewMatch = {
+        roundNumber: 1,
+        roundName: 'Round of 16',
+        matchIndex: i,
+        fixtureId: `fix-${competitionId}-r1-m${i}`,
+        homeClubId: homeClub?.id || 'TBD',
+        homeClubName: homeClub?.name || 'TBD',
+        awayClubId: awayClub?.id || 'TBD',
+        awayClubName: awayClub?.name || 'TBD',
+        homeClub: { id: homeClub?.id || 'TBD', name: homeClub?.name || 'TBD' },
+        awayClub: { id: awayClub?.id || 'TBD', name: awayClub?.name || 'TBD' },
+      };
+      previewMatches.push(m);
+      r1Matches.push(m);
+    }
+    roundsStructured.push({
+      roundNumber: 1,
+      roundName: 'Round of 16',
+      matchesCount: r1Matches.length,
+      totalMatches: r1Matches.length,
+      pairings: r1Matches.map((m) => ({ homeClub: m.homeClub!, awayClub: m.awayClub!, fixtureId: m.fixtureId })),
+      matches: r1Matches,
+    });
+
+    const subsequent = [
+      { roundNumber: 2, name: 'Quarter-Finals', count: 4 },
+      { roundNumber: 3, name: 'Semi-Finals', count: 2 },
+      { roundNumber: 4, name: 'Final', count: 1 },
+    ];
+    for (const s of subsequent) {
+      const subMatches: BracketPreviewMatch[] = [];
+      for (let mIdx = 0; mIdx < s.count; mIdx++) {
+        const m: BracketPreviewMatch = {
+          roundNumber: s.roundNumber,
+          roundName: s.name,
+          matchIndex: mIdx,
+          fixtureId: `fix-${competitionId}-r${s.roundNumber}-m${mIdx}`,
+          homeClubId: 'TBD',
+          homeClubName: 'TBD',
+          awayClubId: 'TBD',
+          awayClubName: 'TBD',
+          homeClub: { id: 'TBD', name: 'TBD' },
+          awayClub: { id: 'TBD', name: 'TBD' },
+        };
+        previewMatches.push(m);
+        subMatches.push(m);
+      }
+      roundsStructured.push({
+        roundNumber: s.roundNumber,
+        roundName: s.name,
+        matchesCount: subMatches.length,
+        totalMatches: subMatches.length,
+        pairings: subMatches.map((m) => ({ homeClub: m.homeClub!, awayClub: m.awayClub!, fixtureId: m.fixtureId })),
+        matches: subMatches,
+      });
     }
   }
 
@@ -514,13 +726,16 @@ export async function previewDomesticCupBracket(
     competitionId,
     competitionName: cupConfig.name,
     totalTeams,
+    totalParticipants: totalTeams,
     prelimMatches,
     byeTeamsCount,
     totalRounds,
+    roundsCount: totalRounds,
     existingFixturesCount: existingCount,
     canGenerate,
     blockReason,
     previewMatches,
+    rounds: roundsStructured,
   };
 }
 
@@ -692,12 +907,15 @@ export async function advanceDomesticCupWinnerSafe(
   const r3Match = fixture.id.match(/-r3-m(\d+)$/);
   const r4Match = fixture.id.match(/-r4-m(\d+)$/);
 
+  const is18Teams = compId.includes('bundesliga') || compId.includes('dfb') || compId.includes('ligue-1') || compId.includes('coupe');
+  const pureByeMatches = is18Teams ? 6 : 4;
+
   if (r1Match) {
     const idx = parseInt(r1Match[1], 10);
-    // Preliminary round winners advance to R16 matches
-    const r16Index = 4 + Math.floor(idx / 2);
+    // Preliminary round match k advances to R16 match (pureByeMatches + k), filling the Away slot
+    const r16Index = pureByeMatches + idx;
     targetFixtureId = `fix-${compId}-r2-m${r16Index}`;
-    isHomeSlot = idx % 2 === 0;
+    isHomeSlot = false;
   } else if (r2Match) {
     const idx = parseInt(r2Match[1], 10);
     targetFixtureId = `fix-${compId}-r3-m${Math.floor(idx / 2)}`;
@@ -753,6 +971,10 @@ export async function advanceDomesticCupWinnerSafe(
       ]);
     }
   } catch {}
+
+  // Invalidate Redis read model and caches
+  const cacheKey = `cup:bracket:${compId}:${fixture.seasonId || 'season-2026-27'}`;
+  await redisDelRaw(cacheKey).catch(() => {});
 
   // Write audit log
   await createAuditLog(

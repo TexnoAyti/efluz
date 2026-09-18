@@ -519,6 +519,12 @@ function updateBroadcastRecipientState(
   if (totalFinished >= bcast.metrics.totalRecipients) {
     bcast.status = bcast.metrics.failedCount > 0 ? 'PARTIALLY_FAILED' : 'COMPLETED';
   }
+
+  // Also persist to Redis if available
+  const client = getUpstashClient();
+  if (client) {
+    client.hset(BROADCASTS_KEY, { [broadcastId]: bcast }).catch(() => {});
+  }
 }
 
 /**
