@@ -138,8 +138,8 @@ export interface FirestoreFixtureDoc {
   seasonId: string;
   matchday: number;
   roundName: string;
-  homeClubId: string;
-  awayClubId: string;
+  homeClubId: string | null;
+  awayClubId: string | null;
   scheduledAt: string;
   status: string;
   homeScore?: number | null;
@@ -148,6 +148,12 @@ export interface FirestoreFixtureDoc {
   resultConfirmedAt?: string | null;
   homeOwnerId?: string;
   awayOwnerId?: string;
+  sourceFixtureId?: string | null;
+  sourceWinnerSlot?: 'home' | 'away' | string | null;
+  homeSourceFixtureId?: string | null;
+  awaySourceFixtureId?: string | null;
+  homeSourceWinnerSlot?: string | null;
+  awaySourceWinnerSlot?: string | null;
   createdAt: string;
   updatedAt: string;
 }

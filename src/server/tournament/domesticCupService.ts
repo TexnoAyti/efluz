@@ -89,10 +89,10 @@ export interface CupBracketNode {
   fixtureId: string;
   matchday: number;
   roundName: string;
-  homeClubId: string;
+  homeClubId: string | null;
   homeClubName: string;
   homeClubBadge?: string;
-  awayClubId: string;
+  awayClubId: string | null;
   awayClubName: string;
   awayClubBadge?: string;
   status: string;
@@ -104,6 +104,12 @@ export interface CupBracketNode {
   winnerClubName?: string;
   scheduledAt: string;
   resultConfirmedAt: string | null;
+  sourceFixtureId?: string | null;
+  sourceWinnerSlot?: string | null;
+  homeSourceFixtureId?: string | null;
+  awaySourceFixtureId?: string | null;
+  homeSourceWinnerSlot?: string | null;
+  awaySourceWinnerSlot?: string | null;
 }
 
 export interface CupBracketRound {
@@ -164,12 +170,18 @@ export interface BracketPreviewMatch {
   roundName: string;
   matchIndex: number;
   fixtureId: string;
-  homeClubId: string;
+  homeClubId: string | null;
   homeClubName: string;
-  awayClubId: string;
+  awayClubId: string | null;
   awayClubName: string;
-  homeClub?: { id: string; name: string };
-  awayClub?: { id: string; name: string };
+  homeClub?: { id: string | null; name: string } | null;
+  awayClub?: { id: string | null; name: string } | null;
+  sourceFixtureId?: string | null;
+  sourceWinnerSlot?: string | null;
+  homeSourceFixtureId?: string | null;
+  awaySourceFixtureId?: string | null;
+  homeSourceWinnerSlot?: string | null;
+  awaySourceWinnerSlot?: string | null;
 }
 
 export interface BracketPreviewRound {
@@ -178,8 +190,8 @@ export interface BracketPreviewRound {
   matchesCount: number;
   totalMatches: number;
   pairings: Array<{
-    homeClub: { id: string; name: string };
-    awayClub: { id: string; name: string };
+    homeClub: { id: string | null; name: string };
+    awayClub: { id: string | null; name: string };
     fixtureId?: string;
   }>;
   matches: BracketPreviewMatch[];
@@ -289,8 +301,12 @@ export async function getDomesticCupDetails(
 
     for (const f of fixtures) {
       const md = f.matchday || 1;
-      const homeClub = clubsMap.get(f.homeClubId);
-      const awayClub = clubsMap.get(f.awayClubId);
+      const rawHomeId = f.homeClubId;
+      const rawAwayId = f.awayClubId;
+      const homeClubId = (!rawHomeId || rawHomeId === 'TBD') ? null : rawHomeId;
+      const awayClubId = (!rawAwayId || rawAwayId === 'TBD') ? null : rawAwayId;
+      const homeClub = homeClubId ? clubsMap.get(homeClubId) : null;
+      const awayClub = awayClubId ? clubsMap.get(awayClubId) : null;
       const winnerClub = f.winnerClubId ? clubsMap.get(f.winnerClubId) : null;
 
       const node: CupBracketNode = {
@@ -298,11 +314,11 @@ export async function getDomesticCupDetails(
         fixtureId: f.id,
         matchday: md,
         roundName: f.roundName || getRoundTitle(md, maxMatchday),
-        homeClubId: f.homeClubId,
-        homeClubName: homeClub?.name || (f.homeClubId === 'TBD' ? 'TBD' : f.homeClubId),
+        homeClubId,
+        homeClubName: homeClub?.name || 'TBD',
         homeClubBadge: homeClub?.logoUrl,
-        awayClubId: f.awayClubId,
-        awayClubName: awayClub?.name || (f.awayClubId === 'TBD' ? 'TBD' : f.awayClubId),
+        awayClubId,
+        awayClubName: awayClub?.name || 'TBD',
         awayClubBadge: awayClub?.logoUrl,
         status: f.status,
         homeScore: f.homeScore,
@@ -313,6 +329,12 @@ export async function getDomesticCupDetails(
         winnerClubName: winnerClub?.name,
         scheduledAt: f.scheduledAt,
         resultConfirmedAt: f.resultConfirmedAt || null,
+        sourceFixtureId: (f as any).sourceFixtureId || null,
+        sourceWinnerSlot: (f as any).sourceWinnerSlot || null,
+        homeSourceFixtureId: (f as any).homeSourceFixtureId || null,
+        awaySourceFixtureId: (f as any).awaySourceFixtureId || null,
+        homeSourceWinnerSlot: (f as any).homeSourceWinnerSlot || null,
+        awaySourceWinnerSlot: (f as any).awaySourceWinnerSlot || null,
       };
 
       if (!roundMap.has(md)) {
@@ -406,8 +428,12 @@ export async function getDomesticCupDetails(
 
     for (const f of fixRows) {
       const md = f.matchday || 1;
-      const homeClub = clubsMap.get(f.home_club_id);
-      const awayClub = clubsMap.get(f.away_club_id);
+      const rawHomeId = f.home_club_id;
+      const rawAwayId = f.away_club_id;
+      const homeClubId = (!rawHomeId || rawHomeId === 'TBD') ? null : rawHomeId;
+      const awayClubId = (!rawAwayId || rawAwayId === 'TBD') ? null : rawAwayId;
+      const homeClub = homeClubId ? clubsMap.get(homeClubId) : null;
+      const awayClub = awayClubId ? clubsMap.get(awayClubId) : null;
       const winnerClub = f.winner_club_id ? clubsMap.get(f.winner_club_id) : null;
 
       const node: CupBracketNode = {
@@ -415,11 +441,11 @@ export async function getDomesticCupDetails(
         fixtureId: f.id,
         matchday: md,
         roundName: f.round_name || `Round ${md}`,
-        homeClubId: f.home_club_id,
-        homeClubName: homeClub?.name || f.home_club_id,
+        homeClubId,
+        homeClubName: homeClub?.name || 'TBD',
         homeClubBadge: homeClub?.logoUrl,
-        awayClubId: f.away_club_id,
-        awayClubName: awayClub?.name || f.away_club_id,
+        awayClubId,
+        awayClubName: awayClub?.name || 'TBD',
         awayClubBadge: awayClub?.logoUrl,
         status: f.status,
         homeScore: f.home_score,
@@ -430,6 +456,8 @@ export async function getDomesticCupDetails(
         winnerClubName: winnerClub?.name,
         scheduledAt: f.scheduled_at,
         resultConfirmedAt: f.result_confirmed_at,
+        sourceFixtureId: f.source_fixture_id || null,
+        sourceWinnerSlot: f.source_winner_slot || null,
       };
 
       if (!roundMap.has(md)) roundMap.set(md, []);

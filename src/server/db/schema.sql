@@ -110,8 +110,8 @@ CREATE TABLE IF NOT EXISTS fixtures (
     competition_id TEXT NOT NULL,
     matchday INTEGER NOT NULL,
     round_name TEXT,
-    home_club_id TEXT NOT NULL,
-    away_club_id TEXT NOT NULL,
+    home_club_id TEXT,
+    away_club_id TEXT,
     scheduled_at TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'SCHEDULED', -- 'SCHEDULED', 'READY', 'PLAYING', 'AWAITING_RESULT', 'PENDING_CONFIRMATION', 'CONFIRMED', 'DISPUTED', 'CANCELLED', 'POSTPONED', 'OVERDUE'
     home_score INTEGER,
@@ -119,12 +119,12 @@ CREATE TABLE IF NOT EXISTS fixtures (
     winner_club_id TEXT,
     result_confirmed_at TEXT,
     fixture_source TEXT DEFAULT 'official_2026_27',
+    source_fixture_id TEXT,
+    source_winner_slot TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY(season_id) REFERENCES seasons(id),
-    FOREIGN KEY(competition_id) REFERENCES competitions(id),
-    FOREIGN KEY(home_club_id) REFERENCES clubs(id),
-    FOREIGN KEY(away_club_id) REFERENCES clubs(id)
+    FOREIGN KEY(competition_id) REFERENCES competitions(id)
 );
 
 CREATE TABLE IF NOT EXISTS result_submissions (
