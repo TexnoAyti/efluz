@@ -21,17 +21,10 @@ export function copyProductionAssets() {
     console.log(` [ASSET] Copied sql-wasm.wasm -> ${path.relative(root, destWasm)} (${(stat.size / 1024).toFixed(1)} KB)`);
   }
 
-  // Also ensure data/efootball.sqlite is copied into api/data for zero-config serverless seeding
-  const dbSource = path.resolve(root, 'data', 'efootball.sqlite');
-  if (fs.existsSync(dbSource)) {
-    const apiDataDir = path.resolve(root, 'api', 'data');
-    if (!fs.existsSync(apiDataDir)) {
-      fs.mkdirSync(apiDataDir, { recursive: true });
-    }
-    const destDb = path.resolve(apiDataDir, 'efootball.sqlite');
-    fs.copyFileSync(dbSource, destDb);
-    console.log(` [ASSET] Copied efootball.sqlite -> ${path.relative(root, destDb)}`);
-  }
+  // Never ship a developer/test SQLite database as production tournament state.
+  // The original data/efootball.sqlite is untouched; only remove an old generated copy.
+  const generatedDb = path.resolve(root, 'api', 'data', 'efootball.sqlite');
+  if (fs.existsSync(generatedDb)) fs.unlinkSync(generatedDb);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

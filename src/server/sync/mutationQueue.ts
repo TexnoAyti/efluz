@@ -78,6 +78,11 @@ function loadQueueBackupFromFile(): void {
 export function enqueueMutation<T = any>(
   mutation: Omit<PendingMutation<T>, 'status' | 'retryCount' | 'lastError' | 'updatedAt'>
 ): PendingMutation<T> {
+  // A Vercel/Cloud Run local file is not a durable accepted-write queue.
+  if (process.env.NODE_ENV === 'production' || process.env.VERCEL || process.env.K_SERVICE || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    throw Object.assign(new Error('Remote database unavailable. Change was not accepted; retry when service recovers.'),
+      { code: 'AUTHORITATIVE_WRITE_REQUIRED', statusCode: 503 });
+  }
   const now = new Date().toISOString();
   const existing = memoryQueue.get(mutation.mutationId);
 
@@ -209,6 +214,9 @@ export function getQueueStats() {
  * Idempotent, safe, drains in creation order.
  */
 export async function processPendingMutations(): Promise<SyncResult> {
+  if (process.env.NODE_ENV === 'production' || process.env.VERCEL || process.env.K_SERVICE || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    throw new Error('HOSTED_LOCAL_QUEUE_DISABLED: reconcile legacy local mutations through a reviewed recovery plan');
+  }
   if (isSyncInProgress) {
     console.log('[MUTATION_QUEUE] Sync already in progress, skipping duplicate call.');
     return {

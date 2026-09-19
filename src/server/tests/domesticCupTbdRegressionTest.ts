@@ -322,18 +322,16 @@ export async function runDomesticCupTbdRegressionTest() {
     resultConfirmedAt: new Date().toISOString(),
   });
 
-  let safetyErrorThrown = false;
-  try {
-    // Attempt re-advance from R1-M1
-    await advanceDomesticCupWinnerSafe(`fix-${dfbId}-r1-m1`, {
-      adminUserId: 'admin-test-safe',
-      adminUsername: 'admin',
-    });
-  } catch (err: any) {
-    safetyErrorThrown = true;
-    assert('Error message explicitly warns about confirmed fixture protection', err.message.includes('CONFIRMED'));
-  }
-  assert('Advancement threw error when target fixture is already CONFIRMED', safetyErrorThrown);
+  const beforeRepeat = (await db.collection(COLLECTIONS.FIXTURES).doc(`fix-${dfbId}-r2-m7`).get()).data();
+  const repeated = await advanceDomesticCupWinnerSafe(`fix-${dfbId}-r1-m1`, { adminUserId: 'admin-test-safe', adminUsername: 'admin' });
+  assert('Same winner into confirmed fixture returns no-op', repeated.isNoop === true);
+  const afterRepeat = (await db.collection(COLLECTIONS.FIXTURES).doc(`fix-${dfbId}-r2-m7`).get()).data();
+  assert('Confirmed scores and metadata unchanged by repeat', JSON.stringify(beforeRepeat) === JSON.stringify(afterRepeat));
+  await db.collection(COLLECTIONS.FIXTURES).doc(`fix-${dfbId}-r2-m7`).update({ awayClubId: 'club-other' });
+  let locked = false;
+  try { await advanceDomesticCupWinnerSafe(`fix-${dfbId}-r1-m1`, { adminUserId: 'admin-test-safe' }); }
+  catch (error: any) { locked = error.code === 'TARGET_MATCH_LOCKED'; }
+  assert('Changing a confirmed fixture remains blocked', locked);
 
   // Attempt to re-generate bracket when fixtures already exist
   let reGenErrorThrown = false;

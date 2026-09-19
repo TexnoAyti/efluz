@@ -1,8 +1,8 @@
-import app, { ensureDbReady } from './app';
+import app from './app';
 
 export default async function handler(req: any, res: any) {
   try {
-    await ensureDbReady();
+    // Database initialization belongs to Express, after the authenticated worker route.
     
     // Normalize URL if Vercel strips /api or passes custom prefix
     if (req.url && !req.url.startsWith('/api')) {

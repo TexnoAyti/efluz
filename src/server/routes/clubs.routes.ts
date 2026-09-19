@@ -289,7 +289,7 @@ clubsRouter.post('/:id/claim', requireAuth, async (req: Request, res: Response) 
   }
 
   try {
-    const result = await claimClubAtomicFirestore(userId, clubId, seasonId);
+    const result = await claimClubAtomicFirestore(userId, clubId, seasonId, { authoritativeOnly: true });
     await invalidateClubReadModels(seasonId).catch(() => {});
     await invalidateUserMembershipReadModel(userId, seasonId).catch(() => {});
     res.json({

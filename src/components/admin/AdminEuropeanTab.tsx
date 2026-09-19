@@ -158,15 +158,15 @@ export const AdminEuropeanTab: React.FC = () => {
             <Trophy className="w-5 h-5" />
           </div>
           <div>
-            <h4 className="font-bold text-white text-sm">UEFA European Competitions (32 Teams)</h4>
+            <h4 className="font-bold text-white text-sm">UEFA European Competitions</h4>
             <p className="text-slate-400 text-[11px] mt-0.5">
-              Strict 32-team single table league phase. Top 8 advance directly; 9–24 enter knockout play-offs; 25–32 eliminated.
+              Jadval va saralash zonalari turnirning saqlangan sozlamalari asosida ko‘rsatiladi.
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-500/15 text-blue-400 border border-blue-500/30">
-            UCL & UEL Standard (32 Teams)
+            UCL & UEL
           </span>
         </div>
       </div>
@@ -204,7 +204,7 @@ export const AdminEuropeanTab: React.FC = () => {
           <div>
             <h3 className="text-base font-black text-white flex items-center gap-2">
               <span>{selectedCompId.includes('champions') ? 'UEFA Champions League' : 'UEFA Europa League'} Standings</span>
-              <span className="text-xs text-slate-400 font-semibold">(32 Teams)</span>
+              <span className="text-xs text-slate-400 font-semibold">({standings.length} Teams)</span>
             </h3>
             <p className="text-[11px] text-slate-400 mt-0.5">
               Source: <span className="font-mono text-emerald-400 font-bold">{standingsSource}</span>
@@ -312,7 +312,7 @@ export const AdminEuropeanTab: React.FC = () => {
               <span>European Qualification Projections & Sync</span>
             </h3>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              Evaluates domestic league standings (Premier League 7, La Liga 7, Serie A 6, Bundesliga 6, Ligue 1 6 = 32 spots)
+              Saralash hozirgi tasdiqlangan natijalar va bazada belgilangan liga kvotalari asosida hisoblanadi.
             </p>
           </div>
 
@@ -383,7 +383,7 @@ export const AdminEuropeanTab: React.FC = () => {
               {/* UCL Diff */}
               <div className="glass-card p-3.5 rounded-xl space-y-2.5">
                 <div className="flex items-center justify-between font-bold text-xs">
-                  <span className="text-blue-400 font-black">UEFA Champions League (32)</span>
+                  <span className="text-blue-400 font-black">UEFA Champions League ({preview.summary.ucl.totalTarget})</span>
                   <span className="text-slate-400">
                     {preview.summary.ucl.retainedCount} Retained • {preview.summary.ucl.addedCount} Added
                   </span>
@@ -408,7 +408,7 @@ export const AdminEuropeanTab: React.FC = () => {
               {/* UEL Diff */}
               <div className="glass-card p-3.5 rounded-xl space-y-2.5">
                 <div className="flex items-center justify-between font-bold text-xs">
-                  <span className="text-amber-400 font-black">UEFA Europa League (32)</span>
+                  <span className="text-amber-400 font-black">UEFA Europa League ({preview.summary.uel.totalTarget})</span>
                   <span className="text-slate-400">
                     {preview.summary.uel.retainedCount} Retained • {preview.summary.uel.addedCount} Added
                   </span>

@@ -92,12 +92,15 @@ export interface NotificationQueueJob {
 
 const BROADCASTS_KEY = `${KEY_PREFIX}:telegram:broadcasts`;
 const QUEUE_KEY = `${KEY_PREFIX}:telegram:queue`;
+const PROCESSING_KEY = `${KEY_PREFIX}:telegram:processing`;
+const WORKER_LOCK = `${KEY_PREFIX}:telegram:worker-lock`;
 const RECIPIENT_DIR_KEY = `${KEY_PREFIX}:private:recipient-directory`;
 
 // In-memory memory fallback stores
 const memoryBroadcasts = new Map<string, TelegramBroadcastRecord>();
 const memoryJobQueue: NotificationQueueJob[] = [];
 const memoryRecipientDirectory = new Map<string, RecipientDirectoryEntry>();
+let memoryRecipientSeason = '';
 
 /**
  * Rebuilds and populates the Private Redis Recipient Directory.
@@ -110,14 +113,15 @@ export async function syncRecipientDirectory(seasonId = 'season-2026-27'): Promi
   try {
     const db = getFirestoreDb();
     const [usersSnap, occSnap] = await Promise.all([
-      db.collection(COLLECTIONS.USERS).get(),
+      db.collection(COLLECTIONS.USERS).limit(1001).get(),
       db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where('seasonId', '==', seasonId).get(),
     ]);
+    if (usersSnap.size > 1000) throw new Error('RECIPIENT_DIRECTORY_TOO_LARGE');
 
     const occupancyMap = new Map<string, { clubId: string; claimedAt: string }>();
     for (const doc of occSnap.docs) {
       const data = doc.data();
-      if (data.userId && data.clubId) {
+      if (data.userId && data.clubId && !['released', 'inactive'].includes(data.status)) {
         occupancyMap.set(data.userId, { clubId: data.clubId, claimedAt: data.claimedAt });
       }
     }
@@ -126,7 +130,7 @@ export async function syncRecipientDirectory(seasonId = 'season-2026-27'): Promi
     const leaguesMap = new Map(SEED_LEAGUES.map((l) => [l.id, l]));
 
     for (const doc of usersSnap.docs) {
-      const u = doc.data() as FirestoreUserDoc;
+      const u = { ...doc.data(), id: doc.id } as FirestoreUserDoc;
       const occ = occupancyMap.get(u.id);
       const club = occ ? clubsMap.get(occ.clubId) : undefined;
       const league = club ? leaguesMap.get(club.leagueId) : undefined;
@@ -147,52 +151,21 @@ export async function syncRecipientDirectory(seasonId = 'season-2026-27'): Promi
       };
 
       dirMap.set(u.id, entry);
-      memoryRecipientDirectory.set(u.id, entry);
     }
-  } catch (err) {
-    // Fallback: populate from SQLite
-    const userRows = queryAll<any>('SELECT * FROM users');
-    const occRows = queryAll<any>('SELECT * FROM club_memberships WHERE status = ?', ['active']);
-    const occupancyMap = new Map<string, string>();
-    for (const o of occRows) {
-      if (o.user_id && o.club_id) occupancyMap.set(o.user_id, o.club_id);
-    }
-
-    const clubsMap = new Map(SEED_CLUBS.map((c) => [c.id, c]));
-    const leaguesMap = new Map(SEED_LEAGUES.map((l) => [l.id, l]));
-
-    for (const u of userRows) {
-      const clubId = occupancyMap.get(u.id);
-      const club = clubId ? clubsMap.get(clubId) : undefined;
-      const league = club ? leaguesMap.get(club.leagueId) : undefined;
-      const hasTelegram = Boolean(u.telegram_id);
-
-      const entry: RecipientDirectoryEntry = {
-        userId: u.id,
-        username: u.username || `player_${u.id.substring(0, 6)}`,
-        displayName: [u.first_name, u.last_name].filter(Boolean).join(' ') || u.username || 'EFL Player',
-        telegramId: u.telegram_id || null,
-        clubId: club?.id,
-        clubName: club?.name,
-        leagueId: league?.id,
-        leagueName: league?.name,
-        messageable: hasTelegram && !u.is_suspended,
-        updatedAt: now,
-      };
-
-      dirMap.set(u.id, entry);
-      memoryRecipientDirectory.set(u.id, entry);
-    }
+  } catch (error) {
+    // Never replace the directory with an incomplete SQLite fallback during quota exhaustion.
+    throw new Error('RECIPIENT_DIRECTORY_UNAVAILABLE: existing directory preserved');
   }
 
   // Persist into private Redis directory
   const entriesArray = Array.from(dirMap.values());
   const client = getUpstashClient();
   if (client) {
-    try {
-      await client.set(RECIPIENT_DIR_KEY, entriesArray);
-    } catch {}
+    await client.set(`${RECIPIENT_DIR_KEY}:${seasonId}`, entriesArray);
   }
+  memoryRecipientDirectory.clear();
+  for (const entry of entriesArray) memoryRecipientDirectory.set(entry.userId, entry);
+  memoryRecipientSeason = seasonId;
 
   return entriesArray.length;
 }
@@ -205,23 +178,24 @@ export async function getSafeEligibleRecipients(
   filter?: { audience?: string; leagueId?: string },
   seasonId = 'season-2026-27'
 ): Promise<PublicRecipientView[]> {
-  if (memoryRecipientDirectory.size === 0) {
-    await syncRecipientDirectory(seasonId);
-  }
-
+  if (memoryRecipientSeason !== seasonId) memoryRecipientDirectory.clear();
   const client = getUpstashClient();
   let entries: RecipientDirectoryEntry[] = [];
 
   if (client) {
     try {
-      const cached = await client.get<RecipientDirectoryEntry[]>(RECIPIENT_DIR_KEY);
+      const cached = await client.get<RecipientDirectoryEntry[]>(`${RECIPIENT_DIR_KEY}:${seasonId}`);
       if (Array.isArray(cached) && cached.length > 0) {
         entries = cached;
+        memoryRecipientDirectory.clear();
+        for (const entry of cached) memoryRecipientDirectory.set(entry.userId, entry);
+        memoryRecipientSeason = seasonId;
       }
     } catch {}
   }
 
   if (entries.length === 0) {
+    if (memoryRecipientDirectory.size === 0) await syncRecipientDirectory(seasonId);
     entries = Array.from(memoryRecipientDirectory.values());
   }
 
@@ -260,19 +234,27 @@ export async function enqueueTelegramBroadcast(params: {
   targetLeagueId?: string;
   selectedUserIds?: string[];
   seasonId?: string;
+  requestId?: string;
 }): Promise<TelegramBroadcastRecord> {
   const seasonId = params.seasonId || 'season-2026-27';
-  if (memoryRecipientDirectory.size === 0) {
-    await syncRecipientDirectory(seasonId);
-  }
+  const durableClient = getUpstashClient();
+  if (!durableClient) throw new Error('REDIS_REQUIRED: durable notification storage is unavailable');
+  if (!['ALL_USERS', 'CLUB_OWNERS', 'LEAGUE_OWNERS', 'SELECTED_RECIPIENTS'].includes(params.targetAudience)) throw new Error('INVALID_AUDIENCE');
+  if (params.targetAudience === 'LEAGUE_OWNERS' && !params.targetLeagueId) throw new Error('LEAGUE_REQUIRED');
+  if (typeof params.title !== 'string' || typeof params.body !== 'string' || !params.title.trim() || !params.body.trim() || params.title.length + params.body.length > 3500) throw new Error('INVALID_MESSAGE');
+  await getSafeEligibleRecipients(undefined, seasonId);
 
-  const broadcastId = `bcast-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+  if (params.requestId && !/^[a-zA-Z0-9-]{8,100}$/.test(params.requestId)) throw new Error('INVALID_REQUEST_ID');
+  const requestId = params.requestId || crypto.randomUUID();
+  const broadcastId = `bcast-${crypto.createHash('sha256').update(params.adminUserId + ':' + requestId).digest('hex')}`;
   const now = new Date().toISOString();
 
   // 1. Resolve recipients
   let targetUserIds: string[] = [];
   if (params.targetAudience === 'SELECTED_RECIPIENTS') {
-    targetUserIds = params.selectedUserIds || [];
+    if (!Array.isArray(params.selectedUserIds)) throw new Error('RECIPIENTS_REQUIRED');
+    targetUserIds = [...new Set(params.selectedUserIds)];
+    if (targetUserIds.some(uid => typeof uid !== 'string' || !memoryRecipientDirectory.has(uid))) throw new Error('UNKNOWN_RECIPIENT');
   } else {
     const safeRecipients = await getSafeEligibleRecipients(
       { audience: params.targetAudience, leagueId: params.targetLeagueId },
@@ -291,7 +273,7 @@ export async function enqueueTelegramBroadcast(params: {
 
   for (const uid of targetUserIds) {
     const recipient = memoryRecipientDirectory.get(uid);
-    const hasTg = Boolean(recipient?.telegramId);
+    const hasTg = Boolean(recipient?.telegramId && recipient.messageable);
 
     recipientStatuses.push({
       userId: uid,
@@ -343,23 +325,18 @@ export async function enqueueTelegramBroadcast(params: {
     recipients: recipientStatuses,
   };
 
-  // Persist record
-  memoryBroadcasts.set(broadcastId, record);
-  for (const job of jobs) {
-    memoryJobQueue.push(job);
-  }
-
-  const client = getUpstashClient();
-  if (client) {
-    try {
-      await client.hset(BROADCASTS_KEY, { [broadcastId]: record });
-      for (const job of jobs) {
-        await client.rpush(QUEUE_KEY, job);
-      }
-    } catch (err: any) {
-      console.warn('[NOTIF_QUEUE] Redis enqueue error:', err.message);
-    }
-  }
+  // One atomic write: a returned broadcast always has a durable queue.
+  const persistedRecord = await durableClient.eval<unknown[], TelegramBroadcastRecord>(`
+    local existing = redis.call('HGET', KEYS[1], ARGV[1])
+    if existing then return existing end
+    redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
+    local jobs = cjson.decode(ARGV[3])
+    for _, job in ipairs(jobs) do redis.call('RPUSH', KEYS[2], cjson.encode(job)) end
+    return ARGV[2]
+  `, [BROADCASTS_KEY, QUEUE_KEY], [broadcastId, JSON.stringify(record), JSON.stringify(jobs)]);
+  if (persistedRecord.title !== record.title || persistedRecord.body !== record.body || persistedRecord.seasonId !== seasonId ||
+      JSON.stringify(persistedRecord.recipients.map(r => r.userId).sort()) !== JSON.stringify(targetUserIds.slice().sort())) throw new Error('REQUEST_ID_REUSED_WITH_DIFFERENT_CONTENT');
+  memoryBroadcasts.set(broadcastId, persistedRecord);
 
   // Create audit log
   await createAuditLog(
@@ -380,16 +357,12 @@ export async function enqueueTelegramBroadcast(params: {
     undefined,
     params.adminUsername,
     `Enqueued broadcast '${params.title}' for ${targetUserIds.length} recipients (${jobs.length} with Telegram).`
-  );
+  ).catch(() => console.warn('[NOTIF_QUEUE] Broadcast persisted; auxiliary audit unavailable'));
 
   // Trigger non-blocking asynchronous queue processor
-  setTimeout(() => {
-    processNotificationQueue().catch((err) =>
-      console.error('[NOTIF_QUEUE] Background processor failed:', err)
-    );
-  }, 100);
+  // The authenticated worker endpoint processes this durable queue.
 
-  return record;
+  return persistedRecord;
 }
 
 /**
@@ -401,78 +374,63 @@ export async function processNotificationQueue(batchSize = 25): Promise<{
   succeeded: number;
   failed: number;
 }> {
-  let processed = 0;
-  let succeeded = 0;
-  let failed = 0;
-
   const client = getUpstashClient();
-  let pendingJobs: NotificationQueueJob[] = [];
-
-  if (client) {
-    try {
-      // Fetch up to batchSize jobs
-      for (let i = 0; i < batchSize; i++) {
-        const job = await client.lpop<NotificationQueueJob>(QUEUE_KEY);
-        if (!job) break;
-        pendingJobs.push(job);
-      }
-    } catch {}
-  }
-
-  if (pendingJobs.length === 0) {
-    pendingJobs = memoryJobQueue.splice(0, batchSize);
-  }
-
-  if (pendingJobs.length === 0) {
-    return { processed: 0, succeeded: 0, failed: 0 };
-  }
-
-  for (const job of pendingJobs) {
-    processed++;
-    const formattedHtml = formatTelegramMessage(job.title, job.body, job.type);
-
-    try {
-      const res = await sendTelegramMessage(job.telegramId!, formattedHtml, { parse_mode: 'HTML' });
-      const now = new Date().toISOString();
-
-      if (res.ok) {
-        succeeded++;
-        job.status = 'SENT';
-        job.sentAt = now;
-
-        updateBroadcastRecipientState(job.broadcastId, job.userId, 'SENT', undefined, now);
-      } else {
-        job.retryCount++;
-        const errMsg = res.error || 'Telegram API returned not ok';
-
-        if (job.retryCount < job.maxRetries) {
-          job.status = 'QUEUED';
-          memoryJobQueue.push(job); // re-queue for retry
-        } else {
-          failed++;
-          job.status = 'FAILED';
-          job.error = errMsg;
-          updateBroadcastRecipientState(job.broadcastId, job.userId, 'FAILED', errMsg);
-        }
-      }
-    } catch (err: any) {
-      job.retryCount++;
-      if (job.retryCount < job.maxRetries) {
-        job.status = 'QUEUED';
-        memoryJobQueue.push(job);
-      } else {
-        failed++;
-        job.status = 'FAILED';
-        job.error = err.message;
-        updateBroadcastRecipientState(job.broadcastId, job.userId, 'FAILED', err.message);
-      }
+  if (!client) throw new Error('REDIS_REQUIRED');
+  const token = crypto.randomUUID();
+  if (!await client.set(WORKER_LOCK, token, { nx: true, ex: 120 })) return { processed: 0, succeeded: 0, failed: 0 };
+  let processed = 0, succeeded = 0, failed = 0;
+  const deadline = Date.now() + 20000;
+  try {
+    // A worker may have died after Telegram accepted a message. Do not blindly resend it.
+    const abandoned = await client.hgetall<Record<string, NotificationQueueJob & { claimedAt?: number }>>(PROCESSING_KEY);
+    for (const job of Object.values(abandoned || {})) {
+      if ((job.claimedAt || 0) + 120000 > Date.now()) continue;
+      await updateBroadcastRecipientState(job.broadcastId, job.userId, 'FAILED', 'DELIVERY_UNKNOWN: worker interrupted; verify delivery before creating another broadcast');
+      await client.hdel(PROCESSING_KEY, job.jobId);
     }
-
-    // Rate-limit throttle: 40ms delay between deliveries (~25 messages/sec)
-    await new Promise((resolve) => setTimeout(resolve, 40));
+    for (let i = 0; i < Math.min(Math.max(batchSize, 1), 25) && Date.now() < deadline; i++) {
+      const job = await client.eval<unknown[], NotificationQueueJob>(`
+        if redis.call('GET', KEYS[3]) ~= ARGV[1] then return nil end
+        local raw = redis.call('LPOP', KEYS[1])
+        if not raw then return nil end
+        local job = cjson.decode(raw)
+        job.claimedAt = tonumber(ARGV[2])
+        redis.call('HSET', KEYS[2], job.jobId, cjson.encode(job))
+        return cjson.encode(job)
+      `, [QUEUE_KEY, PROCESSING_KEY, WORKER_LOCK], [token, Date.now()]);
+      if (!job) break;
+      processed++;
+      const record = await getBroadcastDetails(job.broadcastId);
+      const recipient = record?.recipients.find(r => r.userId === job.userId);
+      if (!record || !recipient) throw new Error('BROADCAST_RECORD_MISSING');
+      if (['SENT', 'FAILED', 'SKIPPED_NO_TELEGRAM'].includes(recipient.status)) {
+        await client.hdel(PROCESSING_KEY, job.jobId);
+        continue;
+      }
+      if (recipient.status === 'SENDING') {
+        await updateBroadcastRecipientState(job.broadcastId, job.userId, 'FAILED', 'DELIVERY_UNKNOWN: interrupted send');
+        await client.hdel(PROCESSING_KEY, job.jobId);
+        continue;
+      }
+      recipient.status = 'SENDING';
+      record.status = 'PROCESSING';
+      await client.hset(BROADCASTS_KEY, { [record.id]: record });
+      const result = await sendTelegramMessage(job.telegramId!, formatTelegramMessage(job.title, job.body, job.type), { parse_mode: 'HTML' });
+      if (result.ok) {
+        await updateBroadcastRecipientState(job.broadcastId, job.userId, 'SENT', undefined, new Date().toISOString());
+        succeeded++;
+      } else {
+        // Ambiguous timeouts must be reviewed; automatic retries can duplicate delivery.
+        await updateBroadcastRecipientState(job.broadcastId, job.userId, 'FAILED', result.error_code ? `TELEGRAM_${result.error_code}: ${result.error || 'Rejected'}${result.parameters?.retry_after ? '; retry after ' + result.parameters.retry_after + ' seconds' : ''}` : 'DELIVERY_UNKNOWN: ' + (result.error || 'No response'));
+        failed++;
+      }
+      await client.hdel(PROCESSING_KEY, job.jobId);
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    return { processed, succeeded, failed };
+  } finally {
+    await client.eval("if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0", [WORKER_LOCK], [token]);
   }
-
-  return { processed, succeeded, failed };
 }
 
 function formatTelegramMessage(title: string, body: string, type: string): string {
@@ -495,15 +453,15 @@ function escapeHtml(str: string): string {
     .replace(/"/g, '&quot;');
 }
 
-function updateBroadcastRecipientState(
+async function updateBroadcastRecipientState(
   broadcastId: string,
   userId: string,
   status: 'SENT' | 'FAILED',
   error?: string,
   sentAt?: string
 ) {
-  const bcast = memoryBroadcasts.get(broadcastId);
-  if (!bcast) return;
+  const bcast = await getBroadcastDetails(broadcastId);
+  if (!bcast) throw new Error('BROADCAST_RECORD_MISSING');
 
   const r = bcast.recipients.find((rec) => rec.userId === userId);
   if (r) {
@@ -512,8 +470,8 @@ function updateBroadcastRecipientState(
     if (sentAt) r.sentAt = sentAt;
   }
 
-  if (status === 'SENT') bcast.metrics.sentCount++;
-  if (status === 'FAILED') bcast.metrics.failedCount++;
+  bcast.metrics.sentCount = bcast.recipients.filter(r => r.status === 'SENT').length;
+  bcast.metrics.failedCount = bcast.recipients.filter(r => r.status === 'FAILED').length;
 
   const totalFinished = bcast.metrics.sentCount + bcast.metrics.failedCount + bcast.metrics.skippedCount;
   if (totalFinished >= bcast.metrics.totalRecipients) {
@@ -523,8 +481,9 @@ function updateBroadcastRecipientState(
   // Also persist to Redis if available
   const client = getUpstashClient();
   if (client) {
-    client.hset(BROADCASTS_KEY, { [broadcastId]: bcast }).catch(() => {});
+    await client.hset(BROADCASTS_KEY, { [broadcastId]: bcast });
   }
+  memoryBroadcasts.set(broadcastId, bcast);
 }
 
 /**

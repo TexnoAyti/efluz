@@ -43,7 +43,7 @@ import {
   FirestoreStandingsDoc,
   FirestoreMatchdayLockDoc,
 } from './collections';
-import { assertTestEnvironmentSafe, guardAgainstTestEntityCreation, assertNoSyntheticIdsInProduction } from '../utils/testGuard';
+import { assertTestEnvironmentSafe, guardAgainstTestEntityCreation, assertNoSyntheticIdsInProduction, isHostedEnvironment } from '../utils/testGuard';
 
 export { assertTestEnvironmentSafe, guardAgainstTestEntityCreation, assertNoSyntheticIdsInProduction };
 import {
@@ -947,11 +947,15 @@ export async function claimClubAtomicFirestore(
         const clubData = clubDoc.data() as FirestoreClubDoc;
 
         // 2. Read user's existing membership for this season
+        const clubOccDoc = await transaction.get(clubOccRef);
         const userMemDoc = await transaction.get(userMemRef);
         if (userMemDoc.exists) {
           const userMemData = userMemDoc.data();
-          if (userMemData && userMemData.status === 'active') {
+          if (userMemData?.clubId && !['released', 'archived', 'inactive'].includes(userMemData.status)) {
             if (userMemData.clubId === clubId) {
+              if (!clubOccDoc.exists || clubOccDoc.data()?.userId !== userId || ['released', 'inactive'].includes(clubOccDoc.data()?.status)) {
+                throw new ClubConflictError('Club membership and occupancy disagree. Admin review is required.', 'OWNERSHIP_INCONSISTENT');
+              }
               // Idempotent: already owns this club
               return {
                 success: true,
@@ -983,10 +987,9 @@ export async function claimClubAtomicFirestore(
         }
 
         // 3. Read club occupancy for this season (authoritative source of truth)
-        const clubOccDoc = await transaction.get(clubOccRef);
         if (clubOccDoc.exists) {
           const clubOccData = clubOccDoc.data();
-          if (clubOccData && clubOccData.status === 'active' && clubOccData.userId !== userId) {
+          if (clubOccData?.userId && !['released', 'inactive'].includes(clubOccData.status) && clubOccData.userId !== userId) {
             throw new ClubConflictError(
               `This club has already been selected by another player for this season.`,
               'CLUB_OCCUPIED'
@@ -1089,7 +1092,7 @@ export async function claimClubAtomicFirestore(
       if (err instanceof ClubConflictError || err instanceof ClubNotFoundError) {
         throw err;
       }
-      if (options?.authoritativeOnly) {
+      if (options?.authoritativeOnly || isHostedEnvironment()) {
         throw err;
       }
       firestoreCircuitBreaker.recordFailure(err);
@@ -1097,7 +1100,7 @@ export async function claimClubAtomicFirestore(
       console.warn('[FIRESTORE FALLBACK] claimClubAtomicFirestore:', err.message);
     }
   } else {
-    if (options?.authoritativeOnly) {
+    if (options?.authoritativeOnly || isHostedEnvironment()) {
       throw new Error('CIRCUIT_OPEN: Firestore circuit breaker is OPEN. Authoritative write cannot execute.');
     }
     recordFallbackUsage();
@@ -4429,7 +4432,7 @@ export async function reopenFixtureFirestore(
       invalidateFirestoreCache();
       return { success: true, fixtureId, authoritative: true, isFallback: false };
     } catch (err: any) {
-      if (options?.authoritativeOnly) {
+      if (options?.authoritativeOnly || isHostedEnvironment()) {
         throw err;
       }
       firestoreCircuitBreaker.recordFailure(err);
@@ -4437,7 +4440,7 @@ export async function reopenFixtureFirestore(
       console.warn('[FIRESTORE FALLBACK] reopenFixtureFirestore:', err.message);
     }
   } else {
-    if (options?.authoritativeOnly) {
+    if (options?.authoritativeOnly || isHostedEnvironment()) {
       throw new Error('CIRCUIT_OPEN: Firestore circuit breaker is OPEN. Authoritative write cannot execute.');
     }
     recordFallbackUsage();
@@ -5180,7 +5183,7 @@ export async function adminReleaseClubFirestore(
       isFallback: false,
     };
   } catch (err: any) {
-    if (options?.authoritativeOnly) {
+    if (options?.authoritativeOnly || isHostedEnvironment()) {
       throw err;
     }
     console.warn('[FIRESTORE FALLBACK] adminReleaseClubFirestore:', err.message);
@@ -5298,7 +5301,7 @@ export async function adminAssignClubFirestore(
       isFallback: false,
     };
   } catch (err: any) {
-    if (options?.authoritativeOnly) {
+    if (options?.authoritativeOnly || isHostedEnvironment()) {
       throw err;
     }
     console.warn('[FIRESTORE FALLBACK] adminAssignClubFirestore:', err.message);
@@ -5496,7 +5499,7 @@ export async function adminApproveFixtureResultFirestore(
         isFallback: false,
       };
     } catch (err: any) {
-      if (options?.authoritativeOnly) {
+      if (options?.authoritativeOnly || isHostedEnvironment()) {
         throw err;
       }
       firestoreCircuitBreaker.recordFailure(err);
@@ -5504,7 +5507,7 @@ export async function adminApproveFixtureResultFirestore(
       console.warn('[FIRESTORE FALLBACK] adminApproveFixtureResultFirestore:', err.message);
     }
   } else {
-    if (options?.authoritativeOnly) {
+    if (options?.authoritativeOnly || isHostedEnvironment()) {
       throw new Error('CIRCUIT_OPEN: Firestore circuit breaker is OPEN. Authoritative write cannot execute.');
     }
     recordFallbackUsage();

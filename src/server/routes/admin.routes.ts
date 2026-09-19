@@ -69,6 +69,7 @@ import {
   processNotificationQueue,
   getBroadcastHistory,
   getBroadcastDetails,
+  syncRecipientDirectory,
 } from '../services/telegramNotificationQueue';
 import { getFirebaseStatus, getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS } from '../firebase/collections';
@@ -81,6 +82,7 @@ import {
   getAdminClubsFromReadModel,
   invalidateClubReadModels,
   invalidateFixtureReadModels,
+  refreshChangedFixtureReadModel,
   invalidateStandingsReadModels,
   invalidateCompetitionReadModels,
   invalidateUserMembershipReadModel,
@@ -187,10 +189,10 @@ adminRouter.get('/overview', async (req: Request, res: Response) => {
     const registeredUsers = usersCountSnap?.data().count ?? 0;
     const activeOccupancies = occCountSnap?.data().count ?? 0;
 
-    const domesticLeagues = competitions.filter((c) => c.type === 'league');
-    const domesticCups = competitions.filter((c) => c.type === 'cup');
+    const domesticLeagues = competitions.filter((c) => String(c.type) === 'LEAGUE' || String(c.type) === 'league');
+    const domesticCups = competitions.filter((c) => String(c.type) === 'DOMESTIC_CUP' || String(c.type) === 'cup');
     const europeanComps = competitions.filter(
-      (c) => c.type === 'champions_league' || c.type === 'europa_league' || c.type === 'conference_league'
+      (c) => ['EUROPEAN_LEAGUE_PHASE', 'champions_league', 'europa_league', 'conference_league'].includes(String(c.type))
     );
 
     const payload = {
@@ -965,11 +967,7 @@ adminRouter.post('/results/:fixtureId/approve', validateBody(approveResultSchema
   try {
     const result = await adminApproveFixtureResultFirestore(adminUserId, fixtureId, homeScore, awayScore, notes);
     const compId = (result as any)?.fixture?.competitionId || '';
-    if (compId) {
-      await invalidateFixtureReadModels(compId, 'season-2026-27').catch(() => {});
-      await invalidateStandingsReadModels(compId, 'season-2026-27').catch(() => {});
-    }
-    await invalidateFixtureReadModels('', 'season-2026-27').catch(() => {});
+    await refreshChangedFixtureReadModel(fixtureId).catch(() => invalidateFixtureReadModels(compId, 'season-2026-27')).catch(() => {});
     res.json(result);
   } catch (err: any) {
     handleFirestoreError(res, err, `POST /api/admin/results/${fixtureId}/approve`);
@@ -983,7 +981,7 @@ adminRouter.post('/results/:fixtureId/reject', validateBody(reopenFixtureSchema)
 
   try {
     const result = await reopenFixtureFirestore(adminUserId, fixtureId, notes || 'Rejected by tournament administrator');
-    await invalidateFixtureReadModels('', 'season-2026-27').catch(() => {});
+    await refreshChangedFixtureReadModel(fixtureId).catch(() => invalidateFixtureReadModels('', 'season-2026-27')).catch(() => {});
     res.json({
       success: true,
       message: 'Pending result rejected and match reopened for re-submission.',
@@ -1304,6 +1302,11 @@ adminRouter.get('/telegram-notifications/recipients', async (req: Request, res: 
   }
 });
 
+adminRouter.post('/telegram-notifications/recipients/refresh', async (req: Request, res: Response) => {
+  try { res.json({ count: await syncRecipientDirectory(req.body.seasonId || 'season-2026-27') }); }
+  catch { res.status(503).json({ error: 'RECIPIENT_DIRECTORY_UNAVAILABLE' }); }
+});
+
 adminRouter.post('/telegram-notifications/broadcast', async (req: Request, res: Response) => {
   const adminUserId = req.user!.id;
   const adminUsername = req.user?.username || 'admin';
@@ -1321,10 +1324,11 @@ adminRouter.post('/telegram-notifications/broadcast', async (req: Request, res: 
       title,
       body,
       type: type || 'CUSTOM_ALERT',
-      targetAudience: targetAudience || 'ALL_USERS',
+      targetAudience: targetAudience || 'SELECTED_RECIPIENTS',
       targetLeagueId,
       selectedUserIds,
       seasonId,
+      requestId: req.body.requestId,
     });
 
     res.json({
@@ -1368,7 +1372,3 @@ adminRouter.post('/telegram-notifications/process-queue', async (req: Request, r
     res.status(500).json({ error: err.message });
   }
 });
-
-
-
-

@@ -1,4 +1,6 @@
 import express from 'express';
+import { timingSafeEqual } from 'node:crypto';
+import { processNotificationQueue } from './services/telegramNotificationQueue';
 import { initDatabase, queryGet, getDbFilePath } from './db';
 import { seedDatabase, repairSeason202627Roster } from './db/seed';
 import { authMiddleware } from './middleware/authMiddleware';
@@ -30,6 +32,7 @@ let dbReady = false;
 let syncWorkerStarted = false;
 
 function startBackgroundReconciliation(): void {
+  if (process.env.ENABLE_LOCAL_MUTATION_REPLAY !== 'true') return;
   if (syncWorkerStarted) return;
   syncWorkerStarted = true;
 
@@ -104,6 +107,19 @@ export function createApp() {
   });
 
   app.use(express.json());
+
+  // Durable worker can run without initializing SQLite or reading Firestore.
+  app.get('/api/internal/telegram-worker', async (req, res) => {
+    const secret = process.env.CRON_SECRET;
+    const actual = Buffer.from(req.headers.authorization || '');
+    const expected = Buffer.from(`Bearer ${secret || ''}`);
+    if (!secret || actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+      res.status(401).json({ error: 'UNAUTHORIZED' });
+      return;
+    }
+    try { res.json(await processNotificationQueue(25)); }
+    catch { res.status(503).json({ error: 'NOTIFICATION_WORKER_UNAVAILABLE' }); }
+  });
 
   // Ensure DB is initialized before executing route handlers
   app.use(async (req, res, next) => {

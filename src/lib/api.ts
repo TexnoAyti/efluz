@@ -1055,6 +1055,7 @@ export const api = {
   },
 
   async sendTelegramBroadcast(params: {
+    requestId?: string;
     title: string;
     body: string;
     type: string;
@@ -1082,4 +1083,3 @@ export const api = {
     return request('/api/admin/telegram-notifications/process-queue', { method: 'POST', skipCache: true });
   },
 };
-

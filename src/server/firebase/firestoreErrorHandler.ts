@@ -21,6 +21,9 @@ export function parseFirestoreError(err: any): FormattedFirestoreError {
   const rawCode = err.code ?? (err.status ?? '');
   const rawMsg = err.message || String(err);
   const strCode = String(rawCode).toUpperCase();
+  if (strCode === 'AUTHORITATIVE_WRITE_REQUIRED') {
+    return { error: strCode, code: strCode, message: 'O‘zgarish saqlanmadi. Baza tiklangandan keyin qayta urinib ko‘ring.', httpStatus: 503 };
+  }
 
   // Matchday Lock / Authorization check
   if (

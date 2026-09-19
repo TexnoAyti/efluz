@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { api } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
 import {
@@ -61,8 +61,9 @@ export const AdminTelegramTab: React.FC = () => {
   const { showToast } = useAuth();
 
   // Audience & filters
-  const [audience, setAudience] = useState<'ALL_USERS' | 'CLUB_OWNERS' | 'LEAGUE_OWNERS' | 'SELECTED_RECIPIENTS'>('ALL_USERS');
-  const [selectedLeagueId, setSelectedLeagueId] = useState<string>('comp-premier-league-2026');
+  const [audience, setAudience] = useState<'ALL_USERS' | 'CLUB_OWNERS' | 'LEAGUE_OWNERS' | 'SELECTED_RECIPIENTS'>('SELECTED_RECIPIENTS');
+  const pendingSend = useRef<{ content: string; id: string } | null>(null);
+  const [selectedLeagueId, setSelectedLeagueId] = useState<string>('league-premier-league');
   const [searchTerm, setSearchTerm] = useState<string>('');
 
   // Recipients
@@ -98,7 +99,7 @@ export const AdminTelegramTab: React.FC = () => {
       setRecipients(res.recipients || []);
 
       // Default all loaded recipients as selected
-      const ids = new Set(res.recipients.map((r: PublicRecipient) => r.userId));
+      const ids = audience === 'SELECTED_RECIPIENTS' ? new Set<string>() : new Set<string>(res.recipients.filter((r: PublicRecipient) => r.messageable).map((r: PublicRecipient) => r.userId));
       setSelectedUserIds(ids);
     } catch (err: any) {
       showToast(err.message || 'Failed to load recipients list', 'error');
@@ -166,7 +167,10 @@ export const AdminTelegramTab: React.FC = () => {
 
     setIsSending(true);
     try {
+      const content = JSON.stringify([title, body, messageType, [...targetList].sort()]);
+      if (pendingSend.current?.content !== content) pendingSend.current = { content, id: crypto.randomUUID() };
       const res = await api.sendTelegramBroadcast({
+        requestId: pendingSend.current.id,
         title,
         body,
         type: messageType,
@@ -176,6 +180,8 @@ export const AdminTelegramTab: React.FC = () => {
       });
 
       showToast(res.message || 'Broadcast queued successfully for delivery!', 'success');
+      pendingSend.current = null;
+      await api.processTelegramQueue().catch(() => showToast('Xabarlar saqlandi. Yuborishni davom ettirish uchun Process Queue tugmasini bosing.', 'info'));
       await loadBroadcasts();
     } catch (err: any) {
       showToast(err.message || 'Failed to send broadcast', 'error');
@@ -205,7 +211,7 @@ export const AdminTelegramTab: React.FC = () => {
           <div>
             <h4 className="font-bold text-white text-sm">Official Telegram Broadcast Center</h4>
             <p className="text-slate-400 text-[11px] mt-0.5">
-              Targeted notifications with Redis job queuing. Telegram numeric IDs are securely isolated and never exposed in the UI.
+              Tanlangan foydalanuvchilarga bot orqali xabar yuboring. Yuborilish holatini quyidagi tarixdan tekshiring.
             </p>
           </div>
         </div>
@@ -286,11 +292,11 @@ export const AdminTelegramTab: React.FC = () => {
                   onChange={(e) => setSelectedLeagueId(e.target.value)}
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-bold text-white"
                 >
-                  <option value="comp-premier-league-2026">Premier League (England)</option>
-                  <option value="comp-la-liga-2026">La Liga (Spain)</option>
-                  <option value="comp-serie-a-2026">Serie A (Italy)</option>
-                  <option value="comp-bundesliga-2026">Bundesliga (Germany)</option>
-                  <option value="comp-ligue-1-2026">Ligue 1 (France)</option>
+                  <option value="league-premier-league">Premier League (England)</option>
+                  <option value="league-la-liga">La Liga (Spain)</option>
+                  <option value="league-serie-a">Serie A (Italy)</option>
+                  <option value="league-bundesliga">Bundesliga (Germany)</option>
+                  <option value="league-ligue-1">Ligue 1 (France)</option>
                 </select>
               </div>
             )}

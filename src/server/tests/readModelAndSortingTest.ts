@@ -425,7 +425,11 @@ async function runTestSuite() {
   assert(initialLkg?.actualCount === 2, 'Initial LKG contains 2 items');
 
   // 2. Attempt empty write (e.g. temporary database glitch returning empty array)
-  await redisSetRaw(testKey9, { data: [] }, 86400);
+  let rejectedEmptySnapshot = false;
+  try { await redisSetRaw(testKey9, { data: [] }, 86400); }
+  catch { rejectedEmptySnapshot = true; }
+  assert(rejectedEmptySnapshot, 'Empty overwrite is rejected before publishing fresh data');
+  assert((await redisGetFresh<typeof populatedData>(testKey9))?.actualCount === 2, 'Fresh snapshot also preserves populated data');
 
   // 3. Verify LKG was protected and NOT overwritten with 0 items
   const protectedLkg = await redisGetLkg<typeof populatedData>(testKey9);

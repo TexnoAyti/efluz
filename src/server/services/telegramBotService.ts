@@ -138,7 +138,7 @@ export async function sendTelegramMessage(
   chatId: number | string,
   text: string,
   options: { parse_mode?: string; reply_markup?: any } = {}
-): Promise<{ ok: boolean; result?: any; error?: string }> {
+): Promise<{ ok: boolean; result?: any; error?: string; error_code?: number; parameters?: { retry_after?: number } }> {
   const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
   if (!botToken) {
     return { ok: false, error: 'TELEGRAM_BOT_TOKEN is not configured' };
@@ -147,6 +147,7 @@ export async function sendTelegramMessage(
   const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
   try {
     const res = await fetch(url, {
+      signal: AbortSignal.timeout(10000),
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -157,7 +158,7 @@ export async function sendTelegramMessage(
       }),
     });
     const data: any = await res.json();
-    return data;
+    return { ...data, error: data.description || data.error };
   } catch (err: any) {
     return { ok: false, error: err.message };
   }

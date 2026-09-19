@@ -19,9 +19,537 @@ var __copyProps = (to, from, except, desc) => {
 };
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// src/server/db/index.ts
+// src/server/firebase/admin.ts
+import { initializeApp, getApps, cert, applicationDefault } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore";
 import fs from "fs";
 import path from "path";
+function loadAppletConfig() {
+  try {
+    const configPath = path.join(process.cwd(), "firebase-applet-config.json");
+    if (fs.existsSync(configPath)) {
+      const raw = fs.readFileSync(configPath, "utf-8");
+      return JSON.parse(raw);
+    }
+  } catch {
+  }
+  return {};
+}
+function initializeFirebaseAdmin() {
+  const isRealProduction = process.env.VERCEL === "1" || process.env.AWS_LAMBDA_FUNCTION_NAME !== void 0 || process.env.NODE_ENV === "production";
+  if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true") {
+    if (isRealProduction) {
+      throw new Error("FATAL_SAFETY_VIOLATION: FIREBASE_FORCE_LOCAL_FALLBACK cannot be enabled in a production environment.");
+    }
+    if (!cachedDb || cachedInfo?.authMode !== "local_fallback") {
+      const fallbackProjectId = "test-local-fallback";
+      const fallbackDatabaseId = "test-local-db";
+      const memoryDb = createMemoryFirestore();
+      cachedDb = memoryDb;
+      cachedInfo = {
+        isConfigured: true,
+        projectId: fallbackProjectId,
+        databaseId: fallbackDatabaseId,
+        authMode: "local_fallback"
+      };
+      console.log(`[FIREBASE AUTH] Using forced local in-memory fallback (FIREBASE_FORCE_LOCAL_FALLBACK=true): projectId=${fallbackProjectId}, databaseId=${fallbackDatabaseId}`);
+    }
+    return {
+      db: cachedDb,
+      info: cachedInfo
+    };
+  }
+  if (cachedInfo?.authMode === "local_fallback") {
+    cachedDb = null;
+    cachedInfo = null;
+  }
+  if (cachedDb && cachedInfo && cachedInfo.isConfigured) {
+    return {
+      db: cachedDb,
+      info: cachedInfo
+    };
+  }
+  const appletConfig = loadAppletConfig();
+  const projectId = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || appletConfig.projectId || "gen-lang-client-0195097895";
+  const databaseId = process.env.FIRESTORE_DATABASE_ID || process.env.FIREBASE_DATABASE_ID || appletConfig.firestoreDatabaseId || "ai-studio-efluz-4c6c88a6-697e-4fdf-82ed-45fec68ca34d";
+  let serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.FIREBASE_SERVICE_ACCOUNT_KEY || process.env.FIREBASE_SERVICE_ACCOUNT;
+  if (!serviceAccountJson && process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+    if (credPath.trim().startsWith("{")) {
+      serviceAccountJson = credPath;
+    } else if (fs.existsSync(credPath)) {
+      try {
+        serviceAccountJson = fs.readFileSync(credPath, "utf-8");
+      } catch {
+      }
+    }
+  }
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+  let privateKey = process.env.FIREBASE_PRIVATE_KEY;
+  if (privateKey) {
+    privateKey = privateKey.replace(/\\n/g, "\n");
+  }
+  const isProduction = process.env.NODE_ENV === "production" || process.env.VERCEL === "1" || process.env.AWS_LAMBDA_FUNCTION_NAME !== void 0;
+  let app2;
+  try {
+    const apps = getApps();
+    if (apps.length === 0) {
+      if (serviceAccountJson) {
+        const parsed = typeof serviceAccountJson === "string" ? JSON.parse(serviceAccountJson) : serviceAccountJson;
+        app2 = initializeApp({
+          credential: cert(parsed),
+          projectId: parsed.project_id || projectId
+        });
+      } else if (clientEmail && privateKey) {
+        app2 = initializeApp({
+          credential: cert({
+            projectId,
+            clientEmail,
+            privateKey
+          }),
+          projectId
+        });
+      } else {
+        try {
+          app2 = initializeApp({
+            credential: applicationDefault(),
+            projectId
+          });
+        } catch (adcErr) {
+          if (isProduction) {
+            console.error("[CRITICAL] Production Firebase initialization failed. Service account credentials required.", adcErr);
+            initError = adcErr.message || "Missing Firebase credentials in production";
+            cachedInfo = {
+              isConfigured: false,
+              projectId,
+              databaseId,
+              authMode: "not_configured",
+              error: initError
+            };
+            return {
+              db: null,
+              info: cachedInfo
+            };
+          }
+          const memoryDb = createMemoryFirestore();
+          cachedDb = memoryDb;
+          cachedInfo = {
+            isConfigured: true,
+            projectId,
+            databaseId,
+            authMode: "local_fallback"
+          };
+          return {
+            db: cachedDb,
+            info: cachedInfo
+          };
+        }
+      }
+    } else {
+      app2 = apps[0];
+    }
+    cachedDb = databaseId && databaseId !== "(default)" ? getFirestore(app2, databaseId) : getFirestore(app2);
+    try {
+      cachedDb.settings({ ignoreUndefinedProperties: true });
+    } catch {
+    }
+    initError = null;
+    cachedInfo = {
+      isConfigured: true,
+      projectId,
+      databaseId,
+      authMode: serviceAccountJson || clientEmail && privateKey ? "credentials" : "application_default"
+    };
+    console.log(`[FIREBASE AUTH] Initialized Firebase Admin successfully: projectId=${projectId}, databaseId=${databaseId}, authMode=${cachedInfo.authMode}`);
+    return {
+      db: cachedDb,
+      info: cachedInfo
+    };
+  } catch (err) {
+    initError = err.message || "Firebase Admin initialization failed";
+    if (isProduction) {
+      console.error("[CRITICAL] Firebase Admin production initialization failed:", err);
+      cachedInfo = {
+        isConfigured: false,
+        projectId,
+        databaseId,
+        authMode: "not_configured",
+        error: initError
+      };
+      return {
+        db: null,
+        info: cachedInfo
+      };
+    }
+    const memoryDb = createMemoryFirestore();
+    cachedDb = memoryDb;
+    cachedInfo = {
+      isConfigured: true,
+      projectId,
+      databaseId,
+      authMode: "local_fallback",
+      error: initError
+    };
+    return {
+      db: cachedDb,
+      info: cachedInfo
+    };
+  }
+}
+function getFirestoreDb() {
+  const { db, info } = initializeFirebaseAdmin();
+  if (!db) {
+    throw new Error(
+      `Firestore is not initialized. Please ensure Firebase environment variables (FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY) are configured. Details: ${info.error || "Unknown error"}`
+    );
+  }
+  return db;
+}
+function getFirebaseStatus() {
+  const { info } = initializeFirebaseAdmin();
+  return info;
+}
+function createMemoryFirestore() {
+  const store = {};
+  let txQueue = Promise.resolve();
+  function getCol(colName) {
+    if (!store[colName]) store[colName] = {};
+    return store[colName];
+  }
+  class MemDocRef {
+    constructor(colName, docId) {
+      this.colName = colName;
+      this.docId = docId;
+    }
+    get id() {
+      return this.docId;
+    }
+    async get() {
+      const col = getCol(this.colName);
+      const data = col[this.docId];
+      return {
+        id: this.docId,
+        exists: data !== void 0,
+        data: () => data !== void 0 ? JSON.parse(JSON.stringify(data)) : void 0
+      };
+    }
+    async set(data, options) {
+      const col = getCol(this.colName);
+      if (options?.merge && col[this.docId]) {
+        col[this.docId] = { ...col[this.docId], ...data };
+      } else {
+        col[this.docId] = JSON.parse(JSON.stringify(data));
+      }
+    }
+    async update(data) {
+      const col = getCol(this.colName);
+      if (!col[this.docId]) {
+        throw new Error(`NOT_FOUND: No document to update: ${this.colName}/${this.docId}`);
+      }
+      col[this.docId] = { ...col[this.docId], ...data };
+    }
+    async delete() {
+      const col = getCol(this.colName);
+      delete col[this.docId];
+    }
+  }
+  class MemQuery {
+    constructor(colName) {
+      this.colName = colName;
+      this.filters = [];
+      this.orderBys = [];
+      this.limitVal = null;
+      this.cursorVal = null;
+    }
+    where(field, op, val) {
+      const q = new MemQuery(this.colName);
+      q.filters = [...this.filters, { field, op, val }];
+      q.orderBys = [...this.orderBys];
+      q.limitVal = this.limitVal;
+      q.cursorVal = this.cursorVal;
+      return q;
+    }
+    orderBy(field, dir = "asc") {
+      const q = new MemQuery(this.colName);
+      q.filters = [...this.filters];
+      q.orderBys = [...this.orderBys, { field, dir }];
+      q.limitVal = this.limitVal;
+      q.cursorVal = this.cursorVal;
+      return q;
+    }
+    startAfter(cursor) {
+      const q = new MemQuery(this.colName);
+      q.filters = [...this.filters];
+      q.orderBys = [...this.orderBys];
+      q.limitVal = this.limitVal;
+      q.cursorVal = cursor;
+      return q;
+    }
+    limit(n) {
+      const q = new MemQuery(this.colName);
+      q.filters = [...this.filters];
+      q.orderBys = [...this.orderBys];
+      q.limitVal = n;
+      q.cursorVal = this.cursorVal;
+      return q;
+    }
+    count() {
+      return {
+        get: async () => {
+          const res = await this.get();
+          return {
+            data: () => ({ count: res.size })
+          };
+        }
+      };
+    }
+    async get() {
+      const col = getCol(this.colName);
+      let docs = Object.entries(col).map(([id, data]) => ({
+        id,
+        ref: new MemDocRef(this.colName, id),
+        exists: true,
+        data: () => JSON.parse(JSON.stringify(data))
+      }));
+      for (const f of this.filters) {
+        docs = docs.filter((d) => {
+          const val = d.data()[f.field];
+          if (f.op === "==" || f.op === "===") return val === f.val;
+          if (f.op === "!=") return val !== f.val;
+          if (f.op === ">") return val > f.val;
+          if (f.op === ">=") return val >= f.val;
+          if (f.op === "<") return val < f.val;
+          if (f.op === "<=") return val <= f.val;
+          if (f.op === "in") return Array.isArray(f.val) && f.val.includes(val);
+          return true;
+        });
+      }
+      for (const o of this.orderBys) {
+        docs.sort((a, b) => {
+          const isDocIdField = o.field === "__name__" || typeof o.field === "object" && o.field !== null || String(o.field).includes("documentId");
+          const vA = isDocIdField ? a.id : a.data()[o.field];
+          const vB = isDocIdField ? b.id : b.data()[o.field];
+          if (vA < vB) return o.dir === "asc" ? -1 : 1;
+          if (vA > vB) return o.dir === "asc" ? 1 : -1;
+          return 0;
+        });
+      }
+      if (this.cursorVal) {
+        const idx = docs.findIndex((d) => d.id === this.cursorVal);
+        if (idx !== -1) {
+          docs = docs.slice(idx + 1);
+        }
+      }
+      if (this.limitVal !== null) {
+        docs = docs.slice(0, this.limitVal);
+      }
+      return {
+        docs,
+        size: docs.length,
+        empty: docs.length === 0
+      };
+    }
+  }
+  class MemCollectionRef extends MemQuery {
+    doc(id) {
+      const docId = id || `doc_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      return new MemDocRef(this.colName, docId);
+    }
+    async add(data) {
+      const docId = `doc_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      const docRef = new MemDocRef(this.colName, docId);
+      await docRef.set(data);
+      return docRef;
+    }
+  }
+  class MemBatch {
+    constructor() {
+      this.operations = [];
+    }
+    create(docRef, data) {
+      this.operations.push(async () => {
+        if ((await docRef.get()).exists) throw new Error("ALREADY_EXISTS");
+        await docRef.set(data);
+      });
+      return this;
+    }
+    set(docRef, data, options) {
+      this.operations.push(() => docRef.set(data, options));
+      return this;
+    }
+    update(docRef, data) {
+      this.operations.push(() => docRef.update(data));
+      return this;
+    }
+    delete(docRef) {
+      this.operations.push(() => docRef.delete());
+      return this;
+    }
+    async commit() {
+      const commit = txQueue.then(async () => {
+        const backup = JSON.parse(JSON.stringify(store));
+        try {
+          for (const op of this.operations) await op();
+        } catch (error) {
+          for (const key of Object.keys(store)) delete store[key];
+          Object.assign(store, backup);
+          throw error;
+        }
+      });
+      txQueue = commit.catch(() => {
+      });
+      await commit;
+    }
+  }
+  return {
+    collection(name) {
+      return new MemCollectionRef(name);
+    },
+    batch() {
+      return new MemBatch();
+    },
+    async runTransaction(updateFunction) {
+      return new Promise((resolve, reject) => {
+        txQueue = txQueue.then(async () => {
+          try {
+            const writes = [];
+            const tx = {
+              async get(docRef) {
+                return await docRef.get();
+              },
+              set(docRef, data, options) {
+                writes.push(async () => {
+                  await docRef.set(data, options);
+                });
+                return tx;
+              },
+              update(docRef, data) {
+                writes.push(async () => {
+                  await docRef.update(data);
+                });
+                return tx;
+              },
+              delete(docRef) {
+                writes.push(async () => {
+                  await docRef.delete();
+                });
+                return tx;
+              }
+            };
+            const result = await updateFunction(tx);
+            for (const write of writes) {
+              await write();
+            }
+            resolve(result);
+          } catch (err) {
+            reject(err);
+          }
+        });
+      });
+    },
+    async listCollections() {
+      return Object.keys(store).map((name) => new MemCollectionRef(name));
+    }
+  };
+}
+var cachedDb, cachedInfo, initError;
+var init_admin = __esm({
+  "src/server/firebase/admin.ts"() {
+    cachedDb = null;
+    cachedInfo = null;
+    initError = null;
+  }
+});
+
+// src/server/firebase/collections.ts
+var COLLECTIONS;
+var init_collections = __esm({
+  "src/server/firebase/collections.ts"() {
+    COLLECTIONS = {
+      USERS: "users",
+      SEASONS: "seasons",
+      LEAGUES: "leagues",
+      CLUBS: "clubs",
+      SEASON_LEAGUE_CLUBS: "season_league_clubs",
+      CLUB_MEMBERSHIPS: "club_memberships",
+      CLUB_OCCUPANCIES: "club_occupancies",
+      USER_MEMBERSHIPS: "user_memberships",
+      COMPETITIONS: "competitions",
+      COMPETITION_PARTICIPANTS: "competition_participants",
+      FIXTURES: "fixtures",
+      RESULT_SUBMISSIONS: "result_submissions",
+      DISPUTES: "disputes",
+      STANDINGS: "standings",
+      NOTIFICATIONS: "notifications",
+      AUDIT_LOGS: "audit_logs",
+      MATCHDAY_LOCKS: "matchday_locks"
+    };
+  }
+});
+
+// src/server/db/migrateFixtures.ts
+function migrateFixturesTableIfNeeded(db) {
+  const ddl = db.exec("SELECT sql FROM sqlite_master WHERE type='table' AND name='fixtures'")[0]?.values[0]?.[0];
+  if (!ddl) return { migrated: false, recordsPreserved: 0, reason: "fixtures table does not exist" };
+  const columns = db.exec("PRAGMA table_xinfo(fixtures)")[0].values;
+  const names = columns.map((c) => String(c[1]));
+  const metadata = ["source_fixture_id", "source_winner_slot", "home_source_fixture_id", "away_source_fixture_id", "home_source_winner_slot", "away_source_winner_slot"];
+  const missing = metadata.filter((name) => !names.includes(name));
+  const needsNullable = columns.some((c) => ["home_club_id", "away_club_id"].includes(String(c[1])) && Number(c[3]) === 1);
+  const scalar = (sql) => Number(db.exec(sql)[0]?.values[0]?.[0] || 0);
+  const dirty = scalar("SELECT count(*) FROM fixtures WHERE home_club_id IN ('TBD','') OR away_club_id IN ('TBD','')");
+  if (!needsNullable && !missing.length && !dirty) return { migrated: false, recordsPreserved: 0, reason: "already up-to-date" };
+  const count = scalar("SELECT count(*) FROM fixtures");
+  const fk = scalar("PRAGMA foreign_keys");
+  const quote = (name) => '"' + name.replace(/"/g, '""') + '"';
+  const schemaObjects = db.exec("SELECT sql FROM sqlite_master WHERE tbl_name='fixtures' AND type IN ('index','trigger') AND sql IS NOT NULL")[0]?.values || [];
+  const originalViolations = JSON.stringify(db.exec("PRAGMA foreign_key_check"));
+  let transaction = false;
+  try {
+    db.run("PRAGMA foreign_keys=OFF");
+    db.run("BEGIN IMMEDIATE");
+    transaction = true;
+    if (needsNullable) {
+      let replacement = String(ddl).replace(/^CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:"fixtures"|`fixtures`|\[fixtures\]|fixtures)/i, "CREATE TABLE fixtures_migration_temp");
+      for (const name of ["home_club_id", "away_club_id"]) {
+        const pattern = new RegExp('((?:"' + name + '"|`' + name + "`|\\[" + name + "\\]|\\b" + name + "\\b)[^,]*?)\\s+NOT\\s+NULL(?:\\s+ON\\s+CONFLICT\\s+\\w+)?", "i");
+        replacement = replacement.replace(pattern, "$1");
+      }
+      if (replacement === String(ddl)) throw new Error("Unrecognized fixtures schema");
+      db.run(replacement);
+      const tempCols = db.exec("PRAGMA table_xinfo(fixtures_migration_temp)")[0].values;
+      if (tempCols.some((c) => ["home_club_id", "away_club_id"].includes(String(c[1])) && Number(c[3]) === 1)) throw new Error("Nullable migration could not preserve schema");
+      const writable = columns.filter((c) => Number(c[6]) === 0).map((c) => String(c[1]));
+      const projection = writable.map((name) => ["home_club_id", "away_club_id"].includes(name) ? `CASE WHEN ${quote(name)} IN ('TBD','') THEN NULL ELSE ${quote(name)} END` : quote(name)).join(",");
+      const fields = writable.map(quote).join(",");
+      db.run(`INSERT INTO fixtures_migration_temp (${fields}) SELECT ${projection} FROM fixtures`);
+      if (scalar("SELECT count(*) FROM fixtures_migration_temp") !== count || db.exec(`SELECT ${projection} FROM fixtures EXCEPT SELECT ${fields} FROM fixtures_migration_temp`).length) throw new Error("Fixture data preservation check failed");
+      db.run("DROP TABLE fixtures");
+      db.run("ALTER TABLE fixtures_migration_temp RENAME TO fixtures");
+      for (const [sql] of schemaObjects) db.run(String(sql));
+    } else if (dirty) {
+      db.run("UPDATE fixtures SET home_club_id = CASE WHEN home_club_id IN ('TBD','') THEN NULL ELSE home_club_id END, away_club_id = CASE WHEN away_club_id IN ('TBD','') THEN NULL ELSE away_club_id END WHERE home_club_id IN ('TBD','') OR away_club_id IN ('TBD','')");
+    }
+    for (const name of missing) db.run(`ALTER TABLE fixtures ADD COLUMN ${quote(name)} TEXT`);
+    if (JSON.stringify(db.exec("PRAGMA foreign_key_check")) !== originalViolations) throw new Error("Migration changed foreign key integrity");
+    db.run("COMMIT");
+    transaction = false;
+    return { migrated: true, recordsPreserved: count };
+  } catch (error) {
+    if (transaction) db.run("ROLLBACK");
+    throw error;
+  } finally {
+    db.run(`PRAGMA foreign_keys=${fk}`);
+  }
+}
+var init_migrateFixtures = __esm({
+  "src/server/db/migrateFixtures.ts"() {
+  }
+});
+
+// src/server/db/index.ts
+import fs2 from "fs";
+import path2 from "path";
 import { fileURLToPath } from "url";
 import initSqlJs from "sql.js";
 function getModuleDir() {
@@ -33,7 +561,7 @@ function getModuleDir() {
   }
   try {
     if (typeof import.meta !== "undefined" && import.meta.url) {
-      return path.dirname(fileURLToPath(import.meta.url));
+      return path2.dirname(fileURLToPath(import.meta.url));
     }
   } catch {
   }
@@ -46,26 +574,26 @@ function resolveSqlWasmPath() {
   const modDir = getModuleDir();
   const candidates = [
     // 1. In node_modules (local dev, tsx, standard node environment)
-    path.resolve(process.cwd(), "node_modules", "sql.js", "dist", "sql-wasm.wasm"),
-    path.join(modDir, "..", "node_modules", "sql.js", "dist", "sql-wasm.wasm"),
+    path2.resolve(process.cwd(), "node_modules", "sql.js", "dist", "sql-wasm.wasm"),
+    path2.join(modDir, "..", "node_modules", "sql.js", "dist", "sql-wasm.wasm"),
     // 2. In same directory as compiled serverless handler (e.g., /var/task/api/sql-wasm.wasm)
-    path.join(modDir, "sql-wasm.wasm"),
+    path2.join(modDir, "sql-wasm.wasm"),
     // 3. In api/ folder relative to project root / task root
-    path.resolve(process.cwd(), "api", "sql-wasm.wasm"),
+    path2.resolve(process.cwd(), "api", "sql-wasm.wasm"),
     // 4. In parent directory (e.g. if modDir is /var/task/api, check /var/task/sql-wasm.wasm)
-    path.join(modDir, "..", "sql-wasm.wasm"),
-    path.join(modDir, "..", "api", "sql-wasm.wasm"),
-    path.resolve(process.cwd(), "sql-wasm.wasm"),
+    path2.join(modDir, "..", "sql-wasm.wasm"),
+    path2.join(modDir, "..", "api", "sql-wasm.wasm"),
+    path2.resolve(process.cwd(), "sql-wasm.wasm"),
     // 5. In dist/ folder
-    path.resolve(process.cwd(), "dist", "sql-wasm.wasm"),
-    path.join(modDir, "..", "dist", "sql-wasm.wasm"),
+    path2.resolve(process.cwd(), "dist", "sql-wasm.wasm"),
+    path2.join(modDir, "..", "dist", "sql-wasm.wasm"),
     // 6. In public/ folder
-    path.resolve(process.cwd(), "public", "sql-wasm.wasm")
+    path2.resolve(process.cwd(), "public", "sql-wasm.wasm")
   ];
   for (const candidate of candidates) {
     try {
-      if (fs.existsSync(candidate)) {
-        const stats = fs.statSync(candidate);
+      if (fs2.existsSync(candidate)) {
+        const stats = fs2.statSync(candidate);
         if (stats.isFile() && stats.size > 1e4) {
           return candidate;
         }
@@ -86,19 +614,19 @@ function isValidSqliteHeader(buffer) {
 function resolveBundledDbPath() {
   const modDir = getModuleDir();
   const candidates = [
-    path.resolve(process.cwd(), "data", "efootball.sqlite"),
-    path.join(modDir, "data", "efootball.sqlite"),
-    path.join(modDir, "..", "data", "efootball.sqlite"),
-    path.resolve(process.cwd(), "api", "data", "efootball.sqlite"),
-    path.resolve(process.cwd(), "api", "efootball.sqlite"),
-    path.join(modDir, "efootball.sqlite")
+    path2.resolve(process.cwd(), "data", "efootball.sqlite"),
+    path2.join(modDir, "data", "efootball.sqlite"),
+    path2.join(modDir, "..", "data", "efootball.sqlite"),
+    path2.resolve(process.cwd(), "api", "data", "efootball.sqlite"),
+    path2.resolve(process.cwd(), "api", "efootball.sqlite"),
+    path2.join(modDir, "efootball.sqlite")
   ];
   for (const candidate of candidates) {
     try {
-      if (fs.existsSync(candidate)) {
-        const stats = fs.statSync(candidate);
+      if (fs2.existsSync(candidate)) {
+        const stats = fs2.statSync(candidate);
         if (stats.isFile() && stats.size > 1e3) {
-          const buf = fs.readFileSync(candidate);
+          const buf = fs2.readFileSync(candidate);
           if (isValidSqliteHeader(buf)) {
             return candidate;
           }
@@ -114,17 +642,18 @@ async function initDatabase() {
     return dbInstance;
   }
   try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
+    if (!fs2.existsSync(DATA_DIR)) {
+      fs2.mkdirSync(DATA_DIR, { recursive: true });
     }
   } catch (err) {
     console.warn(` [DB] Could not create DATA_DIR ${DATA_DIR}, falling back to /tmp/data:`, err);
   }
-  if (IS_SERVERLESS && !fs.existsSync(DB_FILE)) {
-    const bundledDbPath = resolveBundledDbPath();
-    if (bundledDbPath && fs.existsSync(bundledDbPath)) {
+  if (IS_SERVERLESS && !fs2.existsSync(DB_FILE)) {
+    const hosted = process.env.NODE_ENV === "production" || Boolean(process.env.VERCEL || process.env.K_SERVICE || process.env.AWS_LAMBDA_FUNCTION_NAME);
+    const bundledDbPath = hosted ? null : resolveBundledDbPath();
+    if (bundledDbPath && fs2.existsSync(bundledDbPath)) {
       try {
-        fs.copyFileSync(bundledDbPath, DB_FILE);
+        fs2.copyFileSync(bundledDbPath, DB_FILE);
         console.log(` [DB] Copied bundled database from ${bundledDbPath} to serverless location: ${DB_FILE}`);
       } catch (err) {
         console.warn(" [DB] Could not copy bundled DB to serverless path:", err);
@@ -134,7 +663,7 @@ async function initDatabase() {
   const wasmPath = resolveSqlWasmPath();
   let SQL;
   try {
-    const wasmFileBuffer = fs.readFileSync(wasmPath);
+    const wasmFileBuffer = fs2.readFileSync(wasmPath);
     const wasmBinary = new Uint8Array(wasmFileBuffer);
     SQL = await initSqlJs({
       locateFile: () => wasmPath,
@@ -149,39 +678,27 @@ async function initDatabase() {
       SQL = await initSqlJs({});
     }
   }
-  if (fs.existsSync(DB_FILE)) {
+  if (fs2.existsSync(DB_FILE)) {
     try {
-      const fileBuffer = fs.readFileSync(DB_FILE);
+      const fileBuffer = fs2.readFileSync(DB_FILE);
       if (isValidSqliteHeader(fileBuffer)) {
         dbInstance = new SQL.Database(fileBuffer);
         dbInstance.exec("SELECT 1");
         console.log(` [DB] path=${DB_FILE}`);
         console.log(" [DB] initialized=true (loaded from disk)");
       } else {
-        console.log(` [DB] Re-initializing SQLite from clean baseline (existing file not valid SQLite header)`);
-        try {
-          fs.unlinkSync(DB_FILE);
-        } catch {
-        }
-        dbInstance = new SQL.Database();
-        console.log(` [DB] path=${DB_FILE}`);
-        console.log(" [DB] initialized=true (new)");
+        throw new Error("INVALID_SQLITE_FILE: existing database preserved for recovery");
       }
     } catch (err) {
-      console.log(" [DB] Initialized clean SQLite database instance:", err?.message || "recreated");
-      dbInstance = new SQL.Database();
-      try {
-        fs.unlinkSync(DB_FILE);
-      } catch {
-      }
-      console.log(` [DB] path=${DB_FILE}`);
-      console.log(" [DB] initialized=true (recreated)");
+      dbInstance?.close();
+      dbInstance = null;
+      throw err;
     }
   } else {
     const bundledDbPath = resolveBundledDbPath();
-    if (bundledDbPath && fs.existsSync(bundledDbPath)) {
+    if (bundledDbPath && fs2.existsSync(bundledDbPath)) {
       try {
-        const fileBuffer = fs.readFileSync(bundledDbPath);
+        const fileBuffer = fs2.readFileSync(bundledDbPath);
         if (isValidSqliteHeader(fileBuffer)) {
           dbInstance = new SQL.Database(fileBuffer);
           console.log(` [DB] Loaded bundled database from: ${bundledDbPath}`);
@@ -197,15 +714,15 @@ async function initDatabase() {
       dbInstance = new SQL.Database();
     }
   }
-  if (fs.existsSync(SCHEMA_FILE)) {
+  if (fs2.existsSync(SCHEMA_FILE)) {
     try {
-      const schemaSql = fs.readFileSync(SCHEMA_FILE, "utf-8");
+      const schemaSql = fs2.readFileSync(SCHEMA_FILE, "utf-8");
       dbInstance.exec(schemaSql);
     } catch (err) {
-      console.warn(" [DB] Schema init error, resetting DB:", err.message);
-      dbInstance = new SQL.Database();
-      const schemaSql = fs.readFileSync(SCHEMA_FILE, "utf-8");
-      dbInstance.exec(schemaSql);
+      console.error(" [DB] Schema initialization failed; existing database preserved.");
+      dbInstance.close();
+      dbInstance = null;
+      throw err;
     }
   }
   try {
@@ -245,8 +762,28 @@ async function initDatabase() {
   } catch {
   }
   try {
+    migrateFixturesTableIfNeeded(dbInstance);
+  } catch (migErr) {
+    console.error(" [DB] Error during fixtures table migration:", migErr);
+    dbInstance.close();
+    dbInstance = null;
+    throw migErr;
+  }
+  try {
     dbInstance.exec(`
       ALTER TABLE fixtures ADD COLUMN fixture_source TEXT DEFAULT 'official_2026_27';
+    `);
+  } catch {
+  }
+  try {
+    dbInstance.exec(`
+      ALTER TABLE fixtures ADD COLUMN source_fixture_id TEXT;
+    `);
+  } catch {
+  }
+  try {
+    dbInstance.exec(`
+      ALTER TABLE fixtures ADD COLUMN source_winner_slot TEXT;
     `);
   } catch {
   }
@@ -346,13 +883,13 @@ function saveDatabaseSync() {
   try {
     const data = dbInstance.export();
     const buffer = Buffer.from(data);
-    const targetDir = path.dirname(DB_FILE);
-    if (!fs.existsSync(targetDir)) {
-      fs.mkdirSync(targetDir, { recursive: true });
+    const targetDir = path2.dirname(DB_FILE);
+    if (!fs2.existsSync(targetDir)) {
+      fs2.mkdirSync(targetDir, { recursive: true });
     }
     const tempFile = `${DB_FILE}.${process.pid}.${Date.now()}.tmp`;
-    fs.writeFileSync(tempFile, buffer);
-    fs.renameSync(tempFile, DB_FILE);
+    fs2.writeFileSync(tempFile, buffer);
+    fs2.renameSync(tempFile, DB_FILE);
   } catch (err) {
     console.error(" [DB] Error saving SQLite database to disk:", err);
   }
@@ -433,12 +970,14 @@ function dbTransaction(callback) {
 var dbInstance, IS_SERVERLESS, DEFAULT_DATA_DIR, DATA_DIR, DB_FILE, SCHEMA_FILE, transactionDepth;
 var init_db = __esm({
   "src/server/db/index.ts"() {
+    init_migrateFixtures();
+    init_migrateFixtures();
     dbInstance = null;
     IS_SERVERLESS = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_TASK_ROOT);
-    DEFAULT_DATA_DIR = IS_SERVERLESS ? "/tmp/data" : path.resolve(process.cwd(), "data");
+    DEFAULT_DATA_DIR = IS_SERVERLESS ? "/tmp/data" : path2.resolve(process.cwd(), "data");
     DATA_DIR = process.env.DATA_DIR || DEFAULT_DATA_DIR;
-    DB_FILE = process.env.DB_FILE || path.join(DATA_DIR, "efootball.sqlite");
-    SCHEMA_FILE = path.resolve(process.cwd(), "src", "server", "db", "schema.sql");
+    DB_FILE = process.env.DB_FILE || path2.join(DATA_DIR, "efootball.sqlite");
+    SCHEMA_FILE = path2.resolve(process.cwd(), "src", "server", "db", "schema.sql");
     transactionDepth = 0;
   }
 });
@@ -1005,411 +1544,6 @@ var init_seed = __esm({
   }
 });
 
-// src/server/firebase/admin.ts
-import { initializeApp, getApps, cert, applicationDefault } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
-import fs2 from "fs";
-import path2 from "path";
-function loadAppletConfig() {
-  try {
-    const configPath = path2.join(process.cwd(), "firebase-applet-config.json");
-    if (fs2.existsSync(configPath)) {
-      const raw = fs2.readFileSync(configPath, "utf-8");
-      return JSON.parse(raw);
-    }
-  } catch {
-  }
-  return {};
-}
-function initializeFirebaseAdmin() {
-  const isRealProduction = process.env.VERCEL === "1" || process.env.AWS_LAMBDA_FUNCTION_NAME !== void 0 || process.env.NODE_ENV === "production";
-  if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true") {
-    if (isRealProduction) {
-      throw new Error("FATAL_SAFETY_VIOLATION: FIREBASE_FORCE_LOCAL_FALLBACK cannot be enabled in a production environment.");
-    }
-    if (!cachedDb || cachedInfo?.authMode !== "local_fallback") {
-      const fallbackProjectId = "test-local-fallback";
-      const fallbackDatabaseId = "test-local-db";
-      const memoryDb = createMemoryFirestore();
-      cachedDb = memoryDb;
-      cachedInfo = {
-        isConfigured: true,
-        projectId: fallbackProjectId,
-        databaseId: fallbackDatabaseId,
-        authMode: "local_fallback"
-      };
-      console.log(`[FIREBASE AUTH] Using forced local in-memory fallback (FIREBASE_FORCE_LOCAL_FALLBACK=true): projectId=${fallbackProjectId}, databaseId=${fallbackDatabaseId}`);
-    }
-    return {
-      db: cachedDb,
-      info: cachedInfo
-    };
-  }
-  if (cachedInfo?.authMode === "local_fallback") {
-    cachedDb = null;
-    cachedInfo = null;
-  }
-  if (cachedDb && cachedInfo && cachedInfo.isConfigured) {
-    return {
-      db: cachedDb,
-      info: cachedInfo
-    };
-  }
-  const appletConfig = loadAppletConfig();
-  const projectId = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || appletConfig.projectId || "gen-lang-client-0195097895";
-  const databaseId = process.env.FIRESTORE_DATABASE_ID || process.env.FIREBASE_DATABASE_ID || appletConfig.firestoreDatabaseId || "ai-studio-efluz-4c6c88a6-697e-4fdf-82ed-45fec68ca34d";
-  let serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.FIREBASE_SERVICE_ACCOUNT_KEY || process.env.FIREBASE_SERVICE_ACCOUNT;
-  if (!serviceAccountJson && process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-    const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-    if (credPath.trim().startsWith("{")) {
-      serviceAccountJson = credPath;
-    } else if (fs2.existsSync(credPath)) {
-      try {
-        serviceAccountJson = fs2.readFileSync(credPath, "utf-8");
-      } catch {
-      }
-    }
-  }
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  let privateKey = process.env.FIREBASE_PRIVATE_KEY;
-  if (privateKey) {
-    privateKey = privateKey.replace(/\\n/g, "\n");
-  }
-  const isProduction = process.env.NODE_ENV === "production" || process.env.VERCEL === "1" || process.env.AWS_LAMBDA_FUNCTION_NAME !== void 0;
-  let app2;
-  try {
-    const apps = getApps();
-    if (apps.length === 0) {
-      if (serviceAccountJson) {
-        const parsed = typeof serviceAccountJson === "string" ? JSON.parse(serviceAccountJson) : serviceAccountJson;
-        app2 = initializeApp({
-          credential: cert(parsed),
-          projectId: parsed.project_id || projectId
-        });
-      } else if (clientEmail && privateKey) {
-        app2 = initializeApp({
-          credential: cert({
-            projectId,
-            clientEmail,
-            privateKey
-          }),
-          projectId
-        });
-      } else {
-        try {
-          app2 = initializeApp({
-            credential: applicationDefault(),
-            projectId
-          });
-        } catch (adcErr) {
-          if (isProduction) {
-            console.error("[CRITICAL] Production Firebase initialization failed. Service account credentials required.", adcErr);
-            initError = adcErr.message || "Missing Firebase credentials in production";
-            cachedInfo = {
-              isConfigured: false,
-              projectId,
-              databaseId,
-              authMode: "not_configured",
-              error: initError
-            };
-            return {
-              db: null,
-              info: cachedInfo
-            };
-          }
-          const memoryDb = createMemoryFirestore();
-          cachedDb = memoryDb;
-          cachedInfo = {
-            isConfigured: true,
-            projectId,
-            databaseId,
-            authMode: "local_fallback"
-          };
-          return {
-            db: cachedDb,
-            info: cachedInfo
-          };
-        }
-      }
-    } else {
-      app2 = apps[0];
-    }
-    cachedDb = databaseId && databaseId !== "(default)" ? getFirestore(app2, databaseId) : getFirestore(app2);
-    try {
-      cachedDb.settings({ ignoreUndefinedProperties: true });
-    } catch {
-    }
-    initError = null;
-    cachedInfo = {
-      isConfigured: true,
-      projectId,
-      databaseId,
-      authMode: serviceAccountJson || clientEmail && privateKey ? "credentials" : "application_default"
-    };
-    console.log(`[FIREBASE AUTH] Initialized Firebase Admin successfully: projectId=${projectId}, databaseId=${databaseId}, authMode=${cachedInfo.authMode}`);
-    return {
-      db: cachedDb,
-      info: cachedInfo
-    };
-  } catch (err) {
-    initError = err.message || "Firebase Admin initialization failed";
-    if (isProduction) {
-      console.error("[CRITICAL] Firebase Admin production initialization failed:", err);
-      cachedInfo = {
-        isConfigured: false,
-        projectId,
-        databaseId,
-        authMode: "not_configured",
-        error: initError
-      };
-      return {
-        db: null,
-        info: cachedInfo
-      };
-    }
-    const memoryDb = createMemoryFirestore();
-    cachedDb = memoryDb;
-    cachedInfo = {
-      isConfigured: true,
-      projectId,
-      databaseId,
-      authMode: "local_fallback",
-      error: initError
-    };
-    return {
-      db: cachedDb,
-      info: cachedInfo
-    };
-  }
-}
-function getFirestoreDb() {
-  const { db, info } = initializeFirebaseAdmin();
-  if (!db) {
-    throw new Error(
-      `Firestore is not initialized. Please ensure Firebase environment variables (FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY) are configured. Details: ${info.error || "Unknown error"}`
-    );
-  }
-  return db;
-}
-function getFirebaseStatus() {
-  const { info } = initializeFirebaseAdmin();
-  return info;
-}
-function createMemoryFirestore() {
-  const store = {};
-  function getCol(colName) {
-    if (!store[colName]) store[colName] = {};
-    return store[colName];
-  }
-  class MemDocRef {
-    constructor(colName, docId) {
-      this.colName = colName;
-      this.docId = docId;
-    }
-    get id() {
-      return this.docId;
-    }
-    async get() {
-      const col = getCol(this.colName);
-      const data = col[this.docId];
-      return {
-        id: this.docId,
-        exists: data !== void 0,
-        data: () => data !== void 0 ? JSON.parse(JSON.stringify(data)) : void 0
-      };
-    }
-    async set(data, options) {
-      const col = getCol(this.colName);
-      if (options?.merge && col[this.docId]) {
-        col[this.docId] = { ...col[this.docId], ...data };
-      } else {
-        col[this.docId] = JSON.parse(JSON.stringify(data));
-      }
-    }
-    async update(data) {
-      const col = getCol(this.colName);
-      if (!col[this.docId]) {
-        throw new Error(`NOT_FOUND: No document to update: ${this.colName}/${this.docId}`);
-      }
-      col[this.docId] = { ...col[this.docId], ...data };
-    }
-    async delete() {
-      const col = getCol(this.colName);
-      delete col[this.docId];
-    }
-  }
-  class MemQuery {
-    constructor(colName) {
-      this.colName = colName;
-      this.filters = [];
-      this.orderBys = [];
-      this.limitVal = null;
-      this.cursorVal = null;
-    }
-    where(field, op, val) {
-      const q = new MemQuery(this.colName);
-      q.filters = [...this.filters, { field, op, val }];
-      q.orderBys = [...this.orderBys];
-      q.limitVal = this.limitVal;
-      q.cursorVal = this.cursorVal;
-      return q;
-    }
-    orderBy(field, dir = "asc") {
-      const q = new MemQuery(this.colName);
-      q.filters = [...this.filters];
-      q.orderBys = [...this.orderBys, { field, dir }];
-      q.limitVal = this.limitVal;
-      q.cursorVal = this.cursorVal;
-      return q;
-    }
-    startAfter(cursor) {
-      const q = new MemQuery(this.colName);
-      q.filters = [...this.filters];
-      q.orderBys = [...this.orderBys];
-      q.limitVal = this.limitVal;
-      q.cursorVal = cursor;
-      return q;
-    }
-    limit(n) {
-      const q = new MemQuery(this.colName);
-      q.filters = [...this.filters];
-      q.orderBys = [...this.orderBys];
-      q.limitVal = n;
-      q.cursorVal = this.cursorVal;
-      return q;
-    }
-    count() {
-      return {
-        get: async () => {
-          const res = await this.get();
-          return {
-            data: () => ({ count: res.size })
-          };
-        }
-      };
-    }
-    async get() {
-      const col = getCol(this.colName);
-      let docs = Object.entries(col).map(([id, data]) => ({
-        id,
-        ref: new MemDocRef(this.colName, id),
-        exists: true,
-        data: () => JSON.parse(JSON.stringify(data))
-      }));
-      for (const f of this.filters) {
-        docs = docs.filter((d) => {
-          const val = d.data()[f.field];
-          if (f.op === "==" || f.op === "===") return val === f.val;
-          if (f.op === "!=") return val !== f.val;
-          if (f.op === ">") return val > f.val;
-          if (f.op === ">=") return val >= f.val;
-          if (f.op === "<") return val < f.val;
-          if (f.op === "<=") return val <= f.val;
-          if (f.op === "in") return Array.isArray(f.val) && f.val.includes(val);
-          return true;
-        });
-      }
-      for (const o of this.orderBys) {
-        docs.sort((a, b) => {
-          const isDocIdField = o.field === "__name__" || typeof o.field === "object" && o.field !== null || String(o.field).includes("documentId");
-          const vA = isDocIdField ? a.id : a.data()[o.field];
-          const vB = isDocIdField ? b.id : b.data()[o.field];
-          if (vA < vB) return o.dir === "asc" ? -1 : 1;
-          if (vA > vB) return o.dir === "asc" ? 1 : -1;
-          return 0;
-        });
-      }
-      if (this.cursorVal) {
-        const idx = docs.findIndex((d) => d.id === this.cursorVal);
-        if (idx !== -1) {
-          docs = docs.slice(idx + 1);
-        }
-      }
-      if (this.limitVal !== null) {
-        docs = docs.slice(0, this.limitVal);
-      }
-      return {
-        docs,
-        size: docs.length,
-        empty: docs.length === 0
-      };
-    }
-  }
-  class MemCollectionRef extends MemQuery {
-    doc(id) {
-      const docId = id || `doc_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-      return new MemDocRef(this.colName, docId);
-    }
-    async add(data) {
-      const docId = `doc_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-      const docRef = new MemDocRef(this.colName, docId);
-      await docRef.set(data);
-      return docRef;
-    }
-  }
-  class MemBatch {
-    constructor() {
-      this.operations = [];
-    }
-    set(docRef, data, options) {
-      this.operations.push(() => docRef.set(data, options));
-      return this;
-    }
-    update(docRef, data) {
-      this.operations.push(() => docRef.update(data));
-      return this;
-    }
-    delete(docRef) {
-      this.operations.push(() => docRef.delete());
-      return this;
-    }
-    async commit() {
-      for (const op of this.operations) {
-        await op();
-      }
-    }
-  }
-  return {
-    collection(name) {
-      return new MemCollectionRef(name);
-    },
-    batch() {
-      return new MemBatch();
-    },
-    async runTransaction(updateFunction) {
-      const tx = {
-        async get(docRef) {
-          return docRef.get();
-        },
-        set(docRef, data, options) {
-          docRef.set(data, options);
-          return tx;
-        },
-        update(docRef, data) {
-          docRef.update(data);
-          return tx;
-        },
-        delete(docRef) {
-          docRef.delete();
-          return tx;
-        }
-      };
-      return await updateFunction(tx);
-    },
-    async listCollections() {
-      return Object.keys(store).map((name) => new MemCollectionRef(name));
-    }
-  };
-}
-var cachedDb, cachedInfo, initError;
-var init_admin = __esm({
-  "src/server/firebase/admin.ts"() {
-    cachedDb = null;
-    cachedInfo = null;
-    initError = null;
-  }
-});
-
 // src/server/firebase/circuitBreaker.ts
 var DEFAULT_COOLDOWN_MS, CONSECUTIVE_FAILURES_THRESHOLD, FIRESTORE_READ_SOFT_LIMIT, FirestoreCircuitBreaker, firestoreCircuitBreaker;
 var init_circuitBreaker = __esm({
@@ -1715,37 +1849,8 @@ var init_occupancySnapshot = __esm({
   }
 });
 
-// src/server/firebase/collections.ts
-var COLLECTIONS;
-var init_collections = __esm({
-  "src/server/firebase/collections.ts"() {
-    COLLECTIONS = {
-      USERS: "users",
-      SEASONS: "seasons",
-      LEAGUES: "leagues",
-      CLUBS: "clubs",
-      SEASON_LEAGUE_CLUBS: "season_league_clubs",
-      CLUB_MEMBERSHIPS: "club_memberships",
-      CLUB_OCCUPANCIES: "club_occupancies",
-      USER_MEMBERSHIPS: "user_memberships",
-      COMPETITIONS: "competitions",
-      COMPETITION_PARTICIPANTS: "competition_participants",
-      FIXTURES: "fixtures",
-      RESULT_SUBMISSIONS: "result_submissions",
-      DISPUTES: "disputes",
-      STANDINGS: "standings",
-      NOTIFICATIONS: "notifications",
-      AUDIT_LOGS: "audit_logs",
-      MATCHDAY_LOCKS: "matchday_locks"
-    };
-  }
-});
-
 // src/server/utils/testGuard.ts
 function isHostedEnvironment() {
-  if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true") {
-    return false;
-  }
   return Boolean(
     process.env.K_SERVICE && process.env.K_SERVICE.trim() !== "" || process.env.VERCEL || process.env.VERCEL_ENV || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NODE_ENV === "production"
   );
@@ -1785,10 +1890,14 @@ function isSyntheticIdentifier(id) {
 }
 function isTestSafe() {
   if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true") {
+    if (process.env.NODE_ENV === "production" || process.env.VERCEL === "1" || process.env.AWS_LAMBDA_FUNCTION_NAME !== void 0) {
+      return false;
+    }
     const { info } = initializeFirebaseAdmin();
-    if (info.authMode === "local_fallback") {
+    if (info.authMode === "local_fallback" && info.projectId === "test-local-fallback") {
       return true;
     }
+    return false;
   }
   if (isHostedEnvironment()) {
     return false;
@@ -1884,6 +1993,12 @@ function loadQueueBackupFromFile() {
   }
 }
 function enqueueMutation(mutation) {
+  if (process.env.NODE_ENV === "production" || process.env.VERCEL || process.env.K_SERVICE || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    throw Object.assign(
+      new Error("Remote database unavailable. Change was not accepted; retry when service recovers."),
+      { code: "AUTHORITATIVE_WRITE_REQUIRED", statusCode: 503 }
+    );
+  }
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const existing = memoryQueue.get(mutation.mutationId);
   if (existing && existing.status === "SYNCED") {
@@ -1994,6 +2109,9 @@ function getQueueStats() {
   };
 }
 async function processPendingMutations() {
+  if (process.env.NODE_ENV === "production" || process.env.VERCEL || process.env.K_SERVICE || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    throw new Error("HOSTED_LOCAL_QUEUE_DISABLED: reconcile legacy local mutations through a reviewed recovery plan");
+  }
   if (isSyncInProgress) {
     console.log("[MUTATION_QUEUE] Sync already in progress, skipping duplicate call.");
     return {
@@ -2367,6 +2485,690 @@ var init_fixtureEngine = __esm({
   }
 });
 
+// src/server/services/notificationService.ts
+async function createNotification(userId, type, title, message, data) {
+  await createNotificationFirestore(userId, type, title, message, data);
+}
+var init_notificationService = __esm({
+  "src/server/services/notificationService.ts"() {
+    init_firestoreStore();
+  }
+});
+
+// src/server/tournament/standingsProjection.ts
+function projectStandings(clubs, fixtures, config = {}) {
+  const win = Number(config.pointsForWin ?? 3), draw = Number(config.pointsForDraw ?? 1), loss = Number(config.pointsForLoss ?? 0);
+  const rows = clubs.map((c) => ({ position: 0, clubId: c.id, clubName: c.name, shortName: c.shortName, logoUrl: c.logoUrl, played: 0, won: 0, drawn: 0, lost: 0, goalsFor: 0, goalsAgainst: 0, goalDifference: 0, points: 0, form: [] }));
+  const byId = new Map(rows.map((row) => [row.clubId, row]));
+  const confirmed = fixtures.filter((f) => f.status === "CONFIRMED").sort((a, b) => (Date.parse(a.resultConfirmedAt || a.scheduledAt || "") || 0) - (Date.parse(b.resultConfirmedAt || b.scheduledAt || "") || 0) || a.id.localeCompare(b.id));
+  for (const f of confirmed) {
+    if (!f.homeClubId || !f.awayClubId || f.homeClubId === f.awayClubId || !Number.isInteger(f.homeScore) || !Number.isInteger(f.awayScore) || f.homeScore < 0 || f.awayScore < 0) throw new Error(`INVALID_CONFIRMED_RESULT: ${f.id}`);
+    const home = byId.get(f.homeClubId), away = byId.get(f.awayClubId);
+    if (!home || !away) throw new Error(`FIXTURE_PARTICIPANT_MISSING: ${f.id}`);
+    for (const [row, forGoals, againstGoals] of [[home, f.homeScore, f.awayScore], [away, f.awayScore, f.homeScore]]) {
+      row.played++;
+      row.goalsFor += forGoals;
+      row.goalsAgainst += againstGoals;
+      row.goalDifference = row.goalsFor - row.goalsAgainst;
+      if (forGoals > againstGoals) {
+        row.won++;
+        row.points += win;
+        row.form.push("W");
+      } else if (forGoals === againstGoals) {
+        row.drawn++;
+        row.points += draw;
+        row.form.push("D");
+      } else {
+        row.lost++;
+        row.points += loss;
+        row.form.push("L");
+      }
+      row.form = row.form.slice(-5);
+    }
+  }
+  const rules = config.tieBreakers || ["points", "goalDifference", "goalsFor", "headToHead"];
+  if (rules.some((rule) => !["points", "goalDifference", "goalsFor", "headToHead", "wins"].includes(rule))) throw new Error("UNSUPPORTED_TIEBREAKER");
+  function rank(group, index) {
+    if (group.length < 2 || index >= rules.length) return [...group].sort((a, b) => a.clubId.localeCompare(b.clubId));
+    const rule = rules[index];
+    const ids = new Set(group.map((r) => r.clubId));
+    const metric = (row) => {
+      if (rule !== "headToHead") return [rule === "wins" ? row.won : Number(row[rule])];
+      let points = 0, gd = 0, gf = 0;
+      for (const f of confirmed) if (ids.has(f.homeClubId) && ids.has(f.awayClubId)) {
+        if (f.homeClubId !== row.clubId && f.awayClubId !== row.clubId) continue;
+        const own = f.homeClubId === row.clubId ? f.homeScore : f.awayScore, other = f.homeClubId === row.clubId ? f.awayScore : f.homeScore;
+        points += own > other ? win : own === other ? draw : loss;
+        gd += own - other;
+        gf += own;
+      }
+      return [points, gd, gf];
+    };
+    const metrics = new Map(group.map((r) => [r.clubId, metric(r)]));
+    const compare = (a, b) => {
+      const av = metrics.get(a.clubId), bv = metrics.get(b.clubId);
+      for (let i = 0; i < av.length; i++) if (av[i] !== bv[i]) return bv[i] - av[i];
+      return 0;
+    };
+    const ordered = [...group].sort(compare), output = [];
+    for (let start = 0; start < ordered.length; ) {
+      let end = start + 1;
+      while (end < ordered.length && compare(ordered[start], ordered[end]) === 0) end++;
+      output.push(...rank(ordered.slice(start, end), index + 1));
+      start = end;
+    }
+    return output;
+  }
+  return rank(rows, 0).map((row, index) => ({ ...row, position: index + 1 }));
+}
+var init_standingsProjection = __esm({
+  "src/server/tournament/standingsProjection.ts"() {
+  }
+});
+
+// src/server/tournament/qualificationEngine.ts
+var qualificationEngine_exports = {};
+__export(qualificationEngine_exports, {
+  applyEuropeanQualificationSync: () => applyEuropeanQualificationSync,
+  deleteQualificationPreviewToken: () => deleteQualificationPreviewToken,
+  evaluateSeasonQualifications: () => evaluateSeasonQualifications,
+  evaluateSeasonQualificationsFirestore: () => evaluateSeasonQualificationsFirestore,
+  getEuropeanStandings: () => getEuropeanStandings,
+  getQualificationPreviewToken: () => getQualificationPreviewToken,
+  populateSuperCupParticipants: () => populateSuperCupParticipants,
+  previewEuropeanQualificationSync: () => previewEuropeanQualificationSync,
+  rebuildEuropeanStandings: () => rebuildEuropeanStandings,
+  saveQualificationPreviewToken: () => saveQualificationPreviewToken
+});
+import crypto from "crypto";
+function fingerprintSnapshots(snapshots) {
+  const canonical = (value) => Array.isArray(value) ? value.map(canonical) : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().map((k) => [k, canonical(value[k])])) : value;
+  const rows = snapshots.map((s) => s.docs.map((d) => ({ id: d.id, data: d.data() })).sort((a, b) => a.id.localeCompare(b.id)));
+  return crypto.createHash("sha256").update(JSON.stringify(canonical(rows))).digest("hex");
+}
+async function saveQualificationPreviewToken(token, preview) {
+  const key = `${PREVIEW_TOKEN_REDIS_PREFIX}${token}`;
+  const payload = {
+    preview,
+    token,
+    expiresAt: Date.now() + PREVIEW_TOKEN_TTL_SECONDS * 1e3
+  };
+  const client = getUpstashClient();
+  if (client) {
+    try {
+      await client.set(key, payload, { ex: PREVIEW_TOKEN_TTL_SECONDS });
+    } catch (err) {
+      console.warn(`[QUALIFICATION] Failed to write preview token to Upstash Redis:`, err?.message || err);
+      throw new Error("QUALIFICATION_PREVIEW_STORAGE_UNAVAILABLE");
+    }
+  } else if (process.env.NODE_ENV === "production" || process.env.VERCEL || process.env.K_SERVICE) {
+    throw new Error("REDIS_REQUIRED_FOR_QUALIFICATION_PREVIEW");
+  }
+  previewTokenCache.set(token, payload);
+}
+async function getQualificationPreviewToken(token) {
+  const key = `${PREVIEW_TOKEN_REDIS_PREFIX}${token}`;
+  const client = getUpstashClient();
+  if (client) {
+    try {
+      const data = await client.get(key);
+      if (data && data.preview) {
+        return data.preview;
+      }
+    } catch (err) {
+      console.warn(`[QUALIFICATION] Failed to read preview token from Upstash Redis:`, err?.message || err);
+    }
+  }
+  const mem = previewTokenCache.get(token);
+  if (mem && Date.now() <= mem.expiresAt) {
+    return mem.preview;
+  }
+  return null;
+}
+async function deleteQualificationPreviewToken(token) {
+  const key = `${PREVIEW_TOKEN_REDIS_PREFIX}${token}`;
+  previewTokenCache.delete(token);
+  const client = getUpstashClient();
+  if (client) {
+    try {
+      await client.del(key);
+    } catch {
+    }
+  }
+}
+async function previewEuropeanQualificationSync(seasonId = "season-2026-27", mode = "provisional") {
+  const db = getFirestoreDb();
+  const now = /* @__PURE__ */ new Date();
+  const nowIso = now.toISOString();
+  const [compSnap, partsSnap, fixSnap, occSnap] = await Promise.all([
+    db.collection(COLLECTIONS.COMPETITIONS).where("seasonId", "==", seasonId).get(),
+    db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where("seasonId", "==", seasonId).get(),
+    db.collection(COLLECTIONS.FIXTURES).where("seasonId", "==", seasonId).get(),
+    db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where("seasonId", "==", seasonId).get()
+  ]);
+  const allComps = compSnap.docs.map((d) => d.data());
+  const leagues = allComps.filter((c) => c.type === "LEAGUE");
+  const allFixtures = fixSnap.docs.map((d) => d.data());
+  const existingParts = partsSnap.docs.map((d) => d.data());
+  const occupancyMap = /* @__PURE__ */ new Map();
+  for (const doc of occSnap.docs) {
+    const data = doc.data();
+    if (data.userId && data.clubId) {
+      occupancyMap.set(data.clubId, data.userId);
+    }
+  }
+  const clubsMap = new Map(SEED_CLUBS.map((c) => [c.id, c]));
+  const uclComp = allComps.find(
+    (c) => c.type === "EUROPEAN_LEAGUE_PHASE" && (c.name.toLowerCase().includes("champions") || c.id.includes("ucl"))
+  ) || { id: "comp-champions-league-2026", name: "UEFA Champions League", seasonId, type: "EUROPEAN_LEAGUE_PHASE" };
+  const uelComp = allComps.find(
+    (c) => c.type === "EUROPEAN_LEAGUE_PHASE" && (c.name.toLowerCase().includes("europa") || c.id.includes("uel"))
+  ) || { id: "comp-europa-league-2026", name: "UEFA Europa League", seasonId, type: "EUROPEAN_LEAGUE_PHASE" };
+  const uclTotal = Number(uclComp.formatConfig?.leaguePhaseTeams);
+  const uelTotal = Number(uelComp.formatConfig?.leaguePhaseTeams);
+  if (!Number.isInteger(uclTotal) || !Number.isInteger(uelTotal) || uclTotal < 2 || uelTotal < 2) throw new Error("EUROPEAN_FORMAT_NOT_CONFIGURED");
+  const europeanFixtures = allFixtures.filter(
+    (f) => f.competitionId === uclComp.id || f.competitionId === uelComp.id
+  );
+  const playedEuropeanFixtures = europeanFixtures.filter(
+    (f) => f.status !== "SCHEDULED"
+  );
+  const hasEuropeanStarted = playedEuropeanFixtures.length > 0;
+  const leagueIds = new Set(leagues.map((l) => l.id));
+  const leagueFixtures = allFixtures.filter((f) => leagueIds.has(f.competitionId));
+  const unplayedLeagueMatchesCount = leagueFixtures.filter((f) => f.status !== "CONFIRMED").length;
+  const domesticLeaguesCompleted = leagueFixtures.length > 0 && unplayedLeagueMatchesCount === 0;
+  let canApply = true;
+  let blockReason;
+  if (hasEuropeanStarted) {
+    canApply = false;
+    blockReason = `European competitions have already started (${playedEuropeanFixtures.length} played/in-progress matches). Participant synchronization is strictly blocked to protect active competition integrity.`;
+  } else if (mode === "final" && !domesticLeaguesCompleted) {
+    canApply = false;
+    blockReason = `Domestic leagues are not finished (${unplayedLeagueMatchesCount} unconfirmed fixtures remaining). Final European qualification sync can only be applied after all domestic league matches are confirmed.`;
+  }
+  const projectedUcl = [];
+  const projectedUel = [];
+  for (const league of leagues) {
+    const standings = projectStandings(SEED_CLUBS.filter((c) => c.leagueId === league.leagueId), allFixtures.filter((f) => f.competitionId === league.id), league.formatConfig);
+    if (standings.length === 0) continue;
+    const uclConfig = uclComp.formatConfig;
+    const uelConfig = uelComp.formatConfig;
+    const leagueConfig = league.formatConfig;
+    const uclSpots = Number(uclConfig?.qualificationSlots?.[league.id] ?? leagueConfig?.qualificationSpots);
+    const uelSpots = Number(uelConfig?.qualificationSlots?.[league.id] ?? leagueConfig?.europaQualificationSpots ?? leagueConfig?.qualificationSpots);
+    if (!Number.isInteger(uclSpots) || !Number.isInteger(uelSpots) || uclSpots < 0 || uelSpots < 0 || uclSpots + uelSpots > standings.length) {
+      throw new Error(`QUALIFICATION_ALLOCATION_INVALID: ${league.id}`);
+    }
+    for (let i = 0; i < Math.min(uclSpots, standings.length); i++) {
+      const row = standings[i];
+      const ownerUserId = occupancyMap.get(row.clubId) || null;
+      projectedUcl.push({
+        seasonId,
+        sourceCompetitionId: league.id,
+        sourceCompetitionName: league.name,
+        targetCompetitionId: uclComp.id,
+        targetCompetitionName: uclComp.name,
+        clubId: row.clubId,
+        clubName: row.clubName,
+        ownerUserId,
+        rank: row.position,
+        reason: `${league.name} Rank #${row.position} (UCL Spot)`
+      });
+    }
+    for (let i = uclSpots; i < Math.min(uclSpots + uelSpots, standings.length); i++) {
+      const row = standings[i];
+      const ownerUserId = occupancyMap.get(row.clubId) || null;
+      projectedUel.push({
+        seasonId,
+        sourceCompetitionId: league.id,
+        sourceCompetitionName: league.name,
+        targetCompetitionId: uelComp.id,
+        targetCompetitionName: uelComp.name,
+        clubId: row.clubId,
+        clubName: row.clubName,
+        ownerUserId,
+        rank: row.position,
+        reason: `${league.name} Rank #${row.position} (UEL Spot)`
+      });
+    }
+  }
+  const existingUclParts = existingParts.filter((p) => p.competitionId === uclComp.id);
+  const existingUclClubIds = new Set(existingUclParts.map((p) => p.clubId));
+  const projectedUclClubIds = new Set(projectedUcl.map((p) => p.clubId));
+  const uclDiff = {
+    competitionId: uclComp.id,
+    competitionName: uclComp.name,
+    totalTarget: uclTotal,
+    retained: projectedUcl.filter((p) => existingUclClubIds.has(p.clubId)).map((p) => ({ clubId: p.clubId, clubName: p.clubName, rank: p.rank, sourceLeague: p.sourceCompetitionName })),
+    added: projectedUcl.filter((p) => !existingUclClubIds.has(p.clubId)).map((p) => ({ clubId: p.clubId, clubName: p.clubName, rank: p.rank, sourceLeague: p.sourceCompetitionName })),
+    removed: existingUclParts.filter((p) => !projectedUclClubIds.has(p.clubId)).map((p) => {
+      const club = clubsMap.get(p.clubId);
+      return { clubId: p.clubId, clubName: club?.name || p.clubId, previousReason: p.qualificationReason };
+    })
+  };
+  const existingUelParts = existingParts.filter((p) => p.competitionId === uelComp.id);
+  const existingUelClubIds = new Set(existingUelParts.map((p) => p.clubId));
+  const projectedUelClubIds = new Set(projectedUel.map((p) => p.clubId));
+  const uelDiff = {
+    competitionId: uelComp.id,
+    competitionName: uelComp.name,
+    totalTarget: uelTotal,
+    retained: projectedUel.filter((p) => existingUelClubIds.has(p.clubId)).map((p) => ({ clubId: p.clubId, clubName: p.clubName, rank: p.rank, sourceLeague: p.sourceCompetitionName })),
+    added: projectedUel.filter((p) => !existingUelClubIds.has(p.clubId)).map((p) => ({ clubId: p.clubId, clubName: p.clubName, rank: p.rank, sourceLeague: p.sourceCompetitionName })),
+    removed: existingUelParts.filter((p) => !projectedUelClubIds.has(p.clubId)).map((p) => {
+      const club = clubsMap.get(p.clubId);
+      return { clubId: p.clubId, clubName: club?.name || p.clubId, previousReason: p.qualificationReason };
+    })
+  };
+  const previewToken = `prev-qual-${Date.now()}-${crypto.randomBytes(6).toString("hex")}`;
+  const expiresAt = new Date(now.getTime() + 15 * 60 * 1e3).toISOString();
+  if (projectedUcl.length !== uclTotal || projectedUel.length !== uelTotal) {
+    canApply = false;
+    blockReason = "QUALIFICATION_TOTAL_MISMATCH: review configured league allocations and competition team counts";
+  }
+  const preview = {
+    sourceFingerprint: fingerprintSnapshots([compSnap, partsSnap, fixSnap, occSnap]),
+    previewToken,
+    seasonId,
+    mode,
+    canApply,
+    blockReason,
+    domesticLeaguesCompleted,
+    unplayedLeagueMatchesCount,
+    hasEuropeanStarted,
+    summary: {
+      ucl: {
+        totalTarget: uclTotal,
+        retainedCount: uclDiff.retained.length,
+        addedCount: uclDiff.added.length,
+        removedCount: uclDiff.removed.length
+      },
+      uel: {
+        totalTarget: uelTotal,
+        retainedCount: uelDiff.retained.length,
+        addedCount: uelDiff.added.length,
+        removedCount: uelDiff.removed.length
+      }
+    },
+    diff: {
+      ucl: uclDiff,
+      uel: uelDiff
+    },
+    projectedQualifications: [...projectedUcl, ...projectedUel],
+    generatedAt: nowIso,
+    expiresAt
+  };
+  await saveQualificationPreviewToken(previewToken, preview);
+  return preview;
+}
+async function applyEuropeanQualificationSync(params) {
+  if (!params.confirmation) {
+    throw new Error("Explicit admin confirmation is required to apply European qualifications sync.");
+  }
+  const preview = await getQualificationPreviewToken(params.previewToken);
+  if (!preview) {
+    throw new Error("Preview token is invalid, expired, or was already applied. Please generate a fresh preview before applying.");
+  }
+  if (!preview.canApply) {
+    throw new Error(preview.blockReason || "Cannot apply qualifications sync: preconditions failed.");
+  }
+  if (!preview.sourceFingerprint || Date.parse(preview.expiresAt) <= Date.now() || params.seasonId && params.seasonId !== preview.seasonId) {
+    throw new Error("PREVIEW_EXPIRED_OR_SEASON_MISMATCH: generate a new preview");
+  }
+  const db = getFirestoreDb();
+  const activeEuropeanFixSnap = await db.collection(COLLECTIONS.FIXTURES).where("competitionId", "in", [preview.diff.ucl.competitionId, preview.diff.uel.competitionId]).where("status", "in", ["CONFIRMED", "PLAYING", "IN_PROGRESS", "AWAITING_RESULT", "PENDING_CONFIRMATION", "DISPUTED"]).limit(1).get();
+  if (!activeEuropeanFixSnap.empty) {
+    throw new Error(
+      "Precondition Failed: European competitions have already started with active or confirmed matches. Modifying participants is strictly prohibited."
+    );
+  }
+  if (preview.mode === "final") {
+    const unplayedLeaguesSnap = await db.collection(COLLECTIONS.FIXTURES).where("seasonId", "==", preview.seasonId).get();
+    const leagueIds = [
+      "comp-premier-league-2026",
+      "comp-la-liga-2026",
+      "comp-serie-a-2026",
+      "comp-bundesliga-2026",
+      "comp-ligue-1-2026"
+    ];
+    const unplayedLeagueMatches = unplayedLeaguesSnap.docs.filter(
+      (d) => leagueIds.includes(d.data().competitionId) && d.data().status !== "CONFIRMED"
+    ).length;
+    if (unplayedLeagueMatches > 0) {
+      throw new Error(
+        `Precondition Failed: Domestic leagues still have ${unplayedLeagueMatches} unplayed scheduled matches. Final qualification sync cannot be applied.`
+      );
+    }
+  }
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const participantsAdded = preview.diff.ucl.added.length + preview.diff.uel.added.length;
+  const participantsRemoved = preview.diff.ucl.removed.length + preview.diff.uel.removed.length;
+  const notificationsToSend = [];
+  await db.runTransaction(async (transaction) => {
+    const collections = [COLLECTIONS.COMPETITIONS, COLLECTIONS.COMPETITION_PARTICIPANTS, COLLECTIONS.FIXTURES, COLLECTIONS.CLUB_OCCUPANCIES];
+    const snapshots = [];
+    for (const collection of collections) snapshots.push(await transaction.get(db.collection(collection).where("seasonId", "==", preview.seasonId)));
+    const applicationRef = db.collection("qualification_applications").doc(params.previewToken);
+    const application = await transaction.get(applicationRef);
+    if (application.exists) throw new Error("PREVIEW_ALREADY_APPLIED");
+    if (fingerprintSnapshots(snapshots) !== preview.sourceFingerprint) throw new Error("PREVIEW_DATA_CHANGED: refresh and review the new preview");
+    const existing = snapshots[1].docs;
+    for (const q of preview.projectedQualifications) {
+      const matches = existing.filter((d) => d.data().competitionId === q.targetCompetitionId && d.data().clubId === q.clubId);
+      if (matches.length > 1) throw new Error("DUPLICATE_PARTICIPANTS: manual review required");
+      const id = matches[0]?.id || `part-${q.targetCompetitionId}-${q.clubId}`;
+      transaction.set(db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).doc(id), {
+        id,
+        seasonId: preview.seasonId,
+        competitionId: q.targetCompetitionId,
+        clubId: q.clubId,
+        ownerUserId: q.ownerUserId,
+        sourceCompetitionId: q.sourceCompetitionId,
+        sourcePosition: q.rank,
+        qualificationReason: q.reason,
+        qualificationTimestamp: now,
+        createdAt: matches[0]?.data().createdAt || now,
+        updatedAt: now
+      }, { merge: true });
+    }
+    for (const diff of [preview.diff.ucl, preview.diff.uel]) {
+      for (const removed of diff.removed) {
+        const matches = existing.filter((d) => d.data().competitionId === diff.competitionId && d.data().clubId === removed.clubId);
+        if (matches.length !== 1) throw new Error("PARTICIPANT_REMOVAL_AMBIGUOUS");
+        transaction.delete(db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).doc(matches[0].id));
+      }
+    }
+    transaction.set(applicationRef, { appliedAt: now, adminUserId: params.adminUserId, seasonId: preview.seasonId, sourceFingerprint: preview.sourceFingerprint });
+  });
+  for (const q of preview.projectedQualifications) {
+    try {
+      const partId = `part-${q.targetCompetitionId}-${q.clubId}`;
+      queryRun(
+        `INSERT OR REPLACE INTO competition_participants 
+         (id, competition_id, club_id, season_id, owner_user_id, source_competition_id, source_position, qualification_reason, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [partId, q.targetCompetitionId, q.clubId, preview.seasonId, q.ownerUserId, q.sourceCompetitionId, q.rank, q.reason, now]
+      );
+    } catch {
+    }
+  }
+  for (const diff of [preview.diff.ucl, preview.diff.uel]) {
+    for (const removed of diff.removed) {
+      try {
+        queryRun("DELETE FROM competition_participants WHERE competition_id = ? AND season_id = ? AND club_id = ?", [diff.competitionId, preview.seasonId, removed.clubId]);
+      } catch {
+      }
+    }
+  }
+  await deleteQualificationPreviewToken(params.previewToken);
+  await invalidateDataset(ReadModelKeys.competitions(preview.seasonId));
+  for (const compId of [preview.diff.ucl.competitionId, preview.diff.uel.competitionId]) {
+    await invalidateDataset(ReadModelKeys.standings(compId, preview.seasonId));
+    await invalidateDataset(ReadModelKeys.competitionFixtures(compId, preview.seasonId));
+    await invalidateDataset(`european:standings:${compId}:${preview.seasonId}`);
+  }
+  await Promise.all(
+    notificationsToSend.map(
+      (n) => createNotification(n.userId, "QUALIFICATION_CONFIRMED", n.title, n.message).catch(() => {
+      })
+    )
+  );
+  await createAuditLog(
+    params.adminUserId,
+    "EUROPEAN_QUALIFICATIONS_SYNCED",
+    "SEASON",
+    preview.seasonId,
+    void 0,
+    {
+      mode: preview.mode,
+      totalQualified: preview.projectedQualifications.length,
+      participantsAdded,
+      participantsRemoved,
+      previewToken: params.previewToken,
+      timestamp: now
+    },
+    void 0,
+    params.adminUsername || "admin",
+    `Applied European qualification sync (${preview.mode}): ${participantsAdded} added, ${participantsRemoved} removed.`
+  ).catch(() => console.warn("[QUALIFICATION] Applied transaction recorded; auxiliary audit unavailable"));
+  return {
+    success: true,
+    message: `Successfully applied European qualifications sync (${preview.mode}): ${participantsAdded} added, ${participantsRemoved} removed.`,
+    qualificationsApplied: preview.projectedQualifications.length,
+    participantsAdded,
+    participantsRemoved
+  };
+}
+async function rebuildEuropeanStandings(competitionId, seasonId = "season-2026-27") {
+  const db = getFirestoreDb();
+  const [compDoc, partsSnap, fixSnap] = await Promise.all([
+    db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get(),
+    db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where("competitionId", "==", competitionId).get(),
+    db.collection(COLLECTIONS.FIXTURES).where("competitionId", "==", competitionId).get()
+  ]);
+  const clubsMap = new Map(SEED_CLUBS.map((c) => [c.id, c]));
+  const participants = partsSnap.docs.map((d) => d.data());
+  const fixtures = fixSnap.docs.map((d) => d.data());
+  let clubIds = participants.map((p) => p.clubId);
+  if (clubIds.length === 0) {
+    throw new Error("EUROPEAN_PARTICIPANTS_NOT_CONFIGURED");
+  }
+  clubIds = [...new Set(clubIds)];
+  const format = compDoc.data()?.formatConfig;
+  const totalTeams = Number(format?.leaguePhaseTeams);
+  const directQualifiers = Number(format?.directQualifiers);
+  const playoffTeams = Number(format?.playoffTeams);
+  if (!Number.isInteger(totalTeams) || totalTeams !== clubIds.length || !Number.isInteger(directQualifiers) || !Number.isInteger(playoffTeams) || directQualifiers + playoffTeams > totalTeams) {
+    throw new Error("EUROPEAN_FORMAT_PARTICIPANTS_MISMATCH");
+  }
+  const statsMap = /* @__PURE__ */ new Map();
+  for (const cid of clubIds) {
+    const club = clubsMap.get(cid);
+    statsMap.set(cid, {
+      clubId: cid,
+      clubName: club?.name || cid,
+      badgeUrl: club?.logoUrl,
+      played: 0,
+      won: 0,
+      drawn: 0,
+      lost: 0,
+      goalsFor: 0,
+      goalsAgainst: 0,
+      goalDifference: 0,
+      points: 0
+    });
+  }
+  for (const f of fixtures) {
+    if (f.status !== "CONFIRMED" || !Number.isInteger(f.homeScore) || !Number.isInteger(f.awayScore) || f.homeScore < 0 || f.awayScore < 0) continue;
+    if (f.seasonId !== seasonId || !f.homeClubId || !f.awayClubId) continue;
+    if (/quarter|semi|final|play.?off|round of|knockout/i.test(f.roundName || "") || /-r[1-5]-m/.test(f.id)) continue;
+    const home = statsMap.get(f.homeClubId);
+    const away = statsMap.get(f.awayClubId);
+    if (home) {
+      home.played += 1;
+      home.goalsFor += f.homeScore;
+      home.goalsAgainst += f.awayScore;
+      home.goalDifference = home.goalsFor - home.goalsAgainst;
+      if (f.homeScore > f.awayScore) {
+        home.won += 1;
+        home.points += 3;
+      } else if (f.homeScore === f.awayScore) {
+        home.drawn += 1;
+        home.points += 1;
+      } else {
+        home.lost += 1;
+      }
+    }
+    if (away) {
+      away.played += 1;
+      away.goalsFor += f.awayScore;
+      away.goalsAgainst += f.homeScore;
+      away.goalDifference = away.goalsFor - away.goalsAgainst;
+      if (f.awayScore > f.homeScore) {
+        away.won += 1;
+        away.points += 3;
+      } else if (f.homeScore === f.awayScore) {
+        away.drawn += 1;
+        away.points += 1;
+      } else {
+        away.lost += 1;
+      }
+    }
+  }
+  const sorted = Array.from(statsMap.values()).sort((a, b) => {
+    if (b.points !== a.points) return b.points - a.points;
+    if (b.goalDifference !== a.goalDifference) return b.goalDifference - a.goalDifference;
+    if (b.goalsFor !== a.goalsFor) return b.goalsFor - a.goalsFor;
+    return a.clubName.localeCompare(b.clubName);
+  });
+  const rows = sorted.map((s, idx) => {
+    const position = idx + 1;
+    let zone = "ELIMINATED";
+    let zoneLabel = "Eliminated";
+    if (position <= directQualifiers) {
+      zone = "DIRECT_R16";
+      zoneLabel = "Round of 16 (Direct Qualification)";
+    } else if (position <= directQualifiers + playoffTeams) {
+      zone = "KNOCKOUT_PLAYOFF";
+      zoneLabel = "Knockout Play-offs";
+    }
+    return {
+      position,
+      clubId: s.clubId,
+      clubName: s.clubName,
+      shortName: clubsMap.get(s.clubId)?.shortName || s.clubName,
+      logoUrl: s.badgeUrl,
+      form: [],
+      badgeUrl: s.badgeUrl,
+      played: s.played,
+      won: s.won,
+      drawn: s.drawn,
+      lost: s.lost,
+      goalsFor: s.goalsFor,
+      goalsAgainst: s.goalsAgainst,
+      goalDifference: s.goalDifference,
+      points: s.points,
+      zone,
+      zoneLabel
+    };
+  });
+  const cacheKey = ReadModelKeys.standings(competitionId, seasonId);
+  await redisSetRaw(
+    cacheKey,
+    {
+      data: rows,
+      schemaVersion: SCHEMA_VERSION,
+      sourceVersion: "rebuild-european-standings",
+      expectedCount: clubIds.length
+    },
+    86400
+  );
+  return rows;
+}
+async function getEuropeanStandings(competitionId, seasonId = "season-2026-27") {
+  const result = await readThroughReadModel({
+    key: ReadModelKeys.standings(competitionId, seasonId),
+    seasonId,
+    firestoreFetcher: () => rebuildEuropeanStandings(competitionId, seasonId),
+    validateData: (rows) => Array.isArray(rows) && rows.length > 0
+  });
+  return { rows: result.data, source: result.source, degraded: Boolean(result.degraded || result.stale) };
+}
+async function evaluateSeasonQualifications(seasonId = "season-2026-27") {
+  const preview = await previewEuropeanQualificationSync(seasonId, "provisional");
+  return {
+    success: false,
+    qualifications: preview.projectedQualifications,
+    participantsAdded: 0
+  };
+}
+async function populateSuperCupParticipants(seasonId = "season-2026-27", superCupCompetitionId) {
+  const db = getFirestoreDb();
+  const SUPER_CUP_MAP = {
+    "comp-community-shield-2026": { leagueId: "comp-premier-league-2026", cupId: "comp-fa-cup-2026", name: "FA Community Shield" },
+    "comp-supercopa-2026": { leagueId: "comp-la-liga-2026", cupId: "comp-copa-del-rey-2026", name: "Supercopa de Espa\xF1a" },
+    "comp-supercoppa-2026": { leagueId: "comp-serie-a-2026", cupId: "comp-coppa-italia-2026", name: "Supercoppa Italiana" },
+    "comp-dfl-supercup-2026": { leagueId: "comp-bundesliga-2026", cupId: "comp-dfb-pokal-2026", name: "DFL-Supercup" },
+    "comp-trophee-champions-2026": { leagueId: "comp-ligue-1-2026", cupId: "comp-coupe-de-france-2026", name: "Troph\xE9e des Champions" },
+    "comp-uefa-super-cup-2026": { leagueId: "comp-champions-league-2026", cupId: "comp-europa-league-2026", name: "UEFA Super Cup" }
+  };
+  const config = SUPER_CUP_MAP[superCupCompetitionId] || { leagueId: "comp-premier-league-2026", name: "Super Cup" };
+  const leagueStandings = await calculateCompetitionStandingsFirestore(config.leagueId);
+  const leagueChampion = leagueStandings[0];
+  let secondClub = leagueStandings[1] || leagueStandings[0];
+  if (config.cupId) {
+    try {
+      const cupFinalSnap = await db.collection(COLLECTIONS.FIXTURES).where("competitionId", "==", config.cupId).where("roundName", "==", "Final").get();
+      if (!cupFinalSnap.empty) {
+        const finalMatch = cupFinalSnap.docs[0].data();
+        if (finalMatch.winnerClubId && finalMatch.winnerClubId !== leagueChampion?.clubId) {
+          const cDoc = await db.collection(COLLECTIONS.CLUBS).doc(finalMatch.winnerClubId).get();
+          if (cDoc.exists) {
+            secondClub = {
+              clubId: finalMatch.winnerClubId,
+              clubName: cDoc.data()?.name || finalMatch.winnerClubId
+            };
+          }
+        }
+      }
+    } catch {
+    }
+  }
+  const clubsMap = new Map(SEED_CLUBS.map((c) => [c.id, c]));
+  const champClub = leagueChampion ? clubsMap.get(leagueChampion.clubId) || { id: leagueChampion.clubId, name: leagueChampion.clubName } : SEED_CLUBS[0];
+  const chalClub = secondClub ? clubsMap.get(secondClub.clubId) || { id: secondClub.clubId, name: secondClub.clubName } : SEED_CLUBS[1];
+  const participants = [
+    { clubId: champClub.id, clubName: champClub.name, role: "LEAGUE_CHAMPION" },
+    { clubId: chalClub.id, clubName: chalClub.name, role: "CUP_CHAMPION_OR_RUNNER_UP" }
+  ];
+  try {
+    const batch = db.batch();
+    for (const p of participants) {
+      const docRef = db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).doc(`${superCupCompetitionId}_${p.clubId}`);
+      batch.set(
+        docRef,
+        {
+          id: `${superCupCompetitionId}_${p.clubId}`,
+          competitionId: superCupCompetitionId,
+          clubId: p.clubId,
+          clubName: p.clubName,
+          seasonId,
+          qualificationReason: p.role,
+          sourceCompetitionId: config.leagueId,
+          createdAt: (/* @__PURE__ */ new Date()).toISOString()
+        },
+        { merge: true }
+      );
+    }
+    await batch.commit();
+  } catch (err) {
+    console.warn("[SUPER_CUP] Firestore commit error:", err.message);
+  }
+  return {
+    competitionId: superCupCompetitionId,
+    participants
+  };
+}
+var PREVIEW_TOKEN_REDIS_PREFIX, PREVIEW_TOKEN_TTL_SECONDS, previewTokenCache, evaluateSeasonQualificationsFirestore;
+var init_qualificationEngine = __esm({
+  "src/server/tournament/qualificationEngine.ts"() {
+    init_admin();
+    init_collections();
+    init_firestoreStore();
+    init_adminService();
+    init_notificationService();
+    init_db();
+    init_seed();
+    init_readModelStore();
+    init_standingsProjection();
+    PREVIEW_TOKEN_REDIS_PREFIX = "qualification:preview:";
+    PREVIEW_TOKEN_TTL_SECONDS = 900;
+    previewTokenCache = /* @__PURE__ */ new Map();
+    evaluateSeasonQualificationsFirestore = evaluateSeasonQualifications;
+  }
+});
+
 // src/server/readModel/readModelStore.ts
 import { Redis } from "@upstash/redis";
 function getRawDatasetKey(key) {
@@ -2386,8 +3188,8 @@ function getDirtyKey(datasetKey) {
 }
 function getUpstashClient() {
   if (upstashClient) return upstashClient;
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
   if (url && token && !url.includes("your-upstash-redis-url") && !url.includes("example")) {
     try {
       upstashClient = new Redis({ url, token });
@@ -2446,7 +3248,7 @@ async function redisIsDirty(datasetKey) {
   }
   return true;
 }
-async function redisGetRaw(key) {
+async function redisGetRaw2(key) {
   if (key.includes(":fresh:") || key.includes(":lkg:") || key.includes(":dirty:")) {
     return redisGetExact(key);
   }
@@ -2483,65 +3285,30 @@ async function redisSetRaw(datasetKey, snapshot, ttlSeconds = 86400) {
   };
   const client = getUpstashClient();
   if (client) {
-    try {
-      await client.set(freshKey, fullSnapshot, { ex: ttlSeconds });
-    } catch (err) {
-      console.warn(`[READ_MODEL_STORE] Error setting fresh key ${freshKey}:`, err?.message || err);
-    }
-  }
-  memoryRedisStorage.set(freshKey, {
-    snapshot: fullSnapshot,
-    expiresAt: ttlSeconds ? Date.now() + ttlSeconds * 1e3 : null
-  });
-  const existingLkg = await redisGetLkg(cleanKey);
-  const shouldSkipLkg = existingLkg && existingLkg.actualCount > 0 && actualCount === 0;
-  if (shouldSkipLkg) {
-    console.warn(
-      `[READ_MODEL_STORE] LKG PROTECTION: Skipped overwriting non-empty LKG (${existingLkg.actualCount} items) with empty dataset for ${cleanKey}`
-    );
+    const accepted = await client.eval(`
+      local old = redis.call('GET', KEYS[2])
+      if old then
+        local ok, previous = pcall(cjson.decode, old)
+        if ok and tonumber(previous.actualCount or 0) > 0 and tonumber(ARGV[3]) == 0 then return 0 end
+        if ok and previous.generatedAt and previous.generatedAt > ARGV[4] then return 0 end
+      end
+      redis.call('SET', KEYS[2], ARGV[1])
+      redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
+      redis.call('DEL', KEYS[3])
+      return 1
+    `, [freshKey, lkgKey, dirtyKey], [JSON.stringify(fullSnapshot), Math.max(1, ttlSeconds), actualCount, now]);
+    if (Number(accepted) !== 1) throw new Error(`SNAPSHOT_REJECTED: ${cleanKey}`);
   } else {
-    if (client) {
-      try {
-        await client.set(lkgKey, fullSnapshot);
-      } catch (err) {
-        console.warn(`[READ_MODEL_STORE] Error setting LKG key ${lkgKey}:`, err?.message || err);
-      }
-    }
-    memoryRedisStorage.set(lkgKey, {
-      snapshot: fullSnapshot,
-      expiresAt: null
-      // NO TTL! Permanent!
-    });
+    if (process.env.NODE_ENV === "production" || process.env.VERCEL || process.env.K_SERVICE) throw new Error("REDIS_REQUIRED_FOR_DURABLE_SNAPSHOT");
+    const previous = await redisGetLkg(cleanKey);
+    if (previous && (previous.actualCount > 0 && actualCount === 0 || previous.generatedAt > now)) throw new Error(`SNAPSHOT_REJECTED: ${cleanKey}`);
   }
-  if (client) {
-    try {
-      await client.del(dirtyKey);
-    } catch {
-    }
-  }
+  memoryRedisStorage.set(freshKey, { snapshot: fullSnapshot, expiresAt: Date.now() + Math.max(1, ttlSeconds) * 1e3 });
+  memoryRedisStorage.set(lkgKey, { snapshot: fullSnapshot, expiresAt: null });
   memoryRedisStorage.delete(dirtyKey);
   setInProcessMemory(cleanKey, fullSnapshot);
   setInProcessMemory(freshKey, fullSnapshot);
   setInProcessMemory(lkgKey, fullSnapshot);
-}
-async function redisDelRaw(...keys) {
-  if (keys.length === 0) return;
-  for (const k of keys) {
-    inProcessMemoryCache.delete(k);
-    memoryRedisStorage.delete(k);
-    const clean = getRawDatasetKey(k);
-    inProcessMemoryCache.delete(clean);
-    inProcessMemoryCache.delete(getFreshKey(clean));
-    inProcessMemoryCache.delete(getLkgKey(clean));
-  }
-  const client = getUpstashClient();
-  if (client) {
-    try {
-      await client.del(...keys);
-    } catch (err) {
-      console.warn(`[READ_MODEL_STORE] Redis del error:`, err?.message || err);
-    }
-  }
 }
 async function invalidateDataset(datasetKey, targetedRebuild) {
   const cleanKey = getRawDatasetKey(datasetKey);
@@ -2657,8 +3424,9 @@ async function readThroughReadModel(options) {
   const { key, ttlSeconds = 86400, expectedCount, firestoreFetcher, validateData } = options;
   const cleanKey = getRawDatasetKey(key);
   const canQueryFirestore = firestoreCircuitBreaker.canExecute();
+  const isDirty = await redisIsDirty(cleanKey);
   const memoryHit = getFromProcessMemory(cleanKey);
-  if (memoryHit && memoryHit.data !== void 0) {
+  if (!isDirty && memoryHit && memoryHit.data !== void 0 && Date.now() - Date.parse(memoryHit.generatedAt) < ttlSeconds * 1e3) {
     if (!canQueryFirestore) {
       return {
         data: memoryHit.data,
@@ -2678,7 +3446,6 @@ async function readThroughReadModel(options) {
       degraded: false
     };
   }
-  const isDirty = await redisIsDirty(cleanKey);
   let freshSnapshot = null;
   if (!isDirty) {
     freshSnapshot = await redisGetFresh(cleanKey);
@@ -2713,7 +3480,7 @@ async function readThroughReadModel(options) {
   }
   if (freshSnapshot && freshSnapshot.data !== void 0) {
     const ageMs = Date.now() - new Date(freshSnapshot.generatedAt).getTime();
-    if (ageMs < 6e5) {
+    if (ageMs < ttlSeconds * 1e3) {
       setInProcessMemory(cleanKey, freshSnapshot);
       return {
         data: freshSnapshot.data,
@@ -2790,48 +3557,24 @@ async function readThroughReadModel(options) {
   }
 }
 async function buildCompetitionsSnapshot(seasonId = "season-2026-27") {
-  const validComps = SEED_COMPETITIONS.filter((c) => {
-    return !c.id.includes("trophee-des-champions") && !c.id.includes("conference-league") && !c.id.includes("uecl") && !c.id.includes("efl-cup") && c.status !== "inactive" && !c.hidden;
-  });
-  const competitions = validComps.map((seed) => {
-    let totalTeams = 0;
-    if (seed.leagueId) {
-      totalTeams = SEED_CLUBS.filter((c) => c.leagueId === seed.leagueId).length || 20;
-    } else {
-      totalTeams = seed.formatConfig?.maxTeams || 32;
-    }
-    const totalMatchdays = seed.leagueId ? seed.leagueId.includes("bundesliga") || seed.leagueId.includes("ligue-1") ? 17 : 19 : 8;
-    return {
-      id: seed.id,
-      seasonId: seed.seasonId || seasonId,
-      leagueId: seed.leagueId,
-      name: seed.name,
-      type: seed.type,
-      scheduleMode: seed.scheduleMode,
-      status: "active",
-      totalTeams,
-      hasFixtures: true,
-      fixtureCount: 0,
-      fixturesCount: 0,
-      generationStatus: "generated",
-      formatConfig: seed.formatConfig || {},
-      currentMatchday: 1,
-      totalMatchdays,
-      isMatchdayOpen: true,
-      adminOverrideStatus: "AUTO",
-      createdAt: (/* @__PURE__ */ new Date()).toISOString()
-    };
-  });
+  const db = getFirestoreDb();
+  if (!db) throw new ReadModelNotWarmedError("Firestore unavailable for competition refresh");
+  const docs = await db.collection(COLLECTIONS.COMPETITIONS).where("seasonId", "==", seasonId).get();
+  const competitions = docs.docs.map((d) => {
+    const data = d.data();
+    const seed = SEED_COMPETITIONS.find((c) => c.id === d.id);
+    return { ...seed, ...data, id: d.id, seasonId };
+  }).filter((c) => !c.id.includes("efl-cup") && String(c.status) !== "inactive" && !c.hidden);
+  if (!competitions.length) throw new ReadModelNotWarmedError("No authoritative competition catalog");
   const snapshot = {
     schemaVersion: SCHEMA_VERSION,
     generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
-    sourceVersion: "seed-catalog",
-    expectedCount: 17,
+    sourceVersion: "firestore-catalog",
+    expectedCount: competitions.length,
     actualCount: competitions.length,
     data: competitions
   };
-  const key = ReadModelKeys.competitions(seasonId);
-  await redisSetRaw(key, snapshot, 86400);
+  await redisSetRaw(ReadModelKeys.competitions(seasonId), snapshot, 3600);
   return snapshot;
 }
 async function buildClubsSnapshot(seasonId = "season-2026-27") {
@@ -2839,18 +3582,20 @@ async function buildClubsSnapshot(seasonId = "season-2026-27") {
   const userMap = /* @__PURE__ */ new Map();
   const existingLkg = await redisGetLkg(ReadModelKeys.clubsWithOwners(seasonId));
   let firestoreFailed = false;
+  let occupancyDocumentsSeen = 0;
   try {
     const db = getFirestoreDb();
     if (db) {
-      const occSnap = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where("seasonId", "==", seasonId).where("status", "==", "active").get();
+      const occSnap = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where("seasonId", "==", seasonId).get();
+      occupancyDocumentsSeen = occSnap.size;
       for (const doc of occSnap.docs) {
         const data = doc.data();
-        if (data.clubId && data.userId) {
+        if (data.clubId && data.userId && !["released", "inactive"].includes(data.status)) {
           occMap.set(data.clubId, { userId: data.userId });
         }
       }
       if (occMap.size === 0) {
-        const broadSnap = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).limit(100).get();
+        const broadSnap = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where("seasonId", "==", seasonId).limit(100).get();
         for (const doc of broadSnap.docs) {
           const data = doc.data();
           if (data.clubId && data.userId && data.status !== "released") {
@@ -2870,6 +3615,8 @@ async function buildClubsSnapshot(seasonId = "season-2026-27") {
               });
             }
           } catch {
+            const previous = existingLkg?.data.find((c) => c.ownerUserId === uid);
+            if (previous?.ownerUsername) userMap.set(uid, { username: previous.ownerUsername });
           }
         })
       );
@@ -2880,15 +3627,15 @@ async function buildClubsSnapshot(seasonId = "season-2026-27") {
   }
   if (firestoreFailed) {
     if (existingLkg && Array.isArray(existingLkg.data) && existingLkg.data.length > 0) {
-      return existingLkg;
+      throw new ReadModelNotWarmedError("Authoritative refresh unavailable; preserve last-known-good snapshot");
     }
     throw new ReadModelNotWarmedError(
       "READ_MODEL_NOT_WARMED: Firestore club/occupancy read failed and no populated clubs-with-owners LKG exists."
     );
   }
-  if (occMap.size === 0 && existingLkg && Array.isArray(existingLkg.data) && existingLkg.data.some((c) => c.isOccupied)) {
+  if (occMap.size === 0 && occupancyDocumentsSeen === 0 && existingLkg && Array.isArray(existingLkg.data) && existingLkg.data.some((c) => c.isOccupied)) {
     console.warn("[READ_MODEL_STORE] Firestore returned 0 occupancies while LKG had active owners; preserving LKG snapshot.");
-    return existingLkg;
+    throw new ReadModelNotWarmedError("Authoritative refresh unavailable; preserve last-known-good snapshot");
   }
   const neutralClubs = SEED_CLUBS.map((seed) => {
     const occ = occMap.get(seed.id);
@@ -2951,7 +3698,25 @@ function enrichClubForUser(club, currentUserId) {
   const isCurrentUserClub = Boolean(currentUserId && club.ownerUserId === currentUserId);
   const isOccupied = Boolean(club.ownerUserId || club.isOccupied || club.isTaken);
   return {
-    ...club,
+    id: club.id,
+    name: club.name,
+    shortName: club.shortName,
+    country: club.country,
+    leagueId: club.leagueId,
+    leagueName: club.leagueName,
+    logoUrl: club.logoUrl,
+    active: club.active,
+    stadium: club.stadium,
+    createdAt: club.createdAt,
+    ownerUserId: club.ownerUserId,
+    ownerUsername: club.ownerUsername,
+    isOccupied,
+    owner: club.owner ? {
+      userId: club.owner.userId,
+      username: club.owner.username,
+      firstName: club.owner.firstName,
+      claimedAt: club.owner.claimedAt
+    } : void 0,
     isCurrentUserClub,
     isTaken: isOccupied,
     claimedByUserId: club.ownerUserId,
@@ -2962,6 +3727,50 @@ function enrichClubForUser(club, currentUserId) {
       userId: club.ownerUserId || void 0,
       username: club.ownerUsername || void 0
     }
+  };
+}
+function normalizeFixtureSnapshot(doc, seasonId = "season-2026-27") {
+  const homeClubSeed = SEED_CLUBS.find((c) => c.id === doc.homeClubId);
+  const awayClubSeed = SEED_CLUBS.find((c) => c.id === doc.awayClubId);
+  return {
+    id: doc.id,
+    seasonId: doc.seasonId || seasonId,
+    competitionId: doc.competitionId,
+    competitionName: doc.competitionName || doc.competitionId,
+    matchday: doc.matchday,
+    roundName: doc.roundName,
+    homeClubId: doc.homeClubId && doc.homeClubId !== "TBD" ? doc.homeClubId : null,
+    awayClubId: doc.awayClubId && doc.awayClubId !== "TBD" ? doc.awayClubId : null,
+    homeClub: doc.homeClubId && doc.homeClubId !== "TBD" ? {
+      id: doc.homeClubId,
+      name: homeClubSeed?.name || doc.homeClubId,
+      shortName: homeClubSeed?.shortName || doc.homeClubId.substring(0, 3).toUpperCase(),
+      country: homeClubSeed?.country || "England",
+      leagueId: homeClubSeed?.leagueId || "league-premier-league",
+      logoUrl: homeClubSeed?.logoUrl || "",
+      active: true,
+      createdAt: ""
+    } : void 0,
+    awayClub: doc.awayClubId && doc.awayClubId !== "TBD" ? {
+      id: doc.awayClubId,
+      name: awayClubSeed?.name || doc.awayClubId,
+      shortName: awayClubSeed?.shortName || doc.awayClubId.substring(0, 3).toUpperCase(),
+      country: awayClubSeed?.country || "England",
+      leagueId: awayClubSeed?.leagueId || "league-premier-league",
+      logoUrl: awayClubSeed?.logoUrl || "",
+      active: true,
+      createdAt: ""
+    } : void 0,
+    scheduledAt: doc.scheduledAt,
+    homeScore: doc.homeScore ?? void 0,
+    awayScore: doc.awayScore ?? void 0,
+    winnerClubId: doc.winnerClubId ?? void 0,
+    status: doc.status || "SCHEDULED",
+    resultConfirmedAt: doc.resultConfirmedAt || void 0,
+    homeOwnerId: doc.homeOwnerId,
+    awayOwnerId: doc.awayOwnerId,
+    createdAt: doc.createdAt || (/* @__PURE__ */ new Date()).toISOString(),
+    updatedAt: doc.updatedAt || doc.createdAt || (/* @__PURE__ */ new Date()).toISOString()
   };
 }
 async function buildAdminFixturesSnapshot(seasonId = "season-2026-27") {
@@ -2975,54 +3784,12 @@ async function buildAdminFixturesSnapshot(seasonId = "season-2026-27") {
       console.warn("[READ_MODEL_STORE] Error fetching fixtures in buildAdminFixturesSnapshot:", err?.message || err);
       const existingLkg = await redisGetLkg(ReadModelKeys.adminFixtures(seasonId));
       if (existingLkg && existingLkg.data) {
-        return existingLkg;
+        throw new ReadModelNotWarmedError("Authoritative refresh unavailable; preserve last-known-good snapshot");
       }
+      throw new ReadModelNotWarmedError("Authoritative fixture read failed and no snapshot exists");
     }
-  }
-  const fixtures = fixDocs.map((doc) => {
-    const homeClubSeed = SEED_CLUBS.find((c) => c.id === doc.homeClubId);
-    const awayClubSeed = SEED_CLUBS.find((c) => c.id === doc.awayClubId);
-    return {
-      id: doc.id,
-      seasonId: doc.seasonId || seasonId,
-      competitionId: doc.competitionId,
-      competitionName: doc.competitionName || doc.competitionId,
-      matchday: doc.matchday,
-      roundName: doc.roundName,
-      homeClubId: doc.homeClubId,
-      awayClubId: doc.awayClubId,
-      homeClub: {
-        id: doc.homeClubId,
-        name: homeClubSeed?.name || doc.homeClubId,
-        shortName: homeClubSeed?.shortName || doc.homeClubId.substring(0, 3).toUpperCase(),
-        country: homeClubSeed?.country || "England",
-        leagueId: homeClubSeed?.leagueId || "league-premier-league",
-        logoUrl: homeClubSeed?.logoUrl || "",
-        active: true,
-        createdAt: ""
-      },
-      awayClub: {
-        id: doc.awayClubId,
-        name: awayClubSeed?.name || doc.awayClubId,
-        shortName: awayClubSeed?.shortName || doc.awayClubId.substring(0, 3).toUpperCase(),
-        country: awayClubSeed?.country || "England",
-        leagueId: awayClubSeed?.leagueId || "league-premier-league",
-        logoUrl: awayClubSeed?.logoUrl || "",
-        active: true,
-        createdAt: ""
-      },
-      scheduledAt: doc.scheduledAt,
-      homeScore: doc.homeScore ?? void 0,
-      awayScore: doc.awayScore ?? void 0,
-      winnerClubId: doc.winnerClubId ?? void 0,
-      status: doc.status || "SCHEDULED",
-      resultConfirmedAt: doc.resultConfirmedAt || void 0,
-      homeOwnerId: doc.homeOwnerId,
-      awayOwnerId: doc.awayOwnerId,
-      createdAt: doc.createdAt || (/* @__PURE__ */ new Date()).toISOString(),
-      updatedAt: doc.updatedAt || doc.createdAt || (/* @__PURE__ */ new Date()).toISOString()
-    };
-  });
+  } else throw new ReadModelNotWarmedError("Firestore unavailable for fixture refresh");
+  const fixtures = fixDocs.map((doc) => normalizeFixtureSnapshot(doc, seasonId));
   fixtures.sort((a, b) => compareAdminFixtures(a, b, false));
   const snapshot = {
     schemaVersion: SCHEMA_VERSION,
@@ -3078,6 +3845,11 @@ function generateZeroValueStandings(competitionId, seasonId = "season-2026-27") 
   }));
 }
 async function buildStandingsSnapshot(competitionId, seasonId = "season-2026-27") {
+  if (["comp-champions-league-2026", "comp-europa-league-2026"].includes(competitionId)) {
+    const { rebuildEuropeanStandings: rebuildEuropeanStandings2 } = await Promise.resolve().then(() => (init_qualificationEngine(), qualificationEngine_exports));
+    const rows2 = await rebuildEuropeanStandings2(competitionId, seasonId);
+    return { schemaVersion: SCHEMA_VERSION, generatedAt: (/* @__PURE__ */ new Date()).toISOString(), sourceVersion: "european-authoritative", expectedCount: rows2.length, actualCount: rows2.length, data: rows2 };
+  }
   const config = DOMESTIC_LEAGUE_CONFIG[competitionId];
   const expectedCount = config ? config.expectedCount : 20;
   const key = ReadModelKeys.standings(competitionId, seasonId);
@@ -3101,7 +3873,7 @@ async function buildStandingsSnapshot(competitionId, seasonId = "season-2026-27"
   }
   if (firestoreFailed) {
     if (existingLkg && Array.isArray(existingLkg.data) && existingLkg.data.length > 0) {
-      return existingLkg;
+      throw new ReadModelNotWarmedError("Authoritative refresh unavailable; preserve last-known-good snapshot");
     }
     throw new ReadModelNotWarmedError(
       `READ_MODEL_NOT_WARMED: Firestore standings retrieval failed for ${competitionId} and no valid LKG snapshot exists.`
@@ -3109,7 +3881,7 @@ async function buildStandingsSnapshot(competitionId, seasonId = "season-2026-27"
   }
   if (rows.length === 0) {
     if (existingLkg && Array.isArray(existingLkg.data) && existingLkg.data.length > 0) {
-      return existingLkg;
+      throw new ReadModelNotWarmedError("Authoritative refresh unavailable; preserve last-known-good snapshot");
     }
     let hasConfirmedFixtures = false;
     try {
@@ -3117,8 +3889,11 @@ async function buildStandingsSnapshot(competitionId, seasonId = "season-2026-27"
       if (db) {
         const fixSnap = await db.collection(COLLECTIONS.FIXTURES).where("competitionId", "==", competitionId).where("status", "==", "CONFIRMED").limit(1).get();
         hasConfirmedFixtures = !fixSnap.empty;
+      } else {
+        throw new Error("Firestore unavailable: cannot verify empty standings");
       }
-    } catch {
+    } catch (error) {
+      throw error;
     }
     if (!hasConfirmedFixtures && config) {
       rows = generateZeroValueStandings(competitionId, seasonId);
@@ -3205,61 +3980,15 @@ async function getAdminClubsFromReadModel(seasonId = "season-2026-27", leagueId,
   };
 }
 async function getLeagueClubsFromReadModel(leagueId, seasonId = "season-2026-27", currentUserId) {
-  const leagueKey = ReadModelKeys.leagueClubs(leagueId, seasonId);
-  const cleanKey = getRawDatasetKey(leagueKey);
-  const memoryHit = getFromProcessMemory(cleanKey);
-  if (memoryHit && Array.isArray(memoryHit.data) && memoryHit.data.length > 0) {
-    const clubs2 = memoryHit.data.map((c) => enrichClubForUser(c, currentUserId));
-    return { clubs: clubs2, source: "memory", stale: false, degraded: false, snapshotAt: memoryHit.generatedAt };
-  }
-  const freshSnapshot = await redisGetFresh(cleanKey);
-  if (freshSnapshot && Array.isArray(freshSnapshot.data) && freshSnapshot.data.length > 0) {
-    setInProcessMemory(cleanKey, freshSnapshot);
-    const clubs2 = freshSnapshot.data.map((c) => enrichClubForUser(c, currentUserId));
-    return { clubs: clubs2, source: "redis_fresh", stale: false, degraded: false, snapshotAt: freshSnapshot.generatedAt };
-  }
-  const globalFresh = await redisGetFresh(ReadModelKeys.clubsWithOwners(seasonId));
-  const globalLkg = await redisGetLkg(ReadModelKeys.clubsWithOwners(seasonId));
-  const globalSnap = globalFresh?.data?.length ? globalFresh : globalLkg;
-  if (globalSnap && Array.isArray(globalSnap.data) && globalSnap.data.length > 0) {
-    const leagueClubs = globalSnap.data.filter((c) => c.leagueId === leagueId);
-    if (leagueClubs.length > 0) {
-      const derivedSnapshot = {
-        schemaVersion: SCHEMA_VERSION,
-        generatedAt: globalSnap.generatedAt,
-        sourceVersion: `derived-from-global:${globalSnap.sourceVersion}`,
-        expectedCount: leagueId.includes("bundesliga") || leagueId.includes("ligue-1") ? 18 : 20,
-        actualCount: leagueClubs.length,
-        data: leagueClubs
-      };
-      await redisSetRaw(leagueKey, derivedSnapshot, 86400);
-      setInProcessMemory(cleanKey, derivedSnapshot);
-      const clubs2 = leagueClubs.map((c) => enrichClubForUser(c, currentUserId));
-      return {
-        clubs: clubs2,
-        source: "redis_derived",
-        stale: Boolean(globalSnap === globalLkg),
-        degraded: false,
-        snapshotAt: derivedSnapshot.generatedAt
-      };
-    }
-  }
   const result = await readThroughReadModel({
-    key: leagueKey,
+    key: ReadModelKeys.clubsWithOwners(seasonId),
     seasonId,
-    expectedCount: leagueId.includes("bundesliga") || leagueId.includes("ligue-1") ? 18 : 20,
-    firestoreFetcher: async () => {
-      await buildClubsSnapshot(seasonId);
-      const leagueSnap = await redisGetRaw(ReadModelKeys.leagueClubs(leagueId, seasonId));
-      if (leagueSnap && leagueSnap.data) return leagueSnap.data;
-      const allClubs = await redisGetRaw(ReadModelKeys.clubsWithOwners(seasonId));
-      return (allClubs?.data || []).filter((c) => c.leagueId === leagueId);
-    },
+    expectedCount: 96,
+    firestoreFetcher: async () => (await buildClubsSnapshot(seasonId)).data,
     validateData: (data) => Array.isArray(data) && data.length > 0
   });
-  const clubs = result.data.map((c) => enrichClubForUser(c, currentUserId));
   return {
-    clubs,
+    clubs: result.data.filter((c) => c.leagueId === leagueId).map((c) => enrichClubForUser(c, currentUserId)),
     source: result.source,
     stale: Boolean(result.stale),
     degraded: Boolean(result.degraded),
@@ -3305,106 +4034,15 @@ async function getClubByIdFromReadModel(clubId, seasonId = "season-2026-27", cur
   return { club, source: result.source, stale: Boolean(result.stale), degraded: Boolean(result.degraded) };
 }
 async function getUserActiveClubFromReadModel(userId, seasonId = "season-2026-27") {
-  const key = ReadModelKeys.userMembership(userId, seasonId);
-  const cleanKey = getRawDatasetKey(key);
-  const memHit = getFromProcessMemory(cleanKey);
-  if (memHit && memHit.data) {
-    if (memHit.data.hasClub === false) return null;
-    if (memHit.data.hasClub === true && memHit.data.club) return memHit.data.club;
-  }
-  const memFresh = await redisGetFresh(cleanKey);
-  const memLkg = await redisGetLkg(cleanKey);
-  const memSnap = memFresh || memLkg;
-  if (memSnap && memSnap.data) {
-    setInProcessMemory(cleanKey, memSnap);
-    if (memSnap.data.hasClub === false) return null;
-    if (memSnap.data.hasClub === true && memSnap.data.club) return memSnap.data.club;
-  }
-  try {
-    const globalFresh = await redisGetFresh(ReadModelKeys.clubsWithOwners(seasonId));
-    const globalLkg = await redisGetLkg(ReadModelKeys.clubsWithOwners(seasonId));
-    const clubsSnap = globalFresh?.data?.length ? globalFresh : globalLkg;
-    if (clubsSnap && Array.isArray(clubsSnap.data) && clubsSnap.data.length > 0) {
-      const found = clubsSnap.data.find((c) => c.ownerUserId === userId || c.claimedByUserId === userId);
-      if (found) {
-        const club = enrichClubForUser(found, userId);
-        const sentinelSnap = {
-          schemaVersion: SCHEMA_VERSION,
-          generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
-          sourceVersion: "derived-from-clubs-with-owners",
-          expectedCount: 1,
-          actualCount: 1,
-          data: { hasClub: true, clubId: found.id, club }
-        };
-        await redisSetRaw(key, sentinelSnap, 86400);
-        setInProcessMemory(cleanKey, sentinelSnap);
-        return club;
-      } else if (clubsSnap.data.length >= 96) {
-        const sentinelSnap = {
-          schemaVersion: SCHEMA_VERSION,
-          generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
-          sourceVersion: "derived-sentinel-no-club",
-          expectedCount: 1,
-          actualCount: 1,
-          data: { hasClub: false, clubId: null, club: null }
-        };
-        await redisSetRaw(key, sentinelSnap, 86400);
-        setInProcessMemory(cleanKey, sentinelSnap);
-        return null;
-      }
-    }
-  } catch (err) {
-    console.warn("[READ_MODEL_STORE] Error inspecting clubs-with-owners for user membership:", err?.message || err);
-  }
-  if (firestoreCircuitBreaker.canExecute()) {
-    try {
-      const db = getFirestoreDb();
-      if (db) {
-        const occSnap = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where("userId", "==", userId).where("seasonId", "==", seasonId).where("status", "==", "active").limit(1).get();
-        if (!occSnap.empty) {
-          const occ = occSnap.docs[0].data();
-          const seed = SEED_CLUBS.find((c) => c.id === occ.clubId);
-          if (seed) {
-            const club = {
-              ...seed,
-              active: true,
-              createdAt: "",
-              isTaken: true,
-              isCurrentUserClub: true,
-              claimedByUserId: userId,
-              claimedByUsername: null,
-              occupancy: { status: "owned", userId }
-            };
-            const sentinelSnap = {
-              schemaVersion: SCHEMA_VERSION,
-              generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
-              sourceVersion: "firestore-membership",
-              expectedCount: 1,
-              actualCount: 1,
-              data: { hasClub: true, clubId: occ.clubId, club }
-            };
-            await redisSetRaw(key, sentinelSnap, 86400);
-            setInProcessMemory(cleanKey, sentinelSnap);
-            return club;
-          }
-        }
-        const negativeSnap = {
-          schemaVersion: SCHEMA_VERSION,
-          generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
-          sourceVersion: "firestore-no-club",
-          expectedCount: 1,
-          actualCount: 1,
-          data: { hasClub: false, clubId: null, club: null }
-        };
-        await redisSetRaw(key, negativeSnap, 86400);
-        setInProcessMemory(cleanKey, negativeSnap);
-        return null;
-      }
-    } catch (err) {
-      console.warn("[READ_MODEL_STORE] Firestore membership query error:", err?.message || err);
-    }
-  }
-  return null;
+  const result = await readThroughReadModel({
+    key: ReadModelKeys.clubsWithOwners(seasonId),
+    seasonId,
+    expectedCount: 96,
+    firestoreFetcher: async () => (await buildClubsSnapshot(seasonId)).data,
+    validateData: (data) => Array.isArray(data) && data.length > 0
+  });
+  const owner = result.data.find((c) => (c.ownerUserId || c.claimedByUserId) === userId);
+  return owner ? enrichClubForUser(owner, userId) : null;
 }
 async function getCompetitionStandingsFromReadModel(competitionId, seasonId = "season-2026-27") {
   const config = DOMESTIC_LEAGUE_CONFIG[competitionId];
@@ -3429,80 +4067,21 @@ async function getCompetitionStandingsFromReadModel(competitionId, seasonId = "s
 }
 async function getCompetitionFixturesFromReadModel(competitionId, options = {}) {
   const seasonId = options.seasonId || "season-2026-27";
-  const key = ReadModelKeys.competitionFixtures(competitionId, seasonId);
-  const cleanKey = getRawDatasetKey(key);
-  const memoryHit = getFromProcessMemory(cleanKey);
-  let fixturesData = null;
-  let source = "memory";
-  let isStale = false;
-  let isDegraded = false;
-  let snapshotAt = (/* @__PURE__ */ new Date()).toISOString();
-  if (memoryHit && Array.isArray(memoryHit.data)) {
-    fixturesData = memoryHit.data;
-    snapshotAt = memoryHit.generatedAt;
-  } else {
-    const freshSnapshot = await redisGetFresh(cleanKey);
-    if (freshSnapshot && Array.isArray(freshSnapshot.data)) {
-      setInProcessMemory(cleanKey, freshSnapshot);
-      fixturesData = freshSnapshot.data;
-      source = "redis_fresh";
-      snapshotAt = freshSnapshot.generatedAt;
-    } else {
-      const adminFresh = await redisGetFresh(ReadModelKeys.adminFixtures(seasonId));
-      const adminLkg = await redisGetLkg(ReadModelKeys.adminFixtures(seasonId));
-      const adminSnap = adminFresh?.data ? adminFresh : adminLkg;
-      if (adminSnap && Array.isArray(adminSnap.data)) {
-        const derivedFixtures = adminSnap.data.filter((f) => f.competitionId === competitionId).sort((a, b) => compareAdminFixtures(a, b, true));
-        const derivedSnapshot = {
-          schemaVersion: SCHEMA_VERSION,
-          generatedAt: adminSnap.generatedAt,
-          sourceVersion: `derived-from-admin:${adminSnap.sourceVersion}`,
-          expectedCount: derivedFixtures.length,
-          actualCount: derivedFixtures.length,
-          data: derivedFixtures
-        };
-        await redisSetRaw(key, derivedSnapshot, 86400);
-        setInProcessMemory(cleanKey, derivedSnapshot);
-        fixturesData = derivedFixtures;
-        source = "redis_derived";
-        isStale = Boolean(adminSnap === adminLkg);
-        isDegraded = Boolean(adminSnap === adminLkg);
-        snapshotAt = derivedSnapshot.generatedAt;
-      }
-    }
-  }
-  if (!fixturesData) {
-    const result = await readThroughReadModel({
-      key,
-      seasonId,
-      firestoreFetcher: async () => {
-        await buildAdminFixturesSnapshot(seasonId);
-        const snap = await redisGetRaw(key);
-        if (snap && snap.data) return snap.data;
-        const allFixSnap = await redisGetRaw(ReadModelKeys.adminFixtures(seasonId));
-        return (allFixSnap?.data || []).filter((f) => f.competitionId === competitionId);
-      },
-      validateData: (fixtures2) => Array.isArray(fixtures2)
-    });
-    fixturesData = result.data;
-    source = result.source;
-    isStale = Boolean(result.stale);
-    isDegraded = Boolean(result.degraded);
-    snapshotAt = result.generatedAt;
-  }
-  let fixtures = fixturesData;
-  if (options.matchday !== void 0) {
-    fixtures = fixtures.filter((f) => f.matchday === options.matchday);
-  }
-  if (options.status && options.status !== "ALL") {
-    fixtures = fixtures.filter((f) => f.status === options.status);
-  }
+  const result = await readThroughReadModel({
+    key: ReadModelKeys.adminFixtures(seasonId),
+    seasonId,
+    firestoreFetcher: async () => (await buildAdminFixturesSnapshot(seasonId)).data,
+    validateData: (data) => Array.isArray(data)
+  });
+  let fixtures = result.data.filter((f) => f.competitionId === competitionId);
+  if (options.matchday !== void 0) fixtures = fixtures.filter((f) => Number(f.matchday) === Number(options.matchday));
+  if (options.status && options.status !== "ALL") fixtures = fixtures.filter((f) => f.status === options.status);
   return {
-    fixtures,
-    source,
-    stale: isStale,
-    degraded: isDegraded,
-    snapshotAt
+    fixtures: fixtures.sort((a, b) => compareAdminFixtures(a, b, true)),
+    source: result.source,
+    stale: Boolean(result.stale),
+    degraded: Boolean(result.degraded),
+    snapshotAt: result.generatedAt
   };
 }
 async function getAdminFixturesFromReadModel(options = {}) {
@@ -3517,7 +4096,7 @@ async function getAdminFixturesFromReadModel(options = {}) {
     },
     validateData: (fixtures) => Array.isArray(fixtures) && fixtures.length > 0
   });
-  let allFixtures = snapshotRes.data;
+  let allFixtures = [...snapshotRes.data].sort((a, b) => compareAdminFixtures(a, b));
   if (options.competitionId && options.competitionId !== "ALL") {
     allFixtures = allFixtures.filter((f) => f.competitionId === options.competitionId);
   }
@@ -3541,15 +4120,20 @@ async function getAdminFixturesFromReadModel(options = {}) {
   if (options.cursor) {
     const tuple = decodeFixtureCursor(options.cursor);
     if (tuple) {
-      const foundIdx = allFixtures.findIndex((f) => f.id === tuple.id);
-      if (foundIdx >= 0) {
-        startIndex = foundIdx + 1;
-      }
+      const foundIdx = allFixtures.findIndex((f) => {
+        const order = CANONICAL_COMPETITION_ORDER[f.competitionId] ?? 999;
+        if (order !== tuple.competitionOrder) return order > tuple.competitionOrder;
+        const matchday = Number(f.matchday) || 0;
+        if (matchday !== tuple.matchday) return matchday > tuple.matchday;
+        const time = Date.parse(f.scheduledAt) || 0, previous = Date.parse(tuple.scheduledAt) || 0;
+        return time !== previous ? time > previous : f.id.localeCompare(tuple.id) > 0;
+      });
+      startIndex = foundIdx < 0 ? allFixtures.length : foundIdx;
     } else {
       const rawIdx = allFixtures.findIndex((f) => f.id === options.cursor);
       if (rawIdx >= 0) {
         startIndex = rawIdx + 1;
-      }
+      } else throw Object.assign(new Error("INVALID_FIXTURE_CURSOR"), { statusCode: 400 });
     }
   }
   const pagedFixtures = allFixtures.slice(startIndex, startIndex + limit);
@@ -3574,15 +4158,49 @@ async function invalidateClubReadModels(seasonId = "season-2026-27") {
   }
   await invalidateDataset(ReadModelKeys.adminFixtures(seasonId));
 }
+async function refreshChangedFixtureReadModel(fixtureId) {
+  const document = await getFirestoreDb().collection(COLLECTIONS.FIXTURES).doc(fixtureId).get();
+  if (!document.exists) throw new Error("FIXTURE_NOT_FOUND");
+  const fixture = normalizeFixtureSnapshot({ ...document.data(), id: document.id });
+  const key = ReadModelKeys.adminFixtures(fixture.seasonId);
+  const client = getUpstashClient();
+  let patched = false;
+  if (client) {
+    const result = await client.eval(`
+      if redis.call('EXISTS', KEYS[3]) == 1 then return 0 end
+      local raw = redis.call('GET', KEYS[2])
+      if not raw then return 0 end
+      local snapshot = cjson.decode(raw)
+      local changed = cjson.decode(ARGV[1])
+      for i, row in ipairs(snapshot.data) do
+        if row.id == changed.id then
+          if row.updatedAt and row.updatedAt > changed.updatedAt then return 1 end
+          snapshot.data[i] = changed
+          local updated = cjson.encode(snapshot)
+          redis.call('SET', KEYS[2], updated)
+          local ttl = redis.call('TTL', KEYS[1])
+          if ttl > 0 then redis.call('SET', KEYS[1], updated, 'EX', ttl) end
+          return 1
+        end
+      end
+      return 0
+    `, [getFreshKey(key), getLkgKey(key), getDirtyKey(key)], [JSON.stringify(fixture)]);
+    patched = Number(result) === 1;
+    inProcessMemoryCache.delete(getRawDatasetKey(key));
+    inProcessMemoryCache.delete(key);
+    memoryRedisStorage.delete(getFreshKey(key));
+    memoryRedisStorage.delete(getLkgKey(key));
+  }
+  if (!patched) await invalidateDataset(key);
+  await invalidateDataset(ReadModelKeys.competitionFixtures(fixture.competitionId, fixture.seasonId));
+  await invalidateDataset(ReadModelKeys.standings(fixture.competitionId, fixture.seasonId));
+}
 async function invalidateFixtureReadModels(competitionId, seasonId = "season-2026-27") {
   await invalidateDataset(ReadModelKeys.adminFixtures(seasonId));
   if (competitionId) {
     await invalidateDataset(ReadModelKeys.competitionFixtures(competitionId, seasonId));
     await invalidateDataset(ReadModelKeys.standings(competitionId, seasonId));
   }
-}
-async function invalidateStandingsReadModels(competitionId, seasonId = "season-2026-27") {
-  await invalidateDataset(ReadModelKeys.standings(competitionId, seasonId));
 }
 async function invalidateUserMembershipReadModel(userId, seasonId = "season-2026-27") {
   await invalidateDataset(ReadModelKeys.userMembership(userId, seasonId));
@@ -4101,62 +4719,6 @@ var init_sqliteStandings = __esm({
   }
 });
 
-// src/server/services/notificationService.ts
-async function createNotification(userId, type, title, message, data) {
-  await createNotificationFirestore(userId, type, title, message, data);
-}
-var init_notificationService = __esm({
-  "src/server/services/notificationService.ts"() {
-    init_firestoreStore();
-  }
-});
-
-// src/server/services/adminService.ts
-async function createAuditLog(actorUserId, action, entityType, entityId, oldValue, newValue, ipAddress, actorUsername, notes) {
-  await createAuditLogFirestore(actorUserId, action, entityType, entityId, oldValue, newValue, ipAddress, actorUsername, notes);
-}
-async function getDisputes(status = "OPEN") {
-  return await getDisputesFirestore(status);
-}
-async function editFixtureResult(adminUserId, adminUsername, fixtureId, params) {
-  return await adminEditFixtureResultFirestore(adminUserId, adminUsername, fixtureId, params);
-}
-async function deleteFixtureResult(adminUserId, adminUsername, fixtureId, options) {
-  return await adminDeleteFixtureResultFirestore(adminUserId, adminUsername, fixtureId, options);
-}
-async function deleteFixture(adminUserId, adminUsername, fixtureId, reason) {
-  return await adminDeleteFixtureFirestore(adminUserId, adminUsername, fixtureId, reason);
-}
-async function getAllAdminUsers() {
-  return await getAllUsersFirestore();
-}
-async function getUserDetail(targetUserId) {
-  return await adminGetUserDetailFirestore(targetUserId);
-}
-async function setUserAdminRole(adminUserId, adminUsername, targetUserId, isAdmin) {
-  return await adminSetUserAdminFirestore(adminUserId, adminUsername, targetUserId, isAdmin);
-}
-async function setUserSuspension(adminUserId, adminUsername, targetUserId, isSuspended, reason) {
-  return await adminSetUserSuspensionFirestore(adminUserId, adminUsername, targetUserId, isSuspended, reason);
-}
-async function deleteUser(adminUserId, adminUsername, targetUserId, reason) {
-  return await adminDeleteUserFirestore(adminUserId, adminUsername, targetUserId, reason);
-}
-async function getResultSubmissions(filter) {
-  return await adminGetResultSubmissionsFirestore(filter);
-}
-async function deleteResultSubmission(adminUserId, adminUsername, submissionId, notes) {
-  return await adminDeleteResultSubmissionFirestore(adminUserId, adminUsername, submissionId, notes);
-}
-async function getAuditLogs(limit = 50) {
-  return await getAuditLogsFirestore(limit);
-}
-var init_adminService = __esm({
-  "src/server/services/adminService.ts"() {
-    init_firestoreStore();
-  }
-});
-
 // src/server/tournament/domesticCupService.ts
 var domesticCupService_exports = {};
 __export(domesticCupService_exports, {
@@ -4187,7 +4749,7 @@ function validateDomesticCupId(competitionId) {
 async function getDomesticCupDetails(competitionId, seasonId = "season-2026-27") {
   const cupConfig = validateDomesticCupId(competitionId);
   const cacheKey = `cup:bracket:${competitionId}:${seasonId}`;
-  const rawLkg = await redisGetRaw(cacheKey);
+  const rawLkg = await redisGetRaw2(cacheKey);
   if (rawLkg?.data && (!firestoreCircuitBreaker.canExecute() || rawLkg.data.rounds?.length > 0)) {
     if (!firestoreCircuitBreaker.canExecute()) {
       return {
@@ -4871,7 +5433,7 @@ async function generateDomesticCupBracketSafe(competitionId, options) {
   const batch = db.batch();
   for (const m of preview.previewMatches) {
     const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(m.fixtureId);
-    batch.set(fixRef, {
+    batch.create(fixRef, {
       id: m.fixtureId,
       seasonId,
       competitionId,
@@ -4895,9 +5457,21 @@ async function generateDomesticCupBracketSafe(competitionId, options) {
       createdAt: now,
       updatedAt: now
     });
+  }
+  const compRef = db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId);
+  batch.set(compRef, {
+    status: "active",
+    hasFixtures: true,
+    fixtureCount: preview.previewMatches.length,
+    fixturesCount: preview.previewMatches.length,
+    generationStatus: "generated",
+    updatedAt: now
+  }, { merge: true });
+  await batch.commit();
+  for (const m of preview.previewMatches) {
     try {
       queryRun(
-        `INSERT OR REPLACE INTO fixtures (id, season_id, competition_id, matchday, round_name, home_club_id, away_club_id, status, scheduled_at, source_fixture_id, source_winner_slot, created_at, updated_at)
+        `INSERT OR IGNORE INTO fixtures (id, season_id, competition_id, matchday, round_name, home_club_id, away_club_id, status, scheduled_at, source_fixture_id, source_winner_slot, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           m.fixtureId,
@@ -4918,16 +5492,8 @@ async function generateDomesticCupBracketSafe(competitionId, options) {
     } catch {
     }
   }
-  const compRef = db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId);
-  batch.set(compRef, {
-    status: "active",
-    hasFixtures: true,
-    fixtureCount: preview.previewMatches.length,
-    fixturesCount: preview.previewMatches.length,
-    generationStatus: "generated",
-    updatedAt: now
-  }, { merge: true });
-  await batch.commit();
+  await invalidateDataset(`cup:bracket:${competitionId}:${seasonId}`);
+  await invalidateFixtureReadModels(competitionId, seasonId);
   await createAuditLog(
     options.adminUserId,
     "CUP_BRACKET_GENERATED",
@@ -5022,25 +5588,100 @@ async function advanceDomesticCupWinnerSafe(fixtureId, options) {
     };
   }
   const targetRef = db.collection(COLLECTIONS.FIXTURES).doc(targetFixtureId);
-  const targetDoc = await targetRef.get();
-  if (!targetDoc.exists) {
-    throw new Error(`Target round fixture '${targetFixtureId}' does not exist.`);
+  const txResult = await db.runTransaction(async (transaction) => {
+    const sourceDoc = await transaction.get(fixRef);
+    const source = sourceDoc.data();
+    if (!source || source.status !== "CONFIRMED" || source.winnerClubId !== winnerClubId || source.competitionId !== compId || source.seasonId !== fixture.seasonId || ![source.homeClubId, source.awayClubId].includes(winnerClubId)) {
+      throw Object.assign(new Error("SOURCE_FIXTURE_CHANGED"), { statusCode: 409 });
+    }
+    const targetDoc = await transaction.get(targetRef);
+    if (!targetDoc.exists) {
+      const err = new Error(`Target round fixture '${targetFixtureId}' does not exist.`);
+      err.statusCode = 404;
+      err.code = "NOT_FOUND";
+      throw err;
+    }
+    const targetFixture = targetDoc.data();
+    if (targetFixture.competitionId !== compId || targetFixture.seasonId !== source.seasonId) {
+      throw Object.assign(new Error("TARGET_COMPETITION_MISMATCH"), { statusCode: 409 });
+    }
+    const existingWinner = isHomeSlot ? targetFixture.homeClubId : targetFixture.awayClubId;
+    if (existingWinner === winnerClubId) {
+      return {
+        alreadyAdvanced: true,
+        success: true,
+        advanced: false,
+        isNoop: true,
+        targetFixtureId,
+        winnerClubId,
+        message: "Winner already advanced."
+      };
+    }
+    const protectedStatuses = [
+      "PLAYING",
+      "IN_PROGRESS",
+      "AWAITING_RESULT",
+      "PENDING_CONFIRMATION",
+      "DISPUTED",
+      "CONFIRMED"
+    ];
+    if (protectedStatuses.includes(targetFixture.status)) {
+      const statusErr = new Error(
+        `Cannot advance winner: Target round fixture '${targetFixtureId}' has status '${targetFixture.status}'. Matches that are started, submitted, disputed, or confirmed cannot be modified.`
+      );
+      statusErr.statusCode = 400;
+      statusErr.code = "TARGET_MATCH_LOCKED";
+      throw statusErr;
+    }
+    const currentOccupant = isHomeSlot ? targetFixture.homeClubId : targetFixture.awayClubId;
+    if (currentOccupant === winnerClubId) {
+      return {
+        alreadyAdvanced: true,
+        success: true,
+        advanced: false,
+        isNoop: true,
+        targetFixtureId,
+        winnerClubId,
+        message: `Winner '${winnerClubId}' has already been advanced to ${targetFixtureId} as ${isHomeSlot ? "Home" : "Away"} club. Repeated advancement is a no-op.`
+      };
+    }
+    if (currentOccupant && currentOccupant !== winnerClubId && currentOccupant !== "TBD") {
+      const conflictErr = new Error(
+        `Conflict: Target round fixture '${targetFixtureId}' ${isHomeSlot ? "home" : "away"} slot is already occupied by club '${currentOccupant}', which conflicts with advancing winner '${winnerClubId}'.`
+      );
+      conflictErr.statusCode = 409;
+      conflictErr.code = "TARGET_SLOT_OCCUPIED_CONFLICT";
+      throw conflictErr;
+    }
+    const updatePayload = {
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    if (isHomeSlot) {
+      updatePayload.homeClubId = winnerClubId;
+    } else {
+      updatePayload.awayClubId = winnerClubId;
+    }
+    transaction.update(targetRef, updatePayload);
+    return {
+      alreadyAdvanced: false,
+      success: true,
+      advanced: true,
+      isNoop: false,
+      targetFixtureId,
+      winnerClubId,
+      message: `Advanced ${winnerClubId} to ${targetFixtureId} as ${isHomeSlot ? "Home" : "Away"} club.`
+    };
+  });
+  if (txResult.alreadyAdvanced) {
+    return {
+      success: true,
+      advanced: false,
+      isNoop: true,
+      targetFixtureId: txResult.targetFixtureId,
+      winnerClubId: txResult.winnerClubId,
+      message: txResult.message
+    };
   }
-  const targetFixture = targetDoc.data();
-  if (targetFixture.status === "CONFIRMED") {
-    throw new Error(
-      `Cannot advance winner: Target round fixture '${targetFixtureId}' has already been played and CONFIRMED. Overwriting confirmed results is strictly prohibited.`
-    );
-  }
-  const updatePayload = {
-    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-  };
-  if (isHomeSlot) {
-    updatePayload.homeClubId = winnerClubId;
-  } else {
-    updatePayload.awayClubId = winnerClubId;
-  }
-  await targetRef.update(updatePayload);
   try {
     if (isHomeSlot) {
       queryRun("UPDATE fixtures SET home_club_id = ?, updated_at = ? WHERE id = ?", [
@@ -5058,8 +5699,8 @@ async function advanceDomesticCupWinnerSafe(fixtureId, options) {
   } catch {
   }
   const cacheKey = `cup:bracket:${compId}:${fixture.seasonId || "season-2026-27"}`;
-  await redisDelRaw(cacheKey).catch(() => {
-  });
+  await invalidateDataset(cacheKey);
+  await refreshChangedFixtureReadModel(targetFixtureId).catch(() => invalidateFixtureReadModels(compId, fixture.seasonId || "season-2026-27"));
   await createAuditLog(
     options.adminUserId,
     "KNOCKOUT_ROUND_ADVANCED",
@@ -5080,6 +5721,7 @@ async function advanceDomesticCupWinnerSafe(fixtureId, options) {
   return {
     success: true,
     advanced: true,
+    isNoop: false,
     targetFixtureId,
     winnerClubId,
     message: `Advanced ${winnerClubId} to ${targetFixtureId} as ${isHomeSlot ? "Home" : "Away"} club.`
@@ -5790,7 +6432,7 @@ __export(firestoreStore_exports, {
   markNotificationsReadFirestore: () => markNotificationsReadFirestore,
   markSingleNotificationReadFirestore: () => markSingleNotificationReadFirestore,
   openCompetitionMatchdayNowFirestore: () => openCompetitionMatchdayNowFirestore,
-  rebuildCompetitionStandingsFirestore: () => rebuildCompetitionStandingsFirestore,
+  rebuildCompetitionStandingsFirestore: () => rebuildCompetitionStandingsFirestore2,
   recordEndpointCall: () => recordEndpointCall,
   recordFallbackUsage: () => recordFallbackUsage,
   reopenFixtureFirestore: () => reopenFixtureFirestore,
@@ -6462,11 +7104,15 @@ async function claimClubAtomicFirestore(userId, clubId, seasonId = "season-2026-
           throw new ClubNotFoundError(`Club with ID '${clubId}' does not exist.`);
         }
         const clubData = clubDoc.data();
+        const clubOccDoc = await transaction.get(clubOccRef);
         const userMemDoc = await transaction.get(userMemRef);
         if (userMemDoc.exists) {
           const userMemData = userMemDoc.data();
-          if (userMemData && userMemData.status === "active") {
+          if (userMemData?.clubId && !["released", "archived", "inactive"].includes(userMemData.status)) {
             if (userMemData.clubId === clubId) {
+              if (!clubOccDoc.exists || clubOccDoc.data()?.userId !== userId || ["released", "inactive"].includes(clubOccDoc.data()?.status)) {
+                throw new ClubConflictError("Club membership and occupancy disagree. Admin review is required.", "OWNERSHIP_INCONSISTENT");
+              }
               return {
                 success: true,
                 club: {
@@ -6494,10 +7140,9 @@ async function claimClubAtomicFirestore(userId, clubId, seasonId = "season-2026-
             );
           }
         }
-        const clubOccDoc = await transaction.get(clubOccRef);
         if (clubOccDoc.exists) {
           const clubOccData = clubOccDoc.data();
-          if (clubOccData && clubOccData.status === "active" && clubOccData.userId !== userId) {
+          if (clubOccData?.userId && !["released", "inactive"].includes(clubOccData.status) && clubOccData.userId !== userId) {
             throw new ClubConflictError(
               `This club has already been selected by another player for this season.`,
               "CLUB_OCCUPIED"
@@ -6587,7 +7232,7 @@ async function claimClubAtomicFirestore(userId, clubId, seasonId = "season-2026-
       if (err instanceof ClubConflictError || err instanceof ClubNotFoundError) {
         throw err;
       }
-      if (options?.authoritativeOnly) {
+      if (options?.authoritativeOnly || isHostedEnvironment()) {
         throw err;
       }
       firestoreCircuitBreaker.recordFailure(err);
@@ -6595,7 +7240,7 @@ async function claimClubAtomicFirestore(userId, clubId, seasonId = "season-2026-
       console.warn("[FIRESTORE FALLBACK] claimClubAtomicFirestore:", err.message);
     }
   } else {
-    if (options?.authoritativeOnly) {
+    if (options?.authoritativeOnly || isHostedEnvironment()) {
       throw new Error("CIRCUIT_OPEN: Firestore circuit breaker is OPEN. Authoritative write cannot execute.");
     }
     recordFallbackUsage();
@@ -8500,7 +9145,7 @@ async function getCompetitionStandingsFirestore(competitionId, options = {}) {
     return enriched;
   }
 }
-async function rebuildCompetitionStandingsFirestore(competitionId) {
+async function rebuildCompetitionStandingsFirestore2(competitionId) {
   const cacheKey = `firestore:standings:${competitionId}`;
   try {
     const db = getFirestoreDb();
@@ -8806,7 +9451,7 @@ async function submitFixtureResultFirestore(userId, fixtureId, homeScore, awaySc
     }
     if (newStatus === "CONFIRMED" && fixture.competitionId) {
       try {
-        await rebuildCompetitionStandingsFirestore(fixture.competitionId);
+        await rebuildCompetitionStandingsFirestore2(fixture.competitionId);
       } catch (standingsErr) {
         console.warn("[STANDINGS_UPDATE] Non-blocking standings update error on confirmation:", standingsErr);
       }
@@ -9208,7 +9853,7 @@ async function reopenFixtureFirestore(adminUserId, fixtureId, notes, options) {
       await deleteBatch.commit();
       if (fixDoc.data()?.competitionId) {
         try {
-          await rebuildCompetitionStandingsFirestore(fixDoc.data().competitionId);
+          await rebuildCompetitionStandingsFirestore2(fixDoc.data().competitionId);
         } catch (standingsErr) {
           console.warn("[STANDINGS_UPDATE] Non-blocking standings update error on reopen:", standingsErr);
         }
@@ -9224,7 +9869,7 @@ async function reopenFixtureFirestore(adminUserId, fixtureId, notes, options) {
       invalidateFirestoreCache();
       return { success: true, fixtureId, authoritative: true, isFallback: false };
     } catch (err) {
-      if (options?.authoritativeOnly) {
+      if (options?.authoritativeOnly || isHostedEnvironment()) {
         throw err;
       }
       firestoreCircuitBreaker.recordFailure(err);
@@ -9232,7 +9877,7 @@ async function reopenFixtureFirestore(adminUserId, fixtureId, notes, options) {
       console.warn("[FIRESTORE FALLBACK] reopenFixtureFirestore:", err.message);
     }
   } else {
-    if (options?.authoritativeOnly) {
+    if (options?.authoritativeOnly || isHostedEnvironment()) {
       throw new Error("CIRCUIT_OPEN: Firestore circuit breaker is OPEN. Authoritative write cannot execute.");
     }
     recordFallbackUsage();
@@ -9304,7 +9949,7 @@ async function resolveDisputeFirestore(adminUserId, disputeId, params) {
   }
   if (fixture.competitionId) {
     try {
-      await rebuildCompetitionStandingsFirestore(fixture.competitionId);
+      await rebuildCompetitionStandingsFirestore2(fixture.competitionId);
     } catch (standingsErr) {
       console.warn("[STANDINGS_UPDATE] Non-blocking standings update error on dispute resolution:", standingsErr);
     }
@@ -9841,7 +10486,7 @@ async function adminReleaseClubFirestore(adminUserId, clubId, seasonId = "season
       isFallback: false
     };
   } catch (err) {
-    if (options?.authoritativeOnly) {
+    if (options?.authoritativeOnly || isHostedEnvironment()) {
       throw err;
     }
     console.warn("[FIRESTORE FALLBACK] adminReleaseClubFirestore:", err.message);
@@ -9937,7 +10582,7 @@ async function adminAssignClubFirestore(adminUserId, clubId, targetUserId, seaso
       isFallback: false
     };
   } catch (err) {
-    if (options?.authoritativeOnly) {
+    if (options?.authoritativeOnly || isHostedEnvironment()) {
       throw err;
     }
     console.warn("[FIRESTORE FALLBACK] adminAssignClubFirestore:", err.message);
@@ -10082,7 +10727,7 @@ async function adminApproveFixtureResultFirestore(adminUserId, fixtureId, homeSc
       }
       if (fixture.competitionId) {
         try {
-          await rebuildCompetitionStandingsFirestore(fixture.competitionId);
+          await rebuildCompetitionStandingsFirestore2(fixture.competitionId);
         } catch (standingsErr) {
           console.warn("[STANDINGS_UPDATE] Non-blocking standings update error on admin approval:", standingsErr);
         }
@@ -10105,7 +10750,7 @@ async function adminApproveFixtureResultFirestore(adminUserId, fixtureId, homeSc
         isFallback: false
       };
     } catch (err) {
-      if (options?.authoritativeOnly) {
+      if (options?.authoritativeOnly || isHostedEnvironment()) {
         throw err;
       }
       firestoreCircuitBreaker.recordFailure(err);
@@ -10113,7 +10758,7 @@ async function adminApproveFixtureResultFirestore(adminUserId, fixtureId, homeSc
       console.warn("[FIRESTORE FALLBACK] adminApproveFixtureResultFirestore:", err.message);
     }
   } else {
-    if (options?.authoritativeOnly) {
+    if (options?.authoritativeOnly || isHostedEnvironment()) {
       throw new Error("CIRCUIT_OPEN: Firestore circuit breaker is OPEN. Authoritative write cannot execute.");
     }
     recordFallbackUsage();
@@ -10326,7 +10971,7 @@ async function adminEditFixtureResultFirestore(adminUserId, adminUsername, fixtu
   }
   if (existing.competitionId) {
     try {
-      await rebuildCompetitionStandingsFirestore(existing.competitionId);
+      await rebuildCompetitionStandingsFirestore2(existing.competitionId);
     } catch (err) {
       console.warn("[STANDINGS_REBUILD]:", err);
     }
@@ -10397,7 +11042,7 @@ async function adminDeleteFixtureResultFirestore(adminUserId, adminUsername, fix
   }
   if (existing.competitionId) {
     try {
-      await rebuildCompetitionStandingsFirestore(existing.competitionId);
+      await rebuildCompetitionStandingsFirestore2(existing.competitionId);
     } catch (err) {
       console.warn("[STANDINGS_REBUILD]:", err);
     }
@@ -10455,7 +11100,7 @@ async function adminDeleteFixtureFirestore(adminUserId, adminUsername, fixtureId
   }
   if (existing.competitionId && existing.status === "CONFIRMED") {
     try {
-      await rebuildCompetitionStandingsFirestore(existing.competitionId);
+      await rebuildCompetitionStandingsFirestore2(existing.competitionId);
     } catch (err) {
       console.warn("[STANDINGS_REBUILD]:", err);
     }
@@ -10886,17 +11531,582 @@ var init_firestoreStore = __esm({
   }
 });
 
+// src/server/services/adminService.ts
+async function createAuditLog(actorUserId, action, entityType, entityId, oldValue, newValue, ipAddress, actorUsername, notes) {
+  await createAuditLogFirestore(actorUserId, action, entityType, entityId, oldValue, newValue, ipAddress, actorUsername, notes);
+}
+async function getDisputes(status = "OPEN") {
+  return await getDisputesFirestore(status);
+}
+async function editFixtureResult(adminUserId, adminUsername, fixtureId, params) {
+  return await adminEditFixtureResultFirestore(adminUserId, adminUsername, fixtureId, params);
+}
+async function deleteFixtureResult(adminUserId, adminUsername, fixtureId, options) {
+  return await adminDeleteFixtureResultFirestore(adminUserId, adminUsername, fixtureId, options);
+}
+async function deleteFixture(adminUserId, adminUsername, fixtureId, reason) {
+  return await adminDeleteFixtureFirestore(adminUserId, adminUsername, fixtureId, reason);
+}
+async function getAllAdminUsers() {
+  return await getAllUsersFirestore();
+}
+async function getUserDetail(targetUserId) {
+  return await adminGetUserDetailFirestore(targetUserId);
+}
+async function setUserAdminRole(adminUserId, adminUsername, targetUserId, isAdmin) {
+  return await adminSetUserAdminFirestore(adminUserId, adminUsername, targetUserId, isAdmin);
+}
+async function setUserSuspension(adminUserId, adminUsername, targetUserId, isSuspended, reason) {
+  return await adminSetUserSuspensionFirestore(adminUserId, adminUsername, targetUserId, isSuspended, reason);
+}
+async function deleteUser(adminUserId, adminUsername, targetUserId, reason) {
+  return await adminDeleteUserFirestore(adminUserId, adminUsername, targetUserId, reason);
+}
+async function getResultSubmissions(filter) {
+  return await adminGetResultSubmissionsFirestore(filter);
+}
+async function deleteResultSubmission(adminUserId, adminUsername, submissionId, notes) {
+  return await adminDeleteResultSubmissionFirestore(adminUserId, adminUsername, submissionId, notes);
+}
+async function getAuditLogs(limit = 50) {
+  return await getAuditLogsFirestore(limit);
+}
+var init_adminService = __esm({
+  "src/server/services/adminService.ts"() {
+    init_firestoreStore();
+  }
+});
+
+// src/server/app.ts
+import express from "express";
+import { timingSafeEqual } from "node:crypto";
+
+// src/server/services/telegramNotificationQueue.ts
+init_admin();
+init_collections();
+
+// src/server/services/telegramBotService.ts
+var POSITIVE_MEMBERSHIP_CACHE_TTL_MS = 5 * 60 * 1e3;
+var NEGATIVE_MEMBERSHIP_CACHE_TTL_MS = 20 * 1e3;
+var membershipCache = /* @__PURE__ */ new Map();
+async function verifyTelegramGroupMembership(telegramUserId, forceRefresh) {
+  const userIdStr = String(telegramUserId).trim();
+  if (!userIdStr) {
+    return { isMember: false, status: "empty_user_id" };
+  }
+  if (!forceRefresh) {
+    const cached = membershipCache.get(userIdStr);
+    if (cached) {
+      const ttl = cached.isMember ? POSITIVE_MEMBERSHIP_CACHE_TTL_MS : NEGATIVE_MEMBERSHIP_CACHE_TTL_MS;
+      if (Date.now() - cached.timestamp < ttl) {
+        return { isMember: cached.isMember, status: cached.status, cached: true };
+      }
+    }
+  }
+  const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
+  const groupUsername = (process.env.TELEGRAM_GROUP_USERNAME || "@efleagueuz").trim();
+  if (!botToken) {
+    const isDev = process.env.ENABLE_DEV_AUTH === "true" || process.env.NODE_ENV !== "production";
+    if (isDev) {
+      console.log(`[TELEGRAM MEMBERSHIP] No TELEGRAM_BOT_TOKEN set in dev environment. Allowing user ${userIdStr} in sandbox.`);
+      return { isMember: true, status: "dev_mock_allowed" };
+    }
+    console.warn(`[TELEGRAM MEMBERSHIP] TELEGRAM_BOT_TOKEN is missing in production.`);
+    return { isMember: true, status: "fail_open_no_token" };
+  }
+  const url = `https://api.telegram.org/bot${botToken}/getChatMember?chat_id=${encodeURIComponent(groupUsername)}&user_id=${encodeURIComponent(userIdStr)}`;
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6e3);
+    const response = await fetch(url, {
+      method: "GET",
+      headers: { "Accept": "application/json" },
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    const data = await response.json();
+    if (data && data.ok && data.result) {
+      const status = data.result.status;
+      const isRestrictedMember = status === "restricted" && Boolean(data.result.is_member);
+      const isMember = ["creator", "administrator", "member"].includes(status) || isRestrictedMember;
+      membershipCache.set(userIdStr, {
+        isMember,
+        status: status || "unknown",
+        timestamp: Date.now()
+      });
+      return { isMember, status };
+    }
+    const description = (data?.description || "").toLowerCase();
+    if (description.includes("user not found") || description.includes("participant_id_invalid") || description.includes("not a member") || description.includes("chat not found")) {
+      membershipCache.set(userIdStr, {
+        isMember: false,
+        status: "left_or_not_found",
+        timestamp: Date.now()
+      });
+      return { isMember: false, status: "left_or_not_found" };
+    }
+    console.warn(`[TELEGRAM MEMBERSHIP CHECK] Non-definitive Telegram response for user ${userIdStr}:`, data);
+    return { isMember: true, status: "fail_open_transient_error" };
+  } catch (err) {
+    console.warn(`[TELEGRAM MEMBERSHIP CHECK] Network failure querying Telegram for user ${userIdStr}: ${err.message}`);
+    return { isMember: true, status: "fail_open_network_timeout" };
+  }
+}
+async function sendTelegramMessage(chatId, text, options = {}) {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
+  if (!botToken) {
+    return { ok: false, error: "TELEGRAM_BOT_TOKEN is not configured" };
+  }
+  const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+  try {
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(1e4),
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        parse_mode: options.parse_mode || "HTML",
+        reply_markup: options.reply_markup
+      })
+    });
+    const data = await res.json();
+    return { ...data, error: data.description || data.error };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+async function sendTelegramSticker(chatId, stickerFileId) {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
+  if (!botToken) {
+    return { ok: false, error: "TELEGRAM_BOT_TOKEN is not configured" };
+  }
+  const url = `https://api.telegram.org/bot${botToken}/sendSticker`;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        sticker: stickerFileId
+      })
+    });
+    const data = await res.json();
+    return data;
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+async function handleTelegramStart(chatId, fromUser) {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
+  if (!botToken) {
+    console.warn("[TELEGRAM BOT /start] Missing TELEGRAM_BOT_TOKEN");
+    return { ok: false, messageSent: false, error: "TELEGRAM_BOT_TOKEN is missing" };
+  }
+  const stickerFileId = process.env.TELEGRAM_WELCOME_STICKER_FILE_ID?.trim();
+  let stickerSent = false;
+  if (stickerFileId) {
+    try {
+      const stickerRes = await sendTelegramSticker(chatId, stickerFileId);
+      stickerSent = Boolean(stickerRes && stickerRes.ok);
+    } catch (err) {
+      console.warn("[TELEGRAM BOT] Failed to send welcome sticker:", err.message);
+    }
+  }
+  const rawFirstName = fromUser?.first_name || "Foydalanuvchi";
+  const cleanFirstName = rawFirstName.replace(/[<>]/g, "");
+  const webAppUrl = process.env.TELEGRAM_WEBAPP_URL?.trim() || process.env.APP_URL?.trim() || "https://efluz.vercel.app";
+  const groupUsername = (process.env.TELEGRAM_GROUP_USERNAME || "@efleagueuz").trim();
+  const groupUrl = groupUsername.startsWith("@") ? `https://t.me/${groupUsername.slice(1)}` : `https://t.me/${groupUsername}`;
+  const welcomeText = `Assalomu alaykum, <b>${cleanFirstName}</b>!
+
+\u26BD <b>EFL UZ</b> \u2014 eFootball O\u2018zbekiston Rasmiy Ligasi platformasiga xush kelibsiz!
+
+\u{1F3C6} <b>Top 5 Yevropa Ligalari:</b>
+\u2022 \u{1F1EC}\u{1F1E7} Premier League
+\u2022 \u{1F1EA}\u{1F1F8} La Liga
+\u2022 \u{1F1EE}\u{1F1F9} Serie A
+\u2022 \u{1F1E9}\u{1F1EA} Bundesliga
+\u2022 \u{1F1EB}\u{1F1F7} Ligue 1
+
+\u2694\uFE0F <b>Asosiy Imkoniyatlar:</b>
+\u2022 Sevimli klubingizni tanlang va boshqaring
+\u2022 Real-vaqt matchmarkaz va eFootball bahslari
+\u2022 Ikki tomonlama natija tasdiqlash va hakamlik
+\u2022 UEFA Chempionlar Ligasi saralash tizimi
+
+Quyidagi tugma orqali ilovani oching va o\u2018z klubingizni band qiling!`;
+  const replyMarkup = {
+    inline_keyboard: [
+      [
+        {
+          text: "\u26BD Ilovani ochish (EFL UZ)",
+          web_app: { url: webAppUrl }
+        }
+      ],
+      [
+        {
+          text: `\u{1F4E2} Rasmiy guruh (${groupUsername})`,
+          url: groupUrl
+        }
+      ]
+    ]
+  };
+  const msgRes = await sendTelegramMessage(chatId, welcomeText, {
+    parse_mode: "HTML",
+    reply_markup: replyMarkup
+  });
+  return {
+    ok: msgRes.ok,
+    stickerSent,
+    messageSent: msgRes.ok,
+    error: msgRes.error
+  };
+}
+
+// src/server/services/telegramNotificationQueue.ts
+init_adminService();
+init_readModelStore();
+init_seed();
+import crypto2 from "crypto";
+var BROADCASTS_KEY = `${KEY_PREFIX}:telegram:broadcasts`;
+var QUEUE_KEY = `${KEY_PREFIX}:telegram:queue`;
+var PROCESSING_KEY = `${KEY_PREFIX}:telegram:processing`;
+var WORKER_LOCK = `${KEY_PREFIX}:telegram:worker-lock`;
+var RECIPIENT_DIR_KEY = `${KEY_PREFIX}:private:recipient-directory`;
+var memoryBroadcasts = /* @__PURE__ */ new Map();
+var memoryRecipientDirectory = /* @__PURE__ */ new Map();
+var memoryRecipientSeason = "";
+async function syncRecipientDirectory(seasonId = "season-2026-27") {
+  const dirMap = /* @__PURE__ */ new Map();
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  try {
+    const db = getFirestoreDb();
+    const [usersSnap, occSnap] = await Promise.all([
+      db.collection(COLLECTIONS.USERS).limit(1001).get(),
+      db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where("seasonId", "==", seasonId).get()
+    ]);
+    if (usersSnap.size > 1e3) throw new Error("RECIPIENT_DIRECTORY_TOO_LARGE");
+    const occupancyMap = /* @__PURE__ */ new Map();
+    for (const doc of occSnap.docs) {
+      const data = doc.data();
+      if (data.userId && data.clubId && !["released", "inactive"].includes(data.status)) {
+        occupancyMap.set(data.userId, { clubId: data.clubId, claimedAt: data.claimedAt });
+      }
+    }
+    const clubsMap = new Map(SEED_CLUBS.map((c) => [c.id, c]));
+    const leaguesMap = new Map(SEED_LEAGUES.map((l) => [l.id, l]));
+    for (const doc of usersSnap.docs) {
+      const u = { ...doc.data(), id: doc.id };
+      const occ = occupancyMap.get(u.id);
+      const club = occ ? clubsMap.get(occ.clubId) : void 0;
+      const league = club ? leaguesMap.get(club.leagueId) : void 0;
+      const hasTelegram = Boolean(u.telegramId && String(u.telegramId).trim().length > 0);
+      const entry = {
+        userId: u.id,
+        username: u.username || `player_${u.id.substring(0, 6)}`,
+        displayName: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.username || "EFL Player",
+        telegramId: u.telegramId || null,
+        clubId: club?.id,
+        clubName: club?.name,
+        leagueId: league?.id,
+        leagueName: league?.name,
+        messageable: hasTelegram && !u.isSuspended,
+        updatedAt: now
+      };
+      dirMap.set(u.id, entry);
+    }
+  } catch (error) {
+    throw new Error("RECIPIENT_DIRECTORY_UNAVAILABLE: existing directory preserved");
+  }
+  const entriesArray = Array.from(dirMap.values());
+  const client = getUpstashClient();
+  if (client) {
+    await client.set(`${RECIPIENT_DIR_KEY}:${seasonId}`, entriesArray);
+  }
+  memoryRecipientDirectory.clear();
+  for (const entry of entriesArray) memoryRecipientDirectory.set(entry.userId, entry);
+  memoryRecipientSeason = seasonId;
+  return entriesArray.length;
+}
+async function getSafeEligibleRecipients(filter, seasonId = "season-2026-27") {
+  if (memoryRecipientSeason !== seasonId) memoryRecipientDirectory.clear();
+  const client = getUpstashClient();
+  let entries = [];
+  if (client) {
+    try {
+      const cached = await client.get(`${RECIPIENT_DIR_KEY}:${seasonId}`);
+      if (Array.isArray(cached) && cached.length > 0) {
+        entries = cached;
+        memoryRecipientDirectory.clear();
+        for (const entry of cached) memoryRecipientDirectory.set(entry.userId, entry);
+        memoryRecipientSeason = seasonId;
+      }
+    } catch {
+    }
+  }
+  if (entries.length === 0) {
+    if (memoryRecipientDirectory.size === 0) await syncRecipientDirectory(seasonId);
+    entries = Array.from(memoryRecipientDirectory.values());
+  }
+  let filtered = entries;
+  if (filter?.audience === "CLUB_OWNERS") {
+    filtered = filtered.filter((r) => Boolean(r.clubId));
+  } else if (filter?.audience === "LEAGUE_OWNERS" && filter.leagueId) {
+    filtered = filtered.filter((r) => r.leagueId === filter.leagueId && Boolean(r.clubId));
+  }
+  return filtered.map((r) => ({
+    userId: r.userId,
+    username: r.username,
+    displayName: r.displayName,
+    clubId: r.clubId,
+    clubName: r.clubName,
+    leagueId: r.leagueId,
+    leagueName: r.leagueName,
+    hasTelegram: Boolean(r.telegramId),
+    messageable: r.messageable
+  }));
+}
+async function enqueueTelegramBroadcast(params) {
+  const seasonId = params.seasonId || "season-2026-27";
+  const durableClient = getUpstashClient();
+  if (!durableClient) throw new Error("REDIS_REQUIRED: durable notification storage is unavailable");
+  if (!["ALL_USERS", "CLUB_OWNERS", "LEAGUE_OWNERS", "SELECTED_RECIPIENTS"].includes(params.targetAudience)) throw new Error("INVALID_AUDIENCE");
+  if (params.targetAudience === "LEAGUE_OWNERS" && !params.targetLeagueId) throw new Error("LEAGUE_REQUIRED");
+  if (typeof params.title !== "string" || typeof params.body !== "string" || !params.title.trim() || !params.body.trim() || params.title.length + params.body.length > 3500) throw new Error("INVALID_MESSAGE");
+  await getSafeEligibleRecipients(void 0, seasonId);
+  if (params.requestId && !/^[a-zA-Z0-9-]{8,100}$/.test(params.requestId)) throw new Error("INVALID_REQUEST_ID");
+  const requestId = params.requestId || crypto2.randomUUID();
+  const broadcastId = `bcast-${crypto2.createHash("sha256").update(params.adminUserId + ":" + requestId).digest("hex")}`;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  let targetUserIds = [];
+  if (params.targetAudience === "SELECTED_RECIPIENTS") {
+    if (!Array.isArray(params.selectedUserIds)) throw new Error("RECIPIENTS_REQUIRED");
+    targetUserIds = [...new Set(params.selectedUserIds)];
+    if (targetUserIds.some((uid) => typeof uid !== "string" || !memoryRecipientDirectory.has(uid))) throw new Error("UNKNOWN_RECIPIENT");
+  } else {
+    const safeRecipients = await getSafeEligibleRecipients(
+      { audience: params.targetAudience, leagueId: params.targetLeagueId },
+      seasonId
+    );
+    targetUserIds = safeRecipients.map((r) => r.userId);
+  }
+  if (targetUserIds.length === 0) {
+    throw new Error("No eligible recipients found for this broadcast selection.");
+  }
+  const recipientStatuses = [];
+  const jobs = [];
+  for (const uid of targetUserIds) {
+    const recipient = memoryRecipientDirectory.get(uid);
+    const hasTg = Boolean(recipient?.telegramId && recipient.messageable);
+    recipientStatuses.push({
+      userId: uid,
+      username: recipient?.username || "user",
+      displayName: recipient?.displayName || "User",
+      clubName: recipient?.clubName,
+      status: hasTg ? "PENDING" : "SKIPPED_NO_TELEGRAM",
+      error: hasTg ? void 0 : "User has no connected Telegram account",
+      retryCount: 0
+    });
+    if (hasTg) {
+      jobs.push({
+        jobId: `job-${broadcastId}-${uid}`,
+        broadcastId,
+        userId: uid,
+        username: recipient?.username || "user",
+        displayName: recipient?.displayName || "User",
+        telegramId: recipient.telegramId,
+        title: params.title,
+        body: params.body,
+        type: params.type,
+        status: "QUEUED",
+        retryCount: 0,
+        maxRetries: 3,
+        createdAt: now
+      });
+    }
+  }
+  const record = {
+    id: broadcastId,
+    seasonId,
+    title: params.title,
+    body: params.body,
+    type: params.type,
+    targetAudience: params.targetAudience,
+    targetLeagueId: params.targetLeagueId,
+    createdById: params.adminUserId,
+    createdByUsername: params.adminUsername,
+    createdAt: now,
+    status: jobs.length > 0 ? "QUEUED" : "COMPLETED",
+    metrics: {
+      totalRecipients: targetUserIds.length,
+      sentCount: 0,
+      failedCount: 0,
+      skippedCount: recipientStatuses.filter((r) => r.status === "SKIPPED_NO_TELEGRAM").length
+    },
+    recipients: recipientStatuses
+  };
+  const persistedRecord = await durableClient.eval(`
+    local existing = redis.call('HGET', KEYS[1], ARGV[1])
+    if existing then return existing end
+    redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
+    local jobs = cjson.decode(ARGV[3])
+    for _, job in ipairs(jobs) do redis.call('RPUSH', KEYS[2], cjson.encode(job)) end
+    return ARGV[2]
+  `, [BROADCASTS_KEY, QUEUE_KEY], [broadcastId, JSON.stringify(record), JSON.stringify(jobs)]);
+  if (persistedRecord.title !== record.title || persistedRecord.body !== record.body || persistedRecord.seasonId !== seasonId || JSON.stringify(persistedRecord.recipients.map((r) => r.userId).sort()) !== JSON.stringify(targetUserIds.slice().sort())) throw new Error("REQUEST_ID_REUSED_WITH_DIFFERENT_CONTENT");
+  memoryBroadcasts.set(broadcastId, persistedRecord);
+  await createAuditLog(
+    params.adminUserId,
+    "TELEGRAM_NOTIFICATION_BROADCAST",
+    "BROADCAST",
+    broadcastId,
+    void 0,
+    {
+      broadcastId,
+      title: params.title,
+      type: params.type,
+      recipientsTotal: targetUserIds.length,
+      queuedJobs: jobs.length,
+      skippedNoTelegram: record.metrics.skippedCount,
+      timestamp: now
+    },
+    void 0,
+    params.adminUsername,
+    `Enqueued broadcast '${params.title}' for ${targetUserIds.length} recipients (${jobs.length} with Telegram).`
+  ).catch(() => console.warn("[NOTIF_QUEUE] Broadcast persisted; auxiliary audit unavailable"));
+  return persistedRecord;
+}
+async function processNotificationQueue(batchSize = 25) {
+  const client = getUpstashClient();
+  if (!client) throw new Error("REDIS_REQUIRED");
+  const token = crypto2.randomUUID();
+  if (!await client.set(WORKER_LOCK, token, { nx: true, ex: 120 })) return { processed: 0, succeeded: 0, failed: 0 };
+  let processed = 0, succeeded = 0, failed = 0;
+  const deadline = Date.now() + 2e4;
+  try {
+    const abandoned = await client.hgetall(PROCESSING_KEY);
+    for (const job of Object.values(abandoned || {})) {
+      if ((job.claimedAt || 0) + 12e4 > Date.now()) continue;
+      await updateBroadcastRecipientState(job.broadcastId, job.userId, "FAILED", "DELIVERY_UNKNOWN: worker interrupted; verify delivery before creating another broadcast");
+      await client.hdel(PROCESSING_KEY, job.jobId);
+    }
+    for (let i = 0; i < Math.min(Math.max(batchSize, 1), 25) && Date.now() < deadline; i++) {
+      const job = await client.eval(`
+        if redis.call('GET', KEYS[3]) ~= ARGV[1] then return nil end
+        local raw = redis.call('LPOP', KEYS[1])
+        if not raw then return nil end
+        local job = cjson.decode(raw)
+        job.claimedAt = tonumber(ARGV[2])
+        redis.call('HSET', KEYS[2], job.jobId, cjson.encode(job))
+        return cjson.encode(job)
+      `, [QUEUE_KEY, PROCESSING_KEY, WORKER_LOCK], [token, Date.now()]);
+      if (!job) break;
+      processed++;
+      const record = await getBroadcastDetails(job.broadcastId);
+      const recipient = record?.recipients.find((r) => r.userId === job.userId);
+      if (!record || !recipient) throw new Error("BROADCAST_RECORD_MISSING");
+      if (["SENT", "FAILED", "SKIPPED_NO_TELEGRAM"].includes(recipient.status)) {
+        await client.hdel(PROCESSING_KEY, job.jobId);
+        continue;
+      }
+      if (recipient.status === "SENDING") {
+        await updateBroadcastRecipientState(job.broadcastId, job.userId, "FAILED", "DELIVERY_UNKNOWN: interrupted send");
+        await client.hdel(PROCESSING_KEY, job.jobId);
+        continue;
+      }
+      recipient.status = "SENDING";
+      record.status = "PROCESSING";
+      await client.hset(BROADCASTS_KEY, { [record.id]: record });
+      const result = await sendTelegramMessage(job.telegramId, formatTelegramMessage(job.title, job.body, job.type), { parse_mode: "HTML" });
+      if (result.ok) {
+        await updateBroadcastRecipientState(job.broadcastId, job.userId, "SENT", void 0, (/* @__PURE__ */ new Date()).toISOString());
+        succeeded++;
+      } else {
+        await updateBroadcastRecipientState(job.broadcastId, job.userId, "FAILED", result.error_code ? `TELEGRAM_${result.error_code}: ${result.error || "Rejected"}${result.parameters?.retry_after ? "; retry after " + result.parameters.retry_after + " seconds" : ""}` : "DELIVERY_UNKNOWN: " + (result.error || "No response"));
+        failed++;
+      }
+      await client.hdel(PROCESSING_KEY, job.jobId);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    return { processed, succeeded, failed };
+  } finally {
+    await client.eval("if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0", [WORKER_LOCK], [token]);
+  }
+}
+function formatTelegramMessage(title, body, type) {
+  let icon = "\u{1F4E2}";
+  if (type === "NEW_MATCHDAY") icon = "\u26BD";
+  if (type === "UPCOMING_MATCH") icon = "\u23F0";
+  if (type === "COMPETITION_UPDATE") icon = "\u{1F3C6}";
+  return `<b>${icon} EFL UZ Official Alert</b>
+
+<b>${escapeHtml(title)}</b>
+
+${escapeHtml(body)}
+
+<i>Season 2026/27 \u2022 Open EFL WebApp to manage fixtures</i>`;
+}
+function escapeHtml(str) {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+async function updateBroadcastRecipientState(broadcastId, userId, status, error, sentAt) {
+  const bcast = await getBroadcastDetails(broadcastId);
+  if (!bcast) throw new Error("BROADCAST_RECORD_MISSING");
+  const r = bcast.recipients.find((rec) => rec.userId === userId);
+  if (r) {
+    r.status = status;
+    if (error) r.error = error;
+    if (sentAt) r.sentAt = sentAt;
+  }
+  bcast.metrics.sentCount = bcast.recipients.filter((r2) => r2.status === "SENT").length;
+  bcast.metrics.failedCount = bcast.recipients.filter((r2) => r2.status === "FAILED").length;
+  const totalFinished = bcast.metrics.sentCount + bcast.metrics.failedCount + bcast.metrics.skippedCount;
+  if (totalFinished >= bcast.metrics.totalRecipients) {
+    bcast.status = bcast.metrics.failedCount > 0 ? "PARTIALLY_FAILED" : "COMPLETED";
+  }
+  const client = getUpstashClient();
+  if (client) {
+    await client.hset(BROADCASTS_KEY, { [broadcastId]: bcast });
+  }
+  memoryBroadcasts.set(broadcastId, bcast);
+}
+async function getBroadcastHistory(limit = 20) {
+  const client = getUpstashClient();
+  if (client) {
+    try {
+      const records = await client.hgetall(BROADCASTS_KEY);
+      if (records) {
+        const list = Object.values(records);
+        return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, limit);
+      }
+    } catch {
+    }
+  }
+  return Array.from(memoryBroadcasts.values()).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, limit);
+}
+async function getBroadcastDetails(broadcastId) {
+  const client = getUpstashClient();
+  if (client) {
+    try {
+      const record = await client.hget(BROADCASTS_KEY, broadcastId);
+      if (record) return record;
+    } catch {
+    }
+  }
+  return memoryBroadcasts.get(broadcastId) || null;
+}
+
 // src/server/app.ts
 init_db();
 init_seed();
-import express from "express";
 
 // src/server/auth/telegramAuth.ts
 init_firestoreStore();
-import crypto2 from "crypto";
+import crypto4 from "crypto";
 
 // src/server/auth/sessionToken.ts
-import crypto from "crypto";
+import crypto3 from "crypto";
 function getSessionSecret() {
   return process.env.SESSION_SECRET || process.env.TELEGRAM_BOT_TOKEN || "efl-uz-secure-session-key-production-2026";
 }
@@ -10928,7 +12138,7 @@ function createSessionToken(user, expiresInSeconds = 86400) {
   const encodedHeader = base64UrlEncode(JSON.stringify(header));
   const encodedPayload = base64UrlEncode(JSON.stringify(claims));
   const data = `${encodedHeader}.${encodedPayload}`;
-  const signature = crypto.createHmac("sha256", getSessionSecret()).update(data).digest("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const signature = crypto3.createHmac("sha256", getSessionSecret()).update(data).digest("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   return `${data}.${signature}`;
 }
 function verifySessionToken(token) {
@@ -10941,10 +12151,10 @@ function verifySessionToken(token) {
   }
   const [encodedHeader, encodedPayload, receivedSig] = parts;
   const data = `${encodedHeader}.${encodedPayload}`;
-  const expectedSig = crypto.createHmac("sha256", getSessionSecret()).update(data).digest("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const expectedSig = crypto3.createHmac("sha256", getSessionSecret()).update(data).digest("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const expectedBuf = Buffer.from(expectedSig);
   const receivedBuf = Buffer.from(receivedSig);
-  if (expectedBuf.length !== receivedBuf.length || !crypto.timingSafeEqual(expectedBuf, receivedBuf)) {
+  if (expectedBuf.length !== receivedBuf.length || !crypto3.timingSafeEqual(expectedBuf, receivedBuf)) {
     return { isValid: false, error: "Invalid token signature" };
   }
   try {
@@ -10979,11 +12189,11 @@ function verifyTelegramWebAppData(initData, botToken, maxAgeSeconds = 86400) {
     });
     paramsList.sort();
     const dataCheckString = paramsList.join("\n");
-    const secretKey = crypto2.createHmac("sha256", "WebAppData").update(cleanToken).digest();
-    const calculatedHash = crypto2.createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
+    const secretKey = crypto4.createHmac("sha256", "WebAppData").update(cleanToken).digest();
+    const calculatedHash = crypto4.createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
     const calculatedHashBuf = Buffer.from(calculatedHash, "hex");
     const receivedHashBuf = Buffer.from(hash, "hex");
-    if (calculatedHashBuf.length !== receivedHashBuf.length || !crypto2.timingSafeEqual(calculatedHashBuf, receivedHashBuf)) {
+    if (calculatedHashBuf.length !== receivedHashBuf.length || !crypto4.timingSafeEqual(calculatedHashBuf, receivedHashBuf)) {
       return { isValid: false, error: "Invalid HMAC signature" };
     }
     const authDateStr = urlParams.get("auth_date");
@@ -11467,6 +12677,9 @@ function parseFirestoreError(err) {
   const rawCode = err.code ?? (err.status ?? "");
   const rawMsg = err.message || String(err);
   const strCode = String(rawCode).toUpperCase();
+  if (strCode === "AUTHORITATIVE_WRITE_REQUIRED") {
+    return { error: strCode, code: strCode, message: "O\u2018zgarish saqlanmadi. Baza tiklangandan keyin qayta urinib ko\u2018ring.", httpStatus: 503 };
+  }
   if (strCode === "MATCHDAY_LOCKED" || strCode.includes("MATCHDAY_LOCKED") || rawMsg.includes("MATCHDAY_LOCKED") || err.code === "MATCHDAY_LOCKED" || err.statusCode === 403) {
     return {
       error: "MATCHDAY_LOCKED",
@@ -11661,186 +12874,6 @@ leaguesRouter.get("/:id/clubs", async (req, res) => {
 import { Router as Router6 } from "express";
 init_firestoreStore();
 init_seed();
-
-// src/server/services/telegramBotService.ts
-var POSITIVE_MEMBERSHIP_CACHE_TTL_MS = 5 * 60 * 1e3;
-var NEGATIVE_MEMBERSHIP_CACHE_TTL_MS = 20 * 1e3;
-var membershipCache = /* @__PURE__ */ new Map();
-async function verifyTelegramGroupMembership(telegramUserId, forceRefresh) {
-  const userIdStr = String(telegramUserId).trim();
-  if (!userIdStr) {
-    return { isMember: false, status: "empty_user_id" };
-  }
-  if (!forceRefresh) {
-    const cached = membershipCache.get(userIdStr);
-    if (cached) {
-      const ttl = cached.isMember ? POSITIVE_MEMBERSHIP_CACHE_TTL_MS : NEGATIVE_MEMBERSHIP_CACHE_TTL_MS;
-      if (Date.now() - cached.timestamp < ttl) {
-        return { isMember: cached.isMember, status: cached.status, cached: true };
-      }
-    }
-  }
-  const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
-  const groupUsername = (process.env.TELEGRAM_GROUP_USERNAME || "@efleagueuz").trim();
-  if (!botToken) {
-    const isDev = process.env.ENABLE_DEV_AUTH === "true" || process.env.NODE_ENV !== "production";
-    if (isDev) {
-      console.log(`[TELEGRAM MEMBERSHIP] No TELEGRAM_BOT_TOKEN set in dev environment. Allowing user ${userIdStr} in sandbox.`);
-      return { isMember: true, status: "dev_mock_allowed" };
-    }
-    console.warn(`[TELEGRAM MEMBERSHIP] TELEGRAM_BOT_TOKEN is missing in production.`);
-    return { isMember: true, status: "fail_open_no_token" };
-  }
-  const url = `https://api.telegram.org/bot${botToken}/getChatMember?chat_id=${encodeURIComponent(groupUsername)}&user_id=${encodeURIComponent(userIdStr)}`;
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6e3);
-    const response = await fetch(url, {
-      method: "GET",
-      headers: { "Accept": "application/json" },
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-    const data = await response.json();
-    if (data && data.ok && data.result) {
-      const status = data.result.status;
-      const isRestrictedMember = status === "restricted" && Boolean(data.result.is_member);
-      const isMember = ["creator", "administrator", "member"].includes(status) || isRestrictedMember;
-      membershipCache.set(userIdStr, {
-        isMember,
-        status: status || "unknown",
-        timestamp: Date.now()
-      });
-      return { isMember, status };
-    }
-    const description = (data?.description || "").toLowerCase();
-    if (description.includes("user not found") || description.includes("participant_id_invalid") || description.includes("not a member") || description.includes("chat not found")) {
-      membershipCache.set(userIdStr, {
-        isMember: false,
-        status: "left_or_not_found",
-        timestamp: Date.now()
-      });
-      return { isMember: false, status: "left_or_not_found" };
-    }
-    console.warn(`[TELEGRAM MEMBERSHIP CHECK] Non-definitive Telegram response for user ${userIdStr}:`, data);
-    return { isMember: true, status: "fail_open_transient_error" };
-  } catch (err) {
-    console.warn(`[TELEGRAM MEMBERSHIP CHECK] Network failure querying Telegram for user ${userIdStr}: ${err.message}`);
-    return { isMember: true, status: "fail_open_network_timeout" };
-  }
-}
-async function sendTelegramMessage(chatId, text, options = {}) {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
-  if (!botToken) {
-    return { ok: false, error: "TELEGRAM_BOT_TOKEN is not configured" };
-  }
-  const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text,
-        parse_mode: options.parse_mode || "HTML",
-        reply_markup: options.reply_markup
-      })
-    });
-    const data = await res.json();
-    return data;
-  } catch (err) {
-    return { ok: false, error: err.message };
-  }
-}
-async function sendTelegramSticker(chatId, stickerFileId) {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
-  if (!botToken) {
-    return { ok: false, error: "TELEGRAM_BOT_TOKEN is not configured" };
-  }
-  const url = `https://api.telegram.org/bot${botToken}/sendSticker`;
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        sticker: stickerFileId
-      })
-    });
-    const data = await res.json();
-    return data;
-  } catch (err) {
-    return { ok: false, error: err.message };
-  }
-}
-async function handleTelegramStart(chatId, fromUser) {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
-  if (!botToken) {
-    console.warn("[TELEGRAM BOT /start] Missing TELEGRAM_BOT_TOKEN");
-    return { ok: false, messageSent: false, error: "TELEGRAM_BOT_TOKEN is missing" };
-  }
-  const stickerFileId = process.env.TELEGRAM_WELCOME_STICKER_FILE_ID?.trim();
-  let stickerSent = false;
-  if (stickerFileId) {
-    try {
-      const stickerRes = await sendTelegramSticker(chatId, stickerFileId);
-      stickerSent = Boolean(stickerRes && stickerRes.ok);
-    } catch (err) {
-      console.warn("[TELEGRAM BOT] Failed to send welcome sticker:", err.message);
-    }
-  }
-  const rawFirstName = fromUser?.first_name || "Foydalanuvchi";
-  const cleanFirstName = rawFirstName.replace(/[<>]/g, "");
-  const webAppUrl = process.env.TELEGRAM_WEBAPP_URL?.trim() || process.env.APP_URL?.trim() || "https://efluz.vercel.app";
-  const groupUsername = (process.env.TELEGRAM_GROUP_USERNAME || "@efleagueuz").trim();
-  const groupUrl = groupUsername.startsWith("@") ? `https://t.me/${groupUsername.slice(1)}` : `https://t.me/${groupUsername}`;
-  const welcomeText = `Assalomu alaykum, <b>${cleanFirstName}</b>!
-
-\u26BD <b>EFL UZ</b> \u2014 eFootball O\u2018zbekiston Rasmiy Ligasi platformasiga xush kelibsiz!
-
-\u{1F3C6} <b>Top 5 Yevropa Ligalari:</b>
-\u2022 \u{1F1EC}\u{1F1E7} Premier League
-\u2022 \u{1F1EA}\u{1F1F8} La Liga
-\u2022 \u{1F1EE}\u{1F1F9} Serie A
-\u2022 \u{1F1E9}\u{1F1EA} Bundesliga
-\u2022 \u{1F1EB}\u{1F1F7} Ligue 1
-
-\u2694\uFE0F <b>Asosiy Imkoniyatlar:</b>
-\u2022 Sevimli klubingizni tanlang va boshqaring
-\u2022 Real-vaqt matchmarkaz va eFootball bahslari
-\u2022 Ikki tomonlama natija tasdiqlash va hakamlik
-\u2022 UEFA Chempionlar Ligasi saralash tizimi
-
-Quyidagi tugma orqali ilovani oching va o\u2018z klubingizni band qiling!`;
-  const replyMarkup = {
-    inline_keyboard: [
-      [
-        {
-          text: "\u26BD Ilovani ochish (EFL UZ)",
-          web_app: { url: webAppUrl }
-        }
-      ],
-      [
-        {
-          text: `\u{1F4E2} Rasmiy guruh (${groupUsername})`,
-          url: groupUrl
-        }
-      ]
-    ]
-  };
-  const msgRes = await sendTelegramMessage(chatId, welcomeText, {
-    parse_mode: "HTML",
-    reply_markup: replyMarkup
-  });
-  return {
-    ok: msgRes.ok,
-    stickerSent,
-    messageSent: msgRes.ok,
-    error: msgRes.error
-  };
-}
-
-// src/server/routes/clubs.routes.ts
 init_readModelStore();
 var clubsRouter = Router6();
 function resolveCanonicalClub(id) {
@@ -12057,7 +13090,7 @@ clubsRouter.post("/:id/claim", requireAuth, async (req, res) => {
     }
   }
   try {
-    const result = await claimClubAtomicFirestore(userId, clubId, seasonId);
+    const result = await claimClubAtomicFirestore(userId, clubId, seasonId, { authoritativeOnly: true });
     await invalidateClubReadModels(seasonId).catch(() => {
     });
     await invalidateUserMembershipReadModel(userId, seasonId).catch(() => {
@@ -12195,7 +13228,7 @@ competitionsRouter.post("/:id/reset-fixtures", requireAdmin, async (req, res) =>
 });
 competitionsRouter.post("/:id/rebuild-standings", requireAdmin, async (req, res) => {
   try {
-    const standings = await rebuildCompetitionStandingsFirestore(req.params.id);
+    const standings = await rebuildCompetitionStandingsFirestore2(req.params.id);
     res.json({
       success: true,
       competitionId: req.params.id,
@@ -12248,13 +13281,7 @@ fixturesRouter.post("/:id/result", requireAuth, validateBody(resultSubmissionSch
   const { homeScore, awayScore, proofUrl } = req.body;
   try {
     const updatedFixture = await submitFixtureResultFirestore(userId, fixtureId, homeScore, awayScore, proofUrl);
-    if (updatedFixture?.competitionId) {
-      await invalidateFixtureReadModels(updatedFixture.competitionId, updatedFixture.seasonId || "season-2026-27").catch(() => {
-      });
-      await invalidateStandingsReadModels(updatedFixture.competitionId, updatedFixture.seasonId || "season-2026-27").catch(() => {
-      });
-    }
-    await invalidateFixtureReadModels("", updatedFixture.seasonId || "season-2026-27").catch(() => {
+    await refreshChangedFixtureReadModel(fixtureId).catch(() => invalidateFixtureReadModels(updatedFixture.competitionId, updatedFixture.seasonId || "season-2026-27")).catch(() => {
     });
     res.json({
       success: true,
@@ -12710,910 +13737,8 @@ async function migrateSqliteToFirestore() {
 // src/server/routes/admin.routes.ts
 init_mutationQueue();
 init_knockoutEngine();
-
-// src/server/tournament/qualificationEngine.ts
-init_admin();
-init_collections();
-init_firestoreStore();
-init_adminService();
-init_notificationService();
-init_db();
-init_seed();
-init_readModelStore();
-import crypto3 from "crypto";
-var PREVIEW_TOKEN_REDIS_PREFIX = "qualification:preview:";
-var PREVIEW_TOKEN_TTL_SECONDS = 900;
-var previewTokenCache = /* @__PURE__ */ new Map();
-async function saveQualificationPreviewToken(token, preview) {
-  const key = `${PREVIEW_TOKEN_REDIS_PREFIX}${token}`;
-  const payload = {
-    preview,
-    token,
-    expiresAt: Date.now() + PREVIEW_TOKEN_TTL_SECONDS * 1e3
-  };
-  const client = getUpstashClient();
-  if (client) {
-    try {
-      await client.set(key, payload, { ex: PREVIEW_TOKEN_TTL_SECONDS });
-    } catch (err) {
-      console.warn(`[QUALIFICATION] Failed to write preview token to Upstash Redis:`, err?.message || err);
-    }
-  }
-  previewTokenCache.set(token, payload);
-}
-async function getQualificationPreviewToken(token) {
-  const key = `${PREVIEW_TOKEN_REDIS_PREFIX}${token}`;
-  const client = getUpstashClient();
-  if (client) {
-    try {
-      const data = await client.get(key);
-      if (data && data.preview) {
-        return data.preview;
-      }
-    } catch (err) {
-      console.warn(`[QUALIFICATION] Failed to read preview token from Upstash Redis:`, err?.message || err);
-    }
-  }
-  const mem = previewTokenCache.get(token);
-  if (mem && Date.now() <= mem.expiresAt) {
-    return mem.preview;
-  }
-  return null;
-}
-async function deleteQualificationPreviewToken(token) {
-  const key = `${PREVIEW_TOKEN_REDIS_PREFIX}${token}`;
-  previewTokenCache.delete(token);
-  const client = getUpstashClient();
-  if (client) {
-    try {
-      await client.del(key);
-    } catch {
-    }
-  }
-}
-async function previewEuropeanQualificationSync(seasonId = "season-2026-27", mode = "provisional") {
-  const db = getFirestoreDb();
-  const now = /* @__PURE__ */ new Date();
-  const nowIso = now.toISOString();
-  const [compSnap, partsSnap, fixSnap, occSnap] = await Promise.all([
-    db.collection(COLLECTIONS.COMPETITIONS).where("seasonId", "==", seasonId).get(),
-    db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where("seasonId", "==", seasonId).get(),
-    db.collection(COLLECTIONS.FIXTURES).where("seasonId", "==", seasonId).get(),
-    db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where("seasonId", "==", seasonId).get()
-  ]);
-  const allComps = compSnap.docs.map((d) => d.data());
-  const leagues = allComps.filter((c) => c.type === "LEAGUE");
-  const allFixtures = fixSnap.docs.map((d) => d.data());
-  const existingParts = partsSnap.docs.map((d) => d.data());
-  const occupancyMap = /* @__PURE__ */ new Map();
-  for (const doc of occSnap.docs) {
-    const data = doc.data();
-    if (data.userId && data.clubId) {
-      occupancyMap.set(data.clubId, data.userId);
-    }
-  }
-  const clubsMap = new Map(SEED_CLUBS.map((c) => [c.id, c]));
-  const uclComp = allComps.find(
-    (c) => c.type === "EUROPEAN_LEAGUE_PHASE" && (c.name.toLowerCase().includes("champions") || c.id.includes("ucl"))
-  ) || { id: "comp-champions-league-2026", name: "UEFA Champions League", seasonId, type: "EUROPEAN_LEAGUE_PHASE" };
-  const uelComp = allComps.find(
-    (c) => c.type === "EUROPEAN_LEAGUE_PHASE" && (c.name.toLowerCase().includes("europa") || c.id.includes("uel"))
-  ) || { id: "comp-europa-league-2026", name: "UEFA Europa League", seasonId, type: "EUROPEAN_LEAGUE_PHASE" };
-  const europeanFixtures = allFixtures.filter(
-    (f) => f.competitionId === uclComp.id || f.competitionId === uelComp.id
-  );
-  const playedEuropeanFixtures = europeanFixtures.filter(
-    (f) => f.status === "CONFIRMED" || f.status === "PENDING_CONFIRMATION" || f.status === "AWAITING_RESULT"
-  );
-  const hasEuropeanStarted = playedEuropeanFixtures.length > 0;
-  const leagueIds = new Set(leagues.map((l) => l.id));
-  const leagueFixtures = allFixtures.filter((f) => leagueIds.has(f.competitionId));
-  const unplayedLeagueMatchesCount = leagueFixtures.filter((f) => f.status !== "CONFIRMED").length;
-  const domesticLeaguesCompleted = leagueFixtures.length > 0 && unplayedLeagueMatchesCount === 0;
-  let canApply = true;
-  let blockReason;
-  if (hasEuropeanStarted) {
-    canApply = false;
-    blockReason = `European competitions have already started (${playedEuropeanFixtures.length} played/in-progress matches). Participant synchronization is strictly blocked to protect active competition integrity.`;
-  } else if (mode === "final" && !domesticLeaguesCompleted) {
-    canApply = false;
-    blockReason = `Domestic leagues are not finished (${unplayedLeagueMatchesCount} unconfirmed fixtures remaining). Final European qualification sync can only be applied after all domestic league matches are confirmed.`;
-  }
-  const projectedUcl = [];
-  const projectedUel = [];
-  for (const league of leagues) {
-    const standings = await calculateCompetitionStandingsFirestore(league.id);
-    if (standings.length === 0) continue;
-    const leagueIdLower = (league.id || "").toLowerCase();
-    const leagueNameLower = (league.name || "").toLowerCase();
-    let uclSpots = 7;
-    let uelSpots = 7;
-    if (leagueIdLower.includes("serie-a") || leagueNameLower.includes("serie a") || leagueIdLower.includes("bundesliga") || leagueNameLower.includes("bundesliga") || leagueIdLower.includes("ligue-1") || leagueNameLower.includes("ligue 1")) {
-      uclSpots = 6;
-      uelSpots = 6;
-    }
-    for (let i = 0; i < Math.min(uclSpots, standings.length); i++) {
-      const row = standings[i];
-      const ownerUserId = occupancyMap.get(row.clubId) || null;
-      projectedUcl.push({
-        seasonId,
-        sourceCompetitionId: league.id,
-        sourceCompetitionName: league.name,
-        targetCompetitionId: uclComp.id,
-        targetCompetitionName: uclComp.name,
-        clubId: row.clubId,
-        clubName: row.clubName,
-        ownerUserId,
-        rank: row.position,
-        reason: `${league.name} Rank #${row.position} (UCL Spot)`
-      });
-    }
-    for (let i = uclSpots; i < Math.min(uclSpots + uelSpots, standings.length); i++) {
-      const row = standings[i];
-      const ownerUserId = occupancyMap.get(row.clubId) || null;
-      projectedUel.push({
-        seasonId,
-        sourceCompetitionId: league.id,
-        sourceCompetitionName: league.name,
-        targetCompetitionId: uelComp.id,
-        targetCompetitionName: uelComp.name,
-        clubId: row.clubId,
-        clubName: row.clubName,
-        ownerUserId,
-        rank: row.position,
-        reason: `${league.name} Rank #${row.position} (UEL Spot)`
-      });
-    }
-  }
-  const existingUclParts = existingParts.filter((p) => p.competitionId === uclComp.id);
-  const existingUclClubIds = new Set(existingUclParts.map((p) => p.clubId));
-  const projectedUclClubIds = new Set(projectedUcl.map((p) => p.clubId));
-  const uclDiff = {
-    competitionId: uclComp.id,
-    competitionName: uclComp.name,
-    totalTarget: 32,
-    retained: projectedUcl.filter((p) => existingUclClubIds.has(p.clubId)).map((p) => ({ clubId: p.clubId, clubName: p.clubName, rank: p.rank, sourceLeague: p.sourceCompetitionName })),
-    added: projectedUcl.filter((p) => !existingUclClubIds.has(p.clubId)).map((p) => ({ clubId: p.clubId, clubName: p.clubName, rank: p.rank, sourceLeague: p.sourceCompetitionName })),
-    removed: existingUclParts.filter((p) => !projectedUclClubIds.has(p.clubId)).map((p) => {
-      const club = clubsMap.get(p.clubId);
-      return { clubId: p.clubId, clubName: club?.name || p.clubId, previousReason: p.qualificationReason };
-    })
-  };
-  const existingUelParts = existingParts.filter((p) => p.competitionId === uelComp.id);
-  const existingUelClubIds = new Set(existingUelParts.map((p) => p.clubId));
-  const projectedUelClubIds = new Set(projectedUel.map((p) => p.clubId));
-  const uelDiff = {
-    competitionId: uelComp.id,
-    competitionName: uelComp.name,
-    totalTarget: 32,
-    retained: projectedUel.filter((p) => existingUelClubIds.has(p.clubId)).map((p) => ({ clubId: p.clubId, clubName: p.clubName, rank: p.rank, sourceLeague: p.sourceCompetitionName })),
-    added: projectedUel.filter((p) => !existingUelClubIds.has(p.clubId)).map((p) => ({ clubId: p.clubId, clubName: p.clubName, rank: p.rank, sourceLeague: p.sourceCompetitionName })),
-    removed: existingUelParts.filter((p) => !projectedUelClubIds.has(p.clubId)).map((p) => {
-      const club = clubsMap.get(p.clubId);
-      return { clubId: p.clubId, clubName: club?.name || p.clubId, previousReason: p.qualificationReason };
-    })
-  };
-  const previewToken = `prev-qual-${Date.now()}-${crypto3.randomBytes(6).toString("hex")}`;
-  const expiresAt = new Date(now.getTime() + 15 * 60 * 1e3).toISOString();
-  const preview = {
-    previewToken,
-    seasonId,
-    mode,
-    canApply,
-    blockReason,
-    domesticLeaguesCompleted,
-    unplayedLeagueMatchesCount,
-    hasEuropeanStarted,
-    summary: {
-      ucl: {
-        totalTarget: 32,
-        retainedCount: uclDiff.retained.length,
-        addedCount: uclDiff.added.length,
-        removedCount: uclDiff.removed.length
-      },
-      uel: {
-        totalTarget: 32,
-        retainedCount: uelDiff.retained.length,
-        addedCount: uelDiff.added.length,
-        removedCount: uelDiff.removed.length
-      }
-    },
-    diff: {
-      ucl: uclDiff,
-      uel: uelDiff
-    },
-    projectedQualifications: [...projectedUcl, ...projectedUel],
-    generatedAt: nowIso,
-    expiresAt
-  };
-  await saveQualificationPreviewToken(previewToken, preview);
-  return preview;
-}
-async function applyEuropeanQualificationSync(params) {
-  if (!params.confirmation) {
-    throw new Error("Explicit admin confirmation is required to apply European qualifications sync.");
-  }
-  const preview = await getQualificationPreviewToken(params.previewToken);
-  if (!preview) {
-    throw new Error("Preview token is invalid, expired, or was already applied. Please generate a fresh preview before applying.");
-  }
-  if (!preview.canApply) {
-    throw new Error(preview.blockReason || "Cannot apply qualifications sync: preconditions failed.");
-  }
-  const db = getFirestoreDb();
-  const activeEuropeanFixSnap = await db.collection(COLLECTIONS.FIXTURES).where("competitionId", "in", [preview.diff.ucl.competitionId, preview.diff.uel.competitionId]).where("status", "in", ["CONFIRMED", "PLAYING"]).limit(1).get();
-  if (!activeEuropeanFixSnap.empty) {
-    throw new Error(
-      "Precondition Failed: European competitions have already started with active or confirmed matches. Modifying participants is strictly prohibited."
-    );
-  }
-  if (preview.mode === "final") {
-    const unplayedLeaguesSnap = await db.collection(COLLECTIONS.FIXTURES).where("seasonId", "==", preview.seasonId).where("status", "==", "SCHEDULED").get();
-    const leagueIds = [
-      "comp-premier-league-2026",
-      "comp-la-liga-2026",
-      "comp-serie-a-2026",
-      "comp-bundesliga-2026",
-      "comp-ligue-1-2026"
-    ];
-    const unplayedLeagueMatches = unplayedLeaguesSnap.docs.filter(
-      (d) => leagueIds.includes(d.data().competitionId)
-    ).length;
-    if (unplayedLeagueMatches > 0) {
-      throw new Error(
-        `Precondition Failed: Domestic leagues still have ${unplayedLeagueMatches} unplayed scheduled matches. Final qualification sync cannot be applied.`
-      );
-    }
-  }
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const batch = db.batch();
-  let participantsAdded = 0;
-  let participantsRemoved = 0;
-  const notificationsToSend = [];
-  for (let i = 0; i < preview.diff.ucl.added.length; i++) {
-    const item = preview.diff.ucl.added[i];
-    const qual = preview.projectedQualifications.find((q) => q.clubId === item.clubId && q.targetCompetitionId === preview.diff.ucl.competitionId);
-    const partId = `part-${preview.diff.ucl.competitionId}-${item.clubId}`;
-    const partRef = db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).doc(partId);
-    const docData = {
-      id: partId,
-      competitionId: preview.diff.ucl.competitionId,
-      clubId: item.clubId,
-      seasonId: preview.seasonId,
-      ownerUserId: qual?.ownerUserId || void 0,
-      sourceCompetitionId: qual?.sourceCompetitionId,
-      sourceCompetitionName: qual?.sourceCompetitionName,
-      sourcePosition: item.rank,
-      qualificationReason: qual?.reason || "Qualified for UCL",
-      qualificationTimestamp: now,
-      seedNumber: i + 1,
-      createdAt: now
-    };
-    batch.set(partRef, docData, { merge: true });
-    participantsAdded++;
-    if (qual?.ownerUserId) {
-      notificationsToSend.push({
-        userId: qual.ownerUserId,
-        title: "\u{1F3C6} Qualified for UEFA Champions League!",
-        message: `Congratulations! ${item.clubName} qualified for the UEFA Champions League (${item.sourceLeague} #${item.rank})!`
-      });
-    }
-  }
-  for (let i = 0; i < preview.diff.uel.added.length; i++) {
-    const item = preview.diff.uel.added[i];
-    const qual = preview.projectedQualifications.find((q) => q.clubId === item.clubId && q.targetCompetitionId === preview.diff.uel.competitionId);
-    const partId = `part-${preview.diff.uel.competitionId}-${item.clubId}`;
-    const partRef = db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).doc(partId);
-    const docData = {
-      id: partId,
-      competitionId: preview.diff.uel.competitionId,
-      clubId: item.clubId,
-      seasonId: preview.seasonId,
-      ownerUserId: qual?.ownerUserId || void 0,
-      sourceCompetitionId: qual?.sourceCompetitionId,
-      sourceCompetitionName: qual?.sourceCompetitionName,
-      sourcePosition: item.rank,
-      qualificationReason: qual?.reason || "Qualified for UEL",
-      qualificationTimestamp: now,
-      seedNumber: i + 1,
-      createdAt: now
-    };
-    batch.set(partRef, docData, { merge: true });
-    participantsAdded++;
-    if (qual?.ownerUserId) {
-      notificationsToSend.push({
-        userId: qual.ownerUserId,
-        title: "Qualified for UEFA Europa League",
-        message: `Congratulations! ${item.clubName} qualified for the UEFA Europa League (${item.sourceLeague} #${item.rank})!`
-      });
-    }
-  }
-  for (const rem of [...preview.diff.ucl.removed, ...preview.diff.uel.removed]) {
-    const compId = preview.diff.ucl.removed.includes(rem) ? preview.diff.ucl.competitionId : preview.diff.uel.competitionId;
-    const partId = `part-${compId}-${rem.clubId}`;
-    const partRef = db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).doc(partId);
-    batch.delete(partRef);
-    participantsRemoved++;
-  }
-  await batch.commit();
-  for (const q of preview.projectedQualifications) {
-    try {
-      const partId = `part-${q.targetCompetitionId}-${q.clubId}`;
-      queryRun(
-        `INSERT OR REPLACE INTO competition_participants 
-         (id, competition_id, club_id, season_id, owner_user_id, source_competition_id, source_position, qualification_reason, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [partId, q.targetCompetitionId, q.clubId, preview.seasonId, q.ownerUserId, q.sourceCompetitionId, q.rank, q.reason, now]
-      );
-    } catch {
-    }
-  }
-  await deleteQualificationPreviewToken(params.previewToken);
-  await redisDelRaw(ReadModelKeys.competitions(preview.seasonId)).catch(() => {
-  });
-  for (const compId of [preview.diff.ucl.competitionId, preview.diff.uel.competitionId]) {
-    await redisDelRaw(ReadModelKeys.standings(compId, preview.seasonId)).catch(() => {
-    });
-    await redisDelRaw(ReadModelKeys.competitionFixtures(compId, preview.seasonId)).catch(() => {
-    });
-  }
-  await Promise.all(
-    notificationsToSend.map(
-      (n) => createNotification(n.userId, "QUALIFICATION_CONFIRMED", n.title, n.message).catch(() => {
-      })
-    )
-  );
-  await createAuditLog(
-    params.adminUserId,
-    "EUROPEAN_QUALIFICATIONS_SYNCED",
-    "SEASON",
-    preview.seasonId,
-    void 0,
-    {
-      mode: preview.mode,
-      totalQualified: preview.projectedQualifications.length,
-      participantsAdded,
-      participantsRemoved,
-      previewToken: params.previewToken,
-      timestamp: now
-    },
-    void 0,
-    params.adminUsername || "admin",
-    `Applied European qualification sync (${preview.mode}): ${participantsAdded} added, ${participantsRemoved} removed.`
-  );
-  return {
-    success: true,
-    message: `Successfully applied European qualifications sync (${preview.mode}): ${participantsAdded} added, ${participantsRemoved} removed.`,
-    qualificationsApplied: preview.projectedQualifications.length,
-    participantsAdded,
-    participantsRemoved
-  };
-}
-async function rebuildEuropeanStandings(competitionId, seasonId = "season-2026-27") {
-  const db = getFirestoreDb();
-  const [compDoc, partsSnap, fixSnap] = await Promise.all([
-    db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get(),
-    db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where("competitionId", "==", competitionId).get(),
-    db.collection(COLLECTIONS.FIXTURES).where("competitionId", "==", competitionId).get()
-  ]);
-  const clubsMap = new Map(SEED_CLUBS.map((c) => [c.id, c]));
-  const participants = partsSnap.docs.map((d) => d.data());
-  const fixtures = fixSnap.docs.map((d) => d.data());
-  let clubIds = participants.map((p) => p.clubId);
-  if (clubIds.length === 0) {
-    clubIds = SEED_CLUBS.slice(0, 32).map((c) => c.id);
-  }
-  const statsMap = /* @__PURE__ */ new Map();
-  for (const cid of clubIds) {
-    const club = clubsMap.get(cid);
-    statsMap.set(cid, {
-      clubId: cid,
-      clubName: club?.name || cid,
-      badgeUrl: club?.logoUrl,
-      played: 0,
-      won: 0,
-      drawn: 0,
-      lost: 0,
-      goalsFor: 0,
-      goalsAgainst: 0,
-      goalDifference: 0,
-      points: 0
-    });
-  }
-  for (const f of fixtures) {
-    if (f.status !== "CONFIRMED" || f.homeScore === null || f.awayScore === null) continue;
-    const home = statsMap.get(f.homeClubId);
-    const away = statsMap.get(f.awayClubId);
-    if (home) {
-      home.played += 1;
-      home.goalsFor += f.homeScore;
-      home.goalsAgainst += f.awayScore;
-      home.goalDifference = home.goalsFor - home.goalsAgainst;
-      if (f.homeScore > f.awayScore) {
-        home.won += 1;
-        home.points += 3;
-      } else if (f.homeScore === f.awayScore) {
-        home.drawn += 1;
-        home.points += 1;
-      } else {
-        home.lost += 1;
-      }
-    }
-    if (away) {
-      away.played += 1;
-      away.goalsFor += f.awayScore;
-      away.goalsAgainst += f.homeScore;
-      away.goalDifference = away.goalsFor - away.goalsAgainst;
-      if (f.awayScore > f.homeScore) {
-        away.won += 1;
-        away.points += 3;
-      } else if (f.homeScore === f.awayScore) {
-        away.drawn += 1;
-        away.points += 1;
-      } else {
-        away.lost += 1;
-      }
-    }
-  }
-  const sorted = Array.from(statsMap.values()).sort((a, b) => {
-    if (b.points !== a.points) return b.points - a.points;
-    if (b.goalDifference !== a.goalDifference) return b.goalDifference - a.goalDifference;
-    if (b.goalsFor !== a.goalsFor) return b.goalsFor - a.goalsFor;
-    return a.clubName.localeCompare(b.clubName);
-  });
-  const rows = sorted.map((s, idx) => {
-    const position = idx + 1;
-    let zone = "ELIMINATED";
-    let zoneLabel = "Eliminated (25-32)";
-    if (position <= 8) {
-      zone = "DIRECT_R16";
-      zoneLabel = "Round of 16 (Direct Qualification)";
-    } else if (position <= 24) {
-      zone = "KNOCKOUT_PLAYOFF";
-      zoneLabel = "Knockout Play-offs (9-24)";
-    }
-    return {
-      position,
-      clubId: s.clubId,
-      clubName: s.clubName,
-      badgeUrl: s.badgeUrl,
-      played: s.played,
-      won: s.won,
-      drawn: s.drawn,
-      lost: s.lost,
-      goalsFor: s.goalsFor,
-      goalsAgainst: s.goalsAgainst,
-      goalDifference: s.goalDifference,
-      points: s.points,
-      zone,
-      zoneLabel
-    };
-  });
-  const cacheKey = `european:standings:${competitionId}:${seasonId}`;
-  await redisSetRaw(
-    cacheKey,
-    {
-      data: rows,
-      schemaVersion: SCHEMA_VERSION,
-      sourceVersion: "rebuild-european-standings",
-      expectedCount: 32
-    },
-    86400
-  );
-  return rows;
-}
-async function getEuropeanStandings(competitionId, seasonId = "season-2026-27") {
-  const cacheKey = `european:standings:${competitionId}:${seasonId}`;
-  const raw = await redisGetRaw(cacheKey);
-  if (raw?.data && Array.isArray(raw.data) && raw.data.length > 0) {
-    return {
-      rows: raw.data,
-      source: "redis-read-model",
-      degraded: false
-    };
-  }
-  try {
-    const rows = await rebuildEuropeanStandings(competitionId, seasonId);
-    return { rows, source: "firestore", degraded: false };
-  } catch (err) {
-    firestoreCircuitBreaker.recordFailure(err);
-    return { rows: [], source: "error-fallback", degraded: true };
-  }
-}
-async function evaluateSeasonQualifications(seasonId = "season-2026-27") {
-  const preview = await previewEuropeanQualificationSync(seasonId, "provisional");
-  if (preview.canApply) {
-    const res = await applyEuropeanQualificationSync({
-      seasonId,
-      previewToken: preview.previewToken,
-      confirmation: true,
-      adminUserId: "system",
-      adminUsername: "system-evaluator"
-    });
-    return {
-      success: true,
-      qualifications: preview.projectedQualifications,
-      participantsAdded: res.participantsAdded
-    };
-  }
-  return {
-    success: false,
-    qualifications: preview.projectedQualifications,
-    participantsAdded: 0
-  };
-}
-
-// src/server/routes/admin.routes.ts
+init_qualificationEngine();
 init_domesticCupService();
-
-// src/server/services/telegramNotificationQueue.ts
-init_admin();
-init_collections();
-init_adminService();
-init_readModelStore();
-init_seed();
-init_db();
-import crypto4 from "crypto";
-var BROADCASTS_KEY = `${KEY_PREFIX}:telegram:broadcasts`;
-var QUEUE_KEY = `${KEY_PREFIX}:telegram:queue`;
-var RECIPIENT_DIR_KEY = `${KEY_PREFIX}:private:recipient-directory`;
-var memoryBroadcasts = /* @__PURE__ */ new Map();
-var memoryJobQueue = [];
-var memoryRecipientDirectory = /* @__PURE__ */ new Map();
-async function syncRecipientDirectory(seasonId = "season-2026-27") {
-  const dirMap = /* @__PURE__ */ new Map();
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  try {
-    const db = getFirestoreDb();
-    const [usersSnap, occSnap] = await Promise.all([
-      db.collection(COLLECTIONS.USERS).get(),
-      db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where("seasonId", "==", seasonId).get()
-    ]);
-    const occupancyMap = /* @__PURE__ */ new Map();
-    for (const doc of occSnap.docs) {
-      const data = doc.data();
-      if (data.userId && data.clubId) {
-        occupancyMap.set(data.userId, { clubId: data.clubId, claimedAt: data.claimedAt });
-      }
-    }
-    const clubsMap = new Map(SEED_CLUBS.map((c) => [c.id, c]));
-    const leaguesMap = new Map(SEED_LEAGUES.map((l) => [l.id, l]));
-    for (const doc of usersSnap.docs) {
-      const u = doc.data();
-      const occ = occupancyMap.get(u.id);
-      const club = occ ? clubsMap.get(occ.clubId) : void 0;
-      const league = club ? leaguesMap.get(club.leagueId) : void 0;
-      const hasTelegram = Boolean(u.telegramId && String(u.telegramId).trim().length > 0);
-      const entry = {
-        userId: u.id,
-        username: u.username || `player_${u.id.substring(0, 6)}`,
-        displayName: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.username || "EFL Player",
-        telegramId: u.telegramId || null,
-        clubId: club?.id,
-        clubName: club?.name,
-        leagueId: league?.id,
-        leagueName: league?.name,
-        messageable: hasTelegram && !u.isSuspended,
-        updatedAt: now
-      };
-      dirMap.set(u.id, entry);
-      memoryRecipientDirectory.set(u.id, entry);
-    }
-  } catch (err) {
-    const userRows = queryAll("SELECT * FROM users");
-    const occRows = queryAll("SELECT * FROM club_memberships WHERE status = ?", ["active"]);
-    const occupancyMap = /* @__PURE__ */ new Map();
-    for (const o of occRows) {
-      if (o.user_id && o.club_id) occupancyMap.set(o.user_id, o.club_id);
-    }
-    const clubsMap = new Map(SEED_CLUBS.map((c) => [c.id, c]));
-    const leaguesMap = new Map(SEED_LEAGUES.map((l) => [l.id, l]));
-    for (const u of userRows) {
-      const clubId = occupancyMap.get(u.id);
-      const club = clubId ? clubsMap.get(clubId) : void 0;
-      const league = club ? leaguesMap.get(club.leagueId) : void 0;
-      const hasTelegram = Boolean(u.telegram_id);
-      const entry = {
-        userId: u.id,
-        username: u.username || `player_${u.id.substring(0, 6)}`,
-        displayName: [u.first_name, u.last_name].filter(Boolean).join(" ") || u.username || "EFL Player",
-        telegramId: u.telegram_id || null,
-        clubId: club?.id,
-        clubName: club?.name,
-        leagueId: league?.id,
-        leagueName: league?.name,
-        messageable: hasTelegram && !u.is_suspended,
-        updatedAt: now
-      };
-      dirMap.set(u.id, entry);
-      memoryRecipientDirectory.set(u.id, entry);
-    }
-  }
-  const entriesArray = Array.from(dirMap.values());
-  const client = getUpstashClient();
-  if (client) {
-    try {
-      await client.set(RECIPIENT_DIR_KEY, entriesArray);
-    } catch {
-    }
-  }
-  return entriesArray.length;
-}
-async function getSafeEligibleRecipients(filter, seasonId = "season-2026-27") {
-  if (memoryRecipientDirectory.size === 0) {
-    await syncRecipientDirectory(seasonId);
-  }
-  const client = getUpstashClient();
-  let entries = [];
-  if (client) {
-    try {
-      const cached = await client.get(RECIPIENT_DIR_KEY);
-      if (Array.isArray(cached) && cached.length > 0) {
-        entries = cached;
-      }
-    } catch {
-    }
-  }
-  if (entries.length === 0) {
-    entries = Array.from(memoryRecipientDirectory.values());
-  }
-  let filtered = entries;
-  if (filter?.audience === "CLUB_OWNERS") {
-    filtered = filtered.filter((r) => Boolean(r.clubId));
-  } else if (filter?.audience === "LEAGUE_OWNERS" && filter.leagueId) {
-    filtered = filtered.filter((r) => r.leagueId === filter.leagueId && Boolean(r.clubId));
-  }
-  return filtered.map((r) => ({
-    userId: r.userId,
-    username: r.username,
-    displayName: r.displayName,
-    clubId: r.clubId,
-    clubName: r.clubName,
-    leagueId: r.leagueId,
-    leagueName: r.leagueName,
-    hasTelegram: Boolean(r.telegramId),
-    messageable: r.messageable
-  }));
-}
-async function enqueueTelegramBroadcast(params) {
-  const seasonId = params.seasonId || "season-2026-27";
-  if (memoryRecipientDirectory.size === 0) {
-    await syncRecipientDirectory(seasonId);
-  }
-  const broadcastId = `bcast-${Date.now()}-${crypto4.randomBytes(4).toString("hex")}`;
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  let targetUserIds = [];
-  if (params.targetAudience === "SELECTED_RECIPIENTS") {
-    targetUserIds = params.selectedUserIds || [];
-  } else {
-    const safeRecipients = await getSafeEligibleRecipients(
-      { audience: params.targetAudience, leagueId: params.targetLeagueId },
-      seasonId
-    );
-    targetUserIds = safeRecipients.map((r) => r.userId);
-  }
-  if (targetUserIds.length === 0) {
-    throw new Error("No eligible recipients found for this broadcast selection.");
-  }
-  const recipientStatuses = [];
-  const jobs = [];
-  for (const uid of targetUserIds) {
-    const recipient = memoryRecipientDirectory.get(uid);
-    const hasTg = Boolean(recipient?.telegramId);
-    recipientStatuses.push({
-      userId: uid,
-      username: recipient?.username || "user",
-      displayName: recipient?.displayName || "User",
-      clubName: recipient?.clubName,
-      status: hasTg ? "PENDING" : "SKIPPED_NO_TELEGRAM",
-      error: hasTg ? void 0 : "User has no connected Telegram account",
-      retryCount: 0
-    });
-    if (hasTg) {
-      jobs.push({
-        jobId: `job-${broadcastId}-${uid}`,
-        broadcastId,
-        userId: uid,
-        username: recipient?.username || "user",
-        displayName: recipient?.displayName || "User",
-        telegramId: recipient.telegramId,
-        title: params.title,
-        body: params.body,
-        type: params.type,
-        status: "QUEUED",
-        retryCount: 0,
-        maxRetries: 3,
-        createdAt: now
-      });
-    }
-  }
-  const record = {
-    id: broadcastId,
-    seasonId,
-    title: params.title,
-    body: params.body,
-    type: params.type,
-    targetAudience: params.targetAudience,
-    targetLeagueId: params.targetLeagueId,
-    createdById: params.adminUserId,
-    createdByUsername: params.adminUsername,
-    createdAt: now,
-    status: jobs.length > 0 ? "QUEUED" : "COMPLETED",
-    metrics: {
-      totalRecipients: targetUserIds.length,
-      sentCount: 0,
-      failedCount: 0,
-      skippedCount: recipientStatuses.filter((r) => r.status === "SKIPPED_NO_TELEGRAM").length
-    },
-    recipients: recipientStatuses
-  };
-  memoryBroadcasts.set(broadcastId, record);
-  for (const job of jobs) {
-    memoryJobQueue.push(job);
-  }
-  const client = getUpstashClient();
-  if (client) {
-    try {
-      await client.hset(BROADCASTS_KEY, { [broadcastId]: record });
-      for (const job of jobs) {
-        await client.rpush(QUEUE_KEY, job);
-      }
-    } catch (err) {
-      console.warn("[NOTIF_QUEUE] Redis enqueue error:", err.message);
-    }
-  }
-  await createAuditLog(
-    params.adminUserId,
-    "TELEGRAM_NOTIFICATION_BROADCAST",
-    "BROADCAST",
-    broadcastId,
-    void 0,
-    {
-      broadcastId,
-      title: params.title,
-      type: params.type,
-      recipientsTotal: targetUserIds.length,
-      queuedJobs: jobs.length,
-      skippedNoTelegram: record.metrics.skippedCount,
-      timestamp: now
-    },
-    void 0,
-    params.adminUsername,
-    `Enqueued broadcast '${params.title}' for ${targetUserIds.length} recipients (${jobs.length} with Telegram).`
-  );
-  setTimeout(() => {
-    processNotificationQueue().catch(
-      (err) => console.error("[NOTIF_QUEUE] Background processor failed:", err)
-    );
-  }, 100);
-  return record;
-}
-async function processNotificationQueue(batchSize = 25) {
-  let processed = 0;
-  let succeeded = 0;
-  let failed = 0;
-  const client = getUpstashClient();
-  let pendingJobs = [];
-  if (client) {
-    try {
-      for (let i = 0; i < batchSize; i++) {
-        const job = await client.lpop(QUEUE_KEY);
-        if (!job) break;
-        pendingJobs.push(job);
-      }
-    } catch {
-    }
-  }
-  if (pendingJobs.length === 0) {
-    pendingJobs = memoryJobQueue.splice(0, batchSize);
-  }
-  if (pendingJobs.length === 0) {
-    return { processed: 0, succeeded: 0, failed: 0 };
-  }
-  for (const job of pendingJobs) {
-    processed++;
-    const formattedHtml = formatTelegramMessage(job.title, job.body, job.type);
-    try {
-      const res = await sendTelegramMessage(job.telegramId, formattedHtml, { parse_mode: "HTML" });
-      const now = (/* @__PURE__ */ new Date()).toISOString();
-      if (res.ok) {
-        succeeded++;
-        job.status = "SENT";
-        job.sentAt = now;
-        updateBroadcastRecipientState(job.broadcastId, job.userId, "SENT", void 0, now);
-      } else {
-        job.retryCount++;
-        const errMsg = res.error || "Telegram API returned not ok";
-        if (job.retryCount < job.maxRetries) {
-          job.status = "QUEUED";
-          memoryJobQueue.push(job);
-        } else {
-          failed++;
-          job.status = "FAILED";
-          job.error = errMsg;
-          updateBroadcastRecipientState(job.broadcastId, job.userId, "FAILED", errMsg);
-        }
-      }
-    } catch (err) {
-      job.retryCount++;
-      if (job.retryCount < job.maxRetries) {
-        job.status = "QUEUED";
-        memoryJobQueue.push(job);
-      } else {
-        failed++;
-        job.status = "FAILED";
-        job.error = err.message;
-        updateBroadcastRecipientState(job.broadcastId, job.userId, "FAILED", err.message);
-      }
-    }
-    await new Promise((resolve) => setTimeout(resolve, 40));
-  }
-  return { processed, succeeded, failed };
-}
-function formatTelegramMessage(title, body, type) {
-  let icon = "\u{1F4E2}";
-  if (type === "NEW_MATCHDAY") icon = "\u26BD";
-  if (type === "UPCOMING_MATCH") icon = "\u23F0";
-  if (type === "COMPETITION_UPDATE") icon = "\u{1F3C6}";
-  return `<b>${icon} EFL UZ Official Alert</b>
-
-<b>${escapeHtml(title)}</b>
-
-${escapeHtml(body)}
-
-<i>Season 2026/27 \u2022 Open EFL WebApp to manage fixtures</i>`;
-}
-function escapeHtml(str) {
-  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-function updateBroadcastRecipientState(broadcastId, userId, status, error, sentAt) {
-  const bcast = memoryBroadcasts.get(broadcastId);
-  if (!bcast) return;
-  const r = bcast.recipients.find((rec) => rec.userId === userId);
-  if (r) {
-    r.status = status;
-    if (error) r.error = error;
-    if (sentAt) r.sentAt = sentAt;
-  }
-  if (status === "SENT") bcast.metrics.sentCount++;
-  if (status === "FAILED") bcast.metrics.failedCount++;
-  const totalFinished = bcast.metrics.sentCount + bcast.metrics.failedCount + bcast.metrics.skippedCount;
-  if (totalFinished >= bcast.metrics.totalRecipients) {
-    bcast.status = bcast.metrics.failedCount > 0 ? "PARTIALLY_FAILED" : "COMPLETED";
-  }
-  const client = getUpstashClient();
-  if (client) {
-    client.hset(BROADCASTS_KEY, { [broadcastId]: bcast }).catch(() => {
-    });
-  }
-}
-async function getBroadcastHistory(limit = 20) {
-  const client = getUpstashClient();
-  if (client) {
-    try {
-      const records = await client.hgetall(BROADCASTS_KEY);
-      if (records) {
-        const list = Object.values(records);
-        return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, limit);
-      }
-    } catch {
-    }
-  }
-  return Array.from(memoryBroadcasts.values()).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, limit);
-}
-async function getBroadcastDetails(broadcastId) {
-  const client = getUpstashClient();
-  if (client) {
-    try {
-      const record = await client.hget(BROADCASTS_KEY, broadcastId);
-      if (record) return record;
-    } catch {
-    }
-  }
-  return memoryBroadcasts.get(broadcastId) || null;
-}
-
-// src/server/routes/admin.routes.ts
 init_admin();
 init_collections();
 init_circuitBreaker();
@@ -13704,10 +13829,10 @@ adminRouter.get("/overview", async (req, res) => {
     ]);
     const registeredUsers = usersCountSnap?.data().count ?? 0;
     const activeOccupancies = occCountSnap?.data().count ?? 0;
-    const domesticLeagues = competitions.filter((c) => c.type === "league");
-    const domesticCups = competitions.filter((c) => c.type === "cup");
+    const domesticLeagues = competitions.filter((c) => String(c.type) === "LEAGUE" || String(c.type) === "league");
+    const domesticCups = competitions.filter((c) => String(c.type) === "DOMESTIC_CUP" || String(c.type) === "cup");
     const europeanComps = competitions.filter(
-      (c) => c.type === "champions_league" || c.type === "europa_league" || c.type === "conference_league"
+      (c) => ["EUROPEAN_LEAGUE_PHASE", "champions_league", "europa_league", "conference_league"].includes(String(c.type))
     );
     const payload = {
       season: {
@@ -14324,7 +14449,7 @@ adminRouter.post("/fixtures/reset", async (req, res) => {
 adminRouter.post("/competitions/:id/rebuild-standings", async (req, res) => {
   const competitionId = req.params.id;
   try {
-    const standings = await rebuildCompetitionStandingsFirestore(competitionId);
+    const standings = await rebuildCompetitionStandingsFirestore2(competitionId);
     res.json({
       success: true,
       competitionId,
@@ -14397,13 +14522,7 @@ adminRouter.post("/results/:fixtureId/approve", validateBody(approveResultSchema
   try {
     const result = await adminApproveFixtureResultFirestore(adminUserId, fixtureId, homeScore, awayScore, notes);
     const compId = result?.fixture?.competitionId || "";
-    if (compId) {
-      await invalidateFixtureReadModels(compId, "season-2026-27").catch(() => {
-      });
-      await invalidateStandingsReadModels(compId, "season-2026-27").catch(() => {
-      });
-    }
-    await invalidateFixtureReadModels("", "season-2026-27").catch(() => {
+    await refreshChangedFixtureReadModel(fixtureId).catch(() => invalidateFixtureReadModels(compId, "season-2026-27")).catch(() => {
     });
     res.json(result);
   } catch (err) {
@@ -14416,7 +14535,7 @@ adminRouter.post("/results/:fixtureId/reject", validateBody(reopenFixtureSchema)
   const { notes } = req.body;
   try {
     const result = await reopenFixtureFirestore(adminUserId, fixtureId, notes || "Rejected by tournament administrator");
-    await invalidateFixtureReadModels("", "season-2026-27").catch(() => {
+    await refreshChangedFixtureReadModel(fixtureId).catch(() => invalidateFixtureReadModels("", "season-2026-27")).catch(() => {
     });
     res.json({
       success: true,
@@ -14600,7 +14719,11 @@ adminRouter.post("/cups/matches/:fixtureId/advance", async (req, res) => {
     });
     res.json(result);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    const statusCode = err.statusCode || err.status || 400;
+    res.status(statusCode).json({
+      error: err.message,
+      code: err.code || (statusCode === 409 ? "CONFLICT" : "BAD_REQUEST")
+    });
   }
 });
 adminRouter.get("/european/standings", async (req, res) => {
@@ -14681,6 +14804,13 @@ adminRouter.get("/telegram-notifications/recipients", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+adminRouter.post("/telegram-notifications/recipients/refresh", async (req, res) => {
+  try {
+    res.json({ count: await syncRecipientDirectory(req.body.seasonId || "season-2026-27") });
+  } catch {
+    res.status(503).json({ error: "RECIPIENT_DIRECTORY_UNAVAILABLE" });
+  }
+});
 adminRouter.post("/telegram-notifications/broadcast", async (req, res) => {
   const adminUserId = req.user.id;
   const adminUsername = req.user?.username || "admin";
@@ -14696,10 +14826,11 @@ adminRouter.post("/telegram-notifications/broadcast", async (req, res) => {
       title,
       body,
       type: type || "CUSTOM_ALERT",
-      targetAudience: targetAudience || "ALL_USERS",
+      targetAudience: targetAudience || "SELECTED_RECIPIENTS",
       targetLeagueId,
       selectedUserIds,
-      seasonId
+      seasonId,
+      requestId: req.body.requestId
     });
     res.json({
       success: true,
@@ -14800,6 +14931,7 @@ var dbInitPromise = null;
 var dbReady = false;
 var syncWorkerStarted = false;
 function startBackgroundReconciliation() {
+  if (process.env.ENABLE_LOCAL_MUTATION_REPLAY !== "true") return;
   if (syncWorkerStarted) return;
   syncWorkerStarted = true;
   setTimeout(() => {
@@ -14855,6 +14987,20 @@ function createApp() {
     next();
   });
   app2.use(express.json());
+  app2.get("/api/internal/telegram-worker", async (req, res) => {
+    const secret = process.env.CRON_SECRET;
+    const actual = Buffer.from(req.headers.authorization || "");
+    const expected = Buffer.from(`Bearer ${secret || ""}`);
+    if (!secret || actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+      res.status(401).json({ error: "UNAUTHORIZED" });
+      return;
+    }
+    try {
+      res.json(await processNotificationQueue(25));
+    } catch {
+      res.status(503).json({ error: "NOTIFICATION_WORKER_UNAVAILABLE" });
+    }
+  });
   app2.use(async (req, res, next) => {
     try {
       await ensureDbReady();
@@ -14898,7 +15044,6 @@ var app_default = app;
 // src/server/apiEntry.ts
 async function handler(req, res) {
   try {
-    await ensureDbReady();
     if (req.url && !req.url.startsWith("/api")) {
       req.url = "/api" + (req.url.startsWith("/") ? req.url : "/" + req.url);
     }

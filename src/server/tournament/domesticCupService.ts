@@ -10,7 +10,9 @@ import { createAuditLog } from '../services/adminService';
 import {
   redisGetRaw,
   redisSetRaw,
-  redisDelRaw,
+  invalidateDataset,
+  invalidateFixtureReadModels,
+  refreshChangedFixtureReadModel,
   getLkgKey,
   ReadModelKeys,
   ReadModelSnapshot,
@@ -1015,7 +1017,7 @@ export async function generateDomesticCupBracketSafe(
   // Batch insert all fixtures
   for (const m of preview.previewMatches) {
     const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(m.fixtureId);
-    batch.set(fixRef, {
+    batch.create(fixRef, {
       id: m.fixtureId,
       seasonId,
       competitionId,
@@ -1040,10 +1042,27 @@ export async function generateDomesticCupBracketSafe(
       updatedAt: now,
     });
 
+  }
+
+  // Update competition metadata
+  const compRef = db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId);
+  batch.set(compRef, {
+    status: 'active',
+    hasFixtures: true,
+    fixtureCount: preview.previewMatches.length,
+    fixturesCount: preview.previewMatches.length,
+    generationStatus: 'generated',
+    updatedAt: now,
+  }, { merge: true });
+
+  await batch.commit();
+
+  // Only mirror data after the entire authoritative batch committed.
+  for (const m of preview.previewMatches) {
     // Also mirror to SQLite
     try {
       queryRun(
-        `INSERT OR REPLACE INTO fixtures (id, season_id, competition_id, matchday, round_name, home_club_id, away_club_id, status, scheduled_at, source_fixture_id, source_winner_slot, created_at, updated_at)
+        `INSERT OR IGNORE INTO fixtures (id, season_id, competition_id, matchday, round_name, home_club_id, away_club_id, status, scheduled_at, source_fixture_id, source_winner_slot, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           m.fixtureId,
@@ -1064,18 +1083,8 @@ export async function generateDomesticCupBracketSafe(
     } catch {}
   }
 
-  // Update competition metadata
-  const compRef = db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId);
-  batch.set(compRef, {
-    status: 'active',
-    hasFixtures: true,
-    fixtureCount: preview.previewMatches.length,
-    fixturesCount: preview.previewMatches.length,
-    generationStatus: 'generated',
-    updatedAt: now,
-  }, { merge: true });
-
-  await batch.commit();
+  await invalidateDataset(`cup:bracket:${competitionId}:${seasonId}`);
+  await invalidateFixtureReadModels(competitionId, seasonId);
 
   // Write audit log
   await createAuditLog(
@@ -1202,6 +1211,14 @@ export async function advanceDomesticCupWinnerSafe(
 
   // Execute advancement inside a transaction to prevent race conditions and concurrent overwrites
   const txResult = await db.runTransaction(async (transaction) => {
+    // Read the source in the same transaction: a reopen/correction must invalidate advancement.
+    const sourceDoc = await transaction.get(fixRef);
+    const source = sourceDoc.data() as FirestoreFixtureDoc | undefined;
+    if (!source || source.status !== 'CONFIRMED' || source.winnerClubId !== winnerClubId ||
+        source.competitionId !== compId || source.seasonId !== fixture.seasonId ||
+        ![source.homeClubId, source.awayClubId].includes(winnerClubId)) {
+      throw Object.assign(new Error('SOURCE_FIXTURE_CHANGED'), { statusCode: 409 });
+    }
     const targetDoc = await transaction.get(targetRef);
 
     if (!targetDoc.exists) {
@@ -1212,6 +1229,14 @@ export async function advanceDomesticCupWinnerSafe(
     }
 
     const targetFixture = targetDoc.data() as FirestoreFixtureDoc;
+    if (targetFixture.competitionId !== compId || targetFixture.seasonId !== source.seasonId) {
+      throw Object.assign(new Error('TARGET_COMPETITION_MISMATCH'), { statusCode: 409 });
+    }
+    const existingWinner = isHomeSlot ? targetFixture.homeClubId : targetFixture.awayClubId;
+    if (existingWinner === winnerClubId) {
+      return { alreadyAdvanced: true, success: true, advanced: false, isNoop: true,
+        targetFixtureId, winnerClubId, message: 'Winner already advanced.' };
+    }
 
     // Safety: started, submitted, disputed or confirmed target matches cannot be modified
     const protectedStatuses = [
@@ -1309,7 +1334,8 @@ export async function advanceDomesticCupWinnerSafe(
 
   // Invalidate Redis read model and caches
   const cacheKey = `cup:bracket:${compId}:${fixture.seasonId || 'season-2026-27'}`;
-  await redisDelRaw(cacheKey).catch(() => {});
+  await invalidateDataset(cacheKey);
+  await refreshChangedFixtureReadModel(targetFixtureId).catch(() => invalidateFixtureReadModels(compId, fixture.seasonId || 'season-2026-27'));
 
   // Write audit log
   await createAuditLog(

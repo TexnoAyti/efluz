@@ -14,12 +14,14 @@ import { SEED_CLUBS } from '../db/seed';
 import {
   redisGetRaw,
   redisSetRaw,
-  redisDelRaw,
+  invalidateDataset,
+  readThroughReadModel,
   getUpstashClient,
   ReadModelKeys,
   SCHEMA_VERSION,
 } from '../readModel/readModelStore';
 import crypto from 'crypto';
+import { projectStandings } from './standingsProjection';
 
 export interface QualificationResult {
   seasonId: string;
@@ -44,6 +46,7 @@ export interface EuropeanQualificationDiff {
 }
 
 export interface EuropeanQualificationPreview {
+  sourceFingerprint?: string;
   previewToken: string;
   seasonId: string;
   mode: 'provisional' | 'final';
@@ -89,6 +92,13 @@ const PREVIEW_TOKEN_REDIS_PREFIX = 'qualification:preview:';
 const PREVIEW_TOKEN_TTL_SECONDS = 900; // 15 minutes
 const previewTokenCache = new Map<string, { preview: EuropeanQualificationPreview; expiresAt: number }>();
 
+function fingerprintSnapshots(snapshots: any[]): string {
+  const canonical = (value: any): any => Array.isArray(value) ? value.map(canonical) :
+    value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(k => [k, canonical(value[k])])) : value;
+  const rows = snapshots.map(s => s.docs.map((d: any) => ({ id: d.id, data: d.data() })).sort((a: any,b: any) => a.id.localeCompare(b.id)));
+  return crypto.createHash('sha256').update(JSON.stringify(canonical(rows))).digest('hex');
+}
+
 export async function saveQualificationPreviewToken(
   token: string,
   preview: EuropeanQualificationPreview
@@ -105,7 +115,10 @@ export async function saveQualificationPreviewToken(
       await client.set(key, payload, { ex: PREVIEW_TOKEN_TTL_SECONDS });
     } catch (err: any) {
       console.warn(`[QUALIFICATION] Failed to write preview token to Upstash Redis:`, err?.message || err);
+      throw new Error('QUALIFICATION_PREVIEW_STORAGE_UNAVAILABLE');
     }
+  } else if (process.env.NODE_ENV === 'production' || process.env.VERCEL || process.env.K_SERVICE) {
+    throw new Error('REDIS_REQUIRED_FOR_QUALIFICATION_PREVIEW');
   }
   previewTokenCache.set(token, payload);
 }
@@ -191,11 +204,14 @@ export async function previewEuropeanQualificationSync(
   ) || { id: 'comp-europa-league-2026', name: 'UEFA Europa League', seasonId, type: 'EUROPEAN_LEAGUE_PHASE' as const };
 
   // SAFETY GUARD 1: Has UCL or UEL competition started?
+  const uclTotal = Number(((uclComp as FirestoreCompetitionDoc).formatConfig as any)?.leaguePhaseTeams);
+  const uelTotal = Number(((uelComp as FirestoreCompetitionDoc).formatConfig as any)?.leaguePhaseTeams);
+  if (!Number.isInteger(uclTotal) || !Number.isInteger(uelTotal) || uclTotal < 2 || uelTotal < 2) throw new Error('EUROPEAN_FORMAT_NOT_CONFIGURED');
   const europeanFixtures = allFixtures.filter(
     (f) => f.competitionId === uclComp.id || f.competitionId === uelComp.id
   );
   const playedEuropeanFixtures = europeanFixtures.filter(
-    (f) => f.status === 'CONFIRMED' || f.status === 'PENDING_CONFIRMATION' || f.status === 'AWAITING_RESULT'
+    (f) => f.status !== 'SCHEDULED'
   );
   const hasEuropeanStarted = playedEuropeanFixtures.length > 0;
 
@@ -221,32 +237,16 @@ export async function previewEuropeanQualificationSync(
   const projectedUel: QualificationResult[] = [];
 
   for (const league of leagues) {
-    const standings = await calculateCompetitionStandingsFirestore(league.id);
+    const standings = projectStandings(SEED_CLUBS.filter(c => c.leagueId === league.leagueId), allFixtures.filter(f => f.competitionId === league.id), league.formatConfig);
     if (standings.length === 0) continue;
 
-    const leagueIdLower = (league.id || '').toLowerCase();
-    const leagueNameLower = (league.name || '').toLowerCase();
-
-    // Allocation quotas:
-    // Premier League: 7 UCL, 7 UEL
-    // La Liga: 7 UCL, 7 UEL
-    // Serie A: 6 UCL, 6 UEL
-    // Bundesliga: 6 UCL, 6 UEL
-    // Ligue 1: 6 UCL, 6 UEL
-    // Total: exactly 32 UCL, 32 UEL!
-    let uclSpots = 7;
-    let uelSpots = 7;
-
-    if (
-      leagueIdLower.includes('serie-a') ||
-      leagueNameLower.includes('serie a') ||
-      leagueIdLower.includes('bundesliga') ||
-      leagueNameLower.includes('bundesliga') ||
-      leagueIdLower.includes('ligue-1') ||
-      leagueNameLower.includes('ligue 1')
-    ) {
-      uclSpots = 6;
-      uelSpots = 6;
+    const uclConfig = (uclComp as FirestoreCompetitionDoc).formatConfig as any;
+    const uelConfig = (uelComp as FirestoreCompetitionDoc).formatConfig as any;
+    const leagueConfig = league.formatConfig as any;
+    const uclSpots = Number(uclConfig?.qualificationSlots?.[league.id] ?? leagueConfig?.qualificationSpots);
+    const uelSpots = Number(uelConfig?.qualificationSlots?.[league.id] ?? leagueConfig?.europaQualificationSpots ?? leagueConfig?.qualificationSpots);
+    if (!Number.isInteger(uclSpots) || !Number.isInteger(uelSpots) || uclSpots < 0 || uelSpots < 0 || uclSpots + uelSpots > standings.length) {
+      throw new Error(`QUALIFICATION_ALLOCATION_INVALID: ${league.id}`);
     }
 
     // UCL spots
@@ -294,7 +294,7 @@ export async function previewEuropeanQualificationSync(
   const uclDiff: EuropeanQualificationDiff = {
     competitionId: uclComp.id,
     competitionName: uclComp.name,
-    totalTarget: 32,
+    totalTarget: uclTotal,
     retained: projectedUcl
       .filter((p) => existingUclClubIds.has(p.clubId))
       .map((p) => ({ clubId: p.clubId, clubName: p.clubName, rank: p.rank, sourceLeague: p.sourceCompetitionName })),
@@ -316,7 +316,7 @@ export async function previewEuropeanQualificationSync(
   const uelDiff: EuropeanQualificationDiff = {
     competitionId: uelComp.id,
     competitionName: uelComp.name,
-    totalTarget: 32,
+    totalTarget: uelTotal,
     retained: projectedUel
       .filter((p) => existingUelClubIds.has(p.clubId))
       .map((p) => ({ clubId: p.clubId, clubName: p.clubName, rank: p.rank, sourceLeague: p.sourceCompetitionName })),
@@ -334,7 +334,12 @@ export async function previewEuropeanQualificationSync(
   const previewToken = `prev-qual-${Date.now()}-${crypto.randomBytes(6).toString('hex')}`;
   const expiresAt = new Date(now.getTime() + 15 * 60 * 1000).toISOString();
 
+  if (projectedUcl.length !== uclTotal || projectedUel.length !== uelTotal) {
+    canApply = false;
+    blockReason = 'QUALIFICATION_TOTAL_MISMATCH: review configured league allocations and competition team counts';
+  }
   const preview: EuropeanQualificationPreview = {
+    sourceFingerprint: fingerprintSnapshots([compSnap, partsSnap, fixSnap, occSnap]),
     previewToken,
     seasonId,
     mode,
@@ -345,13 +350,13 @@ export async function previewEuropeanQualificationSync(
     hasEuropeanStarted,
     summary: {
       ucl: {
-        totalTarget: 32,
+        totalTarget: uclTotal,
         retainedCount: uclDiff.retained.length,
         addedCount: uclDiff.added.length,
         removedCount: uclDiff.removed.length,
       },
       uel: {
-        totalTarget: 32,
+        totalTarget: uelTotal,
         retainedCount: uelDiff.retained.length,
         addedCount: uelDiff.added.length,
         removedCount: uelDiff.removed.length,
@@ -405,6 +410,10 @@ export async function applyEuropeanQualificationSync(params: {
     throw new Error(preview.blockReason || 'Cannot apply qualifications sync: preconditions failed.');
   }
 
+  if (!preview.sourceFingerprint || Date.parse(preview.expiresAt) <= Date.now() || (params.seasonId && params.seasonId !== preview.seasonId)) {
+    throw new Error('PREVIEW_EXPIRED_OR_SEASON_MISMATCH: generate a new preview');
+  }
+
   const db = getFirestoreDb();
 
   // STRICT APPLY-TIME VALIDATION:
@@ -412,7 +421,7 @@ export async function applyEuropeanQualificationSync(params: {
   const activeEuropeanFixSnap = await db
     .collection(COLLECTIONS.FIXTURES)
     .where('competitionId', 'in', [preview.diff.ucl.competitionId, preview.diff.uel.competitionId])
-    .where('status', 'in', ['CONFIRMED', 'PLAYING'])
+    .where('status', 'in', ['CONFIRMED', 'PLAYING', 'IN_PROGRESS', 'AWAITING_RESULT', 'PENDING_CONFIRMATION', 'DISPUTED'])
     .limit(1)
     .get();
 
@@ -427,7 +436,6 @@ export async function applyEuropeanQualificationSync(params: {
     const unplayedLeaguesSnap = await db
       .collection(COLLECTIONS.FIXTURES)
       .where('seasonId', '==', preview.seasonId)
-      .where('status', '==', 'SCHEDULED')
       .get();
     const leagueIds = [
       'comp-premier-league-2026',
@@ -437,7 +445,7 @@ export async function applyEuropeanQualificationSync(params: {
       'comp-ligue-1-2026',
     ];
     const unplayedLeagueMatches = unplayedLeaguesSnap.docs.filter((d) =>
-      leagueIds.includes(d.data().competitionId)
+      leagueIds.includes(d.data().competitionId) && d.data().status !== 'CONFIRMED'
     ).length;
     if (unplayedLeagueMatches > 0) {
       throw new Error(
@@ -447,90 +455,38 @@ export async function applyEuropeanQualificationSync(params: {
   }
 
   const now = new Date().toISOString();
-  const batch = db.batch();
-
-  let participantsAdded = 0;
-  let participantsRemoved = 0;
+  const participantsAdded = preview.diff.ucl.added.length + preview.diff.uel.added.length;
+  const participantsRemoved = preview.diff.ucl.removed.length + preview.diff.uel.removed.length;
   const notificationsToSend: Array<{ userId: string; title: string; message: string }> = [];
-
-  // 1. Process UCL additions / updates
-  for (let i = 0; i < preview.diff.ucl.added.length; i++) {
-    const item = preview.diff.ucl.added[i];
-    const qual = preview.projectedQualifications.find((q) => q.clubId === item.clubId && q.targetCompetitionId === preview.diff.ucl.competitionId);
-    const partId = `part-${preview.diff.ucl.competitionId}-${item.clubId}`;
-    const partRef = db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).doc(partId);
-
-    const docData: FirestoreCompetitionParticipantDoc = {
-      id: partId,
-      competitionId: preview.diff.ucl.competitionId,
-      clubId: item.clubId,
-      seasonId: preview.seasonId,
-      ownerUserId: qual?.ownerUserId || undefined,
-      sourceCompetitionId: qual?.sourceCompetitionId,
-      sourceCompetitionName: qual?.sourceCompetitionName,
-      sourcePosition: item.rank,
-      qualificationReason: qual?.reason || 'Qualified for UCL',
-      qualificationTimestamp: now,
-      seedNumber: i + 1,
-      createdAt: now,
-    };
-
-    batch.set(partRef, docData, { merge: true });
-    participantsAdded++;
-
-    if (qual?.ownerUserId) {
-      notificationsToSend.push({
-        userId: qual.ownerUserId,
-        title: '🏆 Qualified for UEFA Champions League!',
-        message: `Congratulations! ${item.clubName} qualified for the UEFA Champions League (${item.sourceLeague} #${item.rank})!`,
-      });
+  await db.runTransaction(async transaction => {
+    const collections = [COLLECTIONS.COMPETITIONS, COLLECTIONS.COMPETITION_PARTICIPANTS, COLLECTIONS.FIXTURES, COLLECTIONS.CLUB_OCCUPANCIES];
+    const snapshots = [];
+    for (const collection of collections) snapshots.push(await transaction.get(db.collection(collection).where('seasonId', '==', preview.seasonId)));
+    const applicationRef = db.collection('qualification_applications').doc(params.previewToken);
+    const application = await transaction.get(applicationRef);
+    if (application.exists) throw new Error('PREVIEW_ALREADY_APPLIED');
+    if (fingerprintSnapshots(snapshots) !== preview.sourceFingerprint) throw new Error('PREVIEW_DATA_CHANGED: refresh and review the new preview');
+    const existing = snapshots[1].docs;
+    for (const q of preview.projectedQualifications) {
+      const matches = existing.filter(d => d.data().competitionId === q.targetCompetitionId && d.data().clubId === q.clubId);
+      if (matches.length > 1) throw new Error('DUPLICATE_PARTICIPANTS: manual review required');
+      const id = matches[0]?.id || `part-${q.targetCompetitionId}-${q.clubId}`;
+      transaction.set(db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).doc(id), {
+        id, seasonId: preview.seasonId, competitionId: q.targetCompetitionId, clubId: q.clubId,
+        ownerUserId: q.ownerUserId, sourceCompetitionId: q.sourceCompetitionId,
+        sourcePosition: q.rank, qualificationReason: q.reason, qualificationTimestamp: now,
+        createdAt: matches[0]?.data().createdAt || now, updatedAt: now,
+      }, { merge: true });
     }
-  }
-
-  // 2. Process UEL additions / updates
-  for (let i = 0; i < preview.diff.uel.added.length; i++) {
-    const item = preview.diff.uel.added[i];
-    const qual = preview.projectedQualifications.find((q) => q.clubId === item.clubId && q.targetCompetitionId === preview.diff.uel.competitionId);
-    const partId = `part-${preview.diff.uel.competitionId}-${item.clubId}`;
-    const partRef = db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).doc(partId);
-
-    const docData: FirestoreCompetitionParticipantDoc = {
-      id: partId,
-      competitionId: preview.diff.uel.competitionId,
-      clubId: item.clubId,
-      seasonId: preview.seasonId,
-      ownerUserId: qual?.ownerUserId || undefined,
-      sourceCompetitionId: qual?.sourceCompetitionId,
-      sourceCompetitionName: qual?.sourceCompetitionName,
-      sourcePosition: item.rank,
-      qualificationReason: qual?.reason || 'Qualified for UEL',
-      qualificationTimestamp: now,
-      seedNumber: i + 1,
-      createdAt: now,
-    };
-
-    batch.set(partRef, docData, { merge: true });
-    participantsAdded++;
-
-    if (qual?.ownerUserId) {
-      notificationsToSend.push({
-        userId: qual.ownerUserId,
-        title: 'Qualified for UEFA Europa League',
-        message: `Congratulations! ${item.clubName} qualified for the UEFA Europa League (${item.sourceLeague} #${item.rank})!`,
-      });
+    for (const diff of [preview.diff.ucl, preview.diff.uel]) {
+      for (const removed of diff.removed) {
+        const matches = existing.filter(d => d.data().competitionId === diff.competitionId && d.data().clubId === removed.clubId);
+        if (matches.length !== 1) throw new Error('PARTICIPANT_REMOVAL_AMBIGUOUS');
+        transaction.delete(db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).doc(matches[0].id));
+      }
     }
-  }
-
-  // 3. Process removals (only explicitly approved items from diff)
-  for (const rem of [...preview.diff.ucl.removed, ...preview.diff.uel.removed]) {
-    const compId = preview.diff.ucl.removed.includes(rem) ? preview.diff.ucl.competitionId : preview.diff.uel.competitionId;
-    const partId = `part-${compId}-${rem.clubId}`;
-    const partRef = db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).doc(partId);
-    batch.delete(partRef);
-    participantsRemoved++;
-  }
-
-  await batch.commit();
+    transaction.set(applicationRef, { appliedAt: now, adminUserId: params.adminUserId, seasonId: preview.seasonId, sourceFingerprint: preview.sourceFingerprint });
+  });
 
   // Mirror to SQLite
   for (const q of preview.projectedQualifications) {
@@ -546,13 +502,19 @@ export async function applyEuropeanQualificationSync(params: {
   }
 
   // Remove used preview token from Redis and memory
+  for (const diff of [preview.diff.ucl, preview.diff.uel]) {
+    for (const removed of diff.removed) {
+      try { queryRun('DELETE FROM competition_participants WHERE competition_id = ? AND season_id = ? AND club_id = ?', [diff.competitionId, preview.seasonId, removed.clubId]); } catch {}
+    }
+  }
   await deleteQualificationPreviewToken(params.previewToken);
 
   // Invalidate competition participants and table caches
-  await redisDelRaw(ReadModelKeys.competitions(preview.seasonId)).catch(() => {});
+  await invalidateDataset(ReadModelKeys.competitions(preview.seasonId));
   for (const compId of [preview.diff.ucl.competitionId, preview.diff.uel.competitionId]) {
-    await redisDelRaw(ReadModelKeys.standings(compId, preview.seasonId)).catch(() => {});
-    await redisDelRaw(ReadModelKeys.competitionFixtures(compId, preview.seasonId)).catch(() => {});
+    await invalidateDataset(ReadModelKeys.standings(compId, preview.seasonId));
+    await invalidateDataset(ReadModelKeys.competitionFixtures(compId, preview.seasonId));
+    await invalidateDataset(`european:standings:${compId}:${preview.seasonId}`);
   }
 
   // Send notifications
@@ -580,7 +542,7 @@ export async function applyEuropeanQualificationSync(params: {
     undefined,
     params.adminUsername || 'admin',
     `Applied European qualification sync (${preview.mode}): ${participantsAdded} added, ${participantsRemoved} removed.`
-  );
+  ).catch(() => console.warn('[QUALIFICATION] Applied transaction recorded; auxiliary audit unavailable'));
 
   return {
     success: true,
@@ -614,7 +576,15 @@ export async function rebuildEuropeanStandings(
   // If no registered participants, seed fallback from all clubs with seeds
   let clubIds = participants.map((p) => p.clubId);
   if (clubIds.length === 0) {
-    clubIds = SEED_CLUBS.slice(0, 32).map((c) => c.id);
+    throw new Error('EUROPEAN_PARTICIPANTS_NOT_CONFIGURED');
+  }
+  clubIds = [...new Set(clubIds)];
+  const format = compDoc.data()?.formatConfig as any;
+  const totalTeams = Number(format?.leaguePhaseTeams);
+  const directQualifiers = Number(format?.directQualifiers);
+  const playoffTeams = Number(format?.playoffTeams);
+  if (!Number.isInteger(totalTeams) || totalTeams !== clubIds.length || !Number.isInteger(directQualifiers) || !Number.isInteger(playoffTeams) || directQualifiers + playoffTeams > totalTeams) {
+    throw new Error('EUROPEAN_FORMAT_PARTICIPANTS_MISMATCH');
   }
 
   // Initialize standings map
@@ -651,7 +621,9 @@ export async function rebuildEuropeanStandings(
 
   // Accumulate confirmed fixtures
   for (const f of fixtures) {
-    if (f.status !== 'CONFIRMED' || f.homeScore === null || f.awayScore === null) continue;
+    if (f.status !== 'CONFIRMED' || !Number.isInteger(f.homeScore) || !Number.isInteger(f.awayScore) || f.homeScore < 0 || f.awayScore < 0) continue;
+    if (f.seasonId !== seasonId || !f.homeClubId || !f.awayClubId) continue;
+    if (/quarter|semi|final|play.?off|round of|knockout/i.test(f.roundName || '') || /-r[1-5]-m/.test(f.id)) continue;
 
     const home = statsMap.get(f.homeClubId);
     const away = statsMap.get(f.awayClubId);
@@ -702,20 +674,23 @@ export async function rebuildEuropeanStandings(
   const rows: EuropeanStandingsRow[] = sorted.map((s, idx) => {
     const position = idx + 1;
     let zone: EuropeanStandingsRow['zone'] = 'ELIMINATED';
-    let zoneLabel = 'Eliminated (25-32)';
+    let zoneLabel = 'Eliminated';
 
-    if (position <= 8) {
+    if (position <= directQualifiers) {
       zone = 'DIRECT_R16';
       zoneLabel = 'Round of 16 (Direct Qualification)';
-    } else if (position <= 24) {
+    } else if (position <= directQualifiers + playoffTeams) {
       zone = 'KNOCKOUT_PLAYOFF';
-      zoneLabel = 'Knockout Play-offs (9-24)';
+      zoneLabel = 'Knockout Play-offs';
     }
 
     return {
       position,
       clubId: s.clubId,
       clubName: s.clubName,
+      shortName: clubsMap.get(s.clubId)?.shortName || s.clubName,
+      logoUrl: s.badgeUrl,
+      form: [],
       badgeUrl: s.badgeUrl,
       played: s.played,
       won: s.won,
@@ -731,14 +706,14 @@ export async function rebuildEuropeanStandings(
   });
 
   // Save to Redis Read Model (Fresh + LKG permanent)
-  const cacheKey = `european:standings:${competitionId}:${seasonId}`;
+  const cacheKey = ReadModelKeys.standings(competitionId, seasonId);
   await redisSetRaw(
     cacheKey,
     {
       data: rows,
       schemaVersion: SCHEMA_VERSION,
       sourceVersion: 'rebuild-european-standings',
-      expectedCount: 32,
+      expectedCount: clubIds.length,
     },
     86400
   );
@@ -753,24 +728,12 @@ export async function getEuropeanStandings(
   competitionId: string,
   seasonId = 'season-2026-27'
 ): Promise<{ rows: EuropeanStandingsRow[]; source: string; degraded: boolean }> {
-  const cacheKey = `european:standings:${competitionId}:${seasonId}`;
-  const raw = await redisGetRaw<EuropeanStandingsRow[]>(cacheKey);
-
-  if (raw?.data && Array.isArray(raw.data) && raw.data.length > 0) {
-    return {
-      rows: raw.data,
-      source: 'redis-read-model',
-      degraded: false,
-    };
-  }
-
-  try {
-    const rows = await rebuildEuropeanStandings(competitionId, seasonId);
-    return { rows, source: 'firestore', degraded: false };
-  } catch (err: any) {
-    firestoreCircuitBreaker.recordFailure(err);
-    return { rows: [], source: 'error-fallback', degraded: true };
-  }
+  const result = await readThroughReadModel<EuropeanStandingsRow[]>({
+    key: ReadModelKeys.standings(competitionId, seasonId), seasonId,
+    firestoreFetcher: () => rebuildEuropeanStandings(competitionId, seasonId),
+    validateData: rows => Array.isArray(rows) && rows.length > 0,
+  });
+  return { rows: result.data, source: result.source, degraded: Boolean(result.degraded || result.stale) };
 }
 
 /**
@@ -782,20 +745,7 @@ export async function evaluateSeasonQualifications(seasonId = 'season-2026-27'):
   participantsAdded: number;
 }> {
   const preview = await previewEuropeanQualificationSync(seasonId, 'provisional');
-  if (preview.canApply) {
-    const res = await applyEuropeanQualificationSync({
-      seasonId,
-      previewToken: preview.previewToken,
-      confirmation: true,
-      adminUserId: 'system',
-      adminUsername: 'system-evaluator',
-    });
-    return {
-      success: true,
-      qualifications: preview.projectedQualifications,
-      participantsAdded: res.participantsAdded,
-    };
-  }
+  // Legacy evaluation is preview-only; applying requires explicit admin review.
 
   return {
     success: false,
@@ -897,4 +847,3 @@ export async function populateSuperCupParticipants(
     participants,
   };
 }
-

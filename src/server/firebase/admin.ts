@@ -449,6 +449,14 @@ function createMemoryFirestore() {
   class MemBatch {
     private operations: Array<() => Promise<void>> = [];
 
+    create(docRef: any, data: any) {
+      this.operations.push(async () => {
+        if ((await docRef.get()).exists) throw new Error('ALREADY_EXISTS');
+        await docRef.set(data);
+      });
+      return this;
+    }
+
     set(docRef: any, data: any, options?: any) {
       this.operations.push(() => docRef.set(data, options));
       return this;
@@ -465,9 +473,17 @@ function createMemoryFirestore() {
     }
 
     async commit() {
-      for (const op of this.operations) {
-        await op();
-      }
+      const commit = txQueue.then(async () => {
+        const backup = JSON.parse(JSON.stringify(store));
+        try { for (const op of this.operations) await op(); }
+        catch (error) {
+          for (const key of Object.keys(store)) delete store[key];
+          Object.assign(store, backup);
+          throw error;
+        }
+      });
+      txQueue = commit.catch(() => {});
+      await commit;
     }
   }
 
