@@ -27,6 +27,7 @@
     "test:ucl32-locking": "tsx src/server/tests/verifyUCL32AndMatchdayLocking.ts",
     "test:deployment-selfcheck": "tsx src/server/tests/deploymentSelfCheck.ts",
     "test:read-model": "tsx src/server/tests/readModelAndSortingTest.ts",
+    "test:domestic-cup": "tsx src/server/tests/domesticCupTbdRegressionTest.ts",
     "test:quota-audit": "tsx src/server/tests/verifyQuotaResilienceAudit.ts",
     "audit:contamination:readonly": "tsx src/server/scripts/productionContaminationAudit.ts",
     "recovery:contamination:plan": "tsx src/server/scripts/applyProductionContaminationRecovery.ts --plan",

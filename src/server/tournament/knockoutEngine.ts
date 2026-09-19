@@ -2,6 +2,7 @@ import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS, FirestoreCompetitionDoc, FirestoreFixtureDoc, FirestoreCompetitionParticipantDoc, FirestoreClubDoc } from '../firebase/collections';
 import { createNotification } from '../services/notificationService';
 import { createAuditLog } from '../services/adminService';
+import { isDomesticCup } from './domesticCupService';
 
 export interface KnockoutMatchNode {
   fixtureId: string;
@@ -111,6 +112,18 @@ export async function generateKnockoutBracket(
     }
   }
 
+  // Delegate domestic cups to authoritative domesticCupService
+  if (isDomesticCup(competitionId)) {
+    const { generateDomesticCupBracketSafe } = await import('./domesticCupService');
+    const res = await generateDomesticCupBracketSafe(competitionId, {
+      adminUserId: 'system',
+      adminUsername: 'system',
+      confirmation: true,
+      seasonId: comp.seasonId,
+    });
+    return { generated: res.generated, rounds: res.rounds };
+  }
+
   const now = new Date().toISOString();
   let totalGenerated = 0;
   let totalRounds = 0;
@@ -128,8 +141,8 @@ export async function generateKnockoutBracket(
     // Round 1: Preliminary / Play-in Round (4 matches for 20 teams, 2 matches for 18 teams)
     for (let i = 0; i < prelimMatches; i++) {
       const fixtureId = `fix-${competitionId}-r1-m${i}`;
-      const homeClubId = clubIds[byeTeamsCount + i * 2] || 'TBD';
-      const awayClubId = clubIds[byeTeamsCount + i * 2 + 1] || 'TBD';
+      const homeClubId = clubIds[byeTeamsCount + i * 2] || null;
+      const awayClubId = clubIds[byeTeamsCount + i * 2 + 1] || null;
       const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
 
       batch.set(fixRef, {
@@ -156,13 +169,13 @@ export async function generateKnockoutBracket(
     // Round 2: Round of 16 (8 matches)
     for (let i = 0; i < 8; i++) {
       const fixtureId = `fix-${competitionId}-r2-m${i}`;
-      let homeClubId = 'TBD';
-      let awayClubId = 'TBD';
+      let homeClubId: string | null = null;
+      let awayClubId: string | null = null;
 
       if (i >= prelimPairs) {
         const byeIdx = (i - prelimPairs) * 2;
-        homeClubId = clubIds[byeIdx] || 'TBD';
-        awayClubId = clubIds[byeIdx + 1] || 'TBD';
+        homeClubId = clubIds[byeIdx] || null;
+        awayClubId = clubIds[byeIdx + 1] || null;
       }
 
       const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
@@ -198,8 +211,8 @@ export async function generateKnockoutBracket(
         competitionName: comp.name,
         matchday: 3,
         roundName: 'Quarter-Finals',
-        homeClubId: 'TBD',
-        awayClubId: 'TBD',
+        homeClubId: null,
+        awayClubId: null,
         scheduledAt: now,
         status: 'SCHEDULED',
         homeScore: null,
@@ -223,8 +236,8 @@ export async function generateKnockoutBracket(
         competitionName: comp.name,
         matchday: 4,
         roundName: 'Semi-Finals',
-        homeClubId: 'TBD',
-        awayClubId: 'TBD',
+        homeClubId: null,
+        awayClubId: null,
         scheduledAt: now,
         status: 'SCHEDULED',
         homeScore: null,
@@ -247,8 +260,8 @@ export async function generateKnockoutBracket(
       competitionName: comp.name,
       matchday: 5,
       roundName: 'Final',
-      homeClubId: 'TBD',
-      awayClubId: 'TBD',
+      homeClubId: null,
+      awayClubId: null,
       scheduledAt: now,
       status: 'SCHEDULED',
       homeScore: null,
@@ -280,8 +293,8 @@ export async function generateKnockoutBracket(
     // First round matches
     const firstRoundMatches = bracketSize / 2;
     for (let i = 0; i < firstRoundMatches; i++) {
-      const homeClubId = clubIds[i * 2] || 'TBD';
-      const awayClubId = clubIds[i * 2 + 1] || 'TBD';
+      const homeClubId = clubIds[i * 2] || null;
+      const awayClubId = clubIds[i * 2 + 1] || null;
       const fixtureId = `fix-${competitionId}-r1-m${i}`;
       const roundName = getRoundName(1);
 
@@ -307,7 +320,7 @@ export async function generateKnockoutBracket(
       totalGenerated++;
     }
 
-    // Subsequent rounds (QF, SF, Final) with TBD placeholders
+    // Subsequent rounds (QF, SF, Final) with null placeholders
     for (let round = 2; round <= totalRounds; round++) {
       const matchesInRound = Math.pow(2, totalRounds - round);
       const roundName = getRoundName(round);
@@ -322,8 +335,8 @@ export async function generateKnockoutBracket(
           competitionName: comp.name,
           matchday: round,
           roundName,
-          homeClubId: 'TBD',
-          awayClubId: 'TBD',
+          homeClubId: null,
+          awayClubId: null,
           scheduledAt: now,
           status: 'SCHEDULED',
           homeScore: null,
@@ -557,6 +570,13 @@ export async function advanceKnockoutWinner(fixtureId: string): Promise<{ advanc
     comp.type !== 'EUROPEAN_LEAGUE_PHASE'
   ) {
     return { advanced: false };
+  }
+
+  // Delegate domestic cups to authoritative domesticCupService
+  if (isDomesticCup(compId)) {
+    const { advanceDomesticCupWinnerSafe } = await import('./domesticCupService');
+    const res = await advanceDomesticCupWinnerSafe(fixtureId, { adminUserId: 'system' });
+    return { advanced: res.advanced, targetFixtureId: res.targetFixtureId };
   }
 
   // Parse target next round and match index from fixture ID

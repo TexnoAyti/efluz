@@ -571,12 +571,18 @@ export async function previewDomesticCupBracket(
         roundName: 'Preliminary Round',
         matchIndex: i,
         fixtureId: `fix-${competitionId}-r1-m${i}`,
-        homeClubId: homeClub?.id || 'TBD',
+        homeClubId: homeClub?.id || null,
         homeClubName: homeClub?.name || 'TBD',
-        awayClubId: awayClub?.id || 'TBD',
+        awayClubId: awayClub?.id || null,
         awayClubName: awayClub?.name || 'TBD',
-        homeClub: { id: homeClub?.id || 'TBD', name: homeClub?.name || 'TBD' },
-        awayClub: { id: awayClub?.id || 'TBD', name: awayClub?.name || 'TBD' },
+        homeClub: homeClub ? { id: homeClub.id, name: homeClub.name } : null,
+        awayClub: awayClub ? { id: awayClub.id, name: awayClub.name } : null,
+        sourceFixtureId: null,
+        sourceWinnerSlot: null,
+        homeSourceFixtureId: null,
+        awaySourceFixtureId: null,
+        homeSourceWinnerSlot: null,
+        awaySourceWinnerSlot: null,
       };
       previewMatches.push(m);
       r1Matches.push(m);
@@ -587,8 +593,8 @@ export async function previewDomesticCupBracket(
       matchesCount: r1Matches.length,
       totalMatches: r1Matches.length,
       pairings: r1Matches.map((m) => ({
-        homeClub: m.homeClub!,
-        awayClub: m.awayClub!,
+        homeClub: m.homeClub || { id: null, name: m.homeClubName },
+        awayClub: m.awayClub || { id: null, name: m.awayClubName },
         fixtureId: m.fixtureId,
       })),
       matches: r1Matches,
@@ -597,23 +603,42 @@ export async function previewDomesticCupBracket(
     // Round 2 (Round of 16 - 8 matches)
     const r2Matches: BracketPreviewMatch[] = [];
     for (let i = 0; i < 8; i++) {
-      let homeId = 'TBD';
+      let homeId: string | null = null;
       let homeName = 'TBD';
-      let awayId = 'TBD';
+      let awayId: string | null = null;
       let awayName = 'TBD';
+      let homeClubObj: { id: string | null; name: string } | null = null;
+      let awayClubObj: { id: string | null; name: string } | null = null;
+      let sourceFixtureId: string | null = null;
+      let sourceWinnerSlot: string | null = null;
+      let homeSourceFixtureId: string | null = null;
+      let awaySourceFixtureId: string | null = null;
+      let homeSourceWinnerSlot: string | null = null;
+      let awaySourceWinnerSlot: string | null = null;
 
       if (i < pureByeMatches) {
-        homeId = leagueClubs[i * 2]?.id || 'TBD';
-        homeName = leagueClubs[i * 2]?.name || 'TBD';
-        awayId = leagueClubs[i * 2 + 1]?.id || 'TBD';
-        awayName = leagueClubs[i * 2 + 1]?.name || 'TBD';
+        const homeClub = leagueClubs[i * 2];
+        const awayClub = leagueClubs[i * 2 + 1];
+        homeId = homeClub?.id || null;
+        homeName = homeClub?.name || 'TBD';
+        awayId = awayClub?.id || null;
+        awayName = awayClub?.name || 'TBD';
+        homeClubObj = homeClub ? { id: homeClub.id, name: homeClub.name } : null;
+        awayClubObj = awayClub ? { id: awayClub.id, name: awayClub.name } : null;
       } else {
         const k = i - pureByeMatches;
         const byeClub = leagueClubs[pureByeMatches * 2 + k];
-        homeId = byeClub?.id || 'TBD';
+        const srcFixId = `fix-${competitionId}-r1-m${k}`;
+        homeId = byeClub?.id || null;
         homeName = byeClub?.name || 'TBD';
-        awayId = 'TBD';
+        awayId = null;
         awayName = `Winner R1-M${k}`;
+        homeClubObj = byeClub ? { id: byeClub.id, name: byeClub.name } : null;
+        awayClubObj = null;
+        sourceFixtureId = srcFixId;
+        sourceWinnerSlot = 'away';
+        awaySourceFixtureId = srcFixId;
+        awaySourceWinnerSlot = 'away';
       }
 
       const m: BracketPreviewMatch = {
@@ -625,8 +650,14 @@ export async function previewDomesticCupBracket(
         homeClubName: homeName,
         awayClubId: awayId,
         awayClubName: awayName,
-        homeClub: { id: homeId, name: homeName },
-        awayClub: { id: awayId, name: awayName },
+        homeClub: homeClubObj,
+        awayClub: awayClubObj,
+        sourceFixtureId,
+        sourceWinnerSlot,
+        homeSourceFixtureId,
+        awaySourceFixtureId,
+        homeSourceWinnerSlot,
+        awaySourceWinnerSlot,
       };
       previewMatches.push(m);
       r2Matches.push(m);
@@ -637,50 +668,128 @@ export async function previewDomesticCupBracket(
       matchesCount: r2Matches.length,
       totalMatches: r2Matches.length,
       pairings: r2Matches.map((m) => ({
-        homeClub: m.homeClub!,
-        awayClub: m.awayClub!,
+        homeClub: m.homeClub || { id: null, name: m.homeClubName },
+        awayClub: m.awayClub || { id: null, name: m.awayClubName },
         fixtureId: m.fixtureId,
       })),
       matches: r2Matches,
     });
 
     // Subsequent rounds (QF, SF, Final)
-    const subsequent = [
-      { roundNumber: 3, name: 'Quarter-Finals', count: 4 },
-      { roundNumber: 4, name: 'Semi-Finals', count: 2 },
-      { roundNumber: 5, name: 'Final', count: 1 },
-    ];
-    for (const s of subsequent) {
-      const subMatches: BracketPreviewMatch[] = [];
-      for (let mIdx = 0; mIdx < s.count; mIdx++) {
-        const m: BracketPreviewMatch = {
-          roundNumber: s.roundNumber,
-          roundName: s.name,
-          matchIndex: mIdx,
-          fixtureId: `fix-${competitionId}-r${s.roundNumber}-m${mIdx}`,
-          homeClubId: 'TBD',
-          homeClubName: 'TBD',
-          awayClubId: 'TBD',
-          awayClubName: 'TBD',
-          homeClub: { id: 'TBD', name: 'TBD' },
-          awayClub: { id: 'TBD', name: 'TBD' },
-        };
-        previewMatches.push(m);
-        subMatches.push(m);
-      }
-      roundsStructured.push({
-        roundNumber: s.roundNumber,
-        roundName: s.name,
-        matchesCount: subMatches.length,
-        totalMatches: subMatches.length,
-        pairings: subMatches.map((m) => ({
-          homeClub: m.homeClub!,
-          awayClub: m.awayClub!,
-          fixtureId: m.fixtureId,
-        })),
-        matches: subMatches,
-      });
+    // Round 3: Quarter-Finals (4 matches, fed by R2 pairs)
+    const r3Matches: BracketPreviewMatch[] = [];
+    for (let mIdx = 0; mIdx < 4; mIdx++) {
+      const homeSource = `fix-${competitionId}-r2-m${mIdx * 2}`;
+      const awaySource = `fix-${competitionId}-r2-m${mIdx * 2 + 1}`;
+      const m: BracketPreviewMatch = {
+        roundNumber: 3,
+        roundName: 'Quarter-Finals',
+        matchIndex: mIdx,
+        fixtureId: `fix-${competitionId}-r3-m${mIdx}`,
+        homeClubId: null,
+        homeClubName: `Winner R2-M${mIdx * 2}`,
+        awayClubId: null,
+        awayClubName: `Winner R2-M${mIdx * 2 + 1}`,
+        homeClub: null,
+        awayClub: null,
+        sourceFixtureId: homeSource,
+        sourceWinnerSlot: 'home',
+        homeSourceFixtureId: homeSource,
+        awaySourceFixtureId: awaySource,
+        homeSourceWinnerSlot: 'home',
+        awaySourceWinnerSlot: 'away',
+      };
+      previewMatches.push(m);
+      r3Matches.push(m);
     }
+    roundsStructured.push({
+      roundNumber: 3,
+      roundName: 'Quarter-Finals',
+      matchesCount: r3Matches.length,
+      totalMatches: r3Matches.length,
+      pairings: r3Matches.map((m) => ({
+        homeClub: m.homeClub || { id: null, name: m.homeClubName },
+        awayClub: m.awayClub || { id: null, name: m.awayClubName },
+        fixtureId: m.fixtureId,
+      })),
+      matches: r3Matches,
+    });
+
+    // Round 4: Semi-Finals (2 matches, fed by R3 pairs)
+    const r4Matches: BracketPreviewMatch[] = [];
+    for (let mIdx = 0; mIdx < 2; mIdx++) {
+      const homeSource = `fix-${competitionId}-r3-m${mIdx * 2}`;
+      const awaySource = `fix-${competitionId}-r3-m${mIdx * 2 + 1}`;
+      const m: BracketPreviewMatch = {
+        roundNumber: 4,
+        roundName: 'Semi-Finals',
+        matchIndex: mIdx,
+        fixtureId: `fix-${competitionId}-r4-m${mIdx}`,
+        homeClubId: null,
+        homeClubName: `Winner QF-M${mIdx * 2}`,
+        awayClubId: null,
+        awayClubName: `Winner QF-M${mIdx * 2 + 1}`,
+        homeClub: null,
+        awayClub: null,
+        sourceFixtureId: homeSource,
+        sourceWinnerSlot: 'home',
+        homeSourceFixtureId: homeSource,
+        awaySourceFixtureId: awaySource,
+        homeSourceWinnerSlot: 'home',
+        awaySourceWinnerSlot: 'away',
+      };
+      previewMatches.push(m);
+      r4Matches.push(m);
+    }
+    roundsStructured.push({
+      roundNumber: 4,
+      roundName: 'Semi-Finals',
+      matchesCount: r4Matches.length,
+      totalMatches: r4Matches.length,
+      pairings: r4Matches.map((m) => ({
+        homeClub: m.homeClub || { id: null, name: m.homeClubName },
+        awayClub: m.awayClub || { id: null, name: m.awayClubName },
+        fixtureId: m.fixtureId,
+      })),
+      matches: r4Matches,
+    });
+
+    // Round 5: Final (1 match, fed by R4 pair)
+    const r5HomeSource = `fix-${competitionId}-r4-m0`;
+    const r5AwaySource = `fix-${competitionId}-r4-m1`;
+    const r5Matches: BracketPreviewMatch[] = [
+      {
+        roundNumber: 5,
+        roundName: 'Final',
+        matchIndex: 0,
+        fixtureId: `fix-${competitionId}-r5-m0`,
+        homeClubId: null,
+        homeClubName: 'Winner SF-M0',
+        awayClubId: null,
+        awayClubName: 'Winner SF-M1',
+        homeClub: null,
+        awayClub: null,
+        sourceFixtureId: r5HomeSource,
+        sourceWinnerSlot: 'home',
+        homeSourceFixtureId: r5HomeSource,
+        awaySourceFixtureId: r5AwaySource,
+        homeSourceWinnerSlot: 'home',
+        awaySourceWinnerSlot: 'away',
+      },
+    ];
+    previewMatches.push(r5Matches[0]);
+    roundsStructured.push({
+      roundNumber: 5,
+      roundName: 'Final',
+      matchesCount: 1,
+      totalMatches: 1,
+      pairings: r5Matches.map((m) => ({
+        homeClub: m.homeClub || { id: null, name: m.homeClubName },
+        awayClub: m.awayClub || { id: null, name: m.awayClubName },
+        fixtureId: m.fixtureId,
+      })),
+      matches: r5Matches,
+    });
   } else {
     // 16-Team direct knockout
     const r1Matches: BracketPreviewMatch[] = [];
@@ -692,12 +801,18 @@ export async function previewDomesticCupBracket(
         roundName: 'Round of 16',
         matchIndex: i,
         fixtureId: `fix-${competitionId}-r1-m${i}`,
-        homeClubId: homeClub?.id || 'TBD',
+        homeClubId: homeClub?.id || null,
         homeClubName: homeClub?.name || 'TBD',
-        awayClubId: awayClub?.id || 'TBD',
+        awayClubId: awayClub?.id || null,
         awayClubName: awayClub?.name || 'TBD',
-        homeClub: { id: homeClub?.id || 'TBD', name: homeClub?.name || 'TBD' },
-        awayClub: { id: awayClub?.id || 'TBD', name: awayClub?.name || 'TBD' },
+        homeClub: homeClub ? { id: homeClub.id, name: homeClub.name } : null,
+        awayClub: awayClub ? { id: awayClub.id, name: awayClub.name } : null,
+        sourceFixtureId: null,
+        sourceWinnerSlot: null,
+        homeSourceFixtureId: null,
+        awaySourceFixtureId: null,
+        homeSourceWinnerSlot: null,
+        awaySourceWinnerSlot: null,
       };
       previewMatches.push(m);
       r1Matches.push(m);
@@ -707,42 +822,129 @@ export async function previewDomesticCupBracket(
       roundName: 'Round of 16',
       matchesCount: r1Matches.length,
       totalMatches: r1Matches.length,
-      pairings: r1Matches.map((m) => ({ homeClub: m.homeClub!, awayClub: m.awayClub!, fixtureId: m.fixtureId })),
+      pairings: r1Matches.map((m) => ({
+        homeClub: m.homeClub || { id: null, name: m.homeClubName },
+        awayClub: m.awayClub || { id: null, name: m.awayClubName },
+        fixtureId: m.fixtureId,
+      })),
       matches: r1Matches,
     });
 
-    const subsequent = [
-      { roundNumber: 2, name: 'Quarter-Finals', count: 4 },
-      { roundNumber: 3, name: 'Semi-Finals', count: 2 },
-      { roundNumber: 4, name: 'Final', count: 1 },
-    ];
-    for (const s of subsequent) {
-      const subMatches: BracketPreviewMatch[] = [];
-      for (let mIdx = 0; mIdx < s.count; mIdx++) {
-        const m: BracketPreviewMatch = {
-          roundNumber: s.roundNumber,
-          roundName: s.name,
-          matchIndex: mIdx,
-          fixtureId: `fix-${competitionId}-r${s.roundNumber}-m${mIdx}`,
-          homeClubId: 'TBD',
-          homeClubName: 'TBD',
-          awayClubId: 'TBD',
-          awayClubName: 'TBD',
-          homeClub: { id: 'TBD', name: 'TBD' },
-          awayClub: { id: 'TBD', name: 'TBD' },
-        };
-        previewMatches.push(m);
-        subMatches.push(m);
-      }
-      roundsStructured.push({
-        roundNumber: s.roundNumber,
-        roundName: s.name,
-        matchesCount: subMatches.length,
-        totalMatches: subMatches.length,
-        pairings: subMatches.map((m) => ({ homeClub: m.homeClub!, awayClub: m.awayClub!, fixtureId: m.fixtureId })),
-        matches: subMatches,
-      });
+    // Subsequent rounds (QF, SF, Final) for 16 teams
+    // R2: Quarter-Finals (4 matches)
+    const r2Matches: BracketPreviewMatch[] = [];
+    for (let mIdx = 0; mIdx < 4; mIdx++) {
+      const homeSource = `fix-${competitionId}-r1-m${mIdx * 2}`;
+      const awaySource = `fix-${competitionId}-r1-m${mIdx * 2 + 1}`;
+      const m: BracketPreviewMatch = {
+        roundNumber: 2,
+        roundName: 'Quarter-Finals',
+        matchIndex: mIdx,
+        fixtureId: `fix-${competitionId}-r2-m${mIdx}`,
+        homeClubId: null,
+        homeClubName: `Winner R1-M${mIdx * 2}`,
+        awayClubId: null,
+        awayClubName: `Winner R1-M${mIdx * 2 + 1}`,
+        homeClub: null,
+        awayClub: null,
+        sourceFixtureId: homeSource,
+        sourceWinnerSlot: 'home',
+        homeSourceFixtureId: homeSource,
+        awaySourceFixtureId: awaySource,
+        homeSourceWinnerSlot: 'home',
+        awaySourceWinnerSlot: 'away',
+      };
+      previewMatches.push(m);
+      r2Matches.push(m);
     }
+    roundsStructured.push({
+      roundNumber: 2,
+      roundName: 'Quarter-Finals',
+      matchesCount: r2Matches.length,
+      totalMatches: r2Matches.length,
+      pairings: r2Matches.map((m) => ({
+        homeClub: m.homeClub || { id: null, name: m.homeClubName },
+        awayClub: m.awayClub || { id: null, name: m.awayClubName },
+        fixtureId: m.fixtureId,
+      })),
+      matches: r2Matches,
+    });
+
+    // R3: Semi-Finals (2 matches)
+    const r3Matches: BracketPreviewMatch[] = [];
+    for (let mIdx = 0; mIdx < 2; mIdx++) {
+      const homeSource = `fix-${competitionId}-r2-m${mIdx * 2}`;
+      const awaySource = `fix-${competitionId}-r2-m${mIdx * 2 + 1}`;
+      const m: BracketPreviewMatch = {
+        roundNumber: 3,
+        roundName: 'Semi-Finals',
+        matchIndex: mIdx,
+        fixtureId: `fix-${competitionId}-r3-m${mIdx}`,
+        homeClubId: null,
+        homeClubName: `Winner QF-M${mIdx * 2}`,
+        awayClubId: null,
+        awayClubName: `Winner QF-M${mIdx * 2 + 1}`,
+        homeClub: null,
+        awayClub: null,
+        sourceFixtureId: homeSource,
+        sourceWinnerSlot: 'home',
+        homeSourceFixtureId: homeSource,
+        awaySourceFixtureId: awaySource,
+        homeSourceWinnerSlot: 'home',
+        awaySourceWinnerSlot: 'away',
+      };
+      previewMatches.push(m);
+      r3Matches.push(m);
+    }
+    roundsStructured.push({
+      roundNumber: 3,
+      roundName: 'Semi-Finals',
+      matchesCount: r3Matches.length,
+      totalMatches: r3Matches.length,
+      pairings: r3Matches.map((m) => ({
+        homeClub: m.homeClub || { id: null, name: m.homeClubName },
+        awayClub: m.awayClub || { id: null, name: m.awayClubName },
+        fixtureId: m.fixtureId,
+      })),
+      matches: r3Matches,
+    });
+
+    // R4: Final (1 match)
+    const r4HomeSource = `fix-${competitionId}-r3-m0`;
+    const r4AwaySource = `fix-${competitionId}-r3-m1`;
+    const r4Matches: BracketPreviewMatch[] = [
+      {
+        roundNumber: 4,
+        roundName: 'Final',
+        matchIndex: 0,
+        fixtureId: `fix-${competitionId}-r4-m0`,
+        homeClubId: null,
+        homeClubName: 'Winner SF-M0',
+        awayClubId: null,
+        awayClubName: 'Winner SF-M1',
+        homeClub: null,
+        awayClub: null,
+        sourceFixtureId: r4HomeSource,
+        sourceWinnerSlot: 'home',
+        homeSourceFixtureId: r4HomeSource,
+        awaySourceFixtureId: r4AwaySource,
+        homeSourceWinnerSlot: 'home',
+        awaySourceWinnerSlot: 'away',
+      },
+    ];
+    previewMatches.push(r4Matches[0]);
+    roundsStructured.push({
+      roundNumber: 4,
+      roundName: 'Final',
+      matchesCount: 1,
+      totalMatches: 1,
+      pairings: r4Matches.map((m) => ({
+        homeClub: m.homeClub || { id: null, name: m.homeClubName },
+        awayClub: m.awayClub || { id: null, name: m.awayClubName },
+        fixtureId: m.fixtureId,
+      })),
+      matches: r4Matches,
+    });
   }
 
   const canGenerate = existingCount === 0;
@@ -820,14 +1022,20 @@ export async function generateDomesticCupBracketSafe(
       competitionName: cupConfig.name,
       matchday: m.roundNumber,
       roundName: m.roundName,
-      homeClubId: m.homeClubId,
-      awayClubId: m.awayClubId,
+      homeClubId: m.homeClubId ?? null,
+      awayClubId: m.awayClubId ?? null,
       scheduledAt: now,
       status: 'SCHEDULED',
       homeScore: null,
       awayScore: null,
       winnerClubId: null,
       resultConfirmedAt: null,
+      sourceFixtureId: m.sourceFixtureId ?? null,
+      sourceWinnerSlot: m.sourceWinnerSlot ?? null,
+      homeSourceFixtureId: m.homeSourceFixtureId ?? null,
+      awaySourceFixtureId: m.awaySourceFixtureId ?? null,
+      homeSourceWinnerSlot: m.homeSourceWinnerSlot ?? null,
+      awaySourceWinnerSlot: m.awaySourceWinnerSlot ?? null,
       createdAt: now,
       updatedAt: now,
     });
@@ -835,18 +1043,20 @@ export async function generateDomesticCupBracketSafe(
     // Also mirror to SQLite
     try {
       queryRun(
-        `INSERT OR REPLACE INTO fixtures (id, season_id, competition_id, matchday, round_name, home_club_id, away_club_id, status, scheduled_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT OR REPLACE INTO fixtures (id, season_id, competition_id, matchday, round_name, home_club_id, away_club_id, status, scheduled_at, source_fixture_id, source_winner_slot, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           m.fixtureId,
           seasonId,
           competitionId,
           m.roundNumber,
           m.roundName,
-          m.homeClubId,
-          m.awayClubId,
+          m.homeClubId ?? null,
+          m.awayClubId ?? null,
           'SCHEDULED',
           now,
+          m.sourceFixtureId ?? null,
+          m.sourceWinnerSlot ?? null,
           now,
           now,
         ]
@@ -856,14 +1066,14 @@ export async function generateDomesticCupBracketSafe(
 
   // Update competition metadata
   const compRef = db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId);
-  batch.update(compRef, {
+  batch.set(compRef, {
     status: 'active',
     hasFixtures: true,
     fixtureCount: preview.previewMatches.length,
     fixturesCount: preview.previewMatches.length,
     generationStatus: 'generated',
     updatedAt: now,
-  });
+  }, { merge: true });
 
   await batch.commit();
 
@@ -935,25 +1145,49 @@ export async function advanceDomesticCupWinnerSafe(
   const r3Match = fixture.id.match(/-r3-m(\d+)$/);
   const r4Match = fixture.id.match(/-r4-m(\d+)$/);
 
-  const is18Teams = compId.includes('bundesliga') || compId.includes('dfb') || compId.includes('ligue-1') || compId.includes('coupe');
+  const cupConfigEntry = DOMESTIC_CUPS[compId];
+  const expectedTeams =
+    cupConfigEntry?.expectedTeams ||
+    (compId.includes('bundesliga') || compId.includes('dfb') || compId.includes('ligue-1') || compId.includes('coupe')
+      ? 18
+      : 20);
+  const is18Teams = expectedTeams === 18;
+  const is16Teams = expectedTeams === 16;
   const pureByeMatches = is18Teams ? 6 : 4;
 
   if (r1Match) {
     const idx = parseInt(r1Match[1], 10);
-    // Preliminary round match k advances to R16 match (pureByeMatches + k), filling the Away slot
-    const r16Index = pureByeMatches + idx;
-    targetFixtureId = `fix-${compId}-r2-m${r16Index}`;
-    isHomeSlot = false;
+    if (is16Teams) {
+      targetFixtureId = `fix-${compId}-r2-m${Math.floor(idx / 2)}`;
+      isHomeSlot = idx % 2 === 0;
+    } else {
+      // Preliminary round match k advances to R16 match (pureByeMatches + k), filling the Away slot
+      const r16Index = pureByeMatches + idx;
+      targetFixtureId = `fix-${compId}-r2-m${r16Index}`;
+      isHomeSlot = false;
+    }
   } else if (r2Match) {
     const idx = parseInt(r2Match[1], 10);
     targetFixtureId = `fix-${compId}-r3-m${Math.floor(idx / 2)}`;
     isHomeSlot = idx % 2 === 0;
   } else if (r3Match) {
     const idx = parseInt(r3Match[1], 10);
-    targetFixtureId = `fix-${compId}-r4-m${Math.floor(idx / 2)}`;
-    isHomeSlot = idx % 2 === 0;
+    if (is16Teams) {
+      targetFixtureId = `fix-${compId}-r4-m0`;
+      isHomeSlot = idx === 0;
+    } else {
+      targetFixtureId = `fix-${compId}-r4-m${Math.floor(idx / 2)}`;
+      isHomeSlot = idx % 2 === 0;
+    }
   } else if (r4Match) {
     const idx = parseInt(r4Match[1], 10);
+    if (is16Teams) {
+      return {
+        success: true,
+        advanced: false,
+        message: 'This match was the Final. Winner has been crowned champion.',
+      };
+    }
     targetFixtureId = `fix-${compId}-r5-m0`;
     isHomeSlot = idx === 0;
   } else {
@@ -969,6 +1203,13 @@ export async function advanceDomesticCupWinnerSafe(
 
   if (!targetDoc.exists) {
     throw new Error(`Target round fixture '${targetFixtureId}' does not exist.`);
+  }
+
+  const targetFixture = targetDoc.data() as FirestoreFixtureDoc;
+  if (targetFixture.status === 'CONFIRMED') {
+    throw new Error(
+      `Cannot advance winner: Target round fixture '${targetFixtureId}' has already been played and CONFIRMED. Overwriting confirmed results is strictly prohibited.`
+    );
   }
 
   const updatePayload: Partial<FirestoreFixtureDoc> = {

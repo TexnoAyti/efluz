@@ -904,15 +904,6 @@ var init_seed = __esm({
         formatConfig: { rounds: 6, singleLeg: true, extraTime: true, penalties: true }
       },
       {
-        id: "comp-efl-cup-2026",
-        seasonId: "season-2026-27",
-        leagueId: "league-premier-league",
-        name: "EFL Cup",
-        type: "KNOCKOUT",
-        scheduleMode: "GENERATED_SCHEDULE",
-        formatConfig: { rounds: 5, singleLeg: true, extraTime: true, penalties: true }
-      },
-      {
         id: "comp-copa-del-rey-2026",
         seasonId: "season-2026-27",
         leagueId: "league-la-liga",
@@ -1253,12 +1244,14 @@ function createMemoryFirestore() {
       this.filters = [];
       this.orderBys = [];
       this.limitVal = null;
+      this.cursorVal = null;
     }
     where(field, op, val) {
       const q = new MemQuery(this.colName);
       q.filters = [...this.filters, { field, op, val }];
       q.orderBys = [...this.orderBys];
       q.limitVal = this.limitVal;
+      q.cursorVal = this.cursorVal;
       return q;
     }
     orderBy(field, dir = "asc") {
@@ -1266,6 +1259,15 @@ function createMemoryFirestore() {
       q.filters = [...this.filters];
       q.orderBys = [...this.orderBys, { field, dir }];
       q.limitVal = this.limitVal;
+      q.cursorVal = this.cursorVal;
+      return q;
+    }
+    startAfter(cursor) {
+      const q = new MemQuery(this.colName);
+      q.filters = [...this.filters];
+      q.orderBys = [...this.orderBys];
+      q.limitVal = this.limitVal;
+      q.cursorVal = cursor;
       return q;
     }
     limit(n) {
@@ -1273,7 +1275,18 @@ function createMemoryFirestore() {
       q.filters = [...this.filters];
       q.orderBys = [...this.orderBys];
       q.limitVal = n;
+      q.cursorVal = this.cursorVal;
       return q;
+    }
+    count() {
+      return {
+        get: async () => {
+          const res = await this.get();
+          return {
+            data: () => ({ count: res.size })
+          };
+        }
+      };
     }
     async get() {
       const col = getCol(this.colName);
@@ -1298,12 +1311,19 @@ function createMemoryFirestore() {
       }
       for (const o of this.orderBys) {
         docs.sort((a, b) => {
-          const vA = a.data()[o.field];
-          const vB = b.data()[o.field];
+          const isDocIdField = o.field === "__name__" || typeof o.field === "object" && o.field !== null || String(o.field).includes("documentId");
+          const vA = isDocIdField ? a.id : a.data()[o.field];
+          const vB = isDocIdField ? b.id : b.data()[o.field];
           if (vA < vB) return o.dir === "asc" ? -1 : 1;
           if (vA > vB) return o.dir === "asc" ? 1 : -1;
           return 0;
         });
+      }
+      if (this.cursorVal) {
+        const idx = docs.findIndex((d) => d.id === this.cursorVal);
+        if (idx !== -1) {
+          docs = docs.slice(idx + 1);
+        }
       }
       if (this.limitVal !== null) {
         docs = docs.slice(0, this.limitVal);
@@ -1723,16 +1743,22 @@ var init_collections = __esm({
 
 // src/server/utils/testGuard.ts
 function isHostedEnvironment() {
+  if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true") {
+    return false;
+  }
   return Boolean(
     process.env.K_SERVICE && process.env.K_SERVICE.trim() !== "" || process.env.VERCEL || process.env.VERCEL_ENV || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NODE_ENV === "production"
   );
 }
 function isConnectedToProductionFirestore() {
+  if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true") {
+    return false;
+  }
   if (isHostedEnvironment()) {
     return true;
   }
   const status = getFirebaseStatus();
-  if (status.authMode === "local_fallback" || process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true") {
+  if (status.authMode === "local_fallback") {
     return false;
   }
   if (process.env.FIRESTORE_EMULATOR_HOST && (status.projectId?.startsWith("demo-") || status.projectId?.startsWith("test-"))) {
@@ -1741,6 +1767,9 @@ function isConnectedToProductionFirestore() {
   return true;
 }
 function isTargetingProductionProjectOrDb() {
+  if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true") {
+    return false;
+  }
   const status = getFirebaseStatus();
   const envProjectId = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT;
   const envDbId = process.env.FIRESTORE_DATABASE_ID || process.env.FIREBASE_DATABASE_ID;
@@ -1755,14 +1784,14 @@ function isSyntheticIdentifier(id) {
   return SYNTHETIC_ID_PATTERNS.some((pattern) => lower.includes(pattern));
 }
 function isTestSafe() {
-  if (isHostedEnvironment()) {
-    return false;
-  }
   if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true") {
     const { info } = initializeFirebaseAdmin();
     if (info.authMode === "local_fallback") {
       return true;
     }
+  }
+  if (isHostedEnvironment()) {
+    return false;
   }
   if (process.env.FIRESTORE_EMULATOR_HOST) {
     const projId = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || "";
@@ -2104,8 +2133,8 @@ async function executeSingleMutationSync(db, item) {
       });
       if (newStatus === "CONFIRMED" && fixData.competitionId) {
         try {
-          const { rebuildCompetitionStandingsFirestore: rebuildCompetitionStandingsFirestore2 } = await Promise.resolve().then(() => (init_firestoreStore(), firestoreStore_exports));
-          await rebuildCompetitionStandingsFirestore2(fixData.competitionId);
+          const { rebuildCompetitionStandingsFirestore: rebuildCompetitionStandingsFirestore3 } = await Promise.resolve().then(() => (init_firestoreStore(), firestoreStore_exports));
+          await rebuildCompetitionStandingsFirestore3(fixData.competitionId);
         } catch {
         }
       }
@@ -2141,8 +2170,8 @@ async function executeSingleMutationSync(db, item) {
       }
       if (fixData.competitionId) {
         try {
-          const { rebuildCompetitionStandingsFirestore: rebuildCompetitionStandingsFirestore2 } = await Promise.resolve().then(() => (init_firestoreStore(), firestoreStore_exports));
-          await rebuildCompetitionStandingsFirestore2(fixData.competitionId);
+          const { rebuildCompetitionStandingsFirestore: rebuildCompetitionStandingsFirestore3 } = await Promise.resolve().then(() => (init_firestoreStore(), firestoreStore_exports));
+          await rebuildCompetitionStandingsFirestore3(fixData.competitionId);
         } catch {
         }
       }
@@ -2171,8 +2200,8 @@ async function executeSingleMutationSync(db, item) {
       await b.commit();
       if (fixDoc.data()?.competitionId) {
         try {
-          const { rebuildCompetitionStandingsFirestore: rebuildCompetitionStandingsFirestore2 } = await Promise.resolve().then(() => (init_firestoreStore(), firestoreStore_exports));
-          await rebuildCompetitionStandingsFirestore2(fixDoc.data().competitionId);
+          const { rebuildCompetitionStandingsFirestore: rebuildCompetitionStandingsFirestore3 } = await Promise.resolve().then(() => (init_firestoreStore(), firestoreStore_exports));
+          await rebuildCompetitionStandingsFirestore3(fixDoc.data().competitionId);
         } catch {
         }
       }
@@ -2335,6 +2364,1482 @@ function generateEuropean32LeaguePhaseSchedule(clubIds, options = {}) {
 }
 var init_fixtureEngine = __esm({
   "src/server/tournament/fixtureEngine.ts"() {
+  }
+});
+
+// src/server/readModel/readModelStore.ts
+import { Redis } from "@upstash/redis";
+function getRawDatasetKey(key) {
+  return key.replace(/^efluz:v1:(fresh:|lkg:|dirty:)?/, "").replace(/^efluz:v1:/, "");
+}
+function getFreshKey(datasetKey) {
+  const clean = getRawDatasetKey(datasetKey);
+  return `${KEY_PREFIX}:fresh:${clean}`;
+}
+function getLkgKey(datasetKey) {
+  const clean = getRawDatasetKey(datasetKey);
+  return `${KEY_PREFIX}:lkg:${clean}`;
+}
+function getDirtyKey(datasetKey) {
+  const clean = getRawDatasetKey(datasetKey);
+  return `${KEY_PREFIX}:dirty:${clean}`;
+}
+function getUpstashClient() {
+  if (upstashClient) return upstashClient;
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (url && token && !url.includes("your-upstash-redis-url") && !url.includes("example")) {
+    try {
+      upstashClient = new Redis({ url, token });
+      isUpstashConfigured = true;
+      return upstashClient;
+    } catch (err) {
+      console.warn("[READ_MODEL_STORE] Failed to initialize Upstash Redis client:", err);
+    }
+  }
+  return null;
+}
+async function redisGetExact(key) {
+  const client = getUpstashClient();
+  if (client) {
+    try {
+      const val = await client.get(key);
+      if (val && typeof val === "object" && "data" in val) {
+        return val;
+      }
+      return null;
+    } catch (err) {
+      console.warn(`[READ_MODEL_STORE] Redis get error for key ${key}:`, err?.message || err);
+    }
+  }
+  const entry = memoryRedisStorage.get(key);
+  if (!entry) return null;
+  if (entry.expiresAt && Date.now() > entry.expiresAt) {
+    memoryRedisStorage.delete(key);
+    return null;
+  }
+  return entry.snapshot;
+}
+async function redisGetFresh(datasetKey) {
+  const freshKey = getFreshKey(datasetKey);
+  return redisGetExact(freshKey);
+}
+async function redisGetLkg(datasetKey) {
+  const lkgKey = getLkgKey(datasetKey);
+  return redisGetExact(lkgKey);
+}
+async function redisIsDirty(datasetKey) {
+  const dirtyKey = getDirtyKey(datasetKey);
+  const client = getUpstashClient();
+  if (client) {
+    try {
+      const exists = await client.exists(dirtyKey);
+      if (exists > 0) return true;
+    } catch {
+    }
+  }
+  const entry = memoryRedisStorage.get(dirtyKey);
+  if (!entry) return false;
+  if (entry.expiresAt && Date.now() > entry.expiresAt) {
+    memoryRedisStorage.delete(dirtyKey);
+    return false;
+  }
+  return true;
+}
+async function redisGetRaw(key) {
+  if (key.includes(":fresh:") || key.includes(":lkg:") || key.includes(":dirty:")) {
+    return redisGetExact(key);
+  }
+  const fresh = await redisGetFresh(key);
+  if (fresh && fresh.data !== void 0) {
+    const dirty = await redisIsDirty(key);
+    if (!dirty) {
+      return fresh;
+    }
+  }
+  const lkg = await redisGetLkg(key);
+  if (lkg && lkg.data !== void 0) {
+    return lkg;
+  }
+  const legacy = await redisGetExact(key);
+  if (legacy) return legacy;
+  return null;
+}
+async function redisSetRaw(datasetKey, snapshot, ttlSeconds = 86400) {
+  const cleanKey = getRawDatasetKey(datasetKey);
+  const freshKey = getFreshKey(cleanKey);
+  const lkgKey = getLkgKey(cleanKey);
+  const dirtyKey = getDirtyKey(cleanKey);
+  const now = snapshot.generatedAt || (/* @__PURE__ */ new Date()).toISOString();
+  globalLastSnapshotAt = now;
+  const actualCount = Array.isArray(snapshot.data) ? snapshot.data.length : snapshot.data !== null && snapshot.data !== void 0 ? 1 : 0;
+  const fullSnapshot = {
+    schemaVersion: snapshot.schemaVersion || SCHEMA_VERSION,
+    generatedAt: now,
+    sourceVersion: snapshot.sourceVersion || "authoritative",
+    expectedCount: snapshot.expectedCount !== void 0 ? snapshot.expectedCount : actualCount,
+    actualCount,
+    data: snapshot.data
+  };
+  const client = getUpstashClient();
+  if (client) {
+    try {
+      await client.set(freshKey, fullSnapshot, { ex: ttlSeconds });
+    } catch (err) {
+      console.warn(`[READ_MODEL_STORE] Error setting fresh key ${freshKey}:`, err?.message || err);
+    }
+  }
+  memoryRedisStorage.set(freshKey, {
+    snapshot: fullSnapshot,
+    expiresAt: ttlSeconds ? Date.now() + ttlSeconds * 1e3 : null
+  });
+  const existingLkg = await redisGetLkg(cleanKey);
+  const shouldSkipLkg = existingLkg && existingLkg.actualCount > 0 && actualCount === 0;
+  if (shouldSkipLkg) {
+    console.warn(
+      `[READ_MODEL_STORE] LKG PROTECTION: Skipped overwriting non-empty LKG (${existingLkg.actualCount} items) with empty dataset for ${cleanKey}`
+    );
+  } else {
+    if (client) {
+      try {
+        await client.set(lkgKey, fullSnapshot);
+      } catch (err) {
+        console.warn(`[READ_MODEL_STORE] Error setting LKG key ${lkgKey}:`, err?.message || err);
+      }
+    }
+    memoryRedisStorage.set(lkgKey, {
+      snapshot: fullSnapshot,
+      expiresAt: null
+      // NO TTL! Permanent!
+    });
+  }
+  if (client) {
+    try {
+      await client.del(dirtyKey);
+    } catch {
+    }
+  }
+  memoryRedisStorage.delete(dirtyKey);
+  setInProcessMemory(cleanKey, fullSnapshot);
+  setInProcessMemory(freshKey, fullSnapshot);
+  setInProcessMemory(lkgKey, fullSnapshot);
+}
+async function redisDelRaw(...keys) {
+  if (keys.length === 0) return;
+  for (const k of keys) {
+    inProcessMemoryCache.delete(k);
+    memoryRedisStorage.delete(k);
+    const clean = getRawDatasetKey(k);
+    inProcessMemoryCache.delete(clean);
+    inProcessMemoryCache.delete(getFreshKey(clean));
+    inProcessMemoryCache.delete(getLkgKey(clean));
+  }
+  const client = getUpstashClient();
+  if (client) {
+    try {
+      await client.del(...keys);
+    } catch (err) {
+      console.warn(`[READ_MODEL_STORE] Redis del error:`, err?.message || err);
+    }
+  }
+}
+async function invalidateDataset(datasetKey, targetedRebuild) {
+  const cleanKey = getRawDatasetKey(datasetKey);
+  const freshKey = getFreshKey(cleanKey);
+  const dirtyKey = getDirtyKey(cleanKey);
+  inProcessMemoryCache.delete(datasetKey);
+  inProcessMemoryCache.delete(cleanKey);
+  inProcessMemoryCache.delete(freshKey);
+  inProcessMemoryCache.delete(`${KEY_PREFIX}:${cleanKey}`);
+  const client = getUpstashClient();
+  if (client) {
+    try {
+      await client.del(freshKey);
+      await client.set(dirtyKey, { markedAt: (/* @__PURE__ */ new Date()).toISOString() }, { ex: 86400 });
+    } catch (err) {
+      console.warn(`[READ_MODEL_STORE] Error invalidating fresh key ${freshKey}:`, err?.message || err);
+    }
+  }
+  memoryRedisStorage.delete(freshKey);
+  memoryRedisStorage.set(dirtyKey, {
+    snapshot: {
+      schemaVersion: SCHEMA_VERSION,
+      generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      sourceVersion: "dirty",
+      expectedCount: 0,
+      actualCount: 0,
+      data: true
+    },
+    expiresAt: Date.now() + 864e5
+  });
+  if (targetedRebuild) {
+    try {
+      await targetedRebuild();
+      if (client) {
+        try {
+          await client.del(dirtyKey);
+        } catch {
+        }
+      }
+      memoryRedisStorage.delete(dirtyKey);
+    } catch (err) {
+      console.warn(
+        `[READ_MODEL_STORE] Targeted rebuild failed for ${cleanKey}; preserving existing LKG snapshot as stale. Cause:`,
+        err?.message || err
+      );
+    }
+  }
+}
+function getFromProcessMemory(key) {
+  const cleanKey = getRawDatasetKey(key);
+  const entry = inProcessMemoryCache.get(key) || inProcessMemoryCache.get(cleanKey);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    inProcessMemoryCache.delete(key);
+    inProcessMemoryCache.delete(cleanKey);
+    return null;
+  }
+  return entry.data;
+}
+function setInProcessMemory(key, data, ttlMs = PROCESS_MEMORY_TTL_MS) {
+  const cleanKey = getRawDatasetKey(key);
+  const entry = { data, expiresAt: Date.now() + ttlMs };
+  inProcessMemoryCache.set(key, entry);
+  if (cleanKey !== key) {
+    inProcessMemoryCache.set(cleanKey, entry);
+  }
+}
+function compareAdminFixtures(a, b, singleCompetition = false) {
+  if (!singleCompetition) {
+    const orderA = CANONICAL_COMPETITION_ORDER[a.competitionId] ?? 999;
+    const orderB = CANONICAL_COMPETITION_ORDER[b.competitionId] ?? 999;
+    if (orderA !== orderB) {
+      return orderA - orderB;
+    }
+  }
+  const mdA = typeof a.matchday === "number" ? a.matchday : parseInt(String(a.matchday || 0), 10) || 0;
+  const mdB = typeof b.matchday === "number" ? b.matchday : parseInt(String(b.matchday || 0), 10) || 0;
+  if (mdA !== mdB) {
+    return mdA - mdB;
+  }
+  const timeA = a.scheduledAt ? new Date(a.scheduledAt).getTime() : 0;
+  const timeB = b.scheduledAt ? new Date(b.scheduledAt).getTime() : 0;
+  if (timeA !== timeB) {
+    return timeA - timeB;
+  }
+  return (a.id || "").localeCompare(b.id || "");
+}
+function encodeFixtureCursor(fixture) {
+  const compOrder = CANONICAL_COMPETITION_ORDER[fixture.competitionId] ?? 999;
+  const matchday = typeof fixture.matchday === "number" ? fixture.matchday : parseInt(String(fixture.matchday || 0), 10) || 0;
+  const scheduledAt = fixture.scheduledAt || "";
+  const id = fixture.id;
+  const tuple = {
+    competitionOrder: compOrder,
+    matchday,
+    scheduledAt,
+    id
+  };
+  return Buffer.from(JSON.stringify(tuple)).toString("base64url");
+}
+function decodeFixtureCursor(cursorStr) {
+  try {
+    const raw = Buffer.from(cursorStr, "base64url").toString("utf-8");
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed.id === "string") {
+      return parsed;
+    }
+  } catch {
+  }
+  return null;
+}
+async function readThroughReadModel(options) {
+  const { key, ttlSeconds = 86400, expectedCount, firestoreFetcher, validateData } = options;
+  const cleanKey = getRawDatasetKey(key);
+  const canQueryFirestore = firestoreCircuitBreaker.canExecute();
+  const memoryHit = getFromProcessMemory(cleanKey);
+  if (memoryHit && memoryHit.data !== void 0) {
+    if (!canQueryFirestore) {
+      return {
+        data: memoryHit.data,
+        source: "memory_stale",
+        generatedAt: memoryHit.generatedAt,
+        sourceVersion: memoryHit.sourceVersion,
+        stale: true,
+        degraded: true
+      };
+    }
+    return {
+      data: memoryHit.data,
+      source: "memory",
+      generatedAt: memoryHit.generatedAt,
+      sourceVersion: memoryHit.sourceVersion,
+      stale: false,
+      degraded: false
+    };
+  }
+  const isDirty = await redisIsDirty(cleanKey);
+  let freshSnapshot = null;
+  if (!isDirty) {
+    freshSnapshot = await redisGetFresh(cleanKey);
+  }
+  if (!canQueryFirestore) {
+    if (freshSnapshot && freshSnapshot.data !== void 0) {
+      setInProcessMemory(cleanKey, freshSnapshot);
+      return {
+        data: freshSnapshot.data,
+        source: "redis_fresh",
+        generatedAt: freshSnapshot.generatedAt,
+        sourceVersion: freshSnapshot.sourceVersion,
+        stale: true,
+        degraded: true
+      };
+    }
+    const lkgSnapshot = await redisGetLkg(cleanKey);
+    if (lkgSnapshot && lkgSnapshot.data !== void 0) {
+      setInProcessMemory(cleanKey, lkgSnapshot);
+      return {
+        data: lkgSnapshot.data,
+        source: "redis_stale",
+        generatedAt: lkgSnapshot.generatedAt,
+        sourceVersion: lkgSnapshot.sourceVersion,
+        stale: true,
+        degraded: true
+      };
+    }
+    throw new ReadModelNotWarmedError(
+      `Firestore circuit breaker is OPEN and no warmed Redis snapshot exists for key: ${key}`
+    );
+  }
+  if (freshSnapshot && freshSnapshot.data !== void 0) {
+    const ageMs = Date.now() - new Date(freshSnapshot.generatedAt).getTime();
+    if (ageMs < 6e5) {
+      setInProcessMemory(cleanKey, freshSnapshot);
+      return {
+        data: freshSnapshot.data,
+        source: "redis_fresh",
+        generatedAt: freshSnapshot.generatedAt,
+        sourceVersion: freshSnapshot.sourceVersion,
+        stale: false,
+        degraded: false
+      };
+    }
+  }
+  let loader = inFlightLoaders.get(cleanKey);
+  if (!loader) {
+    loader = (async () => {
+      try {
+        const freshData = await firestoreFetcher();
+        const isValid = validateData ? validateData(freshData) : Boolean(freshData);
+        if (!isValid) {
+          throw new Error(`Fetched Firestore data failed validation for key ${key}`);
+        }
+        const now = (/* @__PURE__ */ new Date()).toISOString();
+        const actualCount = Array.isArray(freshData) ? freshData.length : freshData ? 1 : 0;
+        const snapshot = {
+          schemaVersion: SCHEMA_VERSION,
+          generatedAt: now,
+          sourceVersion: options.sourceVersion || "firestore-authoritative",
+          expectedCount: expectedCount ?? actualCount,
+          actualCount,
+          data: freshData
+        };
+        await redisSetRaw(cleanKey, snapshot, ttlSeconds);
+        firestoreCircuitBreaker.recordSuccess();
+        return freshData;
+      } catch (err) {
+        firestoreCircuitBreaker.recordFailure(err);
+        throw err;
+      } finally {
+        inFlightLoaders.delete(cleanKey);
+      }
+    })();
+    inFlightLoaders.set(cleanKey, loader);
+  }
+  try {
+    const resultData = await loader;
+    return {
+      data: resultData,
+      source: "firestore",
+      generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      sourceVersion: options.sourceVersion || "firestore-authoritative",
+      stale: false,
+      degraded: false
+    };
+  } catch (firestoreErr) {
+    const lkgSnapshot = await redisGetLkg(cleanKey);
+    if (lkgSnapshot && lkgSnapshot.data !== void 0) {
+      console.warn(
+        `[READ_MODEL] Firestore failed for ${key}, serving stale Redis LKG snapshot. Cause:`,
+        firestoreErr?.message || firestoreErr
+      );
+      setInProcessMemory(cleanKey, lkgSnapshot);
+      return {
+        data: lkgSnapshot.data,
+        source: "redis_stale",
+        generatedAt: lkgSnapshot.generatedAt,
+        sourceVersion: lkgSnapshot.sourceVersion,
+        stale: true,
+        degraded: true
+      };
+    }
+    console.error(`[READ_MODEL] Both Firestore and Redis unavailable for key: ${key}. Error:`, firestoreErr);
+    throw new ReadModelNotWarmedError(
+      `Failed to load authoritative data from Firestore and no Redis snapshot is available for key: ${key}`
+    );
+  }
+}
+async function buildCompetitionsSnapshot(seasonId = "season-2026-27") {
+  const validComps = SEED_COMPETITIONS.filter((c) => {
+    return !c.id.includes("trophee-des-champions") && !c.id.includes("conference-league") && !c.id.includes("uecl") && !c.id.includes("efl-cup") && c.status !== "inactive" && !c.hidden;
+  });
+  const competitions = validComps.map((seed) => {
+    let totalTeams = 0;
+    if (seed.leagueId) {
+      totalTeams = SEED_CLUBS.filter((c) => c.leagueId === seed.leagueId).length || 20;
+    } else {
+      totalTeams = seed.formatConfig?.maxTeams || 32;
+    }
+    const totalMatchdays = seed.leagueId ? seed.leagueId.includes("bundesliga") || seed.leagueId.includes("ligue-1") ? 17 : 19 : 8;
+    return {
+      id: seed.id,
+      seasonId: seed.seasonId || seasonId,
+      leagueId: seed.leagueId,
+      name: seed.name,
+      type: seed.type,
+      scheduleMode: seed.scheduleMode,
+      status: "active",
+      totalTeams,
+      hasFixtures: true,
+      fixtureCount: 0,
+      fixturesCount: 0,
+      generationStatus: "generated",
+      formatConfig: seed.formatConfig || {},
+      currentMatchday: 1,
+      totalMatchdays,
+      isMatchdayOpen: true,
+      adminOverrideStatus: "AUTO",
+      createdAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+  });
+  const snapshot = {
+    schemaVersion: SCHEMA_VERSION,
+    generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    sourceVersion: "seed-catalog",
+    expectedCount: 17,
+    actualCount: competitions.length,
+    data: competitions
+  };
+  const key = ReadModelKeys.competitions(seasonId);
+  await redisSetRaw(key, snapshot, 86400);
+  return snapshot;
+}
+async function buildClubsSnapshot(seasonId = "season-2026-27") {
+  const occMap = /* @__PURE__ */ new Map();
+  const userMap = /* @__PURE__ */ new Map();
+  const existingLkg = await redisGetLkg(ReadModelKeys.clubsWithOwners(seasonId));
+  let firestoreFailed = false;
+  try {
+    const db = getFirestoreDb();
+    if (db) {
+      const occSnap = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where("seasonId", "==", seasonId).where("status", "==", "active").get();
+      for (const doc of occSnap.docs) {
+        const data = doc.data();
+        if (data.clubId && data.userId) {
+          occMap.set(data.clubId, { userId: data.userId });
+        }
+      }
+      if (occMap.size === 0) {
+        const broadSnap = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).limit(100).get();
+        for (const doc of broadSnap.docs) {
+          const data = doc.data();
+          if (data.clubId && data.userId && data.status !== "released") {
+            occMap.set(data.clubId, { userId: data.userId });
+          }
+        }
+      }
+      const ownerUserIds = Array.from(new Set(Array.from(occMap.values()).map((o) => o.userId)));
+      await Promise.all(
+        ownerUserIds.map(async (uid) => {
+          try {
+            const uDoc = await db.collection(COLLECTIONS.USERS).doc(uid).get();
+            if (uDoc.exists) {
+              const uData = uDoc.data();
+              userMap.set(uid, {
+                username: uData?.username || `user_${uid.substring(0, 5)}`
+              });
+            }
+          } catch {
+          }
+        })
+      );
+    }
+  } catch (err) {
+    firestoreFailed = true;
+    console.warn("[READ_MODEL_STORE] Firestore occupancies fetch error in buildClubsSnapshot:", err?.message || err);
+  }
+  if (firestoreFailed) {
+    if (existingLkg && Array.isArray(existingLkg.data) && existingLkg.data.length > 0) {
+      return existingLkg;
+    }
+    throw new ReadModelNotWarmedError(
+      "READ_MODEL_NOT_WARMED: Firestore club/occupancy read failed and no populated clubs-with-owners LKG exists."
+    );
+  }
+  if (occMap.size === 0 && existingLkg && Array.isArray(existingLkg.data) && existingLkg.data.some((c) => c.isOccupied)) {
+    console.warn("[READ_MODEL_STORE] Firestore returned 0 occupancies while LKG had active owners; preserving LKG snapshot.");
+    return existingLkg;
+  }
+  const neutralClubs = SEED_CLUBS.map((seed) => {
+    const occ = occMap.get(seed.id);
+    const ownerUserId = occ ? occ.userId : null;
+    const userDetail = ownerUserId ? userMap.get(ownerUserId) : null;
+    const isOccupied = Boolean(ownerUserId);
+    return {
+      id: seed.id,
+      name: seed.name,
+      shortName: seed.shortName,
+      country: seed.country,
+      leagueId: seed.leagueId,
+      logoUrl: seed.logoUrl,
+      active: true,
+      createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+      ownerUserId,
+      ownerUsername: userDetail?.username || null,
+      claimedByUserId: ownerUserId,
+      claimedByUsername: userDetail?.username || null,
+      managerUserId: ownerUserId,
+      managerUsername: userDetail?.username || null,
+      isClaimed: isOccupied,
+      isAvailable: !isOccupied,
+      isOccupied,
+      isTaken: isOccupied,
+      occupancy: {
+        status: isOccupied ? "occupied" : "available",
+        userId: ownerUserId || void 0,
+        username: userDetail?.username || void 0
+      }
+    };
+  });
+  const snapshot = {
+    schemaVersion: SCHEMA_VERSION,
+    generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    sourceVersion: `occupancies-${occMap.size}`,
+    expectedCount: 96,
+    actualCount: neutralClubs.length,
+    data: neutralClubs
+  };
+  const key = ReadModelKeys.clubsWithOwners(seasonId);
+  await redisSetRaw(key, snapshot, 86400);
+  for (const league of SEED_LEAGUES) {
+    const leagueClubs = neutralClubs.filter((c) => c.leagueId === league.id);
+    const expectedLeagueCount = league.id.includes("bundesliga") || league.id.includes("ligue-1") ? 18 : 20;
+    const leagueSnapshot = {
+      schemaVersion: SCHEMA_VERSION,
+      generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      sourceVersion: `occupancies-${occMap.size}`,
+      expectedCount: expectedLeagueCount,
+      actualCount: leagueClubs.length,
+      data: leagueClubs
+    };
+    const leagueKey = ReadModelKeys.leagueClubs(league.id, seasonId);
+    await redisSetRaw(leagueKey, leagueSnapshot, 86400);
+  }
+  return snapshot;
+}
+function enrichClubForUser(club, currentUserId) {
+  const isCurrentUserClub = Boolean(currentUserId && club.ownerUserId === currentUserId);
+  const isOccupied = Boolean(club.ownerUserId || club.isOccupied || club.isTaken);
+  return {
+    ...club,
+    isCurrentUserClub,
+    isTaken: isOccupied,
+    claimedByUserId: club.ownerUserId,
+    claimedByUsername: club.ownerUsername,
+    managerUsername: club.ownerUsername,
+    occupancy: {
+      status: isCurrentUserClub ? "owned" : isOccupied ? "occupied" : "available",
+      userId: club.ownerUserId || void 0,
+      username: club.ownerUsername || void 0
+    }
+  };
+}
+async function buildAdminFixturesSnapshot(seasonId = "season-2026-27") {
+  const db = getFirestoreDb();
+  let fixDocs = [];
+  if (db) {
+    try {
+      const fixSnap = await db.collection(COLLECTIONS.FIXTURES).where("seasonId", "==", seasonId).get();
+      fixDocs = fixSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((f) => !f.competitionId.includes("efl-cup"));
+    } catch (err) {
+      console.warn("[READ_MODEL_STORE] Error fetching fixtures in buildAdminFixturesSnapshot:", err?.message || err);
+      const existingLkg = await redisGetLkg(ReadModelKeys.adminFixtures(seasonId));
+      if (existingLkg && existingLkg.data) {
+        return existingLkg;
+      }
+    }
+  }
+  const fixtures = fixDocs.map((doc) => {
+    const homeClubSeed = SEED_CLUBS.find((c) => c.id === doc.homeClubId);
+    const awayClubSeed = SEED_CLUBS.find((c) => c.id === doc.awayClubId);
+    return {
+      id: doc.id,
+      seasonId: doc.seasonId || seasonId,
+      competitionId: doc.competitionId,
+      competitionName: doc.competitionName || doc.competitionId,
+      matchday: doc.matchday,
+      roundName: doc.roundName,
+      homeClubId: doc.homeClubId,
+      awayClubId: doc.awayClubId,
+      homeClub: {
+        id: doc.homeClubId,
+        name: homeClubSeed?.name || doc.homeClubId,
+        shortName: homeClubSeed?.shortName || doc.homeClubId.substring(0, 3).toUpperCase(),
+        country: homeClubSeed?.country || "England",
+        leagueId: homeClubSeed?.leagueId || "league-premier-league",
+        logoUrl: homeClubSeed?.logoUrl || "",
+        active: true,
+        createdAt: ""
+      },
+      awayClub: {
+        id: doc.awayClubId,
+        name: awayClubSeed?.name || doc.awayClubId,
+        shortName: awayClubSeed?.shortName || doc.awayClubId.substring(0, 3).toUpperCase(),
+        country: awayClubSeed?.country || "England",
+        leagueId: awayClubSeed?.leagueId || "league-premier-league",
+        logoUrl: awayClubSeed?.logoUrl || "",
+        active: true,
+        createdAt: ""
+      },
+      scheduledAt: doc.scheduledAt,
+      homeScore: doc.homeScore ?? void 0,
+      awayScore: doc.awayScore ?? void 0,
+      winnerClubId: doc.winnerClubId ?? void 0,
+      status: doc.status || "SCHEDULED",
+      resultConfirmedAt: doc.resultConfirmedAt || void 0,
+      homeOwnerId: doc.homeOwnerId,
+      awayOwnerId: doc.awayOwnerId,
+      createdAt: doc.createdAt || (/* @__PURE__ */ new Date()).toISOString(),
+      updatedAt: doc.updatedAt || doc.createdAt || (/* @__PURE__ */ new Date()).toISOString()
+    };
+  });
+  fixtures.sort((a, b) => compareAdminFixtures(a, b, false));
+  const snapshot = {
+    schemaVersion: SCHEMA_VERSION,
+    generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    sourceVersion: `fixtures-${fixtures.length}`,
+    expectedCount: fixtures.length,
+    actualCount: fixtures.length,
+    data: fixtures
+  };
+  const key = ReadModelKeys.adminFixtures(seasonId);
+  await redisSetRaw(key, snapshot, 86400);
+  const compsSet = new Set(fixtures.map((f) => f.competitionId));
+  for (const compId of compsSet) {
+    const compFixtures = fixtures.filter((f) => f.competitionId === compId);
+    compFixtures.sort((a, b) => compareAdminFixtures(a, b, true));
+    const compKey = ReadModelKeys.competitionFixtures(compId, seasonId);
+    const compSnapshot = {
+      schemaVersion: SCHEMA_VERSION,
+      generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      sourceVersion: `fixtures-${compFixtures.length}`,
+      expectedCount: compFixtures.length,
+      actualCount: compFixtures.length,
+      data: compFixtures
+    };
+    await redisSetRaw(compKey, compSnapshot, 86400);
+  }
+  return snapshot;
+}
+function generateZeroValueStandings(competitionId, seasonId = "season-2026-27") {
+  const config = DOMESTIC_LEAGUE_CONFIG[competitionId];
+  let clubs = config ? SEED_CLUBS.filter((c) => c.leagueId === config.leagueId) : [];
+  if (clubs.length === 0) {
+    clubs = SEED_CLUBS.slice(0, 20);
+  }
+  return clubs.map((club, idx) => ({
+    position: idx + 1,
+    clubId: club.id,
+    clubName: club.name,
+    shortName: club.shortName,
+    logoUrl: club.logoUrl,
+    played: 0,
+    won: 0,
+    drawn: 0,
+    lost: 0,
+    goalsFor: 0,
+    goalsAgainst: 0,
+    goalDifference: 0,
+    points: 0,
+    form: [],
+    streak: "",
+    competitionId,
+    seasonId
+  }));
+}
+async function buildStandingsSnapshot(competitionId, seasonId = "season-2026-27") {
+  const config = DOMESTIC_LEAGUE_CONFIG[competitionId];
+  const expectedCount = config ? config.expectedCount : 20;
+  const key = ReadModelKeys.standings(competitionId, seasonId);
+  const existingLkg = await redisGetLkg(key);
+  let rows = [];
+  let firestoreFailed = false;
+  try {
+    const db = getFirestoreDb();
+    if (db) {
+      const stdDoc = await db.collection(COLLECTIONS.STANDINGS).doc(competitionId).get();
+      if (stdDoc.exists) {
+        const data = stdDoc.data();
+        if (Array.isArray(data?.rows) && data.rows.length > 0) {
+          rows = data.rows;
+        }
+      }
+    }
+  } catch (err) {
+    firestoreFailed = true;
+    console.warn(`[READ_MODEL_STORE] Error fetching standings for ${competitionId}:`, err?.message || err);
+  }
+  if (firestoreFailed) {
+    if (existingLkg && Array.isArray(existingLkg.data) && existingLkg.data.length > 0) {
+      return existingLkg;
+    }
+    throw new ReadModelNotWarmedError(
+      `READ_MODEL_NOT_WARMED: Firestore standings retrieval failed for ${competitionId} and no valid LKG snapshot exists.`
+    );
+  }
+  if (rows.length === 0) {
+    if (existingLkg && Array.isArray(existingLkg.data) && existingLkg.data.length > 0) {
+      return existingLkg;
+    }
+    let hasConfirmedFixtures = false;
+    try {
+      const db = getFirestoreDb();
+      if (db) {
+        const fixSnap = await db.collection(COLLECTIONS.FIXTURES).where("competitionId", "==", competitionId).where("status", "==", "CONFIRMED").limit(1).get();
+        hasConfirmedFixtures = !fixSnap.empty;
+      }
+    } catch {
+    }
+    if (!hasConfirmedFixtures && config) {
+      rows = generateZeroValueStandings(competitionId, seasonId);
+    } else if (hasConfirmedFixtures) {
+      throw new Error(
+        `Standings for ${competitionId} cannot be zeroed: competition has confirmed fixtures recorded in Firestore.`
+      );
+    }
+  }
+  rows.sort((a, b) => a.position - b.position);
+  const snapshot = {
+    schemaVersion: SCHEMA_VERSION,
+    generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    sourceVersion: `standings-${rows.length}`,
+    expectedCount,
+    actualCount: rows.length,
+    data: rows
+  };
+  await redisSetRaw(key, snapshot, 86400);
+  return snapshot;
+}
+async function getCompetitionsFromReadModel(seasonId = "season-2026-27") {
+  const result = await readThroughReadModel({
+    key: ReadModelKeys.competitions(seasonId),
+    seasonId,
+    expectedCount: 17,
+    firestoreFetcher: async () => {
+      const snap = await buildCompetitionsSnapshot(seasonId);
+      return snap.data;
+    },
+    validateData: (data) => Array.isArray(data) && data.length > 0
+  });
+  return {
+    competitions: result.data,
+    source: result.source,
+    stale: Boolean(result.stale),
+    degraded: Boolean(result.degraded),
+    snapshotAt: result.generatedAt
+  };
+}
+async function getAdminClubsFromReadModel(seasonId = "season-2026-27", leagueId, currentUserId) {
+  const result = await readThroughReadModel({
+    key: ReadModelKeys.clubsWithOwners(seasonId),
+    seasonId,
+    expectedCount: 96,
+    firestoreFetcher: async () => {
+      const snap = await buildClubsSnapshot(seasonId);
+      return snap.data;
+    },
+    validateData: (data) => Array.isArray(data) && data.length > 0
+  });
+  let clubs = result.data;
+  if (leagueId && leagueId !== "ALL") {
+    clubs = clubs.filter((c) => c.leagueId === leagueId);
+  }
+  const adminClubs = clubs.map((c) => {
+    const isCurrentUserClub = Boolean(currentUserId && c.ownerUserId === currentUserId);
+    return {
+      ...c,
+      seasonId,
+      isOccupied: Boolean(c.ownerUserId),
+      occupiedByUserId: c.ownerUserId,
+      occupiedByUsername: c.ownerUsername,
+      claimedByUserId: c.ownerUserId,
+      claimedByUsername: c.ownerUsername,
+      managerUserId: c.ownerUserId,
+      managerUsername: c.ownerUsername,
+      isTaken: Boolean(c.ownerUserId),
+      isCurrentUserClub,
+      occupancy: {
+        status: isCurrentUserClub ? "owned" : c.ownerUserId ? "occupied" : "available",
+        userId: c.ownerUserId || void 0,
+        username: c.ownerUsername || void 0
+      }
+    };
+  });
+  return {
+    clubs: adminClubs,
+    total: adminClubs.length,
+    source: result.source,
+    degraded: Boolean(result.degraded),
+    stale: Boolean(result.stale),
+    snapshotAt: result.generatedAt
+  };
+}
+async function getLeagueClubsFromReadModel(leagueId, seasonId = "season-2026-27", currentUserId) {
+  const leagueKey = ReadModelKeys.leagueClubs(leagueId, seasonId);
+  const cleanKey = getRawDatasetKey(leagueKey);
+  const memoryHit = getFromProcessMemory(cleanKey);
+  if (memoryHit && Array.isArray(memoryHit.data) && memoryHit.data.length > 0) {
+    const clubs2 = memoryHit.data.map((c) => enrichClubForUser(c, currentUserId));
+    return { clubs: clubs2, source: "memory", stale: false, degraded: false, snapshotAt: memoryHit.generatedAt };
+  }
+  const freshSnapshot = await redisGetFresh(cleanKey);
+  if (freshSnapshot && Array.isArray(freshSnapshot.data) && freshSnapshot.data.length > 0) {
+    setInProcessMemory(cleanKey, freshSnapshot);
+    const clubs2 = freshSnapshot.data.map((c) => enrichClubForUser(c, currentUserId));
+    return { clubs: clubs2, source: "redis_fresh", stale: false, degraded: false, snapshotAt: freshSnapshot.generatedAt };
+  }
+  const globalFresh = await redisGetFresh(ReadModelKeys.clubsWithOwners(seasonId));
+  const globalLkg = await redisGetLkg(ReadModelKeys.clubsWithOwners(seasonId));
+  const globalSnap = globalFresh?.data?.length ? globalFresh : globalLkg;
+  if (globalSnap && Array.isArray(globalSnap.data) && globalSnap.data.length > 0) {
+    const leagueClubs = globalSnap.data.filter((c) => c.leagueId === leagueId);
+    if (leagueClubs.length > 0) {
+      const derivedSnapshot = {
+        schemaVersion: SCHEMA_VERSION,
+        generatedAt: globalSnap.generatedAt,
+        sourceVersion: `derived-from-global:${globalSnap.sourceVersion}`,
+        expectedCount: leagueId.includes("bundesliga") || leagueId.includes("ligue-1") ? 18 : 20,
+        actualCount: leagueClubs.length,
+        data: leagueClubs
+      };
+      await redisSetRaw(leagueKey, derivedSnapshot, 86400);
+      setInProcessMemory(cleanKey, derivedSnapshot);
+      const clubs2 = leagueClubs.map((c) => enrichClubForUser(c, currentUserId));
+      return {
+        clubs: clubs2,
+        source: "redis_derived",
+        stale: Boolean(globalSnap === globalLkg),
+        degraded: false,
+        snapshotAt: derivedSnapshot.generatedAt
+      };
+    }
+  }
+  const result = await readThroughReadModel({
+    key: leagueKey,
+    seasonId,
+    expectedCount: leagueId.includes("bundesliga") || leagueId.includes("ligue-1") ? 18 : 20,
+    firestoreFetcher: async () => {
+      await buildClubsSnapshot(seasonId);
+      const leagueSnap = await redisGetRaw(ReadModelKeys.leagueClubs(leagueId, seasonId));
+      if (leagueSnap && leagueSnap.data) return leagueSnap.data;
+      const allClubs = await redisGetRaw(ReadModelKeys.clubsWithOwners(seasonId));
+      return (allClubs?.data || []).filter((c) => c.leagueId === leagueId);
+    },
+    validateData: (data) => Array.isArray(data) && data.length > 0
+  });
+  const clubs = result.data.map((c) => enrichClubForUser(c, currentUserId));
+  return {
+    clubs,
+    source: result.source,
+    stale: Boolean(result.stale),
+    degraded: Boolean(result.degraded),
+    snapshotAt: result.generatedAt
+  };
+}
+async function getAvailableClubsFromReadModel(seasonId = "season-2026-27", currentUserId) {
+  const result = await readThroughReadModel({
+    key: ReadModelKeys.clubsWithOwners(seasonId),
+    seasonId,
+    expectedCount: 96,
+    firestoreFetcher: async () => {
+      const snap = await buildClubsSnapshot(seasonId);
+      return snap.data;
+    },
+    validateData: (data) => Array.isArray(data) && data.length > 0
+  });
+  const availableClubs = result.data.filter((c) => !c.ownerUserId && !c.isOccupied && !c.isTaken).map((c) => enrichClubForUser(c, currentUserId));
+  return {
+    clubs: availableClubs,
+    source: result.source,
+    stale: Boolean(result.stale),
+    degraded: Boolean(result.degraded),
+    snapshotAt: result.generatedAt
+  };
+}
+async function getClubByIdFromReadModel(clubId, seasonId = "season-2026-27", currentUserId) {
+  const result = await readThroughReadModel({
+    key: ReadModelKeys.clubsWithOwners(seasonId),
+    seasonId,
+    expectedCount: 96,
+    firestoreFetcher: async () => {
+      const snap = await buildClubsSnapshot(seasonId);
+      return snap.data;
+    },
+    validateData: (data) => Array.isArray(data) && data.length > 0
+  });
+  const neutral = result.data.find((c) => c.id === clubId);
+  if (!neutral) {
+    return { club: null, source: result.source, stale: Boolean(result.stale), degraded: Boolean(result.degraded) };
+  }
+  const club = enrichClubForUser(neutral, currentUserId);
+  return { club, source: result.source, stale: Boolean(result.stale), degraded: Boolean(result.degraded) };
+}
+async function getUserActiveClubFromReadModel(userId, seasonId = "season-2026-27") {
+  const key = ReadModelKeys.userMembership(userId, seasonId);
+  const cleanKey = getRawDatasetKey(key);
+  const memHit = getFromProcessMemory(cleanKey);
+  if (memHit && memHit.data) {
+    if (memHit.data.hasClub === false) return null;
+    if (memHit.data.hasClub === true && memHit.data.club) return memHit.data.club;
+  }
+  const memFresh = await redisGetFresh(cleanKey);
+  const memLkg = await redisGetLkg(cleanKey);
+  const memSnap = memFresh || memLkg;
+  if (memSnap && memSnap.data) {
+    setInProcessMemory(cleanKey, memSnap);
+    if (memSnap.data.hasClub === false) return null;
+    if (memSnap.data.hasClub === true && memSnap.data.club) return memSnap.data.club;
+  }
+  try {
+    const globalFresh = await redisGetFresh(ReadModelKeys.clubsWithOwners(seasonId));
+    const globalLkg = await redisGetLkg(ReadModelKeys.clubsWithOwners(seasonId));
+    const clubsSnap = globalFresh?.data?.length ? globalFresh : globalLkg;
+    if (clubsSnap && Array.isArray(clubsSnap.data) && clubsSnap.data.length > 0) {
+      const found = clubsSnap.data.find((c) => c.ownerUserId === userId || c.claimedByUserId === userId);
+      if (found) {
+        const club = enrichClubForUser(found, userId);
+        const sentinelSnap = {
+          schemaVersion: SCHEMA_VERSION,
+          generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+          sourceVersion: "derived-from-clubs-with-owners",
+          expectedCount: 1,
+          actualCount: 1,
+          data: { hasClub: true, clubId: found.id, club }
+        };
+        await redisSetRaw(key, sentinelSnap, 86400);
+        setInProcessMemory(cleanKey, sentinelSnap);
+        return club;
+      } else if (clubsSnap.data.length >= 96) {
+        const sentinelSnap = {
+          schemaVersion: SCHEMA_VERSION,
+          generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+          sourceVersion: "derived-sentinel-no-club",
+          expectedCount: 1,
+          actualCount: 1,
+          data: { hasClub: false, clubId: null, club: null }
+        };
+        await redisSetRaw(key, sentinelSnap, 86400);
+        setInProcessMemory(cleanKey, sentinelSnap);
+        return null;
+      }
+    }
+  } catch (err) {
+    console.warn("[READ_MODEL_STORE] Error inspecting clubs-with-owners for user membership:", err?.message || err);
+  }
+  if (firestoreCircuitBreaker.canExecute()) {
+    try {
+      const db = getFirestoreDb();
+      if (db) {
+        const occSnap = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where("userId", "==", userId).where("seasonId", "==", seasonId).where("status", "==", "active").limit(1).get();
+        if (!occSnap.empty) {
+          const occ = occSnap.docs[0].data();
+          const seed = SEED_CLUBS.find((c) => c.id === occ.clubId);
+          if (seed) {
+            const club = {
+              ...seed,
+              active: true,
+              createdAt: "",
+              isTaken: true,
+              isCurrentUserClub: true,
+              claimedByUserId: userId,
+              claimedByUsername: null,
+              occupancy: { status: "owned", userId }
+            };
+            const sentinelSnap = {
+              schemaVersion: SCHEMA_VERSION,
+              generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+              sourceVersion: "firestore-membership",
+              expectedCount: 1,
+              actualCount: 1,
+              data: { hasClub: true, clubId: occ.clubId, club }
+            };
+            await redisSetRaw(key, sentinelSnap, 86400);
+            setInProcessMemory(cleanKey, sentinelSnap);
+            return club;
+          }
+        }
+        const negativeSnap = {
+          schemaVersion: SCHEMA_VERSION,
+          generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+          sourceVersion: "firestore-no-club",
+          expectedCount: 1,
+          actualCount: 1,
+          data: { hasClub: false, clubId: null, club: null }
+        };
+        await redisSetRaw(key, negativeSnap, 86400);
+        setInProcessMemory(cleanKey, negativeSnap);
+        return null;
+      }
+    } catch (err) {
+      console.warn("[READ_MODEL_STORE] Firestore membership query error:", err?.message || err);
+    }
+  }
+  return null;
+}
+async function getCompetitionStandingsFromReadModel(competitionId, seasonId = "season-2026-27") {
+  const config = DOMESTIC_LEAGUE_CONFIG[competitionId];
+  const expectedCount = config ? config.expectedCount : 20;
+  const result = await readThroughReadModel({
+    key: ReadModelKeys.standings(competitionId, seasonId),
+    seasonId,
+    expectedCount,
+    firestoreFetcher: async () => {
+      const snap = await buildStandingsSnapshot(competitionId, seasonId);
+      return snap.data;
+    },
+    validateData: (rows) => Array.isArray(rows) && rows.length > 0
+  });
+  return {
+    standings: result.data,
+    source: result.source,
+    stale: Boolean(result.stale),
+    degraded: Boolean(result.degraded),
+    snapshotAt: result.generatedAt
+  };
+}
+async function getCompetitionFixturesFromReadModel(competitionId, options = {}) {
+  const seasonId = options.seasonId || "season-2026-27";
+  const key = ReadModelKeys.competitionFixtures(competitionId, seasonId);
+  const cleanKey = getRawDatasetKey(key);
+  const memoryHit = getFromProcessMemory(cleanKey);
+  let fixturesData = null;
+  let source = "memory";
+  let isStale = false;
+  let isDegraded = false;
+  let snapshotAt = (/* @__PURE__ */ new Date()).toISOString();
+  if (memoryHit && Array.isArray(memoryHit.data)) {
+    fixturesData = memoryHit.data;
+    snapshotAt = memoryHit.generatedAt;
+  } else {
+    const freshSnapshot = await redisGetFresh(cleanKey);
+    if (freshSnapshot && Array.isArray(freshSnapshot.data)) {
+      setInProcessMemory(cleanKey, freshSnapshot);
+      fixturesData = freshSnapshot.data;
+      source = "redis_fresh";
+      snapshotAt = freshSnapshot.generatedAt;
+    } else {
+      const adminFresh = await redisGetFresh(ReadModelKeys.adminFixtures(seasonId));
+      const adminLkg = await redisGetLkg(ReadModelKeys.adminFixtures(seasonId));
+      const adminSnap = adminFresh?.data ? adminFresh : adminLkg;
+      if (adminSnap && Array.isArray(adminSnap.data)) {
+        const derivedFixtures = adminSnap.data.filter((f) => f.competitionId === competitionId).sort((a, b) => compareAdminFixtures(a, b, true));
+        const derivedSnapshot = {
+          schemaVersion: SCHEMA_VERSION,
+          generatedAt: adminSnap.generatedAt,
+          sourceVersion: `derived-from-admin:${adminSnap.sourceVersion}`,
+          expectedCount: derivedFixtures.length,
+          actualCount: derivedFixtures.length,
+          data: derivedFixtures
+        };
+        await redisSetRaw(key, derivedSnapshot, 86400);
+        setInProcessMemory(cleanKey, derivedSnapshot);
+        fixturesData = derivedFixtures;
+        source = "redis_derived";
+        isStale = Boolean(adminSnap === adminLkg);
+        isDegraded = Boolean(adminSnap === adminLkg);
+        snapshotAt = derivedSnapshot.generatedAt;
+      }
+    }
+  }
+  if (!fixturesData) {
+    const result = await readThroughReadModel({
+      key,
+      seasonId,
+      firestoreFetcher: async () => {
+        await buildAdminFixturesSnapshot(seasonId);
+        const snap = await redisGetRaw(key);
+        if (snap && snap.data) return snap.data;
+        const allFixSnap = await redisGetRaw(ReadModelKeys.adminFixtures(seasonId));
+        return (allFixSnap?.data || []).filter((f) => f.competitionId === competitionId);
+      },
+      validateData: (fixtures2) => Array.isArray(fixtures2)
+    });
+    fixturesData = result.data;
+    source = result.source;
+    isStale = Boolean(result.stale);
+    isDegraded = Boolean(result.degraded);
+    snapshotAt = result.generatedAt;
+  }
+  let fixtures = fixturesData;
+  if (options.matchday !== void 0) {
+    fixtures = fixtures.filter((f) => f.matchday === options.matchday);
+  }
+  if (options.status && options.status !== "ALL") {
+    fixtures = fixtures.filter((f) => f.status === options.status);
+  }
+  return {
+    fixtures,
+    source,
+    stale: isStale,
+    degraded: isDegraded,
+    snapshotAt
+  };
+}
+async function getAdminFixturesFromReadModel(options = {}) {
+  const seasonId = options.seasonId || "season-2026-27";
+  const limit = Math.min(Math.max(options.limit || 25, 1), 100);
+  const snapshotRes = await readThroughReadModel({
+    key: ReadModelKeys.adminFixtures(seasonId),
+    seasonId,
+    firestoreFetcher: async () => {
+      const snap = await buildAdminFixturesSnapshot(seasonId);
+      return snap.data;
+    },
+    validateData: (fixtures) => Array.isArray(fixtures) && fixtures.length > 0
+  });
+  let allFixtures = snapshotRes.data;
+  if (options.competitionId && options.competitionId !== "ALL") {
+    allFixtures = allFixtures.filter((f) => f.competitionId === options.competitionId);
+  }
+  if (options.status && options.status !== "ALL") {
+    allFixtures = allFixtures.filter((f) => f.status === options.status);
+  }
+  if (options.matchday !== void 0) {
+    allFixtures = allFixtures.filter((f) => f.matchday === options.matchday);
+  }
+  if (options.clubId) {
+    allFixtures = allFixtures.filter((f) => f.homeClubId === options.clubId || f.awayClubId === options.clubId);
+  }
+  if (options.search) {
+    const q = options.search.toLowerCase();
+    allFixtures = allFixtures.filter(
+      (f) => f.homeClub?.name.toLowerCase().includes(q) || f.awayClub?.name.toLowerCase().includes(q) || f.roundName?.toLowerCase().includes(q) || f.id.toLowerCase().includes(q)
+    );
+  }
+  const total = allFixtures.length;
+  let startIndex = 0;
+  if (options.cursor) {
+    const tuple = decodeFixtureCursor(options.cursor);
+    if (tuple) {
+      const foundIdx = allFixtures.findIndex((f) => f.id === tuple.id);
+      if (foundIdx >= 0) {
+        startIndex = foundIdx + 1;
+      }
+    } else {
+      const rawIdx = allFixtures.findIndex((f) => f.id === options.cursor);
+      if (rawIdx >= 0) {
+        startIndex = rawIdx + 1;
+      }
+    }
+  }
+  const pagedFixtures = allFixtures.slice(startIndex, startIndex + limit);
+  const hasMore = startIndex + limit < allFixtures.length;
+  const nextCursor = hasMore && pagedFixtures.length > 0 ? encodeFixtureCursor(pagedFixtures[pagedFixtures.length - 1]) : void 0;
+  return {
+    fixtures: pagedFixtures,
+    total,
+    hasMore,
+    nextCursor,
+    limit,
+    source: snapshotRes.source,
+    degraded: snapshotRes.source === "redis_stale",
+    stale: snapshotRes.source === "redis_stale",
+    generatedAt: snapshotRes.generatedAt
+  };
+}
+async function invalidateClubReadModels(seasonId = "season-2026-27") {
+  await invalidateDataset(ReadModelKeys.clubsWithOwners(seasonId));
+  for (const l of SEED_LEAGUES) {
+    await invalidateDataset(ReadModelKeys.leagueClubs(l.id, seasonId));
+  }
+  await invalidateDataset(ReadModelKeys.adminFixtures(seasonId));
+}
+async function invalidateFixtureReadModels(competitionId, seasonId = "season-2026-27") {
+  await invalidateDataset(ReadModelKeys.adminFixtures(seasonId));
+  if (competitionId) {
+    await invalidateDataset(ReadModelKeys.competitionFixtures(competitionId, seasonId));
+    await invalidateDataset(ReadModelKeys.standings(competitionId, seasonId));
+  }
+}
+async function invalidateStandingsReadModels(competitionId, seasonId = "season-2026-27") {
+  await invalidateDataset(ReadModelKeys.standings(competitionId, seasonId));
+}
+async function invalidateUserMembershipReadModel(userId, seasonId = "season-2026-27") {
+  await invalidateDataset(ReadModelKeys.userMembership(userId, seasonId));
+}
+async function rebuildAllReadModels(seasonId = "season-2026-27") {
+  const warmedLkgKeys = [];
+  const errors = [];
+  const standingsPerLeague = {};
+  let compCount = 0;
+  try {
+    const compSnap = await buildCompetitionsSnapshot(seasonId);
+    compCount = compSnap.data.length;
+    warmedLkgKeys.push(getLkgKey(ReadModelKeys.competitions(seasonId)));
+  } catch (err) {
+    errors.push(`Competitions rebuild error: ${err.message}`);
+  }
+  let clubCount = 0;
+  try {
+    const clubSnap = await buildClubsSnapshot(seasonId);
+    clubCount = clubSnap.data.length;
+    warmedLkgKeys.push(getLkgKey(ReadModelKeys.clubsWithOwners(seasonId)));
+    for (const l of SEED_LEAGUES) {
+      warmedLkgKeys.push(getLkgKey(ReadModelKeys.leagueClubs(l.id, seasonId)));
+    }
+  } catch (err) {
+    errors.push(`Clubs rebuild error: ${err.message}`);
+  }
+  let fixtureCount = 0;
+  try {
+    const fixSnap = await buildAdminFixturesSnapshot(seasonId);
+    fixtureCount = fixSnap.data.length;
+    warmedLkgKeys.push(getLkgKey(ReadModelKeys.adminFixtures(seasonId)));
+    const uniqueCompIds = Array.from(new Set(fixSnap.data.map((f) => f.competitionId)));
+    for (const cId of uniqueCompIds) {
+      warmedLkgKeys.push(getLkgKey(ReadModelKeys.competitionFixtures(cId, seasonId)));
+    }
+  } catch (err) {
+    errors.push(`Fixtures rebuild error: ${err.message}`);
+  }
+  let standingsCount = 0;
+  for (const cId of Object.keys(DOMESTIC_LEAGUE_CONFIG)) {
+    try {
+      const stdSnap = await buildStandingsSnapshot(cId, seasonId);
+      standingsCount += stdSnap.data.length;
+      standingsPerLeague[DOMESTIC_LEAGUE_CONFIG[cId].name] = stdSnap.data.length;
+      warmedLkgKeys.push(getLkgKey(ReadModelKeys.standings(cId, seasonId)));
+    } catch (err) {
+      errors.push(`Standings rebuild error for ${cId}: ${err.message}`);
+    }
+  }
+  let membershipCount = 0;
+  try {
+    const db = getFirestoreDb();
+    if (db) {
+      const occSnap = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where("seasonId", "==", seasonId).where("status", "==", "active").get();
+      for (const occDoc of occSnap.docs) {
+        const occ = occDoc.data();
+        if (occ.userId && occ.clubId) {
+          const clubSeed = SEED_CLUBS.find((c) => c.id === occ.clubId);
+          const membershipData = {
+            hasClub: true,
+            clubId: occ.clubId,
+            club: clubSeed ? enrichClubForUser(clubSeed, occ.userId) : null
+          };
+          const memKey = ReadModelKeys.userMembership(occ.userId, seasonId);
+          const memSnap = {
+            schemaVersion: SCHEMA_VERSION,
+            generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+            sourceVersion: `occupancy-${occDoc.id}`,
+            expectedCount: 1,
+            actualCount: 1,
+            data: membershipData
+          };
+          await redisSetRaw(memKey, memSnap, 86400);
+          warmedLkgKeys.push(getLkgKey(memKey));
+          membershipCount++;
+        }
+      }
+    }
+  } catch (err) {
+    errors.push(`User memberships rebuild error: ${err.message}`);
+  }
+  return {
+    success: errors.length === 0,
+    generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    warmedLkgKeys,
+    warmedKeys: warmedLkgKeys,
+    counts: {
+      competitions: compCount,
+      clubs: clubCount,
+      fixtures: fixtureCount,
+      standings: standingsCount,
+      userMemberships: membershipCount,
+      standingsPerLeague
+    },
+    errors: errors.length > 0 ? errors : void 0
+  };
+}
+async function getReadModelHealthStatus(seasonId = "season-2026-27") {
+  const cb = firestoreCircuitBreaker.getStatus();
+  let redisState = "IN_MEMORY_FALLBACK";
+  const client = getUpstashClient();
+  if (client) {
+    try {
+      const ping = await client.ping();
+      redisState = ping === "PONG" || ping ? "CONNECTED" : "ERROR";
+    } catch {
+      redisState = "ERROR";
+    }
+  }
+  const coreDatasetDefinitions = [
+    { name: "competitions", rawKey: ReadModelKeys.competitions(seasonId), expectedCount: 17 },
+    { name: "clubs-with-owners", rawKey: ReadModelKeys.clubsWithOwners(seasonId), expectedCount: 96 },
+    { name: "admin-fixtures", rawKey: ReadModelKeys.adminFixtures(seasonId), expectedCount: 0 },
+    ...SEED_LEAGUES.map((l) => ({
+      name: `league-${l.id}-clubs`,
+      rawKey: ReadModelKeys.leagueClubs(l.id, seasonId),
+      expectedCount: l.id.includes("bundesliga") || l.id.includes("ligue-1") ? 18 : 20
+    })),
+    ...Object.entries(DOMESTIC_LEAGUE_CONFIG).map(([compId, conf]) => ({
+      name: `standings-${conf.name}`,
+      rawKey: ReadModelKeys.standings(compId, seasonId),
+      expectedCount: conf.expectedCount
+    }))
+  ];
+  const freshKeys = [];
+  const lkgKeys = [];
+  const dirtyKeys = [];
+  const missingKeys = [];
+  const coreDatasets = {};
+  let newestSnapshotTime = globalLastSnapshotAt;
+  for (const def of coreDatasetDefinitions) {
+    const cleanKey = getRawDatasetKey(def.rawKey);
+    const fresh = await redisGetFresh(cleanKey);
+    const lkg = await redisGetLkg(cleanKey);
+    const isDirty = await redisIsDirty(cleanKey);
+    const hasFresh = Boolean(fresh && fresh.data !== void 0);
+    const hasLkg = Boolean(lkg && lkg.data !== void 0);
+    if (hasFresh) freshKeys.push(getFreshKey(cleanKey));
+    if (hasLkg) lkgKeys.push(getLkgKey(cleanKey));
+    if (isDirty) dirtyKeys.push(getDirtyKey(cleanKey));
+    if (!hasFresh && !hasLkg) missingKeys.push(cleanKey);
+    const snap = fresh || lkg;
+    if (snap?.generatedAt) {
+      if (!newestSnapshotTime || new Date(snap.generatedAt) > new Date(newestSnapshotTime)) {
+        newestSnapshotTime = snap.generatedAt;
+      }
+    }
+    const snapTimestamp = snap?.generatedAt || null;
+    const snapAge = snapTimestamp ? Math.floor((Date.now() - new Date(snapTimestamp).getTime()) / 1e3) : null;
+    const actualCount = snap?.actualCount ?? 0;
+    let status = "MISSING";
+    if (hasFresh && !isDirty) {
+      status = "FRESH";
+    } else if (isDirty) {
+      status = "DIRTY";
+    } else if (hasLkg) {
+      status = "LKG_STALE";
+    }
+    coreDatasets[def.name] = {
+      key: cleanKey,
+      expectedCount: def.expectedCount,
+      actualCount,
+      snapshotTimestamp: snapTimestamp,
+      snapshotAgeSeconds: snapAge,
+      hasFresh,
+      hasLkg,
+      isDirty,
+      status
+    };
+  }
+  const now = Date.now();
+  const snapshotAgeSeconds = newestSnapshotTime ? Math.floor((now - new Date(newestSnapshotTime).getTime()) / 1e3) : null;
+  return {
+    firestoreState: cb.state,
+    redisState,
+    circuitBreakerState: {
+      state: cb.state,
+      consecutiveFailures: cb.consecutiveFailures,
+      resourceExhaustedCount: cb.resourceExhaustedCount,
+      lastFailureTime: cb.lastFailureTime,
+      lastError: cb.lastError
+    },
+    lastSnapshotAt: newestSnapshotTime,
+    snapshotAgeSeconds,
+    freshKeys,
+    lkgKeys,
+    dirtyKeys,
+    missingKeys,
+    "fresh keys": freshKeys,
+    "lkg keys": lkgKeys,
+    "dirty keys": dirtyKeys,
+    "missing keys": missingKeys,
+    warmedKeys: lkgKeys,
+    coreDatasets
+  };
+}
+var SCHEMA_VERSION, KEY_PREFIX, ReadModelNotWarmedError, DOMESTIC_LEAGUE_CONFIG, CANONICAL_COMPETITION_ORDER, ReadModelKeys, upstashClient, isUpstashConfigured, memoryRedisStorage, inProcessMemoryCache, PROCESS_MEMORY_TTL_MS, inFlightLoaders, globalLastSnapshotAt;
+var init_readModelStore = __esm({
+  "src/server/readModel/readModelStore.ts"() {
+    init_circuitBreaker();
+    init_admin();
+    init_collections();
+    init_seed();
+    SCHEMA_VERSION = "v1";
+    KEY_PREFIX = `efluz:${SCHEMA_VERSION}`;
+    ReadModelNotWarmedError = class extends Error {
+      constructor(message = "Read model is not warmed and authoritative database is temporarily unreachable.") {
+        super(message);
+        this.errorCode = "READ_MODEL_NOT_WARMED";
+        this.statusCode = 503;
+        this.status = 503;
+        this.name = "ReadModelNotWarmedError";
+      }
+    };
+    DOMESTIC_LEAGUE_CONFIG = {
+      "comp-premier-league-2026": { leagueId: "league-premier-league", expectedCount: 20, name: "Premier League" },
+      "comp-la-liga-2026": { leagueId: "league-la-liga", expectedCount: 20, name: "La Liga" },
+      "comp-serie-a-2026": { leagueId: "league-serie-a", expectedCount: 20, name: "Serie A" },
+      "comp-bundesliga-2026": { leagueId: "league-bundesliga", expectedCount: 18, name: "Bundesliga" },
+      "comp-ligue-1-2026": { leagueId: "league-ligue-1", expectedCount: 18, name: "Ligue 1" }
+    };
+    CANONICAL_COMPETITION_ORDER = {
+      "comp-premier-league-2026": 1,
+      "comp-la-liga-2026": 2,
+      "comp-serie-a-2026": 3,
+      "comp-bundesliga-2026": 4,
+      "comp-ligue-1-2026": 5,
+      "comp-fa-cup-2026": 6,
+      "comp-copa-del-rey-2026": 7,
+      "comp-coppa-italia-2026": 8,
+      "comp-dfb-pokal-2026": 9,
+      "comp-coupe-de-france-2026": 10,
+      "comp-community-shield-2026": 11,
+      "comp-supercopa-espana-2026": 12,
+      "comp-supercoppa-italiana-2026": 13,
+      "comp-dfl-supercup-2026": 14,
+      "comp-champions-league-2026": 15,
+      "comp-europa-league-2026": 16,
+      "comp-uefa-super-cup-2026": 17
+    };
+    ReadModelKeys = {
+      competitions: (seasonId = "season-2026-27") => `${KEY_PREFIX}:season:${seasonId}:competitions`,
+      clubsWithOwners: (seasonId = "season-2026-27") => `${KEY_PREFIX}:season:${seasonId}:clubs-with-owners`,
+      leagueClubs: (leagueId, seasonId = "season-2026-27") => `${KEY_PREFIX}:season:${seasonId}:league:${leagueId}:clubs`,
+      standings: (competitionId, seasonId = "season-2026-27") => `${KEY_PREFIX}:season:${seasonId}:competition:${competitionId}:standings`,
+      competitionFixtures: (competitionId, seasonId = "season-2026-27") => `${KEY_PREFIX}:season:${seasonId}:competition:${competitionId}:fixtures`,
+      adminFixtures: (seasonId = "season-2026-27") => `${KEY_PREFIX}:season:${seasonId}:admin:fixtures`,
+      userMembership: (userId, seasonId = "season-2026-27") => `${KEY_PREFIX}:season:${seasonId}:user:${userId}:membership`
+    };
+    upstashClient = null;
+    isUpstashConfigured = false;
+    memoryRedisStorage = /* @__PURE__ */ new Map();
+    inProcessMemoryCache = /* @__PURE__ */ new Map();
+    PROCESS_MEMORY_TTL_MS = 15e3;
+    inFlightLoaders = /* @__PURE__ */ new Map();
+    globalLastSnapshotAt = null;
   }
 });
 
@@ -2652,6 +4157,984 @@ var init_adminService = __esm({
   }
 });
 
+// src/server/tournament/domesticCupService.ts
+var domesticCupService_exports = {};
+__export(domesticCupService_exports, {
+  DOMESTIC_CUPS: () => DOMESTIC_CUPS,
+  advanceDomesticCupWinnerSafe: () => advanceDomesticCupWinnerSafe,
+  generateDomesticCupBracketSafe: () => generateDomesticCupBracketSafe,
+  getDomesticCupDetails: () => getDomesticCupDetails,
+  isDomesticCup: () => isDomesticCup,
+  previewDomesticCupBracket: () => previewDomesticCupBracket,
+  validateDomesticCupId: () => validateDomesticCupId
+});
+function isDomesticCup(competitionId) {
+  if (competitionId.toLowerCase().includes("efl-cup") || competitionId.toLowerCase().includes("carabao")) {
+    return false;
+  }
+  return Boolean(DOMESTIC_CUPS[competitionId]);
+}
+function validateDomesticCupId(competitionId) {
+  if (competitionId.toLowerCase().includes("efl-cup") || competitionId.toLowerCase().includes("carabao")) {
+    throw new Error("EFL Cup is strictly excluded from domestic cup administration.");
+  }
+  const cup = DOMESTIC_CUPS[competitionId];
+  if (!cup) {
+    throw new Error(`Invalid domestic cup ID '${competitionId}'. Must be one of: ${Object.keys(DOMESTIC_CUPS).join(", ")}`);
+  }
+  return cup;
+}
+async function getDomesticCupDetails(competitionId, seasonId = "season-2026-27") {
+  const cupConfig = validateDomesticCupId(competitionId);
+  const cacheKey = `cup:bracket:${competitionId}:${seasonId}`;
+  const rawLkg = await redisGetRaw(cacheKey);
+  if (rawLkg?.data && (!firestoreCircuitBreaker.canExecute() || rawLkg.data.rounds?.length > 0)) {
+    if (!firestoreCircuitBreaker.canExecute()) {
+      return {
+        ...rawLkg.data,
+        source: "redis-lkg",
+        degraded: true
+      };
+    }
+  }
+  try {
+    const db = getFirestoreDb();
+    const [compDoc, partSnap, fixSnap, occSnap] = await Promise.all([
+      db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get(),
+      db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where("competitionId", "==", competitionId).get(),
+      db.collection(COLLECTIONS.FIXTURES).where("competitionId", "==", competitionId).get(),
+      db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where("seasonId", "==", seasonId).get()
+    ]);
+    const compData = compDoc.exists ? compDoc.data() : null;
+    const occupancyUserMap = /* @__PURE__ */ new Map();
+    for (const d of occSnap.docs) {
+      const occ = d.data();
+      if (occ.clubId && occ.userId) {
+        occupancyUserMap.set(occ.clubId, occ.userId);
+      }
+    }
+    const clubsMap = new Map(SEED_CLUBS.map((c) => [c.id, c]));
+    const participants = [];
+    if (!partSnap.empty) {
+      for (const d of partSnap.docs) {
+        const part = d.data();
+        const club = clubsMap.get(part.clubId);
+        participants.push({
+          clubId: part.clubId,
+          clubName: club?.name || part.clubId,
+          badgeUrl: club?.logoUrl,
+          seedNumber: part.seedNumber,
+          ownerUserId: part.ownerUserId || occupancyUserMap.get(part.clubId)
+        });
+      }
+    } else {
+      const leagueClubs = SEED_CLUBS.filter((c) => c.leagueId === cupConfig.leagueId);
+      for (const c of leagueClubs) {
+        participants.push({
+          clubId: c.id,
+          clubName: c.name,
+          badgeUrl: c.logoUrl,
+          ownerUserId: occupancyUserMap.get(c.id)
+        });
+      }
+    }
+    const fixtures = fixSnap.docs.map((d) => d.data());
+    const roundMap = /* @__PURE__ */ new Map();
+    const getRoundTitle = (md, totalRounds) => {
+      if (md === totalRounds) return "Final";
+      if (md === totalRounds - 1) return "Semi-Finals";
+      if (md === totalRounds - 2) return "Quarter-Finals";
+      if (md === totalRounds - 3) return "Round of 16";
+      return `Round ${md}`;
+    };
+    const maxMatchday = Math.max(1, ...fixtures.map((f) => f.matchday || 1));
+    for (const f of fixtures) {
+      const md = f.matchday || 1;
+      const rawHomeId = f.homeClubId;
+      const rawAwayId = f.awayClubId;
+      const homeClubId = !rawHomeId || rawHomeId === "TBD" ? null : rawHomeId;
+      const awayClubId = !rawAwayId || rawAwayId === "TBD" ? null : rawAwayId;
+      const homeClub = homeClubId ? clubsMap.get(homeClubId) : null;
+      const awayClub = awayClubId ? clubsMap.get(awayClubId) : null;
+      const winnerClub = f.winnerClubId ? clubsMap.get(f.winnerClubId) : null;
+      const node = {
+        id: f.id,
+        fixtureId: f.id,
+        matchday: md,
+        roundName: f.roundName || getRoundTitle(md, maxMatchday),
+        homeClubId,
+        homeClubName: homeClub?.name || "TBD",
+        homeClubBadge: homeClub?.logoUrl,
+        awayClubId,
+        awayClubName: awayClub?.name || "TBD",
+        awayClubBadge: awayClub?.logoUrl,
+        status: f.status,
+        homeScore: f.homeScore,
+        awayScore: f.awayScore,
+        homePenaltyScore: f.homePenaltyScore ?? null,
+        awayPenaltyScore: f.awayPenaltyScore ?? null,
+        winnerClubId: f.winnerClubId,
+        winnerClubName: winnerClub?.name,
+        scheduledAt: f.scheduledAt,
+        resultConfirmedAt: f.resultConfirmedAt || null,
+        sourceFixtureId: f.sourceFixtureId || null,
+        sourceWinnerSlot: f.sourceWinnerSlot || null,
+        homeSourceFixtureId: f.homeSourceFixtureId || null,
+        awaySourceFixtureId: f.awaySourceFixtureId || null,
+        homeSourceWinnerSlot: f.homeSourceWinnerSlot || null,
+        awaySourceWinnerSlot: f.awaySourceWinnerSlot || null
+      };
+      if (!roundMap.has(md)) {
+        roundMap.set(md, []);
+      }
+      roundMap.get(md).push(node);
+    }
+    const rounds = Array.from(roundMap.entries()).sort(([a], [b]) => a - b).map(([roundNumber, matches]) => {
+      const sortedMatches = matches.sort((a, b) => a.fixtureId.localeCompare(b.fixtureId));
+      const completedCount2 = sortedMatches.filter((m) => m.status === "CONFIRMED").length;
+      return {
+        roundNumber,
+        roundName: sortedMatches[0]?.roundName || `Round ${roundNumber}`,
+        matches: sortedMatches,
+        fixtures: sortedMatches,
+        matchesCount: sortedMatches.length,
+        totalMatches: sortedMatches.length,
+        completedCount: completedCount2,
+        completedMatches: completedCount2
+      };
+    });
+    const completedCount = fixtures.filter((f) => f.status === "CONFIRMED").length;
+    const bracketStatus = fixtures.length === 0 ? "NOT_GENERATED" : completedCount === fixtures.length ? "COMPLETED" : "IN_PROGRESS";
+    const result = {
+      competition: {
+        id: competitionId,
+        name: compData?.name || cupConfig.name,
+        type: compData?.type || "KNOCKOUT",
+        seasonId: compData?.seasonId || seasonId,
+        status: compData?.status || "active",
+        hasFixtures: fixtures.length > 0,
+        fixtureCount: fixtures.length,
+        fixturesCount: fixtures.length,
+        currentMatchday: compData?.currentMatchday || 1,
+        isMatchdayOpen: compData?.isMatchdayOpen ?? true,
+        nextMatchdayOpenAt: compData?.nextMatchdayOpenAt,
+        matchdayOverrideStatus: compData?.adminOverrideStatus
+      },
+      totalTeams: participants.length,
+      totalParticipants: participants.length,
+      participantsCount: participants.length,
+      expectedTeams: cupConfig.expectedTeams,
+      participants,
+      rounds,
+      fixturesCount: fixtures.length,
+      totalFixtures: fixtures.length,
+      completedFixturesCount: completedCount,
+      completedFixtures: completedCount,
+      totalMatches: fixtures.length,
+      completedMatches: completedCount,
+      bracketStatus,
+      currentRound: compData?.currentMatchday || 1,
+      currentRoundName: rounds.find((r) => r.roundNumber === (compData?.currentMatchday || 1))?.roundName || "Round 1",
+      isMatchdayLocked: !(compData?.isMatchdayOpen ?? true),
+      source: "firestore",
+      degraded: false
+    };
+    await redisSetRaw(
+      cacheKey,
+      {
+        data: result,
+        schemaVersion: SCHEMA_VERSION,
+        sourceVersion: "firestore-authoritative",
+        expectedCount: result.rounds.length
+      },
+      86400
+    );
+    return result;
+  } catch (err) {
+    firestoreCircuitBreaker.recordFailure(err);
+    const compRow = queryGet("SELECT * FROM competitions WHERE id = ?", [competitionId]);
+    const fixRows = queryAll(
+      "SELECT * FROM fixtures WHERE competition_id = ? ORDER BY matchday ASC, id ASC",
+      [competitionId]
+    );
+    const clubsMap = new Map(SEED_CLUBS.map((c) => [c.id, c]));
+    const roundMap = /* @__PURE__ */ new Map();
+    for (const f of fixRows) {
+      const md = f.matchday || 1;
+      const rawHomeId = f.home_club_id;
+      const rawAwayId = f.away_club_id;
+      const homeClubId = !rawHomeId || rawHomeId === "TBD" ? null : rawHomeId;
+      const awayClubId = !rawAwayId || rawAwayId === "TBD" ? null : rawAwayId;
+      const homeClub = homeClubId ? clubsMap.get(homeClubId) : null;
+      const awayClub = awayClubId ? clubsMap.get(awayClubId) : null;
+      const winnerClub = f.winner_club_id ? clubsMap.get(f.winner_club_id) : null;
+      const node = {
+        id: f.id,
+        fixtureId: f.id,
+        matchday: md,
+        roundName: f.round_name || `Round ${md}`,
+        homeClubId,
+        homeClubName: homeClub?.name || "TBD",
+        homeClubBadge: homeClub?.logoUrl,
+        awayClubId,
+        awayClubName: awayClub?.name || "TBD",
+        awayClubBadge: awayClub?.logoUrl,
+        status: f.status,
+        homeScore: f.home_score,
+        awayScore: f.away_score,
+        homePenaltyScore: f.home_penalty_score ?? null,
+        awayPenaltyScore: f.away_penalty_score ?? null,
+        winnerClubId: f.winner_club_id,
+        winnerClubName: winnerClub?.name,
+        scheduledAt: f.scheduled_at,
+        resultConfirmedAt: f.result_confirmed_at,
+        sourceFixtureId: f.source_fixture_id || null,
+        sourceWinnerSlot: f.source_winner_slot || null
+      };
+      if (!roundMap.has(md)) roundMap.set(md, []);
+      roundMap.get(md).push(node);
+    }
+    const rounds = Array.from(roundMap.entries()).sort(([a], [b]) => a - b).map(([roundNumber, matches]) => {
+      const sorted = matches.sort((a, b) => a.fixtureId.localeCompare(b.fixtureId));
+      const completed = sorted.filter((m) => m.status === "CONFIRMED").length;
+      return {
+        roundNumber,
+        roundName: sorted[0]?.roundName || `Round ${roundNumber}`,
+        matches: sorted,
+        fixtures: sorted,
+        matchesCount: sorted.length,
+        totalMatches: sorted.length,
+        completedCount: completed,
+        completedMatches: completed
+      };
+    });
+    const completedCount = fixRows.filter((f) => f.status === "CONFIRMED").length;
+    const bracketStatus = fixRows.length === 0 ? "NOT_GENERATED" : completedCount === fixRows.length ? "COMPLETED" : "IN_PROGRESS";
+    return {
+      competition: {
+        id: competitionId,
+        name: compRow?.name || cupConfig.name,
+        type: compRow?.type || "KNOCKOUT",
+        seasonId: compRow?.season_id || seasonId,
+        status: compRow?.status || "active",
+        hasFixtures: fixRows.length > 0,
+        fixtureCount: fixRows.length,
+        fixturesCount: fixRows.length,
+        currentMatchday: compRow?.current_matchday || 1,
+        isMatchdayOpen: Boolean(compRow?.is_matchday_open ?? 1),
+        nextMatchdayOpenAt: compRow?.next_matchday_open_at,
+        matchdayOverrideStatus: compRow?.matchday_override_status
+      },
+      totalTeams: cupConfig.expectedTeams,
+      totalParticipants: cupConfig.expectedTeams,
+      participantsCount: cupConfig.expectedTeams,
+      expectedTeams: cupConfig.expectedTeams,
+      participants: SEED_CLUBS.filter((c) => c.leagueId === cupConfig.leagueId).map((c) => ({
+        clubId: c.id,
+        clubName: c.name,
+        badgeUrl: c.logoUrl
+      })),
+      rounds,
+      fixturesCount: fixRows.length,
+      totalFixtures: fixRows.length,
+      completedFixturesCount: completedCount,
+      completedFixtures: completedCount,
+      totalMatches: fixRows.length,
+      completedMatches: completedCount,
+      bracketStatus,
+      currentRound: compRow?.current_matchday || 1,
+      currentRoundName: rounds.find((r) => r.roundNumber === (compRow?.current_matchday || 1))?.roundName || "Round 1",
+      isMatchdayLocked: !Boolean(compRow?.is_matchday_open ?? 1),
+      source: "sqlite",
+      degraded: true
+    };
+  }
+}
+async function previewDomesticCupBracket(competitionId, seasonId = "season-2026-27") {
+  const cupConfig = validateDomesticCupId(competitionId);
+  const db = getFirestoreDb();
+  const existingFixSnap = await db.collection(COLLECTIONS.FIXTURES).where("competitionId", "==", competitionId).get();
+  const existingCount = existingFixSnap.size;
+  const leagueClubs = SEED_CLUBS.filter((c) => c.leagueId === cupConfig.leagueId).sort(
+    (a, b) => a.name.localeCompare(b.name)
+  );
+  const clubIds = leagueClubs.map((c) => c.id);
+  const totalTeams = clubIds.length;
+  const prelimMatches = totalTeams > 16 ? totalTeams - 16 : 0;
+  const byeTeamsCount = totalTeams - prelimMatches * 2;
+  const pureByeMatches = totalTeams > 16 ? (byeTeamsCount - prelimMatches) / 2 : 8;
+  const totalRounds = totalTeams > 16 ? 5 : 4;
+  const previewMatches = [];
+  const roundsStructured = [];
+  if (totalTeams > 16) {
+    const r1Matches = [];
+    for (let i = 0; i < prelimMatches; i++) {
+      const homeClub = leagueClubs[byeTeamsCount + i * 2];
+      const awayClub = leagueClubs[byeTeamsCount + i * 2 + 1];
+      const m = {
+        roundNumber: 1,
+        roundName: "Preliminary Round",
+        matchIndex: i,
+        fixtureId: `fix-${competitionId}-r1-m${i}`,
+        homeClubId: homeClub?.id || null,
+        homeClubName: homeClub?.name || "TBD",
+        awayClubId: awayClub?.id || null,
+        awayClubName: awayClub?.name || "TBD",
+        homeClub: homeClub ? { id: homeClub.id, name: homeClub.name } : null,
+        awayClub: awayClub ? { id: awayClub.id, name: awayClub.name } : null,
+        sourceFixtureId: null,
+        sourceWinnerSlot: null,
+        homeSourceFixtureId: null,
+        awaySourceFixtureId: null,
+        homeSourceWinnerSlot: null,
+        awaySourceWinnerSlot: null
+      };
+      previewMatches.push(m);
+      r1Matches.push(m);
+    }
+    roundsStructured.push({
+      roundNumber: 1,
+      roundName: "Preliminary Round",
+      matchesCount: r1Matches.length,
+      totalMatches: r1Matches.length,
+      pairings: r1Matches.map((m) => ({
+        homeClub: m.homeClub || { id: null, name: m.homeClubName },
+        awayClub: m.awayClub || { id: null, name: m.awayClubName },
+        fixtureId: m.fixtureId
+      })),
+      matches: r1Matches
+    });
+    const r2Matches = [];
+    for (let i = 0; i < 8; i++) {
+      let homeId = null;
+      let homeName = "TBD";
+      let awayId = null;
+      let awayName = "TBD";
+      let homeClubObj = null;
+      let awayClubObj = null;
+      let sourceFixtureId = null;
+      let sourceWinnerSlot = null;
+      let homeSourceFixtureId = null;
+      let awaySourceFixtureId = null;
+      let homeSourceWinnerSlot = null;
+      let awaySourceWinnerSlot = null;
+      if (i < pureByeMatches) {
+        const homeClub = leagueClubs[i * 2];
+        const awayClub = leagueClubs[i * 2 + 1];
+        homeId = homeClub?.id || null;
+        homeName = homeClub?.name || "TBD";
+        awayId = awayClub?.id || null;
+        awayName = awayClub?.name || "TBD";
+        homeClubObj = homeClub ? { id: homeClub.id, name: homeClub.name } : null;
+        awayClubObj = awayClub ? { id: awayClub.id, name: awayClub.name } : null;
+      } else {
+        const k = i - pureByeMatches;
+        const byeClub = leagueClubs[pureByeMatches * 2 + k];
+        const srcFixId = `fix-${competitionId}-r1-m${k}`;
+        homeId = byeClub?.id || null;
+        homeName = byeClub?.name || "TBD";
+        awayId = null;
+        awayName = `Winner R1-M${k}`;
+        homeClubObj = byeClub ? { id: byeClub.id, name: byeClub.name } : null;
+        awayClubObj = null;
+        sourceFixtureId = srcFixId;
+        sourceWinnerSlot = "away";
+        awaySourceFixtureId = srcFixId;
+        awaySourceWinnerSlot = "away";
+      }
+      const m = {
+        roundNumber: 2,
+        roundName: "Round of 16",
+        matchIndex: i,
+        fixtureId: `fix-${competitionId}-r2-m${i}`,
+        homeClubId: homeId,
+        homeClubName: homeName,
+        awayClubId: awayId,
+        awayClubName: awayName,
+        homeClub: homeClubObj,
+        awayClub: awayClubObj,
+        sourceFixtureId,
+        sourceWinnerSlot,
+        homeSourceFixtureId,
+        awaySourceFixtureId,
+        homeSourceWinnerSlot,
+        awaySourceWinnerSlot
+      };
+      previewMatches.push(m);
+      r2Matches.push(m);
+    }
+    roundsStructured.push({
+      roundNumber: 2,
+      roundName: "Round of 16",
+      matchesCount: r2Matches.length,
+      totalMatches: r2Matches.length,
+      pairings: r2Matches.map((m) => ({
+        homeClub: m.homeClub || { id: null, name: m.homeClubName },
+        awayClub: m.awayClub || { id: null, name: m.awayClubName },
+        fixtureId: m.fixtureId
+      })),
+      matches: r2Matches
+    });
+    const r3Matches = [];
+    for (let mIdx = 0; mIdx < 4; mIdx++) {
+      const homeSource = `fix-${competitionId}-r2-m${mIdx * 2}`;
+      const awaySource = `fix-${competitionId}-r2-m${mIdx * 2 + 1}`;
+      const m = {
+        roundNumber: 3,
+        roundName: "Quarter-Finals",
+        matchIndex: mIdx,
+        fixtureId: `fix-${competitionId}-r3-m${mIdx}`,
+        homeClubId: null,
+        homeClubName: `Winner R2-M${mIdx * 2}`,
+        awayClubId: null,
+        awayClubName: `Winner R2-M${mIdx * 2 + 1}`,
+        homeClub: null,
+        awayClub: null,
+        sourceFixtureId: homeSource,
+        sourceWinnerSlot: "home",
+        homeSourceFixtureId: homeSource,
+        awaySourceFixtureId: awaySource,
+        homeSourceWinnerSlot: "home",
+        awaySourceWinnerSlot: "away"
+      };
+      previewMatches.push(m);
+      r3Matches.push(m);
+    }
+    roundsStructured.push({
+      roundNumber: 3,
+      roundName: "Quarter-Finals",
+      matchesCount: r3Matches.length,
+      totalMatches: r3Matches.length,
+      pairings: r3Matches.map((m) => ({
+        homeClub: m.homeClub || { id: null, name: m.homeClubName },
+        awayClub: m.awayClub || { id: null, name: m.awayClubName },
+        fixtureId: m.fixtureId
+      })),
+      matches: r3Matches
+    });
+    const r4Matches = [];
+    for (let mIdx = 0; mIdx < 2; mIdx++) {
+      const homeSource = `fix-${competitionId}-r3-m${mIdx * 2}`;
+      const awaySource = `fix-${competitionId}-r3-m${mIdx * 2 + 1}`;
+      const m = {
+        roundNumber: 4,
+        roundName: "Semi-Finals",
+        matchIndex: mIdx,
+        fixtureId: `fix-${competitionId}-r4-m${mIdx}`,
+        homeClubId: null,
+        homeClubName: `Winner QF-M${mIdx * 2}`,
+        awayClubId: null,
+        awayClubName: `Winner QF-M${mIdx * 2 + 1}`,
+        homeClub: null,
+        awayClub: null,
+        sourceFixtureId: homeSource,
+        sourceWinnerSlot: "home",
+        homeSourceFixtureId: homeSource,
+        awaySourceFixtureId: awaySource,
+        homeSourceWinnerSlot: "home",
+        awaySourceWinnerSlot: "away"
+      };
+      previewMatches.push(m);
+      r4Matches.push(m);
+    }
+    roundsStructured.push({
+      roundNumber: 4,
+      roundName: "Semi-Finals",
+      matchesCount: r4Matches.length,
+      totalMatches: r4Matches.length,
+      pairings: r4Matches.map((m) => ({
+        homeClub: m.homeClub || { id: null, name: m.homeClubName },
+        awayClub: m.awayClub || { id: null, name: m.awayClubName },
+        fixtureId: m.fixtureId
+      })),
+      matches: r4Matches
+    });
+    const r5HomeSource = `fix-${competitionId}-r4-m0`;
+    const r5AwaySource = `fix-${competitionId}-r4-m1`;
+    const r5Matches = [
+      {
+        roundNumber: 5,
+        roundName: "Final",
+        matchIndex: 0,
+        fixtureId: `fix-${competitionId}-r5-m0`,
+        homeClubId: null,
+        homeClubName: "Winner SF-M0",
+        awayClubId: null,
+        awayClubName: "Winner SF-M1",
+        homeClub: null,
+        awayClub: null,
+        sourceFixtureId: r5HomeSource,
+        sourceWinnerSlot: "home",
+        homeSourceFixtureId: r5HomeSource,
+        awaySourceFixtureId: r5AwaySource,
+        homeSourceWinnerSlot: "home",
+        awaySourceWinnerSlot: "away"
+      }
+    ];
+    previewMatches.push(r5Matches[0]);
+    roundsStructured.push({
+      roundNumber: 5,
+      roundName: "Final",
+      matchesCount: 1,
+      totalMatches: 1,
+      pairings: r5Matches.map((m) => ({
+        homeClub: m.homeClub || { id: null, name: m.homeClubName },
+        awayClub: m.awayClub || { id: null, name: m.awayClubName },
+        fixtureId: m.fixtureId
+      })),
+      matches: r5Matches
+    });
+  } else {
+    const r1Matches = [];
+    for (let i = 0; i < 8; i++) {
+      const homeClub = leagueClubs[i * 2];
+      const awayClub = leagueClubs[i * 2 + 1];
+      const m = {
+        roundNumber: 1,
+        roundName: "Round of 16",
+        matchIndex: i,
+        fixtureId: `fix-${competitionId}-r1-m${i}`,
+        homeClubId: homeClub?.id || null,
+        homeClubName: homeClub?.name || "TBD",
+        awayClubId: awayClub?.id || null,
+        awayClubName: awayClub?.name || "TBD",
+        homeClub: homeClub ? { id: homeClub.id, name: homeClub.name } : null,
+        awayClub: awayClub ? { id: awayClub.id, name: awayClub.name } : null,
+        sourceFixtureId: null,
+        sourceWinnerSlot: null,
+        homeSourceFixtureId: null,
+        awaySourceFixtureId: null,
+        homeSourceWinnerSlot: null,
+        awaySourceWinnerSlot: null
+      };
+      previewMatches.push(m);
+      r1Matches.push(m);
+    }
+    roundsStructured.push({
+      roundNumber: 1,
+      roundName: "Round of 16",
+      matchesCount: r1Matches.length,
+      totalMatches: r1Matches.length,
+      pairings: r1Matches.map((m) => ({
+        homeClub: m.homeClub || { id: null, name: m.homeClubName },
+        awayClub: m.awayClub || { id: null, name: m.awayClubName },
+        fixtureId: m.fixtureId
+      })),
+      matches: r1Matches
+    });
+    const r2Matches = [];
+    for (let mIdx = 0; mIdx < 4; mIdx++) {
+      const homeSource = `fix-${competitionId}-r1-m${mIdx * 2}`;
+      const awaySource = `fix-${competitionId}-r1-m${mIdx * 2 + 1}`;
+      const m = {
+        roundNumber: 2,
+        roundName: "Quarter-Finals",
+        matchIndex: mIdx,
+        fixtureId: `fix-${competitionId}-r2-m${mIdx}`,
+        homeClubId: null,
+        homeClubName: `Winner R1-M${mIdx * 2}`,
+        awayClubId: null,
+        awayClubName: `Winner R1-M${mIdx * 2 + 1}`,
+        homeClub: null,
+        awayClub: null,
+        sourceFixtureId: homeSource,
+        sourceWinnerSlot: "home",
+        homeSourceFixtureId: homeSource,
+        awaySourceFixtureId: awaySource,
+        homeSourceWinnerSlot: "home",
+        awaySourceWinnerSlot: "away"
+      };
+      previewMatches.push(m);
+      r2Matches.push(m);
+    }
+    roundsStructured.push({
+      roundNumber: 2,
+      roundName: "Quarter-Finals",
+      matchesCount: r2Matches.length,
+      totalMatches: r2Matches.length,
+      pairings: r2Matches.map((m) => ({
+        homeClub: m.homeClub || { id: null, name: m.homeClubName },
+        awayClub: m.awayClub || { id: null, name: m.awayClubName },
+        fixtureId: m.fixtureId
+      })),
+      matches: r2Matches
+    });
+    const r3Matches = [];
+    for (let mIdx = 0; mIdx < 2; mIdx++) {
+      const homeSource = `fix-${competitionId}-r2-m${mIdx * 2}`;
+      const awaySource = `fix-${competitionId}-r2-m${mIdx * 2 + 1}`;
+      const m = {
+        roundNumber: 3,
+        roundName: "Semi-Finals",
+        matchIndex: mIdx,
+        fixtureId: `fix-${competitionId}-r3-m${mIdx}`,
+        homeClubId: null,
+        homeClubName: `Winner QF-M${mIdx * 2}`,
+        awayClubId: null,
+        awayClubName: `Winner QF-M${mIdx * 2 + 1}`,
+        homeClub: null,
+        awayClub: null,
+        sourceFixtureId: homeSource,
+        sourceWinnerSlot: "home",
+        homeSourceFixtureId: homeSource,
+        awaySourceFixtureId: awaySource,
+        homeSourceWinnerSlot: "home",
+        awaySourceWinnerSlot: "away"
+      };
+      previewMatches.push(m);
+      r3Matches.push(m);
+    }
+    roundsStructured.push({
+      roundNumber: 3,
+      roundName: "Semi-Finals",
+      matchesCount: r3Matches.length,
+      totalMatches: r3Matches.length,
+      pairings: r3Matches.map((m) => ({
+        homeClub: m.homeClub || { id: null, name: m.homeClubName },
+        awayClub: m.awayClub || { id: null, name: m.awayClubName },
+        fixtureId: m.fixtureId
+      })),
+      matches: r3Matches
+    });
+    const r4HomeSource = `fix-${competitionId}-r3-m0`;
+    const r4AwaySource = `fix-${competitionId}-r3-m1`;
+    const r4Matches = [
+      {
+        roundNumber: 4,
+        roundName: "Final",
+        matchIndex: 0,
+        fixtureId: `fix-${competitionId}-r4-m0`,
+        homeClubId: null,
+        homeClubName: "Winner SF-M0",
+        awayClubId: null,
+        awayClubName: "Winner SF-M1",
+        homeClub: null,
+        awayClub: null,
+        sourceFixtureId: r4HomeSource,
+        sourceWinnerSlot: "home",
+        homeSourceFixtureId: r4HomeSource,
+        awaySourceFixtureId: r4AwaySource,
+        homeSourceWinnerSlot: "home",
+        awaySourceWinnerSlot: "away"
+      }
+    ];
+    previewMatches.push(r4Matches[0]);
+    roundsStructured.push({
+      roundNumber: 4,
+      roundName: "Final",
+      matchesCount: 1,
+      totalMatches: 1,
+      pairings: r4Matches.map((m) => ({
+        homeClub: m.homeClub || { id: null, name: m.homeClubName },
+        awayClub: m.awayClub || { id: null, name: m.awayClubName },
+        fixtureId: m.fixtureId
+      })),
+      matches: r4Matches
+    });
+  }
+  const canGenerate = existingCount === 0;
+  const blockReason = !canGenerate ? `Competition already has ${existingCount} existing fixtures. Bracket generation is blocked to preserve confirmed results and prevent overwriting production fixtures.` : void 0;
+  return {
+    competitionId,
+    competitionName: cupConfig.name,
+    totalTeams,
+    totalParticipants: totalTeams,
+    prelimMatches,
+    byeTeamsCount,
+    totalRounds,
+    roundsCount: totalRounds,
+    existingFixturesCount: existingCount,
+    canGenerate,
+    blockReason,
+    previewMatches,
+    rounds: roundsStructured
+  };
+}
+async function generateDomesticCupBracketSafe(competitionId, options) {
+  const cupConfig = validateDomesticCupId(competitionId);
+  const seasonId = options.seasonId || "season-2026-27";
+  if (!options.confirmation) {
+    throw new Error("Explicit admin confirmation is required to generate a domestic cup bracket.");
+  }
+  const db = getFirestoreDb();
+  const existingFixSnap = await db.collection(COLLECTIONS.FIXTURES).where("competitionId", "==", competitionId).get();
+  if (!existingFixSnap.empty) {
+    throw new Error(
+      `Precondition Failed: Competition '${cupConfig.name}' already has ${existingFixSnap.size} existing fixtures. Bracket regeneration is blocked to protect match records. Force overwrite is strictly prohibited.`
+    );
+  }
+  const preview = await previewDomesticCupBracket(competitionId, seasonId);
+  if (!preview.canGenerate) {
+    throw new Error(preview.blockReason || "Bracket generation preconditions failed.");
+  }
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const batch = db.batch();
+  for (const m of preview.previewMatches) {
+    const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(m.fixtureId);
+    batch.set(fixRef, {
+      id: m.fixtureId,
+      seasonId,
+      competitionId,
+      competitionName: cupConfig.name,
+      matchday: m.roundNumber,
+      roundName: m.roundName,
+      homeClubId: m.homeClubId ?? null,
+      awayClubId: m.awayClubId ?? null,
+      scheduledAt: now,
+      status: "SCHEDULED",
+      homeScore: null,
+      awayScore: null,
+      winnerClubId: null,
+      resultConfirmedAt: null,
+      sourceFixtureId: m.sourceFixtureId ?? null,
+      sourceWinnerSlot: m.sourceWinnerSlot ?? null,
+      homeSourceFixtureId: m.homeSourceFixtureId ?? null,
+      awaySourceFixtureId: m.awaySourceFixtureId ?? null,
+      homeSourceWinnerSlot: m.homeSourceWinnerSlot ?? null,
+      awaySourceWinnerSlot: m.awaySourceWinnerSlot ?? null,
+      createdAt: now,
+      updatedAt: now
+    });
+    try {
+      queryRun(
+        `INSERT OR REPLACE INTO fixtures (id, season_id, competition_id, matchday, round_name, home_club_id, away_club_id, status, scheduled_at, source_fixture_id, source_winner_slot, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          m.fixtureId,
+          seasonId,
+          competitionId,
+          m.roundNumber,
+          m.roundName,
+          m.homeClubId ?? null,
+          m.awayClubId ?? null,
+          "SCHEDULED",
+          now,
+          m.sourceFixtureId ?? null,
+          m.sourceWinnerSlot ?? null,
+          now,
+          now
+        ]
+      );
+    } catch {
+    }
+  }
+  const compRef = db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId);
+  batch.set(compRef, {
+    status: "active",
+    hasFixtures: true,
+    fixtureCount: preview.previewMatches.length,
+    fixturesCount: preview.previewMatches.length,
+    generationStatus: "generated",
+    updatedAt: now
+  }, { merge: true });
+  await batch.commit();
+  await createAuditLog(
+    options.adminUserId,
+    "CUP_BRACKET_GENERATED",
+    "COMPETITION",
+    competitionId,
+    void 0,
+    {
+      competitionId,
+      competitionName: cupConfig.name,
+      generatedFixtures: preview.previewMatches.length,
+      totalRounds: preview.totalRounds,
+      timestamp: now
+    },
+    void 0,
+    options.adminUsername || "admin",
+    `Generated ${preview.previewMatches.length} safe knockout bracket fixtures for ${cupConfig.name}.`
+  );
+  return {
+    success: true,
+    generated: preview.previewMatches.length,
+    rounds: preview.totalRounds,
+    message: `Safely generated ${preview.previewMatches.length} fixtures for ${cupConfig.name} across ${preview.totalRounds} rounds without overwriting existing data.`
+  };
+}
+async function advanceDomesticCupWinnerSafe(fixtureId, options) {
+  const db = getFirestoreDb();
+  const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
+  const fixDoc = await fixRef.get();
+  if (!fixDoc.exists) {
+    throw new Error(`Fixture '${fixtureId}' not found.`);
+  }
+  const fixture = fixDoc.data();
+  validateDomesticCupId(fixture.competitionId);
+  if (fixture.status !== "CONFIRMED") {
+    throw new Error(`Cannot advance knockout winner: match status is '${fixture.status}'. Must be 'CONFIRMED'.`);
+  }
+  if (!fixture.winnerClubId) {
+    throw new Error("Cannot advance knockout winner: no winnerClubId is recorded for this fixture.");
+  }
+  const winnerClubId = fixture.winnerClubId;
+  const compId = fixture.competitionId;
+  let targetFixtureId = "";
+  let isHomeSlot = true;
+  const r1Match = fixture.id.match(/-r1-m(\d+)$/);
+  const r2Match = fixture.id.match(/-r2-m(\d+)$/);
+  const r3Match = fixture.id.match(/-r3-m(\d+)$/);
+  const r4Match = fixture.id.match(/-r4-m(\d+)$/);
+  const cupConfigEntry = DOMESTIC_CUPS[compId];
+  const expectedTeams = cupConfigEntry?.expectedTeams || (compId.includes("bundesliga") || compId.includes("dfb") || compId.includes("ligue-1") || compId.includes("coupe") ? 18 : 20);
+  const is18Teams = expectedTeams === 18;
+  const is16Teams = expectedTeams === 16;
+  const pureByeMatches = is18Teams ? 6 : 4;
+  if (r1Match) {
+    const idx = parseInt(r1Match[1], 10);
+    if (is16Teams) {
+      targetFixtureId = `fix-${compId}-r2-m${Math.floor(idx / 2)}`;
+      isHomeSlot = idx % 2 === 0;
+    } else {
+      const r16Index = pureByeMatches + idx;
+      targetFixtureId = `fix-${compId}-r2-m${r16Index}`;
+      isHomeSlot = false;
+    }
+  } else if (r2Match) {
+    const idx = parseInt(r2Match[1], 10);
+    targetFixtureId = `fix-${compId}-r3-m${Math.floor(idx / 2)}`;
+    isHomeSlot = idx % 2 === 0;
+  } else if (r3Match) {
+    const idx = parseInt(r3Match[1], 10);
+    if (is16Teams) {
+      targetFixtureId = `fix-${compId}-r4-m0`;
+      isHomeSlot = idx === 0;
+    } else {
+      targetFixtureId = `fix-${compId}-r4-m${Math.floor(idx / 2)}`;
+      isHomeSlot = idx % 2 === 0;
+    }
+  } else if (r4Match) {
+    const idx = parseInt(r4Match[1], 10);
+    if (is16Teams) {
+      return {
+        success: true,
+        advanced: false,
+        message: "This match was the Final. Winner has been crowned champion."
+      };
+    }
+    targetFixtureId = `fix-${compId}-r5-m0`;
+    isHomeSlot = idx === 0;
+  } else {
+    return {
+      success: true,
+      advanced: false,
+      message: "This match was the Final. Winner has been crowned champion."
+    };
+  }
+  const targetRef = db.collection(COLLECTIONS.FIXTURES).doc(targetFixtureId);
+  const targetDoc = await targetRef.get();
+  if (!targetDoc.exists) {
+    throw new Error(`Target round fixture '${targetFixtureId}' does not exist.`);
+  }
+  const targetFixture = targetDoc.data();
+  if (targetFixture.status === "CONFIRMED") {
+    throw new Error(
+      `Cannot advance winner: Target round fixture '${targetFixtureId}' has already been played and CONFIRMED. Overwriting confirmed results is strictly prohibited.`
+    );
+  }
+  const updatePayload = {
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  if (isHomeSlot) {
+    updatePayload.homeClubId = winnerClubId;
+  } else {
+    updatePayload.awayClubId = winnerClubId;
+  }
+  await targetRef.update(updatePayload);
+  try {
+    if (isHomeSlot) {
+      queryRun("UPDATE fixtures SET home_club_id = ?, updated_at = ? WHERE id = ?", [
+        winnerClubId,
+        (/* @__PURE__ */ new Date()).toISOString(),
+        targetFixtureId
+      ]);
+    } else {
+      queryRun("UPDATE fixtures SET away_club_id = ?, updated_at = ? WHERE id = ?", [
+        winnerClubId,
+        (/* @__PURE__ */ new Date()).toISOString(),
+        targetFixtureId
+      ]);
+    }
+  } catch {
+  }
+  const cacheKey = `cup:bracket:${compId}:${fixture.seasonId || "season-2026-27"}`;
+  await redisDelRaw(cacheKey).catch(() => {
+  });
+  await createAuditLog(
+    options.adminUserId,
+    "KNOCKOUT_ROUND_ADVANCED",
+    "FIXTURE",
+    targetFixtureId,
+    void 0,
+    {
+      sourceFixtureId: fixtureId,
+      targetFixtureId,
+      slot: isHomeSlot ? "home" : "away",
+      winnerClubId,
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
+    },
+    void 0,
+    options.adminUsername || "admin",
+    `Advanced winner ${winnerClubId} from ${fixtureId} to ${targetFixtureId} (${isHomeSlot ? "home" : "away"}).`
+  );
+  return {
+    success: true,
+    advanced: true,
+    targetFixtureId,
+    winnerClubId,
+    message: `Advanced ${winnerClubId} to ${targetFixtureId} as ${isHomeSlot ? "Home" : "Away"} club.`
+  };
+}
+var DOMESTIC_CUPS;
+var init_domesticCupService = __esm({
+  "src/server/tournament/domesticCupService.ts"() {
+    init_admin();
+    init_collections();
+    init_adminService();
+    init_readModelStore();
+    init_seed();
+    init_db();
+    init_firestoreStore();
+    DOMESTIC_CUPS = {
+      "comp-fa-cup-2026": {
+        id: "comp-fa-cup-2026",
+        name: "FA Cup",
+        country: "England",
+        leagueId: "league-premier-league",
+        expectedTeams: 20
+      },
+      "comp-copa-del-rey-2026": {
+        id: "comp-copa-del-rey-2026",
+        name: "Copa del Rey",
+        country: "Spain",
+        leagueId: "league-la-liga",
+        expectedTeams: 20
+      },
+      "comp-coppa-italia-2026": {
+        id: "comp-coppa-italia-2026",
+        name: "Coppa Italia",
+        country: "Italy",
+        leagueId: "league-serie-a",
+        expectedTeams: 20
+      },
+      "comp-dfb-pokal-2026": {
+        id: "comp-dfb-pokal-2026",
+        name: "DFB-Pokal",
+        country: "Germany",
+        leagueId: "league-bundesliga",
+        expectedTeams: 18
+      },
+      "comp-coupe-de-france-2026": {
+        id: "comp-coupe-de-france-2026",
+        name: "Coupe de France",
+        country: "France",
+        leagueId: "league-ligue-1",
+        expectedTeams: 18
+      }
+    };
+  }
+});
+
 // src/server/tournament/knockoutEngine.ts
 var knockoutEngine_exports = {};
 __export(knockoutEngine_exports, {
@@ -2712,6 +5195,16 @@ async function generateKnockoutBracket(competitionId, options = {}) {
       return { generated: uclRes.generated, rounds: 5 };
     }
   }
+  if (isDomesticCup(competitionId)) {
+    const { generateDomesticCupBracketSafe: generateDomesticCupBracketSafe2 } = await Promise.resolve().then(() => (init_domesticCupService(), domesticCupService_exports));
+    const res = await generateDomesticCupBracketSafe2(competitionId, {
+      adminUserId: "system",
+      adminUsername: "system",
+      confirmation: true,
+      seasonId: comp.seasonId
+    });
+    return { generated: res.generated, rounds: res.rounds };
+  }
   const now = (/* @__PURE__ */ new Date()).toISOString();
   let totalGenerated = 0;
   let totalRounds = 0;
@@ -2725,8 +5218,8 @@ async function generateKnockoutBracket(competitionId, options = {}) {
     const prelimPairs = Math.ceil(prelimMatches / 2);
     for (let i = 0; i < prelimMatches; i++) {
       const fixtureId = `fix-${competitionId}-r1-m${i}`;
-      const homeClubId = clubIds[byeTeamsCount + i * 2] || "TBD";
-      const awayClubId = clubIds[byeTeamsCount + i * 2 + 1] || "TBD";
+      const homeClubId = clubIds[byeTeamsCount + i * 2] || null;
+      const awayClubId = clubIds[byeTeamsCount + i * 2 + 1] || null;
       const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
       batch.set(fixRef, {
         id: fixtureId,
@@ -2750,12 +5243,12 @@ async function generateKnockoutBracket(competitionId, options = {}) {
     }
     for (let i = 0; i < 8; i++) {
       const fixtureId = `fix-${competitionId}-r2-m${i}`;
-      let homeClubId = "TBD";
-      let awayClubId = "TBD";
+      let homeClubId = null;
+      let awayClubId = null;
       if (i >= prelimPairs) {
         const byeIdx = (i - prelimPairs) * 2;
-        homeClubId = clubIds[byeIdx] || "TBD";
-        awayClubId = clubIds[byeIdx + 1] || "TBD";
+        homeClubId = clubIds[byeIdx] || null;
+        awayClubId = clubIds[byeIdx + 1] || null;
       }
       const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
       batch.set(fixRef, {
@@ -2788,8 +5281,8 @@ async function generateKnockoutBracket(competitionId, options = {}) {
         competitionName: comp.name,
         matchday: 3,
         roundName: "Quarter-Finals",
-        homeClubId: "TBD",
-        awayClubId: "TBD",
+        homeClubId: null,
+        awayClubId: null,
         scheduledAt: now,
         status: "SCHEDULED",
         homeScore: null,
@@ -2811,8 +5304,8 @@ async function generateKnockoutBracket(competitionId, options = {}) {
         competitionName: comp.name,
         matchday: 4,
         roundName: "Semi-Finals",
-        homeClubId: "TBD",
-        awayClubId: "TBD",
+        homeClubId: null,
+        awayClubId: null,
         scheduledAt: now,
         status: "SCHEDULED",
         homeScore: null,
@@ -2833,8 +5326,8 @@ async function generateKnockoutBracket(competitionId, options = {}) {
       competitionName: comp.name,
       matchday: 5,
       roundName: "Final",
-      homeClubId: "TBD",
-      awayClubId: "TBD",
+      homeClubId: null,
+      awayClubId: null,
       scheduledAt: now,
       status: "SCHEDULED",
       homeScore: null,
@@ -2862,8 +5355,8 @@ async function generateKnockoutBracket(competitionId, options = {}) {
     };
     const firstRoundMatches = bracketSize / 2;
     for (let i = 0; i < firstRoundMatches; i++) {
-      const homeClubId = clubIds[i * 2] || "TBD";
-      const awayClubId = clubIds[i * 2 + 1] || "TBD";
+      const homeClubId = clubIds[i * 2] || null;
+      const awayClubId = clubIds[i * 2 + 1] || null;
       const fixtureId = `fix-${competitionId}-r1-m${i}`;
       const roundName = getRoundName(1);
       const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
@@ -2900,8 +5393,8 @@ async function generateKnockoutBracket(competitionId, options = {}) {
           competitionName: comp.name,
           matchday: round,
           roundName,
-          homeClubId: "TBD",
-          awayClubId: "TBD",
+          homeClubId: null,
+          awayClubId: null,
           scheduledAt: now,
           status: "SCHEDULED",
           homeScore: null,
@@ -3086,6 +5579,11 @@ async function advanceKnockoutWinner(fixtureId) {
   if (comp.type !== "KNOCKOUT" && comp.type !== "SUPER_CUP" && comp.type !== "EUROPEAN_KNOCKOUT" && comp.type !== "EUROPEAN_LEAGUE_PHASE") {
     return { advanced: false };
   }
+  if (isDomesticCup(compId)) {
+    const { advanceDomesticCupWinnerSafe: advanceDomesticCupWinnerSafe2 } = await Promise.resolve().then(() => (init_domesticCupService(), domesticCupService_exports));
+    const res = await advanceDomesticCupWinnerSafe2(fixtureId, { adminUserId: "system" });
+    return { advanced: res.advanced, targetFixtureId: res.targetFixtureId };
+  }
   let nextFixtureId = "";
   let isHomeSlot = true;
   let nextRound = 0;
@@ -3210,6 +5708,7 @@ var init_knockoutEngine = __esm({
     init_collections();
     init_notificationService();
     init_adminService();
+    init_domesticCupService();
     generateKnockoutBracketFirestore = generateKnockoutBracket;
     generateUCLKnockoutBracketFirestore = generateUCLKnockoutBracket;
     advanceKnockoutWinnerFirestore = advanceKnockoutWinner;
@@ -3244,6 +5743,7 @@ __export(firestoreStore_exports, {
   createNotificationFirestore: () => createNotificationFirestore,
   enrichStandingsWithActiveOwners: () => enrichStandingsWithActiveOwners,
   executeAdminFixturesPagedFallback: () => executeAdminFixturesPagedFallback,
+  firestoreCircuitBreaker: () => firestoreCircuitBreaker,
   generateCompetitionFixturesFirestore: () => generateCompetitionFixturesFirestore,
   getActiveOccupanciesForSeason: () => getActiveOccupanciesForSeason,
   getActiveSeasonFirestore: () => getActiveSeasonFirestore,
@@ -3283,6 +5783,7 @@ __export(firestoreStore_exports, {
   guardAgainstTestEntityCreation: () => guardAgainstTestEntityCreation,
   invalidateFirestoreCache: () => invalidateFirestoreCache,
   invalidateMatchdayLockCache: () => invalidateMatchdayLockCache,
+  invalidateOwnershipCache: () => invalidateOwnershipCache,
   isMatchdayPlayableKey: () => isMatchdayPlayableKey,
   lastKnownGoodFixtures: () => lastKnownGoodFixtures,
   lastKnownGoodStandings: () => lastKnownGoodStandings,
@@ -3402,6 +5903,13 @@ function invalidateFirestoreCache(prefix) {
       serverCache.delete(key);
     }
   }
+}
+function invalidateOwnershipCache(seasonId = "season-2026-27", clubId) {
+  invalidateFirestoreCache(`firestore:occupancies:${seasonId}`);
+  invalidateFirestoreCache("firestore:clubs:league:");
+  invalidateFirestoreCache(clubId ? `firestore:club:${clubId}` : "firestore:club:");
+  invalidateFirestoreCache("firestore:admin_paged_fixtures:");
+  invalidateFirestoreCache("firestore:admin_fixtures_count:");
 }
 function getFromCache(key) {
   const entry = serverCache.get(key);
@@ -3651,7 +6159,15 @@ async function getClubsByLeagueFirestore(leagueId, seasonId = "season-2026-27", 
     });
     const sortedClubs = clubs.sort((a, b) => a.name.localeCompare(b.name));
     if (sortedClubs.length > 0) {
-      setInCache(cacheKey, sortedClubs, 6e4);
+      const neutralClubsForCache = sortedClubs.map((c) => ({
+        ...c,
+        isCurrentUserClub: false,
+        occupancy: {
+          ...c.occupancy,
+          status: c.isTaken ? "occupied" : "available"
+        }
+      }));
+      setInCache(cacheKey, neutralClubsForCache, 6e4);
     }
     return sortedClubs;
   } catch (err) {
@@ -4169,7 +6685,7 @@ async function getAllCompetitionsFirestore(seasonId = "season-2026-27") {
   const cached = getFromCache(cacheKey);
   if (cached && cached.length > 0) return cached;
   const validComps = SEED_COMPETITIONS.filter((c) => {
-    return !c.id.includes("trophee-des-champions") && !c.id.includes("conference-league") && !c.id.includes("uecl");
+    return !c.id.includes("trophee-des-champions") && !c.id.includes("conference-league") && !c.id.includes("uecl") && !c.id.includes("efl-cup") && c.status !== "inactive" && !c.hidden;
   });
   const competitions = validComps.map((seed) => {
     const override = compOverrideMap.get(seed.id) || {};
@@ -4405,12 +6921,12 @@ async function getFixturesFirestore(filter) {
         competitionName: r.competitionName || r.competitionId,
         matchday: r.matchday,
         roundName: r.roundName,
-        homeClubId: r.homeClubId,
-        awayClubId: r.awayClubId,
-        homeClub: {
-          id: r.homeClubId || "TBD",
-          name: homeSeed?.name || (r.homeClubId === "TBD" ? "TBD" : r.homeClubId),
-          shortName: homeSeed?.shortName || (r.homeClubId === "TBD" ? "TBD" : r.homeClubId),
+        homeClubId: !r.homeClubId || r.homeClubId === "TBD" ? null : r.homeClubId,
+        awayClubId: !r.awayClubId || r.awayClubId === "TBD" ? null : r.awayClubId,
+        homeClub: !r.homeClubId || r.homeClubId === "TBD" ? null : {
+          id: r.homeClubId,
+          name: homeSeed?.name || r.homeClubId,
+          shortName: homeSeed?.shortName || r.homeClubId,
           country: homeSeed?.country || "",
           leagueId: homeSeed?.leagueId || "",
           logoUrl: homeSeed?.logoUrl || "",
@@ -4420,10 +6936,10 @@ async function getFixturesFirestore(filter) {
           claimedByUsername: homeOcc ? usernameMap.get(homeOcc.userId) || null : null,
           createdAt: ""
         },
-        awayClub: {
-          id: r.awayClubId || "TBD",
-          name: awaySeed?.name || (r.awayClubId === "TBD" ? "TBD" : r.awayClubId),
-          shortName: awaySeed?.shortName || (r.awayClubId === "TBD" ? "TBD" : r.awayClubId),
+        awayClub: !r.awayClubId || r.awayClubId === "TBD" ? null : {
+          id: r.awayClubId,
+          name: awaySeed?.name || r.awayClubId,
+          shortName: awaySeed?.shortName || r.awayClubId,
           country: awaySeed?.country || "",
           leagueId: awaySeed?.leagueId || "",
           logoUrl: awaySeed?.logoUrl || "",
@@ -4558,10 +7074,10 @@ async function executeFixturesFallback(filter, targetClubId, cacheKey) {
       competitionName: r.competition_name || r.competition_id,
       matchday: r.matchday,
       roundName: r.round_name,
-      homeClubId: r.home_club_id,
-      awayClubId: r.away_club_id,
-      homeClub: {
-        id: r.home_club_id || "TBD",
+      homeClubId: !r.home_club_id || r.home_club_id === "TBD" ? null : r.home_club_id,
+      awayClubId: !r.away_club_id || r.away_club_id === "TBD" ? null : r.away_club_id,
+      homeClub: !r.home_club_id || r.home_club_id === "TBD" ? null : {
+        id: r.home_club_id,
         name: r.home_name || r.home_club_id,
         shortName: r.home_short || r.home_club_id,
         country: r.home_country || "",
@@ -4573,8 +7089,8 @@ async function executeFixturesFallback(filter, targetClubId, cacheKey) {
         claimedByUsername: homeOcc ? usernameMap.get(homeOcc.userId) || null : null,
         createdAt: ""
       },
-      awayClub: {
-        id: r.away_club_id || "TBD",
+      awayClub: !r.away_club_id || r.away_club_id === "TBD" ? null : {
+        id: r.away_club_id,
         name: r.away_name || r.away_club_id,
         shortName: r.away_short || r.away_club_id,
         country: r.away_country || "",
@@ -4698,127 +7214,29 @@ function executeAdminFixturesPagedFallback(options, pageSize) {
   };
 }
 async function getAdminFixturesPagedFirestore(options = {}) {
-  const pageSize = Math.min(Math.max(options.limit || 25, 1), 100);
-  const cacheKey = `firestore:admin_paged_fixtures:${options.seasonId || "all"}:${options.competitionId || "all"}:${options.status || "all"}:${options.matchday || "all"}:${options.cursor || "start"}:${pageSize}`;
-  const cached = getFromCache(cacheKey);
-  if (cached) return cached;
-  if (!firestoreCircuitBreaker.canExecute()) {
-    recordFallbackUsage();
-    return executeAdminFixturesPagedFallback(options, pageSize);
-  }
-  try {
-    const db = getFirestoreDb();
-    let query = db.collection(COLLECTIONS.FIXTURES);
-    if (options.competitionId) {
-      query = query.where("competitionId", "==", options.competitionId);
-    } else if (options.seasonId) {
-      query = query.where("seasonId", "==", options.seasonId);
-    }
-    if (options.status) {
-      query = query.where("status", "==", options.status);
-    }
-    if (options.matchday) {
-      query = query.where("matchday", "==", options.matchday);
-    }
-    query = query.orderBy(FirebaseFirestore.FieldPath.documentId());
-    if (options.cursor) {
-      query = query.startAfter(options.cursor);
-    }
-    query = query.limit(pageSize + 1);
-    const snap = await query.get();
-    firestoreCircuitBreaker.recordSuccess();
-    trackFirestoreRead(
-      COLLECTIONS.FIXTURES,
-      snap.empty ? 1 : snap.docs.length,
-      "getAdminFixturesPagedFirestore"
-    );
-    const hasMore = snap.docs.length > pageSize;
-    const docsToUse = snap.docs.slice(0, pageSize);
-    const nextCursor = hasMore && docsToUse.length > 0 ? docsToUse[docsToUse.length - 1].id : void 0;
-    const countFilter = [];
-    let countSql = "SELECT COUNT(*) as count FROM fixtures WHERE 1=1";
-    if (options.competitionId) {
-      countSql += " AND competition_id = ?";
-      countFilter.push(options.competitionId);
-    } else if (options.seasonId) {
-      countSql += " AND season_id = ?";
-      countFilter.push(options.seasonId);
-    }
-    if (options.status) {
-      countSql += " AND status = ?";
-      countFilter.push(options.status);
-    }
-    if (options.matchday) {
-      countSql += " AND matchday = ?";
-      countFilter.push(options.matchday);
-    }
-    const countRow = queryGet(countSql, countFilter);
-    const total = countRow?.count || docsToUse.length;
-    const fixtureDocs = docsToUse.map((d) => d.data());
-    const { clubOccupancyMap, usernameMap, userMap } = await getActiveOccupanciesForSeason(options.seasonId || "season-2026-27");
-    const mappedFixtures = fixtureDocs.map((doc) => {
-      const homeClubSeed = SEED_CLUB_MAP.get(doc.homeClubId);
-      const awayClubSeed = SEED_CLUB_MAP.get(doc.awayClubId);
-      const homeClub = {
-        id: doc.homeClubId,
-        name: homeClubSeed?.name || doc.homeClubId,
-        shortName: homeClubSeed?.shortName || doc.homeClubId.substring(0, 3).toUpperCase(),
-        country: homeClubSeed?.country || "England",
-        leagueId: homeClubSeed?.leagueId || "league-premier-league",
-        logoUrl: homeClubSeed?.logoUrl || "",
-        active: true,
-        createdAt: (/* @__PURE__ */ new Date()).toISOString()
-      };
-      const awayClub = {
-        id: doc.awayClubId,
-        name: awayClubSeed?.name || doc.awayClubId,
-        shortName: awayClubSeed?.shortName || doc.awayClubId.substring(0, 3).toUpperCase(),
-        country: awayClubSeed?.country || "England",
-        leagueId: awayClubSeed?.leagueId || "league-premier-league",
-        logoUrl: awayClubSeed?.logoUrl || "",
-        active: true,
-        createdAt: (/* @__PURE__ */ new Date()).toISOString()
-      };
-      const homeOwnerId = doc.homeOwnerId || clubOccupancyMap.get(doc.homeClubId)?.userId || void 0;
-      const awayOwnerId = doc.awayOwnerId || clubOccupancyMap.get(doc.awayClubId)?.userId || void 0;
-      return {
-        id: doc.id,
-        competitionId: doc.competitionId,
-        competitionName: doc.competitionName,
-        seasonId: doc.seasonId,
-        matchday: doc.matchday,
-        roundName: doc.roundName,
-        homeClubId: doc.homeClubId,
-        awayClubId: doc.awayClubId,
-        homeScore: doc.homeScore,
-        awayScore: doc.awayScore,
-        status: doc.status,
-        scheduledAt: doc.scheduledAt,
-        homeClub,
-        awayClub,
-        homeOwnerId,
-        awayOwnerId,
-        createdAt: doc.createdAt || (/* @__PURE__ */ new Date()).toISOString(),
-        updatedAt: doc.updatedAt || (/* @__PURE__ */ new Date()).toISOString()
-      };
-    });
-    const result = {
-      fixtures: mappedFixtures,
-      total,
-      hasMore,
-      nextCursor,
-      limit: pageSize,
-      source: "firestore",
-      degraded: false,
-      stale: false,
-      generatedAt: (/* @__PURE__ */ new Date()).toISOString()
-    };
-    setInCache(cacheKey, result, 3e4);
-    return result;
-  } catch (err) {
-    firestoreCircuitBreaker.recordFailure(err);
-    return executeAdminFixturesPagedFallback(options, pageSize);
-  }
+  const result = await getAdminFixturesFromReadModel({
+    seasonId: options.seasonId,
+    competitionId: options.competitionId,
+    status: options.status,
+    matchday: options.matchday,
+    clubId: options.clubId,
+    userId: options.userId,
+    search: options.search,
+    cursor: options.cursor,
+    limit: options.limit
+  });
+  return {
+    fixtures: result.fixtures,
+    total: result.total,
+    hasMore: result.hasMore,
+    nextCursor: result.nextCursor,
+    limit: result.limit,
+    source: result.source,
+    degraded: result.degraded,
+    stale: result.stale,
+    errorCode: result.degraded ? "ADMIN_FIXTURES_DEGRADED" : void 0,
+    generatedAt: result.generatedAt
+  };
 }
 async function getFixtureByIdFirestore(fixtureId, currentUserId) {
   const cacheKey = `firestore:fixture:${fixtureId}:${currentUserId || "anon"}`;
@@ -4893,12 +7311,12 @@ async function getFixtureByIdFirestore(fixtureId, currentUserId) {
           competitionName: r2.competitionName || r2.competitionId,
           matchday: r2.matchday,
           roundName: r2.roundName,
-          homeClubId: r2.homeClubId,
-          awayClubId: r2.awayClubId,
-          homeClub: {
-            id: r2.homeClubId || "TBD",
-            name: homeSeed?.name || (r2.homeClubId === "TBD" ? "TBD" : r2.homeClubId),
-            shortName: homeSeed?.shortName || (r2.homeClubId === "TBD" ? "TBD" : r2.homeClubId),
+          homeClubId: !r2.homeClubId || r2.homeClubId === "TBD" ? null : r2.homeClubId,
+          awayClubId: !r2.awayClubId || r2.awayClubId === "TBD" ? null : r2.awayClubId,
+          homeClub: !r2.homeClubId || r2.homeClubId === "TBD" ? null : {
+            id: r2.homeClubId,
+            name: homeSeed?.name || r2.homeClubId,
+            shortName: homeSeed?.shortName || r2.homeClubId,
             country: homeSeed?.country || "",
             leagueId: homeSeed?.leagueId || "",
             logoUrl: homeSeed?.logoUrl || "",
@@ -4908,10 +7326,10 @@ async function getFixtureByIdFirestore(fixtureId, currentUserId) {
             claimedByUsername: homeOcc2 ? usernameMap2.get(homeOcc2.userId) || null : null,
             createdAt: ""
           },
-          awayClub: {
-            id: r2.awayClubId || "TBD",
-            name: awaySeed?.name || (r2.awayClubId === "TBD" ? "TBD" : r2.awayClubId),
-            shortName: awaySeed?.shortName || (r2.awayClubId === "TBD" ? "TBD" : r2.awayClubId),
+          awayClub: !r2.awayClubId || r2.awayClubId === "TBD" ? null : {
+            id: r2.awayClubId,
+            name: awaySeed?.name || r2.awayClubId,
+            shortName: awaySeed?.shortName || r2.awayClubId,
             country: awaySeed?.country || "",
             leagueId: awaySeed?.leagueId || "",
             logoUrl: awaySeed?.logoUrl || "",
@@ -4921,6 +7339,12 @@ async function getFixtureByIdFirestore(fixtureId, currentUserId) {
             claimedByUsername: awayOcc2 ? usernameMap2.get(awayOcc2.userId) || null : null,
             createdAt: ""
           },
+          sourceFixtureId: r2.sourceFixtureId || null,
+          sourceWinnerSlot: r2.sourceWinnerSlot || null,
+          homeSourceFixtureId: r2.homeSourceFixtureId || null,
+          awaySourceFixtureId: r2.awaySourceFixtureId || null,
+          homeSourceWinnerSlot: r2.homeSourceWinnerSlot || null,
+          awaySourceWinnerSlot: r2.awaySourceWinnerSlot || null,
           homeOwnerId: homeOcc2 ? homeOcc2.userId : r2.homeOwnerId,
           awayOwnerId: awayOcc2 ? awayOcc2.userId : r2.awayOwnerId,
           homeUser: homeUser2,
@@ -5006,10 +7430,10 @@ async function getFixtureByIdFirestore(fixtureId, currentUserId) {
     competitionName: r.competition_name || r.competition_id,
     matchday: r.matchday,
     roundName: r.round_name,
-    homeClubId: r.home_club_id,
-    awayClubId: r.away_club_id,
-    homeClub: {
-      id: r.home_club_id || "TBD",
+    homeClubId: !r.home_club_id || r.home_club_id === "TBD" ? null : r.home_club_id,
+    awayClubId: !r.away_club_id || r.away_club_id === "TBD" ? null : r.away_club_id,
+    homeClub: !r.home_club_id || r.home_club_id === "TBD" ? null : {
+      id: r.home_club_id,
       name: r.home_name || r.home_club_id,
       shortName: r.home_short || r.home_club_id,
       country: r.home_country || "",
@@ -5021,8 +7445,8 @@ async function getFixtureByIdFirestore(fixtureId, currentUserId) {
       claimedByUsername: homeOcc ? usernameMap.get(homeOcc.userId) || null : null,
       createdAt: ""
     },
-    awayClub: {
-      id: r.away_club_id || "TBD",
+    awayClub: !r.away_club_id || r.away_club_id === "TBD" ? null : {
+      id: r.away_club_id,
       name: r.away_name || r.away_club_id,
       shortName: r.away_short || r.away_club_id,
       country: r.away_country || "",
@@ -5034,6 +7458,8 @@ async function getFixtureByIdFirestore(fixtureId, currentUserId) {
       claimedByUsername: awayOcc ? usernameMap.get(awayOcc.userId) || null : null,
       createdAt: ""
     },
+    sourceFixtureId: r.source_fixture_id || null,
+    sourceWinnerSlot: r.source_winner_slot || null,
     homeOwnerId: homeOcc ? homeOcc.userId : r.home_owner_id,
     awayOwnerId: awayOcc ? awayOcc.userId : r.away_owner_id,
     homeUser,
@@ -7570,10 +9996,10 @@ function getLocalPendingResults(seasonId, limitCount = 50) {
         competitionName: r.competition_id,
         matchday: r.matchday,
         roundName: r.round_name,
-        homeClubId: r.home_club_id,
-        awayClubId: r.away_club_id,
-        homeClub: {
-          id: r.home_club_id || "TBD",
+        homeClubId: !r.home_club_id || r.home_club_id === "TBD" ? null : r.home_club_id,
+        awayClubId: !r.away_club_id || r.away_club_id === "TBD" ? null : r.away_club_id,
+        homeClub: !r.home_club_id || r.home_club_id === "TBD" ? null : {
+          id: r.home_club_id,
           name: homeSeed?.name || r.home_club_id,
           shortName: homeSeed?.shortName || r.home_club_id,
           country: homeSeed?.country || "",
@@ -7582,8 +10008,8 @@ function getLocalPendingResults(seasonId, limitCount = 50) {
           active: true,
           createdAt: ""
         },
-        awayClub: {
-          id: r.away_club_id || "TBD",
+        awayClub: !r.away_club_id || r.away_club_id === "TBD" ? null : {
+          id: r.away_club_id,
           name: awaySeed?.name || r.away_club_id,
           shortName: awaySeed?.shortName || r.away_club_id,
           country: awaySeed?.country || "",
@@ -7794,22 +10220,22 @@ async function getPendingResultsFirestore(seasonId = "season-2026-27") {
         competitionName: r.competitionName || r.competitionId,
         matchday: r.matchday,
         roundName: r.roundName,
-        homeClubId: r.homeClubId,
-        awayClubId: r.awayClubId,
-        homeClub: {
-          id: r.homeClubId || "TBD",
-          name: homeSeed?.name || (r.homeClubId === "TBD" ? "TBD" : r.homeClubId),
-          shortName: homeSeed?.shortName || (r.homeClubId === "TBD" ? "TBD" : r.homeClubId),
+        homeClubId: !r.homeClubId || r.homeClubId === "TBD" ? null : r.homeClubId,
+        awayClubId: !r.awayClubId || r.awayClubId === "TBD" ? null : r.awayClubId,
+        homeClub: !r.homeClubId || r.homeClubId === "TBD" ? null : {
+          id: r.homeClubId,
+          name: homeSeed?.name || r.homeClubId,
+          shortName: homeSeed?.shortName || r.homeClubId,
           country: homeSeed?.country || "",
           leagueId: homeSeed?.leagueId || "",
           logoUrl: homeSeed?.logoUrl || "",
           active: true,
           createdAt: ""
         },
-        awayClub: {
-          id: r.awayClubId || "TBD",
-          name: awaySeed?.name || (r.awayClubId === "TBD" ? "TBD" : r.awayClubId),
-          shortName: awaySeed?.shortName || (r.awayClubId === "TBD" ? "TBD" : r.awayClubId),
+        awayClub: !r.awayClubId || r.awayClubId === "TBD" ? null : {
+          id: r.awayClubId,
+          name: awaySeed?.name || r.awayClubId,
+          shortName: awaySeed?.shortName || r.awayClubId,
           country: awaySeed?.country || "",
           leagueId: awaySeed?.leagueId || "",
           logoUrl: awaySeed?.logoUrl || "",
@@ -8410,9 +10836,11 @@ var init_firestoreStore = __esm({
     init_db();
     init_seed();
     init_circuitBreaker();
+    init_circuitBreaker();
     init_occupancySnapshot();
     init_mutationQueue();
     init_fixtureEngine();
+    init_readModelStore();
     init_collections();
     init_testGuard();
     SEED_CLUB_MAP = new Map(
@@ -8742,6 +11170,7 @@ init_mutationQueue();
 
 // src/server/routes/readOptimized.routes.ts
 init_firestoreStore();
+init_readModelStore();
 import { Router } from "express";
 var readOptimizedRouter = Router();
 readOptimizedRouter.get("/leagues", async (req, res, next) => {
@@ -8750,6 +11179,10 @@ readOptimizedRouter.get("/leagues", async (req, res, next) => {
     res.setHeader("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600");
     res.json({ leagues });
   } catch (err) {
+    if (err instanceof ReadModelNotWarmedError || err?.errorCode === "READ_MODEL_NOT_WARMED") {
+      res.status(503).json({ errorCode: "READ_MODEL_NOT_WARMED", message: "Read model is not warmed and database is unreachable" });
+      return;
+    }
     next(err);
   }
 });
@@ -8760,6 +11193,10 @@ readOptimizedRouter.get("/competitions", async (req, res, next) => {
     res.setHeader("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600");
     res.json({ competitions });
   } catch (err) {
+    if (err instanceof ReadModelNotWarmedError || err?.errorCode === "READ_MODEL_NOT_WARMED") {
+      res.status(503).json({ errorCode: "READ_MODEL_NOT_WARMED", message: "Read model is not warmed and database is unreachable" });
+      return;
+    }
     next(err);
   }
 });
@@ -8772,6 +11209,10 @@ readOptimizedRouter.get("/competitions/:id", async (req, res, next) => {
     res.setHeader("Cache-Control", "public, max-age=30, s-maxage=120, stale-while-revalidate=300");
     res.json({ competition });
   } catch (err) {
+    if (err instanceof ReadModelNotWarmedError || err?.errorCode === "READ_MODEL_NOT_WARMED") {
+      res.status(503).json({ errorCode: "READ_MODEL_NOT_WARMED", message: "Read model is not warmed and database is unreachable" });
+      return;
+    }
     next(err);
   }
 });
@@ -8781,6 +11222,10 @@ readOptimizedRouter.get("/competitions/:id/standings", async (req, res, next) =>
     res.setHeader("Cache-Control", "public, max-age=30, s-maxage=120, stale-while-revalidate=300");
     res.json({ standings });
   } catch (err) {
+    if (err instanceof ReadModelNotWarmedError || err?.errorCode === "READ_MODEL_NOT_WARMED") {
+      res.status(503).json({ errorCode: "READ_MODEL_NOT_WARMED", message: "Read model is not warmed and database is unreachable" });
+      return;
+    }
     next(err);
   }
 });
@@ -8796,6 +11241,10 @@ readOptimizedRouter.get("/competitions/:id/fixtures", async (req, res, next) => 
     res.setHeader("Cache-Control", "public, max-age=30, s-maxage=60, stale-while-revalidate=180");
     res.json({ fixtures });
   } catch (err) {
+    if (err instanceof ReadModelNotWarmedError || err?.errorCode === "READ_MODEL_NOT_WARMED") {
+      res.status(503).json({ errorCode: "READ_MODEL_NOT_WARMED", message: "Read model is not warmed and database is unreachable" });
+      return;
+    }
     next(err);
   }
 });
@@ -8924,6 +11373,7 @@ function validateBody(schema) {
 
 // src/server/routes/auth.routes.ts
 init_firestoreStore();
+init_readModelStore();
 var authRouter = Router3();
 var telegramAuthSchema = z.object({
   initData: z.string().min(1, "initData is required")
@@ -8941,7 +11391,7 @@ authRouter.post("/telegram", validateBody(telegramAuthSchema), async (req, res) 
         const userRaw = urlParams.get("user");
         if (userRaw) {
           const user = await getOrCreateTelegramUser(JSON.parse(userRaw));
-          const currentClub = await getUserActiveClubFirestore(user.id, "season-2026-27");
+          const currentClub = await getUserActiveClubFromReadModel(user.id, "season-2026-27") || await getUserActiveClubFirestore(user.id, "season-2026-27");
           const token = createSessionToken(user);
           console.log(`[TELEGRAM AUTH - DEV SANDBOX] user=${user.username} (id: ${user.telegramId}), isAdmin=${user.isAdmin}`);
           res.json({ success: true, user, currentClub, token });
@@ -8961,7 +11411,7 @@ authRouter.post("/telegram", validateBody(telegramAuthSchema), async (req, res) 
   }
   try {
     const user = await getOrCreateTelegramUser(verifyResult.user);
-    const currentClub = await getUserActiveClubFirestore(user.id, "season-2026-27");
+    const currentClub = await getUserActiveClubFromReadModel(user.id, "season-2026-27") || await getUserActiveClubFirestore(user.id, "season-2026-27");
     const token = createSessionToken(user);
     console.log(`[TELEGRAM AUTH]
 initData received: YES
@@ -8984,7 +11434,7 @@ authRouter.post("/dev", validateBody(devAuthSchema), async (req, res) => {
   }
   try {
     const user = await getOrCreateDevUser(req.body.devUserId);
-    const currentClub = await getUserActiveClubFirestore(user.id, "season-2026-27");
+    const currentClub = await getUserActiveClubFromReadModel(user.id, "season-2026-27") || await getUserActiveClubFirestore(user.id, "season-2026-27");
     const token = createSessionToken(user);
     res.json({ success: true, user, currentClub, token });
   } catch (err) {
@@ -9144,6 +11594,17 @@ seasonsRouter.get("/:id", async (req, res) => {
 // src/server/routes/leagues.routes.ts
 init_firestoreStore();
 import { Router as Router5 } from "express";
+
+// src/server/middleware/ownershipCacheControl.ts
+function setOwnershipSensitiveHeaders(res) {
+  res.setHeader("Cache-Control", "private, no-store, no-cache, must-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.setHeader("Vary", "Authorization, X-Session-Token, X-Telegram-Init-Data");
+}
+
+// src/server/routes/leagues.routes.ts
+init_readModelStore();
 var leaguesRouter = Router5();
 var LEAGUE_ID_ALIASES = {
   "league-epl": "league-premier-league",
@@ -9178,12 +11639,19 @@ leaguesRouter.get("/:id", async (req, res) => {
   }
 });
 leaguesRouter.get("/:id/clubs", async (req, res) => {
+  setOwnershipSensitiveHeaders(res);
   const seasonId = req.query.seasonId || "season-2026-27";
   const leagueId = resolveLeagueId(req.params.id);
   const currentUserId = req.user?.id;
   try {
-    const clubs = await getClubsByLeagueFirestore(leagueId, seasonId, currentUserId);
-    res.json({ clubs });
+    const result = await getLeagueClubsFromReadModel(leagueId, seasonId, currentUserId);
+    res.json({
+      clubs: result.clubs,
+      source: result.source,
+      stale: result.stale,
+      degraded: result.degraded,
+      snapshotAt: result.snapshotAt
+    });
   } catch (err) {
     handleFirestoreError(res, err, `GET /api/leagues/${req.params.id}/clubs`);
   }
@@ -9373,6 +11841,7 @@ Quyidagi tugma orqali ilovani oching va o\u2018z klubingizni band qiling!`;
 }
 
 // src/server/routes/clubs.routes.ts
+init_readModelStore();
 var clubsRouter = Router6();
 function resolveCanonicalClub(id) {
   if (!id) return null;
@@ -9481,11 +11950,18 @@ clubsRouter.get("/crest-proxy", async (req, res) => {
   await fetchAndServeImage(url, res);
 });
 clubsRouter.get("/available", async (req, res) => {
+  setOwnershipSensitiveHeaders(res);
   const seasonId = req.query.seasonId || "season-2026-27";
   const currentUserId = req.user?.id;
   try {
-    const clubs = await getAvailableClubsFirestore(seasonId, currentUserId);
-    res.json({ clubs });
+    const result = await getAvailableClubsFromReadModel(seasonId, currentUserId);
+    res.json({
+      clubs: result.clubs,
+      source: result.source,
+      stale: result.stale,
+      degraded: result.degraded,
+      snapshotAt: result.snapshotAt
+    });
   } catch (err) {
     handleFirestoreError(res, err, "GET /api/clubs/available");
   }
@@ -9535,23 +12011,37 @@ clubsRouter.get("/:id/crest", async (req, res) => {
   }
 });
 clubsRouter.get("/:id", async (req, res) => {
+  setOwnershipSensitiveHeaders(res);
   const seasonId = req.query.seasonId || "season-2026-27";
   const currentUserId = req.user?.id;
   try {
-    const club = await getClubByIdFirestore(req.params.id, seasonId, currentUserId);
-    if (!club) {
+    const result = await getClubByIdFromReadModel(req.params.id, seasonId, currentUserId);
+    if (!result.club) {
       res.status(404).json({ error: "Club not found", code: "NOT_FOUND", message: `Club '${req.params.id}' not found.` });
       return;
     }
-    res.json({ club });
+    res.json({
+      club: result.club,
+      source: result.source,
+      stale: result.stale,
+      degraded: result.degraded
+    });
   } catch (err) {
     handleFirestoreError(res, err, `GET /api/clubs/${req.params.id}`);
   }
 });
 clubsRouter.post("/:id/claim", requireAuth, async (req, res) => {
+  const clubId = req.params.id;
+  if (!clubId || clubId === "undefined" || clubId === "null" || !clubId.startsWith("club-")) {
+    res.status(400).json({
+      error: "INVALID_CLUB_ID",
+      code: "INVALID_CLUB_ID",
+      message: "Invalid club ID provided."
+    });
+    return;
+  }
   const seasonId = req.body.seasonId || "season-2026-27";
   const userId = req.user.id;
-  const clubId = req.params.id;
   const telegramId = req.user.telegramId;
   if (telegramId) {
     const membership = await verifyTelegramGroupMembership(telegramId);
@@ -9568,6 +12058,10 @@ clubsRouter.post("/:id/claim", requireAuth, async (req, res) => {
   }
   try {
     const result = await claimClubAtomicFirestore(userId, clubId, seasonId);
+    await invalidateClubReadModels(seasonId).catch(() => {
+    });
+    await invalidateUserMembershipReadModel(userId, seasonId).catch(() => {
+    });
     res.json({
       success: true,
       message: `Successfully claimed ${result.club.name}!`,
@@ -9597,12 +12091,19 @@ clubsRouter.post("/:id/claim", requireAuth, async (req, res) => {
 // src/server/routes/competitions.routes.ts
 import { Router as Router7 } from "express";
 init_firestoreStore();
+init_readModelStore();
 var competitionsRouter = Router7();
 competitionsRouter.get("/", async (req, res) => {
   const seasonId = req.query.seasonId || "season-2026-27";
   try {
-    const competitions = await getAllCompetitionsFirestore(seasonId);
-    res.json({ competitions });
+    const result = await getCompetitionsFromReadModel(seasonId);
+    res.json({
+      competitions: result.competitions,
+      source: result.source,
+      stale: result.stale,
+      degraded: result.degraded,
+      snapshotAt: result.snapshotAt
+    });
   } catch (err) {
     handleFirestoreError(res, err, "GET /api/competitions");
   }
@@ -9628,9 +12129,16 @@ competitionsRouter.get("/:id/participants", async (req, res) => {
   }
 });
 competitionsRouter.get("/:id/standings", async (req, res) => {
+  const seasonId = req.query.seasonId || "season-2026-27";
   try {
-    const standings = await calculateCompetitionStandingsFirestore(req.params.id);
-    res.json({ standings });
+    const result = await getCompetitionStandingsFromReadModel(req.params.id, seasonId);
+    res.json({
+      standings: result.standings,
+      source: result.source,
+      stale: result.stale,
+      degraded: result.degraded,
+      snapshotAt: result.snapshotAt
+    });
   } catch (err) {
     handleFirestoreError(res, err, `GET /api/competitions/${req.params.id}/standings`);
   }
@@ -9638,13 +12146,20 @@ competitionsRouter.get("/:id/standings", async (req, res) => {
 competitionsRouter.get("/:id/fixtures", async (req, res) => {
   const matchday = req.query.matchday ? parseInt(req.query.matchday, 10) : void 0;
   const status = req.query.status;
+  const seasonId = req.query.seasonId || "season-2026-27";
   try {
-    const fixtures = await getFixturesFirestore({
-      competitionId: req.params.id,
+    const result = await getCompetitionFixturesFromReadModel(req.params.id, {
       matchday,
-      status
+      status,
+      seasonId
     });
-    res.json({ fixtures });
+    res.json({
+      fixtures: result.fixtures,
+      source: result.source,
+      stale: result.stale,
+      degraded: result.degraded,
+      snapshotAt: result.snapshotAt
+    });
   } catch (err) {
     handleFirestoreError(res, err, `GET /api/competitions/${req.params.id}/fixtures`);
   }
@@ -9706,6 +12221,7 @@ competitionsRouter.get("/:id/locks", async (req, res) => {
 import { Router as Router8 } from "express";
 import { z as z2 } from "zod";
 init_firestoreStore();
+init_readModelStore();
 var fixturesRouter = Router8();
 var fixturesResilientRouter = fixturesRouter;
 var resultSubmissionSchema = z2.object({
@@ -9732,6 +12248,14 @@ fixturesRouter.post("/:id/result", requireAuth, validateBody(resultSubmissionSch
   const { homeScore, awayScore, proofUrl } = req.body;
   try {
     const updatedFixture = await submitFixtureResultFirestore(userId, fixtureId, homeScore, awayScore, proofUrl);
+    if (updatedFixture?.competitionId) {
+      await invalidateFixtureReadModels(updatedFixture.competitionId, updatedFixture.seasonId || "season-2026-27").catch(() => {
+      });
+      await invalidateStandingsReadModels(updatedFixture.competitionId, updatedFixture.seasonId || "season-2026-27").catch(() => {
+      });
+    }
+    await invalidateFixtureReadModels("", updatedFixture.seasonId || "season-2026-27").catch(() => {
+    });
     res.json({
       success: true,
       message: updatedFixture.status === "CONFIRMED" ? "Match result confirmed!" : updatedFixture.status === "DISPUTED" ? "Scores differ! Match has been marked DISPUTED and sent to admin." : "Score submitted! Awaiting opponent confirmation.",
@@ -9779,19 +12303,18 @@ notificationsReadResilientRouter.post("/notifications/read", requireAuth, async 
 // src/server/routes/me.routes.ts
 import { Router as Router10 } from "express";
 init_firestoreStore();
+init_readModelStore();
 var meRouter = Router10();
 var meResilientRouter = meRouter;
 meRouter.use((req, res, next) => {
-  res.setHeader("Cache-Control", "private, no-cache, no-store, must-revalidate");
-  res.setHeader("Pragma", "no-cache");
-  res.setHeader("Expires", "0");
+  setOwnershipSensitiveHeaders(res);
   next();
 });
 meRouter.get("/", requireAuth, async (req, res) => {
   const user = req.user;
   const seasonId = req.query.seasonId || "season-2026-27";
   try {
-    const currentClub = await getUserActiveClubFirestore(user.id, seasonId);
+    const currentClub = await getUserActiveClubFromReadModel(user.id, seasonId) || await getUserActiveClubFirestore(user.id, seasonId);
     const stats = {
       matchesPlayed: 0,
       wins: 0,
@@ -9954,7 +12477,6 @@ import { Router as Router12 } from "express";
 import { z as z3 } from "zod";
 init_adminService();
 init_firestoreStore();
-init_seed();
 
 // src/server/firebase/migrateSqliteToFirestore.ts
 init_admin();
@@ -10196,34 +12718,109 @@ init_firestoreStore();
 init_adminService();
 init_notificationService();
 init_db();
-async function evaluateSeasonQualifications(seasonId = "season-2026-27") {
+init_seed();
+init_readModelStore();
+import crypto3 from "crypto";
+var PREVIEW_TOKEN_REDIS_PREFIX = "qualification:preview:";
+var PREVIEW_TOKEN_TTL_SECONDS = 900;
+var previewTokenCache = /* @__PURE__ */ new Map();
+async function saveQualificationPreviewToken(token, preview) {
+  const key = `${PREVIEW_TOKEN_REDIS_PREFIX}${token}`;
+  const payload = {
+    preview,
+    token,
+    expiresAt: Date.now() + PREVIEW_TOKEN_TTL_SECONDS * 1e3
+  };
+  const client = getUpstashClient();
+  if (client) {
+    try {
+      await client.set(key, payload, { ex: PREVIEW_TOKEN_TTL_SECONDS });
+    } catch (err) {
+      console.warn(`[QUALIFICATION] Failed to write preview token to Upstash Redis:`, err?.message || err);
+    }
+  }
+  previewTokenCache.set(token, payload);
+}
+async function getQualificationPreviewToken(token) {
+  const key = `${PREVIEW_TOKEN_REDIS_PREFIX}${token}`;
+  const client = getUpstashClient();
+  if (client) {
+    try {
+      const data = await client.get(key);
+      if (data && data.preview) {
+        return data.preview;
+      }
+    } catch (err) {
+      console.warn(`[QUALIFICATION] Failed to read preview token from Upstash Redis:`, err?.message || err);
+    }
+  }
+  const mem = previewTokenCache.get(token);
+  if (mem && Date.now() <= mem.expiresAt) {
+    return mem.preview;
+  }
+  return null;
+}
+async function deleteQualificationPreviewToken(token) {
+  const key = `${PREVIEW_TOKEN_REDIS_PREFIX}${token}`;
+  previewTokenCache.delete(token);
+  const client = getUpstashClient();
+  if (client) {
+    try {
+      await client.del(key);
+    } catch {
+    }
+  }
+}
+async function previewEuropeanQualificationSync(seasonId = "season-2026-27", mode = "provisional") {
   const db = getFirestoreDb();
-  const qualifications = [];
-  let participantsAdded = 0;
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const [compSnap, existingPartsSnap, occupanciesSnap] = await Promise.all([
+  const now = /* @__PURE__ */ new Date();
+  const nowIso = now.toISOString();
+  const [compSnap, partsSnap, fixSnap, occSnap] = await Promise.all([
     db.collection(COLLECTIONS.COMPETITIONS).where("seasonId", "==", seasonId).get(),
     db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where("seasonId", "==", seasonId).get(),
-    db.collection(COLLECTIONS.CLUB_OCCUPANCIES).get()
+    db.collection(COLLECTIONS.FIXTURES).where("seasonId", "==", seasonId).get(),
+    db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where("seasonId", "==", seasonId).get()
   ]);
   const allComps = compSnap.docs.map((d) => d.data());
   const leagues = allComps.filter((c) => c.type === "LEAGUE");
-  const existingPartIds = new Set(existingPartsSnap.docs.map((d) => d.id));
+  const allFixtures = fixSnap.docs.map((d) => d.data());
+  const existingParts = partsSnap.docs.map((d) => d.data());
   const occupancyMap = /* @__PURE__ */ new Map();
-  for (const doc of occupanciesSnap.docs) {
+  for (const doc of occSnap.docs) {
     const data = doc.data();
     if (data.userId && data.clubId) {
       occupancyMap.set(data.clubId, data.userId);
     }
   }
+  const clubsMap = new Map(SEED_CLUBS.map((c) => [c.id, c]));
   const uclComp = allComps.find(
-    (c) => c.type === "EUROPEAN_LEAGUE_PHASE" && (c.name.toLowerCase().includes("champions league") || c.id.includes("ucl"))
-  );
+    (c) => c.type === "EUROPEAN_LEAGUE_PHASE" && (c.name.toLowerCase().includes("champions") || c.id.includes("ucl"))
+  ) || { id: "comp-champions-league-2026", name: "UEFA Champions League", seasonId, type: "EUROPEAN_LEAGUE_PHASE" };
   const uelComp = allComps.find(
-    (c) => c.type === "EUROPEAN_LEAGUE_PHASE" && (c.name.toLowerCase().includes("europa league") || c.id.includes("uel"))
+    (c) => c.type === "EUROPEAN_LEAGUE_PHASE" && (c.name.toLowerCase().includes("europa") || c.id.includes("uel"))
+  ) || { id: "comp-europa-league-2026", name: "UEFA Europa League", seasonId, type: "EUROPEAN_LEAGUE_PHASE" };
+  const europeanFixtures = allFixtures.filter(
+    (f) => f.competitionId === uclComp.id || f.competitionId === uelComp.id
   );
-  const newParticipants = [];
-  const notificationsToSend = [];
+  const playedEuropeanFixtures = europeanFixtures.filter(
+    (f) => f.status === "CONFIRMED" || f.status === "PENDING_CONFIRMATION" || f.status === "AWAITING_RESULT"
+  );
+  const hasEuropeanStarted = playedEuropeanFixtures.length > 0;
+  const leagueIds = new Set(leagues.map((l) => l.id));
+  const leagueFixtures = allFixtures.filter((f) => leagueIds.has(f.competitionId));
+  const unplayedLeagueMatchesCount = leagueFixtures.filter((f) => f.status !== "CONFIRMED").length;
+  const domesticLeaguesCompleted = leagueFixtures.length > 0 && unplayedLeagueMatchesCount === 0;
+  let canApply = true;
+  let blockReason;
+  if (hasEuropeanStarted) {
+    canApply = false;
+    blockReason = `European competitions have already started (${playedEuropeanFixtures.length} played/in-progress matches). Participant synchronization is strictly blocked to protect active competition integrity.`;
+  } else if (mode === "final" && !domesticLeaguesCompleted) {
+    canApply = false;
+    blockReason = `Domestic leagues are not finished (${unplayedLeagueMatchesCount} unconfirmed fixtures remaining). Final European qualification sync can only be applied after all domestic league matches are confirmed.`;
+  }
+  const projectedUcl = [];
+  const projectedUel = [];
   for (const league of leagues) {
     const standings = await calculateCompetitionStandingsFirestore(league.id);
     if (standings.length === 0) continue;
@@ -10231,190 +12828,233 @@ async function evaluateSeasonQualifications(seasonId = "season-2026-27") {
     const leagueNameLower = (league.name || "").toLowerCase();
     let uclSpots = 7;
     let uelSpots = 7;
-    if (leagueIdLower.includes("serie-a") || leagueNameLower.includes("serie a")) {
-      uclSpots = 6;
-      uelSpots = 6;
-    } else if (leagueIdLower.includes("bundesliga") || leagueNameLower.includes("bundesliga")) {
-      uclSpots = 6;
-      uelSpots = 6;
-    } else if (leagueIdLower.includes("ligue-1") || leagueNameLower.includes("ligue 1")) {
+    if (leagueIdLower.includes("serie-a") || leagueNameLower.includes("serie a") || leagueIdLower.includes("bundesliga") || leagueNameLower.includes("bundesliga") || leagueIdLower.includes("ligue-1") || leagueNameLower.includes("ligue 1")) {
       uclSpots = 6;
       uelSpots = 6;
     }
-    if (uclComp) {
-      for (let i = 0; i < Math.min(uclSpots, standings.length); i++) {
-        const row = standings[i];
-        const ownerUserId = occupancyMap.get(row.clubId) || null;
-        const reason = `${league.name} Rank #${row.position} (UCL Spot)`;
-        qualifications.push({
-          seasonId,
-          sourceCompetitionId: league.id,
-          sourceCompetitionName: league.name,
-          targetCompetitionId: uclComp.id,
-          targetCompetitionName: uclComp.name,
-          clubId: row.clubId,
-          clubName: row.clubName,
-          ownerUserId,
-          rank: row.position,
-          reason
-        });
-        const partId = `part-${uclComp.id}-${row.clubId}`;
-        newParticipants.push({
-          id: partId,
-          competitionId: uclComp.id,
-          clubId: row.clubId,
-          seasonId,
-          ownerUserId: ownerUserId || void 0,
-          sourceCompetitionId: league.id,
-          sourceCompetitionName: league.name,
-          sourcePosition: row.position,
-          qualificationReason: reason,
-          qualificationTimestamp: now,
-          seedNumber: newParticipants.filter((p) => p.competitionId === uclComp.id).length + 1,
-          createdAt: now
-        });
-        participantsAdded++;
-        if (ownerUserId) {
-          notificationsToSend.push({
-            userId: ownerUserId,
-            title: "\u{1F3C6} Qualified for UEFA Champions League!",
-            message: `Congratulations! ${row.clubName} finished #${row.position} in ${league.name} and qualified for the UEFA Champions League!`
-          });
-        }
-      }
+    for (let i = 0; i < Math.min(uclSpots, standings.length); i++) {
+      const row = standings[i];
+      const ownerUserId = occupancyMap.get(row.clubId) || null;
+      projectedUcl.push({
+        seasonId,
+        sourceCompetitionId: league.id,
+        sourceCompetitionName: league.name,
+        targetCompetitionId: uclComp.id,
+        targetCompetitionName: uclComp.name,
+        clubId: row.clubId,
+        clubName: row.clubName,
+        ownerUserId,
+        rank: row.position,
+        reason: `${league.name} Rank #${row.position} (UCL Spot)`
+      });
     }
-    if (uelComp) {
-      for (let i = uclSpots; i < Math.min(uclSpots + uelSpots, standings.length); i++) {
-        const row = standings[i];
-        const ownerUserId = occupancyMap.get(row.clubId) || null;
-        const reason = `${league.name} Rank #${row.position} (UEL Spot)`;
-        qualifications.push({
-          seasonId,
-          sourceCompetitionId: league.id,
-          sourceCompetitionName: league.name,
-          targetCompetitionId: uelComp.id,
-          targetCompetitionName: uelComp.name,
-          clubId: row.clubId,
-          clubName: row.clubName,
-          ownerUserId,
-          rank: row.position,
-          reason
-        });
-        const partId = `part-${uelComp.id}-${row.clubId}`;
-        newParticipants.push({
-          id: partId,
-          competitionId: uelComp.id,
-          clubId: row.clubId,
-          seasonId,
-          ownerUserId: ownerUserId || void 0,
-          sourceCompetitionId: league.id,
-          sourceCompetitionName: league.name,
-          sourcePosition: row.position,
-          qualificationReason: reason,
-          qualificationTimestamp: now,
-          seedNumber: newParticipants.filter((p) => p.competitionId === uelComp.id).length + 1,
-          createdAt: now
-        });
-        participantsAdded++;
-        if (ownerUserId) {
-          notificationsToSend.push({
-            userId: ownerUserId,
-            title: "Qualified for UEFA Europa League",
-            message: `Congratulations! ${row.clubName} finished #${row.position} in ${league.name} and qualified for the UEFA Europa League!`
-          });
-        }
-      }
+    for (let i = uclSpots; i < Math.min(uclSpots + uelSpots, standings.length); i++) {
+      const row = standings[i];
+      const ownerUserId = occupancyMap.get(row.clubId) || null;
+      projectedUel.push({
+        seasonId,
+        sourceCompetitionId: league.id,
+        sourceCompetitionName: league.name,
+        targetCompetitionId: uelComp.id,
+        targetCompetitionName: uelComp.name,
+        clubId: row.clubId,
+        clubName: row.clubName,
+        ownerUserId,
+        rank: row.position,
+        reason: `${league.name} Rank #${row.position} (UEL Spot)`
+      });
     }
   }
-  if (uclComp) {
-    const existingUclParts = await db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where("competitionId", "==", uclComp.id).get();
-    if (!existingUclParts.empty) {
-      const batchDelete = db.batch();
-      existingUclParts.docs.forEach((doc) => batchDelete.delete(doc.ref));
-      await batchDelete.commit();
-    }
-    try {
-      queryRun("DELETE FROM competition_participants WHERE competition_id = ?", [uclComp.id]);
-    } catch {
-    }
-  }
-  if (uelComp) {
-    const existingUelParts = await db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where("competitionId", "==", uelComp.id).get();
-    if (!existingUelParts.empty) {
-      const batchDelete = db.batch();
-      existingUelParts.docs.forEach((doc) => batchDelete.delete(doc.ref));
-      await batchDelete.commit();
-    }
-    try {
-      queryRun("DELETE FROM competition_participants WHERE competition_id = ?", [uelComp.id]);
-    } catch {
-    }
-  }
-  if (newParticipants.length > 0) {
-    const batch = db.batch();
-    for (const part of newParticipants) {
-      const ref = db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).doc(part.id);
-      batch.set(ref, part);
-    }
-    await batch.commit();
-    for (const part of newParticipants) {
-      try {
-        queryRun(
-          `INSERT OR REPLACE INTO competition_participants 
-           (id, competition_id, club_id, season_id, owner_user_id, source_competition_id, source_position, qualification_reason, seed_number, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            part.id,
-            part.competitionId,
-            part.clubId,
-            part.seasonId,
-            part.ownerUserId || null,
-            part.sourceCompetitionId || null,
-            part.sourcePosition || null,
-            part.qualificationReason || null,
-            part.seedNumber || null,
-            part.createdAt
-          ]
-        );
-      } catch {
-      }
-    }
-  }
-  const formatConfig32 = {
-    leaguePhaseTeams: 32,
-    matchesPerTeam: 8,
-    directQualifiers: 8,
-    playoffTeams: 16,
-    knockoutTeams: 16
+  const existingUclParts = existingParts.filter((p) => p.competitionId === uclComp.id);
+  const existingUclClubIds = new Set(existingUclParts.map((p) => p.clubId));
+  const projectedUclClubIds = new Set(projectedUcl.map((p) => p.clubId));
+  const uclDiff = {
+    competitionId: uclComp.id,
+    competitionName: uclComp.name,
+    totalTarget: 32,
+    retained: projectedUcl.filter((p) => existingUclClubIds.has(p.clubId)).map((p) => ({ clubId: p.clubId, clubName: p.clubName, rank: p.rank, sourceLeague: p.sourceCompetitionName })),
+    added: projectedUcl.filter((p) => !existingUclClubIds.has(p.clubId)).map((p) => ({ clubId: p.clubId, clubName: p.clubName, rank: p.rank, sourceLeague: p.sourceCompetitionName })),
+    removed: existingUclParts.filter((p) => !projectedUclClubIds.has(p.clubId)).map((p) => {
+      const club = clubsMap.get(p.clubId);
+      return { clubId: p.clubId, clubName: club?.name || p.clubId, previousReason: p.qualificationReason };
+    })
   };
-  if (uclComp) {
-    await db.collection(COLLECTIONS.COMPETITIONS).doc(uclComp.id).set(
-      { formatConfig: formatConfig32 },
-      { merge: true }
-    );
-    try {
-      queryRun("UPDATE competitions SET format_config_json = ? WHERE id = ?", [
-        JSON.stringify(formatConfig32),
-        uclComp.id
-      ]);
-    } catch {
-    }
-    await rebuildCompetitionStandingsFirestore(uclComp.id).catch(() => {
-    });
+  const existingUelParts = existingParts.filter((p) => p.competitionId === uelComp.id);
+  const existingUelClubIds = new Set(existingUelParts.map((p) => p.clubId));
+  const projectedUelClubIds = new Set(projectedUel.map((p) => p.clubId));
+  const uelDiff = {
+    competitionId: uelComp.id,
+    competitionName: uelComp.name,
+    totalTarget: 32,
+    retained: projectedUel.filter((p) => existingUelClubIds.has(p.clubId)).map((p) => ({ clubId: p.clubId, clubName: p.clubName, rank: p.rank, sourceLeague: p.sourceCompetitionName })),
+    added: projectedUel.filter((p) => !existingUelClubIds.has(p.clubId)).map((p) => ({ clubId: p.clubId, clubName: p.clubName, rank: p.rank, sourceLeague: p.sourceCompetitionName })),
+    removed: existingUelParts.filter((p) => !projectedUelClubIds.has(p.clubId)).map((p) => {
+      const club = clubsMap.get(p.clubId);
+      return { clubId: p.clubId, clubName: club?.name || p.clubId, previousReason: p.qualificationReason };
+    })
+  };
+  const previewToken = `prev-qual-${Date.now()}-${crypto3.randomBytes(6).toString("hex")}`;
+  const expiresAt = new Date(now.getTime() + 15 * 60 * 1e3).toISOString();
+  const preview = {
+    previewToken,
+    seasonId,
+    mode,
+    canApply,
+    blockReason,
+    domesticLeaguesCompleted,
+    unplayedLeagueMatchesCount,
+    hasEuropeanStarted,
+    summary: {
+      ucl: {
+        totalTarget: 32,
+        retainedCount: uclDiff.retained.length,
+        addedCount: uclDiff.added.length,
+        removedCount: uclDiff.removed.length
+      },
+      uel: {
+        totalTarget: 32,
+        retainedCount: uelDiff.retained.length,
+        addedCount: uelDiff.added.length,
+        removedCount: uelDiff.removed.length
+      }
+    },
+    diff: {
+      ucl: uclDiff,
+      uel: uelDiff
+    },
+    projectedQualifications: [...projectedUcl, ...projectedUel],
+    generatedAt: nowIso,
+    expiresAt
+  };
+  await saveQualificationPreviewToken(previewToken, preview);
+  return preview;
+}
+async function applyEuropeanQualificationSync(params) {
+  if (!params.confirmation) {
+    throw new Error("Explicit admin confirmation is required to apply European qualifications sync.");
   }
-  if (uelComp) {
-    await db.collection(COLLECTIONS.COMPETITIONS).doc(uelComp.id).set(
-      { formatConfig: formatConfig32 },
-      { merge: true }
+  const preview = await getQualificationPreviewToken(params.previewToken);
+  if (!preview) {
+    throw new Error("Preview token is invalid, expired, or was already applied. Please generate a fresh preview before applying.");
+  }
+  if (!preview.canApply) {
+    throw new Error(preview.blockReason || "Cannot apply qualifications sync: preconditions failed.");
+  }
+  const db = getFirestoreDb();
+  const activeEuropeanFixSnap = await db.collection(COLLECTIONS.FIXTURES).where("competitionId", "in", [preview.diff.ucl.competitionId, preview.diff.uel.competitionId]).where("status", "in", ["CONFIRMED", "PLAYING"]).limit(1).get();
+  if (!activeEuropeanFixSnap.empty) {
+    throw new Error(
+      "Precondition Failed: European competitions have already started with active or confirmed matches. Modifying participants is strictly prohibited."
     );
+  }
+  if (preview.mode === "final") {
+    const unplayedLeaguesSnap = await db.collection(COLLECTIONS.FIXTURES).where("seasonId", "==", preview.seasonId).where("status", "==", "SCHEDULED").get();
+    const leagueIds = [
+      "comp-premier-league-2026",
+      "comp-la-liga-2026",
+      "comp-serie-a-2026",
+      "comp-bundesliga-2026",
+      "comp-ligue-1-2026"
+    ];
+    const unplayedLeagueMatches = unplayedLeaguesSnap.docs.filter(
+      (d) => leagueIds.includes(d.data().competitionId)
+    ).length;
+    if (unplayedLeagueMatches > 0) {
+      throw new Error(
+        `Precondition Failed: Domestic leagues still have ${unplayedLeagueMatches} unplayed scheduled matches. Final qualification sync cannot be applied.`
+      );
+    }
+  }
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const batch = db.batch();
+  let participantsAdded = 0;
+  let participantsRemoved = 0;
+  const notificationsToSend = [];
+  for (let i = 0; i < preview.diff.ucl.added.length; i++) {
+    const item = preview.diff.ucl.added[i];
+    const qual = preview.projectedQualifications.find((q) => q.clubId === item.clubId && q.targetCompetitionId === preview.diff.ucl.competitionId);
+    const partId = `part-${preview.diff.ucl.competitionId}-${item.clubId}`;
+    const partRef = db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).doc(partId);
+    const docData = {
+      id: partId,
+      competitionId: preview.diff.ucl.competitionId,
+      clubId: item.clubId,
+      seasonId: preview.seasonId,
+      ownerUserId: qual?.ownerUserId || void 0,
+      sourceCompetitionId: qual?.sourceCompetitionId,
+      sourceCompetitionName: qual?.sourceCompetitionName,
+      sourcePosition: item.rank,
+      qualificationReason: qual?.reason || "Qualified for UCL",
+      qualificationTimestamp: now,
+      seedNumber: i + 1,
+      createdAt: now
+    };
+    batch.set(partRef, docData, { merge: true });
+    participantsAdded++;
+    if (qual?.ownerUserId) {
+      notificationsToSend.push({
+        userId: qual.ownerUserId,
+        title: "\u{1F3C6} Qualified for UEFA Champions League!",
+        message: `Congratulations! ${item.clubName} qualified for the UEFA Champions League (${item.sourceLeague} #${item.rank})!`
+      });
+    }
+  }
+  for (let i = 0; i < preview.diff.uel.added.length; i++) {
+    const item = preview.diff.uel.added[i];
+    const qual = preview.projectedQualifications.find((q) => q.clubId === item.clubId && q.targetCompetitionId === preview.diff.uel.competitionId);
+    const partId = `part-${preview.diff.uel.competitionId}-${item.clubId}`;
+    const partRef = db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).doc(partId);
+    const docData = {
+      id: partId,
+      competitionId: preview.diff.uel.competitionId,
+      clubId: item.clubId,
+      seasonId: preview.seasonId,
+      ownerUserId: qual?.ownerUserId || void 0,
+      sourceCompetitionId: qual?.sourceCompetitionId,
+      sourceCompetitionName: qual?.sourceCompetitionName,
+      sourcePosition: item.rank,
+      qualificationReason: qual?.reason || "Qualified for UEL",
+      qualificationTimestamp: now,
+      seedNumber: i + 1,
+      createdAt: now
+    };
+    batch.set(partRef, docData, { merge: true });
+    participantsAdded++;
+    if (qual?.ownerUserId) {
+      notificationsToSend.push({
+        userId: qual.ownerUserId,
+        title: "Qualified for UEFA Europa League",
+        message: `Congratulations! ${item.clubName} qualified for the UEFA Europa League (${item.sourceLeague} #${item.rank})!`
+      });
+    }
+  }
+  for (const rem of [...preview.diff.ucl.removed, ...preview.diff.uel.removed]) {
+    const compId = preview.diff.ucl.removed.includes(rem) ? preview.diff.ucl.competitionId : preview.diff.uel.competitionId;
+    const partId = `part-${compId}-${rem.clubId}`;
+    const partRef = db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).doc(partId);
+    batch.delete(partRef);
+    participantsRemoved++;
+  }
+  await batch.commit();
+  for (const q of preview.projectedQualifications) {
     try {
-      queryRun("UPDATE competitions SET format_config_json = ? WHERE id = ?", [
-        JSON.stringify(formatConfig32),
-        uelComp.id
-      ]);
+      const partId = `part-${q.targetCompetitionId}-${q.clubId}`;
+      queryRun(
+        `INSERT OR REPLACE INTO competition_participants 
+         (id, competition_id, club_id, season_id, owner_user_id, source_competition_id, source_position, qualification_reason, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [partId, q.targetCompetitionId, q.clubId, preview.seasonId, q.ownerUserId, q.sourceCompetitionId, q.rank, q.reason, now]
+      );
     } catch {
     }
-    await rebuildCompetitionStandingsFirestore(uelComp.id).catch(() => {
+  }
+  await deleteQualificationPreviewToken(params.previewToken);
+  await redisDelRaw(ReadModelKeys.competitions(preview.seasonId)).catch(() => {
+  });
+  for (const compId of [preview.diff.ucl.competitionId, preview.diff.uel.competitionId]) {
+    await redisDelRaw(ReadModelKeys.standings(compId, preview.seasonId)).catch(() => {
+    });
+    await redisDelRaw(ReadModelKeys.competitionFixtures(compId, preview.seasonId)).catch(() => {
     });
   }
   await Promise.all(
@@ -10424,18 +13064,553 @@ async function evaluateSeasonQualifications(seasonId = "season-2026-27") {
     )
   );
   await createAuditLog(
-    "system",
-    "EVALUATE_QUALIFICATIONS",
-    "seasons",
-    seasonId,
-    null,
-    { totalQualified: qualifications.length, participantsAdded }
+    params.adminUserId,
+    "EUROPEAN_QUALIFICATIONS_SYNCED",
+    "SEASON",
+    preview.seasonId,
+    void 0,
+    {
+      mode: preview.mode,
+      totalQualified: preview.projectedQualifications.length,
+      participantsAdded,
+      participantsRemoved,
+      previewToken: params.previewToken,
+      timestamp: now
+    },
+    void 0,
+    params.adminUsername || "admin",
+    `Applied European qualification sync (${preview.mode}): ${participantsAdded} added, ${participantsRemoved} removed.`
   );
   return {
     success: true,
-    qualifications,
-    participantsAdded
+    message: `Successfully applied European qualifications sync (${preview.mode}): ${participantsAdded} added, ${participantsRemoved} removed.`,
+    qualificationsApplied: preview.projectedQualifications.length,
+    participantsAdded,
+    participantsRemoved
   };
+}
+async function rebuildEuropeanStandings(competitionId, seasonId = "season-2026-27") {
+  const db = getFirestoreDb();
+  const [compDoc, partsSnap, fixSnap] = await Promise.all([
+    db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get(),
+    db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where("competitionId", "==", competitionId).get(),
+    db.collection(COLLECTIONS.FIXTURES).where("competitionId", "==", competitionId).get()
+  ]);
+  const clubsMap = new Map(SEED_CLUBS.map((c) => [c.id, c]));
+  const participants = partsSnap.docs.map((d) => d.data());
+  const fixtures = fixSnap.docs.map((d) => d.data());
+  let clubIds = participants.map((p) => p.clubId);
+  if (clubIds.length === 0) {
+    clubIds = SEED_CLUBS.slice(0, 32).map((c) => c.id);
+  }
+  const statsMap = /* @__PURE__ */ new Map();
+  for (const cid of clubIds) {
+    const club = clubsMap.get(cid);
+    statsMap.set(cid, {
+      clubId: cid,
+      clubName: club?.name || cid,
+      badgeUrl: club?.logoUrl,
+      played: 0,
+      won: 0,
+      drawn: 0,
+      lost: 0,
+      goalsFor: 0,
+      goalsAgainst: 0,
+      goalDifference: 0,
+      points: 0
+    });
+  }
+  for (const f of fixtures) {
+    if (f.status !== "CONFIRMED" || f.homeScore === null || f.awayScore === null) continue;
+    const home = statsMap.get(f.homeClubId);
+    const away = statsMap.get(f.awayClubId);
+    if (home) {
+      home.played += 1;
+      home.goalsFor += f.homeScore;
+      home.goalsAgainst += f.awayScore;
+      home.goalDifference = home.goalsFor - home.goalsAgainst;
+      if (f.homeScore > f.awayScore) {
+        home.won += 1;
+        home.points += 3;
+      } else if (f.homeScore === f.awayScore) {
+        home.drawn += 1;
+        home.points += 1;
+      } else {
+        home.lost += 1;
+      }
+    }
+    if (away) {
+      away.played += 1;
+      away.goalsFor += f.awayScore;
+      away.goalsAgainst += f.homeScore;
+      away.goalDifference = away.goalsFor - away.goalsAgainst;
+      if (f.awayScore > f.homeScore) {
+        away.won += 1;
+        away.points += 3;
+      } else if (f.homeScore === f.awayScore) {
+        away.drawn += 1;
+        away.points += 1;
+      } else {
+        away.lost += 1;
+      }
+    }
+  }
+  const sorted = Array.from(statsMap.values()).sort((a, b) => {
+    if (b.points !== a.points) return b.points - a.points;
+    if (b.goalDifference !== a.goalDifference) return b.goalDifference - a.goalDifference;
+    if (b.goalsFor !== a.goalsFor) return b.goalsFor - a.goalsFor;
+    return a.clubName.localeCompare(b.clubName);
+  });
+  const rows = sorted.map((s, idx) => {
+    const position = idx + 1;
+    let zone = "ELIMINATED";
+    let zoneLabel = "Eliminated (25-32)";
+    if (position <= 8) {
+      zone = "DIRECT_R16";
+      zoneLabel = "Round of 16 (Direct Qualification)";
+    } else if (position <= 24) {
+      zone = "KNOCKOUT_PLAYOFF";
+      zoneLabel = "Knockout Play-offs (9-24)";
+    }
+    return {
+      position,
+      clubId: s.clubId,
+      clubName: s.clubName,
+      badgeUrl: s.badgeUrl,
+      played: s.played,
+      won: s.won,
+      drawn: s.drawn,
+      lost: s.lost,
+      goalsFor: s.goalsFor,
+      goalsAgainst: s.goalsAgainst,
+      goalDifference: s.goalDifference,
+      points: s.points,
+      zone,
+      zoneLabel
+    };
+  });
+  const cacheKey = `european:standings:${competitionId}:${seasonId}`;
+  await redisSetRaw(
+    cacheKey,
+    {
+      data: rows,
+      schemaVersion: SCHEMA_VERSION,
+      sourceVersion: "rebuild-european-standings",
+      expectedCount: 32
+    },
+    86400
+  );
+  return rows;
+}
+async function getEuropeanStandings(competitionId, seasonId = "season-2026-27") {
+  const cacheKey = `european:standings:${competitionId}:${seasonId}`;
+  const raw = await redisGetRaw(cacheKey);
+  if (raw?.data && Array.isArray(raw.data) && raw.data.length > 0) {
+    return {
+      rows: raw.data,
+      source: "redis-read-model",
+      degraded: false
+    };
+  }
+  try {
+    const rows = await rebuildEuropeanStandings(competitionId, seasonId);
+    return { rows, source: "firestore", degraded: false };
+  } catch (err) {
+    firestoreCircuitBreaker.recordFailure(err);
+    return { rows: [], source: "error-fallback", degraded: true };
+  }
+}
+async function evaluateSeasonQualifications(seasonId = "season-2026-27") {
+  const preview = await previewEuropeanQualificationSync(seasonId, "provisional");
+  if (preview.canApply) {
+    const res = await applyEuropeanQualificationSync({
+      seasonId,
+      previewToken: preview.previewToken,
+      confirmation: true,
+      adminUserId: "system",
+      adminUsername: "system-evaluator"
+    });
+    return {
+      success: true,
+      qualifications: preview.projectedQualifications,
+      participantsAdded: res.participantsAdded
+    };
+  }
+  return {
+    success: false,
+    qualifications: preview.projectedQualifications,
+    participantsAdded: 0
+  };
+}
+
+// src/server/routes/admin.routes.ts
+init_domesticCupService();
+
+// src/server/services/telegramNotificationQueue.ts
+init_admin();
+init_collections();
+init_adminService();
+init_readModelStore();
+init_seed();
+init_db();
+import crypto4 from "crypto";
+var BROADCASTS_KEY = `${KEY_PREFIX}:telegram:broadcasts`;
+var QUEUE_KEY = `${KEY_PREFIX}:telegram:queue`;
+var RECIPIENT_DIR_KEY = `${KEY_PREFIX}:private:recipient-directory`;
+var memoryBroadcasts = /* @__PURE__ */ new Map();
+var memoryJobQueue = [];
+var memoryRecipientDirectory = /* @__PURE__ */ new Map();
+async function syncRecipientDirectory(seasonId = "season-2026-27") {
+  const dirMap = /* @__PURE__ */ new Map();
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  try {
+    const db = getFirestoreDb();
+    const [usersSnap, occSnap] = await Promise.all([
+      db.collection(COLLECTIONS.USERS).get(),
+      db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where("seasonId", "==", seasonId).get()
+    ]);
+    const occupancyMap = /* @__PURE__ */ new Map();
+    for (const doc of occSnap.docs) {
+      const data = doc.data();
+      if (data.userId && data.clubId) {
+        occupancyMap.set(data.userId, { clubId: data.clubId, claimedAt: data.claimedAt });
+      }
+    }
+    const clubsMap = new Map(SEED_CLUBS.map((c) => [c.id, c]));
+    const leaguesMap = new Map(SEED_LEAGUES.map((l) => [l.id, l]));
+    for (const doc of usersSnap.docs) {
+      const u = doc.data();
+      const occ = occupancyMap.get(u.id);
+      const club = occ ? clubsMap.get(occ.clubId) : void 0;
+      const league = club ? leaguesMap.get(club.leagueId) : void 0;
+      const hasTelegram = Boolean(u.telegramId && String(u.telegramId).trim().length > 0);
+      const entry = {
+        userId: u.id,
+        username: u.username || `player_${u.id.substring(0, 6)}`,
+        displayName: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.username || "EFL Player",
+        telegramId: u.telegramId || null,
+        clubId: club?.id,
+        clubName: club?.name,
+        leagueId: league?.id,
+        leagueName: league?.name,
+        messageable: hasTelegram && !u.isSuspended,
+        updatedAt: now
+      };
+      dirMap.set(u.id, entry);
+      memoryRecipientDirectory.set(u.id, entry);
+    }
+  } catch (err) {
+    const userRows = queryAll("SELECT * FROM users");
+    const occRows = queryAll("SELECT * FROM club_memberships WHERE status = ?", ["active"]);
+    const occupancyMap = /* @__PURE__ */ new Map();
+    for (const o of occRows) {
+      if (o.user_id && o.club_id) occupancyMap.set(o.user_id, o.club_id);
+    }
+    const clubsMap = new Map(SEED_CLUBS.map((c) => [c.id, c]));
+    const leaguesMap = new Map(SEED_LEAGUES.map((l) => [l.id, l]));
+    for (const u of userRows) {
+      const clubId = occupancyMap.get(u.id);
+      const club = clubId ? clubsMap.get(clubId) : void 0;
+      const league = club ? leaguesMap.get(club.leagueId) : void 0;
+      const hasTelegram = Boolean(u.telegram_id);
+      const entry = {
+        userId: u.id,
+        username: u.username || `player_${u.id.substring(0, 6)}`,
+        displayName: [u.first_name, u.last_name].filter(Boolean).join(" ") || u.username || "EFL Player",
+        telegramId: u.telegram_id || null,
+        clubId: club?.id,
+        clubName: club?.name,
+        leagueId: league?.id,
+        leagueName: league?.name,
+        messageable: hasTelegram && !u.is_suspended,
+        updatedAt: now
+      };
+      dirMap.set(u.id, entry);
+      memoryRecipientDirectory.set(u.id, entry);
+    }
+  }
+  const entriesArray = Array.from(dirMap.values());
+  const client = getUpstashClient();
+  if (client) {
+    try {
+      await client.set(RECIPIENT_DIR_KEY, entriesArray);
+    } catch {
+    }
+  }
+  return entriesArray.length;
+}
+async function getSafeEligibleRecipients(filter, seasonId = "season-2026-27") {
+  if (memoryRecipientDirectory.size === 0) {
+    await syncRecipientDirectory(seasonId);
+  }
+  const client = getUpstashClient();
+  let entries = [];
+  if (client) {
+    try {
+      const cached = await client.get(RECIPIENT_DIR_KEY);
+      if (Array.isArray(cached) && cached.length > 0) {
+        entries = cached;
+      }
+    } catch {
+    }
+  }
+  if (entries.length === 0) {
+    entries = Array.from(memoryRecipientDirectory.values());
+  }
+  let filtered = entries;
+  if (filter?.audience === "CLUB_OWNERS") {
+    filtered = filtered.filter((r) => Boolean(r.clubId));
+  } else if (filter?.audience === "LEAGUE_OWNERS" && filter.leagueId) {
+    filtered = filtered.filter((r) => r.leagueId === filter.leagueId && Boolean(r.clubId));
+  }
+  return filtered.map((r) => ({
+    userId: r.userId,
+    username: r.username,
+    displayName: r.displayName,
+    clubId: r.clubId,
+    clubName: r.clubName,
+    leagueId: r.leagueId,
+    leagueName: r.leagueName,
+    hasTelegram: Boolean(r.telegramId),
+    messageable: r.messageable
+  }));
+}
+async function enqueueTelegramBroadcast(params) {
+  const seasonId = params.seasonId || "season-2026-27";
+  if (memoryRecipientDirectory.size === 0) {
+    await syncRecipientDirectory(seasonId);
+  }
+  const broadcastId = `bcast-${Date.now()}-${crypto4.randomBytes(4).toString("hex")}`;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  let targetUserIds = [];
+  if (params.targetAudience === "SELECTED_RECIPIENTS") {
+    targetUserIds = params.selectedUserIds || [];
+  } else {
+    const safeRecipients = await getSafeEligibleRecipients(
+      { audience: params.targetAudience, leagueId: params.targetLeagueId },
+      seasonId
+    );
+    targetUserIds = safeRecipients.map((r) => r.userId);
+  }
+  if (targetUserIds.length === 0) {
+    throw new Error("No eligible recipients found for this broadcast selection.");
+  }
+  const recipientStatuses = [];
+  const jobs = [];
+  for (const uid of targetUserIds) {
+    const recipient = memoryRecipientDirectory.get(uid);
+    const hasTg = Boolean(recipient?.telegramId);
+    recipientStatuses.push({
+      userId: uid,
+      username: recipient?.username || "user",
+      displayName: recipient?.displayName || "User",
+      clubName: recipient?.clubName,
+      status: hasTg ? "PENDING" : "SKIPPED_NO_TELEGRAM",
+      error: hasTg ? void 0 : "User has no connected Telegram account",
+      retryCount: 0
+    });
+    if (hasTg) {
+      jobs.push({
+        jobId: `job-${broadcastId}-${uid}`,
+        broadcastId,
+        userId: uid,
+        username: recipient?.username || "user",
+        displayName: recipient?.displayName || "User",
+        telegramId: recipient.telegramId,
+        title: params.title,
+        body: params.body,
+        type: params.type,
+        status: "QUEUED",
+        retryCount: 0,
+        maxRetries: 3,
+        createdAt: now
+      });
+    }
+  }
+  const record = {
+    id: broadcastId,
+    seasonId,
+    title: params.title,
+    body: params.body,
+    type: params.type,
+    targetAudience: params.targetAudience,
+    targetLeagueId: params.targetLeagueId,
+    createdById: params.adminUserId,
+    createdByUsername: params.adminUsername,
+    createdAt: now,
+    status: jobs.length > 0 ? "QUEUED" : "COMPLETED",
+    metrics: {
+      totalRecipients: targetUserIds.length,
+      sentCount: 0,
+      failedCount: 0,
+      skippedCount: recipientStatuses.filter((r) => r.status === "SKIPPED_NO_TELEGRAM").length
+    },
+    recipients: recipientStatuses
+  };
+  memoryBroadcasts.set(broadcastId, record);
+  for (const job of jobs) {
+    memoryJobQueue.push(job);
+  }
+  const client = getUpstashClient();
+  if (client) {
+    try {
+      await client.hset(BROADCASTS_KEY, { [broadcastId]: record });
+      for (const job of jobs) {
+        await client.rpush(QUEUE_KEY, job);
+      }
+    } catch (err) {
+      console.warn("[NOTIF_QUEUE] Redis enqueue error:", err.message);
+    }
+  }
+  await createAuditLog(
+    params.adminUserId,
+    "TELEGRAM_NOTIFICATION_BROADCAST",
+    "BROADCAST",
+    broadcastId,
+    void 0,
+    {
+      broadcastId,
+      title: params.title,
+      type: params.type,
+      recipientsTotal: targetUserIds.length,
+      queuedJobs: jobs.length,
+      skippedNoTelegram: record.metrics.skippedCount,
+      timestamp: now
+    },
+    void 0,
+    params.adminUsername,
+    `Enqueued broadcast '${params.title}' for ${targetUserIds.length} recipients (${jobs.length} with Telegram).`
+  );
+  setTimeout(() => {
+    processNotificationQueue().catch(
+      (err) => console.error("[NOTIF_QUEUE] Background processor failed:", err)
+    );
+  }, 100);
+  return record;
+}
+async function processNotificationQueue(batchSize = 25) {
+  let processed = 0;
+  let succeeded = 0;
+  let failed = 0;
+  const client = getUpstashClient();
+  let pendingJobs = [];
+  if (client) {
+    try {
+      for (let i = 0; i < batchSize; i++) {
+        const job = await client.lpop(QUEUE_KEY);
+        if (!job) break;
+        pendingJobs.push(job);
+      }
+    } catch {
+    }
+  }
+  if (pendingJobs.length === 0) {
+    pendingJobs = memoryJobQueue.splice(0, batchSize);
+  }
+  if (pendingJobs.length === 0) {
+    return { processed: 0, succeeded: 0, failed: 0 };
+  }
+  for (const job of pendingJobs) {
+    processed++;
+    const formattedHtml = formatTelegramMessage(job.title, job.body, job.type);
+    try {
+      const res = await sendTelegramMessage(job.telegramId, formattedHtml, { parse_mode: "HTML" });
+      const now = (/* @__PURE__ */ new Date()).toISOString();
+      if (res.ok) {
+        succeeded++;
+        job.status = "SENT";
+        job.sentAt = now;
+        updateBroadcastRecipientState(job.broadcastId, job.userId, "SENT", void 0, now);
+      } else {
+        job.retryCount++;
+        const errMsg = res.error || "Telegram API returned not ok";
+        if (job.retryCount < job.maxRetries) {
+          job.status = "QUEUED";
+          memoryJobQueue.push(job);
+        } else {
+          failed++;
+          job.status = "FAILED";
+          job.error = errMsg;
+          updateBroadcastRecipientState(job.broadcastId, job.userId, "FAILED", errMsg);
+        }
+      }
+    } catch (err) {
+      job.retryCount++;
+      if (job.retryCount < job.maxRetries) {
+        job.status = "QUEUED";
+        memoryJobQueue.push(job);
+      } else {
+        failed++;
+        job.status = "FAILED";
+        job.error = err.message;
+        updateBroadcastRecipientState(job.broadcastId, job.userId, "FAILED", err.message);
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 40));
+  }
+  return { processed, succeeded, failed };
+}
+function formatTelegramMessage(title, body, type) {
+  let icon = "\u{1F4E2}";
+  if (type === "NEW_MATCHDAY") icon = "\u26BD";
+  if (type === "UPCOMING_MATCH") icon = "\u23F0";
+  if (type === "COMPETITION_UPDATE") icon = "\u{1F3C6}";
+  return `<b>${icon} EFL UZ Official Alert</b>
+
+<b>${escapeHtml(title)}</b>
+
+${escapeHtml(body)}
+
+<i>Season 2026/27 \u2022 Open EFL WebApp to manage fixtures</i>`;
+}
+function escapeHtml(str) {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function updateBroadcastRecipientState(broadcastId, userId, status, error, sentAt) {
+  const bcast = memoryBroadcasts.get(broadcastId);
+  if (!bcast) return;
+  const r = bcast.recipients.find((rec) => rec.userId === userId);
+  if (r) {
+    r.status = status;
+    if (error) r.error = error;
+    if (sentAt) r.sentAt = sentAt;
+  }
+  if (status === "SENT") bcast.metrics.sentCount++;
+  if (status === "FAILED") bcast.metrics.failedCount++;
+  const totalFinished = bcast.metrics.sentCount + bcast.metrics.failedCount + bcast.metrics.skippedCount;
+  if (totalFinished >= bcast.metrics.totalRecipients) {
+    bcast.status = bcast.metrics.failedCount > 0 ? "PARTIALLY_FAILED" : "COMPLETED";
+  }
+  const client = getUpstashClient();
+  if (client) {
+    client.hset(BROADCASTS_KEY, { [broadcastId]: bcast }).catch(() => {
+    });
+  }
+}
+async function getBroadcastHistory(limit = 20) {
+  const client = getUpstashClient();
+  if (client) {
+    try {
+      const records = await client.hgetall(BROADCASTS_KEY);
+      if (records) {
+        const list = Object.values(records);
+        return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, limit);
+      }
+    } catch {
+    }
+  }
+  return Array.from(memoryBroadcasts.values()).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, limit);
+}
+async function getBroadcastDetails(broadcastId) {
+  const client = getUpstashClient();
+  if (client) {
+    try {
+      const record = await client.hget(BROADCASTS_KEY, broadcastId);
+      if (record) return record;
+    } catch {
+    }
+  }
+  return memoryBroadcasts.get(broadcastId) || null;
 }
 
 // src/server/routes/admin.routes.ts
@@ -10443,6 +13618,7 @@ init_admin();
 init_collections();
 init_circuitBreaker();
 init_db();
+init_readModelStore();
 var adminRouter = Router12();
 adminRouter.use(requireAdmin);
 function getFallbackAdminOverview(seasonId) {
@@ -10578,44 +13754,30 @@ adminRouter.get("/overview", async (req, res) => {
   }
 });
 adminRouter.get("/clubs", async (req, res) => {
+  setOwnershipSensitiveHeaders(res);
   const seasonId = req.query.seasonId || "season-2026-27";
   const leagueId = req.query.leagueId;
-  let targetLeagues = SEED_LEAGUES;
-  if (leagueId && leagueId !== "ALL") {
-    targetLeagues = SEED_LEAGUES.filter((l) => l.id === leagueId);
-  }
-  if (!firestoreCircuitBreaker.canExecute()) {
-    const clubs = targetLeagues.flatMap(
-      (l) => SEED_CLUBS.filter((c) => c.leagueId === l.id).map((c) => ({
-        ...c,
-        seasonId,
-        isOccupied: false,
-        occupiedByUserId: null
-      }))
-    );
-    res.json({ clubs, total: clubs.length, source: "sqlite", degraded: true, stale: true });
-    return;
-  }
   try {
-    const clubsByLeague = await Promise.all(
-      targetLeagues.map((l) => getClubsByLeagueFirestore(l.id, seasonId))
-    );
-    const clubs = clubsByLeague.flat();
-    res.json({ clubs, total: clubs.length, source: "firestore", degraded: false, stale: false });
+    const result = await getAdminClubsFromReadModel(seasonId, leagueId);
+    res.json({
+      clubs: result.clubs,
+      total: result.total,
+      source: result.source,
+      degraded: result.degraded,
+      stale: result.stale,
+      generatedAt: result.snapshotAt
+    });
   } catch (err) {
-    firestoreCircuitBreaker.recordFailure(err);
-    const clubs = targetLeagues.flatMap(
-      (l) => SEED_CLUBS.filter((c) => c.leagueId === l.id).map((c) => ({
-        ...c,
-        seasonId,
-        isOccupied: false,
-        occupiedByUserId: null
-      }))
-    );
-    res.json({ clubs, total: clubs.length, source: "sqlite", degraded: true, stale: true });
+    console.error("[ADMIN_CLUBS_ERROR]", err);
+    res.status(503).json({
+      errorCode: "READ_MODEL_ERROR",
+      message: err.message || "Failed to retrieve admin clubs read model",
+      generatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    });
   }
 });
 adminRouter.get("/fixtures", async (req, res) => {
+  setOwnershipSensitiveHeaders(res);
   const seasonId = req.query.seasonId || "season-2026-27";
   const competitionId = req.query.competitionId;
   const status = req.query.status;
@@ -10649,30 +13811,30 @@ adminRouter.get("/fixtures", async (req, res) => {
       source: result.source,
       degraded: result.degraded,
       stale: result.stale,
+      errorCode: result.errorCode,
       generatedAt: result.generatedAt
     });
   } catch (err) {
-    firestoreCircuitBreaker.recordFailure(err);
-    const fallback = executeAdminFixturesPagedFallback({
+    if (err instanceof ReadModelNotWarmedError || err?.errorCode === "READ_MODEL_NOT_WARMED") {
+      res.status(503).json({
+        errorCode: "READ_MODEL_NOT_WARMED",
+        message: "Read model is not warmed and authoritative database is unreachable.",
+        generatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      return;
+    }
+    console.error("[ADMIN_FIXTURES_FAILED]", {
+      message: err?.message,
+      code: err?.code,
       seasonId,
-      competitionId: competitionId === "ALL" ? void 0 : competitionId,
-      status: status === "ALL" ? void 0 : status,
-      matchday: matchday || void 0,
-      cursor,
-      limit
-    }, limit);
-    res.status(200).json({
-      fixtures: fallback.fixtures,
-      total: fallback.total,
-      hasMore: fallback.hasMore,
-      nextCursor: fallback.nextCursor,
-      page,
-      totalPages: Math.ceil(fallback.total / limit) || 1,
-      limit,
-      source: "sqlite",
-      degraded: true,
-      stale: true,
-      generatedAt: fallback.generatedAt
+      competitionId,
+      status,
+      matchday
+    });
+    res.status(503).json({
+      errorCode: "READ_MODEL_ERROR",
+      message: err.message || "Failed to retrieve admin fixtures read model",
+      generatedAt: (/* @__PURE__ */ new Date()).toISOString()
     });
   }
 });
@@ -11180,6 +14342,8 @@ adminRouter.post("/clubs/:id/release", async (req, res) => {
   const seasonId = req.body.seasonId || "season-2026-27";
   try {
     const result = await adminReleaseClubFirestore(adminUserId, clubId, seasonId);
+    await invalidateClubReadModels(seasonId).catch(() => {
+    });
     res.json(result);
   } catch (err) {
     handleFirestoreError(res, err, `POST /api/admin/clubs/${clubId}/release`);
@@ -11195,6 +14359,10 @@ adminRouter.post("/clubs/:id/assign", async (req, res) => {
   }
   try {
     const result = await adminAssignClubFirestore(adminUserId, clubId, targetUserId, seasonId);
+    await invalidateClubReadModels(seasonId).catch(() => {
+    });
+    await invalidateUserMembershipReadModel(targetUserId, seasonId).catch(() => {
+    });
     res.json(result);
   } catch (err) {
     handleFirestoreError(res, err, `POST /api/admin/clubs/${clubId}/assign`);
@@ -11228,6 +14396,15 @@ adminRouter.post("/results/:fixtureId/approve", validateBody(approveResultSchema
   const { homeScore, awayScore, notes } = req.body;
   try {
     const result = await adminApproveFixtureResultFirestore(adminUserId, fixtureId, homeScore, awayScore, notes);
+    const compId = result?.fixture?.competitionId || "";
+    if (compId) {
+      await invalidateFixtureReadModels(compId, "season-2026-27").catch(() => {
+      });
+      await invalidateStandingsReadModels(compId, "season-2026-27").catch(() => {
+      });
+    }
+    await invalidateFixtureReadModels("", "season-2026-27").catch(() => {
+    });
     res.json(result);
   } catch (err) {
     handleFirestoreError(res, err, `POST /api/admin/results/${fixtureId}/approve`);
@@ -11239,6 +14416,8 @@ adminRouter.post("/results/:fixtureId/reject", validateBody(reopenFixtureSchema)
   const { notes } = req.body;
   try {
     const result = await reopenFixtureFirestore(adminUserId, fixtureId, notes || "Rejected by tournament administrator");
+    await invalidateFixtureReadModels("", "season-2026-27").catch(() => {
+    });
     res.json({
       success: true,
       message: "Pending result rejected and match reopened for re-submission.",
@@ -11336,6 +14515,228 @@ adminRouter.post("/sync", async (_req, res) => {
       success: false,
       error: err.message
     });
+  }
+});
+adminRouter.post("/read-model/rebuild", async (req, res) => {
+  const seasonId = req.body?.seasonId || req.query?.seasonId || "season-2026-27";
+  try {
+    const result = await rebuildAllReadModels(seasonId);
+    res.json(result);
+  } catch (err) {
+    console.error("[ADMIN_READ_MODEL_REBUILD_ERROR]", err);
+    res.status(500).json({
+      success: false,
+      error: err.message || "Failed to rebuild read model snapshots",
+      generatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    });
+  }
+});
+adminRouter.get("/read-model/health", async (req, res) => {
+  const seasonId = req.query?.seasonId || "season-2026-27";
+  try {
+    const health = await getReadModelHealthStatus(seasonId);
+    res.json(health);
+  } catch (err) {
+    console.error("[ADMIN_READ_MODEL_HEALTH_ERROR]", err);
+    res.status(500).json({
+      error: err.message || "Failed to get read model health"
+    });
+  }
+});
+adminRouter.get("/cups", async (req, res) => {
+  try {
+    const cups = Object.values(DOMESTIC_CUPS);
+    res.json({ cups });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+adminRouter.get("/cups/:cupId", async (req, res) => {
+  const cupId = req.params.cupId;
+  const seasonId = req.query.seasonId || "season-2026-27";
+  try {
+    const details = await getDomesticCupDetails(cupId, seasonId);
+    res.json(details);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+adminRouter.post("/cups/:cupId/bracket/preview", async (req, res) => {
+  const cupId = req.params.cupId;
+  const seasonId = req.body.seasonId || "season-2026-27";
+  try {
+    const preview = await previewDomesticCupBracket(cupId, seasonId);
+    res.json(preview);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+adminRouter.post("/cups/:cupId/bracket/generate", async (req, res) => {
+  const cupId = req.params.cupId;
+  const adminUserId = req.user.id;
+  const adminUsername = req.user?.username || "admin";
+  const confirmation = Boolean(req.body.confirmation);
+  const seasonId = req.body.seasonId || "season-2026-27";
+  try {
+    const result = await generateDomesticCupBracketSafe(cupId, {
+      adminUserId,
+      adminUsername,
+      confirmation,
+      seasonId
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+adminRouter.post("/cups/matches/:fixtureId/advance", async (req, res) => {
+  const fixtureId = req.params.fixtureId;
+  const adminUserId = req.user.id;
+  const adminUsername = req.user?.username || "admin";
+  try {
+    const result = await advanceDomesticCupWinnerSafe(fixtureId, {
+      adminUserId,
+      adminUsername
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+adminRouter.get("/european/standings", async (req, res) => {
+  const competitionId = req.query.competitionId || "comp-champions-league-2026";
+  const seasonId = req.query.seasonId || "season-2026-27";
+  try {
+    const result = await getEuropeanStandings(competitionId, seasonId);
+    res.json({
+      competitionId,
+      seasonId,
+      standings: result.rows,
+      source: result.source,
+      degraded: result.degraded
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+adminRouter.post("/european/standings/rebuild", async (req, res) => {
+  const competitionId = req.body.competitionId || "comp-champions-league-2026";
+  const seasonId = req.body.seasonId || "season-2026-27";
+  try {
+    const rows = await rebuildEuropeanStandings(competitionId, seasonId);
+    res.json({
+      success: true,
+      competitionId,
+      seasonId,
+      totalTeams: rows.length,
+      standings: rows,
+      message: `Rebuilt 32-team standings for ${competitionId}.`
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+adminRouter.get("/european/qualification/preview", async (req, res) => {
+  const seasonId = req.query.seasonId || "season-2026-27";
+  const mode = req.query.mode || "provisional";
+  try {
+    const preview = await previewEuropeanQualificationSync(seasonId, mode);
+    res.json(preview);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+adminRouter.post("/european/qualification/apply", async (req, res) => {
+  const adminUserId = req.user.id;
+  const adminUsername = req.user?.username || "admin";
+  const { previewToken, confirmation, seasonId } = req.body;
+  if (!previewToken) {
+    res.status(400).json({ error: "previewToken is required" });
+    return;
+  }
+  try {
+    const result = await applyEuropeanQualificationSync({
+      seasonId,
+      previewToken,
+      confirmation: Boolean(confirmation),
+      adminUserId,
+      adminUsername
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+adminRouter.get("/telegram-notifications/recipients", async (req, res) => {
+  const audience = req.query.audience;
+  const leagueId = req.query.leagueId;
+  const seasonId = req.query.seasonId || "season-2026-27";
+  try {
+    const recipients = await getSafeEligibleRecipients({ audience, leagueId }, seasonId);
+    res.json({
+      total: recipients.length,
+      recipients
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+adminRouter.post("/telegram-notifications/broadcast", async (req, res) => {
+  const adminUserId = req.user.id;
+  const adminUsername = req.user?.username || "admin";
+  const { title, body, type, targetAudience, targetLeagueId, selectedUserIds, seasonId } = req.body;
+  if (!title || !body) {
+    res.status(400).json({ error: "Title and message body are required" });
+    return;
+  }
+  try {
+    const record = await enqueueTelegramBroadcast({
+      adminUserId,
+      adminUsername,
+      title,
+      body,
+      type: type || "CUSTOM_ALERT",
+      targetAudience: targetAudience || "ALL_USERS",
+      targetLeagueId,
+      selectedUserIds,
+      seasonId
+    });
+    res.json({
+      success: true,
+      message: `Enqueued broadcast '${title}' for ${record.metrics.totalRecipients} recipients.`,
+      broadcast: record
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+adminRouter.get("/telegram-notifications/broadcasts", async (req, res) => {
+  const limit = req.query.limit ? parseInt(req.query.limit, 10) : 20;
+  try {
+    const broadcasts = await getBroadcastHistory(limit);
+    res.json({ broadcasts });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+adminRouter.get("/telegram-notifications/broadcasts/:id", async (req, res) => {
+  try {
+    const broadcast = await getBroadcastDetails(req.params.id);
+    if (!broadcast) {
+      res.status(404).json({ error: "Broadcast not found" });
+      return;
+    }
+    res.json({ broadcast });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+adminRouter.post("/telegram-notifications/process-queue", async (req, res) => {
+  try {
+    const result = await processNotificationQueue(50);
+    res.json({ success: true, result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

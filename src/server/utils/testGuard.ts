@@ -30,6 +30,10 @@ export const SYNTHETIC_ID_PATTERNS = [
  * Every hosted environment is treated as unsafe for test mutations, including ais-dev-* Cloud Run services.
  */
 export function isHostedEnvironment(): boolean {
+  // If forced local fallback is active, we are strictly in local in-memory emulation
+  if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === 'true') {
+    return false;
+  }
   return Boolean(
     (process.env.K_SERVICE && process.env.K_SERVICE.trim() !== '') ||
     process.env.VERCEL ||
@@ -43,14 +47,18 @@ export function isHostedEnvironment(): boolean {
  * Checks whether the process is connected to the real production project or database.
  */
 export function isConnectedToProductionFirestore(): boolean {
+  // Under forced local fallback, we are connected to the isolated in-memory mock
+  if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === 'true') {
+    return false;
+  }
+
   // If hosted in production, treat as connected to production
   if (isHostedEnvironment()) {
     return true;
   }
 
   const status = getFirebaseStatus();
-  // Under forced local fallback, we are connected to the isolated in-memory mock
-  if (status.authMode === 'local_fallback' || process.env.FIREBASE_FORCE_LOCAL_FALLBACK === 'true') {
+  if (status.authMode === 'local_fallback') {
     return false;
   }
 
@@ -70,6 +78,10 @@ export function isConnectedToProductionFirestore(): boolean {
  * Checks whether the process or configuration targets the real production project or database.
  */
 export function isTargetingProductionProjectOrDb(): boolean {
+  if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === 'true') {
+    return false;
+  }
+
   const status = getFirebaseStatus();
   const envProjectId =
     process.env.FIREBASE_PROJECT_ID ||
@@ -108,18 +120,17 @@ export function isSyntheticIdentifier(id: string | null | undefined): boolean {
  * Any hosted environment is strictly unsafe.
  */
 export function isTestSafe(): boolean {
-  // Hosted environments (Cloud Run, Vercel, production) are NEVER safe for test mutations
-  if (isHostedEnvironment()) {
-    return false;
-  }
-
-  // ALLOW_TEST_WRITES alone must NEVER authorize writes
   // Path 1: Local In-Memory Fallback
   if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === 'true') {
     const { info } = initializeFirebaseAdmin();
     if (info.authMode === 'local_fallback') {
       return true;
     }
+  }
+
+  // Hosted environments (Cloud Run, Vercel, production) are NEVER safe for test mutations
+  if (isHostedEnvironment()) {
+    return false;
   }
 
   // Path 2: Verified Local Emulator with demo- or test- project
