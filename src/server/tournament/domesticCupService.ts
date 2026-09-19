@@ -1113,7 +1113,7 @@ export async function advanceDomesticCupWinnerSafe(
     adminUserId: string;
     adminUsername?: string;
   }
-): Promise<{ success: boolean; advanced: boolean; targetFixtureId?: string; winnerClubId?: string; message: string }> {
+): Promise<{ success: boolean; advanced: boolean; isNoop?: boolean; targetFixtureId?: string; winnerClubId?: string; message: string }> {
   const db = getFirestoreDb();
   const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
   const fixDoc = await fixRef.get();
@@ -1199,30 +1199,96 @@ export async function advanceDomesticCupWinnerSafe(
   }
 
   const targetRef = db.collection(COLLECTIONS.FIXTURES).doc(targetFixtureId);
-  const targetDoc = await targetRef.get();
 
-  if (!targetDoc.exists) {
-    throw new Error(`Target round fixture '${targetFixtureId}' does not exist.`);
+  // Execute advancement inside a transaction to prevent race conditions and concurrent overwrites
+  const txResult = await db.runTransaction(async (transaction) => {
+    const targetDoc = await transaction.get(targetRef);
+
+    if (!targetDoc.exists) {
+      const err: any = new Error(`Target round fixture '${targetFixtureId}' does not exist.`);
+      err.statusCode = 404;
+      err.code = 'NOT_FOUND';
+      throw err;
+    }
+
+    const targetFixture = targetDoc.data() as FirestoreFixtureDoc;
+
+    // Safety: started, submitted, disputed or confirmed target matches cannot be modified
+    const protectedStatuses = [
+      'PLAYING',
+      'IN_PROGRESS',
+      'AWAITING_RESULT',
+      'PENDING_CONFIRMATION',
+      'DISPUTED',
+      'CONFIRMED',
+    ];
+    if (protectedStatuses.includes(targetFixture.status)) {
+      const statusErr: any = new Error(
+        `Cannot advance winner: Target round fixture '${targetFixtureId}' has status '${targetFixture.status}'. Matches that are started, submitted, disputed, or confirmed cannot be modified.`
+      );
+      statusErr.statusCode = 400;
+      statusErr.code = 'TARGET_MATCH_LOCKED';
+      throw statusErr;
+    }
+
+    const currentOccupant = isHomeSlot ? targetFixture.homeClubId : targetFixture.awayClubId;
+
+    // Safety: repeated advancement is an idempotent no-op
+    if (currentOccupant === winnerClubId) {
+      return {
+        alreadyAdvanced: true,
+        success: true,
+        advanced: false,
+        isNoop: true,
+        targetFixtureId,
+        winnerClubId,
+        message: `Winner '${winnerClubId}' has already been advanced to ${targetFixtureId} as ${isHomeSlot ? 'Home' : 'Away'} club. Repeated advancement is a no-op.`,
+      };
+    }
+
+    // Safety: a target slot containing another club returns 409
+    if (currentOccupant && currentOccupant !== winnerClubId && currentOccupant !== 'TBD') {
+      const conflictErr: any = new Error(
+        `Conflict: Target round fixture '${targetFixtureId}' ${isHomeSlot ? 'home' : 'away'} slot is already occupied by club '${currentOccupant}', which conflicts with advancing winner '${winnerClubId}'.`
+      );
+      conflictErr.statusCode = 409;
+      conflictErr.code = 'TARGET_SLOT_OCCUPIED_CONFLICT';
+      throw conflictErr;
+    }
+
+    // Atomic update within transaction
+    const updatePayload: Partial<FirestoreFixtureDoc> = {
+      updatedAt: new Date().toISOString(),
+    };
+    if (isHomeSlot) {
+      updatePayload.homeClubId = winnerClubId;
+    } else {
+      updatePayload.awayClubId = winnerClubId;
+    }
+
+    transaction.update(targetRef, updatePayload);
+
+    return {
+      alreadyAdvanced: false,
+      success: true,
+      advanced: true,
+      isNoop: false,
+      targetFixtureId,
+      winnerClubId,
+      message: `Advanced ${winnerClubId} to ${targetFixtureId} as ${isHomeSlot ? 'Home' : 'Away'} club.`,
+    };
+  });
+
+  if (txResult.alreadyAdvanced) {
+    return {
+      success: true,
+      advanced: false,
+      isNoop: true,
+      targetFixtureId: txResult.targetFixtureId,
+      winnerClubId: txResult.winnerClubId,
+      message: txResult.message,
+    };
   }
-
-  const targetFixture = targetDoc.data() as FirestoreFixtureDoc;
-  if (targetFixture.status === 'CONFIRMED') {
-    throw new Error(
-      `Cannot advance winner: Target round fixture '${targetFixtureId}' has already been played and CONFIRMED. Overwriting confirmed results is strictly prohibited.`
-    );
-  }
-
-  const updatePayload: Partial<FirestoreFixtureDoc> = {
-    updatedAt: new Date().toISOString(),
-  };
-
-  if (isHomeSlot) {
-    updatePayload.homeClubId = winnerClubId;
-  } else {
-    updatePayload.awayClubId = winnerClubId;
-  }
-
-  await targetRef.update(updatePayload);
 
   // Mirror to SQLite
   try {
@@ -1267,6 +1333,7 @@ export async function advanceDomesticCupWinnerSafe(
   return {
     success: true,
     advanced: true,
+    isNoop: false,
     targetFixtureId,
     winnerClubId,
     message: `Advanced ${winnerClubId} to ${targetFixtureId} as ${isHomeSlot ? 'Home' : 'Away'} club.`,

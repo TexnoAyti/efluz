@@ -1198,7 +1198,11 @@ adminRouter.post('/cups/matches/:fixtureId/advance', async (req: Request, res: R
     });
     res.json(result);
   } catch (err: any) {
-    res.status(400).json({ error: err.message });
+    const statusCode = err.statusCode || err.status || 400;
+    res.status(statusCode).json({
+      error: err.message,
+      code: err.code || (statusCode === 409 ? 'CONFLICT' : 'BAD_REQUEST'),
+    });
   }
 });
 

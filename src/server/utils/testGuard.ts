@@ -30,10 +30,6 @@ export const SYNTHETIC_ID_PATTERNS = [
  * Every hosted environment is treated as unsafe for test mutations, including ais-dev-* Cloud Run services.
  */
 export function isHostedEnvironment(): boolean {
-  // If forced local fallback is active, we are strictly in local in-memory emulation
-  if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === 'true') {
-    return false;
-  }
   return Boolean(
     (process.env.K_SERVICE && process.env.K_SERVICE.trim() !== '') ||
     process.env.VERCEL ||
@@ -122,10 +118,19 @@ export function isSyntheticIdentifier(id: string | null | undefined): boolean {
 export function isTestSafe(): boolean {
   // Path 1: Local In-Memory Fallback
   if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === 'true') {
+    // Hosted production environments are strictly forbidden from enabling test fallback
+    if (
+      process.env.NODE_ENV === 'production' ||
+      process.env.VERCEL === '1' ||
+      process.env.AWS_LAMBDA_FUNCTION_NAME !== undefined
+    ) {
+      return false;
+    }
     const { info } = initializeFirebaseAdmin();
-    if (info.authMode === 'local_fallback') {
+    if (info.authMode === 'local_fallback' && info.projectId === 'test-local-fallback') {
       return true;
     }
+    return false;
   }
 
   // Hosted environments (Cloud Run, Vercel, production) are NEVER safe for test mutations

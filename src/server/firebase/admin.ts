@@ -270,6 +270,7 @@ export function getFirebaseStatus(): FirebaseConfigInfo {
 // ----------------------------------------------------
 function createMemoryFirestore() {
   const store: Record<string, Record<string, any>> = {};
+  let txQueue: Promise<any> = Promise.resolve();
 
   function getCol(colName: string) {
     if (!store[colName]) store[colName] = {};
@@ -478,24 +479,46 @@ function createMemoryFirestore() {
       return new MemBatch();
     },
     async runTransaction(updateFunction: (transaction: any) => Promise<any>) {
-      const tx = {
-        async get(docRef: any) {
-          return docRef.get();
-        },
-        set(docRef: any, data: any, options?: any) {
-          docRef.set(data, options);
-          return tx;
-        },
-        update(docRef: any, data: any) {
-          docRef.update(data);
-          return tx;
-        },
-        delete(docRef: any) {
-          docRef.delete();
-          return tx;
-        },
-      };
-      return await updateFunction(tx);
+      // Serialize transactions in-memory to emulate Firestore transactional isolation
+      return new Promise((resolve, reject) => {
+        txQueue = txQueue.then(async () => {
+          try {
+            const writes: Array<() => Promise<void>> = [];
+            const tx = {
+              async get(docRef: any) {
+                return await docRef.get();
+              },
+              set(docRef: any, data: any, options?: any) {
+                writes.push(async () => {
+                  await docRef.set(data, options);
+                });
+                return tx;
+              },
+              update(docRef: any, data: any) {
+                writes.push(async () => {
+                  await docRef.update(data);
+                });
+                return tx;
+              },
+              delete(docRef: any) {
+                writes.push(async () => {
+                  await docRef.delete();
+                });
+                return tx;
+              },
+            };
+
+            const result = await updateFunction(tx);
+            // Atomic commit
+            for (const write of writes) {
+              await write();
+            }
+            resolve(result);
+          } catch (err) {
+            reject(err);
+          }
+        });
+      });
     },
     async listCollections() {
       return Object.keys(store).map((name) => new MemCollectionRef(name));

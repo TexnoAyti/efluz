@@ -240,9 +240,26 @@ export async function initDatabase(): Promise<Database> {
       ALTER TABLE competition_participants ADD COLUMN qualification_timestamp TEXT;
     `);
   } catch {}
+  // Ensure fixtures table supports nullable club IDs and source metadata columns safely and idempotently
+  try {
+    migrateFixturesTableIfNeeded(dbInstance);
+  } catch (migErr) {
+    console.error(' [DB] Error during fixtures table migration:', migErr);
+  }
+
   try {
     dbInstance.exec(`
       ALTER TABLE fixtures ADD COLUMN fixture_source TEXT DEFAULT 'official_2026_27';
+    `);
+  } catch {}
+  try {
+    dbInstance.exec(`
+      ALTER TABLE fixtures ADD COLUMN source_fixture_id TEXT;
+    `);
+  } catch {}
+  try {
+    dbInstance.exec(`
+      ALTER TABLE fixtures ADD COLUMN source_winner_slot TEXT;
     `);
   } catch {}
   try {
@@ -325,6 +342,144 @@ export async function initDatabase(): Promise<Database> {
 
   saveDatabaseSync();
   return dbInstance;
+}
+
+export function migrateFixturesTableIfNeeded(db: Database): { migrated: boolean; recordsPreserved: number; reason?: string } {
+  try {
+    // Check if fixtures table exists
+    const tableExists = db.exec("SELECT 1 FROM sqlite_master WHERE type='table' AND name='fixtures'");
+    if (!tableExists || tableExists.length === 0 || tableExists[0].values.length === 0) {
+      return { migrated: false, recordsPreserved: 0, reason: 'fixtures table does not exist' };
+    }
+
+    // Inspect columns
+    const pragmaRes = db.exec("PRAGMA table_info(fixtures)");
+    if (!pragmaRes || pragmaRes.length === 0) {
+      return { migrated: false, recordsPreserved: 0, reason: 'failed to read table_info' };
+    }
+
+    const cols = pragmaRes[0].values;
+    let homeNotNull = false;
+    let awayNotNull = false;
+    let hasSourceFixtureId = false;
+    let hasSourceWinnerSlot = false;
+    const existingColNames = new Set<string>();
+
+    for (const col of cols) {
+      const name = String(col[1]);
+      const notnull = Number(col[3]);
+      existingColNames.add(name);
+      if (name === 'home_club_id' && notnull === 1) homeNotNull = true;
+      if (name === 'away_club_id' && notnull === 1) awayNotNull = true;
+      if (name === 'source_fixture_id') hasSourceFixtureId = true;
+      if (name === 'source_winner_slot') hasSourceWinnerSlot = true;
+    }
+
+    // Check for 'TBD' or empty string values in home_club_id or away_club_id
+    let tbdCount = 0;
+    try {
+      const tbdRes = db.exec("SELECT count(*) FROM fixtures WHERE home_club_id = 'TBD' OR away_club_id = 'TBD' OR home_club_id = '' OR away_club_id = ''");
+      if (tbdRes && tbdRes.length > 0 && tbdRes[0].values.length > 0) {
+        tbdCount = Number(tbdRes[0].values[0][0]) || 0;
+      }
+    } catch {}
+
+    const needsMigration = homeNotNull || awayNotNull || !hasSourceFixtureId || !hasSourceWinnerSlot || tbdCount > 0;
+    if (!needsMigration) {
+      return { migrated: false, recordsPreserved: 0, reason: 'already up-to-date' };
+    }
+
+    // Count before migration
+    let countBefore = 0;
+    const countRes = db.exec("SELECT count(*) FROM fixtures");
+    if (countRes && countRes.length > 0 && countRes[0].values.length > 0) {
+      countBefore = Number(countRes[0].values[0][0]) || 0;
+    }
+
+    console.log(` [DB MIGRATION] Migrating 'fixtures' table to support nullable clubs and source metadata. Existing records: ${countBefore}`);
+
+    db.exec('PRAGMA foreign_keys = OFF;');
+    db.exec('BEGIN TRANSACTION;');
+
+    db.exec(`
+      CREATE TABLE fixtures_migration_temp (
+        id TEXT PRIMARY KEY,
+        season_id TEXT NOT NULL,
+        competition_id TEXT NOT NULL,
+        matchday INTEGER NOT NULL,
+        round_name TEXT,
+        home_club_id TEXT,
+        away_club_id TEXT,
+        scheduled_at TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'SCHEDULED',
+        home_score INTEGER,
+        away_score INTEGER,
+        winner_club_id TEXT,
+        result_confirmed_at TEXT,
+        fixture_source TEXT DEFAULT 'official_2026_27',
+        source_fixture_id TEXT,
+        source_winner_slot TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(season_id) REFERENCES seasons(id),
+        FOREIGN KEY(competition_id) REFERENCES competitions(id)
+      );
+    `);
+
+    const sourceFixtureIdExpr = hasSourceFixtureId ? 'source_fixture_id' : 'NULL';
+    const sourceWinnerSlotExpr = hasSourceWinnerSlot ? 'source_winner_slot' : 'NULL';
+    const fixtureSourceExpr = existingColNames.has('fixture_source') ? 'fixture_source' : "'official_2026_27'";
+    const roundNameExpr = existingColNames.has('round_name') ? 'round_name' : 'NULL';
+    const winnerClubIdExpr = existingColNames.has('winner_club_id') ? 'winner_club_id' : 'NULL';
+    const resultConfirmedAtExpr = existingColNames.has('result_confirmed_at') ? 'result_confirmed_at' : 'NULL';
+    const homeScoreExpr = existingColNames.has('home_score') ? 'home_score' : 'NULL';
+    const awayScoreExpr = existingColNames.has('away_score') ? 'away_score' : 'NULL';
+
+    db.exec(`
+      INSERT INTO fixtures_migration_temp (
+        id, season_id, competition_id, matchday, round_name,
+        home_club_id, away_club_id, scheduled_at, status,
+        home_score, away_score, winner_club_id, result_confirmed_at,
+        fixture_source, source_fixture_id, source_winner_slot,
+        created_at, updated_at
+      )
+      SELECT
+        id, season_id, competition_id, matchday, ${roundNameExpr},
+        CASE WHEN home_club_id = 'TBD' OR home_club_id = '' THEN NULL ELSE home_club_id END,
+        CASE WHEN away_club_id = 'TBD' OR away_club_id = '' THEN NULL ELSE away_club_id END,
+        scheduled_at, status,
+        ${homeScoreExpr}, ${awayScoreExpr}, ${winnerClubIdExpr}, ${resultConfirmedAtExpr},
+        ${fixtureSourceExpr},
+        ${sourceFixtureIdExpr},
+        ${sourceWinnerSlotExpr},
+        created_at, updated_at
+      FROM fixtures;
+    `);
+
+    // Verify temp count equals count before
+    const tempCountRes = db.exec("SELECT count(*) FROM fixtures_migration_temp");
+    const tempCount = Number(tempCountRes[0].values[0][0]) || 0;
+    if (tempCount !== countBefore) {
+      db.exec('ROLLBACK;');
+      db.exec('PRAGMA foreign_keys = ON;');
+      throw new Error(`[DB MIGRATION FATAL] Record count mismatch in migration: before=${countBefore}, migrated=${tempCount}. Transaction rolled back.`);
+    }
+
+    db.exec('DROP TABLE fixtures;');
+    db.exec('ALTER TABLE fixtures_migration_temp RENAME TO fixtures;');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_fixtures_competition ON fixtures(competition_id, matchday);');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_fixtures_clubs ON fixtures(home_club_id, away_club_id);');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_fixtures_season ON fixtures(season_id, status);');
+
+    db.exec('COMMIT;');
+    db.exec('PRAGMA foreign_keys = ON;');
+
+    console.log(` [DB MIGRATION] Successfully migrated 'fixtures' table. Preserved exactly ${tempCount} records with nullable club IDs.`);
+    return { migrated: true, recordsPreserved: tempCount };
+  } catch (err: any) {
+    console.error(' [DB MIGRATION ERROR] Failed migrating fixtures table:', err);
+    throw err;
+  }
 }
 
 export function getDb(): Database {

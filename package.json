@@ -28,6 +28,7 @@
     "test:deployment-selfcheck": "tsx src/server/tests/deploymentSelfCheck.ts",
     "test:read-model": "tsx src/server/tests/readModelAndSortingTest.ts",
     "test:domestic-cup": "tsx src/server/tests/domesticCupTbdRegressionTest.ts",
+    "test:domestic-cup-safety": "tsx src/server/tests/domesticCupSafetyVerificationTest.ts",
     "test:quota-audit": "tsx src/server/tests/verifyQuotaResilienceAudit.ts",
     "audit:contamination:readonly": "tsx src/server/scripts/productionContaminationAudit.ts",
     "recovery:contamination:plan": "tsx src/server/scripts/applyProductionContaminationRecovery.ts --plan",
