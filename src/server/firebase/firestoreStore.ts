@@ -5299,7 +5299,23 @@ export async function adminAssignClubFirestore(
     const db = getFirestoreDb();
     const clubRef = db.collection(COLLECTIONS.CLUBS).doc(clubId);
     const clubDoc = await clubRef.get();
-    if (!clubDoc.exists) {
+    if (!clubDoc.exists && process.env.FIREBASE_FORCE_LOCAL_FALLBACK === 'true') {
+      const seedClub = SEED_CLUBS.find((candidate) => candidate.id === clubId);
+      if (seedClub) {
+        await clubRef.set({
+          id: seedClub.id,
+          name: seedClub.name,
+          shortName: seedClub.shortName,
+          leagueId: seedClub.leagueId,
+          country: seedClub.country,
+          logo: seedClub.logoUrl,
+          isActive: true,
+          createdAt: now,
+        }, { merge: true });
+      }
+    }
+    const hydratedClubDoc = await clubRef.get();
+    if (!hydratedClubDoc.exists) {
       throw new ClubNotFoundError(`Club with ID '${clubId}' not found.`);
     }
 
