@@ -2297,6 +2297,20 @@ export async function generateCompetitionFixturesFirestore(
         formatConfig: fallbackSeedCompetition!.formatConfig,
       }) as FirestoreCompetitionDoc;
 
+  if (!compDoc.exists && fallbackSeedCompetition) {
+    await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).set(
+      {
+        id: fallbackSeedCompetition.id,
+        seasonId: fallbackSeedCompetition.seasonId,
+        leagueId: fallbackSeedCompetition.leagueId,
+        name: fallbackSeedCompetition.name,
+        type: fallbackSeedCompetition.type,
+        formatConfig: fallbackSeedCompetition.formatConfig,
+      },
+      { merge: true },
+    );
+  }
+
   // Check existing fixtures
   const existingSnap = await db.collection(COLLECTIONS.FIXTURES).where('competitionId', '==', competitionId).get();
   if (!existingSnap.empty && !options.force) {

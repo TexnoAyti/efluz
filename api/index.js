@@ -8339,6 +8339,19 @@ async function generateCompetitionFixturesFirestore(competitionId, options = {})
     type: fallbackSeedCompetition.type,
     formatConfig: fallbackSeedCompetition.formatConfig
   };
+  if (!compDoc.exists && fallbackSeedCompetition) {
+    await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).set(
+      {
+        id: fallbackSeedCompetition.id,
+        seasonId: fallbackSeedCompetition.seasonId,
+        leagueId: fallbackSeedCompetition.leagueId,
+        name: fallbackSeedCompetition.name,
+        type: fallbackSeedCompetition.type,
+        formatConfig: fallbackSeedCompetition.formatConfig
+      },
+      { merge: true }
+    );
+  }
   const existingSnap = await db.collection(COLLECTIONS.FIXTURES).where("competitionId", "==", competitionId).get();
   if (!existingSnap.empty && !options.force) {
     const matchdays = new Set(existingSnap.docs.map((d) => d.data().matchday)).size;
