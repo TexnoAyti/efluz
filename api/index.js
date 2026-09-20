@@ -8324,10 +8324,21 @@ async function getCompetitionParticipantsFirestore(competitionId) {
 async function generateCompetitionFixturesFirestore(competitionId, options = {}) {
   const db = getFirestoreDb();
   const compDoc = await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get();
-  if (!compDoc.exists) {
+  let fallbackSeedCompetition;
+  if (!compDoc.exists && process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true") {
+    fallbackSeedCompetition = SEED_COMPETITIONS.find((candidate) => candidate.id === competitionId);
+  }
+  if (!compDoc.exists && !fallbackSeedCompetition) {
     throw new Error(`Competition '${competitionId}' not found.`);
   }
-  const comp = compDoc.data();
+  const comp = compDoc.exists ? compDoc.data() : {
+    id: fallbackSeedCompetition.id,
+    seasonId: fallbackSeedCompetition.seasonId,
+    leagueId: fallbackSeedCompetition.leagueId,
+    name: fallbackSeedCompetition.name,
+    type: fallbackSeedCompetition.type,
+    formatConfig: fallbackSeedCompetition.formatConfig
+  };
   const existingSnap = await db.collection(COLLECTIONS.FIXTURES).where("competitionId", "==", competitionId).get();
   if (!existingSnap.empty && !options.force) {
     const matchdays = new Set(existingSnap.docs.map((d) => d.data().matchday)).size;
@@ -8340,6 +8351,9 @@ async function generateCompetitionFixturesFirestore(competitionId, options = {})
   } else if (comp.leagueId) {
     const leagueClubsSnap = await db.collection(COLLECTIONS.CLUBS).where("leagueId", "==", comp.leagueId).where("isActive", "==", true).get();
     clubIds = leagueClubsSnap.docs.map((d) => d.id).sort();
+  }
+  if (clubIds.length < 2 && fallbackSeedCompetition) {
+    clubIds = SEED_CLUBS.filter((club) => club.leagueId === fallbackSeedCompetition.leagueId).map((club) => club.id).sort();
   }
   if (clubIds.length < 2) {
     throw new Error(`Not enough clubs (${clubIds.length}) to generate fixtures for ${comp.name}.`);

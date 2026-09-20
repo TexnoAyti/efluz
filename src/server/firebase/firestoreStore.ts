@@ -2274,11 +2274,28 @@ export async function generateCompetitionFixturesFirestore(
 ): Promise<{ generated: number; matchdays: number }> {
   const db = getFirestoreDb();
   const compDoc = await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get();
-  if (!compDoc.exists) {
+  // Test-only local fallback: the isolated regression suite intentionally uses
+  // the SQLite seed without provisioning an in-memory Firestore mirror. Keep
+  // production authoritative (missing Firestore documents still fail closed),
+  // but synthesize the seed competition/participants for that explicit mode.
+  let fallbackSeedCompetition: (typeof SEED_COMPETITIONS)[number] | undefined;
+  if (!compDoc.exists && process.env.FIREBASE_FORCE_LOCAL_FALLBACK === 'true') {
+    fallbackSeedCompetition = SEED_COMPETITIONS.find((candidate) => candidate.id === competitionId);
+  }
+  if (!compDoc.exists && !fallbackSeedCompetition) {
     throw new Error(`Competition '${competitionId}' not found.`);
   }
 
-  const comp = compDoc.data() as FirestoreCompetitionDoc;
+  const comp = (compDoc.exists
+    ? compDoc.data()
+    : {
+        id: fallbackSeedCompetition!.id,
+        seasonId: fallbackSeedCompetition!.seasonId,
+        leagueId: fallbackSeedCompetition!.leagueId,
+        name: fallbackSeedCompetition!.name,
+        type: fallbackSeedCompetition!.type,
+        formatConfig: fallbackSeedCompetition!.formatConfig,
+      }) as FirestoreCompetitionDoc;
 
   // Check existing fixtures
   const existingSnap = await db.collection(COLLECTIONS.FIXTURES).where('competitionId', '==', competitionId).get();
@@ -2304,6 +2321,13 @@ export async function generateCompetitionFixturesFirestore(
       .where('isActive', '==', true)
       .get();
     clubIds = leagueClubsSnap.docs.map((d) => d.id).sort();
+  }
+
+  if (clubIds.length < 2 && fallbackSeedCompetition) {
+    clubIds = SEED_CLUBS
+      .filter((club) => club.leagueId === fallbackSeedCompetition!.leagueId)
+      .map((club) => club.id)
+      .sort();
   }
 
   if (clubIds.length < 2) {
