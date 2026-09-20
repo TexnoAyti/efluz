@@ -111,6 +111,7 @@ async function resolveTelegramContext(maxWaitMs = 1200): Promise<{
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [currentClub, setCurrentClub] = useState<Club | null>(null);
+  const [clubUnavailable, setClubUnavailable] = useState(false);
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [activeSeasonId, setActiveSeasonId] = useState<string>('season-2026-27');
   const [currentSeason, setCurrentSeason] = useState<Season | null>(null);
@@ -167,7 +168,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const meRes = await api.getMe(seasonId);
       setUser(meRes.user);
-      setCurrentClub(meRes.currentClub);
+      setClubUnavailable(meRes.currentClubStatus === 'unavailable');
+      if (meRes.currentClubStatus !== 'unavailable') setCurrentClub(meRes.currentClub);
 
       setTelegramDiagnostics((prev) => ({
         ...prev,
@@ -256,7 +258,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const authRes = await api.authenticateTelegram(tgCtx.initData);
             if (isMounted) {
               setUser(authRes.user);
-              setCurrentClub(authRes.currentClub);
+              setClubUnavailable(authRes.currentClubStatus === 'unavailable');
+      setCurrentClub(authRes.currentClub);
               setAuthStatus('AUTHENTICATED');
               setTelegramDiagnostics((prev) => ({
                 ...prev,
@@ -285,7 +288,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 const devId = getDevUserId() || 'user-dev-a';
                 const authRes = await api.authenticateDev(devId);
                 setUser(authRes.user);
-                setCurrentClub(authRes.currentClub);
+                setClubUnavailable(authRes.currentClubStatus === 'unavailable');
+      setCurrentClub(authRes.currentClub);
                 setAuthStatus('AUTHENTICATED');
                 await fetchUserData(targetSeasonId);
               } else {
@@ -300,7 +304,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const authRes = await api.authenticateDev(devId);
           if (isMounted) {
             setUser(authRes.user);
-            setCurrentClub(authRes.currentClub);
+            setClubUnavailable(authRes.currentClubStatus === 'unavailable');
+      setCurrentClub(authRes.currentClub);
             setAuthStatus('AUTHENTICATED');
             setTelegramDiagnostics((prev) => ({
               ...prev,
@@ -318,7 +323,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const meRes = await api.getMe(targetSeasonId);
             if (isMounted) {
               setUser(meRes.user);
-              setCurrentClub(meRes.currentClub);
+              setClubUnavailable(meRes.currentClubStatus === 'unavailable');
+      if (meRes.currentClubStatus !== 'unavailable') setCurrentClub(meRes.currentClub);
               setAuthStatus('AUTHENTICATED');
               setTelegramDiagnostics((prev) => ({
                 ...prev,
@@ -374,6 +380,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const authRes = await api.authenticateDev(devUserId);
       setUser(authRes.user);
+      setClubUnavailable(authRes.currentClubStatus === 'unavailable');
       setCurrentClub(authRes.currentClub);
       setTelegramDiagnostics((prev) => ({
         ...prev,
@@ -450,6 +457,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         showToast,
       }}
     >
+      {clubUnavailable && user && (
+        <div role="status" className="bg-amber-950 text-amber-100 px-4 py-2 text-sm">
+          Akkauntga kirildi. Klub ma’lumotlari vaqtincha yuklanmadi; bu klubingiz bo‘shatilganini anglatmaydi.
+        </div>
+      )}
       {children}
     </AuthContext.Provider>
   );

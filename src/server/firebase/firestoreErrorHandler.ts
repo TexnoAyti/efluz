@@ -18,6 +18,10 @@ export function parseFirestoreError(err: any): FormattedFirestoreError {
     };
   }
 
+  if (err.errorCode === 'READ_MODEL_NOT_WARMED') {
+    return { error: 'READ_MODEL_NOT_WARMED', code: 'READ_MODEL_NOT_WARMED',
+      message: 'Ma’lumotlar vaqtincha mavjud emas. Keyinroq qayta urinib ko‘ring.', httpStatus: 503 };
+  }
   const rawCode = err.code ?? (err.status ?? '');
   const rawMsg = err.message || String(err);
   const strCode = String(rawCode).toUpperCase();

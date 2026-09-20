@@ -3622,6 +3622,7 @@ async function buildClubsSnapshot(seasonId = "season-2026-27") {
       );
     }
   } catch (err) {
+    firestoreCircuitBreaker.recordFailure(err);
     firestoreFailed = true;
     console.warn("[READ_MODEL_STORE] Firestore occupancies fetch error in buildClubsSnapshot:", err?.message || err);
   }
@@ -4043,6 +4044,15 @@ async function getUserActiveClubFromReadModel(userId, seasonId = "season-2026-27
   });
   const owner = result.data.find((c) => (c.ownerUserId || c.claimedByUserId) === userId);
   return owner ? enrichClubForUser(owner, userId) : null;
+}
+async function getOptionalCurrentClub(userId, seasonId = "season-2026-27") {
+  try {
+    const currentClub = await getUserActiveClubFromReadModel(userId, seasonId);
+    return { currentClub, currentClubStatus: "resolved", degraded: false };
+  } catch (error) {
+    if (!(error instanceof ReadModelNotWarmedError)) throw error;
+    return { currentClub: null, currentClubStatus: "unavailable", degraded: true };
+  }
 }
 async function getCompetitionStandingsFromReadModel(competitionId, seasonId = "season-2026-27") {
   const config = DOMESTIC_LEAGUE_CONFIG[competitionId];
@@ -12582,7 +12592,6 @@ function validateBody(schema) {
 }
 
 // src/server/routes/auth.routes.ts
-init_firestoreStore();
 init_readModelStore();
 var authRouter = Router3();
 var telegramAuthSchema = z.object({
@@ -12601,10 +12610,10 @@ authRouter.post("/telegram", validateBody(telegramAuthSchema), async (req, res) 
         const userRaw = urlParams.get("user");
         if (userRaw) {
           const user = await getOrCreateTelegramUser(JSON.parse(userRaw));
-          const currentClub = await getUserActiveClubFromReadModel(user.id, "season-2026-27") || await getUserActiveClubFirestore(user.id, "season-2026-27");
+          const clubState = await getOptionalCurrentClub(user.id);
           const token = createSessionToken(user);
           console.log(`[TELEGRAM AUTH - DEV SANDBOX] user=${user.username} (id: ${user.telegramId}), isAdmin=${user.isAdmin}`);
-          res.json({ success: true, user, currentClub, token });
+          res.json({ success: true, user, ...clubState, token });
           return;
         }
       } catch {
@@ -12621,7 +12630,7 @@ authRouter.post("/telegram", validateBody(telegramAuthSchema), async (req, res) 
   }
   try {
     const user = await getOrCreateTelegramUser(verifyResult.user);
-    const currentClub = await getUserActiveClubFromReadModel(user.id, "season-2026-27") || await getUserActiveClubFirestore(user.id, "season-2026-27");
+    const clubState = await getOptionalCurrentClub(user.id);
     const token = createSessionToken(user);
     console.log(`[TELEGRAM AUTH]
 initData received: YES
@@ -12631,7 +12640,7 @@ auth_date valid: ${verifyResult.authDate ? "YES" : "NO"}
 HMAC valid: YES
 internal user: ${user.id}
 isAdmin: ${user.isAdmin ? "YES" : "NO"}`);
-    res.json({ success: true, user, currentClub, token });
+    res.json({ success: true, user, ...clubState, token });
   } catch (err) {
     res.status(500).json({ error: "Authentication failed", message: err.message });
   }
@@ -12644,9 +12653,9 @@ authRouter.post("/dev", validateBody(devAuthSchema), async (req, res) => {
   }
   try {
     const user = await getOrCreateDevUser(req.body.devUserId);
-    const currentClub = await getUserActiveClubFromReadModel(user.id, "season-2026-27") || await getUserActiveClubFirestore(user.id, "season-2026-27");
+    const clubState = await getOptionalCurrentClub(user.id);
     const token = createSessionToken(user);
-    res.json({ success: true, user, currentClub, token });
+    res.json({ success: true, user, ...clubState, token });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -12672,6 +12681,14 @@ function parseFirestoreError(err) {
       code: "UNKNOWN",
       message: "An unknown error occurred.",
       httpStatus: 500
+    };
+  }
+  if (err.errorCode === "READ_MODEL_NOT_WARMED") {
+    return {
+      error: "READ_MODEL_NOT_WARMED",
+      code: "READ_MODEL_NOT_WARMED",
+      message: "Ma\u2019lumotlar vaqtincha mavjud emas. Keyinroq qayta urinib ko\u2018ring.",
+      httpStatus: 503
     };
   }
   const rawCode = err.code ?? (err.status ?? "");
@@ -13341,7 +13358,8 @@ meRouter.get("/", requireAuth, async (req, res) => {
   const user = req.user;
   const seasonId = req.query.seasonId || "season-2026-27";
   try {
-    const currentClub = await getUserActiveClubFromReadModel(user.id, seasonId) || await getUserActiveClubFirestore(user.id, seasonId);
+    const clubState = await getOptionalCurrentClub(user.id, seasonId);
+    const { currentClub } = clubState;
     const stats = {
       matchesPlayed: 0,
       wins: 0,
@@ -13383,7 +13401,7 @@ meRouter.get("/", requireAuth, async (req, res) => {
     res.json({
       authenticated: true,
       user,
-      currentClub,
+      ...clubState,
       stats
     });
   } catch (err) {

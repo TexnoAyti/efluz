@@ -868,6 +868,7 @@ export async function buildClubsSnapshot(seasonId = 'season-2026-27'): Promise<R
       );
     }
   } catch (err: any) {
+    firestoreCircuitBreaker.recordFailure(err);
     firestoreFailed = true;
     console.warn('[READ_MODEL_STORE] Firestore occupancies fetch error in buildClubsSnapshot:', err?.message || err);
   }
@@ -1418,6 +1419,17 @@ export async function getUserActiveClubFromReadModel(
   });
   const owner = result.data.find(c => (c.ownerUserId || c.claimedByUserId) === userId);
   return owner ? enrichClubForUser(owner, userId) : null;
+}
+
+/** Membership is optional profile data; its outage must not invalidate verified identity. */
+export async function getOptionalCurrentClub(userId: string, seasonId = 'season-2026-27') {
+  try {
+    const currentClub = await getUserActiveClubFromReadModel(userId, seasonId);
+    return { currentClub, currentClubStatus: 'resolved' as const, degraded: false };
+  } catch (error) {
+    if (!(error instanceof ReadModelNotWarmedError)) throw error;
+    return { currentClub: null, currentClubStatus: 'unavailable' as const, degraded: true };
+  }
 }
 
 /**

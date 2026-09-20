@@ -282,7 +282,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
 
 export const api = {
   // Auth
-  async authenticateTelegram(initData: string): Promise<{ success: boolean; user: User; currentClub: Club | null }> {
+  async authenticateTelegram(initData: string): Promise<{ success: boolean; user: User; currentClub: Club | null; currentClubStatus?: 'resolved' | 'unavailable' }> {
     invalidateClientCache();
     return request('/api/auth/telegram', {
       method: 'POST',
@@ -290,7 +290,7 @@ export const api = {
     });
   },
 
-  async authenticateDev(devUserId: string): Promise<{ success: boolean; user: User; currentClub: Club | null }> {
+  async authenticateDev(devUserId: string): Promise<{ success: boolean; user: User; currentClub: Club | null; currentClubStatus?: 'resolved' | 'unavailable' }> {
     invalidateClientCache();
     return request('/api/auth/dev', {
       method: 'POST',
@@ -312,7 +312,7 @@ export const api = {
   // Me
   async getMe(seasonId = 'season-2026-27', skipCache = false): Promise<{
     user: User;
-    currentClub: Club | null;
+    currentClub: Club | null; currentClubStatus?: 'resolved' | 'unavailable';
     stats: {
       matchesPlayed: number;
       wins: number;

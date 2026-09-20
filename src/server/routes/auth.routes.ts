@@ -2,8 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { validateBody } from '../middleware/validationMiddleware';
 import { verifyTelegramWebAppData, getOrCreateTelegramUser, getOrCreateDevUser, createSessionToken, DEV_PROFILES } from '../auth/telegramAuth';
-import { getUserActiveClubFirestore } from '../firebase/firestoreStore';
-import { getUserActiveClubFromReadModel } from '../readModel/readModelStore';
+import { getOptionalCurrentClub } from '../readModel/readModelStore';
 
 export const authRouter = Router();
 
@@ -27,10 +26,10 @@ authRouter.post('/telegram', validateBody(telegramAuthSchema), async (req: Reque
         const userRaw = urlParams.get('user');
         if (userRaw) {
           const user = await getOrCreateTelegramUser(JSON.parse(userRaw));
-          const currentClub = (await getUserActiveClubFromReadModel(user.id, 'season-2026-27')) || (await getUserActiveClubFirestore(user.id, 'season-2026-27'));
+          const clubState = await getOptionalCurrentClub(user.id);
           const token = createSessionToken(user);
           console.log(`[TELEGRAM AUTH - DEV SANDBOX] user=${user.username} (id: ${user.telegramId}), isAdmin=${user.isAdmin}`);
-          res.json({ success: true, user, currentClub, token });
+          res.json({ success: true, user, ...clubState, token });
           return;
         }
       } catch {
@@ -50,7 +49,7 @@ authRouter.post('/telegram', validateBody(telegramAuthSchema), async (req: Reque
 
   try {
     const user = await getOrCreateTelegramUser(verifyResult.user);
-    const currentClub = (await getUserActiveClubFromReadModel(user.id, 'season-2026-27')) || (await getUserActiveClubFirestore(user.id, 'season-2026-27'));
+    const clubState = await getOptionalCurrentClub(user.id);
     const token = createSessionToken(user);
 
     console.log(`[TELEGRAM AUTH]
@@ -62,7 +61,7 @@ HMAC valid: YES
 internal user: ${user.id}
 isAdmin: ${user.isAdmin ? 'YES' : 'NO'}`);
 
-    res.json({ success: true, user, currentClub, token });
+    res.json({ success: true, user, ...clubState, token });
   } catch (err: any) {
     res.status(500).json({ error: 'Authentication failed', message: err.message });
   }
@@ -77,9 +76,9 @@ authRouter.post('/dev', validateBody(devAuthSchema), async (req: Request, res: R
 
   try {
     const user = await getOrCreateDevUser(req.body.devUserId);
-    const currentClub = (await getUserActiveClubFromReadModel(user.id, 'season-2026-27')) || (await getUserActiveClubFirestore(user.id, 'season-2026-27'));
+    const clubState = await getOptionalCurrentClub(user.id);
     const token = createSessionToken(user);
-    res.json({ success: true, user, currentClub, token });
+    res.json({ success: true, user, ...clubState, token });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
