@@ -13,5 +13,11 @@
       "source": "/((?!api|api/).*)",
       "destination": "/index.html"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/internal/telegram-worker",
+      "schedule": "* * * * *"
+    }
   ]
 }

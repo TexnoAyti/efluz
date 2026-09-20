@@ -13,7 +13,6 @@ const MANUAL_PROBE_COOLDOWN_MS = 60000;
 healthRouter.get('/', async (req: Request, res: Response) => {
   const status = getFirebaseStatus();
   const cbStatus = firestoreCircuitBreaker.getStatus();
-  const queue = getQueueStats();
 
   // Passive health status: do NOT execute Firestore read operations on standard health checks
   const isConnected = Boolean(status.isConfigured && firestoreCircuitBreaker.canExecute());
@@ -31,17 +30,8 @@ healthRouter.get('/', async (req: Request, res: Response) => {
     circuitBreaker: {
       status: cbStatus.state,
       state: cbStatus.state,
-      failureCount: cbStatus.totalErrors,
-      consecutiveFailures: cbStatus.consecutiveFailures,
-      resourceExhaustedCount: cbStatus.resourceExhaustedCount,
-      cooldownRemainingMs: cbStatus.cooldownRemainingMs,
     },
-    queueStats: queue,
     firebaseConfigured: status.isConfigured,
-    projectId: status.projectId,
-    databaseId: status.databaseId,
-    firestoreDatabaseId: status.databaseId,
-    authMode: status.authMode,
     warning: connectionWarning || undefined,
     timestamp: new Date().toISOString(),
     version: '2.0.0-firestore-production',
@@ -49,7 +39,7 @@ healthRouter.get('/', async (req: Request, res: Response) => {
 });
 
 // Explicit diagnostic probe with cooldown (60s)
-healthRouter.post('/probe', async (req: Request, res: Response) => {
+healthRouter.post('/probe', requireAdmin, async (req: Request, res: Response) => {
   const now = Date.now();
   if (now - lastManualProbeTime < MANUAL_PROBE_COOLDOWN_MS) {
     const waitSec = Math.ceil((MANUAL_PROBE_COOLDOWN_MS - (now - lastManualProbeTime)) / 1000);
@@ -74,13 +64,13 @@ healthRouter.post('/probe', async (req: Request, res: Response) => {
     firestoreCircuitBreaker.recordFailure(err);
     res.status(503).json({
       success: false,
-      error: err.message,
+      error: 'Firestore active probe failed',
       timestamp: new Date().toISOString(),
     });
   }
 });
 
-healthRouter.get('/resilience', (req: Request, res: Response) => {
+healthRouter.get('/resilience', requireAdmin, (req: Request, res: Response) => {
   const cbStatus = firestoreCircuitBreaker.getStatus();
   const queue = getQueueStats();
   res.status(200).json({
@@ -107,4 +97,3 @@ healthRouter.post('/sync', requireAdmin, async (req: Request, res: Response) => 
     });
   }
 });
-

@@ -783,7 +783,17 @@ export async function buildCompetitionsSnapshot(seasonId = 'season-2026-27'): Pr
   const competitions = docs.docs.map(d => {
     const data = d.data();
     const seed = SEED_COMPETITIONS.find(c => c.id === d.id);
-    return { ...seed, ...data, id: d.id, seasonId } as Competition;
+    const competition = { ...seed, ...data, id: d.id, seasonId } as Competition;
+    if (competition.type === 'EUROPEAN_LEAGUE_PHASE') {
+      const teams = Number(competition.formatConfig?.leaguePhaseTeams || 32);
+      const matchesPerTeam = Number(competition.formatConfig?.matchesPerTeam || 8);
+      if (Number(competition.currentMatchday || 1) <= matchesPerTeam) {
+        const leaguePhaseFixtureCount = (teams * matchesPerTeam) / 2;
+        competition.fixtureCount = leaguePhaseFixtureCount;
+        competition.fixturesCount = leaguePhaseFixtureCount;
+      }
+    }
+    return competition;
   }).filter(c => !c.id.includes('efl-cup') && String(c.status) !== 'inactive' && !(c as any).hidden);
   if (!competitions.length) throw new ReadModelNotWarmedError('No authoritative competition catalog');
   const snapshot: ReadModelSnapshot<Competition[]> = {
@@ -1482,10 +1492,54 @@ export async function getCompetitionFixturesFromReadModel(
     validateData: data => Array.isArray(data),
   });
   let fixtures = result.data.filter(f => f.competitionId === competitionId);
+  if (['comp-champions-league-2026', 'comp-europa-league-2026'].includes(competitionId)) {
+    const leaguePhaseFixtures = fixtures.filter((fixture) => Number(fixture.matchday) >= 1 && Number(fixture.matchday) <= 8);
+    if (leaguePhaseFixtures.length > 0 && leaguePhaseFixtures.some((fixture) => fixture.status !== 'CONFIRMED')) {
+      fixtures = leaguePhaseFixtures;
+    }
+  }
+  const clubsResult = await readThroughReadModel<OwnerNeutralClub[]>({
+    key: ReadModelKeys.clubsWithOwners(seasonId),
+    seasonId,
+    expectedCount: 96,
+    firestoreFetcher: async () => (await buildClubsSnapshot(seasonId)).data,
+    validateData: data => Array.isArray(data) && data.length > 0,
+  });
+  const ownersByClub = new Map(clubsResult.data.map((club) => [club.id, club]));
+  fixtures = fixtures.map((fixture) => {
+    const homeOwner = fixture.homeClubId ? ownersByClub.get(fixture.homeClubId) : undefined;
+    const awayOwner = fixture.awayClubId ? ownersByClub.get(fixture.awayClubId) : undefined;
+    const enrichFixtureClub = (club: Fixture['homeClub'], owner?: OwnerNeutralClub) => club ? ({
+      ...club,
+      claimedByUserId: owner?.ownerUserId || null,
+      claimedByUsername: owner?.ownerUsername || null,
+      managerUsername: owner?.ownerUsername || undefined,
+      isTaken: Boolean(owner?.ownerUserId),
+      occupancy: {
+        status: owner?.ownerUserId ? 'occupied' as const : 'available' as const,
+        userId: owner?.ownerUserId || undefined,
+        username: owner?.ownerUsername || undefined,
+      },
+    }) : club;
+    const toFixtureUser = (owner?: OwnerNeutralClub) => owner?.ownerUserId ? ({
+      id: owner.ownerUserId,
+      username: owner.ownerUsername || '',
+      displayName: owner.ownerUsername ? `@${owner.ownerUsername}` : `User #${owner.ownerUserId}`,
+    }) : null;
+    return {
+      ...fixture,
+      homeClub: enrichFixtureClub(fixture.homeClub, homeOwner),
+      awayClub: enrichFixtureClub(fixture.awayClub, awayOwner),
+      homeOwnerId: homeOwner?.ownerUserId || undefined,
+      awayOwnerId: awayOwner?.ownerUserId || undefined,
+      homeUser: toFixtureUser(homeOwner),
+      awayUser: toFixtureUser(awayOwner),
+    };
+  });
   if (options.matchday !== undefined) fixtures = fixtures.filter(f => Number(f.matchday) === Number(options.matchday));
   if (options.status && options.status !== 'ALL') fixtures = fixtures.filter(f => f.status === options.status);
   return { fixtures: fixtures.sort((a,b) => compareAdminFixtures(a,b,true)), source: result.source,
-    stale: Boolean(result.stale), degraded: Boolean(result.degraded), snapshotAt: result.generatedAt };
+    stale: Boolean(result.stale || clubsResult.stale), degraded: Boolean(result.degraded || clubsResult.degraded), snapshotAt: result.generatedAt };
 }
 
 /**

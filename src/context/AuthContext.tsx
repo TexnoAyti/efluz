@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { User, Club, Season, Notification } from '../types';
-import { api, getDevUserId, setDevUserId, getTelegramInitData, setTelegramInitData } from '../lib/api';
+import { api, getDevUserId, setDevUserId, getTelegramInitData, setTelegramInitData, setSessionToken } from '../lib/api';
 
 export type AuthBootstrapStatus = 'AUTH_LOADING' | 'AUTHENTICATED' | 'AUTH_ANONYMOUS' | 'AUTH_ERROR';
 
@@ -257,6 +257,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           try {
             const authRes = await api.authenticateTelegram(tgCtx.initData);
             if (isMounted) {
+              setSessionToken(authRes.token);
+              setTelegramInitData(null);
               setUser(authRes.user);
               setClubUnavailable(authRes.currentClubStatus === 'unavailable');
       setCurrentClub(authRes.currentClub);
@@ -287,6 +289,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 // Fallback to dev profile only if server explicitly allows dev auth
                 const devId = getDevUserId() || 'user-dev-a';
                 const authRes = await api.authenticateDev(devId);
+                setSessionToken(authRes.token);
                 setUser(authRes.user);
                 setClubUnavailable(authRes.currentClubStatus === 'unavailable');
       setCurrentClub(authRes.currentClub);
@@ -303,6 +306,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setDevUserId(devId);
           const authRes = await api.authenticateDev(devId);
           if (isMounted) {
+            setSessionToken(authRes.token);
             setUser(authRes.user);
             setClubUnavailable(authRes.currentClubStatus === 'unavailable');
       setCurrentClub(authRes.currentClub);
@@ -374,11 +378,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [fetchUserData]);
 
+  // Rotate the short-lived session token while the Telegram Mini App remains open.
+  useEffect(() => {
+    if (authStatus !== 'AUTHENTICATED') return;
+    const refreshToken = async () => {
+      const initData = getTelegramInitData();
+      if (!initData) return;
+      try {
+        const authRes = await api.authenticateTelegram(initData);
+        setSessionToken(authRes.token);
+      } catch (err: any) {
+        console.warn('Session refresh failed:', err?.message || 'unknown error');
+      }
+    };
+    const interval = window.setInterval(refreshToken, 10 * 60 * 1000);
+    return () => window.clearInterval(interval);
+  }, [authStatus]);
+
   const switchDevUser = async (devUserId: string) => {
     setIsLoading(true);
     setDevUserId(devUserId);
     try {
       const authRes = await api.authenticateDev(devUserId);
+      setSessionToken(authRes.token);
       setUser(authRes.user);
       setClubUnavailable(authRes.currentClubStatus === 'unavailable');
       setCurrentClub(authRes.currentClub);

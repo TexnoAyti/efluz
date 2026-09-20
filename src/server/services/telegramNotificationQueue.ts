@@ -86,6 +86,7 @@ export interface NotificationQueueJob {
   retryCount: number;
   maxRetries: number;
   createdAt: string;
+  availableAt?: number;
   sentAt?: string;
   error?: string;
 }
@@ -338,6 +339,28 @@ export async function enqueueTelegramBroadcast(params: {
       JSON.stringify(persistedRecord.recipients.map(r => r.userId).sort()) !== JSON.stringify(targetUserIds.slice().sort())) throw new Error('REQUEST_ID_REUSED_WITH_DIFFERENT_CONTENT');
   memoryBroadcasts.set(broadcastId, persistedRecord);
 
+  // Every selected user receives an in-app notification, including users who
+  // do not have a messageable Telegram account. Deterministic document IDs make
+  // retries with the same requestId idempotent.
+  const notificationBatchSize = 400;
+  const notificationDb = getFirestoreDb();
+  for (let i = 0; i < targetUserIds.length; i += notificationBatchSize) {
+    const batch = notificationDb.batch();
+    for (const uid of targetUserIds.slice(i, i + notificationBatchSize)) {
+      batch.set(notificationDb.collection(COLLECTIONS.NOTIFICATIONS).doc(`notif-${broadcastId}-${uid}`), {
+        id: `notif-${broadcastId}-${uid}`,
+        userId: uid,
+        type: params.type,
+        title: params.title,
+        message: params.body,
+        data: { broadcastId },
+        isRead: false,
+        createdAt: now,
+      }, { merge: true });
+    }
+    await batch.commit();
+  }
+
   // Create audit log
   await createAuditLog(
     params.adminUserId,
@@ -399,6 +422,11 @@ export async function processNotificationQueue(batchSize = 25): Promise<{
         return cjson.encode(job)
       `, [QUEUE_KEY, PROCESSING_KEY, WORKER_LOCK], [token, Date.now()]);
       if (!job) break;
+      if (job.availableAt && job.availableAt > Date.now()) {
+        await client.rpush(QUEUE_KEY, JSON.stringify(job));
+        await client.hdel(PROCESSING_KEY, job.jobId);
+        break;
+      }
       processed++;
       const record = await getBroadcastDetails(job.broadcastId);
       const recipient = record?.recipients.find(r => r.userId === job.userId);
@@ -420,9 +448,24 @@ export async function processNotificationQueue(batchSize = 25): Promise<{
         await updateBroadcastRecipientState(job.broadcastId, job.userId, 'SENT', undefined, new Date().toISOString());
         succeeded++;
       } else {
-        // Ambiguous timeouts must be reviewed; automatic retries can duplicate delivery.
-        await updateBroadcastRecipientState(job.broadcastId, job.userId, 'FAILED', result.error_code ? `TELEGRAM_${result.error_code}: ${result.error || 'Rejected'}${result.parameters?.retry_after ? '; retry after ' + result.parameters.retry_after + ' seconds' : ''}` : 'DELIVERY_UNKNOWN: ' + (result.error || 'No response'));
-        failed++;
+        const errorText = result.error_code
+          ? `TELEGRAM_${result.error_code}: ${result.error || 'Rejected'}${result.parameters?.retry_after ? '; retry after ' + result.parameters.retry_after + ' seconds' : ''}`
+          : 'DELIVERY_UNKNOWN: ' + (result.error || 'No response');
+        const definitelyRejected = Boolean(result.error_code);
+        const retryable = result.error_code === 429 || Boolean(result.error_code && result.error_code >= 500);
+        if (definitelyRejected && retryable && job.retryCount < job.maxRetries) {
+          job.retryCount += 1;
+          const retryAfterSeconds = Math.max(Number(result.parameters?.retry_after || 0), 2 ** job.retryCount);
+          job.availableAt = Date.now() + retryAfterSeconds * 1000;
+          job.status = 'QUEUED';
+          await updateBroadcastRecipientState(job.broadcastId, job.userId, 'PENDING', errorText, undefined, job.retryCount);
+          await client.rpush(QUEUE_KEY, JSON.stringify(job));
+        } else {
+          // Ambiguous timeouts are never retried automatically because Telegram
+          // may have accepted the message before the connection was lost.
+          await updateBroadcastRecipientState(job.broadcastId, job.userId, 'FAILED', errorText, undefined, job.retryCount);
+          failed++;
+        }
       }
       await client.hdel(PROCESSING_KEY, job.jobId);
       await new Promise(resolve => setTimeout(resolve, 50));
@@ -456,9 +499,10 @@ function escapeHtml(str: string): string {
 async function updateBroadcastRecipientState(
   broadcastId: string,
   userId: string,
-  status: 'SENT' | 'FAILED',
+  status: 'PENDING' | 'SENT' | 'FAILED',
   error?: string,
-  sentAt?: string
+  sentAt?: string,
+  retryCount?: number
 ) {
   const bcast = await getBroadcastDetails(broadcastId);
   if (!bcast) throw new Error('BROADCAST_RECORD_MISSING');
@@ -468,6 +512,7 @@ async function updateBroadcastRecipientState(
     r.status = status;
     if (error) r.error = error;
     if (sentAt) r.sentAt = sentAt;
+    if (retryCount !== undefined) r.retryCount = retryCount;
   }
 
   bcast.metrics.sentCount = bcast.recipients.filter(r => r.status === 'SENT').length;

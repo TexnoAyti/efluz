@@ -59,10 +59,62 @@ interface CachedImage {
   expiry: number;
 }
 const imageCache = new Map<string, CachedImage>();
+const ALLOWED_CREST_HOSTS = new Set(['resources.premierleague.com', 'crests.football-data.org']);
+const MAX_CREST_BYTES = 1024 * 1024;
+const MAX_CREST_CACHE_ENTRIES = 250;
+
+function escapeXml(value: string): string {
+  return value.replace(/[&<>'"]/g, (char) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    "'": '&apos;',
+    '"': '&quot;',
+  }[char] || char));
+}
+
+function parseAllowedCrestUrl(value: string): URL | null {
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port) return null;
+    if (!ALLOWED_CREST_HOSTS.has(parsed.hostname.toLowerCase())) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+async function readResponseWithLimit(response: globalThis.Response): Promise<Buffer> {
+  const contentLength = Number(response.headers.get('content-length') || 0);
+  if (contentLength > MAX_CREST_BYTES) throw new Error('CREST_TOO_LARGE');
+  if (!response.body) throw new Error('EMPTY_CREST_BODY');
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    total += value.byteLength;
+    if (total > MAX_CREST_BYTES) {
+      await reader.cancel();
+      throw new Error('CREST_TOO_LARGE');
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)));
+}
+
+function setSafeSvgHeaders(res: Response): void {
+  res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+}
 
 // Helper to generate dynamic fallback SVG badge
 function generateFallbackSvgBadge(name: string, shortName?: string): string {
-  const text = (shortName || name.slice(0, 3)).toUpperCase();
+  const text = escapeXml((shortName || name.slice(0, 3)).toUpperCase().slice(0, 8));
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
     <defs>
       <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -86,21 +138,26 @@ function wrapRasterImageInSvg(buffer: Buffer, mimeType: string): Buffer {
 }
 
 async function fetchAndServeImage(imageUrl: string, res: Response, fallbackName = 'FC', fallbackShortName = 'FC') {
+  const allowedUrl = parseAllowedCrestUrl(imageUrl);
   const now = Date.now();
-  const cached = imageCache.get(imageUrl);
+  const cacheKey = allowedUrl?.toString() || imageUrl;
+  const cached = imageCache.get(cacheKey);
   if (cached && cached.expiry > now) {
     res.setHeader('Content-Type', cached.contentType);
     res.setHeader('Cache-Control', 'public, max-age=604800, s-maxage=2592000, immutable');
     res.setHeader('Access-Control-Allow-Origin', '*');
+    setSafeSvgHeaders(res);
     res.send(cached.buffer);
     return;
   }
 
   try {
+    if (!allowedUrl) throw new Error('CREST_HOST_NOT_ALLOWED');
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 4000);
-    const response = await fetch(imageUrl, {
+    const response = await fetch(allowedUrl, {
       signal: controller.signal,
+      redirect: 'error',
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
@@ -109,14 +166,14 @@ async function fetchAndServeImage(imageUrl: string, res: Response, fallbackName 
     clearTimeout(timeoutId);
 
     if (response.ok) {
-      const rawContentType = response.headers.get('content-type') || 'image/png';
-      const arrayBuffer = await response.arrayBuffer();
-      const rawBuffer = Buffer.from(arrayBuffer);
+      const rawContentType = (response.headers.get('content-type') || '').toLowerCase();
+      if (!rawContentType.startsWith('image/')) throw new Error('INVALID_CREST_CONTENT_TYPE');
+      const rawBuffer = await readResponseWithLimit(response);
 
       let finalBuffer: Buffer;
       let finalContentType: string;
 
-      const isSvg = rawContentType.includes('svg') || imageUrl.toLowerCase().endsWith('.svg');
+      const isSvg = rawContentType.includes('svg') || allowedUrl.pathname.toLowerCase().endsWith('.svg');
       if (isSvg) {
         finalBuffer = rawBuffer;
         finalContentType = 'image/svg+xml; charset=utf-8';
@@ -126,7 +183,11 @@ async function fetchAndServeImage(imageUrl: string, res: Response, fallbackName 
       }
 
       // Cache for 7 days
-      imageCache.set(imageUrl, {
+      if (imageCache.size >= MAX_CREST_CACHE_ENTRIES) {
+        const oldestKey = imageCache.keys().next().value;
+        if (oldestKey) imageCache.delete(oldestKey);
+      }
+      imageCache.set(cacheKey, {
         buffer: finalBuffer,
         contentType: finalContentType,
         expiry: now + 7 * 24 * 60 * 60 * 1000,
@@ -135,6 +196,7 @@ async function fetchAndServeImage(imageUrl: string, res: Response, fallbackName 
       res.setHeader('Content-Type', finalContentType);
       res.setHeader('Cache-Control', 'public, max-age=604800, s-maxage=2592000, immutable');
       res.setHeader('Access-Control-Allow-Origin', '*');
+      setSafeSvgHeaders(res);
       res.send(finalBuffer);
       return;
     }
@@ -147,14 +209,15 @@ async function fetchAndServeImage(imageUrl: string, res: Response, fallbackName 
   res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
   res.setHeader('Cache-Control', 'public, max-age=86400');
   res.setHeader('Access-Control-Allow-Origin', '*');
+  setSafeSvgHeaders(res);
   res.send(Buffer.from(svg, 'utf-8'));
 }
 
 // 0. Generic Crest Proxy endpoint (for any whitelisted club crest URL)
 clubsRouter.get('/crest-proxy', async (req: Request, res: Response) => {
   const url = req.query.url as string;
-  if (!url || !url.startsWith('http')) {
-    res.status(400).json({ error: 'Valid image URL is required' });
+  if (!url || !parseAllowedCrestUrl(url)) {
+    res.status(400).json({ error: 'Crest URL host is not allowed' });
     return;
   }
   await fetchAndServeImage(url, res);

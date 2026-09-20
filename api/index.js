@@ -3595,7 +3595,17 @@ async function buildCompetitionsSnapshot(seasonId = "season-2026-27") {
   const competitions = docs.docs.map((d) => {
     const data = d.data();
     const seed = SEED_COMPETITIONS.find((c) => c.id === d.id);
-    return { ...seed, ...data, id: d.id, seasonId };
+    const competition = { ...seed, ...data, id: d.id, seasonId };
+    if (competition.type === "EUROPEAN_LEAGUE_PHASE") {
+      const teams = Number(competition.formatConfig?.leaguePhaseTeams || 32);
+      const matchesPerTeam = Number(competition.formatConfig?.matchesPerTeam || 8);
+      if (Number(competition.currentMatchday || 1) <= matchesPerTeam) {
+        const leaguePhaseFixtureCount = teams * matchesPerTeam / 2;
+        competition.fixtureCount = leaguePhaseFixtureCount;
+        competition.fixturesCount = leaguePhaseFixtureCount;
+      }
+    }
+    return competition;
   }).filter((c) => !c.id.includes("efl-cup") && String(c.status) !== "inactive" && !c.hidden);
   if (!competitions.length) throw new ReadModelNotWarmedError("No authoritative competition catalog");
   const snapshot = {
@@ -4109,13 +4119,57 @@ async function getCompetitionFixturesFromReadModel(competitionId, options = {}) 
     validateData: (data) => Array.isArray(data)
   });
   let fixtures = result.data.filter((f) => f.competitionId === competitionId);
+  if (["comp-champions-league-2026", "comp-europa-league-2026"].includes(competitionId)) {
+    const leaguePhaseFixtures = fixtures.filter((fixture) => Number(fixture.matchday) >= 1 && Number(fixture.matchday) <= 8);
+    if (leaguePhaseFixtures.length > 0 && leaguePhaseFixtures.some((fixture) => fixture.status !== "CONFIRMED")) {
+      fixtures = leaguePhaseFixtures;
+    }
+  }
+  const clubsResult = await readThroughReadModel({
+    key: ReadModelKeys.clubsWithOwners(seasonId),
+    seasonId,
+    expectedCount: 96,
+    firestoreFetcher: async () => (await buildClubsSnapshot(seasonId)).data,
+    validateData: (data) => Array.isArray(data) && data.length > 0
+  });
+  const ownersByClub = new Map(clubsResult.data.map((club) => [club.id, club]));
+  fixtures = fixtures.map((fixture) => {
+    const homeOwner = fixture.homeClubId ? ownersByClub.get(fixture.homeClubId) : void 0;
+    const awayOwner = fixture.awayClubId ? ownersByClub.get(fixture.awayClubId) : void 0;
+    const enrichFixtureClub = (club, owner) => club ? {
+      ...club,
+      claimedByUserId: owner?.ownerUserId || null,
+      claimedByUsername: owner?.ownerUsername || null,
+      managerUsername: owner?.ownerUsername || void 0,
+      isTaken: Boolean(owner?.ownerUserId),
+      occupancy: {
+        status: owner?.ownerUserId ? "occupied" : "available",
+        userId: owner?.ownerUserId || void 0,
+        username: owner?.ownerUsername || void 0
+      }
+    } : club;
+    const toFixtureUser = (owner) => owner?.ownerUserId ? {
+      id: owner.ownerUserId,
+      username: owner.ownerUsername || "",
+      displayName: owner.ownerUsername ? `@${owner.ownerUsername}` : `User #${owner.ownerUserId}`
+    } : null;
+    return {
+      ...fixture,
+      homeClub: enrichFixtureClub(fixture.homeClub, homeOwner),
+      awayClub: enrichFixtureClub(fixture.awayClub, awayOwner),
+      homeOwnerId: homeOwner?.ownerUserId || void 0,
+      awayOwnerId: awayOwner?.ownerUserId || void 0,
+      homeUser: toFixtureUser(homeOwner),
+      awayUser: toFixtureUser(awayOwner)
+    };
+  });
   if (options.matchday !== void 0) fixtures = fixtures.filter((f) => Number(f.matchday) === Number(options.matchday));
   if (options.status && options.status !== "ALL") fixtures = fixtures.filter((f) => f.status === options.status);
   return {
     fixtures: fixtures.sort((a, b) => compareAdminFixtures(a, b, true)),
     source: result.source,
-    stale: Boolean(result.stale),
-    degraded: Boolean(result.degraded),
+    stale: Boolean(result.stale || clubsResult.stale),
+    degraded: Boolean(result.degraded || clubsResult.degraded),
     snapshotAt: result.generatedAt
   };
 }
@@ -5846,8 +5900,9 @@ async function generateKnockoutBracket(competitionId, options = {}) {
     throw new Error(`Competition '${competitionId}' not found.`);
   }
   const comp = compDoc.data();
+  const isEuropeanLeaguePhase = comp.type === "EUROPEAN_LEAGUE_PHASE" || comp.type === "EUROPEAN_KNOCKOUT" || competitionId.includes("champions") || competitionId.includes("europa") || competitionId.includes("ucl") || competitionId.includes("uel");
   const existingFixSnap = await db.collection(COLLECTIONS.FIXTURES).where("competitionId", "==", competitionId).get();
-  if (!existingFixSnap.empty) {
+  if (!existingFixSnap.empty && !isEuropeanLeaguePhase) {
     if (options.force) {
       const deleteBatch = db.batch();
       for (const fix of existingFixSnap.docs) {
@@ -5874,18 +5929,46 @@ async function generateKnockoutBracket(competitionId, options = {}) {
   if (clubIds.length < 2) {
     throw new Error(`Cannot generate knockout bracket with fewer than 2 teams (found ${clubIds.length}).`);
   }
-  if (comp.type === "EUROPEAN_LEAGUE_PHASE" || comp.type === "EUROPEAN_KNOCKOUT" || competitionId.includes("champions") || competitionId.includes("europa") || competitionId.includes("ucl") || competitionId.includes("uel")) {
+  if (isEuropeanLeaguePhase) {
     if (clubIds.length >= 24) {
-      const standingsSnap = await db.collection(COLLECTIONS.STANDINGS).where("competitionId", "==", competitionId).get();
-      let ranked = clubIds;
-      if (!standingsSnap.empty) {
-        const sortedStandings = standingsSnap.docs.map((d) => d.data()).sort((a, b) => {
-          if ((b.points || 0) !== (a.points || 0)) return (b.points || 0) - (a.points || 0);
-          return (b.goalDifference || 0) - (a.goalDifference || 0);
-        });
-        ranked = sortedStandings.map((s) => s.clubId);
+      const matchesPerTeam = Number(comp.formatConfig?.matchesPerTeam || 8);
+      const expectedLeaguePhaseFixtures = clubIds.length * matchesPerTeam / 2;
+      const leaguePhaseDocs = existingFixSnap.docs.filter((doc) => {
+        const fixture = doc.data();
+        return fixture.matchday >= 1 && fixture.matchday <= matchesPerTeam;
+      });
+      if (leaguePhaseDocs.length !== expectedLeaguePhaseFixtures) {
+        throw new Error(`LEAGUE_PHASE_INCOMPLETE: expected ${expectedLeaguePhaseFixtures} fixtures, found ${leaguePhaseDocs.length}.`);
+      }
+      if (leaguePhaseDocs.some((doc) => doc.data().status !== "CONFIRMED")) {
+        throw new Error("LEAGUE_PHASE_INCOMPLETE: every league-phase fixture must be CONFIRMED before generating knockouts.");
+      }
+      const existingKnockoutDocs = existingFixSnap.docs.filter((doc) => doc.data().matchday > matchesPerTeam);
+      if (existingKnockoutDocs.length > 0 && !options.force) {
+        return { generated: existingKnockoutDocs.length, rounds: 5 };
+      }
+      if (existingKnockoutDocs.some((doc) => ["CONFIRMED", "DISPUTED", "PENDING_CONFIRMATION", "PLAYING"].includes(doc.data().status))) {
+        throw new Error("KNOCKOUT_RESET_BLOCKED: existing knockout fixtures contain protected results or submissions.");
+      }
+      const standingsDoc = await db.collection(COLLECTIONS.STANDINGS).doc(competitionId).get();
+      const rows = standingsDoc.exists && Array.isArray(standingsDoc.data()?.rows) ? standingsDoc.data().rows : [];
+      const ranked = rows.map((row) => row.clubId).filter((clubId) => typeof clubId === "string");
+      if (ranked.length !== clubIds.length || new Set(ranked).size !== clubIds.length || ranked.some((clubId) => !clubIds.includes(clubId))) {
+        throw new Error("STANDINGS_NOT_READY: rebuild complete league-phase standings before generating knockouts.");
+      }
+      if (existingKnockoutDocs.length > 0) {
+        const deleteBatch = db.batch();
+        for (const doc of existingKnockoutDocs) deleteBatch.delete(doc.ref);
+        await deleteBatch.commit();
       }
       const uclRes = await generateUCLKnockoutBracket(competitionId, ranked);
+      const totalFixtures = leaguePhaseDocs.length + uclRes.generated;
+      await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).update({
+        fixtureCount: totalFixtures,
+        fixturesCount: totalFixtures,
+        totalMatchdays: matchesPerTeam + 5,
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      });
       return { generated: uclRes.generated, rounds: 5 };
     }
   }
@@ -8330,45 +8413,10 @@ async function generateCompetitionFixturesFirestore(competitionId, options = {})
     }
   }
   const toDeleteSnap = await db.collection(COLLECTIONS.FIXTURES).where("competitionId", "==", competitionId).get();
-  const confirmedMap = /* @__PURE__ */ new Map();
-  if (!toDeleteSnap.empty) {
-    for (const doc of toDeleteSnap.docs) {
-      const data = doc.data();
-      if (data.status === "CONFIRMED" && data.homeScore !== null && data.homeScore !== void 0) {
-        confirmedMap.set(`${data.homeClubId}->${data.awayClubId}`, {
-          homeScore: data.homeScore,
-          awayScore: data.awayScore ?? 0,
-          winnerClubId: data.winnerClubId,
-          resultConfirmedAt: data.resultConfirmedAt
-        });
-      }
-    }
-    const batchSize2 = 400;
-    for (let i = 0; i < toDeleteSnap.docs.length; i += batchSize2) {
-      const chunk = toDeleteSnap.docs.slice(i, i + batchSize2);
-      const batch = db.batch();
-      chunk.forEach((doc) => batch.delete(doc.ref));
-      await batch.commit();
-    }
-  }
-  for (const fix of generatedFixtures) {
-    const key = `${fix.homeClubId}->${fix.awayClubId}`;
-    const revKey = `${fix.awayClubId}->${fix.homeClubId}`;
-    if (confirmedMap.has(key)) {
-      const match = confirmedMap.get(key);
-      fix.status = "CONFIRMED";
-      fix.homeScore = match.homeScore;
-      fix.awayScore = match.awayScore;
-      fix.winnerClubId = match.winnerClubId;
-      fix.resultConfirmedAt = match.resultConfirmedAt;
-    } else if (confirmedMap.has(revKey)) {
-      const match = confirmedMap.get(revKey);
-      fix.status = "CONFIRMED";
-      fix.homeScore = match.awayScore;
-      fix.awayScore = match.homeScore;
-      fix.winnerClubId = match.winnerClubId;
-      fix.resultConfirmedAt = match.resultConfirmedAt;
-    }
+  const protectedStatuses = /* @__PURE__ */ new Set(["CONFIRMED", "DISPUTED", "PENDING_CONFIRMATION", "AWAITING_RESULT", "PLAYING"]);
+  const protectedFixture = toDeleteSnap.docs.find((doc) => protectedStatuses.has(doc.data().status));
+  if (protectedFixture) {
+    throw new Error(`FIXTURE_REGENERATION_BLOCKED: fixture '${protectedFixture.id}' contains protected match activity.`);
   }
   const batchSize = 400;
   for (let i = 0; i < generatedFixtures.length; i += batchSize) {
@@ -8378,6 +8426,14 @@ async function generateCompetitionFixturesFirestore(competitionId, options = {})
       const ref = db.collection(COLLECTIONS.FIXTURES).doc(fix.id);
       batch.set(ref, fix);
     }
+    await batch.commit();
+  }
+  const generatedIds = new Set(generatedFixtures.map((fixture) => fixture.id));
+  const obsoleteDocs = toDeleteSnap.docs.filter((doc) => !generatedIds.has(doc.id));
+  for (let i = 0; i < obsoleteDocs.length; i += batchSize) {
+    const chunk = obsoleteDocs.slice(i, i + batchSize);
+    const batch = db.batch();
+    chunk.forEach((doc) => batch.delete(doc.ref));
     await batch.commit();
   }
   let verifySnap = await db.collection(COLLECTIONS.FIXTURES).where("competitionId", "==", competitionId).get();
@@ -9293,13 +9349,18 @@ async function calculateCompetitionStandingsFirestore(competitionId) {
 async function submitFixtureResultFirestore(userId, fixtureId, homeScore, awayScore, proofUrl) {
   assertNoSyntheticIdsInProduction("submitFixtureResultFirestore", [userId, fixtureId]);
   guardAgainstTestEntityCreation("submission", fixtureId, userId);
-  if (!Number.isInteger(homeScore) || homeScore < 0 || !Number.isInteger(awayScore) || awayScore < 0) {
-    throw new Error("Scores must be non-negative integers.");
+  if (!Number.isInteger(homeScore) || homeScore < 0 || homeScore > 99 || !Number.isInteger(awayScore) || awayScore < 0 || awayScore > 99) {
+    throw new Error("Scores must be integers between 0 and 99.");
   }
   const db = getFirestoreDb();
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const submissionId = `sub-${fixtureId}-${userId}`;
   const executeFallbackSubmit = async () => {
+    if (process.env.VERCEL === "1" || Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME)) {
+      const err = new Error("AUTHORITATIVE_WRITE_REQUIRED: result submission is temporarily unavailable.");
+      err.statusCode = 503;
+      throw err;
+    }
     console.log("[RESULT_SUBMISSION_FALLBACK] Executing resilient SQLite fallback persistence for fixture:", fixtureId);
     const row = queryGet("SELECT * FROM fixtures WHERE id = ?", [fixtureId]);
     if (!row) {
@@ -9413,72 +9474,108 @@ async function submitFixtureResultFirestore(userId, fixtureId, homeScore, awaySc
       err.statusCode = 400;
       throw err;
     }
-    trackFirestoreRead(COLLECTIONS.USER_MEMBERSHIPS, 1, "submitFixtureResultFirestore:membership");
-    const userMemDoc = await db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${fixture.seasonId}_${userId}`).get();
-    if (!userMemDoc.exists || userMemDoc.data()?.status !== "active") {
-      throw new Error("You do not own either the home or away club in this fixture.");
-    }
-    const userClubId = userMemDoc.data().clubId;
-    const isHome = userClubId === fixture.homeClubId;
-    const isAway = userClubId === fixture.awayClubId;
-    if (!isHome && !isAway) {
-      throw new Error("You do not own either the home or away club in this fixture.");
-    }
+    const membershipRef = db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${fixture.seasonId}_${userId}`);
     const subRef = db.collection(COLLECTIONS.RESULT_SUBMISSIONS).doc(submissionId);
-    trackFirestoreWrite(COLLECTIONS.RESULT_SUBMISSIONS, 1, "submitFixtureResultFirestore:setSubmission");
-    await subRef.set({
-      id: submissionId,
-      fixtureId,
-      submittedByUserId: userId,
-      clubId: userClubId,
-      homeScore,
-      awayScore,
-      proofUrl: proofUrl || null,
-      createdAt: now
-    });
-    trackFirestoreRead(COLLECTIONS.RESULT_SUBMISSIONS, 1, "submitFixtureResultFirestore:allSubs");
-    const allSubsSnap = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where("fixtureId", "==", fixtureId).get();
-    const allSubs = allSubsSnap.docs.map((d) => d.data());
-    let newStatus = allSubs.length === 1 ? "PENDING_CONFIRMATION" : "AWAITING_RESULT";
-    let confirmedHomeScore = null;
-    let confirmedAwayScore = null;
-    let winnerClubId = null;
-    let confirmedAt = null;
-    if (allSubs.length >= 2) {
-      const [sub1, sub2] = allSubs;
-      if (sub1.homeScore === sub2.homeScore && sub1.awayScore === sub2.awayScore) {
-        newStatus = "CONFIRMED";
-        confirmedHomeScore = sub1.homeScore;
-        confirmedAwayScore = sub1.awayScore;
-        confirmedAt = now;
-        if (confirmedHomeScore > confirmedAwayScore) winnerClubId = fixture.homeClubId;
-        else if (confirmedAwayScore > confirmedHomeScore) winnerClubId = fixture.awayClubId;
-      } else {
-        newStatus = "DISPUTED";
-        const disputeRef = db.collection(COLLECTIONS.DISPUTES).doc(`disp-${fixtureId}`);
-        trackFirestoreWrite(COLLECTIONS.DISPUTES, 1, "submitFixtureResultFirestore:dispute");
-        await disputeRef.set({
-          id: `disp-${fixtureId}`,
-          fixtureId,
-          seasonId: fixture.seasonId,
-          homeSubmissionId: sub1.id,
-          awaySubmissionId: sub2.id,
-          status: "OPEN",
-          createdAt: now
-        });
+    const submissionsQuery = db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where("fixtureId", "==", fixtureId);
+    const disputeRef = db.collection(COLLECTIONS.DISPUTES).doc(`disp-${fixtureId}`);
+    const consensus = await db.runTransaction(async (transaction) => {
+      const [txFixDoc, userMemDoc, allSubsSnap] = await Promise.all([
+        transaction.get(fixRef),
+        transaction.get(membershipRef),
+        transaction.get(submissionsQuery)
+      ]);
+      if (!txFixDoc.exists) throw new Error(`Fixture with ID '${fixtureId}' not found.`);
+      const currentFixture = txFixDoc.data();
+      if (currentFixture.status === "CONFIRMED") {
+        throw new Error("This match result is already CONFIRMED and cannot be modified.");
       }
-    } else {
-      newStatus = "PENDING_CONFIRMATION";
-    }
-    trackFirestoreWrite(COLLECTIONS.FIXTURES, 1, "submitFixtureResultFirestore:updateStatus");
-    await fixRef.update({
-      status: newStatus,
-      homeScore: confirmedHomeScore,
-      awayScore: confirmedAwayScore,
-      winnerClubId,
-      resultConfirmedAt: confirmedAt,
-      updatedAt: now
+      if (!currentFixture.homeClubId || !currentFixture.awayClubId || currentFixture.homeClubId === "TBD" || currentFixture.awayClubId === "TBD") {
+        const err = new Error("This match has undetermined participants (TBD) and cannot be played yet.");
+        err.code = "FIXTURE_NOT_READY";
+        err.statusCode = 400;
+        throw err;
+      }
+      if (!userMemDoc.exists || userMemDoc.data()?.status !== "active") {
+        throw new Error("You do not own either the home or away club in this fixture.");
+      }
+      const userClubId2 = userMemDoc.data().clubId;
+      if (userClubId2 !== currentFixture.homeClubId && userClubId2 !== currentFixture.awayClubId) {
+        throw new Error("You do not own either the home or away club in this fixture.");
+      }
+      const currentSubmission = {
+        id: submissionId,
+        fixtureId,
+        submittedByUserId: userId,
+        clubId: userClubId2,
+        homeScore,
+        awayScore,
+        proofUrl: proofUrl || null,
+        createdAt: now
+      };
+      const byClub = /* @__PURE__ */ new Map();
+      for (const doc of allSubsSnap.docs) {
+        const submission = doc.data();
+        if (submission.clubId === currentFixture.homeClubId || submission.clubId === currentFixture.awayClubId) {
+          byClub.set(submission.clubId, submission);
+        }
+      }
+      byClub.set(userClubId2, currentSubmission);
+      const homeSubmission = byClub.get(currentFixture.homeClubId);
+      const awaySubmission = byClub.get(currentFixture.awayClubId);
+      let newStatus2 = "PENDING_CONFIRMATION";
+      let confirmedHomeScore2 = null;
+      let confirmedAwayScore2 = null;
+      let winnerClubId2 = null;
+      let confirmedAt2 = null;
+      if (homeSubmission && awaySubmission) {
+        if (homeSubmission.homeScore === awaySubmission.homeScore && homeSubmission.awayScore === awaySubmission.awayScore) {
+          newStatus2 = "CONFIRMED";
+          confirmedHomeScore2 = homeSubmission.homeScore;
+          confirmedAwayScore2 = homeSubmission.awayScore;
+          confirmedAt2 = now;
+          if (confirmedHomeScore2 > confirmedAwayScore2) winnerClubId2 = currentFixture.homeClubId;
+          else if (confirmedAwayScore2 > confirmedHomeScore2) winnerClubId2 = currentFixture.awayClubId;
+          transaction.set(disputeRef, {
+            id: `disp-${fixtureId}`,
+            fixtureId,
+            seasonId: currentFixture.seasonId,
+            homeSubmissionId: homeSubmission.id,
+            awaySubmissionId: awaySubmission.id,
+            status: "CANCELLED",
+            resolutionNotes: "Both participants submitted the same score.",
+            resolvedAt: now,
+            createdAt: now
+          }, { merge: true });
+        } else {
+          newStatus2 = "DISPUTED";
+          transaction.set(disputeRef, {
+            id: `disp-${fixtureId}`,
+            fixtureId,
+            seasonId: currentFixture.seasonId,
+            homeSubmissionId: homeSubmission.id,
+            awaySubmissionId: awaySubmission.id,
+            status: "OPEN",
+            createdAt: now
+          }, { merge: true });
+        }
+      }
+      transaction.set(subRef, currentSubmission);
+      transaction.update(fixRef, {
+        status: newStatus2,
+        homeScore: confirmedHomeScore2,
+        awayScore: confirmedAwayScore2,
+        winnerClubId: winnerClubId2,
+        resultConfirmedAt: confirmedAt2,
+        updatedAt: now
+      });
+      return { fixture: currentFixture, userClubId: userClubId2, newStatus: newStatus2, confirmedHomeScore: confirmedHomeScore2, confirmedAwayScore: confirmedAwayScore2, winnerClubId: winnerClubId2, confirmedAt: confirmedAt2 };
     });
+    const { userClubId, newStatus, confirmedHomeScore, confirmedAwayScore, winnerClubId, confirmedAt } = consensus;
+    trackFirestoreRead(COLLECTIONS.USER_MEMBERSHIPS, 1, "submitFixtureResultFirestore:membership");
+    trackFirestoreRead(COLLECTIONS.RESULT_SUBMISSIONS, 1, "submitFixtureResultFirestore:allSubs");
+    trackFirestoreWrite(COLLECTIONS.RESULT_SUBMISSIONS, 1, "submitFixtureResultFirestore:setSubmission");
+    trackFirestoreWrite(COLLECTIONS.FIXTURES, 1, "submitFixtureResultFirestore:updateStatus");
+    if (newStatus === "DISPUTED") trackFirestoreWrite(COLLECTIONS.DISPUTES, 1, "submitFixtureResultFirestore:dispute");
     firestoreCircuitBreaker.recordSuccess();
     try {
       queryRun(
@@ -9501,9 +9598,9 @@ async function submitFixtureResultFirestore(userId, fixtureId, homeScore, awaySc
         console.warn("[KNOCKOUT_ADVANCE] Non-blocking advance error:", err);
       }
     }
-    if (newStatus === "CONFIRMED" && fixture.competitionId) {
+    if (newStatus === "CONFIRMED" && consensus.fixture.competitionId) {
       try {
-        await rebuildCompetitionStandingsFirestore2(fixture.competitionId);
+        await rebuildCompetitionStandingsFirestore2(consensus.fixture.competitionId);
       } catch (standingsErr) {
         console.warn("[STANDINGS_UPDATE] Non-blocking standings update error on confirmation:", standingsErr);
       }
@@ -9514,7 +9611,7 @@ async function submitFixtureResultFirestore(userId, fixtureId, homeScore, awaySc
   } catch (firestoreErr) {
     const errMsg = firestoreErr?.message || String(firestoreErr);
     console.error(`[RESULT_SUBMISSION] Firestore operation failed: ${errMsg}`);
-    if (errMsg.includes("not found") || errMsg.includes("already CONFIRMED") || errMsg.includes("MATCHDAY_LOCKED") || errMsg.includes("locked") || errMsg.includes("paused") || errMsg.includes("do not own") || errMsg.includes("Scores must be")) {
+    if (errMsg.includes("not found") || errMsg.includes("already CONFIRMED") || errMsg.includes("MATCHDAY_LOCKED") || errMsg.includes("locked") || errMsg.includes("paused") || errMsg.includes("do not own") || errMsg.includes("undetermined participants") || errMsg.includes("Scores must be")) {
       throw firestoreErr;
     }
     firestoreCircuitBreaker.recordFailure(firestoreErr);
@@ -12008,6 +12105,24 @@ async function enqueueTelegramBroadcast(params) {
   `, [BROADCASTS_KEY, QUEUE_KEY], [broadcastId, JSON.stringify(record), JSON.stringify(jobs)]);
   if (persistedRecord.title !== record.title || persistedRecord.body !== record.body || persistedRecord.seasonId !== seasonId || JSON.stringify(persistedRecord.recipients.map((r) => r.userId).sort()) !== JSON.stringify(targetUserIds.slice().sort())) throw new Error("REQUEST_ID_REUSED_WITH_DIFFERENT_CONTENT");
   memoryBroadcasts.set(broadcastId, persistedRecord);
+  const notificationBatchSize = 400;
+  const notificationDb = getFirestoreDb();
+  for (let i = 0; i < targetUserIds.length; i += notificationBatchSize) {
+    const batch = notificationDb.batch();
+    for (const uid of targetUserIds.slice(i, i + notificationBatchSize)) {
+      batch.set(notificationDb.collection(COLLECTIONS.NOTIFICATIONS).doc(`notif-${broadcastId}-${uid}`), {
+        id: `notif-${broadcastId}-${uid}`,
+        userId: uid,
+        type: params.type,
+        title: params.title,
+        message: params.body,
+        data: { broadcastId },
+        isRead: false,
+        createdAt: now
+      }, { merge: true });
+    }
+    await batch.commit();
+  }
   await createAuditLog(
     params.adminUserId,
     "TELEGRAM_NOTIFICATION_BROADCAST",
@@ -12054,6 +12169,11 @@ async function processNotificationQueue(batchSize = 25) {
         return cjson.encode(job)
       `, [QUEUE_KEY, PROCESSING_KEY, WORKER_LOCK], [token, Date.now()]);
       if (!job) break;
+      if (job.availableAt && job.availableAt > Date.now()) {
+        await client.rpush(QUEUE_KEY, JSON.stringify(job));
+        await client.hdel(PROCESSING_KEY, job.jobId);
+        break;
+      }
       processed++;
       const record = await getBroadcastDetails(job.broadcastId);
       const recipient = record?.recipients.find((r) => r.userId === job.userId);
@@ -12075,8 +12195,20 @@ async function processNotificationQueue(batchSize = 25) {
         await updateBroadcastRecipientState(job.broadcastId, job.userId, "SENT", void 0, (/* @__PURE__ */ new Date()).toISOString());
         succeeded++;
       } else {
-        await updateBroadcastRecipientState(job.broadcastId, job.userId, "FAILED", result.error_code ? `TELEGRAM_${result.error_code}: ${result.error || "Rejected"}${result.parameters?.retry_after ? "; retry after " + result.parameters.retry_after + " seconds" : ""}` : "DELIVERY_UNKNOWN: " + (result.error || "No response"));
-        failed++;
+        const errorText = result.error_code ? `TELEGRAM_${result.error_code}: ${result.error || "Rejected"}${result.parameters?.retry_after ? "; retry after " + result.parameters.retry_after + " seconds" : ""}` : "DELIVERY_UNKNOWN: " + (result.error || "No response");
+        const definitelyRejected = Boolean(result.error_code);
+        const retryable = result.error_code === 429 || Boolean(result.error_code && result.error_code >= 500);
+        if (definitelyRejected && retryable && job.retryCount < job.maxRetries) {
+          job.retryCount += 1;
+          const retryAfterSeconds = Math.max(Number(result.parameters?.retry_after || 0), 2 ** job.retryCount);
+          job.availableAt = Date.now() + retryAfterSeconds * 1e3;
+          job.status = "QUEUED";
+          await updateBroadcastRecipientState(job.broadcastId, job.userId, "PENDING", errorText, void 0, job.retryCount);
+          await client.rpush(QUEUE_KEY, JSON.stringify(job));
+        } else {
+          await updateBroadcastRecipientState(job.broadcastId, job.userId, "FAILED", errorText, void 0, job.retryCount);
+          failed++;
+        }
       }
       await client.hdel(PROCESSING_KEY, job.jobId);
       await new Promise((resolve) => setTimeout(resolve, 50));
@@ -12102,7 +12234,7 @@ ${escapeHtml(body)}
 function escapeHtml(str) {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
-async function updateBroadcastRecipientState(broadcastId, userId, status, error, sentAt) {
+async function updateBroadcastRecipientState(broadcastId, userId, status, error, sentAt, retryCount) {
   const bcast = await getBroadcastDetails(broadcastId);
   if (!bcast) throw new Error("BROADCAST_RECORD_MISSING");
   const r = bcast.recipients.find((rec) => rec.userId === userId);
@@ -12110,6 +12242,7 @@ async function updateBroadcastRecipientState(broadcastId, userId, status, error,
     r.status = status;
     if (error) r.error = error;
     if (sentAt) r.sentAt = sentAt;
+    if (retryCount !== void 0) r.retryCount = retryCount;
   }
   bcast.metrics.sentCount = bcast.recipients.filter((r2) => r2.status === "SENT").length;
   bcast.metrics.failedCount = bcast.recipients.filter((r2) => r2.status === "FAILED").length;
@@ -12160,7 +12293,11 @@ import crypto4 from "crypto";
 // src/server/auth/sessionToken.ts
 import crypto3 from "crypto";
 function getSessionSecret() {
-  return process.env.SESSION_SECRET || process.env.TELEGRAM_BOT_TOKEN || "efl-uz-secure-session-key-production-2026";
+  const secret = process.env.SESSION_SECRET || process.env.TELEGRAM_BOT_TOKEN;
+  if (!secret || secret.length < 24) {
+    throw new Error("SESSION_SECRET_REQUIRED: configure a strong SESSION_SECRET (or TELEGRAM_BOT_TOKEN).");
+  }
+  return secret;
 }
 function base64UrlEncode(str) {
   return Buffer.from(str).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -12172,7 +12309,7 @@ function base64UrlDecode(str) {
   }
   return Buffer.from(base64, "base64").toString("utf8");
 }
-function createSessionToken(user, expiresInSeconds = 86400) {
+function createSessionToken(user, expiresInSeconds = 900) {
   const now = Math.floor(Date.now() / 1e3);
   const claims = {
     id: user.id,
@@ -12210,9 +12347,16 @@ function verifySessionToken(token) {
     return { isValid: false, error: "Invalid token signature" };
   }
   try {
+    const header = JSON.parse(base64UrlDecode(encodedHeader));
+    if (header?.alg !== "HS256" || header?.typ !== "JWT") {
+      return { isValid: false, error: "Invalid token header" };
+    }
     const claims = JSON.parse(base64UrlDecode(encodedPayload));
     const now = Math.floor(Date.now() / 1e3);
-    if (claims.exp && claims.exp < now) {
+    if (!claims || typeof claims.id !== "string" || typeof claims.telegramId !== "string" || typeof claims.username !== "string" || typeof claims.firstName !== "string" || typeof claims.iat !== "number" || typeof claims.exp !== "number" || typeof claims.isAdmin !== "boolean" || typeof claims.isSuspended !== "boolean") {
+      return { isValid: false, error: "Invalid token claims" };
+    }
+    if (claims.iat > now + 60 || claims.exp <= now || claims.exp - claims.iat > 900) {
       return { isValid: false, error: "Token expired" };
     }
     return { isValid: true, claims };
@@ -12300,6 +12444,7 @@ async function getOrCreateDevUser(devUserId) {
 }
 
 // src/server/middleware/authMiddleware.ts
+init_firestoreStore();
 var cachedUserByTelegramId = /* @__PURE__ */ new Map();
 var cachedUserByDevId = /* @__PURE__ */ new Map();
 async function authMiddleware(req, res, next) {
@@ -12407,7 +12552,7 @@ function requireAuth(req, res, next) {
   }
   next();
 }
-function requireAdmin(req, res, next) {
+async function requireAdmin(req, res, next) {
   if (!req.user) {
     res.status(401).json({
       error: "Unauthorized",
@@ -12415,7 +12560,17 @@ function requireAdmin(req, res, next) {
     });
     return;
   }
-  if (!req.user.isAdmin) {
+  const authoritativeUser = await getUserByIdFirestore(req.user.id).catch(() => null);
+  if (!authoritativeUser) {
+    res.status(503).json({ error: "Admin authorization is temporarily unavailable." });
+    return;
+  }
+  req.user = authoritativeUser;
+  if (authoritativeUser.isSuspended) {
+    res.status(403).json({ error: "Account Suspended", message: "Your account has been suspended." });
+    return;
+  }
+  if (!authoritativeUser.isAdmin) {
     res.status(403).json({
       error: "Forbidden",
       message: "You do not have administrative privileges."
@@ -12423,6 +12578,55 @@ function requireAdmin(req, res, next) {
     return;
   }
   next();
+}
+
+// src/server/middleware/rateLimitMiddleware.ts
+init_readModelStore();
+import crypto5 from "crypto";
+var localCounters = /* @__PURE__ */ new Map();
+function subjectFor(req) {
+  const raw = req.user?.id || req.ip || req.socket.remoteAddress || "unknown";
+  return crypto5.createHash("sha256").update(raw).digest("hex").slice(0, 24);
+}
+function rateLimit(name, limit, windowSeconds) {
+  return async (req, res, next) => {
+    const windowId = Math.floor(Date.now() / (windowSeconds * 1e3));
+    const key = `${KEY_PREFIX}:ratelimit:${name}:${subjectFor(req)}:${windowId}`;
+    let count = 0;
+    try {
+      const client = getUpstashClient();
+      if (client) {
+        count = Number(await client.eval(
+          "local n=redis.call('INCR',KEYS[1]); if n==1 then redis.call('EXPIRE',KEYS[1],ARGV[1]) end; return n",
+          [key],
+          [windowSeconds]
+        ));
+      } else {
+        const now = Date.now();
+        const current = localCounters.get(key);
+        if (!current || current.resetAt <= now) {
+          count = 1;
+          localCounters.set(key, { count, resetAt: now + windowSeconds * 1e3 });
+        } else {
+          current.count += 1;
+          count = current.count;
+        }
+        if (localCounters.size > 5e3) {
+          for (const [localKey, value] of localCounters) if (value.resetAt <= now) localCounters.delete(localKey);
+        }
+      }
+    } catch {
+      return next();
+    }
+    res.setHeader("RateLimit-Limit", String(limit));
+    res.setHeader("RateLimit-Remaining", String(Math.max(0, limit - count)));
+    if (count > limit) {
+      res.setHeader("Retry-After", String(windowSeconds));
+      res.status(429).json({ error: "Too many requests. Please try again later." });
+      return;
+    }
+    next();
+  };
 }
 
 // src/server/app.ts
@@ -12442,7 +12646,6 @@ var MANUAL_PROBE_COOLDOWN_MS = 6e4;
 healthRouter.get("/", async (req, res) => {
   const status = getFirebaseStatus();
   const cbStatus = firestoreCircuitBreaker.getStatus();
-  const queue = getQueueStats();
   const isConnected = Boolean(status.isConfigured && firestoreCircuitBreaker.canExecute());
   const connectionWarning = !firestoreCircuitBreaker.canExecute() ? "Firestore circuit breaker is open (fallback mode active)" : !status.isConfigured ? "Firebase credentials not configured" : null;
   res.status(200).json({
@@ -12452,24 +12655,15 @@ healthRouter.get("/", async (req, res) => {
     isOffline: !firestoreCircuitBreaker.canExecute(),
     circuitBreaker: {
       status: cbStatus.state,
-      state: cbStatus.state,
-      failureCount: cbStatus.totalErrors,
-      consecutiveFailures: cbStatus.consecutiveFailures,
-      resourceExhaustedCount: cbStatus.resourceExhaustedCount,
-      cooldownRemainingMs: cbStatus.cooldownRemainingMs
+      state: cbStatus.state
     },
-    queueStats: queue,
     firebaseConfigured: status.isConfigured,
-    projectId: status.projectId,
-    databaseId: status.databaseId,
-    firestoreDatabaseId: status.databaseId,
-    authMode: status.authMode,
     warning: connectionWarning || void 0,
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     version: "2.0.0-firestore-production"
   });
 });
-healthRouter.post("/probe", async (req, res) => {
+healthRouter.post("/probe", requireAdmin, async (req, res) => {
   const now = Date.now();
   if (now - lastManualProbeTime < MANUAL_PROBE_COOLDOWN_MS) {
     const waitSec = Math.ceil((MANUAL_PROBE_COOLDOWN_MS - (now - lastManualProbeTime)) / 1e3);
@@ -12493,12 +12687,12 @@ healthRouter.post("/probe", async (req, res) => {
     firestoreCircuitBreaker.recordFailure(err);
     res.status(503).json({
       success: false,
-      error: err.message,
+      error: "Firestore active probe failed",
       timestamp: (/* @__PURE__ */ new Date()).toISOString()
     });
   }
 });
-healthRouter.get("/resilience", (req, res) => {
+healthRouter.get("/resilience", requireAdmin, (req, res) => {
   const cbStatus = firestoreCircuitBreaker.getStatus();
   const queue = getQueueStats();
   res.status(200).json({
@@ -12877,8 +13071,55 @@ function resolveCanonicalClub(id) {
   return found || null;
 }
 var imageCache = /* @__PURE__ */ new Map();
+var ALLOWED_CREST_HOSTS = /* @__PURE__ */ new Set(["resources.premierleague.com", "crests.football-data.org"]);
+var MAX_CREST_BYTES = 1024 * 1024;
+var MAX_CREST_CACHE_ENTRIES = 250;
+function escapeXml(value) {
+  return value.replace(/[&<>'"]/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "'": "&apos;",
+    '"': "&quot;"
+  })[char] || char);
+}
+function parseAllowedCrestUrl(value) {
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.port) return null;
+    if (!ALLOWED_CREST_HOSTS.has(parsed.hostname.toLowerCase())) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+async function readResponseWithLimit(response) {
+  const contentLength = Number(response.headers.get("content-length") || 0);
+  if (contentLength > MAX_CREST_BYTES) throw new Error("CREST_TOO_LARGE");
+  if (!response.body) throw new Error("EMPTY_CREST_BODY");
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    total += value.byteLength;
+    if (total > MAX_CREST_BYTES) {
+      await reader.cancel();
+      throw new Error("CREST_TOO_LARGE");
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)));
+}
+function setSafeSvgHeaders(res) {
+  res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+}
 function generateFallbackSvgBadge(name, shortName) {
-  const text = (shortName || name.slice(0, 3)).toUpperCase();
+  const text = escapeXml((shortName || name.slice(0, 3)).toUpperCase().slice(0, 8));
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
     <defs>
       <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -12899,20 +13140,25 @@ function wrapRasterImageInSvg(buffer, mimeType) {
   return Buffer.from(svg, "utf-8");
 }
 async function fetchAndServeImage(imageUrl, res, fallbackName = "FC", fallbackShortName = "FC") {
+  const allowedUrl = parseAllowedCrestUrl(imageUrl);
   const now = Date.now();
-  const cached = imageCache.get(imageUrl);
+  const cacheKey = allowedUrl?.toString() || imageUrl;
+  const cached = imageCache.get(cacheKey);
   if (cached && cached.expiry > now) {
     res.setHeader("Content-Type", cached.contentType);
     res.setHeader("Cache-Control", "public, max-age=604800, s-maxage=2592000, immutable");
     res.setHeader("Access-Control-Allow-Origin", "*");
+    setSafeSvgHeaders(res);
     res.send(cached.buffer);
     return;
   }
   try {
+    if (!allowedUrl) throw new Error("CREST_HOST_NOT_ALLOWED");
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 4e3);
-    const response = await fetch(imageUrl, {
+    const response = await fetch(allowedUrl, {
       signal: controller.signal,
+      redirect: "error",
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
@@ -12920,12 +13166,12 @@ async function fetchAndServeImage(imageUrl, res, fallbackName = "FC", fallbackSh
     });
     clearTimeout(timeoutId);
     if (response.ok) {
-      const rawContentType = response.headers.get("content-type") || "image/png";
-      const arrayBuffer = await response.arrayBuffer();
-      const rawBuffer = Buffer.from(arrayBuffer);
+      const rawContentType = (response.headers.get("content-type") || "").toLowerCase();
+      if (!rawContentType.startsWith("image/")) throw new Error("INVALID_CREST_CONTENT_TYPE");
+      const rawBuffer = await readResponseWithLimit(response);
       let finalBuffer;
       let finalContentType;
-      const isSvg = rawContentType.includes("svg") || imageUrl.toLowerCase().endsWith(".svg");
+      const isSvg = rawContentType.includes("svg") || allowedUrl.pathname.toLowerCase().endsWith(".svg");
       if (isSvg) {
         finalBuffer = rawBuffer;
         finalContentType = "image/svg+xml; charset=utf-8";
@@ -12933,7 +13179,11 @@ async function fetchAndServeImage(imageUrl, res, fallbackName = "FC", fallbackSh
         finalBuffer = wrapRasterImageInSvg(rawBuffer, rawContentType);
         finalContentType = "image/svg+xml; charset=utf-8";
       }
-      imageCache.set(imageUrl, {
+      if (imageCache.size >= MAX_CREST_CACHE_ENTRIES) {
+        const oldestKey = imageCache.keys().next().value;
+        if (oldestKey) imageCache.delete(oldestKey);
+      }
+      imageCache.set(cacheKey, {
         buffer: finalBuffer,
         contentType: finalContentType,
         expiry: now + 7 * 24 * 60 * 60 * 1e3
@@ -12941,6 +13191,7 @@ async function fetchAndServeImage(imageUrl, res, fallbackName = "FC", fallbackSh
       res.setHeader("Content-Type", finalContentType);
       res.setHeader("Cache-Control", "public, max-age=604800, s-maxage=2592000, immutable");
       res.setHeader("Access-Control-Allow-Origin", "*");
+      setSafeSvgHeaders(res);
       res.send(finalBuffer);
       return;
     }
@@ -12950,12 +13201,13 @@ async function fetchAndServeImage(imageUrl, res, fallbackName = "FC", fallbackSh
   res.setHeader("Content-Type", "image/svg+xml; charset=utf-8");
   res.setHeader("Cache-Control", "public, max-age=86400");
   res.setHeader("Access-Control-Allow-Origin", "*");
+  setSafeSvgHeaders(res);
   res.send(Buffer.from(svg, "utf-8"));
 }
 clubsRouter.get("/crest-proxy", async (req, res) => {
   const url = req.query.url;
-  if (!url || !url.startsWith("http")) {
-    res.status(400).json({ error: "Valid image URL is required" });
+  if (!url || !parseAllowedCrestUrl(url)) {
+    res.status(400).json({ error: "Crest URL host is not allowed" });
     return;
   }
   await fetchAndServeImage(url, res);
@@ -13234,11 +13486,12 @@ import { z as z2 } from "zod";
 init_firestoreStore();
 init_readModelStore();
 var fixturesRouter = Router7();
-var fixturesResilientRouter = fixturesRouter;
 var resultSubmissionSchema = z2.object({
-  homeScore: z2.number().int().min(0, "Home score must be >= 0"),
-  awayScore: z2.number().int().min(0, "Away score must be >= 0"),
-  proofUrl: z2.string().optional()
+  homeScore: z2.number().int().min(0, "Home score must be >= 0").max(99, "Home score must be <= 99"),
+  awayScore: z2.number().int().min(0, "Away score must be >= 0").max(99, "Away score must be <= 99"),
+  proofUrl: z2.string().url().max(2048).refine((value) => new URL(value).protocol === "https:", {
+    message: "Proof URL must use HTTPS"
+  }).optional()
 });
 fixturesRouter.get("/:id", async (req, res) => {
   const currentUserId = req.user?.id;
@@ -13310,7 +13563,6 @@ import { Router as Router9 } from "express";
 init_firestoreStore();
 init_readModelStore();
 var meRouter = Router9();
-var meResilientRouter = meRouter;
 meRouter.use((req, res, next) => {
   setOwnershipSensitiveHeaders(res);
   next();
@@ -14852,11 +15104,29 @@ adminRouter.post("/telegram-notifications/process-queue", async (req, res) => {
 
 // src/server/routes/telegram.routes.ts
 import { Router as Router12 } from "express";
+init_readModelStore();
 var telegramRouter = Router12();
+var recentWebhookUpdates = /* @__PURE__ */ new Map();
+async function claimTelegramUpdate(updateId) {
+  const client = getUpstashClient();
+  if (client) {
+    const key = `${KEY_PREFIX}:telegram:webhook-update:${updateId}`;
+    return Boolean(await client.set(key, "1", { nx: true, ex: 86400 }));
+  }
+  const now = Date.now();
+  for (const [id, expiresAt] of recentWebhookUpdates) if (expiresAt <= now) recentWebhookUpdates.delete(id);
+  if (recentWebhookUpdates.has(updateId)) return false;
+  recentWebhookUpdates.set(updateId, now + 10 * 60 * 1e3);
+  return true;
+}
 telegramRouter.post("/webhook", async (req, res) => {
   const secretToken = req.headers["x-telegram-bot-api-secret-token"];
   const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
-  if (expectedSecret && secretToken !== expectedSecret) {
+  if (!expectedSecret) {
+    res.status(503).json({ error: "Webhook is not configured" });
+    return;
+  }
+  if (secretToken !== expectedSecret) {
     res.status(401).json({ error: "Unauthorized webhook secret token" });
     return;
   }
@@ -14865,17 +15135,25 @@ telegramRouter.post("/webhook", async (req, res) => {
     res.status(200).json({ ok: true, ignored: "empty_update" });
     return;
   }
+  if (!Number.isSafeInteger(update.update_id)) {
+    res.status(200).json({ ok: true, ignored: "invalid_update_id" });
+    return;
+  }
+  if (!await claimTelegramUpdate(update.update_id)) {
+    res.status(200).json({ ok: true, ignored: "duplicate_update" });
+    return;
+  }
   const message = update.message;
   if (message && message.text && typeof message.text === "string") {
     const text = message.text.trim();
-    if (text.startsWith("/start")) {
+    if (text.startsWith("/start") && Number.isSafeInteger(message.chat?.id) && Number.isSafeInteger(message.from?.id)) {
       try {
         const result = await handleTelegramStart(message.chat.id, message.from);
         res.status(200).json({ ok: true, handled: "start", result });
         return;
       } catch (err) {
         console.error("[TELEGRAM WEBHOOK /start error]:", err.message);
-        res.status(200).json({ ok: true, error: err.message });
+        res.status(200).json({ ok: true, error: "start_handler_failed" });
         return;
       }
     }
@@ -14955,17 +15233,39 @@ async function ensureDbReady() {
 }
 function createApp() {
   const app2 = express();
+  app2.disable("x-powered-by");
+  const localDevHost = "localhost";
+  const allowedOrigins = new Set([
+    "https://efluz.vercel.app",
+    process.env.APP_URL,
+    process.env.TELEGRAM_WEBAPP_URL,
+    ...process.env.NODE_ENV !== "production" ? [`http://${localDevHost}:5173`, `http://${localDevHost}:3000`] : []
+  ].filter((value) => Boolean(value)));
   app2.use((req, res, next) => {
-    res.setHeader("Access-Control-Allow-Origin", "*");
+    const origin = req.headers.origin;
+    if (origin && allowedOrigins.has(origin)) res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-dev-user-id, x-telegram-init-data");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-session-token, x-dev-user-id, x-telegram-init-data");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    res.setHeader(
+      "Content-Security-Policy",
+      "default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://resources.premierleague.com https://crests.football-data.org https://t.me; connect-src 'self'; frame-ancestors 'self' https://web.telegram.org https://*.telegram.org"
+    );
     if (req.method === "OPTIONS") {
+      if (origin && !allowedOrigins.has(origin)) {
+        res.sendStatus(403);
+        return;
+      }
       res.sendStatus(204);
       return;
     }
     next();
   });
-  app2.use(express.json());
+  app2.use(express.json({ limit: "256kb" }));
+  app2.use("/api", rateLimit("api-global", 300, 60));
   app2.get("/api/internal/telegram-worker", async (req, res) => {
     const secret = process.env.CRON_SECRET;
     const actual = Buffer.from(req.headers.authorization || "");
@@ -14990,16 +15290,20 @@ function createApp() {
     }
   });
   app2.use(authMiddleware);
+  app2.use("/api/auth", rateLimit("auth", 20, 600));
+  app2.use("/api/clubs/crest-proxy", rateLimit("crest-proxy", 60, 60));
+  app2.use("/api/health/probe", rateLimit("health-probe", 3, 600));
+  app2.use("/api/telegram/webhook", rateLimit("telegram-webhook", 120, 60));
+  app2.use("/api/fixtures", rateLimit("fixture-write", 60, 60));
+  app2.use("/api/clubs", rateLimit("club-action", 120, 60));
   app2.use("/api/health", healthRouter);
   app2.use("/api/auth", authRouter);
   app2.use("/api/seasons", seasonsRouter);
   app2.use("/api/leagues", leaguesRouter);
   app2.use("/api/clubs", clubsRouter);
   app2.use("/api/competitions", competitionsRouter);
-  app2.use("/api/fixtures", fixturesResilientRouter);
   app2.use("/api/fixtures", fixturesRouter);
   app2.use("/api/me", notificationsReadResilientRouter);
-  app2.use("/api/me", meResilientRouter);
   app2.use("/api/me", meRouter);
   app2.use("/api/users", usersRouter);
   app2.use("/api/admin", adminRouter);

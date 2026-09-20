@@ -15,7 +15,11 @@ export interface SessionClaims {
 }
 
 function getSessionSecret(): string {
-  return process.env.SESSION_SECRET || process.env.TELEGRAM_BOT_TOKEN || 'efl-uz-secure-session-key-production-2026';
+  const secret = process.env.SESSION_SECRET || process.env.TELEGRAM_BOT_TOKEN;
+  if (!secret || secret.length < 24) {
+    throw new Error('SESSION_SECRET_REQUIRED: configure a strong SESSION_SECRET (or TELEGRAM_BOT_TOKEN).');
+  }
+  return secret;
 }
 
 function base64UrlEncode(str: string): string {
@@ -37,7 +41,7 @@ function base64UrlDecode(str: string): string {
 /**
  * Creates a cryptographically signed session token (default 24 hours validity).
  */
-export function createSessionToken(user: User, expiresInSeconds = 86400): string {
+export function createSessionToken(user: User, expiresInSeconds = 900): string {
   const now = Math.floor(Date.now() / 1000);
   const claims: SessionClaims = {
     id: user.id,
@@ -104,9 +108,21 @@ export function verifySessionToken(token: string): {
   }
 
   try {
+    const header = JSON.parse(base64UrlDecode(encodedHeader));
+    if (header?.alg !== 'HS256' || header?.typ !== 'JWT') {
+      return { isValid: false, error: 'Invalid token header' };
+    }
     const claims: SessionClaims = JSON.parse(base64UrlDecode(encodedPayload));
     const now = Math.floor(Date.now() / 1000);
-    if (claims.exp && claims.exp < now) {
+    if (
+      !claims || typeof claims.id !== 'string' || typeof claims.telegramId !== 'string' ||
+      typeof claims.username !== 'string' || typeof claims.firstName !== 'string' ||
+      typeof claims.iat !== 'number' || typeof claims.exp !== 'number' ||
+      typeof claims.isAdmin !== 'boolean' || typeof claims.isSuspended !== 'boolean'
+    ) {
+      return { isValid: false, error: 'Invalid token claims' };
+    }
+    if (claims.iat > now + 60 || claims.exp <= now || claims.exp - claims.iat > 900) {
       return { isValid: false, error: 'Token expired' };
     }
     return { isValid: true, claims };

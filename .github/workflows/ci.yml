@@ -38,3 +38,18 @@ jobs:
           bun run test:tournament-architecture
           bun run test:quota-audit
           bun run test:vercel
+          bun run test:critical-safety
+          bun run test:auth-quota
+          bun run test:security-http
+          bun run test:european-safety
+          bun run test:domestic-cup:isolated
+          bun run test:read-model
+
+      - name: Install Redis test dependency
+        run: sudo apt-get update && sudo apt-get install -y redis-server
+
+      - name: Run Redis durability regression
+        env:
+          FIREBASE_FORCE_LOCAL_FALLBACK: "true"
+          NODE_ENV: "test"
+        run: bun run test:redis-durability
