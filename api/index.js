@@ -12430,94 +12430,13 @@ init_circuitBreaker();
 init_occupancySnapshot();
 init_mutationQueue();
 
-// src/server/routes/readOptimized.routes.ts
-init_firestoreStore();
-init_readModelStore();
-import { Router } from "express";
-var readOptimizedRouter = Router();
-readOptimizedRouter.get("/leagues", async (req, res, next) => {
-  try {
-    const leagues = await getAllLeaguesFirestore();
-    res.setHeader("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600");
-    res.json({ leagues });
-  } catch (err) {
-    if (err instanceof ReadModelNotWarmedError || err?.errorCode === "READ_MODEL_NOT_WARMED") {
-      res.status(503).json({ errorCode: "READ_MODEL_NOT_WARMED", message: "Read model is not warmed and database is unreachable" });
-      return;
-    }
-    next(err);
-  }
-});
-readOptimizedRouter.get("/competitions", async (req, res, next) => {
-  const seasonId = req.query.seasonId || "season-2026-27";
-  try {
-    const competitions = await getAllCompetitionsFirestore(seasonId);
-    res.setHeader("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600");
-    res.json({ competitions });
-  } catch (err) {
-    if (err instanceof ReadModelNotWarmedError || err?.errorCode === "READ_MODEL_NOT_WARMED") {
-      res.status(503).json({ errorCode: "READ_MODEL_NOT_WARMED", message: "Read model is not warmed and database is unreachable" });
-      return;
-    }
-    next(err);
-  }
-});
-readOptimizedRouter.get("/competitions/:id", async (req, res, next) => {
-  try {
-    const competition = await getCompetitionByIdFirestore(req.params.id);
-    if (!competition) {
-      return next();
-    }
-    res.setHeader("Cache-Control", "public, max-age=30, s-maxage=120, stale-while-revalidate=300");
-    res.json({ competition });
-  } catch (err) {
-    if (err instanceof ReadModelNotWarmedError || err?.errorCode === "READ_MODEL_NOT_WARMED") {
-      res.status(503).json({ errorCode: "READ_MODEL_NOT_WARMED", message: "Read model is not warmed and database is unreachable" });
-      return;
-    }
-    next(err);
-  }
-});
-readOptimizedRouter.get("/competitions/:id/standings", async (req, res, next) => {
-  try {
-    const standings = await calculateCompetitionStandingsFirestore(req.params.id);
-    res.setHeader("Cache-Control", "public, max-age=30, s-maxage=120, stale-while-revalidate=300");
-    res.json({ standings });
-  } catch (err) {
-    if (err instanceof ReadModelNotWarmedError || err?.errorCode === "READ_MODEL_NOT_WARMED") {
-      res.status(503).json({ errorCode: "READ_MODEL_NOT_WARMED", message: "Read model is not warmed and database is unreachable" });
-      return;
-    }
-    next(err);
-  }
-});
-readOptimizedRouter.get("/competitions/:id/fixtures", async (req, res, next) => {
-  const matchday = req.query.matchday ? parseInt(req.query.matchday, 10) : void 0;
-  const status = req.query.status;
-  try {
-    const fixtures = await getFixturesFirestore({
-      competitionId: req.params.id,
-      matchday,
-      status
-    });
-    res.setHeader("Cache-Control", "public, max-age=30, s-maxage=60, stale-while-revalidate=180");
-    res.json({ fixtures });
-  } catch (err) {
-    if (err instanceof ReadModelNotWarmedError || err?.errorCode === "READ_MODEL_NOT_WARMED") {
-      res.status(503).json({ errorCode: "READ_MODEL_NOT_WARMED", message: "Read model is not warmed and database is unreachable" });
-      return;
-    }
-    next(err);
-  }
-});
-
 // src/server/routes/health.routes.ts
-import { Router as Router2 } from "express";
+import { Router } from "express";
 init_admin();
 init_collections();
 init_circuitBreaker();
 init_mutationQueue();
-var healthRouter = Router2();
+var healthRouter = Router();
 var lastManualProbeTime = 0;
 var MANUAL_PROBE_COOLDOWN_MS = 6e4;
 healthRouter.get("/", async (req, res) => {
@@ -12607,7 +12526,7 @@ healthRouter.post("/sync", requireAdmin, async (req, res) => {
 });
 
 // src/server/routes/auth.routes.ts
-import { Router as Router3 } from "express";
+import { Router as Router2 } from "express";
 import { z } from "zod";
 
 // src/server/middleware/validationMiddleware.ts
@@ -12635,7 +12554,7 @@ function validateBody(schema) {
 
 // src/server/routes/auth.routes.ts
 init_readModelStore();
-var authRouter = Router3();
+var authRouter = Router2();
 var telegramAuthSchema = z.object({
   initData: z.string().min(1, "initData is required")
 });
@@ -12713,7 +12632,7 @@ authRouter.get("/dev-profiles", (req, res) => {
 
 // src/server/routes/seasons.routes.ts
 init_firestoreStore();
-import { Router as Router4 } from "express";
+import { Router as Router3 } from "express";
 
 // src/server/firebase/firestoreErrorHandler.ts
 function parseFirestoreError(err) {
@@ -12826,7 +12745,7 @@ function handleFirestoreError(res, err, context = "Firestore operation") {
 }
 
 // src/server/routes/seasons.routes.ts
-var seasonsRouter = Router4();
+var seasonsRouter = Router3();
 seasonsRouter.get("/", async (req, res) => {
   try {
     const seasons = await getAllSeasonsFirestore();
@@ -12865,7 +12784,7 @@ seasonsRouter.get("/:id", async (req, res) => {
 
 // src/server/routes/leagues.routes.ts
 init_firestoreStore();
-import { Router as Router5 } from "express";
+import { Router as Router4 } from "express";
 
 // src/server/middleware/ownershipCacheControl.ts
 function setOwnershipSensitiveHeaders(res) {
@@ -12877,7 +12796,7 @@ function setOwnershipSensitiveHeaders(res) {
 
 // src/server/routes/leagues.routes.ts
 init_readModelStore();
-var leaguesRouter = Router5();
+var leaguesRouter = Router4();
 var LEAGUE_ID_ALIASES = {
   "league-epl": "league-premier-league",
   "league-laliga": "league-la-liga",
@@ -12930,11 +12849,11 @@ leaguesRouter.get("/:id/clubs", async (req, res) => {
 });
 
 // src/server/routes/clubs.routes.ts
-import { Router as Router6 } from "express";
+import { Router as Router5 } from "express";
 init_firestoreStore();
 init_seed();
 init_readModelStore();
-var clubsRouter = Router6();
+var clubsRouter = Router5();
 function resolveCanonicalClub(id) {
   if (!id) return null;
   const trimmed = id.trim();
@@ -13181,10 +13100,10 @@ clubsRouter.post("/:id/claim", requireAuth, async (req, res) => {
 });
 
 // src/server/routes/competitions.routes.ts
-import { Router as Router7 } from "express";
+import { Router as Router6 } from "express";
 init_firestoreStore();
 init_readModelStore();
-var competitionsRouter = Router7();
+var competitionsRouter = Router6();
 competitionsRouter.get("/", async (req, res) => {
   const seasonId = req.query.seasonId || "season-2026-27";
   try {
@@ -13310,11 +13229,11 @@ competitionsRouter.get("/:id/locks", async (req, res) => {
 });
 
 // src/server/routes/fixtures.routes.ts
-import { Router as Router8 } from "express";
+import { Router as Router7 } from "express";
 import { z as z2 } from "zod";
 init_firestoreStore();
 init_readModelStore();
-var fixturesRouter = Router8();
+var fixturesRouter = Router7();
 var fixturesResilientRouter = fixturesRouter;
 var resultSubmissionSchema = z2.object({
   homeScore: z2.number().int().min(0, "Home score must be >= 0"),
@@ -13353,9 +13272,9 @@ fixturesRouter.post("/:id/result", requireAuth, validateBody(resultSubmissionSch
 });
 
 // src/server/routes/notificationsReadResilient.routes.ts
-import { Router as Router9 } from "express";
+import { Router as Router8 } from "express";
 init_firestoreStore();
-var notificationsReadResilientRouter = Router9();
+var notificationsReadResilientRouter = Router8();
 notificationsReadResilientRouter.use((req, res, next) => {
   res.setHeader("Cache-Control", "private, no-cache, no-store, must-revalidate");
   res.setHeader("Pragma", "no-cache");
@@ -13387,10 +13306,10 @@ notificationsReadResilientRouter.post("/notifications/read", requireAuth, async 
 });
 
 // src/server/routes/me.routes.ts
-import { Router as Router10 } from "express";
+import { Router as Router9 } from "express";
 init_firestoreStore();
 init_readModelStore();
-var meRouter = Router10();
+var meRouter = Router9();
 var meResilientRouter = meRouter;
 meRouter.use((req, res, next) => {
   setOwnershipSensitiveHeaders(res);
@@ -13491,8 +13410,8 @@ meRouter.post("/notifications/read", requireAuth, async (req, res) => {
 
 // src/server/routes/users.routes.ts
 init_firestoreStore();
-import { Router as Router11 } from "express";
-var usersRouter = Router11();
+import { Router as Router10 } from "express";
+var usersRouter = Router10();
 usersRouter.get("/:id", async (req, res) => {
   const userId = req.params.id;
   const seasonId = req.query.seasonId || "season-2026-27";
@@ -13560,7 +13479,7 @@ usersRouter.get("/:id", async (req, res) => {
 });
 
 // src/server/routes/admin.routes.ts
-import { Router as Router12 } from "express";
+import { Router as Router11 } from "express";
 import { z as z3 } from "zod";
 init_adminService();
 init_firestoreStore();
@@ -13804,7 +13723,7 @@ init_collections();
 init_circuitBreaker();
 init_db();
 init_readModelStore();
-var adminRouter = Router12();
+var adminRouter = Router11();
 adminRouter.use(requireAdmin);
 function getFallbackAdminOverview(seasonId) {
   const status = getFirebaseStatus();
@@ -14932,8 +14851,8 @@ adminRouter.post("/telegram-notifications/process-queue", async (req, res) => {
 });
 
 // src/server/routes/telegram.routes.ts
-import { Router as Router13 } from "express";
-var telegramRouter = Router13();
+import { Router as Router12 } from "express";
+var telegramRouter = Router12();
 telegramRouter.post("/webhook", async (req, res) => {
   const secretToken = req.headers["x-telegram-bot-api-secret-token"];
   const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
@@ -15071,7 +14990,6 @@ function createApp() {
     }
   });
   app2.use(authMiddleware);
-  app2.use("/api", readOptimizedRouter);
   app2.use("/api/health", healthRouter);
   app2.use("/api/auth", authRouter);
   app2.use("/api/seasons", seasonsRouter);
