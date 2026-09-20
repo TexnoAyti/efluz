@@ -2485,6 +2485,35 @@ var init_fixtureEngine = __esm({
   }
 });
 
+// src/server/readModel/redisConfig.ts
+function resolveRedisConfig(env) {
+  const pairs = [
+    ["UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"],
+    ["KV_REST_API_URL", "KV_REST_API_TOKEN"]
+  ];
+  const valid = ([urlName, tokenName]) => {
+    const url = env[urlName]?.trim();
+    const token = env[tokenName]?.trim();
+    if (!url || !token || /your-upstash|example/.test(url)) return null;
+    try {
+      if (new URL(url).protocol !== "https:") return null;
+    } catch {
+      return null;
+    }
+    return { url, token, urlName, tokenName };
+  };
+  for (const pair of pairs) {
+    const config = valid(pair);
+    if (config) return config;
+  }
+  const custom = Object.keys(env).filter((name) => /_(?:UPSTASH_REDIS_REST_URL|KV_REST_API_URL)$/.test(name)).map((name) => valid([name, name.replace(/URL$/, "TOKEN")])).filter((value) => value !== null);
+  return custom.length === 1 ? custom[0] : null;
+}
+var init_redisConfig = __esm({
+  "src/server/readModel/redisConfig.ts"() {
+  }
+});
+
 // src/server/services/notificationService.ts
 async function createNotification(userId, type, title, message, data) {
   await createNotificationFirestore(userId, type, title, message, data);
@@ -3188,15 +3217,18 @@ function getDirtyKey(datasetKey) {
 }
 function getUpstashClient() {
   if (upstashClient) return upstashClient;
-  const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
-  if (url && token && !url.includes("your-upstash-redis-url") && !url.includes("example")) {
+  const config = resolveRedisConfig(process.env);
+  if (!reportedRedisConfig) {
+    reportedRedisConfig = true;
+    console.info("[READ_MODEL_REDIS_CONFIG]", config ? `CONFIGURED: ${config.urlName} / ${config.tokenName}` : "MISSING_OR_AMBIGUOUS: no single complete Redis REST credential pair");
+  }
+  if (config) {
     try {
-      upstashClient = new Redis({ url, token });
+      upstashClient = new Redis({ url: config.url, token: config.token });
       isUpstashConfigured = true;
       return upstashClient;
-    } catch (err) {
-      console.warn("[READ_MODEL_STORE] Failed to initialize Upstash Redis client:", err);
+    } catch {
+      console.warn("[READ_MODEL_STORE] Redis client configuration is invalid.");
     }
   }
   return null;
@@ -3594,15 +3626,6 @@ async function buildClubsSnapshot(seasonId = "season-2026-27") {
           occMap.set(data.clubId, { userId: data.userId });
         }
       }
-      if (occMap.size === 0) {
-        const broadSnap = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where("seasonId", "==", seasonId).limit(100).get();
-        for (const doc of broadSnap.docs) {
-          const data = doc.data();
-          if (data.clubId && data.userId && data.status !== "released") {
-            occMap.set(data.clubId, { userId: data.userId });
-          }
-        }
-      }
       const ownerUserIds = Array.from(new Set(Array.from(occMap.values()).map((o) => o.userId)));
       await Promise.all(
         ownerUserIds.map(async (uid) => {
@@ -3782,6 +3805,7 @@ async function buildAdminFixturesSnapshot(seasonId = "season-2026-27") {
       const fixSnap = await db.collection(COLLECTIONS.FIXTURES).where("seasonId", "==", seasonId).get();
       fixDocs = fixSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((f) => !f.competitionId.includes("efl-cup"));
     } catch (err) {
+      firestoreCircuitBreaker.recordFailure(err);
       console.warn("[READ_MODEL_STORE] Error fetching fixtures in buildAdminFixturesSnapshot:", err?.message || err);
       const existingLkg = await redisGetLkg(ReadModelKeys.adminFixtures(seasonId));
       if (existingLkg && existingLkg.data) {
@@ -3870,6 +3894,7 @@ async function buildStandingsSnapshot(competitionId, seasonId = "season-2026-27"
     }
   } catch (err) {
     firestoreFailed = true;
+    firestoreCircuitBreaker.recordFailure(err);
     console.warn(`[READ_MODEL_STORE] Error fetching standings for ${competitionId}:`, err?.message || err);
   }
   if (firestoreFailed) {
@@ -4216,30 +4241,45 @@ async function invalidateUserMembershipReadModel(userId, seasonId = "season-2026
   await invalidateDataset(ReadModelKeys.userMembership(userId, seasonId));
 }
 async function rebuildAllReadModels(seasonId = "season-2026-27") {
+  const client = getUpstashClient();
+  const hosted = Boolean(process.env.VERCEL || process.env.K_SERVICE || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NODE_ENV === "production");
+  if (hosted && !client) throw new Error("REDIS_NOT_CONFIGURED: Production uchun Redis URL va token juftligini tekshiring.");
+  if (client && await client.ping() !== "PONG") throw new Error("REDIS_UNAVAILABLE");
+  if (!firestoreCircuitBreaker.canExecute()) throw new Error("FIRESTORE_COOLDOWN: Baza cheklovi faol. Keyinroq qayta urinib ko\u2018ring.");
+  const assertReadable = () => {
+    if (firestoreCircuitBreaker.getStatus().state === "OPEN") throw new Error("FIRESTORE_COOLDOWN");
+  };
   const warmedLkgKeys = [];
   const errors = [];
   const standingsPerLeague = {};
   let compCount = 0;
   try {
+    assertReadable();
     const compSnap = await buildCompetitionsSnapshot(seasonId);
     compCount = compSnap.data.length;
     warmedLkgKeys.push(getLkgKey(ReadModelKeys.competitions(seasonId)));
   } catch (err) {
+    firestoreCircuitBreaker.recordFailure(err);
     errors.push(`Competitions rebuild error: ${err.message}`);
   }
   let clubCount = 0;
+  let rebuiltClubs = [];
   try {
+    assertReadable();
     const clubSnap = await buildClubsSnapshot(seasonId);
+    rebuiltClubs = clubSnap.data;
     clubCount = clubSnap.data.length;
     warmedLkgKeys.push(getLkgKey(ReadModelKeys.clubsWithOwners(seasonId)));
     for (const l of SEED_LEAGUES) {
       warmedLkgKeys.push(getLkgKey(ReadModelKeys.leagueClubs(l.id, seasonId)));
     }
   } catch (err) {
+    firestoreCircuitBreaker.recordFailure(err);
     errors.push(`Clubs rebuild error: ${err.message}`);
   }
   let fixtureCount = 0;
   try {
+    assertReadable();
     const fixSnap = await buildAdminFixturesSnapshot(seasonId);
     fixtureCount = fixSnap.data.length;
     warmedLkgKeys.push(getLkgKey(ReadModelKeys.adminFixtures(seasonId)));
@@ -4248,51 +4288,51 @@ async function rebuildAllReadModels(seasonId = "season-2026-27") {
       warmedLkgKeys.push(getLkgKey(ReadModelKeys.competitionFixtures(cId, seasonId)));
     }
   } catch (err) {
+    firestoreCircuitBreaker.recordFailure(err);
     errors.push(`Fixtures rebuild error: ${err.message}`);
   }
   let standingsCount = 0;
   for (const cId of Object.keys(DOMESTIC_LEAGUE_CONFIG)) {
     try {
+      assertReadable();
       const stdSnap = await buildStandingsSnapshot(cId, seasonId);
       standingsCount += stdSnap.data.length;
       standingsPerLeague[DOMESTIC_LEAGUE_CONFIG[cId].name] = stdSnap.data.length;
       warmedLkgKeys.push(getLkgKey(ReadModelKeys.standings(cId, seasonId)));
     } catch (err) {
+      firestoreCircuitBreaker.recordFailure(err);
       errors.push(`Standings rebuild error for ${cId}: ${err.message}`);
     }
   }
   let membershipCount = 0;
   try {
-    const db = getFirestoreDb();
-    if (db) {
-      const occSnap = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where("seasonId", "==", seasonId).where("status", "==", "active").get();
-      for (const occDoc of occSnap.docs) {
-        const occ = occDoc.data();
-        if (occ.userId && occ.clubId) {
-          const clubSeed = SEED_CLUBS.find((c) => c.id === occ.clubId);
-          const membershipData = {
-            hasClub: true,
-            clubId: occ.clubId,
-            club: clubSeed ? enrichClubForUser(clubSeed, occ.userId) : null
-          };
-          const memKey = ReadModelKeys.userMembership(occ.userId, seasonId);
-          const memSnap = {
-            schemaVersion: SCHEMA_VERSION,
-            generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
-            sourceVersion: `occupancy-${occDoc.id}`,
-            expectedCount: 1,
-            actualCount: 1,
-            data: membershipData
-          };
-          await redisSetRaw(memKey, memSnap, 86400);
-          warmedLkgKeys.push(getLkgKey(memKey));
-          membershipCount++;
-        }
+    for (const club of rebuiltClubs) {
+      if (club.ownerUserId) {
+        const occ = { userId: club.ownerUserId };
+        const membershipData = {
+          hasClub: true,
+          clubId: club.id,
+          club: enrichClubForUser(club, club.ownerUserId)
+        };
+        const memKey = ReadModelKeys.userMembership(occ.userId, seasonId);
+        const memSnap = {
+          schemaVersion: SCHEMA_VERSION,
+          generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+          sourceVersion: `ownership-${club.id}`,
+          expectedCount: 1,
+          actualCount: 1,
+          data: membershipData
+        };
+        await redisSetRaw(memKey, memSnap, 86400);
+        warmedLkgKeys.push(getLkgKey(memKey));
+        membershipCount++;
       }
     }
   } catch (err) {
+    firestoreCircuitBreaker.recordFailure(err);
     errors.push(`User memberships rebuild error: ${err.message}`);
   }
+  if (errors.length === 0) firestoreCircuitBreaker.recordSuccess();
   return {
     success: errors.length === 0,
     generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
@@ -4408,9 +4448,10 @@ async function getReadModelHealthStatus(seasonId = "season-2026-27") {
     coreDatasets
   };
 }
-var SCHEMA_VERSION, KEY_PREFIX, ReadModelNotWarmedError, DOMESTIC_LEAGUE_CONFIG, CANONICAL_COMPETITION_ORDER, ReadModelKeys, upstashClient, isUpstashConfigured, memoryRedisStorage, inProcessMemoryCache, PROCESS_MEMORY_TTL_MS, inFlightLoaders, globalLastSnapshotAt;
+var SCHEMA_VERSION, KEY_PREFIX, ReadModelNotWarmedError, DOMESTIC_LEAGUE_CONFIG, CANONICAL_COMPETITION_ORDER, ReadModelKeys, upstashClient, isUpstashConfigured, reportedRedisConfig, memoryRedisStorage, inProcessMemoryCache, PROCESS_MEMORY_TTL_MS, inFlightLoaders, globalLastSnapshotAt;
 var init_readModelStore = __esm({
   "src/server/readModel/readModelStore.ts"() {
+    init_redisConfig();
     init_circuitBreaker();
     init_admin();
     init_collections();
@@ -4463,6 +4504,7 @@ var init_readModelStore = __esm({
     };
     upstashClient = null;
     isUpstashConfigured = false;
+    reportedRedisConfig = false;
     memoryRedisStorage = /* @__PURE__ */ new Map();
     inProcessMemoryCache = /* @__PURE__ */ new Map();
     PROCESS_MEMORY_TTL_MS = 15e3;

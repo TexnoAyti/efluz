@@ -180,6 +180,10 @@ export const AdminView: React.FC = () => {
   // Read Model Health & Rebuild State
   const [readModelHealth, setReadModelHealth] = useState<any>(null);
   const [isRebuildingReadModels, setIsRebuildingReadModels] = useState(false);
+  const readModelStatus = !readModelHealth ? 'UNKNOWN'
+    : readModelHealth.redisState !== 'CONNECTED' ? 'DOWN'
+    : readModelHealth.missingKeys?.length || readModelHealth.dirtyKeys?.length || readModelHealth.firestoreState !== 'CLOSED' ? 'DEGRADED' : 'HEALTHY';
+
   const [readModelRebuildMsg, setReadModelRebuildMsg] = useState<string | null>(null);
 
   const [loadedTabs, setLoadedTabs] = useState<Set<string>>(new Set());
@@ -280,11 +284,11 @@ export const AdminView: React.FC = () => {
     try {
       const res = await api.rebuildReadModels(activeSeasonId);
       if (res?.success) {
-        setReadModelRebuildMsg(`Rebuilt ${res.rebuiltKeys?.length || 0} models successfully in ${res.durationMs || 0}ms.`);
+        setReadModelRebuildMsg(`Saqlandi: ${res.counts?.clubs ?? 0} klub, ${res.counts?.fixtures ?? 0} match, ${res.counts?.standings ?? 0} jadval qatori. ${res.warmedLkgKeys?.length ?? 0} nusxa.`);
         const updatedHealth = await api.getReadModelHealth(activeSeasonId).catch(() => null);
         if (updatedHealth) setReadModelHealth(updatedHealth);
       } else {
-        setReadModelRebuildMsg(`Rebuild failed: ${res?.error || 'Unknown error'}`);
+        setReadModelRebuildMsg(`Rebuild failed: ${res?.errors?.join('; ') || res?.error || 'Unknown error'}`);
       }
     } catch (err: any) {
       setReadModelRebuildMsg(`Rebuild failed: ${err.message}`);
@@ -2570,7 +2574,7 @@ export const AdminView: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleRebuildReadModels}
-                  disabled={isRebuildingReadModels}
+                  disabled={isRebuildingReadModels || readModelHealth?.redisState !== 'CONNECTED'}
                   className="px-3.5 py-1.5 bg-sky-500 hover:bg-sky-400 text-slate-950 rounded-xl text-xs font-black shadow flex items-center gap-1.5 transition-all disabled:opacity-50"
                   title="Rebuild all Redis read models from Firestore"
                 >
@@ -2602,12 +2606,12 @@ export const AdminView: React.FC = () => {
                   <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
                     <div className="text-[10px] uppercase font-black text-slate-500">Read-Model Status</div>
                     <div className="text-xs font-black mt-1 flex items-center gap-1.5">
-                      {readModelHealth.status === 'HEALTHY' ? (
+                      {readModelStatus === 'HEALTHY' ? (
                         <>
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                           <span className="text-emerald-400">HEALTHY</span>
                         </>
-                      ) : readModelHealth.status === 'DEGRADED' ? (
+                      ) : readModelStatus === 'DEGRADED' ? (
                         <>
                           <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
                           <span className="text-amber-400">DEGRADED</span>
@@ -2624,10 +2628,10 @@ export const AdminView: React.FC = () => {
                   <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
                     <div className="text-[10px] uppercase font-black text-slate-500">Redis Connectivity</div>
                     <div className="text-xs font-black mt-1">
-                      {readModelHealth.redisConnected ? (
+                      {readModelHealth.redisState === 'CONNECTED' ? (
                         <span className="text-emerald-400">CONNECTED</span>
                       ) : (
-                        <span className="text-rose-400">DISCONNECTED</span>
+                        <span className="text-rose-400">{readModelHealth.redisState === 'IN_MEMORY_FALLBACK' ? 'NOT CONFIGURED' : 'CONNECTION ERROR'}</span>
                       )}
                     </div>
                   </div>
@@ -2635,15 +2639,15 @@ export const AdminView: React.FC = () => {
                   <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
                     <div className="text-[10px] uppercase font-black text-slate-500">Total Datasets</div>
                     <div className="text-xs font-black text-white mt-1">
-                      {readModelHealth.totalKeys ?? readModelHealth.datasets?.length ?? 0} Models
+                      {Object.keys(readModelHealth.coreDatasets || {}).length} Models
                     </div>
                   </div>
 
                   <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
                     <div className="text-[10px] uppercase font-black text-slate-500">Last Rebuild</div>
                     <div className="text-xs font-mono font-bold text-slate-300 mt-1 truncate">
-                      {readModelHealth.lastRebuildAt
-                        ? new Date(readModelHealth.lastRebuildAt).toLocaleTimeString()
+                      {readModelHealth.lastSnapshotAt
+                        ? new Date(readModelHealth.lastSnapshotAt).toLocaleTimeString()
                         : 'Never'}
                     </div>
                   </div>
@@ -2663,19 +2667,19 @@ export const AdminView: React.FC = () => {
                         <th className="p-2.5">Redis Key</th>
                         <th className="p-2.5">Fresh Cache</th>
                         <th className="p-2.5">LKG Snapshot</th>
-                        <th className="p-2.5">Memory</th>
+                        <th className="p-2.5">Snapshot age</th>
                         <th className="p-2.5">State</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/[0.04] bg-slate-950/30 font-mono text-[11px]">
-                      {readModelHealth.datasets?.map((ds: any) => (
+                      {Object.entries(readModelHealth.coreDatasets || {}).map(([name, value]) => { const ds = value as any; return (
                         <tr key={ds.key} className="hover:bg-white/[0.02]">
-                          <td className="p-2.5 font-bold text-white font-sans">{ds.name}</td>
+                          <td className="p-2.5 font-bold text-white font-sans">{name}</td>
                           <td className="p-2.5 text-slate-400">{ds.key}</td>
                           <td className="p-2.5">
                             {ds.hasFresh ? (
                               <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                                TTL: {ds.freshTtlSeconds}s
+                                FRESH
                               </span>
                             ) : (
                               <span className="text-slate-600 text-[10px]">expired</span>
@@ -2684,18 +2688,14 @@ export const AdminView: React.FC = () => {
                           <td className="p-2.5">
                             {ds.hasLkg ? (
                               <span className="text-sky-400 font-bold">
-                                YES <span className="text-slate-500 text-[10px]">({Math.round(ds.lkgSizeBytes / 1024)} KB)</span>
+                                YES <span className="text-slate-500 text-[10px]">({ds.actualCount} yozuv)</span>
                               </span>
                             ) : (
                               <span className="text-rose-400 text-[10px]">MISSING</span>
                             )}
                           </td>
                           <td className="p-2.5">
-                            {ds.inMemory ? (
-                              <span className="text-emerald-400 font-bold">CACHED</span>
-                            ) : (
-                              <span className="text-slate-600">cold</span>
-                            )}
+                            {ds.snapshotAgeSeconds == null ? '—' : `${ds.snapshotAgeSeconds}s`}
                           </td>
                           <td className="p-2.5">
                             {ds.isDirty ? (
@@ -2717,7 +2717,7 @@ export const AdminView: React.FC = () => {
                             )}
                           </td>
                         </tr>
-                      ))}
+                      )})}
                     </tbody>
                   </table>
                 </div>

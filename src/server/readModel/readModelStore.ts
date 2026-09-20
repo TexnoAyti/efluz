@@ -20,6 +20,7 @@
  */
 
 import { Redis } from '@upstash/redis';
+import { resolveRedisConfig } from './redisConfig';
 import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
 import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS, FirestoreFixtureDoc, FirestoreCompetitionDoc } from '../firebase/collections';
@@ -158,6 +159,7 @@ export const ReadModelKeys = {
 
 let upstashClient: Redis | null = null;
 let isUpstashConfigured = false;
+let reportedRedisConfig = false;
 
 // Persistent memory storage mimicking Redis (for environments without Upstash credentials or offline)
 export const memoryRedisStorage = new Map<
@@ -177,16 +179,20 @@ let globalLastSnapshotAt: string | null = null;
 
 export function getUpstashClient(): Redis | null {
   if (upstashClient) return upstashClient;
-  const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
-
-  if (url && token && !url.includes('your-upstash-redis-url') && !url.includes('example')) {
+  const config = resolveRedisConfig(process.env);
+  if (!reportedRedisConfig) {
+    reportedRedisConfig = true;
+    console.info('[READ_MODEL_REDIS_CONFIG]', config
+      ? `CONFIGURED: ${config.urlName} / ${config.tokenName}`
+      : 'MISSING_OR_AMBIGUOUS: no single complete Redis REST credential pair');
+  }
+  if (config) {
     try {
-      upstashClient = new Redis({ url, token });
+      upstashClient = new Redis({ url: config.url, token: config.token });
       isUpstashConfigured = true;
       return upstashClient;
-    } catch (err) {
-      console.warn('[READ_MODEL_STORE] Failed to initialize Upstash Redis client:', err);
+    } catch {
+      console.warn('[READ_MODEL_STORE] Redis client configuration is invalid.');
     }
   }
   return null;
@@ -837,17 +843,6 @@ export async function buildClubsSnapshot(seasonId = 'season-2026-27'): Promise<R
         }
       }
 
-      // If bounded query returned 0, do a fallback check without status filter for safety
-      if (occMap.size === 0) {
-        const broadSnap = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where('seasonId', '==', seasonId).limit(100).get();
-        for (const doc of broadSnap.docs) {
-          const data = doc.data();
-          if (data.clubId && data.userId && data.status !== 'released') {
-            occMap.set(data.clubId, { userId: data.userId });
-          }
-        }
-      }
-
       // 2. Fetch only the users who own clubs (avoids full USERS collection scan)
       const ownerUserIds = Array.from(new Set(Array.from(occMap.values()).map((o) => o.userId)));
       await Promise.all(
@@ -1046,6 +1041,7 @@ export async function buildAdminFixturesSnapshot(seasonId = 'season-2026-27'): P
         .map((d) => ({ id: d.id, ...d.data() } as FirestoreFixtureDoc))
         .filter((f) => !f.competitionId.includes('efl-cup'));
     } catch (err: any) {
+      firestoreCircuitBreaker.recordFailure(err);
       console.warn('[READ_MODEL_STORE] Error fetching fixtures in buildAdminFixturesSnapshot:', err?.message || err);
       // Fallback to existing LKG snapshot if available
       const existingLkg = await redisGetLkg<Fixture[]>(ReadModelKeys.adminFixtures(seasonId));
@@ -1168,6 +1164,7 @@ export async function buildStandingsSnapshot(
     }
   } catch (err: any) {
     firestoreFailed = true;
+    firestoreCircuitBreaker.recordFailure(err);
     console.warn(`[READ_MODEL_STORE] Error fetching standings for ${competitionId}:`, err?.message || err);
   }
 
@@ -1707,6 +1704,15 @@ export interface RebuildResult {
  * Admin-triggered action; never run automatically on production startup.
  */
 export async function rebuildAllReadModels(seasonId = 'season-2026-27'): Promise<RebuildResult> {
+  const client = getUpstashClient();
+  const hosted = Boolean(process.env.VERCEL || process.env.K_SERVICE || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NODE_ENV === 'production');
+  if (hosted && !client) throw new Error('REDIS_NOT_CONFIGURED: Production uchun Redis URL va token juftligini tekshiring.');
+  if (client && await client.ping() !== 'PONG') throw new Error('REDIS_UNAVAILABLE');
+  if (!firestoreCircuitBreaker.canExecute()) throw new Error('FIRESTORE_COOLDOWN: Baza cheklovi faol. Keyinroq qayta urinib ko‘ring.');
+  const assertReadable = () => {
+    if (firestoreCircuitBreaker.getStatus().state === 'OPEN') throw new Error('FIRESTORE_COOLDOWN');
+  };
+
   const warmedLkgKeys: string[] = [];
   const errors: string[] = [];
   const standingsPerLeague: Record<string, number> = {};
@@ -1714,29 +1720,36 @@ export async function rebuildAllReadModels(seasonId = 'season-2026-27'): Promise
   // 1. Competitions catalog
   let compCount = 0;
   try {
+    assertReadable();
     const compSnap = await buildCompetitionsSnapshot(seasonId);
     compCount = compSnap.data.length;
     warmedLkgKeys.push(getLkgKey(ReadModelKeys.competitions(seasonId)));
   } catch (err: any) {
+    firestoreCircuitBreaker.recordFailure(err);
     errors.push(`Competitions rebuild error: ${err.message}`);
   }
 
   // 2. Clubs & occupancies (owner-neutral, all 96 clubs)
   let clubCount = 0;
+  let rebuiltClubs: OwnerNeutralClub[] = [];
   try {
+    assertReadable();
     const clubSnap = await buildClubsSnapshot(seasonId);
+    rebuiltClubs = clubSnap.data;
     clubCount = clubSnap.data.length;
     warmedLkgKeys.push(getLkgKey(ReadModelKeys.clubsWithOwners(seasonId)));
     for (const l of SEED_LEAGUES) {
       warmedLkgKeys.push(getLkgKey(ReadModelKeys.leagueClubs(l.id, seasonId)));
     }
   } catch (err: any) {
+    firestoreCircuitBreaker.recordFailure(err);
     errors.push(`Clubs rebuild error: ${err.message}`);
   }
 
   // 3. Admin & competition fixtures (sorted by canonical tuple)
   let fixtureCount = 0;
   try {
+    assertReadable();
     const fixSnap = await buildAdminFixturesSnapshot(seasonId);
     fixtureCount = fixSnap.data.length;
     warmedLkgKeys.push(getLkgKey(ReadModelKeys.adminFixtures(seasonId)));
@@ -1745,6 +1758,7 @@ export async function rebuildAllReadModels(seasonId = 'season-2026-27'): Promise
       warmedLkgKeys.push(getLkgKey(ReadModelKeys.competitionFixtures(cId, seasonId)));
     }
   } catch (err: any) {
+    firestoreCircuitBreaker.recordFailure(err);
     errors.push(`Fixtures rebuild error: ${err.message}`);
   }
 
@@ -1752,11 +1766,13 @@ export async function rebuildAllReadModels(seasonId = 'season-2026-27'): Promise
   let standingsCount = 0;
   for (const cId of Object.keys(DOMESTIC_LEAGUE_CONFIG)) {
     try {
+      assertReadable();
       const stdSnap = await buildStandingsSnapshot(cId, seasonId);
       standingsCount += stdSnap.data.length;
       standingsPerLeague[DOMESTIC_LEAGUE_CONFIG[cId].name] = stdSnap.data.length;
       warmedLkgKeys.push(getLkgKey(ReadModelKeys.standings(cId, seasonId)));
     } catch (err: any) {
+    firestoreCircuitBreaker.recordFailure(err);
       errors.push(`Standings rebuild error for ${cId}: ${err.message}`);
     }
   }
@@ -1764,28 +1780,17 @@ export async function rebuildAllReadModels(seasonId = 'season-2026-27'): Promise
   // 5. Active user memberships
   let membershipCount = 0;
   try {
-    const db = getFirestoreDb();
-    if (db) {
-      const occSnap = await db
-        .collection(COLLECTIONS.CLUB_OCCUPANCIES)
-        .where('seasonId', '==', seasonId)
-        .where('status', '==', 'active')
-        .get();
-
-      for (const occDoc of occSnap.docs) {
-        const occ = occDoc.data();
-        if (occ.userId && occ.clubId) {
-          const clubSeed = SEED_CLUBS.find((c) => c.id === occ.clubId);
+    for (const club of rebuiltClubs) {
+      if (club.ownerUserId) {
+          const occ = { userId: club.ownerUserId };
           const membershipData: UserMembershipSentinel = {
-            hasClub: true,
-            clubId: occ.clubId,
-            club: clubSeed ? enrichClubForUser(clubSeed as any, occ.userId) : null,
+            hasClub: true, clubId: club.id, club: enrichClubForUser(club, club.ownerUserId),
           };
           const memKey = ReadModelKeys.userMembership(occ.userId, seasonId);
           const memSnap: ReadModelSnapshot<UserMembershipSentinel> = {
             schemaVersion: SCHEMA_VERSION,
             generatedAt: new Date().toISOString(),
-            sourceVersion: `occupancy-${occDoc.id}`,
+            sourceVersion: `ownership-${club.id}`,
             expectedCount: 1,
             actualCount: 1,
             data: membershipData,
@@ -1793,13 +1798,14 @@ export async function rebuildAllReadModels(seasonId = 'season-2026-27'): Promise
           await redisSetRaw(memKey, memSnap, 86400);
           warmedLkgKeys.push(getLkgKey(memKey));
           membershipCount++;
-        }
       }
     }
   } catch (err: any) {
+    firestoreCircuitBreaker.recordFailure(err);
     errors.push(`User memberships rebuild error: ${err.message}`);
   }
 
+  if (errors.length === 0) firestoreCircuitBreaker.recordSuccess();
   return {
     success: errors.length === 0,
     generatedAt: new Date().toISOString(),
