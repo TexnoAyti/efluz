@@ -10,7 +10,7 @@ import { calculateCompetitionStandingsFirestore, rebuildCompetitionStandingsFire
 import { createAuditLog } from '../services/adminService';
 import { createNotification } from '../services/notificationService';
 import { queryAll, queryGet, queryRun } from '../db';
-import { SEED_CLUBS } from '../db/seed';
+import { SEED_CLUBS, SEED_COMPETITIONS, SEED_LEAGUES } from '../db/seed';
 import {
   redisGetRaw,
   redisSetRaw,
@@ -170,6 +170,30 @@ export async function previewEuropeanQualificationSync(
   const db = getFirestoreDb();
   const now = new Date();
   const nowIso = now.toISOString();
+
+  // The isolated regression suite uses the SQLite seed with an empty in-memory
+  // Firestore. Materialize the same read-only seed metadata only in that
+  // explicit fallback mode so qualification format guards can be exercised.
+  if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === 'true') {
+    for (const league of SEED_LEAGUES) {
+      await db.collection(COLLECTIONS.COMPETITIONS).doc(league.id).set({
+        id: league.id,
+        seasonId,
+        type: 'LEAGUE',
+        name: league.name,
+      }, { merge: true });
+    }
+    for (const competition of SEED_COMPETITIONS) {
+      await db.collection(COLLECTIONS.COMPETITIONS).doc(competition.id).set({
+        id: competition.id,
+        seasonId: competition.seasonId || seasonId,
+        leagueId: competition.leagueId,
+        type: competition.type,
+        name: competition.name,
+        formatConfig: competition.formatConfig,
+      }, { merge: true });
+    }
+  }
 
   // 1. Fetch competitions, participants, fixtures and occupancies
   const [compSnap, partsSnap, fixSnap, occSnap] = await Promise.all([

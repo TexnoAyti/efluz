@@ -2669,6 +2669,26 @@ async function previewEuropeanQualificationSync(seasonId = "season-2026-27", mod
   const db = getFirestoreDb();
   const now = /* @__PURE__ */ new Date();
   const nowIso = now.toISOString();
+  if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true") {
+    for (const league of SEED_LEAGUES) {
+      await db.collection(COLLECTIONS.COMPETITIONS).doc(league.id).set({
+        id: league.id,
+        seasonId,
+        type: "LEAGUE",
+        name: league.name
+      }, { merge: true });
+    }
+    for (const competition of SEED_COMPETITIONS) {
+      await db.collection(COLLECTIONS.COMPETITIONS).doc(competition.id).set({
+        id: competition.id,
+        seasonId: competition.seasonId || seasonId,
+        leagueId: competition.leagueId,
+        type: competition.type,
+        name: competition.name,
+        formatConfig: competition.formatConfig
+      }, { merge: true });
+    }
+  }
   const [compSnap, partsSnap, fixSnap, occSnap] = await Promise.all([
     db.collection(COLLECTIONS.COMPETITIONS).where("seasonId", "==", seasonId).get(),
     db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where("seasonId", "==", seasonId).get(),
