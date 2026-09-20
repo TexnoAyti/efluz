@@ -13,7 +13,6 @@ import { loadSnapshotFromFile } from './firebase/occupancySnapshot';
 import { processPendingMutations } from './sync/mutationQueue';
 
 // Route imports
-import { readOptimizedRouter } from './routes/readOptimized.routes';
 import { healthRouter } from './routes/health.routes';
 import { authRouter } from './routes/auth.routes';
 import { seasonsRouter } from './routes/seasons.routes';
@@ -134,10 +133,10 @@ export function createApp() {
 
   app.use(authMiddleware);
 
-  // Mount optimized read routes at /api before legacy endpoints
-  app.use('/api', readOptimizedRouter);
-
-  // Mount API routes
+  // Mount the canonical API routes. Competition, fixture, standings and club
+  // reads are backed by the durable read-model layer in their own routers.
+  // Do not mount readOptimizedRouter ahead of these routes: it bypasses Redis
+  // and shadows the resilient handlers with direct Firestore reads.
   app.use('/api/health', healthRouter);
   app.use('/api/auth', authRouter);
   app.use('/api/seasons', seasonsRouter);
