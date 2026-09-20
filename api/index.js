@@ -7229,6 +7229,23 @@ async function claimClubAtomicFirestore(userId, clubId, seasonId = "season-2026-
   if (firestoreCircuitBreaker.canExecute()) {
     try {
       const db = getFirestoreDb();
+      if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true") {
+        const seedClub = SEED_CLUBS.find((candidate) => candidate.id === clubId);
+        const seedRef = db.collection(COLLECTIONS.CLUBS).doc(clubId);
+        const seedDoc = await seedRef.get();
+        if (!seedDoc.exists && seedClub) {
+          await seedRef.set({
+            id: seedClub.id,
+            name: seedClub.name,
+            shortName: seedClub.shortName,
+            leagueId: seedClub.leagueId,
+            country: seedClub.country,
+            logo: seedClub.logoUrl,
+            isActive: true,
+            createdAt: now
+          }, { merge: true });
+        }
+      }
       const claimResult = await db.runTransaction(async (transaction) => {
         const userMemRef = db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${seasonId}_${userId}`);
         const clubOccRef = db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_${clubId}`);
