@@ -13,6 +13,7 @@ import {
 import { SEED_CLUBS, SEED_LEAGUES } from '../db/seed';
 import { queryAll, queryGet } from '../db';
 import crypto from 'crypto';
+import { waitUntil } from '@vercel/functions';
 
 export interface RecipientDirectoryEntry {
   userId: string;
@@ -102,6 +103,31 @@ const memoryBroadcasts = new Map<string, TelegramBroadcastRecord>();
 const memoryJobQueue: NotificationQueueJob[] = [];
 const memoryRecipientDirectory = new Map<string, RecipientDirectoryEntry>();
 let memoryRecipientSeason = '';
+
+/**
+ * Wake the durable Redis worker when a queue item is created by a hosted
+ * request. Vercel keeps the invocation alive through waitUntil; Cloud Run can
+ * process it on its long-lived instance. Local tests intentionally leave the
+ * queue untouched so they can exercise the recovery worker deterministically.
+ */
+export function scheduleNotificationQueueDrain(): void {
+  const drain = () => processNotificationQueue(25).catch((error) => {
+    console.warn('[NOTIF_QUEUE] Event-driven drain deferred to recovery cron:', error?.message || error);
+  });
+
+  if (process.env.VERCEL === '1') {
+    try {
+      waitUntil(drain());
+    } catch (error) {
+      console.warn('[NOTIF_QUEUE] Vercel background context unavailable; recovery cron will drain queue:', error);
+    }
+    return;
+  }
+
+  if (process.env.K_SERVICE) {
+    void drain();
+  }
+}
 
 /**
  * Rebuilds and populates the Private Redis Recipient Directory.
@@ -382,8 +408,10 @@ export async function enqueueTelegramBroadcast(params: {
     `Enqueued broadcast '${params.title}' for ${targetUserIds.length} recipients (${jobs.length} with Telegram).`
   ).catch(() => console.warn('[NOTIF_QUEUE] Broadcast persisted; auxiliary audit unavailable'));
 
-  // Trigger non-blocking asynchronous queue processor
-  // The authenticated worker endpoint processes this durable queue.
+  // Start delivery only after the durable broadcast and in-app notification
+  // writes have completed. If a function is terminated, the daily recovery
+  // cron sees the same Redis job.
+  scheduleNotificationQueueDrain();
 
   return persistedRecord;
 }

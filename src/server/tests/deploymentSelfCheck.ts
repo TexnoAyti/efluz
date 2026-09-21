@@ -55,7 +55,12 @@ async function runDeploymentSelfCheck() {
   if (!spaRewrite || !spaRewrite.source.includes('?!api')) {
     throw new Error('FAILED [CHECK 2]: vercel.json SPA rewrite must exclude /api to prevent index.html routing on API requests!');
   }
-  console.log('✅ PASS [CHECK 2]: vercel.json correctly routes /api to serverless handler and protects SPA fallback.');
+  const crons = Array.isArray(vercelConfig.crons) ? vercelConfig.crons : [];
+  const workerCron = crons.find((cron: any) => cron.path === '/api/internal/telegram-worker');
+  if (crons.length !== 1 || !workerCron || workerCron.schedule !== '0 3 * * *') {
+    throw new Error('FAILED [CHECK 2]: notification recovery must use exactly one Hobby-compatible daily cron at 03:00 UTC.');
+  }
+  console.log('✅ PASS [CHECK 2]: API routes, SPA fallback, and 03:00 UTC daily notification recovery cron are valid.');
 
   // --- CHECK 3: API bundle execution & health check ---
   console.log('\n--- [CHECK 3] Live API Bundle Invocation ---');

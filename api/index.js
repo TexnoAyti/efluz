@@ -12274,6 +12274,7 @@ init_adminService();
 init_readModelStore();
 init_seed();
 import crypto2 from "crypto";
+import { waitUntil } from "@vercel/functions";
 var BROADCASTS_KEY = `${KEY_PREFIX}:telegram:broadcasts`;
 var QUEUE_KEY = `${KEY_PREFIX}:telegram:queue`;
 var PROCESSING_KEY = `${KEY_PREFIX}:telegram:processing`;
@@ -12282,6 +12283,22 @@ var RECIPIENT_DIR_KEY = `${KEY_PREFIX}:private:recipient-directory`;
 var memoryBroadcasts = /* @__PURE__ */ new Map();
 var memoryRecipientDirectory = /* @__PURE__ */ new Map();
 var memoryRecipientSeason = "";
+function scheduleNotificationQueueDrain() {
+  const drain = () => processNotificationQueue(25).catch((error) => {
+    console.warn("[NOTIF_QUEUE] Event-driven drain deferred to recovery cron:", error?.message || error);
+  });
+  if (process.env.VERCEL === "1") {
+    try {
+      waitUntil(drain());
+    } catch (error) {
+      console.warn("[NOTIF_QUEUE] Vercel background context unavailable; recovery cron will drain queue:", error);
+    }
+    return;
+  }
+  if (process.env.K_SERVICE) {
+    void drain();
+  }
+}
 async function syncRecipientDirectory(seasonId = "season-2026-27") {
   const dirMap = /* @__PURE__ */ new Map();
   const now = (/* @__PURE__ */ new Date()).toISOString();
@@ -12498,6 +12515,7 @@ async function enqueueTelegramBroadcast(params) {
     params.adminUsername,
     `Enqueued broadcast '${params.title}' for ${targetUserIds.length} recipients (${jobs.length} with Telegram).`
   ).catch(() => console.warn("[NOTIF_QUEUE] Broadcast persisted; auxiliary audit unavailable"));
+  scheduleNotificationQueueDrain();
   return persistedRecord;
 }
 async function processNotificationQueue(batchSize = 25) {
