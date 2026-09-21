@@ -472,7 +472,7 @@ export const FixturesView: React.FC = () => {
                           (You)
                         </span>
                       ) : (() => {
-                        const homeOwnerInfo = getClubOwnerDisplay(fixture.homeClub, fixture.homeUser, fixture.homeOwnerId, t.userNeeded);
+                        const homeOwnerInfo = getClubOwnerDisplay(fixture.homeClub, fixture.homeOwner || fixture.homeUser, fixture.homeOwnerId, t.userNeeded);
                         if (homeOwnerInfo.isClaimed) {
                           return homeOwnerInfo.userId ? (
                             <button
@@ -536,7 +536,7 @@ export const FixturesView: React.FC = () => {
                           (You)
                         </span>
                       ) : (() => {
-                        const awayOwnerInfo = getClubOwnerDisplay(fixture.awayClub, fixture.awayUser, fixture.awayOwnerId, t.userNeeded);
+                        const awayOwnerInfo = getClubOwnerDisplay(fixture.awayClub, fixture.awayOwner || fixture.awayUser, fixture.awayOwnerId, t.userNeeded);
                         if (awayOwnerInfo.isClaimed) {
                           return awayOwnerInfo.userId ? (
                             <button
@@ -601,8 +601,8 @@ export const FixturesView: React.FC = () => {
                     {(() => {
                       if (!isUserParticipant) return null;
                       const oppUsername = isHomeUser
-                        ? (fixture.awayUser?.username || fixture.awayClub?.claimedByUsername)
-                        : (fixture.homeUser?.username || fixture.homeClub?.claimedByUsername);
+                        ? (fixture.awayOwner?.username || fixture.awayUser?.username || fixture.awayClub?.claimedByUsername)
+                        : (fixture.homeOwner?.username || fixture.homeUser?.username || fixture.homeClub?.claimedByUsername);
                       if (!isValidTelegramUsername(oppUsername)) return null;
                       return (
                         <button

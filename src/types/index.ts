@@ -136,8 +136,17 @@ export interface Competition {
   createdAt: string;
 }
 
+export interface FixtureOwnerInfo {
+  userId: string;
+  telegramId?: string;
+  username: string | null;
+  displayName: string;
+}
+
 export interface FixtureUserInfo {
   id: string;
+  userId?: string;
+  telegramId?: string;
   username: string;
   displayName: string;
 }
@@ -161,6 +170,8 @@ export interface Fixture {
   awaySourceWinnerSlot?: string | null;
   homeUser?: FixtureUserInfo | null;
   awayUser?: FixtureUserInfo | null;
+  homeOwner?: FixtureOwnerInfo | null;
+  awayOwner?: FixtureOwnerInfo | null;
   activeMatchday?: number;
   isPlayable?: boolean;
   nextMatchdayOpenAt?: string | null;

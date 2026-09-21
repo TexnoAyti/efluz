@@ -1052,7 +1052,14 @@ export async function buildAdminFixturesSnapshot(seasonId = 'season-2026-27'): P
     }
   } else throw new ReadModelNotWarmedError('Firestore unavailable for fixture refresh');
 
-  const fixtures: Fixture[] = fixDocs.map(doc => normalizeFixtureSnapshot(doc, seasonId));
+  let fixtures: Fixture[] = fixDocs.map(doc => normalizeFixtureSnapshot(doc, seasonId));
+
+  try {
+    const { enrichFixturesWithAuthoritativeOwners } = await import('../firebase/firestoreStore');
+    fixtures = await enrichFixturesWithAuthoritativeOwners(fixtures, seasonId);
+  } catch (enrichErr) {
+    console.warn('[BUILD_FIXTURES_SNAPSHOT] Non-blocking ownership enrichment fallback:', enrichErr);
+  }
 
   // Sort strictly using stable tuple
   fixtures.sort((a, b) => compareAdminFixtures(a, b, false));
@@ -1484,6 +1491,12 @@ export async function getCompetitionFixturesFromReadModel(
   let fixtures = result.data.filter(f => f.competitionId === competitionId);
   if (options.matchday !== undefined) fixtures = fixtures.filter(f => Number(f.matchday) === Number(options.matchday));
   if (options.status && options.status !== 'ALL') fixtures = fixtures.filter(f => f.status === options.status);
+  try {
+    const { enrichFixturesWithAuthoritativeOwners } = await import('../firebase/firestoreStore');
+    fixtures = await enrichFixturesWithAuthoritativeOwners(fixtures, seasonId);
+  } catch (err) {
+    console.warn('[COMPETITION_FIXTURES] Ownership enrichment fallback:', err);
+  }
   return { fixtures: fixtures.sort((a,b) => compareAdminFixtures(a,b,true)), source: result.source,
     stale: Boolean(result.stale), degraded: Boolean(result.degraded), snapshotAt: result.generatedAt };
 }
@@ -1586,8 +1599,14 @@ export async function getAdminFixturesFromReadModel(
       ? encodeFixtureCursor(pagedFixtures[pagedFixtures.length - 1])
       : undefined;
 
+  let enrichedPagedFixtures = pagedFixtures;
+  try {
+    const { enrichFixturesWithAuthoritativeOwners } = await import('../firebase/firestoreStore');
+    enrichedPagedFixtures = await enrichFixturesWithAuthoritativeOwners(pagedFixtures, seasonId);
+  } catch {}
+
   return {
-    fixtures: pagedFixtures,
+    fixtures: enrichedPagedFixtures,
     total,
     hasMore,
     nextCursor,

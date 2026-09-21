@@ -202,10 +202,10 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
 
     const homeOwnerInfo = isHomeTbd
       ? null
-      : getClubOwnerDisplay(fixture.homeClub, fixture.homeUser, fixture.homeOwnerId, t.userNeeded);
+      : getClubOwnerDisplay(fixture.homeClub, fixture.homeOwner || fixture.homeUser, fixture.homeOwnerId, t.userNeeded);
     const awayOwnerInfo = isAwayTbd
       ? null
-      : getClubOwnerDisplay(fixture.awayClub, fixture.awayUser, fixture.awayOwnerId, t.userNeeded);
+      : getClubOwnerDisplay(fixture.awayClub, fixture.awayOwner || fixture.awayUser, fixture.awayOwnerId, t.userNeeded);
 
     const oppOwnerInfo = isHomeUser ? awayOwnerInfo : isAwayUser ? homeOwnerInfo : null;
     const hasOppTg = oppOwnerInfo && isValidTelegramUsername(oppOwnerInfo.username);

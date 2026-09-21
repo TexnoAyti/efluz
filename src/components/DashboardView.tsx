@@ -328,7 +328,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       ({t.myClub})
                     </span>
                   ) : (() => {
-                    const homeOwnerInfo = getClubOwnerDisplay(nextMatch.homeClub, nextMatch.homeUser, nextMatch.homeOwnerId, t.userNeeded);
+                    const homeOwnerInfo = getClubOwnerDisplay(nextMatch.homeClub, nextMatch.homeOwner || nextMatch.homeUser, nextMatch.homeOwnerId, t.userNeeded);
                     if (homeOwnerInfo.isClaimed) {
                       return homeOwnerInfo.userId ? (
                         <button
@@ -382,7 +382,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       ({t.myClub})
                     </span>
                   ) : (() => {
-                    const awayOwnerInfo = getClubOwnerDisplay(nextMatch.awayClub, nextMatch.awayUser, nextMatch.awayOwnerId, t.userNeeded);
+                    const awayOwnerInfo = getClubOwnerDisplay(nextMatch.awayClub, nextMatch.awayOwner || nextMatch.awayUser, nextMatch.awayOwnerId, t.userNeeded);
                     if (awayOwnerInfo.isClaimed) {
                       return awayOwnerInfo.userId ? (
                         <button
@@ -413,8 +413,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               {(() => {
                 const isHome = nextMatch.homeOwnerId === user?.id || nextMatch.homeClub?.claimedByUserId === user?.id;
                 const oppTg = isHome
-                  ? (nextMatch.awayUser?.username || nextMatch.awayClub?.claimedByUsername)
-                  : (nextMatch.homeUser?.username || nextMatch.homeClub?.claimedByUsername);
+                  ? (nextMatch.awayOwner?.username || nextMatch.awayUser?.username || nextMatch.awayClub?.claimedByUsername)
+                  : (nextMatch.homeOwner?.username || nextMatch.homeUser?.username || nextMatch.homeClub?.claimedByUsername);
                 const hasOpponentTg = isValidTelegramUsername(oppTg);
 
                 return (

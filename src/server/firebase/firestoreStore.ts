@@ -50,6 +50,8 @@ import {
   Club,
   Competition,
   Fixture,
+  FixtureOwnerInfo,
+  FixtureUserInfo,
   League,
   MatchStatus,
   Season,
@@ -272,9 +274,15 @@ export function invalidateFirestoreCache(prefix?: string) {
 export function invalidateOwnershipCache(seasonId = 'season-2026-27', clubId?: string) {
   invalidateFirestoreCache(`firestore:occupancies:${seasonId}`);
   invalidateFirestoreCache('firestore:clubs:league:');
-  invalidateFirestoreCache(clubId ? `firestore:club:${clubId}` : 'firestore:club:');
+  if (clubId) {
+    invalidateFirestoreCache(`firestore:club:${clubId}`);
+  }
+  invalidateFirestoreCache('firestore:club:');
   invalidateFirestoreCache('firestore:admin_paged_fixtures:');
   invalidateFirestoreCache('firestore:admin_fixtures_count:');
+  invalidateFirestoreCache(`firestore:fixtures:${seasonId}`);
+  invalidateFirestoreCache('firestore:fixtures:');
+  lastKnownGoodFixtures.clear();
 }
 
 export function getFromCache<T>(key: string): T | null {
@@ -1598,11 +1606,13 @@ export async function getFixturesFirestore(filter: {
       };
     });
 
+    const enrichedFixtures = await enrichFixturesWithAuthoritativeOwners(fixtures, seasonId);
+
     if (cacheKey) {
-      setInCache(cacheKey, fixtures, 30000);
-      lastKnownGoodFixtures.set(cacheKey, fixtures);
+      setInCache(cacheKey, enrichedFixtures, 30000);
+      lastKnownGoodFixtures.set(cacheKey, enrichedFixtures);
     }
-    return fixtures;
+    return enrichedFixtures;
   } catch (err: any) {
     firestoreCircuitBreaker.recordFailure(err);
     recordFallbackUsage();
@@ -1776,11 +1786,13 @@ async function executeFixturesFallback(
     };
   });
 
-  if (cacheKey && fallbackFixtures.length > 0) {
-    setInCache(cacheKey, fallbackFixtures, 30000);
-    lastKnownGoodFixtures.set(cacheKey, fallbackFixtures);
+  const enrichedFallback = await enrichFixturesWithAuthoritativeOwners(fallbackFixtures, filter.seasonId || 'season-2026-27');
+
+  if (cacheKey && enrichedFallback.length > 0) {
+    setInCache(cacheKey, enrichedFallback, 30000);
+    lastKnownGoodFixtures.set(cacheKey, enrichedFallback);
   }
-  return fallbackFixtures;
+  return enrichedFallback;
 }
 
 export interface AdminFixturesQueryOptions {
@@ -2063,8 +2075,9 @@ export async function getFixtureByIdFirestore(fixtureId: string, currentUserId?:
           updatedAt: r.updatedAt,
         };
 
-        setInCache(cacheKey, fix, 30000);
-        return fix;
+        const [enriched] = await enrichFixturesWithAuthoritativeOwners([fix], r.seasonId || 'season-2026-27');
+        setInCache(cacheKey, enriched, 30000);
+        return enriched;
       }
     } catch (err: any) {
       firestoreCircuitBreaker.recordFailure(err);
@@ -2184,8 +2197,9 @@ export async function getFixtureByIdFirestore(fixtureId: string, currentUserId?:
     updatedAt: r.updated_at,
   };
 
-  setInCache(cacheKey, fallbackFix, 30000);
-  return fallbackFix;
+  const [enrichedFallback] = await enrichFixturesWithAuthoritativeOwners([fallbackFix], r.season_id || 'season-2026-27');
+  setInCache(cacheKey, enrichedFallback, 30000);
+  return enrichedFallback;
 }
 
 // ----------------------------------------------------
@@ -3123,26 +3137,235 @@ export async function setCompetitionMatchdayTimerFirestore(
 
 // ----------------------------------------------------
 // ACTIVE CLUB OWNERSHIP / MANAGER RESOLUTION ENGINE
-// Resolves actual owner from active club memberships for standings
+// Authoritative ownership lookup following strict priority:
+// 1. active club_memberships for: seasonId + clubId
+// 2. active_occupancies_cache if appropriate
+// 3. existing valid participant/ownership snapshot as fallback
+// 4. null only when the club is genuinely unclaimed
 // ----------------------------------------------------
+
+export interface AuthoritativeClubOwner {
+  userId: string;
+  telegramId?: string;
+  username: string | null;
+  displayName: string;
+  firstName?: string;
+  lastName?: string;
+}
+
+export function computeManagerDisplayName(user?: {
+  username?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  displayName?: string | null;
+} | null): string {
+  if (user?.username) {
+    const clean = user.username.replace(/^@+/, '').trim();
+    if (clean) return `@${clean}`;
+  }
+  const fullName = `${user?.firstName || ''} ${user?.lastName || ''}`.trim();
+  if (fullName) return fullName;
+  if (user?.firstName?.trim()) return user.firstName.trim();
+  if (user?.displayName && user.displayName.trim() && user.displayName.trim() !== 'User kerak') {
+    return user.displayName.trim();
+  }
+  return 'Telegram user';
+}
+
+export function resolveOwnerUserRecord(
+  ownerUserId: string,
+  hint?: { username?: string | null; displayName?: string | null; firstName?: string | null; lastName?: string | null; telegramId?: string | null }
+): AuthoritativeClubOwner {
+  if (!ownerUserId) {
+    return { userId: '', username: null, displayName: 'User kerak' };
+  }
+
+  // 1. Check in-memory user cache
+  const cached = getFromCache<User>(`firestore:user:${ownerUserId}`);
+  if (cached) {
+    const cleanUname = cached.username ? cached.username.replace(/^@+/, '').trim() : null;
+    const dispName = computeManagerDisplayName({
+      username: cleanUname,
+      firstName: cached.firstName,
+      lastName: cached.lastName,
+    });
+    return {
+      userId: cached.id || ownerUserId,
+      telegramId: cached.telegramId || '',
+      username: cleanUname,
+      displayName: dispName,
+      firstName: cached.firstName,
+      lastName: cached.lastName,
+    };
+  }
+
+  // 2. Query SQLite users table supporting legacy ID formats safely
+  try {
+    const cleanNumeric = ownerUserId.replace(/^user-/, '');
+    const userRow = queryGet<any>(
+      `SELECT id, telegram_id, username, first_name, last_name
+       FROM users
+       WHERE id = ? OR telegram_id = ? OR id = ? OR ('user-' || telegram_id) = ?
+       LIMIT 1`,
+      [ownerUserId, ownerUserId, `user-${cleanNumeric}`, ownerUserId]
+    );
+
+    if (userRow) {
+      const cleanUname = userRow.username ? userRow.username.replace(/^@+/, '').trim() : null;
+      const dispName = computeManagerDisplayName({
+        username: cleanUname,
+        firstName: userRow.first_name,
+        lastName: userRow.last_name,
+      });
+      return {
+        userId: userRow.id || ownerUserId,
+        telegramId: userRow.telegram_id || (cleanNumeric !== ownerUserId ? cleanNumeric : ''),
+        username: cleanUname,
+        displayName: dispName,
+        firstName: userRow.first_name,
+        lastName: userRow.last_name,
+      };
+    }
+  } catch {}
+
+  // 3. Fallback using hint from membership/occupancy or minimal representation
+  const hintUname = hint?.username ? hint.username.replace(/^@+/, '').trim() : null;
+  const dispName = computeManagerDisplayName({
+    username: hintUname,
+    firstName: hint?.firstName,
+    lastName: hint?.lastName,
+    displayName: hint?.displayName,
+  });
+
+  const numericTg = /^\d+$/.test(ownerUserId) ? ownerUserId : (ownerUserId.startsWith('user-') && /^\d+$/.test(ownerUserId.slice(5)) ? ownerUserId.slice(5) : '');
+
+  return {
+    userId: ownerUserId,
+    telegramId: hint?.telegramId || numericTg || '',
+    username: hintUname,
+    displayName: dispName,
+    firstName: hint?.firstName || undefined,
+    lastName: hint?.lastName || undefined,
+  };
+}
 
 export async function resolveClubOwnersForSeason(
   seasonId = 'season-2026-27',
   clubIds?: string[]
-): Promise<Map<string, { userId: string; username: string; displayName?: string }>> {
-  const ownersMap = new Map<string, { userId: string; username: string; displayName?: string }>();
+): Promise<Map<string, AuthoritativeClubOwner>> {
+  const ownersMap = new Map<string, AuthoritativeClubOwner>();
 
-  // 1. Query active occupancies for the season
+  // PRIORITY 1: active club_memberships for: seasonId + clubId
+  // 1a. SQLite club_memberships
+  try {
+    const rows = queryAll<any>(
+      `SELECT cm.club_id, cm.user_id, cm.status,
+              u.id as u_id, u.telegram_id as u_tg, u.username as u_uname, u.first_name as u_fname, u.last_name as u_lname
+       FROM club_memberships cm
+       LEFT JOIN users u ON (
+         cm.user_id = u.id OR
+         cm.user_id = u.telegram_id OR
+         cm.user_id = ('user-' || u.telegram_id) OR
+         ('user-' || cm.user_id) = u.id
+       )
+       WHERE cm.season_id = ? AND cm.status = 'active'`,
+      [seasonId]
+    );
+    for (const r of rows) {
+      if (r.club_id && r.user_id && !ownersMap.has(r.club_id)) {
+        const cleanUname = r.u_uname ? r.u_uname.replace(/^@+/, '').trim() : null;
+        const dispName = computeManagerDisplayName({
+          username: cleanUname,
+          firstName: r.u_fname,
+          lastName: r.u_lname,
+        });
+        ownersMap.set(r.club_id, {
+          userId: r.u_id || r.user_id,
+          telegramId: r.u_tg || (/^\d+$/.test(r.user_id) ? r.user_id : (r.user_id.startsWith('user-') ? r.user_id.slice(5) : '')),
+          username: cleanUname,
+          displayName: dispName,
+          firstName: r.u_fname,
+          lastName: r.u_lname,
+        });
+      }
+    }
+  } catch {}
+
+  // 1b. Firestore club_memberships (authoritative Firestore lookup)
+  try {
+    const db = getFirestoreDb();
+    if (db && firestoreCircuitBreaker.canExecute()) {
+      const memSnap = await db
+        .collection(COLLECTIONS.CLUB_MEMBERSHIPS)
+        .where('seasonId', '==', seasonId)
+        .where('status', '==', 'active')
+        .get();
+
+      if (!memSnap.empty) {
+        for (const doc of memSnap.docs) {
+          const data = doc.data() as FirestoreClubMembershipDoc;
+          if (data.clubId && data.userId && !ownersMap.has(data.clubId)) {
+            const owner = resolveOwnerUserRecord(data.userId);
+            ownersMap.set(data.clubId, owner);
+          }
+        }
+      }
+    }
+  } catch {}
+
+  // PRIORITY 2: active_occupancies_cache if appropriate
+  // 2a. SQLite active_occupancies_cache
+  try {
+    const occRows = queryAll<any>(
+      `SELECT aoc.club_id, aoc.user_id, aoc.username, aoc.display_name, aoc.status,
+              u.id as u_id, u.telegram_id as u_tg, u.username as u_uname, u.first_name as u_fname, u.last_name as u_lname
+       FROM active_occupancies_cache aoc
+       LEFT JOIN users u ON (
+         aoc.user_id = u.id OR
+         aoc.user_id = u.telegram_id OR
+         aoc.user_id = ('user-' || u.telegram_id) OR
+         ('user-' || aoc.user_id) = u.id
+       )
+       WHERE aoc.season_id = ? AND aoc.status = 'active'`,
+      [seasonId]
+    );
+    for (const r of occRows) {
+      if (r.club_id && r.user_id && !ownersMap.has(r.club_id)) {
+        const cleanUname = (r.u_uname || r.username) ? (r.u_uname || r.username).replace(/^@+/, '').trim() : null;
+        const dispName = computeManagerDisplayName({
+          username: cleanUname,
+          firstName: r.u_fname,
+          lastName: r.u_lname,
+          displayName: r.display_name,
+        });
+        ownersMap.set(r.club_id, {
+          userId: r.u_id || r.user_id,
+          telegramId: r.u_tg || (/^\d+$/.test(r.user_id) ? r.user_id : (r.user_id.startsWith('user-') ? r.user_id.slice(5) : '')),
+          username: cleanUname,
+          displayName: dispName,
+          firstName: r.u_fname,
+          lastName: r.u_lname,
+        });
+      }
+    }
+  } catch {}
+
+  // 2b. Dynamic active occupancies from Firestore / memory snapshot
   try {
     const { clubOccupancyMap, usernameMap, userMap } = await getActiveOccupanciesForSeason(seasonId);
     for (const [clubId, occ] of clubOccupancyMap.entries()) {
-      if (occ?.userId) {
+      if (occ?.userId && !ownersMap.has(clubId)) {
         const u = userMap.get(occ.userId);
-        const uname = usernameMap.get(occ.userId) || u?.username || occ.userId;
+        const rawUname = usernameMap.get(occ.userId) || u?.username || null;
+        const cleanUname = rawUname ? rawUname.replace(/^@+/, '').trim() : null;
+        const dispName = computeManagerDisplayName({
+          username: cleanUname,
+          displayName: u?.displayName,
+        });
         ownersMap.set(clubId, {
           userId: occ.userId,
-          username: uname,
-          displayName: u?.displayName || uname,
+          username: cleanUname,
+          displayName: dispName,
         });
       }
     }
@@ -3150,63 +3373,147 @@ export async function resolveClubOwnersForSeason(
     console.warn('[RESOLVE_OWNERS] Error from active occupancies:', err.message);
   }
 
-  // 2. Query SQLite club_memberships + users for any missing clubs
+  // PRIORITY 3: existing valid participant/ownership snapshot as fallback
+  // 3a. SQLite competition_participants
   try {
-    const rows = queryAll<any>(
-      `SELECT cm.club_id, cm.user_id, u.username, u.first_name, u.last_name
-       FROM club_memberships cm
-       LEFT JOIN users u ON cm.user_id = u.id
-       WHERE cm.season_id = ? AND cm.status = 'active'`,
+    const partRows = queryAll<any>(
+      `SELECT cp.club_id, cp.owner_user_id,
+              u.id as u_id, u.telegram_id as u_tg, u.username as u_uname, u.first_name as u_fname, u.last_name as u_lname
+       FROM competition_participants cp
+       LEFT JOIN users u ON (
+         cp.owner_user_id = u.id OR
+         cp.owner_user_id = u.telegram_id OR
+         cp.owner_user_id = ('user-' || u.telegram_id) OR
+         ('user-' || cp.owner_user_id) = u.id
+       )
+       WHERE (cp.season_id = ? OR cp.season_id IS NULL) AND cp.owner_user_id IS NOT NULL AND cp.owner_user_id != ''`,
       [seasonId]
     );
-    for (const r of rows) {
-      if (!ownersMap.has(r.club_id) && r.user_id) {
-        const uname = r.username || r.first_name || r.user_id;
-        const displayName = `${r.first_name || ''} ${r.last_name || ''}`.trim() || uname;
+    for (const r of partRows) {
+      if (r.club_id && r.owner_user_id && !ownersMap.has(r.club_id)) {
+        const cleanUname = r.u_uname ? r.u_uname.replace(/^@+/, '').trim() : null;
+        const dispName = computeManagerDisplayName({
+          username: cleanUname,
+          firstName: r.u_fname,
+          lastName: r.u_lname,
+        });
         ownersMap.set(r.club_id, {
-          userId: r.user_id,
-          username: uname,
-          displayName,
+          userId: r.u_id || r.owner_user_id,
+          telegramId: r.u_tg || '',
+          username: cleanUname,
+          displayName: dispName,
+          firstName: r.u_fname,
+          lastName: r.u_lname,
         });
       }
     }
   } catch {}
 
-  // 3. If specific clubIds were provided and any are still missing, check Firestore club_memberships directly
-  if (clubIds && clubIds.length > 0) {
-    const missingClubIds = clubIds.filter((cid) => !ownersMap.has(cid));
-    if (missingClubIds.length > 0) {
-      try {
-        const db = getFirestoreDb();
-        for (let i = 0; i < missingClubIds.length; i += 30) {
-          const chunk = missingClubIds.slice(i, i + 30);
-          const memSnap = await db
-            .collection(COLLECTIONS.CLUB_MEMBERSHIPS)
-            .where('seasonId', '==', seasonId)
-            .where('clubId', 'in', chunk)
-            .where('status', '==', 'active')
-            .get();
-
-          for (const d of memSnap.docs) {
-            const data = d.data() as FirestoreClubMembershipDoc;
-            if (data.clubId && data.userId && !ownersMap.has(data.clubId)) {
-              let uname = data.userId;
-              const cachedUser = getFromCache<User>(`firestore:user:${data.userId}`);
-              if (cachedUser?.username) {
-                uname = cachedUser.username;
-              }
-              ownersMap.set(data.clubId, {
-                userId: data.userId,
-                username: uname,
-              });
-            }
-          }
-        }
-      } catch {}
+  // 3b. SEED_CLUBS fallback for clubs with initial ownerUserId
+  try {
+    for (const seed of SEED_CLUBS) {
+      if ((seed as any).ownerUserId && !ownersMap.has(seed.id)) {
+        const owner = resolveOwnerUserRecord((seed as any).ownerUserId);
+        ownersMap.set(seed.id, owner);
+      }
     }
+  } catch {}
+
+  // PRIORITY 4: null only when the club is genuinely unclaimed
+  return ownersMap;
+}
+
+export async function enrichFixturesWithAuthoritativeOwners(
+  fixtures: Fixture[],
+  seasonId = 'season-2026-27'
+): Promise<Fixture[]> {
+  if (!fixtures || fixtures.length === 0) return fixtures;
+
+  const clubIds = new Set<string>();
+  for (const f of fixtures) {
+    if (f.homeClubId && f.homeClubId !== 'TBD') clubIds.add(f.homeClubId);
+    if (f.awayClubId && f.awayClubId !== 'TBD') clubIds.add(f.awayClubId);
   }
 
-  return ownersMap;
+  const ownersMap = await resolveClubOwnersForSeason(seasonId, Array.from(clubIds));
+
+  return fixtures.map((f) => {
+    const homeOwner = f.homeClubId ? (ownersMap.get(f.homeClubId) || null) : null;
+    const awayOwner = f.awayClubId ? (ownersMap.get(f.awayClubId) || null) : null;
+
+    const homeUser: FixtureUserInfo | null = homeOwner ? {
+      id: homeOwner.userId,
+      userId: homeOwner.userId,
+      telegramId: homeOwner.telegramId,
+      username: homeOwner.username ? `@${homeOwner.username.replace(/^@+/, '')}` : '',
+      displayName: homeOwner.displayName,
+    } : null;
+
+    const awayUser: FixtureUserInfo | null = awayOwner ? {
+      id: awayOwner.userId,
+      userId: awayOwner.userId,
+      telegramId: awayOwner.telegramId,
+      username: awayOwner.username ? `@${awayOwner.username.replace(/^@+/, '')}` : '',
+      displayName: awayOwner.displayName,
+    } : null;
+
+    const homeOwnerNormalized: FixtureOwnerInfo | null = homeOwner ? {
+      userId: homeOwner.userId,
+      telegramId: homeOwner.telegramId,
+      username: homeOwner.username ? homeOwner.username.replace(/^@+/, '') : null,
+      displayName: homeOwner.displayName,
+    } : null;
+
+    const awayOwnerNormalized: FixtureOwnerInfo | null = awayOwner ? {
+      userId: awayOwner.userId,
+      telegramId: awayOwner.telegramId,
+      username: awayOwner.username ? awayOwner.username.replace(/^@+/, '') : null,
+      displayName: awayOwner.displayName,
+    } : null;
+
+    const homeOwnerId = homeOwner ? homeOwner.userId : undefined;
+    const awayOwnerId = awayOwner ? awayOwner.userId : undefined;
+
+    const homeClub = f.homeClub ? {
+      ...f.homeClub,
+      isTaken: Boolean(homeOwner),
+      claimedByUserId: homeOwner?.userId || null,
+      claimedByUsername: homeOwner?.username || null,
+      managerUsername: homeOwner?.username || undefined,
+      owner: homeOwner ? {
+        userId: homeOwner.userId,
+        username: homeOwner.username || '',
+        firstName: homeOwner.displayName,
+        claimedAt: f.homeClub.owner?.claimedAt || new Date().toISOString(),
+      } : null,
+    } : f.homeClub;
+
+    const awayClub = f.awayClub ? {
+      ...f.awayClub,
+      isTaken: Boolean(awayOwner),
+      claimedByUserId: awayOwner?.userId || null,
+      claimedByUsername: awayOwner?.username || null,
+      managerUsername: awayOwner?.username || undefined,
+      owner: awayOwner ? {
+        userId: awayOwner.userId,
+        username: awayOwner.username || '',
+        firstName: awayOwner.displayName,
+        claimedAt: f.awayClub.owner?.claimedAt || new Date().toISOString(),
+      } : null,
+    } : f.awayClub;
+
+    return {
+      ...f,
+      homeOwnerId,
+      awayOwnerId,
+      homeUser,
+      awayUser,
+      homeOwner: homeOwnerNormalized,
+      awayOwner: awayOwnerNormalized,
+      homeClub,
+      awayClub,
+    };
+  });
 }
 
 export async function enrichStandingsWithActiveOwners(
