@@ -335,6 +335,51 @@ export async function initDatabase(): Promise<Database> {
     `);
   } catch {}
 
+  try {
+    dbInstance.exec(`
+      CREATE TABLE IF NOT EXISTS matchday_locks (
+        id TEXT PRIMARY KEY,
+        season_id TEXT NOT NULL,
+        competition_id TEXT NOT NULL,
+        matchday INTEGER NOT NULL,
+        override_status TEXT NOT NULL,
+        is_open INTEGER NOT NULL,
+        is_locked INTEGER NOT NULL,
+        duration_hours INTEGER,
+        opened_at TEXT,
+        locked_at TEXT,
+        expires_at TEXT,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_matchday_locks_lookup
+      ON matchday_locks(season_id, competition_id, matchday);
+    `);
+  } catch (err: any) {
+    console.error(' [DB] Critical error ensuring matchday_locks table:', err);
+    dbInstance.close();
+    dbInstance = null;
+    throw err;
+  }
+
+  // Verify matchday_locks table exists after initialization
+  try {
+    const tableCheck = dbInstance.exec(`SELECT name FROM sqlite_master WHERE type='table' AND name='matchday_locks';`);
+    if (!tableCheck || tableCheck.length === 0 || tableCheck[0].values.length === 0) {
+      const err = new Error('Database initialization failed: matchday_locks table does not exist');
+      console.error(' [DB]', err.message);
+      dbInstance.close();
+      dbInstance = null;
+      throw err;
+    }
+  } catch (verifyErr: any) {
+    console.error(' [DB] matchday_locks table verification failed:', verifyErr);
+    if (dbInstance) {
+      dbInstance.close();
+      dbInstance = null;
+    }
+    throw verifyErr;
+  }
+
   saveDatabaseSync();
   return dbInstance;
 }

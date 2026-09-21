@@ -249,7 +249,23 @@ CREATE TABLE IF NOT EXISTS competition_standings (
     PRIMARY KEY (competition_id, club_id)
 );
 
+CREATE TABLE IF NOT EXISTS matchday_locks (
+    id TEXT PRIMARY KEY,
+    season_id TEXT NOT NULL,
+    competition_id TEXT NOT NULL,
+    matchday INTEGER NOT NULL,
+    override_status TEXT NOT NULL,
+    is_open INTEGER NOT NULL,
+    is_locked INTEGER NOT NULL,
+    duration_hours INTEGER,
+    opened_at TEXT,
+    locked_at TEXT,
+    expires_at TEXT,
+    updated_at TEXT NOT NULL
+);
+
 -- INDEXES FOR MAXIMUM QUERY SPEED & INTEGRITY
+CREATE INDEX IF NOT EXISTS idx_matchday_locks_lookup ON matchday_locks(season_id, competition_id, matchday);
 CREATE INDEX IF NOT EXISTS idx_competition_standings_rank ON competition_standings(competition_id, rank);
 CREATE INDEX IF NOT EXISTS idx_club_memberships_user ON club_memberships(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_club_memberships_season ON club_memberships(season_id, status);
