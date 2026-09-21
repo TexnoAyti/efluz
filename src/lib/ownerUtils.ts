@@ -19,6 +19,8 @@ export interface ClubOwnerInput {
 
 export interface FixtureUserInput {
   id?: string | null;
+  userId?: string | null;
+  telegramId?: string | null;
   username?: string | null;
   displayName?: string | null;
 }
@@ -58,6 +60,7 @@ export function getClubOwnerDisplay(
 
   // 2. Check for userId candidate
   const resolvedUserId =
+    fixtureUser?.userId ||
     fixtureUser?.id ||
     club?.claimedByUserId ||
     club?.owner?.userId ||
@@ -69,7 +72,7 @@ export function getClubOwnerDisplay(
   const isClaimed = Boolean(
     cleanUsername ||
     resolvedUserId ||
-    fixtureUser?.displayName ||
+    (fixtureUser?.displayName && fixtureUser.displayName !== unclaimedText) ||
     club?.owner?.firstName ||
     (club?.occupancy && club.occupancy.status !== 'available' && club.occupancy.status !== undefined) ||
     club?.isTaken
@@ -88,9 +91,9 @@ export function getClubOwnerDisplay(
 
   if (isClaimed) {
     const fallbackName =
-      fixtureUser?.displayName ||
-      club?.owner?.firstName ||
-      (resolvedUserId ? `User #${resolvedUserId.slice(0, 5)}` : 'Menejer');
+      (fixtureUser?.displayName && fixtureUser.displayName !== unclaimedText)
+        ? fixtureUser.displayName
+        : club?.owner?.firstName || 'Telegram user';
 
     return {
       isClaimed: true,

@@ -231,7 +231,7 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                   ) : (() => {
                     const homeOwnerInfo = getClubOwnerDisplay(
                       focusedFixture.homeClub,
-                      focusedFixture.homeUser,
+                      focusedFixture.homeOwner || focusedFixture.homeUser,
                       focusedFixture.homeOwnerId,
                       t.userNeeded
                     );
@@ -321,7 +321,7 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                   ) : (() => {
                     const awayOwnerInfo = getClubOwnerDisplay(
                       focusedFixture.awayClub,
-                      focusedFixture.awayUser,
+                      focusedFixture.awayOwner || focusedFixture.awayUser,
                       focusedFixture.awayOwnerId,
                       t.userNeeded
                     );
@@ -547,7 +547,7 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                     {/* Home Team */}
                     {(() => {
                       const isHomeUser = fixture.homeOwnerId === user?.id || fixture.homeClub?.claimedByUserId === user?.id;
-                      const homeOwnerInfo = getClubOwnerDisplay(fixture.homeClub, fixture.homeUser, fixture.homeOwnerId, t.userNeeded);
+                      const homeOwnerInfo = getClubOwnerDisplay(fixture.homeClub, fixture.homeOwner || fixture.homeUser, fixture.homeOwnerId, t.userNeeded);
                       return (
                         <div className="flex items-center gap-2 flex-1 min-w-0">
                           <ClubCrest
@@ -606,7 +606,7 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                     {/* Away Team */}
                     {(() => {
                       const isAwayUser = fixture.awayOwnerId === user?.id || fixture.awayClub?.claimedByUserId === user?.id;
-                      const awayOwnerInfo = getClubOwnerDisplay(fixture.awayClub, fixture.awayUser, fixture.awayOwnerId, t.userNeeded);
+                      const awayOwnerInfo = getClubOwnerDisplay(fixture.awayClub, fixture.awayOwner || fixture.awayUser, fixture.awayOwnerId, t.userNeeded);
                       return (
                         <div className="flex items-center justify-end gap-2 flex-1 min-w-0 text-right">
                           <div className="min-w-0 text-right">

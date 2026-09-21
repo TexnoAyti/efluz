@@ -1062,7 +1062,14 @@ export async function buildAdminFixturesSnapshot(seasonId = 'season-2026-27'): P
     }
   } else throw new ReadModelNotWarmedError('Firestore unavailable for fixture refresh');
 
-  const fixtures: Fixture[] = fixDocs.map(doc => normalizeFixtureSnapshot(doc, seasonId));
+  let fixtures: Fixture[] = fixDocs.map(doc => normalizeFixtureSnapshot(doc, seasonId));
+
+  try {
+    const { enrichFixturesWithAuthoritativeOwners } = await import('../firebase/firestoreStore');
+    fixtures = await enrichFixturesWithAuthoritativeOwners(fixtures, seasonId);
+  } catch (enrichErr) {
+    console.warn('[BUILD_FIXTURES_SNAPSHOT] Non-blocking ownership enrichment fallback:', enrichErr);
+  }
 
   // Sort strictly using stable tuple
   fixtures.sort((a, b) => compareAdminFixtures(a, b, false));
@@ -1200,6 +1207,10 @@ export async function buildStandingsSnapshot(
     try {
       const db = getFirestoreDb();
       if (db) {
+        const competition = await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get();
+        if (!competition.exists || competition.data()?.seasonId !== seasonId) {
+          throw new ReadModelNotWarmedError('Cannot initialize standings without an authoritative competition for this season');
+        }
         const fixSnap = await db
           .collection(COLLECTIONS.FIXTURES)
           .where('competitionId', '==', competitionId)
@@ -1538,6 +1549,12 @@ export async function getCompetitionFixturesFromReadModel(
   });
   if (options.matchday !== undefined) fixtures = fixtures.filter(f => Number(f.matchday) === Number(options.matchday));
   if (options.status && options.status !== 'ALL') fixtures = fixtures.filter(f => f.status === options.status);
+  try {
+    const { enrichFixturesWithAuthoritativeOwners } = await import('../firebase/firestoreStore');
+    fixtures = await enrichFixturesWithAuthoritativeOwners(fixtures, seasonId);
+  } catch (err) {
+    console.warn('[COMPETITION_FIXTURES] Ownership enrichment fallback:', err);
+  }
   return { fixtures: fixtures.sort((a,b) => compareAdminFixtures(a,b,true)), source: result.source,
     stale: Boolean(result.stale || clubsResult.stale), degraded: Boolean(result.degraded || clubsResult.degraded), snapshotAt: result.generatedAt };
 }
@@ -1640,8 +1657,14 @@ export async function getAdminFixturesFromReadModel(
       ? encodeFixtureCursor(pagedFixtures[pagedFixtures.length - 1])
       : undefined;
 
+  let enrichedPagedFixtures = pagedFixtures;
+  try {
+    const { enrichFixturesWithAuthoritativeOwners } = await import('../firebase/firestoreStore');
+    enrichedPagedFixtures = await enrichFixturesWithAuthoritativeOwners(pagedFixtures, seasonId);
+  } catch {}
+
   return {
-    fixtures: pagedFixtures,
+    fixtures: enrichedPagedFixtures,
     total,
     hasMore,
     nextCursor,

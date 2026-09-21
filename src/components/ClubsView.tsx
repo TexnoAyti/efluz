@@ -842,7 +842,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                             {fix.homeClub?.shortName || fix.homeClub?.name}
                           </span>
                           {(() => {
-                            const homeOwnerInfo = getClubOwnerDisplay(fix.homeClub, fix.homeUser, fix.homeOwnerId, t.userNeeded);
+                            const homeOwnerInfo = getClubOwnerDisplay(fix.homeClub, fix.homeOwner || fix.homeUser, fix.homeOwnerId, t.userNeeded);
                             if (homeOwnerInfo.isClaimed) {
                               return homeOwnerInfo.userId ? (
                                 <button
@@ -882,7 +882,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                             {fix.awayClub?.shortName || fix.awayClub?.name}
                           </span>
                           {(() => {
-                            const awayOwnerInfo = getClubOwnerDisplay(fix.awayClub, fix.awayUser, fix.awayOwnerId, t.userNeeded);
+                            const awayOwnerInfo = getClubOwnerDisplay(fix.awayClub, fix.awayOwner || fix.awayUser, fix.awayOwnerId, t.userNeeded);
                             if (awayOwnerInfo.isClaimed) {
                               return awayOwnerInfo.userId ? (
                                 <button

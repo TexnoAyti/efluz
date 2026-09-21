@@ -47,10 +47,22 @@ async function main() {
   });
   await new Promise<void>(resolve=>bridge.listen(0,'127.0.0.1',resolve));
   const address=bridge.address() as any;
-  process.env.UPSTASH_REDIS_REST_URL=`http://127.0.0.1:${address.port}`;
+  // Exercise the production HTTPS-only configuration contract while routing
+  // this test's transport exclusively through the isolated loopback bridge.
+  const redisOrigin = 'https://redis.test.invalid';
+  const isolatedFetch = globalThis.fetch;
+  globalThis.fetch = (input: any, init?: any) => {
+    const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
+    if (url.origin === redisOrigin) {
+      return isolatedFetch(`http://127.0.0.1:${address.port}${url.pathname}${url.search}`, init);
+    }
+    return isolatedFetch(input, init);
+  };
+  process.env.UPSTASH_REDIS_REST_URL=redisOrigin;
   process.env.UPSTASH_REDIS_REST_TOKEN='isolated-local-only';
   const model=await import('../readModel/readModelStore');
   const client=model.getUpstashClient()!;
+  assert.ok(client, 'Redis test must use the real Redis bridge, never in-memory fallback');
   const firebase=await import('../firebase/admin');
   const {COLLECTIONS}=await import('../firebase/collections');
   const queue=await import('../services/telegramNotificationQueue');
@@ -107,6 +119,6 @@ async function main() {
     globalThis.fetch=originalFetch;
     console.log('PASS: broadcast retries deduplicate, concurrent workers send once, interrupted jobs remain visible without blind resend');
     console.log('Redis durability regression passed; Telegram transport was mocked, no real messages sent.');
-  } finally { bridge.close(); }
+  } finally { globalThis.fetch = isolatedFetch; bridge.close(); }
 }
 main().then(()=>process.exit(0)).catch(error=>{console.error(error);process.exit(1);});

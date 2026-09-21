@@ -79,21 +79,21 @@ async function testVercelHandler() {
     }
     console.log(`✅ PASS: /api/me -> HTTP 200, user=${meAuth.data.user.username}, club=${meAuth.data.currentClub?.name || 'none'}`);
 
-    // 7. Test /api/competitions
+    // 7. Empty isolated Firestore and Redis must fail closed, not serve SQLite seed data.
     console.log('\n--- 7. Testing GET /api/competitions ---');
     const comps = await fetchJson('/api/competitions');
-    if (comps.status !== 200 || !Array.isArray(comps.data.competitions)) {
+    if (comps.status !== 503 || comps.data.code !== 'READ_MODEL_NOT_WARMED' || comps.data.competitions !== undefined) {
       throw new Error(`/api/competitions failed: status=${comps.status}, data=${JSON.stringify(comps.data)}`);
     }
-    console.log(`✅ PASS: /api/competitions -> HTTP 200, competitions count=${comps.data.competitions.length}`);
+    console.log('✅ PASS: /api/competitions -> HTTP 503 READ_MODEL_NOT_WARMED without fabricated competitions');
 
     // 8. Test /api/competitions/comp-premier-league-2026/standings
     console.log('\n--- 8. Testing GET /api/competitions/comp-premier-league-2026/standings ---');
     const standings = await fetchJson('/api/competitions/comp-premier-league-2026/standings');
-    if (standings.status !== 200 || !Array.isArray(standings.data.standings)) {
+    if (standings.status !== 503 || standings.data.code !== 'READ_MODEL_NOT_WARMED' || standings.data.standings !== undefined) {
       throw new Error(`/api/competitions standings failed: status=${standings.status}, data=${JSON.stringify(standings.data)}`);
     }
-    console.log(`✅ PASS: /api/competitions/.../standings -> HTTP 200, standings rows=${standings.data.standings.length}`);
+    console.log('✅ PASS: /api/competitions/.../standings -> HTTP 503 READ_MODEL_NOT_WARMED without fabricated standings');
 
     // 9. Test /api/auth/dev-profiles
     console.log('\n--- 9. Testing GET /api/auth/dev-profiles ---');
