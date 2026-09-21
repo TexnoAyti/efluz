@@ -1,8 +1,8 @@
 import express from 'express';
 import { timingSafeEqual } from 'node:crypto';
-import { processNotificationQueue } from './services/telegramNotificationQueue';
+import { drainNotificationQueue, scheduleNotificationQueueDrain } from './services/telegramNotificationQueue';
 import { initDatabase, queryGet, getDbFilePath } from './db';
-import { seedDatabase, repairSeason202627Roster } from './db/seed';
+import { seedMissingStaticCatalog } from './db/seed';
 import { authMiddleware } from './middleware/authMiddleware';
 import { rateLimit } from './middleware/rateLimitMiddleware';
 import { isFirebaseConfigured, getFirestoreDb, getFirebaseStatus } from './firebase/admin';
@@ -64,8 +64,7 @@ export async function ensureDbReady(): Promise<void> {
       try {
         // Always initialize SQLite baseline so the application is 100% resilient
         await initDatabase();
-        seedDatabase();
-        repairSeason202627Roster();
+        seedMissingStaticCatalog();
         console.log(`[BOOT] SQLite baseline ready from: ${getDbFilePath()}`);
 
         // Restore occupancy snapshot from disk if available
@@ -132,7 +131,7 @@ export function createApp() {
   app.use('/api', rateLimit('api-global', 300, 60));
 
   // Durable worker can run without initializing SQLite or reading Firestore.
-  app.get('/api/internal/telegram-worker', async (req, res) => {
+  app.all('/api/internal/telegram-worker', async (req, res) => {
     const secret = process.env.CRON_SECRET;
     const actual = Buffer.from(req.headers.authorization || '');
     const expected = Buffer.from(`Bearer ${secret || ''}`);
@@ -140,7 +139,18 @@ export function createApp() {
       res.status(401).json({ error: 'UNAUTHORIZED' });
       return;
     }
-    try { res.json(await processNotificationQueue(25)); }
+    if (!['GET', 'POST'].includes(req.method)) { res.sendStatus(405); return; }
+    const hop = Number(req.query.hop || 0);
+    if (!Number.isInteger(hop) || hop < 0 || hop > 256) { res.sendStatus(400); return; }
+    try {
+      if (process.env.VERCEL === '1') {
+        scheduleNotificationQueueDrain(hop);
+        res.status(202).json({ accepted: true });
+      } else {
+        await drainNotificationQueue({ hop });
+        res.json({ drained: true });
+      }
+    }
     catch { res.status(503).json({ error: 'NOTIFICATION_WORKER_UNAVAILABLE' }); }
   });
 

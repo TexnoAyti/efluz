@@ -52,6 +52,9 @@ jobs:
           bun run test:domestic-cup:isolated
           bun run test:read-model
           bun run test:standings-initialization
+          bun run test:startup-preservation
+          bun run test:admin-authorization
+          bun run test:matchday-locks
 
       - name: Install Redis test dependency
         timeout-minutes: 3

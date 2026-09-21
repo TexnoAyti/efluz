@@ -1340,30 +1340,21 @@ export async function getRawClubFixturesFirestore(
   }
 }
 
-function checkFixturePlayability(
+export function checkFixturePlayability(
   competitionId: string,
   seasonId: string,
   matchday: number,
   fixtureStatus: string,
   homeClubId?: string | null,
   awayClubId?: string | null,
-  compData?: Partial<FirestoreCompetitionDoc> | null
+  compData?: Partial<FirestoreCompetitionDoc> | null,
+  preloadedLock?: FirestoreMatchdayLockDoc | null
 ): { isPlayable: boolean; activeMatchday: number } {
-  const activeMatchday = compData?.currentMatchday || 1;
-  const adminStatus = compData?.adminOverrideStatus || 'AUTO';
-  const isMatchdayOpen = compData?.isMatchdayOpen !== false;
-  const compType =
-    compData?.type ||
-    (competitionId.includes('cup') ||
-    competitionId.includes('pokal') ||
-    competitionId.includes('rey') ||
-    competitionId.includes('italia')
-      ? 'KNOCKOUT'
-      : 'LEAGUE');
-  const isKnockout =
-    compType === 'KNOCKOUT' ||
-    compType === 'SUPER_CUP' ||
-    compType === 'EUROPEAN_KNOCKOUT';
+  let resolvedComp = compData;
+  if (!resolvedComp && competitionId) {
+    resolvedComp = compOverrideMap.get(competitionId) || null;
+  }
+  const activeMatchday = resolvedComp?.currentMatchday || 1;
 
   if (fixtureStatus === 'CONFIRMED') {
     return { isPlayable: false, activeMatchday };
@@ -1371,15 +1362,42 @@ function checkFixturePlayability(
   if (!homeClubId || homeClubId === 'TBD' || !awayClubId || awayClubId === 'TBD') {
     return { isPlayable: false, activeMatchday };
   }
-  if (adminStatus === 'FORCE_LOCKED' || adminStatus === 'PAUSED') {
-    return { isPlayable: false, activeMatchday };
-  }
-  if (!isMatchdayOpen) {
-    return { isPlayable: false, activeMatchday };
+
+  // 1. Resolve exact granular lock: seasonId + competitionId + matchday
+  const key = getMatchdayLockKey(seasonId, competitionId, matchday);
+  let lock: FirestoreMatchdayLockDoc | null = preloadedLock || null;
+
+  if (!lock) {
+    if (matchdayLocksCache.has(key)) {
+      lock = matchdayLocksCache.get(key) || null;
+    } else {
+      try {
+        const row = queryGet<any>(
+          'SELECT * FROM matchday_locks WHERE season_id = ? AND competition_id = ? AND matchday = ?',
+          [seasonId, competitionId, matchday]
+        );
+        if (row) {
+          lock = {
+            id: row.id,
+            seasonId: row.season_id,
+            competitionId: row.competition_id,
+            matchday: row.matchday,
+            overrideStatus: row.override_status,
+            isOpen: Boolean(row.is_open),
+            isLocked: Boolean(row.is_locked),
+            durationHours: row.duration_hours || undefined,
+            openedAt: row.opened_at || undefined,
+            lockedAt: row.locked_at || undefined,
+            expiresAt: row.expires_at || undefined,
+            updatedAt: row.updated_at,
+          };
+          matchdayLocksCache.set(key, lock);
+        }
+      } catch {}
+    }
   }
 
-  // Check granular matchday lock for this specific matchday
-  const lock = matchdayLocksCache.get(getMatchdayLockKey(seasonId, competitionId, matchday));
+  // 2. If granular lock exists, it takes precedence over competition-level defaults
   if (lock) {
     if (lock.overrideStatus === 'FORCE_OPEN' || lock.isOpen === true) {
       return { isPlayable: true, activeMatchday };
@@ -1392,6 +1410,29 @@ function checkFixturePlayability(
     ) {
       return { isPlayable: false, activeMatchday };
     }
+  }
+
+  // 3. Only if NO granular lock exists: use competition-level fallback
+  const adminStatus = resolvedComp?.adminOverrideStatus || 'AUTO';
+  const isMatchdayOpen = resolvedComp?.isMatchdayOpen !== false;
+  const compType =
+    resolvedComp?.type ||
+    (competitionId.includes('cup') ||
+    competitionId.includes('pokal') ||
+    competitionId.includes('rey') ||
+    competitionId.includes('italia')
+      ? 'KNOCKOUT'
+      : 'LEAGUE');
+  const isKnockout =
+    compType === 'KNOCKOUT' ||
+    compType === 'SUPER_CUP' ||
+    compType === 'EUROPEAN_KNOCKOUT';
+
+  if (adminStatus === 'FORCE_LOCKED' || adminStatus === 'PAUSED') {
+    return { isPlayable: false, activeMatchday };
+  }
+  if (!isMatchdayOpen) {
+    return { isPlayable: false, activeMatchday };
   }
 
   if (isKnockout) {
@@ -1545,11 +1586,20 @@ export async function getFixturesFirestore(filter: {
       }
     }
 
+    // Preload competition locks once for all competitions in docs (0 Firestore reads, pure SQLite/cache)
+    const compIdsInDocs = Array.from(new Set(docs.map((r) => r.competitionId).filter(Boolean)));
+    const compLocksMap = new Map<string, Record<number, FirestoreMatchdayLockDoc>>();
+    for (const compId of compIdsInDocs) {
+      const locks = await getCompetitionMatchdayLocksFirestore(filter.seasonId || 'season-2026-27', compId);
+      compLocksMap.set(compId, locks);
+    }
+
     const fixtures: Fixture[] = docs.map((r) => {
       const homeSeed = SEED_CLUB_MAP.get(r.homeClubId);
       const awaySeed = SEED_CLUB_MAP.get(r.awayClubId);
 
       const comp = compMap.get(r.competitionId);
+      const preloadedLock = compLocksMap.get(r.competitionId)?.[r.matchday] || null;
       const { isPlayable, activeMatchday } = checkFixturePlayability(
         r.competitionId,
         r.seasonId,
@@ -1557,7 +1607,8 @@ export async function getFixturesFirestore(filter: {
         r.status,
         r.homeClubId,
         r.awayClubId,
-        comp
+        comp,
+        preloadedLock
       );
 
       const homeOcc = clubOccupancyMap.get(r.homeClubId);
@@ -1728,8 +1779,17 @@ async function executeFixturesFallback(
     } catch {}
   }
 
+  // Preload competition locks once for all competitions in fallback rows (0 Firestore reads, pure SQLite/cache)
+  const compIdsInFallback = Array.from(new Set(rows.map((r) => r.competition_id).filter(Boolean)));
+  const compLocksMap = new Map<string, Record<number, FirestoreMatchdayLockDoc>>();
+  for (const compId of compIdsInFallback) {
+    const locks = await getCompetitionMatchdayLocksFirestore(filter.seasonId || 'season-2026-27', compId);
+    compLocksMap.set(compId, locks);
+  }
+
   const fallbackFixtures = rows.map((r) => {
     const comp = compOverrideMap.get(r.competition_id);
+    const preloadedLock = compLocksMap.get(r.competition_id)?.[r.matchday] || null;
     const { isPlayable, activeMatchday } = checkFixturePlayability(
       r.competition_id,
       r.season_id,
@@ -1737,7 +1797,8 @@ async function executeFixturesFallback(
       r.status,
       r.home_club_id,
       r.away_club_id,
-      comp
+      comp,
+      preloadedLock
     );
 
     const homeOcc = clubOccupancyMap.get(r.home_club_id);
@@ -1996,6 +2057,9 @@ export async function getFixtureByIdFirestore(fixtureId: string, currentUserId?:
           } catch {}
         }
 
+        const compLocks = await getCompetitionMatchdayLocksFirestore(r.seasonId || 'season-2026-27', r.competitionId);
+        const preloadedLock = compLocks[r.matchday] || null;
+
         const { isPlayable, activeMatchday } = checkFixturePlayability(
           r.competitionId,
           r.seasonId,
@@ -2003,7 +2067,8 @@ export async function getFixtureByIdFirestore(fixtureId: string, currentUserId?:
           r.status,
           r.homeClubId,
           r.awayClubId,
-          comp
+          comp,
+          preloadedLock
         );
 
         // Fetch user/opponent submissions if currentUserId is provided
@@ -2149,6 +2214,9 @@ export async function getFixtureByIdFirestore(fixtureId: string, currentUserId?:
     }
   } catch {}
 
+  const compLocks = await getCompetitionMatchdayLocksFirestore(r.season_id || 'season-2026-27', r.competition_id);
+  const preloadedLock = compLocks[r.matchday] || null;
+
   const comp = compOverrideMap.get(r.competition_id);
   const { isPlayable, activeMatchday } = checkFixturePlayability(
     r.competition_id,
@@ -2157,7 +2225,8 @@ export async function getFixtureByIdFirestore(fixtureId: string, currentUserId?:
     r.status,
     r.home_club_id,
     r.away_club_id,
-    comp
+    comp,
+    preloadedLock
   );
 
   const fallbackFix: Fixture = {
@@ -2594,7 +2663,7 @@ export function invalidateMatchdayLockCache(seasonId: string, competitionId: str
   }
 }
 
-function ensureMatchdayLocksTable(): void {
+export function ensureMatchdayLocksTable(): void {
   try {
     queryRun(`
       CREATE TABLE IF NOT EXISTS matchday_locks (
@@ -2610,11 +2679,14 @@ function ensureMatchdayLocksTable(): void {
         locked_at TEXT,
         expires_at TEXT,
         updated_at TEXT NOT NULL
-      )
+      );
+      CREATE INDEX IF NOT EXISTS idx_matchday_locks_lookup
+      ON matchday_locks(season_id, competition_id, matchday);
     `);
-  } catch {}
+  } catch (err: any) {
+    console.error(' [DB] ensureMatchdayLocksTable error:', err?.message);
+  }
 }
-ensureMatchdayLocksTable();
 
 export async function getCompetitionMatchdayLocksFirestore(
   seasonId: string,
@@ -4629,6 +4701,20 @@ export async function getOrCreateTelegramUserFirestore(tgUser: {
     createdAt: now,
     updatedAt: now,
   };
+}
+
+/** Privileged authorization never uses profile cache or SQLite fallback.
+ * One document read, no collection scan. Fail closed on missing/unavailable state.
+ */
+export async function getAuthoritativeUserForAuthorization(userId: string): Promise<User | null> {
+  trackFirestoreRead(COLLECTIONS.USERS, 1, 'adminAuthorization');
+  const doc = await getFirestoreDb().collection(COLLECTIONS.USERS).doc(userId).get();
+  if (!doc.exists) return null;
+  const data = doc.data() as FirestoreUserDoc;
+  return { id: doc.id, telegramId: data.telegramId || '', username: data.username || '',
+    firstName: data.firstName || '', lastName: data.lastName || '', photoUrl: data.photoUrl || '',
+    isAdmin: data.isAdmin === true, isSuspended: data.isSuspended === true,
+    createdAt: data.createdAt || '', updatedAt: data.updatedAt || '' };
 }
 
 export async function getUserByIdFirestore(userId: string): Promise<User | null> {

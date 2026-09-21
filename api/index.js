@@ -612,6 +612,7 @@ function isValidSqliteHeader(buffer) {
   return headerString === "SQLite format 3\0";
 }
 function resolveBundledDbPath() {
+  if (IS_HOSTED) return null;
   const modDir = getModuleDir();
   const candidates = [
     path2.resolve(process.cwd(), "data", "efootball.sqlite"),
@@ -640,6 +641,9 @@ function resolveBundledDbPath() {
 async function initDatabase() {
   if (dbInstance) {
     return dbInstance;
+  }
+  if (IS_HOSTED && [path2.resolve(process.cwd(), "data/efootball.sqlite"), path2.resolve(process.cwd(), "api/data/efootball.sqlite")].includes(path2.resolve(DB_FILE))) {
+    throw new Error("BUNDLED_DATABASE_FORBIDDEN: configure a separate runtime DB_FILE or DATA_DIR");
   }
   try {
     if (!fs2.existsSync(DATA_DIR)) {
@@ -869,6 +873,48 @@ async function initDatabase() {
     `);
   } catch {
   }
+  try {
+    dbInstance.exec(`
+      CREATE TABLE IF NOT EXISTS matchday_locks (
+        id TEXT PRIMARY KEY,
+        season_id TEXT NOT NULL,
+        competition_id TEXT NOT NULL,
+        matchday INTEGER NOT NULL,
+        override_status TEXT NOT NULL,
+        is_open INTEGER NOT NULL,
+        is_locked INTEGER NOT NULL,
+        duration_hours INTEGER,
+        opened_at TEXT,
+        locked_at TEXT,
+        expires_at TEXT,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_matchday_locks_lookup
+      ON matchday_locks(season_id, competition_id, matchday);
+    `);
+  } catch (err) {
+    console.error(" [DB] Critical error ensuring matchday_locks table:", err);
+    dbInstance.close();
+    dbInstance = null;
+    throw err;
+  }
+  try {
+    const tableCheck = dbInstance.exec(`SELECT name FROM sqlite_master WHERE type='table' AND name='matchday_locks';`);
+    if (!tableCheck || tableCheck.length === 0 || tableCheck[0].values.length === 0) {
+      const err = new Error("Database initialization failed: matchday_locks table does not exist");
+      console.error(" [DB]", err.message);
+      dbInstance.close();
+      dbInstance = null;
+      throw err;
+    }
+  } catch (verifyErr) {
+    console.error(" [DB] matchday_locks table verification failed:", verifyErr);
+    if (dbInstance) {
+      dbInstance.close();
+      dbInstance = null;
+    }
+    throw verifyErr;
+  }
   saveDatabaseSync();
   return dbInstance;
 }
@@ -967,14 +1013,15 @@ function dbTransaction(callback) {
     throw error;
   }
 }
-var dbInstance, IS_SERVERLESS, DEFAULT_DATA_DIR, DATA_DIR, DB_FILE, SCHEMA_FILE, transactionDepth;
+var dbInstance, IS_HOSTED, IS_SERVERLESS, DEFAULT_DATA_DIR, DATA_DIR, DB_FILE, SCHEMA_FILE, transactionDepth;
 var init_db = __esm({
   "src/server/db/index.ts"() {
     init_migrateFixtures();
     init_migrateFixtures();
     dbInstance = null;
+    IS_HOSTED = Boolean(process.env.VERCEL || process.env.VERCEL_ENV || process.env.K_SERVICE || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NODE_ENV === "production");
     IS_SERVERLESS = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_TASK_ROOT);
-    DEFAULT_DATA_DIR = IS_SERVERLESS ? "/tmp/data" : path2.resolve(process.cwd(), "data");
+    DEFAULT_DATA_DIR = IS_HOSTED || IS_SERVERLESS ? "/tmp/data" : path2.resolve(process.cwd(), "data");
     DATA_DIR = process.env.DATA_DIR || DEFAULT_DATA_DIR;
     DB_FILE = process.env.DB_FILE || path2.join(DATA_DIR, "efootball.sqlite");
     SCHEMA_FILE = path2.resolve(process.cwd(), "src", "server", "db", "schema.sql");
@@ -983,252 +1030,31 @@ var init_db = __esm({
 });
 
 // src/server/db/seed.ts
-function seedDatabase() {
-  return dbTransaction(() => {
-    let seasonsCreated = 0;
-    let leaguesCreated = 0;
-    let clubsCreated = 0;
-    let competitionsCreated = 0;
-    let skipped = 0;
+function seedMissingStaticCatalog() {
+  dbTransaction(() => {
     const now = (/* @__PURE__ */ new Date()).toISOString();
-    const existingSeason = queryGet("SELECT id FROM seasons WHERE id = ?", [SEED_SEASON.id]);
-    if (!existingSeason) {
-      queryRun(
-        "INSERT INTO seasons (id, name, status, start_date, end_date, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-        [SEED_SEASON.id, SEED_SEASON.name, SEED_SEASON.status, SEED_SEASON.startDate, SEED_SEASON.endDate, now]
-      );
-      seasonsCreated++;
-    } else {
-      queryRun(
-        "UPDATE seasons SET name = ?, status = ?, start_date = ?, end_date = ? WHERE id = ?",
-        [SEED_SEASON.name, SEED_SEASON.status, SEED_SEASON.startDate, SEED_SEASON.endDate, SEED_SEASON.id]
-      );
-    }
-    for (const league of SEED_LEAGUES) {
-      const existingLeague = queryGet("SELECT id FROM leagues WHERE id = ?", [league.id]);
-      if (!existingLeague) {
-        queryRun(
-          "INSERT INTO leagues (id, name, country, tier, logo_url, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-          [league.id, league.name, league.country, league.tier, league.logoUrl, now]
-        );
-        leaguesCreated++;
-      } else {
-        skipped++;
-      }
-    }
-    const activeClubIds = new Set(SEED_CLUBS.map((c) => c.id));
-    for (const club of SEED_CLUBS) {
-      const existingClub = queryGet("SELECT id FROM clubs WHERE id = ?", [club.id]);
-      if (!existingClub) {
-        queryRun(
-          "INSERT INTO clubs (id, name, short_name, country, league_id, logo_url, active, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
-          [club.id, club.name, club.shortName, club.country, club.leagueId, club.logoUrl, now]
-        );
-        clubsCreated++;
-      } else {
-        queryRun(
-          "UPDATE clubs SET name = ?, short_name = ?, country = ?, league_id = ?, logo_url = ?, active = 1 WHERE id = ?",
-          [club.name, club.shortName, club.country, club.leagueId, club.logoUrl, club.id]
-        );
-      }
-      const slcId = `slc-${SEED_SEASON.id}-${club.id}`;
-      queryRun(
-        `INSERT INTO season_league_clubs (id, season_id, league_id, club_id, is_active, created_at)
-         VALUES (?, ?, ?, ?, 1, ?)
-         ON CONFLICT(season_id, club_id) DO UPDATE SET league_id = excluded.league_id, is_active = 1`,
-        [slcId, SEED_SEASON.id, club.leagueId, club.id, now]
-      );
-    }
-    const allDbClubs = queryAll("SELECT id FROM clubs");
-    for (const c of allDbClubs) {
-      if (!activeClubIds.has(c.id)) {
-        queryRun("UPDATE clubs SET active = 0 WHERE id = ?", [c.id]);
-        queryRun(
-          "UPDATE season_league_clubs SET is_active = 0 WHERE club_id = ? AND season_id = ?",
-          [c.id, SEED_SEASON.id]
-        );
-        queryRun(
-          "DELETE FROM competition_participants WHERE club_id = ? AND season_id = ?",
-          [c.id, SEED_SEASON.id]
-        );
-      }
-    }
-    for (const comp of SEED_COMPETITIONS) {
-      const existingComp = queryGet("SELECT id FROM competitions WHERE id = ?", [comp.id]);
-      if (!existingComp) {
-        queryRun(
-          'INSERT INTO competitions (id, season_id, league_id, name, type, schedule_mode, status, format_config_json, created_at) VALUES (?, ?, ?, ?, ?, ?, "upcoming", ?, ?)',
-          [
-            comp.id,
-            comp.seasonId,
-            comp.leagueId || null,
-            comp.name,
-            comp.type,
-            comp.scheduleMode,
-            JSON.stringify(comp.formatConfig),
-            now
-          ]
-        );
-        competitionsCreated++;
-      } else {
-        queryRun(
-          "UPDATE competitions SET schedule_mode = ?, format_config_json = ? WHERE id = ?",
-          [comp.scheduleMode, JSON.stringify(comp.formatConfig), comp.id]
-        );
-        skipped++;
-      }
-      if ((comp.type === "LEAGUE" || comp.type === "KNOCKOUT") && comp.leagueId) {
-        queryRun(
-          `DELETE FROM competition_participants 
-           WHERE competition_id = ? AND club_id NOT IN (
-             SELECT club_id FROM season_league_clubs WHERE league_id = ? AND season_id = ? AND is_active = 1
-           )`,
-          [comp.id, comp.leagueId, comp.seasonId]
-        );
-        const leagueClubs = queryAll(
-          `SELECT slc.club_id 
-           FROM season_league_clubs slc 
-           JOIN clubs c ON slc.club_id = c.id
-           WHERE slc.league_id = ? AND slc.season_id = ? AND slc.is_active = 1 
-           ORDER BY c.name ASC`,
-          [comp.leagueId, comp.seasonId]
-        );
-        for (let i = 0; i < leagueClubs.length; i++) {
-          const clubId = leagueClubs[i].club_id;
-          const partId = `part-${comp.id}-${clubId}`;
-          queryRun(
-            `INSERT INTO competition_participants (id, competition_id, club_id, season_id, seed_number, created_at)
-             VALUES (?, ?, ?, ?, ?, ?)
-             ON CONFLICT(competition_id, club_id) DO UPDATE SET seed_number = excluded.seed_number`,
-            [partId, comp.id, clubId, comp.seasonId, i + 1, now]
-          );
-        }
-      }
-    }
-    console.log(
-      ` [SEED] Done: Created ${seasonsCreated} season, ${leaguesCreated} leagues, ${clubsCreated} clubs, ${competitionsCreated} competitions. Skipped ${skipped} existing records.`
+    queryRun(
+      "INSERT OR IGNORE INTO seasons (id,name,status,start_date,end_date,created_at) VALUES (?,?,?,?,?,?)",
+      [SEED_SEASON.id, SEED_SEASON.name, SEED_SEASON.status, SEED_SEASON.startDate, SEED_SEASON.endDate, now]
     );
-    return { seasonsCreated, leaguesCreated, clubsCreated, competitionsCreated, skipped };
-  });
-}
-function repairSeason202627Roster() {
-  return dbTransaction(() => {
-    const seasonId = "season-2026-27";
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    const activeClubIds = new Set(SEED_CLUBS.map((c) => c.id));
-    for (const league of SEED_LEAGUES) {
-      const existing = queryGet("SELECT id FROM leagues WHERE id = ?", [league.id]);
-      if (!existing) {
-        queryRun(
-          "INSERT INTO leagues (id, name, country, tier, logo_url, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-          [league.id, league.name, league.country, league.tier, league.logoUrl, now]
-        );
-      } else {
-        queryRun(
-          "UPDATE leagues SET name = ?, country = ?, tier = ?, logo_url = ? WHERE id = ?",
-          [league.name, league.country, league.tier, league.logoUrl, league.id]
-        );
-      }
-    }
-    let activatedClubs = 0;
-    for (const club of SEED_CLUBS) {
-      const existing = queryGet("SELECT id FROM clubs WHERE id = ?", [club.id]);
-      if (!existing) {
-        queryRun(
-          "INSERT INTO clubs (id, name, short_name, country, league_id, logo_url, active, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
-          [club.id, club.name, club.shortName, club.country, club.leagueId, club.logoUrl, now]
-        );
-      } else {
-        queryRun(
-          "UPDATE clubs SET name = ?, short_name = ?, country = ?, league_id = ?, logo_url = ?, active = 1 WHERE id = ?",
-          [club.name, club.shortName, club.country, club.leagueId, club.logoUrl, club.id]
-        );
-      }
-      const slcId = `slc-${seasonId}-${club.id}`;
+    for (const l of SEED_LEAGUES) queryRun(
+      "INSERT OR IGNORE INTO leagues (id,name,country,tier,logo_url,created_at) VALUES (?,?,?,?,?,?)",
+      [l.id, l.name, l.country, l.tier, l.logoUrl, now]
+    );
+    for (const c of SEED_CLUBS) {
       queryRun(
-        `INSERT INTO season_league_clubs (id, season_id, league_id, club_id, is_active, created_at)
-         VALUES (?, ?, ?, ?, 1, ?)
-         ON CONFLICT(season_id, club_id) DO UPDATE SET league_id = excluded.league_id, is_active = 1`,
-        [slcId, seasonId, club.leagueId, club.id, now]
+        "INSERT OR IGNORE INTO clubs (id,name,short_name,country,league_id,logo_url,active,created_at) VALUES (?,?,?,?,?,?,1,?)",
+        [c.id, c.name, c.shortName, c.country, c.leagueId, c.logoUrl, now]
       );
-      activatedClubs++;
+      queryRun(
+        "INSERT OR IGNORE INTO season_league_clubs (id,season_id,league_id,club_id,is_active,created_at) VALUES (?,?,?,?,1,?)",
+        [`slc-${SEED_SEASON.id}-${c.id}`, SEED_SEASON.id, c.leagueId, c.id, now]
+      );
     }
-    let deactivatedClubs = 0;
-    const allDbClubs = queryAll("SELECT id FROM clubs");
-    for (const c of allDbClubs) {
-      if (!activeClubIds.has(c.id)) {
-        queryRun("UPDATE clubs SET active = 0 WHERE id = ?", [c.id]);
-        queryRun(
-          "UPDATE season_league_clubs SET is_active = 0 WHERE club_id = ? AND season_id = ?",
-          [c.id, seasonId]
-        );
-        queryRun(
-          "DELETE FROM competition_participants WHERE club_id = ? AND season_id = ?",
-          [c.id, seasonId]
-        );
-        deactivatedClubs++;
-      }
-    }
-    for (const comp of SEED_COMPETITIONS) {
-      if ((comp.type === "LEAGUE" || comp.type === "KNOCKOUT") && comp.leagueId) {
-        queryRun(
-          `DELETE FROM competition_participants 
-           WHERE competition_id = ? AND club_id NOT IN (
-             SELECT club_id FROM season_league_clubs WHERE league_id = ? AND season_id = ? AND is_active = 1
-           )`,
-          [comp.id, comp.leagueId, comp.seasonId]
-        );
-        const leagueClubs = queryAll(
-          `SELECT slc.club_id 
-           FROM season_league_clubs slc 
-           JOIN clubs c ON slc.club_id = c.id
-           WHERE slc.league_id = ? AND slc.season_id = ? AND slc.is_active = 1 
-           ORDER BY c.name ASC`,
-          [comp.leagueId, comp.seasonId]
-        );
-        for (let i = 0; i < leagueClubs.length; i++) {
-          const clubId = leagueClubs[i].club_id;
-          const partId = `part-${comp.id}-${clubId}`;
-          queryRun(
-            `INSERT INTO competition_participants (id, competition_id, club_id, season_id, seed_number, created_at)
-             VALUES (?, ?, ?, ?, ?, ?)
-             ON CONFLICT(competition_id, club_id) DO UPDATE SET seed_number = excluded.seed_number`,
-            [partId, comp.id, clubId, comp.seasonId, i + 1, now]
-          );
-        }
-      }
-    }
-    const invalidFixtures = queryAll(
-      `SELECT id, competition_id FROM fixtures 
-       WHERE season_id = ? AND (
-         home_club_id NOT IN (SELECT club_id FROM season_league_clubs WHERE season_id = ? AND is_active = 1)
-         OR away_club_id NOT IN (SELECT club_id FROM season_league_clubs WHERE season_id = ? AND is_active = 1)
-       )`,
-      [seasonId, seasonId, seasonId]
+    for (const c of SEED_COMPETITIONS) queryRun(
+      "INSERT OR IGNORE INTO competitions (id,season_id,league_id,name,type,schedule_mode,status,format_config_json,created_at) VALUES (?,?,?,?,?,?,?, ?,?)",
+      [c.id, c.seasonId, c.leagueId || null, c.name, c.type, c.scheduleMode, "upcoming", JSON.stringify(c.formatConfig), now]
     );
-    if (invalidFixtures.length > 0) {
-      console.log(` [REPAIR] Found ${invalidFixtures.length} invalid fixtures with inactive clubs. Purging and regenerating domestic schedules...`);
-      const compsToReset = new Set(invalidFixtures.map((f) => f.competition_id));
-      for (const compId of compsToReset) {
-        queryRun("DELETE FROM result_submissions WHERE fixture_id IN (SELECT id FROM fixtures WHERE competition_id = ?)", [compId]);
-        queryRun("DELETE FROM fixtures WHERE competition_id = ?", [compId]);
-      }
-    }
-    const validCompIds = new Set(SEED_COMPETITIONS.map((c) => c.id));
-    const allDbComps = queryAll("SELECT id FROM competitions WHERE season_id = ?", [seasonId]);
-    for (const dbComp of allDbComps) {
-      if (!validCompIds.has(dbComp.id)) {
-        console.log(` [REPAIR] Purging obsolete competition: ${dbComp.id}`);
-        queryRun("DELETE FROM result_submissions WHERE fixture_id IN (SELECT id FROM fixtures WHERE competition_id = ?)", [dbComp.id]);
-        queryRun("DELETE FROM fixtures WHERE competition_id = ?", [dbComp.id]);
-        queryRun("DELETE FROM competition_participants WHERE competition_id = ?", [dbComp.id]);
-        queryRun("DELETE FROM competitions WHERE id = ?", [dbComp.id]);
-      }
-    }
-    console.log(
-      ` [REPAIR] 2026/27 Roster repaired: ${activatedClubs} clubs activated, ${deactivatedClubs} stale clubs deactivated.`
-    );
-    return { activatedClubs, deactivatedClubs, totalActive: activatedClubs };
   });
 }
 var SEED_SEASON, SEED_SEASONS, SEED_LEAGUES, SEED_CLUBS, SEED_COMPETITIONS;
@@ -6556,6 +6382,7 @@ __export(firestoreStore_exports, {
   assertNoSyntheticIdsInProduction: () => assertNoSyntheticIdsInProduction,
   assertTestEnvironmentSafe: () => assertTestEnvironmentSafe,
   calculateCompetitionStandingsFirestore: () => calculateCompetitionStandingsFirestore,
+  checkFixturePlayability: () => checkFixturePlayability,
   claimClubAtomicFirestore: () => claimClubAtomicFirestore,
   computeAndSortStandings: () => computeAndSortStandings,
   computeManagerDisplayName: () => computeManagerDisplayName,
@@ -6563,6 +6390,7 @@ __export(firestoreStore_exports, {
   createNotificationFirestore: () => createNotificationFirestore,
   enrichFixturesWithAuthoritativeOwners: () => enrichFixturesWithAuthoritativeOwners,
   enrichStandingsWithActiveOwners: () => enrichStandingsWithActiveOwners,
+  ensureMatchdayLocksTable: () => ensureMatchdayLocksTable,
   executeAdminFixturesPagedFallback: () => executeAdminFixturesPagedFallback,
   firestoreCircuitBreaker: () => firestoreCircuitBreaker,
   generateCompetitionFixturesFirestore: () => generateCompetitionFixturesFirestore,
@@ -6575,6 +6403,7 @@ __export(firestoreStore_exports, {
   getAllUsersFirestore: () => getAllUsersFirestore,
   getAnyCached: () => getAnyCached,
   getAuditLogsFirestore: () => getAuditLogsFirestore,
+  getAuthoritativeUserForAuthorization: () => getAuthoritativeUserForAuthorization,
   getAvailableClubsFirestore: () => getAvailableClubsFirestore,
   getCanonicalTelegramUserId: () => getCanonicalTelegramUserId,
   getClubByIdFirestore: () => getClubByIdFirestore,
@@ -7602,25 +7431,50 @@ async function getRawClubFixturesFirestore(clubId, seasonId = "season-2026-27") 
     return [];
   }
 }
-function checkFixturePlayability(competitionId, seasonId, matchday, fixtureStatus, homeClubId, awayClubId, compData) {
-  const activeMatchday = compData?.currentMatchday || 1;
-  const adminStatus = compData?.adminOverrideStatus || "AUTO";
-  const isMatchdayOpen = compData?.isMatchdayOpen !== false;
-  const compType = compData?.type || (competitionId.includes("cup") || competitionId.includes("pokal") || competitionId.includes("rey") || competitionId.includes("italia") ? "KNOCKOUT" : "LEAGUE");
-  const isKnockout = compType === "KNOCKOUT" || compType === "SUPER_CUP" || compType === "EUROPEAN_KNOCKOUT";
+function checkFixturePlayability(competitionId, seasonId, matchday, fixtureStatus, homeClubId, awayClubId, compData, preloadedLock) {
+  let resolvedComp = compData;
+  if (!resolvedComp && competitionId) {
+    resolvedComp = compOverrideMap.get(competitionId) || null;
+  }
+  const activeMatchday = resolvedComp?.currentMatchday || 1;
   if (fixtureStatus === "CONFIRMED") {
     return { isPlayable: false, activeMatchday };
   }
   if (!homeClubId || homeClubId === "TBD" || !awayClubId || awayClubId === "TBD") {
     return { isPlayable: false, activeMatchday };
   }
-  if (adminStatus === "FORCE_LOCKED" || adminStatus === "PAUSED") {
-    return { isPlayable: false, activeMatchday };
+  const key = getMatchdayLockKey(seasonId, competitionId, matchday);
+  let lock = preloadedLock || null;
+  if (!lock) {
+    if (matchdayLocksCache.has(key)) {
+      lock = matchdayLocksCache.get(key) || null;
+    } else {
+      try {
+        const row = queryGet(
+          "SELECT * FROM matchday_locks WHERE season_id = ? AND competition_id = ? AND matchday = ?",
+          [seasonId, competitionId, matchday]
+        );
+        if (row) {
+          lock = {
+            id: row.id,
+            seasonId: row.season_id,
+            competitionId: row.competition_id,
+            matchday: row.matchday,
+            overrideStatus: row.override_status,
+            isOpen: Boolean(row.is_open),
+            isLocked: Boolean(row.is_locked),
+            durationHours: row.duration_hours || void 0,
+            openedAt: row.opened_at || void 0,
+            lockedAt: row.locked_at || void 0,
+            expiresAt: row.expires_at || void 0,
+            updatedAt: row.updated_at
+          };
+          matchdayLocksCache.set(key, lock);
+        }
+      } catch {
+      }
+    }
   }
-  if (!isMatchdayOpen) {
-    return { isPlayable: false, activeMatchday };
-  }
-  const lock = matchdayLocksCache.get(getMatchdayLockKey(seasonId, competitionId, matchday));
   if (lock) {
     if (lock.overrideStatus === "FORCE_OPEN" || lock.isOpen === true) {
       return { isPlayable: true, activeMatchday };
@@ -7628,6 +7482,16 @@ function checkFixturePlayability(competitionId, seasonId, matchday, fixtureStatu
     if (lock.overrideStatus === "FORCE_LOCKED" || lock.overrideStatus === "PAUSED" || lock.isLocked || lock.isOpen === false) {
       return { isPlayable: false, activeMatchday };
     }
+  }
+  const adminStatus = resolvedComp?.adminOverrideStatus || "AUTO";
+  const isMatchdayOpen = resolvedComp?.isMatchdayOpen !== false;
+  const compType = resolvedComp?.type || (competitionId.includes("cup") || competitionId.includes("pokal") || competitionId.includes("rey") || competitionId.includes("italia") ? "KNOCKOUT" : "LEAGUE");
+  const isKnockout = compType === "KNOCKOUT" || compType === "SUPER_CUP" || compType === "EUROPEAN_KNOCKOUT";
+  if (adminStatus === "FORCE_LOCKED" || adminStatus === "PAUSED") {
+    return { isPlayable: false, activeMatchday };
+  }
+  if (!isMatchdayOpen) {
+    return { isPlayable: false, activeMatchday };
   }
   if (isKnockout) {
     return { isPlayable: true, activeMatchday };
@@ -7742,10 +7606,17 @@ async function getFixturesFirestore(filter) {
         }
       }
     }
+    const compIdsInDocs = Array.from(new Set(docs.map((r) => r.competitionId).filter(Boolean)));
+    const compLocksMap = /* @__PURE__ */ new Map();
+    for (const compId of compIdsInDocs) {
+      const locks = await getCompetitionMatchdayLocksFirestore(filter.seasonId || "season-2026-27", compId);
+      compLocksMap.set(compId, locks);
+    }
     const fixtures = docs.map((r) => {
       const homeSeed = SEED_CLUB_MAP.get(r.homeClubId);
       const awaySeed = SEED_CLUB_MAP.get(r.awayClubId);
       const comp = compMap.get(r.competitionId);
+      const preloadedLock = compLocksMap.get(r.competitionId)?.[r.matchday] || null;
       const { isPlayable, activeMatchday } = checkFixturePlayability(
         r.competitionId,
         r.seasonId,
@@ -7753,7 +7624,8 @@ async function getFixturesFirestore(filter) {
         r.status,
         r.homeClubId,
         r.awayClubId,
-        comp
+        comp,
+        preloadedLock
       );
       const homeOcc = clubOccupancyMap.get(r.homeClubId);
       const homeUser = homeOcc ? userMap?.get(homeOcc.userId) || { id: homeOcc.userId, username: usernameMap.get(homeOcc.userId) || "", displayName: usernameMap.get(homeOcc.userId) || "" } : null;
@@ -7898,8 +7770,15 @@ async function executeFixturesFallback(filter, targetClubId, cacheKey) {
     } catch {
     }
   }
+  const compIdsInFallback = Array.from(new Set(rows.map((r) => r.competition_id).filter(Boolean)));
+  const compLocksMap = /* @__PURE__ */ new Map();
+  for (const compId of compIdsInFallback) {
+    const locks = await getCompetitionMatchdayLocksFirestore(filter.seasonId || "season-2026-27", compId);
+    compLocksMap.set(compId, locks);
+  }
   const fallbackFixtures = rows.map((r) => {
     const comp = compOverrideMap.get(r.competition_id);
+    const preloadedLock = compLocksMap.get(r.competition_id)?.[r.matchday] || null;
     const { isPlayable, activeMatchday } = checkFixturePlayability(
       r.competition_id,
       r.season_id,
@@ -7907,7 +7786,8 @@ async function executeFixturesFallback(filter, targetClubId, cacheKey) {
       r.status,
       r.home_club_id,
       r.away_club_id,
-      comp
+      comp,
+      preloadedLock
     );
     const homeOcc = clubOccupancyMap.get(r.home_club_id);
     const homeUser = homeOcc ? userMap?.get(homeOcc.userId) || { id: homeOcc.userId, username: usernameMap.get(homeOcc.userId) || "", displayName: usernameMap.get(homeOcc.userId) || "" } : null;
@@ -8118,6 +7998,8 @@ async function getFixtureByIdFirestore(fixtureId, currentUserId) {
           } catch {
           }
         }
+        const compLocks2 = await getCompetitionMatchdayLocksFirestore(r2.seasonId || "season-2026-27", r2.competitionId);
+        const preloadedLock2 = compLocks2[r2.matchday] || null;
         const { isPlayable: isPlayable2, activeMatchday: activeMatchday2 } = checkFixturePlayability(
           r2.competitionId,
           r2.seasonId,
@@ -8125,7 +8007,8 @@ async function getFixtureByIdFirestore(fixtureId, currentUserId) {
           r2.status,
           r2.homeClubId,
           r2.awayClubId,
-          comp2
+          comp2,
+          preloadedLock2
         );
         let userSubmission2 = void 0;
         let opponentSubmission2 = void 0;
@@ -8264,6 +8147,8 @@ async function getFixtureByIdFirestore(fixtureId, currentUserId) {
     }
   } catch {
   }
+  const compLocks = await getCompetitionMatchdayLocksFirestore(r.season_id || "season-2026-27", r.competition_id);
+  const preloadedLock = compLocks[r.matchday] || null;
   const comp = compOverrideMap.get(r.competition_id);
   const { isPlayable, activeMatchday } = checkFixturePlayability(
     r.competition_id,
@@ -8272,7 +8157,8 @@ async function getFixtureByIdFirestore(fixtureId, currentUserId) {
     r.status,
     r.home_club_id,
     r.away_club_id,
-    comp
+    comp,
+    preloadedLock
   );
   const fallbackFix = {
     id: r.id,
@@ -8621,9 +8507,12 @@ function ensureMatchdayLocksTable() {
         locked_at TEXT,
         expires_at TEXT,
         updated_at TEXT NOT NULL
-      )
+      );
+      CREATE INDEX IF NOT EXISTS idx_matchday_locks_lookup
+      ON matchday_locks(season_id, competition_id, matchday);
     `);
-  } catch {
+  } catch (err) {
+    console.error(" [DB] ensureMatchdayLocksTable error:", err?.message);
   }
 }
 async function getCompetitionMatchdayLocksFirestore(seasonId, competitionId) {
@@ -10203,6 +10092,24 @@ async function getOrCreateTelegramUserFirestore(tgUser) {
     isSuspended: false,
     createdAt: now,
     updatedAt: now
+  };
+}
+async function getAuthoritativeUserForAuthorization(userId) {
+  trackFirestoreRead(COLLECTIONS.USERS, 1, "adminAuthorization");
+  const doc = await getFirestoreDb().collection(COLLECTIONS.USERS).doc(userId).get();
+  if (!doc.exists) return null;
+  const data = doc.data();
+  return {
+    id: doc.id,
+    telegramId: data.telegramId || "",
+    username: data.username || "",
+    firstName: data.firstName || "",
+    lastName: data.lastName || "",
+    photoUrl: data.photoUrl || "",
+    isAdmin: data.isAdmin === true,
+    isSuspended: data.isSuspended === true,
+    createdAt: data.createdAt || "",
+    updatedAt: data.updatedAt || ""
   };
 }
 async function getUserByIdFirestore(userId) {
@@ -12032,7 +11939,6 @@ var init_firestoreStore = __esm({
     getFirestoreTelemetry = getReadMetrics;
     compOverrideMap = /* @__PURE__ */ new Map();
     matchdayLocksCache = /* @__PURE__ */ new Map();
-    ensureMatchdayLocksTable();
   }
 });
 
@@ -12274,7 +12180,7 @@ init_adminService();
 init_readModelStore();
 init_seed();
 import crypto2 from "crypto";
-import { waitUntil } from "@vercel/functions";
+import { waitUntil, getDeadline } from "@vercel/functions";
 var BROADCASTS_KEY = `${KEY_PREFIX}:telegram:broadcasts`;
 var QUEUE_KEY = `${KEY_PREFIX}:telegram:queue`;
 var PROCESSING_KEY = `${KEY_PREFIX}:telegram:processing`;
@@ -12283,21 +12189,75 @@ var RECIPIENT_DIR_KEY = `${KEY_PREFIX}:private:recipient-directory`;
 var memoryBroadcasts = /* @__PURE__ */ new Map();
 var memoryRecipientDirectory = /* @__PURE__ */ new Map();
 var memoryRecipientSeason = "";
-function scheduleNotificationQueueDrain() {
-  const drain = () => processNotificationQueue(25).catch((error) => {
-    console.warn("[NOTIF_QUEUE] Event-driven drain deferred to recovery cron:", error?.message || error);
-  });
-  if (process.env.VERCEL === "1") {
-    try {
-      waitUntil(drain());
-    } catch (error) {
-      console.warn("[NOTIF_QUEUE] Vercel background context unavailable; recovery cron will drain queue:", error);
+var MAX_CONTINUATION_HOPS = 256;
+var DRAIN_BUDGET_MS = 45e3;
+async function pendingQueueState() {
+  const client = getUpstashClient();
+  if (!client) throw new Error("REDIS_REQUIRED");
+  return client.eval(`
+    local jobs = redis.call('LRANGE', KEYS[1], 0, -1)
+    local nextAt = 0
+    for _, raw in ipairs(jobs) do
+      local job = cjson.decode(raw)
+      local at = tonumber(job.availableAt or 0)
+      if nextAt == 0 or at < nextAt then nextAt = at end
+      if at == 0 then break end
+    end
+    return cjson.encode({pending=#jobs, nextAt=nextAt})
+  `, [QUEUE_KEY], []);
+}
+async function drainNotificationQueue(options = {}) {
+  const hop = options.hop || 0;
+  const deadline = Math.min(
+    options.deadline ?? Date.now() + DRAIN_BUDGET_MS,
+    (getDeadline()?.getTime() ?? Infinity) - 15e3
+  );
+  while (Date.now() + 12e3 < deadline) {
+    const result = await processNotificationQueue(25, deadline - 12e3);
+    if (result.locked) return;
+    const state = await pendingQueueState();
+    if (!state.pending) return;
+    const delay = Math.max(0, state.nextAt - Date.now());
+    if (Date.now() + delay + 12e3 >= deadline) {
+      const wait = Math.max(0, deadline - Date.now() - 12e3);
+      if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
+      break;
     }
+    if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+  }
+  if (!(await pendingQueueState()).pending) return;
+  if (hop >= MAX_CONTINUATION_HOPS) {
+    console.warn("[NOTIF_QUEUE] Continuation cap reached; pending jobs preserved for recovery");
     return;
   }
-  if (process.env.K_SERVICE) {
-    void drain();
+  await (options.continueDrain || triggerNotificationContinuation)(hop + 1);
+}
+async function triggerNotificationContinuation(hop) {
+  if (process.env.VERCEL === "1") {
+    const host = process.env.VERCEL_ENV === "production" ? process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL : process.env.VERCEL_URL;
+    const secret = process.env.CRON_SECRET;
+    if (!host || !/^[a-zA-Z0-9.-]+\.vercel\.app$/.test(host) || !secret) throw new Error("NOTIFICATION_CONTINUATION_CONFIG_REQUIRED");
+    const headers = { authorization: `Bearer ${secret}` };
+    if (process.env.VERCEL_AUTOMATION_BYPASS_SECRET) headers["x-vercel-protection-bypass"] = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+    const response = await fetch(`https://${host}/api/internal/telegram-worker?hop=${hop}`, {
+      method: "POST",
+      headers,
+      redirect: "error",
+      signal: AbortSignal.timeout(5e3)
+    });
+    if (!response.ok) throw new Error(`NOTIFICATION_CONTINUATION_REJECTED_${response.status}`);
+    return;
   }
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  await drainNotificationQueue({ hop });
+}
+function scheduleNotificationQueueDrain(hop = 0) {
+  if (process.env.VERCEL !== "1" && !process.env.K_SERVICE) return;
+  const work = drainNotificationQueue({ hop }).catch((error) => {
+    console.warn("[NOTIF_QUEUE] Drain interrupted; durable jobs retained for recovery:", error?.message || error);
+  });
+  if (process.env.VERCEL === "1") waitUntil(work);
+  else void work;
 }
 async function syncRecipientDirectory(seasonId = "season-2026-27") {
   const dirMap = /* @__PURE__ */ new Map();
@@ -12478,6 +12438,7 @@ async function enqueueTelegramBroadcast(params) {
   `, [BROADCASTS_KEY, QUEUE_KEY], [broadcastId, JSON.stringify(record), JSON.stringify(jobs)]);
   if (persistedRecord.title !== record.title || persistedRecord.body !== record.body || persistedRecord.seasonId !== seasonId || JSON.stringify(persistedRecord.recipients.map((r) => r.userId).sort()) !== JSON.stringify(targetUserIds.slice().sort())) throw new Error("REQUEST_ID_REUSED_WITH_DIFFERENT_CONTENT");
   memoryBroadcasts.set(broadcastId, persistedRecord);
+  scheduleNotificationQueueDrain();
   const notificationBatchSize = 400;
   const notificationDb = getFirestoreDb();
   for (let i = 0; i < targetUserIds.length; i += notificationBatchSize) {
@@ -12515,16 +12476,15 @@ async function enqueueTelegramBroadcast(params) {
     params.adminUsername,
     `Enqueued broadcast '${params.title}' for ${targetUserIds.length} recipients (${jobs.length} with Telegram).`
   ).catch(() => console.warn("[NOTIF_QUEUE] Broadcast persisted; auxiliary audit unavailable"));
-  scheduleNotificationQueueDrain();
   return persistedRecord;
 }
-async function processNotificationQueue(batchSize = 25) {
+async function processNotificationQueue(batchSize = 25, stopClaimingAt = Infinity) {
   const client = getUpstashClient();
   if (!client) throw new Error("REDIS_REQUIRED");
   const token = crypto2.randomUUID();
-  if (!await client.set(WORKER_LOCK, token, { nx: true, ex: 120 })) return { processed: 0, succeeded: 0, failed: 0 };
+  if (!await client.set(WORKER_LOCK, token, { nx: true, ex: 120 })) return { processed: 0, succeeded: 0, failed: 0, locked: true };
   let processed = 0, succeeded = 0, failed = 0;
-  const deadline = Date.now() + 2e4;
+  const deadline = Math.min(Date.now() + 2e4, stopClaimingAt);
   try {
     const abandoned = await client.hgetall(PROCESSING_KEY);
     for (const job of Object.values(abandoned || {})) {
@@ -12535,19 +12495,20 @@ async function processNotificationQueue(batchSize = 25) {
     for (let i = 0; i < Math.min(Math.max(batchSize, 1), 25) && Date.now() < deadline; i++) {
       const job = await client.eval(`
         if redis.call('GET', KEYS[3]) ~= ARGV[1] then return nil end
-        local raw = redis.call('LPOP', KEYS[1])
-        if not raw then return nil end
-        local job = cjson.decode(raw)
-        job.claimedAt = tonumber(ARGV[2])
-        redis.call('HSET', KEYS[2], job.jobId, cjson.encode(job))
-        return cjson.encode(job)
+        local count = redis.call('LLEN', KEYS[1])
+        for i = 1, count do
+          local raw = redis.call('LPOP', KEYS[1])
+          local job = cjson.decode(raw)
+          if tonumber(job.availableAt or 0) <= tonumber(ARGV[2]) then
+            job.claimedAt = tonumber(ARGV[2])
+            redis.call('HSET', KEYS[2], job.jobId, cjson.encode(job))
+            return cjson.encode(job)
+          end
+          redis.call('RPUSH', KEYS[1], raw)
+        end
+        return nil
       `, [QUEUE_KEY, PROCESSING_KEY, WORKER_LOCK], [token, Date.now()]);
       if (!job) break;
-      if (job.availableAt && job.availableAt > Date.now()) {
-        await client.rpush(QUEUE_KEY, JSON.stringify(job));
-        await client.hdel(PROCESSING_KEY, job.jobId);
-        break;
-      }
       processed++;
       const record = await getBroadcastDetails(job.broadcastId);
       const recipient = record?.recipients.find((r) => r.userId === job.userId);
@@ -12934,7 +12895,7 @@ async function requireAdmin(req, res, next) {
     });
     return;
   }
-  const authoritativeUser = await getUserByIdFirestore(req.user.id).catch(() => null);
+  const authoritativeUser = await getAuthoritativeUserForAuthorization(req.user.id).catch(() => null);
   if (!authoritativeUser) {
     res.status(503).json({ error: "Admin authorization is temporarily unavailable." });
     return;
@@ -15469,7 +15430,8 @@ adminRouter.get("/telegram-notifications/broadcasts/:id", async (req, res) => {
 });
 adminRouter.post("/telegram-notifications/process-queue", async (req, res) => {
   try {
-    const result = await processNotificationQueue(50);
+    const result = await processNotificationQueue(25);
+    scheduleNotificationQueueDrain();
     res.json({ success: true, result });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -15587,8 +15549,7 @@ async function ensureDbReady() {
     dbInitPromise = (async () => {
       try {
         await initDatabase();
-        seedDatabase();
-        repairSeason202627Roster();
+        seedMissingStaticCatalog();
         console.log(`[BOOT] SQLite baseline ready from: ${getDbFilePath()}`);
         loadSnapshotFromFile();
         const isServerless = process.env.VERCEL === "1" || Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME);
@@ -15640,7 +15601,7 @@ function createApp() {
   });
   app2.use(express.json({ limit: "256kb" }));
   app2.use("/api", rateLimit("api-global", 300, 60));
-  app2.get("/api/internal/telegram-worker", async (req, res) => {
+  app2.all("/api/internal/telegram-worker", async (req, res) => {
     const secret = process.env.CRON_SECRET;
     const actual = Buffer.from(req.headers.authorization || "");
     const expected = Buffer.from(`Bearer ${secret || ""}`);
@@ -15648,8 +15609,23 @@ function createApp() {
       res.status(401).json({ error: "UNAUTHORIZED" });
       return;
     }
+    if (!["GET", "POST"].includes(req.method)) {
+      res.sendStatus(405);
+      return;
+    }
+    const hop = Number(req.query.hop || 0);
+    if (!Number.isInteger(hop) || hop < 0 || hop > 256) {
+      res.sendStatus(400);
+      return;
+    }
     try {
-      res.json(await processNotificationQueue(25));
+      if (process.env.VERCEL === "1") {
+        scheduleNotificationQueueDrain(hop);
+        res.status(202).json({ accepted: true });
+      } else {
+        await drainNotificationQueue({ hop });
+        res.json({ drained: true });
+      }
     } catch {
       res.status(503).json({ error: "NOTIFICATION_WORKER_UNAVAILABLE" });
     }

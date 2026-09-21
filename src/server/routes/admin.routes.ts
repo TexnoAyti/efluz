@@ -67,6 +67,7 @@ import {
   getSafeEligibleRecipients,
   enqueueTelegramBroadcast,
   processNotificationQueue,
+  scheduleNotificationQueueDrain,
   getBroadcastHistory,
   getBroadcastDetails,
   syncRecipientDirectory,
@@ -1366,7 +1367,8 @@ adminRouter.get('/telegram-notifications/broadcasts/:id', async (req: Request, r
 
 adminRouter.post('/telegram-notifications/process-queue', async (req: Request, res: Response) => {
   try {
-    const result = await processNotificationQueue(50);
+    const result = await processNotificationQueue(25);
+    scheduleNotificationQueueDrain();
     res.json({ success: true, result });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

@@ -116,6 +116,73 @@ async function main() {
     assert.equal(details?.metrics.failedCount,1);
     assert.match(details?.recipients[0].error || '',/DELIVERY_UNKNOWN/);
     assert.equal(sends,1);
+
+    // More than one batch, with a future retry at the head of the same queue.
+    const ids = Array.from({length: 61}, (_, i) => `bulk-${i}`);
+    for (let i=0; i<ids.length; i++) await db.collection(COLLECTIONS.USERS).doc(ids[i]).set({username:ids[i],telegramId:String(2000+i)});
+    await queue.syncRecipientDirectory(seasonId);
+    const bulk = await queue.enqueueTelegramBroadcast({...params,requestId:'bulk-continuation-001',selectedUserIds:ids});
+    await queue.enqueueTelegramBroadcast({...params,requestId:'bulk-continuation-001',selectedUserIds:ids});
+    assert.equal(await client.llen(`${model.KEY_PREFIX}:telegram:queue`),61, 'Enqueue retry is idempotent');
+    const delayed:any = await client.lpop(`${model.KEY_PREFIX}:telegram:queue`);
+    delayed.availableAt = Date.now()+5000;
+    await client.lpush(`${model.KEY_PREFIX}:telegram:queue`,JSON.stringify(delayed));
+    const sentTo = new Map<string, number>();
+    let retryAttemptAt=0;
+    let rejectedOnce=false;
+    globalThis.fetch=async (input:any,init?:any) => {
+      if (String(input).startsWith('https://api.telegram.org/')) {
+        const id=String(JSON.parse(init.body).chat_id);
+        if (id === delayed.telegramId) assert.ok(Date.now() >= delayed.availableAt,'Deferred job sent before backoff');
+        if (id === '2060' && !rejectedOnce) {
+          rejectedOnce=true; retryAttemptAt=Date.now();
+          return new Response(JSON.stringify({ok:false,error_code:429,description:'retry',parameters:{retry_after:2}}),{status:429});
+        }
+        if(id === '2060') assert.ok(Date.now()-retryAttemptAt>=2000,'429 retried before backoff');
+        sentTo.set(id,(sentTo.get(id)||0)+1);
+        return new Response(JSON.stringify({ok:true,result:{message_id:100+sends++}}),{status:200});
+      }
+      return originalFetch(input,init);
+    };
+    const originalCollection=db.collection;
+    (db as any).collection=()=>{throw new Error('Queue drain must make ZERO Firestore reads or writes');};
+    try {
+      await queue.processNotificationQueue(25);
+      assert.equal(sentTo.size,25,'Future head must not block 25 ready jobs');
+      assert.equal(sentTo.has(delayed.telegramId),false);
+      let continuations=0;
+      await queue.drainNotificationQueue({deadline:Date.now(),continueDrain:async hop=>{
+        assert.equal(hop,1); continuations++;
+        // Model the next Vercel invocation and its waitUntil lifecycle.
+        const pending:Promise<unknown>[]=[];
+        const symbol=Symbol.for('@vercel/request-context');
+        const previous=(globalThis as any)[symbol];
+        (globalThis as any)[symbol]={get:()=>({waitUntil:(p:Promise<unknown>)=>pending.push(p)})};
+        process.env.VERCEL='1';
+        try { queue.scheduleNotificationQueueDrain(hop); assert.equal(pending.length,1); await Promise.all(pending); }
+        finally { delete process.env.VERCEL; (globalThis as any)[symbol]=previous; }
+      }});
+      assert.equal(continuations,1,'Expired invocation budget hands off');
+      assert.equal(sentTo.size,61,'All recipients drained beyond the first batch');
+      assert.ok([...sentTo.values()].every(n=>n===1),'No duplicate successful delivery');
+      assert.equal(await client.llen(`${model.KEY_PREFIX}:telegram:queue`),0);
+      assert.equal((await queue.getBroadcastDetails(bulk.id))?.metrics.sentCount,61);
+      await queue.drainNotificationQueue();
+      assert.equal(sentTo.size,61);
+      // Verify authenticated HTTP handoff stays on the configured Vercel host.
+      const savedFetch=globalThis.fetch;
+      process.env.VERCEL='1'; process.env.VERCEL_URL='efluz-preview.vercel.app'; process.env.CRON_SECRET='isolated-secret';
+      let handoffs=0;
+      globalThis.fetch=async (input:any,init?:any) => {
+        assert.equal(String(input),'https://efluz-preview.vercel.app/api/internal/telegram-worker?hop=2');
+        assert.equal(init.method,'POST'); assert.equal(init.headers.authorization,'Bearer isolated-secret');
+        assert.equal(init.redirect,'error'); handoffs++;
+        return new Response('{}',{status:202});
+      };
+      try { await queue.triggerNotificationContinuation(2); assert.equal(handoffs,1); }
+      finally { globalThis.fetch=savedFetch; delete process.env.VERCEL; delete process.env.VERCEL_URL; delete process.env.CRON_SECRET; }
+      console.log('PASS >25 recipients, waitUntil continuation, deferred head bypass, 429 backoff, idempotency and zero Firestore access');
+    } finally { (db as any).collection=originalCollection; }
     globalThis.fetch=originalFetch;
     console.log('PASS: broadcast retries deduplicate, concurrent workers send once, interrupted jobs remain visible without blind resend');
     console.log('Redis durability regression passed; Telegram transport was mocked, no real messages sent.');

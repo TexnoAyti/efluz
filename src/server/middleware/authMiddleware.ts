@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyTelegramWebAppData, getOrCreateTelegramUser, getOrCreateDevUser, verifySessionToken } from '../auth/telegramAuth';
 import { User } from '../../types';
-import { getUserByIdFirestore } from '../firebase/firestoreStore';
+import { getAuthoritativeUserForAuthorization } from '../firebase/firestoreStore';
 
 declare global {
   namespace Express {
@@ -151,7 +151,7 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
   }
   // Admin privileges are security-sensitive and must not rely on token claims
   // for their full lifetime. Re-read the authoritative account before acting.
-  const authoritativeUser = await getUserByIdFirestore(req.user.id).catch(() => null);
+  const authoritativeUser = await getAuthoritativeUserForAuthorization(req.user.id).catch(() => null);
   if (!authoritativeUser) {
     res.status(503).json({ error: 'Admin authorization is temporarily unavailable.' });
     return;
