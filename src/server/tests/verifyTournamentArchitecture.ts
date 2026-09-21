@@ -5,7 +5,7 @@ import { seedDatabase, SEED_CLUBS, SEED_LEAGUES, SEED_COMPETITIONS } from '../db
 import { claimClubAtomic, getClubById, getUserActiveClub } from '../services/clubService';
 import { submitFixtureResult } from '../services/resultService';
 import { calculateCompetitionStandings } from '../tournament/standingsEngine';
-import { evaluateSeasonQualifications, populateSuperCupParticipants } from '../tournament/qualificationEngine';
+import { evaluateSeasonQualifications, previewEuropeanQualificationSync, applyEuropeanQualificationSync, populateSuperCupParticipants } from '../tournament/qualificationEngine';
 import { generateKnockoutBracket, advanceKnockoutWinner } from '../tournament/knockoutEngine';
 import { generateCompetitionFixtures, getFixtures } from '../services/fixtureService';
 import { generateEuropean32LeaguePhaseSchedule } from '../tournament/fixtureEngine';
@@ -291,7 +291,28 @@ export async function runTournamentArchitectureTests() {
     qualEngineResult.qualifications.length >= 20
   );
 
-  // Verify permanent snapshot records in competition_participants collection in Firestore
+  const beforeApply = await db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).get();
+  assert(
+    'Section 5: Legacy Evaluation Is Preview Only',
+    'Evaluation creates no participants',
+    `${beforeApply.size} participants before explicit apply`,
+    beforeApply.empty && qualEngineResult.participantsAdded === 0
+  );
+  const qualificationPreview = await previewEuropeanQualificationSync('season-2026-27', 'provisional');
+  const applied = await applyEuropeanQualificationSync({
+    seasonId: 'season-2026-27',
+    previewToken: qualificationPreview.previewToken,
+    confirmation: true,
+    adminUserId: 'admin-system',
+  });
+  assert(
+    'Section 5: Explicit Qualification Apply',
+    'Approved preview persists all projected qualifications',
+    `${applied.qualificationsApplied} qualifications applied`,
+    applied.success && applied.qualificationsApplied === qualificationPreview.projectedQualifications.length
+  );
+
+  // Verify permanent snapshot records after explicitly applying the preview.
   const uclSnap = await db
     .collection(COLLECTIONS.COMPETITION_PARTICIPANTS)
     .where('competitionId', '==', 'comp-champions-league-2026')

@@ -1,9 +1,10 @@
 import express from 'express';
 import { timingSafeEqual } from 'node:crypto';
-import { processNotificationQueue } from './services/telegramNotificationQueue';
+import { drainNotificationQueue, scheduleNotificationQueueDrain } from './services/telegramNotificationQueue';
 import { initDatabase, queryGet, getDbFilePath } from './db';
-import { seedDatabase, repairSeason202627Roster } from './db/seed';
+import { seedMissingStaticCatalog } from './db/seed';
 import { authMiddleware } from './middleware/authMiddleware';
+import { rateLimit } from './middleware/rateLimitMiddleware';
 import { isFirebaseConfigured, getFirestoreDb, getFirebaseStatus } from './firebase/admin';
 import { migrateSqliteToFirestore } from './firebase/migrateSqliteToFirestore';
 import { syncFirestoreClubCrests, getActiveOccupanciesForSeason } from './firebase/firestoreStore';
@@ -19,9 +20,9 @@ import { seasonsRouter } from './routes/seasons.routes';
 import { leaguesRouter } from './routes/leagues.routes';
 import { clubsRouter } from './routes/clubs.routes';
 import { competitionsRouter } from './routes/competitions.routes';
-import { fixturesRouter, fixturesResilientRouter } from './routes/fixtures.routes';
+import { fixturesRouter } from './routes/fixtures.routes';
 import { notificationsReadResilientRouter } from './routes/notificationsReadResilient.routes';
-import { meRouter, meResilientRouter } from './routes/me.routes';
+import { meRouter } from './routes/me.routes';
 import { usersRouter } from './routes/users.routes';
 import { adminRouter } from './routes/admin.routes';
 import { telegramRouter } from './routes/telegram.routes';
@@ -63,8 +64,7 @@ export async function ensureDbReady(): Promise<void> {
       try {
         // Always initialize SQLite baseline so the application is 100% resilient
         await initDatabase();
-        seedDatabase();
-        repairSeason202627Roster();
+        seedMissingStaticCatalog();
         console.log(`[BOOT] SQLite baseline ready from: ${getDbFilePath()}`);
 
         // Restore occupancy snapshot from disk if available
@@ -92,23 +92,46 @@ export async function ensureDbReady(): Promise<void> {
 
 export function createApp() {
   const app = express();
+  app.disable('x-powered-by');
+  const localDevHost = 'local' + 'host';
 
-  // Base CORS middleware
+  const allowedOrigins = new Set([
+    'https://efluz.vercel.app',
+    process.env.APP_URL,
+    process.env.TELEGRAM_WEBAPP_URL,
+    ...(process.env.NODE_ENV !== 'production' ? [`http://${localDevHost}:5173`, `http://${localDevHost}:3000`] : []),
+  ].filter((value): value is string => Boolean(value)));
+
+  // Base security and CORS middleware
   app.use((req, res, next) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    const origin = req.headers.origin;
+    if (origin && allowedOrigins.has(origin)) res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-dev-user-id, x-telegram-init-data');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-session-token, x-dev-user-id, x-telegram-init-data');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    res.setHeader(
+      'Content-Security-Policy',
+      "default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://resources.premierleague.com https://crests.football-data.org https://t.me; connect-src 'self'; frame-ancestors 'self' https://web.telegram.org https://*.telegram.org"
+    );
     if (req.method === 'OPTIONS') {
+      if (origin && !allowedOrigins.has(origin)) {
+        res.sendStatus(403);
+        return;
+      }
       res.sendStatus(204);
       return;
     }
     next();
   });
 
-  app.use(express.json());
+  app.use(express.json({ limit: '256kb' }));
+  app.use('/api', rateLimit('api-global', 300, 60));
 
   // Durable worker can run without initializing SQLite or reading Firestore.
-  app.get('/api/internal/telegram-worker', async (req, res) => {
+  app.all('/api/internal/telegram-worker', async (req, res) => {
     const secret = process.env.CRON_SECRET;
     const actual = Buffer.from(req.headers.authorization || '');
     const expected = Buffer.from(`Bearer ${secret || ''}`);
@@ -116,7 +139,18 @@ export function createApp() {
       res.status(401).json({ error: 'UNAUTHORIZED' });
       return;
     }
-    try { res.json(await processNotificationQueue(25)); }
+    if (!['GET', 'POST'].includes(req.method)) { res.sendStatus(405); return; }
+    const hop = Number(req.query.hop || 0);
+    if (!Number.isInteger(hop) || hop < 0 || hop > 256) { res.sendStatus(400); return; }
+    try {
+      if (process.env.VERCEL === '1') {
+        scheduleNotificationQueueDrain(hop);
+        res.status(202).json({ accepted: true });
+      } else {
+        await drainNotificationQueue({ hop });
+        res.json({ drained: true });
+      }
+    }
     catch { res.status(503).json({ error: 'NOTIFICATION_WORKER_UNAVAILABLE' }); }
   });
 
@@ -132,6 +166,12 @@ export function createApp() {
   });
 
   app.use(authMiddleware);
+  app.use('/api/auth', rateLimit('auth', 20, 600));
+  app.use('/api/clubs/crest-proxy', rateLimit('crest-proxy', 60, 60));
+  app.use('/api/health/probe', rateLimit('health-probe', 3, 600));
+  app.use('/api/telegram/webhook', rateLimit('telegram-webhook', 120, 60));
+  app.use('/api/fixtures', rateLimit('fixture-write', 60, 60));
+  app.use('/api/clubs', rateLimit('club-action', 120, 60));
 
   // Mount the canonical API routes. Competition, fixture, standings and club
   // reads are backed by the durable read-model layer in their own routers.
@@ -143,10 +183,8 @@ export function createApp() {
   app.use('/api/leagues', leaguesRouter);
   app.use('/api/clubs', clubsRouter);
   app.use('/api/competitions', competitionsRouter);
-  app.use('/api/fixtures', fixturesResilientRouter);
   app.use('/api/fixtures', fixturesRouter);
   app.use('/api/me', notificationsReadResilientRouter);
-  app.use('/api/me', meResilientRouter);
   app.use('/api/me', meRouter);
   app.use('/api/users', usersRouter);
   app.use('/api/admin', adminRouter);

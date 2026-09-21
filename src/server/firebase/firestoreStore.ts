@@ -941,6 +941,24 @@ export async function claimClubAtomicFirestore(
     try {
       const db = getFirestoreDb();
 
+      if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === 'true') {
+        const seedClub = SEED_CLUBS.find((candidate) => candidate.id === clubId);
+        const seedRef = db.collection(COLLECTIONS.CLUBS).doc(clubId);
+        const seedDoc = await seedRef.get();
+        if (!seedDoc.exists && seedClub) {
+          await seedRef.set({
+            id: seedClub.id,
+            name: seedClub.name,
+            shortName: seedClub.shortName,
+            leagueId: seedClub.leagueId,
+            country: seedClub.country,
+            logo: seedClub.logoUrl,
+            isActive: true,
+            createdAt: now,
+          }, { merge: true });
+        }
+      }
+
       const claimResult = await db.runTransaction(async (transaction) => {
         const userMemRef = db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${seasonId}_${userId}`);
         const clubOccRef = db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_${clubId}`);
@@ -2357,11 +2375,42 @@ export async function generateCompetitionFixturesFirestore(
 ): Promise<{ generated: number; matchdays: number }> {
   const db = getFirestoreDb();
   const compDoc = await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get();
-  if (!compDoc.exists) {
+  // Test-only local fallback: the isolated regression suite intentionally uses
+  // the SQLite seed without provisioning an in-memory Firestore mirror. Keep
+  // production authoritative (missing Firestore documents still fail closed),
+  // but synthesize the seed competition/participants for that explicit mode.
+  let fallbackSeedCompetition: (typeof SEED_COMPETITIONS)[number] | undefined;
+  if (!compDoc.exists && process.env.FIREBASE_FORCE_LOCAL_FALLBACK === 'true') {
+    fallbackSeedCompetition = SEED_COMPETITIONS.find((candidate) => candidate.id === competitionId);
+  }
+  if (!compDoc.exists && !fallbackSeedCompetition) {
     throw new Error(`Competition '${competitionId}' not found.`);
   }
 
-  const comp = compDoc.data() as FirestoreCompetitionDoc;
+  const comp = (compDoc.exists
+    ? compDoc.data()
+    : {
+        id: fallbackSeedCompetition!.id,
+        seasonId: fallbackSeedCompetition!.seasonId,
+        leagueId: fallbackSeedCompetition!.leagueId,
+        name: fallbackSeedCompetition!.name,
+        type: fallbackSeedCompetition!.type,
+        formatConfig: fallbackSeedCompetition!.formatConfig,
+      }) as FirestoreCompetitionDoc;
+
+  if (!compDoc.exists && fallbackSeedCompetition) {
+    await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).set(
+      {
+        id: fallbackSeedCompetition.id,
+        seasonId: fallbackSeedCompetition.seasonId,
+        leagueId: fallbackSeedCompetition.leagueId,
+        name: fallbackSeedCompetition.name,
+        type: fallbackSeedCompetition.type,
+        formatConfig: fallbackSeedCompetition.formatConfig,
+      },
+      { merge: true },
+    );
+  }
 
   // Check existing fixtures
   const existingSnap = await db.collection(COLLECTIONS.FIXTURES).where('competitionId', '==', competitionId).get();
@@ -2387,6 +2436,13 @@ export async function generateCompetitionFixturesFirestore(
       .where('isActive', '==', true)
       .get();
     clubIds = leagueClubsSnap.docs.map((d) => d.id).sort();
+  }
+
+  if (clubIds.length < 2 && fallbackSeedCompetition) {
+    clubIds = SEED_CLUBS
+      .filter((club) => club.leagueId === fallbackSeedCompetition!.leagueId)
+      .map((club) => club.id)
+      .sort();
   }
 
   if (clubIds.length < 2) {
@@ -2489,59 +2545,14 @@ export async function generateCompetitionFixturesFirestore(
     }
   }
 
-  // 3. Purge all existing fixtures for this competition before writing new ones (while preserving confirmed results)
+  // 3. Never regenerate a competition that already contains user activity.
+  // New fixtures are written before obsolete scheduled fixtures are removed, so
+  // an interrupted deployment cannot leave the competition empty.
   const toDeleteSnap = await db.collection(COLLECTIONS.FIXTURES).where('competitionId', '==', competitionId).get();
-  const confirmedMap = new Map<
-    string,
-    {
-      homeScore: number;
-      awayScore: number;
-      winnerClubId?: string | null;
-      resultConfirmedAt?: string | null;
-    }
-  >();
-
-  if (!toDeleteSnap.empty) {
-    for (const doc of toDeleteSnap.docs) {
-      const data = doc.data() as FirestoreFixtureDoc;
-      if (data.status === 'CONFIRMED' && data.homeScore !== null && data.homeScore !== undefined) {
-        confirmedMap.set(`${data.homeClubId}->${data.awayClubId}`, {
-          homeScore: data.homeScore,
-          awayScore: data.awayScore ?? 0,
-          winnerClubId: data.winnerClubId,
-          resultConfirmedAt: data.resultConfirmedAt,
-        });
-      }
-    }
-
-    const batchSize = 400;
-    for (let i = 0; i < toDeleteSnap.docs.length; i += batchSize) {
-      const chunk = toDeleteSnap.docs.slice(i, i + batchSize);
-      const batch = db.batch();
-      chunk.forEach((doc) => batch.delete(doc.ref));
-      await batch.commit();
-    }
-  }
-
-  // If any confirmed match existed between the two clubs, preserve the confirmed score
-  for (const fix of generatedFixtures) {
-    const key = `${fix.homeClubId}->${fix.awayClubId}`;
-    const revKey = `${fix.awayClubId}->${fix.homeClubId}`;
-    if (confirmedMap.has(key)) {
-      const match = confirmedMap.get(key)!;
-      (fix as any).status = 'CONFIRMED';
-      (fix as any).homeScore = match.homeScore;
-      (fix as any).awayScore = match.awayScore;
-      (fix as any).winnerClubId = match.winnerClubId;
-      (fix as any).resultConfirmedAt = match.resultConfirmedAt;
-    } else if (confirmedMap.has(revKey)) {
-      const match = confirmedMap.get(revKey)!;
-      (fix as any).status = 'CONFIRMED';
-      (fix as any).homeScore = match.awayScore;
-      (fix as any).awayScore = match.homeScore;
-      (fix as any).winnerClubId = match.winnerClubId;
-      (fix as any).resultConfirmedAt = match.resultConfirmedAt;
-    }
+  const protectedStatuses = new Set(['CONFIRMED', 'DISPUTED', 'PENDING_CONFIRMATION', 'AWAITING_RESULT', 'PLAYING']);
+  const protectedFixture = toDeleteSnap.docs.find((doc) => protectedStatuses.has((doc.data() as FirestoreFixtureDoc).status));
+  if (protectedFixture) {
+    throw new Error(`FIXTURE_REGENERATION_BLOCKED: fixture '${protectedFixture.id}' contains protected match activity.`);
   }
 
   // 4. Batch write all new fixtures
@@ -2553,6 +2564,15 @@ export async function generateCompetitionFixturesFirestore(
       const ref = db.collection(COLLECTIONS.FIXTURES).doc(fix.id);
       batch.set(ref, fix);
     }
+    await batch.commit();
+  }
+
+  const generatedIds = new Set(generatedFixtures.map((fixture) => fixture.id));
+  const obsoleteDocs = toDeleteSnap.docs.filter((doc) => !generatedIds.has(doc.id));
+  for (let i = 0; i < obsoleteDocs.length; i += batchSize) {
+    const chunk = obsoleteDocs.slice(i, i + batchSize);
+    const batch = db.batch();
+    chunk.forEach((doc) => batch.delete(doc.ref));
     await batch.commit();
   }
 
@@ -4006,8 +4026,8 @@ export async function submitFixtureResultFirestore(
   assertNoSyntheticIdsInProduction('submitFixtureResultFirestore', [userId, fixtureId]);
   guardAgainstTestEntityCreation('submission', fixtureId, userId);
 
-  if (!Number.isInteger(homeScore) || homeScore < 0 || !Number.isInteger(awayScore) || awayScore < 0) {
-    throw new Error('Scores must be non-negative integers.');
+  if (!Number.isInteger(homeScore) || homeScore < 0 || homeScore > 99 || !Number.isInteger(awayScore) || awayScore < 0 || awayScore > 99) {
+    throw new Error('Scores must be integers between 0 and 99.');
   }
 
   const db = getFirestoreDb();
@@ -4015,6 +4035,11 @@ export async function submitFixtureResultFirestore(
   const submissionId = `sub-${fixtureId}-${userId}`;
 
   const executeFallbackSubmit = async (): Promise<Fixture> => {
+    if (process.env.VERCEL === '1' || Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME)) {
+      const err: any = new Error('AUTHORITATIVE_WRITE_REQUIRED: result submission is temporarily unavailable.');
+      err.statusCode = 503;
+      throw err;
+    }
     console.log('[RESULT_SUBMISSION_FALLBACK] Executing resilient SQLite fallback persistence for fixture:', fixtureId);
     const row = queryGet<any>('SELECT * FROM fixtures WHERE id = ?', [fixtureId]);
     if (!row) {
@@ -4150,82 +4175,132 @@ export async function submitFixtureResultFirestore(
       throw err;
     }
 
-    // Verify ownership
-    trackFirestoreRead(COLLECTIONS.USER_MEMBERSHIPS, 1, 'submitFixtureResultFirestore:membership');
-    const userMemDoc = await db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${fixture.seasonId}_${userId}`).get();
-    if (!userMemDoc.exists || userMemDoc.data()?.status !== 'active') {
-      throw new Error('You do not own either the home or away club in this fixture.');
-    }
-
-    const userClubId = userMemDoc.data()!.clubId;
-    const isHome = userClubId === fixture.homeClubId;
-    const isAway = userClubId === fixture.awayClubId;
-
-    if (!isHome && !isAway) {
-      throw new Error('You do not own either the home or away club in this fixture.');
-    }
-
-    // Write submission idempotently
+    const membershipRef = db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${fixture.seasonId}_${userId}`);
     const subRef = db.collection(COLLECTIONS.RESULT_SUBMISSIONS).doc(submissionId);
-    trackFirestoreWrite(COLLECTIONS.RESULT_SUBMISSIONS, 1, 'submitFixtureResultFirestore:setSubmission');
-    await subRef.set({
-      id: submissionId,
-      fixtureId,
-      submittedByUserId: userId,
-      clubId: userClubId,
-      homeScore,
-      awayScore,
-      proofUrl: proofUrl || null,
-      createdAt: now,
-    });
+    const submissionsQuery = db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where('fixtureId', '==', fixtureId);
+    const disputeRef = db.collection(COLLECTIONS.DISPUTES).doc(`disp-${fixtureId}`);
 
-    // Evaluate all submissions for fixture
-    trackFirestoreRead(COLLECTIONS.RESULT_SUBMISSIONS, 1, 'submitFixtureResultFirestore:allSubs');
-    const allSubsSnap = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where('fixtureId', '==', fixtureId).get();
-    const allSubs = allSubsSnap.docs.map((d) => d.data() as FirestoreResultSubmissionDoc);
+    type ConsensusResult = {
+      fixture: FirestoreFixtureDoc;
+      userClubId: string;
+      newStatus: string;
+      confirmedHomeScore: number | null;
+      confirmedAwayScore: number | null;
+      winnerClubId: string | null;
+      confirmedAt: string | null;
+    };
 
-    let newStatus = allSubs.length === 1 ? 'PENDING_CONFIRMATION' : 'AWAITING_RESULT';
-    let confirmedHomeScore: number | null = null;
-    let confirmedAwayScore: number | null = null;
-    let winnerClubId: string | null = null;
-    let confirmedAt: string | null = null;
+    // Submission, consensus, dispute and fixture state are one serializable unit.
+    // Firestore retries this callback when either participant submits concurrently.
+    const consensus = await db.runTransaction(async (transaction): Promise<ConsensusResult> => {
+      const [txFixDoc, userMemDoc, allSubsSnap] = await Promise.all([
+        transaction.get(fixRef),
+        transaction.get(membershipRef),
+        transaction.get(submissionsQuery),
+      ]);
 
-    if (allSubs.length >= 2) {
-      const [sub1, sub2] = allSubs;
-      if (sub1.homeScore === sub2.homeScore && sub1.awayScore === sub2.awayScore) {
-        newStatus = 'CONFIRMED';
-        confirmedHomeScore = sub1.homeScore;
-        confirmedAwayScore = sub1.awayScore;
-        confirmedAt = now;
-        if (confirmedHomeScore > confirmedAwayScore) winnerClubId = fixture.homeClubId;
-        else if (confirmedAwayScore > confirmedHomeScore) winnerClubId = fixture.awayClubId;
-      } else {
-        newStatus = 'DISPUTED';
-        const disputeRef = db.collection(COLLECTIONS.DISPUTES).doc(`disp-${fixtureId}`);
-        trackFirestoreWrite(COLLECTIONS.DISPUTES, 1, 'submitFixtureResultFirestore:dispute');
-        await disputeRef.set({
-          id: `disp-${fixtureId}`,
-          fixtureId,
-          seasonId: fixture.seasonId,
-          homeSubmissionId: sub1.id,
-          awaySubmissionId: sub2.id,
-          status: 'OPEN',
-          createdAt: now,
-        });
+      if (!txFixDoc.exists) throw new Error(`Fixture with ID '${fixtureId}' not found.`);
+      const currentFixture = txFixDoc.data() as FirestoreFixtureDoc;
+      if (currentFixture.status === 'CONFIRMED') {
+        throw new Error('This match result is already CONFIRMED and cannot be modified.');
       }
-    } else {
-      newStatus = 'PENDING_CONFIRMATION';
-    }
+      if (!currentFixture.homeClubId || !currentFixture.awayClubId || currentFixture.homeClubId === 'TBD' || currentFixture.awayClubId === 'TBD') {
+        const err: any = new Error('This match has undetermined participants (TBD) and cannot be played yet.');
+        err.code = 'FIXTURE_NOT_READY';
+        err.statusCode = 400;
+        throw err;
+      }
+      if (!userMemDoc.exists || userMemDoc.data()?.status !== 'active') {
+        throw new Error('You do not own either the home or away club in this fixture.');
+      }
 
-    trackFirestoreWrite(COLLECTIONS.FIXTURES, 1, 'submitFixtureResultFirestore:updateStatus');
-    await fixRef.update({
-      status: newStatus,
-      homeScore: confirmedHomeScore,
-      awayScore: confirmedAwayScore,
-      winnerClubId,
-      resultConfirmedAt: confirmedAt,
-      updatedAt: now,
+      const userClubId = userMemDoc.data()!.clubId;
+      if (userClubId !== currentFixture.homeClubId && userClubId !== currentFixture.awayClubId) {
+        throw new Error('You do not own either the home or away club in this fixture.');
+      }
+
+      const currentSubmission: FirestoreResultSubmissionDoc = {
+        id: submissionId,
+        fixtureId,
+        submittedByUserId: userId,
+        clubId: userClubId,
+        homeScore,
+        awayScore,
+        proofUrl: proofUrl || null,
+        createdAt: now,
+      };
+
+      // Keep at most one effective submission per participating club. The current
+      // owner submission wins over any historical submission for the same club.
+      const byClub = new Map<string, FirestoreResultSubmissionDoc>();
+      for (const doc of allSubsSnap.docs) {
+        const submission = doc.data() as FirestoreResultSubmissionDoc;
+        if (submission.clubId === currentFixture.homeClubId || submission.clubId === currentFixture.awayClubId) {
+          byClub.set(submission.clubId, submission);
+        }
+      }
+      byClub.set(userClubId, currentSubmission);
+
+      const homeSubmission = byClub.get(currentFixture.homeClubId);
+      const awaySubmission = byClub.get(currentFixture.awayClubId);
+      let newStatus = 'PENDING_CONFIRMATION';
+      let confirmedHomeScore: number | null = null;
+      let confirmedAwayScore: number | null = null;
+      let winnerClubId: string | null = null;
+      let confirmedAt: string | null = null;
+
+      if (homeSubmission && awaySubmission) {
+        if (homeSubmission.homeScore === awaySubmission.homeScore && homeSubmission.awayScore === awaySubmission.awayScore) {
+          newStatus = 'CONFIRMED';
+          confirmedHomeScore = homeSubmission.homeScore;
+          confirmedAwayScore = homeSubmission.awayScore;
+          confirmedAt = now;
+          if (confirmedHomeScore > confirmedAwayScore) winnerClubId = currentFixture.homeClubId;
+          else if (confirmedAwayScore > confirmedHomeScore) winnerClubId = currentFixture.awayClubId;
+          transaction.set(disputeRef, {
+            id: `disp-${fixtureId}`,
+            fixtureId,
+            seasonId: currentFixture.seasonId,
+            homeSubmissionId: homeSubmission.id,
+            awaySubmissionId: awaySubmission.id,
+            status: 'CANCELLED',
+            resolutionNotes: 'Both participants submitted the same score.',
+            resolvedAt: now,
+            createdAt: now,
+          }, { merge: true });
+        } else {
+          newStatus = 'DISPUTED';
+          transaction.set(disputeRef, {
+            id: `disp-${fixtureId}`,
+            fixtureId,
+            seasonId: currentFixture.seasonId,
+            homeSubmissionId: homeSubmission.id,
+            awaySubmissionId: awaySubmission.id,
+            status: 'OPEN',
+            createdAt: now,
+          }, { merge: true });
+        }
+      }
+
+      transaction.set(subRef, currentSubmission);
+      transaction.update(fixRef, {
+        status: newStatus,
+        homeScore: confirmedHomeScore,
+        awayScore: confirmedAwayScore,
+        winnerClubId,
+        resultConfirmedAt: confirmedAt,
+        updatedAt: now,
+      });
+
+      return { fixture: currentFixture, userClubId, newStatus, confirmedHomeScore, confirmedAwayScore, winnerClubId, confirmedAt };
     });
+
+    const { userClubId, newStatus, confirmedHomeScore, confirmedAwayScore, winnerClubId, confirmedAt } = consensus;
+    trackFirestoreRead(COLLECTIONS.USER_MEMBERSHIPS, 1, 'submitFixtureResultFirestore:membership');
+    trackFirestoreRead(COLLECTIONS.RESULT_SUBMISSIONS, 1, 'submitFixtureResultFirestore:allSubs');
+    trackFirestoreWrite(COLLECTIONS.RESULT_SUBMISSIONS, 1, 'submitFixtureResultFirestore:setSubmission');
+    trackFirestoreWrite(COLLECTIONS.FIXTURES, 1, 'submitFixtureResultFirestore:updateStatus');
+    if (newStatus === 'DISPUTED') trackFirestoreWrite(COLLECTIONS.DISPUTES, 1, 'submitFixtureResultFirestore:dispute');
 
     // Mark circuit breaker success
     firestoreCircuitBreaker.recordSuccess();
@@ -4254,9 +4329,9 @@ export async function submitFixtureResultFirestore(
       }
     }
 
-    if (newStatus === 'CONFIRMED' && fixture.competitionId) {
+    if (newStatus === 'CONFIRMED' && consensus.fixture.competitionId) {
       try {
-        await rebuildCompetitionStandingsFirestore(fixture.competitionId);
+        await rebuildCompetitionStandingsFirestore(consensus.fixture.competitionId);
       } catch (standingsErr) {
         console.warn('[STANDINGS_UPDATE] Non-blocking standings update error on confirmation:', standingsErr);
       }
@@ -4278,6 +4353,7 @@ export async function submitFixtureResultFirestore(
       errMsg.includes('locked') ||
       errMsg.includes('paused') ||
       errMsg.includes('do not own') ||
+      errMsg.includes('undetermined participants') ||
       errMsg.includes('Scores must be')
     ) {
       throw firestoreErr;
@@ -4625,6 +4701,20 @@ export async function getOrCreateTelegramUserFirestore(tgUser: {
     createdAt: now,
     updatedAt: now,
   };
+}
+
+/** Privileged authorization never uses profile cache or SQLite fallback.
+ * One document read, no collection scan. Fail closed on missing/unavailable state.
+ */
+export async function getAuthoritativeUserForAuthorization(userId: string): Promise<User | null> {
+  trackFirestoreRead(COLLECTIONS.USERS, 1, 'adminAuthorization');
+  const doc = await getFirestoreDb().collection(COLLECTIONS.USERS).doc(userId).get();
+  if (!doc.exists) return null;
+  const data = doc.data() as FirestoreUserDoc;
+  return { id: doc.id, telegramId: data.telegramId || '', username: data.username || '',
+    firstName: data.firstName || '', lastName: data.lastName || '', photoUrl: data.photoUrl || '',
+    isAdmin: data.isAdmin === true, isSuspended: data.isSuspended === true,
+    createdAt: data.createdAt || '', updatedAt: data.updatedAt || '' };
 }
 
 export async function getUserByIdFirestore(userId: string): Promise<User | null> {
@@ -5602,7 +5692,23 @@ export async function adminAssignClubFirestore(
     const db = getFirestoreDb();
     const clubRef = db.collection(COLLECTIONS.CLUBS).doc(clubId);
     const clubDoc = await clubRef.get();
-    if (!clubDoc.exists) {
+    if (!clubDoc.exists && process.env.FIREBASE_FORCE_LOCAL_FALLBACK === 'true') {
+      const seedClub = SEED_CLUBS.find((candidate) => candidate.id === clubId);
+      if (seedClub) {
+        await clubRef.set({
+          id: seedClub.id,
+          name: seedClub.name,
+          shortName: seedClub.shortName,
+          leagueId: seedClub.leagueId,
+          country: seedClub.country,
+          logo: seedClub.logoUrl,
+          isActive: true,
+          createdAt: now,
+        }, { merge: true });
+      }
+    }
+    const hydratedClubDoc = await clubRef.get();
+    if (!hydratedClubDoc.exists) {
       throw new ClubNotFoundError(`Club with ID '${clubId}' not found.`);
     }
 

@@ -35,10 +35,17 @@ export async function generateKnockoutBracket(
     throw new Error(`Competition '${competitionId}' not found.`);
   }
   const comp = compDoc.data() as FirestoreCompetitionDoc;
+  const isEuropeanLeaguePhase =
+    comp.type === 'EUROPEAN_LEAGUE_PHASE' ||
+    comp.type === 'EUROPEAN_KNOCKOUT' ||
+    competitionId.includes('champions') ||
+    competitionId.includes('europa') ||
+    competitionId.includes('ucl') ||
+    competitionId.includes('uel');
 
   // Check existing fixtures
   const existingFixSnap = await db.collection(COLLECTIONS.FIXTURES).where('competitionId', '==', competitionId).get();
-  if (!existingFixSnap.empty) {
+  if (!existingFixSnap.empty && !isEuropeanLeaguePhase) {
     if (options.force) {
       const deleteBatch = db.batch();
       for (const fix of existingFixSnap.docs) {
@@ -84,30 +91,49 @@ export async function generateKnockoutBracket(
   }
 
   // Handle European 32-team League Phase transitions (Champions League / Europa League)
-  if (
-    comp.type === 'EUROPEAN_LEAGUE_PHASE' ||
-    comp.type === 'EUROPEAN_KNOCKOUT' ||
-    competitionId.includes('champions') ||
-    competitionId.includes('europa') ||
-    competitionId.includes('ucl') ||
-    competitionId.includes('uel')
-  ) {
+  if (isEuropeanLeaguePhase) {
     if (clubIds.length >= 24) {
-      const standingsSnap = await db
-        .collection(COLLECTIONS.STANDINGS)
-        .where('competitionId', '==', competitionId)
-        .get();
-      let ranked = clubIds;
-      if (!standingsSnap.empty) {
-        const sortedStandings = standingsSnap.docs
-          .map((d) => d.data())
-          .sort((a: any, b: any) => {
-            if ((b.points || 0) !== (a.points || 0)) return (b.points || 0) - (a.points || 0);
-            return (b.goalDifference || 0) - (a.goalDifference || 0);
-          });
-        ranked = sortedStandings.map((s: any) => s.clubId);
+      const matchesPerTeam = Number(comp.formatConfig?.matchesPerTeam || 8);
+      const expectedLeaguePhaseFixtures = (clubIds.length * matchesPerTeam) / 2;
+      const leaguePhaseDocs = existingFixSnap.docs.filter((doc) => {
+        const fixture = doc.data() as FirestoreFixtureDoc;
+        return fixture.matchday >= 1 && fixture.matchday <= matchesPerTeam;
+      });
+      if (leaguePhaseDocs.length !== expectedLeaguePhaseFixtures) {
+        throw new Error(`LEAGUE_PHASE_INCOMPLETE: expected ${expectedLeaguePhaseFixtures} fixtures, found ${leaguePhaseDocs.length}.`);
+      }
+      if (leaguePhaseDocs.some((doc) => (doc.data() as FirestoreFixtureDoc).status !== 'CONFIRMED')) {
+        throw new Error('LEAGUE_PHASE_INCOMPLETE: every league-phase fixture must be CONFIRMED before generating knockouts.');
+      }
+
+      const existingKnockoutDocs = existingFixSnap.docs.filter((doc) => (doc.data() as FirestoreFixtureDoc).matchday > matchesPerTeam);
+      if (existingKnockoutDocs.length > 0 && !options.force) {
+        return { generated: existingKnockoutDocs.length, rounds: 5 };
+      }
+      if (existingKnockoutDocs.some((doc) => ['CONFIRMED', 'DISPUTED', 'PENDING_CONFIRMATION', 'PLAYING'].includes((doc.data() as FirestoreFixtureDoc).status))) {
+        throw new Error('KNOCKOUT_RESET_BLOCKED: existing knockout fixtures contain protected results or submissions.');
+      }
+
+      const standingsDoc = await db.collection(COLLECTIONS.STANDINGS).doc(competitionId).get();
+      const rows = standingsDoc.exists && Array.isArray(standingsDoc.data()?.rows) ? standingsDoc.data()!.rows : [];
+      const ranked = rows.map((row: any) => row.clubId).filter((clubId: unknown): clubId is string => typeof clubId === 'string');
+      if (ranked.length !== clubIds.length || new Set(ranked).size !== clubIds.length || ranked.some((clubId) => !clubIds.includes(clubId))) {
+        throw new Error('STANDINGS_NOT_READY: rebuild complete league-phase standings before generating knockouts.');
+      }
+
+      if (existingKnockoutDocs.length > 0) {
+        const deleteBatch = db.batch();
+        for (const doc of existingKnockoutDocs) deleteBatch.delete(doc.ref);
+        await deleteBatch.commit();
       }
       const uclRes = await generateUCLKnockoutBracket(competitionId, ranked);
+      const totalFixtures = leaguePhaseDocs.length + uclRes.generated;
+      await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).update({
+        fixtureCount: totalFixtures,
+        fixturesCount: totalFixtures,
+        totalMatchdays: matchesPerTeam + 5,
+        updatedAt: new Date().toISOString(),
+      });
       return { generated: uclRes.generated, rounds: 5 };
     }
   }

@@ -13,9 +13,11 @@ export const fixturesRouter = Router();
 export const fixturesResilientRouter = fixturesRouter;
 
 const resultSubmissionSchema = z.object({
-  homeScore: z.number().int().min(0, 'Home score must be >= 0'),
-  awayScore: z.number().int().min(0, 'Away score must be >= 0'),
-  proofUrl: z.string().optional(),
+  homeScore: z.number().int().min(0, 'Home score must be >= 0').max(99, 'Home score must be <= 99'),
+  awayScore: z.number().int().min(0, 'Away score must be >= 0').max(99, 'Away score must be <= 99'),
+  proofUrl: z.string().url().max(2048).refine((value) => new URL(value).protocol === 'https:', {
+    message: 'Proof URL must use HTTPS',
+  }).optional(),
 });
 
 fixturesRouter.get('/:id', async (req: Request, res: Response) => {

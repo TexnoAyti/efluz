@@ -6,9 +6,14 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -18,6 +23,7 @@ jobs:
           bun-version: latest
 
       - name: Install dependencies
+        timeout-minutes: 3
         run: bun install
 
       - name: Run Lint
@@ -30,6 +36,7 @@ jobs:
         run: bun run build
 
       - name: Run Vercel Self-Check & Verification Suites
+        timeout-minutes: 8
         env:
           FIREBASE_FORCE_LOCAL_FALLBACK: "true"
           NODE_ENV: "test"
@@ -38,3 +45,24 @@ jobs:
           bun run test:tournament-architecture
           bun run test:quota-audit
           bun run test:vercel
+          bun run test:critical-safety
+          bun run test:auth-quota
+          bun run test:security-http
+          bun run test:european-safety
+          bun run test:domestic-cup:isolated
+          bun run test:read-model
+          bun run test:standings-initialization
+          bun run test:startup-preservation
+          bun run test:admin-authorization
+          bun run test:matchday-locks
+
+      - name: Install Redis test dependency
+        timeout-minutes: 3
+        run: sudo apt-get update && sudo apt-get install -y redis-server
+
+      - name: Run Redis durability regression
+        timeout-minutes: 3
+        env:
+          FIREBASE_FORCE_LOCAL_FALLBACK: "true"
+          NODE_ENV: "test"
+        run: bun run test:redis-durability

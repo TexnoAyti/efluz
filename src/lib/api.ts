@@ -2,6 +2,23 @@ import { User, Club, Season, League, Competition, Fixture, StandingsRow, Dispute
 
 let currentDevUserId: string | null = null;
 let currentTelegramInitData: string | null = null;
+let currentSessionToken: string | null = null;
+
+export function setSessionToken(token: string | null) {
+  currentSessionToken = token || null;
+  if (typeof window !== 'undefined') {
+    if (token) sessionStorage.setItem('efootball_session_token', token);
+    else sessionStorage.removeItem('efootball_session_token');
+  }
+}
+
+export function getSessionToken(): string | null {
+  if (currentSessionToken) return currentSessionToken;
+  if (typeof window !== 'undefined') {
+    currentSessionToken = sessionStorage.getItem('efootball_session_token');
+  }
+  return currentSessionToken;
+}
 
 export function setDevUserId(id: string | null) {
   currentDevUserId = id;
@@ -64,6 +81,9 @@ export function getTelegramInitData(): string {
         const tgData = hashParams.get('tgWebAppData');
         if (tgData) {
           currentTelegramInitData = tgData;
+          hashParams.delete('tgWebAppData');
+          const cleanHash = hashParams.toString();
+          window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}${cleanHash ? `#${cleanHash}` : ''}`);
           return tgData;
         }
       }
@@ -78,6 +98,10 @@ export function getTelegramInitData(): string {
         const searchData = searchParams.get('tgWebAppData') || searchParams.get('initData');
         if (searchData) {
           currentTelegramInitData = searchData;
+          searchParams.delete('tgWebAppData');
+          searchParams.delete('initData');
+          const cleanSearch = searchParams.toString();
+          window.history.replaceState(window.history.state, '', `${window.location.pathname}${cleanSearch ? `?${cleanSearch}` : ''}${window.location.hash}`);
           return searchData;
         }
       }
@@ -154,7 +178,8 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
   const cacheTtl = options.cacheTtlMs ?? (isGet ? 15000 : 0); // Default 15s cache for GETs to conserve free-tier quota
   const timeoutMs = options.timeoutMs ?? 14000; // 14s timeout prevents indefinite hangs on slow mobile/Telegram connections
 
-  const cacheKey = `${endpoint}::${getDevUserId() || ''}::${getTelegramInitData().slice(0, 32)}`;
+  const authCacheIdentity = getSessionToken()?.slice(0, 32) || getTelegramInitData().slice(0, 32);
+  const cacheKey = `${endpoint}::${getDevUserId() || ''}::${authCacheIdentity}`;
 
   // 1. Check in-memory cache for GET
   if (isGet && !options.skipCache && cacheTtl > 0) {
@@ -186,8 +211,11 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
           ...(options.headers as Record<string, string> || {}),
         };
 
+        const sessionToken = getSessionToken();
         const tgInitData = getTelegramInitData();
-        if (tgInitData) {
+        if (sessionToken) {
+          headers.Authorization = `Bearer ${sessionToken}`;
+        } else if (tgInitData) {
           headers['x-telegram-init-data'] = tgInitData;
         } else {
           const devId = getDevUserId();
@@ -282,7 +310,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
 
 export const api = {
   // Auth
-  async authenticateTelegram(initData: string): Promise<{ success: boolean; user: User; currentClub: Club | null; currentClubStatus?: 'resolved' | 'unavailable' }> {
+  async authenticateTelegram(initData: string): Promise<{ success: boolean; user: User; currentClub: Club | null; currentClubStatus?: 'resolved' | 'unavailable'; token: string }> {
     invalidateClientCache();
     return request('/api/auth/telegram', {
       method: 'POST',
@@ -290,7 +318,7 @@ export const api = {
     });
   },
 
-  async authenticateDev(devUserId: string): Promise<{ success: boolean; user: User; currentClub: Club | null; currentClubStatus?: 'resolved' | 'unavailable' }> {
+  async authenticateDev(devUserId: string): Promise<{ success: boolean; user: User; currentClub: Club | null; currentClubStatus?: 'resolved' | 'unavailable'; token: string }> {
     invalidateClientCache();
     return request('/api/auth/dev', {
       method: 'POST',

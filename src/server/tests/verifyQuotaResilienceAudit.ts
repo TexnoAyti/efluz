@@ -22,6 +22,8 @@ import {
 } from '../sync/mutationQueue';
 import { getDbFilePath } from '../db';
 import { assertTestEnvironmentSafe } from '../utils/testGuard';
+import path from 'node:path';
+import fs from 'node:fs';
 
 interface AuditResult {
   section: string;
@@ -317,7 +319,7 @@ export async function runQuotaResilienceAudit() {
   recordAudit(
     'TEST 8',
     'SQLite Filepath Resolution',
-    dbPath.includes('efootball.sqlite'),
+    dbPath === path.resolve(process.env.DB_FILE || path.join(process.env.DATA_DIR || './data', 'efootball.sqlite')) && fs.existsSync(dbPath),
     `Database file path: ${dbPath}`
   );
   console.log('   [PERSISTENCE FACT] SQLite is stored in container filesystem: Ephemeral.');

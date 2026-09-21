@@ -345,6 +345,25 @@ export const SEED_COMPETITIONS: SeedCompetition[] = [
   },
 ];
 
+/** Boot catalog is insert-only: existing tournament state is never reconciled. */
+export function seedMissingStaticCatalog(): void {
+  dbTransaction(() => {
+    const now = new Date().toISOString();
+    queryRun('INSERT OR IGNORE INTO seasons (id,name,status,start_date,end_date,created_at) VALUES (?,?,?,?,?,?)',
+      [SEED_SEASON.id, SEED_SEASON.name, SEED_SEASON.status, SEED_SEASON.startDate, SEED_SEASON.endDate, now]);
+    for (const l of SEED_LEAGUES) queryRun('INSERT OR IGNORE INTO leagues (id,name,country,tier,logo_url,created_at) VALUES (?,?,?,?,?,?)',
+      [l.id,l.name,l.country,l.tier,l.logoUrl,now]);
+    for (const c of SEED_CLUBS) {
+      queryRun('INSERT OR IGNORE INTO clubs (id,name,short_name,country,league_id,logo_url,active,created_at) VALUES (?,?,?,?,?,?,1,?)',
+        [c.id,c.name,c.shortName,c.country,c.leagueId,c.logoUrl,now]);
+      queryRun('INSERT OR IGNORE INTO season_league_clubs (id,season_id,league_id,club_id,is_active,created_at) VALUES (?,?,?,?,1,?)',
+        [`slc-${SEED_SEASON.id}-${c.id}`,SEED_SEASON.id,c.leagueId,c.id,now]);
+    }
+    for (const c of SEED_COMPETITIONS) queryRun('INSERT OR IGNORE INTO competitions (id,season_id,league_id,name,type,schedule_mode,status,format_config_json,created_at) VALUES (?,?,?,?,?,?,?, ?,?)',
+      [c.id,c.seasonId,c.leagueId || null,c.name,c.type,c.scheduleMode,'upcoming',JSON.stringify(c.formatConfig),now]);
+  });
+}
+
 export function seedDatabase(): {
   seasonsCreated: number;
   leaguesCreated: number;
@@ -515,145 +534,11 @@ export function seedDatabase(): {
  * 8. Preserve historical ownership.
  * 9. Preserve audit logs.
  */
-export function repairSeason202627Roster(): {
-  activatedClubs: number;
-  deactivatedClubs: number;
-  totalActive: number;
-} {
-  return dbTransaction(() => {
-    const seasonId = 'season-2026-27';
-    const now = new Date().toISOString();
-    const activeClubIds = new Set(SEED_CLUBS.map((c) => c.id));
-
-    // 0. Ensure domestic leagues have official metadata and working crests
-    for (const league of SEED_LEAGUES) {
-      const existing = queryGet('SELECT id FROM leagues WHERE id = ?', [league.id]);
-      if (!existing) {
-        queryRun(
-          'INSERT INTO leagues (id, name, country, tier, logo_url, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-          [league.id, league.name, league.country, league.tier, league.logoUrl, now]
-        );
-      } else {
-        queryRun(
-          'UPDATE leagues SET name = ?, country = ?, tier = ?, logo_url = ? WHERE id = ?',
-          [league.name, league.country, league.tier, league.logoUrl, league.id]
-        );
-      }
-    }
-
-    // 1. Ensure all 2026/27 clubs exist in global clubs table and are active = 1
-    let activatedClubs = 0;
-    for (const club of SEED_CLUBS) {
-      const existing = queryGet('SELECT id FROM clubs WHERE id = ?', [club.id]);
-      if (!existing) {
-        queryRun(
-          'INSERT INTO clubs (id, name, short_name, country, league_id, logo_url, active, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?)',
-          [club.id, club.name, club.shortName, club.country, club.leagueId, club.logoUrl, now]
-        );
-      } else {
-        queryRun(
-          'UPDATE clubs SET name = ?, short_name = ?, country = ?, league_id = ?, logo_url = ?, active = 1 WHERE id = ?',
-          [club.name, club.shortName, club.country, club.leagueId, club.logoUrl, club.id]
-        );
-      }
-
-      // 2. Set active in season_league_clubs for 2026/27
-      const slcId = `slc-${seasonId}-${club.id}`;
-      queryRun(
-        `INSERT INTO season_league_clubs (id, season_id, league_id, club_id, is_active, created_at)
-         VALUES (?, ?, ?, ?, 1, ?)
-         ON CONFLICT(season_id, club_id) DO UPDATE SET league_id = excluded.league_id, is_active = 1`,
-        [slcId, seasonId, club.leagueId, club.id, now]
-      );
-      activatedClubs++;
-    }
-
-    // 3. Mark non-2026/27 clubs as inactive in season-2026-27 (DO NOT delete global club entities)
-    let deactivatedClubs = 0;
-    const allDbClubs = queryAll<{ id: string }>('SELECT id FROM clubs');
-    for (const c of allDbClubs) {
-      if (!activeClubIds.has(c.id)) {
-        queryRun('UPDATE clubs SET active = 0 WHERE id = ?', [c.id]);
-        queryRun(
-          'UPDATE season_league_clubs SET is_active = 0 WHERE club_id = ? AND season_id = ?',
-          [c.id, seasonId]
-        );
-        queryRun(
-          'DELETE FROM competition_participants WHERE club_id = ? AND season_id = ?',
-          [c.id, seasonId]
-        );
-        deactivatedClubs++;
-      }
-    }
-
-    // 4. Clean and synchronize competition_participants for domestic leagues and cups
-    for (const comp of SEED_COMPETITIONS) {
-      if ((comp.type === 'LEAGUE' || comp.type === 'KNOCKOUT') && comp.leagueId) {
-        queryRun(
-          `DELETE FROM competition_participants 
-           WHERE competition_id = ? AND club_id NOT IN (
-             SELECT club_id FROM season_league_clubs WHERE league_id = ? AND season_id = ? AND is_active = 1
-           )`,
-          [comp.id, comp.leagueId, comp.seasonId]
-        );
-
-        const leagueClubs = queryAll<{ club_id: string }>(
-          `SELECT slc.club_id 
-           FROM season_league_clubs slc 
-           JOIN clubs c ON slc.club_id = c.id
-           WHERE slc.league_id = ? AND slc.season_id = ? AND slc.is_active = 1 
-           ORDER BY c.name ASC`,
-          [comp.leagueId, comp.seasonId]
-        );
-
-        for (let i = 0; i < leagueClubs.length; i++) {
-          const clubId = leagueClubs[i].club_id;
-          const partId = `part-${comp.id}-${clubId}`;
-          queryRun(
-            `INSERT INTO competition_participants (id, competition_id, club_id, season_id, seed_number, created_at)
-             VALUES (?, ?, ?, ?, ?, ?)
-             ON CONFLICT(competition_id, club_id) DO UPDATE SET seed_number = excluded.seed_number`,
-            [partId, comp.id, clubId, comp.seasonId, i + 1, now]
-          );
-        }
-      }
-    }
-
-    // 5. Clean up any invalid fixtures containing inactive clubs for season-2026-27
-    const invalidFixtures = queryAll<{ id: string; competition_id: string }>(
-      `SELECT id, competition_id FROM fixtures 
-       WHERE season_id = ? AND (
-         home_club_id NOT IN (SELECT club_id FROM season_league_clubs WHERE season_id = ? AND is_active = 1)
-         OR away_club_id NOT IN (SELECT club_id FROM season_league_clubs WHERE season_id = ? AND is_active = 1)
-       )`,
-      [seasonId, seasonId, seasonId]
-    );
-
-    if (invalidFixtures.length > 0) {
-      console.log(` [REPAIR] Found ${invalidFixtures.length} invalid fixtures with inactive clubs. Purging and regenerating domestic schedules...`);
-      const compsToReset = new Set(invalidFixtures.map((f) => f.competition_id));
-      for (const compId of compsToReset) {
-        queryRun('DELETE FROM result_submissions WHERE fixture_id IN (SELECT id FROM fixtures WHERE competition_id = ?)', [compId]);
-        queryRun('DELETE FROM fixtures WHERE competition_id = ?', [compId]);
-      }
-    }
-
-    // 6. Explicitly remove obsolete/unsupported competitions (e.g., Trophee des Champions)
-    const validCompIds = new Set(SEED_COMPETITIONS.map((c) => c.id));
-    const allDbComps = queryAll<{ id: string }>('SELECT id FROM competitions WHERE season_id = ?', [seasonId]);
-    for (const dbComp of allDbComps) {
-      if (!validCompIds.has(dbComp.id)) {
-        console.log(` [REPAIR] Purging obsolete competition: ${dbComp.id}`);
-        queryRun('DELETE FROM result_submissions WHERE fixture_id IN (SELECT id FROM fixtures WHERE competition_id = ?)', [dbComp.id]);
-        queryRun('DELETE FROM fixtures WHERE competition_id = ?', [dbComp.id]);
-        queryRun('DELETE FROM competition_participants WHERE competition_id = ?', [dbComp.id]);
-        queryRun('DELETE FROM competitions WHERE id = ?', [dbComp.id]);
-      }
-    }
-
-    console.log(
-      ` [REPAIR] 2026/27 Roster repaired: ${activatedClubs} clubs activated, ${deactivatedClubs} stale clubs deactivated.`
-    );
-    return { activatedClubs, deactivatedClubs, totalActive: activatedClubs };
-  });
+/** Compatibility entry point: roster reconciliation is no longer destructive.
+ * Existing clubs, participants, competitions, fixtures and results are preserved.
+ */
+export function repairSeason202627Roster(): { activatedClubs: number; deactivatedClubs: number; totalActive: number } {
+  seedMissingStaticCatalog();
+  return { activatedClubs: 0, deactivatedClubs: 0,
+    totalActive: queryGet<{ n: number }>('SELECT count(*) n FROM clubs WHERE active = 1')?.n || 0 };
 }

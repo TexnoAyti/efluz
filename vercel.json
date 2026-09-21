@@ -13,5 +13,16 @@
       "source": "/((?!api|api/).*)",
       "destination": "/index.html"
     }
-  ]
+  ],
+  "crons": [
+    {
+      "path": "/api/internal/telegram-worker",
+      "schedule": "0 3 * * *"
+    }
+  ],
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 60
+    }
+  }
 }

@@ -19,8 +19,9 @@ function getModuleDir(): string {
 }
 
 let dbInstance: Database | null = null;
+const IS_HOSTED = Boolean(process.env.VERCEL || process.env.VERCEL_ENV || process.env.K_SERVICE || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NODE_ENV === 'production');
 const IS_SERVERLESS = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_TASK_ROOT);
-const DEFAULT_DATA_DIR = IS_SERVERLESS ? '/tmp/data' : path.resolve(process.cwd(), 'data');
+const DEFAULT_DATA_DIR = IS_HOSTED || IS_SERVERLESS ? '/tmp/data' : path.resolve(process.cwd(), 'data');
 const DATA_DIR = process.env.DATA_DIR || DEFAULT_DATA_DIR;
 const DB_FILE = process.env.DB_FILE || path.join(DATA_DIR, 'efootball.sqlite');
 const SCHEMA_FILE = path.resolve(process.cwd(), 'src', 'server', 'db', 'schema.sql');
@@ -77,6 +78,9 @@ function isValidSqliteHeader(buffer: Buffer): boolean {
 }
 
 export function resolveBundledDbPath(): string | null {
+  // A repository database is never runtime user data on any hosted platform.
+  // Guard the resolver itself so every current/future fallback is covered.
+  if (IS_HOSTED) return null;
   const modDir = getModuleDir();
   const candidates = [
     path.resolve(process.cwd(), 'data', 'efootball.sqlite'),
@@ -106,6 +110,9 @@ export function resolveBundledDbPath(): string | null {
 export async function initDatabase(): Promise<Database> {
   if (dbInstance) {
     return dbInstance;
+  }
+  if (IS_HOSTED && [path.resolve(process.cwd(), 'data/efootball.sqlite'), path.resolve(process.cwd(), 'api/data/efootball.sqlite')].includes(path.resolve(DB_FILE))) {
+    throw new Error('BUNDLED_DATABASE_FORBIDDEN: configure a separate runtime DB_FILE or DATA_DIR');
   }
 
   try {

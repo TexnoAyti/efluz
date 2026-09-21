@@ -4,9 +4,11 @@ import { migrateFixturesTableIfNeeded } from '../db/migrateFixtures';
 import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS } from '../firebase/collections';
 import { buildAdminFixturesSnapshot, redisSetRaw, redisGetLkg, redisGetFresh, invalidateDataset, readThroughReadModel, resetMemoryRedisStore, ReadModelKeys, enrichClubForUser, getUserActiveClubFromReadModel, buildClubsSnapshot, buildCompetitionsSnapshot } from '../readModel/readModelStore';
-import { firestoreCircuitBreaker } from '../firebase/firestoreStore';
+import { firestoreCircuitBreaker, submitFixtureResultFirestore } from '../firebase/firestoreStore';
 import { advanceDomesticCupWinnerSafe } from '../tournament/domesticCupService';
+import { generateKnockoutBracket } from '../tournament/knockoutEngine';
 import { enqueueMutation } from '../sync/mutationQueue';
+import { initDatabase } from '../db';
 
 async function main() {
   const SQL = await initSqlJs();
@@ -90,6 +92,55 @@ async function main() {
   assert.throws(() => enqueueMutation({ mutationId: 'rejected', entityType: 'CLUB_CLAIM', entityId: 'club-arsenal', operation: 'claim', payload: {}, createdAt: new Date().toISOString() } as any), /not accepted/);
   process.env.NODE_ENV = originalEnv;
   console.log('PASS: started-target no-op, concurrent source correction blocks advancement, hosted ephemeral queue rejects acceptance');
+
+  await initDatabase();
+  const raceCompId = 'comp-result-race';
+  const raceFixtureId = 'fix-result-race';
+  await firestore.collection(COLLECTIONS.COMPETITIONS).doc(raceCompId).set({
+    id: raceCompId, seasonId, name: 'Race Test', type: 'LEAGUE', currentMatchday: 1,
+    isMatchdayOpen: true, adminOverrideStatus: 'AUTO', status: 'active', createdAt: new Date().toISOString(),
+  });
+  await firestore.collection(COLLECTIONS.FIXTURES).doc(raceFixtureId).set({
+    id: raceFixtureId, seasonId, competitionId: raceCompId, matchday: 1, roundName: 'Matchday 1',
+    homeClubId: 'club-race-home', awayClubId: 'club-race-away', status: 'SCHEDULED',
+    scheduledAt: new Date().toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  });
+  await firestore.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${seasonId}_user-race-home`).set({
+    userId: 'user-race-home', seasonId, clubId: 'club-race-home', status: 'active',
+  });
+  await firestore.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${seasonId}_user-race-away`).set({
+    userId: 'user-race-away', seasonId, clubId: 'club-race-away', status: 'active',
+  });
+  await Promise.all([
+    submitFixtureResultFirestore('user-race-home', raceFixtureId, 3, 2),
+    submitFixtureResultFirestore('user-race-away', raceFixtureId, 3, 2),
+  ]);
+  const raceResult = (await firestore.collection(COLLECTIONS.FIXTURES).doc(raceFixtureId).get()).data();
+  assert.equal(raceResult?.status, 'CONFIRMED');
+  assert.equal(raceResult?.homeScore, 3);
+  assert.equal(raceResult?.awayScore, 2);
+  console.log('PASS: concurrent two-party submissions converge atomically to CONFIRMED');
+
+  const europeanCompId = 'comp-european-guard';
+  await firestore.collection(COLLECTIONS.COMPETITIONS).doc(europeanCompId).set({
+    id: europeanCompId, seasonId, name: 'European Guard', type: 'EUROPEAN_LEAGUE_PHASE',
+    formatConfig: { matchesPerTeam: 8 }, status: 'active', createdAt: new Date().toISOString(),
+  });
+  for (let i = 0; i < 32; i++) {
+    await firestore.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).doc(`${europeanCompId}-${i}`).set({
+      id: `${europeanCompId}-${i}`, competitionId: europeanCompId, seasonId,
+      clubId: `club-eu-${i}`, seedNumber: i + 1, createdAt: new Date().toISOString(),
+    });
+  }
+  for (let i = 0; i < 128; i++) {
+    await firestore.collection(COLLECTIONS.FIXTURES).doc(`${europeanCompId}-${i}`).set({
+      id: `${europeanCompId}-${i}`, competitionId: europeanCompId, seasonId,
+      matchday: Math.floor(i / 16) + 1, status: 'SCHEDULED', homeClubId: `club-eu-${i % 32}`,
+      awayClubId: `club-eu-${(i + 1) % 32}`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    });
+  }
+  await assert.rejects(generateKnockoutBracket(europeanCompId), /LEAGUE_PHASE_INCOMPLETE/);
+  console.log('PASS: European knockout generation is blocked until every league-phase fixture is confirmed');
   console.log('All critical safety regression groups passed.');
 }
 main().then(() => process.exit(0)).catch(error => { console.error(error); process.exit(1); });

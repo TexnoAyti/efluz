@@ -14,7 +14,7 @@ import { resetMemoryRedisStore, ReadModelNotWarmedError, redisSetRaw, ReadModelK
 
 async function main() {
   process.env.TELEGRAM_BOT_TOKEN = 'isolated-test-token';
-  process.env.SESSION_SECRET = 'isolated-session-secret';
+  process.env.SESSION_SECRET = 'isolated-session-secret-32-bytes';
   await initDatabase();
   resetMemoryRedisStore();
   const db = getFirestoreDb();

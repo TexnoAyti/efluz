@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyTelegramWebAppData, getOrCreateTelegramUser, getOrCreateDevUser, verifySessionToken } from '../auth/telegramAuth';
 import { User } from '../../types';
+import { getAuthoritativeUserForAuthorization } from '../firebase/firestoreStore';
 
 declare global {
   namespace Express {
@@ -140,7 +141,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   next();
 }
 
-export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
+export async function requireAdmin(req: Request, res: Response, next: NextFunction): Promise<void> {
   if (!req.user) {
     res.status(401).json({
       error: 'Unauthorized',
@@ -148,7 +149,19 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction): v
     });
     return;
   }
-  if (!req.user.isAdmin) {
+  // Admin privileges are security-sensitive and must not rely on token claims
+  // for their full lifetime. Re-read the authoritative account before acting.
+  const authoritativeUser = await getAuthoritativeUserForAuthorization(req.user.id).catch(() => null);
+  if (!authoritativeUser) {
+    res.status(503).json({ error: 'Admin authorization is temporarily unavailable.' });
+    return;
+  }
+  req.user = authoritativeUser;
+  if (authoritativeUser.isSuspended) {
+    res.status(403).json({ error: 'Account Suspended', message: 'Your account has been suspended.' });
+    return;
+  }
+  if (!authoritativeUser.isAdmin) {
     res.status(403).json({
       error: 'Forbidden',
       message: 'You do not have administrative privileges.',
