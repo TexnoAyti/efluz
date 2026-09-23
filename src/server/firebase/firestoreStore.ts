@@ -98,6 +98,7 @@ export interface ReadMetrics {
   totalReads?: number;
   sessionReads: number;
   sessionWrites: number;
+  aggregationReads?: number;
   readsByCollection: Record<string, number>;
   readsByFunction: Record<string, number>;
   cacheHits: number;
@@ -137,6 +138,7 @@ export interface ReadMetrics {
 const readMetrics = {
   sessionReads: 0,
   sessionWrites: 0,
+  aggregationReads: 0,
   readsByCollection: {} as Record<string, number>,
   readsByFunction: {} as Record<string, number>,
   cacheHits: 0,
@@ -163,6 +165,13 @@ export function trackFirestoreRead(collectionName: string, count = 1, caller = '
   readMetrics.sessionReads += count;
   readMetrics.readsByCollection[collectionName] = (readMetrics.readsByCollection[collectionName] || 0) + count;
   readMetrics.readsByFunction[caller] = (readMetrics.readsByFunction[caller] || 0) + count;
+}
+
+export function trackFirestoreAggregation(collectionName: string, count = 1, caller = 'unknown') {
+  readMetrics.sessionReads += count;
+  readMetrics.aggregationReads = (readMetrics.aggregationReads || 0) + count;
+  readMetrics.readsByCollection[collectionName] = (readMetrics.readsByCollection[collectionName] || 0) + count;
+  readMetrics.readsByFunction[`aggregation:${caller}`] = (readMetrics.readsByFunction[`aggregation:${caller}`] || 0) + count;
 }
 
 export function trackFirestoreWrite(collectionName: string, count = 1, caller = 'unknown') {
@@ -214,6 +223,7 @@ export function getReadMetrics(): ReadMetrics {
     totalReads: readMetrics.sessionReads,
     sessionReads: readMetrics.sessionReads,
     sessionWrites: readMetrics.sessionWrites,
+    aggregationReads: readMetrics.aggregationReads,
     readsByCollection: { ...readMetrics.readsByCollection },
     readsByFunction: { ...readMetrics.readsByFunction },
     cacheHits: readMetrics.cacheHits,
@@ -240,6 +250,8 @@ export function getReadMetrics(): ReadMetrics {
 }
 
 export const getFirestoreTelemetry = getReadMetrics;
+export const getFirestoreReadMetrics = getReadMetrics;
+export const resetFirestoreReadMetrics = resetReadMetrics;
 
 export function resetReadMetrics(): void {
   readMetrics.sessionReads = 0;
@@ -384,10 +396,37 @@ export async function getActiveOccupanciesForSeason(
   const cached = getFromCache<SeasonOccupancyInfo>(cacheKey);
   if (cached) return cached;
 
-  // If circuit breaker is OPEN, do not attempt Firestore and directly use local snapshot/SQLite
-  if (!firestoreCircuitBreaker.canExecute()) {
-    recordFallbackUsage();
-    return getLocalFallbackOccupancies(seasonId, cacheKey);
+  // 1. Check Redis clubsWithOwners read model (fresh or LKG)
+  try {
+    const { redisGetFresh, redisGetLkg, ReadModelKeys } = await import('../readModel/readModelStore');
+    const clubsRes = (await redisGetFresh<any[]>(ReadModelKeys.clubsWithOwners(seasonId))) ||
+                     (await redisGetLkg<any[]>(ReadModelKeys.clubsWithOwners(seasonId)));
+    if (clubsRes && Array.isArray(clubsRes.data) && clubsRes.data.length > 0) {
+      const clubOccupancyMap = new Map<string, { userId: string }>();
+      const usernameMap = new Map<string, string>();
+      const userMap = new Map<string, { id: string; username: string; displayName: string }>();
+      for (const c of clubsRes.data) {
+        if (c.ownerUserId) {
+          clubOccupancyMap.set(c.id, { userId: c.ownerUserId });
+          const uname = c.ownerUsername ? c.ownerUsername.replace(/^@+/, '').trim() : c.ownerUserId;
+          usernameMap.set(c.ownerUserId, uname);
+          userMap.set(c.ownerUserId, {
+            id: c.ownerUserId,
+            username: uname,
+            displayName: uname ? `@${uname}` : `User #${c.ownerUserId}`,
+          });
+        }
+      }
+      const info: SeasonOccupancyInfo = { clubOccupancyMap, usernameMap, userMap };
+      setInCache(cacheKey, info, 300000);
+      return info;
+    }
+  } catch {}
+
+  // 2. Check SQLite local snapshot / active_occupancies_cache
+  const localFallback = getLocalFallbackOccupancies(seasonId, cacheKey);
+  if (localFallback.clubOccupancyMap.size > 0 || !firestoreCircuitBreaker.canExecute()) {
+    return localFallback;
   }
 
   try {
@@ -402,7 +441,7 @@ export async function getActiveOccupanciesForSeason(
 
     trackFirestoreRead(
       COLLECTIONS.CLUB_OCCUPANCIES,
-      occupanciesSnap.empty ? 1 : occupanciesSnap.docs.length,
+      occupanciesSnap.docs.length,
       'getActiveOccupanciesForSeason'
     );
 
@@ -445,7 +484,7 @@ export async function getActiveOccupanciesForSeason(
           if (usersSnap) {
             trackFirestoreRead(
               COLLECTIONS.USERS,
-              usersSnap.empty ? 1 : usersSnap.docs.length,
+              usersSnap.docs.length,
               'getActiveOccupanciesForSeason:users'
             );
             for (const uDoc of usersSnap.docs) {
@@ -966,6 +1005,7 @@ export async function claimClubAtomicFirestore(
         const clubRef = db.collection(COLLECTIONS.CLUBS).doc(clubId);
 
         // 1. Read club existence
+        trackFirestoreRead(COLLECTIONS.CLUBS, 1, 'claimClubAtomicFirestore:club');
         const clubDoc = await transaction.get(clubRef);
         if (!clubDoc.exists) {
           throw new ClubNotFoundError(`Club with ID '${clubId}' does not exist.`);
@@ -973,6 +1013,8 @@ export async function claimClubAtomicFirestore(
         const clubData = clubDoc.data() as FirestoreClubDoc;
 
         // 2. Read user's existing membership for this season
+        trackFirestoreRead(COLLECTIONS.CLUB_OCCUPANCIES, 1, 'claimClubAtomicFirestore:occupancy');
+        trackFirestoreRead(COLLECTIONS.USER_MEMBERSHIPS, 1, 'claimClubAtomicFirestore:membership');
         const clubOccDoc = await transaction.get(clubOccRef);
         const userMemDoc = await transaction.get(userMemRef);
         if (userMemDoc.exists) {
@@ -1084,6 +1126,7 @@ export async function claimClubAtomicFirestore(
       });
 
       // Verify occupancy persistence directly in Firestore
+      trackFirestoreRead(COLLECTIONS.CLUB_OCCUPANCIES, 1, 'claimClubAtomicFirestore:verify');
       const verifyOcc = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_${clubId}`).get();
       if (!verifyOcc.exists || verifyOcc.data()?.status !== 'active') {
         throw new Error(`OCCUPANCY_PERSISTENCE_FAILED: Failed to verify club occupancy record at '${COLLECTIONS.CLUB_OCCUPANCIES}/${seasonId}_${clubId}'.`);
@@ -2300,12 +2343,12 @@ export async function getCompetitionParticipantsFirestore(competitionId: string)
 
   try {
     const db = getFirestoreDb();
-    trackFirestoreRead(COLLECTIONS.COMPETITION_PARTICIPANTS, 1, 'getCompetitionParticipantsFirestore');
     const snap = await db
       .collection(COLLECTIONS.COMPETITION_PARTICIPANTS)
       .where('competitionId', '==', competitionId)
       .orderBy('seedNumber', 'asc')
       .get();
+    trackFirestoreRead(COLLECTIONS.COMPETITION_PARTICIPANTS, snap.docs.length, 'getCompetitionParticipantsFirestore');
 
     if (!snap.empty) {
       const participants = snap.docs.map((d) => {
@@ -3347,6 +3390,28 @@ export async function resolveClubOwnersForSeason(
 ): Promise<Map<string, AuthoritativeClubOwner>> {
   const ownersMap = new Map<string, AuthoritativeClubOwner>();
 
+  // PRIORITY 0: Redis clubsWithOwners read model (fresh or LKG)
+  try {
+    const { redisGetFresh, redisGetLkg, ReadModelKeys } = await import('../readModel/readModelStore');
+    const clubsRes = (await redisGetFresh<any[]>(ReadModelKeys.clubsWithOwners(seasonId))) ||
+                     (await redisGetLkg<any[]>(ReadModelKeys.clubsWithOwners(seasonId)));
+    if (clubsRes && Array.isArray(clubsRes.data) && clubsRes.data.length > 0) {
+      for (const club of clubsRes.data) {
+        if (club.ownerUserId && !ownersMap.has(club.id)) {
+          const uname = club.ownerUsername ? club.ownerUsername.replace(/^@+/, '').trim() : null;
+          ownersMap.set(club.id, {
+            userId: club.ownerUserId,
+            username: uname,
+            displayName: uname ? `@${uname}` : `User #${club.ownerUserId}`,
+          });
+        }
+      }
+      if (ownersMap.size > 0 && (!clubIds || clubIds.length === 0 || clubIds.every((id) => ownersMap.has(id)))) {
+        return ownersMap;
+      }
+    }
+  } catch {}
+
   // PRIORITY 1: active club_memberships for: seasonId + clubId
   // 1a. SQLite club_memberships
   try {
@@ -3383,7 +3448,12 @@ export async function resolveClubOwnersForSeason(
     }
   } catch {}
 
-  // 1b. Firestore club_memberships (authoritative Firestore lookup)
+  // If SQLite club_memberships satisfies request, return immediately without Firestore fan-out
+  if (ownersMap.size > 0 && (!clubIds || clubIds.length === 0 || clubIds.every((id) => ownersMap.has(id)))) {
+    return ownersMap;
+  }
+
+  // 1b. Firestore club_memberships (authoritative Firestore lookup only when SQLite miss)
   try {
     const db = getFirestoreDb();
     if (db && firestoreCircuitBreaker.canExecute()) {
@@ -3392,6 +3462,7 @@ export async function resolveClubOwnersForSeason(
         .where('seasonId', '==', seasonId)
         .where('status', '==', 'active')
         .get();
+      trackFirestoreRead(COLLECTIONS.CLUB_MEMBERSHIPS, memSnap.docs.length, 'resolveClubOwnersForSeason:memberships');
 
       if (!memSnap.empty) {
         for (const doc of memSnap.docs) {
@@ -5170,35 +5241,173 @@ export async function getDisputesFirestore(status = 'OPEN', limitCount = 50): Pr
   }
 }
 
-export async function getAllUsersFirestore(): Promise<User[]> {
-  const cacheKey = 'firestore:all_users';
-  const cached = getFromCache<User[]>(cacheKey);
-  if (cached) return cached;
+export interface AdminUsersQueryOptions {
+  limit?: number;
+  cursor?: string;
+  page?: number;
+  role?: 'ADMIN' | 'PLAYER' | 'ALL' | string;
+  status?: 'ACTIVE' | 'SUSPENDED' | 'ALL' | string;
+  search?: string;
+}
 
+export interface AdminUsersPageResult {
+  users: User[];
+  total: number;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  nextCursor?: string;
+  source: string;
+  degraded: boolean;
+  stale: boolean;
+}
+
+export async function getAdminUsersPagedFirestore(options: AdminUsersQueryOptions = {}): Promise<AdminUsersPageResult> {
+  const pageSize = Math.min(Math.max(options.limit || 25, 1), 50);
+  const page = Math.max(options.page || 1, 1);
+  const role = (options.role || 'ALL').toUpperCase();
+  const status = (options.status || 'ALL').toUpperCase();
+  const search = (options.search || '').trim();
+
+  // PRIORITY 1: SQLite local read model / cache
+  try {
+    const conditions: string[] = ['1=1'];
+    const params: any[] = [];
+    if (role === 'ADMIN') {
+      conditions.push('u.is_admin = 1');
+    } else if (role === 'PLAYER') {
+      conditions.push('(u.is_admin = 0 OR u.is_admin IS NULL)');
+    }
+    if (status === 'SUSPENDED') {
+      conditions.push('u.is_suspended = 1');
+    } else if (status === 'ACTIVE') {
+      conditions.push('(u.is_suspended = 0 OR u.is_suspended IS NULL)');
+    }
+    if (search) {
+      conditions.push('(u.username LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ? OR u.telegram_id LIKE ? OR u.id LIKE ?)');
+      const sParam = `%${search}%`;
+      params.push(sParam, sParam, sParam, sParam, sParam);
+    }
+    const whereClause = conditions.join(' AND ');
+    const countRow = queryGet<{ count: number }>(`SELECT COUNT(*) as count FROM users u WHERE ${whereClause}`, params);
+    const total = countRow?.count ?? 0;
+
+    if (total > 0 || search || role !== 'ALL' || status !== 'ALL') {
+      const offset = (page - 1) * pageSize;
+      const rows = queryAll<any>(
+        `SELECT * FROM users u WHERE ${whereClause} ORDER BY u.created_at DESC, u.id DESC LIMIT ? OFFSET ?`,
+        [...params, pageSize + 1, offset]
+      );
+      const hasMore = rows.length > pageSize;
+      const pageRows = rows.slice(0, pageSize);
+      const nextCursor = hasMore && pageRows.length > 0 ? pageRows[pageRows.length - 1].id : undefined;
+      const users: User[] = pageRows.map((r) => ({
+        id: r.id,
+        telegramId: r.telegram_id,
+        username: r.username,
+        firstName: r.first_name,
+        lastName: r.last_name,
+        photoUrl: r.photo_url,
+        isAdmin: Boolean(r.is_admin),
+        isSuspended: Boolean(r.is_suspended),
+        createdAt: r.created_at || new Date().toISOString(),
+        updatedAt: r.updated_at || new Date().toISOString(),
+      }));
+      return {
+        users,
+        total,
+        page,
+        limit: pageSize,
+        hasMore,
+        nextCursor,
+        source: 'sqlite',
+        degraded: false,
+        stale: false,
+      };
+    }
+  } catch {}
+
+  // PRIORITY 2: Bounded Firestore pagination (reads <= 25 docs, max 50)
   const db = getFirestoreDb();
-  const snap = await db.collection(COLLECTIONS.USERS).orderBy('createdAt', 'desc').get();
-  trackFirestoreRead(
-    COLLECTIONS.USERS,
-    snap.empty ? 1 : snap.docs.length,
-    'getAllUsersFirestore'
-  );
-  const users = snap.docs.map((d) => {
-    const data = d.data() as FirestoreUserDoc;
-    return {
-      id: d.id,
-      telegramId: data.telegramId,
-      username: data.username,
-      firstName: data.firstName,
-      lastName: data.lastName,
-      photoUrl: data.photoUrl,
-      isAdmin: data.isAdmin,
-      isSuspended: data.isSuspended,
-      createdAt: data.createdAt,
-      updatedAt: data.updatedAt,
-    };
-  });
-  setInCache(cacheKey, users, 30000); // 30s cache
-  return users;
+  if (db && firestoreCircuitBreaker.canExecute()) {
+    try {
+      let query: FirebaseFirestore.Query = db.collection(COLLECTIONS.USERS);
+      if (role === 'ADMIN') {
+        query = query.where('isAdmin', '==', true);
+      } else if (role === 'PLAYER') {
+        query = query.where('isAdmin', '==', false);
+      }
+      if (status === 'SUSPENDED') {
+        query = query.where('isSuspended', '==', true);
+      } else if (status === 'ACTIVE') {
+        query = query.where('isSuspended', '==', false);
+      }
+      query = query.orderBy('createdAt', 'desc');
+
+      if (options.cursor) {
+        const cursorDoc = await db.collection(COLLECTIONS.USERS).doc(options.cursor).get();
+        trackFirestoreRead(COLLECTIONS.USERS, 1, 'getAdminUsersPagedFirestore:cursor');
+        if (cursorDoc.exists) {
+          query = query.startAfter(cursorDoc);
+        }
+      }
+
+      query = query.limit(pageSize + 1);
+      const snap = await query.get();
+      trackFirestoreRead(COLLECTIONS.USERS, snap.docs.length, 'getAdminUsersPagedFirestore');
+
+      const docs = snap.docs;
+      const hasMore = docs.length > pageSize;
+      const pageDocs = docs.slice(0, pageSize);
+      const nextCursor = hasMore && pageDocs.length > 0 ? pageDocs[pageDocs.length - 1].id : undefined;
+
+      const users: User[] = pageDocs.map((d) => {
+        const data = d.data() as FirestoreUserDoc;
+        return {
+          id: d.id,
+          telegramId: data.telegramId,
+          username: data.username,
+          firstName: data.firstName,
+          lastName: data.lastName,
+          photoUrl: data.photoUrl,
+          isAdmin: Boolean(data.isAdmin),
+          isSuspended: Boolean(data.isSuspended),
+          createdAt: data.createdAt,
+          updatedAt: data.updatedAt,
+        };
+      });
+
+      return {
+        users,
+        total: users.length,
+        page,
+        limit: pageSize,
+        hasMore,
+        nextCursor,
+        source: 'firestore_paged',
+        degraded: false,
+        stale: false,
+      };
+    } catch (err: any) {
+      firestoreCircuitBreaker.recordFailure(err);
+    }
+  }
+
+  return {
+    users: [],
+    total: 0,
+    page,
+    limit: pageSize,
+    hasMore: false,
+    source: 'empty_fallback',
+    degraded: true,
+    stale: true,
+  };
+}
+
+export async function getAllUsersFirestore(): Promise<User[]> {
+  const paged = await getAdminUsersPagedFirestore({ limit: 50, page: 1 });
+  return paged.users;
 }
 
 export async function getAuditLogsFirestore(limit = 50): Promise<AuditLog[]> {

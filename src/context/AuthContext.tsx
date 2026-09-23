@@ -27,6 +27,17 @@ export interface TelegramDiagnosticsInfo {
 interface AuthContextType {
   user: User | null;
   currentClub: Club | null;
+  userStats: {
+    matchesPlayed: number;
+    wins: number;
+    draws: number;
+    losses: number;
+    goalsScored: number;
+    goalsConceded: number;
+    points: number;
+    trophies: number;
+    leaguePosition: number;
+  } | null;
   currentSeason: Season | null;
   seasons: Season[];
   activeSeasonId: string;
@@ -111,6 +122,17 @@ async function resolveTelegramContext(maxWaitMs = 1200): Promise<{
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [currentClub, setCurrentClub] = useState<Club | null>(null);
+  const [userStats, setUserStats] = useState<{
+    matchesPlayed: number;
+    wins: number;
+    draws: number;
+    losses: number;
+    goalsScored: number;
+    goalsConceded: number;
+    points: number;
+    trophies: number;
+    leaguePosition: number;
+  } | null>(null);
   const [clubUnavailable, setClubUnavailable] = useState(false);
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [activeSeasonId, setActiveSeasonId] = useState<string>('season-2026-27');
@@ -170,6 +192,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(meRes.user);
       setClubUnavailable(meRes.currentClubStatus === 'unavailable');
       if (meRes.currentClubStatus !== 'unavailable') setCurrentClub(meRes.currentClub);
+      if (meRes.stats) setUserStats(meRes.stats);
 
       setTelegramDiagnostics((prev) => ({
         ...prev,
@@ -261,7 +284,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               setTelegramInitData(null);
               setUser(authRes.user);
               setClubUnavailable(authRes.currentClubStatus === 'unavailable');
-      setCurrentClub(authRes.currentClub);
+              setCurrentClub(authRes.currentClub);
+              if (authRes.stats) setUserStats(authRes.stats);
               setAuthStatus('AUTHENTICATED');
               setTelegramDiagnostics((prev) => ({
                 ...prev,
@@ -271,7 +295,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 username: authRes.user.username,
                 isAdmin: authRes.user.isAdmin,
               }));
-              await fetchUserData(targetSeasonId);
+              await refreshNotifications(false);
             }
           } catch (tErr: any) {
             console.error('Telegram authentication failed:', tErr);
@@ -292,9 +316,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 setSessionToken(authRes.token);
                 setUser(authRes.user);
                 setClubUnavailable(authRes.currentClubStatus === 'unavailable');
-      setCurrentClub(authRes.currentClub);
+                setCurrentClub(authRes.currentClub);
+                if (authRes.stats) setUserStats(authRes.stats);
                 setAuthStatus('AUTHENTICATED');
-                await fetchUserData(targetSeasonId);
+                await refreshNotifications(false);
               } else {
                 setAuthStatus('AUTH_ERROR');
               }
@@ -309,7 +334,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setSessionToken(authRes.token);
             setUser(authRes.user);
             setClubUnavailable(authRes.currentClubStatus === 'unavailable');
-      setCurrentClub(authRes.currentClub);
+            setCurrentClub(authRes.currentClub);
+            if (authRes.stats) setUserStats(authRes.stats);
             setAuthStatus('AUTHENTICATED');
             setTelegramDiagnostics((prev) => ({
               ...prev,
@@ -319,7 +345,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               username: authRes.user.username,
               isAdmin: authRes.user.isAdmin,
             }));
-            await fetchUserData(targetSeasonId);
+            await refreshNotifications(false);
           }
         } else {
           // 6. Production web session outside Telegram
@@ -456,6 +482,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       value={{
         user,
         currentClub,
+        userStats,
         currentSeason,
         seasons,
         activeSeasonId,

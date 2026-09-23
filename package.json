@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "test:read-reduction": "node scripts/run-isolated-test.mjs src/server/tests/readReductionRegressionTest.ts",
     "test:standings-initialization": "node scripts/run-isolated-test.mjs src/server/tests/standingsInitializationRegressionTest.ts",
     "test:european-safety": "node scripts/run-isolated-test.mjs src/server/tests/europeanSafetyRegressionTest.ts",
     "test:redis-durability": "node scripts/run-redis-tests.mjs",

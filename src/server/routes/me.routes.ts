@@ -41,11 +41,35 @@ meRouter.get('/', requireAuth, async (req: Request, res: Response) => {
     };
 
     if (currentClub) {
-      const confirmedMatches = await getFixturesFirestore({
-        clubId: currentClub.id,
-        seasonId,
-        status: 'CONFIRMED',
-      });
+      let confirmedMatches: any[] = [];
+      try {
+        const { queryAll } = require('../db');
+        const rows = queryAll(
+          `SELECT * FROM fixtures WHERE status = 'CONFIRMED' AND (home_club_id = ? OR away_club_id = ?) AND (season_id = ? OR season_id IS NULL)`,
+          [currentClub.id, currentClub.id, seasonId]
+        );
+        if (rows && rows.length > 0) {
+          confirmedMatches = rows.map((r: any) => ({
+            id: r.id,
+            homeClubId: r.home_club_id,
+            awayClubId: r.away_club_id,
+            homeScore: r.home_score,
+            awayScore: r.away_score,
+            status: r.status,
+            seasonId: r.season_id,
+          }));
+        }
+      } catch {}
+
+      if (confirmedMatches.length === 0) {
+        try {
+          confirmedMatches = await getFixturesFirestore({
+            clubId: currentClub.id,
+            seasonId,
+            status: 'CONFIRMED',
+          });
+        } catch {}
+      }
 
       for (const m of confirmedMatches) {
         const isHome = m.homeClubId === currentClub.id;

@@ -38,6 +38,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const {
     user,
     currentClub,
+    userStats,
     activeSeasonId,
     authStatus,
     authError,
@@ -58,22 +59,31 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     points: number;
     trophies: number;
     leaguePosition: number;
-  } | null>(null);
+  } | null>(userStats || null);
+
+  useEffect(() => {
+    if (userStats) {
+      setStats(userStats);
+    }
+  }, [userStats]);
 
   const [myMatches, setMyMatches] = useState<Fixture[]>([]);
   const [selectedFixtureForSubmit, setSelectedFixtureForSubmit] = useState<Fixture | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadDashboardData = async () => {
+  const loadDashboardData = async (forceRefresh = false) => {
     setIsLoading(true);
     setError(null);
     try {
+      const fetchMe = forceRefresh || (!userStats && !stats);
       const [meRes, matchesRes] = await Promise.all([
-        api.getMe(activeSeasonId).catch((err) => {
-          console.warn('Dashboard getMe failed:', err);
-          return null;
-        }),
+        fetchMe
+          ? api.getMe(activeSeasonId).catch((err) => {
+              console.warn('Dashboard getMe failed:', err);
+              return null;
+            })
+          : Promise.resolve({ stats: userStats || stats, user, currentClub }),
         api.getMyMatches(activeSeasonId).catch((err) => {
           console.warn('Dashboard getMyMatches failed:', err);
           return null;

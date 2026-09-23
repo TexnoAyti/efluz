@@ -1,4 +1,4 @@
-import { queryAll, queryRun } from '../db';
+import { queryAll, queryRun, isDatabaseInitialized } from '../db';
 import { SEED_CLUBS } from '../db/seed';
 
 export interface OccupancyRecord {
@@ -65,6 +65,9 @@ export function getLocalOccupancySnapshot(seasonId = 'season-2026-27'): Occupanc
   }
 
   // Otherwise hydrate from SQLite active_occupancies_cache or club_memberships
+  if (!isDatabaseInitialized()) {
+    return memRecords;
+  }
   try {
     const cachedRows = queryAll<any>(
       `SELECT club_id, season_id, user_id, username, display_name, status, updated_at

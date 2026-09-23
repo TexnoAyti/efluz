@@ -1,4 +1,4 @@
-import { User, Club, Season, League, Competition, Fixture, StandingsRow, Dispute, Notification, AuditLog } from '../types';
+import { User, Club, Season, League, Competition, Fixture, StandingsRow, Dispute, Notification, AuditLog, UserStats } from '../types';
 
 let currentDevUserId: string | null = null;
 let currentTelegramInitData: string | null = null;
@@ -310,7 +310,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
 
 export const api = {
   // Auth
-  async authenticateTelegram(initData: string): Promise<{ success: boolean; user: User; currentClub: Club | null; currentClubStatus?: 'resolved' | 'unavailable'; token: string }> {
+  async authenticateTelegram(initData: string): Promise<{ success: boolean; user: User; currentClub: Club | null; currentClubStatus?: 'resolved' | 'unavailable'; token: string; stats?: UserStats }> {
     invalidateClientCache();
     return request('/api/auth/telegram', {
       method: 'POST',
@@ -318,7 +318,7 @@ export const api = {
     });
   },
 
-  async authenticateDev(devUserId: string): Promise<{ success: boolean; user: User; currentClub: Club | null; currentClubStatus?: 'resolved' | 'unavailable'; token: string }> {
+  async authenticateDev(devUserId: string): Promise<{ success: boolean; user: User; currentClub: Club | null; currentClubStatus?: 'resolved' | 'unavailable'; token: string; stats?: UserStats }> {
     invalidateClientCache();
     return request('/api/auth/dev', {
       method: 'POST',
@@ -813,8 +813,28 @@ export const api = {
     return request(`/api/admin/audit-logs?limit=${limit}`, { cacheTtlMs: 15000, skipCache });
   },
 
-  async getAdminUsers(skipCache = false): Promise<{ users: User[] }> {
-    return request('/api/admin/users', { cacheTtlMs: 30000, skipCache });
+  async getAdminUsers(params?: {
+    page?: number;
+    limit?: number;
+    cursor?: string;
+    role?: string;
+    status?: string;
+    search?: string;
+    skipCache?: boolean;
+  } | boolean): Promise<{ users: User[]; total?: number; page?: number; limit?: number; hasMore?: boolean; nextCursor?: string; source?: string }> {
+    const skipCache = typeof params === 'boolean' ? params : Boolean(params?.skipCache);
+    const query = new URLSearchParams();
+    if (typeof params === 'object' && params !== null) {
+      if (params.page) query.set('page', String(params.page));
+      if (params.limit) query.set('limit', String(params.limit));
+      if (params.cursor) query.set('cursor', params.cursor);
+      if (params.role && params.role !== 'ALL') query.set('role', params.role);
+      if (params.status && params.status !== 'ALL') query.set('status', params.status);
+      if (params.search) query.set('search', params.search);
+    }
+    const qStr = query.toString();
+    const endpoint = `/api/admin/users${qStr ? `?${qStr}` : ''}`;
+    return request(endpoint, { cacheTtlMs: 30000, skipCache });
   },
 
   async evaluateSeasonQualifications(seasonId = 'season-2026-27'): Promise<{ success: boolean; message: string }> {

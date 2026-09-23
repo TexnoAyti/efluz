@@ -393,6 +393,10 @@ export async function initDatabase(): Promise<Database> {
 
 export { migrateFixturesTableIfNeeded } from './migrateFixtures';
 
+export function isDatabaseInitialized(): boolean {
+  return dbInstance !== null;
+}
+
 export function getDb(): Database {
   if (!dbInstance) {
     throw new Error('Database is not initialized. Call initDatabase() first.');

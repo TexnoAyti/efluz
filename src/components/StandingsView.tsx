@@ -23,7 +23,7 @@ export const StandingsView: React.FC = () => {
   const { t } = useI18n();
 
   const [competitions, setCompetitions] = useState<Competition[]>([]);
-  const [selectedCompetitionId, setSelectedCompetitionId] = useState<string>('comp-premier-league-2026');
+  const [selectedCompetitionId, setSelectedCompetitionId] = useState<string>('');
   const [standings, setStandings] = useState<StandingsRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -35,11 +35,10 @@ export const StandingsView: React.FC = () => {
         const res = await api.getCompetitions(activeSeasonId);
         // Prioritize leagues
         const leagues = (res.competitions || []).filter((c) => c.type === 'LEAGUE');
-        setCompetitions(leagues.length > 0 ? leagues : res.competitions || []);
-        if (leagues.length > 0) {
-          setSelectedCompetitionId(leagues[0].id);
-        } else if (res.competitions && res.competitions.length > 0) {
-          setSelectedCompetitionId(res.competitions[0].id);
+        const comps = leagues.length > 0 ? leagues : res.competitions || [];
+        setCompetitions(comps);
+        if (comps.length > 0) {
+          setSelectedCompetitionId((prev) => (prev && comps.some((c) => c.id === prev) ? prev : comps[0].id));
         } else {
           setIsLoading(false);
         }
@@ -71,7 +70,9 @@ export const StandingsView: React.FC = () => {
   };
 
   useEffect(() => {
-    loadStandings();
+    if (selectedCompetitionId) {
+      loadStandings();
+    }
   }, [selectedCompetitionId, activeSeasonId]);
 
   const activeComp = competitions.find((c) => c.id === selectedCompetitionId);

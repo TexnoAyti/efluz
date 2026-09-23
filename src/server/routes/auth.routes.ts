@@ -14,6 +14,46 @@ const devAuthSchema = z.object({
   devUserId: z.string().min(1, 'devUserId is required'),
 });
 
+function getClubStatsQuick(clubId?: string, seasonId = 'season-2026-27') {
+  const stats = {
+    matchesPlayed: 0,
+    wins: 0,
+    draws: 0,
+    losses: 0,
+    goalsScored: 0,
+    goalsConceded: 0,
+    points: 0,
+    trophies: 0,
+    leaguePosition: 0,
+  };
+  if (!clubId) return stats;
+  try {
+    const { queryAll } = require('../db');
+    const rows = queryAll(
+      `SELECT home_club_id, away_club_id, home_score, away_score FROM fixtures WHERE status = 'CONFIRMED' AND (home_club_id = ? OR away_club_id = ?) AND (season_id = ? OR season_id IS NULL)`,
+      [clubId, clubId, seasonId]
+    );
+    for (const m of rows) {
+      const isHome = m.home_club_id === clubId;
+      stats.matchesPlayed++;
+      const myScore = isHome ? (m.home_score ?? 0) : (m.away_score ?? 0);
+      const oppScore = isHome ? (m.away_score ?? 0) : (m.home_score ?? 0);
+      stats.goalsScored += myScore;
+      stats.goalsConceded += oppScore;
+      if (myScore > oppScore) {
+        stats.wins++;
+        stats.points += 3;
+      } else if (myScore === oppScore) {
+        stats.draws++;
+        stats.points += 1;
+      } else {
+        stats.losses++;
+      }
+    }
+  } catch {}
+  return stats;
+}
+
 authRouter.post('/telegram', validateBody(telegramAuthSchema), async (req: Request, res: Response) => {
   const { initData } = req.body;
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -27,9 +67,10 @@ authRouter.post('/telegram', validateBody(telegramAuthSchema), async (req: Reque
         if (userRaw) {
           const user = await getOrCreateTelegramUser(JSON.parse(userRaw));
           const clubState = await getOptionalCurrentClub(user.id);
+          const stats = getClubStatsQuick(clubState.currentClub?.id);
           const token = createSessionToken(user);
           console.log(`[TELEGRAM AUTH - DEV SANDBOX] user=${user.username} (id: ${user.telegramId}), isAdmin=${user.isAdmin}`);
-          res.json({ success: true, user, ...clubState, token });
+          res.json({ success: true, user, ...clubState, stats, token });
           return;
         }
       } catch {
@@ -50,6 +91,7 @@ authRouter.post('/telegram', validateBody(telegramAuthSchema), async (req: Reque
   try {
     const user = await getOrCreateTelegramUser(verifyResult.user);
     const clubState = await getOptionalCurrentClub(user.id);
+    const stats = getClubStatsQuick(clubState.currentClub?.id);
     const token = createSessionToken(user);
 
     console.log(`[TELEGRAM AUTH]
@@ -61,7 +103,7 @@ HMAC valid: YES
 internal user: ${user.id}
 isAdmin: ${user.isAdmin ? 'YES' : 'NO'}`);
 
-    res.json({ success: true, user, ...clubState, token });
+    res.json({ success: true, user, ...clubState, stats, token });
   } catch (err: any) {
     res.status(500).json({ error: 'Authentication failed', message: err.message });
   }
@@ -77,8 +119,9 @@ authRouter.post('/dev', validateBody(devAuthSchema), async (req: Request, res: R
   try {
     const user = await getOrCreateDevUser(req.body.devUserId);
     const clubState = await getOptionalCurrentClub(user.id);
+    const stats = getClubStatsQuick(clubState.currentClub?.id);
     const token = createSessionToken(user);
-    res.json({ success: true, user, ...clubState, token });
+    res.json({ success: true, user, ...clubState, stats, token });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }

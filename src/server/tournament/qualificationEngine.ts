@@ -6,7 +6,7 @@ import {
   FirestoreFixtureDoc,
   FirestoreClubDoc,
 } from '../firebase/collections';
-import { calculateCompetitionStandingsFirestore, rebuildCompetitionStandingsFirestore, firestoreCircuitBreaker } from '../firebase/firestoreStore';
+import { calculateCompetitionStandingsFirestore, rebuildCompetitionStandingsFirestore, firestoreCircuitBreaker, trackFirestoreRead } from '../firebase/firestoreStore';
 import { createAuditLog } from '../services/adminService';
 import { createNotification } from '../services/notificationService';
 import { queryAll, queryGet, queryRun } from '../db';
@@ -14,6 +14,8 @@ import { SEED_CLUBS, SEED_COMPETITIONS, SEED_LEAGUES } from '../db/seed';
 import {
   redisGetRaw,
   redisSetRaw,
+  redisGetFresh,
+  redisGetLkg,
   invalidateDataset,
   readThroughReadModel,
   getUpstashClient,
@@ -577,37 +579,18 @@ export async function applyEuropeanQualificationSync(params: {
   };
 }
 
-/**
- * Rebuilds UEFA Champions League or Europa League single 32-team league phase standings table.
- */
-export async function rebuildEuropeanStandings(
-  competitionId: string,
+export function computeEuropeanStandingsRows(
+  format: any,
+  clubIds: string[],
+  fixtures: any[],
   seasonId = 'season-2026-27'
-): Promise<EuropeanStandingsRow[]> {
-  const db = getFirestoreDb();
-
-  // 1. Fetch participants and fixtures
-  const [compDoc, partsSnap, fixSnap] = await Promise.all([
-    db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get(),
-    db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where('competitionId', '==', competitionId).get(),
-    db.collection(COLLECTIONS.FIXTURES).where('competitionId', '==', competitionId).get(),
-  ]);
-
+): EuropeanStandingsRow[] {
   const clubsMap = new Map(SEED_CLUBS.map((c) => [c.id, c]));
-  const participants = partsSnap.docs.map((d) => d.data() as FirestoreCompetitionParticipantDoc);
-  const fixtures = fixSnap.docs.map((d) => d.data() as FirestoreFixtureDoc);
-
-  // If no registered participants, seed fallback from all clubs with seeds
-  let clubIds = participants.map((p) => p.clubId);
-  if (clubIds.length === 0) {
-    throw new Error('EUROPEAN_PARTICIPANTS_NOT_CONFIGURED');
-  }
-  clubIds = [...new Set(clubIds)];
-  const format = compDoc.data()?.formatConfig as any;
+  const uniqueClubIds = [...new Set(clubIds)];
   const totalTeams = Number(format?.leaguePhaseTeams);
   const directQualifiers = Number(format?.directQualifiers);
   const playoffTeams = Number(format?.playoffTeams);
-  if (!Number.isInteger(totalTeams) || totalTeams !== clubIds.length || !Number.isInteger(directQualifiers) || !Number.isInteger(playoffTeams) || directQualifiers + playoffTeams > totalTeams) {
+  if (!Number.isInteger(totalTeams) || totalTeams !== uniqueClubIds.length || !Number.isInteger(directQualifiers) || !Number.isInteger(playoffTeams) || directQualifiers + playoffTeams > totalTeams) {
     throw new Error('EUROPEAN_FORMAT_PARTICIPANTS_MISMATCH');
   }
 
@@ -626,7 +609,7 @@ export async function rebuildEuropeanStandings(
     points: number;
   }>();
 
-  for (const cid of clubIds) {
+  for (const cid of uniqueClubIds) {
     const club = clubsMap.get(cid);
     statsMap.set(cid, {
       clubId: cid,
@@ -645,23 +628,31 @@ export async function rebuildEuropeanStandings(
 
   // Accumulate confirmed fixtures
   for (const f of fixtures) {
-    if (f.status !== 'CONFIRMED' || !Number.isInteger(f.homeScore) || !Number.isInteger(f.awayScore) || f.homeScore < 0 || f.awayScore < 0) continue;
-    if (f.seasonId !== seasonId || !f.homeClubId || !f.awayClubId) continue;
-    if (/quarter|semi|final|play.?off|round of|knockout/i.test(f.roundName || '') || /-r[1-5]-m/.test(f.id)) continue;
+    const homeScore = f.homeScore ?? f.home_score;
+    const awayScore = f.awayScore ?? f.away_score;
+    const homeClubId = f.homeClubId ?? f.home_club_id;
+    const awayClubId = f.awayClubId ?? f.away_club_id;
+    const fSeasonId = f.seasonId ?? f.season_id;
+    const roundName = f.roundName ?? f.round_name ?? '';
+    const id = f.id;
 
-    const home = statsMap.get(f.homeClubId);
-    const away = statsMap.get(f.awayClubId);
+    if (f.status !== 'CONFIRMED' || !Number.isInteger(homeScore) || !Number.isInteger(awayScore) || homeScore < 0 || awayScore < 0) continue;
+    if ((fSeasonId && fSeasonId !== seasonId) || !homeClubId || !awayClubId) continue;
+    if (/quarter|semi|final|play.?off|round of|knockout/i.test(roundName) || /-r[1-5]-m/.test(id)) continue;
+
+    const home = statsMap.get(homeClubId);
+    const away = statsMap.get(awayClubId);
 
     if (home) {
       home.played += 1;
-      home.goalsFor += f.homeScore;
-      home.goalsAgainst += f.awayScore;
+      home.goalsFor += homeScore;
+      home.goalsAgainst += awayScore;
       home.goalDifference = home.goalsFor - home.goalsAgainst;
 
-      if (f.homeScore > f.awayScore) {
+      if (homeScore > awayScore) {
         home.won += 1;
         home.points += 3;
-      } else if (f.homeScore === f.awayScore) {
+      } else if (homeScore === awayScore) {
         home.drawn += 1;
         home.points += 1;
       } else {
@@ -671,14 +662,14 @@ export async function rebuildEuropeanStandings(
 
     if (away) {
       away.played += 1;
-      away.goalsFor += f.awayScore;
-      away.goalsAgainst += f.homeScore;
+      away.goalsFor += awayScore;
+      away.goalsAgainst += homeScore;
       away.goalDifference = away.goalsFor - away.goalsAgainst;
 
-      if (f.awayScore > f.homeScore) {
+      if (awayScore > homeScore) {
         away.won += 1;
         away.points += 3;
-      } else if (f.homeScore === f.awayScore) {
+      } else if (homeScore === awayScore) {
         away.drawn += 1;
         away.points += 1;
       } else {
@@ -695,7 +686,7 @@ export async function rebuildEuropeanStandings(
     return a.clubName.localeCompare(b.clubName);
   });
 
-  const rows: EuropeanStandingsRow[] = sorted.map((s, idx) => {
+  return sorted.map((s, idx) => {
     const position = idx + 1;
     let zone: EuropeanStandingsRow['zone'] = 'ELIMINATED';
     let zoneLabel = 'Eliminated';
@@ -728,6 +719,82 @@ export async function rebuildEuropeanStandings(
       zoneLabel,
     };
   });
+}
+
+export function calculateEuropeanStandingsFromSqlite(
+  competitionId: string,
+  seasonId = 'season-2026-27'
+): EuropeanStandingsRow[] | null {
+  try {
+    const compRow = queryGet<any>('SELECT * FROM competitions WHERE id = ?', [competitionId]);
+    let formatConfig: any = null;
+    if (compRow && compRow.format_config) {
+      try {
+        formatConfig = typeof compRow.format_config === 'string' ? JSON.parse(compRow.format_config) : compRow.format_config;
+      } catch {}
+    }
+    if (!formatConfig) {
+      const seedComp = SEED_COMPETITIONS.find((c) => c.id === competitionId);
+      formatConfig = seedComp?.formatConfig;
+    }
+    if (!formatConfig) return null;
+
+    let partRows = queryAll<{ club_id: string }>(
+      'SELECT club_id FROM competition_participants WHERE competition_id = ?',
+      [competitionId]
+    );
+    let clubIds = partRows.map((r) => r.club_id);
+    if (clubIds.length === 0) {
+      const { SEED_COMPETITION_PARTICIPANTS } = require('../db/seed');
+      if (SEED_COMPETITION_PARTICIPANTS) {
+        clubIds = SEED_COMPETITION_PARTICIPANTS
+          .filter((p: any) => p.competitionId === competitionId)
+          .map((p: any) => p.clubId);
+      }
+    }
+    if (clubIds.length === 0) return null;
+
+    const fixtures = queryAll<any>(
+      `SELECT * FROM fixtures WHERE competition_id = ? AND (season_id = ? OR season_id IS NULL)`,
+      [competitionId, seasonId]
+    );
+
+    return computeEuropeanStandingsRows(formatConfig, clubIds, fixtures, seasonId);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Rebuilds UEFA Champions League or Europa League single 32-team league phase standings table.
+ */
+export async function rebuildEuropeanStandings(
+  competitionId: string,
+  seasonId = 'season-2026-27'
+): Promise<EuropeanStandingsRow[]> {
+  const db = getFirestoreDb();
+
+  // 1. Fetch participants and fixtures
+  const [compDoc, partsSnap, fixSnap] = await Promise.all([
+    db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get(),
+    db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where('competitionId', '==', competitionId).get(),
+    db.collection(COLLECTIONS.FIXTURES).where('competitionId', '==', competitionId).get(),
+  ]);
+
+  // Track Firestore reads accurately with actual document counts
+  trackFirestoreRead(COLLECTIONS.COMPETITIONS, compDoc.exists ? 1 : 0, 'rebuildEuropeanStandings:comp');
+  trackFirestoreRead(COLLECTIONS.COMPETITION_PARTICIPANTS, partsSnap.docs.length, 'rebuildEuropeanStandings:participants');
+  trackFirestoreRead(COLLECTIONS.FIXTURES, fixSnap.docs.length, 'rebuildEuropeanStandings:fixtures');
+
+  const participants = partsSnap.docs.map((d) => d.data() as FirestoreCompetitionParticipantDoc);
+  const fixtures = fixSnap.docs.map((d) => d.data() as FirestoreFixtureDoc);
+
+  let clubIds = participants.map((p) => p.clubId);
+  if (clubIds.length === 0) {
+    throw new Error('EUROPEAN_PARTICIPANTS_NOT_CONFIGURED');
+  }
+  const format = compDoc.data()?.formatConfig as any;
+  const rows = computeEuropeanStandingsRows(format, clubIds, fixtures, seasonId);
 
   // Save to Redis Read Model (Fresh + LKG permanent)
   const cacheKey = ReadModelKeys.standings(competitionId, seasonId);
@@ -737,7 +804,7 @@ export async function rebuildEuropeanStandings(
       data: rows,
       schemaVersion: SCHEMA_VERSION,
       sourceVersion: 'rebuild-european-standings',
-      expectedCount: clubIds.length,
+      expectedCount: [...new Set(clubIds)].length,
     },
     86400
   );
@@ -746,18 +813,42 @@ export async function rebuildEuropeanStandings(
 }
 
 /**
- * Reads European standings through tiered read model.
+ * Reads European standings through tiered read model:
+ * Redis Fresh -> Redis LKG -> SQLite local calculation -> Bounded Firestore fallback
  */
 export async function getEuropeanStandings(
   competitionId: string,
   seasonId = 'season-2026-27'
 ): Promise<{ rows: EuropeanStandingsRow[]; source: string; degraded: boolean }> {
-  const result = await readThroughReadModel<EuropeanStandingsRow[]>({
-    key: ReadModelKeys.standings(competitionId, seasonId), seasonId,
-    firestoreFetcher: () => rebuildEuropeanStandings(competitionId, seasonId),
-    validateData: rows => Array.isArray(rows) && rows.length > 0,
-  });
-  return { rows: result.data, source: result.source, degraded: Boolean(result.degraded || result.stale) };
+  const cacheKey = ReadModelKeys.standings(competitionId, seasonId);
+
+  // 1. Memory / Redis Fresh
+  const fresh = await redisGetFresh<EuropeanStandingsRow[]>(cacheKey);
+  if (fresh && fresh.length > 0) {
+    return { rows: fresh, source: 'redis-fresh', degraded: false };
+  }
+
+  // 2. Redis LKG (Last-Known-Good)
+  const lkg = await redisGetLkg<EuropeanStandingsRow[]>(cacheKey);
+  if (lkg && lkg.length > 0) {
+    return { rows: lkg, source: 'redis-lkg', degraded: true };
+  }
+
+  // 3. SQLite calculation from locally available fixtures/participants
+  const sqliteRows = calculateEuropeanStandingsFromSqlite(competitionId, seasonId);
+  if (sqliteRows && sqliteRows.length > 0) {
+    redisSetRaw(cacheKey, {
+      data: sqliteRows,
+      schemaVersion: SCHEMA_VERSION,
+      sourceVersion: 'european-sqlite',
+      expectedCount: sqliteRows.length,
+    }, 86400).catch(() => {});
+    return { rows: sqliteRows, source: 'sqlite', degraded: true };
+  }
+
+  // 4. Bounded Firestore fallback only when required
+  const rows = await rebuildEuropeanStandings(competitionId, seasonId);
+  return { rows, source: 'firestore-rebuild', degraded: false };
 }
 
 /**

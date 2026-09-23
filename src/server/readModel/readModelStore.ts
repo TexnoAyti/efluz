@@ -24,6 +24,8 @@ import { resolveRedisConfig } from './redisConfig';
 import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
 import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS, FirestoreFixtureDoc, FirestoreCompetitionDoc } from '../firebase/collections';
+import { queryAll, queryGet } from '../db';
+import { trackFirestoreRead } from '../firebase/firestoreStore';
 import { SEED_COMPETITIONS, SEED_CLUBS, SEED_LEAGUES } from '../db/seed';
 import { Club, Fixture, Competition, StandingsRow } from '../../types/index';
 
@@ -149,6 +151,7 @@ export const ReadModelKeys = {
   leagueClubs: (leagueId: string, seasonId = 'season-2026-27') => `${KEY_PREFIX}:season:${seasonId}:league:${leagueId}:clubs`,
   standings: (competitionId: string, seasonId = 'season-2026-27') => `${KEY_PREFIX}:season:${seasonId}:competition:${competitionId}:standings`,
   competitionFixtures: (competitionId: string, seasonId = 'season-2026-27') => `${KEY_PREFIX}:season:${seasonId}:competition:${competitionId}:fixtures`,
+  fixtures: (competitionId: string, seasonId = 'season-2026-27') => `${KEY_PREFIX}:season:${seasonId}:competition:${competitionId}:fixtures`,
   adminFixtures: (seasonId = 'season-2026-27') => `${KEY_PREFIX}:season:${seasonId}:admin:fixtures`,
   userMembership: (userId: string, seasonId = 'season-2026-27') => `${KEY_PREFIX}:season:${seasonId}:user:${userId}:membership`,
 };
@@ -994,49 +997,63 @@ export function enrichClubForUser(club: OwnerNeutralClub, currentUserId?: string
  * 3. scheduledAt
  * 4. fixture id as final tie-breaker
  */
-export function normalizeFixtureSnapshot(doc: FirestoreFixtureDoc, seasonId = 'season-2026-27'): Fixture {
-    const homeClubSeed = SEED_CLUBS.find((c) => c.id === doc.homeClubId);
-    const awayClubSeed = SEED_CLUBS.find((c) => c.id === doc.awayClubId);
+export function normalizeFixtureSnapshot(doc: any, seasonId = 'season-2026-27'): Fixture {
+    const homeClubId = doc.homeClubId ?? doc.home_club_id;
+    const awayClubId = doc.awayClubId ?? doc.away_club_id;
+    const competitionId = doc.competitionId ?? doc.competition_id;
+    const competitionName = doc.competitionName ?? doc.competition_name;
+    const scheduledAt = doc.scheduledAt ?? doc.scheduled_at;
+    const homeScore = doc.homeScore ?? doc.home_score;
+    const awayScore = doc.awayScore ?? doc.away_score;
+    const winnerClubId = doc.winnerClubId ?? doc.winner_club_id;
+    const resultConfirmedAt = doc.resultConfirmedAt ?? doc.result_confirmed_at;
+    const roundName = doc.roundName ?? doc.round_name;
+    const createdAt = doc.createdAt ?? doc.created_at;
+    const updatedAt = doc.updatedAt ?? doc.updated_at;
+    const docSeasonId = doc.seasonId ?? doc.season_id;
+
+    const homeClubSeed = SEED_CLUBS.find((c) => c.id === homeClubId);
+    const awayClubSeed = SEED_CLUBS.find((c) => c.id === awayClubId);
 
     return {
       id: doc.id,
-      seasonId: doc.seasonId || seasonId,
-      competitionId: doc.competitionId,
-      competitionName: doc.competitionName || doc.competitionId,
+      seasonId: docSeasonId || seasonId,
+      competitionId: competitionId,
+      competitionName: competitionName || competitionId,
       matchday: doc.matchday,
-      roundName: doc.roundName,
-      homeClubId: doc.homeClubId && doc.homeClubId !== 'TBD' ? doc.homeClubId : null,
-      awayClubId: doc.awayClubId && doc.awayClubId !== 'TBD' ? doc.awayClubId : null,
-      homeClub: doc.homeClubId && doc.homeClubId !== 'TBD' ? {
-        id: doc.homeClubId,
-        name: homeClubSeed?.name || doc.homeClubId,
-        shortName: homeClubSeed?.shortName || doc.homeClubId.substring(0, 3).toUpperCase(),
+      roundName: roundName,
+      homeClubId: homeClubId && homeClubId !== 'TBD' ? homeClubId : null,
+      awayClubId: awayClubId && awayClubId !== 'TBD' ? awayClubId : null,
+      homeClub: homeClubId && homeClubId !== 'TBD' ? {
+        id: homeClubId,
+        name: homeClubSeed?.name || homeClubId,
+        shortName: homeClubSeed?.shortName || homeClubId.substring(0, 3).toUpperCase(),
         country: homeClubSeed?.country || 'England',
         leagueId: homeClubSeed?.leagueId || 'league-premier-league',
         logoUrl: homeClubSeed?.logoUrl || '',
         active: true,
         createdAt: '',
       } : undefined,
-      awayClub: doc.awayClubId && doc.awayClubId !== 'TBD' ? {
-        id: doc.awayClubId,
-        name: awayClubSeed?.name || doc.awayClubId,
-        shortName: awayClubSeed?.shortName || doc.awayClubId.substring(0, 3).toUpperCase(),
+      awayClub: awayClubId && awayClubId !== 'TBD' ? {
+        id: awayClubId,
+        name: awayClubSeed?.name || awayClubId,
+        shortName: awayClubSeed?.shortName || awayClubId.substring(0, 3).toUpperCase(),
         country: awayClubSeed?.country || 'England',
         leagueId: awayClubSeed?.leagueId || 'league-premier-league',
         logoUrl: awayClubSeed?.logoUrl || '',
         active: true,
         createdAt: '',
       } : undefined,
-      scheduledAt: doc.scheduledAt,
-      homeScore: doc.homeScore ?? undefined,
-      awayScore: doc.awayScore ?? undefined,
-      winnerClubId: doc.winnerClubId ?? undefined,
+      scheduledAt: scheduledAt,
+      homeScore: homeScore ?? undefined,
+      awayScore: awayScore ?? undefined,
+      winnerClubId: winnerClubId ?? undefined,
       status: (doc.status || 'SCHEDULED') as any,
-      resultConfirmedAt: doc.resultConfirmedAt || undefined,
-      homeOwnerId: doc.homeOwnerId,
-      awayOwnerId: doc.awayOwnerId,
-      createdAt: doc.createdAt || new Date().toISOString(),
-      updatedAt: doc.updatedAt || doc.createdAt || new Date().toISOString(),
+      resultConfirmedAt: resultConfirmedAt || undefined,
+      homeOwnerId: doc.homeOwnerId ?? doc.home_owner_id,
+      awayOwnerId: doc.awayOwnerId ?? doc.away_owner_id,
+      createdAt: createdAt || new Date().toISOString(),
+      updatedAt: updatedAt || createdAt || new Date().toISOString(),
     };
 }
 
@@ -1047,6 +1064,7 @@ export async function buildAdminFixturesSnapshot(seasonId = 'season-2026-27'): P
   if (db) {
     try {
       const fixSnap = await db.collection(COLLECTIONS.FIXTURES).where('seasonId', '==', seasonId).get();
+      trackFirestoreRead(COLLECTIONS.FIXTURES, fixSnap.docs.length, 'buildAdminFixturesSnapshot');
       fixDocs = fixSnap.docs
         .map((d) => ({ id: d.id, ...d.data() } as FirestoreFixtureDoc))
         .filter((f) => !f.competitionId.includes('efl-cup'));
@@ -1156,7 +1174,18 @@ export async function buildStandingsSnapshot(
   seasonId = 'season-2026-27'
 ): Promise<ReadModelSnapshot<StandingsRow[]>> {
   if (['comp-champions-league-2026', 'comp-europa-league-2026'].includes(competitionId)) {
-    const { rebuildEuropeanStandings } = await import('../tournament/qualificationEngine');
+    const { calculateEuropeanStandingsFromSqlite, rebuildEuropeanStandings } = await import('../tournament/qualificationEngine');
+    const sqliteRows = calculateEuropeanStandingsFromSqlite(competitionId, seasonId);
+    if (sqliteRows && sqliteRows.length > 0) {
+      return {
+        schemaVersion: SCHEMA_VERSION,
+        generatedAt: new Date().toISOString(),
+        sourceVersion: 'european-sqlite-local',
+        expectedCount: sqliteRows.length,
+        actualCount: sqliteRows.length,
+        data: sqliteRows as unknown as StandingsRow[],
+      };
+    }
     const rows = await rebuildEuropeanStandings(competitionId, seasonId);
     return { schemaVersion: SCHEMA_VERSION, generatedAt: new Date().toISOString(), sourceVersion: 'european-authoritative', expectedCount: rows.length, actualCount: rows.length, data: rows as unknown as StandingsRow[] };
   }
@@ -1172,6 +1201,7 @@ export async function buildStandingsSnapshot(
     const db = getFirestoreDb();
     if (db) {
       const stdDoc = await db.collection(COLLECTIONS.STANDINGS).doc(competitionId).get();
+      trackFirestoreRead(COLLECTIONS.STANDINGS, stdDoc.exists ? 1 : 0, 'buildStandingsSnapshot');
       if (stdDoc.exists) {
         const data = stdDoc.data();
         if (Array.isArray(data?.rows) && data.rows.length > 0) {
@@ -1494,29 +1524,145 @@ export async function getCompetitionStandingsFromReadModel(
  */
 export async function getCompetitionFixturesFromReadModel(
   competitionId: string,
-  options: { matchday?: number; status?: string; seasonId?: string } = {}
+  optionsOrMatchday: number | { matchday?: number; status?: string; seasonId?: string } = {},
+  fallbackSeasonId = 'season-2026-27'
 ): Promise<{ fixtures: Fixture[]; source: string; stale: boolean; degraded: boolean; snapshotAt: string }> {
-  const seasonId = options.seasonId || 'season-2026-27';
-  const result = await readThroughReadModel<Fixture[]>({
-    key: ReadModelKeys.adminFixtures(seasonId), seasonId,
-    firestoreFetcher: async () => (await buildAdminFixturesSnapshot(seasonId)).data,
-    validateData: data => Array.isArray(data),
-  });
-  let fixtures = result.data.filter(f => f.competitionId === competitionId);
+  const options = typeof optionsOrMatchday === 'number'
+    ? { matchday: optionsOrMatchday, seasonId: fallbackSeasonId }
+    : optionsOrMatchday || {};
+  const seasonId = options.seasonId || fallbackSeasonId;
+  let rawFixtures: Fixture[] = [];
+  let source = 'memory';
+  let stale = false;
+  let degraded = false;
+  let generatedAt = new Date().toISOString();
+
+  // 1. Tier-1 memory & 2. Redis fresh
+  const compKey = ReadModelKeys.competitionFixtures(competitionId, seasonId);
+  const adminKey = ReadModelKeys.adminFixtures(seasonId);
+
+  let redisFresh = await redisGetFresh<Fixture[]>(compKey);
+  if (!redisFresh) {
+    const adminFresh = await redisGetFresh<Fixture[]>(adminKey);
+    if (adminFresh && Array.isArray(adminFresh.data)) {
+      redisFresh = {
+        ...adminFresh,
+        data: adminFresh.data.filter((f) => f.competitionId === competitionId),
+      };
+    }
+  }
+
+  if (redisFresh && Array.isArray(redisFresh.data) && redisFresh.data.length > 0) {
+    rawFixtures = redisFresh.data;
+    source = redisFresh.source;
+    stale = Boolean(redisFresh.stale);
+    degraded = Boolean(redisFresh.degraded);
+    generatedAt = redisFresh.generatedAt;
+  }
+
+  // 3. Redis LKG
+  if (rawFixtures.length === 0) {
+    let redisLkg = await redisGetLkg<Fixture[]>(compKey);
+    if (!redisLkg) {
+      const adminLkg = await redisGetLkg<Fixture[]>(adminKey);
+      if (adminLkg && Array.isArray(adminLkg.data)) {
+        redisLkg = {
+          ...adminLkg,
+          data: adminLkg.data.filter((f) => f.competitionId === competitionId),
+        };
+      }
+    }
+    if (redisLkg && Array.isArray(redisLkg.data) && redisLkg.data.length > 0) {
+      rawFixtures = redisLkg.data;
+      source = redisLkg.source;
+      stale = true;
+      degraded = true;
+      generatedAt = redisLkg.generatedAt;
+    }
+  }
+
+  // 4. SQLite local read model
+  if (rawFixtures.length === 0) {
+    try {
+      const conditions: string[] = ['competition_id = ?'];
+      const params: any[] = [competitionId];
+      if (seasonId) {
+        conditions.push('(season_id = ? OR season_id IS NULL)');
+        params.push(seasonId);
+      }
+      if (options.matchday !== undefined) {
+        conditions.push('matchday = ?');
+        params.push(options.matchday);
+      }
+      if (options.status && options.status !== 'ALL') {
+        conditions.push('status = ?');
+        params.push(options.status);
+      }
+      const sqliteRows = queryAll<any>(
+        `SELECT * FROM fixtures WHERE ${conditions.join(' AND ')} ORDER BY matchday ASC, scheduled_at ASC, id ASC`,
+        params
+      );
+      if (sqliteRows && sqliteRows.length > 0) {
+        rawFixtures = sqliteRows.map((r) => normalizeFixtureSnapshot(r, seasonId));
+        source = 'sqlite';
+        stale = true;
+        degraded = true;
+      }
+    } catch {}
+  }
+
+  // 5. Bounded Firestore query as last online fallback (NEVER a full-season scan!)
+  if (rawFixtures.length === 0) {
+    const db = getFirestoreDb();
+    if (db && firestoreCircuitBreaker.canExecute()) {
+      try {
+        let query: FirebaseFirestore.Query = db.collection(COLLECTIONS.FIXTURES)
+          .where('seasonId', '==', seasonId)
+          .where('competitionId', '==', competitionId);
+        if (options.matchday !== undefined) {
+          query = query.where('matchday', '==', options.matchday);
+        }
+        if (options.status && options.status !== 'ALL') {
+          query = query.where('status', '==', options.status);
+        }
+        const snap = await query.get();
+        trackFirestoreRead(COLLECTIONS.FIXTURES, snap.docs.length, 'getCompetitionFixturesBoundedFirestore');
+        rawFixtures = snap.docs.map((d) => normalizeFixtureSnapshot({ id: d.id, ...d.data() }, seasonId));
+        source = 'firestore_bounded';
+        stale = false;
+        degraded = false;
+      } catch (err: any) {
+        firestoreCircuitBreaker.recordFailure(err);
+      }
+    }
+  }
+
+  let fixtures = rawFixtures;
+  if (options.matchday !== undefined) {
+    fixtures = fixtures.filter((fixture) => Number(fixture.matchday) === Number(options.matchday));
+  }
+  if (options.status && options.status !== 'ALL') {
+    fixtures = fixtures.filter((fixture) => fixture.status === options.status);
+  }
   if (['comp-champions-league-2026', 'comp-europa-league-2026'].includes(competitionId)) {
     const leaguePhaseFixtures = fixtures.filter((fixture) => Number(fixture.matchday) >= 1 && Number(fixture.matchday) <= 8);
     if (leaguePhaseFixtures.length > 0 && leaguePhaseFixtures.some((fixture) => fixture.status !== 'CONFIRMED')) {
       fixtures = leaguePhaseFixtures;
     }
   }
-  const clubsResult = await readThroughReadModel<OwnerNeutralClub[]>({
-    key: ReadModelKeys.clubsWithOwners(seasonId),
-    seasonId,
-    expectedCount: 96,
-    firestoreFetcher: async () => (await buildClubsSnapshot(seasonId)).data,
-    validateData: data => Array.isArray(data) && data.length > 0,
-  });
-  const ownersByClub = new Map(clubsResult.data.map((club) => [club.id, club]));
+
+  let clubsResult: any = null;
+  try {
+    clubsResult = await readThroughReadModel<OwnerNeutralClub[]>({
+      key: ReadModelKeys.clubsWithOwners(seasonId),
+      seasonId,
+      expectedCount: 96,
+      firestoreFetcher: async () => (await buildClubsSnapshot(seasonId)).data,
+      validateData: (data) => Array.isArray(data) && data.length > 0,
+    });
+  } catch {}
+
+  const ownersByClub = new Map(clubsResult?.data ? clubsResult.data.map((club: any) => [club.id, club]) : []);
   fixtures = fixtures.map((fixture) => {
     const homeOwner = fixture.homeClubId ? ownersByClub.get(fixture.homeClubId) : undefined;
     const awayOwner = fixture.awayClubId ? ownersByClub.get(fixture.awayClubId) : undefined;
@@ -1555,8 +1701,13 @@ export async function getCompetitionFixturesFromReadModel(
   } catch (err) {
     console.warn('[COMPETITION_FIXTURES] Ownership enrichment fallback:', err);
   }
-  return { fixtures: fixtures.sort((a,b) => compareAdminFixtures(a,b,true)), source: result.source,
-    stale: Boolean(result.stale || clubsResult.stale), degraded: Boolean(result.degraded || clubsResult.degraded), snapshotAt: result.generatedAt };
+  return {
+    fixtures: fixtures.sort((a,b) => compareAdminFixtures(a,b,true)),
+    source,
+    stale: Boolean(stale || clubsResult?.stale),
+    degraded: Boolean(degraded || clubsResult?.degraded),
+    snapshotAt: generatedAt,
+  };
 }
 
 /**
@@ -1592,7 +1743,33 @@ export async function getAdminFixturesFromReadModel(
   const seasonId = options.seasonId || 'season-2026-27';
   const limit = Math.min(Math.max(options.limit || 25, 1), 100);
 
-  const snapshotRes = await readThroughReadModel<Fixture[]>({
+  // 1. Check Redis fresh or LKG snapshot first
+  const redisFresh = await redisGetFresh<Fixture[]>(ReadModelKeys.adminFixtures(seasonId));
+  const redisLkg = !redisFresh ? await redisGetLkg<Fixture[]>(ReadModelKeys.adminFixtures(seasonId)) : null;
+  const snapshotRes = redisFresh || redisLkg;
+
+  if (!snapshotRes || !Array.isArray(snapshotRes.data) || snapshotRes.data.length === 0) {
+    // 2. Redis miss: Fallback to SQLite local read model BEFORE scanning Firestore!
+    try {
+      const { executeAdminFixturesPagedFallback } = await import('../firebase/firestoreStore');
+      const fallbackRes = executeAdminFixturesPagedFallback(options, limit);
+      if (fallbackRes.total > 0 || !firestoreCircuitBreaker.canExecute()) {
+        return {
+          fixtures: fallbackRes.fixtures,
+          total: fallbackRes.total,
+          hasMore: fallbackRes.hasMore,
+          nextCursor: fallbackRes.nextCursor,
+          limit: fallbackRes.limit,
+          source: 'sqlite',
+          degraded: true,
+          stale: true,
+          generatedAt: fallbackRes.generatedAt,
+        };
+      }
+    } catch {}
+  }
+
+  const effectiveSnapshotRes = snapshotRes || (await readThroughReadModel<Fixture[]>({
     key: ReadModelKeys.adminFixtures(seasonId),
     seasonId,
     firestoreFetcher: async () => {
@@ -1600,9 +1777,9 @@ export async function getAdminFixturesFromReadModel(
       return snap.data;
     },
     validateData: (fixtures) => Array.isArray(fixtures) && fixtures.length > 0,
-  });
+  }));
 
-  let allFixtures = [...snapshotRes.data].sort((a,b) => compareAdminFixtures(a,b));
+  let allFixtures = [...effectiveSnapshotRes.data].sort((a,b) => compareAdminFixtures(a,b));
 
   if (options.competitionId && options.competitionId !== 'ALL') {
     allFixtures = allFixtures.filter((f) => f.competitionId === options.competitionId);
@@ -1669,10 +1846,10 @@ export async function getAdminFixturesFromReadModel(
     hasMore,
     nextCursor,
     limit,
-    source: snapshotRes.source,
-    degraded: snapshotRes.source === 'redis_stale',
-    stale: snapshotRes.source === 'redis_stale',
-    generatedAt: snapshotRes.generatedAt,
+    source: effectiveSnapshotRes.source,
+    degraded: effectiveSnapshotRes.source === 'redis_stale',
+    stale: effectiveSnapshotRes.source === 'redis_stale',
+    generatedAt: effectiveSnapshotRes.generatedAt,
   };
 }
 

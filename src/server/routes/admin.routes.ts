@@ -653,34 +653,27 @@ adminRouter.post('/migrate-to-firestore', async (req: Request, res: Response) =>
 });
 
 adminRouter.get('/users', async (req: Request, res: Response) => {
-  if (!firestoreCircuitBreaker.canExecute()) {
-    const rows = queryAll<any>('SELECT * FROM users ORDER BY created_at DESC');
-    res.json({
-      users: rows.map((r) => ({
-        id: r.id,
-        telegramId: r.telegram_id,
-        username: r.username,
-        firstName: r.first_name,
-        lastName: r.last_name || '',
-        photoUrl: r.photo_url || '',
-        isAdmin: Boolean(r.is_admin),
-        isSuspended: Boolean(r.is_suspended),
-        createdAt: r.created_at,
-        updatedAt: r.updated_at,
-      })),
-      source: 'sqlite',
-      degraded: true,
-      stale: true,
-    });
-    return;
-  }
+  const page = req.query.page ? Math.max(1, parseInt(req.query.page as string, 10)) : 1;
+  const limit = req.query.limit ? Math.min(Math.max(1, parseInt(req.query.limit as string, 10)), 50) : 25;
+  const cursor = (req.query.cursor as string) || undefined;
+  const role = (req.query.role as string) || 'ALL';
+  const status = (req.query.status as string) || 'ALL';
+  const search = (req.query.search as string) || '';
 
   try {
-    const users = await getAllAdminUsers();
-    res.json({ users, source: 'firestore', degraded: false, stale: false });
+    const { getAdminUsersPagedFirestore } = await import('../firebase/firestoreStore');
+    const result = await getAdminUsersPagedFirestore({
+      page,
+      limit,
+      cursor,
+      role,
+      status,
+      search,
+    });
+    res.json(result);
   } catch (err: any) {
     firestoreCircuitBreaker.recordFailure(err);
-    const rows = queryAll<any>('SELECT * FROM users ORDER BY created_at DESC');
+    const rows = queryAll<any>('SELECT * FROM users ORDER BY created_at DESC LIMIT ?', [limit]);
     res.json({
       users: rows.map((r) => ({
         id: r.id,
@@ -694,7 +687,11 @@ adminRouter.get('/users', async (req: Request, res: Response) => {
         createdAt: r.created_at,
         updatedAt: r.updated_at,
       })),
-      source: 'sqlite',
+      total: rows.length,
+      page,
+      limit,
+      hasMore: false,
+      source: 'sqlite_fallback',
       degraded: true,
       stale: true,
     });
