@@ -5,6 +5,26 @@ import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
 import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS } from '../firebase/collections';
 import { assertNoSyntheticIdsInProduction } from '../utils/testGuard';
+import {
+  persistDurableMutation,
+  getDuePendingMutations,
+  getDurableMutation,
+  markMutationSyncing,
+  markMutationSynced,
+  markMutationRetryable,
+  markMutationFailed,
+  isRedisOutboxConfigured,
+  DurablePersistenceUnavailableError,
+  type DurableOutboxMutation,
+} from '../outbox/redisOutbox';
+
+export {
+  isRedisOutboxConfigured,
+  DurablePersistenceUnavailableError,
+};
+export type {
+  DurableOutboxMutation,
+};
 
 export type MutationStatus = 'PENDING' | 'SYNCING' | 'SYNCED' | 'FAILED';
 
@@ -75,14 +95,98 @@ function loadQueueBackupFromFile(): void {
   } catch {}
 }
 
+export async function enqueueDurableOutboxMutation<T = any>(
+  mutation: {
+    mutationId: string;
+    operation: string;
+    entityType: string;
+    entityId: string;
+    userId?: string;
+    adminUserId?: string;
+    seasonId?: string;
+    competitionId?: string;
+    payload: T;
+    createdAt?: string;
+  }
+): Promise<PendingMutation<T>> {
+  const now = new Date().toISOString();
+  const createdAt = mutation.createdAt || now;
+
+  const fullMutation: PendingMutation<T> = {
+    mutationId: mutation.mutationId,
+    entityType: mutation.entityType,
+    entityId: mutation.entityId,
+    operation: mutation.operation,
+    payload: mutation.payload,
+    createdAt,
+    status: 'PENDING',
+    retryCount: 0,
+    lastError: null,
+    updatedAt: now,
+  };
+
+  const durableMutation: DurableOutboxMutation<T> = {
+    mutationId: mutation.mutationId,
+    operation: mutation.operation,
+    entityType: mutation.entityType,
+    entityId: mutation.entityId,
+    userId: mutation.userId,
+    adminUserId: mutation.adminUserId,
+    seasonId: mutation.seasonId || 'season-2026-27',
+    competitionId: mutation.competitionId,
+    payload: mutation.payload,
+    createdAt,
+    updatedAt: now,
+    retryCount: 0,
+    nextRetryAt: Date.now(),
+    lastError: null,
+    status: 'PENDING',
+  };
+
+  // 1. MUST persist to durable Redis outbox FIRST
+  await persistDurableMutation(durableMutation);
+
+  // 2. Only after Redis persistence succeeds, update local memory & SQLite mirror
+  memoryQueue.set(mutation.mutationId, fullMutation);
+  saveQueueBackupToFile();
+
+  try {
+    queryRun(
+      `INSERT OR REPLACE INTO pending_mutations 
+       (mutation_id, entity_type, entity_id, operation, payload, status, retry_count, last_error, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        fullMutation.mutationId,
+        fullMutation.entityType,
+        fullMutation.entityId,
+        fullMutation.operation,
+        JSON.stringify(fullMutation.payload),
+        fullMutation.status,
+        fullMutation.retryCount,
+        fullMutation.lastError,
+        fullMutation.createdAt,
+        fullMutation.updatedAt,
+      ]
+    );
+  } catch (err) {
+    console.warn('[MUTATION_QUEUE] SQLite mirror insert warning:', err);
+  }
+
+  console.log(`[MUTATION_QUEUE] Enqueued durable mutation: id=${fullMutation.mutationId} type=${fullMutation.entityType}`);
+  return fullMutation;
+}
+
 export function enqueueMutation<T = any>(
   mutation: Omit<PendingMutation<T>, 'status' | 'retryCount' | 'lastError' | 'updatedAt'>
 ): PendingMutation<T> {
-  // A Vercel/Cloud Run local file is not a durable accepted-write queue.
-  if (process.env.NODE_ENV === 'production' || process.env.VERCEL || process.env.K_SERVICE || process.env.AWS_LAMBDA_FUNCTION_NAME) {
-    throw Object.assign(new Error('Remote database unavailable. Change was not accepted; retry when service recovers.'),
-      { code: 'AUTHORITATIVE_WRITE_REQUIRED', statusCode: 503 });
+  // If Redis is not configured, we cannot durably accept the mutation.
+  if (!isRedisOutboxConfigured()) {
+    throw Object.assign(
+      new DurablePersistenceUnavailableError('Remote database unavailable. Change was not accepted; retry when service recovers.'),
+      { code: 'DURABLE_PERSISTENCE_UNAVAILABLE', statusCode: 503 }
+    );
   }
+
   const now = new Date().toISOString();
   const existing = memoryQueue.get(mutation.mutationId);
 
@@ -99,10 +203,32 @@ export function enqueueMutation<T = any>(
     updatedAt: now,
   };
 
+  // Asynchronously persist to Redis
+  const durableMutation: DurableOutboxMutation<T> = {
+    mutationId: mutation.mutationId,
+    operation: mutation.operation,
+    entityType: mutation.entityType,
+    entityId: mutation.entityId,
+    userId: (mutation.payload as any)?.userId,
+    adminUserId: (mutation.payload as any)?.adminUserId,
+    seasonId: (mutation.payload as any)?.seasonId || 'season-2026-27',
+    competitionId: (mutation.payload as any)?.competitionId,
+    payload: mutation.payload,
+    createdAt: mutation.createdAt || now,
+    updatedAt: now,
+    retryCount: fullMutation.retryCount,
+    nextRetryAt: Date.now(),
+    lastError: null,
+    status: 'PENDING',
+  };
+  persistDurableMutation(durableMutation).catch((err) => {
+    console.warn('[MUTATION_QUEUE] Background Redis persistence failed:', err);
+  });
+
   memoryQueue.set(mutation.mutationId, fullMutation);
   saveQueueBackupToFile();
 
-  // Persist into SQLite
+  // Persist into SQLite mirror
   try {
     queryRun(
       `INSERT OR REPLACE INTO pending_mutations 
@@ -214,9 +340,6 @@ export function getQueueStats() {
  * Idempotent, safe, drains in creation order.
  */
 export async function processPendingMutations(): Promise<SyncResult> {
-  if (process.env.NODE_ENV === 'production' || process.env.VERCEL || process.env.K_SERVICE || process.env.AWS_LAMBDA_FUNCTION_NAME) {
-    throw new Error('HOSTED_LOCAL_QUEUE_DISABLED: reconcile legacy local mutations through a reviewed recovery plan');
-  }
   if (isSyncInProgress) {
     console.log('[MUTATION_QUEUE] Sync already in progress, skipping duplicate call.');
     return {
@@ -242,10 +365,6 @@ export async function processPendingMutations(): Promise<SyncResult> {
   }
 
   isSyncInProgress = true;
-  const pendingItems = getPendingMutations('PENDING').sort(
-    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-  );
-
   let processed = 0;
   let synced = 0;
   let failed = 0;
@@ -254,7 +373,36 @@ export async function processPendingMutations(): Promise<SyncResult> {
   try {
     const db = getFirestoreDb();
 
-    for (const item of pendingItems) {
+    // 1. Fetch due items from durable Redis outbox first
+    let dueMutations: PendingMutation[] = [];
+    if (isRedisOutboxConfigured()) {
+      try {
+        const redisDue = await getDuePendingMutations(15);
+        dueMutations = redisDue.map((m) => ({
+          mutationId: m.mutationId,
+          entityType: m.entityType,
+          entityId: m.entityId,
+          operation: m.operation,
+          payload: m.payload,
+          createdAt: m.createdAt,
+          status: m.status,
+          retryCount: m.retryCount,
+          lastError: m.lastError,
+          updatedAt: m.updatedAt,
+        }));
+      } catch (err: any) {
+        console.warn('[MUTATION_QUEUE] Failed to fetch due mutations from Redis outbox:', err?.message || err);
+      }
+    }
+
+    // 2. If Redis returned no items or is not configured, check local SQLite / memory fallback
+    if (dueMutations.length === 0) {
+      dueMutations = getPendingMutations('PENDING').sort(
+        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      );
+    }
+
+    for (const item of dueMutations) {
       // Check circuit breaker before each mutation
       if (!firestoreCircuitBreaker.canExecute()) {
         console.warn('[MUTATION_QUEUE] Circuit breaker tripped during sync. Aborting remaining mutations.');
@@ -262,10 +410,12 @@ export async function processPendingMutations(): Promise<SyncResult> {
       }
 
       processed++;
+      await markMutationSyncing(item.mutationId).catch(() => {});
       updateMutationStatus(item.mutationId, 'SYNCING');
 
       try {
         await executeSingleMutationSync(db, item);
+        await markMutationSynced(item.mutationId).catch(() => {});
         updateMutationStatus(item.mutationId, 'SYNCED');
         firestoreCircuitBreaker.recordSuccess();
         synced++;
@@ -279,6 +429,11 @@ export async function processPendingMutations(): Promise<SyncResult> {
         // Failed or fallback-only replay must remain PENDING for retry.
         // Terminal permission/ownership mismatches must be marked FAILED.
         const nextStatus: MutationStatus = isTerminalError ? 'FAILED' : 'PENDING';
+        if (isTerminalError) {
+          await markMutationFailed(item.mutationId, err.message).catch(() => {});
+        } else {
+          await markMutationRetryable(item.mutationId, err.message).catch(() => {});
+        }
         updateMutationStatus(item.mutationId, nextStatus, err.message);
         failed++;
         errors.push({ mutationId: item.mutationId, error: err.message });
@@ -382,10 +537,55 @@ async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: 
         updatedAt: new Date().toISOString(),
       });
 
+      if (newStatus === 'CONFIRMED' && winnerClubId) {
+        try {
+          const { advanceKnockoutWinnerFirestore } = await import('../tournament/knockoutEngine');
+          await advanceKnockoutWinnerFirestore(entityId);
+        } catch (kErr) {
+          console.warn('[KNOCKOUT_ADVANCE] Non-blocking advance error in sync replay:', kErr);
+        }
+      }
+
       if (newStatus === 'CONFIRMED' && fixData.competitionId) {
         try {
           const { rebuildCompetitionStandingsFirestore } = await import('../firebase/firestoreStore');
           await rebuildCompetitionStandingsFirestore(fixData.competitionId);
+        } catch (sErr) {
+          console.warn('[STANDINGS_UPDATE] Non-blocking standings update in sync replay:', sErr);
+        }
+      }
+
+      // Replay-safe deterministic audit log
+      const auditId = `audit_${item.mutationId}_submit`;
+      await db.collection(COLLECTIONS.AUDIT_LOGS).doc(auditId).set({
+        id: auditId,
+        actorUserId: payload.userId,
+        action: 'SUBMIT_RESULT',
+        entityType: 'fixture',
+        entityId: entityId,
+        notes: `Result submitted: ${payload.homeScore}-${payload.awayScore} (status: ${newStatus})`,
+        createdAt: payload.createdAt || new Date().toISOString(),
+      }, { merge: true });
+
+      // Replay-safe deterministic opponent notification
+      const opponentClubId = payload.userClubId === fixData.homeClubId ? fixData.awayClubId : fixData.homeClubId;
+      if (opponentClubId && fixData.seasonId) {
+        try {
+          const notifId = `notif_${item.mutationId}_opponent`;
+          const opponentOcc = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${fixData.seasonId}_${opponentClubId}`).get();
+          if (opponentOcc.exists && opponentOcc.data()?.userId) {
+            const oppUserId = opponentOcc.data()!.userId;
+            await db.collection(COLLECTIONS.NOTIFICATIONS).doc(notifId).set({
+              id: notifId,
+              userId: oppUserId,
+              type: newStatus === 'CONFIRMED' ? 'RESULT_CONFIRMED' : 'RESULT_SUBMITTED',
+              title: newStatus === 'CONFIRMED' ? 'Match Result Confirmed' : 'Opponent Submitted Score',
+              message: `Match result: ${payload.homeScore}-${payload.awayScore}`,
+              fixtureId: entityId,
+              isRead: false,
+              createdAt: new Date().toISOString(),
+            }, { merge: true });
+          }
         } catch {}
       }
       break;
@@ -425,12 +625,31 @@ async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: 
         });
       }
 
+      if (winnerClubId) {
+        try {
+          const { advanceKnockoutWinnerFirestore } = await import('../tournament/knockoutEngine');
+          await advanceKnockoutWinnerFirestore(entityId);
+        } catch {}
+      }
+
       if (fixData.competitionId) {
         try {
           const { rebuildCompetitionStandingsFirestore } = await import('../firebase/firestoreStore');
           await rebuildCompetitionStandingsFirestore(fixData.competitionId);
         } catch {}
       }
+
+      // Replay-safe deterministic audit log
+      const auditId = `audit_${item.mutationId}_approve`;
+      await db.collection(COLLECTIONS.AUDIT_LOGS).doc(auditId).set({
+        id: auditId,
+        actorUserId: payload.adminUserId,
+        action: 'ADMIN_APPROVE_RESULT',
+        entityType: 'fixture',
+        entityId: entityId,
+        notes: payload.notes || 'Approved by admin via sync',
+        createdAt: now,
+      }, { merge: true });
       break;
     }
 
@@ -466,6 +685,18 @@ async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: 
           await rebuildCompetitionStandingsFirestore(fixDoc.data()!.competitionId);
         } catch {}
       }
+
+      // Replay-safe deterministic audit log
+      const auditId = `audit_${item.mutationId}_reject`;
+      await db.collection(COLLECTIONS.AUDIT_LOGS).doc(auditId).set({
+        id: auditId,
+        actorUserId: payload.adminUserId,
+        action: 'ADMIN_REJECT_RESULT',
+        entityType: 'fixture',
+        entityId: entityId,
+        notes: payload.notes || 'Rejected by admin via sync',
+        createdAt: now,
+      }, { merge: true });
       break;
     }
 

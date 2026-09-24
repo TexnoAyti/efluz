@@ -22,6 +22,7 @@ import {
 } from '../sync/mutationQueue';
 import { getDbFilePath } from '../db';
 import { assertTestEnvironmentSafe } from '../utils/testGuard';
+import { startMockUpstashBridge } from './mockUpstashBridge';
 import path from 'node:path';
 import fs from 'node:fs';
 
@@ -54,6 +55,8 @@ export async function runQuotaResilienceAudit() {
   console.log('\n================================================================');
   console.log('    STRICT EFL UZ FIRESTORE QUOTA & RESILIENCE TEST SUITE      ');
   console.log('================================================================\n');
+
+  const mockRedis = await startMockUpstashBridge();
 
   // Initialize DB and ensure clean base seed
   await initDatabase();
@@ -501,6 +504,8 @@ export async function runQuotaResilienceAudit() {
   const passed = auditResults.filter((r) => r.passed).length;
   const total = auditResults.length;
   console.log(`TOTAL AUDIT CHECKS: ${total} | PASSED: ${passed} | FAILED: ${total - passed}`);
+
+  await mockRedis.close();
 
   return passed === total;
 }

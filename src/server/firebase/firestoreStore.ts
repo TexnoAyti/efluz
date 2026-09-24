@@ -15,6 +15,7 @@ import {
 } from './occupancySnapshot';
 import {
   enqueueMutation,
+  enqueueDurableOutboxMutation,
   getPendingMutations,
   updateMutationStatus,
   processPendingMutations,
@@ -1161,18 +1162,14 @@ export async function claimClubAtomicFirestore(
       if (err instanceof ClubConflictError || err instanceof ClubNotFoundError) {
         throw err;
       }
-      if (options?.authoritativeOnly || isHostedEnvironment()) {
-        throw err;
-      }
       firestoreCircuitBreaker.recordFailure(err);
       recordFallbackUsage();
-      console.warn('[FIRESTORE FALLBACK] claimClubAtomicFirestore:', err.message);
+      console.warn('[FIRESTORE REJECT] claimClubAtomicFirestore failed authoritatively:', err.message);
+      throw err;
     }
   } else {
-    if (options?.authoritativeOnly || isHostedEnvironment()) {
-      throw new Error('CIRCUIT_OPEN: Firestore circuit breaker is OPEN. Authoritative write cannot execute.');
-    }
     recordFallbackUsage();
+    throw new Error('CIRCUIT_OPEN: Firestore circuit breaker is OPEN. Authoritative write cannot execute.');
   }
 
   // Resilient Offline Claim with SQLite & mutation queue
@@ -4106,12 +4103,7 @@ export async function submitFixtureResultFirestore(
   const submissionId = `sub-${fixtureId}-${userId}`;
 
   const executeFallbackSubmit = async (): Promise<Fixture> => {
-    if (process.env.VERCEL === '1' || Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME)) {
-      const err: any = new Error('AUTHORITATIVE_WRITE_REQUIRED: result submission is temporarily unavailable.');
-      err.statusCode = 503;
-      throw err;
-    }
-    console.log('[RESULT_SUBMISSION_FALLBACK] Executing resilient SQLite fallback persistence for fixture:', fixtureId);
+    console.log('[RESULT_SUBMISSION_FALLBACK] Executing resilient durable fallback persistence for fixture:', fixtureId);
     const row = queryGet<any>('SELECT * FROM fixtures WHERE id = ?', [fixtureId]);
     if (!row) {
       throw new Error(`Fixture with ID '${fixtureId}' not found.`);
@@ -4152,25 +4144,19 @@ export async function submitFixtureResultFirestore(
       throw new Error('You do not own either the home or away club in this fixture.');
     }
 
-    queryRun(
-      `INSERT OR REPLACE INTO result_submissions (id, fixture_id, submitted_by_user_id, club_id, home_score, away_score, proof_url, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [submissionId, fixtureId, userId, userClubId, homeScore, awayScore, proofUrl || null, now]
-    );
-
     const existingSubs = queryAll<any>('SELECT * FROM result_submissions WHERE fixture_id = ?', [fixtureId]);
-    let newStatus = existingSubs.length === 1 ? 'PENDING_CONFIRMATION' : 'AWAITING_RESULT';
+    const otherSub = existingSubs.find((s) => s.submitted_by_user_id !== userId);
+    let newStatus = 'PENDING_CONFIRMATION';
     let confirmedHomeScore: number | null = null;
     let confirmedAwayScore: number | null = null;
     let winnerClubId: string | null = null;
     let confirmedAt: string | null = null;
 
-    if (existingSubs.length >= 2) {
-      const [sub1, sub2] = existingSubs;
-      if (sub1.home_score === sub2.home_score && sub1.away_score === sub2.away_score) {
+    if (otherSub) {
+      if (otherSub.home_score === homeScore && otherSub.away_score === awayScore) {
         newStatus = 'CONFIRMED';
-        confirmedHomeScore = sub1.home_score;
-        confirmedAwayScore = sub1.away_score;
+        confirmedHomeScore = homeScore;
+        confirmedAwayScore = awayScore;
         confirmedAt = now;
         if (confirmedHomeScore > confirmedAwayScore) winnerClubId = row.home_club_id;
         else if (confirmedAwayScore > confirmedHomeScore) winnerClubId = row.away_club_id;
@@ -4179,29 +4165,53 @@ export async function submitFixtureResultFirestore(
       }
     }
 
+    const mutationId = `sub_${fixtureId}_${userId}`;
+    const mutationPayload = {
+      fixtureId,
+      userId,
+      userClubId,
+      homeScore,
+      awayScore,
+      proofUrl: proofUrl || null,
+      submissionId,
+      seasonId: row.season_id || 'season-2026-27',
+      competitionId: row.competition_id,
+      homeClubId: row.home_club_id,
+      awayClubId: row.away_club_id,
+      matchday: row.matchday,
+      isConfirmation: newStatus === 'CONFIRMED',
+      resultingStatus: newStatus,
+      confirmedHomeScore,
+      confirmedAwayScore,
+      winnerClubId,
+      confirmedAt,
+      createdAt: now,
+    };
+
+    // 1. MUST persist to durable Redis outbox FIRST
+    await enqueueDurableOutboxMutation({
+      mutationId,
+      entityType: 'RESULT_SUBMISSION',
+      entityId: fixtureId,
+      operation: 'SUBMIT_RESULT',
+      userId,
+      seasonId: row.season_id || 'season-2026-27',
+      competitionId: row.competition_id,
+      payload: mutationPayload,
+      createdAt: now,
+    });
+
+    // 2. Only after Redis persistence succeeds: update local SQLite/read model
+    queryRun(
+      `INSERT OR REPLACE INTO result_submissions (id, fixture_id, submitted_by_user_id, club_id, home_score, away_score, proof_url, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [submissionId, fixtureId, userId, userClubId, homeScore, awayScore, proofUrl || null, now]
+    );
+
     queryRun(
       `UPDATE fixtures SET status = ?, home_score = ?, away_score = ?, winner_club_id = ?, result_confirmed_at = ?, updated_at = ? WHERE id = ?`,
       [newStatus, confirmedHomeScore, confirmedAwayScore, winnerClubId, confirmedAt, now, fixtureId]
     );
-
-    // Enqueue durable mutation for background reconciliation when Firestore is restored
-    enqueueMutation({
-      mutationId: `sub_${fixtureId}_${userId}`,
-      entityType: 'RESULT_SUBMISSION',
-      entityId: fixtureId,
-      operation: 'SUBMIT_RESULT',
-      payload: {
-        fixtureId,
-        userId,
-        userClubId,
-        homeScore,
-        awayScore,
-        proofUrl: proofUrl || null,
-        submissionId,
-        createdAt: now,
-      },
-      createdAt: now,
-    });
 
     invalidateFirestoreCache('firestore:fixtures');
     invalidateFirestoreCache('firestore:comp');
@@ -4912,7 +4922,7 @@ export async function reopenFixtureFirestore(
   fixtureId: string,
   notes?: string,
   options?: { authoritativeOnly?: boolean }
-): Promise<{ success: boolean; fixtureId: string; authoritative?: boolean; isFallback?: boolean }> {
+): Promise<{ success: boolean; fixtureId: string; authoritative?: boolean; isFallback?: boolean; pendingSync?: boolean }> {
   assertNoSyntheticIdsInProduction('reopenFixtureFirestore', [adminUserId, fixtureId]);
   const now = new Date().toISOString();
 
@@ -4959,20 +4969,22 @@ export async function reopenFixtureFirestore(
         }
       }
 
-      // Audit log
-      await db.collection(COLLECTIONS.AUDIT_LOGS).add({
+      // Audit log (deterministic ID prevents duplicate on replay)
+      const auditId = `audit_reopen_${fixtureId}`;
+      await db.collection(COLLECTIONS.AUDIT_LOGS).doc(auditId).set({
+        id: auditId,
         actorUserId: adminUserId,
         action: 'REOPEN_FIXTURE',
         entityType: 'fixture',
         entityId: fixtureId,
         notes: notes || null,
         createdAt: now,
-      });
+      }, { merge: true });
 
       invalidateFirestoreCache();
       return { success: true, fixtureId, authoritative: true, isFallback: false };
     } catch (err: any) {
-      if (options?.authoritativeOnly || isHostedEnvironment()) {
+      if (options?.authoritativeOnly) {
         throw err;
       }
       firestoreCircuitBreaker.recordFailure(err);
@@ -4980,13 +4992,37 @@ export async function reopenFixtureFirestore(
       console.warn('[FIRESTORE FALLBACK] reopenFixtureFirestore:', err.message);
     }
   } else {
-    if (options?.authoritativeOnly || isHostedEnvironment()) {
+    if (options?.authoritativeOnly) {
       throw new Error('CIRCUIT_OPEN: Firestore circuit breaker is OPEN. Authoritative write cannot execute.');
     }
     recordFallbackUsage();
   }
 
-  // SQLite Fallback & Mutation Queue
+  // Durable Redis Outbox & SQLite Fallback
+  const localFix = queryGet<any>('SELECT * FROM fixtures WHERE id = ?', [fixtureId]);
+  const mutationId = `admin_reject_${fixtureId}`;
+
+  // 1. MUST persist to durable Redis outbox FIRST
+  await enqueueDurableOutboxMutation({
+    mutationId,
+    entityType: 'ADMIN_DECISION',
+    entityId: fixtureId,
+    operation: 'ADMIN_REJECT_RESULT',
+    adminUserId,
+    userId: adminUserId,
+    seasonId: localFix?.season_id || 'season-2026-27',
+    competitionId: localFix?.competition_id,
+    payload: {
+      adminUserId,
+      fixtureId,
+      notes: notes || 'Rejected by tournament administrator (offline queued)',
+      seasonId: localFix?.season_id || 'season-2026-27',
+      competitionId: localFix?.competition_id,
+    },
+    createdAt: now,
+  });
+
+  // 2. Only after Redis persistence succeeds, update local SQLite
   queryRun(
     `UPDATE fixtures 
      SET status = 'SCHEDULED', home_score = NULL, away_score = NULL, winner_club_id = NULL, result_confirmed_at = NULL, updated_at = ? 
@@ -4996,20 +5032,7 @@ export async function reopenFixtureFirestore(
   queryRun('DELETE FROM result_submissions WHERE fixture_id = ?', [fixtureId]);
   queryRun('DELETE FROM disputes WHERE fixture_id = ?', [fixtureId]);
 
-  enqueueMutation({
-    mutationId: `admin_reject_${fixtureId}`,
-    entityType: 'ADMIN_DECISION',
-    entityId: fixtureId,
-    operation: 'ADMIN_REJECT_RESULT',
-    payload: {
-      adminUserId,
-      fixtureId,
-      notes: notes || 'Rejected by tournament administrator (offline queued)',
-    },
-    createdAt: now,
-  });
-
-  return { success: true, fixtureId, authoritative: false, isFallback: true };
+  return { success: true, fixtureId, pendingSync: true, authoritative: false, isFallback: true };
 }
 
 export async function resolveDisputeFirestore(
@@ -5089,14 +5112,16 @@ export async function resolveDisputeFirestore(
 
   await disputeRef.update(updatedDispute);
 
-  await db.collection(COLLECTIONS.AUDIT_LOGS).add({
+  const auditId = `audit_resolve_dispute_${disputeId}`;
+  await db.collection(COLLECTIONS.AUDIT_LOGS).doc(auditId).set({
+    id: auditId,
     actorUserId: adminUserId,
     action: 'RESOLVE_DISPUTE',
     entityType: 'dispute',
     entityId: disputeId,
     notes: params.notes || null,
     createdAt: now,
-  });
+  }, { merge: true });
 
   return { success: true, dispute: updatedDispute };
 }
@@ -5471,13 +5496,15 @@ export async function createAuditLogFirestore(
   newValue?: any,
   ipAddress?: string,
   actorUsername?: string,
-  notes?: string
+  notes?: string,
+  customAuditId?: string
 ): Promise<void> {
   const db = getFirestoreDb();
   const now = new Date().toISOString();
-  const auditId = `audit-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const auditId = customAuditId || `audit_${action}_${entityType}_${entityId}`;
   try {
-    await db.collection(COLLECTIONS.AUDIT_LOGS).add({
+    await db.collection(COLLECTIONS.AUDIT_LOGS).doc(auditId).set({
+      id: auditId,
       actorUserId,
       actorUsername: actorUsername || null,
       action,
@@ -5488,7 +5515,7 @@ export async function createAuditLogFirestore(
       ipAddress: ipAddress || null,
       notes: notes || null,
       createdAt: now,
-    });
+    }, { merge: true });
     trackFirestoreWrite(COLLECTIONS.AUDIT_LOGS, 1, 'createAuditLogFirestore');
   } catch (err: any) {
     console.warn('[FIRESTORE AUDIT LOG WARN]:', err.message);
@@ -5497,7 +5524,7 @@ export async function createAuditLogFirestore(
   // Also log to SQLite for local consistency
   try {
     queryRun(
-      `INSERT INTO audit_logs (id, actor_user_id, actor_username, action, entity_type, entity_id, old_value_json, new_value_json, ip_address, created_at)
+      `INSERT OR REPLACE INTO audit_logs (id, actor_user_id, actor_username, action, entity_type, entity_id, old_value_json, new_value_json, ip_address, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         auditId,
@@ -5522,12 +5549,15 @@ export async function createNotificationFirestore(
   type: string,
   title: string,
   message: string,
-  data?: Record<string, unknown>
+  data?: Record<string, unknown>,
+  customNotificationId?: string
 ): Promise<void> {
   const now = new Date().toISOString();
+  const notifId = customNotificationId || `notif_${type}_${userId}_${String(data?.fixtureId || data?.clubId || 'gen')}`;
   try {
     const db = getFirestoreDb();
-    await db.collection(COLLECTIONS.NOTIFICATIONS).add({
+    await db.collection(COLLECTIONS.NOTIFICATIONS).doc(notifId).set({
+      id: notifId,
       userId,
       type,
       title,
@@ -5535,12 +5565,11 @@ export async function createNotificationFirestore(
       data: data || null,
       isRead: false,
       createdAt: now,
-    });
+    }, { merge: true });
   } catch (err: any) {
     console.warn('[FIRESTORE FALLBACK] createNotificationFirestore:', err.message);
-    const notifId = `notif-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     queryRun(
-      `INSERT INTO notifications (id, user_id, type, title, message, is_read, created_at)
+      `INSERT OR REPLACE INTO notifications (id, user_id, type, title, message, is_read, created_at)
        VALUES (?, ?, ?, ?, ?, 0, ?)`,
       [notifId, userId, type, title, message, now]
     );
@@ -6116,7 +6145,7 @@ export async function adminApproveFixtureResultFirestore(
   awayScore: number,
   notes?: string,
   options?: { authoritativeOnly?: boolean }
-): Promise<{ success: boolean; message: string; fixture: Fixture; authoritative?: boolean; isFallback?: boolean }> {
+): Promise<{ success: boolean; message: string; fixture: Fixture; authoritative?: boolean; isFallback?: boolean; pendingSync?: boolean }> {
   assertNoSyntheticIdsInProduction('adminApproveFixtureResultFirestore', [adminUserId, fixtureId]);
   const now = new Date().toISOString();
   let winnerClubId: string | null = null;
@@ -6173,15 +6202,17 @@ export async function adminApproveFixtureResultFirestore(
         }
       }
 
-      // Audit log
-      await db.collection(COLLECTIONS.AUDIT_LOGS).add({
+      // Audit log (deterministic ID prevents duplicate on replay)
+      const auditId = `audit_approve_${fixtureId}`;
+      await db.collection(COLLECTIONS.AUDIT_LOGS).doc(auditId).set({
+        id: auditId,
         actorUserId: adminUserId,
         action: 'ADMIN_APPROVE_RESULT',
         entityType: 'fixture',
         entityId: fixtureId,
         notes: notes || `Admin confirmed result ${homeScore}-${awayScore}`,
         createdAt: now,
-      });
+      }, { merge: true });
 
       invalidateFirestoreCache();
       const updatedFixture = await getFixtureByIdFirestore(fixtureId);
@@ -6193,7 +6224,7 @@ export async function adminApproveFixtureResultFirestore(
         isFallback: false,
       };
     } catch (err: any) {
-      if (options?.authoritativeOnly || isHostedEnvironment()) {
+      if (options?.authoritativeOnly) {
         throw err;
       }
       firestoreCircuitBreaker.recordFailure(err);
@@ -6201,13 +6232,13 @@ export async function adminApproveFixtureResultFirestore(
       console.warn('[FIRESTORE FALLBACK] adminApproveFixtureResultFirestore:', err.message);
     }
   } else {
-    if (options?.authoritativeOnly || isHostedEnvironment()) {
+    if (options?.authoritativeOnly) {
       throw new Error('CIRCUIT_OPEN: Firestore circuit breaker is OPEN. Authoritative write cannot execute.');
     }
     recordFallbackUsage();
   }
 
-  // SQLite Fallback & Mutation Queueing
+  // Durable Redis Outbox & SQLite Fallback
   const localFix = queryGet<any>('SELECT * FROM fixtures WHERE id = ?', [fixtureId]);
   if (!localFix) {
     throw new Error(`Fixture '${fixtureId}' not found in local database.`);
@@ -6216,6 +6247,31 @@ export async function adminApproveFixtureResultFirestore(
   if (homeScore > awayScore) winnerClubId = localFix.home_club_id;
   else if (awayScore > homeScore) winnerClubId = localFix.away_club_id;
 
+  const mutationId = `admin_approve_${fixtureId}`;
+  // 1. MUST persist to durable Redis outbox FIRST
+  await enqueueDurableOutboxMutation({
+    mutationId,
+    entityType: 'ADMIN_DECISION',
+    entityId: fixtureId,
+    operation: 'ADMIN_APPROVE_RESULT',
+    adminUserId,
+    userId: adminUserId,
+    seasonId: localFix.season_id || 'season-2026-27',
+    competitionId: localFix.competition_id,
+    payload: {
+      adminUserId,
+      fixtureId,
+      homeScore,
+      awayScore,
+      notes: notes || 'Approved by tournament administrator (offline queued)',
+      seasonId: localFix.season_id || 'season-2026-27',
+      competitionId: localFix.competition_id,
+      winnerClubId,
+    },
+    createdAt: now,
+  });
+
+  // 2. Only after Redis persistence succeeds, update local SQLite
   queryRun(
     `UPDATE fixtures 
      SET status = 'CONFIRMED', home_score = ?, away_score = ?, winner_club_id = ?, result_confirmed_at = ?, updated_at = ? 
@@ -6230,26 +6286,12 @@ export async function adminApproveFixtureResultFirestore(
     [adminUserId, notes || 'Approved by tournament administrator (offline queued)', now, fixtureId]
   );
 
-  enqueueMutation({
-    mutationId: `admin_approve_${fixtureId}`,
-    entityType: 'ADMIN_DECISION',
-    entityId: fixtureId,
-    operation: 'ADMIN_APPROVE_RESULT',
-    payload: {
-      adminUserId,
-      fixtureId,
-      homeScore,
-      awayScore,
-      notes: notes || 'Approved by tournament administrator (offline queued)',
-    },
-    createdAt: now,
-  });
-
   const updatedFixture = await getFixtureByIdFirestore(fixtureId);
   return {
     success: true,
     message: `Match result (${homeScore} - ${awayScore}) confirmed locally (queued for background sync).`,
     fixture: updatedFixture!,
+    pendingSync: true,
     authoritative: false,
     isFallback: true,
   };

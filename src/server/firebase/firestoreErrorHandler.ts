@@ -25,6 +25,15 @@ export function parseFirestoreError(err: any): FormattedFirestoreError {
   const rawCode = err.code ?? (err.status ?? '');
   const rawMsg = err.message || String(err);
   const strCode = String(rawCode).toUpperCase();
+  if (strCode === 'DURABLE_PERSISTENCE_UNAVAILABLE' || rawMsg.includes('DURABLE_PERSISTENCE_UNAVAILABLE')) {
+    return {
+      error: 'DURABLE_PERSISTENCE_UNAVAILABLE',
+      code: 'DURABLE_PERSISTENCE_UNAVAILABLE',
+      message: 'Durable persistence is temporarily unavailable. Change was not accepted; retry when service recovers.',
+      httpStatus: 503,
+      details: err.details || rawMsg,
+    };
+  }
   if (strCode === 'AUTHORITATIVE_WRITE_REQUIRED') {
     return { error: strCode, code: strCode, message: 'O‘zgarish saqlanmadi. Baza tiklangandan keyin qayta urinib ko‘ring.', httpStatus: 503 };
   }

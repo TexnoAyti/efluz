@@ -548,6 +548,22 @@ var init_migrateFixtures = __esm({
 });
 
 // src/server/db/index.ts
+var db_exports = {};
+__export(db_exports, {
+  dbTransaction: () => dbTransaction,
+  getDb: () => getDb,
+  getDbFilePath: () => getDbFilePath,
+  initDatabase: () => initDatabase,
+  isDatabaseInitialized: () => isDatabaseInitialized,
+  migrateFixturesTableIfNeeded: () => migrateFixturesTableIfNeeded,
+  persistDatabase: () => persistDatabase,
+  queryAll: () => queryAll,
+  queryGet: () => queryGet,
+  queryRun: () => queryRun,
+  resolveBundledDbPath: () => resolveBundledDbPath,
+  resolveSqlWasmPath: () => resolveSqlWasmPath,
+  saveDatabaseSync: () => saveDatabaseSync
+});
 import fs2 from "fs";
 import path2 from "path";
 import { fileURLToPath } from "url";
@@ -918,6 +934,9 @@ async function initDatabase() {
   saveDatabaseSync();
   return dbInstance;
 }
+function isDatabaseInitialized() {
+  return dbInstance !== null;
+}
 function getDb() {
   if (!dbInstance) {
     throw new Error("Database is not initialized. Call initDatabase() first.");
@@ -938,6 +957,22 @@ function saveDatabaseSync() {
     fs2.renameSync(tempFile, DB_FILE);
   } catch (err) {
     console.error(" [DB] Error saving SQLite database to disk:", err);
+  }
+}
+async function persistDatabase() {
+  if (isSaving) {
+    needsSave = true;
+    return;
+  }
+  isSaving = true;
+  try {
+    saveDatabaseSync();
+  } finally {
+    isSaving = false;
+    if (needsSave) {
+      needsSave = false;
+      await persistDatabase();
+    }
   }
 }
 function queryGet(sql, params = []) {
@@ -1013,7 +1048,7 @@ function dbTransaction(callback) {
     throw error;
   }
 }
-var dbInstance, IS_HOSTED, IS_SERVERLESS, DEFAULT_DATA_DIR, DATA_DIR, DB_FILE, SCHEMA_FILE, transactionDepth;
+var dbInstance, IS_HOSTED, IS_SERVERLESS, DEFAULT_DATA_DIR, DATA_DIR, DB_FILE, SCHEMA_FILE, isSaving, needsSave, transactionDepth;
 var init_db = __esm({
   "src/server/db/index.ts"() {
     init_migrateFixtures();
@@ -1025,11 +1060,24 @@ var init_db = __esm({
     DATA_DIR = process.env.DATA_DIR || DEFAULT_DATA_DIR;
     DB_FILE = process.env.DB_FILE || path2.join(DATA_DIR, "efootball.sqlite");
     SCHEMA_FILE = path2.resolve(process.cwd(), "src", "server", "db", "schema.sql");
+    isSaving = false;
+    needsSave = false;
     transactionDepth = 0;
   }
 });
 
 // src/server/db/seed.ts
+var seed_exports = {};
+__export(seed_exports, {
+  SEED_CLUBS: () => SEED_CLUBS,
+  SEED_COMPETITIONS: () => SEED_COMPETITIONS,
+  SEED_LEAGUES: () => SEED_LEAGUES,
+  SEED_SEASON: () => SEED_SEASON,
+  SEED_SEASONS: () => SEED_SEASONS,
+  repairSeason202627Roster: () => repairSeason202627Roster,
+  seedDatabase: () => seedDatabase,
+  seedMissingStaticCatalog: () => seedMissingStaticCatalog
+});
 function seedMissingStaticCatalog() {
   dbTransaction(() => {
     const now = (/* @__PURE__ */ new Date()).toISOString();
@@ -1056,6 +1104,142 @@ function seedMissingStaticCatalog() {
       [c.id, c.seasonId, c.leagueId || null, c.name, c.type, c.scheduleMode, "upcoming", JSON.stringify(c.formatConfig), now]
     );
   });
+}
+function seedDatabase() {
+  return dbTransaction(() => {
+    let seasonsCreated = 0;
+    let leaguesCreated = 0;
+    let clubsCreated = 0;
+    let competitionsCreated = 0;
+    let skipped = 0;
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const existingSeason = queryGet("SELECT id FROM seasons WHERE id = ?", [SEED_SEASON.id]);
+    if (!existingSeason) {
+      queryRun(
+        "INSERT INTO seasons (id, name, status, start_date, end_date, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        [SEED_SEASON.id, SEED_SEASON.name, SEED_SEASON.status, SEED_SEASON.startDate, SEED_SEASON.endDate, now]
+      );
+      seasonsCreated++;
+    } else {
+      queryRun(
+        "UPDATE seasons SET name = ?, status = ?, start_date = ?, end_date = ? WHERE id = ?",
+        [SEED_SEASON.name, SEED_SEASON.status, SEED_SEASON.startDate, SEED_SEASON.endDate, SEED_SEASON.id]
+      );
+    }
+    for (const league of SEED_LEAGUES) {
+      const existingLeague = queryGet("SELECT id FROM leagues WHERE id = ?", [league.id]);
+      if (!existingLeague) {
+        queryRun(
+          "INSERT INTO leagues (id, name, country, tier, logo_url, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+          [league.id, league.name, league.country, league.tier, league.logoUrl, now]
+        );
+        leaguesCreated++;
+      } else {
+        skipped++;
+      }
+    }
+    const activeClubIds = new Set(SEED_CLUBS.map((c) => c.id));
+    for (const club of SEED_CLUBS) {
+      const existingClub = queryGet("SELECT id FROM clubs WHERE id = ?", [club.id]);
+      if (!existingClub) {
+        queryRun(
+          "INSERT INTO clubs (id, name, short_name, country, league_id, logo_url, active, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
+          [club.id, club.name, club.shortName, club.country, club.leagueId, club.logoUrl, now]
+        );
+        clubsCreated++;
+      } else {
+        queryRun(
+          "UPDATE clubs SET name = ?, short_name = ?, country = ?, league_id = ?, logo_url = ?, active = 1 WHERE id = ?",
+          [club.name, club.shortName, club.country, club.leagueId, club.logoUrl, club.id]
+        );
+      }
+      const slcId = `slc-${SEED_SEASON.id}-${club.id}`;
+      queryRun(
+        `INSERT INTO season_league_clubs (id, season_id, league_id, club_id, is_active, created_at)
+         VALUES (?, ?, ?, ?, 1, ?)
+         ON CONFLICT(season_id, club_id) DO UPDATE SET league_id = excluded.league_id, is_active = 1`,
+        [slcId, SEED_SEASON.id, club.leagueId, club.id, now]
+      );
+    }
+    const allDbClubs = queryAll("SELECT id FROM clubs");
+    for (const c of allDbClubs) {
+      if (!activeClubIds.has(c.id)) {
+        queryRun("UPDATE clubs SET active = 0 WHERE id = ?", [c.id]);
+        queryRun(
+          "UPDATE season_league_clubs SET is_active = 0 WHERE club_id = ? AND season_id = ?",
+          [c.id, SEED_SEASON.id]
+        );
+        queryRun(
+          "DELETE FROM competition_participants WHERE club_id = ? AND season_id = ?",
+          [c.id, SEED_SEASON.id]
+        );
+      }
+    }
+    for (const comp of SEED_COMPETITIONS) {
+      const existingComp = queryGet("SELECT id FROM competitions WHERE id = ?", [comp.id]);
+      if (!existingComp) {
+        queryRun(
+          'INSERT INTO competitions (id, season_id, league_id, name, type, schedule_mode, status, format_config_json, created_at) VALUES (?, ?, ?, ?, ?, ?, "upcoming", ?, ?)',
+          [
+            comp.id,
+            comp.seasonId,
+            comp.leagueId || null,
+            comp.name,
+            comp.type,
+            comp.scheduleMode,
+            JSON.stringify(comp.formatConfig),
+            now
+          ]
+        );
+        competitionsCreated++;
+      } else {
+        queryRun(
+          "UPDATE competitions SET schedule_mode = ?, format_config_json = ? WHERE id = ?",
+          [comp.scheduleMode, JSON.stringify(comp.formatConfig), comp.id]
+        );
+        skipped++;
+      }
+      if ((comp.type === "LEAGUE" || comp.type === "KNOCKOUT") && comp.leagueId) {
+        queryRun(
+          `DELETE FROM competition_participants 
+           WHERE competition_id = ? AND club_id NOT IN (
+             SELECT club_id FROM season_league_clubs WHERE league_id = ? AND season_id = ? AND is_active = 1
+           )`,
+          [comp.id, comp.leagueId, comp.seasonId]
+        );
+        const leagueClubs = queryAll(
+          `SELECT slc.club_id 
+           FROM season_league_clubs slc 
+           JOIN clubs c ON slc.club_id = c.id
+           WHERE slc.league_id = ? AND slc.season_id = ? AND slc.is_active = 1 
+           ORDER BY c.name ASC`,
+          [comp.leagueId, comp.seasonId]
+        );
+        for (let i = 0; i < leagueClubs.length; i++) {
+          const clubId = leagueClubs[i].club_id;
+          const partId = `part-${comp.id}-${clubId}`;
+          queryRun(
+            `INSERT INTO competition_participants (id, competition_id, club_id, season_id, seed_number, created_at)
+             VALUES (?, ?, ?, ?, ?, ?)
+             ON CONFLICT(competition_id, club_id) DO UPDATE SET seed_number = excluded.seed_number`,
+            [partId, comp.id, clubId, comp.seasonId, i + 1, now]
+          );
+        }
+      }
+    }
+    console.log(
+      ` [SEED] Done: Created ${seasonsCreated} season, ${leaguesCreated} leagues, ${clubsCreated} clubs, ${competitionsCreated} competitions. Skipped ${skipped} existing records.`
+    );
+    return { seasonsCreated, leaguesCreated, clubsCreated, competitionsCreated, skipped };
+  });
+}
+function repairSeason202627Roster() {
+  seedMissingStaticCatalog();
+  return {
+    activatedClubs: 0,
+    deactivatedClubs: 0,
+    totalActive: queryGet("SELECT count(*) n FROM clubs WHERE active = 1")?.n || 0
+  };
 }
 var SEED_SEASON, SEED_SEASONS, SEED_LEAGUES, SEED_CLUBS, SEED_COMPETITIONS;
 var init_seed = __esm({
@@ -1587,6 +1771,9 @@ function getLocalOccupancySnapshot(seasonId = "season-2026-27") {
   if (memRecords.length > 0) {
     return memRecords;
   }
+  if (!isDatabaseInitialized()) {
+    return memRecords;
+  }
   try {
     const cachedRows = queryAll(
       `SELECT club_id, season_id, user_id, username, display_name, status, updated_at
@@ -1791,526 +1978,6 @@ var init_testGuard = __esm({
   }
 });
 
-// src/server/sync/mutationQueue.ts
-import fs3 from "fs";
-import path3 from "path";
-function saveQueueBackupToFile() {
-  try {
-    if (!fs3.existsSync(BACKUP_DIR)) {
-      fs3.mkdirSync(BACKUP_DIR, { recursive: true });
-    }
-    const arr = Array.from(memoryQueue.values()).filter((m) => m.status === "PENDING" || m.status === "SYNCING");
-    fs3.writeFileSync(BACKUP_FILE, JSON.stringify(arr, null, 2), "utf-8");
-  } catch {
-  }
-}
-function loadQueueBackupFromFile() {
-  try {
-    if (fs3.existsSync(BACKUP_FILE)) {
-      const content = fs3.readFileSync(BACKUP_FILE, "utf-8");
-      const arr = JSON.parse(content);
-      for (const item of arr) {
-        if (!memoryQueue.has(item.mutationId)) {
-          memoryQueue.set(item.mutationId, item);
-        }
-      }
-    }
-  } catch {
-  }
-}
-function enqueueMutation(mutation) {
-  if (process.env.NODE_ENV === "production" || process.env.VERCEL || process.env.K_SERVICE || process.env.AWS_LAMBDA_FUNCTION_NAME) {
-    throw Object.assign(
-      new Error("Remote database unavailable. Change was not accepted; retry when service recovers."),
-      { code: "AUTHORITATIVE_WRITE_REQUIRED", statusCode: 503 }
-    );
-  }
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const existing = memoryQueue.get(mutation.mutationId);
-  if (existing && existing.status === "SYNCED") {
-    return existing;
-  }
-  const fullMutation = {
-    ...mutation,
-    status: "PENDING",
-    retryCount: existing ? existing.retryCount : 0,
-    lastError: null,
-    updatedAt: now
-  };
-  memoryQueue.set(mutation.mutationId, fullMutation);
-  saveQueueBackupToFile();
-  try {
-    queryRun(
-      `INSERT OR REPLACE INTO pending_mutations 
-       (mutation_id, entity_type, entity_id, operation, payload, status, retry_count, last_error, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        fullMutation.mutationId,
-        fullMutation.entityType,
-        fullMutation.entityId,
-        fullMutation.operation,
-        JSON.stringify(fullMutation.payload),
-        fullMutation.status,
-        fullMutation.retryCount,
-        fullMutation.lastError,
-        fullMutation.createdAt,
-        fullMutation.updatedAt
-      ]
-    );
-  } catch (err) {
-    console.warn("[MUTATION_QUEUE] SQLite insert warning:", err);
-  }
-  console.log(`[MUTATION_QUEUE] Enqueued mutation: id=${fullMutation.mutationId} type=${fullMutation.entityType}`);
-  return fullMutation;
-}
-function getPendingMutations(status) {
-  if (memoryQueue.size === 0) {
-    try {
-      const rows = queryAll(
-        `SELECT mutation_id, entity_type, entity_id, operation, payload, status, retry_count, last_error, created_at, updated_at 
-         FROM pending_mutations WHERE status IN ('PENDING', 'SYNCING')`
-      );
-      for (const r of rows) {
-        let payload = {};
-        try {
-          payload = JSON.parse(r.payload);
-        } catch {
-        }
-        memoryQueue.set(r.mutation_id, {
-          mutationId: r.mutation_id,
-          entityType: r.entity_type,
-          entityId: r.entity_id,
-          operation: r.operation,
-          payload,
-          status: r.status,
-          retryCount: r.retry_count || 0,
-          lastError: r.last_error || null,
-          createdAt: r.created_at,
-          updatedAt: r.updated_at
-        });
-      }
-    } catch {
-    }
-    loadQueueBackupFromFile();
-  }
-  const all = Array.from(memoryQueue.values());
-  if (status) {
-    return all.filter((m) => m.status === status);
-  }
-  return all;
-}
-function updateMutationStatus(mutationId, status, error) {
-  const item = memoryQueue.get(mutationId);
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  if (item) {
-    item.status = status;
-    item.updatedAt = now;
-    if (error) {
-      item.lastError = error;
-      item.retryCount = (item.retryCount || 0) + 1;
-    } else if (status === "SYNCED") {
-      item.lastError = null;
-    }
-    memoryQueue.set(mutationId, item);
-  }
-  saveQueueBackupToFile();
-  try {
-    queryRun(
-      `UPDATE pending_mutations 
-       SET status = ?, last_error = ?, updated_at = ?, retry_count = retry_count + ?
-       WHERE mutation_id = ?`,
-      [status, error || null, now, error ? 1 : 0, mutationId]
-    );
-  } catch {
-  }
-}
-function getQueueStats() {
-  const all = getPendingMutations();
-  return {
-    total: all.length,
-    pending: all.filter((m) => m.status === "PENDING").length,
-    syncing: all.filter((m) => m.status === "SYNCING").length,
-    synced: all.filter((m) => m.status === "SYNCED").length,
-    failed: all.filter((m) => m.status === "FAILED").length
-  };
-}
-async function processPendingMutations() {
-  if (process.env.NODE_ENV === "production" || process.env.VERCEL || process.env.K_SERVICE || process.env.AWS_LAMBDA_FUNCTION_NAME) {
-    throw new Error("HOSTED_LOCAL_QUEUE_DISABLED: reconcile legacy local mutations through a reviewed recovery plan");
-  }
-  if (isSyncInProgress) {
-    console.log("[MUTATION_QUEUE] Sync already in progress, skipping duplicate call.");
-    return {
-      totalPending: getPendingMutations("PENDING").length,
-      processed: 0,
-      synced: 0,
-      failed: 0,
-      circuitOpen: !firestoreCircuitBreaker.canExecute(),
-      errors: []
-    };
-  }
-  if (!firestoreCircuitBreaker.canExecute()) {
-    console.log("[MUTATION_QUEUE] Circuit breaker is OPEN. Deferring sync.");
-    return {
-      totalPending: getPendingMutations("PENDING").length,
-      processed: 0,
-      synced: 0,
-      failed: 0,
-      circuitOpen: true,
-      errors: []
-    };
-  }
-  isSyncInProgress = true;
-  const pendingItems = getPendingMutations("PENDING").sort(
-    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-  );
-  let processed = 0;
-  let synced = 0;
-  let failed = 0;
-  const errors = [];
-  try {
-    const db = getFirestoreDb();
-    for (const item of pendingItems) {
-      if (!firestoreCircuitBreaker.canExecute()) {
-        console.warn("[MUTATION_QUEUE] Circuit breaker tripped during sync. Aborting remaining mutations.");
-        break;
-      }
-      processed++;
-      updateMutationStatus(item.mutationId, "SYNCING");
-      try {
-        await executeSingleMutationSync(db, item);
-        updateMutationStatus(item.mutationId, "SYNCED");
-        firestoreCircuitBreaker.recordSuccess();
-        synced++;
-        console.log(`[MUTATION_QUEUE] Successfully synced mutation ${item.mutationId} (${item.entityType})`);
-      } catch (err) {
-        const isQuota = firestoreCircuitBreaker.isQuotaExhaustedError(err);
-        const isOwnershipMismatch = err.message?.includes("OWNERSHIP_MISMATCH");
-        const isTerminalError = isOwnershipMismatch;
-        firestoreCircuitBreaker.recordFailure(err);
-        const nextStatus = isTerminalError ? "FAILED" : "PENDING";
-        updateMutationStatus(item.mutationId, nextStatus, err.message);
-        failed++;
-        errors.push({ mutationId: item.mutationId, error: err.message });
-        console.error(`[MUTATION_QUEUE] Failed syncing mutation ${item.mutationId}:`, err.message);
-        if (isQuota) {
-          break;
-        }
-      }
-    }
-  } finally {
-    isSyncInProgress = false;
-  }
-  return {
-    totalPending: getPendingMutations("PENDING").length,
-    processed,
-    synced,
-    failed,
-    circuitOpen: !firestoreCircuitBreaker.canExecute(),
-    errors
-  };
-}
-async function executeSingleMutationSync(db, item) {
-  const { entityType, entityId, payload } = item;
-  assertNoSyntheticIdsInProduction(`mutation_queue_replay:${entityType}`, [
-    item.mutationId,
-    entityId,
-    payload?.adminUserId,
-    payload?.userId,
-    payload?.targetUserId,
-    payload?.submittedByUserId,
-    payload?.fixtureId,
-    payload?.clubId,
-    payload?.submissionId
-  ]);
-  switch (entityType) {
-    case "RESULT_SUBMISSION": {
-      const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(entityId);
-      const fixDoc = await fixRef.get();
-      if (!fixDoc.exists) {
-        throw new Error(`Fixture ${entityId} not found in Firestore.`);
-      }
-      const fixData = fixDoc.data();
-      const subRef = db.collection(COLLECTIONS.RESULT_SUBMISSIONS).doc(payload.submissionId);
-      await subRef.set(
-        {
-          id: payload.submissionId,
-          fixtureId: entityId,
-          submittedByUserId: payload.userId,
-          clubId: payload.userClubId,
-          homeScore: payload.homeScore,
-          awayScore: payload.awayScore,
-          proofUrl: payload.proofUrl || null,
-          createdAt: payload.createdAt || (/* @__PURE__ */ new Date()).toISOString()
-        },
-        { merge: true }
-      );
-      const subsSnap = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where("fixtureId", "==", entityId).get();
-      const subs = subsSnap.docs.map((d) => d.data());
-      let newStatus = fixData.status;
-      let confirmedHome = fixData.homeScore ?? null;
-      let confirmedAway = fixData.awayScore ?? null;
-      let winnerClubId = fixData.winnerClubId ?? null;
-      let confirmedAt = fixData.resultConfirmedAt ?? null;
-      if (subs.length >= 2) {
-        const [s1, s2] = subs;
-        if (s1.homeScore === s2.homeScore && s1.awayScore === s2.awayScore) {
-          newStatus = "CONFIRMED";
-          confirmedHome = s1.homeScore;
-          confirmedAway = s1.awayScore;
-          confirmedAt = payload.updatedAt || (/* @__PURE__ */ new Date()).toISOString();
-          if (confirmedHome > confirmedAway) winnerClubId = fixData.homeClubId;
-          else if (confirmedAway > confirmedHome) winnerClubId = fixData.awayClubId;
-        } else {
-          newStatus = "DISPUTED";
-        }
-      } else if (subs.length === 1 && newStatus !== "CONFIRMED") {
-        newStatus = "PENDING_CONFIRMATION";
-      }
-      await fixRef.update({
-        status: newStatus,
-        homeScore: confirmedHome,
-        awayScore: confirmedAway,
-        winnerClubId,
-        resultConfirmedAt: confirmedAt,
-        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-      });
-      if (newStatus === "CONFIRMED" && fixData.competitionId) {
-        try {
-          const { rebuildCompetitionStandingsFirestore: rebuildCompetitionStandingsFirestore3 } = await Promise.resolve().then(() => (init_firestoreStore(), firestoreStore_exports));
-          await rebuildCompetitionStandingsFirestore3(fixData.competitionId);
-        } catch {
-        }
-      }
-      break;
-    }
-    case "ADMIN_APPROVE_RESULT": {
-      const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(entityId);
-      const fixDoc = await fixRef.get();
-      if (!fixDoc.exists) {
-        throw new Error(`Fixture ${entityId} not found in Firestore.`);
-      }
-      const fixData = fixDoc.data();
-      const now = (/* @__PURE__ */ new Date()).toISOString();
-      let winnerClubId = null;
-      if (payload.homeScore > payload.awayScore) winnerClubId = fixData.homeClubId;
-      else if (payload.awayScore > payload.homeScore) winnerClubId = fixData.awayClubId;
-      await fixRef.update({
-        status: "CONFIRMED",
-        homeScore: payload.homeScore,
-        awayScore: payload.awayScore,
-        winnerClubId,
-        resultConfirmedAt: now,
-        updatedAt: now
-      });
-      const disputesSnap = await db.collection(COLLECTIONS.DISPUTES).where("fixtureId", "==", entityId).get();
-      for (const d of disputesSnap.docs) {
-        await d.ref.update({
-          status: "RESOLVED",
-          resolvedByUserId: payload.adminUserId,
-          resolutionNotes: payload.notes || "Approved by admin via sync",
-          resolvedAt: now
-        });
-      }
-      if (fixData.competitionId) {
-        try {
-          const { rebuildCompetitionStandingsFirestore: rebuildCompetitionStandingsFirestore3 } = await Promise.resolve().then(() => (init_firestoreStore(), firestoreStore_exports));
-          await rebuildCompetitionStandingsFirestore3(fixData.competitionId);
-        } catch {
-        }
-      }
-      break;
-    }
-    case "ADMIN_REJECT_RESULT": {
-      const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(entityId);
-      const fixDoc = await fixRef.get();
-      if (!fixDoc.exists) {
-        throw new Error(`Fixture ${entityId} not found in Firestore.`);
-      }
-      const now = (/* @__PURE__ */ new Date()).toISOString();
-      await fixRef.update({
-        status: "SCHEDULED",
-        homeScore: null,
-        awayScore: null,
-        winnerClubId: null,
-        resultConfirmedAt: null,
-        updatedAt: now
-      });
-      const subsSnap = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where("fixtureId", "==", entityId).get();
-      const b = db.batch();
-      for (const doc of subsSnap.docs) {
-        b.delete(doc.ref);
-      }
-      await b.commit();
-      if (fixDoc.data()?.competitionId) {
-        try {
-          const { rebuildCompetitionStandingsFirestore: rebuildCompetitionStandingsFirestore3 } = await Promise.resolve().then(() => (init_firestoreStore(), firestoreStore_exports));
-          await rebuildCompetitionStandingsFirestore3(fixDoc.data().competitionId);
-        } catch {
-        }
-      }
-      break;
-    }
-    case "CLUB_CLAIM": {
-      const { claimClubAtomicFirestore: claimClubAtomicFirestore2 } = await Promise.resolve().then(() => (init_firestoreStore(), firestoreStore_exports));
-      const res = await claimClubAtomicFirestore2(payload.userId, payload.clubId, payload.seasonId, { authoritativeOnly: true });
-      if (!res || !res.authoritative || res.isFallback) {
-        throw new Error("AUTHORITATIVE_WRITE_FAILED: Remote claim write did not succeed.");
-      }
-      break;
-    }
-    case "ADMIN_ASSIGN_CLUB": {
-      const { adminAssignClubFirestore: adminAssignClubFirestore2 } = await Promise.resolve().then(() => (init_firestoreStore(), firestoreStore_exports));
-      const res = await adminAssignClubFirestore2(payload.adminUserId || "system", payload.clubId, payload.targetUserId, payload.seasonId, { authoritativeOnly: true });
-      if (!res || !res.authoritative || res.isFallback) {
-        throw new Error("AUTHORITATIVE_WRITE_FAILED: Remote admin assign club did not succeed.");
-      }
-      break;
-    }
-    case "ADMIN_RELEASE_CLUB": {
-      const { adminReleaseClubFirestore: adminReleaseClubFirestore2 } = await Promise.resolve().then(() => (init_firestoreStore(), firestoreStore_exports));
-      const res = await adminReleaseClubFirestore2(payload.adminUserId || "system", payload.clubId, payload.seasonId, { authoritativeOnly: true });
-      if (!res || !res.authoritative || res.isFallback) {
-        throw new Error("AUTHORITATIVE_WRITE_FAILED: Remote admin release club did not succeed.");
-      }
-      break;
-    }
-    case "MATCHDAY_OVERRIDE": {
-      const { setCompetitionMatchdayOverrideFirestore: setCompetitionMatchdayOverrideFirestore2 } = await Promise.resolve().then(() => (init_firestoreStore(), firestoreStore_exports));
-      await setCompetitionMatchdayOverrideFirestore2(payload.competitionId, payload.overrideStatus);
-      break;
-    }
-    case "ADMIN_DECISION": {
-      if (item.operation === "ADMIN_APPROVE_RESULT") {
-        const { adminApproveFixtureResultFirestore: adminApproveFixtureResultFirestore2 } = await Promise.resolve().then(() => (init_firestoreStore(), firestoreStore_exports));
-        const res = await adminApproveFixtureResultFirestore2(
-          payload.adminUserId,
-          payload.fixtureId,
-          payload.homeScore,
-          payload.awayScore,
-          payload.notes,
-          { authoritativeOnly: true }
-        );
-        if (!res || !res.authoritative || res.isFallback) {
-          throw new Error("AUTHORITATIVE_WRITE_FAILED: Remote admin approve write did not succeed.");
-        }
-      } else if (item.operation === "ADMIN_REJECT_RESULT") {
-        const { reopenFixtureFirestore: reopenFixtureFirestore2 } = await Promise.resolve().then(() => (init_firestoreStore(), firestoreStore_exports));
-        const res = await reopenFixtureFirestore2(
-          payload.adminUserId,
-          payload.fixtureId,
-          payload.notes,
-          { authoritativeOnly: true }
-        );
-        if (!res || !res.authoritative || res.isFallback) {
-          throw new Error("AUTHORITATIVE_WRITE_FAILED: Remote reopen write did not succeed.");
-        }
-      }
-      break;
-    }
-    case "USER_CREATE": {
-      const { getOrCreateTelegramUserFirestore: getOrCreateTelegramUserFirestore2 } = await Promise.resolve().then(() => (init_firestoreStore(), firestoreStore_exports));
-      await getOrCreateTelegramUserFirestore2(payload);
-      break;
-    }
-    case "NOTIFICATION_READ": {
-      const notifRef = db.collection(COLLECTIONS.NOTIFICATIONS).doc(entityId);
-      const notifDoc = await notifRef.get();
-      if (!notifDoc.exists) {
-        console.warn(`[MUTATION_QUEUE] Notification ${entityId} not found in Firestore during sync replay. Skipping.`);
-        break;
-      }
-      const notifData = notifDoc.data();
-      if (payload.userId && notifData?.userId !== payload.userId) {
-        throw new Error(`OWNERSHIP_MISMATCH: Notification ${entityId} belongs to user '${notifData?.userId}', not '${payload.userId}'.`);
-      }
-      await notifRef.update({ isRead: true, readAt: payload.readAt || (/* @__PURE__ */ new Date()).toISOString() });
-      break;
-    }
-    case "NOTIFICATION_READ_ALL": {
-      const targetUserId = payload.userId || entityId;
-      const notifsSnap = await db.collection(COLLECTIONS.NOTIFICATIONS).where("userId", "==", targetUserId).where("isRead", "==", false).get();
-      if (!notifsSnap.empty) {
-        const b = db.batch();
-        const readAt = payload.readAt || (/* @__PURE__ */ new Date()).toISOString();
-        notifsSnap.docs.forEach((d) => b.update(d.ref, { isRead: true, readAt }));
-        await b.commit();
-      }
-      break;
-    }
-    default:
-      console.warn(`[MUTATION_QUEUE] Unknown mutation entityType: ${entityType}`);
-  }
-}
-var memoryQueue, isSyncInProgress, IS_SERVERLESS2, BACKUP_DIR, BACKUP_FILE;
-var init_mutationQueue = __esm({
-  "src/server/sync/mutationQueue.ts"() {
-    init_db();
-    init_circuitBreaker();
-    init_admin();
-    init_collections();
-    init_testGuard();
-    memoryQueue = /* @__PURE__ */ new Map();
-    isSyncInProgress = false;
-    IS_SERVERLESS2 = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_TASK_ROOT);
-    BACKUP_DIR = process.env.DATA_DIR || (IS_SERVERLESS2 ? "/tmp/data" : path3.resolve(process.cwd(), "data"));
-    BACKUP_FILE = path3.join(BACKUP_DIR, "pending_mutations.json");
-  }
-});
-
-// src/server/tournament/fixtureEngine.ts
-function generateEuropean32LeaguePhaseSchedule(clubIds, options = {}) {
-  if (clubIds.length !== 32) {
-    throw new Error(`European 32-team league phase requires exactly 32 clubs (received ${clubIds.length}).`);
-  }
-  const n = 32;
-  const numRounds = 8;
-  const roundPairs = [];
-  for (let r = 0; r < numRounds; r++) {
-    const pairs = [];
-    pairs.push([31, r]);
-    for (let i = 1; i <= 15; i++) {
-      const u = (r + i) % 31;
-      const v = (r - i + 31) % 31;
-      pairs.push([u, v]);
-    }
-    roundPairs.push(pairs);
-  }
-  const homeCount = new Array(n).fill(0);
-  const matchups = [];
-  for (let r = 0; r < numRounds; r++) {
-    const pairs = roundPairs[r];
-    for (let m = 0; m < pairs.length; m++) {
-      const [u, v] = pairs[m];
-      let uIsHome;
-      if (homeCount[u] >= 4 && homeCount[v] < 4) {
-        uIsHome = false;
-      } else if (homeCount[v] >= 4 && homeCount[u] < 4) {
-        uIsHome = true;
-      } else if (homeCount[u] < homeCount[v]) {
-        uIsHome = true;
-      } else if (homeCount[v] < homeCount[u]) {
-        uIsHome = false;
-      } else {
-        uIsHome = (r + m) % 2 === 0;
-      }
-      const homeIdx = uIsHome ? u : v;
-      const awayIdx = uIsHome ? v : u;
-      homeCount[homeIdx]++;
-      matchups.push({
-        matchday: r + 1,
-        homeClubId: clubIds[homeIdx],
-        awayClubId: clubIds[awayIdx]
-      });
-    }
-  }
-  return matchups;
-}
-var init_fixtureEngine = __esm({
-  "src/server/tournament/fixtureEngine.ts"() {
-  }
-});
-
 // src/server/readModel/redisConfig.ts
 function resolveRedisConfig(env) {
   const pairs = [
@@ -2425,6 +2092,8 @@ var init_standingsProjection = __esm({
 var qualificationEngine_exports = {};
 __export(qualificationEngine_exports, {
   applyEuropeanQualificationSync: () => applyEuropeanQualificationSync,
+  calculateEuropeanStandingsFromSqlite: () => calculateEuropeanStandingsFromSqlite,
+  computeEuropeanStandingsRows: () => computeEuropeanStandingsRows,
   deleteQualificationPreviewToken: () => deleteQualificationPreviewToken,
   evaluateSeasonQualifications: () => evaluateSeasonQualifications,
   evaluateSeasonQualificationsFirestore: () => evaluateSeasonQualificationsFirestore,
@@ -2815,30 +2484,17 @@ async function applyEuropeanQualificationSync(params) {
     participantsRemoved
   };
 }
-async function rebuildEuropeanStandings(competitionId, seasonId = "season-2026-27") {
-  const db = getFirestoreDb();
-  const [compDoc, partsSnap, fixSnap] = await Promise.all([
-    db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get(),
-    db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where("competitionId", "==", competitionId).get(),
-    db.collection(COLLECTIONS.FIXTURES).where("competitionId", "==", competitionId).get()
-  ]);
+function computeEuropeanStandingsRows(format, clubIds, fixtures, seasonId = "season-2026-27") {
   const clubsMap = new Map(SEED_CLUBS.map((c) => [c.id, c]));
-  const participants = partsSnap.docs.map((d) => d.data());
-  const fixtures = fixSnap.docs.map((d) => d.data());
-  let clubIds = participants.map((p) => p.clubId);
-  if (clubIds.length === 0) {
-    throw new Error("EUROPEAN_PARTICIPANTS_NOT_CONFIGURED");
-  }
-  clubIds = [...new Set(clubIds)];
-  const format = compDoc.data()?.formatConfig;
+  const uniqueClubIds = [...new Set(clubIds)];
   const totalTeams = Number(format?.leaguePhaseTeams);
   const directQualifiers = Number(format?.directQualifiers);
   const playoffTeams = Number(format?.playoffTeams);
-  if (!Number.isInteger(totalTeams) || totalTeams !== clubIds.length || !Number.isInteger(directQualifiers) || !Number.isInteger(playoffTeams) || directQualifiers + playoffTeams > totalTeams) {
+  if (!Number.isInteger(totalTeams) || totalTeams !== uniqueClubIds.length || !Number.isInteger(directQualifiers) || !Number.isInteger(playoffTeams) || directQualifiers + playoffTeams > totalTeams) {
     throw new Error("EUROPEAN_FORMAT_PARTICIPANTS_MISMATCH");
   }
   const statsMap = /* @__PURE__ */ new Map();
-  for (const cid of clubIds) {
+  for (const cid of uniqueClubIds) {
     const club = clubsMap.get(cid);
     statsMap.set(cid, {
       clubId: cid,
@@ -2855,20 +2511,27 @@ async function rebuildEuropeanStandings(competitionId, seasonId = "season-2026-2
     });
   }
   for (const f of fixtures) {
-    if (f.status !== "CONFIRMED" || !Number.isInteger(f.homeScore) || !Number.isInteger(f.awayScore) || f.homeScore < 0 || f.awayScore < 0) continue;
-    if (f.seasonId !== seasonId || !f.homeClubId || !f.awayClubId) continue;
-    if (/quarter|semi|final|play.?off|round of|knockout/i.test(f.roundName || "") || /-r[1-5]-m/.test(f.id)) continue;
-    const home = statsMap.get(f.homeClubId);
-    const away = statsMap.get(f.awayClubId);
+    const homeScore = f.homeScore ?? f.home_score;
+    const awayScore = f.awayScore ?? f.away_score;
+    const homeClubId = f.homeClubId ?? f.home_club_id;
+    const awayClubId = f.awayClubId ?? f.away_club_id;
+    const fSeasonId = f.seasonId ?? f.season_id;
+    const roundName = f.roundName ?? f.round_name ?? "";
+    const id = f.id;
+    if (f.status !== "CONFIRMED" || !Number.isInteger(homeScore) || !Number.isInteger(awayScore) || homeScore < 0 || awayScore < 0) continue;
+    if (fSeasonId && fSeasonId !== seasonId || !homeClubId || !awayClubId) continue;
+    if (/quarter|semi|final|play.?off|round of|knockout/i.test(roundName) || /-r[1-5]-m/.test(id)) continue;
+    const home = statsMap.get(homeClubId);
+    const away = statsMap.get(awayClubId);
     if (home) {
       home.played += 1;
-      home.goalsFor += f.homeScore;
-      home.goalsAgainst += f.awayScore;
+      home.goalsFor += homeScore;
+      home.goalsAgainst += awayScore;
       home.goalDifference = home.goalsFor - home.goalsAgainst;
-      if (f.homeScore > f.awayScore) {
+      if (homeScore > awayScore) {
         home.won += 1;
         home.points += 3;
-      } else if (f.homeScore === f.awayScore) {
+      } else if (homeScore === awayScore) {
         home.drawn += 1;
         home.points += 1;
       } else {
@@ -2877,13 +2540,13 @@ async function rebuildEuropeanStandings(competitionId, seasonId = "season-2026-2
     }
     if (away) {
       away.played += 1;
-      away.goalsFor += f.awayScore;
-      away.goalsAgainst += f.homeScore;
+      away.goalsFor += awayScore;
+      away.goalsAgainst += homeScore;
       away.goalDifference = away.goalsFor - away.goalsAgainst;
-      if (f.awayScore > f.homeScore) {
+      if (awayScore > homeScore) {
         away.won += 1;
         away.points += 3;
-      } else if (f.homeScore === f.awayScore) {
+      } else if (homeScore === awayScore) {
         away.drawn += 1;
         away.points += 1;
       } else {
@@ -2897,7 +2560,7 @@ async function rebuildEuropeanStandings(competitionId, seasonId = "season-2026-2
     if (b.goalsFor !== a.goalsFor) return b.goalsFor - a.goalsFor;
     return a.clubName.localeCompare(b.clubName);
   });
-  const rows = sorted.map((s, idx) => {
+  return sorted.map((s, idx) => {
     const position = idx + 1;
     let zone = "ELIMINATED";
     let zoneLabel = "Eliminated";
@@ -2928,6 +2591,61 @@ async function rebuildEuropeanStandings(competitionId, seasonId = "season-2026-2
       zoneLabel
     };
   });
+}
+function calculateEuropeanStandingsFromSqlite(competitionId, seasonId = "season-2026-27") {
+  try {
+    const compRow = queryGet("SELECT * FROM competitions WHERE id = ?", [competitionId]);
+    let formatConfig = null;
+    if (compRow && compRow.format_config) {
+      try {
+        formatConfig = typeof compRow.format_config === "string" ? JSON.parse(compRow.format_config) : compRow.format_config;
+      } catch {
+      }
+    }
+    if (!formatConfig) {
+      const seedComp = SEED_COMPETITIONS.find((c) => c.id === competitionId);
+      formatConfig = seedComp?.formatConfig;
+    }
+    if (!formatConfig) return null;
+    let partRows = queryAll(
+      "SELECT club_id FROM competition_participants WHERE competition_id = ?",
+      [competitionId]
+    );
+    let clubIds = partRows.map((r) => r.club_id);
+    if (clubIds.length === 0) {
+      const { SEED_COMPETITION_PARTICIPANTS } = (init_seed(), __toCommonJS(seed_exports));
+      if (SEED_COMPETITION_PARTICIPANTS) {
+        clubIds = SEED_COMPETITION_PARTICIPANTS.filter((p) => p.competitionId === competitionId).map((p) => p.clubId);
+      }
+    }
+    if (clubIds.length === 0) return null;
+    const fixtures = queryAll(
+      `SELECT * FROM fixtures WHERE competition_id = ? AND (season_id = ? OR season_id IS NULL)`,
+      [competitionId, seasonId]
+    );
+    return computeEuropeanStandingsRows(formatConfig, clubIds, fixtures, seasonId);
+  } catch {
+    return null;
+  }
+}
+async function rebuildEuropeanStandings(competitionId, seasonId = "season-2026-27") {
+  const db = getFirestoreDb();
+  const [compDoc, partsSnap, fixSnap] = await Promise.all([
+    db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get(),
+    db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where("competitionId", "==", competitionId).get(),
+    db.collection(COLLECTIONS.FIXTURES).where("competitionId", "==", competitionId).get()
+  ]);
+  trackFirestoreRead(COLLECTIONS.COMPETITIONS, compDoc.exists ? 1 : 0, "rebuildEuropeanStandings:comp");
+  trackFirestoreRead(COLLECTIONS.COMPETITION_PARTICIPANTS, partsSnap.docs.length, "rebuildEuropeanStandings:participants");
+  trackFirestoreRead(COLLECTIONS.FIXTURES, fixSnap.docs.length, "rebuildEuropeanStandings:fixtures");
+  const participants = partsSnap.docs.map((d) => d.data());
+  const fixtures = fixSnap.docs.map((d) => d.data());
+  let clubIds = participants.map((p) => p.clubId);
+  if (clubIds.length === 0) {
+    throw new Error("EUROPEAN_PARTICIPANTS_NOT_CONFIGURED");
+  }
+  const format = compDoc.data()?.formatConfig;
+  const rows = computeEuropeanStandingsRows(format, clubIds, fixtures, seasonId);
   const cacheKey = ReadModelKeys.standings(competitionId, seasonId);
   await redisSetRaw(
     cacheKey,
@@ -2935,20 +2653,35 @@ async function rebuildEuropeanStandings(competitionId, seasonId = "season-2026-2
       data: rows,
       schemaVersion: SCHEMA_VERSION,
       sourceVersion: "rebuild-european-standings",
-      expectedCount: clubIds.length
+      expectedCount: [...new Set(clubIds)].length
     },
     86400
   );
   return rows;
 }
 async function getEuropeanStandings(competitionId, seasonId = "season-2026-27") {
-  const result = await readThroughReadModel({
-    key: ReadModelKeys.standings(competitionId, seasonId),
-    seasonId,
-    firestoreFetcher: () => rebuildEuropeanStandings(competitionId, seasonId),
-    validateData: (rows) => Array.isArray(rows) && rows.length > 0
-  });
-  return { rows: result.data, source: result.source, degraded: Boolean(result.degraded || result.stale) };
+  const cacheKey = ReadModelKeys.standings(competitionId, seasonId);
+  const fresh = await redisGetFresh(cacheKey);
+  if (fresh?.data && Array.isArray(fresh.data) && fresh.data.length > 0) {
+    return { rows: fresh.data, source: "redis-fresh", degraded: false };
+  }
+  const lkg = await redisGetLkg(cacheKey);
+  if (lkg?.data && Array.isArray(lkg.data) && lkg.data.length > 0) {
+    return { rows: lkg.data, source: "redis-lkg", degraded: true };
+  }
+  const sqliteRows = calculateEuropeanStandingsFromSqlite(competitionId, seasonId);
+  if (sqliteRows && sqliteRows.length > 0) {
+    redisSetRaw(cacheKey, {
+      data: sqliteRows,
+      schemaVersion: SCHEMA_VERSION,
+      sourceVersion: "european-sqlite",
+      expectedCount: sqliteRows.length
+    }, 86400).catch(() => {
+    });
+    return { rows: sqliteRows, source: "sqlite", degraded: true };
+  }
+  const rows = await rebuildEuropeanStandings(competitionId, seasonId);
+  return { rows, source: "firestore-rebuild", degraded: false };
 }
 async function evaluateSeasonQualifications(seasonId = "season-2026-27") {
   const preview = await previewEuropeanQualificationSync(seasonId, "provisional");
@@ -3045,6 +2778,66 @@ var init_qualificationEngine = __esm({
 });
 
 // src/server/readModel/readModelStore.ts
+var readModelStore_exports = {};
+__export(readModelStore_exports, {
+  CANONICAL_COMPETITION_ORDER: () => CANONICAL_COMPETITION_ORDER,
+  DOMESTIC_LEAGUE_CONFIG: () => DOMESTIC_LEAGUE_CONFIG,
+  KEY_PREFIX: () => KEY_PREFIX,
+  ReadModelKeys: () => ReadModelKeys,
+  ReadModelNotWarmedError: () => ReadModelNotWarmedError,
+  SCHEMA_VERSION: () => SCHEMA_VERSION,
+  buildAdminFixturesSnapshot: () => buildAdminFixturesSnapshot,
+  buildClubsSnapshot: () => buildClubsSnapshot,
+  buildCompetitionsSnapshot: () => buildCompetitionsSnapshot,
+  buildStandingsSnapshot: () => buildStandingsSnapshot,
+  clearProcessMemoryCache: () => clearProcessMemoryCache,
+  clearProcessMemoryForTest: () => clearProcessMemoryForTest,
+  compareAdminFixtures: () => compareAdminFixtures,
+  decodeFixtureCursor: () => decodeFixtureCursor,
+  encodeFixtureCursor: () => encodeFixtureCursor,
+  enrichClubForUser: () => enrichClubForUser,
+  generateZeroValueStandings: () => generateZeroValueStandings,
+  getAdminClubsFromReadModel: () => getAdminClubsFromReadModel,
+  getAdminFixturesFromReadModel: () => getAdminFixturesFromReadModel,
+  getAvailableClubsFromReadModel: () => getAvailableClubsFromReadModel,
+  getClubByIdFromReadModel: () => getClubByIdFromReadModel,
+  getCompetitionFixturesFromReadModel: () => getCompetitionFixturesFromReadModel,
+  getCompetitionStandingsFromReadModel: () => getCompetitionStandingsFromReadModel,
+  getCompetitionsFromReadModel: () => getCompetitionsFromReadModel,
+  getDirtyKey: () => getDirtyKey,
+  getFreshKey: () => getFreshKey,
+  getFromProcessMemory: () => getFromProcessMemory,
+  getLeagueClubsFromReadModel: () => getLeagueClubsFromReadModel,
+  getLkgKey: () => getLkgKey,
+  getOptionalCurrentClub: () => getOptionalCurrentClub,
+  getRawDatasetKey: () => getRawDatasetKey,
+  getReadModelHealthStatus: () => getReadModelHealthStatus,
+  getUpstashClient: () => getUpstashClient,
+  getUserActiveClubFromReadModel: () => getUserActiveClubFromReadModel,
+  inProcessMemoryCache: () => inProcessMemoryCache,
+  invalidateClubReadModels: () => invalidateClubReadModels,
+  invalidateCompetitionReadModels: () => invalidateCompetitionReadModels,
+  invalidateDataset: () => invalidateDataset,
+  invalidateFixtureReadModels: () => invalidateFixtureReadModels,
+  invalidateStandingsReadModels: () => invalidateStandingsReadModels,
+  invalidateUserMembershipReadModel: () => invalidateUserMembershipReadModel,
+  memoryRedisStorage: () => memoryRedisStorage,
+  normalizeFixtureSnapshot: () => normalizeFixtureSnapshot,
+  readThroughReadModel: () => readThroughReadModel2,
+  rebuildAllReadModels: () => rebuildAllReadModels,
+  redisDelRaw: () => redisDelRaw,
+  redisGetExact: () => redisGetExact,
+  redisGetFresh: () => redisGetFresh,
+  redisGetLkg: () => redisGetLkg,
+  redisGetRaw: () => redisGetRaw2,
+  redisGetTtl: () => redisGetTtl,
+  redisIsDirty: () => redisIsDirty,
+  redisSetRaw: () => redisSetRaw,
+  refreshChangedFixtureReadModel: () => refreshChangedFixtureReadModel,
+  resetMemoryRedisStore: () => resetMemoryRedisStore,
+  resetUpstashClient: () => resetUpstashClient,
+  setInProcessMemory: () => setInProcessMemory
+});
 import { Redis } from "@upstash/redis";
 function getRawDatasetKey(key) {
   return key.replace(/^efluz:v1:(fresh:|lkg:|dirty:)?/, "").replace(/^efluz:v1:/, "");
@@ -3060,6 +2853,11 @@ function getLkgKey(datasetKey) {
 function getDirtyKey(datasetKey) {
   const clean = getRawDatasetKey(datasetKey);
   return `${KEY_PREFIX}:dirty:${clean}`;
+}
+function resetUpstashClient() {
+  upstashClient = null;
+  isUpstashConfigured = false;
+  reportedRedisConfig = false;
 }
 function getUpstashClient() {
   if (upstashClient) return upstashClient;
@@ -3078,6 +2876,25 @@ function getUpstashClient() {
     }
   }
   return null;
+}
+async function redisGetTtl(key) {
+  const client = getUpstashClient();
+  if (client) {
+    try {
+      return await client.ttl(key);
+    } catch (err) {
+      console.warn(`[READ_MODEL_STORE] Redis ttl error for ${key}:`, err?.message || err);
+    }
+  }
+  const entry = memoryRedisStorage.get(key);
+  if (!entry) return -2;
+  if (entry.expiresAt === null) return -1;
+  const remainingMs = entry.expiresAt - Date.now();
+  if (remainingMs <= 0) {
+    memoryRedisStorage.delete(key);
+    return -2;
+  }
+  return Math.floor(remainingMs / 1e3);
 }
 async function redisGetExact(key) {
   const client = getUpstashClient();
@@ -3188,6 +3005,25 @@ async function redisSetRaw(datasetKey, snapshot, ttlSeconds = 86400) {
   setInProcessMemory(freshKey, fullSnapshot);
   setInProcessMemory(lkgKey, fullSnapshot);
 }
+async function redisDelRaw(...keys) {
+  if (keys.length === 0) return;
+  for (const k of keys) {
+    inProcessMemoryCache.delete(k);
+    memoryRedisStorage.delete(k);
+    const clean = getRawDatasetKey(k);
+    inProcessMemoryCache.delete(clean);
+    inProcessMemoryCache.delete(getFreshKey(clean));
+    inProcessMemoryCache.delete(getLkgKey(clean));
+  }
+  const client = getUpstashClient();
+  if (client) {
+    try {
+      await client.del(...keys);
+    } catch (err) {
+      console.warn(`[READ_MODEL_STORE] Redis del error:`, err?.message || err);
+    }
+  }
+}
 async function invalidateDataset(datasetKey, targetedRebuild) {
   const cleanKey = getRawDatasetKey(datasetKey);
   const freshKey = getFreshKey(cleanKey);
@@ -3254,6 +3090,15 @@ function setInProcessMemory(key, data, ttlMs = PROCESS_MEMORY_TTL_MS) {
     inProcessMemoryCache.set(cleanKey, entry);
   }
 }
+function clearProcessMemoryCache() {
+  inProcessMemoryCache.clear();
+  inFlightLoaders.clear();
+}
+function resetMemoryRedisStore() {
+  clearProcessMemoryCache();
+  memoryRedisStorage.clear();
+  globalLastSnapshotAt = null;
+}
 function compareAdminFixtures(a, b, singleCompetition = false) {
   if (!singleCompetition) {
     const orderA = CANONICAL_COMPETITION_ORDER[a.competitionId] ?? 999;
@@ -3298,7 +3143,7 @@ function decodeFixtureCursor(cursorStr) {
   }
   return null;
 }
-async function readThroughReadModel(options) {
+async function readThroughReadModel2(options) {
   const { key, ttlSeconds = 86400, expectedCount, firestoreFetcher, validateData } = options;
   const cleanKey = getRawDatasetKey(key);
   const canQueryFirestore = firestoreCircuitBreaker.canExecute();
@@ -3610,47 +3455,60 @@ function enrichClubForUser(club, currentUserId) {
   };
 }
 function normalizeFixtureSnapshot(doc, seasonId = "season-2026-27") {
-  const homeClubSeed = SEED_CLUBS.find((c) => c.id === doc.homeClubId);
-  const awayClubSeed = SEED_CLUBS.find((c) => c.id === doc.awayClubId);
+  const homeClubId = doc.homeClubId ?? doc.home_club_id;
+  const awayClubId = doc.awayClubId ?? doc.away_club_id;
+  const competitionId = doc.competitionId ?? doc.competition_id;
+  const competitionName = doc.competitionName ?? doc.competition_name;
+  const scheduledAt = doc.scheduledAt ?? doc.scheduled_at;
+  const homeScore = doc.homeScore ?? doc.home_score;
+  const awayScore = doc.awayScore ?? doc.away_score;
+  const winnerClubId = doc.winnerClubId ?? doc.winner_club_id;
+  const resultConfirmedAt = doc.resultConfirmedAt ?? doc.result_confirmed_at;
+  const roundName = doc.roundName ?? doc.round_name;
+  const createdAt = doc.createdAt ?? doc.created_at;
+  const updatedAt = doc.updatedAt ?? doc.updated_at;
+  const docSeasonId = doc.seasonId ?? doc.season_id;
+  const homeClubSeed = SEED_CLUBS.find((c) => c.id === homeClubId);
+  const awayClubSeed = SEED_CLUBS.find((c) => c.id === awayClubId);
   return {
     id: doc.id,
-    seasonId: doc.seasonId || seasonId,
-    competitionId: doc.competitionId,
-    competitionName: doc.competitionName || doc.competitionId,
+    seasonId: docSeasonId || seasonId,
+    competitionId,
+    competitionName: competitionName || competitionId,
     matchday: doc.matchday,
-    roundName: doc.roundName,
-    homeClubId: doc.homeClubId && doc.homeClubId !== "TBD" ? doc.homeClubId : null,
-    awayClubId: doc.awayClubId && doc.awayClubId !== "TBD" ? doc.awayClubId : null,
-    homeClub: doc.homeClubId && doc.homeClubId !== "TBD" ? {
-      id: doc.homeClubId,
-      name: homeClubSeed?.name || doc.homeClubId,
-      shortName: homeClubSeed?.shortName || doc.homeClubId.substring(0, 3).toUpperCase(),
+    roundName,
+    homeClubId: homeClubId && homeClubId !== "TBD" ? homeClubId : null,
+    awayClubId: awayClubId && awayClubId !== "TBD" ? awayClubId : null,
+    homeClub: homeClubId && homeClubId !== "TBD" ? {
+      id: homeClubId,
+      name: homeClubSeed?.name || homeClubId,
+      shortName: homeClubSeed?.shortName || homeClubId.substring(0, 3).toUpperCase(),
       country: homeClubSeed?.country || "England",
       leagueId: homeClubSeed?.leagueId || "league-premier-league",
       logoUrl: homeClubSeed?.logoUrl || "",
       active: true,
       createdAt: ""
     } : void 0,
-    awayClub: doc.awayClubId && doc.awayClubId !== "TBD" ? {
-      id: doc.awayClubId,
-      name: awayClubSeed?.name || doc.awayClubId,
-      shortName: awayClubSeed?.shortName || doc.awayClubId.substring(0, 3).toUpperCase(),
+    awayClub: awayClubId && awayClubId !== "TBD" ? {
+      id: awayClubId,
+      name: awayClubSeed?.name || awayClubId,
+      shortName: awayClubSeed?.shortName || awayClubId.substring(0, 3).toUpperCase(),
       country: awayClubSeed?.country || "England",
       leagueId: awayClubSeed?.leagueId || "league-premier-league",
       logoUrl: awayClubSeed?.logoUrl || "",
       active: true,
       createdAt: ""
     } : void 0,
-    scheduledAt: doc.scheduledAt,
-    homeScore: doc.homeScore ?? void 0,
-    awayScore: doc.awayScore ?? void 0,
-    winnerClubId: doc.winnerClubId ?? void 0,
+    scheduledAt,
+    homeScore: homeScore ?? void 0,
+    awayScore: awayScore ?? void 0,
+    winnerClubId: winnerClubId ?? void 0,
     status: doc.status || "SCHEDULED",
-    resultConfirmedAt: doc.resultConfirmedAt || void 0,
-    homeOwnerId: doc.homeOwnerId,
-    awayOwnerId: doc.awayOwnerId,
-    createdAt: doc.createdAt || (/* @__PURE__ */ new Date()).toISOString(),
-    updatedAt: doc.updatedAt || doc.createdAt || (/* @__PURE__ */ new Date()).toISOString()
+    resultConfirmedAt: resultConfirmedAt || void 0,
+    homeOwnerId: doc.homeOwnerId ?? doc.home_owner_id,
+    awayOwnerId: doc.awayOwnerId ?? doc.away_owner_id,
+    createdAt: createdAt || (/* @__PURE__ */ new Date()).toISOString(),
+    updatedAt: updatedAt || createdAt || (/* @__PURE__ */ new Date()).toISOString()
   };
 }
 async function buildAdminFixturesSnapshot(seasonId = "season-2026-27") {
@@ -3659,6 +3517,7 @@ async function buildAdminFixturesSnapshot(seasonId = "season-2026-27") {
   if (db) {
     try {
       const fixSnap = await db.collection(COLLECTIONS.FIXTURES).where("seasonId", "==", seasonId).get();
+      trackFirestoreRead(COLLECTIONS.FIXTURES, fixSnap.docs.length, "buildAdminFixturesSnapshot");
       fixDocs = fixSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((f) => !f.competitionId.includes("efl-cup"));
     } catch (err) {
       firestoreCircuitBreaker.recordFailure(err);
@@ -3733,7 +3592,18 @@ function generateZeroValueStandings(competitionId, seasonId = "season-2026-27") 
 }
 async function buildStandingsSnapshot(competitionId, seasonId = "season-2026-27") {
   if (["comp-champions-league-2026", "comp-europa-league-2026"].includes(competitionId)) {
-    const { rebuildEuropeanStandings: rebuildEuropeanStandings2 } = await Promise.resolve().then(() => (init_qualificationEngine(), qualificationEngine_exports));
+    const { calculateEuropeanStandingsFromSqlite: calculateEuropeanStandingsFromSqlite2, rebuildEuropeanStandings: rebuildEuropeanStandings2 } = await Promise.resolve().then(() => (init_qualificationEngine(), qualificationEngine_exports));
+    const sqliteRows = calculateEuropeanStandingsFromSqlite2(competitionId, seasonId);
+    if (sqliteRows && sqliteRows.length > 0) {
+      return {
+        schemaVersion: SCHEMA_VERSION,
+        generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        sourceVersion: "european-sqlite-local",
+        expectedCount: sqliteRows.length,
+        actualCount: sqliteRows.length,
+        data: sqliteRows
+      };
+    }
     const rows2 = await rebuildEuropeanStandings2(competitionId, seasonId);
     return { schemaVersion: SCHEMA_VERSION, generatedAt: (/* @__PURE__ */ new Date()).toISOString(), sourceVersion: "european-authoritative", expectedCount: rows2.length, actualCount: rows2.length, data: rows2 };
   }
@@ -3747,6 +3617,7 @@ async function buildStandingsSnapshot(competitionId, seasonId = "season-2026-27"
     const db = getFirestoreDb();
     if (db) {
       const stdDoc = await db.collection(COLLECTIONS.STANDINGS).doc(competitionId).get();
+      trackFirestoreRead(COLLECTIONS.STANDINGS, stdDoc.exists ? 1 : 0, "buildStandingsSnapshot");
       if (stdDoc.exists) {
         const data = stdDoc.data();
         if (Array.isArray(data?.rows) && data.rows.length > 0) {
@@ -3808,7 +3679,7 @@ async function buildStandingsSnapshot(competitionId, seasonId = "season-2026-27"
   return snapshot;
 }
 async function getCompetitionsFromReadModel(seasonId = "season-2026-27") {
-  const result = await readThroughReadModel({
+  const result = await readThroughReadModel2({
     key: ReadModelKeys.competitions(seasonId),
     seasonId,
     expectedCount: 17,
@@ -3827,7 +3698,7 @@ async function getCompetitionsFromReadModel(seasonId = "season-2026-27") {
   };
 }
 async function getAdminClubsFromReadModel(seasonId = "season-2026-27", leagueId, currentUserId) {
-  const result = await readThroughReadModel({
+  const result = await readThroughReadModel2({
     key: ReadModelKeys.clubsWithOwners(seasonId),
     seasonId,
     expectedCount: 96,
@@ -3872,7 +3743,7 @@ async function getAdminClubsFromReadModel(seasonId = "season-2026-27", leagueId,
   };
 }
 async function getLeagueClubsFromReadModel(leagueId, seasonId = "season-2026-27", currentUserId) {
-  const result = await readThroughReadModel({
+  const result = await readThroughReadModel2({
     key: ReadModelKeys.clubsWithOwners(seasonId),
     seasonId,
     expectedCount: 96,
@@ -3888,7 +3759,7 @@ async function getLeagueClubsFromReadModel(leagueId, seasonId = "season-2026-27"
   };
 }
 async function getAvailableClubsFromReadModel(seasonId = "season-2026-27", currentUserId) {
-  const result = await readThroughReadModel({
+  const result = await readThroughReadModel2({
     key: ReadModelKeys.clubsWithOwners(seasonId),
     seasonId,
     expectedCount: 96,
@@ -3908,7 +3779,7 @@ async function getAvailableClubsFromReadModel(seasonId = "season-2026-27", curre
   };
 }
 async function getClubByIdFromReadModel(clubId, seasonId = "season-2026-27", currentUserId) {
-  const result = await readThroughReadModel({
+  const result = await readThroughReadModel2({
     key: ReadModelKeys.clubsWithOwners(seasonId),
     seasonId,
     expectedCount: 96,
@@ -3926,7 +3797,7 @@ async function getClubByIdFromReadModel(clubId, seasonId = "season-2026-27", cur
   return { club, source: result.source, stale: Boolean(result.stale), degraded: Boolean(result.degraded) };
 }
 async function getUserActiveClubFromReadModel(userId, seasonId = "season-2026-27") {
-  const result = await readThroughReadModel({
+  const result = await readThroughReadModel2({
     key: ReadModelKeys.clubsWithOwners(seasonId),
     seasonId,
     expectedCount: 96,
@@ -3948,7 +3819,7 @@ async function getOptionalCurrentClub(userId, seasonId = "season-2026-27") {
 async function getCompetitionStandingsFromReadModel(competitionId, seasonId = "season-2026-27") {
   const config = DOMESTIC_LEAGUE_CONFIG[competitionId];
   const expectedCount = config ? config.expectedCount : 20;
-  const result = await readThroughReadModel({
+  const result = await readThroughReadModel2({
     key: ReadModelKeys.standings(competitionId, seasonId),
     seasonId,
     expectedCount,
@@ -3966,29 +3837,130 @@ async function getCompetitionStandingsFromReadModel(competitionId, seasonId = "s
     snapshotAt: result.generatedAt
   };
 }
-async function getCompetitionFixturesFromReadModel(competitionId, options = {}) {
-  const seasonId = options.seasonId || "season-2026-27";
-  const result = await readThroughReadModel({
-    key: ReadModelKeys.adminFixtures(seasonId),
-    seasonId,
-    firestoreFetcher: async () => (await buildAdminFixturesSnapshot(seasonId)).data,
-    validateData: (data) => Array.isArray(data)
-  });
-  let fixtures = result.data.filter((f) => f.competitionId === competitionId);
+async function getCompetitionFixturesFromReadModel(competitionId, optionsOrMatchday = {}, fallbackSeasonId = "season-2026-27") {
+  const options = typeof optionsOrMatchday === "number" ? { matchday: optionsOrMatchday, seasonId: fallbackSeasonId } : optionsOrMatchday || {};
+  const seasonId = options.seasonId || fallbackSeasonId;
+  let rawFixtures = [];
+  let source = "memory";
+  let stale = false;
+  let degraded = false;
+  let generatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  const compKey = ReadModelKeys.competitionFixtures(competitionId, seasonId);
+  const adminKey = ReadModelKeys.adminFixtures(seasonId);
+  let redisFresh = await redisGetFresh(compKey);
+  if (!redisFresh) {
+    const adminFresh = await redisGetFresh(adminKey);
+    if (adminFresh && Array.isArray(adminFresh.data)) {
+      redisFresh = {
+        ...adminFresh,
+        data: adminFresh.data.filter((f) => f.competitionId === competitionId)
+      };
+    }
+  }
+  if (redisFresh && Array.isArray(redisFresh.data) && redisFresh.data.length > 0) {
+    rawFixtures = redisFresh.data;
+    source = redisFresh.source;
+    stale = Boolean(redisFresh.stale);
+    degraded = Boolean(redisFresh.degraded);
+    generatedAt = redisFresh.generatedAt;
+  }
+  if (rawFixtures.length === 0) {
+    let redisLkg = await redisGetLkg(compKey);
+    if (!redisLkg) {
+      const adminLkg = await redisGetLkg(adminKey);
+      if (adminLkg && Array.isArray(adminLkg.data)) {
+        redisLkg = {
+          ...adminLkg,
+          data: adminLkg.data.filter((f) => f.competitionId === competitionId)
+        };
+      }
+    }
+    if (redisLkg && Array.isArray(redisLkg.data) && redisLkg.data.length > 0) {
+      rawFixtures = redisLkg.data;
+      source = redisLkg.source;
+      stale = true;
+      degraded = true;
+      generatedAt = redisLkg.generatedAt;
+    }
+  }
+  if (rawFixtures.length === 0) {
+    try {
+      const conditions = ["competition_id = ?"];
+      const params = [competitionId];
+      if (seasonId) {
+        conditions.push("(season_id = ? OR season_id IS NULL)");
+        params.push(seasonId);
+      }
+      if (options.matchday !== void 0) {
+        conditions.push("matchday = ?");
+        params.push(options.matchday);
+      }
+      if (options.status && options.status !== "ALL") {
+        conditions.push("status = ?");
+        params.push(options.status);
+      }
+      const sqliteRows = queryAll(
+        `SELECT * FROM fixtures WHERE ${conditions.join(" AND ")} ORDER BY matchday ASC, scheduled_at ASC, id ASC`,
+        params
+      );
+      if (sqliteRows && sqliteRows.length > 0) {
+        rawFixtures = sqliteRows.map((r) => normalizeFixtureSnapshot(r, seasonId));
+        source = "sqlite";
+        stale = true;
+        degraded = true;
+      }
+    } catch {
+    }
+  }
+  if (rawFixtures.length === 0) {
+    const db = getFirestoreDb();
+    if (db && firestoreCircuitBreaker.canExecute()) {
+      try {
+        let query = db.collection(COLLECTIONS.FIXTURES).where("seasonId", "==", seasonId).where("competitionId", "==", competitionId);
+        if (options.matchday !== void 0) {
+          query = query.where("matchday", "==", options.matchday);
+        }
+        if (options.status && options.status !== "ALL") {
+          query = query.where("status", "==", options.status);
+        }
+        const snap = await query.get();
+        trackFirestoreRead(COLLECTIONS.FIXTURES, snap.docs.length, "getCompetitionFixturesBoundedFirestore");
+        rawFixtures = snap.docs.map((d) => normalizeFixtureSnapshot({ id: d.id, ...d.data() }, seasonId));
+        source = "firestore_bounded";
+        stale = false;
+        degraded = false;
+      } catch (err) {
+        firestoreCircuitBreaker.recordFailure(err);
+      }
+    }
+  }
+  let fixtures = rawFixtures;
+  if (options.matchday !== void 0) {
+    fixtures = fixtures.filter((fixture) => Number(fixture.matchday) === Number(options.matchday));
+  }
+  if (options.status && options.status !== "ALL") {
+    fixtures = fixtures.filter((fixture) => fixture.status === options.status);
+  }
   if (["comp-champions-league-2026", "comp-europa-league-2026"].includes(competitionId)) {
     const leaguePhaseFixtures = fixtures.filter((fixture) => Number(fixture.matchday) >= 1 && Number(fixture.matchday) <= 8);
     if (leaguePhaseFixtures.length > 0 && leaguePhaseFixtures.some((fixture) => fixture.status !== "CONFIRMED")) {
       fixtures = leaguePhaseFixtures;
     }
   }
-  const clubsResult = await readThroughReadModel({
-    key: ReadModelKeys.clubsWithOwners(seasonId),
-    seasonId,
-    expectedCount: 96,
-    firestoreFetcher: async () => (await buildClubsSnapshot(seasonId)).data,
-    validateData: (data) => Array.isArray(data) && data.length > 0
-  });
-  const ownersByClub = new Map(clubsResult.data.map((club) => [club.id, club]));
+  let clubsResult = null;
+  try {
+    clubsResult = await readThroughReadModel2({
+      key: ReadModelKeys.clubsWithOwners(seasonId),
+      seasonId,
+      expectedCount: 96,
+      firestoreFetcher: async () => (await buildClubsSnapshot(seasonId)).data,
+      validateData: (data) => Array.isArray(data) && data.length > 0
+    });
+  } catch {
+  }
+  const ownersByClub = new Map(
+    clubsResult?.data ? clubsResult.data.map((club) => [club.id, club]) : []
+  );
   fixtures = fixtures.map((fixture) => {
     const homeOwner = fixture.homeClubId ? ownersByClub.get(fixture.homeClubId) : void 0;
     const awayOwner = fixture.awayClubId ? ownersByClub.get(fixture.awayClubId) : void 0;
@@ -4029,16 +4001,39 @@ async function getCompetitionFixturesFromReadModel(competitionId, options = {}) 
   }
   return {
     fixtures: fixtures.sort((a, b) => compareAdminFixtures(a, b, true)),
-    source: result.source,
-    stale: Boolean(result.stale || clubsResult.stale),
-    degraded: Boolean(result.degraded || clubsResult.degraded),
-    snapshotAt: result.generatedAt
+    source,
+    stale: Boolean(stale || clubsResult?.stale),
+    degraded: Boolean(degraded || clubsResult?.degraded),
+    snapshotAt: generatedAt
   };
 }
 async function getAdminFixturesFromReadModel(options = {}) {
   const seasonId = options.seasonId || "season-2026-27";
   const limit = Math.min(Math.max(options.limit || 25, 1), 100);
-  const snapshotRes = await readThroughReadModel({
+  const redisFresh = await redisGetFresh(ReadModelKeys.adminFixtures(seasonId));
+  const redisLkg = !redisFresh ? await redisGetLkg(ReadModelKeys.adminFixtures(seasonId)) : null;
+  const snapshotRes = redisFresh || redisLkg;
+  if (!snapshotRes || !Array.isArray(snapshotRes.data) || snapshotRes.data.length === 0) {
+    try {
+      const { executeAdminFixturesPagedFallback: executeAdminFixturesPagedFallback3 } = await Promise.resolve().then(() => (init_firestoreStore(), firestoreStore_exports));
+      const fallbackRes = executeAdminFixturesPagedFallback3(options, limit);
+      if (fallbackRes.total > 0 || !firestoreCircuitBreaker.canExecute()) {
+        return {
+          fixtures: fallbackRes.fixtures,
+          total: fallbackRes.total,
+          hasMore: fallbackRes.hasMore,
+          nextCursor: fallbackRes.nextCursor,
+          limit: fallbackRes.limit,
+          source: "sqlite",
+          degraded: true,
+          stale: true,
+          generatedAt: fallbackRes.generatedAt
+        };
+      }
+    } catch {
+    }
+  }
+  const effectiveSnapshotRes = snapshotRes || await readThroughReadModel2({
     key: ReadModelKeys.adminFixtures(seasonId),
     seasonId,
     firestoreFetcher: async () => {
@@ -4047,7 +4042,7 @@ async function getAdminFixturesFromReadModel(options = {}) {
     },
     validateData: (fixtures) => Array.isArray(fixtures) && fixtures.length > 0
   });
-  let allFixtures = [...snapshotRes.data].sort((a, b) => compareAdminFixtures(a, b));
+  let allFixtures = [...effectiveSnapshotRes.data].sort((a, b) => compareAdminFixtures(a, b));
   if (options.competitionId && options.competitionId !== "ALL") {
     allFixtures = allFixtures.filter((f) => f.competitionId === options.competitionId);
   }
@@ -4102,10 +4097,10 @@ async function getAdminFixturesFromReadModel(options = {}) {
     hasMore,
     nextCursor,
     limit,
-    source: snapshotRes.source,
-    degraded: snapshotRes.source === "redis_stale",
-    stale: snapshotRes.source === "redis_stale",
-    generatedAt: snapshotRes.generatedAt
+    source: effectiveSnapshotRes.source,
+    degraded: effectiveSnapshotRes.source === "redis_stale",
+    stale: effectiveSnapshotRes.source === "redis_stale",
+    generatedAt: effectiveSnapshotRes.generatedAt
   };
 }
 async function invalidateClubReadModels(seasonId = "season-2026-27") {
@@ -4158,6 +4153,12 @@ async function invalidateFixtureReadModels(competitionId, seasonId = "season-202
     await invalidateDataset(ReadModelKeys.competitionFixtures(competitionId, seasonId));
     await invalidateDataset(ReadModelKeys.standings(competitionId, seasonId));
   }
+}
+async function invalidateStandingsReadModels(competitionId, seasonId = "season-2026-27") {
+  await invalidateDataset(ReadModelKeys.standings(competitionId, seasonId));
+}
+async function invalidateCompetitionReadModels(seasonId = "season-2026-27") {
+  await invalidateDataset(ReadModelKeys.competitions(seasonId));
 }
 async function invalidateUserMembershipReadModel(userId, seasonId = "season-2026-27") {
   await invalidateDataset(ReadModelKeys.userMembership(userId, seasonId));
@@ -4370,13 +4371,15 @@ async function getReadModelHealthStatus(seasonId = "season-2026-27") {
     coreDatasets
   };
 }
-var SCHEMA_VERSION, KEY_PREFIX, ReadModelNotWarmedError, DOMESTIC_LEAGUE_CONFIG, CANONICAL_COMPETITION_ORDER, ReadModelKeys, upstashClient, isUpstashConfigured, reportedRedisConfig, memoryRedisStorage, inProcessMemoryCache, PROCESS_MEMORY_TTL_MS, inFlightLoaders, globalLastSnapshotAt;
+var SCHEMA_VERSION, KEY_PREFIX, ReadModelNotWarmedError, DOMESTIC_LEAGUE_CONFIG, CANONICAL_COMPETITION_ORDER, ReadModelKeys, upstashClient, isUpstashConfigured, reportedRedisConfig, memoryRedisStorage, inProcessMemoryCache, PROCESS_MEMORY_TTL_MS, inFlightLoaders, globalLastSnapshotAt, clearProcessMemoryForTest;
 var init_readModelStore = __esm({
   "src/server/readModel/readModelStore.ts"() {
     init_redisConfig();
     init_circuitBreaker();
     init_admin();
     init_collections();
+    init_db();
+    init_firestoreStore();
     init_seed();
     SCHEMA_VERSION = "v1";
     KEY_PREFIX = `efluz:${SCHEMA_VERSION}`;
@@ -4421,6 +4424,7 @@ var init_readModelStore = __esm({
       leagueClubs: (leagueId, seasonId = "season-2026-27") => `${KEY_PREFIX}:season:${seasonId}:league:${leagueId}:clubs`,
       standings: (competitionId, seasonId = "season-2026-27") => `${KEY_PREFIX}:season:${seasonId}:competition:${competitionId}:standings`,
       competitionFixtures: (competitionId, seasonId = "season-2026-27") => `${KEY_PREFIX}:season:${seasonId}:competition:${competitionId}:fixtures`,
+      fixtures: (competitionId, seasonId = "season-2026-27") => `${KEY_PREFIX}:season:${seasonId}:competition:${competitionId}:fixtures`,
       adminFixtures: (seasonId = "season-2026-27") => `${KEY_PREFIX}:season:${seasonId}:admin:fixtures`,
       userMembership: (userId, seasonId = "season-2026-27") => `${KEY_PREFIX}:season:${seasonId}:user:${userId}:membership`
     };
@@ -4432,264 +4436,171 @@ var init_readModelStore = __esm({
     PROCESS_MEMORY_TTL_MS = 15e3;
     inFlightLoaders = /* @__PURE__ */ new Map();
     globalLastSnapshotAt = null;
+    clearProcessMemoryForTest = clearProcessMemoryCache;
   }
 });
 
-// src/server/tournament/standingsEngine.ts
-function calculateCompetitionStandings(competitionId) {
-  const comp = queryGet(
-    "SELECT season_id, format_config_json FROM competitions WHERE id = ?",
-    [competitionId]
-  );
-  const seasonId = comp?.season_id || "season-2026-27";
-  let formatConfig = {};
-  if (comp?.format_config_json) {
-    try {
-      formatConfig = JSON.parse(comp.format_config_json);
-    } catch {
-      formatConfig = {};
-    }
-  }
-  const pointsForWin = formatConfig.pointsForWin ?? 3;
-  const pointsForDraw = formatConfig.pointsForDraw ?? 1;
-  const pointsForLoss = formatConfig.pointsForLoss ?? 0;
-  const tieBreakers = formatConfig.tieBreakers ?? ["points", "goalDifference", "goalsFor", "headToHead"];
-  const clubs = queryAll(
-    `SELECT c.id, c.name, c.short_name, c.logo_url, u.username as manager_username
-     FROM competition_participants cp
-     JOIN clubs c ON cp.club_id = c.id
-     LEFT JOIN club_memberships cm ON c.id = cm.club_id AND cm.season_id = ? AND cm.status = 'active'
-     LEFT JOIN users u ON cm.user_id = u.id
-     WHERE cp.competition_id = ?
-     ORDER BY c.name ASC`,
-    [seasonId, competitionId]
-  );
-  let clubList = clubs;
-  if (clubList.length === 0) {
-    clubList = queryAll(
-      `SELECT c.id, c.name, c.short_name, c.logo_url, u.username as manager_username
-       FROM competitions comp
-       JOIN season_league_clubs slc ON comp.league_id = slc.league_id AND comp.season_id = slc.season_id AND slc.is_active = 1
-       JOIN clubs c ON slc.club_id = c.id
-       LEFT JOIN club_memberships cm ON c.id = cm.club_id AND cm.season_id = comp.season_id AND cm.status = 'active'
-       LEFT JOIN users u ON cm.user_id = u.id
-       WHERE comp.id = ?
-       ORDER BY c.name ASC`,
-      [competitionId]
+// src/server/outbox/redisOutbox.ts
+function isRedisOutboxConfigured() {
+  return getUpstashClient() !== null;
+}
+async function persistDurableMutation(mutation) {
+  const client = getUpstashClient();
+  if (!client) {
+    throw new DurablePersistenceUnavailableError(
+      "Durable Redis outbox is not configured. Local ephemeral storage cannot acknowledge mutations."
     );
   }
-  const confirmedFixtures = queryAll(
-    `SELECT id, matchday, home_club_id, away_club_id, home_score, away_score, result_confirmed_at
-     FROM fixtures
-     WHERE competition_id = ? AND status = 'CONFIRMED' AND home_score IS NOT NULL AND away_score IS NOT NULL
-     ORDER BY matchday ASC, result_confirmed_at ASC`,
-    [competitionId]
-  );
-  const statsMap = /* @__PURE__ */ new Map();
-  for (const c of clubList) {
-    statsMap.set(c.id, {
-      clubId: c.id,
-      clubName: c.name,
-      shortName: c.short_name,
-      logoUrl: c.logo_url,
-      managerUsername: c.manager_username || void 0,
-      played: 0,
-      won: 0,
-      drawn: 0,
-      lost: 0,
-      goalsFor: 0,
-      goalsAgainst: 0,
-      goalDifference: 0,
-      points: 0,
-      form: []
-    });
+  const mutationKey = OUTBOX_KEYS.mutation(mutation.mutationId);
+  const pendingKey = OUTBOX_KEYS.pending();
+  const allKey = OUTBOX_KEYS.all();
+  try {
+    const rawJson = JSON.stringify(mutation);
+    await client.set(mutationKey, rawJson);
+    if (mutation.status === "PENDING" || mutation.status === "SYNCING") {
+      await client.zadd(pendingKey, { score: mutation.nextRetryAt, member: mutation.mutationId });
+    }
+    await client.sadd(allKey, mutation.mutationId);
+    console.log(`[DURABLE_OUTBOX] Persisted mutation ${mutation.mutationId} (${mutation.operation}) to Redis`);
+  } catch (err) {
+    console.error(`[DURABLE_OUTBOX] Failed to persist mutation ${mutation.mutationId} to Redis:`, err?.message || err);
+    throw new DurablePersistenceUnavailableError(
+      `Failed to persist mutation to durable Redis outbox: ${err?.message || "Upstash error"}`
+    );
   }
-  for (const fix of confirmedFixtures) {
-    const home = statsMap.get(fix.home_club_id);
-    const away = statsMap.get(fix.away_club_id);
-    if (home) {
-      home.played += 1;
-      home.goalsFor += fix.home_score;
-      home.goalsAgainst += fix.away_score;
-      if (fix.home_score > fix.away_score) {
-        home.won += 1;
-        home.points += pointsForWin;
-        home.form.push("W");
-      } else if (fix.home_score === fix.away_score) {
-        home.drawn += 1;
-        home.points += pointsForDraw;
-        home.form.push("D");
-      } else {
-        home.lost += 1;
-        home.points += pointsForLoss;
-        home.form.push("L");
-      }
-    }
-    if (away) {
-      away.played += 1;
-      away.goalsFor += fix.away_score;
-      away.goalsAgainst += fix.home_score;
-      if (fix.away_score > fix.home_score) {
-        away.won += 1;
-        away.points += pointsForWin;
-        away.form.push("W");
-      } else if (fix.away_score === fix.home_score) {
-        away.drawn += 1;
-        away.points += pointsForDraw;
-        away.form.push("D");
-      } else {
-        away.lost += 1;
-        away.points += pointsForLoss;
-        away.form.push("L");
-      }
-    }
-  }
-  const rows = Array.from(statsMap.values()).map((row) => {
-    row.goalDifference = row.goalsFor - row.goalsAgainst;
-    row.form = row.form.slice(-5);
-    return row;
-  });
-  function getH2HPoints(clubAId, clubBId) {
-    let pts = 0;
-    for (const f of confirmedFixtures) {
-      if (f.home_club_id === clubAId && f.away_club_id === clubBId) {
-        if (f.home_score > f.away_score) pts += pointsForWin;
-        else if (f.home_score === f.away_score) pts += pointsForDraw;
-      } else if (f.home_club_id === clubBId && f.away_club_id === clubAId) {
-        if (f.away_score > f.home_score) pts += pointsForWin;
-        else if (f.away_score === f.home_score) pts += pointsForDraw;
-      }
-    }
-    return pts;
-  }
-  rows.sort((a, b) => {
-    if (b.points !== a.points) {
-      return b.points - a.points;
-    }
-    for (const criteria of tieBreakers) {
-      if (criteria === "goalDifference") {
-        if (b.goalDifference !== a.goalDifference) {
-          return b.goalDifference - a.goalDifference;
-        }
-      } else if (criteria === "goalsFor") {
-        if (b.goalsFor !== a.goalsFor) {
-          return b.goalsFor - a.goalsFor;
-        }
-      } else if (criteria === "headToHead") {
-        const h2hA = getH2HPoints(a.clubId, b.clubId);
-        const h2hB = getH2HPoints(b.clubId, a.clubId);
-        if (h2hB !== h2hA) {
-          return h2hB - h2hA;
-        }
-      }
-    }
-    return a.clubName.localeCompare(b.clubName);
-  });
-  return rows.map((r, index) => ({
-    position: index + 1,
-    clubId: r.clubId,
-    clubName: r.clubName,
-    shortName: r.shortName,
-    logoUrl: r.logoUrl,
-    managerUsername: r.managerUsername,
-    played: r.played,
-    won: r.won,
-    drawn: r.drawn,
-    lost: r.lost,
-    goalsFor: r.goalsFor,
-    goalsAgainst: r.goalsAgainst,
-    goalDifference: r.goalDifference,
-    points: r.points,
-    form: r.form
-  }));
 }
-var init_standingsEngine = __esm({
-  "src/server/tournament/standingsEngine.ts"() {
-    init_db();
-  }
-});
-
-// src/server/db/sqliteStandings.ts
-var sqliteStandings_exports = {};
-__export(sqliteStandings_exports, {
-  getMaterializedStandingsForCompetition: () => getMaterializedStandingsForCompetition,
-  refreshMaterializedStandingsForCompetition: () => refreshMaterializedStandingsForCompetition,
-  updateMaterializedStandingsFromFixture: () => updateMaterializedStandingsFromFixture
-});
-function refreshMaterializedStandingsForCompetition(competitionId) {
-  const standings = calculateCompetitionStandings(competitionId);
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  dbTransaction(() => {
-    queryRun("DELETE FROM competition_standings WHERE competition_id = ?", [competitionId]);
-    for (const row of standings) {
-      queryRun(
-        `INSERT OR REPLACE INTO competition_standings (
-          competition_id, club_id, rank, club_name, short_name, logo_url,
-          played, won, drawn, lost, goals_for, goals_against, goal_difference,
-          points, form_json, qualification_status, manager_username, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          competitionId,
-          row.clubId,
-          row.position,
-          row.clubName,
-          row.shortName || "",
-          row.logoUrl || "",
-          row.played,
-          row.won,
-          row.drawn,
-          row.lost,
-          row.goalsFor,
-          row.goalsAgainst,
-          row.goalDifference,
-          row.points,
-          JSON.stringify(row.form || []),
-          null,
-          row.managerUsername || null,
-          now
-        ]
-      );
+async function getDurableMutation(mutationId) {
+  const client = getUpstashClient();
+  if (!client) return null;
+  try {
+    const raw = await client.get(OUTBOX_KEYS.mutation(mutationId));
+    if (!raw) return null;
+    if (typeof raw === "string") {
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return null;
+      }
     }
-  });
-  return standings;
-}
-function getMaterializedStandingsForCompetition(competitionId) {
-  const rows = queryAll(
-    "SELECT * FROM competition_standings WHERE competition_id = ? ORDER BY rank ASC",
-    [competitionId]
-  );
-  if (!rows || rows.length === 0) {
-    return refreshMaterializedStandingsForCompetition(competitionId);
-  }
-  return rows.map((r) => ({
-    position: r.rank,
-    clubId: r.club_id,
-    clubName: r.club_name,
-    shortName: r.short_name,
-    logoUrl: r.logo_url,
-    managerUsername: r.manager_username || void 0,
-    played: r.played,
-    won: r.won,
-    drawn: r.drawn,
-    lost: r.lost,
-    goalsFor: r.goals_for,
-    goalsAgainst: r.goals_against,
-    goalDifference: r.goal_difference,
-    points: r.points,
-    form: r.form_json ? JSON.parse(r.form_json) : []
-  }));
-}
-function updateMaterializedStandingsFromFixture(fixtureId) {
-  const fix = queryGet("SELECT competition_id FROM fixtures WHERE id = ?", [fixtureId]);
-  if (!fix?.competition_id) {
+    return raw;
+  } catch (err) {
+    console.warn(`[DURABLE_OUTBOX] Failed to read mutation ${mutationId}:`, err?.message || err);
     return null;
   }
-  return refreshMaterializedStandingsForCompetition(fix.competition_id);
 }
-var init_sqliteStandings = __esm({
-  "src/server/db/sqliteStandings.ts"() {
-    init_db();
-    init_standingsEngine();
+async function getDuePendingMutations(limit = 25) {
+  const client = getUpstashClient();
+  if (!client) return [];
+  try {
+    const now = Date.now();
+    const members = await client.zrange(
+      OUTBOX_KEYS.pending(),
+      0,
+      now,
+      { byScore: true, offset: 0, count: limit }
+    );
+    if (!members || members.length === 0) return [];
+    const mutations = [];
+    for (const id of members) {
+      const mut = await getDurableMutation(id);
+      if (mut && mut.status !== "SYNCED") {
+        mutations.push(mut);
+      }
+    }
+    return mutations.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  } catch (err) {
+    console.warn("[DURABLE_OUTBOX] Error retrieving due pending mutations:", err?.message || err);
+    return [];
+  }
+}
+async function markMutationSyncing(mutationId) {
+  const client = getUpstashClient();
+  if (!client) return false;
+  try {
+    const mut = await getDurableMutation(mutationId);
+    if (!mut || mut.status === "SYNCED") return false;
+    mut.status = "SYNCING";
+    mut.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await client.set(OUTBOX_KEYS.mutation(mutationId), JSON.stringify(mut));
+    return true;
+  } catch (err) {
+    console.warn(`[DURABLE_OUTBOX] Failed to mark mutation ${mutationId} as SYNCING:`, err?.message || err);
+    return false;
+  }
+}
+async function markMutationSynced(mutationId) {
+  const client = getUpstashClient();
+  if (!client) return;
+  try {
+    const mut = await getDurableMutation(mutationId);
+    if (mut) {
+      mut.status = "SYNCED";
+      mut.lastError = null;
+      mut.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+      await client.set(OUTBOX_KEYS.mutation(mutationId), JSON.stringify(mut));
+    }
+    await client.zrem(OUTBOX_KEYS.pending(), mutationId);
+    console.log(`[DURABLE_OUTBOX] Mutation ${mutationId} marked SYNCED in Redis`);
+  } catch (err) {
+    console.warn(`[DURABLE_OUTBOX] Failed to mark mutation ${mutationId} as SYNCED:`, err?.message || err);
+  }
+}
+async function markMutationRetryable(mutationId, errorMessage) {
+  const client = getUpstashClient();
+  if (!client) return;
+  try {
+    const mut = await getDurableMutation(mutationId);
+    if (!mut) return;
+    const retryCount = (mut.retryCount || 0) + 1;
+    const backoffMs = Math.min(3e5, 3e3 * Math.pow(2, Math.min(retryCount, 6)));
+    const nextRetryAt = Date.now() + backoffMs;
+    mut.status = "PENDING";
+    mut.retryCount = retryCount;
+    mut.nextRetryAt = nextRetryAt;
+    mut.lastError = errorMessage;
+    mut.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await client.set(OUTBOX_KEYS.mutation(mutationId), JSON.stringify(mut));
+    await client.zadd(OUTBOX_KEYS.pending(), { score: nextRetryAt, member: mutationId });
+    console.log(`[DURABLE_OUTBOX] Mutation ${mutationId} backed off (retry #${retryCount}, next at ${new Date(nextRetryAt).toISOString()})`);
+  } catch (err) {
+    console.warn(`[DURABLE_OUTBOX] Failed to set retryable on mutation ${mutationId}:`, err?.message || err);
+  }
+}
+async function markMutationFailed(mutationId, errorMessage) {
+  const client = getUpstashClient();
+  if (!client) return;
+  try {
+    const mut = await getDurableMutation(mutationId);
+    if (mut) {
+      mut.status = "FAILED";
+      mut.lastError = errorMessage;
+      mut.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+      await client.set(OUTBOX_KEYS.mutation(mutationId), JSON.stringify(mut));
+    }
+    await client.zrem(OUTBOX_KEYS.pending(), mutationId);
+    console.error(`[DURABLE_OUTBOX] Mutation ${mutationId} marked permanently FAILED:`, errorMessage);
+  } catch (err) {
+    console.warn(`[DURABLE_OUTBOX] Failed to mark mutation ${mutationId} as FAILED:`, err?.message || err);
+  }
+}
+var DurablePersistenceUnavailableError, OUTBOX_KEYS;
+var init_redisOutbox = __esm({
+  "src/server/outbox/redisOutbox.ts"() {
+    init_readModelStore();
+    DurablePersistenceUnavailableError = class extends Error {
+      constructor(message = "Durable persistence is temporarily unavailable. Mutation was not accepted; retry when service recovers.") {
+        super(message);
+        this.code = "DURABLE_PERSISTENCE_UNAVAILABLE";
+        this.statusCode = 503;
+        this.status = 503;
+        this.name = "DurablePersistenceUnavailableError";
+      }
+    };
+    OUTBOX_KEYS = {
+      mutation: (mutationId) => `${KEY_PREFIX}:outbox:mutation:${mutationId}`,
+      pending: () => `${KEY_PREFIX}:outbox:pending`,
+      all: () => `${KEY_PREFIX}:outbox:all`
+    };
   }
 });
 
@@ -6360,6 +6271,961 @@ var init_knockoutEngine = __esm({
   }
 });
 
+// src/server/sync/mutationQueue.ts
+import fs3 from "fs";
+import path3 from "path";
+function saveQueueBackupToFile() {
+  try {
+    if (!fs3.existsSync(BACKUP_DIR)) {
+      fs3.mkdirSync(BACKUP_DIR, { recursive: true });
+    }
+    const arr = Array.from(memoryQueue.values()).filter((m) => m.status === "PENDING" || m.status === "SYNCING");
+    fs3.writeFileSync(BACKUP_FILE, JSON.stringify(arr, null, 2), "utf-8");
+  } catch {
+  }
+}
+function loadQueueBackupFromFile() {
+  try {
+    if (fs3.existsSync(BACKUP_FILE)) {
+      const content = fs3.readFileSync(BACKUP_FILE, "utf-8");
+      const arr = JSON.parse(content);
+      for (const item of arr) {
+        if (!memoryQueue.has(item.mutationId)) {
+          memoryQueue.set(item.mutationId, item);
+        }
+      }
+    }
+  } catch {
+  }
+}
+async function enqueueDurableOutboxMutation(mutation) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const createdAt = mutation.createdAt || now;
+  const fullMutation = {
+    mutationId: mutation.mutationId,
+    entityType: mutation.entityType,
+    entityId: mutation.entityId,
+    operation: mutation.operation,
+    payload: mutation.payload,
+    createdAt,
+    status: "PENDING",
+    retryCount: 0,
+    lastError: null,
+    updatedAt: now
+  };
+  const durableMutation = {
+    mutationId: mutation.mutationId,
+    operation: mutation.operation,
+    entityType: mutation.entityType,
+    entityId: mutation.entityId,
+    userId: mutation.userId,
+    adminUserId: mutation.adminUserId,
+    seasonId: mutation.seasonId || "season-2026-27",
+    competitionId: mutation.competitionId,
+    payload: mutation.payload,
+    createdAt,
+    updatedAt: now,
+    retryCount: 0,
+    nextRetryAt: Date.now(),
+    lastError: null,
+    status: "PENDING"
+  };
+  await persistDurableMutation(durableMutation);
+  memoryQueue.set(mutation.mutationId, fullMutation);
+  saveQueueBackupToFile();
+  try {
+    queryRun(
+      `INSERT OR REPLACE INTO pending_mutations 
+       (mutation_id, entity_type, entity_id, operation, payload, status, retry_count, last_error, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        fullMutation.mutationId,
+        fullMutation.entityType,
+        fullMutation.entityId,
+        fullMutation.operation,
+        JSON.stringify(fullMutation.payload),
+        fullMutation.status,
+        fullMutation.retryCount,
+        fullMutation.lastError,
+        fullMutation.createdAt,
+        fullMutation.updatedAt
+      ]
+    );
+  } catch (err) {
+    console.warn("[MUTATION_QUEUE] SQLite mirror insert warning:", err);
+  }
+  console.log(`[MUTATION_QUEUE] Enqueued durable mutation: id=${fullMutation.mutationId} type=${fullMutation.entityType}`);
+  return fullMutation;
+}
+function enqueueMutation(mutation) {
+  if (!isRedisOutboxConfigured()) {
+    throw Object.assign(
+      new DurablePersistenceUnavailableError("Remote database unavailable. Change was not accepted; retry when service recovers."),
+      { code: "DURABLE_PERSISTENCE_UNAVAILABLE", statusCode: 503 }
+    );
+  }
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const existing = memoryQueue.get(mutation.mutationId);
+  if (existing && existing.status === "SYNCED") {
+    return existing;
+  }
+  const fullMutation = {
+    ...mutation,
+    status: "PENDING",
+    retryCount: existing ? existing.retryCount : 0,
+    lastError: null,
+    updatedAt: now
+  };
+  const durableMutation = {
+    mutationId: mutation.mutationId,
+    operation: mutation.operation,
+    entityType: mutation.entityType,
+    entityId: mutation.entityId,
+    userId: mutation.payload?.userId,
+    adminUserId: mutation.payload?.adminUserId,
+    seasonId: mutation.payload?.seasonId || "season-2026-27",
+    competitionId: mutation.payload?.competitionId,
+    payload: mutation.payload,
+    createdAt: mutation.createdAt || now,
+    updatedAt: now,
+    retryCount: fullMutation.retryCount,
+    nextRetryAt: Date.now(),
+    lastError: null,
+    status: "PENDING"
+  };
+  persistDurableMutation(durableMutation).catch((err) => {
+    console.warn("[MUTATION_QUEUE] Background Redis persistence failed:", err);
+  });
+  memoryQueue.set(mutation.mutationId, fullMutation);
+  saveQueueBackupToFile();
+  try {
+    queryRun(
+      `INSERT OR REPLACE INTO pending_mutations 
+       (mutation_id, entity_type, entity_id, operation, payload, status, retry_count, last_error, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        fullMutation.mutationId,
+        fullMutation.entityType,
+        fullMutation.entityId,
+        fullMutation.operation,
+        JSON.stringify(fullMutation.payload),
+        fullMutation.status,
+        fullMutation.retryCount,
+        fullMutation.lastError,
+        fullMutation.createdAt,
+        fullMutation.updatedAt
+      ]
+    );
+  } catch (err) {
+    console.warn("[MUTATION_QUEUE] SQLite insert warning:", err);
+  }
+  console.log(`[MUTATION_QUEUE] Enqueued mutation: id=${fullMutation.mutationId} type=${fullMutation.entityType}`);
+  return fullMutation;
+}
+function getPendingMutations(status) {
+  if (memoryQueue.size === 0) {
+    try {
+      const rows = queryAll(
+        `SELECT mutation_id, entity_type, entity_id, operation, payload, status, retry_count, last_error, created_at, updated_at 
+         FROM pending_mutations WHERE status IN ('PENDING', 'SYNCING')`
+      );
+      for (const r of rows) {
+        let payload = {};
+        try {
+          payload = JSON.parse(r.payload);
+        } catch {
+        }
+        memoryQueue.set(r.mutation_id, {
+          mutationId: r.mutation_id,
+          entityType: r.entity_type,
+          entityId: r.entity_id,
+          operation: r.operation,
+          payload,
+          status: r.status,
+          retryCount: r.retry_count || 0,
+          lastError: r.last_error || null,
+          createdAt: r.created_at,
+          updatedAt: r.updated_at
+        });
+      }
+    } catch {
+    }
+    loadQueueBackupFromFile();
+  }
+  const all = Array.from(memoryQueue.values());
+  if (status) {
+    return all.filter((m) => m.status === status);
+  }
+  return all;
+}
+function updateMutationStatus(mutationId, status, error) {
+  const item = memoryQueue.get(mutationId);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  if (item) {
+    item.status = status;
+    item.updatedAt = now;
+    if (error) {
+      item.lastError = error;
+      item.retryCount = (item.retryCount || 0) + 1;
+    } else if (status === "SYNCED") {
+      item.lastError = null;
+    }
+    memoryQueue.set(mutationId, item);
+  }
+  saveQueueBackupToFile();
+  try {
+    queryRun(
+      `UPDATE pending_mutations 
+       SET status = ?, last_error = ?, updated_at = ?, retry_count = retry_count + ?
+       WHERE mutation_id = ?`,
+      [status, error || null, now, error ? 1 : 0, mutationId]
+    );
+  } catch {
+  }
+}
+function getQueueStats() {
+  const all = getPendingMutations();
+  return {
+    total: all.length,
+    pending: all.filter((m) => m.status === "PENDING").length,
+    syncing: all.filter((m) => m.status === "SYNCING").length,
+    synced: all.filter((m) => m.status === "SYNCED").length,
+    failed: all.filter((m) => m.status === "FAILED").length
+  };
+}
+async function processPendingMutations() {
+  if (isSyncInProgress) {
+    console.log("[MUTATION_QUEUE] Sync already in progress, skipping duplicate call.");
+    return {
+      totalPending: getPendingMutations("PENDING").length,
+      processed: 0,
+      synced: 0,
+      failed: 0,
+      circuitOpen: !firestoreCircuitBreaker.canExecute(),
+      errors: []
+    };
+  }
+  if (!firestoreCircuitBreaker.canExecute()) {
+    console.log("[MUTATION_QUEUE] Circuit breaker is OPEN. Deferring sync.");
+    return {
+      totalPending: getPendingMutations("PENDING").length,
+      processed: 0,
+      synced: 0,
+      failed: 0,
+      circuitOpen: true,
+      errors: []
+    };
+  }
+  isSyncInProgress = true;
+  let processed = 0;
+  let synced = 0;
+  let failed = 0;
+  const errors = [];
+  try {
+    const db = getFirestoreDb();
+    let dueMutations = [];
+    if (isRedisOutboxConfigured()) {
+      try {
+        const redisDue = await getDuePendingMutations(15);
+        dueMutations = redisDue.map((m) => ({
+          mutationId: m.mutationId,
+          entityType: m.entityType,
+          entityId: m.entityId,
+          operation: m.operation,
+          payload: m.payload,
+          createdAt: m.createdAt,
+          status: m.status,
+          retryCount: m.retryCount,
+          lastError: m.lastError,
+          updatedAt: m.updatedAt
+        }));
+      } catch (err) {
+        console.warn("[MUTATION_QUEUE] Failed to fetch due mutations from Redis outbox:", err?.message || err);
+      }
+    }
+    if (dueMutations.length === 0) {
+      dueMutations = getPendingMutations("PENDING").sort(
+        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      );
+    }
+    for (const item of dueMutations) {
+      if (!firestoreCircuitBreaker.canExecute()) {
+        console.warn("[MUTATION_QUEUE] Circuit breaker tripped during sync. Aborting remaining mutations.");
+        break;
+      }
+      processed++;
+      await markMutationSyncing(item.mutationId).catch(() => {
+      });
+      updateMutationStatus(item.mutationId, "SYNCING");
+      try {
+        await executeSingleMutationSync(db, item);
+        await markMutationSynced(item.mutationId).catch(() => {
+        });
+        updateMutationStatus(item.mutationId, "SYNCED");
+        firestoreCircuitBreaker.recordSuccess();
+        synced++;
+        console.log(`[MUTATION_QUEUE] Successfully synced mutation ${item.mutationId} (${item.entityType})`);
+      } catch (err) {
+        const isQuota = firestoreCircuitBreaker.isQuotaExhaustedError(err);
+        const isOwnershipMismatch = err.message?.includes("OWNERSHIP_MISMATCH");
+        const isTerminalError = isOwnershipMismatch;
+        firestoreCircuitBreaker.recordFailure(err);
+        const nextStatus = isTerminalError ? "FAILED" : "PENDING";
+        if (isTerminalError) {
+          await markMutationFailed(item.mutationId, err.message).catch(() => {
+          });
+        } else {
+          await markMutationRetryable(item.mutationId, err.message).catch(() => {
+          });
+        }
+        updateMutationStatus(item.mutationId, nextStatus, err.message);
+        failed++;
+        errors.push({ mutationId: item.mutationId, error: err.message });
+        console.error(`[MUTATION_QUEUE] Failed syncing mutation ${item.mutationId}:`, err.message);
+        if (isQuota) {
+          break;
+        }
+      }
+    }
+  } finally {
+    isSyncInProgress = false;
+  }
+  return {
+    totalPending: getPendingMutations("PENDING").length,
+    processed,
+    synced,
+    failed,
+    circuitOpen: !firestoreCircuitBreaker.canExecute(),
+    errors
+  };
+}
+async function executeSingleMutationSync(db, item) {
+  const { entityType, entityId, payload } = item;
+  assertNoSyntheticIdsInProduction(`mutation_queue_replay:${entityType}`, [
+    item.mutationId,
+    entityId,
+    payload?.adminUserId,
+    payload?.userId,
+    payload?.targetUserId,
+    payload?.submittedByUserId,
+    payload?.fixtureId,
+    payload?.clubId,
+    payload?.submissionId
+  ]);
+  switch (entityType) {
+    case "RESULT_SUBMISSION": {
+      const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(entityId);
+      const fixDoc = await fixRef.get();
+      if (!fixDoc.exists) {
+        throw new Error(`Fixture ${entityId} not found in Firestore.`);
+      }
+      const fixData = fixDoc.data();
+      const subRef = db.collection(COLLECTIONS.RESULT_SUBMISSIONS).doc(payload.submissionId);
+      await subRef.set(
+        {
+          id: payload.submissionId,
+          fixtureId: entityId,
+          submittedByUserId: payload.userId,
+          clubId: payload.userClubId,
+          homeScore: payload.homeScore,
+          awayScore: payload.awayScore,
+          proofUrl: payload.proofUrl || null,
+          createdAt: payload.createdAt || (/* @__PURE__ */ new Date()).toISOString()
+        },
+        { merge: true }
+      );
+      const subsSnap = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where("fixtureId", "==", entityId).get();
+      const subs = subsSnap.docs.map((d) => d.data());
+      let newStatus = fixData.status;
+      let confirmedHome = fixData.homeScore ?? null;
+      let confirmedAway = fixData.awayScore ?? null;
+      let winnerClubId = fixData.winnerClubId ?? null;
+      let confirmedAt = fixData.resultConfirmedAt ?? null;
+      if (subs.length >= 2) {
+        const [s1, s2] = subs;
+        if (s1.homeScore === s2.homeScore && s1.awayScore === s2.awayScore) {
+          newStatus = "CONFIRMED";
+          confirmedHome = s1.homeScore;
+          confirmedAway = s1.awayScore;
+          confirmedAt = payload.updatedAt || (/* @__PURE__ */ new Date()).toISOString();
+          if (confirmedHome > confirmedAway) winnerClubId = fixData.homeClubId;
+          else if (confirmedAway > confirmedHome) winnerClubId = fixData.awayClubId;
+        } else {
+          newStatus = "DISPUTED";
+        }
+      } else if (subs.length === 1 && newStatus !== "CONFIRMED") {
+        newStatus = "PENDING_CONFIRMATION";
+      }
+      await fixRef.update({
+        status: newStatus,
+        homeScore: confirmedHome,
+        awayScore: confirmedAway,
+        winnerClubId,
+        resultConfirmedAt: confirmedAt,
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      if (newStatus === "CONFIRMED" && winnerClubId) {
+        try {
+          const { advanceKnockoutWinnerFirestore: advanceKnockoutWinnerFirestore2 } = await Promise.resolve().then(() => (init_knockoutEngine(), knockoutEngine_exports));
+          await advanceKnockoutWinnerFirestore2(entityId);
+        } catch (kErr) {
+          console.warn("[KNOCKOUT_ADVANCE] Non-blocking advance error in sync replay:", kErr);
+        }
+      }
+      if (newStatus === "CONFIRMED" && fixData.competitionId) {
+        try {
+          const { rebuildCompetitionStandingsFirestore: rebuildCompetitionStandingsFirestore3 } = await Promise.resolve().then(() => (init_firestoreStore(), firestoreStore_exports));
+          await rebuildCompetitionStandingsFirestore3(fixData.competitionId);
+        } catch (sErr) {
+          console.warn("[STANDINGS_UPDATE] Non-blocking standings update in sync replay:", sErr);
+        }
+      }
+      const auditId = `audit_${item.mutationId}_submit`;
+      await db.collection(COLLECTIONS.AUDIT_LOGS).doc(auditId).set({
+        id: auditId,
+        actorUserId: payload.userId,
+        action: "SUBMIT_RESULT",
+        entityType: "fixture",
+        entityId,
+        notes: `Result submitted: ${payload.homeScore}-${payload.awayScore} (status: ${newStatus})`,
+        createdAt: payload.createdAt || (/* @__PURE__ */ new Date()).toISOString()
+      }, { merge: true });
+      const opponentClubId = payload.userClubId === fixData.homeClubId ? fixData.awayClubId : fixData.homeClubId;
+      if (opponentClubId && fixData.seasonId) {
+        try {
+          const notifId = `notif_${item.mutationId}_opponent`;
+          const opponentOcc = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${fixData.seasonId}_${opponentClubId}`).get();
+          if (opponentOcc.exists && opponentOcc.data()?.userId) {
+            const oppUserId = opponentOcc.data().userId;
+            await db.collection(COLLECTIONS.NOTIFICATIONS).doc(notifId).set({
+              id: notifId,
+              userId: oppUserId,
+              type: newStatus === "CONFIRMED" ? "RESULT_CONFIRMED" : "RESULT_SUBMITTED",
+              title: newStatus === "CONFIRMED" ? "Match Result Confirmed" : "Opponent Submitted Score",
+              message: `Match result: ${payload.homeScore}-${payload.awayScore}`,
+              fixtureId: entityId,
+              isRead: false,
+              createdAt: (/* @__PURE__ */ new Date()).toISOString()
+            }, { merge: true });
+          }
+        } catch {
+        }
+      }
+      break;
+    }
+    case "ADMIN_APPROVE_RESULT": {
+      const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(entityId);
+      const fixDoc = await fixRef.get();
+      if (!fixDoc.exists) {
+        throw new Error(`Fixture ${entityId} not found in Firestore.`);
+      }
+      const fixData = fixDoc.data();
+      const now = (/* @__PURE__ */ new Date()).toISOString();
+      let winnerClubId = null;
+      if (payload.homeScore > payload.awayScore) winnerClubId = fixData.homeClubId;
+      else if (payload.awayScore > payload.homeScore) winnerClubId = fixData.awayClubId;
+      await fixRef.update({
+        status: "CONFIRMED",
+        homeScore: payload.homeScore,
+        awayScore: payload.awayScore,
+        winnerClubId,
+        resultConfirmedAt: now,
+        updatedAt: now
+      });
+      const disputesSnap = await db.collection(COLLECTIONS.DISPUTES).where("fixtureId", "==", entityId).get();
+      for (const d of disputesSnap.docs) {
+        await d.ref.update({
+          status: "RESOLVED",
+          resolvedByUserId: payload.adminUserId,
+          resolutionNotes: payload.notes || "Approved by admin via sync",
+          resolvedAt: now
+        });
+      }
+      if (winnerClubId) {
+        try {
+          const { advanceKnockoutWinnerFirestore: advanceKnockoutWinnerFirestore2 } = await Promise.resolve().then(() => (init_knockoutEngine(), knockoutEngine_exports));
+          await advanceKnockoutWinnerFirestore2(entityId);
+        } catch {
+        }
+      }
+      if (fixData.competitionId) {
+        try {
+          const { rebuildCompetitionStandingsFirestore: rebuildCompetitionStandingsFirestore3 } = await Promise.resolve().then(() => (init_firestoreStore(), firestoreStore_exports));
+          await rebuildCompetitionStandingsFirestore3(fixData.competitionId);
+        } catch {
+        }
+      }
+      const auditId = `audit_${item.mutationId}_approve`;
+      await db.collection(COLLECTIONS.AUDIT_LOGS).doc(auditId).set({
+        id: auditId,
+        actorUserId: payload.adminUserId,
+        action: "ADMIN_APPROVE_RESULT",
+        entityType: "fixture",
+        entityId,
+        notes: payload.notes || "Approved by admin via sync",
+        createdAt: now
+      }, { merge: true });
+      break;
+    }
+    case "ADMIN_REJECT_RESULT": {
+      const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(entityId);
+      const fixDoc = await fixRef.get();
+      if (!fixDoc.exists) {
+        throw new Error(`Fixture ${entityId} not found in Firestore.`);
+      }
+      const now = (/* @__PURE__ */ new Date()).toISOString();
+      await fixRef.update({
+        status: "SCHEDULED",
+        homeScore: null,
+        awayScore: null,
+        winnerClubId: null,
+        resultConfirmedAt: null,
+        updatedAt: now
+      });
+      const subsSnap = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where("fixtureId", "==", entityId).get();
+      const b = db.batch();
+      for (const doc of subsSnap.docs) {
+        b.delete(doc.ref);
+      }
+      await b.commit();
+      if (fixDoc.data()?.competitionId) {
+        try {
+          const { rebuildCompetitionStandingsFirestore: rebuildCompetitionStandingsFirestore3 } = await Promise.resolve().then(() => (init_firestoreStore(), firestoreStore_exports));
+          await rebuildCompetitionStandingsFirestore3(fixDoc.data().competitionId);
+        } catch {
+        }
+      }
+      const auditId = `audit_${item.mutationId}_reject`;
+      await db.collection(COLLECTIONS.AUDIT_LOGS).doc(auditId).set({
+        id: auditId,
+        actorUserId: payload.adminUserId,
+        action: "ADMIN_REJECT_RESULT",
+        entityType: "fixture",
+        entityId,
+        notes: payload.notes || "Rejected by admin via sync",
+        createdAt: now
+      }, { merge: true });
+      break;
+    }
+    case "CLUB_CLAIM": {
+      const { claimClubAtomicFirestore: claimClubAtomicFirestore2 } = await Promise.resolve().then(() => (init_firestoreStore(), firestoreStore_exports));
+      const res = await claimClubAtomicFirestore2(payload.userId, payload.clubId, payload.seasonId, { authoritativeOnly: true });
+      if (!res || !res.authoritative || res.isFallback) {
+        throw new Error("AUTHORITATIVE_WRITE_FAILED: Remote claim write did not succeed.");
+      }
+      break;
+    }
+    case "ADMIN_ASSIGN_CLUB": {
+      const { adminAssignClubFirestore: adminAssignClubFirestore2 } = await Promise.resolve().then(() => (init_firestoreStore(), firestoreStore_exports));
+      const res = await adminAssignClubFirestore2(payload.adminUserId || "system", payload.clubId, payload.targetUserId, payload.seasonId, { authoritativeOnly: true });
+      if (!res || !res.authoritative || res.isFallback) {
+        throw new Error("AUTHORITATIVE_WRITE_FAILED: Remote admin assign club did not succeed.");
+      }
+      break;
+    }
+    case "ADMIN_RELEASE_CLUB": {
+      const { adminReleaseClubFirestore: adminReleaseClubFirestore2 } = await Promise.resolve().then(() => (init_firestoreStore(), firestoreStore_exports));
+      const res = await adminReleaseClubFirestore2(payload.adminUserId || "system", payload.clubId, payload.seasonId, { authoritativeOnly: true });
+      if (!res || !res.authoritative || res.isFallback) {
+        throw new Error("AUTHORITATIVE_WRITE_FAILED: Remote admin release club did not succeed.");
+      }
+      break;
+    }
+    case "MATCHDAY_OVERRIDE": {
+      const { setCompetitionMatchdayOverrideFirestore: setCompetitionMatchdayOverrideFirestore2 } = await Promise.resolve().then(() => (init_firestoreStore(), firestoreStore_exports));
+      await setCompetitionMatchdayOverrideFirestore2(payload.competitionId, payload.overrideStatus);
+      break;
+    }
+    case "ADMIN_DECISION": {
+      if (item.operation === "ADMIN_APPROVE_RESULT") {
+        const { adminApproveFixtureResultFirestore: adminApproveFixtureResultFirestore2 } = await Promise.resolve().then(() => (init_firestoreStore(), firestoreStore_exports));
+        const res = await adminApproveFixtureResultFirestore2(
+          payload.adminUserId,
+          payload.fixtureId,
+          payload.homeScore,
+          payload.awayScore,
+          payload.notes,
+          { authoritativeOnly: true }
+        );
+        if (!res || !res.authoritative || res.isFallback) {
+          throw new Error("AUTHORITATIVE_WRITE_FAILED: Remote admin approve write did not succeed.");
+        }
+      } else if (item.operation === "ADMIN_REJECT_RESULT") {
+        const { reopenFixtureFirestore: reopenFixtureFirestore2 } = await Promise.resolve().then(() => (init_firestoreStore(), firestoreStore_exports));
+        const res = await reopenFixtureFirestore2(
+          payload.adminUserId,
+          payload.fixtureId,
+          payload.notes,
+          { authoritativeOnly: true }
+        );
+        if (!res || !res.authoritative || res.isFallback) {
+          throw new Error("AUTHORITATIVE_WRITE_FAILED: Remote reopen write did not succeed.");
+        }
+      }
+      break;
+    }
+    case "USER_CREATE": {
+      const { getOrCreateTelegramUserFirestore: getOrCreateTelegramUserFirestore2 } = await Promise.resolve().then(() => (init_firestoreStore(), firestoreStore_exports));
+      await getOrCreateTelegramUserFirestore2(payload);
+      break;
+    }
+    case "NOTIFICATION_READ": {
+      const notifRef = db.collection(COLLECTIONS.NOTIFICATIONS).doc(entityId);
+      const notifDoc = await notifRef.get();
+      if (!notifDoc.exists) {
+        console.warn(`[MUTATION_QUEUE] Notification ${entityId} not found in Firestore during sync replay. Skipping.`);
+        break;
+      }
+      const notifData = notifDoc.data();
+      if (payload.userId && notifData?.userId !== payload.userId) {
+        throw new Error(`OWNERSHIP_MISMATCH: Notification ${entityId} belongs to user '${notifData?.userId}', not '${payload.userId}'.`);
+      }
+      await notifRef.update({ isRead: true, readAt: payload.readAt || (/* @__PURE__ */ new Date()).toISOString() });
+      break;
+    }
+    case "NOTIFICATION_READ_ALL": {
+      const targetUserId = payload.userId || entityId;
+      const notifsSnap = await db.collection(COLLECTIONS.NOTIFICATIONS).where("userId", "==", targetUserId).where("isRead", "==", false).get();
+      if (!notifsSnap.empty) {
+        const b = db.batch();
+        const readAt = payload.readAt || (/* @__PURE__ */ new Date()).toISOString();
+        notifsSnap.docs.forEach((d) => b.update(d.ref, { isRead: true, readAt }));
+        await b.commit();
+      }
+      break;
+    }
+    default:
+      console.warn(`[MUTATION_QUEUE] Unknown mutation entityType: ${entityType}`);
+  }
+}
+var memoryQueue, isSyncInProgress, IS_SERVERLESS2, BACKUP_DIR, BACKUP_FILE;
+var init_mutationQueue = __esm({
+  "src/server/sync/mutationQueue.ts"() {
+    init_db();
+    init_circuitBreaker();
+    init_admin();
+    init_collections();
+    init_testGuard();
+    init_redisOutbox();
+    memoryQueue = /* @__PURE__ */ new Map();
+    isSyncInProgress = false;
+    IS_SERVERLESS2 = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_TASK_ROOT);
+    BACKUP_DIR = process.env.DATA_DIR || (IS_SERVERLESS2 ? "/tmp/data" : path3.resolve(process.cwd(), "data"));
+    BACKUP_FILE = path3.join(BACKUP_DIR, "pending_mutations.json");
+  }
+});
+
+// src/server/tournament/fixtureEngine.ts
+function generateEuropean32LeaguePhaseSchedule(clubIds, options = {}) {
+  if (clubIds.length !== 32) {
+    throw new Error(`European 32-team league phase requires exactly 32 clubs (received ${clubIds.length}).`);
+  }
+  const n = 32;
+  const numRounds = 8;
+  const roundPairs = [];
+  for (let r = 0; r < numRounds; r++) {
+    const pairs = [];
+    pairs.push([31, r]);
+    for (let i = 1; i <= 15; i++) {
+      const u = (r + i) % 31;
+      const v = (r - i + 31) % 31;
+      pairs.push([u, v]);
+    }
+    roundPairs.push(pairs);
+  }
+  const homeCount = new Array(n).fill(0);
+  const matchups = [];
+  for (let r = 0; r < numRounds; r++) {
+    const pairs = roundPairs[r];
+    for (let m = 0; m < pairs.length; m++) {
+      const [u, v] = pairs[m];
+      let uIsHome;
+      if (homeCount[u] >= 4 && homeCount[v] < 4) {
+        uIsHome = false;
+      } else if (homeCount[v] >= 4 && homeCount[u] < 4) {
+        uIsHome = true;
+      } else if (homeCount[u] < homeCount[v]) {
+        uIsHome = true;
+      } else if (homeCount[v] < homeCount[u]) {
+        uIsHome = false;
+      } else {
+        uIsHome = (r + m) % 2 === 0;
+      }
+      const homeIdx = uIsHome ? u : v;
+      const awayIdx = uIsHome ? v : u;
+      homeCount[homeIdx]++;
+      matchups.push({
+        matchday: r + 1,
+        homeClubId: clubIds[homeIdx],
+        awayClubId: clubIds[awayIdx]
+      });
+    }
+  }
+  return matchups;
+}
+var init_fixtureEngine = __esm({
+  "src/server/tournament/fixtureEngine.ts"() {
+  }
+});
+
+// src/server/tournament/standingsEngine.ts
+function calculateCompetitionStandings(competitionId) {
+  const comp = queryGet(
+    "SELECT season_id, format_config_json FROM competitions WHERE id = ?",
+    [competitionId]
+  );
+  const seasonId = comp?.season_id || "season-2026-27";
+  let formatConfig = {};
+  if (comp?.format_config_json) {
+    try {
+      formatConfig = JSON.parse(comp.format_config_json);
+    } catch {
+      formatConfig = {};
+    }
+  }
+  const pointsForWin = formatConfig.pointsForWin ?? 3;
+  const pointsForDraw = formatConfig.pointsForDraw ?? 1;
+  const pointsForLoss = formatConfig.pointsForLoss ?? 0;
+  const tieBreakers = formatConfig.tieBreakers ?? ["points", "goalDifference", "goalsFor", "headToHead"];
+  const clubs = queryAll(
+    `SELECT c.id, c.name, c.short_name, c.logo_url, u.username as manager_username
+     FROM competition_participants cp
+     JOIN clubs c ON cp.club_id = c.id
+     LEFT JOIN club_memberships cm ON c.id = cm.club_id AND cm.season_id = ? AND cm.status = 'active'
+     LEFT JOIN users u ON cm.user_id = u.id
+     WHERE cp.competition_id = ?
+     ORDER BY c.name ASC`,
+    [seasonId, competitionId]
+  );
+  let clubList = clubs;
+  if (clubList.length === 0) {
+    clubList = queryAll(
+      `SELECT c.id, c.name, c.short_name, c.logo_url, u.username as manager_username
+       FROM competitions comp
+       JOIN season_league_clubs slc ON comp.league_id = slc.league_id AND comp.season_id = slc.season_id AND slc.is_active = 1
+       JOIN clubs c ON slc.club_id = c.id
+       LEFT JOIN club_memberships cm ON c.id = cm.club_id AND cm.season_id = comp.season_id AND cm.status = 'active'
+       LEFT JOIN users u ON cm.user_id = u.id
+       WHERE comp.id = ?
+       ORDER BY c.name ASC`,
+      [competitionId]
+    );
+  }
+  const confirmedFixtures = queryAll(
+    `SELECT id, matchday, home_club_id, away_club_id, home_score, away_score, result_confirmed_at
+     FROM fixtures
+     WHERE competition_id = ? AND status = 'CONFIRMED' AND home_score IS NOT NULL AND away_score IS NOT NULL
+     ORDER BY matchday ASC, result_confirmed_at ASC`,
+    [competitionId]
+  );
+  const statsMap = /* @__PURE__ */ new Map();
+  for (const c of clubList) {
+    statsMap.set(c.id, {
+      clubId: c.id,
+      clubName: c.name,
+      shortName: c.short_name,
+      logoUrl: c.logo_url,
+      managerUsername: c.manager_username || void 0,
+      played: 0,
+      won: 0,
+      drawn: 0,
+      lost: 0,
+      goalsFor: 0,
+      goalsAgainst: 0,
+      goalDifference: 0,
+      points: 0,
+      form: []
+    });
+  }
+  for (const fix of confirmedFixtures) {
+    const home = statsMap.get(fix.home_club_id);
+    const away = statsMap.get(fix.away_club_id);
+    if (home) {
+      home.played += 1;
+      home.goalsFor += fix.home_score;
+      home.goalsAgainst += fix.away_score;
+      if (fix.home_score > fix.away_score) {
+        home.won += 1;
+        home.points += pointsForWin;
+        home.form.push("W");
+      } else if (fix.home_score === fix.away_score) {
+        home.drawn += 1;
+        home.points += pointsForDraw;
+        home.form.push("D");
+      } else {
+        home.lost += 1;
+        home.points += pointsForLoss;
+        home.form.push("L");
+      }
+    }
+    if (away) {
+      away.played += 1;
+      away.goalsFor += fix.away_score;
+      away.goalsAgainst += fix.home_score;
+      if (fix.away_score > fix.home_score) {
+        away.won += 1;
+        away.points += pointsForWin;
+        away.form.push("W");
+      } else if (fix.away_score === fix.home_score) {
+        away.drawn += 1;
+        away.points += pointsForDraw;
+        away.form.push("D");
+      } else {
+        away.lost += 1;
+        away.points += pointsForLoss;
+        away.form.push("L");
+      }
+    }
+  }
+  const rows = Array.from(statsMap.values()).map((row) => {
+    row.goalDifference = row.goalsFor - row.goalsAgainst;
+    row.form = row.form.slice(-5);
+    return row;
+  });
+  function getH2HPoints(clubAId, clubBId) {
+    let pts = 0;
+    for (const f of confirmedFixtures) {
+      if (f.home_club_id === clubAId && f.away_club_id === clubBId) {
+        if (f.home_score > f.away_score) pts += pointsForWin;
+        else if (f.home_score === f.away_score) pts += pointsForDraw;
+      } else if (f.home_club_id === clubBId && f.away_club_id === clubAId) {
+        if (f.away_score > f.home_score) pts += pointsForWin;
+        else if (f.away_score === f.home_score) pts += pointsForDraw;
+      }
+    }
+    return pts;
+  }
+  rows.sort((a, b) => {
+    if (b.points !== a.points) {
+      return b.points - a.points;
+    }
+    for (const criteria of tieBreakers) {
+      if (criteria === "goalDifference") {
+        if (b.goalDifference !== a.goalDifference) {
+          return b.goalDifference - a.goalDifference;
+        }
+      } else if (criteria === "goalsFor") {
+        if (b.goalsFor !== a.goalsFor) {
+          return b.goalsFor - a.goalsFor;
+        }
+      } else if (criteria === "headToHead") {
+        const h2hA = getH2HPoints(a.clubId, b.clubId);
+        const h2hB = getH2HPoints(b.clubId, a.clubId);
+        if (h2hB !== h2hA) {
+          return h2hB - h2hA;
+        }
+      }
+    }
+    return a.clubName.localeCompare(b.clubName);
+  });
+  return rows.map((r, index) => ({
+    position: index + 1,
+    clubId: r.clubId,
+    clubName: r.clubName,
+    shortName: r.shortName,
+    logoUrl: r.logoUrl,
+    managerUsername: r.managerUsername,
+    played: r.played,
+    won: r.won,
+    drawn: r.drawn,
+    lost: r.lost,
+    goalsFor: r.goalsFor,
+    goalsAgainst: r.goalsAgainst,
+    goalDifference: r.goalDifference,
+    points: r.points,
+    form: r.form
+  }));
+}
+var init_standingsEngine = __esm({
+  "src/server/tournament/standingsEngine.ts"() {
+    init_db();
+  }
+});
+
+// src/server/db/sqliteStandings.ts
+var sqliteStandings_exports = {};
+__export(sqliteStandings_exports, {
+  getMaterializedStandingsForCompetition: () => getMaterializedStandingsForCompetition,
+  refreshMaterializedStandingsForCompetition: () => refreshMaterializedStandingsForCompetition,
+  updateMaterializedStandingsFromFixture: () => updateMaterializedStandingsFromFixture
+});
+function refreshMaterializedStandingsForCompetition(competitionId) {
+  const standings = calculateCompetitionStandings(competitionId);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  dbTransaction(() => {
+    queryRun("DELETE FROM competition_standings WHERE competition_id = ?", [competitionId]);
+    for (const row of standings) {
+      queryRun(
+        `INSERT OR REPLACE INTO competition_standings (
+          competition_id, club_id, rank, club_name, short_name, logo_url,
+          played, won, drawn, lost, goals_for, goals_against, goal_difference,
+          points, form_json, qualification_status, manager_username, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          competitionId,
+          row.clubId,
+          row.position,
+          row.clubName,
+          row.shortName || "",
+          row.logoUrl || "",
+          row.played,
+          row.won,
+          row.drawn,
+          row.lost,
+          row.goalsFor,
+          row.goalsAgainst,
+          row.goalDifference,
+          row.points,
+          JSON.stringify(row.form || []),
+          null,
+          row.managerUsername || null,
+          now
+        ]
+      );
+    }
+  });
+  return standings;
+}
+function getMaterializedStandingsForCompetition(competitionId) {
+  const rows = queryAll(
+    "SELECT * FROM competition_standings WHERE competition_id = ? ORDER BY rank ASC",
+    [competitionId]
+  );
+  if (!rows || rows.length === 0) {
+    return refreshMaterializedStandingsForCompetition(competitionId);
+  }
+  return rows.map((r) => ({
+    position: r.rank,
+    clubId: r.club_id,
+    clubName: r.club_name,
+    shortName: r.short_name,
+    logoUrl: r.logo_url,
+    managerUsername: r.manager_username || void 0,
+    played: r.played,
+    won: r.won,
+    drawn: r.drawn,
+    lost: r.lost,
+    goalsFor: r.goals_for,
+    goalsAgainst: r.goals_against,
+    goalDifference: r.goal_difference,
+    points: r.points,
+    form: r.form_json ? JSON.parse(r.form_json) : []
+  }));
+}
+function updateMaterializedStandingsFromFixture(fixtureId) {
+  const fix = queryGet("SELECT competition_id FROM fixtures WHERE id = ?", [fixtureId]);
+  if (!fix?.competition_id) {
+    return null;
+  }
+  return refreshMaterializedStandingsForCompetition(fix.competition_id);
+}
+var init_sqliteStandings = __esm({
+  "src/server/db/sqliteStandings.ts"() {
+    init_db();
+    init_standingsEngine();
+  }
+});
+
 // src/server/firebase/firestoreStore.ts
 var firestoreStore_exports = {};
 __export(firestoreStore_exports, {
@@ -6397,6 +7263,7 @@ __export(firestoreStore_exports, {
   getActiveOccupanciesForSeason: () => getActiveOccupanciesForSeason,
   getActiveSeasonFirestore: () => getActiveSeasonFirestore,
   getAdminFixturesPagedFirestore: () => getAdminFixturesPagedFirestore,
+  getAdminUsersPagedFirestore: () => getAdminUsersPagedFirestore,
   getAllCompetitionsFirestore: () => getAllCompetitionsFirestore,
   getAllLeaguesFirestore: () => getAllLeaguesFirestore,
   getAllSeasonsFirestore: () => getAllSeasonsFirestore,
@@ -6413,6 +7280,7 @@ __export(firestoreStore_exports, {
   getCompetitionParticipantsFirestore: () => getCompetitionParticipantsFirestore,
   getCompetitionStandingsFirestore: () => getCompetitionStandingsFirestore,
   getDisputesFirestore: () => getDisputesFirestore,
+  getFirestoreReadMetrics: () => getFirestoreReadMetrics,
   getFirestoreTelemetry: () => getFirestoreTelemetry,
   getFixtureByIdFirestore: () => getFixtureByIdFirestore,
   getFixturesFirestore: () => getFixturesFirestore,
@@ -6444,6 +7312,7 @@ __export(firestoreStore_exports, {
   recordEndpointCall: () => recordEndpointCall,
   recordFallbackUsage: () => recordFallbackUsage,
   reopenFixtureFirestore: () => reopenFixtureFirestore,
+  resetFirestoreReadMetrics: () => resetFirestoreReadMetrics,
   resetReadMetrics: () => resetReadMetrics,
   resolveClubOwnersForSeason: () => resolveClubOwnersForSeason,
   resolveDisputeFirestore: () => resolveDisputeFirestore,
@@ -6454,6 +7323,7 @@ __export(firestoreStore_exports, {
   setMatchdayLockFirestore: () => setMatchdayLockFirestore,
   submitFixtureResultFirestore: () => submitFixtureResultFirestore,
   syncFirestoreClubCrests: () => syncFirestoreClubCrests,
+  trackFirestoreAggregation: () => trackFirestoreAggregation,
   trackFirestoreRead: () => trackFirestoreRead,
   trackFirestoreWrite: () => trackFirestoreWrite,
   validateDomesticFixturesFirestore: () => validateDomesticFixturesFirestore,
@@ -6463,6 +7333,12 @@ function trackFirestoreRead(collectionName, count = 1, caller = "unknown") {
   readMetrics.sessionReads += count;
   readMetrics.readsByCollection[collectionName] = (readMetrics.readsByCollection[collectionName] || 0) + count;
   readMetrics.readsByFunction[caller] = (readMetrics.readsByFunction[caller] || 0) + count;
+}
+function trackFirestoreAggregation(collectionName, count = 1, caller = "unknown") {
+  readMetrics.sessionReads += count;
+  readMetrics.aggregationReads = (readMetrics.aggregationReads || 0) + count;
+  readMetrics.readsByCollection[collectionName] = (readMetrics.readsByCollection[collectionName] || 0) + count;
+  readMetrics.readsByFunction[`aggregation:${caller}`] = (readMetrics.readsByFunction[`aggregation:${caller}`] || 0) + count;
 }
 function trackFirestoreWrite(collectionName, count = 1, caller = "unknown") {
   readMetrics.sessionWrites += count;
@@ -6503,6 +7379,7 @@ function getReadMetrics() {
     totalReads: readMetrics.sessionReads,
     sessionReads: readMetrics.sessionReads,
     sessionWrites: readMetrics.sessionWrites,
+    aggregationReads: readMetrics.aggregationReads,
     readsByCollection: { ...readMetrics.readsByCollection },
     readsByFunction: { ...readMetrics.readsByFunction },
     cacheHits: readMetrics.cacheHits,
@@ -6641,9 +7518,34 @@ async function getActiveOccupanciesForSeason(seasonId = "season-2026-27") {
   const cacheKey = `firestore:occupancies:${seasonId}`;
   const cached = getFromCache(cacheKey);
   if (cached) return cached;
-  if (!firestoreCircuitBreaker.canExecute()) {
-    recordFallbackUsage();
-    return getLocalFallbackOccupancies(seasonId, cacheKey);
+  try {
+    const { redisGetFresh: redisGetFresh2, redisGetLkg: redisGetLkg2, ReadModelKeys: ReadModelKeys3 } = await Promise.resolve().then(() => (init_readModelStore(), readModelStore_exports));
+    const clubsRes = await redisGetFresh2(ReadModelKeys3.clubsWithOwners(seasonId)) || await redisGetLkg2(ReadModelKeys3.clubsWithOwners(seasonId));
+    if (clubsRes && Array.isArray(clubsRes.data) && clubsRes.data.length > 0) {
+      const clubOccupancyMap = /* @__PURE__ */ new Map();
+      const usernameMap = /* @__PURE__ */ new Map();
+      const userMap = /* @__PURE__ */ new Map();
+      for (const c of clubsRes.data) {
+        if (c.ownerUserId) {
+          clubOccupancyMap.set(c.id, { userId: c.ownerUserId });
+          const uname = c.ownerUsername ? c.ownerUsername.replace(/^@+/, "").trim() : c.ownerUserId;
+          usernameMap.set(c.ownerUserId, uname);
+          userMap.set(c.ownerUserId, {
+            id: c.ownerUserId,
+            username: uname,
+            displayName: uname ? `@${uname}` : `User #${c.ownerUserId}`
+          });
+        }
+      }
+      const info = { clubOccupancyMap, usernameMap, userMap };
+      setInCache(cacheKey, info, 3e5);
+      return info;
+    }
+  } catch {
+  }
+  const localFallback = getLocalFallbackOccupancies(seasonId, cacheKey);
+  if (localFallback.clubOccupancyMap.size > 0 || !firestoreCircuitBreaker.canExecute()) {
+    return localFallback;
   }
   try {
     const db = getFirestoreDb();
@@ -6651,7 +7553,7 @@ async function getActiveOccupanciesForSeason(seasonId = "season-2026-27") {
     firestoreCircuitBreaker.recordSuccess();
     trackFirestoreRead(
       COLLECTIONS.CLUB_OCCUPANCIES,
-      occupanciesSnap.empty ? 1 : occupanciesSnap.docs.length,
+      occupanciesSnap.docs.length,
       "getActiveOccupanciesForSeason"
     );
     const clubOccupancyMap = /* @__PURE__ */ new Map();
@@ -6690,7 +7592,7 @@ async function getActiveOccupanciesForSeason(seasonId = "season-2026-27") {
           if (usersSnap) {
             trackFirestoreRead(
               COLLECTIONS.USERS,
-              usersSnap.empty ? 1 : usersSnap.docs.length,
+              usersSnap.docs.length,
               "getActiveOccupanciesForSeason:users"
             );
             for (const uDoc of usersSnap.docs) {
@@ -7131,11 +8033,14 @@ async function claimClubAtomicFirestore(userId, clubId, seasonId = "season-2026-
         const clubOccRef = db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_${clubId}`);
         const membershipRef = db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).doc(`${seasonId}_${clubId}`);
         const clubRef = db.collection(COLLECTIONS.CLUBS).doc(clubId);
+        trackFirestoreRead(COLLECTIONS.CLUBS, 1, "claimClubAtomicFirestore:club");
         const clubDoc = await transaction.get(clubRef);
         if (!clubDoc.exists) {
           throw new ClubNotFoundError(`Club with ID '${clubId}' does not exist.`);
         }
         const clubData = clubDoc.data();
+        trackFirestoreRead(COLLECTIONS.CLUB_OCCUPANCIES, 1, "claimClubAtomicFirestore:occupancy");
+        trackFirestoreRead(COLLECTIONS.USER_MEMBERSHIPS, 1, "claimClubAtomicFirestore:membership");
         const clubOccDoc = await transaction.get(clubOccRef);
         const userMemDoc = await transaction.get(userMemRef);
         if (userMemDoc.exists) {
@@ -7233,6 +8138,7 @@ async function claimClubAtomicFirestore(userId, clubId, seasonId = "season-2026-
           }
         };
       });
+      trackFirestoreRead(COLLECTIONS.CLUB_OCCUPANCIES, 1, "claimClubAtomicFirestore:verify");
       const verifyOcc = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_${clubId}`).get();
       if (!verifyOcc.exists || verifyOcc.data()?.status !== "active") {
         throw new Error(`OCCUPANCY_PERSISTENCE_FAILED: Failed to verify club occupancy record at '${COLLECTIONS.CLUB_OCCUPANCIES}/${seasonId}_${clubId}'.`);
@@ -7264,18 +8170,14 @@ async function claimClubAtomicFirestore(userId, clubId, seasonId = "season-2026-
       if (err instanceof ClubConflictError || err instanceof ClubNotFoundError) {
         throw err;
       }
-      if (options?.authoritativeOnly || isHostedEnvironment()) {
-        throw err;
-      }
       firestoreCircuitBreaker.recordFailure(err);
       recordFallbackUsage();
-      console.warn("[FIRESTORE FALLBACK] claimClubAtomicFirestore:", err.message);
+      console.warn("[FIRESTORE REJECT] claimClubAtomicFirestore failed authoritatively:", err.message);
+      throw err;
     }
   } else {
-    if (options?.authoritativeOnly || isHostedEnvironment()) {
-      throw new Error("CIRCUIT_OPEN: Firestore circuit breaker is OPEN. Authoritative write cannot execute.");
-    }
     recordFallbackUsage();
+    throw new Error("CIRCUIT_OPEN: Firestore circuit breaker is OPEN. Authoritative write cannot execute.");
   }
   return dbTransaction(() => {
     const seed = SEED_CLUB_MAP.get(clubId);
@@ -8224,8 +9126,8 @@ async function getCompetitionParticipantsFirestore(competitionId) {
   if (cached) return cached;
   try {
     const db = getFirestoreDb();
-    trackFirestoreRead(COLLECTIONS.COMPETITION_PARTICIPANTS, 1, "getCompetitionParticipantsFirestore");
     const snap = await db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where("competitionId", "==", competitionId).orderBy("seedNumber", "asc").get();
+    trackFirestoreRead(COLLECTIONS.COMPETITION_PARTICIPANTS, snap.docs.length, "getCompetitionParticipantsFirestore");
     if (!snap.empty) {
       const participants = snap.docs.map((d) => {
         const data = d.data();
@@ -9009,6 +9911,26 @@ function resolveOwnerUserRecord(ownerUserId, hint) {
 async function resolveClubOwnersForSeason(seasonId = "season-2026-27", clubIds) {
   const ownersMap = /* @__PURE__ */ new Map();
   try {
+    const { redisGetFresh: redisGetFresh2, redisGetLkg: redisGetLkg2, ReadModelKeys: ReadModelKeys3 } = await Promise.resolve().then(() => (init_readModelStore(), readModelStore_exports));
+    const clubsRes = await redisGetFresh2(ReadModelKeys3.clubsWithOwners(seasonId)) || await redisGetLkg2(ReadModelKeys3.clubsWithOwners(seasonId));
+    if (clubsRes && Array.isArray(clubsRes.data) && clubsRes.data.length > 0) {
+      for (const club of clubsRes.data) {
+        if (club.ownerUserId && !ownersMap.has(club.id)) {
+          const uname = club.ownerUsername ? club.ownerUsername.replace(/^@+/, "").trim() : null;
+          ownersMap.set(club.id, {
+            userId: club.ownerUserId,
+            username: uname,
+            displayName: uname ? `@${uname}` : `User #${club.ownerUserId}`
+          });
+        }
+      }
+      if (ownersMap.size > 0 && (!clubIds || clubIds.length === 0 || clubIds.every((id) => ownersMap.has(id)))) {
+        return ownersMap;
+      }
+    }
+  } catch {
+  }
+  try {
     const rows = queryAll(
       `SELECT cm.club_id, cm.user_id, cm.status,
               u.id as u_id, u.telegram_id as u_tg, u.username as u_uname, u.first_name as u_fname, u.last_name as u_lname
@@ -9042,10 +9964,14 @@ async function resolveClubOwnersForSeason(seasonId = "season-2026-27", clubIds) 
     }
   } catch {
   }
+  if (ownersMap.size > 0 && (!clubIds || clubIds.length === 0 || clubIds.every((id) => ownersMap.has(id)))) {
+    return ownersMap;
+  }
   try {
     const db = getFirestoreDb();
     if (db && firestoreCircuitBreaker.canExecute()) {
       const memSnap = await db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).where("seasonId", "==", seasonId).where("status", "==", "active").get();
+      trackFirestoreRead(COLLECTIONS.CLUB_MEMBERSHIPS, memSnap.docs.length, "resolveClubOwnersForSeason:memberships");
       if (!memSnap.empty) {
         for (const doc of memSnap.docs) {
           const data = doc.data();
@@ -9585,12 +10511,7 @@ async function submitFixtureResultFirestore(userId, fixtureId, homeScore, awaySc
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const submissionId = `sub-${fixtureId}-${userId}`;
   const executeFallbackSubmit = async () => {
-    if (process.env.VERCEL === "1" || Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME)) {
-      const err = new Error("AUTHORITATIVE_WRITE_REQUIRED: result submission is temporarily unavailable.");
-      err.statusCode = 503;
-      throw err;
-    }
-    console.log("[RESULT_SUBMISSION_FALLBACK] Executing resilient SQLite fallback persistence for fixture:", fixtureId);
+    console.log("[RESULT_SUBMISSION_FALLBACK] Executing resilient durable fallback persistence for fixture:", fixtureId);
     const row = queryGet("SELECT * FROM fixtures WHERE id = ?", [fixtureId]);
     if (!row) {
       throw new Error(`Fixture with ID '${fixtureId}' not found.`);
@@ -9622,23 +10543,18 @@ async function submitFixtureResultFirestore(userId, fixtureId, homeScore, awaySc
     if (!userClubId || userClubId !== row.home_club_id && userClubId !== row.away_club_id) {
       throw new Error("You do not own either the home or away club in this fixture.");
     }
-    queryRun(
-      `INSERT OR REPLACE INTO result_submissions (id, fixture_id, submitted_by_user_id, club_id, home_score, away_score, proof_url, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [submissionId, fixtureId, userId, userClubId, homeScore, awayScore, proofUrl || null, now]
-    );
     const existingSubs = queryAll("SELECT * FROM result_submissions WHERE fixture_id = ?", [fixtureId]);
-    let newStatus = existingSubs.length === 1 ? "PENDING_CONFIRMATION" : "AWAITING_RESULT";
+    const otherSub = existingSubs.find((s) => s.submitted_by_user_id !== userId);
+    let newStatus = "PENDING_CONFIRMATION";
     let confirmedHomeScore = null;
     let confirmedAwayScore = null;
     let winnerClubId = null;
     let confirmedAt = null;
-    if (existingSubs.length >= 2) {
-      const [sub1, sub2] = existingSubs;
-      if (sub1.home_score === sub2.home_score && sub1.away_score === sub2.away_score) {
+    if (otherSub) {
+      if (otherSub.home_score === homeScore && otherSub.away_score === awayScore) {
         newStatus = "CONFIRMED";
-        confirmedHomeScore = sub1.home_score;
-        confirmedAwayScore = sub1.away_score;
+        confirmedHomeScore = homeScore;
+        confirmedAwayScore = awayScore;
         confirmedAt = now;
         if (confirmedHomeScore > confirmedAwayScore) winnerClubId = row.home_club_id;
         else if (confirmedAwayScore > confirmedHomeScore) winnerClubId = row.away_club_id;
@@ -9646,27 +10562,48 @@ async function submitFixtureResultFirestore(userId, fixtureId, homeScore, awaySc
         newStatus = "DISPUTED";
       }
     }
+    const mutationId = `sub_${fixtureId}_${userId}`;
+    const mutationPayload = {
+      fixtureId,
+      userId,
+      userClubId,
+      homeScore,
+      awayScore,
+      proofUrl: proofUrl || null,
+      submissionId,
+      seasonId: row.season_id || "season-2026-27",
+      competitionId: row.competition_id,
+      homeClubId: row.home_club_id,
+      awayClubId: row.away_club_id,
+      matchday: row.matchday,
+      isConfirmation: newStatus === "CONFIRMED",
+      resultingStatus: newStatus,
+      confirmedHomeScore,
+      confirmedAwayScore,
+      winnerClubId,
+      confirmedAt,
+      createdAt: now
+    };
+    await enqueueDurableOutboxMutation({
+      mutationId,
+      entityType: "RESULT_SUBMISSION",
+      entityId: fixtureId,
+      operation: "SUBMIT_RESULT",
+      userId,
+      seasonId: row.season_id || "season-2026-27",
+      competitionId: row.competition_id,
+      payload: mutationPayload,
+      createdAt: now
+    });
+    queryRun(
+      `INSERT OR REPLACE INTO result_submissions (id, fixture_id, submitted_by_user_id, club_id, home_score, away_score, proof_url, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [submissionId, fixtureId, userId, userClubId, homeScore, awayScore, proofUrl || null, now]
+    );
     queryRun(
       `UPDATE fixtures SET status = ?, home_score = ?, away_score = ?, winner_club_id = ?, result_confirmed_at = ?, updated_at = ? WHERE id = ?`,
       [newStatus, confirmedHomeScore, confirmedAwayScore, winnerClubId, confirmedAt, now, fixtureId]
     );
-    enqueueMutation({
-      mutationId: `sub_${fixtureId}_${userId}`,
-      entityType: "RESULT_SUBMISSION",
-      entityId: fixtureId,
-      operation: "SUBMIT_RESULT",
-      payload: {
-        fixtureId,
-        userId,
-        userClubId,
-        homeScore,
-        awayScore,
-        proofUrl: proofUrl || null,
-        submissionId,
-        createdAt: now
-      },
-      createdAt: now
-    });
     invalidateFirestoreCache("firestore:fixtures");
     invalidateFirestoreCache("firestore:comp");
     const fallbackFixture = await getFixtureByIdFirestore(fixtureId, userId);
@@ -10254,18 +11191,20 @@ async function reopenFixtureFirestore(adminUserId, fixtureId, notes, options) {
           console.warn("[STANDINGS_UPDATE] Non-blocking standings update error on reopen:", standingsErr);
         }
       }
-      await db.collection(COLLECTIONS.AUDIT_LOGS).add({
+      const auditId = `audit_reopen_${fixtureId}`;
+      await db.collection(COLLECTIONS.AUDIT_LOGS).doc(auditId).set({
+        id: auditId,
         actorUserId: adminUserId,
         action: "REOPEN_FIXTURE",
         entityType: "fixture",
         entityId: fixtureId,
         notes: notes || null,
         createdAt: now
-      });
+      }, { merge: true });
       invalidateFirestoreCache();
       return { success: true, fixtureId, authoritative: true, isFallback: false };
     } catch (err) {
-      if (options?.authoritativeOnly || isHostedEnvironment()) {
+      if (options?.authoritativeOnly) {
         throw err;
       }
       firestoreCircuitBreaker.recordFailure(err);
@@ -10273,11 +11212,31 @@ async function reopenFixtureFirestore(adminUserId, fixtureId, notes, options) {
       console.warn("[FIRESTORE FALLBACK] reopenFixtureFirestore:", err.message);
     }
   } else {
-    if (options?.authoritativeOnly || isHostedEnvironment()) {
+    if (options?.authoritativeOnly) {
       throw new Error("CIRCUIT_OPEN: Firestore circuit breaker is OPEN. Authoritative write cannot execute.");
     }
     recordFallbackUsage();
   }
+  const localFix = queryGet("SELECT * FROM fixtures WHERE id = ?", [fixtureId]);
+  const mutationId = `admin_reject_${fixtureId}`;
+  await enqueueDurableOutboxMutation({
+    mutationId,
+    entityType: "ADMIN_DECISION",
+    entityId: fixtureId,
+    operation: "ADMIN_REJECT_RESULT",
+    adminUserId,
+    userId: adminUserId,
+    seasonId: localFix?.season_id || "season-2026-27",
+    competitionId: localFix?.competition_id,
+    payload: {
+      adminUserId,
+      fixtureId,
+      notes: notes || "Rejected by tournament administrator (offline queued)",
+      seasonId: localFix?.season_id || "season-2026-27",
+      competitionId: localFix?.competition_id
+    },
+    createdAt: now
+  });
   queryRun(
     `UPDATE fixtures 
      SET status = 'SCHEDULED', home_score = NULL, away_score = NULL, winner_club_id = NULL, result_confirmed_at = NULL, updated_at = ? 
@@ -10286,19 +11245,7 @@ async function reopenFixtureFirestore(adminUserId, fixtureId, notes, options) {
   );
   queryRun("DELETE FROM result_submissions WHERE fixture_id = ?", [fixtureId]);
   queryRun("DELETE FROM disputes WHERE fixture_id = ?", [fixtureId]);
-  enqueueMutation({
-    mutationId: `admin_reject_${fixtureId}`,
-    entityType: "ADMIN_DECISION",
-    entityId: fixtureId,
-    operation: "ADMIN_REJECT_RESULT",
-    payload: {
-      adminUserId,
-      fixtureId,
-      notes: notes || "Rejected by tournament administrator (offline queued)"
-    },
-    createdAt: now
-  });
-  return { success: true, fixtureId, authoritative: false, isFallback: true };
+  return { success: true, fixtureId, pendingSync: true, authoritative: false, isFallback: true };
 }
 async function resolveDisputeFirestore(adminUserId, disputeId, params) {
   const db = getFirestoreDb();
@@ -10358,14 +11305,16 @@ async function resolveDisputeFirestore(adminUserId, disputeId, params) {
     resolvedAt: now
   };
   await disputeRef.update(updatedDispute);
-  await db.collection(COLLECTIONS.AUDIT_LOGS).add({
+  const auditId = `audit_resolve_dispute_${disputeId}`;
+  await db.collection(COLLECTIONS.AUDIT_LOGS).doc(auditId).set({
+    id: auditId,
     actorUserId: adminUserId,
     action: "RESOLVE_DISPUTE",
     entityType: "dispute",
     entityId: disputeId,
     notes: params.notes || null,
     createdAt: now
-  });
+  }, { merge: true });
   return { success: true, dispute: updatedDispute };
 }
 function getLocalDisputes(status = "OPEN", limitCount = 50) {
@@ -10495,34 +11444,141 @@ async function getDisputesFirestore(status = "OPEN", limitCount = 50) {
     return getLocalDisputes(status, limitCount);
   }
 }
-async function getAllUsersFirestore() {
-  const cacheKey = "firestore:all_users";
-  const cached = getFromCache(cacheKey);
-  if (cached) return cached;
+async function getAdminUsersPagedFirestore(options = {}) {
+  const pageSize = Math.min(Math.max(options.limit || 25, 1), 50);
+  const page = Math.max(options.page || 1, 1);
+  const role = (options.role || "ALL").toUpperCase();
+  const status = (options.status || "ALL").toUpperCase();
+  const search = (options.search || "").trim();
+  try {
+    const conditions = ["1=1"];
+    const params = [];
+    if (role === "ADMIN") {
+      conditions.push("u.is_admin = 1");
+    } else if (role === "PLAYER") {
+      conditions.push("(u.is_admin = 0 OR u.is_admin IS NULL)");
+    }
+    if (status === "SUSPENDED") {
+      conditions.push("u.is_suspended = 1");
+    } else if (status === "ACTIVE") {
+      conditions.push("(u.is_suspended = 0 OR u.is_suspended IS NULL)");
+    }
+    if (search) {
+      conditions.push("(u.username LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ? OR u.telegram_id LIKE ? OR u.id LIKE ?)");
+      const sParam = `%${search}%`;
+      params.push(sParam, sParam, sParam, sParam, sParam);
+    }
+    const whereClause = conditions.join(" AND ");
+    const countRow = queryGet(`SELECT COUNT(*) as count FROM users u WHERE ${whereClause}`, params);
+    const total = countRow?.count ?? 0;
+    if (total > 0 || search || role !== "ALL" || status !== "ALL") {
+      const offset = (page - 1) * pageSize;
+      const rows = queryAll(
+        `SELECT * FROM users u WHERE ${whereClause} ORDER BY u.created_at DESC, u.id DESC LIMIT ? OFFSET ?`,
+        [...params, pageSize + 1, offset]
+      );
+      const hasMore = rows.length > pageSize;
+      const pageRows = rows.slice(0, pageSize);
+      const nextCursor = hasMore && pageRows.length > 0 ? pageRows[pageRows.length - 1].id : void 0;
+      const users = pageRows.map((r) => ({
+        id: r.id,
+        telegramId: r.telegram_id,
+        username: r.username,
+        firstName: r.first_name,
+        lastName: r.last_name,
+        photoUrl: r.photo_url,
+        isAdmin: Boolean(r.is_admin),
+        isSuspended: Boolean(r.is_suspended),
+        createdAt: r.created_at || (/* @__PURE__ */ new Date()).toISOString(),
+        updatedAt: r.updated_at || (/* @__PURE__ */ new Date()).toISOString()
+      }));
+      return {
+        users,
+        total,
+        page,
+        limit: pageSize,
+        hasMore,
+        nextCursor,
+        source: "sqlite",
+        degraded: false,
+        stale: false
+      };
+    }
+  } catch {
+  }
   const db = getFirestoreDb();
-  const snap = await db.collection(COLLECTIONS.USERS).orderBy("createdAt", "desc").get();
-  trackFirestoreRead(
-    COLLECTIONS.USERS,
-    snap.empty ? 1 : snap.docs.length,
-    "getAllUsersFirestore"
-  );
-  const users = snap.docs.map((d) => {
-    const data = d.data();
-    return {
-      id: d.id,
-      telegramId: data.telegramId,
-      username: data.username,
-      firstName: data.firstName,
-      lastName: data.lastName,
-      photoUrl: data.photoUrl,
-      isAdmin: data.isAdmin,
-      isSuspended: data.isSuspended,
-      createdAt: data.createdAt,
-      updatedAt: data.updatedAt
-    };
-  });
-  setInCache(cacheKey, users, 3e4);
-  return users;
+  if (db && firestoreCircuitBreaker.canExecute()) {
+    try {
+      let query = db.collection(COLLECTIONS.USERS);
+      if (role === "ADMIN") {
+        query = query.where("isAdmin", "==", true);
+      } else if (role === "PLAYER") {
+        query = query.where("isAdmin", "==", false);
+      }
+      if (status === "SUSPENDED") {
+        query = query.where("isSuspended", "==", true);
+      } else if (status === "ACTIVE") {
+        query = query.where("isSuspended", "==", false);
+      }
+      query = query.orderBy("createdAt", "desc");
+      if (options.cursor) {
+        const cursorDoc = await db.collection(COLLECTIONS.USERS).doc(options.cursor).get();
+        trackFirestoreRead(COLLECTIONS.USERS, 1, "getAdminUsersPagedFirestore:cursor");
+        if (cursorDoc.exists) {
+          query = query.startAfter(cursorDoc);
+        }
+      }
+      query = query.limit(pageSize + 1);
+      const snap = await query.get();
+      trackFirestoreRead(COLLECTIONS.USERS, snap.docs.length, "getAdminUsersPagedFirestore");
+      const docs = snap.docs;
+      const hasMore = docs.length > pageSize;
+      const pageDocs = docs.slice(0, pageSize);
+      const nextCursor = hasMore && pageDocs.length > 0 ? pageDocs[pageDocs.length - 1].id : void 0;
+      const users = pageDocs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          telegramId: data.telegramId,
+          username: data.username,
+          firstName: data.firstName,
+          lastName: data.lastName,
+          photoUrl: data.photoUrl,
+          isAdmin: Boolean(data.isAdmin),
+          isSuspended: Boolean(data.isSuspended),
+          createdAt: data.createdAt,
+          updatedAt: data.updatedAt
+        };
+      });
+      return {
+        users,
+        total: users.length,
+        page,
+        limit: pageSize,
+        hasMore,
+        nextCursor,
+        source: "firestore_paged",
+        degraded: false,
+        stale: false
+      };
+    } catch (err) {
+      firestoreCircuitBreaker.recordFailure(err);
+    }
+  }
+  return {
+    users: [],
+    total: 0,
+    page,
+    limit: pageSize,
+    hasMore: false,
+    source: "empty_fallback",
+    degraded: true,
+    stale: true
+  };
+}
+async function getAllUsersFirestore() {
+  const paged = await getAdminUsersPagedFirestore({ limit: 50, page: 1 });
+  return paged.users;
 }
 async function getAuditLogsFirestore(limit = 50) {
   const cacheKey = `firestore:audit_logs:${limit}`;
@@ -10566,12 +11622,13 @@ async function getAuditLogsFirestore(limit = 50) {
   setInCache(cacheKey, logs, 2e4);
   return logs;
 }
-async function createAuditLogFirestore(actorUserId, action, entityType, entityId, oldValue, newValue, ipAddress, actorUsername, notes) {
+async function createAuditLogFirestore(actorUserId, action, entityType, entityId, oldValue, newValue, ipAddress, actorUsername, notes, customAuditId) {
   const db = getFirestoreDb();
   const now = (/* @__PURE__ */ new Date()).toISOString();
-  const auditId = `audit-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const auditId = customAuditId || `audit_${action}_${entityType}_${entityId}`;
   try {
-    await db.collection(COLLECTIONS.AUDIT_LOGS).add({
+    await db.collection(COLLECTIONS.AUDIT_LOGS).doc(auditId).set({
+      id: auditId,
       actorUserId,
       actorUsername: actorUsername || null,
       action,
@@ -10582,14 +11639,14 @@ async function createAuditLogFirestore(actorUserId, action, entityType, entityId
       ipAddress: ipAddress || null,
       notes: notes || null,
       createdAt: now
-    });
+    }, { merge: true });
     trackFirestoreWrite(COLLECTIONS.AUDIT_LOGS, 1, "createAuditLogFirestore");
   } catch (err) {
     console.warn("[FIRESTORE AUDIT LOG WARN]:", err.message);
   }
   try {
     queryRun(
-      `INSERT INTO audit_logs (id, actor_user_id, actor_username, action, entity_type, entity_id, old_value_json, new_value_json, ip_address, created_at)
+      `INSERT OR REPLACE INTO audit_logs (id, actor_user_id, actor_username, action, entity_type, entity_id, old_value_json, new_value_json, ip_address, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         auditId,
@@ -10607,11 +11664,13 @@ async function createAuditLogFirestore(actorUserId, action, entityType, entityId
   } catch {
   }
 }
-async function createNotificationFirestore(userId, type, title, message, data) {
+async function createNotificationFirestore(userId, type, title, message, data, customNotificationId) {
   const now = (/* @__PURE__ */ new Date()).toISOString();
+  const notifId = customNotificationId || `notif_${type}_${userId}_${String(data?.fixtureId || data?.clubId || "gen")}`;
   try {
     const db = getFirestoreDb();
-    await db.collection(COLLECTIONS.NOTIFICATIONS).add({
+    await db.collection(COLLECTIONS.NOTIFICATIONS).doc(notifId).set({
+      id: notifId,
       userId,
       type,
       title,
@@ -10619,12 +11678,11 @@ async function createNotificationFirestore(userId, type, title, message, data) {
       data: data || null,
       isRead: false,
       createdAt: now
-    });
+    }, { merge: true });
   } catch (err) {
     console.warn("[FIRESTORE FALLBACK] createNotificationFirestore:", err.message);
-    const notifId = `notif-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     queryRun(
-      `INSERT INTO notifications (id, user_id, type, title, message, is_read, created_at)
+      `INSERT OR REPLACE INTO notifications (id, user_id, type, title, message, is_read, created_at)
        VALUES (?, ?, ?, ?, ?, 0, ?)`,
       [notifId, userId, type, title, message, now]
     );
@@ -11144,14 +12202,16 @@ async function adminApproveFixtureResultFirestore(adminUserId, fixtureId, homeSc
           console.warn("[STANDINGS_UPDATE] Non-blocking standings update error on admin approval:", standingsErr);
         }
       }
-      await db.collection(COLLECTIONS.AUDIT_LOGS).add({
+      const auditId = `audit_approve_${fixtureId}`;
+      await db.collection(COLLECTIONS.AUDIT_LOGS).doc(auditId).set({
+        id: auditId,
         actorUserId: adminUserId,
         action: "ADMIN_APPROVE_RESULT",
         entityType: "fixture",
         entityId: fixtureId,
         notes: notes || `Admin confirmed result ${homeScore}-${awayScore}`,
         createdAt: now
-      });
+      }, { merge: true });
       invalidateFirestoreCache();
       const updatedFixture2 = await getFixtureByIdFirestore(fixtureId);
       return {
@@ -11162,7 +12222,7 @@ async function adminApproveFixtureResultFirestore(adminUserId, fixtureId, homeSc
         isFallback: false
       };
     } catch (err) {
-      if (options?.authoritativeOnly || isHostedEnvironment()) {
+      if (options?.authoritativeOnly) {
         throw err;
       }
       firestoreCircuitBreaker.recordFailure(err);
@@ -11170,7 +12230,7 @@ async function adminApproveFixtureResultFirestore(adminUserId, fixtureId, homeSc
       console.warn("[FIRESTORE FALLBACK] adminApproveFixtureResultFirestore:", err.message);
     }
   } else {
-    if (options?.authoritativeOnly || isHostedEnvironment()) {
+    if (options?.authoritativeOnly) {
       throw new Error("CIRCUIT_OPEN: Firestore circuit breaker is OPEN. Authoritative write cannot execute.");
     }
     recordFallbackUsage();
@@ -11181,6 +12241,28 @@ async function adminApproveFixtureResultFirestore(adminUserId, fixtureId, homeSc
   }
   if (homeScore > awayScore) winnerClubId = localFix.home_club_id;
   else if (awayScore > homeScore) winnerClubId = localFix.away_club_id;
+  const mutationId = `admin_approve_${fixtureId}`;
+  await enqueueDurableOutboxMutation({
+    mutationId,
+    entityType: "ADMIN_DECISION",
+    entityId: fixtureId,
+    operation: "ADMIN_APPROVE_RESULT",
+    adminUserId,
+    userId: adminUserId,
+    seasonId: localFix.season_id || "season-2026-27",
+    competitionId: localFix.competition_id,
+    payload: {
+      adminUserId,
+      fixtureId,
+      homeScore,
+      awayScore,
+      notes: notes || "Approved by tournament administrator (offline queued)",
+      seasonId: localFix.season_id || "season-2026-27",
+      competitionId: localFix.competition_id,
+      winnerClubId
+    },
+    createdAt: now
+  });
   queryRun(
     `UPDATE fixtures 
      SET status = 'CONFIRMED', home_score = ?, away_score = ?, winner_club_id = ?, result_confirmed_at = ?, updated_at = ? 
@@ -11193,25 +12275,12 @@ async function adminApproveFixtureResultFirestore(adminUserId, fixtureId, homeSc
      WHERE fixture_id = ?`,
     [adminUserId, notes || "Approved by tournament administrator (offline queued)", now, fixtureId]
   );
-  enqueueMutation({
-    mutationId: `admin_approve_${fixtureId}`,
-    entityType: "ADMIN_DECISION",
-    entityId: fixtureId,
-    operation: "ADMIN_APPROVE_RESULT",
-    payload: {
-      adminUserId,
-      fixtureId,
-      homeScore,
-      awayScore,
-      notes: notes || "Approved by tournament administrator (offline queued)"
-    },
-    createdAt: now
-  });
   const updatedFixture = await getFixtureByIdFirestore(fixtureId);
   return {
     success: true,
     message: `Match result (${homeScore} - ${awayScore}) confirmed locally (queued for background sync).`,
     fixture: updatedFixture,
+    pendingSync: true,
     authoritative: false,
     isFallback: true
   };
@@ -11886,7 +12955,7 @@ async function adminDeleteResultSubmissionFirestore(adminUserId, adminUsername, 
     message: `Result submission '${submissionId}' has been deleted.`
   };
 }
-var SEED_CLUB_MAP, ClubConflictError, ClubNotFoundError, serverCache, lastKnownGoodStandings, lastKnownGoodFixtures, readMetrics, getFirestoreTelemetry, compOverrideMap, matchdayLocksCache;
+var SEED_CLUB_MAP, ClubConflictError, ClubNotFoundError, serverCache, lastKnownGoodStandings, lastKnownGoodFixtures, readMetrics, getFirestoreTelemetry, getFirestoreReadMetrics, resetFirestoreReadMetrics, compOverrideMap, matchdayLocksCache;
 var init_firestoreStore = __esm({
   "src/server/firebase/firestoreStore.ts"() {
     init_admin();
@@ -11922,6 +12991,7 @@ var init_firestoreStore = __esm({
     readMetrics = {
       sessionReads: 0,
       sessionWrites: 0,
+      aggregationReads: 0,
       readsByCollection: {},
       readsByFunction: {},
       cacheHits: 0,
@@ -11937,6 +13007,8 @@ var init_firestoreStore = __esm({
       startedAt: (/* @__PURE__ */ new Date()).toISOString()
     };
     getFirestoreTelemetry = getReadMetrics;
+    getFirestoreReadMetrics = getReadMetrics;
+    resetFirestoreReadMetrics = resetReadMetrics;
     compOverrideMap = /* @__PURE__ */ new Map();
     matchdayLocksCache = /* @__PURE__ */ new Map();
   }
@@ -11957,9 +13029,6 @@ async function deleteFixtureResult(adminUserId, adminUsername, fixtureId, option
 }
 async function deleteFixture(adminUserId, adminUsername, fixtureId, reason) {
   return await adminDeleteFixtureFirestore(adminUserId, adminUsername, fixtureId, reason);
-}
-async function getAllAdminUsers() {
-  return await getAllUsersFirestore();
 }
 async function getUserDetail(targetUserId) {
   return await adminGetUserDetailFirestore(targetUserId);
@@ -13090,6 +14159,46 @@ var telegramAuthSchema = z.object({
 var devAuthSchema = z.object({
   devUserId: z.string().min(1, "devUserId is required")
 });
+function getClubStatsQuick(clubId, seasonId = "season-2026-27") {
+  const stats = {
+    matchesPlayed: 0,
+    wins: 0,
+    draws: 0,
+    losses: 0,
+    goalsScored: 0,
+    goalsConceded: 0,
+    points: 0,
+    trophies: 0,
+    leaguePosition: 0
+  };
+  if (!clubId) return stats;
+  try {
+    const { queryAll: queryAll2 } = (init_db(), __toCommonJS(db_exports));
+    const rows = queryAll2(
+      `SELECT home_club_id, away_club_id, home_score, away_score FROM fixtures WHERE status = 'CONFIRMED' AND (home_club_id = ? OR away_club_id = ?) AND (season_id = ? OR season_id IS NULL)`,
+      [clubId, clubId, seasonId]
+    );
+    for (const m of rows) {
+      const isHome = m.home_club_id === clubId;
+      stats.matchesPlayed++;
+      const myScore = isHome ? m.home_score ?? 0 : m.away_score ?? 0;
+      const oppScore = isHome ? m.away_score ?? 0 : m.home_score ?? 0;
+      stats.goalsScored += myScore;
+      stats.goalsConceded += oppScore;
+      if (myScore > oppScore) {
+        stats.wins++;
+        stats.points += 3;
+      } else if (myScore === oppScore) {
+        stats.draws++;
+        stats.points += 1;
+      } else {
+        stats.losses++;
+      }
+    }
+  } catch {
+  }
+  return stats;
+}
 authRouter.post("/telegram", validateBody(telegramAuthSchema), async (req, res) => {
   const { initData } = req.body;
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -13101,9 +14210,10 @@ authRouter.post("/telegram", validateBody(telegramAuthSchema), async (req, res) 
         if (userRaw) {
           const user = await getOrCreateTelegramUser(JSON.parse(userRaw));
           const clubState = await getOptionalCurrentClub(user.id);
+          const stats = getClubStatsQuick(clubState.currentClub?.id);
           const token = createSessionToken(user);
           console.log(`[TELEGRAM AUTH - DEV SANDBOX] user=${user.username} (id: ${user.telegramId}), isAdmin=${user.isAdmin}`);
-          res.json({ success: true, user, ...clubState, token });
+          res.json({ success: true, user, ...clubState, stats, token });
           return;
         }
       } catch {
@@ -13121,6 +14231,7 @@ authRouter.post("/telegram", validateBody(telegramAuthSchema), async (req, res) 
   try {
     const user = await getOrCreateTelegramUser(verifyResult.user);
     const clubState = await getOptionalCurrentClub(user.id);
+    const stats = getClubStatsQuick(clubState.currentClub?.id);
     const token = createSessionToken(user);
     console.log(`[TELEGRAM AUTH]
 initData received: YES
@@ -13130,7 +14241,7 @@ auth_date valid: ${verifyResult.authDate ? "YES" : "NO"}
 HMAC valid: YES
 internal user: ${user.id}
 isAdmin: ${user.isAdmin ? "YES" : "NO"}`);
-    res.json({ success: true, user, ...clubState, token });
+    res.json({ success: true, user, ...clubState, stats, token });
   } catch (err) {
     res.status(500).json({ error: "Authentication failed", message: err.message });
   }
@@ -13144,8 +14255,9 @@ authRouter.post("/dev", validateBody(devAuthSchema), async (req, res) => {
   try {
     const user = await getOrCreateDevUser(req.body.devUserId);
     const clubState = await getOptionalCurrentClub(user.id);
+    const stats = getClubStatsQuick(clubState.currentClub?.id);
     const token = createSessionToken(user);
-    res.json({ success: true, user, ...clubState, token });
+    res.json({ success: true, user, ...clubState, stats, token });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -13184,6 +14296,15 @@ function parseFirestoreError(err) {
   const rawCode = err.code ?? (err.status ?? "");
   const rawMsg = err.message || String(err);
   const strCode = String(rawCode).toUpperCase();
+  if (strCode === "DURABLE_PERSISTENCE_UNAVAILABLE" || rawMsg.includes("DURABLE_PERSISTENCE_UNAVAILABLE")) {
+    return {
+      error: "DURABLE_PERSISTENCE_UNAVAILABLE",
+      code: "DURABLE_PERSISTENCE_UNAVAILABLE",
+      message: "Durable persistence is temporarily unavailable. Change was not accepted; retry when service recovers.",
+      httpStatus: 503,
+      details: err.details || rawMsg
+    };
+  }
   if (strCode === "AUTHORITATIVE_WRITE_REQUIRED") {
     return { error: strCode, code: strCode, message: "O\u2018zgarish saqlanmadi. Baza tiklangandan keyin qayta urinib ko\u2018ring.", httpStatus: 503 };
   }
@@ -13920,11 +15041,36 @@ meRouter.get("/", requireAuth, async (req, res) => {
       leaguePosition: 0
     };
     if (currentClub) {
-      const confirmedMatches = await getFixturesFirestore({
-        clubId: currentClub.id,
-        seasonId,
-        status: "CONFIRMED"
-      });
+      let confirmedMatches = [];
+      try {
+        const { queryAll: queryAll2 } = (init_db(), __toCommonJS(db_exports));
+        const rows = queryAll2(
+          `SELECT * FROM fixtures WHERE status = 'CONFIRMED' AND (home_club_id = ? OR away_club_id = ?) AND (season_id = ? OR season_id IS NULL)`,
+          [currentClub.id, currentClub.id, seasonId]
+        );
+        if (rows && rows.length > 0) {
+          confirmedMatches = rows.map((r) => ({
+            id: r.id,
+            homeClubId: r.home_club_id,
+            awayClubId: r.away_club_id,
+            homeScore: r.home_score,
+            awayScore: r.away_score,
+            status: r.status,
+            seasonId: r.season_id
+          }));
+        }
+      } catch {
+      }
+      if (confirmedMatches.length === 0) {
+        try {
+          confirmedMatches = await getFixturesFirestore({
+            clubId: currentClub.id,
+            seasonId,
+            status: "CONFIRMED"
+          });
+        } catch {
+        }
+      }
       for (const m of confirmedMatches) {
         const isHome = m.homeClubId === currentClub.id;
         const isAway = m.awayClubId === currentClub.id;
@@ -14803,33 +15949,26 @@ adminRouter.post("/migrate-to-firestore", async (req, res) => {
   }
 });
 adminRouter.get("/users", async (req, res) => {
-  if (!firestoreCircuitBreaker.canExecute()) {
-    const rows = queryAll("SELECT * FROM users ORDER BY created_at DESC");
-    res.json({
-      users: rows.map((r) => ({
-        id: r.id,
-        telegramId: r.telegram_id,
-        username: r.username,
-        firstName: r.first_name,
-        lastName: r.last_name || "",
-        photoUrl: r.photo_url || "",
-        isAdmin: Boolean(r.is_admin),
-        isSuspended: Boolean(r.is_suspended),
-        createdAt: r.created_at,
-        updatedAt: r.updated_at
-      })),
-      source: "sqlite",
-      degraded: true,
-      stale: true
-    });
-    return;
-  }
+  const page = req.query.page ? Math.max(1, parseInt(req.query.page, 10)) : 1;
+  const limit = req.query.limit ? Math.min(Math.max(1, parseInt(req.query.limit, 10)), 50) : 25;
+  const cursor = req.query.cursor || void 0;
+  const role = req.query.role || "ALL";
+  const status = req.query.status || "ALL";
+  const search = req.query.search || "";
   try {
-    const users = await getAllAdminUsers();
-    res.json({ users, source: "firestore", degraded: false, stale: false });
+    const { getAdminUsersPagedFirestore: getAdminUsersPagedFirestore2 } = await Promise.resolve().then(() => (init_firestoreStore(), firestoreStore_exports));
+    const result = await getAdminUsersPagedFirestore2({
+      page,
+      limit,
+      cursor,
+      role,
+      status,
+      search
+    });
+    res.json(result);
   } catch (err) {
     firestoreCircuitBreaker.recordFailure(err);
-    const rows = queryAll("SELECT * FROM users ORDER BY created_at DESC");
+    const rows = queryAll("SELECT * FROM users ORDER BY created_at DESC LIMIT ?", [limit]);
     res.json({
       users: rows.map((r) => ({
         id: r.id,
@@ -14843,7 +15982,11 @@ adminRouter.get("/users", async (req, res) => {
         createdAt: r.created_at,
         updatedAt: r.updated_at
       })),
-      source: "sqlite",
+      total: rows.length,
+      page,
+      limit,
+      hasMore: false,
+      source: "sqlite_fallback",
       degraded: true,
       stale: true
     });

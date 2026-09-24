@@ -9,6 +9,7 @@
     "test:european-safety": "node scripts/run-isolated-test.mjs src/server/tests/europeanSafetyRegressionTest.ts",
     "test:redis-durability": "node scripts/run-redis-tests.mjs",
     "test:critical-safety": "node scripts/run-isolated-test.mjs src/server/tests/criticalSafetyRegressionTest.ts",
+    "test:phase2-durability": "node scripts/run-isolated-test.mjs src/server/tests/phase2DurableMutationsTest.ts",
     "test:auth-quota": "node scripts/run-isolated-test.mjs src/server/tests/authQuotaRegressionTest.ts",
     "test:security-http": "node scripts/run-isolated-test.mjs src/server/tests/securityHttpRegressionTest.ts",
     "test:domestic-cup:isolated": "node scripts/run-isolated-test.mjs src/server/tests/domesticCupTbdRegressionTest.ts",
