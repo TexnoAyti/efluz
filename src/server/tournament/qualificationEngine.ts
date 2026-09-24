@@ -824,14 +824,14 @@ export async function getEuropeanStandings(
 
   // 1. Memory / Redis Fresh
   const fresh = await redisGetFresh<EuropeanStandingsRow[]>(cacheKey);
-  if (fresh && fresh.length > 0) {
-    return { rows: fresh, source: 'redis-fresh', degraded: false };
+  if (fresh?.data && Array.isArray(fresh.data) && fresh.data.length > 0) {
+    return { rows: fresh.data, source: 'redis-fresh', degraded: false };
   }
 
   // 2. Redis LKG (Last-Known-Good)
   const lkg = await redisGetLkg<EuropeanStandingsRow[]>(cacheKey);
-  if (lkg && lkg.length > 0) {
-    return { rows: lkg, source: 'redis-lkg', degraded: true };
+  if (lkg?.data && Array.isArray(lkg.data) && lkg.data.length > 0) {
+    return { rows: lkg.data, source: 'redis-lkg', degraded: true };
   }
 
   // 3. SQLite calculation from locally available fixtures/participants

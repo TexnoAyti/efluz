@@ -39,6 +39,9 @@ export interface ReadModelSnapshot<T> {
   expectedCount: number;
   actualCount: number;
   data: T;
+  source?: string;
+  stale?: boolean;
+  degraded?: boolean;
 }
 
 export interface CoreDatasetHealth {
@@ -1662,7 +1665,9 @@ export async function getCompetitionFixturesFromReadModel(
     });
   } catch {}
 
-  const ownersByClub = new Map(clubsResult?.data ? clubsResult.data.map((club: any) => [club.id, club]) : []);
+  const ownersByClub = new Map<string, OwnerNeutralClub>(
+    clubsResult?.data ? clubsResult.data.map((club: OwnerNeutralClub) => [club.id, club]) : []
+  );
   fixtures = fixtures.map((fixture) => {
     const homeOwner = fixture.homeClubId ? ownersByClub.get(fixture.homeClubId) : undefined;
     const awayOwner = fixture.awayClubId ? ownersByClub.get(fixture.awayClubId) : undefined;
