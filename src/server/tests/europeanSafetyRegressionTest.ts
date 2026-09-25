@@ -6,6 +6,10 @@ import { previewEuropeanQualificationSync, applyEuropeanQualificationSync, rebui
 import { getCompetitionStandingsFromReadModel, redisGetLkg, ReadModelKeys } from '../readModel/readModelStore';
 import { projectStandings } from '../tournament/standingsProjection';
 
+function footballStandingsShape(rows: any[]) {
+  return rows.map(({ managerUserId, managerUsername, managerFirstName, managerLastName, managerDisplayName, ...row }) => row);
+}
+
 async function main() {
   const db=getFirestoreDb(), seasonId='season-2026-27';
   for(const competition of SEED_COMPETITIONS) await db.collection(COLLECTIONS.COMPETITIONS).doc(competition.id).set(competition);
@@ -33,12 +37,14 @@ async function main() {
   assert.equal(rows.length,32);
   assert.equal(rows.reduce((sum,row)=>sum+row.played,0),2);
   assert.equal(rows.find(row=>row.clubId===teams[0].clubId)?.goalsFor,2);
-  assert.deepEqual((await getEuropeanStandings(ucl,seasonId)).rows,(await getCompetitionStandingsFromReadModel(ucl,seasonId)).standings);
+  const europeanRows=(await getEuropeanStandings(ucl,seasonId)).rows;
+  const readModelRows=(await getCompetitionStandingsFromReadModel(ucl,seasonId)).standings;
+  assert.deepEqual(footballStandingsShape(europeanRows),footballStandingsShape(readModelRows));
   assert.equal((await redisGetLkg<any[]>(ReadModelKeys.standings(ucl,seasonId)))?.data.length,32);
   assert.equal((await previewEuropeanQualificationSync(seasonId)).canApply,false);
   const projection=projectStandings([{id:'a',name:'A',shortName:'A'},{id:'b',name:'B',shortName:'B'}],[{id:'score',homeClubId:'a',awayClubId:'b',status:'CONFIRMED',homeScore:0,awayScore:0}]);
   assert.equal(projection[0].points,1);
   assert.throws(()=>projectStandings([{id:'a',name:'A',shortName:'A'}],[{id:'bad',homeClubId:'a',awayClubId:'b',status:'CONFIRMED',homeScore:undefined,awayScore:1}]),/INVALID_CONFIRMED_RESULT/);
-  console.log('PASS: current results drive qualification, stale previews cannot write, replay cannot duplicate, started Europe is protected, knockout scores excluded, public/admin share one standings snapshot');
+  console.log('PASS: current results drive qualification, stale previews cannot write, replay cannot duplicate, started Europe is protected, knockout scores excluded, public/admin share one football standings snapshot while owner enrichment may add manager fields');
 }
 main().then(()=>process.exit(0)).catch(error=>{console.error(error);process.exit(1);});
