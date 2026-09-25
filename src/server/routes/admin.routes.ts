@@ -338,17 +338,29 @@ const adminEditResultSchema = z.object({
   awayScore: z.number().int().min(0, 'Away score must be >= 0'),
   status: z.enum(['CONFIRMED', 'AWAITING_RESULT', 'SCHEDULED']).optional(),
   notes: z.string().optional(),
+  idempotencyKey: z.string().optional(),
 });
 
 adminRouter.post('/fixtures/:id/result', validateBody(adminEditResultSchema), async (req: Request, res: Response) => {
   const adminUserId = req.user!.id;
   const adminUsername = req.user!.username || 'admin';
   const fixtureId = req.params.id;
+  const headerIdempotencyKey = (req.headers['x-idempotency-key'] || req.headers['idempotency-key']) as string | undefined;
+  const idempotencyKey = req.body.idempotencyKey || headerIdempotencyKey;
 
   try {
-    const result = await editFixtureResult(adminUserId, adminUsername, fixtureId, req.body);
+    const result = await editFixtureResult(adminUserId, adminUsername, fixtureId, {
+      ...req.body,
+      idempotencyKey,
+    });
+    await refreshChangedFixtureReadModel(fixtureId).catch(() => {});
+    if (result.fixture?.competitionId) {
+      await invalidateFixtureReadModels(result.fixture.competitionId, result.fixture.seasonId || 'season-2026-27').catch(() => {});
+      await invalidateStandingsReadModels(result.fixture.competitionId, result.fixture.seasonId || 'season-2026-27').catch(() => {});
+    }
     res.json(result);
   } catch (err: any) {
+    console.error('[ADMIN_RESULT_SAVE_FAILED]', JSON.stringify({ fixtureId, error: err?.message }));
     handleFirestoreError(res, err, `POST /api/admin/fixtures/${fixtureId}/result`);
   }
 });
@@ -357,20 +369,33 @@ adminRouter.post('/fixtures/:id/result', validateBody(adminEditResultSchema), as
 const adminDeleteResultSchema = z.object({
   deleteSubmissions: z.boolean().optional(),
   notes: z.string().optional(),
+  idempotencyKey: z.string().optional(),
 });
 
 adminRouter.post('/fixtures/:id/delete-result', validateBody(adminDeleteResultSchema), async (req: Request, res: Response) => {
   const adminUserId = req.user!.id;
   const adminUsername = req.user!.username || 'admin';
   const fixtureId = req.params.id;
+  const headerIdempotencyKey = (req.headers['x-idempotency-key'] || req.headers['idempotency-key']) as string | undefined;
+  const idempotencyKey = req.body.idempotencyKey || headerIdempotencyKey;
 
   try {
-    const result = await deleteFixtureResult(adminUserId, adminUsername, fixtureId, req.body);
+    const result = await deleteFixtureResult(adminUserId, adminUsername, fixtureId, {
+      ...req.body,
+      idempotencyKey,
+    });
+    await refreshChangedFixtureReadModel(fixtureId).catch(() => {});
+    if (result.fixture?.competitionId) {
+      await invalidateFixtureReadModels(result.fixture.competitionId, result.fixture.seasonId || 'season-2026-27').catch(() => {});
+      await invalidateStandingsReadModels(result.fixture.competitionId, result.fixture.seasonId || 'season-2026-27').catch(() => {});
+    }
     res.json(result);
   } catch (err: any) {
+    console.error('[ADMIN_RESULT_SAVE_FAILED]', JSON.stringify({ fixtureId, error: err?.message, operation: 'ADMIN_DELETE_RESULT' }));
     handleFirestoreError(res, err, `POST /api/admin/fixtures/${fixtureId}/delete-result`);
   }
 });
+
 
 // Admin delete fixture
 const adminDeleteFixtureSchema = z.object({

@@ -1,6 +1,7 @@
 import { Firestore, FieldValue, FieldPath } from 'firebase-admin/firestore';
 import { getFirestoreDb } from './admin';
-import { queryAll, queryGet, queryRun, dbTransaction } from '../db';
+import { queryAll, queryGet, queryRun, dbTransaction, upsertFixtureToSqlite } from '../db';
+import { refreshMaterializedStandingsForCompetition } from '../db/sqliteStandings';
 import { SEED_CLUBS, SEED_LEAGUES, SEED_COMPETITIONS, SEED_SEASONS, SEED_SEASON } from '../db/seed';
 export { firestoreCircuitBreaker, type CircuitBreakerStatus } from './circuitBreaker';
 import { firestoreCircuitBreaker, CircuitBreakerStatus } from './circuitBreaker';
@@ -26,7 +27,12 @@ const SEED_CLUB_MAP = new Map<string, (typeof SEED_CLUBS)[0]>(
   SEED_CLUBS.map((c) => [c.id, c])
 );
 import { generateEuropean32LeaguePhaseSchedule } from '../tournament/fixtureEngine';
-import { getAdminFixturesFromReadModel } from '../readModel/readModelStore';
+import {
+  getAdminFixturesFromReadModel,
+  refreshChangedFixtureReadModel,
+  invalidateFixtureReadModels,
+  invalidateStandingsReadModels,
+} from '../readModel/readModelStore';
 import {
   COLLECTIONS,
   FirestoreClubDoc,
@@ -6448,105 +6454,255 @@ export async function adminEditFixtureResultFirestore(
     awayScore: number;
     status?: string;
     notes?: string;
+    idempotencyKey?: string;
   }
-): Promise<{ success: boolean; message: string; fixture: Fixture }> {
+): Promise<{ success: boolean; message: string; fixture: Fixture; pendingSync?: boolean }> {
   if (params.homeScore < 0 || params.awayScore < 0) {
     throw new Error('Scores must be non-negative integers.');
   }
   const now = new Date().toISOString();
-  const db = getFirestoreDb();
-  const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
-  const fixDoc = await fixRef.get();
-  if (!fixDoc.exists) {
-    throw new Error(`Fixture '${fixtureId}' not found.`);
-  }
-
-  const existing = fixDoc.data() as FirestoreFixtureDoc;
-  const oldScore = {
-    homeScore: existing.homeScore,
-    awayScore: existing.awayScore,
-    status: existing.status,
-    winnerClubId: existing.winnerClubId,
-  };
-
-  let winnerClubId: string | null = null;
-  if (params.homeScore > params.awayScore) winnerClubId = existing.homeClubId;
-  else if (params.awayScore > params.homeScore) winnerClubId = existing.awayClubId;
-
   const targetStatus = params.status || 'CONFIRMED';
+  const mutationId =
+    params.idempotencyKey ||
+    `admin_edit_${fixtureId}_${targetStatus}_${params.homeScore}_${params.awayScore}`;
 
-  await fixRef.update({
-    status: targetStatus,
-    homeScore: params.homeScore,
-    awayScore: params.awayScore,
-    winnerClubId,
-    resultConfirmedAt: targetStatus === 'CONFIRMED' ? now : null,
-    updatedAt: now,
-  });
+  console.log('[ADMIN_RESULT_SAVE_START]', JSON.stringify({ fixtureId, adminUserId, homeScore: params.homeScore, awayScore: params.awayScore, status: targetStatus, mutationId }));
 
-  // Also update SQLite
-  try {
-    queryRun(
-      `UPDATE fixtures 
-       SET status = ?, home_score = ?, away_score = ?, winner_club_id = ?, result_confirmed_at = ?, updated_at = ? 
-       WHERE id = ?`,
-      [
-        targetStatus,
-        params.homeScore,
-        params.awayScore,
-        winnerClubId,
-        targetStatus === 'CONFIRMED' ? now : null,
-        now,
-        fixtureId,
-      ]
-    );
-  } catch (err: any) {
-    console.warn('[SQLITE UPDATE FIXTURE]:', err.message);
-  }
+  // Helper for Phase 2 durable fallback when Firestore is unavailable
+  const executeDurableFallbackEdit = async (existingData?: Partial<FirestoreFixtureDoc>) => {
+    recordFallbackUsage();
+    const sqliteRow = queryGet<any>('SELECT * FROM fixtures WHERE id = ?', [fixtureId]);
+    const seasonId = existingData?.seasonId || sqliteRow?.season_id || 'season-2026-27';
+    const compId = existingData?.competitionId || sqliteRow?.competition_id || '';
+    const homeClubId = existingData?.homeClubId || sqliteRow?.home_club_id || null;
+    const awayClubId = existingData?.awayClubId || sqliteRow?.away_club_id || null;
+    const matchday = existingData?.matchday !== undefined ? existingData.matchday : (sqliteRow?.matchday ?? 1);
+    const roundName = existingData?.roundName || sqliteRow?.round_name || `Matchday ${matchday}`;
+    const scheduledAt = existingData?.scheduledAt || sqliteRow?.scheduled_at || now;
 
-  // Knockout advancement if applicable
-  if (winnerClubId && targetStatus === 'CONFIRMED') {
-    try {
-      const { advanceKnockoutWinnerFirestore } = await import('../tournament/knockoutEngine');
-      await advanceKnockoutWinnerFirestore(fixtureId);
-    } catch (err) {
-      console.warn('[KNOCKOUT_ADVANCE]:', err);
+    let winnerClubId: string | null = null;
+    if (params.homeScore > params.awayScore) winnerClubId = homeClubId;
+    else if (params.awayScore > params.homeScore) winnerClubId = awayClubId;
+
+    const mutationPayload = {
+      fixtureId,
+      adminUserId,
+      adminUsername,
+      homeScore: params.homeScore,
+      awayScore: params.awayScore,
+      status: targetStatus,
+      notes: params.notes || `Admin set result ${params.homeScore}-${params.awayScore}`,
+      competitionId: compId,
+      seasonId,
+      matchday,
+      roundName,
+      homeClubId,
+      awayClubId,
+      scheduledAt,
+      winnerClubId,
+      resultConfirmedAt: targetStatus === 'CONFIRMED' ? now : null,
+      createdAt: now,
+    };
+
+    // 1. MUST persist to durable Redis outbox FIRST (throws 503 if Redis down)
+    await enqueueDurableOutboxMutation({
+      mutationId,
+      entityType: 'ADMIN_EDIT_RESULT',
+      entityId: fixtureId,
+      operation: 'ADMIN_EDIT_RESULT',
+      adminUserId,
+      seasonId,
+      competitionId: compId,
+      payload: mutationPayload,
+      createdAt: now,
+    });
+    console.log('[ADMIN_RESULT_OUTBOX_ENQUEUED]', JSON.stringify({ fixtureId, mutationId, operation: 'ADMIN_EDIT_RESULT' }));
+
+    // 2. Only after Redis persistence succeeds, update local SQLite mirror
+    upsertFixtureToSqlite({
+      id: fixtureId,
+      seasonId,
+      competitionId: compId,
+      matchday,
+      roundName,
+      homeClubId,
+      awayClubId,
+      scheduledAt,
+      status: targetStatus,
+      homeScore: params.homeScore,
+      awayScore: params.awayScore,
+      winnerClubId,
+      resultConfirmedAt: targetStatus === 'CONFIRMED' ? now : null,
+      updatedAt: now,
+    });
+    console.log('[ADMIN_RESULT_SQLITE_SYNCED]', JSON.stringify({ fixtureId, homeScore: params.homeScore, awayScore: params.awayScore }));
+
+    if (compId) {
+      try {
+        refreshMaterializedStandingsForCompetition(compId);
+      } catch (stErr: any) {
+        console.warn('[SQLITE STANDINGS FALLBACK]:', stErr.message);
+      }
     }
-  }
 
-  // Rebuild standings
-  if (existing.competitionId) {
-    try {
-      await rebuildCompetitionStandingsFirestore(existing.competitionId);
-    } catch (err) {
-      console.warn('[STANDINGS_REBUILD]:', err);
+    invalidateFirestoreCache();
+    await invalidateFixtureReadModels(compId, seasonId).catch(() => {});
+    await invalidateStandingsReadModels(compId, seasonId).catch(() => {});
+    console.log('[ADMIN_RESULT_READMODEL_REFRESHED]', JSON.stringify({ fixtureId, compId, seasonId }));
+
+    const fallbackFixture = await getFixtureByIdFirestore(fixtureId, adminUserId);
+    if (fallbackFixture) {
+      (fallbackFixture as any).pendingSync = true;
     }
-  }
 
-  // Audit log
-  const actionName = (existing.status === 'CONFIRMED' || existing.homeScore != null)
-    ? 'ADMIN_EDIT_RESULT'
-    : 'ADMIN_SET_RESULT';
-
-  await createAuditLogFirestore(
-    adminUserId,
-    actionName,
-    'fixture',
-    fixtureId,
-    oldScore,
-    { homeScore: params.homeScore, awayScore: params.awayScore, winnerClubId, status: targetStatus },
-    undefined,
-    adminUsername,
-    params.notes || `Admin set result ${params.homeScore}-${params.awayScore}`
-  );
-
-  invalidateFirestoreCache();
-  const updated = await getFixtureByIdFirestore(fixtureId);
-  return {
-    success: true,
-    message: `Result updated to ${params.homeScore}-${params.awayScore} (${targetStatus}) and standings recalculated.`,
-    fixture: updated!,
+    console.log('[ADMIN_RESULT_SAVE_SUCCESS]', JSON.stringify({ fixtureId, pendingSync: true }));
+    return {
+      success: true,
+      pendingSync: true,
+      message: `Result queued for sync: ${params.homeScore}-${params.awayScore} (${targetStatus}).`,
+      fixture: fallbackFixture || ({
+        id: fixtureId,
+        competitionId: compId,
+        seasonId,
+        matchday,
+        roundName,
+        homeClubId: homeClubId || '',
+        awayClubId: awayClubId || '',
+        status: targetStatus as any,
+        homeScore: params.homeScore,
+        awayScore: params.awayScore,
+        winnerClubId: winnerClubId || undefined,
+        scheduledAt,
+        createdAt: now,
+        updatedAt: now,
+        pendingSync: true,
+      } as any),
+    };
   };
+
+  if (!firestoreCircuitBreaker.canExecute()) {
+    return await executeDurableFallbackEdit();
+  }
+
+  try {
+    const db = getFirestoreDb();
+    const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
+    const fixDoc = await fixRef.get();
+    if (!fixDoc.exists) {
+      throw new Error(`Fixture '${fixtureId}' not found.`);
+    }
+
+    const existing = fixDoc.data() as FirestoreFixtureDoc;
+    const oldScore = {
+      homeScore: existing.homeScore,
+      awayScore: existing.awayScore,
+      status: existing.status,
+      winnerClubId: existing.winnerClubId,
+    };
+
+    let winnerClubId: string | null = null;
+    if (params.homeScore > params.awayScore) winnerClubId = existing.homeClubId;
+    else if (params.awayScore > params.homeScore) winnerClubId = existing.awayClubId;
+
+    await fixRef.update({
+      status: targetStatus,
+      homeScore: params.homeScore,
+      awayScore: params.awayScore,
+      winnerClubId,
+      resultConfirmedAt: targetStatus === 'CONFIRMED' ? now : null,
+      updatedAt: now,
+    });
+    console.log('[ADMIN_RESULT_FIRESTORE_SUCCESS]', JSON.stringify({ fixtureId, targetStatus, homeScore: params.homeScore, awayScore: params.awayScore }));
+
+    // Synchronize SQLite mirror with full upsert semantics
+    try {
+      upsertFixtureToSqlite({
+        id: fixtureId,
+        seasonId: existing.seasonId,
+        competitionId: existing.competitionId,
+        matchday: existing.matchday,
+        roundName: existing.roundName,
+        homeClubId: existing.homeClubId,
+        awayClubId: existing.awayClubId,
+        scheduledAt: existing.scheduledAt,
+        status: targetStatus,
+        homeScore: params.homeScore,
+        awayScore: params.awayScore,
+        winnerClubId,
+        resultConfirmedAt: targetStatus === 'CONFIRMED' ? now : null,
+        updatedAt: now,
+      });
+      console.log('[ADMIN_RESULT_SQLITE_SYNCED]', JSON.stringify({ fixtureId, homeScore: params.homeScore, awayScore: params.awayScore }));
+    } catch (err: any) {
+      console.warn('[SQLITE UPSERT FIXTURE]:', err.message);
+    }
+
+    // Knockout advancement if applicable
+    if (winnerClubId && targetStatus === 'CONFIRMED') {
+      try {
+        const { advanceKnockoutWinnerFirestore } = await import('../tournament/knockoutEngine');
+        await advanceKnockoutWinnerFirestore(fixtureId);
+      } catch (err) {
+        console.warn('[KNOCKOUT_ADVANCE]:', err);
+      }
+    }
+
+    // Rebuild standings in Firestore and SQLite
+    if (existing.competitionId) {
+      try {
+        await rebuildCompetitionStandingsFirestore(existing.competitionId);
+      } catch (err) {
+        console.warn('[STANDINGS_REBUILD]:', err);
+      }
+      try {
+        refreshMaterializedStandingsForCompetition(existing.competitionId);
+      } catch (stErr) {
+        console.warn('[SQLITE_STANDINGS_REBUILD]:', stErr);
+      }
+    }
+
+    // Deterministic Audit log
+    const actionName = (existing.status === 'CONFIRMED' || existing.homeScore != null)
+      ? 'ADMIN_EDIT_RESULT'
+      : 'ADMIN_SET_RESULT';
+
+    const auditId = `audit_${mutationId}`;
+    await createAuditLogFirestore(
+      adminUserId,
+      actionName,
+      'fixture',
+      fixtureId,
+      oldScore,
+      { homeScore: params.homeScore, awayScore: params.awayScore, winnerClubId, status: targetStatus },
+      undefined,
+      adminUsername,
+      params.notes || `Admin set result ${params.homeScore}-${params.awayScore}`,
+      auditId
+    );
+
+    invalidateFirestoreCache();
+    // Critical: propagate changed fixture and invalidate scoped read models
+    await refreshChangedFixtureReadModel(fixtureId).catch(() => {});
+    await invalidateFixtureReadModels(existing.competitionId, existing.seasonId || 'season-2026-27').catch(() => {});
+    await invalidateStandingsReadModels(existing.competitionId, existing.seasonId || 'season-2026-27').catch(() => {});
+    console.log('[ADMIN_RESULT_READMODEL_REFRESHED]', JSON.stringify({ fixtureId, competitionId: existing.competitionId, seasonId: existing.seasonId }));
+
+    const updated = await getFixtureByIdFirestore(fixtureId);
+    console.log('[ADMIN_RESULT_SAVE_SUCCESS]', JSON.stringify({ fixtureId, pendingSync: false }));
+    return {
+      success: true,
+      message: `Result updated to ${params.homeScore}-${params.awayScore} (${targetStatus}) and standings recalculated.`,
+      fixture: updated!,
+    };
+  } catch (err: any) {
+    console.error('[ADMIN_RESULT_FIRESTORE_FAILURE]', JSON.stringify({ fixtureId, error: err?.message }));
+    firestoreCircuitBreaker.recordFailure(err);
+    if (!firestoreCircuitBreaker.canExecute()) {
+      return await executeDurableFallbackEdit();
+    }
+    console.error('[ADMIN_RESULT_SAVE_FAILED]', JSON.stringify({ fixtureId, error: err?.message }));
+    throw err;
+  }
 }
 
 export async function adminDeleteFixtureResultFirestore(
@@ -6556,87 +6712,243 @@ export async function adminDeleteFixtureResultFirestore(
   options?: {
     deleteSubmissions?: boolean;
     notes?: string;
+    idempotencyKey?: string;
   }
-): Promise<{ success: boolean; message: string; fixture: Fixture }> {
+): Promise<{ success: boolean; message: string; fixture: Fixture; pendingSync?: boolean }> {
   const now = new Date().toISOString();
-  const db = getFirestoreDb();
-  const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
-  const fixDoc = await fixRef.get();
-  if (!fixDoc.exists) {
-    throw new Error(`Fixture '${fixtureId}' not found.`);
-  }
+  const mutationId =
+    options?.idempotencyKey ||
+    `admin_del_${fixtureId}${options?.deleteSubmissions ? '_with_subs' : ''}`;
 
-  const existing = fixDoc.data() as FirestoreFixtureDoc;
-  const oldScore = {
-    homeScore: existing.homeScore,
-    awayScore: existing.awayScore,
-    status: existing.status,
-    winnerClubId: existing.winnerClubId,
+  console.log('[ADMIN_RESULT_SAVE_START]', JSON.stringify({ fixtureId, adminUserId, operation: 'ADMIN_DELETE_RESULT', mutationId }));
+
+  const executeDurableFallbackDelete = async (existingData?: Partial<FirestoreFixtureDoc>) => {
+    recordFallbackUsage();
+    const sqliteRow = queryGet<any>('SELECT * FROM fixtures WHERE id = ?', [fixtureId]);
+    const seasonId = existingData?.seasonId || sqliteRow?.season_id || 'season-2026-27';
+    const compId = existingData?.competitionId || sqliteRow?.competition_id || '';
+    const homeClubId = existingData?.homeClubId || sqliteRow?.home_club_id || null;
+    const awayClubId = existingData?.awayClubId || sqliteRow?.away_club_id || null;
+    const matchday = existingData?.matchday !== undefined ? existingData.matchday : (sqliteRow?.matchday ?? 1);
+    const roundName = existingData?.roundName || sqliteRow?.round_name || `Matchday ${matchday}`;
+    const scheduledAt = existingData?.scheduledAt || sqliteRow?.scheduled_at || now;
+
+    const mutationPayload = {
+      fixtureId,
+      adminUserId,
+      adminUsername,
+      deleteSubmissions: Boolean(options?.deleteSubmissions),
+      notes: options?.notes || 'Admin deleted match result and reset status to SCHEDULED',
+      competitionId: compId,
+      seasonId,
+      matchday,
+      roundName,
+      homeClubId,
+      awayClubId,
+      scheduledAt,
+      createdAt: now,
+    };
+
+    // 1. Persist to durable Redis outbox FIRST (throws 503 if Redis down)
+    await enqueueDurableOutboxMutation({
+      mutationId,
+      entityType: 'ADMIN_DELETE_RESULT',
+      entityId: fixtureId,
+      operation: 'ADMIN_DELETE_RESULT',
+      adminUserId,
+      seasonId,
+      competitionId: compId,
+      payload: mutationPayload,
+      createdAt: now,
+    });
+    console.log('[ADMIN_RESULT_OUTBOX_ENQUEUED]', JSON.stringify({ fixtureId, mutationId, operation: 'ADMIN_DELETE_RESULT' }));
+
+    // 2. Only after Redis persistence succeeds, update SQLite mirror
+    upsertFixtureToSqlite({
+      id: fixtureId,
+      seasonId,
+      competitionId: compId,
+      matchday,
+      roundName,
+      homeClubId,
+      awayClubId,
+      scheduledAt,
+      status: 'SCHEDULED',
+      homeScore: null,
+      awayScore: null,
+      winnerClubId: null,
+      resultConfirmedAt: null,
+      updatedAt: now,
+    });
+    console.log('[ADMIN_RESULT_SQLITE_SYNCED]', JSON.stringify({ fixtureId, operation: 'ADMIN_DELETE_RESULT' }));
+
+    if (options?.deleteSubmissions) {
+      try {
+        queryRun('DELETE FROM result_submissions WHERE fixture_id = ?', [fixtureId]);
+      } catch {}
+    }
+
+    if (compId) {
+      try {
+        refreshMaterializedStandingsForCompetition(compId);
+      } catch (stErr: any) {
+        console.warn('[SQLITE STANDINGS DELETE FALLBACK]:', stErr.message);
+      }
+    }
+
+    invalidateFirestoreCache();
+    await invalidateFixtureReadModels(compId, seasonId).catch(() => {});
+    await invalidateStandingsReadModels(compId, seasonId).catch(() => {});
+    console.log('[ADMIN_RESULT_READMODEL_REFRESHED]', JSON.stringify({ fixtureId, compId, seasonId }));
+
+    const fallbackFixture = await getFixtureByIdFirestore(fixtureId, adminUserId);
+    if (fallbackFixture) {
+      (fallbackFixture as any).pendingSync = true;
+    }
+
+    console.log('[ADMIN_RESULT_SAVE_SUCCESS]', JSON.stringify({ fixtureId, operation: 'ADMIN_DELETE_RESULT', pendingSync: true }));
+    return {
+      success: true,
+      pendingSync: true,
+      message: 'Match result reset queued for sync and status set to SCHEDULED.',
+      fixture: fallbackFixture || ({
+        id: fixtureId,
+        competitionId: compId,
+        seasonId,
+        matchday,
+        roundName,
+        homeClubId: homeClubId || '',
+        awayClubId: awayClubId || '',
+        status: 'SCHEDULED' as any,
+        homeScore: null,
+        awayScore: null,
+        winnerClubId: undefined,
+        scheduledAt,
+        createdAt: now,
+        updatedAt: now,
+        pendingSync: true,
+      } as any),
+    };
   };
 
-  await fixRef.update({
-    status: 'SCHEDULED',
-    homeScore: null,
-    awayScore: null,
-    winnerClubId: null,
-    resultConfirmedAt: null,
-    updatedAt: now,
-  });
+  if (!firestoreCircuitBreaker.canExecute()) {
+    return await executeDurableFallbackDelete();
+  }
 
-  // Update SQLite
   try {
-    queryRun(
-      `UPDATE fixtures 
-       SET status = 'SCHEDULED', home_score = NULL, away_score = NULL, winner_club_id = NULL, result_confirmed_at = NULL, updated_at = ? 
-       WHERE id = ?`,
-      [now, fixtureId]
-    );
-  } catch (err: any) {
-    console.warn('[SQLITE DELETE RESULT]:', err.message);
-  }
+    const db = getFirestoreDb();
+    const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
+    const fixDoc = await fixRef.get();
+    if (!fixDoc.exists) {
+      throw new Error(`Fixture '${fixtureId}' not found.`);
+    }
 
-  // Delete submissions if requested
-  if (options?.deleteSubmissions) {
+    const existing = fixDoc.data() as FirestoreFixtureDoc;
+    const oldScore = {
+      homeScore: existing.homeScore,
+      awayScore: existing.awayScore,
+      status: existing.status,
+      winnerClubId: existing.winnerClubId,
+    };
+
+    await fixRef.update({
+      status: 'SCHEDULED',
+      homeScore: null,
+      awayScore: null,
+      winnerClubId: null,
+      resultConfirmedAt: null,
+      updatedAt: now,
+    });
+    console.log('[ADMIN_RESULT_FIRESTORE_SUCCESS]', JSON.stringify({ fixtureId, operation: 'ADMIN_DELETE_RESULT' }));
+
+    // Update SQLite mirror using upsert
     try {
-      const subsSnap = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where('fixtureId', '==', fixtureId).get();
-      const batch = db.batch();
-      subsSnap.docs.forEach((d) => batch.delete(d.ref));
-      await batch.commit();
-      queryRun('DELETE FROM result_submissions WHERE fixture_id = ?', [fixtureId]);
+      upsertFixtureToSqlite({
+        id: fixtureId,
+        seasonId: existing.seasonId,
+        competitionId: existing.competitionId,
+        matchday: existing.matchday,
+        roundName: existing.roundName,
+        homeClubId: existing.homeClubId,
+        awayClubId: existing.awayClubId,
+        scheduledAt: existing.scheduledAt,
+        status: 'SCHEDULED',
+        homeScore: null,
+        awayScore: null,
+        winnerClubId: null,
+        resultConfirmedAt: null,
+        updatedAt: now,
+      });
+      console.log('[ADMIN_RESULT_SQLITE_SYNCED]', JSON.stringify({ fixtureId, operation: 'ADMIN_DELETE_RESULT' }));
     } catch (err: any) {
-      console.warn('[DELETE SUBMISSIONS]:', err.message);
+      console.warn('[SQLITE UPSERT FIXTURE DELETE]:', err.message);
     }
-  }
 
-  // Rebuild standings
-  if (existing.competitionId) {
-    try {
-      await rebuildCompetitionStandingsFirestore(existing.competitionId);
-    } catch (err) {
-      console.warn('[STANDINGS_REBUILD]:', err);
+    // Delete submissions if requested
+    if (options?.deleteSubmissions) {
+      try {
+        const subsSnap = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where('fixtureId', '==', fixtureId).get();
+        const batch = db.batch();
+        subsSnap.docs.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+        queryRun('DELETE FROM result_submissions WHERE fixture_id = ?', [fixtureId]);
+      } catch (err: any) {
+        console.warn('[DELETE SUBMISSIONS]:', err.message);
+      }
     }
+
+    // Rebuild standings in Firestore and SQLite
+    if (existing.competitionId) {
+      try {
+        await rebuildCompetitionStandingsFirestore(existing.competitionId);
+      } catch (err) {
+        console.warn('[STANDINGS_REBUILD]:', err);
+      }
+      try {
+        refreshMaterializedStandingsForCompetition(existing.competitionId);
+      } catch (stErr) {
+        console.warn('[SQLITE_STANDINGS_REBUILD]:', stErr);
+      }
+    }
+
+    const auditId = `audit_${mutationId}`;
+    await createAuditLogFirestore(
+      adminUserId,
+      'ADMIN_DELETE_RESULT',
+      'fixture',
+      fixtureId,
+      oldScore,
+      { status: 'SCHEDULED', homeScore: null, awayScore: null },
+      undefined,
+      adminUsername,
+      options?.notes || 'Admin deleted match result and reset status to SCHEDULED',
+      auditId
+    );
+
+    invalidateFirestoreCache();
+    await refreshChangedFixtureReadModel(fixtureId).catch(() => {});
+    await invalidateFixtureReadModels(existing.competitionId, existing.seasonId || 'season-2026-27').catch(() => {});
+    await invalidateStandingsReadModels(existing.competitionId, existing.seasonId || 'season-2026-27').catch(() => {});
+    console.log('[ADMIN_RESULT_READMODEL_REFRESHED]', JSON.stringify({ fixtureId, operation: 'ADMIN_DELETE_RESULT' }));
+
+    const updated = await getFixtureByIdFirestore(fixtureId);
+    console.log('[ADMIN_RESULT_SAVE_SUCCESS]', JSON.stringify({ fixtureId, operation: 'ADMIN_DELETE_RESULT', pendingSync: false }));
+    return {
+      success: true,
+      message: 'Match result deleted and status reset to SCHEDULED. Standings recalculated.',
+      fixture: updated!,
+    };
+  } catch (err: any) {
+    console.error('[ADMIN_RESULT_FIRESTORE_FAILURE]', JSON.stringify({ fixtureId, error: err?.message }));
+    firestoreCircuitBreaker.recordFailure(err);
+    if (!firestoreCircuitBreaker.canExecute()) {
+      return await executeDurableFallbackDelete();
+    }
+    console.error('[ADMIN_RESULT_SAVE_FAILED]', JSON.stringify({ fixtureId, error: err?.message }));
+    throw err;
   }
-
-  await createAuditLogFirestore(
-    adminUserId,
-    'ADMIN_DELETE_RESULT',
-    'fixture',
-    fixtureId,
-    oldScore,
-    { status: 'SCHEDULED', homeScore: null, awayScore: null },
-    undefined,
-    adminUsername,
-    options?.notes || 'Admin deleted match result and reset status to SCHEDULED'
-  );
-
-  invalidateFirestoreCache();
-  const updated = await getFixtureByIdFirestore(fixtureId);
-  return {
-    success: true,
-    message: 'Match result deleted and status reset to SCHEDULED. Standings recalculated.',
-    fixture: updated!,
-  };
 }
+
 
 export async function adminDeleteFixtureFirestore(
   adminUserId: string,

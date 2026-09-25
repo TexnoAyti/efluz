@@ -518,3 +518,97 @@ export function dbTransaction<T>(callback: () => T): T {
     throw error;
   }
 }
+
+export interface SqliteFixtureUpsertInput {
+  id: string;
+  seasonId?: string;
+  competitionId?: string;
+  matchday?: number;
+  roundName?: string | null;
+  homeClubId?: string | null;
+  awayClubId?: string | null;
+  scheduledAt?: string;
+  status?: string;
+  homeScore?: number | null;
+  awayScore?: number | null;
+  winnerClubId?: string | null;
+  resultConfirmedAt?: string | null;
+  fixtureSource?: string;
+  sourceFixtureId?: string | null;
+  sourceWinnerSlot?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export function upsertFixtureToSqlite(fixture: SqliteFixtureUpsertInput): void {
+  const existing = queryGet<{
+    id: string;
+    season_id: string;
+    competition_id: string;
+    matchday: number;
+    round_name: string | null;
+    home_club_id: string | null;
+    away_club_id: string | null;
+    scheduled_at: string;
+    status: string;
+    home_score: number | null;
+    away_score: number | null;
+    winner_club_id: string | null;
+    result_confirmed_at: string | null;
+    fixture_source: string;
+    source_fixture_id: string | null;
+    source_winner_slot: string | null;
+    created_at: string;
+    updated_at: string;
+  }>('SELECT * FROM fixtures WHERE id = ?', [fixture.id]);
+
+  const now = new Date().toISOString();
+  const seasonId = fixture.seasonId || existing?.season_id || 'season-2026-27';
+  const competitionId = fixture.competitionId || existing?.competition_id || '';
+  const matchday = fixture.matchday !== undefined ? fixture.matchday : (existing?.matchday ?? 1);
+  const roundName = fixture.roundName !== undefined ? fixture.roundName : (existing?.round_name ?? `Matchday ${matchday}`);
+  const homeClubId = fixture.homeClubId !== undefined ? fixture.homeClubId : (existing?.home_club_id ?? null);
+  const awayClubId = fixture.awayClubId !== undefined ? fixture.awayClubId : (existing?.away_club_id ?? null);
+  const scheduledAt = fixture.scheduledAt || existing?.scheduled_at || now;
+  const status = fixture.status || existing?.status || 'SCHEDULED';
+  const homeScore = fixture.homeScore !== undefined ? fixture.homeScore : (existing?.home_score ?? null);
+  const awayScore = fixture.awayScore !== undefined ? fixture.awayScore : (existing?.away_score ?? null);
+  const winnerClubId = fixture.winnerClubId !== undefined ? fixture.winnerClubId : (existing?.winner_club_id ?? null);
+  const resultConfirmedAt = fixture.resultConfirmedAt !== undefined ? fixture.resultConfirmedAt : (existing?.result_confirmed_at ?? null);
+  const fixtureSource = fixture.fixtureSource || existing?.fixture_source || 'official_2026_27';
+  const sourceFixtureId = fixture.sourceFixtureId !== undefined ? fixture.sourceFixtureId : (existing?.source_fixture_id ?? null);
+  const sourceWinnerSlot = fixture.sourceWinnerSlot !== undefined ? fixture.sourceWinnerSlot : (existing?.source_winner_slot ?? null);
+  const createdAt = existing?.created_at || fixture.createdAt || now;
+  const updatedAt = fixture.updatedAt || now;
+
+  queryRun(
+    `INSERT OR REPLACE INTO fixtures (
+      id, season_id, competition_id, matchday, round_name,
+      home_club_id, away_club_id, scheduled_at, status,
+      home_score, away_score, winner_club_id, result_confirmed_at,
+      fixture_source, source_fixture_id, source_winner_slot,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      fixture.id,
+      seasonId,
+      competitionId,
+      matchday,
+      roundName,
+      homeClubId,
+      awayClubId,
+      scheduledAt,
+      status,
+      homeScore,
+      awayScore,
+      winnerClubId,
+      resultConfirmedAt,
+      fixtureSource,
+      sourceFixtureId,
+      sourceWinnerSlot,
+      createdAt,
+      updatedAt,
+    ]
+  );
+  saveDatabaseSync();
+}

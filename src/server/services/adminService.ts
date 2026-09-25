@@ -65,8 +65,9 @@ export async function editFixtureResult(
     awayScore: number;
     status?: string;
     notes?: string;
+    idempotencyKey?: string;
   }
-): Promise<{ success: boolean; message: string; fixture: Fixture }> {
+): Promise<{ success: boolean; message: string; fixture: Fixture; pendingSync?: boolean }> {
   return await adminEditFixtureResultFirestore(adminUserId, adminUsername, fixtureId, params);
 }
 
@@ -77,10 +78,12 @@ export async function deleteFixtureResult(
   options?: {
     deleteSubmissions?: boolean;
     notes?: string;
+    idempotencyKey?: string;
   }
-): Promise<{ success: boolean; message: string; fixture: Fixture }> {
+): Promise<{ success: boolean; message: string; fixture: Fixture; pendingSync?: boolean }> {
   return await adminDeleteFixtureResultFirestore(adminUserId, adminUsername, fixtureId, options);
 }
+
 
 export async function deleteFixture(
   adminUserId: string,

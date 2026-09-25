@@ -116,7 +116,16 @@ export async function startMockUpstashBridge(): Promise<MockRedisServer> {
       return Array.from(s);
     }
     if (op === 'eval') {
-      return 'OK';
+      const numKeys = Number(args[2] || 0);
+      const keys = args.slice(3, 3 + numKeys);
+      const argv = args.slice(3 + numKeys);
+      if (keys[1] && argv[0]) {
+        store.set(String(keys[1]), typeof argv[0] === 'string' ? argv[0] : JSON.stringify(argv[0]));
+      }
+      if (keys[0] && argv[0]) {
+        store.set(String(keys[0]), typeof argv[0] === 'string' ? argv[0] : JSON.stringify(argv[0]));
+      }
+      return 1;
     }
     return 'OK';
   }

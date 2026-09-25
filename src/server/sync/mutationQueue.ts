@@ -588,6 +588,17 @@ async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: 
           }
         } catch {}
       }
+
+      if (newStatus === 'CONFIRMED') {
+        try {
+          const { refreshChangedFixtureReadModel, invalidateFixtureReadModels, invalidateStandingsReadModels } = await import('../readModel/readModelStore');
+          await refreshChangedFixtureReadModel(entityId).catch(() => {});
+          if (fixData.competitionId) {
+            await invalidateFixtureReadModels(fixData.competitionId, fixData.seasonId || 'season-2026-27').catch(() => {});
+            await invalidateStandingsReadModels(fixData.competitionId, fixData.seasonId || 'season-2026-27').catch(() => {});
+          }
+        } catch {}
+      }
       break;
     }
 
@@ -614,6 +625,27 @@ async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: 
         updatedAt: now,
       });
 
+      // Synchronize SQLite mirror
+      try {
+        const { upsertFixtureToSqlite } = await import('../db');
+        upsertFixtureToSqlite({
+          id: entityId,
+          seasonId: fixData.seasonId || 'season-2026-27',
+          competitionId: fixData.competitionId,
+          matchday: fixData.matchday || 1,
+          roundName: fixData.roundName,
+          homeClubId: fixData.homeClubId,
+          awayClubId: fixData.awayClubId,
+          scheduledAt: fixData.scheduledAt || now,
+          status: 'CONFIRMED',
+          homeScore: payload.homeScore,
+          awayScore: payload.awayScore,
+          winnerClubId,
+          resultConfirmedAt: now,
+          updatedAt: now,
+        });
+      } catch {}
+
       // Resolve open disputes in Firestore
       const disputesSnap = await db.collection(COLLECTIONS.DISPUTES).where('fixtureId', '==', entityId).get();
       for (const d of disputesSnap.docs) {
@@ -637,6 +669,10 @@ async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: 
           const { rebuildCompetitionStandingsFirestore } = await import('../firebase/firestoreStore');
           await rebuildCompetitionStandingsFirestore(fixData.competitionId);
         } catch {}
+        try {
+          const { refreshMaterializedStandingsForCompetition } = await import('../db/sqliteStandings');
+          refreshMaterializedStandingsForCompetition(fixData.competitionId);
+        } catch {}
       }
 
       // Replay-safe deterministic audit log
@@ -650,6 +686,16 @@ async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: 
         notes: payload.notes || 'Approved by admin via sync',
         createdAt: now,
       }, { merge: true });
+
+      // Propagate to read models on replay
+      try {
+        const { refreshChangedFixtureReadModel, invalidateFixtureReadModels, invalidateStandingsReadModels } = await import('../readModel/readModelStore');
+        await refreshChangedFixtureReadModel(entityId).catch(() => {});
+        if (fixData.competitionId) {
+          await invalidateFixtureReadModels(fixData.competitionId, fixData.seasonId || 'season-2026-27').catch(() => {});
+          await invalidateStandingsReadModels(fixData.competitionId, fixData.seasonId || 'season-2026-27').catch(() => {});
+        }
+      } catch {}
       break;
     }
 
@@ -671,6 +717,27 @@ async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: 
         updatedAt: now,
       });
 
+      // Synchronize SQLite mirror
+      try {
+        const { upsertFixtureToSqlite } = await import('../db');
+        upsertFixtureToSqlite({
+          id: entityId,
+          seasonId: fixDoc.data()?.seasonId || 'season-2026-27',
+          competitionId: fixDoc.data()?.competitionId,
+          matchday: fixDoc.data()?.matchday || 1,
+          roundName: fixDoc.data()?.roundName,
+          homeClubId: fixDoc.data()?.homeClubId,
+          awayClubId: fixDoc.data()?.awayClubId,
+          scheduledAt: fixDoc.data()?.scheduledAt || now,
+          status: 'SCHEDULED',
+          homeScore: null,
+          awayScore: null,
+          winnerClubId: null,
+          resultConfirmedAt: null,
+          updatedAt: now,
+        });
+      } catch {}
+
       // Delete submissions
       const subsSnap = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where('fixtureId', '==', entityId).get();
       const b = db.batch();
@@ -678,11 +745,18 @@ async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: 
         b.delete(doc.ref);
       }
       await b.commit();
+      try {
+        queryRun('DELETE FROM result_submissions WHERE fixture_id = ?', [entityId]);
+      } catch {}
 
       if (fixDoc.data()?.competitionId) {
         try {
           const { rebuildCompetitionStandingsFirestore } = await import('../firebase/firestoreStore');
           await rebuildCompetitionStandingsFirestore(fixDoc.data()!.competitionId);
+        } catch {}
+        try {
+          const { refreshMaterializedStandingsForCompetition } = await import('../db/sqliteStandings');
+          refreshMaterializedStandingsForCompetition(fixDoc.data()!.competitionId);
         } catch {}
       }
 
@@ -697,8 +771,205 @@ async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: 
         notes: payload.notes || 'Rejected by admin via sync',
         createdAt: now,
       }, { merge: true });
+
+      // Propagate to read models on replay
+      try {
+        const { refreshChangedFixtureReadModel, invalidateFixtureReadModels, invalidateStandingsReadModels } = await import('../readModel/readModelStore');
+        await refreshChangedFixtureReadModel(entityId).catch(() => {});
+        if (fixDoc.data()?.competitionId) {
+          await invalidateFixtureReadModels(fixDoc.data()!.competitionId, fixDoc.data()?.seasonId || 'season-2026-27').catch(() => {});
+          await invalidateStandingsReadModels(fixDoc.data()!.competitionId, fixDoc.data()?.seasonId || 'season-2026-27').catch(() => {});
+        }
+      } catch {}
       break;
     }
+
+    case 'ADMIN_EDIT_RESULT': {
+      // payload: { fixtureId, adminUserId, adminUsername, homeScore, awayScore, status, notes, competitionId, seasonId, matchday, roundName, homeClubId, awayClubId, winnerClubId }
+      const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(entityId);
+      const fixDoc = await fixRef.get();
+      if (!fixDoc.exists) {
+        throw new Error(`Fixture ${entityId} not found in Firestore.`);
+      }
+
+      const fixData = fixDoc.data()!;
+      const now = new Date().toISOString();
+      const targetStatus = payload.status || 'CONFIRMED';
+      let winnerClubId: string | null = null;
+      if (payload.homeScore > payload.awayScore) winnerClubId = fixData.homeClubId || payload.homeClubId;
+      else if (payload.awayScore > payload.homeScore) winnerClubId = fixData.awayClubId || payload.awayClubId;
+
+      await fixRef.update({
+        status: targetStatus,
+        homeScore: payload.homeScore,
+        awayScore: payload.awayScore,
+        winnerClubId,
+        resultConfirmedAt: targetStatus === 'CONFIRMED' ? now : null,
+        updatedAt: now,
+      });
+
+      const compId = fixData.competitionId || payload.competitionId;
+      const seasonId = fixData.seasonId || payload.seasonId || 'season-2026-27';
+
+      try {
+        const { upsertFixtureToSqlite } = await import('../db');
+        upsertFixtureToSqlite({
+          id: entityId,
+          seasonId,
+          competitionId: compId,
+          matchday: fixData.matchday || payload.matchday || 1,
+          roundName: fixData.roundName || payload.roundName,
+          homeClubId: fixData.homeClubId || payload.homeClubId,
+          awayClubId: fixData.awayClubId || payload.awayClubId,
+          scheduledAt: fixData.scheduledAt || payload.scheduledAt || now,
+          status: targetStatus,
+          homeScore: payload.homeScore,
+          awayScore: payload.awayScore,
+          winnerClubId,
+          resultConfirmedAt: targetStatus === 'CONFIRMED' ? now : null,
+          updatedAt: now,
+        });
+      } catch (err: any) {
+        console.warn('[REPLAY SQLITE UPSERT WARNING]:', err.message);
+      }
+
+      if (winnerClubId && targetStatus === 'CONFIRMED') {
+        try {
+          const { advanceKnockoutWinnerFirestore } = await import('../tournament/knockoutEngine');
+          await advanceKnockoutWinnerFirestore(entityId);
+        } catch {}
+      }
+
+      if (compId) {
+        try {
+          const { rebuildCompetitionStandingsFirestore } = await import('../firebase/firestoreStore');
+          await rebuildCompetitionStandingsFirestore(compId);
+        } catch {}
+        try {
+          const { refreshMaterializedStandingsForCompetition } = await import('../db/sqliteStandings');
+          refreshMaterializedStandingsForCompetition(compId);
+        } catch {}
+      }
+
+      // Replay-safe deterministic audit log
+      const auditId = `audit_${item.mutationId}`;
+      await db.collection(COLLECTIONS.AUDIT_LOGS).doc(auditId).set({
+        id: auditId,
+        actorUserId: payload.adminUserId,
+        actorUsername: payload.adminUsername,
+        action: 'ADMIN_EDIT_RESULT',
+        entityType: 'fixture',
+        entityId: entityId,
+        notes: payload.notes || `Admin set result ${payload.homeScore}-${payload.awayScore}`,
+        createdAt: payload.createdAt || now,
+      }, { merge: true });
+
+      try {
+        const { refreshChangedFixtureReadModel, invalidateFixtureReadModels, invalidateStandingsReadModels } = await import('../readModel/readModelStore');
+        await refreshChangedFixtureReadModel(entityId).catch(() => {});
+        if (compId) {
+          await invalidateFixtureReadModels(compId, seasonId).catch(() => {});
+          await invalidateStandingsReadModels(compId, seasonId).catch(() => {});
+        }
+      } catch (rmErr: any) {
+        console.warn('[REPLAY READ_MODEL_PROPAGATION_WARNING]:', rmErr?.message);
+      }
+      break;
+    }
+
+    case 'ADMIN_DELETE_RESULT': {
+      // payload: { fixtureId, adminUserId, adminUsername, deleteSubmissions, notes, competitionId, seasonId, matchday, roundName, homeClubId, awayClubId }
+      const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(entityId);
+      const fixDoc = await fixRef.get();
+      if (!fixDoc.exists) {
+        throw new Error(`Fixture ${entityId} not found in Firestore.`);
+      }
+
+      const fixData = fixDoc.data()!;
+      const now = new Date().toISOString();
+      await fixRef.update({
+        status: 'SCHEDULED',
+        homeScore: null,
+        awayScore: null,
+        winnerClubId: null,
+        resultConfirmedAt: null,
+        updatedAt: now,
+      });
+
+      const compId = fixData.competitionId || payload.competitionId;
+      const seasonId = fixData.seasonId || payload.seasonId || 'season-2026-27';
+
+      try {
+        const { upsertFixtureToSqlite } = await import('../db');
+        upsertFixtureToSqlite({
+          id: entityId,
+          seasonId,
+          competitionId: compId,
+          matchday: fixData.matchday || payload.matchday || 1,
+          roundName: fixData.roundName || payload.roundName,
+          homeClubId: fixData.homeClubId || payload.homeClubId,
+          awayClubId: fixData.awayClubId || payload.awayClubId,
+          scheduledAt: fixData.scheduledAt || payload.scheduledAt || now,
+          status: 'SCHEDULED',
+          homeScore: null,
+          awayScore: null,
+          winnerClubId: null,
+          resultConfirmedAt: null,
+          updatedAt: now,
+        });
+      } catch (err: any) {
+        console.warn('[REPLAY SQLITE UPSERT DELETE WARNING]:', err.message);
+      }
+
+      if (payload.deleteSubmissions) {
+        try {
+          const subsSnap = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where('fixtureId', '==', entityId).get();
+          const b = db.batch();
+          for (const doc of subsSnap.docs) {
+            b.delete(doc.ref);
+          }
+          await b.commit();
+          queryRun('DELETE FROM result_submissions WHERE fixture_id = ?', [entityId]);
+        } catch {}
+      }
+
+      if (compId) {
+        try {
+          const { rebuildCompetitionStandingsFirestore } = await import('../firebase/firestoreStore');
+          await rebuildCompetitionStandingsFirestore(compId);
+        } catch {}
+        try {
+          const { refreshMaterializedStandingsForCompetition } = await import('../db/sqliteStandings');
+          refreshMaterializedStandingsForCompetition(compId);
+        } catch {}
+      }
+
+      // Replay-safe deterministic audit log
+      const auditId = `audit_${item.mutationId}`;
+      await db.collection(COLLECTIONS.AUDIT_LOGS).doc(auditId).set({
+        id: auditId,
+        actorUserId: payload.adminUserId,
+        actorUsername: payload.adminUsername,
+        action: 'ADMIN_DELETE_RESULT',
+        entityType: 'fixture',
+        entityId: entityId,
+        notes: payload.notes || 'Admin deleted match result and reset status to SCHEDULED',
+        createdAt: payload.createdAt || now,
+      }, { merge: true });
+
+      try {
+        const { refreshChangedFixtureReadModel, invalidateFixtureReadModels, invalidateStandingsReadModels } = await import('../readModel/readModelStore');
+        await refreshChangedFixtureReadModel(entityId).catch(() => {});
+        if (compId) {
+          await invalidateFixtureReadModels(compId, seasonId).catch(() => {});
+          await invalidateStandingsReadModels(compId, seasonId).catch(() => {});
+        }
+      } catch (rmErr: any) {
+        console.warn('[REPLAY READ_MODEL_PROPAGATION_WARNING]:', rmErr?.message);
+      }
+      break;
+    }
+
 
     case 'CLUB_CLAIM': {
       // payload: { clubId, seasonId, userId, claimedAt }

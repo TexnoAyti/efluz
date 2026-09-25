@@ -43,12 +43,14 @@ import {
 import { getClubOwnerDisplay } from '../../lib/ownerUtils';
 import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS } from '../firebase/collections';
+import { startMockUpstashBridge } from './mockUpstashBridge';
 
 async function run() {
   console.log('================================================================');
   console.log('   DATA PROPAGATION & OWNER RESOLUTION REGRESSION TEST          ');
   console.log('================================================================');
 
+  const mockRedis = await startMockUpstashBridge();
   await initDatabase();
   const db = getFirestoreDb();
   const seasonId = 'season-2026-27';
@@ -118,8 +120,7 @@ async function run() {
   console.log('✅ [TEST B PASS] Fixture preserves 2-1 after cache clear.');
 
   console.log('\n--- TEST C: Fetch same fixture through Match Day read model ---');
-  // Need to ensure read-model invalidation/patch happened
-  await refreshChangedFixtureReadModel(fixtureId);
+  // Pure production check: adminEditFixtureResultFirestore MUST have updated the read model directly
   const matchDayResult = await getCompetitionFixturesFromReadModel(compId, { matchday: 1, seasonId });
   const mdFixture = matchDayResult.fixtures.find((f) => f.id === fixtureId);
   console.log('Match Day fixture:', mdFixture?.id, 'Score:', mdFixture?.homeScore, '-', mdFixture?.awayScore, 'Status:', mdFixture?.status);
@@ -130,9 +131,7 @@ async function run() {
   console.log('✅ [TEST C PASS] Match Day returns 2-1.');
 
   console.log('\n--- TEST D: Fetch standings -> points/GF/GA/GD reflect 2-1 exactly once ---');
-  // Rebuild standings and verify read model
-  await rebuildCompetitionStandingsFirestore(compId);
-  await invalidateDataset(ReadModelKeys.standings(compId, seasonId));
+  // Pure production check: adminEditFixtureResultFirestore MUST have recalculated standings and invalidated read model directly
   const standingsResult = await getCompetitionStandingsFromReadModel(compId, seasonId);
   const interStanding = standingsResult.standings.find((s) => s.clubId === 'club-inter');
   const milanStanding = standingsResult.standings.find((s) => s.clubId === 'club-milan');
@@ -171,7 +170,11 @@ async function run() {
     first_name: 'Gian',
     last_name: 'Piero',
   });
-  await claimClubAtomicFirestore(userF.id, 'club-atalanta', seasonId);
+  try {
+    await claimClubAtomicFirestore(userF.id, 'club-atalanta', seasonId);
+  } catch (err: any) {
+    if (err?.code !== 'CLUB_OCCUPIED') throw err;
+  }
   await invalidateClubReadModels(seasonId);
   await invalidateDataset(ReadModelKeys.standings(compId, seasonId));
 
@@ -203,7 +206,11 @@ async function run() {
     first_name: 'Thiago',
     last_name: 'Motta',
   });
-  await claimClubAtomicFirestore(userG.id, 'club-bologna', seasonId);
+  try {
+    await claimClubAtomicFirestore(userG.id, 'club-bologna', seasonId);
+  } catch (err: any) {
+    if (err?.code !== 'CLUB_OCCUPIED') throw err;
+  }
   await invalidateClubReadModels(seasonId);
   await invalidateDataset(ReadModelKeys.standings(compId, seasonId));
 
@@ -273,6 +280,7 @@ async function run() {
   console.log('\n================================================================');
   console.log('   ALL 9 ISOLATED REGRESSION TESTS PASSED!                      ');
   console.log('================================================================');
+  await mockRedis.close();
 }
 
 run().catch((err) => {
