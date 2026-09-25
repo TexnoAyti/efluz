@@ -353,11 +353,9 @@ adminRouter.post('/fixtures/:id/result', validateBody(adminEditResultSchema), as
       ...req.body,
       idempotencyKey,
     });
-    await refreshChangedFixtureReadModel(fixtureId).catch(() => {});
-    if (result.fixture?.competitionId) {
-      await invalidateFixtureReadModels(result.fixture.competitionId, result.fixture.seasonId || 'season-2026-27').catch(() => {});
-      await invalidateStandingsReadModels(result.fixture.competitionId, result.fixture.seasonId || 'season-2026-27').catch(() => {});
-    }
+    // Atomically patch Admin + Match Day Fresh/LKG fixture snapshots. Do not
+    // invalidate them again after a successful patch or stale LKG can win.
+    await refreshChangedFixtureReadModel(fixtureId);
     res.json(result);
   } catch (err: any) {
     console.error('[ADMIN_RESULT_SAVE_FAILED]', JSON.stringify({ fixtureId, error: err?.message }));
@@ -384,11 +382,9 @@ adminRouter.post('/fixtures/:id/delete-result', validateBody(adminDeleteResultSc
       ...req.body,
       idempotencyKey,
     });
-    await refreshChangedFixtureReadModel(fixtureId).catch(() => {});
-    if (result.fixture?.competitionId) {
-      await invalidateFixtureReadModels(result.fixture.competitionId, result.fixture.seasonId || 'season-2026-27').catch(() => {});
-      await invalidateStandingsReadModels(result.fixture.competitionId, result.fixture.seasonId || 'season-2026-27').catch(() => {});
-    }
+    // Atomically patch Admin + Match Day Fresh/LKG fixture snapshots. Do not
+    // invalidate them again after a successful patch or stale LKG can win.
+    await refreshChangedFixtureReadModel(fixtureId);
     res.json(result);
   } catch (err: any) {
     console.error('[ADMIN_RESULT_SAVE_FAILED]', JSON.stringify({ fixtureId, error: err?.message, operation: 'ADMIN_DELETE_RESULT' }));

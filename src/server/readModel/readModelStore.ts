@@ -1987,39 +1987,62 @@ export async function invalidateClubReadModels(seasonId = 'season-2026-27'): Pro
 /** Refresh one changed fixture with one document read instead of scanning the season. */
 export async function refreshChangedFixtureReadModel(fixtureId: string): Promise<void> {
   const document = await getFirestoreDb().collection(COLLECTIONS.FIXTURES).doc(fixtureId).get();
+  trackFirestoreRead(COLLECTIONS.FIXTURES, document.exists ? 1 : 0, 'refreshChangedFixtureReadModel');
   if (!document.exists) throw new Error('FIXTURE_NOT_FOUND');
   const fixture = normalizeFixtureSnapshot({ ...document.data(), id: document.id } as FirestoreFixtureDoc);
-  const key = ReadModelKeys.adminFixtures(fixture.seasonId);
-  const client = getUpstashClient();
-  let patched = false;
-  if (client) {
-    const result = await client.eval(`
-      if redis.call('EXISTS', KEYS[3]) == 1 then return 0 end
-      local raw = redis.call('GET', KEYS[2])
-      if not raw then return 0 end
-      local snapshot = cjson.decode(raw)
-      local changed = cjson.decode(ARGV[1])
-      for i, row in ipairs(snapshot.data) do
-        if row.id == changed.id then
-          if row.updatedAt and row.updatedAt > changed.updatedAt then return 1 end
-          snapshot.data[i] = changed
-          local updated = cjson.encode(snapshot)
-          redis.call('SET', KEYS[2], updated)
-          local ttl = redis.call('TTL', KEYS[1])
-          if ttl > 0 then redis.call('SET', KEYS[1], updated, 'EX', ttl) end
-          return 1
+
+  const patchDataset = async (key: string): Promise<boolean> => {
+    const client = getUpstashClient();
+    if (client) {
+      const result = await client.eval(`
+        local raw = redis.call('GET', KEYS[2])
+        if not raw then raw = redis.call('GET', KEYS[1]) end
+        if not raw then return 0 end
+        local snapshot = cjson.decode(raw)
+        local changed = cjson.decode(ARGV[1])
+        local found = false
+        for i, row in ipairs(snapshot.data or {}) do
+          if row.id == changed.id then
+            if row.updatedAt and changed.updatedAt and row.updatedAt > changed.updatedAt then return 1 end
+            snapshot.data[i] = changed
+            found = true
+            break
+          end
         end
-      end
-      return 0
-    `, [getFreshKey(key), getLkgKey(key), getDirtyKey(key)], [JSON.stringify(fixture)]);
-    patched = Number(result) === 1;
+        if not found then return 0 end
+        snapshot.generatedAt = ARGV[2]
+        snapshot.sourceVersion = ARGV[3]
+        snapshot.actualCount = #(snapshot.data or {})
+        local updated = cjson.encode(snapshot)
+        redis.call('SET', KEYS[2], updated)
+        local ttl = redis.call('TTL', KEYS[1])
+        if ttl and ttl > 0 then redis.call('SET', KEYS[1], updated, 'EX', ttl)
+        else redis.call('SET', KEYS[1], updated, 'EX', 86400) end
+        redis.call('DEL', KEYS[3])
+        return 1
+      `, [getFreshKey(key), getLkgKey(key), getDirtyKey(key)], [JSON.stringify(fixture), new Date().toISOString(), `fixture-patch-${fixture.id}-${fixture.updatedAt || Date.now()}`]);
+      inProcessMemoryCache.delete(getRawDatasetKey(key));
+      inProcessMemoryCache.delete(key);
+      memoryRedisStorage.delete(getFreshKey(key));
+      memoryRedisStorage.delete(getLkgKey(key));
+      return Number(result) === 1;
+    }
+    const existing = (await redisGetFresh<Fixture[]>(key)) || (await redisGetLkg<Fixture[]>(key));
+    if (!existing || !Array.isArray(existing.data)) return false;
+    let found = false;
+    const data = existing.data.map((row) => row.id === fixture.id ? (found = true, fixture) : row);
+    if (!found) return false;
+    await redisSetRaw(key, { ...existing, generatedAt: new Date().toISOString(), sourceVersion: `fixture-patch-${fixture.id}-${fixture.updatedAt || Date.now()}`, data }, 86400);
     inProcessMemoryCache.delete(getRawDatasetKey(key));
     inProcessMemoryCache.delete(key);
-    memoryRedisStorage.delete(getFreshKey(key));
-    memoryRedisStorage.delete(getLkgKey(key));
-  }
-  if (!patched) await invalidateDataset(key);
-  await invalidateDataset(ReadModelKeys.competitionFixtures(fixture.competitionId, fixture.seasonId));
+    return true;
+  };
+
+  const adminKey = ReadModelKeys.adminFixtures(fixture.seasonId);
+  const competitionKey = ReadModelKeys.competitionFixtures(fixture.competitionId, fixture.seasonId);
+  const [adminPatched, competitionPatched] = await Promise.all([patchDataset(adminKey), patchDataset(competitionKey)]);
+  if (!adminPatched) await invalidateDataset(adminKey);
+  if (!competitionPatched) await invalidateDataset(competitionKey);
   await invalidateDataset(ReadModelKeys.standings(fixture.competitionId, fixture.seasonId));
 }
 
