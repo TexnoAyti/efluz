@@ -1888,6 +1888,16 @@ export async function getAdminFixturesFromReadModel(
     } catch {}
   }
 
+  if (!snapshotRes || !Array.isArray(snapshotRes.data) || snapshotRes.data.length === 0) {
+    const hosted = Boolean(process.env.VERCEL || process.env.K_SERVICE || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NODE_ENV === 'production');
+    if (hosted) {
+      console.warn('[FIRESTORE_BROAD_READ_BLOCKED]', JSON.stringify({ dataset: 'adminFixtures', seasonId }));
+      throw new ReadModelNotWarmedError(
+        'Admin fixture read model is not warmed. Automatic full-season Firestore scans are disabled in hosted production.'
+      );
+    }
+  }
+
   const effectiveSnapshotRes = snapshotRes || (await readThroughReadModel<Fixture[]>({
     key: ReadModelKeys.adminFixtures(seasonId),
     seasonId,

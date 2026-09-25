@@ -172,6 +172,9 @@ export function trackFirestoreRead(collectionName: string, count = 1, caller = '
   readMetrics.sessionReads += count;
   readMetrics.readsByCollection[collectionName] = (readMetrics.readsByCollection[collectionName] || 0) + count;
   readMetrics.readsByFunction[caller] = (readMetrics.readsByFunction[caller] || 0) + count;
+  if (count >= 100) {
+    console.warn('[FIRESTORE_HIGH_READ]', JSON.stringify({ collection: collectionName, count, caller }));
+  }
 }
 
 export function trackFirestoreAggregation(collectionName: string, count = 1, caller = 'unknown') {
@@ -1357,6 +1360,26 @@ export async function getRawClubFixturesFirestore(
   if (cached) return cached;
 
   try {
+    // Durable cross-instance read model first. This is critical on Vercel where
+    // process memory is not shared and a Firestore query on every cold instance
+    // would multiply reads by active users.
+    try {
+      const { redisGetFresh, redisGetLkg, ReadModelKeys } = await import('../readModel/readModelStore');
+      const adminKey = ReadModelKeys.adminFixtures(seasonId);
+      const snapshot = (await redisGetFresh<Fixture[]>(adminKey)) || (await redisGetLkg<Fixture[]>(adminKey));
+      if (snapshot && Array.isArray(snapshot.data) && snapshot.data.length > 0) {
+        const docs = snapshot.data
+          .filter((fixture) => fixture.homeClubId === clubId || fixture.awayClubId === clubId)
+          .map((fixture) => ({ ...fixture } as unknown as FirestoreFixtureDoc));
+        if (docs.length > 0) {
+          setInCache(cacheKey, docs, 300000);
+          return docs;
+        }
+      }
+    } catch (readModelErr: any) {
+      console.warn('[CLUB_FIXTURES_READ_MODEL_FALLBACK]', readModelErr?.message || readModelErr);
+    }
+
     const db = getFirestoreDb();
     const [homeSnap, awaySnap] = await Promise.all([
       db
@@ -5594,6 +5617,17 @@ export async function getUserNotificationsFirestore(userId: string, limit = 30):
   const cached = getFromCache<Notification[]>(cacheKey);
   if (cached) return cached;
 
+  const durableNotificationKey = `efluz:v1:user:${userId}:notifications:${limit}`;
+  try {
+    const { redisGetFresh, redisGetLkg } = await import('../readModel/readModelStore');
+    const durable = (await redisGetFresh<Notification[]>(durableNotificationKey)) ||
+      (await redisGetLkg<Notification[]>(durableNotificationKey));
+    if (durable && Array.isArray(durable.data)) {
+      setInCache(cacheKey, durable.data, 300000);
+      return durable.data;
+    }
+  } catch {}
+
   const validTypes: Array<Notification['type']> = [
     'MATCH_SCHEDULED',
     'RESULT_SUBMITTED',
@@ -5640,7 +5674,17 @@ export async function getUserNotificationsFirestore(userId: string, limit = 30):
       };
     });
 
-    setInCache(cacheKey, notifications, 30000);
+    setInCache(cacheKey, notifications, 300000);
+    try {
+      const { redisSetRaw } = await import('../readModel/readModelStore');
+      await redisSetRaw(durableNotificationKey, {
+        data: notifications,
+        generatedAt: new Date().toISOString(),
+        sourceVersion: 'notifications-firestore',
+        expectedCount: notifications.length,
+        actualCount: notifications.length,
+      }, 300);
+    } catch {}
     return notifications;
   } catch (err: any) {
     console.warn('[FIRESTORE FALLBACK] getUserNotificationsFirestore:', err.message);

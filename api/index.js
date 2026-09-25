@@ -4440,6 +4440,15 @@ async function getAdminFixturesFromReadModel(options = {}) {
     } catch {
     }
   }
+  if (!snapshotRes || !Array.isArray(snapshotRes.data) || snapshotRes.data.length === 0) {
+    const hosted = Boolean(process.env.VERCEL || process.env.K_SERVICE || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NODE_ENV === "production");
+    if (hosted) {
+      console.warn("[FIRESTORE_BROAD_READ_BLOCKED]", JSON.stringify({ dataset: "adminFixtures", seasonId }));
+      throw new ReadModelNotWarmedError(
+        "Admin fixture read model is not warmed. Automatic full-season Firestore scans are disabled in hosted production."
+      );
+    }
+  }
   const effectiveSnapshotRes = snapshotRes || await readThroughReadModel2({
     key: ReadModelKeys.adminFixtures(seasonId),
     seasonId,
@@ -7772,6 +7781,9 @@ function trackFirestoreRead(collectionName, count = 1, caller = "unknown") {
   readMetrics.sessionReads += count;
   readMetrics.readsByCollection[collectionName] = (readMetrics.readsByCollection[collectionName] || 0) + count;
   readMetrics.readsByFunction[caller] = (readMetrics.readsByFunction[caller] || 0) + count;
+  if (count >= 100) {
+    console.warn("[FIRESTORE_HIGH_READ]", JSON.stringify({ collection: collectionName, count, caller }));
+  }
 }
 function trackFirestoreAggregation(collectionName, count = 1, caller = "unknown") {
   readMetrics.sessionReads += count;
@@ -8754,6 +8766,20 @@ async function getRawClubFixturesFirestore(clubId, seasonId = "season-2026-27") 
   const cached = getFromCache(cacheKey);
   if (cached) return cached;
   try {
+    try {
+      const { redisGetFresh: redisGetFresh2, redisGetLkg: redisGetLkg2, ReadModelKeys: ReadModelKeys3 } = await Promise.resolve().then(() => (init_readModelStore(), readModelStore_exports));
+      const adminKey = ReadModelKeys3.adminFixtures(seasonId);
+      const snapshot = await redisGetFresh2(adminKey) || await redisGetLkg2(adminKey);
+      if (snapshot && Array.isArray(snapshot.data) && snapshot.data.length > 0) {
+        const docs2 = snapshot.data.filter((fixture) => fixture.homeClubId === clubId || fixture.awayClubId === clubId).map((fixture) => ({ ...fixture }));
+        if (docs2.length > 0) {
+          setInCache(cacheKey, docs2, 3e5);
+          return docs2;
+        }
+      }
+    } catch (readModelErr) {
+      console.warn("[CLUB_FIXTURES_READ_MODEL_FALLBACK]", readModelErr?.message || readModelErr);
+    }
     const db = getFirestoreDb();
     const [homeSnap, awaySnap] = await Promise.all([
       db.collection(COLLECTIONS.FIXTURES).where("homeClubId", "==", clubId).get(),
@@ -12138,6 +12164,16 @@ async function getUserNotificationsFirestore(userId, limit = 30) {
   const cacheKey = `firestore:notifications:${userId}:${limit}`;
   const cached = getFromCache(cacheKey);
   if (cached) return cached;
+  const durableNotificationKey = `efluz:v1:user:${userId}:notifications:${limit}`;
+  try {
+    const { redisGetFresh: redisGetFresh2, redisGetLkg: redisGetLkg2 } = await Promise.resolve().then(() => (init_readModelStore(), readModelStore_exports));
+    const durable = await redisGetFresh2(durableNotificationKey) || await redisGetLkg2(durableNotificationKey);
+    if (durable && Array.isArray(durable.data)) {
+      setInCache(cacheKey, durable.data, 3e5);
+      return durable.data;
+    }
+  } catch {
+  }
   const validTypes = [
     "MATCH_SCHEDULED",
     "RESULT_SUBMITTED",
@@ -12175,7 +12211,18 @@ async function getUserNotificationsFirestore(userId, limit = 30) {
         createdAt: data.createdAt
       };
     });
-    setInCache(cacheKey, notifications, 3e4);
+    setInCache(cacheKey, notifications, 3e5);
+    try {
+      const { redisSetRaw: redisSetRaw3 } = await Promise.resolve().then(() => (init_readModelStore(), readModelStore_exports));
+      await redisSetRaw3(durableNotificationKey, {
+        data: notifications,
+        generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        sourceVersion: "notifications-firestore",
+        expectedCount: notifications.length,
+        actualCount: notifications.length
+      }, 300);
+    } catch {
+    }
     return notifications;
   } catch (err) {
     console.warn("[FIRESTORE FALLBACK] getUserNotificationsFirestore:", err.message);
