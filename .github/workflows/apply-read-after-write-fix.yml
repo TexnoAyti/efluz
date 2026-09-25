@@ -1,9 +1,7 @@
 name: Apply read-after-write consistency fix
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -18,23 +16,32 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: '20'
+          bun-version: latest
       - name: Apply targeted source fix
         run: python scripts/applyReadAfterWriteFix.py
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: bun install
       - name: TypeScript
-        run: npx tsc --noEmit
+        run: bun run lint
       - name: Targeted regression
-        run: npm run test:read-after-write
+        run: bun run test:read-after-write
       - name: Existing propagation regression
-        run: npm run test:data-propagation
+        run: bun run test:data-propagation
       - name: Read budget regression
-        run: npm run test:read-reduction
+        run: bun run test:read-reduction
+      - name: European safety regression
+        env:
+          FIREBASE_FORCE_LOCAL_FALLBACK: "true"
+          NODE_ENV: "test"
+        run: bun run test:european-safety
       - name: Production build
-        run: npm run build
+        env:
+          FIREBASE_FORCE_LOCAL_FALLBACK: "true"
+          NODE_ENV: "test"
+        run: bun run build
       - name: Commit tested source fix
         run: |
           rm -f .github/workflows/apply-read-after-write-fix.yml scripts/applyReadAfterWriteFix.py
