@@ -1,0 +1,48 @@
+name: Open verified read-after-write PR
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/open-read-after-write-pr.yml']
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: python scripts/applyReadAfterWriteFix.py
+      - run: bun install
+      - run: bun run lint
+      - run: bun run test:read-after-write
+      - run: bun run test:data-propagation
+      - run: bun run test:read-reduction
+      - run: bun run test:european-safety
+        env:
+          FIREBASE_FORCE_LOCAL_FALLBACK: 'true'
+          NODE_ENV: test
+      - run: bun run build
+        env:
+          FIREBASE_FORCE_LOCAL_FALLBACK: 'true'
+          NODE_ENV: test
+      - name: Remove temporary patch machinery from proposed branch
+        run: |
+          rm -f .github/workflows/apply-read-after-write-fix.yml
+          rm -f .github/workflows/verify-read-after-write-fix.yml
+          rm -f .github/workflows/open-read-after-write-pr.yml
+          rm -f scripts/applyReadAfterWriteFix.py
+          rm -f .npmrc
+      - uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: fix/admin-result-read-after-write-final
+          delete-branch: true
+          title: 'fix: preserve admin result read-after-write consistency'
+          commit-message: 'fix(results): preserve fresh fixture snapshots after admin save'
+          body: 'Verified targeted fix: patches Admin + competition fixture Fresh/LKG snapshots, avoids destructive re-invalidation after admin save/reset, keeps standings invalidation scoped, and passes TypeScript, propagation, read-budget, European safety, and production build checks.'
