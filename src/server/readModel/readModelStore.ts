@@ -820,10 +820,16 @@ export async function buildCompetitionsSnapshot(seasonId = 'season-2026-27'): Pr
 export interface OwnerNeutralClub extends Club {
   ownerUserId: string | null;
   ownerUsername: string | null;
+  ownerFirstName?: string | null;
+  ownerLastName?: string | null;
+  ownerDisplayName?: string | null;
   claimedByUserId?: string | null;
   claimedByUsername?: string | null;
   managerUserId?: string | null;
   managerUsername?: string | null;
+  managerFirstName?: string | null;
+  managerLastName?: string | null;
+  managerDisplayName?: string | null;
   isClaimed?: boolean;
   isAvailable?: boolean;
   isOccupied: boolean;
@@ -843,7 +849,7 @@ export interface UserMembershipSentinel {
  */
 export async function buildClubsSnapshot(seasonId = 'season-2026-27'): Promise<ReadModelSnapshot<OwnerNeutralClub[]>> {
   const occMap = new Map<string, { userId: string }>();
-  const userMap = new Map<string, { username: string }>();
+  const userMap = new Map<string, { username: string | null; firstName?: string | null; lastName?: string | null; displayName?: string | null }>();
   const existingLkg = await redisGetLkg<OwnerNeutralClub[]>(ReadModelKeys.clubsWithOwners(seasonId));
 
   let firestoreFailed = false;
@@ -873,13 +879,29 @@ export async function buildClubsSnapshot(seasonId = 'season-2026-27'): Promise<R
             const uDoc = await db.collection(COLLECTIONS.USERS).doc(uid).get();
             if (uDoc.exists) {
               const uData = uDoc.data();
+              const uname = uData?.username ? String(uData.username).replace(/^@+/, '').trim() : null;
+              const isSynth = uname ? (uname.startsWith('tg_') || uname.startsWith('user_')) : false;
+              const validUname = isSynth ? null : uname;
+              const fname = uData?.firstName ? String(uData.firstName).trim() : null;
+              const lname = uData?.lastName ? String(uData.lastName).trim() : null;
+              const dname = [fname, lname].filter(Boolean).join(' ') || fname || (validUname ? `@${validUname}` : `User #${uid}`);
               userMap.set(uid, {
-                username: uData?.username || `user_${uid.substring(0, 5)}`,
+                username: validUname,
+                firstName: fname,
+                lastName: lname,
+                displayName: dname,
               });
             }
           } catch {
             const previous = existingLkg?.data.find(c => c.ownerUserId === uid);
-            if (previous?.ownerUsername) userMap.set(uid, { username: previous.ownerUsername });
+            if (previous) {
+              userMap.set(uid, {
+                username: previous.ownerUsername,
+                firstName: previous.ownerFirstName,
+                lastName: previous.ownerLastName,
+                displayName: previous.ownerDisplayName,
+              });
+            }
           }
         })
       );
@@ -924,10 +946,16 @@ export async function buildClubsSnapshot(seasonId = 'season-2026-27'): Promise<R
       createdAt: new Date().toISOString(),
       ownerUserId,
       ownerUsername: userDetail?.username || null,
+      ownerFirstName: userDetail?.firstName || null,
+      ownerLastName: userDetail?.lastName || null,
+      ownerDisplayName: userDetail?.displayName || null,
       claimedByUserId: ownerUserId,
       claimedByUsername: userDetail?.username || null,
       managerUserId: ownerUserId,
       managerUsername: userDetail?.username || null,
+      managerFirstName: userDetail?.firstName || null,
+      managerLastName: userDetail?.lastName || null,
+      managerDisplayName: userDetail?.displayName || null,
       isClaimed: isOccupied,
       isAvailable: !isOccupied,
       isOccupied,
@@ -1518,8 +1546,88 @@ export async function getCompetitionStandingsFromReadModel(
     validateData: (rows) => Array.isArray(rows) && rows.length > 0,
   });
 
+  let clubsResult: any = null;
+  try {
+    clubsResult = await readThroughReadModel<OwnerNeutralClub[]>({
+      key: ReadModelKeys.clubsWithOwners(seasonId),
+      seasonId,
+      expectedCount: 96,
+      firestoreFetcher: async () => (await buildClubsSnapshot(seasonId)).data,
+      validateData: (data) => Array.isArray(data) && data.length > 0,
+    });
+  } catch {}
+
+  const ownersByClub = new Map<string, OwnerNeutralClub>(
+    clubsResult?.data ? clubsResult.data.map((club: OwnerNeutralClub) => [club.id, club]) : []
+  );
+
+  // Fallback to SQLite membership/user data if needed
+  try {
+    const { queryAll } = await import('../db/index');
+    const localRows = queryAll<any>(
+      `SELECT cm.club_id, cm.user_id, u.username, u.first_name, u.last_name
+       FROM club_memberships cm
+       LEFT JOIN users u ON cm.user_id = u.id
+       WHERE cm.season_id = ? AND cm.status = 'active'`,
+      [seasonId]
+    );
+    for (const r of localRows) {
+      if (r.club_id && !ownersByClub.has(r.club_id)) {
+        const cleanUname = r.username ? r.username.replace(/^@+/, '').trim() : null;
+        const isSynth = cleanUname?.startsWith('tg_') || cleanUname?.startsWith('user_');
+        const validUname = isSynth ? null : cleanUname;
+        const fname = r.first_name || null;
+        const lname = r.last_name || null;
+        const dname = [fname, lname].filter(Boolean).join(' ') || fname || (validUname ? `@${validUname}` : `User #${r.user_id}`);
+        ownersByClub.set(r.club_id, {
+          id: r.club_id,
+          ownerUserId: r.user_id,
+          ownerUsername: validUname,
+          ownerFirstName: fname,
+          ownerLastName: lname,
+          ownerDisplayName: dname,
+          managerUserId: r.user_id,
+          managerUsername: validUname,
+          managerFirstName: fname,
+          managerLastName: lname,
+          managerDisplayName: dname,
+        } as any);
+      }
+    }
+  } catch {}
+
+  const enrichedStandings: StandingsRow[] = (result.data || []).map((row) => {
+    const owner = ownersByClub.get(row.clubId);
+    if (!owner || !owner.ownerUserId) {
+      return {
+        ...row,
+        managerUserId: undefined,
+        managerUsername: undefined,
+        managerFirstName: undefined,
+        managerLastName: undefined,
+        managerDisplayName: undefined,
+      };
+    }
+
+    const cleanUname = owner.ownerUsername ? owner.ownerUsername.replace(/^@+/, '').trim() : null;
+    const isSynth = cleanUname?.startsWith('tg_') || cleanUname?.startsWith('user_');
+    const validUname = isSynth ? null : cleanUname;
+    const fname = owner.ownerFirstName || (owner as any).firstName || undefined;
+    const lname = owner.ownerLastName || (owner as any).lastName || undefined;
+    const dname = owner.ownerDisplayName || (owner as any).displayName || [fname, lname].filter(Boolean).join(' ') || fname || (validUname ? `@${validUname}` : undefined);
+
+    return {
+      ...row,
+      managerUserId: owner.ownerUserId || undefined,
+      managerUsername: validUname || undefined,
+      managerFirstName: fname,
+      managerLastName: lname,
+      managerDisplayName: dname,
+    };
+  });
+
   return {
-    standings: result.data,
+    standings: enrichedStandings,
     source: result.source,
     stale: Boolean(result.stale),
     degraded: Boolean(result.degraded),

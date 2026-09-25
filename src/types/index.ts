@@ -244,6 +244,9 @@ export interface StandingsRow {
   logoUrl?: string;
   managerUserId?: string;
   managerUsername?: string;
+  managerFirstName?: string;
+  managerLastName?: string;
+  managerDisplayName?: string;
   played: number;
   won: number;
   drawn: number;

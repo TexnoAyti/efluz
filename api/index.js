@@ -3334,13 +3334,29 @@ async function buildClubsSnapshot(seasonId = "season-2026-27") {
             const uDoc = await db.collection(COLLECTIONS.USERS).doc(uid).get();
             if (uDoc.exists) {
               const uData = uDoc.data();
+              const uname = uData?.username ? String(uData.username).replace(/^@+/, "").trim() : null;
+              const isSynth = uname ? uname.startsWith("tg_") || uname.startsWith("user_") : false;
+              const validUname = isSynth ? null : uname;
+              const fname = uData?.firstName ? String(uData.firstName).trim() : null;
+              const lname = uData?.lastName ? String(uData.lastName).trim() : null;
+              const dname = [fname, lname].filter(Boolean).join(" ") || fname || (validUname ? `@${validUname}` : `User #${uid}`);
               userMap.set(uid, {
-                username: uData?.username || `user_${uid.substring(0, 5)}`
+                username: validUname,
+                firstName: fname,
+                lastName: lname,
+                displayName: dname
               });
             }
           } catch {
             const previous = existingLkg?.data.find((c) => c.ownerUserId === uid);
-            if (previous?.ownerUsername) userMap.set(uid, { username: previous.ownerUsername });
+            if (previous) {
+              userMap.set(uid, {
+                username: previous.ownerUsername,
+                firstName: previous.ownerFirstName,
+                lastName: previous.ownerLastName,
+                displayName: previous.ownerDisplayName
+              });
+            }
           }
         })
       );
@@ -3378,10 +3394,16 @@ async function buildClubsSnapshot(seasonId = "season-2026-27") {
       createdAt: (/* @__PURE__ */ new Date()).toISOString(),
       ownerUserId,
       ownerUsername: userDetail?.username || null,
+      ownerFirstName: userDetail?.firstName || null,
+      ownerLastName: userDetail?.lastName || null,
+      ownerDisplayName: userDetail?.displayName || null,
       claimedByUserId: ownerUserId,
       claimedByUsername: userDetail?.username || null,
       managerUserId: ownerUserId,
       managerUsername: userDetail?.username || null,
+      managerFirstName: userDetail?.firstName || null,
+      managerLastName: userDetail?.lastName || null,
+      managerDisplayName: userDetail?.displayName || null,
       isClaimed: isOccupied,
       isAvailable: !isOccupied,
       isOccupied,
@@ -3829,8 +3851,83 @@ async function getCompetitionStandingsFromReadModel(competitionId, seasonId = "s
     },
     validateData: (rows) => Array.isArray(rows) && rows.length > 0
   });
+  let clubsResult = null;
+  try {
+    clubsResult = await readThroughReadModel2({
+      key: ReadModelKeys.clubsWithOwners(seasonId),
+      seasonId,
+      expectedCount: 96,
+      firestoreFetcher: async () => (await buildClubsSnapshot(seasonId)).data,
+      validateData: (data) => Array.isArray(data) && data.length > 0
+    });
+  } catch {
+  }
+  const ownersByClub = new Map(
+    clubsResult?.data ? clubsResult.data.map((club) => [club.id, club]) : []
+  );
+  try {
+    const { queryAll: queryAll3 } = await Promise.resolve().then(() => (init_db(), db_exports));
+    const localRows = queryAll3(
+      `SELECT cm.club_id, cm.user_id, u.username, u.first_name, u.last_name
+       FROM club_memberships cm
+       LEFT JOIN users u ON cm.user_id = u.id
+       WHERE cm.season_id = ? AND cm.status = 'active'`,
+      [seasonId]
+    );
+    for (const r of localRows) {
+      if (r.club_id && !ownersByClub.has(r.club_id)) {
+        const cleanUname = r.username ? r.username.replace(/^@+/, "").trim() : null;
+        const isSynth = cleanUname?.startsWith("tg_") || cleanUname?.startsWith("user_");
+        const validUname = isSynth ? null : cleanUname;
+        const fname = r.first_name || null;
+        const lname = r.last_name || null;
+        const dname = [fname, lname].filter(Boolean).join(" ") || fname || (validUname ? `@${validUname}` : `User #${r.user_id}`);
+        ownersByClub.set(r.club_id, {
+          id: r.club_id,
+          ownerUserId: r.user_id,
+          ownerUsername: validUname,
+          ownerFirstName: fname,
+          ownerLastName: lname,
+          ownerDisplayName: dname,
+          managerUserId: r.user_id,
+          managerUsername: validUname,
+          managerFirstName: fname,
+          managerLastName: lname,
+          managerDisplayName: dname
+        });
+      }
+    }
+  } catch {
+  }
+  const enrichedStandings = (result.data || []).map((row) => {
+    const owner = ownersByClub.get(row.clubId);
+    if (!owner || !owner.ownerUserId) {
+      return {
+        ...row,
+        managerUserId: void 0,
+        managerUsername: void 0,
+        managerFirstName: void 0,
+        managerLastName: void 0,
+        managerDisplayName: void 0
+      };
+    }
+    const cleanUname = owner.ownerUsername ? owner.ownerUsername.replace(/^@+/, "").trim() : null;
+    const isSynth = cleanUname?.startsWith("tg_") || cleanUname?.startsWith("user_");
+    const validUname = isSynth ? null : cleanUname;
+    const fname = owner.ownerFirstName || owner.firstName || void 0;
+    const lname = owner.ownerLastName || owner.lastName || void 0;
+    const dname = owner.ownerDisplayName || owner.displayName || [fname, lname].filter(Boolean).join(" ") || fname || (validUname ? `@${validUname}` : void 0);
+    return {
+      ...row,
+      managerUserId: owner.ownerUserId || void 0,
+      managerUsername: validUname || void 0,
+      managerFirstName: fname,
+      managerLastName: lname,
+      managerDisplayName: dname
+    };
+  });
   return {
-    standings: result.data,
+    standings: enrichedStandings,
     source: result.source,
     stale: Boolean(result.stale),
     degraded: Boolean(result.degraded),
@@ -6988,7 +7085,11 @@ function calculateCompetitionStandings(competitionId) {
   const pointsForLoss = formatConfig.pointsForLoss ?? 0;
   const tieBreakers = formatConfig.tieBreakers ?? ["points", "goalDifference", "goalsFor", "headToHead"];
   const clubs = queryAll(
-    `SELECT c.id, c.name, c.short_name, c.logo_url, u.username as manager_username
+    `SELECT c.id, c.name, c.short_name, c.logo_url,
+            cm.user_id as manager_user_id,
+            u.username as manager_username,
+            u.first_name as manager_first_name,
+            u.last_name as manager_last_name
      FROM competition_participants cp
      JOIN clubs c ON cp.club_id = c.id
      LEFT JOIN club_memberships cm ON c.id = cm.club_id AND cm.season_id = ? AND cm.status = 'active'
@@ -7000,7 +7101,11 @@ function calculateCompetitionStandings(competitionId) {
   let clubList = clubs;
   if (clubList.length === 0) {
     clubList = queryAll(
-      `SELECT c.id, c.name, c.short_name, c.logo_url, u.username as manager_username
+      `SELECT c.id, c.name, c.short_name, c.logo_url,
+              cm.user_id as manager_user_id,
+              u.username as manager_username,
+              u.first_name as manager_first_name,
+              u.last_name as manager_last_name
        FROM competitions comp
        JOIN season_league_clubs slc ON comp.league_id = slc.league_id AND comp.season_id = slc.season_id AND slc.is_active = 1
        JOIN clubs c ON slc.club_id = c.id
@@ -7020,12 +7125,23 @@ function calculateCompetitionStandings(competitionId) {
   );
   const statsMap = /* @__PURE__ */ new Map();
   for (const c of clubList) {
+    const fname = c.manager_first_name?.trim() || void 0;
+    const lname = c.manager_last_name?.trim() || void 0;
+    const cleanUname = c.manager_username ? c.manager_username.replace(/^@+/, "").trim() : void 0;
+    const isSyntheticUname = cleanUname?.startsWith("tg_") || cleanUname?.startsWith("user_");
+    const validUname = isSyntheticUname ? void 0 : cleanUname;
+    const fullName = [fname, lname].filter(Boolean).join(" ");
+    const displayName = fullName || fname || (validUname ? `@${validUname}` : void 0);
     statsMap.set(c.id, {
       clubId: c.id,
       clubName: c.name,
       shortName: c.short_name,
       logoUrl: c.logo_url,
-      managerUsername: c.manager_username || void 0,
+      managerUserId: c.manager_user_id || void 0,
+      managerUsername: validUname,
+      managerFirstName: fname,
+      managerLastName: lname,
+      managerDisplayName: displayName,
       played: 0,
       won: 0,
       drawn: 0,
@@ -7124,7 +7240,11 @@ function calculateCompetitionStandings(competitionId) {
     clubName: r.clubName,
     shortName: r.shortName,
     logoUrl: r.logoUrl,
+    managerUserId: r.managerUserId,
     managerUsername: r.managerUsername,
+    managerFirstName: r.managerFirstName,
+    managerLastName: r.managerLastName,
+    managerDisplayName: r.managerDisplayName,
     played: r.played,
     won: r.won,
     drawn: r.drawn,
@@ -7187,30 +7307,7 @@ function refreshMaterializedStandingsForCompetition(competitionId) {
   return standings;
 }
 function getMaterializedStandingsForCompetition(competitionId) {
-  const rows = queryAll(
-    "SELECT * FROM competition_standings WHERE competition_id = ? ORDER BY rank ASC",
-    [competitionId]
-  );
-  if (!rows || rows.length === 0) {
-    return refreshMaterializedStandingsForCompetition(competitionId);
-  }
-  return rows.map((r) => ({
-    position: r.rank,
-    clubId: r.club_id,
-    clubName: r.club_name,
-    shortName: r.short_name,
-    logoUrl: r.logo_url,
-    managerUsername: r.manager_username || void 0,
-    played: r.played,
-    won: r.won,
-    drawn: r.drawn,
-    lost: r.lost,
-    goalsFor: r.goals_for,
-    goalsAgainst: r.goals_against,
-    goalDifference: r.goal_difference,
-    points: r.points,
-    form: r.form_json ? JSON.parse(r.form_json) : []
-  }));
+  return refreshMaterializedStandingsForCompetition(competitionId);
 }
 function updateMaterializedStandingsFromFixture(fixtureId) {
   const fix = queryGet("SELECT competition_id FROM fixtures WHERE id = ?", [fixtureId]);
@@ -9917,10 +10014,17 @@ async function resolveClubOwnersForSeason(seasonId = "season-2026-27", clubIds) 
       for (const club of clubsRes.data) {
         if (club.ownerUserId && !ownersMap.has(club.id)) {
           const uname = club.ownerUsername ? club.ownerUsername.replace(/^@+/, "").trim() : null;
+          const isSynth = uname ? uname.startsWith("tg_") || uname.startsWith("user_") : false;
+          const validUname = isSynth ? null : uname;
+          const fname = club.ownerFirstName || club.managerFirstName || null;
+          const lname = club.ownerLastName || club.managerLastName || null;
+          const dname = club.ownerDisplayName || club.managerDisplayName || [fname, lname].filter(Boolean).join(" ") || fname || (validUname ? `@${validUname}` : `User #${club.ownerUserId}`);
           ownersMap.set(club.id, {
             userId: club.ownerUserId,
-            username: uname,
-            displayName: uname ? `@${uname}` : `User #${club.ownerUserId}`
+            username: validUname,
+            displayName: dname,
+            firstName: fname || void 0,
+            lastName: lname || void 0
           });
         }
       }
@@ -14173,8 +14277,8 @@ function getClubStatsQuick(clubId, seasonId = "season-2026-27") {
   };
   if (!clubId) return stats;
   try {
-    const { queryAll: queryAll2 } = (init_db(), __toCommonJS(db_exports));
-    const rows = queryAll2(
+    const { queryAll: queryAll3 } = (init_db(), __toCommonJS(db_exports));
+    const rows = queryAll3(
       `SELECT home_club_id, away_club_id, home_score, away_score FROM fixtures WHERE status = 'CONFIRMED' AND (home_club_id = ? OR away_club_id = ?) AND (season_id = ? OR season_id IS NULL)`,
       [clubId, clubId, seasonId]
     );
@@ -15043,8 +15147,8 @@ meRouter.get("/", requireAuth, async (req, res) => {
     if (currentClub) {
       let confirmedMatches = [];
       try {
-        const { queryAll: queryAll2 } = (init_db(), __toCommonJS(db_exports));
-        const rows = queryAll2(
+        const { queryAll: queryAll3 } = (init_db(), __toCommonJS(db_exports));
+        const rows = queryAll3(
           `SELECT * FROM fixtures WHERE status = 'CONFIRMED' AND (home_club_id = ? OR away_club_id = ?) AND (season_id = ? OR season_id IS NULL)`,
           [currentClub.id, currentClub.id, seasonId]
         );

@@ -55,32 +55,7 @@ export function refreshMaterializedStandingsForCompetition(competitionId: string
  * automatically computes and caches them.
  */
 export function getMaterializedStandingsForCompetition(competitionId: string): StandingsRow[] {
-  const rows = queryAll<any>(
-    'SELECT * FROM competition_standings WHERE competition_id = ? ORDER BY rank ASC',
-    [competitionId]
-  );
-
-  if (!rows || rows.length === 0) {
-    return refreshMaterializedStandingsForCompetition(competitionId);
-  }
-
-  return rows.map((r) => ({
-    position: r.rank,
-    clubId: r.club_id,
-    clubName: r.club_name,
-    shortName: r.short_name,
-    logoUrl: r.logo_url,
-    managerUsername: r.manager_username || undefined,
-    played: r.played,
-    won: r.won,
-    drawn: r.drawn,
-    lost: r.lost,
-    goalsFor: r.goals_for,
-    goalsAgainst: r.goals_against,
-    goalDifference: r.goal_difference,
-    points: r.points,
-    form: r.form_json ? JSON.parse(r.form_json) : [],
-  }));
+  return refreshMaterializedStandingsForCompetition(competitionId);
 }
 
 /**

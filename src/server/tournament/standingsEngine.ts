@@ -6,7 +6,10 @@ interface ClubRaw {
   name: string;
   short_name: string;
   logo_url: string;
+  manager_user_id?: string | null;
   manager_username?: string | null;
+  manager_first_name?: string | null;
+  manager_last_name?: string | null;
 }
 
 interface ConfirmedFixtureRaw {
@@ -44,7 +47,11 @@ export function calculateCompetitionStandings(competitionId: string): StandingsR
 
   // 2. Fetch all participating clubs for this competition with active owner
   const clubs = queryAll<ClubRaw>(
-    `SELECT c.id, c.name, c.short_name, c.logo_url, u.username as manager_username
+    `SELECT c.id, c.name, c.short_name, c.logo_url,
+            cm.user_id as manager_user_id,
+            u.username as manager_username,
+            u.first_name as manager_first_name,
+            u.last_name as manager_last_name
      FROM competition_participants cp
      JOIN clubs c ON cp.club_id = c.id
      LEFT JOIN club_memberships cm ON c.id = cm.club_id AND cm.season_id = ? AND cm.status = 'active'
@@ -58,7 +65,11 @@ export function calculateCompetitionStandings(competitionId: string): StandingsR
   let clubList = clubs;
   if (clubList.length === 0) {
     clubList = queryAll<ClubRaw>(
-      `SELECT c.id, c.name, c.short_name, c.logo_url, u.username as manager_username
+      `SELECT c.id, c.name, c.short_name, c.logo_url,
+              cm.user_id as manager_user_id,
+              u.username as manager_username,
+              u.first_name as manager_first_name,
+              u.last_name as manager_last_name
        FROM competitions comp
        JOIN season_league_clubs slc ON comp.league_id = slc.league_id AND comp.season_id = slc.season_id AND slc.is_active = 1
        JOIN clubs c ON slc.club_id = c.id
@@ -87,7 +98,11 @@ export function calculateCompetitionStandings(competitionId: string): StandingsR
       clubName: string;
       shortName: string;
       logoUrl: string;
+      managerUserId?: string;
       managerUsername?: string;
+      managerFirstName?: string;
+      managerLastName?: string;
+      managerDisplayName?: string;
       played: number;
       won: number;
       drawn: number;
@@ -101,12 +116,24 @@ export function calculateCompetitionStandings(competitionId: string): StandingsR
   >();
 
   for (const c of clubList) {
+    const fname = c.manager_first_name?.trim() || undefined;
+    const lname = c.manager_last_name?.trim() || undefined;
+    const cleanUname = c.manager_username ? c.manager_username.replace(/^@+/, '').trim() : undefined;
+    const isSyntheticUname = cleanUname?.startsWith('tg_') || cleanUname?.startsWith('user_');
+    const validUname = isSyntheticUname ? undefined : cleanUname;
+    const fullName = [fname, lname].filter(Boolean).join(' ');
+    const displayName = fullName || fname || (validUname ? `@${validUname}` : undefined);
+
     statsMap.set(c.id, {
       clubId: c.id,
       clubName: c.name,
       shortName: c.short_name,
       logoUrl: c.logo_url,
-      managerUsername: c.manager_username || undefined,
+      managerUserId: c.manager_user_id || undefined,
+      managerUsername: validUname,
+      managerFirstName: fname,
+      managerLastName: lname,
+      managerDisplayName: displayName,
       played: 0,
       won: 0,
       drawn: 0,
@@ -220,7 +247,11 @@ export function calculateCompetitionStandings(competitionId: string): StandingsR
     clubName: r.clubName,
     shortName: r.shortName,
     logoUrl: r.logoUrl,
+    managerUserId: r.managerUserId,
     managerUsername: r.managerUsername,
+    managerFirstName: r.managerFirstName,
+    managerLastName: r.managerLastName,
+    managerDisplayName: r.managerDisplayName,
     played: r.played,
     won: r.won,
     drawn: r.drawn,

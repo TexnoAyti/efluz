@@ -3396,10 +3396,17 @@ export async function resolveClubOwnersForSeason(
       for (const club of clubsRes.data) {
         if (club.ownerUserId && !ownersMap.has(club.id)) {
           const uname = club.ownerUsername ? club.ownerUsername.replace(/^@+/, '').trim() : null;
+          const isSynth = uname ? (uname.startsWith('tg_') || uname.startsWith('user_')) : false;
+          const validUname = isSynth ? null : uname;
+          const fname = club.ownerFirstName || club.managerFirstName || null;
+          const lname = club.ownerLastName || club.managerLastName || null;
+          const dname = club.ownerDisplayName || club.managerDisplayName || [fname, lname].filter(Boolean).join(' ') || fname || (validUname ? `@${validUname}` : `User #${club.ownerUserId}`);
           ownersMap.set(club.id, {
             userId: club.ownerUserId,
-            username: uname,
-            displayName: uname ? `@${uname}` : `User #${club.ownerUserId}`,
+            username: validUname,
+            displayName: dname,
+            firstName: fname || undefined,
+            lastName: lname || undefined,
           });
         }
       }

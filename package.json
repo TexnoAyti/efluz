@@ -12,6 +12,7 @@
     "test:phase2-durability": "node scripts/run-isolated-test.mjs src/server/tests/phase2DurableMutationsTest.ts",
     "test:auth-quota": "node scripts/run-isolated-test.mjs src/server/tests/authQuotaRegressionTest.ts",
     "test:security-http": "node scripts/run-isolated-test.mjs src/server/tests/securityHttpRegressionTest.ts",
+    "test:data-propagation": "node scripts/run-isolated-test.mjs src/server/tests/dataPropagationRegressionTest.ts",
     "test:domestic-cup:isolated": "node scripts/run-isolated-test.mjs src/server/tests/domesticCupTbdRegressionTest.ts",
     "dev": "tsx server.ts",
     "build": "vite build && node --import tsx src/server/buildAssets.ts && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && esbuild src/server/apiEntry.ts --bundle --platform=node --format=esm --packages=external --sourcemap --outfile=api/index.js && node scripts/run-isolated-test.mjs src/server/tests/deploymentSelfCheck.ts",
