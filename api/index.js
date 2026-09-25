@@ -562,7 +562,8 @@ __export(db_exports, {
   queryRun: () => queryRun,
   resolveBundledDbPath: () => resolveBundledDbPath,
   resolveSqlWasmPath: () => resolveSqlWasmPath,
-  saveDatabaseSync: () => saveDatabaseSync
+  saveDatabaseSync: () => saveDatabaseSync,
+  upsertFixtureToSqlite: () => upsertFixtureToSqlite
 });
 import fs2 from "fs";
 import path2 from "path";
@@ -1048,6 +1049,57 @@ function dbTransaction(callback) {
     throw error;
   }
 }
+function upsertFixtureToSqlite(fixture) {
+  const existing = queryGet("SELECT * FROM fixtures WHERE id = ?", [fixture.id]);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const seasonId = fixture.seasonId || existing?.season_id || "season-2026-27";
+  const competitionId = fixture.competitionId || existing?.competition_id || "";
+  const matchday = fixture.matchday !== void 0 ? fixture.matchday : existing?.matchday ?? 1;
+  const roundName = fixture.roundName !== void 0 ? fixture.roundName : existing?.round_name ?? `Matchday ${matchday}`;
+  const homeClubId = fixture.homeClubId !== void 0 ? fixture.homeClubId : existing?.home_club_id ?? null;
+  const awayClubId = fixture.awayClubId !== void 0 ? fixture.awayClubId : existing?.away_club_id ?? null;
+  const scheduledAt = fixture.scheduledAt || existing?.scheduled_at || now;
+  const status = fixture.status || existing?.status || "SCHEDULED";
+  const homeScore = fixture.homeScore !== void 0 ? fixture.homeScore : existing?.home_score ?? null;
+  const awayScore = fixture.awayScore !== void 0 ? fixture.awayScore : existing?.away_score ?? null;
+  const winnerClubId = fixture.winnerClubId !== void 0 ? fixture.winnerClubId : existing?.winner_club_id ?? null;
+  const resultConfirmedAt = fixture.resultConfirmedAt !== void 0 ? fixture.resultConfirmedAt : existing?.result_confirmed_at ?? null;
+  const fixtureSource = fixture.fixtureSource || existing?.fixture_source || "official_2026_27";
+  const sourceFixtureId = fixture.sourceFixtureId !== void 0 ? fixture.sourceFixtureId : existing?.source_fixture_id ?? null;
+  const sourceWinnerSlot = fixture.sourceWinnerSlot !== void 0 ? fixture.sourceWinnerSlot : existing?.source_winner_slot ?? null;
+  const createdAt = existing?.created_at || fixture.createdAt || now;
+  const updatedAt = fixture.updatedAt || now;
+  queryRun(
+    `INSERT OR REPLACE INTO fixtures (
+      id, season_id, competition_id, matchday, round_name,
+      home_club_id, away_club_id, scheduled_at, status,
+      home_score, away_score, winner_club_id, result_confirmed_at,
+      fixture_source, source_fixture_id, source_winner_slot,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      fixture.id,
+      seasonId,
+      competitionId,
+      matchday,
+      roundName,
+      homeClubId,
+      awayClubId,
+      scheduledAt,
+      status,
+      homeScore,
+      awayScore,
+      winnerClubId,
+      resultConfirmedAt,
+      fixtureSource,
+      sourceFixtureId,
+      sourceWinnerSlot,
+      createdAt,
+      updatedAt
+    ]
+  );
+  saveDatabaseSync();
+}
 var dbInstance, IS_HOSTED, IS_SERVERLESS, DEFAULT_DATA_DIR, DATA_DIR, DB_FILE, SCHEMA_FILE, isSaving, needsSave, transactionDepth;
 var init_db = __esm({
   "src/server/db/index.ts"() {
@@ -1063,6 +1115,264 @@ var init_db = __esm({
     isSaving = false;
     needsSave = false;
     transactionDepth = 0;
+  }
+});
+
+// src/server/tournament/standingsEngine.ts
+function calculateCompetitionStandings(competitionId) {
+  const comp = queryGet(
+    "SELECT season_id, format_config_json FROM competitions WHERE id = ?",
+    [competitionId]
+  );
+  const seasonId = comp?.season_id || "season-2026-27";
+  let formatConfig = {};
+  if (comp?.format_config_json) {
+    try {
+      formatConfig = JSON.parse(comp.format_config_json);
+    } catch {
+      formatConfig = {};
+    }
+  }
+  const pointsForWin = formatConfig.pointsForWin ?? 3;
+  const pointsForDraw = formatConfig.pointsForDraw ?? 1;
+  const pointsForLoss = formatConfig.pointsForLoss ?? 0;
+  const tieBreakers = formatConfig.tieBreakers ?? ["points", "goalDifference", "goalsFor", "headToHead"];
+  const clubs = queryAll(
+    `SELECT c.id, c.name, c.short_name, c.logo_url,
+            cm.user_id as manager_user_id,
+            u.username as manager_username,
+            u.first_name as manager_first_name,
+            u.last_name as manager_last_name
+     FROM competition_participants cp
+     JOIN clubs c ON cp.club_id = c.id
+     LEFT JOIN club_memberships cm ON c.id = cm.club_id AND cm.season_id = ? AND cm.status = 'active'
+     LEFT JOIN users u ON cm.user_id = u.id
+     WHERE cp.competition_id = ?
+     ORDER BY c.name ASC`,
+    [seasonId, competitionId]
+  );
+  let clubList = clubs;
+  if (clubList.length === 0) {
+    clubList = queryAll(
+      `SELECT c.id, c.name, c.short_name, c.logo_url,
+              cm.user_id as manager_user_id,
+              u.username as manager_username,
+              u.first_name as manager_first_name,
+              u.last_name as manager_last_name
+       FROM competitions comp
+       JOIN season_league_clubs slc ON comp.league_id = slc.league_id AND comp.season_id = slc.season_id AND slc.is_active = 1
+       JOIN clubs c ON slc.club_id = c.id
+       LEFT JOIN club_memberships cm ON c.id = cm.club_id AND cm.season_id = comp.season_id AND cm.status = 'active'
+       LEFT JOIN users u ON cm.user_id = u.id
+       WHERE comp.id = ?
+       ORDER BY c.name ASC`,
+      [competitionId]
+    );
+  }
+  const confirmedFixtures = queryAll(
+    `SELECT id, matchday, home_club_id, away_club_id, home_score, away_score, result_confirmed_at
+     FROM fixtures
+     WHERE competition_id = ? AND status = 'CONFIRMED' AND home_score IS NOT NULL AND away_score IS NOT NULL
+     ORDER BY matchday ASC, result_confirmed_at ASC`,
+    [competitionId]
+  );
+  const statsMap = /* @__PURE__ */ new Map();
+  for (const c of clubList) {
+    const fname = c.manager_first_name?.trim() || void 0;
+    const lname = c.manager_last_name?.trim() || void 0;
+    const cleanUname = c.manager_username ? c.manager_username.replace(/^@+/, "").trim() : void 0;
+    const isSyntheticUname = cleanUname?.startsWith("tg_") || cleanUname?.startsWith("user_");
+    const validUname = isSyntheticUname ? void 0 : cleanUname;
+    const fullName = [fname, lname].filter(Boolean).join(" ");
+    const displayName = fullName || fname || (validUname ? `@${validUname}` : void 0);
+    statsMap.set(c.id, {
+      clubId: c.id,
+      clubName: c.name,
+      shortName: c.short_name,
+      logoUrl: c.logo_url,
+      managerUserId: c.manager_user_id || void 0,
+      managerUsername: validUname,
+      managerFirstName: fname,
+      managerLastName: lname,
+      managerDisplayName: displayName,
+      played: 0,
+      won: 0,
+      drawn: 0,
+      lost: 0,
+      goalsFor: 0,
+      goalsAgainst: 0,
+      goalDifference: 0,
+      points: 0,
+      form: []
+    });
+  }
+  for (const fix of confirmedFixtures) {
+    const home = statsMap.get(fix.home_club_id);
+    const away = statsMap.get(fix.away_club_id);
+    if (home) {
+      home.played += 1;
+      home.goalsFor += fix.home_score;
+      home.goalsAgainst += fix.away_score;
+      if (fix.home_score > fix.away_score) {
+        home.won += 1;
+        home.points += pointsForWin;
+        home.form.push("W");
+      } else if (fix.home_score === fix.away_score) {
+        home.drawn += 1;
+        home.points += pointsForDraw;
+        home.form.push("D");
+      } else {
+        home.lost += 1;
+        home.points += pointsForLoss;
+        home.form.push("L");
+      }
+    }
+    if (away) {
+      away.played += 1;
+      away.goalsFor += fix.away_score;
+      away.goalsAgainst += fix.home_score;
+      if (fix.away_score > fix.home_score) {
+        away.won += 1;
+        away.points += pointsForWin;
+        away.form.push("W");
+      } else if (fix.away_score === fix.home_score) {
+        away.drawn += 1;
+        away.points += pointsForDraw;
+        away.form.push("D");
+      } else {
+        away.lost += 1;
+        away.points += pointsForLoss;
+        away.form.push("L");
+      }
+    }
+  }
+  const rows = Array.from(statsMap.values()).map((row) => {
+    row.goalDifference = row.goalsFor - row.goalsAgainst;
+    row.form = row.form.slice(-5);
+    return row;
+  });
+  function getH2HPoints(clubAId, clubBId) {
+    let pts = 0;
+    for (const f of confirmedFixtures) {
+      if (f.home_club_id === clubAId && f.away_club_id === clubBId) {
+        if (f.home_score > f.away_score) pts += pointsForWin;
+        else if (f.home_score === f.away_score) pts += pointsForDraw;
+      } else if (f.home_club_id === clubBId && f.away_club_id === clubAId) {
+        if (f.away_score > f.home_score) pts += pointsForWin;
+        else if (f.away_score === f.home_score) pts += pointsForDraw;
+      }
+    }
+    return pts;
+  }
+  rows.sort((a, b) => {
+    if (b.points !== a.points) {
+      return b.points - a.points;
+    }
+    for (const criteria of tieBreakers) {
+      if (criteria === "goalDifference") {
+        if (b.goalDifference !== a.goalDifference) {
+          return b.goalDifference - a.goalDifference;
+        }
+      } else if (criteria === "goalsFor") {
+        if (b.goalsFor !== a.goalsFor) {
+          return b.goalsFor - a.goalsFor;
+        }
+      } else if (criteria === "headToHead") {
+        const h2hA = getH2HPoints(a.clubId, b.clubId);
+        const h2hB = getH2HPoints(b.clubId, a.clubId);
+        if (h2hB !== h2hA) {
+          return h2hB - h2hA;
+        }
+      }
+    }
+    return a.clubName.localeCompare(b.clubName);
+  });
+  return rows.map((r, index) => ({
+    position: index + 1,
+    clubId: r.clubId,
+    clubName: r.clubName,
+    shortName: r.shortName,
+    logoUrl: r.logoUrl,
+    managerUserId: r.managerUserId,
+    managerUsername: r.managerUsername,
+    managerFirstName: r.managerFirstName,
+    managerLastName: r.managerLastName,
+    managerDisplayName: r.managerDisplayName,
+    played: r.played,
+    won: r.won,
+    drawn: r.drawn,
+    lost: r.lost,
+    goalsFor: r.goalsFor,
+    goalsAgainst: r.goalsAgainst,
+    goalDifference: r.goalDifference,
+    points: r.points,
+    form: r.form
+  }));
+}
+var init_standingsEngine = __esm({
+  "src/server/tournament/standingsEngine.ts"() {
+    init_db();
+  }
+});
+
+// src/server/db/sqliteStandings.ts
+var sqliteStandings_exports = {};
+__export(sqliteStandings_exports, {
+  getMaterializedStandingsForCompetition: () => getMaterializedStandingsForCompetition,
+  refreshMaterializedStandingsForCompetition: () => refreshMaterializedStandingsForCompetition,
+  updateMaterializedStandingsFromFixture: () => updateMaterializedStandingsFromFixture
+});
+function refreshMaterializedStandingsForCompetition(competitionId) {
+  const standings = calculateCompetitionStandings(competitionId);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  dbTransaction(() => {
+    queryRun("DELETE FROM competition_standings WHERE competition_id = ?", [competitionId]);
+    for (const row of standings) {
+      queryRun(
+        `INSERT OR REPLACE INTO competition_standings (
+          competition_id, club_id, rank, club_name, short_name, logo_url,
+          played, won, drawn, lost, goals_for, goals_against, goal_difference,
+          points, form_json, qualification_status, manager_username, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          competitionId,
+          row.clubId,
+          row.position,
+          row.clubName,
+          row.shortName || "",
+          row.logoUrl || "",
+          row.played,
+          row.won,
+          row.drawn,
+          row.lost,
+          row.goalsFor,
+          row.goalsAgainst,
+          row.goalDifference,
+          row.points,
+          JSON.stringify(row.form || []),
+          null,
+          row.managerUsername || null,
+          now
+        ]
+      );
+    }
+  });
+  return standings;
+}
+function getMaterializedStandingsForCompetition(competitionId) {
+  return refreshMaterializedStandingsForCompetition(competitionId);
+}
+function updateMaterializedStandingsFromFixture(fixtureId) {
+  const fix = queryGet("SELECT competition_id FROM fixtures WHERE id = ?", [fixtureId]);
+  if (!fix?.competition_id) {
+    return null;
+  }
+  return refreshMaterializedStandingsForCompetition(fix.competition_id);
+}
+var init_sqliteStandings = __esm({
+  "src/server/db/sqliteStandings.ts"() {
+    init_db();
+    init_standingsEngine();
   }
 });
 
@@ -4209,39 +4519,60 @@ async function invalidateClubReadModels(seasonId = "season-2026-27") {
 }
 async function refreshChangedFixtureReadModel(fixtureId) {
   const document = await getFirestoreDb().collection(COLLECTIONS.FIXTURES).doc(fixtureId).get();
+  trackFirestoreRead(COLLECTIONS.FIXTURES, document.exists ? 1 : 0, "refreshChangedFixtureReadModel");
   if (!document.exists) throw new Error("FIXTURE_NOT_FOUND");
   const fixture = normalizeFixtureSnapshot({ ...document.data(), id: document.id });
-  const key = ReadModelKeys.adminFixtures(fixture.seasonId);
-  const client = getUpstashClient();
-  let patched = false;
-  if (client) {
-    const result = await client.eval(`
-      if redis.call('EXISTS', KEYS[3]) == 1 then return 0 end
-      local raw = redis.call('GET', KEYS[2])
-      if not raw then return 0 end
-      local snapshot = cjson.decode(raw)
-      local changed = cjson.decode(ARGV[1])
-      for i, row in ipairs(snapshot.data) do
-        if row.id == changed.id then
-          if row.updatedAt and row.updatedAt > changed.updatedAt then return 1 end
-          snapshot.data[i] = changed
-          local updated = cjson.encode(snapshot)
-          redis.call('SET', KEYS[2], updated)
-          local ttl = redis.call('TTL', KEYS[1])
-          if ttl > 0 then redis.call('SET', KEYS[1], updated, 'EX', ttl) end
-          return 1
+  const patchDataset = async (key) => {
+    const client = getUpstashClient();
+    if (client) {
+      const result = await client.eval(`
+        local raw = redis.call('GET', KEYS[2])
+        if not raw then raw = redis.call('GET', KEYS[1]) end
+        if not raw then return 0 end
+        local snapshot = cjson.decode(raw)
+        local changed = cjson.decode(ARGV[1])
+        local found = false
+        for i, row in ipairs(snapshot.data or {}) do
+          if row.id == changed.id then
+            if row.updatedAt and changed.updatedAt and row.updatedAt > changed.updatedAt then return 1 end
+            snapshot.data[i] = changed
+            found = true
+            break
+          end
         end
-      end
-      return 0
-    `, [getFreshKey(key), getLkgKey(key), getDirtyKey(key)], [JSON.stringify(fixture)]);
-    patched = Number(result) === 1;
+        if not found then return 0 end
+        snapshot.generatedAt = ARGV[2]
+        snapshot.sourceVersion = ARGV[3]
+        snapshot.actualCount = #(snapshot.data or {})
+        local updated = cjson.encode(snapshot)
+        redis.call('SET', KEYS[2], updated)
+        local ttl = redis.call('TTL', KEYS[1])
+        if ttl and ttl > 0 then redis.call('SET', KEYS[1], updated, 'EX', ttl)
+        else redis.call('SET', KEYS[1], updated, 'EX', 86400) end
+        redis.call('DEL', KEYS[3])
+        return 1
+      `, [getFreshKey(key), getLkgKey(key), getDirtyKey(key)], [JSON.stringify(fixture), (/* @__PURE__ */ new Date()).toISOString(), `fixture-patch-${fixture.id}-${fixture.updatedAt || Date.now()}`]);
+      inProcessMemoryCache.delete(getRawDatasetKey(key));
+      inProcessMemoryCache.delete(key);
+      memoryRedisStorage.delete(getFreshKey(key));
+      memoryRedisStorage.delete(getLkgKey(key));
+      return Number(result) === 1;
+    }
+    const existing = await redisGetFresh(key) || await redisGetLkg(key);
+    if (!existing || !Array.isArray(existing.data)) return false;
+    let found = false;
+    const data = existing.data.map((row) => row.id === fixture.id ? (found = true, fixture) : row);
+    if (!found) return false;
+    await redisSetRaw(key, { ...existing, generatedAt: (/* @__PURE__ */ new Date()).toISOString(), sourceVersion: `fixture-patch-${fixture.id}-${fixture.updatedAt || Date.now()}`, data }, 86400);
     inProcessMemoryCache.delete(getRawDatasetKey(key));
     inProcessMemoryCache.delete(key);
-    memoryRedisStorage.delete(getFreshKey(key));
-    memoryRedisStorage.delete(getLkgKey(key));
-  }
-  if (!patched) await invalidateDataset(key);
-  await invalidateDataset(ReadModelKeys.competitionFixtures(fixture.competitionId, fixture.seasonId));
+    return true;
+  };
+  const adminKey = ReadModelKeys.adminFixtures(fixture.seasonId);
+  const competitionKey = ReadModelKeys.competitionFixtures(fixture.competitionId, fixture.seasonId);
+  const [adminPatched, competitionPatched] = await Promise.all([patchDataset(adminKey), patchDataset(competitionKey)]);
+  if (!adminPatched) await invalidateDataset(adminKey);
+  if (!competitionPatched) await invalidateDataset(competitionKey);
   await invalidateDataset(ReadModelKeys.standings(fixture.competitionId, fixture.seasonId));
 }
 async function invalidateFixtureReadModels(competitionId, seasonId = "season-2026-27") {
@@ -6808,6 +7139,20 @@ async function executeSingleMutationSync(db, item) {
         } catch {
         }
       }
+      if (newStatus === "CONFIRMED") {
+        try {
+          const { refreshChangedFixtureReadModel: refreshChangedFixtureReadModel2, invalidateFixtureReadModels: invalidateFixtureReadModels2, invalidateStandingsReadModels: invalidateStandingsReadModels4 } = await Promise.resolve().then(() => (init_readModelStore(), readModelStore_exports));
+          await refreshChangedFixtureReadModel2(entityId).catch(() => {
+          });
+          if (fixData.competitionId) {
+            await invalidateFixtureReadModels2(fixData.competitionId, fixData.seasonId || "season-2026-27").catch(() => {
+            });
+            await invalidateStandingsReadModels4(fixData.competitionId, fixData.seasonId || "season-2026-27").catch(() => {
+            });
+          }
+        } catch {
+        }
+      }
       break;
     }
     case "ADMIN_APPROVE_RESULT": {
@@ -6829,6 +7174,26 @@ async function executeSingleMutationSync(db, item) {
         resultConfirmedAt: now,
         updatedAt: now
       });
+      try {
+        const { upsertFixtureToSqlite: upsertFixtureToSqlite2 } = await Promise.resolve().then(() => (init_db(), db_exports));
+        upsertFixtureToSqlite2({
+          id: entityId,
+          seasonId: fixData.seasonId || "season-2026-27",
+          competitionId: fixData.competitionId,
+          matchday: fixData.matchday || 1,
+          roundName: fixData.roundName,
+          homeClubId: fixData.homeClubId,
+          awayClubId: fixData.awayClubId,
+          scheduledAt: fixData.scheduledAt || now,
+          status: "CONFIRMED",
+          homeScore: payload.homeScore,
+          awayScore: payload.awayScore,
+          winnerClubId,
+          resultConfirmedAt: now,
+          updatedAt: now
+        });
+      } catch {
+      }
       const disputesSnap = await db.collection(COLLECTIONS.DISPUTES).where("fixtureId", "==", entityId).get();
       for (const d of disputesSnap.docs) {
         await d.ref.update({
@@ -6851,6 +7216,11 @@ async function executeSingleMutationSync(db, item) {
           await rebuildCompetitionStandingsFirestore3(fixData.competitionId);
         } catch {
         }
+        try {
+          const { refreshMaterializedStandingsForCompetition: refreshMaterializedStandingsForCompetition2 } = await Promise.resolve().then(() => (init_sqliteStandings(), sqliteStandings_exports));
+          refreshMaterializedStandingsForCompetition2(fixData.competitionId);
+        } catch {
+        }
       }
       const auditId = `audit_${item.mutationId}_approve`;
       await db.collection(COLLECTIONS.AUDIT_LOGS).doc(auditId).set({
@@ -6862,6 +7232,18 @@ async function executeSingleMutationSync(db, item) {
         notes: payload.notes || "Approved by admin via sync",
         createdAt: now
       }, { merge: true });
+      try {
+        const { refreshChangedFixtureReadModel: refreshChangedFixtureReadModel2, invalidateFixtureReadModels: invalidateFixtureReadModels2, invalidateStandingsReadModels: invalidateStandingsReadModels4 } = await Promise.resolve().then(() => (init_readModelStore(), readModelStore_exports));
+        await refreshChangedFixtureReadModel2(entityId).catch(() => {
+        });
+        if (fixData.competitionId) {
+          await invalidateFixtureReadModels2(fixData.competitionId, fixData.seasonId || "season-2026-27").catch(() => {
+          });
+          await invalidateStandingsReadModels4(fixData.competitionId, fixData.seasonId || "season-2026-27").catch(() => {
+          });
+        }
+      } catch {
+      }
       break;
     }
     case "ADMIN_REJECT_RESULT": {
@@ -6879,16 +7261,45 @@ async function executeSingleMutationSync(db, item) {
         resultConfirmedAt: null,
         updatedAt: now
       });
+      try {
+        const { upsertFixtureToSqlite: upsertFixtureToSqlite2 } = await Promise.resolve().then(() => (init_db(), db_exports));
+        upsertFixtureToSqlite2({
+          id: entityId,
+          seasonId: fixDoc.data()?.seasonId || "season-2026-27",
+          competitionId: fixDoc.data()?.competitionId,
+          matchday: fixDoc.data()?.matchday || 1,
+          roundName: fixDoc.data()?.roundName,
+          homeClubId: fixDoc.data()?.homeClubId,
+          awayClubId: fixDoc.data()?.awayClubId,
+          scheduledAt: fixDoc.data()?.scheduledAt || now,
+          status: "SCHEDULED",
+          homeScore: null,
+          awayScore: null,
+          winnerClubId: null,
+          resultConfirmedAt: null,
+          updatedAt: now
+        });
+      } catch {
+      }
       const subsSnap = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where("fixtureId", "==", entityId).get();
       const b = db.batch();
       for (const doc of subsSnap.docs) {
         b.delete(doc.ref);
       }
       await b.commit();
+      try {
+        queryRun("DELETE FROM result_submissions WHERE fixture_id = ?", [entityId]);
+      } catch {
+      }
       if (fixDoc.data()?.competitionId) {
         try {
           const { rebuildCompetitionStandingsFirestore: rebuildCompetitionStandingsFirestore3 } = await Promise.resolve().then(() => (init_firestoreStore(), firestoreStore_exports));
           await rebuildCompetitionStandingsFirestore3(fixDoc.data().competitionId);
+        } catch {
+        }
+        try {
+          const { refreshMaterializedStandingsForCompetition: refreshMaterializedStandingsForCompetition2 } = await Promise.resolve().then(() => (init_sqliteStandings(), sqliteStandings_exports));
+          refreshMaterializedStandingsForCompetition2(fixDoc.data().competitionId);
         } catch {
         }
       }
@@ -6902,6 +7313,195 @@ async function executeSingleMutationSync(db, item) {
         notes: payload.notes || "Rejected by admin via sync",
         createdAt: now
       }, { merge: true });
+      try {
+        const { refreshChangedFixtureReadModel: refreshChangedFixtureReadModel2, invalidateFixtureReadModels: invalidateFixtureReadModels2, invalidateStandingsReadModels: invalidateStandingsReadModels4 } = await Promise.resolve().then(() => (init_readModelStore(), readModelStore_exports));
+        await refreshChangedFixtureReadModel2(entityId).catch(() => {
+        });
+        if (fixDoc.data()?.competitionId) {
+          await invalidateFixtureReadModels2(fixDoc.data().competitionId, fixDoc.data()?.seasonId || "season-2026-27").catch(() => {
+          });
+          await invalidateStandingsReadModels4(fixDoc.data().competitionId, fixDoc.data()?.seasonId || "season-2026-27").catch(() => {
+          });
+        }
+      } catch {
+      }
+      break;
+    }
+    case "ADMIN_EDIT_RESULT": {
+      const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(entityId);
+      const fixDoc = await fixRef.get();
+      if (!fixDoc.exists) {
+        throw new Error(`Fixture ${entityId} not found in Firestore.`);
+      }
+      const fixData = fixDoc.data();
+      const now = (/* @__PURE__ */ new Date()).toISOString();
+      const targetStatus = payload.status || "CONFIRMED";
+      let winnerClubId = null;
+      if (payload.homeScore > payload.awayScore) winnerClubId = fixData.homeClubId || payload.homeClubId;
+      else if (payload.awayScore > payload.homeScore) winnerClubId = fixData.awayClubId || payload.awayClubId;
+      await fixRef.update({
+        status: targetStatus,
+        homeScore: payload.homeScore,
+        awayScore: payload.awayScore,
+        winnerClubId,
+        resultConfirmedAt: targetStatus === "CONFIRMED" ? now : null,
+        updatedAt: now
+      });
+      const compId = fixData.competitionId || payload.competitionId;
+      const seasonId = fixData.seasonId || payload.seasonId || "season-2026-27";
+      try {
+        const { upsertFixtureToSqlite: upsertFixtureToSqlite2 } = await Promise.resolve().then(() => (init_db(), db_exports));
+        upsertFixtureToSqlite2({
+          id: entityId,
+          seasonId,
+          competitionId: compId,
+          matchday: fixData.matchday || payload.matchday || 1,
+          roundName: fixData.roundName || payload.roundName,
+          homeClubId: fixData.homeClubId || payload.homeClubId,
+          awayClubId: fixData.awayClubId || payload.awayClubId,
+          scheduledAt: fixData.scheduledAt || payload.scheduledAt || now,
+          status: targetStatus,
+          homeScore: payload.homeScore,
+          awayScore: payload.awayScore,
+          winnerClubId,
+          resultConfirmedAt: targetStatus === "CONFIRMED" ? now : null,
+          updatedAt: now
+        });
+      } catch (err) {
+        console.warn("[REPLAY SQLITE UPSERT WARNING]:", err.message);
+      }
+      if (winnerClubId && targetStatus === "CONFIRMED") {
+        try {
+          const { advanceKnockoutWinnerFirestore: advanceKnockoutWinnerFirestore2 } = await Promise.resolve().then(() => (init_knockoutEngine(), knockoutEngine_exports));
+          await advanceKnockoutWinnerFirestore2(entityId);
+        } catch {
+        }
+      }
+      if (compId) {
+        try {
+          const { rebuildCompetitionStandingsFirestore: rebuildCompetitionStandingsFirestore3 } = await Promise.resolve().then(() => (init_firestoreStore(), firestoreStore_exports));
+          await rebuildCompetitionStandingsFirestore3(compId);
+        } catch {
+        }
+        try {
+          const { refreshMaterializedStandingsForCompetition: refreshMaterializedStandingsForCompetition2 } = await Promise.resolve().then(() => (init_sqliteStandings(), sqliteStandings_exports));
+          refreshMaterializedStandingsForCompetition2(compId);
+        } catch {
+        }
+      }
+      const auditId = `audit_${item.mutationId}`;
+      await db.collection(COLLECTIONS.AUDIT_LOGS).doc(auditId).set({
+        id: auditId,
+        actorUserId: payload.adminUserId,
+        actorUsername: payload.adminUsername,
+        action: "ADMIN_EDIT_RESULT",
+        entityType: "fixture",
+        entityId,
+        notes: payload.notes || `Admin set result ${payload.homeScore}-${payload.awayScore}`,
+        createdAt: payload.createdAt || now
+      }, { merge: true });
+      try {
+        const { refreshChangedFixtureReadModel: refreshChangedFixtureReadModel2, invalidateFixtureReadModels: invalidateFixtureReadModels2, invalidateStandingsReadModels: invalidateStandingsReadModels4 } = await Promise.resolve().then(() => (init_readModelStore(), readModelStore_exports));
+        await refreshChangedFixtureReadModel2(entityId).catch(() => {
+        });
+        if (compId) {
+          await invalidateFixtureReadModels2(compId, seasonId).catch(() => {
+          });
+          await invalidateStandingsReadModels4(compId, seasonId).catch(() => {
+          });
+        }
+      } catch (rmErr) {
+        console.warn("[REPLAY READ_MODEL_PROPAGATION_WARNING]:", rmErr?.message);
+      }
+      break;
+    }
+    case "ADMIN_DELETE_RESULT": {
+      const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(entityId);
+      const fixDoc = await fixRef.get();
+      if (!fixDoc.exists) {
+        throw new Error(`Fixture ${entityId} not found in Firestore.`);
+      }
+      const fixData = fixDoc.data();
+      const now = (/* @__PURE__ */ new Date()).toISOString();
+      await fixRef.update({
+        status: "SCHEDULED",
+        homeScore: null,
+        awayScore: null,
+        winnerClubId: null,
+        resultConfirmedAt: null,
+        updatedAt: now
+      });
+      const compId = fixData.competitionId || payload.competitionId;
+      const seasonId = fixData.seasonId || payload.seasonId || "season-2026-27";
+      try {
+        const { upsertFixtureToSqlite: upsertFixtureToSqlite2 } = await Promise.resolve().then(() => (init_db(), db_exports));
+        upsertFixtureToSqlite2({
+          id: entityId,
+          seasonId,
+          competitionId: compId,
+          matchday: fixData.matchday || payload.matchday || 1,
+          roundName: fixData.roundName || payload.roundName,
+          homeClubId: fixData.homeClubId || payload.homeClubId,
+          awayClubId: fixData.awayClubId || payload.awayClubId,
+          scheduledAt: fixData.scheduledAt || payload.scheduledAt || now,
+          status: "SCHEDULED",
+          homeScore: null,
+          awayScore: null,
+          winnerClubId: null,
+          resultConfirmedAt: null,
+          updatedAt: now
+        });
+      } catch (err) {
+        console.warn("[REPLAY SQLITE UPSERT DELETE WARNING]:", err.message);
+      }
+      if (payload.deleteSubmissions) {
+        try {
+          const subsSnap = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where("fixtureId", "==", entityId).get();
+          const b = db.batch();
+          for (const doc of subsSnap.docs) {
+            b.delete(doc.ref);
+          }
+          await b.commit();
+          queryRun("DELETE FROM result_submissions WHERE fixture_id = ?", [entityId]);
+        } catch {
+        }
+      }
+      if (compId) {
+        try {
+          const { rebuildCompetitionStandingsFirestore: rebuildCompetitionStandingsFirestore3 } = await Promise.resolve().then(() => (init_firestoreStore(), firestoreStore_exports));
+          await rebuildCompetitionStandingsFirestore3(compId);
+        } catch {
+        }
+        try {
+          const { refreshMaterializedStandingsForCompetition: refreshMaterializedStandingsForCompetition2 } = await Promise.resolve().then(() => (init_sqliteStandings(), sqliteStandings_exports));
+          refreshMaterializedStandingsForCompetition2(compId);
+        } catch {
+        }
+      }
+      const auditId = `audit_${item.mutationId}`;
+      await db.collection(COLLECTIONS.AUDIT_LOGS).doc(auditId).set({
+        id: auditId,
+        actorUserId: payload.adminUserId,
+        actorUsername: payload.adminUsername,
+        action: "ADMIN_DELETE_RESULT",
+        entityType: "fixture",
+        entityId,
+        notes: payload.notes || "Admin deleted match result and reset status to SCHEDULED",
+        createdAt: payload.createdAt || now
+      }, { merge: true });
+      try {
+        const { refreshChangedFixtureReadModel: refreshChangedFixtureReadModel2, invalidateFixtureReadModels: invalidateFixtureReadModels2, invalidateStandingsReadModels: invalidateStandingsReadModels4 } = await Promise.resolve().then(() => (init_readModelStore(), readModelStore_exports));
+        await refreshChangedFixtureReadModel2(entityId).catch(() => {
+        });
+        if (compId) {
+          await invalidateFixtureReadModels2(compId, seasonId).catch(() => {
+          });
+          await invalidateStandingsReadModels4(compId, seasonId).catch(() => {
+          });
+        }
+      } catch (rmErr) {
+        console.warn("[REPLAY READ_MODEL_PROPAGATION_WARNING]:", rmErr?.message);
+      }
       break;
     }
     case "CLUB_CLAIM": {
@@ -7062,264 +7662,6 @@ function generateEuropean32LeaguePhaseSchedule(clubIds, options = {}) {
 }
 var init_fixtureEngine = __esm({
   "src/server/tournament/fixtureEngine.ts"() {
-  }
-});
-
-// src/server/tournament/standingsEngine.ts
-function calculateCompetitionStandings(competitionId) {
-  const comp = queryGet(
-    "SELECT season_id, format_config_json FROM competitions WHERE id = ?",
-    [competitionId]
-  );
-  const seasonId = comp?.season_id || "season-2026-27";
-  let formatConfig = {};
-  if (comp?.format_config_json) {
-    try {
-      formatConfig = JSON.parse(comp.format_config_json);
-    } catch {
-      formatConfig = {};
-    }
-  }
-  const pointsForWin = formatConfig.pointsForWin ?? 3;
-  const pointsForDraw = formatConfig.pointsForDraw ?? 1;
-  const pointsForLoss = formatConfig.pointsForLoss ?? 0;
-  const tieBreakers = formatConfig.tieBreakers ?? ["points", "goalDifference", "goalsFor", "headToHead"];
-  const clubs = queryAll(
-    `SELECT c.id, c.name, c.short_name, c.logo_url,
-            cm.user_id as manager_user_id,
-            u.username as manager_username,
-            u.first_name as manager_first_name,
-            u.last_name as manager_last_name
-     FROM competition_participants cp
-     JOIN clubs c ON cp.club_id = c.id
-     LEFT JOIN club_memberships cm ON c.id = cm.club_id AND cm.season_id = ? AND cm.status = 'active'
-     LEFT JOIN users u ON cm.user_id = u.id
-     WHERE cp.competition_id = ?
-     ORDER BY c.name ASC`,
-    [seasonId, competitionId]
-  );
-  let clubList = clubs;
-  if (clubList.length === 0) {
-    clubList = queryAll(
-      `SELECT c.id, c.name, c.short_name, c.logo_url,
-              cm.user_id as manager_user_id,
-              u.username as manager_username,
-              u.first_name as manager_first_name,
-              u.last_name as manager_last_name
-       FROM competitions comp
-       JOIN season_league_clubs slc ON comp.league_id = slc.league_id AND comp.season_id = slc.season_id AND slc.is_active = 1
-       JOIN clubs c ON slc.club_id = c.id
-       LEFT JOIN club_memberships cm ON c.id = cm.club_id AND cm.season_id = comp.season_id AND cm.status = 'active'
-       LEFT JOIN users u ON cm.user_id = u.id
-       WHERE comp.id = ?
-       ORDER BY c.name ASC`,
-      [competitionId]
-    );
-  }
-  const confirmedFixtures = queryAll(
-    `SELECT id, matchday, home_club_id, away_club_id, home_score, away_score, result_confirmed_at
-     FROM fixtures
-     WHERE competition_id = ? AND status = 'CONFIRMED' AND home_score IS NOT NULL AND away_score IS NOT NULL
-     ORDER BY matchday ASC, result_confirmed_at ASC`,
-    [competitionId]
-  );
-  const statsMap = /* @__PURE__ */ new Map();
-  for (const c of clubList) {
-    const fname = c.manager_first_name?.trim() || void 0;
-    const lname = c.manager_last_name?.trim() || void 0;
-    const cleanUname = c.manager_username ? c.manager_username.replace(/^@+/, "").trim() : void 0;
-    const isSyntheticUname = cleanUname?.startsWith("tg_") || cleanUname?.startsWith("user_");
-    const validUname = isSyntheticUname ? void 0 : cleanUname;
-    const fullName = [fname, lname].filter(Boolean).join(" ");
-    const displayName = fullName || fname || (validUname ? `@${validUname}` : void 0);
-    statsMap.set(c.id, {
-      clubId: c.id,
-      clubName: c.name,
-      shortName: c.short_name,
-      logoUrl: c.logo_url,
-      managerUserId: c.manager_user_id || void 0,
-      managerUsername: validUname,
-      managerFirstName: fname,
-      managerLastName: lname,
-      managerDisplayName: displayName,
-      played: 0,
-      won: 0,
-      drawn: 0,
-      lost: 0,
-      goalsFor: 0,
-      goalsAgainst: 0,
-      goalDifference: 0,
-      points: 0,
-      form: []
-    });
-  }
-  for (const fix of confirmedFixtures) {
-    const home = statsMap.get(fix.home_club_id);
-    const away = statsMap.get(fix.away_club_id);
-    if (home) {
-      home.played += 1;
-      home.goalsFor += fix.home_score;
-      home.goalsAgainst += fix.away_score;
-      if (fix.home_score > fix.away_score) {
-        home.won += 1;
-        home.points += pointsForWin;
-        home.form.push("W");
-      } else if (fix.home_score === fix.away_score) {
-        home.drawn += 1;
-        home.points += pointsForDraw;
-        home.form.push("D");
-      } else {
-        home.lost += 1;
-        home.points += pointsForLoss;
-        home.form.push("L");
-      }
-    }
-    if (away) {
-      away.played += 1;
-      away.goalsFor += fix.away_score;
-      away.goalsAgainst += fix.home_score;
-      if (fix.away_score > fix.home_score) {
-        away.won += 1;
-        away.points += pointsForWin;
-        away.form.push("W");
-      } else if (fix.away_score === fix.home_score) {
-        away.drawn += 1;
-        away.points += pointsForDraw;
-        away.form.push("D");
-      } else {
-        away.lost += 1;
-        away.points += pointsForLoss;
-        away.form.push("L");
-      }
-    }
-  }
-  const rows = Array.from(statsMap.values()).map((row) => {
-    row.goalDifference = row.goalsFor - row.goalsAgainst;
-    row.form = row.form.slice(-5);
-    return row;
-  });
-  function getH2HPoints(clubAId, clubBId) {
-    let pts = 0;
-    for (const f of confirmedFixtures) {
-      if (f.home_club_id === clubAId && f.away_club_id === clubBId) {
-        if (f.home_score > f.away_score) pts += pointsForWin;
-        else if (f.home_score === f.away_score) pts += pointsForDraw;
-      } else if (f.home_club_id === clubBId && f.away_club_id === clubAId) {
-        if (f.away_score > f.home_score) pts += pointsForWin;
-        else if (f.away_score === f.home_score) pts += pointsForDraw;
-      }
-    }
-    return pts;
-  }
-  rows.sort((a, b) => {
-    if (b.points !== a.points) {
-      return b.points - a.points;
-    }
-    for (const criteria of tieBreakers) {
-      if (criteria === "goalDifference") {
-        if (b.goalDifference !== a.goalDifference) {
-          return b.goalDifference - a.goalDifference;
-        }
-      } else if (criteria === "goalsFor") {
-        if (b.goalsFor !== a.goalsFor) {
-          return b.goalsFor - a.goalsFor;
-        }
-      } else if (criteria === "headToHead") {
-        const h2hA = getH2HPoints(a.clubId, b.clubId);
-        const h2hB = getH2HPoints(b.clubId, a.clubId);
-        if (h2hB !== h2hA) {
-          return h2hB - h2hA;
-        }
-      }
-    }
-    return a.clubName.localeCompare(b.clubName);
-  });
-  return rows.map((r, index) => ({
-    position: index + 1,
-    clubId: r.clubId,
-    clubName: r.clubName,
-    shortName: r.shortName,
-    logoUrl: r.logoUrl,
-    managerUserId: r.managerUserId,
-    managerUsername: r.managerUsername,
-    managerFirstName: r.managerFirstName,
-    managerLastName: r.managerLastName,
-    managerDisplayName: r.managerDisplayName,
-    played: r.played,
-    won: r.won,
-    drawn: r.drawn,
-    lost: r.lost,
-    goalsFor: r.goalsFor,
-    goalsAgainst: r.goalsAgainst,
-    goalDifference: r.goalDifference,
-    points: r.points,
-    form: r.form
-  }));
-}
-var init_standingsEngine = __esm({
-  "src/server/tournament/standingsEngine.ts"() {
-    init_db();
-  }
-});
-
-// src/server/db/sqliteStandings.ts
-var sqliteStandings_exports = {};
-__export(sqliteStandings_exports, {
-  getMaterializedStandingsForCompetition: () => getMaterializedStandingsForCompetition,
-  refreshMaterializedStandingsForCompetition: () => refreshMaterializedStandingsForCompetition,
-  updateMaterializedStandingsFromFixture: () => updateMaterializedStandingsFromFixture
-});
-function refreshMaterializedStandingsForCompetition(competitionId) {
-  const standings = calculateCompetitionStandings(competitionId);
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  dbTransaction(() => {
-    queryRun("DELETE FROM competition_standings WHERE competition_id = ?", [competitionId]);
-    for (const row of standings) {
-      queryRun(
-        `INSERT OR REPLACE INTO competition_standings (
-          competition_id, club_id, rank, club_name, short_name, logo_url,
-          played, won, drawn, lost, goals_for, goals_against, goal_difference,
-          points, form_json, qualification_status, manager_username, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          competitionId,
-          row.clubId,
-          row.position,
-          row.clubName,
-          row.shortName || "",
-          row.logoUrl || "",
-          row.played,
-          row.won,
-          row.drawn,
-          row.lost,
-          row.goalsFor,
-          row.goalsAgainst,
-          row.goalDifference,
-          row.points,
-          JSON.stringify(row.form || []),
-          null,
-          row.managerUsername || null,
-          now
-        ]
-      );
-    }
-  });
-  return standings;
-}
-function getMaterializedStandingsForCompetition(competitionId) {
-  return refreshMaterializedStandingsForCompetition(competitionId);
-}
-function updateMaterializedStandingsFromFixture(fixtureId) {
-  const fix = queryGet("SELECT competition_id FROM fixtures WHERE id = ?", [fixtureId]);
-  if (!fix?.competition_id) {
-    return null;
-  }
-  return refreshMaterializedStandingsForCompetition(fix.competition_id);
-}
-var init_sqliteStandings = __esm({
-  "src/server/db/sqliteStandings.ts"() {
-    init_db();
-    init_standingsEngine();
   }
 });
 
@@ -12503,153 +12845,432 @@ async function adminEditFixtureResultFirestore(adminUserId, adminUsername, fixtu
     throw new Error("Scores must be non-negative integers.");
   }
   const now = (/* @__PURE__ */ new Date()).toISOString();
-  const db = getFirestoreDb();
-  const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
-  const fixDoc = await fixRef.get();
-  if (!fixDoc.exists) {
-    throw new Error(`Fixture '${fixtureId}' not found.`);
-  }
-  const existing = fixDoc.data();
-  const oldScore = {
-    homeScore: existing.homeScore,
-    awayScore: existing.awayScore,
-    status: existing.status,
-    winnerClubId: existing.winnerClubId
-  };
-  let winnerClubId = null;
-  if (params.homeScore > params.awayScore) winnerClubId = existing.homeClubId;
-  else if (params.awayScore > params.homeScore) winnerClubId = existing.awayClubId;
   const targetStatus = params.status || "CONFIRMED";
-  await fixRef.update({
-    status: targetStatus,
-    homeScore: params.homeScore,
-    awayScore: params.awayScore,
-    winnerClubId,
-    resultConfirmedAt: targetStatus === "CONFIRMED" ? now : null,
-    updatedAt: now
-  });
-  try {
-    queryRun(
-      `UPDATE fixtures 
-       SET status = ?, home_score = ?, away_score = ?, winner_club_id = ?, result_confirmed_at = ?, updated_at = ? 
-       WHERE id = ?`,
-      [
-        targetStatus,
-        params.homeScore,
-        params.awayScore,
-        winnerClubId,
-        targetStatus === "CONFIRMED" ? now : null,
-        now,
-        fixtureId
-      ]
-    );
-  } catch (err) {
-    console.warn("[SQLITE UPDATE FIXTURE]:", err.message);
-  }
-  if (winnerClubId && targetStatus === "CONFIRMED") {
-    try {
-      const { advanceKnockoutWinnerFirestore: advanceKnockoutWinnerFirestore2 } = await Promise.resolve().then(() => (init_knockoutEngine(), knockoutEngine_exports));
-      await advanceKnockoutWinnerFirestore2(fixtureId);
-    } catch (err) {
-      console.warn("[KNOCKOUT_ADVANCE]:", err);
+  const mutationId = params.idempotencyKey || `admin_edit_${fixtureId}_${targetStatus}_${params.homeScore}_${params.awayScore}`;
+  console.log("[ADMIN_RESULT_SAVE_START]", JSON.stringify({ fixtureId, adminUserId, homeScore: params.homeScore, awayScore: params.awayScore, status: targetStatus, mutationId }));
+  const executeDurableFallbackEdit = async (existingData) => {
+    recordFallbackUsage();
+    const sqliteRow = queryGet("SELECT * FROM fixtures WHERE id = ?", [fixtureId]);
+    const seasonId = existingData?.seasonId || sqliteRow?.season_id || "season-2026-27";
+    const compId = existingData?.competitionId || sqliteRow?.competition_id || "";
+    const homeClubId = existingData?.homeClubId || sqliteRow?.home_club_id || null;
+    const awayClubId = existingData?.awayClubId || sqliteRow?.away_club_id || null;
+    const matchday = existingData?.matchday !== void 0 ? existingData.matchday : sqliteRow?.matchday ?? 1;
+    const roundName = existingData?.roundName || sqliteRow?.round_name || `Matchday ${matchday}`;
+    const scheduledAt = existingData?.scheduledAt || sqliteRow?.scheduled_at || now;
+    let winnerClubId = null;
+    if (params.homeScore > params.awayScore) winnerClubId = homeClubId;
+    else if (params.awayScore > params.homeScore) winnerClubId = awayClubId;
+    const mutationPayload = {
+      fixtureId,
+      adminUserId,
+      adminUsername,
+      homeScore: params.homeScore,
+      awayScore: params.awayScore,
+      status: targetStatus,
+      notes: params.notes || `Admin set result ${params.homeScore}-${params.awayScore}`,
+      competitionId: compId,
+      seasonId,
+      matchday,
+      roundName,
+      homeClubId,
+      awayClubId,
+      scheduledAt,
+      winnerClubId,
+      resultConfirmedAt: targetStatus === "CONFIRMED" ? now : null,
+      createdAt: now
+    };
+    await enqueueDurableOutboxMutation({
+      mutationId,
+      entityType: "ADMIN_EDIT_RESULT",
+      entityId: fixtureId,
+      operation: "ADMIN_EDIT_RESULT",
+      adminUserId,
+      seasonId,
+      competitionId: compId,
+      payload: mutationPayload,
+      createdAt: now
+    });
+    console.log("[ADMIN_RESULT_OUTBOX_ENQUEUED]", JSON.stringify({ fixtureId, mutationId, operation: "ADMIN_EDIT_RESULT" }));
+    upsertFixtureToSqlite({
+      id: fixtureId,
+      seasonId,
+      competitionId: compId,
+      matchday,
+      roundName,
+      homeClubId,
+      awayClubId,
+      scheduledAt,
+      status: targetStatus,
+      homeScore: params.homeScore,
+      awayScore: params.awayScore,
+      winnerClubId,
+      resultConfirmedAt: targetStatus === "CONFIRMED" ? now : null,
+      updatedAt: now
+    });
+    console.log("[ADMIN_RESULT_SQLITE_SYNCED]", JSON.stringify({ fixtureId, homeScore: params.homeScore, awayScore: params.awayScore }));
+    if (compId) {
+      try {
+        refreshMaterializedStandingsForCompetition(compId);
+      } catch (stErr) {
+        console.warn("[SQLITE STANDINGS FALLBACK]:", stErr.message);
+      }
     }
-  }
-  if (existing.competitionId) {
-    try {
-      await rebuildCompetitionStandingsFirestore2(existing.competitionId);
-    } catch (err) {
-      console.warn("[STANDINGS_REBUILD]:", err);
+    invalidateFirestoreCache();
+    await invalidateFixtureReadModels(compId, seasonId).catch(() => {
+    });
+    await invalidateStandingsReadModels(compId, seasonId).catch(() => {
+    });
+    console.log("[ADMIN_RESULT_READMODEL_REFRESHED]", JSON.stringify({ fixtureId, compId, seasonId }));
+    const fallbackFixture = await getFixtureByIdFirestore(fixtureId, adminUserId);
+    if (fallbackFixture) {
+      fallbackFixture.pendingSync = true;
     }
-  }
-  const actionName = existing.status === "CONFIRMED" || existing.homeScore != null ? "ADMIN_EDIT_RESULT" : "ADMIN_SET_RESULT";
-  await createAuditLogFirestore(
-    adminUserId,
-    actionName,
-    "fixture",
-    fixtureId,
-    oldScore,
-    { homeScore: params.homeScore, awayScore: params.awayScore, winnerClubId, status: targetStatus },
-    void 0,
-    adminUsername,
-    params.notes || `Admin set result ${params.homeScore}-${params.awayScore}`
-  );
-  invalidateFirestoreCache();
-  const updated = await getFixtureByIdFirestore(fixtureId);
-  return {
-    success: true,
-    message: `Result updated to ${params.homeScore}-${params.awayScore} (${targetStatus}) and standings recalculated.`,
-    fixture: updated
+    console.log("[ADMIN_RESULT_SAVE_SUCCESS]", JSON.stringify({ fixtureId, pendingSync: true }));
+    return {
+      success: true,
+      pendingSync: true,
+      message: `Result queued for sync: ${params.homeScore}-${params.awayScore} (${targetStatus}).`,
+      fixture: fallbackFixture || {
+        id: fixtureId,
+        competitionId: compId,
+        seasonId,
+        matchday,
+        roundName,
+        homeClubId: homeClubId || "",
+        awayClubId: awayClubId || "",
+        status: targetStatus,
+        homeScore: params.homeScore,
+        awayScore: params.awayScore,
+        winnerClubId: winnerClubId || void 0,
+        scheduledAt,
+        createdAt: now,
+        updatedAt: now,
+        pendingSync: true
+      }
+    };
   };
+  if (!firestoreCircuitBreaker.canExecute()) {
+    return await executeDurableFallbackEdit();
+  }
+  try {
+    const db = getFirestoreDb();
+    const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
+    const fixDoc = await fixRef.get();
+    if (!fixDoc.exists) {
+      throw new Error(`Fixture '${fixtureId}' not found.`);
+    }
+    const existing = fixDoc.data();
+    const oldScore = {
+      homeScore: existing.homeScore,
+      awayScore: existing.awayScore,
+      status: existing.status,
+      winnerClubId: existing.winnerClubId
+    };
+    let winnerClubId = null;
+    if (params.homeScore > params.awayScore) winnerClubId = existing.homeClubId;
+    else if (params.awayScore > params.homeScore) winnerClubId = existing.awayClubId;
+    await fixRef.update({
+      status: targetStatus,
+      homeScore: params.homeScore,
+      awayScore: params.awayScore,
+      winnerClubId,
+      resultConfirmedAt: targetStatus === "CONFIRMED" ? now : null,
+      updatedAt: now
+    });
+    console.log("[ADMIN_RESULT_FIRESTORE_SUCCESS]", JSON.stringify({ fixtureId, targetStatus, homeScore: params.homeScore, awayScore: params.awayScore }));
+    try {
+      upsertFixtureToSqlite({
+        id: fixtureId,
+        seasonId: existing.seasonId,
+        competitionId: existing.competitionId,
+        matchday: existing.matchday,
+        roundName: existing.roundName,
+        homeClubId: existing.homeClubId,
+        awayClubId: existing.awayClubId,
+        scheduledAt: existing.scheduledAt,
+        status: targetStatus,
+        homeScore: params.homeScore,
+        awayScore: params.awayScore,
+        winnerClubId,
+        resultConfirmedAt: targetStatus === "CONFIRMED" ? now : null,
+        updatedAt: now
+      });
+      console.log("[ADMIN_RESULT_SQLITE_SYNCED]", JSON.stringify({ fixtureId, homeScore: params.homeScore, awayScore: params.awayScore }));
+    } catch (err) {
+      console.warn("[SQLITE UPSERT FIXTURE]:", err.message);
+    }
+    if (winnerClubId && targetStatus === "CONFIRMED") {
+      try {
+        const { advanceKnockoutWinnerFirestore: advanceKnockoutWinnerFirestore2 } = await Promise.resolve().then(() => (init_knockoutEngine(), knockoutEngine_exports));
+        await advanceKnockoutWinnerFirestore2(fixtureId);
+      } catch (err) {
+        console.warn("[KNOCKOUT_ADVANCE]:", err);
+      }
+    }
+    if (existing.competitionId) {
+      try {
+        await rebuildCompetitionStandingsFirestore2(existing.competitionId);
+      } catch (err) {
+        console.warn("[STANDINGS_REBUILD]:", err);
+      }
+      try {
+        refreshMaterializedStandingsForCompetition(existing.competitionId);
+      } catch (stErr) {
+        console.warn("[SQLITE_STANDINGS_REBUILD]:", stErr);
+      }
+    }
+    const actionName = existing.status === "CONFIRMED" || existing.homeScore != null ? "ADMIN_EDIT_RESULT" : "ADMIN_SET_RESULT";
+    const auditId = `audit_${mutationId}`;
+    await createAuditLogFirestore(
+      adminUserId,
+      actionName,
+      "fixture",
+      fixtureId,
+      oldScore,
+      { homeScore: params.homeScore, awayScore: params.awayScore, winnerClubId, status: targetStatus },
+      void 0,
+      adminUsername,
+      params.notes || `Admin set result ${params.homeScore}-${params.awayScore}`,
+      auditId
+    );
+    invalidateFirestoreCache();
+    await refreshChangedFixtureReadModel(fixtureId).catch(() => {
+    });
+    await invalidateFixtureReadModels(existing.competitionId, existing.seasonId || "season-2026-27").catch(() => {
+    });
+    await invalidateStandingsReadModels(existing.competitionId, existing.seasonId || "season-2026-27").catch(() => {
+    });
+    console.log("[ADMIN_RESULT_READMODEL_REFRESHED]", JSON.stringify({ fixtureId, competitionId: existing.competitionId, seasonId: existing.seasonId }));
+    const updated = await getFixtureByIdFirestore(fixtureId);
+    console.log("[ADMIN_RESULT_SAVE_SUCCESS]", JSON.stringify({ fixtureId, pendingSync: false }));
+    return {
+      success: true,
+      message: `Result updated to ${params.homeScore}-${params.awayScore} (${targetStatus}) and standings recalculated.`,
+      fixture: updated
+    };
+  } catch (err) {
+    console.error("[ADMIN_RESULT_FIRESTORE_FAILURE]", JSON.stringify({ fixtureId, error: err?.message }));
+    firestoreCircuitBreaker.recordFailure(err);
+    if (!firestoreCircuitBreaker.canExecute()) {
+      return await executeDurableFallbackEdit();
+    }
+    console.error("[ADMIN_RESULT_SAVE_FAILED]", JSON.stringify({ fixtureId, error: err?.message }));
+    throw err;
+  }
 }
 async function adminDeleteFixtureResultFirestore(adminUserId, adminUsername, fixtureId, options) {
   const now = (/* @__PURE__ */ new Date()).toISOString();
-  const db = getFirestoreDb();
-  const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
-  const fixDoc = await fixRef.get();
-  if (!fixDoc.exists) {
-    throw new Error(`Fixture '${fixtureId}' not found.`);
-  }
-  const existing = fixDoc.data();
-  const oldScore = {
-    homeScore: existing.homeScore,
-    awayScore: existing.awayScore,
-    status: existing.status,
-    winnerClubId: existing.winnerClubId
+  const mutationId = options?.idempotencyKey || `admin_del_${fixtureId}${options?.deleteSubmissions ? "_with_subs" : ""}`;
+  console.log("[ADMIN_RESULT_SAVE_START]", JSON.stringify({ fixtureId, adminUserId, operation: "ADMIN_DELETE_RESULT", mutationId }));
+  const executeDurableFallbackDelete = async (existingData) => {
+    recordFallbackUsage();
+    const sqliteRow = queryGet("SELECT * FROM fixtures WHERE id = ?", [fixtureId]);
+    const seasonId = existingData?.seasonId || sqliteRow?.season_id || "season-2026-27";
+    const compId = existingData?.competitionId || sqliteRow?.competition_id || "";
+    const homeClubId = existingData?.homeClubId || sqliteRow?.home_club_id || null;
+    const awayClubId = existingData?.awayClubId || sqliteRow?.away_club_id || null;
+    const matchday = existingData?.matchday !== void 0 ? existingData.matchday : sqliteRow?.matchday ?? 1;
+    const roundName = existingData?.roundName || sqliteRow?.round_name || `Matchday ${matchday}`;
+    const scheduledAt = existingData?.scheduledAt || sqliteRow?.scheduled_at || now;
+    const mutationPayload = {
+      fixtureId,
+      adminUserId,
+      adminUsername,
+      deleteSubmissions: Boolean(options?.deleteSubmissions),
+      notes: options?.notes || "Admin deleted match result and reset status to SCHEDULED",
+      competitionId: compId,
+      seasonId,
+      matchday,
+      roundName,
+      homeClubId,
+      awayClubId,
+      scheduledAt,
+      createdAt: now
+    };
+    await enqueueDurableOutboxMutation({
+      mutationId,
+      entityType: "ADMIN_DELETE_RESULT",
+      entityId: fixtureId,
+      operation: "ADMIN_DELETE_RESULT",
+      adminUserId,
+      seasonId,
+      competitionId: compId,
+      payload: mutationPayload,
+      createdAt: now
+    });
+    console.log("[ADMIN_RESULT_OUTBOX_ENQUEUED]", JSON.stringify({ fixtureId, mutationId, operation: "ADMIN_DELETE_RESULT" }));
+    upsertFixtureToSqlite({
+      id: fixtureId,
+      seasonId,
+      competitionId: compId,
+      matchday,
+      roundName,
+      homeClubId,
+      awayClubId,
+      scheduledAt,
+      status: "SCHEDULED",
+      homeScore: null,
+      awayScore: null,
+      winnerClubId: null,
+      resultConfirmedAt: null,
+      updatedAt: now
+    });
+    console.log("[ADMIN_RESULT_SQLITE_SYNCED]", JSON.stringify({ fixtureId, operation: "ADMIN_DELETE_RESULT" }));
+    if (options?.deleteSubmissions) {
+      try {
+        queryRun("DELETE FROM result_submissions WHERE fixture_id = ?", [fixtureId]);
+      } catch {
+      }
+    }
+    if (compId) {
+      try {
+        refreshMaterializedStandingsForCompetition(compId);
+      } catch (stErr) {
+        console.warn("[SQLITE STANDINGS DELETE FALLBACK]:", stErr.message);
+      }
+    }
+    invalidateFirestoreCache();
+    await invalidateFixtureReadModels(compId, seasonId).catch(() => {
+    });
+    await invalidateStandingsReadModels(compId, seasonId).catch(() => {
+    });
+    console.log("[ADMIN_RESULT_READMODEL_REFRESHED]", JSON.stringify({ fixtureId, compId, seasonId }));
+    const fallbackFixture = await getFixtureByIdFirestore(fixtureId, adminUserId);
+    if (fallbackFixture) {
+      fallbackFixture.pendingSync = true;
+    }
+    console.log("[ADMIN_RESULT_SAVE_SUCCESS]", JSON.stringify({ fixtureId, operation: "ADMIN_DELETE_RESULT", pendingSync: true }));
+    return {
+      success: true,
+      pendingSync: true,
+      message: "Match result reset queued for sync and status set to SCHEDULED.",
+      fixture: fallbackFixture || {
+        id: fixtureId,
+        competitionId: compId,
+        seasonId,
+        matchday,
+        roundName,
+        homeClubId: homeClubId || "",
+        awayClubId: awayClubId || "",
+        status: "SCHEDULED",
+        homeScore: null,
+        awayScore: null,
+        winnerClubId: void 0,
+        scheduledAt,
+        createdAt: now,
+        updatedAt: now,
+        pendingSync: true
+      }
+    };
   };
-  await fixRef.update({
-    status: "SCHEDULED",
-    homeScore: null,
-    awayScore: null,
-    winnerClubId: null,
-    resultConfirmedAt: null,
-    updatedAt: now
-  });
+  if (!firestoreCircuitBreaker.canExecute()) {
+    return await executeDurableFallbackDelete();
+  }
   try {
-    queryRun(
-      `UPDATE fixtures 
-       SET status = 'SCHEDULED', home_score = NULL, away_score = NULL, winner_club_id = NULL, result_confirmed_at = NULL, updated_at = ? 
-       WHERE id = ?`,
-      [now, fixtureId]
+    const db = getFirestoreDb();
+    const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
+    const fixDoc = await fixRef.get();
+    if (!fixDoc.exists) {
+      throw new Error(`Fixture '${fixtureId}' not found.`);
+    }
+    const existing = fixDoc.data();
+    const oldScore = {
+      homeScore: existing.homeScore,
+      awayScore: existing.awayScore,
+      status: existing.status,
+      winnerClubId: existing.winnerClubId
+    };
+    await fixRef.update({
+      status: "SCHEDULED",
+      homeScore: null,
+      awayScore: null,
+      winnerClubId: null,
+      resultConfirmedAt: null,
+      updatedAt: now
+    });
+    console.log("[ADMIN_RESULT_FIRESTORE_SUCCESS]", JSON.stringify({ fixtureId, operation: "ADMIN_DELETE_RESULT" }));
+    try {
+      upsertFixtureToSqlite({
+        id: fixtureId,
+        seasonId: existing.seasonId,
+        competitionId: existing.competitionId,
+        matchday: existing.matchday,
+        roundName: existing.roundName,
+        homeClubId: existing.homeClubId,
+        awayClubId: existing.awayClubId,
+        scheduledAt: existing.scheduledAt,
+        status: "SCHEDULED",
+        homeScore: null,
+        awayScore: null,
+        winnerClubId: null,
+        resultConfirmedAt: null,
+        updatedAt: now
+      });
+      console.log("[ADMIN_RESULT_SQLITE_SYNCED]", JSON.stringify({ fixtureId, operation: "ADMIN_DELETE_RESULT" }));
+    } catch (err) {
+      console.warn("[SQLITE UPSERT FIXTURE DELETE]:", err.message);
+    }
+    if (options?.deleteSubmissions) {
+      try {
+        const subsSnap = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where("fixtureId", "==", fixtureId).get();
+        const batch = db.batch();
+        subsSnap.docs.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+        queryRun("DELETE FROM result_submissions WHERE fixture_id = ?", [fixtureId]);
+      } catch (err) {
+        console.warn("[DELETE SUBMISSIONS]:", err.message);
+      }
+    }
+    if (existing.competitionId) {
+      try {
+        await rebuildCompetitionStandingsFirestore2(existing.competitionId);
+      } catch (err) {
+        console.warn("[STANDINGS_REBUILD]:", err);
+      }
+      try {
+        refreshMaterializedStandingsForCompetition(existing.competitionId);
+      } catch (stErr) {
+        console.warn("[SQLITE_STANDINGS_REBUILD]:", stErr);
+      }
+    }
+    const auditId = `audit_${mutationId}`;
+    await createAuditLogFirestore(
+      adminUserId,
+      "ADMIN_DELETE_RESULT",
+      "fixture",
+      fixtureId,
+      oldScore,
+      { status: "SCHEDULED", homeScore: null, awayScore: null },
+      void 0,
+      adminUsername,
+      options?.notes || "Admin deleted match result and reset status to SCHEDULED",
+      auditId
     );
+    invalidateFirestoreCache();
+    await refreshChangedFixtureReadModel(fixtureId).catch(() => {
+    });
+    await invalidateFixtureReadModels(existing.competitionId, existing.seasonId || "season-2026-27").catch(() => {
+    });
+    await invalidateStandingsReadModels(existing.competitionId, existing.seasonId || "season-2026-27").catch(() => {
+    });
+    console.log("[ADMIN_RESULT_READMODEL_REFRESHED]", JSON.stringify({ fixtureId, operation: "ADMIN_DELETE_RESULT" }));
+    const updated = await getFixtureByIdFirestore(fixtureId);
+    console.log("[ADMIN_RESULT_SAVE_SUCCESS]", JSON.stringify({ fixtureId, operation: "ADMIN_DELETE_RESULT", pendingSync: false }));
+    return {
+      success: true,
+      message: "Match result deleted and status reset to SCHEDULED. Standings recalculated.",
+      fixture: updated
+    };
   } catch (err) {
-    console.warn("[SQLITE DELETE RESULT]:", err.message);
-  }
-  if (options?.deleteSubmissions) {
-    try {
-      const subsSnap = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where("fixtureId", "==", fixtureId).get();
-      const batch = db.batch();
-      subsSnap.docs.forEach((d) => batch.delete(d.ref));
-      await batch.commit();
-      queryRun("DELETE FROM result_submissions WHERE fixture_id = ?", [fixtureId]);
-    } catch (err) {
-      console.warn("[DELETE SUBMISSIONS]:", err.message);
+    console.error("[ADMIN_RESULT_FIRESTORE_FAILURE]", JSON.stringify({ fixtureId, error: err?.message }));
+    firestoreCircuitBreaker.recordFailure(err);
+    if (!firestoreCircuitBreaker.canExecute()) {
+      return await executeDurableFallbackDelete();
     }
+    console.error("[ADMIN_RESULT_SAVE_FAILED]", JSON.stringify({ fixtureId, error: err?.message }));
+    throw err;
   }
-  if (existing.competitionId) {
-    try {
-      await rebuildCompetitionStandingsFirestore2(existing.competitionId);
-    } catch (err) {
-      console.warn("[STANDINGS_REBUILD]:", err);
-    }
-  }
-  await createAuditLogFirestore(
-    adminUserId,
-    "ADMIN_DELETE_RESULT",
-    "fixture",
-    fixtureId,
-    oldScore,
-    { status: "SCHEDULED", homeScore: null, awayScore: null },
-    void 0,
-    adminUsername,
-    options?.notes || "Admin deleted match result and reset status to SCHEDULED"
-  );
-  invalidateFirestoreCache();
-  const updated = await getFixtureByIdFirestore(fixtureId);
-  return {
-    success: true,
-    message: "Match result deleted and status reset to SCHEDULED. Standings recalculated.",
-    fixture: updated
-  };
 }
 async function adminDeleteFixtureFirestore(adminUserId, adminUsername, fixtureId, reason) {
   if (!reason || reason.trim().length < 3) {
@@ -13064,6 +13685,7 @@ var init_firestoreStore = __esm({
   "src/server/firebase/firestoreStore.ts"() {
     init_admin();
     init_db();
+    init_sqliteStandings();
     init_seed();
     init_circuitBreaker();
     init_circuitBreaker();
@@ -15783,31 +16405,47 @@ var adminEditResultSchema = z3.object({
   homeScore: z3.number().int().min(0, "Home score must be >= 0"),
   awayScore: z3.number().int().min(0, "Away score must be >= 0"),
   status: z3.enum(["CONFIRMED", "AWAITING_RESULT", "SCHEDULED"]).optional(),
-  notes: z3.string().optional()
+  notes: z3.string().optional(),
+  idempotencyKey: z3.string().optional()
 });
 adminRouter.post("/fixtures/:id/result", validateBody(adminEditResultSchema), async (req, res) => {
   const adminUserId = req.user.id;
   const adminUsername = req.user.username || "admin";
   const fixtureId = req.params.id;
+  const headerIdempotencyKey = req.headers["x-idempotency-key"] || req.headers["idempotency-key"];
+  const idempotencyKey = req.body.idempotencyKey || headerIdempotencyKey;
   try {
-    const result = await editFixtureResult(adminUserId, adminUsername, fixtureId, req.body);
+    const result = await editFixtureResult(adminUserId, adminUsername, fixtureId, {
+      ...req.body,
+      idempotencyKey
+    });
+    await refreshChangedFixtureReadModel(fixtureId);
     res.json(result);
   } catch (err) {
+    console.error("[ADMIN_RESULT_SAVE_FAILED]", JSON.stringify({ fixtureId, error: err?.message }));
     handleFirestoreError(res, err, `POST /api/admin/fixtures/${fixtureId}/result`);
   }
 });
 var adminDeleteResultSchema = z3.object({
   deleteSubmissions: z3.boolean().optional(),
-  notes: z3.string().optional()
+  notes: z3.string().optional(),
+  idempotencyKey: z3.string().optional()
 });
 adminRouter.post("/fixtures/:id/delete-result", validateBody(adminDeleteResultSchema), async (req, res) => {
   const adminUserId = req.user.id;
   const adminUsername = req.user.username || "admin";
   const fixtureId = req.params.id;
+  const headerIdempotencyKey = req.headers["x-idempotency-key"] || req.headers["idempotency-key"];
+  const idempotencyKey = req.body.idempotencyKey || headerIdempotencyKey;
   try {
-    const result = await deleteFixtureResult(adminUserId, adminUsername, fixtureId, req.body);
+    const result = await deleteFixtureResult(adminUserId, adminUsername, fixtureId, {
+      ...req.body,
+      idempotencyKey
+    });
+    await refreshChangedFixtureReadModel(fixtureId);
     res.json(result);
   } catch (err) {
+    console.error("[ADMIN_RESULT_SAVE_FAILED]", JSON.stringify({ fixtureId, error: err?.message, operation: "ADMIN_DELETE_RESULT" }));
     handleFirestoreError(res, err, `POST /api/admin/fixtures/${fixtureId}/delete-result`);
   }
 });
