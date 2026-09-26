@@ -23,7 +23,9 @@ jobs:
           bun-version: latest
 
       - name: Apply standings self-heal patch
-        run: python scripts/applyStandingsRedisSelfHeal.py
+        run: |
+          python scripts/applyStandingsRedisSelfHeal.py
+          python scripts/fixStandingsSelfHealTyping.py
 
       - name: Install dependencies
         run: bun install
@@ -65,7 +67,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm .github/workflows/standings-self-heal.yml scripts/applyStandingsRedisSelfHeal.py
+          git rm .github/workflows/standings-self-heal.yml scripts/applyStandingsRedisSelfHeal.py scripts/fixStandingsSelfHealTyping.py
           git add src/server/readModel/readModelStore.ts api/index.js api/index.js.map
           git commit -m "fix(standings): self-heal Redis from confirmed fixture snapshots"
           git push origin HEAD:fix/standings-redis-self-heal
