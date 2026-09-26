@@ -388,7 +388,7 @@ export const EflCareerCard: React.FC<{ userId?: string; adminPreview?: boolean }
                       </div>
                       <h3 className="mt-2 text-xl font-black text-white">One season. One payment.</h3>
                       <p className="mt-2 max-w-xl text-xs leading-relaxed text-slate-400">
-                        The invoice is priced at exactly {priceStars} Stars and carries a server-created order ID. Premium activates only after Telegram sends a verified successful-payment webhook.
+                        The invoice is priced at exactly {priceStars} Stars and carries a server-created order ID. Premium activates only after Telegram sends a verified successful-payment webhook. On the production bot, completing checkout uses real Telegram Stars.
                       </p>
                     </div>
                     <div className="rounded-2xl border border-amber-300/25 bg-black/25 px-5 py-4 text-center shrink-0">
@@ -403,7 +403,7 @@ export const EflCareerCard: React.FC<{ userId?: string; adminPreview?: boolean }
                     className="relative z-10 mt-5 flex min-h-[46px] w-full items-center justify-center gap-2 rounded-xl bg-amber-300 px-4 py-3 text-xs font-black text-slate-950 shadow-xl shadow-amber-950/25 transition hover:bg-amber-200 disabled:opacity-50"
                   >
                     {actionLoading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <CircleDollarSign className="h-4 w-4" />}
-                    Create {priceStars}⭐ test invoice for my admin account
+                    Create {priceStars}⭐ invoice for my admin account
                   </button>
                 </div>
 

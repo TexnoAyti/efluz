@@ -14,6 +14,7 @@ export const PREMIUM_DEFAULT_SEASON_ID = 'season-2026-27';
 const ENTITLEMENTS_COLLECTION = 'premium_entitlements';
 const PAYMENTS_COLLECTION = 'premium_payments';
 const ORDERS_COLLECTION = 'premium_orders';
+const PREMIUM_ORDER_TTL_MS = 60 * 60 * 1000;
 
 export type PremiumEntitlementStatus = 'ACTIVE' | 'REVOKED';
 export type PremiumEntitlementSource = 'ADMIN' | 'TELEGRAM_STARS';
@@ -131,6 +132,13 @@ export async function listPremiumEntitlements(
   return snap.docs.map((doc) => ({ id: doc.id, ...(doc.data() as Omit<PremiumEntitlement, 'id'>) }));
 }
 
+async function assertPremiumTargetUserExists(userId: string): Promise<void> {
+  const db = getFirestoreDb();
+  const snap = await db.collection('users').doc(userId).get();
+  trackFirestoreRead('users', 1, 'assertPremiumTargetUserExists');
+  if (!snap.exists) throw new Error('PREMIUM_TARGET_USER_NOT_FOUND');
+}
+
 export async function grantPremiumEntitlement(params: {
   userId: string;
   seasonId?: string;
@@ -141,6 +149,7 @@ export async function grantPremiumEntitlement(params: {
   paymentChargeId?: string;
 }): Promise<PremiumEntitlement> {
   const seasonId = params.seasonId || PREMIUM_DEFAULT_SEASON_ID;
+  await assertPremiumTargetUserExists(params.userId);
   const now = new Date().toISOString();
   const db = getFirestoreDb();
   const ref = db.collection(ENTITLEMENTS_COLLECTION).doc(entitlementId(params.userId, seasonId));
@@ -190,6 +199,7 @@ export async function revokePremiumEntitlement(params: {
   note?: string;
 }): Promise<PremiumEntitlement> {
   const seasonId = params.seasonId || PREMIUM_DEFAULT_SEASON_ID;
+  await assertPremiumTargetUserExists(params.userId);
   const db = getFirestoreDb();
   const ref = db.collection(ENTITLEMENTS_COLLECTION).doc(entitlementId(params.userId, seasonId));
   const existing = await ref.get();
@@ -485,12 +495,21 @@ export async function answerPremiumPreCheckout(query: any): Promise<{ accepted: 
       trackFirestoreRead(ORDERS_COLLECTION, 1, 'answerPremiumPreCheckout');
       const order: any = orderSnap.data();
       const telegramId = String(query?.from?.id || '');
+      const orderAgeMs = order?.createdAt ? Date.now() - new Date(order.createdAt).getTime() : Number.POSITIVE_INFINITY;
       if (!orderSnap.exists || !order || order.status !== 'PENDING') {
         reason = 'This Premium order is already completed or expired.';
       } else if (String(order.telegramId) !== telegramId) {
         reason = 'This Premium invoice belongs to another Telegram account.';
+      } else if (!Number.isFinite(orderAgeMs) || orderAgeMs > PREMIUM_ORDER_TTL_MS) {
+        reason = 'This Premium invoice expired. Please create a new invoice.';
       } else {
-        accepted = true;
+        const entitlementSnap = await db.collection(ENTITLEMENTS_COLLECTION).doc(entitlementId(order.userId, order.seasonId)).get();
+        trackFirestoreRead(ENTITLEMENTS_COLLECTION, 1, 'answerPremiumPreCheckout');
+        if (entitlementSnap.exists && entitlementSnap.data()?.status === 'ACTIVE') {
+          reason = 'Premium is already active for this season.';
+        } else {
+          accepted = true;
+        }
       }
     }
   } catch (err: any) {

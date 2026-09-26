@@ -165,6 +165,10 @@ telegramRouter.post('/check-membership', requireAuth, async (req: Request, res: 
 // -----------------------------------------------------------------------------
 telegramRouter.get('/premium/me', requireAuth, async (req: Request, res: Response) => {
   const seasonId = normalizedSeasonId(req.query.seasonId);
+  if (!req.user!.isAdmin && !isPremiumPublicEnabled()) {
+    res.status(404).json({ error: 'PREMIUM_NOT_PUBLIC' });
+    return;
+  }
   try {
     const entitlement = await getPremiumEntitlement(req.user!.id, seasonId);
     res.json({

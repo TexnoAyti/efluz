@@ -19301,6 +19301,7 @@ var PREMIUM_DEFAULT_SEASON_ID = "season-2026-27";
 var ENTITLEMENTS_COLLECTION = "premium_entitlements";
 var PAYMENTS_COLLECTION = "premium_payments";
 var ORDERS_COLLECTION = "premium_orders";
+var PREMIUM_ORDER_TTL_MS = 60 * 60 * 1e3;
 function entitlementId(userId, seasonId) {
   return `${seasonId}__${userId}`;
 }
@@ -19331,8 +19332,15 @@ async function listPremiumEntitlements(seasonId = PREMIUM_DEFAULT_SEASON_ID) {
   trackFirestoreRead(ENTITLEMENTS_COLLECTION, snap.size, "listPremiumEntitlements");
   return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 }
+async function assertPremiumTargetUserExists(userId) {
+  const db = getFirestoreDb();
+  const snap = await db.collection("users").doc(userId).get();
+  trackFirestoreRead("users", 1, "assertPremiumTargetUserExists");
+  if (!snap.exists) throw new Error("PREMIUM_TARGET_USER_NOT_FOUND");
+}
 async function grantPremiumEntitlement(params) {
   const seasonId = params.seasonId || PREMIUM_DEFAULT_SEASON_ID;
+  await assertPremiumTargetUserExists(params.userId);
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const db = getFirestoreDb();
   const ref = db.collection(ENTITLEMENTS_COLLECTION).doc(entitlementId(params.userId, seasonId));
@@ -19371,6 +19379,7 @@ async function grantPremiumEntitlement(params) {
 }
 async function revokePremiumEntitlement(params) {
   const seasonId = params.seasonId || PREMIUM_DEFAULT_SEASON_ID;
+  await assertPremiumTargetUserExists(params.userId);
   const db = getFirestoreDb();
   const ref = db.collection(ENTITLEMENTS_COLLECTION).doc(entitlementId(params.userId, seasonId));
   const existing = await ref.get();
@@ -19633,12 +19642,21 @@ async function answerPremiumPreCheckout(query) {
       trackFirestoreRead(ORDERS_COLLECTION, 1, "answerPremiumPreCheckout");
       const order = orderSnap.data();
       const telegramId = String(query?.from?.id || "");
+      const orderAgeMs = order?.createdAt ? Date.now() - new Date(order.createdAt).getTime() : Number.POSITIVE_INFINITY;
       if (!orderSnap.exists || !order || order.status !== "PENDING") {
         reason = "This Premium order is already completed or expired.";
       } else if (String(order.telegramId) !== telegramId) {
         reason = "This Premium invoice belongs to another Telegram account.";
+      } else if (!Number.isFinite(orderAgeMs) || orderAgeMs > PREMIUM_ORDER_TTL_MS) {
+        reason = "This Premium invoice expired. Please create a new invoice.";
       } else {
-        accepted = true;
+        const entitlementSnap = await db.collection(ENTITLEMENTS_COLLECTION).doc(entitlementId(order.userId, order.seasonId)).get();
+        trackFirestoreRead(ENTITLEMENTS_COLLECTION, 1, "answerPremiumPreCheckout");
+        if (entitlementSnap.exists && entitlementSnap.data()?.status === "ACTIVE") {
+          reason = "Premium is already active for this season.";
+        } else {
+          accepted = true;
+        }
       }
     }
   } catch (err) {
@@ -19836,6 +19854,10 @@ telegramRouter.post("/check-membership", requireAuth, async (req, res) => {
 });
 telegramRouter.get("/premium/me", requireAuth, async (req, res) => {
   const seasonId = normalizedSeasonId(req.query.seasonId);
+  if (!req.user.isAdmin && !isPremiumPublicEnabled()) {
+    res.status(404).json({ error: "PREMIUM_NOT_PUBLIC" });
+    return;
+  }
   try {
     const entitlement = await getPremiumEntitlement(req.user.id, seasonId);
     res.json({
