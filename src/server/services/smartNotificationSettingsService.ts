@@ -18,6 +18,7 @@ export interface SmartNotificationSettings {
   updatedBy?: string;
 }
 
+// Short cache keeps admin toggles responsive across serverless instances without Firestore reads.
 const SETTINGS_TTL_MS = 15_000;
 const memory = new Map<string, { value: SmartNotificationSettings; expiresAt: number }>();
 
