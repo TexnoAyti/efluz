@@ -25,6 +25,7 @@ import { notificationsReadResilientRouter } from './routes/notificationsReadResi
 import { meRouter } from './routes/me.routes';
 import { usersRouter } from './routes/users.routes';
 import { adminCupDrawRouter } from './routes/adminCupDraw.routes';
+import { adminCupOpsRouter } from './routes/adminCupOps.routes';
 import { adminRouter } from './routes/admin.routes';
 import { telegramRouter } from './routes/telegram.routes';
 
@@ -192,6 +193,9 @@ export function createApp() {
   // standings-aware implementation while the legacy admin cup endpoints remain
   // available for details and winner advancement.
   app.use('/api/admin/cups', adminCupDrawRouter);
+  // Cup round operations are also mounted before the legacy admin router so
+  // approve/reopen/reject flows can keep knockout source slots consistent.
+  app.use('/api/admin', adminCupOpsRouter);
   app.use('/api/admin', adminRouter);
   app.use('/api/telegram', telegramRouter);
 
