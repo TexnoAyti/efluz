@@ -3133,6 +3133,7 @@ __export(readModelStore_exports, {
   invalidateUserMembershipReadModel: () => invalidateUserMembershipReadModel,
   memoryRedisStorage: () => memoryRedisStorage,
   normalizeFixtureSnapshot: () => normalizeFixtureSnapshot,
+  publishStandingsFromFixtureReadModel: () => publishStandingsFromFixtureReadModel,
   readThroughReadModel: () => readThroughReadModel2,
   rebuildAllReadModels: () => rebuildAllReadModels,
   redisDelRaw: () => redisDelRaw,
@@ -4148,10 +4149,124 @@ async function getOptionalCurrentClub(userId, seasonId = "season-2026-27") {
     return { currentClub: null, currentClubStatus: "unavailable", degraded: true };
   }
 }
+function calculateDomesticStandingsFromFixtureSnapshot(competitionId, seasonId, fixtures) {
+  const config = DOMESTIC_LEAGUE_CONFIG[competitionId];
+  if (!config) return null;
+  const clubs = SEED_CLUBS.filter((club) => club.leagueId === config.leagueId);
+  if (clubs.length !== config.expectedCount) return null;
+  const confirmed = fixtures.filter(
+    (fixture) => fixture.competitionId === competitionId && fixture.status === "CONFIRMED" && fixture.homeClubId && fixture.awayClubId && Number.isFinite(Number(fixture.homeScore)) && Number.isFinite(Number(fixture.awayScore))
+  ).sort((a, b) => {
+    const md = Number(a.matchday || 0) - Number(b.matchday || 0);
+    if (md !== 0) return md;
+    const time = (Date.parse(a.resultConfirmedAt || a.updatedAt || a.scheduledAt || "") || 0) - (Date.parse(b.resultConfirmedAt || b.updatedAt || b.scheduledAt || "") || 0);
+    return time !== 0 ? time : a.id.localeCompare(b.id);
+  });
+  const rowsByClub = /* @__PURE__ */ new Map();
+  for (const club of clubs) {
+    rowsByClub.set(club.id, {
+      position: 0,
+      clubId: club.id,
+      clubName: club.name,
+      shortName: club.shortName,
+      logoUrl: club.logoUrl,
+      played: 0,
+      won: 0,
+      drawn: 0,
+      lost: 0,
+      goalsFor: 0,
+      goalsAgainst: 0,
+      goalDifference: 0,
+      points: 0,
+      form: []
+    });
+  }
+  for (const fixture of confirmed) {
+    const home = rowsByClub.get(fixture.homeClubId);
+    const away = rowsByClub.get(fixture.awayClubId);
+    if (!home || !away) continue;
+    const homeScore = Number(fixture.homeScore);
+    const awayScore = Number(fixture.awayScore);
+    home.played += 1;
+    away.played += 1;
+    home.goalsFor += homeScore;
+    home.goalsAgainst += awayScore;
+    away.goalsFor += awayScore;
+    away.goalsAgainst += homeScore;
+    if (homeScore > awayScore) {
+      home.won += 1;
+      away.lost += 1;
+      home.points += 3;
+      home.form = [...home.form || [], "W"].slice(-5);
+      away.form = [...away.form || [], "L"].slice(-5);
+    } else if (awayScore > homeScore) {
+      away.won += 1;
+      home.lost += 1;
+      away.points += 3;
+      away.form = [...away.form || [], "W"].slice(-5);
+      home.form = [...home.form || [], "L"].slice(-5);
+    } else {
+      home.drawn += 1;
+      away.drawn += 1;
+      home.points += 1;
+      away.points += 1;
+      home.form = [...home.form || [], "D"].slice(-5);
+      away.form = [...away.form || [], "D"].slice(-5);
+    }
+  }
+  const rows = Array.from(rowsByClub.values());
+  for (const row of rows) row.goalDifference = row.goalsFor - row.goalsAgainst;
+  const h2hPoints = (clubAId, clubBId) => {
+    let points = 0;
+    for (const fixture of confirmed) {
+      const homeScore = Number(fixture.homeScore);
+      const awayScore = Number(fixture.awayScore);
+      if (fixture.homeClubId === clubAId && fixture.awayClubId === clubBId) {
+        points += homeScore > awayScore ? 3 : homeScore === awayScore ? 1 : 0;
+      } else if (fixture.homeClubId === clubBId && fixture.awayClubId === clubAId) {
+        points += awayScore > homeScore ? 3 : awayScore === homeScore ? 1 : 0;
+      }
+    }
+    return points;
+  };
+  rows.sort((a, b) => {
+    if (b.points !== a.points) return b.points - a.points;
+    if (b.goalDifference !== a.goalDifference) return b.goalDifference - a.goalDifference;
+    if (b.goalsFor !== a.goalsFor) return b.goalsFor - a.goalsFor;
+    const aH2h = h2hPoints(a.clubId, b.clubId);
+    const bH2h = h2hPoints(b.clubId, a.clubId);
+    if (bH2h !== aH2h) return bH2h - aH2h;
+    return a.clubName.localeCompare(b.clubName);
+  });
+  return rows.map((row, index) => ({ ...row, position: index + 1 }));
+}
+async function publishStandingsFromFixtureReadModel(competitionId, seasonId = "season-2026-27") {
+  if (!DOMESTIC_LEAGUE_CONFIG[competitionId]) return false;
+  const fixtureKey = ReadModelKeys.competitionFixtures(competitionId, seasonId);
+  const fixtureSnapshot = await redisGetFresh(fixtureKey) || await redisGetLkg(fixtureKey);
+  if (!fixtureSnapshot || !Array.isArray(fixtureSnapshot.data) || fixtureSnapshot.data.length === 0) return false;
+  const rows = calculateDomesticStandingsFromFixtureSnapshot(competitionId, seasonId, fixtureSnapshot.data);
+  const expectedCount = DOMESTIC_LEAGUE_CONFIG[competitionId].expectedCount;
+  if (!rows || rows.length !== expectedCount) return false;
+  const standingsKey = ReadModelKeys.standings(competitionId, seasonId);
+  const generatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  await redisSetRaw(standingsKey, {
+    schemaVersion: SCHEMA_VERSION,
+    generatedAt,
+    sourceVersion: `fixture-read-model-${fixtureSnapshot.sourceVersion || fixtureSnapshot.generatedAt}`,
+    expectedCount,
+    actualCount: rows.length,
+    data: rows
+  }, 86400);
+  inProcessMemoryCache.delete(getRawDatasetKey(standingsKey));
+  inProcessMemoryCache.delete(standingsKey);
+  console.info("[STANDINGS_READMODEL_PUBLISHED]", JSON.stringify({ competitionId, seasonId, rows: rows.length, source: "fixture-read-model" }));
+  return true;
+}
 async function getCompetitionStandingsFromReadModel(competitionId, seasonId = "season-2026-27") {
   const config = DOMESTIC_LEAGUE_CONFIG[competitionId];
   const expectedCount = config ? config.expectedCount : 20;
-  const result = await readThroughReadModel2({
+  let result = await readThroughReadModel2({
     key: ReadModelKeys.standings(competitionId, seasonId),
     seasonId,
     expectedCount,
@@ -4161,6 +4276,21 @@ async function getCompetitionStandingsFromReadModel(competitionId, seasonId = "s
     },
     validateData: (rows) => Array.isArray(rows) && rows.length > 0
   });
+  try {
+    const fixtureKey = ReadModelKeys.competitionFixtures(competitionId, seasonId);
+    const fixtureSnapshot = await redisGetFresh(fixtureKey) || await redisGetLkg(fixtureKey);
+    const fixtureAt = fixtureSnapshot?.generatedAt ? Date.parse(fixtureSnapshot.generatedAt) : 0;
+    const standingsAt = result.generatedAt ? Date.parse(result.generatedAt) : 0;
+    const dirty = await redisIsDirty(ReadModelKeys.standings(competitionId, seasonId));
+    if (fixtureSnapshot && Array.isArray(fixtureSnapshot.data) && fixtureSnapshot.data.length > 0 && (dirty || fixtureAt > standingsAt)) {
+      if (await publishStandingsFromFixtureReadModel(competitionId, seasonId)) {
+        const healed = await redisGetFresh(ReadModelKeys.standings(competitionId, seasonId));
+        if (healed?.data?.length) result = { ...result, data: healed.data, generatedAt: healed.generatedAt, source: "redis_fresh", stale: false, degraded: false };
+      }
+    }
+  } catch (healErr) {
+    console.warn("[STANDINGS_READMODEL_SELF_HEAL_FAILED]", healErr?.message || healErr);
+  }
   let clubsResult = null;
   try {
     clubsResult = await readThroughReadModel2({
@@ -4582,7 +4712,9 @@ async function refreshChangedFixtureReadModel(fixtureId) {
   const [adminPatched, competitionPatched] = await Promise.all([patchDataset(adminKey), patchDataset(competitionKey)]);
   if (!adminPatched) await invalidateDataset(adminKey);
   if (!competitionPatched) await invalidateDataset(competitionKey);
-  await invalidateDataset(ReadModelKeys.standings(fixture.competitionId, fixture.seasonId));
+  if (!await publishStandingsFromFixtureReadModel(fixture.competitionId, fixture.seasonId)) {
+    await invalidateDataset(ReadModelKeys.standings(fixture.competitionId, fixture.seasonId));
+  }
 }
 async function invalidateFixtureReadModels(competitionId, seasonId = "season-2026-27") {
   await invalidateDataset(ReadModelKeys.adminFixtures(seasonId));
@@ -4592,6 +4724,7 @@ async function invalidateFixtureReadModels(competitionId, seasonId = "season-202
   }
 }
 async function invalidateStandingsReadModels(competitionId, seasonId = "season-2026-27") {
+  if (await publishStandingsFromFixtureReadModel(competitionId, seasonId)) return;
   await invalidateDataset(ReadModelKeys.standings(competitionId, seasonId));
 }
 async function invalidateCompetitionReadModels(seasonId = "season-2026-27") {
@@ -15792,6 +15925,13 @@ import { Router as Router9 } from "express";
 init_firestoreStore();
 init_readModelStore();
 var meRouter = Router9();
+var DOMESTIC_LEAGUE_COMPETITION_BY_LEAGUE = {
+  "league-premier-league": "comp-premier-league-2026",
+  "league-la-liga": "comp-la-liga-2026",
+  "league-serie-a": "comp-serie-a-2026",
+  "league-bundesliga": "comp-bundesliga-2026",
+  "league-ligue-1": "comp-ligue-1-2026"
+};
 meRouter.use((req, res, next) => {
   setOwnershipSensitiveHeaders(res);
   next();
@@ -15814,53 +15954,87 @@ meRouter.get("/", requireAuth, async (req, res) => {
       leaguePosition: 0
     };
     if (currentClub) {
-      let confirmedMatches = [];
-      try {
-        const { queryAll: queryAll3 } = (init_db(), __toCommonJS(db_exports));
-        const rows = queryAll3(
-          `SELECT * FROM fixtures WHERE status = 'CONFIRMED' AND (home_club_id = ? OR away_club_id = ?) AND (season_id = ? OR season_id IS NULL)`,
-          [currentClub.id, currentClub.id, seasonId]
-        );
-        if (rows && rows.length > 0) {
-          confirmedMatches = rows.map((r) => ({
-            id: r.id,
-            homeClubId: r.home_club_id,
-            awayClubId: r.away_club_id,
-            homeScore: r.home_score,
-            awayScore: r.away_score,
-            status: r.status,
-            seasonId: r.season_id
-          }));
-        }
-      } catch {
-      }
-      if (confirmedMatches.length === 0) {
+      const leagueCompetitionId = currentClub.leagueId ? DOMESTIC_LEAGUE_COMPETITION_BY_LEAGUE[currentClub.leagueId] : void 0;
+      let statsResolvedFromStandings = false;
+      if (leagueCompetitionId) {
         try {
-          confirmedMatches = await getFixturesFirestore({
-            clubId: currentClub.id,
-            seasonId,
-            status: "CONFIRMED"
-          });
+          const standingsResult = await getCompetitionStandingsFromReadModel(leagueCompetitionId, seasonId);
+          const row = standingsResult.standings.find((standing) => standing.clubId === currentClub.id);
+          if (row) {
+            stats.matchesPlayed = row.played || 0;
+            stats.wins = row.won || 0;
+            stats.draws = row.drawn || 0;
+            stats.losses = row.lost || 0;
+            stats.goalsScored = row.goalsFor || 0;
+            stats.goalsConceded = row.goalsAgainst || 0;
+            stats.points = row.points || 0;
+            stats.leaguePosition = row.position || 0;
+            statsResolvedFromStandings = true;
+          }
+        } catch (standingsErr) {
+          console.warn("[ME_STATS] Standings read-model fallback:", standingsErr?.message || standingsErr);
+        }
+      }
+      if (!statsResolvedFromStandings) {
+        let confirmedMatches = [];
+        try {
+          const { queryAll: queryAll3 } = (init_db(), __toCommonJS(db_exports));
+          const conditions = [
+            "status = 'CONFIRMED'",
+            "(home_club_id = ? OR away_club_id = ?)",
+            "(season_id = ? OR season_id IS NULL)"
+          ];
+          const params = [currentClub.id, currentClub.id, seasonId];
+          if (leagueCompetitionId) {
+            conditions.push("competition_id = ?");
+            params.push(leagueCompetitionId);
+          }
+          const rows = queryAll3(
+            `SELECT * FROM fixtures WHERE ${conditions.join(" AND ")}`,
+            params
+          );
+          if (rows && rows.length > 0) {
+            confirmedMatches = rows.map((r) => ({
+              id: r.id,
+              homeClubId: r.home_club_id,
+              awayClubId: r.away_club_id,
+              homeScore: r.home_score,
+              awayScore: r.away_score,
+              status: r.status,
+              seasonId: r.season_id
+            }));
+          }
         } catch {
         }
-      }
-      for (const m of confirmedMatches) {
-        const isHome = m.homeClubId === currentClub.id;
-        const isAway = m.awayClubId === currentClub.id;
-        if (isHome || isAway) {
-          stats.matchesPlayed++;
-          const myScore = isHome ? m.homeScore ?? 0 : m.awayScore ?? 0;
-          const oppScore = isHome ? m.awayScore ?? 0 : m.homeScore ?? 0;
-          stats.goalsScored += myScore;
-          stats.goalsConceded += oppScore;
-          if (myScore > oppScore) {
-            stats.wins++;
-            stats.points += 3;
-          } else if (myScore === oppScore) {
-            stats.draws++;
-            stats.points += 1;
-          } else {
-            stats.losses++;
+        if (confirmedMatches.length === 0) {
+          try {
+            confirmedMatches = await getFixturesFirestore({
+              clubId: currentClub.id,
+              seasonId,
+              competitionId: leagueCompetitionId,
+              status: "CONFIRMED"
+            });
+          } catch {
+          }
+        }
+        for (const m of confirmedMatches) {
+          const isHome = m.homeClubId === currentClub.id;
+          const isAway = m.awayClubId === currentClub.id;
+          if (isHome || isAway) {
+            stats.matchesPlayed++;
+            const myScore = isHome ? m.homeScore ?? 0 : m.awayScore ?? 0;
+            const oppScore = isHome ? m.awayScore ?? 0 : m.homeScore ?? 0;
+            stats.goalsScored += myScore;
+            stats.goalsConceded += oppScore;
+            if (myScore > oppScore) {
+              stats.wins++;
+              stats.points += 3;
+            } else if (myScore === oppScore) {
+              stats.draws++;
+              stats.points += 1;
+            } else {
+              stats.losses++;
+            }
           }
         }
       }
