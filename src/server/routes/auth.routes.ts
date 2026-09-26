@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { validateBody } from '../middleware/validationMiddleware';
 import { verifyTelegramWebAppData, getOrCreateTelegramUser, getOrCreateDevUser, createSessionToken, DEV_PROFILES } from '../auth/telegramAuth';
 import { getOptionalCurrentClub } from '../readModel/readModelStore';
+import { refreshRecipientDirectoryIfStale } from '../services/recipientDirectoryRefreshService';
 
 export const authRouter = Router();
 
@@ -54,6 +55,13 @@ function getClubStatsQuick(clubId?: string, seasonId = 'season-2026-27') {
   return stats;
 }
 
+async function refreshTelegramDirectoryAfterAuth(): Promise<void> {
+  // Best-effort only: recipient sync must never make a valid login fail.
+  await refreshRecipientDirectoryIfStale('season-2026-27').catch((error: any) => {
+    console.warn('[AUTH_RECIPIENT_DIRECTORY_REFRESH_FAILED]', error?.message || error);
+  });
+}
+
 authRouter.post('/telegram', validateBody(telegramAuthSchema), async (req: Request, res: Response) => {
   const { initData } = req.body;
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -66,6 +74,7 @@ authRouter.post('/telegram', validateBody(telegramAuthSchema), async (req: Reque
         const userRaw = urlParams.get('user');
         if (userRaw) {
           const user = await getOrCreateTelegramUser(JSON.parse(userRaw));
+          await refreshTelegramDirectoryAfterAuth();
           const clubState = await getOptionalCurrentClub(user.id);
           const stats = getClubStatsQuick(clubState.currentClub?.id);
           const token = createSessionToken(user);
@@ -90,18 +99,12 @@ authRouter.post('/telegram', validateBody(telegramAuthSchema), async (req: Reque
 
   try {
     const user = await getOrCreateTelegramUser(verifyResult.user);
+    await refreshTelegramDirectoryAfterAuth();
     const clubState = await getOptionalCurrentClub(user.id);
     const stats = getClubStatsQuick(clubState.currentClub?.id);
     const token = createSessionToken(user);
 
-    console.log(`[TELEGRAM AUTH]
-initData received: YES
-parsed user id: ${verifyResult.user.id}
-username: ${verifyResult.user.username || '(none)'}
-auth_date valid: ${verifyResult.authDate ? 'YES' : 'NO'}
-HMAC valid: YES
-internal user: ${user.id}
-isAdmin: ${user.isAdmin ? 'YES' : 'NO'}`);
+    console.log(`[TELEGRAM AUTH]\ninitData received: YES\nparsed user id: ${verifyResult.user.id}\nusername: ${verifyResult.user.username || '(none)'}\nauth_date valid: ${verifyResult.authDate ? 'YES' : 'NO'}\nHMAC valid: YES\ninternal user: ${user.id}\nisAdmin: ${user.isAdmin ? 'YES' : 'NO'}`);
 
     res.json({ success: true, user, ...clubState, stats, token });
   } catch (err: any) {
@@ -118,6 +121,7 @@ authRouter.post('/dev', validateBody(devAuthSchema), async (req: Request, res: R
 
   try {
     const user = await getOrCreateDevUser(req.body.devUserId);
+    await refreshTelegramDirectoryAfterAuth();
     const clubState = await getOptionalCurrentClub(user.id);
     const stats = getClubStatsQuick(clubState.currentClub?.id);
     const token = createSessionToken(user);
