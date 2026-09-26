@@ -2511,8 +2511,109 @@ var init_notificationService = __esm({
   }
 });
 
+// src/server/services/smartNotificationSettingsService.ts
+function defaultSmartNotificationSettings(seasonId = "season-2026-27") {
+  return {
+    seasonId,
+    enabled: true,
+    events: { ...DEFAULT_SMART_NOTIFICATION_EVENTS }
+  };
+}
+function settingsKey(seasonId) {
+  return `${KEY_PREFIX}:telegram:smart:settings:${seasonId}`;
+}
+function normalizeSettings(raw, seasonId) {
+  const base = defaultSmartNotificationSettings(seasonId);
+  return {
+    seasonId,
+    enabled: typeof raw?.enabled === "boolean" ? raw.enabled : base.enabled,
+    events: {
+      ...base.events,
+      ...raw?.events || {}
+    },
+    updatedAt: raw?.updatedAt,
+    updatedBy: raw?.updatedBy
+  };
+}
+async function getSmartNotificationSettings(seasonId = "season-2026-27") {
+  const cached = memory.get(seasonId);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  const client = getUpstashClient();
+  if (!client) {
+    const fallback = defaultSmartNotificationSettings(seasonId);
+    memory.set(seasonId, { value: fallback, expiresAt: Date.now() + SETTINGS_TTL_MS });
+    return fallback;
+  }
+  try {
+    const raw = await client.get(settingsKey(seasonId));
+    const value = normalizeSettings(raw, seasonId);
+    memory.set(seasonId, { value, expiresAt: Date.now() + SETTINGS_TTL_MS });
+    return value;
+  } catch (error) {
+    console.warn("[SMART_NOTIFY_SETTINGS] Redis read failed, using safe defaults:", error?.message || error);
+    const fallback = defaultSmartNotificationSettings(seasonId);
+    memory.set(seasonId, { value: fallback, expiresAt: Date.now() + SETTINGS_TTL_MS });
+    return fallback;
+  }
+}
+async function updateSmartNotificationSettings(params) {
+  const seasonId = params.seasonId || "season-2026-27";
+  const value = normalizeSettings({
+    enabled: params.enabled,
+    events: params.events,
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    updatedBy: params.updatedBy
+  }, seasonId);
+  const client = getUpstashClient();
+  const isHosted = Boolean(process.env.VERCEL || process.env.K_SERVICE || process.env.NODE_ENV === "production");
+  if (!client) {
+    if (isHosted) throw new Error("SMART_NOTIFICATION_SETTINGS_REDIS_UNAVAILABLE");
+    memory.set(seasonId, { value, expiresAt: Number.MAX_SAFE_INTEGER });
+    return value;
+  }
+  await client.set(settingsKey(seasonId), value);
+  memory.set(seasonId, { value, expiresAt: Date.now() + SETTINGS_TTL_MS });
+  return value;
+}
+async function isSmartNotificationEventEnabled(seasonId, event) {
+  const settings = await getSmartNotificationSettings(seasonId);
+  if (!settings.enabled) return false;
+  if (!event) return true;
+  return settings.events[event] !== false;
+}
+var SETTINGS_TTL_MS, memory, DEFAULT_SMART_NOTIFICATION_EVENTS;
+var init_smartNotificationSettingsService = __esm({
+  "src/server/services/smartNotificationSettingsService.ts"() {
+    init_readModelStore();
+    SETTINGS_TTL_MS = 15e3;
+    memory = /* @__PURE__ */ new Map();
+    DEFAULT_SMART_NOTIFICATION_EVENTS = {
+      resultVerification: true,
+      resultConfirmed: true,
+      resultDisputed: true,
+      nextOpponent: true,
+      matchdayOpened: true,
+      cupProgress: true,
+      qualification: true,
+      europeanOutcome: true
+    };
+  }
+});
+
 // src/server/services/smartNotificationService.ts
 import crypto from "crypto";
+function inferSmartEvent(eventId) {
+  const value = String(eventId || "").toLowerCase();
+  if (value.includes(":verify:")) return "resultVerification";
+  if (value.includes(":confirmed")) return "resultConfirmed";
+  if (value.includes(":disputed")) return "resultDisputed";
+  if (value.startsWith("next-fixture:")) return "nextOpponent";
+  if (value.startsWith("matchday-open:")) return "matchdayOpened";
+  if (value.startsWith("cup-advance:") || value.startsWith("cup-champion:")) return "cupProgress";
+  if (value.includes("qualification") || value.includes("qualified")) return "qualification";
+  if (value.includes("european") || value.includes("league-phase") || value.includes("playoff")) return "europeanOutcome";
+  return null;
+}
 function escapeHtml(value) {
   return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -2551,6 +2652,11 @@ async function getCachedRecipient(userId, seasonId) {
   }
 }
 async function enqueueSmartTelegramNotification(params) {
+  const event = inferSmartEvent(params.eventId);
+  if (!await isSmartNotificationEventEnabled(params.seasonId, event)) {
+    console.info("[SMART_NOTIFY_DISABLED]", JSON.stringify({ event, eventId: params.eventId, seasonId: params.seasonId }));
+    return false;
+  }
   const client = getUpstashClient();
   if (!client) {
     console.warn("[SMART_NOTIFY] Redis unavailable; notification skipped without affecting mutation");
@@ -2746,6 +2852,7 @@ var init_smartNotificationService = __esm({
   "src/server/services/smartNotificationService.ts"() {
     init_readModelStore();
     init_telegramNotificationQueue();
+    init_smartNotificationSettingsService();
     BROADCASTS_KEY = `${KEY_PREFIX}:telegram:broadcasts`;
     QUEUE_KEY = `${KEY_PREFIX}:telegram:queue`;
     RECIPIENT_DIR_KEY = `${KEY_PREFIX}:private:recipient-directory`;
@@ -16570,11 +16677,51 @@ init_telegramNotificationQueue();
 init_smartNotificationService();
 init_admin();
 init_collections();
+init_smartNotificationSettingsService();
 init_circuitBreaker();
 init_db();
 init_readModelStore();
 var adminRouter = Router11();
 adminRouter.use(requireAdmin);
+var smartNotificationSettingsSchema = z3.object({
+  seasonId: z3.string().min(1).optional(),
+  enabled: z3.boolean(),
+  events: z3.object({
+    resultVerification: z3.boolean(),
+    resultConfirmed: z3.boolean(),
+    resultDisputed: z3.boolean(),
+    nextOpponent: z3.boolean(),
+    matchdayOpened: z3.boolean(),
+    cupProgress: z3.boolean(),
+    qualification: z3.boolean(),
+    europeanOutcome: z3.boolean()
+  })
+});
+adminRouter.get("/telegram/smart-settings", async (req, res) => {
+  const seasonId = req.query.seasonId || "season-2026-27";
+  try {
+    const settings = await getSmartNotificationSettings(seasonId);
+    res.json({ settings, defaults: DEFAULT_SMART_NOTIFICATION_EVENTS, source: "redis-or-defaults" });
+  } catch (err) {
+    res.status(503).json({ error: err?.message || "SMART_NOTIFICATION_SETTINGS_UNAVAILABLE" });
+  }
+});
+adminRouter.put("/telegram/smart-settings", async (req, res) => {
+  const parsed = smartNotificationSettingsSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "INVALID_SMART_NOTIFICATION_SETTINGS", details: parsed.error.flatten() });
+    return;
+  }
+  try {
+    const settings = await updateSmartNotificationSettings({
+      ...parsed.data,
+      updatedBy: req.user.id
+    });
+    res.json({ success: true, settings });
+  } catch (err) {
+    res.status(503).json({ error: err?.message || "SMART_NOTIFICATION_SETTINGS_SAVE_FAILED" });
+  }
+});
 function getFallbackAdminOverview(seasonId) {
   const status = getFirebaseStatus();
   const occRow = queryGet("SELECT COUNT(*) as count FROM club_memberships WHERE season_id = ? AND status = 'active'", [seasonId]);

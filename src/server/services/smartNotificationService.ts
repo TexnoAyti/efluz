@@ -8,6 +8,7 @@ import {
   redisGetLkg,
 } from '../readModel/readModelStore';
 import { scheduleNotificationQueueDrain } from './telegramNotificationQueue';
+import { isSmartNotificationEventEnabled, SmartNotificationEvent } from './smartNotificationSettingsService';
 
 interface RecipientDirectoryEntry {
   userId: string;
@@ -68,6 +69,19 @@ const QUEUE_KEY = `${KEY_PREFIX}:telegram:queue`;
 const RECIPIENT_DIR_KEY = `${KEY_PREFIX}:private:recipient-directory`;
 const SMART_DEDUPE_PREFIX = `${KEY_PREFIX}:telegram:smart:dedupe`;
 const SMART_DEDUPE_TTL_SECONDS = 7 * 24 * 60 * 60;
+
+function inferSmartEvent(eventId: string): SmartNotificationEvent | null {
+  const value = String(eventId || '').toLowerCase();
+  if (value.includes(':verify:')) return 'resultVerification';
+  if (value.includes(':confirmed')) return 'resultConfirmed';
+  if (value.includes(':disputed')) return 'resultDisputed';
+  if (value.startsWith('next-fixture:')) return 'nextOpponent';
+  if (value.startsWith('matchday-open:')) return 'matchdayOpened';
+  if (value.startsWith('cup-advance:') || value.startsWith('cup-champion:')) return 'cupProgress';
+  if (value.includes('qualification') || value.includes('qualified')) return 'qualification';
+  if (value.includes('european') || value.includes('league-phase') || value.includes('playoff')) return 'europeanOutcome';
+  return null;
+}
 
 function escapeHtml(value: unknown): string {
   return String(value ?? '')
@@ -150,6 +164,12 @@ export async function enqueueSmartTelegramNotification(params: {
   title: string;
   body: string;
 }): Promise<boolean> {
+  const event = inferSmartEvent(params.eventId);
+  if (!(await isSmartNotificationEventEnabled(params.seasonId, event))) {
+    console.info('[SMART_NOTIFY_DISABLED]', JSON.stringify({ event, eventId: params.eventId, seasonId: params.seasonId }));
+    return false;
+  }
+
   const client = getUpstashClient();
   if (!client) {
     console.warn('[SMART_NOTIFY] Redis unavailable; notification skipped without affecting mutation');

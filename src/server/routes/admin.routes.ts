@@ -76,6 +76,11 @@ import { notifySmartMatchdayOpened } from '../services/smartNotificationService'
 import { getFirebaseStatus, getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS } from '../firebase/collections';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
+import {
+  getSmartNotificationSettings,
+  updateSmartNotificationSettings,
+  DEFAULT_SMART_NOTIFICATION_EVENTS,
+} from '../services/smartNotificationSettingsService';
 import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
 import { queryAll, queryGet } from '../db/index';
 import {
@@ -95,6 +100,48 @@ export const adminRouter = Router();
 
 // Protect ALL admin routes with server-side requireAdmin
 adminRouter.use(requireAdmin);
+
+const smartNotificationSettingsSchema = z.object({
+  seasonId: z.string().min(1).optional(),
+  enabled: z.boolean(),
+  events: z.object({
+    resultVerification: z.boolean(),
+    resultConfirmed: z.boolean(),
+    resultDisputed: z.boolean(),
+    nextOpponent: z.boolean(),
+    matchdayOpened: z.boolean(),
+    cupProgress: z.boolean(),
+    qualification: z.boolean(),
+    europeanOutcome: z.boolean(),
+  }),
+});
+
+adminRouter.get('/telegram/smart-settings', async (req: Request, res: Response) => {
+  const seasonId = (req.query.seasonId as string) || 'season-2026-27';
+  try {
+    const settings = await getSmartNotificationSettings(seasonId);
+    res.json({ settings, defaults: DEFAULT_SMART_NOTIFICATION_EVENTS, source: 'redis-or-defaults' });
+  } catch (err: any) {
+    res.status(503).json({ error: err?.message || 'SMART_NOTIFICATION_SETTINGS_UNAVAILABLE' });
+  }
+});
+
+adminRouter.put('/telegram/smart-settings', async (req: Request, res: Response) => {
+  const parsed = smartNotificationSettingsSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'INVALID_SMART_NOTIFICATION_SETTINGS', details: parsed.error.flatten() });
+    return;
+  }
+  try {
+    const settings = await updateSmartNotificationSettings({
+      ...parsed.data,
+      updatedBy: req.user!.id,
+    });
+    res.json({ success: true, settings });
+  } catch (err: any) {
+    res.status(503).json({ error: err?.message || 'SMART_NOTIFICATION_SETTINGS_SAVE_FAILED' });
+  }
+});
 
 function getFallbackAdminOverview(seasonId: string) {
   const status = getFirebaseStatus();

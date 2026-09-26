@@ -30,6 +30,23 @@ interface PublicRecipient {
   messageable: boolean;
 }
 
+interface SmartNotificationSettings {
+  seasonId: string;
+  enabled: boolean;
+  events: {
+    resultVerification: boolean;
+    resultConfirmed: boolean;
+    resultDisputed: boolean;
+    nextOpponent: boolean;
+    matchdayOpened: boolean;
+    cupProgress: boolean;
+    qualification: boolean;
+    europeanOutcome: boolean;
+  };
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
 interface BroadcastRecord {
   id: string;
   title: string;
@@ -84,10 +101,18 @@ export const AdminTelegramTab: React.FC = () => {
   const [isLoadingHistory, setIsLoadingHistory] = useState<boolean>(false);
   const [selectedBroadcast, setSelectedBroadcast] = useState<BroadcastRecord | null>(null);
 
+  const [smartSettings, setSmartSettings] = useState<SmartNotificationSettings | null>(null);
+  const [isLoadingSmartSettings, setIsLoadingSmartSettings] = useState(true);
+  const [isSavingSmartSettings, setIsSavingSmartSettings] = useState(false);
+
   useEffect(() => {
     loadRecipients();
     loadBroadcasts();
   }, [audience, selectedLeagueId]);
+
+  useEffect(() => {
+    loadSmartSettings();
+  }, []);
 
   async function loadRecipients() {
     setIsLoadingRecipients(true);
@@ -118,6 +143,45 @@ export const AdminTelegramTab: React.FC = () => {
     } finally {
       setIsLoadingHistory(false);
     }
+  }
+
+  async function loadSmartSettings() {
+    setIsLoadingSmartSettings(true);
+    try {
+      const res = await api.getSmartNotificationSettings('season-2026-27');
+      setSmartSettings(res.settings);
+    } catch (err: any) {
+      showToast(err.message || 'Smart notification settings could not be loaded', 'error');
+    } finally {
+      setIsLoadingSmartSettings(false);
+    }
+  }
+
+  async function saveSmartSettings(next: SmartNotificationSettings) {
+    setSmartSettings(next);
+    setIsSavingSmartSettings(true);
+    try {
+      const res = await api.updateSmartNotificationSettings({
+        seasonId: next.seasonId || 'season-2026-27',
+        enabled: next.enabled,
+        events: next.events,
+      });
+      setSmartSettings(res.settings);
+      showToast('Smart notification sozlamalari saqlandi', 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Smart notification settings could not be saved', 'error');
+      await loadSmartSettings();
+    } finally {
+      setIsSavingSmartSettings(false);
+    }
+  }
+
+  function toggleSmartEvent(key: keyof SmartNotificationSettings['events']) {
+    if (!smartSettings || isSavingSmartSettings) return;
+    void saveSmartSettings({
+      ...smartSettings,
+      events: { ...smartSettings.events, [key]: !smartSettings.events[key] },
+    });
   }
 
   // Filtered visible recipients
@@ -223,6 +287,68 @@ export const AdminTelegramTab: React.FC = () => {
             <RefreshCw className="w-3.5 h-3.5 text-sky-400" />
             <span>Flush Queue</span>
           </button>
+        </div>
+      </div>
+
+      <div className="glass-panel p-5 rounded-2xl border-slate-800 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-black text-white flex items-center gap-2">
+              <Shield className="w-4 h-4 text-emerald-400" />
+              <span>Smart Notification Control</span>
+            </h3>
+            <p className="text-[11px] text-slate-400 mt-1">
+              Avtomatik Telegram xabarlarini productionda boshqaring. Hozircha oddiy va premium foydalanuvchilarga bir xil ishlaydi.
+            </p>
+          </div>
+          {isLoadingSmartSettings ? (
+            <RefreshCw className="w-4 h-4 animate-spin text-sky-400" />
+          ) : smartSettings ? (
+            <button
+              onClick={() => void saveSmartSettings({ ...smartSettings, enabled: !smartSettings.enabled })}
+              disabled={isSavingSmartSettings}
+              className={`px-4 py-2 rounded-xl text-xs font-black border transition-all ${smartSettings.enabled
+                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                : 'bg-slate-900 border-slate-700 text-slate-400'}`}
+            >
+              {smartSettings.enabled ? 'MASTER: ON' : 'MASTER: OFF'}
+            </button>
+          ) : null}
+        </div>
+
+        {smartSettings && (
+          <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 ${!smartSettings.enabled ? 'opacity-50' : ''}`}>
+            {([
+              ['resultVerification', 'Natijani tasdiqlash', 'Raqib score yuborganda'],
+              ['resultConfirmed', 'Natija tasdiqlandi', 'Final score ikki tomonga'],
+              ['resultDisputed', 'Dispute alert', 'Natijalar mos kelmaganda'],
+              ['nextOpponent', 'Keyingi raqib', 'Match tasdiqlangandan keyin'],
+              ['matchdayOpened', 'Matchday ochildi', 'Raqib + deadline'],
+              ['cupProgress', 'Cup progress', 'Next round + champion'],
+              ['qualification', 'Qualification', 'UCL/UEL yo‘llanmasi'],
+              ['europeanOutcome', 'European outcome', 'Direct/playoff/eliminated'],
+            ] as Array<[keyof SmartNotificationSettings['events'], string, string]>).map(([key, label, detail]) => (
+              <button
+                key={key}
+                onClick={() => toggleSmartEvent(key)}
+                disabled={isSavingSmartSettings}
+                className={`p-3 rounded-xl border text-left transition-all ${smartSettings.events[key]
+                  ? 'bg-sky-500/10 border-sky-500/30'
+                  : 'bg-slate-950 border-slate-800'}`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-black text-white">{label}</span>
+                  <span className={`w-2.5 h-2.5 rounded-full ${smartSettings.events[key] ? 'bg-emerald-400' : 'bg-slate-600'}`} />
+                </div>
+                <div className="text-[10px] text-slate-400 mt-1">{detail}</div>
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="flex items-center justify-between text-[10px] text-slate-500 border-t border-slate-800 pt-3">
+          <span>Storage: Upstash Redis • Firestore read: 0</span>
+          <span>{isSavingSmartSettings ? 'Saving…' : smartSettings?.updatedAt ? `Updated ${new Date(smartSettings.updatedAt).toLocaleString()}` : 'Defaults active'}</span>
         </div>
       </div>
 
