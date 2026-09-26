@@ -36,8 +36,8 @@ s = replace_once(
 marker = "  const expectedTeams = expectedTeamsForCup(activeCup);\n"
 insert = marker + "\n  useEffect(() => {\n    let cancelled = false;\n    if (!activeCup?.leagueId) {\n      setCupParticipants([]);\n      return () => { cancelled = true; };\n    }\n    api.getLeagueClubs(activeCup.leagueId, activeSeasonId)\n      .then((res) => { if (!cancelled) setCupParticipants(res.clubs || []); })\n      .catch((err) => {\n        console.warn('[CUP_BRACKET] Could not load full participant roster:', err);\n        if (!cancelled) setCupParticipants([]);\n      });\n    return () => { cancelled = true; };\n  }, [activeCup?.leagueId, activeSeasonId]);\n"
 s = replace_once(s, marker, insert, 'participant load effect')
-old = "            competition={activeCup}\n"
-new = "            competition={activeCup}\n            participants={cupParticipants}\n"
+old = "          competition={activeCup}\n        />"
+new = "          competition={activeCup}\n          participants={cupParticipants}\n        />"
 s = replace_once(s, old, new, 'pass cup participants')
 p.write_text(s)
 
