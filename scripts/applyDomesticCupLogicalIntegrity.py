@@ -125,7 +125,7 @@ new = '''  const expectedTotal = Object.values(expectedCounts).reduce((sum, coun
     };
   }
 
-  const clubs = sortedParticipants;
+  const clubs = sortedParticipants
 '''
 s = replace_once(s, old, new, 'logical integrity block')
 
