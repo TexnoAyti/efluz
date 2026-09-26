@@ -15020,6 +15020,61 @@ async function getBroadcastHistory(limit = 20) {
   }
   return Array.from(memoryBroadcasts.values()).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, limit);
 }
+async function retryFailedBroadcastRecipients(broadcastId, userId) {
+  const client = getUpstashClient();
+  if (!client) throw new Error("REDIS_REQUIRED");
+  const record = await getBroadcastDetails(broadcastId);
+  if (!record) throw new Error("BROADCAST_NOT_FOUND");
+  const directory = await client.get(`${RECIPIENT_DIR_KEY2}:${record.seasonId}`);
+  const byUser = new Map((Array.isArray(directory) ? directory : []).map((entry) => [entry.userId, entry]));
+  const targets = record.recipients.filter(
+    (recipient) => recipient.status === "FAILED" && (!userId || recipient.userId === userId)
+  );
+  if (userId && targets.length === 0) throw new Error("FAILED_RECIPIENT_NOT_FOUND");
+  let retried = 0;
+  let skipped = 0;
+  for (const recipient of targets) {
+    const directoryEntry = byUser.get(recipient.userId);
+    if (!directoryEntry?.messageable || !directoryEntry.telegramId) {
+      skipped++;
+      continue;
+    }
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const retryNumber = Number(recipient.retryCount || 0) + 1;
+    const job = {
+      jobId: `job-retry-${broadcastId}-${recipient.userId}-${Date.now()}-${retryNumber}`,
+      broadcastId,
+      userId: recipient.userId,
+      username: recipient.username || directoryEntry.username || "player",
+      displayName: recipient.displayName || directoryEntry.displayName || "EFL Player",
+      telegramId: directoryEntry.telegramId,
+      title: record.title,
+      body: record.body,
+      type: record.type,
+      status: "QUEUED",
+      retryCount: 0,
+      maxRetries: 3,
+      createdAt: now,
+      availableAt: Date.now(),
+      bodyIsHtml: Boolean(record.bodyIsHtml),
+      replyMarkup: record.replyMarkup
+    };
+    recipient.status = "PENDING";
+    recipient.retryCount = retryNumber;
+    delete recipient.error;
+    delete recipient.sentAt;
+    await client.rpush(QUEUE_KEY2, JSON.stringify(job));
+    retried++;
+  }
+  if (retried > 0) {
+    record.metrics.failedCount = Math.max(0, Number(record.metrics.failedCount || 0) - retried);
+    record.status = "QUEUED";
+    await client.hset(BROADCASTS_KEY2, { [record.id]: record });
+    memoryBroadcasts.set(record.id, record);
+    scheduleNotificationQueueDrain();
+  }
+  return { retried, skipped };
+}
 async function getBroadcastDetails(broadcastId) {
   const client = getUpstashClient();
   if (client) {
@@ -19185,6 +19240,18 @@ adminRouter.post("/telegram-notifications/broadcast", async (req, res) => {
     });
   } catch (err) {
     res.status(400).json({ error: err.message });
+  }
+});
+adminRouter.post("/telegram-notifications/broadcasts/:broadcastId/retry-failed", async (req, res) => {
+  try {
+    const result = await retryFailedBroadcastRecipients(
+      req.params.broadcastId,
+      typeof req.body?.userId === "string" ? req.body.userId : void 0
+    );
+    res.json({ success: true, ...result });
+  } catch (err) {
+    const status = ["BROADCAST_NOT_FOUND", "FAILED_RECIPIENT_NOT_FOUND"].includes(err?.message) ? 404 : 500;
+    res.status(status).json({ error: err?.message || "RETRY_FAILED" });
   }
 });
 adminRouter.get("/telegram-notifications/broadcasts", async (req, res) => {

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n, Language } from '../i18n';
 import { ClubCrest } from './ClubCrest';
+import { EflCareerCard } from './EflCareerCard';
 import {
   User,
   Shield,
@@ -132,6 +133,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigateTab }) => {
           </div>
         </div>
       )}
+
+      <EflCareerCard userId={user?.id} adminPreview={Boolean(user?.isAdmin)} />
 
       {/* Language Selector Card */}
       <div className="glass-panel p-6 shadow-xl space-y-4">
