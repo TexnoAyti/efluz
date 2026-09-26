@@ -157,7 +157,7 @@ async function buildMatchCardBody(params: {
   const matchup = params.showScore
     ? scoreLine(fixture)
     : `⚽ <b>${home}</b>  vs  <b>${away}</b>`;
-  const viewer = params.viewerSide === 'home' ? `\n🎮 Siz: <b>${home}</b>` : params.viewerSide === 'away' ? `\n🎮 Siz: <b>${away}</b>` : '';
+  const viewer = params.viewerSide === 'home' ? `🎮 Siz: <b>${home}</b>` : params.viewerSide === 'away' ? `🎮 Siz: <b>${away}</b>` : '';
   return [
     `🏟 ${contextLine(fixture)}`,
     '',
@@ -471,7 +471,7 @@ export async function notifySmartResultLifecycle(fixture: Fixture, actorUserId: 
   }
 
   if (status === 'CONFIRMED') {
-    await Promise.all(owners.map((userId) => enqueueSmartTelegramNotification({
+    await Promise.all(owners.map(async (userId) => enqueueSmartTelegramNotification({
       userId,
       seasonId,
       eventId: `${eventBase}:confirmed`,
@@ -484,7 +484,7 @@ export async function notifySmartResultLifecycle(fixture: Fixture, actorUserId: 
   }
 
   if (status === 'DISPUTED') {
-    await Promise.all(owners.map((userId) => enqueueSmartTelegramNotification({
+    await Promise.all(owners.map(async (userId) => enqueueSmartTelegramNotification({
       userId,
       seasonId,
       eventId: `${eventBase}:disputed`,
