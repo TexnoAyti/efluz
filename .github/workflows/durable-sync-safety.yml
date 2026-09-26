@@ -17,6 +17,8 @@ jobs:
         with:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
+      - name: Restore baseline phase2 test and seed authoritative replay ownership
+        run: python scripts/restorePhase2Test.py
       - name: Apply durable sync safety patch
         run: python scripts/applyDurableSyncSafety.py
       - name: Install dependencies
@@ -39,7 +41,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/server/app.ts src/server/outbox/redisOutbox.ts src/server/sync/mutationQueue.ts src/server/tests/deploymentSelfCheck.ts src/server/tests/durableSyncWorkerRegressionTest.ts package.json api/index.js api/index.js.map
+          git add src/server/app.ts src/server/outbox/redisOutbox.ts src/server/sync/mutationQueue.ts src/server/tests/deploymentSelfCheck.ts src/server/tests/durableSyncWorkerRegressionTest.ts src/server/tests/phase2DurableMutationsTest.ts package.json api/index.js api/index.js.map
           git diff --cached --check
           git commit -m "feat(sync): add durable event-driven mutation replay worker"
           git push origin HEAD:codex/durable-sync-safety
