@@ -11,13 +11,16 @@ assert(insights.includes("id: 'LONGEST_UNBEATEN'"), 'season awards must include 
 assert(insights.includes("id: 'LONGEST_WIN_STREAK'"), 'season awards must include win streak');
 assert(insights.includes('getSeasonTrophies'), 'trophy cabinet derivation missing');
 assert(insights.includes('getPlayerSeasonInsights'), 'player season profile derivation missing');
+assert(insights.includes('competitionBreakdown'), 'premium-ready competition breakdown derivation missing');
 assert(insights.includes('redisGetFresh'), 'insights must prefer durable read models');
 assert(insights.includes("source: 'sqlite'"), 'insights must preserve SQLite fallback');
 
 const profile = read('src/components/PlayerSeasonProfile.tsx');
-for (const marker of ['Public Season Profile', 'Recent Form', 'Trophy Cabinet', 'Season Awards', 'Competition Breakdown']) {
+for (const marker of ['Public Season Profile', 'Recent Form', 'Next Assignment', 'Season Awards']) {
   assert(profile.includes(marker), `player profile missing ${marker}`);
 }
+assert(profile.includes('Trophy Cabinet remain Premium'), 'public profile must state the Premium career boundary');
+assert(!profile.includes('Strongest Competition'), 'advanced competition analysis must not leak into the free profile');
 
 const matchControl = read('src/components/admin/AdminMatchModals.tsx');
 for (const marker of ['Match Control Center', 'Submission Evidence', 'Fixture Audit Trail', 'Send Player Reminder', 'Danger Zone']) {
@@ -29,6 +32,7 @@ const reminderRoute = read('src/server/routes/adminMatchControl.routes.ts');
 assert(reminderRoute.includes('requireAdmin'), 'per-fixture reminder must be admin protected');
 assert(reminderRoute.includes("'/fixtures/:id/remind'"), 'per-fixture reminder route missing');
 assert(reminderRoute.includes("fixture.status === 'CONFIRMED'"), 'confirmed matches must not receive result reminders');
+assert(reminderRoute.includes('REMINDER_WINDOW_MS = 15 * 60 * 1000'), 'manual reminders must be deduped in a stable window');
 
 const telegram = read('src/server/services/smartNotificationService.ts');
 for (const marker of ['buildMatchCardBody', 'Asia/Tashkent', 'EFL UZ ilovasini ochish', 'Natijani yuborish']) {
