@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { Competition, Fixture } from '../types';
+import { Club, Competition, Fixture } from '../types';
 import { ClubCrest } from './ClubCrest';
+import { SofaBracketTree } from './SofaBracketTree';
 import {
   CheckCircle2,
   ChevronLeft,
@@ -23,6 +24,7 @@ interface TournamentBracketProps {
   userId?: string;
   onSelectFixture?: (fixture: Fixture) => void;
   competition?: Competition | null;
+  participants?: Club[];
 }
 
 type RoundKey = 'PRELIM' | 'PLAYOFF' | 'R16' | 'QF' | 'SF' | 'FINAL' | 'UNKNOWN';
@@ -78,6 +80,7 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
   userId,
   onSelectFixture,
   competition,
+  participants = [],
 }) => {
   const { openUserProfile } = useUserProfile();
   const { t } = useI18n();
@@ -285,6 +288,14 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
         </div>
       </div>
 
+      <SofaBracketTree
+        fixtures={fixtures}
+        competition={competition}
+        participants={participants}
+        currentClubId={currentClubId}
+        onSelectFixture={onSelectFixture}
+      />
+
       {champion && (
         <div className="relative overflow-hidden border-b border-amber-300/20 bg-[radial-gradient(circle_at_center,rgba(251,191,36,0.13),transparent_55%)] px-5 py-6 text-center">
           <Sparkles className="absolute left-[18%] top-5 h-4 w-4 text-amber-300/40" />
@@ -338,7 +349,7 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
         )}
       </div>
 
-      <div className="hidden lg:block">
+      <div className="hidden">
         <div className="overflow-x-auto p-5 scrollbar-thin">
           <div className="flex min-w-max items-stretch gap-5">
             {rounds.map((round, roundIndex) => (
