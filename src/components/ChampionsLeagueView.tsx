@@ -176,6 +176,128 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
     return standings;
   }, [standings, participants]);
 
+  const actualKnockoutFixtures = useMemo(
+    () => fixtures.filter((f) =>
+      f.id.includes('-po-') ||
+      f.id.includes('-r16-') ||
+      f.id.includes('-qf-') ||
+      f.id.includes('-sf-') ||
+      f.id.includes('-final-')
+    ),
+    [fixtures]
+  );
+
+  /**
+   * Live knockout projection driven entirely by the current league-phase ranking.
+   * It is display-only: no projected node can submit a result or mutate tournament data.
+   * Once authoritative knockout fixtures exist, they replace this projection automatically.
+   */
+  const projectedKnockoutFixtures = useMemo<Fixture[]>(() => {
+    if (actualKnockoutFixtures.length > 0 || displayStandings.length < 24 || !selectedTournament) return [];
+
+    const ranked = [...displayStandings]
+      .sort((a, b) => (a.position || 999) - (b.position || 999))
+      .slice(0, 24);
+    if (ranked.length < 24) return [];
+
+    const now = new Date().toISOString();
+    const clubFromRow = (row: StandingsRow) => ({
+      id: row.clubId,
+      name: row.clubName,
+      shortName: row.shortName,
+      country: '',
+      leagueId: '',
+      logoUrl: (row as any).clubLogoUrl || (row as any).logoUrl || '',
+      active: true,
+      managerUsername: row.managerUsername,
+      claimedByUserId: row.managerUserId || null,
+      claimedByUsername: row.managerUsername || null,
+      createdAt: now,
+    } as any);
+    const baseFixture = (id: string, matchday: number, roundName: string): Fixture => ({
+      id,
+      seasonId: selectedTournament.seasonId,
+      competitionId: selectedTournament.id,
+      competitionName: selectedTournament.name,
+      matchday,
+      roundName,
+      homeClubId: null,
+      awayClubId: null,
+      scheduledAt: now,
+      status: 'SCHEDULED',
+      homeScore: null,
+      awayScore: null,
+      winnerClubId: null,
+      resultConfirmedAt: null,
+      createdAt: now,
+      updatedAt: now,
+      ...( { isProjected: true } as any),
+    });
+
+    const out: Fixture[] = [];
+
+    // Position-paired play-offs: 9v24, 10v23, ... 16v17.
+    for (let i = 0; i < 8; i++) {
+      const seeded = ranked[8 + i];
+      const unseeded = ranked[23 - i];
+      const f = baseFixture(`projection-${selectedTournament.id}-po-m${i}`, 9, 'Knockout Play-offs');
+      f.homeClubId = unseeded.clubId;
+      f.awayClubId = seeded.clubId;
+      f.homeClub = clubFromRow(unseeded);
+      f.awayClub = clubFromRow(seeded);
+      (f as any).homeSeedPosition = unseeded.position;
+      (f as any).awaySeedPosition = seeded.position;
+      (f as any).projectionLabel = `#${seeded.position} vs #${unseeded.position}`;
+      out.push(f);
+    }
+
+    // Top 8 are direct R16 qualifiers. Their opponent is the winner of the
+    // corresponding position-paired play-off and updates live as standings move.
+    for (let i = 0; i < 8; i++) {
+      const direct = ranked[i];
+      const seeded = ranked[8 + i];
+      const unseeded = ranked[23 - i];
+      const f = baseFixture(`projection-${selectedTournament.id}-r16-m${i}`, 10, 'Round of 16');
+      f.homeClubId = direct.clubId;
+      f.homeClub = clubFromRow(direct);
+      f.awayClubId = null;
+      f.awaySourceFixtureId = `projection-${selectedTournament.id}-po-m${i}`;
+      (f as any).homeSeedPosition = direct.position;
+      (f as any).awaySourceLabel = `Winner #${seeded.position} vs #${unseeded.position}`;
+      out.push(f);
+    }
+
+    for (let i = 0; i < 4; i++) {
+      const f = baseFixture(`projection-${selectedTournament.id}-qf-m${i}`, 11, 'Quarter-Finals');
+      f.homeSourceFixtureId = `projection-${selectedTournament.id}-r16-m${i * 2}`;
+      f.awaySourceFixtureId = `projection-${selectedTournament.id}-r16-m${i * 2 + 1}`;
+      (f as any).homeSourceLabel = `Winner R16 • M${i * 2 + 1}`;
+      (f as any).awaySourceLabel = `Winner R16 • M${i * 2 + 2}`;
+      out.push(f);
+    }
+
+    for (let i = 0; i < 2; i++) {
+      const f = baseFixture(`projection-${selectedTournament.id}-sf-m${i}`, 12, 'Semi-Finals');
+      f.homeSourceFixtureId = `projection-${selectedTournament.id}-qf-m${i * 2}`;
+      f.awaySourceFixtureId = `projection-${selectedTournament.id}-qf-m${i * 2 + 1}`;
+      (f as any).homeSourceLabel = `Winner QF • M${i * 2 + 1}`;
+      (f as any).awaySourceLabel = `Winner QF • M${i * 2 + 2}`;
+      out.push(f);
+    }
+
+    const final = baseFixture(`projection-${selectedTournament.id}-final-m0`, 13, 'Final');
+    final.homeSourceFixtureId = `projection-${selectedTournament.id}-sf-m0`;
+    final.awaySourceFixtureId = `projection-${selectedTournament.id}-sf-m1`;
+    (final as any).homeSourceLabel = 'Winner SF • M1';
+    (final as any).awaySourceLabel = 'Winner SF • M2';
+    out.push(final);
+
+    return out;
+  }, [actualKnockoutFixtures.length, displayStandings, selectedTournament]);
+
+  const bracketFixtures = actualKnockoutFixtures.length > 0 ? actualKnockoutFixtures : projectedKnockoutFixtures;
+  const isLiveProjection = actualKnockoutFixtures.length === 0 && projectedKnockoutFixtures.length > 0;
+
   return (
     <div className="space-y-6 animate-in fade-in duration-300 pb-20">
       {/* Category Quick Switcher Hub */}
@@ -533,22 +655,27 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
       {/* TAB 2: Knockout Bracket & Matches */}
       {activeTab === 'BRACKET' && (
         <div className="space-y-4">
+          {isLiveProjection && (
+            <div className="rounded-2xl border border-blue-400/20 bg-blue-500/[0.07] px-4 py-3 text-xs text-blue-100 shadow-lg">
+              <div className="flex items-center gap-2 font-black uppercase tracking-wider">
+                <Sparkles className="h-4 w-4 text-blue-300" />
+                Live knockout projection
+              </div>
+              <p className="mt-1 text-[11px] leading-relaxed text-slate-300">
+                Juftliklar hozirgi liga jadvalidagi o‘rinlarga qarab avtomatik yangilanadi: 9–24, 10–23, 11–22 … 16–17. Liga bosqichi tugagach final jadval bo‘yicha rasmiy bracket yaratiladi.
+              </p>
+            </div>
+          )}
+
           <TournamentBracket
-            fixtures={fixtures}
+            fixtures={bracketFixtures}
             currentClubId={currentClub?.id}
             userId={user?.id}
-            onSelectFixture={(f) => setSelectedFixtureForSubmit(f)}
+            onSelectFixture={isLiveProjection ? undefined : (f) => setSelectedFixtureForSubmit(f)}
             competition={selectedTournament}
           />
 
-          {fixtures.filter(
-            (f) =>
-              f.id.includes('-po-') ||
-              f.id.includes('-r16-') ||
-              f.id.includes('-qf-') ||
-              f.id.includes('-sf-') ||
-              f.id.includes('-final-')
-          ).length === 0 && (
+          {bracketFixtures.length === 0 && (
             <div className="glass-panel p-5 rounded-2xl border-indigo-500/30 bg-indigo-950/20 text-center space-y-3">
               <Sparkles className="w-8 h-8 text-indigo-400 mx-auto" />
               <h4 className="text-sm font-bold text-white">Knockout bosqichi kutilmoqda</h4>
