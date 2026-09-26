@@ -7,7 +7,6 @@ function replaceOnce(path, needle, replacement, guard) {
   fs.writeFileSync(path, source.replace(needle, replacement));
 }
 
-// Keep the selection regression lightweight.
 {
   const path = 'src/server/services/matchdayReminderService.ts';
   let source = fs.readFileSync(path, 'utf8');
@@ -163,12 +162,5 @@ replaceOnce(
   data.scripts['test:matchday-reminder'] = 'node scripts/run-isolated-test.mjs src/server/tests/matchdayReminderRegressionTest.ts';
   fs.writeFileSync(path, JSON.stringify(data, null, 2) + '\n');
 }
-
-replaceOnce(
-  '.github/workflows/ci.yml',
-  '          bun run test:matchday-locks\n',
-  '          bun run test:matchday-locks\n          bun run test:matchday-reminder\n',
-  'bun run test:matchday-reminder'
-);
 
 console.log('MATCHDAY_DEADLINE_V1_PATCH_APPLIED');
