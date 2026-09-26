@@ -1,0 +1,60 @@
+name: Premium Smart Alerts Build
+
+on:
+  push:
+    branches: [feat/premium-private-lab]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: premium-alerts-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/premium-private-lab
+          fetch-depth: 0
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Integrate Smart Alerts tab
+        run: node scripts/patch-premium-alert-tab.mjs
+
+      - name: Premium regression
+        env:
+          FIREBASE_FORCE_LOCAL_FALLBACK: "true"
+          NODE_ENV: "test"
+        run: node scripts/run-isolated-test.mjs src/server/tests/premiumPrivateLabRegressionTest.ts
+
+      - name: TypeScript
+        run: bun run lint
+
+      - name: Production build
+        env:
+          FIREBASE_FORCE_LOCAL_FALLBACK: "true"
+          NODE_ENV: "test"
+        run: bun run build
+
+      - name: Commit source and generated bundle
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/components/EflCareerCard.tsx api/index.js api/index.js.map
+          if git diff --cached --quiet; then
+            echo "Smart Alerts UI already integrated"
+          else
+            git commit -m "feat(premium): integrate smart alerts private lab tab"
+            git push origin HEAD:feat/premium-private-lab
+          fi
