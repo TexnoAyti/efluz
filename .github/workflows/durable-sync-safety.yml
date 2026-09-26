@@ -37,6 +37,8 @@ jobs:
         run: bun run test:read-reduction
       - name: Data propagation regression
         run: bun run test:data-propagation
+      - name: Install Redis test dependency
+        run: sudo apt-get update && sudo apt-get install -y redis-server
       - name: Redis durability regression
         run: bun run test:redis-durability
       - name: Commit verified source and generated bundle
