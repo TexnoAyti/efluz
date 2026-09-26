@@ -65,6 +65,19 @@ export interface PremiumAdminUser {
   createdAt?: string;
 }
 
+export interface PremiumSmartAlertsDto {
+  userId: string;
+  seasonId: string;
+  enabled: boolean;
+  deadlinePriority: boolean;
+  qualificationWatch: boolean;
+  cupProgress: boolean;
+  formMilestones: boolean;
+  careerDigest: boolean;
+  updatedAt: string;
+  updatedBy?: string;
+}
+
 async function premiumRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -130,6 +143,28 @@ export const premiumApi = {
     priceStars: number;
     seasonId: string;
   }>('/api/telegram/premium/invoice', {
+    method: 'POST',
+    body: JSON.stringify({ seasonId }),
+  }),
+
+  getSmartAlerts: (userId: string, seasonId = 'season-2026-27') => premiumRequest<{
+    preferences: PremiumSmartAlertsDto;
+  }>(`/api/premium/smart-alerts/${encodeURIComponent(userId)}?seasonId=${encodeURIComponent(seasonId)}`),
+
+  updateSmartAlerts: (preferences: PremiumSmartAlertsDto) => premiumRequest<{
+    success: true;
+    preferences: PremiumSmartAlertsDto;
+  }>('/api/premium/smart-alerts', {
+    method: 'PUT',
+    body: JSON.stringify(preferences),
+  }),
+
+  sendCareerDigest: (userId: string, seasonId = 'season-2026-27') => premiumRequest<{
+    success: true;
+    sent: boolean;
+    telegramId: string;
+    preview: string;
+  }>(`/api/premium/smart-alerts/${encodeURIComponent(userId)}/career-digest`, {
     method: 'POST',
     body: JSON.stringify({ seasonId }),
   }),
