@@ -41,9 +41,7 @@ async function main() {
   const homeUserId = 'user-bournemouth-owner';
   const awayUserId = 'user-tottenham-owner';
 
-  // Seed participating users and memberships in SQLite and mock Firestore.
-  // Durable replay authorizes against CLUB_OCCUPANCIES, so the isolated test
-  // must seed the same authoritative ownership documents production uses.
+  // Seed participating users and memberships in SQLite and mock Firestore
   const db = getFirestoreDb();
   queryRun(
     `INSERT OR REPLACE INTO club_memberships (id, season_id, club_id, user_id, status, claimed_at, updated_at)
@@ -58,6 +56,7 @@ async function main() {
   await db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${seasonId}_${awayUserId}`).set({
     userId: awayUserId, seasonId, clubId: 'club-tottenham', status: 'active',
   });
+  // Durable replay authorizes against the authoritative club occupancy documents.
   const claimedAt = new Date().toISOString();
   await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_club-bournemouth`).set({
     id: `${seasonId}_club-bournemouth`, seasonId, clubId: 'club-bournemouth', userId: homeUserId,
@@ -249,44 +248,93 @@ async function main() {
 
     assert.ok(claimErr, 'Club claim must fail when Firestore is offline');
     assert.ok(
-      claimErr.code === 'REMOTE_DB_UNAVAILABLE' ||
-      claimErr.statusCode === 503 ||
-      String(claimErr).includes('authoritative'),
-      `Expected authoritative-operation 503, got: ${claimErr?.message || claimErr}`
+      claimErr.message.includes('CIRCUIT_OPEN') || claimErr.message.includes('Authoritative write cannot execute'),
+      `Expected circuit open error, got: ${claimErr?.message}`
     );
-    console.log('✅ [TEST E PASS] Club claim safely rejected while Firestore was unavailable.');
+
+    // Verify club was not claimed in SQLite or Firestore
+    const localOcc = queryGet<any>('SELECT * FROM club_memberships WHERE user_id = "user-unauthorized"');
+    assert.equal(localOcc, null, 'User must NOT receive club ownership offline');
+    console.log('✅ [TEST E PASS] Club claim rejected safely when Firestore is offline (prevents split-brain ownership).');
 
     // -------------------------------------------------------------------
-    // TEST F: Standings authority survives process restart via Firestore aggregate
+    // TEST F: Standings correctness after outbox replay
     // -------------------------------------------------------------------
-    console.log('\n--- [TEST F] Standings Rebuild from Durable Firestore Truth ---');
+    console.log('\n--- [TEST F] Standings Materialization after Outbox Replay ---');
     firestoreCircuitBreaker.forceState('CLOSED');
-    await rebuildCompetitionStandingsFirestore(compId);
-    const standings = await calculateCompetitionStandingsFirestore(compId, seasonId);
-    const bournemouth = standings.find((r: any) => r.clubId === 'club-bournemouth');
-    assert.ok(bournemouth, 'Bournemouth must exist in standings');
-    assert.ok(Number.isFinite(bournemouth?.points), 'Standings points must be numeric');
-    console.log('✅ [TEST F PASS] Standings rebuild from Firestore confirmed truth is available after restart.');
+    const standings = await rebuildCompetitionStandingsFirestore(compId);
+    assert.ok(Array.isArray(standings));
+    const bmouthRow = standings.find((r) => r.clubId === 'club-bournemouth');
+    assert.ok(bmouthRow, 'Bournemouth must be in standings');
+    assert.equal(bmouthRow.played, 1);
+    assert.equal(bmouthRow.won, 1);
+    assert.equal(bmouthRow.points, 3);
+    assert.equal(bmouthRow.goalDifference, 1);
+
+    const tottRow = standings.find((r) => r.clubId === 'club-tottenham');
+    assert.ok(tottRow, 'Tottenham must be in standings');
+    assert.equal(tottRow.played, 1);
+    assert.equal(tottRow.lost, 1);
+    assert.equal(tottRow.points, 0);
+    assert.equal(tottRow.goalDifference, -1);
+    console.log('✅ [TEST F PASS] Standings materialized correctly and deterministically from confirmed fixture state.');
 
     // -------------------------------------------------------------------
-    // TEST G: Durable outbox retains audit trail and pending set is drained
+    // TEST G: Admin Fallback Mutations (Approve & Reopen via Durable Outbox)
     // -------------------------------------------------------------------
-    console.log('\n--- [TEST G] Durable Outbox Audit Trail & Pending Drain ---');
-    const pending = await getDuePendingMutations(100);
-    assert.equal(pending.length, 0, 'No due pending durable mutations should remain after successful replay');
-    const homeFinalOutbox = await getDurableMutation(expectedMutationId);
-    const awayFinalOutbox = await getDurableMutation(awayMutationId);
-    assert.equal(homeFinalOutbox?.status, 'SYNCED');
-    assert.equal(awayFinalOutbox?.status, 'SYNCED');
-    console.log('✅ [TEST G PASS] Durable outbox audit records preserved; pending queue fully drained.');
+    console.log('\n--- [TEST G] Admin Fallback Mutations (Approve & Reopen) ---');
+    const { adminApproveFixtureResultFirestore, reopenFixtureFirestore } = await import('../firebase/firestoreStore');
+    firestoreCircuitBreaker.forceState('OPEN');
+
+    // Admin approve offline
+    const adminApproveRes = await adminApproveFixtureResultFirestore(
+      'admin-super',
+      testFixtureId,
+      3,
+      0,
+      'Admin manual approval'
+    );
+    assert.equal(adminApproveRes.pendingSync, true);
+    const adminApproveMut = await getDurableMutation(`admin_approve_${testFixtureId}`);
+    assert.ok(adminApproveMut, 'Admin approve mutation must exist in Redis outbox');
+    assert.equal(adminApproveMut.status, 'PENDING');
+    assert.equal(adminApproveMut.payload.homeScore, 3);
+    assert.equal(adminApproveMut.payload.awayScore, 0);
+
+    // Replay to Firestore
+    firestoreCircuitBreaker.forceState('CLOSED');
+    await processPendingMutations();
+
+    const adminApprovedDoc = await db.collection(COLLECTIONS.FIXTURES).doc(testFixtureId).get();
+    assert.equal(adminApprovedDoc.data()?.status, 'CONFIRMED');
+    assert.equal(adminApprovedDoc.data()?.homeScore, 3);
+    assert.equal(adminApprovedDoc.data()?.awayScore, 0);
+    assert.equal((await getDurableMutation(`admin_approve_${testFixtureId}`))?.status, 'SYNCED');
+
+    // Admin reopen offline
+    firestoreCircuitBreaker.forceState('OPEN');
+    const reopenRes = await reopenFixtureFirestore('admin-super', testFixtureId, 'Reopening fixture');
+    assert.equal(reopenRes.pendingSync, true);
+    const reopenMut = await getDurableMutation(`admin_reject_${testFixtureId}`);
+    assert.ok(reopenMut, 'Admin reopen mutation must exist in Redis outbox');
+    assert.equal(reopenMut.status, 'PENDING');
+
+    // Replay reopen to Firestore
+    firestoreCircuitBreaker.forceState('CLOSED');
+    await processPendingMutations();
+
+    const reopenedDoc = await db.collection(COLLECTIONS.FIXTURES).doc(testFixtureId).get();
+    assert.equal(reopenedDoc.data()?.status, 'SCHEDULED');
+    assert.equal(reopenedDoc.data()?.homeScore, null);
+    assert.equal((await getDurableMutation(`admin_reject_${testFixtureId}`))?.status, 'SYNCED');
+    console.log('✅ [TEST G PASS] Admin approve & reopen fallback mutations persist to Redis outbox and replay idempotently.');
+
+    console.log('\n================================================================');
+    console.log('   ALL PHASE 2 ZERO-LOSS DURABILITY TESTS PASSED (7/7)        ');
+    console.log('================================================================\n');
   } finally {
-    firestoreCircuitBreaker.forceState('CLOSED');
-    await mockRedis.stop();
+    await mockRedis.close();
   }
-
-  console.log('\n================================================================');
-  console.log('        ALL PHASE 2 ZERO-LOSS DURABILITY CHECKS PASSED         ');
-  console.log('================================================================\n');
 }
 
 main().catch((err) => {

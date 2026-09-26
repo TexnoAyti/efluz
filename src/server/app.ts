@@ -154,6 +154,25 @@ export function createApp() {
     catch { res.status(503).json({ error: 'NOTIFICATION_WORKER_UNAVAILABLE' }); }
   });
 
+  // Durable mutation replay worker can run from Redis without startup Firestore reads.
+  app.all('/api/internal/mutation-worker', async (req, res) => {
+    const secret = process.env.CRON_SECRET;
+    const actual = Buffer.from(req.headers.authorization || '');
+    const expected = Buffer.from(`Bearer ${secret || ''}`);
+    if (!secret || actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+      res.status(401).json({ error: 'UNAUTHORIZED' });
+      return;
+    }
+    if (!['GET', 'POST'].includes(req.method)) { res.sendStatus(405); return; }
+    try {
+      const result = await processPendingMutations();
+      res.json({ ok: true, ...result });
+    } catch (err: any) {
+      console.warn('[MUTATION_WORKER] Replay failed:', err?.message || err);
+      res.status(503).json({ error: 'MUTATION_WORKER_UNAVAILABLE' });
+    }
+  });
+
   // Ensure DB is initialized before executing route handlers
   app.use(async (req, res, next) => {
     try {

@@ -162,6 +162,14 @@ async function runDeploymentSelfCheck() {
       throw new Error(`FAILED [CHECK 3.6]: POST /api/auth/telegram returned HTTP ${authTest.status} (expected JSON 400, got text="${authTest.text.slice(0, 80)}")`);
     }
     console.log('✅ PASS [CHECK 3.6]: POST /api/auth/telegram returned HTTP 400 JSON (Clean JSON error, NOT HTML)');
+
+
+    // 3.7 internal mutation worker must be CRON_SECRET protected before DB/auth middleware
+    const mutationWorkerAnon = await testEndpoint('/api/internal/mutation-worker', { method: 'POST' });
+    if (mutationWorkerAnon.status !== 401 || !mutationWorkerAnon.isJson || mutationWorkerAnon.json?.error !== 'UNAUTHORIZED') {
+      throw new Error(`FAILED [CHECK 3.7]: POST /api/internal/mutation-worker expected JSON 401, got HTTP ${mutationWorkerAnon.status}`);
+    }
+    console.log('✅ PASS [CHECK 3.7]: mutation replay worker rejects unauthenticated requests with JSON 401');
   } finally {
     server.close();
   }

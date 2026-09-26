@@ -5,9 +5,11 @@ import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
 import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS } from '../firebase/collections';
 import { assertNoSyntheticIdsInProduction } from '../utils/testGuard';
+import { waitUntil } from '@vercel/functions';
 import {
   persistDurableMutation,
   getDuePendingMutations,
+  claimDuePendingMutations,
   getDurableMutation,
   markMutationSyncing,
   markMutationSynced,
@@ -145,6 +147,7 @@ export async function enqueueDurableOutboxMutation<T = any>(
 
   // 1. MUST persist to durable Redis outbox FIRST
   await persistDurableMutation(durableMutation);
+  scheduleDurableMutationReplay();
 
   // 2. Only after Redis persistence succeeds, update local memory & SQLite mirror
   memoryQueue.set(mutation.mutationId, fullMutation);
@@ -221,9 +224,11 @@ export function enqueueMutation<T = any>(
     lastError: null,
     status: 'PENDING',
   };
-  persistDurableMutation(durableMutation).catch((err) => {
-    console.warn('[MUTATION_QUEUE] Background Redis persistence failed:', err);
-  });
+  persistDurableMutation(durableMutation)
+    .then(() => scheduleDurableMutationReplay())
+    .catch((err) => {
+      console.warn('[MUTATION_QUEUE] Background Redis persistence failed:', err);
+    });
 
   memoryQueue.set(mutation.mutationId, fullMutation);
   saveQueueBackupToFile();
@@ -335,6 +340,17 @@ export function getQueueStats() {
   };
 }
 
+
+/** Event-driven replay trigger after Redis has durably accepted a mutation. */
+export function scheduleDurableMutationReplay(): void {
+  if (!isRedisOutboxConfigured()) return;
+  const work = processPendingMutations().catch((err) => {
+    console.warn('[MUTATION_WORKER] Event-driven replay deferred:', err?.message || err);
+  });
+  if (process.env.VERCEL === '1') waitUntil(work);
+  else void work;
+}
+
 /**
  * Reconciles pending mutations to Firestore when Firestore is available.
  * Idempotent, safe, drains in creation order.
@@ -377,7 +393,7 @@ export async function processPendingMutations(): Promise<SyncResult> {
     let dueMutations: PendingMutation[] = [];
     if (isRedisOutboxConfigured()) {
       try {
-        const redisDue = await getDuePendingMutations(15);
+        const redisDue = await claimDuePendingMutations(15, 120_000);
         dueMutations = redisDue.map((m) => ({
           mutationId: m.mutationId,
           entityType: m.entityType,
@@ -410,7 +426,6 @@ export async function processPendingMutations(): Promise<SyncResult> {
       }
 
       processed++;
-      await markMutationSyncing(item.mutationId).catch(() => {});
       updateMutationStatus(item.mutationId, 'SYNCING');
 
       try {
@@ -422,8 +437,13 @@ export async function processPendingMutations(): Promise<SyncResult> {
         console.log(`[MUTATION_QUEUE] Successfully synced mutation ${item.mutationId} (${item.entityType})`);
       } catch (err: any) {
         const isQuota = firestoreCircuitBreaker.isQuotaExhaustedError(err);
-        const isOwnershipMismatch = err.message?.includes('OWNERSHIP_MISMATCH');
-        const isTerminalError = isOwnershipMismatch;
+        const terminalReplayCodes = [
+          'OWNERSHIP_MISMATCH',
+          'FIXTURE_ALREADY_CONFIRMED',
+          'SUBMISSION_CONFLICT',
+          'INVALID_FIXTURE_PARTICIPANT',
+        ];
+        const isTerminalError = terminalReplayCodes.some((code) => err.message?.includes(code));
         firestoreCircuitBreaker.recordFailure(err);
 
         // Failed or fallback-only replay must remain PENDING for retry.
@@ -477,19 +497,32 @@ async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: 
 
   switch (entityType) {
     case 'RESULT_SUBMISSION': {
-      // payload: { fixtureId, userId, userClubId, homeScore, awayScore, proofUrl, now, submissionId }
       const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(entityId);
-      const fixDoc = await fixRef.get();
-      if (!fixDoc.exists) {
-        throw new Error(`Fixture ${entityId} not found in Firestore.`);
-      }
-
-      const fixData = fixDoc.data()!;
       const subRef = db.collection(COLLECTIONS.RESULT_SUBMISSIONS).doc(payload.submissionId);
 
-      // Write submission doc
-      await subRef.set(
-        {
+      const replay = await db.runTransaction(async (tx) => {
+        const fixDoc = await tx.get(fixRef);
+        if (!fixDoc.exists) throw new Error(`Fixture ${entityId} not found in Firestore.`);
+
+        const fixData = fixDoc.data()!;
+        if (![fixData.homeClubId, fixData.awayClubId].includes(payload.userClubId)) {
+          throw new Error(`INVALID_FIXTURE_PARTICIPANT: club ${payload.userClubId} does not belong to fixture ${entityId}.`);
+        }
+
+        const seasonId = fixData.seasonId || payload.seasonId || 'season-2026-27';
+        const occupancyRef = db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_${payload.userClubId}`);
+        const submissionsQuery = db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where('fixtureId', '==', entityId);
+
+        const occupancyDoc = await tx.get(occupancyRef);
+        const existingSubDoc = await tx.get(subRef);
+        const submissionsSnap = await tx.get(submissionsQuery);
+
+        const occupancy = occupancyDoc.exists ? occupancyDoc.data() : null;
+        if (!occupancy || occupancy.userId !== payload.userId || ['released', 'inactive'].includes(String(occupancy.status || '').toLowerCase())) {
+          throw new Error(`OWNERSHIP_MISMATCH: user ${payload.userId} no longer owns club ${payload.userClubId} in ${seasonId}.`);
+        }
+
+        const incomingSubmission = {
           id: payload.submissionId,
           fixtureId: entityId,
           submittedByUserId: payload.userId,
@@ -498,44 +531,66 @@ async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: 
           awayScore: payload.awayScore,
           proofUrl: payload.proofUrl || null,
           createdAt: payload.createdAt || new Date().toISOString(),
-        },
-        { merge: true }
-      );
+        };
 
-      // Check all submissions in Firestore for this fixture
-      const subsSnap = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where('fixtureId', '==', entityId).get();
-      const subs = subsSnap.docs.map((d) => d.data());
-
-      let newStatus = fixData.status;
-      let confirmedHome: number | null = fixData.homeScore ?? null;
-      let confirmedAway: number | null = fixData.awayScore ?? null;
-      let winnerClubId: string | null = fixData.winnerClubId ?? null;
-      let confirmedAt: string | null = fixData.resultConfirmedAt ?? null;
-
-      if (subs.length >= 2) {
-        const [s1, s2] = subs;
-        if (s1.homeScore === s2.homeScore && s1.awayScore === s2.awayScore) {
-          newStatus = 'CONFIRMED';
-          confirmedHome = s1.homeScore;
-          confirmedAway = s1.awayScore;
-          confirmedAt = payload.updatedAt || new Date().toISOString();
-          if (confirmedHome > confirmedAway) winnerClubId = fixData.homeClubId;
-          else if (confirmedAway > confirmedHome) winnerClubId = fixData.awayClubId;
-        } else {
-          newStatus = 'DISPUTED';
+        if (existingSubDoc.exists) {
+          const existing = existingSubDoc.data()!;
+          const same = existing.fixtureId === entityId && existing.submittedByUserId === payload.userId && existing.clubId === payload.userClubId && Number(existing.homeScore) === Number(payload.homeScore) && Number(existing.awayScore) === Number(payload.awayScore);
+          if (!same) throw new Error(`SUBMISSION_CONFLICT: submission ${payload.submissionId} already exists with different data.`);
         }
-      } else if (subs.length === 1 && newStatus !== 'CONFIRMED') {
-        newStatus = 'PENDING_CONFIRMATION';
-      }
 
-      await fixRef.update({
-        status: newStatus,
-        homeScore: confirmedHome,
-        awayScore: confirmedAway,
-        winnerClubId,
-        resultConfirmedAt: confirmedAt,
-        updatedAt: new Date().toISOString(),
+        const confirmedMatchesIncoming = Number(fixData.homeScore) === Number(payload.homeScore) && Number(fixData.awayScore) === Number(payload.awayScore);
+        if (fixData.status === 'CONFIRMED' && !confirmedMatchesIncoming) {
+          throw new Error(`FIXTURE_ALREADY_CONFIRMED: fixture ${entityId} is already confirmed as ${fixData.homeScore}-${fixData.awayScore}.`);
+        }
+
+        const existingSubmissions = submissionsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as any));
+        const sameActorOther = existingSubmissions.find((sub: any) => sub.submittedByUserId === payload.userId && sub.id !== payload.submissionId);
+        if (sameActorOther && (Number(sameActorOther.homeScore) !== Number(payload.homeScore) || Number(sameActorOther.awayScore) !== Number(payload.awayScore) || sameActorOther.clubId !== payload.userClubId)) {
+          throw new Error(`SUBMISSION_CONFLICT: user ${payload.userId} already submitted a different result for ${entityId}.`);
+        }
+
+        if (!existingSubDoc.exists) tx.set(subRef, incomingSubmission);
+
+        if (fixData.status === 'CONFIRMED') {
+          return { fixData, newStatus: 'CONFIRMED', winnerClubId: fixData.winnerClubId ?? null };
+        }
+
+        const byActor = new Map<string, any>();
+        for (const sub of existingSubmissions) {
+          if (sub.id === payload.submissionId) continue;
+          if (sub.submittedByUserId) byActor.set(sub.submittedByUserId, sub);
+        }
+        byActor.set(payload.userId, incomingSubmission);
+        const submissions = Array.from(byActor.values());
+
+        let newStatus = fixData.status;
+        let confirmedHome: number | null = fixData.homeScore ?? null;
+        let confirmedAway: number | null = fixData.awayScore ?? null;
+        let winnerClubId: string | null = fixData.winnerClubId ?? null;
+        let confirmedAt: string | null = fixData.resultConfirmedAt ?? null;
+
+        const homeSubmission = submissions.find((sub: any) => sub.clubId === fixData.homeClubId);
+        const awaySubmission = submissions.find((sub: any) => sub.clubId === fixData.awayClubId);
+        if (homeSubmission && awaySubmission) {
+          if (Number(homeSubmission.homeScore) === Number(awaySubmission.homeScore) && Number(homeSubmission.awayScore) === Number(awaySubmission.awayScore)) {
+            newStatus = 'CONFIRMED';
+            confirmedHome = Number(homeSubmission.homeScore);
+            confirmedAway = Number(homeSubmission.awayScore);
+            confirmedAt = payload.updatedAt || new Date().toISOString();
+            winnerClubId = confirmedHome > confirmedAway ? fixData.homeClubId : confirmedAway > confirmedHome ? fixData.awayClubId : null;
+          } else {
+            newStatus = 'DISPUTED';
+          }
+        } else {
+          newStatus = 'PENDING_CONFIRMATION';
+        }
+
+        tx.update(fixRef, { status: newStatus, homeScore: confirmedHome, awayScore: confirmedAway, winnerClubId, resultConfirmedAt: confirmedAt, updatedAt: new Date().toISOString() });
+        return { fixData, newStatus, winnerClubId };
       });
+
+      const { fixData, newStatus, winnerClubId } = replay;
 
       if (newStatus === 'CONFIRMED' && winnerClubId) {
         try {
@@ -555,19 +610,9 @@ async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: 
         }
       }
 
-      // Replay-safe deterministic audit log
       const auditId = `audit_${item.mutationId}_submit`;
-      await db.collection(COLLECTIONS.AUDIT_LOGS).doc(auditId).set({
-        id: auditId,
-        actorUserId: payload.userId,
-        action: 'SUBMIT_RESULT',
-        entityType: 'fixture',
-        entityId: entityId,
-        notes: `Result submitted: ${payload.homeScore}-${payload.awayScore} (status: ${newStatus})`,
-        createdAt: payload.createdAt || new Date().toISOString(),
-      }, { merge: true });
+      await db.collection(COLLECTIONS.AUDIT_LOGS).doc(auditId).set({ id: auditId, actorUserId: payload.userId, action: 'SUBMIT_RESULT', entityType: 'fixture', entityId, notes: `Result submitted: ${payload.homeScore}-${payload.awayScore} (status: ${newStatus})`, createdAt: payload.createdAt || new Date().toISOString() }, { merge: true });
 
-      // Replay-safe deterministic opponent notification
       const opponentClubId = payload.userClubId === fixData.homeClubId ? fixData.awayClubId : fixData.homeClubId;
       if (opponentClubId && fixData.seasonId) {
         try {
@@ -575,16 +620,7 @@ async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: 
           const opponentOcc = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${fixData.seasonId}_${opponentClubId}`).get();
           if (opponentOcc.exists && opponentOcc.data()?.userId) {
             const oppUserId = opponentOcc.data()!.userId;
-            await db.collection(COLLECTIONS.NOTIFICATIONS).doc(notifId).set({
-              id: notifId,
-              userId: oppUserId,
-              type: newStatus === 'CONFIRMED' ? 'RESULT_CONFIRMED' : 'RESULT_SUBMITTED',
-              title: newStatus === 'CONFIRMED' ? 'Match Result Confirmed' : 'Opponent Submitted Score',
-              message: `Match result: ${payload.homeScore}-${payload.awayScore}`,
-              fixtureId: entityId,
-              isRead: false,
-              createdAt: new Date().toISOString(),
-            }, { merge: true });
+            await db.collection(COLLECTIONS.NOTIFICATIONS).doc(notifId).set({ id: notifId, userId: oppUserId, type: newStatus === 'CONFIRMED' ? 'RESULT_CONFIRMED' : 'RESULT_SUBMITTED', title: newStatus === 'CONFIRMED' ? 'Match Result Confirmed' : 'Opponent Submitted Score', message: `Match result: ${payload.homeScore}-${payload.awayScore}`, fixtureId: entityId, isRead: false, createdAt: new Date().toISOString() }, { merge: true });
           }
         } catch {}
       }

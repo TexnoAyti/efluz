@@ -47,7 +47,8 @@
     "test:startup-preservation": "node scripts/run-isolated-test.mjs src/server/tests/startupPreservationRegressionTest.ts",
     "test:admin-authorization": "node scripts/run-isolated-test.mjs src/server/tests/adminAuthorizationRegressionTest.ts",
     "test:matchday-locks": "node scripts/run-isolated-test.mjs src/server/tests/verifyMatchdayLockRegression.ts",
-    "test:read-after-write": "tsx src/server/tests/readAfterWriteConsistencyRegressionTest.ts"
+    "test:read-after-write": "tsx src/server/tests/readAfterWriteConsistencyRegressionTest.ts",
+    "test:durable-sync-worker": "node scripts/run-isolated-test.mjs src/server/tests/durableSyncWorkerRegressionTest.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

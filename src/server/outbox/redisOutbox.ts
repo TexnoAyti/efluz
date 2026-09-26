@@ -41,6 +41,80 @@ export function isRedisOutboxConfigured(): boolean {
   return getUpstashClient() !== null;
 }
 
+
+const DEFAULT_CLAIM_LEASE_MS = 120_000;
+
+/**
+ * Atomically claims due Redis outbox mutations for one replay worker.
+ * A claimed item is moved to SYNCING and leased for 120 seconds so a dead
+ * worker can be recovered without duplicate concurrent replay.
+ */
+export async function claimDuePendingMutations(
+  limit = 15,
+  leaseMs = DEFAULT_CLAIM_LEASE_MS
+): Promise<DurableOutboxMutation[]> {
+  const client = getUpstashClient();
+  if (!client) return [];
+
+  const now = Date.now();
+  const nowIso = new Date(now).toISOString();
+  const staleBeforeIso = new Date(now - leaseMs).toISOString();
+  const leaseUntil = now + leaseMs;
+  const mutationPrefix = `${KEY_PREFIX}:outbox:mutation:`;
+
+  try {
+    const raw = await client.eval<any>(`
+      local ids = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', ARGV[1], 'LIMIT', 0, ARGV[2])
+      local claimed = {}
+      for _, id in ipairs(ids) do
+        local mutationKey = ARGV[6] .. id
+        local encoded = redis.call('GET', mutationKey)
+        if encoded then
+          local ok, mut = pcall(cjson.decode, encoded)
+          if ok and mut then
+            local status = tostring(mut.status or 'PENDING')
+            local updatedAt = tostring(mut.updatedAt or '')
+            local canClaim = status == 'PENDING'
+              or (status == 'SYNCING' and updatedAt ~= '' and updatedAt <= ARGV[4])
+            if canClaim then
+              mut.status = 'SYNCING'
+              mut.updatedAt = ARGV[3]
+              mut.nextRetryAt = tonumber(ARGV[5])
+              local nextEncoded = cjson.encode(mut)
+              redis.call('SET', mutationKey, nextEncoded)
+              redis.call('ZADD', KEYS[1], ARGV[5], id)
+              table.insert(claimed, nextEncoded)
+            end
+          end
+        else
+          redis.call('ZREM', KEYS[1], id)
+        end
+      end
+      return cjson.encode(claimed)
+    `, [OUTBOX_KEYS.pending()], [
+      String(now),
+      String(Math.max(1, Math.min(limit, 50))),
+      nowIso,
+      staleBeforeIso,
+      String(leaseUntil),
+      mutationPrefix,
+    ]);
+
+    const rows: any[] = typeof raw === 'string' ? JSON.parse(raw) : Array.isArray(raw) ? raw : [];
+    return rows
+      .map((row) => {
+        if (typeof row === 'string') {
+          try { return JSON.parse(row); } catch { return null; }
+        }
+        return row;
+      })
+      .filter(Boolean) as DurableOutboxMutation[];
+  } catch (err: any) {
+    console.warn('[DURABLE_OUTBOX] Atomic claim failed:', err?.message || err);
+    return [];
+  }
+}
+
 /**
  * Persists a complete replayable mutation to the durable Redis outbox.
  * Throws DurablePersistenceUnavailableError if Redis client is not available or write fails.

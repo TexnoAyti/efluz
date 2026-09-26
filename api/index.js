@@ -5440,6 +5440,67 @@ var init_readModelStore = __esm({
 function isRedisOutboxConfigured() {
   return getUpstashClient() !== null;
 }
+async function claimDuePendingMutations(limit = 15, leaseMs = DEFAULT_CLAIM_LEASE_MS) {
+  const client = getUpstashClient();
+  if (!client) return [];
+  const now = Date.now();
+  const nowIso = new Date(now).toISOString();
+  const staleBeforeIso = new Date(now - leaseMs).toISOString();
+  const leaseUntil = now + leaseMs;
+  const mutationPrefix = `${KEY_PREFIX}:outbox:mutation:`;
+  try {
+    const raw = await client.eval(`
+      local ids = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', ARGV[1], 'LIMIT', 0, ARGV[2])
+      local claimed = {}
+      for _, id in ipairs(ids) do
+        local mutationKey = ARGV[6] .. id
+        local encoded = redis.call('GET', mutationKey)
+        if encoded then
+          local ok, mut = pcall(cjson.decode, encoded)
+          if ok and mut then
+            local status = tostring(mut.status or 'PENDING')
+            local updatedAt = tostring(mut.updatedAt or '')
+            local canClaim = status == 'PENDING'
+              or (status == 'SYNCING' and updatedAt ~= '' and updatedAt <= ARGV[4])
+            if canClaim then
+              mut.status = 'SYNCING'
+              mut.updatedAt = ARGV[3]
+              mut.nextRetryAt = tonumber(ARGV[5])
+              local nextEncoded = cjson.encode(mut)
+              redis.call('SET', mutationKey, nextEncoded)
+              redis.call('ZADD', KEYS[1], ARGV[5], id)
+              table.insert(claimed, nextEncoded)
+            end
+          end
+        else
+          redis.call('ZREM', KEYS[1], id)
+        end
+      end
+      return cjson.encode(claimed)
+    `, [OUTBOX_KEYS.pending()], [
+      String(now),
+      String(Math.max(1, Math.min(limit, 50))),
+      nowIso,
+      staleBeforeIso,
+      String(leaseUntil),
+      mutationPrefix
+    ]);
+    const rows = typeof raw === "string" ? JSON.parse(raw) : Array.isArray(raw) ? raw : [];
+    return rows.map((row) => {
+      if (typeof row === "string") {
+        try {
+          return JSON.parse(row);
+        } catch {
+          return null;
+        }
+      }
+      return row;
+    }).filter(Boolean);
+  } catch (err) {
+    console.warn("[DURABLE_OUTBOX] Atomic claim failed:", err?.message || err);
+    return [];
+  }
+}
 async function persistDurableMutation(mutation) {
   const client = getUpstashClient();
   if (!client) {
@@ -5482,46 +5543,6 @@ async function getDurableMutation(mutationId) {
   } catch (err) {
     console.warn(`[DURABLE_OUTBOX] Failed to read mutation ${mutationId}:`, err?.message || err);
     return null;
-  }
-}
-async function getDuePendingMutations(limit = 25) {
-  const client = getUpstashClient();
-  if (!client) return [];
-  try {
-    const now = Date.now();
-    const members = await client.zrange(
-      OUTBOX_KEYS.pending(),
-      0,
-      now,
-      { byScore: true, offset: 0, count: limit }
-    );
-    if (!members || members.length === 0) return [];
-    const mutations = [];
-    for (const id of members) {
-      const mut = await getDurableMutation(id);
-      if (mut && mut.status !== "SYNCED") {
-        mutations.push(mut);
-      }
-    }
-    return mutations.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-  } catch (err) {
-    console.warn("[DURABLE_OUTBOX] Error retrieving due pending mutations:", err?.message || err);
-    return [];
-  }
-}
-async function markMutationSyncing(mutationId) {
-  const client = getUpstashClient();
-  if (!client) return false;
-  try {
-    const mut = await getDurableMutation(mutationId);
-    if (!mut || mut.status === "SYNCED") return false;
-    mut.status = "SYNCING";
-    mut.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    await client.set(OUTBOX_KEYS.mutation(mutationId), JSON.stringify(mut));
-    return true;
-  } catch (err) {
-    console.warn(`[DURABLE_OUTBOX] Failed to mark mutation ${mutationId} as SYNCING:`, err?.message || err);
-    return false;
   }
 }
 async function markMutationSynced(mutationId) {
@@ -5579,7 +5600,7 @@ async function markMutationFailed(mutationId, errorMessage) {
     console.warn(`[DURABLE_OUTBOX] Failed to mark mutation ${mutationId} as FAILED:`, err?.message || err);
   }
 }
-var DurablePersistenceUnavailableError, OUTBOX_KEYS;
+var DurablePersistenceUnavailableError, OUTBOX_KEYS, DEFAULT_CLAIM_LEASE_MS;
 var init_redisOutbox = __esm({
   "src/server/outbox/redisOutbox.ts"() {
     init_readModelStore();
@@ -5597,6 +5618,7 @@ var init_redisOutbox = __esm({
       pending: () => `${KEY_PREFIX}:outbox:pending`,
       all: () => `${KEY_PREFIX}:outbox:all`
     };
+    DEFAULT_CLAIM_LEASE_MS = 12e4;
   }
 });
 
@@ -7294,6 +7316,7 @@ var init_knockoutEngine = __esm({
 // src/server/sync/mutationQueue.ts
 import fs3 from "fs";
 import path3 from "path";
+import { waitUntil } from "@vercel/functions";
 function saveQueueBackupToFile() {
   try {
     if (!fs3.existsSync(BACKUP_DIR)) {
@@ -7351,6 +7374,7 @@ async function enqueueDurableOutboxMutation(mutation) {
     status: "PENDING"
   };
   await persistDurableMutation(durableMutation);
+  scheduleDurableMutationReplay();
   memoryQueue.set(mutation.mutationId, fullMutation);
   saveQueueBackupToFile();
   try {
@@ -7413,7 +7437,7 @@ function enqueueMutation(mutation) {
     lastError: null,
     status: "PENDING"
   };
-  persistDurableMutation(durableMutation).catch((err) => {
+  persistDurableMutation(durableMutation).then(() => scheduleDurableMutationReplay()).catch((err) => {
     console.warn("[MUTATION_QUEUE] Background Redis persistence failed:", err);
   });
   memoryQueue.set(mutation.mutationId, fullMutation);
@@ -7513,6 +7537,14 @@ function getQueueStats() {
     failed: all.filter((m) => m.status === "FAILED").length
   };
 }
+function scheduleDurableMutationReplay() {
+  if (!isRedisOutboxConfigured()) return;
+  const work = processPendingMutations().catch((err) => {
+    console.warn("[MUTATION_WORKER] Event-driven replay deferred:", err?.message || err);
+  });
+  if (process.env.VERCEL === "1") waitUntil(work);
+  else void work;
+}
 async function processPendingMutations() {
   if (isSyncInProgress) {
     console.log("[MUTATION_QUEUE] Sync already in progress, skipping duplicate call.");
@@ -7546,7 +7578,7 @@ async function processPendingMutations() {
     let dueMutations = [];
     if (isRedisOutboxConfigured()) {
       try {
-        const redisDue = await getDuePendingMutations(15);
+        const redisDue = await claimDuePendingMutations(15, 12e4);
         dueMutations = redisDue.map((m) => ({
           mutationId: m.mutationId,
           entityType: m.entityType,
@@ -7574,8 +7606,6 @@ async function processPendingMutations() {
         break;
       }
       processed++;
-      await markMutationSyncing(item.mutationId).catch(() => {
-      });
       updateMutationStatus(item.mutationId, "SYNCING");
       try {
         await executeSingleMutationSync(db, item);
@@ -7587,8 +7617,13 @@ async function processPendingMutations() {
         console.log(`[MUTATION_QUEUE] Successfully synced mutation ${item.mutationId} (${item.entityType})`);
       } catch (err) {
         const isQuota = firestoreCircuitBreaker.isQuotaExhaustedError(err);
-        const isOwnershipMismatch = err.message?.includes("OWNERSHIP_MISMATCH");
-        const isTerminalError = isOwnershipMismatch;
+        const terminalReplayCodes = [
+          "OWNERSHIP_MISMATCH",
+          "FIXTURE_ALREADY_CONFIRMED",
+          "SUBMISSION_CONFLICT",
+          "INVALID_FIXTURE_PARTICIPANT"
+        ];
+        const isTerminalError = terminalReplayCodes.some((code) => err.message?.includes(code));
         firestoreCircuitBreaker.recordFailure(err);
         const nextStatus = isTerminalError ? "FAILED" : "PENDING";
         if (isTerminalError) {
@@ -7635,14 +7670,25 @@ async function executeSingleMutationSync(db, item) {
   switch (entityType) {
     case "RESULT_SUBMISSION": {
       const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(entityId);
-      const fixDoc = await fixRef.get();
-      if (!fixDoc.exists) {
-        throw new Error(`Fixture ${entityId} not found in Firestore.`);
-      }
-      const fixData = fixDoc.data();
       const subRef = db.collection(COLLECTIONS.RESULT_SUBMISSIONS).doc(payload.submissionId);
-      await subRef.set(
-        {
+      const replay = await db.runTransaction(async (tx) => {
+        const fixDoc = await tx.get(fixRef);
+        if (!fixDoc.exists) throw new Error(`Fixture ${entityId} not found in Firestore.`);
+        const fixData2 = fixDoc.data();
+        if (![fixData2.homeClubId, fixData2.awayClubId].includes(payload.userClubId)) {
+          throw new Error(`INVALID_FIXTURE_PARTICIPANT: club ${payload.userClubId} does not belong to fixture ${entityId}.`);
+        }
+        const seasonId = fixData2.seasonId || payload.seasonId || "season-2026-27";
+        const occupancyRef = db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_${payload.userClubId}`);
+        const submissionsQuery = db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where("fixtureId", "==", entityId);
+        const occupancyDoc = await tx.get(occupancyRef);
+        const existingSubDoc = await tx.get(subRef);
+        const submissionsSnap = await tx.get(submissionsQuery);
+        const occupancy = occupancyDoc.exists ? occupancyDoc.data() : null;
+        if (!occupancy || occupancy.userId !== payload.userId || ["released", "inactive"].includes(String(occupancy.status || "").toLowerCase())) {
+          throw new Error(`OWNERSHIP_MISMATCH: user ${payload.userId} no longer owns club ${payload.userClubId} in ${seasonId}.`);
+        }
+        const incomingSubmission = {
           id: payload.submissionId,
           fixtureId: entityId,
           submittedByUserId: payload.userId,
@@ -7651,39 +7697,56 @@ async function executeSingleMutationSync(db, item) {
           awayScore: payload.awayScore,
           proofUrl: payload.proofUrl || null,
           createdAt: payload.createdAt || (/* @__PURE__ */ new Date()).toISOString()
-        },
-        { merge: true }
-      );
-      const subsSnap = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where("fixtureId", "==", entityId).get();
-      const subs = subsSnap.docs.map((d) => d.data());
-      let newStatus = fixData.status;
-      let confirmedHome = fixData.homeScore ?? null;
-      let confirmedAway = fixData.awayScore ?? null;
-      let winnerClubId = fixData.winnerClubId ?? null;
-      let confirmedAt = fixData.resultConfirmedAt ?? null;
-      if (subs.length >= 2) {
-        const [s1, s2] = subs;
-        if (s1.homeScore === s2.homeScore && s1.awayScore === s2.awayScore) {
-          newStatus = "CONFIRMED";
-          confirmedHome = s1.homeScore;
-          confirmedAway = s1.awayScore;
-          confirmedAt = payload.updatedAt || (/* @__PURE__ */ new Date()).toISOString();
-          if (confirmedHome > confirmedAway) winnerClubId = fixData.homeClubId;
-          else if (confirmedAway > confirmedHome) winnerClubId = fixData.awayClubId;
-        } else {
-          newStatus = "DISPUTED";
+        };
+        if (existingSubDoc.exists) {
+          const existing = existingSubDoc.data();
+          const same = existing.fixtureId === entityId && existing.submittedByUserId === payload.userId && existing.clubId === payload.userClubId && Number(existing.homeScore) === Number(payload.homeScore) && Number(existing.awayScore) === Number(payload.awayScore);
+          if (!same) throw new Error(`SUBMISSION_CONFLICT: submission ${payload.submissionId} already exists with different data.`);
         }
-      } else if (subs.length === 1 && newStatus !== "CONFIRMED") {
-        newStatus = "PENDING_CONFIRMATION";
-      }
-      await fixRef.update({
-        status: newStatus,
-        homeScore: confirmedHome,
-        awayScore: confirmedAway,
-        winnerClubId,
-        resultConfirmedAt: confirmedAt,
-        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+        const confirmedMatchesIncoming = Number(fixData2.homeScore) === Number(payload.homeScore) && Number(fixData2.awayScore) === Number(payload.awayScore);
+        if (fixData2.status === "CONFIRMED" && !confirmedMatchesIncoming) {
+          throw new Error(`FIXTURE_ALREADY_CONFIRMED: fixture ${entityId} is already confirmed as ${fixData2.homeScore}-${fixData2.awayScore}.`);
+        }
+        const existingSubmissions = submissionsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const sameActorOther = existingSubmissions.find((sub) => sub.submittedByUserId === payload.userId && sub.id !== payload.submissionId);
+        if (sameActorOther && (Number(sameActorOther.homeScore) !== Number(payload.homeScore) || Number(sameActorOther.awayScore) !== Number(payload.awayScore) || sameActorOther.clubId !== payload.userClubId)) {
+          throw new Error(`SUBMISSION_CONFLICT: user ${payload.userId} already submitted a different result for ${entityId}.`);
+        }
+        if (!existingSubDoc.exists) tx.set(subRef, incomingSubmission);
+        if (fixData2.status === "CONFIRMED") {
+          return { fixData: fixData2, newStatus: "CONFIRMED", winnerClubId: fixData2.winnerClubId ?? null };
+        }
+        const byActor = /* @__PURE__ */ new Map();
+        for (const sub of existingSubmissions) {
+          if (sub.id === payload.submissionId) continue;
+          if (sub.submittedByUserId) byActor.set(sub.submittedByUserId, sub);
+        }
+        byActor.set(payload.userId, incomingSubmission);
+        const submissions = Array.from(byActor.values());
+        let newStatus2 = fixData2.status;
+        let confirmedHome = fixData2.homeScore ?? null;
+        let confirmedAway = fixData2.awayScore ?? null;
+        let winnerClubId2 = fixData2.winnerClubId ?? null;
+        let confirmedAt = fixData2.resultConfirmedAt ?? null;
+        const homeSubmission = submissions.find((sub) => sub.clubId === fixData2.homeClubId);
+        const awaySubmission = submissions.find((sub) => sub.clubId === fixData2.awayClubId);
+        if (homeSubmission && awaySubmission) {
+          if (Number(homeSubmission.homeScore) === Number(awaySubmission.homeScore) && Number(homeSubmission.awayScore) === Number(awaySubmission.awayScore)) {
+            newStatus2 = "CONFIRMED";
+            confirmedHome = Number(homeSubmission.homeScore);
+            confirmedAway = Number(homeSubmission.awayScore);
+            confirmedAt = payload.updatedAt || (/* @__PURE__ */ new Date()).toISOString();
+            winnerClubId2 = confirmedHome > confirmedAway ? fixData2.homeClubId : confirmedAway > confirmedHome ? fixData2.awayClubId : null;
+          } else {
+            newStatus2 = "DISPUTED";
+          }
+        } else {
+          newStatus2 = "PENDING_CONFIRMATION";
+        }
+        tx.update(fixRef, { status: newStatus2, homeScore: confirmedHome, awayScore: confirmedAway, winnerClubId: winnerClubId2, resultConfirmedAt: confirmedAt, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
+        return { fixData: fixData2, newStatus: newStatus2, winnerClubId: winnerClubId2 };
       });
+      const { fixData, newStatus, winnerClubId } = replay;
       if (newStatus === "CONFIRMED" && winnerClubId) {
         try {
           const { advanceKnockoutWinnerFirestore: advanceKnockoutWinnerFirestore2 } = await Promise.resolve().then(() => (init_knockoutEngine(), knockoutEngine_exports));
@@ -7701,15 +7764,7 @@ async function executeSingleMutationSync(db, item) {
         }
       }
       const auditId = `audit_${item.mutationId}_submit`;
-      await db.collection(COLLECTIONS.AUDIT_LOGS).doc(auditId).set({
-        id: auditId,
-        actorUserId: payload.userId,
-        action: "SUBMIT_RESULT",
-        entityType: "fixture",
-        entityId,
-        notes: `Result submitted: ${payload.homeScore}-${payload.awayScore} (status: ${newStatus})`,
-        createdAt: payload.createdAt || (/* @__PURE__ */ new Date()).toISOString()
-      }, { merge: true });
+      await db.collection(COLLECTIONS.AUDIT_LOGS).doc(auditId).set({ id: auditId, actorUserId: payload.userId, action: "SUBMIT_RESULT", entityType: "fixture", entityId, notes: `Result submitted: ${payload.homeScore}-${payload.awayScore} (status: ${newStatus})`, createdAt: payload.createdAt || (/* @__PURE__ */ new Date()).toISOString() }, { merge: true });
       const opponentClubId = payload.userClubId === fixData.homeClubId ? fixData.awayClubId : fixData.homeClubId;
       if (opponentClubId && fixData.seasonId) {
         try {
@@ -7717,16 +7772,7 @@ async function executeSingleMutationSync(db, item) {
           const opponentOcc = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${fixData.seasonId}_${opponentClubId}`).get();
           if (opponentOcc.exists && opponentOcc.data()?.userId) {
             const oppUserId = opponentOcc.data().userId;
-            await db.collection(COLLECTIONS.NOTIFICATIONS).doc(notifId).set({
-              id: notifId,
-              userId: oppUserId,
-              type: newStatus === "CONFIRMED" ? "RESULT_CONFIRMED" : "RESULT_SUBMITTED",
-              title: newStatus === "CONFIRMED" ? "Match Result Confirmed" : "Opponent Submitted Score",
-              message: `Match result: ${payload.homeScore}-${payload.awayScore}`,
-              fixtureId: entityId,
-              isRead: false,
-              createdAt: (/* @__PURE__ */ new Date()).toISOString()
-            }, { merge: true });
+            await db.collection(COLLECTIONS.NOTIFICATIONS).doc(notifId).set({ id: notifId, userId: oppUserId, type: newStatus === "CONFIRMED" ? "RESULT_CONFIRMED" : "RESULT_SUBMITTED", title: newStatus === "CONFIRMED" ? "Match Result Confirmed" : "Opponent Submitted Score", message: `Match result: ${payload.homeScore}-${payload.awayScore}`, fixtureId: entityId, isRead: false, createdAt: (/* @__PURE__ */ new Date()).toISOString() }, { merge: true });
           }
         } catch {
         }
@@ -14415,7 +14461,7 @@ var init_adminService = __esm({
 
 // src/server/services/telegramNotificationQueue.ts
 import crypto3 from "crypto";
-import { waitUntil, getDeadline } from "@vercel/functions";
+import { waitUntil as waitUntil2, getDeadline } from "@vercel/functions";
 async function pendingQueueState() {
   const client = getUpstashClient();
   if (!client) throw new Error("REDIS_REQUIRED");
@@ -14481,7 +14527,7 @@ function scheduleNotificationQueueDrain(hop = 0) {
   const work = drainNotificationQueue({ hop }).catch((error) => {
     console.warn("[NOTIF_QUEUE] Drain interrupted; durable jobs retained for recovery:", error?.message || error);
   });
-  if (process.env.VERCEL === "1") waitUntil(work);
+  if (process.env.VERCEL === "1") waitUntil2(work);
   else void work;
 }
 async function syncRecipientDirectory(seasonId = "season-2026-27") {
@@ -18093,6 +18139,26 @@ function createApp() {
       }
     } catch {
       res.status(503).json({ error: "NOTIFICATION_WORKER_UNAVAILABLE" });
+    }
+  });
+  app2.all("/api/internal/mutation-worker", async (req, res) => {
+    const secret = process.env.CRON_SECRET;
+    const actual = Buffer.from(req.headers.authorization || "");
+    const expected = Buffer.from(`Bearer ${secret || ""}`);
+    if (!secret || actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+      res.status(401).json({ error: "UNAUTHORIZED" });
+      return;
+    }
+    if (!["GET", "POST"].includes(req.method)) {
+      res.sendStatus(405);
+      return;
+    }
+    try {
+      const result = await processPendingMutations();
+      res.json({ ok: true, ...result });
+    } catch (err) {
+      console.warn("[MUTATION_WORKER] Replay failed:", err?.message || err);
+      res.status(503).json({ error: "MUTATION_WORKER_UNAVAILABLE" });
     }
   });
   app2.use(async (req, res, next) => {
