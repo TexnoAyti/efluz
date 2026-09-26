@@ -28,6 +28,7 @@ import { adminCupDrawRouter } from './routes/adminCupDraw.routes';
 import { adminCupOpsRouter } from './routes/adminCupOps.routes';
 import { adminRouter } from './routes/admin.routes';
 import { telegramRouter } from './routes/telegram.routes';
+import { premiumPrivateRouter } from './routes/premiumPrivate.routes';
 
 let dbInitPromise: Promise<void> | null = null;
 let dbReady = false;
@@ -198,6 +199,7 @@ export function createApp() {
   app.use('/api/admin', adminCupOpsRouter);
   app.use('/api/admin', adminRouter);
   app.use('/api/telegram', telegramRouter);
+  app.use('/api/premium', premiumPrivateRouter);
 
   // 404 JSON fallback for any unhandled /api/* route
   app.use('/api/*', (req, res) => {
