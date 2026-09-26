@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n';
 import { api } from '../lib/api';
-import { Competition, Fixture } from '../types';
+import { Club, Competition, Fixture } from '../types';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
 import { TournamentBracket } from './TournamentBracket';
 import {
@@ -36,6 +36,7 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
   const [cupCompetitions, setCupCompetitions] = useState<Competition[]>([]);
   const [selectedCupId, setSelectedCupId] = useState('');
   const [cupFixtures, setCupFixtures] = useState<Fixture[]>([]);
+  const [cupParticipants, setCupParticipants] = useState<Club[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedFixtureForSubmit, setSelectedFixtureForSubmit] = useState<Fixture | null>(null);
@@ -98,6 +99,21 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
 
   const activeCup = cupCompetitions.find((cup) => cup.id === selectedCupId) || null;
   const expectedTeams = expectedTeamsForCup(activeCup);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!activeCup?.leagueId) {
+      setCupParticipants([]);
+      return () => { cancelled = true; };
+    }
+    api.getLeagueClubs(activeCup.leagueId, activeSeasonId)
+      .then((res) => { if (!cancelled) setCupParticipants(res.clubs || []); })
+      .catch((err) => {
+        console.warn('[CUP_BRACKET] Could not load full participant roster:', err);
+        if (!cancelled) setCupParticipants([]);
+      });
+    return () => { cancelled = true; };
+  }, [activeCup?.leagueId, activeSeasonId]);
 
   const format = useMemo(() => {
     const playInMatches = Math.max(0, expectedTeams - 16);
@@ -282,6 +298,7 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
           userId={user?.id}
           onSelectFixture={setSelectedFixtureForSubmit}
           competition={activeCup}
+          participants={cupParticipants}
         />
       )}
 
