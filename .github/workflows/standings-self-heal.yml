@@ -1,0 +1,71 @@
+name: Standings Redis self-heal
+
+on:
+  push:
+    branches: [fix/standings-redis-self-heal]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/standings-redis-self-heal
+          fetch-depth: 0
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Apply standings self-heal patch
+        run: python scripts/applyStandingsRedisSelfHeal.py
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Read reduction regression
+        env:
+          FIREBASE_FORCE_LOCAL_FALLBACK: "true"
+          NODE_ENV: "test"
+        run: bun run test:read-reduction
+
+      - name: Data propagation regression
+        env:
+          FIREBASE_FORCE_LOCAL_FALLBACK: "true"
+          NODE_ENV: "test"
+        run: bun run test:data-propagation
+
+      - name: Standings initialization regression
+        env:
+          FIREBASE_FORCE_LOCAL_FALLBACK: "true"
+          NODE_ENV: "test"
+        run: bun run test:standings-initialization
+
+      - name: European safety regression
+        env:
+          FIREBASE_FORCE_LOCAL_FALLBACK: "true"
+          NODE_ENV: "test"
+        run: bun run test:european-safety
+
+      - name: Production build
+        env:
+          FIREBASE_FORCE_LOCAL_FALLBACK: "true"
+          NODE_ENV: "test"
+        run: bun run build
+
+      - name: Commit verified source fix and remove temporary runner
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/standings-self-heal.yml scripts/applyStandingsRedisSelfHeal.py
+          git add src/server/readModel/readModelStore.ts api/index.js api/index.js.map
+          git commit -m "fix(standings): self-heal Redis from confirmed fixture snapshots"
+          git push origin HEAD:fix/standings-redis-self-heal
