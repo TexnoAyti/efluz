@@ -29,6 +29,7 @@ import { adminCupOpsRouter } from './routes/adminCupOps.routes';
 import { adminRouter } from './routes/admin.routes';
 import { telegramRouter } from './routes/telegram.routes';
 import { premiumPrivateRouter } from './routes/premiumPrivate.routes';
+import { competitionConsistencyRouter, adminConsistencyRouter } from './routes/consistencyGuard.routes';
 
 let dbInitPromise: Promise<void> | null = null;
 let dbReady = false;
@@ -178,13 +179,15 @@ export function createApp() {
 
   // Mount the canonical API routes. Competition, fixture, standings and club
   // reads are backed by the durable read-model layer in their own routers.
-  // Do not mount readOptimizedRouter ahead of these routes: it bypasses Redis
-  // and shadows the resilient handlers with direct Firestore reads.
+  // Consistency guards must run before the generic routes so a dirty domestic
+  // cup snapshot cannot resurrect a pre-redraw LKG bracket and stale admin
+  // fixture rows can be purged idempotently.
   app.use('/api/health', healthRouter);
   app.use('/api/auth', authRouter);
   app.use('/api/seasons', seasonsRouter);
   app.use('/api/leagues', leaguesRouter);
   app.use('/api/clubs', clubsRouter);
+  app.use('/api/competitions', competitionConsistencyRouter);
   app.use('/api/competitions', competitionsRouter);
   app.use('/api/fixtures', fixturesRouter);
   app.use('/api/me', notificationsReadResilientRouter);
@@ -194,9 +197,11 @@ export function createApp() {
   // standings-aware implementation while the legacy admin cup endpoints remain
   // available for details and winner advancement.
   app.use('/api/admin/cups', adminCupDrawRouter);
-  // Cup round operations are also mounted before the legacy admin router so
-  // approve/reopen/reject flows can keep knockout source slots consistent.
+  // Cup round operations and consistency guards are mounted before the legacy
+  // admin router so source-linked knockout state and stale fixture cleanup stay
+  // coherent.
   app.use('/api/admin', adminCupOpsRouter);
+  app.use('/api/admin', adminConsistencyRouter);
   app.use('/api/admin', adminRouter);
   app.use('/api/telegram', telegramRouter);
   app.use('/api/premium', premiumPrivateRouter);
