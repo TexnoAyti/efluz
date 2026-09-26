@@ -12,6 +12,7 @@ function replaceOnce(path, needle, replacement, guard) {
   const path = 'src/server/services/matchdayReminderService.ts';
   let source = fs.readFileSync(path, 'utf8');
   source = source.replace("import { getResultSubmissions } from './adminService';\n", '');
+  source = source.replace('return [fixture.id, []] as const;', 'return [fixture.id, [] as any[]] as const;');
   const needle = "  const submissions = await Promise.all(\n    current.map(async (fixture) => {";
   if (!source.includes("await import('./adminService')")) {
     if (!source.includes(needle)) throw new Error('Reminder service patch point missing');
