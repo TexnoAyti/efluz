@@ -18,7 +18,9 @@ jobs:
         with:
           bun-version: latest
       - name: Apply targeted patch
-        run: node scripts/apply-phase2-ops-career.mjs
+        run: |
+          node scripts/apply-phase2-ops-career.mjs
+          node scripts/fix-phase2-types.mjs
       - name: Install dependencies
         run: bun install
       - name: Result lifecycle contract
