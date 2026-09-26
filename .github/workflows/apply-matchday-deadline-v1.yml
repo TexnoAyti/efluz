@@ -36,6 +36,6 @@ jobs:
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add src/server/services/matchdayReminderService.ts src/server/routes/admin.routes.ts src/lib/api.ts src/components/AdminView.tsx src/server/tests/matchdayReminderRegressionTest.ts package.json .github/workflows/ci.yml api/index.js api/index.js.map
+          git add src/server/services/matchdayReminderService.ts src/server/routes/admin.routes.ts src/lib/api.ts src/components/AdminView.tsx src/server/tests/matchdayReminderRegressionTest.ts package.json api/index.js api/index.js.map
           git commit -m "feat(deadline): add matchday overdue reminders" || exit 0
           git push origin HEAD:feat/matchday-deadline-reminders
