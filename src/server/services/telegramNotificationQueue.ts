@@ -71,6 +71,8 @@ export interface TelegramBroadcastRecord {
     skippedCount: number;
   };
   recipients: BroadcastRecipientStatus[];
+  bodyIsHtml?: boolean;
+  replyMarkup?: any;
 }
 
 export interface NotificationQueueJob {
@@ -644,6 +646,69 @@ export async function getBroadcastHistory(limit = 20): Promise<TelegramBroadcast
   return Array.from(memoryBroadcasts.values())
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, limit);
+}
+
+/** Retry FAILED recipients without re-sending already successful deliveries. */
+export async function retryFailedBroadcastRecipients(
+  broadcastId: string,
+  userId?: string
+): Promise<{ retried: number; skipped: number }> {
+  const client = getUpstashClient();
+  if (!client) throw new Error('REDIS_REQUIRED');
+  const record = await getBroadcastDetails(broadcastId);
+  if (!record) throw new Error('BROADCAST_NOT_FOUND');
+
+  const directory = await client.get<RecipientDirectoryEntry[]>(`${RECIPIENT_DIR_KEY}:${record.seasonId}`);
+  const byUser = new Map((Array.isArray(directory) ? directory : []).map((entry) => [entry.userId, entry]));
+  const targets = record.recipients.filter((recipient) =>
+    recipient.status === 'FAILED' && (!userId || recipient.userId === userId)
+  );
+  if (userId && targets.length === 0) throw new Error('FAILED_RECIPIENT_NOT_FOUND');
+
+  let retried = 0;
+  let skipped = 0;
+  for (const recipient of targets) {
+    const directoryEntry = byUser.get(recipient.userId);
+    if (!directoryEntry?.messageable || !directoryEntry.telegramId) {
+      skipped++;
+      continue;
+    }
+    const now = new Date().toISOString();
+    const retryNumber = Number(recipient.retryCount || 0) + 1;
+    const job: NotificationQueueJob = {
+      jobId: `job-retry-${broadcastId}-${recipient.userId}-${Date.now()}-${retryNumber}`,
+      broadcastId,
+      userId: recipient.userId,
+      username: recipient.username || directoryEntry.username || 'player',
+      displayName: recipient.displayName || directoryEntry.displayName || 'EFL Player',
+      telegramId: directoryEntry.telegramId,
+      title: record.title,
+      body: record.body,
+      type: record.type,
+      status: 'QUEUED',
+      retryCount: 0,
+      maxRetries: 3,
+      createdAt: now,
+      availableAt: Date.now(),
+      bodyIsHtml: Boolean(record.bodyIsHtml),
+      replyMarkup: record.replyMarkup,
+    };
+    recipient.status = 'PENDING';
+    recipient.retryCount = retryNumber;
+    delete recipient.error;
+    delete recipient.sentAt;
+    await client.rpush(QUEUE_KEY, JSON.stringify(job));
+    retried++;
+  }
+
+  if (retried > 0) {
+    record.metrics.failedCount = Math.max(0, Number(record.metrics.failedCount || 0) - retried);
+    record.status = 'QUEUED';
+    await client.hset(BROADCASTS_KEY, { [record.id]: record });
+    memoryBroadcasts.set(record.id, record);
+    scheduleNotificationQueueDrain();
+  }
+  return { retried, skipped };
 }
 
 /**

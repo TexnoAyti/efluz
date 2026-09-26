@@ -1155,6 +1155,14 @@ export const api = {
     });
   },
 
+  async retryTelegramBroadcastFailures(broadcastId: string, userId?: string): Promise<{ success: boolean; retried: number; skipped: number }> {
+    return request(`/api/admin/telegram-notifications/broadcasts/${encodeURIComponent(broadcastId)}/retry-failed`, {
+      method: 'POST',
+      body: JSON.stringify(userId ? { userId } : {}),
+      skipCache: true,
+    });
+  },
+
   async getTelegramBroadcasts(limit = 20): Promise<{ broadcasts: any[] }> {
     return request(`/api/admin/telegram-notifications/broadcasts?limit=${limit}`, { skipCache: true });
   },

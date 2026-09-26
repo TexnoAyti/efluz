@@ -70,6 +70,7 @@ import {
   scheduleNotificationQueueDrain,
   getBroadcastHistory,
   getBroadcastDetails,
+  retryFailedBroadcastRecipients,
   syncRecipientDirectory,
 } from '../services/telegramNotificationQueue';
 import { notifySmartMatchdayOpened } from '../services/smartNotificationService';
@@ -1464,6 +1465,19 @@ adminRouter.post('/telegram-notifications/broadcast', async (req: Request, res: 
     });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+adminRouter.post('/telegram-notifications/broadcasts/:broadcastId/retry-failed', async (req: Request, res: Response) => {
+  try {
+    const result = await retryFailedBroadcastRecipients(
+      req.params.broadcastId,
+      typeof req.body?.userId === 'string' ? req.body.userId : undefined
+    );
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    const status = ['BROADCAST_NOT_FOUND', 'FAILED_RECIPIENT_NOT_FOUND'].includes(err?.message) ? 404 : 500;
+    res.status(status).json({ error: err?.message || 'RETRY_FAILED' });
   }
 });
 

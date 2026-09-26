@@ -100,6 +100,7 @@ export const AdminTelegramTab: React.FC = () => {
   const [broadcasts, setBroadcasts] = useState<BroadcastRecord[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState<boolean>(false);
   const [selectedBroadcast, setSelectedBroadcast] = useState<BroadcastRecord | null>(null);
+  const [retryingBroadcastId, setRetryingBroadcastId] = useState<string | null>(null);
 
   const [smartSettings, setSmartSettings] = useState<SmartNotificationSettings | null>(null);
   const [isLoadingSmartSettings, setIsLoadingSmartSettings] = useState(true);
@@ -184,6 +185,15 @@ export const AdminTelegramTab: React.FC = () => {
     });
   }
 
+  const deliveryHealth = useMemo(() => broadcasts.reduce((acc, item) => {
+    acc.total += Number(item.metrics?.totalRecipients || 0);
+    acc.sent += Number(item.metrics?.sentCount || 0);
+    acc.failed += Number(item.metrics?.failedCount || 0);
+    acc.skipped += Number(item.metrics?.skippedCount || 0);
+    acc.pending += Math.max(0, Number(item.metrics?.totalRecipients || 0) - Number(item.metrics?.sentCount || 0) - Number(item.metrics?.failedCount || 0) - Number(item.metrics?.skippedCount || 0));
+    return acc;
+  }, { total: 0, sent: 0, failed: 0, skipped: 0, pending: 0 }), [broadcasts]);
+
   // Filtered visible recipients
   const filteredRecipients = useMemo(() => {
     if (!searchTerm.trim()) return recipients;
@@ -261,6 +271,19 @@ export const AdminTelegramTab: React.FC = () => {
       await loadBroadcasts();
     } catch (err: any) {
       showToast(err.message || 'Failed to trigger queue processor', 'error');
+    }
+  }
+
+  async function handleRetryFailed(broadcastId: string) {
+    setRetryingBroadcastId(broadcastId);
+    try {
+      const res = await api.retryTelegramBroadcastFailures(broadcastId);
+      showToast(res.retried > 0 ? `Retry queued for ${res.retried} failed recipient(s).` : 'No retryable failed recipients found.', res.retried > 0 ? 'success' : 'info');
+      await loadBroadcasts();
+    } catch (err: any) {
+      showToast(err.message || 'Failed deliveries could not be retried', 'error');
+    } finally {
+      setRetryingBroadcastId(null);
     }
   }
 
@@ -624,6 +647,13 @@ export const AdminTelegramTab: React.FC = () => {
         </div>
       </div>
 
+      <div className="glass-panel p-4 rounded-2xl border-slate-800 space-y-3">
+        <div className="flex items-center justify-between"><div><h3 className="text-sm font-black text-white">Delivery Health</h3><p className="text-[10px] text-slate-500">Recent Redis broadcast records • successful users are never resent by Retry Failed</p></div><button onClick={handleProcessQueue} className="px-3 py-1.5 rounded-xl bg-sky-500/10 border border-sky-500/30 text-sky-300 text-[10px] font-black">Process Queue</button></div>
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          {[['Total', deliveryHealth.total, 'text-white'], ['Sent', deliveryHealth.sent, 'text-emerald-300'], ['Pending', deliveryHealth.pending, 'text-sky-300'], ['Failed', deliveryHealth.failed, 'text-rose-300'], ['Skipped', deliveryHealth.skipped, 'text-slate-400']].map(([label, value, cls]) => <div key={String(label)} className="rounded-xl bg-slate-950/60 border border-white/[0.05] p-3"><div className={`text-lg font-black font-mono ${cls}`}>{value}</div><div className="text-[9px] uppercase font-bold text-slate-500">{label}</div></div>)}
+        </div>
+      </div>
+
       {/* Broadcast Delivery History Table */}
       <div className="glass-panel p-5 rounded-2xl border-slate-800 space-y-4">
         <div className="flex items-center justify-between pb-3 border-b border-slate-800">
@@ -661,6 +691,7 @@ export const AdminTelegramTab: React.FC = () => {
                   <th className="py-2.5 px-2 text-center">Total</th>
                   <th className="py-2.5 px-2 text-center">Sent</th>
                   <th className="py-2.5 px-2 text-center">Skipped</th>
+                  <th className="py-2.5 px-2 text-center">Failed</th>
                   <th className="py-2.5 px-3 text-right">Status</th>
                 </tr>
               </thead>
@@ -688,6 +719,9 @@ export const AdminTelegramTab: React.FC = () => {
                     <td className="py-2 px-2 text-center font-mono font-bold text-slate-500">
                       {b.metrics?.skippedCount || 0}
                     </td>
+                    <td className="py-2 px-2 text-center font-mono font-bold text-rose-400">
+                      {b.metrics?.failedCount || 0}
+                    </td>
                     <td className="py-2 px-3 text-right">
                       <span
                         className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
@@ -700,6 +734,15 @@ export const AdminTelegramTab: React.FC = () => {
                       >
                         {b.status}
                       </span>
+                      {(b.metrics?.failedCount || 0) > 0 && (
+                        <button
+                          onClick={() => handleRetryFailed(b.id)}
+                          disabled={retryingBroadcastId === b.id}
+                          className="ml-2 px-2 py-0.5 rounded text-[9px] font-black bg-rose-500/10 border border-rose-500/30 text-rose-300 hover:bg-rose-500/20 disabled:opacity-50"
+                        >
+                          {retryingBroadcastId === b.id ? 'Retrying…' : 'Retry Failed'}
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
