@@ -94,29 +94,111 @@ function buildProjectedDomesticBracket(
   }
 
   const expectedTotal = Object.values(expectedCounts).reduce((sum, count) => sum + count, 0);
-  const structurallyComplete =
+  const countsAreComplete =
     actual.length === expectedTotal &&
     (Object.keys(expectedCounts) as RoundKey[]).every((key) => actualCounts[key] === expectedCounts[key]);
+  const hasProtectedData = actual.some(protectedFixture);
 
-  if (structurallyComplete) return { fixtures: actual as BracketFixture[], projected: false };
-  if (actual.some(protectedFixture)) {
+  const sortedParticipants = [...participants]
+    .filter((club) => club.active !== false)
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .slice(0, expectedTeams);
+  const expectedParticipantIds = new Set(sortedParticipants.map((club) => club.id));
+  const prelimMatches = expectedTeams - 16;
+  const prelimTeamsCount = prelimMatches * 2;
+  const byeTeamsCount = expectedTeams - prelimTeamsCount;
+  const pureByeMatches = (byeTeamsCount - prelimMatches) / 2;
+
+  // A legacy bracket can have the right number of fixtures but still be logically broken
+  // (duplicate clubs, only half the play-in field, or R16 slots not sourced from play-in winners).
+  // Deep validation is applied while the bracket is still pristine. Once real result data exists,
+  // we never synthesize a replacement display over protected tournament state.
+  let logicalStructureValid = countsAreComplete;
+  if (logicalStructureValid && !hasProtectedData) {
+    const byRound = (key: RoundKey) => actual
+      .filter((fixture) => classifyRound(fixture) === key)
+      .sort((a, b) => fixtureIndex(a) - fixtureIndex(b));
+    const prelim = byRound('PRELIM');
+    const r16 = byRound('R16');
+    const qf = byRound('QF');
+    const sf = byRound('SF');
+    const final = byRound('FINAL');
+    const firstPathClubs = new Set<string>();
+    const addInitialClub = (clubId?: string | null) => {
+      if (!clubId || clubId === 'TBD' || !expectedParticipantIds.has(clubId) || firstPathClubs.has(clubId)) {
+        logicalStructureValid = false;
+        return;
+      }
+      firstPathClubs.add(clubId);
+    };
+
+    for (let i = 0; i < prelimMatches; i++) {
+      const fixture = prelim[i];
+      if (!fixture) { logicalStructureValid = false; break; }
+      addInitialClub(fixture.homeClubId);
+      addInitialClub(fixture.awayClubId);
+    }
+
+    for (let i = 0; i < 8 && logicalStructureValid; i++) {
+      const fixture = r16[i];
+      if (!fixture) { logicalStructureValid = false; break; }
+      if (i < pureByeMatches) {
+        if (fixture.homeSourceFixtureId || fixture.awaySourceFixtureId) logicalStructureValid = false;
+        addInitialClub(fixture.homeClubId);
+        addInitialClub(fixture.awayClubId);
+      } else {
+        const playInIndex = i - pureByeMatches;
+        const expectedSource = `fix-${competition.id}-r1-m${playInIndex}`;
+        const homeUsesSource = fixture.homeSourceFixtureId === expectedSource;
+        const awayUsesSource = fixture.awaySourceFixtureId === expectedSource;
+        if (homeUsesSource === awayUsesSource) {
+          logicalStructureValid = false;
+          break;
+        }
+        if (homeUsesSource) {
+          if (fixture.homeClubId && fixture.homeClubId !== 'TBD') logicalStructureValid = false;
+          addInitialClub(fixture.awayClubId);
+        } else {
+          if (fixture.awayClubId && fixture.awayClubId !== 'TBD') logicalStructureValid = false;
+          addInitialClub(fixture.homeClubId);
+        }
+      }
+    }
+
+    const validateSources = (round: Fixture[], sourceRound: number) => {
+      round.forEach((fixture, index) => {
+        if (!logicalStructureValid) return;
+        const expectedHome = `fix-${competition.id}-r${sourceRound}-m${index * 2}`;
+        const expectedAway = `fix-${competition.id}-r${sourceRound}-m${index * 2 + 1}`;
+        const sources = new Set([fixture.homeSourceFixtureId, fixture.awaySourceFixtureId].filter(Boolean));
+        if (sources.size !== 2 || !sources.has(expectedHome) || !sources.has(expectedAway)) logicalStructureValid = false;
+      });
+    };
+    validateSources(qf, 2);
+    validateSources(sf, 3);
+    validateSources(final, 4);
+
+    if (firstPathClubs.size !== expectedTeams) logicalStructureValid = false;
+    for (const clubId of expectedParticipantIds) {
+      if (!firstPathClubs.has(clubId)) logicalStructureValid = false;
+    }
+  }
+
+  if (logicalStructureValid) return { fixtures: actual as BracketFixture[], projected: false };
+  if (hasProtectedData) {
     return {
       fixtures: actual as BracketFixture[],
       projected: false,
-      warning: 'Legacy bracket is incomplete, but protected match data exists. Display repair is intentionally disabled to preserve real results.',
+      warning: 'Legacy bracket structure is inconsistent, but protected match data exists. Automatic display repair is disabled to preserve real results.',
     };
   }
 
-  const clubs = [...participants]
+  const clubs = sortedParticipants
     .filter((club) => club.active !== false)
     .sort((a, b) => a.name.localeCompare(b.name))
     .slice(0, expectedTeams);
   if (clubs.length !== expectedTeams) return { fixtures: actual as BracketFixture[], projected: false };
 
-  const prelimMatches = expectedTeams - 16;
-  const prelimTeamsCount = prelimMatches * 2;
-  const byeTeamsCount = expectedTeams - prelimTeamsCount;
-  const pureByeMatches = (byeTeamsCount - prelimMatches) / 2;
   const now = new Date().toISOString();
   const byId = new Map(actual.map((fixture) => [fixture.id, fixture]));
   const result: BracketFixture[] = [];
@@ -206,7 +288,7 @@ function buildProjectedDomesticBracket(
   return {
     fixtures: result,
     projected: true,
-    warning: `Legacy ${competition.name} bracket is structurally incomplete. Showing the canonical ${expectedTeams}-club path without modifying production data.`,
+    warning: `Legacy ${competition.name} bracket is structurally or logically incomplete. Showing the canonical ${expectedTeams}-club path without modifying production data.`,
   };
 }
 

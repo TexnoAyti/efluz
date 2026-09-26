@@ -268,7 +268,7 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
           </div>
         </div>
 
-        <div className="mt-4 flex gap-2 overflow-x-auto pb-1 scrollbar-none lg:hidden">
+        <div className="hidden">
           {rounds.map((round) => {
             const active = currentRound?.key === round.key;
             const completed = round.fixtures.every((fixture) => fixture.status === 'CONFIRMED');
@@ -308,7 +308,7 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
         </div>
       )}
 
-      <div className="lg:hidden">
+      <div className="hidden">
         {currentRound && (
           <div className="p-4">
             <div className={`mb-3 flex items-center justify-between rounded-2xl border p-3 ${currentRound.glow}`}>
