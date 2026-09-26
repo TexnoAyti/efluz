@@ -8,6 +8,8 @@ import {
   Crown,
   Flame,
   GitBranch,
+  Layers,
+  LayoutGrid,
   Medal,
   Radio,
   Sparkles,
@@ -26,6 +28,7 @@ interface TournamentBracketProps {
 }
 
 type RoundKey = 'PRELIM' | 'PLAYOFF' | 'R16' | 'QF' | 'SF' | 'FINAL' | 'UNKNOWN';
+type BracketViewMode = 'bracket' | 'rounds';
 
 interface RoundDefinition {
   key: RoundKey;
@@ -82,6 +85,7 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
   const { openUserProfile } = useUserProfile();
   const { t } = useI18n();
   const [activeRoundKey, setActiveRoundKey] = useState<RoundKey | null>(null);
+  const [viewMode, setViewMode] = useState<BracketViewMode>('bracket');
 
   const rounds = useMemo<RoundDefinition[]>(() => {
     const buckets: Record<RoundKey, Fixture[]> = {
@@ -131,7 +135,7 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
   const completedCount = useMemo(() => fixtures.filter((fixture) => fixture.status === 'CONFIRMED').length, [fixtures]);
   const progress = fixtures.length ? Math.round((completedCount / fixtures.length) * 100) : 0;
 
-  const renderClubRow = (fixture: Fixture, side: 'home' | 'away') => {
+  const renderClubRow = (fixture: Fixture, side: 'home' | 'away', compact = false) => {
     const isHome = side === 'home';
     const clubId = isHome ? fixture.homeClubId : fixture.awayClubId;
     const club = isHome ? fixture.homeClub : fixture.awayClub;
@@ -147,10 +151,10 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
     const ownerInfo = tbd ? null : getClubOwnerDisplay(club, owner, ownerId, t.userNeeded);
 
     return (
-      <div className={`flex items-center gap-2.5 rounded-xl px-2.5 py-2 transition ${winner ? 'bg-emerald-400/[0.08]' : 'bg-white/[0.018]'}`}>
+      <div className={`flex items-center transition ${compact ? 'gap-1.5 rounded-lg px-1.5 py-1.5' : 'gap-2.5 rounded-xl px-2.5 py-2'} ${winner ? 'bg-emerald-400/[0.08]' : 'bg-white/[0.018]'}`}>
         <div className="relative shrink-0">
           {tbd ? (
-            <div className="flex h-7 w-7 items-center justify-center rounded-full border border-dashed border-white/[0.12] bg-white/[0.025] text-[9px] font-black text-slate-600">?</div>
+            <div className={`flex items-center justify-center rounded-full border border-dashed border-white/[0.12] bg-white/[0.025] font-black text-slate-600 ${compact ? 'h-5 w-5 text-[7px]' : 'h-7 w-7 text-[9px]'}`}>?</div>
           ) : (
             <ClubCrest
               clubId={club?.id || clubId || undefined}
@@ -158,20 +162,20 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
               name={club?.name || String(clubId || '')}
               shortName={club?.shortName}
               size="xs"
-              className="h-7 w-7"
+              className={compact ? 'h-5 w-5' : 'h-7 w-7'}
             />
           )}
-          {winner && <div className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-[#0b1220] bg-emerald-400" />}
+          {winner && <div className={`absolute -right-1 -top-1 rounded-full border-2 border-[#0b1220] bg-emerald-400 ${compact ? 'h-2 w-2' : 'h-2.5 w-2.5'}`} />}
         </div>
 
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <span className={`truncate text-xs ${winner ? 'font-black text-emerald-300' : tbd ? 'font-bold italic text-slate-500' : 'font-black text-slate-100'}`}>
+          <div className="flex min-w-0 items-center gap-1">
+            <span className={`truncate ${compact ? 'text-[10px]' : 'text-xs'} ${winner ? 'font-black text-emerald-300' : tbd ? 'font-bold italic text-slate-500' : 'font-black text-slate-100'}`}>
               {tbd ? (customSourceLabel || sourceLabel(sourceFixtureId)) : `${seedPosition ? `#${seedPosition} ` : ''}${club?.name || clubId}`}
             </span>
-            {isMe && <span className="rounded bg-amber-400/15 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wide text-amber-300">Siz</span>}
+            {isMe && <span className={`shrink-0 rounded bg-amber-400/15 font-black uppercase tracking-wide text-amber-300 ${compact ? 'px-1 py-px text-[6px]' : 'px-1.5 py-0.5 text-[8px]'}`}>Siz</span>}
           </div>
-          {!tbd && (
+          {!compact && !tbd && (
             ownerInfo?.isClaimed && ownerInfo.userId ? (
               <button
                 type="button"
@@ -189,14 +193,14 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
           )}
         </div>
 
-        <div className={`min-w-[30px] rounded-lg border px-2 py-1 text-center font-mono text-sm font-black ${winner ? 'border-emerald-400/25 bg-emerald-400/10 text-emerald-300' : 'border-white/[0.07] bg-black/20 text-slate-300'}`}>
+        <div className={`rounded-lg border text-center font-mono font-black ${compact ? 'min-w-[24px] px-1.5 py-0.5 text-[11px]' : 'min-w-[30px] px-2 py-1 text-sm'} ${winner ? 'border-emerald-400/25 bg-emerald-400/10 text-emerald-300' : 'border-white/[0.07] bg-black/20 text-slate-300'}`}>
           {score !== null && score !== undefined ? score : '–'}
         </div>
       </div>
     );
   };
 
-  const renderMatchCard = (fixture: Fixture, round: RoundDefinition, index: number, featured = false) => {
+  const renderMatchCard = (fixture: Fixture, round: RoundDefinition, index: number, featured = false, compact = false) => {
     const isMyMatch = Boolean(
       (currentClubId && [fixture.homeClubId, fixture.awayClubId].includes(currentClubId)) ||
       (userId && [fixture.homeOwnerId, fixture.awayOwnerId].includes(userId))
@@ -210,26 +214,26 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
         key={fixture.id}
         type="button"
         onClick={() => { if (!isProjected) onSelectFixture?.(fixture); }}
-        className={`group relative w-full overflow-hidden rounded-2xl border p-2.5 text-left shadow-xl transition duration-200 ${featured ? 'min-h-[158px] border-amber-300/30 bg-gradient-to-br from-amber-500/[0.10] via-slate-950 to-slate-950' : 'border-white/[0.08] bg-[#0a111e]/95'} ${isMyMatch ? 'ring-1 ring-amber-300/45 shadow-amber-500/10' : ''} ${canOpen ? 'hover:-translate-y-0.5 hover:border-white/[0.18]' : ''}`}
+        className={`group relative w-full overflow-hidden border text-left shadow-xl transition duration-200 ${compact ? 'rounded-xl p-1.5' : 'rounded-2xl p-2.5'} ${featured ? `${compact ? 'min-h-[102px]' : 'min-h-[158px]'} border-amber-300/30 bg-gradient-to-br from-amber-500/[0.10] via-slate-950 to-slate-950` : 'border-white/[0.08] bg-[#0a111e]/95'} ${isMyMatch ? 'ring-1 ring-amber-300/45 shadow-amber-500/10' : ''} ${canOpen ? 'hover:-translate-y-0.5 hover:border-white/[0.18]' : ''}`}
       >
-        {featured && <div className="pointer-events-none absolute right-0 top-0 h-20 w-20 rounded-bl-full bg-amber-400/[0.05]" />}
-        <div className="mb-2 flex items-center justify-between gap-2 px-1">
-          <div className="flex items-center gap-1.5">
-            <span className={`text-[9px] font-black uppercase tracking-[0.16em] ${round.accent}`}>{round.shortLabel}</span>
-            <span className="text-[9px] font-bold text-slate-600">M{index + 1}</span>
+        {featured && <div className={`pointer-events-none absolute right-0 top-0 rounded-bl-full bg-amber-400/[0.05] ${compact ? 'h-12 w-12' : 'h-20 w-20'}`} />}
+        <div className={`flex items-center justify-between gap-1 px-0.5 ${compact ? 'mb-1' : 'mb-2'}`}>
+          <div className="flex min-w-0 items-center gap-1">
+            <span className={`font-black uppercase ${round.accent} ${compact ? 'text-[7px] tracking-[0.12em]' : 'text-[9px] tracking-[0.16em]'}`}>{round.shortLabel}</span>
+            <span className={`font-bold text-slate-600 ${compact ? 'text-[7px]' : 'text-[9px]'}`}>M{index + 1}</span>
           </div>
-          <span className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[8px] font-black uppercase tracking-wide ${isProjected ? 'border-violet-400/20 bg-violet-400/[0.08] text-violet-300' : fixture.status === 'CONFIRMED' ? 'border-emerald-400/20 bg-emerald-400/[0.08] text-emerald-300' : fixture.status === 'DISPUTED' ? 'border-rose-400/20 bg-rose-400/[0.08] text-rose-300' : 'border-blue-400/20 bg-blue-400/[0.07] text-blue-300'}`}>
-            {fixture.status === 'CONFIRMED' ? <CheckCircle2 className="h-2.5 w-2.5" /> : <Radio className="h-2.5 w-2.5" />}
+          <span className={`flex shrink-0 items-center gap-1 rounded-full border font-black uppercase tracking-wide ${compact ? 'px-1.5 py-px text-[6px]' : 'px-2 py-0.5 text-[8px]'} ${isProjected ? 'border-violet-400/20 bg-violet-400/[0.08] text-violet-300' : fixture.status === 'CONFIRMED' ? 'border-emerald-400/20 bg-emerald-400/[0.08] text-emerald-300' : fixture.status === 'DISPUTED' ? 'border-rose-400/20 bg-rose-400/[0.08] text-rose-300' : 'border-blue-400/20 bg-blue-400/[0.07] text-blue-300'}`}>
+            {fixture.status === 'CONFIRMED' ? <CheckCircle2 className={compact ? 'h-2 w-2' : 'h-2.5 w-2.5'} /> : <Radio className={compact ? 'h-2 w-2' : 'h-2.5 w-2.5'} />}
             {statusLabel}
           </span>
         </div>
 
-        <div className="space-y-1.5">
-          {renderClubRow(fixture, 'home')}
-          {renderClubRow(fixture, 'away')}
+        <div className={compact ? 'space-y-1' : 'space-y-1.5'}>
+          {renderClubRow(fixture, 'home', compact)}
+          {renderClubRow(fixture, 'away', compact)}
         </div>
 
-        {featured && (
+        {featured && !compact && (
           <div className="mt-2 flex items-center justify-center gap-1 text-[9px] font-black uppercase tracking-[0.18em] text-amber-300/70">
             <Trophy className="h-3 w-3" />
             Road to Champion
@@ -239,131 +243,159 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
     );
   };
 
+  const currentRoundIndex = currentRound ? rounds.findIndex((round) => round.key === currentRound.key) : -1;
+
   return (
-    <section className="overflow-hidden rounded-[28px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(7,12,23,0.98),rgba(4,8,16,0.98))] shadow-2xl">
-      <div className="border-b border-white/[0.07] bg-[radial-gradient(circle_at_12%_10%,rgba(59,130,246,0.10),transparent_26%),radial-gradient(circle_at_88%_10%,rgba(251,191,36,0.10),transparent_24%)] p-4 sm:p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">
+    <section className="overflow-hidden rounded-[24px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(7,12,23,0.98),rgba(4,8,16,0.98))] shadow-2xl sm:rounded-[28px]">
+      <div className="border-b border-white/[0.07] bg-[radial-gradient(circle_at_12%_10%,rgba(59,130,246,0.10),transparent_26%),radial-gradient(circle_at_88%_10%,rgba(251,191,36,0.10),transparent_24%)] p-3 sm:p-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.18em] text-slate-500 sm:text-[10px] sm:tracking-[0.2em]">
               <GitBranch className="h-3.5 w-3.5 text-blue-300" />
-              Knockout bracket
+              Knockout
             </div>
-            <div className="mt-1 flex items-center gap-2">
-              <h2 className="text-lg font-black tracking-tight text-white sm:text-xl">{competition?.name || 'Domestic Cup'}</h2>
-              <span className="rounded-full border border-white/[0.08] bg-white/[0.035] px-2 py-0.5 text-[9px] font-black text-slate-400">{fixtures.length} matches</span>
+            <div className="mt-1 flex min-w-0 items-center gap-2">
+              <h2 className="truncate text-base font-black tracking-tight text-white sm:text-xl">{competition?.name || 'Domestic Cup'}</h2>
+              <span className="shrink-0 rounded-full border border-white/[0.08] bg-white/[0.035] px-2 py-0.5 text-[8px] font-black text-slate-400 sm:text-[9px]">{fixtures.length} matches</span>
             </div>
           </div>
 
-          <div className="min-w-[230px]">
-            <div className="mb-1.5 flex items-center justify-between text-[9px] font-bold uppercase tracking-wider text-slate-500">
-              <span>Tournament progress</span>
-              <span className="text-slate-300">{completedCount}/{fixtures.length}</span>
-            </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
-              <div className="h-full rounded-full bg-gradient-to-r from-blue-400 via-cyan-300 to-amber-300 transition-all" style={{ width: `${progress}%` }} />
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-4 flex gap-2 overflow-x-auto pb-1 scrollbar-none lg:hidden">
-          {rounds.map((round) => {
-            const active = currentRound?.key === round.key;
-            const completed = round.fixtures.every((fixture) => fixture.status === 'CONFIRMED');
-            return (
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="grid grid-cols-2 rounded-xl border border-white/[0.08] bg-black/20 p-1">
               <button
-                key={round.key}
                 type="button"
-                onClick={() => setActiveRoundKey(round.key)}
-                className={`flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-[10px] font-black transition ${active ? `${round.glow} ${round.accent}` : 'border-white/[0.07] bg-white/[0.025] text-slate-500'}`}
+                onClick={() => setViewMode('bracket')}
+                className={`flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[9px] font-black uppercase tracking-wide transition sm:text-[10px] ${viewMode === 'bracket' ? 'bg-blue-500/15 text-blue-200 shadow-sm ring-1 ring-blue-400/20' : 'text-slate-500 hover:text-slate-300'}`}
               >
-                {completed && <CheckCircle2 className="h-3 w-3 text-emerald-400" />}
-                {round.label}
-                <span className="text-[9px] opacity-60">{round.fixtures.length}</span>
+                <LayoutGrid className="h-3.5 w-3.5" />
+                Bracket
               </button>
-            );
-          })}
-        </div>
-      </div>
+              <button
+                type="button"
+                onClick={() => setViewMode('rounds')}
+                className={`flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[9px] font-black uppercase tracking-wide transition sm:text-[10px] ${viewMode === 'rounds' ? 'bg-amber-400/15 text-amber-200 shadow-sm ring-1 ring-amber-300/20' : 'text-slate-500 hover:text-slate-300'}`}
+              >
+                <Layers className="h-3.5 w-3.5" />
+                Round to Round
+              </button>
+            </div>
 
-      {champion && (
-        <div className="relative overflow-hidden border-b border-amber-300/20 bg-[radial-gradient(circle_at_center,rgba(251,191,36,0.13),transparent_55%)] px-5 py-6 text-center">
-          <Sparkles className="absolute left-[18%] top-5 h-4 w-4 text-amber-300/40" />
-          <Sparkles className="absolute right-[18%] top-10 h-3 w-3 text-amber-300/30" />
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-amber-300/25 bg-amber-400/[0.10] shadow-lg shadow-amber-500/10">
-            <Crown className="h-6 w-6 text-amber-300" />
+            <div className="min-w-0 sm:w-[230px]">
+              <div className="mb-1.5 flex items-center justify-between text-[8px] font-bold uppercase tracking-wider text-slate-500 sm:text-[9px]">
+                <span>Tournament progress</span>
+                <span className="text-slate-300">{completedCount}/{fixtures.length}</span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+                <div className="h-full rounded-full bg-gradient-to-r from-blue-400 via-cyan-300 to-amber-300 transition-all" style={{ width: `${progress}%` }} />
+              </div>
+            </div>
           </div>
-          <div className="mt-3 text-[9px] font-black uppercase tracking-[0.25em] text-amber-300/70">2026/27 Champion</div>
-          <div className="mt-1 text-xl font-black text-white">{champion.name}</div>
         </div>
-      )}
 
-      <div className="lg:hidden">
-        {currentRound && (
-          <div className="p-4">
-            <div className={`mb-3 flex items-center justify-between rounded-2xl border p-3 ${currentRound.glow}`}>
-              <div>
-                <div className={`text-[10px] font-black uppercase tracking-[0.18em] ${currentRound.accent}`}>{currentRound.label}</div>
-                <div className="mt-0.5 text-xs font-bold text-slate-400">{currentRound.fixtures.length} ta match</div>
-              </div>
-              <div className="flex items-center gap-1">
+        {viewMode === 'rounds' && (
+          <div className="mt-3 flex gap-1.5 overflow-x-auto pb-1 scrollbar-none sm:mt-4 sm:gap-2">
+            {rounds.map((round) => {
+              const active = currentRound?.key === round.key;
+              const completed = round.fixtures.every((fixture) => fixture.status === 'CONFIRMED');
+              return (
                 <button
+                  key={round.key}
                   type="button"
-                  onClick={() => {
-                    const index = rounds.findIndex((round) => round.key === currentRound.key);
-                    if (index > 0) setActiveRoundKey(rounds[index - 1].key);
-                  }}
-                  className="rounded-xl border border-white/[0.07] bg-black/20 p-2 text-slate-400 disabled:opacity-25"
-                  disabled={rounds.findIndex((round) => round.key === currentRound.key) <= 0}
+                  onClick={() => setActiveRoundKey(round.key)}
+                  className={`flex shrink-0 items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-[9px] font-black transition sm:gap-2 sm:px-3 sm:py-2 sm:text-[10px] ${active ? `${round.glow} ${round.accent}` : 'border-white/[0.07] bg-white/[0.025] text-slate-500'}`}
                 >
-                  <ChevronLeft className="h-4 w-4" />
+                  {completed && <CheckCircle2 className="h-3 w-3 text-emerald-400" />}
+                  {round.label}
+                  <span className="text-[8px] opacity-60 sm:text-[9px]">{round.fixtures.length}</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const index = rounds.findIndex((round) => round.key === currentRound.key);
-                    if (index >= 0 && index < rounds.length - 1) setActiveRoundKey(rounds[index + 1].key);
-                  }}
-                  className="rounded-xl border border-white/[0.07] bg-black/20 p-2 text-slate-400 disabled:opacity-25"
-                  disabled={rounds.findIndex((round) => round.key === currentRound.key) >= rounds.length - 1}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              {currentRound.fixtures.map((fixture, index) => renderMatchCard(fixture, currentRound, index, currentRound.key === 'FINAL'))}
-            </div>
+              );
+            })}
           </div>
         )}
       </div>
 
-      <div className="hidden lg:block">
-        <div className="overflow-x-auto p-5 scrollbar-thin">
-          <div className="flex min-w-max items-stretch gap-5">
+      {champion && (
+        <div className="relative overflow-hidden border-b border-amber-300/20 bg-[radial-gradient(circle_at_center,rgba(251,191,36,0.13),transparent_55%)] px-4 py-4 text-center sm:px-5 sm:py-6">
+          <Sparkles className="absolute left-[18%] top-5 h-4 w-4 text-amber-300/40" />
+          <Sparkles className="absolute right-[18%] top-10 h-3 w-3 text-amber-300/30" />
+          <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl border border-amber-300/25 bg-amber-400/[0.10] shadow-lg shadow-amber-500/10 sm:h-12 sm:w-12 sm:rounded-2xl">
+            <Crown className="h-5 w-5 text-amber-300 sm:h-6 sm:w-6" />
+          </div>
+          <div className="mt-2 text-[8px] font-black uppercase tracking-[0.22em] text-amber-300/70 sm:mt-3 sm:text-[9px] sm:tracking-[0.25em]">2026/27 Champion</div>
+          <div className="mt-1 text-lg font-black text-white sm:text-xl">{champion.name}</div>
+        </div>
+      )}
+
+      {viewMode === 'rounds' && currentRound && (
+        <div className="mx-auto w-full max-w-3xl p-3 sm:p-4 lg:p-5">
+          <div className={`mb-3 flex items-center justify-between rounded-2xl border p-2.5 sm:p-3 ${currentRound.glow}`}>
+            <div>
+              <div className={`text-[9px] font-black uppercase tracking-[0.16em] sm:text-[10px] sm:tracking-[0.18em] ${currentRound.accent}`}>{currentRound.label}</div>
+              <div className="mt-0.5 text-[11px] font-bold text-slate-400 sm:text-xs">{currentRound.fixtures.length} ta match</div>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => {
+                  if (currentRoundIndex > 0) setActiveRoundKey(rounds[currentRoundIndex - 1].key);
+                }}
+                className="rounded-xl border border-white/[0.07] bg-black/20 p-1.5 text-slate-400 disabled:opacity-25 sm:p-2"
+                disabled={currentRoundIndex <= 0}
+                aria-label="Previous round"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (currentRoundIndex >= 0 && currentRoundIndex < rounds.length - 1) setActiveRoundKey(rounds[currentRoundIndex + 1].key);
+                }}
+                className="rounded-xl border border-white/[0.07] bg-black/20 p-1.5 text-slate-400 disabled:opacity-25 sm:p-2"
+                disabled={currentRoundIndex < 0 || currentRoundIndex >= rounds.length - 1}
+                aria-label="Next round"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-2.5 sm:space-y-3">
+            {currentRound.fixtures.map((fixture, index) => renderMatchCard(fixture, currentRound, index, currentRound.key === 'FINAL'))}
+          </div>
+        </div>
+      )}
+
+      {viewMode === 'bracket' && (
+        <div className="overflow-x-auto p-2.5 scrollbar-thin sm:p-4 lg:p-5">
+          <div className="flex min-w-max items-start gap-2 sm:gap-3 lg:items-stretch lg:gap-5">
             {rounds.map((round, roundIndex) => (
               <React.Fragment key={round.key}>
-                <div className={`flex w-[270px] flex-col rounded-[22px] border p-3 ${round.glow}`}>
-                  <div className="mb-3 flex items-center justify-between border-b border-white/[0.06] pb-2">
+                <div className={`flex w-[205px] flex-col rounded-2xl border p-2 sm:w-[235px] sm:p-2.5 lg:w-[270px] lg:rounded-[22px] lg:p-3 ${round.glow}`}>
+                  <div className="mb-2 flex items-center justify-between border-b border-white/[0.06] pb-1.5 sm:mb-2.5 sm:pb-2 lg:mb-3">
                     <div>
-                      <div className={`text-[10px] font-black uppercase tracking-[0.18em] ${round.accent}`}>{round.label}</div>
-                      <div className="mt-0.5 text-[9px] font-bold text-slate-600">{round.fixtures.length} matches</div>
+                      <div className={`text-[8px] font-black uppercase tracking-[0.14em] sm:text-[9px] sm:tracking-[0.16em] lg:text-[10px] lg:tracking-[0.18em] ${round.accent}`}>{round.label}</div>
+                      <div className="mt-0.5 text-[8px] font-bold text-slate-600 lg:text-[9px]">{round.fixtures.length} matches</div>
                     </div>
-                    <div className={`flex h-8 w-8 items-center justify-center rounded-xl border border-white/[0.07] bg-black/20 ${round.accent}`}>
-                      {round.key === 'FINAL' ? <Trophy className="h-4 w-4" /> : round.key === 'SF' ? <Medal className="h-4 w-4" /> : round.key === 'PRELIM' ? <Flame className="h-4 w-4" /> : <GitBranch className="h-4 w-4" />}
+                    <div className={`flex h-6 w-6 items-center justify-center rounded-lg border border-white/[0.07] bg-black/20 sm:h-7 sm:w-7 lg:h-8 lg:w-8 lg:rounded-xl ${round.accent}`}>
+                      {round.key === 'FINAL' ? <Trophy className="h-3 w-3 lg:h-4 lg:w-4" /> : round.key === 'SF' ? <Medal className="h-3 w-3 lg:h-4 lg:w-4" /> : round.key === 'PRELIM' ? <Flame className="h-3 w-3 lg:h-4 lg:w-4" /> : <GitBranch className="h-3 w-3 lg:h-4 lg:w-4" />}
                     </div>
                   </div>
 
-                  <div className="flex flex-1 flex-col justify-around gap-3">
-                    {round.fixtures.map((fixture, index) => renderMatchCard(fixture, round, index, round.key === 'FINAL'))}
+                  <div className="flex flex-col gap-1.5 sm:gap-2 lg:flex-1 lg:justify-around lg:gap-3">
+                    {round.fixtures.map((fixture, index) => (
+                      <React.Fragment key={fixture.id}>
+                        <div className="lg:hidden">{renderMatchCard(fixture, round, index, round.key === 'FINAL', true)}</div>
+                        <div className="hidden lg:block">{renderMatchCard(fixture, round, index, round.key === 'FINAL')}</div>
+                      </React.Fragment>
+                    ))}
                   </div>
                 </div>
 
                 {roundIndex < rounds.length - 1 && (
-                  <div className="flex w-7 shrink-0 items-center justify-center">
-                    <div className="relative h-full w-px bg-gradient-to-b from-transparent via-white/[0.09] to-transparent">
-                      <div className="absolute left-1/2 top-1/2 flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/[0.08] bg-[#080e19] text-slate-600">
-                        <ChevronRight className="h-3.5 w-3.5" />
+                  <div className="flex w-4 shrink-0 self-stretch items-center justify-center sm:w-5 lg:w-7">
+                    <div className="relative h-full min-h-16 w-px bg-gradient-to-b from-transparent via-white/[0.09] to-transparent">
+                      <div className="absolute left-1/2 top-1/2 flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/[0.08] bg-[#080e19] text-slate-600 sm:h-6 sm:w-6 lg:h-7 lg:w-7">
+                        <ChevronRight className="h-3 w-3 lg:h-3.5 lg:w-3.5" />
                       </div>
                     </div>
                   </div>
@@ -372,9 +404,9 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
             ))}
           </div>
         </div>
-      </div>
+      )}
 
-      <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 border-t border-white/[0.06] bg-black/15 px-4 py-3 text-[9px] font-bold text-slate-600">
+      <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 border-t border-white/[0.06] bg-black/15 px-3 py-2.5 text-[8px] font-bold text-slate-600 sm:gap-x-5 sm:gap-y-2 sm:px-4 sm:py-3 sm:text-[9px]">
         <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-blue-400" /> Open match</span>
         <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-400" /> Confirmed winner</span>
         <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-amber-300" /> Your path</span>
