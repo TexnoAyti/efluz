@@ -6,6 +6,8 @@ import { enqueueSmartTelegramNotification } from '../services/smartNotificationS
 export const adminMatchControlRouter = Router();
 adminMatchControlRouter.use(requireAdmin);
 
+const REMINDER_WINDOW_MS = 15 * 60 * 1000;
+
 function ownerId(fixture: any, side: 'home' | 'away'): string | undefined {
   return side === 'home'
     ? (fixture.homeOwnerId || fixture.homeOwner?.userId || fixture.homeUser?.id)
@@ -62,12 +64,15 @@ adminMatchControlRouter.post('/fixtures/:id/remind', async (req: Request, res: R
       : null;
     const topicUrl = resultTopicUrl(fixture);
     const tasks: Array<Promise<boolean>> = [];
+    // Stable 15-minute window prevents accidental double-click spam while still
+    // allowing an administrator to intentionally remind again later.
+    const reminderWindow = Math.floor(Date.now() / REMINDER_WINDOW_MS);
 
     if (homeUserId) {
       tasks.push(enqueueSmartTelegramNotification({
         userId: homeUserId,
         seasonId,
-        eventId: `next-fixture:admin-reminder:${fixtureId}:home:${Date.now()}`,
+        eventId: `next-fixture:admin-reminder:${fixtureId}:home:${reminderWindow}`,
         title: '⏰ Match reminder',
         body: `<b>${escapeHtml(competition)}</b> • ${escapeHtml(round)}\n\n⚽ <b>${escapeHtml(clubName(fixture, 'home'))}</b> vs <b>${escapeHtml(clubName(fixture, 'away'))}</b>${deadlineText ? `\n⏳ Deadline: <b>${deadlineText}</b>` : ''}\n\nAdmin reminder: o‘yinni yakunlab, natijani yuboring.`,
         replyMarkup: { inline_keyboard: [[{ text: '📸 Natijani yuborish', url: topicUrl }]] },
@@ -77,7 +82,7 @@ adminMatchControlRouter.post('/fixtures/:id/remind', async (req: Request, res: R
       tasks.push(enqueueSmartTelegramNotification({
         userId: awayUserId,
         seasonId,
-        eventId: `next-fixture:admin-reminder:${fixtureId}:away:${Date.now()}`,
+        eventId: `next-fixture:admin-reminder:${fixtureId}:away:${reminderWindow}`,
         title: '⏰ Match reminder',
         body: `<b>${escapeHtml(competition)}</b> • ${escapeHtml(round)}\n\n⚽ <b>${escapeHtml(clubName(fixture, 'home'))}</b> vs <b>${escapeHtml(clubName(fixture, 'away'))}</b>${deadlineText ? `\n⏳ Deadline: <b>${deadlineText}</b>` : ''}\n\nAdmin reminder: o‘yinni yakunlab, natijani yuboring.`,
         replyMarkup: { inline_keyboard: [[{ text: '📸 Natijani yuborish', url: topicUrl }]] },
@@ -86,7 +91,7 @@ adminMatchControlRouter.post('/fixtures/:id/remind', async (req: Request, res: R
 
     const settled = await Promise.allSettled(tasks);
     const queued = settled.filter((item) => item.status === 'fulfilled' && item.value).length;
-    res.json({ success: true, fixtureId, recipients: tasks.length, queued, skipped: tasks.length - queued });
+    res.json({ success: true, fixtureId, recipients: tasks.length, queued, skipped: tasks.length - queued, dedupeWindowMinutes: 15 });
   } catch (error: any) {
     console.error('[ADMIN_FIXTURE_REMINDER_FAILED]', JSON.stringify({ fixtureId, error: error?.message || String(error) }));
     res.status(500).json({ error: error?.message || 'Failed to queue fixture reminder.' });
