@@ -19289,6 +19289,439 @@ adminRouter.post("/telegram-notifications/process-queue", async (req, res) => {
 init_telegramBotService();
 import { Router as Router14 } from "express";
 init_readModelStore();
+
+// src/server/services/premiumService.ts
+init_admin();
+init_firestoreStore();
+init_db();
+init_seed();
+import { createHash, randomUUID } from "node:crypto";
+var PREMIUM_PRICE_STARS = 89;
+var PREMIUM_DEFAULT_SEASON_ID = "season-2026-27";
+var ENTITLEMENTS_COLLECTION = "premium_entitlements";
+var PAYMENTS_COLLECTION = "premium_payments";
+var ORDERS_COLLECTION = "premium_orders";
+function entitlementId(userId, seasonId) {
+  return `${seasonId}__${userId}`;
+}
+function paymentDocumentId(chargeId) {
+  return createHash("sha256").update(chargeId).digest("hex");
+}
+function isPremiumPublicEnabled() {
+  return process.env.PREMIUM_PUBLIC_ENABLED === "true";
+}
+function makePremiumPayload(orderId) {
+  return `eflp:${orderId}`;
+}
+function parsePremiumPayload(payload) {
+  if (!payload || !payload.startsWith("eflp:")) return null;
+  const orderId = payload.slice(5).trim();
+  return /^[a-zA-Z0-9_-]{8,64}$/.test(orderId) ? orderId : null;
+}
+async function getPremiumEntitlement(userId, seasonId = PREMIUM_DEFAULT_SEASON_ID) {
+  const db = getFirestoreDb();
+  const snap = await db.collection(ENTITLEMENTS_COLLECTION).doc(entitlementId(userId, seasonId)).get();
+  trackFirestoreRead(ENTITLEMENTS_COLLECTION, 1, "getPremiumEntitlement");
+  if (!snap.exists) return null;
+  return { id: snap.id, ...snap.data() };
+}
+async function listPremiumEntitlements(seasonId = PREMIUM_DEFAULT_SEASON_ID) {
+  const db = getFirestoreDb();
+  const snap = await db.collection(ENTITLEMENTS_COLLECTION).where("seasonId", "==", seasonId).limit(500).get();
+  trackFirestoreRead(ENTITLEMENTS_COLLECTION, snap.size, "listPremiumEntitlements");
+  return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+}
+async function grantPremiumEntitlement(params) {
+  const seasonId = params.seasonId || PREMIUM_DEFAULT_SEASON_ID;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const db = getFirestoreDb();
+  const ref = db.collection(ENTITLEMENTS_COLLECTION).doc(entitlementId(params.userId, seasonId));
+  const existing = await ref.get();
+  trackFirestoreRead(ENTITLEMENTS_COLLECTION, 1, "grantPremiumEntitlement");
+  const previous = existing.exists ? existing.data() : null;
+  const next = {
+    userId: params.userId,
+    seasonId,
+    status: "ACTIVE",
+    source: params.source,
+    activatedAt: previous?.activatedAt || now,
+    updatedAt: now,
+    updatedBy: params.actorUserId || params.userId,
+    revokedAt: null,
+    revokedBy: null,
+    note: params.note?.trim() || previous?.note || null,
+    paymentChargeId: params.paymentChargeId || previous?.paymentChargeId || null
+  };
+  await ref.set(next, { merge: true });
+  trackFirestoreWrite(ENTITLEMENTS_COLLECTION, 1, "grantPremiumEntitlement");
+  if (params.actorUserId) {
+    await createAuditLogFirestore(
+      params.actorUserId,
+      "PREMIUM_GRANT",
+      "premium_entitlement",
+      ref.id,
+      previous,
+      next,
+      void 0,
+      params.actorUsername,
+      params.note
+    ).catch((err) => console.warn("[PREMIUM_AUDIT_GRANT]", err?.message || err));
+  }
+  return { id: ref.id, ...next };
+}
+async function revokePremiumEntitlement(params) {
+  const seasonId = params.seasonId || PREMIUM_DEFAULT_SEASON_ID;
+  const db = getFirestoreDb();
+  const ref = db.collection(ENTITLEMENTS_COLLECTION).doc(entitlementId(params.userId, seasonId));
+  const existing = await ref.get();
+  trackFirestoreRead(ENTITLEMENTS_COLLECTION, 1, "revokePremiumEntitlement");
+  const previous = existing.exists ? existing.data() : null;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const next = {
+    userId: params.userId,
+    seasonId,
+    status: "REVOKED",
+    source: previous?.source || "ADMIN",
+    activatedAt: previous?.activatedAt || now,
+    updatedAt: now,
+    updatedBy: params.actorUserId,
+    revokedAt: now,
+    revokedBy: params.actorUserId,
+    note: params.note?.trim() || previous?.note || null,
+    paymentChargeId: previous?.paymentChargeId || null
+  };
+  await ref.set(next, { merge: true });
+  trackFirestoreWrite(ENTITLEMENTS_COLLECTION, 1, "revokePremiumEntitlement");
+  await createAuditLogFirestore(
+    params.actorUserId,
+    "PREMIUM_REVOKE",
+    "premium_entitlement",
+    ref.id,
+    previous,
+    next,
+    void 0,
+    params.actorUsername,
+    params.note
+  ).catch((err) => console.warn("[PREMIUM_AUDIT_REVOKE]", err?.message || err));
+  return { id: ref.id, ...next };
+}
+function scoreFixture(row, clubId) {
+  const homeClubId = row.home_club_id ?? row.homeClubId;
+  const awayClubId = row.away_club_id ?? row.awayClubId;
+  const homeScore = Number(row.home_score ?? row.homeScore ?? 0);
+  const awayScore = Number(row.away_score ?? row.awayScore ?? 0);
+  const isHome = homeClubId === clubId;
+  const gf = isHome ? homeScore : awayScore;
+  const ga = isHome ? awayScore : homeScore;
+  const result = gf > ga ? "W" : gf === ga ? "D" : "L";
+  return { gf, ga, result };
+}
+function computeCareerStatsFromFixtures(rows, clubId) {
+  let wins = 0;
+  let draws = 0;
+  let losses = 0;
+  let goalsFor = 0;
+  let goalsAgainst = 0;
+  let cleanSheets = 0;
+  let currentUnbeaten = 0;
+  let longestUnbeatenRun = 0;
+  let currentWinStreak = 0;
+  let longestWinStreak = 0;
+  const form = [];
+  const competitionMap = /* @__PURE__ */ new Map();
+  const competitionNameMap = new Map(SEED_COMPETITIONS.map((competition) => [competition.id, competition.name]));
+  for (const row of rows) {
+    const { gf, ga, result } = scoreFixture(row, clubId);
+    goalsFor += gf;
+    goalsAgainst += ga;
+    if (ga === 0) cleanSheets += 1;
+    if (result === "W") wins += 1;
+    else if (result === "D") draws += 1;
+    else losses += 1;
+    if (result !== "L") {
+      currentUnbeaten += 1;
+      longestUnbeatenRun = Math.max(longestUnbeatenRun, currentUnbeaten);
+    } else {
+      currentUnbeaten = 0;
+    }
+    if (result === "W") {
+      currentWinStreak += 1;
+      longestWinStreak = Math.max(longestWinStreak, currentWinStreak);
+    } else {
+      currentWinStreak = 0;
+    }
+    form.push(result);
+    const competitionId = String(row.competition_id ?? row.competitionId ?? "unknown");
+    if (!competitionMap.has(competitionId)) {
+      competitionMap.set(competitionId, {
+        competitionId,
+        name: competitionNameMap.get(competitionId) || competitionId.replace(/^comp-/, "").replace(/-/g, " "),
+        matches: 0,
+        wins: 0,
+        draws: 0,
+        losses: 0,
+        goalsFor: 0,
+        goalsAgainst: 0
+      });
+    }
+    const bucket = competitionMap.get(competitionId);
+    bucket.matches += 1;
+    bucket.goalsFor += gf;
+    bucket.goalsAgainst += ga;
+    if (result === "W") bucket.wins += 1;
+    else if (result === "D") bucket.draws += 1;
+    else bucket.losses += 1;
+  }
+  const matches = rows.length;
+  const points = wins * 3 + draws;
+  const competitions = [...competitionMap.values()].map((bucket) => ({
+    ...bucket,
+    goalDifference: bucket.goalsFor - bucket.goalsAgainst,
+    winRate: bucket.matches ? Math.round(bucket.wins / bucket.matches * 100) : 0
+  })).sort((a, b) => b.matches - a.matches || a.name.localeCompare(b.name));
+  return {
+    overall: {
+      matches,
+      wins,
+      draws,
+      losses,
+      goalsFor,
+      goalsAgainst,
+      goalDifference: goalsFor - goalsAgainst,
+      points,
+      winRate: matches ? Math.round(wins / matches * 100) : 0,
+      pointsPerMatch: matches ? Number((points / matches).toFixed(2)) : 0,
+      goalsPerMatch: matches ? Number((goalsFor / matches).toFixed(2)) : 0,
+      cleanSheets,
+      longestUnbeatenRun,
+      longestWinStreak
+    },
+    form: form.slice(-5),
+    competitions
+  };
+}
+async function getPremiumCareerSnapshot(userId, seasonId = PREMIUM_DEFAULT_SEASON_ID) {
+  let clubId = queryGet(
+    "SELECT club_id FROM club_memberships WHERE user_id = ? AND season_id = ? AND status = 'active' ORDER BY claimed_at DESC LIMIT 1",
+    [userId, seasonId]
+  )?.club_id;
+  let club = clubId ? SEED_CLUBS.find((item) => item.id === clubId) : null;
+  if (!clubId) {
+    try {
+      const currentClub = await getUserActiveClubFirestore(userId, seasonId);
+      if (currentClub) {
+        clubId = currentClub.id;
+        club = currentClub;
+      }
+    } catch {
+    }
+  }
+  const empty = computeCareerStatsFromFixtures([], clubId || "none");
+  if (!clubId) {
+    return {
+      userId,
+      seasonId,
+      currentClub: null,
+      ...empty,
+      achievements: buildAchievements(empty.overall),
+      generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      source: "empty"
+    };
+  }
+  let rows = [];
+  try {
+    rows = queryAll(
+      `SELECT id, competition_id, home_club_id, away_club_id, home_score, away_score
+       FROM fixtures
+       WHERE status = 'CONFIRMED'
+         AND (season_id = ? OR season_id IS NULL)
+         AND (home_club_id = ? OR away_club_id = ?)
+       ORDER BY COALESCE(scheduled_at, created_at, id) ASC`,
+      [seasonId, clubId, clubId]
+    );
+  } catch {
+    rows = queryAll(
+      `SELECT id, competition_id, home_club_id, away_club_id, home_score, away_score
+       FROM fixtures
+       WHERE status = 'CONFIRMED'
+         AND (season_id = ? OR season_id IS NULL)
+         AND (home_club_id = ? OR away_club_id = ?)
+       ORDER BY id ASC`,
+      [seasonId, clubId, clubId]
+    );
+  }
+  const computed = computeCareerStatsFromFixtures(rows || [], clubId);
+  return {
+    userId,
+    seasonId,
+    currentClub: club ? { id: club.id, name: club.name, shortName: club.shortName, leagueId: club.leagueId } : { id: clubId, name: clubId },
+    ...computed,
+    achievements: buildAchievements(computed.overall),
+    generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    source: rows.length ? "sqlite" : "empty"
+  };
+}
+function buildAchievements(overall) {
+  return [
+    { id: "first-win", label: "First Victory", description: "Win your first official EFL UZ match.", unlocked: overall.wins >= 1 },
+    { id: "ten-matches", label: "Established", description: "Complete 10 official matches.", unlocked: overall.matches >= 10 },
+    { id: "goal-machine", label: "Goal Machine", description: "Score 20 official goals in the season.", unlocked: overall.goalsFor >= 20 },
+    { id: "unbeaten-five", label: "Unshaken", description: "Build a 5-match unbeaten run.", unlocked: overall.longestUnbeatenRun >= 5 },
+    { id: "clean-sheet-five", label: "Fortress", description: "Keep 5 clean sheets.", unlocked: overall.cleanSheets >= 5 },
+    { id: "win-streak-three", label: "On Fire", description: "Win 3 consecutive matches.", unlocked: overall.longestWinStreak >= 3 }
+  ];
+}
+async function telegramBotCall(method, payload) {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
+  if (!botToken) throw new Error("TELEGRAM_BOT_TOKEN is not configured");
+  const response = await fetch(`https://api.telegram.org/bot${botToken}/${method}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(9e3)
+  });
+  const data = await response.json();
+  if (!data?.ok) throw new Error(data?.description || `${method} failed`);
+  return data.result;
+}
+async function createPremiumStarsInvoice(params) {
+  const seasonId = params.seasonId || PREMIUM_DEFAULT_SEASON_ID;
+  const orderId = randomUUID().replace(/-/g, "").slice(0, 24);
+  const payload = makePremiumPayload(orderId);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const db = getFirestoreDb();
+  const orderRef = db.collection(ORDERS_COLLECTION).doc(orderId);
+  await orderRef.set({
+    orderId,
+    userId: params.userId,
+    telegramId: String(params.telegramId),
+    seasonId,
+    amount: PREMIUM_PRICE_STARS,
+    currency: "XTR",
+    status: "PENDING",
+    payload,
+    createdAt: now,
+    updatedAt: now
+  });
+  trackFirestoreWrite(ORDERS_COLLECTION, 1, "createPremiumStarsInvoice");
+  try {
+    const invoiceLink = await telegramBotCall("createInvoiceLink", {
+      title: "EFL UZ Premium",
+      description: `EFL UZ Premium access for the ${seasonId === "season-2026-27" ? "2026/27" : seasonId} season`,
+      payload,
+      currency: "XTR",
+      prices: [{ label: "EFL UZ Premium \u2014 Season Pass", amount: PREMIUM_PRICE_STARS }]
+    });
+    await orderRef.set({ invoiceCreatedAt: (/* @__PURE__ */ new Date()).toISOString(), updatedAt: (/* @__PURE__ */ new Date()).toISOString() }, { merge: true });
+    trackFirestoreWrite(ORDERS_COLLECTION, 1, "createPremiumStarsInvoice:invoiceCreated");
+    return { orderId, invoiceLink: String(invoiceLink), priceStars: PREMIUM_PRICE_STARS, seasonId };
+  } catch (err) {
+    await orderRef.set({ status: "INVOICE_FAILED", error: err?.message || "invoice_failed", updatedAt: (/* @__PURE__ */ new Date()).toISOString() }, { merge: true }).catch(() => void 0);
+    throw err;
+  }
+}
+async function answerPremiumPreCheckout(query) {
+  const orderId = parsePremiumPayload(String(query?.invoice_payload || ""));
+  let accepted = false;
+  let reason = "This EFL UZ Premium order is no longer valid.";
+  try {
+    if (!orderId || query?.currency !== "XTR" || Number(query?.total_amount) !== PREMIUM_PRICE_STARS) {
+      reason = "Invalid Premium order amount.";
+    } else {
+      const db = getFirestoreDb();
+      const orderSnap = await db.collection(ORDERS_COLLECTION).doc(orderId).get();
+      trackFirestoreRead(ORDERS_COLLECTION, 1, "answerPremiumPreCheckout");
+      const order = orderSnap.data();
+      const telegramId = String(query?.from?.id || "");
+      if (!orderSnap.exists || !order || order.status !== "PENDING") {
+        reason = "This Premium order is already completed or expired.";
+      } else if (String(order.telegramId) !== telegramId) {
+        reason = "This Premium invoice belongs to another Telegram account.";
+      } else {
+        accepted = true;
+      }
+    }
+  } catch (err) {
+    reason = "Premium checkout validation is temporarily unavailable.";
+    console.warn("[PREMIUM_PRECHECKOUT]", err?.message || err);
+  }
+  await telegramBotCall("answerPreCheckoutQuery", accepted ? { pre_checkout_query_id: query.id, ok: true } : { pre_checkout_query_id: query.id, ok: false, error_message: reason });
+  return accepted ? { accepted: true } : { accepted: false, reason };
+}
+async function handlePremiumSuccessfulPayment(message) {
+  const payment = message?.successful_payment;
+  const orderId = parsePremiumPayload(String(payment?.invoice_payload || ""));
+  if (!orderId) return { handled: false, reason: "not_premium_payload" };
+  if (payment?.currency !== "XTR" || Number(payment?.total_amount) !== PREMIUM_PRICE_STARS) {
+    throw new Error("PREMIUM_PAYMENT_AMOUNT_MISMATCH");
+  }
+  const chargeId = String(payment.telegram_payment_charge_id || "").trim();
+  if (!chargeId) throw new Error("PREMIUM_PAYMENT_CHARGE_ID_MISSING");
+  const db = getFirestoreDb();
+  const orderRef = db.collection(ORDERS_COLLECTION).doc(orderId);
+  const paymentRef = db.collection(PAYMENTS_COLLECTION).doc(paymentDocumentId(chargeId));
+  let result = null;
+  await db.runTransaction(async (tx) => {
+    const [orderSnap, paymentSnap] = await Promise.all([tx.get(orderRef), tx.get(paymentRef)]);
+    trackFirestoreRead(ORDERS_COLLECTION, 1, "handlePremiumSuccessfulPayment");
+    trackFirestoreRead(PAYMENTS_COLLECTION, 1, "handlePremiumSuccessfulPayment");
+    if (paymentSnap.exists) {
+      result = { handled: true, idempotent: true, ...paymentSnap.data() || {} };
+      return;
+    }
+    if (!orderSnap.exists) throw new Error("PREMIUM_ORDER_NOT_FOUND");
+    const order = orderSnap.data();
+    if (String(order.telegramId) !== String(message?.from?.id || "")) throw new Error("PREMIUM_PAYMENT_USER_MISMATCH");
+    if (order.currency !== "XTR" || Number(order.amount) !== PREMIUM_PRICE_STARS) throw new Error("PREMIUM_ORDER_AMOUNT_MISMATCH");
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const paymentRecord = {
+      orderId,
+      userId: order.userId,
+      telegramId: String(order.telegramId),
+      seasonId: order.seasonId,
+      currency: "XTR",
+      amount: PREMIUM_PRICE_STARS,
+      telegramPaymentChargeId: chargeId,
+      providerPaymentChargeId: payment.provider_payment_charge_id || null,
+      paidAt: now,
+      createdAt: now
+    };
+    tx.set(paymentRef, paymentRecord);
+    tx.set(orderRef, { status: "PAID", paidAt: now, updatedAt: now, telegramPaymentChargeId: chargeId }, { merge: true });
+    tx.set(db.collection(ENTITLEMENTS_COLLECTION).doc(entitlementId(order.userId, order.seasonId)), {
+      userId: order.userId,
+      seasonId: order.seasonId,
+      status: "ACTIVE",
+      source: "TELEGRAM_STARS",
+      activatedAt: now,
+      updatedAt: now,
+      updatedBy: order.userId,
+      revokedAt: null,
+      revokedBy: null,
+      paymentChargeId: chargeId
+    }, { merge: true });
+    result = { handled: true, idempotent: false, ...paymentRecord };
+  });
+  trackFirestoreWrite(PAYMENTS_COLLECTION, 1, "handlePremiumSuccessfulPayment");
+  trackFirestoreWrite(ORDERS_COLLECTION, 1, "handlePremiumSuccessfulPayment");
+  trackFirestoreWrite(ENTITLEMENTS_COLLECTION, 1, "handlePremiumSuccessfulPayment");
+  if (result?.userId) {
+    await createAuditLogFirestore(
+      result.userId,
+      "PREMIUM_STARS_PAYMENT",
+      "premium_entitlement",
+      entitlementId(result.userId, result.seasonId),
+      null,
+      { seasonId: result.seasonId, amount: PREMIUM_PRICE_STARS, currency: "XTR", chargeId },
+      void 0,
+      void 0,
+      "Telegram Stars payment confirmed"
+    ).catch(() => void 0);
+  }
+  return result;
+}
+
+// src/server/routes/telegram.routes.ts
 var telegramRouter = Router14();
 var recentWebhookUpdates = /* @__PURE__ */ new Map();
 async function claimTelegramUpdate(updateId) {
@@ -19302,6 +19735,9 @@ async function claimTelegramUpdate(updateId) {
   if (recentWebhookUpdates.has(updateId)) return false;
   recentWebhookUpdates.set(updateId, now + 10 * 60 * 1e3);
   return true;
+}
+function normalizedSeasonId(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : PREMIUM_DEFAULT_SEASON_ID;
 }
 telegramRouter.post("/webhook", async (req, res) => {
   const secretToken = req.headers["x-telegram-bot-api-secret-token"];
@@ -19327,7 +19763,39 @@ telegramRouter.post("/webhook", async (req, res) => {
     res.status(200).json({ ok: true, ignored: "duplicate_update" });
     return;
   }
+  if (update.pre_checkout_query) {
+    try {
+      const result = await answerPremiumPreCheckout(update.pre_checkout_query);
+      res.status(200).json({ ok: true, handled: "premium_pre_checkout", result });
+    } catch (err) {
+      console.error("[PREMIUM PRE-CHECKOUT ERROR]", err?.message || err);
+      res.status(200).json({ ok: true, error: "premium_pre_checkout_failed" });
+    }
+    return;
+  }
   const message = update.message;
+  if (message?.successful_payment) {
+    try {
+      const paymentResult = await handlePremiumSuccessfulPayment(message);
+      if (paymentResult?.handled && paymentResult?.userId) {
+        await sendTelegramMessage(
+          message.chat?.id || message.from?.id,
+          `<b>EFL UZ Premium activated</b>
+
+Season: <b>2026/27</b>
+Payment: <b>${PREMIUM_PRICE_STARS} \u2B50</b>
+
+Your season access is now active.`,
+          { parse_mode: "HTML" }
+        ).catch(() => void 0);
+      }
+      res.status(200).json({ ok: true, handled: "premium_successful_payment", result: paymentResult });
+    } catch (err) {
+      console.error("[PREMIUM PAYMENT ERROR]", err?.message || err);
+      res.status(200).json({ ok: true, error: "premium_payment_processing_failed" });
+    }
+    return;
+  }
   if (message && message.text && typeof message.text === "string") {
     const text = message.text.trim();
     if (text.startsWith("/start") && Number.isSafeInteger(message.chat?.id) && Number.isSafeInteger(message.from?.id)) {
@@ -19365,6 +19833,124 @@ telegramRouter.post("/check-membership", requireAuth, async (req, res) => {
   }
   const result = await verifyTelegramGroupMembership(telegramId, true);
   res.json(result);
+});
+telegramRouter.get("/premium/me", requireAuth, async (req, res) => {
+  const seasonId = normalizedSeasonId(req.query.seasonId);
+  try {
+    const entitlement = await getPremiumEntitlement(req.user.id, seasonId);
+    res.json({
+      seasonId,
+      priceStars: PREMIUM_PRICE_STARS,
+      publicEnabled: isPremiumPublicEnabled(),
+      active: entitlement?.status === "ACTIVE",
+      entitlement
+    });
+  } catch (err) {
+    res.status(503).json({ error: err?.message || "PREMIUM_STATUS_UNAVAILABLE" });
+  }
+});
+telegramRouter.post("/premium/invoice", requireAuth, async (req, res) => {
+  const seasonId = normalizedSeasonId(req.body?.seasonId);
+  if (!req.user.isAdmin && !isPremiumPublicEnabled()) {
+    res.status(404).json({ error: "PREMIUM_NOT_PUBLIC" });
+    return;
+  }
+  if (!req.user.telegramId) {
+    res.status(400).json({ error: "TELEGRAM_ACCOUNT_REQUIRED" });
+    return;
+  }
+  try {
+    const existing = await getPremiumEntitlement(req.user.id, seasonId);
+    if (existing?.status === "ACTIVE") {
+      res.status(409).json({ error: "PREMIUM_ALREADY_ACTIVE", entitlement: existing });
+      return;
+    }
+    const invoice = await createPremiumStarsInvoice({
+      userId: req.user.id,
+      telegramId: req.user.telegramId,
+      seasonId
+    });
+    res.json({ success: true, ...invoice });
+  } catch (err) {
+    res.status(503).json({ error: err?.message || "PREMIUM_INVOICE_FAILED" });
+  }
+});
+telegramRouter.get("/premium/admin/overview", requireAdmin, async (req, res) => {
+  const seasonId = normalizedSeasonId(req.query.seasonId);
+  try {
+    const entitlements = await listPremiumEntitlements(seasonId);
+    const active = entitlements.filter((item) => item.status === "ACTIVE");
+    res.json({
+      seasonId,
+      priceStars: PREMIUM_PRICE_STARS,
+      publicEnabled: isPremiumPublicEnabled(),
+      counts: {
+        totalRecords: entitlements.length,
+        active: active.length,
+        revoked: entitlements.filter((item) => item.status === "REVOKED").length,
+        stars: active.filter((item) => item.source === "TELEGRAM_STARS").length,
+        admin: active.filter((item) => item.source === "ADMIN").length
+      },
+      entitlements
+    });
+  } catch (err) {
+    res.status(503).json({ error: err?.message || "PREMIUM_OVERVIEW_UNAVAILABLE" });
+  }
+});
+telegramRouter.post("/premium/admin/grant", requireAdmin, async (req, res) => {
+  const userId = String(req.body?.userId || "").trim();
+  const seasonId = normalizedSeasonId(req.body?.seasonId);
+  const note = typeof req.body?.note === "string" ? req.body.note.slice(0, 500) : void 0;
+  if (!userId) {
+    res.status(400).json({ error: "USER_ID_REQUIRED" });
+    return;
+  }
+  try {
+    const entitlement = await grantPremiumEntitlement({
+      userId,
+      seasonId,
+      source: "ADMIN",
+      actorUserId: req.user.id,
+      actorUsername: req.user.username,
+      note
+    });
+    res.json({ success: true, entitlement });
+  } catch (err) {
+    res.status(503).json({ error: err?.message || "PREMIUM_GRANT_FAILED" });
+  }
+});
+telegramRouter.post("/premium/admin/revoke", requireAdmin, async (req, res) => {
+  const userId = String(req.body?.userId || "").trim();
+  const seasonId = normalizedSeasonId(req.body?.seasonId);
+  const note = typeof req.body?.note === "string" ? req.body.note.slice(0, 500) : void 0;
+  if (!userId) {
+    res.status(400).json({ error: "USER_ID_REQUIRED" });
+    return;
+  }
+  try {
+    const entitlement = await revokePremiumEntitlement({
+      userId,
+      seasonId,
+      actorUserId: req.user.id,
+      actorUsername: req.user.username,
+      note
+    });
+    res.json({ success: true, entitlement });
+  } catch (err) {
+    res.status(503).json({ error: err?.message || "PREMIUM_REVOKE_FAILED" });
+  }
+});
+telegramRouter.get("/premium/admin/career/:userId", requireAdmin, async (req, res) => {
+  const seasonId = normalizedSeasonId(req.query.seasonId);
+  try {
+    const [career, entitlement] = await Promise.all([
+      getPremiumCareerSnapshot(req.params.userId, seasonId),
+      getPremiumEntitlement(req.params.userId, seasonId)
+    ]);
+    res.json({ career, entitlement, seasonId, priceStars: PREMIUM_PRICE_STARS });
+  } catch (err) {
+    res.status(503).json({ error: err?.message || "PREMIUM_CAREER_UNAVAILABLE" });
+  }
 });
 
 // src/server/app.ts
