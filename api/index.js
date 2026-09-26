@@ -19975,6 +19975,160 @@ telegramRouter.get("/premium/admin/career/:userId", requireAdmin, async (req, re
   }
 });
 
+// src/server/routes/premiumPrivate.routes.ts
+import { Router as Router15 } from "express";
+import { z as z4 } from "zod";
+
+// src/server/services/premiumSmartNotificationService.ts
+init_admin();
+init_readModelStore();
+init_telegramBotService();
+function preferencesKey(userId, seasonId) {
+  return `${KEY_PREFIX}:premium:smart-alerts:${seasonId}:${userId}`;
+}
+function defaultPremiumSmartAlertPreferences(userId, seasonId = PREMIUM_DEFAULT_SEASON_ID) {
+  return {
+    userId,
+    seasonId,
+    enabled: true,
+    deadlinePriority: true,
+    qualificationWatch: true,
+    cupProgress: true,
+    formMilestones: true,
+    careerDigest: true,
+    updatedAt: (/* @__PURE__ */ new Date(0)).toISOString()
+  };
+}
+async function getPremiumSmartAlertPreferences(userId, seasonId = PREMIUM_DEFAULT_SEASON_ID) {
+  const client = getUpstashClient();
+  if (!client) return defaultPremiumSmartAlertPreferences(userId, seasonId);
+  try {
+    const stored = await client.get(preferencesKey(userId, seasonId));
+    if (!stored || typeof stored !== "object") return defaultPremiumSmartAlertPreferences(userId, seasonId);
+    return {
+      ...defaultPremiumSmartAlertPreferences(userId, seasonId),
+      ...stored,
+      userId,
+      seasonId
+    };
+  } catch {
+    return defaultPremiumSmartAlertPreferences(userId, seasonId);
+  }
+}
+async function updatePremiumSmartAlertPreferences(params) {
+  const seasonId = params.seasonId || PREMIUM_DEFAULT_SEASON_ID;
+  const current = await getPremiumSmartAlertPreferences(params.userId, seasonId);
+  const next = {
+    ...current,
+    ...params.values,
+    userId: params.userId,
+    seasonId,
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    updatedBy: params.updatedBy
+  };
+  const client = getUpstashClient();
+  if (!client) throw new Error("PREMIUM_SMART_ALERTS_REDIS_UNAVAILABLE");
+  await client.set(preferencesKey(params.userId, seasonId), next);
+  return next;
+}
+function buildPremiumCareerDigestHtml(params) {
+  const { career } = params;
+  const o = career.overall;
+  const form = career.form.length ? career.form.join(" \xB7 ") : "\u2014";
+  const username = params.username ? `@${params.username.replace(/^@/, "")}` : "Player";
+  const club = career.currentClub?.name || "No active club";
+  return [
+    "<b>\u2728 EFL Career Digest</b>",
+    "",
+    `<b>${username}</b> \xB7 ${club}`,
+    "<b>Season 2026/27</b>",
+    "",
+    `\u{1F3AE} Matches: <b>${o.matches}</b>`,
+    `\u{1F4CA} W-D-L: <b>${o.wins}-${o.draws}-${o.losses}</b>`,
+    `\u{1F3AF} Goals: <b>${o.goalsFor}:${o.goalsAgainst}</b> \xB7 GD <b>${o.goalDifference >= 0 ? "+" : ""}${o.goalDifference}</b>`,
+    `\u{1F525} Win rate: <b>${o.winRate}%</b> \xB7 PPG <b>${o.pointsPerMatch}</b>`,
+    `\u{1F9F1} Clean sheets: <b>${o.cleanSheets}</b>`,
+    `\u26A1 Best unbeaten run: <b>${o.longestUnbeatenRun}</b>`,
+    `\u{1F4C8} Last five: <b>${form}</b>`,
+    "",
+    "<i>Your EFL Career keeps tracking official confirmed results throughout the season.</i>"
+  ].join("\n");
+}
+async function sendPremiumCareerDigest(params) {
+  const seasonId = params.seasonId || PREMIUM_DEFAULT_SEASON_ID;
+  const entitlement = await getPremiumEntitlement(params.userId, seasonId);
+  if (entitlement?.status !== "ACTIVE") throw new Error("PREMIUM_ENTITLEMENT_REQUIRED");
+  const prefs = await getPremiumSmartAlertPreferences(params.userId, seasonId);
+  if (!prefs.enabled || !prefs.careerDigest) throw new Error("PREMIUM_CAREER_DIGEST_DISABLED");
+  const db = getFirestoreDb();
+  const userSnap = await db.collection("users").doc(params.userId).get();
+  if (!userSnap.exists) throw new Error("PREMIUM_TARGET_USER_NOT_FOUND");
+  const user = userSnap.data();
+  const telegramId = String(user?.telegramId || "").trim();
+  if (!telegramId) throw new Error("PREMIUM_TARGET_TELEGRAM_UNAVAILABLE");
+  const career = await getPremiumCareerSnapshot(params.userId, seasonId);
+  const preview = buildPremiumCareerDigestHtml({ username: user?.username, career });
+  const result = await sendTelegramMessage(telegramId, preview, { parse_mode: "HTML" });
+  if (!result.ok) throw new Error(result.error || "PREMIUM_CAREER_DIGEST_SEND_FAILED");
+  return { sent: true, telegramId, preview };
+}
+
+// src/server/routes/premiumPrivate.routes.ts
+var premiumPrivateRouter = Router15();
+premiumPrivateRouter.use(requireAdmin);
+function seasonIdFrom(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : PREMIUM_DEFAULT_SEASON_ID;
+}
+var preferencesSchema = z4.object({
+  userId: z4.string().min(1),
+  seasonId: z4.string().min(1).optional(),
+  enabled: z4.boolean(),
+  deadlinePriority: z4.boolean(),
+  qualificationWatch: z4.boolean(),
+  cupProgress: z4.boolean(),
+  formMilestones: z4.boolean(),
+  careerDigest: z4.boolean()
+});
+premiumPrivateRouter.get("/smart-alerts/:userId", async (req, res) => {
+  const seasonId = seasonIdFrom(req.query.seasonId);
+  try {
+    const preferences = await getPremiumSmartAlertPreferences(req.params.userId, seasonId);
+    res.json({ preferences });
+  } catch (err) {
+    res.status(503).json({ error: err?.message || "PREMIUM_SMART_ALERTS_UNAVAILABLE" });
+  }
+});
+premiumPrivateRouter.put("/smart-alerts", async (req, res) => {
+  const parsed = preferencesSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "INVALID_PREMIUM_SMART_ALERTS", details: parsed.error.flatten() });
+    return;
+  }
+  try {
+    const { userId, seasonId, ...values } = parsed.data;
+    const preferences = await updatePremiumSmartAlertPreferences({
+      userId,
+      seasonId: seasonId || PREMIUM_DEFAULT_SEASON_ID,
+      values,
+      updatedBy: req.user.id
+    });
+    res.json({ success: true, preferences });
+  } catch (err) {
+    res.status(503).json({ error: err?.message || "PREMIUM_SMART_ALERTS_SAVE_FAILED" });
+  }
+});
+premiumPrivateRouter.post("/smart-alerts/:userId/career-digest", async (req, res) => {
+  const seasonId = seasonIdFrom(req.body?.seasonId);
+  try {
+    const result = await sendPremiumCareerDigest({ userId: req.params.userId, seasonId });
+    res.json({ success: true, ...result });
+  } catch (err) {
+    const code = String(err?.message || "PREMIUM_CAREER_DIGEST_FAILED");
+    const status = code === "PREMIUM_ENTITLEMENT_REQUIRED" ? 409 : code === "PREMIUM_TARGET_TELEGRAM_UNAVAILABLE" ? 422 : 503;
+    res.status(status).json({ error: code });
+  }
+});
+
 // src/server/app.ts
 var dbInitPromise = null;
 var dbReady = false;
@@ -20116,6 +20270,7 @@ function createApp() {
   app2.use("/api/admin", adminCupOpsRouter);
   app2.use("/api/admin", adminRouter);
   app2.use("/api/telegram", telegramRouter);
+  app2.use("/api/premium", premiumPrivateRouter);
   app2.use("/api/*", (req, res) => {
     res.status(404).json({ error: "Endpoint not found", path: req.originalUrl });
   });

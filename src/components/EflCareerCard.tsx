@@ -28,10 +28,11 @@ import {
   PremiumEntitlementDto,
   premiumApi,
 } from '../lib/premiumApi';
+import { PremiumSmartAlertsPanel } from './PremiumSmartAlertsPanel';
 
 const SEASON_ID = 'season-2026-27';
 
-type LabTab = 'career' | 'access' | 'checkout';
+type LabTab = 'career' | 'access' | 'alerts' | 'checkout';
 
 export const EflCareerCard: React.FC<{ userId?: string; adminPreview?: boolean }> = ({ userId, adminPreview = false }) => {
   const [users, setUsers] = useState<PremiumAdminUser[]>([]);
@@ -249,6 +250,7 @@ export const EflCareerCard: React.FC<{ userId?: string; adminPreview?: boolean }
         <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none rounded-2xl border border-white/[0.06] bg-black/20 p-1.5">
           <LabTabButton active={tab === 'career'} onClick={() => setTab('career')} icon={<BarChart3 className="h-3.5 w-3.5" />} label="Career Studio" />
           <LabTabButton active={tab === 'access'} onClick={() => setTab('access')} icon={<UserRoundCheck className="h-3.5 w-3.5" />} label="Access Control" />
+          <LabTabButton active={tab === 'alerts'} onClick={() => setTab('alerts')} icon={<Sparkles className="h-3.5 w-3.5" />} label="Smart Alerts" />
           <LabTabButton active={tab === 'checkout'} onClick={() => setTab('checkout')} icon={<Star className="h-3.5 w-3.5" />} label="Stars Checkout" />
           <button onClick={() => void loadLab()} disabled={loading} className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-slate-500 transition hover:bg-white/[0.05] hover:text-white disabled:opacity-50" title="Refresh Premium Lab">
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -375,6 +377,14 @@ export const EflCareerCard: React.FC<{ userId?: string; adminPreview?: boolean }
                   <FeatureCard icon={<LockKeyhole className="h-4 w-4" />} title="Private beta gate" text="Regular players receive no Premium UI while public visibility remains OFF." />
                 </div>
               </div>
+            )}
+
+            {tab === 'alerts' && selectedUserId && (
+              <PremiumSmartAlertsPanel
+                userId={selectedUserId}
+                username={selectedUser?.username}
+                entitlementActive={activeEntitlement}
+              />
             )}
 
             {tab === 'checkout' && (
