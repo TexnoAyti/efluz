@@ -10,6 +10,7 @@ import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
 import { invalidateFixtureReadModels, refreshChangedFixtureReadModel } from '../readModel/readModelStore';
 import { isDomesticCup, advanceDomesticCupWinnerSafe } from '../tournament/domesticCupService';
 import { reconcileDomesticCupSourceFixture } from '../tournament/domesticCupRoundOps';
+import { notifySmartResultLifecycle } from '../services/smartNotificationService';
 
 export const fixturesRouter = Router();
 export const fixturesResilientRouter = fixturesRouter;
@@ -66,6 +67,11 @@ fixturesRouter.post('/:id/result', requireAuth, validateBody(resultSubmissionSch
     await refreshChangedFixtureReadModel(fixtureId)
       .catch(() => invalidateFixtureReadModels(updatedFixture.competitionId, updatedFixture.seasonId || 'season-2026-27'))
       .catch(() => {});
+
+    // Smart alerts are best-effort and must never make a valid result submission fail.
+    await notifySmartResultLifecycle(updatedFixture, userId).catch((error: any) => {
+      console.warn('[SMART_NOTIFY] Result lifecycle notification failed:', error?.message || error);
+    });
 
     res.json({
       success: true,

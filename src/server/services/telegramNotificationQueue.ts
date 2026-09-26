@@ -90,6 +90,8 @@ export interface NotificationQueueJob {
   availableAt?: number;
   sentAt?: string;
   error?: string;
+  bodyIsHtml?: boolean;
+  replyMarkup?: any;
 }
 
 const BROADCASTS_KEY = `${KEY_PREFIX}:telegram:broadcasts`;
@@ -530,7 +532,11 @@ export async function processNotificationQueue(batchSize = 25, stopClaimingAt = 
       recipient.status = 'SENDING';
       record.status = 'PROCESSING';
       await client.hset(BROADCASTS_KEY, { [record.id]: record });
-      const result = await sendTelegramMessage(job.telegramId!, formatTelegramMessage(job.title, job.body, job.type), { parse_mode: 'HTML' });
+      const result = await sendTelegramMessage(
+        job.telegramId!,
+        formatTelegramMessage(job.title, job.body, job.type, Boolean(job.bodyIsHtml)),
+        { parse_mode: 'HTML', reply_markup: job.replyMarkup }
+      );
       if (result.ok) {
         await updateBroadcastRecipientState(job.broadcastId, job.userId, 'SENT', undefined, new Date().toISOString());
         succeeded++;
@@ -563,16 +569,16 @@ export async function processNotificationQueue(batchSize = 25, stopClaimingAt = 
   }
 }
 
-function formatTelegramMessage(title: string, body: string, type: string): string {
+function formatTelegramMessage(title: string, body: string, type: string, bodyIsHtml = false): string {
   let icon = '📢';
   if (type === 'NEW_MATCHDAY') icon = '⚽';
   if (type === 'UPCOMING_MATCH') icon = '⏰';
   if (type === 'COMPETITION_UPDATE') icon = '🏆';
 
-  return `<b>${icon} EFL UZ Official Alert</b>\n\n` +
-         `<b>${escapeHtml(title)}</b>\n\n` +
-         `${escapeHtml(body)}\n\n` +
-         `<i>Season 2026/27 • Open EFL WebApp to manage fixtures</i>`;
+  // No permanent "Official Alert" header/footer. Smart bodies are generated server-side
+  // and may contain a small, controlled HTML subset; admin-entered bodies stay escaped.
+  const safeBody = bodyIsHtml ? body : escapeHtml(body);
+  return `<b>${icon} ${escapeHtml(title)}</b>\n\n${safeBody}`;
 }
 
 function escapeHtml(str: string): string {

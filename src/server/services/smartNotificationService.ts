@@ -62,6 +62,8 @@ interface SmartQueueJob {
   maxRetries: number;
   createdAt: string;
   availableAt: number;
+  bodyIsHtml?: boolean;
+  replyMarkup?: any;
 }
 
 const BROADCASTS_KEY = `${KEY_PREFIX}:telegram:broadcasts`;
@@ -126,6 +128,44 @@ function clubName(fixture: Fixture, side: 'home' | 'away'): string {
     : (fixture.awayClub?.name || fixture.awayClubId || 'Away');
 }
 
+const RESULT_TOPIC_BY_LEAGUE: Record<string, string> = {
+  'league-premier-league': 'https://t.me/efleagueuz/2',
+  'league-la-liga': 'https://t.me/efleagueuz/3',
+  'league-serie-a': 'https://t.me/efleagueuz/4',
+  'league-bundesliga': 'https://t.me/efleagueuz/5',
+  'league-ligue-1': 'https://t.me/efleagueuz/6',
+};
+
+function resultTopicUrl(fixture: Fixture): string {
+  const competition = `${fixture.competitionId || ''} ${fixture.competitionName || ''}`.toLowerCase();
+  if (competition.includes('super')) return 'https://t.me/efleagueuz/2335';
+  if (competition.includes('champions') || competition.includes('ucl')) return 'https://t.me/efleagueuz/7';
+  if (competition.includes('cup') || competition.includes('pokal') || competition.includes('copa') || competition.includes('coppa') || competition.includes('coupe')) {
+    return 'https://t.me/efleagueuz/8';
+  }
+  const leagueId = fixture.homeClub?.leagueId || fixture.awayClub?.leagueId || '';
+  return RESULT_TOPIC_BY_LEAGUE[leagueId] || 'https://t.me/efleagueuz';
+}
+
+async function fixtureReplyMarkup(fixture: Fixture, opponentUserId?: string) {
+  const rows: any[][] = [];
+  if (opponentUserId) {
+    const opponent = await getCachedRecipient(opponentUserId, fixture.seasonId || 'season-2026-27');
+    const username = String(opponent?.username || '').replace(/^@+/, '').trim();
+    if (username) rows.push([{ text: `👤 Raqib: @${username}`, url: `https://t.me/${username}` }]);
+  }
+  rows.push([{ text: '📸 O‘yin natijasini bu yerga tashlang', url: resultTopicUrl(fixture) }]);
+  return { inline_keyboard: rows };
+}
+
+async function opponentText(userId: string | undefined, seasonId: string): Promise<string> {
+  if (!userId) return 'Raqib';
+  const recipient = await getCachedRecipient(userId, seasonId);
+  const username = String(recipient?.username || '').replace(/^@+/, '').trim();
+  if (username) return `@${escapeHtml(username)}`;
+  return escapeHtml(recipient?.displayName || 'Raqib');
+}
+
 async function getCompetitionFixtureSnapshot(
   competitionId: string,
   seasonId: string
@@ -163,6 +203,7 @@ export async function enqueueSmartTelegramNotification(params: {
   eventId: string;
   title: string;
   body: string;
+  replyMarkup?: any;
 }): Promise<boolean> {
   const event = inferSmartEvent(params.eventId);
   if (!(await isSmartNotificationEventEnabled(params.seasonId, event))) {
@@ -230,6 +271,8 @@ export async function enqueueSmartTelegramNotification(params: {
     maxRetries: 3,
     createdAt: now,
     availableAt: Date.now(),
+    bodyIsHtml: true,
+    replyMarkup: params.replyMarkup,
   };
 
   try {
@@ -284,23 +327,27 @@ export async function notifySmartMatchdayOpened(params: {
 
     if (homeUserId) {
       const opponent = escapeHtml(clubName(fixture, 'away'));
+      const opponentUser = await opponentText(awayUserId, params.seasonId);
       tasks.push(enqueueSmartTelegramNotification({
         userId: homeUserId,
         seasonId: params.seasonId,
         eventId: `matchday-open:${params.competitionId}:${params.matchday}:${fixture.id}:${params.deadlineAt || ''}`,
         title: '🚀 Matchday ochildi',
-        body: `${context}\n\nSizning raqibingiz: <b>${opponent}</b>${deadline ? `\n⏳ Deadline: <b>${deadline}</b>` : ''}\n\nO‘yinni o‘tkazing va natijani EFL UZ orqali yuboring.`,
+        body: `${context}\n\nRaqib klub: <b>${opponent}</b>\nRaqib user: <b>${opponentUser}</b>${deadline ? `\n⏳ Deadline: <b>${deadline}</b>` : ''}\n\nO‘yinni o‘tkazing va natijani yuboring.`,
+        replyMarkup: await fixtureReplyMarkup(fixture, awayUserId),
       }));
     }
 
     if (awayUserId) {
       const opponent = escapeHtml(clubName(fixture, 'home'));
+      const opponentUser = await opponentText(homeUserId, params.seasonId);
       tasks.push(enqueueSmartTelegramNotification({
         userId: awayUserId,
         seasonId: params.seasonId,
         eventId: `matchday-open:${params.competitionId}:${params.matchday}:${fixture.id}:${params.deadlineAt || ''}`,
         title: '🚀 Matchday ochildi',
-        body: `${context}\n\nSizning raqibingiz: <b>${opponent}</b>${deadline ? `\n⏳ Deadline: <b>${deadline}</b>` : ''}\n\nO‘yinni o‘tkazing va natijani EFL UZ orqali yuboring.`,
+        body: `${context}\n\nRaqib klub: <b>${opponent}</b>\nRaqib user: <b>${opponentUser}</b>${deadline ? `\n⏳ Deadline: <b>${deadline}</b>` : ''}\n\nO‘yinni o‘tkazing va natijani yuboring.`,
+        replyMarkup: await fixtureReplyMarkup(fixture, homeUserId),
       }));
     }
   }
@@ -336,14 +383,18 @@ async function notifyNextFixtureIfKnown(fixture: Fixture): Promise<void> {
 
     if (!next) continue;
     const isHome = next.homeClubId === side.clubId;
-    const opponent = escapeHtml(clubName(next, isHome ? 'away' : 'home'));
+    const opponentSide = isHome ? 'away' : 'home';
+    const opponentId = ownerId(next, opponentSide);
+    const opponent = escapeHtml(clubName(next, opponentSide));
+    const opponentUser = await opponentText(opponentId, seasonId);
     const when = formatUtcDeadline(next.scheduledAt);
     await enqueueSmartTelegramNotification({
       userId: side.userId,
       seasonId,
       eventId: `next-fixture:${fixture.id}:${next.id}`,
       title: '🎯 Keyingi raqib tayyor',
-      body: `${contextLine(next)}\n\nKeyingi raqibingiz: <b>${opponent}</b>${when ? `\n🗓 Vaqt: <b>${when}</b>` : ''}\n\nMatch tafsilotlari EFL UZ ilovasida.`,
+      body: `${contextLine(next)}\n\nRaqib klub: <b>${opponent}</b>\nRaqib user: <b>${opponentUser}</b>${when ? `\n🗓 Vaqt: <b>${when}</b>` : ''}`,
+      replyMarkup: await fixtureReplyMarkup(next, opponentId),
     });
   }
 }
@@ -465,12 +516,14 @@ export async function notifySmartResultLifecycle(
   if (status === 'PENDING_CONFIRMATION') {
     const opponentId = owners.find((id) => id !== actorUserId);
     if (!opponentId) return;
+    const actorUser = await opponentText(actorUserId, seasonId);
     await enqueueSmartTelegramNotification({
       userId: opponentId,
       seasonId,
       eventId: `${eventBase}:verify:${actorUserId}`,
       title: '⚡ Natijani tasdiqlang',
-      body: `${context}\n\n${score}\n\nRaqib natijani yubordi. EFL UZ ilovasini ochib hisobni tekshiring va tasdiqlang.`,
+      body: `${context}\n\n${score}\n\nNatijani yuborgan raqib: <b>${actorUser}</b>\nHisobni tekshirib, o‘z natijangizni yuboring.`,
+      replyMarkup: await fixtureReplyMarkup(fixture, actorUserId),
     });
     return;
   }
