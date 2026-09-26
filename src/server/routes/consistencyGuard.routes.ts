@@ -73,8 +73,8 @@ function mapAuthoritativeFixture(doc: FirebaseFirestore.QueryDocumentSnapshot, s
  * Domestic cup redraws mark the competition fixture read model dirty. The
  * generic competition reader historically read Redis LKG directly and could
  * therefore resurrect the pre-redraw bracket. Intercept only dirty domestic
- * cup reads, refresh from authoritative Firestore, and warm Fresh + LKG with
- * the new bracket before the legacy route runs again.
+ * cup reads, refresh the complete bracket from authoritative Firestore, warm
+ * Fresh + LKG, and only then apply request-level filters to the response.
  */
 competitionConsistencyRouter.get('/:id/fixtures', async (req: Request, res: Response, next: NextFunction) => {
   const competitionId = req.params.id;
@@ -88,38 +88,46 @@ competitionConsistencyRouter.get('/:id/fixtures', async (req: Request, res: Resp
     if (!dirty) return next();
 
     const db = getFirestoreDb();
-    let query: FirebaseFirestore.Query = db.collection(COLLECTIONS.FIXTURES)
-      .where('seasonId', '==', seasonId)
-      .where('competitionId', '==', competitionId);
+    const snap = await db.collection(COLLECTIONS.FIXTURES)
+      .where('competitionId', '==', competitionId)
+      .get();
 
-    if (req.query.matchday !== undefined) {
-      const matchday = Number(req.query.matchday);
-      if (Number.isInteger(matchday) && matchday > 0) query = query.where('matchday', '==', matchday);
-    }
-    if (typeof req.query.status === 'string' && req.query.status && req.query.status !== 'ALL') {
-      query = query.where('status', '==', req.query.status);
-    }
-
-    const snap = await query.get();
-    let fixtures = snap.docs.map((doc) => mapAuthoritativeFixture(doc, seasonId));
-    fixtures = await enrichFixturesWithAuthoritativeOwners(fixtures, seasonId);
-    fixtures.sort((a, b) => Number(a.matchday) - Number(b.matchday) || a.id.localeCompare(b.id));
+    let fullFixtures = snap.docs
+      .filter((doc) => {
+        const row: any = doc.data();
+        return !row.seasonId || row.seasonId === seasonId;
+      })
+      .map((doc) => mapAuthoritativeFixture(doc, seasonId));
+    fullFixtures = await enrichFixturesWithAuthoritativeOwners(fullFixtures, seasonId);
+    fullFixtures.sort((a, b) => Number(a.matchday) - Number(b.matchday) || a.id.localeCompare(b.id));
 
     await redisSetRaw(key, {
       schemaVersion: SCHEMA_VERSION,
       generatedAt: new Date().toISOString(),
       sourceVersion: 'cup-redraw-authoritative-refresh',
-      expectedCount: fixtures.length,
-      actualCount: fixtures.length,
-      data: fixtures,
+      expectedCount: fullFixtures.length,
+      actualCount: fullFixtures.length,
+      data: fullFixtures,
     }, 86400);
 
+    let fixtures = fullFixtures;
+    if (req.query.matchday !== undefined) {
+      const matchday = Number(req.query.matchday);
+      if (Number.isInteger(matchday) && matchday > 0) {
+        fixtures = fixtures.filter((fixture) => Number(fixture.matchday) === matchday);
+      }
+    }
+    if (typeof req.query.status === 'string' && req.query.status && req.query.status !== 'ALL') {
+      fixtures = fixtures.filter((fixture) => fixture.status === req.query.status);
+    }
+
+    const snapshotAt = new Date().toISOString();
     res.json({
       fixtures,
       source: 'firestore_redraw_refresh',
       stale: false,
       degraded: false,
-      snapshotAt: new Date().toISOString(),
+      snapshotAt,
     });
   } catch (error: any) {
     console.warn('[CUP_DIRTY_REFRESH_FAILED]', competitionId, error?.message || error);
