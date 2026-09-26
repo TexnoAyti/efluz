@@ -5324,7 +5324,7 @@ export interface AdminUsersPageResult {
 }
 
 export async function getAdminUsersPagedFirestore(options: AdminUsersQueryOptions = {}): Promise<AdminUsersPageResult> {
-  const pageSize = Math.min(Math.max(options.limit || 25, 1), 50);
+  const pageSize = Math.min(Math.max(options.limit || 100, 1), 100);
   const page = Math.max(options.page || 1, 1);
   const role = (options.role || 'ALL').toUpperCase();
   const status = (options.status || 'ALL').toUpperCase();

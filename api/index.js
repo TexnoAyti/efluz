@@ -2617,6 +2617,13 @@ function inferSmartEvent(eventId) {
 function escapeHtml(value) {
   return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
+function scoreLine(fixture) {
+  const home = escapeHtml(fixture.homeClub?.name || fixture.homeClubId || "Home");
+  const away = escapeHtml(fixture.awayClub?.name || fixture.awayClubId || "Away");
+  const homeScore = fixture.homeScore ?? "\u2013";
+  const awayScore = fixture.awayScore ?? "\u2013";
+  return `<b>${home}</b> ${homeScore}\u2013${awayScore} <b>${away}</b>`;
+}
 function contextLine(fixture) {
   const competition = escapeHtml(fixture.competitionName || fixture.competitionId || "EFL UZ");
   const round = fixture.roundName ? escapeHtml(fixture.roundName) : `Matchday ${Number(fixture.matchday || 0)}`;
@@ -2633,6 +2640,33 @@ function ownerId(fixture, side) {
 }
 function clubName(fixture, side) {
   return side === "home" ? fixture.homeClub?.name || fixture.homeClubId || "Home" : fixture.awayClub?.name || fixture.awayClubId || "Away";
+}
+function resultTopicUrl(fixture) {
+  const competition = `${fixture.competitionId || ""} ${fixture.competitionName || ""}`.toLowerCase();
+  if (competition.includes("super")) return "https://t.me/efleagueuz/2335";
+  if (competition.includes("champions") || competition.includes("ucl")) return "https://t.me/efleagueuz/7";
+  if (competition.includes("cup") || competition.includes("pokal") || competition.includes("copa") || competition.includes("coppa") || competition.includes("coupe")) {
+    return "https://t.me/efleagueuz/8";
+  }
+  const leagueId = fixture.homeClub?.leagueId || fixture.awayClub?.leagueId || "";
+  return RESULT_TOPIC_BY_LEAGUE[leagueId] || "https://t.me/efleagueuz";
+}
+async function fixtureReplyMarkup(fixture, opponentUserId) {
+  const rows = [];
+  if (opponentUserId) {
+    const opponent = await getCachedRecipient(opponentUserId, fixture.seasonId || "season-2026-27");
+    const username = String(opponent?.username || "").replace(/^@+/, "").trim();
+    if (username) rows.push([{ text: `\u{1F464} Raqib: @${username}`, url: `https://t.me/${username}` }]);
+  }
+  rows.push([{ text: "\u{1F4F8} O\u2018yin natijasini bu yerga tashlang", url: resultTopicUrl(fixture) }]);
+  return { inline_keyboard: rows };
+}
+async function opponentText(userId, seasonId) {
+  if (!userId) return "Raqib";
+  const recipient = await getCachedRecipient(userId, seasonId);
+  const username = String(recipient?.username || "").replace(/^@+/, "").trim();
+  if (username) return `@${escapeHtml(username)}`;
+  return escapeHtml(recipient?.displayName || "Raqib");
 }
 async function getCompetitionFixtureSnapshot(competitionId, seasonId) {
   const key = ReadModelKeys.competitionFixtures(competitionId, seasonId);
@@ -2709,7 +2743,9 @@ async function enqueueSmartTelegramNotification(params) {
     retryCount: 0,
     maxRetries: 3,
     createdAt: now,
-    availableAt: Date.now()
+    availableAt: Date.now(),
+    bodyIsHtml: true,
+    replyMarkup: params.replyMarkup
   };
   try {
     const queued = await client.eval(`
@@ -2749,6 +2785,7 @@ async function notifySmartMatchdayOpened(params) {
     const context = contextLine(fixture);
     if (homeUserId) {
       const opponent = escapeHtml(clubName(fixture, "away"));
+      const opponentUser = await opponentText(awayUserId, params.seasonId);
       tasks.push(enqueueSmartTelegramNotification({
         userId: homeUserId,
         seasonId: params.seasonId,
@@ -2756,14 +2793,17 @@ async function notifySmartMatchdayOpened(params) {
         title: "\u{1F680} Matchday ochildi",
         body: `${context}
 
-Sizning raqibingiz: <b>${opponent}</b>${deadline ? `
+Raqib klub: <b>${opponent}</b>
+Raqib user: <b>${opponentUser}</b>${deadline ? `
 \u23F3 Deadline: <b>${deadline}</b>` : ""}
 
-O\u2018yinni o\u2018tkazing va natijani EFL UZ orqali yuboring.`
+O\u2018yinni o\u2018tkazing va natijani yuboring.`,
+        replyMarkup: await fixtureReplyMarkup(fixture, awayUserId)
       }));
     }
     if (awayUserId) {
       const opponent = escapeHtml(clubName(fixture, "home"));
+      const opponentUser = await opponentText(homeUserId, params.seasonId);
       tasks.push(enqueueSmartTelegramNotification({
         userId: awayUserId,
         seasonId: params.seasonId,
@@ -2771,15 +2811,55 @@ O\u2018yinni o\u2018tkazing va natijani EFL UZ orqali yuboring.`
         title: "\u{1F680} Matchday ochildi",
         body: `${context}
 
-Sizning raqibingiz: <b>${opponent}</b>${deadline ? `
+Raqib klub: <b>${opponent}</b>
+Raqib user: <b>${opponentUser}</b>${deadline ? `
 \u23F3 Deadline: <b>${deadline}</b>` : ""}
 
-O\u2018yinni o\u2018tkazing va natijani EFL UZ orqali yuboring.`
+O\u2018yinni o\u2018tkazing va natijani yuboring.`,
+        replyMarkup: await fixtureReplyMarkup(fixture, homeUserId)
       }));
     }
   }
   const results = await Promise.allSettled(tasks);
   return results.filter((result) => result.status === "fulfilled" && result.value).length;
+}
+async function notifyNextFixtureIfKnown(fixture) {
+  const seasonId = fixture.seasonId || "season-2026-27";
+  const fixtures = await getCompetitionFixtureSnapshot(fixture.competitionId, seasonId);
+  if (fixtures.length === 0) return;
+  const sides = [
+    { userId: ownerId(fixture, "home"), clubId: fixture.homeClubId },
+    { userId: ownerId(fixture, "away"), clubId: fixture.awayClubId }
+  ];
+  for (const side of sides) {
+    if (!side.userId || !side.clubId) continue;
+    const next = fixtures.filter(
+      (candidate) => candidate.id !== fixture.id && (candidate.homeClubId === side.clubId || candidate.awayClubId === side.clubId) && !["CONFIRMED", "CANCELLED"].includes(candidate.status) && Number(candidate.matchday || 0) >= Number(fixture.matchday || 0)
+    ).sort((a, b) => {
+      const matchdayDiff = Number(a.matchday || 0) - Number(b.matchday || 0);
+      if (matchdayDiff !== 0) return matchdayDiff;
+      return String(a.scheduledAt || "").localeCompare(String(b.scheduledAt || ""));
+    })[0];
+    if (!next) continue;
+    const isHome = next.homeClubId === side.clubId;
+    const opponentSide = isHome ? "away" : "home";
+    const opponentId = ownerId(next, opponentSide);
+    const opponent = escapeHtml(clubName(next, opponentSide));
+    const opponentUser = await opponentText(opponentId, seasonId);
+    const when = formatUtcDeadline(next.scheduledAt);
+    await enqueueSmartTelegramNotification({
+      userId: side.userId,
+      seasonId,
+      eventId: `next-fixture:${fixture.id}:${next.id}`,
+      title: "\u{1F3AF} Keyingi raqib tayyor",
+      body: `${contextLine(next)}
+
+Raqib klub: <b>${opponent}</b>
+Raqib user: <b>${opponentUser}</b>${when ? `
+\u{1F5D3} Vaqt: <b>${when}</b>` : ""}`,
+      replyMarkup: await fixtureReplyMarkup(next, opponentId)
+    });
+  }
 }
 async function getCachedRecipientByClubId(clubId, seasonId) {
   const client = getUpstashClient();
@@ -2847,7 +2927,68 @@ Yevrokubok holatingiz EFL UZ ilovasida yangilandi.`
   const results = await Promise.allSettled(tasks);
   return results.filter((result) => result.status === "fulfilled" && result.value).length;
 }
-var BROADCASTS_KEY, QUEUE_KEY, RECIPIENT_DIR_KEY, SMART_DEDUPE_PREFIX, SMART_DEDUPE_TTL_SECONDS;
+async function notifySmartResultLifecycle(fixture, actorUserId) {
+  const seasonId = fixture.seasonId || "season-2026-27";
+  const homeOwnerId = ownerId(fixture, "home");
+  const awayOwnerId = ownerId(fixture, "away");
+  const owners = [...new Set([homeOwnerId, awayOwnerId].filter(Boolean))];
+  if (owners.length === 0) return;
+  const status = fixture.status;
+  const revision = fixture.resultConfirmedAt || fixture.updatedAt || `${fixture.homeScore}-${fixture.awayScore}`;
+  const eventBase = `${fixture.id}:${status}:${revision}`;
+  const score = scoreLine(fixture);
+  const context = contextLine(fixture);
+  if (status === "PENDING_CONFIRMATION") {
+    const opponentId = owners.find((id) => id !== actorUserId);
+    if (!opponentId) return;
+    const actorUser = await opponentText(actorUserId, seasonId);
+    await enqueueSmartTelegramNotification({
+      userId: opponentId,
+      seasonId,
+      eventId: `${eventBase}:verify:${actorUserId}`,
+      title: "\u26A1 Natijani tasdiqlang",
+      body: `${context}
+
+${score}
+
+Natijani yuborgan raqib: <b>${actorUser}</b>
+Hisobni tekshirib, o\u2018z natijangizni yuboring.`,
+      replyMarkup: await fixtureReplyMarkup(fixture, actorUserId)
+    });
+    return;
+  }
+  if (status === "CONFIRMED") {
+    await Promise.all(owners.map((userId) => enqueueSmartTelegramNotification({
+      userId,
+      seasonId,
+      eventId: `${eventBase}:confirmed`,
+      title: "\u2705 Natija tasdiqlandi",
+      body: `${context}
+
+${score}
+
+Natija rasmiy tasdiqlandi. Liga jadvali va statistikalar yangilandi.`
+    })));
+    await notifyNextFixtureIfKnown(fixture).catch((error) => {
+      console.warn("[SMART_NOTIFY] Next fixture lookup failed:", error?.message || error);
+    });
+    return;
+  }
+  if (status === "DISPUTED") {
+    await Promise.all(owners.map((userId) => enqueueSmartTelegramNotification({
+      userId,
+      seasonId,
+      eventId: `${eventBase}:disputed`,
+      title: "\u26A0\uFE0F Natijalar mos kelmadi",
+      body: `${context}
+
+${score}
+
+Ikki tomon yuborgan natijalar mos kelmadi. Holat admin ko\u2018rib chiqishi uchun dispute sifatida belgilandi.`
+    })));
+  }
+}
+var BROADCASTS_KEY, QUEUE_KEY, RECIPIENT_DIR_KEY, SMART_DEDUPE_PREFIX, SMART_DEDUPE_TTL_SECONDS, RESULT_TOPIC_BY_LEAGUE;
 var init_smartNotificationService = __esm({
   "src/server/services/smartNotificationService.ts"() {
     init_readModelStore();
@@ -2858,6 +2999,13 @@ var init_smartNotificationService = __esm({
     RECIPIENT_DIR_KEY = `${KEY_PREFIX}:private:recipient-directory`;
     SMART_DEDUPE_PREFIX = `${KEY_PREFIX}:telegram:smart:dedupe`;
     SMART_DEDUPE_TTL_SECONDS = 7 * 24 * 60 * 60;
+    RESULT_TOPIC_BY_LEAGUE = {
+      "league-premier-league": "https://t.me/efleagueuz/2",
+      "league-la-liga": "https://t.me/efleagueuz/3",
+      "league-serie-a": "https://t.me/efleagueuz/4",
+      "league-bundesliga": "https://t.me/efleagueuz/5",
+      "league-ligue-1": "https://t.me/efleagueuz/6"
+    };
   }
 });
 
@@ -7747,13 +7895,13 @@ async function executeSingleMutationSync(db, item) {
       }
       if (newStatus === "CONFIRMED") {
         try {
-          const { refreshChangedFixtureReadModel: refreshChangedFixtureReadModel2, invalidateFixtureReadModels: invalidateFixtureReadModels2, invalidateStandingsReadModels: invalidateStandingsReadModels4 } = await Promise.resolve().then(() => (init_readModelStore(), readModelStore_exports));
+          const { refreshChangedFixtureReadModel: refreshChangedFixtureReadModel2, invalidateFixtureReadModels: invalidateFixtureReadModels2, invalidateStandingsReadModels: invalidateStandingsReadModels3 } = await Promise.resolve().then(() => (init_readModelStore(), readModelStore_exports));
           await refreshChangedFixtureReadModel2(entityId).catch(() => {
           });
           if (fixData.competitionId) {
             await invalidateFixtureReadModels2(fixData.competitionId, fixData.seasonId || "season-2026-27").catch(() => {
             });
-            await invalidateStandingsReadModels4(fixData.competitionId, fixData.seasonId || "season-2026-27").catch(() => {
+            await invalidateStandingsReadModels3(fixData.competitionId, fixData.seasonId || "season-2026-27").catch(() => {
             });
           }
         } catch {
@@ -7839,13 +7987,13 @@ async function executeSingleMutationSync(db, item) {
         createdAt: now
       }, { merge: true });
       try {
-        const { refreshChangedFixtureReadModel: refreshChangedFixtureReadModel2, invalidateFixtureReadModels: invalidateFixtureReadModels2, invalidateStandingsReadModels: invalidateStandingsReadModels4 } = await Promise.resolve().then(() => (init_readModelStore(), readModelStore_exports));
+        const { refreshChangedFixtureReadModel: refreshChangedFixtureReadModel2, invalidateFixtureReadModels: invalidateFixtureReadModels2, invalidateStandingsReadModels: invalidateStandingsReadModels3 } = await Promise.resolve().then(() => (init_readModelStore(), readModelStore_exports));
         await refreshChangedFixtureReadModel2(entityId).catch(() => {
         });
         if (fixData.competitionId) {
           await invalidateFixtureReadModels2(fixData.competitionId, fixData.seasonId || "season-2026-27").catch(() => {
           });
-          await invalidateStandingsReadModels4(fixData.competitionId, fixData.seasonId || "season-2026-27").catch(() => {
+          await invalidateStandingsReadModels3(fixData.competitionId, fixData.seasonId || "season-2026-27").catch(() => {
           });
         }
       } catch {
@@ -7920,13 +8068,13 @@ async function executeSingleMutationSync(db, item) {
         createdAt: now
       }, { merge: true });
       try {
-        const { refreshChangedFixtureReadModel: refreshChangedFixtureReadModel2, invalidateFixtureReadModels: invalidateFixtureReadModels2, invalidateStandingsReadModels: invalidateStandingsReadModels4 } = await Promise.resolve().then(() => (init_readModelStore(), readModelStore_exports));
+        const { refreshChangedFixtureReadModel: refreshChangedFixtureReadModel2, invalidateFixtureReadModels: invalidateFixtureReadModels2, invalidateStandingsReadModels: invalidateStandingsReadModels3 } = await Promise.resolve().then(() => (init_readModelStore(), readModelStore_exports));
         await refreshChangedFixtureReadModel2(entityId).catch(() => {
         });
         if (fixDoc.data()?.competitionId) {
           await invalidateFixtureReadModels2(fixDoc.data().competitionId, fixDoc.data()?.seasonId || "season-2026-27").catch(() => {
           });
-          await invalidateStandingsReadModels4(fixDoc.data().competitionId, fixDoc.data()?.seasonId || "season-2026-27").catch(() => {
+          await invalidateStandingsReadModels3(fixDoc.data().competitionId, fixDoc.data()?.seasonId || "season-2026-27").catch(() => {
           });
         }
       } catch {
@@ -8007,13 +8155,13 @@ async function executeSingleMutationSync(db, item) {
         createdAt: payload.createdAt || now
       }, { merge: true });
       try {
-        const { refreshChangedFixtureReadModel: refreshChangedFixtureReadModel2, invalidateFixtureReadModels: invalidateFixtureReadModels2, invalidateStandingsReadModels: invalidateStandingsReadModels4 } = await Promise.resolve().then(() => (init_readModelStore(), readModelStore_exports));
+        const { refreshChangedFixtureReadModel: refreshChangedFixtureReadModel2, invalidateFixtureReadModels: invalidateFixtureReadModels2, invalidateStandingsReadModels: invalidateStandingsReadModels3 } = await Promise.resolve().then(() => (init_readModelStore(), readModelStore_exports));
         await refreshChangedFixtureReadModel2(entityId).catch(() => {
         });
         if (compId) {
           await invalidateFixtureReadModels2(compId, seasonId).catch(() => {
           });
-          await invalidateStandingsReadModels4(compId, seasonId).catch(() => {
+          await invalidateStandingsReadModels3(compId, seasonId).catch(() => {
           });
         }
       } catch (rmErr) {
@@ -8096,13 +8244,13 @@ async function executeSingleMutationSync(db, item) {
         createdAt: payload.createdAt || now
       }, { merge: true });
       try {
-        const { refreshChangedFixtureReadModel: refreshChangedFixtureReadModel2, invalidateFixtureReadModels: invalidateFixtureReadModels2, invalidateStandingsReadModels: invalidateStandingsReadModels4 } = await Promise.resolve().then(() => (init_readModelStore(), readModelStore_exports));
+        const { refreshChangedFixtureReadModel: refreshChangedFixtureReadModel2, invalidateFixtureReadModels: invalidateFixtureReadModels2, invalidateStandingsReadModels: invalidateStandingsReadModels3 } = await Promise.resolve().then(() => (init_readModelStore(), readModelStore_exports));
         await refreshChangedFixtureReadModel2(entityId).catch(() => {
         });
         if (compId) {
           await invalidateFixtureReadModels2(compId, seasonId).catch(() => {
           });
-          await invalidateStandingsReadModels4(compId, seasonId).catch(() => {
+          await invalidateStandingsReadModels3(compId, seasonId).catch(() => {
           });
         }
       } catch (rmErr) {
@@ -12514,7 +12662,7 @@ async function getDisputesFirestore(status = "OPEN", limitCount = 50) {
   }
 }
 async function getAdminUsersPagedFirestore(options = {}) {
-  const pageSize = Math.min(Math.max(options.limit || 25, 1), 50);
+  const pageSize = Math.min(Math.max(options.limit || 100, 1), 100);
   const page = Math.max(options.page || 1, 1);
   const role = (options.role || "ALL").toUpperCase();
   const status = (options.status || "ALL").toUpperCase();
@@ -14764,7 +14912,11 @@ async function processNotificationQueue(batchSize = 25, stopClaimingAt = Infinit
       recipient.status = "SENDING";
       record.status = "PROCESSING";
       await client.hset(BROADCASTS_KEY2, { [record.id]: record });
-      const result = await sendTelegramMessage(job.telegramId, formatTelegramMessage(job.title, job.body, job.type), { parse_mode: "HTML" });
+      const result = await sendTelegramMessage(
+        job.telegramId,
+        formatTelegramMessage(job.title, job.body, job.type, Boolean(job.bodyIsHtml)),
+        { parse_mode: "HTML", reply_markup: job.replyMarkup }
+      );
       if (result.ok) {
         await updateBroadcastRecipientState(job.broadcastId, job.userId, "SENT", void 0, (/* @__PURE__ */ new Date()).toISOString());
         succeeded++;
@@ -14792,18 +14944,15 @@ async function processNotificationQueue(batchSize = 25, stopClaimingAt = Infinit
     await client.eval("if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0", [WORKER_LOCK], [token]);
   }
 }
-function formatTelegramMessage(title, body, type) {
+function formatTelegramMessage(title, body, type, bodyIsHtml = false) {
   let icon = "\u{1F4E2}";
   if (type === "NEW_MATCHDAY") icon = "\u26BD";
   if (type === "UPCOMING_MATCH") icon = "\u23F0";
   if (type === "COMPETITION_UPDATE") icon = "\u{1F3C6}";
-  return `<b>${icon} EFL UZ Official Alert</b>
+  const safeBody = bodyIsHtml ? body : escapeHtml2(body);
+  return `<b>${icon} ${escapeHtml2(title)}</b>
 
-<b>${escapeHtml2(title)}</b>
-
-${escapeHtml2(body)}
-
-<i>Season 2026/27 \u2022 Open EFL WebApp to manage fixtures</i>`;
+${safeBody}`;
 }
 function escapeHtml2(str) {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -15346,6 +15495,44 @@ function validateBody(schema) {
 
 // src/server/routes/auth.routes.ts
 init_readModelStore();
+
+// src/server/services/recipientDirectoryRefreshService.ts
+init_readModelStore();
+init_telegramNotificationQueue();
+var DEFAULT_REFRESH_INTERVAL_SECONDS = 5 * 60;
+async function refreshRecipientDirectoryIfStale(seasonId = "season-2026-27", intervalSeconds = DEFAULT_REFRESH_INTERVAL_SECONDS) {
+  const client = getUpstashClient();
+  if (!client) return { refreshed: false, reason: "redis-unavailable" };
+  const leaseKey = `${KEY_PREFIX}:telegram:recipient-directory:refresh-lease:${seasonId}`;
+  const ttl = Math.max(60, Math.floor(intervalSeconds));
+  try {
+    const claimed = await client.eval(`
+      if redis.call('EXISTS', KEYS[1]) == 1 then
+        return 0
+      end
+      redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
+      return 1
+    `, [leaseKey], [String(Date.now()), ttl]);
+    if (Number(claimed) !== 1) {
+      return { refreshed: false, reason: "recently-refreshed" };
+    }
+    try {
+      const count = await syncRecipientDirectory(seasonId);
+      console.info("[RECIPIENT_DIRECTORY_REFRESHED]", JSON.stringify({ seasonId, count }));
+      return { refreshed: true, count, reason: "refreshed" };
+    } catch (error) {
+      await client.del(leaseKey).catch(() => {
+      });
+      console.warn("[RECIPIENT_DIRECTORY_REFRESH_FAILED]", error?.message || error);
+      return { refreshed: false, reason: "refresh-failed" };
+    }
+  } catch (error) {
+    console.warn("[RECIPIENT_DIRECTORY_REFRESH_LEASE_FAILED]", error?.message || error);
+    return { refreshed: false, reason: "refresh-failed" };
+  }
+}
+
+// src/server/routes/auth.routes.ts
 var authRouter = Router2();
 var telegramAuthSchema = z.object({
   initData: z.string().min(1, "initData is required")
@@ -15393,6 +15580,11 @@ function getClubStatsQuick(clubId, seasonId = "season-2026-27") {
   }
   return stats;
 }
+async function refreshTelegramDirectoryAfterAuth() {
+  await refreshRecipientDirectoryIfStale("season-2026-27").catch((error) => {
+    console.warn("[AUTH_RECIPIENT_DIRECTORY_REFRESH_FAILED]", error?.message || error);
+  });
+}
 authRouter.post("/telegram", validateBody(telegramAuthSchema), async (req, res) => {
   const { initData } = req.body;
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -15403,6 +15595,7 @@ authRouter.post("/telegram", validateBody(telegramAuthSchema), async (req, res) 
         const userRaw = urlParams.get("user");
         if (userRaw) {
           const user = await getOrCreateTelegramUser(JSON.parse(userRaw));
+          await refreshTelegramDirectoryAfterAuth();
           const clubState = await getOptionalCurrentClub(user.id);
           const stats = getClubStatsQuick(clubState.currentClub?.id);
           const token = createSessionToken(user);
@@ -15424,6 +15617,7 @@ authRouter.post("/telegram", validateBody(telegramAuthSchema), async (req, res) 
   }
   try {
     const user = await getOrCreateTelegramUser(verifyResult.user);
+    await refreshTelegramDirectoryAfterAuth();
     const clubState = await getOptionalCurrentClub(user.id);
     const stats = getClubStatsQuick(clubState.currentClub?.id);
     const token = createSessionToken(user);
@@ -15448,6 +15642,7 @@ authRouter.post("/dev", validateBody(devAuthSchema), async (req, res) => {
   }
   try {
     const user = await getOrCreateDevUser(req.body.devUserId);
+    await refreshTelegramDirectoryAfterAuth();
     const clubState = await getOptionalCurrentClub(user.id);
     const stats = getClubStatsQuick(clubState.currentClub?.id);
     const token = createSessionToken(user);
@@ -16136,6 +16331,276 @@ import { Router as Router7 } from "express";
 import { z as z2 } from "zod";
 init_firestoreStore();
 init_readModelStore();
+init_domesticCupService();
+
+// src/server/tournament/domesticCupRoundOps.ts
+init_admin();
+init_collections();
+init_adminService();
+init_readModelStore();
+init_domesticCupService();
+var PROTECTED_STATUSES = /* @__PURE__ */ new Set([
+  "PLAYING",
+  "IN_PROGRESS",
+  "AWAITING_RESULT",
+  "PENDING_CONFIRMATION",
+  "DISPUTED",
+  "CONFIRMED"
+]);
+function isProtected(fixture) {
+  return PROTECTED_STATUSES.has(String(fixture.status || "SCHEDULED")) || fixture.homeScore != null || fixture.awayScore != null || Boolean(fixture.resultConfirmedAt);
+}
+async function loadCupFixtures(competitionId) {
+  validateDomesticCupId(competitionId);
+  const db = getFirestoreDb();
+  const snap = await db.collection(COLLECTIONS.FIXTURES).where("competitionId", "==", competitionId).get();
+  return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+}
+function buildHealth(competitionId, fixtures, currentRound) {
+  const byId = new Map(fixtures.map((fixture) => [fixture.id, fixture]));
+  const issues = [];
+  for (const target of fixtures) {
+    const sourceSlots = [
+      { slot: "home", sourceId: target.homeSourceFixtureId, occupant: target.homeClubId },
+      { slot: "away", sourceId: target.awaySourceFixtureId, occupant: target.awayClubId }
+    ];
+    for (const link of sourceSlots) {
+      if (!link.sourceId) continue;
+      const source = byId.get(link.sourceId);
+      if (!source) {
+        issues.push({
+          code: "MISSING_SOURCE",
+          severity: "error",
+          fixtureId: target.id,
+          slot: link.slot,
+          message: `${target.id} ${link.slot} slot references missing source ${link.sourceId}.`
+        });
+        continue;
+      }
+      const expectedWinner = source.status === "CONFIRMED" ? source.winnerClubId || null : null;
+      if (expectedWinner && !link.occupant) {
+        issues.push({
+          code: "MISSING_ADVANCEMENT",
+          severity: "warning",
+          fixtureId: target.id,
+          slot: link.slot,
+          message: `${source.id} is confirmed but its winner has not advanced into ${target.id}.`
+        });
+      } else if (expectedWinner && link.occupant && link.occupant !== expectedWinner) {
+        issues.push({
+          code: isProtected(target) ? "LOCKED_TARGET_MISMATCH" : "STALE_WINNER",
+          severity: "error",
+          fixtureId: target.id,
+          slot: link.slot,
+          message: `${target.id} ${link.slot} slot contains ${link.occupant}, expected ${expectedWinner} from ${source.id}.`
+        });
+      } else if (!expectedWinner && link.occupant) {
+        issues.push({
+          code: isProtected(target) ? "LOCKED_TARGET_MISMATCH" : "STALE_WINNER",
+          severity: isProtected(target) ? "error" : "warning",
+          fixtureId: target.id,
+          slot: link.slot,
+          message: `${target.id} ${link.slot} slot still contains ${link.occupant}, but source ${source.id} is not confirmed.`
+        });
+      }
+    }
+  }
+  const roundMap = /* @__PURE__ */ new Map();
+  for (const fixture of fixtures) {
+    const round = Number(fixture.matchday || 1);
+    const list = roundMap.get(round) || [];
+    list.push(fixture);
+    roundMap.set(round, list);
+  }
+  for (const [round, roundFixtures] of roundMap) {
+    const seen = /* @__PURE__ */ new Map();
+    for (const fixture of roundFixtures) {
+      for (const clubId of [fixture.homeClubId, fixture.awayClubId]) {
+        if (!clubId) continue;
+        const previous = seen.get(clubId);
+        if (previous) {
+          issues.push({
+            code: "DUPLICATE_CLUB",
+            severity: "error",
+            fixtureId: fixture.id,
+            message: `${clubId} appears more than once in round ${round} (${previous}, ${fixture.id}).`
+          });
+        } else {
+          seen.set(clubId, fixture.id);
+        }
+      }
+    }
+  }
+  const rounds = Array.from(roundMap.entries()).sort(([a], [b]) => a - b).map(([roundNumber, roundFixtures]) => ({
+    roundNumber,
+    roundName: roundFixtures[0]?.roundName || `Round ${roundNumber}`,
+    matches: roundFixtures.length,
+    confirmed: roundFixtures.filter((fixture) => fixture.status === "CONFIRMED").length,
+    readyToAdvance: roundFixtures.length > 0 && roundFixtures.every((fixture) => fixture.status === "CONFIRMED")
+  }));
+  return {
+    competitionId,
+    healthy: issues.length === 0,
+    issues,
+    fixtures: fixtures.length,
+    confirmed: fixtures.filter((fixture) => fixture.status === "CONFIRMED").length,
+    currentRound,
+    rounds
+  };
+}
+async function getDomesticCupBracketHealth(competitionId) {
+  validateDomesticCupId(competitionId);
+  const db = getFirestoreDb();
+  const [fixtures, compDoc] = await Promise.all([
+    loadCupFixtures(competitionId),
+    db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get()
+  ]);
+  const currentRound = Number(compDoc.data()?.currentMatchday || 1);
+  return buildHealth(competitionId, fixtures, currentRound);
+}
+async function reconcileDomesticCupBracketSafe(competitionId, options) {
+  validateDomesticCupId(competitionId);
+  const db = getFirestoreDb();
+  const fixtures = await loadCupFixtures(competitionId);
+  const byId = new Map(fixtures.map((fixture) => [fixture.id, fixture]));
+  const batch = db.batch();
+  let changed = 0;
+  let blocked = 0;
+  const changedIds = [];
+  for (const target of fixtures) {
+    const updates = {};
+    for (const slot of ["home", "away"]) {
+      const sourceId = slot === "home" ? target.homeSourceFixtureId : target.awaySourceFixtureId;
+      if (!sourceId) continue;
+      const source = byId.get(sourceId);
+      if (!source) continue;
+      const expectedWinner = source.status === "CONFIRMED" ? source.winnerClubId || null : null;
+      const field = slot === "home" ? "homeClubId" : "awayClubId";
+      const current = target[field] || null;
+      if (current === expectedWinner) continue;
+      if (isProtected(target)) {
+        blocked += 1;
+        continue;
+      }
+      updates[field] = expectedWinner;
+    }
+    if (Object.keys(updates).length) {
+      updates.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+      batch.update(db.collection(COLLECTIONS.FIXTURES).doc(target.id), updates);
+      changed += 1;
+      changedIds.push(target.id);
+    }
+  }
+  if (changed) await batch.commit();
+  const seasonId = fixtures[0]?.seasonId || "season-2026-27";
+  for (const fixtureId of changedIds) {
+    await refreshChangedFixtureReadModel(fixtureId).catch(() => {
+    });
+  }
+  await invalidateDataset(`cup:bracket:${competitionId}:${seasonId}`).catch(() => {
+  });
+  await invalidateFixtureReadModels(competitionId, seasonId).catch(() => {
+  });
+  await createAuditLog(
+    options.adminUserId,
+    "CUP_BRACKET_RECONCILED",
+    "COMPETITION",
+    competitionId,
+    void 0,
+    { changed, blocked, reason: options.reason || "manual-health-reconcile" },
+    void 0,
+    options.adminUsername || "admin",
+    `Reconciled domestic cup bracket: ${changed} fixture(s) updated, ${blocked} protected mismatch(es) left untouched.`
+  );
+  const compDoc = await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get();
+  const refreshed = await loadCupFixtures(competitionId);
+  return { success: true, changed, blocked, health: buildHealth(competitionId, refreshed, Number(compDoc.data()?.currentMatchday || 1)) };
+}
+async function reconcileDomesticCupSourceFixture(fixtureId, options = {}) {
+  const db = getFirestoreDb();
+  const sourceDoc = await db.collection(COLLECTIONS.FIXTURES).doc(fixtureId).get();
+  if (!sourceDoc.exists) return { domesticCup: false, changed: 0, blocked: 0 };
+  const source = { id: sourceDoc.id, ...sourceDoc.data() };
+  if (!DOMESTIC_CUPS[source.competitionId]) return { domesticCup: false, changed: 0, blocked: 0 };
+  const result = await reconcileDomesticCupBracketSafe(source.competitionId, {
+    adminUserId: options.actorUserId || "system-cup-progression",
+    adminUsername: options.actorUsername || "system",
+    reason: options.reason || `source-fixture:${fixtureId}`
+  });
+  return { domesticCup: true, changed: result.changed, blocked: result.blocked };
+}
+async function setDomesticCupRoundStateSafe(competitionId, roundNumber, action, options) {
+  validateDomesticCupId(competitionId);
+  if (!Number.isInteger(roundNumber) || roundNumber < 1) throw new Error("Invalid cup round number.");
+  const db = getFirestoreDb();
+  const fixtures = await loadCupFixtures(competitionId);
+  const roundFixtures = fixtures.filter((fixture) => Number(fixture.matchday || 1) === roundNumber);
+  if (!roundFixtures.length) throw new Error(`Round ${roundNumber} does not exist for ${competitionId}.`);
+  if (action === "OPEN") {
+    const previousRounds = fixtures.filter((fixture) => Number(fixture.matchday || 1) < roundNumber);
+    const latestPreviousRound = Math.max(0, ...previousRounds.map((fixture) => Number(fixture.matchday || 1)));
+    if (latestPreviousRound > 0) {
+      const previous = fixtures.filter((fixture) => Number(fixture.matchday || 1) === latestPreviousRound);
+      if (previous.some((fixture) => fixture.status !== "CONFIRMED")) {
+        throw new Error(`Cannot open round ${roundNumber}: round ${latestPreviousRound} is not fully confirmed.`);
+      }
+      await reconcileDomesticCupBracketSafe(competitionId, {
+        adminUserId: options.adminUserId,
+        adminUsername: options.adminUsername,
+        reason: `open-round-${roundNumber}`
+      });
+    }
+  }
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).set({
+    currentMatchday: roundNumber,
+    isMatchdayOpen: action === "OPEN",
+    adminOverrideStatus: action === "OPEN" ? "FORCE_OPEN" : "FORCE_LOCKED",
+    updatedAt: now
+  }, { merge: true });
+  await createAuditLog(
+    options.adminUserId,
+    action === "OPEN" ? "CUP_ROUND_OPENED" : "CUP_ROUND_LOCKED",
+    "COMPETITION",
+    competitionId,
+    void 0,
+    { roundNumber, roundName: roundFixtures[0]?.roundName || `Round ${roundNumber}` },
+    void 0,
+    options.adminUsername || "admin",
+    `${action === "OPEN" ? "Opened" : "Locked"} domestic cup round ${roundNumber}.`
+  );
+  return {
+    success: true,
+    competitionId,
+    roundNumber,
+    isOpen: action === "OPEN",
+    roundName: roundFixtures[0]?.roundName || `Round ${roundNumber}`
+  };
+}
+async function advanceDomesticCupRoundSafe(competitionId, options) {
+  validateDomesticCupId(competitionId);
+  const db = getFirestoreDb();
+  const compDoc = await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get();
+  const currentRound = Number(compDoc.data()?.currentMatchday || 1);
+  const fixtures = await loadCupFixtures(competitionId);
+  const currentFixtures = fixtures.filter((fixture) => Number(fixture.matchday || 1) === currentRound);
+  if (!currentFixtures.length) throw new Error(`Current round ${currentRound} has no fixtures.`);
+  if (currentFixtures.some((fixture) => fixture.status !== "CONFIRMED")) {
+    throw new Error(`Cannot advance: round ${currentRound} still has unconfirmed fixtures.`);
+  }
+  await reconcileDomesticCupBracketSafe(competitionId, {
+    adminUserId: options.adminUserId,
+    adminUsername: options.adminUsername,
+    reason: `advance-round-${currentRound}`
+  });
+  const nextRound = Math.min(...fixtures.map((fixture) => Number(fixture.matchday || 1)).filter((round) => round > currentRound));
+  if (!Number.isFinite(nextRound)) throw new Error("Final round is already complete; there is no next round to open.");
+  const result = await setDomesticCupRoundStateSafe(competitionId, nextRound, "OPEN", options);
+  return { success: true, fromRound: currentRound, toRound: nextRound, roundName: result.roundName };
+}
+
+// src/server/routes/fixtures.routes.ts
+init_smartNotificationService();
 var fixturesRouter = Router7();
 var resultSubmissionSchema = z2.object({
   homeScore: z2.number().int().min(0, "Home score must be >= 0").max(99, "Home score must be <= 99"),
@@ -16163,7 +16628,25 @@ fixturesRouter.post("/:id/result", requireAuth, validateBody(resultSubmissionSch
   const { homeScore, awayScore, proofUrl } = req.body;
   try {
     const updatedFixture = await submitFixtureResultFirestore(userId, fixtureId, homeScore, awayScore, proofUrl);
+    if (updatedFixture.status === "CONFIRMED" && isDomesticCup(updatedFixture.competitionId)) {
+      await advanceDomesticCupWinnerSafe(fixtureId, {
+        adminUserId: "system-cup-progression",
+        adminUsername: "system"
+      }).catch(async (err) => {
+        if (!String(err?.message || "").toLowerCase().includes("final")) {
+          await reconcileDomesticCupSourceFixture(fixtureId, {
+            actorUserId: "system-cup-progression",
+            actorUsername: "system",
+            reason: "automatic-result-confirmation"
+          }).catch(() => {
+          });
+        }
+      });
+    }
     await refreshChangedFixtureReadModel(fixtureId).catch(() => invalidateFixtureReadModels(updatedFixture.competitionId, updatedFixture.seasonId || "season-2026-27")).catch(() => {
+    });
+    await notifySmartResultLifecycle(updatedFixture, userId).catch((error) => {
+      console.warn("[SMART_NOTIFY] Result lifecycle notification failed:", error?.message || error);
     });
     res.json({
       success: true,
@@ -16447,8 +16930,622 @@ usersRouter.get("/:id", async (req, res) => {
   }
 });
 
-// src/server/routes/admin.routes.ts
+// src/server/routes/adminCupDraw.routes.ts
 import { Router as Router11 } from "express";
+import { randomBytes } from "node:crypto";
+init_admin();
+init_collections();
+init_domesticCupService();
+init_seed();
+init_db();
+init_adminService();
+init_readModelStore();
+var adminCupDrawRouter = Router11();
+adminCupDrawRouter.use(requireAdmin);
+var LEAGUE_COMPETITION_BY_LEAGUE = {
+  "league-premier-league": "comp-premier-league-2026",
+  "league-la-liga": "comp-la-liga-2026",
+  "league-serie-a": "comp-serie-a-2026",
+  "league-bundesliga": "comp-bundesliga-2026",
+  "league-ligue-1": "comp-ligue-1-2026"
+};
+function stringHash(value) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < value.length; i++) {
+    h ^= value.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+function seededRandom(seedText) {
+  let state = stringHash(seedText) || 1831565813;
+  return () => {
+    state += 1831565813;
+    let t = state;
+    t = Math.imul(t ^ t >>> 15, t | 1);
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function shuffled(items, seed) {
+  const out = [...items];
+  const random = seededRandom(seed);
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+function isProtectedFixture(fixture) {
+  return String(fixture.status || "SCHEDULED") !== "SCHEDULED" || fixture.homeScore !== null && fixture.homeScore !== void 0 || fixture.awayScore !== null && fixture.awayScore !== void 0 || Boolean(fixture.winnerClubId) || Boolean(fixture.resultConfirmedAt);
+}
+async function loadStandingsSeed(cupId, seasonId) {
+  const cup = validateDomesticCupId(cupId);
+  const leagueCompetitionId = LEAGUE_COMPETITION_BY_LEAGUE[cup.leagueId];
+  if (!leagueCompetitionId) throw new Error(`No league competition mapping for ${cup.leagueId}`);
+  const standingsResult = await getCompetitionStandingsFromReadModel(leagueCompetitionId, seasonId);
+  const standings = Array.isArray(standingsResult?.standings) ? standingsResult.standings : [];
+  const eligible = new Map(
+    SEED_CLUBS.filter((club) => club.leagueId === cup.leagueId).map((club) => [club.id, club])
+  );
+  const seeded = standings.filter((row) => eligible.has(row.clubId)).sort((a, b) => Number(a.position || 999) - Number(b.position || 999)).map((row, index) => ({
+    id: row.clubId,
+    name: eligible.get(row.clubId)?.name || row.clubName || row.clubId,
+    position: Number(row.position || index + 1)
+  }));
+  if (seeded.length !== cup.expectedTeams) {
+    throw Object.assign(
+      new Error(`STANDINGS_INCOMPLETE: expected ${cup.expectedTeams} clubs, got ${seeded.length}`),
+      { statusCode: 409 }
+    );
+  }
+  return seeded;
+}
+function buildDraw(cupId, seeded, drawSeed) {
+  const cup = validateDomesticCupId(cupId);
+  const totalTeams = seeded.length;
+  const prelimMatches = totalTeams - 16;
+  const playInTeamsCount = prelimMatches * 2;
+  const byeTeamsCount = totalTeams - playInTeamsCount;
+  const pureByeMatches = (byeTeamsCount - prelimMatches) / 2;
+  const totalRounds = 5;
+  const byePool = seeded.slice(0, byeTeamsCount);
+  const playInPool = seeded.slice(byeTeamsCount);
+  const shuffledByes = shuffled(byePool, `${drawSeed}:bye`);
+  const shuffledPlayIn = shuffled(playInPool, `${drawSeed}:playin`);
+  const previewMatches = [];
+  const rounds = [];
+  const r1Matches = [];
+  for (let i = 0; i < prelimMatches; i++) {
+    const home = shuffledPlayIn[i * 2];
+    const away = shuffledPlayIn[i * 2 + 1];
+    const match = {
+      roundNumber: 1,
+      roundName: "Preliminary Round",
+      matchIndex: i,
+      fixtureId: `fix-${cupId}-r1-m${i}`,
+      homeClubId: home?.id || null,
+      homeClubName: home?.name || "TBD",
+      awayClubId: away?.id || null,
+      awayClubName: away?.name || "TBD",
+      homeClub: home ? { id: home.id, name: home.name, position: home.position } : null,
+      awayClub: away ? { id: away.id, name: away.name, position: away.position } : null,
+      sourceFixtureId: null,
+      sourceWinnerSlot: null,
+      homeSourceFixtureId: null,
+      awaySourceFixtureId: null,
+      homeSourceWinnerSlot: null,
+      awaySourceWinnerSlot: null
+    };
+    r1Matches.push(match);
+    previewMatches.push(match);
+  }
+  rounds.push({
+    roundNumber: 1,
+    roundName: "Preliminary Round",
+    matchesCount: r1Matches.length,
+    totalMatches: r1Matches.length,
+    pairings: r1Matches.map((m) => ({ homeClub: m.homeClub, awayClub: m.awayClub, fixtureId: m.fixtureId })),
+    matches: r1Matches
+  });
+  const r2Matches = [];
+  let byeCursor = 0;
+  for (let i = 0; i < 8; i++) {
+    if (i < pureByeMatches) {
+      const home = shuffledByes[byeCursor++];
+      const away = shuffledByes[byeCursor++];
+      const match = {
+        roundNumber: 2,
+        roundName: "Round of 16",
+        matchIndex: i,
+        fixtureId: `fix-${cupId}-r2-m${i}`,
+        homeClubId: home?.id || null,
+        homeClubName: home?.name || "TBD",
+        awayClubId: away?.id || null,
+        awayClubName: away?.name || "TBD",
+        homeClub: home ? { id: home.id, name: home.name, position: home.position } : null,
+        awayClub: away ? { id: away.id, name: away.name, position: away.position } : null,
+        sourceFixtureId: null,
+        sourceWinnerSlot: null,
+        homeSourceFixtureId: null,
+        awaySourceFixtureId: null,
+        homeSourceWinnerSlot: null,
+        awaySourceWinnerSlot: null
+      };
+      r2Matches.push(match);
+      previewMatches.push(match);
+    } else {
+      const k = i - pureByeMatches;
+      const bye = shuffledByes[byeCursor++];
+      const sourceId = `fix-${cupId}-r1-m${k}`;
+      const match = {
+        roundNumber: 2,
+        roundName: "Round of 16",
+        matchIndex: i,
+        fixtureId: `fix-${cupId}-r2-m${i}`,
+        homeClubId: bye?.id || null,
+        homeClubName: bye?.name || "TBD",
+        awayClubId: null,
+        awayClubName: `Winner Play-in M${k + 1}`,
+        homeClub: bye ? { id: bye.id, name: bye.name, position: bye.position } : null,
+        awayClub: null,
+        sourceFixtureId: sourceId,
+        sourceWinnerSlot: "away",
+        homeSourceFixtureId: null,
+        awaySourceFixtureId: sourceId,
+        homeSourceWinnerSlot: null,
+        awaySourceWinnerSlot: "away"
+      };
+      r2Matches.push(match);
+      previewMatches.push(match);
+    }
+  }
+  rounds.push({
+    roundNumber: 2,
+    roundName: "Round of 16",
+    matchesCount: 8,
+    totalMatches: 8,
+    pairings: r2Matches.map((m) => ({
+      homeClub: m.homeClub || { id: null, name: m.homeClubName },
+      awayClub: m.awayClub || { id: null, name: m.awayClubName },
+      fixtureId: m.fixtureId
+    })),
+    matches: r2Matches
+  });
+  const downstream = [
+    { roundNumber: 3, roundName: "Quarter-Finals", token: "r3", count: 4, sourceRound: 2, sourceLabel: "R16" },
+    { roundNumber: 4, roundName: "Semi-Finals", token: "r4", count: 2, sourceRound: 3, sourceLabel: "QF" },
+    { roundNumber: 5, roundName: "Final", token: "r5", count: 1, sourceRound: 4, sourceLabel: "SF" }
+  ];
+  for (const round of downstream) {
+    const matches = [];
+    for (let i = 0; i < round.count; i++) {
+      const homeSource = `fix-${cupId}-r${round.sourceRound}-m${i * 2}`;
+      const awaySource = `fix-${cupId}-r${round.sourceRound}-m${i * 2 + 1}`;
+      const match = {
+        roundNumber: round.roundNumber,
+        roundName: round.roundName,
+        matchIndex: i,
+        fixtureId: `fix-${cupId}-${round.token}-m${i}`,
+        homeClubId: null,
+        homeClubName: `Winner ${round.sourceLabel} M${i * 2 + 1}`,
+        awayClubId: null,
+        awayClubName: `Winner ${round.sourceLabel} M${i * 2 + 2}`,
+        homeClub: null,
+        awayClub: null,
+        sourceFixtureId: homeSource,
+        sourceWinnerSlot: "home",
+        homeSourceFixtureId: homeSource,
+        awaySourceFixtureId: awaySource,
+        homeSourceWinnerSlot: "home",
+        awaySourceWinnerSlot: "away"
+      };
+      matches.push(match);
+      previewMatches.push(match);
+    }
+    rounds.push({
+      roundNumber: round.roundNumber,
+      roundName: round.roundName,
+      matchesCount: round.count,
+      totalMatches: round.count,
+      pairings: matches.map((m) => ({
+        homeClub: { id: null, name: m.homeClubName },
+        awayClub: { id: null, name: m.awayClubName },
+        fixtureId: m.fixtureId
+      })),
+      matches
+    });
+  }
+  return {
+    competitionId: cupId,
+    competitionName: cup.name,
+    totalTeams,
+    totalParticipants: totalTeams,
+    prelimMatches,
+    byeTeamsCount,
+    totalRounds,
+    roundsCount: totalRounds,
+    drawSeed,
+    seedingPolicy: totalTeams === 20 ? "POSITIONS_1_12_BYE__13_20_PLAYIN" : "POSITIONS_1_14_BYE__15_18_PLAYIN",
+    byeTeams: byePool,
+    playInTeams: playInPool,
+    previewMatches,
+    rounds
+  };
+}
+async function getExistingFixtureState(cupId) {
+  const db = getFirestoreDb();
+  const snapshot = await db.collection(COLLECTIONS.FIXTURES).where("competitionId", "==", cupId).get();
+  const fixtures = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+  const protectedFixtures = fixtures.filter(isProtectedFixture);
+  return {
+    fixtures,
+    existingCount: fixtures.length,
+    protectedFixtures,
+    canRedraw: fixtures.length > 0 && protectedFixtures.length === 0
+  };
+}
+async function createPreview(cupId, seasonId, requestedSeed) {
+  const standingsSeed = await loadStandingsSeed(cupId, seasonId);
+  const stableStandingsFingerprint = standingsSeed.map((club) => `${club.position}:${club.id}`).join("|");
+  const drawSeed = requestedSeed || `${cupId}:${stringHash(stableStandingsFingerprint).toString(16)}`;
+  const draw = buildDraw(cupId, standingsSeed, drawSeed);
+  const existing = await getExistingFixtureState(cupId);
+  const canGenerate = existing.existingCount === 0 || existing.canRedraw;
+  const blockReason = canGenerate ? void 0 : `Redraw blocked: ${existing.protectedFixtures.length} fixture(s) already contain match activity/results. Reopen or resolve those fixtures before changing the draw.`;
+  return {
+    ...draw,
+    existingFixturesCount: existing.existingCount,
+    protectedFixturesCount: existing.protectedFixtures.length,
+    canGenerate,
+    canRedraw: existing.canRedraw,
+    mode: existing.existingCount === 0 ? "CREATE" : "REDRAW",
+    blockReason
+  };
+}
+adminCupDrawRouter.post("/:cupId/bracket/preview", async (req, res) => {
+  const seasonId = String(req.body?.seasonId || "season-2026-27");
+  const requestedSeed = typeof req.body?.drawSeed === "string" && req.body.drawSeed.trim() ? req.body.drawSeed.trim() : req.body?.newDraw === true ? `${req.params.cupId}:${randomBytes(12).toString("hex")}` : void 0;
+  try {
+    const preview = await createPreview(req.params.cupId, seasonId, requestedSeed);
+    res.json(preview);
+  } catch (err) {
+    res.status(err?.statusCode || 400).json({ error: err?.message || "CUP_DRAW_PREVIEW_FAILED" });
+  }
+});
+adminCupDrawRouter.post("/:cupId/bracket/generate", async (req, res) => {
+  const cupId = req.params.cupId;
+  const seasonId = String(req.body?.seasonId || "season-2026-27");
+  const confirmation = Boolean(req.body?.confirmation);
+  const drawSeed = typeof req.body?.drawSeed === "string" ? req.body.drawSeed.trim() : "";
+  if (!confirmation) {
+    res.status(400).json({ error: "Explicit admin confirmation is required." });
+    return;
+  }
+  if (!drawSeed) {
+    res.status(400).json({ error: "DRAW_SEED_REQUIRED: preview the draw before confirming it." });
+    return;
+  }
+  try {
+    const cup = validateDomesticCupId(cupId);
+    const preview = await createPreview(cupId, seasonId, drawSeed);
+    if (!preview.canGenerate) {
+      res.status(409).json({ error: preview.blockReason || "CUP_REDRAW_BLOCKED" });
+      return;
+    }
+    const db = getFirestoreDb();
+    const existingSnap = await db.collection(COLLECTIONS.FIXTURES).where("competitionId", "==", cupId).get();
+    const existingFixtures = existingSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    const protectedExisting = existingFixtures.filter(isProtectedFixture);
+    if (protectedExisting.length > 0) {
+      res.status(409).json({ error: "CUP_REDRAW_RACE_BLOCKED: match activity appeared after preview." });
+      return;
+    }
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const batch = db.batch();
+    for (const doc of existingSnap.docs) batch.delete(doc.ref);
+    for (const match of preview.previewMatches) {
+      const ref = db.collection(COLLECTIONS.FIXTURES).doc(match.fixtureId);
+      batch.create(ref, {
+        id: match.fixtureId,
+        seasonId,
+        competitionId: cupId,
+        competitionName: cup.name,
+        matchday: match.roundNumber,
+        roundName: match.roundName,
+        homeClubId: match.homeClubId ?? null,
+        awayClubId: match.awayClubId ?? null,
+        scheduledAt: now,
+        status: "SCHEDULED",
+        homeScore: null,
+        awayScore: null,
+        winnerClubId: null,
+        resultConfirmedAt: null,
+        sourceFixtureId: match.sourceFixtureId ?? null,
+        sourceWinnerSlot: match.sourceWinnerSlot ?? null,
+        homeSourceFixtureId: match.homeSourceFixtureId ?? null,
+        awaySourceFixtureId: match.awaySourceFixtureId ?? null,
+        homeSourceWinnerSlot: match.homeSourceWinnerSlot ?? null,
+        awaySourceWinnerSlot: match.awaySourceWinnerSlot ?? null,
+        drawSeed,
+        createdAt: now,
+        updatedAt: now
+      });
+    }
+    batch.set(db.collection(COLLECTIONS.COMPETITIONS).doc(cupId), {
+      status: "active",
+      hasFixtures: true,
+      fixtureCount: preview.previewMatches.length,
+      fixturesCount: preview.previewMatches.length,
+      generationStatus: "generated",
+      drawSeed,
+      drawPolicy: preview.seedingPolicy,
+      drawUpdatedAt: now,
+      updatedAt: now
+    }, { merge: true });
+    await batch.commit();
+    try {
+      queryRun("DELETE FROM fixtures WHERE competition_id = ?", [cupId]);
+      for (const match of preview.previewMatches) {
+        queryRun(
+          `INSERT OR REPLACE INTO fixtures (id, season_id, competition_id, matchday, round_name, home_club_id, away_club_id, status, scheduled_at, source_fixture_id, source_winner_slot, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'SCHEDULED', ?, ?, ?, ?, ?)`,
+          [
+            match.fixtureId,
+            seasonId,
+            cupId,
+            match.roundNumber,
+            match.roundName,
+            match.homeClubId ?? null,
+            match.awayClubId ?? null,
+            now,
+            match.sourceFixtureId ?? null,
+            match.sourceWinnerSlot ?? null,
+            now,
+            now
+          ]
+        );
+      }
+    } catch (mirrorError) {
+      console.warn("[CUP_DRAW_SQLITE_MIRROR_WARNING]", mirrorError?.message || mirrorError);
+    }
+    await invalidateDataset(`cup:bracket:${cupId}:${seasonId}`);
+    await invalidateFixtureReadModels(cupId, seasonId);
+    const action = existingFixtures.length > 0 ? "CUP_BRACKET_REDRAWN" : "CUP_BRACKET_GENERATED";
+    await createAuditLog(
+      req.user.id,
+      action,
+      "COMPETITION",
+      cupId,
+      void 0,
+      {
+        competitionId: cupId,
+        competitionName: cup.name,
+        drawSeed,
+        seedingPolicy: preview.seedingPolicy,
+        byePositions: preview.byeTeams.map((club) => club.position),
+        playInPositions: preview.playInTeams.map((club) => club.position),
+        replacedFixtures: existingFixtures.length,
+        generatedFixtures: preview.previewMatches.length,
+        timestamp: now
+      },
+      void 0,
+      req.user?.username || "admin",
+      `${existingFixtures.length > 0 ? "Redrew" : "Generated"} standings-seeded ${cup.name} bracket.`
+    );
+    res.json({
+      success: true,
+      generated: preview.previewMatches.length,
+      rounds: preview.totalRounds,
+      drawSeed,
+      mode: existingFixtures.length > 0 ? "REDRAW" : "CREATE",
+      message: `${cup.name} draw saved: positions ${cup.expectedTeams === 20 ? "1-12" : "1-14"} received byes; positions ${cup.expectedTeams === 20 ? "13-20" : "15-18"} entered the play-in.`
+    });
+  } catch (err) {
+    res.status(err?.statusCode || 400).json({ error: err?.message || "CUP_DRAW_CONFIRM_FAILED" });
+  }
+});
+adminCupDrawRouter.patch("/:cupId/bracket/fixture/:fixtureId", async (req, res) => {
+  const cupId = req.params.cupId;
+  const fixtureId = req.params.fixtureId;
+  const seasonId = String(req.body?.seasonId || "season-2026-27");
+  const cup = validateDomesticCupId(cupId);
+  const requestedHome = req.body?.homeClubId === void 0 ? void 0 : req.body.homeClubId || null;
+  const requestedAway = req.body?.awayClubId === void 0 ? void 0 : req.body.awayClubId || null;
+  try {
+    const db = getFirestoreDb();
+    const ref = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
+    const doc = await ref.get();
+    if (!doc.exists) {
+      res.status(404).json({ error: "Fixture not found." });
+      return;
+    }
+    const fixture = doc.data();
+    if (fixture.competitionId !== cupId) {
+      res.status(409).json({ error: "Fixture does not belong to this cup." });
+      return;
+    }
+    if (isProtectedFixture(fixture)) {
+      res.status(409).json({ error: "Manual pairing is locked after match activity starts." });
+      return;
+    }
+    const eligibleIds = new Set(SEED_CLUBS.filter((club) => club.leagueId === cup.leagueId).map((club) => club.id));
+    if (requestedHome && !eligibleIds.has(requestedHome)) {
+      res.status(400).json({ error: "Invalid home club for this cup." });
+      return;
+    }
+    if (requestedAway && !eligibleIds.has(requestedAway)) {
+      res.status(400).json({ error: "Invalid away club for this cup." });
+      return;
+    }
+    if (requestedHome && requestedAway && requestedHome === requestedAway) {
+      res.status(400).json({ error: "A club cannot play itself." });
+      return;
+    }
+    if (requestedHome !== void 0 && fixture.homeSourceFixtureId) {
+      res.status(409).json({ error: "Home slot is source-bound to a previous-round winner." });
+      return;
+    }
+    if (requestedAway !== void 0 && fixture.awaySourceFixtureId) {
+      res.status(409).json({ error: "Away slot is source-bound to a previous-round winner." });
+      return;
+    }
+    const roundSnap = await db.collection(COLLECTIONS.FIXTURES).where("competitionId", "==", cupId).where("matchday", "==", fixture.matchday).get();
+    const occupiedByOther = /* @__PURE__ */ new Set();
+    for (const roundDoc of roundSnap.docs) {
+      if (roundDoc.id === fixtureId) continue;
+      const row = roundDoc.data();
+      if (row.homeClubId) occupiedByOther.add(row.homeClubId);
+      if (row.awayClubId) occupiedByOther.add(row.awayClubId);
+    }
+    if (requestedHome && occupiedByOther.has(requestedHome) || requestedAway && occupiedByOther.has(requestedAway)) {
+      res.status(409).json({ error: "Selected club is already assigned to another match in this round." });
+      return;
+    }
+    const update = { updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
+    if (requestedHome !== void 0) update.homeClubId = requestedHome;
+    if (requestedAway !== void 0) update.awayClubId = requestedAway;
+    await ref.update(update);
+    await invalidateDataset(`cup:bracket:${cupId}:${seasonId}`);
+    await invalidateFixtureReadModels(cupId, seasonId);
+    await createAuditLog(
+      req.user.id,
+      "CUP_PAIRING_MANUAL_EDIT",
+      "FIXTURE",
+      fixtureId,
+      { homeClubId: fixture.homeClubId ?? null, awayClubId: fixture.awayClubId ?? null },
+      { homeClubId: update.homeClubId ?? fixture.homeClubId ?? null, awayClubId: update.awayClubId ?? fixture.awayClubId ?? null },
+      void 0,
+      req.user?.username || "admin",
+      `Manually edited ${cup.name} pairing ${fixtureId}.`
+    );
+    res.json({ success: true, fixtureId, ...update });
+  } catch (err) {
+    res.status(err?.statusCode || 400).json({ error: err?.message || "CUP_PAIRING_EDIT_FAILED" });
+  }
+});
+
+// src/server/routes/adminCupOps.routes.ts
+import { Router as Router12 } from "express";
+init_firestoreStore();
+init_domesticCupService();
+init_readModelStore();
+var adminCupOpsRouter = Router12();
+adminCupOpsRouter.use(requireAdmin);
+adminCupOpsRouter.get("/cups/:cupId/health", async (req, res) => {
+  try {
+    const health = await getDomesticCupBracketHealth(req.params.cupId);
+    res.json(health);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+adminCupOpsRouter.post("/cups/:cupId/reconcile", async (req, res) => {
+  try {
+    const result = await reconcileDomesticCupBracketSafe(req.params.cupId, {
+      adminUserId: req.user.id,
+      adminUsername: req.user?.username || "admin",
+      reason: req.body?.reason || "admin-bracket-health-reconcile"
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+adminCupOpsRouter.post("/cups/:cupId/round", async (req, res) => {
+  const roundNumber = Number(req.body?.roundNumber);
+  const action = req.body?.action;
+  if (!Number.isInteger(roundNumber) || !["OPEN", "LOCK"].includes(action)) {
+    res.status(400).json({ error: "roundNumber and action OPEN|LOCK are required." });
+    return;
+  }
+  try {
+    const result = await setDomesticCupRoundStateSafe(req.params.cupId, roundNumber, action, {
+      adminUserId: req.user.id,
+      adminUsername: req.user?.username || "admin"
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+adminCupOpsRouter.post("/cups/:cupId/round/advance", async (req, res) => {
+  try {
+    const result = await advanceDomesticCupRoundSafe(req.params.cupId, {
+      adminUserId: req.user.id,
+      adminUsername: req.user?.username || "admin"
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+adminCupOpsRouter.post("/results/:fixtureId/approve", async (req, res, next) => {
+  const { homeScore, awayScore, notes } = req.body || {};
+  if (!Number.isInteger(homeScore) || homeScore < 0 || !Number.isInteger(awayScore) || awayScore < 0) {
+    next();
+    return;
+  }
+  try {
+    const result = await adminApproveFixtureResultFirestore(req.user.id, req.params.fixtureId, homeScore, awayScore, notes);
+    const fixture = result?.fixture;
+    const competitionId = fixture?.competitionId || "";
+    if (competitionId && DOMESTIC_CUPS[competitionId] && fixture?.status === "CONFIRMED") {
+      await advanceDomesticCupWinnerSafe(req.params.fixtureId, {
+        adminUserId: req.user.id,
+        adminUsername: req.user?.username || "admin"
+      }).catch(async () => {
+        await reconcileDomesticCupSourceFixture(req.params.fixtureId, {
+          actorUserId: req.user.id,
+          actorUsername: req.user?.username || "admin",
+          reason: "admin-result-approved"
+        });
+      });
+    }
+    await refreshChangedFixtureReadModel(req.params.fixtureId).catch(() => invalidateFixtureReadModels(competitionId, fixture?.seasonId || "season-2026-27")).catch(() => {
+    });
+    res.json(result);
+  } catch (err) {
+    handleFirestoreError(res, err, `POST /api/admin/results/${req.params.fixtureId}/approve`);
+  }
+});
+adminCupOpsRouter.post("/fixtures/:id/reopen", async (req, res) => {
+  const fixtureId = req.params.id;
+  try {
+    const result = await reopenFixtureFirestore(req.user.id, fixtureId, req.body?.notes);
+    await reconcileDomesticCupSourceFixture(fixtureId, {
+      actorUserId: req.user.id,
+      actorUsername: req.user?.username || "admin",
+      reason: "fixture-reopened"
+    }).catch(() => {
+    });
+    res.json({ success: true, message: "Fixture has been reopened for submissions.", result });
+  } catch (err) {
+    handleFirestoreError(res, err, `POST /api/admin/fixtures/${fixtureId}/reopen`);
+  }
+});
+adminCupOpsRouter.post("/results/:fixtureId/reject", async (req, res) => {
+  const fixtureId = req.params.fixtureId;
+  try {
+    const result = await reopenFixtureFirestore(
+      req.user.id,
+      fixtureId,
+      req.body?.notes || "Rejected by tournament administrator"
+    );
+    await reconcileDomesticCupSourceFixture(fixtureId, {
+      actorUserId: req.user.id,
+      actorUsername: req.user?.username || "admin",
+      reason: "admin-result-rejected"
+    }).catch(() => {
+    });
+    res.json({ success: true, message: "Pending result rejected and match reopened for re-submission.", result });
+  } catch (err) {
+    handleFirestoreError(res, err, `POST /api/admin/results/${fixtureId}/reject`);
+  }
+});
+
+// src/server/routes/admin.routes.ts
+import { Router as Router13 } from "express";
 import { z as z3 } from "zod";
 init_adminService();
 init_firestoreStore();
@@ -16695,7 +17792,7 @@ init_smartNotificationSettingsService();
 init_circuitBreaker();
 init_db();
 init_readModelStore();
-var adminRouter = Router11();
+var adminRouter = Router13();
 adminRouter.use(requireAdmin);
 var smartNotificationSettingsSchema = z3.object({
   seasonId: z3.string().min(1).optional(),
@@ -17244,7 +18341,7 @@ adminRouter.post("/migrate-to-firestore", async (req, res) => {
 });
 adminRouter.get("/users", async (req, res) => {
   const page = req.query.page ? Math.max(1, parseInt(req.query.page, 10)) : 1;
-  const limit = req.query.limit ? Math.min(Math.max(1, parseInt(req.query.limit, 10)), 50) : 25;
+  const limit = req.query.limit ? Math.min(Math.max(1, parseInt(req.query.limit, 10)), 100) : 100;
   const cursor = req.query.cursor || void 0;
   const role = req.query.role || "ALL";
   const status = req.query.status || "ALL";
@@ -17918,9 +19015,9 @@ adminRouter.post("/telegram-notifications/process-queue", async (req, res) => {
 
 // src/server/routes/telegram.routes.ts
 init_telegramBotService();
-import { Router as Router12 } from "express";
+import { Router as Router14 } from "express";
 init_readModelStore();
-var telegramRouter = Router12();
+var telegramRouter = Router14();
 var recentWebhookUpdates = /* @__PURE__ */ new Map();
 async function claimTelegramUpdate(updateId) {
   const client = getUpstashClient();
@@ -18135,6 +19232,8 @@ function createApp() {
   app2.use("/api/me", notificationsReadResilientRouter);
   app2.use("/api/me", meRouter);
   app2.use("/api/users", usersRouter);
+  app2.use("/api/admin/cups", adminCupDrawRouter);
+  app2.use("/api/admin", adminCupOpsRouter);
   app2.use("/api/admin", adminRouter);
   app2.use("/api/telegram", telegramRouter);
   app2.use("/api/*", (req, res) => {

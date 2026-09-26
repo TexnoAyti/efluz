@@ -723,7 +723,7 @@ adminRouter.post('/migrate-to-firestore', async (req: Request, res: Response) =>
 
 adminRouter.get('/users', async (req: Request, res: Response) => {
   const page = req.query.page ? Math.max(1, parseInt(req.query.page as string, 10)) : 1;
-  const limit = req.query.limit ? Math.min(Math.max(1, parseInt(req.query.limit as string, 10)), 50) : 25;
+  const limit = req.query.limit ? Math.min(Math.max(1, parseInt(req.query.limit as string, 10)), 100) : 100;
   const cursor = (req.query.cursor as string) || undefined;
   const role = (req.query.role as string) || 'ALL';
   const status = (req.query.status as string) || 'ALL';
