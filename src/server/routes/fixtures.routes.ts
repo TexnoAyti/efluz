@@ -7,7 +7,9 @@ import {
   submitFixtureResultFirestore,
 } from '../firebase/firestoreStore';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
-import { invalidateFixtureReadModels, invalidateStandingsReadModels, refreshChangedFixtureReadModel } from '../readModel/readModelStore';
+import { invalidateFixtureReadModels, refreshChangedFixtureReadModel } from '../readModel/readModelStore';
+import { isDomesticCup, advanceDomesticCupWinnerSafe } from '../tournament/domesticCupService';
+import { reconcileDomesticCupSourceFixture } from '../tournament/domesticCupRoundOps';
 
 export const fixturesRouter = Router();
 export const fixturesResilientRouter = fixturesRouter;
@@ -41,7 +43,30 @@ fixturesRouter.post('/:id/result', requireAuth, validateBody(resultSubmissionSch
 
   try {
     const updatedFixture = await submitFixtureResultFirestore(userId, fixtureId, homeScore, awayScore, proofUrl);
-    await refreshChangedFixtureReadModel(fixtureId).catch(() => invalidateFixtureReadModels(updatedFixture.competitionId, updatedFixture.seasonId || 'season-2026-27')).catch(() => {});
+
+    // Domestic cups advance immediately when the dual-submission workflow reaches
+    // CONFIRMED. The advancement service is idempotent, so retries are safe.
+    if (updatedFixture.status === 'CONFIRMED' && isDomesticCup(updatedFixture.competitionId)) {
+      await advanceDomesticCupWinnerSafe(fixtureId, {
+        adminUserId: 'system-cup-progression',
+        adminUsername: 'system',
+      }).catch(async (err: any) => {
+        // Final fixtures intentionally have no target; any other mismatch is
+        // reconciled from source links without overwriting protected matches.
+        if (!String(err?.message || '').toLowerCase().includes('final')) {
+          await reconcileDomesticCupSourceFixture(fixtureId, {
+            actorUserId: 'system-cup-progression',
+            actorUsername: 'system',
+            reason: 'automatic-result-confirmation',
+          }).catch(() => {});
+        }
+      });
+    }
+
+    await refreshChangedFixtureReadModel(fixtureId)
+      .catch(() => invalidateFixtureReadModels(updatedFixture.competitionId, updatedFixture.seasonId || 'season-2026-27'))
+      .catch(() => {});
+
     res.json({
       success: true,
       message:
