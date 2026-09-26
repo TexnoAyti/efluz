@@ -7,6 +7,7 @@ import {
   FirestoreClubDoc,
 } from '../firebase/collections';
 import { createAuditLog } from '../services/adminService';
+import { notifySmartCupAdvancement, notifySmartCupChampion } from '../services/smartNotificationService';
 import {
   redisGetRaw,
   redisSetRaw,
@@ -1191,6 +1192,12 @@ export async function advanceDomesticCupWinnerSafe(
   } else if (r4Match) {
     const idx = parseInt(r4Match[1], 10);
     if (is16Teams) {
+      await notifySmartCupChampion({
+        competitionId: compId,
+        seasonId: fixture.seasonId || 'season-2026-27',
+        sourceFixtureId: fixtureId,
+        winnerClubId,
+      }).catch(() => {});
       return {
         success: true,
         advanced: false,
@@ -1200,6 +1207,12 @@ export async function advanceDomesticCupWinnerSafe(
     targetFixtureId = `fix-${compId}-r5-m0`;
     isHomeSlot = idx === 0;
   } else {
+    await notifySmartCupChampion({
+      competitionId: compId,
+      seasonId: fixture.seasonId || 'season-2026-27',
+      sourceFixtureId: fixtureId,
+      winnerClubId,
+    }).catch(() => {});
     return {
       success: true,
       advanced: false,
@@ -1336,6 +1349,15 @@ export async function advanceDomesticCupWinnerSafe(
   const cacheKey = `cup:bracket:${compId}:${fixture.seasonId || 'season-2026-27'}`;
   await invalidateDataset(cacheKey);
   await refreshChangedFixtureReadModel(targetFixtureId).catch(() => invalidateFixtureReadModels(compId, fixture.seasonId || 'season-2026-27'));
+  await notifySmartCupAdvancement({
+    competitionId: compId,
+    seasonId: fixture.seasonId || 'season-2026-27',
+    sourceFixtureId: fixtureId,
+    targetFixtureId,
+    winnerClubId,
+  }).catch((error: any) => {
+    console.warn('[SMART_NOTIFY] Cup advancement notification failed:', error?.message || error);
+  });
 
   // Write audit log
   await createAuditLog(

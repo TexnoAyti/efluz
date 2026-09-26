@@ -1080,6 +1080,24 @@ export const api = {
   // --------------------------------------------------------------------------
   // ADMIN TELEGRAM BOT NOTIFICATIONS
   // --------------------------------------------------------------------------
+  async getSmartNotificationSettings(seasonId = 'season-2026-27'): Promise<{ settings: any; defaults: any; source: string }> {
+    return request(`/api/admin/telegram/smart-settings?seasonId=${encodeURIComponent(seasonId)}`, {
+      cacheTtlMs: 5000,
+    });
+  },
+
+  async updateSmartNotificationSettings(payload: {
+    seasonId?: string;
+    enabled: boolean;
+    events: Record<string, boolean>;
+  }): Promise<{ success: boolean; settings: any }> {
+    invalidateClientCache('/api/admin/telegram/smart-settings');
+    return request('/api/admin/telegram/smart-settings', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  },
+
   async getNotificationRecipients(params?: { audience?: string; leagueId?: string; seasonId?: string }): Promise<{
     total: number;
     recipients: Array<{

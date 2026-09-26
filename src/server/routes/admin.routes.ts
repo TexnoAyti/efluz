@@ -72,9 +72,15 @@ import {
   getBroadcastDetails,
   syncRecipientDirectory,
 } from '../services/telegramNotificationQueue';
+import { notifySmartMatchdayOpened } from '../services/smartNotificationService';
 import { getFirebaseStatus, getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS } from '../firebase/collections';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
+import {
+  getSmartNotificationSettings,
+  updateSmartNotificationSettings,
+  DEFAULT_SMART_NOTIFICATION_EVENTS,
+} from '../services/smartNotificationSettingsService';
 import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
 import { queryAll, queryGet } from '../db/index';
 import {
@@ -94,6 +100,48 @@ export const adminRouter = Router();
 
 // Protect ALL admin routes with server-side requireAdmin
 adminRouter.use(requireAdmin);
+
+const smartNotificationSettingsSchema = z.object({
+  seasonId: z.string().min(1).optional(),
+  enabled: z.boolean(),
+  events: z.object({
+    resultVerification: z.boolean(),
+    resultConfirmed: z.boolean(),
+    resultDisputed: z.boolean(),
+    nextOpponent: z.boolean(),
+    matchdayOpened: z.boolean(),
+    cupProgress: z.boolean(),
+    qualification: z.boolean(),
+    europeanOutcome: z.boolean(),
+  }),
+});
+
+adminRouter.get('/telegram/smart-settings', async (req: Request, res: Response) => {
+  const seasonId = (req.query.seasonId as string) || 'season-2026-27';
+  try {
+    const settings = await getSmartNotificationSettings(seasonId);
+    res.json({ settings, defaults: DEFAULT_SMART_NOTIFICATION_EVENTS, source: 'redis-or-defaults' });
+  } catch (err: any) {
+    res.status(503).json({ error: err?.message || 'SMART_NOTIFICATION_SETTINGS_UNAVAILABLE' });
+  }
+});
+
+adminRouter.put('/telegram/smart-settings', async (req: Request, res: Response) => {
+  const parsed = smartNotificationSettingsSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'INVALID_SMART_NOTIFICATION_SETTINGS', details: parsed.error.flatten() });
+    return;
+  }
+  try {
+    const settings = await updateSmartNotificationSettings({
+      ...parsed.data,
+      updatedBy: req.user!.id,
+    });
+    res.json({ success: true, settings });
+  } catch (err: any) {
+    res.status(503).json({ error: err?.message || 'SMART_NOTIFICATION_SETTINGS_SAVE_FAILED' });
+  }
+});
 
 function getFallbackAdminOverview(seasonId: string) {
   const status = getFirebaseStatus();
@@ -1027,7 +1075,23 @@ adminRouter.post('/competitions/:id/matchday/override', async (req: Request, res
       seasonId: typeof seasonId === 'string' ? seasonId : undefined,
       adminUserId: req.user?.id,
     });
-    res.json(result);
+    let smartNotificationsQueued = 0;
+    if (overrideStatus === 'FORCE_OPEN') {
+      try {
+        const resolvedMatchday = Number((result as any)?.currentMatchday ?? matchday ?? 0);
+        if (resolvedMatchday > 0) {
+          smartNotificationsQueued = await notifySmartMatchdayOpened({
+            competitionId,
+            seasonId: typeof seasonId === 'string' ? seasonId : 'season-2026-27',
+            matchday: resolvedMatchday,
+            deadlineAt: (result as any)?.nextMatchdayOpenAt || null,
+          });
+        }
+      } catch (notificationError: any) {
+        console.warn('[SMART_NOTIFY] FORCE_OPEN notification failed:', notificationError?.message || notificationError);
+      }
+    }
+    res.json({ ...result, smartNotificationsQueued });
   } catch (err: any) {
     handleFirestoreError(res, err, `POST /api/admin/competitions/${competitionId}/matchday/override`);
   }
@@ -1035,11 +1099,25 @@ adminRouter.post('/competitions/:id/matchday/override', async (req: Request, res
 
 adminRouter.post('/competitions/:id/matchday/advance', async (req: Request, res: Response) => {
   const competitionId = req.params.id;
-  const { durationHours } = req.body;
+  const { durationHours, seasonId } = req.body;
 
   try {
     const result = await advanceCompetitionMatchdayFirestore(competitionId, { durationHours });
-    res.json(result);
+    let smartNotificationsQueued = 0;
+    try {
+      const resolvedMatchday = Number((result as any)?.currentMatchday || 0);
+      if (resolvedMatchday > 0) {
+        smartNotificationsQueued = await notifySmartMatchdayOpened({
+          competitionId,
+          seasonId: typeof seasonId === 'string' ? seasonId : 'season-2026-27',
+          matchday: resolvedMatchday,
+          deadlineAt: (result as any)?.nextMatchdayOpenAt || null,
+        });
+      }
+    } catch (notificationError: any) {
+      console.warn('[SMART_NOTIFY] Matchday advance notification failed:', notificationError?.message || notificationError);
+    }
+    res.json({ ...result, smartNotificationsQueued });
   } catch (err: any) {
     handleFirestoreError(res, err, `POST /api/admin/competitions/${competitionId}/matchday/advance`);
   }
@@ -1056,7 +1134,18 @@ adminRouter.post('/competitions/:id/matchday/open-now', async (req: Request, res
       typeof matchday === 'number' ? matchday : undefined,
       typeof seasonId === 'string' ? seasonId : undefined
     );
-    res.json(result);
+    let smartNotificationsQueued = 0;
+    try {
+      smartNotificationsQueued = await notifySmartMatchdayOpened({
+        competitionId,
+        seasonId: typeof seasonId === 'string' ? seasonId : 'season-2026-27',
+        matchday: Number(result.currentMatchday),
+        deadlineAt: result.nextMatchdayOpenAt || null,
+      });
+    } catch (notificationError: any) {
+      console.warn('[SMART_NOTIFY] Matchday open notification failed:', notificationError?.message || notificationError);
+    }
+    res.json({ ...result, smartNotificationsQueued });
   } catch (err: any) {
     handleFirestoreError(res, err, `POST /api/admin/competitions/${competitionId}/matchday/open-now`);
   }
