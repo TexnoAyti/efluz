@@ -139,6 +139,8 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
     const owner = isHome ? (fixture.homeOwner || fixture.homeUser) : (fixture.awayOwner || fixture.awayUser);
     const ownerId = isHome ? fixture.homeOwnerId : fixture.awayOwnerId;
     const sourceFixtureId = isHome ? (fixture as any).homeSourceFixtureId : (fixture as any).awaySourceFixtureId;
+    const customSourceLabel = isHome ? (fixture as any).homeSourceLabel : (fixture as any).awaySourceLabel;
+    const seedPosition = isHome ? (fixture as any).homeSeedPosition : (fixture as any).awaySeedPosition;
     const tbd = !clubId || clubId === 'TBD' || club?.name === 'TBD';
     const winner = Boolean(fixture.winnerClubId && fixture.winnerClubId === clubId);
     const isMe = Boolean((currentClubId && currentClubId === clubId) || (userId && userId === ownerId));
@@ -165,7 +167,7 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <span className={`truncate text-xs ${winner ? 'font-black text-emerald-300' : tbd ? 'font-bold italic text-slate-500' : 'font-black text-slate-100'}`}>
-              {tbd ? sourceLabel(sourceFixtureId) : club?.name || clubId}
+              {tbd ? (customSourceLabel || sourceLabel(sourceFixtureId)) : `${seedPosition ? `#${seedPosition} ` : ''}${club?.name || clubId}`}
             </span>
             {isMe && <span className="rounded bg-amber-400/15 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wide text-amber-300">Siz</span>}
           </div>
@@ -199,14 +201,15 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
       (currentClubId && [fixture.homeClubId, fixture.awayClubId].includes(currentClubId)) ||
       (userId && [fixture.homeOwnerId, fixture.awayOwnerId].includes(userId))
     );
-    const statusLabel = fixture.status === 'CONFIRMED' ? 'Finished' : fixture.status === 'DISPUTED' ? 'Disputed' : 'Open';
-    const canOpen = Boolean(onSelectFixture);
+    const isProjected = Boolean((fixture as any).isProjected);
+    const statusLabel = isProjected ? 'Projected' : fixture.status === 'CONFIRMED' ? 'Finished' : fixture.status === 'DISPUTED' ? 'Disputed' : 'Open';
+    const canOpen = Boolean(onSelectFixture && !isProjected);
 
     return (
       <button
         key={fixture.id}
         type="button"
-        onClick={() => onSelectFixture?.(fixture)}
+        onClick={() => { if (!isProjected) onSelectFixture?.(fixture); }}
         className={`group relative w-full overflow-hidden rounded-2xl border p-2.5 text-left shadow-xl transition duration-200 ${featured ? 'min-h-[158px] border-amber-300/30 bg-gradient-to-br from-amber-500/[0.10] via-slate-950 to-slate-950' : 'border-white/[0.08] bg-[#0a111e]/95'} ${isMyMatch ? 'ring-1 ring-amber-300/45 shadow-amber-500/10' : ''} ${canOpen ? 'hover:-translate-y-0.5 hover:border-white/[0.18]' : ''}`}
       >
         {featured && <div className="pointer-events-none absolute right-0 top-0 h-20 w-20 rounded-bl-full bg-amber-400/[0.05]" />}
@@ -215,7 +218,7 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
             <span className={`text-[9px] font-black uppercase tracking-[0.16em] ${round.accent}`}>{round.shortLabel}</span>
             <span className="text-[9px] font-bold text-slate-600">M{index + 1}</span>
           </div>
-          <span className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[8px] font-black uppercase tracking-wide ${fixture.status === 'CONFIRMED' ? 'border-emerald-400/20 bg-emerald-400/[0.08] text-emerald-300' : fixture.status === 'DISPUTED' ? 'border-rose-400/20 bg-rose-400/[0.08] text-rose-300' : 'border-blue-400/20 bg-blue-400/[0.07] text-blue-300'}`}>
+          <span className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[8px] font-black uppercase tracking-wide ${isProjected ? 'border-violet-400/20 bg-violet-400/[0.08] text-violet-300' : fixture.status === 'CONFIRMED' ? 'border-emerald-400/20 bg-emerald-400/[0.08] text-emerald-300' : fixture.status === 'DISPUTED' ? 'border-rose-400/20 bg-rose-400/[0.08] text-rose-300' : 'border-blue-400/20 bg-blue-400/[0.07] text-blue-300'}`}>
             {fixture.status === 'CONFIRMED' ? <CheckCircle2 className="h-2.5 w-2.5" /> : <Radio className="h-2.5 w-2.5" />}
             {statusLabel}
           </span>
