@@ -24,6 +24,7 @@ import { fixturesRouter } from './routes/fixtures.routes';
 import { notificationsReadResilientRouter } from './routes/notificationsReadResilient.routes';
 import { meRouter } from './routes/me.routes';
 import { usersRouter } from './routes/users.routes';
+import { seasonInsightsRouter } from './routes/seasonInsights.routes';
 import { adminCupDrawRouter } from './routes/adminCupDraw.routes';
 import { adminCupOpsRouter } from './routes/adminCupOps.routes';
 import { adminRouter } from './routes/admin.routes';
@@ -193,6 +194,7 @@ export function createApp() {
   app.use('/api/me', notificationsReadResilientRouter);
   app.use('/api/me', meRouter);
   app.use('/api/users', usersRouter);
+  app.use('/api/insights', seasonInsightsRouter);
   // Seeded draw routes are mounted first so Preview/Generate use the safe
   // standings-aware implementation while the legacy admin cup endpoints remain
   // available for details and winner advancement.
