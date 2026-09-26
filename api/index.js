@@ -487,6 +487,190 @@ var init_collections = __esm({
   }
 });
 
+// src/server/services/telegramBotService.ts
+async function verifyTelegramGroupMembership(telegramUserId, forceRefresh) {
+  const userIdStr = String(telegramUserId).trim();
+  if (!userIdStr) {
+    return { isMember: false, status: "empty_user_id" };
+  }
+  if (!forceRefresh) {
+    const cached = membershipCache.get(userIdStr);
+    if (cached) {
+      const ttl = cached.isMember ? POSITIVE_MEMBERSHIP_CACHE_TTL_MS : NEGATIVE_MEMBERSHIP_CACHE_TTL_MS;
+      if (Date.now() - cached.timestamp < ttl) {
+        return { isMember: cached.isMember, status: cached.status, cached: true };
+      }
+    }
+  }
+  const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
+  const groupUsername = (process.env.TELEGRAM_GROUP_USERNAME || "@efleagueuz").trim();
+  if (!botToken) {
+    const isDev = process.env.ENABLE_DEV_AUTH === "true" || process.env.NODE_ENV !== "production";
+    if (isDev) {
+      console.log(`[TELEGRAM MEMBERSHIP] No TELEGRAM_BOT_TOKEN set in dev environment. Allowing user ${userIdStr} in sandbox.`);
+      return { isMember: true, status: "dev_mock_allowed" };
+    }
+    console.warn(`[TELEGRAM MEMBERSHIP] TELEGRAM_BOT_TOKEN is missing in production.`);
+    return { isMember: true, status: "fail_open_no_token" };
+  }
+  const url = `https://api.telegram.org/bot${botToken}/getChatMember?chat_id=${encodeURIComponent(groupUsername)}&user_id=${encodeURIComponent(userIdStr)}`;
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6e3);
+    const response = await fetch(url, {
+      method: "GET",
+      headers: { "Accept": "application/json" },
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    const data = await response.json();
+    if (data && data.ok && data.result) {
+      const status = data.result.status;
+      const isRestrictedMember = status === "restricted" && Boolean(data.result.is_member);
+      const isMember = ["creator", "administrator", "member"].includes(status) || isRestrictedMember;
+      membershipCache.set(userIdStr, {
+        isMember,
+        status: status || "unknown",
+        timestamp: Date.now()
+      });
+      return { isMember, status };
+    }
+    const description = (data?.description || "").toLowerCase();
+    if (description.includes("user not found") || description.includes("participant_id_invalid") || description.includes("not a member") || description.includes("chat not found")) {
+      membershipCache.set(userIdStr, {
+        isMember: false,
+        status: "left_or_not_found",
+        timestamp: Date.now()
+      });
+      return { isMember: false, status: "left_or_not_found" };
+    }
+    console.warn(`[TELEGRAM MEMBERSHIP CHECK] Non-definitive Telegram response for user ${userIdStr}:`, data);
+    return { isMember: true, status: "fail_open_transient_error" };
+  } catch (err) {
+    console.warn(`[TELEGRAM MEMBERSHIP CHECK] Network failure querying Telegram for user ${userIdStr}: ${err.message}`);
+    return { isMember: true, status: "fail_open_network_timeout" };
+  }
+}
+async function sendTelegramMessage(chatId, text, options = {}) {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
+  if (!botToken) {
+    return { ok: false, error: "TELEGRAM_BOT_TOKEN is not configured" };
+  }
+  const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+  try {
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(1e4),
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        parse_mode: options.parse_mode || "HTML",
+        reply_markup: options.reply_markup
+      })
+    });
+    const data = await res.json();
+    return { ...data, error: data.description || data.error };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+async function sendTelegramSticker(chatId, stickerFileId) {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
+  if (!botToken) {
+    return { ok: false, error: "TELEGRAM_BOT_TOKEN is not configured" };
+  }
+  const url = `https://api.telegram.org/bot${botToken}/sendSticker`;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        sticker: stickerFileId
+      })
+    });
+    const data = await res.json();
+    return data;
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+async function handleTelegramStart(chatId, fromUser) {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
+  if (!botToken) {
+    console.warn("[TELEGRAM BOT /start] Missing TELEGRAM_BOT_TOKEN");
+    return { ok: false, messageSent: false, error: "TELEGRAM_BOT_TOKEN is missing" };
+  }
+  const stickerFileId = process.env.TELEGRAM_WELCOME_STICKER_FILE_ID?.trim();
+  let stickerSent = false;
+  if (stickerFileId) {
+    try {
+      const stickerRes = await sendTelegramSticker(chatId, stickerFileId);
+      stickerSent = Boolean(stickerRes && stickerRes.ok);
+    } catch (err) {
+      console.warn("[TELEGRAM BOT] Failed to send welcome sticker:", err.message);
+    }
+  }
+  const rawFirstName = fromUser?.first_name || "Foydalanuvchi";
+  const cleanFirstName = rawFirstName.replace(/[<>]/g, "");
+  const webAppUrl = process.env.TELEGRAM_WEBAPP_URL?.trim() || process.env.APP_URL?.trim() || "https://efluz.vercel.app";
+  const groupUsername = (process.env.TELEGRAM_GROUP_USERNAME || "@efleagueuz").trim();
+  const groupUrl = groupUsername.startsWith("@") ? `https://t.me/${groupUsername.slice(1)}` : `https://t.me/${groupUsername}`;
+  const welcomeText = `Assalomu alaykum, <b>${cleanFirstName}</b>!
+
+\u26BD <b>EFL UZ</b> \u2014 eFootball O\u2018zbekiston Rasmiy Ligasi platformasiga xush kelibsiz!
+
+\u{1F3C6} <b>Top 5 Yevropa Ligalari:</b>
+\u2022 \u{1F1EC}\u{1F1E7} Premier League
+\u2022 \u{1F1EA}\u{1F1F8} La Liga
+\u2022 \u{1F1EE}\u{1F1F9} Serie A
+\u2022 \u{1F1E9}\u{1F1EA} Bundesliga
+\u2022 \u{1F1EB}\u{1F1F7} Ligue 1
+
+\u2694\uFE0F <b>Asosiy Imkoniyatlar:</b>
+\u2022 Sevimli klubingizni tanlang va boshqaring
+\u2022 Real-vaqt matchmarkaz va eFootball bahslari
+\u2022 Ikki tomonlama natija tasdiqlash va hakamlik
+\u2022 UEFA Chempionlar Ligasi saralash tizimi
+
+Quyidagi tugma orqali ilovani oching va o\u2018z klubingizni band qiling!`;
+  const replyMarkup = {
+    inline_keyboard: [
+      [
+        {
+          text: "\u26BD Ilovani ochish (EFL UZ)",
+          web_app: { url: webAppUrl }
+        }
+      ],
+      [
+        {
+          text: `\u{1F4E2} Rasmiy guruh (${groupUsername})`,
+          url: groupUrl
+        }
+      ]
+    ]
+  };
+  const msgRes = await sendTelegramMessage(chatId, welcomeText, {
+    parse_mode: "HTML",
+    reply_markup: replyMarkup
+  });
+  return {
+    ok: msgRes.ok,
+    stickerSent,
+    messageSent: msgRes.ok,
+    error: msgRes.error
+  };
+}
+var POSITIVE_MEMBERSHIP_CACHE_TTL_MS, NEGATIVE_MEMBERSHIP_CACHE_TTL_MS, membershipCache;
+var init_telegramBotService = __esm({
+  "src/server/services/telegramBotService.ts"() {
+    POSITIVE_MEMBERSHIP_CACHE_TTL_MS = 5 * 60 * 1e3;
+    NEGATIVE_MEMBERSHIP_CACHE_TTL_MS = 20 * 1e3;
+    membershipCache = /* @__PURE__ */ new Map();
+  }
+});
+
 // src/server/db/migrateFixtures.ts
 function migrateFixturesTableIfNeeded(db) {
   const ddl = db.exec("SELECT sql FROM sqlite_master WHERE type='table' AND name='fixtures'")[0]?.values[0]?.[0];
@@ -2327,6 +2511,249 @@ var init_notificationService = __esm({
   }
 });
 
+// src/server/services/smartNotificationService.ts
+import crypto from "crypto";
+function escapeHtml(value) {
+  return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function contextLine(fixture) {
+  const competition = escapeHtml(fixture.competitionName || fixture.competitionId || "EFL UZ");
+  const round = fixture.roundName ? escapeHtml(fixture.roundName) : `Matchday ${Number(fixture.matchday || 0)}`;
+  return `${competition} \u2022 ${round}`;
+}
+function formatUtcDeadline(value) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return escapeHtml(value);
+  return `${parsed.toISOString().slice(0, 16).replace("T", " ")} UTC`;
+}
+function ownerId(fixture, side) {
+  return side === "home" ? fixture.homeOwnerId || fixture.homeOwner?.userId : fixture.awayOwnerId || fixture.awayOwner?.userId;
+}
+function clubName(fixture, side) {
+  return side === "home" ? fixture.homeClub?.name || fixture.homeClubId || "Home" : fixture.awayClub?.name || fixture.awayClubId || "Away";
+}
+async function getCompetitionFixtureSnapshot(competitionId, seasonId) {
+  const key = ReadModelKeys.competitionFixtures(competitionId, seasonId);
+  const snapshot = await redisGetFresh(key) || await redisGetLkg(key);
+  return Array.isArray(snapshot?.data) ? snapshot.data : [];
+}
+async function getCachedRecipient(userId, seasonId) {
+  const client = getUpstashClient();
+  if (!client) return null;
+  try {
+    const entries = await client.get(`${RECIPIENT_DIR_KEY}:${seasonId}`);
+    if (!Array.isArray(entries) || entries.length === 0) return null;
+    return entries.find((entry) => entry.userId === userId) || null;
+  } catch (error) {
+    console.warn("[SMART_NOTIFY] Recipient directory read failed:", error?.message || error);
+    return null;
+  }
+}
+async function enqueueSmartTelegramNotification(params) {
+  const client = getUpstashClient();
+  if (!client) {
+    console.warn("[SMART_NOTIFY] Redis unavailable; notification skipped without affecting mutation");
+    return false;
+  }
+  const recipient = await getCachedRecipient(params.userId, params.seasonId);
+  if (!recipient?.messageable || !recipient.telegramId) {
+    console.info("[SMART_NOTIFY] Recipient not messageable or directory not warmed", {
+      userId: params.userId,
+      seasonId: params.seasonId
+    });
+    return false;
+  }
+  const digest = crypto.createHash("sha256").update(`${params.eventId}:${params.userId}`).digest("hex");
+  const broadcastId = `smart-${digest}`;
+  const jobId = `job-${broadcastId}-${params.userId}`;
+  const dedupeKey = `${SMART_DEDUPE_PREFIX}:${digest}`;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const record = {
+    id: broadcastId,
+    seasonId: params.seasonId,
+    title: params.title,
+    body: params.body,
+    type: "CUSTOM_ALERT",
+    targetAudience: "SELECTED_RECIPIENTS",
+    createdById: "system:smart-notifications",
+    createdByUsername: "EFL UZ",
+    createdAt: now,
+    status: "QUEUED",
+    metrics: { totalRecipients: 1, sentCount: 0, failedCount: 0, skippedCount: 0 },
+    recipients: [{
+      userId: recipient.userId,
+      username: recipient.username || "player",
+      displayName: recipient.displayName || recipient.username || "EFL Player",
+      status: "PENDING",
+      retryCount: 0
+    }]
+  };
+  const job = {
+    jobId,
+    broadcastId,
+    userId: recipient.userId,
+    username: recipient.username || "player",
+    displayName: recipient.displayName || recipient.username || "EFL Player",
+    telegramId: recipient.telegramId,
+    title: params.title,
+    body: params.body,
+    type: "CUSTOM_ALERT",
+    status: "QUEUED",
+    retryCount: 0,
+    maxRetries: 3,
+    createdAt: now,
+    availableAt: Date.now()
+  };
+  try {
+    const queued = await client.eval(`
+      local accepted = redis.call('SET', KEYS[1], '1', 'NX', 'EX', ARGV[1])
+      if not accepted then return 0 end
+      redis.call('HSET', KEYS[2], ARGV[2], ARGV[3])
+      redis.call('RPUSH', KEYS[3], ARGV[4])
+      return 1
+    `, [dedupeKey, BROADCASTS_KEY, QUEUE_KEY], [
+      SMART_DEDUPE_TTL_SECONDS,
+      broadcastId,
+      JSON.stringify(record),
+      JSON.stringify(job)
+    ]);
+    if (Number(queued) !== 1) return false;
+    scheduleNotificationQueueDrain();
+    console.info("[SMART_NOTIFY_QUEUED]", JSON.stringify({
+      eventId: params.eventId,
+      userId: params.userId,
+      broadcastId
+    }));
+    return true;
+  } catch (error) {
+    console.warn("[SMART_NOTIFY] Queue write failed; mutation remains successful:", error?.message || error);
+    return false;
+  }
+}
+async function notifySmartMatchdayOpened(params) {
+  const fixtures = await getCompetitionFixtureSnapshot(params.competitionId, params.seasonId);
+  const matchdayFixtures = fixtures.filter((fixture) => Number(fixture.matchday) === Number(params.matchday));
+  if (matchdayFixtures.length === 0) return 0;
+  const deadline = formatUtcDeadline(params.deadlineAt);
+  const tasks = [];
+  for (const fixture of matchdayFixtures) {
+    const homeUserId = ownerId(fixture, "home");
+    const awayUserId = ownerId(fixture, "away");
+    const context = contextLine(fixture);
+    if (homeUserId) {
+      const opponent = escapeHtml(clubName(fixture, "away"));
+      tasks.push(enqueueSmartTelegramNotification({
+        userId: homeUserId,
+        seasonId: params.seasonId,
+        eventId: `matchday-open:${params.competitionId}:${params.matchday}:${fixture.id}:${params.deadlineAt || ""}`,
+        title: "\u{1F680} Matchday ochildi",
+        body: `${context}
+
+Sizning raqibingiz: <b>${opponent}</b>${deadline ? `
+\u23F3 Deadline: <b>${deadline}</b>` : ""}
+
+O\u2018yinni o\u2018tkazing va natijani EFL UZ orqali yuboring.`
+      }));
+    }
+    if (awayUserId) {
+      const opponent = escapeHtml(clubName(fixture, "home"));
+      tasks.push(enqueueSmartTelegramNotification({
+        userId: awayUserId,
+        seasonId: params.seasonId,
+        eventId: `matchday-open:${params.competitionId}:${params.matchday}:${fixture.id}:${params.deadlineAt || ""}`,
+        title: "\u{1F680} Matchday ochildi",
+        body: `${context}
+
+Sizning raqibingiz: <b>${opponent}</b>${deadline ? `
+\u23F3 Deadline: <b>${deadline}</b>` : ""}
+
+O\u2018yinni o\u2018tkazing va natijani EFL UZ orqali yuboring.`
+      }));
+    }
+  }
+  const results = await Promise.allSettled(tasks);
+  return results.filter((result) => result.status === "fulfilled" && result.value).length;
+}
+async function getCachedRecipientByClubId(clubId, seasonId) {
+  const client = getUpstashClient();
+  if (!client) return null;
+  try {
+    const entries = await client.get(`${RECIPIENT_DIR_KEY}:${seasonId}`);
+    if (!Array.isArray(entries) || entries.length === 0) return null;
+    return entries.find((entry) => entry.clubId === clubId) || null;
+  } catch (error) {
+    console.warn("[SMART_NOTIFY] Club recipient lookup failed:", error?.message || error);
+    return null;
+  }
+}
+async function notifySmartCupAdvancement(params) {
+  const recipient = await getCachedRecipientByClubId(params.winnerClubId, params.seasonId);
+  if (!recipient) return false;
+  const fixtures = await getCompetitionFixtureSnapshot(params.competitionId, params.seasonId);
+  const target = fixtures.find((fixture) => fixture.id === params.targetFixtureId);
+  const isHome = target?.homeClubId === params.winnerClubId;
+  const opponent = target ? escapeHtml(clubName(target, isHome ? "away" : "home")) : "TBD";
+  const round = target?.roundName ? escapeHtml(target.roundName) : "Keyingi bosqich";
+  return enqueueSmartTelegramNotification({
+    userId: recipient.userId,
+    seasonId: params.seasonId,
+    eventId: `cup-advance:${params.sourceFixtureId}:${params.targetFixtureId}:${params.winnerClubId}`,
+    title: "\u{1F3C6} Keyingi bosqichga o\u2018tdingiz",
+    body: `<b>${round}</b>
+
+Keyingi raqib: <b>${opponent}</b>
+
+Bracket yangilandi. Tafsilotlar EFL UZ ilovasida.`
+  });
+}
+async function notifySmartCupChampion(params) {
+  const recipient = await getCachedRecipientByClubId(params.winnerClubId, params.seasonId);
+  if (!recipient) return false;
+  return enqueueSmartTelegramNotification({
+    userId: recipient.userId,
+    seasonId: params.seasonId,
+    eventId: `cup-champion:${params.competitionId}:${params.sourceFixtureId}:${params.winnerClubId}`,
+    title: "\u{1F451} Chempion!",
+    body: `<b>${escapeHtml(params.competitionId)}</b>
+
+Tabriklaymiz \u2014 kubok finalida g\u2018alaba qozondingiz va chempion bo\u2018ldingiz!`
+  });
+}
+async function notifySmartEuropeanZones(params) {
+  const tasks = [];
+  for (const row of params.rows) {
+    const recipient = await getCachedRecipientByClubId(row.clubId, params.seasonId);
+    if (!recipient) continue;
+    const title = row.zone === "DIRECT_R16" ? "\u{1F31F} To\u2018g\u2018ridan-to\u2018g\u2018ri yo\u2018llanma" : row.zone === "KNOCKOUT_PLAYOFF" ? "\u2694\uFE0F Play-off yo\u2018llanmasi" : "\u{1F4CB} Liga bosqichi yakunlandi";
+    tasks.push(enqueueSmartTelegramNotification({
+      userId: recipient.userId,
+      seasonId: params.seasonId,
+      eventId: `european-zone:${params.competitionId}:${row.clubId}:${row.zone}:${row.position}`,
+      title,
+      body: `<b>${escapeHtml(row.clubName)}</b> \u2022 #${row.position}
+
+${escapeHtml(row.zoneLabel)}
+
+Yevrokubok holatingiz EFL UZ ilovasida yangilandi.`
+    }));
+  }
+  const results = await Promise.allSettled(tasks);
+  return results.filter((result) => result.status === "fulfilled" && result.value).length;
+}
+var BROADCASTS_KEY, QUEUE_KEY, RECIPIENT_DIR_KEY, SMART_DEDUPE_PREFIX, SMART_DEDUPE_TTL_SECONDS;
+var init_smartNotificationService = __esm({
+  "src/server/services/smartNotificationService.ts"() {
+    init_readModelStore();
+    init_telegramNotificationQueue();
+    BROADCASTS_KEY = `${KEY_PREFIX}:telegram:broadcasts`;
+    QUEUE_KEY = `${KEY_PREFIX}:telegram:queue`;
+    RECIPIENT_DIR_KEY = `${KEY_PREFIX}:private:recipient-directory`;
+    SMART_DEDUPE_PREFIX = `${KEY_PREFIX}:telegram:smart:dedupe`;
+    SMART_DEDUPE_TTL_SECONDS = 7 * 24 * 60 * 60;
+  }
+});
+
 // src/server/tournament/standingsProjection.ts
 function projectStandings(clubs, fixtures, config = {}) {
   const win = Number(config.pointsForWin ?? 3), draw = Number(config.pointsForDraw ?? 1), loss = Number(config.pointsForLoss ?? 0);
@@ -2414,11 +2841,11 @@ __export(qualificationEngine_exports, {
   rebuildEuropeanStandings: () => rebuildEuropeanStandings,
   saveQualificationPreviewToken: () => saveQualificationPreviewToken
 });
-import crypto from "crypto";
+import crypto2 from "crypto";
 function fingerprintSnapshots(snapshots) {
   const canonical = (value) => Array.isArray(value) ? value.map(canonical) : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().map((k) => [k, canonical(value[k])])) : value;
   const rows = snapshots.map((s) => s.docs.map((d) => ({ id: d.id, data: d.data() })).sort((a, b) => a.id.localeCompare(b.id)));
-  return crypto.createHash("sha256").update(JSON.stringify(canonical(rows))).digest("hex");
+  return crypto2.createHash("sha256").update(JSON.stringify(canonical(rows))).digest("hex");
 }
 async function saveQualificationPreviewToken(token, preview) {
   const key = `${PREVIEW_TOKEN_REDIS_PREFIX}${token}`;
@@ -2615,7 +3042,7 @@ async function previewEuropeanQualificationSync(seasonId = "season-2026-27", mod
       return { clubId: p.clubId, clubName: club?.name || p.clubId, previousReason: p.qualificationReason };
     })
   };
-  const previewToken = `prev-qual-${Date.now()}-${crypto.randomBytes(6).toString("hex")}`;
+  const previewToken = `prev-qual-${Date.now()}-${crypto2.randomBytes(6).toString("hex")}`;
   const expiresAt = new Date(now.getTime() + 15 * 60 * 1e3).toISOString();
   if (projectedUcl.length !== uclTotal || projectedUel.length !== uelTotal) {
     canApply = false;
@@ -2762,11 +3189,29 @@ async function applyEuropeanQualificationSync(params) {
     await invalidateDataset(ReadModelKeys.competitionFixtures(compId, preview.seasonId));
     await invalidateDataset(`european:standings:${compId}:${preview.seasonId}`);
   }
+  if (preview.mode === "final") {
+    for (const q of preview.projectedQualifications) {
+      if (!q.ownerUserId) continue;
+      notificationsToSend.push({
+        userId: q.ownerUserId,
+        title: `\u{1F3C6} ${q.targetCompetitionName} yo\u2018llanmasi`,
+        message: `${q.clubName} ${q.targetCompetitionName} turniriga yo\u2018llanma oldi. ${q.reason}`
+      });
+    }
+  }
   await Promise.all(
-    notificationsToSend.map(
-      (n) => createNotification(n.userId, "QUALIFICATION_CONFIRMED", n.title, n.message).catch(() => {
-      })
-    )
+    notificationsToSend.map(async (n) => {
+      await Promise.allSettled([
+        createNotification(n.userId, "QUALIFICATION_CONFIRMED", n.title, n.message),
+        enqueueSmartTelegramNotification({
+          userId: n.userId,
+          seasonId: preview.seasonId,
+          eventId: `qualification:${preview.previewToken}:${n.userId}:${n.title}`,
+          title: n.title,
+          body: n.message
+        })
+      ]);
+    })
   );
   await createAuditLog(
     params.adminUserId,
@@ -2967,6 +3412,12 @@ async function rebuildEuropeanStandings(competitionId, seasonId = "season-2026-2
     },
     86400
   );
+  const matchesPerTeam = Number(format?.matchesPerTeam);
+  if (Number.isInteger(matchesPerTeam) && matchesPerTeam > 0 && rows.length > 0 && rows.every((row) => row.played >= matchesPerTeam)) {
+    await notifySmartEuropeanZones({ competitionId, seasonId, rows }).catch((error) => {
+      console.warn("[SMART_NOTIFY] European zone notification failed:", error?.message || error);
+    });
+  }
   return rows;
 }
 async function getEuropeanStandings(competitionId, seasonId = "season-2026-27") {
@@ -3076,6 +3527,7 @@ var init_qualificationEngine = __esm({
     init_firestoreStore();
     init_adminService();
     init_notificationService();
+    init_smartNotificationService();
     init_db();
     init_seed();
     init_readModelStore();
@@ -5894,6 +6346,13 @@ async function advanceDomesticCupWinnerSafe(fixtureId, options) {
   } else if (r4Match) {
     const idx = parseInt(r4Match[1], 10);
     if (is16Teams) {
+      await notifySmartCupChampion({
+        competitionId: compId,
+        seasonId: fixture.seasonId || "season-2026-27",
+        sourceFixtureId: fixtureId,
+        winnerClubId
+      }).catch(() => {
+      });
       return {
         success: true,
         advanced: false,
@@ -5903,6 +6362,13 @@ async function advanceDomesticCupWinnerSafe(fixtureId, options) {
     targetFixtureId = `fix-${compId}-r5-m0`;
     isHomeSlot = idx === 0;
   } else {
+    await notifySmartCupChampion({
+      competitionId: compId,
+      seasonId: fixture.seasonId || "season-2026-27",
+      sourceFixtureId: fixtureId,
+      winnerClubId
+    }).catch(() => {
+    });
     return {
       success: true,
       advanced: false,
@@ -6023,6 +6489,15 @@ async function advanceDomesticCupWinnerSafe(fixtureId, options) {
   const cacheKey = `cup:bracket:${compId}:${fixture.seasonId || "season-2026-27"}`;
   await invalidateDataset(cacheKey);
   await refreshChangedFixtureReadModel(targetFixtureId).catch(() => invalidateFixtureReadModels(compId, fixture.seasonId || "season-2026-27"));
+  await notifySmartCupAdvancement({
+    competitionId: compId,
+    seasonId: fixture.seasonId || "season-2026-27",
+    sourceFixtureId: fixtureId,
+    targetFixtureId,
+    winnerClubId
+  }).catch((error) => {
+    console.warn("[SMART_NOTIFY] Cup advancement notification failed:", error?.message || error);
+  });
   await createAuditLog(
     options.adminUserId,
     "KNOCKOUT_ROUND_ADVANCED",
@@ -6055,6 +6530,7 @@ var init_domesticCupService = __esm({
     init_admin();
     init_collections();
     init_adminService();
+    init_smartNotificationService();
     init_readModelStore();
     init_seed();
     init_db();
@@ -13830,209 +14306,9 @@ var init_adminService = __esm({
   }
 });
 
-// src/server/app.ts
-import express from "express";
-import { timingSafeEqual } from "node:crypto";
-
 // src/server/services/telegramNotificationQueue.ts
-init_admin();
-init_collections();
-
-// src/server/services/telegramBotService.ts
-var POSITIVE_MEMBERSHIP_CACHE_TTL_MS = 5 * 60 * 1e3;
-var NEGATIVE_MEMBERSHIP_CACHE_TTL_MS = 20 * 1e3;
-var membershipCache = /* @__PURE__ */ new Map();
-async function verifyTelegramGroupMembership(telegramUserId, forceRefresh) {
-  const userIdStr = String(telegramUserId).trim();
-  if (!userIdStr) {
-    return { isMember: false, status: "empty_user_id" };
-  }
-  if (!forceRefresh) {
-    const cached = membershipCache.get(userIdStr);
-    if (cached) {
-      const ttl = cached.isMember ? POSITIVE_MEMBERSHIP_CACHE_TTL_MS : NEGATIVE_MEMBERSHIP_CACHE_TTL_MS;
-      if (Date.now() - cached.timestamp < ttl) {
-        return { isMember: cached.isMember, status: cached.status, cached: true };
-      }
-    }
-  }
-  const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
-  const groupUsername = (process.env.TELEGRAM_GROUP_USERNAME || "@efleagueuz").trim();
-  if (!botToken) {
-    const isDev = process.env.ENABLE_DEV_AUTH === "true" || process.env.NODE_ENV !== "production";
-    if (isDev) {
-      console.log(`[TELEGRAM MEMBERSHIP] No TELEGRAM_BOT_TOKEN set in dev environment. Allowing user ${userIdStr} in sandbox.`);
-      return { isMember: true, status: "dev_mock_allowed" };
-    }
-    console.warn(`[TELEGRAM MEMBERSHIP] TELEGRAM_BOT_TOKEN is missing in production.`);
-    return { isMember: true, status: "fail_open_no_token" };
-  }
-  const url = `https://api.telegram.org/bot${botToken}/getChatMember?chat_id=${encodeURIComponent(groupUsername)}&user_id=${encodeURIComponent(userIdStr)}`;
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6e3);
-    const response = await fetch(url, {
-      method: "GET",
-      headers: { "Accept": "application/json" },
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-    const data = await response.json();
-    if (data && data.ok && data.result) {
-      const status = data.result.status;
-      const isRestrictedMember = status === "restricted" && Boolean(data.result.is_member);
-      const isMember = ["creator", "administrator", "member"].includes(status) || isRestrictedMember;
-      membershipCache.set(userIdStr, {
-        isMember,
-        status: status || "unknown",
-        timestamp: Date.now()
-      });
-      return { isMember, status };
-    }
-    const description = (data?.description || "").toLowerCase();
-    if (description.includes("user not found") || description.includes("participant_id_invalid") || description.includes("not a member") || description.includes("chat not found")) {
-      membershipCache.set(userIdStr, {
-        isMember: false,
-        status: "left_or_not_found",
-        timestamp: Date.now()
-      });
-      return { isMember: false, status: "left_or_not_found" };
-    }
-    console.warn(`[TELEGRAM MEMBERSHIP CHECK] Non-definitive Telegram response for user ${userIdStr}:`, data);
-    return { isMember: true, status: "fail_open_transient_error" };
-  } catch (err) {
-    console.warn(`[TELEGRAM MEMBERSHIP CHECK] Network failure querying Telegram for user ${userIdStr}: ${err.message}`);
-    return { isMember: true, status: "fail_open_network_timeout" };
-  }
-}
-async function sendTelegramMessage(chatId, text, options = {}) {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
-  if (!botToken) {
-    return { ok: false, error: "TELEGRAM_BOT_TOKEN is not configured" };
-  }
-  const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
-  try {
-    const res = await fetch(url, {
-      signal: AbortSignal.timeout(1e4),
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text,
-        parse_mode: options.parse_mode || "HTML",
-        reply_markup: options.reply_markup
-      })
-    });
-    const data = await res.json();
-    return { ...data, error: data.description || data.error };
-  } catch (err) {
-    return { ok: false, error: err.message };
-  }
-}
-async function sendTelegramSticker(chatId, stickerFileId) {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
-  if (!botToken) {
-    return { ok: false, error: "TELEGRAM_BOT_TOKEN is not configured" };
-  }
-  const url = `https://api.telegram.org/bot${botToken}/sendSticker`;
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        sticker: stickerFileId
-      })
-    });
-    const data = await res.json();
-    return data;
-  } catch (err) {
-    return { ok: false, error: err.message };
-  }
-}
-async function handleTelegramStart(chatId, fromUser) {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
-  if (!botToken) {
-    console.warn("[TELEGRAM BOT /start] Missing TELEGRAM_BOT_TOKEN");
-    return { ok: false, messageSent: false, error: "TELEGRAM_BOT_TOKEN is missing" };
-  }
-  const stickerFileId = process.env.TELEGRAM_WELCOME_STICKER_FILE_ID?.trim();
-  let stickerSent = false;
-  if (stickerFileId) {
-    try {
-      const stickerRes = await sendTelegramSticker(chatId, stickerFileId);
-      stickerSent = Boolean(stickerRes && stickerRes.ok);
-    } catch (err) {
-      console.warn("[TELEGRAM BOT] Failed to send welcome sticker:", err.message);
-    }
-  }
-  const rawFirstName = fromUser?.first_name || "Foydalanuvchi";
-  const cleanFirstName = rawFirstName.replace(/[<>]/g, "");
-  const webAppUrl = process.env.TELEGRAM_WEBAPP_URL?.trim() || process.env.APP_URL?.trim() || "https://efluz.vercel.app";
-  const groupUsername = (process.env.TELEGRAM_GROUP_USERNAME || "@efleagueuz").trim();
-  const groupUrl = groupUsername.startsWith("@") ? `https://t.me/${groupUsername.slice(1)}` : `https://t.me/${groupUsername}`;
-  const welcomeText = `Assalomu alaykum, <b>${cleanFirstName}</b>!
-
-\u26BD <b>EFL UZ</b> \u2014 eFootball O\u2018zbekiston Rasmiy Ligasi platformasiga xush kelibsiz!
-
-\u{1F3C6} <b>Top 5 Yevropa Ligalari:</b>
-\u2022 \u{1F1EC}\u{1F1E7} Premier League
-\u2022 \u{1F1EA}\u{1F1F8} La Liga
-\u2022 \u{1F1EE}\u{1F1F9} Serie A
-\u2022 \u{1F1E9}\u{1F1EA} Bundesliga
-\u2022 \u{1F1EB}\u{1F1F7} Ligue 1
-
-\u2694\uFE0F <b>Asosiy Imkoniyatlar:</b>
-\u2022 Sevimli klubingizni tanlang va boshqaring
-\u2022 Real-vaqt matchmarkaz va eFootball bahslari
-\u2022 Ikki tomonlama natija tasdiqlash va hakamlik
-\u2022 UEFA Chempionlar Ligasi saralash tizimi
-
-Quyidagi tugma orqali ilovani oching va o\u2018z klubingizni band qiling!`;
-  const replyMarkup = {
-    inline_keyboard: [
-      [
-        {
-          text: "\u26BD Ilovani ochish (EFL UZ)",
-          web_app: { url: webAppUrl }
-        }
-      ],
-      [
-        {
-          text: `\u{1F4E2} Rasmiy guruh (${groupUsername})`,
-          url: groupUrl
-        }
-      ]
-    ]
-  };
-  const msgRes = await sendTelegramMessage(chatId, welcomeText, {
-    parse_mode: "HTML",
-    reply_markup: replyMarkup
-  });
-  return {
-    ok: msgRes.ok,
-    stickerSent,
-    messageSent: msgRes.ok,
-    error: msgRes.error
-  };
-}
-
-// src/server/services/telegramNotificationQueue.ts
-init_adminService();
-init_readModelStore();
-init_seed();
-import crypto2 from "crypto";
+import crypto3 from "crypto";
 import { waitUntil, getDeadline } from "@vercel/functions";
-var BROADCASTS_KEY = `${KEY_PREFIX}:telegram:broadcasts`;
-var QUEUE_KEY = `${KEY_PREFIX}:telegram:queue`;
-var PROCESSING_KEY = `${KEY_PREFIX}:telegram:processing`;
-var WORKER_LOCK = `${KEY_PREFIX}:telegram:worker-lock`;
-var RECIPIENT_DIR_KEY = `${KEY_PREFIX}:private:recipient-directory`;
-var memoryBroadcasts = /* @__PURE__ */ new Map();
-var memoryRecipientDirectory = /* @__PURE__ */ new Map();
-var memoryRecipientSeason = "";
-var MAX_CONTINUATION_HOPS = 256;
-var DRAIN_BUDGET_MS = 45e3;
 async function pendingQueueState() {
   const client = getUpstashClient();
   if (!client) throw new Error("REDIS_REQUIRED");
@@ -14046,7 +14322,7 @@ async function pendingQueueState() {
       if at == 0 then break end
     end
     return cjson.encode({pending=#jobs, nextAt=nextAt})
-  `, [QUEUE_KEY], []);
+  `, [QUEUE_KEY2], []);
 }
 async function drainNotificationQueue(options = {}) {
   const hop = options.hop || 0;
@@ -14146,7 +14422,7 @@ async function syncRecipientDirectory(seasonId = "season-2026-27") {
   const entriesArray = Array.from(dirMap.values());
   const client = getUpstashClient();
   if (client) {
-    await client.set(`${RECIPIENT_DIR_KEY}:${seasonId}`, entriesArray);
+    await client.set(`${RECIPIENT_DIR_KEY2}:${seasonId}`, entriesArray);
   }
   memoryRecipientDirectory.clear();
   for (const entry of entriesArray) memoryRecipientDirectory.set(entry.userId, entry);
@@ -14159,7 +14435,7 @@ async function getSafeEligibleRecipients(filter, seasonId = "season-2026-27") {
   let entries = [];
   if (client) {
     try {
-      const cached = await client.get(`${RECIPIENT_DIR_KEY}:${seasonId}`);
+      const cached = await client.get(`${RECIPIENT_DIR_KEY2}:${seasonId}`);
       if (Array.isArray(cached) && cached.length > 0) {
         entries = cached;
         memoryRecipientDirectory.clear();
@@ -14200,8 +14476,8 @@ async function enqueueTelegramBroadcast(params) {
   if (typeof params.title !== "string" || typeof params.body !== "string" || !params.title.trim() || !params.body.trim() || params.title.length + params.body.length > 3500) throw new Error("INVALID_MESSAGE");
   await getSafeEligibleRecipients(void 0, seasonId);
   if (params.requestId && !/^[a-zA-Z0-9-]{8,100}$/.test(params.requestId)) throw new Error("INVALID_REQUEST_ID");
-  const requestId = params.requestId || crypto2.randomUUID();
-  const broadcastId = `bcast-${crypto2.createHash("sha256").update(params.adminUserId + ":" + requestId).digest("hex")}`;
+  const requestId = params.requestId || crypto3.randomUUID();
+  const broadcastId = `bcast-${crypto3.createHash("sha256").update(params.adminUserId + ":" + requestId).digest("hex")}`;
   const now = (/* @__PURE__ */ new Date()).toISOString();
   let targetUserIds = [];
   if (params.targetAudience === "SELECTED_RECIPIENTS") {
@@ -14277,7 +14553,7 @@ async function enqueueTelegramBroadcast(params) {
     local jobs = cjson.decode(ARGV[3])
     for _, job in ipairs(jobs) do redis.call('RPUSH', KEYS[2], cjson.encode(job)) end
     return ARGV[2]
-  `, [BROADCASTS_KEY, QUEUE_KEY], [broadcastId, JSON.stringify(record), JSON.stringify(jobs)]);
+  `, [BROADCASTS_KEY2, QUEUE_KEY2], [broadcastId, JSON.stringify(record), JSON.stringify(jobs)]);
   if (persistedRecord.title !== record.title || persistedRecord.body !== record.body || persistedRecord.seasonId !== seasonId || JSON.stringify(persistedRecord.recipients.map((r) => r.userId).sort()) !== JSON.stringify(targetUserIds.slice().sort())) throw new Error("REQUEST_ID_REUSED_WITH_DIFFERENT_CONTENT");
   memoryBroadcasts.set(broadcastId, persistedRecord);
   scheduleNotificationQueueDrain();
@@ -14323,7 +14599,7 @@ async function enqueueTelegramBroadcast(params) {
 async function processNotificationQueue(batchSize = 25, stopClaimingAt = Infinity) {
   const client = getUpstashClient();
   if (!client) throw new Error("REDIS_REQUIRED");
-  const token = crypto2.randomUUID();
+  const token = crypto3.randomUUID();
   if (!await client.set(WORKER_LOCK, token, { nx: true, ex: 120 })) return { processed: 0, succeeded: 0, failed: 0, locked: true };
   let processed = 0, succeeded = 0, failed = 0;
   const deadline = Math.min(Date.now() + 2e4, stopClaimingAt);
@@ -14349,7 +14625,7 @@ async function processNotificationQueue(batchSize = 25, stopClaimingAt = Infinit
           redis.call('RPUSH', KEYS[1], raw)
         end
         return nil
-      `, [QUEUE_KEY, PROCESSING_KEY, WORKER_LOCK], [token, Date.now()]);
+      `, [QUEUE_KEY2, PROCESSING_KEY, WORKER_LOCK], [token, Date.now()]);
       if (!job) break;
       processed++;
       const record = await getBroadcastDetails(job.broadcastId);
@@ -14366,7 +14642,7 @@ async function processNotificationQueue(batchSize = 25, stopClaimingAt = Infinit
       }
       recipient.status = "SENDING";
       record.status = "PROCESSING";
-      await client.hset(BROADCASTS_KEY, { [record.id]: record });
+      await client.hset(BROADCASTS_KEY2, { [record.id]: record });
       const result = await sendTelegramMessage(job.telegramId, formatTelegramMessage(job.title, job.body, job.type), { parse_mode: "HTML" });
       if (result.ok) {
         await updateBroadcastRecipientState(job.broadcastId, job.userId, "SENT", void 0, (/* @__PURE__ */ new Date()).toISOString());
@@ -14381,7 +14657,7 @@ async function processNotificationQueue(batchSize = 25, stopClaimingAt = Infinit
           job.availableAt = Date.now() + retryAfterSeconds * 1e3;
           job.status = "QUEUED";
           await updateBroadcastRecipientState(job.broadcastId, job.userId, "PENDING", errorText, void 0, job.retryCount);
-          await client.rpush(QUEUE_KEY, JSON.stringify(job));
+          await client.rpush(QUEUE_KEY2, JSON.stringify(job));
         } else {
           await updateBroadcastRecipientState(job.broadcastId, job.userId, "FAILED", errorText, void 0, job.retryCount);
           failed++;
@@ -14402,13 +14678,13 @@ function formatTelegramMessage(title, body, type) {
   if (type === "COMPETITION_UPDATE") icon = "\u{1F3C6}";
   return `<b>${icon} EFL UZ Official Alert</b>
 
-<b>${escapeHtml(title)}</b>
+<b>${escapeHtml2(title)}</b>
 
-${escapeHtml(body)}
+${escapeHtml2(body)}
 
 <i>Season 2026/27 \u2022 Open EFL WebApp to manage fixtures</i>`;
 }
-function escapeHtml(str) {
+function escapeHtml2(str) {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 async function updateBroadcastRecipientState(broadcastId, userId, status, error, sentAt, retryCount) {
@@ -14429,7 +14705,7 @@ async function updateBroadcastRecipientState(broadcastId, userId, status, error,
   }
   const client = getUpstashClient();
   if (client) {
-    await client.hset(BROADCASTS_KEY, { [broadcastId]: bcast });
+    await client.hset(BROADCASTS_KEY2, { [broadcastId]: bcast });
   }
   memoryBroadcasts.set(broadcastId, bcast);
 }
@@ -14437,7 +14713,7 @@ async function getBroadcastHistory(limit = 20) {
   const client = getUpstashClient();
   if (client) {
     try {
-      const records = await client.hgetall(BROADCASTS_KEY);
+      const records = await client.hgetall(BROADCASTS_KEY2);
       if (records) {
         const list = Object.values(records);
         return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, limit);
@@ -14451,24 +14727,48 @@ async function getBroadcastDetails(broadcastId) {
   const client = getUpstashClient();
   if (client) {
     try {
-      const record = await client.hget(BROADCASTS_KEY, broadcastId);
+      const record = await client.hget(BROADCASTS_KEY2, broadcastId);
       if (record) return record;
     } catch {
     }
   }
   return memoryBroadcasts.get(broadcastId) || null;
 }
+var BROADCASTS_KEY2, QUEUE_KEY2, PROCESSING_KEY, WORKER_LOCK, RECIPIENT_DIR_KEY2, memoryBroadcasts, memoryRecipientDirectory, memoryRecipientSeason, MAX_CONTINUATION_HOPS, DRAIN_BUDGET_MS;
+var init_telegramNotificationQueue = __esm({
+  "src/server/services/telegramNotificationQueue.ts"() {
+    init_admin();
+    init_collections();
+    init_telegramBotService();
+    init_adminService();
+    init_readModelStore();
+    init_seed();
+    BROADCASTS_KEY2 = `${KEY_PREFIX}:telegram:broadcasts`;
+    QUEUE_KEY2 = `${KEY_PREFIX}:telegram:queue`;
+    PROCESSING_KEY = `${KEY_PREFIX}:telegram:processing`;
+    WORKER_LOCK = `${KEY_PREFIX}:telegram:worker-lock`;
+    RECIPIENT_DIR_KEY2 = `${KEY_PREFIX}:private:recipient-directory`;
+    memoryBroadcasts = /* @__PURE__ */ new Map();
+    memoryRecipientDirectory = /* @__PURE__ */ new Map();
+    memoryRecipientSeason = "";
+    MAX_CONTINUATION_HOPS = 256;
+    DRAIN_BUDGET_MS = 45e3;
+  }
+});
 
 // src/server/app.ts
+init_telegramNotificationQueue();
 init_db();
 init_seed();
+import express from "express";
+import { timingSafeEqual } from "node:crypto";
 
 // src/server/auth/telegramAuth.ts
 init_firestoreStore();
-import crypto4 from "crypto";
+import crypto5 from "crypto";
 
 // src/server/auth/sessionToken.ts
-import crypto3 from "crypto";
+import crypto4 from "crypto";
 function getSessionSecret() {
   const secret = process.env.SESSION_SECRET || process.env.TELEGRAM_BOT_TOKEN;
   if (!secret || secret.length < 24) {
@@ -14504,7 +14804,7 @@ function createSessionToken(user, expiresInSeconds = 900) {
   const encodedHeader = base64UrlEncode(JSON.stringify(header));
   const encodedPayload = base64UrlEncode(JSON.stringify(claims));
   const data = `${encodedHeader}.${encodedPayload}`;
-  const signature = crypto3.createHmac("sha256", getSessionSecret()).update(data).digest("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const signature = crypto4.createHmac("sha256", getSessionSecret()).update(data).digest("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   return `${data}.${signature}`;
 }
 function verifySessionToken(token) {
@@ -14517,10 +14817,10 @@ function verifySessionToken(token) {
   }
   const [encodedHeader, encodedPayload, receivedSig] = parts;
   const data = `${encodedHeader}.${encodedPayload}`;
-  const expectedSig = crypto3.createHmac("sha256", getSessionSecret()).update(data).digest("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const expectedSig = crypto4.createHmac("sha256", getSessionSecret()).update(data).digest("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const expectedBuf = Buffer.from(expectedSig);
   const receivedBuf = Buffer.from(receivedSig);
-  if (expectedBuf.length !== receivedBuf.length || !crypto3.timingSafeEqual(expectedBuf, receivedBuf)) {
+  if (expectedBuf.length !== receivedBuf.length || !crypto4.timingSafeEqual(expectedBuf, receivedBuf)) {
     return { isValid: false, error: "Invalid token signature" };
   }
   try {
@@ -14562,11 +14862,11 @@ function verifyTelegramWebAppData(initData, botToken, maxAgeSeconds = 86400) {
     });
     paramsList.sort();
     const dataCheckString = paramsList.join("\n");
-    const secretKey = crypto4.createHmac("sha256", "WebAppData").update(cleanToken).digest();
-    const calculatedHash = crypto4.createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
+    const secretKey = crypto5.createHmac("sha256", "WebAppData").update(cleanToken).digest();
+    const calculatedHash = crypto5.createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
     const calculatedHashBuf = Buffer.from(calculatedHash, "hex");
     const receivedHashBuf = Buffer.from(hash, "hex");
-    if (calculatedHashBuf.length !== receivedHashBuf.length || !crypto4.timingSafeEqual(calculatedHashBuf, receivedHashBuf)) {
+    if (calculatedHashBuf.length !== receivedHashBuf.length || !crypto5.timingSafeEqual(calculatedHashBuf, receivedHashBuf)) {
       return { isValid: false, error: "Invalid HMAC signature" };
     }
     const authDateStr = urlParams.get("auth_date");
@@ -14759,11 +15059,11 @@ async function requireAdmin(req, res, next) {
 
 // src/server/middleware/rateLimitMiddleware.ts
 init_readModelStore();
-import crypto5 from "crypto";
+import crypto6 from "crypto";
 var localCounters = /* @__PURE__ */ new Map();
 function subjectFor(req) {
   const raw = req.user?.id || req.ip || req.socket.remoteAddress || "unknown";
-  return crypto5.createHash("sha256").update(raw).digest("hex").slice(0, 24);
+  return crypto6.createHash("sha256").update(raw).digest("hex").slice(0, 24);
 }
 function rateLimit(name, limit, windowSeconds) {
   return async (req, res, next) => {
@@ -15275,6 +15575,7 @@ leaguesRouter.get("/:id/clubs", async (req, res) => {
 import { Router as Router5 } from "express";
 init_firestoreStore();
 init_seed();
+init_telegramBotService();
 init_readModelStore();
 var clubsRouter = Router5();
 function resolveCanonicalClub(id) {
@@ -15792,6 +16093,13 @@ import { Router as Router9 } from "express";
 init_firestoreStore();
 init_readModelStore();
 var meRouter = Router9();
+var DOMESTIC_LEAGUE_COMPETITION_BY_LEAGUE = {
+  "league-premier-league": "comp-premier-league-2026",
+  "league-la-liga": "comp-la-liga-2026",
+  "league-serie-a": "comp-serie-a-2026",
+  "league-bundesliga": "comp-bundesliga-2026",
+  "league-ligue-1": "comp-ligue-1-2026"
+};
 meRouter.use((req, res, next) => {
   setOwnershipSensitiveHeaders(res);
   next();
@@ -15814,53 +16122,87 @@ meRouter.get("/", requireAuth, async (req, res) => {
       leaguePosition: 0
     };
     if (currentClub) {
-      let confirmedMatches = [];
-      try {
-        const { queryAll: queryAll3 } = (init_db(), __toCommonJS(db_exports));
-        const rows = queryAll3(
-          `SELECT * FROM fixtures WHERE status = 'CONFIRMED' AND (home_club_id = ? OR away_club_id = ?) AND (season_id = ? OR season_id IS NULL)`,
-          [currentClub.id, currentClub.id, seasonId]
-        );
-        if (rows && rows.length > 0) {
-          confirmedMatches = rows.map((r) => ({
-            id: r.id,
-            homeClubId: r.home_club_id,
-            awayClubId: r.away_club_id,
-            homeScore: r.home_score,
-            awayScore: r.away_score,
-            status: r.status,
-            seasonId: r.season_id
-          }));
-        }
-      } catch {
-      }
-      if (confirmedMatches.length === 0) {
+      const leagueCompetitionId = currentClub.leagueId ? DOMESTIC_LEAGUE_COMPETITION_BY_LEAGUE[currentClub.leagueId] : void 0;
+      let statsResolvedFromStandings = false;
+      if (leagueCompetitionId) {
         try {
-          confirmedMatches = await getFixturesFirestore({
-            clubId: currentClub.id,
-            seasonId,
-            status: "CONFIRMED"
-          });
+          const standingsResult = await getCompetitionStandingsFromReadModel(leagueCompetitionId, seasonId);
+          const row = standingsResult.standings.find((standing) => standing.clubId === currentClub.id);
+          if (row) {
+            stats.matchesPlayed = row.played || 0;
+            stats.wins = row.won || 0;
+            stats.draws = row.drawn || 0;
+            stats.losses = row.lost || 0;
+            stats.goalsScored = row.goalsFor || 0;
+            stats.goalsConceded = row.goalsAgainst || 0;
+            stats.points = row.points || 0;
+            stats.leaguePosition = row.position || 0;
+            statsResolvedFromStandings = true;
+          }
+        } catch (standingsErr) {
+          console.warn("[ME_STATS] Standings read-model fallback:", standingsErr?.message || standingsErr);
+        }
+      }
+      if (!statsResolvedFromStandings) {
+        let confirmedMatches = [];
+        try {
+          const { queryAll: queryAll3 } = (init_db(), __toCommonJS(db_exports));
+          const conditions = [
+            "status = 'CONFIRMED'",
+            "(home_club_id = ? OR away_club_id = ?)",
+            "(season_id = ? OR season_id IS NULL)"
+          ];
+          const params = [currentClub.id, currentClub.id, seasonId];
+          if (leagueCompetitionId) {
+            conditions.push("competition_id = ?");
+            params.push(leagueCompetitionId);
+          }
+          const rows = queryAll3(
+            `SELECT * FROM fixtures WHERE ${conditions.join(" AND ")}`,
+            params
+          );
+          if (rows && rows.length > 0) {
+            confirmedMatches = rows.map((r) => ({
+              id: r.id,
+              homeClubId: r.home_club_id,
+              awayClubId: r.away_club_id,
+              homeScore: r.home_score,
+              awayScore: r.away_score,
+              status: r.status,
+              seasonId: r.season_id
+            }));
+          }
         } catch {
         }
-      }
-      for (const m of confirmedMatches) {
-        const isHome = m.homeClubId === currentClub.id;
-        const isAway = m.awayClubId === currentClub.id;
-        if (isHome || isAway) {
-          stats.matchesPlayed++;
-          const myScore = isHome ? m.homeScore ?? 0 : m.awayScore ?? 0;
-          const oppScore = isHome ? m.awayScore ?? 0 : m.homeScore ?? 0;
-          stats.goalsScored += myScore;
-          stats.goalsConceded += oppScore;
-          if (myScore > oppScore) {
-            stats.wins++;
-            stats.points += 3;
-          } else if (myScore === oppScore) {
-            stats.draws++;
-            stats.points += 1;
-          } else {
-            stats.losses++;
+        if (confirmedMatches.length === 0) {
+          try {
+            confirmedMatches = await getFixturesFirestore({
+              clubId: currentClub.id,
+              seasonId,
+              competitionId: leagueCompetitionId,
+              status: "CONFIRMED"
+            });
+          } catch {
+          }
+        }
+        for (const m of confirmedMatches) {
+          const isHome = m.homeClubId === currentClub.id;
+          const isAway = m.awayClubId === currentClub.id;
+          if (isHome || isAway) {
+            stats.matchesPlayed++;
+            const myScore = isHome ? m.homeScore ?? 0 : m.awayScore ?? 0;
+            const oppScore = isHome ? m.awayScore ?? 0 : m.homeScore ?? 0;
+            stats.goalsScored += myScore;
+            stats.goalsConceded += oppScore;
+            if (myScore > oppScore) {
+              stats.wins++;
+              stats.points += 3;
+            } else if (myScore === oppScore) {
+              stats.draws++;
+              stats.points += 1;
+            } else {
+              stats.losses++;
+            }
           }
         }
       }
@@ -16224,6 +16566,8 @@ init_mutationQueue();
 init_knockoutEngine();
 init_qualificationEngine();
 init_domesticCupService();
+init_telegramNotificationQueue();
+init_smartNotificationService();
 init_admin();
 init_collections();
 init_circuitBreaker();
@@ -17058,17 +17402,47 @@ adminRouter.post("/competitions/:id/matchday/override", async (req, res) => {
       seasonId: typeof seasonId === "string" ? seasonId : void 0,
       adminUserId: req.user?.id
     });
-    res.json(result);
+    let smartNotificationsQueued = 0;
+    if (overrideStatus === "FORCE_OPEN") {
+      try {
+        const resolvedMatchday = Number(result?.currentMatchday ?? matchday ?? 0);
+        if (resolvedMatchday > 0) {
+          smartNotificationsQueued = await notifySmartMatchdayOpened({
+            competitionId,
+            seasonId: typeof seasonId === "string" ? seasonId : "season-2026-27",
+            matchday: resolvedMatchday,
+            deadlineAt: result?.nextMatchdayOpenAt || null
+          });
+        }
+      } catch (notificationError) {
+        console.warn("[SMART_NOTIFY] FORCE_OPEN notification failed:", notificationError?.message || notificationError);
+      }
+    }
+    res.json({ ...result, smartNotificationsQueued });
   } catch (err) {
     handleFirestoreError(res, err, `POST /api/admin/competitions/${competitionId}/matchday/override`);
   }
 });
 adminRouter.post("/competitions/:id/matchday/advance", async (req, res) => {
   const competitionId = req.params.id;
-  const { durationHours } = req.body;
+  const { durationHours, seasonId } = req.body;
   try {
     const result = await advanceCompetitionMatchdayFirestore(competitionId, { durationHours });
-    res.json(result);
+    let smartNotificationsQueued = 0;
+    try {
+      const resolvedMatchday = Number(result?.currentMatchday || 0);
+      if (resolvedMatchday > 0) {
+        smartNotificationsQueued = await notifySmartMatchdayOpened({
+          competitionId,
+          seasonId: typeof seasonId === "string" ? seasonId : "season-2026-27",
+          matchday: resolvedMatchday,
+          deadlineAt: result?.nextMatchdayOpenAt || null
+        });
+      }
+    } catch (notificationError) {
+      console.warn("[SMART_NOTIFY] Matchday advance notification failed:", notificationError?.message || notificationError);
+    }
+    res.json({ ...result, smartNotificationsQueued });
   } catch (err) {
     handleFirestoreError(res, err, `POST /api/admin/competitions/${competitionId}/matchday/advance`);
   }
@@ -17083,7 +17457,18 @@ adminRouter.post("/competitions/:id/matchday/open-now", async (req, res) => {
       typeof matchday === "number" ? matchday : void 0,
       typeof seasonId === "string" ? seasonId : void 0
     );
-    res.json(result);
+    let smartNotificationsQueued = 0;
+    try {
+      smartNotificationsQueued = await notifySmartMatchdayOpened({
+        competitionId,
+        seasonId: typeof seasonId === "string" ? seasonId : "season-2026-27",
+        matchday: Number(result.currentMatchday),
+        deadlineAt: result.nextMatchdayOpenAt || null
+      });
+    } catch (notificationError) {
+      console.warn("[SMART_NOTIFY] Matchday open notification failed:", notificationError?.message || notificationError);
+    }
+    res.json({ ...result, smartNotificationsQueued });
   } catch (err) {
     handleFirestoreError(res, err, `POST /api/admin/competitions/${competitionId}/matchday/open-now`);
   }
@@ -17371,6 +17756,7 @@ adminRouter.post("/telegram-notifications/process-queue", async (req, res) => {
 });
 
 // src/server/routes/telegram.routes.ts
+init_telegramBotService();
 import { Router as Router12 } from "express";
 init_readModelStore();
 var telegramRouter = Router12();

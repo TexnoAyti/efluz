@@ -9,6 +9,7 @@ import {
 import { calculateCompetitionStandingsFirestore, rebuildCompetitionStandingsFirestore, firestoreCircuitBreaker, trackFirestoreRead } from '../firebase/firestoreStore';
 import { createAuditLog } from '../services/adminService';
 import { createNotification } from '../services/notificationService';
+import { enqueueSmartTelegramNotification, notifySmartEuropeanZones } from '../services/smartNotificationService';
 import { queryAll, queryGet, queryRun } from '../db';
 import { SEED_CLUBS, SEED_COMPETITIONS, SEED_LEAGUES } from '../db/seed';
 import {
@@ -543,11 +544,30 @@ export async function applyEuropeanQualificationSync(params: {
     await invalidateDataset(`european:standings:${compId}:${preview.seasonId}`);
   }
 
-  // Send notifications
+  // Final qualification is an event: notify in-app and Telegram without adding Firestore reads.
+  if (preview.mode === 'final') {
+    for (const q of preview.projectedQualifications) {
+      if (!q.ownerUserId) continue;
+      notificationsToSend.push({
+        userId: q.ownerUserId,
+        title: `🏆 ${q.targetCompetitionName} yo‘llanmasi`,
+        message: `${q.clubName} ${q.targetCompetitionName} turniriga yo‘llanma oldi. ${q.reason}`,
+      });
+    }
+  }
   await Promise.all(
-    notificationsToSend.map((n) =>
-      createNotification(n.userId, 'QUALIFICATION_CONFIRMED', n.title, n.message).catch(() => {})
-    )
+    notificationsToSend.map(async (n) => {
+      await Promise.allSettled([
+        createNotification(n.userId, 'QUALIFICATION_CONFIRMED', n.title, n.message),
+        enqueueSmartTelegramNotification({
+          userId: n.userId,
+          seasonId: preview.seasonId,
+          eventId: `qualification:${preview.previewToken}:${n.userId}:${n.title}`,
+          title: n.title,
+          body: n.message,
+        }),
+      ]);
+    })
   );
 
   // Write audit log
@@ -808,6 +828,13 @@ export async function rebuildEuropeanStandings(
     },
     86400
   );
+
+  const matchesPerTeam = Number(format?.matchesPerTeam);
+  if (Number.isInteger(matchesPerTeam) && matchesPerTeam > 0 && rows.length > 0 && rows.every((row) => row.played >= matchesPerTeam)) {
+    await notifySmartEuropeanZones({ competitionId, seasonId, rows }).catch((error: any) => {
+      console.warn('[SMART_NOTIFY] European zone notification failed:', error?.message || error);
+    });
+  }
 
   return rows;
 }
