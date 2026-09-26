@@ -45,6 +45,8 @@ interface SmartBroadcastRecord {
     skippedCount: number;
   };
   recipients: SmartRecipientStatus[];
+  bodyIsHtml?: boolean;
+  replyMarkup?: any;
 }
 
 interface SmartQueueJob {
