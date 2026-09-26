@@ -50,6 +50,7 @@ jobs:
           bun run test:security-http
           bun run test:european-safety
           bun run test:domestic-cup:isolated
+          ./node_modules/.bin/tsx src/server/tests/domesticCupFlowRegressionTest.ts
           bun run test:read-model
           bun run test:standings-initialization
           bun run test:startup-preservation
