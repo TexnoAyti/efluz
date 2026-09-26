@@ -578,6 +578,26 @@ export const AdminView: React.FC = () => {
     }
   };
 
+  const handleSendMatchdayReminder = async (compId: string, matchday: number, deadlineAt?: string | null) => {
+    setIsProcessing(true);
+    try {
+      const res = await api.sendMatchdayReminders(compId, {
+        matchday,
+        seasonId: activeSeasonId,
+        deadlineAt: deadlineAt || null,
+      });
+      const status = res.overdue ? 'OVERDUE' : 'active deadline';
+      showToast(
+        `MD ${matchday} ${status}: ${res.queued}/${res.outstandingPlayers} outstanding player reminder(s) queued.`,
+        res.queued > 0 ? 'success' : 'info'
+      );
+    } catch (err: any) {
+      showToast(err.message || 'Failed to send matchday reminders.', 'error');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleSaveFixtureResult = async (params: { homeScore: number; awayScore: number; status?: string; notes?: string }) => {
     if (!selectedFixtureForEditResult) return;
     try {
@@ -2027,6 +2047,7 @@ export const AdminView: React.FC = () => {
                 const currentMd = comp.currentMatchday || 1;
                 const override = comp.adminOverrideStatus || 'AUTO';
                 const isOpen = override === 'FORCE_OPEN' || (override !== 'FORCE_LOCKED' && comp.isMatchdayOpen);
+                const deadlineIsOverdue = Boolean(comp.nextMatchdayOpenAt && Date.now() > new Date(comp.nextMatchdayOpenAt).getTime());
 
                 return (
                   <div key={comp.id} className="glass-card p-4 rounded-2xl border-slate-800 space-y-3 flex flex-col justify-between">
@@ -2054,9 +2075,12 @@ export const AdminView: React.FC = () => {
                       </div>
 
                       {comp.nextMatchdayOpenAt && (
-                        <div className="text-[10px] text-slate-400 flex items-center gap-1">
-                          <Clock className="w-3 h-3 text-slate-500" />
-                          <span>Timer: {new Date(comp.nextMatchdayOpenAt).toLocaleString()}</span>
+                        <div className={`text-[10px] flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 border ${deadlineIsOverdue ? 'text-rose-300 bg-rose-500/10 border-rose-500/25' : 'text-slate-300 bg-slate-900/50 border-white/[0.04]'}`}>
+                          <span className="flex items-center gap-1">
+                            <Clock className={`w-3 h-3 ${deadlineIsOverdue ? 'text-rose-400' : 'text-slate-500'}`} />
+                            Deadline: {new Date(comp.nextMatchdayOpenAt).toLocaleString()}
+                          </span>
+                          {deadlineIsOverdue && <span className="font-black text-[9px] uppercase">Overdue</span>}
                         </div>
                       )}
                     </div>
@@ -2086,6 +2110,16 @@ export const AdminView: React.FC = () => {
                           <span>{override === 'FORCE_LOCKED' ? 'Unlock MD' : 'Lock MD'}</span>
                         </button>
                       </div>
+
+                      <button
+                        onClick={() => handleSendMatchdayReminder(comp.id, currentMd, comp.nextMatchdayOpenAt)}
+                        disabled={isProcessing}
+                        className={`w-full py-1.5 px-2 rounded-lg text-[10px] font-black flex items-center justify-center gap-1.5 border ${deadlineIsOverdue ? 'bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border-rose-500/30' : 'bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border-amber-500/30'}`}
+                        title="Only players who have not submitted this matchday are notified"
+                      >
+                        <Send className="w-3 h-3" />
+                        <span>{deadlineIsOverdue ? 'Remind Overdue Players' : 'Remind Unfinished Players'}</span>
+                      </button>
 
                       <div className="flex items-center gap-1.5">
                         <button

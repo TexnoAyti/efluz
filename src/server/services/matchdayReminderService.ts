@@ -4,7 +4,6 @@ import {
   redisGetFresh,
   redisGetLkg,
 } from '../readModel/readModelStore';
-import { getResultSubmissions } from './adminService';
 import { enqueueSmartTelegramNotification } from './smartNotificationService';
 
 const RESULT_TOPIC_BY_LEAGUE: Record<string, string> = {
@@ -150,13 +149,14 @@ export async function notifyOutstandingMatchdayOwners(params: {
 
   // Manual/admin-triggered operation only. Queries are bounded to the current matchday
   // (9-10 fixtures for domestic leagues) and never run on normal user reads.
+  const { getResultSubmissions } = await import('./adminService');
   const submissions = await Promise.all(
     current.map(async (fixture) => {
       try {
         const rows = await getResultSubmissions({ fixtureId: fixture.id, limit: 4 });
         return [fixture.id, rows] as const;
       } catch {
-        return [fixture.id, []] as const;
+        return [fixture.id, [] as any[]] as const;
       }
     })
   );

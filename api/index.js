@@ -14533,11 +14533,35 @@ var init_firestoreStore = __esm({
 });
 
 // src/server/services/adminService.ts
+var adminService_exports = {};
+__export(adminService_exports, {
+  createAuditLog: () => createAuditLog,
+  deleteFixture: () => deleteFixture,
+  deleteFixtureResult: () => deleteFixtureResult,
+  deleteResultSubmission: () => deleteResultSubmission,
+  deleteUser: () => deleteUser,
+  editFixtureResult: () => editFixtureResult,
+  getAllAdminUsers: () => getAllAdminUsers,
+  getAuditLogs: () => getAuditLogs,
+  getDisputes: () => getDisputes,
+  getResultSubmissions: () => getResultSubmissions,
+  getUserDetail: () => getUserDetail,
+  reopenFixture: () => reopenFixture,
+  resolveDispute: () => resolveDispute,
+  setUserAdminRole: () => setUserAdminRole,
+  setUserSuspension: () => setUserSuspension
+});
 async function createAuditLog(actorUserId, action, entityType, entityId, oldValue, newValue, ipAddress, actorUsername, notes) {
   await createAuditLogFirestore(actorUserId, action, entityType, entityId, oldValue, newValue, ipAddress, actorUsername, notes);
 }
 async function getDisputes(status = "OPEN") {
   return await getDisputesFirestore(status);
+}
+async function resolveDispute(adminUserId, disputeId, params) {
+  return await resolveDisputeFirestore(adminUserId, disputeId, params);
+}
+async function reopenFixture(adminUserId, fixtureId, notes) {
+  return await reopenFixtureFirestore(adminUserId, fixtureId, notes);
 }
 async function editFixtureResult(adminUserId, adminUsername, fixtureId, params) {
   return await adminEditFixtureResultFirestore(adminUserId, adminUsername, fixtureId, params);
@@ -14547,6 +14571,9 @@ async function deleteFixtureResult(adminUserId, adminUsername, fixtureId, option
 }
 async function deleteFixture(adminUserId, adminUsername, fixtureId, reason) {
   return await adminDeleteFixtureFirestore(adminUserId, adminUsername, fixtureId, reason);
+}
+async function getAllAdminUsers() {
+  return await getAllUsersFirestore();
 }
 async function getUserDetail(targetUserId) {
   return await adminGetUserDetailFirestore(targetUserId);
@@ -17786,6 +17813,168 @@ init_qualificationEngine();
 init_domesticCupService();
 init_telegramNotificationQueue();
 init_smartNotificationService();
+
+// src/server/services/matchdayReminderService.ts
+init_readModelStore();
+init_smartNotificationService();
+var RESULT_TOPIC_BY_LEAGUE2 = {
+  "league-premier-league": "https://t.me/efleagueuz/2",
+  "league-la-liga": "https://t.me/efleagueuz/3",
+  "league-serie-a": "https://t.me/efleagueuz/4",
+  "league-bundesliga": "https://t.me/efleagueuz/5",
+  "league-ligue-1": "https://t.me/efleagueuz/6"
+};
+function escapeHtml3(value) {
+  return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function ownerId2(fixture, side) {
+  const f = fixture;
+  return side === "home" ? f.homeOwnerId || f.homeOwner?.userId || f.homeClub?.claimedByUserId : f.awayOwnerId || f.awayOwner?.userId || f.awayClub?.claimedByUserId;
+}
+function opponentUsername(fixture, side) {
+  const f = fixture;
+  const user = side === "home" ? f.homeUser : f.awayUser;
+  return String(user?.username || "").replace(/^@+/, "").trim() || void 0;
+}
+function clubName2(fixture, side) {
+  const f = fixture;
+  return side === "home" ? f.homeClub?.name || f.homeClubId || "Home" : f.awayClub?.name || f.awayClubId || "Away";
+}
+function resultTopicUrl2(fixture) {
+  const f = fixture;
+  const competition = `${f.competitionId || ""} ${f.competitionName || ""}`.toLowerCase();
+  if (competition.includes("super")) return "https://t.me/efleagueuz/2335";
+  if (competition.includes("champions") || competition.includes("ucl")) return "https://t.me/efleagueuz/7";
+  if (competition.includes("cup") || competition.includes("pokal") || competition.includes("copa") || competition.includes("coppa") || competition.includes("coupe")) {
+    return "https://t.me/efleagueuz/8";
+  }
+  const leagueId = f.homeClub?.leagueId || f.awayClub?.leagueId || "";
+  return RESULT_TOPIC_BY_LEAGUE2[leagueId] || "https://t.me/efleagueuz";
+}
+function formatTashkentDeadline(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  try {
+    return new Intl.DateTimeFormat("uz-UZ", {
+      timeZone: "Asia/Tashkent",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    }).format(date);
+  } catch {
+    return date.toISOString();
+  }
+}
+function selectOutstandingOwnerIds(fixture, submittedByUserIds) {
+  const submitted = new Set(Array.from(submittedByUserIds).filter(Boolean));
+  const owners = [ownerId2(fixture, "home"), ownerId2(fixture, "away")].filter(Boolean);
+  return Array.from(new Set(owners)).filter((userId) => !submitted.has(userId));
+}
+async function getCompetitionFixtureSnapshot2(competitionId, seasonId) {
+  const key = ReadModelKeys.competitionFixtures(competitionId, seasonId);
+  const snapshot = await redisGetFresh(key) || await redisGetLkg(key);
+  return Array.isArray(snapshot?.data) ? snapshot.data : [];
+}
+async function replyMarkupFor(fixture, userId) {
+  const homeId = ownerId2(fixture, "home");
+  const isHome = homeId === userId;
+  const opponentSide = isHome ? "away" : "home";
+  const username = opponentUsername(fixture, opponentSide);
+  const rows = [];
+  if (username) {
+    rows.push([{ text: `\u{1F464} Raqib: @${username}`, url: `https://t.me/${username}` }]);
+  }
+  rows.push([{ text: "\u{1F4F8} O\u2018yin natijasini bu yerga tashlang", url: resultTopicUrl2(fixture) }]);
+  return { inline_keyboard: rows };
+}
+async function notifyOutstandingMatchdayOwners(params) {
+  const fixtures = await getCompetitionFixtureSnapshot2(params.competitionId, params.seasonId);
+  const current = fixtures.filter(
+    (fixture) => Number(fixture.matchday) === Number(params.matchday) && !["CONFIRMED", "CANCELLED"].includes(String(fixture.status || "").toUpperCase())
+  );
+  if (current.length === 0) {
+    return {
+      competitionId: params.competitionId,
+      seasonId: params.seasonId,
+      matchday: params.matchday,
+      deadlineAt: params.deadlineAt || null,
+      overdue: Boolean(params.deadlineAt && Date.now() > new Date(params.deadlineAt).getTime()),
+      fixturesChecked: 0,
+      unfinishedFixtures: 0,
+      outstandingPlayers: 0,
+      queued: 0,
+      skipped: 0
+    };
+  }
+  const { getResultSubmissions: getResultSubmissions2 } = await Promise.resolve().then(() => (init_adminService(), adminService_exports));
+  const submissions = await Promise.all(
+    current.map(async (fixture) => {
+      try {
+        const rows = await getResultSubmissions2({ fixtureId: fixture.id, limit: 4 });
+        return [fixture.id, rows];
+      } catch {
+        return [fixture.id, []];
+      }
+    })
+  );
+  const submissionsByFixture = new Map(submissions);
+  const deadlineText = formatTashkentDeadline(params.deadlineAt);
+  const deadlineMs = params.deadlineAt ? new Date(params.deadlineAt).getTime() : NaN;
+  const overdue = Number.isFinite(deadlineMs) && Date.now() > deadlineMs;
+  const tasks = [];
+  let outstandingPlayers = 0;
+  for (const fixture of current) {
+    const rows = submissionsByFixture.get(fixture.id) || [];
+    const submittedBy = rows.map((row) => String(row.submittedByUserId || row.userId || "")).filter(Boolean);
+    const outstanding = selectOutstandingOwnerIds(fixture, submittedBy);
+    for (const userId of outstanding) {
+      outstandingPlayers++;
+      const homeId = ownerId2(fixture, "home");
+      const isHome = homeId === userId;
+      const opponentSide = isHome ? "away" : "home";
+      const opponent = escapeHtml3(clubName2(fixture, opponentSide));
+      const opponentUser = opponentUsername(fixture, opponentSide);
+      const competition = escapeHtml3(fixture.competitionName || fixture.competitionId || "EFL UZ");
+      const deadlineLine = deadlineText ? `
+\u23F3 Deadline: <b>${escapeHtml3(deadlineText)} (Toshkent)</b>` : "";
+      const statusLine = overdue ? "Deadline o\u2018tgan. Natijani imkon qadar tez yuboring." : "Sizdan hali natija kelmagan.";
+      tasks.push(enqueueSmartTelegramNotification({
+        userId,
+        seasonId: params.seasonId,
+        // Prefix intentionally maps this to the existing matchdayOpened smart setting.
+        eventId: `matchday-open:reminder:${params.competitionId}:${params.matchday}:${fixture.id}:${params.deadlineAt || "manual"}:${userId}`,
+        title: overdue ? "\u26D4 Match deadline o\u2018tdi" : "\u23F3 Match deadline eslatmasi",
+        body: `${competition} \u2022 Matchday ${params.matchday}
+
+Raqib klub: <b>${opponent}</b>${opponentUser ? `
+Raqib user: <b>@${escapeHtml3(opponentUser)}</b>` : ""}${deadlineLine}
+
+${statusLine}`,
+        replyMarkup: await replyMarkupFor(fixture, userId)
+      }));
+    }
+  }
+  const results = await Promise.allSettled(tasks);
+  const queued = results.filter((result) => result.status === "fulfilled" && result.value).length;
+  return {
+    competitionId: params.competitionId,
+    seasonId: params.seasonId,
+    matchday: params.matchday,
+    deadlineAt: params.deadlineAt || null,
+    overdue,
+    fixturesChecked: current.length,
+    unfinishedFixtures: current.length,
+    outstandingPlayers,
+    queued,
+    skipped: Math.max(0, outstandingPlayers - queued)
+  };
+}
+
+// src/server/routes/admin.routes.ts
 init_admin();
 init_collections();
 init_smartNotificationSettingsService();
@@ -18744,6 +18933,22 @@ adminRouter.post("/competitions/:id/matchday/set-timer", async (req, res) => {
     res.json(result);
   } catch (err) {
     handleFirestoreError(res, err, `POST /api/admin/competitions/${competitionId}/matchday/set-timer`);
+  }
+});
+adminRouter.post("/competitions/:id/matchday/remind", async (req, res) => {
+  const competitionId = req.params.id;
+  const seasonId = typeof req.body?.seasonId === "string" ? req.body.seasonId : "season-2026-27";
+  const matchday = Number(req.body?.matchday || 0);
+  const deadlineAt = typeof req.body?.deadlineAt === "string" ? req.body.deadlineAt : null;
+  if (!Number.isInteger(matchday) || matchday <= 0) {
+    res.status(400).json({ error: "A positive integer matchday is required.", code: "BAD_REQUEST" });
+    return;
+  }
+  try {
+    const result = await notifyOutstandingMatchdayOwners({ competitionId, seasonId, matchday, deadlineAt });
+    res.json({ success: true, ...result });
+  } catch (err) {
+    handleFirestoreError(res, err, `POST /api/admin/competitions/${competitionId}/matchday/remind`);
   }
 });
 adminRouter.get("/fixtures/validation", async (req, res) => {

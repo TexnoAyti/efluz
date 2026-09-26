@@ -906,6 +906,24 @@ export const api = {
     return res;
   },
 
+  async sendMatchdayReminders(
+    competitionId: string,
+    params: { matchday: number; seasonId?: string; deadlineAt?: string | null }
+  ): Promise<{
+    success: boolean;
+    overdue: boolean;
+    fixturesChecked: number;
+    unfinishedFixtures: number;
+    outstandingPlayers: number;
+    queued: number;
+    skipped: number;
+  }> {
+    return request(`/api/admin/competitions/${competitionId}/matchday/remind`, {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  },
+
   async setCompetitionMatchdayTimer(
     competitionId: string,
     params: { currentMatchday?: number; durationHours?: number; nextOpenAt?: string; overrideStatus?: 'AUTO' | 'FORCE_OPEN' | 'FORCE_LOCKED' | 'PAUSED' }
