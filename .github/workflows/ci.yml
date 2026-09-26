@@ -35,16 +35,6 @@ jobs:
           NODE_ENV: "test"
         run: bun run build
 
-      - name: Upload generated API bundle
-        uses: actions/upload-artifact@v4
-        with:
-          name: tournament-control-v2-api-bundle
-          path: |
-            api/index.js
-            api/index.js.map
-          if-no-files-found: error
-          retention-days: 1
-
       - name: Run Vercel Self-Check & Verification Suites
         timeout-minutes: 8
         env:
