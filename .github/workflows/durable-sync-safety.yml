@@ -21,6 +21,8 @@ jobs:
         run: python scripts/restorePhase2Test.py
       - name: Apply durable sync safety patch
         run: python scripts/applyDurableSyncSafety.py
+      - name: Apply transaction compatibility fix
+        run: python scripts/fixDurableSyncMockCompat.py
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: TypeScript
