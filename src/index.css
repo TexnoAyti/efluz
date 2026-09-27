@@ -175,3 +175,179 @@
   border-left: 3px solid #ef4444;
 }
 
+/* Admin-only visual preview inspired by the supplied football app reference. */
+.efl-preview {
+  background: radial-gradient(ellipse 85% 32% at 8% 0%, rgba(82, 38, 88, .22), transparent 72%), #0d1424;
+}
+.efl-preview .preview-app-header {
+  background: rgba(13, 20, 36, .94);
+  border-bottom-color: rgba(255, 255, 255, .07);
+}
+.efl-preview .preview-brand-mark {
+  background: linear-gradient(145deg, #ff7177, #c02d60 72%);
+  color: white;
+  border-radius: 12px;
+  box-shadow: 0 8px 22px rgba(209, 50, 97, .3);
+}
+.efl-preview .glass-panel {
+  background-color: #141d31;
+  border-color: rgba(255, 255, 255, .08);
+  border-radius: 20px;
+}
+.efl-preview .glass-card {
+  background-color: #1b263c;
+  border-radius: 15px;
+}
+.efl-preview .glass-card-interactive:hover { background-color: #233149; }
+.efl-preview .glass-input { background-color: #111a2c; }
+.efl-preview .preview-league-banner {
+  background: radial-gradient(circle at 96% 0%, rgba(255, 124, 135, .14), transparent 42%), linear-gradient(130deg, #30263f, #17243c 66%);
+  border-color: rgba(255, 169, 180, .18);
+}
+.efl-preview .preview-match-center {
+  background: radial-gradient(circle at 50% 0%, rgba(64, 136, 181, .16), transparent 56%), #172238;
+  border-color: rgba(122, 189, 217, .2);
+}
+.efl-preview .glass-nav-bottom.preview-bottom-nav {
+  left: 50%;
+  right: auto;
+  bottom: max(14px, env(safe-area-inset-bottom, 0px));
+  width: min(390px, calc(100% - 32px));
+  transform: translateX(-50%);
+  padding: 5px 7px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 24px;
+  background: rgba(21, 30, 49, .94);
+  box-shadow: 0 16px 42px rgba(0, 0, 0, .48);
+}
+.efl-preview .preview-bottom-nav .preview-nav-active {
+  background: rgba(255, 255, 255, .08);
+}
+.matchday-home { max-width: 1120px; margin: 0 auto; }
+.matchday-kicker {
+  color: #6ee7bf;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .14em;
+  line-height: 1.4;
+}
+.matchday-search-button {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  flex: none;
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 15px;
+  background: #1c2940;
+  color: #dbeafe;
+}
+.matchday-search-button:hover, .matchday-quick:hover { background: #283854; }
+.preview-surface {
+  background: #151f33;
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 21px;
+  box-shadow: 0 16px 35px rgba(0, 0, 0, .12);
+}
+.matchday-featured {
+  position: relative;
+  isolation: isolate;
+  min-height: 270px;
+  overflow: hidden;
+  padding: 20px;
+  border: 1px solid rgba(255, 199, 205, .2);
+  border-radius: 26px;
+  background: linear-gradient(116deg, #6b234f 0%, #b44566 48%, #e07672 100%);
+  box-shadow: 0 16px 35px rgba(122, 36, 78, .24);
+}
+.matchday-featured::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  width: 70%;
+  height: 160%;
+  right: -12%;
+  top: -32%;
+  transform: rotate(-22deg);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .12), transparent);
+}
+.matchday-featured::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background: radial-gradient(circle at 0% 100%, rgba(18, 29, 56, .32), transparent 55%);
+}
+.matchday-crest {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  border: 1px solid rgba(255, 255, 255, .25);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, .13);
+  box-shadow: 0 8px 22px rgba(29, 15, 39, .15);
+}
+.matchday-stat {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 13px 6px;
+  border-radius: 14px;
+  background: #1c2940;
+  text-align: center;
+}
+.matchday-stat span { color: #94a3b8; font-size: 10px; font-weight: 700; }
+.matchday-stat strong { overflow: hidden; color: #f8fafc; font-size: 16px; font-weight: 900; text-overflow: ellipsis; white-space: nowrap; }
+.matchday-league-card {
+  position: relative;
+  min-width: 170px;
+  min-height: 142px;
+  overflow: hidden;
+  padding: 15px;
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 20px;
+  text-align: left;
+  transition: transform .15s ease, border-color .15s ease;
+}
+.matchday-league-card:hover { transform: translateY(-2px); border-color: rgba(255, 255, 255, .32); }
+.matchday-league-card.tone-indigo { background: linear-gradient(145deg, #372d60, #18233e); }
+.matchday-league-card.tone-coral { background: linear-gradient(145deg, #852d46, #36213f); }
+.matchday-league-card.tone-blue { background: linear-gradient(145deg, #235e9a, #182f58); }
+.matchday-league-card.tone-red { background: linear-gradient(145deg, #8e293b, #391b35); }
+.matchday-league-card.tone-teal { background: linear-gradient(145deg, #126e74, #15394c); }
+.matchday-league-mark {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(255, 255, 255, .2);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, .14);
+  color: white;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: -.05em;
+}
+.matchday-quick {
+  display: flex;
+  min-height: 74px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 13px;
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 17px;
+  background: #1b2940;
+  color: white;
+  font-size: 11px;
+  font-weight: 800;
+  text-align: left;
+  transition: background .15s ease;
+}
+@media (min-width: 640px) {
+  .matchday-featured { padding: 28px; }
+  .matchday-crest { width: 88px; height: 88px; }
+  .matchday-league-card { min-width: 200px; }
+}

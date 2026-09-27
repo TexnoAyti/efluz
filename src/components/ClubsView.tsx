@@ -36,7 +36,9 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
 
   // League & Data states
   const [leagues, setLeagues] = useState<League[]>([]);
-  const [selectedLeagueId, setSelectedLeagueId] = useState<string>('league-premier-league');
+  const [selectedLeagueId, setSelectedLeagueId] = useState<string>(() => {
+    try { return user?.isAdmin && sessionStorage.getItem('efl:preview-league') || 'league-premier-league'; } catch { return 'league-premier-league'; }
+  });
   const [activeLeagueTab, setActiveLeagueTab] = useState<'CLUBS' | 'MATCHES' | 'STANDINGS'>('CLUBS');
 
   // Clubs state
@@ -206,6 +208,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
 
   const handleSelectLeague = (leagueId: string) => {
     setSelectedLeagueId(leagueId);
+    if (user?.isAdmin) try { sessionStorage.setItem('efl:preview-league', leagueId); } catch { /* storage may be unavailable in a WebView */ }
     loadClubsForLeague(leagueId);
     if (activeLeagueTab === 'MATCHES') {
       loadLeagueFixtures(leagueId, selectedMatchday);
@@ -458,7 +461,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
 
       {/* 2. Dedicated Selected League Header Banner */}
       {currentLeague && (
-        <div className="relative overflow-hidden glass-panel p-4 sm:p-6 shadow-2xl border-emerald-500/30">
+        <div className="relative overflow-hidden glass-panel p-4 sm:p-6 shadow-2xl border-emerald-500/30 preview-league-banner">
           <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
 
           <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
