@@ -32,14 +32,26 @@ interface ClubsViewProps {
 export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
   const { user, currentClub, ownedClubs, activeSeasonId, refreshUserData, showToast } = useAuth();
   const { openUserProfile } = useUserProfile();
-  const { t } = useI18n();
+  const { t, language } = useI18n();
+  const previewText = {
+    uz: { domestic: 'Milliy ligalar', cups: 'Milliy kuboklar', refresh: 'Yangilash', tier: 'Daraja', active: 'Faol', clubs: 'Klublar', matches: 'O‘yinlar', standings: 'Jadval', available: 'Bo‘sh', claimed: 'Tanlangan', matchday: 'Tur', emptyFixtures: 'Bu turda o‘yin yo‘q.', emptyStandings: 'Jadval hali shakllanmagan.' },
+    ru: { domestic: 'Национальные лиги', cups: 'Национальные кубки', refresh: 'Обновить', tier: 'Уровень', active: 'Активен', clubs: 'Клубы', matches: 'Матчи', standings: 'Таблица', available: 'Свободно', claimed: 'Занято', matchday: 'Тур', emptyFixtures: 'В этом туре матчей нет.', emptyStandings: 'Таблица пока не сформирована.' },
+    en: { domestic: 'Domestic Leagues', cups: 'National Cups', refresh: 'Refresh', tier: 'Tier', active: 'Active', clubs: 'Clubs', matches: 'Matches', standings: 'Standings', available: 'Available', claimed: 'Claimed', matchday: 'Matchday', emptyFixtures: 'No fixtures scheduled for this matchday.', emptyStandings: 'Standings are not available yet.' },
+  }[language] || { domestic: 'Milliy ligalar', cups: 'Milliy kuboklar', refresh: 'Yangilash', tier: 'Daraja', active: 'Faol', clubs: 'Klublar', matches: 'O‘yinlar', standings: 'Jadval', available: 'Bo‘sh', claimed: 'Tanlangan', matchday: 'Tur', emptyFixtures: 'Bu turda o‘yin yo‘q.', emptyStandings: 'Jadval hali shakllanmagan.' };
 
   // League & Data states
   const [leagues, setLeagues] = useState<League[]>([]);
   const [selectedLeagueId, setSelectedLeagueId] = useState<string>(() => {
     try { return user?.isAdmin && sessionStorage.getItem('efl:preview-league') || 'league-premier-league'; } catch { return 'league-premier-league'; }
   });
-  const [activeLeagueTab, setActiveLeagueTab] = useState<'CLUBS' | 'MATCHES' | 'STANDINGS'>('CLUBS');
+  const [activeLeagueTab, setActiveLeagueTab] = useState<'CLUBS' | 'MATCHES' | 'STANDINGS'>(() => {
+    if (!user?.isAdmin) return 'CLUBS';
+    try {
+      const target = sessionStorage.getItem('efl:preview-league-tab');
+      sessionStorage.removeItem('efl:preview-league-tab');
+      return target === 'STANDINGS' || target === 'MATCHES' ? target : 'CLUBS';
+    } catch { return 'CLUBS'; }
+  });
 
   // Clubs state
   const [clubs, setClubs] = useState<Club[]>([]);
@@ -375,7 +387,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
           className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-black btn-glass-primary text-slate-950 shadow-md min-h-[36px]"
         >
           <Shield className="w-3.5 h-3.5" />
-          <span>Domestic Leagues</span>
+          <span>{user?.isAdmin ? previewText.domestic : 'Domestic Leagues'}</span>
         </button>
         {onNavigateTab && (
           <>
@@ -384,7 +396,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
               className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold glass-card text-slate-300 hover:text-white min-h-[36px]"
             >
               <Trophy className="w-3.5 h-3.5 text-amber-400" />
-              <span>National Cups</span>
+              <span>{user?.isAdmin ? previewText.cups : 'National Cups'}</span>
             </button>
             <button
               onClick={() => onNavigateTab('champions-league')}
@@ -402,7 +414,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
         <div className="flex items-center justify-between">
           <div className="text-[11px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
             <Shield className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Domestic Leagues (2026/27)</span>
+            <span>{user?.isAdmin ? previewText.domestic : 'Domestic Leagues'} (2026/27)</span>
           </div>
           <button
             id="btn-refresh-clubs-view"
@@ -418,7 +430,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
             className="px-2.5 py-1 glass-card glass-card-interactive text-slate-300 font-bold text-[11px] flex items-center gap-1 transition-colors disabled:opacity-50 min-h-[32px]"
           >
             <RefreshCw className={`w-3 h-3 ${isLoadingClubs ? 'animate-spin text-emerald-400' : ''}`} />
-            <span>Refresh</span>
+            <span>{user?.isAdmin ? previewText.refresh : 'Refresh'}</span>
           </button>
         </div>
 
@@ -493,10 +505,10 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
               <div>
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                    {currentLeague.country} • Tier {currentLeague.tier}
+                    {currentLeague.country} • {user?.isAdmin ? previewText.tier : 'Tier'} {currentLeague.tier}
                   </span>
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                    2026/27 Active
+                    2026/27 {user?.isAdmin ? previewText.active : 'Active'}
                   </span>
                 </div>
                 <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight mt-0.5">
@@ -505,12 +517,12 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                 <div className="flex items-center gap-3 mt-1.5 text-xs text-slate-300">
                   <span className="flex items-center gap-1 font-semibold">
                     <Shield className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>{clubs.length} Clubs</span>
+                    <span>{clubs.length} {user?.isAdmin ? previewText.clubs : 'Clubs'}</span>
                   </span>
                   <span>•</span>
-                  <span className="text-emerald-400 font-bold">{availableCount} Available</span>
+                  <span className="text-emerald-400 font-bold">{availableCount} {user?.isAdmin ? previewText.available : 'Available'}</span>
                   <span>•</span>
-                  <span className="text-indigo-300 font-bold">{claimedCount} Claimed</span>
+                  <span className="text-indigo-300 font-bold">{claimedCount} {user?.isAdmin ? previewText.claimed : 'Claimed'}</span>
                 </div>
               </div>
             </div>
@@ -555,7 +567,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
           }`}
         >
           <Shield className="w-4 h-4" />
-          <span>Clubs ({clubs.length})</span>
+          <span>{user?.isAdmin ? previewText.clubs : 'Clubs'} ({clubs.length})</span>
         </button>
 
         <button
@@ -567,7 +579,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
           }`}
         >
           <Swords className="w-4 h-4" />
-          <span>Matches ({leagueFixtures.length})</span>
+          <span>{user?.isAdmin ? previewText.matches : `Matches (${leagueFixtures.length})`}</span>
         </button>
 
         <button
@@ -579,7 +591,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
           }`}
         >
           <Trophy className="w-4 h-4" />
-          <span>Standings Table</span>
+          <span>{user?.isAdmin ? previewText.standings : 'Standings Table'}</span>
         </button>
       </div>
 
@@ -813,7 +825,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
           {matchdays.length > 0 && (
             <div className="glass-panel p-3 flex items-center gap-2 overflow-x-auto scrollbar-none">
               <span className="text-[11px] font-black text-slate-400 uppercase tracking-wider shrink-0 mr-1">
-                Matchday:
+                {user?.isAdmin ? previewText.matchday : 'Matchday'}:
               </span>
               {matchdays.map((md) => (
                 <button
@@ -825,7 +837,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                       : 'glass-card text-slate-300 hover:text-white'
                   }`}
                 >
-                  MD {md}
+                  {user?.isAdmin ? previewText.matchday : 'MD'} {md}
                 </button>
               ))}
             </div>
@@ -840,7 +852,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
             </div>
           ) : currentMatchdayFixtures.length === 0 ? (
             <div className="py-12 text-center glass-panel rounded-2xl border border-white/[0.06] text-slate-400 text-xs">
-              No fixtures scheduled for this matchday.
+              {user?.isAdmin ? previewText.emptyFixtures : 'No fixtures scheduled for this matchday.'}
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -974,7 +986,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
             </div>
           ) : leagueStandings.length === 0 ? (
             <div className="py-12 text-center glass-panel rounded-2xl border border-white/[0.06] text-slate-400 text-xs">
-              Standings are not available yet.
+              {user?.isAdmin ? previewText.emptyStandings : 'Standings are not available yet.'}
             </div>
           ) : (
             <div className="glass-panel overflow-hidden shadow-2xl border-white/[0.08]">

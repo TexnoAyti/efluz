@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Fixture } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
+import { useI18n } from '../i18n';
 import confetti from 'canvas-confetti';
 import { ClubCrest } from './ClubCrest';
 import {
@@ -31,6 +32,13 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
   onSuccess,
 }) => {
   const { user, showToast } = useAuth();
+  const { language } = useI18n();
+  const previewCopy = {
+    uz: { title: 'Natijani kiritish', matchday: 'tur', you: 'Siz', claimed: 'Tanlangan', unclaimed: 'Egasi yo‘q', opponent: 'Raqib kiritgan natija', opponentHint: 'Hisoblar bir xil bo‘lsa natija tasdiqlanadi. Farq qilsa nizo ko‘rib chiqiladi.', score: 'eFootball o‘yinidagi yakuniy hisob', proof: 'O‘yin skrinshoti havolasi (ixtiyoriy)', proofHint: 'Skrinshot kelishmovchilik bo‘lsa natijani tekshirishga yordam beradi.', cancel: 'Bekor qilish', sending: 'Yuborilmoqda...', submit: 'Hisobni yuborish', confirmed: 'Natija tasdiqlandi va jadval yangilandi.', disputed: 'Hisoblar farq qildi. Nizo adminga yuborildi.', pending: 'Natija yuborildi. Raqib tasdig‘i kutilmoqda.', failed: 'Natijani yuborib bo‘lmadi.' },
+    ru: { title: 'Ввести результат', matchday: 'тур', you: 'Вы', claimed: 'Занят', unclaimed: 'Свободен', opponent: 'Результат соперника', opponentHint: 'Если счета совпадут, результат подтвердится. Разные счета отправятся на рассмотрение.', score: 'Итоговый счёт в eFootball', proof: 'Ссылка на скриншот (необязательно)', proofHint: 'Скриншот поможет проверить результат при споре.', cancel: 'Отмена', sending: 'Отправка...', submit: 'Отправить счёт', confirmed: 'Результат подтверждён, таблица обновлена.', disputed: 'Счета не совпали. Спор отправлен администратору.', pending: 'Результат отправлен. Ожидаем подтверждения соперника.', failed: 'Не удалось отправить результат.' },
+    en: { title: 'Submit match result', matchday: 'Matchday', you: 'You', claimed: 'Claimed', unclaimed: 'Unclaimed', opponent: 'Opponent submitted', opponentHint: 'Matching scores confirm the result. Different scores go to dispute review.', score: 'Final score from eFootball', proof: 'Screenshot link (optional)', proofHint: 'A screenshot helps resolve a score dispute.', cancel: 'Cancel', sending: 'Submitting...', submit: 'Submit score', confirmed: 'Result confirmed and standings updated.', disputed: 'Scores differ. Dispute sent to admin.', pending: 'Score submitted. Awaiting opponent confirmation.', failed: 'Failed to submit score.' },
+  }[language];
+  const c = user?.isAdmin ? previewCopy : null;
 
   // Determine whether current user is Home or Away
   const isHomeOwner = fixture.homeOwnerId === user?.id;
@@ -65,17 +73,17 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
           spread: 70,
           origin: { y: 0.6 },
         });
-        showToast('Match Result Confirmed! Standings have been updated.', 'success');
+        showToast(c?.confirmed || 'Match Result Confirmed! Standings have been updated.', 'success');
       } else if (res.fixture.status === 'DISPUTED') {
-        showToast('Score mismatch! Match sent to Admin Dispute Center.', 'error');
+        showToast(c?.disputed || 'Score mismatch! Match sent to Admin Dispute Center.', 'error');
       } else {
-        showToast('Score submitted! Waiting for opponent confirmation.', 'info');
+        showToast(c?.pending || 'Score submitted! Waiting for opponent confirmation.', 'info');
       }
 
       onSuccess(res.fixture);
       onClose();
     } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to submit score.');
+      setErrorMsg(err.message || c?.failed || 'Failed to submit score.');
     } finally {
       setIsSubmitting(false);
     }
@@ -91,7 +99,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="glass-modal w-full max-w-lg shadow-2xl overflow-hidden text-white flex flex-col max-h-[90vh]">
+      <div className={`glass-modal w-full max-w-lg shadow-2xl overflow-hidden text-white flex flex-col max-h-[90vh] ${c ? 'matchday-result-modal' : ''}`}>
         {/* Header */}
         <div className="px-5 py-4 border-b border-white/[0.08] flex items-center justify-between bg-white/[0.02]">
           <div className="flex items-center gap-2.5">
@@ -99,14 +107,16 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
               <Shield className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="font-bold text-sm sm:text-base text-slate-100">Submit Match Result</h3>
+              <h3 className="font-bold text-sm sm:text-base text-slate-100">{c?.title || 'Submit Match Result'}</h3>
               <p className="text-[11px] text-slate-400">
-                {fixture.competitionName} • {fixture.roundName || `Matchday ${fixture.matchday}`}
+                {fixture.competitionName} • {fixture.roundName || `${c?.matchday || 'Matchday'} ${fixture.matchday}`}
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
+            type="button"
+            aria-label={c?.cancel || 'Close'}
             className="p-1.5 rounded-xl text-slate-400 hover:text-white glass-button transition-colors"
           >
             <X className="w-4 h-4" />
@@ -132,7 +142,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
                 </div>
                 <div className="font-black text-xs sm:text-sm text-slate-100 truncate max-w-full">{fixture.homeClub?.name}</div>
                 <span className="text-[10px] text-emerald-400 font-semibold mt-0.5">
-                  {isHomeOwner ? '(You)' : fixture.homeOwnerId ? 'Claimed' : 'Unclaimed'}
+                  {isHomeOwner ? `(${c?.you || 'You'})` : fixture.homeOwnerId ? c?.claimed || 'Claimed' : c?.unclaimed || 'Unclaimed'}
                 </span>
               </div>
 
@@ -157,7 +167,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
                 </div>
                 <div className="font-black text-xs sm:text-sm text-slate-100 truncate max-w-full">{fixture.awayClub?.name}</div>
                 <span className="text-[10px] text-emerald-400 font-semibold mt-0.5">
-                  {isAwayOwner ? '(You)' : fixture.awayOwnerId ? 'Claimed' : 'Unclaimed'}
+                  {isAwayOwner ? `(${c?.you || 'You'})` : fixture.awayOwnerId ? c?.claimed || 'Claimed' : c?.unclaimed || 'Unclaimed'}
                 </span>
               </div>
             </div>
@@ -168,10 +178,10 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
             <div className="glass-card bg-indigo-950/25 border-indigo-500/30 p-3.5 text-xs space-y-1.5">
               <div className="flex items-center gap-2 font-bold text-indigo-300">
                 <Clock className="w-4 h-4 text-indigo-400 shrink-0" />
-                <span>Opponent Submitted: {fixture.opponentSubmission.homeScore} - {fixture.opponentSubmission.awayScore}</span>
+                <span>{c?.opponent || 'Opponent Submitted'}: {fixture.opponentSubmission.homeScore} - {fixture.opponentSubmission.awayScore}</span>
               </div>
               <p className="text-slate-300 text-[11px] leading-relaxed">
-                If you submit this exact score, the match will be verified and league standings updated immediately.
+                {c?.opponentHint || 'If you submit this exact score, the match will be verified and league standings updated immediately.'}
               </p>
             </div>
           )}
@@ -179,7 +189,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
           {/* Interactive Score Stepper Controls */}
           <div>
             <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-2 text-center">
-              Official Match Score
+              {c?.score || 'Official Match Score'}
             </label>
             <div className="grid grid-cols-2 gap-3 glass-panel p-4">
               {/* Home Score Stepper */}
@@ -201,6 +211,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
                     max="99"
                     value={homeScore}
                     onChange={(e) => setHomeScore(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                    aria-label={fixture.homeClub?.name || 'Home score'}
                     className="w-16 h-12 glass-input rounded-xl text-center text-2xl font-black text-white focus:outline-none"
                   />
                   <button
@@ -232,6 +243,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
                     max="99"
                     value={awayScore}
                     onChange={(e) => setAwayScore(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                    aria-label={fixture.awayClub?.name || 'Away score'}
                     className="w-16 h-12 glass-input rounded-xl text-center text-2xl font-black text-white focus:outline-none"
                   />
                   <button
@@ -250,7 +262,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
           <div>
             <label className="block text-xs font-medium text-slate-300 mb-1 flex items-center gap-1.5">
               <Link className="w-3.5 h-3.5 text-slate-400" />
-              <span>Match Proof / Screenshot URL (Optional)</span>
+              <span>{c?.proof || 'Match Proof / Screenshot URL (Optional)'}</span>
             </label>
             <input
               type="url"
@@ -260,7 +272,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
               className="w-full px-3 py-2 glass-input rounded-xl text-xs text-slate-200 placeholder-slate-500 focus:outline-none"
             />
             <p className="text-[11px] text-slate-500 mt-1">
-              Providing end-game screenshot proof ensures faster resolution if your opponent inputs a wrong score.
+              {c?.proofHint || 'Providing end-game screenshot proof ensures faster resolution if your opponent inputs a wrong score.'}
             </p>
           </div>
 
@@ -279,7 +291,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
               onClick={onClose}
               className="flex-1 py-2.5 px-4 glass-button text-slate-300 font-semibold text-xs transition-colors"
             >
-              Cancel
+              {c?.cancel || 'Cancel'}
             </button>
             <button
               type="submit"
@@ -290,12 +302,12 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
               {isSubmitting ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Submitting...</span>
+                  <span>{c?.sending || 'Submitting...'}</span>
                 </>
               ) : (
                 <>
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>Submit Score ({homeScore} - {awayScore})</span>
+                  <span>{c?.submit || 'Submit Score'} ({homeScore} - {awayScore})</span>
                 </>
               )}
             </button>
