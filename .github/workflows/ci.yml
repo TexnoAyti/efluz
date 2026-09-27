@@ -59,6 +59,7 @@ jobs:
           bun run test:tournament-control-v2
           ./node_modules/.bin/tsx src/server/tests/seasonLifecycleRegressionTest.ts
           bun run test:season-operations-v3
+          bun run test:match-operations-v4
 
       - name: Install Redis test dependency
         timeout-minutes: 3
