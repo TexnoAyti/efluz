@@ -455,7 +455,7 @@ const CareerStudio: React.FC<{
               <h3 className="text-base font-black text-white">@{selectedUser?.username || 'player'} Career</h3>
               <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase ${entitlement?.status === 'ACTIVE' ? 'border-amber-400/25 bg-amber-400/10 text-amber-300' : 'border-slate-700 bg-slate-900 text-slate-500'}`}>{entitlement?.status === 'ACTIVE' ? 'Premium active' : 'Preview only'}</span>
             </div>
-            <p className="mt-1 text-[10px] text-slate-500">{career.currentClub?.name || 'No active club'} • Season 2026/27 • {career.source.toUpperCase()} snapshot</p>
+            <p className="mt-1 text-[10px] text-slate-500">{career.ownedClubs.map((club) => club.name).join(' · ') || 'No active club'} • Season 2026/27 • {career.source.toUpperCase()} snapshot</p>
           </div>
           <div className="flex items-center gap-1.5">
             {career.form.length ? career.form.map((result, index) => <FormDot key={`${result}-${index}`} result={result} />) : <span className="text-[10px] text-slate-600">No form yet</span>}

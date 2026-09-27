@@ -5,7 +5,9 @@ import {
   isPremiumPublicEnabled,
   makePremiumPayload,
   parsePremiumPayload,
+  selectCareerFixtures,
 } from '../services/premiumService';
+import { Fixture } from '../../types';
 
 function run() {
   assert.equal(PREMIUM_PRICE_STARS, 89, 'Premium price must remain 89 Telegram Stars');
@@ -46,6 +48,23 @@ function run() {
   assert.equal(league!.wins, 1);
   assert.equal(league!.draws, 1);
   assert.equal(league!.losses, 0);
+
+  const snapshot = [
+    { id: 'a', competitionId: 'comp-premier-league-2026', homeClubId: 'club-a', awayClubId: 'club-x', homeScore: 2, awayScore: 0, status: 'CONFIRMED' },
+    { id: 'b', competitionId: 'comp-la-liga-2026', homeClubId: 'club-y', awayClubId: 'club-b', homeScore: 1, awayScore: 3, status: 'CONFIRMED' },
+    { id: 'c', competitionId: 'comp-fa-cup-2026', homeClubId: 'club-a', awayClubId: 'club-b', homeScore: 1, awayScore: 2, status: 'CONFIRMED' },
+    { id: 'd', competitionId: 'comp-fa-cup-2026', homeClubId: 'club-a', awayClubId: 'club-z', homeScore: 4, awayScore: 0, status: 'DISPUTED' },
+    { id: 'e', competitionId: 'comp-fa-cup-2026', homeClubId: 'club-a', awayClubId: 'club-z', homeScore: null, awayScore: null, status: 'CONFIRMED' },
+    { id: 'f', competitionId: 'comp-fa-cup-2026', homeClubId: 'club-a', awayClubId: 'club-a', homeScore: 1, awayScore: 1, status: 'CONFIRMED' },
+  ] as Fixture[];
+  const selected = selectCareerFixtures(snapshot, ['club-a', 'club-b']);
+  assert.equal(selected.length, 3, 'Only official, scored fixtures for owned clubs count');
+  const multiClub = computeCareerStatsFromFixtures(selected, ['club-a', 'club-b']);
+  assert.equal(multiClub.overall.matches, 4, 'Both owned clubs count when they meet');
+  assert.equal(multiClub.overall.wins, 3);
+  assert.equal(multiClub.overall.losses, 1);
+  assert.equal(multiClub.overall.goalsFor, 8);
+  assert.equal(multiClub.overall.goalsAgainst, 4);
 
   console.log('Premium Private Lab regression: PASS');
 }

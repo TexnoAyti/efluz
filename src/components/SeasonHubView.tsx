@@ -244,7 +244,10 @@ export const SeasonHubView: React.FC<SeasonHubViewProps> = ({ onNavigateTab }) =
 
       <section className={`glass-panel p-5 sm:p-6 ${career?.locked ? 'border-indigo-500/30' : 'border-emerald-500/30'}`}>
         <div className="flex items-start justify-between gap-4"><div><h2 className="text-sm font-black text-white flex items-center gap-2">{career?.locked ? <LockKeyhole className="w-4 h-4 text-indigo-400" /> : <Sparkles className="w-4 h-4 text-emerald-400" />}EFL Career</h2><p className="text-xs text-slate-400 mt-1">Career barcha player uchun hisoblanadi; advanced view Premium entitlement bilan ochiladi.</p></div>{career?.locked && <span className="text-[10px] px-2 py-1 rounded-lg border border-indigo-500/30 bg-indigo-500/10 text-indigo-300 font-black">{career.priceStars} Stars / season</span>}</div>
-        {!career?.locked && career?.career && <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mt-4">{[['Matches', career.career.overall.matches], ['Wins', career.career.overall.wins], ['Win %', `${career.career.overall.winRate}%`], ['GF', career.career.overall.goalsFor], ['Trophies', career.career.achievements?.filter((x: any) => x.unlocked).length || 0], ['Unbeaten', career.career.overall.longestUnbeatenRun]].map(([label, value]) => <div key={String(label)} className="rounded-xl bg-slate-950/60 p-3 text-center"><div className="text-base font-black text-white">{value}</div><div className="text-[9px] text-slate-500">{label}</div></div>)}</div>}
+        {!career?.locked && career?.career && <>
+          <p className="mt-3 text-[10px] text-slate-400">{career.career.ownedClubs?.map((club: any) => club.name).join(' · ') || 'No active club'}</p>
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mt-3">{[['Matches', career.career.overall.matches], ['Wins', career.career.overall.wins], ['Win %', `${career.career.overall.winRate}%`], ['GF', career.career.overall.goalsFor], ['Trophies', career.career.achievements?.filter((x: any) => x.unlocked).length || 0], ['Unbeaten', career.career.overall.longestUnbeatenRun]].map(([label, value]) => <div key={String(label)} className="rounded-xl bg-slate-950/60 p-3 text-center"><div className="text-base font-black text-white">{value}</div><div className="text-[9px] text-slate-500">{label}</div></div>)}</div>
+        </>}
       </section>
 
       {user?.isAdmin && adminControl && (

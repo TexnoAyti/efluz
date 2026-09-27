@@ -19,6 +19,7 @@ export interface PremiumCareerDto {
   userId: string;
   seasonId: string;
   currentClub: { id: string; name: string; shortName?: string; leagueId?: string } | null;
+  ownedClubs: Array<{ id: string; name: string; shortName?: string; leagueId?: string }>;
   overall: {
     matches: number;
     wins: number;
@@ -50,7 +51,7 @@ export interface PremiumCareerDto {
   }>;
   achievements: Array<{ id: string; label: string; description: string; unlocked: boolean }>;
   generatedAt: string;
-  source: 'sqlite' | 'empty';
+  source: 'read-model' | 'sqlite' | 'empty';
 }
 
 export interface PremiumAdminUser {
