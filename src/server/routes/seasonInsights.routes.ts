@@ -8,7 +8,10 @@ seasonInsightsRouter.get('/season', async (req: Request, res: Response) => {
   const seasonId = String(req.query.seasonId || 'season-2026-27');
   try {
     const result = await getSeasonInsights(seasonId);
-    res.setHeader('Cache-Control', 'private, max-age=30');
+    // Season Awards are live competition state. Do not let the Telegram WebView/browser
+    // pin a pre-mutation response for 30 seconds after an admin result edit/delete.
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
     res.json(result);
   } catch (error: any) {
     console.error('[SEASON_INSIGHTS_FAILED]', error?.message || error);
@@ -33,7 +36,8 @@ seasonInsightsRouter.get('/player/:userId', async (req: Request, res: Response) 
       // Insights can still be derived from owner-neutral snapshots/SQLite.
     }
     const result = await getPlayerSeasonInsights(userId, seasonId, fallbackClubIds);
-    res.setHeader('Cache-Control', 'private, max-age=20');
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
     res.json(result);
   } catch (error: any) {
     console.error('[PLAYER_INSIGHTS_FAILED]', JSON.stringify({ userId, seasonId, error: error?.message || String(error) }));
