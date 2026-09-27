@@ -9,7 +9,6 @@ const LIFECYCLE_TO_OPERATIONS: Record<LifecyclePhaseId, SeasonPhaseId> = {
   DOMESTIC_CUPS: 'DOMESTIC_CUPS',
   LEAGUE_10_19: 'LEAGUE_MD_10_19',
   EUROPE: 'EUROPE_LEAGUE_PHASE',
-  LEAGUE_20_PLUS: 'LEAGUE_MD_20_PLUS',
 };
 
 const DOMESTIC_LEAGUES = new Set([
@@ -28,12 +27,12 @@ const DOMESTIC_CUPS = new Set([
 ]);
 const EUROPE = new Set(['comp-champions-league-2026', 'comp-europa-league-2026']);
 
-function deadlinePhase(item: any): SeasonPhaseId {
+function deadlinePhase(item: any): SeasonPhaseId | null {
   const md = Number(item.matchday || 0);
   if (DOMESTIC_LEAGUES.has(item.competitionId)) {
-    if (md <= 9) return 'LEAGUE_MD_1_9';
-    if (md <= 19) return 'LEAGUE_MD_10_19';
-    return 'LEAGUE_MD_20_PLUS';
+    if (md >= 1 && md <= 9) return 'LEAGUE_MD_1_9';
+    if (md >= 10 && md <= 19) return 'LEAGUE_MD_10_19';
+    return null;
   }
   if (DOMESTIC_CUPS.has(item.competitionId)) return 'DOMESTIC_CUPS';
   if (EUROPE.has(item.competitionId) && md <= 8) return 'EUROPE_LEAGUE_PHASE';
@@ -52,34 +51,39 @@ seasonOperationsConsistencyRouter.get('/overview', async (req: Request, res: Res
       lifecycle.phases.map((phase) => [LIFECYCLE_TO_OPERATIONS[phase.id], phase] as const)
     );
 
-    const phases = overview.phases.map((phase) => {
-      const lifecyclePhase = lifecycleByOperationId.get(phase.id);
-      if (!lifecyclePhase) return phase;
-      return {
-        ...phase,
-        total: lifecyclePhase.total,
-        confirmed: lifecyclePhase.confirmed,
-        remaining: Math.max(0, lifecyclePhase.total - lifecyclePhase.confirmed),
-        percent: lifecyclePhase.progress,
-        status:
-          lifecyclePhase.status === 'COMPLETED'
-            ? 'DONE'
-            : lifecyclePhase.status === 'ACTIVE'
-            ? 'ACTIVE'
-            : 'UPCOMING',
-        currentMatchday: lifecyclePhase.currentMatchday,
-      };
-    });
+    // 2026/27 domestic leagues are one round only (19 matchdays max).
+    // Never expose the legacy MD20+ bucket in the roadmap.
+    const phases = overview.phases
+      .filter((phase) => phase.id !== 'LEAGUE_MD_20_PLUS')
+      .map((phase) => {
+        const lifecyclePhase = lifecycleByOperationId.get(phase.id);
+        if (!lifecyclePhase) return phase;
+        return {
+          ...phase,
+          total: lifecyclePhase.total,
+          confirmed: lifecyclePhase.confirmed,
+          remaining: Math.max(0, lifecyclePhase.total - lifecyclePhase.confirmed),
+          percent: lifecyclePhase.progress,
+          status:
+            lifecyclePhase.status === 'COMPLETED'
+              ? 'DONE'
+              : lifecyclePhase.status === 'ACTIVE'
+              ? 'ACTIVE'
+              : 'UPCOMING',
+          currentMatchday: lifecyclePhase.currentMatchday,
+        };
+      });
 
     const currentOperationPhaseId = LIFECYCLE_TO_OPERATIONS[lifecycle.currentPhase];
     const currentPhase = phases.find((phase) => phase.id === currentOperationPhaseId) || phases.find((phase) => phase.status === 'ACTIVE') || phases[0];
     const currentLifecyclePhase = lifecycle.phases.find((phase) => phase.id === lifecycle.currentPhase);
     const currentMatchday = currentLifecyclePhase?.currentMatchday || null;
 
-    // Only surface deadlines that users can act on now. Future matchdays must not
-    // appear overdue simply because legacy scheduledAt values are old.
+    // Only surface deadlines that users can act on now. Future matchdays and
+    // any legacy domestic MD20+ fixtures are out of scope for a 19-matchday season.
     const deadlines = overview.deadlines.filter((item: any) => {
-      if (deadlinePhase(item) !== currentOperationPhaseId) return false;
+      const itemPhase = deadlinePhase(item);
+      if (!itemPhase || itemPhase !== currentOperationPhaseId) return false;
       if (currentMatchday && Number(item.matchday || 0) > currentMatchday) return false;
       return true;
     });

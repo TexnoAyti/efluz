@@ -3,7 +3,7 @@ import { getCompetitionFixturesFromReadModel } from '../readModel/readModelStore
 import { filterTombstonedFixtures } from './fixtureTombstoneService';
 import { Fixture } from '../../types';
 
-export type LifecyclePhaseId = 'LEAGUE_1_9' | 'DOMESTIC_CUPS' | 'LEAGUE_10_19' | 'EUROPE' | 'LEAGUE_20_PLUS';
+export type LifecyclePhaseId = 'LEAGUE_1_9' | 'DOMESTIC_CUPS' | 'LEAGUE_10_19' | 'EUROPE';
 export type LifecyclePhaseStatus = 'COMPLETED' | 'ACTIVE' | 'LOCKED';
 
 export interface LifecyclePhase {
@@ -36,7 +36,7 @@ const CUPS = [
   'comp-dfb-pokal-2026', 'comp-coupe-de-france-2026',
 ];
 const EUROPE = ['comp-champions-league-2026', 'comp-europa-league-2026'];
-const PHASE_ORDER: LifecyclePhaseId[] = ['LEAGUE_1_9', 'DOMESTIC_CUPS', 'LEAGUE_10_19', 'EUROPE', 'LEAGUE_20_PLUS'];
+const PHASE_ORDER: LifecyclePhaseId[] = ['LEAGUE_1_9', 'DOMESTIC_CUPS', 'LEAGUE_10_19', 'EUROPE'];
 
 let cached: { key: string; value: SeasonLifecycle; expiresAt: number } | null = null;
 
@@ -125,7 +125,6 @@ export async function getSeasonLifecycle(seasonId = 'season-2026-27', force = fa
     DOMESTIC_CUPS: cupFixtures,
     LEAGUE_10_19: leagueFixtures.filter((f) => Number(f.matchday || 0) >= 10 && Number(f.matchday || 0) <= 19),
     EUROPE: europeFixtures.filter((f) => Number(f.matchday || 0) >= 1 && Number(f.matchday || 0) <= 8),
-    LEAGUE_20_PLUS: leagueFixtures.filter((f) => Number(f.matchday || 0) >= 20),
   };
 
   const phaseStats = Object.fromEntries(PHASE_ORDER.map((id) => [id, stats(groups[id])])) as Record<LifecyclePhaseId, ReturnType<typeof stats>>;
@@ -140,9 +139,8 @@ export async function getSeasonLifecycle(seasonId = 'season-2026-27', force = fa
   const labels: Record<LifecyclePhaseId, [string, string]> = {
     LEAGUE_1_9: ['Liga 1–9-turlar', 'MD1 tugagach MD2 ochiladi; MD9 dan keyin kuboklar'],
     DOMESTIC_CUPS: ['Domestic Cups', '5 ta milliy kubok bosqichi'],
-    LEAGUE_10_19: ['Liga 10–19-turlar', 'MD19 dan keyin UCL/UEL ochiladi'],
-    EUROPE: ['UCL / UEL', 'Yevropa liga bosqichi, turma-tur progression'],
-    LEAGUE_20_PLUS: ['Liga 20+ turlar', 'Liga mavsumining ikkinchi yarmi'],
+    LEAGUE_10_19: ['Liga 10–19-turlar', 'Bir davrali liga shu bosqichda MD19 bilan yakunlanadi'],
+    EUROPE: ['UCL / UEL', 'MD19 dan keyin Yevropa liga bosqichi, turma-tur progression'],
   };
 
   const phases = PHASE_ORDER.map((id, index): LifecyclePhase => {
@@ -174,9 +172,9 @@ export async function getSeasonLifecycle(seasonId = 'season-2026-27', force = fa
 export function fixtureLifecyclePhase(fixture: Fixture): LifecyclePhaseId | null {
   const md = Number(fixture.matchday || 0);
   if (LEAGUES.includes(fixture.competitionId)) {
-    if (md <= 9) return 'LEAGUE_1_9';
-    if (md <= 19) return 'LEAGUE_10_19';
-    return 'LEAGUE_20_PLUS';
+    if (md >= 1 && md <= 9) return 'LEAGUE_1_9';
+    if (md >= 10 && md <= 19) return 'LEAGUE_10_19';
+    return null;
   }
   if (CUPS.includes(fixture.competitionId)) return 'DOMESTIC_CUPS';
   if (EUROPE.includes(fixture.competitionId) && md >= 1 && md <= 8) return 'EUROPE';
