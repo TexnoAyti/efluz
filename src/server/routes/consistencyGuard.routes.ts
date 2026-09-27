@@ -5,6 +5,7 @@ import { COLLECTIONS } from '../firebase/collections';
 import {
   adminDeleteFixtureFirestore,
   enrichFixturesWithAuthoritativeOwners,
+  getFixtureByIdFirestore,
 } from '../firebase/firestoreStore';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
 import { queryGet, queryRun } from '../db';
@@ -19,6 +20,12 @@ import {
   redisSetRaw,
 } from '../readModel/readModelStore';
 import { createAuditLog } from '../services/adminService';
+import {
+  addFixtureTombstone,
+  filterTombstonedFixtures,
+  removeFixtureFromDurableSnapshots,
+  refreshDerivedCompetitionState,
+} from '../services/fixtureTombstoneService';
 import { Fixture } from '../../types';
 
 export const competitionConsistencyRouter = Router();
@@ -69,13 +76,6 @@ function mapAuthoritativeFixture(doc: FirebaseFirestore.QueryDocumentSnapshot, s
   } as Fixture;
 }
 
-/**
- * Domestic cup redraws mark the competition fixture read model dirty. The
- * generic competition reader historically read Redis LKG directly and could
- * therefore resurrect the pre-redraw bracket. Intercept only dirty domestic
- * cup reads, refresh the complete bracket from authoritative Firestore, warm
- * Fresh + LKG, and only then apply request-level filters to the response.
- */
 competitionConsistencyRouter.get('/:id/fixtures', async (req: Request, res: Response, next: NextFunction) => {
   const competitionId = req.params.id;
   if (!isDomesticCup(competitionId)) return next();
@@ -98,6 +98,7 @@ competitionConsistencyRouter.get('/:id/fixtures', async (req: Request, res: Resp
         return !row.seasonId || row.seasonId === seasonId;
       })
       .map((doc) => mapAuthoritativeFixture(doc, seasonId));
+    fullFixtures = await filterTombstonedFixtures(fullFixtures, seasonId);
     fullFixtures = await enrichFixturesWithAuthoritativeOwners(fullFixtures, seasonId);
     fullFixtures.sort((a, b) => Number(a.matchday) - Number(b.matchday) || a.id.localeCompare(b.id));
 
@@ -113,22 +114,13 @@ competitionConsistencyRouter.get('/:id/fixtures', async (req: Request, res: Resp
     let fixtures = fullFixtures;
     if (req.query.matchday !== undefined) {
       const matchday = Number(req.query.matchday);
-      if (Number.isInteger(matchday) && matchday > 0) {
-        fixtures = fixtures.filter((fixture) => Number(fixture.matchday) === matchday);
-      }
+      if (Number.isInteger(matchday) && matchday > 0) fixtures = fixtures.filter((fixture) => Number(fixture.matchday) === matchday);
     }
     if (typeof req.query.status === 'string' && req.query.status && req.query.status !== 'ALL') {
       fixtures = fixtures.filter((fixture) => fixture.status === req.query.status);
     }
 
-    const snapshotAt = new Date().toISOString();
-    res.json({
-      fixtures,
-      source: 'firestore_redraw_refresh',
-      stale: false,
-      degraded: false,
-      snapshotAt,
-    });
+    res.json({ fixtures, source: 'firestore_redraw_refresh', stale: false, degraded: false, snapshotAt: new Date().toISOString() });
   } catch (error: any) {
     console.warn('[CUP_DIRTY_REFRESH_FAILED]', competitionId, error?.message || error);
     next();
@@ -137,11 +129,6 @@ competitionConsistencyRouter.get('/:id/fixtures', async (req: Request, res: Resp
 
 adminConsistencyRouter.use(requireAdmin);
 
-/**
- * Make fixture deletion idempotent. A stale admin snapshot can contain a
- * fixture already removed from Firestore (for example after a cup redraw or
- * roster repair). Purging that stale row should be success, not HTTP 500.
- */
 adminConsistencyRouter.delete('/fixtures/:id', async (req: Request, res: Response) => {
   const fixtureId = req.params.id;
   const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
@@ -151,27 +138,38 @@ adminConsistencyRouter.delete('/fixtures/:id', async (req: Request, res: Respons
   }
 
   const local = queryGet<any>('SELECT * FROM fixtures WHERE id = ?', [fixtureId]);
-  const seasonId = local?.season_id || 'season-2026-27';
-  const competitionId = local?.competition_id || '';
+  const authoritative = await getFixtureByIdFirestore(fixtureId, req.user?.id).catch(() => null);
+  const seasonId = authoritative?.seasonId || local?.season_id || 'season-2026-27';
+  const competitionId = authoritative?.competitionId || local?.competition_id || '';
 
-  const invalidateFixtureCaches = async () => {
-    await invalidateDataset(ReadModelKeys.adminFixtures(seasonId)).catch(() => {});
+  const persistDeletion = async () => {
+    await addFixtureTombstone({
+      fixtureId,
+      seasonId,
+      competitionId: competitionId || undefined,
+      deletedAt: new Date().toISOString(),
+      deletedBy: req.user!.id,
+      reason,
+    });
+    queryRun('DELETE FROM result_submissions WHERE fixture_id = ?', [fixtureId]);
+    queryRun('DELETE FROM disputes WHERE fixture_id = ?', [fixtureId]);
+    queryRun('DELETE FROM fixtures WHERE id = ?', [fixtureId]);
+    await removeFixtureFromDurableSnapshots(fixtureId, competitionId || undefined, seasonId);
+    await refreshDerivedCompetitionState(competitionId || undefined, seasonId);
+  };
+
+  const invalidateSecondaryCaches = async () => {
     if (competitionId) {
-      await invalidateDataset(ReadModelKeys.competitionFixtures(competitionId, seasonId)).catch(() => {});
       await invalidateDataset(`cup:bracket:${competitionId}:${seasonId}`).catch(() => {});
       await invalidateFixtureReadModels(competitionId, seasonId).catch(() => {});
     }
   };
 
   try {
-    const result = await adminDeleteFixtureFirestore(
-      req.user!.id,
-      req.user!.username || 'admin',
-      fixtureId,
-      reason
-    );
-    await invalidateFixtureCaches();
-    res.json(result);
+    const result = await adminDeleteFixtureFirestore(req.user!.id, req.user!.username || 'admin', fixtureId, reason);
+    await persistDeletion();
+    await invalidateSecondaryCaches();
+    res.json({ ...result, durableTombstone: true });
   } catch (error: any) {
     const message = String(error?.message || '');
     if (!message.includes('not found')) {
@@ -180,27 +178,25 @@ adminConsistencyRouter.delete('/fixtures/:id', async (req: Request, res: Respons
     }
 
     try {
-      queryRun('DELETE FROM result_submissions WHERE fixture_id = ?', [fixtureId]);
-      queryRun('DELETE FROM disputes WHERE fixture_id = ?', [fixtureId]);
-      queryRun('DELETE FROM fixtures WHERE id = ?', [fixtureId]);
-      await invalidateFixtureCaches();
-
+      await persistDeletion();
+      await invalidateSecondaryCaches();
       await createAuditLog(
         req.user!.id,
         'ADMIN_PURGE_STALE_FIXTURE',
         'fixture',
         fixtureId,
-        local || undefined,
+        local || authoritative || undefined,
         null,
         undefined,
         req.user!.username || 'admin',
-        `${reason} (authoritative fixture already absent; stale read-model/local residue purged)`
+        `${reason} (authoritative fixture already absent; durable tombstone and stale residues purged)`
       ).catch(() => {});
 
       res.json({
         success: true,
         stalePurged: true,
-        message: `Fixture '${fixtureId}' was already absent from Firestore; stale cached/local references were purged successfully.`,
+        durableTombstone: true,
+        message: `Fixture '${fixtureId}' was already absent from Firestore; durable tombstone prevents SQLite/LKG resurrection.`,
       });
     } catch (cleanupError: any) {
       handleFirestoreError(res, cleanupError, `DELETE /api/admin/fixtures/${fixtureId}`);
