@@ -16,6 +16,10 @@ import {
   getCompetitionStandingsFromReadModel,
   getCompetitionFixturesFromReadModel,
 } from '../readModel/readModelStore';
+import {
+  filterTombstonedFixtures,
+  rebuildStandingsSnapshotFromFixtures,
+} from '../services/fixtureTombstoneService';
 
 export const competitionsRouter = Router();
 
@@ -60,13 +64,26 @@ competitionsRouter.get('/:id/participants', async (req: Request, res: Response) 
 competitionsRouter.get('/:id/standings', async (req: Request, res: Response) => {
   const seasonId = (req.query.seasonId as string) || 'season-2026-27';
   try {
-    const result = await getCompetitionStandingsFromReadModel(req.params.id, seasonId);
+    const [result, fixtureResult] = await Promise.all([
+      getCompetitionStandingsFromReadModel(req.params.id, seasonId),
+      getCompetitionFixturesFromReadModel(req.params.id, { seasonId }),
+    ]);
+    const visibleFixtures = await filterTombstonedFixtures(fixtureResult.fixtures, seasonId);
+    const recomputed = await rebuildStandingsSnapshotFromFixtures(
+      req.params.id,
+      seasonId,
+      visibleFixtures
+    ).catch(() => null);
+
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
     res.json({
-      standings: result.standings,
-      source: result.source,
-      stale: result.stale,
-      degraded: result.degraded,
-      snapshotAt: result.snapshotAt,
+      standings: recomputed || result.standings,
+      source: recomputed ? 'visible-fixture-truth' : result.source,
+      stale: recomputed ? false : result.stale,
+      degraded: recomputed ? false : result.degraded,
+      snapshotAt: recomputed ? new Date().toISOString() : result.snapshotAt,
+      fixtureTruthCount: visibleFixtures.length,
     });
   } catch (err: any) {
     handleFirestoreError(res, err, `GET /api/competitions/${req.params.id}/standings`);
@@ -84,8 +101,11 @@ competitionsRouter.get('/:id/fixtures', async (req: Request, res: Response) => {
       status,
       seasonId,
     });
+    const fixtures = await filterTombstonedFixtures(result.fixtures, seasonId);
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
     res.json({
-      fixtures: result.fixtures,
+      fixtures,
       source: result.source,
       stale: result.stale,
       degraded: result.degraded,
