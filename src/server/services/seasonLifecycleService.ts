@@ -1,5 +1,6 @@
 import { getFirestoreDb } from '../firebase/admin';
 import { getCompetitionFixturesFromReadModel } from '../readModel/readModelStore';
+import { filterTombstonedFixtures } from './fixtureTombstoneService';
 import { Fixture } from '../../types';
 
 export type LifecyclePhaseId = 'LEAGUE_1_9' | 'DOMESTIC_CUPS' | 'LEAGUE_10_19' | 'EUROPE' | 'LEAGUE_20_PLUS';
@@ -41,14 +42,22 @@ let cached: { key: string; value: SeasonLifecycle; expiresAt: number } | null = 
 
 async function fixturesFor(ids: string[], seasonId: string): Promise<Fixture[]> {
   const batches = await Promise.all(ids.map(async (id) => {
-    try { return (await getCompetitionFixturesFromReadModel(id, { seasonId })).fixtures; }
-    catch { return [] as Fixture[]; }
+    try {
+      const fixtures = (await getCompetitionFixturesFromReadModel(id, { seasonId })).fixtures;
+      return await filterTombstonedFixtures(fixtures, seasonId);
+    } catch {
+      return [] as Fixture[];
+    }
   }));
   return batches.flat();
 }
 
 function playable(fixtures: Fixture[]) {
-  return fixtures.filter((f) => Boolean(f.homeClubId && f.awayClubId));
+  return fixtures.filter((f) => {
+    const homeOwned = Boolean(f.homeOwnerId || f.homeClub?.claimedByUserId);
+    const awayOwned = Boolean(f.awayOwnerId || f.awayClub?.claimedByUserId);
+    return Boolean(f.homeClubId && f.awayClubId && homeOwned && awayOwned);
+  });
 }
 
 function currentMatchday(fixtures: Fixture[]): number | null {
