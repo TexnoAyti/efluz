@@ -11,6 +11,11 @@ import { setOwnershipSensitiveHeaders } from '../middleware/ownershipCacheContro
 import { getOptionalCurrentClub } from '../readModel/readModelStore';
 import { getDashboardLeagueStats } from '../services/dashboardLeagueStatsService';
 import { canonicalizeMyDomesticCupFixtures } from '../services/myMatchesCanonicalService';
+import {
+  getMyMatchOperations,
+  reportNoShowV4,
+  scheduleDeadlineSweep,
+} from '../services/matchOperationsV4Service';
 import { Fixture } from '../../types';
 
 export const meRouter = Router();
@@ -46,7 +51,6 @@ function myMatchesPhase(fixture: Fixture): number {
   }
   if (DOMESTIC_CUP_IDS.has(fixture.competitionId)) return 20;
   if (EUROPEAN_LEAGUE_PHASE_IDS.has(fixture.competitionId)) return 40;
-  // Super cups and other competitions keep their existing neutral slot.
   return 25;
 }
 
@@ -63,7 +67,6 @@ function sortMyMatches(fixtures: Fixture[]): Fixture[] {
   });
 }
 
-// Ensure all personalized /api/me responses are never cached publicly
 meRouter.use((req: Request, res: Response, next) => {
   setOwnershipSensitiveHeaders(res);
   next();
@@ -77,12 +80,7 @@ meRouter.get('/', requireAuth, async (req: Request, res: Response) => {
     const clubState = await getOptionalCurrentClub(user.id, seasonId);
     const stats = await getDashboardLeagueStats(clubState.currentClub, seasonId);
 
-    res.json({
-      authenticated: true,
-      user,
-      ...clubState,
-      stats,
-    });
+    res.json({ authenticated: true, user, ...clubState, stats });
   } catch (err: any) {
     handleFirestoreError(res, err, 'GET /api/me');
   }
@@ -98,18 +96,49 @@ meRouter.get('/matches', requireAuth, async (req: Request, res: Response) => {
       getFixturesFirestore({ userId, seasonId, status }),
       getOptionalCurrentClub(userId, seasonId),
     ]);
-    const canonicalFixtures = await canonicalizeMyDomesticCupFixtures(
-      fixtures,
-      clubState.currentClub,
-      seasonId
-    );
-
-    const statusFiltered = status
-      ? canonicalFixtures.filter((fixture) => fixture.status === status)
-      : canonicalFixtures;
+    const canonicalFixtures = await canonicalizeMyDomesticCupFixtures(fixtures, clubState.currentClub, seasonId);
+    const statusFiltered = status ? canonicalFixtures.filter((fixture) => fixture.status === status) : canonicalFixtures;
     res.json({ fixtures: sortMyMatches(statusFiltered) });
   } catch (err: any) {
     handleFirestoreError(res, err, 'GET /api/me/matches');
+  }
+});
+
+meRouter.get('/match-ops', requireAuth, async (req: Request, res: Response) => {
+  const seasonId = (req.query.seasonId as string) || 'season-2026-27';
+  try {
+    const payload = await getMyMatchOperations(req.user!.id, seasonId);
+    scheduleDeadlineSweep(seasonId);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json(payload);
+  } catch (err: any) {
+    handleFirestoreError(res, err, 'GET /api/me/match-ops');
+  }
+});
+
+meRouter.post('/match-ops/no-show', requireAuth, async (req: Request, res: Response) => {
+  const fixtureId = String(req.body?.fixtureId || '').trim();
+  const seasonId = String(req.body?.seasonId || 'season-2026-27');
+  const reason = String(req.body?.reason || '').trim();
+  const evidenceUrl = req.body?.evidenceUrl ? String(req.body.evidenceUrl).trim() : null;
+  if (!fixtureId || reason.length < 3 || reason.length > 1000) {
+    res.status(400).json({ error: 'INVALID_NO_SHOW_REPORT' });
+    return;
+  }
+  try {
+    const result = await reportNoShowV4({
+      fixtureId,
+      seasonId,
+      userId: req.user!.id,
+      username: req.user!.username,
+      reason,
+      evidenceUrl,
+    });
+    res.status(result.duplicate ? 200 : 201).json(result);
+  } catch (err: any) {
+    const code = String(err?.message || 'NO_SHOW_REPORT_FAILED');
+    const status = code.includes('NOT_OWNED') ? 403 : code.includes('CLOSED') ? 409 : code.includes('EVIDENCE') || code.includes('INVALID') ? 400 : 503;
+    res.status(status).json({ error: code, message: code });
   }
 });
 
