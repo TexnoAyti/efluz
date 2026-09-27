@@ -14,7 +14,14 @@ import {
   adminGetUserDetailFirestore,
   adminGetResultSubmissionsFirestore,
   adminDeleteResultSubmissionFirestore,
+  getFixtureByIdFirestore,
 } from '../firebase/firestoreStore';
+import { refreshChangedFixtureReadModel } from '../readModel/readModelStore';
+import {
+  addFixtureTombstone,
+  removeFixtureFromDurableSnapshots,
+  refreshDerivedCompetitionState,
+} from './fixtureTombstoneService';
 import { Dispute, AuditLog, User, Fixture } from '../../types';
 
 export async function createAuditLog(
@@ -68,7 +75,10 @@ export async function editFixtureResult(
     idempotencyKey?: string;
   }
 ): Promise<{ success: boolean; message: string; fixture: Fixture; pendingSync?: boolean }> {
-  return await adminEditFixtureResultFirestore(adminUserId, adminUsername, fixtureId, params);
+  const result = await adminEditFixtureResultFirestore(adminUserId, adminUsername, fixtureId, params);
+  await refreshChangedFixtureReadModel(fixtureId).catch(() => {});
+  await refreshDerivedCompetitionState(result.fixture.competitionId, result.fixture.seasonId || 'season-2026-27').catch(() => {});
+  return result;
 }
 
 export async function deleteFixtureResult(
@@ -81,9 +91,11 @@ export async function deleteFixtureResult(
     idempotencyKey?: string;
   }
 ): Promise<{ success: boolean; message: string; fixture: Fixture; pendingSync?: boolean }> {
-  return await adminDeleteFixtureResultFirestore(adminUserId, adminUsername, fixtureId, options);
+  const result = await adminDeleteFixtureResultFirestore(adminUserId, adminUsername, fixtureId, options);
+  await refreshChangedFixtureReadModel(fixtureId).catch(() => {});
+  await refreshDerivedCompetitionState(result.fixture.competitionId, result.fixture.seasonId || 'season-2026-27').catch(() => {});
+  return result;
 }
-
 
 export async function deleteFixture(
   adminUserId: string,
@@ -91,7 +103,14 @@ export async function deleteFixture(
   fixtureId: string,
   reason: string
 ): Promise<{ success: boolean; message: string }> {
-  return await adminDeleteFixtureFirestore(adminUserId, adminUsername, fixtureId, reason);
+  const before = await getFixtureByIdFirestore(fixtureId, adminUserId).catch(() => null);
+  const seasonId = before?.seasonId || 'season-2026-27';
+  const competitionId = before?.competitionId;
+  const result = await adminDeleteFixtureFirestore(adminUserId, adminUsername, fixtureId, reason);
+  await addFixtureTombstone({ fixtureId, seasonId, competitionId, deletedAt: new Date().toISOString(), deletedBy: adminUserId, reason }).catch(() => {});
+  await removeFixtureFromDurableSnapshots(fixtureId, competitionId, seasonId).catch(() => []);
+  await refreshDerivedCompetitionState(competitionId, seasonId).catch(() => {});
+  return result;
 }
 
 export async function getAllAdminUsers(): Promise<User[]> {
@@ -150,4 +169,3 @@ export async function deleteResultSubmission(
 export async function getAuditLogs(limit = 50): Promise<AuditLog[]> {
   return await getAuditLogsFirestore(limit);
 }
-
