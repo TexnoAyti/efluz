@@ -18959,12 +18959,118 @@ async function handlePremiumSuccessfulPayment(message) {
 
 // src/server/routes/seasonOperations.routes.ts
 init_adminService();
+
+// src/server/services/seasonArchiveService.ts
+init_admin();
+init_firestoreStore();
+init_seed();
+init_adminService();
+init_readModelStore();
+var COLLECTION = "season_archives";
+function validSeasonId(seasonId) {
+  if (!/^season-\d{4}-\d{2}$/.test(seasonId)) throw new Error("INVALID_SEASON_ID");
+  return seasonId;
+}
+function missingArchiveTrophies(seasonId, trophies) {
+  const expected = SEED_COMPETITIONS.filter((competition) => competition.seasonId === seasonId);
+  if (!expected.length) return ["SEASON_COMPETITIONS_NOT_CONFIGURED"];
+  const decided = new Set(trophies.filter((trophy) => trophy.seasonId === seasonId).map((trophy) => trophy.competitionId));
+  return expected.filter((competition) => !decided.has(competition.id)).map((competition) => competition.id);
+}
+async function getSeasonArchive(seasonId) {
+  const doc = await getFirestoreDb().collection(COLLECTION).doc(validSeasonId(seasonId)).get();
+  trackFirestoreRead(COLLECTION, 1, "getSeasonArchive");
+  return doc.exists ? doc.data() : null;
+}
+async function listSeasonArchives() {
+  const snap = await getFirestoreDb().collection(COLLECTION).orderBy("archivedAt", "desc").limit(20).get();
+  trackFirestoreRead(COLLECTION, snap.size, "listSeasonArchives");
+  return snap.docs.map((doc) => {
+    const data = doc.data();
+    return { seasonId: doc.id, archivedAt: data.archivedAt, trophyCount: data.trophies?.length || 0 };
+  }).sort((a, b) => b.seasonId.localeCompare(a.seasonId));
+}
+async function archiveCompletedSeason(seasonId, actorUserId, actorUsername = "admin") {
+  validSeasonId(seasonId);
+  const existing = await getSeasonArchive(seasonId);
+  if (existing) return { archive: existing, alreadyArchived: true };
+  const preview = await getSeasonRolloverPreview(seasonId);
+  if (!preview.canRollover) throw new Error(`SEASON_ARCHIVE_BLOCKED: ${preview.blockers.join("; ")}`);
+  const [trophyResult, awardResult, qualification] = await Promise.all([
+    getSeasonTrophies(seasonId),
+    getSeasonAwards(seasonId),
+    getQualificationTracker(seasonId)
+  ]);
+  const missing = missingArchiveTrophies(seasonId, trophyResult.trophies);
+  if (missing.length) throw new Error(`SEASON_ARCHIVE_BLOCKED: trophies not decided: ${missing.join(", ")}`);
+  if (qualification.leagues.length !== 5 || qualification.leagues.some((league) => {
+    const expected = DOMESTIC_LEAGUE_CONFIG[league.competitionId]?.expectedCount;
+    return !expected || league.rows.length !== expected || league.rows.some((row) => row.played !== expected - 1);
+  })) {
+    throw new Error("SEASON_ARCHIVE_BLOCKED: final league standings are incomplete.");
+  }
+  const archive = {
+    seasonId,
+    status: "ARCHIVED",
+    archivedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    archivedBy: actorUserId,
+    trophies: trophyResult.trophies,
+    awards: awardResult.awards,
+    finalStandings: qualification.leagues
+  };
+  const ref = getFirestoreDb().collection(COLLECTION).doc(seasonId);
+  const created = await getFirestoreDb().runTransaction(async (transaction) => {
+    const doc = await transaction.get(ref);
+    if (doc.exists) return false;
+    transaction.set(ref, archive);
+    return true;
+  });
+  if (created) {
+    trackFirestoreWrite(COLLECTION, 1, "archiveCompletedSeason");
+    await createAuditLog(
+      actorUserId,
+      "SEASON_ARCHIVED",
+      "SEASON",
+      seasonId,
+      void 0,
+      { archivedAt: archive.archivedAt, trophies: archive.trophies.length },
+      void 0,
+      actorUsername,
+      "Immutable season trophy and final standings snapshot created."
+    ).catch(() => {
+    });
+  }
+  return { archive: created ? archive : await getSeasonArchive(seasonId), alreadyArchived: !created };
+}
+
+// src/server/routes/seasonOperations.routes.ts
 var seasonOperationsRouter = Router12();
 var adminSeasonOperationsRouter = Router12();
 adminSeasonOperationsRouter.use(requireAdmin);
 function seasonIdFrom(value) {
   return typeof value === "string" && value.trim() ? value.trim() : "season-2026-27";
 }
+seasonOperationsRouter.get("/history", async (_req, res) => {
+  try {
+    res.setHeader("Cache-Control", "public, max-age=300");
+    res.json({ seasons: await listSeasonArchives() });
+  } catch (error) {
+    res.status(503).json({ error: "SEASON_HISTORY_UNAVAILABLE", message: error?.message });
+  }
+});
+seasonOperationsRouter.get("/history/:seasonId", async (req, res) => {
+  try {
+    const archive = await getSeasonArchive(req.params.seasonId);
+    if (!archive) {
+      res.status(404).json({ error: "SEASON_ARCHIVE_NOT_FOUND" });
+      return;
+    }
+    res.setHeader("Cache-Control", "public, max-age=300");
+    res.json(archive);
+  } catch (error) {
+    res.status(error?.message === "INVALID_SEASON_ID" ? 400 : 503).json({ error: error?.message || "SEASON_HISTORY_UNAVAILABLE" });
+  }
+});
 seasonOperationsRouter.get("/overview", async (req, res) => {
   try {
     res.setHeader("Cache-Control", "no-store");
@@ -19244,6 +19350,18 @@ adminSeasonOperationsRouter.post("/rollover", async (req, res) => {
     res.json({ success: true, nextSeasonId: preview.nextSeasonId, destructiveActions: false });
   } catch (error) {
     res.status(503).json({ error: "SEASON_ROLLOVER_FAILED", message: error?.message || String(error) });
+  }
+});
+adminSeasonOperationsRouter.post("/archive", async (req, res) => {
+  if (req.body?.confirmation !== "ARCHIVE_COMPLETED_SEASON") {
+    res.status(400).json({ error: "EXPLICIT_ARCHIVE_CONFIRMATION_REQUIRED" });
+    return;
+  }
+  try {
+    const result = await archiveCompletedSeason(seasonIdFrom(req.body?.seasonId), req.user.id, req.user?.username || "admin");
+    res.json({ success: true, ...result });
+  } catch (error) {
+    res.status(String(error?.message).startsWith("SEASON_ARCHIVE_BLOCKED") ? 409 : 503).json({ error: error?.message || "SEASON_ARCHIVE_FAILED" });
   }
 });
 

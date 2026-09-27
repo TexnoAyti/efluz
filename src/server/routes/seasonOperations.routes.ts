@@ -27,6 +27,7 @@ import {
   isPremiumPublicEnabled,
 } from '../services/premiumService';
 import { createAuditLog } from '../services/adminService';
+import { archiveCompletedSeason, getSeasonArchive, listSeasonArchives } from '../services/seasonArchiveService';
 
 export const seasonOperationsRouter = Router();
 export const adminSeasonOperationsRouter = Router();
@@ -35,6 +36,27 @@ adminSeasonOperationsRouter.use(requireAdmin);
 function seasonIdFrom(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : 'season-2026-27';
 }
+
+seasonOperationsRouter.get('/history', async (_req: Request, res: Response) => {
+  try {
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.json({ seasons: await listSeasonArchives() });
+  } catch (error: any) {
+    res.status(503).json({ error: 'SEASON_HISTORY_UNAVAILABLE', message: error?.message });
+  }
+});
+
+seasonOperationsRouter.get('/history/:seasonId', async (req: Request, res: Response) => {
+  try {
+    const archive = await getSeasonArchive(req.params.seasonId);
+    if (!archive) { res.status(404).json({ error: 'SEASON_ARCHIVE_NOT_FOUND' }); return; }
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.json(archive);
+  } catch (error: any) {
+    res.status(error?.message === 'INVALID_SEASON_ID' ? 400 : 503)
+      .json({ error: error?.message || 'SEASON_HISTORY_UNAVAILABLE' });
+  }
+});
 
 seasonOperationsRouter.get('/overview', async (req: Request, res: Response) => {
   try {
@@ -327,5 +349,19 @@ adminSeasonOperationsRouter.post('/rollover', async (req: Request, res: Response
     res.json({ success: true, nextSeasonId: preview.nextSeasonId, destructiveActions: false });
   } catch (error: any) {
     res.status(503).json({ error: 'SEASON_ROLLOVER_FAILED', message: error?.message || String(error) });
+  }
+});
+
+adminSeasonOperationsRouter.post('/archive', async (req: Request, res: Response) => {
+  if (req.body?.confirmation !== 'ARCHIVE_COMPLETED_SEASON') {
+    res.status(400).json({ error: 'EXPLICIT_ARCHIVE_CONFIRMATION_REQUIRED' });
+    return;
+  }
+  try {
+    const result = await archiveCompletedSeason(seasonIdFrom(req.body?.seasonId), req.user!.id, req.user?.username || 'admin');
+    res.json({ success: true, ...result });
+  } catch (error: any) {
+    res.status(String(error?.message).startsWith('SEASON_ARCHIVE_BLOCKED') ? 409 : 503)
+      .json({ error: error?.message || 'SEASON_ARCHIVE_FAILED' });
   }
 });

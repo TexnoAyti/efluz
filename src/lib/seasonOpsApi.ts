@@ -21,6 +21,8 @@ export const seasonOpsApi = {
   career: (seasonId: string) => seasonRequest<any>(`/api/season-ops/me/career?seasonId=${encodeURIComponent(seasonId)}`),
   qualification: (seasonId: string) => seasonRequest<any>(`/api/season-ops/qualification?seasonId=${encodeURIComponent(seasonId)}`),
   rolloverPreview: (seasonId: string) => seasonRequest<any>(`/api/season-ops/rollover-preview?seasonId=${encodeURIComponent(seasonId)}`),
+  history: () => seasonRequest<{ seasons: Array<{ seasonId: string; archivedAt: string; trophyCount: number }> }>('/api/season-ops/history'),
+  archive: (seasonId: string) => seasonRequest<any>(`/api/season-ops/history/${encodeURIComponent(seasonId)}`),
   club: (clubId: string, seasonId: string) => seasonRequest<any>(`/api/season-ops/club/${encodeURIComponent(clubId)}?seasonId=${encodeURIComponent(seasonId)}`),
   h2h: (clubA: string, clubB: string, seasonId: string) => seasonRequest<any>(`/api/season-ops/h2h?clubA=${encodeURIComponent(clubA)}&clubB=${encodeURIComponent(clubB)}&seasonId=${encodeURIComponent(seasonId)}`),
   reportNoShow: (fixtureId: string, reason: string, seasonId: string) => seasonRequest<any>('/api/season-ops/no-show', {
@@ -39,5 +41,8 @@ export const seasonOpsApi = {
   }),
   createNextSeasonShell: (seasonId: string) => seasonRequest<any>('/api/admin/season-ops/rollover', {
     method: 'POST', body: JSON.stringify({ seasonId, confirmation: 'CREATE_NEXT_SEASON_SHELL' }),
+  }),
+  archiveCompletedSeason: (seasonId: string) => seasonRequest<any>('/api/admin/season-ops/archive', {
+    method: 'POST', body: JSON.stringify({ seasonId, confirmation: 'ARCHIVE_COMPLETED_SEASON' }),
   }),
 };
