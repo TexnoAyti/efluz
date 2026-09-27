@@ -56,6 +56,7 @@ jobs:
           bun run test:startup-preservation
           bun run test:admin-authorization
           bun run test:matchday-locks
+          bun run test:tournament-control-v2
 
       - name: Install Redis test dependency
         timeout-minutes: 3

@@ -24,8 +24,10 @@ import { fixturesRouter } from './routes/fixtures.routes';
 import { notificationsReadResilientRouter } from './routes/notificationsReadResilient.routes';
 import { meRouter } from './routes/me.routes';
 import { usersRouter } from './routes/users.routes';
+import { seasonInsightsRouter } from './routes/seasonInsights.routes';
 import { adminCupDrawRouter } from './routes/adminCupDraw.routes';
 import { adminCupOpsRouter } from './routes/adminCupOps.routes';
+import { adminMatchControlRouter } from './routes/adminMatchControl.routes';
 import { adminRouter } from './routes/admin.routes';
 import { telegramRouter } from './routes/telegram.routes';
 import { premiumPrivateRouter } from './routes/premiumPrivate.routes';
@@ -40,7 +42,6 @@ function startBackgroundReconciliation(): void {
   if (syncWorkerStarted) return;
   syncWorkerStarted = true;
 
-  // Run initial mutation sync after 4 seconds to let startup settle
   setTimeout(() => {
     if (firestoreCircuitBreaker.canExecute()) {
       processPendingMutations().catch((err) => {
@@ -49,7 +50,6 @@ function startBackgroundReconciliation(): void {
     }
   }, 4000);
 
-  // Periodic reconciliation every 60 seconds
   const interval = setInterval(() => {
     if (firestoreCircuitBreaker.canExecute()) {
       processPendingMutations().catch((err) => {
@@ -66,23 +66,13 @@ export async function ensureDbReady(): Promise<void> {
   if (!dbInitPromise) {
     dbInitPromise = (async () => {
       try {
-        // Always initialize SQLite baseline so the application is 100% resilient
         await initDatabase();
         seedMissingStaticCatalog();
         console.log(`[BOOT] SQLite baseline ready from: ${getDbFilePath()}`);
-
-        // Restore occupancy snapshot from disk if available
         loadSnapshotFromFile();
 
-        // Cold start requirement: ZERO Firestore reads on boot.
-        // Seeding, migrating, and occupancy hydration must NOT run during cold start.
-
-        // Only start long-running background intervals in non-serverless environments
         const isServerless = process.env.VERCEL === '1' || Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME);
-        if (!isServerless) {
-          startBackgroundReconciliation();
-        }
-
+        if (!isServerless) startBackgroundReconciliation();
         dbReady = true;
       } catch (err) {
         dbInitPromise = null;
@@ -106,7 +96,6 @@ export function createApp() {
     ...(process.env.NODE_ENV !== 'production' ? [`http://${localDevHost}:5173`, `http://${localDevHost}:3000`] : []),
   ].filter((value): value is string => Boolean(value)));
 
-  // Base security and CORS middleware
   app.use((req, res, next) => {
     const origin = req.headers.origin;
     if (origin && allowedOrigins.has(origin)) res.setHeader('Access-Control-Allow-Origin', origin);
@@ -134,7 +123,6 @@ export function createApp() {
   app.use(express.json({ limit: '256kb' }));
   app.use('/api', rateLimit('api-global', 300, 60));
 
-  // Durable worker can run without initializing SQLite or reading Firestore.
   app.all('/api/internal/telegram-worker', async (req, res) => {
     const secret = process.env.CRON_SECRET;
     const actual = Buffer.from(req.headers.authorization || '');
@@ -154,11 +142,11 @@ export function createApp() {
         await drainNotificationQueue({ hop });
         res.json({ drained: true });
       }
+    } catch {
+      res.status(503).json({ error: 'NOTIFICATION_WORKER_UNAVAILABLE' });
     }
-    catch { res.status(503).json({ error: 'NOTIFICATION_WORKER_UNAVAILABLE' }); }
   });
 
-  // Ensure DB is initialized before executing route handlers
   app.use(async (req, res, next) => {
     try {
       await ensureDbReady();
@@ -177,11 +165,6 @@ export function createApp() {
   app.use('/api/fixtures', rateLimit('fixture-write', 60, 60));
   app.use('/api/clubs', rateLimit('club-action', 120, 60));
 
-  // Mount the canonical API routes. Competition, fixture, standings and club
-  // reads are backed by the durable read-model layer in their own routers.
-  // Consistency guards must run before the generic routes so a dirty domestic
-  // cup snapshot cannot resurrect a pre-redraw LKG bracket and stale admin
-  // fixture rows can be purged idempotently.
   app.use('/api/health', healthRouter);
   app.use('/api/auth', authRouter);
   app.use('/api/seasons', seasonsRouter);
@@ -193,31 +176,22 @@ export function createApp() {
   app.use('/api/me', notificationsReadResilientRouter);
   app.use('/api/me', meRouter);
   app.use('/api/users', usersRouter);
-  // Seeded draw routes are mounted first so Preview/Generate use the safe
-  // standings-aware implementation while the legacy admin cup endpoints remain
-  // available for details and winner advancement.
+  app.use('/api/insights', seasonInsightsRouter);
   app.use('/api/admin/cups', adminCupDrawRouter);
-  // Cup round operations and consistency guards are mounted before the legacy
-  // admin router so source-linked knockout state and stale fixture cleanup stay
-  // coherent.
   app.use('/api/admin', adminCupOpsRouter);
+  app.use('/api/admin', adminMatchControlRouter);
   app.use('/api/admin', adminConsistencyRouter);
   app.use('/api/admin', adminRouter);
   app.use('/api/telegram', telegramRouter);
   app.use('/api/premium', premiumPrivateRouter);
 
-  // 404 JSON fallback for any unhandled /api/* route
   app.use('/api/*', (req, res) => {
     res.status(404).json({ error: 'Endpoint not found', path: req.originalUrl });
   });
 
-  // Global Error Handler guaranteeing JSON output
   app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
     console.error('[SERVER] Unhandled error:', err);
-    res.status(err.status || 500).json({
-      error: err.message || 'Internal Server Error',
-      status: err.status || 500,
-    });
+    res.status(err.status || 500).json({ error: err.message || 'Internal Server Error', status: err.status || 500 });
   });
 
   return app;
