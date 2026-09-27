@@ -13,6 +13,7 @@ export interface LifecyclePhase {
   confirmed: number;
   total: number;
   progress: number;
+  currentMatchday: number | null;
 }
 
 export interface SeasonLifecycle {
@@ -20,6 +21,7 @@ export interface SeasonLifecycle {
   currentPhase: LifecyclePhaseId;
   phases: LifecyclePhase[];
   overridePhase: LifecyclePhaseId | null;
+  overrideMatchday: number | null;
   overrideReason?: string | null;
   generatedAt: string;
 }
@@ -49,38 +51,61 @@ function playable(fixtures: Fixture[]) {
   return fixtures.filter((f) => Boolean(f.homeClubId && f.awayClubId));
 }
 
+function currentMatchday(fixtures: Fixture[]): number | null {
+  const pending = playable(fixtures)
+    .filter((f) => f.status !== 'CONFIRMED' && f.status !== 'CANCELLED')
+    .map((f) => Number(f.matchday || 0))
+    .filter((n) => Number.isFinite(n) && n > 0)
+    .sort((a, b) => a - b);
+  return pending[0] ?? null;
+}
+
 function stats(fixtures: Fixture[]) {
   const rows = playable(fixtures);
   const total = rows.length;
-  const confirmed = rows.filter((f) => f.status === 'CONFIRMED').length;
-  return { total, confirmed, progress: total === 0 ? 0 : Math.round((confirmed / total) * 100) };
+  const confirmed = rows.filter((f) => f.status === 'CONFIRMED' || f.status === 'CANCELLED').length;
+  return {
+    total,
+    confirmed,
+    progress: total === 0 ? 0 : Math.round((confirmed / total) * 100),
+    currentMatchday: currentMatchday(rows),
+  };
 }
 
-async function readOverride(seasonId: string): Promise<{ phase: LifecyclePhaseId; reason?: string } | null> {
+async function readOverride(seasonId: string): Promise<{ phase: LifecyclePhaseId; matchday: number | null; reason?: string } | null> {
   try {
     const db = getFirestoreDb();
+    if (!db) return null;
     const snap = await db.collection('season_lifecycle_controls').doc(seasonId).get();
     if (!snap.exists) return null;
     const data = snap.data() || {};
-    return PHASE_ORDER.includes(data.overridePhase) ? { phase: data.overridePhase, reason: data.reason } : null;
+    return PHASE_ORDER.includes(data.overridePhase)
+      ? { phase: data.overridePhase, matchday: Number.isInteger(data.overrideMatchday) ? data.overrideMatchday : null, reason: data.reason }
+      : null;
   } catch { return null; }
 }
 
-export async function setSeasonLifecycleOverride(seasonId: string, phase: LifecyclePhaseId | null, reason: string, actorUserId: string) {
+export async function setSeasonLifecycleOverride(
+  seasonId: string,
+  phase: LifecyclePhaseId | null,
+  reason: string,
+  actorUserId: string,
+  matchday: number | null = null
+) {
   const db = getFirestoreDb();
+  if (!db) throw new Error('Firestore is unavailable');
   const ref = db.collection('season_lifecycle_controls').doc(seasonId);
   if (!phase) {
-    await ref.set({ overridePhase: null, reason, actorUserId, updatedAt: new Date().toISOString() }, { merge: true });
+    await ref.set({ overridePhase: null, overrideMatchday: null, reason, actorUserId, updatedAt: new Date().toISOString() }, { merge: true });
   } else {
     if (!PHASE_ORDER.includes(phase)) throw new Error('Invalid lifecycle phase');
-    await ref.set({ overridePhase: phase, reason, actorUserId, updatedAt: new Date().toISOString() }, { merge: true });
+    await ref.set({ overridePhase: phase, overrideMatchday: matchday, reason, actorUserId, updatedAt: new Date().toISOString() }, { merge: true });
   }
   cached = null;
 }
 
 export async function getSeasonLifecycle(seasonId = 'season-2026-27', force = false): Promise<SeasonLifecycle> {
-  const key = seasonId;
-  if (!force && cached?.key === key && cached.expiresAt > Date.now()) return cached.value;
+  if (!force && cached?.key === seasonId && cached.expiresAt > Date.now()) return cached.value;
 
   const [leagueFixtures, cupFixtures, europeFixtures, override] = await Promise.all([
     fixturesFor(LEAGUES, seasonId), fixturesFor(CUPS, seasonId), fixturesFor(EUROPE, seasonId), readOverride(seasonId),
@@ -104,24 +129,36 @@ export async function getSeasonLifecycle(seasonId = 'season-2026-27', force = fa
   const activeIndex = PHASE_ORDER.indexOf(currentPhase);
 
   const labels: Record<LifecyclePhaseId, [string, string]> = {
-    LEAGUE_1_9: ['Liga 1–9-turlar', 'Mavsumning birinchi liga bloki'],
-    DOMESTIC_CUPS: ['Domestic Cups', 'FA Cup, Copa del Rey, Coppa Italia, DFB-Pokal, Coupe de France'],
-    LEAGUE_10_19: ['Liga 10–19-turlar', 'Yevropa bosqichidan oldingi liga bloki'],
-    EUROPE: ['UCL / UEL', 'Yevropa liga bosqichi'],
+    LEAGUE_1_9: ['Liga 1–9-turlar', 'MD1 tugagach MD2 ochiladi; MD9 dan keyin kuboklar'],
+    DOMESTIC_CUPS: ['Domestic Cups', '5 ta milliy kubok bosqichi'],
+    LEAGUE_10_19: ['Liga 10–19-turlar', 'MD19 dan keyin UCL/UEL ochiladi'],
+    EUROPE: ['UCL / UEL', 'Yevropa liga bosqichi, turma-tur progression'],
     LEAGUE_20_PLUS: ['Liga 20+ turlar', 'Liga mavsumining ikkinchi yarmi'],
   };
 
   const phases = PHASE_ORDER.map((id, index): LifecyclePhase => {
     const s = phaseStats[id];
     const status: LifecyclePhaseStatus = index < activeIndex ? 'COMPLETED' : index === activeIndex ? 'ACTIVE' : 'LOCKED';
-    return { id, label: labels[id][0], description: labels[id][1], status, ...s };
+    return {
+      id,
+      label: labels[id][0],
+      description: labels[id][1],
+      status,
+      ...s,
+      currentMatchday: index === activeIndex && override?.matchday ? override.matchday : s.currentMatchday,
+    };
   });
 
   const value: SeasonLifecycle = {
-    seasonId, currentPhase, phases, overridePhase: override?.phase || null,
-    overrideReason: override?.reason || null, generatedAt: new Date().toISOString(),
+    seasonId,
+    currentPhase,
+    phases,
+    overridePhase: override?.phase || null,
+    overrideMatchday: override?.matchday || null,
+    overrideReason: override?.reason || null,
+    generatedAt: new Date().toISOString(),
   };
-  cached = { key, value, expiresAt: Date.now() + 15000 };
+  cached = { key: seasonId, value, expiresAt: Date.now() + 15000 };
   return value;
 }
 
@@ -145,6 +182,15 @@ export async function assertFixtureLifecycleOpen(fixture: Fixture): Promise<void
     const err: any = new Error(`This match is locked until the ${phase} season phase opens.`);
     err.status = 423;
     err.code = 'SEASON_PHASE_LOCKED';
+    throw err;
+  }
+
+  const active = lifecycle.phases.find((p) => p.id === phase);
+  const fixtureMd = Number(fixture.matchday || 0);
+  if (active?.currentMatchday && fixtureMd > active.currentMatchday) {
+    const err: any = new Error(`Matchday ${fixtureMd} is locked. Complete matchday ${active.currentMatchday} first.`);
+    err.status = 423;
+    err.code = 'MATCHDAY_PROGRESSION_LOCKED';
     throw err;
   }
 }
