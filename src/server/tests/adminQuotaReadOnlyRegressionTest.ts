@@ -40,10 +40,14 @@ async function main() {
     assert.equal((await request('POST', approved)).status, 503, 'mutations must still fail closed');
     assert.equal((await request('GET', createSessionToken(user('99999')))).status, 503, 'token admin claim is not enough');
     assert.equal((await request('GET', createSessionToken(user('5209126900', { isSuspended: true })))).status, 503);
+    process.env.ADMIN_TELEGRAM_IDS = '@test_admin';
+    assert.equal((await request('GET', approved)).status, 200, 'configured Telegram username also grants emergency read access');
+    assert.equal((await request('GET', createSessionToken(user('99999', { username: 'other' })))).status, 503);
+    assert.equal((await request('POST', approved)).status, 503);
     process.env.ADMIN_TELEGRAM_IDS = '';
     assert.equal((await request('GET', approved)).status, 503, 'configuration removal revokes fallback immediately');
     assert.equal((await request('GET', `${approved}tampered`)).status, 401);
-    console.log('PASS: quota emergency access is GET-only, numeric allowlisted, signed, and fails closed for mutations');
+    console.log('PASS: quota emergency access is GET-only, configured admin only, signed, and fails closed for mutations');
   } finally {
     server.close();
     db.collection = originalCollection;
