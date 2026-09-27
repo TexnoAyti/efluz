@@ -163,9 +163,10 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
     // proves that ID; a user-controlled name or an admin claim alone is insufficient.
     const telegramId = req.user.telegramId;
     const configuredIds = (process.env.ADMIN_TELEGRAM_IDS || '').split(',').map((id) => id.trim());
-    const token = req.headers.authorization?.startsWith('Bearer ')
-      ? req.headers.authorization.slice(7).trim()
-      : (req.headers['x-session-token'] as string | undefined);
+    const bearer = req.headers?.authorization;
+    const token = bearer?.startsWith('Bearer ')
+      ? bearer.slice(7).trim()
+      : (req.headers?.['x-session-token'] as string | undefined);
     const signed = token ? verifySessionToken(token) : null;
     if (req.method === 'GET' && firestoreCircuitBreaker.isQuotaExhaustedError(err) &&
         signed?.isValid && signed.claims?.id === req.user.id &&
