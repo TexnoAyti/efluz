@@ -332,7 +332,7 @@ export async function runQuotaResilienceAudit() {
   // -------------------------------------------------------------------
   // TEST 9: CLUB OCCUPANCY TEST
   // -------------------------------------------------------------------
-  console.log('\n--- [TEST 9] Club Occupancy & 1 Club Limit ---');
+  console.log('\n--- [TEST 9] Club Occupancy & Same-League Limit ---');
   const claimUser = `audit-claimant-${Date.now()}`;
   let claimSuccess = false;
   let doubleClaimRejected = false;
@@ -357,12 +357,13 @@ export async function runQuotaResilienceAudit() {
     doubleClaimRejected =
       err.message.includes('ALREADY_MANAGES_CLUB') ||
       err.message.includes('already') ||
-      err.message.includes('CLUB_SELECTION_LOCKED');
+      err.message.includes('CLUB_SELECTION_LOCKED') ||
+      err.code === 'CLUB_LEAGUE_LIMIT';
   }
 
   recordAudit(
     'TEST 9',
-    '1 User = Max 1 Club per Season Enforcement',
+    'One club per league enforcement',
     claimSuccess && doubleClaimRejected,
     `Claim succeeded: ${claimSuccess}, Duplicate rejected: ${doubleClaimRejected}`
   );

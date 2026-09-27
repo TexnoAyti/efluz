@@ -214,22 +214,22 @@ async function runStrictVerification() {
   }
   console.log('✅ PASS: Database strictly maintained original Club A assignment.');
 
-  // 8. Verify unique index existence and SQLite-level enforcement
-  console.log('\n8. Verifying SQLite unique index enforcement:');
+  // 8. One club cannot have two owners. A Premium user may own two different clubs.
+  console.log('\n8. Verifying SQLite club ownership constraint:');
   const indexRow = queryGet<any>(
     "SELECT name, sql FROM sqlite_master WHERE type='index' AND name='idx_club_memberships_user_season_active'"
   );
   console.log(`Index metadata from sqlite_master:`, indexRow);
   if (!indexRow) {
-    throw new Error('Missing unique index idx_club_memberships_user_season_active!');
+    throw new Error('Missing membership lookup index idx_club_memberships_user_season_active!');
   }
 
-  // Attempt raw SQL insert bypassing service layer to test SQLite database constraint directly
+  // A second owner for the same club must still fail at the database boundary.
   let rawDbConstraintCaught = false;
   try {
     getDb().run(
       'INSERT INTO club_memberships (id, season_id, club_id, user_id, claimed_at, status) VALUES (?, ?, ?, ?, ?, "active")',
-      [`mem-raw-${Date.now()}`, testSeasonId, clubBId, testUserId, new Date().toISOString()]
+      [`mem-raw-${Date.now()}`, testSeasonId, clubAId, 'user-raw-conflict', new Date().toISOString()]
     );
   } catch (err: any) {
     rawDbConstraintCaught = true;
@@ -237,9 +237,9 @@ async function runStrictVerification() {
   }
 
   if (!rawDbConstraintCaught) {
-    throw new Error('SQLite UNIQUE index failed to reject raw SQL duplicate active membership!');
+    throw new Error('SQLite failed to reject a second owner for the same club!');
   }
-  console.log('✅ PASS: SQLite engine level constraint enforced by unique index.');
+  console.log('✅ PASS: SQLite enforces one owner per club and season.');
 
   // Cleanup test user
   queryRun('DELETE FROM club_memberships WHERE user_id = ?', [testUserId]);

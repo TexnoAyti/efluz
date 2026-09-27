@@ -1,4 +1,5 @@
 import React from 'react';
+import { usePremiumClubIds } from '../context/AuthContext';
 
 export interface ClubCrestProps {
   clubId?: string;
@@ -77,6 +78,8 @@ export const ClubCrest: React.FC<ClubCrestProps> = ({
   alt,
   priorityProxy = false,
 }) => {
+  const premiumClubIds = usePremiumClubIds();
+  const premium = Boolean(clubId && premiumClubIds.includes(clubId));
   const directUrl = logoUrl?.trim() || null;
   const clubCrestProxyUrl = clubId ? `/api/clubs/${clubId}/crest` : null;
   const genericCrestProxyUrl = directUrl
@@ -102,6 +105,7 @@ export const ClubCrest: React.FC<ClubCrestProps> = ({
         <span className={`tracking-wider uppercase ${textSizeClass}`}>
           {initials}
         </span>
+        {premium && <span className="absolute bottom-0 right-0 rounded-tl bg-gradient-to-r from-fuchsia-500 via-amber-300 to-sky-400 px-0.5 text-[7px] font-black leading-none text-slate-950" aria-label="Premium club">★</span>}
       </div>
     );
   }
@@ -123,6 +127,7 @@ export const ClubCrest: React.FC<ClubCrestProps> = ({
           backgroundSize: 'contain',
         }}
       />
+      {premium && <span className="absolute bottom-0 right-0 rounded-tl bg-gradient-to-r from-fuchsia-500 via-amber-300 to-sky-400 px-0.5 text-[7px] font-black leading-none text-slate-950" aria-label="Premium club">★</span>}
     </div>
   );
 };

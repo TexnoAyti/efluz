@@ -3,6 +3,7 @@ import { getFirestoreDb } from './admin';
 import { queryAll, queryGet, queryRun, dbTransaction, upsertFixtureToSqlite } from '../db';
 import { refreshMaterializedStandingsForCompetition } from '../db/sqliteStandings';
 import { SEED_CLUBS, SEED_LEAGUES, SEED_COMPETITIONS, SEED_SEASONS, SEED_SEASON } from '../db/seed';
+import { checkClubClaimLimit } from '../services/premiumClubRule';
 export { firestoreCircuitBreaker, type CircuitBreakerStatus } from './circuitBreaker';
 import { firestoreCircuitBreaker, CircuitBreakerStatus } from './circuitBreaker';
 import {
@@ -29,6 +30,7 @@ const SEED_CLUB_MAP = new Map<string, (typeof SEED_CLUBS)[0]>(
 import { generateEuropean32LeaguePhaseSchedule } from '../tournament/fixtureEngine';
 import {
   getAdminFixturesFromReadModel,
+  getAdminClubsFromReadModel,
   refreshChangedFixtureReadModel,
   invalidateFixtureReadModels,
   invalidateStandingsReadModels,
@@ -1027,10 +1029,11 @@ export async function claimClubAtomicFirestore(
         trackFirestoreRead(COLLECTIONS.USER_MEMBERSHIPS, 1, 'claimClubAtomicFirestore:membership');
         const clubOccDoc = await transaction.get(clubOccRef);
         const userMemDoc = await transaction.get(userMemRef);
-        if (userMemDoc.exists) {
-          const userMemData = userMemDoc.data();
-          if (userMemData?.clubId && !['released', 'archived', 'inactive'].includes(userMemData.status)) {
-            if (userMemData.clubId === clubId) {
+        const userMemData = userMemDoc.data();
+        const primaryId = userMemData?.status === 'active' ? String(userMemData.clubId || '') : '';
+        const secondaryId = primaryId ? String(userMemData?.secondaryClubId || '') : '';
+        const ownedIds = [primaryId, secondaryId].filter(Boolean);
+        if (ownedIds.includes(clubId)) {
               if (!clubOccDoc.exists || clubOccDoc.data()?.userId !== userId || ['released', 'inactive'].includes(clubOccDoc.data()?.status)) {
                 throw new ClubConflictError('Club membership and occupancy disagree. Admin review is required.', 'OWNERSHIP_INCONSISTENT');
               }
@@ -1055,11 +1058,24 @@ export async function claimClubAtomicFirestore(
                   },
                 },
               };
-            }
-            // User already has a DIFFERENT club
+        }
+        if (primaryId) {
+          const primaryLeagueId = SEED_CLUB_MAP.get(primaryId)?.leagueId;
+          if (!primaryLeagueId) throw new ClubConflictError('Primary club league needs admin review.', 'OWNERSHIP_INCONSISTENT');
+          // Entitlement is read in the same transaction as the user membership, so
+          // simultaneous claims cannot both become a second club.
+          const entitlementRef = db.collection('premium_entitlements').doc(`${seasonId}__${userId}`);
+          const entitlementDoc = await transaction.get(entitlementRef);
+          trackFirestoreRead('premium_entitlements', 1, 'claimClubAtomicFirestore:premium');
+          const rule = checkClubClaimLimit(
+            [{ id: primaryId, leagueId: primaryLeagueId }, ...(secondaryId ? [{ id: secondaryId, leagueId: String(userMemData?.secondaryLeagueId || '') }] : [])],
+            { id: clubId, leagueId: clubData.leagueId },
+            entitlementDoc.data()?.status === 'ACTIVE'
+          );
+          if (rule !== 'ALLOWED') {
             throw new ClubConflictError(
-              `Your club selection is locked for this season. You have already claimed another club.`,
-              'CLUB_SELECTION_LOCKED'
+              rule === 'SAME_LEAGUE' ? 'The second club must be from another league.' : 'Your season club limit has been reached.',
+              rule === 'SAME_LEAGUE' ? 'CLUB_LEAGUE_LIMIT' : 'CLUB_SELECTION_LOCKED'
             );
           }
         }
@@ -1086,14 +1102,13 @@ export async function claimClubAtomicFirestore(
           updatedAt: now,
         };
 
-        transaction.set(userMemRef, {
-          userId,
-          clubId,
-          seasonId,
-          status: 'active',
-          claimedAt: now,
-          updatedAt: now,
-        });
+        if (primaryId) {
+          transaction.update(userMemRef, { secondaryClubId: clubId, secondaryLeagueId: clubData.leagueId, updatedAt: now });
+        } else {
+          transaction.set(userMemRef, {
+            userId, clubId, seasonId, status: 'active', claimedAt: now, updatedAt: now,
+          });
+        }
 
         transaction.set(clubOccRef, {
           clubId,
@@ -1528,13 +1543,12 @@ export async function getFixturesFirestore(filter: {
 
   let targetClubId = filter.clubId;
 
-  // If filtered by userId, resolve user's active club
   if (filter.userId && !targetClubId) {
-    const activeClub = await getUserActiveClubFirestore(filter.userId, seasonId);
-    if (!activeClub) {
-      return [];
-    }
-    targetClubId = activeClub.id;
+    const ownership = await getAdminClubsFromReadModel(seasonId);
+    const ids = ownership.clubs.filter((club) => club.ownerUserId === filter.userId).map((club) => club.id);
+    if (!ids.length) return [];
+    const fixtureLists = await Promise.all(ids.map((clubId) => getFixturesFirestore({ ...filter, userId: undefined, clubId })));
+    return [...new Map(fixtureLists.flat().map((fixture) => [fixture.id, fixture])).values()];
   }
 
   const cacheKey = targetClubId
@@ -4188,9 +4202,8 @@ export async function submitFixtureResultFirestore(
       userClubId = localOccClubId;
     } else {
       const memRow =
-        queryGet<any>('SELECT * FROM club_memberships WHERE user_id = ? AND season_id = ? AND status = "active"', [
-          userId,
-          row.season_id,
+        queryGet<any>('SELECT * FROM club_memberships WHERE user_id = ? AND season_id = ? AND status = "active" AND club_id IN (?, ?)', [
+          userId, row.season_id, row.home_club_id, row.away_club_id,
         ]) ||
         queryGet<any>('SELECT * FROM season_league_clubs WHERE owner_user_id = ? AND season_id = ?', [
           userId,
@@ -4201,6 +4214,15 @@ export async function submitFixtureResultFirestore(
 
     if (!userClubId || (userClubId !== row.home_club_id && userClubId !== row.away_club_id)) {
       throw new Error('You do not own either the home or away club in this fixture.');
+    }
+    const selfMatch = queryAll<any>(
+      "SELECT club_id FROM club_memberships WHERE user_id = ? AND season_id = ? AND status = 'active' AND club_id IN (?, ?)",
+      [userId, row.season_id, row.home_club_id, row.away_club_id],
+    );
+    if (selfMatch.length > 1) {
+      const err: any = new Error('Both clubs belong to you; admin must resolve this fixture.');
+      err.code = 'SELF_OWNED_MATCH'; err.statusCode = 409;
+      throw err;
     }
 
     const existingSubs = queryAll<any>('SELECT * FROM result_submissions WHERE fixture_id = ?', [fixtureId]);
@@ -4354,8 +4376,14 @@ export async function submitFixtureResultFirestore(
         throw new Error('You do not own either the home or away club in this fixture.');
       }
 
-      const userClubId = userMemDoc.data()!.clubId;
-      if (userClubId !== currentFixture.homeClubId && userClubId !== currentFixture.awayClubId) {
+      const ownedIds = [userMemDoc.data()!.clubId, userMemDoc.data()!.secondaryClubId];
+      const userClubId = ownedIds.find((id) => id === currentFixture.homeClubId || id === currentFixture.awayClubId);
+      if (ownedIds.includes(currentFixture.homeClubId) && ownedIds.includes(currentFixture.awayClubId)) {
+        const err: any = new Error('Both clubs belong to you; admin must resolve this fixture.');
+        err.code = 'SELF_OWNED_MATCH'; err.statusCode = 409;
+        throw err;
+      }
+      if (!userClubId) {
         throw new Error('You do not own either the home or away club in this fixture.');
       }
 
@@ -4487,6 +4515,7 @@ export async function submitFixtureResultFirestore(
 
     // If error is user-validation error, rethrow directly
     if (
+      firestoreErr?.code === 'SELF_OWNED_MATCH' ||
       errMsg.includes('not found') ||
       errMsg.includes('already CONFIRMED') ||
       errMsg.includes('MATCHDAY_LOCKED') ||
@@ -5916,6 +5945,9 @@ export async function adminReleaseClubFirestore(
     
     const clubOccDoc = await clubOccRef.get();
     const previousUserId = clubOccDoc.exists ? clubOccDoc.data()?.userId : null;
+    const previousUserMem = previousUserId
+      ? await db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${seasonId}_${previousUserId}`).get()
+      : null;
 
     const batch = db.batch();
 
@@ -5933,12 +5965,19 @@ export async function adminReleaseClubFirestore(
     // Release user membership if existed
     if (previousUserId) {
       const userMemRef = db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${seasonId}_${previousUserId}`);
-      batch.set(userMemRef, {
-        status: 'released',
-        releasedAt: now,
-        updatedAt: now,
-      }, { merge: true });
+      const membership = previousUserMem?.data();
+      if (membership?.secondaryClubId === clubId) {
+        batch.set(userMemRef, { secondaryClubId: null, secondaryLeagueId: null, updatedAt: now }, { merge: true });
+      } else if (membership?.clubId === clubId && membership?.secondaryClubId) {
+        batch.set(userMemRef, {
+          clubId: membership.secondaryClubId, secondaryClubId: null, secondaryLeagueId: null, updatedAt: now,
+        }, { merge: true });
+      } else if (membership?.clubId === clubId) {
+        batch.set(userMemRef, { status: 'released', releasedAt: now, updatedAt: now }, { merge: true });
+      }
     }
+
+    batch.set(db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).doc(`${seasonId}_${clubId}`), { status: 'released', updatedAt: now }, { merge: true });
 
     // Update club record
     batch.update(clubRef, {
@@ -5959,6 +5998,13 @@ export async function adminReleaseClubFirestore(
     });
 
     await batch.commit();
+    removeOccupancyRecord(seasonId, clubId);
+
+    try {
+      queryRun("UPDATE club_memberships SET status = 'released', updated_at = ? WHERE club_id = ? AND season_id = ? AND status = 'active'", [now, clubId, seasonId]);
+    } catch (error) {
+      console.warn('[SQLITE_SYNC] Club release mirror failed:', error);
+    }
 
     invalidateFirestoreCache();
     const updatedClub = await getClubByIdFirestore(clubId, seasonId);
@@ -6037,6 +6083,9 @@ export async function adminAssignClubFirestore(
     // If target user already owns a different club, release that club first
     const existingUserMem = await userMemRef.get();
     if (existingUserMem.exists && existingUserMem.data()?.status === 'active') {
+      if (existingUserMem.data()?.secondaryClubId) {
+        throw new ClubConflictError('This player owns two clubs. Review ownership before assigning another.', 'CLUB_SELECTION_LOCKED');
+      }
       const prevClubId = existingUserMem.data()!.clubId;
       if (prevClubId && prevClubId !== clubId) {
         const prevOccRef = db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_${prevClubId}`);

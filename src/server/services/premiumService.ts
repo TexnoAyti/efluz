@@ -177,6 +177,8 @@ export async function grantPremiumEntitlement(params: {
 
   await ref.set(next, { merge: true });
   trackFirestoreWrite(ENTITLEMENTS_COLLECTION, 1, 'grantPremiumEntitlement');
+  const { invalidatePremiumBadges } = await import('./premiumBadgeService');
+  await invalidatePremiumBadges(seasonId).catch(() => undefined);
 
   if (params.actorUserId) {
     await createAuditLogFirestore(
@@ -206,27 +208,32 @@ export async function revokePremiumEntitlement(params: {
   await assertPremiumTargetUserExists(params.userId);
   const db = getFirestoreDb();
   const ref = db.collection(ENTITLEMENTS_COLLECTION).doc(entitlementId(params.userId, seasonId));
-  const existing = await ref.get();
-  trackFirestoreRead(ENTITLEMENTS_COLLECTION, 1, 'revokePremiumEntitlement');
-  const previous = existing.exists ? existing.data() : null;
-  const now = new Date().toISOString();
-
-  const next: Omit<PremiumEntitlement, 'id'> = {
-    userId: params.userId,
-    seasonId,
-    status: 'REVOKED',
-    source: (previous?.source as PremiumEntitlementSource) || 'ADMIN',
-    activatedAt: previous?.activatedAt || now,
-    updatedAt: now,
-    updatedBy: params.actorUserId,
-    revokedAt: now,
-    revokedBy: params.actorUserId,
-    note: params.note?.trim() || previous?.note || null,
-    paymentChargeId: previous?.paymentChargeId || null,
-  };
-
-  await ref.set(next, { merge: true });
+  const { previous, next } = await db.runTransaction(async (tx) => {
+    const [existing, membership] = await Promise.all([
+      tx.get(ref), tx.get(db.collection('user_memberships').doc(`${seasonId}_${params.userId}`)),
+    ]);
+    trackFirestoreRead(ENTITLEMENTS_COLLECTION, 1, 'revokePremiumEntitlement');
+    trackFirestoreRead('user_memberships', 1, 'revokePremiumEntitlement:membership');
+    if (membership.data()?.status === 'active' && membership.data()?.secondaryClubId) {
+      throw new Error('PREMIUM_SECOND_CLUB_OWNED');
+    }
+    const previous = existing.exists ? existing.data() : null;
+    const now = new Date().toISOString();
+    const next: Omit<PremiumEntitlement, 'id'> = {
+      userId: params.userId, seasonId, status: 'REVOKED',
+      source: (previous?.source as PremiumEntitlementSource) || 'ADMIN',
+      activatedAt: previous?.activatedAt || now,
+      updatedAt: now, updatedBy: params.actorUserId,
+      revokedAt: now, revokedBy: params.actorUserId,
+      note: params.note?.trim() || previous?.note || null,
+      paymentChargeId: previous?.paymentChargeId || null,
+    };
+    tx.set(ref, next, { merge: true });
+    return { previous, next };
+  });
   trackFirestoreWrite(ENTITLEMENTS_COLLECTION, 1, 'revokePremiumEntitlement');
+  const { invalidatePremiumBadges } = await import('./premiumBadgeService');
+  await invalidatePremiumBadges(seasonId).catch(() => undefined);
 
   await createAuditLogFirestore(
     params.actorUserId,
@@ -594,6 +601,10 @@ export async function handlePremiumSuccessfulPayment(message: any) {
   trackFirestoreWrite(PAYMENTS_COLLECTION, 1, 'handlePremiumSuccessfulPayment');
   trackFirestoreWrite(ORDERS_COLLECTION, 1, 'handlePremiumSuccessfulPayment');
   trackFirestoreWrite(ENTITLEMENTS_COLLECTION, 1, 'handlePremiumSuccessfulPayment');
+  if (result?.seasonId && !result?.idempotent) {
+    const { invalidatePremiumBadges } = await import('./premiumBadgeService');
+    await invalidatePremiumBadges(result.seasonId).catch(() => undefined);
+  }
 
   if (result?.userId) {
     await createAuditLogFirestore(

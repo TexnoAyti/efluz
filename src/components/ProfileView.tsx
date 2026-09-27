@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n, Language } from '../i18n';
 import { ClubCrest } from './ClubCrest';
+import { PremiumClubBadge } from './PremiumClubBadge';
 import { EflCareerCard } from './EflCareerCard';
 import { PlayerSeasonProfile } from './PlayerSeasonProfile';
 import {
@@ -20,7 +21,7 @@ interface ProfileViewProps {
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigateTab }) => {
-  const { user, currentClub, activeSeasonId, isDevMode, devProfiles, switchDevUser } = useAuth();
+  const { user, currentClub, ownedClubs, selectCurrentClub, activeSeasonId, isDevMode, devProfiles, switchDevUser } = useAuth();
   const { language, setLanguage, t } = useI18n();
   const [showSandbox, setShowSandbox] = useState(false);
 
@@ -46,11 +47,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigateTab }) => {
             <h1 className="text-2xl sm:text-3xl font-black text-white">{user?.firstName} {user?.lastName || ''}</h1>
             <p className="text-sm font-semibold text-emerald-400 mt-0.5">@{user?.username}</p>
 
-            {currentClub ? (
-              <div onClick={() => onNavigateTab('my-club')} className="mt-4 inline-flex items-center gap-3 p-2.5 px-4 glass-card cursor-pointer transition-all shadow-md group">
-                <ClubCrest clubId={currentClub.id} logoUrl={currentClub.logoUrl} name={currentClub.name} shortName={currentClub.shortName} size="sm" className="w-6 h-6" />
-                <div className="text-left"><div className="text-xs font-bold text-white group-hover:text-emerald-400 transition-colors">{currentClub.name}</div><div className="text-[10px] text-slate-400 font-medium">{currentClub.leagueId ? currentClub.leagueId.replace('league-', '').replace('-', ' ').toUpperCase() : 'DOMESTIC LEAGUE'}</div></div>
-                <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-emerald-400 ml-2" />
+            {ownedClubs.length ? (
+              <div className="mt-4 flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                {ownedClubs.map((club) => <button key={club.id} type="button" onClick={() => { selectCurrentClub(club.id); onNavigateTab('my-club'); }} className={`inline-flex items-center gap-3 p-2.5 px-4 glass-card transition-all shadow-md group ${currentClub?.id === club.id ? 'border-emerald-400/50' : ''}`}>
+                  <ClubCrest clubId={club.id} logoUrl={club.logoUrl} name={club.name} shortName={club.shortName} size="sm" className="w-6 h-6" />
+                  <div className="text-left"><div className="flex items-center gap-1.5"><span className="text-xs font-bold text-white group-hover:text-emerald-400 transition-colors">{club.name}</span><PremiumClubBadge clubId={club.id} /></div><div className="text-[10px] text-slate-400 font-medium">{club.leagueId ? club.leagueId.replace('league-', '').replace('-', ' ').toUpperCase() : 'DOMESTIC LEAGUE'}</div></div>
+                  <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-emerald-400 ml-2" />
+                </button>)}
               </div>
             ) : (
               <button onClick={() => onNavigateTab('leagues')} className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-xl text-amber-400 text-xs font-bold transition-all"><Shield className="w-4 h-4" /><span>{t.selectYourClub}</span></button>

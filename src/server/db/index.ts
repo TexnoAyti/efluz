@@ -269,6 +269,15 @@ export async function initDatabase(): Promise<Database> {
       ALTER TABLE club_memberships ADD COLUMN updated_at TEXT;
     `);
   } catch {}
+  // Legacy databases enforced one club per user. The claim transaction now enforces
+  // the season entitlement and different-league limit before writing either club.
+  try {
+    dbInstance.exec('DROP INDEX IF EXISTS idx_club_memberships_user_season_active;');
+    dbInstance.exec('CREATE INDEX IF NOT EXISTS idx_club_memberships_user_season_active ON club_memberships(user_id, season_id) WHERE status = \'active\';');
+  } catch (err) {
+    console.error('[DB] Club membership index migration failed:', err);
+    throw err;
+  }
   try {
     dbInstance.exec(`
       CREATE TABLE IF NOT EXISTS season_league_clubs (

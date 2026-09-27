@@ -6,6 +6,7 @@ import { api, invalidateClientCache } from '../lib/api';
 import { Competition, Fixture } from '../types';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
 import { ClubCrest } from './ClubCrest';
+import { PremiumClubBadge } from './PremiumClubBadge';
 import { MatchdayCountdown } from './MatchdayCountdown';
 import { getClubOwnerDisplay } from '../lib/ownerUtils';
 import { openTelegramChat, isValidTelegramUsername } from '../lib/telegramUtils';
@@ -28,7 +29,7 @@ import {
 } from 'lucide-react';
 
 export const FixturesView: React.FC = () => {
-  const { user, currentClub, activeSeasonId, showToast } = useAuth();
+  const { user, currentClub, ownedClubs, activeSeasonId, showToast } = useAuth();
   const { openUserProfile } = useUserProfile();
   const { t } = useI18n();
 
@@ -168,7 +169,7 @@ export const FixturesView: React.FC = () => {
   };
 
   const filteredFixtures = fixtures.filter((f) => {
-    const isMyMatch = f.homeOwnerId === user?.id || f.awayOwnerId === user?.id || f.homeClubId === currentClub?.id || f.awayClubId === currentClub?.id;
+    const isMyMatch = f.homeOwnerId === user?.id || f.awayOwnerId === user?.id || ownedClubs.some((club) => club.id === f.homeClubId || club.id === f.awayClubId);
     if (filterMode === 'MY_MATCHES') return isMyMatch;
     if (filterMode === 'PENDING') return f.status === 'PENDING_CONFIRMATION' || f.status === 'AWAITING_RESULT' || f.status === 'SCHEDULED';
     if (filterMode === 'DISPUTED') return f.status === 'DISPUTED';
@@ -428,8 +429,8 @@ export const FixturesView: React.FC = () => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
           {filteredFixtures.map((fixture) => {
-            const isHomeUser = fixture.homeOwnerId === user?.id || fixture.homeClubId === currentClub?.id;
-            const isAwayUser = fixture.awayOwnerId === user?.id || fixture.awayClubId === currentClub?.id;
+            const isHomeUser = fixture.homeOwnerId === user?.id || ownedClubs.some((club) => club.id === fixture.homeClubId);
+            const isAwayUser = fixture.awayOwnerId === user?.id || ownedClubs.some((club) => club.id === fixture.awayClubId);
             const isUserParticipant = isHomeUser || isAwayUser;
 
             return (
@@ -456,7 +457,7 @@ export const FixturesView: React.FC = () => {
                     <div className="col-span-3 flex flex-col items-center min-w-0">
                       <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-slate-950/80 p-1.5 border border-white/[0.08] flex items-center justify-center mb-1 shadow-inner shrink-0">
                         <ClubCrest
-                          clubId={fixture.homeClub?.id}
+                          clubId={fixture.homeClubId}
                           logoUrl={fixture.homeClub?.logoUrl}
                           name={fixture.homeClub?.name}
                           shortName={fixture.homeClub?.shortName}
@@ -467,6 +468,7 @@ export const FixturesView: React.FC = () => {
                       <span className={`font-bold text-xs truncate max-w-full ${isHomeUser ? 'text-emerald-400 font-black' : 'text-slate-200'}`}>
                         {fixture.homeClub?.name}
                       </span>
+                      <PremiumClubBadge clubId={fixture.homeClubId} />
                       {isHomeUser ? (
                         <span className="text-[10px] text-emerald-400 font-bold truncate max-w-full mt-0.5">
                           (You)
@@ -520,7 +522,7 @@ export const FixturesView: React.FC = () => {
                     <div className="col-span-3 flex flex-col items-center min-w-0">
                       <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-slate-950/80 p-1.5 border border-white/[0.08] flex items-center justify-center mb-1 shadow-inner shrink-0">
                         <ClubCrest
-                          clubId={fixture.awayClub?.id}
+                          clubId={fixture.awayClubId}
                           logoUrl={fixture.awayClub?.logoUrl}
                           name={fixture.awayClub?.name}
                           shortName={fixture.awayClub?.shortName}
@@ -531,6 +533,7 @@ export const FixturesView: React.FC = () => {
                       <span className={`font-bold text-xs truncate max-w-full ${isAwayUser ? 'text-emerald-400 font-black' : 'text-slate-200'}`}>
                         {fixture.awayClub?.name}
                       </span>
+                      <PremiumClubBadge clubId={fixture.awayClubId} />
                       {isAwayUser ? (
                         <span className="text-[10px] text-emerald-400 font-bold truncate max-w-full mt-0.5">
                           (You)

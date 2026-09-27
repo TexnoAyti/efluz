@@ -87,6 +87,10 @@ fixturesRouter.post('/:id/result', requireAuth, validateBody(resultSubmissionSch
       fixture: updatedFixture,
     });
   } catch (err: any) {
+    if (err?.code === 'SELF_OWNED_MATCH') {
+      res.status(409).json({ error: err.code, message: err.message });
+      return;
+    }
     if (err?.code === 'SEASON_PHASE_LOCKED' || err?.code === 'MATCHDAY_PROGRESSION_LOCKED') {
       res.status(423).json({ error: err.code, message: err.message });
       return;

@@ -57,9 +57,14 @@ async function loadAuthoritativeCupFixtures(competitionId: string, seasonId: str
 
 export async function canonicalizeMyDomesticCupFixtures(
   fixtures: Fixture[],
-  currentClub: Club | null | undefined,
+  currentClub: Club | Club[] | null | undefined,
   seasonId: string
 ): Promise<Fixture[]> {
+  if (Array.isArray(currentClub)) {
+    let result = fixtures;
+    for (const club of currentClub) result = await canonicalizeMyDomesticCupFixtures(result, club, seasonId);
+    return result;
+  }
   if (!currentClub?.id || !currentClub.leagueId) return fixtures;
   const cupId = DOMESTIC_CUP_BY_LEAGUE[currentClub.leagueId];
   if (!cupId) return fixtures;

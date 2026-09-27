@@ -5,6 +5,7 @@ import { useI18n } from '../i18n';
 import { api } from '../lib/api';
 import { Competition, StandingsRow } from '../types';
 import { ClubCrest } from './ClubCrest';
+import { PremiumClubBadge } from './PremiumClubBadge';
 import { getClubOwnerDisplay } from '../lib/ownerUtils';
 import {
   Trophy,
@@ -18,7 +19,7 @@ import {
 } from 'lucide-react';
 
 export const StandingsView: React.FC = () => {
-  const { currentClub, activeSeasonId } = useAuth();
+  const { ownedClubs, activeSeasonId } = useAuth();
   const { openUserProfile } = useUserProfile();
   const { t } = useI18n();
 
@@ -217,7 +218,7 @@ export const StandingsView: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-white/[0.04] tabular-nums text-xs">
                 {standings.map((row) => {
-                  const isUserClub = row.clubId === currentClub?.id;
+                  const isUserClub = ownedClubs.some((club) => club.id === row.clubId);
                   const posStyle = getPositionStyle(row.position, standings.length);
 
                   return (
@@ -252,6 +253,7 @@ export const StandingsView: React.FC = () => {
                               <span className={`font-semibold truncate text-slate-100 text-xs ${isUserClub ? 'text-emerald-400 font-bold' : ''}`}>
                                 {row.clubName}
                               </span>
+                              <PremiumClubBadge clubId={row.clubId} />
                               {isUserClub && (
                                 <span className="px-1 py-0.2 rounded text-[8px] font-black uppercase bg-emerald-500 text-slate-950 shrink-0">
                                   YOU

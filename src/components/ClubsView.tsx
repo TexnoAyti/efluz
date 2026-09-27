@@ -3,8 +3,10 @@ import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../context/UserProfileContext';
 import { useI18n } from '../i18n';
 import { api } from '../lib/api';
+import { premiumApi } from '../lib/premiumApi';
 import { League, Club, Fixture, StandingsRow, Competition } from '../types';
 import { ClubCrest } from './ClubCrest';
+import { PremiumClubBadge } from './PremiumClubBadge';
 import { getClubOwnerDisplay } from '../lib/ownerUtils';
 import confetti from 'canvas-confetti';
 import {
@@ -28,7 +30,7 @@ interface ClubsViewProps {
 }
 
 export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
-  const { user, currentClub, activeSeasonId, refreshUserData, showToast } = useAuth();
+  const { user, currentClub, ownedClubs, activeSeasonId, refreshUserData, showToast } = useAuth();
   const { openUserProfile } = useUserProfile();
   const { t } = useI18n();
 
@@ -39,6 +41,19 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
 
   // Clubs state
   const [clubs, setClubs] = useState<Club[]>([]);
+  const [premiumActive, setPremiumActive] = useState(false);
+  const [premiumStatusReady, setPremiumStatusReady] = useState(false);
+  useEffect(() => {
+    let mounted = true;
+    setPremiumStatusReady(false);
+    if (!user) { setPremiumActive(false); setPremiumStatusReady(true); return; }
+    premiumApi.getMyStatus(activeSeasonId).then((status) => {
+      if (mounted) setPremiumActive(status.active);
+    }).catch(() => {
+      if (mounted) setPremiumActive(false);
+    }).finally(() => { if (mounted) setPremiumStatusReady(true); });
+    return () => { mounted = false; };
+  }, [user?.id, activeSeasonId]);
   const [isLoadingClubs, setIsLoadingClubs] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterMode, setFilterMode] = useState<'ALL' | 'AVAILABLE' | 'CLAIMED'>('ALL');
@@ -210,8 +225,8 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
       setClubToClaim(null);
       return;
     }
-    if (currentClub) {
-      showToast(t.alreadyHaveClubMessage, 'error');
+    if (ownedClubs.some((owned) => owned.leagueId === club.leagueId) || ownedClubs.length >= (premiumActive ? 2 : 1) || !premiumStatusReady) {
+      showToast(ownedClubs.some((owned) => owned.leagueId === club.leagueId) ? 'Bitta ligadan faqat bitta klub tanlash mumkin.' : t.alreadyHaveClubMessage, 'error');
       setClubToClaim(null);
       return;
     }
@@ -485,13 +500,13 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
             </div>
 
             {/* User Active Club Badge if belongs to this league */}
-            {currentClub && currentClub.leagueId === selectedLeagueId && (
-              <div className="flex items-center gap-3 glass-card bg-emerald-950/40 border-emerald-500/30 p-2.5 px-3.5 shadow-md">
+            {ownedClubs.filter((owned) => owned.leagueId === selectedLeagueId).map((club) => (
+              <div key={club.id} className="flex items-center gap-3 glass-card bg-emerald-950/40 border-emerald-500/30 p-2.5 px-3.5 shadow-md">
                 <ClubCrest
-                  clubId={currentClub.id}
-                  logoUrl={currentClub.logoUrl}
-                  name={currentClub.name}
-                  shortName={currentClub.shortName}
+                  clubId={club.id}
+                  logoUrl={club.logoUrl}
+                  name={club.name}
+                  shortName={club.shortName}
                   size="sm"
                   className="w-7 h-7"
                 />
@@ -500,8 +515,13 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                     <Lock className="w-2.5 h-2.5" />
                     <span>{t.myClub} ({t.clubLocked})</span>
                   </div>
-                  <div className="text-xs font-bold text-white truncate max-w-[140px]">{currentClub.name}</div>
+                  <div className="text-xs font-bold text-white truncate max-w-[140px]">{club.name}</div>
                 </div>
+              </div>
+            ))}
+            {premiumStatusReady && ownedClubs.length === 1 && !premiumActive && (
+              <div className="rounded-xl border border-fuchsia-400/20 bg-fuchsia-500/[0.07] px-3 py-2 text-[10px] font-semibold text-fuchsia-200">
+                Premium bilan boshqa ligadan yana bitta klub tanlash mumkin. Jami 2 ta klub.
               </div>
             )}
           </div>
@@ -633,7 +653,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                   club.isCurrentUserClub ||
                   club.claimedByUserId === user?.id ||
                   club.occupancy?.status === 'owned' ||
-                  (currentClub && currentClub.id === club.id);
+                  ownedClubs.some((owned) => owned.id === club.id);
                 const isClaimedByOther = (isClubTaken(club) || ownerInfo.isClaimed) && !isUserClub;
 
                 return (
@@ -680,7 +700,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                         </div>
                       </div>
 
-                      <h3 className="font-black text-xs sm:text-sm text-slate-100 line-clamp-1 mb-0.5">{club.name}</h3>
+                      <div className="flex items-center gap-1.5 mb-0.5"><h3 className="font-black text-xs sm:text-sm text-slate-100 line-clamp-1">{club.name}</h3><PremiumClubBadge clubId={club.id} /></div>
                       <div className="mb-2">
                         {isUserClub ? (
                           <span className="text-[11px] font-bold text-emerald-400 truncate block">
@@ -738,7 +758,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                             <span className="font-semibold text-slate-300 truncate">{ownerInfo.displayText}</span>
                           )}
                         </div>
-                      ) : currentClub ? (
+                      ) : !premiumStatusReady || ownedClubs.some((owned) => owned.leagueId === club.leagueId) || ownedClubs.length >= (premiumActive ? 2 : 1) ? (
                         <button
                           disabled={true}
                           className="w-full py-2 glass-card text-slate-500 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-not-allowed opacity-75 min-h-[38px]"
@@ -979,7 +999,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                   <tbody className="divide-y divide-white/[0.04]">
                     {leagueStandings.map((row) => {
                       const posStyle = getPositionStyle(row.position);
-                      const isMyClub = currentClub && currentClub.id === row.clubId;
+                      const isMyClub = ownedClubs.some((club) => club.id === row.clubId);
 
                       return (
                         <tr
@@ -1012,6 +1032,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                                   <span className="font-bold text-white text-xs truncate max-w-[160px]">
                                     {row.clubName}
                                   </span>
+                                  <PremiumClubBadge clubId={row.clubId} />
                                   {isMyClub && (
                                     <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-emerald-500 text-slate-950 uppercase">
                                       You
