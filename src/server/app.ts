@@ -25,6 +25,7 @@ import { notificationsReadResilientRouter } from './routes/notificationsReadResi
 import { meRouter } from './routes/me.routes';
 import { usersRouter } from './routes/users.routes';
 import { seasonInsightsRouter } from './routes/seasonInsights.routes';
+import { seasonOperationsRouter, adminSeasonOperationsRouter } from './routes/seasonOperations.routes';
 import { adminCupDrawRouter } from './routes/adminCupDraw.routes';
 import { adminCupOpsRouter } from './routes/adminCupOps.routes';
 import { adminMatchControlRouter } from './routes/adminMatchControl.routes';
@@ -106,17 +107,10 @@ export function createApp() {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-    res.setHeader(
-      'Content-Security-Policy',
-      "default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://resources.premierleague.com https://crests.football-data.org https://t.me; connect-src 'self'; frame-ancestors 'self' https://web.telegram.org https://*.telegram.org"
-    );
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://resources.premierleague.com https://crests.football-data.org https://t.me; connect-src 'self'; frame-ancestors 'self' https://web.telegram.org https://*.telegram.org");
     if (req.method === 'OPTIONS') {
-      if (origin && !allowedOrigins.has(origin)) {
-        res.sendStatus(403);
-        return;
-      }
-      res.sendStatus(204);
-      return;
+      if (origin && !allowedOrigins.has(origin)) { res.sendStatus(403); return; }
+      res.sendStatus(204); return;
     }
     next();
   });
@@ -128,34 +122,19 @@ export function createApp() {
     const secret = process.env.CRON_SECRET;
     const actual = Buffer.from(req.headers.authorization || '');
     const expected = Buffer.from(`Bearer ${secret || ''}`);
-    if (!secret || actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
-      res.status(401).json({ error: 'UNAUTHORIZED' });
-      return;
-    }
+    if (!secret || actual.length !== expected.length || !timingSafeEqual(actual, expected)) { res.status(401).json({ error: 'UNAUTHORIZED' }); return; }
     if (!['GET', 'POST'].includes(req.method)) { res.sendStatus(405); return; }
     const hop = Number(req.query.hop || 0);
     if (!Number.isInteger(hop) || hop < 0 || hop > 256) { res.sendStatus(400); return; }
     try {
-      if (process.env.VERCEL === '1') {
-        scheduleNotificationQueueDrain(hop);
-        res.status(202).json({ accepted: true });
-      } else {
-        await drainNotificationQueue({ hop });
-        res.json({ drained: true });
-      }
-    } catch {
-      res.status(503).json({ error: 'NOTIFICATION_WORKER_UNAVAILABLE' });
-    }
+      if (process.env.VERCEL === '1') { scheduleNotificationQueueDrain(hop); res.status(202).json({ accepted: true }); }
+      else { await drainNotificationQueue({ hop }); res.json({ drained: true }); }
+    } catch { res.status(503).json({ error: 'NOTIFICATION_WORKER_UNAVAILABLE' }); }
   });
 
   app.use(async (req, res, next) => {
-    try {
-      await ensureDbReady();
-      next();
-    } catch (err: any) {
-      console.error('[SERVER] Database initialization failed on request:', err);
-      res.status(500).json({ error: 'Database initialization failed', details: err.message });
-    }
+    try { await ensureDbReady(); next(); }
+    catch (err: any) { console.error('[SERVER] Database initialization failed on request:', err); res.status(500).json({ error: 'Database initialization failed', details: err.message }); }
   });
 
   app.use(authMiddleware);
@@ -165,11 +144,13 @@ export function createApp() {
   app.use('/api/telegram/webhook', rateLimit('telegram-webhook', 120, 60));
   app.use('/api/fixtures', rateLimit('fixture-write', 60, 60));
   app.use('/api/clubs', rateLimit('club-action', 120, 60));
+  app.use('/api/season-ops/no-show', rateLimit('season-no-show', 8, 600));
 
   app.use('/api/health', healthRouter);
   app.use('/api/auth', authRouter);
   app.use('/api/seasons', seasonsRouter);
   app.use('/api/season-lifecycle', seasonLifecycleRouter);
+  app.use('/api/season-ops', seasonOperationsRouter);
   app.use('/api/leagues', leaguesRouter);
   app.use('/api/clubs', clubsRouter);
   app.use('/api/competitions', competitionConsistencyRouter);
@@ -181,6 +162,7 @@ export function createApp() {
   app.use('/api/insights', seasonInsightsRouter);
   app.use('/api/admin/cups', adminCupDrawRouter);
   app.use('/api/admin/season-lifecycle', adminSeasonLifecycleRouter);
+  app.use('/api/admin/season-ops', adminSeasonOperationsRouter);
   app.use('/api/admin', adminCupOpsRouter);
   app.use('/api/admin', adminMatchControlRouter);
   app.use('/api/admin', adminConsistencyRouter);
@@ -188,15 +170,8 @@ export function createApp() {
   app.use('/api/telegram', telegramRouter);
   app.use('/api/premium', premiumPrivateRouter);
 
-  app.use('/api/*', (req, res) => {
-    res.status(404).json({ error: 'Endpoint not found', path: req.originalUrl });
-  });
-
-  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-    console.error('[SERVER] Unhandled error:', err);
-    res.status(err.status || 500).json({ error: err.message || 'Internal Server Error', status: err.status || 500 });
-  });
-
+  app.use('/api/*', (req, res) => { res.status(404).json({ error: 'Endpoint not found', path: req.originalUrl }); });
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => { console.error('[SERVER] Unhandled error:', err); res.status(err.status || 500).json({ error: err.message || 'Internal Server Error', status: err.status || 500 }); });
   return app;
 }
 
