@@ -370,3 +370,81 @@
   .matchday-crest { width: 88px; height: 88px; }
   .matchday-league-card { min-width: 200px; }
 }
+
+/* Admin mobile shell: the reference app is light-first and content-dense. */
+.efl-preview {
+  background: #f4f6fb;
+  color: #182033;
+}
+.efl-preview main { max-width: 760px; padding-top: 18px; }
+.efl-preview footer { background: #f4f6fb; border-color: #e4e7ef; color: #8a91a2; }
+.efl-preview footer .text-slate-300 { color: #4d5568; }
+.efl-preview .preview-app-header {
+  background: rgba(255,255,255,.96);
+  border-bottom: 1px solid #e6e9f0;
+  color: #182033;
+}
+.efl-preview .preview-app-header .text-white,
+.efl-preview .preview-app-header .text-slate-300 { color: #182033; }
+.efl-preview .preview-app-header button { border-color: #e1e5ee; background: #fff; color: #5d6577; }
+.efl-preview .preview-brand-mark { box-shadow: 0 8px 18px rgba(208,50,97,.22); }
+.efl-preview .matchday-home { max-width: 760px; }
+.efl-preview .matchday-home h1,
+.efl-preview .matchday-home h2,
+.efl-preview .matchday-home .text-white { color: #182033; }
+.efl-preview .matchday-home .text-slate-400,
+.efl-preview .matchday-home .text-slate-500 { color: #7d8494; }
+.efl-preview .matchday-kicker { color: #7061a7; }
+.efl-preview .matchday-search-button { background: #fff; border-color: #e1e5ee; color: #596174; box-shadow: 0 4px 14px rgba(49,58,82,.06); }
+.efl-preview .matchday-search-button:hover { background: #eef1f7; }
+.efl-preview .preview-surface {
+  background: rgba(255,255,255,.92);
+  border-color: #e4e7ef;
+  border-radius: 20px;
+  box-shadow: 0 6px 18px rgba(33,43,70,.05);
+}
+.efl-preview .matchday-featured {
+  min-height: 278px;
+  border-color: #f4b4bb;
+  background: linear-gradient(135deg, #ff9ca3 0%, #fff 56%, #ffd4d0 100%);
+  box-shadow: 0 10px 26px rgba(220,111,125,.14);
+}
+.efl-preview .matchday-featured::after { background: radial-gradient(circle at 100% 0%, rgba(255,255,255,.45), transparent 56%); }
+.efl-preview .matchday-featured .text-white { color: #182033; }
+.efl-preview .matchday-featured .text-rose-100\/80 { color: #7c334e; }
+.efl-preview .matchday-featured .bg-white\/15 { background: rgba(255,255,255,.48); color: #632c45; }
+.efl-preview .matchday-featured .border-white\/20 { border-color: rgba(124,51,78,.18); }
+.efl-preview .matchday-featured .text-white\/90 { color: #6e3a50; }
+.efl-preview .matchday-featured .bg-white { background: #fff; color: #182033; }
+.efl-preview .matchday-crest { background: rgba(255,255,255,.74); border-color: rgba(112,70,93,.18); box-shadow: 0 5px 14px rgba(112,70,93,.1); }
+.efl-preview .matchday-stat { background: #f1f3fa; border: 1px solid #e7eaf1; }
+.efl-preview .matchday-stat span { color: #7f8798; }
+.efl-preview .matchday-stat strong { color: #182033; }
+.efl-preview .matchday-home .divide-y { border-color: #eaedf3; }
+.efl-preview .matchday-home .divide-y > * { border-color: #eaedf3; }
+.efl-preview .matchday-home .hover\:bg-white\/\[0\.04\]:hover { background: #f7f8fb; }
+.efl-preview .matchday-home .bg-white\/\[0\.06\] { background: #edf0f6; color: #566075; }
+.efl-preview .matchday-home .text-slate-200 { color: #30394d; }
+.efl-preview .matchday-home .text-slate-300 { color: #697286; }
+.efl-preview .matchday-home .text-emerald-300 { color: #168b70; }
+.efl-preview .matchday-league-card { min-width: 178px; min-height: 138px; border-color: #e3e5ed; box-shadow: 0 5px 14px rgba(30,40,66,.04); }
+.efl-preview .matchday-league-card.tone-indigo { background: linear-gradient(145deg, #ebe6ff, #fff); }
+.efl-preview .matchday-league-card.tone-coral { background: linear-gradient(145deg, #ffd9dd, #fff); }
+.efl-preview .matchday-league-card.tone-blue { background: linear-gradient(145deg, #d9efff, #fff); }
+.efl-preview .matchday-league-card.tone-red { background: linear-gradient(145deg, #ffe0dd, #fff); }
+.efl-preview .matchday-league-card.tone-teal { background: linear-gradient(145deg, #d8f5ef, #fff); }
+.efl-preview .matchday-league-card .text-white { color: #182033; }
+.efl-preview .matchday-league-card .text-white\/70 { color: #6f7788; }
+.efl-preview .matchday-league-mark { background: rgba(255,255,255,.64); border-color: #d8dbe5; color: #586078; }
+.efl-preview .matchday-quick { min-height: 70px; background: #fff; border-color: #e2e6ef; color: #30394d; box-shadow: 0 5px 14px rgba(30,40,66,.04); }
+.efl-preview .glass-nav-bottom.preview-bottom-nav { background: rgba(255,255,255,.96); border-color: #dfe3ec; box-shadow: 0 10px 28px rgba(38,47,72,.16); }
+.efl-preview .preview-bottom-nav .preview-nav-active { background: #edf0f6; }
+
+@media (max-width: 639px) {
+  .efl-preview main { padding: 14px 12px 88px; }
+  .efl-preview .matchday-home { gap: 18px; }
+  .efl-preview .matchday-featured { padding: 16px; border-radius: 24px; }
+  .efl-preview .matchday-featured .mt-7 { margin-top: 22px; }
+  .efl-preview .matchday-featured .mt-6 { margin-top: 18px; }
+  .efl-preview .matchday-home > .grid { gap: 14px; }
+}
