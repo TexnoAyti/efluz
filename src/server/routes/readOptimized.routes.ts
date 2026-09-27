@@ -7,7 +7,10 @@ import {
   getFixturesFirestore,
 } from '../firebase/firestoreStore';
 import { ReadModelNotWarmedError } from '../readModel/readModelStore';
-import { filterTombstonedFixtures } from '../services/fixtureTombstoneService';
+import {
+  filterTombstonedFixtures,
+  rebuildStandingsSnapshotFromFixtures,
+} from '../services/fixtureTombstoneService';
 
 export const readOptimizedRouter = Router();
 
@@ -56,10 +59,17 @@ readOptimizedRouter.get('/competitions/:id', async (req: Request, res: Response,
 });
 
 readOptimizedRouter.get('/competitions/:id/standings', async (req: Request, res: Response, next: NextFunction) => {
+  const seasonId = (req.query.seasonId as string) || 'season-2026-27';
   try {
-    const standings = await calculateCompetitionStandingsFirestore(req.params.id);
-    res.setHeader('Cache-Control', 'public, max-age=10, s-maxage=20, stale-while-revalidate=30');
-    res.json({ standings });
+    const [cachedStandings, rawFixtures] = await Promise.all([
+      calculateCompetitionStandingsFirestore(req.params.id),
+      getFixturesFirestore({ competitionId: req.params.id }),
+    ]);
+    const fixtures = await filterTombstonedFixtures(rawFixtures, seasonId);
+    const recomputed = await rebuildStandingsSnapshotFromFixtures(req.params.id, seasonId, fixtures).catch(() => null);
+    const standings = recomputed || cachedStandings;
+    res.setHeader('Cache-Control', 'public, max-age=5, s-maxage=10, stale-while-revalidate=15');
+    res.json({ standings, fixtureTruthCount: fixtures.length });
   } catch (err: any) {
     if (err instanceof ReadModelNotWarmedError || err?.errorCode === 'READ_MODEL_NOT_WARMED') {
       res.status(503).json({ errorCode: 'READ_MODEL_NOT_WARMED', message: 'Read model is not warmed and database is unreachable' });
@@ -76,7 +86,7 @@ readOptimizedRouter.get('/competitions/:id/fixtures', async (req: Request, res: 
   try {
     const rawFixtures = await getFixturesFirestore({ competitionId: req.params.id, matchday, status });
     const fixtures = await filterTombstonedFixtures(rawFixtures, seasonId);
-    res.setHeader('Cache-Control', 'public, max-age=10, s-maxage=20, stale-while-revalidate=30');
+    res.setHeader('Cache-Control', 'public, max-age=5, s-maxage=10, stale-while-revalidate=15');
     res.json({ fixtures });
   } catch (err: any) {
     if (err instanceof ReadModelNotWarmedError || err?.errorCode === 'READ_MODEL_NOT_WARMED') {
