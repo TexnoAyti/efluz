@@ -52,6 +52,7 @@ assert(cup.includes("setRound(round.roundNumber, 'LOCK')"), 'cup round lock cont
 const app = read('src/server/app.ts');
 assert(app.includes("app.use('/api/insights', seasonInsightsRouter)"), 'season insights router not mounted');
 assert(app.includes("app.use('/api/admin', adminMatchControlRouter)"), 'admin match control router not mounted');
+assert(app.includes("app.use('/api/competitions', competitionsRouter)"), 'mounted competitions router missing');
 
 const tombstones = read('src/server/services/fixtureTombstoneService.ts');
 for (const marker of ['fixture-tombstones', 'addFixtureTombstone', 'filterTombstonedFixtures', 'removeFixtureFromDurableSnapshots', 'rebuildStandingsSnapshotFromFixtures']) {
@@ -60,9 +61,10 @@ for (const marker of ['fixture-tombstones', 'addFixtureTombstone', 'filterTombst
 const consistency = read('src/server/routes/consistencyGuard.routes.ts');
 assert(consistency.includes('durableTombstone: true'), 'admin fixture deletion must persist a durable tombstone');
 assert(consistency.includes('removeFixtureFromDurableSnapshots'), 'delete must purge Fresh/LKG fixture snapshots');
-const optimized = read('src/server/routes/readOptimized.routes.ts');
-assert(optimized.includes('filterTombstonedFixtures'), 'public fixture reads must suppress tombstoned fixtures');
-assert(optimized.includes('rebuildStandingsSnapshotFromFixtures'), 'standings must derive from visible fixture truth');
+const competitionsRoute = read('src/server/routes/competitions.routes.ts');
+assert(competitionsRoute.includes('filterTombstonedFixtures'), 'mounted public fixture reads must suppress tombstoned fixtures');
+assert(competitionsRoute.includes('rebuildStandingsSnapshotFromFixtures'), 'mounted standings route must derive from visible fixture truth');
+assert(competitionsRoute.includes("'Cache-Control', 'private, no-store, max-age=0'"), 'mounted standings/fixtures must not serve browser-stale competition state');
 const insightsRoute = read('src/server/routes/seasonInsights.routes.ts');
 assert(insightsRoute.includes("'Cache-Control', 'no-store'"), 'season awards/profile insights must not be client-cached after result mutations');
 
