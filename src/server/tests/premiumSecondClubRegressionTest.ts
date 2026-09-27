@@ -25,6 +25,12 @@ async function run() {
     (error: any) => error.code === 'CLUB_SELECTION_LOCKED',
   );
   await db.collection('premium_entitlements').doc(`${seasonId}__${userId}`).set({ userId, seasonId, status: 'ACTIVE' });
+  await db.collection('users').doc(userId).set({ id: userId, isAdmin: false });
+  await assert.rejects(
+    () => claimClubAtomicFirestore(userId, 'club-real-madrid', seasonId, { authoritativeOnly: true }),
+    (error: any) => error.code === 'CLUB_SELECTION_LOCKED',
+  );
+  await db.collection('users').doc(userId).update({ isAdmin: true });
   await assert.rejects(
     () => claimClubAtomicFirestore(userId, 'club-chelsea', seasonId, { authoritativeOnly: true }),
     (error: any) => error.code === 'CLUB_LEAGUE_LIMIT',
@@ -54,7 +60,6 @@ async function run() {
   } finally {
     await redis.close();
   }
-  await db.collection('users').doc(userId).set({ id: userId });
   await assert.rejects(
     () => revokePremiumEntitlement({ userId, seasonId, actorUserId: 'admin-test' }),
     /PREMIUM_SECOND_CLUB_OWNED/,

@@ -46,14 +46,14 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
   useEffect(() => {
     let mounted = true;
     setPremiumStatusReady(false);
-    if (!user) { setPremiumActive(false); setPremiumStatusReady(true); return; }
+    if (!user?.isAdmin) { setPremiumActive(false); setPremiumStatusReady(true); return; }
     premiumApi.getMyStatus(activeSeasonId).then((status) => {
       if (mounted) setPremiumActive(status.active);
     }).catch(() => {
       if (mounted) setPremiumActive(false);
     }).finally(() => { if (mounted) setPremiumStatusReady(true); });
     return () => { mounted = false; };
-  }, [user?.id, activeSeasonId]);
+  }, [user?.id, user?.isAdmin, activeSeasonId]);
   const [isLoadingClubs, setIsLoadingClubs] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterMode, setFilterMode] = useState<'ALL' | 'AVAILABLE' | 'CLAIMED'>('ALL');
@@ -519,7 +519,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                 </div>
               </div>
             ))}
-            {premiumStatusReady && ownedClubs.length === 1 && !premiumActive && (
+            {user?.isAdmin && premiumStatusReady && ownedClubs.length === 1 && !premiumActive && (
               <div className="rounded-xl border border-fuchsia-400/20 bg-fuchsia-500/[0.07] px-3 py-2 text-[10px] font-semibold text-fuchsia-200">
                 Premium bilan boshqa ligadan yana bitta klub tanlash mumkin. Jami 2 ta klub.
               </div>
