@@ -25,6 +25,7 @@ import { notificationsReadResilientRouter } from './routes/notificationsReadResi
 import { meRouter } from './routes/me.routes';
 import { usersRouter } from './routes/users.routes';
 import { seasonInsightsRouter } from './routes/seasonInsights.routes';
+import { seasonOperationsRouter, adminSeasonOperationsRouter } from './routes/seasonOperations.routes';
 import { adminCupDrawRouter } from './routes/adminCupDraw.routes';
 import { adminCupOpsRouter } from './routes/adminCupOps.routes';
 import { adminMatchControlRouter } from './routes/adminMatchControl.routes';
@@ -164,6 +165,7 @@ export function createApp() {
   app.use('/api/telegram/webhook', rateLimit('telegram-webhook', 120, 60));
   app.use('/api/fixtures', rateLimit('fixture-write', 60, 60));
   app.use('/api/clubs', rateLimit('club-action', 120, 60));
+  app.use('/api/season-ops/no-show', rateLimit('season-no-show', 8, 600));
 
   app.use('/api/health', healthRouter);
   app.use('/api/auth', authRouter);
@@ -177,7 +179,9 @@ export function createApp() {
   app.use('/api/me', meRouter);
   app.use('/api/users', usersRouter);
   app.use('/api/insights', seasonInsightsRouter);
+  app.use('/api/season-ops', seasonOperationsRouter);
   app.use('/api/admin/cups', adminCupDrawRouter);
+  app.use('/api/admin/season-ops', adminSeasonOperationsRouter);
   app.use('/api/admin', adminCupOpsRouter);
   app.use('/api/admin', adminMatchControlRouter);
   app.use('/api/admin', adminConsistencyRouter);
