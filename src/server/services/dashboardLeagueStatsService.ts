@@ -1,5 +1,8 @@
 import { Club } from '../../types';
-import { getCompetitionFixturesFromReadModel } from '../readModel/readModelStore';
+import {
+  getCompetitionFixturesFromReadModel,
+  getCompetitionStandingsFromReadModel,
+} from '../readModel/readModelStore';
 import {
   filterTombstonedFixtures,
   rebuildStandingsSnapshotFromFixtures,
@@ -27,6 +30,18 @@ export function emptyDashboardLeagueStats() {
   };
 }
 
+function applyStandingRow(stats: ReturnType<typeof emptyDashboardLeagueStats>, row: any) {
+  stats.matchesPlayed = row.played || 0;
+  stats.wins = row.won || 0;
+  stats.draws = row.drawn || 0;
+  stats.losses = row.lost || 0;
+  stats.goalsScored = row.goalsFor || 0;
+  stats.goalsConceded = row.goalsAgainst || 0;
+  stats.points = row.points || 0;
+  stats.leaguePosition = row.position || 0;
+  return stats;
+}
+
 export async function getDashboardLeagueStats(
   currentClub?: Club | null,
   seasonId = 'season-2026-27'
@@ -37,26 +52,32 @@ export async function getDashboardLeagueStats(
   const competitionId = DOMESTIC_LEAGUE_COMPETITION_BY_LEAGUE[currentClub.leagueId];
   if (!competitionId) return stats;
 
-  // Use exactly the same visible-fixture truth as the public Table endpoint.
-  // This applies durable fixture tombstones before standings are calculated, so
-  // deleted phantom fixtures cannot keep Home POS/PTS/W-D-L stale after cold starts.
-  const fixtureResult = await getCompetitionFixturesFromReadModel(competitionId, { seasonId });
-  const visibleFixtures = await filterTombstonedFixtures(fixtureResult.fixtures, seasonId);
-  const standings = await rebuildStandingsSnapshotFromFixtures(
-    competitionId,
-    seasonId,
-    visibleFixtures
-  );
-  const row = standings.find((standing) => standing.clubId === currentClub.id);
-  if (!row) return stats;
+  // Primary: exactly the same visible-fixture truth as the public Table endpoint.
+  // Durable tombstones are applied before standings are calculated, so deleted
+  // phantom fixtures cannot keep Home POS/PTS/W-D-L stale after cold starts.
+  try {
+    const fixtureResult = await getCompetitionFixturesFromReadModel(competitionId, { seasonId });
+    const visibleFixtures = await filterTombstonedFixtures(fixtureResult.fixtures, seasonId);
+    const standings = await rebuildStandingsSnapshotFromFixtures(
+      competitionId,
+      seasonId,
+      visibleFixtures
+    );
+    const row = standings.find((standing) => standing.clubId === currentClub.id);
+    if (row) return applyStandingRow(stats, row);
+  } catch (error: any) {
+    console.warn('[DASHBOARD_STATS] visible fixture truth unavailable:', error?.message || error);
+  }
 
-  stats.matchesPlayed = row.played || 0;
-  stats.wins = row.won || 0;
-  stats.draws = row.drawn || 0;
-  stats.losses = row.lost || 0;
-  stats.goalsScored = row.goalsFor || 0;
-  stats.goalsConceded = row.goalsAgainst || 0;
-  stats.points = row.points || 0;
-  stats.leaguePosition = row.position || 0;
+  // Resilient fallback: use the durable standings snapshot. This keeps login and
+  // /api/me available during a temporary fixture-read failure.
+  try {
+    const result = await getCompetitionStandingsFromReadModel(competitionId, seasonId);
+    const row = result.standings.find((standing) => standing.clubId === currentClub.id);
+    if (row) return applyStandingRow(stats, row);
+  } catch (error: any) {
+    console.warn('[DASHBOARD_STATS] standings fallback unavailable:', error?.message || error);
+  }
+
   return stats;
 }
