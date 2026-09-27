@@ -6,10 +6,10 @@ import {
   Layers,
   Award,
   Globe2,
-  Trophy,
   Bell,
   User,
   SlidersHorizontal,
+  CalendarDays,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n';
@@ -23,6 +23,7 @@ export type TabType =
   | 'cups'
   | 'champions-league'
   | 'standings'
+  | 'season-hub'
   | 'notifications'
   | 'profile'
   | 'admin';
@@ -43,11 +44,11 @@ export const Navigation: React.FC<NavigationProps> = ({
 
   const currentTab = activeTab === 'home' ? 'dashboard' : activeTab;
 
-  // Desktop complete navigation
   const desktopNavItems = [
     { id: 'dashboard' as TabType, label: t.navHome, icon: Home },
     { id: 'my-club' as TabType, label: t.navMyClub, icon: Shield },
     { id: 'my-matches' as TabType, label: t.navMyMatches, icon: Swords },
+    { id: 'season-hub' as TabType, label: 'Season Hub', icon: CalendarDays },
     { id: 'leagues' as TabType, label: t.navLeagues, icon: Layers },
     { id: 'cups' as TabType, label: t.navCups, icon: Award },
     { id: 'champions-league' as TabType, label: t.navChampionsLeague, icon: Globe2 },
@@ -64,7 +65,6 @@ export const Navigation: React.FC<NavigationProps> = ({
     });
   }
 
-  // Mobile 4-Item Bottom Navigation Bar: Home | Matches | Leagues | Profile
   const mobileNavItems = [
     {
       id: 'dashboard' as TabType,
@@ -82,7 +82,7 @@ export const Navigation: React.FC<NavigationProps> = ({
       id: 'leagues' as TabType,
       label: t.navLeagues || 'Leagues',
       icon: Layers,
-      isActive: currentTab === 'leagues' || currentTab === 'cups' || currentTab === 'champions-league' || currentTab === 'standings',
+      isActive: currentTab === 'leagues' || currentTab === 'cups' || currentTab === 'champions-league' || currentTab === 'standings' || currentTab === 'season-hub',
     },
     {
       id: 'profile' as TabType,
@@ -95,7 +95,6 @@ export const Navigation: React.FC<NavigationProps> = ({
 
   return (
     <>
-      {/* Desktop Navigation Tabs (Horizontal Top Glass Bar) */}
       <nav className="hidden lg:block bg-[#080d16]/85 backdrop-blur-2xl border-b border-white/[0.08] sticky top-[61px] z-30 shadow-lg">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="flex items-center space-x-1.5 py-2 overflow-x-auto scrollbar-none">
@@ -135,8 +134,6 @@ export const Navigation: React.FC<NavigationProps> = ({
         </div>
       </nav>
 
-      {/* Mobile 4-Item Fixed Clean Bottom Navigation Bar */}
-      {/* Optimized for 360px+ viewports without horizontal scroll */}
       <nav
         aria-label="Mobile Navigation"
         className="lg:hidden fixed bottom-0 left-0 right-0 z-50 glass-nav-bottom bottom-nav-safe"
