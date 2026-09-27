@@ -53,4 +53,17 @@ const app = read('src/server/app.ts');
 assert(app.includes("app.use('/api/insights', seasonInsightsRouter)"), 'season insights router not mounted');
 assert(app.includes("app.use('/api/admin', adminMatchControlRouter)"), 'admin match control router not mounted');
 
+const tombstones = read('src/server/services/fixtureTombstoneService.ts');
+for (const marker of ['fixture-tombstones', 'addFixtureTombstone', 'filterTombstonedFixtures', 'removeFixtureFromDurableSnapshots', 'rebuildStandingsSnapshotFromFixtures']) {
+  assert(tombstones.includes(marker), `fixture consistency layer missing ${marker}`);
+}
+const consistency = read('src/server/routes/consistencyGuard.routes.ts');
+assert(consistency.includes('durableTombstone: true'), 'admin fixture deletion must persist a durable tombstone');
+assert(consistency.includes('removeFixtureFromDurableSnapshots'), 'delete must purge Fresh/LKG fixture snapshots');
+const optimized = read('src/server/routes/readOptimized.routes.ts');
+assert(optimized.includes('filterTombstonedFixtures'), 'public fixture reads must suppress tombstoned fixtures');
+assert(optimized.includes('rebuildStandingsSnapshotFromFixtures'), 'standings must derive from visible fixture truth');
+const insightsRoute = read('src/server/routes/seasonInsights.routes.ts');
+assert(insightsRoute.includes("'Cache-Control', 'no-store'"), 'season awards/profile insights must not be client-cached after result mutations');
+
 console.log('TOURNAMENT_CONTROL_V2_CONTRACT_PASS');
