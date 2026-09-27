@@ -8,8 +8,8 @@ seasonInsightsRouter.get('/season', async (req: Request, res: Response) => {
   const seasonId = String(req.query.seasonId || 'season-2026-27');
   try {
     const result = await getSeasonInsights(seasonId);
-    res.setHeader('Cache-Control', 'private, max-age=30');
-    res.json(result);
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ ...result, generatedAt: new Date().toISOString() });
   } catch (error: any) {
     console.error('[SEASON_INSIGHTS_FAILED]', error?.message || error);
     res.status(503).json({ error: 'SEASON_INSIGHTS_UNAVAILABLE', message: error?.message || 'Season insights are temporarily unavailable.' });
@@ -33,8 +33,8 @@ seasonInsightsRouter.get('/player/:userId', async (req: Request, res: Response) 
       // Insights can still be derived from owner-neutral snapshots/SQLite.
     }
     const result = await getPlayerSeasonInsights(userId, seasonId, fallbackClubIds);
-    res.setHeader('Cache-Control', 'private, max-age=20');
-    res.json(result);
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ ...result, generatedAt: new Date().toISOString() });
   } catch (error: any) {
     console.error('[PLAYER_INSIGHTS_FAILED]', JSON.stringify({ userId, seasonId, error: error?.message || String(error) }));
     res.status(503).json({ error: 'PLAYER_INSIGHTS_UNAVAILABLE', message: error?.message || 'Player insights are temporarily unavailable.' });
