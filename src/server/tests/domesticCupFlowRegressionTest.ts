@@ -112,6 +112,16 @@ async function main() {
   target = (await db.collection(COLLECTIONS.FIXTURES).doc(targetFixtureId).get()).data();
   assert(target?.awayClubId === 'club-chelsea', 'Corrected winner did not replace the cleared slot.');
 
+  // A protected target with the wrong participant must not be opened.
+  await db.collection(COLLECTIONS.FIXTURES).doc(targetFixtureId).update({ status: 'PENDING_CONFIRMATION', awayClubId: 'club-arsenal' });
+  let blocked = false;
+  try { await setDomesticCupRoundStateSafe(competitionId, 2, 'OPEN', actor); }
+  catch (error: any) { blocked = String(error?.message).includes('unresolved or inconsistent participants'); }
+  assert(blocked, 'Protected target mismatch was allowed to open.');
+  assert((await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get()).data()?.currentMatchday === 1,
+    'Blocked round changed competition state.');
+  await db.collection(COLLECTIONS.FIXTURES).doc(targetFixtureId).update({ status: 'SCHEDULED', awayClubId: 'club-chelsea' });
+
   // 5. Round completion opens the next round only after the source round is fully confirmed.
   const next = await advanceDomesticCupRoundSafe(competitionId, actor);
   assert(next.fromRound === 1 && next.toRound === 2, 'Round progression did not open Round 2.');

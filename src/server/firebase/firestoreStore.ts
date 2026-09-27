@@ -3106,20 +3106,43 @@ export async function advanceCompetitionMatchdayFirestore(
   const comp = compDoc.data() as FirestoreCompetitionDoc;
   const seasonId = options.seasonId || comp.seasonId || 'season-2026-27';
   const currentMd = comp.currentMatchday || 1;
-  const totalMd = comp.totalMatchdays || 19;
-  const nextMd = Math.min(totalMd, currentMd + 1);
+  const domesticLeague = ['comp-premier-league-2026', 'comp-la-liga-2026', 'comp-serie-a-2026', 'comp-bundesliga-2026', 'comp-ligue-1-2026'].includes(competitionId);
+  const totalMd = domesticLeague ? Math.min(19, comp.totalMatchdays || 19) : (comp.totalMatchdays || 19);
+  if (comp.type !== 'LEAGUE' || currentMd >= totalMd) {
+    throw new Error(`Cannot advance ${competitionId}: no next league matchday after ${currentMd}.`);
+  }
+  // Only an admin-reviewed postponement may remain open while the next round starts.
+  // Read the authoritative fixtures on this admin action, not a possibly stale read model.
+  const currentFixtures = await db.collection(COLLECTIONS.FIXTURES)
+    .where('competitionId', '==', competitionId).get();
+  const roundFixtures = currentFixtures.docs.filter((doc) => {
+    const fixture = doc.data();
+    return Number(fixture.matchday) === currentMd && (!fixture.seasonId || fixture.seasonId === seasonId);
+  });
+  if (!roundFixtures.length) throw new Error(`Cannot advance: matchday ${currentMd} has no fixtures.`);
+  const unfinished = roundFixtures.filter((doc) => !['CONFIRMED', 'CANCELLED', 'POSTPONED'].includes(String(doc.data().status)));
+  if (unfinished.length) {
+    throw new Error(`Cannot advance matchday ${currentMd}: ${unfinished.length} fixture(s) remain unfinished.`);
+  }
+  const nextMd = currentMd + 1;
   const durationHours = options.durationHours || comp.matchdayDurationHours || 30;
   const now = new Date().toISOString();
   const nextOpenAt = new Date(Date.now() + durationHours * 3600 * 1000).toISOString();
 
-  await compRef.update({
-    currentMatchday: nextMd,
-    isMatchdayOpen: true,
-    matchdayOpenedAt: now,
-    matchdayDurationHours: durationHours,
-    nextMatchdayOpenAt: nextOpenAt,
-    adminOverrideStatus: 'AUTO',
-    updatedAt: now,
+  await db.runTransaction(async (transaction) => {
+    const latest = await transaction.get(compRef);
+    if (!latest.exists || Number(latest.data()?.currentMatchday || 1) !== currentMd) {
+      throw new Error('Cannot advance: matchday changed during this request. Refresh and try again.');
+    }
+    transaction.update(compRef, {
+      currentMatchday: nextMd,
+      isMatchdayOpen: true,
+      matchdayOpenedAt: now,
+      matchdayDurationHours: durationHours,
+      nextMatchdayOpenAt: nextOpenAt,
+      adminOverrideStatus: 'AUTO',
+      updatedAt: now,
+    });
   });
 
   const existingOverride = compOverrideMap.get(competitionId) || {};
