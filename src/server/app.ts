@@ -28,6 +28,7 @@ import { seasonInsightsRouter } from './routes/seasonInsights.routes';
 import { adminCupDrawRouter } from './routes/adminCupDraw.routes';
 import { adminCupOpsRouter } from './routes/adminCupOps.routes';
 import { adminMatchControlRouter } from './routes/adminMatchControl.routes';
+import { adminFixtureConsistencyRouter } from './routes/adminFixtureConsistency.routes';
 import { adminRouter } from './routes/admin.routes';
 import { telegramRouter } from './routes/telegram.routes';
 import { premiumPrivateRouter } from './routes/premiumPrivate.routes';
@@ -181,6 +182,7 @@ export function createApp() {
   app.use('/api/admin', adminCupOpsRouter);
   app.use('/api/admin', adminMatchControlRouter);
   app.use('/api/admin', adminConsistencyRouter);
+  app.use('/api/admin', adminFixtureConsistencyRouter);
   app.use('/api/admin', adminRouter);
   app.use('/api/telegram', telegramRouter);
   app.use('/api/premium', premiumPrivateRouter);
