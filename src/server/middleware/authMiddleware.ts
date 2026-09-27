@@ -158,11 +158,12 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
     firestoreCircuitBreaker.recordSuccess();
   } catch (err: any) {
     firestoreCircuitBreaker.recordFailure(err);
-    // Emergency read access is limited to a bootstrap admin explicitly pinned by
-    // numeric Telegram ID in server configuration. The signed, short-lived session
-    // proves that ID; a user-controlled name or an admin claim alone is insufficient.
+    // Emergency read access is limited to a bootstrap admin explicitly named in
+    // server configuration. The signed 15-minute session proves the Telegram
+    // identity used at login; an admin claim alone is insufficient.
     const telegramId = req.user.telegramId;
-    const configuredIds = (process.env.ADMIN_TELEGRAM_IDS || '').split(',').map((id) => id.trim());
+    const configuredAdmins = (process.env.ADMIN_TELEGRAM_IDS || '')
+      .split(',').map((value) => value.trim().replace(/^@/, '').toLowerCase()).filter(Boolean);
     const bearer = req.headers?.authorization;
     const token = bearer?.startsWith('Bearer ')
       ? bearer.slice(7).trim()
@@ -172,7 +173,9 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
         signed?.isValid && signed.claims?.id === req.user.id &&
         signed.claims.telegramId === telegramId && signed.claims.isAdmin && !signed.claims.isSuspended &&
         /^\d+$/.test(telegramId) && req.user.id === `user-${telegramId}` &&
-        configuredIds.includes(telegramId)) {
+        (configuredAdmins.includes(telegramId) ||
+          (Boolean(req.user.username) && signed.claims.username === req.user.username &&
+            configuredAdmins.includes(req.user.username.toLowerCase())))) {
       res.setHeader('X-Admin-Read-Only', 'true');
       console.warn('[ADMIN_AUTH_QUOTA_READ_ONLY] Configured bootstrap admin, GET only');
       next();
