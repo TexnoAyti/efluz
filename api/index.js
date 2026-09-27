@@ -9280,10 +9280,16 @@ async function claimClubAtomicFirestore(userId, clubId, seasonId = "season-2026-
           const entitlementRef = db.collection("premium_entitlements").doc(`${seasonId}__${userId}`);
           const entitlementDoc = await transaction.get(entitlementRef);
           trackFirestoreRead("premium_entitlements", 1, "claimClubAtomicFirestore:premium");
+          let adminPreview = false;
+          if (entitlementDoc.data()?.status === "ACTIVE") {
+            const userDoc = await transaction.get(db.collection("users").doc(userId));
+            trackFirestoreRead("users", 1, "claimClubAtomicFirestore:adminPreview");
+            adminPreview = userDoc.data()?.isAdmin === true;
+          }
           const rule = checkClubClaimLimit(
             [{ id: primaryId, leagueId: primaryLeagueId }, ...secondaryId ? [{ id: secondaryId, leagueId: String(userMemData?.secondaryLeagueId || "") }] : []],
             { id: clubId, leagueId: clubData.leagueId },
-            entitlementDoc.data()?.status === "ACTIVE"
+            adminPreview
           );
           if (rule !== "ALLOWED") {
             throw new ClubConflictError(
@@ -22216,7 +22222,7 @@ telegramRouter.get("/premium/me", requireAuth, async (req, res) => {
     res.status(503).json({ error: err?.message || "PREMIUM_STATUS_UNAVAILABLE" });
   }
 });
-telegramRouter.get("/premium/badges", requireAuth, async (req, res) => {
+telegramRouter.get("/premium/badges", requireAdmin, async (req, res) => {
   try {
     const { getPremiumClubBadgeIds: getPremiumClubBadgeIds2 } = await Promise.resolve().then(() => (init_premiumBadgeService(), premiumBadgeService_exports));
     res.setHeader("Cache-Control", "private, no-store");

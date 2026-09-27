@@ -179,7 +179,7 @@ telegramRouter.get('/premium/me', requireAuth, async (req: Request, res: Respons
   }
 });
 
-telegramRouter.get('/premium/badges', requireAuth, async (req: Request, res: Response) => {
+telegramRouter.get('/premium/badges', requireAdmin, async (req: Request, res: Response) => {
   try {
     const { getPremiumClubBadgeIds } = await import('../services/premiumBadgeService');
     res.setHeader('Cache-Control', 'private, no-store');

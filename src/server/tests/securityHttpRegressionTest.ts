@@ -19,6 +19,11 @@ async function main() {
     const probe = await fetch(`${base}/api/health/probe`, { method: 'POST' });
     assert.equal(probe.status, 401);
 
+    const badges = await fetch(`${base}/api/telegram/premium/badges`, {
+      headers: { 'x-dev-user-id': 'badge-preview-regular' },
+    });
+    assert.equal(badges.status, 403, 'premium club badges are admin-only');
+
     const cors = await fetch(`${base}/api/health`, {
       method: 'OPTIONS', headers: { origin: 'https://attacker.example' },
     });

@@ -147,13 +147,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [activeSeasonId, setActiveSeasonId] = useState<string>('season-2026-27');
   useEffect(() => {
-    if (!user) { setPremiumClubIds([]); return; }
+    if (!user?.isAdmin) { setPremiumClubIds([]); return; }
     let mounted = true;
     premiumApi.getBadgeClubIds(activeSeasonId).then((result) => {
       if (mounted) setPremiumClubIds(result.clubIds || []);
     }).catch(() => { if (mounted) setPremiumClubIds([]); });
     return () => { mounted = false; };
-  }, [user?.id, activeSeasonId, ownedClubs.map((club) => club.id).join(',')]);
+  }, [user?.id, user?.isAdmin, activeSeasonId, ownedClubs.map((club) => club.id).join(',')]);
   const [currentSeason, setCurrentSeason] = useState<Season | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [authStatus, setAuthStatus] = useState<AuthBootstrapStatus>('AUTH_LOADING');

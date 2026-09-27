@@ -1067,10 +1067,18 @@ export async function claimClubAtomicFirestore(
           const entitlementRef = db.collection('premium_entitlements').doc(`${seasonId}__${userId}`);
           const entitlementDoc = await transaction.get(entitlementRef);
           trackFirestoreRead('premium_entitlements', 1, 'claimClubAtomicFirestore:premium');
+          // The second club is in admin preview. Check the authoritative role
+          // inside the claim transaction rather than trusting a client/session flag.
+          let adminPreview = false;
+          if (entitlementDoc.data()?.status === 'ACTIVE') {
+            const userDoc = await transaction.get(db.collection('users').doc(userId));
+            trackFirestoreRead('users', 1, 'claimClubAtomicFirestore:adminPreview');
+            adminPreview = userDoc.data()?.isAdmin === true;
+          }
           const rule = checkClubClaimLimit(
             [{ id: primaryId, leagueId: primaryLeagueId }, ...(secondaryId ? [{ id: secondaryId, leagueId: String(userMemData?.secondaryLeagueId || '') }] : [])],
             { id: clubId, leagueId: clubData.leagueId },
-            entitlementDoc.data()?.status === 'ACTIVE'
+            adminPreview
           );
           if (rule !== 'ALLOWED') {
             throw new ClubConflictError(
