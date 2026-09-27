@@ -1,14 +1,25 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Shield, Bell, UserCircle, ChevronDown, CheckCircle2, Trophy, Sparkles } from 'lucide-react';
+import { Bell, UserCircle, ChevronDown, CheckCircle2, Trophy, Sparkles, Palette } from 'lucide-react';
 import { ClubCrest } from './ClubCrest';
 
 interface HeaderProps {
   onOpenNotifications: () => void;
   onOpenProfile?: () => void;
+  theme: AppTheme;
+  onThemeChange: (theme: AppTheme) => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onOpenNotifications, onOpenProfile }) => {
+export type AppTheme = 'coral' | 'mint' | 'blue' | 'dark';
+
+const themeOptions: Array<{ id: AppTheme; label: string; swatch: string }> = [
+  { id: 'coral', label: 'Coral', swatch: '#f46f6f' },
+  { id: 'mint', label: 'Mint', swatch: '#16b890' },
+  { id: 'blue', label: 'Blue', swatch: '#4f7cff' },
+  { id: 'dark', label: 'Dark', swatch: '#182033' },
+];
+
+export const Header: React.FC<HeaderProps> = ({ onOpenNotifications, onOpenProfile, theme, onThemeChange }) => {
   const {
     user,
     currentClub,
@@ -23,6 +34,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNotifications, onOpenProfi
 
   const [showDevMenu, setShowDevMenu] = useState(false);
   const [showSeasonMenu, setShowSeasonMenu] = useState(false);
+  const [showThemeMenu, setShowThemeMenu] = useState(false);
 
   const activeSeason = seasons.find((s) => s.id === activeSeasonId);
 
@@ -90,13 +102,10 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNotifications, onOpenProfi
       <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 h-13 sm:h-15 flex items-center justify-between gap-2 sm:gap-4">
         {/* Brand & Logo */}
         <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
-          <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-emerald-500 flex items-center justify-center text-slate-950 font-black text-base sm:text-lg tracking-tighter shrink-0 ${user?.isAdmin ? 'preview-brand-mark' : ''}`}>
-            eF
+          <div className={`preview-brand-logo shrink-0 ${user?.isAdmin ? 'preview-brand-mark' : ''}`}>
+            <img src="/efluz-logo.png" alt="EFL UZ" />
           </div>
           <div className="flex items-center gap-2 min-w-0">
-            <span className="font-black text-base sm:text-lg tracking-tight text-white truncate">
-              EFL UZ
-            </span>
             <span className="hidden sm:inline-block px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
               PRO LEAGUE
             </span>
@@ -105,6 +114,23 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNotifications, onOpenProfi
 
         {/* Right Controls */}
         <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+          <div className="relative">
+            <button type="button" onClick={() => setShowThemeMenu((open) => !open)} className="preview-theme-trigger" aria-label="Change app colors" title="Change app colors">
+              <Palette className="h-4 w-4" />
+            </button>
+            {showThemeMenu && (
+              <div className="preview-theme-menu" role="menu">
+                <div className="px-3 pb-2 text-[10px] font-black uppercase tracking-wider text-slate-400">App color</div>
+                {themeOptions.map((option) => (
+                  <button key={option.id} type="button" role="menuitem" onClick={() => { onThemeChange(option.id); setShowThemeMenu(false); }} className={`preview-theme-option ${theme === option.id ? 'is-active' : ''}`}>
+                    <span className="preview-theme-swatch" style={{ backgroundColor: option.swatch }} />
+                    <span>{option.label}</span>
+                    {theme === option.id && <CheckCircle2 className="ml-auto h-3.5 w-3.5" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           {/* Season Selector (Desktop only) */}
           <div className="relative hidden md:block">
             <button

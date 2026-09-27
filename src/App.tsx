@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { UserProfileProvider } from './context/UserProfileContext';
 import { I18nProvider, useI18n } from './i18n';
-import { Header } from './components/Header';
+import { AppTheme, Header } from './components/Header';
 import { Navigation, TabType } from './components/Navigation';
 import { DashboardView } from './components/DashboardView';
 import { MatchdayHomeView } from './components/MatchdayHomeView';
@@ -45,6 +45,16 @@ const AppContent: React.FC = () => {
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
   const [openDisputesCount, setOpenDisputesCount] = useState(0);
+  const [theme, setTheme] = useState<AppTheme>(() => {
+    if (typeof window === 'undefined') return 'coral';
+    const saved = window.localStorage.getItem('efluz-theme') as AppTheme | null;
+    return saved === 'coral' || saved === 'mint' || saved === 'blue' || saved === 'dark' ? saved : 'coral';
+  });
+
+  const changeTheme = (nextTheme: AppTheme) => {
+    setTheme(nextTheme);
+    window.localStorage.setItem('efluz-theme', nextTheme);
+  };
 
   const setActiveTab = (tab: TabType) => {
     const resolvedTab = tab === 'home' ? 'dashboard' : tab;
@@ -79,9 +89,9 @@ const AppContent: React.FC = () => {
 
   const currentTab = activeTab === 'home' ? 'dashboard' : activeTab;
   return (
-    <div className={`min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-slate-950 ${user?.isAdmin ? 'efl-preview' : ''}`}>
+    <div className={`min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-slate-950 ${user?.isAdmin ? `efl-preview theme-${theme}` : ''}`}>
       {toastMessage && <div className="fixed top-14 right-4 z-50 animate-in slide-in-from-top-3 fade-in duration-200"><div className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-2xl text-xs font-bold border backdrop-blur-md ${toastMessage.type === 'success' ? 'bg-emerald-950/90 text-emerald-300 border-emerald-500/40 shadow-emerald-500/10' : toastMessage.type === 'error' ? 'bg-rose-950/90 text-rose-300 border-rose-500/40 shadow-rose-500/10' : 'bg-slate-900/95 text-slate-200 border-slate-700 shadow-slate-900/40'}`}>{toastMessage.type === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />}{toastMessage.type === 'error' && <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />}{toastMessage.type === 'info' && <Info className="w-4 h-4 text-sky-400 shrink-0" />}<span>{toastMessage.text}</span></div></div>}
-      <Header onOpenNotifications={() => setActiveTab('notifications')} onOpenProfile={() => setActiveTab('profile')} />
+      <Header theme={theme} onThemeChange={changeTheme} onOpenNotifications={() => setActiveTab('notifications')} onOpenProfile={() => setActiveTab('profile')} />
       <Navigation activeTab={currentTab} onTabChange={setActiveTab} openDisputesCount={openDisputesCount} />
       <OfflineSyncBanner />
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-4 md:px-6 py-4 sm:py-6 min-w-0">
