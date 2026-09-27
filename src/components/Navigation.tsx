@@ -136,7 +136,7 @@ export const Navigation: React.FC<NavigationProps> = ({
 
       <nav
         aria-label="Mobile Navigation"
-        className="lg:hidden fixed bottom-0 left-0 right-0 z-50 glass-nav-bottom bottom-nav-safe"
+        className={`lg:hidden fixed bottom-0 left-0 right-0 z-50 glass-nav-bottom bottom-nav-safe ${user?.isAdmin ? 'preview-bottom-nav' : ''}`}
       >
         <div className="grid grid-cols-4 items-center w-full max-w-md mx-auto px-1 py-1">
           {mobileNavItems.map((item) => {
@@ -148,7 +148,7 @@ export const Navigation: React.FC<NavigationProps> = ({
                 key={item.id}
                 id={`mobile-tab-${item.id}`}
                 onClick={() => onTabChange(item.id)}
-                className={`relative flex flex-col items-center justify-center py-1 px-1 rounded-lg transition-colors min-h-[46px] touch-manipulation select-none ${
+                className={`relative flex flex-col items-center justify-center py-1 px-1 rounded-lg transition-colors min-h-[46px] touch-manipulation select-none ${user?.isAdmin && item.isActive ? 'preview-nav-active' : ''} ${
                   item.isActive
                     ? 'text-emerald-400 font-bold'
                     : 'text-slate-400 active:text-slate-200'

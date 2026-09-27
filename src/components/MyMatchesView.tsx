@@ -194,7 +194,7 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
           {/* Left Column: Match Details & Submission (lg:col-span-7) */}
           <div className="lg:col-span-7 space-y-4">
           {focusedFixture ? (
-            <div className="glass-panel p-5 sm:p-6 shadow-2xl space-y-5">
+            <div className="glass-panel p-5 sm:p-6 shadow-2xl space-y-5 preview-match-center">
               {/* Competition & Status bar */}
               <div className="flex items-center justify-between border-b border-white/[0.06] pb-3.5">
                 <div>
