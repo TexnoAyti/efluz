@@ -276,6 +276,16 @@ export async function setDomesticCupRoundStateSafe(
         reason: `open-round-${roundNumber}`,
       });
     }
+    // Re-read after reconciliation. A protected target cannot be repaired safely;
+    // never open that round with an unresolved or mismatched bracket slot.
+    const refreshed = await loadCupFixtures(competitionId);
+    const targetFixtures = refreshed.filter((fixture) => Number(fixture.matchday || 1) === roundNumber);
+    const health = buildHealth(competitionId, refreshed, roundNumber);
+    const targetIds = new Set(targetFixtures.map((fixture) => fixture.id));
+    const targetIssues = health.issues.filter((issue) => targetIds.has(issue.fixtureId));
+    if (targetIssues.length || targetFixtures.some((fixture) => !fixture.homeClubId || !fixture.awayClubId)) {
+      throw new Error(`Cannot open round ${roundNumber}: bracket has unresolved or inconsistent participants.`);
+    }
   }
 
   const now = new Date().toISOString();
