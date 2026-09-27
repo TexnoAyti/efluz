@@ -36,7 +36,13 @@ interface MyMatchesViewProps {
 export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFixture, onNavigateTab }) => {
   const { user, currentClub, activeSeasonId, showToast } = useAuth();
   const { openUserProfile } = useUserProfile();
-  const { t } = useI18n();
+  const { t, language } = useI18n();
+  const previewCopy = {
+    uz: { intro: 'eFootball o‘yinini o‘ynang, keyin yakuniy hisobni kiriting. Raqibingiz ham hisobni tasdiqlaydi.', opponent: 'Raqib shu hisobni kiritdi. To‘g‘ri bo‘lsa tasdiqlang; farq qilsa o‘z hisobingizni yuboring.', instructions: 'Ikki o‘yinchi bir xil hisob kiritganda natija tasdiqlanadi. Nizoda skrinshot yordam beradi.', update: 'Natijani qayta yuborish', locked: 'tur qulflangan', noClub: 'Hali klub tanlanmagan', noClubHint: 'Liga ichidan klub tanlang — o‘yinlaringiz shu yerda ko‘rinadi.', choose: 'Klub tanlash', noFixtures: 'Admin jadvalni e’lon qilgach o‘yinlaringiz shu yerda chiqadi.' },
+    ru: { intro: 'Сыграйте матч в eFootball, затем внесите итоговый счёт. Соперник подтвердит результат.', opponent: 'Соперник внёс этот счёт. Подтвердите его или отправьте свой, если он отличается.', instructions: 'Матч подтверждается, когда оба игрока вводят одинаковый счёт. Скриншот поможет при споре.', update: 'Отправить счёт повторно', locked: 'тур закрыт', noClub: 'Клуб пока не выбран', noClubHint: 'Выберите клуб в лиге — ваши матчи появятся здесь.', choose: 'Выбрать клуб', noFixtures: 'Матчи появятся после публикации расписания администратором.' },
+    en: { intro: 'Play the eFootball match, then enter the final score. Your opponent confirms it too.', opponent: 'Your opponent entered this score. Confirm it or submit your own if it differs.', instructions: 'A result is confirmed when both players enter the same score. A screenshot helps in disputes.', update: 'Resubmit result', locked: 'matchday locked', noClub: 'No club selected yet', noClubHint: 'Choose a club in a league to see your fixtures here.', choose: 'Choose a club', noFixtures: 'Fixtures will appear here when the administrator publishes the schedule.' },
+  }[language];
+  const c = user?.isAdmin ? previewCopy : null;
 
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
   const [activeFilter, setActiveFilter] = useState<'ALL' | 'PENDING' | 'CONFIRMED' | 'DISPUTED'>('ALL');
@@ -136,7 +142,7 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
           </div>
           <h2 className="text-xl sm:text-2xl font-black text-white">{t.navMyMatches}</h2>
           <p className="text-xs text-slate-400 mt-1">
-            Play your fixtures in eFootball and submit/confirm verified match scores.
+            {c?.intro || 'Play your fixtures in eFootball and submit/confirm verified match scores.'}
           </p>
         </div>
 
@@ -389,7 +395,7 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                   </div>
 
                   <p className="text-slate-300 text-[11px]">
-                    Your opponent recorded this score. Please confirm if this matches your eFootball match or submit your counter score to dispute.
+                    {c?.opponent || 'Your opponent recorded this score. Please confirm if this matches your eFootball match or submit your counter score to dispute.'}
                   </p>
 
                   <div className="flex items-center gap-2">
@@ -422,7 +428,7 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                   <span>{t.instructions}</span>
                 </div>
                 <p className="text-slate-400 text-[11px] leading-relaxed">
-                  {t.instructionsText} Both players must enter the score or confirm the opponent’s submission. Screenshots can be attached for dispute resolution.
+                  {c?.instructions || `${t.instructionsText} Both players must enter the score or confirm the opponent’s submission. Screenshots can be attached for dispute resolution.`}
                 </p>
               </div>
 
@@ -435,7 +441,7 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                     </div>
                     <div>
                       <div className="font-bold text-rose-300 flex items-center gap-2">
-                        <span>Matchday {focusedFixture.matchday} Qulflangan</span>
+                        <span>{c ? `${focusedFixture.matchday}-${c.locked}` : `Matchday ${focusedFixture.matchday} Qulflangan`}</span>
                         <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
                           LOCKED
                         </span>
@@ -470,12 +476,12 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                   {focusedFixture.isPlayable === false ? (
                     <>
                       <Lock className="w-4 h-4 text-slate-500" />
-                      <span>Matchday {focusedFixture.matchday} Qulflangan</span>
+                      <span>{c ? `${focusedFixture.matchday}-${c.locked}` : `Matchday ${focusedFixture.matchday} Qulflangan`}</span>
                     </>
                   ) : (
                     <>
                       <Swords className="w-4 h-4" />
-                      <span>{focusedFixture.userSubmission ? 'Update / Re-Submit Result' : t.submitResult}</span>
+                      <span>{focusedFixture.userSubmission ? c?.update || 'Update / Re-Submit Result' : t.submitResult}</span>
                     </>
                   )}
                 </button>
@@ -487,9 +493,9 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                 <Shield className="w-7 h-7" />
               </div>
               <div>
-                <h3 className="font-bold text-base text-white">No Club Claimed Yet</h3>
+                <h3 className="font-bold text-base text-white">{c?.noClub || 'No Club Claimed Yet'}</h3>
                 <p className="text-xs text-slate-400 max-w-sm mx-auto mt-1">
-                  Claim your favorite club from Europe's top 5 leagues to unlock your full tournament schedule and match center.
+                  {c?.noClubHint || "Claim your favorite club from Europe's top 5 leagues to unlock your full tournament schedule and match center."}
                 </p>
               </div>
               {onNavigateTab && (
@@ -498,7 +504,7 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                   className="px-5 py-2.5 btn-glass-primary text-xs inline-flex items-center gap-1.5"
                 >
                   <Shield className="w-3.5 h-3.5" />
-                  <span>Choose Your Club</span>
+                  <span>{c?.choose || 'Choose Your Club'}</span>
                 </button>
               )}
             </div>
@@ -507,7 +513,7 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
               <Sparkles className="w-8 h-8 text-slate-600 mx-auto mb-2" />
               <div className="font-bold text-slate-200">{t.noUpcomingMatches}</div>
               <p className="text-xs text-slate-500 mt-1">
-                Your club is active. Fixtures will appear here as soon as the tournament administrator generates the season schedule.
+                {c?.noFixtures || 'Your club is active. Fixtures will appear here as soon as the tournament administrator generates the season schedule.'}
               </p>
             </div>
           )}

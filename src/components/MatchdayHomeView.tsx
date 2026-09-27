@@ -106,8 +106,11 @@ export const MatchdayHomeView: React.FC<Props> = ({ onNavigateTab, onSelectFixtu
     onNavigateTab('my-matches');
   };
 
-  const openLeague = (leagueId: string) => {
-    try { sessionStorage.setItem('efl:preview-league', `league-${leagueId}`); } catch { /* storage may be unavailable in a WebView */ }
+  const openLeague = (leagueId: string, tab: 'CLUBS' | 'STANDINGS' = 'CLUBS') => {
+    try {
+      sessionStorage.setItem('efl:preview-league', `league-${leagueId}`);
+      sessionStorage.setItem('efl:preview-league-tab', tab);
+    } catch { /* storage may be unavailable in a WebView */ }
     onNavigateTab('leagues');
   };
 
@@ -179,7 +182,7 @@ export const MatchdayHomeView: React.FC<Props> = ({ onNavigateTab, onSelectFixtu
 
       <section><div className="mb-3 flex items-end justify-between"><div><div className="matchday-kicker">EFL UZ · 2026/27</div><h2 className="mt-1 text-lg font-black text-white">{c.leagues}</h2><p className="text-xs text-slate-400">{c.leaguesHint}</p></div><button type="button" onClick={() => onNavigateTab('leagues')} className="text-xs font-bold text-emerald-300">{c.explore} →</button></div><div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none">{leagueCards.map((league) => <button key={league.id} type="button" onClick={() => openLeague(league.id)} className={`matchday-league-card tone-${league.tone}`}><span className="matchday-league-mark">{league.mark}</span><span className="mt-3 block truncate text-sm font-black text-white">{league.name}</span><span className="mt-1 block text-[11px] text-white/70">{league.country} · {league.clubs} {c.clubs}</span><span className="absolute right-3 top-3 text-white/50"><ChevronRight className="h-4 w-4" /></span></button>)}</div></section>
 
-      <div className="grid grid-cols-3 gap-2.5"><button type="button" onClick={() => onNavigateTab('standings')} className="matchday-quick"><Trophy className="h-5 w-5 text-amber-300" /><span>{c.table}</span></button><button type="button" onClick={() => onNavigateTab('cups')} className="matchday-quick"><Layers3 className="h-5 w-5 text-rose-300" /><span>{c.cups}</span></button><button type="button" onClick={() => onNavigateTab('season-hub')} className="matchday-quick"><CalendarDays className="h-5 w-5 text-sky-300" /><span>{c.calendar}</span></button></div>
+      <div className="grid grid-cols-3 gap-2.5"><button type="button" onClick={() => openLeague((currentClub?.leagueId || 'league-premier-league').replace(/^league-/, ''), 'STANDINGS')} className="matchday-quick"><Trophy className="h-5 w-5 text-amber-300" /><span>{c.table}</span></button><button type="button" onClick={() => onNavigateTab('cups')} className="matchday-quick"><Layers3 className="h-5 w-5 text-rose-300" /><span>{c.cups}</span></button><button type="button" onClick={() => onNavigateTab('season-hub')} className="matchday-quick"><CalendarDays className="h-5 w-5 text-sky-300" /><span>{c.calendar}</span></button></div>
       <p className="flex items-center gap-1.5 text-[11px] text-slate-500"><CircleHelp className="h-3.5 w-3.5" />eFootball {language === 'uz' ? 'o‘yinini o‘ynang, so‘ng natijani Match Center orqali yuboring.' : language === 'ru' ? 'сыграйте матч и внесите результат в Центре матча.' : 'matches are played first; submit the result in Match Center.'}</p>
     </div>
   );
