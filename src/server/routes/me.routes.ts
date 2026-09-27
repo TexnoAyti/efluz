@@ -24,6 +24,14 @@ const DOMESTIC_LEAGUE_IDS = new Set([
   'comp-ligue-1-2026',
 ]);
 
+const DOMESTIC_CUP_IDS = new Set([
+  'comp-fa-cup-2026',
+  'comp-copa-del-rey-2026',
+  'comp-coppa-italia-2026',
+  'comp-dfb-pokal-2026',
+  'comp-coupe-de-france-2026',
+]);
+
 const EUROPEAN_LEAGUE_PHASE_IDS = new Set([
   'comp-champions-league-2026',
   'comp-europa-league-2026',
@@ -31,10 +39,15 @@ const EUROPEAN_LEAGUE_PHASE_IDS = new Set([
 
 function myMatchesPhase(fixture: Fixture): number {
   if (DOMESTIC_LEAGUE_IDS.has(fixture.competitionId)) {
-    return Number(fixture.matchday || 0) <= 19 ? 10 : 30;
+    const md = Number(fixture.matchday || 0);
+    if (md <= 9) return 10;
+    if (md <= 19) return 30;
+    return 50;
   }
-  if (EUROPEAN_LEAGUE_PHASE_IDS.has(fixture.competitionId)) return 20;
-  return 15;
+  if (DOMESTIC_CUP_IDS.has(fixture.competitionId)) return 20;
+  if (EUROPEAN_LEAGUE_PHASE_IDS.has(fixture.competitionId)) return 40;
+  // Super cups and other competitions keep their existing neutral slot.
+  return 25;
 }
 
 function sortMyMatches(fixtures: Fixture[]): Fixture[] {
