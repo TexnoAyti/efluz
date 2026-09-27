@@ -14,7 +14,7 @@ function fixture(competitionId: string, matchday: number): Fixture {
   } as Fixture;
 }
 
-const cases: Array<[string, number, string]> = [
+const cases: Array<[string, number, string | null]> = [
   ['comp-premier-league-2026', 1, 'LEAGUE_1_9'],
   ['comp-serie-a-2026', 9, 'LEAGUE_1_9'],
   ['comp-fa-cup-2026', 1, 'DOMESTIC_CUPS'],
@@ -23,8 +23,9 @@ const cases: Array<[string, number, string]> = [
   ['comp-bundesliga-2026', 19, 'LEAGUE_10_19'],
   ['comp-champions-league-2026', 1, 'EUROPE'],
   ['comp-europa-league-2026', 8, 'EUROPE'],
-  ['comp-premier-league-2026', 20, 'LEAGUE_20_PLUS'],
-  ['comp-ligue-1-2026', 34, 'LEAGUE_20_PLUS'],
+  // Domestic leagues are a single round: anything above MD19 is legacy/out-of-scope.
+  ['comp-premier-league-2026', 20, null],
+  ['comp-ligue-1-2026', 34, null],
 ];
 
 let failed = 0;

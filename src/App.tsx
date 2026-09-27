@@ -82,7 +82,7 @@ const AppContent: React.FC = () => {
       <Navigation activeTab={currentTab} onTabChange={setActiveTab} openDisputesCount={openDisputesCount} />
       <OfflineSyncBanner />
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-4 md:px-6 py-4 sm:py-6 min-w-0">
-        {currentTab !== 'season-hub' && <div className="mb-5"><SeasonLifecyclePanel seasonId={activeSeasonId} /></div>}
+        {currentTab === 'my-matches' && <div className="mb-5"><SeasonLifecyclePanel seasonId={activeSeasonId} /></div>}
         {(currentTab === 'dashboard' || currentTab === 'home') && <DashboardView onNavigateTab={setActiveTab} onSelectFixtureForMatchCenter={(fix) => { setSelectedFixture(fix); setActiveTab('my-matches'); }} />}
         {currentTab === 'my-club' && <MyClubView onNavigateTab={setActiveTab} />}
         {currentTab === 'my-matches' && <MyMatchesView initialSelectedFixture={selectedFixture} onNavigateTab={setActiveTab} />}
