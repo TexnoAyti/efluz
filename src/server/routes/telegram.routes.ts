@@ -165,10 +165,6 @@ telegramRouter.post('/check-membership', requireAuth, async (req: Request, res: 
 // -----------------------------------------------------------------------------
 telegramRouter.get('/premium/me', requireAuth, async (req: Request, res: Response) => {
   const seasonId = normalizedSeasonId(req.query.seasonId);
-  if (!req.user!.isAdmin && !isPremiumPublicEnabled()) {
-    res.status(404).json({ error: 'PREMIUM_NOT_PUBLIC' });
-    return;
-  }
   try {
     const entitlement = await getPremiumEntitlement(req.user!.id, seasonId);
     res.json({
@@ -180,6 +176,17 @@ telegramRouter.get('/premium/me', requireAuth, async (req: Request, res: Respons
     });
   } catch (err: any) {
     res.status(503).json({ error: err?.message || 'PREMIUM_STATUS_UNAVAILABLE' });
+  }
+});
+
+telegramRouter.get('/premium/badges', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { getPremiumClubBadgeIds } = await import('../services/premiumBadgeService');
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json({ clubIds: await getPremiumClubBadgeIds(normalizedSeasonId(req.query.seasonId)) });
+  } catch {
+    // A badge is decorative; do not treat a failed cache/read as evidence of Premium.
+    res.status(503).json({ error: 'PREMIUM_BADGES_UNAVAILABLE' });
   }
 });
 
@@ -274,7 +281,7 @@ telegramRouter.post('/premium/admin/revoke', requireAdmin, async (req: Request, 
     });
     res.json({ success: true, entitlement });
   } catch (err: any) {
-    res.status(503).json({ error: err?.message || 'PREMIUM_REVOKE_FAILED' });
+    res.status(err?.message === 'PREMIUM_SECOND_CLUB_OWNED' ? 409 : 503).json({ error: err?.message || 'PREMIUM_REVOKE_FAILED' });
   }
 });
 

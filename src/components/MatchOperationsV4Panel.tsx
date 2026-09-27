@@ -16,6 +16,7 @@ import { useAuth } from '../context/AuthContext';
 import { matchOpsApi } from '../lib/matchOpsApi';
 import { seasonOpsApi } from '../lib/seasonOpsApi';
 import { ClubCrest } from './ClubCrest';
+import { PremiumClubBadge } from './PremiumClubBadge';
 
 function tashkent(value?: string | null) {
   if (!value) return 'Deadline belgilanmagan';
@@ -128,9 +129,9 @@ export const MatchOperationsV4Panel: React.FC = () => {
       {fixture && (
         <>
           <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 rounded-2xl border border-white/[0.06] bg-slate-950/50 p-4">
-            <div className="flex items-center gap-2 min-w-0"><ClubCrest clubId={fixture.homeClubId} logoUrl={fixture.homeClub?.logoUrl} name={fixture.homeClub?.name} size="sm" /><div className="min-w-0"><div className="text-xs font-black text-white truncate">{fixture.homeClub?.name || fixture.homeClubId}</div><div className="text-[9px] text-slate-500">HOME</div></div></div>
+            <div className="flex items-center gap-2 min-w-0"><ClubCrest clubId={fixture.homeClubId} logoUrl={fixture.homeClub?.logoUrl} name={fixture.homeClub?.name} size="sm" /><div className="min-w-0"><div className="text-xs font-black text-white truncate">{fixture.homeClub?.name || fixture.homeClubId}</div><PremiumClubBadge clubId={fixture.homeClubId} /><div className="text-[9px] text-slate-500">HOME</div></div></div>
             <div className="text-center"><div className="text-[9px] text-slate-600 font-bold">{fixture.competitionName}</div><div className="text-lg font-black text-white">{fixture.status === 'CONFIRMED' ? `${fixture.homeScore} : ${fixture.awayScore}` : 'VS'}</div><div className="text-[9px] text-slate-500">{fixture.roundName || `MD ${fixture.matchday}`}</div></div>
-            <div className="flex items-center justify-end gap-2 min-w-0 text-right"><div className="min-w-0"><div className="text-xs font-black text-white truncate">{fixture.awayClub?.name || fixture.awayClubId}</div><div className="text-[9px] text-slate-500">AWAY</div></div><ClubCrest clubId={fixture.awayClubId} logoUrl={fixture.awayClub?.logoUrl} name={fixture.awayClub?.name} size="sm" /></div>
+            <div className="flex items-center justify-end gap-2 min-w-0 text-right"><div className="min-w-0"><div className="text-xs font-black text-white truncate">{fixture.awayClub?.name || fixture.awayClubId}</div><PremiumClubBadge clubId={fixture.awayClubId} /><div className="text-[9px] text-slate-500">AWAY</div></div><ClubCrest clubId={fixture.awayClubId} logoUrl={fixture.awayClub?.logoUrl} name={fixture.awayClub?.name} size="sm" /></div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">

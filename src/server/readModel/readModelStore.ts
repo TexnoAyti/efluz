@@ -1506,14 +1506,20 @@ export async function getUserActiveClubFromReadModel(
   return owner ? enrichClubForUser(owner, userId) : null;
 }
 
+export async function getUserActiveClubsFromReadModel(userId: string, seasonId = 'season-2026-27'): Promise<Club[]> {
+  const ownership = await getAdminClubsFromReadModel(seasonId);
+  return ownership.clubs.filter((club) => club.ownerUserId === userId).map((club) => enrichClubForUser(club, userId));
+}
+
 /** Membership is optional profile data; its outage must not invalidate verified identity. */
 export async function getOptionalCurrentClub(userId: string, seasonId = 'season-2026-27') {
   try {
-    const currentClub = await getUserActiveClubFromReadModel(userId, seasonId);
-    return { currentClub, currentClubStatus: 'resolved' as const, degraded: false };
+    const ownedClubs = await getUserActiveClubsFromReadModel(userId, seasonId);
+    const currentClub = ownedClubs[0] || null;
+    return { currentClub, ownedClubs, currentClubStatus: 'resolved' as const, degraded: false };
   } catch (error) {
     if (!(error instanceof ReadModelNotWarmedError)) throw error;
-    return { currentClub: null, currentClubStatus: 'unavailable' as const, degraded: true };
+    return { currentClub: null, ownedClubs: [], currentClubStatus: 'unavailable' as const, degraded: true };
   }
 }
 

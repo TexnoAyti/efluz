@@ -96,7 +96,7 @@ meRouter.get('/matches', requireAuth, async (req: Request, res: Response) => {
       getFixturesFirestore({ userId, seasonId, status }),
       getOptionalCurrentClub(userId, seasonId),
     ]);
-    const canonicalFixtures = await canonicalizeMyDomesticCupFixtures(fixtures, clubState.currentClub, seasonId);
+    const canonicalFixtures = await canonicalizeMyDomesticCupFixtures(fixtures, clubState.ownedClubs, seasonId);
     const statusFiltered = status ? canonicalFixtures.filter((fixture) => fixture.status === status) : canonicalFixtures;
     res.json({ fixtures: sortMyMatches(statusFiltered) });
   } catch (err: any) {

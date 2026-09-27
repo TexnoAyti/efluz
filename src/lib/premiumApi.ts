@@ -104,6 +104,13 @@ async function premiumRequest<T>(endpoint: string, options: RequestInit = {}): P
 }
 
 export const premiumApi = {
+  getMyStatus: (seasonId = 'season-2026-27') => premiumRequest<{
+    seasonId: string; active: boolean; publicEnabled: boolean; priceStars: number;
+    entitlement: PremiumEntitlementDto | null;
+  }>(`/api/telegram/premium/me?seasonId=${encodeURIComponent(seasonId)}`),
+  getBadgeClubIds: (seasonId = 'season-2026-27') => premiumRequest<{ clubIds: string[] }>(
+    `/api/telegram/premium/badges?seasonId=${encodeURIComponent(seasonId)}`
+  ),
   getAdminUsers: () => premiumRequest<{ users: PremiumAdminUser[]; total?: number }>('/api/admin/users?limit=100'),
 
   getOverview: (seasonId = 'season-2026-27') => premiumRequest<{

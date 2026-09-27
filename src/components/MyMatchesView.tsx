@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import { Fixture } from '../types';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
 import { ClubCrest } from './ClubCrest';
+import { PremiumClubBadge } from './PremiumClubBadge';
 import { MatchdayCountdown } from './MatchdayCountdown';
 import { getClubOwnerDisplay } from '../lib/ownerUtils';
 import { openTelegramChat, isValidTelegramUsername } from '../lib/telegramUtils';
@@ -213,7 +214,7 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                 <div className="col-span-3 flex flex-col items-center text-center">
                   <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-slate-950/80 p-2.5 border border-white/[0.08] flex items-center justify-center mb-2 shadow-inner">
                     <ClubCrest
-                      clubId={focusedFixture.homeClub?.id}
+                      clubId={focusedFixture.homeClubId}
                       logoUrl={focusedFixture.homeClub?.logoUrl}
                       name={focusedFixture.homeClub?.name}
                       shortName={focusedFixture.homeClub?.shortName}
@@ -224,6 +225,7 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                   <h4 className="font-black text-xs sm:text-sm text-white truncate max-w-full">
                     {focusedFixture.homeClub?.name}
                   </h4>
+                  <PremiumClubBadge clubId={focusedFixture.homeClubId} />
                   {focusedFixture.homeOwnerId === user?.id || focusedFixture.homeClub?.claimedByUserId === user?.id ? (
                     <span className="text-[10px] text-emerald-400 font-bold mt-1">
                       ({t.myClub})
@@ -303,7 +305,7 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                 <div className="col-span-3 flex flex-col items-center text-center">
                   <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-slate-950/80 p-2.5 border border-white/[0.08] flex items-center justify-center mb-2 shadow-inner">
                     <ClubCrest
-                      clubId={focusedFixture.awayClub?.id}
+                      clubId={focusedFixture.awayClubId}
                       logoUrl={focusedFixture.awayClub?.logoUrl}
                       name={focusedFixture.awayClub?.name}
                       shortName={focusedFixture.awayClub?.shortName}
@@ -314,6 +316,7 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                   <h4 className="font-black text-xs sm:text-sm text-white truncate max-w-full">
                     {focusedFixture.awayClub?.name}
                   </h4>
+                  <PremiumClubBadge clubId={focusedFixture.awayClubId} />
                   {focusedFixture.awayOwnerId === user?.id || focusedFixture.awayClub?.claimedByUserId === user?.id ? (
                     <span className="text-[10px] text-emerald-400 font-bold mt-1">
                       ({t.myClub})
