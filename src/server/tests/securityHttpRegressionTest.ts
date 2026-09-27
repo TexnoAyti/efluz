@@ -23,6 +23,16 @@ async function main() {
       headers: { 'x-dev-user-id': 'badge-preview-regular' },
     });
     assert.equal(badges.status, 403, 'premium club badges are admin-only');
+    const premiumStatus = await fetch(`${base}/api/telegram/premium/me`, {
+      headers: { 'x-dev-user-id': 'badge-preview-regular' },
+    });
+    assert.equal(premiumStatus.status, 403, 'premium preview status is admin-only');
+    const premiumInvoice = await fetch(`${base}/api/telegram/premium/invoice`, {
+      method: 'POST',
+      headers: { 'x-dev-user-id': 'badge-preview-regular', 'content-type': 'application/json' },
+      body: JSON.stringify({ seasonId: 'season-2026-27' }),
+    });
+    assert.equal(premiumInvoice.status, 403, 'regular users cannot purchase preview Premium');
 
     const cors = await fetch(`${base}/api/health`, {
       method: 'OPTIONS', headers: { origin: 'https://attacker.example' },

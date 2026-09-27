@@ -22207,7 +22207,7 @@ telegramRouter.post("/check-membership", requireAuth, async (req, res) => {
   const result = await verifyTelegramGroupMembership(telegramId, true);
   res.json(result);
 });
-telegramRouter.get("/premium/me", requireAuth, async (req, res) => {
+telegramRouter.get("/premium/me", requireAdmin, async (req, res) => {
   const seasonId = normalizedSeasonId(req.query.seasonId);
   try {
     const entitlement = await getPremiumEntitlement(req.user.id, seasonId);
@@ -22231,12 +22231,8 @@ telegramRouter.get("/premium/badges", requireAdmin, async (req, res) => {
     res.status(503).json({ error: "PREMIUM_BADGES_UNAVAILABLE" });
   }
 });
-telegramRouter.post("/premium/invoice", requireAuth, async (req, res) => {
+telegramRouter.post("/premium/invoice", requireAdmin, async (req, res) => {
   const seasonId = normalizedSeasonId(req.body?.seasonId);
-  if (!req.user.isAdmin && !isPremiumPublicEnabled()) {
-    res.status(404).json({ error: "PREMIUM_NOT_PUBLIC" });
-    return;
-  }
   if (!req.user.telegramId) {
     res.status(400).json({ error: "TELEGRAM_ACCOUNT_REQUIRED" });
     return;
