@@ -163,7 +163,7 @@ telegramRouter.post('/check-membership', requireAuth, async (req: Request, res: 
 // Public UI is intentionally disabled. These endpoints provide the production
 // foundation while the product is being iterated by authorized admins.
 // -----------------------------------------------------------------------------
-telegramRouter.get('/premium/me', requireAuth, async (req: Request, res: Response) => {
+telegramRouter.get('/premium/me', requireAdmin, async (req: Request, res: Response) => {
   const seasonId = normalizedSeasonId(req.query.seasonId);
   try {
     const entitlement = await getPremiumEntitlement(req.user!.id, seasonId);
@@ -190,12 +190,8 @@ telegramRouter.get('/premium/badges', requireAdmin, async (req: Request, res: Re
   }
 });
 
-telegramRouter.post('/premium/invoice', requireAuth, async (req: Request, res: Response) => {
+telegramRouter.post('/premium/invoice', requireAdmin, async (req: Request, res: Response) => {
   const seasonId = normalizedSeasonId(req.body?.seasonId);
-  if (!req.user!.isAdmin && !isPremiumPublicEnabled()) {
-    res.status(404).json({ error: 'PREMIUM_NOT_PUBLIC' });
-    return;
-  }
   if (!req.user!.telegramId) {
     res.status(400).json({ error: 'TELEGRAM_ACCOUNT_REQUIRED' });
     return;
