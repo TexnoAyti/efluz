@@ -203,7 +203,7 @@ export const AdminView: React.FC = () => {
 
     try {
       if (tab === 'overview') {
-        const overviewRes = await api.getAdminOverview(activeSeasonId, skipCache).catch(() => null);
+        const overviewRes = await api.getAdminOverview(activeSeasonId, skipCache);
         if (overviewRes) {
           setOverviewData(overviewRes);
           if (overviewRes.openDisputes) setDisputes(overviewRes.openDisputes);
@@ -211,7 +211,7 @@ export const AdminView: React.FC = () => {
         }
       } else if (tab === 'clubs') {
         const [clubsRes, usersRes] = await Promise.all([
-          api.getAdminClubs(activeSeasonId, undefined, skipCache).catch(() => ({ clubs: [], total: 0 })),
+          api.getAdminClubs(activeSeasonId, undefined, skipCache),
           users.length === 0 ? api.getAdminUsers(skipCache).catch(() => ({ users: [] })) : Promise.resolve(null),
         ]);
         if (clubsRes?.clubs) setClubs(clubsRes.clubs);
@@ -234,7 +234,7 @@ export const AdminView: React.FC = () => {
             undefined,
             matchPageSize,
             skipCache
-          ).catch(() => ({ fixtures: [], total: 0, hasMore: false, nextCursor: undefined })),
+          ),
           competitions.length === 0 ? api.getCompetitions(activeSeasonId, skipCache).catch(() => ({ competitions: [] })) : Promise.resolve(null),
           clubs.length === 0 ? api.getAdminClubs(activeSeasonId, undefined, skipCache).catch(() => ({ clubs: [] })) : Promise.resolve(null),
         ]);
@@ -250,16 +250,16 @@ export const AdminView: React.FC = () => {
         if (clubsRes?.clubs) setClubs(clubsRes.clubs);
       } else if (tab === 'results') {
         const [pendingRes, disputesRes] = await Promise.all([
-          api.getAdminPendingResults(activeSeasonId, skipCache).catch(() => ({ pendingFixtures: [], total: 0 })),
+          api.getAdminPendingResults(activeSeasonId, skipCache),
           api.getAdminDisputes('OPEN', skipCache).catch(() => ({ disputes: [] })),
         ]);
         if (pendingRes?.pendingFixtures) setPendingResults(pendingRes.pendingFixtures as any);
         if (disputesRes?.disputes) setDisputes(disputesRes.disputes);
       } else if (tab === 'competitions') {
-        const compsRes = await api.getCompetitions(activeSeasonId, skipCache).catch(() => ({ competitions: [] }));
+        const compsRes = await api.getCompetitions(activeSeasonId, skipCache);
         if (compsRes?.competitions) setCompetitions(compsRes.competitions);
       } else if (tab === 'users') {
-        const usersRes = await api.getAdminUsers(skipCache).catch(() => ({ users: [] }));
+        const usersRes = await api.getAdminUsers(skipCache);
         if (usersRes?.users) setUsers(usersRes.users);
       } else if (tab === 'system') {
         const [diagRes, rmHealthRes] = await Promise.all([
@@ -273,7 +273,9 @@ export const AdminView: React.FC = () => {
       setLoadedTabs((prev) => new Set(prev).add(tab));
     } catch (err: any) {
       console.error(`Failed to load admin data for ${tab}:`, err);
-      setError("Couldn't load some administrative records. Please click refresh.");
+      setError(err?.httpStatus === 503
+        ? 'Admin ma’lumotlari vaqtincha mavjud emas (baza limiti yoki ulanish). Keyinroq qayta urinib ko‘ring.'
+        : 'Admin ma’lumotlarini yuklab bo‘lmadi. Qayta urinib ko‘ring.');
     } finally {
       setIsLoading(false);
     }
@@ -875,6 +877,11 @@ export const AdminView: React.FC = () => {
             >
               Retry
             </button>
+          </div>
+        )}
+        {overviewData?.degraded && !error && (
+          <div role="status" className="mt-4 rounded-xl border border-amber-500/40 bg-amber-950/50 p-3 text-xs font-semibold text-amber-100">
+            Ma’lumotlar bazasi vaqtincha cheklangan. Bu ko‘rsatkichlar eski nusxadan olingan bo‘lishi mumkin; o‘zgartirish amallari vaqtincha ishlamaydi.
           </div>
         )}
       </div>
