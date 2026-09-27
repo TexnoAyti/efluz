@@ -6,8 +6,11 @@ import {
   trackFirestoreRead,
   trackFirestoreWrite,
 } from '../firebase/firestoreStore';
-import { queryAll, queryGet } from '../db';
+import { queryAll } from '../db';
 import { SEED_CLUBS, SEED_COMPETITIONS } from '../db/seed';
+import { Fixture } from '../../types';
+import { getAdminClubsFromReadModel } from '../readModel/readModelStore';
+import { loadSeasonOperationsFixtures } from './seasonOperationsService';
 
 export const PREMIUM_PRICE_STARS = 89;
 export const PREMIUM_DEFAULT_SEASON_ID = 'season-2026-27';
@@ -38,6 +41,7 @@ export interface PremiumCareerSnapshot {
   userId: string;
   seasonId: string;
   currentClub: { id: string; name: string; shortName?: string; leagueId?: string } | null;
+  ownedClubs: Array<{ id: string; name: string; shortName?: string; leagueId?: string }>;
   overall: {
     matches: number;
     wins: number;
@@ -69,7 +73,7 @@ export interface PremiumCareerSnapshot {
   }>;
   achievements: Array<{ id: string; label: string; description: string; unlocked: boolean }>;
   generatedAt: string;
-  source: 'sqlite' | 'empty';
+  source: 'read-model' | 'sqlite' | 'empty';
 }
 
 type FixtureLike = {
@@ -251,7 +255,8 @@ function scoreFixture(row: FixtureLike, clubId: string) {
   return { gf, ga, result };
 }
 
-export function computeCareerStatsFromFixtures(rows: FixtureLike[], clubId: string) {
+export function computeCareerStatsFromFixtures(rows: FixtureLike[], clubIds: string | string[]) {
+  const owned = new Set(Array.isArray(clubIds) ? clubIds : [clubIds]);
   let wins = 0;
   let draws = 0;
   let losses = 0;
@@ -266,52 +271,59 @@ export function computeCareerStatsFromFixtures(rows: FixtureLike[], clubId: stri
   const competitionMap = new Map<string, any>();
   const competitionNameMap = new Map(SEED_COMPETITIONS.map((competition: any) => [competition.id, competition.name]));
 
+  let matches = 0;
   for (const row of rows) {
-    const { gf, ga, result } = scoreFixture(row, clubId);
-    goalsFor += gf;
-    goalsAgainst += ga;
-    if (ga === 0) cleanSheets += 1;
-    if (result === 'W') wins += 1;
-    else if (result === 'D') draws += 1;
-    else losses += 1;
+    const homeId = row.home_club_id ?? row.homeClubId;
+    const awayId = row.away_club_id ?? row.awayClubId;
+    if (!Number.isInteger(row.home_score ?? row.homeScore) || !Number.isInteger(row.away_score ?? row.awayScore)) continue;
+    for (const clubId of [homeId, awayId]) {
+      if (!clubId || !owned.has(clubId)) continue;
+      const { gf, ga, result } = scoreFixture(row, clubId);
+      matches += 1;
+      goalsFor += gf;
+      goalsAgainst += ga;
+      if (ga === 0) cleanSheets += 1;
+      if (result === 'W') wins += 1;
+      else if (result === 'D') draws += 1;
+      else losses += 1;
 
-    if (result !== 'L') {
-      currentUnbeaten += 1;
-      longestUnbeatenRun = Math.max(longestUnbeatenRun, currentUnbeaten);
-    } else {
-      currentUnbeaten = 0;
-    }
-    if (result === 'W') {
-      currentWinStreak += 1;
-      longestWinStreak = Math.max(longestWinStreak, currentWinStreak);
-    } else {
-      currentWinStreak = 0;
-    }
-    form.push(result);
+      if (result !== 'L') {
+        currentUnbeaten += 1;
+        longestUnbeatenRun = Math.max(longestUnbeatenRun, currentUnbeaten);
+      } else {
+        currentUnbeaten = 0;
+      }
+      if (result === 'W') {
+        currentWinStreak += 1;
+        longestWinStreak = Math.max(longestWinStreak, currentWinStreak);
+      } else {
+        currentWinStreak = 0;
+      }
+      form.push(result);
 
-    const competitionId = String(row.competition_id ?? row.competitionId ?? 'unknown');
-    if (!competitionMap.has(competitionId)) {
-      competitionMap.set(competitionId, {
-        competitionId,
-        name: competitionNameMap.get(competitionId) || competitionId.replace(/^comp-/, '').replace(/-/g, ' '),
-        matches: 0,
-        wins: 0,
-        draws: 0,
-        losses: 0,
-        goalsFor: 0,
-        goalsAgainst: 0,
-      });
+      const competitionId = String(row.competition_id ?? row.competitionId ?? 'unknown');
+      if (!competitionMap.has(competitionId)) {
+        competitionMap.set(competitionId, {
+          competitionId,
+          name: competitionNameMap.get(competitionId) || competitionId.replace(/^comp-/, '').replace(/-/g, ' '),
+          matches: 0,
+          wins: 0,
+          draws: 0,
+          losses: 0,
+          goalsFor: 0,
+          goalsAgainst: 0,
+        });
+      }
+      const bucket = competitionMap.get(competitionId);
+      bucket.matches += 1;
+      bucket.goalsFor += gf;
+      bucket.goalsAgainst += ga;
+      if (result === 'W') bucket.wins += 1;
+      else if (result === 'D') bucket.draws += 1;
+      else bucket.losses += 1;
     }
-    const bucket = competitionMap.get(competitionId);
-    bucket.matches += 1;
-    bucket.goalsFor += gf;
-    bucket.goalsAgainst += ga;
-    if (result === 'W') bucket.wins += 1;
-    else if (result === 'D') bucket.draws += 1;
-    else bucket.losses += 1;
   }
 
-  const matches = rows.length;
   const points = wins * 3 + draws;
   const competitions = [...competitionMap.values()]
     .map((bucket) => ({
@@ -343,32 +355,52 @@ export function computeCareerStatsFromFixtures(rows: FixtureLike[], clubId: stri
   };
 }
 
+export function selectCareerFixtures(fixtures: Fixture[], clubIds: string[]): Fixture[] {
+  const owned = new Set(clubIds);
+  return fixtures
+    .filter((fixture) => fixture.status === 'CONFIRMED' &&
+      Number.isInteger(fixture.homeScore) && Number.isInteger(fixture.awayScore) &&
+      fixture.homeClubId !== fixture.awayClubId &&
+      (owned.has(fixture.homeClubId || '') || owned.has(fixture.awayClubId || '')))
+    .sort((a, b) => String(a.resultConfirmedAt || a.scheduledAt || a.id).localeCompare(String(b.resultConfirmedAt || b.scheduledAt || b.id)) || a.id.localeCompare(b.id));
+}
+
 export async function getPremiumCareerSnapshot(
   userId: string,
   seasonId = PREMIUM_DEFAULT_SEASON_ID
 ): Promise<PremiumCareerSnapshot> {
-  let clubId = queryGet<{ club_id: string }>(
-    "SELECT club_id FROM club_memberships WHERE user_id = ? AND season_id = ? AND status = 'active' ORDER BY claimed_at DESC LIMIT 1",
-    [userId, seasonId]
-  )?.club_id;
-
-  let club: any = clubId ? SEED_CLUBS.find((item) => item.id === clubId) : null;
-  if (!clubId) {
+  let clubs: any[] = [];
+  let ownershipResolved = false;
+  try {
+    const ownership = await getAdminClubsFromReadModel(seasonId);
+    clubs = ownership.clubs.filter((club) => club.ownerUserId === userId);
+    ownershipResolved = true;
+  } catch {}
+  if (!ownershipResolved) {
+    const rows = queryAll<{ club_id: string }>(
+      "SELECT club_id FROM club_memberships WHERE user_id = ? AND season_id = ? AND status = 'active' ORDER BY claimed_at DESC",
+      [userId, seasonId]
+    );
+    clubs = rows.map((row) => SEED_CLUBS.find((club) => club.id === row.club_id) || { id: row.club_id, name: row.club_id });
+  }
+  if (!ownershipResolved && !clubs.length) {
     try {
       const currentClub = await getUserActiveClubFirestore(userId, seasonId);
-      if (currentClub) {
-        clubId = currentClub.id;
-        club = currentClub;
-      }
+      if (currentClub) clubs = [currentClub];
     } catch {}
   }
 
-  const empty = computeCareerStatsFromFixtures([], clubId || 'none');
-  if (!clubId) {
+  const ownedClubs = Array.from(new Map(clubs.map((club) => [club.id, {
+    id: club.id, name: club.name, shortName: club.shortName, leagueId: club.leagueId,
+  }])).values());
+  const clubIds = ownedClubs.map((club) => club.id);
+  const empty = computeCareerStatsFromFixtures([], clubIds);
+  if (!clubIds.length) {
     return {
       userId,
       seasonId,
       currentClub: null,
+      ownedClubs: [],
       ...empty,
       achievements: buildAchievements(empty.overall),
       generatedAt: new Date().toISOString(),
@@ -376,40 +408,18 @@ export async function getPremiumCareerSnapshot(
     };
   }
 
-  let rows: FixtureLike[] = [];
-  try {
-    rows = queryAll<FixtureLike>(
-      `SELECT id, competition_id, home_club_id, away_club_id, home_score, away_score
-       FROM fixtures
-       WHERE status = 'CONFIRMED'
-         AND (season_id = ? OR season_id IS NULL)
-         AND (home_club_id = ? OR away_club_id = ?)
-       ORDER BY COALESCE(scheduled_at, created_at, id) ASC`,
-      [seasonId, clubId, clubId]
-    );
-  } catch {
-    rows = queryAll<FixtureLike>(
-      `SELECT id, competition_id, home_club_id, away_club_id, home_score, away_score
-       FROM fixtures
-       WHERE status = 'CONFIRMED'
-         AND (season_id = ? OR season_id IS NULL)
-         AND (home_club_id = ? OR away_club_id = ?)
-       ORDER BY id ASC`,
-      [seasonId, clubId, clubId]
-    );
-  }
-
-  const computed = computeCareerStatsFromFixtures(rows || [], clubId);
+  const fixtureResult = await loadSeasonOperationsFixtures(seasonId);
+  const rows = selectCareerFixtures(fixtureResult.fixtures, clubIds);
+  const computed = computeCareerStatsFromFixtures(rows, clubIds);
   return {
     userId,
     seasonId,
-    currentClub: club
-      ? { id: club.id, name: club.name, shortName: club.shortName, leagueId: club.leagueId }
-      : { id: clubId, name: clubId },
+    currentClub: ownedClubs[0],
+    ownedClubs,
     ...computed,
     achievements: buildAchievements(computed.overall),
     generatedAt: new Date().toISOString(),
-    source: rows.length ? 'sqlite' : 'empty',
+    source: fixtureResult.source === 'sqlite' ? 'sqlite' : 'read-model',
   };
 }
 
