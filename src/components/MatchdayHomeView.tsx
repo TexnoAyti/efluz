@@ -30,6 +30,7 @@ const copy = {
     season: 'MAVSUM KO‘RSATKICHLARI', position: 'O‘rin', points: 'Ochko', played: 'O‘yin', form: 'G‘–D–M',
     leagues: 'Ligalar', leaguesHint: 'Klub va jadvalni ko‘ring', clubs: 'klub',
     table: 'Jadval', cups: 'Kuboklar', calendar: 'Mavsum', explore: 'Ko‘rish',
+    upcoming: 'Kelgusi', results: 'Natijalar', searchClubs: 'Klub qidirish',
     retry: 'Qayta urinish', loadError: 'Ma’lumotni yuklab bo‘lmadi.', chooseClub: 'Klub tanlash',
   },
   ru: {
@@ -42,6 +43,7 @@ const copy = {
     season: 'СТАТИСТИКА СЕЗОНА', position: 'Место', points: 'Очки', played: 'Матчи', form: 'В–Н–П',
     leagues: 'Лиги', leaguesHint: 'Клубы и таблицы', clubs: 'клубов',
     table: 'Таблица', cups: 'Кубки', calendar: 'Сезон', explore: 'Открыть',
+    upcoming: 'Предстоящие', results: 'Результаты', searchClubs: 'Найти клуб',
     retry: 'Повторить', loadError: 'Не удалось загрузить данные.', chooseClub: 'Выбрать клуб',
   },
   en: {
@@ -54,6 +56,7 @@ const copy = {
     season: 'SEASON SNAPSHOT', position: 'Position', points: 'Points', played: 'Played', form: 'W–D–L',
     leagues: 'Leagues', leaguesHint: 'Browse clubs and tables', clubs: 'clubs',
     table: 'Table', cups: 'Cups', calendar: 'Season', explore: 'Explore',
+    upcoming: 'Upcoming', results: 'Results', searchClubs: 'Find a club',
     retry: 'Retry', loadError: 'Could not load data.', chooseClub: 'Choose a club',
   },
 };
@@ -74,6 +77,7 @@ export const MatchdayHomeView: React.FC<Props> = ({ onNavigateTab, onSelectFixtu
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [matchFilter, setMatchFilter] = useState<'upcoming' | 'results'>('upcoming');
 
   const load = async () => {
     setLoading(true);
@@ -93,7 +97,9 @@ export const MatchdayHomeView: React.FC<Props> = ({ onNavigateTab, onSelectFixtu
   const pending = useMemo(() => fixtures.filter((fixture) => fixture.status !== 'CONFIRMED' && fixture.status !== 'CANCELLED'), [fixtures]);
   const featured = pending.find((fixture) => fixture.isPlayable !== false && fixture.status === 'SCHEDULED') || pending[0];
   const otherMatches = pending.filter((fixture) => fixture.id !== featured?.id).slice(0, 3);
-  const lastResult = [...fixtures].reverse().find((fixture) => fixture.status === 'CONFIRMED');
+  const confirmed = useMemo(() => [...fixtures].filter((fixture) => fixture.status === 'CONFIRMED').reverse(), [fixtures]);
+  const lastResult = confirmed[0];
+  const listedMatches = matchFilter === 'upcoming' ? otherMatches : confirmed.slice(0, 4);
 
   const openMatch = (fixture: Fixture) => {
     onSelectFixtureForMatchCenter?.(fixture);
@@ -102,6 +108,11 @@ export const MatchdayHomeView: React.FC<Props> = ({ onNavigateTab, onSelectFixtu
 
   const openLeague = (leagueId: string) => {
     try { sessionStorage.setItem('efl:preview-league', `league-${leagueId}`); } catch { /* storage may be unavailable in a WebView */ }
+    onNavigateTab('leagues');
+  };
+
+  const openClubSearch = () => {
+    try { sessionStorage.setItem('efl:preview-club-search', '1'); } catch { /* storage may be unavailable in a WebView */ }
     onNavigateTab('leagues');
   };
 
@@ -119,7 +130,7 @@ export const MatchdayHomeView: React.FC<Props> = ({ onNavigateTab, onSelectFixtu
           <h1 className="mt-2 text-2xl sm:text-3xl font-black tracking-tight text-white">{c.greeting}, {user?.firstName || user?.username || 'Player'}<span className="text-emerald-300">.</span></h1>
           <p className="mt-1 text-sm text-slate-400">{c.subtitle}</p>
         </div>
-        <button type="button" onClick={() => onNavigateTab('leagues')} aria-label={c.leagues} className="matchday-search-button"><Search className="w-5 h-5" /></button>
+        <button type="button" onClick={openClubSearch} aria-label={c.searchClubs} className="matchday-search-button"><Search className="w-5 h-5" /></button>
       </div>
 
       {error && <div className="preview-surface flex items-center justify-between gap-3 p-4 text-sm text-rose-200"><span>{c.loadError}</span><button type="button" onClick={() => void load()} className="inline-flex items-center gap-1.5 font-bold text-white"><RefreshCw className="w-4 h-4" />{c.retry}</button></div>}
@@ -129,7 +140,12 @@ export const MatchdayHomeView: React.FC<Props> = ({ onNavigateTab, onSelectFixtu
           <span className="matchday-kicker !text-rose-100/80">{c.next}</span>
           {featured && <span className="rounded-full bg-white/15 px-2.5 py-1 text-[10px] font-black text-white backdrop-blur-sm">{featured.competitionName || 'EFL UZ'} · {matchLabel(featured, c.matchday)}</span>}
         </div>
-        {featured ? (
+        {loading && fixtures.length === 0 ? (
+          <div role="status" aria-label={c.next} className="relative z-10 mt-7 space-y-6 animate-pulse">
+            <div className="mx-auto h-20 w-4/5 rounded-2xl bg-white/15" />
+            <div className="h-11 w-full rounded-full bg-white/20" />
+          </div>
+        ) : featured ? (
           <>
             <div className="relative z-10 mt-7 grid grid-cols-[1fr_auto_1fr] items-center gap-3 text-center">
               <div className="min-w-0 flex flex-col items-center gap-3"><div className="matchday-crest"><ClubCrest clubId={featured.homeClubId || undefined} logoUrl={featured.homeClub?.logoUrl} name={featured.homeClub?.name} shortName={featured.homeClub?.shortName} size="xl" className="w-16 h-16" /></div><span className="w-full truncate text-sm font-black text-white">{clubName(featured, 'home')}</span></div>
@@ -142,7 +158,7 @@ export const MatchdayHomeView: React.FC<Props> = ({ onNavigateTab, onSelectFixtu
             </div>
           </>
         ) : (
-          <div className="relative z-10 mt-8"><h2 className="text-xl font-black text-white">{loading ? '…' : c.empty}</h2><p className="mt-1 text-sm text-rose-100/80">{c.emptyHint}</p><button type="button" onClick={() => onNavigateTab(currentClub ? 'my-matches' : 'leagues')} className="mt-6 inline-flex min-h-11 items-center gap-2 rounded-full bg-white px-5 text-xs font-black text-[#131b2d]">{currentClub ? c.allMatches : c.chooseClub}<ArrowRight className="w-4 h-4" /></button></div>
+          <div className="relative z-10 mt-8"><h2 className="text-xl font-black text-white">{c.empty}</h2><p className="mt-1 text-sm text-rose-100/80">{currentClub ? c.noMatches : c.emptyHint}</p><button type="button" onClick={() => onNavigateTab(currentClub ? 'my-matches' : 'leagues')} className="mt-6 inline-flex min-h-11 items-center gap-2 rounded-full bg-white px-5 text-xs font-black text-[#131b2d]">{currentClub ? c.allMatches : c.chooseClub}<ArrowRight className="w-4 h-4" /></button></div>
         )}
       </section>
 
@@ -151,8 +167,11 @@ export const MatchdayHomeView: React.FC<Props> = ({ onNavigateTab, onSelectFixtu
       <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
         <section className="preview-surface overflow-hidden">
           <div className="flex items-center justify-between border-b border-white/[0.07] px-4 py-4 sm:px-5"><div><div className="matchday-kicker">{c.matches}</div><h2 className="mt-1 text-base font-black text-white">{c.allMatches}</h2></div><button type="button" onClick={() => onNavigateTab('my-matches')} className="inline-flex items-center gap-1 text-xs font-bold text-emerald-300">{c.explore}<ChevronRight className="w-4 h-4" /></button></div>
+          <div className="flex gap-2 px-4 pt-3 sm:px-5" role="group" aria-label={c.matches}>
+            {(['upcoming', 'results'] as const).map((filter) => <button key={filter} type="button" aria-pressed={matchFilter === filter} onClick={() => setMatchFilter(filter)} className={`rounded-full px-3 py-1.5 text-[11px] font-bold transition-colors ${matchFilter === filter ? 'bg-emerald-300 text-slate-950' : 'bg-white/[0.06] text-slate-300 hover:bg-white/[0.12]'}`}>{c[filter]}</button>)}
+          </div>
           <div className="divide-y divide-white/[0.06]">
-            {otherMatches.length ? otherMatches.map((fixture) => <button type="button" key={fixture.id} onClick={() => openMatch(fixture)} className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-white/[0.04] sm:px-5"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-400/10 text-sky-300"><Swords className="h-4 w-4" /></div><div className="min-w-0 flex-1"><div className="truncate text-xs font-black text-white">{clubName(fixture, 'home')} <span className="mx-1 text-slate-500">vs</span> {clubName(fixture, 'away')}</div><div className="mt-1 truncate text-[10px] text-slate-400">{fixture.competitionName || 'EFL UZ'} · {matchLabel(fixture, c.matchday)}</div></div><span className="shrink-0 text-[10px] font-bold text-slate-400">{dateLabel(fixture)}</span></button>) : <p className="px-5 py-6 text-xs text-slate-400">{loading ? '…' : c.noMatches}</p>}
+            {listedMatches.length ? listedMatches.map((fixture) => <button type="button" key={fixture.id} onClick={() => openMatch(fixture)} className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-white/[0.04] sm:px-5"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-400/10 text-sky-300"><Swords className="h-4 w-4" /></div><div className="min-w-0 flex-1"><div className="truncate text-xs font-black text-white">{clubName(fixture, 'home')} <span className="mx-1 text-slate-500">{fixture.status === 'CONFIRMED' ? `${fixture.homeScore} : ${fixture.awayScore}` : 'vs'}</span> {clubName(fixture, 'away')}</div><div className="mt-1 truncate text-[10px] text-slate-400">{fixture.competitionName || 'EFL UZ'} · {matchLabel(fixture, c.matchday)}</div></div><span className="shrink-0 text-[10px] font-bold text-slate-400">{dateLabel(fixture)}</span></button>) : <p className="px-5 py-6 text-xs text-slate-400">{loading ? '…' : matchFilter === 'results' ? c.noResult : c.noMatches}</p>}
           </div>
         </section>
         <section className="preview-surface p-4 sm:p-5"><div className="matchday-kicker">{c.season}</div><div className="mt-4 grid grid-cols-4 gap-2"><div className="matchday-stat"><span>{c.position}</span><strong>{userStats?.leaguePosition ? `#${userStats.leaguePosition}` : '—'}</strong></div><div className="matchday-stat"><span>{c.points}</span><strong>{userStats?.points ?? '—'}</strong></div><div className="matchday-stat"><span>{c.played}</span><strong>{userStats?.matchesPlayed ?? '—'}</strong></div><div className="matchday-stat"><span>{c.form}</span><strong className="!text-emerald-300">{userStats ? `${userStats.wins}–${userStats.draws}–${userStats.losses}` : '—'}</strong></div></div><div className="mt-5 border-t border-white/[0.07] pt-4"><div className="matchday-kicker">{c.result}</div>{lastResult ? <button type="button" onClick={() => openMatch(lastResult)} className="mt-3 flex w-full items-center gap-2 text-left"><span className="min-w-0 flex-1 truncate text-xs font-bold text-slate-200">{clubName(lastResult, 'home')} · {clubName(lastResult, 'away')}</span><span className="shrink-0 rounded-lg bg-white/[0.07] px-2 py-1 text-sm font-black text-white">{lastResult.homeScore} : {lastResult.awayScore}</span><ChevronRight className="h-4 w-4 text-slate-500" /></button> : <p className="mt-3 text-xs text-slate-400">{c.noResult}</p>}</div></section>

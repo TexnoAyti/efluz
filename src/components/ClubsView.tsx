@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../context/UserProfileContext';
 import { useI18n } from '../i18n';
@@ -58,7 +58,20 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
   }, [user?.id, user?.isAdmin, activeSeasonId]);
   const [isLoadingClubs, setIsLoadingClubs] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [filterMode, setFilterMode] = useState<'ALL' | 'AVAILABLE' | 'CLAIMED'>('ALL');
+
+  useEffect(() => {
+    if (!user?.isAdmin) return;
+    try {
+      if (sessionStorage.getItem('efl:preview-club-search') !== '1') return;
+      sessionStorage.removeItem('efl:preview-club-search');
+      setActiveLeagueTab('CLUBS');
+      window.requestAnimationFrame(() => searchInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+      // A WebView may hide the focused input behind its software keyboard.
+      window.setTimeout(() => searchInputRef.current?.focus({ preventScroll: true }), 300);
+    } catch { /* storage may be unavailable in a WebView */ }
+  }, [user?.isAdmin]);
 
   // Competition Fixtures & Standings state for the selected league
   const [leagueCompetitions, setLeagueCompetitions] = useState<Competition[]>([]);
@@ -580,6 +593,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
             <div className="relative w-full sm:w-72">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
+                ref={searchInputRef}
                 type="text"
                 placeholder={t.search}
                 value={searchQuery}
