@@ -71,6 +71,16 @@ export async function removeFixtureFromDurableSnapshots(
   return (await patchFixtureSnapshot(ReadModelKeys.competitionFixtures(competitionId, seasonId), fixtureId)) || [];
 }
 
+export async function getVisibleCompetitionFixtures(
+  competitionId: string,
+  seasonId = 'season-2026-27'
+): Promise<Fixture[]> {
+  const key = ReadModelKeys.competitionFixtures(competitionId, seasonId);
+  const snap = (await redisGetFresh<Fixture[]>(key)) || (await redisGetLkg<Fixture[]>(key));
+  if (!Array.isArray(snap?.data)) return [];
+  return filterTombstonedFixtures(snap!.data, seasonId);
+}
+
 export async function rebuildStandingsSnapshotFromFixtures(
   competitionId: string,
   seasonId: string,
@@ -125,9 +135,18 @@ export async function rebuildStandingsSnapshotFromFixtures(
   rows.forEach((row, index) => { row.position = index + 1; });
 
   await redisSetRaw(standingsKey, {
-    sourceVersion: 'fixture-delete-recomputed',
+    sourceVersion: 'fixture-derived-recomputed',
     expectedCount: rows.length,
     data: rows,
   }, 86400);
   return rows;
+}
+
+export async function refreshDerivedCompetitionState(
+  competitionId: string | undefined,
+  seasonId = 'season-2026-27'
+): Promise<void> {
+  if (!competitionId) return;
+  const fixtures = await getVisibleCompetitionFixtures(competitionId, seasonId);
+  if (fixtures.length > 0) await rebuildStandingsSnapshotFromFixtures(competitionId, seasonId, fixtures);
 }
