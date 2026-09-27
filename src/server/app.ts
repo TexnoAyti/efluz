@@ -26,6 +26,7 @@ import { meRouter } from './routes/me.routes';
 import { usersRouter } from './routes/users.routes';
 import { seasonInsightsRouter } from './routes/seasonInsights.routes';
 import { seasonOperationsRouter, adminSeasonOperationsRouter } from './routes/seasonOperations.routes';
+import { seasonOperationsConsistencyRouter } from './routes/seasonOperationsConsistency.routes';
 import { adminCupDrawRouter } from './routes/adminCupDraw.routes';
 import { adminCupOpsRouter } from './routes/adminCupOps.routes';
 import { adminMatchControlRouter } from './routes/adminMatchControl.routes';
@@ -150,6 +151,7 @@ export function createApp() {
   app.use('/api/auth', authRouter);
   app.use('/api/seasons', seasonsRouter);
   app.use('/api/season-lifecycle', seasonLifecycleRouter);
+  app.use('/api/season-ops', seasonOperationsConsistencyRouter);
   app.use('/api/season-ops', seasonOperationsRouter);
   app.use('/api/leagues', leaguesRouter);
   app.use('/api/clubs', clubsRouter);
