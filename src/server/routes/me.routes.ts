@@ -10,9 +10,45 @@ import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
 import { setOwnershipSensitiveHeaders } from '../middleware/ownershipCacheControl';
 import { getOptionalCurrentClub } from '../readModel/readModelStore';
 import { getDashboardLeagueStats } from '../services/dashboardLeagueStatsService';
+import { canonicalizeMyDomesticCupFixtures } from '../services/myMatchesCanonicalService';
+import { Fixture } from '../../types';
 
 export const meRouter = Router();
 export const meResilientRouter = meRouter;
+
+const DOMESTIC_LEAGUE_IDS = new Set([
+  'comp-premier-league-2026',
+  'comp-la-liga-2026',
+  'comp-serie-a-2026',
+  'comp-bundesliga-2026',
+  'comp-ligue-1-2026',
+]);
+
+const EUROPEAN_LEAGUE_PHASE_IDS = new Set([
+  'comp-champions-league-2026',
+  'comp-europa-league-2026',
+]);
+
+function myMatchesPhase(fixture: Fixture): number {
+  if (DOMESTIC_LEAGUE_IDS.has(fixture.competitionId)) {
+    return Number(fixture.matchday || 0) <= 19 ? 10 : 30;
+  }
+  if (EUROPEAN_LEAGUE_PHASE_IDS.has(fixture.competitionId)) return 20;
+  return 15;
+}
+
+function sortMyMatches(fixtures: Fixture[]): Fixture[] {
+  return [...fixtures].sort((a, b) => {
+    const phase = myMatchesPhase(a) - myMatchesPhase(b);
+    if (phase !== 0) return phase;
+    const md = Number(a.matchday || 0) - Number(b.matchday || 0);
+    if (md !== 0) return md;
+    const at = a.scheduledAt ? new Date(a.scheduledAt).getTime() : 0;
+    const bt = b.scheduledAt ? new Date(b.scheduledAt).getTime() : 0;
+    if (at !== bt) return at - bt;
+    return String(a.id).localeCompare(String(b.id));
+  });
+}
 
 // Ensure all personalized /api/me responses are never cached publicly
 meRouter.use((req: Request, res: Response, next) => {
@@ -45,13 +81,20 @@ meRouter.get('/matches', requireAuth, async (req: Request, res: Response) => {
   const status = req.query.status as string | undefined;
 
   try {
-    const fixtures = await getFixturesFirestore({
-      userId,
-      seasonId,
-      status,
-    });
+    const [fixtures, clubState] = await Promise.all([
+      getFixturesFirestore({ userId, seasonId, status }),
+      getOptionalCurrentClub(userId, seasonId),
+    ]);
+    const canonicalFixtures = await canonicalizeMyDomesticCupFixtures(
+      fixtures,
+      clubState.currentClub,
+      seasonId
+    );
 
-    res.json({ fixtures });
+    const statusFiltered = status
+      ? canonicalFixtures.filter((fixture) => fixture.status === status)
+      : canonicalFixtures;
+    res.json({ fixtures: sortMyMatches(statusFiltered) });
   } catch (err: any) {
     handleFirestoreError(res, err, 'GET /api/me/matches');
   }
