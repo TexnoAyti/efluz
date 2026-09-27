@@ -10,6 +10,7 @@ import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
 import { setOwnershipSensitiveHeaders } from '../middleware/ownershipCacheControl';
 import { getOptionalCurrentClub } from '../readModel/readModelStore';
 import { getDashboardLeagueStats } from '../services/dashboardLeagueStatsService';
+import { canonicalizeMyDomesticCupFixtures } from '../services/myMatchesCanonicalService';
 import { Fixture } from '../../types';
 
 export const meRouter = Router();
@@ -30,13 +31,9 @@ const EUROPEAN_LEAGUE_PHASE_IDS = new Set([
 
 function myMatchesPhase(fixture: Fixture): number {
   if (DOMESTIC_LEAGUE_IDS.has(fixture.competitionId)) {
-    // UCL/UEL starts after the domestic first half. Bundesliga/Ligue 1 have
-    // only 17 first-half rounds, so all of their first-half fixtures remain first.
     return Number(fixture.matchday || 0) <= 19 ? 10 : 30;
   }
   if (EUROPEAN_LEAGUE_PHASE_IDS.has(fixture.competitionId)) return 20;
-  // Domestic cups/super cups keep their existing relative position and are not
-  // reinterpreted as league matchdays.
   return 15;
 }
 
@@ -84,13 +81,20 @@ meRouter.get('/matches', requireAuth, async (req: Request, res: Response) => {
   const status = req.query.status as string | undefined;
 
   try {
-    const fixtures = await getFixturesFirestore({
-      userId,
-      seasonId,
-      status,
-    });
+    const [fixtures, clubState] = await Promise.all([
+      getFixturesFirestore({ userId, seasonId, status }),
+      getOptionalCurrentClub(userId, seasonId),
+    ]);
+    const canonicalFixtures = await canonicalizeMyDomesticCupFixtures(
+      fixtures,
+      clubState.currentClub,
+      seasonId
+    );
 
-    res.json({ fixtures: sortMyMatches(fixtures) });
+    const statusFiltered = status
+      ? canonicalFixtures.filter((fixture) => fixture.status === status)
+      : canonicalFixtures;
+    res.json({ fixtures: sortMyMatches(statusFiltered) });
   } catch (err: any) {
     handleFirestoreError(res, err, 'GET /api/me/matches');
   }
