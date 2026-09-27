@@ -39,6 +39,8 @@ export const SeasonHubView: React.FC<SeasonHubViewProps> = ({ onNavigateTab }) =
   const [myData, setMyData] = useState<any>(null);
   const [career, setCareer] = useState<any>(null);
   const [qualification, setQualification] = useState<any>(null);
+  const [history, setHistory] = useState<Array<{ seasonId: string; trophyCount: number }>>([]);
+  const [selectedArchive, setSelectedArchive] = useState<any>(null);
   const [adminControl, setAdminControl] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -62,6 +64,7 @@ export const SeasonHubView: React.FC<SeasonHubViewProps> = ({ onNavigateTab }) =
       setMyData(myRes);
       setCareer(careerRes);
       setQualification(qualificationRes);
+      seasonOpsApi.history().then((result) => setHistory(result.seasons)).catch(() => setHistory([]));
       if (user?.isAdmin) {
         setAdminControl(await seasonOpsApi.adminControl(activeSeasonId));
       }
@@ -210,6 +213,35 @@ export const SeasonHubView: React.FC<SeasonHubViewProps> = ({ onNavigateTab }) =
         </section>
       </div>
 
+      <section className="glass-panel p-5 sm:p-6 space-y-3">
+        <h2 className="text-sm font-black text-white flex items-center gap-2"><Trophy className="w-4 h-4 text-amber-400" />Season History</h2>
+        {history.length === 0 ? <p className="text-xs text-slate-500">Hali yakunlangan mavsum arxivi yo‘q.</p> : (
+          <div className="flex flex-wrap gap-2">{history.map((season) => (
+            <button key={season.seasonId} onClick={() => seasonOpsApi.archive(season.seasonId).then(setSelectedArchive).catch((err) => showToast?.(err?.message || 'Arxiv ochilmadi.', 'error'))}
+              className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-200">
+              {season.seasonId.replace('season-', '')} · {season.trophyCount} trophies
+            </button>
+          ))}</div>
+        )}
+        {selectedArchive && <div className="space-y-2 border-t border-white/10 pt-3">
+          <div className="text-xs font-black text-white">{selectedArchive.seasonId.replace('season-', '')} · Final trophy cabinet</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">{(selectedArchive.trophies || []).map((trophy: any) => (
+            <div key={trophy.competitionId} className="rounded-xl bg-slate-950/60 p-3 text-xs">
+              <div className="font-bold text-slate-400">{trophy.competitionName}</div>
+              <div className="mt-1 font-black text-white">{trophy.clubName}</div>
+              {trophy.winnerUsername && <div className="text-[10px] text-amber-300">@{trophy.winnerUsername}</div>}
+            </div>
+          ))}</div>
+          <div className="text-xs font-black text-white pt-2">Final league positions</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">{(selectedArchive.finalStandings || []).map((league: any) => (
+            <div key={league.competitionId} className="rounded-xl bg-slate-950/60 p-3 text-xs">
+              <div className="font-bold text-slate-300">{league.competitionName}</div>
+              {(league.rows || []).map((row: any) => <div key={row.clubId} className="flex gap-2 py-0.5 text-[10px] text-slate-400"><span className="w-5">{row.position}.</span><span className="flex-1 truncate">{row.clubName}</span><span>{row.points}</span></div>)}
+            </div>
+          ))}</div>
+        </div>}
+      </section>
+
       <section className={`glass-panel p-5 sm:p-6 ${career?.locked ? 'border-indigo-500/30' : 'border-emerald-500/30'}`}>
         <div className="flex items-start justify-between gap-4"><div><h2 className="text-sm font-black text-white flex items-center gap-2">{career?.locked ? <LockKeyhole className="w-4 h-4 text-indigo-400" /> : <Sparkles className="w-4 h-4 text-emerald-400" />}EFL Career</h2><p className="text-xs text-slate-400 mt-1">Career barcha player uchun hisoblanadi; advanced view Premium entitlement bilan ochiladi.</p></div>{career?.locked && <span className="text-[10px] px-2 py-1 rounded-lg border border-indigo-500/30 bg-indigo-500/10 text-indigo-300 font-black">{career.priceStars} Stars / season</span>}</div>
         {!career?.locked && career?.career && <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mt-4">{[['Matches', career.career.overall.matches], ['Wins', career.career.overall.wins], ['Win %', `${career.career.overall.winRate}%`], ['GF', career.career.overall.goalsFor], ['Trophies', career.career.achievements?.filter((x: any) => x.unlocked).length || 0], ['Unbeaten', career.career.overall.longestUnbeatenRun]].map(([label, value]) => <div key={String(label)} className="rounded-xl bg-slate-950/60 p-3 text-center"><div className="text-base font-black text-white">{value}</div><div className="text-[9px] text-slate-500">{label}</div></div>)}</div>}
@@ -237,6 +269,10 @@ export const SeasonHubView: React.FC<SeasonHubViewProps> = ({ onNavigateTab }) =
           <div className="rounded-2xl border border-white/[0.07] bg-slate-950/50 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div><div className="text-xs font-black text-white flex items-center gap-2"><Trophy className="w-4 h-4 text-fuchsia-400" />Season Rollover</div><div className="text-[10px] text-slate-500 mt-1">{adminControl.rollover?.canRollover ? `Ready → ${adminControl.rollover.nextSeasonId}` : `${adminControl.rollover?.blockers?.length || 0} blocker(s). Current season will never be deleted.`}</div></div>
             <button onClick={() => adminAction('rollover', () => seasonOpsApi.createNextSeasonShell(activeSeasonId), 'Next season shell created safely.')} disabled={!adminControl.rollover?.canRollover || actionBusy === 'rollover'} className="px-4 py-2.5 rounded-xl bg-fuchsia-500 text-white text-xs font-black disabled:opacity-40">Create next-season shell</button>
+          </div>
+          <div className="rounded-2xl border border-white/[0.07] bg-slate-950/50 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div><div className="text-xs font-black text-white flex items-center gap-2"><Trophy className="w-4 h-4 text-amber-400" />Archive completed season</div><p className="text-[10px] text-slate-500 mt-1">Barcha musobaqa g‘oliblari va yakuniy jadvallar tayyor bo‘lganda o‘zgarmas tarixiy nusxa saqlanadi.</p></div>
+            <button onClick={() => adminAction('archive', () => seasonOpsApi.archiveCompletedSeason(activeSeasonId), 'Season history archived.')} disabled={!adminControl.rollover?.canRollover || actionBusy === 'archive'} className="px-4 py-2.5 rounded-xl bg-amber-500 text-slate-950 text-xs font-black disabled:opacity-40">Archive season</button>
           </div>
         </section>
       )}
