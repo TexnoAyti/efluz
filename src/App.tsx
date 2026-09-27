@@ -17,6 +17,7 @@ import { AdminView } from './components/AdminView';
 import { NotificationModal } from './components/NotificationModal';
 import { TelegramDiagnosticsModal } from './components/TelegramDiagnosticsModal';
 import { OfflineSyncBanner } from './components/OfflineSyncBanner';
+import { SeasonLifecyclePanel } from './components/SeasonLifecyclePanel';
 import { APP_BUILD_ID } from './context/AuthContext';
 import { Fixture } from './types';
 import { api } from './lib/api';
@@ -47,7 +48,7 @@ function getInitialTab(): TabType {
 }
 
 const AppContent: React.FC = () => {
-  const { isLoading, user, toastMessage, authStatus, authError } = useAuth();
+  const { isLoading, user, toastMessage, authStatus, authError, activeSeasonId } = useAuth();
   const { t } = useI18n();
   const [activeTab, setActiveTabState] = useState<TabType>(getInitialTab);
   const [selectedFixture, setSelectedFixture] = useState<Fixture | null>(null);
@@ -66,7 +67,6 @@ const AppContent: React.FC = () => {
     }
   };
 
-  // Sync tab with browser back/forward buttons
   useEffect(() => {
     const handlePopState = () => {
       setActiveTabState(getInitialTab());
@@ -75,7 +75,6 @@ const AppContent: React.FC = () => {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // Check open disputes count for admins (active admin tab only with visibility check, no continuous polling for passive users)
   useEffect(() => {
     async function checkDisputes() {
       if (document.hidden) return;
@@ -88,7 +87,7 @@ const AppContent: React.FC = () => {
     }
     if (user?.isAdmin && activeTab === 'admin') {
       checkDisputes();
-      const interval = setInterval(checkDisputes, 300000); // 5 minutes interval strictly inside admin panel
+      const interval = setInterval(checkDisputes, 300000);
       return () => clearInterval(interval);
     }
   }, [user?.isAdmin, activeTab]);
@@ -136,7 +135,6 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-slate-950">
-      {/* Toast Notification Alert */}
       {toastMessage && (
         <div className="fixed top-14 right-4 z-50 animate-in slide-in-from-top-3 fade-in duration-200">
           <div
@@ -156,24 +154,24 @@ const AppContent: React.FC = () => {
         </div>
       )}
 
-      {/* Top Header Bar */}
       <Header
         onOpenNotifications={() => setActiveTab('notifications')}
         onOpenProfile={() => setActiveTab('profile')}
       />
 
-      {/* Desktop & Mobile Navigation */}
       <Navigation
         activeTab={currentTab}
         onTabChange={setActiveTab}
         openDisputesCount={openDisputesCount}
       />
 
-      {/* Offline & Mutation Sync Notice Banner */}
       <OfflineSyncBanner />
 
-      {/* Main Content Area - Mobile Optimized (12-16px padding on mobile, no horizontal overflow) */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-4 md:px-6 py-4 sm:py-6 min-w-0">
+        <div className="mb-5">
+          <SeasonLifecyclePanel seasonId={activeSeasonId} />
+        </div>
+
         {(currentTab === 'dashboard' || currentTab === 'home') && (
           <DashboardView
             onNavigateTab={setActiveTab}
@@ -198,7 +196,6 @@ const AppContent: React.FC = () => {
         {currentTab === 'admin' && <AdminView />}
       </main>
 
-      {/* App Footer (Safe margin for bottom nav) */}
       <footer className="border-t border-slate-900 bg-slate-950/80 px-4 py-3 pb-24 lg:pb-3 text-[11px] text-slate-400">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -213,13 +210,11 @@ const AppContent: React.FC = () => {
         </div>
       </footer>
 
-      {/* Real-time Notification Modal */}
       <NotificationModal
         isOpen={isNotificationOpen}
         onClose={() => setIsNotificationOpen(false)}
       />
 
-      {/* Telegram Diagnostics Modal - strictly admin only */}
       {user?.isAdmin && (
         <TelegramDiagnosticsModal
           isOpen={isDiagnosticsOpen}

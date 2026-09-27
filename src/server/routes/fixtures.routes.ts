@@ -11,6 +11,7 @@ import { invalidateFixtureReadModels, refreshChangedFixtureReadModel } from '../
 import { isDomesticCup, advanceDomesticCupWinnerSafe } from '../tournament/domesticCupService';
 import { reconcileDomesticCupSourceFixture } from '../tournament/domesticCupRoundOps';
 import { notifySmartResultLifecycle } from '../services/smartNotificationService';
+import { assertFixtureLifecycleOpen } from '../services/seasonLifecycleService';
 
 export const fixturesRouter = Router();
 export const fixturesResilientRouter = fixturesRouter;
@@ -43,17 +44,20 @@ fixturesRouter.post('/:id/result', requireAuth, validateBody(resultSubmissionSch
   const { homeScore, awayScore, proofUrl } = req.body;
 
   try {
+    const existingFixture = await getFixtureByIdFirestore(fixtureId, userId);
+    if (!existingFixture) {
+      res.status(404).json({ error: 'Fixture not found', code: 'NOT_FOUND' });
+      return;
+    }
+    await assertFixtureLifecycleOpen(existingFixture);
+
     const updatedFixture = await submitFixtureResultFirestore(userId, fixtureId, homeScore, awayScore, proofUrl);
 
-    // Domestic cups advance immediately when the dual-submission workflow reaches
-    // CONFIRMED. The advancement service is idempotent, so retries are safe.
     if (updatedFixture.status === 'CONFIRMED' && isDomesticCup(updatedFixture.competitionId)) {
       await advanceDomesticCupWinnerSafe(fixtureId, {
         adminUserId: 'system-cup-progression',
         adminUsername: 'system',
       }).catch(async (err: any) => {
-        // Final fixtures intentionally have no target; any other mismatch is
-        // reconciled from source links without overwriting protected matches.
         if (!String(err?.message || '').toLowerCase().includes('final')) {
           await reconcileDomesticCupSourceFixture(fixtureId, {
             actorUserId: 'system-cup-progression',
@@ -68,7 +72,6 @@ fixturesRouter.post('/:id/result', requireAuth, validateBody(resultSubmissionSch
       .catch(() => invalidateFixtureReadModels(updatedFixture.competitionId, updatedFixture.seasonId || 'season-2026-27'))
       .catch(() => {});
 
-    // Smart alerts are best-effort and must never make a valid result submission fail.
     await notifySmartResultLifecycle(updatedFixture, userId).catch((error: any) => {
       console.warn('[SMART_NOTIFY] Result lifecycle notification failed:', error?.message || error);
     });
@@ -84,6 +87,10 @@ fixturesRouter.post('/:id/result', requireAuth, validateBody(resultSubmissionSch
       fixture: updatedFixture,
     });
   } catch (err: any) {
+    if (err?.code === 'SEASON_PHASE_LOCKED' || err?.code === 'MATCHDAY_PROGRESSION_LOCKED') {
+      res.status(423).json({ error: err.code, message: err.message });
+      return;
+    }
     handleFirestoreError(res, err, `POST /api/fixtures/${fixtureId}/result`);
   }
 });
