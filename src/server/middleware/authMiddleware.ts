@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { verifyTelegramWebAppData, getOrCreateTelegramUser, getOrCreateDevUser, verifySessionToken } from '../auth/telegramAuth';
 import { User } from '../../types';
 import { getAuthoritativeUserForAuthorization } from '../firebase/firestoreStore';
+import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
 
 declare global {
   namespace Express {
@@ -151,7 +152,33 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
   }
   // Admin privileges are security-sensitive and must not rely on token claims
   // for their full lifetime. Re-read the authoritative account before acting.
-  const authoritativeUser = await getAuthoritativeUserForAuthorization(req.user.id).catch(() => null);
+  let authoritativeUser: User | null = null;
+  try {
+    authoritativeUser = await getAuthoritativeUserForAuthorization(req.user.id);
+    firestoreCircuitBreaker.recordSuccess();
+  } catch (err: any) {
+    firestoreCircuitBreaker.recordFailure(err);
+    // Emergency read access is limited to a bootstrap admin explicitly pinned by
+    // numeric Telegram ID in server configuration. The signed, short-lived session
+    // proves that ID; a user-controlled name or an admin claim alone is insufficient.
+    const telegramId = req.user.telegramId;
+    const configuredIds = (process.env.ADMIN_TELEGRAM_IDS || '').split(',').map((id) => id.trim());
+    const bearer = req.headers?.authorization;
+    const token = bearer?.startsWith('Bearer ')
+      ? bearer.slice(7).trim()
+      : (req.headers?.['x-session-token'] as string | undefined);
+    const signed = token ? verifySessionToken(token) : null;
+    if (req.method === 'GET' && firestoreCircuitBreaker.isQuotaExhaustedError(err) &&
+        signed?.isValid && signed.claims?.id === req.user.id &&
+        signed.claims.telegramId === telegramId && signed.claims.isAdmin && !signed.claims.isSuspended &&
+        /^\d+$/.test(telegramId) && req.user.id === `user-${telegramId}` &&
+        configuredIds.includes(telegramId)) {
+      res.setHeader('X-Admin-Read-Only', 'true');
+      console.warn('[ADMIN_AUTH_QUOTA_READ_ONLY] Configured bootstrap admin, GET only');
+      next();
+      return;
+    }
+  }
   if (!authoritativeUser) {
     res.status(503).json({ error: 'Admin authorization is temporarily unavailable.' });
     return;
