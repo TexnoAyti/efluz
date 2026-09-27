@@ -7,6 +7,7 @@ import { Navigation, TabType } from './components/Navigation';
 import { DashboardView } from './components/DashboardView';
 import { MyClubView } from './components/MyClubView';
 import { MyMatchesView } from './components/MyMatchesView';
+import { MatchOperationsV4Panel } from './components/MatchOperationsV4Panel';
 import { ClubsView } from './components/ClubsView';
 import { CupBracketsView } from './components/CupBracketsView';
 import { ChampionsLeagueView } from './components/ChampionsLeagueView';
@@ -15,6 +16,7 @@ import { SeasonHubView } from './components/SeasonHubView';
 import { NotificationsView } from './components/NotificationsView';
 import { ProfileView } from './components/ProfileView';
 import { AdminView } from './components/AdminView';
+import { AdminMatchOperationsV4Panel } from './components/admin/AdminMatchOperationsV4Panel';
 import { NotificationModal } from './components/NotificationModal';
 import { TelegramDiagnosticsModal } from './components/TelegramDiagnosticsModal';
 import { OfflineSyncBanner } from './components/OfflineSyncBanner';
@@ -83,6 +85,8 @@ const AppContent: React.FC = () => {
       <OfflineSyncBanner />
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-4 md:px-6 py-4 sm:py-6 min-w-0">
         {currentTab === 'my-matches' && <div className="mb-5"><SeasonLifecyclePanel seasonId={activeSeasonId} /></div>}
+        {currentTab === 'my-matches' && <div className="mb-5"><MatchOperationsV4Panel /></div>}
+        {currentTab === 'admin' && user?.isAdmin && <div className="mb-5"><AdminMatchOperationsV4Panel /></div>}
         {(currentTab === 'dashboard' || currentTab === 'home') && <DashboardView onNavigateTab={setActiveTab} onSelectFixtureForMatchCenter={(fix) => { setSelectedFixture(fix); setActiveTab('my-matches'); }} />}
         {currentTab === 'my-club' && <MyClubView onNavigateTab={setActiveTab} />}
         {currentTab === 'my-matches' && <MyMatchesView initialSelectedFixture={selectedFixture} onNavigateTab={setActiveTab} />}
