@@ -32,6 +32,7 @@ import { adminRouter } from './routes/admin.routes';
 import { telegramRouter } from './routes/telegram.routes';
 import { premiumPrivateRouter } from './routes/premiumPrivate.routes';
 import { competitionConsistencyRouter, adminConsistencyRouter } from './routes/consistencyGuard.routes';
+import { seasonLifecycleRouter, adminSeasonLifecycleRouter } from './routes/seasonLifecycle.routes';
 
 let dbInitPromise: Promise<void> | null = null;
 let dbReady = false;
@@ -168,6 +169,7 @@ export function createApp() {
   app.use('/api/health', healthRouter);
   app.use('/api/auth', authRouter);
   app.use('/api/seasons', seasonsRouter);
+  app.use('/api/season-lifecycle', seasonLifecycleRouter);
   app.use('/api/leagues', leaguesRouter);
   app.use('/api/clubs', clubsRouter);
   app.use('/api/competitions', competitionConsistencyRouter);
@@ -178,6 +180,7 @@ export function createApp() {
   app.use('/api/users', usersRouter);
   app.use('/api/insights', seasonInsightsRouter);
   app.use('/api/admin/cups', adminCupDrawRouter);
+  app.use('/api/admin/season-lifecycle', adminSeasonLifecycleRouter);
   app.use('/api/admin', adminCupOpsRouter);
   app.use('/api/admin', adminMatchControlRouter);
   app.use('/api/admin', adminConsistencyRouter);
