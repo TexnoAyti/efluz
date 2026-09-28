@@ -140,7 +140,7 @@ export const MatchdayHomeView: React.FC<Props> = ({ onNavigateTab, onSelectFixtu
 
       <section aria-label={c.next} className="matchday-featured">
         <div className="relative z-10 flex items-center justify-between gap-3">
-          <span className="matchday-kicker !text-rose-100/80">{c.next}</span>
+          <span className="matchday-kicker text-rose-100/80">{c.next}</span>
           {featured && <span className="rounded-full bg-white/15 px-2.5 py-1 text-[10px] font-black text-white backdrop-blur-sm">{featured.competitionName || 'EFL UZ'} · {matchLabel(featured, c.matchday)}</span>}
         </div>
         {loading && fixtures.length === 0 ? (

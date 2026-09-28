@@ -156,7 +156,7 @@ export const PlayerSeasonProfile: React.FC<PlayerSeasonProfileProps> = ({ userId
   const awards = seasonData?.awards || [];
 
   return (
-    <section className="relative overflow-hidden rounded-[28px] border border-emerald-400/15 bg-[radial-gradient(circle_at_10%_0%,rgba(16,185,129,0.14),transparent_30%),radial-gradient(circle_at_90%_8%,rgba(59,130,246,0.10),transparent_28%),linear-gradient(150deg,rgba(15,23,42,0.96),rgba(2,6,23,0.94))] shadow-2xl">
+    <section className="season-profile-card relative overflow-hidden rounded-[28px] border border-emerald-400/15 bg-[radial-gradient(circle_at_10%_0%,rgba(16,185,129,0.14),transparent_30%),radial-gradient(circle_at_90%_8%,rgba(59,130,246,0.10),transparent_28%),linear-gradient(150deg,rgba(15,23,42,0.96),rgba(2,6,23,0.94))] shadow-2xl">
       <div className="pointer-events-none absolute right-0 top-0 h-48 w-48 rounded-full border border-emerald-400/[0.06]" />
       <div className="relative space-y-5 p-4 sm:p-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">

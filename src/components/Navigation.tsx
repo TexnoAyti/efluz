@@ -40,7 +40,7 @@ export const Navigation: React.FC<NavigationProps> = ({
   openDisputesCount = 0,
 }) => {
   const { user, unreadNotificationCount } = useAuth();
-  const { t } = useI18n();
+  const { t, language } = useI18n();
 
   const currentTab = activeTab === 'home' ? 'dashboard' : activeTab;
 
@@ -74,7 +74,7 @@ export const Navigation: React.FC<NavigationProps> = ({
     },
     {
       id: 'my-matches' as TabType,
-      label: t.navMyMatches || 'Matches',
+      label: language === 'uz' ? 'O‘yinlar' : language === 'ru' ? 'Матчи' : 'Matches',
       icon: Swords,
       isActive: currentTab === 'my-matches',
     },
@@ -172,7 +172,7 @@ export const Navigation: React.FC<NavigationProps> = ({
                   )}
                 </div>
                 <span
-                  className={`glass-nav-label text-[10px] mt-0.5 tracking-tight truncate max-w-[68px] leading-tight ${
+                  className={`glass-nav-label text-[11px] mt-0.5 tracking-tight text-center max-w-[78px] leading-[1.1] ${
                     item.isActive ? 'text-emerald-400 font-bold' : 'text-slate-400 font-normal'
                   }`}
                 >

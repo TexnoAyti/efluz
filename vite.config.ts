@@ -6,6 +6,8 @@ import {defineConfig} from 'vite';
 export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
+    // A static design walkthrough is available only in local dev and Vercel Preview builds.
+    define: { __EFL_DESIGN_PREVIEW_BUILD__: JSON.stringify(process.env.VERCEL_ENV === 'preview') },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
