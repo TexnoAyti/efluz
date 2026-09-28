@@ -120,12 +120,12 @@
   --nav-accent: var(--preview-accent);
   --nav-active-bg: color-mix(in srgb, var(--preview-accent) 13%, transparent);
   border-color: rgba(255, 255, 255, .7);
-  background: linear-gradient(155deg, rgba(255, 255, 255, .81), rgba(246, 249, 252, .66) 55%, rgba(232, 238, 245, .74));
+  background: linear-gradient(155deg, rgba(255, 255, 255, .96), rgba(246, 249, 252, .91) 55%, rgba(232, 238, 245, .94));
   box-shadow: 0 16px 38px rgba(29, 42, 62, .18), 0 3px 10px rgba(29, 42, 62, .07), inset 0 1px 0 rgba(255, 255, 255, .9), inset 0 -1px 0 rgba(255, 255, 255, .45);
 }
 .efl-preview.theme-dark .glass-nav-bottom.preview-bottom-nav {
   border-color: rgba(255, 255, 255, .2);
-  background: linear-gradient(155deg, rgba(70, 89, 115, .66), rgba(27, 40, 63, .74) 50%, rgba(18, 29, 48, .82));
+  background: linear-gradient(155deg, rgba(70, 89, 115, .91), rgba(27, 40, 63, .94) 50%, rgba(18, 29, 48, .97));
   box-shadow: 0 16px 38px rgba(0, 0, 0, .38), inset 0 1px 0 rgba(255, 255, 255, .28);
 }
 .efl-preview .preview-bottom-nav .preview-nav-active {
@@ -308,7 +308,7 @@
 .efl-preview:not(.theme-dark) > .fixed.inset-0[class*="bg-slate-950"],
 .efl-preview:not(.theme-dark) .fixed.inset-0[class*="bg-black"] { background: rgba(6, 10, 18, .72); }
 @media (max-width: 639px) {
-  .efl-preview main { padding: 14px 12px 88px; }
+  .efl-preview main { padding: 14px 12px calc(112px + env(safe-area-inset-bottom, 0px)); }
   .efl-preview .matchday-home { gap: 18px; }
   .efl-preview .matchday-featured { padding: 16px; border-radius: 24px; }
   .efl-preview .matchday-featured .mt-7 { margin-top: 22px; }
@@ -383,6 +383,18 @@
 .efl-preview:not(.theme-dark) main[data-preview-page="leagues"] .glass-panel[class*="border-rose-"] { background: #fff0f1; }
 
 /* Cups: bracket cards have no shared glass wrapper. */
+.efl-preview:not(.theme-dark) main[data-preview-page="cups"] .preview-cup-hero {
+  background: linear-gradient(135deg, var(--preview-soft), var(--preview-panel) 70%);
+  border-color: var(--preview-border);
+  box-shadow: 0 8px 24px var(--preview-shadow);
+}
+.efl-preview:not(.theme-dark) main[data-preview-page="cups"] .preview-cup-hero [class*="bg-black/"] {
+  background: var(--preview-raised);
+  border-color: var(--preview-border);
+}
+.efl-preview:not(.theme-dark) main[data-preview-page="cups"] .preview-cup-hero :is(.text-amber-300, .text-amber-300\/70) {
+  color: var(--preview-warning);
+}
 .efl-preview:not(.theme-dark) main[data-preview-page="cups"] section[class*="bg-slate-950"],
 .efl-preview:not(.theme-dark) main[data-preview-page="cups"] [class*="bg-white/[0.0"] {
   background: var(--preview-panel);
@@ -391,6 +403,12 @@
 .efl-preview:not(.theme-dark) main[data-preview-page="cups"] :is(h1, h2, h3, div, span).text-white:not([class*="bg-"]) { color: var(--preview-ink); }
 
 /* European competitions: table text and club rows. */
+.efl-preview:not(.theme-dark) main[data-preview-page="champions-league"] .preview-europe-hero .text-blue-300 {
+  color: var(--preview-info);
+}
+.efl-preview:not(.theme-dark) main[data-preview-page="champions-league"] .preview-europe-hero .text-blue-200 {
+  color: var(--preview-muted);
+}
 .efl-preview:not(.theme-dark) main[data-preview-page="champions-league"] :is(thead, th) { background: var(--preview-raised); color: var(--preview-muted); }
 .efl-preview:not(.theme-dark) main[data-preview-page="champions-league"] tbody tr:hover { background: var(--preview-soft); }
 .efl-preview:not(.theme-dark) main[data-preview-page="champions-league"] [class~="bg-blue-600"] { background: var(--preview-accent); color: #fff; }

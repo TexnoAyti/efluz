@@ -179,6 +179,11 @@ export interface Translations {
   qualificationRules: string;
   uefaClubCompetitions: string;
   uefaSubtitle: string;
+  cupJourney: string;
+  cupClubs: string;
+  cupMatches: string;
+  cupChampion: string;
+  adminSectionsHint: string;
   noEuropeanParticipants: string;
   matchesBeingScheduled: string;
   retry: string;
@@ -366,7 +371,12 @@ export const translations: Record<Language, Translations> = {
     championsLeague: 'Chempionlar Ligasi',
     qualificationRules: 'Saralash qoidalari',
     uefaClubCompetitions: 'UEFA Klub Musobaqalari 2026/27',
-    uefaSubtitle: 'Yevropaning nufuzli klublar musobaqasi: 32 ta eng kuchli jamoa va yagona liga bosqichi',
+    uefaSubtitle: 'Klublar foydalanuvchilar natijalari va ichki liga jadvali orqali saralanadi.',
+    cupJourney: '2026/27 kubok yo‘li',
+    cupClubs: 'Klublar',
+    cupMatches: 'O‘yinlar',
+    cupChampion: 'Chempion',
+    adminSectionsHint: 'Bo‘limlar uchun yon tomonga suring →',
     noEuropeanParticipants: 'Hozircha Yevrokubok ishtirokchilari aniqlanmagan',
     matchesBeingScheduled: 'Saralangan klublar uchun o‘yinlar rejalashtirilmoqda...',
     retry: 'Qayta urinish',
@@ -552,7 +562,12 @@ export const translations: Record<Language, Translations> = {
     championsLeague: 'Лига Чемпионов',
     qualificationRules: 'Правила квалификации',
     uefaClubCompetitions: 'Клубные турниры УЕФА 2026/27',
-    uefaSubtitle: 'Главный клубный турнир Европы: 32 сильнейшие команды и единая лига',
+    uefaSubtitle: 'Клубы отбираются по результатам игроков и таблицам внутренних лиг.',
+    cupJourney: 'Кубковый путь 2026/27',
+    cupClubs: 'Клубы',
+    cupMatches: 'Матчи',
+    cupChampion: 'Чемпион',
+    adminSectionsHint: 'Листайте вбок для других разделов →',
     noEuropeanParticipants: 'Участники еврокубков пока не определены',
     matchesBeingScheduled: 'Расписание для квалифицированных клубов формируется...',
     retry: 'Повторить',
@@ -738,7 +753,12 @@ export const translations: Record<Language, Translations> = {
     championsLeague: 'Champions League',
     qualificationRules: 'Qualification Rules',
     uefaClubCompetitions: 'UEFA Club Competitions 2026/27',
-    uefaSubtitle: "Europe's premier club competition: 32 elite clubs in a single league phase",
+    uefaSubtitle: 'Clubs qualify through player results and domestic league standings.',
+    cupJourney: '2026/27 Cup Journey',
+    cupClubs: 'Clubs',
+    cupMatches: 'Matches',
+    cupChampion: 'Champion',
+    adminSectionsHint: 'Swipe sideways for more sections →',
     noEuropeanParticipants: 'No European participants qualified yet',
     matchesBeingScheduled: 'Matches are being scheduled for qualified clubs...',
     retry: 'Retry',

@@ -74,6 +74,10 @@ const AppContent: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, [activeTab]);
+
+  useEffect(() => {
     if (!user?.isAdmin) return;
     const previousBackground = document.body.style.backgroundColor;
     const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');

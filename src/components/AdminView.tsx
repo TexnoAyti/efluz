@@ -890,6 +890,7 @@ export const AdminView: React.FC = () => {
       {/* ========================================================================= */}
       {/* SECTION TABS (HIGH DENSITY NAVIGATION) */}
       {/* ========================================================================= */}
+      <p className="px-1 text-[11px] font-semibold text-slate-400 sm:hidden">{t.adminSectionsHint}</p>
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
         {/* 1. OVERVIEW */}
         <button
