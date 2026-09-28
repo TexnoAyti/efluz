@@ -649,3 +649,17 @@
 .efl-preview.theme-dark .matchday-home .text-slate-500 { color: var(--preview-muted); }
 .efl-preview.theme-dark .preview-theme-menu { background: var(--preview-panel); border-color: var(--preview-border); }
 .efl-preview.theme-dark .preview-app-header .preview-theme-option { color: var(--preview-title); }
+
+/* Render the transparent mark directly on the header; switch its letter color
+   with the admin preview surface. */
+.preview-brand-logo,
+.efl-preview .preview-brand-mark,
+.efl-preview:not(.theme-dark) .preview-brand-mark {
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+}
+.preview-brand-logo .preview-logo-light { display: none; }
+.efl-preview:not(.theme-dark) .preview-brand-logo .preview-logo-dark { display: none; }
+.efl-preview:not(.theme-dark) .preview-brand-logo .preview-logo-light { display: block; }

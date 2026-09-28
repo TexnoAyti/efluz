@@ -103,7 +103,8 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNotifications, onOpenProfi
         {/* Brand & Logo */}
         <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
           <div className={`preview-brand-logo shrink-0 ${user?.isAdmin ? 'preview-brand-mark' : ''}`}>
-            <img src="/efluz-logo.png" alt="EFL UZ" />
+            <img className="preview-logo-dark" src="/efluz-logo.png" alt="EFL UZ" />
+            {user?.isAdmin && <img className="preview-logo-light" src="/efluz-logo-light.png" alt="" aria-hidden="true" />}
           </div>
           <div className="flex items-center gap-2 min-w-0">
             <span className="hidden sm:inline-block px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
