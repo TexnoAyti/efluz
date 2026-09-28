@@ -248,16 +248,61 @@
 .efl-preview .matchday-home .divide-y > *,
 .efl-preview .matchday-home .border-b { border-color: var(--preview-border); }
 .efl-preview .matchday-home .hover\:bg-white\/\[0\.04\]:hover { background: var(--preview-soft); }
-.efl-preview .matchday-league-card.tone-indigo { background: linear-gradient(145deg, #eeeafa, var(--preview-panel)); }
-.efl-preview .matchday-league-card.tone-coral { background: linear-gradient(145deg, #ffedec, var(--preview-panel)); }
-.efl-preview .matchday-league-card.tone-blue { background: linear-gradient(145deg, #e8f1ff, var(--preview-panel)); }
-.efl-preview .matchday-league-card.tone-red { background: linear-gradient(145deg, #fff0e7, var(--preview-panel)); }
-.efl-preview .matchday-league-card.tone-teal { background: linear-gradient(145deg, #e5f6ef, var(--preview-panel)); }
-.efl-preview.theme-dark .matchday-league-card { background: linear-gradient(145deg, var(--preview-soft), var(--preview-panel)); }
-.efl-preview .matchday-league-card { border-color: var(--preview-border); box-shadow: 0 5px 14px var(--preview-shadow); }
+.efl-preview .matchday-league-card,
+.efl-preview .matchday-league-card.tone-indigo,
+.efl-preview .matchday-league-card.tone-coral,
+.efl-preview .matchday-league-card.tone-blue,
+.efl-preview .matchday-league-card.tone-red,
+.efl-preview .matchday-league-card.tone-teal {
+  background: linear-gradient(145deg, var(--preview-soft), var(--preview-panel) 78%);
+  border-color: color-mix(in srgb, var(--preview-accent) 22%, var(--preview-border));
+  box-shadow: 0 5px 14px var(--preview-shadow);
+}
+.efl-preview .matchday-league-card:hover {
+  border-color: color-mix(in srgb, var(--preview-accent) 48%, var(--preview-border));
+  transform: translateY(-1px);
+}
 .efl-preview .matchday-league-card .text-white { color: var(--preview-ink); }
 .efl-preview .matchday-league-card .text-white\/70 { color: var(--preview-muted); }
 .efl-preview .matchday-league-mark { background: var(--preview-panel); border-color: var(--preview-border); color: var(--preview-accent); }
+
+/* Shared admin chrome: keep typography, focus states and controls consistent
+   across every preview route. */
+.efl-preview main[data-preview-page] :is(button, a) { -webkit-tap-highlight-color: transparent; }
+.efl-preview main[data-preview-page] :is(button, a):focus-visible,
+.efl-preview .preview-app-header :is(button, a):focus-visible,
+.efl-preview .preview-bottom-nav :is(button, a):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--preview-accent) 65%, transparent);
+  outline-offset: 2px;
+}
+.efl-preview main[data-preview-page] :is(h1, h2, h3, h4) { letter-spacing: -0.015em; }
+.efl-preview main[data-preview-page] :is(input, select, textarea)::placeholder { color: var(--preview-muted); opacity: .82; }
+.efl-preview main[data-preview-page] :is(input, select, textarea):disabled { opacity: .62; cursor: not-allowed; }
+.efl-preview main[data-preview-page] .text-white\/70,
+.efl-preview main[data-preview-page] .text-white\/80,
+.efl-preview main[data-preview-page] .text-white\/90 { color: var(--preview-muted); }
+.efl-preview main[data-preview-page] :is(.border-white\/10, .border-white\/\[0\.1\], .border-white\/\[0\.08\]) { border-color: var(--preview-border); }
+
+/* Semantic colors retain their meaning while their tint follows the active theme. */
+.efl-preview main[data-preview-page] :is(.bg-rose-500\/10, .bg-rose-500\/15, .bg-rose-950\/30, .bg-rose-950\/40) { background: var(--preview-danger-soft); }
+.efl-preview main[data-preview-page] :is(.bg-amber-500\/10, .bg-amber-500\/15, .bg-amber-500\/20) { background: var(--preview-warning-soft); }
+.efl-preview main[data-preview-page] :is(.bg-sky-500\/10, .bg-sky-500\/15, .bg-sky-500\/20, .bg-blue-500\/15) { background: var(--preview-info-soft); }
+.efl-preview main[data-preview-page] :is(.bg-emerald-500\/10, .bg-emerald-500\/15, .bg-emerald-500\/20) { background: var(--preview-soft); }
+.efl-preview main[data-preview-page] :is(.text-rose-400, .text-rose-500) { color: var(--preview-danger); }
+.efl-preview main[data-preview-page] :is(.text-amber-400, .text-amber-500) { color: var(--preview-warning); }
+.efl-preview main[data-preview-page] :is(.text-sky-400, .text-sky-500, .text-blue-400) { color: var(--preview-info); }
+.efl-preview main[data-preview-page] :is(.text-emerald-400, .text-emerald-500) { color: var(--preview-accent); }
+
+/* Data tables and dense panels need a clear reading rhythm. */
+.efl-preview main[data-preview-page] :is(tbody tr, .glass-card, .glass-panel) { transition: background-color .18s ease, border-color .18s ease, transform .18s ease; }
+.efl-preview main[data-preview-page] tbody tr:nth-child(even) { background: color-mix(in srgb, var(--preview-raised) 42%, transparent); }
+.efl-preview main[data-preview-page] tbody tr:hover { background: var(--preview-soft); }
+.efl-preview main[data-preview-page] :is(th, td) { border-color: var(--preview-border); }
+.efl-preview main[data-preview-page] :is(th, .uppercase) { letter-spacing: .045em; }
+
+/* The backdrop stays dark in light themes; dialog surfaces use the selected panel. */
+.efl-preview:not(.theme-dark) > .fixed.inset-0[class*="bg-slate-950"],
+.efl-preview:not(.theme-dark) .fixed.inset-0[class*="bg-black"] { background: rgba(6, 10, 18, .72); }
 @media (max-width: 639px) {
   .efl-preview main { padding: 14px 12px 88px; }
   .efl-preview .matchday-home { gap: 18px; }
