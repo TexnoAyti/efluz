@@ -22,6 +22,9 @@ import { NotificationModal } from './components/NotificationModal';
 import { TelegramDiagnosticsModal } from './components/TelegramDiagnosticsModal';
 import { OfflineSyncBanner } from './components/OfflineSyncBanner';
 import { SeasonLifecyclePanel } from './components/SeasonLifecyclePanel';
+import { CompetitionHubView } from './components/CompetitionHubView';
+import { ClubHubView } from './components/ClubHubView';
+import { GlobalSearchModal } from './components/GlobalSearchModal';
 import { APP_BUILD_ID } from './context/AuthContext';
 import { Fixture } from './types';
 import { api } from './lib/api';
@@ -45,16 +48,19 @@ const AppContent: React.FC = () => {
   const [selectedFixture, setSelectedFixture] = useState<Fixture | null>(null);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [openDisputesCount, setOpenDisputesCount] = useState(0);
+
+  // EFL UZ Broadcast Redesign: Light and Dark mode only
   const [theme, setTheme] = useState<AppTheme>(() => {
-    if (typeof window === 'undefined') return 'mint';
-    const saved = window.localStorage.getItem('efluz-preview-theme-v2') as AppTheme | null;
-    return saved === 'coral' || saved === 'mint' || saved === 'blue' || saved === 'dark' ? saved : 'mint';
+    if (typeof window === 'undefined') return 'dark';
+    const saved = window.localStorage.getItem('efluz-theme-mode') as AppTheme | null;
+    return saved === 'light' || saved === 'dark' ? saved : 'dark';
   });
 
   const changeTheme = (nextTheme: AppTheme) => {
     setTheme(nextTheme);
-    window.localStorage.setItem('efluz-preview-theme-v2', nextTheme);
+    window.localStorage.setItem('efluz-theme-mode', nextTheme);
   };
 
   const setActiveTab = (tab: TabType) => {
@@ -82,7 +88,7 @@ const AppContent: React.FC = () => {
     const previousBackground = document.body.style.backgroundColor;
     const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
     const previousThemeColor = themeColor?.content;
-    const background = theme === 'dark' ? '#0d1424' : '#f5f7fa';
+    const background = theme === 'dark' ? '#070b14' : '#f8fafc';
     document.body.style.backgroundColor = background;
     if (themeColor) themeColor.content = background;
     return () => {
@@ -109,31 +115,108 @@ const AppContent: React.FC = () => {
 
   const currentTab = activeTab === 'home' ? 'dashboard' : activeTab;
   return (
-    <div className={`min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-slate-950 ${user?.isAdmin ? `efl-preview theme-${theme}` : ''}`}>
+    <div className={`min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white ${user?.isAdmin ? `efl-preview theme-${theme}` : ''}`}>
       {isDesignPreview && <div className="sticky top-0 z-[60] bg-amber-100 px-3 py-1.5 text-center text-[11px] font-bold text-amber-950">DESIGN PREVIEW · test ko‘rinishi, hisobga kirilmagan</div>}
       {toastMessage && <div className="fixed top-14 right-4 z-50 animate-in slide-in-from-top-3 fade-in duration-200"><div className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-2xl text-xs font-bold border backdrop-blur-md ${toastMessage.type === 'success' ? 'bg-emerald-950/90 text-emerald-300 border-emerald-500/40 shadow-emerald-500/10' : toastMessage.type === 'error' ? 'bg-rose-950/90 text-rose-300 border-rose-500/40 shadow-rose-500/10' : 'bg-slate-900/95 text-slate-200 border-slate-700 shadow-slate-900/40'}`}>{toastMessage.type === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />}{toastMessage.type === 'error' && <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />}{toastMessage.type === 'info' && <Info className="w-4 h-4 text-sky-400 shrink-0" />}<span>{toastMessage.text}</span></div></div>}
-      <Header theme={theme} onThemeChange={changeTheme} onOpenNotifications={() => setActiveTab('notifications')} onOpenProfile={() => setActiveTab('profile')} />
+      <Header
+        theme={theme}
+        onThemeChange={changeTheme}
+        onOpenNotifications={() => setActiveTab('notifications')}
+        onOpenProfile={() => setActiveTab(user?.isAdmin ? 'my-club' : 'profile')}
+        onOpenSearch={() => setIsSearchOpen(true)}
+      />
       <Navigation activeTab={currentTab} onTabChange={setActiveTab} openDisputesCount={openDisputesCount} />
       {!isDesignPreview && user?.isAdmin && <OfflineSyncBanner />}
       <main data-preview-page={user?.isAdmin ? currentTab : undefined} className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-4 md:px-6 py-4 sm:py-6 min-w-0">
-        {currentTab === 'my-matches' && <div className="mb-5"><SeasonLifecyclePanel seasonId={activeSeasonId} /></div>}
-        {currentTab === 'my-matches' && <div className="mb-5"><MatchOperationsV4Panel /></div>}
-        {currentTab === 'admin' && user?.isAdmin && <div className="mb-5"><AdminMatchOperationsV4Panel /></div>}
-        {(currentTab === 'dashboard' || currentTab === 'home') && (user?.isAdmin ? <MatchdayHomeView onNavigateTab={setActiveTab} onSelectFixtureForMatchCenter={(fix) => { setSelectedFixture(fix); setActiveTab('my-matches'); }} /> : <DashboardView onNavigateTab={setActiveTab} onSelectFixtureForMatchCenter={(fix) => { setSelectedFixture(fix); setActiveTab('my-matches'); }} />)}
-        {currentTab === 'my-club' && <MyClubView onNavigateTab={setActiveTab} />}
-        {currentTab === 'my-matches' && <MyMatchesView initialSelectedFixture={selectedFixture} onNavigateTab={setActiveTab} />}
-        {currentTab === 'season-hub' && <SeasonHubView onNavigateTab={setActiveTab} />}
-        {currentTab === 'leagues' && <ClubsView onNavigateTab={setActiveTab} />}
-        {currentTab === 'cups' && <CupBracketsView onNavigateTab={setActiveTab} />}
-        {currentTab === 'champions-league' && <ChampionsLeagueView onNavigateTab={setActiveTab} />}
-        {currentTab === 'standings' && <StandingsView />}
-        {currentTab === 'notifications' && <NotificationsView onNavigateTab={setActiveTab} />}
-        {currentTab === 'profile' && <ProfileView onNavigateTab={setActiveTab} />}
-        {currentTab === 'admin' && <AdminView />}
+        {user?.isAdmin ? (
+          /* ==============================================================
+             ADMIN ONLY: EFL UZ PREMIUM BROADCAST REDESIGN
+             ============================================================== */
+          <>
+            {currentTab === 'admin' && <div className="mb-5"><AdminMatchOperationsV4Panel /></div>}
+
+            {/* HOME: Active Club Broadcast Hub with Hero Match Card */}
+            {(currentTab === 'dashboard' || currentTab === 'home') && (
+              <MatchdayHomeView
+                onNavigateTab={setActiveTab}
+                onSelectFixtureForMatchCenter={(fix) => {
+                  setSelectedFixture(fix);
+                  setActiveTab('my-club');
+                }}
+                onOpenSearch={() => setIsSearchOpen(true)}
+              />
+            )}
+
+            {/* LEAGUES: Unified Competition Hub (Domestic Leagues, Cups, European, Season) */}
+            {(currentTab === 'leagues' || currentTab === 'cups' || currentTab === 'champions-league' || currentTab === 'standings' || currentTab === 'season-hub') && (
+              <CompetitionHubView
+                onNavigateTab={setActiveTab}
+                initialSubTab={
+                  currentTab === 'cups'
+                    ? 'cups'
+                    : currentTab === 'champions-league'
+                    ? 'european'
+                    : currentTab === 'season-hub'
+                    ? 'season'
+                    : 'leagues'
+                }
+              />
+            )}
+
+            {/* CLUB: Replaces Profile & Matches - Active Club, Switcher, Matches, Stats, Settings */}
+            {(currentTab === 'my-club' || currentTab === 'profile' || currentTab === 'my-matches') && (
+              <ClubHubView
+                onNavigateTab={setActiveTab}
+                onSelectFixtureForMatchCenter={(fix) => setSelectedFixture(fix)}
+                initialSelectedFixture={selectedFixture}
+                theme={theme}
+                onThemeChange={changeTheme}
+              />
+            )}
+
+            {currentTab === 'notifications' && <NotificationsView onNavigateTab={setActiveTab} />}
+            {currentTab === 'admin' && <AdminView />}
+          </>
+        ) : (
+          /* ==============================================================
+             NORMAL PLAYERS: 100% UNTOUCHED ORIGINAL DESIGN & ROUTES
+             ============================================================== */
+          <>
+            {currentTab === 'my-matches' && <div className="mb-5"><SeasonLifecyclePanel seasonId={activeSeasonId} /></div>}
+            {currentTab === 'my-matches' && <div className="mb-5"><MatchOperationsV4Panel /></div>}
+            {(currentTab === 'dashboard' || currentTab === 'home') && (
+              <DashboardView
+                onNavigateTab={setActiveTab}
+                onSelectFixtureForMatchCenter={(fix) => {
+                  setSelectedFixture(fix);
+                  setActiveTab('my-matches');
+                }}
+              />
+            )}
+            {currentTab === 'my-club' && <MyClubView onNavigateTab={setActiveTab} />}
+            {currentTab === 'my-matches' && <MyMatchesView initialSelectedFixture={selectedFixture} onNavigateTab={setActiveTab} />}
+            {currentTab === 'season-hub' && <SeasonHubView onNavigateTab={setActiveTab} />}
+            {currentTab === 'leagues' && <ClubsView onNavigateTab={setActiveTab} />}
+            {currentTab === 'cups' && <CupBracketsView onNavigateTab={setActiveTab} />}
+            {currentTab === 'champions-league' && <ChampionsLeagueView onNavigateTab={setActiveTab} />}
+            {currentTab === 'standings' && <StandingsView />}
+            {currentTab === 'notifications' && <NotificationsView onNavigateTab={setActiveTab} />}
+            {currentTab === 'profile' && <ProfileView onNavigateTab={setActiveTab} />}
+          </>
+        )}
       </main>
       <footer className="border-t border-slate-900 bg-slate-950/80 px-4 py-3 pb-24 lg:pb-3 text-[11px] text-slate-400"><div className="max-w-7xl mx-auto flex items-center justify-between gap-2"><div className="flex items-center gap-2"><span className="font-bold text-slate-300">EFL UZ</span><span className="text-slate-600">•</span><span>Official 2026/27 European Competitions</span></div><div className="flex items-center gap-3"><span className="font-mono text-emerald-400 font-semibold">{APP_BUILD_ID}</span></div></div></footer>
       <NotificationModal isOpen={isNotificationOpen} onClose={() => setIsNotificationOpen(false)} />
       {user?.isAdmin && <TelegramDiagnosticsModal isOpen={isDiagnosticsOpen} onClose={() => setIsDiagnosticsOpen(false)} currentRoute={activeTab} />}
+      <GlobalSearchModal
+        isOpen={isSearchOpen}
+        onClose={() => setIsSearchOpen(false)}
+        onNavigateTab={setActiveTab}
+        onSelectFixture={(fix) => {
+          setSelectedFixture(fix);
+          setActiveTab(user?.isAdmin ? 'my-club' : 'my-matches');
+        }}
+      />
     </div>
   );
 };

@@ -2067,68 +2067,6 @@ var init_premiumClubRule = __esm({
   }
 });
 
-// src/server/services/clubAdmission.ts
-function admissionStatus(seasonId, data) {
-  const enabled = data?.enabled === true;
-  const rawStage = Number(data?.stage);
-  if (enabled && (!Number.isInteger(rawStage) || rawStage < 0 || rawStage > CLUB_ADMISSION_LEAGUES.length)) {
-    throw new Error("INVALID_CLUB_ADMISSION_STATE");
-  }
-  const stage = enabled ? rawStage : -1;
-  return {
-    seasonId,
-    enabled,
-    stage,
-    activeLeagueId: stage >= 0 ? CLUB_ADMISSION_LEAGUES[stage]?.id || null : null,
-    leagues: CLUB_ADMISSION_LEAGUES,
-    updatedAt: typeof data?.updatedAt === "string" ? data.updatedAt : null
-  };
-}
-async function getClubAdmissionStatus(seasonId) {
-  const doc = await getFirestoreDb().collection(COLLECTION).doc(seasonId).get();
-  return admissionStatus(seasonId, doc.data());
-}
-async function advanceClubAdmission(seasonId, expectedStage, actorId) {
-  const db = getFirestoreDb();
-  const ref = db.collection(COLLECTION).doc(seasonId);
-  return db.runTransaction(async (transaction) => {
-    const current = admissionStatus(seasonId, (await transaction.get(ref)).data());
-    if (current.stage !== expectedStage) throw new ClubAdmissionConflict("ADMISSION_STAGE_CHANGED");
-    if (current.stage >= CLUB_ADMISSION_LEAGUES.length) throw new ClubAdmissionConflict("ADMISSION_FINISHED");
-    const stage = current.stage + 1;
-    const updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    transaction.set(ref, { seasonId, enabled: true, stage, updatedAt, updatedBy: actorId });
-    return admissionStatus(seasonId, { enabled: true, stage, updatedAt });
-  });
-}
-function assertClubAdmissionOpen(status, leagueId) {
-  if (status.enabled && status.activeLeagueId !== leagueId) {
-    const active = status.leagues.find((league) => league.id === status.activeLeagueId);
-    throw new ClubAdmissionConflictError(active ? `Hozir faqat ${active.name} klublari uchun qabul ochiq.` : "Bu mavsum uchun klub qabuli yakunlangan.");
-  }
-}
-var CLUB_ADMISSION_LEAGUES, COLLECTION, ClubAdmissionConflict, ClubAdmissionConflictError;
-var init_clubAdmission = __esm({
-  "src/server/services/clubAdmission.ts"() {
-    init_admin();
-    init_seed();
-    CLUB_ADMISSION_LEAGUES = SEED_LEAGUES.map(({ id, name }) => ({ id, name }));
-    COLLECTION = "club_admissions";
-    ClubAdmissionConflict = class extends Error {
-      constructor(code) {
-        super(code === "ADMISSION_FINISHED" ? "Klub qabuli yakunlangan." : "Qabul bosqichi o\u2018zgargan. Sahifani yangilang.");
-        this.code = code;
-      }
-    };
-    ClubAdmissionConflictError = class extends Error {
-      constructor() {
-        super(...arguments);
-        this.code = "CLUB_ADMISSION_CLOSED";
-      }
-    };
-  }
-});
-
 // src/server/firebase/circuitBreaker.ts
 var DEFAULT_COOLDOWN_MS, CONSECUTIVE_FAILURES_THRESHOLD, FIRESTORE_READ_SOFT_LIMIT, FirestoreCircuitBreaker, firestoreCircuitBreaker;
 var init_circuitBreaker = __esm({
@@ -2311,256 +2249,6 @@ var init_circuitBreaker = __esm({
       }
     };
     firestoreCircuitBreaker = new FirestoreCircuitBreaker();
-  }
-});
-
-// src/server/firebase/occupancySnapshot.ts
-function updateOccupancyRecord(record) {
-  const key = `${record.seasonId}_${record.clubId}`;
-  memoryOccupancySnapshot.set(key, record);
-  try {
-    queryRun(
-      `INSERT OR REPLACE INTO active_occupancies_cache 
-       (club_id, season_id, user_id, username, display_name, status, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [
-        record.clubId,
-        record.seasonId,
-        record.claimedByUserId,
-        record.username || null,
-        record.displayName || null,
-        record.status,
-        record.updatedAt
-      ]
-    );
-  } catch {
-  }
-}
-function removeOccupancyRecord(seasonId, clubId) {
-  const key = `${seasonId}_${clubId}`;
-  memoryOccupancySnapshot.delete(key);
-  try {
-    queryRun(
-      `DELETE FROM active_occupancies_cache WHERE season_id = ? AND club_id = ?`,
-      [seasonId, clubId]
-    );
-  } catch {
-  }
-}
-function getLocalOccupancySnapshot(seasonId = "season-2026-27") {
-  const memRecords = [];
-  for (const [k, v] of memoryOccupancySnapshot.entries()) {
-    if (k.startsWith(`${seasonId}_`)) {
-      memRecords.push(v);
-    }
-  }
-  if (memRecords.length > 0) {
-    return memRecords;
-  }
-  if (!isDatabaseInitialized()) {
-    return memRecords;
-  }
-  try {
-    const cachedRows = queryAll(
-      `SELECT club_id, season_id, user_id, username, display_name, status, updated_at
-       FROM active_occupancies_cache
-       WHERE season_id = ? AND status = 'active'`,
-      [seasonId]
-    );
-    if (cachedRows.length > 0) {
-      for (const r of cachedRows) {
-        const rec = {
-          clubId: r.club_id,
-          seasonId: r.season_id,
-          status: "active",
-          claimedByUserId: r.user_id,
-          username: r.username || void 0,
-          displayName: r.display_name || void 0,
-          updatedAt: r.updated_at
-        };
-        memoryOccupancySnapshot.set(`${seasonId}_${r.club_id}`, rec);
-        memRecords.push(rec);
-      }
-      return memRecords;
-    }
-    const memRows = queryAll(
-      `SELECT cm.club_id, cm.season_id, cm.user_id, u.username, u.first_name, u.last_name, cm.claimed_at as updated_at
-       FROM club_memberships cm
-       LEFT JOIN users u ON cm.user_id = u.id
-       WHERE cm.season_id = ? AND cm.status = 'active'`,
-      [seasonId]
-    );
-    for (const r of memRows) {
-      const displayName = `${r.first_name || ""} ${r.last_name || ""}`.trim() || r.username || r.user_id;
-      const rec = {
-        clubId: r.club_id,
-        seasonId: r.season_id,
-        status: "active",
-        claimedByUserId: r.user_id,
-        username: r.username || void 0,
-        displayName,
-        updatedAt: r.updated_at || (/* @__PURE__ */ new Date()).toISOString()
-      };
-      memoryOccupancySnapshot.set(`${seasonId}_${r.club_id}`, rec);
-      memRecords.push(rec);
-    }
-  } catch (err) {
-    console.warn("[OCCUPANCY_SNAPSHOT] SQLite hydration error:", err);
-  }
-  return memRecords;
-}
-function syncOccupanciesFromFirestoreDocs(seasonId, occupancies) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  for (const occ of occupancies) {
-    updateOccupancyRecord({
-      clubId: occ.clubId,
-      seasonId,
-      status: "active",
-      claimedByUserId: occ.userId,
-      username: occ.username,
-      displayName: occ.displayName,
-      updatedAt: now
-    });
-  }
-}
-function loadSnapshotFromFile() {
-  try {
-    getLocalOccupancySnapshot("season-2026-27");
-  } catch (err) {
-    console.warn("[OCCUPANCY_SNAPSHOT] Load error:", err.message);
-  }
-}
-function getUserOccupiedClubIdLocally(seasonId, userId) {
-  const snapshot = getLocalOccupancySnapshot(seasonId);
-  const found = snapshot.find((r) => r.claimedByUserId === userId);
-  return found ? found.clubId : null;
-}
-function getClubOccupantUserIdLocally(seasonId, clubId) {
-  const snapshot = getLocalOccupancySnapshot(seasonId);
-  const found = snapshot.find((r) => r.clubId === clubId);
-  return found ? found.claimedByUserId : null;
-}
-var memoryOccupancySnapshot;
-var init_occupancySnapshot = __esm({
-  "src/server/firebase/occupancySnapshot.ts"() {
-    init_db();
-    memoryOccupancySnapshot = /* @__PURE__ */ new Map();
-  }
-});
-
-// src/server/utils/testGuard.ts
-function isHostedEnvironment() {
-  return Boolean(
-    process.env.K_SERVICE && process.env.K_SERVICE.trim() !== "" || process.env.VERCEL || process.env.VERCEL_ENV || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NODE_ENV === "production"
-  );
-}
-function isConnectedToProductionFirestore() {
-  if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true") {
-    return false;
-  }
-  if (isHostedEnvironment()) {
-    return true;
-  }
-  const status = getFirebaseStatus();
-  if (status.authMode === "local_fallback") {
-    return false;
-  }
-  if (process.env.FIRESTORE_EMULATOR_HOST && (status.projectId?.startsWith("demo-") || status.projectId?.startsWith("test-"))) {
-    return false;
-  }
-  return true;
-}
-function isTargetingProductionProjectOrDb() {
-  if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true") {
-    return false;
-  }
-  const status = getFirebaseStatus();
-  const envProjectId = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT;
-  const envDbId = process.env.FIRESTORE_DATABASE_ID || process.env.FIREBASE_DATABASE_ID;
-  if (status.projectId === PROD_PROJECT_ID || status.databaseId === PROD_DATABASE_ID || envProjectId === PROD_PROJECT_ID || envDbId === PROD_DATABASE_ID) {
-    return true;
-  }
-  return false;
-}
-function isSyntheticIdentifier(id) {
-  if (!id || typeof id !== "string") return false;
-  const lower = id.toLowerCase();
-  return SYNTHETIC_ID_PATTERNS.some((pattern) => lower.includes(pattern));
-}
-function isTestSafe() {
-  if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true") {
-    if (process.env.NODE_ENV === "production" || process.env.VERCEL === "1" || process.env.AWS_LAMBDA_FUNCTION_NAME !== void 0) {
-      return false;
-    }
-    const { info } = initializeFirebaseAdmin();
-    if (info.authMode === "local_fallback" && info.projectId === "test-local-fallback") {
-      return true;
-    }
-    return false;
-  }
-  if (isHostedEnvironment()) {
-    return false;
-  }
-  if (process.env.FIRESTORE_EMULATOR_HOST) {
-    const projId = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || "";
-    if (projId.startsWith("demo-") || projId.startsWith("test-")) {
-      return true;
-    }
-  }
-  return false;
-}
-function assertTestEnvironmentSafe(actionName = "test_mutation") {
-  if (!isTestSafe()) {
-    const reasons = [];
-    if (isHostedEnvironment()) reasons.push("hosted environment detected (K_SERVICE/VERCEL/NODE_ENV=production)");
-    if (isTargetingProductionProjectOrDb()) reasons.push("production project/database targeted");
-    if (process.env.ALLOW_TEST_WRITES === "true") reasons.push("ALLOW_TEST_WRITES is deprecated and cannot authorize writes");
-    if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK !== "true" && !process.env.FIRESTORE_EMULATOR_HOST) {
-      reasons.push("neither FIREBASE_FORCE_LOCAL_FALLBACK=true nor FIRESTORE_EMULATOR_HOST is configured");
-    }
-    const errorMsg = `PRODUCTION_SAFETY_VIOLATION: Test mutation "${actionName}" is strictly prohibited. Production database cannot be modified by test helpers or mock data. Violations: [${reasons.join("; ")}]`;
-    console.error(`[CRITICAL PRODUCTION BLOCKED] ${errorMsg}`);
-    throw new Error(errorMsg);
-  }
-}
-function guardAgainstTestEntityCreation(entityType, entityId, entityNameOrUsername) {
-  if (isSyntheticIdentifier(entityId) || isSyntheticIdentifier(entityNameOrUsername)) {
-    assertTestEnvironmentSafe(`create_${entityType}:${entityId}`);
-  }
-}
-function assertNoSyntheticIdsInProduction(actionName, ids) {
-  if (!isConnectedToProductionFirestore()) {
-    return;
-  }
-  for (const id of ids) {
-    if (isSyntheticIdentifier(id)) {
-      const errorMsg = `PRODUCTION_SAFETY_VIOLATION: Synthetic identifier "${id}" rejected in production/hosted environment during "${actionName}". Mutation blocked before persistence.`;
-      console.error(`[CRITICAL PRODUCTION BLOCKED] ${errorMsg}`);
-      throw new Error(errorMsg);
-    }
-  }
-}
-var PROD_PROJECT_ID, PROD_DATABASE_ID, SYNTHETIC_ID_PATTERNS;
-var init_testGuard = __esm({
-  "src/server/utils/testGuard.ts"() {
-    init_admin();
-    PROD_PROJECT_ID = "gen-lang-client-0195097895";
-    PROD_DATABASE_ID = "ai-studio-efluz-4c6c88a6-697e-4fdf-82ed-45fec68ca34d";
-    SYNTHETIC_ID_PATTERNS = [
-      "audit-",
-      "test-",
-      "test_",
-      "admin_test",
-      "admin-test",
-      "admin-offline",
-      "admin-audit",
-      "offline-test",
-      "fix-retry-test",
-      "user_a_",
-      "user_b_",
-      "notif_b_",
-      "spoofed_"
-    ];
   }
 });
 
@@ -5633,6 +5321,7 @@ var init_readModelStore = __esm({
     ReadModelKeys = {
       competitions: (seasonId = "season-2026-27") => `${KEY_PREFIX}:season:${seasonId}:competitions`,
       clubsWithOwners: (seasonId = "season-2026-27") => `${KEY_PREFIX}:season:${seasonId}:clubs-with-owners`,
+      clubAdmission: (seasonId = "season-2026-27") => `${KEY_PREFIX}:season:${seasonId}:club-admission`,
       leagueClubs: (leagueId, seasonId = "season-2026-27") => `${KEY_PREFIX}:season:${seasonId}:league:${leagueId}:clubs`,
       standings: (competitionId, seasonId = "season-2026-27") => `${KEY_PREFIX}:season:${seasonId}:competition:${competitionId}:standings`,
       competitionFixtures: (competitionId, seasonId = "season-2026-27") => `${KEY_PREFIX}:season:${seasonId}:competition:${competitionId}:fixtures`,
@@ -5649,6 +5338,355 @@ var init_readModelStore = __esm({
     inFlightLoaders = /* @__PURE__ */ new Map();
     globalLastSnapshotAt = null;
     clearProcessMemoryForTest = clearProcessMemoryCache;
+  }
+});
+
+// src/server/services/clubAdmission.ts
+function admissionStatus(seasonId, data) {
+  const enabled = data?.enabled === true;
+  const rawStage = Number(data?.stage);
+  if (enabled && (!Number.isInteger(rawStage) || rawStage < 0 || rawStage > CLUB_ADMISSION_LEAGUES.length)) {
+    throw new Error("INVALID_CLUB_ADMISSION_STATE");
+  }
+  const stage = enabled ? rawStage : -1;
+  return {
+    seasonId,
+    enabled,
+    stage,
+    activeLeagueId: stage >= 0 ? CLUB_ADMISSION_LEAGUES[stage]?.id || null : null,
+    leagues: CLUB_ADMISSION_LEAGUES,
+    updatedAt: typeof data?.updatedAt === "string" ? data.updatedAt : null
+  };
+}
+async function getClubAdmissionStatus(seasonId) {
+  const key = ReadModelKeys.clubAdmission(seasonId);
+  const fresh = await redisGetFresh(key);
+  if (fresh?.data) {
+    return { ...admissionStatus(seasonId, fresh.data), stale: !firestoreCircuitBreaker.isHealthy() };
+  }
+  const lastKnown = async () => {
+    const snapshot = await redisGetLkg(key);
+    return snapshot?.data ? { ...admissionStatus(seasonId, snapshot.data), stale: true } : null;
+  };
+  if (!firestoreCircuitBreaker.canExecute()) {
+    const cached2 = await lastKnown();
+    if (cached2) return cached2;
+    throw new ReadModelNotWarmedError("Club admission state is not cached while Firestore is unavailable.");
+  }
+  let status;
+  try {
+    const doc = await getFirestoreDb().collection(COLLECTION).doc(seasonId).get();
+    status = admissionStatus(seasonId, doc.data());
+    firestoreCircuitBreaker.recordSuccess();
+  } catch (error) {
+    firestoreCircuitBreaker.recordFailure(error);
+    const cached2 = await lastKnown();
+    if (cached2) return cached2;
+    throw new ReadModelNotWarmedError("Club admission state is not cached and Firestore could not be read.");
+  }
+  try {
+    await redisSetRaw(key, { data: status, sourceVersion: `club-admission-${status.updatedAt || "disabled"}` }, 60);
+  } catch (error) {
+    console.warn("[CLUB_ADMISSION] Could not cache admission state:", error);
+  }
+  return status;
+}
+async function advanceClubAdmission(seasonId, expectedStage, actorId) {
+  const db = getFirestoreDb();
+  const ref = db.collection(COLLECTION).doc(seasonId);
+  const status = await db.runTransaction(async (transaction) => {
+    const current = admissionStatus(seasonId, (await transaction.get(ref)).data());
+    if (current.stage !== expectedStage) throw new ClubAdmissionConflict("ADMISSION_STAGE_CHANGED");
+    if (current.stage >= CLUB_ADMISSION_LEAGUES.length) throw new ClubAdmissionConflict("ADMISSION_FINISHED");
+    const stage = current.stage + 1;
+    const updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    transaction.set(ref, { seasonId, enabled: true, stage, updatedAt, updatedBy: actorId });
+    return admissionStatus(seasonId, { enabled: true, stage, updatedAt });
+  });
+  try {
+    await redisSetRaw(ReadModelKeys.clubAdmission(seasonId), { data: status, sourceVersion: `club-admission-${status.updatedAt}` }, 60);
+  } catch (error) {
+    console.warn("[CLUB_ADMISSION] Stage changed but cache update failed:", error);
+  }
+  return status;
+}
+function assertClubAdmissionOpen(status, leagueId) {
+  if (status.enabled && status.activeLeagueId !== leagueId) {
+    const active = status.leagues.find((league) => league.id === status.activeLeagueId);
+    throw new ClubAdmissionConflictError(active ? `Hozir faqat ${active.name} klublari uchun qabul ochiq.` : "Bu mavsum uchun klub qabuli yakunlangan.");
+  }
+}
+var CLUB_ADMISSION_LEAGUES, COLLECTION, ClubAdmissionConflict, ClubAdmissionConflictError;
+var init_clubAdmission = __esm({
+  "src/server/services/clubAdmission.ts"() {
+    init_admin();
+    init_circuitBreaker();
+    init_seed();
+    init_readModelStore();
+    CLUB_ADMISSION_LEAGUES = SEED_LEAGUES.map(({ id, name }) => ({ id, name }));
+    COLLECTION = "club_admissions";
+    ClubAdmissionConflict = class extends Error {
+      constructor(code) {
+        super(code === "ADMISSION_FINISHED" ? "Klub qabuli yakunlangan." : "Qabul bosqichi o\u2018zgargan. Sahifani yangilang.");
+        this.code = code;
+      }
+    };
+    ClubAdmissionConflictError = class extends Error {
+      constructor() {
+        super(...arguments);
+        this.code = "CLUB_ADMISSION_CLOSED";
+      }
+    };
+  }
+});
+
+// src/server/firebase/occupancySnapshot.ts
+function updateOccupancyRecord(record) {
+  const key = `${record.seasonId}_${record.clubId}`;
+  memoryOccupancySnapshot.set(key, record);
+  try {
+    queryRun(
+      `INSERT OR REPLACE INTO active_occupancies_cache 
+       (club_id, season_id, user_id, username, display_name, status, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        record.clubId,
+        record.seasonId,
+        record.claimedByUserId,
+        record.username || null,
+        record.displayName || null,
+        record.status,
+        record.updatedAt
+      ]
+    );
+  } catch {
+  }
+}
+function removeOccupancyRecord(seasonId, clubId) {
+  const key = `${seasonId}_${clubId}`;
+  memoryOccupancySnapshot.delete(key);
+  try {
+    queryRun(
+      `DELETE FROM active_occupancies_cache WHERE season_id = ? AND club_id = ?`,
+      [seasonId, clubId]
+    );
+  } catch {
+  }
+}
+function getLocalOccupancySnapshot(seasonId = "season-2026-27") {
+  const memRecords = [];
+  for (const [k, v] of memoryOccupancySnapshot.entries()) {
+    if (k.startsWith(`${seasonId}_`)) {
+      memRecords.push(v);
+    }
+  }
+  if (memRecords.length > 0) {
+    return memRecords;
+  }
+  if (!isDatabaseInitialized()) {
+    return memRecords;
+  }
+  try {
+    const cachedRows = queryAll(
+      `SELECT club_id, season_id, user_id, username, display_name, status, updated_at
+       FROM active_occupancies_cache
+       WHERE season_id = ? AND status = 'active'`,
+      [seasonId]
+    );
+    if (cachedRows.length > 0) {
+      for (const r of cachedRows) {
+        const rec = {
+          clubId: r.club_id,
+          seasonId: r.season_id,
+          status: "active",
+          claimedByUserId: r.user_id,
+          username: r.username || void 0,
+          displayName: r.display_name || void 0,
+          updatedAt: r.updated_at
+        };
+        memoryOccupancySnapshot.set(`${seasonId}_${r.club_id}`, rec);
+        memRecords.push(rec);
+      }
+      return memRecords;
+    }
+    const memRows = queryAll(
+      `SELECT cm.club_id, cm.season_id, cm.user_id, u.username, u.first_name, u.last_name, cm.claimed_at as updated_at
+       FROM club_memberships cm
+       LEFT JOIN users u ON cm.user_id = u.id
+       WHERE cm.season_id = ? AND cm.status = 'active'`,
+      [seasonId]
+    );
+    for (const r of memRows) {
+      const displayName = `${r.first_name || ""} ${r.last_name || ""}`.trim() || r.username || r.user_id;
+      const rec = {
+        clubId: r.club_id,
+        seasonId: r.season_id,
+        status: "active",
+        claimedByUserId: r.user_id,
+        username: r.username || void 0,
+        displayName,
+        updatedAt: r.updated_at || (/* @__PURE__ */ new Date()).toISOString()
+      };
+      memoryOccupancySnapshot.set(`${seasonId}_${r.club_id}`, rec);
+      memRecords.push(rec);
+    }
+  } catch (err) {
+    console.warn("[OCCUPANCY_SNAPSHOT] SQLite hydration error:", err);
+  }
+  return memRecords;
+}
+function syncOccupanciesFromFirestoreDocs(seasonId, occupancies) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  for (const occ of occupancies) {
+    updateOccupancyRecord({
+      clubId: occ.clubId,
+      seasonId,
+      status: "active",
+      claimedByUserId: occ.userId,
+      username: occ.username,
+      displayName: occ.displayName,
+      updatedAt: now
+    });
+  }
+}
+function loadSnapshotFromFile() {
+  try {
+    getLocalOccupancySnapshot("season-2026-27");
+  } catch (err) {
+    console.warn("[OCCUPANCY_SNAPSHOT] Load error:", err.message);
+  }
+}
+function getUserOccupiedClubIdLocally(seasonId, userId) {
+  const snapshot = getLocalOccupancySnapshot(seasonId);
+  const found = snapshot.find((r) => r.claimedByUserId === userId);
+  return found ? found.clubId : null;
+}
+function getClubOccupantUserIdLocally(seasonId, clubId) {
+  const snapshot = getLocalOccupancySnapshot(seasonId);
+  const found = snapshot.find((r) => r.clubId === clubId);
+  return found ? found.claimedByUserId : null;
+}
+var memoryOccupancySnapshot;
+var init_occupancySnapshot = __esm({
+  "src/server/firebase/occupancySnapshot.ts"() {
+    init_db();
+    memoryOccupancySnapshot = /* @__PURE__ */ new Map();
+  }
+});
+
+// src/server/utils/testGuard.ts
+function isHostedEnvironment() {
+  return Boolean(
+    process.env.K_SERVICE && process.env.K_SERVICE.trim() !== "" || process.env.VERCEL || process.env.VERCEL_ENV || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NODE_ENV === "production"
+  );
+}
+function isConnectedToProductionFirestore() {
+  if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true") {
+    return false;
+  }
+  if (isHostedEnvironment()) {
+    return true;
+  }
+  const status = getFirebaseStatus();
+  if (status.authMode === "local_fallback") {
+    return false;
+  }
+  if (process.env.FIRESTORE_EMULATOR_HOST && (status.projectId?.startsWith("demo-") || status.projectId?.startsWith("test-"))) {
+    return false;
+  }
+  return true;
+}
+function isTargetingProductionProjectOrDb() {
+  if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true") {
+    return false;
+  }
+  const status = getFirebaseStatus();
+  const envProjectId = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT;
+  const envDbId = process.env.FIRESTORE_DATABASE_ID || process.env.FIREBASE_DATABASE_ID;
+  if (status.projectId === PROD_PROJECT_ID || status.databaseId === PROD_DATABASE_ID || envProjectId === PROD_PROJECT_ID || envDbId === PROD_DATABASE_ID) {
+    return true;
+  }
+  return false;
+}
+function isSyntheticIdentifier(id) {
+  if (!id || typeof id !== "string") return false;
+  const lower = id.toLowerCase();
+  return SYNTHETIC_ID_PATTERNS.some((pattern) => lower.includes(pattern));
+}
+function isTestSafe() {
+  if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true") {
+    if (process.env.NODE_ENV === "production" || process.env.VERCEL === "1" || process.env.AWS_LAMBDA_FUNCTION_NAME !== void 0) {
+      return false;
+    }
+    const { info } = initializeFirebaseAdmin();
+    if (info.authMode === "local_fallback" && info.projectId === "test-local-fallback") {
+      return true;
+    }
+    return false;
+  }
+  if (isHostedEnvironment()) {
+    return false;
+  }
+  if (process.env.FIRESTORE_EMULATOR_HOST) {
+    const projId = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || "";
+    if (projId.startsWith("demo-") || projId.startsWith("test-")) {
+      return true;
+    }
+  }
+  return false;
+}
+function assertTestEnvironmentSafe(actionName = "test_mutation") {
+  if (!isTestSafe()) {
+    const reasons = [];
+    if (isHostedEnvironment()) reasons.push("hosted environment detected (K_SERVICE/VERCEL/NODE_ENV=production)");
+    if (isTargetingProductionProjectOrDb()) reasons.push("production project/database targeted");
+    if (process.env.ALLOW_TEST_WRITES === "true") reasons.push("ALLOW_TEST_WRITES is deprecated and cannot authorize writes");
+    if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK !== "true" && !process.env.FIRESTORE_EMULATOR_HOST) {
+      reasons.push("neither FIREBASE_FORCE_LOCAL_FALLBACK=true nor FIRESTORE_EMULATOR_HOST is configured");
+    }
+    const errorMsg = `PRODUCTION_SAFETY_VIOLATION: Test mutation "${actionName}" is strictly prohibited. Production database cannot be modified by test helpers or mock data. Violations: [${reasons.join("; ")}]`;
+    console.error(`[CRITICAL PRODUCTION BLOCKED] ${errorMsg}`);
+    throw new Error(errorMsg);
+  }
+}
+function guardAgainstTestEntityCreation(entityType, entityId, entityNameOrUsername) {
+  if (isSyntheticIdentifier(entityId) || isSyntheticIdentifier(entityNameOrUsername)) {
+    assertTestEnvironmentSafe(`create_${entityType}:${entityId}`);
+  }
+}
+function assertNoSyntheticIdsInProduction(actionName, ids) {
+  if (!isConnectedToProductionFirestore()) {
+    return;
+  }
+  for (const id of ids) {
+    if (isSyntheticIdentifier(id)) {
+      const errorMsg = `PRODUCTION_SAFETY_VIOLATION: Synthetic identifier "${id}" rejected in production/hosted environment during "${actionName}". Mutation blocked before persistence.`;
+      console.error(`[CRITICAL PRODUCTION BLOCKED] ${errorMsg}`);
+      throw new Error(errorMsg);
+    }
+  }
+}
+var PROD_PROJECT_ID, PROD_DATABASE_ID, SYNTHETIC_ID_PATTERNS;
+var init_testGuard = __esm({
+  "src/server/utils/testGuard.ts"() {
+    init_admin();
+    PROD_PROJECT_ID = "gen-lang-client-0195097895";
+    PROD_DATABASE_ID = "ai-studio-efluz-4c6c88a6-697e-4fdf-82ed-45fec68ca34d";
+    SYNTHETIC_ID_PATTERNS = [
+      "audit-",
+      "test-",
+      "test_",
+      "admin_test",
+      "admin-test",
+      "admin-offline",
+      "admin-audit",
+      "offline-test",
+      "fix-retry-test",
+      "user_a_",
+      "user_b_",
+      "notif_b_",
+      "spoofed_"
+    ];
   }
 });
 
@@ -16077,12 +16115,12 @@ var init_seasonOperationsService = __esm({
       "comp-ligue-1-2026": 4
     };
     PHASE_DEFS = [
-      { id: "LEAGUE_MD_1_9", label: "League MD 1\u20139", order: 10 },
-      { id: "DOMESTIC_CUPS", label: "Domestic Cups", order: 20 },
-      { id: "LEAGUE_MD_10_19", label: "League MD 10\u201319", order: 30 },
-      { id: "EUROPE_LEAGUE_PHASE", label: "UCL / UEL League Phase", order: 40 },
-      { id: "LEAGUE_MD_20_PLUS", label: "League MD 20+", order: 50 },
-      { id: "KNOCKOUT_RUN_IN", label: "Knockouts & Finals", order: 60 }
+      { id: "LEAGUE_MD_1_9", label: "Liga 1\u20139-turlar", order: 10 },
+      { id: "DOMESTIC_CUPS", label: "Milliy kuboklar", order: 20 },
+      { id: "LEAGUE_MD_10_19", label: "Liga 10\u201319-turlar", order: 30 },
+      { id: "EUROPE_LEAGUE_PHASE", label: "UCL / UEL liga bosqichi", order: 40 },
+      { id: "LEAGUE_MD_20_PLUS", label: "Liga 20+ turlar", order: 50 },
+      { id: "KNOCKOUT_RUN_IN", label: "Pley-off va finallar", order: 60 }
     ];
   }
 });
@@ -17528,6 +17566,11 @@ clubsRouter.get("/admission", async (req, res) => {
     res.setHeader("Cache-Control", "no-store");
     res.json({ admission: await getClubAdmissionStatus(seasonId) });
   } catch (err) {
+    if (err instanceof ReadModelNotWarmedError) {
+      res.setHeader("X-Data-Degraded", "true");
+      res.json({ admission: null, unavailable: true });
+      return;
+    }
     handleFirestoreError(res, err, "GET /api/clubs/admission");
   }
 });
@@ -18373,7 +18416,7 @@ async function getSeasonLifecycle(seasonId = "season-2026-27", force = false) {
   const activeIndex = PHASE_ORDER.indexOf(currentPhase);
   const labels = {
     LEAGUE_1_9: ["Liga 1\u20139-turlar", "MD1 tugagach MD2 ochiladi; MD9 dan keyin kuboklar"],
-    DOMESTIC_CUPS: ["Domestic Cups", "5 ta milliy kubok bosqichi"],
+    DOMESTIC_CUPS: ["Milliy kuboklar", "5 ta milliy kubok bosqichi"],
     LEAGUE_10_19: ["Liga 10\u201319-turlar", "Bir davrali liga shu bosqichda MD19 bilan yakunlanadi"],
     EUROPE: ["UCL / UEL", "MD19 dan keyin Yevropa liga bosqichi, turma-tur progression"]
   };
@@ -20964,6 +21007,11 @@ adminRouter.get("/clubs/admission", async (req, res) => {
     res.setHeader("Cache-Control", "no-store");
     res.json({ admission: await getClubAdmissionStatus(seasonId) });
   } catch (err) {
+    if (err instanceof ReadModelNotWarmedError) {
+      res.setHeader("X-Data-Degraded", "true");
+      res.json({ admission: null, unavailable: true });
+      return;
+    }
     handleFirestoreError(res, err, "GET /api/admin/clubs/admission");
   }
 });

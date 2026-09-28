@@ -1,5 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, CalendarDays, ChevronRight, CircleHelp, Clock3, Layers3, LockKeyhole, RefreshCw, Search, Swords, Trophy } from 'lucide-react';
+import {
+  ArrowRight,
+  CalendarDays,
+  ChevronRight,
+  Clock3,
+  LockKeyhole,
+  RefreshCw,
+  Search,
+  Swords,
+  Trophy,
+  CheckCircle2,
+  AlertTriangle,
+  Flame,
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n';
 import { api } from '../lib/api';
@@ -9,82 +22,140 @@ import { ClubCrest } from './ClubCrest';
 interface Props {
   onNavigateTab: (tab: any) => void;
   onSelectFixtureForMatchCenter?: (fixture: Fixture) => void;
+  onOpenSearch?: () => void;
 }
-
-const leagueCards = [
-  { id: 'premier-league', name: 'Premier League', country: 'Angliya', clubs: 20, mark: 'PL', tone: 'indigo' },
-  { id: 'la-liga', name: 'La Liga', country: 'Ispaniya', clubs: 20, mark: 'LL', tone: 'coral' },
-  { id: 'serie-a', name: 'Serie A', country: 'Italiya', clubs: 20, mark: 'SA', tone: 'blue' },
-  { id: 'bundesliga', name: 'Bundesliga', country: 'Germaniya', clubs: 18, mark: 'BL', tone: 'red' },
-  { id: 'ligue-1', name: 'Ligue 1', country: 'Fransiya', clubs: 18, mark: 'L1', tone: 'teal' },
-] as const;
 
 const copy = {
   uz: {
-    eyebrow: 'EFOOTBALL · 2026/27', greeting: 'Salom', subtitle: 'O‘yinlaringiz va turnir holati bir joyda.',
-    next: 'KEYINGI UCHRASHUV', empty: 'Hozircha o‘yin belgilanmagan', emptyHint: 'Klubingizni tanlang yoki o‘yinlar jadvalini ko‘ring.',
-    matchCenter: 'Match Center', submit: 'Natijani kiritish', locked: 'Tur hali ochilmagan',
-    pending: 'Tasdiq kutilmoqda', disputed: 'Nizo ko‘rib chiqilmoqda', ready: 'O‘ynashga tayyor',
-    matchday: 'tur', myClub: 'Mening klubim', matches: 'O‘yinlar', allMatches: 'Barcha o‘yinlar',
-    noMatches: 'Boshqa yaqinlashayotgan o‘yinlar yo‘q.', result: 'SO‘NGGI NATIJA', noResult: 'Tasdiqlangan natija yo‘q.',
-    season: 'MAVSUM KO‘RSATKICHLARI', position: 'O‘rin', points: 'Ochko', played: 'O‘yin', form: 'G‘–D–M',
-    leagues: 'Ligalar', leaguesHint: 'Klub va jadvalni ko‘ring', clubs: 'klub',
-    table: 'Jadval', cups: 'Kuboklar', calendar: 'Mavsum', explore: 'Ko‘rish',
-    upcoming: 'Kelgusi', results: 'Natijalar', searchClubs: 'Klub qidirish',
-    retry: 'Qayta urinish', loadError: 'Ma’lumotni yuklab bo‘lmadi.', chooseClub: 'Klub tanlash',
+    broadcast: 'EFL UZ MATCH CENTRE',
+    greeting: 'Salom',
+    activeClubContext: 'Klub holati',
+    nextMatch: 'KEYINGI O‘YIN',
+    recentResult: 'SO‘NGGI NATIJA',
+    allMatches: 'O‘yinlar',
+    submitResult: 'Hisobni kiritish',
+    matchCenter: 'O‘yin markazi',
+    locked: 'Tur ochilmagan',
+    pending: 'Tasdiq kutilmoqda',
+    disputed: 'Nizo',
+    ready: 'O‘ynashga tayyor',
+    confirmed: 'Tasdiqlangan',
+    matchday: 'tur',
+    position: 'O‘rin',
+    points: 'Ochko',
+    played: 'O‘yin',
+    form: 'G‘–D–M',
+    noFixture: 'Hozircha rejalashtirilgan o‘yin yo‘q',
+    noFixtureDesc: 'Klubingiz uchun yangi turlar ochilganda shu yerda paydo bo‘ladi.',
+    browseLeagues: 'Turnirlar jadvalini ko‘rish',
+    upcoming: 'Kelgusi',
+    results: 'Natijalar',
+    noResultsYet: 'Hali natijalar yo‘q',
+    noUpcomingYet: 'Boshqa kelgusi o‘yin yo‘q',
+    viewAll: 'Barchasi',
+    competitionHub: 'Turnirlar markazi',
+    leagueSnapshot: 'Mavsum holati',
+    retry: 'Qayta urinish',
+    error: 'Ma’lumot yuklanmadi',
   },
   ru: {
-    eyebrow: 'EFOOTBALL · 2026/27', greeting: 'Привет', subtitle: 'Ваши матчи и сезон в одном месте.',
-    next: 'СЛЕДУЮЩИЙ МАТЧ', empty: 'Матч пока не назначен', emptyHint: 'Выберите клуб или откройте расписание.',
-    matchCenter: 'Центр матча', submit: 'Ввести результат', locked: 'Тур ещё закрыт',
-    pending: 'Ожидает подтверждения', disputed: 'Спор на рассмотрении', ready: 'Готов к игре',
-    matchday: 'тур', myClub: 'Мой клуб', matches: 'Матчи', allMatches: 'Все матчи',
-    noMatches: 'Других ближайших матчей нет.', result: 'ПОСЛЕДНИЙ РЕЗУЛЬТАТ', noResult: 'Подтверждённых результатов нет.',
-    season: 'СТАТИСТИКА СЕЗОНА', position: 'Место', points: 'Очки', played: 'Матчи', form: 'В–Н–П',
-    leagues: 'Лиги', leaguesHint: 'Клубы и таблицы', clubs: 'клубов',
-    table: 'Таблица', cups: 'Кубки', calendar: 'Сезон', explore: 'Открыть',
-    upcoming: 'Предстоящие', results: 'Результаты', searchClubs: 'Найти клуб',
-    retry: 'Повторить', loadError: 'Не удалось загрузить данные.', chooseClub: 'Выбрать клуб',
+    broadcast: 'EFL UZ MATCH CENTRE',
+    greeting: 'Привет',
+    activeClubContext: 'Клуб',
+    nextMatch: 'СЛЕДУЮЩИЙ МАТЧ',
+    recentResult: 'ПОСЛЕДНИЙ РЕЗУЛЬТАТ',
+    allMatches: 'Матчи',
+    submitResult: 'Ввести счёт',
+    matchCenter: 'Центр матча',
+    locked: 'Тур закрыт',
+    pending: 'Ожидает подтверждения',
+    disputed: 'Спор',
+    ready: 'Готов к игре',
+    confirmed: 'Подтверждён',
+    matchday: 'тур',
+    position: 'Место',
+    points: 'Очки',
+    played: 'Матчи',
+    form: 'В–Н–П',
+    noFixture: 'Матч пока не назначен',
+    noFixtureDesc: 'Матчи появятся здесь после открытия очередного тура.',
+    browseLeagues: 'Открыть лиги и расписание',
+    upcoming: 'Предстоящие',
+    results: 'Результаты',
+    noResultsYet: 'Результатов пока нет',
+    noUpcomingYet: 'Других предстоящих матчей нет',
+    viewAll: 'Все',
+    competitionHub: 'Турниры',
+    leagueSnapshot: 'Положение в лиге',
+    retry: 'Повторить',
+    error: 'Ошибка загрузки',
   },
   en: {
-    eyebrow: 'EFOOTBALL · 2026/27', greeting: 'Hello', subtitle: 'Your matches and season in one place.',
-    next: 'NEXT MATCH', empty: 'No match scheduled yet', emptyHint: 'Choose a club or explore the fixture list.',
-    matchCenter: 'Match Center', submit: 'Enter result', locked: 'Matchday is locked',
-    pending: 'Awaiting confirmation', disputed: 'Dispute under review', ready: 'Ready to play',
-    matchday: 'Matchday', myClub: 'My club', matches: 'Matches', allMatches: 'All matches',
-    noMatches: 'No other upcoming matches.', result: 'LATEST RESULT', noResult: 'No confirmed results yet.',
-    season: 'SEASON SNAPSHOT', position: 'Position', points: 'Points', played: 'Played', form: 'W–D–L',
-    leagues: 'Leagues', leaguesHint: 'Browse clubs and tables', clubs: 'clubs',
-    table: 'Table', cups: 'Cups', calendar: 'Season', explore: 'Explore',
-    upcoming: 'Upcoming', results: 'Results', searchClubs: 'Find a club',
-    retry: 'Retry', loadError: 'Could not load data.', chooseClub: 'Choose a club',
+    broadcast: 'EFL UZ MATCH CENTRE',
+    greeting: 'Hello',
+    activeClubContext: 'Club Context',
+    nextMatch: 'NEXT MATCH',
+    recentResult: 'LATEST RESULT',
+    allMatches: 'Matches',
+    submitResult: 'Submit Result',
+    matchCenter: 'Match Center',
+    locked: 'Matchday Locked',
+    pending: 'Awaiting Confirm',
+    disputed: 'Disputed',
+    ready: 'Ready to Play',
+    confirmed: 'Confirmed',
+    matchday: 'Round',
+    position: 'Position',
+    points: 'Points',
+    played: 'Played',
+    form: 'W–D–L',
+    noFixture: 'No Match Scheduled Yet',
+    noFixtureDesc: 'Upcoming fixtures will appear here once published by the league.',
+    browseLeagues: 'Browse Competitions',
+    upcoming: 'Upcoming',
+    results: 'Results',
+    noResultsYet: 'No confirmed results yet',
+    noUpcomingYet: 'No other upcoming matches',
+    viewAll: 'View All',
+    competitionHub: 'Competitions',
+    leagueSnapshot: 'League Snapshot',
+    retry: 'Retry',
+    error: 'Could not load data',
   },
 };
 
-function clubName(fixture: Fixture, side: 'home' | 'away') {
+function getClubDisplay(fixture: Fixture, side: 'home' | 'away') {
   const club = side === 'home' ? fixture.homeClub : fixture.awayClub;
-  return club?.shortName || club?.name || (side === 'home' ? fixture.homeClubId : fixture.awayClubId) || 'TBD';
+  return {
+    id: side === 'home' ? fixture.homeClubId : fixture.awayClubId,
+    name: club?.shortName || club?.name || (side === 'home' ? fixture.homeClubId : fixture.awayClubId) || 'TBD',
+    fullName: club?.name || '',
+    logoUrl: club?.logoUrl,
+  };
 }
 
-function matchLabel(fixture: Fixture, matchday: string) {
-  return fixture.roundName || `${matchday} ${fixture.matchday}`;
-}
-
-export const MatchdayHomeView: React.FC<Props> = ({ onNavigateTab, onSelectFixtureForMatchCenter }) => {
+export const MatchdayHomeView: React.FC<Props> = ({
+  onNavigateTab,
+  onSelectFixtureForMatchCenter,
+  onOpenSearch,
+}) => {
   const { user, currentClub, ownedClubs, activeSeasonId, userStats } = useAuth();
   const { language } = useI18n();
   const c = copy[language] || copy.uz;
+
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const [matchFilter, setMatchFilter] = useState<'upcoming' | 'results'>('upcoming');
+  const [matchTab, setMatchTab] = useState<'upcoming' | 'results'>('upcoming');
 
-  const load = async () => {
+  const activeClub = currentClub || ownedClubs[0] || null;
+
+  const loadData = async () => {
     setLoading(true);
     setError(false);
     try {
-      const result = await api.getMyMatches(activeSeasonId);
-      setFixtures(result.fixtures || []);
+      const res = await api.getMyMatches(activeSeasonId);
+      setFixtures(res.fixtures || []);
     } catch {
       setError(true);
     } finally {
@@ -92,98 +163,454 @@ export const MatchdayHomeView: React.FC<Props> = ({ onNavigateTab, onSelectFixtu
     }
   };
 
-  useEffect(() => { void load(); }, [activeSeasonId, user?.id, ownedClubs.map((club) => club.id).join(',')]);
+  useEffect(() => {
+    void loadData();
+  }, [activeSeasonId, user?.id, activeClub?.id]);
 
-  const pending = useMemo(() => fixtures.filter((fixture) => fixture.status !== 'CONFIRMED' && fixture.status !== 'CANCELLED'), [fixtures]);
-  const featured = pending.find((fixture) => fixture.isPlayable !== false && fixture.status === 'SCHEDULED') || pending[0];
-  const otherMatches = pending.filter((fixture) => fixture.id !== featured?.id).slice(0, 3);
-  const confirmed = useMemo(() => [...fixtures].filter((fixture) => fixture.status === 'CONFIRMED').reverse(), [fixtures]);
-  const lastResult = confirmed[0];
-  const listedMatches = matchFilter === 'upcoming' ? otherMatches : confirmed.slice(0, 4);
+  // Priority: 1. Disputed / Pending action fixture, 2. Next playable scheduled fixture, 3. Any pending fixture, 4. Most recent finished fixture
+  const pendingFixtures = useMemo(
+    () => fixtures.filter((f) => f.status !== 'CONFIRMED' && f.status !== 'CANCELLED'),
+    [fixtures]
+  );
 
-  const openMatch = (fixture: Fixture) => {
-    onSelectFixtureForMatchCenter?.(fixture);
-    onNavigateTab('my-matches');
+  const confirmedFixtures = useMemo(
+    () => [...fixtures].filter((f) => f.status === 'CONFIRMED').reverse(),
+    [fixtures]
+  );
+
+  const heroMatch = useMemo(() => {
+    const actionRequired = pendingFixtures.find(
+      (f) => f.status === 'PENDING_CONFIRMATION' || f.status === 'DISPUTED'
+    );
+    if (actionRequired) return actionRequired;
+
+    const nextPlayable = pendingFixtures.find(
+      (f) => f.isPlayable !== false && f.status === 'SCHEDULED'
+    );
+    if (nextPlayable) return nextPlayable;
+
+    if (pendingFixtures.length > 0) return pendingFixtures[0];
+    if (confirmedFixtures.length > 0) return confirmedFixtures[0];
+    return null;
+  }, [pendingFixtures, confirmedFixtures]);
+
+  const otherUpcoming = useMemo(
+    () => pendingFixtures.filter((f) => f.id !== heroMatch?.id).slice(0, 3),
+    [pendingFixtures, heroMatch]
+  );
+
+  const otherResults = useMemo(
+    () => confirmedFixtures.filter((f) => f.id !== heroMatch?.id).slice(0, 3),
+    [confirmedFixtures, heroMatch]
+  );
+
+  const displayedList = matchTab === 'upcoming' ? otherUpcoming : otherResults;
+
+  const handleOpenMatch = (fixture: Fixture) => {
+    if (onSelectFixtureForMatchCenter) {
+      onSelectFixtureForMatchCenter(fixture);
+    }
+    onNavigateTab('my-club');
   };
 
-  const openLeague = (leagueId: string, tab: 'CLUBS' | 'STANDINGS' = 'CLUBS') => {
-    try {
-      sessionStorage.setItem('efl:preview-league', `league-${leagueId}`);
-      sessionStorage.setItem('efl:preview-league-tab', tab);
-    } catch { /* storage may be unavailable in a WebView */ }
-    onNavigateTab('leagues');
+  const formatFixtureDate = (fixture: Fixture) => {
+    if (!fixture.scheduledAt) {
+      return fixture.roundName || `${c.matchday} ${fixture.matchday}`;
+    }
+    const d = new Date(fixture.scheduledAt);
+    if (Number.isNaN(d.getTime()) || d.getFullYear() < 2026) {
+      return fixture.roundName || `${c.matchday} ${fixture.matchday}`;
+    }
+    return new Intl.DateTimeFormat(language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-GB', {
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(d);
   };
 
-  const openClubSearch = () => {
-    try { sessionStorage.setItem('efl:preview-club-search', '1'); } catch { /* storage may be unavailable in a WebView */ }
-    onNavigateTab('leagues');
-  };
-
-  const dateLabel = (fixture: Fixture) => {
-    if (!fixture.scheduledAt) return matchLabel(fixture, c.matchday);
-    const date = new Date(fixture.scheduledAt);
-    return Number.isNaN(date.getTime()) || date.getFullYear() < 2026 ? matchLabel(fixture, c.matchday) : new Intl.DateTimeFormat(language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(date);
-  };
+  const homeTeam = heroMatch ? getClubDisplay(heroMatch, 'home') : null;
+  const awayTeam = heroMatch ? getClubDisplay(heroMatch, 'away') : null;
+  const isFinished = heroMatch?.status === 'CONFIRMED';
 
   return (
-    <div className="matchday-home space-y-6 pb-24">
-      <div className="flex items-end justify-between gap-3 pt-1">
-        <div>
-          <div className="matchday-kicker">{c.eyebrow}</div>
-          <h1 className="mt-2 text-2xl sm:text-3xl font-black tracking-tight text-white">{c.greeting}, {user?.firstName || user?.username || 'Player'}<span className="text-emerald-300">.</span></h1>
-          <p className="mt-1 text-sm text-slate-400">{c.subtitle}</p>
+    <div className="space-y-5 pb-24 animate-in fade-in duration-200">
+      {/* 1. Compact Contextual Header */}
+      <div className="flex items-center justify-between gap-3 pt-1">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400">
+              {c.broadcast}
+            </span>
+            <span className="text-slate-300 dark:text-slate-700">•</span>
+            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 truncate">
+              Season 2026/27
+            </span>
+          </div>
+          <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-0.5 truncate">
+            {c.greeting}, {user?.firstName || user?.username || 'Player'}
+          </h1>
         </div>
-        <button type="button" onClick={openClubSearch} aria-label={c.searchClubs} className="matchday-search-button"><Search className="w-5 h-5" /></button>
+
+        {/* Active Club Mini Context Badge */}
+        {activeClub && (
+          <button
+            type="button"
+            onClick={() => onNavigateTab('my-club')}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 shadow-sm hover:border-blue-500 transition-all shrink-0 max-w-[170px]"
+          >
+            <div className="w-5 h-5 rounded-lg flex items-center justify-center shrink-0">
+              <ClubCrest
+                clubId={activeClub.id}
+                logoUrl={activeClub.logoUrl}
+                name={activeClub.name}
+                shortName={activeClub.shortName}
+                size="xs"
+              />
+            </div>
+            <span className="text-xs font-black text-slate-900 dark:text-white truncate">
+              {activeClub.shortName || activeClub.name}
+            </span>
+          </button>
+        )}
       </div>
 
-      {error && <div className="preview-surface flex items-center justify-between gap-3 p-4 text-sm text-rose-200"><span>{c.loadError}</span><button type="button" onClick={() => void load()} className="inline-flex items-center gap-1.5 font-bold text-white"><RefreshCw className="w-4 h-4" />{c.retry}</button></div>}
-
-      <section aria-label={c.next} className="matchday-featured">
-        <div className="relative z-10 flex items-center justify-between gap-3">
-          <span className="matchday-kicker text-rose-100/80">{c.next}</span>
-          {featured && <span className="rounded-full bg-white/15 px-2.5 py-1 text-[10px] font-black text-white backdrop-blur-sm">{featured.competitionName || 'EFL UZ'} · {matchLabel(featured, c.matchday)}</span>}
+      {error && (
+        <div className="preview-surface flex items-center justify-between gap-3 p-3.5 rounded-2xl border border-rose-500/20 text-rose-600 dark:text-rose-400 text-xs font-semibold">
+          <span>{c.error}</span>
+          <button
+            type="button"
+            onClick={() => void loadData()}
+            className="inline-flex items-center gap-1 font-bold text-blue-600 dark:text-blue-400"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            {c.retry}
+          </button>
         </div>
+      )}
+
+      {/* 2. Hero Next Match Card (Apple Sports / Broadcast Centerpiece) */}
+      <section aria-label={c.nextMatch}>
         {loading && fixtures.length === 0 ? (
-          <div role="status" aria-label={c.next} className="relative z-10 mt-7 space-y-6 animate-pulse">
-            <div className="mx-auto h-20 w-4/5 rounded-2xl bg-white/15" />
-            <div className="h-11 w-full rounded-full bg-white/20" />
+          <div className="preview-surface p-6 sm:p-8 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm animate-pulse space-y-4">
+            <div className="h-4 w-32 bg-slate-200 dark:bg-white/10 rounded-full mx-auto" />
+            <div className="h-16 w-3/4 bg-slate-200 dark:bg-white/10 rounded-2xl mx-auto" />
+            <div className="h-10 w-44 bg-slate-200 dark:bg-white/10 rounded-xl mx-auto" />
           </div>
-        ) : featured ? (
-          <>
-            <div className="relative z-10 mt-7 grid grid-cols-[1fr_auto_1fr] items-center gap-3 text-center">
-              <div className="min-w-0 flex flex-col items-center gap-3"><div className="matchday-crest"><ClubCrest clubId={featured.homeClubId || undefined} logoUrl={featured.homeClub?.logoUrl} name={featured.homeClub?.name} shortName={featured.homeClub?.shortName} size="xl" className="w-16 h-16" /></div><span className="w-full truncate text-sm font-black text-white">{clubName(featured, 'home')}</span></div>
-              <div className="min-w-[86px]"><div className="text-2xl sm:text-3xl font-black tracking-tight text-white">VS</div><div className="mt-1 text-[10px] font-bold text-rose-100/80">{dateLabel(featured)}</div></div>
-              <div className="min-w-0 flex flex-col items-center gap-3"><div className="matchday-crest"><ClubCrest clubId={featured.awayClubId || undefined} logoUrl={featured.awayClub?.logoUrl} name={featured.awayClub?.name} shortName={featured.awayClub?.shortName} size="xl" className="w-16 h-16" /></div><span className="w-full truncate text-sm font-black text-white">{clubName(featured, 'away')}</span></div>
+        ) : heroMatch && homeTeam && awayTeam ? (
+          <div className="preview-surface p-5 sm:p-7 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-md relative overflow-hidden group">
+            {/* Subtle stadium illumination effect */}
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-80 h-32 bg-blue-500/10 dark:bg-blue-600/15 rounded-full blur-3xl pointer-events-none" />
+
+            {/* Competition Pill & Status Header */}
+            <div className="relative z-10 flex items-center justify-between gap-2 mb-4">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-white/10 text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-white/10">
+                {heroMatch.competitionName || 'EFL UZ'} · {heroMatch.roundName || `${c.matchday} ${heroMatch.matchday}`}
+              </span>
+
+              {/* Status Indicator */}
+              <div className="flex items-center gap-1.5">
+                {heroMatch.status === 'PENDING_CONFIRMATION' ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                    <Clock3 className="w-3 h-3" />
+                    {c.pending}
+                  </span>
+                ) : heroMatch.status === 'DISPUTED' ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                    <AlertTriangle className="w-3 h-3" />
+                    {c.disputed}
+                  </span>
+                ) : isFinished ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                    <CheckCircle2 className="w-3 h-3" />
+                    FT · {c.confirmed}
+                  </span>
+                ) : heroMatch.isPlayable === false ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-400">
+                    <LockKeyhole className="w-3 h-3" />
+                    {c.locked}
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                    <Swords className="w-3 h-3" />
+                    {c.ready}
+                  </span>
+                )}
+              </div>
             </div>
-            <div className="relative z-10 mt-6 flex items-center justify-between gap-2 border-t border-white/20 pt-4">
-              <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-white/90">{featured.isPlayable === false ? <LockKeyhole className="w-3.5 h-3.5" /> : featured.status === 'SCHEDULED' ? <Swords className="w-3.5 h-3.5" /> : <Clock3 className="w-3.5 h-3.5" />}{featured.isPlayable === false ? c.locked : featured.status === 'PENDING_CONFIRMATION' ? c.pending : featured.status === 'DISPUTED' ? c.disputed : c.ready}</span>
-              <button type="button" onClick={() => openMatch(featured)} className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-black text-[#131b2d] shadow-lg shadow-black/10">{featured.isPlayable === false ? c.matchCenter : featured.status === 'SCHEDULED' ? c.submit : c.matchCenter}<ArrowRight className="w-4 h-4" /></button>
+
+            {/* Broadcast Scoreboard Graphic */}
+            <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-3 sm:gap-6 my-4 text-center">
+              {/* Home Team */}
+              <div className="flex flex-col items-center gap-2 min-w-0">
+                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-white/10 p-2.5 flex items-center justify-center shadow-sm">
+                  <ClubCrest
+                    clubId={homeTeam.id}
+                    logoUrl={homeTeam.logoUrl}
+                    name={homeTeam.fullName}
+                    shortName={homeTeam.name}
+                    size="xl"
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+                <div className="w-full">
+                  <span className="block text-sm sm:text-base font-black text-slate-900 dark:text-white truncate">
+                    {homeTeam.name}
+                  </span>
+                  <span className="hidden sm:block text-[11px] text-slate-400 truncate">
+                    {homeTeam.fullName}
+                  </span>
+                </div>
+              </div>
+
+              {/* Center Score / VS Graphic */}
+              <div className="flex flex-col items-center justify-center px-2 min-w-[90px] sm:min-w-[120px]">
+                {isFinished ? (
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <span className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white tabular-nums tracking-tight">
+                      {heroMatch.homeScore}
+                    </span>
+                    <span className="text-xl sm:text-2xl font-bold text-slate-400 dark:text-slate-600">—</span>
+                    <span className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white tabular-nums tracking-tight">
+                      {heroMatch.awayScore}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center">
+                    <span className="text-2xl sm:text-3xl font-black tracking-wider text-slate-900 dark:text-white">
+                      VS
+                    </span>
+                    <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mt-1 whitespace-nowrap">
+                      {formatFixtureDate(heroMatch)}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Away Team */}
+              <div className="flex flex-col items-center gap-2 min-w-0">
+                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-white/10 p-2.5 flex items-center justify-center shadow-sm">
+                  <ClubCrest
+                    clubId={awayTeam.id}
+                    logoUrl={awayTeam.logoUrl}
+                    name={awayTeam.fullName}
+                    shortName={awayTeam.name}
+                    size="xl"
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+                <div className="w-full">
+                  <span className="block text-sm sm:text-base font-black text-slate-900 dark:text-white truncate">
+                    {awayTeam.name}
+                  </span>
+                  <span className="hidden sm:block text-[11px] text-slate-400 truncate">
+                    {awayTeam.fullName}
+                  </span>
+                </div>
+              </div>
             </div>
-          </>
+
+            {/* Match CTA Bottom Bar */}
+            <div className="relative z-10 mt-5 pt-4 border-t border-slate-200/80 dark:border-white/10 flex items-center justify-between gap-3">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 truncate">
+                {isFinished ? c.recentResult : formatFixtureDate(heroMatch)}
+              </span>
+
+              <button
+                type="button"
+                onClick={() => handleOpenMatch(heroMatch)}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-black text-xs shadow-md shadow-blue-500/20 active:scale-95 transition-all"
+              >
+                <span>
+                  {heroMatch.status === 'SCHEDULED' && heroMatch.isPlayable !== false
+                    ? c.submitResult
+                    : c.matchCenter}
+                </span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
         ) : (
-          <div className="relative z-10 mt-8"><h2 className="text-xl font-black text-white">{c.empty}</h2><p className="mt-1 text-sm text-rose-100/80">{currentClub ? c.noMatches : c.emptyHint}</p><button type="button" onClick={() => onNavigateTab(currentClub ? 'my-matches' : 'leagues')} className="mt-6 inline-flex min-h-11 items-center gap-2 rounded-full bg-white px-5 text-xs font-black text-[#131b2d]">{currentClub ? c.allMatches : c.chooseClub}<ArrowRight className="w-4 h-4" /></button></div>
+          <div className="preview-surface p-7 rounded-3xl border border-slate-200/80 dark:border-white/10 text-center shadow-sm space-y-3">
+            <div className="w-12 h-12 mx-auto rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-500">
+              <Swords className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-black text-slate-900 dark:text-white">
+              {c.noFixture}
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
+              {c.noFixtureDesc}
+            </p>
+            <button
+              type="button"
+              onClick={() => onNavigateTab('leagues')}
+              className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-black shadow-sm"
+            >
+              <span>{c.browseLeagues}</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
         )}
       </section>
 
-      {ownedClubs.length > 0 && <section aria-label={c.myClub} className="preview-surface flex items-center gap-3 p-3.5 sm:p-4"><div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/[0.06]"><ClubCrest clubId={currentClub?.id} logoUrl={currentClub?.logoUrl} name={currentClub?.name} shortName={currentClub?.shortName} size="md" /></div><div className="min-w-0 flex-1"><div className="matchday-kicker">{c.myClub}</div><div className="mt-0.5 truncate text-sm font-black text-white">{currentClub?.name || ownedClubs[0].name}</div></div>{ownedClubs.length > 1 && <span className="rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black text-emerald-300">+{ownedClubs.length - 1}</span>}<button type="button" onClick={() => onNavigateTab('my-club')} aria-label={c.myClub} className="rounded-full p-2 text-slate-400 hover:bg-white/10 hover:text-white"><ChevronRight className="h-5 w-5" /></button></section>}
-
-      <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
-        <section className="preview-surface overflow-hidden">
-          <div className="flex items-center justify-between border-b border-white/[0.07] px-4 py-4 sm:px-5"><div><div className="matchday-kicker">{c.matches}</div><h2 className="mt-1 text-base font-black text-white">{c.allMatches}</h2></div><button type="button" onClick={() => onNavigateTab('my-matches')} className="inline-flex items-center gap-1 text-xs font-bold text-emerald-300">{c.explore}<ChevronRight className="w-4 h-4" /></button></div>
-          <div className="flex gap-2 px-4 pt-3 sm:px-5" role="group" aria-label={c.matches}>
-            {(['upcoming', 'results'] as const).map((filter) => <button key={filter} type="button" aria-pressed={matchFilter === filter} onClick={() => setMatchFilter(filter)} className={`rounded-full px-3 py-1.5 text-[11px] font-bold transition-colors ${matchFilter === filter ? 'bg-emerald-300 text-slate-950' : 'bg-white/[0.06] text-slate-300 hover:bg-white/[0.12]'}`}>{c[filter]}</button>)}
+      {/* 3. Relevant Upcoming & Recent Matches */}
+      <section className="preview-surface rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between p-4 border-b border-slate-200/80 dark:border-white/10">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setMatchTab('upcoming')}
+              className={`text-xs font-black px-3 py-1.5 rounded-xl transition-all ${
+                matchTab === 'upcoming'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              {c.upcoming}
+            </button>
+            <button
+              type="button"
+              onClick={() => setMatchTab('results')}
+              className={`text-xs font-black px-3 py-1.5 rounded-xl transition-all ${
+                matchTab === 'results'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              {c.results}
+            </button>
           </div>
-          <div className="divide-y divide-white/[0.06]">
-            {listedMatches.length ? listedMatches.map((fixture) => <button type="button" key={fixture.id} onClick={() => openMatch(fixture)} className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-white/[0.04] sm:px-5"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-400/10 text-sky-300"><Swords className="h-4 w-4" /></div><div className="min-w-0 flex-1"><div className="truncate text-xs font-black text-white">{clubName(fixture, 'home')} <span className="mx-1 text-slate-500">{fixture.status === 'CONFIRMED' ? `${fixture.homeScore} : ${fixture.awayScore}` : 'vs'}</span> {clubName(fixture, 'away')}</div><div className="mt-1 truncate text-[10px] text-slate-400">{fixture.competitionName || 'EFL UZ'} · {matchLabel(fixture, c.matchday)}</div></div><span className="shrink-0 text-[10px] font-bold text-slate-400">{dateLabel(fixture)}</span></button>) : <p className="px-5 py-6 text-xs text-slate-400">{loading ? '…' : matchFilter === 'results' ? c.noResult : c.noMatches}</p>}
+
+          <button
+            type="button"
+            onClick={() => onNavigateTab('my-club')}
+            className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline"
+          >
+            <span>{c.viewAll}</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        <div className="divide-y divide-slate-100 dark:divide-white/5">
+          {displayedList.length > 0 ? (
+            displayedList.map((fixture) => {
+              const home = getClubDisplay(fixture, 'home');
+              const away = getClubDisplay(fixture, 'away');
+              const isMatchFinished = fixture.status === 'CONFIRMED';
+
+              return (
+                <button
+                  key={fixture.id}
+                  type="button"
+                  onClick={() => handleOpenMatch(fixture)}
+                  className="w-full flex items-center justify-between p-3.5 px-4 sm:px-5 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors text-left"
+                >
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div className="flex items-center -space-x-1.5 shrink-0">
+                      <div className="w-7 h-7 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 p-1 flex items-center justify-center shadow-sm">
+                        <ClubCrest
+                          clubId={home.id}
+                          logoUrl={home.logoUrl}
+                          name={home.name}
+                          size="xs"
+                        />
+                      </div>
+                      <div className="w-7 h-7 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 p-1 flex items-center justify-center shadow-sm">
+                        <ClubCrest
+                          clubId={away.id}
+                          logoUrl={away.logoUrl}
+                          name={away.name}
+                          size="xs"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-black text-slate-900 dark:text-white truncate">
+                        {home.name} <span className="text-slate-400 font-normal">vs</span> {away.name}
+                      </div>
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        {fixture.competitionName || 'EFL UZ'} · Round {fixture.matchday}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="shrink-0 text-right">
+                    {isMatchFinished ? (
+                      <span className="font-mono text-xs font-black text-slate-900 dark:text-white px-2 py-1 bg-slate-100 dark:bg-white/10 rounded-lg tabular-nums">
+                        {fixture.homeScore} : {fixture.awayScore}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                        {formatFixtureDate(fixture)}
+                      </span>
+                    )}
+                  </div>
+                </button>
+              );
+            })
+          ) : (
+            <div className="p-6 text-center text-xs text-slate-400">
+              {matchTab === 'upcoming' ? c.noUpcomingYet : c.noResultsYet}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* 4. League Position Snapshot */}
+      <section className="preview-surface p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Trophy className="w-4 h-4 text-amber-500" />
+            <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
+              {c.leagueSnapshot}
+            </h3>
           </div>
-        </section>
-        <section className="preview-surface p-4 sm:p-5"><div className="matchday-kicker">{c.season}</div><div className="mt-4 grid grid-cols-4 gap-2"><div className="matchday-stat"><span>{c.position}</span><strong>{userStats?.leaguePosition ? `#${userStats.leaguePosition}` : '—'}</strong></div><div className="matchday-stat"><span>{c.points}</span><strong>{userStats?.points ?? '—'}</strong></div><div className="matchday-stat"><span>{c.played}</span><strong>{userStats?.matchesPlayed ?? '—'}</strong></div><div className="matchday-stat"><span>{c.form}</span><strong className="!text-emerald-300">{userStats ? `${userStats.wins}–${userStats.draws}–${userStats.losses}` : '—'}</strong></div></div><div className="mt-5 border-t border-white/[0.07] pt-4"><div className="matchday-kicker">{c.result}</div>{lastResult ? <button type="button" onClick={() => openMatch(lastResult)} className="mt-3 flex w-full items-center gap-2 text-left"><span className="min-w-0 flex-1 truncate text-xs font-bold text-slate-200">{clubName(lastResult, 'home')} · {clubName(lastResult, 'away')}</span><span className="shrink-0 rounded-lg bg-white/[0.07] px-2 py-1 text-sm font-black text-white">{lastResult.homeScore} : {lastResult.awayScore}</span><ChevronRight className="h-4 w-4 text-slate-500" /></button> : <p className="mt-3 text-xs text-slate-400">{c.noResult}</p>}</div></section>
-      </div>
+          <button
+            type="button"
+            onClick={() => onNavigateTab('leagues')}
+            className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1"
+          >
+            <span>{c.competitionHub}</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
 
-      <section><div className="mb-3 flex items-end justify-between"><div><div className="matchday-kicker">EFL UZ · 2026/27</div><h2 className="mt-1 text-lg font-black text-white">{c.leagues}</h2><p className="text-xs text-slate-400">{c.leaguesHint}</p></div><button type="button" onClick={() => onNavigateTab('leagues')} className="text-xs font-bold text-emerald-300">{c.explore} →</button></div><div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none">{leagueCards.map((league) => <button key={league.id} type="button" onClick={() => openLeague(league.id)} className={`matchday-league-card tone-${league.tone}`}><span className="matchday-league-mark">{league.mark}</span><span className="mt-3 block truncate text-sm font-black text-white">{league.name}</span><span className="mt-1 block text-[11px] text-white/70">{league.country} · {league.clubs} {c.clubs}</span><span className="absolute right-3 top-3 text-white/50"><ChevronRight className="h-4 w-4" /></span></button>)}</div></section>
-
-      <div className="grid grid-cols-3 gap-2.5"><button type="button" onClick={() => openLeague((currentClub?.leagueId || 'league-premier-league').replace(/^league-/, ''), 'STANDINGS')} className="matchday-quick"><Trophy className="h-5 w-5 text-amber-300" /><span>{c.table}</span></button><button type="button" onClick={() => onNavigateTab('cups')} className="matchday-quick"><Layers3 className="h-5 w-5 text-rose-300" /><span>{c.cups}</span></button><button type="button" onClick={() => onNavigateTab('season-hub')} className="matchday-quick"><CalendarDays className="h-5 w-5 text-sky-300" /><span>{c.calendar}</span></button></div>
-      <p className="flex items-center gap-1.5 text-[11px] text-slate-500"><CircleHelp className="h-3.5 w-3.5" />eFootball {language === 'uz' ? 'o‘yinini o‘ynang, so‘ng natijani Match Center orqali yuboring.' : language === 'ru' ? 'сыграйте матч и внесите результат в Центре матча.' : 'matches are played first; submit the result in Match Center.'}</p>
+        <div className="grid grid-cols-4 gap-2 pt-1">
+          <div className="p-2.5 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/5 text-center">
+            <span className="block text-[10px] font-bold text-slate-500 dark:text-slate-400">
+              {c.position}
+            </span>
+            <strong className="text-base font-black text-slate-900 dark:text-white tabular-nums">
+              {userStats?.leaguePosition ? `#${userStats.leaguePosition}` : '—'}
+            </strong>
+          </div>
+          <div className="p-2.5 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/5 text-center">
+            <span className="block text-[10px] font-bold text-slate-500 dark:text-slate-400">
+              {c.points}
+            </span>
+            <strong className="text-base font-black text-blue-600 dark:text-blue-400 tabular-nums">
+              {userStats?.points ?? '0'}
+            </strong>
+          </div>
+          <div className="p-2.5 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/5 text-center">
+            <span className="block text-[10px] font-bold text-slate-500 dark:text-slate-400">
+              {c.played}
+            </span>
+            <strong className="text-base font-black text-slate-900 dark:text-white tabular-nums">
+              {userStats?.matchesPlayed ?? '0'}
+            </strong>
+          </div>
+          <div className="p-2.5 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/5 text-center">
+            <span className="block text-[10px] font-bold text-slate-500 dark:text-slate-400">
+              {c.form}
+            </span>
+            <strong className="text-xs font-black text-emerald-600 dark:text-emerald-400 tabular-nums">
+              {userStats ? `${userStats.wins}–${userStats.draws}–${userStats.losses}` : '—'}
+            </strong>
+          </div>
+        </div>
+      </section>
     </div>
   );
 };

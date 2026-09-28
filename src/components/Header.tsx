@@ -1,25 +1,35 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Bell, UserCircle, ChevronDown, CheckCircle2, Trophy, Sparkles, Palette } from 'lucide-react';
+import {
+  Bell,
+  UserCircle,
+  ChevronDown,
+  CheckCircle2,
+  Trophy,
+  Sparkles,
+  Search,
+  Sun,
+  Moon,
+} from 'lucide-react';
 import { ClubCrest } from './ClubCrest';
+
+export type AppTheme = 'light' | 'dark';
 
 interface HeaderProps {
   onOpenNotifications: () => void;
   onOpenProfile?: () => void;
+  onOpenSearch?: () => void;
   theme: AppTheme;
   onThemeChange: (theme: AppTheme) => void;
 }
 
-export type AppTheme = 'coral' | 'mint' | 'blue' | 'dark';
-
-const themeOptions: Array<{ id: AppTheme; label: string; swatch: string }> = [
-  { id: 'coral', label: 'Coral', swatch: '#c94860' },
-  { id: 'mint', label: 'Mint', swatch: '#087f66' },
-  { id: 'blue', label: 'Blue', swatch: '#355dcc' },
-  { id: 'dark', label: 'Dark', swatch: '#182033' },
-];
-
-export const Header: React.FC<HeaderProps> = ({ onOpenNotifications, onOpenProfile, theme, onThemeChange }) => {
+export const Header: React.FC<HeaderProps> = ({
+  onOpenNotifications,
+  onOpenProfile,
+  onOpenSearch,
+  theme,
+  onThemeChange,
+}) => {
   const {
     user,
     currentClub,
@@ -34,9 +44,13 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNotifications, onOpenProfi
 
   const [showDevMenu, setShowDevMenu] = useState(false);
   const [showSeasonMenu, setShowSeasonMenu] = useState(false);
-  const [showThemeMenu, setShowThemeMenu] = useState(false);
 
   const activeSeason = seasons.find((s) => s.id === activeSeasonId);
+
+  // Toggle theme between light and dark
+  const handleToggleTheme = () => {
+    onThemeChange(theme === 'dark' ? 'light' : 'dark');
+  };
 
   return (
     <header className={`sticky top-0 z-40 bg-[#06090e]/90 backdrop-blur-xl border-b border-white/[0.08] text-white ${user?.isAdmin ? 'preview-app-header' : ''}`}>
@@ -98,134 +112,166 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNotifications, onOpenProfi
         </div>
       )}
 
-      {/* Main App Bar - Strictly Clean Mobile Target (EFL UZ | Bell | Avatar) */}
+      {/* Main App Bar */}
       <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 h-13 sm:h-15 flex items-center justify-between gap-2 sm:gap-4">
         {/* Brand & Logo */}
         <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
           {user?.isAdmin ? (
-            <div className="preview-brand-logo shrink-0">
+            <div className="preview-brand-logo shrink-0 cursor-pointer" onClick={() => onOpenProfile && onOpenProfile()}>
               <img className="preview-logo-dark" src="/efluz-logo.png" alt="EFL UZ" />
-              <img className="preview-logo-light" src="/efluz-logo-light.png" alt="" aria-hidden="true" />
+              <img className="preview-logo-light" src="/efluz-logo-light.png" alt="EFL UZ" aria-hidden="true" />
             </div>
           ) : (
             <>
               <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-emerald-500 flex items-center justify-center text-slate-950 font-black text-base sm:text-lg tracking-tighter shrink-0">eF</div>
               <span className="font-black text-base sm:text-lg tracking-tight text-white truncate">EFL UZ</span>
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="hidden sm:inline-block px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  PRO LEAGUE
+                </span>
+              </div>
             </>
           )}
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="hidden sm:inline-block px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              PRO LEAGUE
-            </span>
-          </div>
         </div>
 
         {/* Right Controls */}
-        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-          {user?.isAdmin && <div className="relative">
-            <button type="button" onClick={() => setShowThemeMenu((open) => !open)} className="preview-theme-trigger" aria-label="Change app colors" title="Change app colors">
-              <Palette className="h-4 w-4" />
-            </button>
-            {showThemeMenu && (
-              <div className="preview-theme-menu" role="menu">
-                <div className="px-3 pb-2 text-[10px] font-black uppercase tracking-wider text-slate-400">App color</div>
-                {themeOptions.map((option) => (
-                  <button key={option.id} type="button" role="menuitem" onClick={() => { onThemeChange(option.id); setShowThemeMenu(false); }} className={`preview-theme-option ${theme === option.id ? 'is-active' : ''}`}>
-                    <span className="preview-theme-swatch" style={{ backgroundColor: option.swatch }} />
-                    <span>{option.label}</span>
-                    {theme === option.id && <CheckCircle2 className="ml-auto h-3.5 w-3.5" />}
-                  </button>
-                ))}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {user?.isAdmin ? (
+            <>
+              {/* Global Search Button */}
+              <button
+                type="button"
+                id="btn-global-search"
+                onClick={onOpenSearch}
+                className="preview-search-trigger p-2 rounded-xl flex items-center justify-center min-w-[38px] min-h-[38px] transition-colors"
+                aria-label="Search clubs, competitions, players, or matches"
+                title="Search"
+              >
+                <Search className="w-4 h-4" />
+              </button>
+
+              {/* Compact Sun/Moon Theme Toggle */}
+              <button
+                type="button"
+                id="btn-theme-toggle"
+                onClick={handleToggleTheme}
+                className="preview-theme-toggle p-2 rounded-xl flex items-center justify-center min-w-[38px] min-h-[38px] transition-colors"
+                aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+                title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+              >
+                {theme === 'dark' ? (
+                  <Sun className="w-4 h-4 text-amber-400" />
+                ) : (
+                  <Moon className="w-4 h-4 text-slate-700" />
+                )}
+              </button>
+
+              {/* Notifications Button */}
+              <button
+                id="btn-notifications"
+                onClick={onOpenNotifications}
+                className="relative p-2 rounded-xl preview-nav-btn flex items-center justify-center min-w-[38px] min-h-[38px] transition-colors"
+                title="Tournament Notifications"
+                aria-label={`Notifications${unreadNotificationCount > 0 ? ` (${unreadNotificationCount} unread)` : ''}`}
+              >
+                <Bell className="w-4 h-4" />
+                {unreadNotificationCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[17px] h-[17px] px-1 bg-rose-500 text-white text-[9px] font-black rounded-full flex items-center justify-center shadow-sm leading-none border border-current">
+                    {unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}
+                  </span>
+                )}
+              </button>
+            </>
+          ) : (
+            <>
+              {/* Regular Player Header Controls */}
+              {/* Season Selector (Desktop only) */}
+              <div className="relative hidden md:block">
+                <button
+                  id="btn-season-select"
+                  onClick={() => setShowSeasonMenu(!showSeasonMenu)}
+                  className="flex items-center gap-2 px-3 py-1.5 glass-button text-xs font-bold text-slate-200 min-h-[34px]"
+                >
+                  <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                  <span>{activeSeason?.name || '2026/27'}</span>
+                  <ChevronDown className="w-3 h-3 text-slate-400" />
+                </button>
+
+                {showSeasonMenu && (
+                  <div className="absolute right-0 mt-1.5 w-48 glass-modal py-1.5 z-50">
+                    {seasons.map((s) => (
+                      <button
+                        key={s.id}
+                        onClick={() => {
+                          setActiveSeasonId(s.id);
+                          setShowSeasonMenu(false);
+                        }}
+                        className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-white/[0.06] transition-colors ${
+                          s.id === activeSeasonId ? 'text-emerald-400 font-bold bg-emerald-500/10' : 'text-slate-300'
+                        }`}
+                      >
+                        <span>{s.name}</span>
+                        <span className="text-[9px] uppercase font-bold text-slate-400 glass-pill px-1.5 py-0.5">
+                          {s.status}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-          </div>}
-          {/* Season Selector (Desktop only) */}
-          <div className="relative hidden md:block">
-            <button
-              id="btn-season-select"
-              onClick={() => setShowSeasonMenu(!showSeasonMenu)}
-              className="flex items-center gap-2 px-3 py-1.5 glass-button text-xs font-bold text-slate-200 min-h-[34px]"
-            >
-              <Trophy className="w-3.5 h-3.5 text-amber-400" />
-              <span>{activeSeason?.name || '2026/27'}</span>
-              <ChevronDown className="w-3 h-3 text-slate-400" />
-            </button>
 
-            {showSeasonMenu && (
-              <div className="absolute right-0 mt-1.5 w-48 glass-modal py-1.5 z-50">
-                {seasons.map((s) => (
-                  <button
-                    key={s.id}
-                    onClick={() => {
-                      setActiveSeasonId(s.id);
-                      setShowSeasonMenu(false);
-                    }}
-                    className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-white/[0.06] transition-colors ${
-                      s.id === activeSeasonId ? 'text-emerald-400 font-bold bg-emerald-500/10' : 'text-slate-300'
-                    }`}
-                  >
-                    <span>{s.name}</span>
-                    <span className="text-[9px] uppercase font-bold text-slate-400 glass-pill px-1.5 py-0.5">
-                      {s.status}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* User Club Badge (Desktop/Tablet only to keep mobile header minimal) */}
-          {currentClub && (
-            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 glass-card border-white/[0.08] max-w-[150px] min-h-[34px]">
-              <ClubCrest
-                clubId={currentClub.id}
-                logoUrl={currentClub.logoUrl}
-                name={currentClub.name}
-                shortName={currentClub.shortName}
-                size="xs"
-                className="w-4 h-4 shrink-0"
-              />
-              <span className="text-xs font-bold text-slate-200 truncate">
-                {currentClub.shortName || currentClub.name}
-              </span>
-            </div>
-          )}
-
-          {/* Notifications Button */}
-          <button
-            id="btn-notifications"
-            onClick={onOpenNotifications}
-            className="relative p-2 glass-button text-slate-300 flex items-center justify-center min-w-[38px] min-h-[38px] touch-manipulation active:scale-95"
-            title="Tournament Notifications"
-            aria-label={`Notifications${unreadNotificationCount > 0 ? ` (${unreadNotificationCount} unread)` : ''}`}
-          >
-            <Bell className="w-4 h-4" />
-            {unreadNotificationCount > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-[17px] h-[17px] px-1 bg-rose-500 text-white text-[9px] font-black rounded-full flex items-center justify-center shadow-[0_0_8px_rgba(244,63,94,0.6)] leading-none border border-[#06090e]">
-                {unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}
-              </span>
-            )}
-          </button>
-
-          {/* User Profile Avatar */}
-          <div
-            onClick={onOpenProfile}
-            className="flex items-center gap-2 cursor-pointer touch-manipulation active:scale-95"
-          >
-            <div className="w-8 h-8 rounded-full bg-[#141c2e] border border-white/[0.12] flex items-center justify-center text-slate-300 font-bold text-xs overflow-hidden shrink-0">
-              {user?.photoUrl ? (
-                <img src={user.photoUrl} alt={user.username} className="w-full h-full object-cover" />
-              ) : (
-                <UserCircle className="w-5 h-5 text-slate-400" />
+              {/* User Club Badge (Desktop/Tablet) */}
+              {currentClub && (
+                <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 glass-card border-white/[0.08] max-w-[150px] min-h-[34px]">
+                  <ClubCrest
+                    clubId={currentClub.id}
+                    logoUrl={currentClub.logoUrl}
+                    name={currentClub.name}
+                    shortName={currentClub.shortName}
+                    size="xs"
+                    className="w-4 h-4 shrink-0"
+                  />
+                  <span className="text-xs font-bold text-slate-200 truncate">
+                    {currentClub.shortName || currentClub.name}
+                  </span>
+                </div>
               )}
-            </div>
-            <div className="hidden lg:block text-left">
-              <div className="text-xs font-bold text-slate-200 leading-tight">@{user?.username}</div>
-              <div className="text-[10px] text-emerald-400 font-medium">
-                {user?.isAdmin ? 'Admin' : 'Player'}
+
+              {/* Notifications Button */}
+              <button
+                id="btn-notifications"
+                onClick={onOpenNotifications}
+                className="relative p-2 glass-button text-slate-300 flex items-center justify-center min-w-[38px] min-h-[38px] touch-manipulation active:scale-95"
+                title="Tournament Notifications"
+                aria-label={`Notifications${unreadNotificationCount > 0 ? ` (${unreadNotificationCount} unread)` : ''}`}
+              >
+                <Bell className="w-4 h-4" />
+                {unreadNotificationCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[17px] h-[17px] px-1 bg-rose-500 text-white text-[9px] font-black rounded-full flex items-center justify-center shadow-[0_0_8px_rgba(244,63,94,0.6)] leading-none border border-[#06090e]">
+                    {unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}
+                  </span>
+                )}
+              </button>
+
+              {/* User Profile Avatar */}
+              <div
+                onClick={onOpenProfile}
+                className="flex items-center gap-2 cursor-pointer touch-manipulation active:scale-95"
+              >
+                <div className="w-8 h-8 rounded-full bg-[#141c2e] border border-white/[0.12] flex items-center justify-center text-slate-300 font-bold text-xs overflow-hidden shrink-0">
+                  {user?.photoUrl ? (
+                    <img src={user.photoUrl} alt={user.username} className="w-full h-full object-cover" />
+                  ) : (
+                    <UserCircle className="w-5 h-5 text-slate-400" />
+                  )}
+                </div>
+                <div className="hidden lg:block text-left">
+                  <div className="text-xs font-bold text-slate-200 leading-tight">@{user?.username}</div>
+                  <div className="text-[10px] text-emerald-400 font-medium">Player</div>
+                </div>
               </div>
-            </div>
-          </div>
+            </>
+          )}
         </div>
       </div>
     </header>
