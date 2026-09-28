@@ -151,6 +151,7 @@ export function getDirtyKey(datasetKey: string): string {
 export const ReadModelKeys = {
   competitions: (seasonId = 'season-2026-27') => `${KEY_PREFIX}:season:${seasonId}:competitions`,
   clubsWithOwners: (seasonId = 'season-2026-27') => `${KEY_PREFIX}:season:${seasonId}:clubs-with-owners`,
+  clubAdmission: (seasonId = 'season-2026-27') => `${KEY_PREFIX}:season:${seasonId}:club-admission`,
   leagueClubs: (leagueId: string, seasonId = 'season-2026-27') => `${KEY_PREFIX}:season:${seasonId}:league:${leagueId}:clubs`,
   standings: (competitionId: string, seasonId = 'season-2026-27') => `${KEY_PREFIX}:season:${seasonId}:competition:${competitionId}:standings`,
   competitionFixtures: (competitionId: string, seasonId = 'season-2026-27') => `${KEY_PREFIX}:season:${seasonId}:competition:${competitionId}:fixtures`,
