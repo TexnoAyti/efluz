@@ -120,7 +120,7 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
 
   return (
     <div className="space-y-5 pb-24 animate-in fade-in duration-300">
-      {onNavigateTab && (
+      {!user?.isAdmin && onNavigateTab && (
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
           <button
             onClick={() => onNavigateTab('leagues')}

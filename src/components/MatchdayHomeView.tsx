@@ -13,6 +13,7 @@ import {
   Award,
   Globe2,
   Sparkles,
+  Calendar,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n';
@@ -30,20 +31,28 @@ interface Props {
 
 const copy = {
   uz: {
+    yourClub: 'SIZNING KLUBINGIZ',
     greeting: 'Salom',
     season: '2026/27 mavsumi',
     activeMatchday: 'Tur faol',
-    nextMatch: 'Asosiy o‘yin',
-    recentResult: 'So‘nggi natija',
+    homeTag: 'UYDA',
+    awayTag: 'SAFARDA',
+    daysLeft: (d: number) => `${d} kundan so‘ng`,
+    hoursLeft: (h: number) => `${h} soatdan so‘ng`,
+    deadline: 'Muddat',
+    matches: 'O‘yinlar',
+    upcoming: 'Kelgusi',
+    results: 'Natijalar',
+    all: 'Hammasi',
     submitResult: 'Hisobni kiritish',
     matchCenter: 'O‘yin markazi',
     chatWithOpponent: 'Raqibga yozish',
-    locked: 'Yopiq',
-    pending: 'Tasdiq kutilmoqda',
-    disputed: 'Nizo',
-    ready: 'O‘yinga tayyor',
-    confirmed: 'Tasdiqlangan',
-    matchday: 'tur',
+    waitingConfirmation: 'Tasdiq kutilmoqda',
+    disputeUnderReview: 'Nizo tekshirilmoqda',
+    matchdayLocked: 'Tur yopiq',
+    readyToPlay: 'O‘yinga tayyor',
+    confirmedFT: 'Yakunlangan',
+    rankSuffix: '-o‘rin',
     position: 'O‘rin',
     points: 'Ochko',
     played: 'O‘yin',
@@ -52,40 +61,49 @@ const copy = {
     noFixture: 'Rejalashtirilgan o‘yin yo‘q',
     noFixtureDesc: 'Klubingiz uchun yangi turlar ochilganda shu yerda ko‘rinadi.',
     browseLeagues: 'Turnir jadvali',
-    upcoming: 'Kelgusi',
-    results: 'Natijalar',
     noResultsYet: 'Yakunlangan o‘yinlar yo‘q',
     noUpcomingYet: 'Boshqa kelgusi o‘yin yo‘q',
-    viewAll: 'Barchasi',
+    viewAllMatches: 'Barcha o‘yinlarni ko‘rish',
     competitions: 'Turnirlar',
     leagueSnapshot: 'Liga holati',
     domesticLeague: 'Milliy chempionat',
-    domesticLeagueSub: 'Jadval va taqvim',
+    domesticLeagueSub: 'Turnir jadvali va taqvim',
     domesticCup: 'Milliy kubok',
     domesticCupSub: 'Pley-off bosqichi',
     europeanCup: 'Chempionlar Ligasi',
-    europeanCupSub: 'Guruh va pley-off',
-    disputeAlert: 'O‘yinda nizo mavjud. Administrator tekshiruvi kutilmoqda.',
+    europeanCupSub: 'Yevrokuboklar va guruhlar',
+    disputeAlert: 'O‘yinda nizo mavjud. Administrator ko‘rib chiqmoqda.',
     pendingAlert: 'Hisob kiritilgan, raqib tasdiqlashi kutilmoqda.',
     readyAlert: 'Navbatdagi tur o‘yini hisobini kiritishingiz mumkin.',
+    nextMatch: 'Navbatdagi o‘yin',
+    recentResult: 'So‘nggi natija',
+    matchday: 'tur',
     retry: 'Qayta urinish',
     error: 'Ma’lumot yuklanmadi',
   },
   ru: {
+    yourClub: 'ВАШ КЛУБ',
     greeting: 'Привет',
     season: 'Сезон 2026/27',
     activeMatchday: 'Тур активен',
-    nextMatch: 'Главный матч',
-    recentResult: 'Последний результат',
+    homeTag: 'ДОМА',
+    awayTag: 'В ГОСТЯХ',
+    daysLeft: (d: number) => `через ${d} дн.`,
+    hoursLeft: (h: number) => `через ${h} ч.`,
+    deadline: 'Срок',
+    matches: 'Матчи',
+    upcoming: 'Предстоящие',
+    results: 'Результаты',
+    all: 'Все',
     submitResult: 'Ввести счёт',
     matchCenter: 'Центр матча',
     chatWithOpponent: 'Написать сопернику',
-    locked: 'Закрыт',
-    pending: 'Ожидает подтверждения',
-    disputed: 'Спор',
-    ready: 'Готов к игре',
-    confirmed: 'Подтверждён',
-    matchday: 'тур',
+    waitingConfirmation: 'Ожидает подтверждения',
+    disputeUnderReview: 'Спорный матч',
+    matchdayLocked: 'Тур закрыт',
+    readyToPlay: 'Готов к игре',
+    confirmedFT: 'Завершён',
+    rankSuffix: '-е место',
     position: 'Место',
     points: 'Очки',
     played: 'Матчи',
@@ -94,11 +112,9 @@ const copy = {
     noFixture: 'Матч пока не назначен',
     noFixtureDesc: 'Матчи появятся здесь после открытия очередного тура.',
     browseLeagues: 'Таблица лиги',
-    upcoming: 'Предстоящие',
-    results: 'Результаты',
     noResultsYet: 'Завершенных матчей нет',
     noUpcomingYet: 'Других предстоящих матчей нет',
-    viewAll: 'Все',
+    viewAllMatches: 'Посмотреть все матчи',
     competitions: 'Турниры',
     leagueSnapshot: 'Положение в лиге',
     domesticLeague: 'Чемпионат',
@@ -107,27 +123,38 @@ const copy = {
     domesticCupSub: 'Сетка плей-офф',
     europeanCup: 'Лига Чемпионов',
     europeanCupSub: 'Еврокубки',
-    disputeAlert: 'Спорный результат на проверке у администратора.',
+    disputeAlert: 'Спорный результат на рассмотрении у администратора.',
     pendingAlert: 'Результат отправлен, ожидается подтверждение соперника.',
     readyAlert: 'Доступен ввод счёта очередного тура.',
+    nextMatch: 'Следующий матч',
+    recentResult: 'Последний результат',
+    matchday: 'тур',
     retry: 'Повторить',
     error: 'Ошибка загрузки',
   },
   en: {
+    yourClub: 'YOUR CLUB',
     greeting: 'Hello',
     season: 'Season 2026/27',
     activeMatchday: 'Matchday Active',
-    nextMatch: 'Featured Match',
-    recentResult: 'Latest Result',
+    homeTag: 'HOME',
+    awayTag: 'AWAY',
+    daysLeft: (d: number) => `in ${d} days`,
+    hoursLeft: (h: number) => `in ${h} hours`,
+    deadline: 'Deadline',
+    matches: 'Matches',
+    upcoming: 'Upcoming',
+    results: 'Results',
+    all: 'All',
     submitResult: 'Submit Result',
     matchCenter: 'Match Center',
     chatWithOpponent: 'Chat with Opponent',
-    locked: 'Locked',
-    pending: 'Awaiting Confirm',
-    disputed: 'Disputed',
-    ready: 'Ready to Play',
-    confirmed: 'Confirmed',
-    matchday: 'Round',
+    waitingConfirmation: 'Awaiting Confirm',
+    disputeUnderReview: 'Disputed',
+    matchdayLocked: 'Locked',
+    readyToPlay: 'Ready to Play',
+    confirmedFT: 'Full Time',
+    rankSuffix: 'th place',
     position: 'Pos',
     points: 'Pts',
     played: 'Pld',
@@ -136,11 +163,9 @@ const copy = {
     noFixture: 'No Match Scheduled',
     noFixtureDesc: 'Upcoming fixtures will appear here once published.',
     browseLeagues: 'View Table',
-    upcoming: 'Upcoming',
-    results: 'Results',
     noResultsYet: 'No completed matches yet',
     noUpcomingYet: 'No other upcoming fixtures',
-    viewAll: 'View All',
+    viewAllMatches: 'View all matches',
     competitions: 'Competitions',
     leagueSnapshot: 'League Snapshot',
     domesticLeague: 'Domestic League',
@@ -149,9 +174,12 @@ const copy = {
     domesticCupSub: 'Knockout Bracket',
     europeanCup: 'Champions League',
     europeanCupSub: 'UEFA Competition',
-    disputeAlert: 'Match is disputed and under administrator review.',
+    disputeAlert: 'Match is disputed and under review.',
     pendingAlert: 'Result submitted and awaiting opponent confirmation.',
     readyAlert: 'Match is active and ready for result submission.',
+    nextMatch: 'Next Match',
+    recentResult: 'Latest Result',
+    matchday: 'MD',
     retry: 'Retry',
     error: 'Could not load data',
   },
@@ -164,6 +192,7 @@ function getClubDisplay(fixture: Fixture, side: 'home' | 'away') {
     name: club?.shortName || club?.name || (side === 'home' ? fixture.homeClubId : fixture.awayClubId) || 'TBD',
     fullName: club?.name || '',
     logoUrl: club?.logoUrl,
+    stadium: club?.stadium || (side === 'home' ? 'Home Ground' : ''),
   };
 }
 
@@ -251,27 +280,59 @@ export const MatchdayHomeView: React.FC<Props> = ({
     setSelectedFixtureForSubmit(fixture);
   };
 
-  const formatFixtureDate = (fixture: Fixture) => {
+  const isUserHome = heroMatch ? heroMatch.homeOwnerId === user?.id || heroMatch.homeClubId === activeClub?.id : true;
+
+  // Format date and time
+  const formatFixtureSchedule = (fixture: Fixture) => {
     if (!fixture.scheduledAt) {
-      return fixture.roundName || `${c.matchday} ${fixture.matchday}`;
+      return {
+        dateStr: fixture.roundName || `${fixture.matchday}-${c.matchday}`,
+        timeStr: '21:00',
+        relativeTime: null,
+      };
     }
     const d = new Date(fixture.scheduledAt);
     if (Number.isNaN(d.getTime()) || d.getFullYear() < 2026) {
-      return fixture.roundName || `${c.matchday} ${fixture.matchday}`;
+      return {
+        dateStr: fixture.roundName || `${fixture.matchday}-${c.matchday}`,
+        timeStr: '21:00',
+        relativeTime: null,
+      };
     }
-    return new Intl.DateTimeFormat(language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-GB', {
+
+    const dayName = new Intl.DateTimeFormat(language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-GB', {
+      weekday: 'short',
       day: 'numeric',
       month: 'short',
+    }).format(d).toUpperCase();
+
+    const time = new Intl.DateTimeFormat('en-GB', {
       hour: '2-digit',
       minute: '2-digit',
     }).format(d);
+
+    const diffDays = Math.ceil((d.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    let relative = null;
+    if (diffDays > 0) {
+      relative = c.daysLeft(diffDays);
+    } else if (diffDays === 0) {
+      const diffHours = Math.ceil((d.getTime() - Date.now()) / (1000 * 60 * 60));
+      relative = diffHours > 0 ? c.hoursLeft(diffHours) : null;
+    }
+
+    return {
+      dateStr: dayName,
+      timeStr: time,
+      relativeTime: relative,
+    };
   };
 
+  const scheduleInfo = heroMatch ? formatFixtureSchedule(heroMatch) : null;
   const homeTeam = heroMatch ? getClubDisplay(heroMatch, 'home') : null;
   const awayTeam = heroMatch ? getClubDisplay(heroMatch, 'away') : null;
   const isFinished = heroMatch?.status === 'CONFIRMED';
 
-  // Determine opponent Telegram username for direct chat
+  // Determine opponent Telegram username
   const opponentTelegram = useMemo(() => {
     if (!heroMatch) return null;
     const isHome = heroMatch.homeOwnerId === user?.id || heroMatch.homeClubId === activeClub?.id;
@@ -281,7 +342,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
     return isValidTelegramUsername(oppTg) ? oppTg : null;
   }, [heroMatch, user?.id, activeClub?.id]);
 
-  // Action required operational strip: Dispute > Confirmation > Submit Result
+  // Operational strip for dispute or pending confirmation
   const actionBanner = useMemo(() => {
     if (!heroMatch) return null;
     if (heroMatch.status === 'DISPUTED') {
@@ -304,45 +365,39 @@ export const MatchdayHomeView: React.FC<Props> = ({
         onClick: () => handleOpenMatch(heroMatch),
       };
     }
-    if (heroMatch.status === 'SCHEDULED' && heroMatch.isPlayable !== false) {
-      return {
-        icon: Sparkles,
-        bg: 'bg-blue-500/10 border-blue-500/30 text-blue-700 dark:text-blue-400',
-        btnBg: 'bg-[#2563eb] hover:bg-[#1d4ed8] text-white',
-        text: c.readyAlert,
-        actionLabel: c.submitResult,
-        onClick: () => handleOpenSubmit(heroMatch),
-      };
-    }
     return null;
   }, [heroMatch, c]);
 
-  // Goal difference calculation
+  // Goal difference
   const goalDiff = userStats ? (userStats.goalsScored || 0) - (userStats.goalsConceded || 0) : 0;
   const goalDiffDisplay = goalDiff > 0 ? `+${goalDiff}` : `${goalDiff}`;
 
   return (
-    <div className="space-y-3.5 sm:space-y-4 pb-20 animate-in fade-in duration-200">
-      {/* 1. TOP CONTEXT: Clean typography, integrated club identity, no pill clutter */}
+    <div className="space-y-4 pb-20 animate-in fade-in duration-200">
+      {/* 1. TOP BAR: "SIZNING KLUBINGIZ" style from reference video */}
       <div className="flex items-center justify-between gap-3 pt-1">
         <div className="min-w-0">
-          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-            <span>{c.season}</span>
+          <div className="flex items-center gap-2 text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            <span>{c.yourClub}</span>
             <span>•</span>
-            <span className="text-[#1e3a8a] dark:text-[#3b82f6] font-bold">{c.activeMatchday}</span>
+            <span className="text-[#2563eb] dark:text-[#3b82f6] truncate">
+              {activeClub?.leagueId
+                ? activeClub.leagueId.replace('league-', '').replace('-', ' ').toUpperCase()
+                : 'PREMIER LEAGUE'}
+            </span>
           </div>
           <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-0.5 truncate">
             {c.greeting}, {user?.firstName || user?.username || 'Player'}
           </h1>
         </div>
 
-        {/* Subtly Integrated Active Club Badge */}
+        {/* Active Club Crest & Switcher Link */}
         {activeClub && (
           <button
             type="button"
             onClick={() => onNavigateTab('my-club')}
             className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-white dark:bg-[#111722] border border-[#e2e6ec] dark:border-white/10 shadow-xs hover:border-[#2563eb] transition-all shrink-0 max-w-[170px]"
-            title="Active Club"
+            title="Active Club Hub"
           >
             <div className="w-5 h-5 rounded-md flex items-center justify-center shrink-0">
               <ClubCrest
@@ -360,7 +415,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
         )}
       </div>
 
-      {/* Network / Error banner with retry */}
+      {/* Network / Error banner */}
       {error && (
         <div className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/40 text-rose-700 dark:text-rose-400 text-xs font-semibold">
           <span>{c.error}</span>
@@ -375,7 +430,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
         </div>
       )}
 
-      {/* 2. ACTION REQUIRED: Single compact operational strip */}
+      {/* 2. OPERATIONAL ACTION REQUIRED STRIP (If dispute or pending confirmation) */}
       {actionBanner && (
         <div className={`flex items-center justify-between gap-2.5 p-2.5 sm:p-3 rounded-2xl border ${actionBanner.bg} transition-all`}>
           <div className="flex items-center gap-2 min-w-0">
@@ -394,7 +449,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
         </div>
       )}
 
-      {/* 3. HERO MATCH — LEVEL 1 MAJOR BROADCAST MODULE */}
+      {/* 3. HERO MAIN MATCH CARD (Adapted from reference video with participant actions) */}
       <section aria-label={c.nextMatch}>
         {loading && fixtures.length === 0 ? (
           <div className="p-6 rounded-2xl bg-white dark:bg-[#111722] border border-[#e2e6ec] dark:border-white/10 shadow-xs animate-pulse space-y-4">
@@ -403,49 +458,27 @@ export const MatchdayHomeView: React.FC<Props> = ({
             <div className="h-9 w-40 bg-slate-200 dark:bg-white/10 rounded-xl mx-auto" />
           </div>
         ) : heroMatch && homeTeam && awayTeam ? (
-          <div className="p-4 sm:p-6 rounded-2xl bg-white dark:bg-[#111722] border border-[#e2e6ec] dark:border-white/10 shadow-sm relative overflow-hidden">
-            {/* Subtle top specular accent line */}
-            <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#2563eb]/30 to-transparent pointer-events-none" />
-
-            {/* Header: Quiet competition metadata on left, compact status on right */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#111722] border border-[#e2e6ec] dark:border-white/10 shadow-xs relative overflow-hidden">
+            {/* Top Bar inside Card matching reference video: Matchday Tag on Left, Countdown on Right */}
             <div className="flex items-center justify-between gap-2 mb-3">
-              <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate">
-                {heroMatch.competitionName || 'EFL UZ'} • {heroMatch.roundName || `${c.matchday} ${heroMatch.matchday}`}
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                {heroMatch.roundName || `${heroMatch.matchday}-${c.matchday}`} • {isUserHome ? c.homeTag : c.awayTag}
               </span>
 
-              {/* Compact Status Indicator */}
-              <div className="shrink-0">
-                {heroMatch.status === 'PENDING_CONFIRMATION' ? (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20">
-                    <Clock className="w-3 h-3" />
-                    {c.pending}
-                  </span>
-                ) : heroMatch.status === 'DISPUTED' ? (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/20">
-                    <AlertTriangle className="w-3 h-3" />
-                    {c.disputed}
-                  </span>
-                ) : isFinished ? (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
-                    <CheckCircle2 className="w-3 h-3" />
-                    FT • {c.confirmed}
-                  </span>
-                ) : heroMatch.isPlayable === false ? (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-400">
-                    <Lock className="w-3 h-3" />
-                    {c.locked}
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-500/10 text-[#2563eb] dark:text-[#3b82f6] border border-blue-500/20">
-                    <Swords className="w-3 h-3" />
-                    {c.ready}
-                  </span>
-                )}
-              </div>
+              {scheduleInfo?.relativeTime && !isFinished ? (
+                <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                  <Clock className="w-3 h-3 text-slate-400" />
+                  <span>{scheduleInfo.relativeTime}</span>
+                </span>
+              ) : (
+                <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate">
+                  {heroMatch.competitionName || 'EFL UZ'}
+                </span>
+              )}
             </div>
 
-            {/* Broadcast Scoreboard Layout: Larger crests (56-64px), dominant score/VS */}
-            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:gap-6 my-2 text-center">
+            {/* Broadcast Layout: Home Team | Center Date+Time | Away Team */}
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:gap-4 my-2 text-center">
               {/* Home Team */}
               <div className="flex flex-col items-center gap-1.5 min-w-0">
                 <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl bg-slate-50 dark:bg-[#171e2c] border border-[#e2e6ec] dark:border-white/10 p-2 flex items-center justify-center shadow-xs">
@@ -462,31 +495,47 @@ export const MatchdayHomeView: React.FC<Props> = ({
                   <span className="block text-sm sm:text-base font-bold text-slate-900 dark:text-white truncate">
                     {homeTeam.name}
                   </span>
-                  <span className="hidden sm:block text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                    {homeTeam.fullName}
-                  </span>
+                  <div className="flex items-center justify-center gap-1 mt-0.5">
+                    <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                      {isUserHome && userStats?.leaguePosition ? `${userStats.leaguePosition}${c.rankSuffix}` : 'Home'}
+                    </span>
+                    {/* Visual form dots from reference app */}
+                    <span className="inline-flex items-center gap-0.5 ml-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                    </span>
+                  </div>
                 </div>
               </div>
 
-              {/* Centrally Dominant Score / VS */}
-              <div className="flex flex-col items-center justify-center px-1 sm:px-3 min-w-[85px] sm:min-w-[120px]">
+              {/* Center Date + Time / Score Display (from reference video) */}
+              <div className="flex flex-col items-center justify-center px-1 sm:px-3 min-w-[95px] sm:min-w-[125px]">
                 {isFinished ? (
-                  <div className="flex items-center gap-2 sm:gap-3">
-                    <span className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white tabular-nums tracking-tight">
-                      {heroMatch.homeScore}
+                  <div className="flex flex-col items-center">
+                    <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-0.5">
+                      {c.confirmedFT}
                     </span>
-                    <span className="text-lg sm:text-2xl font-bold text-slate-400">—</span>
-                    <span className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white tabular-nums tracking-tight">
-                      {heroMatch.awayScore}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white tabular-nums tracking-tight">
+                        {heroMatch.homeScore}
+                      </span>
+                      <span className="text-lg font-bold text-slate-400">—</span>
+                      <span className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white tabular-nums tracking-tight">
+                        {heroMatch.awayScore}
+                      </span>
+                    </div>
                   </div>
                 ) : (
                   <div className="flex flex-col items-center">
-                    <span className="text-2xl sm:text-3xl font-black tracking-wider text-slate-900 dark:text-white">
-                      VS
+                    <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                      {scheduleInfo?.dateStr}
                     </span>
-                    <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-1 whitespace-nowrap">
-                      {formatFixtureDate(heroMatch)}
+                    <span className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tabular-nums tracking-tight my-0.5">
+                      {scheduleInfo?.timeStr}
+                    </span>
+                    <span className="text-[10px] text-slate-400 truncate max-w-[100px]">
+                      {homeTeam.stadium || 'Camp Nou'}
                     </span>
                   </div>
                 )}
@@ -508,21 +557,45 @@ export const MatchdayHomeView: React.FC<Props> = ({
                   <span className="block text-sm sm:text-base font-bold text-slate-900 dark:text-white truncate">
                     {awayTeam.name}
                   </span>
-                  <span className="hidden sm:block text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                    {awayTeam.fullName}
-                  </span>
+                  <div className="flex items-center justify-center gap-1 mt-0.5">
+                    <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                      {!isUserHome && userStats?.leaguePosition ? `${userStats.leaguePosition}${c.rankSuffix}` : 'Away'}
+                    </span>
+                    <span className="inline-flex items-center gap-0.5 ml-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Hero Card Footer / Primary Actions */}
-            <div className="mt-4 pt-3.5 border-t border-[#e2e6ec] dark:border-white/10 flex flex-col sm:flex-row items-center justify-between gap-2.5">
-              <span className="text-xs font-medium text-slate-500 dark:text-slate-400 truncate self-start sm:self-center">
-                {isFinished ? c.recentResult : formatFixtureDate(heroMatch)}
+            {/* Context status caption matching reference video */}
+            <div className="text-center mt-2.5 mb-3 text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+              {heroMatch.status === 'SCHEDULED' && heroMatch.isPlayable !== false ? (
+                <span className="text-[#2563eb] dark:text-[#3b82f6] font-bold">
+                  ● {c.readyAlert}
+                </span>
+              ) : isFinished ? (
+                <span>
+                  {activeClub?.shortName || activeClub?.name} {userStats?.points || 0} ochko bilan turnir jadvalida
+                </span>
+              ) : (
+                <span>
+                  {heroMatch.competitionName} • {heroMatch.roundName || `${heroMatch.matchday}-${c.matchday}`}
+                </span>
+              )}
+            </div>
+
+            {/* Participant Action Footer: Submit Result & Opponent Chat */}
+            <div className="pt-3 border-t border-[#e2e6ec] dark:border-white/10 flex flex-col sm:flex-row items-center justify-between gap-2">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 truncate self-start sm:self-center">
+                {isFinished ? c.recentResult : c.nextMatch}
               </span>
 
               <div className="flex items-center gap-2 w-full sm:w-auto">
-                {/* One-tap Opponent Chat via Telegram */}
+                {/* 1-tap Telegram opponent chat */}
                 {opponentTelegram && !isFinished && (
                   <button
                     type="button"
@@ -534,7 +607,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
                   </button>
                 )}
 
-                {/* Primary Action Button */}
+                {/* Primary CTA button */}
                 <button
                   type="button"
                   onClick={() => {
@@ -579,9 +652,16 @@ export const MatchdayHomeView: React.FC<Props> = ({
         )}
       </section>
 
-      {/* 4. UPCOMING / RESULTS: LEVEL 2 SECTION SURFACE WITH ROW DIVIDERS */}
+      {/* 4. MATCHES LIST ("O'YINLAR" SECTION FROM REFERENCE VIDEO) */}
       <section className="rounded-2xl bg-white dark:bg-[#111722] border border-[#e2e6ec] dark:border-white/10 shadow-xs overflow-hidden">
+        {/* Header with Title and Segmented Tabs */}
         <div className="flex items-center justify-between p-3 sm:p-3.5 border-b border-[#e2e6ec] dark:border-white/10">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-black text-slate-900 dark:text-white">
+              {c.matches}
+            </h3>
+          </div>
+
           <div className="flex items-center gap-1 p-0.5 rounded-xl bg-slate-100 dark:bg-[#171e2c]">
             <button
               type="button"
@@ -606,74 +686,99 @@ export const MatchdayHomeView: React.FC<Props> = ({
               {c.results}
             </button>
           </div>
+        </div>
 
+        {/* Competition Sub-Header matching reference video: Icon + Title + Count link */}
+        <div className="flex items-center justify-between px-4 py-2 bg-slate-50/80 dark:bg-[#171e2c]/50 border-b border-[#e2e6ec]/60 dark:border-white/5">
+          <div className="flex items-center gap-2 min-w-0">
+            <Trophy className="w-3.5 h-3.5 text-[#2563eb] dark:text-[#3b82f6] shrink-0" />
+            <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+              {activeClub?.leagueId
+                ? activeClub.leagueId.replace('league-', '').replace('-', ' ').toUpperCase()
+                : 'PREMIER LEAGUE'}
+            </span>
+          </div>
           <button
             type="button"
             onClick={() => onNavigateTab('my-club')}
-            className="inline-flex items-center gap-1 text-xs font-semibold text-[#2563eb] dark:text-[#3b82f6] hover:underline"
+            className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 hover:text-[#2563eb] dark:hover:text-[#3b82f6] flex items-center gap-0.5"
           >
-            <span>{c.viewAll}</span>
-            <ChevronRight className="w-3.5 h-3.5" />
+            <span>{displayedList.length} ta o‘yin</span>
+            <ChevronRight className="w-3 h-3" />
           </button>
         </div>
 
-        {/* SofaScore / Apple Sports style clean divided rows */}
+        {/* Match Rows matching reference video structure */}
         <div className="divide-y divide-[#e2e6ec]/70 dark:divide-white/5">
           {displayedList.length > 0 ? (
             displayedList.map((fixture) => {
               const home = getClubDisplay(fixture, 'home');
               const away = getClubDisplay(fixture, 'away');
               const isMatchFinished = fixture.status === 'CONFIRMED';
+              const sched = formatFixtureSchedule(fixture);
 
               return (
                 <button
                   key={fixture.id}
                   type="button"
                   onClick={() => handleOpenMatch(fixture)}
-                  className="w-full flex items-center justify-between p-3 px-4 hover:bg-slate-50/80 dark:hover:bg-white/[0.02] transition-colors text-left"
+                  className="w-full grid grid-cols-[1fr_auto_1fr] items-center p-3 px-4 hover:bg-slate-50/80 dark:hover:bg-white/[0.02] transition-colors text-left"
                 >
-                  {/* Teams + Crests */}
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <div className="flex items-center -space-x-1.5 shrink-0">
-                      <div className="w-7 h-7 rounded-lg bg-slate-50 dark:bg-[#171e2c] border border-[#e2e6ec] dark:border-white/10 p-1 flex items-center justify-center shadow-xs">
-                        <ClubCrest
-                          clubId={home.id}
-                          logoUrl={home.logoUrl}
-                          name={home.name}
-                          size="xs"
-                        />
-                      </div>
-                      <div className="w-7 h-7 rounded-lg bg-slate-50 dark:bg-[#171e2c] border border-[#e2e6ec] dark:border-white/10 p-1 flex items-center justify-center shadow-xs">
-                        <ClubCrest
-                          clubId={away.id}
-                          logoUrl={away.logoUrl}
-                          name={away.name}
-                          size="xs"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="min-w-0 flex-1">
-                      <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                        {home.name} <span className="text-slate-400 font-normal">vs</span> {away.name}
-                      </div>
-                      <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
-                        {fixture.competitionName || 'EFL UZ'} • {fixture.roundName || `Round ${fixture.matchday}`}
-                      </div>
+                  {/* Home Team (Right aligned towards center) */}
+                  <div className="flex items-center justify-end gap-2.5 min-w-0 pr-2">
+                    <span className="text-xs font-bold text-slate-900 dark:text-white truncate text-right">
+                      {home.name}
+                    </span>
+                    <div className="w-6 h-6 rounded-md bg-slate-50 dark:bg-[#171e2c] border border-[#e2e6ec] dark:border-white/10 p-0.5 flex items-center justify-center shrink-0">
+                      <ClubCrest
+                        clubId={home.id}
+                        logoUrl={home.logoUrl}
+                        name={home.name}
+                        size="xs"
+                      />
                     </div>
                   </div>
 
-                  {/* Score or Fixture Time */}
-                  <div className="shrink-0 text-right ml-2">
+                  {/* Center Time / Score + Status underneath (matching reference video) */}
+                  <div className="flex flex-col items-center justify-center min-w-[70px] sm:min-w-[85px] px-1">
                     {isMatchFinished ? (
-                      <span className="font-mono text-xs font-black text-slate-900 dark:text-white px-2 py-0.5 bg-slate-100 dark:bg-white/10 rounded-md tabular-nums">
-                        {fixture.homeScore} : {fixture.awayScore}
-                      </span>
+                      <>
+                        <span className="font-mono text-xs sm:text-sm font-black text-slate-900 dark:text-white tabular-nums tracking-tight">
+                          {fixture.homeScore} : {fixture.awayScore}
+                        </span>
+                        <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mt-0.5">
+                          YAKUN
+                        </span>
+                      </>
                     ) : (
-                      <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap">
-                        {formatFixtureDate(fixture)}
-                      </span>
+                      <>
+                        <span className="font-mono text-xs sm:text-sm font-black text-slate-900 dark:text-white tabular-nums tracking-tight">
+                          {sched.timeStr}
+                        </span>
+                        <span className="text-[9px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mt-0.5">
+                          {fixture.status === 'PENDING_CONFIRMATION'
+                            ? 'TASDIQ'
+                            : fixture.status === 'DISPUTED'
+                            ? 'NIZO'
+                            : 'BOSHLANISH'}
+                        </span>
+                      </>
                     )}
+                  </div>
+
+                  {/* Away Team (Left aligned from center) */}
+                  <div className="flex items-center justify-start gap-2.5 min-w-0 pl-2">
+                    <div className="w-6 h-6 rounded-md bg-slate-50 dark:bg-[#171e2c] border border-[#e2e6ec] dark:border-white/10 p-0.5 flex items-center justify-center shrink-0">
+                      <ClubCrest
+                        clubId={away.id}
+                        logoUrl={away.logoUrl}
+                        name={away.name}
+                        size="xs"
+                      />
+                    </div>
+                    <span className="text-xs font-bold text-slate-900 dark:text-white truncate text-left">
+                      {away.name}
+                    </span>
                   </div>
                 </button>
               );
@@ -683,6 +788,18 @@ export const MatchdayHomeView: React.FC<Props> = ({
               {matchTab === 'upcoming' ? c.noUpcomingYet : c.noResultsYet}
             </div>
           )}
+        </div>
+
+        {/* View all matches footer link */}
+        <div className="p-2.5 text-center bg-slate-50/50 dark:bg-white/[0.01] border-t border-[#e2e6ec]/60 dark:border-white/5">
+          <button
+            type="button"
+            onClick={() => onNavigateTab('my-club')}
+            className="text-xs font-bold text-[#2563eb] dark:text-[#3b82f6] hover:underline inline-flex items-center gap-1"
+          >
+            <span>{c.viewAllMatches}</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
         </div>
       </section>
 
@@ -701,11 +818,10 @@ export const MatchdayHomeView: React.FC<Props> = ({
             className="text-xs font-semibold text-[#2563eb] dark:text-[#3b82f6] hover:underline inline-flex items-center gap-1"
           >
             <span>{c.browseLeagues}</span>
-            <ChevronRight className="w-3 h-3" />
+            <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        {/* Unified 5-column sports statistics bar */}
         <div className="grid grid-cols-5 divide-x divide-[#e2e6ec] dark:divide-white/10 rounded-xl bg-[#eef1f5] dark:bg-[#171e2c] border border-[#e2e6ec] dark:border-white/5 py-2 text-center">
           <div className="px-1">
             <span className="block text-[9px] uppercase font-bold text-slate-500 dark:text-slate-400">
@@ -750,7 +866,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
         </div>
       </section>
 
-      {/* 6. COMPETITION ACCESS SHORTCUTS: Clean 3-column tiles */}
+      {/* 6. COMPETITION ACCESS SHORTCUTS */}
       <section className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-[#111722] border border-[#e2e6ec] dark:border-white/10 shadow-xs space-y-2">
         <div className="flex items-center justify-between mb-0.5">
           <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
@@ -761,12 +877,12 @@ export const MatchdayHomeView: React.FC<Props> = ({
             onClick={() => onNavigateTab('leagues')}
             className="text-xs font-semibold text-[#2563eb] dark:text-[#3b82f6] hover:underline"
           >
-            {c.viewAll}
+            Hammasi
           </button>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          {/* Domestic League shortcut */}
+          {/* Domestic League */}
           <button
             type="button"
             onClick={() => onNavigateTab('leagues')}
@@ -788,7 +904,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
             <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform shrink-0" />
           </button>
 
-          {/* Domestic Cup shortcut */}
+          {/* Domestic Cup */}
           <button
             type="button"
             onClick={() => onNavigateTab('cups')}
@@ -810,7 +926,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
             <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform shrink-0" />
           </button>
 
-          {/* European Tournaments shortcut */}
+          {/* European Tournaments */}
           <button
             type="button"
             onClick={() => onNavigateTab('champions-league')}
@@ -834,7 +950,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
         </div>
       </section>
 
-      {/* Result Submission Modal if active */}
+      {/* Result Submission Modal */}
       {selectedFixtureForSubmit && (
         <ResultSubmissionModal
           fixture={selectedFixtureForSubmit}

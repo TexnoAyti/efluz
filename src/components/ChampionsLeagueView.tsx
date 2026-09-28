@@ -301,7 +301,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
   return (
     <div className="space-y-6 animate-in fade-in duration-300 pb-20">
       {/* Category Quick Switcher Hub */}
-      {onNavigateTab && (
+      {!user?.isAdmin && onNavigateTab && (
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
           <button
             onClick={() => onNavigateTab('leagues')}

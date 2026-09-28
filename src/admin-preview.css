@@ -195,27 +195,94 @@
 .efl-preview .preview-surface,
 .efl-preview .glass-panel,
 .efl-preview .glass-card {
-  background: var(--efl-surface);
-  border-color: var(--efl-border);
-  color: var(--efl-text);
-  box-shadow: var(--efl-shadow);
+  background: var(--efl-surface) !important;
+  border-color: var(--efl-border) !important;
+  color: var(--efl-text) !important;
+  box-shadow: var(--efl-shadow) !important;
 }
 
 .efl-preview .preview-surface-elevated {
-  background: var(--efl-surface-2);
-  border-color: var(--efl-border);
-  color: var(--efl-text);
+  background: var(--efl-surface-2) !important;
+  border-color: var(--efl-border) !important;
+  color: var(--efl-text) !important;
 }
 
 .efl-preview .glass-button {
-  background: var(--efl-surface-2);
-  border-color: var(--efl-border);
-  color: var(--efl-text);
+  background: var(--efl-surface-2) !important;
+  border-color: var(--efl-border) !important;
+  color: var(--efl-text) !important;
 }
 
 .efl-preview .glass-button:hover {
-  background: var(--efl-primary-soft);
-  color: var(--efl-primary);
+  background: var(--efl-primary-soft) !important;
+  color: var(--efl-primary) !important;
+}
+
+/* Primary Button in Admin Broadcast (Cobalt Blue instead of legacy mint) */
+.efl-preview .btn-glass-primary {
+  background: var(--efl-primary) !important;
+  color: #ffffff !important;
+  border: 1px solid transparent !important;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25) !important;
+  border-radius: 0.75rem !important;
+  transition: all 150ms ease !important;
+}
+
+.efl-preview .btn-glass-primary:hover {
+  background: var(--efl-primary-strong) !important;
+  transform: translateY(-1px);
+}
+
+.efl-preview .btn-glass-primary:active {
+  transform: scale(0.98);
+}
+
+/* Inputs in Admin Broadcast */
+.efl-preview .glass-input {
+  background: var(--efl-surface-2) !important;
+  border: 1px solid var(--efl-border) !important;
+  color: var(--efl-text) !important;
+}
+
+.efl-preview .glass-input::placeholder {
+  color: var(--efl-muted) !important;
+}
+
+.efl-preview .glass-input:focus {
+  border-color: var(--efl-primary) !important;
+  outline: none;
+  box-shadow: 0 0 0 2px var(--efl-primary-soft) !important;
+}
+
+/* League Banner Override */
+.efl-preview .preview-league-banner {
+  background: var(--efl-surface) !important;
+  border: 1px solid var(--efl-border) !important;
+  border-radius: 1.25rem !important;
+}
+
+.efl-preview .preview-league-banner h1 {
+  color: var(--efl-text) !important;
+}
+
+/* Clean Tables in Broadcast UI */
+.efl-preview table {
+  color: var(--efl-text) !important;
+}
+
+.efl-preview thead tr {
+  background: var(--efl-surface-2) !important;
+  border-bottom: 1px solid var(--efl-border) !important;
+  color: var(--efl-text-2) !important;
+}
+
+.efl-preview tbody tr {
+  border-bottom: 1px solid var(--efl-border) !important;
+  transition: background-color 120ms ease;
+}
+
+.efl-preview tbody tr:hover {
+  background: var(--efl-surface-2) !important;
 }
 
 /* Desktop navigation overrides for admin */
