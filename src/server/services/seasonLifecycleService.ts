@@ -138,7 +138,7 @@ export async function getSeasonLifecycle(seasonId = 'season-2026-27', force = fa
 
   const labels: Record<LifecyclePhaseId, [string, string]> = {
     LEAGUE_1_9: ['Liga 1–9-turlar', 'MD1 tugagach MD2 ochiladi; MD9 dan keyin kuboklar'],
-    DOMESTIC_CUPS: ['Domestic Cups', '5 ta milliy kubok bosqichi'],
+    DOMESTIC_CUPS: ['Milliy kuboklar', '5 ta milliy kubok bosqichi'],
     LEAGUE_10_19: ['Liga 10–19-turlar', 'Bir davrali liga shu bosqichda MD19 bilan yakunlanadi'],
     EUROPE: ['UCL / UEL', 'MD19 dan keyin Yevropa liga bosqichi, turma-tur progression'],
   };
