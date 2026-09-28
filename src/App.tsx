@@ -46,7 +46,7 @@ const AppContent: React.FC = () => {
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
   const [openDisputesCount, setOpenDisputesCount] = useState(0);
   const [theme, setTheme] = useState<AppTheme>(() => {
-    if (typeof window === 'undefined') return 'coral';
+    if (typeof window === 'undefined') return 'mint';
     const saved = window.localStorage.getItem('efluz-preview-theme-v2') as AppTheme | null;
     return saved === 'coral' || saved === 'mint' || saved === 'blue' || saved === 'dark' ? saved : 'mint';
   });
@@ -70,6 +70,20 @@ const AppContent: React.FC = () => {
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
+
+  useEffect(() => {
+    if (!user?.isAdmin) return;
+    const previousBackground = document.body.style.backgroundColor;
+    const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+    const previousThemeColor = themeColor?.content;
+    const background = theme === 'dark' ? '#0d1424' : '#f5f7fa';
+    document.body.style.backgroundColor = background;
+    if (themeColor) themeColor.content = background;
+    return () => {
+      document.body.style.backgroundColor = previousBackground;
+      if (themeColor && previousThemeColor !== undefined) themeColor.content = previousThemeColor;
+    };
+  }, [user?.isAdmin, theme]);
 
   useEffect(() => {
     async function checkDisputes() {
