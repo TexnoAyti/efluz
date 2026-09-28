@@ -148,7 +148,7 @@ export const Navigation: React.FC<NavigationProps> = ({
                 key={item.id}
                 id={`mobile-tab-${item.id}`}
                 onClick={() => onTabChange(item.id)}
-                className={`relative flex flex-col items-center justify-center py-1 px-1 rounded-lg transition-colors min-h-[46px] touch-manipulation select-none ${user?.isAdmin && item.isActive ? 'preview-nav-active' : ''} ${
+                className={`relative flex flex-col items-center justify-center py-1 px-1 rounded-lg transition-colors min-h-[46px] touch-manipulation select-none ${item.isActive ? 'nav-item-active' : ''} ${user?.isAdmin && item.isActive ? 'preview-nav-active' : ''} ${
                   item.isActive
                     ? 'text-emerald-400 font-bold'
                     : 'text-slate-400 active:text-slate-200'
