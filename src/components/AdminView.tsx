@@ -818,7 +818,7 @@ export const AdminView: React.FC = () => {
         <div className="w-16 h-16 rounded-3xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 mx-auto mb-4 shadow-xl">
           <Shield className="w-8 h-8" />
         </div>
-        <h3 className="text-lg font-black text-white">Admin Authorization Required</h3>
+        <h3 className="text-lg font-black text-white">{t.adminAuthorizationRequired}</h3>
         <p className="text-xs text-slate-400 mt-2 leading-relaxed">
           The active account (Telegram ID: <span className="font-mono text-emerald-400 font-bold">{user?.telegramId || 'Unauthenticated'}</span>, Username: <span className="font-mono text-emerald-400 font-bold">@{user?.username || 'player'}</span>) does not possess administrative privileges.
         </p>
@@ -837,18 +837,18 @@ export const AdminView: React.FC = () => {
             <div className="flex flex-wrap items-center gap-2">
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center gap-1">
                 <Shield className="w-3 h-3" />
-                Tournament Control Dashboard
+                {t.adminPanel}
               </span>
               <span className="text-[11px] font-semibold text-slate-400">
-                Officer: <strong className="text-emerald-400">@{user?.username}</strong> ({user?.id})
+                {t.adminOfficer}: <strong className="text-emerald-400">@{user?.username}</strong> ({user?.id})
               </span>
               <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/15 text-emerald-300 border border-emerald-500/20 font-mono">
-                Season 2026/27 ACTIVE
+                {t.season} 2026/27 · FAOL
               </span>
             </div>
             <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2.5">
               <SlidersHorizontal className="w-6 h-6 text-amber-400 shrink-0" />
-              <span>EFL UZ Competition Management System</span>
+              <span>{t.adminDashboardTitle}</span>
             </h1>
           </div>
 
@@ -860,7 +860,7 @@ export const AdminView: React.FC = () => {
               className="px-4 py-2 glass-card text-slate-200 hover:text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-md min-h-[40px] touch-manipulation hover:border-emerald-500/40"
             >
               <RefreshCw className={`w-4 h-4 text-emerald-400 ${isLoading ? 'animate-spin' : ''}`} />
-              <span>Refresh Center</span>
+              <span>{t.adminRefreshCenter}</span>
             </button>
           </div>
         </div>
@@ -903,7 +903,7 @@ export const AdminView: React.FC = () => {
           }`}
         >
           <Activity className="w-4 h-4" />
-          <span>Overview</span>
+          <span>{t.adminOverview}</span>
           {pendingResults.length > 0 && (
             <span className="px-1.5 py-0.2 bg-amber-600 text-slate-950 rounded-full font-black text-[10px]">
               {pendingResults.length}
@@ -950,7 +950,7 @@ export const AdminView: React.FC = () => {
           }`}
         >
           <FileCheck className="w-4 h-4" />
-          <span>Results & Review</span>
+          <span>{t.adminResultsReview}</span>
           {(pendingResults.length > 0 || disputes.length > 0) && (
             <span className="px-1.5 py-0.2 bg-rose-600 text-white rounded-full font-black text-[10px] animate-pulse">
               {pendingResults.length + disputes.length}
@@ -969,7 +969,7 @@ export const AdminView: React.FC = () => {
           }`}
         >
           <Trophy className="w-4 h-4" />
-          <span>19 Competitions</span>
+          <span>{t.adminCompetitions}</span>
         </button>
 
         {/* 5A. DOMESTIC CUPS */}
@@ -983,7 +983,7 @@ export const AdminView: React.FC = () => {
           }`}
         >
           <Trophy className="w-4 h-4 text-amber-400" />
-          <span>Domestic Cups (5)</span>
+          <span>{t.adminDomesticCups}</span>
         </button>
 
         {/* 5B. EUROPEAN (UCL & UEL) */}
@@ -997,7 +997,7 @@ export const AdminView: React.FC = () => {
           }`}
         >
           <Globe2 className="w-4 h-4 text-blue-300" />
-          <span>UCL & UEL (32)</span>
+          <span>{t.adminEuropeanCompetitions}</span>
         </button>
 
         {/* 5C. TELEGRAM NOTIFICATIONS */}
@@ -1011,7 +1011,7 @@ export const AdminView: React.FC = () => {
           }`}
         >
           <Send className="w-4 h-4 text-sky-400" />
-          <span>Telegram Bot</span>
+          <span>{t.adminTelegramBot}</span>
         </button>
 
         {/* 6. PLAYERS */}
@@ -1025,7 +1025,7 @@ export const AdminView: React.FC = () => {
           }`}
         >
           <UserCheck className="w-4 h-4" />
-          <span>Players ({users.length})</span>
+          <span>{t.adminPlayers} ({users.length})</span>
         </button>
 
         {/* 7. SYSTEM & AUDIT */}
@@ -1039,7 +1039,7 @@ export const AdminView: React.FC = () => {
           }`}
         >
           <Database className="w-4 h-4" />
-          <span>System Diagnostics</span>
+          <span>{t.adminSystemDiagnostics}</span>
         </button>
       </div>
 
@@ -1054,29 +1054,29 @@ export const AdminView: React.FC = () => {
             <div className="glass-card p-4 rounded-2xl relative overflow-hidden border-emerald-500/30">
               <div className="text-[10px] font-black text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5" />
-                Active Season
+                Faol mavsum
               </div>
               <div className="text-xl sm:text-2xl font-black text-white mt-1">2026/27</div>
-              <div className="text-[10px] text-emerald-400 font-semibold mt-0.5">Status: ACTIVE • 5 Leagues</div>
+              <div className="text-[10px] text-emerald-400 font-semibold mt-0.5">Holat: FAOL • 5 ta liga</div>
             </div>
 
             {/* Total Users */}
             <div className="glass-card p-4 rounded-2xl relative overflow-hidden border-slate-800">
               <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                 <UserCheck className="w-3.5 h-3.5" />
-                Registered Users
+                Ro‘yxatdan o‘tgan foydalanuvchilar
               </div>
               <div className="text-xl sm:text-2xl font-black text-white mt-1 tabular-nums">
                 {overviewData?.counts?.totalUsers || users.length || 0}
               </div>
-              <div className="text-[10px] text-slate-400 mt-0.5">Telegram Verified Players</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">Telegram tasdiqlagan o‘yinchilar</div>
             </div>
 
             {/* Registered Clubs (96) */}
             <div className="glass-card p-4 rounded-2xl relative overflow-hidden border-slate-800">
               <div className="text-[10px] font-black text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
                 <Shield className="w-3.5 h-3.5" />
-                Registered Clubs
+                Ro‘yxatdan o‘tgan klublar
               </div>
               <div className="text-xl sm:text-2xl font-black text-white mt-1 tabular-nums">96</div>
               <div className="text-[10px] text-slate-400 mt-0.5">
@@ -1089,10 +1089,10 @@ export const AdminView: React.FC = () => {
             <div className="glass-card p-4 rounded-2xl relative overflow-hidden border-amber-500/30">
               <div className="text-[10px] font-black text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
                 <Trophy className="w-3.5 h-3.5" />
-                Active Competitions
+                Faol musobaqalar
               </div>
               <div className="text-xl sm:text-2xl font-black text-white mt-1 tabular-nums">19</div>
-              <div className="text-[10px] text-slate-400 mt-0.5">5 Leagues • 6 Cups • 5 Super • 3 UEFA</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">5 liga • 6 kubok • 5 superkubok • 3 UEFA</div>
             </div>
           </div>
 
@@ -1100,36 +1100,36 @@ export const AdminView: React.FC = () => {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {/* Upcoming Matches */}
             <div className="glass-card p-4 rounded-2xl border-slate-800">
-              <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Upcoming Matches</div>
+              <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Kutilayotgan o‘yinlar</div>
               <div className="text-xl font-black text-white mt-1 tabular-nums">{matchMetrics.upcoming}</div>
-              <div className="text-[10px] text-slate-400 mt-0.5">Scheduled & In-Play</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">Rejalashtirilgan va jarayondagi</div>
             </div>
 
             {/* Completed Matches */}
             <div className="glass-card p-4 rounded-2xl border-slate-800">
-              <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Completed Matches</div>
+              <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Yakunlangan o‘yinlar</div>
               <div className="text-xl font-black text-emerald-400 mt-1 tabular-nums">{matchMetrics.completed}</div>
-              <div className="text-[10px] text-slate-400 mt-0.5">Confirmed & In Standings</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">Tasdiqlangan va jadvalda</div>
             </div>
 
             {/* Pending Confirmations */}
             <div className="glass-card p-4 rounded-2xl border-amber-500/30 bg-amber-950/10">
               <div className="text-[10px] font-black text-amber-400 uppercase tracking-wider flex items-center gap-1">
                 <Clock className="w-3 h-3" />
-                Pending Confirmations
+                Tasdiq kutilmoqda
               </div>
               <div className="text-xl font-black text-amber-300 mt-1 tabular-nums">{pendingResults.length}</div>
-              <div className="text-[10px] text-slate-400 mt-0.5">Awaiting Review or Consensus</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">Ko‘rib chiqish yoki tasdiq kutilmoqda</div>
             </div>
 
             {/* Open Disputes */}
             <div className="glass-card p-4 rounded-2xl border-rose-500/30 bg-rose-950/10">
               <div className="text-[10px] font-black text-rose-400 uppercase tracking-wider flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3" />
-                Open Conflicts
+                Ochiq bahslar
               </div>
               <div className="text-xl font-black text-rose-300 mt-1 tabular-nums">{disputes.length}</div>
-              <div className="text-[10px] text-slate-400 mt-0.5">Score Mismatches</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">Hisoblar mos kelmagan</div>
             </div>
           </div>
 
