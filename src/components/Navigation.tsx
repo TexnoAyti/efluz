@@ -172,7 +172,7 @@ export const Navigation: React.FC<NavigationProps> = ({
                   )}
                 </div>
                 <span
-                  className={`glass-nav-label text-[10px] mt-0.5 tracking-tight truncate max-w-[68px] leading-tight ${
+                  className={`glass-nav-label text-[11px] mt-0.5 tracking-tight text-center max-w-[78px] leading-[1.1] ${
                     item.isActive ? 'text-emerald-400 font-bold' : 'text-slate-400 font-normal'
                   }`}
                 >

@@ -414,6 +414,14 @@
 .efl-preview:not(.theme-dark) main[data-preview-page="profile"] .glass-panel.text-white,
 .efl-preview:not(.theme-dark) main[data-preview-page="profile"] .glass-panel .text-white { color: var(--preview-ink); }
 .efl-preview:not(.theme-dark) main[data-preview-page="profile"] .glass-panel[class*="bg-gradient"] { background: linear-gradient(110deg, var(--preview-soft), var(--preview-panel)); }
+.efl-preview:not(.theme-dark) main[data-preview-page="profile"] .season-profile-card {
+  background: linear-gradient(145deg, var(--preview-soft), var(--preview-panel) 48%);
+  border-color: var(--preview-border);
+  box-shadow: 0 8px 26px var(--preview-shadow);
+}
+.efl-preview:not(.theme-dark) main[data-preview-page="profile"] .season-profile-card [class*="bg-black/"] {
+  background: var(--preview-raised);
+}
 
 /* Admin console: dense control surfaces need the same neutral contrast. */
 .efl-preview:not(.theme-dark) main[data-preview-page="admin"] :is(.text-white, .text-slate-100, .text-slate-200):not([class*="bg-"]) { color: var(--preview-ink); }
