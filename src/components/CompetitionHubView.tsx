@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n';
 import { ClubsView } from './ClubsView';
 import { CupBracketsView } from './CupBracketsView';
@@ -28,51 +27,61 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
     return initialSubTab;
   });
 
+  // Sync subTab if initialSubTab prop changes (e.g. from Home shortcuts)
+  useEffect(() => {
+    if (initialSubTab) {
+      setSubTab(initialSubTab);
+    }
+  }, [initialSubTab]);
+
   const titles = {
     uz: {
-      leagues: 'Milliy Ligalar',
+      heading: 'Turnirlar',
+      domestic: 'Milliy Ligalar',
       cups: 'Kuboklar',
       european: 'Yevrokuboklar',
       season: 'Mavsum',
-      heading: 'Turnirlar Markazi',
-      subtitle: 'Premier League, La Liga, Milliy Kuboklar va UEFA Chempionlar Ligasi',
     },
     ru: {
-      leagues: 'Лиги',
+      heading: 'Турниры',
+      domestic: 'Лиги',
       cups: 'Кубки',
       european: 'Еврокубки',
       season: 'Сезон',
-      heading: 'Центр Турниров',
-      subtitle: 'Premier League, La Liga, Национальные кубки и Лига Чемпионов УЕФА',
     },
     en: {
-      leagues: 'Leagues',
+      heading: 'Competitions',
+      domestic: 'Domestic',
       cups: 'Cups',
-      european: 'European',
+      european: 'Europe',
       season: 'Season',
-      heading: 'Competition Hub',
-      subtitle: 'Premier League, La Liga, Domestic Cups, and UEFA Champions League',
     },
   }[language] || {
-    leagues: 'Leagues',
+    heading: 'Competitions',
+    domestic: 'Domestic',
     cups: 'Cups',
-    european: 'European',
+    european: 'Europe',
     season: 'Season',
-    heading: 'Competition Hub',
-    subtitle: 'Premier League, La Liga, Domestic Cups, and UEFA Champions League',
   };
 
   const navItems = [
-    { id: 'leagues' as const, label: titles.leagues, icon: Trophy },
+    { id: 'leagues' as const, label: titles.domestic, icon: Trophy },
     { id: 'cups' as const, label: titles.cups, icon: Award },
     { id: 'european' as const, label: titles.european, icon: Globe2 },
     { id: 'season' as const, label: titles.season, icon: CalendarDays },
   ];
 
   return (
-    <div className="space-y-4 pb-24 animate-in fade-in duration-200">
-      {/* Segmented Top Selector */}
-      <div className="preview-surface p-1.5 rounded-2xl flex items-center gap-1 overflow-x-auto scrollbar-none border border-slate-200/80 dark:border-white/10 shadow-sm">
+    <div className="space-y-4 pb-20 animate-in fade-in duration-200">
+      {/* 1. Single Top Page Title */}
+      <div className="flex items-center justify-between pt-1">
+        <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+          {titles.heading}
+        </h1>
+      </div>
+
+      {/* 2. Top-Level Category Segmented Bar */}
+      <div className="p-1 rounded-2xl bg-[#eef1f5] dark:bg-[#171e2c] border border-[#e2e6ec] dark:border-white/10 flex items-center gap-1 overflow-x-auto scrollbar-none shadow-xs">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = subTab === item.id;
@@ -81,20 +90,20 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
               key={item.id}
               type="button"
               onClick={() => setSubTab(item.id)}
-              className={`flex-1 min-w-[78px] flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl text-xs font-bold transition-all ${
+              className={`flex-1 min-w-[76px] flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl text-xs font-bold transition-all ${
                 isActive
-                  ? 'bg-blue-600 text-white shadow-sm font-black'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5'
+                  ? 'bg-white dark:bg-[#111722] text-[#2563eb] dark:text-[#3b82f6] shadow-sm font-black'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-white' : 'text-slate-500 dark:text-slate-400'}`} />
+              <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-[#2563eb] dark:text-[#3b82f6]' : 'text-slate-400'}`} />
               <span className="truncate">{item.label}</span>
             </button>
           );
         })}
       </div>
 
-      {/* View Content */}
+      {/* 3. Category Content */}
       <div className="min-w-0">
         {subTab === 'leagues' && <ClubsView onNavigateTab={onNavigateTab} />}
         {subTab === 'cups' && <CupBracketsView onNavigateTab={onNavigateTab} />}

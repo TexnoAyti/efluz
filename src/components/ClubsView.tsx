@@ -410,33 +410,35 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300 pb-20">
-      {/* Category Quick Switcher Hub */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-        <button
-          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-black btn-glass-primary text-slate-950 shadow-md min-h-[36px]"
-        >
-          <Shield className="w-3.5 h-3.5" />
-          <span>{user?.isAdmin ? previewText.domestic : 'Domestic Leagues'}</span>
-        </button>
-        {onNavigateTab && (
-          <>
-            <button
-              onClick={() => onNavigateTab('cups')}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold glass-card text-slate-300 hover:text-white min-h-[36px]"
-            >
-              <Trophy className="w-3.5 h-3.5 text-amber-400" />
-              <span>{user?.isAdmin ? previewText.cups : 'National Cups'}</span>
-            </button>
-            <button
-              onClick={() => onNavigateTab('champions-league')}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold glass-card text-slate-300 hover:text-white min-h-[36px]"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-blue-400" />
-              <span>Champions League</span>
-            </button>
-          </>
-        )}
-      </div>
+      {/* Category Quick Switcher Hub (Legacy Normal Players only) */}
+      {!user?.isAdmin && (
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+          <button
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-black btn-glass-primary text-slate-950 shadow-md min-h-[36px]"
+          >
+            <Shield className="w-3.5 h-3.5" />
+            <span>Domestic Leagues</span>
+          </button>
+          {onNavigateTab && (
+            <>
+              <button
+                onClick={() => onNavigateTab('cups')}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold glass-card text-slate-300 hover:text-white min-h-[36px]"
+              >
+                <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                <span>National Cups</span>
+              </button>
+              <button
+                onClick={() => onNavigateTab('champions-league')}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold glass-card text-slate-300 hover:text-white min-h-[36px]"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+                <span>Champions League</span>
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* 1. Domestic Leagues Selector Bar */}
       <div className="space-y-2">
