@@ -114,7 +114,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNotifications, onOpenProfi
 
         {/* Right Controls */}
         <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-          <div className="relative">
+          {user?.isAdmin && <div className="relative">
             <button type="button" onClick={() => setShowThemeMenu((open) => !open)} className="preview-theme-trigger" aria-label="Change app colors" title="Change app colors">
               <Palette className="h-4 w-4" />
             </button>
@@ -130,7 +130,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNotifications, onOpenProfi
                 ))}
               </div>
             )}
-          </div>
+          </div>}
           {/* Season Selector (Desktop only) */}
           <div className="relative hidden md:block">
             <button

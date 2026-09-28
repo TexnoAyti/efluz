@@ -497,3 +497,155 @@
 .efl-preview:not(.theme-dark) .matchday-league-card .text-white\/50 { color: var(--preview-accent); }
 .efl-preview.theme-dark .preview-theme-menu { background: #141d31; border-color: rgba(255,255,255,.12); color: #f8fafc; }
 .efl-preview.theme-dark .preview-theme-option { color: #cbd5e1; }
+
+/* The uploaded mark has white letters: preserve a dark backing in light themes. */
+.preview-brand-logo {
+  width: 116px;
+  height: 42px;
+  padding: 7px 9px;
+  border-radius: 12px;
+  background: #050505;
+}
+.efl-preview .preview-brand-mark {
+  background: #050505;
+  border-radius: 12px;
+  box-shadow: none;
+}
+.efl-preview:not(.theme-dark) .preview-brand-mark { background: #050505; }
+.efl-preview .preview-app-header .preview-theme-trigger {
+  background: var(--preview-accent-soft);
+  border: 1px solid color-mix(in srgb, var(--preview-accent) 30%, #fff);
+  color: var(--preview-accent);
+}
+.efl-preview .preview-app-header .preview-theme-option {
+  background: transparent;
+  border: 0;
+  color: #354055;
+}
+.efl-preview .preview-app-header .preview-theme-option:hover,
+.efl-preview .preview-app-header .preview-theme-option.is-active {
+  background: var(--preview-accent-soft);
+  color: var(--preview-accent);
+}
+
+/* One palette powers every admin preview surface and navigation state. */
+.efl-preview {
+  --preview-bg: #f4f6fb;
+  --preview-panel: #fff;
+  --preview-secondary: #f1f3f8;
+  --preview-border: #e2e7f0;
+  --preview-title: #182033;
+  --preview-shadow: rgba(30, 40, 66, .06);
+  background: var(--preview-bg);
+  color: var(--preview-title);
+}
+.efl-preview.theme-dark {
+  --preview-bg: #0d1424;
+  --preview-panel: #172239;
+  --preview-secondary: #223149;
+  --preview-border: #344158;
+  --preview-title: #f6f8fc;
+  --preview-shadow: rgba(0, 0, 0, .28);
+  background: var(--preview-bg);
+  color: var(--preview-title);
+}
+.efl-preview .preview-app-header,
+.efl-preview footer,
+.efl-preview nav.hidden.lg\:block {
+  background: var(--preview-panel);
+  border-color: var(--preview-border);
+  color: var(--preview-title);
+}
+.efl-preview .glass-panel,
+.efl-preview .glass-card,
+.efl-preview .glass-modal,
+.efl-preview .preview-surface,
+.efl-preview .matchday-result-modal {
+  background: var(--preview-panel);
+  border-color: var(--preview-border);
+  color: var(--preview-title);
+  box-shadow: 0 5px 18px var(--preview-shadow);
+}
+.efl-preview .glass-input,
+.efl-preview .matchday-result-modal input[type="number"],
+.efl-preview .matchday-result-modal input[type="url"] {
+  background: var(--preview-secondary);
+  border-color: var(--preview-border);
+  color: var(--preview-title);
+}
+.efl-preview .glass-button,
+.efl-preview .glass-pill {
+  background: var(--preview-secondary);
+  border-color: var(--preview-border);
+  color: var(--preview-title);
+}
+.efl-preview .glass-card-interactive:hover,
+.efl-preview .glass-button:hover { background: var(--preview-accent-soft); }
+.efl-preview .preview-league-banner,
+.efl-preview .preview-match-center {
+  background: linear-gradient(130deg, var(--preview-accent-soft), var(--preview-panel) 70%);
+  border-color: var(--preview-border);
+}
+.efl-preview .btn-glass-primary,
+.efl-preview .matchday-home [aria-pressed="true"] {
+  background: var(--preview-accent);
+  border-color: var(--preview-accent);
+  color: #fff;
+}
+.efl-preview .matchday-kicker,
+.efl-preview .matchday-home .text-emerald-300,
+.efl-preview .matchday-home .text-emerald-400,
+.efl-preview .preview-bottom-nav .preview-nav-active,
+.efl-preview .preview-app-header .text-emerald-400 {
+  color: var(--preview-accent);
+}
+.efl-preview .matchday-home h1 span.text-emerald-300,
+.efl-preview .matchday-stat strong.text-emerald-300 { color: var(--preview-accent) !important; }
+.efl-preview .glass-nav-bottom.preview-bottom-nav {
+  background: var(--preview-panel);
+  border-color: var(--preview-border);
+}
+.efl-preview .preview-bottom-nav .preview-nav-active {
+  background: var(--preview-accent-soft);
+  color: var(--preview-accent);
+}
+.efl-preview .matchday-search-button,
+.efl-preview .matchday-quick,
+.efl-preview .matchday-stat {
+  background: var(--preview-panel);
+  border-color: var(--preview-border);
+  color: var(--preview-title);
+}
+.efl-preview .matchday-stat strong { color: var(--preview-title); }
+.efl-preview .matchday-featured {
+  background: linear-gradient(135deg, var(--preview-accent-soft), var(--preview-panel) 72%);
+  border-color: color-mix(in srgb, var(--preview-accent) 30%, var(--preview-border));
+  box-shadow: 0 10px 26px var(--preview-shadow);
+}
+.efl-preview .matchday-featured::after { background: none; }
+.efl-preview .matchday-featured .text-white,
+.efl-preview .matchday-featured .text-white\/90,
+.efl-preview .matchday-featured .bg-white { color: var(--preview-title); }
+.efl-preview .matchday-featured .text-rose-100\/80 { color: var(--preview-accent); }
+.efl-preview .matchday-league-card.tone-indigo,
+.efl-preview .matchday-league-card.tone-coral,
+.efl-preview .matchday-league-card.tone-blue,
+.efl-preview .matchday-league-card.tone-red,
+.efl-preview .matchday-league-card.tone-teal {
+  background: linear-gradient(145deg, var(--preview-accent-soft), var(--preview-panel));
+  border-color: var(--preview-border);
+}
+.efl-preview .matchday-league-card .text-white { color: var(--preview-title); }
+.efl-preview .matchday-league-card .text-white\/70 { color: var(--preview-muted); }
+.efl-preview .matchday-league-mark { background: var(--preview-panel); border-color: var(--preview-border); color: var(--preview-accent); }
+.efl-preview.theme-dark .matchday-home h1,
+.efl-preview.theme-dark .matchday-home h2,
+.efl-preview.theme-dark .matchday-home .text-white,
+.efl-preview.theme-dark .preview-app-header .text-white,
+.efl-preview.theme-dark .preview-app-header .text-slate-300 { color: var(--preview-title); }
+.efl-preview.theme-dark .matchday-home .text-slate-200,
+.efl-preview.theme-dark .matchday-home .text-slate-300,
+.efl-preview.theme-dark .matchday-home .text-slate-400,
+.efl-preview.theme-dark .matchday-home .text-slate-500 { color: var(--preview-muted); }
+.efl-preview.theme-dark .preview-theme-menu { background: var(--preview-panel); border-color: var(--preview-border); }
+.efl-preview.theme-dark .preview-app-header .preview-theme-option { color: var(--preview-title); }
