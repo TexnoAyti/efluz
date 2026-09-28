@@ -84,6 +84,7 @@ import {
   DEFAULT_SMART_NOTIFICATION_EVENTS,
 } from '../services/smartNotificationSettingsService';
 import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
+import { advanceClubAdmission, CLUB_ADMISSION_LEAGUES, ClubAdmissionConflict, getClubAdmissionStatus } from '../services/clubAdmission';
 import { queryAll, queryGet } from '../db/index';
 import {
   rebuildAllReadModels,
@@ -102,6 +103,35 @@ export const adminRouter = Router();
 
 // Protect ALL admin routes with server-side requireAdmin
 adminRouter.use(requireAdmin);
+
+adminRouter.get('/clubs/admission', async (req: Request, res: Response) => {
+  const seasonId = String(req.query.seasonId || 'season-2026-27');
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ admission: await getClubAdmissionStatus(seasonId) });
+  } catch (err: any) {
+    handleFirestoreError(res, err, 'GET /api/admin/clubs/admission');
+  }
+});
+
+adminRouter.post('/clubs/admission/advance', async (req: Request, res: Response) => {
+  const seasonId = String(req.body?.seasonId || 'season-2026-27');
+  const expectedStage = req.body?.expectedStage;
+  if (!/^season-[a-z0-9-]+$/.test(seasonId) || !Number.isInteger(expectedStage) || expectedStage < -1 || expectedStage > CLUB_ADMISSION_LEAGUES.length) {
+    res.status(400).json({ code: 'INVALID_ADMISSION_STAGE' });
+    return;
+  }
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ admission: await advanceClubAdmission(seasonId, expectedStage, req.user!.id) });
+  } catch (err: any) {
+    if (err instanceof ClubAdmissionConflict) {
+      res.status(409).json({ code: err.code, message: err.message });
+      return;
+    }
+    handleFirestoreError(res, err, 'POST /api/admin/clubs/admission/advance');
+  }
+});
 
 const smartNotificationSettingsSchema = z.object({
   seasonId: z.string().min(1).optional(),

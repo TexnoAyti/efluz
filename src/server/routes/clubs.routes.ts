@@ -11,6 +11,7 @@ import {
 import { SEED_CLUBS } from '../db/seed';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
 import { verifyTelegramGroupMembership } from '../services/telegramBotService';
+import { ClubAdmissionConflictError, getClubAdmissionStatus } from '../services/clubAdmission';
 import {
   invalidateClubReadModels,
   invalidateUserMembershipReadModel,
@@ -19,6 +20,20 @@ import {
 } from '../readModel/readModelStore';
 
 export const clubsRouter = Router();
+
+clubsRouter.get('/admission', async (req: Request, res: Response) => {
+  const seasonId = String(req.query.seasonId || 'season-2026-27');
+  if (!/^season-[a-z0-9-]+$/.test(seasonId)) {
+    res.status(400).json({ code: 'INVALID_SEASON_ID' });
+    return;
+  }
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ admission: await getClubAdmissionStatus(seasonId) });
+  } catch (err: any) {
+    handleFirestoreError(res, err, 'GET /api/clubs/admission');
+  }
+});
 
 // Helper to resolve canonical club from canonical id or numeric/external id
 function resolveCanonicalClub(id: string) {
@@ -333,6 +348,10 @@ clubsRouter.post('/:id/claim', requireAuth, async (req: Request, res: Response) 
   }
 
   const seasonId = (req.body.seasonId as string) || 'season-2026-27';
+  if (!/^season-[a-z0-9-]+$/.test(seasonId)) {
+    res.status(400).json({ code: 'INVALID_SEASON_ID' });
+    return;
+  }
   const userId = req.user!.id;
   const telegramId = req.user!.telegramId;
 
@@ -361,6 +380,10 @@ clubsRouter.post('/:id/claim', requireAuth, async (req: Request, res: Response) 
       club: result.club,
     });
   } catch (err: any) {
+    if (err instanceof ClubAdmissionConflictError) {
+      res.status(409).json({ code: err.code, message: err.message });
+      return;
+    }
     if (err instanceof ClubConflictError) {
       res.status(409).json({
         error: err.code || 'CLUB_CONFLICT',

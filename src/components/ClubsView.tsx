@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../context/UserProfileContext';
 import { useI18n } from '../i18n';
-import { api } from '../lib/api';
+import { api, type ClubAdmissionStatus } from '../lib/api';
 import { premiumApi } from '../lib/premiumApi';
 import { League, Club, Fixture, StandingsRow, Competition } from '../types';
 import { ClubCrest } from './ClubCrest';
@@ -38,6 +38,11 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
     ru: { domestic: 'Национальные лиги', cups: 'Национальные кубки', refresh: 'Обновить', tier: 'Уровень', active: 'Активен', clubs: 'Клубы', matches: 'Матчи', standings: 'Таблица', available: 'Свободно', claimed: 'Занято', matchday: 'Тур', emptyFixtures: 'В этом туре матчей нет.', emptyStandings: 'Таблица пока не сформирована.' },
     en: { domestic: 'Domestic Leagues', cups: 'National Cups', refresh: 'Refresh', tier: 'Tier', active: 'Active', clubs: 'Clubs', matches: 'Matches', standings: 'Standings', available: 'Available', claimed: 'Claimed', matchday: 'Matchday', emptyFixtures: 'No fixtures scheduled for this matchday.', emptyStandings: 'Standings are not available yet.' },
   }[language] || { domestic: 'Milliy ligalar', cups: 'Milliy kuboklar', refresh: 'Yangilash', tier: 'Daraja', active: 'Faol', clubs: 'Klublar', matches: 'O‘yinlar', standings: 'Jadval', available: 'Bo‘sh', claimed: 'Tanlangan', matchday: 'Tur', emptyFixtures: 'Bu turda o‘yin yo‘q.', emptyStandings: 'Jadval hali shakllanmagan.' };
+  const admissionText = {
+    uz: { unavailable: 'Klub qabuli holatini yuklab bo‘lmadi.', checking: 'Klub qabuli tekshirilmoqda…', open: 'Klub tanlash ochiq.', leagueOpen: 'Bu ligada klub qabuli ochiq.', otherLeague: (name: string) => `Hozir ${name} klublari qabul qilinmoqda. Bu liga navbatda yoki yopilgan.`, finished: 'Klub qabuli yakunlangan.', retry: 'Qayta urinish', closed: 'Qabul yopiq' },
+    ru: { unavailable: 'Не удалось загрузить статус приёма.', checking: 'Проверяем приём клубов…', open: 'Выбор клуба открыт.', leagueOpen: 'Приём клубов этой лиги открыт.', otherLeague: (name: string) => `Сейчас принимаются клубы лиги ${name}. Эта лига ожидает очереди или уже закрыта.`, finished: 'Приём клубов завершён.', retry: 'Повторить', closed: 'Приём закрыт' },
+    en: { unavailable: 'Could not load club admission status.', checking: 'Checking club admission…', open: 'Club selection is open.', leagueOpen: 'Club selection is open for this league.', otherLeague: (name: string) => `Currently accepting ${name} clubs. This league is waiting or closed.`, finished: 'Club admission has ended.', retry: 'Retry', closed: 'Admission closed' },
+  }[language] || { unavailable: 'Klub qabuli holatini yuklab bo‘lmadi.', checking: 'Klub qabuli tekshirilmoqda…', open: 'Klub tanlash ochiq.', leagueOpen: 'Bu ligada klub qabuli ochiq.', otherLeague: (name: string) => `Hozir ${name} klublari qabul qilinmoqda. Bu liga navbatda yoki yopilgan.`, finished: 'Klub qabuli yakunlangan.', retry: 'Qayta urinish', closed: 'Qabul yopiq' };
 
   // League & Data states
   const [leagues, setLeagues] = useState<League[]>([]);
@@ -55,6 +60,24 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
 
   // Clubs state
   const [clubs, setClubs] = useState<Club[]>([]);
+  const [admission, setAdmission] = useState<ClubAdmissionStatus | null>(null);
+  const [admissionError, setAdmissionError] = useState(false);
+  const loadAdmission = useCallback(async () => {
+    try {
+      const result = await api.getClubAdmission(activeSeasonId);
+      setAdmission(result.admission);
+      setAdmissionError(false);
+    } catch {
+      setAdmission(null);
+      setAdmissionError(true);
+    }
+  }, [activeSeasonId]);
+  useEffect(() => {
+    setAdmission(null);
+    void loadAdmission();
+    window.addEventListener('focus', loadAdmission);
+    return () => window.removeEventListener('focus', loadAdmission);
+  }, [loadAdmission]);
   const [premiumActive, setPremiumActive] = useState(false);
   const [premiumStatusReady, setPremiumStatusReady] = useState(false);
   useEffect(() => {
@@ -253,6 +276,11 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
       setClubToClaim(null);
       return;
     }
+    if (!admission || admission.enabled && admission.activeLeagueId !== club.leagueId) {
+      showToast(admissionText.closed, 'error');
+      setClubToClaim(null);
+      return;
+    }
     if (ownedClubs.some((owned) => owned.leagueId === club.leagueId) || ownedClubs.length >= (premiumActive ? 2 : 1) || !premiumStatusReady) {
       showToast(ownedClubs.some((owned) => owned.leagueId === club.leagueId) ? 'Bitta ligadan faqat bitta klub tanlash mumkin.' : t.alreadyHaveClubMessage, 'error');
       setClubToClaim(null);
@@ -286,6 +314,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
         showToast(msg, 'error');
         return;
       }
+      if (err.data?.code === 'CLUB_ADMISSION_CLOSED') void loadAdmission();
       const msg = err.data?.message || err.message || 'Failed to claim club.';
       showToast(msg, 'error');
     } finally {
@@ -600,6 +629,10 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
       {/* TAB A: CLUBS LIST */}
       {activeLeagueTab === 'CLUBS' && (
         <div className="space-y-4">
+          <div className="glass-panel p-3 text-xs text-slate-300 flex items-center justify-between gap-3">
+            <span>{admissionError ? admissionText.unavailable : !admission ? admissionText.checking : !admission.enabled ? admissionText.open : admission.activeLeagueId === selectedLeagueId ? admissionText.leagueOpen : admission.activeLeagueId ? admissionText.otherLeague(admission.leagues[admission.stage].name) : admissionText.finished}</span>
+            {admissionError && <button type="button" onClick={() => void loadAdmission()} className="text-emerald-400 font-bold">{admissionText.retry}</button>}
+          </div>
           {/* Search & Filter Toolbar */}
           <div className="glass-panel p-3 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-md bg-[#0b101c]">
             <div className="relative w-full sm:w-72">
@@ -787,13 +820,13 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                             <span className="font-semibold text-slate-300 truncate">{ownerInfo.displayText}</span>
                           )}
                         </div>
-                      ) : !premiumStatusReady || ownedClubs.some((owned) => owned.leagueId === club.leagueId) || ownedClubs.length >= (premiumActive ? 2 : 1) ? (
+                      ) : !admission || admission.enabled && admission.activeLeagueId !== club.leagueId || !premiumStatusReady || ownedClubs.some((owned) => owned.leagueId === club.leagueId) || ownedClubs.length >= (premiumActive ? 2 : 1) ? (
                         <button
                           disabled={true}
                           className="w-full py-2 glass-card text-slate-500 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-not-allowed opacity-75 min-h-[38px]"
                         >
                           <Lock className="w-3.5 h-3.5 text-slate-600" />
-                          <span>{t.clubLocked}</span>
+                          <span>{admission?.enabled && admission.activeLeagueId !== club.leagueId ? admissionText.closed : t.clubLocked}</span>
                         </button>
                       ) : (
                         <button
