@@ -40,9 +40,10 @@ export function AdminClubAdmissionPanel({ seasonId }: { seasonId: string }) {
       {admission?.leagues.map((league, index) => <span key={league.id} className={`rounded-full border px-2.5 py-1 text-[11px] font-bold ${admission.stage === index ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-300' : 'border-white/10 text-slate-400'}`}>{index + 1}. {league.name}{admission.stage === index ? ' · Ochiq' : admission.stage > index ? ' · Yopilgan' : ' · Navbatda'}</span>)}
     </div>
     <div className="flex flex-wrap items-center gap-3">
-      <span className="text-xs text-slate-300">{!admission ? 'Holat yuklanmoqda…' : !admission.enabled ? 'Bosqichli qabul hali boshlanmagan.' : admission.activeLeagueId ? `Hozir: ${admission.leagues[admission.stage].name}` : 'Qabul yakunlangan.'}</span>
-      {admission && admission.stage < admission.leagues.length && <button type="button" onClick={advance} disabled={busy} className="btn-glass-primary px-3 py-2 text-xs font-black disabled:opacity-50">{busy ? 'Saqlanmoqda…' : next ? `${next.name} qabulini ochish` : 'Klub qabulini yakunlash'}</button>}
+      <span className="text-xs text-slate-300">{!admission ? error ? 'Qabul holati hozircha tekshirib bo‘lmadi.' : 'Holat yuklanmoqda…' : !admission.enabled ? 'Bosqichli qabul hali boshlanmagan.' : admission.activeLeagueId ? `Hozir: ${admission.leagues[admission.stage].name}` : 'Qabul yakunlangan.'}</span>
+      {admission && admission.stage < admission.leagues.length && <button type="button" onClick={advance} disabled={busy || admission.stale} className="btn-glass-primary px-3 py-2 text-xs font-black disabled:opacity-50">{busy ? 'Saqlanmoqda…' : next ? `${next.name} qabulini ochish` : 'Klub qabulini yakunlash'}</button>}
     </div>
+    {admission?.stale && <p role="status" className="text-xs text-amber-300">Oxirgi saqlangan qabul holati ko‘rsatilmoqda. Firestore tiklangach bosqichni o‘zgartirish mumkin.</p>}
     {error && <p role="alert" className="text-xs text-rose-300">{error}</p>}
   </section>;
 }
