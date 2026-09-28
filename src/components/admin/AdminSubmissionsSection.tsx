@@ -113,7 +113,7 @@ export const AdminSubmissionsSection: React.FC<{
       {loading ? (
         <div className="py-12 flex flex-col items-center justify-center gap-2 text-slate-400 text-xs">
           <Loader2 className="w-6 h-6 animate-spin text-emerald-400" />
-          <span>Loading result submissions...</span>
+          <span>Natijalar yuklanmoqda...</span>
         </div>
       ) : filteredSubmissions.length === 0 ? (
         <div className="glass-panel p-8 text-center text-slate-400 text-xs">
@@ -193,7 +193,7 @@ export const AdminSubmissionsSection: React.FC<{
                   <Trash2 className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-black text-white">Delete Result Submission</h3>
+                  <h3 className="text-sm font-black text-white">Natijani o‘chirish</h3>
                   <p className="text-[10px] text-slate-400">Remove fraudulent or invalid score entry</p>
                 </div>
               </div>

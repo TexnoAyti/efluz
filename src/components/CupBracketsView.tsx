@@ -127,30 +127,30 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
             className="flex min-h-[38px] shrink-0 items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.035] px-3.5 text-xs font-bold text-slate-300 transition hover:border-emerald-400/30 hover:text-white"
           >
             <Shield className="h-3.5 w-3.5 text-emerald-400" />
-            Domestic Leagues
+            {t.domesticLeagues}
           </button>
           <button className="flex min-h-[38px] shrink-0 items-center gap-2 rounded-xl border border-amber-300/30 bg-amber-400 px-3.5 text-xs font-black text-slate-950 shadow-lg shadow-amber-500/15">
             <Trophy className="h-3.5 w-3.5" />
-            National Cups
+            {t.nationalCups}
           </button>
           <button
             onClick={() => onNavigateTab('champions-league')}
             className="flex min-h-[38px] shrink-0 items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.035] px-3.5 text-xs font-bold text-slate-300 transition hover:border-blue-400/30 hover:text-white"
           >
             <Sparkles className="h-3.5 w-3.5 text-blue-400" />
-            Champions League
+            {t.championsLeague}
           </button>
         </div>
       )}
 
-      <section className="relative overflow-hidden rounded-[28px] border border-amber-300/20 bg-[radial-gradient(circle_at_16%_15%,rgba(251,191,36,0.18),transparent_27%),radial-gradient(circle_at_88%_18%,rgba(59,130,246,0.13),transparent_24%),linear-gradient(135deg,#111827_0%,#060b16_58%,#090d17_100%)] p-5 shadow-2xl sm:p-7">
+      <section className="preview-cup-hero relative overflow-hidden rounded-[28px] border border-amber-300/20 bg-[radial-gradient(circle_at_16%_15%,rgba(251,191,36,0.18),transparent_27%),radial-gradient(circle_at_88%_18%,rgba(59,130,246,0.13),transparent_24%),linear-gradient(135deg,#111827_0%,#060b16_58%,#090d17_100%)] p-5 shadow-2xl sm:p-7">
         <div className="pointer-events-none absolute -right-10 -top-16 h-52 w-52 rounded-full border border-amber-300/10" />
         <div className="pointer-events-none absolute -right-2 -top-8 h-36 w-36 rounded-full border border-amber-300/10" />
         <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-2xl">
             <div className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.22em] text-amber-300">
               <Crown className="h-3.5 w-3.5" />
-              EFL UZ • 2026/27 Cup Journey
+              EFL UZ • {t.cupJourney}
             </div>
             <h1 className="text-2xl font-black tracking-tight text-white sm:text-4xl">
               {activeCup?.name || t.navCups}
@@ -162,15 +162,15 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
 
           <div className="grid grid-cols-3 gap-2 sm:min-w-[370px]">
             <div className="rounded-2xl border border-white/[0.08] bg-black/20 p-3 backdrop-blur">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Clubs</div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{t.cupClubs}</div>
               <div className="mt-1 text-xl font-black text-white">{expectedTeams}</div>
             </div>
             <div className="rounded-2xl border border-white/[0.08] bg-black/20 p-3 backdrop-blur">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Matches</div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{t.cupMatches}</div>
               <div className="mt-1 text-xl font-black text-white">{format.totalMatches}</div>
             </div>
             <div className="rounded-2xl border border-amber-400/20 bg-amber-400/[0.07] p-3 backdrop-blur">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-amber-300/70">Champion</div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-amber-300/70">{t.cupChampion}</div>
               <div className="mt-1 text-xl font-black text-amber-300">1</div>
             </div>
           </div>

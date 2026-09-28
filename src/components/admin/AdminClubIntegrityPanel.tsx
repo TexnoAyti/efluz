@@ -60,7 +60,7 @@ export const AdminClubIntegrityPanel: React.FC<{ clubs: Club[] }> = ({ clubs }) 
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
             Club Owner Integrity
           </h3>
-          <p className="text-[11px] text-slate-400 mt-1">96-club ownership read-model health. Multi-league owners are informational; same-league conflicts are warnings.</p>
+          <p className="text-[11px] text-slate-400 mt-1">96 ta klub egaligi read-model holati. Turli ligalardagi egaliklar ma’lumot sifatida, bir liga ichidagi to‘qnashuvlar esa ogohlantirish sifatida ko‘rsatiladi.</p>
         </div>
         <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black border ${report.warnings.length ? 'bg-amber-500/10 border-amber-500/30 text-amber-300' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'}`}>
           {report.warnings.length ? `${report.warnings.length} warning(s)` : 'Healthy'}

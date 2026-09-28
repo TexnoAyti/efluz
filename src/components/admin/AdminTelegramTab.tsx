@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { api } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
+import { useI18n } from '../../i18n';
 import {
   Send,
   Users,
@@ -76,6 +77,8 @@ interface BroadcastRecord {
 
 export const AdminTelegramTab: React.FC = () => {
   const { showToast } = useAuth();
+  const { language } = useI18n();
+  const loc = (uz: string, ru: string, en: string) => ({ uz, ru, en })[language];
 
   // Audience & filters
   const [audience, setAudience] = useState<'ALL_USERS' | 'CLUB_OWNERS' | 'LEAGUE_OWNERS' | 'SELECTED_RECIPIENTS'>('SELECTED_RECIPIENTS');
@@ -90,9 +93,9 @@ export const AdminTelegramTab: React.FC = () => {
 
   // Message compose
   const [messageType, setMessageType] = useState<'NEW_MATCHDAY' | 'UPCOMING_MATCH' | 'COMPETITION_UPDATE' | 'CUSTOM_ALERT'>('NEW_MATCHDAY');
-  const [title, setTitle] = useState<string>('Matchday 1 is Now Live!');
+  const [title, setTitle] = useState<string>(loc('1-tur boshlandi!', 'Первый тур начался!', 'Matchday 1 is Now Live!'));
   const [body, setBody] = useState<string>(
-    'Fixtures for Matchday 1 have been scheduled. Please submit your match results and proof screenshots through the web app.'
+    loc('1-tur uchrashuvlari belgilandi. Natija va tasdiqlovchi skrinshotlarni ilova orqali yuboring.', 'Матчи первого тура назначены. Отправьте результаты и подтверждающие скриншоты через приложение.', 'Fixtures for Matchday 1 have been scheduled. Please submit your match results and proof screenshots through the web app.')
   );
   const [isSending, setIsSending] = useState<boolean>(false);
 
@@ -128,7 +131,7 @@ export const AdminTelegramTab: React.FC = () => {
       const ids = audience === 'SELECTED_RECIPIENTS' ? new Set<string>() : new Set<string>(res.recipients.filter((r: PublicRecipient) => r.messageable).map((r: PublicRecipient) => r.userId));
       setSelectedUserIds(ids);
     } catch (err: any) {
-      showToast(err.message || 'Failed to load recipients list', 'error');
+      showToast(err.message || loc('Qabul qiluvchilar yuklanmadi', 'Не удалось загрузить получателей', 'Failed to load recipients list'), 'error');
     } finally {
       setIsLoadingRecipients(false);
     }
@@ -152,7 +155,7 @@ export const AdminTelegramTab: React.FC = () => {
       const res = await api.getSmartNotificationSettings('season-2026-27');
       setSmartSettings(res.settings);
     } catch (err: any) {
-      showToast(err.message || 'Smart notification settings could not be loaded', 'error');
+      showToast(err.message || loc('Bildirishnoma sozlamalari yuklanmadi', 'Не удалось загрузить настройки уведомлений', 'Smart notification settings could not be loaded'), 'error');
     } finally {
       setIsLoadingSmartSettings(false);
     }
@@ -168,9 +171,9 @@ export const AdminTelegramTab: React.FC = () => {
         events: next.events,
       });
       setSmartSettings(res.settings);
-      showToast('Smart notification sozlamalari saqlandi', 'success');
+      showToast(loc('Aqlli bildirishnoma sozlamalari saqlandi', 'Настройки умных уведомлений сохранены', 'Smart notification settings saved'), 'success');
     } catch (err: any) {
-      showToast(err.message || 'Smart notification settings could not be saved', 'error');
+      showToast(err.message || loc('Bildirishnoma sozlamalari saqlanmadi', 'Не удалось сохранить настройки уведомлений', 'Smart notification settings could not be saved'), 'error');
       await loadSmartSettings();
     } finally {
       setIsSavingSmartSettings(false);
@@ -229,13 +232,13 @@ export const AdminTelegramTab: React.FC = () => {
 
   async function handleSendBroadcast() {
     if (!title.trim() || !body.trim()) {
-      showToast('Title and message content cannot be empty.', 'info');
+      showToast(loc('Sarlavha va xabar matni bo‘sh bo‘lmasin.', 'Заголовок и текст сообщения обязательны.', 'Title and message content cannot be empty.'), 'info');
       return;
     }
 
     const targetList: string[] = Array.from(selectedUserIds);
     if (targetList.length === 0) {
-      showToast('Please select at least one recipient.', 'info');
+      showToast(loc('Kamida bitta qabul qiluvchini tanlang.', 'Выберите хотя бы одного получателя.', 'Please select at least one recipient.'), 'info');
       return;
     }
 
@@ -253,12 +256,12 @@ export const AdminTelegramTab: React.FC = () => {
         seasonId: 'season-2026-27',
       });
 
-      showToast(res.message || 'Broadcast queued successfully for delivery!', 'success');
+      showToast(res.message || loc('Xabar yuborish navbatiga qo‘yildi!', 'Сообщение поставлено в очередь!', 'Broadcast queued successfully for delivery!'), 'success');
       pendingSend.current = null;
-      await api.processTelegramQueue().catch(() => showToast('Xabarlar saqlandi. Yuborishni davom ettirish uchun Process Queue tugmasini bosing.', 'info'));
+      await api.processTelegramQueue().catch(() => showToast(loc('Xabarlar saqlandi. Yuborishni davom ettirish uchun «Navbatni bajarish» tugmasini bosing.', 'Сообщения сохранены. Для продолжения нажмите «Обработать очередь».', 'Messages were saved. Press Process Queue to continue delivery.'), 'info'));
       await loadBroadcasts();
     } catch (err: any) {
-      showToast(err.message || 'Failed to send broadcast', 'error');
+      showToast(err.message || loc('Xabar yuborilmadi', 'Не удалось отправить сообщение', 'Failed to send broadcast'), 'error');
     } finally {
       setIsSending(false);
     }
@@ -267,10 +270,10 @@ export const AdminTelegramTab: React.FC = () => {
   async function handleProcessQueue() {
     try {
       const res = await api.processTelegramQueue();
-      showToast(`Processed: ${res.result?.processed || 0} jobs`, 'info');
+      showToast(`${loc('Bajarilgan', 'Обработано', 'Processed')}: ${res.result?.processed || 0}`, 'info');
       await loadBroadcasts();
     } catch (err: any) {
-      showToast(err.message || 'Failed to trigger queue processor', 'error');
+      showToast(err.message || loc('Navbat bajarilmadi', 'Не удалось обработать очередь', 'Failed to trigger queue processor'), 'error');
     }
   }
 
@@ -278,10 +281,10 @@ export const AdminTelegramTab: React.FC = () => {
     setRetryingBroadcastId(broadcastId);
     try {
       const res = await api.retryTelegramBroadcastFailures(broadcastId);
-      showToast(res.retried > 0 ? `Retry queued for ${res.retried} failed recipient(s).` : 'No retryable failed recipients found.', res.retried > 0 ? 'success' : 'info');
+      showToast(res.retried > 0 ? `${loc('Qayta yuborish navbatiga qo‘yildi', 'Повторная отправка в очереди', 'Retry queued')}: ${res.retried}` : loc('Qayta yuboriladigan xatolar topilmadi.', 'Нет получателей для повторной отправки.', 'No retryable failed recipients found.'), res.retried > 0 ? 'success' : 'info');
       await loadBroadcasts();
     } catch (err: any) {
-      showToast(err.message || 'Failed deliveries could not be retried', 'error');
+      showToast(err.message || loc('Xatolarni qayta yuborib bo‘lmadi', 'Не удалось повторить отправку', 'Failed deliveries could not be retried'), 'error');
     } finally {
       setRetryingBroadcastId(null);
     }
@@ -296,9 +299,9 @@ export const AdminTelegramTab: React.FC = () => {
             <Send className="w-5 h-5" />
           </div>
           <div>
-            <h4 className="font-bold text-white text-sm">Official Telegram Broadcast Center</h4>
+            <h4 className="font-bold text-white text-sm">{loc('Telegram xabarlari markazi', 'Центр рассылок Telegram', 'Official Telegram Broadcast Center')}</h4>
             <p className="text-slate-400 text-[11px] mt-0.5">
-              Tanlangan foydalanuvchilarga bot orqali xabar yuboring. Yuborilish holatini quyidagi tarixdan tekshiring.
+              {loc('Tanlangan foydalanuvchilarga bot orqali xabar yuboring. Yuborilish holatini quyidagi tarixdan tekshiring.', 'Отправляйте сообщения выбранным пользователям через бота. Статус доставки смотрите в истории ниже.', 'Send messages to selected users through the bot. Check delivery status in the history below.')}
             </p>
           </div>
         </div>
@@ -308,7 +311,7 @@ export const AdminTelegramTab: React.FC = () => {
             className="px-3 py-1.5 glass-card text-slate-300 hover:text-white rounded-xl text-xs font-bold flex items-center gap-1.5"
           >
             <RefreshCw className="w-3.5 h-3.5 text-sky-400" />
-            <span>Flush Queue</span>
+            <span>{loc('Navbatni bajarish', 'Обработать очередь', 'Process Queue')}</span>
           </button>
         </div>
       </div>
@@ -318,10 +321,10 @@ export const AdminTelegramTab: React.FC = () => {
           <div>
             <h3 className="text-sm font-black text-white flex items-center gap-2">
               <Shield className="w-4 h-4 text-emerald-400" />
-              <span>Smart Notification Control</span>
+              <span>{loc('Aqlli bildirishnomalarni boshqarish', 'Управление умными уведомлениями', 'Smart notification controls')}</span>
             </h3>
             <p className="text-[11px] text-slate-400 mt-1">
-              Avtomatik Telegram xabarlarini productionda boshqaring. Hozircha oddiy va premium foydalanuvchilarga bir xil ishlaydi.
+              {loc('Avtomatik Telegram xabarlarini boshqaring. Hozircha oddiy va premium foydalanuvchilarga bir xil ishlaydi.', 'Управляйте автоматическими уведомлениями Telegram. Сейчас они одинаковы для обычных и премиум игроков.', 'Manage automatic Telegram notifications. They currently work the same for standard and premium players.')}
             </p>
           </div>
           {isLoadingSmartSettings ? (
@@ -334,7 +337,7 @@ export const AdminTelegramTab: React.FC = () => {
                 ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
                 : 'bg-slate-900 border-slate-700 text-slate-400'}`}
             >
-              {smartSettings.enabled ? 'MASTER: ON' : 'MASTER: OFF'}
+              {smartSettings.enabled ? loc('Asosiy: yoqilgan', 'Главный: включён', 'Master: on') : loc('Asosiy: o‘chirilgan', 'Главный: выключен', 'Master: off')}
             </button>
           ) : null}
         </div>
@@ -342,14 +345,14 @@ export const AdminTelegramTab: React.FC = () => {
         {smartSettings && (
           <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 ${!smartSettings.enabled ? 'opacity-50' : ''}`}>
             {([
-              ['resultVerification', 'Natijani tasdiqlash', 'Raqib score yuborganda'],
-              ['resultConfirmed', 'Natija tasdiqlandi', 'Final score ikki tomonga'],
-              ['resultDisputed', 'Dispute alert', 'Natijalar mos kelmaganda'],
-              ['nextOpponent', 'Keyingi raqib', 'Match tasdiqlangandan keyin'],
-              ['matchdayOpened', 'Matchday ochildi', 'Raqib + deadline'],
-              ['cupProgress', 'Cup progress', 'Next round + champion'],
-              ['qualification', 'Qualification', 'UCL/UEL yo‘llanmasi'],
-              ['europeanOutcome', 'European outcome', 'Direct/playoff/eliminated'],
+              ['resultVerification', loc('Natijani tekshirish', 'Проверка результата', 'Result verification'), loc('Raqib natija yuborganda', 'Когда соперник отправил счёт', 'When opponent submits a score')],
+              ['resultConfirmed', loc('Natija tasdiqlandi', 'Результат подтверждён', 'Result confirmed'), loc('Tasdiqlangan hisob ikkala tomonga', 'Итоговый счёт обеим сторонам', 'Final score to both sides')],
+              ['resultDisputed', loc('Natijalar bahsi', 'Спор по результату', 'Result dispute'), loc('Natijalar mos kelmaganda', 'Когда результаты не совпадают', 'When scores differ')],
+              ['nextOpponent', loc('Keyingi raqib', 'Следующий соперник', 'Next opponent'), loc('Uchrashuv tasdiqlangandan keyin', 'После подтверждения матча', 'After match confirmation')],
+              ['matchdayOpened', loc('Yangi tur ochildi', 'Новый тур открыт', 'Matchday opened'), loc('Raqib va oxirgi muddat', 'Соперник и крайний срок', 'Opponent and deadline')],
+              ['cupProgress', loc('Kubok bosqichi', 'Кубковый этап', 'Cup progress'), loc('Keyingi bosqich va g‘olib', 'Следующий раунд и победитель', 'Next round and champion')],
+              ['qualification', loc('Yo‘llanma', 'Квалификация', 'Qualification'), loc('UCL/UEL yo‘llanmasi', 'Путёвка в ЛЧ/ЛЕ', 'UCL/UEL qualification')],
+              ['europeanOutcome', loc('Yevropa natijasi', 'Итоги еврокубков', 'European outcome'), loc('To‘g‘ridan, pley-off yoki chiqib ketish', 'Напрямую, плей-офф или вылет', 'Direct, playoff or eliminated')],
             ] as Array<[keyof SmartNotificationSettings['events'], string, string]>).map(([key, label, detail]) => (
               <button
                 key={key}
@@ -370,8 +373,8 @@ export const AdminTelegramTab: React.FC = () => {
         )}
 
         <div className="flex items-center justify-between text-[10px] text-slate-500 border-t border-slate-800 pt-3">
-          <span>Storage: Upstash Redis • Firestore read: 0</span>
-          <span>{isSavingSmartSettings ? 'Saving…' : smartSettings?.updatedAt ? `Updated ${new Date(smartSettings.updatedAt).toLocaleString()}` : 'Defaults active'}</span>
+          <span>{loc('Saqlash: Upstash Redis • Firestore o‘qish: 0', 'Хранилище: Upstash Redis • чтений Firestore: 0', 'Storage: Upstash Redis • Firestore reads: 0')}</span>
+          <span>{isSavingSmartSettings ? loc('Saqlanmoqda…', 'Сохранение…', 'Saving…') : smartSettings?.updatedAt ? `${loc('Yangilandi', 'Обновлено', 'Updated')} ${new Date(smartSettings.updatedAt).toLocaleString()}` : loc('Standart sozlamalar faol', 'Настройки по умолчанию активны', 'Defaults active')}</span>
         </div>
       </div>
 
@@ -382,10 +385,10 @@ export const AdminTelegramTab: React.FC = () => {
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-black text-white flex items-center gap-2">
                 <Users className="w-4 h-4 text-sky-400" />
-                <span>1. Select Target Audience</span>
+                  <span>{loc('1. Qabul qiluvchilarni tanlang', '1. Выберите получателей', '1. Select recipients')}</span>
               </h3>
               <span className="text-xs text-slate-400 font-semibold">
-                {selectedUserIds.size} of {recipients.length} selected
+                {selectedUserIds.size}/{recipients.length} {loc('tanlangan', 'выбрано', 'selected')}
               </span>
             </div>
 
@@ -399,7 +402,7 @@ export const AdminTelegramTab: React.FC = () => {
                     : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
                 }`}
               >
-                All Players
+                {loc('Barcha o‘yinchilar', 'Все игроки', 'All Players')}
               </button>
               <button
                 onClick={() => setAudience('CLUB_OWNERS')}
@@ -409,7 +412,7 @@ export const AdminTelegramTab: React.FC = () => {
                     : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
                 }`}
               >
-                Club Owners
+                {loc('Klub egalari', 'Владельцы клубов', 'Club Owners')}
               </button>
               <button
                 onClick={() => setAudience('LEAGUE_OWNERS')}
@@ -419,7 +422,7 @@ export const AdminTelegramTab: React.FC = () => {
                     : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
                 }`}
               >
-                Specific League
+                {loc('Muayyan liga', 'Определённая лига', 'Specific League')}
               </button>
               <button
                 onClick={() => setAudience('SELECTED_RECIPIENTS')}
@@ -429,7 +432,7 @@ export const AdminTelegramTab: React.FC = () => {
                     : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
                 }`}
               >
-                Manual Picks
+                {loc('Qo‘lda tanlash', 'Выбрать вручную', 'Manual Picks')}
               </button>
             </div>
 
@@ -456,7 +459,7 @@ export const AdminTelegramTab: React.FC = () => {
                 <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="Filter recipients by name, username or club..."
+                  placeholder={loc('Ism, foydalanuvchi yoki klub bo‘yicha qidiring…', 'Поиск по имени, пользователю или клубу…', 'Filter recipients by name, username or club...')}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder:text-slate-500"
@@ -467,7 +470,7 @@ export const AdminTelegramTab: React.FC = () => {
                 onClick={() => handleToggleAll(selectedUserIds.size < filteredRecipients.length)}
                 className="px-3 py-1.5 glass-card text-xs font-bold text-slate-300 hover:text-white rounded-xl whitespace-nowrap"
               >
-                {selectedUserIds.size === filteredRecipients.length ? 'Deselect All' : 'Select All'}
+                {selectedUserIds.size === filteredRecipients.length ? loc('Barchasini bekor qilish', 'Снять выбор', 'Deselect All') : loc('Barchasini tanlash', 'Выбрать всех', 'Select All')}
               </button>
             </div>
 
@@ -476,18 +479,18 @@ export const AdminTelegramTab: React.FC = () => {
               {isLoadingRecipients ? (
                 <div className="py-8 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
                   <RefreshCw className="w-4 h-4 animate-spin text-sky-400" />
-                  <span>Loading safe recipient directory...</span>
+                  <span>{loc('Qabul qiluvchilar ro‘yxati yuklanmoqda…', 'Загрузка получателей…', 'Loading recipients…')}</span>
                 </div>
               ) : filteredRecipients.length === 0 ? (
-                <div className="py-8 text-center text-slate-500 text-xs">No matching recipients found.</div>
+                <div className="py-8 text-center text-slate-500 text-xs">{loc('Mos qabul qiluvchilar topilmadi.', 'Подходящие получатели не найдены.', 'No matching recipients found.')}</div>
               ) : (
                 <table className="w-full text-left text-xs border-collapse">
                   <thead className="bg-slate-900/90 sticky top-0 border-b border-slate-800 text-[10px] uppercase font-bold text-slate-400">
                     <tr>
                       <th className="py-2 px-3 w-8"></th>
-                      <th className="py-2 px-3">Player</th>
-                      <th className="py-2 px-3">Club</th>
-                      <th className="py-2 px-3 text-right">Telegram Status</th>
+                      <th className="py-2 px-3">{loc('O‘yinchi', 'Игрок', 'Player')}</th>
+                      <th className="py-2 px-3">{loc('Klub', 'Клуб', 'Club')}</th>
+                      <th className="py-2 px-3 text-right">{loc('Telegram holati', 'Статус Telegram', 'Telegram Status')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60">
@@ -505,6 +508,7 @@ export const AdminTelegramTab: React.FC = () => {
                             <input
                               type="checkbox"
                               checked={isChecked}
+                              onClick={(event) => event.stopPropagation()}
                               onChange={() => handleToggleUser(r.userId)}
                               className="rounded border-slate-700 text-sky-500 focus:ring-0 cursor-pointer"
                             />
@@ -528,11 +532,11 @@ export const AdminTelegramTab: React.FC = () => {
                           <td className="py-2 px-3 text-right">
                             {r.hasTelegram ? (
                               <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                                Connected
+                                {loc('Ulangan', 'Подключён', 'Connected')}
                               </span>
                             ) : (
                               <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-800 text-slate-500">
-                                No Telegram
+                                {loc('Telegram yo‘q', 'Нет Telegram', 'No Telegram')}
                               </span>
                             )}
                           </td>
@@ -551,44 +555,44 @@ export const AdminTelegramTab: React.FC = () => {
           <div className="glass-panel p-5 rounded-2xl border-slate-800 space-y-4">
             <h3 className="text-sm font-black text-white flex items-center gap-2">
               <MessageSquare className="w-4 h-4 text-sky-400" />
-              <span>2. Compose Official Message</span>
+              <span>{loc('2. Rasmiy xabar yozing', '2. Создайте официальное сообщение', '2. Compose Official Message')}</span>
             </h3>
 
             {/* Template Type */}
             <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase text-slate-400">Message Category</label>
+              <label className="text-[10px] font-bold uppercase text-slate-400">{loc('Xabar turi', 'Категория сообщения', 'Message Category')}</label>
               <select
                 value={messageType}
                 onChange={(e: any) => {
                   setMessageType(e.target.value);
                   if (e.target.value === 'NEW_MATCHDAY') {
-                    setTitle('Matchday Announced!');
-                    setBody('A new matchday has kicked off. Review your scheduled fixtures and coordinate with your opponent in time.');
+                    setTitle(loc('Yangi tur boshlandi!', 'Начался новый тур!', 'Matchday Announced!'));
+                    setBody(loc('Yangi tur ochildi. Uchrashuvingizni ko‘rib, raqibingiz bilan vaqtida kelishing.', 'Начался новый тур. Проверьте матч и вовремя договоритесь с соперником.', 'A new matchday has kicked off. Review your scheduled fixtures and coordinate with your opponent in time.'));
                   } else if (e.target.value === 'UPCOMING_MATCH') {
-                    setTitle('Upcoming Match Reminder');
-                    setBody('You have an unplayed fixture awaiting kickoff. Ensure results are submitted before the deadline window closes.');
+                    setTitle(loc('Uchrashuv eslatmasi', 'Напоминание о матче', 'Upcoming Match Reminder'));
+                    setBody(loc('Sizda o‘ynalmagan uchrashuv bor. Natijani belgilangan muddatgacha yuboring.', 'У вас есть несыгранный матч. Отправьте результат до окончания срока.', 'You have an unplayed fixture awaiting kickoff. Ensure results are submitted before the deadline window closes.'));
                   } else if (e.target.value === 'COMPETITION_UPDATE') {
-                    setTitle('Competition Update');
-                    setBody('Tournament brackets and standings have been updated. Visit the official portal for details.');
+                    setTitle(loc('Musobaqa yangiligi', 'Обновление турнира', 'Competition Update'));
+                    setBody(loc('Turnir bosqichlari va jadval yangilandi. Tafsilotlarni ilovadan ko‘ring.', 'Турнирная сетка и таблица обновлены. Подробнее в приложении.', 'Tournament brackets and standings have been updated. Visit the official portal for details.'));
                   }
                 }}
                 className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-bold text-white"
               >
-                <option value="NEW_MATCHDAY">⚽ New Matchday Announced</option>
-                <option value="UPCOMING_MATCH">⏰ Upcoming Match Reminder</option>
-                <option value="COMPETITION_UPDATE">🏆 Competition Update</option>
-                <option value="CUSTOM_ALERT">📢 Custom Announcement</option>
+                <option value="NEW_MATCHDAY">⚽ {loc('Yangi tur', 'Новый тур', 'New Matchday Announced')}</option>
+                <option value="UPCOMING_MATCH">⏰ {loc('Uchrashuv eslatmasi', 'Напоминание о матче', 'Upcoming Match Reminder')}</option>
+                <option value="COMPETITION_UPDATE">🏆 {loc('Musobaqa yangiligi', 'Обновление турнира', 'Competition Update')}</option>
+                <option value="CUSTOM_ALERT">📢 {loc('Erkin xabar', 'Произвольное объявление', 'Custom Announcement')}</option>
               </select>
             </div>
 
             {/* Title */}
             <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase text-slate-400">Message Title</label>
+              <label className="text-[10px] font-bold uppercase text-slate-400">{loc('Xabar sarlavhasi', 'Заголовок сообщения', 'Message Title')}</label>
               <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="Brief announcement header..."
+                placeholder={loc('Qisqa sarlavha…', 'Краткий заголовок…', 'Brief announcement header...')}
                 className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-bold text-white placeholder:text-slate-500"
               />
             </div>
@@ -596,7 +600,7 @@ export const AdminTelegramTab: React.FC = () => {
             {/* Body */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <label className="text-[10px] font-bold uppercase text-slate-400">Message Body</label>
+                <label className="text-[10px] font-bold uppercase text-slate-400">{loc('Xabar matni', 'Текст сообщения', 'Message Body')}</label>
                 <span className="text-[10px] text-slate-500">{body.length}/1000</span>
               </div>
               <textarea
@@ -604,24 +608,24 @@ export const AdminTelegramTab: React.FC = () => {
                 onChange={(e) => setBody(e.target.value)}
                 rows={4}
                 maxLength={1000}
-                placeholder="Detailed instructions or notification text..."
+                placeholder={loc('Batafsil xabar matni…', 'Подробный текст сообщения…', 'Detailed instructions or notification text...')}
                 className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-xs text-slate-200 placeholder:text-slate-500 resize-none leading-relaxed"
               />
             </div>
 
             {/* Telegram Preview Box */}
             <div className="space-y-1.5">
-              <div className="text-[10px] font-bold uppercase text-slate-400">Live Telegram Preview</div>
+              <div className="text-[10px] font-bold uppercase text-slate-400">{loc('Telegramda ko‘rinishi', 'Предпросмотр в Telegram', 'Live Telegram Preview')}</div>
               <div className="p-3.5 bg-slate-950 border border-sky-500/30 rounded-xl text-xs space-y-2 relative shadow-inner">
                 <div className="text-[11px] font-bold text-sky-400 flex items-center gap-1.5">
-                  <span>⚽ EFL UZ Official Alert</span>
+                  <span>⚽ {loc('EFL UZ rasmiy xabari', 'Официальное сообщение EFL UZ', 'EFL UZ Official Alert')}</span>
                 </div>
-                <div className="font-black text-white text-sm">{title || 'Message Title'}</div>
+                <div className="font-black text-white text-sm">{title || loc('Xabar sarlavhasi', 'Заголовок сообщения', 'Message Title')}</div>
                 <div className="text-slate-300 text-xs whitespace-pre-wrap leading-relaxed">
-                  {body || 'Message body content...'}
+                  {body || loc('Xabar matni…', 'Текст сообщения…', 'Message body content...')}
                 </div>
                 <div className="text-[10px] text-slate-500 italic pt-1 border-t border-slate-800">
-                  Season 2026/27 • Open EFL WebApp to manage fixtures
+                  {loc('2026/27 mavsum • Uchrashuvlar uchun EFL ilovasini oching', 'Сезон 2026/27 • Откройте приложение EFL для матчей', 'Season 2026/27 • Open EFL WebApp to manage fixtures')}
                 </div>
               </div>
             </div>
@@ -639,8 +643,8 @@ export const AdminTelegramTab: React.FC = () => {
               {isSending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
               <span>
                 {isSending
-                  ? 'Enqueuing to Redis Queue...'
-                  : `Send to ${selectedUserIds.size} Selected Recipients`}
+                  ? loc('Navbatga qo‘yilmoqda…', 'Добавление в очередь…', 'Enqueuing to Redis Queue...')
+                  : `${selectedUserIds.size} ${loc('kishiga yuborish', 'получателям отправить', 'selected recipients — send')}`}
               </span>
             </button>
           </div>
@@ -648,9 +652,9 @@ export const AdminTelegramTab: React.FC = () => {
       </div>
 
       <div className="glass-panel p-4 rounded-2xl border-slate-800 space-y-3">
-        <div className="flex items-center justify-between"><div><h3 className="text-sm font-black text-white">Delivery Health</h3><p className="text-[10px] text-slate-500">Recent Redis broadcast records • successful users are never resent by Retry Failed</p></div><button onClick={handleProcessQueue} className="px-3 py-1.5 rounded-xl bg-sky-500/10 border border-sky-500/30 text-sky-300 text-[10px] font-black">Process Queue</button></div>
+        <div className="flex items-center justify-between"><div><h3 className="text-sm font-black text-white">{loc('Yuborish holati', 'Состояние доставки', 'Delivery Health')}</h3><p className="text-[10px] text-slate-500">{loc('Oxirgi yuborishlar • qayta urinish muvaffaqiyatli oluvchilarga qayta yubormaydi', 'Последние рассылки • повторная попытка не затрагивает успешно доставленные сообщения', 'Recent broadcasts • retry never resends successful deliveries')}</p></div><button onClick={handleProcessQueue} className="px-3 py-1.5 rounded-xl bg-sky-500/10 border border-sky-500/30 text-sky-300 text-[10px] font-black">{loc('Navbatni bajarish', 'Обработать очередь', 'Process Queue')}</button></div>
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-          {[['Total', deliveryHealth.total, 'text-white'], ['Sent', deliveryHealth.sent, 'text-emerald-300'], ['Pending', deliveryHealth.pending, 'text-sky-300'], ['Failed', deliveryHealth.failed, 'text-rose-300'], ['Skipped', deliveryHealth.skipped, 'text-slate-400']].map(([label, value, cls]) => <div key={String(label)} className="rounded-xl bg-slate-950/60 border border-white/[0.05] p-3"><div className={`text-lg font-black font-mono ${cls}`}>{value}</div><div className="text-[9px] uppercase font-bold text-slate-500">{label}</div></div>)}
+          {[[loc('Jami', 'Всего', 'Total'), deliveryHealth.total, 'text-white'], [loc('Yuborildi', 'Отправлено', 'Sent'), deliveryHealth.sent, 'text-emerald-300'], [loc('Kutilmoqda', 'Ожидает', 'Pending'), deliveryHealth.pending, 'text-sky-300'], [loc('Xato', 'Ошибки', 'Failed'), deliveryHealth.failed, 'text-rose-300'], [loc('O‘tkazildi', 'Пропущено', 'Skipped'), deliveryHealth.skipped, 'text-slate-400']].map(([label, value, cls]) => <div key={String(label)} className="rounded-xl bg-slate-950/60 border border-white/[0.05] p-3"><div className={`text-lg font-black font-mono ${cls}`}>{value}</div><div className="text-[9px] uppercase font-bold text-slate-500">{label}</div></div>)}
         </div>
       </div>
 
@@ -660,10 +664,10 @@ export const AdminTelegramTab: React.FC = () => {
           <div>
             <h3 className="text-sm font-black text-white flex items-center gap-2">
               <Clock className="w-4 h-4 text-sky-400" />
-              <span>Broadcast Delivery History & Metrics</span>
+              <span>{loc('Yuborish tarixi va ko‘rsatkichlar', 'История и показатели рассылок', 'Broadcast Delivery History & Metrics')}</span>
             </h3>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              Audited queue records tracked in Redis storage
+              {loc('Redisda saqlangan tekshiriladigan navbat yozuvlari', 'Проверяемые записи очереди в Redis', 'Audited queue records tracked in Redis storage')}
             </p>
           </div>
           <button
@@ -672,27 +676,27 @@ export const AdminTelegramTab: React.FC = () => {
             className="px-3 py-1.5 glass-card text-xs font-bold text-slate-300 hover:text-white rounded-xl flex items-center gap-1.5"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-sky-400 ${isLoadingHistory ? 'animate-spin' : ''}`} />
-            <span>Refresh History</span>
+            <span>{loc('Tarixni yangilash', 'Обновить историю', 'Refresh history')}</span>
           </button>
         </div>
 
         {broadcasts.length === 0 ? (
           <div className="py-8 text-center text-slate-500 text-xs">
-            No notification broadcasts have been enqueued in this session.
+            {loc('Hali xabarlar yuborish navbatiga qo‘yilmagan.', 'Сообщений в очереди пока нет.', 'No notification broadcasts have been enqueued in this session.')}
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="border-b border-slate-800 text-[10px] font-bold uppercase text-slate-400">
-                  <th className="py-2.5 px-3">Broadcast</th>
-                  <th className="py-2.5 px-3">Type</th>
-                  <th className="py-2.5 px-3">Sent By</th>
-                  <th className="py-2.5 px-2 text-center">Total</th>
-                  <th className="py-2.5 px-2 text-center">Sent</th>
-                  <th className="py-2.5 px-2 text-center">Skipped</th>
-                  <th className="py-2.5 px-2 text-center">Failed</th>
-                  <th className="py-2.5 px-3 text-right">Status</th>
+                  <th className="py-2.5 px-3">{loc('Xabar', 'Рассылка', 'Broadcast')}</th>
+                  <th className="py-2.5 px-3">{loc('Tur', 'Тип', 'Type')}</th>
+                  <th className="py-2.5 px-3">{loc('Yuboruvchi', 'Отправитель', 'Sent By')}</th>
+                  <th className="py-2.5 px-2 text-center">{loc('Jami', 'Всего', 'Total')}</th>
+                  <th className="py-2.5 px-2 text-center">{loc('Yuborildi', 'Отправлено', 'Sent')}</th>
+                  <th className="py-2.5 px-2 text-center">{loc('O‘tkazildi', 'Пропущено', 'Skipped')}</th>
+                  <th className="py-2.5 px-2 text-center">{loc('Xato', 'Ошибки', 'Failed')}</th>
+                  <th className="py-2.5 px-3 text-right">{loc('Holat', 'Статус', 'Status')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
@@ -740,7 +744,7 @@ export const AdminTelegramTab: React.FC = () => {
                           disabled={retryingBroadcastId === b.id}
                           className="ml-2 px-2 py-0.5 rounded text-[9px] font-black bg-rose-500/10 border border-rose-500/30 text-rose-300 hover:bg-rose-500/20 disabled:opacity-50"
                         >
-                          {retryingBroadcastId === b.id ? 'Retrying…' : 'Retry Failed'}
+                          {retryingBroadcastId === b.id ? loc('Qayta urinilmoqda…', 'Повторная отправка…', 'Retrying…') : loc('Xatolarni qayta yuborish', 'Повторить ошибки', 'Retry Failed')}
                         </button>
                       )}
                     </td>

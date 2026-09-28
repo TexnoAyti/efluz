@@ -171,6 +171,60 @@ export interface Translations {
   generateSchedule: string;
   evaluateQualifications: string;
   auditLogs: string;
+  adminAuthorizationRequired: string;
+  adminDashboardTitle: string;
+  adminOfficer: string;
+  adminRefreshCenter: string;
+  adminOverview: string;
+  adminResultsReview: string;
+  adminCompetitions: string;
+  adminDomesticCups: string;
+  adminEuropeanCompetitions: string;
+  adminTelegramBot: string;
+  adminPlayers: string;
+  adminSystemDiagnostics: string;
+  adminResetResult: string;
+  adminResetResultHint: string;
+  adminCurrentScore: string;
+  adminDeleteSubmissionsHint: string;
+  adminReasonNotes: string;
+  adminResetReasonExample: string;
+  adminStandingsRecalculated: string;
+  adminDeleteFixture: string;
+  adminDangerousAction: string;
+  adminDeleteFixtureReason: string;
+  adminDeleteFixtureExample: string;
+  adminTypeToConfirm: string;
+  adminDeleteFixtureForever: string;
+  adminUserInspection: string;
+  adminLoadingUserHistory: string;
+  adminDeleteUser: string;
+  adminDeleteUserHint: string;
+  adminSafeDeletion: string;
+  adminReleaseClubsHint: string;
+  adminPreserveMatchesHint: string;
+  adminLastAdminHint: string;
+  adminOptionalReason: string;
+  adminPromote: string;
+  adminDemote: string;
+  adminGrantAccessHint: string;
+  adminRevokeAccessHint: string;
+  adminAccessControl: string;
+  adminSuspend: string;
+  adminLiftSuspension: string;
+  adminSuspensionHint: string;
+  adminSuspendReason: string;
+  adminSuspendExample: string;
+  adminConfirmPromotion: string;
+  adminConfirmDemotion: string;
+  adminConfirmSuspension: string;
+  roadmapLeague19: string;
+  roadmapLeague19Desc: string;
+  roadmapDomesticCupsDesc: string;
+  roadmapLeague1019: string;
+  roadmapLeague1019Desc: string;
+  roadmapEurope: string;
+  roadmapEuropeDesc: string;
 
   // Additional tournament & UI labels
   domesticLeagues: string;
@@ -179,6 +233,13 @@ export interface Translations {
   qualificationRules: string;
   uefaClubCompetitions: string;
   uefaSubtitle: string;
+  cupJourney: string;
+  cupClubs: string;
+  cupMatches: string;
+  cupChampion: string;
+  adminSectionsHint: string;
+  seasonRoadmap: string;
+  europeanQualificationHint: string;
   noEuropeanParticipants: string;
   matchesBeingScheduled: string;
   retry: string;
@@ -360,13 +421,74 @@ export const translations: Record<Language, Translations> = {
     generateSchedule: 'Berger round-robin jadvalini yaratish',
     evaluateQualifications: 'Yevrokubok yo‘llanmalarini hisoblash',
     auditLogs: 'Tizim xavfsizlik va audit jurnali',
+    adminAuthorizationRequired: 'Administrator huquqi kerak',
+    adminDashboardTitle: 'EFL UZ musobaqalarini boshqarish tizimi',
+    adminOfficer: 'Mas’ul',
+    adminRefreshCenter: 'Markazni yangilash',
+    adminOverview: 'Umumiy ko‘rinish',
+    adminResultsReview: 'Natijalar va ko‘rib chiqish',
+    adminCompetitions: '19 ta musobaqa',
+    adminDomesticCups: 'Milliy kuboklar (5)',
+    adminEuropeanCompetitions: 'UCL va UEL (32)',
+    adminTelegramBot: 'Telegram bot',
+    adminPlayers: 'O‘yinchilar',
+    adminSystemDiagnostics: 'Tizim diagnostikasi',
+    adminResetResult: 'O‘yin natijasini tiklash',
+    adminResetResultHint: 'Hisobni tozalab, o‘yinni rejalashtirilgan holatga qaytarish',
+    adminCurrentScore: 'Joriy hisob',
+    adminDeleteSubmissionsHint: 'Ushbu o‘yinga yuborilgan barcha hisoblarni ham o‘chirish',
+    adminReasonNotes: 'Sabab / izoh',
+    adminResetReasonExample: 'Masalan: natija xato kiritilgan; o‘yin qayta belgilangan',
+    adminStandingsRecalculated: 'Bu o‘yinning ochko va gollari chiqarilib, jadval avtomatik qayta hisoblanadi.',
+    adminDeleteFixture: 'Uchrashuvni o‘chirish',
+    adminDangerousAction: 'Xavfli administrator amali',
+    adminDeleteFixtureReason: 'O‘chirish sababi (majburiy)',
+    adminDeleteFixtureExample: 'Masalan: takroriy test uchrashuvi',
+    adminTypeToConfirm: 'Tasdiqlash uchun kiriting',
+    adminDeleteFixtureForever: 'Uchrashuvni butunlay o‘chirish',
+    adminUserInspection: 'Foydalanuvchi profili va hisobi',
+    adminLoadingUserHistory: 'Foydalanuvchi profili va tarixi yuklanmoqda...',
+    adminDeleteUser: 'Foydalanuvchini o‘chirish',
+    adminDeleteUserHint: 'Klublar bo‘shaydi, o‘yin ma’lumotlari saqlanadi',
+    adminSafeDeletion: 'O‘chirish kafolatlari',
+    adminReleaseClubsHint: 'Band qilingan klublar boshqa o‘yinchilarga ochiladi.',
+    adminPreserveMatchesHint: 'Mavjud uchrashuvlar va tasdiqlangan hisoblar saqlanadi.',
+    adminLastAdminHint: 'Oxirgi administratorni o‘chirib bo‘lmaydi.',
+    adminOptionalReason: 'Sabab (ixtiyoriy)',
+    adminPromote: 'Administrator etib tayinlash',
+    adminDemote: 'Administrator huquqini olib tashlash',
+    adminGrantAccessHint: 'Administrator o‘yinlar, natijalar, jadval, bahslar, klublar va foydalanuvchilarni boshqara oladi.',
+    adminRevokeAccessHint: 'Foydalanuvchining admin paneliga kirish huquqi olib tashlanadi. Oxirgi administratorni olib tashlab bo‘lmaydi.',
+    adminAccessControl: 'Foydalanuvchi huquqlarini boshqarish',
+    adminSuspend: 'Foydalanuvchini cheklash',
+    adminLiftSuspension: 'Cheklovni olib tashlash',
+    adminSuspensionHint: 'Intizom va kirish huquqini boshqarish',
+    adminSuspendReason: 'Cheklash sababi (ixtiyoriy)',
+    adminSuspendExample: 'Masalan: sportga zid xatti-harakat yoki o‘yinga kelmaslik',
+    adminConfirmPromotion: 'Tayinlashni tasdiqlash',
+    adminConfirmDemotion: 'Huquqni olib tashlashni tasdiqlash',
+    adminConfirmSuspension: 'Cheklashni tasdiqlash',
+    roadmapLeague19: 'Liga 1–9-turlar',
+    roadmapLeague19Desc: '1-turdan keyin navbatdagi tur ochiladi; 9-turdan keyin kuboklar.',
+    roadmapDomesticCupsDesc: '5 ta milliy kubok bosqichi.',
+    roadmapLeague1019: 'Liga 10–19-turlar',
+    roadmapLeague1019Desc: 'Bir davrali liga 19-tur bilan yakunlanadi.',
+    roadmapEurope: 'UCL / UEL',
+    roadmapEuropeDesc: '19-turdan keyin Yevropa ligasi bosqichi navbatma-navbat o‘tkaziladi.',
 
     domesticLeagues: 'Ichki chempionatlar',
     nationalCups: 'Milliy kuboklar',
     championsLeague: 'Chempionlar Ligasi',
     qualificationRules: 'Saralash qoidalari',
     uefaClubCompetitions: 'UEFA Klub Musobaqalari 2026/27',
-    uefaSubtitle: 'Yevropaning nufuzli klublar musobaqasi: 32 ta eng kuchli jamoa va yagona liga bosqichi',
+    uefaSubtitle: 'Klublar foydalanuvchilar natijalari va ichki liga jadvali orqali saralanadi.',
+    cupJourney: '2026/27 kubok yo‘li',
+    cupClubs: 'Klublar',
+    cupMatches: 'O‘yinlar',
+    cupChampion: 'Chempion',
+    adminSectionsHint: 'Bo‘limlar uchun yon tomonga suring →',
+    seasonRoadmap: 'Mavsum yo‘l xaritasi',
+    europeanQualificationHint: 'Klublar ichki liga jadvali va kubok natijalari asosida saralanadi.',
     noEuropeanParticipants: 'Hozircha Yevrokubok ishtirokchilari aniqlanmagan',
     matchesBeingScheduled: 'Saralangan klublar uchun o‘yinlar rejalashtirilmoqda...',
     retry: 'Qayta urinish',
@@ -546,13 +668,74 @@ export const translations: Record<Language, Translations> = {
     generateSchedule: 'Сгенерировать сетку по системе Бергера',
     evaluateQualifications: 'Рассчитать еврокубковые путевки',
     auditLogs: 'Журнал аудита и безопасности',
+    adminAuthorizationRequired: 'Требуются права администратора',
+    adminDashboardTitle: 'Система управления соревнованиями EFL UZ',
+    adminOfficer: 'Ответственный',
+    adminRefreshCenter: 'Обновить центр',
+    adminOverview: 'Обзор',
+    adminResultsReview: 'Результаты и проверка',
+    adminCompetitions: '19 соревнований',
+    adminDomesticCups: 'Национальные кубки (5)',
+    adminEuropeanCompetitions: 'ЛЧ и ЛЕ (32)',
+    adminTelegramBot: 'Telegram-бот',
+    adminPlayers: 'Игроки',
+    adminSystemDiagnostics: 'Диагностика системы',
+    adminResetResult: 'Сбросить результат матча',
+    adminResetResultHint: 'Очистить счёт и вернуть матч в запланированное состояние',
+    adminCurrentScore: 'Текущий счёт',
+    adminDeleteSubmissionsHint: 'Также удалить все отправленные счета этого матча',
+    adminReasonNotes: 'Причина / примечание',
+    adminResetReasonExample: 'Например: счёт введён ошибочно; матч перенесён',
+    adminStandingsRecalculated: 'Очки и голы этого матча будут исключены из таблицы автоматически.',
+    adminDeleteFixture: 'Удалить матч',
+    adminDangerousAction: 'Опасное действие администратора',
+    adminDeleteFixtureReason: 'Причина удаления (обязательно)',
+    adminDeleteFixtureExample: 'Например: дублирующий тестовый матч',
+    adminTypeToConfirm: 'Для подтверждения введите',
+    adminDeleteFixtureForever: 'Удалить матч навсегда',
+    adminUserInspection: 'Профиль и учётная запись пользователя',
+    adminLoadingUserHistory: 'Загружаются профиль и история пользователя...',
+    adminDeleteUser: 'Удалить пользователя',
+    adminDeleteUserHint: 'Клубы освобождаются, данные матчей сохраняются',
+    adminSafeDeletion: 'Гарантии удаления',
+    adminReleaseClubsHint: 'Занятые клубы станут доступны другим игрокам.',
+    adminPreserveMatchesHint: 'Существующие матчи и подтверждённые счета сохранятся.',
+    adminLastAdminHint: 'Последнего администратора удалить нельзя.',
+    adminOptionalReason: 'Причина (необязательно)',
+    adminPromote: 'Назначить администратором',
+    adminDemote: 'Снять права администратора',
+    adminGrantAccessHint: 'Администратор может управлять матчами, результатами, таблицами, спорами, клубами и игроками.',
+    adminRevokeAccessHint: 'Доступ к панели администратора будет отозван. Последнего администратора снять нельзя.',
+    adminAccessControl: 'Управление правами пользователя',
+    adminSuspend: 'Заблокировать пользователя',
+    adminLiftSuspension: 'Снять блокировку',
+    adminSuspensionHint: 'Дисциплина и управление доступом',
+    adminSuspendReason: 'Причина блокировки (необязательно)',
+    adminSuspendExample: 'Например: неспортивное поведение или неявка на матчи',
+    adminConfirmPromotion: 'Подтвердить назначение',
+    adminConfirmDemotion: 'Подтвердить снятие прав',
+    adminConfirmSuspension: 'Подтвердить блокировку',
+    roadmapLeague19: 'Лига, туры 1–9',
+    roadmapLeague19Desc: 'Следующий тур открывается после завершения предыдущего; после 9-го тура — кубки.',
+    roadmapDomesticCupsDesc: 'Этап национальных кубков (5 турниров).',
+    roadmapLeague1019: 'Лига, туры 10–19',
+    roadmapLeague1019Desc: 'Однокруговой чемпионат завершается 19-м туром.',
+    roadmapEurope: 'ЛЧ / ЛЕ',
+    roadmapEuropeDesc: 'После 19-го тура поэтапно начинаются европейские турниры.',
 
     domesticLeagues: 'Внутренние чемпионаты',
     nationalCups: 'Национальные кубки',
     championsLeague: 'Лига Чемпионов',
     qualificationRules: 'Правила квалификации',
     uefaClubCompetitions: 'Клубные турниры УЕФА 2026/27',
-    uefaSubtitle: 'Главный клубный турнир Европы: 32 сильнейшие команды и единая лига',
+    uefaSubtitle: 'Клубы отбираются по результатам игроков и таблицам внутренних лиг.',
+    cupJourney: 'Кубковый путь 2026/27',
+    cupClubs: 'Клубы',
+    cupMatches: 'Матчи',
+    cupChampion: 'Чемпион',
+    adminSectionsHint: 'Листайте вбок для других разделов →',
+    seasonRoadmap: 'Этапы сезона',
+    europeanQualificationHint: 'Клубы отбираются по таблицам внутренних лиг и результатам кубков.',
     noEuropeanParticipants: 'Участники еврокубков пока не определены',
     matchesBeingScheduled: 'Расписание для квалифицированных клубов формируется...',
     retry: 'Повторить',
@@ -732,13 +915,74 @@ export const translations: Record<Language, Translations> = {
     generateSchedule: 'Generate Berger Round-Robin Schedule',
     evaluateQualifications: 'Calculate European Qualifications',
     auditLogs: 'Audit & Security Logs',
+    adminAuthorizationRequired: 'Administrator authorization required',
+    adminDashboardTitle: 'EFL UZ Competition Management System',
+    adminOfficer: 'Officer',
+    adminRefreshCenter: 'Refresh Center',
+    adminOverview: 'Overview',
+    adminResultsReview: 'Results & Review',
+    adminCompetitions: '19 Competitions',
+    adminDomesticCups: 'Domestic Cups (5)',
+    adminEuropeanCompetitions: 'UCL & UEL (32)',
+    adminTelegramBot: 'Telegram Bot',
+    adminPlayers: 'Players',
+    adminSystemDiagnostics: 'System Diagnostics',
+    adminResetResult: 'Reset Match Result',
+    adminResetResultHint: 'Clear scores and return the match to scheduled status',
+    adminCurrentScore: 'Current Score',
+    adminDeleteSubmissionsHint: 'Also delete all submitted scores for this match',
+    adminReasonNotes: 'Reason / Notes',
+    adminResetReasonExample: 'For example: result entered by mistake; match rescheduled',
+    adminStandingsRecalculated: 'Points and goals from this match will be removed from the standings automatically.',
+    adminDeleteFixture: 'Delete Match Fixture',
+    adminDangerousAction: 'Dangerous administrative action',
+    adminDeleteFixtureReason: 'Reason for deletion (required)',
+    adminDeleteFixtureExample: 'For example: duplicate test fixture',
+    adminTypeToConfirm: 'Type to confirm',
+    adminDeleteFixtureForever: 'Permanently Delete Fixture',
+    adminUserInspection: 'User Profile & Account Inspection',
+    adminLoadingUserHistory: 'Loading user profile and history...',
+    adminDeleteUser: 'Delete User',
+    adminDeleteUserHint: 'Claimed clubs are released while match data stays intact',
+    adminSafeDeletion: 'Safe deletion guarantees',
+    adminReleaseClubsHint: 'Claimed clubs become available to other players.',
+    adminPreserveMatchesHint: 'Existing fixtures and confirmed scores remain intact.',
+    adminLastAdminHint: 'The last administrator cannot be deleted.',
+    adminOptionalReason: 'Reason (optional)',
+    adminPromote: 'Promote to Administrator',
+    adminDemote: 'Demote from Administrator',
+    adminGrantAccessHint: 'Administrators can manage matches, results, standings, disputes, clubs, and players.',
+    adminRevokeAccessHint: 'Access to the admin console will be revoked. The last administrator cannot be demoted.',
+    adminAccessControl: 'Manage user access privileges',
+    adminSuspend: 'Suspend User Account',
+    adminLiftSuspension: 'Lift Account Suspension',
+    adminSuspensionHint: 'Disciplinary and access control',
+    adminSuspendReason: 'Reason for suspension (optional)',
+    adminSuspendExample: 'For example: unsportsmanlike conduct or repeated no-shows',
+    adminConfirmPromotion: 'Confirm Promotion',
+    adminConfirmDemotion: 'Confirm Demotion',
+    adminConfirmSuspension: 'Confirm Suspension',
+    roadmapLeague19: 'League MD 1–9',
+    roadmapLeague19Desc: 'The next matchday opens after the previous one; cups begin after MD9.',
+    roadmapDomesticCupsDesc: 'Five domestic cup competitions.',
+    roadmapLeague1019: 'League MD 10–19',
+    roadmapLeague1019Desc: 'The single round-robin league ends at matchday 19.',
+    roadmapEurope: 'UCL / UEL',
+    roadmapEuropeDesc: 'European competitions progress in stages after matchday 19.',
 
     domesticLeagues: 'Domestic Leagues',
     nationalCups: 'National Cups',
     championsLeague: 'Champions League',
     qualificationRules: 'Qualification Rules',
     uefaClubCompetitions: 'UEFA Club Competitions 2026/27',
-    uefaSubtitle: "Europe's premier club competition: 32 elite clubs in a single league phase",
+    uefaSubtitle: 'Clubs qualify through player results and domestic league standings.',
+    cupJourney: '2026/27 Cup Journey',
+    cupClubs: 'Clubs',
+    cupMatches: 'Matches',
+    cupChampion: 'Champion',
+    adminSectionsHint: 'Swipe sideways for more sections →',
+    seasonRoadmap: 'Season Roadmap',
+    europeanQualificationHint: 'Clubs qualify through domestic league standings and cup results.',
     noEuropeanParticipants: 'No European participants qualified yet',
     matchesBeingScheduled: 'Matches are being scheduled for qualified clubs...',
     retry: 'Retry',

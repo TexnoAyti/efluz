@@ -117,12 +117,12 @@ function phaseOf(fixture: Fixture): SeasonPhaseId {
 }
 
 const PHASE_DEFS: Array<{ id: SeasonPhaseId; label: string; order: number }> = [
-  { id: 'LEAGUE_MD_1_9', label: 'League MD 1–9', order: 10 },
-  { id: 'DOMESTIC_CUPS', label: 'Domestic Cups', order: 20 },
-  { id: 'LEAGUE_MD_10_19', label: 'League MD 10–19', order: 30 },
-  { id: 'EUROPE_LEAGUE_PHASE', label: 'UCL / UEL League Phase', order: 40 },
-  { id: 'LEAGUE_MD_20_PLUS', label: 'League MD 20+', order: 50 },
-  { id: 'KNOCKOUT_RUN_IN', label: 'Knockouts & Finals', order: 60 },
+  { id: 'LEAGUE_MD_1_9', label: 'Liga 1–9-turlar', order: 10 },
+  { id: 'DOMESTIC_CUPS', label: 'Milliy kuboklar', order: 20 },
+  { id: 'LEAGUE_MD_10_19', label: 'Liga 10–19-turlar', order: 30 },
+  { id: 'EUROPE_LEAGUE_PHASE', label: 'UCL / UEL liga bosqichi', order: 40 },
+  { id: 'LEAGUE_MD_20_PLUS', label: 'Liga 20+ turlar', order: 50 },
+  { id: 'KNOCKOUT_RUN_IN', label: 'Pley-off va finallar', order: 60 },
 ];
 
 function buildPhases(fixtures: Fixture[]): SeasonPhaseSummary[] {

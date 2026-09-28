@@ -87,7 +87,8 @@ interface PendingFixtureItem extends Fixture {
 
 export const AdminView: React.FC = () => {
   const { user, activeSeasonId, showToast } = useAuth();
-  const { t } = useI18n();
+  const { t, language } = useI18n();
+  const loc = (uz: string, ru: string, en: string) => ({ uz, ru, en })[language];
 
   const [activeAdminTab, setActiveAdminTab] = useState<AdminTab>('overview');
   const [isLoading, setIsLoading] = useState(true);
@@ -288,14 +289,14 @@ export const AdminView: React.FC = () => {
     try {
       const res = await api.rebuildReadModels(activeSeasonId);
       if (res?.success) {
-        setReadModelRebuildMsg(`Saqlandi: ${res.counts?.clubs ?? 0} klub, ${res.counts?.fixtures ?? 0} match, ${res.counts?.standings ?? 0} jadval qatori. ${res.warmedLkgKeys?.length ?? 0} nusxa.`);
+        setReadModelRebuildMsg(`${loc('Yangilandi', 'Обновлено', 'Updated')}: ${res.counts?.clubs ?? 0} ${loc('klub', 'клубов', 'clubs')}, ${res.counts?.fixtures ?? 0} ${loc('uchrashuv', 'матчей', 'fixtures')}, ${res.counts?.standings ?? 0} ${loc('jadval qatori', 'строк таблицы', 'standings rows')}. ${res.warmedLkgKeys?.length ?? 0} ${loc('nusxa', 'копий', 'snapshots')}.`);
         const updatedHealth = await api.getReadModelHealth(activeSeasonId).catch(() => null);
         if (updatedHealth) setReadModelHealth(updatedHealth);
       } else {
-        setReadModelRebuildMsg(`Rebuild failed: ${res?.errors?.join('; ') || res?.error || 'Unknown error'}`);
+        setReadModelRebuildMsg(`${loc('Qayta tuzilmadi', 'Не удалось перестроить', 'Rebuild failed')}: ${res?.errors?.join('; ') || res?.error || loc('Noma’lum xato', 'Неизвестная ошибка', 'Unknown error')}`);
       }
     } catch (err: any) {
-      setReadModelRebuildMsg(`Rebuild failed: ${err.message}`);
+      setReadModelRebuildMsg(`${loc('Qayta tuzilmadi', 'Не удалось перестроить', 'Rebuild failed')}: ${err.message}`);
     } finally {
       setIsRebuildingReadModels(false);
     }
@@ -818,7 +819,7 @@ export const AdminView: React.FC = () => {
         <div className="w-16 h-16 rounded-3xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 mx-auto mb-4 shadow-xl">
           <Shield className="w-8 h-8" />
         </div>
-        <h3 className="text-lg font-black text-white">Admin Authorization Required</h3>
+        <h3 className="text-lg font-black text-white">{t.adminAuthorizationRequired}</h3>
         <p className="text-xs text-slate-400 mt-2 leading-relaxed">
           The active account (Telegram ID: <span className="font-mono text-emerald-400 font-bold">{user?.telegramId || 'Unauthenticated'}</span>, Username: <span className="font-mono text-emerald-400 font-bold">@{user?.username || 'player'}</span>) does not possess administrative privileges.
         </p>
@@ -837,18 +838,18 @@ export const AdminView: React.FC = () => {
             <div className="flex flex-wrap items-center gap-2">
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center gap-1">
                 <Shield className="w-3 h-3" />
-                Tournament Control Dashboard
+                {t.adminPanel}
               </span>
               <span className="text-[11px] font-semibold text-slate-400">
-                Officer: <strong className="text-emerald-400">@{user?.username}</strong> ({user?.id})
+                {t.adminOfficer}: <strong className="text-emerald-400">@{user?.username}</strong> ({user?.id})
               </span>
               <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/15 text-emerald-300 border border-emerald-500/20 font-mono">
-                Season 2026/27 ACTIVE
+                {t.season} 2026/27 · FAOL
               </span>
             </div>
             <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2.5">
               <SlidersHorizontal className="w-6 h-6 text-amber-400 shrink-0" />
-              <span>EFL UZ Competition Management System</span>
+              <span>{t.adminDashboardTitle}</span>
             </h1>
           </div>
 
@@ -860,7 +861,7 @@ export const AdminView: React.FC = () => {
               className="px-4 py-2 glass-card text-slate-200 hover:text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-md min-h-[40px] touch-manipulation hover:border-emerald-500/40"
             >
               <RefreshCw className={`w-4 h-4 text-emerald-400 ${isLoading ? 'animate-spin' : ''}`} />
-              <span>Refresh Center</span>
+              <span>{t.adminRefreshCenter}</span>
             </button>
           </div>
         </div>
@@ -890,6 +891,7 @@ export const AdminView: React.FC = () => {
       {/* ========================================================================= */}
       {/* SECTION TABS (HIGH DENSITY NAVIGATION) */}
       {/* ========================================================================= */}
+      <p className="px-1 text-[11px] font-semibold text-slate-400 sm:hidden">{t.adminSectionsHint}</p>
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
         {/* 1. OVERVIEW */}
         <button
@@ -902,7 +904,7 @@ export const AdminView: React.FC = () => {
           }`}
         >
           <Activity className="w-4 h-4" />
-          <span>Overview</span>
+          <span>{t.adminOverview}</span>
           {pendingResults.length > 0 && (
             <span className="px-1.5 py-0.2 bg-amber-600 text-slate-950 rounded-full font-black text-[10px]">
               {pendingResults.length}
@@ -949,7 +951,7 @@ export const AdminView: React.FC = () => {
           }`}
         >
           <FileCheck className="w-4 h-4" />
-          <span>Results & Review</span>
+          <span>{t.adminResultsReview}</span>
           {(pendingResults.length > 0 || disputes.length > 0) && (
             <span className="px-1.5 py-0.2 bg-rose-600 text-white rounded-full font-black text-[10px] animate-pulse">
               {pendingResults.length + disputes.length}
@@ -968,7 +970,7 @@ export const AdminView: React.FC = () => {
           }`}
         >
           <Trophy className="w-4 h-4" />
-          <span>19 Competitions</span>
+          <span>{t.adminCompetitions}</span>
         </button>
 
         {/* 5A. DOMESTIC CUPS */}
@@ -982,7 +984,7 @@ export const AdminView: React.FC = () => {
           }`}
         >
           <Trophy className="w-4 h-4 text-amber-400" />
-          <span>Domestic Cups (5)</span>
+          <span>{t.adminDomesticCups}</span>
         </button>
 
         {/* 5B. EUROPEAN (UCL & UEL) */}
@@ -996,7 +998,7 @@ export const AdminView: React.FC = () => {
           }`}
         >
           <Globe2 className="w-4 h-4 text-blue-300" />
-          <span>UCL & UEL (32)</span>
+          <span>{t.adminEuropeanCompetitions}</span>
         </button>
 
         {/* 5C. TELEGRAM NOTIFICATIONS */}
@@ -1010,7 +1012,7 @@ export const AdminView: React.FC = () => {
           }`}
         >
           <Send className="w-4 h-4 text-sky-400" />
-          <span>Telegram Bot</span>
+          <span>{t.adminTelegramBot}</span>
         </button>
 
         {/* 6. PLAYERS */}
@@ -1024,7 +1026,7 @@ export const AdminView: React.FC = () => {
           }`}
         >
           <UserCheck className="w-4 h-4" />
-          <span>Players ({users.length})</span>
+          <span>{t.adminPlayers} ({users.length})</span>
         </button>
 
         {/* 7. SYSTEM & AUDIT */}
@@ -1038,7 +1040,7 @@ export const AdminView: React.FC = () => {
           }`}
         >
           <Database className="w-4 h-4" />
-          <span>System Diagnostics</span>
+          <span>{t.adminSystemDiagnostics}</span>
         </button>
       </div>
 
@@ -1053,29 +1055,29 @@ export const AdminView: React.FC = () => {
             <div className="glass-card p-4 rounded-2xl relative overflow-hidden border-emerald-500/30">
               <div className="text-[10px] font-black text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5" />
-                Active Season
+                Faol mavsum
               </div>
               <div className="text-xl sm:text-2xl font-black text-white mt-1">2026/27</div>
-              <div className="text-[10px] text-emerald-400 font-semibold mt-0.5">Status: ACTIVE • 5 Leagues</div>
+              <div className="text-[10px] text-emerald-400 font-semibold mt-0.5">Holat: FAOL • 5 ta liga</div>
             </div>
 
             {/* Total Users */}
             <div className="glass-card p-4 rounded-2xl relative overflow-hidden border-slate-800">
               <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                 <UserCheck className="w-3.5 h-3.5" />
-                Registered Users
+                Ro‘yxatdan o‘tgan foydalanuvchilar
               </div>
               <div className="text-xl sm:text-2xl font-black text-white mt-1 tabular-nums">
                 {overviewData?.counts?.totalUsers || users.length || 0}
               </div>
-              <div className="text-[10px] text-slate-400 mt-0.5">Telegram Verified Players</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">Telegram tasdiqlagan o‘yinchilar</div>
             </div>
 
             {/* Registered Clubs (96) */}
             <div className="glass-card p-4 rounded-2xl relative overflow-hidden border-slate-800">
               <div className="text-[10px] font-black text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
                 <Shield className="w-3.5 h-3.5" />
-                Registered Clubs
+                Ro‘yxatdan o‘tgan klublar
               </div>
               <div className="text-xl sm:text-2xl font-black text-white mt-1 tabular-nums">96</div>
               <div className="text-[10px] text-slate-400 mt-0.5">
@@ -1088,10 +1090,10 @@ export const AdminView: React.FC = () => {
             <div className="glass-card p-4 rounded-2xl relative overflow-hidden border-amber-500/30">
               <div className="text-[10px] font-black text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
                 <Trophy className="w-3.5 h-3.5" />
-                Active Competitions
+                Faol musobaqalar
               </div>
               <div className="text-xl sm:text-2xl font-black text-white mt-1 tabular-nums">19</div>
-              <div className="text-[10px] text-slate-400 mt-0.5">5 Leagues • 6 Cups • 5 Super • 3 UEFA</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">5 liga • 6 kubok • 5 superkubok • 3 UEFA</div>
             </div>
           </div>
 
@@ -1099,36 +1101,36 @@ export const AdminView: React.FC = () => {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {/* Upcoming Matches */}
             <div className="glass-card p-4 rounded-2xl border-slate-800">
-              <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Upcoming Matches</div>
+              <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Kutilayotgan o‘yinlar</div>
               <div className="text-xl font-black text-white mt-1 tabular-nums">{matchMetrics.upcoming}</div>
-              <div className="text-[10px] text-slate-400 mt-0.5">Scheduled & In-Play</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">Rejalashtirilgan va jarayondagi</div>
             </div>
 
             {/* Completed Matches */}
             <div className="glass-card p-4 rounded-2xl border-slate-800">
-              <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Completed Matches</div>
+              <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Yakunlangan o‘yinlar</div>
               <div className="text-xl font-black text-emerald-400 mt-1 tabular-nums">{matchMetrics.completed}</div>
-              <div className="text-[10px] text-slate-400 mt-0.5">Confirmed & In Standings</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">Tasdiqlangan va jadvalda</div>
             </div>
 
             {/* Pending Confirmations */}
             <div className="glass-card p-4 rounded-2xl border-amber-500/30 bg-amber-950/10">
               <div className="text-[10px] font-black text-amber-400 uppercase tracking-wider flex items-center gap-1">
                 <Clock className="w-3 h-3" />
-                Pending Confirmations
+                Tasdiq kutilmoqda
               </div>
               <div className="text-xl font-black text-amber-300 mt-1 tabular-nums">{pendingResults.length}</div>
-              <div className="text-[10px] text-slate-400 mt-0.5">Awaiting Review or Consensus</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">Ko‘rib chiqish yoki tasdiq kutilmoqda</div>
             </div>
 
             {/* Open Disputes */}
             <div className="glass-card p-4 rounded-2xl border-rose-500/30 bg-rose-950/10">
               <div className="text-[10px] font-black text-rose-400 uppercase tracking-wider flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3" />
-                Open Conflicts
+                Ochiq bahslar
               </div>
               <div className="text-xl font-black text-rose-300 mt-1 tabular-nums">{disputes.length}</div>
-              <div className="text-[10px] text-slate-400 mt-0.5">Score Mismatches</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">Hisoblar mos kelmagan</div>
             </div>
           </div>
 
@@ -2508,33 +2510,33 @@ export const AdminView: React.FC = () => {
           <div className="glass-panel p-4 space-y-3">
             <h2 className="text-sm font-black text-white flex items-center gap-2">
               <Database className="w-4 h-4 text-emerald-400" />
-              <span>Firestore System Health & Diagnostics</span>
+              <span>{loc('Firestore tizim holati va diagnostika', 'Состояние Firestore и диагностика', 'Firestore System Health & Diagnostics')}</span>
             </h2>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
               <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
-                <div className="text-[10px] uppercase font-black text-slate-500">Database Connection</div>
-                <div className="text-xs font-black text-emerald-400 mt-1 flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>CONNECTED</span>
+                <div className="text-[10px] uppercase font-black text-slate-500">{loc('Baza aloqasi', 'Подключение к базе', 'Database Connection')}</div>
+                <div className={`text-xs font-black mt-1 flex items-center gap-1.5 ${diagnostics?.connected ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  {diagnostics?.connected ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}
+                  <span>{diagnostics?.connected ? loc('ULANGAN', 'ПОДКЛЮЧЕНО', 'CONNECTED') : loc('TASDIQLANMAGAN', 'НЕ ПОДТВЕРЖДЕНО', 'UNVERIFIED')}</span>
                 </div>
               </div>
 
               <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
-                <div className="text-[10px] uppercase font-black text-slate-500">Project ID</div>
+                <div className="text-[10px] uppercase font-black text-slate-500">{loc('Loyiha ID', 'ID проекта', 'Project ID')}</div>
                 <div className="text-xs font-mono font-bold text-white mt-1 truncate">
-                  {diagnostics?.projectId || overviewData?.systemHealth?.projectId || 'Default Project'}
+                  {diagnostics?.projectId || overviewData?.systemHealth?.projectId || loc('Noma’lum loyiha', 'Неизвестный проект', 'Unknown project')}
                 </div>
               </div>
 
               <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
-                <div className="text-[10px] uppercase font-black text-slate-500">Total Audit Logs</div>
-                <div className="text-xs font-black text-white mt-1">{auditLogs.length} Records</div>
+                <div className="text-[10px] uppercase font-black text-slate-500">{loc('Audit yozuvlari', 'Записи аудита', 'Audit Logs')}</div>
+                <div className="text-xs font-black text-white mt-1">{auditLogs.length} {loc('yozuv', 'записей', 'records')}</div>
               </div>
 
               <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
-                <div className="text-[10px] uppercase font-black text-slate-500">Auth Mode</div>
-                <div className="text-xs font-mono font-bold text-emerald-400 mt-1">Telegram HMAC Verified</div>
+                <div className="text-[10px] uppercase font-black text-slate-500">{loc('Kirish usuli', 'Способ входа', 'Auth Mode')}</div>
+                <div className="text-xs font-mono font-bold text-emerald-400 mt-1">{diagnostics?.authMode || loc('Noma’lum', 'Неизвестно', 'Unknown')}</div>
               </div>
             </div>
 
@@ -2544,24 +2546,24 @@ export const AdminView: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <div className="text-xs font-black uppercase text-slate-300 flex items-center gap-2">
                     <Activity className="w-4 h-4 text-emerald-400" />
-                    <span>Firestore Extreme Read Minimization Telemetry</span>
+                    <span>{loc('Firestore o‘qish ko‘rsatkichlari', 'Показатели чтения Firestore', 'Firestore Read Telemetry')}</span>
                   </div>
                   <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/30">
-                    Free Tier Safe (&lt; 50,000 / day)
+                    {loc('Bepul limit: kuniga 50 000 gacha', 'Бесплатный лимит: до 50 000 в день', 'Free limit: up to 50,000/day')}
                   </span>
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div className="bg-slate-950/80 p-3 rounded-xl border border-white/[0.05]">
-                    <div className="text-[10px] uppercase font-black text-slate-500">Session Reads</div>
+                    <div className="text-[10px] uppercase font-black text-slate-500">{loc('Sessiya o‘qishlari', 'Чтения за сеанс', 'Session Reads')}</div>
                     <div className="text-base font-black text-emerald-400 mt-0.5">
                       {diagnostics.readMetrics.sessionReads}
                     </div>
-                    <div className="text-[9px] text-slate-500">Reads tracked</div>
+                    <div className="text-[9px] text-slate-500">{loc('Qayd etilgan o‘qishlar', 'Учтённые чтения', 'Reads tracked')}</div>
                   </div>
 
                   <div className="bg-slate-950/80 p-3 rounded-xl border border-white/[0.05]">
-                    <div className="text-[10px] uppercase font-black text-slate-500">Cache Hit Ratio</div>
+                    <div className="text-[10px] uppercase font-black text-slate-500">{loc('Keshga tushish ulushi', 'Доля попаданий в кеш', 'Cache Hit Ratio')}</div>
                     <div className="text-base font-black text-sky-400 mt-0.5">
                       {diagnostics.readMetrics.cacheHits + diagnostics.readMetrics.cacheMisses > 0
                         ? `${Math.round(
@@ -2571,23 +2573,23 @@ export const AdminView: React.FC = () => {
                           )}%`
                         : '100%'}
                     </div>
-                    <div className="text-[9px] text-slate-500">{diagnostics.readMetrics.cacheHits} hits / {diagnostics.readMetrics.cacheMisses} misses</div>
+                    <div className="text-[9px] text-slate-500">{diagnostics.readMetrics.cacheHits} {loc('topildi', 'попаданий', 'hits')} / {diagnostics.readMetrics.cacheMisses} {loc('topilmadi', 'промахов', 'misses')}</div>
                   </div>
 
                   <div className="bg-slate-950/80 p-3 rounded-xl border border-white/[0.05]">
-                    <div className="text-[10px] uppercase font-black text-slate-500">Free-Tier Quota Used</div>
+                    <div className="text-[10px] uppercase font-black text-slate-500">{loc('Bepul limit ishlatilishi', 'Использование бесплатного лимита', 'Free Quota Used')}</div>
                     <div className="text-base font-black text-amber-400 mt-0.5">
                       {diagnostics.readMetrics.budget?.percentageConsumed ?? 0}%
                     </div>
-                    <div className="text-[9px] text-slate-500">Limit: 50,000 / day</div>
+                    <div className="text-[9px] text-slate-500">{loc('Limit: kuniga 50 000', 'Лимит: 50 000 в день', 'Limit: 50,000/day')}</div>
                   </div>
 
                   <div className="bg-slate-950/80 p-3 rounded-xl border border-white/[0.05]">
-                    <div className="text-[10px] uppercase font-black text-slate-500">Avg Reads / Session</div>
+                    <div className="text-[10px] uppercase font-black text-slate-500">{loc('Sessiyadagi o‘rtacha o‘qish', 'Среднее чтений за сеанс', 'Avg Reads / Session')}</div>
                     <div className="text-base font-black text-purple-400 mt-0.5">
                       {diagnostics.readMetrics.budget?.estimatedReadsPerUserSession ?? 2}
                     </div>
-                    <div className="text-[9px] text-slate-500">User avg (target &lt; 100)</div>
+                    <div className="text-[9px] text-slate-500">{loc('Maqsad: 100 dan kam', 'Цель: меньше 100', 'Target: under 100')}</div>
                   </div>
                 </div>
               </div>
@@ -2600,10 +2602,10 @@ export const AdminView: React.FC = () => {
               <div>
                 <h2 className="text-sm font-black text-white flex items-center gap-2">
                   <Database className="w-4 h-4 text-sky-400" />
-                  <span>Redis Read-Model Health &amp; Snapshots</span>
+                  <span>{loc('Redis o‘qish modeli va nusxalar holati', 'Состояние моделей чтения Redis и снимков', 'Redis Read-Model Health & Snapshots')}</span>
                 </h2>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  Inspect dual-key Redis read models (fresh with TTL + permanent LKG fallback) and trigger on-demand rebuilds.
+                  {loc('Redis kesh va zaxira nusxalarini tekshiring, kerak bo‘lsa qayta tuzing.', 'Проверьте кеш Redis и резервные снимки, при необходимости перестройте.', 'Inspect Redis caches and fallback snapshots; rebuild when needed.')}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -2611,27 +2613,27 @@ export const AdminView: React.FC = () => {
                   type="button"
                   onClick={() => loadTabData('system', true)}
                   className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all"
-                  title="Refresh read model health"
+                  title={loc('Holatni yangilash', 'Обновить состояние', 'Refresh read model health')}
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
-                  <span>Refresh</span>
+                  <span>{loc('Yangilash', 'Обновить', 'Refresh')}</span>
                 </button>
                 <button
                   type="button"
                   onClick={handleRebuildReadModels}
                   disabled={isRebuildingReadModels || readModelHealth?.redisState !== 'CONNECTED'}
                   className="px-3.5 py-1.5 bg-sky-500 hover:bg-sky-400 text-slate-950 rounded-xl text-xs font-black shadow flex items-center gap-1.5 transition-all disabled:opacity-50"
-                  title="Rebuild all Redis read models from Firestore"
+                  title={loc('Redis modellarini Firestoredan qayta tuzish', 'Перестроить модели Redis из Firestore', 'Rebuild Redis read models from Firestore')}
                 >
                   {isRebuildingReadModels ? (
                     <>
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>Rebuilding...</span>
+                      <span>{loc('Qayta tuzilmoqda…', 'Перестраивается…', 'Rebuilding...')}</span>
                     </>
                   ) : (
                     <>
                       <Sparkles className="w-3.5 h-3.5" />
-                      <span>Rebuild Read Models</span>
+                      <span>{loc('O‘qish modellarini qayta tuzish', 'Перестроить модели чтения', 'Rebuild Read Models')}</span>
                     </>
                   )}
                 </button>
@@ -2649,58 +2651,58 @@ export const AdminView: React.FC = () => {
               <div className="space-y-3">
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
-                    <div className="text-[10px] uppercase font-black text-slate-500">Read-Model Status</div>
+                    <div className="text-[10px] uppercase font-black text-slate-500">{loc('O‘qish modeli holati', 'Состояние модели чтения', 'Read-Model Status')}</div>
                     <div className="text-xs font-black mt-1 flex items-center gap-1.5">
                       {readModelStatus === 'HEALTHY' ? (
                         <>
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                          <span className="text-emerald-400">HEALTHY</span>
+                          <span className="text-emerald-400">{loc('SOZ', 'ИСПРАВНО', 'HEALTHY')}</span>
                         </>
                       ) : readModelStatus === 'DEGRADED' ? (
                         <>
                           <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-                          <span className="text-amber-400">DEGRADED</span>
+                          <span className="text-amber-400">{loc('CHEKLANGAN', 'ЧАСТИЧНО', 'DEGRADED')}</span>
                         </>
                       ) : (
                         <>
                           <XCircle className="w-3.5 h-3.5 text-rose-400" />
-                          <span className="text-rose-400">DOWN</span>
+                          <span className="text-rose-400">{loc('ISHLAMAYAPTI', 'НЕ РАБОТАЕТ', 'DOWN')}</span>
                         </>
                       )}
                     </div>
                   </div>
 
                   <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
-                    <div className="text-[10px] uppercase font-black text-slate-500">Redis Connectivity</div>
+                    <div className="text-[10px] uppercase font-black text-slate-500">{loc('Redis aloqasi', 'Подключение Redis', 'Redis Connectivity')}</div>
                     <div className="text-xs font-black mt-1">
                       {readModelHealth.redisState === 'CONNECTED' ? (
-                        <span className="text-emerald-400">CONNECTED</span>
+                        <span className="text-emerald-400">{loc('ULANGAN', 'ПОДКЛЮЧЕНО', 'CONNECTED')}</span>
                       ) : (
-                        <span className="text-rose-400">{readModelHealth.redisState === 'IN_MEMORY_FALLBACK' ? 'NOT CONFIGURED' : 'CONNECTION ERROR'}</span>
+                        <span className="text-rose-400">{readModelHealth.redisState === 'IN_MEMORY_FALLBACK' ? loc('SOZLANMAGAN', 'НЕ НАСТРОЕН', 'NOT CONFIGURED') : loc('ALOQA XATOSI', 'ОШИБКА ПОДКЛЮЧЕНИЯ', 'CONNECTION ERROR')}</span>
                       )}
                     </div>
                   </div>
 
                   <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
-                    <div className="text-[10px] uppercase font-black text-slate-500">Total Datasets</div>
+                    <div className="text-[10px] uppercase font-black text-slate-500">{loc('Ma’lumot to‘plamlari', 'Наборы данных', 'Total Datasets')}</div>
                     <div className="text-xs font-black text-white mt-1">
-                      {Object.keys(readModelHealth.coreDatasets || {}).length} Models
+                      {Object.keys(readModelHealth.coreDatasets || {}).length} {loc('model', 'моделей', 'models')}
                     </div>
                   </div>
 
                   <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
-                    <div className="text-[10px] uppercase font-black text-slate-500">Last Rebuild</div>
+                    <div className="text-[10px] uppercase font-black text-slate-500">{loc('Oxirgi qayta tuzish', 'Последняя перестройка', 'Last Rebuild')}</div>
                     <div className="text-xs font-mono font-bold text-slate-300 mt-1 truncate">
                       {readModelHealth.lastSnapshotAt
                         ? new Date(readModelHealth.lastSnapshotAt).toLocaleTimeString()
-                        : 'Never'}
+                        : loc('Hali bo‘lmagan', 'Не было', 'Never')}
                     </div>
                   </div>
                 </div>
 
                 {readModelHealth.recommendation && (
                   <div className="text-[11px] text-slate-400 bg-slate-950/40 px-3 py-2 rounded-lg border border-white/[0.04]">
-                    <span className="font-bold text-slate-300">Recommendation:</span> {readModelHealth.recommendation}
+                    <span className="font-bold text-slate-300">{loc('Tavsiya', 'Рекомендация', 'Recommendation')}:</span> {readModelHealth.recommendation}
                   </div>
                 )}
 
@@ -2708,12 +2710,12 @@ export const AdminView: React.FC = () => {
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="border-b border-white/[0.08] text-[10px] uppercase font-black text-slate-400 bg-slate-950/60">
-                        <th className="p-2.5">Dataset</th>
-                        <th className="p-2.5">Redis Key</th>
-                        <th className="p-2.5">Fresh Cache</th>
-                        <th className="p-2.5">LKG Snapshot</th>
-                        <th className="p-2.5">Snapshot age</th>
-                        <th className="p-2.5">State</th>
+                        <th className="p-2.5">{loc('To‘plam', 'Набор', 'Dataset')}</th>
+                        <th className="p-2.5">Redis {loc('kaliti', 'ключ', 'key')}</th>
+                        <th className="p-2.5">{loc('Yangi kesh', 'Свежий кеш', 'Fresh Cache')}</th>
+                        <th className="p-2.5">{loc('Zaxira nusxa', 'Резервный снимок', 'Fallback Snapshot')}</th>
+                        <th className="p-2.5">{loc('Nusxa yoshi', 'Возраст снимка', 'Snapshot age')}</th>
+                        <th className="p-2.5">{loc('Holat', 'Состояние', 'State')}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/[0.04] bg-slate-950/30 font-mono text-[11px]">
@@ -2724,19 +2726,19 @@ export const AdminView: React.FC = () => {
                           <td className="p-2.5">
                             {ds.hasFresh ? (
                               <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                                FRESH
+                                {loc('YANGI', 'СВЕЖИЙ', 'FRESH')}
                               </span>
                             ) : (
-                              <span className="text-slate-600 text-[10px]">expired</span>
+                              <span className="text-slate-600 text-[10px]">{loc('muddati o‘tgan', 'истёк', 'expired')}</span>
                             )}
                           </td>
                           <td className="p-2.5">
                             {ds.hasLkg ? (
                               <span className="text-sky-400 font-bold">
-                                YES <span className="text-slate-500 text-[10px]">({ds.actualCount} yozuv)</span>
+                                {loc('BOR', 'ЕСТЬ', 'YES')} <span className="text-slate-500 text-[10px]">({ds.actualCount} {loc('yozuv', 'записей', 'records')})</span>
                               </span>
                             ) : (
-                              <span className="text-rose-400 text-[10px]">MISSING</span>
+                              <span className="text-rose-400 text-[10px]">{loc('YO‘Q', 'НЕТ', 'MISSING')}</span>
                             )}
                           </td>
                           <td className="p-2.5">
@@ -2745,19 +2747,19 @@ export const AdminView: React.FC = () => {
                           <td className="p-2.5">
                             {ds.isDirty ? (
                               <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">
-                                DIRTY
+                                {loc('YANGILANISHI KERAK', 'ТРЕБУЕТ ОБНОВЛЕНИЯ', 'DIRTY')}
                               </span>
                             ) : ds.hasFresh ? (
                               <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                                FRESH
+                                {loc('YANGI', 'СВЕЖИЙ', 'FRESH')}
                               </span>
                             ) : ds.hasLkg ? (
                               <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-sky-500/10 text-sky-400 border border-sky-500/30">
-                                LKG STALE
+                                {loc('ESKI ZAXIRA', 'УСТАРЕВШИЙ СНИМОК', 'LKG STALE')}
                               </span>
                             ) : (
                               <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/30">
-                                UNWARMED
+                                {loc('TAYYORLANMAGAN', 'НЕ ЗАГРУЖЕН', 'UNWARMED')}
                               </span>
                             )}
                           </td>
@@ -2768,7 +2770,7 @@ export const AdminView: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <div className="text-xs text-slate-500 py-4 text-center">Loading read-model status...</div>
+              <div className="text-xs text-slate-500 py-4 text-center">{loc('O‘qish modeli holati yuklanmoqda…', 'Загрузка состояния модели чтения…', 'Loading read-model status...')}</div>
             )}
           </div>
 
@@ -2776,18 +2778,18 @@ export const AdminView: React.FC = () => {
           <div className="glass-panel p-4 space-y-3">
             <h3 className="text-xs font-black uppercase tracking-wider text-slate-300 flex items-center gap-2">
               <FileText className="w-4 h-4 text-amber-400" />
-              <span>Tamper-Evident Administrative Audit Log</span>
+              <span>{loc('Admin amallari auditi', 'Журнал действий администраторов', 'Administrative Audit Log')}</span>
             </h3>
 
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-white/[0.08] text-[10px] uppercase font-black text-slate-400 bg-slate-950/40">
-                    <th className="p-2.5">Time</th>
-                    <th className="p-2.5">Actor</th>
-                    <th className="p-2.5">Action</th>
-                    <th className="p-2.5">Target Entity</th>
-                    <th className="p-2.5">Notes</th>
+                    <th className="p-2.5">{loc('Vaqt', 'Время', 'Time')}</th>
+                    <th className="p-2.5">{loc('Bajaruvchi', 'Исполнитель', 'Actor')}</th>
+                    <th className="p-2.5">{loc('Amal', 'Действие', 'Action')}</th>
+                    <th className="p-2.5">{loc('Nishon', 'Объект', 'Target')}</th>
+                    <th className="p-2.5">{loc('Izoh', 'Заметки', 'Notes')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/[0.04]">
@@ -2830,7 +2832,7 @@ export const AdminView: React.FC = () => {
                   size="sm"
                 />
                 <div>
-                  <h3 className="text-sm font-black text-white">Assign Club Manager</h3>
+                  <h3 className="text-sm font-black text-white">{loc('Klubga o‘yinchi biriktirish', 'Назначить игрока клубу', 'Assign Club Manager')}</h3>
                   <p className="text-[10px] text-slate-400">{selectedClubForAssign.name}</p>
                 </div>
               </div>
@@ -2843,14 +2845,14 @@ export const AdminView: React.FC = () => {
             </div>
 
             <div className="space-y-3">
-              <label className="text-xs font-bold text-slate-300 block">Select Registered Player</label>
+              <label className="text-xs font-bold text-slate-300 block">{loc('Ro‘yxatdan o‘tgan o‘yinchini tanlang', 'Выберите зарегистрированного игрока', 'Select Registered Player')}</label>
               <div className="relative">
                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   value={assignUserSearch}
                   onChange={(e) => setAssignUserSearch(e.target.value)}
-                  placeholder="Filter by username or Telegram ID..."
+                  placeholder={loc('Foydalanuvchi yoki Telegram ID bo‘yicha qidiring…', 'Поиск по имени или Telegram ID…', 'Filter by username or Telegram ID...')}
                   className="w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500"
                 />
               </div>
@@ -2886,7 +2888,7 @@ export const AdminView: React.FC = () => {
                 onClick={() => setSelectedClubForAssign(null)}
                 className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold"
               >
-                Cancel
+                {t.cancel}
               </button>
               <button
                 type="button"
@@ -2894,7 +2896,7 @@ export const AdminView: React.FC = () => {
                 disabled={!assignTargetUserId || isProcessing}
                 className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl text-xs font-black shadow transition-all disabled:opacity-50"
               >
-                {isProcessing ? 'Assigning...' : 'Confirm Assignment'}
+                {isProcessing ? loc('Biriktirilmoqda…', 'Назначается…', 'Assigning...') : loc('Biriktirishni tasdiqlash', 'Подтвердить назначение', 'Confirm Assignment')}
               </button>
             </div>
           </div>
@@ -2912,15 +2914,15 @@ export const AdminView: React.FC = () => {
                 <UserMinus className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-sm font-black text-white">Release Club Ownership</h3>
+                <h3 className="text-sm font-black text-white">{loc('Klubni bo‘shatish', 'Освободить клуб', 'Release Club Ownership')}</h3>
                 <p className="text-xs text-slate-400">{selectedClubForRelease.name}</p>
               </div>
             </div>
 
             <p className="text-xs text-slate-300 leading-relaxed bg-slate-950/60 p-3 rounded-xl border border-white/[0.06]">
-              Are you sure you want to release ownership of <strong>{selectedClubForRelease.name}</strong> from user{' '}
-              <strong className="text-rose-400">@{selectedClubForRelease.claimedByUsername || selectedClubForRelease.claimedByUserId}</strong>?
-              The club will immediately become available for other players.
+              {loc('Klubni foydalanuvchidan bo‘shatasizmi', 'Освободить клуб от игрока', 'Release club from player')} <strong>{selectedClubForRelease.name}</strong> —{' '}
+              <strong className="text-rose-400">@{selectedClubForRelease.claimedByUsername || selectedClubForRelease.claimedByUserId}</strong>?{' '}
+              {loc('Klub darhol boshqa o‘yinchilar uchun ochiladi.', 'Клуб сразу станет доступен другим игрокам.', 'The club will immediately become available to other players.')}
             </p>
 
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.08]">
@@ -2929,7 +2931,7 @@ export const AdminView: React.FC = () => {
                 onClick={() => setSelectedClubForRelease(null)}
                 className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold"
               >
-                Cancel
+                {t.cancel}
               </button>
               <button
                 type="button"
@@ -2937,7 +2939,7 @@ export const AdminView: React.FC = () => {
                 disabled={isProcessing}
                 className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-black shadow transition-all disabled:opacity-50"
               >
-                {isProcessing ? 'Releasing...' : 'Confirm Release'}
+                {isProcessing ? loc('Bo‘shatilmoqda…', 'Освобождается…', 'Releasing...') : loc('Bo‘shatishni tasdiqlash', 'Подтвердить освобождение', 'Confirm Release')}
               </button>
             </div>
           </div>
@@ -2954,9 +2956,9 @@ export const AdminView: React.FC = () => {
               <div className="flex items-center gap-2">
                 <FileCheck className="w-5 h-5 text-emerald-400" />
                 <div>
-                  <h3 className="text-sm font-black text-white">Approve Match Result</h3>
+                  <h3 className="text-sm font-black text-white">{loc('Uchrashuv natijasini tasdiqlash', 'Подтвердить результат матча', 'Approve Match Result')}</h3>
                   <p className="text-[10px] text-slate-400">
-                    {selectedPendingForApprove.competitionName} • Matchday {selectedPendingForApprove.matchday}
+                    {selectedPendingForApprove.competitionName} • {loc('Tur', 'Тур', 'Matchday')} {selectedPendingForApprove.matchday}
                   </p>
                 </div>
               </div>
@@ -3010,12 +3012,12 @@ export const AdminView: React.FC = () => {
             </div>
 
             <div>
-              <label className="text-[11px] font-bold text-slate-300 block mb-1">Administrative Note</label>
+              <label className="text-[11px] font-bold text-slate-300 block mb-1">{loc('Admin izohi', 'Заметка администратора', 'Administrative Note')}</label>
               <input
                 type="text"
                 value={approveNotes}
                 onChange={(e) => setApproveNotes(e.target.value)}
-                placeholder="Optional confirmation note..."
+                placeholder={loc('Tasdiqlash izohi (ixtiyoriy)…', 'Заметка о подтверждении (необязательно)…', 'Optional confirmation note...')}
                 className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500"
               />
             </div>
@@ -3026,7 +3028,7 @@ export const AdminView: React.FC = () => {
                 onClick={() => setSelectedPendingForApprove(null)}
                 className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold"
               >
-                Cancel
+                {t.cancel}
               </button>
               <button
                 type="button"
@@ -3034,7 +3036,7 @@ export const AdminView: React.FC = () => {
                 disabled={isProcessing}
                 className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl text-xs font-black shadow transition-all disabled:opacity-50"
               >
-                {isProcessing ? 'Confirming...' : 'Confirm & Update Standings'}
+                {isProcessing ? loc('Tasdiqlanmoqda…', 'Подтверждается…', 'Confirming...') : loc('Tasdiqlash va jadvalni yangilash', 'Подтвердить и обновить таблицу', 'Confirm & Update Standings')}
               </button>
             </div>
           </div>
@@ -3051,7 +3053,7 @@ export const AdminView: React.FC = () => {
               <div className="flex items-center gap-2">
                 <XCircle className="w-5 h-5 text-rose-400" />
                 <div>
-                  <h3 className="text-sm font-black text-white">Reject Result Submission</h3>
+                  <h3 className="text-sm font-black text-white">{loc('Yuborilgan natijani rad etish', 'Отклонить отправленный результат', 'Reject Result Submission')}</h3>
                   <p className="text-[10px] text-slate-400">
                     {selectedPendingForReject.homeClub?.name} vs {selectedPendingForReject.awayClub?.name}
                   </p>
@@ -3066,16 +3068,16 @@ export const AdminView: React.FC = () => {
             </div>
 
             <p className="text-xs text-slate-300">
-              Rejecting this result will discard the pending submission and reopen the fixture so both players can re-submit their score.
+              {loc('Natija rad etilsa, yuborilgan hisob bekor qilinadi va ikkala o‘yinchi qayta yuborishi uchun uchrashuv ochiladi.', 'При отклонении результат удалится, а матч снова откроется для подачи счёта обоими игроками.', 'Rejecting this result discards the submission and reopens the fixture for both players to submit again.')}
             </p>
 
             <div>
-              <label className="text-[11px] font-bold text-slate-300 block mb-1">Reason / Note to Players</label>
+              <label className="text-[11px] font-bold text-slate-300 block mb-1">{loc('Sabab / o‘yinchilarga izoh', 'Причина / сообщение игрокам', 'Reason / Note to Players')}</label>
               <textarea
                 rows={2}
                 value={rejectNotes}
                 onChange={(e) => setRejectNotes(e.target.value)}
-                placeholder="e.g. Incorrect score claimed or invalid screenshot..."
+                placeholder={loc('Masalan: noto‘g‘ri hisob yoki yaroqsiz skrinshot…', 'Например: неверный счёт или неподходящий скриншот…', 'e.g. Incorrect score or invalid screenshot...')}
                 className="w-full p-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-rose-500 resize-none"
               />
             </div>
@@ -3086,7 +3088,7 @@ export const AdminView: React.FC = () => {
                 onClick={() => setSelectedPendingForReject(null)}
                 className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold"
               >
-                Cancel
+                {t.cancel}
               </button>
               <button
                 type="button"
@@ -3094,7 +3096,7 @@ export const AdminView: React.FC = () => {
                 disabled={isProcessing}
                 className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-black shadow transition-all disabled:opacity-50"
               >
-                {isProcessing ? 'Rejecting...' : 'Reject & Reopen Match'}
+                {isProcessing ? loc('Rad etilmoqda…', 'Отклоняется…', 'Rejecting...') : loc('Rad etish va uchrashuvni ochish', 'Отклонить и открыть матч', 'Reject & Reopen Match')}
               </button>
             </div>
           </div>
@@ -3115,8 +3117,8 @@ export const AdminView: React.FC = () => {
                     <div className="flex items-center gap-2">
                       <Eye className="w-5 h-5 text-indigo-400" />
                       <div>
-                        <h3 className="text-sm font-black text-white">Match Inspector Record</h3>
-                        <p className="text-[10px] text-slate-400 font-mono">Fixture ID: {fix.id}</p>
+                        <h3 className="text-sm font-black text-white">{loc('Uchrashuv tafsilotlari', 'Данные матча', 'Match Inspector Record')}</h3>
+                        <p className="text-[10px] text-slate-400 font-mono">{loc('Uchrashuv ID', 'ID матча', 'Fixture ID')}: {fix.id}</p>
                       </div>
                     </div>
                     <button
@@ -3133,19 +3135,19 @@ export const AdminView: React.FC = () => {
                   {/* Metadata Grid */}
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div className="bg-slate-950/60 p-2.5 rounded-xl border border-white/[0.05]">
-                      <span className="text-[9px] uppercase font-black text-slate-500 block">Competition</span>
+                      <span className="text-[9px] uppercase font-black text-slate-500 block">{loc('Musobaqa', 'Турнир', 'Competition')}</span>
                       <span className="font-bold text-white">{fix.competitionName || fix.competitionId}</span>
                     </div>
                     <div className="bg-slate-950/60 p-2.5 rounded-xl border border-white/[0.05]">
-                      <span className="text-[9px] uppercase font-black text-slate-500 block">Status</span>
+                      <span className="text-[9px] uppercase font-black text-slate-500 block">{t.status}</span>
                       <span className="font-bold text-emerald-400 font-mono">{fix.status}</span>
                     </div>
                     <div className="bg-slate-950/60 p-2.5 rounded-xl border border-white/[0.05]">
-                      <span className="text-[9px] uppercase font-black text-slate-500 block">Home Team</span>
+                      <span className="text-[9px] uppercase font-black text-slate-500 block">{loc('Uy jamoasi', 'Хозяева', 'Home Team')}</span>
                       <span className="font-bold text-white">{fix.homeClub?.name}</span>
                     </div>
                     <div className="bg-slate-950/60 p-2.5 rounded-xl border border-white/[0.05]">
-                      <span className="text-[9px] uppercase font-black text-slate-500 block">Away Team</span>
+                      <span className="text-[9px] uppercase font-black text-slate-500 block">{loc('Mehmon jamoa', 'Гости', 'Away Team')}</span>
                       <span className="font-bold text-white">{fix.awayClub?.name}</span>
                     </div>
                   </div>
@@ -3153,14 +3155,14 @@ export const AdminView: React.FC = () => {
                   {/* Submissions if any */}
                   {(fix as any).submissions && (fix as any).submissions.length > 0 && (
                     <div className="space-y-2">
-                      <span className="text-[10px] uppercase font-black text-slate-400 block">Raw Player Submissions</span>
+                      <span className="text-[10px] uppercase font-black text-slate-400 block">{loc('O‘yinchilar yuborgan natijalar', 'Результаты игроков', 'Raw Player Submissions')}</span>
                       <div className="space-y-1.5 max-h-40 overflow-y-auto">
                         {(fix as any).submissions.map((sub: any, idx: number) => (
                           <div key={idx} className="bg-slate-950/80 p-2.5 rounded-xl border border-white/[0.05] text-xs flex items-center justify-between">
                             <div>
                               <div className="font-bold text-emerald-400">@{sub.submitterUsername}</div>
                               <div className="text-[10px] text-slate-400 font-mono">
-                                Claimed: {sub.homeScore} - {sub.awayScore} • {new Date(sub.createdAt).toLocaleTimeString()}
+                                {loc('Hisob', 'Счёт', 'Claimed')}: {sub.homeScore} - {sub.awayScore} • {new Date(sub.createdAt).toLocaleTimeString()}
                               </div>
                             </div>
                             {sub.proofUrl && (
@@ -3171,7 +3173,7 @@ export const AdminView: React.FC = () => {
                                 className="text-[11px] text-indigo-400 hover:underline flex items-center gap-1"
                               >
                                 <ExternalLink className="w-3 h-3" />
-                                <span>Proof</span>
+                                <span>{loc('Dalil', 'Доказательство', 'Proof')}</span>
                               </a>
                             )}
                           </div>
@@ -3188,7 +3190,7 @@ export const AdminView: React.FC = () => {
                       }}
                       className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold"
                     >
-                      Close
+                      {t.close}
                     </button>
                   </div>
                 </>
@@ -3209,7 +3211,7 @@ export const AdminView: React.FC = () => {
                 <RotateCcw className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-sm font-black text-white">Reopen Confirmed Fixture</h3>
+                <h3 className="text-sm font-black text-white">{loc('Tasdiqlangan uchrashuvni qayta ochish', 'Открыть подтверждённый матч заново', 'Reopen Confirmed Fixture')}</h3>
                 <p className="text-xs text-slate-400">
                   {selectedFixtureForReopen.homeClub?.name} vs {selectedFixtureForReopen.awayClub?.name}
                 </p>
@@ -3217,16 +3219,16 @@ export const AdminView: React.FC = () => {
             </div>
 
             <p className="text-xs text-slate-300 leading-relaxed">
-              Reopening will remove the confirmed score from official standings and reset the fixture status to <strong>AWAITING_RESULT</strong> so that a corrected score can be submitted.
+              {loc('Qayta ochish tasdiqlangan hisobni rasmiy jadvaldan olib tashlaydi va tuzatilgan hisob yuborilishi uchun uchrashuv holatini', 'Повторное открытие удалит подтверждённый счёт из таблицы и изменит статус матча на', 'Reopening removes the confirmed score from standings and sets the fixture status to')} <strong>AWAITING_RESULT</strong> {loc('holatiga qaytaradi.', 'для отправки исправленного счёта.', 'for a corrected submission.')}
             </p>
 
             <div>
-              <label className="text-[11px] font-bold text-slate-300 block mb-1">Reason for Reopening</label>
+              <label className="text-[11px] font-bold text-slate-300 block mb-1">{loc('Qayta ochish sababi', 'Причина повторного открытия', 'Reason for Reopening')}</label>
               <input
                 type="text"
                 value={reopenNotes}
                 onChange={(e) => setReopenNotes(e.target.value)}
-                placeholder="e.g. Disputed score entry or accidental submission..."
+                placeholder={loc('Masalan: bahsli hisob yoki xato yuborish…', 'Например: спорный счёт или случайная отправка…', 'e.g. Disputed score or accidental submission...')}
                 className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-rose-500"
               />
             </div>
@@ -3237,7 +3239,7 @@ export const AdminView: React.FC = () => {
                 onClick={() => setSelectedFixtureForReopen(null)}
                 className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold"
               >
-                Cancel
+                {t.cancel}
               </button>
               <button
                 type="button"
@@ -3245,7 +3247,7 @@ export const AdminView: React.FC = () => {
                 disabled={isProcessing}
                 className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-black shadow transition-all disabled:opacity-50"
               >
-                {isProcessing ? 'Reopening...' : 'Confirm & Reopen'}
+                {isProcessing ? loc('Qayta ochilmoqda…', 'Открывается…', 'Reopening...') : loc('Tasdiqlash va qayta ochish', 'Подтвердить и открыть', 'Confirm & Reopen')}
               </button>
             </div>
           </div>
@@ -3264,9 +3266,9 @@ export const AdminView: React.FC = () => {
                   <CheckCircle2 className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-black text-white">Domestic League Single Round-Robin Diagnostic</h3>
+                  <h3 className="text-base font-black text-white">{loc('Ichki liga bir davrali jadval diagnostikasi', 'Проверка однокругового календаря лиги', 'Domestic League Single Round-Robin Diagnostic')}</h3>
                   <p className="text-xs text-slate-400">
-                    Target: 20 clubs → 19 MD (190 matches) | 18 clubs → 17 MD (153 matches)
+                    {loc('Maqsad: 20 klub → 19 tur (190 o‘yin) | 18 klub → 17 tur (153 o‘yin)', 'Цель: 20 клубов → 19 туров (190 матчей) | 18 клубов → 17 туров (153 матча)', 'Target: 20 clubs → 19 rounds (190 matches) | 18 clubs → 17 rounds (153 matches)')}
                   </p>
                 </div>
               </div>
@@ -3277,33 +3279,33 @@ export const AdminView: React.FC = () => {
                     : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
                 }`}
               >
-                {fixtureValidationReport.allValid ? '100% Valid' : 'Needs Generation'}
+                {fixtureValidationReport.allValid ? loc('100% to‘g‘ri', '100% корректно', '100% Valid') : loc('Jadval tuzish kerak', 'Нужно создать календарь', 'Needs Generation')}
               </span>
             </div>
 
             {/* Summary KPI Cards */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="bg-slate-900/60 p-3 rounded-xl border border-white/[0.04] text-center">
-                <span className="text-[10px] text-slate-400 font-bold uppercase block">Total Clubs</span>
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">{loc('Jami klublar', 'Всего клубов', 'Total Clubs')}</span>
                 <span className="text-base font-black text-white">{fixtureValidationReport.summary?.totalClubs || 96}</span>
               </div>
               <div className="bg-slate-900/60 p-3 rounded-xl border border-white/[0.04] text-center">
-                <span className="text-[10px] text-slate-400 font-bold uppercase block">Expected Matches</span>
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">{loc('Kutilgan o‘yinlar', 'Ожидаемые матчи', 'Expected Matches')}</span>
                 <span className="text-base font-black text-white">{fixtureValidationReport.summary?.expectedTotalFixtures || 876}</span>
               </div>
               <div className="bg-slate-900/60 p-3 rounded-xl border border-white/[0.04] text-center">
-                <span className="text-[10px] text-slate-400 font-bold uppercase block">Actual Matches</span>
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">{loc('Mavjud o‘yinlar', 'Фактические матчи', 'Actual Matches')}</span>
                 <span className="text-base font-black text-emerald-400">{fixtureValidationReport.summary?.actualTotalFixtures || 0}</span>
               </div>
               <div className="bg-slate-900/60 p-3 rounded-xl border border-white/[0.04] text-center">
-                <span className="text-[10px] text-slate-400 font-bold uppercase block">Confirmed Results</span>
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">{loc('Tasdiqlangan natijalar', 'Подтверждённые результаты', 'Confirmed Results')}</span>
                 <span className="text-base font-black text-amber-400">{fixtureValidationReport.summary?.totalConfirmed || 0}</span>
               </div>
             </div>
 
             {/* Per League Diagnostic Table */}
             <div className="space-y-3">
-              <h4 className="text-xs font-black uppercase text-slate-300">League Breakdown</h4>
+              <h4 className="text-xs font-black uppercase text-slate-300">{loc('Ligalar bo‘yicha', 'По лигам', 'League Breakdown')}</h4>
               <div className="space-y-2">
                 {fixtureValidationReport.leagues?.map((l: any) => (
                   <div
@@ -3318,14 +3320,14 @@ export const AdminView: React.FC = () => {
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-black text-white">{l.name}</span>
                         <span className="text-[10px] px-2 py-0.5 rounded bg-slate-900 font-bold text-slate-300">
-                          {l.clubCount} Clubs
+                          {l.clubCount} {loc('klub', 'клубов', 'clubs')}
                         </span>
                       </div>
                       <div className="text-xs text-slate-400 mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
-                        <span>Matchdays: <strong className="text-white">{l.actualMatchdays} / {l.expectedMatchdays}</strong></span>
-                        <span>Matches: <strong className="text-white">{l.actualFixtureCount} / {l.expectedFixtureCount}</strong></span>
-                        <span>Duplicates: <strong className="text-white">{l.duplicatePairCount}</strong></span>
-                        <span>Reverse (H/A): <strong className="text-white">{l.reverseFixtureCount}</strong></span>
+                        <span>{loc('Turlar', 'Туры', 'Matchdays')}: <strong className="text-white">{l.actualMatchdays} / {l.expectedMatchdays}</strong></span>
+                        <span>{loc('O‘yinlar', 'Матчи', 'Matches')}: <strong className="text-white">{l.actualFixtureCount} / {l.expectedFixtureCount}</strong></span>
+                        <span>{loc('Takrorlar', 'Дубли', 'Duplicates')}: <strong className="text-white">{l.duplicatePairCount}</strong></span>
+                        <span>{loc('Teskari juftliklar', 'Обратные пары', 'Reverse pairs')}: <strong className="text-white">{l.reverseFixtureCount}</strong></span>
                       </div>
                       {l.issues?.length > 0 && (
                         <div className="text-[11px] text-amber-400 mt-1.5 space-y-0.5">
@@ -3342,7 +3344,7 @@ export const AdminView: React.FC = () => {
                     <div className="flex items-center gap-2 shrink-0">
                       {l.isValid ? (
                         <span className="px-3 py-1 rounded-lg text-xs font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
-                          <CheckCircle2 className="w-3.5 h-3.5" /> Perfect 19/17 MD
+                          <CheckCircle2 className="w-3.5 h-3.5" /> {loc('19/17 tur to‘g‘ri', '19/17 туров корректно', 'Perfect 19/17 rounds')}
                         </span>
                       ) : (
                         <button
@@ -3352,7 +3354,7 @@ export const AdminView: React.FC = () => {
                           }}
                           className="px-3 py-1.5 rounded-lg text-xs font-black bg-amber-500 hover:bg-amber-400 text-slate-950 shadow"
                         >
-                          Generate {l.expectedMatchdays} MDs
+                          {loc('Tuzish', 'Создать', 'Generate')} {l.expectedMatchdays} {loc('tur', 'туров', 'rounds')}
                         </button>
                       )}
                     </div>
@@ -3363,14 +3365,14 @@ export const AdminView: React.FC = () => {
 
             <div className="flex items-center justify-between pt-3 border-t border-white/[0.08]">
               <span className="text-[11px] text-slate-500">
-                Diagnostic generated at: {new Date(fixtureValidationReport.timestamp).toLocaleTimeString()}
+                {loc('Tekshiruv vaqti', 'Время проверки', 'Diagnostic generated at')}: {new Date(fixtureValidationReport.timestamp).toLocaleTimeString()}
               </span>
               <button
                 type="button"
                 onClick={() => setShowValidationModal(false)}
                 className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold"
               >
-                Close Diagnostic
+                {loc('Tekshiruvni yopish', 'Закрыть проверку', 'Close Diagnostic')}
               </button>
             </div>
           </div>

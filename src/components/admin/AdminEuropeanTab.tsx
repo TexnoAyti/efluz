@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
+import { useI18n } from '../../i18n';
 import {
   Trophy,
   RefreshCw,
@@ -67,6 +68,8 @@ interface QualificationPreviewData {
 
 export const AdminEuropeanTab: React.FC = () => {
   const { showToast } = useAuth();
+  const { language } = useI18n();
+  const loc = (uz: string, ru: string, en: string) => ({ uz, ru, en })[language];
 
   const [selectedCompId, setSelectedCompId] = useState<string>('comp-champions-league-2026');
   const [standings, setStandings] = useState<EuropeanStandingsRow[]>([]);
@@ -92,7 +95,7 @@ export const AdminEuropeanTab: React.FC = () => {
       setStandings(res.standings || []);
       setStandingsSource(res.source || 'redis-read-model');
     } catch (err: any) {
-      showToast(err.message || 'Failed to load European standings', 'error');
+      showToast(err.message || loc('Yevropa jadvali yuklanmadi', 'Не удалось загрузить еврокубковую таблицу', 'Failed to load European standings'), 'error');
     } finally {
       setIsLoadingStandings(false);
     }
@@ -104,9 +107,9 @@ export const AdminEuropeanTab: React.FC = () => {
       const res = await api.rebuildEuropeanStandings(selectedCompId);
       setStandings(res.standings || []);
       setStandingsSource('rebuilt-firestore');
-      showToast(res.message || 'Standings recalculated from confirmed fixtures', 'success');
+      showToast(res.message || loc('Jadval tasdiqlangan uchrashuvlardan qayta hisoblandi', 'Таблица пересчитана по подтверждённым матчам', 'Standings recalculated from confirmed fixtures'), 'success');
     } catch (err: any) {
-      showToast(err.message || 'Failed to recalculate European standings', 'error');
+      showToast(err.message || loc('Jadvalni qayta hisoblab bo‘lmadi', 'Не удалось пересчитать таблицу', 'Failed to recalculate European standings'), 'error');
     } finally {
       setIsRebuilding(false);
     }
@@ -119,7 +122,7 @@ export const AdminEuropeanTab: React.FC = () => {
       setPreview(data);
       setHasConfirmedApply(false);
     } catch (err: any) {
-      showToast(err.message || 'Failed to generate qualification preview', 'error');
+      showToast(err.message || loc('Saralash ko‘rinishi tayyorlanmadi', 'Не удалось создать предпросмотр квалификации', 'Failed to generate qualification preview'), 'error');
     } finally {
       setIsPreviewLoading(false);
     }
@@ -128,7 +131,7 @@ export const AdminEuropeanTab: React.FC = () => {
   async function handleApplySync() {
     if (!preview || !preview.previewToken) return;
     if (!hasConfirmedApply) {
-      showToast('Please check the confirmation box before applying sync', 'info');
+      showToast(loc('Qo‘llashdan oldin tasdiqlash katagini belgilang', 'Перед применением отметьте подтверждение', 'Please check the confirmation box before applying sync'), 'info');
       return;
     }
 
@@ -139,11 +142,11 @@ export const AdminEuropeanTab: React.FC = () => {
         confirmation: true,
         seasonId: 'season-2026-27',
       });
-      showToast(res.message || 'Successfully applied European qualifications!', 'success');
+      showToast(res.message || loc('Yevropa saralashi qo‘llandi!', 'Еврокубковая квалификация применена!', 'Successfully applied European qualifications!'), 'success');
       setPreview(null);
       await loadStandings(selectedCompId);
     } catch (err: any) {
-      showToast(err.message || 'Failed to apply qualification sync', 'error');
+      showToast(err.message || loc('Saralashni qo‘llab bo‘lmadi', 'Не удалось применить квалификацию', 'Failed to apply qualification sync'), 'error');
     } finally {
       setIsApplying(false);
     }
@@ -158,9 +161,9 @@ export const AdminEuropeanTab: React.FC = () => {
             <Trophy className="w-5 h-5" />
           </div>
           <div>
-            <h4 className="font-bold text-white text-sm">UEFA European Competitions</h4>
+            <h4 className="font-bold text-white text-sm">{loc('UEFA Yevropa musobaqalari', 'Европейские турниры УЕФА', 'UEFA European Competitions')}</h4>
             <p className="text-slate-400 text-[11px] mt-0.5">
-              Jadval va saralash zonalari turnirning saqlangan sozlamalari asosida ko‘rsatiladi.
+              {loc('Jadval va saralash zonalari turnirning saqlangan sozlamalari asosida ko‘rsatiladi.', 'Таблица и зоны квалификации определяются сохранёнными настройками турнира.', 'Standings and qualification zones follow the saved tournament settings.')}
             </p>
           </div>
         </div>
@@ -203,11 +206,11 @@ export const AdminEuropeanTab: React.FC = () => {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
           <div>
             <h3 className="text-base font-black text-white flex items-center gap-2">
-              <span>{selectedCompId.includes('champions') ? 'UEFA Champions League' : 'UEFA Europa League'} Standings</span>
-              <span className="text-xs text-slate-400 font-semibold">({standings.length} Teams)</span>
+              <span>{selectedCompId.includes('champions') ? 'UEFA Champions League' : 'UEFA Europa League'} — {loc('jadval', 'таблица', 'standings')}</span>
+              <span className="text-xs text-slate-400 font-semibold">({standings.length} {loc('klub', 'клубов', 'teams')})</span>
             </h3>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              Source: <span className="font-mono text-emerald-400 font-bold">{standingsSource}</span>
+              {loc('Manba', 'Источник', 'Source')}: <span className="font-mono text-emerald-400 font-bold">{standingsSource}</span>
             </p>
           </div>
 
@@ -218,7 +221,7 @@ export const AdminEuropeanTab: React.FC = () => {
               className="px-3 py-1.5 glass-card text-slate-300 hover:text-white rounded-xl text-xs font-bold flex items-center gap-1.5"
             >
               <RefreshCw className={`w-3.5 h-3.5 text-blue-400 ${isRebuilding ? 'animate-spin' : ''}`} />
-              <span>Rebuild Standings</span>
+              <span>{loc('Jadvalni qayta hisoblash', 'Пересчитать таблицу', 'Rebuild Standings')}</span>
             </button>
           </div>
         </div>
@@ -229,16 +232,16 @@ export const AdminEuropeanTab: React.FC = () => {
             <thead>
               <tr className="border-b border-slate-800 text-[10px] font-bold uppercase text-slate-400">
                 <th className="py-2.5 px-3">#</th>
-                <th className="py-2.5 px-3">Club</th>
-                <th className="py-2.5 px-2 text-center">P</th>
-                <th className="py-2.5 px-2 text-center">W</th>
-                <th className="py-2.5 px-2 text-center">D</th>
-                <th className="py-2.5 px-2 text-center">L</th>
-                <th className="py-2.5 px-2 text-center">GF</th>
-                <th className="py-2.5 px-2 text-center">GA</th>
-                <th className="py-2.5 px-2 text-center">GD</th>
-                <th className="py-2.5 px-3 text-center font-black text-white">PTS</th>
-                <th className="py-2.5 px-3 text-right">Qualification Zone</th>
+                <th className="py-2.5 px-3">{loc('Klub', 'Клуб', 'Club')}</th>
+                <th className="py-2.5 px-2 text-center" title={loc('O‘yin', 'Игры', 'Played')}>{loc('O', 'И', 'P')}</th>
+                <th className="py-2.5 px-2 text-center" title={loc('G‘alaba', 'Победы', 'Won')}>{loc('G‘', 'В', 'W')}</th>
+                <th className="py-2.5 px-2 text-center" title={loc('Durang', 'Ничьи', 'Drawn')}>{loc('D', 'Н', 'D')}</th>
+                <th className="py-2.5 px-2 text-center" title={loc('Mag‘lubiyat', 'Поражения', 'Lost')}>{loc('M', 'П', 'L')}</th>
+                <th className="py-2.5 px-2 text-center" title={loc('Urgan gollar', 'Забитые', 'Goals for')}>{loc('UG', 'ЗМ', 'GF')}</th>
+                <th className="py-2.5 px-2 text-center" title={loc('O‘tkazgan gollar', 'Пропущенные', 'Goals against')}>{loc('OG', 'ПМ', 'GA')}</th>
+                <th className="py-2.5 px-2 text-center" title={loc('To‘plar farqi', 'Разница мячей', 'Goal difference')}>{loc('TF', 'РМ', 'GD')}</th>
+                <th className="py-2.5 px-3 text-center font-black text-white">{loc('OCH', 'ОЧ', 'PTS')}</th>
+                <th className="py-2.5 px-3 text-right">{loc('Saralash zonasi', 'Зона квалификации', 'Qualification Zone')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
@@ -292,7 +295,7 @@ export const AdminEuropeanTab: React.FC = () => {
                             : 'bg-slate-800 text-slate-400'
                         }`}
                       >
-                        {isR16 ? 'Round of 16' : isPlayoff ? 'Play-offs (9-24)' : 'Eliminated'}
+                        {isR16 ? loc('1/8 final', '1/8 финала', 'Round of 16') : isPlayoff ? loc('Pley-off (9–24)', 'Плей-офф (9–24)', 'Play-offs (9-24)') : loc('Chiqib ketgan', 'Выбыл', 'Eliminated')}
                       </span>
                     </td>
                   </tr>
@@ -309,10 +312,10 @@ export const AdminEuropeanTab: React.FC = () => {
           <div>
             <h3 className="text-base font-black text-white flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-emerald-400" />
-              <span>European Qualification Projections & Sync</span>
+              <span>{loc('Yevropa saralashi hisob-kitobi va qo‘llash', 'Расчёт и применение еврокубковой квалификации', 'European Qualification Projections & Sync')}</span>
             </h3>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              Saralash hozirgi tasdiqlangan natijalar va bazada belgilangan liga kvotalari asosida hisoblanadi.
+              {loc('Saralash hozirgi tasdiqlangan natijalar va bazada belgilangan liga kvotalari asosida hisoblanadi.', 'Квалификация рассчитывается по подтверждённым результатам и установленным квотам лиг.', 'Qualification uses confirmed results and saved league quotas.')}
             </p>
           </div>
 
@@ -326,7 +329,7 @@ export const AdminEuropeanTab: React.FC = () => {
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                Provisional
+                {loc('Dastlabki', 'Предварительно', 'Provisional')}
               </button>
               <button
                 onClick={() => setSyncMode('final')}
@@ -336,7 +339,7 @@ export const AdminEuropeanTab: React.FC = () => {
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                Final (Post-Season)
+                {loc('Yakuniy (mavsumdan so‘ng)', 'Итоговый (после сезона)', 'Final (Post-Season)')}
               </button>
             </div>
 
@@ -346,7 +349,7 @@ export const AdminEuropeanTab: React.FC = () => {
               className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-blue-600/20"
             >
               <Eye className="w-3.5 h-3.5" />
-              <span>Preview Sync Diff</span>
+              <span>{loc('O‘zgarishlarni ko‘rish', 'Просмотр изменений', 'Preview Sync Diff')}</span>
             </button>
           </div>
         </div>
@@ -369,11 +372,11 @@ export const AdminEuropeanTab: React.FC = () => {
               )}
               <div>
                 <div className="font-bold">
-                  {preview.canApply ? 'Preconditions Passed: Ready to Apply' : 'Precondition Blocked'}
+                  {preview.canApply ? loc('Shartlar bajarildi: qo‘llash mumkin', 'Условия выполнены: можно применить', 'Preconditions Passed: Ready to Apply') : loc('Shartlar bajarilmadi', 'Условия не выполнены', 'Precondition Blocked')}
                 </div>
                 <div className="text-[11px] opacity-90 mt-0.5">
                   {preview.blockReason ||
-                    `Domestic leagues finished: ${preview.domesticLeaguesCompleted ? 'Yes' : 'In Progress'}. European competitions active: ${preview.hasEuropeanStarted ? 'Yes' : 'No'}.`}
+                    `${loc('Ichki ligalar tugagan', 'Внутренние лиги завершены', 'Domestic leagues finished')}: ${preview.domesticLeaguesCompleted ? loc('ha', 'да', 'yes') : loc('davom etmoqda', 'в процессе', 'in progress')}. ${loc('Yevropa musobaqalari boshlangan', 'Еврокубки начались', 'European competitions active')}: ${preview.hasEuropeanStarted ? loc('ha', 'да', 'yes') : loc('yo‘q', 'нет', 'no')}.`}
                 </div>
               </div>
             </div>
@@ -385,7 +388,7 @@ export const AdminEuropeanTab: React.FC = () => {
                 <div className="flex items-center justify-between font-bold text-xs">
                   <span className="text-blue-400 font-black">UEFA Champions League ({preview.summary.ucl.totalTarget})</span>
                   <span className="text-slate-400">
-                    {preview.summary.ucl.retainedCount} Retained • {preview.summary.ucl.addedCount} Added
+                    {preview.summary.ucl.retainedCount} {loc('saqlanadi', 'остаются', 'retained')} • {preview.summary.ucl.addedCount} {loc('qo‘shiladi', 'добавятся', 'added')}
                   </span>
                 </div>
 
@@ -410,7 +413,7 @@ export const AdminEuropeanTab: React.FC = () => {
                 <div className="flex items-center justify-between font-bold text-xs">
                   <span className="text-amber-400 font-black">UEFA Europa League ({preview.summary.uel.totalTarget})</span>
                   <span className="text-slate-400">
-                    {preview.summary.uel.retainedCount} Retained • {preview.summary.uel.addedCount} Added
+                    {preview.summary.uel.retainedCount} {loc('saqlanadi', 'остаются', 'retained')} • {preview.summary.uel.addedCount} {loc('qo‘shiladi', 'добавятся', 'added')}
                   </span>
                 </div>
 
@@ -441,7 +444,7 @@ export const AdminEuropeanTab: React.FC = () => {
                     onChange={(e) => setHasConfirmedApply(e.target.checked)}
                     className="w-4 h-4 rounded border-slate-700 text-emerald-500 focus:ring-0"
                   />
-                  <span>I confirm this European qualification synchronization for Season 2026/27.</span>
+                  <span>{loc('2026/27 mavsum uchun Yevropa saralashidagi o‘zgarishlarni tasdiqlayman.', 'Подтверждаю изменения еврокубковой квалификации на сезон 2026/27.', 'I confirm this European qualification synchronization for Season 2026/27.')}</span>
                 </label>
 
                 <button
@@ -454,7 +457,7 @@ export const AdminEuropeanTab: React.FC = () => {
                   }`}
                 >
                   {isApplying ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-                  <span>{isApplying ? 'Applying Sync...' : 'Apply Qualifications'}</span>
+                  <span>{isApplying ? loc('Qo‘llanmoqda…', 'Применяется…', 'Applying Sync...') : loc('Saralashni qo‘llash', 'Применить квалификацию', 'Apply Qualifications')}</span>
                 </button>
               </div>
             )}
