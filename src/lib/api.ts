@@ -397,7 +397,7 @@ export const api = {
   },
 
   // Clubs
-  async getClubAdmission(seasonId = 'season-2026-27'): Promise<{ admission: ClubAdmissionStatus }> {
+  async getClubAdmission(seasonId = 'season-2026-27'): Promise<{ admission: ClubAdmissionStatus | null; unavailable?: boolean }> {
     return request(`/api/clubs/admission?seasonId=${encodeURIComponent(seasonId)}`, { skipCache: true });
   },
 

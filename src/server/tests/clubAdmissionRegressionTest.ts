@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import express from 'express';
+import { once } from 'node:events';
 import { initDatabase } from '../db';
 import { seedDatabase } from '../db/seed';
 import { claimClubAtomicFirestore } from '../firebase/firestoreStore';
@@ -6,6 +8,7 @@ import { getFirestoreDb } from '../firebase/admin';
 import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
 import { getFreshKey, ReadModelKeys, redisDelRaw } from '../readModel/readModelStore';
 import { CLUB_ADMISSION_LEAGUES, advanceClubAdmission, getClubAdmissionStatus } from '../services/clubAdmission';
+import { clubsRouter } from '../routes/clubs.routes';
 
 async function run() {
   await initDatabase();
@@ -52,6 +55,18 @@ async function run() {
     assert.equal(cached.stage, CLUB_ADMISSION_LEAGUES.length);
     assert.equal(cached.stale, true);
     await assert.rejects(() => getClubAdmissionStatus('season-admission-uncached'), (err: any) => err.errorCode === 'READ_MODEL_NOT_WARMED');
+    const app = express();
+    app.use('/api/clubs', clubsRouter);
+    const server = app.listen(0, '127.0.0.1');
+    try {
+      await once(server, 'listening');
+      const response = await fetch(`http://127.0.0.1:${(server.address() as any).port}/api/clubs/admission?seasonId=season-admission-uncached`);
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get('x-data-degraded'), 'true');
+      assert.deepEqual(await response.json(), { admission: null, unavailable: true });
+    } finally {
+      server.close();
+    }
   } finally {
     db.collection = originalCollection;
     firestoreCircuitBreaker.reset();
