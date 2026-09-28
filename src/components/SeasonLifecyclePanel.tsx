@@ -56,7 +56,7 @@ export const SeasonLifecyclePanel: React.FC<{ seasonId?: string }> = ({ seasonId
             <Trophy className="w-3.5 h-3.5" /> {t.seasonRoadmap}
           </div>
           <h3 className="text-base sm:text-lg font-black text-white mt-1 truncate">
-            {active?.id === 'DOMESTIC_CUPS' ? t.nationalCups : active?.label || `${t.season} 2026/27`}
+            {active?.id === 'LEAGUE_1_9' ? t.roadmapLeague19 : active?.id === 'DOMESTIC_CUPS' ? t.nationalCups : active?.id === 'LEAGUE_10_19' ? t.roadmapLeague1019 : active?.id === 'EUROPE' ? t.roadmapEurope : active?.label || `${t.season} 2026/27`}
           </h3>
           {active && (
             <p className="text-[11px] text-slate-400 mt-0.5">
@@ -89,7 +89,7 @@ export const SeasonLifecyclePanel: React.FC<{ seasonId?: string }> = ({ seasonId
                 {complete ? <CheckCircle2 className="w-3.5 h-3.5 text-sky-400" /> : activePhase ? <Zap className="w-3.5 h-3.5 text-emerald-400" /> : <Lock className="w-3.5 h-3.5 text-slate-600" />}
               </div>
               <div className="text-xs font-black text-white mt-2 leading-tight">{phase.id === 'DOMESTIC_CUPS' ? t.nationalCups : phase.label}</div>
-              <div className="text-[10px] text-slate-500 mt-1 line-clamp-2 min-h-[24px]">{phase.description}</div>
+              <div className="text-[10px] text-slate-500 mt-1 line-clamp-2 min-h-[24px]">{phase.id === 'LEAGUE_1_9' ? t.roadmapLeague19Desc : phase.id === 'DOMESTIC_CUPS' ? t.roadmapDomesticCupsDesc : phase.id === 'LEAGUE_10_19' ? t.roadmapLeague1019Desc : phase.id === 'EUROPE' ? t.roadmapEuropeDesc : phase.description}</div>
               <div className="mt-2 h-1 rounded-full bg-white/[0.06] overflow-hidden">
                 <div className="h-full bg-emerald-400 transition-all" style={{ width: `${Math.min(100, phase.progress)}%` }} />
               </div>
