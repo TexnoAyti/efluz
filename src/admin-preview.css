@@ -244,3 +244,122 @@
   .efl-preview .matchday-featured .mt-7 { margin-top: 22px; }
   .efl-preview .matchday-featured .mt-6 { margin-top: 18px; }
 }
+
+/* Page audit: shared light-mode readability for every admin route. Status
+   colors keep their meaning, while neutral blocks use the selected palette. */
+.efl-preview:not(.theme-dark) main[data-preview-page] :is(.text-slate-100, .text-slate-200) { color: var(--preview-ink); }
+.efl-preview:not(.theme-dark) main[data-preview-page] :is(.text-slate-300, .text-slate-400, .text-slate-500, .text-slate-600) { color: var(--preview-muted); }
+.efl-preview:not(.theme-dark) main[data-preview-page] :is(h1, h2, h3, h4, strong, label).text-white { color: var(--preview-ink); }
+.efl-preview:not(.theme-dark) main[data-preview-page] :is(div, span, p, td, th).text-white:not([class*="bg-"]) { color: var(--preview-ink); }
+.efl-preview:not(.theme-dark) main[data-preview-page] [class*="bg-slate-950"],
+.efl-preview:not(.theme-dark) main[data-preview-page] [class*="bg-slate-900"],
+.efl-preview:not(.theme-dark) main[data-preview-page] [class*="bg-slate-800"],
+.efl-preview:not(.theme-dark) main[data-preview-page] [class*="bg-slate-700"],
+.efl-preview:not(.theme-dark) main[data-preview-page] [class*="bg-white/[0.0"] {
+  background: var(--preview-raised);
+  color: var(--preview-ink);
+}
+.efl-preview:not(.theme-dark) main[data-preview-page] [class*="border-white/"],
+.efl-preview:not(.theme-dark) main[data-preview-page] [class*="border-slate-7"],
+.efl-preview:not(.theme-dark) main[data-preview-page] [class*="border-slate-8"] { border-color: var(--preview-border); }
+.efl-preview:not(.theme-dark) main[data-preview-page] :is(input, select, textarea) {
+  background-color: var(--preview-raised);
+  border-color: var(--preview-border);
+  color: var(--preview-ink);
+}
+.efl-preview:not(.theme-dark) main[data-preview-page] select option {
+  background: var(--preview-panel);
+  color: var(--preview-ink);
+}
+.efl-preview:not(.theme-dark) main[data-preview-page] :is(.glass-card, .glass-button):hover { color: var(--preview-ink); }
+.efl-preview:not(.theme-dark) main[data-preview-page] .hover\:text-white:hover { color: var(--preview-ink); }
+.efl-preview:not(.theme-dark) main[data-preview-page] [class~="bg-emerald-500"],
+.efl-preview:not(.theme-dark) main[data-preview-page] [class~="bg-emerald-400"] {
+  background-color: var(--preview-accent);
+  color: #fff;
+}
+.efl-preview:not(.theme-dark) main[data-preview-page] [class~="bg-emerald-500"] .text-slate-950,
+.efl-preview:not(.theme-dark) main[data-preview-page] [class~="bg-emerald-400"] .text-slate-950 { color: #fff; }
+.efl-preview:not(.theme-dark) main[data-preview-page] [class*="bg-emerald-950/"] { background: var(--preview-soft); }
+.efl-preview:not(.theme-dark) main[data-preview-page] [class*="bg-rose-950/"] { background: #fff0f1; }
+.efl-preview:not(.theme-dark) main[data-preview-page] [class*="bg-indigo-950/"] { background: #f1efff; }
+.efl-preview:not(.theme-dark) main[data-preview-page] :is(.text-rose-200, .text-rose-300, .text-rose-400) { color: #b42345; }
+.efl-preview:not(.theme-dark) main[data-preview-page] :is(.text-amber-200, .text-amber-300, .text-amber-400) { color: #8a5b00; }
+.efl-preview:not(.theme-dark) main[data-preview-page] :is(.text-sky-300, .text-sky-400) { color: #0b659a; }
+.efl-preview:not(.theme-dark) main[data-preview-page] :is(.text-indigo-300, .text-indigo-400) { color: #5042ab; }
+.efl-preview:not(.theme-dark) main[data-preview-page] :is(.text-emerald-300, .text-emerald-400) { color: var(--preview-accent); }
+.efl-preview:not(.theme-dark) main[data-preview-page] [class*="bg-rose-5"] .text-white,
+.efl-preview:not(.theme-dark) main[data-preview-page] [class*="bg-blue-6"] .text-white,
+.efl-preview:not(.theme-dark) main[data-preview-page] [class*="bg-indigo-6"] .text-white,
+.efl-preview:not(.theme-dark) main[data-preview-page] [class*="bg-emerald-5"] .text-white { color: #fff; }
+
+/* Home: filters, empty state and score card. */
+.efl-preview:not(.theme-dark) main[data-preview-page="dashboard"] .preview-surface .text-rose-200 { color: #b42345; }
+.efl-preview:not(.theme-dark) main[data-preview-page="dashboard"] .matchday-home [aria-pressed="true"] { color: #fff; }
+
+/* My Club: owner banner and roster tiles. */
+.efl-preview:not(.theme-dark) main[data-preview-page="my-club"] .glass-panel .text-white { color: var(--preview-ink); }
+.efl-preview:not(.theme-dark) main[data-preview-page="my-club"] .glass-panel [class*="bg-slate-950"] { border-color: var(--preview-border); }
+
+/* Matches: neutral score blocks and result controls. */
+.efl-preview:not(.theme-dark) main[data-preview-page="my-matches"] .preview-match-center .text-white { color: var(--preview-ink); }
+.efl-preview:not(.theme-dark) main[data-preview-page="my-matches"] .preview-match-center [class*="bg-slate-950"] { background: var(--preview-panel); }
+.efl-preview:not(.theme-dark) main[data-preview-page="my-matches"] .glass-panel[class*="border-rose-"] { background: #fff0f1; }
+
+/* Leagues: search controls, club tiles, fixtures and standings table. */
+.efl-preview:not(.theme-dark) main[data-preview-page="leagues"] .preview-league-banner .text-white { color: var(--preview-ink); }
+.efl-preview:not(.theme-dark) main[data-preview-page="leagues"] :is(thead, th) { background: var(--preview-raised); color: var(--preview-muted); }
+.efl-preview:not(.theme-dark) main[data-preview-page="leagues"] tbody tr:hover { background: var(--preview-soft); }
+.efl-preview:not(.theme-dark) main[data-preview-page="leagues"] .glass-panel[class*="border-rose-"] { background: #fff0f1; }
+
+/* Cups: bracket cards have no shared glass wrapper. */
+.efl-preview:not(.theme-dark) main[data-preview-page="cups"] section[class*="bg-slate-950"],
+.efl-preview:not(.theme-dark) main[data-preview-page="cups"] [class*="bg-white/[0.0"] {
+  background: var(--preview-panel);
+  border-color: var(--preview-border);
+}
+.efl-preview:not(.theme-dark) main[data-preview-page="cups"] :is(h1, h2, h3, div, span).text-white:not([class*="bg-"]) { color: var(--preview-ink); }
+
+/* European competitions: table text and club rows. */
+.efl-preview:not(.theme-dark) main[data-preview-page="champions-league"] :is(thead, th) { background: var(--preview-raised); color: var(--preview-muted); }
+.efl-preview:not(.theme-dark) main[data-preview-page="champions-league"] tbody tr:hover { background: var(--preview-soft); }
+.efl-preview:not(.theme-dark) main[data-preview-page="champions-league"] [class~="bg-blue-600"] { background: var(--preview-accent); color: #fff; }
+
+/* Standings: rank rows and controls. */
+.efl-preview:not(.theme-dark) main[data-preview-page="standings"] :is(thead, th) { background: var(--preview-raised); color: var(--preview-muted); }
+.efl-preview:not(.theme-dark) main[data-preview-page="standings"] tbody tr:hover { background: var(--preview-soft); }
+.efl-preview:not(.theme-dark) main[data-preview-page="standings"] .glass-input.text-white { color: var(--preview-ink); }
+
+/* Season Hub: statistics, deadlines and action forms. */
+.efl-preview:not(.theme-dark) main[data-preview-page="season-hub"] [class*="bg-slate-950"] { background: var(--preview-raised); color: var(--preview-ink); }
+.efl-preview:not(.theme-dark) main[data-preview-page="season-hub"] .text-white:not(button) { color: var(--preview-ink); }
+.efl-preview:not(.theme-dark) main[data-preview-page="season-hub"] .bg-emerald-500.text-slate-950 { color: #fff; }
+
+/* Notifications: read and unread cards retain distinct borders. */
+.efl-preview:not(.theme-dark) main[data-preview-page="notifications"] .glass-panel .text-white { color: var(--preview-ink); }
+.efl-preview:not(.theme-dark) main[data-preview-page="notifications"] [class*="bg-slate-950"] { background: var(--preview-raised); }
+.efl-preview:not(.theme-dark) main[data-preview-page="notifications"] .bg-rose-500.text-white { color: #fff; }
+
+/* Profile: season/admin shortcuts and language settings. */
+.efl-preview:not(.theme-dark) main[data-preview-page="profile"] .glass-panel.text-white,
+.efl-preview:not(.theme-dark) main[data-preview-page="profile"] .glass-panel .text-white { color: var(--preview-ink); }
+.efl-preview:not(.theme-dark) main[data-preview-page="profile"] .glass-panel[class*="bg-gradient"] { background: linear-gradient(110deg, var(--preview-soft), var(--preview-panel)); }
+
+/* Admin console: dense control surfaces need the same neutral contrast. */
+.efl-preview:not(.theme-dark) main[data-preview-page="admin"] :is(.text-white, .text-slate-100, .text-slate-200):not([class*="bg-"]) { color: var(--preview-ink); }
+.efl-preview:not(.theme-dark) main[data-preview-page="admin"] [class*="bg-slate-9"],
+.efl-preview:not(.theme-dark) main[data-preview-page="admin"] [class*="bg-slate-8"],
+.efl-preview:not(.theme-dark) main[data-preview-page="admin"] [class*="bg-slate-7"] { background: var(--preview-raised); }
+.efl-preview:not(.theme-dark) main[data-preview-page="admin"] [class*="bg-rose-5"] .text-white,
+.efl-preview:not(.theme-dark) main[data-preview-page="admin"] [class*="bg-blue-6"] .text-white { color: #fff; }
+
+/* Modal portals sit beside main, so they receive the same neutral treatment. */
+.efl-preview:not(.theme-dark) .glass-modal :is(h1, h2, h3, h4, p, span, div).text-white:not([class*="bg-"]) { color: var(--preview-ink); }
+.efl-preview:not(.theme-dark) .glass-modal :is(.text-slate-300, .text-slate-400) { color: var(--preview-muted); }
+
+/* Preserve white lettering on solid status and action colors. */
+.efl-preview:not(.theme-dark) main[data-preview-page] :is([class~="bg-rose-500"], [class~="bg-rose-600"], [class~="bg-blue-600"], [class~="bg-indigo-600"], [class~="bg-amber-500"], [class~="bg-fuchsia-500"], [class~="bg-emerald-500"]) :is(.text-white, .text-slate-950),
+.efl-preview:not(.theme-dark) main[data-preview-page] :is([class~="bg-rose-500"], [class~="bg-rose-600"], [class~="bg-blue-600"], [class~="bg-indigo-600"], [class~="bg-amber-500"], [class~="bg-fuchsia-500"], [class~="bg-emerald-500"]).text-white {
+  color: #fff;
+}
+.efl-preview:not(.theme-dark) main[data-preview-page] [class*="bg-slate-"] :is(.text-emerald-300, .text-emerald-400) { color: var(--preview-accent); }
