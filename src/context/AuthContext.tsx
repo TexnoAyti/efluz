@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { User, Club, Season, Notification } from '../types';
 import { api, getDevUserId, setDevUserId, getTelegramInitData, setTelegramInitData, setSessionToken } from '../lib/api';
 import { premiumApi } from '../lib/premiumApi';
+import { isDesignPreview } from '../designPreview';
 
 export type AuthBootstrapStatus = 'AUTH_LOADING' | 'AUTHENTICATED' | 'AUTH_ANONYMOUS' | 'AUTH_ERROR';
 
@@ -239,6 +240,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(true);
       setAuthStatus('AUTH_LOADING');
       setAuthError(null);
+
+      if (isDesignPreview) {
+        // Visual inspection only. No Telegram identity, session token, or private API access.
+        setSessionToken(null);
+        setUser({
+          id: 'design-preview', telegramId: '', username: 'design_preview',
+          firstName: 'Design Preview', isAdmin: true, isSuspended: false,
+          createdAt: '', updatedAt: '',
+        });
+        const season: Season = {
+          id: 'season-2026-27', name: '2026/27', status: 'active',
+          startDate: '2026-08-01', createdAt: '',
+        };
+        setSeasons([season]);
+        setCurrentSeason(season);
+        setAuthStatus('AUTHENTICATED');
+        setIsLoading(false);
+        return;
+      }
 
       // 1. Resolve Telegram Context
       const tgCtx = await resolveTelegramContext(1200);

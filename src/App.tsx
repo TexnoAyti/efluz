@@ -25,6 +25,7 @@ import { SeasonLifecyclePanel } from './components/SeasonLifecyclePanel';
 import { APP_BUILD_ID } from './context/AuthContext';
 import { Fixture } from './types';
 import { api } from './lib/api';
+import { isDesignPreview } from './designPreview';
 import { Loader2, CheckCircle2, AlertCircle, Info } from 'lucide-react';
 
 function getInitialTab(): TabType {
@@ -61,7 +62,8 @@ const AppContent: React.FC = () => {
     setActiveTabState(resolvedTab);
     if (typeof window !== 'undefined') {
       const url = resolvedTab === 'dashboard' ? '/' : `/${resolvedTab}`;
-      if (window.location.pathname !== url) window.history.pushState({ tab: resolvedTab }, '', url);
+      const nextUrl = isDesignPreview ? `${url}?designPreview=1` : url;
+      if (window.location.pathname !== url) window.history.pushState({ tab: resolvedTab }, '', nextUrl);
     }
   };
 
@@ -90,7 +92,7 @@ const AppContent: React.FC = () => {
       if (document.hidden) return;
       try { const res = await api.getAdminDisputes('OPEN'); setOpenDisputesCount(res.disputes.length); } catch {}
     }
-    if (user?.isAdmin && activeTab === 'admin') {
+    if (user?.isAdmin && !isDesignPreview && activeTab === 'admin') {
       checkDisputes();
       const interval = setInterval(checkDisputes, 300000);
       return () => clearInterval(interval);
@@ -104,6 +106,7 @@ const AppContent: React.FC = () => {
   const currentTab = activeTab === 'home' ? 'dashboard' : activeTab;
   return (
     <div className={`min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-slate-950 ${user?.isAdmin ? `efl-preview theme-${theme}` : ''}`}>
+      {isDesignPreview && <div className="sticky top-0 z-[60] bg-amber-100 px-3 py-1.5 text-center text-[11px] font-bold text-amber-950">DESIGN PREVIEW · test ko‘rinishi, hisobga kirilmagan</div>}
       {toastMessage && <div className="fixed top-14 right-4 z-50 animate-in slide-in-from-top-3 fade-in duration-200"><div className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-2xl text-xs font-bold border backdrop-blur-md ${toastMessage.type === 'success' ? 'bg-emerald-950/90 text-emerald-300 border-emerald-500/40 shadow-emerald-500/10' : toastMessage.type === 'error' ? 'bg-rose-950/90 text-rose-300 border-rose-500/40 shadow-rose-500/10' : 'bg-slate-900/95 text-slate-200 border-slate-700 shadow-slate-900/40'}`}>{toastMessage.type === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />}{toastMessage.type === 'error' && <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />}{toastMessage.type === 'info' && <Info className="w-4 h-4 text-sky-400 shrink-0" />}<span>{toastMessage.text}</span></div></div>}
       <Header theme={theme} onThemeChange={changeTheme} onOpenNotifications={() => setActiveTab('notifications')} onOpenProfile={() => setActiveTab('profile')} />
       <Navigation activeTab={currentTab} onTabChange={setActiveTab} openDisputesCount={openDisputesCount} />
