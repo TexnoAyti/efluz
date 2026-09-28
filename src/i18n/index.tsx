@@ -171,6 +171,25 @@ export interface Translations {
   generateSchedule: string;
   evaluateQualifications: string;
   auditLogs: string;
+  adminAuthorizationRequired: string;
+  adminDashboardTitle: string;
+  adminOfficer: string;
+  adminRefreshCenter: string;
+  adminOverview: string;
+  adminResultsReview: string;
+  adminCompetitions: string;
+  adminDomesticCups: string;
+  adminEuropeanCompetitions: string;
+  adminTelegramBot: string;
+  adminPlayers: string;
+  adminSystemDiagnostics: string;
+  roadmapLeague19: string;
+  roadmapLeague19Desc: string;
+  roadmapDomesticCupsDesc: string;
+  roadmapLeague1019: string;
+  roadmapLeague1019Desc: string;
+  roadmapEurope: string;
+  roadmapEuropeDesc: string;
 
   // Additional tournament & UI labels
   domesticLeagues: string;
@@ -367,6 +386,25 @@ export const translations: Record<Language, Translations> = {
     generateSchedule: 'Berger round-robin jadvalini yaratish',
     evaluateQualifications: 'Yevrokubok yo‘llanmalarini hisoblash',
     auditLogs: 'Tizim xavfsizlik va audit jurnali',
+    adminAuthorizationRequired: 'Administrator huquqi kerak',
+    adminDashboardTitle: 'EFL UZ musobaqalarini boshqarish tizimi',
+    adminOfficer: 'Mas’ul',
+    adminRefreshCenter: 'Markazni yangilash',
+    adminOverview: 'Umumiy ko‘rinish',
+    adminResultsReview: 'Natijalar va ko‘rib chiqish',
+    adminCompetitions: '19 ta musobaqa',
+    adminDomesticCups: 'Milliy kuboklar (5)',
+    adminEuropeanCompetitions: 'UCL va UEL (32)',
+    adminTelegramBot: 'Telegram bot',
+    adminPlayers: 'O‘yinchilar',
+    adminSystemDiagnostics: 'Tizim diagnostikasi',
+    roadmapLeague19: 'Liga 1–9-turlar',
+    roadmapLeague19Desc: '1-turdan keyin navbatdagi tur ochiladi; 9-turdan keyin kuboklar.',
+    roadmapDomesticCupsDesc: '5 ta milliy kubok bosqichi.',
+    roadmapLeague1019: 'Liga 10–19-turlar',
+    roadmapLeague1019Desc: 'Bir davrali liga 19-tur bilan yakunlanadi.',
+    roadmapEurope: 'UCL / UEL',
+    roadmapEuropeDesc: '19-turdan keyin Yevropa ligasi bosqichi navbatma-navbat o‘tkaziladi.',
 
     domesticLeagues: 'Ichki chempionatlar',
     nationalCups: 'Milliy kuboklar',
@@ -560,6 +598,25 @@ export const translations: Record<Language, Translations> = {
     generateSchedule: 'Сгенерировать сетку по системе Бергера',
     evaluateQualifications: 'Рассчитать еврокубковые путевки',
     auditLogs: 'Журнал аудита и безопасности',
+    adminAuthorizationRequired: 'Требуются права администратора',
+    adminDashboardTitle: 'Система управления соревнованиями EFL UZ',
+    adminOfficer: 'Ответственный',
+    adminRefreshCenter: 'Обновить центр',
+    adminOverview: 'Обзор',
+    adminResultsReview: 'Результаты и проверка',
+    adminCompetitions: '19 соревнований',
+    adminDomesticCups: 'Национальные кубки (5)',
+    adminEuropeanCompetitions: 'ЛЧ и ЛЕ (32)',
+    adminTelegramBot: 'Telegram-бот',
+    adminPlayers: 'Игроки',
+    adminSystemDiagnostics: 'Диагностика системы',
+    roadmapLeague19: 'Лига, туры 1–9',
+    roadmapLeague19Desc: 'Следующий тур открывается после завершения предыдущего; после 9-го тура — кубки.',
+    roadmapDomesticCupsDesc: 'Этап национальных кубков (5 турниров).',
+    roadmapLeague1019: 'Лига, туры 10–19',
+    roadmapLeague1019Desc: 'Однокруговой чемпионат завершается 19-м туром.',
+    roadmapEurope: 'ЛЧ / ЛЕ',
+    roadmapEuropeDesc: 'После 19-го тура поэтапно начинаются европейские турниры.',
 
     domesticLeagues: 'Внутренние чемпионаты',
     nationalCups: 'Национальные кубки',
@@ -753,6 +810,25 @@ export const translations: Record<Language, Translations> = {
     generateSchedule: 'Generate Berger Round-Robin Schedule',
     evaluateQualifications: 'Calculate European Qualifications',
     auditLogs: 'Audit & Security Logs',
+    adminAuthorizationRequired: 'Administrator authorization required',
+    adminDashboardTitle: 'EFL UZ Competition Management System',
+    adminOfficer: 'Officer',
+    adminRefreshCenter: 'Refresh Center',
+    adminOverview: 'Overview',
+    adminResultsReview: 'Results & Review',
+    adminCompetitions: '19 Competitions',
+    adminDomesticCups: 'Domestic Cups (5)',
+    adminEuropeanCompetitions: 'UCL & UEL (32)',
+    adminTelegramBot: 'Telegram Bot',
+    adminPlayers: 'Players',
+    adminSystemDiagnostics: 'System Diagnostics',
+    roadmapLeague19: 'League MD 1–9',
+    roadmapLeague19Desc: 'The next matchday opens after the previous one; cups begin after MD9.',
+    roadmapDomesticCupsDesc: 'Five domestic cup competitions.',
+    roadmapLeague1019: 'League MD 10–19',
+    roadmapLeague1019Desc: 'The single round-robin league ends at matchday 19.',
+    roadmapEurope: 'UCL / UEL',
+    roadmapEuropeDesc: 'European competitions progress in stages after matchday 19.',
 
     domesticLeagues: 'Domestic Leagues',
     nationalCups: 'National Cups',
