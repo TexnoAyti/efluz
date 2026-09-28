@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { CheckCircle2, Lock, RefreshCw, Trophy, Zap } from 'lucide-react';
+import { useI18n } from '../i18n';
 
 type Phase = {
   id: string;
@@ -21,6 +22,7 @@ type Lifecycle = {
 };
 
 export const SeasonLifecyclePanel: React.FC<{ seasonId?: string }> = ({ seasonId = 'season-2026-27' }) => {
+  const { t } = useI18n();
   const [data, setData] = useState<Lifecycle | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -47,14 +49,14 @@ export const SeasonLifecyclePanel: React.FC<{ seasonId?: string }> = ({ seasonId
   const active = data.phases.find((p) => p.status === 'ACTIVE');
 
   return (
-    <section className="glass-panel p-4 sm:p-5 shadow-xl overflow-hidden">
+    <section className="preview-season-roadmap glass-panel p-4 sm:p-5 shadow-xl overflow-hidden">
       <div className="flex items-center justify-between gap-3 mb-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-emerald-400 text-[10px] font-black uppercase tracking-[0.16em]">
-            <Trophy className="w-3.5 h-3.5" /> Season Roadmap
+            <Trophy className="w-3.5 h-3.5" /> {t.seasonRoadmap}
           </div>
           <h3 className="text-base sm:text-lg font-black text-white mt-1 truncate">
-            {active?.label || '2026/27 Competition Calendar'}
+            {active?.id === 'DOMESTIC_CUPS' ? t.nationalCups : active?.label || `${t.season} 2026/27`}
           </h3>
           {active && (
             <p className="text-[11px] text-slate-400 mt-0.5">
@@ -62,7 +64,7 @@ export const SeasonLifecyclePanel: React.FC<{ seasonId?: string }> = ({ seasonId
             </p>
           )}
         </div>
-        <button onClick={load} className="p-2 rounded-xl border border-white/[0.08] text-slate-400 hover:text-white hover:bg-white/[0.05]" aria-label="Refresh season calendar">
+        <button onClick={load} className="p-2 rounded-xl border border-white/[0.08] text-slate-400 hover:text-white hover:bg-white/[0.05]" aria-label={t.refresh}>
           <RefreshCw className="w-4 h-4" />
         </button>
       </div>
@@ -79,15 +81,15 @@ export const SeasonLifecyclePanel: React.FC<{ seasonId?: string }> = ({ seasonId
                   ? 'border-emerald-400/45 bg-emerald-500/10'
                   : complete
                   ? 'border-sky-400/20 bg-sky-500/[0.06]'
-                  : 'border-white/[0.06] bg-white/[0.02] opacity-65'
+                  : 'preview-roadmap-locked border-white/[0.06] bg-white/[0.02] opacity-65'
               }`}
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[9px] font-black text-slate-500 tabular-nums">0{index + 1}</span>
                 {complete ? <CheckCircle2 className="w-3.5 h-3.5 text-sky-400" /> : activePhase ? <Zap className="w-3.5 h-3.5 text-emerald-400" /> : <Lock className="w-3.5 h-3.5 text-slate-600" />}
               </div>
-              <div className="text-[11px] font-black text-white mt-2 leading-tight">{phase.label}</div>
-              <div className="text-[9px] text-slate-500 mt-1 line-clamp-2 min-h-[24px]">{phase.description}</div>
+              <div className="text-xs font-black text-white mt-2 leading-tight">{phase.id === 'DOMESTIC_CUPS' ? t.nationalCups : phase.label}</div>
+              <div className="text-[10px] text-slate-500 mt-1 line-clamp-2 min-h-[24px]">{phase.description}</div>
               <div className="mt-2 h-1 rounded-full bg-white/[0.06] overflow-hidden">
                 <div className="h-full bg-emerald-400 transition-all" style={{ width: `${Math.min(100, phase.progress)}%` }} />
               </div>
