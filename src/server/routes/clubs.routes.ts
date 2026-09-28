@@ -13,6 +13,7 @@ import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
 import { verifyTelegramGroupMembership } from '../services/telegramBotService';
 import { ClubAdmissionConflictError, getClubAdmissionStatus } from '../services/clubAdmission';
 import {
+  ReadModelNotWarmedError,
   invalidateClubReadModels,
   invalidateUserMembershipReadModel,
   getAvailableClubsFromReadModel,
@@ -31,6 +32,11 @@ clubsRouter.get('/admission', async (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');
     res.json({ admission: await getClubAdmissionStatus(seasonId) });
   } catch (err: any) {
+    if (err instanceof ReadModelNotWarmedError) {
+      res.setHeader('X-Data-Degraded', 'true');
+      res.json({ admission: null, unavailable: true });
+      return;
+    }
     handleFirestoreError(res, err, 'GET /api/clubs/admission');
   }
 });
