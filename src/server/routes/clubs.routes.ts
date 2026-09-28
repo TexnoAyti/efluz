@@ -11,10 +11,6 @@ import {
 import { SEED_CLUBS } from '../db/seed';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
 import { verifyTelegramGroupMembership } from '../services/telegramBotService';
-import { assertNoOtherPendingClubClaim, clearOfflineClubClaim, getPendingClubClaim, queueOfflineClubClaim } from '../services/offlineClubClaim';
-import { markMutationSynced } from '../outbox/redisOutbox';
-import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
-import { processPendingMutations } from '../sync/mutationQueue';
 import {
   invalidateClubReadModels,
   invalidateUserMembershipReadModel,
@@ -23,22 +19,6 @@ import {
 } from '../readModel/readModelStore';
 
 export const clubsRouter = Router();
-
-clubsRouter.get('/claim-status', requireAuth, async (req: Request, res: Response) => {
-  const seasonId = String(req.query.seasonId || 'season-2026-27');
-  try {
-    let claim = await getPendingClubClaim(req.user!.id, seasonId);
-    const circuit = firestoreCircuitBreaker.getStatus();
-    if (claim && (circuit.state === 'CLOSED' || circuit.state === 'OPEN' && circuit.cooldownRemainingMs === 0)) {
-      await processPendingMutations();
-      claim = await getPendingClubClaim(req.user!.id, seasonId);
-    }
-    res.setHeader('Cache-Control', 'no-store');
-    res.json({ pendingClaim: claim });
-  } catch (err: any) {
-    handleFirestoreError(res, err, 'GET /api/clubs/claim-status');
-  }
-});
 
 // Helper to resolve canonical club from canonical id or numeric/external id
 function resolveCanonicalClub(id: string) {
@@ -372,13 +352,7 @@ clubsRouter.post('/:id/claim', requireAuth, async (req: Request, res: Response) 
   }
 
   try {
-    await assertNoOtherPendingClubClaim(userId, clubId, seasonId);
     const result = await claimClubAtomicFirestore(userId, clubId, seasonId, { authoritativeOnly: true });
-    const pending = await getPendingClubClaim(userId, seasonId).catch(() => null);
-    if (pending?.clubId === clubId) {
-      await markMutationSynced(`claim_${seasonId}_${clubId}_${userId}`).catch(() => {});
-      await clearOfflineClubClaim(userId, clubId, seasonId).catch(() => {});
-    }
     await invalidateClubReadModels(seasonId).catch(() => {});
     await invalidateUserMembershipReadModel(userId, seasonId).catch(() => {});
     res.json({
@@ -387,10 +361,6 @@ clubsRouter.post('/:id/claim', requireAuth, async (req: Request, res: Response) 
       club: result.club,
     });
   } catch (err: any) {
-    if (err?.code === 'CLUB_CLAIM_PENDING') {
-      res.status(409).json({ code: err.code, message: err.message });
-      return;
-    }
     if (err instanceof ClubConflictError) {
       res.status(409).json({
         error: err.code || 'CLUB_CONFLICT',
@@ -406,25 +376,6 @@ clubsRouter.post('/:id/claim', requireAuth, async (req: Request, res: Response) 
         message: err.message,
       });
       return;
-    }
-    if (firestoreCircuitBreaker.isQuotaExhaustedError(err) || String(err?.message || '').startsWith('CIRCUIT_OPEN:')) {
-      try {
-        const pending = await queueOfflineClubClaim(userId, clubId, seasonId);
-        if (!pending.accepted) {
-          res.status(pending.code === 'READ_MODEL_NOT_WARMED' ? 503 : 409).json({
-            code: pending.code, message: pending.code === 'READ_MODEL_NOT_WARMED'
-              ? 'Klublar bandligi tasdiqlanmagan. Keyinroq qayta urinib ko‘ring.'
-              : 'Bu klub band yoki sizda boshqa klub tanlangan.',
-          });
-          return;
-        }
-        res.status(202).json({ success: false, pending: true, clubId,
-          message: 'Klub so‘rovingiz saqlandi. Baza tiklangach bandlik tasdiqlanadi.' });
-        return;
-      } catch (queueError: any) {
-        handleFirestoreError(res, queueError, `POST /api/clubs/${clubId}/claim pending`);
-        return;
-      }
     }
     handleFirestoreError(res, err, `POST /api/clubs/${clubId}/claim`);
   }

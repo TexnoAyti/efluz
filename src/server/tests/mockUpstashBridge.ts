@@ -116,39 +116,9 @@ export async function startMockUpstashBridge(): Promise<MockRedisServer> {
       return Array.from(s);
     }
     if (op === 'eval') {
-      const script = String(args[1]);
       const numKeys = Number(args[2] || 0);
       const keys = args.slice(3, 3 + numKeys);
       const argv = args.slice(3 + numKeys);
-      if (script.includes('reserve-offline-club-claim')) {
-        const snapshotRaw = store.get(String(keys[0]));
-        if (!snapshotRaw) return 3;
-        const snapshot = JSON.parse(snapshotRaw);
-        if (snapshot.actualCount < 96) return 3;
-        const [clubId, userId, mutation, score, mutationId] = argv.map(String);
-        const club = snapshot.data.find((row: any) => row.id === clubId);
-        if (!club) return 3;
-        if (club.isOccupied || club.isTaken || club.ownerUserId || club.claimedByUserId) return 1;
-        if (snapshot.data.some((row: any) => row.ownerUserId === userId || row.claimedByUserId === userId)) return 2;
-        const reservedClub = store.get(String(keys[1]));
-        const reservedUser = store.get(String(keys[2]));
-        if (reservedClub && reservedClub !== userId) return 1;
-        if (reservedUser && reservedUser !== clubId) return 2;
-        if (reservedClub && reservedUser) return 4;
-        store.set(String(keys[1]), userId);
-        store.set(String(keys[2]), clubId);
-        store.set(String(keys[3]), mutation);
-        if (!zsets.has(String(keys[4]))) zsets.set(String(keys[4]), new Map());
-        zsets.get(String(keys[4]))!.set(mutationId, Number(score));
-        if (!sets.has(String(keys[5]))) sets.set(String(keys[5]), new Set());
-        sets.get(String(keys[5]))!.add(mutationId);
-        return 0;
-      }
-      if (script.includes('clear-offline-club-claim')) {
-        if (store.get(String(keys[0])) === String(argv[0])) store.delete(String(keys[0]));
-        if (store.get(String(keys[1])) === String(argv[1])) store.delete(String(keys[1]));
-        return 1;
-      }
       if (keys[1] && argv[0]) {
         store.set(String(keys[1]), typeof argv[0] === 'string' ? argv[0] : JSON.stringify(argv[0]));
       }

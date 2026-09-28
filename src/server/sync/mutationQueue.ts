@@ -5,7 +5,6 @@ import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
 import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS } from '../firebase/collections';
 import { assertNoSyntheticIdsInProduction } from '../utils/testGuard';
-import { clearOfflineClubClaim } from '../services/offlineClubClaim';
 import {
   persistDurableMutation,
   getDuePendingMutations,
@@ -348,13 +347,12 @@ export async function processPendingMutations(): Promise<SyncResult> {
       processed: 0,
       synced: 0,
       failed: 0,
-      circuitOpen: firestoreCircuitBreaker.getStatus().state !== 'CLOSED',
+      circuitOpen: !firestoreCircuitBreaker.canExecute(),
       errors: [],
     };
   }
 
-  const circuit = firestoreCircuitBreaker.getStatus();
-  if (circuit.softLimitExceeded || circuit.state === 'HALF_OPEN' || circuit.state === 'OPEN' && circuit.cooldownRemainingMs > 0) {
+  if (!firestoreCircuitBreaker.canExecute()) {
     console.log('[MUTATION_QUEUE] Circuit breaker is OPEN. Deferring sync.');
     return {
       totalPending: getPendingMutations('PENDING').length,
@@ -406,7 +404,7 @@ export async function processPendingMutations(): Promise<SyncResult> {
 
     for (const item of dueMutations) {
       // Check circuit breaker before each mutation
-      if (item.entityType !== 'CLUB_CLAIM' && !firestoreCircuitBreaker.canExecute()) {
+      if (!firestoreCircuitBreaker.canExecute()) {
         console.warn('[MUTATION_QUEUE] Circuit breaker tripped during sync. Aborting remaining mutations.');
         break;
       }
@@ -418,12 +416,6 @@ export async function processPendingMutations(): Promise<SyncResult> {
       try {
         await executeSingleMutationSync(db, item);
         await markMutationSynced(item.mutationId).catch(() => {});
-        if (item.entityType === 'CLUB_CLAIM') {
-          await clearOfflineClubClaim(item.payload.userId, item.payload.clubId, item.payload.seasonId).catch(() => {});
-          const { invalidateClubReadModels, invalidateUserMembershipReadModel } = await import('../readModel/readModelStore');
-          await invalidateClubReadModels(item.payload.seasonId).catch(() => {});
-          await invalidateUserMembershipReadModel(item.payload.userId, item.payload.seasonId).catch(() => {});
-        }
         updateMutationStatus(item.mutationId, 'SYNCED');
         firestoreCircuitBreaker.recordSuccess();
         synced++;
@@ -431,9 +423,7 @@ export async function processPendingMutations(): Promise<SyncResult> {
       } catch (err: any) {
         const isQuota = firestoreCircuitBreaker.isQuotaExhaustedError(err);
         const isOwnershipMismatch = err.message?.includes('OWNERSHIP_MISMATCH');
-        const isTerminalError = isOwnershipMismatch || item.entityType === 'CLUB_CLAIM' &&
-          (err.name === 'ClubNotFoundError' ||
-            ['CLUB_OCCUPIED', 'CLUB_SELECTION_LOCKED', 'CLUB_LEAGUE_LIMIT', 'OWNERSHIP_INCONSISTENT'].includes(err.code));
+        const isTerminalError = isOwnershipMismatch;
         firestoreCircuitBreaker.recordFailure(err);
 
         // Failed or fallback-only replay must remain PENDING for retry.
@@ -441,9 +431,6 @@ export async function processPendingMutations(): Promise<SyncResult> {
         const nextStatus: MutationStatus = isTerminalError ? 'FAILED' : 'PENDING';
         if (isTerminalError) {
           await markMutationFailed(item.mutationId, err.message).catch(() => {});
-          if (item.entityType === 'CLUB_CLAIM') {
-            await clearOfflineClubClaim(item.payload.userId, item.payload.clubId, item.payload.seasonId).catch(() => {});
-          }
         } else {
           await markMutationRetryable(item.mutationId, err.message).catch(() => {});
         }
@@ -467,7 +454,7 @@ export async function processPendingMutations(): Promise<SyncResult> {
     processed,
     synced,
     failed,
-    circuitOpen: firestoreCircuitBreaker.getStatus().state !== 'CLOSED',
+    circuitOpen: !firestoreCircuitBreaker.canExecute(),
     errors,
   };
 }
