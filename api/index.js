@@ -2067,6 +2067,68 @@ var init_premiumClubRule = __esm({
   }
 });
 
+// src/server/services/clubAdmission.ts
+function admissionStatus(seasonId, data) {
+  const enabled = data?.enabled === true;
+  const rawStage = Number(data?.stage);
+  if (enabled && (!Number.isInteger(rawStage) || rawStage < 0 || rawStage > CLUB_ADMISSION_LEAGUES.length)) {
+    throw new Error("INVALID_CLUB_ADMISSION_STATE");
+  }
+  const stage = enabled ? rawStage : -1;
+  return {
+    seasonId,
+    enabled,
+    stage,
+    activeLeagueId: stage >= 0 ? CLUB_ADMISSION_LEAGUES[stage]?.id || null : null,
+    leagues: CLUB_ADMISSION_LEAGUES,
+    updatedAt: typeof data?.updatedAt === "string" ? data.updatedAt : null
+  };
+}
+async function getClubAdmissionStatus(seasonId) {
+  const doc = await getFirestoreDb().collection(COLLECTION).doc(seasonId).get();
+  return admissionStatus(seasonId, doc.data());
+}
+async function advanceClubAdmission(seasonId, expectedStage, actorId) {
+  const db = getFirestoreDb();
+  const ref = db.collection(COLLECTION).doc(seasonId);
+  return db.runTransaction(async (transaction) => {
+    const current = admissionStatus(seasonId, (await transaction.get(ref)).data());
+    if (current.stage !== expectedStage) throw new ClubAdmissionConflict("ADMISSION_STAGE_CHANGED");
+    if (current.stage >= CLUB_ADMISSION_LEAGUES.length) throw new ClubAdmissionConflict("ADMISSION_FINISHED");
+    const stage = current.stage + 1;
+    const updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    transaction.set(ref, { seasonId, enabled: true, stage, updatedAt, updatedBy: actorId });
+    return admissionStatus(seasonId, { enabled: true, stage, updatedAt });
+  });
+}
+function assertClubAdmissionOpen(status, leagueId) {
+  if (status.enabled && status.activeLeagueId !== leagueId) {
+    const active = status.leagues.find((league) => league.id === status.activeLeagueId);
+    throw new ClubAdmissionConflictError(active ? `Hozir faqat ${active.name} klublari uchun qabul ochiq.` : "Bu mavsum uchun klub qabuli yakunlangan.");
+  }
+}
+var CLUB_ADMISSION_LEAGUES, COLLECTION, ClubAdmissionConflict, ClubAdmissionConflictError;
+var init_clubAdmission = __esm({
+  "src/server/services/clubAdmission.ts"() {
+    init_admin();
+    init_seed();
+    CLUB_ADMISSION_LEAGUES = SEED_LEAGUES.map(({ id, name }) => ({ id, name }));
+    COLLECTION = "club_admissions";
+    ClubAdmissionConflict = class extends Error {
+      constructor(code) {
+        super(code === "ADMISSION_FINISHED" ? "Klub qabuli yakunlangan." : "Qabul bosqichi o\u2018zgargan. Sahifani yangilang.");
+        this.code = code;
+      }
+    };
+    ClubAdmissionConflictError = class extends Error {
+      constructor() {
+        super(...arguments);
+        this.code = "CLUB_ADMISSION_CLOSED";
+      }
+    };
+  }
+});
+
 // src/server/firebase/circuitBreaker.ts
 var DEFAULT_COOLDOWN_MS, CONSECUTIVE_FAILURES_THRESHOLD, FIRESTORE_READ_SOFT_LIMIT, FirestoreCircuitBreaker, firestoreCircuitBreaker;
 var init_circuitBreaker = __esm({
@@ -9274,6 +9336,8 @@ async function claimClubAtomicFirestore(userId, clubId, seasonId = "season-2026-
             }
           };
         }
+        const admissionDoc = await transaction.get(db.collection("club_admissions").doc(seasonId));
+        assertClubAdmissionOpen(admissionStatus(seasonId, admissionDoc.data()), clubData.leagueId);
         if (primaryId) {
           const primaryLeagueId = SEED_CLUB_MAP.get(primaryId)?.leagueId;
           if (!primaryLeagueId) throw new ClubConflictError("Primary club league needs admin review.", "OWNERSHIP_INCONSISTENT");
@@ -9392,7 +9456,7 @@ async function claimClubAtomicFirestore(userId, clubId, seasonId = "season-2026-
         isFallback: false
       };
     } catch (err) {
-      if (err instanceof ClubConflictError || err instanceof ClubNotFoundError) {
+      if (err instanceof ClubConflictError || err instanceof ClubNotFoundError || err instanceof ClubAdmissionConflictError) {
         throw err;
       }
       firestoreCircuitBreaker.recordFailure(err);
@@ -14567,6 +14631,7 @@ var init_firestoreStore = __esm({
     init_sqliteStandings();
     init_seed();
     init_premiumClubRule();
+    init_clubAdmission();
     init_circuitBreaker();
     init_circuitBreaker();
     init_occupancySnapshot();
@@ -16701,6 +16766,7 @@ async function getOrCreateDevUser(devUserId) {
 
 // src/server/middleware/authMiddleware.ts
 init_firestoreStore();
+init_circuitBreaker();
 var cachedUserByTelegramId = /* @__PURE__ */ new Map();
 var cachedUserByDevId = /* @__PURE__ */ new Map();
 async function authMiddleware(req, res, next) {
@@ -16816,7 +16882,24 @@ async function requireAdmin(req, res, next) {
     });
     return;
   }
-  const authoritativeUser = await getAuthoritativeUserForAuthorization(req.user.id).catch(() => null);
+  let authoritativeUser = null;
+  try {
+    authoritativeUser = await getAuthoritativeUserForAuthorization(req.user.id);
+    firestoreCircuitBreaker.recordSuccess();
+  } catch (err) {
+    firestoreCircuitBreaker.recordFailure(err);
+    const telegramId = req.user.telegramId;
+    const configuredAdmins = (process.env.ADMIN_TELEGRAM_IDS || "").split(",").map((value) => value.trim().replace(/^@/, "").toLowerCase()).filter(Boolean);
+    const bearer = req.headers?.authorization;
+    const token = bearer?.startsWith("Bearer ") ? bearer.slice(7).trim() : req.headers?.["x-session-token"];
+    const signed = token ? verifySessionToken(token) : null;
+    if (req.method === "GET" && firestoreCircuitBreaker.isQuotaExhaustedError(err) && signed?.isValid && signed.claims?.id === req.user.id && signed.claims.telegramId === telegramId && signed.claims.isAdmin && !signed.claims.isSuspended && /^\d+$/.test(telegramId) && req.user.id === `user-${telegramId}` && (configuredAdmins.includes(telegramId) || Boolean(req.user.username) && signed.claims.username === req.user.username && configuredAdmins.includes(req.user.username.toLowerCase()))) {
+      res.setHeader("X-Admin-Read-Only", "true");
+      console.warn("[ADMIN_AUTH_QUOTA_READ_ONLY] Configured bootstrap admin, GET only");
+      next();
+      return;
+    }
+  }
   if (!authoritativeUser) {
     res.status(503).json({ error: "Admin authorization is temporarily unavailable." });
     return;
@@ -16902,13 +16985,14 @@ var MANUAL_PROBE_COOLDOWN_MS = 6e4;
 healthRouter.get("/", async (req, res) => {
   const status = getFirebaseStatus();
   const cbStatus = firestoreCircuitBreaker.getStatus();
-  const isConnected = Boolean(status.isConfigured && firestoreCircuitBreaker.canExecute());
-  const connectionWarning = !firestoreCircuitBreaker.canExecute() ? "Firestore circuit breaker is open (fallback mode active)" : !status.isConfigured ? "Firebase credentials not configured" : null;
+  const isOffline = !status.isConfigured || cbStatus.state !== "CLOSED" || cbStatus.softLimitExceeded;
+  const isConnected = Boolean(status.isConfigured && !isOffline);
+  const connectionWarning = !status.isConfigured ? "Firebase credentials not configured" : isOffline ? "Firestore circuit breaker is open (fallback mode active)" : null;
   res.status(200).json({
     status: "ok",
     database: "firestore",
     connected: isConnected,
-    isOffline: !firestoreCircuitBreaker.canExecute(),
+    isOffline,
     circuitBreaker: {
       status: cbStatus.state,
       state: cbStatus.state
@@ -16953,7 +17037,7 @@ healthRouter.get("/resilience", requireAdmin, (req, res) => {
   const queue = getQueueStats();
   res.status(200).json({
     status: "ok",
-    isOffline: !firestoreCircuitBreaker.canExecute(),
+    isOffline: cbStatus.state !== "CLOSED" || cbStatus.softLimitExceeded,
     circuitBreaker: cbStatus,
     queueStats: queue,
     timestamp: (/* @__PURE__ */ new Date()).toISOString()
@@ -17228,6 +17312,14 @@ function parseFirestoreError(err) {
   if (strCode === "AUTHORITATIVE_WRITE_REQUIRED") {
     return { error: strCode, code: strCode, message: "O\u2018zgarish saqlanmadi. Baza tiklangandan keyin qayta urinib ko\u2018ring.", httpStatus: 503 };
   }
+  if (rawMsg.startsWith("CIRCUIT_OPEN:")) {
+    return {
+      error: "FIRESTORE_TEMPORARILY_UNAVAILABLE",
+      code: "FIRESTORE_TEMPORARILY_UNAVAILABLE",
+      message: "O\u2018zgarish hozircha saqlanmadi. Baza tiklangandan keyin qayta urinib ko\u2018ring.",
+      httpStatus: 503
+    };
+  }
   if (strCode === "MATCHDAY_LOCKED" || strCode.includes("MATCHDAY_LOCKED") || rawMsg.includes("MATCHDAY_LOCKED") || err.code === "MATCHDAY_LOCKED" || err.statusCode === 403) {
     return {
       error: "MATCHDAY_LOCKED",
@@ -17423,8 +17515,22 @@ import { Router as Router5 } from "express";
 init_firestoreStore();
 init_seed();
 init_telegramBotService();
+init_clubAdmission();
 init_readModelStore();
 var clubsRouter = Router5();
+clubsRouter.get("/admission", async (req, res) => {
+  const seasonId = String(req.query.seasonId || "season-2026-27");
+  if (!/^season-[a-z0-9-]+$/.test(seasonId)) {
+    res.status(400).json({ code: "INVALID_SEASON_ID" });
+    return;
+  }
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ admission: await getClubAdmissionStatus(seasonId) });
+  } catch (err) {
+    handleFirestoreError(res, err, "GET /api/clubs/admission");
+  }
+});
 function resolveCanonicalClub(id) {
   if (!id) return null;
   const trimmed = id.trim();
@@ -17681,6 +17787,10 @@ clubsRouter.post("/:id/claim", requireAuth, async (req, res) => {
     return;
   }
   const seasonId = req.body.seasonId || "season-2026-27";
+  if (!/^season-[a-z0-9-]+$/.test(seasonId)) {
+    res.status(400).json({ code: "INVALID_SEASON_ID" });
+    return;
+  }
   const userId = req.user.id;
   const telegramId = req.user.telegramId;
   if (telegramId) {
@@ -17708,6 +17818,10 @@ clubsRouter.post("/:id/claim", requireAuth, async (req, res) => {
       club: result.club
     });
   } catch (err) {
+    if (err instanceof ClubAdmissionConflictError) {
+      res.status(409).json({ code: err.code, message: err.message });
+      return;
+    }
     if (err instanceof ClubConflictError) {
       res.status(409).json({
         error: err.code || "CLUB_CONFLICT",
@@ -19149,7 +19263,7 @@ init_adminService();
 init_seasonInsightsService();
 init_seasonOperationsService();
 init_readModelStore();
-var COLLECTION = "season_archives";
+var COLLECTION2 = "season_archives";
 function validSeasonId(seasonId) {
   if (!/^season-\d{4}-\d{2}$/.test(seasonId)) throw new Error("INVALID_SEASON_ID");
   return seasonId;
@@ -19161,13 +19275,13 @@ function missingArchiveTrophies(seasonId, trophies) {
   return expected.filter((competition) => !decided.has(competition.id)).map((competition) => competition.id);
 }
 async function getSeasonArchive(seasonId) {
-  const doc = await getFirestoreDb().collection(COLLECTION).doc(validSeasonId(seasonId)).get();
-  trackFirestoreRead(COLLECTION, 1, "getSeasonArchive");
+  const doc = await getFirestoreDb().collection(COLLECTION2).doc(validSeasonId(seasonId)).get();
+  trackFirestoreRead(COLLECTION2, 1, "getSeasonArchive");
   return doc.exists ? doc.data() : null;
 }
 async function listSeasonArchives() {
-  const snap = await getFirestoreDb().collection(COLLECTION).orderBy("archivedAt", "desc").limit(20).get();
-  trackFirestoreRead(COLLECTION, snap.size, "listSeasonArchives");
+  const snap = await getFirestoreDb().collection(COLLECTION2).orderBy("archivedAt", "desc").limit(20).get();
+  trackFirestoreRead(COLLECTION2, snap.size, "listSeasonArchives");
   return snap.docs.map((doc) => {
     const data = doc.data();
     return { seasonId: doc.id, archivedAt: data.archivedAt, trophyCount: data.trophies?.length || 0 };
@@ -19201,7 +19315,7 @@ async function archiveCompletedSeason(seasonId, actorUserId, actorUsername = "ad
     awards: awardResult.awards,
     finalStandings: qualification.leagues
   };
-  const ref = getFirestoreDb().collection(COLLECTION).doc(seasonId);
+  const ref = getFirestoreDb().collection(COLLECTION2).doc(seasonId);
   const created = await getFirestoreDb().runTransaction(async (transaction) => {
     const doc = await transaction.get(ref);
     if (doc.exists) return false;
@@ -19209,7 +19323,7 @@ async function archiveCompletedSeason(seasonId, actorUserId, actorUsername = "ad
     return true;
   });
   if (created) {
-    trackFirestoreWrite(COLLECTION, 1, "archiveCompletedSeason");
+    trackFirestoreWrite(COLLECTION2, 1, "archiveCompletedSeason");
     await createAuditLog(
       actorUserId,
       "SEASON_ARCHIVED",
@@ -20839,10 +20953,38 @@ init_admin();
 init_collections();
 init_smartNotificationSettingsService();
 init_circuitBreaker();
+init_clubAdmission();
 init_db();
 init_readModelStore();
 var adminRouter = Router17();
 adminRouter.use(requireAdmin);
+adminRouter.get("/clubs/admission", async (req, res) => {
+  const seasonId = String(req.query.seasonId || "season-2026-27");
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ admission: await getClubAdmissionStatus(seasonId) });
+  } catch (err) {
+    handleFirestoreError(res, err, "GET /api/admin/clubs/admission");
+  }
+});
+adminRouter.post("/clubs/admission/advance", async (req, res) => {
+  const seasonId = String(req.body?.seasonId || "season-2026-27");
+  const expectedStage = req.body?.expectedStage;
+  if (!/^season-[a-z0-9-]+$/.test(seasonId) || !Number.isInteger(expectedStage) || expectedStage < -1 || expectedStage > CLUB_ADMISSION_LEAGUES.length) {
+    res.status(400).json({ code: "INVALID_ADMISSION_STAGE" });
+    return;
+  }
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ admission: await advanceClubAdmission(seasonId, expectedStage, req.user.id) });
+  } catch (err) {
+    if (err instanceof ClubAdmissionConflict) {
+      res.status(409).json({ code: err.code, message: err.message });
+      return;
+    }
+    handleFirestoreError(res, err, "POST /api/admin/clubs/admission/advance");
+  }
+});
 var smartNotificationSettingsSchema = z4.object({
   seasonId: z4.string().min(1).optional(),
   enabled: z4.boolean(),

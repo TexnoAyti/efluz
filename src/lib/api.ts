@@ -1,5 +1,14 @@
 import { User, Club, Season, League, Competition, Fixture, StandingsRow, Dispute, Notification, AuditLog, UserStats } from '../types';
 
+export interface ClubAdmissionStatus {
+  seasonId: string;
+  enabled: boolean;
+  stage: number;
+  activeLeagueId: string | null;
+  leagues: { id: string; name: string }[];
+  updatedAt: string | null;
+}
+
 let currentDevUserId: string | null = null;
 let currentTelegramInitData: string | null = null;
 let currentSessionToken: string | null = null;
@@ -387,6 +396,16 @@ export const api = {
   },
 
   // Clubs
+  async getClubAdmission(seasonId = 'season-2026-27'): Promise<{ admission: ClubAdmissionStatus }> {
+    return request(`/api/clubs/admission?seasonId=${encodeURIComponent(seasonId)}`, { skipCache: true });
+  },
+
+  async advanceClubAdmission(seasonId: string, expectedStage: number): Promise<{ admission: ClubAdmissionStatus }> {
+    return request('/api/admin/clubs/admission/advance', {
+      method: 'POST', body: JSON.stringify({ seasonId, expectedStage }),
+    });
+  },
+
   async getClub(clubId: string, seasonId = 'season-2026-27', skipCache = false): Promise<{ club: Club }> {
     return request(`/api/clubs/${clubId}?seasonId=${seasonId}`, { cacheTtlMs: 120000, skipCache });
   },

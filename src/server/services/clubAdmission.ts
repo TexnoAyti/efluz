@@ -1,0 +1,69 @@
+import { getFirestoreDb } from '../firebase/admin';
+import { SEED_LEAGUES } from '../db/seed';
+
+export const CLUB_ADMISSION_LEAGUES = SEED_LEAGUES.map(({ id, name }) => ({ id, name }));
+const COLLECTION = 'club_admissions';
+
+export interface ClubAdmissionStatus {
+  seasonId: string;
+  enabled: boolean;
+  stage: number;
+  activeLeagueId: string | null;
+  leagues: typeof CLUB_ADMISSION_LEAGUES;
+  updatedAt: string | null;
+}
+
+export class ClubAdmissionConflict extends Error {
+  constructor(public readonly code: 'ADMISSION_STAGE_CHANGED' | 'ADMISSION_FINISHED') {
+    super(code === 'ADMISSION_FINISHED' ? 'Klub qabuli yakunlangan.' : 'Qabul bosqichi o‘zgargan. Sahifani yangilang.');
+  }
+}
+
+export function admissionStatus(seasonId: string, data?: Record<string, unknown>): ClubAdmissionStatus {
+  const enabled = data?.enabled === true;
+  const rawStage = Number(data?.stage);
+  if (enabled && (!Number.isInteger(rawStage) || rawStage < 0 || rawStage > CLUB_ADMISSION_LEAGUES.length)) {
+    throw new Error('INVALID_CLUB_ADMISSION_STATE');
+  }
+  const stage = enabled ? rawStage : -1;
+  return {
+    seasonId,
+    enabled,
+    stage,
+    activeLeagueId: stage >= 0 ? CLUB_ADMISSION_LEAGUES[stage]?.id || null : null,
+    leagues: CLUB_ADMISSION_LEAGUES,
+    updatedAt: typeof data?.updatedAt === 'string' ? data.updatedAt : null,
+  };
+}
+
+export async function getClubAdmissionStatus(seasonId: string): Promise<ClubAdmissionStatus> {
+  const doc = await getFirestoreDb().collection(COLLECTION).doc(seasonId).get();
+  return admissionStatus(seasonId, doc.data());
+}
+
+// Both admin transitions and claims read the same document in Firestore transactions.
+// A concurrent stage change therefore retries a claim against the new stage.
+export async function advanceClubAdmission(seasonId: string, expectedStage: number, actorId: string): Promise<ClubAdmissionStatus> {
+  const db = getFirestoreDb();
+  const ref = db.collection(COLLECTION).doc(seasonId);
+  return db.runTransaction(async (transaction) => {
+    const current = admissionStatus(seasonId, (await transaction.get(ref)).data());
+    if (current.stage !== expectedStage) throw new ClubAdmissionConflict('ADMISSION_STAGE_CHANGED');
+    if (current.stage >= CLUB_ADMISSION_LEAGUES.length) throw new ClubAdmissionConflict('ADMISSION_FINISHED');
+    const stage = current.stage + 1;
+    const updatedAt = new Date().toISOString();
+    transaction.set(ref, { seasonId, enabled: true, stage, updatedAt, updatedBy: actorId });
+    return admissionStatus(seasonId, { enabled: true, stage, updatedAt });
+  });
+}
+
+export function assertClubAdmissionOpen(status: ClubAdmissionStatus, leagueId: string): void {
+  if (status.enabled && status.activeLeagueId !== leagueId) {
+    const active = status.leagues.find((league) => league.id === status.activeLeagueId);
+    throw new ClubAdmissionConflictError(active ? `Hozir faqat ${active.name} klublari uchun qabul ochiq.` : 'Bu mavsum uchun klub qabuli yakunlangan.');
+  }
+}
+
+export class ClubAdmissionConflictError extends Error {
+  readonly code = 'CLUB_ADMISSION_CLOSED';
+}

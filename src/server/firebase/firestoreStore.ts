@@ -4,6 +4,7 @@ import { queryAll, queryGet, queryRun, dbTransaction, upsertFixtureToSqlite } fr
 import { refreshMaterializedStandingsForCompetition } from '../db/sqliteStandings';
 import { SEED_CLUBS, SEED_LEAGUES, SEED_COMPETITIONS, SEED_SEASONS, SEED_SEASON } from '../db/seed';
 import { checkClubClaimLimit } from '../services/premiumClubRule';
+import { admissionStatus, assertClubAdmissionOpen, ClubAdmissionConflictError } from '../services/clubAdmission';
 export { firestoreCircuitBreaker, type CircuitBreakerStatus } from './circuitBreaker';
 import { firestoreCircuitBreaker, CircuitBreakerStatus } from './circuitBreaker';
 import {
@@ -1059,6 +1060,8 @@ export async function claimClubAtomicFirestore(
                 },
               };
         }
+        const admissionDoc = await transaction.get(db.collection('club_admissions').doc(seasonId));
+        assertClubAdmissionOpen(admissionStatus(seasonId, admissionDoc.data()), clubData.leagueId);
         if (primaryId) {
           const primaryLeagueId = SEED_CLUB_MAP.get(primaryId)?.leagueId;
           if (!primaryLeagueId) throw new ClubConflictError('Primary club league needs admin review.', 'OWNERSHIP_INCONSISTENT');
@@ -1191,7 +1194,7 @@ export async function claimClubAtomicFirestore(
         isFallback: false,
       };
     } catch (err: any) {
-      if (err instanceof ClubConflictError || err instanceof ClubNotFoundError) {
+      if (err instanceof ClubConflictError || err instanceof ClubNotFoundError || err instanceof ClubAdmissionConflictError) {
         throw err;
       }
       firestoreCircuitBreaker.recordFailure(err);

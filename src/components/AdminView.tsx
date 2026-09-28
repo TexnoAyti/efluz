@@ -67,6 +67,7 @@ import { AdminDomesticCupsTab } from './admin/AdminDomesticCupsTab';
 import { AdminEuropeanTab } from './admin/AdminEuropeanTab';
 import { AdminTelegramTab } from './admin/AdminTelegramTab';
 import { AdminClubIntegrityPanel } from './admin/AdminClubIntegrityPanel';
+import { AdminClubAdmissionPanel } from './admin/AdminClubAdmissionPanel';
 
 type AdminTab = 'overview' | 'clubs' | 'matches' | 'results' | 'competitions' | 'domestic_cups' | 'european' | 'telegram' | 'users' | 'system';
 
@@ -1264,6 +1265,7 @@ export const AdminView: React.FC = () => {
       {/* ========================================================================= */}
       {activeAdminTab === 'clubs' && (
         <div className="space-y-4">
+          <AdminClubAdmissionPanel seasonId={activeSeasonId} />
           <AdminClubIntegrityPanel clubs={clubs} />
           {/* Controls Bar */}
           <div className="glass-panel p-4 space-y-3">
