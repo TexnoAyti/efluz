@@ -94,7 +94,7 @@ const AppContent: React.FC = () => {
       <Header theme={theme} onThemeChange={changeTheme} onOpenNotifications={() => setActiveTab('notifications')} onOpenProfile={() => setActiveTab('profile')} />
       <Navigation activeTab={currentTab} onTabChange={setActiveTab} openDisputesCount={openDisputesCount} />
       <OfflineSyncBanner />
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-4 md:px-6 py-4 sm:py-6 min-w-0">
+      <main data-preview-page={user?.isAdmin ? currentTab : undefined} className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-4 md:px-6 py-4 sm:py-6 min-w-0">
         {currentTab === 'my-matches' && <div className="mb-5"><SeasonLifecyclePanel seasonId={activeSeasonId} /></div>}
         {currentTab === 'my-matches' && <div className="mb-5"><MatchOperationsV4Panel /></div>}
         {currentTab === 'admin' && user?.isAdmin && <div className="mb-5"><AdminMatchOperationsV4Panel /></div>}
