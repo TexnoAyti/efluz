@@ -318,7 +318,7 @@ export const AdminTelegramTab: React.FC = () => {
           <div>
             <h3 className="text-sm font-black text-white flex items-center gap-2">
               <Shield className="w-4 h-4 text-emerald-400" />
-              <span>Smart Notification Control</span>
+              <span>Aqlli bildirishnomalarni boshqarish</span>
             </h3>
             <p className="text-[11px] text-slate-400 mt-1">
               Avtomatik Telegram xabarlarini productionda boshqaring. Hozircha oddiy va premium foydalanuvchilarga bir xil ishlaydi.
@@ -382,7 +382,7 @@ export const AdminTelegramTab: React.FC = () => {
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-black text-white flex items-center gap-2">
                 <Users className="w-4 h-4 text-sky-400" />
-                <span>1. Select Target Audience</span>
+                  <span>1. Qabul qiluvchilarni tanlang</span>
               </h3>
               <span className="text-xs text-slate-400 font-semibold">
                 {selectedUserIds.size} of {recipients.length} selected
@@ -476,7 +476,7 @@ export const AdminTelegramTab: React.FC = () => {
               {isLoadingRecipients ? (
                 <div className="py-8 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
                   <RefreshCw className="w-4 h-4 animate-spin text-sky-400" />
-                  <span>Loading safe recipient directory...</span>
+                  <span>Xavfsiz qabul qiluvchilar ro‘yxati yuklanmoqda...</span>
                 </div>
               ) : filteredRecipients.length === 0 ? (
                 <div className="py-8 text-center text-slate-500 text-xs">No matching recipients found.</div>
@@ -672,7 +672,7 @@ export const AdminTelegramTab: React.FC = () => {
             className="px-3 py-1.5 glass-card text-xs font-bold text-slate-300 hover:text-white rounded-xl flex items-center gap-1.5"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-sky-400 ${isLoadingHistory ? 'animate-spin' : ''}`} />
-            <span>Refresh History</span>
+            <span>Tarixni yangilash</span>
           </button>
         </div>
 
