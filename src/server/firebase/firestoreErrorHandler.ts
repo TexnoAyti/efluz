@@ -37,6 +37,10 @@ export function parseFirestoreError(err: any): FormattedFirestoreError {
   if (strCode === 'AUTHORITATIVE_WRITE_REQUIRED') {
     return { error: strCode, code: strCode, message: 'O‘zgarish saqlanmadi. Baza tiklangandan keyin qayta urinib ko‘ring.', httpStatus: 503 };
   }
+  if (rawMsg.startsWith('CIRCUIT_OPEN:')) {
+    return { error: 'FIRESTORE_TEMPORARILY_UNAVAILABLE', code: 'FIRESTORE_TEMPORARILY_UNAVAILABLE',
+      message: 'O‘zgarish hozircha saqlanmadi. Baza tiklangandan keyin qayta urinib ko‘ring.', httpStatus: 503 };
+  }
 
   // Matchday Lock / Authorization check
   if (

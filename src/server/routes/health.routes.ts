@@ -14,19 +14,21 @@ healthRouter.get('/', async (req: Request, res: Response) => {
   const status = getFirebaseStatus();
   const cbStatus = firestoreCircuitBreaker.getStatus();
 
-  // Passive health status: do NOT execute Firestore read operations on standard health checks
-  const isConnected = Boolean(status.isConfigured && firestoreCircuitBreaker.canExecute());
-  const connectionWarning = !firestoreCircuitBreaker.canExecute()
-    ? 'Firestore circuit breaker is open (fallback mode active)'
-    : !status.isConfigured
+  // Passive health checks must not reserve the circuit breaker's single
+  // half-open probe. A real Firestore operation owns that probe instead.
+  const isOffline = !status.isConfigured || cbStatus.state !== 'CLOSED' || cbStatus.softLimitExceeded;
+  const isConnected = Boolean(status.isConfigured && !isOffline);
+  const connectionWarning = !status.isConfigured
     ? 'Firebase credentials not configured'
+    : isOffline
+    ? 'Firestore circuit breaker is open (fallback mode active)'
     : null;
 
   res.status(200).json({
     status: 'ok',
     database: 'firestore',
     connected: isConnected,
-    isOffline: !firestoreCircuitBreaker.canExecute(),
+    isOffline,
     circuitBreaker: {
       status: cbStatus.state,
       state: cbStatus.state,
@@ -75,7 +77,7 @@ healthRouter.get('/resilience', requireAdmin, (req: Request, res: Response) => {
   const queue = getQueueStats();
   res.status(200).json({
     status: 'ok',
-    isOffline: !firestoreCircuitBreaker.canExecute(),
+    isOffline: cbStatus.state !== 'CLOSED' || cbStatus.softLimitExceeded,
     circuitBreaker: cbStatus,
     queueStats: queue,
     timestamp: new Date().toISOString(),
