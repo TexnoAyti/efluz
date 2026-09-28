@@ -87,7 +87,8 @@ interface PendingFixtureItem extends Fixture {
 
 export const AdminView: React.FC = () => {
   const { user, activeSeasonId, showToast } = useAuth();
-  const { t } = useI18n();
+  const { t, language } = useI18n();
+  const loc = (uz: string, ru: string, en: string) => ({ uz, ru, en })[language];
 
   const [activeAdminTab, setActiveAdminTab] = useState<AdminTab>('overview');
   const [isLoading, setIsLoading] = useState(true);
@@ -288,14 +289,14 @@ export const AdminView: React.FC = () => {
     try {
       const res = await api.rebuildReadModels(activeSeasonId);
       if (res?.success) {
-        setReadModelRebuildMsg(`Saqlandi: ${res.counts?.clubs ?? 0} klub, ${res.counts?.fixtures ?? 0} match, ${res.counts?.standings ?? 0} jadval qatori. ${res.warmedLkgKeys?.length ?? 0} nusxa.`);
+        setReadModelRebuildMsg(`${loc('Yangilandi', 'Обновлено', 'Updated')}: ${res.counts?.clubs ?? 0} ${loc('klub', 'клубов', 'clubs')}, ${res.counts?.fixtures ?? 0} ${loc('uchrashuv', 'матчей', 'fixtures')}, ${res.counts?.standings ?? 0} ${loc('jadval qatori', 'строк таблицы', 'standings rows')}. ${res.warmedLkgKeys?.length ?? 0} ${loc('nusxa', 'копий', 'snapshots')}.`);
         const updatedHealth = await api.getReadModelHealth(activeSeasonId).catch(() => null);
         if (updatedHealth) setReadModelHealth(updatedHealth);
       } else {
-        setReadModelRebuildMsg(`Rebuild failed: ${res?.errors?.join('; ') || res?.error || 'Unknown error'}`);
+        setReadModelRebuildMsg(`${loc('Qayta tuzilmadi', 'Не удалось перестроить', 'Rebuild failed')}: ${res?.errors?.join('; ') || res?.error || loc('Noma’lum xato', 'Неизвестная ошибка', 'Unknown error')}`);
       }
     } catch (err: any) {
-      setReadModelRebuildMsg(`Rebuild failed: ${err.message}`);
+      setReadModelRebuildMsg(`${loc('Qayta tuzilmadi', 'Не удалось перестроить', 'Rebuild failed')}: ${err.message}`);
     } finally {
       setIsRebuildingReadModels(false);
     }
@@ -2509,33 +2510,33 @@ export const AdminView: React.FC = () => {
           <div className="glass-panel p-4 space-y-3">
             <h2 className="text-sm font-black text-white flex items-center gap-2">
               <Database className="w-4 h-4 text-emerald-400" />
-              <span>Firestore System Health & Diagnostics</span>
+              <span>{loc('Firestore tizim holati va diagnostika', 'Состояние Firestore и диагностика', 'Firestore System Health & Diagnostics')}</span>
             </h2>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
               <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
-                <div className="text-[10px] uppercase font-black text-slate-500">Database Connection</div>
-                <div className="text-xs font-black text-emerald-400 mt-1 flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>CONNECTED</span>
+                <div className="text-[10px] uppercase font-black text-slate-500">{loc('Baza aloqasi', 'Подключение к базе', 'Database Connection')}</div>
+                <div className={`text-xs font-black mt-1 flex items-center gap-1.5 ${diagnostics?.connected ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  {diagnostics?.connected ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}
+                  <span>{diagnostics?.connected ? loc('ULANGAN', 'ПОДКЛЮЧЕНО', 'CONNECTED') : loc('TASDIQLANMAGAN', 'НЕ ПОДТВЕРЖДЕНО', 'UNVERIFIED')}</span>
                 </div>
               </div>
 
               <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
-                <div className="text-[10px] uppercase font-black text-slate-500">Project ID</div>
+                <div className="text-[10px] uppercase font-black text-slate-500">{loc('Loyiha ID', 'ID проекта', 'Project ID')}</div>
                 <div className="text-xs font-mono font-bold text-white mt-1 truncate">
-                  {diagnostics?.projectId || overviewData?.systemHealth?.projectId || 'Default Project'}
+                  {diagnostics?.projectId || overviewData?.systemHealth?.projectId || loc('Noma’lum loyiha', 'Неизвестный проект', 'Unknown project')}
                 </div>
               </div>
 
               <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
-                <div className="text-[10px] uppercase font-black text-slate-500">Total Audit Logs</div>
-                <div className="text-xs font-black text-white mt-1">{auditLogs.length} Records</div>
+                <div className="text-[10px] uppercase font-black text-slate-500">{loc('Audit yozuvlari', 'Записи аудита', 'Audit Logs')}</div>
+                <div className="text-xs font-black text-white mt-1">{auditLogs.length} {loc('yozuv', 'записей', 'records')}</div>
               </div>
 
               <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
-                <div className="text-[10px] uppercase font-black text-slate-500">Auth Mode</div>
-                <div className="text-xs font-mono font-bold text-emerald-400 mt-1">Telegram HMAC Verified</div>
+                <div className="text-[10px] uppercase font-black text-slate-500">{loc('Kirish usuli', 'Способ входа', 'Auth Mode')}</div>
+                <div className="text-xs font-mono font-bold text-emerald-400 mt-1">{diagnostics?.authMode || loc('Noma’lum', 'Неизвестно', 'Unknown')}</div>
               </div>
             </div>
 
@@ -2545,24 +2546,24 @@ export const AdminView: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <div className="text-xs font-black uppercase text-slate-300 flex items-center gap-2">
                     <Activity className="w-4 h-4 text-emerald-400" />
-                    <span>Firestore Extreme Read Minimization Telemetry</span>
+                    <span>{loc('Firestore o‘qish ko‘rsatkichlari', 'Показатели чтения Firestore', 'Firestore Read Telemetry')}</span>
                   </div>
                   <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/30">
-                    Free Tier Safe (&lt; 50,000 / day)
+                    {loc('Bepul limit: kuniga 50 000 gacha', 'Бесплатный лимит: до 50 000 в день', 'Free limit: up to 50,000/day')}
                   </span>
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div className="bg-slate-950/80 p-3 rounded-xl border border-white/[0.05]">
-                    <div className="text-[10px] uppercase font-black text-slate-500">Session Reads</div>
+                    <div className="text-[10px] uppercase font-black text-slate-500">{loc('Sessiya o‘qishlari', 'Чтения за сеанс', 'Session Reads')}</div>
                     <div className="text-base font-black text-emerald-400 mt-0.5">
                       {diagnostics.readMetrics.sessionReads}
                     </div>
-                    <div className="text-[9px] text-slate-500">Reads tracked</div>
+                    <div className="text-[9px] text-slate-500">{loc('Qayd etilgan o‘qishlar', 'Учтённые чтения', 'Reads tracked')}</div>
                   </div>
 
                   <div className="bg-slate-950/80 p-3 rounded-xl border border-white/[0.05]">
-                    <div className="text-[10px] uppercase font-black text-slate-500">Cache Hit Ratio</div>
+                    <div className="text-[10px] uppercase font-black text-slate-500">{loc('Keshga tushish ulushi', 'Доля попаданий в кеш', 'Cache Hit Ratio')}</div>
                     <div className="text-base font-black text-sky-400 mt-0.5">
                       {diagnostics.readMetrics.cacheHits + diagnostics.readMetrics.cacheMisses > 0
                         ? `${Math.round(
@@ -2572,23 +2573,23 @@ export const AdminView: React.FC = () => {
                           )}%`
                         : '100%'}
                     </div>
-                    <div className="text-[9px] text-slate-500">{diagnostics.readMetrics.cacheHits} hits / {diagnostics.readMetrics.cacheMisses} misses</div>
+                    <div className="text-[9px] text-slate-500">{diagnostics.readMetrics.cacheHits} {loc('topildi', 'попаданий', 'hits')} / {diagnostics.readMetrics.cacheMisses} {loc('topilmadi', 'промахов', 'misses')}</div>
                   </div>
 
                   <div className="bg-slate-950/80 p-3 rounded-xl border border-white/[0.05]">
-                    <div className="text-[10px] uppercase font-black text-slate-500">Free-Tier Quota Used</div>
+                    <div className="text-[10px] uppercase font-black text-slate-500">{loc('Bepul limit ishlatilishi', 'Использование бесплатного лимита', 'Free Quota Used')}</div>
                     <div className="text-base font-black text-amber-400 mt-0.5">
                       {diagnostics.readMetrics.budget?.percentageConsumed ?? 0}%
                     </div>
-                    <div className="text-[9px] text-slate-500">Limit: 50,000 / day</div>
+                    <div className="text-[9px] text-slate-500">{loc('Limit: kuniga 50 000', 'Лимит: 50 000 в день', 'Limit: 50,000/day')}</div>
                   </div>
 
                   <div className="bg-slate-950/80 p-3 rounded-xl border border-white/[0.05]">
-                    <div className="text-[10px] uppercase font-black text-slate-500">Avg Reads / Session</div>
+                    <div className="text-[10px] uppercase font-black text-slate-500">{loc('Sessiyadagi o‘rtacha o‘qish', 'Среднее чтений за сеанс', 'Avg Reads / Session')}</div>
                     <div className="text-base font-black text-purple-400 mt-0.5">
                       {diagnostics.readMetrics.budget?.estimatedReadsPerUserSession ?? 2}
                     </div>
-                    <div className="text-[9px] text-slate-500">User avg (target &lt; 100)</div>
+                    <div className="text-[9px] text-slate-500">{loc('Maqsad: 100 dan kam', 'Цель: меньше 100', 'Target: under 100')}</div>
                   </div>
                 </div>
               </div>
@@ -2601,10 +2602,10 @@ export const AdminView: React.FC = () => {
               <div>
                 <h2 className="text-sm font-black text-white flex items-center gap-2">
                   <Database className="w-4 h-4 text-sky-400" />
-                  <span>Redis Read-Model Health &amp; Snapshots</span>
+                  <span>{loc('Redis o‘qish modeli va nusxalar holati', 'Состояние моделей чтения Redis и снимков', 'Redis Read-Model Health & Snapshots')}</span>
                 </h2>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  Inspect dual-key Redis read models (fresh with TTL + permanent LKG fallback) and trigger on-demand rebuilds.
+                  {loc('Redis kesh va zaxira nusxalarini tekshiring, kerak bo‘lsa qayta tuzing.', 'Проверьте кеш Redis и резервные снимки, при необходимости перестройте.', 'Inspect Redis caches and fallback snapshots; rebuild when needed.')}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -2612,27 +2613,27 @@ export const AdminView: React.FC = () => {
                   type="button"
                   onClick={() => loadTabData('system', true)}
                   className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all"
-                  title="Refresh read model health"
+                  title={loc('Holatni yangilash', 'Обновить состояние', 'Refresh read model health')}
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
-                  <span>Refresh</span>
+                  <span>{loc('Yangilash', 'Обновить', 'Refresh')}</span>
                 </button>
                 <button
                   type="button"
                   onClick={handleRebuildReadModels}
                   disabled={isRebuildingReadModels || readModelHealth?.redisState !== 'CONNECTED'}
                   className="px-3.5 py-1.5 bg-sky-500 hover:bg-sky-400 text-slate-950 rounded-xl text-xs font-black shadow flex items-center gap-1.5 transition-all disabled:opacity-50"
-                  title="Rebuild all Redis read models from Firestore"
+                  title={loc('Redis modellarini Firestoredan qayta tuzish', 'Перестроить модели Redis из Firestore', 'Rebuild Redis read models from Firestore')}
                 >
                   {isRebuildingReadModels ? (
                     <>
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>Rebuilding...</span>
+                      <span>{loc('Qayta tuzilmoqda…', 'Перестраивается…', 'Rebuilding...')}</span>
                     </>
                   ) : (
                     <>
                       <Sparkles className="w-3.5 h-3.5" />
-                      <span>Rebuild Read Models</span>
+                      <span>{loc('O‘qish modellarini qayta tuzish', 'Перестроить модели чтения', 'Rebuild Read Models')}</span>
                     </>
                   )}
                 </button>
@@ -2650,58 +2651,58 @@ export const AdminView: React.FC = () => {
               <div className="space-y-3">
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
-                    <div className="text-[10px] uppercase font-black text-slate-500">Read-Model Status</div>
+                    <div className="text-[10px] uppercase font-black text-slate-500">{loc('O‘qish modeli holati', 'Состояние модели чтения', 'Read-Model Status')}</div>
                     <div className="text-xs font-black mt-1 flex items-center gap-1.5">
                       {readModelStatus === 'HEALTHY' ? (
                         <>
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                          <span className="text-emerald-400">HEALTHY</span>
+                          <span className="text-emerald-400">{loc('SOZ', 'ИСПРАВНО', 'HEALTHY')}</span>
                         </>
                       ) : readModelStatus === 'DEGRADED' ? (
                         <>
                           <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-                          <span className="text-amber-400">DEGRADED</span>
+                          <span className="text-amber-400">{loc('CHEKLANGAN', 'ЧАСТИЧНО', 'DEGRADED')}</span>
                         </>
                       ) : (
                         <>
                           <XCircle className="w-3.5 h-3.5 text-rose-400" />
-                          <span className="text-rose-400">DOWN</span>
+                          <span className="text-rose-400">{loc('ISHLAMAYAPTI', 'НЕ РАБОТАЕТ', 'DOWN')}</span>
                         </>
                       )}
                     </div>
                   </div>
 
                   <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
-                    <div className="text-[10px] uppercase font-black text-slate-500">Redis Connectivity</div>
+                    <div className="text-[10px] uppercase font-black text-slate-500">{loc('Redis aloqasi', 'Подключение Redis', 'Redis Connectivity')}</div>
                     <div className="text-xs font-black mt-1">
                       {readModelHealth.redisState === 'CONNECTED' ? (
-                        <span className="text-emerald-400">CONNECTED</span>
+                        <span className="text-emerald-400">{loc('ULANGAN', 'ПОДКЛЮЧЕНО', 'CONNECTED')}</span>
                       ) : (
-                        <span className="text-rose-400">{readModelHealth.redisState === 'IN_MEMORY_FALLBACK' ? 'NOT CONFIGURED' : 'CONNECTION ERROR'}</span>
+                        <span className="text-rose-400">{readModelHealth.redisState === 'IN_MEMORY_FALLBACK' ? loc('SOZLANMAGAN', 'НЕ НАСТРОЕН', 'NOT CONFIGURED') : loc('ALOQA XATOSI', 'ОШИБКА ПОДКЛЮЧЕНИЯ', 'CONNECTION ERROR')}</span>
                       )}
                     </div>
                   </div>
 
                   <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
-                    <div className="text-[10px] uppercase font-black text-slate-500">Total Datasets</div>
+                    <div className="text-[10px] uppercase font-black text-slate-500">{loc('Ma’lumot to‘plamlari', 'Наборы данных', 'Total Datasets')}</div>
                     <div className="text-xs font-black text-white mt-1">
-                      {Object.keys(readModelHealth.coreDatasets || {}).length} Models
+                      {Object.keys(readModelHealth.coreDatasets || {}).length} {loc('model', 'моделей', 'models')}
                     </div>
                   </div>
 
                   <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
-                    <div className="text-[10px] uppercase font-black text-slate-500">Last Rebuild</div>
+                    <div className="text-[10px] uppercase font-black text-slate-500">{loc('Oxirgi qayta tuzish', 'Последняя перестройка', 'Last Rebuild')}</div>
                     <div className="text-xs font-mono font-bold text-slate-300 mt-1 truncate">
                       {readModelHealth.lastSnapshotAt
                         ? new Date(readModelHealth.lastSnapshotAt).toLocaleTimeString()
-                        : 'Never'}
+                        : loc('Hali bo‘lmagan', 'Не было', 'Never')}
                     </div>
                   </div>
                 </div>
 
                 {readModelHealth.recommendation && (
                   <div className="text-[11px] text-slate-400 bg-slate-950/40 px-3 py-2 rounded-lg border border-white/[0.04]">
-                    <span className="font-bold text-slate-300">Recommendation:</span> {readModelHealth.recommendation}
+                    <span className="font-bold text-slate-300">{loc('Tavsiya', 'Рекомендация', 'Recommendation')}:</span> {readModelHealth.recommendation}
                   </div>
                 )}
 
@@ -2709,12 +2710,12 @@ export const AdminView: React.FC = () => {
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="border-b border-white/[0.08] text-[10px] uppercase font-black text-slate-400 bg-slate-950/60">
-                        <th className="p-2.5">Dataset</th>
-                        <th className="p-2.5">Redis Key</th>
-                        <th className="p-2.5">Fresh Cache</th>
-                        <th className="p-2.5">LKG Snapshot</th>
-                        <th className="p-2.5">Snapshot age</th>
-                        <th className="p-2.5">State</th>
+                        <th className="p-2.5">{loc('To‘plam', 'Набор', 'Dataset')}</th>
+                        <th className="p-2.5">Redis {loc('kaliti', 'ключ', 'key')}</th>
+                        <th className="p-2.5">{loc('Yangi kesh', 'Свежий кеш', 'Fresh Cache')}</th>
+                        <th className="p-2.5">{loc('Zaxira nusxa', 'Резервный снимок', 'Fallback Snapshot')}</th>
+                        <th className="p-2.5">{loc('Nusxa yoshi', 'Возраст снимка', 'Snapshot age')}</th>
+                        <th className="p-2.5">{loc('Holat', 'Состояние', 'State')}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/[0.04] bg-slate-950/30 font-mono text-[11px]">
@@ -2725,19 +2726,19 @@ export const AdminView: React.FC = () => {
                           <td className="p-2.5">
                             {ds.hasFresh ? (
                               <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                                FRESH
+                                {loc('YANGI', 'СВЕЖИЙ', 'FRESH')}
                               </span>
                             ) : (
-                              <span className="text-slate-600 text-[10px]">expired</span>
+                              <span className="text-slate-600 text-[10px]">{loc('muddati o‘tgan', 'истёк', 'expired')}</span>
                             )}
                           </td>
                           <td className="p-2.5">
                             {ds.hasLkg ? (
                               <span className="text-sky-400 font-bold">
-                                YES <span className="text-slate-500 text-[10px]">({ds.actualCount} yozuv)</span>
+                                {loc('BOR', 'ЕСТЬ', 'YES')} <span className="text-slate-500 text-[10px]">({ds.actualCount} {loc('yozuv', 'записей', 'records')})</span>
                               </span>
                             ) : (
-                              <span className="text-rose-400 text-[10px]">MISSING</span>
+                              <span className="text-rose-400 text-[10px]">{loc('YO‘Q', 'НЕТ', 'MISSING')}</span>
                             )}
                           </td>
                           <td className="p-2.5">
@@ -2746,19 +2747,19 @@ export const AdminView: React.FC = () => {
                           <td className="p-2.5">
                             {ds.isDirty ? (
                               <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">
-                                DIRTY
+                                {loc('YANGILANISHI KERAK', 'ТРЕБУЕТ ОБНОВЛЕНИЯ', 'DIRTY')}
                               </span>
                             ) : ds.hasFresh ? (
                               <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                                FRESH
+                                {loc('YANGI', 'СВЕЖИЙ', 'FRESH')}
                               </span>
                             ) : ds.hasLkg ? (
                               <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-sky-500/10 text-sky-400 border border-sky-500/30">
-                                LKG STALE
+                                {loc('ESKI ZAXIRA', 'УСТАРЕВШИЙ СНИМОК', 'LKG STALE')}
                               </span>
                             ) : (
                               <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/30">
-                                UNWARMED
+                                {loc('TAYYORLANMAGAN', 'НЕ ЗАГРУЖЕН', 'UNWARMED')}
                               </span>
                             )}
                           </td>
@@ -2769,7 +2770,7 @@ export const AdminView: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <div className="text-xs text-slate-500 py-4 text-center">Loading read-model status...</div>
+              <div className="text-xs text-slate-500 py-4 text-center">{loc('O‘qish modeli holati yuklanmoqda…', 'Загрузка состояния модели чтения…', 'Loading read-model status...')}</div>
             )}
           </div>
 
@@ -2777,18 +2778,18 @@ export const AdminView: React.FC = () => {
           <div className="glass-panel p-4 space-y-3">
             <h3 className="text-xs font-black uppercase tracking-wider text-slate-300 flex items-center gap-2">
               <FileText className="w-4 h-4 text-amber-400" />
-              <span>Tamper-Evident Administrative Audit Log</span>
+              <span>{loc('Admin amallari auditi', 'Журнал действий администраторов', 'Administrative Audit Log')}</span>
             </h3>
 
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-white/[0.08] text-[10px] uppercase font-black text-slate-400 bg-slate-950/40">
-                    <th className="p-2.5">Time</th>
-                    <th className="p-2.5">Actor</th>
-                    <th className="p-2.5">Action</th>
-                    <th className="p-2.5">Target Entity</th>
-                    <th className="p-2.5">Notes</th>
+                    <th className="p-2.5">{loc('Vaqt', 'Время', 'Time')}</th>
+                    <th className="p-2.5">{loc('Bajaruvchi', 'Исполнитель', 'Actor')}</th>
+                    <th className="p-2.5">{loc('Amal', 'Действие', 'Action')}</th>
+                    <th className="p-2.5">{loc('Nishon', 'Объект', 'Target')}</th>
+                    <th className="p-2.5">{loc('Izoh', 'Заметки', 'Notes')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/[0.04]">
