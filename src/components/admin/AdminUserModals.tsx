@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User } from '../../types';
 import { api } from '../../lib/api';
+import { useI18n } from '../../i18n';
 import {
   X,
   Shield,
@@ -33,8 +34,14 @@ export const AdminUserDetailModal: React.FC<UserDetailModalProps> = ({
   onToggleAdmin,
   onToggleSuspend,
 }) => {
+  const { t, language } = useI18n();
   const [detailData, setDetailData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const copy = {
+    uz: { player: 'O‘yinchi', suspended: 'Cheklangan', active: 'Faol hisob', none: 'Yo‘q', firstName: 'Ism', lastName: 'Familiya', joined: 'Ro‘yxatdan o‘tgan', club: 'Faol klub', submissions: 'Natija yuborishlari', noSubmissions: 'Bu o‘yinchi hali natija yubormagan.', score: 'Hisob', actions: 'Foydalanuvchiga oid admin amallari', noActions: 'Bu hisobda admin o‘zgarishlari qayd etilmagan.' },
+    ru: { player: 'Игрок', suspended: 'Ограничен', active: 'Активный аккаунт', none: 'Нет', firstName: 'Имя', lastName: 'Фамилия', joined: 'Дата регистрации', club: 'Активный клуб', submissions: 'Отправленные результаты', noSubmissions: 'Этот игрок ещё не отправлял результаты.', score: 'Счёт', actions: 'Действия администраторов по игроку', noActions: 'Изменений администраторов для этого аккаунта нет.' },
+    en: { player: 'Player', suspended: 'Suspended', active: 'Active Account', none: 'None', firstName: 'First Name', lastName: 'Last Name', joined: 'Joined', club: 'Active Club', submissions: 'Result Submissions', noSubmissions: 'No score submissions recorded for this player yet.', score: 'Score', actions: 'Administrative Actions Related to User', noActions: 'No admin modifications logged for this account.' },
+  }[language];
 
   useEffect(() => {
     if (!isOpen || !user) return;
@@ -68,7 +75,7 @@ export const AdminUserDetailModal: React.FC<UserDetailModalProps> = ({
               <UserIcon className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-sm font-black text-white">User Profile & Account Inspection</h3>
+              <h3 className="text-sm font-black text-white">{t.adminUserInspection}</h3>
               <p className="text-[10px] text-slate-400">@{user.username || 'unknown'} • ID: {user.id}</p>
             </div>
           </div>
@@ -83,7 +90,7 @@ export const AdminUserDetailModal: React.FC<UserDetailModalProps> = ({
         {loading ? (
           <div className="py-12 flex flex-col items-center justify-center gap-2 text-slate-400 text-xs">
             <Loader2 className="w-6 h-6 animate-spin text-emerald-400" />
-            <span>Loading user profile & history...</span>
+            <span>{t.adminLoadingUserHistory}</span>
           </div>
         ) : (
           <div className="space-y-4 text-xs">
@@ -94,7 +101,7 @@ export const AdminUserDetailModal: React.FC<UserDetailModalProps> = ({
                   ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
                   : 'bg-slate-800 text-slate-400 border-slate-700'
               }`}>
-                {user.isAdmin ? 'Administrator' : 'Player'}
+                {user.isAdmin ? 'Administrator' : copy.player}
               </span>
 
               <span className={`px-2.5 py-1 rounded-lg font-black text-[10px] uppercase border ${
@@ -102,34 +109,34 @@ export const AdminUserDetailModal: React.FC<UserDetailModalProps> = ({
                   ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
                   : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
               }`}>
-                {user.isSuspended ? 'Suspended' : 'Active Account'}
+                {user.isSuspended ? copy.suspended : copy.active}
               </span>
 
               <span className="text-slate-400 text-[11px] ml-auto">
-                Telegram: <strong className="text-white font-mono">{user.telegramId || 'None'}</strong>
+                Telegram: <strong className="text-white font-mono">{user.telegramId || copy.none}</strong>
               </span>
             </div>
 
             {/* Profile Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <div className="p-2.5 rounded-xl bg-slate-900/40 border border-slate-800">
-                <span className="text-[10px] text-slate-500 uppercase block font-bold">First Name</span>
+                <span className="text-[10px] text-slate-500 uppercase block font-bold">{copy.firstName}</span>
                 <span className="text-xs font-bold text-white">{user.firstName || '—'}</span>
               </div>
               <div className="p-2.5 rounded-xl bg-slate-900/40 border border-slate-800">
-                <span className="text-[10px] text-slate-500 uppercase block font-bold">Last Name</span>
+                <span className="text-[10px] text-slate-500 uppercase block font-bold">{copy.lastName}</span>
                 <span className="text-xs font-bold text-white">{user.lastName || '—'}</span>
               </div>
               <div className="p-2.5 rounded-xl bg-slate-900/40 border border-slate-800">
-                <span className="text-[10px] text-slate-500 uppercase block font-bold">Joined</span>
+                <span className="text-[10px] text-slate-500 uppercase block font-bold">{copy.joined}</span>
                 <span className="text-xs font-bold text-white">
                   {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '—'}
                 </span>
               </div>
               <div className="p-2.5 rounded-xl bg-slate-900/40 border border-slate-800">
-                <span className="text-[10px] text-slate-500 uppercase block font-bold">Active Club</span>
+                <span className="text-[10px] text-slate-500 uppercase block font-bold">{copy.club}</span>
                 <span className="text-xs font-bold text-emerald-400">
-                  {detailData?.activeOccupancy?.clubId || detailData?.user?.clubId || 'None'}
+                  {detailData?.activeOccupancy?.clubId || detailData?.user?.clubId || copy.none}
                 </span>
               </div>
             </div>
@@ -139,13 +146,13 @@ export const AdminUserDetailModal: React.FC<UserDetailModalProps> = ({
               <div className="flex items-center justify-between mb-1.5">
                 <h4 className="text-xs font-black text-white flex items-center gap-1.5">
                   <FileText className="w-3.5 h-3.5 text-emerald-400" />
-                  Result Submissions ({detailData?.submissions?.length ?? 0})
+                  {copy.submissions} ({detailData?.submissions?.length ?? 0})
                 </h4>
               </div>
 
               {detailData?.submissions?.length === 0 ? (
                 <div className="p-3 rounded-xl bg-slate-900/30 border border-slate-800/80 text-slate-500 text-center text-[11px]">
-                  No score submissions recorded for this player yet.
+                  {copy.noSubmissions}
                 </div>
               ) : (
                 <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
@@ -157,7 +164,7 @@ export const AdminUserDetailModal: React.FC<UserDetailModalProps> = ({
                       <div>
                         <span className="font-mono text-slate-400 text-[10px] mr-2">{sub.fixtureId}</span>
                         <span className="font-bold text-white">
-                          Score: {sub.homeScore} - {sub.awayScore}
+                          {copy.score}: {sub.homeScore} - {sub.awayScore}
                         </span>
                       </div>
                       <span className="text-[10px] text-slate-500 font-mono">
@@ -173,11 +180,11 @@ export const AdminUserDetailModal: React.FC<UserDetailModalProps> = ({
             <div>
               <h4 className="text-xs font-black text-white flex items-center gap-1.5 mb-1.5">
                 <Activity className="w-3.5 h-3.5 text-amber-400" />
-                Administrative Actions Related to User ({detailData?.auditLogs?.length ?? 0})
+                {copy.actions} ({detailData?.auditLogs?.length ?? 0})
               </h4>
               {detailData?.auditLogs?.length === 0 ? (
                 <div className="p-3 rounded-xl bg-slate-900/30 border border-slate-800/80 text-slate-500 text-center text-[11px]">
-                  No admin modifications logged for this account.
+                  {copy.noActions}
                 </div>
               ) : (
                 <div className="max-h-32 overflow-y-auto space-y-1 pr-1">
@@ -215,7 +222,7 @@ export const AdminUserDetailModal: React.FC<UserDetailModalProps> = ({
                   }`}
                 >
                   <Shield className="w-3.5 h-3.5" />
-                  {user.isAdmin ? 'Demote from Admin' : 'Promote to Admin'}
+                  {user.isAdmin ? t.adminDemote : t.adminPromote}
                 </button>
 
                 <button
@@ -231,7 +238,7 @@ export const AdminUserDetailModal: React.FC<UserDetailModalProps> = ({
                   }`}
                 >
                   <Ban className="w-3.5 h-3.5" />
-                  {user.isSuspended ? 'Lift Suspension' : 'Suspend User'}
+                  {user.isSuspended ? t.adminLiftSuspension : t.adminSuspend}
                 </button>
               </div>
 
@@ -240,7 +247,7 @@ export const AdminUserDetailModal: React.FC<UserDetailModalProps> = ({
                 onClick={onClose}
                 className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold"
               >
-                Close
+                {t.close}
               </button>
             </div>
           </div>
@@ -263,6 +270,7 @@ export const AdminSetRoleModal: React.FC<SetRoleModalProps> = ({
   onClose,
   onConfirm,
 }) => {
+  const { t } = useI18n();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const targetIsAdmin = !user.isAdmin;
 
@@ -290,9 +298,9 @@ export const AdminSetRoleModal: React.FC<SetRoleModalProps> = ({
             </div>
             <div>
               <h3 className="text-sm font-black text-white">
-                {targetIsAdmin ? 'Promote to Administrator' : 'Demote from Administrator'}
+                {targetIsAdmin ? t.adminPromote : t.adminDemote}
               </h3>
-              <p className="text-[10px] text-slate-400">Manage user access privileges</p>
+              <p className="text-[10px] text-slate-400">{t.adminAccessControl}</p>
             </div>
           </div>
           <button
@@ -311,9 +319,7 @@ export const AdminSetRoleModal: React.FC<SetRoleModalProps> = ({
         </div>
 
         <p className="text-xs text-slate-300 leading-relaxed">
-          {targetIsAdmin
-            ? 'Granting administrator status will allow this user full management of matches, results, standings, disputes, club assignments, and player suspensions.'
-            : 'Demoting this user will revoke access to the admin management console. The system will prevent removal if this is the last active administrator.'}
+          {targetIsAdmin ? t.adminGrantAccessHint : t.adminRevokeAccessHint}
         </p>
 
         <div className="flex items-center justify-end gap-2 pt-2">
@@ -323,7 +329,7 @@ export const AdminSetRoleModal: React.FC<SetRoleModalProps> = ({
             disabled={isSubmitting}
             className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold"
           >
-            Cancel
+            {t.cancel}
           </button>
           <button
             type="button"
@@ -336,7 +342,7 @@ export const AdminSetRoleModal: React.FC<SetRoleModalProps> = ({
             }`}
           >
             {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-            {targetIsAdmin ? 'Confirm Promotion' : 'Confirm Demotion'}
+            {targetIsAdmin ? t.adminConfirmPromotion : t.adminConfirmDemotion}
           </button>
         </div>
       </div>
@@ -357,6 +363,7 @@ export const AdminSuspendModal: React.FC<SuspendModalProps> = ({
   onClose,
   onConfirm,
 }) => {
+  const { t } = useI18n();
   const [reason, setReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const targetSuspended = !user.isSuspended;
@@ -386,9 +393,9 @@ export const AdminSuspendModal: React.FC<SuspendModalProps> = ({
             </div>
             <div>
               <h3 className="text-sm font-black text-white">
-                {targetSuspended ? 'Suspend User Account' : 'Lift Account Suspension'}
+                {targetSuspended ? t.adminSuspend : t.adminLiftSuspension}
               </h3>
-              <p className="text-[10px] text-slate-400">Disciplinary and access control</p>
+              <p className="text-[10px] text-slate-400">{t.adminSuspensionHint}</p>
             </div>
           </div>
           <button
@@ -409,12 +416,12 @@ export const AdminSuspendModal: React.FC<SuspendModalProps> = ({
         <form onSubmit={handleSubmit} className="space-y-3">
           {targetSuspended && (
             <div>
-              <label className="text-xs font-bold text-slate-300 block mb-1">Reason for Suspension (Optional)</label>
+              <label className="text-xs font-bold text-slate-300 block mb-1">{t.adminSuspendReason}</label>
               <input
                 type="text"
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                placeholder="e.g. Unsportsmanlike conduct / repeated no-shows"
+                placeholder={t.adminSuspendExample}
                 className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-rose-500"
               />
             </div>
@@ -427,7 +434,7 @@ export const AdminSuspendModal: React.FC<SuspendModalProps> = ({
               disabled={isSubmitting}
               className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold"
             >
-              Cancel
+              {t.cancel}
             </button>
             <button
               type="submit"
@@ -439,7 +446,7 @@ export const AdminSuspendModal: React.FC<SuspendModalProps> = ({
               }`}
             >
               {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              {targetSuspended ? 'Confirm Suspension' : 'Lift Suspension'}
+              {targetSuspended ? t.adminConfirmSuspension : t.adminLiftSuspension}
             </button>
           </div>
         </form>
@@ -461,6 +468,7 @@ export const AdminDeleteUserModal: React.FC<DeleteUserModalProps> = ({
   onClose,
   onConfirm,
 }) => {
+  const { t } = useI18n();
   const [reason, setReason] = useState('');
   const [confirmText, setConfirmText] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
@@ -492,8 +500,8 @@ export const AdminDeleteUserModal: React.FC<DeleteUserModalProps> = ({
               <Trash2 className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-sm font-black text-white">Safely Delete User Account</h3>
-              <p className="text-[10px] text-rose-400 font-bold">Releases claimed clubs without breaking match data</p>
+              <h3 className="text-sm font-black text-white">{t.adminDeleteUser}</h3>
+              <p className="text-[10px] text-rose-400 font-bold">{t.adminDeleteUserHint}</p>
             </div>
           </div>
           <button
@@ -514,18 +522,18 @@ export const AdminDeleteUserModal: React.FC<DeleteUserModalProps> = ({
         <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-[11px] text-slate-300 space-y-1">
           <div className="flex items-center gap-1 text-emerald-400 font-bold">
             <CheckCircle2 className="w-3.5 h-3.5" />
-            Safe Deletion Guarantee:
+            {t.adminSafeDeletion}:
           </div>
           <p className="text-slate-400">
-            • Occupied clubs will be made available to other players.<br />
-            • Existing fixtures and completed match scores remain intact.<br />
-            • The last administrator cannot be deleted.
+            • {t.adminReleaseClubsHint}<br />
+            • {t.adminPreserveMatchesHint}<br />
+            • {t.adminLastAdminHint}
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label className="text-xs font-bold text-slate-300 block mb-1">Reason (Optional)</label>
+            <label className="text-xs font-bold text-slate-300 block mb-1">{t.adminOptionalReason}</label>
             <input
               type="text"
               value={reason}
@@ -537,7 +545,7 @@ export const AdminDeleteUserModal: React.FC<DeleteUserModalProps> = ({
 
           <div>
             <label className="text-xs font-bold text-slate-300 block mb-1">
-              Type <span className="font-mono text-rose-400 font-black">@{user.username || 'CONFIRM'}</span> to confirm:
+              {t.adminTypeToConfirm}: <span className="font-mono text-rose-400 font-black">{user.username || 'CONFIRM'}</span>
             </label>
             <input
               type="text"
@@ -556,7 +564,7 @@ export const AdminDeleteUserModal: React.FC<DeleteUserModalProps> = ({
               disabled={isDeleting}
               className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold"
             >
-              Cancel
+              {t.cancel}
             </button>
             <button
               type="submit"
@@ -564,7 +572,7 @@ export const AdminDeleteUserModal: React.FC<DeleteUserModalProps> = ({
               className="px-5 py-2 bg-rose-500 hover:bg-rose-400 disabled:opacity-50 disabled:hover:bg-rose-500 text-white rounded-xl text-xs font-black flex items-center gap-1.5"
             >
               {isDeleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              Delete User
+              {t.adminDeleteUser}
             </button>
           </div>
         </form>
