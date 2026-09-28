@@ -57,27 +57,6 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
   const [clubs, setClubs] = useState<Club[]>([]);
   const [premiumActive, setPremiumActive] = useState(false);
   const [premiumStatusReady, setPremiumStatusReady] = useState(false);
-  const [pendingClubId, setPendingClubId] = useState<string | null>(null);
-  const pendingClubRef = useRef<string | null>(null);
-  const refreshUserDataRef = useRef(refreshUserData);
-  refreshUserDataRef.current = refreshUserData;
-  useEffect(() => {
-    if (!user?.id) return;
-    let active = true;
-    const check = async () => {
-      try {
-        const { pendingClaim } = await api.getPendingClubClaim(activeSeasonId);
-        if (!active) return;
-        const previous = pendingClubRef.current;
-        pendingClubRef.current = pendingClaim?.clubId || null;
-        setPendingClubId(pendingClubRef.current);
-        if (previous && !pendingClaim) await refreshUserDataRef.current();
-      } catch { /* Keep the previous pending state until status is available. */ }
-    };
-    void check();
-    const timer = window.setInterval(check, 30000);
-    return () => { active = false; window.clearInterval(timer); };
-  }, [user?.id, activeSeasonId]);
   useEffect(() => {
     let mounted = true;
     setPremiumStatusReady(false);
@@ -274,11 +253,6 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
       setClubToClaim(null);
       return;
     }
-    if (pendingClubId) {
-      showToast('Avvalgi klub so‘rovingiz hali tasdiqlanmoqda.', 'error');
-      setClubToClaim(null);
-      return;
-    }
     if (ownedClubs.some((owned) => owned.leagueId === club.leagueId) || ownedClubs.length >= (premiumActive ? 2 : 1) || !premiumStatusReady) {
       showToast(ownedClubs.some((owned) => owned.leagueId === club.leagueId) ? 'Bitta ligadan faqat bitta klub tanlash mumkin.' : t.alreadyHaveClubMessage, 'error');
       setClubToClaim(null);
@@ -287,14 +261,6 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
     setIsClaiming(true);
     try {
       const res = await api.claimClub(clubId, activeSeasonId);
-      if (res.pending) {
-        pendingClubRef.current = clubId;
-        setPendingClubId(clubId);
-        setClubToClaim(null);
-        setMembershipModal(null);
-        showToast(res.message, 'success');
-        return;
-      }
       confetti({
         particleCount: 100,
         spread: 80,
@@ -590,12 +556,6 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
         </div>
       )}
 
-      {pendingClubId && (
-        <div role="status" className="glass-card border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-          Klub so‘rovi saqlandi. Baza tiklangach tasdiqlanadi; hozircha klub sizga biriktirilmagan.
-        </div>
-      )}
-
       {/* 3. Sub-Navigation Tabs: Clubs | Matches | Standings */}
       <div className="flex items-center gap-2 border-b border-white/[0.08] pb-2 overflow-x-auto scrollbar-none">
         <button
@@ -827,7 +787,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                             <span className="font-semibold text-slate-300 truncate">{ownerInfo.displayText}</span>
                           )}
                         </div>
-                      ) : pendingClubId || !premiumStatusReady || ownedClubs.some((owned) => owned.leagueId === club.leagueId) || ownedClubs.length >= (premiumActive ? 2 : 1) ? (
+                      ) : !premiumStatusReady || ownedClubs.some((owned) => owned.leagueId === club.leagueId) || ownedClubs.length >= (premiumActive ? 2 : 1) ? (
                         <button
                           disabled={true}
                           className="w-full py-2 glass-card text-slate-500 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-not-allowed opacity-75 min-h-[38px]"
