@@ -13,9 +13,9 @@ interface HeaderProps {
 export type AppTheme = 'coral' | 'mint' | 'blue' | 'dark';
 
 const themeOptions: Array<{ id: AppTheme; label: string; swatch: string }> = [
-  { id: 'coral', label: 'Coral', swatch: '#f46f6f' },
-  { id: 'mint', label: 'Mint', swatch: '#16b890' },
-  { id: 'blue', label: 'Blue', swatch: '#4f7cff' },
+  { id: 'coral', label: 'Coral', swatch: '#c94860' },
+  { id: 'mint', label: 'Mint', swatch: '#087f66' },
+  { id: 'blue', label: 'Blue', swatch: '#355dcc' },
   { id: 'dark', label: 'Dark', swatch: '#182033' },
 ];
 
@@ -102,10 +102,17 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNotifications, onOpenProfi
       <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 h-13 sm:h-15 flex items-center justify-between gap-2 sm:gap-4">
         {/* Brand & Logo */}
         <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
-          <div className={`preview-brand-logo shrink-0 ${user?.isAdmin ? 'preview-brand-mark' : ''}`}>
-            <img className="preview-logo-dark" src="/efluz-logo.png" alt="EFL UZ" />
-            {user?.isAdmin && <img className="preview-logo-light" src="/efluz-logo-light.png" alt="" aria-hidden="true" />}
-          </div>
+          {user?.isAdmin ? (
+            <div className="preview-brand-logo shrink-0">
+              <img className="preview-logo-dark" src="/efluz-logo.png" alt="EFL UZ" />
+              <img className="preview-logo-light" src="/efluz-logo-light.png" alt="" aria-hidden="true" />
+            </div>
+          ) : (
+            <>
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-emerald-500 flex items-center justify-center text-slate-950 font-black text-base sm:text-lg tracking-tighter shrink-0">eF</div>
+              <span className="font-black text-base sm:text-lg tracking-tight text-white truncate">EFL UZ</span>
+            </>
+          )}
           <div className="flex items-center gap-2 min-w-0">
             <span className="hidden sm:inline-block px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
               PRO LEAGUE
