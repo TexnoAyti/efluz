@@ -249,8 +249,8 @@ export const AdminDomesticCupsTab: React.FC = () => {
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400"><Trophy className="w-5 h-5" /></div>
           <div>
-            <h3 className="font-black text-white">Domestic Cup Control Center</h3>
-            <p className="text-[11px] text-slate-400">Seeded draw • automatic winner progression • round locks • bracket health</p>
+            <h3 className="font-black text-white">Milliy kuboklarni boshqarish markazi</h3>
+            <p className="text-[11px] text-slate-400">Qur’a • g‘oliblarning avtomatik keyingi bosqichga o‘tishi • tur qulflari • bracket holati</p>
           </div>
         </div>
         <button onClick={() => loadCup()} className="px-3 py-2 rounded-xl bg-slate-800 text-slate-200 text-xs font-bold flex items-center gap-2 self-start lg:self-auto">
