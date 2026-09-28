@@ -372,6 +372,11 @@
 .efl-preview:not(.theme-dark) main[data-preview-page="my-club"] .glass-panel [class*="bg-slate-950"] { border-color: var(--preview-border); }
 
 /* Matches: neutral score blocks and result controls. */
+.efl-preview main[data-preview-page="my-matches"] .preview-season-roadmap .preview-roadmap-locked {
+  opacity: 1;
+  background: var(--preview-raised);
+  border-color: var(--preview-border);
+}
 .efl-preview:not(.theme-dark) main[data-preview-page="my-matches"] .preview-match-center .text-white { color: var(--preview-ink); }
 .efl-preview:not(.theme-dark) main[data-preview-page="my-matches"] .preview-match-center [class*="bg-slate-950"] { background: var(--preview-panel); }
 .efl-preview:not(.theme-dark) main[data-preview-page="my-matches"] .glass-panel[class*="border-rose-"] { background: #fff0f1; }
