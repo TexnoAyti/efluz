@@ -183,6 +183,41 @@ export interface Translations {
   adminTelegramBot: string;
   adminPlayers: string;
   adminSystemDiagnostics: string;
+  adminResetResult: string;
+  adminResetResultHint: string;
+  adminCurrentScore: string;
+  adminDeleteSubmissionsHint: string;
+  adminReasonNotes: string;
+  adminResetReasonExample: string;
+  adminStandingsRecalculated: string;
+  adminDeleteFixture: string;
+  adminDangerousAction: string;
+  adminDeleteFixtureReason: string;
+  adminDeleteFixtureExample: string;
+  adminTypeToConfirm: string;
+  adminDeleteFixtureForever: string;
+  adminUserInspection: string;
+  adminLoadingUserHistory: string;
+  adminDeleteUser: string;
+  adminDeleteUserHint: string;
+  adminSafeDeletion: string;
+  adminReleaseClubsHint: string;
+  adminPreserveMatchesHint: string;
+  adminLastAdminHint: string;
+  adminOptionalReason: string;
+  adminPromote: string;
+  adminDemote: string;
+  adminGrantAccessHint: string;
+  adminRevokeAccessHint: string;
+  adminAccessControl: string;
+  adminSuspend: string;
+  adminLiftSuspension: string;
+  adminSuspensionHint: string;
+  adminSuspendReason: string;
+  adminSuspendExample: string;
+  adminConfirmPromotion: string;
+  adminConfirmDemotion: string;
+  adminConfirmSuspension: string;
   roadmapLeague19: string;
   roadmapLeague19Desc: string;
   roadmapDomesticCupsDesc: string;
@@ -398,6 +433,41 @@ export const translations: Record<Language, Translations> = {
     adminTelegramBot: 'Telegram bot',
     adminPlayers: 'O‘yinchilar',
     adminSystemDiagnostics: 'Tizim diagnostikasi',
+    adminResetResult: 'O‘yin natijasini tiklash',
+    adminResetResultHint: 'Hisobni tozalab, o‘yinni rejalashtirilgan holatga qaytarish',
+    adminCurrentScore: 'Joriy hisob',
+    adminDeleteSubmissionsHint: 'Ushbu o‘yinga yuborilgan barcha hisoblarni ham o‘chirish',
+    adminReasonNotes: 'Sabab / izoh',
+    adminResetReasonExample: 'Masalan: natija xato kiritilgan; o‘yin qayta belgilangan',
+    adminStandingsRecalculated: 'Bu o‘yinning ochko va gollari chiqarilib, jadval avtomatik qayta hisoblanadi.',
+    adminDeleteFixture: 'Uchrashuvni o‘chirish',
+    adminDangerousAction: 'Xavfli administrator amali',
+    adminDeleteFixtureReason: 'O‘chirish sababi (majburiy)',
+    adminDeleteFixtureExample: 'Masalan: takroriy test uchrashuvi',
+    adminTypeToConfirm: 'Tasdiqlash uchun kiriting',
+    adminDeleteFixtureForever: 'Uchrashuvni butunlay o‘chirish',
+    adminUserInspection: 'Foydalanuvchi profili va hisobi',
+    adminLoadingUserHistory: 'Foydalanuvchi profili va tarixi yuklanmoqda...',
+    adminDeleteUser: 'Foydalanuvchini o‘chirish',
+    adminDeleteUserHint: 'Klublar bo‘shaydi, o‘yin ma’lumotlari saqlanadi',
+    adminSafeDeletion: 'O‘chirish kafolatlari',
+    adminReleaseClubsHint: 'Band qilingan klublar boshqa o‘yinchilarga ochiladi.',
+    adminPreserveMatchesHint: 'Mavjud uchrashuvlar va tasdiqlangan hisoblar saqlanadi.',
+    adminLastAdminHint: 'Oxirgi administratorni o‘chirib bo‘lmaydi.',
+    adminOptionalReason: 'Sabab (ixtiyoriy)',
+    adminPromote: 'Administrator etib tayinlash',
+    adminDemote: 'Administrator huquqini olib tashlash',
+    adminGrantAccessHint: 'Administrator o‘yinlar, natijalar, jadval, bahslar, klublar va foydalanuvchilarni boshqara oladi.',
+    adminRevokeAccessHint: 'Foydalanuvchining admin paneliga kirish huquqi olib tashlanadi. Oxirgi administratorni olib tashlab bo‘lmaydi.',
+    adminAccessControl: 'Foydalanuvchi huquqlarini boshqarish',
+    adminSuspend: 'Foydalanuvchini cheklash',
+    adminLiftSuspension: 'Cheklovni olib tashlash',
+    adminSuspensionHint: 'Intizom va kirish huquqini boshqarish',
+    adminSuspendReason: 'Cheklash sababi (ixtiyoriy)',
+    adminSuspendExample: 'Masalan: sportga zid xatti-harakat yoki o‘yinga kelmaslik',
+    adminConfirmPromotion: 'Tayinlashni tasdiqlash',
+    adminConfirmDemotion: 'Huquqni olib tashlashni tasdiqlash',
+    adminConfirmSuspension: 'Cheklashni tasdiqlash',
     roadmapLeague19: 'Liga 1–9-turlar',
     roadmapLeague19Desc: '1-turdan keyin navbatdagi tur ochiladi; 9-turdan keyin kuboklar.',
     roadmapDomesticCupsDesc: '5 ta milliy kubok bosqichi.',
@@ -610,6 +680,41 @@ export const translations: Record<Language, Translations> = {
     adminTelegramBot: 'Telegram-бот',
     adminPlayers: 'Игроки',
     adminSystemDiagnostics: 'Диагностика системы',
+    adminResetResult: 'Сбросить результат матча',
+    adminResetResultHint: 'Очистить счёт и вернуть матч в запланированное состояние',
+    adminCurrentScore: 'Текущий счёт',
+    adminDeleteSubmissionsHint: 'Также удалить все отправленные счета этого матча',
+    adminReasonNotes: 'Причина / примечание',
+    adminResetReasonExample: 'Например: счёт введён ошибочно; матч перенесён',
+    adminStandingsRecalculated: 'Очки и голы этого матча будут исключены из таблицы автоматически.',
+    adminDeleteFixture: 'Удалить матч',
+    adminDangerousAction: 'Опасное действие администратора',
+    adminDeleteFixtureReason: 'Причина удаления (обязательно)',
+    adminDeleteFixtureExample: 'Например: дублирующий тестовый матч',
+    adminTypeToConfirm: 'Для подтверждения введите',
+    adminDeleteFixtureForever: 'Удалить матч навсегда',
+    adminUserInspection: 'Профиль и учётная запись пользователя',
+    adminLoadingUserHistory: 'Загружаются профиль и история пользователя...',
+    adminDeleteUser: 'Удалить пользователя',
+    adminDeleteUserHint: 'Клубы освобождаются, данные матчей сохраняются',
+    adminSafeDeletion: 'Гарантии удаления',
+    adminReleaseClubsHint: 'Занятые клубы станут доступны другим игрокам.',
+    adminPreserveMatchesHint: 'Существующие матчи и подтверждённые счета сохранятся.',
+    adminLastAdminHint: 'Последнего администратора удалить нельзя.',
+    adminOptionalReason: 'Причина (необязательно)',
+    adminPromote: 'Назначить администратором',
+    adminDemote: 'Снять права администратора',
+    adminGrantAccessHint: 'Администратор может управлять матчами, результатами, таблицами, спорами, клубами и игроками.',
+    adminRevokeAccessHint: 'Доступ к панели администратора будет отозван. Последнего администратора снять нельзя.',
+    adminAccessControl: 'Управление правами пользователя',
+    adminSuspend: 'Заблокировать пользователя',
+    adminLiftSuspension: 'Снять блокировку',
+    adminSuspensionHint: 'Дисциплина и управление доступом',
+    adminSuspendReason: 'Причина блокировки (необязательно)',
+    adminSuspendExample: 'Например: неспортивное поведение или неявка на матчи',
+    adminConfirmPromotion: 'Подтвердить назначение',
+    adminConfirmDemotion: 'Подтвердить снятие прав',
+    adminConfirmSuspension: 'Подтвердить блокировку',
     roadmapLeague19: 'Лига, туры 1–9',
     roadmapLeague19Desc: 'Следующий тур открывается после завершения предыдущего; после 9-го тура — кубки.',
     roadmapDomesticCupsDesc: 'Этап национальных кубков (5 турниров).',
@@ -822,6 +927,41 @@ export const translations: Record<Language, Translations> = {
     adminTelegramBot: 'Telegram Bot',
     adminPlayers: 'Players',
     adminSystemDiagnostics: 'System Diagnostics',
+    adminResetResult: 'Reset Match Result',
+    adminResetResultHint: 'Clear scores and return the match to scheduled status',
+    adminCurrentScore: 'Current Score',
+    adminDeleteSubmissionsHint: 'Also delete all submitted scores for this match',
+    adminReasonNotes: 'Reason / Notes',
+    adminResetReasonExample: 'For example: result entered by mistake; match rescheduled',
+    adminStandingsRecalculated: 'Points and goals from this match will be removed from the standings automatically.',
+    adminDeleteFixture: 'Delete Match Fixture',
+    adminDangerousAction: 'Dangerous administrative action',
+    adminDeleteFixtureReason: 'Reason for deletion (required)',
+    adminDeleteFixtureExample: 'For example: duplicate test fixture',
+    adminTypeToConfirm: 'Type to confirm',
+    adminDeleteFixtureForever: 'Permanently Delete Fixture',
+    adminUserInspection: 'User Profile & Account Inspection',
+    adminLoadingUserHistory: 'Loading user profile and history...',
+    adminDeleteUser: 'Delete User',
+    adminDeleteUserHint: 'Claimed clubs are released while match data stays intact',
+    adminSafeDeletion: 'Safe deletion guarantees',
+    adminReleaseClubsHint: 'Claimed clubs become available to other players.',
+    adminPreserveMatchesHint: 'Existing fixtures and confirmed scores remain intact.',
+    adminLastAdminHint: 'The last administrator cannot be deleted.',
+    adminOptionalReason: 'Reason (optional)',
+    adminPromote: 'Promote to Administrator',
+    adminDemote: 'Demote from Administrator',
+    adminGrantAccessHint: 'Administrators can manage matches, results, standings, disputes, clubs, and players.',
+    adminRevokeAccessHint: 'Access to the admin console will be revoked. The last administrator cannot be demoted.',
+    adminAccessControl: 'Manage user access privileges',
+    adminSuspend: 'Suspend User Account',
+    adminLiftSuspension: 'Lift Account Suspension',
+    adminSuspensionHint: 'Disciplinary and access control',
+    adminSuspendReason: 'Reason for suspension (optional)',
+    adminSuspendExample: 'For example: unsportsmanlike conduct or repeated no-shows',
+    adminConfirmPromotion: 'Confirm Promotion',
+    adminConfirmDemotion: 'Confirm Demotion',
+    adminConfirmSuspension: 'Confirm Suspension',
     roadmapLeague19: 'League MD 1–9',
     roadmapLeague19Desc: 'The next matchday opens after the previous one; cups begin after MD9.',
     roadmapDomesticCupsDesc: 'Five domestic cup competitions.',
