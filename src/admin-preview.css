@@ -311,6 +311,14 @@
   color: var(--efl-muted);
 }
 
+/* Club switcher and responsive sports density */
+.efl-preview .efl-club-switch-btn {
+  transition: transform 180ms ease, opacity 180ms ease;
+}
+.efl-preview .efl-club-switch-btn:active {
+  transform: scale(0.95);
+}
+
 /* Motion Preferences */
 @media (prefers-reduced-motion: reduce) {
   .efl-preview * {
