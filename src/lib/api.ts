@@ -7,6 +7,7 @@ export interface ClubAdmissionStatus {
   activeLeagueId: string | null;
   leagues: { id: string; name: string }[];
   updatedAt: string | null;
+  stale?: boolean;
 }
 
 let currentDevUserId: string | null = null;
