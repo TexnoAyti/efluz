@@ -62,6 +62,7 @@ jobs:
           bun run test:match-operations-v4
           node scripts/run-isolated-test.mjs src/server/tests/premiumPrivateLabRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/premiumSecondClubRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/offlineClubClaimRegressionTest.ts
 
       - name: Install Redis test dependency
         timeout-minutes: 3

@@ -391,11 +391,11 @@ export const api = {
     return request(`/api/clubs/${clubId}?seasonId=${seasonId}`, { cacheTtlMs: 120000, skipCache });
   },
 
-  async claimClub(clubId: string, seasonId = 'season-2026-27'): Promise<{ success: boolean; message: string; club: Club }> {
+  async claimClub(clubId: string, seasonId = 'season-2026-27'): Promise<{ success: boolean; message: string; club?: Club; pending?: boolean; clubId?: string }> {
     if (!clubId || clubId === 'undefined' || clubId === 'null' || !clubId.startsWith('club-')) {
       throw new Error('INVALID_CLUB_ID: Invalid club identifier provided.');
     }
-    const res = await request<{ success: boolean; message: string; club: Club }>(`/api/clubs/${clubId}/claim`, {
+    const res = await request<{ success: boolean; message: string; club?: Club; pending?: boolean; clubId?: string }>(`/api/clubs/${clubId}/claim`, {
       method: 'POST',
       body: JSON.stringify({ seasonId }),
     });
@@ -404,6 +404,11 @@ export const api = {
     invalidateClientCache('/api/leagues');
     invalidateClientCache('/api/me');
     return res;
+  },
+
+  async getPendingClubClaim(seasonId = 'season-2026-27'):
+    Promise<{ pendingClaim: { clubId: string; status: string; lastError: string | null } | null }> {
+    return request(`/api/clubs/claim-status?seasonId=${encodeURIComponent(seasonId)}`, { skipCache: true });
   },
 
   // Competitions (Static Catalog - 30 minutes TTL)

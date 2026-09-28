@@ -1,5 +1,6 @@
 import express from 'express';
 import { timingSafeEqual } from 'node:crypto';
+import { waitUntil } from '@vercel/functions';
 import { drainNotificationQueue, scheduleNotificationQueueDrain } from './services/telegramNotificationQueue';
 import { initDatabase, queryGet, getDbFilePath } from './db';
 import { seedMissingStaticCatalog } from './db/seed';
@@ -46,19 +47,15 @@ function startBackgroundReconciliation(): void {
   syncWorkerStarted = true;
 
   setTimeout(() => {
-    if (firestoreCircuitBreaker.canExecute()) {
-      processPendingMutations().catch((err) => {
-        console.warn('[RECONCILIATION] Startup mutation sync notice:', err.message);
-      });
-    }
+    processPendingMutations().catch((err) => {
+      console.warn('[RECONCILIATION] Startup mutation sync notice:', err.message);
+    });
   }, 4000);
 
   const interval = setInterval(() => {
-    if (firestoreCircuitBreaker.canExecute()) {
-      processPendingMutations().catch((err) => {
-        console.warn('[RECONCILIATION] Periodic mutation sync notice:', err.message);
-      });
-    }
+    processPendingMutations().catch((err) => {
+      console.warn('[RECONCILIATION] Periodic mutation sync notice:', err.message);
+    });
   }, 60000);
 
   if (interval.unref) interval.unref();
@@ -128,7 +125,13 @@ export function createApp() {
     const hop = Number(req.query.hop || 0);
     if (!Number.isInteger(hop) || hop < 0 || hop > 256) { res.sendStatus(400); return; }
     try {
-      if (process.env.VERCEL === '1') { scheduleNotificationQueueDrain(hop); res.status(202).json({ accepted: true }); }
+      if (process.env.VERCEL === '1') {
+        scheduleNotificationQueueDrain(hop);
+        if (hop === 0) waitUntil(ensureDbReady().then(() => processPendingMutations()).catch((err) => {
+          console.warn('[CLAIM_REPLAY] Daily recovery deferred:', err?.message || err);
+        }));
+        res.status(202).json({ accepted: true });
+      }
       else { await drainNotificationQueue({ hop }); res.json({ drained: true }); }
     } catch { res.status(503).json({ error: 'NOTIFICATION_WORKER_UNAVAILABLE' }); }
   });
