@@ -148,6 +148,7 @@ export const Navigation: React.FC<NavigationProps> = ({
                 key={item.id}
                 id={`mobile-tab-${item.id}`}
                 onClick={() => onTabChange(item.id)}
+                aria-current={item.isActive ? 'page' : undefined}
                 className={`relative flex flex-col items-center justify-center py-1 px-1 rounded-lg transition-colors min-h-[46px] touch-manipulation select-none ${item.isActive ? 'nav-item-active' : ''} ${user?.isAdmin && item.isActive ? 'preview-nav-active' : ''} ${
                   item.isActive
                     ? 'text-emerald-400 font-bold'
@@ -156,7 +157,7 @@ export const Navigation: React.FC<NavigationProps> = ({
               >
                 <div className="relative flex items-center justify-center">
                   <div
-                    className={`p-1 rounded-md transition-colors duration-150 ${
+                    className={`glass-nav-icon p-1 rounded-md transition-colors duration-150 ${
                       item.isActive
                         ? 'text-emerald-400 bg-emerald-500/10'
                         : 'text-slate-400'
@@ -171,7 +172,7 @@ export const Navigation: React.FC<NavigationProps> = ({
                   )}
                 </div>
                 <span
-                  className={`text-[10px] mt-0.5 tracking-tight truncate max-w-[58px] leading-tight ${
+                  className={`glass-nav-label text-[10px] mt-0.5 tracking-tight truncate max-w-[68px] leading-tight ${
                     item.isActive ? 'text-emerald-400 font-bold' : 'text-slate-400 font-normal'
                   }`}
                 >
