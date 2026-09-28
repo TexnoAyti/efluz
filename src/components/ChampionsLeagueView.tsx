@@ -461,13 +461,13 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
               <div className="py-8 text-center text-slate-400 text-xs">
                 {participants.length === 0 ? (
                   <div>
-                    <p className="font-semibold text-slate-300 mb-1">No European participants qualified yet</p>
+                    <p className="font-semibold text-slate-300 mb-1">{t.noEuropeanParticipants}</p>
                     <p className="text-slate-500">
-                      Clubs earn qualification dynamically based on final domestic league standings and cup results.
+                      {t.europeanQualificationHint}
                     </p>
                   </div>
                 ) : (
-                  <p>Matches are being scheduled for qualified clubs.</p>
+                  <p>{t.matchesBeingScheduled}</p>
                 )}
               </div>
             ) : (
