@@ -184,6 +184,8 @@ export interface Translations {
   cupMatches: string;
   cupChampion: string;
   adminSectionsHint: string;
+  seasonRoadmap: string;
+  europeanQualificationHint: string;
   noEuropeanParticipants: string;
   matchesBeingScheduled: string;
   retry: string;
@@ -377,6 +379,8 @@ export const translations: Record<Language, Translations> = {
     cupMatches: 'O‘yinlar',
     cupChampion: 'Chempion',
     adminSectionsHint: 'Bo‘limlar uchun yon tomonga suring →',
+    seasonRoadmap: 'Mavsum yo‘l xaritasi',
+    europeanQualificationHint: 'Klublar ichki liga jadvali va kubok natijalari asosida saralanadi.',
     noEuropeanParticipants: 'Hozircha Yevrokubok ishtirokchilari aniqlanmagan',
     matchesBeingScheduled: 'Saralangan klublar uchun o‘yinlar rejalashtirilmoqda...',
     retry: 'Qayta urinish',
@@ -568,6 +572,8 @@ export const translations: Record<Language, Translations> = {
     cupMatches: 'Матчи',
     cupChampion: 'Чемпион',
     adminSectionsHint: 'Листайте вбок для других разделов →',
+    seasonRoadmap: 'Этапы сезона',
+    europeanQualificationHint: 'Клубы отбираются по таблицам внутренних лиг и результатам кубков.',
     noEuropeanParticipants: 'Участники еврокубков пока не определены',
     matchesBeingScheduled: 'Расписание для квалифицированных клубов формируется...',
     retry: 'Повторить',
@@ -759,6 +765,8 @@ export const translations: Record<Language, Translations> = {
     cupMatches: 'Matches',
     cupChampion: 'Champion',
     adminSectionsHint: 'Swipe sideways for more sections →',
+    seasonRoadmap: 'Season Roadmap',
+    europeanQualificationHint: 'Clubs qualify through domestic league standings and cup results.',
     noEuropeanParticipants: 'No European participants qualified yet',
     matchesBeingScheduled: 'Matches are being scheduled for qualified clubs...',
     retry: 'Retry',
