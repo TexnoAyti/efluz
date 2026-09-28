@@ -206,14 +206,16 @@ export const Navigation: React.FC<NavigationProps> = ({
                   aria-label={item.label}
                   aria-current={item.isActive ? 'page' : undefined}
                   className={`relative flex items-center justify-center w-14 h-12 rounded-2xl transition-all duration-200 active:scale-90 ${
-                    item.isActive ? 'liquid-nav-active text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                    item.isActive
+                      ? 'liquid-nav-active text-[#2563eb] dark:text-[#3b82f6]'
+                      : 'text-[#1e3a8a]/70 dark:text-[#94a3b8] hover:text-[#1e3a8a] dark:hover:text-white'
                   }`}
                 >
                   {/* Subtle liquid lens highlight behind active icon */}
                   {item.isActive && (
                     <span
                       aria-hidden="true"
-                      className="absolute inset-1 rounded-xl bg-blue-500/15 dark:bg-blue-500/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.4)] pointer-events-none"
+                      className="absolute inset-1 rounded-xl bg-[#2563eb]/10 dark:bg-[#3b82f6]/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.4)] pointer-events-none"
                     />
                   )}
 

@@ -5359,6 +5359,17 @@ function admissionStatus(seasonId, data) {
   };
 }
 async function getClubAdmissionStatus(seasonId) {
+  const pending = pendingStatusReads.get(seasonId);
+  if (pending) return pending;
+  const read = loadClubAdmissionStatus(seasonId);
+  pendingStatusReads.set(seasonId, read);
+  try {
+    return await read;
+  } finally {
+    if (pendingStatusReads.get(seasonId) === read) pendingStatusReads.delete(seasonId);
+  }
+}
+async function loadClubAdmissionStatus(seasonId) {
   const key = ReadModelKeys.clubAdmission(seasonId);
   const fresh = await redisGetFresh(key);
   if (fresh?.data) {
@@ -5385,7 +5396,7 @@ async function getClubAdmissionStatus(seasonId) {
     throw new ReadModelNotWarmedError("Club admission state is not cached and Firestore could not be read.");
   }
   try {
-    await redisSetRaw(key, { data: status, sourceVersion: `club-admission-${status.updatedAt || "disabled"}` }, 60);
+    await redisSetRaw(key, { data: status, sourceVersion: `club-admission-${status.updatedAt || "disabled"}` }, ADMISSION_CACHE_TTL_SECONDS);
   } catch (error) {
     console.warn("[CLUB_ADMISSION] Could not cache admission state:", error);
   }
@@ -5404,7 +5415,7 @@ async function advanceClubAdmission(seasonId, expectedStage, actorId) {
     return admissionStatus(seasonId, { enabled: true, stage, updatedAt });
   });
   try {
-    await redisSetRaw(ReadModelKeys.clubAdmission(seasonId), { data: status, sourceVersion: `club-admission-${status.updatedAt}` }, 60);
+    await redisSetRaw(ReadModelKeys.clubAdmission(seasonId), { data: status, sourceVersion: `club-admission-${status.updatedAt}` }, ADMISSION_CACHE_TTL_SECONDS);
   } catch (error) {
     console.warn("[CLUB_ADMISSION] Stage changed but cache update failed:", error);
   }
@@ -5416,7 +5427,7 @@ function assertClubAdmissionOpen(status, leagueId) {
     throw new ClubAdmissionConflictError(active ? `Hozir faqat ${active.name} klublari uchun qabul ochiq.` : "Bu mavsum uchun klub qabuli yakunlangan.");
   }
 }
-var CLUB_ADMISSION_LEAGUES, COLLECTION, ClubAdmissionConflict, ClubAdmissionConflictError;
+var CLUB_ADMISSION_LEAGUES, COLLECTION, ADMISSION_CACHE_TTL_SECONDS, pendingStatusReads, ClubAdmissionConflict, ClubAdmissionConflictError;
 var init_clubAdmission = __esm({
   "src/server/services/clubAdmission.ts"() {
     init_admin();
@@ -5425,6 +5436,8 @@ var init_clubAdmission = __esm({
     init_readModelStore();
     CLUB_ADMISSION_LEAGUES = SEED_LEAGUES.map(({ id, name }) => ({ id, name }));
     COLLECTION = "club_admissions";
+    ADMISSION_CACHE_TTL_SECONDS = 300;
+    pendingStatusReads = /* @__PURE__ */ new Map();
     ClubAdmissionConflict = class extends Error {
       constructor(code) {
         super(code === "ADMISSION_FINISHED" ? "Klub qabuli yakunlangan." : "Qabul bosqichi o\u2018zgargan. Sahifani yangilang.");
