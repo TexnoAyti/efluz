@@ -47,13 +47,13 @@ const AppContent: React.FC = () => {
   const [openDisputesCount, setOpenDisputesCount] = useState(0);
   const [theme, setTheme] = useState<AppTheme>(() => {
     if (typeof window === 'undefined') return 'coral';
-    const saved = window.localStorage.getItem('efluz-theme') as AppTheme | null;
-    return saved === 'coral' || saved === 'mint' || saved === 'blue' || saved === 'dark' ? saved : 'coral';
+    const saved = window.localStorage.getItem('efluz-preview-theme-v2') as AppTheme | null;
+    return saved === 'coral' || saved === 'mint' || saved === 'blue' || saved === 'dark' ? saved : 'mint';
   });
 
   const changeTheme = (nextTheme: AppTheme) => {
     setTheme(nextTheme);
-    window.localStorage.setItem('efluz-theme', nextTheme);
+    window.localStorage.setItem('efluz-preview-theme-v2', nextTheme);
   };
 
   const setActiveTab = (tab: TabType) => {
