@@ -17,6 +17,30 @@ async function run() {
   let status = await getClubAdmissionStatus(seasonId);
   assert.equal(status.enabled, false, 'existing seasons retain open selection until an admin starts stages');
 
+  // Simultaneous first loads of an uncached season should share one Firestore read.
+  const dbForConcurrentReads = getFirestoreDb();
+  const originalConcurrentCollection = dbForConcurrentReads.collection.bind(dbForConcurrentReads);
+  let admissionReads = 0;
+  dbForConcurrentReads.collection = ((name: string) => {
+    const collection = originalConcurrentCollection(name);
+    if (name !== 'club_admissions') return collection;
+    return { doc: (id: string) => {
+      const ref = collection.doc(id);
+      return { get: async () => {
+        admissionReads++;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        return ref.get();
+      } };
+    } } as any;
+  }) as any;
+  try {
+    const statuses = await Promise.all(Array.from({ length: 8 }, () => getClubAdmissionStatus('season-admission-concurrent')));
+    assert.equal(admissionReads, 1);
+    assert(statuses.every((item) => item.enabled === false));
+  } finally {
+    dbForConcurrentReads.collection = originalConcurrentCollection;
+  }
+
   status = await advanceClubAdmission(seasonId, -1, 'admin-test');
   assert.equal(status.activeLeagueId, 'league-premier-league');
   await assert.rejects(() => advanceClubAdmission(seasonId, -1, 'admin-test'), (err: any) => err.code === 'ADMISSION_STAGE_CHANGED');

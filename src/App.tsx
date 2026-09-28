@@ -114,7 +114,7 @@ const AppContent: React.FC = () => {
       {toastMessage && <div className="fixed top-14 right-4 z-50 animate-in slide-in-from-top-3 fade-in duration-200"><div className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-2xl text-xs font-bold border backdrop-blur-md ${toastMessage.type === 'success' ? 'bg-emerald-950/90 text-emerald-300 border-emerald-500/40 shadow-emerald-500/10' : toastMessage.type === 'error' ? 'bg-rose-950/90 text-rose-300 border-rose-500/40 shadow-rose-500/10' : 'bg-slate-900/95 text-slate-200 border-slate-700 shadow-slate-900/40'}`}>{toastMessage.type === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />}{toastMessage.type === 'error' && <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />}{toastMessage.type === 'info' && <Info className="w-4 h-4 text-sky-400 shrink-0" />}<span>{toastMessage.text}</span></div></div>}
       <Header theme={theme} onThemeChange={changeTheme} onOpenNotifications={() => setActiveTab('notifications')} onOpenProfile={() => setActiveTab('profile')} />
       <Navigation activeTab={currentTab} onTabChange={setActiveTab} openDisputesCount={openDisputesCount} />
-      {!isDesignPreview && <OfflineSyncBanner />}
+      {!isDesignPreview && user?.isAdmin && <OfflineSyncBanner />}
       <main data-preview-page={user?.isAdmin ? currentTab : undefined} className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-4 md:px-6 py-4 sm:py-6 min-w-0">
         {currentTab === 'my-matches' && <div className="mb-5"><SeasonLifecyclePanel seasonId={activeSeasonId} /></div>}
         {currentTab === 'my-matches' && <div className="mb-5"><MatchOperationsV4Panel /></div>}
