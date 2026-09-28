@@ -1,5 +1,7 @@
 import { getFirestoreDb } from '../firebase/admin';
+import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
 import { SEED_LEAGUES } from '../db/seed';
+import { ReadModelKeys, ReadModelNotWarmedError, redisGetFresh, redisGetLkg, redisSetRaw } from '../readModel/readModelStore';
 
 export const CLUB_ADMISSION_LEAGUES = SEED_LEAGUES.map(({ id, name }) => ({ id, name }));
 const COLLECTION = 'club_admissions';
@@ -11,6 +13,7 @@ export interface ClubAdmissionStatus {
   activeLeagueId: string | null;
   leagues: typeof CLUB_ADMISSION_LEAGUES;
   updatedAt: string | null;
+  stale?: boolean;
 }
 
 export class ClubAdmissionConflict extends Error {
@@ -37,8 +40,40 @@ export function admissionStatus(seasonId: string, data?: Record<string, unknown>
 }
 
 export async function getClubAdmissionStatus(seasonId: string): Promise<ClubAdmissionStatus> {
-  const doc = await getFirestoreDb().collection(COLLECTION).doc(seasonId).get();
-  return admissionStatus(seasonId, doc.data());
+  const key = ReadModelKeys.clubAdmission(seasonId);
+  const fresh = await redisGetFresh<ClubAdmissionStatus>(key);
+  if (fresh?.data) {
+    return { ...admissionStatus(seasonId, fresh.data as unknown as Record<string, unknown>), stale: !firestoreCircuitBreaker.isHealthy() };
+  }
+
+  const lastKnown = async () => {
+    const snapshot = await redisGetLkg<ClubAdmissionStatus>(key);
+    return snapshot?.data ? { ...admissionStatus(seasonId, snapshot.data as unknown as Record<string, unknown>), stale: true } : null;
+  };
+  if (!firestoreCircuitBreaker.canExecute()) {
+    const cached = await lastKnown();
+    if (cached) return cached;
+    throw new ReadModelNotWarmedError('Club admission state is not cached while Firestore is unavailable.');
+  }
+
+  let status: ClubAdmissionStatus;
+  try {
+    const doc = await getFirestoreDb().collection(COLLECTION).doc(seasonId).get();
+    status = admissionStatus(seasonId, doc.data());
+    firestoreCircuitBreaker.recordSuccess();
+  } catch (error) {
+    firestoreCircuitBreaker.recordFailure(error);
+    const cached = await lastKnown();
+    if (cached) return cached;
+    throw new ReadModelNotWarmedError('Club admission state is not cached and Firestore could not be read.');
+  }
+
+  try {
+    await redisSetRaw(key, { data: status, sourceVersion: `club-admission-${status.updatedAt || 'disabled'}` }, 60);
+  } catch (error) {
+    console.warn('[CLUB_ADMISSION] Could not cache admission state:', error);
+  }
+  return status;
 }
 
 // Both admin transitions and claims read the same document in Firestore transactions.
@@ -46,7 +81,7 @@ export async function getClubAdmissionStatus(seasonId: string): Promise<ClubAdmi
 export async function advanceClubAdmission(seasonId: string, expectedStage: number, actorId: string): Promise<ClubAdmissionStatus> {
   const db = getFirestoreDb();
   const ref = db.collection(COLLECTION).doc(seasonId);
-  return db.runTransaction(async (transaction) => {
+  const status = await db.runTransaction(async (transaction) => {
     const current = admissionStatus(seasonId, (await transaction.get(ref)).data());
     if (current.stage !== expectedStage) throw new ClubAdmissionConflict('ADMISSION_STAGE_CHANGED');
     if (current.stage >= CLUB_ADMISSION_LEAGUES.length) throw new ClubAdmissionConflict('ADMISSION_FINISHED');
@@ -55,6 +90,13 @@ export async function advanceClubAdmission(seasonId: string, expectedStage: numb
     transaction.set(ref, { seasonId, enabled: true, stage, updatedAt, updatedBy: actorId });
     return admissionStatus(seasonId, { enabled: true, stage, updatedAt });
   });
+  try {
+    await redisSetRaw(ReadModelKeys.clubAdmission(seasonId), { data: status, sourceVersion: `club-admission-${status.updatedAt}` }, 60);
+  } catch (error) {
+    // The Firestore transaction has committed; a cache failure must not report the mutation as failed.
+    console.warn('[CLUB_ADMISSION] Stage changed but cache update failed:', error);
+  }
+  return status;
 }
 
 export function assertClubAdmissionOpen(status: ClubAdmissionStatus, leagueId: string): void {
