@@ -347,6 +347,13 @@ adminCupDrawRouter.post('/:cupId/bracket/preview', async (req: Request, res: Res
 
   try {
     const preview = await createPreview(req.params.cupId, seasonId, requestedSeed);
+    if (!preview.canGenerate) {
+      res.status(409).json({
+        error: `Qur’a qulflangan: ${preview.protectedFixturesCount} ta uchrashuvda faollik yoki tasdiqlangan natija bor. Amaldagi qura saqlanadi.`,
+        code: 'CUP_DRAW_LOCKED_AFTER_ACTIVITY',
+      });
+      return;
+    }
     res.json(preview);
   } catch (err: any) {
     res.status(err?.statusCode || 400).json({ error: err?.message || 'CUP_DRAW_PREVIEW_FAILED' });
@@ -548,6 +555,15 @@ adminCupDrawRouter.patch('/:cupId/bracket/fixture/:fixtureId', async (req: Reque
     }
     if (isProtectedFixture(fixture)) {
       res.status(409).json({ error: 'Manual pairing is locked after match activity starts.' });
+      return;
+    }
+
+    const cupState = await getExistingFixtureState(cupId);
+    if (cupState.protectedFixtures.length > 0) {
+      res.status(409).json({
+        error: `Qur’a qulflangan: ${cupState.protectedFixtures.length} ta uchrashuvda faollik yoki tasdiqlangan natija bor. Boshqa juftliklarni o‘zgartirib bo‘lmaydi.`,
+        code: 'CUP_PAIRINGS_LOCKED_AFTER_ACTIVITY',
+      });
       return;
     }
 
