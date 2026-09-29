@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { validateBody } from '../middleware/validationMiddleware';
 import { verifyTelegramWebAppData, getOrCreateTelegramUser, getOrCreateDevUser, createSessionToken, DEV_PROFILES } from '../auth/telegramAuth';
 import { getOptionalCurrentClub } from '../readModel/readModelStore';
-import { refreshRecipientDirectoryIfStale } from '../services/recipientDirectoryRefreshService';
 import { getDashboardLeagueStats } from '../services/dashboardLeagueStatsService';
 
 export const authRouter = Router();
@@ -16,12 +15,6 @@ const devAuthSchema = z.object({
   devUserId: z.string().min(1, 'devUserId is required'),
 });
 
-async function refreshTelegramDirectoryAfterAuth(): Promise<void> {
-  await refreshRecipientDirectoryIfStale('season-2026-27').catch((error: any) => {
-    console.warn('[AUTH_RECIPIENT_DIRECTORY_REFRESH_FAILED]', error?.message || error);
-  });
-}
-
 authRouter.post('/telegram', validateBody(telegramAuthSchema), async (req: Request, res: Response) => {
   const { initData } = req.body;
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -33,7 +26,6 @@ authRouter.post('/telegram', validateBody(telegramAuthSchema), async (req: Reque
         const userRaw = urlParams.get('user');
         if (userRaw) {
           const user = await getOrCreateTelegramUser(JSON.parse(userRaw));
-          await refreshTelegramDirectoryAfterAuth();
           const clubState = await getOptionalCurrentClub(user.id);
           const stats = await getDashboardLeagueStats(clubState.currentClub);
           const token = createSessionToken(user);
@@ -58,7 +50,6 @@ authRouter.post('/telegram', validateBody(telegramAuthSchema), async (req: Reque
 
   try {
     const user = await getOrCreateTelegramUser(verifyResult.user);
-    await refreshTelegramDirectoryAfterAuth();
     const clubState = await getOptionalCurrentClub(user.id);
     const stats = await getDashboardLeagueStats(clubState.currentClub);
     const token = createSessionToken(user);
@@ -80,7 +71,6 @@ authRouter.post('/dev', validateBody(devAuthSchema), async (req: Request, res: R
 
   try {
     const user = await getOrCreateDevUser(req.body.devUserId);
-    await refreshTelegramDirectoryAfterAuth();
     const clubState = await getOptionalCurrentClub(user.id);
     const stats = await getDashboardLeagueStats(clubState.currentClub);
     const token = createSessionToken(user);
