@@ -115,7 +115,7 @@ const AppContent: React.FC = () => {
 
   const currentTab = activeTab === 'home' ? 'dashboard' : activeTab;
   return (
-    <div className={`min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white ${user?.isAdmin ? `efl-preview theme-${theme}` : ''}`}>
+    <div className={`min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white ${user?.isAdmin ? `efl-preview theme-${theme} ${theme === 'dark' ? 'dark' : ''}` : ''}`}>
       {isDesignPreview && <div className="sticky top-0 z-[60] bg-amber-100 px-3 py-1.5 text-center text-[11px] font-bold text-amber-950">DESIGN PREVIEW · test ko‘rinishi, hisobga kirilmagan</div>}
       {toastMessage && <div className="fixed top-14 right-4 z-50 animate-in slide-in-from-top-3 fade-in duration-200"><div className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-2xl text-xs font-bold border backdrop-blur-md ${toastMessage.type === 'success' ? 'bg-emerald-950/90 text-emerald-300 border-emerald-500/40 shadow-emerald-500/10' : toastMessage.type === 'error' ? 'bg-rose-950/90 text-rose-300 border-rose-500/40 shadow-rose-500/10' : 'bg-slate-900/95 text-slate-200 border-slate-700 shadow-slate-900/40'}`}>{toastMessage.type === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />}{toastMessage.type === 'error' && <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />}{toastMessage.type === 'info' && <Info className="w-4 h-4 text-sky-400 shrink-0" />}<span>{toastMessage.text}</span></div></div>}
       <Header

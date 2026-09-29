@@ -254,7 +254,7 @@
   box-shadow: 0 0 0 2px var(--efl-primary-soft) !important;
 }
 
-/* League Banner Override */
+/* League Banner Override - Compact Neutral Sports Surface */
 .efl-preview .preview-league-banner {
   background: var(--efl-surface) !important;
   border: 1px solid var(--efl-border) !important;
@@ -265,9 +265,23 @@
   color: var(--efl-text) !important;
 }
 
+/* Neutral Sports Surfaces for Deep Competition Pages */
+.efl-preview .preview-cup-hero,
+.efl-preview .preview-europe-hero {
+  background: var(--efl-surface) !important;
+  border: 1px solid var(--efl-border) !important;
+  border-radius: 1.25rem !important;
+}
+
+.efl-preview .preview-cup-hero h1,
+.efl-preview .preview-europe-hero h1 {
+  color: var(--efl-text) !important;
+}
+
 /* Clean Tables in Broadcast UI */
 .efl-preview table {
   color: var(--efl-text) !important;
+  width: 100%;
 }
 
 .efl-preview thead tr {
@@ -283,6 +297,18 @@
 
 .efl-preview tbody tr:hover {
   background: var(--efl-surface-2) !important;
+}
+
+/* Subtle Active Club Row Highlight */
+.efl-preview tr.active-club-highlight,
+.efl-preview tbody tr.active-club-highlight {
+  background: var(--efl-primary-soft) !important;
+  border-left: 3px solid var(--efl-primary) !important;
+}
+
+.efl-preview tr.active-club-highlight td {
+  font-weight: 700 !important;
+  color: var(--efl-text) !important;
 }
 
 /* Desktop navigation overrides for admin */

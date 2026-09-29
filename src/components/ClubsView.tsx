@@ -23,7 +23,12 @@ import {
   Swords,
   ExternalLink,
   Users,
+  ChevronLeft,
+  ChevronRight,
+  Calendar,
+  Clock,
 } from 'lucide-react';
+import { ResultSubmissionModal } from './ResultSubmissionModal';
 
 interface ClubsViewProps {
   onNavigateTab?: (tab: any) => void;
@@ -113,6 +118,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
   const [leagueFixtures, setLeagueFixtures] = useState<Fixture[]>([]);
   const [leagueStandings, setLeagueStandings] = useState<StandingsRow[]>([]);
   const [selectedMatchday, setSelectedMatchday] = useState<number>(1);
+  const [selectedFixtureForModal, setSelectedFixtureForModal] = useState<Fixture | null>(null);
   const [isLoadingFixtures, setIsLoadingFixtures] = useState(false);
   const [isLoadingStandings, setIsLoadingStandings] = useState(false);
 
@@ -407,6 +413,486 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
       label: '',
     };
   };
+
+  if (user?.isAdmin) {
+    const userClubInLeague = ownedClubs.find((owned) => owned.leagueId === selectedLeagueId);
+    const userClubStanding = leagueStandings.find((s) => s.clubId === userClubInLeague?.id);
+
+    return (
+      <div className="space-y-4 animate-in fade-in duration-200 pb-20">
+        {/* 1. Domestic Leagues Selector Bar */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none flex-1">
+            {leagues.map((league) => {
+              const isSelected = selectedLeagueId === league.id;
+              return (
+                <button
+                  key={league.id}
+                  onClick={() => handleSelectLeague(league.id)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-all min-h-[36px] ${
+                    isSelected
+                      ? 'bg-blue-600 text-white font-black shadow-xs'
+                      : 'bg-white dark:bg-[#171e2c] border border-slate-200/80 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <img
+                    src={league.logoUrl}
+                    alt={league.name}
+                    className="w-3.5 h-3.5 object-contain shrink-0"
+                    onError={(e) => {
+                      (e.target as HTMLElement).style.display = 'none';
+                    }}
+                  />
+                  <span>{league.name}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            onClick={() => {
+              loadClubsForLeague(selectedLeagueId, true);
+              if (activeLeagueTab === 'MATCHES') {
+                loadLeagueFixtures(selectedLeagueId, selectedMatchday);
+              } else if (activeLeagueTab === 'STANDINGS') {
+                loadLeagueStandings(selectedLeagueId);
+              }
+            }}
+            disabled={isLoadingClubs}
+            className="p-2 rounded-xl bg-white dark:bg-[#171e2c] border border-slate-200/80 dark:border-white/10 text-slate-500 hover:text-slate-900 dark:hover:text-white shrink-0 min-h-[36px]"
+            title={previewText.refresh}
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoadingClubs ? 'animate-spin text-blue-500' : ''}`} />
+          </button>
+        </div>
+
+        {/* 2. Compact Domestic League Overview Header */}
+        {currentLeague && (
+          <div className="preview-surface p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-white/10 shadow-xs flex flex-col sm:flex-row items-center sm:items-start justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 p-2 flex items-center justify-center shrink-0">
+                <img
+                  src={currentLeague.logoUrl}
+                  alt={currentLeague.name}
+                  className="w-full h-full object-contain"
+                  onError={(e) => {
+                    (e.target as HTMLElement).style.display = 'none';
+                  }}
+                />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+                    {currentLeague.name}
+                  </h1>
+                  <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                    2026/27
+                  </span>
+                </div>
+                <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  {currentLeague.country} • {clubs.length} {previewText.clubs} ({availableCount} {previewText.available})
+                </div>
+              </div>
+            </div>
+
+            {/* Contextual Active Club Row if in this league */}
+            {userClubInLeague && (
+              <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs shrink-0">
+                <ClubCrest
+                  clubId={userClubInLeague.id}
+                  logoUrl={userClubInLeague.logoUrl}
+                  name={userClubInLeague.name}
+                  shortName={userClubInLeague.shortName}
+                  size="xs"
+                  className="w-6 h-6 shrink-0"
+                />
+                <div className="min-w-0">
+                  <div className="font-black text-slate-900 dark:text-white truncate max-w-[130px]">
+                    {userClubInLeague.name}
+                  </div>
+                  <div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold tabular-nums">
+                    {userClubStanding ? `#${userClubStanding.position} • ${userClubStanding.points} pts` : t.myClub}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 3. Compact Segmented Sub-Navigation Bar */}
+        <div className="p-1 rounded-2xl bg-[#eef1f5] dark:bg-[#171e2c] border border-[#e2e6ec] dark:border-white/10 flex items-center gap-1 shadow-xs">
+          <button
+            type="button"
+            onClick={() => setActiveLeagueTab('CLUBS')}
+            className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition-all ${
+              activeLeagueTab === 'CLUBS'
+                ? 'bg-white dark:bg-[#111722] text-[#2563eb] dark:text-[#3b82f6] shadow-xs font-black'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            {previewText.clubs} ({clubs.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveLeagueTab('MATCHES')}
+            className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition-all ${
+              activeLeagueTab === 'MATCHES'
+                ? 'bg-white dark:bg-[#111722] text-[#2563eb] dark:text-[#3b82f6] shadow-xs font-black'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            {previewText.matches}
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveLeagueTab('STANDINGS')}
+            className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition-all ${
+              activeLeagueTab === 'STANDINGS'
+                ? 'bg-white dark:bg-[#111722] text-[#2563eb] dark:text-[#3b82f6] shadow-xs font-black'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            {previewText.standings}
+          </button>
+        </div>
+
+        {/* 4. Sub-Tab Content */}
+
+        {/* TAB A: STANDINGS TABLE */}
+        {activeLeagueTab === 'STANDINGS' && (
+          <div className="preview-surface rounded-2xl border border-slate-200/80 dark:border-white/10 overflow-hidden shadow-xs">
+            {/* Qualification Zone Legend Strip */}
+            <div className="px-4 py-2.5 bg-slate-50 dark:bg-white/5 border-b border-slate-200/80 dark:border-white/10 flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-500 dark:text-slate-400">
+              <div className="font-bold text-slate-700 dark:text-slate-300">
+                {currentComp?.name || currentLeague?.name || 'League Table'} • {totalLeagueMatchdays} {previewText.matchday}
+              </div>
+              <div className="flex flex-wrap items-center gap-2.5">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-3 rounded-xs bg-blue-500" />
+                  <span>UCL (1–{uclThreshold})</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-3 rounded-xs bg-indigo-500" />
+                  <span>UEL ({uclThreshold + 1}–{uelThreshold})</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-3 rounded-xs bg-rose-500" />
+                  <span>Relegation ({relThreshold}–{relThreshold === 16 ? 18 : 20})</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Standings Table */}
+            {isLoadingStandings && leagueStandings.length === 0 ? (
+              <div className="p-8 text-center text-xs text-slate-400 animate-pulse">Loading standings...</div>
+            ) : leagueStandings.length === 0 ? (
+              <div className="p-8 text-center text-xs text-slate-400">{previewText.emptyStandings}</div>
+            ) : (
+              <div className="overflow-x-auto scrollbar-none">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200/80 dark:border-white/10 bg-slate-50/75 dark:bg-white/[0.03] text-slate-500 dark:text-slate-400 font-bold uppercase text-[10px] tracking-wider">
+                      <th className="py-2.5 px-2.5 w-10 text-center">#</th>
+                      <th className="py-2.5 px-2">{t.club}</th>
+                      <th className="py-2.5 px-2 text-center font-bold text-slate-700 dark:text-slate-300">P</th>
+                      <th className="py-2.5 px-2 text-center hidden sm:table-cell">W</th>
+                      <th className="py-2.5 px-2 text-center hidden sm:table-cell">D</th>
+                      <th className="py-2.5 px-2 text-center hidden sm:table-cell">L</th>
+                      <th className="py-2.5 px-2 text-center hidden sm:table-cell">GF</th>
+                      <th className="py-2.5 px-2 text-center hidden sm:table-cell">GA</th>
+                      <th className="py-2.5 px-2 text-center">GD</th>
+                      <th className="py-2.5 px-3 text-center font-black text-blue-600 dark:text-blue-400">PTS</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+                    {leagueStandings.map((row) => {
+                      const posStyle = getPositionStyle(row.position);
+                      const isMyClub = ownedClubs.some((club) => club.id === row.clubId);
+
+                      return (
+                        <tr
+                          key={row.clubId}
+                          className={`transition-colors ${
+                            isMyClub ? 'active-club-highlight bg-blue-500/10 dark:bg-blue-500/15' : 'hover:bg-slate-50 dark:hover:bg-white/[0.02]'
+                          }`}
+                        >
+                          <td className="py-2.5 px-2 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <span className={`w-1 h-3.5 rounded-xs ${posStyle.barColor}`} title={posStyle.label} />
+                              <span className="font-black text-slate-800 dark:text-slate-200 text-xs tabular-nums">{row.position}</span>
+                            </div>
+                          </td>
+
+                          <td className="py-2.5 px-2">
+                            <div className="flex items-center gap-2 min-w-[120px]">
+                              <ClubCrest
+                                clubId={row.clubId}
+                                logoUrl={row.clubLogoUrl}
+                                name={row.clubName}
+                                size="xs"
+                                className="w-5 h-5 shrink-0"
+                              />
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className={`truncate text-xs ${isMyClub ? 'font-black text-blue-600 dark:text-blue-400' : 'font-bold text-slate-900 dark:text-white'}`}>
+                                  {row.clubName}
+                                </span>
+                                {isMyClub && (
+                                  <span className="px-1 py-0.2 rounded text-[8px] font-black bg-blue-600 text-white uppercase shrink-0">
+                                    Siz
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="py-2.5 px-2 text-center font-bold text-slate-700 dark:text-slate-300 tabular-nums">{row.played}</td>
+                          <td className="py-2.5 px-2 text-center text-slate-500 dark:text-slate-400 hidden sm:table-cell tabular-nums">{row.won}</td>
+                          <td className="py-2.5 px-2 text-center text-slate-500 dark:text-slate-400 hidden sm:table-cell tabular-nums">{row.drawn}</td>
+                          <td className="py-2.5 px-2 text-center text-slate-500 dark:text-slate-400 hidden sm:table-cell tabular-nums">{row.lost}</td>
+                          <td className="py-2.5 px-2 text-center text-slate-500 dark:text-slate-400 hidden sm:table-cell tabular-nums">{row.goalsFor}</td>
+                          <td className="py-2.5 px-2 text-center text-slate-500 dark:text-slate-400 hidden sm:table-cell tabular-nums">{row.goalsAgainst}</td>
+                          <td className="py-2.5 px-2 text-center font-bold text-slate-700 dark:text-slate-300 tabular-nums">
+                            {row.goalDifference > 0 ? `+${row.goalDifference}` : row.goalDifference}
+                          </td>
+                          <td className="py-2.5 px-3 text-center font-black text-blue-600 dark:text-blue-400 text-xs sm:text-sm tabular-nums">
+                            {row.points}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB B: MATCHES / FIXTURES */}
+        {activeLeagueTab === 'MATCHES' && (
+          <div className="space-y-3">
+            {/* Matchday Selector (Compact ‹ 8-TUR ›) */}
+            <div className="preview-surface p-2.5 rounded-2xl border border-slate-200/80 dark:border-white/10 flex items-center justify-between gap-2 shadow-xs">
+              <button
+                type="button"
+                onClick={() => setSelectedMatchday((m) => Math.max(1, m - 1))}
+                disabled={selectedMatchday <= 1}
+                className="p-1.5 rounded-xl border border-slate-200/80 dark:border-white/10 text-slate-500 hover:text-slate-900 dark:hover:text-white disabled:opacity-30 transition-all"
+                aria-label="Previous matchday"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none px-1">
+                {matchdays.map((md) => (
+                  <button
+                    key={md}
+                    type="button"
+                    onClick={() => setSelectedMatchday(md)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 transition-all ${
+                      selectedMatchday === md
+                        ? 'bg-blue-600 text-white font-black shadow-xs'
+                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    {md}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedMatchday((m) => Math.min(totalLeagueMatchdays, m + 1))}
+                disabled={selectedMatchday >= totalLeagueMatchdays}
+                className="p-1.5 rounded-xl border border-slate-200/80 dark:border-white/10 text-slate-500 hover:text-slate-900 dark:hover:text-white disabled:opacity-30 transition-all"
+                aria-label="Next matchday"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Fixtures List on single surface with row dividers */}
+            <div className="preview-surface rounded-2xl border border-slate-200/80 dark:border-white/10 overflow-hidden shadow-xs divide-y divide-slate-100 dark:divide-white/5">
+              {isLoadingFixtures && leagueFixtures.length === 0 ? (
+                <div className="p-8 text-center text-xs text-slate-400 animate-pulse">Loading fixtures...</div>
+              ) : currentMatchdayFixtures.length === 0 ? (
+                <div className="p-8 text-center text-xs text-slate-400">{previewText.emptyFixtures}</div>
+              ) : (
+                currentMatchdayFixtures.map((fix) => {
+                  const isConfirmed = fix.status === 'CONFIRMED';
+                  const isUserClub = ownedClubs.some((club) => club.id === fix.homeClubId || club.id === fix.awayClubId);
+
+                  return (
+                    <div
+                      key={fix.id}
+                      onClick={() => {
+                        if (!isConfirmed && fix.isPlayable !== false) {
+                          setSelectedFixtureForModal(fix);
+                        }
+                      }}
+                      className={`p-3 sm:p-3.5 flex items-center justify-between gap-2 hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors cursor-pointer ${
+                        isUserClub ? 'bg-blue-500/[0.05] dark:bg-blue-500/[0.08]' : ''
+                      }`}
+                    >
+                      {/* Home */}
+                      <div className="flex-1 flex items-center justify-end gap-2 text-right min-w-0">
+                        <span className={`text-xs truncate ${isUserClub && ownedClubs.some((c) => c.id === fix.homeClubId) ? 'font-black text-blue-600 dark:text-blue-400' : 'font-bold text-slate-900 dark:text-white'}`}>
+                          {fix.homeClub?.shortName || fix.homeClub?.name}
+                        </span>
+                        <ClubCrest
+                          clubId={fix.homeClub?.id}
+                          logoUrl={fix.homeClub?.logoUrl}
+                          name={fix.homeClub?.name}
+                          shortName={fix.homeClub?.shortName}
+                          size="xs"
+                          className="w-5 h-5 shrink-0"
+                        />
+                      </div>
+
+                      {/* Center Score / Time */}
+                      <div className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-white/5 text-center min-w-[64px] shrink-0 font-mono tabular-nums">
+                        {isConfirmed ? (
+                          <span className="font-black text-slate-900 dark:text-white text-xs">
+                            {fix.homeScore ?? 0} : {fix.awayScore ?? 0}
+                          </span>
+                        ) : fix.status === 'PENDING_CONFIRMATION' ? (
+                          <span className="text-[10px] font-black text-amber-500">PENDING</span>
+                        ) : fix.status === 'DISPUTED' ? (
+                          <span className="text-[10px] font-black text-rose-500">DISPUTE</span>
+                        ) : fix.isPlayable === false ? (
+                          <span className="text-[10px] font-bold text-slate-400">LOCKED</span>
+                        ) : (
+                          <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">VS</span>
+                        )}
+                      </div>
+
+                      {/* Away */}
+                      <div className="flex-1 flex items-center justify-start gap-2 text-left min-w-0">
+                        <ClubCrest
+                          clubId={fix.awayClub?.id}
+                          logoUrl={fix.awayClub?.logoUrl}
+                          name={fix.awayClub?.name}
+                          shortName={fix.awayClub?.shortName}
+                          size="xs"
+                          className="w-5 h-5 shrink-0"
+                        />
+                        <span className={`text-xs truncate ${isUserClub && ownedClubs.some((c) => c.id === fix.awayClubId) ? 'font-black text-blue-600 dark:text-blue-400' : 'font-bold text-slate-900 dark:text-white'}`}>
+                          {fix.awayClub?.shortName || fix.awayClub?.name}
+                        </span>
+                      </div>
+
+                      {/* Action affordance for user fixture */}
+                      {isUserClub && !isConfirmed && fix.isPlayable !== false && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedFixtureForModal(fix);
+                          }}
+                          className="px-2 py-1 rounded-lg bg-blue-600 text-white font-black text-[10px] shrink-0 shadow-xs"
+                        >
+                          Hisob
+                        </button>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* TAB C: CLUBS DIRECTORY */}
+        {activeLeagueTab === 'CLUBS' && (
+          <div className="space-y-3">
+            {/* Search Bar */}
+            <div className="relative w-full">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                placeholder={t.search}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 preview-surface rounded-xl text-xs text-slate-900 dark:text-white placeholder-slate-400 border border-slate-200/80 dark:border-white/10 min-h-[38px]"
+              />
+            </div>
+
+            {/* 2-Column Sports Directory Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {filteredClubs.map((club) => {
+                const ownerInfo = getClubOwnerDisplay(club, undefined, club.claimedByUserId, t.userNeeded);
+                const isUserClub =
+                  club.isCurrentUserClub ||
+                  club.claimedByUserId === user?.id ||
+                  club.occupancy?.status === 'owned' ||
+                  ownedClubs.some((owned) => owned.id === club.id);
+                const isClaimedByOther = (isClubTaken(club) || ownerInfo.isClaimed) && !isUserClub;
+
+                return (
+                  <div
+                    key={club.id}
+                    className={`preview-surface p-3 rounded-2xl border flex items-center justify-between gap-3 shadow-xs ${
+                      isUserClub
+                        ? 'border-blue-500/40 bg-blue-500/5'
+                        : 'border-slate-200/80 dark:border-white/10'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <ClubCrest
+                        clubId={club.id}
+                        logoUrl={club.logoUrl}
+                        name={club.name}
+                        shortName={club.shortName}
+                        size="sm"
+                        className="w-8 h-8 shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <div className="text-xs font-black text-slate-900 dark:text-white truncate">
+                          {club.name}
+                        </div>
+                        <div className="text-[10px] text-slate-400 mt-0.5 truncate">
+                          {isUserClub ? (
+                            <span className="text-blue-600 dark:text-blue-400 font-bold">● Sizning klubingiz</span>
+                          ) : isClaimedByOther ? (
+                            <span>@{ownerInfo.displayText}</span>
+                          ) : (
+                            <span className="text-emerald-600 dark:text-emerald-400 font-bold">Bo‘sh</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {!isUserClub && !isClaimedByOther && (
+                      <button
+                        type="button"
+                        onClick={() => setClubToClaim(club)}
+                        className="px-3 py-1.5 rounded-xl bg-blue-600 text-white font-black text-xs shrink-0 shadow-xs hover:bg-blue-500 transition-colors"
+                      >
+                        {t.claimClub}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Result Submission Modal for Admin */}
+        {selectedFixtureForModal && (
+          <ResultSubmissionModal
+            fixture={selectedFixtureForModal}
+            isOpen={true}
+            onClose={() => setSelectedFixtureForModal(null)}
+            onSuccess={() => {
+              setSelectedFixtureForModal(null);
+              loadLeagueFixtures(selectedLeagueId, selectedMatchday);
+            }}
+          />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300 pb-20">
