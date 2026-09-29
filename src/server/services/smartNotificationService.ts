@@ -9,6 +9,7 @@ import {
 } from '../readModel/readModelStore';
 import { scheduleNotificationQueueDrain } from './telegramNotificationQueue';
 import { isSmartNotificationEventEnabled, SmartNotificationEvent } from './smartNotificationSettingsService';
+import { telegramMiniAppButton } from './telegramMiniAppButton';
 
 interface RecipientDirectoryEntry {
   userId: string;
@@ -68,7 +69,6 @@ const QUEUE_KEY = `${KEY_PREFIX}:telegram:queue`;
 const RECIPIENT_DIR_KEY = `${KEY_PREFIX}:private:recipient-directory`;
 const SMART_DEDUPE_PREFIX = `${KEY_PREFIX}:telegram:smart:dedupe`;
 const SMART_DEDUPE_TTL_SECONDS = 7 * 24 * 60 * 60;
-const APP_URL = process.env.APP_URL || process.env.TELEGRAM_WEBAPP_URL || 'https://efluz.vercel.app/';
 
 function inferSmartEvent(eventId: string): SmartNotificationEvent | null {
   const value = String(eventId || '').toLowerCase();
@@ -194,7 +194,7 @@ async function fixtureReplyMarkup(fixture: Fixture, opponentUserId?: string, inc
     if (username) rows.push([{ text: `👤 @${username}`, url: `https://t.me/${username}` }]);
   }
   if (includeResultAction) rows.push([{ text: '📸 Natijani yuborish', url: resultTopicUrl(fixture) }]);
-  rows.push([{ text: '🏟 EFL UZ ilovasini ochish', url: APP_URL }]);
+  rows.push([telegramMiniAppButton()]);
   return { inline_keyboard: rows };
 }
 
@@ -396,7 +396,7 @@ export async function notifySmartCupAdvancement(params: {
     body: target
       ? await buildMatchCardBody({ fixture: target, viewerSide, footer: 'Bracket yangilandi. Keyingi bosqichga tayyorlaning.' })
       : `<b>Keyingi bosqich</b>\n\nBracket yangilandi. Tafsilotlar EFL UZ ilovasida.`,
-    replyMarkup: target ? await fixtureReplyMarkup(target, viewerSide === 'home' ? ownerId(target, 'away') : ownerId(target, 'home')) : { inline_keyboard: [[{ text: '🏟 EFL UZ ilovasini ochish', url: APP_URL }]] },
+    replyMarkup: target ? await fixtureReplyMarkup(target, viewerSide === 'home' ? ownerId(target, 'away') : ownerId(target, 'home')) : { inline_keyboard: [[telegramMiniAppButton()]] },
   });
 }
 
@@ -419,7 +419,7 @@ export async function notifySmartCupChampion(params: {
     body: finalFixture
       ? `${await buildMatchCardBody({ fixture: finalFixture, showScore: true })}\n\n🏆 <b>${escapeHtml(competitionName)} chempioni!</b>\nTrophy Cabinet yangilanadi.`
       : `🏆 <b>${escapeHtml(competitionName)}</b>\n\nTabriklaymiz — siz chempion bo‘ldingiz!`,
-    replyMarkup: { inline_keyboard: [[{ text: '🏟 EFL UZ ilovasini ochish', url: APP_URL }]] },
+    replyMarkup: { inline_keyboard: [[telegramMiniAppButton()]] },
   });
 }
 
@@ -439,7 +439,7 @@ export async function notifySmartEuropeanZones(params: {
       eventId: `european-zone:${params.competitionId}:${row.clubId}:${row.zone}:${row.position}`,
       title,
       body: `🏟 <b>${escapeHtml(row.clubName)}</b> • #${row.position}\n\n${escapeHtml(row.zoneLabel)}\n\nYevrokubok holatingiz EFL UZ ilovasida yangilandi.`,
-      replyMarkup: { inline_keyboard: [[{ text: '🏟 EFL UZ ilovasini ochish', url: APP_URL }]] },
+      replyMarkup: { inline_keyboard: [[telegramMiniAppButton()]] },
     }));
   }
   const results = await Promise.allSettled(tasks);
