@@ -2380,6 +2380,16 @@ var init_smartNotificationSettingsService = __esm({
   }
 });
 
+// src/server/services/telegramMiniAppButton.ts
+function telegramMiniAppButton(text = "\u{1F3DF} EFL UZ ilovasini ochish") {
+  const url = process.env.TELEGRAM_WEBAPP_URL?.trim() || process.env.APP_URL?.trim() || "https://efluz.vercel.app";
+  return { text, web_app: { url } };
+}
+var init_telegramMiniAppButton = __esm({
+  "src/server/services/telegramMiniAppButton.ts"() {
+  }
+});
+
 // src/server/services/smartNotificationService.ts
 import crypto from "crypto";
 function inferSmartEvent(eventId) {
@@ -2477,7 +2487,7 @@ async function fixtureReplyMarkup(fixture, opponentUserId, includeResultAction =
     if (username) rows.push([{ text: `\u{1F464} @${username}`, url: `https://t.me/${username}` }]);
   }
   if (includeResultAction) rows.push([{ text: "\u{1F4F8} Natijani yuborish", url: resultTopicUrl(fixture) }]);
-  rows.push([{ text: "\u{1F3DF} EFL UZ ilovasini ochish", url: APP_URL }]);
+  rows.push([telegramMiniAppButton()]);
   return { inline_keyboard: rows };
 }
 async function getCompetitionFixtureSnapshot(competitionId, seasonId) {
@@ -2647,7 +2657,7 @@ async function notifySmartCupAdvancement(params) {
     body: target ? await buildMatchCardBody({ fixture: target, viewerSide, footer: "Bracket yangilandi. Keyingi bosqichga tayyorlaning." }) : `<b>Keyingi bosqich</b>
 
 Bracket yangilandi. Tafsilotlar EFL UZ ilovasida.`,
-    replyMarkup: target ? await fixtureReplyMarkup(target, viewerSide === "home" ? ownerId(target, "away") : ownerId(target, "home")) : { inline_keyboard: [[{ text: "\u{1F3DF} EFL UZ ilovasini ochish", url: APP_URL }]] }
+    replyMarkup: target ? await fixtureReplyMarkup(target, viewerSide === "home" ? ownerId(target, "away") : ownerId(target, "home")) : { inline_keyboard: [[telegramMiniAppButton()]] }
   });
 }
 async function notifySmartCupChampion(params) {
@@ -2667,7 +2677,7 @@ async function notifySmartCupChampion(params) {
 Trophy Cabinet yangilanadi.` : `\u{1F3C6} <b>${escapeHtml(competitionName)}</b>
 
 Tabriklaymiz \u2014 siz chempion bo\u2018ldingiz!`,
-    replyMarkup: { inline_keyboard: [[{ text: "\u{1F3DF} EFL UZ ilovasini ochish", url: APP_URL }]] }
+    replyMarkup: { inline_keyboard: [[telegramMiniAppButton()]] }
   });
 }
 async function notifySmartEuropeanZones(params) {
@@ -2686,7 +2696,7 @@ async function notifySmartEuropeanZones(params) {
 ${escapeHtml(row.zoneLabel)}
 
 Yevrokubok holatingiz EFL UZ ilovasida yangilandi.`,
-      replyMarkup: { inline_keyboard: [[{ text: "\u{1F3DF} EFL UZ ilovasini ochish", url: APP_URL }]] }
+      replyMarkup: { inline_keyboard: [[telegramMiniAppButton()]] }
     }));
   }
   const results = await Promise.allSettled(tasks);
@@ -2737,18 +2747,18 @@ async function notifySmartResultLifecycle(fixture, actorUserId) {
     })));
   }
 }
-var BROADCASTS_KEY, QUEUE_KEY, RECIPIENT_DIR_KEY, SMART_DEDUPE_PREFIX, SMART_DEDUPE_TTL_SECONDS, APP_URL, RESULT_TOPIC_BY_LEAGUE;
+var BROADCASTS_KEY, QUEUE_KEY, RECIPIENT_DIR_KEY, SMART_DEDUPE_PREFIX, SMART_DEDUPE_TTL_SECONDS, RESULT_TOPIC_BY_LEAGUE;
 var init_smartNotificationService = __esm({
   "src/server/services/smartNotificationService.ts"() {
     init_readModelStore();
     init_telegramNotificationQueue();
     init_smartNotificationSettingsService();
+    init_telegramMiniAppButton();
     BROADCASTS_KEY = `${KEY_PREFIX}:telegram:broadcasts`;
     QUEUE_KEY = `${KEY_PREFIX}:telegram:queue`;
     RECIPIENT_DIR_KEY = `${KEY_PREFIX}:private:recipient-directory`;
     SMART_DEDUPE_PREFIX = `${KEY_PREFIX}:telegram:smart:dedupe`;
     SMART_DEDUPE_TTL_SECONDS = 7 * 24 * 60 * 60;
-    APP_URL = process.env.APP_URL || process.env.TELEGRAM_WEBAPP_URL || "https://efluz.vercel.app/";
     RESULT_TOPIC_BY_LEAGUE = {
       "league-premier-league": "https://t.me/efleagueuz/2",
       "league-la-liga": "https://t.me/efleagueuz/3",
@@ -3602,6 +3612,7 @@ __export(readModelStore_exports, {
   redisIsDirty: () => redisIsDirty,
   redisSetRaw: () => redisSetRaw,
   refreshChangedFixtureReadModel: () => refreshChangedFixtureReadModel,
+  replaceCupFixturesInAdminSnapshot: () => replaceCupFixturesInAdminSnapshot,
   resetMemoryRedisStore: () => resetMemoryRedisStore,
   resetUpstashClient: () => resetUpstashClient,
   setInProcessMemory: () => setInProcessMemory
@@ -4267,6 +4278,12 @@ function normalizeFixtureSnapshot(doc, seasonId = "season-2026-27") {
     competitionName: competitionName || competitionId,
     matchday: doc.matchday,
     roundName,
+    sourceFixtureId: doc.sourceFixtureId ?? doc.source_fixture_id ?? null,
+    sourceWinnerSlot: doc.sourceWinnerSlot ?? doc.source_winner_slot ?? null,
+    homeSourceFixtureId: doc.homeSourceFixtureId ?? doc.home_source_fixture_id ?? null,
+    awaySourceFixtureId: doc.awaySourceFixtureId ?? doc.away_source_fixture_id ?? null,
+    homeSourceWinnerSlot: doc.homeSourceWinnerSlot ?? doc.home_source_winner_slot ?? null,
+    awaySourceWinnerSlot: doc.awaySourceWinnerSlot ?? doc.away_source_winner_slot ?? null,
     homeClubId: homeClubId && homeClubId !== "TBD" ? homeClubId : null,
     awayClubId: awayClubId && awayClubId !== "TBD" ? awayClubId : null,
     homeClub: homeClubId && homeClubId !== "TBD" ? {
@@ -4912,7 +4929,7 @@ async function getAdminFixturesFromReadModel(options = {}) {
       );
     }
   }
-  const effectiveSnapshotRes = snapshotRes || await readThroughReadModel2({
+  let effectiveSnapshotRes = snapshotRes || await readThroughReadModel2({
     key: ReadModelKeys.adminFixtures(seasonId),
     seasonId,
     firestoreFetcher: async () => {
@@ -4921,6 +4938,26 @@ async function getAdminFixturesFromReadModel(options = {}) {
     },
     validateData: (fixtures) => Array.isArray(fixtures) && fixtures.length > 0
   });
+  if (await redisIsDirty(ReadModelKeys.adminFixtures(seasonId))) {
+    const cupIds = [
+      "comp-fa-cup-2026",
+      "comp-copa-del-rey-2026",
+      "comp-coppa-italia-2026",
+      "comp-dfb-pokal-2026",
+      "comp-coupe-de-france-2026"
+    ];
+    const candidateIds = options.competitionId ? [options.competitionId] : cupIds;
+    const snapshots = await Promise.all(candidateIds.map(async (cupId) => ({
+      cupId,
+      snapshot: await redisGetFresh(ReadModelKeys.competitionFixtures(cupId, seasonId))
+    })));
+    let merged = effectiveSnapshotRes.data;
+    for (const { cupId, snapshot } of snapshots) {
+      if (!snapshot || !Array.isArray(snapshot.data)) continue;
+      merged = merged.filter((fixture) => fixture.competitionId !== cupId).concat(snapshot.data);
+    }
+    effectiveSnapshotRes = { ...effectiveSnapshotRes, data: merged };
+  }
   let allFixtures = [...effectiveSnapshotRes.data].sort((a, b) => compareAdminFixtures(a, b));
   if (options.competitionId && options.competitionId !== "ALL") {
     allFixtures = allFixtures.filter((f) => f.competitionId === options.competitionId);
@@ -5053,6 +5090,22 @@ async function invalidateFixtureReadModels(competitionId, seasonId = "season-202
     await invalidateDataset(ReadModelKeys.competitionFixtures(competitionId, seasonId));
     await invalidateDataset(ReadModelKeys.standings(competitionId, seasonId));
   }
+}
+async function replaceCupFixturesInAdminSnapshot(competitionId, seasonId, cupFixtures) {
+  const key = ReadModelKeys.adminFixtures(seasonId);
+  const previous = await redisGetFresh(key) || await redisGetLkg(key);
+  if (!previous || !Array.isArray(previous.data)) {
+    await invalidateDataset(key);
+    return;
+  }
+  const fixtures = previous.data.filter((fixture) => fixture.competitionId !== competitionId).concat(cupFixtures).sort((a, b) => compareAdminFixtures(a, b));
+  await redisSetRaw(key, {
+    schemaVersion: SCHEMA_VERSION,
+    generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    sourceVersion: `cup-redraw:${competitionId}`,
+    expectedCount: fixtures.length,
+    data: fixtures
+  });
 }
 async function invalidateStandingsReadModels(competitionId, seasonId = "season-2026-27") {
   await invalidateDataset(ReadModelKeys.standings(competitionId, seasonId));
@@ -15099,7 +15152,7 @@ async function getSafeEligibleRecipients(filter, seasonId = "season-2026-27") {
     }
   }
   if (entries.length === 0) {
-    if (memoryRecipientDirectory.size === 0) await syncRecipientDirectory(seasonId);
+    if (memoryRecipientDirectory.size === 0) throw new Error("RECIPIENT_DIRECTORY_UNAVAILABLE");
     entries = Array.from(memoryRecipientDirectory.values());
   }
   let filtered = entries;
@@ -17140,42 +17193,6 @@ function validateBody(schema) {
 // src/server/routes/auth.routes.ts
 init_readModelStore();
 
-// src/server/services/recipientDirectoryRefreshService.ts
-init_readModelStore();
-init_telegramNotificationQueue();
-var DEFAULT_REFRESH_INTERVAL_SECONDS = 5 * 60;
-async function refreshRecipientDirectoryIfStale(seasonId = "season-2026-27", intervalSeconds = DEFAULT_REFRESH_INTERVAL_SECONDS) {
-  const client = getUpstashClient();
-  if (!client) return { refreshed: false, reason: "redis-unavailable" };
-  const leaseKey = `${KEY_PREFIX}:telegram:recipient-directory:refresh-lease:${seasonId}`;
-  const ttl = Math.max(60, Math.floor(intervalSeconds));
-  try {
-    const claimed = await client.eval(`
-      if redis.call('EXISTS', KEYS[1]) == 1 then
-        return 0
-      end
-      redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
-      return 1
-    `, [leaseKey], [String(Date.now()), ttl]);
-    if (Number(claimed) !== 1) {
-      return { refreshed: false, reason: "recently-refreshed" };
-    }
-    try {
-      const count = await syncRecipientDirectory(seasonId);
-      console.info("[RECIPIENT_DIRECTORY_REFRESHED]", JSON.stringify({ seasonId, count }));
-      return { refreshed: true, count, reason: "refreshed" };
-    } catch (error) {
-      await client.del(leaseKey).catch(() => {
-      });
-      console.warn("[RECIPIENT_DIRECTORY_REFRESH_FAILED]", error?.message || error);
-      return { refreshed: false, reason: "refresh-failed" };
-    }
-  } catch (error) {
-    console.warn("[RECIPIENT_DIRECTORY_REFRESH_LEASE_FAILED]", error?.message || error);
-    return { refreshed: false, reason: "refresh-failed" };
-  }
-}
-
 // src/server/services/dashboardLeagueStatsService.ts
 init_readModelStore();
 init_fixtureTombstoneService();
@@ -17246,11 +17263,6 @@ var telegramAuthSchema = z.object({
 var devAuthSchema = z.object({
   devUserId: z.string().min(1, "devUserId is required")
 });
-async function refreshTelegramDirectoryAfterAuth() {
-  await refreshRecipientDirectoryIfStale("season-2026-27").catch((error) => {
-    console.warn("[AUTH_RECIPIENT_DIRECTORY_REFRESH_FAILED]", error?.message || error);
-  });
-}
 authRouter.post("/telegram", validateBody(telegramAuthSchema), async (req, res) => {
   const { initData } = req.body;
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -17261,7 +17273,6 @@ authRouter.post("/telegram", validateBody(telegramAuthSchema), async (req, res) 
         const userRaw = urlParams.get("user");
         if (userRaw) {
           const user = await getOrCreateTelegramUser(JSON.parse(userRaw));
-          await refreshTelegramDirectoryAfterAuth();
           const clubState = await getOptionalCurrentClub(user.id);
           const stats2 = await getDashboardLeagueStats(clubState.currentClub);
           const token = createSessionToken(user);
@@ -17283,7 +17294,6 @@ authRouter.post("/telegram", validateBody(telegramAuthSchema), async (req, res) 
   }
   try {
     const user = await getOrCreateTelegramUser(verifyResult.user);
-    await refreshTelegramDirectoryAfterAuth();
     const clubState = await getOptionalCurrentClub(user.id);
     const stats2 = await getDashboardLeagueStats(clubState.currentClub);
     const token = createSessionToken(user);
@@ -17308,7 +17318,6 @@ authRouter.post("/dev", validateBody(devAuthSchema), async (req, res) => {
   }
   try {
     const user = await getOrCreateDevUser(req.body.devUserId);
-    await refreshTelegramDirectoryAfterAuth();
     const clubState = await getOptionalCurrentClub(user.id);
     const stats2 = await getDashboardLeagueStats(clubState.currentClub);
     const token = createSessionToken(user);
@@ -18686,6 +18695,7 @@ init_firestoreStore();
 init_readModelStore();
 init_adminService();
 init_smartNotificationService();
+init_telegramMiniAppButton();
 import { waitUntil as waitUntil2 } from "@vercel/functions";
 var DEADLINE_COLLECTION = "match_deadlines";
 var NO_SHOW_COLLECTION = "no_show_reports";
@@ -18941,7 +18951,7 @@ ${kind === "overdue" ? "Muddat tugadi. Natijani yuboring yoki no-show holatini E
     eventId: `matchday-open:deadline:${kind}:${deadline.fixtureId}:${deadline.deadlineAt}`,
     title,
     body,
-    replyMarkup: { inline_keyboard: [[{ text: "\u{1F3DF} Mening o\u2018yinlarim", url: "https://efluz.vercel.app/my-matches" }]] }
+    replyMarkup: { inline_keyboard: [[telegramMiniAppButton("\u{1F3DF} Mening o\u2018yinlarim")]] }
   })));
   const queued = results.filter((item) => item.status === "fulfilled" && item.value).length;
   return { attempted: true, queued };
@@ -20093,6 +20103,13 @@ adminCupDrawRouter.post("/:cupId/bracket/preview", async (req, res) => {
   const requestedSeed = typeof req.body?.drawSeed === "string" && req.body.drawSeed.trim() ? req.body.drawSeed.trim() : req.body?.newDraw === true ? `${req.params.cupId}:${randomBytes(12).toString("hex")}` : void 0;
   try {
     const preview = await createPreview(req.params.cupId, seasonId, requestedSeed);
+    if (!preview.canGenerate) {
+      res.status(409).json({
+        error: `Qur\u2019a qulflangan: ${preview.protectedFixturesCount} ta uchrashuvda faollik yoki tasdiqlangan natija bor. Amaldagi qura saqlanadi.`,
+        code: "CUP_DRAW_LOCKED_AFTER_ACTIVITY"
+      });
+      return;
+    }
     res.json(preview);
   } catch (err) {
     res.status(err?.statusCode || 400).json({ error: err?.message || "CUP_DRAW_PREVIEW_FAILED" });
@@ -20196,6 +20213,31 @@ adminCupDrawRouter.post("/:cupId/bracket/generate", async (req, res) => {
     }
     await invalidateDataset(`cup:bracket:${cupId}:${seasonId}`);
     await invalidateFixtureReadModels(cupId, seasonId);
+    try {
+      const cupFixtures = preview.previewMatches.map((match) => normalizeFixtureSnapshot({
+        id: match.fixtureId,
+        seasonId,
+        competitionId: cupId,
+        competitionName: cup.name,
+        matchday: match.roundNumber,
+        roundName: match.roundName,
+        homeClubId: match.homeClubId,
+        awayClubId: match.awayClubId,
+        sourceFixtureId: match.sourceFixtureId,
+        sourceWinnerSlot: match.sourceWinnerSlot,
+        homeSourceFixtureId: match.homeSourceFixtureId,
+        awaySourceFixtureId: match.awaySourceFixtureId,
+        homeSourceWinnerSlot: match.homeSourceWinnerSlot,
+        awaySourceWinnerSlot: match.awaySourceWinnerSlot,
+        status: "SCHEDULED",
+        scheduledAt: now,
+        createdAt: now,
+        updatedAt: now
+      }, seasonId));
+      await replaceCupFixturesInAdminSnapshot(cupId, seasonId, cupFixtures);
+    } catch (snapshotError) {
+      console.warn("[CUP_DRAW_ADMIN_SNAPSHOT_WARNING]", snapshotError?.message || snapshotError);
+    }
     const action = existingFixtures.length > 0 ? "CUP_BRACKET_REDRAWN" : "CUP_BRACKET_GENERATED";
     await createAuditLog(
       req.user.id,
@@ -20252,6 +20294,14 @@ adminCupDrawRouter.patch("/:cupId/bracket/fixture/:fixtureId", async (req, res) 
     }
     if (isProtectedFixture(fixture)) {
       res.status(409).json({ error: "Manual pairing is locked after match activity starts." });
+      return;
+    }
+    const cupState = await getExistingFixtureState(cupId);
+    if (cupState.protectedFixtures.length > 0) {
+      res.status(409).json({
+        error: `Qur\u2019a qulflangan: ${cupState.protectedFixtures.length} ta uchrashuvda faollik yoki tasdiqlangan natija bor. Boshqa juftliklarni o\u2018zgartirib bo\u2018lmaydi.`,
+        code: "CUP_PAIRINGS_LOCKED_AFTER_ACTIVITY"
+      });
       return;
     }
     const eligibleIds = new Set(SEED_CLUBS.filter((club) => club.leagueId === cup.leagueId).map((club) => club.id));
@@ -21009,6 +21059,42 @@ init_admin();
 init_collections();
 init_smartNotificationSettingsService();
 init_circuitBreaker();
+
+// src/server/services/recipientDirectoryRefreshService.ts
+init_readModelStore();
+init_telegramNotificationQueue();
+var DEFAULT_REFRESH_INTERVAL_SECONDS = 5 * 60;
+async function refreshRecipientDirectoryIfStale(seasonId = "season-2026-27", intervalSeconds = DEFAULT_REFRESH_INTERVAL_SECONDS) {
+  const client = getUpstashClient();
+  if (!client) return { refreshed: false, reason: "redis-unavailable" };
+  const leaseKey = `${KEY_PREFIX}:telegram:recipient-directory:refresh-lease:${seasonId}`;
+  const ttl = Math.max(60, Math.floor(intervalSeconds));
+  try {
+    const claimed = await client.eval(`
+      if redis.call('EXISTS', KEYS[1]) == 1 then
+        return 0
+      end
+      redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
+      return 1
+    `, [leaseKey], [String(Date.now()), ttl]);
+    if (Number(claimed) !== 1) {
+      return { refreshed: false, reason: "recently-refreshed" };
+    }
+    try {
+      const count = await syncRecipientDirectory(seasonId);
+      console.info("[RECIPIENT_DIRECTORY_REFRESHED]", JSON.stringify({ seasonId, count }));
+      return { refreshed: true, count, reason: "refreshed" };
+    } catch (error) {
+      console.warn("[RECIPIENT_DIRECTORY_REFRESH_FAILED]", error?.message || error);
+      return { refreshed: false, reason: "refresh-failed" };
+    }
+  } catch (error) {
+    console.warn("[RECIPIENT_DIRECTORY_REFRESH_LEASE_FAILED]", error?.message || error);
+    return { refreshed: false, reason: "refresh-failed" };
+  }
+}
+
+// src/server/routes/admin.routes.ts
 init_clubAdmission();
 init_db();
 init_readModelStore();
@@ -22204,6 +22290,7 @@ adminRouter.get("/telegram-notifications/recipients", async (req, res) => {
   const leagueId = req.query.leagueId;
   const seasonId = req.query.seasonId || "season-2026-27";
   try {
+    await refreshRecipientDirectoryIfStale(seasonId);
     const recipients = await getSafeEligibleRecipients({ audience, leagueId }, seasonId);
     res.json({
       total: recipients.length,
@@ -22229,6 +22316,7 @@ adminRouter.post("/telegram-notifications/broadcast", async (req, res) => {
     return;
   }
   try {
+    await refreshRecipientDirectoryIfStale(seasonId || "season-2026-27");
     const record = await enqueueTelegramBroadcast({
       adminUserId,
       adminUsername,
