@@ -33,7 +33,8 @@ async function main() {
   // its own snapshot. The admin response must use that newer cup data.
   await invalidateFixtureReadModels(cup, season);
   await redisSetRaw(ReadModelKeys.competitionFixtures(cup, season), {
-    generatedAt: new Date(Date.now() + 2000).toISOString(), data: [fixture('latest-cup', cup)],
+    // Its clock may precede a stale admin LKG written by a later cache rebuild.
+    generatedAt: '2026-09-29T00:00:00.000Z', data: [fixture('latest-cup', cup)],
   });
   const repaired = await getAdminFixturesFromReadModel({ seasonId: season });
   assert.equal(repaired.fixtures.some((row) => row.id === 'old-cup' || row.id === 'new-cup'), false);
