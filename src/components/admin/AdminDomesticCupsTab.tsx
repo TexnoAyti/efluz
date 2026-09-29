@@ -277,7 +277,7 @@ export const AdminDomesticCupsTab: React.FC = () => {
                 <div className="text-xs text-slate-400 mt-1">{details.completedFixtures}/{details.totalFixtures} fixtures confirmed</div>
               </div>
               <div className="flex flex-wrap gap-2">
-                <button onClick={() => previewDraw(details.totalFixtures > 0)} disabled={busy === 'preview'} className="px-3 py-2 rounded-xl bg-amber-500 text-slate-950 text-xs font-black flex items-center gap-1.5 disabled:opacity-50">
+                <button title={details.completedFixtures > 0 ? 'Natijalar boshlanganidan keyin qur’a qulflanadi' : undefined} onClick={() => previewDraw(details.totalFixtures > 0)} disabled={busy === 'preview' || details.completedFixtures > 0} className="px-3 py-2 rounded-xl bg-amber-500 text-slate-950 text-xs font-black flex items-center gap-1.5 disabled:opacity-50">
                   {details.totalFixtures > 0 ? <Shuffle className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                   {details.totalFixtures > 0 ? 'Redraw Preview' : 'Preview Draw'}
                 </button>
@@ -352,7 +352,7 @@ export const AdminDomesticCupsTab: React.FC = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                     {(round.fixtures || []).map((fixture) => {
                       const finished = fixture.status === 'CONFIRMED';
-                      const editable = fixture.status === 'SCHEDULED' && fixture.homeScore == null && fixture.awayScore == null;
+                      const editable = details.completedFixtures === 0 && fixture.status === 'SCHEDULED' && fixture.homeScore == null && fixture.awayScore == null;
                       return (
                         <div key={fixture.id} className="rounded-xl bg-slate-950/55 border border-slate-800 p-3 flex items-center justify-between gap-3">
                           <div className="min-w-0 flex-1">
