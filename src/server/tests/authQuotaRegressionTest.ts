@@ -10,6 +10,7 @@ import { meRouter } from '../routes/me.routes';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
 import { parseFirestoreError } from '../firebase/firestoreErrorHandler';
+import { getSafeEligibleRecipients } from '../services/telegramNotificationQueue';
 import { resetMemoryRedisStore, ReadModelNotWarmedError, redisSetRaw, ReadModelKeys } from '../readModel/readModelStore';
 
 async function main() {
@@ -17,10 +18,24 @@ async function main() {
   process.env.SESSION_SECRET = 'isolated-session-secret-32-bytes';
   await initDatabase();
   resetMemoryRedisStore();
+  await assert.rejects(
+    () => getSafeEligibleRecipients(undefined, 'season-directory-uncached'),
+    /RECIPIENT_DIRECTORY_UNAVAILABLE/,
+    'A missing directory must not start a Firestore scan from a read path',
+  );
   const db = getFirestoreDb();
   const originalCollection = db.collection.bind(db);
   let occupancyReads = 0;
+  let directoryScans = 0;
   db.collection = ((name: string) => {
+    if (name === COLLECTIONS.USERS) {
+      return new Proxy(originalCollection(name), {
+        get(target, key) {
+          if (key === 'limit') return () => { directoryScans++; throw new Error('Login must not scan the recipient directory'); };
+          return Reflect.get(target, key);
+        },
+      });
+    }
     if (name === COLLECTIONS.CLUB_OCCUPANCIES) {
       occupancyReads++;
       throw Object.assign(new Error('RESOURCE_EXHAUSTED: quota exceeded'), { code: 8 });
@@ -47,6 +62,7 @@ async function main() {
     assert.ok(body.token);
     assert.equal(body.currentClubStatus,'unavailable');
     assert.equal(body.degraded,true);
+    assert.equal(directoryScans,0,'Telegram login must not trigger a full users scan');
     assert.equal(firestoreCircuitBreaker.getStatus().state,'OPEN');
     const me = await fetch(base+'/api/me', {headers:{Authorization:`Bearer ${body.token}`}});
     assert.equal(me.status,200);

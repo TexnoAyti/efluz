@@ -10,12 +10,11 @@ export interface RecipientDirectoryRefreshResult {
 }
 
 /**
- * Keeps the durable Telegram recipient directory aligned with Firestore without
- * turning every login into a full users/occupancies scan.
+ * Refreshes the durable Telegram recipient directory when an admin opens it.
  *
  * A Redis lease allows at most one authoritative rebuild per interval across
- * all serverless instances. Failures never break authentication; the existing
- * durable directory is preserved by syncRecipientDirectory().
+ * all serverless instances. A failed refresh retains the lease until expiry,
+ * avoiding a full Firestore scan on every request during quota exhaustion.
  */
 export async function refreshRecipientDirectoryIfStale(
   seasonId = 'season-2026-27',
@@ -45,8 +44,6 @@ export async function refreshRecipientDirectoryIfStale(
       console.info('[RECIPIENT_DIRECTORY_REFRESHED]', JSON.stringify({ seasonId, count }));
       return { refreshed: true, count, reason: 'refreshed' };
     } catch (error: any) {
-      // Allow a fast retry after a failed authoritative refresh.
-      await client.del(leaseKey).catch(() => {});
       console.warn('[RECIPIENT_DIRECTORY_REFRESH_FAILED]', error?.message || error);
       return { refreshed: false, reason: 'refresh-failed' };
     }

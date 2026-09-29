@@ -286,7 +286,9 @@ export async function getSafeEligibleRecipients(
   }
 
   if (entries.length === 0) {
-    if (memoryRecipientDirectory.size === 0) await syncRecipientDirectory(seasonId);
+    // A missing snapshot is an explicit admin refresh condition. Never start
+    // an unbounded Firestore scan from a read path during quota exhaustion.
+    if (memoryRecipientDirectory.size === 0) throw new Error('RECIPIENT_DIRECTORY_UNAVAILABLE');
     entries = Array.from(memoryRecipientDirectory.values());
   }
 

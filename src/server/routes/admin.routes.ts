@@ -84,6 +84,7 @@ import {
   DEFAULT_SMART_NOTIFICATION_EVENTS,
 } from '../services/smartNotificationSettingsService';
 import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
+import { refreshRecipientDirectoryIfStale } from '../services/recipientDirectoryRefreshService';
 import { advanceClubAdmission, CLUB_ADMISSION_LEAGUES, ClubAdmissionConflict, getClubAdmissionStatus } from '../services/clubAdmission';
 import { queryAll, queryGet } from '../db/index';
 import {
@@ -1453,6 +1454,7 @@ adminRouter.get('/telegram-notifications/recipients', async (req: Request, res: 
   const seasonId = (req.query.seasonId as string) || 'season-2026-27';
 
   try {
+    await refreshRecipientDirectoryIfStale(seasonId);
     // STRICT DATA SAFETY RULE: telegramId is completely omitted in response!
     const recipients = await getSafeEligibleRecipients({ audience, leagueId }, seasonId);
     res.json({
@@ -1480,6 +1482,7 @@ adminRouter.post('/telegram-notifications/broadcast', async (req: Request, res: 
   }
 
   try {
+    await refreshRecipientDirectoryIfStale(seasonId || 'season-2026-27');
     const record = await enqueueTelegramBroadcast({
       adminUserId,
       adminUsername,
