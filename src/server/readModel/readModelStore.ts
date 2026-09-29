@@ -1936,7 +1936,7 @@ export async function getAdminFixturesFromReadModel(
     })));
     let merged = effectiveSnapshotRes.data;
     for (const { cupId, snapshot } of snapshots) {
-      if (!snapshot || !Array.isArray(snapshot.data) || snapshot.generatedAt <= effectiveSnapshotRes.generatedAt) continue;
+      if (!snapshot || !Array.isArray(snapshot.data)) continue;
       merged = merged.filter((fixture) => fixture.competitionId !== cupId).concat(snapshot.data);
     }
     effectiveSnapshotRes = { ...effectiveSnapshotRes, data: merged };
