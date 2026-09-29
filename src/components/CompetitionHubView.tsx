@@ -75,13 +75,13 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
     <div className="space-y-4 pb-20 animate-in fade-in duration-200">
       {/* 1. Single Top Page Title */}
       <div className="flex items-center justify-between pt-1">
-        <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+        <h1 className="text-xl sm:text-2xl font-black text-[var(--efl-text)] tracking-tight">
           {titles.heading}
         </h1>
       </div>
 
       {/* 2. Top-Level Category Segmented Bar */}
-      <div className="p-1 rounded-2xl bg-[#eef1f5] dark:bg-[#171e2c] border border-[#e2e6ec] dark:border-white/10 flex items-center gap-1 overflow-x-auto scrollbar-none shadow-xs">
+      <div className="p-1 rounded-2xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)] flex items-center gap-1 overflow-x-auto scrollbar-none shadow-xs">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = subTab === item.id;
@@ -92,11 +92,11 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
               onClick={() => setSubTab(item.id)}
               className={`flex-1 min-w-[76px] flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl text-xs font-bold transition-all ${
                 isActive
-                  ? 'bg-white dark:bg-[#111722] text-[#2563eb] dark:text-[#3b82f6] shadow-sm font-black'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  ? 'bg-[var(--efl-surface)] text-[var(--efl-primary)] shadow-sm font-black'
+                  : 'text-[var(--efl-text-2)] hover:text-[var(--efl-text)]'
               }`}
             >
-              <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-[#2563eb] dark:text-[#3b82f6]' : 'text-slate-400'}`} />
+              <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-[var(--efl-primary)]' : 'text-[var(--efl-muted)]'}`} />
               <span className="truncate">{item.label}</span>
             </button>
           );

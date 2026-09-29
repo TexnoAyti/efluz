@@ -30,7 +30,7 @@ interface SeasonHubViewProps {
 function statusTone(status: string) {
   if (status === 'DONE') return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
   if (status === 'ACTIVE') return 'border-sky-500/40 bg-sky-500/10 text-sky-300';
-  return 'border-slate-700 bg-slate-900/60 text-slate-400';
+  return 'border-[var(--efl-border)] bg-[var(--efl-surface-2)] text-[var(--efl-muted)]';
 }
 
 export const SeasonHubView: React.FC<SeasonHubViewProps> = ({ onNavigateTab }) => {

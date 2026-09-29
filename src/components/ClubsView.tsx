@@ -1510,21 +1510,21 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
               {user?.isAdmin ? previewText.emptyStandings : 'Standings are not available yet.'}
             </div>
           ) : (
-            <div className="glass-panel overflow-hidden shadow-2xl border-white/[0.08]">
-              <div className="flex flex-wrap items-center justify-between gap-2.5 p-3 bg-slate-950/70 border-b border-white/[0.08] text-[10px]">
-                <div className="font-bold text-slate-300">
+            <div className="preview-surface overflow-hidden shadow-sm rounded-2xl border border-[var(--efl-border)]">
+              <div className="flex flex-wrap items-center justify-between gap-2.5 p-3 bg-[var(--efl-surface-2)] border-b border-[var(--efl-border)] text-[10px]">
+                <div className="font-bold text-[var(--efl-text)]">
                   {currentComp?.name || 'League Table'} • {totalLeagueMatchdays} Tur
                 </div>
                 <div className="flex flex-wrap items-center gap-2.5">
-                  <div className="flex items-center gap-1.5 text-slate-300">
+                  <div className="flex items-center gap-1.5 text-[var(--efl-text-2)]">
                     <span className="w-2 h-2 rounded-full bg-blue-500" />
                     <span>{t.uclZone} (1–{uclThreshold})</span>
                   </div>
-                  <div className="flex items-center gap-1.5 text-slate-300">
+                  <div className="flex items-center gap-1.5 text-[var(--efl-text-2)]">
                     <span className="w-2 h-2 rounded-full bg-indigo-500" />
                     <span>{t.uelZone} ({uclThreshold + 1}–{uelThreshold})</span>
                   </div>
-                  <div className="flex items-center gap-1.5 text-slate-300">
+                  <div className="flex items-center gap-1.5 text-[var(--efl-text-2)]">
                     <span className="w-2 h-2 rounded-full bg-rose-500" />
                     <span>{t.relegationZone} ({relThreshold}–{relThreshold === 16 ? 18 : 20})</span>
                   </div>
@@ -1533,20 +1533,20 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
               <div className="overflow-x-auto scrollbar-none">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
-                    <tr className="border-b border-white/[0.08] bg-slate-950/60 text-slate-400 font-bold uppercase text-[10px] tracking-wider">
+                    <tr className="border-b border-[var(--efl-border)] bg-[var(--efl-surface-2)] text-[var(--efl-text-2)] font-bold uppercase text-[10px] tracking-wider">
                       <th className="py-3 px-3 w-12 text-center">#</th>
                       <th className="py-3 px-3">{t.club}</th>
-                      <th className="py-3 px-2 text-center font-bold text-slate-300">P</th>
+                      <th className="py-3 px-2 text-center font-bold text-[var(--efl-text)]">P</th>
                       <th className="py-3 px-2 text-center">W</th>
                       <th className="py-3 px-2 text-center">D</th>
                       <th className="py-3 px-2 text-center">L</th>
                       <th className="py-3 px-2 text-center hidden sm:table-cell">GF</th>
                       <th className="py-3 px-2 text-center hidden sm:table-cell">GA</th>
                       <th className="py-3 px-2 text-center">GD</th>
-                      <th className="py-3 px-3 text-center font-black text-emerald-400">PTS</th>
+                      <th className="py-3 px-3 text-center font-black text-[var(--efl-primary)]">PTS</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-white/[0.04]">
+                  <tbody className="divide-y divide-[var(--efl-border)]">
                     {leagueStandings.map((row) => {
                       const posStyle = getPositionStyle(row.position);
                       const isMyClub = ownedClubs.some((club) => club.id === row.clubId);
@@ -1555,7 +1555,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                         <tr
                           key={row.clubId}
                           className={`transition-colors ${
-                            isMyClub ? 'bg-emerald-950/30 font-bold' : 'hover:bg-white/[0.02]'
+                            isMyClub ? 'active-club-highlight bg-[var(--efl-primary-soft)] font-bold' : 'hover:bg-[var(--efl-surface-2)]'
                           }`}
                         >
                           <td className="py-2.5 px-3 text-center">
@@ -1564,7 +1564,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                                 className={`w-1.5 h-4 rounded-full ${posStyle.barColor}`}
                                 title={posStyle.label}
                               />
-                              <span className="font-black text-slate-300 text-xs">{row.position}</span>
+                              <span className="font-black text-[var(--efl-text)] text-xs">{row.position}</span>
                             </div>
                           </td>
 
@@ -1579,12 +1579,12 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                               />
                               <div className="flex flex-col min-w-0">
                                 <div className="flex items-center gap-1.5">
-                                  <span className="font-bold text-white text-xs truncate max-w-[160px]">
+                                  <span className="font-bold text-[var(--efl-text)] text-xs truncate max-w-[160px]">
                                     {row.clubName}
                                   </span>
                                   <PremiumClubBadge clubId={row.clubId} />
                                   {isMyClub && (
-                                    <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-emerald-500 text-slate-950 uppercase">
+                                    <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-[var(--efl-primary)] text-white uppercase">
                                       You
                                     </span>
                                   )}
@@ -1608,18 +1608,18 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                                           e.stopPropagation();
                                           openUserProfile(rowOwnerInfo.userId!);
                                         }}
-                                        className="text-[10px] text-slate-400 hover:text-emerald-400 font-medium truncate max-w-[140px] text-left transition-colors"
+                                        className="text-[10px] text-[var(--efl-muted)] hover:text-[var(--efl-primary)] font-medium truncate max-w-[140px] text-left transition-colors"
                                       >
                                         {rowOwnerInfo.displayText}
                                       </button>
                                     ) : (
-                                      <span className="text-[10px] text-slate-400 font-medium truncate max-w-[140px]">
+                                      <span className="text-[10px] text-[var(--efl-muted)] font-medium truncate max-w-[140px]">
                                         {rowOwnerInfo.displayText}
                                       </span>
                                     );
                                   }
                                   return (
-                                    <span className="text-[10px] text-amber-400/90 font-bold truncate max-w-[140px]">
+                                    <span className="text-[10px] text-amber-500 font-bold truncate max-w-[140px]">
                                       {t.userNeeded}
                                     </span>
                                   );
@@ -1628,20 +1628,20 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                             </div>
                           </td>
 
-                          <td className="py-2.5 px-2 text-center font-semibold text-slate-300">{row.played}</td>
-                          <td className="py-2.5 px-2 text-center text-slate-400">{row.won}</td>
-                          <td className="py-2.5 px-2 text-center text-slate-400">{row.drawn}</td>
-                          <td className="py-2.5 px-2 text-center text-slate-400">{row.lost}</td>
-                          <td className="py-2.5 px-2 text-center text-slate-400 hidden sm:table-cell">
+                          <td className="py-2.5 px-2 text-center font-semibold text-[var(--efl-text)]">{row.played}</td>
+                          <td className="py-2.5 px-2 text-center text-[var(--efl-text-2)]">{row.won}</td>
+                          <td className="py-2.5 px-2 text-center text-[var(--efl-text-2)]">{row.drawn}</td>
+                          <td className="py-2.5 px-2 text-center text-[var(--efl-text-2)]">{row.lost}</td>
+                          <td className="py-2.5 px-2 text-center text-[var(--efl-text-2)] hidden sm:table-cell">
                             {row.goalsFor}
                           </td>
-                          <td className="py-2.5 px-2 text-center text-slate-400 hidden sm:table-cell">
+                          <td className="py-2.5 px-2 text-center text-[var(--efl-text-2)] hidden sm:table-cell">
                             {row.goalsAgainst}
                           </td>
-                          <td className="py-2.5 px-2 text-center font-bold text-slate-300">
+                          <td className="py-2.5 px-2 text-center font-bold text-[var(--efl-text)]">
                             {row.goalDifference > 0 ? `+${row.goalDifference}` : row.goalDifference}
                           </td>
-                          <td className="py-2.5 px-3 text-center font-black text-emerald-400 text-sm">{row.points}</td>
+                          <td className="py-2.5 px-3 text-center font-black text-[var(--efl-primary)] text-sm">{row.points}</td>
                         </tr>
                       );
                     })}

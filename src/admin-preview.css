@@ -191,17 +191,21 @@
   color: var(--efl-primary) !important;
 }
 
-/* Broadcast Card and Surface Presets */
+/* Broadcast Card, Modal, and Surface Presets */
 .efl-preview .preview-surface,
+.efl-preview .preview-card,
 .efl-preview .glass-panel,
-.efl-preview .glass-card {
+.efl-preview .glass-card,
+.efl-preview .glass-modal,
+.efl-preview .preview-modal {
   background: var(--efl-surface) !important;
   border-color: var(--efl-border) !important;
   color: var(--efl-text) !important;
   box-shadow: var(--efl-shadow) !important;
 }
 
-.efl-preview .preview-surface-elevated {
+.efl-preview .preview-surface-elevated,
+.efl-preview .preview-surface-subtle {
   background: var(--efl-surface-2) !important;
   border-color: var(--efl-border) !important;
   color: var(--efl-text) !important;
@@ -238,20 +242,58 @@
 }
 
 /* Inputs in Admin Broadcast */
-.efl-preview .glass-input {
+.efl-preview .glass-input,
+.efl-preview input[type="text"],
+.efl-preview input[type="search"],
+.efl-preview input[type="number"],
+.efl-preview input[type="url"],
+.efl-preview select,
+.efl-preview textarea {
   background: var(--efl-surface-2) !important;
   border: 1px solid var(--efl-border) !important;
   color: var(--efl-text) !important;
 }
 
-.efl-preview .glass-input::placeholder {
+.efl-preview .glass-input::placeholder,
+.efl-preview input::placeholder,
+.efl-preview textarea::placeholder {
   color: var(--efl-muted) !important;
 }
 
-.efl-preview .glass-input:focus {
+.efl-preview .glass-input:focus,
+.efl-preview input:focus,
+.efl-preview select:focus,
+.efl-preview textarea:focus {
   border-color: var(--efl-primary) !important;
   outline: none;
   box-shadow: 0 0 0 2px var(--efl-primary-soft) !important;
+}
+
+/* Explicit Design Token Utility Classes */
+.efl-preview .efl-surface {
+  background-color: var(--efl-surface) !important;
+}
+.efl-preview .efl-surface-2 {
+  background-color: var(--efl-surface-2) !important;
+}
+.efl-preview .efl-border {
+  border-color: var(--efl-border) !important;
+}
+.efl-preview .efl-text {
+  color: var(--efl-text) !important;
+}
+.efl-preview .efl-text-2 {
+  color: var(--efl-text-2) !important;
+}
+.efl-preview .efl-muted {
+  color: var(--efl-muted) !important;
+}
+.efl-preview .efl-primary-text {
+  color: var(--efl-primary) !important;
+}
+.efl-preview .efl-primary-soft {
+  background-color: var(--efl-primary-soft) !important;
+  color: var(--efl-primary) !important;
 }
 
 /* League Banner Override - Compact Neutral Sports Surface */
@@ -290,6 +332,11 @@
   color: var(--efl-text-2) !important;
 }
 
+.efl-preview thead th {
+  color: var(--efl-text-2) !important;
+  font-weight: 700 !important;
+}
+
 .efl-preview tbody tr {
   border-bottom: 1px solid var(--efl-border) !important;
   transition: background-color 120ms ease;
@@ -297,6 +344,21 @@
 
 .efl-preview tbody tr:hover {
   background: var(--efl-surface-2) !important;
+}
+
+/* Modal Dialog and Overlays */
+.efl-preview [role="dialog"],
+.efl-preview .fixed.inset-0.z-50,
+.efl-preview .fixed.inset-0.z-\[100\] {
+  background-color: rgba(0, 0, 0, 0.45) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+}
+
+.efl-preview.theme-dark [role="dialog"],
+.efl-preview.theme-dark .fixed.inset-0.z-50,
+.efl-preview.theme-dark .fixed.inset-0.z-\[100\] {
+  background-color: rgba(0, 0, 0, 0.75) !important;
 }
 
 /* Subtle Active Club Row Highlight */
@@ -328,13 +390,20 @@
 
 /* Footer styling */
 .efl-preview footer {
-  background: var(--efl-surface);
-  border-color: var(--efl-border);
-  color: var(--efl-muted);
+  background: var(--efl-surface) !important;
+  border-color: var(--efl-border) !important;
+  color: var(--efl-muted) !important;
 }
 
-.efl-preview footer span {
-  color: var(--efl-muted);
+.efl-preview footer span,
+.efl-preview footer div,
+.efl-preview footer .text-slate-300,
+.efl-preview footer .text-slate-400 {
+  color: var(--efl-muted) !important;
+}
+
+.efl-preview footer .font-bold {
+  color: var(--efl-text-2) !important;
 }
 
 /* Club switcher and responsive sports density */

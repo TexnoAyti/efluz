@@ -115,9 +115,38 @@ const AppContent: React.FC = () => {
 
   const currentTab = activeTab === 'home' ? 'dashboard' : activeTab;
   return (
-    <div className={`min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white ${user?.isAdmin ? `efl-preview theme-${theme} ${theme === 'dark' ? 'dark' : ''}` : ''}`}>
+    <div
+      className={`min-h-screen flex flex-col font-sans selection:bg-blue-600 selection:text-white ${
+        user?.isAdmin
+          ? `efl-preview theme-${theme} ${theme === 'dark' ? 'dark' : ''}`
+          : 'bg-slate-950 text-slate-100'
+      }`}
+    >
       {isDesignPreview && <div className="sticky top-0 z-[60] bg-amber-100 px-3 py-1.5 text-center text-[11px] font-bold text-amber-950">DESIGN PREVIEW · test ko‘rinishi, hisobga kirilmagan</div>}
-      {toastMessage && <div className="fixed top-14 right-4 z-50 animate-in slide-in-from-top-3 fade-in duration-200"><div className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-2xl text-xs font-bold border backdrop-blur-md ${toastMessage.type === 'success' ? 'bg-emerald-950/90 text-emerald-300 border-emerald-500/40 shadow-emerald-500/10' : toastMessage.type === 'error' ? 'bg-rose-950/90 text-rose-300 border-rose-500/40 shadow-rose-500/10' : 'bg-slate-900/95 text-slate-200 border-slate-700 shadow-slate-900/40'}`}>{toastMessage.type === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />}{toastMessage.type === 'error' && <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />}{toastMessage.type === 'info' && <Info className="w-4 h-4 text-sky-400 shrink-0" />}<span>{toastMessage.text}</span></div></div>}
+      {toastMessage && (
+        <div className="fixed top-14 right-4 z-50 animate-in slide-in-from-top-3 fade-in duration-200">
+          <div
+            className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-2xl text-xs font-bold border backdrop-blur-md ${
+              user?.isAdmin
+                ? toastMessage.type === 'success'
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300 shadow-emerald-500/10 dark:bg-emerald-950/90 dark:text-emerald-300 dark:border-emerald-500/40'
+                  : toastMessage.type === 'error'
+                  ? 'bg-rose-50 text-rose-800 border-rose-300 shadow-rose-500/10 dark:bg-rose-950/90 dark:text-rose-300 dark:border-rose-500/40'
+                  : 'bg-blue-50 text-blue-800 border-blue-300 shadow-blue-500/10 dark:bg-blue-950/90 dark:text-blue-300 dark:border-blue-500/40'
+                : toastMessage.type === 'success'
+                ? 'bg-emerald-950/90 text-emerald-300 border-emerald-500/40 shadow-emerald-500/10'
+                : toastMessage.type === 'error'
+                ? 'bg-rose-950/90 text-rose-300 border-rose-500/40 shadow-rose-500/10'
+                : 'bg-slate-900/95 text-slate-200 border-slate-700 shadow-slate-900/40'
+            }`}
+          >
+            {toastMessage.type === 'success' && <CheckCircle2 className={`w-4 h-4 shrink-0 ${user?.isAdmin ? 'text-emerald-600 dark:text-emerald-400' : 'text-emerald-400'}`} />}
+            {toastMessage.type === 'error' && <AlertCircle className={`w-4 h-4 shrink-0 ${user?.isAdmin ? 'text-rose-600 dark:text-rose-400' : 'text-rose-400'}`} />}
+            {toastMessage.type === 'info' && <Info className={`w-4 h-4 shrink-0 ${user?.isAdmin ? 'text-blue-600 dark:text-sky-400' : 'text-sky-400'}`} />}
+            <span>{toastMessage.text}</span>
+          </div>
+        </div>
+      )}
       <Header
         theme={theme}
         onThemeChange={changeTheme}

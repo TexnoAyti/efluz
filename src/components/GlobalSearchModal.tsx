@@ -201,9 +201,9 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-label="Global Search"
-      className="fixed inset-0 z-[100] flex flex-col bg-slate-950/85 backdrop-blur-2xl animate-in fade-in duration-200"
+      className="fixed inset-0 z-[100] flex flex-col bg-slate-950/60 dark:bg-black/80 backdrop-blur-xl animate-in fade-in duration-200"
     >
-      <div className="w-full max-w-2xl mx-auto px-4 pt-4 pb-3 sm:pt-6 flex flex-col h-full">
+      <div className="w-full max-w-2xl mx-auto px-4 pt-4 pb-3 sm:pt-6 flex flex-col h-full text-slate-900 dark:text-white">
         {/* Search Input Bar */}
         <div className="relative flex items-center gap-3">
           <div className="relative flex-1 flex items-center">
@@ -220,13 +220,13 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
                   ? 'Поиск клубов, турниров, игроков или матчей...'
                   : 'Search clubs, competitions, players or matches...'
               }
-              className="w-full pl-11 pr-10 py-3.5 rounded-2xl bg-white/10 border border-white/15 text-white placeholder-slate-400 text-sm font-semibold focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all"
+              className="w-full pl-11 pr-10 py-3.5 rounded-2xl bg-white dark:bg-[#171e2c] border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white placeholder-slate-400 text-sm font-semibold focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 shadow-xs transition-all"
             />
             {query && (
               <button
                 type="button"
                 onClick={() => setQuery('')}
-                className="absolute right-3 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10"
+                className="absolute right-3 p-1.5 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10"
                 aria-label="Clear search"
               >
                 <X className="w-4 h-4" />
@@ -236,7 +236,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-3 rounded-2xl text-xs font-bold text-slate-300 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
+            className="px-4 py-3 rounded-2xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-white dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200 dark:border-white/10 shadow-xs transition-colors"
           >
             {language === 'uz' ? 'Yopish' : language === 'ru' ? 'Закрыть' : 'Close'}
           </button>
@@ -246,17 +246,17 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
         <div className="flex-1 overflow-y-auto mt-4 space-y-6 pb-20 pr-1 scrollbar-none">
           {!trimmed && (
             <div className="text-center py-12 px-4">
-              <div className="w-14 h-14 mx-auto rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 mb-3">
+              <div className="w-14 h-14 mx-auto rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-600 dark:text-blue-400 mb-3">
                 <Search className="w-7 h-7" />
               </div>
-              <h3 className="text-sm font-bold text-white">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
                 {language === 'uz'
                   ? 'EFL UZ Bo‘ylab Qidiruv'
                   : language === 'ru'
                   ? 'Поиск по EFL UZ'
                   : 'Search across EFL UZ'}
               </h3>
-              <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-xs mx-auto">
                 {language === 'uz'
                   ? 'Premier League, La Liga, UCL, milliy kuboklar, klublar va o‘yinchilarni toping.'
                   : language === 'ru'
@@ -271,7 +271,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
                     key={comp.id}
                     type="button"
                     onClick={() => handleSelectCompetition(comp)}
-                    className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-slate-300 hover:text-white transition-colors"
+                    className="px-3 py-1.5 rounded-xl bg-white dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200 dark:border-white/10 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white shadow-xs transition-colors"
                   >
                     {comp.name}
                   </button>
@@ -282,30 +282,30 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
 
           {trimmed && !hasResults && !isLoading && (
             <div className="text-center py-12">
-              <p className="text-sm font-bold text-slate-300">
+              <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
                 {language === 'uz' ? 'Hech narsa topilmadi' : language === 'ru' ? 'Ничего не найдено' : 'No results found'}
               </p>
-              <p className="text-xs text-slate-400 mt-1">"{query}"</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">"{query}"</p>
             </div>
           )}
 
           {/* Group 1: Clubs */}
           {filteredClubs.length > 0 && (
             <div className="space-y-2">
-              <div className="text-[11px] font-black uppercase tracking-wider text-slate-400 px-2 flex items-center gap-1.5">
-                <Shield className="w-3.5 h-3.5 text-blue-400" />
+              <div className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 px-2 flex items-center gap-1.5">
+                <Shield className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
                 <span>{language === 'uz' ? 'Klublar' : language === 'ru' ? 'Клубы' : 'Clubs'}</span>
               </div>
-              <div className="bg-white/5 rounded-2xl border border-white/10 divide-y divide-white/5 overflow-hidden">
+              <div className="bg-white dark:bg-[#111722] rounded-2xl border border-slate-200/80 dark:border-white/10 divide-y divide-slate-100 dark:divide-white/5 overflow-hidden shadow-xs">
                 {filteredClubs.map((club) => (
                   <button
                     key={club.id}
                     type="button"
                     onClick={() => handleSelectClub(club)}
-                    className="w-full flex items-center justify-between p-3 px-4 hover:bg-white/10 transition-colors text-left"
+                    className="w-full flex items-center justify-between p-3 px-4 hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors text-left"
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-8 h-8 rounded-xl bg-slate-900 border border-white/10 flex items-center justify-center shrink-0">
+                      <div className="w-8 h-8 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 flex items-center justify-center shrink-0">
                         <ClubCrest
                           clubId={club.id}
                           logoUrl={club.logoUrl}
@@ -315,13 +315,13 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
                         />
                       </div>
                       <div className="min-w-0">
-                        <div className="text-xs font-bold text-white truncate">{club.name}</div>
-                        <div className="text-[10px] text-slate-400 capitalize">
+                        <div className="text-xs font-bold text-slate-900 dark:text-white truncate">{club.name}</div>
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400 capitalize">
                           {club.leagueId?.replace('league-', '').replace('-', ' ') || 'Domestic League'}
                         </div>
                       </div>
                     </div>
-                    <ChevronRight className="w-4 h-4 text-slate-500 shrink-0" />
+                    <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
                   </button>
                 ))}
               </div>
@@ -331,28 +331,28 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
           {/* Group 2: Competitions */}
           {filteredCompetitions.length > 0 && (
             <div className="space-y-2">
-              <div className="text-[11px] font-black uppercase tracking-wider text-slate-400 px-2 flex items-center gap-1.5">
-                <Trophy className="w-3.5 h-3.5 text-amber-400" />
+              <div className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 px-2 flex items-center gap-1.5">
+                <Trophy className="w-3.5 h-3.5 text-amber-500" />
                 <span>{language === 'uz' ? 'Turnirlar' : language === 'ru' ? 'Турниры' : 'Competitions'}</span>
               </div>
-              <div className="bg-white/5 rounded-2xl border border-white/10 divide-y divide-white/5 overflow-hidden">
+              <div className="bg-white dark:bg-[#111722] rounded-2xl border border-slate-200/80 dark:border-white/10 divide-y divide-slate-100 dark:divide-white/5 overflow-hidden shadow-xs">
                 {filteredCompetitions.map((comp) => (
                   <button
                     key={comp.id}
                     type="button"
                     onClick={() => handleSelectCompetition(comp)}
-                    className="w-full flex items-center justify-between p-3 px-4 hover:bg-white/10 transition-colors text-left"
+                    className="w-full flex items-center justify-between p-3 px-4 hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors text-left"
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 shrink-0">
+                      <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 shrink-0">
                         <Trophy className="w-4 h-4" />
                       </div>
                       <div className="min-w-0">
-                        <div className="text-xs font-bold text-white truncate">{comp.name}</div>
-                        <div className="text-[10px] text-slate-400">{comp.country}</div>
+                        <div className="text-xs font-bold text-slate-900 dark:text-white truncate">{comp.name}</div>
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400">{comp.country}</div>
                       </div>
                     </div>
-                    <span className="text-[10px] font-black uppercase text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-lg border border-blue-500/20">
+                    <span className="text-[10px] font-black uppercase text-blue-600 dark:text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-lg border border-blue-500/20">
                       {comp.type}
                     </span>
                   </button>
@@ -364,33 +364,33 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
           {/* Group 3: Matches */}
           {filteredMatches.length > 0 && (
             <div className="space-y-2">
-              <div className="text-[11px] font-black uppercase tracking-wider text-slate-400 px-2 flex items-center gap-1.5">
-                <Swords className="w-3.5 h-3.5 text-rose-400" />
+              <div className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 px-2 flex items-center gap-1.5">
+                <Swords className="w-3.5 h-3.5 text-rose-500" />
                 <span>{language === 'uz' ? 'O‘yinlar' : language === 'ru' ? 'Матчи' : 'Matches'}</span>
               </div>
-              <div className="bg-white/5 rounded-2xl border border-white/10 divide-y divide-white/5 overflow-hidden">
+              <div className="bg-white dark:bg-[#111722] rounded-2xl border border-slate-200/80 dark:border-white/10 divide-y divide-slate-100 dark:divide-white/5 overflow-hidden shadow-xs">
                 {filteredMatches.map((f) => (
                   <button
                     key={f.id}
                     type="button"
                     onClick={() => handleSelectMatch(f)}
-                    className="w-full flex items-center justify-between p-3 px-4 hover:bg-white/10 transition-colors text-left"
+                    className="w-full flex items-center justify-between p-3 px-4 hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors text-left"
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="text-xs font-bold text-white truncate">
+                      <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
                         {f.homeClub?.shortName || f.homeClub?.name || 'Home'} vs{' '}
                         {f.awayClub?.shortName || f.awayClub?.name || 'Away'}
                       </div>
-                      <div className="text-[10px] text-slate-400 mt-0.5">
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
                         {f.competitionName || 'EFL UZ'} · Round {f.matchday}
                       </div>
                     </div>
                     {f.status === 'CONFIRMED' ? (
-                      <span className="font-mono text-xs font-black text-white px-2 py-1 bg-white/10 rounded-lg">
+                      <span className="font-mono text-xs font-black text-slate-900 dark:text-white px-2 py-1 bg-slate-100 dark:bg-white/10 rounded-lg">
                         {f.homeScore} : {f.awayScore}
                       </span>
                     ) : (
-                      <span className="text-[10px] font-bold text-slate-400 bg-white/5 px-2 py-1 rounded-lg">
+                      <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-white/5 px-2 py-1 rounded-lg">
                         {f.status}
                       </span>
                     )}
@@ -403,29 +403,29 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
           {/* Group 4: Players */}
           {filteredPlayers.length > 0 && (
             <div className="space-y-2">
-              <div className="text-[11px] font-black uppercase tracking-wider text-slate-400 px-2 flex items-center gap-1.5">
-                <User className="w-3.5 h-3.5 text-emerald-400" />
+              <div className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 px-2 flex items-center gap-1.5">
+                <User className="w-3.5 h-3.5 text-emerald-500" />
                 <span>{language === 'uz' ? 'O‘yinchilar' : language === 'ru' ? 'Игроки' : 'Players'}</span>
               </div>
-              <div className="bg-white/5 rounded-2xl border border-white/10 divide-y divide-white/5 overflow-hidden">
+              <div className="bg-white dark:bg-[#111722] rounded-2xl border border-slate-200/80 dark:border-white/10 divide-y divide-slate-100 dark:divide-white/5 overflow-hidden shadow-xs">
                 {filteredPlayers.map((p) => (
                   <button
                     key={p.id}
                     type="button"
                     onClick={handleSelectPlayer}
-                    className="w-full flex items-center justify-between p-3 px-4 hover:bg-white/10 transition-colors text-left"
+                    className="w-full flex items-center justify-between p-3 px-4 hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors text-left"
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-8 h-8 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-bold text-xs shrink-0">
+                      <div className="w-8 h-8 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400 font-bold text-xs shrink-0">
                         {p.firstName?.charAt(0) || '@'}
                       </div>
                       <div className="min-w-0">
-                        <div className="text-xs font-bold text-white truncate">@{p.username}</div>
-                        <div className="text-[10px] text-slate-400">{p.firstName}</div>
+                        <div className="text-xs font-bold text-slate-900 dark:text-white truncate">@{p.username}</div>
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400">{p.firstName}</div>
                       </div>
                     </div>
                     {p.isAdmin && (
-                      <span className="text-[9px] font-black uppercase text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                      <span className="text-[9px] font-black uppercase text-amber-600 dark:text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
                         Admin
                       </span>
                     )}

@@ -487,15 +487,15 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
   // If user has NO club claimed
   if (!activeClub && ownedClubs.length === 0 && !isLoading) {
     return (
-      <div className="preview-surface p-8 sm:p-12 rounded-3xl border border-slate-200/80 dark:border-white/10 text-center max-w-lg mx-auto my-8 space-y-4 shadow-sm">
-        <div className="w-16 h-16 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400 mx-auto flex items-center justify-center">
+      <div className="preview-surface p-8 sm:p-12 rounded-3xl border border-[var(--efl-border)] text-center max-w-lg mx-auto my-8 space-y-4 shadow-sm">
+        <div className="w-16 h-16 rounded-2xl bg-[var(--efl-primary-soft)] border border-[var(--efl-border)] text-[var(--efl-primary)] mx-auto flex items-center justify-center">
           <Shield className="w-8 h-8" />
         </div>
         <div>
-          <h2 className="text-xl font-black text-slate-900 dark:text-white">
+          <h2 className="text-xl font-black text-[var(--efl-text)]">
             {copy.noClubYet}
           </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
+          <p className="text-xs text-[var(--efl-text-2)] mt-1 max-w-sm mx-auto">
             {copy.selectClubCta}
           </p>
         </div>
@@ -516,12 +516,12 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
       {/* ==============================================================
           1. ACTIVE CLUB IDENTITY & 2. OWNED CLUB SWITCHER
           ============================================================== */}
-      <section className="preview-surface rounded-3xl border border-slate-200/80 dark:border-white/10 p-5 sm:p-6 shadow-sm relative overflow-hidden">
+      <section className="preview-surface rounded-3xl border border-[var(--efl-border)] p-5 sm:p-6 shadow-sm relative overflow-hidden">
         <div className="flex flex-col sm:flex-row items-center sm:items-start justify-between gap-5 text-center sm:text-left">
           {/* Active Club Identity Layout */}
           <div className="flex flex-col sm:flex-row items-center gap-4.5">
             <div className="relative group shrink-0">
-              <div className="w-20 h-20 sm:w-22 sm:h-22 rounded-2xl bg-white dark:bg-[#171e2c] border-2 border-blue-500/60 p-2 flex items-center justify-center shadow-md transition-transform duration-200">
+              <div className="w-20 h-20 sm:w-22 sm:h-22 rounded-2xl bg-[var(--efl-surface)] border-2 border-[var(--efl-primary)] p-2 flex items-center justify-center shadow-md transition-transform duration-200">
                 <ClubCrest
                   clubId={activeClub?.id}
                   logoUrl={activeClub?.logoUrl}
@@ -532,7 +532,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
                 />
               </div>
               <div
-                className="absolute -bottom-1 -right-1 bg-blue-600 text-white p-1 rounded-full shadow-sm ring-2 ring-white dark:ring-[#111722]"
+                className="absolute -bottom-1 -right-1 bg-[var(--efl-primary)] text-white p-1 rounded-full shadow-sm ring-2 ring-[var(--efl-surface)]"
                 title={copy.activeClub}
               >
                 <CheckCircle2 className="w-3.5 h-3.5" />
@@ -551,20 +551,20 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
                 <span>2026/27</span>
               </div>
 
-              <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight truncate max-w-sm">
+              <h1 className="text-2xl sm:text-3xl font-black text-[var(--efl-text)] tracking-tight truncate max-w-sm">
                 {activeClub?.name || 'Club'}
               </h1>
 
-              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 text-xs text-slate-500 dark:text-slate-400 mt-1">
-                <span className="font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 text-xs text-[var(--efl-text-2)] mt-1">
+                <span className="font-bold text-[var(--efl-primary)] flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[var(--efl-primary)] animate-pulse" />
                   {copy.controlledClub}
                 </span>
                 {activeClub?.stadium && (
                   <>
                     <span>•</span>
                     <span className="flex items-center gap-1">
-                      <MapPin className="w-3 h-3 text-slate-400" />
+                      <MapPin className="w-3 h-3 text-[var(--efl-muted)]" />
                       {activeClub.stadium}
                     </span>
                   </>
@@ -575,15 +575,15 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
 
           {/* 2. OWNED CLUB SWITCHER (Crest-first switching, only if user owns > 1 club) */}
           {secondaryClubs.length > 0 && (
-            <div className="flex flex-col items-center sm:items-end gap-1.5 bg-slate-50 dark:bg-white/5 p-3 rounded-2xl border border-slate-200/80 dark:border-white/10 shrink-0">
-              <div className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            <div className="flex flex-col items-center sm:items-end gap-1.5 bg-[var(--efl-surface-2)] p-3 rounded-2xl border border-[var(--efl-border)] shrink-0">
+              <div className="text-[10px] font-black uppercase tracking-wider text-[var(--efl-text-2)]">
                 {copy.switchClub}
               </div>
 
               <div className="flex items-center gap-2">
                 {/* Active Club mini crest */}
                 <div
-                  className="w-11 h-11 rounded-xl p-1.5 flex items-center justify-center bg-white dark:bg-[#111722] ring-2 ring-blue-600 shadow-xs relative"
+                  className="w-11 h-11 rounded-xl p-1.5 flex items-center justify-center bg-[var(--efl-surface)] ring-2 ring-[var(--efl-primary)] shadow-xs relative"
                   title={`${activeClub?.name} (${copy.activeClub})`}
                 >
                   <ClubCrest
@@ -594,7 +594,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
                     size="xs"
                     className="w-full h-full object-contain"
                   />
-                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-blue-600 ring-1 ring-white dark:ring-[#111722]" />
+                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[var(--efl-primary)] ring-1 ring-[var(--efl-surface)]" />
                 </div>
 
                 {/* Secondary Owned Clubs */}
@@ -605,7 +605,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
                     onClick={() => selectCurrentClub(club.id)}
                     title={`${copy.switchClub}: ${club.name}`}
                     aria-label={`${copy.switchClub}: ${club.name}`}
-                    className="w-11 h-11 rounded-xl p-1.5 flex items-center justify-center bg-white/70 dark:bg-white/5 hover:bg-white dark:hover:bg-white/10 border border-slate-200 dark:border-white/10 opacity-70 hover:opacity-100 hover:scale-105 active:scale-95 transition-all duration-180"
+                    className="w-11 h-11 rounded-xl p-1.5 flex items-center justify-center bg-[var(--efl-surface)] hover:bg-[var(--efl-surface-2)] border border-[var(--efl-border)] opacity-80 hover:opacity-100 hover:scale-105 active:scale-95 transition-all duration-180"
                   >
                     <ClubCrest
                       clubId={club.id}
@@ -627,11 +627,11 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
           3. NEXT MATCH / ACTION REQUIRED
           ============================================================== */}
       {heroMatch && (
-        <section className="preview-surface rounded-3xl border border-slate-200/80 dark:border-white/10 p-5 shadow-sm space-y-4">
+        <section className="preview-surface rounded-3xl border border-[var(--efl-border)] p-5 shadow-sm space-y-4">
           {/* Header row */}
-          <div className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-white/5 pb-3">
-            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              <Swords className="w-3.5 h-3.5 text-blue-500" />
+          <div className="flex items-center justify-between gap-2 border-b border-[var(--efl-border)] pb-3">
+            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-[var(--efl-text-2)]">
+              <Swords className="w-3.5 h-3.5 text-[var(--efl-primary)]" />
               <span>
                 {heroMatch.competitionName || 'Domestic League'} • {copy.matchday} {heroMatch.matchday}
               </span>
@@ -651,7 +651,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
                 <Clock className="w-3 h-3" /> {t.matchStatusPending}
               </span>
             ) : heroMatch.isPlayable === false ? (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-white/10">
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-[var(--efl-surface-2)] text-[var(--efl-muted)] border border-[var(--efl-border)]">
                 <Lock className="w-3 h-3" /> {copy.matchdayLocked}
               </span>
             ) : (
@@ -666,12 +666,12 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
             {/* Home Team (Cols 3) */}
             <div className="col-span-3 flex flex-col sm:flex-row items-center justify-end sm:gap-3 text-center sm:text-right">
               <div className="order-2 sm:order-1 min-w-0">
-                <div className="text-xs font-black text-slate-900 dark:text-white truncate">
+                <div className="text-xs font-black text-[var(--efl-text)] truncate">
                   {heroMatch.homeClub?.name || 'Home Club'}
                 </div>
-                <div className="text-[10px] text-slate-400 font-bold uppercase">{copy.homeTag}</div>
+                <div className="text-[10px] text-[var(--efl-muted)] font-bold uppercase">{copy.homeTag}</div>
               </div>
-              <div className="order-1 sm:order-2 w-12 h-12 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/10 p-1.5 flex items-center justify-center shrink-0 mb-1 sm:mb-0">
+              <div className="order-1 sm:order-2 w-12 h-12 rounded-xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)] p-1.5 flex items-center justify-center shrink-0 mb-1 sm:mb-0">
                 <ClubCrest
                   clubId={heroMatch.homeClubId || heroMatch.homeClub?.id}
                   logoUrl={heroMatch.homeClub?.logoUrl}
@@ -686,7 +686,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
             {/* Center Score / VS (Col 1) */}
             <div className="col-span-1 flex flex-col items-center justify-center text-center">
               {heroMatch.status === 'CONFIRMED' ? (
-                <div className="text-lg sm:text-2xl font-black text-slate-900 dark:text-white tabular-nums tracking-tight font-mono">
+                <div className="text-lg sm:text-2xl font-black text-[var(--efl-text)] tabular-nums tracking-tight font-mono">
                   {heroMatch.homeScore ?? 0} : {heroMatch.awayScore ?? 0}
                 </div>
               ) : heroMatch.opponentSubmission ? (
@@ -694,7 +694,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
                   {heroMatch.opponentSubmission.homeScore} : {heroMatch.opponentSubmission.awayScore}
                 </div>
               ) : (
-                <div className="text-xs sm:text-sm font-black text-slate-400 uppercase tracking-widest">
+                <div className="text-xs sm:text-sm font-black text-[var(--efl-muted)] uppercase tracking-widest">
                   VS
                 </div>
               )}
@@ -702,7 +702,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
 
             {/* Away Team (Cols 3) */}
             <div className="col-span-3 flex flex-col sm:flex-row items-center justify-start sm:gap-3 text-center sm:text-left">
-              <div className="w-12 h-12 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/10 p-1.5 flex items-center justify-center shrink-0 mb-1 sm:mb-0">
+              <div className="w-12 h-12 rounded-xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)] p-1.5 flex items-center justify-center shrink-0 mb-1 sm:mb-0">
                 <ClubCrest
                   clubId={heroMatch.awayClubId || heroMatch.awayClub?.id}
                   logoUrl={heroMatch.awayClub?.logoUrl}
@@ -713,10 +713,10 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
                 />
               </div>
               <div className="min-w-0">
-                <div className="text-xs font-black text-slate-900 dark:text-white truncate">
+                <div className="text-xs font-black text-[var(--efl-text)] truncate">
                   {heroMatch.awayClub?.name || 'Away Club'}
                 </div>
-                <div className="text-[10px] text-slate-400 font-bold uppercase">{copy.awayTag}</div>
+                <div className="text-[10px] text-[var(--efl-muted)] font-bold uppercase">{copy.awayTag}</div>
               </div>
             </div>
           </div>
@@ -767,7 +767,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
                 onClick={() => setSelectedFixtureForModal(heroMatch)}
                 className={`flex-1 min-h-[40px] py-2.5 px-4 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all ${
                   heroMatch.isPlayable === false
-                    ? 'bg-slate-100 dark:bg-white/5 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-white/10 cursor-not-allowed'
+                    ? 'bg-[var(--efl-surface-2)] text-[var(--efl-muted)] border border-[var(--efl-border)] cursor-not-allowed'
                     : 'btn-glass-primary'
                 }`}
               >
@@ -803,24 +803,24 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
       {/* ==============================================================
           4. MATCHES (Upcoming & Results on a single coherent surface)
           ============================================================== */}
-      <section className="preview-surface rounded-3xl border border-slate-200/80 dark:border-white/10 overflow-hidden shadow-sm">
+      <section className="preview-surface rounded-3xl border border-[var(--efl-border)] overflow-hidden shadow-sm">
         {/* Section Header & Segmented Tabs */}
-        <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-white/5 flex items-center justify-between gap-3">
+        <div className="p-4 sm:p-5 border-b border-[var(--efl-border)] flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <Swords className="w-4 h-4 text-blue-500" />
-            <h2 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
+            <Swords className="w-4 h-4 text-[var(--efl-primary)]" />
+            <h2 className="text-sm font-black text-[var(--efl-text)] uppercase tracking-wider">
               {copy.matches}
             </h2>
           </div>
 
-          <div className="flex items-center gap-1 bg-slate-100 dark:bg-white/5 p-1 rounded-xl border border-slate-200/80 dark:border-white/10 text-xs">
+          <div className="flex items-center gap-1 bg-[var(--efl-surface-2)] p-1 rounded-xl border border-[var(--efl-border)] text-xs">
             <button
               type="button"
               onClick={() => setMatchTab('upcoming')}
               className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
                 matchTab === 'upcoming'
-                  ? 'bg-blue-600 text-white font-black shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  ? 'bg-[var(--efl-primary)] text-white font-black shadow-xs'
+                  : 'text-[var(--efl-text-2)] hover:text-[var(--efl-text)]'
               }`}
             >
               {copy.upcoming} ({pendingFixtures.length})
@@ -830,8 +830,8 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
               onClick={() => setMatchTab('results')}
               className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
                 matchTab === 'results'
-                  ? 'bg-blue-600 text-white font-black shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  ? 'bg-[var(--efl-primary)] text-white font-black shadow-xs'
+                  : 'text-[var(--efl-text-2)] hover:text-[var(--efl-text)]'
               }`}
             >
               {copy.results} ({confirmedFixtures.length})
@@ -840,9 +840,9 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
         </div>
 
         {/* Fixture Rows with clean row dividers */}
-        <div className="divide-y divide-slate-100 dark:divide-white/5">
+        <div className="divide-y divide-[var(--efl-border)]">
           {(matchTab === 'upcoming' ? pendingFixtures : confirmedFixtures).length === 0 ? (
-            <div className="p-8 text-center text-xs text-slate-400">
+            <div className="p-8 text-center text-xs text-[var(--efl-muted)]">
               {copy.noMatches}
             </div>
           ) : (
@@ -858,20 +858,20 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
                       setSelectedFixtureForModal(fixture);
                     }
                   }}
-                  className="p-3 sm:p-4 hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors cursor-pointer flex items-center justify-between gap-2 text-xs"
+                  className="p-3 sm:p-4 hover:bg-[var(--efl-surface-2)] transition-colors cursor-pointer flex items-center justify-between gap-2 text-xs"
                 >
                   {/* Home Team */}
                   <div className="flex-1 flex items-center justify-end gap-2 text-right min-w-0">
                     <span
                       className={`truncate font-bold ${
                         isHome
-                          ? 'text-blue-600 dark:text-blue-400 font-black'
-                          : 'text-slate-900 dark:text-white'
+                          ? 'text-[var(--efl-primary)] font-black'
+                          : 'text-[var(--efl-text)]'
                       }`}
                     >
                       {fixture.homeClub?.shortName || fixture.homeClub?.name || 'Home'}
                     </span>
-                    <div className="w-6 h-6 rounded-md bg-slate-50 dark:bg-white/5 p-0.5 flex items-center justify-center shrink-0">
+                    <div className="w-6 h-6 rounded-md bg-[var(--efl-surface-2)] p-0.5 flex items-center justify-center shrink-0">
                       <ClubCrest
                         clubId={fixture.homeClubId || fixture.homeClub?.id}
                         logoUrl={fixture.homeClub?.logoUrl}
@@ -884,13 +884,13 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
                   </div>
 
                   {/* Center Score / Time */}
-                  <div className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-white/5 text-center min-w-[70px] shrink-0 font-mono tabular-nums">
+                  <div className="px-2.5 py-1 rounded-lg bg-[var(--efl-surface-2)] text-center min-w-[70px] shrink-0 font-mono tabular-nums">
                     {fixture.status === 'CONFIRMED' ? (
-                      <span className="font-black text-slate-900 dark:text-white text-xs">
+                      <span className="font-black text-[var(--efl-text)] text-xs">
                         {fixture.homeScore ?? 0} : {fixture.awayScore ?? 0}
                       </span>
                     ) : (
-                      <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                      <span className="text-[11px] font-bold text-[var(--efl-text-2)]">
                         {copy.matchday} {fixture.matchday}
                       </span>
                     )}
@@ -898,7 +898,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
 
                   {/* Away Team */}
                   <div className="flex-1 flex items-center justify-start gap-2 text-left min-w-0">
-                    <div className="w-6 h-6 rounded-md bg-slate-50 dark:bg-white/5 p-0.5 flex items-center justify-center shrink-0">
+                    <div className="w-6 h-6 rounded-md bg-[var(--efl-surface-2)] p-0.5 flex items-center justify-center shrink-0">
                       <ClubCrest
                         clubId={fixture.awayClubId || fixture.awayClub?.id}
                         logoUrl={fixture.awayClub?.logoUrl}
@@ -911,8 +911,8 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
                     <span
                       className={`truncate font-bold ${
                         isAway
-                          ? 'text-blue-600 dark:text-blue-400 font-black'
-                          : 'text-slate-900 dark:text-white'
+                          ? 'text-[var(--efl-primary)] font-black'
+                          : 'text-[var(--efl-text)]'
                       }`}
                     >
                       {fixture.awayClub?.shortName || fixture.awayClub?.name || 'Away'}
@@ -926,9 +926,9 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
                         ✓
                       </span>
                     ) : fixture.isPlayable === false ? (
-                      <Lock className="w-3.5 h-3.5 text-slate-400" />
+                      <Lock className="w-3.5 h-3.5 text-[var(--efl-muted)]" />
                     ) : (
-                      <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                      <ChevronRight className="w-3.5 h-3.5 text-[var(--efl-muted)]" />
                     )}
                   </div>
                 </div>
@@ -941,68 +941,68 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
       {/* ==============================================================
           5. SEASON SNAPSHOT (One coherent stats surface)
           ============================================================== */}
-      <section className="preview-surface rounded-3xl border border-slate-200/80 dark:border-white/10 p-5 sm:p-6 shadow-sm space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/5 pb-3">
+      <section className="preview-surface rounded-3xl border border-[var(--efl-border)] p-5 sm:p-6 shadow-sm space-y-4">
+        <div className="flex items-center justify-between border-b border-[var(--efl-border)] pb-3">
           <div className="flex items-center gap-2">
-            <Trophy className="w-4 h-4 text-blue-500" />
-            <h2 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
+            <Trophy className="w-4 h-4 text-[var(--efl-primary)]" />
+            <h2 className="text-sm font-black text-[var(--efl-text)] uppercase tracking-wider">
               {copy.seasonSnapshot}
             </h2>
           </div>
-          <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
+          <span className="text-xs font-bold text-[var(--efl-text-2)]">
             {activeClub?.leagueId ? activeClub.leagueId.replace('league-', '').replace('-', ' ').toUpperCase() : 'League Record'}
           </span>
         </div>
 
         {/* 6-Metric Sports Grid */}
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-center">
-          <div className="p-3 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/5">
-            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">
+          <div className="p-3 rounded-2xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)]">
+            <span className="text-[10px] font-bold text-[var(--efl-text-2)] uppercase">
               {copy.position}
             </span>
-            <div className="text-base sm:text-lg font-black text-slate-900 dark:text-white tabular-nums mt-0.5">
+            <div className="text-base sm:text-lg font-black text-[var(--efl-text)] tabular-nums mt-0.5">
               {statsPosition ? `#${statsPosition}` : '—'}
             </div>
           </div>
 
-          <div className="p-3 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/5">
-            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">
+          <div className="p-3 rounded-2xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)]">
+            <span className="text-[10px] font-bold text-[var(--efl-text-2)] uppercase">
               {copy.points}
             </span>
-            <div className="text-base sm:text-lg font-black text-blue-600 dark:text-blue-400 tabular-nums mt-0.5">
+            <div className="text-base sm:text-lg font-black text-[var(--efl-primary)] tabular-nums mt-0.5">
               {statsPoints}
             </div>
           </div>
 
-          <div className="p-3 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/5">
-            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">
+          <div className="p-3 rounded-2xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)]">
+            <span className="text-[10px] font-bold text-[var(--efl-text-2)] uppercase">
               {copy.played}
             </span>
-            <div className="text-base sm:text-lg font-black text-slate-900 dark:text-white tabular-nums mt-0.5">
+            <div className="text-base sm:text-lg font-black text-[var(--efl-text)] tabular-nums mt-0.5">
               {statsPlayed}
             </div>
           </div>
 
-          <div className="p-3 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/5">
-            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">
+          <div className="p-3 rounded-2xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)]">
+            <span className="text-[10px] font-bold text-[var(--efl-text-2)] uppercase">
               {copy.record}
             </span>
-            <div className="text-xs sm:text-sm font-black text-slate-900 dark:text-white tabular-nums mt-1 font-mono">
+            <div className="text-xs sm:text-sm font-black text-[var(--efl-text)] tabular-nums mt-1 font-mono">
               {statsWon}–{statsDrawn}–{statsLost}
             </div>
           </div>
 
-          <div className="p-3 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/5">
-            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">
+          <div className="p-3 rounded-2xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)]">
+            <span className="text-[10px] font-bold text-[var(--efl-text-2)] uppercase">
               {copy.goals}
             </span>
-            <div className="text-xs sm:text-sm font-black text-slate-900 dark:text-white tabular-nums mt-1 font-mono">
+            <div className="text-xs sm:text-sm font-black text-[var(--efl-text)] tabular-nums mt-1 font-mono">
               {statsGf}:{statsGa}
             </div>
           </div>
 
-          <div className="p-3 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/5">
-            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">
+          <div className="p-3 rounded-2xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)]">
+            <span className="text-[10px] font-bold text-[var(--efl-text-2)] uppercase">
               {copy.difference}
             </span>
             <div
@@ -1011,7 +1011,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
                   ? 'text-emerald-600 dark:text-emerald-400'
                   : statsGd < 0
                   ? 'text-rose-600 dark:text-rose-400'
-                  : 'text-slate-700 dark:text-slate-300'
+                  : 'text-[var(--efl-text)]'
               }`}
             >
               {statsGd > 0 ? `+${statsGd}` : statsGd}
@@ -1021,8 +1021,8 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
 
         {/* Recent Form row if confirmed fixtures exist */}
         {recentFormList.length > 0 && (
-          <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-white/5 text-xs">
-            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase">
+          <div className="flex items-center justify-between pt-2 border-t border-[var(--efl-border)] text-xs">
+            <span className="text-[11px] font-bold text-[var(--efl-text-2)] uppercase">
               {copy.form}
             </span>
             <div className="flex items-center gap-1.5">
@@ -1042,11 +1042,11 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
       {/* ==============================================================
           6. COMPETITION STATUS (Tournaments the active club participates in)
           ============================================================== */}
-      <section className="preview-surface rounded-3xl border border-slate-200/80 dark:border-white/10 p-5 sm:p-6 shadow-sm space-y-3">
-        <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/5 pb-3">
+      <section className="preview-surface rounded-3xl border border-[var(--efl-border)] p-5 sm:p-6 shadow-sm space-y-3">
+        <div className="flex items-center justify-between border-b border-[var(--efl-border)] pb-3">
           <div className="flex items-center gap-2">
-            <Globe2 className="w-4 h-4 text-blue-500" />
-            <h2 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
+            <Globe2 className="w-4 h-4 text-[var(--efl-primary)]" />
+            <h2 className="text-sm font-black text-[var(--efl-text)] uppercase tracking-wider">
               {copy.competitions}
             </h2>
           </div>
@@ -1059,17 +1059,17 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
               <div
                 key={comp.id}
                 onClick={() => onNavigateTab(comp.targetTab)}
-                className="p-3 sm:p-3.5 rounded-2xl bg-slate-50 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200/60 dark:border-white/5 transition-all flex items-center justify-between gap-3 cursor-pointer group"
+                className="p-3 sm:p-3.5 rounded-2xl bg-[var(--efl-surface-2)] hover:bg-[var(--efl-surface)] border border-[var(--efl-border)] transition-all flex items-center justify-between gap-3 cursor-pointer group"
               >
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
                     <CompIcon className="w-4 h-4" />
                   </div>
                   <div className="min-w-0">
-                    <div className="text-xs font-black text-slate-900 dark:text-white truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                    <div className="text-xs font-black text-[var(--efl-text)] truncate group-hover:text-[var(--efl-primary)] transition-colors">
                       {comp.name}
                     </div>
-                    <div className="text-[10px] text-slate-400">{comp.type}</div>
+                    <div className="text-[10px] text-[var(--efl-muted)]">{comp.type}</div>
                   </div>
                 </div>
 
@@ -1077,7 +1077,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
                   <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
                     {comp.stage}
                   </span>
-                  <ChevronRight className="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+                  <ChevronRight className="w-3.5 h-3.5 text-[var(--efl-muted)] group-hover:translate-x-0.5 transition-transform" />
                 </div>
               </div>
             );
@@ -1088,17 +1088,17 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
       {/* ==============================================================
           7. ACCOUNT / SETTINGS (Lower in the page, secondary)
           ============================================================== */}
-      <section className="preview-surface rounded-3xl border border-slate-200/80 dark:border-white/10 p-5 sm:p-6 shadow-sm space-y-5">
-        <div className="flex items-center gap-2 border-b border-slate-100 dark:border-white/5 pb-3">
-          <UserIcon className="w-4 h-4 text-blue-500" />
-          <h2 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
+      <section className="preview-surface rounded-3xl border border-[var(--efl-border)] p-5 sm:p-6 shadow-sm space-y-5">
+        <div className="flex items-center gap-2 border-b border-[var(--efl-border)] pb-3">
+          <UserIcon className="w-4 h-4 text-[var(--efl-primary)]" />
+          <h2 className="text-sm font-black text-[var(--efl-text)] uppercase tracking-wider">
             {copy.accountSettings}
           </h2>
         </div>
 
         {/* Telegram User Identity Bar */}
         <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 flex items-center justify-center text-slate-500 overflow-hidden shrink-0">
+          <div className="w-12 h-12 rounded-2xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)] flex items-center justify-center text-[var(--efl-muted)] overflow-hidden shrink-0">
             {user?.photoUrl ? (
               <img src={user.photoUrl} alt={user.username} className="w-full h-full object-cover" />
             ) : (
@@ -1107,7 +1107,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="text-sm font-black text-slate-900 dark:text-white truncate">
+              <span className="text-sm font-black text-[var(--efl-text)] truncate">
                 {user?.firstName} {user?.lastName || ''}
               </span>
               {user?.isAdmin && (
@@ -1116,10 +1116,10 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
                 </span>
               )}
             </div>
-            <div className="text-xs font-semibold text-blue-600 dark:text-blue-400">
+            <div className="text-xs font-semibold text-[var(--efl-primary)]">
               @{user?.username || 'player'}
             </div>
-            <div className="text-[10px] text-slate-400">
+            <div className="text-[10px] text-[var(--efl-muted)]">
               Telegram ID: {user?.telegramId || user?.id || '—'}
             </div>
           </div>
@@ -1128,22 +1128,22 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
         {/* Appearance Toggle (Light / Dark) */}
         <div className="flex items-center justify-between pt-1">
           <div>
-            <div className="text-xs font-bold text-slate-900 dark:text-white">
+            <div className="text-xs font-bold text-[var(--efl-text)]">
               {copy.appearance}
             </div>
-            <div className="text-[11px] text-slate-500 dark:text-slate-400">
+            <div className="text-[11px] text-[var(--efl-text-2)]">
               EFL UZ Premium Broadcast Design
             </div>
           </div>
 
-          <div className="flex items-center gap-1 bg-slate-100 dark:bg-white/5 p-1 rounded-xl border border-slate-200/80 dark:border-white/10">
+          <div className="flex items-center gap-1 bg-[var(--efl-surface-2)] p-1 rounded-xl border border-[var(--efl-border)]">
             <button
               type="button"
               onClick={() => onThemeChange?.('light')}
               className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                 theme === 'light'
-                  ? 'bg-white text-slate-900 shadow-xs font-black'
-                  : 'text-slate-500 hover:text-slate-900'
+                  ? 'bg-[var(--efl-surface)] text-[var(--efl-text)] shadow-xs font-black'
+                  : 'text-[var(--efl-text-2)] hover:text-[var(--efl-text)]'
               }`}
             >
               <Sun className="w-3.5 h-3.5 text-amber-500" />
@@ -1154,8 +1154,8 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
               onClick={() => onThemeChange?.('dark')}
               className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                 theme === 'dark'
-                  ? 'bg-blue-600 text-white shadow-xs font-black'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-[var(--efl-primary)] text-white shadow-xs font-black'
+                  : 'text-[var(--efl-text-2)] hover:text-[var(--efl-text)]'
               }`}
             >
               <Moon className="w-3.5 h-3.5" />
@@ -1166,8 +1166,8 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
 
         {/* Language Selector */}
         <div className="space-y-2 pt-1">
-          <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900 dark:text-white">
-            <Languages className="w-3.5 h-3.5 text-blue-500" />
+          <div className="flex items-center gap-1.5 text-xs font-bold text-[var(--efl-text)]">
+            <Languages className="w-3.5 h-3.5 text-[var(--efl-primary)]" />
             <span>{t.changeLanguage}</span>
           </div>
           <div className="grid grid-cols-3 gap-2">
@@ -1181,7 +1181,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
                   className={`flex items-center justify-center gap-2 p-2.5 rounded-xl border transition-all text-xs ${
                     isSelected
                       ? 'bg-blue-500/10 border-blue-500 text-blue-600 dark:text-blue-400 font-black shadow-xs'
-                      : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300'
+                      : 'bg-[var(--efl-surface-2)] border-[var(--efl-border)] text-[var(--efl-text-2)] hover:text-[var(--efl-text)]'
                   }`}
                 >
                   <span className="text-base">{item.flag}</span>
@@ -1204,13 +1204,13 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
                 <SlidersHorizontal className="w-4 h-4" />
               </div>
               <div>
-                <div className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-2">
+                <div className="text-xs font-black text-[var(--efl-text)] flex items-center gap-2">
                   <span>{copy.adminPanel}</span>
                   <span className="px-1.5 py-0.2 rounded text-[9px] font-black uppercase bg-amber-500/20 text-amber-500">
                     Admin
                   </span>
                 </div>
-                <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                <div className="text-[11px] text-[var(--efl-text-2)] mt-0.5">
                   {copy.adminDesc}
                 </div>
               </div>
@@ -1221,12 +1221,12 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
 
         {/* Sandbox Dev Profiles Switcher (When in dev mode) */}
         {isDevMode && devProfiles.length > 0 && (
-          <div className="p-4 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-slate-50 dark:bg-white/5 space-y-2.5">
-            <div className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
+          <div className="p-4 rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface-2)] space-y-2.5">
+            <div className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-[var(--efl-text)]">
               <Sparkles className="w-3.5 h-3.5 text-amber-500" />
               <span>{t.sandboxSwitcher}</span>
             </div>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+            <p className="text-[11px] text-[var(--efl-text-2)]">
               {copy.sandboxSubtitle}
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
@@ -1240,14 +1240,14 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
                     className={`flex items-center justify-between p-2 rounded-xl border text-left text-xs transition-all ${
                       isSelected
                         ? 'bg-blue-500/10 border-blue-500 text-blue-600 dark:text-blue-400 font-black'
-                        : 'bg-white dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300'
+                        : 'bg-[var(--efl-surface)] border-[var(--efl-border)] text-[var(--efl-text-2)] hover:text-[var(--efl-text)]'
                     }`}
                   >
                     <div className="flex items-center gap-2 truncate">
-                      <div className={`w-2 h-2 rounded-full shrink-0 ${isSelected ? 'bg-blue-500' : 'bg-slate-400'}`} />
+                      <div className={`w-2 h-2 rounded-full shrink-0 ${isSelected ? 'bg-blue-500' : 'bg-[var(--efl-muted)]'}`} />
                       <div className="truncate">
                         <div className="font-bold truncate">@{prof.username}</div>
-                        <div className="text-[10px] text-slate-400">
+                        <div className="text-[10px] text-[var(--efl-muted)]">
                           {prof.firstName} {prof.isAdmin ? '• Admin' : ''}
                         </div>
                       </div>

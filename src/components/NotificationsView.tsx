@@ -29,6 +29,7 @@ type FilterType = 'all' | 'unread' | 'matches' | 'competitions';
 
 export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigateTab }) => {
   const {
+    user,
     notifications,
     unreadNotificationCount,
     isNotificationsLoading,
@@ -187,9 +188,13 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
               id="btn-mark-all-notifications-read"
               onClick={handleMarkAllAsRead}
               disabled={isMarkingAll}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl glass-card text-xs font-bold text-slate-200 hover:text-white active:scale-95 transition-all min-h-[38px] touch-manipulation border border-white/[0.08] hover:border-emerald-500/40"
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold active:scale-95 transition-all min-h-[38px] touch-manipulation border ${
+                user?.isAdmin
+                  ? 'bg-white dark:bg-[#171e2c] border-slate-200/80 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:text-blue-600 dark:hover:text-blue-400 shadow-xs'
+                  : 'glass-card text-slate-200 hover:text-white border-white/[0.08] hover:border-emerald-500/40'
+              }`}
             >
-              <CheckCheck className="w-4 h-4 text-emerald-400" />
+              <CheckCheck className={`w-4 h-4 ${user?.isAdmin ? 'text-blue-600 dark:text-blue-400' : 'text-emerald-400'}`} />
               <span>{isMarkingAll ? 'Marking...' : t.markAllRead}</span>
             </button>
           )}
@@ -198,12 +203,16 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
             id="btn-refresh-notifications"
             onClick={() => refreshNotifications(true)}
             disabled={isNotificationsLoading}
-            className="flex items-center justify-center p-2 rounded-xl glass-card text-slate-300 hover:text-white active:scale-95 transition-all min-w-[38px] min-h-[38px] touch-manipulation border border-white/[0.08]"
+            className={`flex items-center justify-center p-2 rounded-xl active:scale-95 transition-all min-w-[38px] min-h-[38px] touch-manipulation border ${
+              user?.isAdmin
+                ? 'bg-white dark:bg-[#171e2c] border-slate-200/80 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white shadow-xs'
+                : 'glass-card text-slate-300 hover:text-white border-white/[0.08]'
+            }`}
             title="Refresh notifications"
             aria-label="Refresh notifications"
           >
             <RefreshCw
-              className={`w-4 h-4 ${isNotificationsLoading ? 'animate-spin text-emerald-400' : ''}`}
+              className={`w-4 h-4 ${isNotificationsLoading ? 'animate-spin text-blue-500' : ''}`}
             />
           </button>
         </div>
@@ -216,7 +225,11 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
             onClick={() => setActiveFilter('all')}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap min-h-[34px] touch-manipulation ${
               activeFilter === 'all'
-                ? 'bg-emerald-500 text-slate-950 font-black shadow-md shadow-emerald-500/20'
+                ? user?.isAdmin
+                  ? 'bg-blue-600 text-white font-black shadow-xs'
+                  : 'bg-emerald-500 text-slate-950 font-black shadow-md shadow-emerald-500/20'
+                : user?.isAdmin
+                ? 'bg-white dark:bg-[#111722] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white border border-slate-200/80 dark:border-white/10'
                 : 'glass-card text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -227,7 +240,11 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
             onClick={() => setActiveFilter('unread')}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap min-h-[34px] touch-manipulation flex items-center gap-1.5 ${
               activeFilter === 'unread'
-                ? 'bg-emerald-500 text-slate-950 font-black shadow-md shadow-emerald-500/20'
+                ? user?.isAdmin
+                  ? 'bg-blue-600 text-white font-black shadow-xs'
+                  : 'bg-emerald-500 text-slate-950 font-black shadow-md shadow-emerald-500/20'
+                : user?.isAdmin
+                ? 'bg-white dark:bg-[#111722] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white border border-slate-200/80 dark:border-white/10'
                 : 'glass-card text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -236,7 +253,9 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
               <span
                 className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
                   activeFilter === 'unread'
-                    ? 'bg-slate-950 text-emerald-400'
+                    ? user?.isAdmin
+                      ? 'bg-white text-blue-600'
+                      : 'bg-slate-950 text-emerald-400'
                     : 'bg-rose-500 text-white'
                 }`}
               >
@@ -249,7 +268,11 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
             onClick={() => setActiveFilter('matches')}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap min-h-[34px] touch-manipulation ${
               activeFilter === 'matches'
-                ? 'bg-emerald-500 text-slate-950 font-black shadow-md shadow-emerald-500/20'
+                ? user?.isAdmin
+                  ? 'bg-blue-600 text-white font-black shadow-xs'
+                  : 'bg-emerald-500 text-slate-950 font-black shadow-md shadow-emerald-500/20'
+                : user?.isAdmin
+                ? 'bg-white dark:bg-[#111722] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white border border-slate-200/80 dark:border-white/10'
                 : 'glass-card text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -260,7 +283,11 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
             onClick={() => setActiveFilter('competitions')}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap min-h-[34px] touch-manipulation ${
               activeFilter === 'competitions'
-                ? 'bg-emerald-500 text-slate-950 font-black shadow-md shadow-emerald-500/20'
+                ? user?.isAdmin
+                  ? 'bg-blue-600 text-white font-black shadow-xs'
+                  : 'bg-emerald-500 text-slate-950 font-black shadow-md shadow-emerald-500/20'
+                : user?.isAdmin
+                ? 'bg-white dark:bg-[#111722] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white border border-slate-200/80 dark:border-white/10'
                 : 'glass-card text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -276,32 +303,52 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
           {[1, 2, 3].map((i) => (
             <div
               key={i}
-              className="glass-card p-4 rounded-2xl border border-white/[0.06] animate-pulse flex items-start gap-3.5"
+              className={`p-4 rounded-2xl border animate-pulse flex items-start gap-3.5 ${
+                user?.isAdmin
+                  ? 'bg-white dark:bg-[#111722] border-slate-200/80 dark:border-white/10 shadow-xs'
+                  : 'glass-card border-white/[0.06]'
+              }`}
             >
-              <div className="w-9 h-9 rounded-xl bg-slate-800/60 shrink-0" />
+              <div
+                className={`w-9 h-9 rounded-xl shrink-0 ${
+                  user?.isAdmin ? 'bg-slate-200 dark:bg-white/10' : 'bg-slate-800/60'
+                }`}
+              />
               <div className="flex-1 space-y-2">
                 <div className="flex items-center justify-between">
-                  <div className="h-4 bg-slate-800/80 rounded w-1/3" />
-                  <div className="h-3 bg-slate-800/60 rounded w-16" />
+                  <div className={`h-4 rounded w-1/3 ${user?.isAdmin ? 'bg-slate-200 dark:bg-white/10' : 'bg-slate-800/80'}`} />
+                  <div className={`h-3 rounded w-16 ${user?.isAdmin ? 'bg-slate-200 dark:bg-white/10' : 'bg-slate-800/60'}`} />
                 </div>
-                <div className="h-3 bg-slate-800/50 rounded w-4/5" />
-                <div className="h-3 bg-slate-800/40 rounded w-1/2" />
+                <div className={`h-3 rounded w-4/5 ${user?.isAdmin ? 'bg-slate-100 dark:bg-white/5' : 'bg-slate-800/50'}`} />
+                <div className={`h-3 rounded w-1/2 ${user?.isAdmin ? 'bg-slate-100 dark:bg-white/5' : 'bg-slate-800/40'}`} />
               </div>
             </div>
           ))}
         </div>
       ) : notificationsError && notifications.length === 0 ? (
         /* ERROR STATE */
-        <div className="glass-panel p-8 sm:p-10 text-center text-slate-400 text-xs shadow-xl border border-rose-500/20">
-          <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 mx-auto mb-3.5 shadow-inner">
+        <div
+          className={`p-8 sm:p-10 text-center text-xs shadow-xl border rounded-3xl ${
+            user?.isAdmin
+              ? 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40 text-rose-700 dark:text-rose-400'
+              : 'glass-panel text-slate-400 border-rose-500/20'
+          }`}
+        >
+          <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-500 mx-auto mb-3.5 shadow-inner">
             <AlertCircle className="w-6 h-6" />
           </div>
-          <h3 className="text-sm sm:text-base font-bold text-slate-200">Couldn't load notifications</h3>
-          <p className="text-slate-400 mt-1 mb-5">Please try again.</p>
+          <h3 className={`text-sm sm:text-base font-bold ${user?.isAdmin ? 'text-slate-900 dark:text-white' : 'text-slate-200'}`}>
+            Couldn't load notifications
+          </h3>
+          <p className="text-slate-500 dark:text-slate-400 mt-1 mb-5">Please try again.</p>
           <button
             id="btn-retry-notifications"
             onClick={() => refreshNotifications(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 font-black text-xs hover:bg-emerald-400 active:scale-95 transition-all shadow-md shadow-emerald-500/20"
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl font-black text-xs active:scale-95 transition-all shadow-md ${
+              user?.isAdmin
+                ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                : 'bg-emerald-500 text-slate-950 hover:bg-emerald-400 shadow-emerald-500/20'
+            }`}
           >
             <RotateCcw className="w-3.5 h-3.5" />
             <span>Retry</span>
@@ -309,26 +356,58 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
         </div>
       ) : notifications.length === 0 ? (
         /* EMPTY STATE - NO NOTIFICATIONS */
-        <div className="glass-panel p-10 sm:p-14 text-center text-slate-400 text-xs shadow-lg border border-white/[0.08]">
-          <div className="w-12 h-12 rounded-2xl bg-slate-950/80 border border-white/[0.08] flex items-center justify-center text-slate-500 mx-auto mb-3.5 shadow-inner">
+        <div
+          className={`p-10 sm:p-14 text-center text-xs shadow-lg border rounded-3xl ${
+            user?.isAdmin
+              ? 'preview-surface border-slate-200/80 dark:border-white/10 text-slate-500 dark:text-slate-400'
+              : 'glass-panel text-slate-400 border-white/[0.08]'
+          }`}
+        >
+          <div
+            className={`w-12 h-12 rounded-2xl border flex items-center justify-center mx-auto mb-3.5 ${
+              user?.isAdmin
+                ? 'bg-slate-100 dark:bg-white/5 border-slate-200/80 dark:border-white/10 text-slate-400'
+                : 'bg-slate-950/80 border-white/[0.08] text-slate-500 shadow-inner'
+            }`}
+          >
             <Bell className="w-6 h-6 opacity-60" />
           </div>
-          <h3 className="text-sm sm:text-base font-bold text-slate-200">No notifications yet</h3>
-          <p className="text-slate-400 mt-1 max-w-sm mx-auto leading-relaxed">
+          <h3 className={`text-sm sm:text-base font-bold ${user?.isAdmin ? 'text-slate-900 dark:text-white' : 'text-slate-200'}`}>
+            No notifications yet
+          </h3>
+          <p className="text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto leading-relaxed">
             Important match and competition updates will appear here.
           </p>
         </div>
       ) : filteredNotifications.length === 0 ? (
         /* FILTER EMPTY STATE */
-        <div className="glass-panel p-8 sm:p-10 text-center text-slate-400 text-xs shadow-lg border border-white/[0.08]">
-          <div className="w-10 h-10 rounded-xl bg-slate-950/80 border border-white/[0.08] flex items-center justify-center text-emerald-400 mx-auto mb-3 shadow-inner">
+        <div
+          className={`p-8 sm:p-10 text-center text-xs shadow-lg border rounded-3xl ${
+            user?.isAdmin
+              ? 'preview-surface border-slate-200/80 dark:border-white/10 text-slate-500 dark:text-slate-400'
+              : 'glass-panel text-slate-400 border-white/[0.08]'
+          }`}
+        >
+          <div
+            className={`w-10 h-10 rounded-xl border flex items-center justify-center mx-auto mb-3 ${
+              user?.isAdmin
+                ? 'bg-blue-500/10 border-blue-500/25 text-blue-600 dark:text-blue-400'
+                : 'bg-slate-950/80 border-white/[0.08] text-emerald-400 shadow-inner'
+            }`}
+          >
             <CheckCircle2 className="w-5 h-5" />
           </div>
-          <h3 className="text-sm font-bold text-slate-200">All caught up</h3>
-          <p className="text-slate-400 mt-1 mb-4">No notifications match the selected filter.</p>
+          <h3 className={`text-sm font-bold ${user?.isAdmin ? 'text-slate-900 dark:text-white' : 'text-slate-200'}`}>
+            All caught up
+          </h3>
+          <p className="text-slate-500 dark:text-slate-400 mt-1 mb-4">No notifications match the selected filter.</p>
           <button
             onClick={() => setActiveFilter('all')}
-            className="px-3.5 py-1.5 rounded-xl glass-card text-xs font-bold text-slate-300 hover:text-white"
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+              user?.isAdmin
+                ? 'bg-slate-100 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                : 'glass-card text-slate-300 hover:text-white'
+            }`}
           >
             View all notifications
           </button>
@@ -342,15 +421,25 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
               onClick={() => handleNotificationClick(notif)}
               className={`p-3.5 sm:p-4 rounded-2xl border transition-all flex items-start justify-between gap-3 cursor-pointer group ${
                 notif.isRead
-                  ? 'glass-card text-slate-300 hover:border-white/[0.15]'
+                  ? user?.isAdmin
+                    ? 'bg-slate-50 dark:bg-white/5 border-slate-200/80 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10'
+                    : 'glass-card text-slate-300 hover:border-white/[0.15]'
+                  : user?.isAdmin
+                  ? 'bg-white dark:bg-[#111722] border-blue-500/40 shadow-xs text-slate-900 dark:text-white hover:border-blue-500/60'
                   : 'glass-panel border-emerald-500/40 shadow-lg shadow-emerald-500/5 text-white hover:border-emerald-500/60'
               }`}
             >
               <div className="flex items-start gap-3.5 min-w-0 flex-1">
                 {/* Type Icon Container */}
                 <div
-                  className={`p-2 sm:p-2.5 rounded-xl bg-slate-950/80 border shrink-0 mt-0.5 ${
-                    notif.isRead ? 'border-white/[0.08]' : 'border-emerald-500/30'
+                  className={`p-2 sm:p-2.5 rounded-xl border shrink-0 mt-0.5 ${
+                    user?.isAdmin
+                      ? notif.isRead
+                        ? 'bg-white dark:bg-[#171e2c] border-slate-200/80 dark:border-white/10'
+                        : 'bg-blue-50 dark:bg-blue-500/10 border-blue-500/30'
+                      : notif.isRead
+                      ? 'bg-slate-950/80 border-white/[0.08]'
+                      : 'bg-slate-950/80 border-emerald-500/30'
                   }`}
                 >
                   {getNotificationIcon(notif.type)}
@@ -361,33 +450,57 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
                   <div className="flex items-center gap-2 flex-wrap">
                     <h4
                       className={`text-xs sm:text-sm font-bold truncate ${
-                        notif.isRead ? 'text-slate-200' : 'text-white'
+                        notif.isRead
+                          ? user?.isAdmin
+                            ? 'text-slate-700 dark:text-slate-300'
+                            : 'text-slate-200'
+                          : user?.isAdmin
+                          ? 'text-slate-900 dark:text-white'
+                          : 'text-white'
                       }`}
                     >
                       {notif.title}
                     </h4>
                     {!notif.isRead && (
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#10b981] shrink-0" />
+                      <span
+                        className={`w-2 h-2 rounded-full shrink-0 ${
+                          user?.isAdmin
+                            ? 'bg-blue-600 dark:bg-blue-400'
+                            : 'bg-emerald-400 shadow-[0_0_6px_#10b981]'
+                        }`}
+                      />
                     )}
                   </div>
-                  <p className="text-xs text-slate-400 mt-1 leading-relaxed break-words">
+                  <p
+                    className={`text-xs mt-1 leading-relaxed break-words ${
+                      user?.isAdmin ? 'text-slate-500 dark:text-slate-400' : 'text-slate-400'
+                    }`}
+                  >
                     {notif.message}
                   </p>
 
                   <div className="flex items-center gap-3 mt-2.5 flex-wrap">
-                    <span className="text-[10px] text-slate-500 font-medium">
+                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
                       {formatTimestamp(notif.createdAt)}
                     </span>
 
                     {notif.fixtureId && (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-400 group-hover:underline">
+                      <span
+                        className={`inline-flex items-center gap-1 text-[10px] font-bold group-hover:underline ${
+                          user?.isAdmin ? 'text-blue-600 dark:text-blue-400' : 'text-emerald-400'
+                        }`}
+                      >
                         <span>View Match</span>
                         <ExternalLink className="w-3 h-3" />
                       </span>
                     )}
 
                     {(notif.type === 'CLUB_ASSIGNED' || notif.entityType === 'club') && (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-teal-400 group-hover:underline">
+                      <span
+                        className={`inline-flex items-center gap-1 text-[10px] font-bold group-hover:underline ${
+                          user?.isAdmin ? 'text-blue-600 dark:text-blue-400' : 'text-teal-400'
+                        }`}
+                      >
                         <span>View Club</span>
                         <ExternalLink className="w-3 h-3" />
                       </span>
@@ -401,7 +514,11 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
                 <button
                   onClick={(e) => handleMarkSingleRead(e, notif.id)}
                   disabled={markingReadId === notif.id}
-                  className="p-1.5 rounded-lg glass-button text-slate-400 hover:text-emerald-400 hover:border-emerald-500/40 shrink-0 touch-manipulation"
+                  className={`p-1.5 rounded-lg shrink-0 touch-manipulation transition-colors ${
+                    user?.isAdmin
+                      ? 'bg-white dark:bg-[#171e2c] border border-slate-200/80 dark:border-white/10 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 shadow-xs'
+                      : 'glass-button text-slate-400 hover:text-emerald-400 hover:border-emerald-500/40'
+                  }`}
                   title="Mark as read"
                   aria-label="Mark as read"
                 >

@@ -377,16 +377,16 @@ export const MatchdayHomeView: React.FC<Props> = ({
       {/* 1. TOP BAR: "SIZNING KLUBINGIZ" style from reference video */}
       <div className="flex items-center justify-between gap-3 pt-1">
         <div className="min-w-0">
-          <div className="flex items-center gap-2 text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+          <div className="flex items-center gap-2 text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-[var(--efl-text-2)]">
             <span>{c.yourClub}</span>
             <span>•</span>
-            <span className="text-[#2563eb] dark:text-[#3b82f6] truncate">
+            <span className="text-[var(--efl-primary)] truncate">
               {activeClub?.leagueId
                 ? activeClub.leagueId.replace('league-', '').replace('-', ' ').toUpperCase()
                 : 'PREMIER LEAGUE'}
             </span>
           </div>
-          <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-0.5 truncate">
+          <h1 className="text-xl sm:text-2xl font-black text-[var(--efl-text)] tracking-tight mt-0.5 truncate">
             {c.greeting}, {user?.firstName || user?.username || 'Player'}
           </h1>
         </div>
@@ -396,7 +396,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
           <button
             type="button"
             onClick={() => onNavigateTab('my-club')}
-            className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-white dark:bg-[#111722] border border-[#e2e6ec] dark:border-white/10 shadow-xs hover:border-[#2563eb] transition-all shrink-0 max-w-[170px]"
+            className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-[var(--efl-surface)] border border-[var(--efl-border)] shadow-xs hover:border-[var(--efl-primary)] transition-all shrink-0 max-w-[170px]"
             title="Active Club Hub"
           >
             <div className="w-5 h-5 rounded-md flex items-center justify-center shrink-0">
@@ -408,7 +408,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
                 size="xs"
               />
             </div>
-            <span className="text-xs font-black text-slate-900 dark:text-white truncate">
+            <span className="text-xs font-black text-[var(--efl-text)] truncate">
               {activeClub.shortName || activeClub.name}
             </span>
           </button>
@@ -422,7 +422,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
           <button
             type="button"
             onClick={() => void loadData()}
-            className="inline-flex items-center gap-1 font-bold text-[#2563eb] dark:text-[#3b82f6]"
+            className="inline-flex items-center gap-1 font-bold text-[var(--efl-primary)]"
           >
             <RefreshCw className="w-3.5 h-3.5" />
             {c.retry}
@@ -452,13 +452,13 @@ export const MatchdayHomeView: React.FC<Props> = ({
       {/* 3. HERO MAIN MATCH CARD (Adapted from reference video with participant actions) */}
       <section aria-label={c.nextMatch}>
         {loading && fixtures.length === 0 ? (
-          <div className="p-6 rounded-2xl bg-white dark:bg-[#111722] border border-[#e2e6ec] dark:border-white/10 shadow-xs animate-pulse space-y-4">
-            <div className="h-4 w-32 bg-slate-200 dark:bg-white/10 rounded-full mx-auto" />
-            <div className="h-16 w-3/4 bg-slate-200 dark:bg-white/10 rounded-xl mx-auto" />
-            <div className="h-9 w-40 bg-slate-200 dark:bg-white/10 rounded-xl mx-auto" />
+          <div className="p-6 rounded-2xl bg-[var(--efl-surface)] border border-[var(--efl-border)] shadow-xs animate-pulse space-y-4">
+            <div className="h-4 w-32 bg-[var(--efl-surface-2)] rounded-full mx-auto" />
+            <div className="h-16 w-3/4 bg-[var(--efl-surface-2)] rounded-xl mx-auto" />
+            <div className="h-9 w-40 bg-[var(--efl-surface-2)] rounded-xl mx-auto" />
           </div>
         ) : heroMatch && homeTeam && awayTeam ? (
-          <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#111722] border border-[#e2e6ec] dark:border-white/10 shadow-xs relative overflow-hidden">
+          <div className="p-4 sm:p-5 rounded-2xl bg-[var(--efl-surface)] border border-[var(--efl-border)] shadow-xs relative overflow-hidden">
             {/* Top Bar inside Card matching reference video: Matchday Tag on Left, Countdown on Right */}
             <div className="flex items-center justify-between gap-2 mb-3">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
@@ -466,12 +466,12 @@ export const MatchdayHomeView: React.FC<Props> = ({
               </span>
 
               {scheduleInfo?.relativeTime && !isFinished ? (
-                <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                  <Clock className="w-3 h-3 text-slate-400" />
+                <span className="text-[11px] font-bold text-[var(--efl-text-2)] flex items-center gap-1">
+                  <Clock className="w-3 h-3 text-[var(--efl-muted)]" />
                   <span>{scheduleInfo.relativeTime}</span>
                 </span>
               ) : (
-                <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate">
+                <span className="text-[11px] font-medium text-[var(--efl-text-2)] truncate">
                   {heroMatch.competitionName || 'EFL UZ'}
                 </span>
               )}
@@ -481,7 +481,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
             <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:gap-4 my-2 text-center">
               {/* Home Team */}
               <div className="flex flex-col items-center gap-1.5 min-w-0">
-                <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl bg-slate-50 dark:bg-[#171e2c] border border-[#e2e6ec] dark:border-white/10 p-2 flex items-center justify-center shadow-xs">
+                <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)] p-2 flex items-center justify-center shadow-xs">
                   <ClubCrest
                     clubId={homeTeam.id}
                     logoUrl={homeTeam.logoUrl}
@@ -492,11 +492,11 @@ export const MatchdayHomeView: React.FC<Props> = ({
                   />
                 </div>
                 <div className="w-full px-1">
-                  <span className="block text-sm sm:text-base font-bold text-slate-900 dark:text-white truncate">
+                  <span className="block text-sm sm:text-base font-bold text-[var(--efl-text)] truncate">
                     {homeTeam.name}
                   </span>
                   <div className="flex items-center justify-center gap-1 mt-0.5">
-                    <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                    <span className="text-[10px] font-medium text-[var(--efl-text-2)]">
                       {isUserHome && userStats?.leaguePosition ? `${userStats.leaguePosition}${c.rankSuffix}` : 'Home'}
                     </span>
                     {/* Visual form dots from reference app */}
@@ -517,24 +517,24 @@ export const MatchdayHomeView: React.FC<Props> = ({
                       {c.confirmedFT}
                     </span>
                     <div className="flex items-center gap-2">
-                      <span className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white tabular-nums tracking-tight">
+                      <span className="text-3xl sm:text-4xl font-black text-[var(--efl-text)] tabular-nums tracking-tight">
                         {heroMatch.homeScore}
                       </span>
-                      <span className="text-lg font-bold text-slate-400">—</span>
-                      <span className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white tabular-nums tracking-tight">
+                      <span className="text-lg font-bold text-[var(--efl-muted)]">—</span>
+                      <span className="text-3xl sm:text-4xl font-black text-[var(--efl-text)] tabular-nums tracking-tight">
                         {heroMatch.awayScore}
                       </span>
                     </div>
                   </div>
                 ) : (
                   <div className="flex flex-col items-center">
-                    <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                    <span className="text-[10px] font-bold text-[var(--efl-text-2)] uppercase tracking-wider">
                       {scheduleInfo?.dateStr}
                     </span>
-                    <span className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tabular-nums tracking-tight my-0.5">
+                    <span className="text-2xl sm:text-3xl font-black text-[var(--efl-text)] tabular-nums tracking-tight my-0.5">
                       {scheduleInfo?.timeStr}
                     </span>
-                    <span className="text-[10px] text-slate-400 truncate max-w-[100px]">
+                    <span className="text-[10px] text-[var(--efl-muted)] truncate max-w-[100px]">
                       {homeTeam.stadium || 'Camp Nou'}
                     </span>
                   </div>
@@ -543,7 +543,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
 
               {/* Away Team */}
               <div className="flex flex-col items-center gap-1.5 min-w-0">
-                <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl bg-slate-50 dark:bg-[#171e2c] border border-[#e2e6ec] dark:border-white/10 p-2 flex items-center justify-center shadow-xs">
+                <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)] p-2 flex items-center justify-center shadow-xs">
                   <ClubCrest
                     clubId={awayTeam.id}
                     logoUrl={awayTeam.logoUrl}
@@ -554,11 +554,11 @@ export const MatchdayHomeView: React.FC<Props> = ({
                   />
                 </div>
                 <div className="w-full px-1">
-                  <span className="block text-sm sm:text-base font-bold text-slate-900 dark:text-white truncate">
+                  <span className="block text-sm sm:text-base font-bold text-[var(--efl-text)] truncate">
                     {awayTeam.name}
                   </span>
                   <div className="flex items-center justify-center gap-1 mt-0.5">
-                    <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                    <span className="text-[10px] font-medium text-[var(--efl-text-2)]">
                       {!isUserHome && userStats?.leaguePosition ? `${userStats.leaguePosition}${c.rankSuffix}` : 'Away'}
                     </span>
                     <span className="inline-flex items-center gap-0.5 ml-1">
@@ -572,9 +572,9 @@ export const MatchdayHomeView: React.FC<Props> = ({
             </div>
 
             {/* Context status caption matching reference video */}
-            <div className="text-center mt-2.5 mb-3 text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+            <div className="text-center mt-2.5 mb-3 text-[11px] text-[var(--efl-text-2)] font-medium">
               {heroMatch.status === 'SCHEDULED' && heroMatch.isPlayable !== false ? (
-                <span className="text-[#2563eb] dark:text-[#3b82f6] font-bold">
+                <span className="text-[var(--efl-primary)] font-bold">
                   ● {c.readyAlert}
                 </span>
               ) : isFinished ? (
@@ -589,8 +589,8 @@ export const MatchdayHomeView: React.FC<Props> = ({
             </div>
 
             {/* Participant Action Footer: Submit Result & Opponent Chat */}
-            <div className="pt-3 border-t border-[#e2e6ec] dark:border-white/10 flex flex-col sm:flex-row items-center justify-between gap-2">
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 truncate self-start sm:self-center">
+            <div className="pt-3 border-t border-[var(--efl-border)] flex flex-col sm:flex-row items-center justify-between gap-2">
+              <span className="text-xs font-semibold text-[var(--efl-text-2)] truncate self-start sm:self-center">
                 {isFinished ? c.recentResult : c.nextMatch}
               </span>
 
@@ -617,7 +617,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
                       handleOpenMatch(heroMatch);
                     }
                   }}
-                  className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-5 py-2 rounded-xl bg-[#2563eb] hover:bg-[#1d4ed8] text-white font-black text-xs shadow-xs active:scale-95 transition-all min-h-[38px]"
+                  className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-5 py-2 rounded-xl btn-glass-primary text-xs shadow-xs active:scale-95 transition-all min-h-[38px]"
                 >
                   <span>
                     {heroMatch.status === 'SCHEDULED' && heroMatch.isPlayable !== false
@@ -630,20 +630,20 @@ export const MatchdayHomeView: React.FC<Props> = ({
             </div>
           </div>
         ) : (
-          <div className="p-6 rounded-2xl bg-white dark:bg-[#111722] border border-[#e2e6ec] dark:border-white/10 text-center shadow-xs space-y-3">
-            <div className="w-11 h-11 mx-auto rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-[#2563eb] dark:text-[#3b82f6]">
+          <div className="p-6 rounded-2xl bg-[var(--efl-surface)] border border-[var(--efl-border)] text-center shadow-xs space-y-3">
+            <div className="w-11 h-11 mx-auto rounded-xl bg-[var(--efl-primary-soft)] border border-[var(--efl-border)] flex items-center justify-center text-[var(--efl-primary)]">
               <Swords className="w-5 h-5" />
             </div>
-            <h3 className="text-sm font-black text-slate-900 dark:text-white">
+            <h3 className="text-sm font-black text-[var(--efl-text)]">
               {c.noFixture}
             </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
+            <p className="text-xs text-[var(--efl-text-2)] max-w-sm mx-auto">
               {c.noFixtureDesc}
             </p>
             <button
               type="button"
               onClick={() => onNavigateTab('leagues')}
-              className="mt-1 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#2563eb] text-white text-xs font-black shadow-xs"
+              className="mt-1 inline-flex items-center gap-2 px-4 py-2 rounded-xl btn-glass-primary text-xs shadow-xs"
             >
               <span>{c.browseLeagues}</span>
               <ArrowRight className="w-3.5 h-3.5" />
@@ -653,23 +653,23 @@ export const MatchdayHomeView: React.FC<Props> = ({
       </section>
 
       {/* 4. MATCHES LIST ("O'YINLAR" SECTION FROM REFERENCE VIDEO) */}
-      <section className="rounded-2xl bg-white dark:bg-[#111722] border border-[#e2e6ec] dark:border-white/10 shadow-xs overflow-hidden">
+      <section className="rounded-2xl bg-[var(--efl-surface)] border border-[var(--efl-border)] shadow-xs overflow-hidden">
         {/* Header with Title and Segmented Tabs */}
-        <div className="flex items-center justify-between p-3 sm:p-3.5 border-b border-[#e2e6ec] dark:border-white/10">
+        <div className="flex items-center justify-between p-3 sm:p-3.5 border-b border-[var(--efl-border)]">
           <div className="flex items-center gap-2">
-            <h3 className="text-sm font-black text-slate-900 dark:text-white">
+            <h3 className="text-sm font-black text-[var(--efl-text)]">
               {c.matches}
             </h3>
           </div>
 
-          <div className="flex items-center gap-1 p-0.5 rounded-xl bg-slate-100 dark:bg-[#171e2c]">
+          <div className="flex items-center gap-1 p-0.5 rounded-xl bg-[var(--efl-surface-2)]">
             <button
               type="button"
               onClick={() => setMatchTab('upcoming')}
               className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${
                 matchTab === 'upcoming'
-                  ? 'bg-white dark:bg-[#111722] text-slate-900 dark:text-white shadow-xs font-black'
-                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                  ? 'bg-[var(--efl-surface)] text-[var(--efl-text)] shadow-xs font-black'
+                  : 'text-[var(--efl-text-2)] hover:text-[var(--efl-text)]'
               }`}
             >
               {c.upcoming}
@@ -679,8 +679,8 @@ export const MatchdayHomeView: React.FC<Props> = ({
               onClick={() => setMatchTab('results')}
               className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${
                 matchTab === 'results'
-                  ? 'bg-white dark:bg-[#111722] text-slate-900 dark:text-white shadow-xs font-black'
-                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                  ? 'bg-[var(--efl-surface)] text-[var(--efl-text)] shadow-xs font-black'
+                  : 'text-[var(--efl-text-2)] hover:text-[var(--efl-text)]'
               }`}
             >
               {c.results}
@@ -689,10 +689,10 @@ export const MatchdayHomeView: React.FC<Props> = ({
         </div>
 
         {/* Competition Sub-Header matching reference video: Icon + Title + Count link */}
-        <div className="flex items-center justify-between px-4 py-2 bg-slate-50/80 dark:bg-[#171e2c]/50 border-b border-[#e2e6ec]/60 dark:border-white/5">
+        <div className="flex items-center justify-between px-4 py-2 bg-[var(--efl-surface-2)] border-b border-[var(--efl-border)]">
           <div className="flex items-center gap-2 min-w-0">
-            <Trophy className="w-3.5 h-3.5 text-[#2563eb] dark:text-[#3b82f6] shrink-0" />
-            <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+            <Trophy className="w-3.5 h-3.5 text-[var(--efl-primary)] shrink-0" />
+            <span className="text-xs font-bold text-[var(--efl-text)] truncate">
               {activeClub?.leagueId
                 ? activeClub.leagueId.replace('league-', '').replace('-', ' ').toUpperCase()
                 : 'PREMIER LEAGUE'}
@@ -701,7 +701,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
           <button
             type="button"
             onClick={() => onNavigateTab('my-club')}
-            className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 hover:text-[#2563eb] dark:hover:text-[#3b82f6] flex items-center gap-0.5"
+            className="text-[11px] font-semibold text-[var(--efl-text-2)] hover:text-[var(--efl-primary)] flex items-center gap-0.5"
           >
             <span>{displayedList.length} ta o‘yin</span>
             <ChevronRight className="w-3 h-3" />
@@ -709,7 +709,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
         </div>
 
         {/* Match Rows matching reference video structure */}
-        <div className="divide-y divide-[#e2e6ec]/70 dark:divide-white/5">
+        <div className="divide-y divide-[var(--efl-border)]">
           {displayedList.length > 0 ? (
             displayedList.map((fixture) => {
               const home = getClubDisplay(fixture, 'home');
@@ -722,14 +722,14 @@ export const MatchdayHomeView: React.FC<Props> = ({
                   key={fixture.id}
                   type="button"
                   onClick={() => handleOpenMatch(fixture)}
-                  className="w-full grid grid-cols-[1fr_auto_1fr] items-center p-3 px-4 hover:bg-slate-50/80 dark:hover:bg-white/[0.02] transition-colors text-left"
+                  className="w-full grid grid-cols-[1fr_auto_1fr] items-center p-3 px-4 hover:bg-[var(--efl-surface-2)] transition-colors text-left"
                 >
                   {/* Home Team (Right aligned towards center) */}
                   <div className="flex items-center justify-end gap-2.5 min-w-0 pr-2">
-                    <span className="text-xs font-bold text-slate-900 dark:text-white truncate text-right">
+                    <span className="text-xs font-bold text-[var(--efl-text)] truncate text-right">
                       {home.name}
                     </span>
-                    <div className="w-6 h-6 rounded-md bg-slate-50 dark:bg-[#171e2c] border border-[#e2e6ec] dark:border-white/10 p-0.5 flex items-center justify-center shrink-0">
+                    <div className="w-6 h-6 rounded-md bg-[var(--efl-surface-2)] border border-[var(--efl-border)] p-0.5 flex items-center justify-center shrink-0">
                       <ClubCrest
                         clubId={home.id}
                         logoUrl={home.logoUrl}
@@ -743,7 +743,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
                   <div className="flex flex-col items-center justify-center min-w-[70px] sm:min-w-[85px] px-1">
                     {isMatchFinished ? (
                       <>
-                        <span className="font-mono text-xs sm:text-sm font-black text-slate-900 dark:text-white tabular-nums tracking-tight">
+                        <span className="font-mono text-xs sm:text-sm font-black text-[var(--efl-text)] tabular-nums tracking-tight">
                           {fixture.homeScore} : {fixture.awayScore}
                         </span>
                         <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mt-0.5">
@@ -752,10 +752,10 @@ export const MatchdayHomeView: React.FC<Props> = ({
                       </>
                     ) : (
                       <>
-                        <span className="font-mono text-xs sm:text-sm font-black text-slate-900 dark:text-white tabular-nums tracking-tight">
+                        <span className="font-mono text-xs sm:text-sm font-black text-[var(--efl-text)] tabular-nums tracking-tight">
                           {sched.timeStr}
                         </span>
-                        <span className="text-[9px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mt-0.5">
+                        <span className="text-[9px] font-medium text-[var(--efl-text-2)] uppercase tracking-wider mt-0.5">
                           {fixture.status === 'PENDING_CONFIRMATION'
                             ? 'TASDIQ'
                             : fixture.status === 'DISPUTED'
@@ -768,7 +768,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
 
                   {/* Away Team (Left aligned from center) */}
                   <div className="flex items-center justify-start gap-2.5 min-w-0 pl-2">
-                    <div className="w-6 h-6 rounded-md bg-slate-50 dark:bg-[#171e2c] border border-[#e2e6ec] dark:border-white/10 p-0.5 flex items-center justify-center shrink-0">
+                    <div className="w-6 h-6 rounded-md bg-[var(--efl-surface-2)] border border-[var(--efl-border)] p-0.5 flex items-center justify-center shrink-0">
                       <ClubCrest
                         clubId={away.id}
                         logoUrl={away.logoUrl}
@@ -776,7 +776,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
                         size="xs"
                       />
                     </div>
-                    <span className="text-xs font-bold text-slate-900 dark:text-white truncate text-left">
+                    <span className="text-xs font-bold text-[var(--efl-text)] truncate text-left">
                       {away.name}
                     </span>
                   </div>
@@ -784,18 +784,18 @@ export const MatchdayHomeView: React.FC<Props> = ({
               );
             })
           ) : (
-            <div className="p-6 text-center text-xs text-slate-400">
+            <div className="p-6 text-center text-xs text-[var(--efl-muted)]">
               {matchTab === 'upcoming' ? c.noUpcomingYet : c.noResultsYet}
             </div>
           )}
         </div>
 
         {/* View all matches footer link */}
-        <div className="p-2.5 text-center bg-slate-50/50 dark:bg-white/[0.01] border-t border-[#e2e6ec]/60 dark:border-white/5">
+        <div className="p-2.5 text-center bg-[var(--efl-surface-2)] border-t border-[var(--efl-border)]">
           <button
             type="button"
             onClick={() => onNavigateTab('my-club')}
-            className="text-xs font-bold text-[#2563eb] dark:text-[#3b82f6] hover:underline inline-flex items-center gap-1"
+            className="text-xs font-bold text-[var(--efl-primary)] hover:underline inline-flex items-center gap-1"
           >
             <span>{c.viewAllMatches}</span>
             <ChevronRight className="w-3.5 h-3.5" />
@@ -804,27 +804,27 @@ export const MatchdayHomeView: React.FC<Props> = ({
       </section>
 
       {/* 5. LEAGUE SNAPSHOT: UNIFIED HORIZONTAL SUMMARY STRIP */}
-      <section className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-[#111722] border border-[#e2e6ec] dark:border-white/10 shadow-xs space-y-2.5">
+      <section className="p-3.5 sm:p-4 rounded-2xl bg-[var(--efl-surface)] border border-[var(--efl-border)] shadow-xs space-y-2.5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
             <Trophy className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-            <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
+            <h3 className="text-xs font-black uppercase tracking-wider text-[var(--efl-text)]">
               {c.leagueSnapshot}
             </h3>
           </div>
           <button
             type="button"
             onClick={() => onNavigateTab('leagues')}
-            className="text-xs font-semibold text-[#2563eb] dark:text-[#3b82f6] hover:underline inline-flex items-center gap-1"
+            className="text-xs font-semibold text-[var(--efl-primary)] hover:underline inline-flex items-center gap-1"
           >
             <span>{c.browseLeagues}</span>
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        <div className="grid grid-cols-5 divide-x divide-[#e2e6ec] dark:divide-white/10 rounded-xl bg-[#eef1f5] dark:bg-[#171e2c] border border-[#e2e6ec] dark:border-white/5 py-2 text-center">
+        <div className="grid grid-cols-5 divide-x divide-[var(--efl-border)] rounded-xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)] py-2 text-center">
           <div className="px-1">
-            <span className="block text-[9px] uppercase font-bold text-slate-500 dark:text-slate-400">
+            <span className="block text-[9px] uppercase font-bold text-[var(--efl-text-2)]">
               {c.position}
             </span>
             <strong className="text-sm sm:text-base font-black text-amber-600 dark:text-amber-400 tabular-nums">
@@ -832,23 +832,23 @@ export const MatchdayHomeView: React.FC<Props> = ({
             </strong>
           </div>
           <div className="px-1">
-            <span className="block text-[9px] uppercase font-bold text-slate-500 dark:text-slate-400">
+            <span className="block text-[9px] uppercase font-bold text-[var(--efl-text-2)]">
               {c.points}
             </span>
-            <strong className="text-sm sm:text-base font-black text-[#2563eb] dark:text-[#3b82f6] tabular-nums">
+            <strong className="text-sm sm:text-base font-black text-[var(--efl-primary)] tabular-nums">
               {userStats?.points ?? '0'}
             </strong>
           </div>
           <div className="px-1">
-            <span className="block text-[9px] uppercase font-bold text-slate-500 dark:text-slate-400">
+            <span className="block text-[9px] uppercase font-bold text-[var(--efl-text-2)]">
               {c.played}
             </span>
-            <strong className="text-sm sm:text-base font-black text-slate-900 dark:text-white tabular-nums">
+            <strong className="text-sm sm:text-base font-black text-[var(--efl-text)] tabular-nums">
               {userStats?.matchesPlayed ?? '0'}
             </strong>
           </div>
           <div className="px-1">
-            <span className="block text-[9px] uppercase font-bold text-slate-500 dark:text-slate-400">
+            <span className="block text-[9px] uppercase font-bold text-[var(--efl-text-2)]">
               {c.form}
             </span>
             <strong className="text-xs sm:text-sm font-black text-emerald-600 dark:text-emerald-400 tabular-nums">
@@ -856,10 +856,10 @@ export const MatchdayHomeView: React.FC<Props> = ({
             </strong>
           </div>
           <div className="px-1">
-            <span className="block text-[9px] uppercase font-bold text-slate-500 dark:text-slate-400">
+            <span className="block text-[9px] uppercase font-bold text-[var(--efl-text-2)]">
               {c.gd}
             </span>
-            <strong className="text-xs sm:text-sm font-black text-slate-700 dark:text-slate-300 tabular-nums">
+            <strong className="text-xs sm:text-sm font-black text-[var(--efl-text)] tabular-nums">
               {goalDiffDisplay}
             </strong>
           </div>
@@ -867,15 +867,15 @@ export const MatchdayHomeView: React.FC<Props> = ({
       </section>
 
       {/* 6. COMPETITION ACCESS SHORTCUTS */}
-      <section className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-[#111722] border border-[#e2e6ec] dark:border-white/10 shadow-xs space-y-2">
+      <section className="p-3.5 sm:p-4 rounded-2xl bg-[var(--efl-surface)] border border-[var(--efl-border)] shadow-xs space-y-2">
         <div className="flex items-center justify-between mb-0.5">
-          <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
+          <h3 className="text-xs font-black uppercase tracking-wider text-[var(--efl-text)]">
             {c.competitions}
           </h3>
           <button
             type="button"
             onClick={() => onNavigateTab('leagues')}
-            className="text-xs font-semibold text-[#2563eb] dark:text-[#3b82f6] hover:underline"
+            className="text-xs font-semibold text-[var(--efl-primary)] hover:underline"
           >
             Hammasi
           </button>
@@ -886,66 +886,66 @@ export const MatchdayHomeView: React.FC<Props> = ({
           <button
             type="button"
             onClick={() => onNavigateTab('leagues')}
-            className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-[#171e2c] border border-[#e2e6ec]/80 dark:border-white/5 hover:border-[#2563eb] transition-all text-left group"
+            className="flex items-center justify-between p-2.5 rounded-xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)] hover:border-[var(--efl-primary)] transition-all text-left group"
           >
             <div className="flex items-center gap-2 min-w-0">
               <div className="w-7 h-7 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
                 <Trophy className="w-3.5 h-3.5" />
               </div>
               <div className="min-w-0">
-                <span className="block text-xs font-bold text-slate-900 dark:text-white truncate">
+                <span className="block text-xs font-bold text-[var(--efl-text)] truncate">
                   {c.domesticLeague}
                 </span>
-                <span className="block text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                <span className="block text-[10px] text-[var(--efl-text-2)] truncate">
                   {c.domesticLeagueSub}
                 </span>
               </div>
             </div>
-            <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform shrink-0" />
+            <ChevronRight className="w-3.5 h-3.5 text-[var(--efl-muted)] group-hover:translate-x-0.5 transition-transform shrink-0" />
           </button>
 
           {/* Domestic Cup */}
           <button
             type="button"
             onClick={() => onNavigateTab('cups')}
-            className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-[#171e2c] border border-[#e2e6ec]/80 dark:border-white/5 hover:border-[#2563eb] transition-all text-left group"
+            className="flex items-center justify-between p-2.5 rounded-xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)] hover:border-[var(--efl-primary)] transition-all text-left group"
           >
             <div className="flex items-center gap-2 min-w-0">
               <div className="w-7 h-7 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
                 <Award className="w-3.5 h-3.5" />
               </div>
               <div className="min-w-0">
-                <span className="block text-xs font-bold text-slate-900 dark:text-white truncate">
+                <span className="block text-xs font-bold text-[var(--efl-text)] truncate">
                   {c.domesticCup}
                 </span>
-                <span className="block text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                <span className="block text-[10px] text-[var(--efl-text-2)] truncate">
                   {c.domesticCupSub}
                 </span>
               </div>
             </div>
-            <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform shrink-0" />
+            <ChevronRight className="w-3.5 h-3.5 text-[var(--efl-muted)] group-hover:translate-x-0.5 transition-transform shrink-0" />
           </button>
 
           {/* European Tournaments */}
           <button
             type="button"
             onClick={() => onNavigateTab('champions-league')}
-            className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-[#171e2c] border border-[#e2e6ec]/80 dark:border-white/5 hover:border-[#2563eb] transition-all text-left group"
+            className="flex items-center justify-between p-2.5 rounded-xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)] hover:border-[var(--efl-primary)] transition-all text-left group"
           >
             <div className="flex items-center gap-2 min-w-0">
               <div className="w-7 h-7 rounded-lg bg-sky-500/10 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0">
                 <Globe2 className="w-3.5 h-3.5" />
               </div>
               <div className="min-w-0">
-                <span className="block text-xs font-bold text-slate-900 dark:text-white truncate">
+                <span className="block text-xs font-bold text-[var(--efl-text)] truncate">
                   {c.europeanCup}
                 </span>
-                <span className="block text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                <span className="block text-[10px] text-[var(--efl-text-2)] truncate">
                   {c.europeanCupSub}
                 </span>
               </div>
             </div>
-            <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform shrink-0" />
+            <ChevronRight className="w-3.5 h-3.5 text-[var(--efl-muted)] group-hover:translate-x-0.5 transition-transform shrink-0" />
           </button>
         </div>
       </section>
