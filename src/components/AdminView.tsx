@@ -196,7 +196,7 @@ export const AdminView: React.FC = () => {
       setIsLoading(false);
       return;
     }
-    if (!skipCache && loadedTabs.has(tab)) {
+    if (!skipCache && tab !== 'matches' && loadedTabs.has(tab)) {
       // Warm tab navigation: preserve already fetched state with 0 reads
       return;
     }

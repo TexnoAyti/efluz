@@ -1060,6 +1060,12 @@ export function normalizeFixtureSnapshot(doc: any, seasonId = 'season-2026-27'):
       competitionName: competitionName || competitionId,
       matchday: doc.matchday,
       roundName: roundName,
+      sourceFixtureId: doc.sourceFixtureId ?? doc.source_fixture_id ?? null,
+      sourceWinnerSlot: doc.sourceWinnerSlot ?? doc.source_winner_slot ?? null,
+      homeSourceFixtureId: doc.homeSourceFixtureId ?? doc.home_source_fixture_id ?? null,
+      awaySourceFixtureId: doc.awaySourceFixtureId ?? doc.away_source_fixture_id ?? null,
+      homeSourceWinnerSlot: doc.homeSourceWinnerSlot ?? doc.home_source_winner_slot ?? null,
+      awaySourceWinnerSlot: doc.awaySourceWinnerSlot ?? doc.away_source_winner_slot ?? null,
       homeClubId: homeClubId && homeClubId !== 'TBD' ? homeClubId : null,
       awayClubId: awayClubId && awayClubId !== 'TBD' ? awayClubId : null,
       homeClub: homeClubId && homeClubId !== 'TBD' ? {
@@ -1905,7 +1911,7 @@ export async function getAdminFixturesFromReadModel(
     }
   }
 
-  const effectiveSnapshotRes = snapshotRes || (await readThroughReadModel<Fixture[]>({
+  let effectiveSnapshotRes = snapshotRes || (await readThroughReadModel<Fixture[]>({
     key: ReadModelKeys.adminFixtures(seasonId),
     seasonId,
     firestoreFetcher: async () => {
@@ -1914,6 +1920,27 @@ export async function getAdminFixturesFromReadModel(
     },
     validateData: (fixtures) => Array.isArray(fixtures) && fixtures.length > 0,
   }));
+
+  // A cup's authoritative refresh may already be newer than an old admin LKG
+  // (for example after a redraw performed before this fix was deployed).
+  // Repair that one slice from Redis without scanning the whole Firestore season.
+  if (await redisIsDirty(ReadModelKeys.adminFixtures(seasonId))) {
+    const cupIds = [
+      'comp-fa-cup-2026', 'comp-copa-del-rey-2026', 'comp-coppa-italia-2026',
+      'comp-dfb-pokal-2026', 'comp-coupe-de-france-2026',
+    ];
+    const candidateIds = options.competitionId ? [options.competitionId] : cupIds;
+    const snapshots = await Promise.all(candidateIds.map(async (cupId) => ({
+      cupId,
+      snapshot: await redisGetFresh<Fixture[]>(ReadModelKeys.competitionFixtures(cupId, seasonId)),
+    })));
+    let merged = effectiveSnapshotRes.data;
+    for (const { cupId, snapshot } of snapshots) {
+      if (!snapshot || !Array.isArray(snapshot.data) || snapshot.generatedAt <= effectiveSnapshotRes.generatedAt) continue;
+      merged = merged.filter((fixture) => fixture.competitionId !== cupId).concat(snapshot.data);
+    }
+    effectiveSnapshotRes = { ...effectiveSnapshotRes, data: merged };
+  }
 
   let allFixtures = [...effectiveSnapshotRes.data].sort((a,b) => compareAdminFixtures(a,b));
 
@@ -2072,6 +2099,30 @@ export async function invalidateFixtureReadModels(
     await invalidateDataset(ReadModelKeys.competitionFixtures(competitionId, seasonId));
     await invalidateDataset(ReadModelKeys.standings(competitionId, seasonId));
   }
+}
+
+/** Replace one cup in the admin snapshot after an authoritative redraw. */
+export async function replaceCupFixturesInAdminSnapshot(
+  competitionId: string,
+  seasonId: string,
+  cupFixtures: Fixture[]
+): Promise<void> {
+  const key = ReadModelKeys.adminFixtures(seasonId);
+  const previous = await redisGetFresh<Fixture[]>(key) || await redisGetLkg<Fixture[]>(key);
+  if (!previous || !Array.isArray(previous.data)) {
+    await invalidateDataset(key);
+    return;
+  }
+  const fixtures = previous.data.filter((fixture) => fixture.competitionId !== competitionId)
+    .concat(cupFixtures)
+    .sort((a, b) => compareAdminFixtures(a, b));
+  await redisSetRaw(key, {
+    schemaVersion: SCHEMA_VERSION,
+    generatedAt: new Date().toISOString(),
+    sourceVersion: `cup-redraw:${competitionId}`,
+    expectedCount: fixtures.length,
+    data: fixtures,
+  });
 }
 
 export async function invalidateStandingsReadModels(
