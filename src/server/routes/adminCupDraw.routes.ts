@@ -11,6 +11,8 @@ import {
   getCompetitionStandingsFromReadModel,
   invalidateDataset,
   invalidateFixtureReadModels,
+  normalizeFixtureSnapshot,
+  replaceCupFixturesInAdminSnapshot,
 } from '../readModel/readModelStore';
 
 export const adminCupDrawRouter = Router();
@@ -458,6 +460,33 @@ adminCupDrawRouter.post('/:cupId/bracket/generate', async (req: Request, res: Re
 
     await invalidateDataset(`cup:bracket:${cupId}:${seasonId}`);
     await invalidateFixtureReadModels(cupId, seasonId);
+    // Keep the admin match list in step with the newly committed bracket.
+    // Invalidating alone leaves its old LKG draw visible during quota outages.
+    try {
+      const cupFixtures = preview.previewMatches.map((match) => normalizeFixtureSnapshot({
+        id: match.fixtureId,
+        seasonId,
+        competitionId: cupId,
+        competitionName: cup.name,
+        matchday: match.roundNumber,
+        roundName: match.roundName,
+        homeClubId: match.homeClubId,
+        awayClubId: match.awayClubId,
+        sourceFixtureId: match.sourceFixtureId,
+        sourceWinnerSlot: match.sourceWinnerSlot,
+        homeSourceFixtureId: match.homeSourceFixtureId,
+        awaySourceFixtureId: match.awaySourceFixtureId,
+        homeSourceWinnerSlot: match.homeSourceWinnerSlot,
+        awaySourceWinnerSlot: match.awaySourceWinnerSlot,
+        status: 'SCHEDULED',
+        scheduledAt: now,
+        createdAt: now,
+        updatedAt: now,
+      }, seasonId));
+      await replaceCupFixturesInAdminSnapshot(cupId, seasonId, cupFixtures);
+    } catch (snapshotError: any) {
+      console.warn('[CUP_DRAW_ADMIN_SNAPSHOT_WARNING]', snapshotError?.message || snapshotError);
+    }
 
     const action = existingFixtures.length > 0 ? 'CUP_BRACKET_REDRAWN' : 'CUP_BRACKET_GENERATED';
     await createAuditLog(

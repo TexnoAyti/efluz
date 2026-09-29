@@ -615,7 +615,7 @@ export const api = {
       const safeLimit = Math.max(filterOrSeason.limit && filterOrSeason.limit > 0 ? filterOrSeason.limit : 25, 1);
       p.set('limit', String(safeLimit));
       url += `?${p.toString()}`;
-      skipCache = Boolean(competitionIdParam);
+      skipCache = skipCacheParam || Boolean(competitionIdParam);
     } else {
       const seasonId = filterOrSeason || 'season-2026-27';
       const competitionId = competitionIdParam as string | undefined;
