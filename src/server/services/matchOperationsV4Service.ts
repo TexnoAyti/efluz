@@ -19,6 +19,7 @@ import {
   resolveDispute,
 } from './adminService';
 import { enqueueSmartTelegramNotification } from './smartNotificationService';
+import { telegramMiniAppButton } from './telegramMiniAppButton';
 
 const DEADLINE_COLLECTION = 'match_deadlines';
 const NO_SHOW_COLLECTION = 'no_show_reports';
@@ -309,7 +310,7 @@ async function sendDeadlineReminder(deadline: any, kind: '24h' | '6h' | 'overdue
     eventId: `matchday-open:deadline:${kind}:${deadline.fixtureId}:${deadline.deadlineAt}`,
     title,
     body,
-    replyMarkup: { inline_keyboard: [[{ text: '🏟 Mening o‘yinlarim', url: 'https://efluz.vercel.app/my-matches' }]] },
+    replyMarkup: { inline_keyboard: [[telegramMiniAppButton('🏟 Mening o‘yinlarim')]] },
   })));
   const queued = results.filter((item) => item.status === 'fulfilled' && item.value).length;
   return { attempted: true, queued };
