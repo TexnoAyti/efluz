@@ -35,9 +35,10 @@ assert(reminderRoute.includes("fixture.status === 'CONFIRMED'"), 'confirmed matc
 assert(reminderRoute.includes('REMINDER_WINDOW_MS = 15 * 60 * 1000'), 'manual reminders must be deduped in a stable window');
 
 const telegram = read('src/server/services/smartNotificationService.ts');
-for (const marker of ['buildMatchCardBody', 'Asia/Tashkent', 'EFL UZ ilovasini ochish', 'Natijani yuborish']) {
+for (const marker of ['buildMatchCardBody', 'Asia/Tashkent', 'telegramMiniAppButton', 'Natijani yuborish']) {
   assert(telegram.includes(marker), `Telegram Match Card V2 missing ${marker}`);
 }
+assert(read('src/server/services/telegramMiniAppButton.ts').includes('web_app: { url }'), 'Telegram notification button must open the Mini App');
 assert(telegram.includes("status === 'PENDING_CONFIRMATION'"), 'result verification lifecycle missing');
 assert(telegram.includes("status === 'CONFIRMED'"), 'confirmed lifecycle missing');
 assert(telegram.includes("status === 'DISPUTED'"), 'dispute lifecycle missing');
