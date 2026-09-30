@@ -78,28 +78,28 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
     switch (type) {
       case 'RESULT_CONFIRMED':
       case 'MATCH_CONFIRMED':
-        return <CheckCircle2 className="w-4 h-4 text-emerald-400" />;
+        return <CheckCircle2 className="w-4 h-4 text-emerald-400 efl-theme-emerald" />;
       case 'DISPUTE_OPENED':
       case 'MATCH_DISPUTED':
-        return <AlertTriangle className="w-4 h-4 text-rose-400" />;
+        return <AlertTriangle className="w-4 h-4 text-rose-400 efl-theme-rose" />;
       case 'DISPUTE_RESOLVED':
-        return <Sparkles className="w-4 h-4 text-sky-400" />;
+        return <Sparkles className="w-4 h-4 text-sky-400 efl-theme-sky" />;
       case 'RESULT_SUBMITTED':
       case 'SUBMISSION_RECEIVED':
       case 'OPPONENT_SUBMITTED':
-        return <Clock className="w-4 h-4 text-sky-400" />;
+        return <Clock className="w-4 h-4 text-sky-400 efl-theme-sky" />;
       case 'MATCH_SCHEDULED':
       case 'NEW_FIXTURE':
-        return <Calendar className="w-4 h-4 text-indigo-400" />;
+        return <Calendar className="w-4 h-4 text-indigo-400 efl-theme-indigo" />;
       case 'CLUB_ASSIGNED':
       case 'CLUB_CLAIMED':
         return <Shield className="w-4 h-4 text-teal-400" />;
       case 'NEXT_ROUND_MATCH':
       case 'QUALIFICATION_CONFIRMED':
       case 'COMPETITION_UPDATE':
-        return <Trophy className="w-4 h-4 text-amber-400" />;
+        return <Trophy className="w-4 h-4 text-amber-400 efl-theme-amber" />;
       default:
-        return <Award className="w-4 h-4 text-emerald-400" />;
+        return <Award className="w-4 h-4 text-emerald-400 efl-theme-emerald" />;
     }
   };
 
@@ -161,21 +161,21 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
   return (
     <div className="space-y-6 animate-in fade-in duration-300 pb-20 max-w-4xl mx-auto">
       {/* Header Container */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 glass-panel p-4 sm:p-6 shadow-xl border border-white/[0.08]">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 glass-panel p-4 sm:p-6 shadow-xl border border-white/[0.08] efl-theme-border">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-slate-950/80 p-2.5 border border-white/[0.08] flex items-center justify-center text-emerald-400 shrink-0 shadow-inner">
+          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-slate-950/80 efl-theme-surface-2 p-2.5 border border-white/[0.08] efl-theme-border flex items-center justify-center text-emerald-400 efl-theme-emerald shrink-0 shadow-inner">
             <Bell className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-lg sm:text-2xl font-black text-white">{t.notificationsTitle}</h2>
+              <h2 className="text-lg sm:text-2xl font-black text-white efl-theme-text">{t.notificationsTitle}</h2>
               {unreadNotificationCount > 0 && (
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white shadow-[0_0_8px_rgba(244,63,94,0.4)]">
                   {unreadNotificationCount > 9 ? '9+' : unreadNotificationCount} new
                 </span>
               )}
             </div>
-            <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5">
+            <p className="text-[11px] sm:text-xs text-slate-400 efl-theme-text-2 mt-0.5">
               Live updates on match submissions, consensus verifications, and disputes
             </p>
           </div>
@@ -190,11 +190,11 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
               disabled={isMarkingAll}
               className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold active:scale-95 transition-all min-h-[38px] touch-manipulation border ${
                 user?.isAdmin
-                  ? 'bg-white dark:bg-[#171e2c] border-slate-200/80 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:text-blue-600 dark:hover:text-blue-400 shadow-xs'
-                  : 'glass-card text-slate-200 hover:text-white border-white/[0.08] hover:border-emerald-500/40'
+                  ? 'bg-white efl-theme-surface dark:bg-[#171e2c] border-slate-200/80 efl-theme-border dark:border-white/10 text-slate-700 efl-theme-text-2 dark:text-slate-200 hover:text-blue-600 dark:hover:text-blue-400 shadow-xs'
+                  : 'glass-card text-slate-200 efl-theme-text hover:text-white efl-theme-hover-text border-white/[0.08] efl-theme-border hover:border-emerald-500/40'
               }`}
             >
-              <CheckCheck className={`w-4 h-4 ${user?.isAdmin ? 'text-blue-600 dark:text-blue-400' : 'text-emerald-400'}`} />
+              <CheckCheck className={`w-4 h-4 ${user?.isAdmin ? 'text-blue-600 efl-theme-blue dark:text-blue-400' : 'text-emerald-400 efl-theme-emerald'}`} />
               <span>{isMarkingAll ? 'Marking...' : t.markAllRead}</span>
             </button>
           )}
@@ -205,14 +205,14 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
             disabled={isNotificationsLoading}
             className={`flex items-center justify-center p-2 rounded-xl active:scale-95 transition-all min-w-[38px] min-h-[38px] touch-manipulation border ${
               user?.isAdmin
-                ? 'bg-white dark:bg-[#171e2c] border-slate-200/80 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white shadow-xs'
-                : 'glass-card text-slate-300 hover:text-white border-white/[0.08]'
+                ? 'bg-white efl-theme-surface dark:bg-[#171e2c] border-slate-200/80 efl-theme-border dark:border-white/10 text-slate-600 efl-theme-text-2 dark:text-slate-400 hover:text-slate-900 efl-theme-hover-text dark:hover:text-white shadow-xs'
+                : 'glass-card text-slate-300 efl-theme-text-2 hover:text-white efl-theme-hover-text border-white/[0.08] efl-theme-border'
             }`}
             title="Refresh notifications"
             aria-label="Refresh notifications"
           >
             <RefreshCw
-              className={`w-4 h-4 ${isNotificationsLoading ? 'animate-spin text-blue-500' : ''}`}
+              className={`w-4 h-4 ${isNotificationsLoading ? 'animate-spin text-blue-500 efl-theme-blue' : ''}`}
             />
           </button>
         </div>
@@ -229,8 +229,8 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
                   ? 'bg-blue-600 text-white font-black shadow-xs'
                   : 'bg-emerald-500 text-slate-950 font-black shadow-md shadow-emerald-500/20'
                 : user?.isAdmin
-                ? 'bg-white dark:bg-[#111722] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white border border-slate-200/80 dark:border-white/10'
-                : 'glass-card text-slate-400 hover:text-slate-200'
+                ? 'bg-white efl-theme-surface dark:bg-[#111722] text-slate-600 efl-theme-text-2 dark:text-slate-400 hover:text-slate-900 efl-theme-hover-text dark:hover:text-white border border-slate-200/80 efl-theme-border dark:border-white/10'
+                : 'glass-card text-slate-400 efl-theme-text-2 hover:text-slate-200 efl-theme-hover-text'
             }`}
           >
             All ({notifications.length})
@@ -244,8 +244,8 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
                   ? 'bg-blue-600 text-white font-black shadow-xs'
                   : 'bg-emerald-500 text-slate-950 font-black shadow-md shadow-emerald-500/20'
                 : user?.isAdmin
-                ? 'bg-white dark:bg-[#111722] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white border border-slate-200/80 dark:border-white/10'
-                : 'glass-card text-slate-400 hover:text-slate-200'
+                ? 'bg-white efl-theme-surface dark:bg-[#111722] text-slate-600 efl-theme-text-2 dark:text-slate-400 hover:text-slate-900 efl-theme-hover-text dark:hover:text-white border border-slate-200/80 efl-theme-border dark:border-white/10'
+                : 'glass-card text-slate-400 efl-theme-text-2 hover:text-slate-200 efl-theme-hover-text'
             }`}
           >
             <span>Unread</span>
@@ -254,8 +254,8 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
                 className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
                   activeFilter === 'unread'
                     ? user?.isAdmin
-                      ? 'bg-white text-blue-600'
-                      : 'bg-slate-950 text-emerald-400'
+                      ? 'bg-white efl-theme-surface text-blue-600 efl-theme-blue'
+                      : 'bg-slate-950 efl-theme-surface-2 text-emerald-400 efl-theme-emerald'
                     : 'bg-rose-500 text-white'
                 }`}
               >
@@ -272,8 +272,8 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
                   ? 'bg-blue-600 text-white font-black shadow-xs'
                   : 'bg-emerald-500 text-slate-950 font-black shadow-md shadow-emerald-500/20'
                 : user?.isAdmin
-                ? 'bg-white dark:bg-[#111722] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white border border-slate-200/80 dark:border-white/10'
-                : 'glass-card text-slate-400 hover:text-slate-200'
+                ? 'bg-white efl-theme-surface dark:bg-[#111722] text-slate-600 efl-theme-text-2 dark:text-slate-400 hover:text-slate-900 efl-theme-hover-text dark:hover:text-white border border-slate-200/80 efl-theme-border dark:border-white/10'
+                : 'glass-card text-slate-400 efl-theme-text-2 hover:text-slate-200 efl-theme-hover-text'
             }`}
           >
             Matches
@@ -287,8 +287,8 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
                   ? 'bg-blue-600 text-white font-black shadow-xs'
                   : 'bg-emerald-500 text-slate-950 font-black shadow-md shadow-emerald-500/20'
                 : user?.isAdmin
-                ? 'bg-white dark:bg-[#111722] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white border border-slate-200/80 dark:border-white/10'
-                : 'glass-card text-slate-400 hover:text-slate-200'
+                ? 'bg-white efl-theme-surface dark:bg-[#111722] text-slate-600 efl-theme-text-2 dark:text-slate-400 hover:text-slate-900 efl-theme-hover-text dark:hover:text-white border border-slate-200/80 efl-theme-border dark:border-white/10'
+                : 'glass-card text-slate-400 efl-theme-text-2 hover:text-slate-200 efl-theme-hover-text'
             }`}
           >
             Updates
@@ -305,22 +305,22 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
               key={i}
               className={`p-4 rounded-2xl border animate-pulse flex items-start gap-3.5 ${
                 user?.isAdmin
-                  ? 'bg-white dark:bg-[#111722] border-slate-200/80 dark:border-white/10 shadow-xs'
-                  : 'glass-card border-white/[0.06]'
+                  ? 'bg-white efl-theme-surface dark:bg-[#111722] border-slate-200/80 efl-theme-border dark:border-white/10 shadow-xs'
+                  : 'glass-card border-white/[0.06] efl-theme-border'
               }`}
             >
               <div
                 className={`w-9 h-9 rounded-xl shrink-0 ${
-                  user?.isAdmin ? 'bg-slate-200 dark:bg-white/10' : 'bg-slate-800/60'
+                  user?.isAdmin ? 'bg-slate-200 efl-theme-surface-2 dark:bg-white/10' : 'bg-slate-800/60 efl-theme-surface-2'
                 }`}
               />
               <div className="flex-1 space-y-2">
                 <div className="flex items-center justify-between">
-                  <div className={`h-4 rounded w-1/3 ${user?.isAdmin ? 'bg-slate-200 dark:bg-white/10' : 'bg-slate-800/80'}`} />
-                  <div className={`h-3 rounded w-16 ${user?.isAdmin ? 'bg-slate-200 dark:bg-white/10' : 'bg-slate-800/60'}`} />
+                  <div className={`h-4 rounded w-1/3 ${user?.isAdmin ? 'bg-slate-200 efl-theme-surface-2 dark:bg-white/10' : 'bg-slate-800/80 efl-theme-surface-2'}`} />
+                  <div className={`h-3 rounded w-16 ${user?.isAdmin ? 'bg-slate-200 efl-theme-surface-2 dark:bg-white/10' : 'bg-slate-800/60 efl-theme-surface-2'}`} />
                 </div>
-                <div className={`h-3 rounded w-4/5 ${user?.isAdmin ? 'bg-slate-100 dark:bg-white/5' : 'bg-slate-800/50'}`} />
-                <div className={`h-3 rounded w-1/2 ${user?.isAdmin ? 'bg-slate-100 dark:bg-white/5' : 'bg-slate-800/40'}`} />
+                <div className={`h-3 rounded w-4/5 ${user?.isAdmin ? 'bg-slate-100 efl-theme-surface-2 dark:bg-white/5' : 'bg-slate-800/50 efl-theme-surface-2'}`} />
+                <div className={`h-3 rounded w-1/2 ${user?.isAdmin ? 'bg-slate-100 efl-theme-surface-2 dark:bg-white/5' : 'bg-slate-800/40 efl-theme-surface-2'}`} />
               </div>
             </div>
           ))}
@@ -330,17 +330,17 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
         <div
           className={`p-8 sm:p-10 text-center text-xs shadow-xl border rounded-3xl ${
             user?.isAdmin
-              ? 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40 text-rose-700 dark:text-rose-400'
-              : 'glass-panel text-slate-400 border-rose-500/20'
+              ? 'bg-rose-50/50 efl-theme-rose-soft dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40 text-rose-700 efl-theme-rose dark:text-rose-400'
+              : 'glass-panel text-slate-400 efl-theme-text-2 border-rose-500/20'
           }`}
         >
-          <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-500 mx-auto mb-3.5 shadow-inner">
+          <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-500 efl-theme-rose mx-auto mb-3.5 shadow-inner">
             <AlertCircle className="w-6 h-6" />
           </div>
-          <h3 className={`text-sm sm:text-base font-bold ${user?.isAdmin ? 'text-slate-900 dark:text-white' : 'text-slate-200'}`}>
+          <h3 className={`text-sm sm:text-base font-bold ${user?.isAdmin ? 'text-slate-900 efl-theme-text dark:text-white' : 'text-slate-200 efl-theme-text'}`}>
             Couldn't load notifications
           </h3>
-          <p className="text-slate-500 dark:text-slate-400 mt-1 mb-5">Please try again.</p>
+          <p className="text-slate-500 efl-theme-text-2 dark:text-slate-400 mt-1 mb-5">Please try again.</p>
           <button
             id="btn-retry-notifications"
             onClick={() => refreshNotifications(true)}
@@ -359,23 +359,23 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
         <div
           className={`p-10 sm:p-14 text-center text-xs shadow-lg border rounded-3xl ${
             user?.isAdmin
-              ? 'preview-surface border-slate-200/80 dark:border-white/10 text-slate-500 dark:text-slate-400'
-              : 'glass-panel text-slate-400 border-white/[0.08]'
+              ? 'preview-surface border-slate-200/80 efl-theme-border dark:border-white/10 text-slate-500 efl-theme-text-2 dark:text-slate-400'
+              : 'glass-panel text-slate-400 efl-theme-text-2 border-white/[0.08] efl-theme-border'
           }`}
         >
           <div
             className={`w-12 h-12 rounded-2xl border flex items-center justify-center mx-auto mb-3.5 ${
               user?.isAdmin
-                ? 'bg-slate-100 dark:bg-white/5 border-slate-200/80 dark:border-white/10 text-slate-400'
-                : 'bg-slate-950/80 border-white/[0.08] text-slate-500 shadow-inner'
+                ? 'bg-slate-100 efl-theme-surface-2 dark:bg-white/5 border-slate-200/80 efl-theme-border dark:border-white/10 text-slate-400 efl-theme-text-2'
+                : 'bg-slate-950/80 efl-theme-surface-2 border-white/[0.08] efl-theme-border text-slate-500 efl-theme-text-2 shadow-inner'
             }`}
           >
             <Bell className="w-6 h-6 opacity-60" />
           </div>
-          <h3 className={`text-sm sm:text-base font-bold ${user?.isAdmin ? 'text-slate-900 dark:text-white' : 'text-slate-200'}`}>
+          <h3 className={`text-sm sm:text-base font-bold ${user?.isAdmin ? 'text-slate-900 efl-theme-text dark:text-white' : 'text-slate-200 efl-theme-text'}`}>
             No notifications yet
           </h3>
-          <p className="text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto leading-relaxed">
+          <p className="text-slate-500 efl-theme-text-2 dark:text-slate-400 mt-1 max-w-sm mx-auto leading-relaxed">
             Important match and competition updates will appear here.
           </p>
         </div>
@@ -384,29 +384,29 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
         <div
           className={`p-8 sm:p-10 text-center text-xs shadow-lg border rounded-3xl ${
             user?.isAdmin
-              ? 'preview-surface border-slate-200/80 dark:border-white/10 text-slate-500 dark:text-slate-400'
-              : 'glass-panel text-slate-400 border-white/[0.08]'
+              ? 'preview-surface border-slate-200/80 efl-theme-border dark:border-white/10 text-slate-500 efl-theme-text-2 dark:text-slate-400'
+              : 'glass-panel text-slate-400 efl-theme-text-2 border-white/[0.08] efl-theme-border'
           }`}
         >
           <div
             className={`w-10 h-10 rounded-xl border flex items-center justify-center mx-auto mb-3 ${
               user?.isAdmin
-                ? 'bg-blue-500/10 border-blue-500/25 text-blue-600 dark:text-blue-400'
-                : 'bg-slate-950/80 border-white/[0.08] text-emerald-400 shadow-inner'
+                ? 'bg-blue-500/10 border-blue-500/25 text-blue-600 efl-theme-blue dark:text-blue-400'
+                : 'bg-slate-950/80 efl-theme-surface-2 border-white/[0.08] efl-theme-border text-emerald-400 efl-theme-emerald shadow-inner'
             }`}
           >
             <CheckCircle2 className="w-5 h-5" />
           </div>
-          <h3 className={`text-sm font-bold ${user?.isAdmin ? 'text-slate-900 dark:text-white' : 'text-slate-200'}`}>
+          <h3 className={`text-sm font-bold ${user?.isAdmin ? 'text-slate-900 efl-theme-text dark:text-white' : 'text-slate-200 efl-theme-text'}`}>
             All caught up
           </h3>
-          <p className="text-slate-500 dark:text-slate-400 mt-1 mb-4">No notifications match the selected filter.</p>
+          <p className="text-slate-500 efl-theme-text-2 dark:text-slate-400 mt-1 mb-4">No notifications match the selected filter.</p>
           <button
             onClick={() => setActiveFilter('all')}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors ${
               user?.isAdmin
-                ? 'bg-slate-100 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                : 'glass-card text-slate-300 hover:text-white'
+                ? 'bg-slate-100 efl-theme-surface-2 dark:bg-white/5 border border-slate-200/80 efl-theme-border dark:border-white/10 text-slate-700 efl-theme-text-2 dark:text-slate-300 hover:text-slate-900 efl-theme-hover-text dark:hover:text-white'
+                : 'glass-card text-slate-300 efl-theme-text-2 hover:text-white efl-theme-hover-text'
             }`}
           >
             View all notifications
@@ -422,11 +422,11 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
               className={`p-3.5 sm:p-4 rounded-2xl border transition-all flex items-start justify-between gap-3 cursor-pointer group ${
                 notif.isRead
                   ? user?.isAdmin
-                    ? 'bg-slate-50 dark:bg-white/5 border-slate-200/80 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10'
-                    : 'glass-card text-slate-300 hover:border-white/[0.15]'
+                    ? 'bg-slate-50 dark:bg-white/5 border-slate-200/80 efl-theme-border dark:border-white/10 text-slate-600 efl-theme-text-2 dark:text-slate-400 hover:bg-slate-100 efl-theme-hover-surface dark:hover:bg-white/10'
+                    : 'glass-card text-slate-300 efl-theme-text-2 hover:border-white/[0.15]'
                   : user?.isAdmin
-                  ? 'bg-white dark:bg-[#111722] border-blue-500/40 shadow-xs text-slate-900 dark:text-white hover:border-blue-500/60'
-                  : 'glass-panel border-emerald-500/40 shadow-lg shadow-emerald-500/5 text-white hover:border-emerald-500/60'
+                  ? 'bg-white efl-theme-surface dark:bg-[#111722] border-blue-500/40 shadow-xs text-slate-900 efl-theme-text dark:text-white hover:border-blue-500/60'
+                  : 'glass-panel border-emerald-500/40 shadow-lg shadow-emerald-500/5 text-white efl-theme-text hover:border-emerald-500/60'
               }`}
             >
               <div className="flex items-start gap-3.5 min-w-0 flex-1">
@@ -435,11 +435,11 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
                   className={`p-2 sm:p-2.5 rounded-xl border shrink-0 mt-0.5 ${
                     user?.isAdmin
                       ? notif.isRead
-                        ? 'bg-white dark:bg-[#171e2c] border-slate-200/80 dark:border-white/10'
-                        : 'bg-blue-50 dark:bg-blue-500/10 border-blue-500/30'
+                        ? 'bg-white efl-theme-surface dark:bg-[#171e2c] border-slate-200/80 efl-theme-border dark:border-white/10'
+                        : 'bg-blue-50 efl-theme-blue-soft dark:bg-blue-500/10 border-blue-500/30'
                       : notif.isRead
-                      ? 'bg-slate-950/80 border-white/[0.08]'
-                      : 'bg-slate-950/80 border-emerald-500/30'
+                      ? 'bg-slate-950/80 efl-theme-surface-2 border-white/[0.08] efl-theme-border'
+                      : 'bg-slate-950/80 efl-theme-surface-2 border-emerald-500/30'
                   }`}
                 >
                   {getNotificationIcon(notif.type)}
@@ -452,11 +452,11 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
                       className={`text-xs sm:text-sm font-bold truncate ${
                         notif.isRead
                           ? user?.isAdmin
-                            ? 'text-slate-700 dark:text-slate-300'
-                            : 'text-slate-200'
+                            ? 'text-slate-700 efl-theme-text-2 dark:text-slate-300'
+                            : 'text-slate-200 efl-theme-text'
                           : user?.isAdmin
-                          ? 'text-slate-900 dark:text-white'
-                          : 'text-white'
+                          ? 'text-slate-900 efl-theme-text dark:text-white'
+                          : 'text-white efl-theme-text'
                       }`}
                     >
                       {notif.title}
@@ -473,21 +473,21 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
                   </div>
                   <p
                     className={`text-xs mt-1 leading-relaxed break-words ${
-                      user?.isAdmin ? 'text-slate-500 dark:text-slate-400' : 'text-slate-400'
+                      user?.isAdmin ? 'text-slate-500 efl-theme-text-2 dark:text-slate-400' : 'text-slate-400 efl-theme-text-2'
                     }`}
                   >
                     {notif.message}
                   </p>
 
                   <div className="flex items-center gap-3 mt-2.5 flex-wrap">
-                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+                    <span className="text-[10px] text-slate-400 efl-theme-text-2 dark:text-slate-500 font-medium">
                       {formatTimestamp(notif.createdAt)}
                     </span>
 
                     {notif.fixtureId && (
                       <span
                         className={`inline-flex items-center gap-1 text-[10px] font-bold group-hover:underline ${
-                          user?.isAdmin ? 'text-blue-600 dark:text-blue-400' : 'text-emerald-400'
+                          user?.isAdmin ? 'text-blue-600 efl-theme-blue dark:text-blue-400' : 'text-emerald-400 efl-theme-emerald'
                         }`}
                       >
                         <span>View Match</span>
@@ -498,7 +498,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
                     {(notif.type === 'CLUB_ASSIGNED' || notif.entityType === 'club') && (
                       <span
                         className={`inline-flex items-center gap-1 text-[10px] font-bold group-hover:underline ${
-                          user?.isAdmin ? 'text-blue-600 dark:text-blue-400' : 'text-teal-400'
+                          user?.isAdmin ? 'text-blue-600 efl-theme-blue dark:text-blue-400' : 'text-teal-400'
                         }`}
                       >
                         <span>View Club</span>
@@ -516,8 +516,8 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
                   disabled={markingReadId === notif.id}
                   className={`p-1.5 rounded-lg shrink-0 touch-manipulation transition-colors ${
                     user?.isAdmin
-                      ? 'bg-white dark:bg-[#171e2c] border border-slate-200/80 dark:border-white/10 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 shadow-xs'
-                      : 'glass-button text-slate-400 hover:text-emerald-400 hover:border-emerald-500/40'
+                      ? 'bg-white efl-theme-surface dark:bg-[#171e2c] border border-slate-200/80 efl-theme-border dark:border-white/10 text-slate-400 efl-theme-text-2 hover:text-blue-600 dark:hover:text-blue-400 shadow-xs'
+                      : 'glass-button text-slate-400 efl-theme-text-2 hover:text-emerald-400 hover:border-emerald-500/40'
                   }`}
                   title="Mark as read"
                   aria-label="Mark as read"
@@ -532,3 +532,4 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
     </div>
   );
 };
+

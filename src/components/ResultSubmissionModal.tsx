@@ -102,27 +102,27 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
       <div
         className={`w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${
           user?.isAdmin
-            ? 'preview-surface rounded-3xl border border-slate-200/80 dark:border-white/10 text-slate-900 dark:text-white shadow-2xl'
-            : 'glass-modal text-white'
+            ? 'preview-surface rounded-3xl border border-slate-200/80 efl-theme-border dark:border-white/10 text-slate-900 efl-theme-text dark:text-white shadow-2xl'
+            : 'glass-modal text-white efl-theme-text'
         }`}
       >
         {/* Header */}
         <div
           className={`px-5 py-4 border-b flex items-center justify-between ${
             user?.isAdmin
-              ? 'border-slate-200/80 dark:border-white/10 bg-slate-50/75 dark:bg-white/[0.02]'
-              : 'border-white/[0.08] bg-white/[0.02]'
+              ? 'border-slate-200/80 efl-theme-border dark:border-white/10 bg-slate-50/75 dark:bg-white/[0.02]'
+              : 'border-white/[0.08] efl-theme-border bg-white/[0.02] efl-theme-surface-2'
           }`}
         >
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-blue-500/10 border border-blue-500/25 flex items-center justify-center text-blue-600 dark:text-blue-400">
+            <div className="w-8 h-8 rounded-xl bg-blue-500/10 border border-blue-500/25 flex items-center justify-center text-blue-600 efl-theme-blue dark:text-blue-400">
               <Shield className="w-4 h-4" />
             </div>
             <div>
-              <h3 className={`font-bold text-sm sm:text-base ${user?.isAdmin ? 'text-slate-900 dark:text-white' : 'text-slate-100'}`}>
+              <h3 className={`font-bold text-sm sm:text-base ${user?.isAdmin ? 'text-slate-900 efl-theme-text dark:text-white' : 'text-slate-100 efl-theme-text'}`}>
                 {c?.title || 'Submit Match Result'}
               </h3>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              <p className="text-[11px] text-slate-500 efl-theme-text-2 dark:text-slate-400">
                 {fixture.competitionName} • {fixture.roundName || `${c?.matchday || 'Matchday'} ${fixture.matchday}`}
               </p>
             </div>
@@ -133,8 +133,8 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
             aria-label={c?.cancel || 'Close'}
             className={`p-1.5 rounded-xl transition-colors ${
               user?.isAdmin
-                ? 'text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10'
-                : 'text-slate-400 hover:text-white glass-button'
+                ? 'text-slate-400 efl-theme-text-2 hover:text-slate-900 efl-theme-hover-text dark:hover:text-white hover:bg-slate-100 efl-theme-hover-surface dark:hover:bg-white/10'
+                : 'text-slate-400 efl-theme-text-2 hover:text-white efl-theme-hover-text glass-button'
             }`}
           >
             <X className="w-4 h-4" />
@@ -147,7 +147,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
           <div
             className={`p-4 rounded-2xl border ${
               user?.isAdmin
-                ? 'bg-slate-50 dark:bg-white/5 border-slate-200/80 dark:border-white/10 shadow-xs'
+                ? 'bg-slate-50 dark:bg-white/5 border-slate-200/80 efl-theme-border dark:border-white/10 shadow-xs'
                 : 'glass-card'
             }`}
           >
@@ -157,8 +157,8 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
                 <div
                   className={`w-14 h-14 rounded-2xl p-2 border flex items-center justify-center mb-2 ${
                     user?.isAdmin
-                      ? 'bg-white dark:bg-[#171e2c] border-slate-200/80 dark:border-white/10 shadow-xs'
-                      : 'bg-slate-950/80 border-white/[0.08] shadow-inner'
+                      ? 'bg-white efl-theme-surface dark:bg-[#171e2c] border-slate-200/80 efl-theme-border dark:border-white/10 shadow-xs'
+                      : 'bg-slate-950/80 efl-theme-surface-2 border-white/[0.08] efl-theme-border shadow-inner'
                   }`}
                 >
                   <ClubCrest
@@ -172,12 +172,12 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
                 </div>
                 <div
                   className={`font-black text-xs sm:text-sm truncate max-w-full ${
-                    user?.isAdmin ? 'text-slate-900 dark:text-white' : 'text-slate-100'
+                    user?.isAdmin ? 'text-slate-900 efl-theme-text dark:text-white' : 'text-slate-100 efl-theme-text'
                   }`}
                 >
                   {fixture.homeClub?.name}
                 </div>
-                <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold mt-0.5">
+                <span className="text-[10px] text-blue-600 efl-theme-blue dark:text-blue-400 font-bold mt-0.5">
                   {isHomeOwner ? `(${c?.you || 'You'})` : fixture.homeOwnerId ? c?.claimed || 'Claimed' : c?.unclaimed || 'Unclaimed'}
                 </span>
               </div>
@@ -187,8 +187,8 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
                 <div
                   className={`w-8 h-8 rounded-full font-black text-xs flex items-center justify-center ${
                     user?.isAdmin
-                      ? 'bg-slate-200/80 dark:bg-white/10 text-slate-600 dark:text-slate-300'
-                      : 'glass-card text-slate-400'
+                      ? 'bg-slate-200/80 efl-theme-surface-2 dark:bg-white/10 text-slate-600 efl-theme-text-2 dark:text-slate-300'
+                      : 'glass-card text-slate-400 efl-theme-text-2'
                   }`}
                 >
                   VS
@@ -200,8 +200,8 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
                 <div
                   className={`w-14 h-14 rounded-2xl p-2 border flex items-center justify-center mb-2 ${
                     user?.isAdmin
-                      ? 'bg-white dark:bg-[#171e2c] border-slate-200/80 dark:border-white/10 shadow-xs'
-                      : 'bg-slate-950/80 border-white/[0.08] shadow-inner'
+                      ? 'bg-white efl-theme-surface dark:bg-[#171e2c] border-slate-200/80 efl-theme-border dark:border-white/10 shadow-xs'
+                      : 'bg-slate-950/80 efl-theme-surface-2 border-white/[0.08] efl-theme-border shadow-inner'
                   }`}
                 >
                   <ClubCrest
@@ -215,12 +215,12 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
                 </div>
                 <div
                   className={`font-black text-xs sm:text-sm truncate max-w-full ${
-                    user?.isAdmin ? 'text-slate-900 dark:text-white' : 'text-slate-100'
+                    user?.isAdmin ? 'text-slate-900 efl-theme-text dark:text-white' : 'text-slate-100 efl-theme-text'
                   }`}
                 >
                   {fixture.awayClub?.name}
                 </div>
-                <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold mt-0.5">
+                <span className="text-[10px] text-blue-600 efl-theme-blue dark:text-blue-400 font-bold mt-0.5">
                   {isAwayOwner ? `(${c?.you || 'You'})` : fixture.awayOwnerId ? c?.claimed || 'Claimed' : c?.unclaimed || 'Unclaimed'}
                 </span>
               </div>
@@ -232,23 +232,23 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
             <div
               className={`p-3.5 rounded-2xl border text-xs space-y-1.5 ${
                 user?.isAdmin
-                  ? 'bg-blue-50 dark:bg-blue-500/10 border-blue-200 dark:border-blue-500/25'
+                  ? 'bg-blue-50 efl-theme-blue-soft dark:bg-blue-500/10 border-blue-200 dark:border-blue-500/25'
                   : 'glass-card bg-indigo-950/25 border-indigo-500/30'
               }`}
             >
               <div
                 className={`flex items-center gap-2 font-bold ${
-                  user?.isAdmin ? 'text-blue-700 dark:text-blue-300' : 'text-indigo-300'
+                  user?.isAdmin ? 'text-blue-700 efl-theme-blue dark:text-blue-300' : 'text-indigo-300 efl-theme-indigo'
                 }`}
               >
-                <Clock className="w-4 h-4 text-blue-500 dark:text-blue-400 shrink-0" />
+                <Clock className="w-4 h-4 text-blue-500 efl-theme-blue dark:text-blue-400 shrink-0" />
                 <span>
                   {c?.opponent || 'Opponent Submitted'}: {fixture.opponentSubmission.homeScore} - {fixture.opponentSubmission.awayScore}
                 </span>
               </div>
               <p
                 className={`text-[11px] leading-relaxed ${
-                  user?.isAdmin ? 'text-slate-600 dark:text-slate-300' : 'text-slate-300'
+                  user?.isAdmin ? 'text-slate-600 efl-theme-text-2 dark:text-slate-300' : 'text-slate-300 efl-theme-text-2'
                 }`}
               >
                 {c?.opponentHint || 'If you submit this exact score, the match will be verified and league standings updated immediately.'}
@@ -260,7 +260,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
           <div>
             <label
               className={`block text-[11px] font-bold uppercase tracking-wider mb-2 text-center ${
-                user?.isAdmin ? 'text-slate-600 dark:text-slate-400' : 'text-slate-300'
+                user?.isAdmin ? 'text-slate-600 efl-theme-text-2 dark:text-slate-400' : 'text-slate-300 efl-theme-text-2'
               }`}
             >
               {c?.score || 'Official Match Score'}
@@ -268,7 +268,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
             <div
               className={`grid grid-cols-2 gap-3 p-4 rounded-2xl border ${
                 user?.isAdmin
-                  ? 'bg-slate-50 dark:bg-white/5 border-slate-200/80 dark:border-white/10 shadow-xs'
+                  ? 'bg-slate-50 dark:bg-white/5 border-slate-200/80 efl-theme-border dark:border-white/10 shadow-xs'
                   : 'glass-panel'
               }`}
             >
@@ -276,7 +276,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
               <div className="flex flex-col items-center">
                 <span
                   className={`text-xs font-bold mb-2 truncate max-w-full ${
-                    user?.isAdmin ? 'text-slate-700 dark:text-slate-300' : 'text-slate-300'
+                    user?.isAdmin ? 'text-slate-700 efl-theme-text-2 dark:text-slate-300' : 'text-slate-300 efl-theme-text-2'
                   }`}
                 >
                   {fixture.homeClub?.shortName || 'HOME'}
@@ -287,8 +287,8 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
                     onClick={() => handleScoreAdjust('home', -1)}
                     className={`w-10 h-10 font-bold text-lg flex items-center justify-center select-none rounded-xl transition-all ${
                       user?.isAdmin
-                        ? 'bg-white dark:bg-[#171e2c] border border-slate-200/80 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white shadow-xs'
-                        : 'glass-button text-slate-200'
+                        ? 'bg-white efl-theme-surface dark:bg-[#171e2c] border border-slate-200/80 efl-theme-border dark:border-white/10 text-slate-700 efl-theme-text-2 dark:text-slate-200 hover:text-slate-900 efl-theme-hover-text dark:hover:text-white shadow-xs'
+                        : 'glass-button text-slate-200 efl-theme-text'
                     }`}
                   >
                     -
@@ -302,8 +302,8 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
                     aria-label={fixture.homeClub?.name || 'Home score'}
                     className={`w-16 h-12 rounded-xl text-center text-2xl font-black tabular-nums focus:outline-none ${
                       user?.isAdmin
-                        ? 'bg-white dark:bg-[#111722] border border-slate-200/80 dark:border-white/10 text-slate-900 dark:text-white shadow-xs focus:border-blue-500'
-                        : 'glass-input text-white'
+                        ? 'bg-white efl-theme-surface dark:bg-[#111722] border border-slate-200/80 efl-theme-border dark:border-white/10 text-slate-900 efl-theme-text dark:text-white shadow-xs focus:border-blue-500'
+                        : 'glass-input text-white efl-theme-text'
                     }`}
                   />
                   <button
@@ -311,8 +311,8 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
                     onClick={() => handleScoreAdjust('home', 1)}
                     className={`w-10 h-10 font-bold text-lg flex items-center justify-center select-none rounded-xl transition-all ${
                       user?.isAdmin
-                        ? 'bg-white dark:bg-[#171e2c] border border-slate-200/80 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white shadow-xs'
-                        : 'glass-button text-slate-200'
+                        ? 'bg-white efl-theme-surface dark:bg-[#171e2c] border border-slate-200/80 efl-theme-border dark:border-white/10 text-slate-700 efl-theme-text-2 dark:text-slate-200 hover:text-slate-900 efl-theme-hover-text dark:hover:text-white shadow-xs'
+                        : 'glass-button text-slate-200 efl-theme-text'
                     }`}
                   >
                     +
@@ -324,7 +324,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
               <div className="flex flex-col items-center">
                 <span
                   className={`text-xs font-bold mb-2 truncate max-w-full ${
-                    user?.isAdmin ? 'text-slate-700 dark:text-slate-300' : 'text-slate-300'
+                    user?.isAdmin ? 'text-slate-700 efl-theme-text-2 dark:text-slate-300' : 'text-slate-300 efl-theme-text-2'
                   }`}
                 >
                   {fixture.awayClub?.shortName || 'AWAY'}
@@ -335,8 +335,8 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
                     onClick={() => handleScoreAdjust('away', -1)}
                     className={`w-10 h-10 font-bold text-lg flex items-center justify-center select-none rounded-xl transition-all ${
                       user?.isAdmin
-                        ? 'bg-white dark:bg-[#171e2c] border border-slate-200/80 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white shadow-xs'
-                        : 'glass-button text-slate-200'
+                        ? 'bg-white efl-theme-surface dark:bg-[#171e2c] border border-slate-200/80 efl-theme-border dark:border-white/10 text-slate-700 efl-theme-text-2 dark:text-slate-200 hover:text-slate-900 efl-theme-hover-text dark:hover:text-white shadow-xs'
+                        : 'glass-button text-slate-200 efl-theme-text'
                     }`}
                   >
                     -
@@ -350,8 +350,8 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
                     aria-label={fixture.awayClub?.name || 'Away score'}
                     className={`w-16 h-12 rounded-xl text-center text-2xl font-black tabular-nums focus:outline-none ${
                       user?.isAdmin
-                        ? 'bg-white dark:bg-[#111722] border border-slate-200/80 dark:border-white/10 text-slate-900 dark:text-white shadow-xs focus:border-blue-500'
-                        : 'glass-input text-white'
+                        ? 'bg-white efl-theme-surface dark:bg-[#111722] border border-slate-200/80 efl-theme-border dark:border-white/10 text-slate-900 efl-theme-text dark:text-white shadow-xs focus:border-blue-500'
+                        : 'glass-input text-white efl-theme-text'
                     }`}
                   />
                   <button
@@ -359,8 +359,8 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
                     onClick={() => handleScoreAdjust('away', 1)}
                     className={`w-10 h-10 font-bold text-lg flex items-center justify-center select-none rounded-xl transition-all ${
                       user?.isAdmin
-                        ? 'bg-white dark:bg-[#171e2c] border border-slate-200/80 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white shadow-xs'
-                        : 'glass-button text-slate-200'
+                        ? 'bg-white efl-theme-surface dark:bg-[#171e2c] border border-slate-200/80 efl-theme-border dark:border-white/10 text-slate-700 efl-theme-text-2 dark:text-slate-200 hover:text-slate-900 efl-theme-hover-text dark:hover:text-white shadow-xs'
+                        : 'glass-button text-slate-200 efl-theme-text'
                     }`}
                   >
                     +
@@ -374,10 +374,10 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
           <div>
             <label
               className={`block text-xs font-semibold mb-1 flex items-center gap-1.5 ${
-                user?.isAdmin ? 'text-slate-700 dark:text-slate-300' : 'text-slate-300'
+                user?.isAdmin ? 'text-slate-700 efl-theme-text-2 dark:text-slate-300' : 'text-slate-300 efl-theme-text-2'
               }`}
             >
-              <Link className="w-3.5 h-3.5 text-slate-400" />
+              <Link className="w-3.5 h-3.5 text-slate-400 efl-theme-text-2" />
               <span>{c?.proof || 'Match Proof / Screenshot URL (Optional)'}</span>
             </label>
             <input
@@ -387,18 +387,18 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
               onChange={(e) => setProofUrl(e.target.value)}
               className={`w-full px-3 py-2 rounded-xl text-xs focus:outline-none ${
                 user?.isAdmin
-                  ? 'bg-white dark:bg-[#171e2c] border border-slate-200/80 dark:border-white/10 text-slate-900 dark:text-white placeholder-slate-400 focus:border-blue-500 shadow-xs'
-                  : 'glass-input text-slate-200 placeholder-slate-500'
+                  ? 'bg-white efl-theme-surface dark:bg-[#171e2c] border border-slate-200/80 efl-theme-border dark:border-white/10 text-slate-900 efl-theme-text dark:text-white placeholder-slate-400 efl-theme-placeholder focus:border-blue-500 shadow-xs'
+                  : 'glass-input text-slate-200 efl-theme-text placeholder-slate-500 efl-theme-placeholder'
               }`}
             />
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+            <p className="text-[11px] text-slate-500 efl-theme-text-2 dark:text-slate-400 mt-1">
               {c?.proofHint || 'Providing end-game screenshot proof ensures faster resolution if your opponent inputs a wrong score.'}
             </p>
           </div>
 
           {/* Error Message */}
           {errorMsg && (
-            <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-600 dark:text-rose-400 flex items-center gap-2">
+            <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-600 efl-theme-rose dark:text-rose-400 flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 shrink-0" />
               <span>{errorMsg}</span>
             </div>
@@ -411,8 +411,8 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
               onClick={onClose}
               className={`flex-1 py-2.5 px-4 rounded-xl font-bold text-xs transition-colors ${
                 user?.isAdmin
-                  ? 'bg-slate-100 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                  : 'glass-button text-slate-300 font-semibold'
+                  ? 'bg-slate-100 efl-theme-surface-2 dark:bg-white/5 border border-slate-200/80 efl-theme-border dark:border-white/10 text-slate-700 efl-theme-text-2 dark:text-slate-300 hover:text-slate-900 efl-theme-hover-text dark:hover:text-white'
+                  : 'glass-button text-slate-300 efl-theme-text-2 font-semibold'
               }`}
             >
               {c?.cancel || 'Cancel'}
@@ -445,3 +445,4 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
     </div>
   );
 };
+
