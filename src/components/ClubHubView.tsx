@@ -59,6 +59,12 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
     showToast,
   } = useAuth();
   const { language, setLanguage, t } = useI18n();
+  const resultText = {
+    uz: { win: 'G‘alaba', draw: 'Durang', loss: 'Mag‘lubiyat', winShort: 'G‘', drawShort: 'D', lossShort: 'M' },
+    ru: { win: 'Победа', draw: 'Ничья', loss: 'Поражение', winShort: 'В', drawShort: 'Н', lossShort: 'П' },
+    en: { win: 'Win', draw: 'Draw', loss: 'Loss', winShort: 'W', drawShort: 'D', lossShort: 'L' },
+  }[language];
+
 
   // Local copy dictionary for participant-first Club section
   const copy = {
@@ -81,7 +87,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
       record: 'G‘–D–M',
       goals: 'Gollar',
       difference: 'Farq',
-      form: 'So‘nggi forma',
+      form: 'So‘nggi natijalar',
       competitions: 'Musobaqalar holati',
       domesticLeague: 'Milliy liga',
       domesticCup: 'Milliy kubok',
@@ -401,9 +407,9 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
       const isHome = f.homeClubId === activeClub.id || f.homeClub?.id === activeClub.id;
       const myScore = isHome ? (f.homeScore ?? 0) : (f.awayScore ?? 0);
       const oppScore = isHome ? (f.awayScore ?? 0) : (f.homeScore ?? 0);
-      if (myScore > oppScore) return { letter: 'W', bg: 'bg-emerald-500 text-white' };
-      if (myScore === oppScore) return { letter: 'D', bg: 'bg-amber-500 text-white' };
-      return { letter: 'L', bg: 'bg-rose-500 text-white' };
+      if (myScore > oppScore) return { letter: 'W', bg: 'efl-result-win efl-result-badge' };
+      if (myScore === oppScore) return { letter: 'D', bg: 'efl-result-draw efl-result-badge' };
+      return { letter: 'L', bg: 'efl-result-loss efl-result-badge' };
     });
   }, [confirmedFixtures, activeClub?.id]);
 
@@ -989,7 +995,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
               {copy.record}
             </span>
             <div className="text-xs sm:text-sm font-black text-[var(--efl-text)] tabular-nums mt-1 font-mono">
-              {statsWon}–{statsDrawn}–{statsLost}
+              <span className="efl-result-win" title={resultText.win}>{statsWon}</span>–<span className="efl-result-draw" title={resultText.draw}>{statsDrawn}</span>–<span className="efl-result-loss" title={resultText.loss}>{statsLost}</span>
             </div>
           </div>
 
@@ -1025,14 +1031,21 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
           <div className="flex items-center justify-between pt-2 border-t border-[var(--efl-border)] text-xs">
             <span className="text-[11px] font-bold text-[var(--efl-text-2)] uppercase">
               {copy.form}
+              <span className="mt-1 flex flex-wrap gap-x-2 text-[9px] normal-case font-medium">
+                <span className="efl-result-win">{resultText.winShort} — {resultText.win}</span>
+                <span className="efl-result-draw">{resultText.drawShort} — {resultText.draw}</span>
+                <span className="efl-result-loss">{resultText.lossShort} — {resultText.loss}</span>
+              </span>
             </span>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 shrink-0">
               {recentFormList.map((item, idx) => (
                 <span
                   key={idx}
+                  title={item.letter === 'W' ? resultText.win : item.letter === 'D' ? resultText.draw : resultText.loss}
+                  aria-label={item.letter === 'W' ? resultText.win : item.letter === 'D' ? resultText.draw : resultText.loss}
                   className={`w-6 h-6 rounded-md font-black text-[11px] flex items-center justify-center shadow-xs font-mono ${item.bg}`}
                 >
-                  {item.letter}
+                  {item.letter === 'W' ? resultText.winShort : item.letter === 'D' ? resultText.drawShort : resultText.lossShort}
                 </span>
               ))}
             </div>
@@ -1280,3 +1293,4 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
     </div>
   );
 };
+

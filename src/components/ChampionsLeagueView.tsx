@@ -583,7 +583,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
                                 </td>
                                 <td className="py-2.5 px-2 text-center text-slate-700 efl-theme-text-2 dark:text-slate-300 text-xs tabular-nums">{row.played}</td>
                                 <td className="py-2.5 px-2 text-center text-emerald-600 efl-theme-emerald dark:text-emerald-400 text-xs font-bold tabular-nums">{row.won}</td>
-                                <td className="py-2.5 px-2 text-center text-amber-600 efl-theme-amber dark:text-amber-400 text-xs hidden sm:table-cell tabular-nums">{row.drawn}</td>
+                                <td className="py-2.5 px-2 text-center text-amber-600 efl-theme-amber dark:text-amber-400 efl-result-draw text-xs hidden sm:table-cell tabular-nums">{row.drawn}</td>
                                 <td className="py-2.5 px-2 text-center text-rose-600 efl-theme-rose dark:text-rose-400 text-xs hidden sm:table-cell tabular-nums">{row.lost}</td>
                                 <td className="py-2.5 px-2 text-center text-slate-500 efl-theme-text-2 dark:text-slate-400 text-xs hidden md:table-cell tabular-nums">{row.goalsFor}</td>
                                 <td className="py-2.5 px-2 text-center text-slate-500 efl-theme-text-2 dark:text-slate-400 text-xs hidden md:table-cell tabular-nums">{row.goalsAgainst}</td>

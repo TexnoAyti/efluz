@@ -202,6 +202,12 @@ export const MatchdayHomeView: React.FC<Props> = ({
 }) => {
   const { user, currentClub, ownedClubs, activeSeasonId, userStats } = useAuth();
   const { language } = useI18n();
+  const resultText = {
+    uz: { win: 'G‘alaba', draw: 'Durang', loss: 'Mag‘lubiyat', winShort: 'G‘', drawShort: 'D', lossShort: 'M' },
+    ru: { win: 'Победа', draw: 'Ничья', loss: 'Поражение', winShort: 'В', drawShort: 'Н', lossShort: 'П' },
+    en: { win: 'Win', draw: 'Draw', loss: 'Loss', winShort: 'W', drawShort: 'D', lossShort: 'L' },
+  }[language];
+
   const c = copy[language] || copy.uz;
 
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
@@ -851,8 +857,8 @@ export const MatchdayHomeView: React.FC<Props> = ({
             <span className="block text-[9px] uppercase font-bold text-[var(--efl-text-2)]">
               {c.form}
             </span>
-            <strong className="text-xs sm:text-sm font-black text-emerald-600 efl-theme-emerald dark:text-emerald-400 tabular-nums">
-              {userStats ? `${userStats.wins}–${userStats.draws}–${userStats.losses}` : '0-0-0'}
+            <strong className="text-xs sm:text-sm font-black text-[var(--efl-text-2)] tabular-nums">
+              <span className="efl-result-win" title={resultText.win}>{userStats?.wins ?? 0}</span>–<span className="efl-result-draw" title={resultText.draw}>{userStats?.draws ?? 0}</span>–<span className="efl-result-loss" title={resultText.loss}>{userStats?.losses ?? 0}</span>
             </strong>
           </div>
           <div className="px-1">

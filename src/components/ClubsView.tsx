@@ -38,6 +38,12 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
   const { user, currentClub, ownedClubs, activeSeasonId, refreshUserData, showToast } = useAuth();
   const { openUserProfile } = useUserProfile();
   const { t, language } = useI18n();
+  const fixtureStatusText: Record<string, string> = {
+    uz: { CONFIRMED: 'Tasdiqlangan', PENDING_CONFIRMATION: 'Tasdiq kutilmoqda', UPCOMING: 'Kelgusi', SCHEDULED: 'Rejalashtirilgan', DISPUTED: 'Bahsli natija', CANCELLED: 'Bekor qilingan', LIVE: 'Davom etmoqda' },
+    ru: { CONFIRMED: 'Подтверждён', PENDING_CONFIRMATION: 'Ожидает подтверждения', UPCOMING: 'Предстоящий', SCHEDULED: 'Запланирован', DISPUTED: 'Спорный результат', CANCELLED: 'Отменён', LIVE: 'Идёт матч' },
+    en: { CONFIRMED: 'Confirmed', PENDING_CONFIRMATION: 'Awaiting confirmation', UPCOMING: 'Upcoming', SCHEDULED: 'Scheduled', DISPUTED: 'Disputed result', CANCELLED: 'Cancelled', LIVE: 'In progress' },
+  }[language];
+
   const previewText = {
     uz: { domestic: 'Milliy ligalar', cups: 'Milliy kuboklar', refresh: 'Yangilash', tier: 'Daraja', active: 'Faol', clubs: 'Klublar', matches: 'O‘yinlar', standings: 'Jadval', available: 'Bo‘sh', claimed: 'Tanlangan', matchday: 'Tur', emptyFixtures: 'Bu turda o‘yin yo‘q.', emptyStandings: 'Jadval hali shakllanmagan.' },
     ru: { domestic: 'Национальные лиги', cups: 'Национальные кубки', refresh: 'Обновить', tier: 'Уровень', active: 'Активен', clubs: 'Клубы', matches: 'Матчи', standings: 'Таблица', available: 'Свободно', claimed: 'Занято', matchday: 'Тур', emptyFixtures: 'В этом туре матчей нет.', emptyStandings: 'Таблица пока не сформирована.' },
@@ -916,7 +922,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                     } ${isUserClub ? 'border-[var(--efl-primary)]/40 bg-[var(--efl-primary-soft)]/40' : ''}`}
                   >
                     <div className="flex items-center justify-between text-[11px] text-[var(--efl-text-2)] border-b border-[var(--efl-border)] pb-2">
-                      <span className="font-bold">{fix.roundName || `Matchday ${fix.matchday}`}</span>
+                      <span className="font-bold">{fix.roundName || `${user?.isAdmin ? previewText.matchday : 'Matchday'} ${fix.matchday}`}</span>
                       <span
                         className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
                           isConfirmed
@@ -926,7 +932,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                             : 'bg-[var(--efl-surface-2)] text-[var(--efl-text-2)] border border-[var(--efl-border)]'
                         }`}
                       >
-                        {isConfirmed ? 'CONFIRMED' : fix.status || 'UPCOMING'}
+                        {user?.isAdmin ? fixtureStatusText[fix.status || 'UPCOMING'] || fix.status || fixtureStatusText.UPCOMING : isConfirmed ? 'CONFIRMED' : fix.status || 'UPCOMING'}
                       </span>
                     </div>
 
@@ -1119,7 +1125,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                                   <PremiumClubBadge clubId={row.clubId} />
                                   {isMyClub && (
                                     <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-[var(--efl-primary)] text-white uppercase">
-                                      You
+                                      {user?.isAdmin ? ({ uz: 'Siz', ru: 'Вы', en: 'You' }[language]) : 'You'}
                                     </span>
                                   )}
                                 </div>
@@ -1163,9 +1169,9 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                           </td>
 
                           <td className="py-2.5 px-2 text-center font-semibold text-[var(--efl-text)]">{row.played}</td>
-                          <td className="py-2.5 px-2 text-center text-[var(--efl-text-2)]">{row.won}</td>
-                          <td className="py-2.5 px-2 text-center text-[var(--efl-text-2)]">{row.drawn}</td>
-                          <td className="py-2.5 px-2 text-center text-[var(--efl-text-2)]">{row.lost}</td>
+                          <td className="py-2.5 px-2 text-center text-[var(--efl-text-2)] efl-result-win">{row.won}</td>
+                          <td className="py-2.5 px-2 text-center text-[var(--efl-text-2)] efl-result-draw">{row.drawn}</td>
+                          <td className="py-2.5 px-2 text-center text-[var(--efl-text-2)] efl-result-loss">{row.lost}</td>
                           <td className="py-2.5 px-2 text-center text-[var(--efl-text-2)] hidden sm:table-cell">
                             {row.goalsFor}
                           </td>
