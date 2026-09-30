@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { WelcomeScreen } from './components/WelcomeScreen';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { UserProfileProvider } from './context/UserProfileContext';
 import { I18nProvider, useI18n } from './i18n';
@@ -50,6 +51,21 @@ const AppContent: React.FC = () => {
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [openDisputesCount, setOpenDisputesCount] = useState(0);
+  const [welcomeCompletedFor, setWelcomeCompletedFor] = useState<string | null>(null);
+  const welcomeCompleted = useMemo(() => {
+    if (!user) return false;
+    if (welcomeCompletedFor === user.id) return true;
+    // Force only the existing, build-gated visual preview; never bypass Telegram auth.
+    if (isDesignPreview && new URLSearchParams(window.location.search).get('welcome') === '1') return false;
+    try { return window.localStorage.getItem(`efluz-welcome-v1:${user.id}`) === 'done'; }
+    catch { return false; }
+  }, [user?.id, welcomeCompletedFor]);
+
+  const completeWelcome = () => {
+    if (!user) return;
+    try { window.localStorage.setItem(`efluz-welcome-v1:${user.id}`, 'done'); } catch {}
+    setWelcomeCompletedFor(user.id);
+  };
 
   // EFL UZ Broadcast Redesign: Light and Dark mode only
   const [theme, setTheme] = useState<AppTheme>(() => {
@@ -112,6 +128,8 @@ const AppContent: React.FC = () => {
   if (isLoading) return <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white"><div className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-slate-950 font-black text-3xl mb-4 shadow-2xl shadow-emerald-500/20 animate-pulse">eF</div><div className="flex items-center gap-2 text-slate-300 text-sm font-semibold"><Loader2 className="w-4 h-4 animate-spin text-emerald-400" /><span>{t.loading}</span></div></div>;
 
   if (authStatus === 'AUTH_ANONYMOUS' || authStatus === 'AUTH_ERROR') return <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center px-5"><div className="w-full max-w-md rounded-3xl border border-slate-800 bg-slate-900/80 p-7 text-center shadow-2xl"><div className="mx-auto mb-5 h-16 w-16 rounded-2xl bg-emerald-400 text-slate-950 flex items-center justify-center text-2xl font-black">eF</div><h1 className="text-2xl font-black mb-2">EFL UZ</h1><p className="text-slate-300 text-sm leading-6">{authStatus === 'AUTH_ERROR' ? 'Telegram orqali kirish tasdiqlanmadi. Mini Appni Telegram ichidan qayta oching.' : 'Bu turnir platformasi Telegram Mini App orqali ishlaydi. Davom etish uchun uni Telegram ichidan oching.'}</p>{authError && <p className="mt-3 text-xs text-rose-300">{authError}</p>}<a href="https://t.me/efleagueuz" target="_blank" rel="noopener noreferrer" className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-emerald-400 px-5 py-3 text-sm font-black text-slate-950 hover:bg-emerald-300">Telegram kanaliga o‘tish</a></div></div>;
+
+  if (user && !welcomeCompleted) return <WelcomeScreen theme={theme} onThemeChange={changeTheme} onStart={completeWelcome} />;
 
   const currentTab = activeTab === 'home' ? 'dashboard' : activeTab;
   return (
