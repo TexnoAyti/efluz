@@ -26,6 +26,7 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
   onNavigateTab,
 }) => {
   const {
+    user,
     notifications,
     unreadNotificationCount,
     markNotificationsAsRead,
