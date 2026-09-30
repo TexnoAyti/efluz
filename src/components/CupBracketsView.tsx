@@ -157,7 +157,7 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
       <section className="preview-cup-hero preview-surface relative overflow-hidden rounded-2xl border border-slate-200/80 efl-theme-border dark:border-white/10 p-5 sm:p-6 shadow-xs">
         <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-2xl">
-            <div className="mb-2 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-amber-600 dark:text-amber-400">
+            <div className="mb-2 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-amber-600 efl-theme-amber dark:text-amber-400">
               <Crown className="h-3.5 w-3.5" />
               EFL UZ • {t.cupJourney}
             </div>
@@ -179,15 +179,15 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
               <div className="mt-1 text-lg sm:text-xl font-black text-slate-900 efl-theme-text dark:text-white tabular-nums">{format.totalMatches}</div>
             </div>
             <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-center">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">{t.cupChampion}</div>
-              <div className="mt-1 text-lg sm:text-xl font-black text-amber-600 dark:text-amber-400 tabular-nums">1</div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-amber-600 efl-theme-amber dark:text-amber-400">{t.cupChampion}</div>
+              <div className="mt-1 text-lg sm:text-xl font-black text-amber-600 efl-theme-amber dark:text-amber-400 tabular-nums">1</div>
             </div>
           </div>
         </div>
 
         {/* Participant's Club in Cup highlight */}
         {userClubInCup && (
-          <div className="relative z-10 mt-4 flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-amber-500/10 border border-amber-500/25 text-xs text-amber-800 dark:text-amber-200">
+          <div className="relative z-10 mt-4 flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-amber-500/10 border border-amber-500/25 text-xs text-amber-800 efl-theme-amber dark:text-amber-200">
             <ClubCrest
               clubId={userClubInCup.id}
               logoUrl={userClubInCup.logoUrl}
@@ -217,7 +217,7 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
                     : 'bg-slate-100 efl-theme-surface-2 dark:bg-[#171e2c] border border-slate-200/80 efl-theme-border dark:border-white/10 text-slate-700 efl-theme-text dark:text-slate-300 hover:text-slate-900 efl-theme-hover-text dark:hover:text-white'
                 }`}
               >
-                <Trophy className={`w-3.5 h-3.5 ${selected ? 'text-slate-950' : 'text-amber-500'}`} />
+                <Trophy className={`w-3.5 h-3.5 ${selected ? 'text-slate-950' : 'text-amber-500 efl-theme-amber'}`} />
                 <span>{cup.name}</span>
               </button>
             );
@@ -230,7 +230,7 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <div className="flex items-center gap-2 text-xs sm:text-sm font-black text-slate-900 efl-theme-text dark:text-white">
-              <Zap className="h-4 w-4 text-amber-500" />
+              <Zap className="h-4 w-4 text-amber-500 efl-theme-amber" />
               Format qanday ishlaydi?
             </div>
             <p className="mt-1 text-[11px] text-slate-500 efl-theme-muted dark:text-slate-400">
@@ -240,13 +240,13 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
 
           <div className="flex min-w-0 items-stretch gap-1.5 overflow-x-auto pb-1 scrollbar-none">
             <div className="min-w-[120px] rounded-xl border border-violet-500/20 bg-violet-500/10 p-2.5">
-              <div className="text-[9px] font-black uppercase tracking-wider text-violet-600 dark:text-violet-300">Play-in</div>
+              <div className="text-[9px] font-black uppercase tracking-wider text-violet-600 efl-theme-violet dark:text-violet-300">Play-in</div>
               <div className="mt-0.5 text-xs font-black text-slate-900 efl-theme-text dark:text-white">{format.playInTeams} clubs</div>
               <div className="text-[10px] text-slate-500 efl-theme-muted dark:text-slate-400">{format.playInMatches} matches</div>
             </div>
             <div className="flex items-center px-0.5 text-slate-400 efl-theme-text-2"><ArrowRight className="h-3.5 w-3.5" /></div>
             <div className="min-w-[120px] rounded-xl border border-blue-500/20 bg-blue-500/10 p-2.5">
-              <div className="text-[9px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-300">Round of 16</div>
+              <div className="text-[9px] font-black uppercase tracking-wider text-blue-600 efl-theme-blue dark:text-blue-300">Round of 16</div>
               <div className="mt-0.5 text-xs font-black text-slate-900 efl-theme-text dark:text-white">16 clubs</div>
               <div className="text-[10px] text-slate-500 efl-theme-muted dark:text-slate-400">{format.byeTeams} byes + {format.playInMatches} w</div>
             </div>
@@ -262,8 +262,8 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
             </div>
             <div className="flex items-center px-0.5 text-slate-400 efl-theme-text-2"><ArrowRight className="h-3.5 w-3.5" /></div>
             <div className="min-w-[95px] rounded-xl border border-amber-500/20 bg-amber-500/10 p-2.5 text-center">
-              <div className="text-[9px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-400">Final</div>
-              <div className="mt-0.5 text-xs font-black text-amber-600 dark:text-amber-400">2 clubs</div>
+              <div className="text-[9px] font-black uppercase tracking-wider text-amber-600 efl-theme-amber dark:text-amber-400">Final</div>
+              <div className="mt-0.5 text-xs font-black text-amber-600 efl-theme-amber dark:text-amber-400">2 clubs</div>
             </div>
           </div>
         </div>
@@ -282,18 +282,18 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
             </div>
           </div>
           <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 shadow-xs">
-            <div className="text-[9px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+            <div className="text-[9px] font-black uppercase tracking-wider text-emerald-600 efl-theme-emerald dark:text-emerald-400">
               Completed
             </div>
-            <div className="mt-1 text-base sm:text-lg font-black text-emerald-600 dark:text-emerald-400 tabular-nums">
+            <div className="mt-1 text-base sm:text-lg font-black text-emerald-600 efl-theme-emerald dark:text-emerald-400 tabular-nums">
               {bracketStats.completed}
             </div>
           </div>
           <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-3 shadow-xs">
-            <div className="text-[9px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400">
+            <div className="text-[9px] font-black uppercase tracking-wider text-blue-600 efl-theme-blue dark:text-blue-400">
               Open / Pending
             </div>
-            <div className="mt-1 text-base sm:text-lg font-black text-blue-600 dark:text-blue-400 tabular-nums">
+            <div className="mt-1 text-base sm:text-lg font-black text-blue-600 efl-theme-blue dark:text-blue-400 tabular-nums">
               {bracketStats.live}
             </div>
           </div>

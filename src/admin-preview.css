@@ -430,12 +430,13 @@
    These scoped declarations outrank the earlier preview legacy-utility rules. */
 .efl-preview .efl-theme-text { color: var(--efl-text) !important; }
 .efl-preview .efl-theme-text-2 { color: var(--efl-text-2) !important; }
-.efl-preview .efl-theme-muted { color: var(--efl-muted) !important; }
+.efl-preview .efl-theme-muted,
+.efl-preview .efl-theme-meta { color: var(--efl-text-2) !important; }
 .efl-preview .efl-theme-surface { background: var(--efl-surface) !important; }
 .efl-preview .efl-theme-surface-2 { background: var(--efl-surface-2) !important; }
 .efl-preview .efl-theme-border { border-color: var(--efl-border) !important; }
 .efl-preview .efl-theme-divide > :not(:last-child) { border-color: var(--efl-border) !important; }
-.efl-preview .efl-theme-placeholder::placeholder { color: var(--efl-muted) !important; }
+.efl-preview .efl-theme-placeholder::placeholder { color: var(--efl-text-2) !important; }
 .efl-preview .efl-theme-hover-text:hover { color: var(--efl-text) !important; }
 .efl-preview .efl-theme-hover-border:hover { border-color: var(--efl-border) !important; }
 .efl-preview .efl-theme-hover-surface:hover { background: var(--efl-surface-2) !important; }
@@ -458,3 +459,20 @@
 .efl-preview:not(.theme-dark) .efl-theme-orange { color: #c2410c !important; }
 .efl-preview:not(.theme-dark) .efl-theme-connector-start { stop-color: rgba(37,99,235,.65); }
 .efl-preview:not(.theme-dark) .efl-theme-connector-end { stop-color: rgba(180,83,9,.65); }
+
+/* Match the app theme explicitly; Tailwind dark variants can follow the OS. */
+.efl-preview.theme-dark .efl-theme-amber { color: #fbbf24 !important; }
+.efl-preview.theme-dark .efl-theme-emerald { color: #34d399 !important; }
+.efl-preview.theme-dark .efl-theme-rose { color: #fda4af !important; }
+.efl-preview.theme-dark .efl-theme-blue { color: #93c5fd !important; }
+.efl-preview.theme-dark .efl-theme-violet { color: #c4b5fd !important; }
+.efl-preview.theme-dark .efl-theme-fuchsia { color: #f0abfc !important; }
+.efl-preview.theme-dark .efl-theme-indigo { color: #a5b4fc !important; }
+.efl-preview.theme-dark .efl-theme-cyan { color: #67e8f9 !important; }
+.efl-preview.theme-dark .efl-theme-orange { color: #fdba74 !important; }
+.efl-preview .efl-theme-hover-primary:hover { color: var(--efl-primary) !important; }
+/* A light backing preserves the original colors of dark league logo artwork. */
+.efl-preview .efl-theme-league-logo { background: var(--efl-surface-2) !important; }
+.efl-preview.theme-dark .efl-theme-league-logo {
+  background: color-mix(in srgb, var(--efl-text) 94%, var(--efl-surface-2)) !important;
+}

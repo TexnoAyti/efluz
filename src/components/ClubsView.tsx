@@ -502,7 +502,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                   <img
                     src={league.logoUrl}
                     alt={league.name}
-                    className="w-4 h-4 object-contain shrink-0"
+                    className="w-4 h-4 object-contain shrink-0 efl-theme-league-logo"
                     onError={(e) => {
                       (e.target as HTMLElement).style.display = 'none';
                     }}
@@ -530,7 +530,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
         <div className="relative overflow-hidden p-4 sm:p-6 shadow-xs border border-[var(--efl-border)] bg-[var(--efl-surface)] rounded-2xl preview-league-banner">
           <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-center gap-4">
-              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-[var(--efl-surface-2)] p-2.5 border border-[var(--efl-border)] flex items-center justify-center shadow-xs shrink-0">
+              <div className="efl-theme-league-logo w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-[var(--efl-surface-2)] p-2.5 border border-[var(--efl-border)] flex items-center justify-center shadow-xs shrink-0">
                 <img
                   src={currentLeague.logoUrl}
                   alt={currentLeague.name}
@@ -559,9 +559,9 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                     <span>{clubs.length} {user?.isAdmin ? previewText.clubs : 'Clubs'}</span>
                   </span>
                   <span>•</span>
-                  <span className="text-emerald-600 dark:text-emerald-400 font-bold">{availableCount} {user?.isAdmin ? previewText.available : 'Available'}</span>
+                  <span className="text-emerald-600 efl-theme-emerald dark:text-emerald-400 font-bold">{availableCount} {user?.isAdmin ? previewText.available : 'Available'}</span>
                   <span>•</span>
-                  <span className="text-blue-600 dark:text-blue-400 font-bold">{claimedCount} {user?.isAdmin ? previewText.claimed : 'Claimed'}</span>
+                  <span className="text-blue-600 efl-theme-blue dark:text-blue-400 font-bold">{claimedCount} {user?.isAdmin ? previewText.claimed : 'Claimed'}</span>
                 </div>
               </div>
             </div>
@@ -587,7 +587,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
               </div>
             ))}
             {user?.isAdmin && premiumStatusReady && ownedClubs.length === 1 && !premiumActive && (
-              <div className="rounded-xl border border-fuchsia-500/20 bg-fuchsia-500/10 px-3 py-2 text-[10px] font-semibold text-fuchsia-700 dark:text-fuchsia-300">
+              <div className="rounded-xl border border-fuchsia-500/20 bg-fuchsia-500/10 px-3 py-2 text-[10px] font-semibold text-fuchsia-700 efl-theme-fuchsia dark:text-fuchsia-300">
                 Premium bilan boshqa ligadan yana bitta klub tanlash mumkin. Jami 2 ta klub.
               </div>
             )}
@@ -641,19 +641,19 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
         <div className="space-y-4">
           <div className="p-3 rounded-xl bg-[var(--efl-surface)] border border-[var(--efl-border)] text-xs text-[var(--efl-text-2)] flex items-center justify-between gap-3 shadow-xs">
             <span>{admissionError ? admissionText.unavailable : !admission ? admissionText.checking : !admission.enabled ? admissionText.open : admission.activeLeagueId === selectedLeagueId ? admissionText.leagueOpen : admission.activeLeagueId ? admissionText.otherLeague(admission.leagues[admission.stage].name) : admissionText.finished}</span>
-            {admissionError && <button type="button" onClick={() => void loadAdmission()} className="text-emerald-600 dark:text-emerald-400 font-bold">{admissionText.retry}</button>}
+            {admissionError && <button type="button" onClick={() => void loadAdmission()} className="text-emerald-600 efl-theme-emerald dark:text-emerald-400 font-bold">{admissionText.retry}</button>}
           </div>
           {/* Search & Filter Toolbar */}
           <div className="p-3 rounded-2xl bg-[var(--efl-surface)] border border-[var(--efl-border)] flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
             <div className="relative w-full sm:w-72">
-              <Search className="w-4 h-4 text-[var(--efl-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search className="w-4 h-4 text-[var(--efl-muted)] efl-theme-meta absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 ref={searchInputRef}
                 type="text"
                 placeholder={t.search}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 rounded-xl text-xs bg-[var(--efl-surface-2)] border border-[var(--efl-border)] text-[var(--efl-text)] placeholder-[var(--efl-muted)] min-h-[38px] focus:outline-none focus:border-[var(--efl-primary)]"
+                className="w-full pl-9 pr-3 py-2 rounded-xl text-xs bg-[var(--efl-surface-2)] border border-[var(--efl-border)] text-[var(--efl-text)] placeholder-[var(--efl-muted)] efl-theme-placeholder min-h-[38px] focus:outline-none focus:border-[var(--efl-primary)]"
               />
             </div>
 
@@ -672,7 +672,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                 onClick={() => setFilterMode('AVAILABLE')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors min-h-[36px] ${
                   filterMode === 'AVAILABLE'
-                    ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 font-black'
+                    ? 'bg-emerald-500/15 text-emerald-600 efl-theme-emerald dark:text-emerald-400 border border-emerald-500/30 font-black'
                     : 'text-[var(--efl-text-2)] hover:text-[var(--efl-text)] hover:bg-[var(--efl-surface-2)]'
                 }`}
               >
@@ -682,7 +682,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                 onClick={() => setFilterMode('CLAIMED')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors min-h-[36px] ${
                   filterMode === 'CLAIMED'
-                    ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/30 font-black'
+                    ? 'bg-blue-500/15 text-blue-600 efl-theme-blue dark:text-blue-400 border border-blue-500/30 font-black'
                     : 'text-[var(--efl-text-2)] hover:text-[var(--efl-text)] hover:bg-[var(--efl-surface-2)]'
                 }`}
               >
@@ -757,16 +757,16 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                             {club.shortName}
                           </span>
                           {isUserClub ? (
-                            <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20">
+                            <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-blue-600 efl-theme-blue dark:text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20">
                               <CheckCircle2 className="w-3 h-3" /> {t.myClub}
                             </div>
                           ) : isClaimedByOther ? (
                             <div className="mt-1.5 flex items-center gap-1 text-[10px] font-semibold text-[var(--efl-text-2)] bg-[var(--efl-surface-2)] border border-[var(--efl-border)] px-2 py-0.5 rounded-full">
-                              <Lock className="w-3 h-3 text-[var(--efl-muted)]" /> {t.claimed}
+                              <Lock className="w-3 h-3 text-[var(--efl-muted)] efl-theme-meta" /> {t.claimed}
                             </div>
                           ) : (
-                            <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/30">
-                              <Sparkles className="w-3 h-3 text-amber-500" /> {t.userNeeded}
+                            <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-amber-600 efl-theme-amber dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/30">
+                              <Sparkles className="w-3 h-3 text-amber-500 efl-theme-amber" /> {t.userNeeded}
                             </div>
                           )}
                         </div>
@@ -775,7 +775,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                       <div className="flex items-center gap-1.5 mb-0.5"><h3 className="font-black text-xs sm:text-sm text-[var(--efl-text)] line-clamp-1">{club.name}</h3><PremiumClubBadge clubId={club.id} /></div>
                       <div className="mb-2">
                         {isUserClub ? (
-                          <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400 truncate block">
+                          <span className="text-[11px] font-bold text-blue-600 efl-theme-blue dark:text-blue-400 truncate block">
                             @{user?.username || 'siz'}
                           </span>
                         ) : isClaimedByOther ? (
@@ -786,7 +786,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                                 e.stopPropagation();
                                 openUserProfile(ownerInfo.userId!);
                               }}
-                              className="text-[11px] font-semibold text-[var(--efl-text-2)] hover:text-[var(--efl-primary)] transition-colors truncate block text-left"
+                              className="text-[11px] font-semibold text-[var(--efl-text-2)] hover:text-[var(--efl-primary)] efl-theme-hover-primary transition-colors truncate block text-left"
                             >
                               {ownerInfo.displayText}
                             </button>
@@ -796,25 +796,25 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                             </span>
                           )
                         ) : (
-                          <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 truncate block">
+                          <span className="text-[11px] font-bold text-amber-600 efl-theme-amber dark:text-amber-400 truncate block">
                             {t.userNeeded}
                           </span>
                         )}
                       </div>
-                      <div className="text-[11px] text-[var(--efl-muted)] flex items-center gap-1.5 mb-2.5">
-                        <MapPin className="w-3 h-3 text-[var(--efl-muted)] shrink-0" />
+                      <div className="text-[11px] text-[var(--efl-muted)] efl-theme-meta flex items-center gap-1.5 mb-2.5">
+                        <MapPin className="w-3 h-3 text-[var(--efl-muted)] efl-theme-meta shrink-0" />
                         <span className="truncate">{club.stadium || 'Home Stadium'}</span>
                       </div>
                     </div>
 
                     <div className="pt-2.5 border-t border-[var(--efl-border)] mt-1">
                       {isUserClub ? (
-                        <div className="text-[11px] font-bold text-blue-600 dark:text-blue-400 text-center py-1.5 bg-blue-500/10 rounded-xl border border-blue-500/20">
+                        <div className="text-[11px] font-bold text-blue-600 efl-theme-blue dark:text-blue-400 text-center py-1.5 bg-blue-500/10 rounded-xl border border-blue-500/20">
                           {t.manager}: @{user?.username}
                         </div>
                       ) : isClaimedByOther ? (
                         <div className="flex items-center justify-between text-[11px] text-[var(--efl-text-2)] bg-[var(--efl-surface-2)] border border-[var(--efl-border)] p-2 rounded-xl">
-                          <span className="text-[10px] uppercase font-bold text-[var(--efl-muted)]">{t.manager}:</span>
+                          <span className="text-[10px] uppercase font-bold text-[var(--efl-muted)] efl-theme-meta">{t.manager}:</span>
                           {ownerInfo.userId ? (
                             <button
                               type="button"
@@ -822,7 +822,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                                 e.stopPropagation();
                                 openUserProfile(ownerInfo.userId!);
                               }}
-                              className="font-semibold text-[var(--efl-text)] hover:text-[var(--efl-primary)] transition-colors truncate underline decoration-[var(--efl-border)] hover:decoration-[var(--efl-primary)] underline-offset-2 max-w-[140px]"
+                              className="font-semibold text-[var(--efl-text)] hover:text-[var(--efl-primary)] efl-theme-hover-primary transition-colors truncate underline decoration-[var(--efl-border)] hover:decoration-[var(--efl-primary)] underline-offset-2 max-w-[140px]"
                             >
                               {ownerInfo.displayText}
                             </button>
@@ -833,9 +833,9 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                       ) : !admission || admission.enabled && admission.activeLeagueId !== club.leagueId || !premiumStatusReady || ownedClubs.some((owned) => owned.leagueId === club.leagueId) || ownedClubs.length >= (premiumActive ? 2 : 1) ? (
                         <button
                           disabled={true}
-                          className="w-full py-2 bg-[var(--efl-surface-2)] border border-[var(--efl-border)] text-[var(--efl-muted)] font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-not-allowed opacity-75 min-h-[38px]"
+                          className="w-full py-2 bg-[var(--efl-surface-2)] border border-[var(--efl-border)] text-[var(--efl-muted)] efl-theme-meta font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-not-allowed opacity-75 min-h-[38px]"
                         >
-                          <Lock className="w-3.5 h-3.5 text-[var(--efl-muted)]" />
+                          <Lock className="w-3.5 h-3.5 text-[var(--efl-muted)] efl-theme-meta" />
                           <span>{admission?.enabled && admission.activeLeagueId !== club.leagueId ? admissionText.closed : t.clubLocked}</span>
                         </button>
                       ) : (
@@ -920,9 +920,9 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                       <span
                         className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
                           isConfirmed
-                            ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
+                            ? 'bg-emerald-500/15 text-emerald-600 efl-theme-emerald dark:text-emerald-400 border border-emerald-500/30'
                             : fix.status === 'PENDING_CONFIRMATION'
-                            ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30'
+                            ? 'bg-amber-500/15 text-amber-600 efl-theme-amber dark:text-amber-400 border border-amber-500/30'
                             : 'bg-[var(--efl-surface-2)] text-[var(--efl-text-2)] border border-[var(--efl-border)]'
                         }`}
                       >
@@ -942,7 +942,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                           className="w-6 h-6 shrink-0"
                         />
                         <div className="min-w-0">
-                          <span className={`text-xs truncate block ${isUserClub && ownedClubs.some((c) => c.id === fix.homeClubId) ? 'font-black text-blue-600 dark:text-blue-400' : 'font-bold text-[var(--efl-text)]'}`}>
+                          <span className={`text-xs truncate block ${isUserClub && ownedClubs.some((c) => c.id === fix.homeClubId) ? 'font-black text-blue-600 efl-theme-blue dark:text-blue-400' : 'font-bold text-[var(--efl-text)]'}`}>
                             {fix.homeClub?.shortName || fix.homeClub?.name}
                           </span>
                           {(() => {
@@ -955,18 +955,18 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                                     e.stopPropagation();
                                     openUserProfile(homeOwnerInfo.userId!);
                                   }}
-                                  className="text-[10px] text-[var(--efl-muted)] hover:text-[var(--efl-primary)] transition-colors font-medium truncate block text-left"
+                                  className="text-[10px] text-[var(--efl-muted)] efl-theme-meta hover:text-[var(--efl-primary)] efl-theme-hover-primary transition-colors font-medium truncate block text-left"
                                 >
                                   {homeOwnerInfo.displayText}
                                 </button>
                               ) : (
-                                <span className="text-[10px] text-[var(--efl-muted)] font-medium truncate block">
+                                <span className="text-[10px] text-[var(--efl-muted)] efl-theme-meta font-medium truncate block">
                                   {homeOwnerInfo.displayText}
                                 </span>
                               );
                             }
                             return (
-                              <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold truncate block">
+                              <span className="text-[10px] text-amber-600 efl-theme-amber dark:text-amber-400 font-bold truncate block">
                                 {t.userNeeded}
                               </span>
                             );
@@ -982,7 +982,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                       {/* Away */}
                       <div className="flex items-center gap-2 flex-1 min-w-0 justify-end text-right">
                         <div className="min-w-0 text-right">
-                          <span className={`text-xs truncate block ${isUserClub && ownedClubs.some((c) => c.id === fix.awayClubId) ? 'font-black text-blue-600 dark:text-blue-400' : 'font-bold text-[var(--efl-text)]'}`}>
+                          <span className={`text-xs truncate block ${isUserClub && ownedClubs.some((c) => c.id === fix.awayClubId) ? 'font-black text-blue-600 efl-theme-blue dark:text-blue-400' : 'font-bold text-[var(--efl-text)]'}`}>
                             {fix.awayClub?.shortName || fix.awayClub?.name}
                           </span>
                           {(() => {
@@ -995,18 +995,18 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                                     e.stopPropagation();
                                     openUserProfile(awayOwnerInfo.userId!);
                                   }}
-                                  className="text-[10px] text-[var(--efl-muted)] hover:text-[var(--efl-primary)] transition-colors font-medium truncate block text-right ml-auto"
+                                  className="text-[10px] text-[var(--efl-muted)] efl-theme-meta hover:text-[var(--efl-primary)] efl-theme-hover-primary transition-colors font-medium truncate block text-right ml-auto"
                                 >
                                   {awayOwnerInfo.displayText}
                                 </button>
                               ) : (
-                                <span className="text-[10px] text-[var(--efl-muted)] font-medium truncate block text-right">
+                                <span className="text-[10px] text-[var(--efl-muted)] efl-theme-meta font-medium truncate block text-right">
                                   {awayOwnerInfo.displayText}
                                 </span>
                               );
                             }
                             return (
-                              <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold truncate block text-right">
+                              <span className="text-[10px] text-amber-600 efl-theme-amber dark:text-amber-400 font-bold truncate block text-right">
                                 {t.userNeeded}
                               </span>
                             );
@@ -1142,18 +1142,18 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                                           e.stopPropagation();
                                           openUserProfile(rowOwnerInfo.userId!);
                                         }}
-                                        className="text-[10px] text-[var(--efl-muted)] hover:text-[var(--efl-primary)] font-medium truncate max-w-[140px] text-left transition-colors"
+                                        className="text-[10px] text-[var(--efl-muted)] efl-theme-meta hover:text-[var(--efl-primary)] efl-theme-hover-primary font-medium truncate max-w-[140px] text-left transition-colors"
                                       >
                                         {rowOwnerInfo.displayText}
                                       </button>
                                     ) : (
-                                      <span className="text-[10px] text-[var(--efl-muted)] font-medium truncate max-w-[140px]">
+                                      <span className="text-[10px] text-[var(--efl-muted)] efl-theme-meta font-medium truncate max-w-[140px]">
                                         {rowOwnerInfo.displayText}
                                       </span>
                                     );
                                   }
                                   return (
-                                    <span className="text-[10px] text-amber-500 font-bold truncate max-w-[140px]">
+                                    <span className="text-[10px] text-amber-500 efl-theme-amber font-bold truncate max-w-[140px]">
                                       {t.userNeeded}
                                     </span>
                                   );
@@ -1241,14 +1241,14 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
       {membershipModal?.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-200">
           <div className="glass-panel w-full max-w-md shadow-2xl p-6 text-white text-center border-amber-500/40">
-            <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 mx-auto mb-3 flex items-center justify-center shadow-lg text-amber-400">
+            <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 mx-auto mb-3 flex items-center justify-center shadow-lg text-amber-400 efl-theme-amber">
               <Users className="w-8 h-8" />
             </div>
 
             <h3 className="text-lg font-black text-white">Guruhga A'zo Bo'ling</h3>
             <p className="text-xs text-slate-300 mt-2 mb-4 leading-relaxed">
               Klub tanlash va ligada ishtirok etish uchun rasmiy{' '}
-              <span className="text-amber-400 font-bold">{membershipModal.groupUsername}</span> Telegram guruhimizga
+              <span className="text-amber-400 efl-theme-amber font-bold">{membershipModal.groupUsername}</span> Telegram guruhimizga
               a'zo bo'lishingiz lozim.
             </p>
 

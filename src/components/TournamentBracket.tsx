@@ -146,7 +146,7 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
             {isMe && <span className="shrink-0 rounded bg-amber-400/15 px-1.5 py-0.5 text-[8px] font-black uppercase text-amber-300 efl-theme-amber">Siz</span>}
           </div>
           {!tbd && (ownerInfo?.isClaimed && ownerInfo.userId ? (
-            <button type="button" onClick={(event) => { event.stopPropagation(); openUserProfile(ownerInfo.userId!); }} className="mt-0.5 block max-w-full truncate text-left text-[9px] font-medium text-slate-500 efl-theme-muted hover:text-blue-300">{ownerInfo.displayText}</button>
+            <button type="button" onClick={(event) => { event.stopPropagation(); openUserProfile(ownerInfo.userId!); }} className="mt-0.5 block max-w-full truncate text-left text-[9px] font-medium text-slate-500 efl-theme-muted hover:text-blue-300 efl-theme-hover-primary">{ownerInfo.displayText}</button>
           ) : (
             <div className="mt-0.5 truncate text-[9px] font-medium text-slate-600 efl-theme-muted">{ownerInfo?.displayText || t.userNeeded}</div>
           ))}
