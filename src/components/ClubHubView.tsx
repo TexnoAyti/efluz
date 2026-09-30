@@ -856,6 +856,11 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
             (matchTab === 'upcoming' ? pendingFixtures : confirmedFixtures).slice(0, 10).map((fixture) => {
               const isHome = fixture.homeClubId === activeClub?.id || fixture.homeClub?.id === activeClub?.id;
               const isAway = fixture.awayClubId === activeClub?.id || fixture.awayClub?.id === activeClub?.id;
+              const resultOutcome = fixture.status === 'CONFIRMED' && (isHome || isAway)
+                && typeof fixture.homeScore === 'number' && typeof fixture.awayScore === 'number'
+                ? fixture.homeScore === fixture.awayScore ? 'draw'
+                  : (isHome ? fixture.homeScore > fixture.awayScore : fixture.awayScore > fixture.homeScore) ? 'win' : 'loss'
+                : null;
 
               return (
                 <div
@@ -893,8 +898,9 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
                   {/* Center Score / Time */}
                   <div className="px-2.5 py-1 rounded-lg bg-[var(--efl-surface-2)] text-center min-w-[70px] shrink-0 font-mono tabular-nums">
                     {fixture.status === 'CONFIRMED' ? (
-                      <span className="font-black text-[var(--efl-text)] text-xs">
+                      <span className={`font-black text-[var(--efl-text)] text-xs ${resultOutcome ? `efl-result-${resultOutcome}` : ''}`}>
                         {fixture.homeScore ?? 0} : {fixture.awayScore ?? 0}
+                        {resultOutcome && <span className="block text-[9px] font-sans mt-0.5">{resultText[resultOutcome]}</span>}
                       </span>
                     ) : (
                       <span className="text-[11px] font-bold text-[var(--efl-text-2)]">

@@ -710,6 +710,13 @@ export const MatchdayHomeView: React.FC<Props> = ({
               const home = getClubDisplay(fixture, 'home');
               const away = getClubDisplay(fixture, 'away');
               const isMatchFinished = fixture.status === 'CONFIRMED';
+              const isClubHome = !!activeClub && home.id === activeClub.id;
+              const isClubAway = !!activeClub && away.id === activeClub.id;
+              const resultOutcome = isMatchFinished && (isClubHome || isClubAway)
+                && typeof fixture.homeScore === 'number' && typeof fixture.awayScore === 'number'
+                ? fixture.homeScore === fixture.awayScore ? 'draw'
+                  : (isClubHome ? fixture.homeScore > fixture.awayScore : fixture.awayScore > fixture.homeScore) ? 'win' : 'loss'
+                : null;
               const sched = formatFixtureSchedule(fixture);
 
               return (
@@ -738,11 +745,11 @@ export const MatchdayHomeView: React.FC<Props> = ({
                   <div className="flex flex-col items-center justify-center min-w-[70px] sm:min-w-[85px] px-1">
                     {isMatchFinished ? (
                       <>
-                        <span className="font-mono text-xs sm:text-sm font-black text-[var(--efl-text)] tabular-nums tracking-tight">
+                        <span className={`font-mono text-xs sm:text-sm font-black text-[var(--efl-text)] tabular-nums tracking-tight ${resultOutcome ? `efl-result-${resultOutcome}` : ''}`}>
                           {fixture.homeScore} : {fixture.awayScore}
                         </span>
-                        <span className="text-[9px] font-bold text-emerald-600 efl-theme-emerald dark:text-emerald-400 uppercase tracking-wider mt-0.5">
-                          YAKUN
+                        <span className={`text-[9px] font-bold uppercase tracking-wider mt-0.5 ${resultOutcome ? `efl-result-${resultOutcome}` : 'text-[var(--efl-text-2)]'}`}>
+                          {resultOutcome ? resultText[resultOutcome] : ({ uz: 'Yakunlangan', ru: 'Завершён', en: 'Finished' }[language])}
                         </span>
                       </>
                     ) : (
