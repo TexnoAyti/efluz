@@ -163,6 +163,36 @@
   color: var(--efl-primary) !important;
 }
 
+/* iOS-style Elastic Rubber Indicator inside GlassSurface */
+.efl-preview .efl-rubber-track {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.efl-preview .efl-rubber-indicator {
+  left: 0;
+  height: calc(100% - 12px);
+  background: var(--efl-primary-soft);
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  box-shadow:
+    0 2px 8px rgba(37, 99, 235, 0.12),
+    inset 0 1px 1.5px rgba(255, 255, 255, 0.85),
+    inset 0 -1px 1px rgba(37, 99, 235, 0.08);
+  will-change: transform;
+  pointer-events: none;
+}
+
+.efl-preview.theme-dark .efl-rubber-indicator,
+.efl-preview.dark .efl-rubber-indicator {
+  background: rgba(59, 130, 246, 0.2);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  box-shadow:
+    0 2px 10px rgba(0, 0, 0, 0.3),
+    inset 0 1px 1.5px rgba(255, 255, 255, 0.25),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.3);
+}
+
 /* Broadcast Card, Modal, and Surface Presets */
 .efl-preview .preview-surface,
 .efl-preview .preview-card,

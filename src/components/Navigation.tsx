@@ -14,6 +14,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n';
 import { GlassSurface } from './GlassSurface';
+import { ElasticNavIndicator } from './ElasticNavIndicator';
 
 export type TabType =
   | 'dashboard'
@@ -208,46 +209,11 @@ export const Navigation: React.FC<NavigationProps> = ({
             mixBlendMode="normal"
             className="efl-bottom-glass w-full"
           >
-            <div className="w-full h-full px-2 flex items-center justify-around">
-              {adminMobileItems.map((item) => {
-                const Icon = item.icon;
-                const hasBadge = (item.badge || 0) > 0;
-
-                return (
-                  <button
-                    key={item.id}
-                    id={`admin-tab-${item.id}`}
-                    onClick={() => onTabChange(item.id)}
-                    aria-label={item.label}
-                    aria-current={item.isActive ? 'page' : undefined}
-                    className={`relative flex items-center justify-center flex-1 max-w-[80px] h-12 rounded-2xl transition-all duration-200 active:scale-90 ${
-                      item.isActive
-                        ? 'liquid-nav-active text-[var(--efl-primary)]'
-                        : 'text-[var(--efl-text-2)] hover:text-[var(--efl-text)]'
-                    }`}
-                  >
-                    {/* Subtle liquid lens highlight behind active icon */}
-                    {item.isActive && (
-                      <span
-                        aria-hidden="true"
-                        className="absolute inset-1 rounded-xl bg-[var(--efl-primary-soft)] shadow-[inset_0_1px_1px_rgba(255,255,255,0.4)] pointer-events-none"
-                      />
-                    )}
-
-                    <Icon
-                      className={`w-6 h-6 transition-transform duration-200 ${
-                        item.isActive ? 'scale-110 stroke-[2.3]' : 'stroke-[1.8]'
-                      }`}
-                    />
-
-                    {/* Badge */}
-                    {hasBadge && (
-                      <span className="absolute top-2 right-2 min-w-[7px] h-[7px] bg-rose-500 rounded-full shadow-[0_0_6px_rgba(244,63,94,0.8)]" />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+            <ElasticNavIndicator
+              items={adminMobileItems}
+              activeTabId={currentTab}
+              onTabChange={onTabChange}
+            />
           </GlassSurface>
         </nav>
       ) : (
