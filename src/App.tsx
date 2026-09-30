@@ -165,7 +165,7 @@ const AppContent: React.FC = () => {
             {currentTab === 'admin' && <div className="mb-5"><AdminMatchOperationsV4Panel /></div>}
 
             {/* HOME: Active Club Broadcast Hub with Hero Match Card */}
-            {(currentTab === 'dashboard' || currentTab === 'home') && (
+            {currentTab === 'dashboard' && (
               <MatchdayHomeView
                 onNavigateTab={setActiveTab}
                 onSelectFixtureForMatchCenter={(fix) => {
@@ -213,7 +213,7 @@ const AppContent: React.FC = () => {
           <>
             {currentTab === 'my-matches' && <div className="mb-5"><SeasonLifecyclePanel seasonId={activeSeasonId} /></div>}
             {currentTab === 'my-matches' && <div className="mb-5"><MatchOperationsV4Panel /></div>}
-            {(currentTab === 'dashboard' || currentTab === 'home') && (
+            {currentTab === 'dashboard' && (
               <DashboardView
                 onNavigateTab={setActiveTab}
                 onSelectFixtureForMatchCenter={(fix) => {

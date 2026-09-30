@@ -331,6 +331,7 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
 
       {selectedFixtureForSubmit && (
         <ResultSubmissionModal
+          isOpen={true}
           fixture={selectedFixtureForSubmit}
           onClose={() => setSelectedFixtureForSubmit(null)}
           onSuccess={() => {

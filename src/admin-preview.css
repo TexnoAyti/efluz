@@ -144,49 +144,21 @@
   color: var(--efl-primary);
 }
 
-/* Apple Liquid Glass Bottom Navigation */
-.efl-preview .liquid-glass-nav {
-  position: relative;
-  border-radius: 9999px;
-  backdrop-filter: blur(28px) saturate(190%);
-  -webkit-backdrop-filter: blur(28px) saturate(190%);
-  background: rgba(255, 255, 255, 0.88);
-  border: 1px solid rgba(226, 230, 236, 0.95);
-  box-shadow:
-    0 16px 36px rgba(17, 24, 39, 0.08),
-    0 3px 10px rgba(17, 24, 39, 0.03),
-    inset 0 1px 1.5px rgba(255, 255, 255, 0.95),
-    inset 0 -1px 1px rgba(226, 230, 236, 0.6);
+/* React Bits GlassSurface Bottom Navigation Shell */
+.efl-preview .efl-bottom-glass {
+  border-radius: 9999px !important;
+  border: 1px solid var(--efl-border) !important;
+  box-shadow: 0 16px 36px rgba(17, 24, 39, 0.08), 0 3px 10px rgba(17, 24, 39, 0.03) !important;
   transition: all 180ms ease;
 }
 
-.efl-preview.theme-dark .liquid-glass-nav {
-  background: rgba(17, 23, 34, 0.86);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow:
-    0 18px 42px rgba(0, 0, 0, 0.55),
-    0 4px 14px rgba(0, 0, 0, 0.25),
-    inset 0 1px 1.5px rgba(255, 255, 255, 0.18),
-    inset 0 -1px 1px rgba(0, 0, 0, 0.4);
+.efl-preview.theme-dark .efl-bottom-glass,
+.efl-preview.dark .efl-bottom-glass {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.55), 0 4px 14px rgba(0, 0, 0, 0.25) !important;
 }
 
-/* Subtle Specular Refraction Arc on Top of Capsule */
-.efl-preview .liquid-glass-nav::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 15%;
-  right: 15%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.8), transparent);
-  pointer-events: none;
-}
-
-.efl-preview.theme-dark .liquid-glass-nav::before {
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
-}
-
-/* Active Icon Highlight within Liquid Glass */
+/* Active Icon Highlight within Bottom Navigation */
 .efl-preview .liquid-nav-active {
   color: var(--efl-primary) !important;
 }

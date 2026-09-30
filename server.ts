@@ -4,7 +4,7 @@ import { createServer as createViteServer } from 'vite';
 import app, { ensureDbReady } from './src/server/app';
 
 async function startServer() {
-  const PORT = Number(process.env.PORT || 3000);
+  const PORT = Number(process.env.APP_PORT || (process.env.PORT && process.env.PORT !== '8080' ? process.env.PORT : 3000));
 
   // Initialize SQLite database and seed top 5 European leagues & competitions
   try {

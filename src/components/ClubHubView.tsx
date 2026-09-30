@@ -6,6 +6,7 @@ import { Fixture, Club, Competition, StandingsRow } from '../types';
 import { ClubCrest } from './ClubCrest';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
 import { MatchdayCountdown } from './MatchdayCountdown';
+import { FluidGlassExperiment } from './FluidGlassExperiment';
 import { getClubOwnerDisplay } from '../lib/ownerUtils';
 import { openTelegramChat, isValidTelegramUsername } from '../lib/telegramUtils';
 import {
@@ -434,7 +435,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
 
     // 2. Domestic Cup
     const domCup = competitions.find(
-      (c) => c.type === 'CUP' && (c.leagueId === activeClub.leagueId || c.name.toLowerCase().includes(activeClub.leagueId?.replace('league-', '') || ''))
+      (c) => (c.type as string) === 'CUP' && (c.leagueId === activeClub.leagueId || c.name.toLowerCase().includes(activeClub.leagueId?.replace('league-', '') || ''))
     );
     if (domCup) {
       list.push({
@@ -448,7 +449,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
     }
 
     // 3. Champions League / European
-    const eurComp = competitions.find((c) => c.type === 'CHAMPIONS_LEAGUE');
+    const eurComp = competitions.find((c) => (c.type as string) === 'CHAMPIONS_LEAGUE');
     if (eurComp) {
       list.push({
         id: eurComp.id,
@@ -1218,6 +1219,9 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
             <ChevronRight className="w-4 h-4 text-amber-500 group-hover:translate-x-0.5 transition-transform" />
           </button>
         )}
+
+        {/* Fluid Glass Experiment (React Bits 3D Lab - Admin Only) */}
+        {user?.isAdmin && <FluidGlassExperiment />}
 
         {/* Sandbox Dev Profiles Switcher (When in dev mode) */}
         {isDevMode && devProfiles.length > 0 && (

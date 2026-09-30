@@ -75,6 +75,7 @@ export interface Club {
   claimedByUserId?: string | null;
   claimedByUsername?: string | null;
   managerUsername?: string;
+  managerUserId?: string;
   owner?: {
     userId: string;
     username: string;
@@ -218,6 +219,8 @@ export interface Dispute {
   resolvedByUserId?: string;
   resolvedAt?: string;
   resolutionNotes?: string;
+  reportedByUserId?: string;
+  reason?: string;
   createdAt: string;
 }
 
@@ -242,6 +245,7 @@ export interface StandingsRow {
   clubName: string;
   shortName: string;
   logoUrl?: string;
+  clubLogoUrl?: string;
   managerUserId?: string;
   managerUsername?: string;
   managerFirstName?: string;
@@ -255,7 +259,8 @@ export interface StandingsRow {
   goalsAgainst: number;
   goalDifference: number;
   points: number;
-  form: Array<'W' | 'D' | 'L'>;
+  form?: Array<'W' | 'D' | 'L'>;
+  recentForm?: string;
 }
 
 export interface ResultSubmission {

@@ -758,7 +758,7 @@ export const AdminView: React.FC = () => {
     const domesticLeagues = competitions.filter(
       (c) =>
         c.type === 'LEAGUE' ||
-        c.type === 'league' ||
+        (c.type as string) === 'league' ||
         c.id.includes('premier-league') ||
         c.id.includes('la-liga') ||
         c.id.includes('serie-a') ||

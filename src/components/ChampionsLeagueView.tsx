@@ -697,6 +697,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
 
       {selectedFixtureForSubmit && (
         <ResultSubmissionModal
+          isOpen={true}
           fixture={selectedFixtureForSubmit}
           onClose={() => setSelectedFixtureForSubmit(null)}
           onSuccess={() => {
