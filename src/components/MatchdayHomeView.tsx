@@ -503,13 +503,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
                   </span>
                   <div className="flex items-center justify-center gap-1 mt-0.5">
                     <span className="text-[10px] font-medium text-[var(--efl-text-2)]">
-                      {isUserHome && userStats?.leaguePosition ? `${userStats.leaguePosition}${c.rankSuffix}` : 'Home'}
-                    </span>
-                    {/* Visual form dots from reference app */}
-                    <span className="inline-flex items-center gap-0.5 ml-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                      {isUserHome && userStats?.leaguePosition ? `${userStats.leaguePosition}${c.rankSuffix}` : c.homeTag}
                     </span>
                   </div>
                 </div>
@@ -565,12 +559,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
                   </span>
                   <div className="flex items-center justify-center gap-1 mt-0.5">
                     <span className="text-[10px] font-medium text-[var(--efl-text-2)]">
-                      {!isUserHome && userStats?.leaguePosition ? `${userStats.leaguePosition}${c.rankSuffix}` : 'Away'}
-                    </span>
-                    <span className="inline-flex items-center gap-0.5 ml-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      {!isUserHome && userStats?.leaguePosition ? `${userStats.leaguePosition}${c.rankSuffix}` : c.awayTag}
                     </span>
                   </div>
                 </div>

@@ -39,9 +39,9 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
   const { openUserProfile } = useUserProfile();
   const { t, language } = useI18n();
   const fixtureStatusText: Record<string, string> = {
-    uz: { CONFIRMED: 'Tasdiqlangan', PENDING_CONFIRMATION: 'Tasdiq kutilmoqda', UPCOMING: 'Kelgusi', SCHEDULED: 'Rejalashtirilgan', DISPUTED: 'Bahsli natija', CANCELLED: 'Bekor qilingan', LIVE: 'Davom etmoqda' },
-    ru: { CONFIRMED: 'Подтверждён', PENDING_CONFIRMATION: 'Ожидает подтверждения', UPCOMING: 'Предстоящий', SCHEDULED: 'Запланирован', DISPUTED: 'Спорный результат', CANCELLED: 'Отменён', LIVE: 'Идёт матч' },
-    en: { CONFIRMED: 'Confirmed', PENDING_CONFIRMATION: 'Awaiting confirmation', UPCOMING: 'Upcoming', SCHEDULED: 'Scheduled', DISPUTED: 'Disputed result', CANCELLED: 'Cancelled', LIVE: 'In progress' },
+    uz: { CONFIRMED: 'Tasdiqlangan', PENDING_CONFIRMATION: 'Tasdiq kutilmoqda', UPCOMING: 'Kelgusi', SCHEDULED: 'Rejalashtirilgan', DISPUTED: 'Bahsli natija', CANCELLED: 'Bekor qilingan', READY: 'O‘yinga tayyor', PLAYING: 'Davom etmoqda', AWAITING_RESULT: 'Natija kutilmoqda', POSTPONED: 'Qoldirilgan', OVERDUE: 'Muddat o‘tgan' },
+    ru: { CONFIRMED: 'Подтверждён', PENDING_CONFIRMATION: 'Ожидает подтверждения', UPCOMING: 'Предстоящий', SCHEDULED: 'Запланирован', DISPUTED: 'Спорный результат', CANCELLED: 'Отменён', READY: 'Готов к игре', PLAYING: 'Идёт матч', AWAITING_RESULT: 'Ожидает результата', POSTPONED: 'Перенесён', OVERDUE: 'Просрочен' },
+    en: { CONFIRMED: 'Confirmed', PENDING_CONFIRMATION: 'Awaiting confirmation', UPCOMING: 'Upcoming', SCHEDULED: 'Scheduled', DISPUTED: 'Disputed result', CANCELLED: 'Cancelled', READY: 'Ready to play', PLAYING: 'In progress', AWAITING_RESULT: 'Awaiting result', POSTPONED: 'Postponed', OVERDUE: 'Overdue' },
   }[language];
 
   const previewText = {
