@@ -388,27 +388,27 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
   const getPositionStyle = (position: number) => {
     if (position <= uclThreshold) {
       return {
-        badgeColor: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+        badgeColor: 'bg-blue-500/20 text-blue-400 efl-theme-blue border-blue-500/30',
         barColor: 'bg-blue-500',
         label: t.uclZone,
       };
     }
     if (position <= uelThreshold) {
       return {
-        badgeColor: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30',
+        badgeColor: 'bg-indigo-500/20 text-indigo-400 efl-theme-indigo border-indigo-500/30',
         barColor: 'bg-indigo-500',
         label: t.uelZone,
       };
     }
     if (position >= relThreshold) {
       return {
-        badgeColor: 'bg-rose-500/20 text-rose-400 border-rose-500/30',
+        badgeColor: 'bg-rose-500/20 text-rose-400 efl-theme-rose border-rose-500/30',
         barColor: 'bg-rose-500',
         label: t.relegationZone,
       };
     }
     return {
-      badgeColor: 'bg-slate-800 text-slate-400 border-slate-700',
+      badgeColor: 'bg-slate-800 efl-theme-surface-2 text-slate-400 efl-theme-text-2 border-slate-700',
       barColor: 'bg-transparent',
       label: '',
     };
@@ -431,16 +431,16 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
             <>
               <button
                 onClick={() => onNavigateTab('cups')}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold glass-card text-slate-300 hover:text-white min-h-[36px]"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold glass-card text-slate-300 efl-theme-text-2 hover:text-white efl-theme-hover-text min-h-[36px]"
               >
-                <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                <Trophy className="w-3.5 h-3.5 text-amber-400 efl-theme-amber" />
                 <span>National Cups</span>
               </button>
               <button
                 onClick={() => onNavigateTab('champions-league')}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold glass-card text-slate-300 hover:text-white min-h-[36px]"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold glass-card text-slate-300 efl-theme-text-2 hover:text-white efl-theme-hover-text min-h-[36px]"
               >
-                <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+                <Sparkles className="w-3.5 h-3.5 text-blue-400 efl-theme-blue" />
                 <span>Champions League</span>
               </button>
             </>
@@ -700,9 +700,9 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
             </div>
           ) : error && clubs.length === 0 ? (
             <div className="p-8 text-center glass-panel border-rose-500/30 bg-rose-950/30 rounded-3xl max-w-md mx-auto my-6 shadow-xl">
-              <AlertTriangle className="w-10 h-10 mx-auto mb-3 text-rose-400" />
-              <h4 className="text-sm font-bold text-white mb-1">Couldn't load data</h4>
-              <p className="text-xs text-rose-200/80 mb-5">Please try again.</p>
+              <AlertTriangle className="w-10 h-10 mx-auto mb-3 text-rose-400 efl-theme-rose" />
+              <h4 className="text-sm font-bold text-white efl-theme-text mb-1">Couldn't load data</h4>
+              <p className="text-xs text-rose-200/80 efl-theme-rose mb-5">Please try again.</p>
               <button
                 onClick={() => loadClubsForLeague(selectedLeagueId, true)}
                 className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all shadow-md inline-flex items-center gap-2"
@@ -712,10 +712,10 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
               </button>
             </div>
           ) : filteredClubs.length === 0 ? (
-            <div className="py-16 text-center glass-panel rounded-3xl border border-white/[0.06]">
-              <Shield className="w-10 h-10 text-slate-500 mx-auto mb-2 opacity-60" />
-              <h4 className="text-sm font-bold text-slate-200">No clubs found</h4>
-              <p className="text-xs text-slate-400 mt-1">Try adjusting your search or filters.</p>
+            <div className="py-16 text-center glass-panel rounded-3xl border border-white/[0.06] efl-theme-border">
+              <Shield className="w-10 h-10 text-slate-500 efl-theme-muted mx-auto mb-2 opacity-60" />
+              <h4 className="text-sm font-bold text-slate-200 efl-theme-text">No clubs found</h4>
+              <p className="text-xs text-slate-400 efl-theme-text-2 mt-1">Try adjusting your search or filters.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
@@ -1296,3 +1296,4 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
     </div>
   );
 };
+

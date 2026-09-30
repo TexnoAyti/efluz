@@ -184,15 +184,15 @@ export const SofaBracketTree: React.FC<Props> = ({ fixtures, competition, curren
   if (!rounds.length) return null;
 
   return (
-    <div className="border-b border-white/[0.07] bg-[#050a13]">
+    <div className="border-b border-white/[0.07] efl-theme-border bg-[#050a13] efl-theme-surface">
       <div className="flex items-center justify-between gap-3 px-3 pb-2 pt-3 sm:px-5 sm:pt-4">
         <div className="min-w-0">
-          <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.18em] text-blue-300 sm:text-[10px]">
+          <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.18em] text-blue-300 efl-theme-blue sm:text-[10px]">
             <GitBranch className="h-3.5 w-3.5" /> Connected knockout map
           </div>
-          <p className="mt-1 text-[9px] text-slate-500 sm:text-[10px]">{competition?.name || 'Cup'} • swipe horizontally to follow the full path</p>
+          <p className="mt-1 text-[9px] text-slate-500 efl-theme-muted sm:text-[10px]">{competition?.name || 'Cup'} • swipe horizontally to follow the full path</p>
         </div>
-        <div className="flex shrink-0 items-center gap-1 rounded-xl border border-white/[0.07] bg-white/[0.03] px-2 py-1.5 text-[8px] font-black text-slate-400 sm:text-[9px]">
+        <div className="flex shrink-0 items-center gap-1 rounded-xl border border-white/[0.07] efl-theme-border bg-white/[0.03] efl-theme-surface-2 px-2 py-1.5 text-[8px] font-black text-slate-400 efl-theme-text-2 sm:text-[9px]">
           <Maximize2 className="h-3 w-3" /> FULL TREE
         </div>
       </div>
@@ -202,8 +202,8 @@ export const SofaBracketTree: React.FC<Props> = ({ fixtures, competition, curren
           <svg className="pointer-events-none absolute inset-0 z-0" width={layout.width} height={layout.height} aria-hidden="true">
             <defs>
               <linearGradient id="bracketLineCompact" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0%" stopColor="rgba(96,165,250,0.34)" />
-                <stop offset="100%" stopColor="rgba(251,191,36,0.42)" />
+                <stop offset="0%" className="efl-theme-connector-start" stopColor="rgba(96,165,250,0.34)" />
+                <stop offset="100%" className="efl-theme-connector-end" stopColor="rgba(251,191,36,0.42)" />
               </linearGradient>
             </defs>
             {layout.connectors.map(([from, to]) => {
@@ -218,9 +218,9 @@ export const SofaBracketTree: React.FC<Props> = ({ fixtures, competition, curren
 
           {rounds.map((round, roundIndex) => (
             <div key={round.key} className="absolute top-0 z-10" style={{ left: roundIndex * (CARD_WIDTH + COLUMN_GAP), width: CARD_WIDTH }}>
-              <div className="flex h-8 items-center justify-between border-b border-white/[0.06] px-1">
-                <span className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-300">{round.label}</span>
-                <span className="rounded-full bg-white/[0.04] px-1.5 py-0.5 text-[7px] font-black text-slate-600">{round.fixtures.length}</span>
+              <div className="flex h-8 items-center justify-between border-b border-white/[0.06] efl-theme-border px-1">
+                <span className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-300 efl-theme-text-2">{round.label}</span>
+                <span className="rounded-full bg-white/[0.04] efl-theme-surface-2 px-1.5 py-0.5 text-[7px] font-black text-slate-600 efl-theme-muted">{round.fixtures.length}</span>
               </div>
             </div>
           ))}
@@ -235,16 +235,16 @@ export const SofaBracketTree: React.FC<Props> = ({ fixtures, competition, curren
               const score = home ? fixture.homeScore : fixture.awayScore;
               const isWinner = Boolean(clubId && fixture.winnerClubId === clubId);
               return (
-                <div className={`flex h-[29px] items-center gap-1.5 rounded-lg px-1.5 ${isWinner ? 'bg-emerald-400/[0.10]' : 'bg-white/[0.018]'}`}>
+                <div className={`flex h-[29px] items-center gap-1.5 rounded-lg px-1.5 ${isWinner ? 'bg-emerald-400/[0.10]' : 'bg-white/[0.018] efl-theme-surface-2'}`}>
                   {clubId && clubId !== 'TBD' ? (
                     <ClubCrest clubId={club?.id || clubId} logoUrl={club?.logoUrl} name={club?.name || clubId} shortName={club?.shortName} size="xs" className="h-4.5 w-4.5 shrink-0" />
                   ) : (
-                    <div className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border border-dashed border-white/[0.12] text-[7px] text-slate-600">?</div>
+                    <div className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border border-dashed border-white/[0.12] efl-theme-border text-[7px] text-slate-600 efl-theme-muted">?</div>
                   )}
-                  <span className={`min-w-0 flex-1 truncate text-[9px] ${isWinner ? 'font-black text-emerald-300' : clubId ? 'font-bold text-slate-200' : 'italic text-slate-500'}`}>
+                  <span className={`min-w-0 flex-1 truncate text-[9px] ${isWinner ? 'font-black text-emerald-300 efl-theme-emerald' : clubId ? 'font-bold text-slate-200 efl-theme-text' : 'italic text-slate-500 efl-theme-muted'}`}>
                     {clubId ? compactName(club?.name || clubId) : sourceLabel(fixture, side)}
                   </span>
-                  <span className="w-4 text-right font-mono text-[10px] font-black text-slate-300">{score == null ? '–' : score}</span>
+                  <span className="w-4 text-right font-mono text-[10px] font-black text-slate-300 efl-theme-text-2">{score == null ? '–' : score}</span>
                 </div>
               );
             };
@@ -255,14 +255,14 @@ export const SofaBracketTree: React.FC<Props> = ({ fixtures, competition, curren
                 type="button"
                 disabled={projected}
                 onClick={() => { if (!projected) onSelectFixture?.(fixture); }}
-                className={`absolute z-10 rounded-xl border p-1.5 text-left shadow-xl transition ${round === 'FINAL' ? 'border-amber-300/35 bg-gradient-to-br from-amber-500/[0.13] to-[#09111f] shadow-amber-500/10' : 'border-white/[0.09] bg-[#09111f]/95'} ${isMine ? 'ring-1 ring-amber-300/55' : ''} ${projected ? 'cursor-default' : 'hover:-translate-y-0.5 hover:border-blue-300/30'}`}
+                className={`absolute z-10 rounded-xl border p-1.5 text-left shadow-xl transition ${round === 'FINAL' ? 'border-amber-300/35 bg-gradient-to-br from-amber-500/[0.13] to-[#09111f] efl-theme-final shadow-amber-500/10' : 'border-white/[0.09] efl-theme-border bg-[#09111f]/95 efl-theme-surface'} ${isMine ? 'ring-1 ring-amber-300/55' : ''} ${projected ? 'cursor-default' : 'hover:-translate-y-0.5 hover:border-blue-300/30'}`}
                 style={{ left: x, top: y, width: CARD_WIDTH, height: CARD_HEIGHT }}
               >
                 <div className="mb-1 flex items-center justify-between px-0.5">
-                  <span className={`text-[7px] font-black uppercase tracking-wider ${round === 'FINAL' ? 'text-amber-300' : 'text-blue-300/80'}`}>
+                  <span className={`text-[7px] font-black uppercase tracking-wider ${round === 'FINAL' ? 'text-amber-300 efl-theme-amber' : 'text-blue-300/80 efl-theme-blue'}`}>
                     {round === 'FINAL' ? <span className="flex items-center gap-1"><Trophy className="h-2.5 w-2.5" /> Final</span> : `M${index + 1}`}
                   </span>
-                  <span className={`rounded-full px-1.5 py-0.5 text-[6px] font-black uppercase ${projected ? 'bg-violet-400/10 text-violet-300' : fixture.status === 'CONFIRMED' ? 'bg-emerald-400/10 text-emerald-300' : fixture.status === 'DISPUTED' ? 'bg-rose-400/10 text-rose-300' : 'bg-blue-400/10 text-blue-300'}`}>
+                  <span className={`rounded-full px-1.5 py-0.5 text-[6px] font-black uppercase ${projected ? 'bg-violet-400/10 text-violet-300 efl-theme-violet' : fixture.status === 'CONFIRMED' ? 'bg-emerald-400/10 text-emerald-300 efl-theme-emerald' : fixture.status === 'DISPUTED' ? 'bg-rose-400/10 text-rose-300 efl-theme-rose' : 'bg-blue-400/10 text-blue-300 efl-theme-blue'}`}>
                     {projected ? 'Projected' : fixture.status === 'CONFIRMED' ? 'Finished' : fixture.status === 'DISPUTED' ? 'Disputed' : 'Open'}
                   </span>
                 </div>

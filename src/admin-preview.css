@@ -424,3 +424,37 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+
+/* League/cup theme repair. Companion classes retain existing player styles.
+   These scoped declarations outrank the earlier preview legacy-utility rules. */
+.efl-preview .efl-theme-text { color: var(--efl-text) !important; }
+.efl-preview .efl-theme-text-2 { color: var(--efl-text-2) !important; }
+.efl-preview .efl-theme-muted { color: var(--efl-muted) !important; }
+.efl-preview .efl-theme-surface { background: var(--efl-surface) !important; }
+.efl-preview .efl-theme-surface-2 { background: var(--efl-surface-2) !important; }
+.efl-preview .efl-theme-border { border-color: var(--efl-border) !important; }
+.efl-preview .efl-theme-divide > :not(:last-child) { border-color: var(--efl-border) !important; }
+.efl-preview .efl-theme-placeholder::placeholder { color: var(--efl-muted) !important; }
+.efl-preview .efl-theme-hover-text:hover { color: var(--efl-text) !important; }
+.efl-preview .efl-theme-hover-border:hover { border-color: var(--efl-border) !important; }
+.efl-preview .efl-theme-hover-surface:hover { background: var(--efl-surface-2) !important; }
+.efl-preview .efl-theme-selected-count {
+  background: color-mix(in srgb, var(--preview-on-accent) 15%, transparent) !important;
+  color: var(--preview-on-accent) !important;
+}
+.efl-preview .efl-theme-final {
+  background: linear-gradient(135deg, rgba(245,158,11,.13), var(--efl-surface)) !important;
+}
+/* Retain semantic hues, with readable light-mode counterparts. */
+.efl-preview:not(.theme-dark) .efl-theme-amber { color: #92400e !important; }
+.efl-preview:not(.theme-dark) .efl-theme-emerald { color: #047857 !important; }
+.efl-preview:not(.theme-dark) .efl-theme-rose { color: #be123c !important; }
+.efl-preview:not(.theme-dark) .efl-theme-blue { color: #1d4ed8 !important; }
+.efl-preview:not(.theme-dark) .efl-theme-violet,
+.efl-preview:not(.theme-dark) .efl-theme-fuchsia,
+.efl-preview:not(.theme-dark) .efl-theme-indigo { color: #6d28d9 !important; }
+.efl-preview:not(.theme-dark) .efl-theme-cyan { color: #0e7490 !important; }
+.efl-preview:not(.theme-dark) .efl-theme-orange { color: #c2410c !important; }
+.efl-preview:not(.theme-dark) .efl-theme-connector-start { stop-color: rgba(37,99,235,.65); }
+.efl-preview:not(.theme-dark) .efl-theme-connector-end { stop-color: rgba(180,83,9,.65); }
