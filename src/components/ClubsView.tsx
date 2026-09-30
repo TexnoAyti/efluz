@@ -414,485 +414,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
     };
   };
 
-  if (user?.isAdmin) {
-    const userClubInLeague = ownedClubs.find((owned) => owned.leagueId === selectedLeagueId);
-    const userClubStanding = leagueStandings.find((s) => s.clubId === userClubInLeague?.id);
 
-    return (
-      <div className="space-y-4 animate-in fade-in duration-200 pb-20">
-        {/* 1. Domestic Leagues Selector Bar */}
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none flex-1">
-            {leagues.map((league) => {
-              const isSelected = selectedLeagueId === league.id;
-              return (
-                <button
-                  key={league.id}
-                  onClick={() => handleSelectLeague(league.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-all min-h-[36px] ${
-                    isSelected
-                      ? 'bg-blue-600 text-white font-black shadow-xs'
-                      : 'bg-white dark:bg-[#171e2c] border border-slate-200/80 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  <img
-                    src={league.logoUrl}
-                    alt={league.name}
-                    className="w-3.5 h-3.5 object-contain shrink-0"
-                    onError={(e) => {
-                      (e.target as HTMLElement).style.display = 'none';
-                    }}
-                  />
-                  <span>{league.name}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          <button
-            onClick={() => {
-              loadClubsForLeague(selectedLeagueId, true);
-              if (activeLeagueTab === 'MATCHES') {
-                loadLeagueFixtures(selectedLeagueId, selectedMatchday);
-              } else if (activeLeagueTab === 'STANDINGS') {
-                loadLeagueStandings(selectedLeagueId);
-              }
-            }}
-            disabled={isLoadingClubs}
-            className="p-2 rounded-xl bg-white dark:bg-[#171e2c] border border-slate-200/80 dark:border-white/10 text-slate-500 hover:text-slate-900 dark:hover:text-white shrink-0 min-h-[36px]"
-            title={previewText.refresh}
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoadingClubs ? 'animate-spin text-blue-500' : ''}`} />
-          </button>
-        </div>
-
-        {/* 2. Compact Domestic League Overview Header */}
-        {currentLeague && (
-          <div className="preview-surface p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-white/10 shadow-xs flex flex-col sm:flex-row items-center sm:items-start justify-between gap-4">
-            <div className="flex items-center gap-3.5">
-              <div className="w-12 h-12 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 p-2 flex items-center justify-center shrink-0">
-                <img
-                  src={currentLeague.logoUrl}
-                  alt={currentLeague.name}
-                  className="w-full h-full object-contain"
-                  onError={(e) => {
-                    (e.target as HTMLElement).style.display = 'none';
-                  }}
-                />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-                    {currentLeague.name}
-                  </h1>
-                  <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
-                    2026/27
-                  </span>
-                </div>
-                <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  {currentLeague.country} • {clubs.length} {previewText.clubs} ({availableCount} {previewText.available})
-                </div>
-              </div>
-            </div>
-
-            {/* Contextual Active Club Row if in this league */}
-            {userClubInLeague && (
-              <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs shrink-0">
-                <ClubCrest
-                  clubId={userClubInLeague.id}
-                  logoUrl={userClubInLeague.logoUrl}
-                  name={userClubInLeague.name}
-                  shortName={userClubInLeague.shortName}
-                  size="xs"
-                  className="w-6 h-6 shrink-0"
-                />
-                <div className="min-w-0">
-                  <div className="font-black text-slate-900 dark:text-white truncate max-w-[130px]">
-                    {userClubInLeague.name}
-                  </div>
-                  <div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold tabular-nums">
-                    {userClubStanding ? `#${userClubStanding.position} • ${userClubStanding.points} pts` : t.myClub}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* 3. Compact Segmented Sub-Navigation Bar */}
-        <div className="p-1 rounded-2xl bg-[#eef1f5] dark:bg-[#171e2c] border border-[#e2e6ec] dark:border-white/10 flex items-center gap-1 shadow-xs">
-          <button
-            type="button"
-            onClick={() => setActiveLeagueTab('CLUBS')}
-            className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition-all ${
-              activeLeagueTab === 'CLUBS'
-                ? 'bg-white dark:bg-[#111722] text-[#2563eb] dark:text-[#3b82f6] shadow-xs font-black'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            {previewText.clubs} ({clubs.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveLeagueTab('MATCHES')}
-            className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition-all ${
-              activeLeagueTab === 'MATCHES'
-                ? 'bg-white dark:bg-[#111722] text-[#2563eb] dark:text-[#3b82f6] shadow-xs font-black'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            {previewText.matches}
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveLeagueTab('STANDINGS')}
-            className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition-all ${
-              activeLeagueTab === 'STANDINGS'
-                ? 'bg-white dark:bg-[#111722] text-[#2563eb] dark:text-[#3b82f6] shadow-xs font-black'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            {previewText.standings}
-          </button>
-        </div>
-
-        {/* 4. Sub-Tab Content */}
-
-        {/* TAB A: STANDINGS TABLE */}
-        {activeLeagueTab === 'STANDINGS' && (
-          <div className="preview-surface rounded-2xl border border-slate-200/80 dark:border-white/10 overflow-hidden shadow-xs">
-            {/* Qualification Zone Legend Strip */}
-            <div className="px-4 py-2.5 bg-slate-50 dark:bg-white/5 border-b border-slate-200/80 dark:border-white/10 flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-500 dark:text-slate-400">
-              <div className="font-bold text-slate-700 dark:text-slate-300">
-                {currentComp?.name || currentLeague?.name || 'League Table'} • {totalLeagueMatchdays} {previewText.matchday}
-              </div>
-              <div className="flex flex-wrap items-center gap-2.5">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-3 rounded-xs bg-blue-500" />
-                  <span>UCL (1–{uclThreshold})</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-3 rounded-xs bg-indigo-500" />
-                  <span>UEL ({uclThreshold + 1}–{uelThreshold})</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-3 rounded-xs bg-rose-500" />
-                  <span>Relegation ({relThreshold}–{relThreshold === 16 ? 18 : 20})</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Standings Table */}
-            {isLoadingStandings && leagueStandings.length === 0 ? (
-              <div className="p-8 text-center text-xs text-slate-400 animate-pulse">Loading standings...</div>
-            ) : leagueStandings.length === 0 ? (
-              <div className="p-8 text-center text-xs text-slate-400">{previewText.emptyStandings}</div>
-            ) : (
-              <div className="overflow-x-auto scrollbar-none">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b border-slate-200/80 dark:border-white/10 bg-slate-50/75 dark:bg-white/[0.03] text-slate-500 dark:text-slate-400 font-bold uppercase text-[10px] tracking-wider">
-                      <th className="py-2.5 px-2.5 w-10 text-center">#</th>
-                      <th className="py-2.5 px-2">{t.club}</th>
-                      <th className="py-2.5 px-2 text-center font-bold text-slate-700 dark:text-slate-300">P</th>
-                      <th className="py-2.5 px-2 text-center hidden sm:table-cell">W</th>
-                      <th className="py-2.5 px-2 text-center hidden sm:table-cell">D</th>
-                      <th className="py-2.5 px-2 text-center hidden sm:table-cell">L</th>
-                      <th className="py-2.5 px-2 text-center hidden sm:table-cell">GF</th>
-                      <th className="py-2.5 px-2 text-center hidden sm:table-cell">GA</th>
-                      <th className="py-2.5 px-2 text-center">GD</th>
-                      <th className="py-2.5 px-3 text-center font-black text-blue-600 dark:text-blue-400">PTS</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-                    {leagueStandings.map((row) => {
-                      const posStyle = getPositionStyle(row.position);
-                      const isMyClub = ownedClubs.some((club) => club.id === row.clubId);
-
-                      return (
-                        <tr
-                          key={row.clubId}
-                          className={`transition-colors ${
-                            isMyClub ? 'active-club-highlight bg-blue-500/10 dark:bg-blue-500/15' : 'hover:bg-slate-50 dark:hover:bg-white/[0.02]'
-                          }`}
-                        >
-                          <td className="py-2.5 px-2 text-center">
-                            <div className="flex items-center justify-center gap-1">
-                              <span className={`w-1 h-3.5 rounded-xs ${posStyle.barColor}`} title={posStyle.label} />
-                              <span className="font-black text-slate-800 dark:text-slate-200 text-xs tabular-nums">{row.position}</span>
-                            </div>
-                          </td>
-
-                          <td className="py-2.5 px-2">
-                            <div className="flex items-center gap-2 min-w-[120px]">
-                              <ClubCrest
-                                clubId={row.clubId}
-                                logoUrl={row.clubLogoUrl}
-                                name={row.clubName}
-                                size="xs"
-                                className="w-5 h-5 shrink-0"
-                              />
-                              <div className="flex items-center gap-1.5 min-w-0">
-                                <span className={`truncate text-xs ${isMyClub ? 'font-black text-blue-600 dark:text-blue-400' : 'font-bold text-slate-900 dark:text-white'}`}>
-                                  {row.clubName}
-                                </span>
-                                {isMyClub && (
-                                  <span className="px-1 py-0.2 rounded text-[8px] font-black bg-blue-600 text-white uppercase shrink-0">
-                                    Siz
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </td>
-
-                          <td className="py-2.5 px-2 text-center font-bold text-slate-700 dark:text-slate-300 tabular-nums">{row.played}</td>
-                          <td className="py-2.5 px-2 text-center text-slate-500 dark:text-slate-400 hidden sm:table-cell tabular-nums">{row.won}</td>
-                          <td className="py-2.5 px-2 text-center text-slate-500 dark:text-slate-400 hidden sm:table-cell tabular-nums">{row.drawn}</td>
-                          <td className="py-2.5 px-2 text-center text-slate-500 dark:text-slate-400 hidden sm:table-cell tabular-nums">{row.lost}</td>
-                          <td className="py-2.5 px-2 text-center text-slate-500 dark:text-slate-400 hidden sm:table-cell tabular-nums">{row.goalsFor}</td>
-                          <td className="py-2.5 px-2 text-center text-slate-500 dark:text-slate-400 hidden sm:table-cell tabular-nums">{row.goalsAgainst}</td>
-                          <td className="py-2.5 px-2 text-center font-bold text-slate-700 dark:text-slate-300 tabular-nums">
-                            {row.goalDifference > 0 ? `+${row.goalDifference}` : row.goalDifference}
-                          </td>
-                          <td className="py-2.5 px-3 text-center font-black text-blue-600 dark:text-blue-400 text-xs sm:text-sm tabular-nums">
-                            {row.points}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* TAB B: MATCHES / FIXTURES */}
-        {activeLeagueTab === 'MATCHES' && (
-          <div className="space-y-3">
-            {/* Matchday Selector (Compact ‹ 8-TUR ›) */}
-            <div className="preview-surface p-2.5 rounded-2xl border border-slate-200/80 dark:border-white/10 flex items-center justify-between gap-2 shadow-xs">
-              <button
-                type="button"
-                onClick={() => setSelectedMatchday((m) => Math.max(1, m - 1))}
-                disabled={selectedMatchday <= 1}
-                className="p-1.5 rounded-xl border border-slate-200/80 dark:border-white/10 text-slate-500 hover:text-slate-900 dark:hover:text-white disabled:opacity-30 transition-all"
-                aria-label="Previous matchday"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none px-1">
-                {matchdays.map((md) => (
-                  <button
-                    key={md}
-                    type="button"
-                    onClick={() => setSelectedMatchday(md)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 transition-all ${
-                      selectedMatchday === md
-                        ? 'bg-blue-600 text-white font-black shadow-xs'
-                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    {md}
-                  </button>
-                ))}
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setSelectedMatchday((m) => Math.min(totalLeagueMatchdays, m + 1))}
-                disabled={selectedMatchday >= totalLeagueMatchdays}
-                className="p-1.5 rounded-xl border border-slate-200/80 dark:border-white/10 text-slate-500 hover:text-slate-900 dark:hover:text-white disabled:opacity-30 transition-all"
-                aria-label="Next matchday"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Fixtures List on single surface with row dividers */}
-            <div className="preview-surface rounded-2xl border border-slate-200/80 dark:border-white/10 overflow-hidden shadow-xs divide-y divide-slate-100 dark:divide-white/5">
-              {isLoadingFixtures && leagueFixtures.length === 0 ? (
-                <div className="p-8 text-center text-xs text-slate-400 animate-pulse">Loading fixtures...</div>
-              ) : currentMatchdayFixtures.length === 0 ? (
-                <div className="p-8 text-center text-xs text-slate-400">{previewText.emptyFixtures}</div>
-              ) : (
-                currentMatchdayFixtures.map((fix) => {
-                  const isConfirmed = fix.status === 'CONFIRMED';
-                  const isUserClub = ownedClubs.some((club) => club.id === fix.homeClubId || club.id === fix.awayClubId);
-
-                  return (
-                    <div
-                      key={fix.id}
-                      onClick={() => {
-                        if (!isConfirmed && fix.isPlayable !== false) {
-                          setSelectedFixtureForModal(fix);
-                        }
-                      }}
-                      className={`p-3 sm:p-3.5 flex items-center justify-between gap-2 hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors cursor-pointer ${
-                        isUserClub ? 'bg-blue-500/[0.05] dark:bg-blue-500/[0.08]' : ''
-                      }`}
-                    >
-                      {/* Home */}
-                      <div className="flex-1 flex items-center justify-end gap-2 text-right min-w-0">
-                        <span className={`text-xs truncate ${isUserClub && ownedClubs.some((c) => c.id === fix.homeClubId) ? 'font-black text-blue-600 dark:text-blue-400' : 'font-bold text-slate-900 dark:text-white'}`}>
-                          {fix.homeClub?.shortName || fix.homeClub?.name}
-                        </span>
-                        <ClubCrest
-                          clubId={fix.homeClub?.id}
-                          logoUrl={fix.homeClub?.logoUrl}
-                          name={fix.homeClub?.name}
-                          shortName={fix.homeClub?.shortName}
-                          size="xs"
-                          className="w-5 h-5 shrink-0"
-                        />
-                      </div>
-
-                      {/* Center Score / Time */}
-                      <div className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-white/5 text-center min-w-[64px] shrink-0 font-mono tabular-nums">
-                        {isConfirmed ? (
-                          <span className="font-black text-slate-900 dark:text-white text-xs">
-                            {fix.homeScore ?? 0} : {fix.awayScore ?? 0}
-                          </span>
-                        ) : fix.status === 'PENDING_CONFIRMATION' ? (
-                          <span className="text-[10px] font-black text-amber-500">PENDING</span>
-                        ) : fix.status === 'DISPUTED' ? (
-                          <span className="text-[10px] font-black text-rose-500">DISPUTE</span>
-                        ) : fix.isPlayable === false ? (
-                          <span className="text-[10px] font-bold text-slate-400">LOCKED</span>
-                        ) : (
-                          <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">VS</span>
-                        )}
-                      </div>
-
-                      {/* Away */}
-                      <div className="flex-1 flex items-center justify-start gap-2 text-left min-w-0">
-                        <ClubCrest
-                          clubId={fix.awayClub?.id}
-                          logoUrl={fix.awayClub?.logoUrl}
-                          name={fix.awayClub?.name}
-                          shortName={fix.awayClub?.shortName}
-                          size="xs"
-                          className="w-5 h-5 shrink-0"
-                        />
-                        <span className={`text-xs truncate ${isUserClub && ownedClubs.some((c) => c.id === fix.awayClubId) ? 'font-black text-blue-600 dark:text-blue-400' : 'font-bold text-slate-900 dark:text-white'}`}>
-                          {fix.awayClub?.shortName || fix.awayClub?.name}
-                        </span>
-                      </div>
-
-                      {/* Action affordance for user fixture */}
-                      {isUserClub && !isConfirmed && fix.isPlayable !== false && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedFixtureForModal(fix);
-                          }}
-                          className="px-2 py-1 rounded-lg bg-blue-600 text-white font-black text-[10px] shrink-0 shadow-xs"
-                        >
-                          Hisob
-                        </button>
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* TAB C: CLUBS DIRECTORY */}
-        {activeLeagueTab === 'CLUBS' && (
-          <div className="space-y-3">
-            {/* Search Bar */}
-            <div className="relative w-full">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                placeholder={t.search}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 preview-surface rounded-xl text-xs text-slate-900 dark:text-white placeholder-slate-400 border border-slate-200/80 dark:border-white/10 min-h-[38px]"
-              />
-            </div>
-
-            {/* 2-Column Sports Directory Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {filteredClubs.map((club) => {
-                const ownerInfo = getClubOwnerDisplay(club, undefined, club.claimedByUserId, t.userNeeded);
-                const isUserClub =
-                  club.isCurrentUserClub ||
-                  club.claimedByUserId === user?.id ||
-                  club.occupancy?.status === 'owned' ||
-                  ownedClubs.some((owned) => owned.id === club.id);
-                const isClaimedByOther = (isClubTaken(club) || ownerInfo.isClaimed) && !isUserClub;
-
-                return (
-                  <div
-                    key={club.id}
-                    className={`preview-surface p-3 rounded-2xl border flex items-center justify-between gap-3 shadow-xs ${
-                      isUserClub
-                        ? 'border-blue-500/40 bg-blue-500/5'
-                        : 'border-slate-200/80 dark:border-white/10'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <ClubCrest
-                        clubId={club.id}
-                        logoUrl={club.logoUrl}
-                        name={club.name}
-                        shortName={club.shortName}
-                        size="sm"
-                        className="w-8 h-8 shrink-0"
-                      />
-                      <div className="min-w-0">
-                        <div className="text-xs font-black text-slate-900 dark:text-white truncate">
-                          {club.name}
-                        </div>
-                        <div className="text-[10px] text-slate-400 mt-0.5 truncate">
-                          {isUserClub ? (
-                            <span className="text-blue-600 dark:text-blue-400 font-bold">● Sizning klubingiz</span>
-                          ) : isClaimedByOther ? (
-                            <span>@{ownerInfo.displayText}</span>
-                          ) : (
-                            <span className="text-emerald-600 dark:text-emerald-400 font-bold">Bo‘sh</span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {!isUserClub && !isClaimedByOther && (
-                      <button
-                        type="button"
-                        onClick={() => setClubToClaim(club)}
-                        className="px-3 py-1.5 rounded-xl bg-blue-600 text-white font-black text-xs shrink-0 shadow-xs hover:bg-blue-500 transition-colors"
-                      >
-                        {t.claimClub}
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Result Submission Modal for Admin */}
-        {selectedFixtureForModal && (
-          <ResultSubmissionModal
-            fixture={selectedFixtureForModal}
-            isOpen={true}
-            onClose={() => setSelectedFixtureForModal(null)}
-            onSuccess={() => {
-              setSelectedFixtureForModal(null);
-              loadLeagueFixtures(selectedLeagueId, selectedMatchday);
-            }}
-          />
-        )}
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300 pb-20">
@@ -929,8 +451,8 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
       {/* 1. Domestic Leagues Selector Bar */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <div className="text-[11px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-            <Shield className="w-3.5 h-3.5 text-emerald-400" />
+          <div className="text-[11px] font-black text-[var(--efl-text-2)] uppercase tracking-wider flex items-center gap-1.5">
+            <Shield className="w-3.5 h-3.5 text-[var(--efl-primary)]" />
             <span>{user?.isAdmin ? previewText.domestic : 'Domestic Leagues'} (2026/27)</span>
           </div>
           <button
@@ -944,9 +466,9 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
               }
             }}
             disabled={isLoadingClubs}
-            className="px-2.5 py-1 glass-card glass-card-interactive text-slate-300 font-bold text-[11px] flex items-center gap-1 transition-colors disabled:opacity-50 min-h-[32px]"
+            className="px-2.5 py-1 rounded-xl bg-[var(--efl-surface)] border border-[var(--efl-border)] text-[var(--efl-text-2)] hover:bg-[var(--efl-surface-2)] hover:text-[var(--efl-text)] font-bold text-[11px] flex items-center gap-1 transition-colors disabled:opacity-50 min-h-[32px] shadow-xs"
           >
-            <RefreshCw className={`w-3 h-3 ${isLoadingClubs ? 'animate-spin text-emerald-400' : ''}`} />
+            <RefreshCw className={`w-3 h-3 ${isLoadingClubs ? 'animate-spin text-[var(--efl-primary)]' : ''}`} />
             <span>{user?.isAdmin ? previewText.refresh : 'Refresh'}</span>
           </button>
         </div>
@@ -971,10 +493,10 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                   key={league.id}
                   id={`btn-league-${league.id}`}
                   onClick={() => handleSelectLeague(league.id)}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs shrink-0 transition-all min-h-[42px] ${
+                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs shrink-0 transition-all min-h-[42px] border ${
                     isSelected
-                      ? 'btn-glass-primary text-slate-950 font-black shadow-lg shadow-emerald-500/20 scale-[1.02]'
-                      : 'glass-card text-slate-300 hover:text-white'
+                      ? 'bg-[var(--efl-primary-soft)] border-[var(--efl-primary)]/40 text-[var(--efl-primary)] font-black shadow-xs'
+                      : 'bg-[var(--efl-surface)] border-[var(--efl-border)] text-[var(--efl-text-2)] hover:bg-[var(--efl-surface-2)] hover:text-[var(--efl-text)]'
                   }`}
                 >
                   <img
@@ -989,7 +511,9 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                   <span>{league.name}</span>
                   <span
                     className={`text-[10px] px-1.5 py-0.5 rounded font-black ${
-                      isSelected ? 'bg-slate-950/20 text-slate-950' : 'bg-slate-800 text-slate-400'
+                      isSelected
+                        ? 'bg-[var(--efl-primary)] text-white'
+                        : 'bg-[var(--efl-surface-2)] text-[var(--efl-text-2)]'
                     }`}
                   >
                     {league.totalClubs || (league.name === 'Bundesliga' || league.name === 'Ligue 1' ? 18 : 20)}
@@ -1003,12 +527,10 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
 
       {/* 2. Dedicated Selected League Header Banner */}
       {currentLeague && (
-        <div className="relative overflow-hidden glass-panel p-4 sm:p-6 shadow-2xl border-emerald-500/30 preview-league-banner">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
-
+        <div className="relative overflow-hidden p-4 sm:p-6 shadow-xs border border-[var(--efl-border)] bg-[var(--efl-surface)] rounded-2xl preview-league-banner">
           <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-center gap-4">
-              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-slate-950/90 p-2.5 border border-white/[0.1] flex items-center justify-center shadow-xl shrink-0">
+              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-[var(--efl-surface-2)] p-2.5 border border-[var(--efl-border)] flex items-center justify-center shadow-xs shrink-0">
                 <img
                   src={currentLeague.logoUrl}
                   alt={currentLeague.name}
@@ -1021,32 +543,32 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
 
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                  <span className="text-xs font-bold text-[var(--efl-text-2)] uppercase tracking-wider">
                     {currentLeague.country} • {user?.isAdmin ? previewText.tier : 'Tier'} {currentLeague.tier}
                   </span>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-[var(--efl-primary-soft)] text-[var(--efl-primary)] border border-[var(--efl-primary)]/20">
                     2026/27 {user?.isAdmin ? previewText.active : 'Active'}
                   </span>
                 </div>
-                <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight mt-0.5">
+                <h1 className="text-xl sm:text-2xl font-black text-[var(--efl-text)] tracking-tight mt-0.5">
                   {currentLeague.name}
                 </h1>
-                <div className="flex items-center gap-3 mt-1.5 text-xs text-slate-300">
+                <div className="flex items-center gap-3 mt-1.5 text-xs text-[var(--efl-text-2)]">
                   <span className="flex items-center gap-1 font-semibold">
-                    <Shield className="w-3.5 h-3.5 text-emerald-400" />
+                    <Shield className="w-3.5 h-3.5 text-[var(--efl-primary)]" />
                     <span>{clubs.length} {user?.isAdmin ? previewText.clubs : 'Clubs'}</span>
                   </span>
                   <span>•</span>
-                  <span className="text-emerald-400 font-bold">{availableCount} {user?.isAdmin ? previewText.available : 'Available'}</span>
+                  <span className="text-emerald-600 dark:text-emerald-400 font-bold">{availableCount} {user?.isAdmin ? previewText.available : 'Available'}</span>
                   <span>•</span>
-                  <span className="text-indigo-300 font-bold">{claimedCount} {user?.isAdmin ? previewText.claimed : 'Claimed'}</span>
+                  <span className="text-blue-600 dark:text-blue-400 font-bold">{claimedCount} {user?.isAdmin ? previewText.claimed : 'Claimed'}</span>
                 </div>
               </div>
             </div>
 
             {/* User Active Club Badge if belongs to this league */}
             {ownedClubs.filter((owned) => owned.leagueId === selectedLeagueId).map((club) => (
-              <div key={club.id} className="flex items-center gap-3 glass-card bg-emerald-950/40 border-emerald-500/30 p-2.5 px-3.5 shadow-md">
+              <div key={club.id} className="flex items-center gap-3 bg-[var(--efl-surface-2)] border border-[var(--efl-border)] rounded-xl p-2.5 px-3.5 shadow-xs">
                 <ClubCrest
                   clubId={club.id}
                   logoUrl={club.logoUrl}
@@ -1056,16 +578,16 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                   className="w-7 h-7"
                 />
                 <div className="min-w-0">
-                  <div className="text-[9px] uppercase font-black text-emerald-400 flex items-center gap-1">
+                  <div className="text-[9px] uppercase font-black text-[var(--efl-primary)] flex items-center gap-1">
                     <Lock className="w-2.5 h-2.5" />
                     <span>{t.myClub} ({t.clubLocked})</span>
                   </div>
-                  <div className="text-xs font-bold text-white truncate max-w-[140px]">{club.name}</div>
+                  <div className="text-xs font-bold text-[var(--efl-text)] truncate max-w-[140px]">{club.name}</div>
                 </div>
               </div>
             ))}
             {user?.isAdmin && premiumStatusReady && ownedClubs.length === 1 && !premiumActive && (
-              <div className="rounded-xl border border-fuchsia-400/20 bg-fuchsia-500/[0.07] px-3 py-2 text-[10px] font-semibold text-fuchsia-200">
+              <div className="rounded-xl border border-fuchsia-500/20 bg-fuchsia-500/10 px-3 py-2 text-[10px] font-semibold text-fuchsia-700 dark:text-fuchsia-300">
                 Premium bilan boshqa ligadan yana bitta klub tanlash mumkin. Jami 2 ta klub.
               </div>
             )}
@@ -1074,13 +596,13 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
       )}
 
       {/* 3. Sub-Navigation Tabs: Clubs | Matches | Standings */}
-      <div className="flex items-center gap-2 border-b border-white/[0.08] pb-2 overflow-x-auto scrollbar-none">
+      <div className="flex items-center gap-2 border-b border-[var(--efl-border)] pb-2 overflow-x-auto scrollbar-none">
         <button
           onClick={() => setActiveLeagueTab('CLUBS')}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all min-h-[38px] ${
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all min-h-[38px] border ${
             activeLeagueTab === 'CLUBS'
-              ? 'btn-glass-primary text-slate-950 font-black shadow-md'
-              : 'glass-card text-slate-300 hover:text-white'
+              ? 'bg-[var(--efl-primary-soft)] border-[var(--efl-primary)]/30 text-[var(--efl-primary)] font-black shadow-xs'
+              : 'bg-[var(--efl-surface)] border-[var(--efl-border)] text-[var(--efl-text-2)] hover:bg-[var(--efl-surface-2)] hover:text-[var(--efl-text)]'
           }`}
         >
           <Shield className="w-4 h-4" />
@@ -1089,10 +611,10 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
 
         <button
           onClick={() => setActiveLeagueTab('MATCHES')}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all min-h-[38px] ${
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all min-h-[38px] border ${
             activeLeagueTab === 'MATCHES'
-              ? 'btn-glass-primary text-slate-950 font-black shadow-md'
-              : 'glass-card text-slate-300 hover:text-white'
+              ? 'bg-[var(--efl-primary-soft)] border-[var(--efl-primary)]/30 text-[var(--efl-primary)] font-black shadow-xs'
+              : 'bg-[var(--efl-surface)] border-[var(--efl-border)] text-[var(--efl-text-2)] hover:bg-[var(--efl-surface-2)] hover:text-[var(--efl-text)]'
           }`}
         >
           <Swords className="w-4 h-4" />
@@ -1101,10 +623,10 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
 
         <button
           onClick={() => setActiveLeagueTab('STANDINGS')}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all min-h-[38px] ${
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all min-h-[38px] border ${
             activeLeagueTab === 'STANDINGS'
-              ? 'btn-glass-primary text-slate-950 font-black shadow-md'
-              : 'glass-card text-slate-300 hover:text-white'
+              ? 'bg-[var(--efl-primary-soft)] border-[var(--efl-primary)]/30 text-[var(--efl-primary)] font-black shadow-xs'
+              : 'bg-[var(--efl-surface)] border-[var(--efl-border)] text-[var(--efl-text-2)] hover:bg-[var(--efl-surface-2)] hover:text-[var(--efl-text)]'
           }`}
         >
           <Trophy className="w-4 h-4" />
@@ -1117,21 +639,21 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
       {/* TAB A: CLUBS LIST */}
       {activeLeagueTab === 'CLUBS' && (
         <div className="space-y-4">
-          <div className="glass-panel p-3 text-xs text-slate-300 flex items-center justify-between gap-3">
+          <div className="p-3 rounded-xl bg-[var(--efl-surface)] border border-[var(--efl-border)] text-xs text-[var(--efl-text-2)] flex items-center justify-between gap-3 shadow-xs">
             <span>{admissionError ? admissionText.unavailable : !admission ? admissionText.checking : !admission.enabled ? admissionText.open : admission.activeLeagueId === selectedLeagueId ? admissionText.leagueOpen : admission.activeLeagueId ? admissionText.otherLeague(admission.leagues[admission.stage].name) : admissionText.finished}</span>
-            {admissionError && <button type="button" onClick={() => void loadAdmission()} className="text-emerald-400 font-bold">{admissionText.retry}</button>}
+            {admissionError && <button type="button" onClick={() => void loadAdmission()} className="text-emerald-600 dark:text-emerald-400 font-bold">{admissionText.retry}</button>}
           </div>
           {/* Search & Filter Toolbar */}
-          <div className="glass-panel p-3 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-md bg-[#0b101c]">
+          <div className="p-3 rounded-2xl bg-[var(--efl-surface)] border border-[var(--efl-border)] flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
             <div className="relative w-full sm:w-72">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search className="w-4 h-4 text-[var(--efl-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 ref={searchInputRef}
                 type="text"
                 placeholder={t.search}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 glass-input rounded-lg text-xs text-slate-200 placeholder-slate-500 min-h-[38px]"
+                className="w-full pl-9 pr-3 py-2 rounded-xl text-xs bg-[var(--efl-surface-2)] border border-[var(--efl-border)] text-[var(--efl-text)] placeholder-[var(--efl-muted)] min-h-[38px] focus:outline-none focus:border-[var(--efl-primary)]"
               />
             </div>
 
@@ -1140,8 +662,8 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                 onClick={() => setFilterMode('ALL')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors min-h-[36px] ${
                   filterMode === 'ALL'
-                    ? 'bg-slate-800 text-white border border-slate-600'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'bg-[var(--efl-surface-2)] text-[var(--efl-text)] border border-[var(--efl-border)] font-black'
+                    : 'text-[var(--efl-text-2)] hover:text-[var(--efl-text)] hover:bg-[var(--efl-surface-2)]'
                 }`}
               >
                 {t.filterAll} ({clubs.length})
@@ -1150,8 +672,8 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                 onClick={() => setFilterMode('AVAILABLE')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors min-h-[36px] ${
                   filterMode === 'AVAILABLE'
-                    ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 font-black'
+                    : 'text-[var(--efl-text-2)] hover:text-[var(--efl-text)] hover:bg-[var(--efl-surface-2)]'
                 }`}
               >
                 {t.available} ({availableCount})
@@ -1160,8 +682,8 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                 onClick={() => setFilterMode('CLAIMED')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors min-h-[36px] ${
                   filterMode === 'CLAIMED'
-                    ? 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/30 font-black'
+                    : 'text-[var(--efl-text-2)] hover:text-[var(--efl-text)] hover:bg-[var(--efl-surface-2)]'
                 }`}
               >
                 {t.claimed} ({claimedCount})
@@ -1173,7 +695,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
           {isLoadingClubs && clubs.length === 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 animate-pulse">
               {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-                <div key={i} className="h-44 rounded-2xl bg-white/[0.04] border border-white/[0.06]" />
+                <div key={i} className="h-44 rounded-2xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)]" />
               ))}
             </div>
           ) : error && clubs.length === 0 ? (
@@ -1209,17 +731,17 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                 return (
                   <div
                     key={club.id}
-                    className={`glass-panel p-4 flex flex-col justify-between shadow-lg transition-all relative overflow-hidden ${
+                    className={`p-4 rounded-2xl flex flex-col justify-between shadow-xs transition-all relative overflow-hidden border bg-[var(--efl-surface)] ${
                       isUserClub
-                        ? 'border-emerald-500/60 bg-emerald-950/20 shadow-emerald-500/10'
+                        ? 'border-[var(--efl-primary)]/50 bg-[var(--efl-primary-soft)]'
                         : isClaimedByOther
-                        ? 'opacity-85'
-                        : 'hover:border-white/[0.2] hover:shadow-xl'
+                        ? 'border-[var(--efl-border)] opacity-90'
+                        : 'border-[var(--efl-border)] hover:border-[var(--efl-primary)]/40 hover:bg-[var(--efl-surface-2)]/60'
                     }`}
                   >
                     <div>
                       <div className="flex items-start justify-between gap-3 mb-2.5">
-                        <div className="w-12 h-12 rounded-xl bg-slate-950/80 p-2 border border-white/[0.08] flex items-center justify-center shadow-inner shrink-0">
+                        <div className="w-12 h-12 rounded-xl bg-[var(--efl-surface-2)] p-2 border border-[var(--efl-border)] flex items-center justify-center shadow-xs shrink-0">
                           <ClubCrest
                             clubId={club.id}
                             logoUrl={club.logoUrl}
@@ -1231,29 +753,29 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                         </div>
 
                         <div className="text-right">
-                          <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider glass-card text-slate-300">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-[var(--efl-surface-2)] border border-[var(--efl-border)] text-[var(--efl-text-2)]">
                             {club.shortName}
                           </span>
                           {isUserClub ? (
-                            <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                            <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20">
                               <CheckCircle2 className="w-3 h-3" /> {t.myClub}
                             </div>
                           ) : isClaimedByOther ? (
-                            <div className="mt-1.5 flex items-center gap-1 text-[10px] font-semibold text-slate-400 glass-card px-2 py-0.5 rounded-full">
-                              <Lock className="w-3 h-3 text-slate-400" /> {t.claimed}
+                            <div className="mt-1.5 flex items-center gap-1 text-[10px] font-semibold text-[var(--efl-text-2)] bg-[var(--efl-surface-2)] border border-[var(--efl-border)] px-2 py-0.5 rounded-full">
+                              <Lock className="w-3 h-3 text-[var(--efl-muted)]" /> {t.claimed}
                             </div>
                           ) : (
-                            <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/30">
-                              <Sparkles className="w-3 h-3 text-amber-400" /> {t.userNeeded}
+                            <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/30">
+                              <Sparkles className="w-3 h-3 text-amber-500" /> {t.userNeeded}
                             </div>
                           )}
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1.5 mb-0.5"><h3 className="font-black text-xs sm:text-sm text-slate-100 line-clamp-1">{club.name}</h3><PremiumClubBadge clubId={club.id} /></div>
+                      <div className="flex items-center gap-1.5 mb-0.5"><h3 className="font-black text-xs sm:text-sm text-[var(--efl-text)] line-clamp-1">{club.name}</h3><PremiumClubBadge clubId={club.id} /></div>
                       <div className="mb-2">
                         {isUserClub ? (
-                          <span className="text-[11px] font-bold text-emerald-400 truncate block">
+                          <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400 truncate block">
                             @{user?.username || 'siz'}
                           </span>
                         ) : isClaimedByOther ? (
@@ -1264,35 +786,35 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                                 e.stopPropagation();
                                 openUserProfile(ownerInfo.userId!);
                               }}
-                              className="text-[11px] font-semibold text-slate-300 hover:text-emerald-400 transition-colors truncate block text-left"
+                              className="text-[11px] font-semibold text-[var(--efl-text-2)] hover:text-[var(--efl-primary)] transition-colors truncate block text-left"
                             >
                               {ownerInfo.displayText}
                             </button>
                           ) : (
-                            <span className="text-[11px] font-semibold text-slate-300 truncate block">
+                            <span className="text-[11px] font-semibold text-[var(--efl-text-2)] truncate block">
                               {ownerInfo.displayText}
                             </span>
                           )
                         ) : (
-                          <span className="text-[11px] font-bold text-amber-400/90 truncate block">
+                          <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 truncate block">
                             {t.userNeeded}
                           </span>
                         )}
                       </div>
-                      <div className="text-[11px] text-slate-400 flex items-center gap-1.5 mb-2.5">
-                        <MapPin className="w-3 h-3 text-slate-500 shrink-0" />
+                      <div className="text-[11px] text-[var(--efl-muted)] flex items-center gap-1.5 mb-2.5">
+                        <MapPin className="w-3 h-3 text-[var(--efl-muted)] shrink-0" />
                         <span className="truncate">{club.stadium || 'Home Stadium'}</span>
                       </div>
                     </div>
 
-                    <div className="pt-2.5 border-t border-white/[0.06] mt-1">
+                    <div className="pt-2.5 border-t border-[var(--efl-border)] mt-1">
                       {isUserClub ? (
-                        <div className="text-[11px] font-bold text-emerald-400 text-center py-1.5 bg-emerald-500/10 rounded-xl border border-emerald-500/20">
+                        <div className="text-[11px] font-bold text-blue-600 dark:text-blue-400 text-center py-1.5 bg-blue-500/10 rounded-xl border border-blue-500/20">
                           {t.manager}: @{user?.username}
                         </div>
                       ) : isClaimedByOther ? (
-                        <div className="flex items-center justify-between text-[11px] text-slate-400 glass-card p-2 rounded-xl">
-                          <span className="text-[10px] uppercase font-bold text-slate-500">{t.manager}:</span>
+                        <div className="flex items-center justify-between text-[11px] text-[var(--efl-text-2)] bg-[var(--efl-surface-2)] border border-[var(--efl-border)] p-2 rounded-xl">
+                          <span className="text-[10px] uppercase font-bold text-[var(--efl-muted)]">{t.manager}:</span>
                           {ownerInfo.userId ? (
                             <button
                               type="button"
@@ -1300,20 +822,20 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                                 e.stopPropagation();
                                 openUserProfile(ownerInfo.userId!);
                               }}
-                              className="font-semibold text-slate-300 hover:text-emerald-400 transition-colors truncate underline decoration-slate-600 hover:decoration-emerald-500 underline-offset-2 max-w-[140px]"
+                              className="font-semibold text-[var(--efl-text)] hover:text-[var(--efl-primary)] transition-colors truncate underline decoration-[var(--efl-border)] hover:decoration-[var(--efl-primary)] underline-offset-2 max-w-[140px]"
                             >
                               {ownerInfo.displayText}
                             </button>
                           ) : (
-                            <span className="font-semibold text-slate-300 truncate">{ownerInfo.displayText}</span>
+                            <span className="font-semibold text-[var(--efl-text)] truncate">{ownerInfo.displayText}</span>
                           )}
                         </div>
                       ) : !admission || admission.enabled && admission.activeLeagueId !== club.leagueId || !premiumStatusReady || ownedClubs.some((owned) => owned.leagueId === club.leagueId) || ownedClubs.length >= (premiumActive ? 2 : 1) ? (
                         <button
                           disabled={true}
-                          className="w-full py-2 glass-card text-slate-500 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-not-allowed opacity-75 min-h-[38px]"
+                          className="w-full py-2 bg-[var(--efl-surface-2)] border border-[var(--efl-border)] text-[var(--efl-muted)] font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-not-allowed opacity-75 min-h-[38px]"
                         >
-                          <Lock className="w-3.5 h-3.5 text-slate-600" />
+                          <Lock className="w-3.5 h-3.5 text-[var(--efl-muted)]" />
                           <span>{admission?.enabled && admission.activeLeagueId !== club.leagueId ? admissionText.closed : t.clubLocked}</span>
                         </button>
                       ) : (
@@ -1324,9 +846,9 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                               setClubToClaim(club);
                             }
                           }}
-                          className="w-full py-2 btn-glass-primary text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 min-h-[40px] touch-manipulation"
+                          className="w-full py-2 btn-glass-primary text-white font-black text-xs flex items-center justify-center gap-1.5 min-h-[40px] touch-manipulation shadow-xs"
                         >
-                          <Shield className="w-3.5 h-3.5 text-slate-950" />
+                          <Shield className="w-3.5 h-3.5" />
                           <span>{t.claimClub}</span>
                         </button>
                       )}
@@ -1344,18 +866,18 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
         <div className="space-y-4">
           {/* Matchday Selector */}
           {matchdays.length > 0 && (
-            <div className="glass-panel p-3 flex items-center gap-2 overflow-x-auto scrollbar-none">
-              <span className="text-[11px] font-black text-slate-400 uppercase tracking-wider shrink-0 mr-1">
+            <div className="p-2.5 rounded-2xl bg-[var(--efl-surface)] border border-[var(--efl-border)] flex items-center gap-2 overflow-x-auto scrollbar-none shadow-xs">
+              <span className="text-[11px] font-black text-[var(--efl-text-2)] uppercase tracking-wider shrink-0 mr-1">
                 {user?.isAdmin ? previewText.matchday : 'Matchday'}:
               </span>
               {matchdays.map((md) => (
                 <button
                   key={md}
                   onClick={() => setSelectedMatchday(md)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold shrink-0 transition-all min-h-[34px] ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold shrink-0 transition-all min-h-[34px] border ${
                     selectedMatchday === md
-                      ? 'bg-emerald-500 text-slate-950 font-black shadow-md'
-                      : 'glass-card text-slate-300 hover:text-white'
+                      ? 'bg-[var(--efl-primary)] text-white font-black shadow-xs border-transparent'
+                      : 'bg-[var(--efl-surface-2)] border-[var(--efl-border)] text-[var(--efl-text-2)] hover:bg-[var(--efl-surface)] hover:text-[var(--efl-text)]'
                   }`}
                 >
                   {user?.isAdmin ? previewText.matchday : 'MD'} {md}
@@ -1368,28 +890,40 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
           {isLoadingFixtures && leagueFixtures.length === 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 animate-pulse">
               {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="h-28 rounded-2xl bg-white/[0.04] border border-white/[0.06]" />
+                <div key={i} className="h-28 rounded-2xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)]" />
               ))}
             </div>
           ) : currentMatchdayFixtures.length === 0 ? (
-            <div className="py-12 text-center glass-panel rounded-2xl border border-white/[0.06] text-slate-400 text-xs">
+            <div className="py-12 text-center rounded-2xl bg-[var(--efl-surface)] border border-[var(--efl-border)] text-[var(--efl-text-2)] text-xs shadow-xs">
               {user?.isAdmin ? previewText.emptyFixtures : 'No fixtures scheduled for this matchday.'}
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {currentMatchdayFixtures.map((fix) => {
                 const isConfirmed = fix.status === 'CONFIRMED';
+                const isUserClub = ownedClubs.some((club) => club.id === fix.homeClubId || club.id === fix.awayClubId);
+
                 return (
-                  <div key={fix.id} className="glass-panel p-4 flex flex-col justify-between gap-3 shadow-md">
-                    <div className="flex items-center justify-between text-[11px] text-slate-400 border-b border-white/[0.06] pb-2">
+                  <div
+                    key={fix.id}
+                    onClick={() => {
+                      if (!isConfirmed && fix.isPlayable !== false) {
+                        setSelectedFixtureForModal(fix);
+                      }
+                    }}
+                    className={`p-3.5 sm:p-4 rounded-2xl flex flex-col justify-between gap-3 shadow-xs bg-[var(--efl-surface)] border border-[var(--efl-border)] transition-colors ${
+                      !isConfirmed && fix.isPlayable !== false ? 'cursor-pointer hover:bg-[var(--efl-surface-2)]/60' : ''
+                    } ${isUserClub ? 'border-[var(--efl-primary)]/40 bg-[var(--efl-primary-soft)]/40' : ''}`}
+                  >
+                    <div className="flex items-center justify-between text-[11px] text-[var(--efl-text-2)] border-b border-[var(--efl-border)] pb-2">
                       <span className="font-bold">{fix.roundName || `Matchday ${fix.matchday}`}</span>
                       <span
                         className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
                           isConfirmed
-                            ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                            ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
                             : fix.status === 'PENDING_CONFIRMATION'
-                            ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-                            : 'bg-slate-800 text-slate-400'
+                            ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30'
+                            : 'bg-[var(--efl-surface-2)] text-[var(--efl-text-2)] border border-[var(--efl-border)]'
                         }`}
                       >
                         {isConfirmed ? 'CONFIRMED' : fix.status || 'UPCOMING'}
@@ -1408,7 +942,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                           className="w-6 h-6 shrink-0"
                         />
                         <div className="min-w-0">
-                          <span className="text-xs font-bold text-white truncate block">
+                          <span className={`text-xs truncate block ${isUserClub && ownedClubs.some((c) => c.id === fix.homeClubId) ? 'font-black text-blue-600 dark:text-blue-400' : 'font-bold text-[var(--efl-text)]'}`}>
                             {fix.homeClub?.shortName || fix.homeClub?.name}
                           </span>
                           {(() => {
@@ -1421,18 +955,18 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                                     e.stopPropagation();
                                     openUserProfile(homeOwnerInfo.userId!);
                                   }}
-                                  className="text-[10px] text-slate-400 hover:text-emerald-400 transition-colors font-medium truncate block text-left"
+                                  className="text-[10px] text-[var(--efl-muted)] hover:text-[var(--efl-primary)] transition-colors font-medium truncate block text-left"
                                 >
                                   {homeOwnerInfo.displayText}
                                 </button>
                               ) : (
-                                <span className="text-[10px] text-slate-400 font-medium truncate block">
+                                <span className="text-[10px] text-[var(--efl-muted)] font-medium truncate block">
                                   {homeOwnerInfo.displayText}
                                 </span>
                               );
                             }
                             return (
-                              <span className="text-[10px] text-amber-400/90 font-bold truncate block">
+                              <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold truncate block">
                                 {t.userNeeded}
                               </span>
                             );
@@ -1441,14 +975,14 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                       </div>
 
                       {/* Score / VS */}
-                      <div className="px-3 py-1.5 rounded-xl bg-slate-950/80 border border-white/[0.1] font-black text-xs sm:text-sm text-white shrink-0">
+                      <div className="px-3 py-1.5 rounded-xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)] font-black text-xs sm:text-sm text-[var(--efl-text)] shrink-0 tabular-nums">
                         {isConfirmed ? `${fix.homeScore} : ${fix.awayScore}` : 'vs'}
                       </div>
 
                       {/* Away */}
                       <div className="flex items-center gap-2 flex-1 min-w-0 justify-end text-right">
                         <div className="min-w-0 text-right">
-                          <span className="text-xs font-bold text-white truncate block">
+                          <span className={`text-xs truncate block ${isUserClub && ownedClubs.some((c) => c.id === fix.awayClubId) ? 'font-black text-blue-600 dark:text-blue-400' : 'font-bold text-[var(--efl-text)]'}`}>
                             {fix.awayClub?.shortName || fix.awayClub?.name}
                           </span>
                           {(() => {
@@ -1461,18 +995,18 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                                     e.stopPropagation();
                                     openUserProfile(awayOwnerInfo.userId!);
                                   }}
-                                  className="text-[10px] text-slate-400 hover:text-emerald-400 transition-colors font-medium truncate block text-right ml-auto"
+                                  className="text-[10px] text-[var(--efl-muted)] hover:text-[var(--efl-primary)] transition-colors font-medium truncate block text-right ml-auto"
                                 >
                                   {awayOwnerInfo.displayText}
                                 </button>
                               ) : (
-                                <span className="text-[10px] text-slate-400 font-medium truncate block text-right">
+                                <span className="text-[10px] text-[var(--efl-muted)] font-medium truncate block text-right">
                                   {awayOwnerInfo.displayText}
                                 </span>
                               );
                             }
                             return (
-                              <span className="text-[10px] text-amber-400/90 font-bold truncate block text-right">
+                              <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold truncate block text-right">
                                 {t.userNeeded}
                               </span>
                             );
@@ -1500,13 +1034,13 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
       {activeLeagueTab === 'STANDINGS' && (
         <div className="space-y-4">
           {isLoadingStandings && leagueStandings.length === 0 ? (
-            <div className="glass-panel p-4 space-y-3 animate-pulse">
+            <div className="p-4 rounded-2xl bg-[var(--efl-surface)] border border-[var(--efl-border)] space-y-3 animate-pulse shadow-xs">
               {[1, 2, 3, 4, 5, 6].map((i) => (
-                <div key={i} className="h-10 rounded-xl bg-white/[0.04] border border-white/[0.04]" />
+                <div key={i} className="h-10 rounded-xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)]" />
               ))}
             </div>
           ) : leagueStandings.length === 0 ? (
-            <div className="py-12 text-center glass-panel rounded-2xl border border-white/[0.06] text-slate-400 text-xs">
+            <div className="py-12 text-center rounded-2xl bg-[var(--efl-surface)] border border-[var(--efl-border)] text-[var(--efl-text-2)] text-xs shadow-xs">
               {user?.isAdmin ? previewText.emptyStandings : 'Standings are not available yet.'}
             </div>
           ) : (
