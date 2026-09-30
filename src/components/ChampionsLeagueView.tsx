@@ -392,12 +392,12 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
       ) : (
         <>
           {/* Segmented Sub-navigation Tabs */}
-          <div className="p-1 rounded-2xl bg-[#eef1f5] dark:bg-[#171e2c] border border-[#e2e6ec] dark:border-white/10 flex items-center gap-1 overflow-x-auto scrollbar-none shadow-xs">
+          <div className="p-1 rounded-2xl bg-[#eef1f5] efl-theme-surface-2 dark:bg-[#171e2c] border border-[#e2e6ec] efl-theme-border dark:border-white/10 flex items-center gap-1 overflow-x-auto scrollbar-none shadow-xs">
             <button
               onClick={() => handleTabChange('STANDINGS')}
               className={`flex-1 min-w-[110px] py-1.5 px-3 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
                 activeTab === 'STANDINGS'
-                  ? 'bg-white efl-theme-surface dark:bg-[#111722] text-[#2563eb] dark:text-[#3b82f6] shadow-xs font-black'
+                  ? 'bg-white efl-theme-surface dark:bg-[#111722] text-[#2563eb] efl-theme-blue dark:text-[#3b82f6] shadow-xs font-black'
                   : 'text-slate-600 efl-theme-text-2 dark:text-slate-400 hover:text-slate-900 efl-theme-hover-text dark:hover:text-white'
               }`}
             >
@@ -407,7 +407,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
               onClick={() => handleTabChange('BRACKET')}
               className={`flex-1 min-w-[110px] py-1.5 px-3 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
                 activeTab === 'BRACKET'
-                  ? 'bg-white efl-theme-surface dark:bg-[#111722] text-[#2563eb] dark:text-[#3b82f6] shadow-xs font-black'
+                  ? 'bg-white efl-theme-surface dark:bg-[#111722] text-[#2563eb] efl-theme-blue dark:text-[#3b82f6] shadow-xs font-black'
                   : 'text-slate-600 efl-theme-text-2 dark:text-slate-400 hover:text-slate-900 efl-theme-hover-text dark:hover:text-white'
               }`}
             >
@@ -417,7 +417,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
               onClick={() => setActiveTab('QUALIFICATION')}
               className={`flex-1 min-w-[110px] py-1.5 px-3 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
                 activeTab === 'QUALIFICATION'
-                  ? 'bg-white efl-theme-surface dark:bg-[#111722] text-[#2563eb] dark:text-[#3b82f6] shadow-xs font-black'
+                  ? 'bg-white efl-theme-surface dark:bg-[#111722] text-[#2563eb] efl-theme-blue dark:text-[#3b82f6] shadow-xs font-black'
                   : 'text-slate-600 efl-theme-text-2 dark:text-slate-400 hover:text-slate-900 efl-theme-hover-text dark:hover:text-white'
               }`}
             >
@@ -470,7 +470,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
                   <div className="overflow-x-auto -mx-4 sm:mx-0">
                     <table className="w-full text-left text-xs border-collapse min-w-[320px]">
                       <thead>
-                        <tr className="border-b border-slate-200/80 efl-theme-border dark:border-white/10 bg-slate-50/75 dark:bg-white/[0.03] text-slate-500 efl-theme-text-2 dark:text-slate-400 text-[10px] font-black uppercase tracking-wider">
+                        <tr className="border-b border-slate-200/80 efl-theme-border dark:border-white/10 bg-slate-50/75 efl-theme-surface-2 dark:bg-white/[0.03] text-slate-500 efl-theme-text-2 dark:text-slate-400 text-[10px] font-black uppercase tracking-wider">
                           <th className="py-2.5 px-2.5 w-8 sm:w-10">#</th>
                           <th className="py-2.5 px-2.5">{t.club}</th>
                           <th className="py-2.5 px-2 text-center w-8">{t.p}</th>
@@ -615,7 +615,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
                     {participants.map((p) => (
                       <div
                         key={p.id}
-                        className="p-3 rounded-xl border border-slate-200/80 efl-theme-border dark:border-white/10 bg-slate-50 dark:bg-white/[0.03] flex items-center justify-between gap-3 shadow-xs"
+                        className="p-3 rounded-xl border border-slate-200/80 efl-theme-border dark:border-white/10 bg-slate-50 efl-theme-surface-2 dark:bg-white/[0.03] flex items-center justify-between gap-3 shadow-xs"
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
                           <div className="w-8 h-8 rounded-lg bg-white efl-theme-surface dark:bg-white/5 border border-slate-200/80 efl-theme-border dark:border-white/10 p-1 flex items-center justify-center shrink-0">
@@ -652,7 +652,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
       {activeTab === 'BRACKET' && (
         <div className="space-y-4">
           {isLiveProjection && (
-            <div className="rounded-2xl border border-blue-400/20 bg-blue-500/[0.07] px-4 py-3 text-xs text-blue-100 shadow-lg">
+            <div className="rounded-2xl border border-blue-400/20 bg-blue-500/[0.07] px-4 py-3 text-xs text-blue-100 efl-theme-blue shadow-lg">
               <div className="flex items-center gap-2 font-black uppercase tracking-wider">
                 <Sparkles className="h-4 w-4 text-blue-300 efl-theme-blue" />
                 Live knockout projection
@@ -718,7 +718,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
           </h3>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 text-xs">
-            <div className="p-4 rounded-xl border border-slate-200/80 efl-theme-border dark:border-white/10 bg-slate-50 dark:bg-white/[0.03] space-y-2">
+            <div className="p-4 rounded-xl border border-slate-200/80 efl-theme-border dark:border-white/10 bg-slate-50 efl-theme-surface-2 dark:bg-white/[0.03] space-y-2">
               <div className="font-black text-blue-600 efl-theme-blue dark:text-blue-400 text-sm">UEFA Champions League (32 Clubs Total)</div>
               <ul className="space-y-1.5 text-slate-600 efl-theme-text-2 dark:text-slate-400 text-xs">
                 <li>• Premier League: 7 spots (1st – 7th)</li>
@@ -731,7 +731,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
               </ul>
             </div>
 
-            <div className="p-4 rounded-xl border border-slate-200/80 efl-theme-border dark:border-white/10 bg-slate-50 dark:bg-white/[0.03] space-y-2">
+            <div className="p-4 rounded-xl border border-slate-200/80 efl-theme-border dark:border-white/10 bg-slate-50 efl-theme-surface-2 dark:bg-white/[0.03] space-y-2">
               <div className="font-black text-indigo-600 efl-theme-indigo dark:text-indigo-400 text-sm">UEFA Europa League (32 Clubs Total)</div>
               <ul className="space-y-1.5 text-slate-600 efl-theme-text-2 dark:text-slate-400 text-xs">
                 <li>• Premier League: 7 spots (8th – 14th)</li>

@@ -422,7 +422,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
               className={`p-3.5 sm:p-4 rounded-2xl border transition-all flex items-start justify-between gap-3 cursor-pointer group ${
                 notif.isRead
                   ? user?.isAdmin
-                    ? 'bg-slate-50 dark:bg-white/5 border-slate-200/80 efl-theme-border dark:border-white/10 text-slate-600 efl-theme-text-2 dark:text-slate-400 hover:bg-slate-100 efl-theme-hover-surface dark:hover:bg-white/10'
+                    ? 'bg-slate-50 efl-theme-surface-2 dark:bg-white/5 border-slate-200/80 efl-theme-border dark:border-white/10 text-slate-600 efl-theme-text-2 dark:text-slate-400 hover:bg-slate-100 efl-theme-hover-surface dark:hover:bg-white/10'
                     : 'glass-card text-slate-300 efl-theme-text-2 hover:border-white/[0.15]'
                   : user?.isAdmin
                   ? 'bg-white efl-theme-surface dark:bg-[#111722] border-blue-500/40 shadow-xs text-slate-900 efl-theme-text dark:text-white hover:border-blue-500/60'

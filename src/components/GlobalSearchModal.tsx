@@ -305,7 +305,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
                     className="w-full flex items-center justify-between p-3 px-4 hover:bg-slate-50 efl-theme-hover-surface dark:hover:bg-white/[0.03] transition-colors text-left"
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-8 h-8 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200/80 efl-theme-border dark:border-white/10 flex items-center justify-center shrink-0">
+                      <div className="w-8 h-8 rounded-xl bg-slate-50 efl-theme-surface-2 dark:bg-white/5 border border-slate-200/80 efl-theme-border dark:border-white/10 flex items-center justify-center shrink-0">
                         <ClubCrest
                           clubId={club.id}
                           logoUrl={club.logoUrl}

@@ -209,7 +209,7 @@ export const SeasonHubView: React.FC<SeasonHubViewProps> = ({ onNavigateTab }) =
                 className={`rounded-xl border p-2 text-center ${
                   label === 'PTS'
                     ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                    : 'bg-slate-50 dark:bg-white/[0.03] border-slate-200/80 efl-theme-border dark:border-white/10'
+                    : 'bg-slate-50 efl-theme-surface-2 dark:bg-white/[0.03] border-slate-200/80 efl-theme-border dark:border-white/10'
                 }`}
               >
                 <div
@@ -221,7 +221,7 @@ export const SeasonHubView: React.FC<SeasonHubViewProps> = ({ onNavigateTab }) =
                 </div>
                 <div
                   className={`text-[9px] font-bold ${
-                    label === 'PTS' ? 'text-blue-100' : 'text-slate-500 efl-theme-text-2 dark:text-slate-400'
+                    label === 'PTS' ? 'text-blue-100 efl-theme-blue' : 'text-slate-500 efl-theme-text-2 dark:text-slate-400'
                   }`}
                 >
                   {label}
@@ -252,7 +252,7 @@ export const SeasonHubView: React.FC<SeasonHubViewProps> = ({ onNavigateTab }) =
                   ? 'border-emerald-500/20 bg-emerald-500/5 text-emerald-800 efl-theme-emerald dark:text-emerald-300'
                   : phase.status === 'ACTIVE'
                   ? 'border-blue-500/30 bg-blue-500/5 text-blue-800 efl-theme-blue dark:text-blue-300'
-                  : 'border-slate-200/80 efl-theme-border dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-slate-600 efl-theme-text-2 dark:text-slate-400'
+                  : 'border-slate-200/80 efl-theme-border dark:border-white/10 bg-slate-50 efl-theme-surface-2 dark:bg-white/[0.02] text-slate-600 efl-theme-text-2 dark:text-slate-400'
               }`}
             >
               <div className="flex items-center justify-between gap-2">
@@ -306,7 +306,7 @@ export const SeasonHubView: React.FC<SeasonHubViewProps> = ({ onNavigateTab }) =
             {(overview?.deadlines || []).slice(0, 5).map((item: any) => (
               <div
                 key={item.fixtureId}
-                className="rounded-xl border border-slate-200/80 efl-theme-border dark:border-white/10 bg-slate-50 dark:bg-white/[0.03] p-2.5 flex items-center justify-between gap-3 text-xs"
+                className="rounded-xl border border-slate-200/80 efl-theme-border dark:border-white/10 bg-slate-50 efl-theme-surface-2 dark:bg-white/[0.03] p-2.5 flex items-center justify-between gap-3 text-xs"
               >
                 <div className="min-w-0">
                   <div className="text-xs font-bold text-slate-900 efl-theme-text dark:text-white truncate">
@@ -327,7 +327,7 @@ export const SeasonHubView: React.FC<SeasonHubViewProps> = ({ onNavigateTab }) =
               <select
                 value={selectedFixtureId}
                 onChange={(e) => setSelectedFixtureId(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200/80 efl-theme-border dark:border-white/10 rounded-xl px-3 py-2 text-xs text-slate-900 efl-theme-text dark:text-white min-h-[38px]"
+                className="w-full bg-slate-50 efl-theme-surface-2 dark:bg-white/5 border border-slate-200/80 efl-theme-border dark:border-white/10 rounded-xl px-3 py-2 text-xs text-slate-900 efl-theme-text dark:text-white min-h-[38px]"
               >
                 <option value="">No-show uchun match tanlang</option>
                 {upcoming.map((fixture: any) => (
@@ -339,7 +339,7 @@ export const SeasonHubView: React.FC<SeasonHubViewProps> = ({ onNavigateTab }) =
               <textarea
                 value={noShowReason}
                 onChange={(e) => setNoShowReason(e.target.value)}
-                className="w-full min-h-16 bg-slate-50 dark:bg-white/5 border border-slate-200/80 efl-theme-border dark:border-white/10 rounded-xl px-3 py-2 text-xs text-slate-900 efl-theme-text dark:text-white"
+                className="w-full min-h-16 bg-slate-50 efl-theme-surface-2 dark:bg-white/5 border border-slate-200/80 efl-theme-border dark:border-white/10 rounded-xl px-3 py-2 text-xs text-slate-900 efl-theme-text dark:text-white"
               />
               <button
                 onClick={reportNoShow}
@@ -364,7 +364,7 @@ export const SeasonHubView: React.FC<SeasonHubViewProps> = ({ onNavigateTab }) =
                   <div className="text-xl font-black text-emerald-600 efl-theme-emerald dark:text-emerald-400 tabular-nums">{h2h.summary.aWins}</div>
                   <div className="text-[9px] text-slate-500 efl-theme-text-2 dark:text-slate-400 font-bold uppercase">G‘alaba</div>
                 </div>
-                <div className="rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200/80 efl-theme-border dark:border-white/10 p-3">
+                <div className="rounded-xl bg-slate-50 efl-theme-surface-2 dark:bg-white/[0.03] border border-slate-200/80 efl-theme-border dark:border-white/10 p-3">
                   <div className="text-xl font-black text-slate-900 efl-theme-text dark:text-white tabular-nums">{h2h.summary.draws}</div>
                   <div className="text-[9px] text-slate-500 efl-theme-text-2 dark:text-slate-400 font-bold uppercase">Durang</div>
                 </div>
@@ -394,7 +394,7 @@ export const SeasonHubView: React.FC<SeasonHubViewProps> = ({ onNavigateTab }) =
           </h2>
           <div className="space-y-2">
             {(overview?.awards || []).map((award: any) => (
-              <div key={award.id} className="rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200/80 efl-theme-border dark:border-white/10 p-2.5">
+              <div key={award.id} className="rounded-xl bg-slate-50 efl-theme-surface-2 dark:bg-white/[0.03] border border-slate-200/80 efl-theme-border dark:border-white/10 p-2.5">
                 <div className="text-xs font-bold text-slate-900 efl-theme-text dark:text-white">{award.label}</div>
                 <div className="text-[10px] text-slate-500 efl-theme-text-2 dark:text-slate-400 mt-0.5">{award.description}</div>
                 <div className="mt-2 flex flex-wrap gap-1.5">
@@ -416,7 +416,7 @@ export const SeasonHubView: React.FC<SeasonHubViewProps> = ({ onNavigateTab }) =
           </h2>
           <div className="space-y-2">
             {(qualification?.leagues || []).map((league: any) => (
-              <div key={league.competitionId} className="rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200/80 efl-theme-border dark:border-white/10 p-2.5">
+              <div key={league.competitionId} className="rounded-xl bg-slate-50 efl-theme-surface-2 dark:bg-white/[0.03] border border-slate-200/80 efl-theme-border dark:border-white/10 p-2.5">
                 <div className="flex items-center justify-between text-xs font-bold text-slate-900 efl-theme-text dark:text-white">
                   <span>{league.competitionName}</span>
                   <span className="text-[10px] text-slate-500 efl-theme-text-2 font-normal">UCL {league.allocation?.ucl || 0} • UEL {league.allocation?.uel || 0}</span>
@@ -474,7 +474,7 @@ export const SeasonHubView: React.FC<SeasonHubViewProps> = ({ onNavigateTab }) =
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
               {(selectedArchive.trophies || []).map((trophy: any) => (
-                <div key={trophy.competitionId} className="rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200/80 efl-theme-border dark:border-white/10 p-2.5 text-xs">
+                <div key={trophy.competitionId} className="rounded-xl bg-slate-50 efl-theme-surface-2 dark:bg-white/[0.03] border border-slate-200/80 efl-theme-border dark:border-white/10 p-2.5 text-xs">
                   <div className="font-bold text-slate-500 efl-theme-text-2">{trophy.competitionName}</div>
                   <div className="mt-0.5 font-black text-slate-900 efl-theme-text dark:text-white">{trophy.clubName}</div>
                   {trophy.winnerUsername && <div className="text-[10px] text-amber-600 efl-theme-amber dark:text-amber-400">@{trophy.winnerUsername}</div>}

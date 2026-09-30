@@ -478,7 +478,8 @@
 }
 
 /* Remaining preview pages: use the app theme for overlay and semantic tints. */
-.efl-preview .efl-theme-search-overlay {
+.efl-preview .efl-theme-search-overlay.fixed.inset-0,
+.efl-preview.theme-dark .efl-theme-search-overlay.fixed.inset-0 {
   background: color-mix(in srgb, var(--efl-bg) 94%, transparent) !important;
 }
 .efl-preview:not(.theme-dark) .efl-theme-sky { color: #0369a1 !important; }

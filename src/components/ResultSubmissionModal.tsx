@@ -110,7 +110,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
         <div
           className={`px-5 py-4 border-b flex items-center justify-between ${
             user?.isAdmin
-              ? 'border-slate-200/80 efl-theme-border dark:border-white/10 bg-slate-50/75 dark:bg-white/[0.02]'
+              ? 'border-slate-200/80 efl-theme-border dark:border-white/10 bg-slate-50/75 efl-theme-surface-2 dark:bg-white/[0.02]'
               : 'border-white/[0.08] efl-theme-border bg-white/[0.02] efl-theme-surface-2'
           }`}
         >
@@ -147,7 +147,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
           <div
             className={`p-4 rounded-2xl border ${
               user?.isAdmin
-                ? 'bg-slate-50 dark:bg-white/5 border-slate-200/80 efl-theme-border dark:border-white/10 shadow-xs'
+                ? 'bg-slate-50 efl-theme-surface-2 dark:bg-white/5 border-slate-200/80 efl-theme-border dark:border-white/10 shadow-xs'
                 : 'glass-card'
             }`}
           >
@@ -268,7 +268,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
             <div
               className={`grid grid-cols-2 gap-3 p-4 rounded-2xl border ${
                 user?.isAdmin
-                  ? 'bg-slate-50 dark:bg-white/5 border-slate-200/80 efl-theme-border dark:border-white/10 shadow-xs'
+                  ? 'bg-slate-50 efl-theme-surface-2 dark:bg-white/5 border-slate-200/80 efl-theme-border dark:border-white/10 shadow-xs'
                   : 'glass-panel'
               }`}
             >
