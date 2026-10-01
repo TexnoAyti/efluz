@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import {
   ArrowRight,
   ChevronRight,
@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n';
+import { fixturesForClub } from '../lib/activeClub';
+import { useActiveClubStanding } from '../lib/useActiveClubStanding';
 import { api } from '../lib/api';
 import { Fixture } from '../types';
 import { ClubCrest } from './ClubCrest';
@@ -200,7 +202,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
   onNavigateTab,
   onSelectFixtureForMatchCenter,
 }) => {
-  const { user, currentClub, ownedClubs, activeSeasonId, userStats } = useAuth();
+  const { user, currentClub, ownedClubs, activeSeasonId } = useAuth();
   const { language } = useI18n();
   const resultText = {
     uz: { win: 'G‘alaba', draw: 'Durang', loss: 'Mag‘lubiyat', winShort: 'G‘', drawShort: 'D', lossShort: 'M' },
@@ -217,33 +219,51 @@ export const MatchdayHomeView: React.FC<Props> = ({
   const [selectedFixtureForSubmit, setSelectedFixtureForSubmit] = useState<Fixture | null>(null);
 
   const activeClub = currentClub || ownedClubs[0] || null;
+  const modalClubId = useRef(activeClub?.id);
+  useEffect(() => {
+    if (modalClubId.current !== activeClub?.id) {
+      setSelectedFixtureForSubmit(null);
+      modalClubId.current = activeClub?.id;
+    }
+  }, [activeClub?.id]);
 
-  const loadData = async () => {
+  const { row: standing, refresh: refreshStanding } = useActiveClubStanding(activeClub, activeSeasonId);
+  const userStats = standing ? {
+    leaguePosition: standing.position, points: standing.points, matchesPlayed: standing.played,
+    wins: standing.won, draws: standing.drawn, losses: standing.lost,
+    goalsScored: standing.goalsFor, goalsConceded: standing.goalsAgainst,
+  } : null;
+  const activeClubFixtures = useMemo(() => fixturesForClub(fixtures, activeClub?.id), [fixtures, activeClub?.id]);
+  const loadRequest = useRef(0);
+  const loadData = useCallback(async () => {
+    const request = ++loadRequest.current;
+    void refreshStanding();
     setLoading(true);
     setError(false);
     try {
       const res = await api.getMyMatches(activeSeasonId);
-      setFixtures(res.fixtures || []);
+      if (request === loadRequest.current) setFixtures(res.fixtures || []);
     } catch {
-      setError(true);
+      if (request === loadRequest.current) setError(true);
     } finally {
-      setLoading(false);
+      if (request === loadRequest.current) setLoading(false);
     }
-  };
+  }, [activeSeasonId, user?.id, refreshStanding]);
 
   useEffect(() => {
     void loadData();
-  }, [activeSeasonId, user?.id, activeClub?.id]);
+    return () => { loadRequest.current++; };
+  }, [loadData]);
 
   // Fixtures partition
   const pendingFixtures = useMemo(
-    () => fixtures.filter((f) => f.status !== 'CONFIRMED' && f.status !== 'CANCELLED'),
-    [fixtures]
+    () => activeClubFixtures.filter((f) => f.status !== 'CONFIRMED' && f.status !== 'CANCELLED'),
+    [activeClubFixtures]
   );
 
   const confirmedFixtures = useMemo(
-    () => [...fixtures].filter((f) => f.status === 'CONFIRMED').reverse(),
-    [fixtures]
+    () => [...activeClubFixtures].filter((f) => f.status === 'CONFIRMED').reverse(),
+    [activeClubFixtures]
   );
 
   // Hero match selection
@@ -275,6 +295,16 @@ export const MatchdayHomeView: React.FC<Props> = ({
 
   const displayedList = matchTab === 'upcoming' ? otherUpcoming : otherResults;
 
+  const openActiveLeague = (standings = false) => {
+    if (activeClub?.leagueId) {
+      try {
+        sessionStorage.setItem('efl:preview-league', activeClub.leagueId);
+        sessionStorage.setItem('efl:preview-league-tab', standings ? 'STANDINGS' : 'CLUBS');
+      } catch { /* Navigation also works without storage. */ }
+    }
+    onNavigateTab('leagues');
+  };
+
   const handleOpenMatch = (fixture: Fixture) => {
     if (onSelectFixtureForMatchCenter) {
       onSelectFixtureForMatchCenter(fixture);
@@ -286,7 +316,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
     setSelectedFixtureForSubmit(fixture);
   };
 
-  const isUserHome = heroMatch ? heroMatch.homeOwnerId === user?.id || heroMatch.homeClubId === activeClub?.id : true;
+  const isUserHome = heroMatch ? heroMatch.homeClubId === activeClub?.id || heroMatch.homeClub?.id === activeClub?.id : true;
 
   // Format date and time
   const formatFixtureSchedule = (fixture: Fixture) => {
@@ -341,7 +371,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
   // Determine opponent Telegram username
   const opponentTelegram = useMemo(() => {
     if (!heroMatch) return null;
-    const isHome = heroMatch.homeOwnerId === user?.id || heroMatch.homeClubId === activeClub?.id;
+    const isHome = heroMatch.homeClubId === activeClub?.id || heroMatch.homeClub?.id === activeClub?.id;
     const oppTg = isHome
       ? heroMatch.awayOwner?.username || heroMatch.awayUser?.username || heroMatch.awayClub?.claimedByUsername
       : heroMatch.homeOwner?.username || heroMatch.homeUser?.username || heroMatch.homeClub?.claimedByUsername;
@@ -637,7 +667,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
             </p>
             <button
               type="button"
-              onClick={() => onNavigateTab('leagues')}
+              onClick={() => openActiveLeague()}
               className="mt-1 inline-flex items-center gap-2 px-4 py-2 rounded-xl btn-glass-primary text-xs shadow-xs"
             >
               <span>{c.browseLeagues}</span>
@@ -816,7 +846,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
           </div>
           <button
             type="button"
-            onClick={() => onNavigateTab('leagues')}
+            onClick={() => openActiveLeague(true)}
             className="text-xs font-semibold text-[var(--efl-primary)] hover:underline inline-flex items-center gap-1"
           >
             <span>{c.browseLeagues}</span>
@@ -876,7 +906,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
           </h3>
           <button
             type="button"
-            onClick={() => onNavigateTab('leagues')}
+            onClick={() => openActiveLeague()}
             className="text-xs font-semibold text-[var(--efl-primary)] hover:underline"
           >
             Hammasi
@@ -887,7 +917,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
           {/* Domestic League */}
           <button
             type="button"
-            onClick={() => onNavigateTab('leagues')}
+            onClick={() => openActiveLeague()}
             className="flex items-center justify-between p-2.5 rounded-xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)] hover:border-[var(--efl-primary)] transition-all text-left group"
           >
             <div className="flex items-center gap-2 min-w-0">
@@ -953,7 +983,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
       </section>
 
       {/* Result Submission Modal */}
-      {selectedFixtureForSubmit && (
+      {selectedFixtureForSubmit && fixturesForClub([selectedFixtureForSubmit], activeClub?.id).length > 0 && (
         <ResultSubmissionModal
           fixture={selectedFixtureForSubmit}
           isOpen={true}

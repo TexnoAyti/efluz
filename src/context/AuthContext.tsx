@@ -1,8 +1,13 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { User, Club, Season, Notification } from '../types';
 import { api, getDevUserId, setDevUserId, getTelegramInitData, setTelegramInitData, setSessionToken } from '../lib/api';
+import { resolveActiveClub, saveActiveClub } from '../lib/activeClub';
 import { premiumApi } from '../lib/premiumApi';
 import { isDesignPreview } from '../designPreview';
+
+function clubPreferenceStorage(): Storage | undefined {
+  try { return window.localStorage; } catch { return undefined; }
+}
 
 export type AuthBootstrapStatus = 'AUTH_LOADING' | 'AUTHENTICATED' | 'AUTH_ANONYMOUS' | 'AUTH_ERROR';
 
@@ -213,7 +218,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (meRes.currentClubStatus !== 'unavailable') {
         const clubs = meRes.ownedClubs || (meRes.currentClub ? [meRes.currentClub] : []);
         setOwnedClubs(clubs);
-        setCurrentClub((previous) => clubs.find((club) => club.id === previous?.id) || meRes.currentClub);
+        setCurrentClub((previous) => resolveActiveClub(clubs, previous || meRes.currentClub, meRes.user.id, seasonId, clubPreferenceStorage()));
       }
       if (meRes.stats) setUserStats(meRes.stats);
 
@@ -326,7 +331,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               setTelegramInitData(null);
               setUser(authRes.user);
               setClubUnavailable(authRes.currentClubStatus === 'unavailable');
-              setCurrentClub(authRes.currentClub);
+              setCurrentClub(resolveActiveClub(authRes.ownedClubs || (authRes.currentClub ? [authRes.currentClub] : []), authRes.currentClub, authRes.user.id, targetSeasonId, clubPreferenceStorage()));
               setOwnedClubs(authRes.ownedClubs || (authRes.currentClub ? [authRes.currentClub] : []));
               if (authRes.stats) setUserStats(authRes.stats);
               setAuthStatus('AUTHENTICATED');
@@ -359,7 +364,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 setSessionToken(authRes.token);
                 setUser(authRes.user);
                 setClubUnavailable(authRes.currentClubStatus === 'unavailable');
-                setCurrentClub(authRes.currentClub);
+                setCurrentClub(resolveActiveClub(authRes.ownedClubs || (authRes.currentClub ? [authRes.currentClub] : []), authRes.currentClub, authRes.user.id, targetSeasonId, clubPreferenceStorage()));
                 setOwnedClubs(authRes.ownedClubs || (authRes.currentClub ? [authRes.currentClub] : []));
                 if (authRes.stats) setUserStats(authRes.stats);
                 setAuthStatus('AUTHENTICATED');
@@ -378,7 +383,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setSessionToken(authRes.token);
             setUser(authRes.user);
             setClubUnavailable(authRes.currentClubStatus === 'unavailable');
-            setCurrentClub(authRes.currentClub);
+            setCurrentClub(resolveActiveClub(authRes.ownedClubs || (authRes.currentClub ? [authRes.currentClub] : []), authRes.currentClub, authRes.user.id, targetSeasonId, clubPreferenceStorage()));
             setOwnedClubs(authRes.ownedClubs || (authRes.currentClub ? [authRes.currentClub] : []));
             if (authRes.stats) setUserStats(authRes.stats);
             setAuthStatus('AUTHENTICATED');
@@ -402,7 +407,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (meRes.currentClubStatus !== 'unavailable') {
         const clubs = meRes.ownedClubs || (meRes.currentClub ? [meRes.currentClub] : []);
         setOwnedClubs(clubs);
-        setCurrentClub((previous) => clubs.find((club) => club.id === previous?.id) || meRes.currentClub);
+        setCurrentClub(resolveActiveClub(clubs, meRes.currentClub, meRes.user.id, targetSeasonId, clubPreferenceStorage()));
       }
               setAuthStatus('AUTHENTICATED');
               setTelegramDiagnostics((prev) => ({
@@ -479,7 +484,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSessionToken(authRes.token);
       setUser(authRes.user);
       setClubUnavailable(authRes.currentClubStatus === 'unavailable');
-      setCurrentClub(authRes.currentClub);
+      setCurrentClub(resolveActiveClub(authRes.ownedClubs || (authRes.currentClub ? [authRes.currentClub] : []), authRes.currentClub, authRes.user.id, activeSeasonId, clubPreferenceStorage()));
       setOwnedClubs(authRes.ownedClubs || (authRes.currentClub ? [authRes.currentClub] : []));
       setTelegramDiagnostics((prev) => ({
         ...prev,
@@ -537,7 +542,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         premiumClubIds,
         selectCurrentClub: (clubId) => {
           const club = ownedClubs.find((item) => item.id === clubId);
-          if (club) setCurrentClub(club);
+          if (club && user) {
+            saveActiveClub(club.id, user.id, activeSeasonId, clubPreferenceStorage());
+            setCurrentClub(club);
+          }
         },
         userStats,
         currentSeason,
@@ -580,3 +588,4 @@ export function useAuth(): AuthContextType {
   }
   return context;
 }
+

@@ -1,8 +1,10 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n, Language } from '../i18n';
+import { fixturesForClub } from '../lib/activeClub';
+import { useActiveClubStanding } from '../lib/useActiveClubStanding';
 import { api } from '../lib/api';
-import { Fixture, Club, Competition, StandingsRow } from '../types';
+import { Fixture, Club, Competition } from '../types';
 import { ClubCrest } from './ClubCrest';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
 import { MatchdayCountdown } from './MatchdayCountdown';
@@ -51,7 +53,6 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
     currentClub,
     ownedClubs,
     selectCurrentClub,
-    userStats,
     activeSeasonId,
     isDevMode,
     devProfiles,
@@ -268,7 +269,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
   // State
   const [allFixtures, setAllFixtures] = useState<Fixture[]>([]);
   const [competitions, setCompetitions] = useState<Competition[]>([]);
-  const [leagueStandings, setLeagueStandings] = useState<StandingsRow[]>([]);
+  const loadRequest = useRef(0);
   const [matchTab, setMatchTab] = useState<'upcoming' | 'results'>('upcoming');
   const [selectedFixtureForModal, setSelectedFixtureForModal] = useState<Fixture | null>(
     initialSelectedFixture || null
@@ -278,6 +279,14 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
 
   // Active Club determination
   const activeClub = currentClub || ownedClubs[0] || null;
+  const modalClubId = useRef(activeClub?.id);
+  useEffect(() => {
+    if (modalClubId.current !== activeClub?.id) {
+      setSelectedFixtureForModal(null);
+      modalClubId.current = activeClub?.id;
+    }
+  }, [activeClub?.id]);
+  const { row: clubStandingRow, refresh: refreshStanding } = useActiveClubStanding(activeClub, activeSeasonId);
   const secondaryClubs = useMemo(
     () => ownedClubs.filter((c) => c.id !== activeClub?.id),
     [ownedClubs, activeClub?.id]
@@ -285,56 +294,39 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
 
   // Load Fixtures & Competitions
   const loadData = useCallback(async () => {
+    const request = ++loadRequest.current;
     setIsLoading(true);
+    void refreshStanding();
     try {
       const [matchesRes, compsRes] = await Promise.all([
         api.getMyMatches(activeSeasonId).catch(() => ({ fixtures: [] })),
         api.getCompetitions(activeSeasonId).catch(() => ({ competitions: [] })),
       ]);
 
+      if (request !== loadRequest.current) return;
       const fixtures = matchesRes.fixtures || [];
       setAllFixtures(fixtures);
 
       const comps = compsRes.competitions || [];
       setCompetitions(comps);
 
-      // Load league standings for active club
-      if (activeClub?.leagueId) {
-        const matchingComp = comps.find(
-          (c) => c.leagueId === activeClub.leagueId && c.type === 'LEAGUE'
-        );
-        if (matchingComp) {
-          try {
-            const standRes = await api.getCompetitionStandings(matchingComp.id);
-            setLeagueStandings(standRes.standings || []);
-          } catch {
-            setLeagueStandings([]);
-          }
-        }
-      }
     } catch (err: any) {
       console.warn('Failed to load club hub data:', err.message);
     } finally {
-      setIsLoading(false);
+      if (request === loadRequest.current) setIsLoading(false);
     }
-  }, [activeSeasonId, activeClub?.id, activeClub?.leagueId]);
+  }, [activeSeasonId, user?.id, refreshStanding]);
 
   useEffect(() => {
     void loadData();
+    return () => { loadRequest.current++; };
   }, [loadData]);
 
   // Filter fixtures belonging to the active club
-  const activeClubFixtures = useMemo(() => {
-    if (!activeClub) return allFixtures;
-    const directMatches = allFixtures.filter(
-      (f) =>
-        f.homeClubId === activeClub.id ||
-        f.awayClubId === activeClub.id ||
-        f.homeClub?.id === activeClub.id ||
-        f.awayClub?.id === activeClub.id
-    );
-    return directMatches.length > 0 ? directMatches : allFixtures;
-  }, [allFixtures, activeClub?.id]);
+  const activeClubFixtures = useMemo(
+    () => fixturesForClub(allFixtures, activeClub?.id),
+    [allFixtures, activeClub?.id]
+  );
 
   // Partitions
   const pendingFixtures = useMemo(
@@ -385,19 +377,15 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
   }, [heroMatch, activeClub?.id]);
 
   // Season Snapshot Data
-  const clubStandingRow = useMemo(() => {
-    if (!activeClub || leagueStandings.length === 0) return null;
-    return leagueStandings.find((r) => r.clubId === activeClub.id) || null;
-  }, [activeClub?.id, leagueStandings]);
 
-  const statsPosition = clubStandingRow?.position ?? userStats?.leaguePosition ?? null;
-  const statsPoints = clubStandingRow?.points ?? userStats?.points ?? 0;
-  const statsPlayed = clubStandingRow?.played ?? userStats?.matchesPlayed ?? 0;
-  const statsWon = clubStandingRow?.won ?? userStats?.wins ?? 0;
-  const statsDrawn = clubStandingRow?.drawn ?? userStats?.draws ?? 0;
-  const statsLost = clubStandingRow?.lost ?? userStats?.losses ?? 0;
-  const statsGf = clubStandingRow?.goalsFor ?? userStats?.goalsScored ?? 0;
-  const statsGa = clubStandingRow?.goalsAgainst ?? userStats?.goalsConceded ?? 0;
+  const statsPosition = clubStandingRow?.position ?? null;
+  const statsPoints = clubStandingRow?.points ?? 0;
+  const statsPlayed = clubStandingRow?.played ?? 0;
+  const statsWon = clubStandingRow?.won ?? 0;
+  const statsDrawn = clubStandingRow?.drawn ?? 0;
+  const statsLost = clubStandingRow?.lost ?? 0;
+  const statsGf = clubStandingRow?.goalsFor ?? 0;
+  const statsGa = clubStandingRow?.goalsAgainst ?? 0;
   const statsGd = clubStandingRow?.goalDifference ?? statsGf - statsGa;
 
   // Recent Form dots derived from actual confirmed matches
@@ -1078,7 +1066,15 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
             return (
               <div
                 key={comp.id}
-                onClick={() => onNavigateTab(comp.targetTab)}
+                onClick={() => {
+                  if (comp.targetTab === 'leagues' && activeClub?.leagueId) {
+                    try {
+                      sessionStorage.setItem('efl:preview-league', activeClub.leagueId);
+                      sessionStorage.setItem('efl:preview-league-tab', 'STANDINGS');
+                    } catch { /* Navigation also works without storage. */ }
+                  }
+                  onNavigateTab(comp.targetTab);
+                }}
                 className="p-3 sm:p-3.5 rounded-2xl bg-[var(--efl-surface-2)] hover:bg-[var(--efl-surface)] border border-[var(--efl-border)] transition-all flex items-center justify-between gap-3 cursor-pointer group"
               >
                 <div className="flex items-center gap-3 min-w-0">
@@ -1285,7 +1281,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
       </section>
 
       {/* Result Submission Modal */}
-      {selectedFixtureForModal && (
+      {selectedFixtureForModal && fixturesForClub([selectedFixtureForModal], activeClub?.id).length > 0 && (
         <ResultSubmissionModal
           fixture={selectedFixtureForModal}
           isOpen={true}
