@@ -735,3 +735,25 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
   .efl-preview .efl-club-filters { width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .efl-preview .efl-club-filters > button { min-width: 0; padding: 8px 4px; white-space: normal; overflow-wrap: anywhere; }
 }
+
+/* Reuse the welcome screen's five icon-only league marks in admin selection. */
+.efl-preview .efl-league-icon-selector {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  overflow: visible;
+}
+.efl-preview .efl-league-icon-selector > button {
+  min-width: 0;
+  min-height: 60px;
+  padding: 10px 6px;
+  justify-content: center;
+}
+.efl-preview .efl-league-icon {
+  width: 32px;
+  height: 38px;
+  background: transparent;
+}
+.efl-preview.theme-dark .efl-league-icon-monochrome {
+  filter: brightness(0) invert(1);
+}

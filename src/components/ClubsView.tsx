@@ -30,6 +30,14 @@ import {
 } from 'lucide-react';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
 
+const welcomeLeagueIcons: Record<string, string> = {
+  'league-premier-league': 'premier-league',
+  'league-la-liga': 'la-liga',
+  'league-serie-a': 'serie-a',
+  'league-bundesliga': 'bundesliga',
+  'league-ligue-1': 'ligue-1',
+};
+
 interface ClubsViewProps {
   onNavigateTab?: (tab: any) => void;
 }
@@ -426,7 +434,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
     <div className="space-y-6 animate-in fade-in duration-300 pb-20">
       {/* Category Quick Switcher Hub (Legacy Normal Players only) */}
       {!user?.isAdmin && (
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+        <div className={`flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none ${user?.isAdmin ? 'efl-league-icon-selector' : ''}`}>
           <button
             className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-black btn-glass-primary text-slate-950 shadow-md min-h-[36px]"
           >
@@ -483,6 +491,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
           <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
             {leagues.map((league) => {
               const isSelected = selectedLeagueId === league.id;
+              const welcomeIcon = user?.isAdmin ? welcomeLeagueIcons[league.id] : undefined;
               const flag =
                 league.country === 'England'
                   ? '🏴󠁧󠁢󠁥󠁮󠁧󠁿'
@@ -498,6 +507,9 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                 <button
                   key={league.id}
                   id={`btn-league-${league.id}`}
+                  aria-label={league.name}
+                  aria-pressed={isSelected}
+                  title={league.name}
                   onClick={() => handleSelectLeague(league.id)}
                   className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs shrink-0 transition-all min-h-[42px] border ${
                     isSelected
@@ -506,13 +518,14 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                   }`}
                 >
                   <img
-                    src={league.logoUrl}
+                    src={welcomeIcon ? `/welcome/${welcomeIcon}.svg` : league.logoUrl}
                     alt={league.name}
-                    className="w-4 h-4 object-contain shrink-0 efl-theme-league-logo"
+                    className={`w-4 h-4 object-contain shrink-0 ${welcomeIcon ? `efl-league-icon ${welcomeIcon === 'premier-league' || welcomeIcon === 'ligue-1' ? 'efl-league-icon-monochrome' : ''}` : 'efl-theme-league-logo'}`}
                     onError={(e) => {
                       (e.target as HTMLElement).style.display = 'none';
                     }}
                   />
+                  {!user?.isAdmin && <>
                   <span>{flag}</span>
                   <span>{league.name}</span>
                   <span
@@ -524,6 +537,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                   >
                     {league.totalClubs || (league.name === 'Bundesliga' || league.name === 'Ligue 1' ? 18 : 20)}
                   </span>
+                  </>}
                 </button>
               );
             })}
@@ -538,7 +552,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
             <div className="efl-league-banner-content flex items-center gap-4">
               <div className="efl-theme-league-logo w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-[var(--efl-surface-2)] p-2.5 border border-[var(--efl-border)] flex items-center justify-center shadow-xs shrink-0">
                 <img
-                  src={currentLeague.logoUrl}
+                  src={user?.isAdmin && welcomeLeagueIcons[currentLeague.id] ? `/welcome/${welcomeLeagueIcons[currentLeague.id]}.svg` : currentLeague.logoUrl}
                   alt={currentLeague.name}
                   className="w-10 h-10 object-contain"
                   onError={(e) => {
