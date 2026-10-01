@@ -1153,4 +1153,153 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                                         {rowOwnerInfo.displayText}
                                       </button>
                                     ) : (
-                                      <span className="text-[10px] text-[var(--efl-mute
+                                      <span className="text-[10px] text-[var(--efl-muted)] efl-theme-meta font-medium truncate max-w-[140px]">
+                                        {rowOwnerInfo.displayText}
+                                      </span>
+                                    );
+                                  }
+                                  return (
+                                    <span className="text-[10px] text-amber-500 efl-theme-amber font-bold truncate max-w-[140px]">
+                                      {t.userNeeded}
+                                    </span>
+                                  );
+                                })()}
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="py-2.5 px-2 text-center font-semibold text-[var(--efl-text)]">{row.played}</td>
+                          <td className="py-2.5 px-2 text-center text-[var(--efl-text-2)] efl-result-win">{row.won}</td>
+                          <td className="py-2.5 px-2 text-center text-[var(--efl-text-2)] efl-result-draw">{row.drawn}</td>
+                          <td className="py-2.5 px-2 text-center text-[var(--efl-text-2)] efl-result-loss">{row.lost}</td>
+                          <td className="py-2.5 px-2 text-center text-[var(--efl-text-2)] hidden sm:table-cell">
+                            {row.goalsFor}
+                          </td>
+                          <td className="py-2.5 px-2 text-center text-[var(--efl-text-2)] hidden sm:table-cell">
+                            {row.goalsAgainst}
+                          </td>
+                          <td className="py-2.5 px-2 text-center font-bold text-[var(--efl-text)]">
+                            {row.goalDifference > 0 ? `+${row.goalDifference}` : row.goalDifference}
+                          </td>
+                          <td className="py-2.5 px-3 text-center font-black text-[var(--efl-primary)] text-sm">{row.points}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Claim Confirmation Modal */}
+      {clubToClaim && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="glass-panel w-full max-w-md shadow-2xl p-6 text-white text-center border-emerald-500/30">
+            <div className="w-16 h-16 rounded-2xl bg-slate-950/90 p-2.5 border border-white/[0.1] mx-auto mb-3 flex items-center justify-center shadow-lg">
+              <ClubCrest
+                clubId={clubToClaim.id}
+                logoUrl={clubToClaim.logoUrl}
+                name={clubToClaim.name}
+                shortName={clubToClaim.shortName}
+                size="lg"
+                className="w-11 h-11"
+              />
+            </div>
+
+            <h3 className="text-lg font-black text-white">{clubToClaim.name}</h3>
+            <p className="text-xs text-slate-300 mt-2 mb-4 leading-relaxed">{t.claimConfirmationDesc}</p>
+
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setClubToClaim(null)}
+                className="flex-1 py-2.5 glass-card glass-card-interactive text-slate-300 font-semibold text-xs min-h-[44px] touch-manipulation"
+              >
+                {t.cancel}
+              </button>
+              <button
+                type="button"
+                id="btn-confirm-claim-action"
+                disabled={isClaiming || !clubToClaim || !clubToClaim.id || clubToClaim.id === 'undefined' || clubToClaim.id === 'null' || !clubToClaim.id.startsWith('club-')}
+                onClick={() => handleClaimClub()}
+                className="flex-1 py-2.5 btn-glass-primary disabled:opacity-50 text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 min-h-[44px] touch-manipulation"
+              >
+                {isClaiming ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
+                    <span>{t.loading}</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 text-slate-950" />
+                    <span>{t.confirm}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Telegram Group Membership Required Modal */}
+      {membershipModal?.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="glass-panel w-full max-w-md shadow-2xl p-6 text-white text-center border-amber-500/40">
+            <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 mx-auto mb-3 flex items-center justify-center shadow-lg text-amber-400 efl-theme-amber">
+              <Users className="w-8 h-8" />
+            </div>
+
+            <h3 className="text-lg font-black text-white">Guruhga A'zo Bo'ling</h3>
+            <p className="text-xs text-slate-300 mt-2 mb-4 leading-relaxed">
+              Klub tanlash va ligada ishtirok etish uchun rasmiy{' '}
+              <span className="text-amber-400 efl-theme-amber font-bold">{membershipModal.groupUsername}</span> Telegram guruhimizga
+              a'zo bo'lishingiz lozim.
+            </p>
+
+            <div className="space-y-2">
+              <a
+                href={membershipModal.groupUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="w-full py-3 btn-glass-primary text-slate-950 font-black text-xs flex items-center justify-center gap-2 rounded-xl touch-manipulation shadow-md"
+              >
+                <Users className="w-4 h-4 text-slate-950" />
+                <span>{membershipModal.groupUsername} guruhiga qo'shilish</span>
+                <ExternalLink className="w-3.5 h-3.5 text-slate-950" />
+              </a>
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setMembershipModal(null)}
+                  className="flex-1 py-2.5 glass-card glass-card-interactive text-slate-300 font-semibold text-xs min-h-[44px] touch-manipulation"
+                >
+                  Yopish
+                </button>
+                <button
+                  type="button"
+                  id="btn-verify-telegram-membership"
+                  disabled={isCheckingMembership || isClaiming}
+                  onClick={handleCheckMembershipAndClaim}
+                  className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-slate-950 font-black text-xs rounded-xl flex items-center justify-center gap-1.5 min-h-[44px] touch-manipulation shadow-md transition-colors"
+                >
+                  {isCheckingMembership || isClaiming ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-950" />
+                      <span>Tekshirilmoqda...</span>
+                    </>
+                  ) : (
+                    <span>✅ Tekshirish</span>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
