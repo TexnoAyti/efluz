@@ -1,3 +1,4 @@
+import { isDesignPreview } from '../designPreview';
 import React from 'react';
 import { usePremiumClubIds } from '../context/AuthContext';
 
@@ -87,7 +88,7 @@ export const ClubCrest: React.FC<ClubCrestProps> = ({
     : null;
 
   // Same-origin URL only; no direct third-party CDN requests
-  const currentSrc = clubCrestProxyUrl || genericCrestProxyUrl || null;
+  const currentSrc = isDesignPreview ? null : clubCrestProxyUrl || genericCrestProxyUrl || null;
 
   const containerSizeClass = SIZE_CONTAINER_CLASSES[size] || SIZE_CONTAINER_CLASSES.md;
   const textSizeClass = SIZE_TEXT_CLASSES[size] || SIZE_TEXT_CLASSES.md;

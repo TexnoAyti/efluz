@@ -1,3 +1,4 @@
+import { isDesignPreview } from '../designPreview';
 import { User, Club, Season, League, Competition, Fixture, StandingsRow, Dispute, Notification, AuditLog, UserStats } from '../types';
 
 export interface ClubAdmissionStatus {
@@ -183,6 +184,7 @@ interface RequestOptions extends RequestInit {
 }
 
 async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
+  if (isDesignPreview) return (await import('./designPreviewData')).designPreviewRequest(endpoint, options) as Promise<T>;
   const method = (options.method || 'GET').toUpperCase();
   const isGet = method === 'GET';
   const cacheTtl = options.cacheTtlMs ?? (isGet ? 15000 : 0); // Default 15s cache for GETs to conserve free-tier quota
@@ -1195,3 +1197,4 @@ export const api = {
     return request('/api/admin/telegram-notifications/process-queue', { method: 'POST', skipCache: true });
   },
 };
+

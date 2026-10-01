@@ -1,3 +1,4 @@
+import { isDesignPreview } from '../designPreview';
 import { getDevUserId, getSessionToken, getTelegramInitData } from './api';
 
 export interface PremiumEntitlementDto {
@@ -80,6 +81,7 @@ export interface PremiumSmartAlertsDto {
 }
 
 async function premiumRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  if (isDesignPreview) return (await import('./designPreviewData')).designPreviewRequest(endpoint, options) as Promise<T>;
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string> || {}),

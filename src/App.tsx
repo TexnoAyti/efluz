@@ -140,7 +140,7 @@ const AppContent: React.FC = () => {
           : 'bg-slate-950 text-slate-100'
       }`}
     >
-      {isDesignPreview && <div className="sticky top-0 z-[60] bg-amber-100 px-3 py-1.5 text-center text-[11px] font-bold text-amber-950">DESIGN PREVIEW · test ko‘rinishi, hisobga kirilmagan</div>}
+      {isDesignPreview && <div className="sticky top-0 z-[60] bg-amber-100 px-3 py-1.5 text-center text-[11px] font-bold text-amber-950">DEMO · namunaviy ma’lumotlar <button className="ml-2 rounded border border-amber-800 px-2 py-1" onClick={async () => { (await import('./lib/designPreviewData')).confirmDemoOpponent(); window.location.reload(); }}>Raqib tasdig‘ini sinash</button><button className="ml-2 rounded border border-amber-800 px-2 py-1" onClick={async () => { (await import('./lib/designPreviewData')).resetDemoResults(); window.location.reload(); }}>Demoni tiklash</button></div>}
       {toastMessage && (
         <div className="fixed top-14 right-4 z-50 animate-in slide-in-from-top-3 fade-in duration-200">
           <div
