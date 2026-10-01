@@ -77,6 +77,13 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
     } catch { return 'CLUBS'; }
   });
 
+  const [standingsView, setStandingsView] = useState<'short' | 'full' | 'form'>('short');
+  const standingsLabels = {
+    uz: { short: 'Qisqa', full: 'To‘liq', form: 'Forma', played: 'O‘', won: 'G‘', drawn: 'D', lost: 'M', goals: 'Gollar', difference: 'TF', points: 'Och', win: 'G‘alaba', draw: 'Durang', loss: 'Mag‘lubiyat', empty: 'Natija yo‘q', view: 'Jadval ko‘rinishi' },
+    ru: { short: 'Кратко', full: 'Полная', form: 'Форма', played: 'И', won: 'В', drawn: 'Н', lost: 'П', goals: 'Голы', difference: 'РМ', points: 'Оч', win: 'Победа', draw: 'Ничья', loss: 'Поражение', empty: 'Нет результатов', view: 'Вид таблицы' },
+    en: { short: 'Short', full: 'Full', form: 'Form', played: 'P', won: 'W', drawn: 'D', lost: 'L', goals: 'Goals', difference: 'GD', points: 'PTS', win: 'Win', draw: 'Draw', loss: 'Loss', empty: 'No results', view: 'Table view' },
+  }[language];
+
   // Clubs state
   const [clubs, setClubs] = useState<Club[]>([]);
   const [admission, setAdmission] = useState<ClubAdmissionStatus | null>(null);
@@ -431,7 +438,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
 
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-300 pb-20">
+    <div className={`space-y-6 animate-in fade-in duration-300 pb-20 ${user?.isAdmin && activeLeagueTab === 'STANDINGS' ? 'efl-standings-page' : ''}`}>
       {/* Category Quick Switcher Hub (Legacy Normal Players only) */}
       {!user?.isAdmin && (
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
@@ -1052,7 +1059,23 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
 
       {/* TAB C: STANDINGS TABLE */}
       {activeLeagueTab === 'STANDINGS' && (
-        <div className="space-y-4">
+        <div className={`space-y-4 ${user?.isAdmin ? `efl-standings efl-standings--${standingsView}` : ''}`}>
+          {user?.isAdmin && (
+            <div className="efl-standings-toolbar">
+              <div role="group" aria-label={standingsLabels.view} className="efl-standings-view-switch">
+                {(['short', 'full', 'form'] as const).map((view) => (
+                  <button key={view} type="button" aria-pressed={standingsView === view} onClick={() => setStandingsView(view)}>
+                    {standingsLabels[view]}
+                  </button>
+                ))}
+              </div>
+              {standingsView === 'form' && <div className="efl-standings-form-legend">
+                <span className="efl-result-win">{standingsLabels.win}</span>
+                <span className="efl-result-draw">{standingsLabels.draw}</span>
+                <span className="efl-result-loss">{standingsLabels.loss}</span>
+              </div>}
+            </div>
+          )}
           {isLoadingStandings && leagueStandings.length === 0 ? (
             <div className="p-4 rounded-2xl bg-[var(--efl-surface)] border border-[var(--efl-border)] space-y-3 animate-pulse shadow-xs">
               {[1, 2, 3, 4, 5, 6].map((i) => (
@@ -1069,7 +1092,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                 <div className="font-bold text-[var(--efl-text)]">
                   {currentComp?.name || 'League Table'} • {totalLeagueMatchdays} Tur
                 </div>
-                <div className="flex flex-wrap items-center gap-2.5">
+                <div className="efl-standings-qualification-legend flex flex-wrap items-center gap-2.5">
                   <div className="flex items-center gap-1.5 text-[var(--efl-text-2)]">
                     <span className="w-2 h-2 rounded-full bg-blue-500" />
                     <span>{t.uclZone} (1–{uclThreshold})</span>
@@ -1090,14 +1113,15 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                     <tr className="border-b border-[var(--efl-border)] bg-[var(--efl-surface-2)] text-[var(--efl-text-2)] font-bold uppercase text-[10px] tracking-wider">
                       <th className="py-3 px-3 w-12 text-center">#</th>
                       <th className="py-3 px-3">{t.club}</th>
-                      <th className="py-3 px-2 text-center font-bold text-[var(--efl-text)]">P</th>
-                      <th className="py-3 px-2 text-center">W</th>
-                      <th className="py-3 px-2 text-center">D</th>
-                      <th className="py-3 px-2 text-center">L</th>
-                      <th className="py-3 px-2 text-center hidden sm:table-cell">GF</th>
-                      <th className="py-3 px-2 text-center hidden sm:table-cell">GA</th>
-                      <th className="py-3 px-2 text-center">GD</th>
-                      <th className="py-3 px-3 text-center font-black text-[var(--efl-primary)]">PTS</th>
+                      <th className="py-3 px-2 text-center font-bold text-[var(--efl-text)]">{user?.isAdmin ? standingsLabels.played : 'P'}</th>
+                      <th className="efl-col-won py-3 px-2 text-center">{user?.isAdmin ? standingsLabels.won : 'W'}</th>
+                      <th className="efl-col-drawn py-3 px-2 text-center">{user?.isAdmin ? standingsLabels.drawn : 'D'}</th>
+                      <th className="efl-col-lost py-3 px-2 text-center">{user?.isAdmin ? standingsLabels.lost : 'L'}</th>
+                      <th className="efl-col-goalsFor py-3 px-2 text-center hidden sm:table-cell">GF</th>
+                      <th className="efl-col-goalsAgainst py-3 px-2 text-center hidden sm:table-cell">GA</th>
+                      <th className="efl-col-goalDifference py-3 px-2 text-center">{user?.isAdmin ? standingsLabels.difference : 'GD'}</th>
+                      {user?.isAdmin && <th className="efl-col-form py-3 px-2 text-center">{standingsLabels.form}</th>}
+                      <th className="py-3 px-3 text-center font-black text-[var(--efl-primary)]">{user?.isAdmin ? standingsLabels.points : 'PTS'}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[var(--efl-border)]">
@@ -1133,7 +1157,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                               />
                               <div className="flex flex-col min-w-0">
                                 <div className="flex items-center gap-1.5">
-                                  <span className="font-bold text-[var(--efl-text)] text-xs truncate max-w-[160px]">
+                                  <span title={row.clubName} className="efl-standings-club-name font-bold text-[var(--efl-text)] text-xs truncate max-w-[160px]">
                                     {row.clubName}
                                   </span>
                                   <PremiumClubBadge clubId={row.clubId} />
@@ -1143,7 +1167,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                                     </span>
                                   )}
                                 </div>
-                                {(() => {
+                                <div className="efl-standings-owner">{(() => {
                                   const rowOwnerInfo = getClubOwnerDisplay(
                                     {
                                       claimedByUserId: row.managerUserId,
@@ -1177,24 +1201,32 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                                       {t.userNeeded}
                                     </span>
                                   );
-                                })()}
+                                })()}</div>
                               </div>
                             </div>
                           </td>
 
                           <td className="py-2.5 px-2 text-center font-semibold text-[var(--efl-text)]">{row.played}</td>
-                          <td className="py-2.5 px-2 text-center text-[var(--efl-text-2)] efl-result-win">{row.won}</td>
-                          <td className="py-2.5 px-2 text-center text-[var(--efl-text-2)] efl-result-draw">{row.drawn}</td>
-                          <td className="py-2.5 px-2 text-center text-[var(--efl-text-2)] efl-result-loss">{row.lost}</td>
-                          <td className="py-2.5 px-2 text-center text-[var(--efl-text-2)] hidden sm:table-cell">
-                            {row.goalsFor}
+                          <td className="efl-col-won py-2.5 px-2 text-center text-[var(--efl-text-2)] efl-result-win">{row.won}</td>
+                          <td className="efl-col-drawn py-2.5 px-2 text-center text-[var(--efl-text-2)] efl-result-draw">{row.drawn}</td>
+                          <td className="efl-col-lost py-2.5 px-2 text-center text-[var(--efl-text-2)] efl-result-loss">{row.lost}</td>
+                          <td className="efl-col-goalsFor py-2.5 px-2 text-center text-[var(--efl-text-2)] hidden sm:table-cell">{row.goalsFor}
                           </td>
-                          <td className="py-2.5 px-2 text-center text-[var(--efl-text-2)] hidden sm:table-cell">
-                            {row.goalsAgainst}
+                          <td className="efl-col-goalsAgainst py-2.5 px-2 text-center text-[var(--efl-text-2)] hidden sm:table-cell">{row.goalsAgainst}
                           </td>
-                          <td className="py-2.5 px-2 text-center font-bold text-[var(--efl-text)]">
+                          <td className="efl-col-goalDifference py-2.5 px-2 text-center font-bold text-[var(--efl-text)]">
                             {row.goalDifference > 0 ? `+${row.goalDifference}` : row.goalDifference}
                           </td>
+                          {user?.isAdmin && <td className="efl-col-form py-2.5 px-2 text-center">
+                            <div className="efl-standings-form">
+                              {(row.form?.length ? row.form : (row.recentForm || '').split('').filter((result): result is 'W' | 'D' | 'L' => result === 'W' || result === 'D' || result === 'L')).slice(-5).map((result, index) => (
+                                <span key={index} className={`efl-form-result efl-form-result--${result.toLowerCase()}`} title={result === 'W' ? standingsLabels.win : result === 'D' ? standingsLabels.draw : standingsLabels.loss}>
+                                  {result === 'W' ? standingsLabels.won : result === 'D' ? standingsLabels.drawn : standingsLabels.lost}
+                                </span>
+                              ))}
+                              {!row.form?.length && !/[WDL]/.test(row.recentForm || '') && <span className="text-[var(--efl-muted)]" title={standingsLabels.empty}>—</span>}
+                            </div>
+                          </td>}
                           <td className="py-2.5 px-3 text-center font-black text-[var(--efl-primary)] text-sm">{row.points}</td>
                         </tr>
                       );

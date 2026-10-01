@@ -757,3 +757,50 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 .efl-preview.theme-dark .efl-league-icon-monochrome {
   filter: brightness(0) invert(1);
 }
+
+/* Admin standings views only; existing standings data and player table stay intact. */
+.efl-preview .efl-standings-page { gap: 12px; }
+.efl-preview .efl-standings-page > * + * { margin-top: 12px; }
+.efl-preview .efl-standings-page .preview-league-banner { padding: 10px 12px; }
+.efl-preview .efl-standings-page .efl-league-banner-content { gap: 10px; }
+.efl-preview .efl-standings-page .efl-league-banner-content > div:first-child { width: 36px; height: 36px; padding: 4px; border-radius: 10px; }
+.efl-preview .efl-standings-page .efl-league-banner-content img { width: 28px; height: 28px; }
+.efl-preview .efl-standings-page .preview-league-banner h1 { font-size: 16px; margin: 0; line-height: 1.4; }
+.efl-preview .efl-standings-page .efl-league-banner-content > div:last-child > div:first-child,
+.efl-preview .efl-standings-page .efl-league-banner-content > div:last-child > div:last-child { display: none; }
+.efl-preview .efl-standings-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.efl-preview .efl-standings-view-switch { display: flex; gap: 4px; padding: 4px; background: var(--efl-surface-2); border: 1px solid var(--efl-border); border-radius: 12px; }
+.efl-preview .efl-standings-view-switch button { min-height: 36px; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; color: var(--efl-text-2); }
+.efl-preview .efl-standings-view-switch button[aria-pressed="true"] { background: var(--efl-primary-soft); color: var(--efl-primary); }
+.efl-preview .efl-standings-form-legend { display: flex; gap: 8px; font-size: 10px; }
+.efl-preview .efl-standings table { font-variant-numeric: tabular-nums; }
+.efl-preview .efl-standings th { padding: 8px 4px; letter-spacing: 0; }
+.efl-preview .efl-standings td { padding: 5px 4px; height: 32px; }
+.efl-preview .efl-standings td:first-child,
+.efl-preview .efl-standings th:first-child { width: 30px; }
+.efl-preview .efl-standings td:nth-child(2) > div { min-width: 0; gap: 6px; }
+.efl-preview .efl-standings-owner { display: none; }
+.efl-preview .efl-standings:not(.efl-standings--full) .efl-standings-qualification-legend,
+.efl-preview .efl-standings:not(.efl-standings--full) .efl-col-won,
+.efl-preview .efl-standings:not(.efl-standings--full) .efl-col-drawn,
+.efl-preview .efl-standings:not(.efl-standings--full) .efl-col-lost,
+.efl-preview .efl-standings:not(.efl-standings--full) .efl-col-goalsFor,
+.efl-preview .efl-standings:not(.efl-standings--full) .efl-col-goalsAgainst,
+.efl-preview .efl-standings:not(.efl-standings--form) .efl-col-form,
+.efl-preview .efl-standings--form .efl-col-goalDifference { display: none; }
+.efl-preview .efl-standings--full .efl-col-goalsFor,
+.efl-preview .efl-standings--full .efl-col-goalsAgainst { display: table-cell; }
+.efl-preview .efl-standings:not(.efl-standings--full) table { table-layout: fixed; }
+.efl-preview .efl-standings:not(.efl-standings--full) th:nth-child(3) { width: 28px; }
+.efl-preview .efl-standings .efl-col-goalDifference { width: 36px; }
+.efl-preview .efl-standings th:last-child { width: 38px; }
+.efl-preview .efl-standings .efl-col-form { width: 100px; }
+.efl-preview .efl-standings-club-name { min-width: 0; }
+.efl-preview .efl-standings--full table { min-width: 480px; }
+.efl-preview .efl-standings-form { display: flex; align-items: center; justify-content: center; gap: 3px; }
+.efl-preview .efl-form-result { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 20px; border-radius: 4px; font-size: 9px; font-weight: 800; }
+.efl-preview .efl-form-result--w { background: #d1fae5; color: #065f46; }
+.efl-preview .efl-form-result--d { background: var(--efl-surface-2); color: var(--efl-text-2); border: 1px solid var(--efl-border); }
+.efl-preview .efl-form-result--l { background: #ffe4e6; color: #9f1239; }
+.efl-preview.theme-dark .efl-form-result--w { background: #064e3b; color: #6ee7b7; }
+.efl-preview.theme-dark .efl-form-result--l { background: #4c0519; color: #fda4af; }
