@@ -659,6 +659,24 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
   font-weight: 800;
 }
 
+/* European sub-tabs have a different minimum width from the category bar. */
+@media (max-width: 480px) {
+  .efl-preview div:has(> button[class*="min-w-[110px]"]) {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: stretch;
+    overflow: visible;
+  }
+  .efl-preview div:has(> button[class*="min-w-[110px]"]) > button {
+    min-width: 0;
+    min-height: 44px;
+    padding: 8px 6px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.35;
+  }
+}
+
 /* Admin-only responsive copy: retain table/tree scrolling and player layouts. */
 .efl-preview main :is(h1, h2, h3, p) {
   min-width: 0;
