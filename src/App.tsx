@@ -50,6 +50,7 @@ const AppContent: React.FC = () => {
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchNavigationRevision, setSearchNavigationRevision] = useState(0);
   const [openDisputesCount, setOpenDisputesCount] = useState(0);
   const [welcomeCompletedFor, setWelcomeCompletedFor] = useState<string | null>(null);
   const welcomeCompleted = useMemo(() => {
@@ -197,6 +198,7 @@ const AppContent: React.FC = () => {
             {/* LEAGUES: Unified Competition Hub (Domestic Leagues, Cups, European, Season) */}
             {(currentTab === 'leagues' || currentTab === 'cups' || currentTab === 'champions-league' || currentTab === 'standings' || currentTab === 'season-hub') && (
               <CompetitionHubView
+                key={searchNavigationRevision}
                 onNavigateTab={setActiveTab}
                 initialSubTab={
                   currentTab === 'cups'
@@ -258,7 +260,10 @@ const AppContent: React.FC = () => {
       <GlobalSearchModal
         isOpen={isSearchOpen}
         onClose={() => setIsSearchOpen(false)}
-        onNavigateTab={setActiveTab}
+        onNavigateTab={(tab) => {
+          setSearchNavigationRevision((revision) => revision + 1);
+          setActiveTab(tab);
+        }}
         onSelectFixture={(fix) => {
           setSelectedFixture(fix);
           setActiveTab(user?.isAdmin ? 'my-club' : 'my-matches');
