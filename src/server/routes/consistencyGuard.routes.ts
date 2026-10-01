@@ -138,7 +138,12 @@ adminConsistencyRouter.delete('/fixtures/:id', async (req: Request, res: Respons
   }
 
   const local = queryGet<any>('SELECT * FROM fixtures WHERE id = ?', [fixtureId]);
-  const authoritative = await getFixtureByIdFirestore(fixtureId, req.user?.id).catch(() => null);
+  let authoritative: Fixture | null;
+  try { authoritative = await getFixtureByIdFirestore(fixtureId, req.user?.id); }
+  catch (error: any) {
+    handleFirestoreError(res, error, `DELETE /api/admin/fixtures/${fixtureId}`);
+    return;
+  }
   const seasonId = authoritative?.seasonId || local?.season_id || 'season-2026-27';
   const competitionId = authoritative?.competitionId || local?.competition_id || '';
 
@@ -150,6 +155,8 @@ adminConsistencyRouter.delete('/fixtures/:id', async (req: Request, res: Respons
       deletedAt: new Date().toISOString(),
       deletedBy: req.user!.id,
       reason,
+      homeClubId: authoritative?.homeClubId || local?.home_club_id || null,
+      awayClubId: authoritative?.awayClubId || local?.away_club_id || null,
     });
     queryRun('DELETE FROM result_submissions WHERE fixture_id = ?', [fixtureId]);
     queryRun('DELETE FROM disputes WHERE fixture_id = ?', [fixtureId]);
@@ -171,8 +178,7 @@ adminConsistencyRouter.delete('/fixtures/:id', async (req: Request, res: Respons
     await invalidateSecondaryCaches();
     res.json({ ...result, durableTombstone: true });
   } catch (error: any) {
-    const message = String(error?.message || '');
-    if (!message.includes('not found')) {
+    if (error?.errorCode !== 'FIXTURE_NOT_FOUND') {
       handleFirestoreError(res, error, `DELETE /api/admin/fixtures/${fixtureId}`);
       return;
     }

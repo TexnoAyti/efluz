@@ -672,6 +672,37 @@ var init_telegramBotService = __esm({
   }
 });
 
+// src/server/services/leaguePairIntegrity.ts
+function analyzeLeaguePairs(fixtures, clubs) {
+  const names = new Map(clubs.map((club) => [club.id, club.name]));
+  const pairs = /* @__PURE__ */ new Map();
+  const invalidFixtureIds = [];
+  for (const fixture of fixtures) {
+    const home = fixture.homeClubId, away = fixture.awayClubId;
+    if (!home || !away || home === away || !names.has(home) || !names.has(away)) {
+      invalidFixtureIds.push(fixture.id);
+      continue;
+    }
+    const key = [home, away].sort().join("|");
+    pairs.set(key, [...pairs.get(key) || [], fixture.id]);
+  }
+  const missingPairs = [];
+  const ids = [...names.keys()].sort();
+  for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
+    if (!pairs.has([ids[i], ids[j]].join("|"))) missingPairs.push({
+      homeClubId: ids[i],
+      awayClubId: ids[j],
+      homeClubName: names.get(ids[i]),
+      awayClubName: names.get(ids[j])
+    });
+  }
+  return { missingPairs, invalidFixtureIds };
+}
+var init_leaguePairIntegrity = __esm({
+  "src/server/services/leaguePairIntegrity.ts"() {
+  }
+});
+
 // src/server/db/migrateFixtures.ts
 function migrateFixturesTableIfNeeded(db) {
   const ddl = db.exec("SELECT sql FROM sqlite_master WHERE type='table' AND name='fixtures'")[0]?.values[0]?.[0];
@@ -3647,6 +3678,17 @@ var init_qualificationEngine = __esm({
 });
 
 // src/server/services/fixtureTombstoneService.ts
+var fixtureTombstoneService_exports = {};
+__export(fixtureTombstoneService_exports, {
+  addFixtureTombstone: () => addFixtureTombstone,
+  filterTombstonedFixtures: () => filterTombstonedFixtures,
+  getFixtureTombstones: () => getFixtureTombstones,
+  getVisibleCompetitionFixtures: () => getVisibleCompetitionFixtures,
+  isFixtureTombstoned: () => isFixtureTombstoned,
+  rebuildStandingsSnapshotFromFixtures: () => rebuildStandingsSnapshotFromFixtures,
+  refreshDerivedCompetitionState: () => refreshDerivedCompetitionState,
+  removeFixtureFromDurableSnapshots: () => removeFixtureFromDurableSnapshots
+});
 function tombstoneKey(seasonId) {
   return `efluz:v1:season:${seasonId}:fixture-tombstones`;
 }
@@ -3670,6 +3712,10 @@ async function filterTombstonedFixtures(fixtures, seasonId = "season-2026-27") {
   if (!tombstones.length) return fixtures;
   const ids = new Set(tombstones.map((row) => row.fixtureId));
   return fixtures.filter((fixture) => !ids.has(fixture.id));
+}
+async function isFixtureTombstoned(fixtureId, seasonId = "season-2026-27") {
+  const tombstones = await getFixtureTombstones(seasonId);
+  return tombstones.some((row) => row.fixtureId === fixtureId);
 }
 async function patchFixtureSnapshot(key, fixtureId) {
   const snap = await redisGetFresh(key) || await redisGetLkg(key);
@@ -12494,6 +12540,10 @@ async function submitFixtureResultFirestore(userId, fixtureId, homeScore, awaySc
   }
 }
 async function validateDomesticFixturesFirestore(seasonId = "season-2026-27") {
+  const { redisGetFresh: redisGetFresh2, redisGetLkg: redisGetLkg2, ReadModelKeys: ReadModelKeys3, getCompetitionFixturesFromReadModel: getCompetitionFixturesFromReadModel2 } = await Promise.resolve().then(() => (init_readModelStore(), readModelStore_exports));
+  const { getFixtureTombstones: getFixtureTombstones2, filterTombstonedFixtures: filterTombstonedFixtures2 } = await Promise.resolve().then(() => (init_fixtureTombstoneService(), fixtureTombstoneService_exports));
+  const rosterSnapshot = await redisGetFresh2(ReadModelKeys3.clubsWithOwners(seasonId)) || await redisGetLkg2(ReadModelKeys3.clubsWithOwners(seasonId));
+  const tombstones = await getFixtureTombstones2(seasonId);
   const domesticComps = [
     { competitionId: "comp-premier-league-2026", leagueId: "league-premier-league", name: "Premier League", expectedTeams: 20, expectedMDs: 19, expectedFixtures: 190 },
     { competitionId: "comp-la-liga-2026", leagueId: "league-la-liga", name: "La Liga", expectedTeams: 20, expectedMDs: 19, expectedFixtures: 190 },
@@ -12509,11 +12559,17 @@ async function validateDomesticFixturesFirestore(seasonId = "season-2026-27") {
   let expectedTotalFixtures = 0;
   let totalClubs = 0;
   for (const item of domesticComps) {
-    const clubCount = SEED_CLUBS.filter((c) => c.leagueId === item.leagueId).length || item.expectedTeams;
+    const fixtureResult = await getCompetitionFixturesFromReadModel2(item.competitionId, { seasonId });
+    const fixtures = await filterTombstonedFixtures2(fixtureResult.fixtures, seasonId);
+    const cachedClubs = Array.isArray(rosterSnapshot?.data) ? rosterSnapshot.data.filter((club) => club.leagueId === item.leagueId) : [];
+    const fixtureClubs = Array.from(new Map(fixtures.flatMap((fixture) => [fixture.homeClub, fixture.awayClub]).filter((club) => Boolean(club?.id)).map((club) => [club.id, club])).values());
+    const rosterSource = cachedClubs.length ? "cached-clubs" : fixtureClubs.length === item.expectedTeams ? "fixture-clubs" : "seed-clubs";
+    const clubs = cachedClubs.length ? cachedClubs : fixtureClubs.length === item.expectedTeams ? fixtureClubs : SEED_CLUBS.filter((club) => club.leagueId === item.leagueId);
+    const clubCount = clubs.length;
     totalClubs += clubCount;
     expectedTotalFixtures += item.expectedFixtures;
-    const fixtures = await getFixturesFirestore({ competitionId: item.competitionId, seasonId });
     actualTotalFixtures += fixtures.length;
+    const integrity = analyzeLeaguePairs(fixtures, clubs);
     const matchdaySet = /* @__PURE__ */ new Set();
     const directedPairs = /* @__PURE__ */ new Set();
     const undirectedPairs = /* @__PURE__ */ new Set();
@@ -12523,6 +12579,8 @@ async function validateDomesticFixturesFirestore(seasonId = "season-2026-27") {
     let confirmedCount = 0;
     let pendingCount = 0;
     const issues = [];
+    if (integrity.missingPairs.length) issues.push(`${integrity.missingPairs.length} klub juftligi uchun o\u2018yin topilmadi.`);
+    if (integrity.invalidFixtureIds.length) issues.push(`${integrity.invalidFixtureIds.length} o\u2018yinda klub bog\u2018lanishi noto\u2018g\u2018ri.`);
     for (const f of fixtures) {
       if (f.matchday < 1 || f.matchday > item.expectedMDs) {
         invalidMatchdays++;
@@ -12577,7 +12635,12 @@ async function validateDomesticFixturesFirestore(seasonId = "season-2026-27") {
       confirmedResultsCount: confirmedCount,
       pendingResultsCount: pendingCount,
       isValid,
-      issues
+      issues,
+      ...integrity,
+      rosterSource,
+      fixtureSource: fixtureResult.source,
+      stale: fixtureResult.stale,
+      deletedFixtures: tombstones.filter((row) => row.competitionId === item.competitionId)
     });
   }
   return {
@@ -14582,7 +14645,7 @@ async function adminDeleteFixtureFirestore(adminUserId, adminUsername, fixtureId
   const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
   const fixDoc = await fixRef.get();
   if (!fixDoc.exists) {
-    throw new Error(`Fixture '${fixtureId}' not found.`);
+    throw Object.assign(new Error(`Fixture '${fixtureId}' not found.`), { errorCode: "FIXTURE_NOT_FOUND" });
   }
   const existing = fixDoc.data();
   const snapshot = { ...existing, id: fixtureId };
@@ -14986,6 +15049,7 @@ var SEED_CLUB_MAP, ClubConflictError, ClubNotFoundError, serverCache, lastKnownG
 var init_firestoreStore = __esm({
   "src/server/firebase/firestoreStore.ts"() {
     init_admin();
+    init_leaguePairIntegrity();
     init_db();
     init_sqliteStandings();
     init_seed();
@@ -23069,7 +23133,13 @@ adminConsistencyRouter.delete("/fixtures/:id", async (req, res) => {
     return;
   }
   const local = queryGet("SELECT * FROM fixtures WHERE id = ?", [fixtureId]);
-  const authoritative = await getFixtureByIdFirestore(fixtureId, req.user?.id).catch(() => null);
+  let authoritative;
+  try {
+    authoritative = await getFixtureByIdFirestore(fixtureId, req.user?.id);
+  } catch (error) {
+    handleFirestoreError(res, error, `DELETE /api/admin/fixtures/${fixtureId}`);
+    return;
+  }
   const seasonId = authoritative?.seasonId || local?.season_id || "season-2026-27";
   const competitionId = authoritative?.competitionId || local?.competition_id || "";
   const persistDeletion = async () => {
@@ -23079,7 +23149,9 @@ adminConsistencyRouter.delete("/fixtures/:id", async (req, res) => {
       competitionId: competitionId || void 0,
       deletedAt: (/* @__PURE__ */ new Date()).toISOString(),
       deletedBy: req.user.id,
-      reason
+      reason,
+      homeClubId: authoritative?.homeClubId || local?.home_club_id || null,
+      awayClubId: authoritative?.awayClubId || local?.away_club_id || null
     });
     queryRun("DELETE FROM result_submissions WHERE fixture_id = ?", [fixtureId]);
     queryRun("DELETE FROM disputes WHERE fixture_id = ?", [fixtureId]);
@@ -23101,8 +23173,7 @@ adminConsistencyRouter.delete("/fixtures/:id", async (req, res) => {
     await invalidateSecondaryCaches();
     res.json({ ...result, durableTombstone: true });
   } catch (error) {
-    const message = String(error?.message || "");
-    if (!message.includes("not found")) {
+    if (error?.errorCode !== "FIXTURE_NOT_FOUND") {
       handleFirestoreError(res, error, `DELETE /api/admin/fixtures/${fixtureId}`);
       return;
     }

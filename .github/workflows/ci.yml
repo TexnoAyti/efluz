@@ -64,6 +64,8 @@ jobs:
           node scripts/run-isolated-test.mjs src/server/tests/premiumSecondClubRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/clubAdmissionRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/visibleFixtureCountsRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/leaguePairIntegrityRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/fixtureDeletionFailureRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/notificationBackupRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/smartNotificationRecoveryRegressionTest.ts
 

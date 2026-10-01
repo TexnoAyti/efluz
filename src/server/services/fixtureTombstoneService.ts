@@ -13,6 +13,8 @@ export interface FixtureTombstone {
   deletedAt: string;
   deletedBy?: string;
   reason?: string;
+  homeClubId?: string | null;
+  awayClubId?: string | null;
 }
 
 function tombstoneKey(seasonId: string): string {

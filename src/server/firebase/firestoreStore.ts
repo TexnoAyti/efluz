@@ -1,5 +1,6 @@
 import { Firestore, FieldValue, FieldPath } from 'firebase-admin/firestore';
 import { getFirestoreDb } from './admin';
+import { analyzeLeaguePairs } from '../services/leaguePairIntegrity';
 import { queryAll, queryGet, queryRun, dbTransaction, upsertFixtureToSqlite } from '../db';
 import { refreshMaterializedStandingsForCompetition } from '../db/sqliteStandings';
 import { SEED_CLUBS, SEED_LEAGUES, SEED_COMPETITIONS, SEED_SEASONS, SEED_SEASON } from '../db/seed';
@@ -4562,6 +4563,12 @@ export interface DomesticFixtureValidation {
   pendingResultsCount: number;
   isValid: boolean;
   issues: string[];
+  missingPairs: ReturnType<typeof analyzeLeaguePairs>['missingPairs'];
+  invalidFixtureIds: string[];
+  deletedFixtures: import('../services/fixtureTombstoneService').FixtureTombstone[];
+  rosterSource: 'cached-clubs' | 'fixture-clubs' | 'seed-clubs';
+  fixtureSource: string;
+  stale: boolean;
 }
 
 export interface FixtureValidationReport {
@@ -4578,6 +4585,10 @@ export interface FixtureValidationReport {
 }
 
 export async function validateDomesticFixturesFirestore(seasonId = 'season-2026-27'): Promise<FixtureValidationReport> {
+  const { redisGetFresh, redisGetLkg, ReadModelKeys, getCompetitionFixturesFromReadModel } = await import('../readModel/readModelStore');
+  const { getFixtureTombstones, filterTombstonedFixtures } = await import('../services/fixtureTombstoneService');
+  const rosterSnapshot = (await redisGetFresh<Club[]>(ReadModelKeys.clubsWithOwners(seasonId))) || (await redisGetLkg<Club[]>(ReadModelKeys.clubsWithOwners(seasonId)));
+  const tombstones = await getFixtureTombstones(seasonId);
   const domesticComps = [
     { competitionId: 'comp-premier-league-2026', leagueId: 'league-premier-league', name: 'Premier League', expectedTeams: 20, expectedMDs: 19, expectedFixtures: 190 },
     { competitionId: 'comp-la-liga-2026', leagueId: 'league-la-liga', name: 'La Liga', expectedTeams: 20, expectedMDs: 19, expectedFixtures: 190 },
@@ -4595,12 +4606,18 @@ export async function validateDomesticFixturesFirestore(seasonId = 'season-2026-
   let totalClubs = 0;
 
   for (const item of domesticComps) {
-    const clubCount = SEED_CLUBS.filter((c) => c.leagueId === item.leagueId).length || item.expectedTeams;
+    const fixtureResult = await getCompetitionFixturesFromReadModel(item.competitionId, { seasonId });
+    const fixtures = await filterTombstonedFixtures(fixtureResult.fixtures, seasonId);
+    const cachedClubs = Array.isArray(rosterSnapshot?.data) ? rosterSnapshot.data.filter(club => club.leagueId === item.leagueId) : [];
+    const fixtureClubs = Array.from(new Map(fixtures.flatMap(fixture => [fixture.homeClub, fixture.awayClub]).filter((club): club is Club => Boolean(club?.id)).map(club => [club.id, club])).values());
+    const rosterSource = cachedClubs.length ? 'cached-clubs' : fixtureClubs.length === item.expectedTeams ? 'fixture-clubs' : 'seed-clubs';
+    const clubs = cachedClubs.length ? cachedClubs : fixtureClubs.length === item.expectedTeams ? fixtureClubs : SEED_CLUBS.filter(club => club.leagueId === item.leagueId);
+    const clubCount = clubs.length;
     totalClubs += clubCount;
     expectedTotalFixtures += item.expectedFixtures;
 
-    const fixtures = await getFixturesFirestore({ competitionId: item.competitionId, seasonId });
     actualTotalFixtures += fixtures.length;
+    const integrity = analyzeLeaguePairs(fixtures, clubs);
 
     const matchdaySet = new Set<number>();
     const directedPairs = new Set<string>();
@@ -4611,6 +4628,8 @@ export async function validateDomesticFixturesFirestore(seasonId = 'season-2026-
     let confirmedCount = 0;
     let pendingCount = 0;
     const issues: string[] = [];
+    if (integrity.missingPairs.length) issues.push(`${integrity.missingPairs.length} klub juftligi uchun o‘yin topilmadi.`);
+    if (integrity.invalidFixtureIds.length) issues.push(`${integrity.invalidFixtureIds.length} o‘yinda klub bog‘lanishi noto‘g‘ri.`);
 
     for (const f of fixtures) {
       if (f.matchday < 1 || f.matchday > item.expectedMDs) {
@@ -4675,6 +4694,11 @@ export async function validateDomesticFixturesFirestore(seasonId = 'season-2026-
       pendingResultsCount: pendingCount,
       isValid,
       issues,
+      ...integrity,
+      rosterSource,
+      fixtureSource: fixtureResult.source,
+      stale: fixtureResult.stale,
+      deletedFixtures: tombstones.filter(row => row.competitionId === item.competitionId),
     });
   }
 
@@ -7090,7 +7114,7 @@ export async function adminDeleteFixtureFirestore(
   const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
   const fixDoc = await fixRef.get();
   if (!fixDoc.exists) {
-    throw new Error(`Fixture '${fixtureId}' not found.`);
+    throw Object.assign(new Error(`Fixture '${fixtureId}' not found.`), { errorCode: 'FIXTURE_NOT_FOUND' });
   }
 
   const existing = fixDoc.data() as FirestoreFixtureDoc;

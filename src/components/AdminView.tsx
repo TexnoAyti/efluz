@@ -3279,7 +3279,7 @@ export const AdminView: React.FC = () => {
                     : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
                 }`}
               >
-                {fixtureValidationReport.allValid ? loc('100% to‘g‘ri', '100% корректно', '100% Valid') : loc('Jadval tuzish kerak', 'Нужно создать календарь', 'Needs Generation')}
+                {fixtureValidationReport.allValid ? loc('100% to‘g‘ri', '100% корректно', '100% Valid') : loc('Tekshirish kerak', 'Требуется проверка', 'Review required')}
               </span>
             </div>
 
@@ -3339,12 +3339,32 @@ export const AdminView: React.FC = () => {
                           ))}
                         </div>
                       )}
+                      {l.missingPairs?.length > 0 && (
+                        <div className="text-xs mt-2 space-y-1 break-words">
+                          <strong>{loc('Yetishmayotgan juftliklar', 'Отсутствующие пары', 'Missing pairings')}</strong>
+                          {l.missingPairs.map((pair: any) => (
+                            <div key={`${pair.homeClubId}:${pair.awayClubId}`}>{pair.homeClubName} — {pair.awayClubName}</div>
+                          ))}
+                        </div>
+                      )}
+                      {l.deletedFixtures?.length > 0 && (
+                        <div className="text-xs mt-2 space-y-1 break-words">
+                          <strong>{loc('O‘chirish tarixi', 'История удаления', 'Deletion history')}</strong>
+                          {l.deletedFixtures.map((row: any) => (
+                            <div key={row.fixtureId}>{row.fixtureId} · {row.reason || loc('Sabab yozilmagan', 'Причина не указана', 'No reason recorded')} · {row.deletedAt}</div>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
                       {l.isValid ? (
                         <span className="px-3 py-1 rounded-lg text-xs font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
                           <CheckCircle2 className="w-3.5 h-3.5" /> {loc('19/17 tur to‘g‘ri', '19/17 туров корректно', 'Perfect 19/17 rounds')}
+                        </span>
+                      ) : l.actualFixtureCount > 0 ? (
+                        <span className="text-xs max-w-48 whitespace-normal break-words">
+                          {loc('Mavjud jadvalni qayta tuzmang. Avval juftliklar va o‘chirish tarixini tekshiring.', 'Не пересоздавайте календарь. Сначала проверьте пары и историю удаления.', 'Review pairings and deletion history before changing the existing schedule.')}
                         </span>
                       ) : (
                         <button
@@ -3448,4 +3468,3 @@ export const AdminView: React.FC = () => {
     </div>
   );
 };
-
