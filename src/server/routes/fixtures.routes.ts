@@ -87,6 +87,10 @@ fixturesRouter.post('/:id/result', requireAuth, validateBody(resultSubmissionSch
       fixture: updatedFixture,
     });
   } catch (err: any) {
+    if (err?.code === 'RESULT_NOT_PARTICIPANT' || err?.code === 'RESULT_ALREADY_CONFIRMED') {
+      res.status(err.code === 'RESULT_NOT_PARTICIPANT' ? 403 : 409).json({ error: err.code, code: err.code, message: err.message });
+      return;
+    }
     if (err?.code === 'SELF_OWNED_MATCH') {
       res.status(409).json({ error: err.code, message: err.message });
       return;

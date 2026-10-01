@@ -12253,7 +12253,7 @@ async function submitFixtureResultFirestore(userId, fixtureId, homeScore, awaySc
     }
     await assertMatchdayPlayableFirestore(row.season_id || "season-2026-27", row.competition_id, row.matchday);
     if (row.status === "CONFIRMED") {
-      throw new Error("This match result is already CONFIRMED and cannot be modified.");
+      throw Object.assign(new Error("This match result is already CONFIRMED and cannot be modified."), { code: "RESULT_ALREADY_CONFIRMED", statusCode: 409 });
     }
     if (row.home_club_id === "TBD" || row.away_club_id === "TBD" || !row.home_club_id || !row.away_club_id) {
       const err = new Error("This match has undetermined participants (TBD) and cannot be played yet.");
@@ -12278,7 +12278,7 @@ async function submitFixtureResultFirestore(userId, fixtureId, homeScore, awaySc
       userClubId = memRow?.club_id || memRow?.clubId;
     }
     if (!userClubId || userClubId !== row.home_club_id && userClubId !== row.away_club_id) {
-      throw new Error("You do not own either the home or away club in this fixture.");
+      throw Object.assign(new Error("You do not own either the home or away club in this fixture."), { code: "RESULT_NOT_PARTICIPANT", statusCode: 403 });
     }
     const selfMatch = queryAll(
       "SELECT club_id FROM club_memberships WHERE user_id = ? AND season_id = ? AND status = 'active' AND club_id IN (?, ?)",
@@ -12351,6 +12351,7 @@ async function submitFixtureResultFirestore(userId, fixtureId, homeScore, awaySc
       `UPDATE fixtures SET status = ?, home_score = ?, away_score = ?, winner_club_id = ?, result_confirmed_at = ?, updated_at = ? WHERE id = ?`,
       [newStatus, confirmedHomeScore, confirmedAwayScore, winnerClubId, confirmedAt, now, fixtureId]
     );
+    invalidateFirestoreCache(`firestore:fixture:${fixtureId}:`);
     invalidateFirestoreCache("firestore:fixtures");
     invalidateFirestoreCache("firestore:comp");
     const fallbackFixture = await getFixtureByIdFirestore(fixtureId, userId);
@@ -12379,7 +12380,7 @@ async function submitFixtureResultFirestore(userId, fixtureId, homeScore, awaySc
       );
     }
     if (fixture.status === "CONFIRMED") {
-      throw new Error("This match result is already CONFIRMED and cannot be modified.");
+      throw Object.assign(new Error("This match result is already CONFIRMED and cannot be modified."), { code: "RESULT_ALREADY_CONFIRMED", statusCode: 409 });
     }
     if (fixture.homeClubId === "TBD" || fixture.awayClubId === "TBD" || !fixture.homeClubId || !fixture.awayClubId) {
       const err = new Error("This match has undetermined participants (TBD) and cannot be played yet.");
@@ -12400,7 +12401,7 @@ async function submitFixtureResultFirestore(userId, fixtureId, homeScore, awaySc
       if (!txFixDoc.exists) throw new Error(`Fixture with ID '${fixtureId}' not found.`);
       const currentFixture = txFixDoc.data();
       if (currentFixture.status === "CONFIRMED") {
-        throw new Error("This match result is already CONFIRMED and cannot be modified.");
+        throw Object.assign(new Error("This match result is already CONFIRMED and cannot be modified."), { code: "RESULT_ALREADY_CONFIRMED", statusCode: 409 });
       }
       if (!currentFixture.homeClubId || !currentFixture.awayClubId || currentFixture.homeClubId === "TBD" || currentFixture.awayClubId === "TBD") {
         const err = new Error("This match has undetermined participants (TBD) and cannot be played yet.");
@@ -12409,7 +12410,7 @@ async function submitFixtureResultFirestore(userId, fixtureId, homeScore, awaySc
         throw err;
       }
       if (!userMemDoc.exists || userMemDoc.data()?.status !== "active") {
-        throw new Error("You do not own either the home or away club in this fixture.");
+        throw Object.assign(new Error("You do not own either the home or away club in this fixture."), { code: "RESULT_NOT_PARTICIPANT", statusCode: 403 });
       }
       const ownedIds = [userMemDoc.data().clubId, userMemDoc.data().secondaryClubId];
       const userClubId2 = ownedIds.find((id) => id === currentFixture.homeClubId || id === currentFixture.awayClubId);
@@ -12420,7 +12421,7 @@ async function submitFixtureResultFirestore(userId, fixtureId, homeScore, awaySc
         throw err;
       }
       if (!userClubId2) {
-        throw new Error("You do not own either the home or away club in this fixture.");
+        throw Object.assign(new Error("You do not own either the home or away club in this fixture."), { code: "RESULT_NOT_PARTICIPANT", statusCode: 403 });
       }
       const currentSubmission = {
         id: submissionId,
@@ -12525,6 +12526,7 @@ async function submitFixtureResultFirestore(userId, fixtureId, homeScore, awaySc
         console.warn("[STANDINGS_UPDATE] Non-blocking standings update error on confirmation:", standingsErr);
       }
     }
+    invalidateFirestoreCache(`firestore:fixture:${fixtureId}:`);
     invalidateFirestoreCache("firestore:fixtures");
     invalidateFirestoreCache("firestore:comp");
     return await getFixtureByIdFirestore(fixtureId, userId);
@@ -18778,6 +18780,10 @@ fixturesRouter.post("/:id/result", requireAuth, validateBody(resultSubmissionSch
       fixture: updatedFixture
     });
   } catch (err) {
+    if (err?.code === "RESULT_NOT_PARTICIPANT" || err?.code === "RESULT_ALREADY_CONFIRMED") {
+      res.status(err.code === "RESULT_NOT_PARTICIPANT" ? 403 : 409).json({ error: err.code, code: err.code, message: err.message });
+      return;
+    }
     if (err?.code === "SELF_OWNED_MATCH") {
       res.status(409).json({ error: err.code, message: err.message });
       return;

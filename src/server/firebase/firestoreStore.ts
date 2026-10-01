@@ -4198,7 +4198,7 @@ export async function submitFixtureResultFirestore(
     await assertMatchdayPlayableFirestore(row.season_id || 'season-2026-27', row.competition_id, row.matchday);
 
     if (row.status === 'CONFIRMED') {
-      throw new Error('This match result is already CONFIRMED and cannot be modified.');
+      throw Object.assign(new Error('This match result is already CONFIRMED and cannot be modified.'), { code: 'RESULT_ALREADY_CONFIRMED', statusCode: 409 });
     }
     if (row.home_club_id === 'TBD' || row.away_club_id === 'TBD' || !row.home_club_id || !row.away_club_id) {
       const err: any = new Error('This match has undetermined participants (TBD) and cannot be played yet.');
@@ -4225,7 +4225,7 @@ export async function submitFixtureResultFirestore(
     }
 
     if (!userClubId || (userClubId !== row.home_club_id && userClubId !== row.away_club_id)) {
-      throw new Error('You do not own either the home or away club in this fixture.');
+      throw Object.assign(new Error('You do not own either the home or away club in this fixture.'), { code: 'RESULT_NOT_PARTICIPANT', statusCode: 403 });
     }
     const selfMatch = queryAll<any>(
       "SELECT club_id FROM club_memberships WHERE user_id = ? AND season_id = ? AND status = 'active' AND club_id IN (?, ?)",
@@ -4306,6 +4306,7 @@ export async function submitFixtureResultFirestore(
       [newStatus, confirmedHomeScore, confirmedAwayScore, winnerClubId, confirmedAt, now, fixtureId]
     );
 
+    invalidateFirestoreCache(`firestore:fixture:${fixtureId}:`);
     invalidateFirestoreCache('firestore:fixtures');
     invalidateFirestoreCache('firestore:comp');
     const fallbackFixture = (await getFixtureByIdFirestore(fixtureId, userId))!;
@@ -4340,7 +4341,7 @@ export async function submitFixtureResultFirestore(
     }
 
     if (fixture.status === 'CONFIRMED') {
-      throw new Error('This match result is already CONFIRMED and cannot be modified.');
+      throw Object.assign(new Error('This match result is already CONFIRMED and cannot be modified.'), { code: 'RESULT_ALREADY_CONFIRMED', statusCode: 409 });
     }
     if (fixture.homeClubId === 'TBD' || fixture.awayClubId === 'TBD' || !fixture.homeClubId || !fixture.awayClubId) {
       const err: any = new Error('This match has undetermined participants (TBD) and cannot be played yet.');
@@ -4376,7 +4377,7 @@ export async function submitFixtureResultFirestore(
       if (!txFixDoc.exists) throw new Error(`Fixture with ID '${fixtureId}' not found.`);
       const currentFixture = txFixDoc.data() as FirestoreFixtureDoc;
       if (currentFixture.status === 'CONFIRMED') {
-        throw new Error('This match result is already CONFIRMED and cannot be modified.');
+        throw Object.assign(new Error('This match result is already CONFIRMED and cannot be modified.'), { code: 'RESULT_ALREADY_CONFIRMED', statusCode: 409 });
       }
       if (!currentFixture.homeClubId || !currentFixture.awayClubId || currentFixture.homeClubId === 'TBD' || currentFixture.awayClubId === 'TBD') {
         const err: any = new Error('This match has undetermined participants (TBD) and cannot be played yet.');
@@ -4385,7 +4386,7 @@ export async function submitFixtureResultFirestore(
         throw err;
       }
       if (!userMemDoc.exists || userMemDoc.data()?.status !== 'active') {
-        throw new Error('You do not own either the home or away club in this fixture.');
+        throw Object.assign(new Error('You do not own either the home or away club in this fixture.'), { code: 'RESULT_NOT_PARTICIPANT', statusCode: 403 });
       }
 
       const ownedIds = [userMemDoc.data()!.clubId, userMemDoc.data()!.secondaryClubId];
@@ -4396,7 +4397,7 @@ export async function submitFixtureResultFirestore(
         throw err;
       }
       if (!userClubId) {
-        throw new Error('You do not own either the home or away club in this fixture.');
+        throw Object.assign(new Error('You do not own either the home or away club in this fixture.'), { code: 'RESULT_NOT_PARTICIPANT', statusCode: 403 });
       }
 
       const currentSubmission: FirestoreResultSubmissionDoc = {
@@ -4517,6 +4518,7 @@ export async function submitFixtureResultFirestore(
       }
     }
 
+    invalidateFirestoreCache(`firestore:fixture:${fixtureId}:`);
     invalidateFirestoreCache('firestore:fixtures');
     invalidateFirestoreCache('firestore:comp');
 
