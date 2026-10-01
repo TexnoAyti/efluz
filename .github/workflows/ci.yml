@@ -63,6 +63,9 @@ jobs:
           node scripts/run-isolated-test.mjs src/server/tests/premiumPrivateLabRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/premiumSecondClubRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/clubAdmissionRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/visibleFixtureCountsRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/notificationBackupRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/smartNotificationRecoveryRegressionTest.ts
 
       - name: Install Redis test dependency
         timeout-minutes: 3

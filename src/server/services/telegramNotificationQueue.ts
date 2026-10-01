@@ -13,6 +13,7 @@ import {
 import { SEED_CLUBS, SEED_LEAGUES } from '../db/seed';
 import { queryAll, queryGet } from '../db';
 import crypto from 'crypto';
+import { recoverBackupNotifications, pendingBackupNotifications } from './notificationBackupQueue';
 import { waitUntil, getDeadline } from '@vercel/functions';
 
 export interface RecipientDirectoryEntry {
@@ -117,7 +118,7 @@ const DRAIN_BUDGET_MS = 45000;
 async function pendingQueueState(): Promise<{ pending: number; nextAt: number }> {
   const client = getUpstashClient();
   if (!client) throw new Error('REDIS_REQUIRED');
-  return client.eval(`
+  const state: { pending: number; nextAt: number } = await client.eval(`
     local jobs = redis.call('LRANGE', KEYS[1], 0, -1)
     local nextAt = 0
     for _, raw in ipairs(jobs) do
@@ -128,6 +129,8 @@ async function pendingQueueState(): Promise<{ pending: number; nextAt: number }>
     end
     return cjson.encode({pending=#jobs, nextAt=nextAt})
   `, [QUEUE_KEY], []);
+  const backupPending = await pendingBackupNotifications();
+  return { pending: state.pending + backupPending, nextAt: backupPending ? 0 : state.nextAt };
 }
 
 /** Bounded batches share the invocation lifetime; a new invocation takes over
@@ -498,6 +501,8 @@ export async function processNotificationQueue(batchSize = 25, stopClaimingAt = 
   let processed = 0, succeeded = 0, failed = 0;
   const deadline = Math.min(Date.now() + 20000, stopClaimingAt);
   try {
+    try { await recoverBackupNotifications(batchSize); }
+    catch (error: any) { console.warn('[NOTIF_BACKUP_RECOVERY_DEFERRED]', error?.message || error); }
     // A worker may have died after Telegram accepted a message. Do not blindly resend it.
     const abandoned = await client.hgetall<Record<string, NotificationQueueJob & { claimedAt?: number }>>(PROCESSING_KEY);
     for (const job of Object.values(abandoned || {})) {
@@ -755,4 +760,3 @@ export async function getBroadcastDetails(broadcastId: string): Promise<Telegram
   }
   return memoryBroadcasts.get(broadcastId) || null;
 }
-

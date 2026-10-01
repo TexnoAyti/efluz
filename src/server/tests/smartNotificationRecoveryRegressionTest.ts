@@ -117,5 +117,48 @@ try {
   console.log('PASS cup advancement/champion and European events recover recipients from fixture snapshots without extra Firestore reads.');
   rejectQueue = true;
   assert.equal(await enqueueSmartTelegramNotification({...params, eventId:'redis-outage'}), false);
-  console.log('PASS cold directory events retained, deduplicated, delivered after recovery; suspended users skipped. Redis total outage remains unavailable. No Firestore/network calls.');
+  process.env.NOTIFICATION_BACKUP_REDIS_REST_URL = 'https://backup.test.invalid';
+  process.env.NOTIFICATION_BACKUP_REDIS_REST_TOKEN = 'fake-backup-token';
+  const backupRecords = new Map<string, any>();
+  const backupPending = new Set<string>();
+  const primaryFetch = globalThis.fetch;
+  globalThis.fetch = async (input: any, init: any) => {
+    const url = typeof input === 'string' ? input : input.url;
+    if (new URL(url).hostname !== 'backup.test.invalid') return primaryFetch(input, init);
+    const body = JSON.parse(init.body);
+    const commands = Array.isArray(body[0]) ? body : [body];
+    const replies = commands.map((command: any[]) => {
+      const [name, ...args] = command;
+      let result: any;
+      if (String(name).toLowerCase() === 'eval') {
+        const script = args[0], count = Number(args[1]), argv = args.slice(2 + count);
+        if (script.includes('HSETNX')) {
+          if (!backupRecords.has(argv[0])) backupRecords.set(argv[0], JSON.parse(argv[1]));
+          backupPending.add(argv[0]);
+        } else { backupRecords.delete(argv[0]); backupPending.delete(argv[0]); }
+        result = 1;
+      } else if (String(name).toLowerCase() === 'zrange') {
+        result = [...backupPending].slice(Number(args[1]), Number(args[2]) + 1).map(x => Buffer.from(x).toString('base64'));
+      } else if (String(name).toLowerCase() === 'hget') {
+        const value = backupRecords.get(args[1]);
+        result = value ? Buffer.from(JSON.stringify(value)).toString('base64') : null;
+      } else if (String(name).toLowerCase() === 'zcard') result = backupPending.size;
+      else throw Error('Unsupported backup command: ' + name);
+      return { result };
+    });
+    return new Response(JSON.stringify(Array.isArray(body[0]) ? replies : replies[0]));
+  };
+  assert.equal(await enqueueSmartTelegramNotification({...params, eventId:'backup-outage'}), true);
+  assert.equal(backupPending.size, 1);
+  assert.equal(await enqueueSmartTelegramNotification({...params, eventId:'backup-outage'}), true);
+  assert.equal(backupPending.size, 1);
+  const { recoverBackupNotifications } = await import('../services/notificationBackupQueue');
+  await assert.rejects(recoverBackupNotifications());
+  assert.equal(backupPending.size, 1);
+  rejectQueue = false;
+  assert.equal(await recoverBackupNotifications(), 1);
+  assert.equal(backupPending.size, 0);
+  assert.equal(jobs.filter(job => job.body === params.body).length, 1);
+  assert.equal(jobs.find(job => job.body === params.body).requiresRecipientLookup, true);
+  console.log('PASS real enqueue/SDK path saves during primary failure and replays once after recovery. Redis REST mocked; no external messages or Firestore reads.');
 } finally { globalThis.fetch = originalFetch; }

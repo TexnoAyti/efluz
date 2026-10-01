@@ -10,6 +10,7 @@ import {
 import { scheduleNotificationQueueDrain } from './telegramNotificationQueue';
 import { isSmartNotificationEventEnabled, SmartNotificationEvent } from './smartNotificationSettingsService';
 import { telegramMiniAppButton } from './telegramMiniAppButton';
+import { persistBackupNotification, SMART_ENQUEUE_SCRIPT } from './notificationBackupQueue';
 
 interface RecipientDirectoryEntry {
   userId: string;
@@ -252,10 +253,6 @@ export async function enqueueSmartTelegramNotification(params: {
   }
 
   const client = getUpstashClient();
-  if (!client) {
-    console.warn('[SMART_NOTIFY] Redis unavailable; notification skipped without affecting mutation');
-    return false;
-  }
   const recipient = await getCachedRecipient(params.userId, params.seasonId);
   if (recipient && (!recipient.messageable || !recipient.telegramId)) {
     console.info('[SMART_NOTIFY] Recipient not messageable', { userId: params.userId, seasonId: params.seasonId });
@@ -305,19 +302,26 @@ export async function enqueueSmartTelegramNotification(params: {
   };
 
   try {
-    const queued = await client.eval<unknown[], number>(`
-      local accepted = redis.call('SET', KEYS[1], '1', 'NX', 'EX', ARGV[1])
-      if not accepted then return 0 end
-      redis.call('HSET', KEYS[2], ARGV[2], ARGV[3])
-      redis.call('RPUSH', KEYS[3], ARGV[4])
-      return 1
-    `, [dedupeKey, BROADCASTS_KEY, QUEUE_KEY], [SMART_DEDUPE_TTL_SECONDS, broadcastId, JSON.stringify(record), JSON.stringify(job)]);
-    if (Number(queued) !== 1) return false;
+    if (!client) throw new Error('PRIMARY_REDIS_UNAVAILABLE');
+    const queued = await client.eval<unknown[], number>(SMART_ENQUEUE_SCRIPT, [dedupeKey, BROADCASTS_KEY, QUEUE_KEY], [SMART_DEDUPE_TTL_SECONDS, broadcastId, JSON.stringify(record), JSON.stringify(job)]);
+    if (Number(queued) === 0) return false;
+    if (Number(queued) !== 1) throw new Error('PRIMARY_QUEUE_WRITE_UNCONFIRMED');
     scheduleNotificationQueueDrain();
     console.info('[SMART_NOTIFY_QUEUED]', JSON.stringify({ eventId: params.eventId, userId: params.userId, broadcastId }));
     return true;
   } catch (error: any) {
-    console.warn('[SMART_NOTIFY] Queue write failed; mutation remains successful:', error?.message || error);
+    try {
+      // Resolve the current recipient again after recovery, including suspension.
+      job.requiresRecipientLookup = true;
+      if (await persistBackupNotification({ dedupeKey, broadcastId, record: JSON.stringify(record), job: JSON.stringify(job) })) {
+        console.info('[SMART_NOTIFY_BACKUP_SAVED]', { broadcastId });
+        scheduleNotificationQueueDrain();
+        return true;
+      }
+    } catch (backupError: any) {
+      console.error('[SMART_NOTIFY_BACKUP_FAILED]', backupError?.message || backupError);
+    }
+    console.error('[SMART_NOTIFY_NOT_PERSISTED]', { broadcastId, reason: error?.message || 'PRIMARY_REDIS_UNAVAILABLE' });
     return false;
   }
 }
@@ -509,4 +513,3 @@ export async function notifySmartResultLifecycle(fixture: Fixture, actorUserId: 
     })));
   }
 }
-

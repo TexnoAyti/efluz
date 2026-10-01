@@ -185,6 +185,26 @@ async function main() {
     } finally { (db as any).collection=originalCollection; }
     globalThis.fetch=originalFetch;
     console.log('PASS: broadcast retries deduplicate, concurrent workers send once, interrupted jobs remain visible without blind resend');
+    const backup = await import('../services/notificationBackupQueue');
+    const envelope = { broadcastId: 'smart-real-backup', dedupeKey: 'dedupe-real-backup', record: '{}', job: '{}' };
+    await backup.persistBackupNotification(envelope, client);
+    await backup.persistBackupNotification(envelope, client);
+    assert.equal(await client.zcard(`${model.KEY_PREFIX}:telegram:backup:pending`), 1);
+    assert.equal(await client.ttl(`${model.KEY_PREFIX}:telegram:backup:records`), -1);
+    assert.equal(await backup.recoverBackupNotifications(25, client, client), 1);
+    assert.equal(await client.llen(`${model.KEY_PREFIX}:telegram:queue`), 1);
+    // The saved broadcast deduplicates replay even after the transient key expires.
+    await client.del(envelope.dedupeKey);
+    await backup.persistBackupNotification(envelope, client);
+    assert.equal(await backup.recoverBackupNotifications(25, client, client), 1);
+    assert.equal(await client.llen(`${model.KEY_PREFIX}:telegram:queue`), 1);
+    assert.equal(await client.zcard(`${model.KEY_PREFIX}:telegram:backup:pending`), 0);
+    const incomplete = { ...envelope, broadcastId: 'smart-incomplete-backup', dedupeKey: 'dedupe-incomplete-backup' };
+    await client.set(incomplete.dedupeKey, '1');
+    await backup.persistBackupNotification(incomplete, client);
+    await assert.rejects(backup.recoverBackupNotifications(25, client, client), /UNCONFIRMED/);
+    assert.equal(await client.zcard(`${model.KEY_PREFIX}:telegram:backup:pending`), 1);
+    console.log('PASS actual Redis Lua: durable backup, duplicate and late replay, incomplete primary write retains backup.');
     console.log('Redis durability regression passed; Telegram transport was mocked, no real messages sent.');
   } finally { globalThis.fetch = isolatedFetch; bridge.close(); }
 }

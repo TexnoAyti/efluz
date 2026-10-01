@@ -11,6 +11,7 @@ import {
   getCompetitionMatchdayLocksFirestore,
 } from '../firebase/firestoreStore';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
+import { withVisibleFixtureCounts } from '../services/competitionFixtureCounts';
 import {
   getCompetitionsFromReadModel,
   getCompetitionStandingsFromReadModel,
@@ -46,7 +47,8 @@ competitionsRouter.get('/:id', async (req: Request, res: Response) => {
       res.status(404).json({ error: 'Competition not found', code: 'NOT_FOUND', message: `Competition '${req.params.id}' not found` });
       return;
     }
-    res.json({ competition });
+    const seasonId = (req.query.seasonId as string) || competition.seasonId || 'season-2026-27';
+    res.json({ competition: (await withVisibleFixtureCounts([competition], seasonId))[0] });
   } catch (err: any) {
     handleFirestoreError(res, err, `GET /api/competitions/${req.params.id}`);
   }

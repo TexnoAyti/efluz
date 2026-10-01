@@ -2274,7 +2274,7 @@ function resolveRedisConfig(env) {
     const config = valid(pair);
     if (config) return config;
   }
-  const custom = Object.keys(env).filter((name) => /_(?:UPSTASH_REDIS_REST_URL|KV_REST_API_URL)$/.test(name)).map((name) => valid([name, name.replace(/URL$/, "TOKEN")])).filter((value) => value !== null);
+  const custom = Object.keys(env).filter((name) => !name.startsWith("NOTIFICATION_BACKUP_") && /_(?:UPSTASH_REDIS_REST_URL|KV_REST_API_URL)$/.test(name)).map((name) => valid([name, name.replace(/URL$/, "TOKEN")])).filter((value) => value !== null);
   return custom.length === 1 ? custom[0] : null;
 }
 var init_redisConfig = __esm({
@@ -2388,6 +2388,82 @@ function telegramMiniAppButton(text = "\u{1F3DF} EFL UZ ilovasini ochish") {
 }
 var init_telegramMiniAppButton = __esm({
   "src/server/services/telegramMiniAppButton.ts"() {
+  }
+});
+
+// src/server/services/notificationBackupQueue.ts
+import { Redis } from "@upstash/redis";
+function getNotificationBackupClient() {
+  if (backupClient) return backupClient;
+  const url = process.env.NOTIFICATION_BACKUP_REDIS_REST_URL?.trim();
+  const token = process.env.NOTIFICATION_BACKUP_REDIS_REST_TOKEN?.trim();
+  const primary = resolveRedisConfig(process.env);
+  if (!url || !token || url === primary?.url) return null;
+  try {
+    if (new URL(url).protocol !== "https:") return null;
+    backupClient = new Redis({ url, token, retry: { retries: 1 }, signal: () => AbortSignal.timeout(5e3) });
+    return backupClient;
+  } catch {
+    return null;
+  }
+}
+async function persistBackupNotification(envelope, backup = getNotificationBackupClient()) {
+  if (!backup) return false;
+  await backup.eval(`
+    redis.call('HSETNX', KEYS[1], ARGV[1], ARGV[2])
+    redis.call('ZADD', KEYS[2], 'NX', ARGV[3], ARGV[1])
+    return 1
+  `, [RECORDS, PENDING], [envelope.broadcastId, JSON.stringify(envelope), Date.now()]);
+  return true;
+}
+async function pendingBackupNotifications() {
+  const backup = getNotificationBackupClient();
+  if (!backup) return 0;
+  try {
+    return await backup.zcard(PENDING);
+  } catch (error) {
+    console.warn("[NOTIF_BACKUP_STATUS_UNAVAILABLE]", error?.message || error);
+    return 0;
+  }
+}
+async function recoverBackupNotifications(batchSize = 25, primary = getUpstashClient(), backup = getNotificationBackupClient()) {
+  if (!primary || !backup) return 0;
+  const ids = await backup.zrange(PENDING, 0, Math.max(1, Math.min(batchSize, 100)) - 1);
+  let recovered = 0;
+  for (const id of ids) {
+    const envelope = await backup.hget(RECORDS, id);
+    if (!envelope || envelope.broadcastId !== id) throw new Error("NOTIFICATION_BACKUP_RECORD_INVALID");
+    const result = await primary.eval(
+      SMART_ENQUEUE_SCRIPT,
+      [envelope.dedupeKey, `${KEY_PREFIX}:telegram:broadcasts`, `${KEY_PREFIX}:telegram:queue`],
+      [7 * 24 * 60 * 60, id, envelope.record, envelope.job]
+    );
+    if (Number(result) !== 0 && Number(result) !== 1) throw new Error("NOTIFICATION_BACKUP_REPLAY_UNCONFIRMED");
+    await backup.eval(`
+      redis.call('HDEL', KEYS[1], ARGV[1])
+      redis.call('ZREM', KEYS[2], ARGV[1])
+      return 1
+    `, [RECORDS, PENDING], [id]);
+    recovered++;
+  }
+  return recovered;
+}
+var SMART_ENQUEUE_SCRIPT, RECORDS, PENDING, backupClient;
+var init_notificationBackupQueue = __esm({
+  "src/server/services/notificationBackupQueue.ts"() {
+    init_readModelStore();
+    init_redisConfig();
+    SMART_ENQUEUE_SCRIPT = `
+  if redis.call('HEXISTS', KEYS[2], ARGV[2]) == 1 then return 0 end
+  local accepted = redis.call('SET', KEYS[1], '1', 'NX', 'EX', ARGV[1])
+  if not accepted then return -1 end
+  redis.call('HSET', KEYS[2], ARGV[2], ARGV[3])
+  redis.call('RPUSH', KEYS[3], ARGV[4])
+  return 1
+`;
+    RECORDS = `${KEY_PREFIX}:telegram:backup:records`;
+    PENDING = `${KEY_PREFIX}:telegram:backup:pending`;
+    backupClient = null;
   }
 });
 
@@ -2531,10 +2607,6 @@ async function enqueueSmartTelegramNotification(params) {
     return false;
   }
   const client = getUpstashClient();
-  if (!client) {
-    console.warn("[SMART_NOTIFY] Redis unavailable; notification skipped without affecting mutation");
-    return false;
-  }
   const recipient = await getCachedRecipient(params.userId, params.seasonId);
   if (recipient && (!recipient.messageable || !recipient.telegramId)) {
     console.info("[SMART_NOTIFY] Recipient not messageable", { userId: params.userId, seasonId: params.seasonId });
@@ -2582,19 +2654,25 @@ async function enqueueSmartTelegramNotification(params) {
     replyMarkup: params.replyMarkup
   };
   try {
-    const queued = await client.eval(`
-      local accepted = redis.call('SET', KEYS[1], '1', 'NX', 'EX', ARGV[1])
-      if not accepted then return 0 end
-      redis.call('HSET', KEYS[2], ARGV[2], ARGV[3])
-      redis.call('RPUSH', KEYS[3], ARGV[4])
-      return 1
-    `, [dedupeKey, BROADCASTS_KEY, QUEUE_KEY], [SMART_DEDUPE_TTL_SECONDS, broadcastId, JSON.stringify(record), JSON.stringify(job)]);
-    if (Number(queued) !== 1) return false;
+    if (!client) throw new Error("PRIMARY_REDIS_UNAVAILABLE");
+    const queued = await client.eval(SMART_ENQUEUE_SCRIPT, [dedupeKey, BROADCASTS_KEY, QUEUE_KEY], [SMART_DEDUPE_TTL_SECONDS, broadcastId, JSON.stringify(record), JSON.stringify(job)]);
+    if (Number(queued) === 0) return false;
+    if (Number(queued) !== 1) throw new Error("PRIMARY_QUEUE_WRITE_UNCONFIRMED");
     scheduleNotificationQueueDrain();
     console.info("[SMART_NOTIFY_QUEUED]", JSON.stringify({ eventId: params.eventId, userId: params.userId, broadcastId }));
     return true;
   } catch (error) {
-    console.warn("[SMART_NOTIFY] Queue write failed; mutation remains successful:", error?.message || error);
+    try {
+      job.requiresRecipientLookup = true;
+      if (await persistBackupNotification({ dedupeKey, broadcastId, record: JSON.stringify(record), job: JSON.stringify(job) })) {
+        console.info("[SMART_NOTIFY_BACKUP_SAVED]", { broadcastId });
+        scheduleNotificationQueueDrain();
+        return true;
+      }
+    } catch (backupError) {
+      console.error("[SMART_NOTIFY_BACKUP_FAILED]", backupError?.message || backupError);
+    }
+    console.error("[SMART_NOTIFY_NOT_PERSISTED]", { broadcastId, reason: error?.message || "PRIMARY_REDIS_UNAVAILABLE" });
     return false;
   }
 }
@@ -2767,6 +2845,7 @@ var init_smartNotificationService = __esm({
     init_telegramNotificationQueue();
     init_smartNotificationSettingsService();
     init_telegramMiniAppButton();
+    init_notificationBackupQueue();
     BROADCASTS_KEY = `${KEY_PREFIX}:telegram:broadcasts`;
     QUEUE_KEY = `${KEY_PREFIX}:telegram:queue`;
     RECIPIENT_DIR_KEY = `${KEY_PREFIX}:private:recipient-directory`;
@@ -3567,6 +3646,169 @@ var init_qualificationEngine = __esm({
   }
 });
 
+// src/server/services/fixtureTombstoneService.ts
+function tombstoneKey(seasonId) {
+  return `efluz:v1:season:${seasonId}:fixture-tombstones`;
+}
+async function getFixtureTombstones(seasonId = "season-2026-27") {
+  const key = tombstoneKey(seasonId);
+  const snap = await redisGetFresh(key) || await redisGetLkg(key);
+  return Array.isArray(snap?.data) ? snap.data : [];
+}
+async function addFixtureTombstone(input) {
+  const existing = await getFixtureTombstones(input.seasonId);
+  const next = [...existing.filter((row) => row.fixtureId !== input.fixtureId), input];
+  await redisSetRaw(tombstoneKey(input.seasonId), {
+    sourceVersion: "fixture-delete-tombstones",
+    expectedCount: next.length,
+    data: next
+  }, 31536e3);
+}
+async function filterTombstonedFixtures(fixtures, seasonId = "season-2026-27") {
+  if (!fixtures.length) return fixtures;
+  const tombstones = await getFixtureTombstones(seasonId);
+  if (!tombstones.length) return fixtures;
+  const ids = new Set(tombstones.map((row) => row.fixtureId));
+  return fixtures.filter((fixture) => !ids.has(fixture.id));
+}
+async function patchFixtureSnapshot(key, fixtureId) {
+  const snap = await redisGetFresh(key) || await redisGetLkg(key);
+  if (!Array.isArray(snap?.data)) return null;
+  const next = snap.data.filter((fixture) => fixture.id !== fixtureId);
+  if (next.length === snap.data.length) return next;
+  await redisSetRaw(key, {
+    sourceVersion: "fixture-delete-filtered",
+    expectedCount: next.length,
+    data: next
+  }, 86400);
+  return next;
+}
+async function removeFixtureFromDurableSnapshots(fixtureId, competitionId, seasonId = "season-2026-27") {
+  await patchFixtureSnapshot(ReadModelKeys.adminFixtures(seasonId), fixtureId);
+  if (!competitionId) return [];
+  return await patchFixtureSnapshot(ReadModelKeys.competitionFixtures(competitionId, seasonId), fixtureId) || [];
+}
+async function getVisibleCompetitionFixtures(competitionId, seasonId = "season-2026-27") {
+  const key = ReadModelKeys.competitionFixtures(competitionId, seasonId);
+  const snap = await redisGetFresh(key) || await redisGetLkg(key);
+  if (!Array.isArray(snap?.data)) return [];
+  return filterTombstonedFixtures(snap.data, seasonId);
+}
+async function rebuildStandingsSnapshotFromFixtures(competitionId, seasonId, fixtures) {
+  const standingsKey = ReadModelKeys.standings(competitionId, seasonId);
+  const current = await redisGetFresh(standingsKey) || await redisGetLkg(standingsKey);
+  if (!Array.isArray(current?.data) || current.data.length === 0) return null;
+  const byClub = /* @__PURE__ */ new Map();
+  for (const old of current.data) {
+    byClub.set(old.clubId, {
+      ...old,
+      position: 0,
+      played: 0,
+      won: 0,
+      drawn: 0,
+      lost: 0,
+      goalsFor: 0,
+      goalsAgainst: 0,
+      goalDifference: 0,
+      points: 0,
+      form: []
+    });
+  }
+  const confirmed = fixtures.filter((fixture) => fixture.competitionId === competitionId && fixture.status === "CONFIRMED" && fixture.homeClubId && fixture.awayClubId && fixture.homeScore != null && fixture.awayScore != null).sort((a, b) => Number(a.matchday || 0) - Number(b.matchday || 0) || String(a.resultConfirmedAt || "").localeCompare(String(b.resultConfirmedAt || "")) || a.id.localeCompare(b.id));
+  for (const fixture of confirmed) {
+    const home = byClub.get(fixture.homeClubId);
+    const away = byClub.get(fixture.awayClubId);
+    const hs = Number(fixture.homeScore);
+    const as = Number(fixture.awayScore);
+    if (home) {
+      home.played++;
+      home.goalsFor += hs;
+      home.goalsAgainst += as;
+      if (hs > as) {
+        home.won++;
+        home.points += 3;
+        home.form.push("W");
+      } else if (hs === as) {
+        home.drawn++;
+        home.points += 1;
+        home.form.push("D");
+      } else {
+        home.lost++;
+        home.form.push("L");
+      }
+    }
+    if (away) {
+      away.played++;
+      away.goalsFor += as;
+      away.goalsAgainst += hs;
+      if (as > hs) {
+        away.won++;
+        away.points += 3;
+        away.form.push("W");
+      } else if (as === hs) {
+        away.drawn++;
+        away.points += 1;
+        away.form.push("D");
+      } else {
+        away.lost++;
+        away.form.push("L");
+      }
+    }
+  }
+  const rows = Array.from(byClub.values()).map((row) => ({ ...row, goalDifference: row.goalsFor - row.goalsAgainst, form: row.form.slice(-5) }));
+  rows.sort((a, b) => b.points - a.points || b.goalDifference - a.goalDifference || b.goalsFor - a.goalsFor || a.clubName.localeCompare(b.clubName));
+  rows.forEach((row, index) => {
+    row.position = index + 1;
+  });
+  await redisSetRaw(standingsKey, {
+    sourceVersion: "fixture-derived-recomputed",
+    expectedCount: rows.length,
+    data: rows
+  }, 86400);
+  return rows;
+}
+async function refreshDerivedCompetitionState(competitionId, seasonId = "season-2026-27") {
+  if (!competitionId) return;
+  const fixtures = await getVisibleCompetitionFixtures(competitionId, seasonId);
+  if (fixtures.length > 0) await rebuildStandingsSnapshotFromFixtures(competitionId, seasonId, fixtures);
+}
+var init_fixtureTombstoneService = __esm({
+  "src/server/services/fixtureTombstoneService.ts"() {
+    init_readModelStore();
+  }
+});
+
+// src/server/services/competitionFixtureCounts.ts
+var competitionFixtureCounts_exports = {};
+__export(competitionFixtureCounts_exports, {
+  withVisibleFixtureCounts: () => withVisibleFixtureCounts
+});
+async function withVisibleFixtureCounts(competitions, seasonId) {
+  return Promise.all(competitions.map(async (competition) => {
+    if (competition.type !== "LEAGUE") return competition;
+    const key = ReadModelKeys.competitionFixtures(competition.id, seasonId);
+    const snapshot = await redisGetFresh(key) || await redisGetLkg(key);
+    if (!Array.isArray(snapshot?.data) || snapshot.actualCount != null && snapshot.actualCount !== snapshot.data.length) return competition;
+    const matching = snapshot.data.filter((fixture) => fixture.competitionId === competition.id && (!fixture.seasonId || fixture.seasonId === seasonId));
+    const fixtures = await filterTombstonedFixtures(matching, seasonId);
+    return {
+      ...competition,
+      fixtureCount: fixtures.length,
+      fixturesCount: fixtures.length,
+      hasFixtures: fixtures.length > 0,
+      configuredFixtureCount: competition.fixturesCount ?? competition.fixtureCount,
+      fixtureCountSource: "visible-fixture-snapshot",
+      fixtureCountSnapshotAt: snapshot.generatedAt
+    };
+  }));
+}
+var init_competitionFixtureCounts = __esm({
+  "src/server/services/competitionFixtureCounts.ts"() {
+    init_readModelStore();
+    init_fixtureTombstoneService();
+  }
+});
+
 // src/server/readModel/readModelStore.ts
 var readModelStore_exports = {};
 __export(readModelStore_exports, {
@@ -3630,7 +3872,7 @@ __export(readModelStore_exports, {
   resetUpstashClient: () => resetUpstashClient,
   setInProcessMemory: () => setInProcessMemory
 });
-import { Redis } from "@upstash/redis";
+import { Redis as Redis2 } from "@upstash/redis";
 function getRawDatasetKey(key) {
   return key.replace(/^efluz:v1:(fresh:|lkg:|dirty:)?/, "").replace(/^efluz:v1:/, "");
 }
@@ -3660,7 +3902,7 @@ function getUpstashClient() {
   }
   if (config) {
     try {
-      upstashClient = new Redis({ url: config.url, token: config.token });
+      upstashClient = new Redis2({ url: config.url, token: config.token });
       isUpstashConfigured = true;
       return upstashClient;
     } catch {
@@ -4510,7 +4752,7 @@ async function getCompetitionsFromReadModel(seasonId = "season-2026-27") {
     validateData: (data) => Array.isArray(data) && data.length > 0
   });
   return {
-    competitions: result.data,
+    competitions: await (await Promise.resolve().then(() => (init_competitionFixtureCounts(), competitionFixtureCounts_exports))).withVisibleFixtureCounts(result.data, seasonId),
     source: result.source,
     stale: Boolean(result.stale),
     degraded: Boolean(result.degraded),
@@ -14802,138 +15044,6 @@ var init_firestoreStore = __esm({
   }
 });
 
-// src/server/services/fixtureTombstoneService.ts
-function tombstoneKey(seasonId) {
-  return `efluz:v1:season:${seasonId}:fixture-tombstones`;
-}
-async function getFixtureTombstones(seasonId = "season-2026-27") {
-  const key = tombstoneKey(seasonId);
-  const snap = await redisGetFresh(key) || await redisGetLkg(key);
-  return Array.isArray(snap?.data) ? snap.data : [];
-}
-async function addFixtureTombstone(input) {
-  const existing = await getFixtureTombstones(input.seasonId);
-  const next = [...existing.filter((row) => row.fixtureId !== input.fixtureId), input];
-  await redisSetRaw(tombstoneKey(input.seasonId), {
-    sourceVersion: "fixture-delete-tombstones",
-    expectedCount: next.length,
-    data: next
-  }, 31536e3);
-}
-async function filterTombstonedFixtures(fixtures, seasonId = "season-2026-27") {
-  if (!fixtures.length) return fixtures;
-  const tombstones = await getFixtureTombstones(seasonId);
-  if (!tombstones.length) return fixtures;
-  const ids = new Set(tombstones.map((row) => row.fixtureId));
-  return fixtures.filter((fixture) => !ids.has(fixture.id));
-}
-async function patchFixtureSnapshot(key, fixtureId) {
-  const snap = await redisGetFresh(key) || await redisGetLkg(key);
-  if (!Array.isArray(snap?.data)) return null;
-  const next = snap.data.filter((fixture) => fixture.id !== fixtureId);
-  if (next.length === snap.data.length) return next;
-  await redisSetRaw(key, {
-    sourceVersion: "fixture-delete-filtered",
-    expectedCount: next.length,
-    data: next
-  }, 86400);
-  return next;
-}
-async function removeFixtureFromDurableSnapshots(fixtureId, competitionId, seasonId = "season-2026-27") {
-  await patchFixtureSnapshot(ReadModelKeys.adminFixtures(seasonId), fixtureId);
-  if (!competitionId) return [];
-  return await patchFixtureSnapshot(ReadModelKeys.competitionFixtures(competitionId, seasonId), fixtureId) || [];
-}
-async function getVisibleCompetitionFixtures(competitionId, seasonId = "season-2026-27") {
-  const key = ReadModelKeys.competitionFixtures(competitionId, seasonId);
-  const snap = await redisGetFresh(key) || await redisGetLkg(key);
-  if (!Array.isArray(snap?.data)) return [];
-  return filterTombstonedFixtures(snap.data, seasonId);
-}
-async function rebuildStandingsSnapshotFromFixtures(competitionId, seasonId, fixtures) {
-  const standingsKey = ReadModelKeys.standings(competitionId, seasonId);
-  const current = await redisGetFresh(standingsKey) || await redisGetLkg(standingsKey);
-  if (!Array.isArray(current?.data) || current.data.length === 0) return null;
-  const byClub = /* @__PURE__ */ new Map();
-  for (const old of current.data) {
-    byClub.set(old.clubId, {
-      ...old,
-      position: 0,
-      played: 0,
-      won: 0,
-      drawn: 0,
-      lost: 0,
-      goalsFor: 0,
-      goalsAgainst: 0,
-      goalDifference: 0,
-      points: 0,
-      form: []
-    });
-  }
-  const confirmed = fixtures.filter((fixture) => fixture.competitionId === competitionId && fixture.status === "CONFIRMED" && fixture.homeClubId && fixture.awayClubId && fixture.homeScore != null && fixture.awayScore != null).sort((a, b) => Number(a.matchday || 0) - Number(b.matchday || 0) || String(a.resultConfirmedAt || "").localeCompare(String(b.resultConfirmedAt || "")) || a.id.localeCompare(b.id));
-  for (const fixture of confirmed) {
-    const home = byClub.get(fixture.homeClubId);
-    const away = byClub.get(fixture.awayClubId);
-    const hs = Number(fixture.homeScore);
-    const as = Number(fixture.awayScore);
-    if (home) {
-      home.played++;
-      home.goalsFor += hs;
-      home.goalsAgainst += as;
-      if (hs > as) {
-        home.won++;
-        home.points += 3;
-        home.form.push("W");
-      } else if (hs === as) {
-        home.drawn++;
-        home.points += 1;
-        home.form.push("D");
-      } else {
-        home.lost++;
-        home.form.push("L");
-      }
-    }
-    if (away) {
-      away.played++;
-      away.goalsFor += as;
-      away.goalsAgainst += hs;
-      if (as > hs) {
-        away.won++;
-        away.points += 3;
-        away.form.push("W");
-      } else if (as === hs) {
-        away.drawn++;
-        away.points += 1;
-        away.form.push("D");
-      } else {
-        away.lost++;
-        away.form.push("L");
-      }
-    }
-  }
-  const rows = Array.from(byClub.values()).map((row) => ({ ...row, goalDifference: row.goalsFor - row.goalsAgainst, form: row.form.slice(-5) }));
-  rows.sort((a, b) => b.points - a.points || b.goalDifference - a.goalDifference || b.goalsFor - a.goalsFor || a.clubName.localeCompare(b.clubName));
-  rows.forEach((row, index) => {
-    row.position = index + 1;
-  });
-  await redisSetRaw(standingsKey, {
-    sourceVersion: "fixture-derived-recomputed",
-    expectedCount: rows.length,
-    data: rows
-  }, 86400);
-  return rows;
-}
-async function refreshDerivedCompetitionState(competitionId, seasonId = "season-2026-27") {
-  if (!competitionId) return;
-  const fixtures = await getVisibleCompetitionFixtures(competitionId, seasonId);
-  if (fixtures.length > 0) await rebuildStandingsSnapshotFromFixtures(competitionId, seasonId, fixtures);
-}
-var init_fixtureTombstoneService = __esm({
-  "src/server/services/fixtureTombstoneService.ts"() {
-    init_readModelStore();
-  }
-});
-
 // src/server/services/adminService.ts
 var adminService_exports = {};
 __export(adminService_exports, {
@@ -15031,7 +15141,7 @@ import { waitUntil, getDeadline } from "@vercel/functions";
 async function pendingQueueState() {
   const client = getUpstashClient();
   if (!client) throw new Error("REDIS_REQUIRED");
-  return client.eval(`
+  const state = await client.eval(`
     local jobs = redis.call('LRANGE', KEYS[1], 0, -1)
     local nextAt = 0
     for _, raw in ipairs(jobs) do
@@ -15042,6 +15152,8 @@ async function pendingQueueState() {
     end
     return cjson.encode({pending=#jobs, nextAt=nextAt})
   `, [QUEUE_KEY2], []);
+  const backupPending = await pendingBackupNotifications();
+  return { pending: state.pending + backupPending, nextAt: backupPending ? 0 : state.nextAt };
 }
 async function drainNotificationQueue(options = {}) {
   const hop = options.hop || 0;
@@ -15323,6 +15435,11 @@ async function processNotificationQueue(batchSize = 25, stopClaimingAt = Infinit
   let processed = 0, succeeded = 0, failed = 0;
   const deadline = Math.min(Date.now() + 2e4, stopClaimingAt);
   try {
+    try {
+      await recoverBackupNotifications(batchSize);
+    } catch (error) {
+      console.warn("[NOTIF_BACKUP_RECOVERY_DEFERRED]", error?.message || error);
+    }
     const abandoned = await client.hgetall(PROCESSING_KEY);
     for (const job of Object.values(abandoned || {})) {
       if ((job.claimedAt || 0) + 12e4 > Date.now()) continue;
@@ -15542,6 +15659,7 @@ var init_telegramNotificationQueue = __esm({
     init_adminService();
     init_readModelStore();
     init_seed();
+    init_notificationBackupQueue();
     BROADCASTS_KEY2 = `${KEY_PREFIX}:telegram:broadcasts`;
     QUEUE_KEY2 = `${KEY_PREFIX}:telegram:queue`;
     PROCESSING_KEY = `${KEY_PREFIX}:telegram:processing`;
@@ -17947,6 +18065,7 @@ clubsRouter.post("/:id/claim", requireAuth, async (req, res) => {
 // src/server/routes/competitions.routes.ts
 import { Router as Router6 } from "express";
 init_firestoreStore();
+init_competitionFixtureCounts();
 init_readModelStore();
 init_fixtureTombstoneService();
 var competitionsRouter = Router6();
@@ -17972,7 +18091,8 @@ competitionsRouter.get("/:id", async (req, res) => {
       res.status(404).json({ error: "Competition not found", code: "NOT_FOUND", message: `Competition '${req.params.id}' not found` });
       return;
     }
-    res.json({ competition });
+    const seasonId = req.query.seasonId || competition.seasonId || "season-2026-27";
+    res.json({ competition: (await withVisibleFixtureCounts([competition], seasonId))[0] });
   } catch (err) {
     handleFirestoreError(res, err, `GET /api/competitions/${req.params.id}`);
   }

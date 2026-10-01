@@ -1346,7 +1346,7 @@ export async function getCompetitionsFromReadModel(
   });
 
   return {
-    competitions: result.data,
+    competitions: await (await import('../services/competitionFixtureCounts')).withVisibleFixtureCounts(result.data, seasonId),
     source: result.source,
     stale: Boolean(result.stale),
     degraded: Boolean(result.degraded),
