@@ -1,4 +1,4 @@
-import type { Club, Fixture } from '../types';
+import type { Club, Fixture, StandingsRow } from '../types';
 
 const seasonId = 'season-2026-27';
 const createdAt = '2026-10-01T12:00:00Z';
@@ -11,10 +11,16 @@ const opponents: Club[] = [
   {...demoClubs[0], id: 'club-chelsea', name: 'Chelsea', shortName: 'CHE'},
   {...demoClubs[1], id: 'club-barcelona', name: 'Barcelona', shortName: 'BAR'},
 ];
+[...demoClubs, ...opponents].forEach((club, index) => {
+  const userId = index < 2 ? 'design-preview' : `demo-opponent-${index - 2}`;
+  const username = index < 2 ? 'design_preview' : 'demo_opponent';
+  Object.assign(club, {isTaken: true, claimedByUserId: userId, claimedByUsername: username,
+    occupancy: {status: 'occupied', userId, username}, owner: {userId, username, firstName: 'Demo', claimedAt: createdAt}});
+});
 export const demoCompetitions = demoClubs.map((club, index) => ({
   id: `demo-league-${index}`, seasonId, leagueId: club.leagueId, name: club.leagueName,
   type: 'LEAGUE', status: 'active', scheduleMode: 'MANUAL', formatConfig: {},
-  currentMatchday: 1, isMatchdayOpen: true, adminOverrideStatus: 'AUTO',
+  currentMatchday: 1, totalMatchdays: 1, isMatchdayOpen: true, adminOverrideStatus: 'AUTO',
   fixtureCount: 1, hasFixtures: true, totalTeams: 2, createdAt,
 }));
 const initialFixtures: Fixture[] = demoClubs.map((club, index) => ({
@@ -35,17 +41,17 @@ export function confirmDemoOpponent() {
   save(fixtures().map(f => f.status === 'PENDING_CONFIRMATION' ? {...f, status: 'CONFIRMED', resultConfirmedAt: new Date().toISOString()} : f));
 }
 export function resetDemoResults() { sessionStorage.removeItem(key); }
-function standings(id: string) {
+function standings(id: string): StandingsRow[] {
   const f = fixtures().find(f => f.competitionId === id);
   if (!f) return [];
   return [f.homeClub!, f.awayClub!].map((club, index) => {
     const confirmed = f.status === 'CONFIRMED';
     const gf = confirmed ? Number(index ? f.awayScore : f.homeScore) : 0;
     const ga = confirmed ? Number(index ? f.homeScore : f.awayScore) : 0;
-    return {clubId: club.id, club, position: index + 1, played: confirmed ? 1 : 0,
+    return {clubId: club.id, clubName: club.name, shortName: club.shortName, logoUrl: club.logoUrl, managerUserId: club.claimedByUserId || undefined, managerUsername: club.claimedByUsername || undefined, position: index + 1, played: confirmed ? 1 : 0,
       won: confirmed && gf > ga ? 1 : 0, drawn: confirmed && gf === ga ? 1 : 0,
       lost: confirmed && gf < ga ? 1 : 0, goalsFor: gf, goalsAgainst: ga, goalDifference: gf - ga,
-      points: confirmed ? gf > ga ? 3 : gf === ga ? 1 : 0 : 0, form: confirmed ? [gf > ga ? 'W' : gf === ga ? 'D' : 'L'] : []};
+      points: confirmed ? gf > ga ? 3 : gf === ga ? 1 : 0 : 0, form: confirmed ? [gf > ga ? 'W' as const : gf === ga ? 'D' as const : 'L' as const] : []};
   }).sort((a,b) => b.points-a.points || b.goalDifference-a.goalDifference).map((row, index) => ({...row, position: index + 1}));
 }
 
@@ -71,7 +77,7 @@ export async function designPreviewRequest(endpoint: string, options: RequestIni
   if (path === '/api/me/notifications') return {notifications: []};
   if (path === '/api/seasons') return {seasons: [{id: seasonId, name: '2026/27', status: 'active', createdAt}]};
   if (path === '/api/competitions') return {competitions: demoCompetitions};
-  if (path === '/api/leagues') return {leagues: demoClubs.map((c,index) => ({id: c.leagueId, name: c.leagueName, country: c.country, sortOrder: index, clubCount: 2, createdAt}))};
+  if (path === '/api/leagues') return {leagues: demoClubs.map((c,index) => ({id: c.leagueId, name: c.leagueName, country: c.country, tier: 1, logoUrl: '', sortOrder: index, clubCount: 2, totalClubs: 2, createdAt}))};
   const comp = path.match(/^\/api\/competitions\/([^/]+)\/(standings|fixtures|participants)$/);
   if (comp) return comp[2] === 'standings' ? {standings: standings(comp[1])} : comp[2] === 'fixtures' ? {fixtures: fixtures().filter(f => f.competitionId === comp[1])} : {participants: []};
   if (/^\/api\/leagues\/[^/]+\/clubs$/.test(path)) return {clubs: [...demoClubs, ...opponents].filter(c => c.leagueId === path.split('/')[3])};
