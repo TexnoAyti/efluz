@@ -434,7 +434,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
     <div className="space-y-6 animate-in fade-in duration-300 pb-20">
       {/* Category Quick Switcher Hub (Legacy Normal Players only) */}
       {!user?.isAdmin && (
-        <div className={`flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none ${user?.isAdmin ? 'efl-league-icon-selector' : ''}`}>
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
           <button
             className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-black btn-glass-primary text-slate-950 shadow-md min-h-[36px]"
           >
@@ -488,7 +488,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
         </div>
 
         {leagues.length > 0 && (
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+          <div className={`flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none ${user?.isAdmin ? 'efl-league-icon-selector' : ''}`}>
             {leagues.map((league) => {
               const isSelected = selectedLeagueId === league.id;
               const welcomeIcon = user?.isAdmin ? welcomeLeagueIcons[league.id] : undefined;
