@@ -914,3 +914,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 .efl-preview:not(.theme-dark) main[data-preview-page="admin"] [class*="bg-teal-950"] { background-color: color-mix(in srgb, #0f766e 10%, var(--efl-surface)) !important; }
 .efl-preview main[data-preview-page="admin"] :is([class~="hover:text-white"], [class~="hover:text-slate-200"]):hover { color: var(--efl-text) !important; }
 .efl-preview main[data-preview-page="admin"] :is([class~="hover:bg-slate-700"], [class~="hover:bg-slate-800"], [class~="hover:bg-white/[0.04]"]):hover { background-color: var(--efl-surface-2) !important; }
+.efl-preview main[data-preview-page="admin"] [id^="tab-admin-"] { flex-shrink: 0; }
+@media (min-width: 1024px) {
+  .efl-preview footer { padding-bottom: 12px; }
+}
