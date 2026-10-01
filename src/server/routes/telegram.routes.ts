@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Router, Request, Response } from 'express';
 import {
   handleTelegramStart,
@@ -22,19 +23,44 @@ import {
 } from '../services/premiumService';
 
 export const telegramRouter = Router();
-const recentWebhookUpdates = new Map<number, number>();
+// A processing lease is separate from acknowledgement: failed work remains retryable.
+const recentWebhookUpdates = new Map<number, { value: string; expiresAt: number }>();
+const WEBHOOK_LEASE_SECONDS = 120;
+const WEBHOOK_DONE_SECONDS = 86400;
 
-async function claimTelegramUpdate(updateId: number): Promise<boolean> {
+async function claimTelegramUpdate(updateId: number, owner: string): Promise<'claimed' | 'done' | 'busy'> {
   const client = getUpstashClient();
+  const key = `${KEY_PREFIX}:telegram:webhook-update:${updateId}`;
   if (client) {
-    const key = `${KEY_PREFIX}:telegram:webhook-update:${updateId}`;
-    return Boolean(await client.set(key, '1', { nx: true, ex: 86400 }));
+    if (await client.set(key, owner, { nx: true, ex: WEBHOOK_LEASE_SECONDS })) return 'claimed';
+    const value = await client.get<string>(key);
+    // '1' is the completed marker used by the previous implementation.
+    return value === 'done' || value === '1' ? 'done' : 'busy';
   }
   const now = Date.now();
-  for (const [id, expiresAt] of recentWebhookUpdates) if (expiresAt <= now) recentWebhookUpdates.delete(id);
-  if (recentWebhookUpdates.has(updateId)) return false;
-  recentWebhookUpdates.set(updateId, now + 10 * 60 * 1000);
-  return true;
+  for (const [id, record] of recentWebhookUpdates) if (record.expiresAt <= now) recentWebhookUpdates.delete(id);
+  const record = recentWebhookUpdates.get(updateId);
+  if (record) return record.value === 'done' ? 'done' : 'busy';
+  recentWebhookUpdates.set(updateId, { value: owner, expiresAt: now + WEBHOOK_LEASE_SECONDS * 1000 });
+  return 'claimed';
+}
+
+async function settleTelegramUpdate(updateId: number, owner: string, completed: boolean): Promise<void> {
+  const client = getUpstashClient();
+  if (client) {
+    // Ownership checks stop an expired worker from completing/releasing a newer lease.
+    await client.eval(`
+      if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end
+      if ARGV[2] == 'done' then
+        return redis.call('SET', KEYS[1], 'done', 'EX', ARGV[3])
+      end
+      return redis.call('DEL', KEYS[1])
+    `, [`${KEY_PREFIX}:telegram:webhook-update:${updateId}`], [owner, completed ? 'done' : 'release', WEBHOOK_DONE_SECONDS]);
+    return;
+  }
+  if (recentWebhookUpdates.get(updateId)?.value !== owner) return;
+  if (completed) recentWebhookUpdates.set(updateId, { value: 'done', expiresAt: Date.now() + WEBHOOK_DONE_SECONDS * 1000 });
+  else recentWebhookUpdates.delete(updateId);
 }
 
 function normalizedSeasonId(value: unknown): string {
@@ -67,61 +93,65 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
     res.status(200).json({ ok: true, ignored: 'invalid_update_id' });
     return;
   }
-  if (!(await claimTelegramUpdate(update.update_id))) {
-    res.status(200).json({ ok: true, ignored: 'duplicate_update' });
-    return;
-  }
-
-  // Telegram Stars checkout must be answered within 10 seconds.
-  if (update.pre_checkout_query) {
-    try {
+  const owner = randomUUID();
+  let claimed = false;
+  try {
+    const claim = await claimTelegramUpdate(update.update_id, owner);
+    if (claim === 'done') {
+      res.status(200).json({ ok: true, ignored: 'duplicate_update' });
+      return;
+    }
+    if (claim === 'busy') {
+      res.status(503).json({ ok: false, error: 'update_in_progress' });
+      return;
+    }
+    claimed = true;
+    let response: Record<string, unknown> = { ok: true, ignored: 'unhandled_update_type' };
+    if (update.pre_checkout_query) {
       const result = await answerPremiumPreCheckout(update.pre_checkout_query);
-      res.status(200).json({ ok: true, handled: 'premium_pre_checkout', result });
-    } catch (err: any) {
-      console.error('[PREMIUM PRE-CHECKOUT ERROR]', err?.message || err);
-      res.status(200).json({ ok: true, error: 'premium_pre_checkout_failed' });
-    }
-    return;
-  }
-
-  const message = update.message;
-
-  // Premium is granted only after Telegram sends successful_payment.
-  if (message?.successful_payment) {
-    try {
-      const paymentResult = await handlePremiumSuccessfulPayment(message);
-      if (paymentResult?.handled && paymentResult?.userId) {
-        await sendTelegramMessage(
-          message.chat?.id || message.from?.id,
-          `<b>EFL UZ Premium activated</b>\n\nSeason: <b>2026/27</b>\nPayment: <b>${PREMIUM_PRICE_STARS} ⭐</b>\n\nYour season access is now active.`,
-          { parse_mode: 'HTML' }
-        ).catch(() => undefined);
-      }
-      res.status(200).json({ ok: true, handled: 'premium_successful_payment', result: paymentResult });
-    } catch (err: any) {
-      console.error('[PREMIUM PAYMENT ERROR]', err?.message || err);
-      res.status(200).json({ ok: true, error: 'premium_payment_processing_failed' });
-    }
-    return;
-  }
-
-  // Handle incoming /start message
-  if (message && message.text && typeof message.text === 'string') {
-    const text = message.text.trim();
-    if (text.startsWith('/start') && Number.isSafeInteger(message.chat?.id) && Number.isSafeInteger(message.from?.id)) {
-      try {
-        const result = await handleTelegramStart(message.chat.id, message.from);
-        res.status(200).json({ ok: true, handled: 'start', result });
-        return;
-      } catch (err: any) {
-        console.error('[TELEGRAM WEBHOOK /start error]:', err.message);
-        res.status(200).json({ ok: true, error: 'start_handler_failed' });
-        return;
+      response = { ok: true, handled: 'premium_pre_checkout', result };
+    } else {
+      const message = update.message;
+      if (message?.successful_payment) {
+        const result = await handlePremiumSuccessfulPayment(message);
+        // The transaction deduplicates by charge ID, including retries after a Redis outage.
+        if (result?.handled && result?.userId && !result?.idempotent) {
+          await sendTelegramMessage(
+            message.chat?.id || message.from?.id,
+            `<b>EFL UZ Premium faollashtirildi</b>\n\nMavsum: <b>${result.seasonId === 'season-2026-27' ? '2026/27' : result.seasonId}</b>\nTo‘lov: <b>${PREMIUM_PRICE_STARS} ⭐</b>\n\nMavsum uchun Premium imkoniyatlaringiz faollashdi.`,
+            { parse_mode: 'HTML' }
+          ).catch(() => undefined);
+        }
+        response = { ok: true, handled: 'premium_successful_payment', result };
+      } else if (typeof message?.text === 'string' && Number.isSafeInteger(message.chat?.id) && Number.isSafeInteger(message.from?.id)) {
+        const command = /^\/(start|help|paysupport)(?:@[a-zA-Z0-9_]+)?(?:\s|$)/.exec(message.text.trim())?.[1];
+        if (command === 'start') {
+          const result = await handleTelegramStart(message.chat.id, message.from);
+          if (!result.ok || !result.messageSent) throw new Error('START_MESSAGE_NOT_SENT');
+          response = { ok: true, handled: 'start', result };
+        } else if (command === 'help' || command === 'paysupport') {
+          const group = (process.env.TELEGRAM_GROUP_USERNAME || '@efleagueuz').trim().replace(/^@/, '');
+          const text = command === 'paysupport'
+            ? 'Premium to‘lovi yoki faollashishi bilan muammo bo‘lsa, rasmiy guruhdagi administratorga murojaat qiling. To‘lov sanasi va Telegram to‘lov chekingizni yuboring. Parol va tasdiqlash kodlarini yubormang.'
+            : 'EFL UZ’ni ochish uchun /start bosing. Ilovada klub tanlash, uchrashuvlar va turnir jadvalini ko‘rishingiz mumkin. Yordam uchun rasmiy guruhdagi administratorga murojaat qiling.';
+          const result = await sendTelegramMessage(message.chat.id, text, {
+            reply_markup: { inline_keyboard: [[{ text: 'Administrator bilan bog‘lanish', url: `https://t.me/${group}` }]] },
+          });
+          if (!result.ok) throw new Error('SUPPORT_MESSAGE_NOT_SENT');
+          response = { ok: true, handled: command };
+        }
       }
     }
+    await settleTelegramUpdate(update.update_id, owner, true);
+    res.status(200).json(response);
+  } catch (err: any) {
+    console.error('[TELEGRAM WEBHOOK ERROR]', err?.message || err);
+    if (claimed) await settleTelegramUpdate(update.update_id, owner, false).catch((releaseError) => {
+      console.error('[TELEGRAM WEBHOOK LEASE RELEASE ERROR]', releaseError?.message || releaseError);
+    });
+    // Non-2xx lets Telegram retry; never acknowledge an unprocessed payment.
+    res.status(503).json({ ok: false, error: 'webhook_processing_failed' });
   }
-
-  res.status(200).json({ ok: true, ignored: 'unhandled_update_type' });
 });
 
 /**

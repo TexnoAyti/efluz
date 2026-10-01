@@ -179,6 +179,7 @@ export async function sendTelegramSticker(
   const url = `https://api.telegram.org/bot${botToken}/sendSticker`;
   try {
     const res = await fetch(url, {
+      signal: AbortSignal.timeout(10000),
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -223,7 +224,7 @@ export async function handleTelegramStart(
 
   // 2. Format personalized welcome message
   const rawFirstName = fromUser?.first_name || 'Foydalanuvchi';
-  const cleanFirstName = rawFirstName.replace(/[<>]/g, '');
+  const cleanFirstName = rawFirstName.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const webAppUrl = process.env.TELEGRAM_WEBAPP_URL?.trim() || process.env.APP_URL?.trim() || 'https://efluz.vercel.app';
   const groupUsername = (process.env.TELEGRAM_GROUP_USERNAME || '@efleagueuz').trim();
   const groupUrl = groupUsername.startsWith('@')

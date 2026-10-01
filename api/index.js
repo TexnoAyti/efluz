@@ -583,6 +583,7 @@ async function sendTelegramSticker(chatId, stickerFileId) {
   const url = `https://api.telegram.org/bot${botToken}/sendSticker`;
   try {
     const res = await fetch(url, {
+      signal: AbortSignal.timeout(1e4),
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -613,7 +614,7 @@ async function handleTelegramStart(chatId, fromUser) {
     }
   }
   const rawFirstName = fromUser?.first_name || "Foydalanuvchi";
-  const cleanFirstName = rawFirstName.replace(/[<>]/g, "");
+  const cleanFirstName = rawFirstName.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const webAppUrl = process.env.TELEGRAM_WEBAPP_URL?.trim() || process.env.APP_URL?.trim() || "https://efluz.vercel.app";
   const groupUsername = (process.env.TELEGRAM_GROUP_USERNAME || "@efleagueuz").trim();
   const groupUrl = groupUsername.startsWith("@") ? `https://t.me/${groupUsername.slice(1)}` : `https://t.me/${groupUsername}`;
@@ -2410,6 +2411,10 @@ function escapeHtml(value) {
 function ownerId(fixture, side) {
   return side === "home" ? fixture.homeOwnerId || fixture.homeOwner?.userId || fixture.homeUser?.id : fixture.awayOwnerId || fixture.awayOwner?.userId || fixture.awayUser?.id;
 }
+function ownerOfClub(fixtures, clubId) {
+  const fixture = fixtures.find((item) => item.homeClubId === clubId || item.awayClubId === clubId);
+  return fixture ? ownerId(fixture, fixture.homeClubId === clubId ? "home" : "away") : void 0;
+}
 function clubName(fixture, side) {
   return side === "home" ? fixture.homeClub?.name || fixture.homeClubId || "Home" : fixture.awayClub?.name || fixture.awayClubId || "Away";
 }
@@ -2531,8 +2536,8 @@ async function enqueueSmartTelegramNotification(params) {
     return false;
   }
   const recipient = await getCachedRecipient(params.userId, params.seasonId);
-  if (!recipient?.messageable || !recipient.telegramId) {
-    console.info("[SMART_NOTIFY] Recipient not messageable or directory not warmed", { userId: params.userId, seasonId: params.seasonId });
+  if (recipient && (!recipient.messageable || !recipient.telegramId)) {
+    console.info("[SMART_NOTIFY] Recipient not messageable", { userId: params.userId, seasonId: params.seasonId });
     return false;
   }
   const digest = crypto.createHash("sha256").update(`${params.eventId}:${params.userId}`).digest("hex");
@@ -2552,17 +2557,19 @@ async function enqueueSmartTelegramNotification(params) {
     createdAt: now,
     status: "QUEUED",
     metrics: { totalRecipients: 1, sentCount: 0, failedCount: 0, skippedCount: 0 },
-    recipients: [{ userId: recipient.userId, username: recipient.username || "player", displayName: recipient.displayName || recipient.username || "EFL Player", status: "PENDING", retryCount: 0 }],
+    recipients: [{ userId: recipient?.userId || params.userId, username: recipient?.username || "player", displayName: recipient?.displayName || recipient?.username || "EFL Player", status: "PENDING", retryCount: 0 }],
     bodyIsHtml: true,
     replyMarkup: params.replyMarkup
   };
   const job = {
     jobId,
     broadcastId,
-    userId: recipient.userId,
-    username: recipient.username || "player",
-    displayName: recipient.displayName || recipient.username || "EFL Player",
-    telegramId: recipient.telegramId,
+    userId: recipient?.userId || params.userId,
+    username: recipient?.username || "player",
+    displayName: recipient?.displayName || recipient?.username || "EFL Player",
+    telegramId: recipient?.telegramId || void 0,
+    seasonId: params.seasonId,
+    requiresRecipientLookup: !recipient,
     title: params.title,
     body: params.body,
     type: "CUSTOM_ALERT",
@@ -2645,12 +2652,14 @@ async function notifyNextFixtureIfKnown(fixture) {
 }
 async function notifySmartCupAdvancement(params) {
   const recipient = await getCachedRecipientByClubId(params.winnerClubId, params.seasonId);
-  if (!recipient) return false;
   const fixtures = await getCompetitionFixtureSnapshot(params.competitionId, params.seasonId);
+  const source = fixtures.find((fixture) => fixture.id === params.sourceFixtureId);
+  const winnerUserId = recipient?.userId || ownerOfClub(source ? [source] : [], params.winnerClubId);
+  if (!winnerUserId) return false;
   const target = fixtures.find((fixture) => fixture.id === params.targetFixtureId);
   const viewerSide = target?.homeClubId === params.winnerClubId ? "home" : target?.awayClubId === params.winnerClubId ? "away" : void 0;
   return enqueueSmartTelegramNotification({
-    userId: recipient.userId,
+    userId: winnerUserId,
     seasonId: params.seasonId,
     eventId: `cup-advance:${params.sourceFixtureId}:${params.targetFixtureId}:${params.winnerClubId}`,
     title: "\u{1F3C6} Keyingi bosqichga o\u2018tdingiz",
@@ -2662,12 +2671,13 @@ Bracket yangilandi. Tafsilotlar EFL UZ ilovasida.`,
 }
 async function notifySmartCupChampion(params) {
   const recipient = await getCachedRecipientByClubId(params.winnerClubId, params.seasonId);
-  if (!recipient) return false;
   const fixtures = await getCompetitionFixtureSnapshot(params.competitionId, params.seasonId);
   const finalFixture = fixtures.find((fixture) => fixture.id === params.sourceFixtureId);
+  const winnerUserId = recipient?.userId || ownerOfClub(finalFixture ? [finalFixture] : [], params.winnerClubId);
+  if (!winnerUserId) return false;
   const competitionName = finalFixture?.competitionName || params.competitionId;
   return enqueueSmartTelegramNotification({
-    userId: recipient.userId,
+    userId: winnerUserId,
     seasonId: params.seasonId,
     eventId: `cup-champion:${params.competitionId}:${params.sourceFixtureId}:${params.winnerClubId}`,
     title: "\u{1F451} Chempion!",
@@ -2682,12 +2692,15 @@ Tabriklaymiz \u2014 siz chempion bo\u2018ldingiz!`,
 }
 async function notifySmartEuropeanZones(params) {
   const tasks = [];
+  let fixtures;
   for (const row of params.rows) {
     const recipient = await getCachedRecipientByClubId(row.clubId, params.seasonId);
-    if (!recipient) continue;
+    if (!recipient && !fixtures) fixtures = await getCompetitionFixtureSnapshot(params.competitionId, params.seasonId);
+    const userId = recipient?.userId || ownerOfClub(fixtures || [], row.clubId);
+    if (!userId) continue;
     const title = row.zone === "DIRECT_R16" ? "\u{1F31F} To\u2018g\u2018ridan-to\u2018g\u2018ri yo\u2018llanma" : row.zone === "KNOCKOUT_PLAYOFF" ? "\u2694\uFE0F Play-off yo\u2018llanmasi" : "\u{1F4CB} Liga bosqichi yakunlandi";
     tasks.push(enqueueSmartTelegramNotification({
-      userId: recipient.userId,
+      userId,
       seasonId: params.seasonId,
       eventId: `european-zone:${params.competitionId}:${row.clubId}:${row.zone}:${row.position}`,
       title,
@@ -15313,7 +15326,12 @@ async function processNotificationQueue(batchSize = 25, stopClaimingAt = Infinit
     const abandoned = await client.hgetall(PROCESSING_KEY);
     for (const job of Object.values(abandoned || {})) {
       if ((job.claimedAt || 0) + 12e4 > Date.now()) continue;
-      await updateBroadcastRecipientState(job.broadcastId, job.userId, "FAILED", "DELIVERY_UNKNOWN: worker interrupted; verify delivery before creating another broadcast");
+      if (job.requiresRecipientLookup) {
+        job.availableAt = Date.now() + 3e5;
+        await client.rpush(QUEUE_KEY2, JSON.stringify(job));
+      } else {
+        await updateBroadcastRecipientState(job.broadcastId, job.userId, "FAILED", "DELIVERY_UNKNOWN: worker interrupted; verify delivery before creating another broadcast");
+      }
       await client.hdel(PROCESSING_KEY, job.jobId);
     }
     for (let i = 0; i < Math.min(Math.max(batchSize, 1), 25) && Date.now() < deadline; i++) {
@@ -15345,6 +15363,24 @@ async function processNotificationQueue(batchSize = 25, stopClaimingAt = Infinit
         await updateBroadcastRecipientState(job.broadcastId, job.userId, "FAILED", "DELIVERY_UNKNOWN: interrupted send");
         await client.hdel(PROCESSING_KEY, job.jobId);
         continue;
+      }
+      if (job.requiresRecipientLookup) {
+        const entries = await client.get(`${RECIPIENT_DIR_KEY2}:${job.seasonId || record.seasonId}`);
+        const entry = Array.isArray(entries) ? entries.find((item) => item.userId === job.userId) : void 0;
+        if (!entry) {
+          job.availableAt = Date.now() + 3e5;
+          await client.rpush(QUEUE_KEY2, JSON.stringify(job));
+          await client.hdel(PROCESSING_KEY, job.jobId);
+          continue;
+        }
+        if (!entry.messageable || !entry.telegramId) {
+          await updateBroadcastRecipientState(job.broadcastId, job.userId, "SKIPPED_NO_TELEGRAM");
+          await client.hdel(PROCESSING_KEY, job.jobId);
+          continue;
+        }
+        job.telegramId = entry.telegramId;
+        job.requiresRecipientLookup = false;
+        await client.hset(PROCESSING_KEY, { [job.jobId]: { ...job, claimedAt: Date.now() } });
       }
       recipient.status = "SENDING";
       record.status = "PROCESSING";
@@ -15406,6 +15442,7 @@ async function updateBroadcastRecipientState(broadcastId, userId, status, error,
   }
   bcast.metrics.sentCount = bcast.recipients.filter((r2) => r2.status === "SENT").length;
   bcast.metrics.failedCount = bcast.recipients.filter((r2) => r2.status === "FAILED").length;
+  bcast.metrics.skippedCount = bcast.recipients.filter((r2) => r2.status === "SKIPPED_NO_TELEGRAM").length;
   const totalFinished = bcast.metrics.sentCount + bcast.metrics.failedCount + bcast.metrics.skippedCount;
   if (totalFinished >= bcast.metrics.totalRecipients) {
     bcast.status = bcast.metrics.failedCount > 0 ? "PARTIALLY_FAILED" : "COMPLETED";
@@ -22383,22 +22420,44 @@ adminRouter.post("/telegram-notifications/process-queue", async (req, res) => {
 
 // src/server/routes/telegram.routes.ts
 init_telegramBotService();
+import { randomUUID as randomUUID2 } from "node:crypto";
 import { Router as Router18 } from "express";
 init_readModelStore();
 init_premiumService();
 var telegramRouter = Router18();
 var recentWebhookUpdates = /* @__PURE__ */ new Map();
-async function claimTelegramUpdate(updateId) {
+var WEBHOOK_LEASE_SECONDS = 120;
+var WEBHOOK_DONE_SECONDS = 86400;
+async function claimTelegramUpdate(updateId, owner) {
   const client = getUpstashClient();
+  const key = `${KEY_PREFIX}:telegram:webhook-update:${updateId}`;
   if (client) {
-    const key = `${KEY_PREFIX}:telegram:webhook-update:${updateId}`;
-    return Boolean(await client.set(key, "1", { nx: true, ex: 86400 }));
+    if (await client.set(key, owner, { nx: true, ex: WEBHOOK_LEASE_SECONDS })) return "claimed";
+    const value = await client.get(key);
+    return value === "done" || value === "1" ? "done" : "busy";
   }
   const now = Date.now();
-  for (const [id, expiresAt] of recentWebhookUpdates) if (expiresAt <= now) recentWebhookUpdates.delete(id);
-  if (recentWebhookUpdates.has(updateId)) return false;
-  recentWebhookUpdates.set(updateId, now + 10 * 60 * 1e3);
-  return true;
+  for (const [id, record2] of recentWebhookUpdates) if (record2.expiresAt <= now) recentWebhookUpdates.delete(id);
+  const record = recentWebhookUpdates.get(updateId);
+  if (record) return record.value === "done" ? "done" : "busy";
+  recentWebhookUpdates.set(updateId, { value: owner, expiresAt: now + WEBHOOK_LEASE_SECONDS * 1e3 });
+  return "claimed";
+}
+async function settleTelegramUpdate(updateId, owner, completed) {
+  const client = getUpstashClient();
+  if (client) {
+    await client.eval(`
+      if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end
+      if ARGV[2] == 'done' then
+        return redis.call('SET', KEYS[1], 'done', 'EX', ARGV[3])
+      end
+      return redis.call('DEL', KEYS[1])
+    `, [`${KEY_PREFIX}:telegram:webhook-update:${updateId}`], [owner, completed ? "done" : "release", WEBHOOK_DONE_SECONDS]);
+    return;
+  }
+  if (recentWebhookUpdates.get(updateId)?.value !== owner) return;
+  if (completed) recentWebhookUpdates.set(updateId, { value: "done", expiresAt: Date.now() + WEBHOOK_DONE_SECONDS * 1e3 });
+  else recentWebhookUpdates.delete(updateId);
 }
 function normalizedSeasonId(value) {
   return typeof value === "string" && value.trim() ? value.trim() : PREMIUM_DEFAULT_SEASON_ID;
@@ -22423,58 +22482,66 @@ telegramRouter.post("/webhook", async (req, res) => {
     res.status(200).json({ ok: true, ignored: "invalid_update_id" });
     return;
   }
-  if (!await claimTelegramUpdate(update.update_id)) {
-    res.status(200).json({ ok: true, ignored: "duplicate_update" });
-    return;
-  }
-  if (update.pre_checkout_query) {
-    try {
+  const owner = randomUUID2();
+  let claimed = false;
+  try {
+    const claim = await claimTelegramUpdate(update.update_id, owner);
+    if (claim === "done") {
+      res.status(200).json({ ok: true, ignored: "duplicate_update" });
+      return;
+    }
+    if (claim === "busy") {
+      res.status(503).json({ ok: false, error: "update_in_progress" });
+      return;
+    }
+    claimed = true;
+    let response = { ok: true, ignored: "unhandled_update_type" };
+    if (update.pre_checkout_query) {
       const result = await answerPremiumPreCheckout(update.pre_checkout_query);
-      res.status(200).json({ ok: true, handled: "premium_pre_checkout", result });
-    } catch (err) {
-      console.error("[PREMIUM PRE-CHECKOUT ERROR]", err?.message || err);
-      res.status(200).json({ ok: true, error: "premium_pre_checkout_failed" });
-    }
-    return;
-  }
-  const message = update.message;
-  if (message?.successful_payment) {
-    try {
-      const paymentResult = await handlePremiumSuccessfulPayment(message);
-      if (paymentResult?.handled && paymentResult?.userId) {
-        await sendTelegramMessage(
-          message.chat?.id || message.from?.id,
-          `<b>EFL UZ Premium activated</b>
+      response = { ok: true, handled: "premium_pre_checkout", result };
+    } else {
+      const message = update.message;
+      if (message?.successful_payment) {
+        const result = await handlePremiumSuccessfulPayment(message);
+        if (result?.handled && result?.userId && !result?.idempotent) {
+          await sendTelegramMessage(
+            message.chat?.id || message.from?.id,
+            `<b>EFL UZ Premium faollashtirildi</b>
 
-Season: <b>2026/27</b>
-Payment: <b>${PREMIUM_PRICE_STARS} \u2B50</b>
+Mavsum: <b>${result.seasonId === "season-2026-27" ? "2026/27" : result.seasonId}</b>
+To\u2018lov: <b>${PREMIUM_PRICE_STARS} \u2B50</b>
 
-Your season access is now active.`,
-          { parse_mode: "HTML" }
-        ).catch(() => void 0);
-      }
-      res.status(200).json({ ok: true, handled: "premium_successful_payment", result: paymentResult });
-    } catch (err) {
-      console.error("[PREMIUM PAYMENT ERROR]", err?.message || err);
-      res.status(200).json({ ok: true, error: "premium_payment_processing_failed" });
-    }
-    return;
-  }
-  if (message && message.text && typeof message.text === "string") {
-    const text = message.text.trim();
-    if (text.startsWith("/start") && Number.isSafeInteger(message.chat?.id) && Number.isSafeInteger(message.from?.id)) {
-      try {
-        const result = await handleTelegramStart(message.chat.id, message.from);
-        res.status(200).json({ ok: true, handled: "start", result });
-        return;
-      } catch (err) {
-        console.error("[TELEGRAM WEBHOOK /start error]:", err.message);
-        res.status(200).json({ ok: true, error: "start_handler_failed" });
-        return;
+Mavsum uchun Premium imkoniyatlaringiz faollashdi.`,
+            { parse_mode: "HTML" }
+          ).catch(() => void 0);
+        }
+        response = { ok: true, handled: "premium_successful_payment", result };
+      } else if (typeof message?.text === "string" && Number.isSafeInteger(message.chat?.id) && Number.isSafeInteger(message.from?.id)) {
+        const command = /^\/(start|help|paysupport)(?:@[a-zA-Z0-9_]+)?(?:\s|$)/.exec(message.text.trim())?.[1];
+        if (command === "start") {
+          const result = await handleTelegramStart(message.chat.id, message.from);
+          if (!result.ok || !result.messageSent) throw new Error("START_MESSAGE_NOT_SENT");
+          response = { ok: true, handled: "start", result };
+        } else if (command === "help" || command === "paysupport") {
+          const group = (process.env.TELEGRAM_GROUP_USERNAME || "@efleagueuz").trim().replace(/^@/, "");
+          const text = command === "paysupport" ? "Premium to\u2018lovi yoki faollashishi bilan muammo bo\u2018lsa, rasmiy guruhdagi administratorga murojaat qiling. To\u2018lov sanasi va Telegram to\u2018lov chekingizni yuboring. Parol va tasdiqlash kodlarini yubormang." : "EFL UZ\u2019ni ochish uchun /start bosing. Ilovada klub tanlash, uchrashuvlar va turnir jadvalini ko\u2018rishingiz mumkin. Yordam uchun rasmiy guruhdagi administratorga murojaat qiling.";
+          const result = await sendTelegramMessage(message.chat.id, text, {
+            reply_markup: { inline_keyboard: [[{ text: "Administrator bilan bog\u2018lanish", url: `https://t.me/${group}` }]] }
+          });
+          if (!result.ok) throw new Error("SUPPORT_MESSAGE_NOT_SENT");
+          response = { ok: true, handled: command };
+        }
       }
     }
+    await settleTelegramUpdate(update.update_id, owner, true);
+    res.status(200).json(response);
+  } catch (err) {
+    console.error("[TELEGRAM WEBHOOK ERROR]", err?.message || err);
+    if (claimed) await settleTelegramUpdate(update.update_id, owner, false).catch((releaseError) => {
+      console.error("[TELEGRAM WEBHOOK LEASE RELEASE ERROR]", releaseError?.message || releaseError);
+    });
+    res.status(503).json({ ok: false, error: "webhook_processing_failed" });
   }
-  res.status(200).json({ ok: true, ignored: "unhandled_update_type" });
 });
 telegramRouter.get("/status", (req, res) => {
   const hasToken = Boolean(process.env.TELEGRAM_BOT_TOKEN);

@@ -165,8 +165,8 @@ async function runSuite1_SQLiteMigration() {
       const srcSlotCol = cols.find((c) => c[1] === 'source_winner_slot');
 
       const passed =
-        countBefore === 190 &&
-        countAfter === 190 &&
+        countBefore > 0 &&
+        countAfter === countBefore &&
         homeCol &&
         homeCol[3] === 0 && // notnull === 0 (nullable!)
         awayCol &&
@@ -176,7 +176,7 @@ async function runSuite1_SQLiteMigration() {
 
       recordTest(
         suite,
-        'Existing data/efootball.sqlite (190 fixtures) migrated safely with 100% record preservation',
+        'Existing data/efootball.sqlite migrated safely with 100% record preservation',
         Boolean(passed),
         `countBefore=${countBefore}, countAfter=${countAfter}, homeNotNull=${homeCol ? homeCol[3] : 'N/A'}, awayNotNull=${awayCol ? awayCol[3] : 'N/A'}, sourceColumnsPresent=${Boolean(srcFixCol && srcSlotCol)}`
       );

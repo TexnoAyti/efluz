@@ -82,6 +82,8 @@ export interface NotificationQueueJob {
   username: string;
   displayName: string;
   telegramId?: string | number; // PRIVATE
+  seasonId?: string;
+  requiresRecipientLookup?: boolean;
   title: string;
   body: string;
   type: string;
@@ -500,7 +502,12 @@ export async function processNotificationQueue(batchSize = 25, stopClaimingAt = 
     const abandoned = await client.hgetall<Record<string, NotificationQueueJob & { claimedAt?: number }>>(PROCESSING_KEY);
     for (const job of Object.values(abandoned || {})) {
       if ((job.claimedAt || 0) + 120000 > Date.now()) continue;
-      await updateBroadcastRecipientState(job.broadcastId, job.userId, 'FAILED', 'DELIVERY_UNKNOWN: worker interrupted; verify delivery before creating another broadcast');
+      if (job.requiresRecipientLookup) {
+        job.availableAt = Date.now() + 300000;
+        await client.rpush(QUEUE_KEY, JSON.stringify(job));
+      } else {
+        await updateBroadcastRecipientState(job.broadcastId, job.userId, 'FAILED', 'DELIVERY_UNKNOWN: worker interrupted; verify delivery before creating another broadcast');
+      }
       await client.hdel(PROCESSING_KEY, job.jobId);
     }
     for (let i = 0; i < Math.min(Math.max(batchSize, 1), 25) && Date.now() < deadline; i++) {
@@ -532,6 +539,27 @@ export async function processNotificationQueue(batchSize = 25, stopClaimingAt = 
         await updateBroadcastRecipientState(job.broadcastId, job.userId, 'FAILED', 'DELIVERY_UNKNOWN: interrupted send');
         await client.hdel(PROCESSING_KEY, job.jobId);
         continue;
+      }
+      if (job.requiresRecipientLookup) {
+        const entries = await client.get<RecipientDirectoryEntry[]>(`${RECIPIENT_DIR_KEY}:${job.seasonId || record.seasonId}`);
+        const entry = Array.isArray(entries) ? entries.find((item) => item.userId === job.userId) : undefined;
+        if (!entry) {
+          // Keep the event durable until the existing directory sync catches up.
+          // This worker never warms the directory through extra Firestore reads.
+          job.availableAt = Date.now() + 300000;
+          await client.rpush(QUEUE_KEY, JSON.stringify(job));
+          await client.hdel(PROCESSING_KEY, job.jobId);
+          continue;
+        }
+        if (!entry.messageable || !entry.telegramId) {
+          await updateBroadcastRecipientState(job.broadcastId, job.userId, 'SKIPPED_NO_TELEGRAM');
+          await client.hdel(PROCESSING_KEY, job.jobId);
+          continue;
+        }
+        job.telegramId = entry.telegramId;
+        job.requiresRecipientLookup = false;
+        // Crash recovery must know when a resolved job may have started sending.
+        await client.hset(PROCESSING_KEY, { [job.jobId]: { ...job, claimedAt: Date.now() } });
       }
       recipient.status = 'SENDING';
       record.status = 'PROCESSING';
@@ -596,7 +624,7 @@ function escapeHtml(str: string): string {
 async function updateBroadcastRecipientState(
   broadcastId: string,
   userId: string,
-  status: 'PENDING' | 'SENT' | 'FAILED',
+  status: 'PENDING' | 'SENT' | 'FAILED' | 'SKIPPED_NO_TELEGRAM',
   error?: string,
   sentAt?: string,
   retryCount?: number
@@ -614,6 +642,7 @@ async function updateBroadcastRecipientState(
 
   bcast.metrics.sentCount = bcast.recipients.filter(r => r.status === 'SENT').length;
   bcast.metrics.failedCount = bcast.recipients.filter(r => r.status === 'FAILED').length;
+  bcast.metrics.skippedCount = bcast.recipients.filter(r => r.status === 'SKIPPED_NO_TELEGRAM').length;
 
   const totalFinished = bcast.metrics.sentCount + bcast.metrics.failedCount + bcast.metrics.skippedCount;
   if (totalFinished >= bcast.metrics.totalRecipients) {
@@ -726,3 +755,4 @@ export async function getBroadcastDetails(broadcastId: string): Promise<Telegram
   }
   return memoryBroadcasts.get(broadcastId) || null;
 }
+

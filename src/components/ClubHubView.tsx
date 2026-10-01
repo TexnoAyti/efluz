@@ -429,7 +429,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
 
     // 2. Domestic Cup
     const domCup = competitions.find(
-      (c) => (c.type as string) === 'CUP' && (c.leagueId === activeClub.leagueId || c.name.toLowerCase().includes(activeClub.leagueId?.replace('league-', '') || ''))
+      (c) => c.type === 'KNOCKOUT' && c.leagueId === activeClub.leagueId
     );
     if (domCup) {
       list.push({
@@ -443,7 +443,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
     }
 
     // 3. Champions League / European
-    const eurComp = competitions.find((c) => (c.type as string) === 'CHAMPIONS_LEAGUE');
+    const eurComp = competitions.find((c) => c.type === 'EUROPEAN_LEAGUE_PHASE' && /(?:^|[- ])ucl(?:[- ]|$)|champions league|chempionlar/i.test(`${c.id} ${c.name}`));
     if (eurComp) {
       list.push({
         id: eurComp.id,

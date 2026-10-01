@@ -51,7 +51,9 @@ interface SmartQueueJob {
   userId: string;
   username: string;
   displayName: string;
-  telegramId: string | number;
+  telegramId?: string | number;
+  seasonId?: string;
+  requiresRecipientLookup?: boolean;
   title: string;
   body: string;
   type: 'CUSTOM_ALERT';
@@ -91,6 +93,11 @@ function ownerId(fixture: Fixture, side: 'home' | 'away'): string | undefined {
   return side === 'home'
     ? (fixture.homeOwnerId || fixture.homeOwner?.userId || (fixture as any).homeUser?.id)
     : (fixture.awayOwnerId || fixture.awayOwner?.userId || (fixture as any).awayUser?.id);
+}
+
+function ownerOfClub(fixtures: Fixture[], clubId: string): string | undefined {
+  const fixture = fixtures.find((item) => item.homeClubId === clubId || item.awayClubId === clubId);
+  return fixture ? ownerId(fixture, fixture.homeClubId === clubId ? 'home' : 'away') : undefined;
 }
 
 function clubName(fixture: Fixture, side: 'home' | 'away'): string {
@@ -250,8 +257,8 @@ export async function enqueueSmartTelegramNotification(params: {
     return false;
   }
   const recipient = await getCachedRecipient(params.userId, params.seasonId);
-  if (!recipient?.messageable || !recipient.telegramId) {
-    console.info('[SMART_NOTIFY] Recipient not messageable or directory not warmed', { userId: params.userId, seasonId: params.seasonId });
+  if (recipient && (!recipient.messageable || !recipient.telegramId)) {
+    console.info('[SMART_NOTIFY] Recipient not messageable', { userId: params.userId, seasonId: params.seasonId });
     return false;
   }
 
@@ -272,17 +279,19 @@ export async function enqueueSmartTelegramNotification(params: {
     createdAt: now,
     status: 'QUEUED',
     metrics: { totalRecipients: 1, sentCount: 0, failedCount: 0, skippedCount: 0 },
-    recipients: [{ userId: recipient.userId, username: recipient.username || 'player', displayName: recipient.displayName || recipient.username || 'EFL Player', status: 'PENDING', retryCount: 0 }],
+    recipients: [{ userId: recipient?.userId || params.userId, username: recipient?.username || 'player', displayName: recipient?.displayName || recipient?.username || 'EFL Player', status: 'PENDING', retryCount: 0 }],
     bodyIsHtml: true,
     replyMarkup: params.replyMarkup,
   };
   const job: SmartQueueJob = {
     jobId,
     broadcastId,
-    userId: recipient.userId,
-    username: recipient.username || 'player',
-    displayName: recipient.displayName || recipient.username || 'EFL Player',
-    telegramId: recipient.telegramId,
+    userId: recipient?.userId || params.userId,
+    username: recipient?.username || 'player',
+    displayName: recipient?.displayName || recipient?.username || 'EFL Player',
+    telegramId: recipient?.telegramId || undefined,
+    seasonId: params.seasonId,
+    requiresRecipientLookup: !recipient,
     title: params.title,
     body: params.body,
     type: 'CUSTOM_ALERT',
@@ -384,12 +393,14 @@ export async function notifySmartCupAdvancement(params: {
   winnerClubId: string;
 }): Promise<boolean> {
   const recipient = await getCachedRecipientByClubId(params.winnerClubId, params.seasonId);
-  if (!recipient) return false;
   const fixtures = await getCompetitionFixtureSnapshot(params.competitionId, params.seasonId);
+  const source = fixtures.find((fixture) => fixture.id === params.sourceFixtureId);
+  const winnerUserId = recipient?.userId || ownerOfClub(source ? [source] : [], params.winnerClubId);
+  if (!winnerUserId) return false;
   const target = fixtures.find((fixture) => fixture.id === params.targetFixtureId);
   const viewerSide = target?.homeClubId === params.winnerClubId ? 'home' : target?.awayClubId === params.winnerClubId ? 'away' : undefined;
   return enqueueSmartTelegramNotification({
-    userId: recipient.userId,
+    userId: winnerUserId,
     seasonId: params.seasonId,
     eventId: `cup-advance:${params.sourceFixtureId}:${params.targetFixtureId}:${params.winnerClubId}`,
     title: '🏆 Keyingi bosqichga o‘tdingiz',
@@ -407,12 +418,13 @@ export async function notifySmartCupChampion(params: {
   winnerClubId: string;
 }): Promise<boolean> {
   const recipient = await getCachedRecipientByClubId(params.winnerClubId, params.seasonId);
-  if (!recipient) return false;
   const fixtures = await getCompetitionFixtureSnapshot(params.competitionId, params.seasonId);
   const finalFixture = fixtures.find((fixture) => fixture.id === params.sourceFixtureId);
+  const winnerUserId = recipient?.userId || ownerOfClub(finalFixture ? [finalFixture] : [], params.winnerClubId);
+  if (!winnerUserId) return false;
   const competitionName = finalFixture?.competitionName || params.competitionId;
   return enqueueSmartTelegramNotification({
-    userId: recipient.userId,
+    userId: winnerUserId,
     seasonId: params.seasonId,
     eventId: `cup-champion:${params.competitionId}:${params.sourceFixtureId}:${params.winnerClubId}`,
     title: '👑 Chempion!',
@@ -429,12 +441,15 @@ export async function notifySmartEuropeanZones(params: {
   rows: Array<{ clubId: string; clubName: string; position: number; zone: 'DIRECT_R16' | 'KNOCKOUT_PLAYOFF' | 'ELIMINATED'; zoneLabel: string }>;
 }): Promise<number> {
   const tasks: Array<Promise<boolean>> = [];
+  let fixtures: Fixture[] | undefined;
   for (const row of params.rows) {
     const recipient = await getCachedRecipientByClubId(row.clubId, params.seasonId);
-    if (!recipient) continue;
+    if (!recipient && !fixtures) fixtures = await getCompetitionFixtureSnapshot(params.competitionId, params.seasonId);
+    const userId = recipient?.userId || ownerOfClub(fixtures || [], row.clubId);
+    if (!userId) continue;
     const title = row.zone === 'DIRECT_R16' ? '🌟 To‘g‘ridan-to‘g‘ri yo‘llanma' : row.zone === 'KNOCKOUT_PLAYOFF' ? '⚔️ Play-off yo‘llanmasi' : '📋 Liga bosqichi yakunlandi';
     tasks.push(enqueueSmartTelegramNotification({
-      userId: recipient.userId,
+      userId,
       seasonId: params.seasonId,
       eventId: `european-zone:${params.competitionId}:${row.clubId}:${row.zone}:${row.position}`,
       title,
@@ -494,3 +509,4 @@ export async function notifySmartResultLifecycle(fixture: Fixture, actorUserId: 
     })));
   }
 }
+

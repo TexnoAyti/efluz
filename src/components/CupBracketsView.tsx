@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n';
 import { api } from '../lib/api';
@@ -34,8 +34,13 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
   const { user, currentClub, ownedClubs = [], activeSeasonId } = useAuth();
   const { t } = useI18n();
 
+  const fixtureRequest = useRef(0);
+
   const [cupCompetitions, setCupCompetitions] = useState<Competition[]>([]);
   const [selectedCupId, setSelectedCupId] = useState('');
+  const fixtureScope = `${activeSeasonId}:${selectedCupId}`;
+  const currentFixtureScope = useRef(fixtureScope);
+  currentFixtureScope.current = fixtureScope;
   const [cupFixtures, setCupFixtures] = useState<Fixture[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -72,7 +77,9 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
     };
   }, [activeSeasonId]);
 
-  const loadCupFixtures = async () => {
+  const loadCupFixtures = useCallback(async () => {
+    if (currentFixtureScope.current !== fixtureScope) return;
+    const requestId = ++fixtureRequest.current;
     if (!selectedCupId) {
       setCupFixtures([]);
       setIsLoading(false);
@@ -80,22 +87,26 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
     }
 
     setIsLoading(true);
+    setCupFixtures([]);
+    setSelectedFixtureForSubmit(null);
     setError(null);
     try {
       const res = await api.getCompetitionFixtures(selectedCupId);
+      if (requestId !== fixtureRequest.current || currentFixtureScope.current !== fixtureScope) return;
       setCupFixtures(res.fixtures || []);
     } catch (err) {
+      if (requestId !== fixtureRequest.current || currentFixtureScope.current !== fixtureScope) return;
       console.error('Failed to load cup fixtures:', err);
       setError("Couldn't load this cup bracket. Please try again.");
     } finally {
-      setIsLoading(false);
+      if (requestId === fixtureRequest.current && currentFixtureScope.current === fixtureScope) setIsLoading(false);
     }
-  };
+  }, [selectedCupId, activeSeasonId, fixtureScope]);
 
   useEffect(() => {
     loadCupFixtures();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCupId, activeSeasonId]);
+    return () => { fixtureRequest.current += 1; };
+  }, [loadCupFixtures]);
 
   const activeCup = cupCompetitions.find((cup) => cup.id === selectedCupId) || null;
   const expectedTeams = expectedTeamsForCup(activeCup);

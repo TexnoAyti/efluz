@@ -441,6 +441,31 @@ export const SeasonHubView: React.FC<SeasonHubViewProps> = ({ onNavigateTab }) =
         </section>
       </div>
 
+      {user?.isAdmin && career && (
+        <section className="preview-surface rounded-2xl border border-[var(--efl-border)] p-4 sm:p-5 space-y-3">
+          <h2 className="text-sm font-black text-[var(--efl-text)] flex items-center gap-2">
+            <Crown className="w-4 h-4 text-amber-500 efl-theme-amber" /> EFL Career
+          </h2>
+          {career.locked ? (
+            <p className="text-xs text-[var(--efl-text-2)]">Career statistikasi hisoblanadi. Uni ko‘rish uchun Premium kerak.</p>
+          ) : career.career?.overall ? (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {[
+                ['O‘yinlar', career.career.overall.matches],
+                ['G‘alabalar', career.career.overall.wins],
+                ['Duranglar', career.career.overall.draws],
+                ['Mag‘lubiyatlar', career.career.overall.losses],
+              ].map(([label, value]) => (
+                <div key={String(label)} className="rounded-xl bg-[var(--efl-surface-2)] p-3">
+                  <div className="text-xs text-[var(--efl-text-2)]">{label}</div>
+                  <div className="font-black tabular-nums text-[var(--efl-text)]">{value}</div>
+                </div>
+              ))}
+            </div>
+          ) : <p className="text-xs text-[var(--efl-muted)]">Career statistikasi hozircha mavjud emas.</p>}
+        </section>
+      )}
+
       {/* 7. Season History */}
       <section className="preview-surface p-4 sm:p-5 rounded-2xl border border-slate-200/80 efl-theme-border dark:border-white/10 shadow-xs space-y-3">
         <h2 className="text-xs sm:text-sm font-black text-slate-900 efl-theme-text dark:text-white flex items-center gap-2">

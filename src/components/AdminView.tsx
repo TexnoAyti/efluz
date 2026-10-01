@@ -752,7 +752,7 @@ export const AdminView: React.FC = () => {
       .slice(0, 20);
   }, [users, assignUserSearch]);
 
-  // Clean, official 19 competition categorization
+  // Clean, official competition categorization
   const groupedCompetitions = useMemo(() => {
     // 1. Domestic Leagues (5)
     const domesticLeagues = competitions.filter(
@@ -1092,8 +1092,8 @@ export const AdminView: React.FC = () => {
                 <Trophy className="w-3.5 h-3.5" />
                 Faol musobaqalar
               </div>
-              <div className="text-xl sm:text-2xl font-black text-white mt-1 tabular-nums">19</div>
-              <div className="text-[10px] text-slate-400 mt-0.5">5 liga • 6 kubok • 5 superkubok • 3 UEFA</div>
+              <div className="text-xl sm:text-2xl font-black text-white mt-1 tabular-nums">{competitions.length}</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">{competitions.filter((c) => c.type === 'LEAGUE').length} liga • {competitions.filter((c) => c.type === 'KNOCKOUT').length} kubok • {competitions.filter((c) => c.type === 'SUPER_CUP').length} superkubok • {competitions.filter((c) => c.type === 'EUROPEAN_LEAGUE_PHASE' || c.type === 'EUROPEAN_KNOCKOUT').length} UEFA</div>
             </div>
           </div>
 
@@ -1238,7 +1238,7 @@ export const AdminView: React.FC = () => {
                 <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-emerald-400 transition-colors" />
               </div>
               <p className="text-[11px] text-slate-400">
-                Inspect schedule across all 19 tournaments, check scores, reopen matches if needed.
+                Inspect schedule across all {competitions.length} tournaments, check scores, reopen matches if needed.
               </p>
             </button>
 
@@ -1482,7 +1482,7 @@ export const AdminView: React.FC = () => {
                 }}
                 className="px-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-semibold"
               >
-                <option value="ALL">All Competitions ({competitions.length || 19})</option>
+                <option value="ALL">All Competitions ({competitions.length})</option>
                 {competitions.map((comp) => (
                   <option key={comp.id} value={comp.id}>
                     {comp.name}
@@ -3448,3 +3448,4 @@ export const AdminView: React.FC = () => {
     </div>
   );
 };
+
