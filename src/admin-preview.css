@@ -918,3 +918,6 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 @media (min-width: 1024px) {
   .efl-preview footer { padding-bottom: 12px; }
 }
+/* Opaque bright actions retain a dark foreground in either theme. */
+.efl-preview main[data-preview-page="admin"] :is([class~="bg-amber-500"], [class~="bg-yellow-500"], [class~="bg-emerald-500"], [class~="bg-green-500"], [class~="bg-cyan-500"], [class~="bg-sky-500"]):not(.btn-glass-primary),
+.efl-preview main[data-preview-page="admin"] :is([class~="bg-amber-500"], [class~="bg-yellow-500"], [class~="bg-emerald-500"], [class~="bg-green-500"], [class~="bg-cyan-500"], [class~="bg-sky-500"]):not(.btn-glass-primary) * { color: #0f172a !important; }
