@@ -658,3 +658,62 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 .efl-welcome .font-black {
   font-weight: 800;
 }
+
+/* Admin-only responsive copy: retain table/tree scrolling and player layouts. */
+.efl-preview main :is(h1, h2, h3, p) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.efl-preview main :is(h1, h2, h3).truncate,
+.efl-preview .efl-fit-copy,
+.efl-preview main[data-preview-page="dashboard"] section button .truncate,
+.efl-preview main[data-preview-page="dashboard"] [class*="grid-cols-[1fr_auto_1fr]"] .truncate,
+.efl-preview main[data-preview-page="my-club"] .divide-y > div .truncate {
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+}
+.efl-preview .efl-fit-wrap { flex-wrap: wrap; }
+.efl-preview .efl-league-banner-content > div:last-child { min-width: 0; flex: 1; }
+.efl-preview .efl-league-banner-content .efl-fit-wrap > span { min-width: 0; }
+.efl-preview .efl-league-section-heading { gap: 8px; align-items: flex-start; }
+.efl-preview .efl-league-section-heading > div { min-width: 0; }
+.efl-preview #btn-refresh-clubs-view { flex-shrink: 0; }
+.efl-preview .efl-league-tabs > button { min-width: 0; flex: 1; justify-content: center; }
+.efl-preview .efl-league-tabs > button svg { flex-shrink: 0; }
+.efl-preview .efl-league-tabs > button span { white-space: normal; overflow-wrap: anywhere; line-height: 1.35; }
+.efl-preview footer > div { flex-wrap: wrap; gap: 8px 16px; }
+.efl-preview footer > div > div { min-width: 0; flex-wrap: wrap; }
+.efl-preview footer .font-mono { overflow-wrap: anywhere; }
+.efl-preview main[data-preview-page="my-club"] .border-t:has(.efl-result-badge) { flex-wrap: wrap; gap: 8px; }
+
+@media (max-width: 480px) {
+  /* The existing competition segmented bar, identified by its button sizing. */
+  .efl-preview div:has(> button[class*="min-w-[76px]"]) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+    overflow: visible;
+  }
+  .efl-preview div:has(> button[class*="min-w-[76px]"]) > button {
+    min-width: 0;
+    min-height: 42px;
+    padding: 8px;
+    gap: 6px;
+  }
+  .efl-preview div:has(> button[class*="min-w-[76px]"]) > button > span {
+    min-width: 0;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    overflow-wrap: anywhere;
+    line-height: 1.35;
+  }
+  .efl-preview .efl-league-tabs { align-items: stretch; gap: 6px; overflow: visible; }
+  .efl-preview .efl-league-tabs > button { padding: 8px 6px; gap: 4px; }
+  .efl-preview .efl-club-filters { width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .efl-preview .efl-club-filters > button { min-width: 0; padding: 8px 4px; white-space: normal; overflow-wrap: anywhere; }
+}

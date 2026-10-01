@@ -196,8 +196,8 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
               size="xs"
               className="w-5 h-5 shrink-0"
             />
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="font-black truncate">{userClubInCup.name}</span>
+            <div className="efl-fit-wrap flex items-center gap-2 min-w-0">
+              <span className="font-black truncate efl-fit-copy">{userClubInCup.name}</span>
               <span className="text-[10px] font-bold opacity-80">• Kubok ishtirokchisi (Sizning klubingiz)</span>
             </div>
           </div>

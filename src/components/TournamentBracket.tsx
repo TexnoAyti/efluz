@@ -140,15 +140,15 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
         )}
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-1">
-            <span className={`truncate text-xs ${winner ? 'font-black text-emerald-300 efl-theme-emerald' : tbd ? 'font-bold italic text-slate-500 efl-theme-muted' : 'font-black text-slate-100 efl-theme-text'}`}>
+            <span className={`truncate efl-fit-copy text-xs ${winner ? 'font-black text-emerald-300 efl-theme-emerald' : tbd ? 'font-bold italic text-slate-500 efl-theme-muted' : 'font-black text-slate-100 efl-theme-text'}`}>
               {tbd ? sourceLabel(fixture, side) : `${(home ? (fixture as any).homeSeedPosition : (fixture as any).awaySeedPosition) ? `#${home ? (fixture as any).homeSeedPosition : (fixture as any).awaySeedPosition} ` : ''}${club?.name || clubId}`}
             </span>
             {isMe && <span className="shrink-0 rounded bg-amber-400/15 px-1.5 py-0.5 text-[8px] font-black uppercase text-amber-300 efl-theme-amber">Siz</span>}
           </div>
           {!tbd && (ownerInfo?.isClaimed && ownerInfo.userId ? (
-            <button type="button" onClick={(event) => { event.stopPropagation(); openUserProfile(ownerInfo.userId!); }} className="mt-0.5 block max-w-full truncate text-left text-[9px] font-medium text-slate-500 efl-theme-muted hover:text-blue-300 efl-theme-hover-primary">{ownerInfo.displayText}</button>
+            <button type="button" onClick={(event) => { event.stopPropagation(); openUserProfile(ownerInfo.userId!); }} className="mt-0.5 block max-w-full truncate efl-fit-copy text-left text-[9px] font-medium text-slate-500 efl-theme-muted hover:text-blue-300 efl-theme-hover-primary">{ownerInfo.displayText}</button>
           ) : (
-            <div className="mt-0.5 truncate text-[9px] font-medium text-slate-600 efl-theme-muted">{ownerInfo?.displayText || t.userNeeded}</div>
+            <div className="mt-0.5 truncate efl-fit-copy text-[9px] font-medium text-slate-600 efl-theme-muted">{ownerInfo?.displayText || t.userNeeded}</div>
           ))}
         </div>
         <div className={`min-w-[30px] rounded-lg border px-2 py-1 text-center font-mono text-sm font-black ${winner ? 'border-emerald-400/25 bg-emerald-400/10 text-emerald-300 efl-theme-emerald' : 'border-white/[0.07] efl-theme-border bg-black/20 efl-theme-surface-2 text-slate-300 efl-theme-text-2'}`}>{score ?? '–'}</div>
@@ -185,7 +185,7 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.18em] text-slate-500 efl-theme-muted sm:text-[10px]"><GitBranch className="h-3.5 w-3.5 text-blue-300 efl-theme-blue" />Knockout bracket</div>
-            <div className="mt-1 flex min-w-0 items-center gap-2"><h2 className="truncate text-lg font-black text-white efl-theme-text sm:text-xl">{competition?.name || 'Domestic Cup'}</h2><span className="shrink-0 rounded-full border border-white/[0.08] efl-theme-border bg-white/[0.035] efl-theme-surface-2 px-2 py-0.5 text-[8px] font-black text-slate-400 efl-theme-text-2 sm:text-[9px]">{fixtures.length} matches</span></div>
+            <div className="efl-fit-wrap mt-1 flex min-w-0 items-center gap-2"><h2 className="truncate text-lg font-black text-white efl-theme-text sm:text-xl">{competition?.name || 'Domestic Cup'}</h2><span className="shrink-0 rounded-full border border-white/[0.08] efl-theme-border bg-white/[0.035] efl-theme-surface-2 px-2 py-0.5 text-[8px] font-black text-slate-400 efl-theme-text-2 sm:text-[9px]">{fixtures.length} matches</span></div>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <div className="grid grid-cols-2 rounded-xl border border-white/[0.08] efl-theme-border bg-black/20 efl-theme-surface-2 p-1">

@@ -185,7 +185,7 @@ export const SofaBracketTree: React.FC<Props> = ({ fixtures, competition, curren
 
   return (
     <div className="border-b border-white/[0.07] efl-theme-border bg-[#050a13] efl-theme-surface">
-      <div className="flex items-center justify-between gap-3 px-3 pb-2 pt-3 sm:px-5 sm:pt-4">
+      <div className="efl-fit-wrap flex items-center justify-between gap-3 px-3 pb-2 pt-3 sm:px-5 sm:pt-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.18em] text-blue-300 efl-theme-blue sm:text-[10px]">
             <GitBranch className="h-3.5 w-3.5" /> Connected knockout map
@@ -241,7 +241,7 @@ export const SofaBracketTree: React.FC<Props> = ({ fixtures, competition, curren
                   ) : (
                     <div className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border border-dashed border-white/[0.12] efl-theme-border text-[7px] text-slate-600 efl-theme-muted">?</div>
                   )}
-                  <span className={`min-w-0 flex-1 truncate text-[9px] ${isWinner ? 'font-black text-emerald-300 efl-theme-emerald' : clubId ? 'font-bold text-slate-200 efl-theme-text' : 'italic text-slate-500 efl-theme-muted'}`}>
+                  <span title={clubId ? club?.name || clubId : sourceLabel(fixture, side)} className={`min-w-0 flex-1 truncate text-[9px] ${isWinner ? 'font-black text-emerald-300 efl-theme-emerald' : clubId ? 'font-bold text-slate-200 efl-theme-text' : 'italic text-slate-500 efl-theme-muted'}`}>
                     {clubId ? compactName(club?.name || clubId) : sourceLabel(fixture, side)}
                   </span>
                   <span className="w-4 text-right font-mono text-[10px] font-black text-slate-300 efl-theme-text-2">{score == null ? '–' : score}</span>
