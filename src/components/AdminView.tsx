@@ -92,8 +92,6 @@ export const AdminView: React.FC = () => {
   const { t, language } = useI18n();
   const loc = (uz: string, ru: string, en: string) => ({ uz, ru, en })[language];
 
-  const [isRepairingFixtures, setIsRepairingFixtures] = useState(false);
-  const [fixtureRepairMessage, setFixtureRepairMessage] = useState('');
   const [activeAdminTab, setActiveAdminTab] = useState<AdminTab>('overview');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -527,18 +525,6 @@ export const AdminView: React.FC = () => {
     } finally {
       setIsProcessing(false);
     }
-  };
-
-  const handleRestoreMissingFixtures = async () => {
-    setIsRepairingFixtures(true);
-    try {
-      const response = await api.restoreMissingLeaguePairs();
-      const errors = response.results.filter(result => result.status === 'error');
-      setFixtureRepairMessage(response.results.map(result => `${result.competitionId}: ${result.message || (result.status === 'restored' ? 'tiklandi' : 'mavjud')}`).join(' · '));
-      showToast(errors.length ? 'Tiklash yakunlandi. Tafsilotlarni ko‘ring.' : 'Ikkala uchrashuv ham mavjud. Ro‘yxat yangilandi.', errors.length ? 'error' : 'success');
-    } catch (err: any) {
-      setFixtureRepairMessage(err.message || 'Uchrashuvlarni tiklab bo‘lmadi. Qayta urinib ko‘ring.');
-    } finally { setIsRepairingFixtures(false); }
   };
 
   const handleRunFixtureValidation = async () => {
@@ -2026,10 +2012,6 @@ export const AdminView: React.FC = () => {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                <button onClick={handleRestoreMissingFixtures} disabled={isRepairingFixtures}
-                  className="px-3.5 py-2 bg-sky-600 text-white rounded-xl text-xs font-black disabled:opacity-50">
-                  {isRepairingFixtures ? loc('Tiklanmoqda...', 'Восстановление...', 'Restoring...') : loc('Yetishmayotgan 2 o‘yinni tiklash', 'Восстановить 2 матча', 'Restore 2 missing fixtures')}
-                </button>
                 <button
                   onClick={handleRunFixtureValidation}
                   disabled={isValidatingFixtures}
@@ -2050,8 +2032,6 @@ export const AdminView: React.FC = () => {
               </div>
             </div>
           </div>
-
-          {fixtureRepairMessage && <p role="status" className="text-sm text-slate-300">{fixtureRepairMessage}</p>}
 
           {/* 1. DOMESTIC LEAGUES (5) */}
           <div className="space-y-3">
