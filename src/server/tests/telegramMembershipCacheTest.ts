@@ -61,6 +61,7 @@ async function testTelegramMembershipCache() {
 
     // Simulate global fetch for Telegram Bot API
     const originalFetch = global.fetch;
+    const originalBotToken = process.env.TELEGRAM_BOT_TOKEN;
     let mockMemberStatus = 'left'; // Initially not a member
     let fetchCallsToTelegram = 0;
 
@@ -84,6 +85,7 @@ async function testTelegramMembershipCache() {
     };
 
     try {
+      process.env.TELEGRAM_BOT_TOKEN = 'membership-test-token';
       const simulatedTgId = '112233';
       clearTelegramMembershipCache(simulatedTgId);
 
@@ -131,6 +133,8 @@ async function testTelegramMembershipCache() {
       console.log('✅ PASS: NOT MEMBER -> try claim -> join -> press Tekshirish -> fresh Telegram check -> immediately claim club successfully');
     } finally {
       global.fetch = originalFetch;
+      if (originalBotToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+      else process.env.TELEGRAM_BOT_TOKEN = originalBotToken;
     }
   } finally {
     server.close();

@@ -44,6 +44,7 @@ jobs:
           node --require ./scripts/block-external-network.cjs --import tsx src/lib/__tests__/fixtureOrderRegressionTest.ts
           node --require ./scripts/block-external-network.cjs --import tsx src/lib/__tests__/scopedAdminFixturesRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/leagueAdminPermissionsRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/telegramMembershipCacheTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/adminUsernameAndRepairRegressionTest.ts
           bun run test:deployment-selfcheck
           bun run test:tournament-architecture
