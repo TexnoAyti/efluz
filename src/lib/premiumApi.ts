@@ -111,7 +111,7 @@ export const premiumApi = {
   getBadgeClubIds: (seasonId = 'season-2026-27') => premiumRequest<{ clubIds: string[] }>(
     `/api/telegram/premium/badges?seasonId=${encodeURIComponent(seasonId)}`
   ),
-  getAdminUsers: () => premiumRequest<{ users: PremiumAdminUser[]; total?: number }>('/api/admin/users?limit=100'),
+  getAdminUsers: () => premiumRequest<{ users: PremiumAdminUser[]; total?: number }>('/api/admin/users/directory'),
 
   getOverview: (seasonId = 'season-2026-27') => premiumRequest<{
     seasonId: string;

@@ -18,7 +18,15 @@ export async function getAdminUserDirectory(skipCache = false): Promise<User[]> 
     let query = collection.orderBy(FieldPath.documentId());
     if (previous) query = query.startAfter(previous);
     const snapshot = await query.limit(100).get();
-    users.push(...snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as User)));
+    users.push(...snapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id, telegramId: String(data.telegramId || ''), username: data.username || '',
+        firstName: data.firstName || '', lastName: data.lastName || '', photoUrl: data.photoUrl || '',
+        isAdmin: Boolean(data.isAdmin), isSuspended: Boolean(data.isSuspended),
+        createdAt: data.createdAt || '', updatedAt: data.updatedAt,
+      } as User;
+    }));
     if (snapshot.docs.length < 100) {
       await redisSetRaw(key, { data: users, sourceVersion: 'admin-user-directory' }, 30).catch(() => {});
       return users;

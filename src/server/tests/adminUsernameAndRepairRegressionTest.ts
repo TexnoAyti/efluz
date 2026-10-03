@@ -22,6 +22,8 @@ assert.ok(matchesUserSearch(user, 'test manager'));
 assert.ok(matchesUserSearch(user, '700124'));
 assert.equal(matchesUserSearch(user, '@unknown'), false);
 await assert.rejects(resolveAdminUserReference('@unknown'), /USER_NOT_FOUND/);
+await db.collection('users').doc('directory-user-124').update({ privateInternalField: 'must-not-be-returned' });
+assert.equal('privateInternalField' in (await getAdminUserDirectory(true)).find(user => user.id === 'directory-user-124')!, false);
 await db.collection('users').doc('ambiguous').set({ username: 'player124' });
 await assert.rejects(resolveAdminUserReference('@player124'), /AMBIGUOUS_USER_REFERENCE/);
 console.log('PASS username/@username/case/space/name/ID search and complete 125-user directory; ambiguity rejects');

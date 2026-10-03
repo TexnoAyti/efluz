@@ -1,3 +1,4 @@
+import { normalizeUserSearch } from '../lib/userSearch';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
@@ -63,7 +64,7 @@ export const EflCareerCard: React.FC<{ userId?: string; adminPreview?: boolean }
   );
 
   const filteredUsers = useMemo(() => {
-    const query = search.trim().toLowerCase();
+    const query = normalizeUserSearch(search);
     const sorted = [...users].sort((a, b) => {
       const aPremium = entitlementMap.get(a.id)?.status === 'ACTIVE' ? 1 : 0;
       const bPremium = entitlementMap.get(b.id)?.status === 'ACTIVE' ? 1 : 0;

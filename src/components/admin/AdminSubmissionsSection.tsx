@@ -1,3 +1,4 @@
+import { normalizeUserSearch } from '../../lib/userSearch';
 import React, { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
 import {
@@ -44,7 +45,7 @@ export const AdminSubmissionsSection: React.FC<{
 
   const filteredSubmissions = submissions.filter((s) => {
     if (!search.trim()) return true;
-    const q = search.toLowerCase();
+    const q = normalizeUserSearch(search);
     return (
       s.fixtureId?.toLowerCase().includes(q) ||
       s.submitterUsername?.toLowerCase().includes(q) ||
