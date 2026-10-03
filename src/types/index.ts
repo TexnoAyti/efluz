@@ -98,6 +98,7 @@ export interface ClubMembership {
 }
 
 export interface Competition {
+  updatedAt?: string;
   id: string;
   seasonId: string;
   leagueId?: string;

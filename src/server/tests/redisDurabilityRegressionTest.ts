@@ -77,6 +77,22 @@ async function main() {
     assert.equal(await model.redisGetFresh('atomic-test'),null);
     assert.equal((await model.redisGetLkg<any[]>('atomic-test'))?.data[0].id,'kept');
     console.log('PASS: actual Redis Lua publishes atomically and preserves permanent snapshot');
+    const catalogKey = model.ReadModelKeys.competitions(seasonId);
+    await model.redisSetRaw(catalogKey, { data: [
+      { id: 'catalog-la', seasonId, currentMatchday: 1, updatedAt: '2026-01-01T00:00:00.000Z' },
+      { id: 'catalog-pl', seasonId, currentMatchday: 1, updatedAt: '2026-01-01T00:00:00.000Z' },
+    ] });
+    await Promise.all([
+      model.patchCompetitionMatchdayCatalog({ id: 'catalog-la', seasonId, currentMatchday: 3, updatedAt: '2026-02-01T00:00:00.000Z' } as any),
+      model.patchCompetitionMatchdayCatalog({ id: 'catalog-pl', seasonId, currentMatchday: 4, updatedAt: '2026-02-01T00:00:00.000Z' } as any),
+    ]);
+    await model.patchCompetitionMatchdayCatalog({ id: 'catalog-la', seasonId, currentMatchday: 2, updatedAt: '2026-01-15T00:00:00.000Z' } as any);
+    const catalog = (await model.redisGetFresh<any[]>(catalogKey))!.data;
+    assert.equal(catalog.find(c => c.id === 'catalog-la').currentMatchday, 3);
+    assert.equal(catalog.find(c => c.id === 'catalog-pl').currentMatchday, 4);
+    assert.equal(await client.ttl(model.getLkgKey(catalogKey)), -1);
+    console.log('PASS actual Redis Lua: parallel league controls retain both changes and reject stale round state.');
+    await import('./matchdayControlRegressionTest');
     await import('./notificationReadPersistenceRegressionTest');
     await import('./notificationModerationRegressionTest');
 

@@ -25,6 +25,7 @@ import {
 export const competitionsRouter = Router();
 
 competitionsRouter.get('/', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'private, no-store');
   const seasonId = (req.query.seasonId as string) || 'season-2026-27';
   try {
     const result = await getCompetitionsFromReadModel(seasonId);
@@ -166,6 +167,7 @@ competitionsRouter.post('/:id/rebuild-standings', requireAdmin, async (req: Requ
 });
 
 competitionsRouter.get('/:id/locks', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'private, no-store');
   const seasonId = (req.query.seasonId as string) || 'season-2026-27';
   try {
     const locks = await getCompetitionMatchdayLocksFirestore(seasonId, req.params.id);

@@ -818,6 +818,43 @@ export async function buildCompetitionsSnapshot(seasonId = 'season-2026-27'): Pr
   return snapshot;
 }
 
+// Patch only one competition inside the durable catalog. Parallel admins managing
+// different leagues must not replace one another's state with an older whole list.
+export async function patchCompetitionMatchdayCatalog(competition: FirestoreCompetitionDoc): Promise<void> {
+  const key = ReadModelKeys.competitions(competition.seasonId);
+  const clean = getRawDatasetKey(key), fresh = getFreshKey(clean), lkg = getLkgKey(clean);
+  const now = new Date().toISOString(), client = getUpstashClient();
+  if (client) {
+    await client.eval(`
+      local raw = redis.call('GET', KEYS[2]) or redis.call('GET', KEYS[1])
+      if not raw then return 0 end
+      local snapshot = cjson.decode(raw)
+      local patch = cjson.decode(ARGV[1])
+      local found = false
+      for _, item in ipairs(snapshot.data) do
+        if item.id == patch.id then
+          if item.updatedAt and patch.updatedAt and item.updatedAt > patch.updatedAt then return 0 end
+          for k, v in pairs(patch) do item[k] = v end
+          found = true
+        end
+      end
+      if not found then return 0 end
+      snapshot.generatedAt = ARGV[2]
+      snapshot.sourceVersion = 'matchday-control'
+      local updated = cjson.encode(snapshot)
+      redis.call('SET', KEYS[2], updated)
+      redis.call('SET', KEYS[1], updated, 'EX', 3600)
+      redis.call('DEL', KEYS[3])
+      return 1
+    `, [fresh, lkg, getDirtyKey(clean)], [JSON.stringify(competition), now]);
+    memoryRedisStorage.delete(fresh); memoryRedisStorage.delete(lkg);
+  } else {
+    const snapshot = await redisGetFresh<Competition[]>(key) || await redisGetLkg<Competition[]>(key);
+    if (snapshot?.data?.length) await redisSetRaw(key, { ...snapshot, generatedAt: now, data: snapshot.data.map(c => c.id === competition.id && (!c.updatedAt || !competition.updatedAt || c.updatedAt <= competition.updatedAt) ? { ...c, ...competition } as Competition : c) }, 3600);
+  }
+  inProcessMemoryCache.delete(clean); inProcessMemoryCache.delete(key);
+}
+
 export interface OwnerNeutralClub extends Club {
   ownerUserId: string | null;
   ownerUsername: string | null;

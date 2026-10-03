@@ -15,12 +15,14 @@ async function main() {
   await fixtures.doc('matchday-guard-a').set({ competitionId, seasonId, matchday: 1, status: 'SCHEDULED' });
   await fixtures.doc('matchday-guard-b').set({ competitionId, seasonId, matchday: 1, status: 'POSTPONED' });
 
-  await assertRejects('remain unfinished', () => advanceCompetitionMatchdayFirestore(competitionId));
+  await fixtures.doc('matchday-guard-next').set({ competitionId, seasonId, matchday: 2, status: 'SCHEDULED' });
+  await assertRejects('tugamagan', () => advanceCompetitionMatchdayFirestore(competitionId));
   if ((await comp.get()).data()?.currentMatchday !== 1) throw new Error('Blocked advance changed matchday');
   await fixtures.doc('matchday-guard-a').update({ status: 'CONFIRMED' });
   const result = await advanceCompetitionMatchdayFirestore(competitionId);
   if (result.currentMatchday !== 2) throw new Error('Confirmed + postponed round did not advance');
-  await assertRejects('no fixtures', () => advanceCompetitionMatchdayFirestore(competitionId));
+  await fixtures.doc('matchday-guard-next').delete();
+  await assertRejects('o‘yinlar yo‘q', () => advanceCompetitionMatchdayFirestore(competitionId));
 
   await comp.update({ currentMatchday: 19, totalMatchdays: 38 });
   await assertRejects('no next league matchday', () => advanceCompetitionMatchdayFirestore(competitionId));

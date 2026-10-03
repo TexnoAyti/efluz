@@ -1,3 +1,4 @@
+import { AdminMatchdayControl } from './admin/AdminMatchdayControl';
 import type { AdminPermissions } from '../types';
 import { permittedAdminLeagues } from '../lib/adminPermissions';
 import { getScopedAdminFixturePage } from '../lib/scopedAdminFixtures';
@@ -585,46 +586,6 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions }> = ({ permissio
       showToast(err.message || 'Failed to run fixture validation.', 'error');
     } finally {
       setIsValidatingFixtures(false);
-    }
-  };
-
-  const handleAdvanceMatchday = async (compId: string) => {
-    setIsProcessing(true);
-    try {
-      const res = await api.advanceCompetitionMatchday(compId, 30);
-      showToast(`Matchday advanced to MD ${res.currentMatchday} of ${res.totalMatchdays}! Timer set to 30h.`, 'success');
-      await loadAllAdminData(true);
-    } catch (err: any) {
-      showToast(err.message || 'Failed to advance matchday.', 'error');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleToggleMatchdayOverride = async (compId: string, currentOverride?: string) => {
-    setIsProcessing(true);
-    try {
-      const nextStatus = currentOverride === 'FORCE_LOCKED' ? 'FORCE_OPEN' : currentOverride === 'FORCE_OPEN' ? 'AUTO' : 'FORCE_LOCKED';
-      const res = await api.overrideCompetitionMatchday(compId, nextStatus as any);
-      showToast(`Matchday override updated to ${res.adminOverrideStatus}!`, 'success');
-      await loadAllAdminData(true);
-    } catch (err: any) {
-      showToast(err.message || 'Failed to update matchday override.', 'error');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleOpenMatchdayNow = async (compId: string) => {
-    setIsProcessing(true);
-    try {
-      const res = await api.openCompetitionMatchdayNow(compId, 30);
-      showToast(`Matchday unlocked for 30 hours!`, 'success');
-      await loadAllAdminData(true);
-    } catch (err: any) {
-      showToast(err.message || 'Failed to open matchday.', 'error');
-    } finally {
-      setIsProcessing(false);
     }
   };
 
@@ -2084,7 +2045,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions }> = ({ permissio
                 const totalMds = comp.totalMatchdays || (comp.leagueId?.includes('bundesliga') || comp.leagueId?.includes('ligue-1') ? 17 : 19);
                 const currentMd = comp.currentMatchday || 1;
                 const override = comp.adminOverrideStatus || 'AUTO';
-                const isOpen = override === 'FORCE_OPEN' || (override !== 'FORCE_LOCKED' && comp.isMatchdayOpen);
+                const isOpen = override !== 'FORCE_LOCKED' && override !== 'PAUSED' && Boolean(comp.isMatchdayOpen) && (!comp.nextMatchdayOpenAt || Date.parse(comp.nextMatchdayOpenAt) > Date.now());
                 const deadlineIsOverdue = Boolean(comp.nextMatchdayOpenAt && Date.now() > new Date(comp.nextMatchdayOpenAt).getTime());
 
                 return (
@@ -2124,30 +2085,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions }> = ({ permissio
                     </div>
 
                     <div className="pt-2 border-t border-white/[0.06] space-y-2">
-                      {/* Matchday Admin Controls */}
-                      <div className="grid grid-cols-2 gap-1.5">
-                        <button
-                          onClick={() => handleAdvanceMatchday(comp.id)}
-                          disabled={isProcessing}
-                          className="py-1.5 px-2 bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1"
-                        >
-                          <ChevronRight className="w-3 h-3" />
-                          <span>Advance +1 MD</span>
-                        </button>
-
-                        <button
-                          onClick={() => handleToggleMatchdayOverride(comp.id, override)}
-                          disabled={isProcessing}
-                          className={`py-1.5 px-2 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 border ${
-                            override === 'FORCE_LOCKED'
-                              ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/30'
-                              : 'bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border-rose-500/30'
-                          }`}
-                        >
-                          {override === 'FORCE_LOCKED' ? <Unlock className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
-                          <span>{override === 'FORCE_LOCKED' ? 'Unlock MD' : 'Lock MD'}</span>
-                        </button>
-                      </div>
+                      <AdminMatchdayControl competitionId={comp.id} onChanged={async () => { const data = await api.getCompetitions(activeSeasonId, true); setCompetitions(prev => prev.map(c => data.competitions.find(updated => updated.id === c.id) || c)); }} />
 
                       <button
                         onClick={() => handleSendMatchdayReminder(comp.id, currentMd, comp.nextMatchdayOpenAt)}
@@ -2277,7 +2215,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions }> = ({ permissio
                 const totalMds = comp.totalMatchdays || 8;
                 const currentMd = comp.currentMatchday || 1;
                 const override = comp.adminOverrideStatus || 'AUTO';
-                const isOpen = override === 'FORCE_OPEN' || (override !== 'FORCE_LOCKED' && comp.isMatchdayOpen);
+                const isOpen = override !== 'FORCE_LOCKED' && override !== 'PAUSED' && Boolean(comp.isMatchdayOpen) && (!comp.nextMatchdayOpenAt || Date.parse(comp.nextMatchdayOpenAt) > Date.now());
 
                 return (
                   <div key={comp.id} className="glass-card p-4 rounded-2xl border-slate-800 space-y-3 flex flex-col justify-between">
@@ -2311,30 +2249,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions }> = ({ permissio
                     </div>
 
                     <div className="pt-2 border-t border-white/[0.06] space-y-2">
-                      {/* Matchday Admin Controls */}
-                      <div className="grid grid-cols-2 gap-1.5">
-                        <button
-                          onClick={() => handleAdvanceMatchday(comp.id)}
-                          disabled={isProcessing}
-                          className="py-1.5 px-2 bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1"
-                        >
-                          <ChevronRight className="w-3 h-3" />
-                          <span>Advance +1 MD</span>
-                        </button>
-
-                        <button
-                          onClick={() => handleToggleMatchdayOverride(comp.id, override)}
-                          disabled={isProcessing}
-                          className={`py-1.5 px-2 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 border ${
-                            override === 'FORCE_LOCKED'
-                              ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/30'
-                              : 'bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border-rose-500/30'
-                          }`}
-                        >
-                          {override === 'FORCE_LOCKED' ? <Unlock className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
-                          <span>{override === 'FORCE_LOCKED' ? 'Unlock MD' : 'Lock MD'}</span>
-                        </button>
-                      </div>
+                      <AdminMatchdayControl competitionId={comp.id} onChanged={async () => { const data = await api.getCompetitions(activeSeasonId, true); setCompetitions(prev => prev.map(c => data.competitions.find(updated => updated.id === c.id) || c)); }} />
 
                       <div className="flex items-center gap-1.5">
                         <button

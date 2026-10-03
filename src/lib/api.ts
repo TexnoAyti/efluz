@@ -1,3 +1,4 @@
+import type { MatchdayControlAction, MatchdayControlOverview } from './matchdayState';
 import type { AdminPermissions } from '../types';
 import { User, Club, Season, League, Competition, Fixture, StandingsRow, Dispute, Notification, AuditLog, UserStats } from '../types';
 
@@ -443,7 +444,7 @@ export const api = {
 
   // Competitions (Static Catalog - 30 minutes TTL)
   async getCompetitions(seasonId = 'season-2026-27', skipCache = false): Promise<{ competitions: Competition[] }> {
-    return request(`/api/competitions?seasonId=${seasonId}`, { cacheTtlMs: 1800000, skipCache });
+    return request(`/api/competitions?seasonId=${seasonId}`, { cacheTtlMs: 15000, skipCache });
   },
 
   async getCompetitionStandings(competitionId: string, skipCache = false): Promise<{ standings: StandingsRow[] }> {
@@ -933,8 +934,18 @@ export const api = {
     seasonId = 'season-2026-27'
   ): Promise<{ locks: Record<number, any> }> {
     return await request<{ locks: Record<number, any> }>(
-      `/api/competitions/${competitionId}/locks?seasonId=${encodeURIComponent(seasonId)}`
+      `/api/competitions/${competitionId}/locks?seasonId=${encodeURIComponent(seasonId)}`, { cacheTtlMs: 0 }
     );
+  },
+
+  async getMatchdayControl(competitionId: string): Promise<MatchdayControlOverview> {
+    return request(`/api/admin/competitions/${competitionId}/matchday/control`, { cacheTtlMs: 0 });
+  },
+
+  async controlMatchday(competitionId: string, params: { action: MatchdayControlAction; matchday: number; durationHours: number; expectedUpdatedAt: string | null }): Promise<{ success: boolean }> {
+    const result = await request<{ success: boolean }>(`/api/admin/competitions/${competitionId}/matchday/control`, { method: 'POST', body: JSON.stringify(params) });
+    invalidateClientCache();
+    return result;
   },
 
   async advanceCompetitionMatchday(

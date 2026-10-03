@@ -1,3 +1,4 @@
+import { resolveMatchdayGate } from '../../lib/matchdayState';
 import { Firestore, FieldValue, FieldPath } from 'firebase-admin/firestore';
 import { getNotificationControls, notificationVisible } from '../services/notificationVisibility';
 import { getNotificationReadState, applyNotificationReadState, persistNotificationReadState } from '../services/notificationReadState';
@@ -1311,6 +1312,15 @@ const compOverrideMap = new Map<string, Partial<FirestoreCompetitionDoc>>();
 
 export async function getAllCompetitionsFirestore(seasonId = 'season-2026-27'): Promise<Competition[]> {
   const cacheKey = `firestore:competitions:${seasonId}`;
+  try {
+    const { redisGetFresh, ReadModelKeys } = await import('../readModel/readModelStore');
+    const snapshot = await redisGetFresh<Competition[]>(ReadModelKeys.competitions(seasonId));
+    if (snapshot?.data?.length) {
+      for (const comp of snapshot.data) compOverrideMap.set(comp.id, comp as FirestoreCompetitionDoc);
+      return snapshot.data;
+    }
+  } catch {}
+
   const cached = getFromCache<Competition[]>(cacheKey);
   if (cached && cached.length > 0) return cached;
 
@@ -1495,20 +1505,8 @@ export function checkFixturePlayability(
     }
   }
 
-  // 2. If granular lock exists, it takes precedence over competition-level defaults
-  if (lock) {
-    if (lock.overrideStatus === 'FORCE_OPEN' || lock.isOpen === true) {
-      return { isPlayable: true, activeMatchday };
-    }
-    if (
-      lock.overrideStatus === 'FORCE_LOCKED' ||
-      lock.overrideStatus === 'PAUSED' ||
-      lock.isLocked ||
-      lock.isOpen === false
-    ) {
-      return { isPlayable: false, activeMatchday };
-    }
-  }
+  const explicitGate = resolveMatchdayGate(lock);
+  if (explicitGate !== null) return { isPlayable: explicitGate, activeMatchday };
 
   // 3. Only if NO granular lock exists: use competition-level fallback
   const adminStatus = resolvedComp?.adminOverrideStatus || 'AUTO';
@@ -1529,7 +1527,7 @@ export function checkFixturePlayability(
   if (adminStatus === 'FORCE_LOCKED' || adminStatus === 'PAUSED') {
     return { isPlayable: false, activeMatchday };
   }
-  if (!isMatchdayOpen) {
+  if (!isMatchdayOpen || (resolvedComp?.nextMatchdayOpenAt && Date.parse(resolvedComp.nextMatchdayOpenAt) <= Date.now())) {
     return { isPlayable: false, activeMatchday };
   }
 
@@ -1573,9 +1571,10 @@ export async function getFixturesFirestore(filter: {
 
   if (cacheKey) {
     const cached = getFromCache<Fixture[]>(cacheKey);
-    if (cached) return cached;
+    if (cached) return refreshFixtureMatchdayRules(cached, seasonId);
   }
 
+  await getAllCompetitionsFirestore(seasonId);
   if (!firestoreCircuitBreaker.canExecute()) {
     recordFallbackUsage();
     return executeFixturesFallback(filter, targetClubId, cacheKey);
@@ -1778,7 +1777,7 @@ export async function getFixturesFirestore(filter: {
       setInCache(cacheKey, enrichedFixtures, 30000);
       lastKnownGoodFixtures.set(cacheKey, enrichedFixtures);
     }
-    return enrichedFixtures;
+    return refreshFixtureMatchdayRules(enrichedFixtures, seasonId);
   } catch (err: any) {
     firestoreCircuitBreaker.recordFailure(err);
     recordFallbackUsage();
@@ -1804,7 +1803,7 @@ async function executeFixturesFallback(
   if (cacheKey) {
     const memoryCached = lastKnownGoodFixtures.get(cacheKey) || getAnyCached<Fixture[]>(cacheKey);
     if (memoryCached && memoryCached.length > 0) {
-      return memoryCached;
+      return refreshFixtureMatchdayRules(memoryCached, filter.seasonId || 'season-2026-27');
     }
   }
 
@@ -1968,7 +1967,7 @@ async function executeFixturesFallback(
     setInCache(cacheKey, enrichedFallback, 30000);
     lastKnownGoodFixtures.set(cacheKey, enrichedFallback);
   }
-  return enrichedFallback;
+  return refreshFixtureMatchdayRules(enrichedFallback, filter.seasonId || 'season-2026-27');
 }
 
 export interface AdminFixturesQueryOptions {
@@ -2744,6 +2743,45 @@ export function getMatchdayLockKey(seasonId: string, competitionId: string, matc
 
 const matchdayLocksCache = new Map<string, FirestoreMatchdayLockDoc>();
 
+export async function refreshFixtureMatchdayRules(fixtures: Fixture[], seasonId: string): Promise<Fixture[]> {
+  const rules = new Map<string, Record<number, FirestoreMatchdayLockDoc>>();
+  await Promise.all([...new Set(fixtures.map(f => f.competitionId))].map(async id => {
+    rules.set(id, await getCompetitionMatchdayLocksFirestore(seasonId, id));
+  }));
+  return fixtures.map(f => ({ ...f, ...checkFixturePlayability(f.competitionId, f.seasonId || seasonId, f.matchday, f.status, f.homeClubId, f.awayClubId, compOverrideMap.get(f.competitionId), rules.get(f.competitionId)?.[f.matchday]) }));
+}
+
+export async function syncCompetitionMatchdayState(comp: FirestoreCompetitionDoc, changedLocks: FirestoreMatchdayLockDoc[]) {
+  let competition = comp, locks = changedLocks;
+  // Refresh the bounded state after committing. A later concurrent transaction wins.
+  try {
+    const db = getFirestoreDb();
+    const [doc, rows] = await Promise.all([
+      db.collection(COLLECTIONS.COMPETITIONS).doc(comp.id).get(),
+      db.collection(COLLECTIONS.MATCHDAY_LOCKS).where('competitionId', '==', comp.id).get(),
+    ]);
+    if (doc.exists) competition = { ...doc.data(), id: comp.id } as FirestoreCompetitionDoc;
+    locks = rows.docs.map(d => d.data() as FirestoreMatchdayLockDoc).filter(l => l.seasonId === comp.seasonId);
+  } catch {}
+  compOverrideMap.set(comp.id, competition);
+  for (const lock of locks) {
+    matchdayLocksCache.set(lock.id, lock);
+    try {
+      queryRun(`INSERT OR REPLACE INTO matchday_locks (id, season_id, competition_id, matchday, override_status, is_open, is_locked, duration_hours, opened_at, locked_at, expires_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [lock.id, lock.seasonId, lock.competitionId, lock.matchday, lock.overrideStatus, lock.isOpen ? 1 : 0, lock.isLocked ? 1 : 0, lock.durationHours || null, lock.openedAt || null, lock.lockedAt || null, lock.expiresAt || null, lock.updatedAt]);
+    } catch {}
+  }
+  invalidateFirestoreCache('firestore:comp');
+  invalidateFirestoreCache('firestore:fixtures');
+  try {
+    const { redisSetRaw, patchCompetitionMatchdayCatalog } = await import('../readModel/readModelStore');
+    const generatedAt = competition.updatedAt || new Date().toISOString();
+    await redisSetRaw(`matchday-state:${comp.seasonId}:${comp.id}`, { generatedAt, data: { competition, locks }, sourceVersion: `matchday-${generatedAt}` }, 86400);
+    await patchCompetitionMatchdayCatalog(competition);
+  } catch (error: any) {
+    console.warn('[MATCHDAY_STATE_CACHE_REFRESH]', error?.message || error);
+  }
+}
+
 export function invalidateMatchdayLockCache(seasonId: string, competitionId: string, matchday?: number): void {
   if (matchday !== undefined) {
     const key = getMatchdayLockKey(seasonId, competitionId, matchday);
@@ -2791,6 +2829,18 @@ export async function getCompetitionMatchdayLocksFirestore(
 ): Promise<Record<number, FirestoreMatchdayLockDoc>> {
   const result: Record<number, FirestoreMatchdayLockDoc> = {};
   try {
+    const { redisGetFresh, redisGetLkg } = await import('../readModel/readModelStore');
+    const snapshot = await redisGetFresh<{ competition: FirestoreCompetitionDoc; locks: FirestoreMatchdayLockDoc[] }>(`matchday-state:${seasonId}:${competitionId}`) || await redisGetLkg<{ competition: FirestoreCompetitionDoc; locks: FirestoreMatchdayLockDoc[] }>(`matchday-state:${seasonId}:${competitionId}`);
+    if (snapshot?.data) {
+      compOverrideMap.set(competitionId, snapshot.data.competition);
+      for (const lock of snapshot.data.locks) {
+        result[lock.matchday] = lock;
+        matchdayLocksCache.set(lock.id, lock);
+      }
+      return result;
+    }
+  } catch {}
+  try {
     const rows = queryAll<any>(
       'SELECT * FROM matchday_locks WHERE season_id = ? AND competition_id = ? ORDER BY matchday ASC',
       [seasonId, competitionId]
@@ -2820,10 +2870,11 @@ export async function getCompetitionMatchdayLocksFirestore(
 export async function getMatchdayLockFirestore(
   seasonId: string,
   competitionId: string,
-  matchday: number
+  matchday: number,
+  authoritative = false
 ): Promise<FirestoreMatchdayLockDoc | null> {
   const key = getMatchdayLockKey(seasonId, competitionId, matchday);
-  if (matchdayLocksCache.has(key)) {
+  if (!authoritative && matchdayLocksCache.has(key)) {
     return matchdayLocksCache.get(key)!;
   }
 
@@ -2837,6 +2888,11 @@ export async function getMatchdayLockFirestore(
       matchdayLocksCache.set(key, data);
       return data;
     }
+  } catch {}
+
+  try {
+    const locks = await getCompetitionMatchdayLocksFirestore(seasonId, competitionId);
+    if (locks[matchday]) return locks[matchday];
   } catch {}
 
   // Check SQLite strictly scoped to seasonId, competitionId, and matchday
@@ -2868,129 +2924,23 @@ export async function getMatchdayLockFirestore(
   return null;
 }
 
-export async function setMatchdayLockFirestore(
-  seasonId: string,
-  competitionId: string,
-  matchday: number,
-  params: {
-    overrideStatus: 'AUTO' | 'FORCE_OPEN' | 'FORCE_LOCKED' | 'PAUSED';
-    durationHours?: number;
-    adminUserId?: string;
-  }
-): Promise<FirestoreMatchdayLockDoc> {
-  const key = getMatchdayLockKey(seasonId, competitionId, matchday);
-  const now = new Date().toISOString();
-  const durationHours = params.durationHours || 30;
-  const expiresAt = params.overrideStatus === 'FORCE_OPEN' || params.overrideStatus === 'AUTO'
-    ? new Date(Date.now() + durationHours * 3600 * 1000).toISOString()
-    : undefined;
-
-  const isOpen = params.overrideStatus === 'FORCE_OPEN' || params.overrideStatus === 'AUTO';
-  const isLocked = params.overrideStatus === 'FORCE_LOCKED' || params.overrideStatus === 'PAUSED';
-
-  const lockDoc: FirestoreMatchdayLockDoc = {
-    id: key,
-    seasonId,
-    competitionId,
-    matchday,
-    overrideStatus: params.overrideStatus,
-    isOpen,
-    isLocked,
-    durationHours,
-    openedAt: isOpen ? now : undefined,
-    lockedAt: isLocked ? now : undefined,
-    expiresAt,
-    updatedAt: now,
-    updatedByUserId: params.adminUserId,
-  };
-
-  // 1. Update in-memory cache strictly for this lock key
-  matchdayLocksCache.set(key, lockDoc);
-
-  // 2. Persist in Firestore
-  try {
-    const db = getFirestoreDb();
-    await db.collection(COLLECTIONS.MATCHDAY_LOCKS).doc(key).set(lockDoc, { merge: true });
-  } catch (err: any) {
-    console.warn('[FIRESTORE FALLBACK] setMatchdayLockFirestore:', err.message);
-  }
-
-  // 3. Persist in SQLite strictly scoped
-  try {
-    queryRun(
-      `INSERT INTO matchday_locks (id, season_id, competition_id, matchday, override_status, is_open, is_locked, duration_hours, opened_at, locked_at, expires_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET
-         override_status = excluded.override_status,
-         is_open = excluded.is_open,
-         is_locked = excluded.is_locked,
-         duration_hours = excluded.duration_hours,
-         opened_at = excluded.opened_at,
-         locked_at = excluded.locked_at,
-         expires_at = excluded.expires_at,
-         updated_at = excluded.updated_at
-       WHERE matchday_locks.season_id = excluded.season_id
-         AND matchday_locks.competition_id = excluded.competition_id
-         AND matchday_locks.matchday = excluded.matchday`,
-      [
-        key,
-        seasonId,
-        competitionId,
-        matchday,
-        params.overrideStatus,
-        isOpen ? 1 : 0,
-        isLocked ? 1 : 0,
-        durationHours,
-        lockDoc.openedAt || null,
-        lockDoc.lockedAt || null,
-        lockDoc.expiresAt || null,
-        now,
-      ]
-    );
-  } catch {}
-
-  // 4. Update competition doc if this matchday is the current active matchday
-  try {
-    const existingComp = compOverrideMap.get(competitionId);
-    if (!existingComp || existingComp.currentMatchday === matchday || !existingComp.currentMatchday) {
-      compOverrideMap.set(competitionId, {
-        ...existingComp,
-        adminOverrideStatus: params.overrideStatus,
-        isMatchdayOpen: isOpen,
-      });
-
-      const db = getFirestoreDb();
-      await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).update({
-        adminOverrideStatus: params.overrideStatus,
-        isMatchdayOpen: isOpen,
-        updatedAt: now,
-      }).catch(() => {});
-    }
-  } catch {}
-
-  // Invalidate ONLY this modified competition/matchday lock and cache
-  invalidateMatchdayLockCache(seasonId, competitionId, matchday);
-  serverCache.delete(`firestore:comp:${competitionId}`);
-  serverCache.delete(`firestore:competitions:${seasonId}`);
-  serverCache.delete(`firestore:fixtures:${competitionId}`);
-  return lockDoc;
+export async function setMatchdayLockFirestore(seasonId: string, competitionId: string, matchday: number, params: { overrideStatus: 'AUTO' | 'FORCE_OPEN' | 'FORCE_LOCKED' | 'PAUSED'; durationHours?: number; adminUserId?: string }): Promise<FirestoreMatchdayLockDoc> {
+  await setCompetitionMatchdayOverrideFirestore(competitionId, params.overrideStatus, { ...params, matchday, seasonId });
+  const doc = await getFirestoreDb().collection(COLLECTIONS.MATCHDAY_LOCKS).doc(getMatchdayLockKey(seasonId, competitionId, matchday)).get();
+  return doc.data() as FirestoreMatchdayLockDoc;
 }
 
 export function isMatchdayPlayableKey(
   seasonId: string,
   competitionId: string,
   matchday: number,
-  compState?: { currentMatchday?: number; adminOverrideStatus?: string; isMatchdayOpen?: boolean; type?: string }
+  compState?: { currentMatchday?: number; adminOverrideStatus?: string; isMatchdayOpen?: boolean; type?: string; nextMatchdayOpenAt?: string }
 ): boolean {
   const key = getMatchdayLockKey(seasonId, competitionId, matchday);
   const lock = matchdayLocksCache.get(key);
 
-  if (lock) {
-    if (lock.overrideStatus === 'FORCE_OPEN') return true;
-    if (lock.overrideStatus === 'FORCE_LOCKED' || lock.overrideStatus === 'PAUSED' || lock.isLocked) return false;
-    if (lock.isOpen === false) return false;
-    if (lock.isOpen === true) return true;
-  }
+  const explicitGate = resolveMatchdayGate(lock);
+  if (explicitGate !== null) return explicitGate;
 
   // Isolated competition-level fallback
   const activeMatchday = compState?.currentMatchday || 1;
@@ -3009,7 +2959,7 @@ export function isMatchdayPlayableKey(
     compType === 'SUPER_CUP' ||
     compType === 'EUROPEAN_KNOCKOUT';
 
-  if (adminStatus === 'FORCE_LOCKED' || adminStatus === 'PAUSED') return false;
+  if (adminStatus === 'FORCE_LOCKED' || adminStatus === 'PAUSED' || !isMatchdayOpen || (compState?.nextMatchdayOpenAt && Date.parse(compState.nextMatchdayOpenAt) <= Date.now())) return false;
   if (isKnockout) {
     return true;
   }
@@ -3024,23 +2974,17 @@ export async function assertMatchdayPlayableFirestore(
   matchday: number
 ): Promise<void> {
   const key = getMatchdayLockKey(seasonId, competitionId, matchday);
-  const lock = await getMatchdayLockFirestore(seasonId, competitionId, matchday);
+  const lock = await getMatchdayLockFirestore(seasonId, competitionId, matchday, true);
 
-  if (lock) {
-    if (lock.overrideStatus === 'FORCE_LOCKED' || lock.overrideStatus === 'PAUSED' || lock.isLocked || lock.isOpen === false) {
-      const err: any = new Error(`MATCHDAY_LOCKED: Matchday ${matchday} for competition '${competitionId}' is locked by tournament administration.`);
-      err.code = 'MATCHDAY_LOCKED';
-      err.statusCode = 403;
-      throw err;
-    }
-    if (lock.overrideStatus === 'FORCE_OPEN' || lock.isOpen === true) {
-      return; // Allowed!
-    }
+  const explicitGate = resolveMatchdayGate(lock);
+  if (explicitGate === true) return;
+  if (explicitGate === false) {
+    throw Object.assign(new Error(`MATCHDAY_LOCKED: ${matchday}-tur yopiq yoki muddati tugagan.`), { code: 'MATCHDAY_LOCKED', statusCode: 403 });
   }
 
   // Check competition-level state for this specific competition
   let comp = compOverrideMap.get(competitionId);
-  if (!comp || !comp.type) {
+  {
     try {
       const db = getFirestoreDb();
       const doc = await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get();
@@ -3092,6 +3036,10 @@ export async function assertMatchdayPlayableFirestore(
     throw err;
   }
 
+  if (!isMatchdayOpen || (comp?.nextMatchdayOpenAt && Date.parse(comp.nextMatchdayOpenAt) <= Date.now())) {
+    throw Object.assign(new Error('MATCHDAY_LOCKED: Tur yopiq yoki muddati tugagan.'), { code: 'MATCHDAY_LOCKED', statusCode: 403 });
+  }
+
   // Knockout/Cup competitions: rounds are event-driven bracket stages.
   // Unless explicitly locked by an administrator, matches with determined clubs are playable.
   if (isKnockout) {
@@ -3120,231 +3068,48 @@ export async function assertMatchdayPlayableFirestore(
 // COMPETITION MATCHDAY MANAGEMENT (ISOLATED)
 // ----------------------------------------------------
 
-export async function advanceCompetitionMatchdayFirestore(
-  competitionId: string,
-  options: { durationHours?: number; seasonId?: string } = {}
-): Promise<{ success: boolean; currentMatchday: number; totalMatchdays: number; isMatchdayOpen: boolean; nextMatchdayOpenAt: string }> {
+export async function advanceCompetitionMatchdayFirestore(competitionId: string, options: { durationHours?: number; seasonId?: string } = {}) {
   const db = getFirestoreDb();
-  const compRef = db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId);
-  const compDoc = await compRef.get();
-  if (!compDoc.exists) {
-    throw new Error(`Competition '${competitionId}' not found.`);
-  }
-
-  const comp = compDoc.data() as FirestoreCompetitionDoc;
-  const seasonId = options.seasonId || comp.seasonId || 'season-2026-27';
-  const currentMd = comp.currentMatchday || 1;
-  const domesticLeague = ['comp-premier-league-2026', 'comp-la-liga-2026', 'comp-serie-a-2026', 'comp-bundesliga-2026', 'comp-ligue-1-2026'].includes(competitionId);
-  const totalMd = domesticLeague ? Math.min(19, comp.totalMatchdays || 19) : (comp.totalMatchdays || 19);
-  if (comp.type !== 'LEAGUE' || currentMd >= totalMd) {
-    throw new Error(`Cannot advance ${competitionId}: no next league matchday after ${currentMd}.`);
-  }
-  // Only an admin-reviewed postponement may remain open while the next round starts.
-  // Read the authoritative fixtures on this admin action, not a possibly stale read model.
-  const currentFixtures = await db.collection(COLLECTIONS.FIXTURES)
-    .where('competitionId', '==', competitionId).get();
-  const roundFixtures = currentFixtures.docs.filter((doc) => {
-    const fixture = doc.data();
-    return Number(fixture.matchday) === currentMd && (!fixture.seasonId || fixture.seasonId === seasonId);
-  });
-  if (!roundFixtures.length) throw new Error(`Cannot advance: matchday ${currentMd} has no fixtures.`);
-  const unfinished = roundFixtures.filter((doc) => !['CONFIRMED', 'CANCELLED', 'POSTPONED'].includes(String(doc.data().status)));
-  if (unfinished.length) {
-    throw new Error(`Cannot advance matchday ${currentMd}: ${unfinished.length} fixture(s) remain unfinished.`);
-  }
-  const nextMd = currentMd + 1;
-  const durationHours = options.durationHours || comp.matchdayDurationHours || 30;
-  const now = new Date().toISOString();
-  const nextOpenAt = new Date(Date.now() + durationHours * 3600 * 1000).toISOString();
-
-  await db.runTransaction(async (transaction) => {
-    const latest = await transaction.get(compRef);
-    if (!latest.exists || Number(latest.data()?.currentMatchday || 1) !== currentMd) {
-      throw new Error('Cannot advance: matchday changed during this request. Refresh and try again.');
-    }
-    transaction.update(compRef, {
-      currentMatchday: nextMd,
-      isMatchdayOpen: true,
-      matchdayOpenedAt: now,
-      matchdayDurationHours: durationHours,
-      nextMatchdayOpenAt: nextOpenAt,
-      adminOverrideStatus: 'AUTO',
-      updatedAt: now,
-    });
-  });
-
-  const existingOverride = compOverrideMap.get(competitionId) || {};
-  compOverrideMap.set(competitionId, {
-    ...existingOverride,
-    currentMatchday: nextMd,
-    isMatchdayOpen: true,
-    adminOverrideStatus: 'AUTO',
-  });
-
-  // Automatically update the lock for the new matchday isolated to this competition
-  await setMatchdayLockFirestore(seasonId, competitionId, nextMd, {
-    overrideStatus: 'AUTO',
-    durationHours,
-  });
-
-  invalidateFirestoreCache('firestore:comp');
-  return {
-    success: true,
-    currentMatchday: nextMd,
-    totalMatchdays: totalMd,
-    isMatchdayOpen: true,
-    nextMatchdayOpenAt: nextOpenAt,
-  };
+  const doc = await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get();
+  const comp = doc.data() as FirestoreCompetitionDoc;
+  if (!doc.exists) throw new Error(`Competition '${competitionId}' not found.`);
+  if (options.seasonId && options.seasonId !== comp.seasonId) throw Object.assign(new Error('Season mismatch'), { statusCode: 400 });
+  const limit = comp.leagueId === 'league-bundesliga' || comp.leagueId === 'league-ligue-1' ? 17 : 19;
+  if (comp.type !== 'LEAGUE' || (comp.currentMatchday || 1) >= Math.min(limit, comp.totalMatchdays || limit)) throw new Error(`Cannot advance ${competitionId}: no next league matchday after ${comp.currentMatchday || 1}.`);
+  const { controlCompetitionMatchday } = await import('../services/competitionMatchdayService');
+  return controlCompetitionMatchday(competitionId, { action: 'SELECT', matchday: (comp.currentMatchday || 1) + 1, durationHours: options.durationHours ?? comp.matchdayDurationHours ?? 30, expectedUpdatedAt: comp.updatedAt || null });
 }
 
-export async function setCompetitionMatchdayOverrideFirestore(
-  competitionId: string,
-  overrideStatus: 'AUTO' | 'FORCE_OPEN' | 'FORCE_LOCKED' | 'PAUSED',
-  options?: { matchday?: number; seasonId?: string; durationHours?: number; adminUserId?: string }
-): Promise<{ success: boolean; adminOverrideStatus: string; isMatchdayOpen: boolean; matchdayLock?: FirestoreMatchdayLockDoc }> {
-  const db = getFirestoreDb();
-  const compRef = db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId);
-  const compDoc = await compRef.get();
-  if (!compDoc.exists) {
-    throw new Error(`Competition '${competitionId}' not found.`);
-  }
-
-  const comp = compDoc.data() as FirestoreCompetitionDoc;
-  const seasonId = options?.seasonId || comp.seasonId || 'season-2026-27';
-  const targetMatchday = options?.matchday || comp.currentMatchday || 1;
-  const now = new Date().toISOString();
-  const isMatchdayOpen = overrideStatus === 'FORCE_OPEN' || overrideStatus === 'AUTO';
-
-  // Set the isolated matchday lock for this exact `${seasonId}:${competitionId}:${targetMatchday}`
-  const lockDoc = await setMatchdayLockFirestore(seasonId, competitionId, targetMatchday, {
-    overrideStatus,
-    durationHours: options?.durationHours,
-    adminUserId: options?.adminUserId,
-  });
-
-  // Only update competition top-level status if targetMatchday matches currentMatchday
-  if (targetMatchday === (comp.currentMatchday || 1)) {
-    await compRef.update({
-      adminOverrideStatus: overrideStatus,
-      isMatchdayOpen,
-      updatedAt: now,
-    });
-
-    const existingOverride = compOverrideMap.get(competitionId) || {};
-    compOverrideMap.set(competitionId, {
-      ...existingOverride,
-      adminOverrideStatus: overrideStatus,
-      isMatchdayOpen,
-    });
-  }
-
-  // Invalidate ONLY this modified competition/matchday lock
-  invalidateMatchdayLockCache(seasonId, competitionId, targetMatchday);
-  serverCache.delete(`firestore:comp:${competitionId}`);
-  serverCache.delete(`firestore:competitions:${seasonId}`);
-  serverCache.delete(`firestore:fixtures:${competitionId}`);
-  return {
-    success: true,
-    adminOverrideStatus: overrideStatus,
-    isMatchdayOpen,
-    matchdayLock: lockDoc,
-  };
+export async function setCompetitionMatchdayOverrideFirestore(competitionId: string, overrideStatus: 'AUTO' | 'FORCE_OPEN' | 'FORCE_LOCKED' | 'PAUSED', options?: { matchday?: number; seasonId?: string; durationHours?: number; adminUserId?: string }) {
+  const doc = await getFirestoreDb().collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get();
+  if (!doc.exists) throw new Error(`Competition '${competitionId}' not found.`);
+  const comp = doc.data() as FirestoreCompetitionDoc;
+  if (options?.seasonId && options.seasonId !== comp.seasonId) throw Object.assign(new Error('Season mismatch'), { statusCode: 400 });
+  const { controlCompetitionMatchday } = await import('../services/competitionMatchdayService');
+  const result = await controlCompetitionMatchday(competitionId, { action: overrideStatus === 'FORCE_LOCKED' || overrideStatus === 'PAUSED' ? 'LOCK' : 'OPEN', matchday: options?.matchday ?? comp.currentMatchday ?? 1, durationHours: options?.durationHours ?? comp.matchdayDurationHours ?? 30, adminUserId: options?.adminUserId });
+  return { ...result, adminOverrideStatus: overrideStatus };
 }
 
-export async function openCompetitionMatchdayNowFirestore(
-  competitionId: string,
-  durationHours = 30,
-  matchday?: number,
-  seasonId = 'season-2026-27'
-): Promise<{ success: boolean; currentMatchday: number; isMatchdayOpen: boolean; nextMatchdayOpenAt: string }> {
-  const db = getFirestoreDb();
-  const compRef = db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId);
-  const compDoc = await compRef.get();
-  if (!compDoc.exists) {
-    throw new Error(`Competition '${competitionId}' not found.`);
-  }
-
-  const comp = compDoc.data() as FirestoreCompetitionDoc;
-  const targetMd = matchday || comp.currentMatchday || 1;
-  const now = new Date().toISOString();
-  const nextOpenAt = new Date(Date.now() + durationHours * 3600 * 1000).toISOString();
-
-  await setMatchdayLockFirestore(seasonId, competitionId, targetMd, {
-    overrideStatus: 'FORCE_OPEN',
-    durationHours,
-  });
-
-  if (targetMd === (comp.currentMatchday || 1)) {
-    await compRef.update({
-      isMatchdayOpen: true,
-      matchdayOpenedAt: now,
-      matchdayDurationHours: durationHours,
-      nextMatchdayOpenAt: nextOpenAt,
-      adminOverrideStatus: 'AUTO',
-      updatedAt: now,
-    });
-
-    const existingOverride = compOverrideMap.get(competitionId) || {};
-    compOverrideMap.set(competitionId, {
-      ...existingOverride,
-      isMatchdayOpen: true,
-      adminOverrideStatus: 'AUTO',
-    });
-  }
-
-  invalidateFirestoreCache('firestore:comp');
-  return {
-    success: true,
-    currentMatchday: targetMd,
-    isMatchdayOpen: true,
-    nextMatchdayOpenAt: nextOpenAt,
-  };
+export async function openCompetitionMatchdayNowFirestore(competitionId: string, durationHours = 30, matchday?: number, seasonId?: string) {
+  const doc = await getFirestoreDb().collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get();
+  if (!doc.exists) throw new Error(`Competition '${competitionId}' not found.`);
+  const comp = doc.data() as FirestoreCompetitionDoc;
+  if (seasonId && seasonId !== comp.seasonId) throw Object.assign(new Error('Season mismatch'), { statusCode: 400 });
+  const { controlCompetitionMatchday } = await import('../services/competitionMatchdayService');
+  return controlCompetitionMatchday(competitionId, { action: 'OPEN', matchday: matchday ?? comp.currentMatchday ?? 1, durationHours });
 }
 
-export async function setCompetitionMatchdayTimerFirestore(
-  competitionId: string,
-  params: { currentMatchday?: number; durationHours?: number; nextOpenAt?: string; overrideStatus?: 'AUTO' | 'FORCE_OPEN' | 'FORCE_LOCKED' | 'PAUSED'; seasonId?: string }
-): Promise<{ success: boolean; competitionId: string }> {
-  const db = getFirestoreDb();
-  const compRef = db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId);
-  const compDoc = await compRef.get();
-  if (!compDoc.exists) {
-    throw new Error(`Competition '${competitionId}' not found.`);
-  }
-
-  const comp = compDoc.data() as FirestoreCompetitionDoc;
-  const seasonId = params.seasonId || comp.seasonId || 'season-2026-27';
-  const now = new Date().toISOString();
-  const updates: Partial<FirestoreCompetitionDoc> = {
-    updatedAt: now,
-  };
-
-  if (params.currentMatchday !== undefined) updates.currentMatchday = params.currentMatchday;
-  if (params.durationHours !== undefined) updates.matchdayDurationHours = params.durationHours;
-  if (params.nextOpenAt !== undefined) updates.nextMatchdayOpenAt = params.nextOpenAt;
-  if (params.overrideStatus !== undefined) {
-    updates.adminOverrideStatus = params.overrideStatus;
-    updates.isMatchdayOpen = params.overrideStatus === 'FORCE_OPEN' || params.overrideStatus === 'AUTO';
-  }
-
-  await compRef.update(updates);
-
-  const existingOverride = compOverrideMap.get(competitionId) || {};
-  compOverrideMap.set(competitionId, {
-    ...existingOverride,
-    ...updates,
-  });
-
-  if (params.overrideStatus !== undefined) {
-    const md = params.currentMatchday || comp.currentMatchday || 1;
-    await setMatchdayLockFirestore(seasonId, competitionId, md, {
-      overrideStatus: params.overrideStatus,
-      durationHours: params.durationHours,
-    });
-  }
-
-  invalidateFirestoreCache('firestore:comp');
-  return { success: true, competitionId };
+export async function setCompetitionMatchdayTimerFirestore(competitionId: string, params: { currentMatchday?: number; durationHours?: number; nextOpenAt?: string; overrideStatus?: 'AUTO' | 'FORCE_OPEN' | 'FORCE_LOCKED' | 'PAUSED'; seasonId?: string }) {
+  const doc = await getFirestoreDb().collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get();
+  if (!doc.exists) throw new Error(`Competition '${competitionId}' not found.`);
+  const comp = doc.data() as FirestoreCompetitionDoc;
+  if (params.seasonId && params.seasonId !== comp.seasonId) throw Object.assign(new Error('Season mismatch'), { statusCode: 400 });
+  if (params.overrideStatus !== undefined && !['AUTO', 'FORCE_OPEN', 'FORCE_LOCKED', 'PAUSED'].includes(params.overrideStatus)) throw Object.assign(new Error('Invalid override status'), { statusCode: 400 });
+  const duration = params.nextOpenAt !== undefined ? (Date.parse(params.nextOpenAt) - Date.now()) / 3600000 : params.durationHours;
+  const { controlCompetitionMatchday } = await import('../services/competitionMatchdayService');
+  const locked = params.overrideStatus === 'FORCE_LOCKED' || params.overrideStatus === 'PAUSED';
+  if (locked && params.currentMatchday !== undefined && params.currentMatchday !== (comp.currentMatchday || 1)) throw Object.assign(new Error('Select the round before locking it.'), { statusCode: 400 });
+  return controlCompetitionMatchday(competitionId, { action: locked ? 'LOCK' : params.currentMatchday !== undefined && params.currentMatchday !== (comp.currentMatchday || 1) ? 'SELECT' : 'RESTART', matchday: params.currentMatchday ?? comp.currentMatchday ?? 1, durationHours: duration ?? comp.matchdayDurationHours ?? 30 });
 }
 
 // ----------------------------------------------------

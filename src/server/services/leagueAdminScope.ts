@@ -13,6 +13,7 @@ export async function enforceLeagueAdminScope(req: Request, res: Response, next:
   const deny = () => { res.status(403).json({ error: 'ADMIN_SCOPE_FORBIDDEN', message: 'Sizda bu liga yoki amal uchun ruxsat yo‘q.' }); };
   if (req.method === 'GET' && path === '/api/admin/access') return next();
   if (!allowed.length) return deny();
+  if (req.method === 'GET' && /^\/api\/admin\/competitions\/([^/]+)\/matchday\/control$/.test(path) && competitionIds.has(decodeURIComponent(path.split('/')[4]))) return next();
   if (req.method === 'GET' && ['/api/admin/scoped/overview', '/api/admin/scoped/users'].includes(path)) return next();
   const db = getFirestoreDb();
   const clubMatch = path.match(/^\/api\/admin\/clubs\/([^/]+)\/(assign|release)$/);
@@ -37,7 +38,7 @@ export async function enforceLeagueAdminScope(req: Request, res: Response, next:
     if (!fixture.exists || !competitionIds.has(fixture.data()!.competitionId)) return deny();
     return next();
   }
-  const competitionMatch = path.match(/^\/api\/admin\/competitions\/([^/]+)\/(?:rebuild-standings|matchday\/(?:override|advance|open-now|set-timer|remind))$/);
+  const competitionMatch = path.match(/^\/api\/admin\/competitions\/([^/]+)\/(?:rebuild-standings|matchday\/(?:override|advance|open-now|set-timer|remind|control))$/);
   if (req.method === 'POST' && competitionMatch && competitionIds.has(decodeURIComponent(competitionMatch[1]))) return next();
   // Every other admin endpoint, including new endpoints, is denied by default.
   return deny();

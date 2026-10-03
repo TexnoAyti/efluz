@@ -1144,6 +1144,28 @@ adminRouter.post('/results/:fixtureId/reject', validateBody(reopenFixtureSchema)
 });
 
 // Competition Matchday Controls
+adminRouter.get('/competitions/:id/matchday/control', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'private, no-store');
+  try {
+    const { getCompetitionMatchdayControl } = await import('../services/competitionMatchdayService');
+    res.json(await getCompetitionMatchdayControl(req.params.id));
+  } catch (err: any) { res.status(err.statusCode || 503).json({ code: err.code || 'MATCHDAY_UNAVAILABLE', message: err.message }); }
+});
+adminRouter.post('/competitions/:id/matchday/control', async (req: Request, res: Response) => {
+  try {
+    const { controlCompetitionMatchday } = await import('../services/competitionMatchdayService');
+    const { action, matchday, durationHours, expectedUpdatedAt } = req.body;
+    const result = await controlCompetitionMatchday(req.params.id, { action, matchday, durationHours, expectedUpdatedAt, adminUserId: req.user!.id });
+    let smartNotificationsQueued = 0;
+    if (action === 'SELECT' || action === 'OPEN' || action === 'RESTART') {
+      try {
+        const doc = await getFirestoreDb().collection(COLLECTIONS.COMPETITIONS).doc(req.params.id).get();
+        smartNotificationsQueued = await notifySmartMatchdayOpened({ competitionId: req.params.id, seasonId: doc.data()?.seasonId || 'season-2026-27', matchday, deadlineAt: result.nextMatchdayOpenAt });
+      } catch (error: any) { console.warn('[SMART_NOTIFY] Matchday control notification failed:', error?.message || error); }
+    }
+    res.json({ ...result, smartNotificationsQueued });
+  } catch (err: any) { res.status(err.statusCode || 503).json({ code: err.code || 'MATCHDAY_UNAVAILABLE', message: err.message, blockers: err.blockers || [] }); }
+});
 adminRouter.post('/competitions/:id/matchday/override', async (req: Request, res: Response) => {
   const competitionId = req.params.id;
   const { overrideStatus, matchday, durationHours, seasonId } = req.body;
@@ -1162,7 +1184,7 @@ adminRouter.post('/competitions/:id/matchday/override', async (req: Request, res
     let smartNotificationsQueued = 0;
     if (overrideStatus === 'FORCE_OPEN') {
       try {
-        const resolvedMatchday = Number((result as any)?.currentMatchday ?? matchday ?? 0);
+        const resolvedMatchday = Number((result as any)?.matchday ?? matchday ?? (result as any)?.currentMatchday ?? 0);
         if (resolvedMatchday > 0) {
           smartNotificationsQueued = await notifySmartMatchdayOpened({
             competitionId,
@@ -1186,7 +1208,7 @@ adminRouter.post('/competitions/:id/matchday/advance', async (req: Request, res:
   const { durationHours, seasonId } = req.body;
 
   try {
-    const result = await advanceCompetitionMatchdayFirestore(competitionId, { durationHours });
+    const result = await advanceCompetitionMatchdayFirestore(competitionId, { durationHours, seasonId });
     let smartNotificationsQueued = 0;
     try {
       const resolvedMatchday = Number((result as any)?.currentMatchday || 0);
@@ -1223,7 +1245,7 @@ adminRouter.post('/competitions/:id/matchday/open-now', async (req: Request, res
       smartNotificationsQueued = await notifySmartMatchdayOpened({
         competitionId,
         seasonId: typeof seasonId === 'string' ? seasonId : 'season-2026-27',
-        matchday: Number(result.currentMatchday),
+        matchday: Number(result.matchday),
         deadlineAt: result.nextMatchdayOpenAt || null,
       });
     } catch (notificationError: any) {
