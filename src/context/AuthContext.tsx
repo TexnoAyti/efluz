@@ -258,9 +258,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           id: 'season-2026-27', name: '2026/27', status: 'active',
           startDate: '2026-08-01', createdAt: '',
         };
-        const { demoClubs } = await import('../lib/designPreviewData');
-        setOwnedClubs(demoClubs);
-        setCurrentClub(resolveActiveClub(demoClubs, demoClubs[0], 'design-preview', season.id, clubPreferenceStorage()));
         setSeasons([season]);
         setCurrentSeason(season);
         setAuthStatus('AUTHENTICATED');
@@ -594,3 +591,4 @@ export function useAuth(): AuthContextType {
   }
   return context;
 }
+
