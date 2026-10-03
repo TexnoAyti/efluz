@@ -2,7 +2,6 @@ import type { Notification } from '../../types';
 import { getUpstashClient } from '../readModel/readModelStore';
 import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS } from '../firebase/collections';
-import { getBroadcastHistory, getBroadcastDetails } from './telegramNotificationQueue';
 
 export type NotificationControl = 'visible' | 'hidden' | 'deleted';
 export type NotificationControls = Record<string, NotificationControl>;
@@ -44,6 +43,7 @@ export function notificationVisible(notification: Notification, controls: Notifi
 }
 
 export async function listAdminNotificationMessages(cursor?: string) {
+  const { getBroadcastHistory } = await import('./telegramNotificationQueue');
   const controls = await getNotificationControls();
   const records = (await getBroadcastHistory(Number.MAX_SAFE_INTEGER))
     .filter(record => !record.createdById?.startsWith('system:'))
@@ -60,6 +60,7 @@ export async function listAdminNotificationMessages(cursor?: string) {
 }
 
 export async function setBroadcastVisibility(id: string, visibility: NotificationControl): Promise<void> {
+  const { getBroadcastDetails } = await import('./telegramNotificationQueue');
   const record = await getBroadcastDetails(id);
   if (!record || record.createdById?.startsWith('system:')) throw new Error('NOTIFICATION_NOT_FOUND');
   await save('broadcast:' + id, visibility);
