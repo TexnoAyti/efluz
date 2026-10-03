@@ -1,3 +1,4 @@
+import { matchesUserSearch } from '../../lib/userSearch';
 import { getAdminUserDirectory, resolveAdminUserReference } from '../services/adminUserDirectory';
 import { Router, Request, Response } from 'express';
 import { adminNotificationsRouter } from './adminNotifications.routes';
@@ -111,6 +112,15 @@ adminRouter.use(requireAdmin);
 adminRouter.get('/access', (req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'private, no-store');
   res.json({ adminPermissions: req.user!.adminPermissions || { scope: 'ALL', leagueIds: [] } });
+});
+adminRouter.get('/scoped/users', async (req: Request, res: Response) => {
+  const search = String(req.query.search || '').trim().slice(0, 80);
+  if (search.length < 2) { res.json({ users: [] }); return; }
+  try {
+    const users = (await getAdminUserDirectory()).filter(user => matchesUserSearch(user, search)).slice(0, 20);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json({ users: users.map(user => ({ id: user.id, telegramId: user.telegramId, username: user.username, firstName: user.firstName, lastName: user.lastName, photoUrl: user.photoUrl, isSuspended: user.isSuspended })) });
+  } catch (err: any) { handleFirestoreError(res, err, 'GET /api/admin/scoped/users'); }
 });
 adminRouter.get('/scoped/overview', async (req: Request, res: Response) => {
   try {

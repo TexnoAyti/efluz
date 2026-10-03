@@ -55,6 +55,14 @@ try {
     ['/api/admin/read-model/rebuild', 'POST', {}], ['/api/admin/telegram-notifications/broadcast', 'POST', {}],
     ['/api/admin/clubs/club-arsenal/release', 'POST', {}], ['/api/admin/fixtures/scope-pl-fixture', 'DELETE', { reason: 'forged' }],
   ] as const) assert.equal((await request(path, method, body)).status, 403, path);
+  const identities = await request('/api/admin/scoped/users?search=@scope-root');
+  assert.equal(identities.status, 200);
+  const identityUsers = (await identities.json()).users;
+  assert.equal(identityUsers.length, 1);
+  assert.equal(identityUsers[0].id, 'scope-root');
+  assert.equal('adminPermissions' in identityUsers[0], false);
+  assert.equal('isAdmin' in identityUsers[0], false);
+  assert.equal((await (await request('/api/admin/scoped/users?search=x')).json()).users.length, 0);
   const overviewResponse = await request('/api/admin/scoped/overview');
   assert.equal(overviewResponse.status, 200);
   const overview = await overviewResponse.json();

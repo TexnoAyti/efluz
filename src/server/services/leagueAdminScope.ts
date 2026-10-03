@@ -13,7 +13,7 @@ export async function enforceLeagueAdminScope(req: Request, res: Response, next:
   const deny = () => { res.status(403).json({ error: 'ADMIN_SCOPE_FORBIDDEN', message: 'Sizda bu liga yoki amal uchun ruxsat yo‘q.' }); };
   if (req.method === 'GET' && path === '/api/admin/access') return next();
   if (!allowed.length) return deny();
-  if (req.method === 'GET' && path === '/api/admin/scoped/overview') return next();
+  if (req.method === 'GET' && ['/api/admin/scoped/overview', '/api/admin/scoped/users'].includes(path)) return next();
   const db = getFirestoreDb();
   const clubMatch = path.match(/^\/api\/admin\/clubs\/([^/]+)\/(assign|release)$/);
   if (req.method === 'POST' && clubMatch) {

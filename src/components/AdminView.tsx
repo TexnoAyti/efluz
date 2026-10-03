@@ -1,5 +1,6 @@
 import type { AdminPermissions } from '../types';
-import { LeagueAdminView } from './admin/LeagueAdminView';
+import { permittedAdminLeagues } from '../lib/adminPermissions';
+import { getScopedAdminFixturePage } from '../lib/scopedAdminFixtures';
 import { matchesUserSearch } from '../lib/userSearch';
 import React, { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -103,15 +104,18 @@ export const AdminView: React.FC = () => {
   if (!user?.isAdmin) return <FullAdminView />;
   if (error) return <div role="alert" className="p-6 text-white">{error}<button className="ml-3 underline" onClick={() => setRetry(value => value + 1)}>Qayta tekshirish</button></div>;
   if (!permissions) return <div role="status" className="p-6 text-slate-300">Ruxsatlar tekshirilmoqda...</div>;
-  return permissions.scope === 'ALL' ? <FullAdminView /> : <LeagueAdminView permissions={permissions} />;
+  return <FullAdminView key={JSON.stringify(permissions)} permissions={permissions} />;
 };
 
-const FullAdminView: React.FC = () => {
+const FullAdminView: React.FC<{ permissions?: AdminPermissions }> = ({ permissions }) => {
+  const isScoped = Boolean(permissions && permissions.scope !== 'ALL');
+  const allowedLeagues = permittedAdminLeagues({ adminPermissions: permissions });
+  const [scopedFixtures, setScopedFixtures] = useState<Fixture[]>([]);
   const { user, activeSeasonId, showToast } = useAuth();
   const { t, language } = useI18n();
   const loc = (uz: string, ru: string, en: string) => ({ uz, ru, en })[language];
 
-  const [activeAdminTab, setActiveAdminTab] = useState<AdminTab>('overview');
+  const [activeAdminTab, setActiveAdminTab] = useState<AdminTab>(isScoped ? 'matches' : 'overview');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -225,7 +229,14 @@ const FullAdminView: React.FC = () => {
     setError(null);
 
     try {
-      if (tab === 'overview') {
+      if (isScoped) {
+        const data = await api.getLeagueAdminOverview(activeSeasonId);
+        setClubs(data.clubs); setCompetitions(data.competitions); setScopedFixtures(data.fixtures);
+        if (tab === 'matches') {
+          const page = getScopedAdminFixturePage(data.fixtures, { competitionId: matchCompFilter, status: matchStatusFilter, clubId: matchClubFilter, matchday: matchdayFilter, search: matchSearch, limit: matchPageSize });
+          setFixtures(page.fixtures); setFixturesTotal(page.total); setFixturesHasMore(page.hasMore); setFixturesNextCursor(undefined); setMatchPage(1); setPageCursors({ 1: undefined });
+        }
+      } else if (tab === 'overview') {
         const overviewRes = await api.getAdminOverview(activeSeasonId, skipCache);
         if (overviewRes) {
           setOverviewData(overviewRes);
@@ -338,7 +349,9 @@ const FullAdminView: React.FC = () => {
   const fetchAdminMatches = async (targetPage = 1, cursor?: string, append = false, skipCache = false) => {
     setIsMatchesLoading(true);
     try {
-      const res = await api.getAdminFixtures(
+      const source = isScoped && skipCache ? await api.getLeagueAdminOverview(activeSeasonId) : null;
+      if (source) { setScopedFixtures(source.fixtures); setClubs(source.clubs); setCompetitions(source.competitions); }
+      const res = isScoped ? getScopedAdminFixturePage(source?.fixtures || scopedFixtures, { competitionId: matchCompFilter, status: matchStatusFilter, clubId: matchClubFilter, matchday: matchdayFilter, search: matchSearch, page: targetPage, limit: matchPageSize }) : await api.getAdminFixtures(
         {
           seasonId: activeSeasonId,
           competitionId: matchCompFilter !== 'ALL' ? matchCompFilter : undefined,
@@ -382,11 +395,22 @@ const FullAdminView: React.FC = () => {
     if (activeAdminTab === 'matches' && loadedTabs.has('matches')) {
       const timer = setTimeout(() => {
         setPageCursors({ 1: undefined });
-        fetchAdminMatches(1, undefined, false, true);
+        fetchAdminMatches(1, undefined, false, !isScoped);
       }, 250);
       return () => clearTimeout(timer);
     }
   }, [matchCompFilter, matchStatusFilter, matchClubFilter, matchdayFilter, matchSearch, matchPageSize]);
+
+  useEffect(() => {
+    if (!isScoped || !selectedClubForAssign) return;
+    let cancelled = false;
+    setUsers([]); setAssignTargetUserId('');
+    if (assignUserSearch.trim().length < 2) return;
+    const timer = setTimeout(() => {
+      api.getLeagueAdminAssignees(assignUserSearch).then(data => { if (!cancelled) setUsers(data.users); }).catch(err => { if (!cancelled) showToast(err.message, 'error'); });
+    }, 250);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [isScoped, selectedClubForAssign?.id, assignUserSearch]);
 
   // =========================================================================
   // CLUB OWNERSHIP ACTIONS
@@ -523,7 +547,7 @@ const FullAdminView: React.FC = () => {
   const handleRebuildStandings = async (compId: string) => {
     setRebuildingStandingsCompId(compId);
     try {
-      const res = await api.rebuildStandings(compId);
+      const res = isScoped ? await api.rebuildLeagueAdminStandings(compId, activeSeasonId) : await api.rebuildStandings(compId);
       showToast(res.message || 'Standings recalculated from confirmed fixtures.', 'success');
       await loadAllAdminData(true);
     } catch (err: any) {
@@ -630,9 +654,8 @@ const FullAdminView: React.FC = () => {
       const res = await api.adminEditFixtureResult(selectedFixtureForEditResult.id, params);
       if (res.success) {
         showToast(res.message || 'Fixture result updated and standings recalculated.', 'success');
-        setFixtures((prev) =>
-          prev.map((f) => (f.id === res.fixture.id ? { ...f, ...res.fixture } : f))
-        );
+        setFixtures((prev) => prev.map((f) => (f.id === res.fixture.id ? { ...f, ...res.fixture } : f)));
+        if (isScoped) setScopedFixtures(prev => prev.map(f => f.id === res.fixture.id ? { ...f, ...res.fixture } : f));
       }
     } catch (err: any) {
       showToast(err.message || 'Failed to update fixture result.', 'error');
@@ -646,9 +669,8 @@ const FullAdminView: React.FC = () => {
       const res = await api.adminDeleteFixtureResult(selectedFixtureForDeleteResult.id, options);
       if (res.success) {
         showToast(res.message || 'Fixture result reset to SCHEDULED.', 'success');
-        setFixtures((prev) =>
-          prev.map((f) => (f.id === res.fixture.id ? { ...f, ...res.fixture } : f))
-        );
+        setFixtures((prev) => prev.map((f) => (f.id === res.fixture.id ? { ...f, ...res.fixture } : f)));
+        if (isScoped) setScopedFixtures(prev => prev.map(f => f.id === res.fixture.id ? { ...f, ...res.fixture } : f));
       }
     } catch (err: any) {
       showToast(err.message || 'Failed to reset fixture result.', 'error');
@@ -663,6 +685,7 @@ const FullAdminView: React.FC = () => {
       if (res.success) {
         showToast(res.message || 'Fixture deleted.', 'success');
         setFixtures((prev) => prev.filter((f) => f.id !== selectedFixtureForDelete.id));
+        if (isScoped) setScopedFixtures(prev => prev.filter(f => f.id !== selectedFixtureForDelete.id));
       }
     } catch (err: any) {
       showToast(err.message || 'Failed to delete fixture.', 'error');
@@ -842,6 +865,7 @@ const FullAdminView: React.FC = () => {
                 <Shield className="w-3 h-3" />
                 {t.adminPanel}
               </span>
+              {isScoped && <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/15 text-emerald-300 border border-emerald-500/20">{allowedLeagues.map(league => league.name).join(', ')}</span>}
               <span className="text-[11px] font-semibold text-slate-400">
                 {t.adminOfficer}: <strong className="text-emerald-400">@{user?.username}</strong> ({user?.id})
               </span>
@@ -896,7 +920,7 @@ const FullAdminView: React.FC = () => {
       <p className="px-1 text-[11px] font-semibold text-slate-400 sm:hidden">{t.adminSectionsHint}</p>
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
         {/* 1. OVERVIEW */}
-        <button
+        {!isScoped && (<button
           id="tab-admin-overview"
           onClick={() => setActiveAdminTab('overview')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all min-h-[40px] ${
@@ -912,7 +936,7 @@ const FullAdminView: React.FC = () => {
               {pendingResults.length}
             </span>
           )}
-        </button>
+        </button>)}
 
         {/* 2. CLUBS */}
         <button
@@ -925,7 +949,7 @@ const FullAdminView: React.FC = () => {
           }`}
         >
           <Shield className="w-4 h-4" />
-          <span>Clubs ({clubs.length || 96})</span>
+          <span>Clubs ({isScoped ? clubs.length : clubs.length || 96})</span>
         </button>
 
         {/* 3. MATCHES */}
@@ -943,7 +967,7 @@ const FullAdminView: React.FC = () => {
         </button>
 
         {/* 4. RESULTS */}
-        <button
+        {!isScoped && (<button
           id="tab-admin-results"
           onClick={() => setActiveAdminTab('results')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all min-h-[40px] ${
@@ -959,7 +983,7 @@ const FullAdminView: React.FC = () => {
               {pendingResults.length + disputes.length}
             </span>
           )}
-        </button>
+        </button>)}
 
         {/* 5. COMPETITIONS */}
         <button
@@ -976,7 +1000,7 @@ const FullAdminView: React.FC = () => {
         </button>
 
         {/* 5A. DOMESTIC CUPS */}
-        <button
+        {!isScoped && (<button
           id="tab-admin-domestic-cups"
           onClick={() => setActiveAdminTab('domestic_cups')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all min-h-[40px] ${
@@ -987,10 +1011,10 @@ const FullAdminView: React.FC = () => {
         >
           <Trophy className="w-4 h-4 text-amber-400" />
           <span>{t.adminDomesticCups}</span>
-        </button>
+        </button>)}
 
         {/* 5B. EUROPEAN (UCL & UEL) */}
-        <button
+        {!isScoped && (<button
           id="tab-admin-european"
           onClick={() => setActiveAdminTab('european')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all min-h-[40px] ${
@@ -1001,10 +1025,10 @@ const FullAdminView: React.FC = () => {
         >
           <Globe2 className="w-4 h-4 text-blue-300" />
           <span>{t.adminEuropeanCompetitions}</span>
-        </button>
+        </button>)}
 
         {/* 5C. TELEGRAM NOTIFICATIONS */}
-        <button
+        {!isScoped && (<button
           id="tab-admin-telegram"
           onClick={() => setActiveAdminTab('telegram')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all min-h-[40px] ${
@@ -1015,13 +1039,13 @@ const FullAdminView: React.FC = () => {
         >
           <Send className="w-4 h-4 text-sky-400" />
           <span>{t.adminTelegramBot}</span>
-        </button>
+        </button>)}
 
         {/* 6. PLAYERS */}
-        <button id="tab-admin-notifications" onClick={() => setActiveAdminTab('notifications')} className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap min-h-[40px] ${activeAdminTab === 'notifications' ? 'bg-sky-500 text-slate-950' : 'glass-card text-slate-300 hover:text-white'}`}>
+        {!isScoped && (<button id="tab-admin-notifications" onClick={() => setActiveAdminTab('notifications')} className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap min-h-[40px] ${activeAdminTab === 'notifications' ? 'bg-sky-500 text-slate-950' : 'glass-card text-slate-300 hover:text-white'}`}>
           <Eye className="w-4 h-4" /><span>{loc('Bildirishnomalar', 'Уведомления', 'Notifications')}</span>
-        </button>
-        <button
+        </button>)}
+        {!isScoped && (<button
           id="tab-admin-users"
           onClick={() => setActiveAdminTab('users')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all min-h-[40px] ${
@@ -1032,10 +1056,10 @@ const FullAdminView: React.FC = () => {
         >
           <UserCheck className="w-4 h-4" />
           <span>{t.adminPlayers} ({users.length})</span>
-        </button>
+        </button>)}
 
         {/* 7. SYSTEM & AUDIT */}
-        <button
+        {!isScoped && (<button
           id="tab-admin-system"
           onClick={() => setActiveAdminTab('system')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all min-h-[40px] ${
@@ -1046,7 +1070,7 @@ const FullAdminView: React.FC = () => {
         >
           <Database className="w-4 h-4" />
           <span>{t.adminSystemDiagnostics}</span>
-        </button>
+        </button>)}
       </div>
 
       {/* ========================================================================= */}
@@ -1272,7 +1296,7 @@ const FullAdminView: React.FC = () => {
       {/* ========================================================================= */}
       {activeAdminTab === 'clubs' && (
         <div className="space-y-4">
-          <AdminClubAdmissionPanel seasonId={activeSeasonId} />
+          {!isScoped && <AdminClubAdmissionPanel seasonId={activeSeasonId} />}
           <AdminClubIntegrityPanel clubs={clubs} />
           {/* Controls Bar */}
           <div className="glass-panel p-4 space-y-3">
@@ -1280,7 +1304,7 @@ const FullAdminView: React.FC = () => {
               <div>
                 <h2 className="text-sm font-black text-white flex items-center gap-2">
                   <Shield className="w-4 h-4 text-emerald-400" />
-                  <span>96 Official European Clubs</span>
+                  <span>{isScoped ? `${clubs.length} ${loc('klub', 'клубов', 'clubs')} · ${allowedLeagues.map(league => league.name).join(', ')}` : '96 Official European Clubs'}</span>
                 </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
                   Safely manage club occupancy, assign registered users, or release clubs. Deletion is protected.
@@ -1317,12 +1341,8 @@ const FullAdminView: React.FC = () => {
                 onChange={(e) => setClubLeagueFilter(e.target.value)}
                 className="px-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-semibold"
               >
-                <option value="ALL">All Leagues (96 Clubs)</option>
-                <option value="league-premier-league">Premier League (20)</option>
-                <option value="league-la-liga">La Liga (20)</option>
-                <option value="league-serie-a">Serie A (20)</option>
-                <option value="league-bundesliga">Bundesliga (18)</option>
-                <option value="league-ligue-1">Ligue 1 (18)</option>
+                <option value="ALL">{isScoped ? loc('Ruxsat berilgan ligalar', 'Доступные лиги', 'Permitted leagues') : 'All Leagues (96 Clubs)'}</option>
+                {allowedLeagues.map(league => <option key={league.id} value={league.id}>{league.name}</option>)}
               </select>
 
               {/* Occupancy Filter */}
@@ -2023,14 +2043,14 @@ const FullAdminView: React.FC = () => {
               <div>
                 <h2 className="text-sm font-black text-white flex items-center gap-2">
                   <Trophy className="w-4 h-4 text-amber-400" />
-                  <span>18 Official Tournament Competitions</span>
+                  <span>{isScoped ? allowedLeagues.map(league => league.name).join(', ') : '18 Official Tournament Competitions'}</span>
                 </h2>
                 <p className="text-xs text-slate-400">
-                  5 Single Round-Robin Domestic Leagues, 6 National Cups, 5 Super Cups, and 2 32-Team European Competitions.
+                  {isScoped ? loc('Tanlangan liga boshqaruvi', 'Управление выбранной лигой', 'Selected league management') : '5 Single Round-Robin Domestic Leagues, 6 National Cups, 5 Super Cups, and 2 32-Team European Competitions.'}
                 </p>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
+{!isScoped && (              <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={handleRunFixtureValidation}
                   disabled={isValidatingFixtures}
@@ -2048,7 +2068,7 @@ const FullAdminView: React.FC = () => {
                   <Sparkles className="w-3.5 h-3.5" />
                   <span>Evaluate European Spots</span>
                 </button>
-              </div>
+              </div>)}
             </div>
           </div>
 
@@ -2056,7 +2076,7 @@ const FullAdminView: React.FC = () => {
           <div className="space-y-3">
             <h3 className="text-xs font-black uppercase tracking-wider text-emerald-400 flex items-center gap-2">
               <Globe2 className="w-3.5 h-3.5" />
-              <span>Domestic Leagues (5) • Single Round-Robin (19 MDs for 20 teams, 17 MDs for 18 teams)</span>
+              <span>{isScoped ? loc('Liga boshqaruvi', 'Управление лигой', 'League management') : 'Domestic Leagues (5) • Single Round-Robin (19 MDs for 20 teams, 17 MDs for 18 teams)'}</span>
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -2166,6 +2186,7 @@ const FullAdminView: React.FC = () => {
             </div>
           </div>
 
+          {!isScoped && <>
           {/* 2. DOMESTIC CUPS (5) */}
           <div className="space-y-3 pt-2">
             <h3 className="text-xs font-black uppercase tracking-wider text-amber-400 flex items-center gap-2">
@@ -2341,6 +2362,7 @@ const FullAdminView: React.FC = () => {
               })}
             </div>
           </div>
+          </>}
         </div>
       )}
 

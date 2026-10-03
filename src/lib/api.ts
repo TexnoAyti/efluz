@@ -511,6 +511,14 @@ export const api = {
     return request('/api/admin/scoped/overview?seasonId=' + encodeURIComponent(seasonId), { skipCache: true });
   },
 
+  async getLeagueAdminAssignees(search: string): Promise<{ users: User[] }> {
+    return request('/api/admin/scoped/users?search=' + encodeURIComponent(search), { skipCache: true });
+  },
+  async rebuildLeagueAdminStandings(competitionId: string, seasonId: string): Promise<{ success: boolean; message: string }> {
+    const result = await request<{ success: boolean; message: string }>('/api/admin/competitions/' + encodeURIComponent(competitionId) + '/rebuild-standings', { method: 'POST', body: JSON.stringify({ seasonId }) });
+    invalidateClientCache(); return result;
+  },
+
   async getAdminOverview(seasonId = 'season-2026-27', skipCache = false): Promise<{
     season: { id: string; name: string; status: string };
     counts: {
