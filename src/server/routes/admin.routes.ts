@@ -1,3 +1,4 @@
+import { getAdminUserDirectory, resolveAdminUserReference } from '../services/adminUserDirectory';
 import { Router, Request, Response } from 'express';
 import { adminNotificationsRouter } from './adminNotifications.routes';
 import { z } from 'zod';
@@ -761,6 +762,18 @@ adminRouter.post('/migrate-to-firestore', async (req: Request, res: Response) =>
   }
 });
 
+adminRouter.post('/fixtures/restore-missing-pairs', async (req: Request, res: Response) => {
+  try {
+    const { restoreMissingLeaguePairs } = await import('../services/missingLeaguePairRepair');
+    res.json(await restoreMissingLeaguePairs(req.user!.id));
+  } catch (err: any) { handleFirestoreError(res, err, 'POST /api/admin/fixtures/restore-missing-pairs'); }
+});
+
+adminRouter.get('/users/directory', async (_req: Request, res: Response) => {
+  try { res.json({ users: await getAdminUserDirectory() }); }
+  catch (err: any) { handleFirestoreError(res, err, 'GET /api/admin/users/directory'); }
+});
+
 adminRouter.get('/users', async (req: Request, res: Response) => {
   const page = req.query.page ? Math.max(1, parseInt(req.query.page as string, 10)) : 1;
   const limit = req.query.limit ? Math.min(Math.max(1, parseInt(req.query.limit as string, 10)), 100) : 100;
@@ -1022,19 +1035,24 @@ adminRouter.post('/clubs/:id/release', async (req: Request, res: Response) => {
 adminRouter.post('/clubs/:id/assign', async (req: Request, res: Response) => {
   const adminUserId = req.user!.id;
   const clubId = req.params.id;
-  const { targetUserId, seasonId = 'season-2026-27' } = req.body;
+  const { targetUserId: targetReference, seasonId = 'season-2026-27' } = req.body;
 
-  if (!targetUserId) {
+  if (typeof targetReference !== 'string' || !targetReference.trim()) {
     res.status(400).json({ error: 'targetUserId is required', code: 'BAD_REQUEST', message: 'targetUserId is required' });
     return;
   }
 
   try {
+    const targetUserId = await resolveAdminUserReference(targetReference);
     const result = await adminAssignClubFirestore(adminUserId, clubId, targetUserId, seasonId);
     await invalidateClubReadModels(seasonId).catch(() => {});
     await invalidateUserMembershipReadModel(targetUserId, seasonId).catch(() => {});
     res.json(result);
   } catch (err: any) {
+    if (['USER_NOT_FOUND', 'AMBIGUOUS_USER_REFERENCE'].includes(err.message)) {
+      res.status(err.message === 'USER_NOT_FOUND' ? 404 : 409).json({ error: err.message, message: err.message === 'USER_NOT_FOUND' ? 'Foydalanuvchi topilmadi' : 'Username bir nechta foydalanuvchiga mos keldi. ID orqali tanlang.' });
+      return;
+    }
     handleFirestoreError(res, err, `POST /api/admin/clubs/${clubId}/assign`);
   }
 });

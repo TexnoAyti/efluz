@@ -1,3 +1,4 @@
+import { matchesUserSearch } from '../lib/userSearch';
 import React, { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n';
@@ -91,6 +92,8 @@ export const AdminView: React.FC = () => {
   const { t, language } = useI18n();
   const loc = (uz: string, ru: string, en: string) => ({ uz, ru, en })[language];
 
+  const [isRepairingFixtures, setIsRepairingFixtures] = useState(false);
+  const [fixtureRepairMessage, setFixtureRepairMessage] = useState('');
   const [activeAdminTab, setActiveAdminTab] = useState<AdminTab>('overview');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -215,7 +218,7 @@ export const AdminView: React.FC = () => {
       } else if (tab === 'clubs') {
         const [clubsRes, usersRes] = await Promise.all([
           api.getAdminClubs(activeSeasonId, undefined, skipCache),
-          users.length === 0 ? api.getAdminUsers(skipCache).catch(() => ({ users: [] })) : Promise.resolve(null),
+          users.length === 0 ? api.getAdminUserDirectory(skipCache) : Promise.resolve(null),
         ]);
         if (clubsRes?.clubs) setClubs(clubsRes.clubs);
         if (usersRes?.users) setUsers(usersRes.users);
@@ -262,7 +265,7 @@ export const AdminView: React.FC = () => {
         const compsRes = await api.getCompetitions(activeSeasonId, skipCache);
         if (compsRes?.competitions) setCompetitions(compsRes.competitions);
       } else if (tab === 'users') {
-        const usersRes = await api.getAdminUsers(skipCache);
+        const usersRes = await api.getAdminUserDirectory(skipCache);
         if (usersRes?.users) setUsers(usersRes.users);
       } else if (tab === 'system') {
         const [diagRes, rmHealthRes] = await Promise.all([
@@ -526,6 +529,18 @@ export const AdminView: React.FC = () => {
     }
   };
 
+  const handleRestoreMissingFixtures = async () => {
+    setIsRepairingFixtures(true);
+    try {
+      const response = await api.restoreMissingLeaguePairs();
+      const errors = response.results.filter(result => result.status === 'error');
+      setFixtureRepairMessage(response.results.map(result => `${result.competitionId}: ${result.message || (result.status === 'restored' ? 'tiklandi' : 'mavjud')}`).join(' · '));
+      showToast(errors.length ? 'Tiklash yakunlandi. Tafsilotlarni ko‘ring.' : 'Ikkala uchrashuv ham mavjud. Ro‘yxat yangilandi.', errors.length ? 'error' : 'success');
+    } catch (err: any) {
+      setFixtureRepairMessage(err.message || 'Uchrashuvlarni tiklab bo‘lmadi. Qayta urinib ko‘ring.');
+    } finally { setIsRepairingFixtures(false); }
+  };
+
   const handleRunFixtureValidation = async () => {
     setIsValidatingFixtures(true);
     try {
@@ -727,31 +742,12 @@ export const AdminView: React.FC = () => {
       if (userRoleFilter === 'ADMIN' && !u.isAdmin) return false;
       if (userRoleFilter === 'PLAYER' && u.isAdmin) return false;
       if (userRoleFilter === 'SUSPENDED' && !u.isSuspended) return false;
-      if (userSearch.trim()) {
-        const q = userSearch.toLowerCase();
-        const unameMatch = u.username?.toLowerCase().includes(q);
-        const nameMatch = `${u.firstName || ''} ${u.lastName || ''}`.toLowerCase().includes(q);
-        const idMatch = u.telegramId?.includes(q) || u.id?.toLowerCase().includes(q);
-        if (!unameMatch && !nameMatch && !idMatch) return false;
-      }
+      if (!matchesUserSearch(u, userSearch)) return false;
       return true;
     });
   }, [users, userRoleFilter, userSearch]);
 
-  const assignableUsers = useMemo(() => {
-    if (!assignUserSearch.trim()) return users.slice(0, 15);
-    const q = assignUserSearch.toLowerCase();
-    return users
-      .filter((u) => {
-        return (
-          u.username?.toLowerCase().includes(q) ||
-          `${u.firstName || ''} ${u.lastName || ''}`.toLowerCase().includes(q) ||
-          u.telegramId?.includes(q) ||
-          u.id.toLowerCase().includes(q)
-        );
-      })
-      .slice(0, 20);
-  }, [users, assignUserSearch]);
+  const assignableUsers = useMemo(() => users.filter(user => matchesUserSearch(user, assignUserSearch)).slice(0, assignUserSearch.trim() ? 20 : 15), [users, assignUserSearch]);
 
   // Clean, official competition categorization
   const groupedCompetitions = useMemo(() => {
@@ -2029,7 +2025,11 @@ export const AdminView: React.FC = () => {
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button onClick={handleRestoreMissingFixtures} disabled={isRepairingFixtures}
+                  className="px-3.5 py-2 bg-sky-600 text-white rounded-xl text-xs font-black disabled:opacity-50">
+                  {isRepairingFixtures ? loc('Tiklanmoqda...', 'Восстановление...', 'Restoring...') : loc('Yetishmayotgan 2 o‘yinni tiklash', 'Восстановить 2 матча', 'Restore 2 missing fixtures')}
+                </button>
                 <button
                   onClick={handleRunFixtureValidation}
                   disabled={isValidatingFixtures}
@@ -2050,6 +2050,8 @@ export const AdminView: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {fixtureRepairMessage && <p role="status" className="text-sm text-slate-300">{fixtureRepairMessage}</p>}
 
           {/* 1. DOMESTIC LEAGUES (5) */}
           <div className="space-y-3">
@@ -2385,7 +2387,7 @@ export const AdminView: React.FC = () => {
                   type="text"
                   value={userSearch}
                   onChange={(e) => setUserSearch(e.target.value)}
-                  placeholder="Search player username or ID..."
+                  placeholder={loc('Username, @username yoki ID...', 'Username, @username или ID...', 'Username, @username or ID...')}
                   className="w-full pl-9 pr-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500"
                 />
               </div>
@@ -2857,7 +2859,7 @@ export const AdminView: React.FC = () => {
                   type="text"
                   value={assignUserSearch}
                   onChange={(e) => setAssignUserSearch(e.target.value)}
-                  placeholder={loc('Foydalanuvchi yoki Telegram ID bo‘yicha qidiring…', 'Поиск по имени или Telegram ID…', 'Filter by username or Telegram ID...')}
+                  placeholder={loc('Username, @username yoki Telegram ID…', 'Username, @username или Telegram ID…', 'Username, @username or Telegram ID...')}
                   className="w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500"
                 />
               </div>

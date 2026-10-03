@@ -1,3 +1,4 @@
+import { normalizeUserSearch } from '../../lib/userSearch';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { api } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
@@ -200,10 +201,11 @@ export const AdminTelegramTab: React.FC = () => {
   // Filtered visible recipients
   const filteredRecipients = useMemo(() => {
     if (!searchTerm.trim()) return recipients;
-    const q = searchTerm.toLowerCase();
+    const q = normalizeUserSearch(searchTerm);
     return recipients.filter(
       (r) =>
-        r.username.toLowerCase().includes(q) ||
+        normalizeUserSearch(r.username || '').includes(q) ||
+        r.userId.toLowerCase().includes(q) ||
         r.displayName.toLowerCase().includes(q) ||
         (r.clubName && r.clubName.toLowerCase().includes(q))
     );
@@ -758,3 +760,4 @@ export const AdminTelegramTab: React.FC = () => {
     </div>
   );
 };
+

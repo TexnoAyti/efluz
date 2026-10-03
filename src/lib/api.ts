@@ -847,6 +847,16 @@ export const api = {
     return request(`/api/admin/audit-logs?limit=${limit}`, { cacheTtlMs: 15000, skipCache });
   },
 
+  async getAdminUserDirectory(skipCache = false): Promise<{ users: User[] }> {
+    return request('/api/admin/users/directory', { cacheTtlMs: 30000, skipCache });
+  },
+
+  async restoreMissingLeaguePairs(): Promise<{ results: { competitionId: string; status: string; message?: string }[] }> {
+    const result = await request<{ results: { competitionId: string; status: string; message?: string }[] }>('/api/admin/fixtures/restore-missing-pairs', { method: 'POST' });
+    invalidateClientCache();
+    return result;
+  },
+
   async getAdminUsers(params?: {
     page?: number;
     limit?: number;

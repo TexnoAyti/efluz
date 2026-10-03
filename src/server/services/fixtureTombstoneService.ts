@@ -11,6 +11,8 @@ export interface FixtureTombstone {
   seasonId: string;
   competitionId?: string;
   deletedAt: string;
+  restoredAt?: string;
+  restoredBy?: string;
   deletedBy?: string;
   reason?: string;
   homeClubId?: string | null;
@@ -21,14 +23,25 @@ function tombstoneKey(seasonId: string): string {
   return `efluz:v1:season:${seasonId}:fixture-tombstones`;
 }
 
-export async function getFixtureTombstones(seasonId = 'season-2026-27'): Promise<FixtureTombstone[]> {
+async function getAllFixtureTombstones(seasonId = 'season-2026-27'): Promise<FixtureTombstone[]> {
   const key = tombstoneKey(seasonId);
   const snap = (await redisGetFresh<FixtureTombstone[]>(key)) || (await redisGetLkg<FixtureTombstone[]>(key));
   return Array.isArray(snap?.data) ? snap!.data : [];
 }
 
+export async function getFixtureTombstones(seasonId = 'season-2026-27'): Promise<FixtureTombstone[]> {
+  return (await getAllFixtureTombstones(seasonId)).filter(row => !row.restoredAt);
+}
+
+export async function restoreFixtureTombstone(fixtureId: string, seasonId: string, adminId: string): Promise<void> {
+  const existing = await getAllFixtureTombstones(seasonId);
+  if (!existing.some(row => row.fixtureId === fixtureId && !row.restoredAt)) return;
+  const next = existing.map(row => row.fixtureId === fixtureId ? { ...row, restoredAt: new Date().toISOString(), restoredBy: adminId } : row);
+  await redisSetRaw(tombstoneKey(seasonId), { sourceVersion: 'fixture-restore-tombstones', expectedCount: next.length, data: next }, 31536000);
+}
+
 export async function addFixtureTombstone(input: FixtureTombstone): Promise<void> {
-  const existing = await getFixtureTombstones(input.seasonId);
+  const existing = await getAllFixtureTombstones(input.seasonId);
   const next = [...existing.filter((row) => row.fixtureId !== input.fixtureId), input];
   await redisSetRaw(tombstoneKey(input.seasonId), {
     sourceVersion: 'fixture-delete-tombstones',
