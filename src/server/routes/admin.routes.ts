@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { adminNotificationsRouter } from './adminNotifications.routes';
 import { z } from 'zod';
 import { requireAdmin } from '../middleware/authMiddleware';
 import { setOwnershipSensitiveHeaders } from '../middleware/ownershipCacheControl';
@@ -103,6 +104,7 @@ import {
 export const adminRouter = Router();
 
 // Protect ALL admin routes with server-side requireAdmin
+adminRouter.use('/notifications', adminNotificationsRouter);
 adminRouter.use(requireAdmin);
 
 adminRouter.get('/clubs/admission', async (req: Request, res: Response) => {

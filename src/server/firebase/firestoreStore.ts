@@ -1,4 +1,5 @@
 import { Firestore, FieldValue, FieldPath } from 'firebase-admin/firestore';
+import { getNotificationControls, notificationVisible } from '../services/notificationVisibility';
 import { getNotificationReadState, applyNotificationReadState, persistNotificationReadState } from '../services/notificationReadState';
 import { getFirestoreDb } from './admin';
 import { analyzeLeaguePairs } from '../services/leaguePairIntegrity';
@@ -5703,8 +5704,12 @@ export async function createNotificationFirestore(
 }
 
 export async function getUserNotificationsFirestore(userId: string, limit = 30): Promise<Notification[]> {
+  const controls = await getNotificationControls();
   const readState = await getNotificationReadState(userId).catch(() => null);
-  const applyReadState = (notifications: Notification[]) => readState ? applyNotificationReadState(notifications, readState) : notifications;
+  const applyReadState = (notifications: Notification[]) => {
+    const visible = notifications.filter(notification => notificationVisible(notification, controls));
+    return readState ? applyNotificationReadState(visible, readState) : visible;
+  };
   const cacheKey = `firestore:notifications:${userId}:${limit}`;
   const cached = getFromCache<Notification[]>(cacheKey);
   if (cached && readState) return applyReadState(cached);

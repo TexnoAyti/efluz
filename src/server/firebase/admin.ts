@@ -343,12 +343,12 @@ function createMemoryFirestore() {
       return q;
     }
 
-    startAfter(cursor: string) {
+    startAfter(cursor: string | { id: string }) {
       const q = new MemQuery(this.colName);
       q.filters = [...this.filters];
       q.orderBys = [...this.orderBys];
       q.limitVal = this.limitVal;
-      q.cursorVal = cursor;
+      q.cursorVal = typeof cursor === 'string' ? cursor : cursor.id;
       return q;
     }
 

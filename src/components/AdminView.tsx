@@ -66,10 +66,11 @@ import {
 import { AdminDomesticCupsTab } from './admin/AdminDomesticCupsTab';
 import { AdminEuropeanTab } from './admin/AdminEuropeanTab';
 import { AdminTelegramTab } from './admin/AdminTelegramTab';
+import { AdminNotificationsTab } from './admin/AdminNotificationsTab';
 import { AdminClubIntegrityPanel } from './admin/AdminClubIntegrityPanel';
 import { AdminClubAdmissionPanel } from './admin/AdminClubAdmissionPanel';
 
-type AdminTab = 'overview' | 'clubs' | 'matches' | 'results' | 'competitions' | 'domestic_cups' | 'european' | 'telegram' | 'users' | 'system';
+type AdminTab = 'overview' | 'clubs' | 'matches' | 'results' | 'competitions' | 'domestic_cups' | 'european' | 'telegram' | 'notifications' | 'users' | 'system';
 
 interface PendingFixtureItem extends Fixture {
   submissions?: {
@@ -1016,6 +1017,9 @@ export const AdminView: React.FC = () => {
         </button>
 
         {/* 6. PLAYERS */}
+        <button id="tab-admin-notifications" onClick={() => setActiveAdminTab('notifications')} className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap min-h-[40px] ${activeAdminTab === 'notifications' ? 'bg-sky-500 text-slate-950' : 'glass-card text-slate-300 hover:text-white'}`}>
+          <Eye className="w-4 h-4" /><span>{loc('Bildirishnomalar', 'Уведомления', 'Notifications')}</span>
+        </button>
         <button
           id="tab-admin-users"
           onClick={() => setActiveAdminTab('users')}
@@ -2353,6 +2357,7 @@ export const AdminView: React.FC = () => {
       {/* 5C. TELEGRAM NOTIFICATIONS SECTION */}
       {/* ========================================================================= */}
       {activeAdminTab === 'telegram' && <AdminTelegramTab />}
+      {activeAdminTab === 'notifications' && <AdminNotificationsTab />}
 
       {/* ========================================================================= */}
       {/* 6. PLAYERS & ROSTER SECTION */}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n';
 import { Notification } from '../types';
@@ -39,6 +39,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
     refreshNotifications,
   } = useAuth();
   const { t, language } = useI18n();
+  useEffect(() => { void refreshNotifications(true); }, [refreshNotifications]);
 
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const [markingReadId, setMarkingReadId] = useState<string | null>(null);
@@ -532,4 +533,3 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
     </div>
   );
 };
-
