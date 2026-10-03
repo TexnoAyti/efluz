@@ -4871,6 +4871,7 @@ export async function getOrCreateTelegramUserFirestore(tgUser: {
         lastName: changed ? (lastName || existing.lastName || '') : (existing.lastName || ''),
         photoUrl: changed ? (photoUrl || existing.photoUrl || '') : (existing.photoUrl || ''),
         isAdmin: updatedAdmin,
+        adminPermissions: existing.adminPermissions,
         isSuspended: Boolean(existing.isSuspended),
         createdAt: existing.createdAt || now,
         updatedAt: changed ? now : (existing.updatedAt || now),
@@ -4921,7 +4922,7 @@ export async function getAuthoritativeUserForAuthorization(userId: string): Prom
   const data = doc.data() as FirestoreUserDoc;
   return { id: doc.id, telegramId: data.telegramId || '', username: data.username || '',
     firstName: data.firstName || '', lastName: data.lastName || '', photoUrl: data.photoUrl || '',
-    isAdmin: data.isAdmin === true, isSuspended: data.isSuspended === true,
+    adminPermissions: data.adminPermissions, isAdmin: data.isAdmin === true, isSuspended: data.isSuspended === true,
     createdAt: data.createdAt || '', updatedAt: data.updatedAt || '' };
 }
 
@@ -4943,7 +4944,7 @@ export async function getUserByIdFirestore(userId: string): Promise<User | null>
         firstName: data.firstName || '',
         lastName: data.lastName || '',
         photoUrl: data.photoUrl || '',
-        isAdmin: Boolean(data.isAdmin),
+        adminPermissions: data.adminPermissions, isAdmin: Boolean(data.isAdmin),
         isSuspended: Boolean(data.isSuspended),
         createdAt: data.createdAt || '',
         updatedAt: data.updatedAt || '',
@@ -5522,7 +5523,7 @@ export async function getAdminUsersPagedFirestore(options: AdminUsersQueryOption
           firstName: data.firstName,
           lastName: data.lastName,
           photoUrl: data.photoUrl,
-          isAdmin: Boolean(data.isAdmin),
+          adminPermissions: data.adminPermissions, isAdmin: Boolean(data.isAdmin),
           isSuspended: Boolean(data.isSuspended),
           createdAt: data.createdAt,
           updatedAt: data.updatedAt,
@@ -7202,7 +7203,8 @@ export async function adminSetUserAdminFirestore(
   adminUserId: string,
   adminUsername: string,
   targetUserId: string,
-  isAdmin: boolean
+  isAdmin: boolean,
+  adminPermissions?: import("../../types").AdminPermissions
 ): Promise<{ success: boolean; message: string; user: User }> {
   const db = getFirestoreDb();
   const userRef = db.collection(COLLECTIONS.USERS).doc(targetUserId);
@@ -7213,19 +7215,20 @@ export async function adminSetUserAdminFirestore(
 
   const userData = userDoc.data() as FirestoreUserDoc;
 
-  // Protection: Prevent removing the last admin
-  if (!isAdmin) {
-    const allUsers = await getAllUsersFirestore();
-    const adminCount = allUsers.filter((u) => u.isAdmin).length;
-    if (adminCount <= 1 && userData.isAdmin) {
-      throw new Error('PROTECTION_ERROR: Cannot remove the last administrator from the system.');
-    }
+  const nextPermissions = isAdmin ? (adminPermissions || { scope: 'ALL' as const, leagueIds: [] }) : { scope: 'LEAGUES' as const, leagueIds: [] };
+  const bootstrap = (process.env.ADMIN_TELEGRAM_IDS || '').split(',').map(id => id.trim().replace(/^@/, '').toLowerCase()).filter(Boolean);
+  if (isAdmin && nextPermissions.scope === 'LEAGUES' && (bootstrap.includes(userData.telegramId) || bootstrap.includes((userData.username || '').toLowerCase()))) {
+    throw new Error('PROTECTION_ERROR: Configured system administrator must retain full access.');
   }
-
   const now = new Date().toISOString();
-  await userRef.update({
-    isAdmin,
-    updatedAt: now,
+  await db.runTransaction(async transaction => {
+    const current = await transaction.get(userRef);
+    if (!current.exists) throw new Error('USER_NOT_FOUND');
+    const admins = await transaction.get(db.collection(COLLECTIONS.USERS).where('isAdmin', '==', true));
+    const fullAdmins = admins.docs.filter(doc => !doc.data().isSuspended && (!doc.data().adminPermissions || doc.data().adminPermissions.scope === 'ALL'));
+    const wasFull = current.data()!.isAdmin && (!current.data()!.adminPermissions || current.data()!.adminPermissions.scope === 'ALL');
+    if (wasFull && (!isAdmin || nextPermissions.scope !== 'ALL') && fullAdmins.length <= 1) throw new Error('PROTECTION_ERROR: Cannot remove the last full administrator.');
+    transaction.update(userRef, { isAdmin, adminPermissions: nextPermissions, updatedAt: now });
   });
 
   // Update SQLite
@@ -7240,14 +7243,16 @@ export async function adminSetUserAdminFirestore(
     isAdmin ? 'ADMIN_MAKE_ADMIN' : 'ADMIN_REMOVE_ADMIN',
     'user',
     targetUserId,
-    { isAdmin: userData.isAdmin },
-    { isAdmin },
+    { isAdmin: userData.isAdmin, adminPermissions: userData.adminPermissions || null },
+    { isAdmin, adminPermissions: nextPermissions },
     undefined,
     adminUsername,
     `Admin changed role of @${userData.username || targetUserId} to ${isAdmin ? 'ADMIN' : 'PLAYER'}`
   );
 
   invalidateFirestoreCache();
+  const { invalidateDataset } = await import('../readModel/readModelStore');
+  await invalidateDataset('efluz:v1:admin:user-directory').catch(() => {});
 
   const updatedUser: User = {
     id: targetUserId,
@@ -7257,6 +7262,7 @@ export async function adminSetUserAdminFirestore(
     lastName: userData.lastName,
     photoUrl: userData.photoUrl,
     isAdmin,
+    adminPermissions: nextPermissions,
     isSuspended: Boolean(userData.isSuspended),
     createdAt: userData.createdAt,
     updatedAt: now,

@@ -1,3 +1,4 @@
+import type { AdminPermissions } from '../types';
 import { User, Club, Season, League, Competition, Fixture, StandingsRow, Dispute, Notification, AuditLog, UserStats } from '../types';
 
 export interface ClubAdmissionStatus {
@@ -503,6 +504,13 @@ export const api = {
   },
 
   // Admin
+  async getAdminAccess(): Promise<{ adminPermissions: AdminPermissions }> {
+    return request('/api/admin/access', { skipCache: true });
+  },
+  async getLeagueAdminOverview(seasonId: string): Promise<{ leagues: { id: string; name: string; competitionId: string }[]; competitions: Competition[]; clubs: Club[]; fixtures: Fixture[] }> {
+    return request('/api/admin/scoped/overview?seasonId=' + encodeURIComponent(seasonId), { skipCache: true });
+  },
+
   async getAdminOverview(seasonId = 'season-2026-27', skipCache = false): Promise<{
     season: { id: string; name: string; status: string };
     counts: {
@@ -704,13 +712,14 @@ export const api = {
 
   async adminSetUserRole(
     userId: string,
-    isAdmin: boolean
+    isAdmin: boolean,
+    adminPermissions?: AdminPermissions
   ): Promise<{ success: boolean; message: string; user: User }> {
     const res = await request<{ success: boolean; message: string; user: User }>(
       `/api/admin/users/${userId}/role`,
       {
         method: 'POST',
-        body: JSON.stringify({ isAdmin }),
+        body: JSON.stringify({ isAdmin, adminPermissions }),
       }
     );
     invalidateClientCache();

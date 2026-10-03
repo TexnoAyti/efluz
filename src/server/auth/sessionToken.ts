@@ -9,6 +9,7 @@ export interface SessionClaims {
   lastName?: string;
   photoUrl?: string;
   isAdmin: boolean;
+  adminPermissions?: User['adminPermissions'];
   isSuspended: boolean;
   iat: number;
   exp: number;
@@ -51,6 +52,7 @@ export function createSessionToken(user: User, expiresInSeconds = 900): string {
     lastName: user.lastName,
     photoUrl: user.photoUrl,
     isAdmin: Boolean(user.isAdmin),
+    adminPermissions: user.adminPermissions,
     isSuspended: Boolean(user.isSuspended),
     iat: now,
     exp: now + expiresInSeconds,

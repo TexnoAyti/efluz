@@ -1,3 +1,5 @@
+import { ADMIN_LEAGUES } from '../../lib/adminPermissions';
+import type { AdminPermissions } from '../../types';
 import React, { useState, useEffect } from 'react';
 import { User } from '../../types';
 import { api } from '../../lib/api';
@@ -261,7 +263,7 @@ interface SetRoleModalProps {
   user: User;
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (isAdmin: boolean) => Promise<void>;
+  onConfirm: (isAdmin: boolean, adminPermissions?: AdminPermissions) => Promise<void>;
 }
 
 export const AdminSetRoleModal: React.FC<SetRoleModalProps> = ({
@@ -272,14 +274,16 @@ export const AdminSetRoleModal: React.FC<SetRoleModalProps> = ({
 }) => {
   const { t } = useI18n();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const targetIsAdmin = !user.isAdmin;
+  const targetIsAdmin = true;
+  const [scope, setScope] = useState<'ALL' | 'LEAGUES'>(user.isAdmin && !user.adminPermissions ? 'ALL' : user.adminPermissions?.scope || 'LEAGUES');
+  const [leagueIds, setLeagueIds] = useState<string[]>(user.adminPermissions?.leagueIds || []);
 
   if (!isOpen) return null;
 
-  const handleAction = async () => {
+  const handleAction = async (grant = true) => {
     setIsSubmitting(true);
     try {
-      await onConfirm(targetIsAdmin);
+      await onConfirm(grant, { scope, leagueIds: scope === 'ALL' ? [] : leagueIds });
       onClose();
     } catch (err) {
       console.error(err);
@@ -298,7 +302,7 @@ export const AdminSetRoleModal: React.FC<SetRoleModalProps> = ({
             </div>
             <div>
               <h3 className="text-sm font-black text-white">
-                {targetIsAdmin ? t.adminPromote : t.adminDemote}
+                {user.isAdmin ? 'Ruxsatlarni saqlash' : t.adminPromote}
               </h3>
               <p className="text-[10px] text-slate-400">{t.adminAccessControl}</p>
             </div>
@@ -319,9 +323,17 @@ export const AdminSetRoleModal: React.FC<SetRoleModalProps> = ({
         </div>
 
         <p className="text-xs text-slate-300 leading-relaxed">
-          {targetIsAdmin ? t.adminGrantAccessHint : t.adminRevokeAccessHint}
+          {'Tanlangan ruxsatlar ushbu foydalanuvchiga beriladi.'}
         </p>
 
+        <fieldset className="space-y-2 text-sm text-slate-200">
+          <legend className="font-bold mb-2">Admin ruxsatlari</legend>
+          <label className="flex gap-2"><input type="radio" name="admin-scope" checked={scope === 'LEAGUES'} onChange={() => setScope('LEAGUES')} />Faqat tanlangan ligalar</label>
+          {scope === 'LEAGUES' && ADMIN_LEAGUES.map(league => <label key={league.id} className="flex gap-2 pl-5"><input type="checkbox" checked={leagueIds.includes(league.id)} onChange={event => { const checked = event.target.checked; setLeagueIds(previous => checked ? [...previous, league.id] : previous.filter(id => id !== league.id)); }} />{league.name}</label>)}
+          <label className="flex gap-2"><input type="radio" name="admin-scope" checked={scope === 'ALL'} onChange={() => setScope('ALL')} />Barcha admin ruxsatlari</label>
+          <p className="text-xs text-slate-400">Liga admini faqat tanlangan ligalarning klublari, o‘yinlari va turlarini boshqaradi.</p>
+        </fieldset>
+        {user.isAdmin && <button type="button" disabled={isSubmitting} onClick={() => handleAction(false)} className="text-sm text-rose-400">Adminlikni olib tashlash</button>}
         <div className="flex items-center justify-end gap-2 pt-2">
           <button
             type="button"
@@ -333,8 +345,8 @@ export const AdminSetRoleModal: React.FC<SetRoleModalProps> = ({
           </button>
           <button
             type="button"
-            onClick={handleAction}
-            disabled={isSubmitting}
+            onClick={() => handleAction()}
+            disabled={isSubmitting || (scope === 'LEAGUES' && !leagueIds.length)}
             className={`px-5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 ${
               targetIsAdmin
                 ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950'
@@ -342,7 +354,7 @@ export const AdminSetRoleModal: React.FC<SetRoleModalProps> = ({
             }`}
           >
             {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-            {targetIsAdmin ? t.adminConfirmPromotion : t.adminConfirmDemotion}
+            {user.isAdmin ? 'Ruxsatlarni saqlash' : t.adminConfirmPromotion}
           </button>
         </div>
       </div>

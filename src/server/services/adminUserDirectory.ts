@@ -23,7 +23,7 @@ export async function getAdminUserDirectory(skipCache = false): Promise<User[]> 
       return {
         id: doc.id, telegramId: String(data.telegramId || ''), username: data.username || '',
         firstName: data.firstName || '', lastName: data.lastName || '', photoUrl: data.photoUrl || '',
-        isAdmin: Boolean(data.isAdmin), isSuspended: Boolean(data.isSuspended),
+        isAdmin: Boolean(data.isAdmin), adminPermissions: data.adminPermissions, isSuspended: Boolean(data.isSuspended),
         createdAt: data.createdAt || '', updatedAt: data.updatedAt,
       } as User;
     }));
@@ -37,12 +37,12 @@ export async function getAdminUserDirectory(skipCache = false): Promise<User[]> 
 }
 
 export async function resolveAdminUserReference(reference: string): Promise<string> {
-  const users = await getAdminUserDirectory(true);
   const raw = reference.trim();
-  if (!raw.startsWith('@')) {
-    const byId = users.find(user => user.id === raw);
-    if (byId) return byId.id;
+  if (!raw.startsWith('@') && raw && !raw.includes('/')) {
+    const direct = await getFirestoreDb().collection(COLLECTIONS.USERS).doc(raw).get();
+    if (direct.exists) return direct.id;
   }
+  const users = await getAdminUserDirectory(true);
   const query = normalizeUserSearch(raw);
   if (!query) throw new Error('USER_NOT_FOUND');
   const matches = users.filter(user => normalizeUserSearch(user.username || '') === query || (!raw.startsWith('@') && String(user.telegramId) === raw));

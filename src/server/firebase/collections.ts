@@ -28,6 +28,7 @@ export interface FirestoreUserDoc {
   lastName: string;
   photoUrl?: string;
   isAdmin: boolean;
+  adminPermissions?: import('../../types').AdminPermissions;
   isSuspended: boolean;
   createdAt: string;
   updatedAt: string;

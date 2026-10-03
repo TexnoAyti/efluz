@@ -1,3 +1,5 @@
+import type { AdminPermissions } from '../types';
+import { LeagueAdminView } from './admin/LeagueAdminView';
 import { matchesUserSearch } from '../lib/userSearch';
 import React, { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -88,6 +90,23 @@ interface PendingFixtureItem extends Fixture {
 }
 
 export const AdminView: React.FC = () => {
+  const { user } = useAuth();
+  const [permissions, setPermissions] = useState<AdminPermissions | null>(null);
+  const [error, setError] = useState('');
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    setPermissions(null); setError('');
+    if (user?.isAdmin) api.getAdminAccess().then(result => { if (!cancelled) setPermissions(result.adminPermissions); }).catch(err => { if (!cancelled) setError(err.message); });
+    return () => { cancelled = true; };
+  }, [user?.id, user?.isAdmin, retry]);
+  if (!user?.isAdmin) return <FullAdminView />;
+  if (error) return <div role="alert" className="p-6 text-white">{error}<button className="ml-3 underline" onClick={() => setRetry(value => value + 1)}>Qayta tekshirish</button></div>;
+  if (!permissions) return <div role="status" className="p-6 text-slate-300">Ruxsatlar tekshirilmoqda...</div>;
+  return permissions.scope === 'ALL' ? <FullAdminView /> : <LeagueAdminView permissions={permissions} />;
+};
+
+const FullAdminView: React.FC = () => {
   const { user, activeSeasonId, showToast } = useAuth();
   const { t, language } = useI18n();
   const loc = (uz: string, ru: string, en: string) => ({ uz, ru, en })[language];
@@ -651,14 +670,14 @@ export const AdminView: React.FC = () => {
     }
   };
 
-  const handleSetUserRole = async (isAdmin: boolean) => {
+  const handleSetUserRole = async (isAdmin: boolean, adminPermissions?: AdminPermissions) => {
     if (!selectedUserForRole) return;
     try {
-      const res = await api.adminSetUserRole(selectedUserForRole.id, isAdmin);
+      const res = await api.adminSetUserRole(selectedUserForRole.id, isAdmin, adminPermissions);
       if (res.success) {
         showToast(res.message || 'User role updated.', 'success');
         setUsers((prev) =>
-          prev.map((u) => (u.id === res.user.id ? { ...u, isAdmin: res.user.isAdmin } : u))
+          prev.map((u) => (u.id === res.user.id ? { ...u, isAdmin: res.user.isAdmin, adminPermissions: res.user.adminPermissions } : u))
         );
       }
     } catch (err: any) {
@@ -2455,7 +2474,7 @@ export const AdminView: React.FC = () => {
                             type="button"
                             onClick={() => setSelectedUserForRole(u)}
                             className="p-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 transition-colors"
-                            title={u.isAdmin ? 'Demote admin' : 'Promote to admin'}
+                            title={u.isAdmin ? 'Admin ruxsatlarini boshqarish' : 'Admin tayinlash'}
                           >
                             <Shield className="w-3.5 h-3.5" />
                           </button>
@@ -3428,6 +3447,7 @@ export const AdminView: React.FC = () => {
 
       {selectedUserForRole && (
         <AdminSetRoleModal
+          key={selectedUserForRole.id}
           user={selectedUserForRole}
           isOpen={!!selectedUserForRole}
           onClose={() => setSelectedUserForRole(null)}

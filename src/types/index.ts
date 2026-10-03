@@ -21,6 +21,8 @@ export type CompetitionType =
 
 export type ScheduleMode = 'REAL_SCHEDULE' | 'OFFICIAL_IMPORT' | 'GENERATED_SCHEDULE';
 
+export interface AdminPermissions { scope: 'ALL' | 'LEAGUES'; leagueIds: string[]; }
+
 export interface User {
   id: string;
   telegramId: string;
@@ -29,6 +31,7 @@ export interface User {
   lastName?: string;
   photoUrl?: string;
   isAdmin: boolean;
+  adminPermissions?: AdminPermissions;
   isSuspended: boolean;
   createdAt: string;
   updatedAt: string;

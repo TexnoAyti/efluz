@@ -46,6 +46,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
         lastName: verified.claims.lastName,
         photoUrl: verified.claims.photoUrl,
         isAdmin: Boolean(verified.claims.isAdmin),
+        adminPermissions: verified.claims.adminPermissions,
         isSuspended: Boolean(verified.claims.isSuspended),
         createdAt: '',
         updatedAt: '',
@@ -172,6 +173,7 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
     if (req.method === 'GET' && firestoreCircuitBreaker.isQuotaExhaustedError(err) &&
         signed?.isValid && signed.claims?.id === req.user.id &&
         signed.claims.telegramId === telegramId && signed.claims.isAdmin && !signed.claims.isSuspended &&
+        (!signed.claims.adminPermissions || signed.claims.adminPermissions.scope === 'ALL') &&
         /^\d+$/.test(telegramId) && req.user.id === `user-${telegramId}` &&
         (configuredAdmins.includes(telegramId) ||
           (Boolean(req.user.username) && signed.claims.username === req.user.username &&
@@ -198,5 +200,8 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
     });
     return;
   }
-  next();
+  try {
+    const { enforceLeagueAdminScope } = await import('../services/leagueAdminScope');
+    await enforceLeagueAdminScope(req, res, next);
+  } catch { res.status(503).json({ error: 'ADMIN_SCOPE_UNAVAILABLE', message: 'Ruxsatlarni tekshirib bo‘lmadi.' }); }
 }

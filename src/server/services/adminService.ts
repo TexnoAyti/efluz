@@ -125,9 +125,10 @@ export async function setUserAdminRole(
   adminUserId: string,
   adminUsername: string,
   targetUserId: string,
-  isAdmin: boolean
+  isAdmin: boolean,
+  adminPermissions?: import("../../types").AdminPermissions
 ): Promise<{ success: boolean; message: string; user: User }> {
-  return await adminSetUserAdminFirestore(adminUserId, adminUsername, targetUserId, isAdmin);
+  return await adminSetUserAdminFirestore(adminUserId, adminUsername, targetUserId, isAdmin, adminPermissions);
 }
 
 export async function setUserSuspension(

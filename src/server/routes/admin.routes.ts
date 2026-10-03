@@ -108,6 +108,17 @@ export const adminRouter = Router();
 adminRouter.use('/notifications', adminNotificationsRouter);
 adminRouter.use(requireAdmin);
 
+adminRouter.get('/access', (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ adminPermissions: req.user!.adminPermissions || { scope: 'ALL', leagueIds: [] } });
+});
+adminRouter.get('/scoped/overview', async (req: Request, res: Response) => {
+  try {
+    const { getLeagueAdminOverview } = await import('../services/leagueAdminScope');
+    res.json(await getLeagueAdminOverview(req.user!, String(req.query.seasonId || 'season-2026-27')));
+  } catch (err: any) { handleFirestoreError(res, err, 'GET /api/admin/scoped/overview'); }
+});
+
 adminRouter.get('/clubs/admission', async (req: Request, res: Response) => {
   const seasonId = String(req.query.seasonId || 'season-2026-27');
   try {
@@ -574,7 +585,8 @@ adminRouter.get('/users/:id/detail', async (req: Request, res: Response) => {
 // User role management (Make/Remove Admin)
 const adminSetRoleSchema = z.object({
   isAdmin: z.boolean(),
-});
+  adminPermissions: z.object({ scope: z.enum(['ALL', 'LEAGUES']), leagueIds: z.array(z.enum(['league-premier-league', 'league-la-liga', 'league-serie-a', 'league-bundesliga', 'league-ligue-1'])).max(5) }).optional(),
+}).refine(value => !value.isAdmin || Boolean(value.adminPermissions && (value.adminPermissions.scope === 'ALL' || value.adminPermissions.leagueIds.length)), { message: 'Admin uchun ruxsat turini va kamida bitta ligani tanlang.' });
 
 adminRouter.post('/users/:id/role', validateBody(adminSetRoleSchema), async (req: Request, res: Response) => {
   const adminUserId = req.user!.id;
@@ -582,9 +594,13 @@ adminRouter.post('/users/:id/role', validateBody(adminSetRoleSchema), async (req
   const targetUserId = req.params.id;
 
   try {
-    const result = await setUserAdminRole(adminUserId, adminUsername, targetUserId, req.body.isAdmin);
+    const result = await setUserAdminRole(adminUserId, adminUsername, targetUserId, req.body.isAdmin, req.body.adminPermissions);
     res.json(result);
   } catch (err: any) {
+    if (String(err.message).startsWith('PROTECTION_ERROR:')) {
+      res.status(409).json({ error: 'ADMIN_PROTECTION', message: err.message });
+      return;
+    }
     handleFirestoreError(res, err, `POST /api/admin/users/${targetUserId}/role`);
   }
 });

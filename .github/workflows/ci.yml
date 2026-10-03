@@ -42,6 +42,7 @@ jobs:
           NODE_ENV: "test"
         run: |
           node --require ./scripts/block-external-network.cjs --import tsx src/lib/__tests__/fixtureOrderRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/leagueAdminPermissionsRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/adminUsernameAndRepairRegressionTest.ts
           bun run test:deployment-selfcheck
           bun run test:tournament-architecture
