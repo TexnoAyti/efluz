@@ -41,6 +41,7 @@ jobs:
           FIREBASE_FORCE_LOCAL_FALLBACK: "true"
           NODE_ENV: "test"
         run: |
+          node --require ./scripts/block-external-network.cjs --import tsx src/lib/__tests__/fixtureOrderRegressionTest.ts
           bun run test:deployment-selfcheck
           bun run test:tournament-architecture
           bun run test:quota-audit

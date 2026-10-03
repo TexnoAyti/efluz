@@ -1,3 +1,5 @@
+import { sortSeasonFixtures } from '../lib/fixtureOrder';
+import { fixturesForClub } from '../lib/activeClub';
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../context/UserProfileContext';
@@ -113,9 +115,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   }, [activeSeasonId, user?.id, currentClub?.id]);
 
   // Determine next pending match vs past confirmed matches
-  const pendingMatches = myMatches.filter((m) => m.status !== 'CONFIRMED' && m.status !== 'CANCELLED');
+  const activeClubMatches = sortSeasonFixtures(fixturesForClub(myMatches, currentClub?.id));
+  const pendingMatches = activeClubMatches.filter((m) => m.status !== 'CONFIRMED' && m.status !== 'CANCELLED');
   const nextMatch = pendingMatches[0] || null;
-  const recentFinishedMatches = myMatches.filter((m) => m.status === 'CONFIRMED');
+  const recentFinishedMatches = activeClubMatches.filter((m) => m.status === 'CONFIRMED');
   const latestFinishedMatch = recentFinishedMatches[recentFinishedMatches.length - 1] || null;
 
   const calculateForm = (fixture: Fixture): 'W' | 'D' | 'L' => {

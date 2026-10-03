@@ -16,56 +16,10 @@ import {
   reportNoShowV4,
   scheduleDeadlineSweep,
 } from '../services/matchOperationsV4Service';
-import { Fixture } from '../../types';
+import { sortSeasonFixtures } from '../../lib/fixtureOrder';
 
 export const meRouter = Router();
 export const meResilientRouter = meRouter;
-
-const DOMESTIC_LEAGUE_IDS = new Set([
-  'comp-premier-league-2026',
-  'comp-la-liga-2026',
-  'comp-serie-a-2026',
-  'comp-bundesliga-2026',
-  'comp-ligue-1-2026',
-]);
-
-const DOMESTIC_CUP_IDS = new Set([
-  'comp-fa-cup-2026',
-  'comp-copa-del-rey-2026',
-  'comp-coppa-italia-2026',
-  'comp-dfb-pokal-2026',
-  'comp-coupe-de-france-2026',
-]);
-
-const EUROPEAN_LEAGUE_PHASE_IDS = new Set([
-  'comp-champions-league-2026',
-  'comp-europa-league-2026',
-]);
-
-function myMatchesPhase(fixture: Fixture): number {
-  if (DOMESTIC_LEAGUE_IDS.has(fixture.competitionId)) {
-    const md = Number(fixture.matchday || 0);
-    if (md <= 9) return 10;
-    if (md <= 19) return 30;
-    return 50;
-  }
-  if (DOMESTIC_CUP_IDS.has(fixture.competitionId)) return 20;
-  if (EUROPEAN_LEAGUE_PHASE_IDS.has(fixture.competitionId)) return 40;
-  return 25;
-}
-
-function sortMyMatches(fixtures: Fixture[]): Fixture[] {
-  return [...fixtures].sort((a, b) => {
-    const phase = myMatchesPhase(a) - myMatchesPhase(b);
-    if (phase !== 0) return phase;
-    const md = Number(a.matchday || 0) - Number(b.matchday || 0);
-    if (md !== 0) return md;
-    const at = a.scheduledAt ? new Date(a.scheduledAt).getTime() : 0;
-    const bt = b.scheduledAt ? new Date(b.scheduledAt).getTime() : 0;
-    if (at !== bt) return at - bt;
-    return String(a.id).localeCompare(String(b.id));
-  });
-}
 
 meRouter.use((req: Request, res: Response, next) => {
   setOwnershipSensitiveHeaders(res);
@@ -98,7 +52,7 @@ meRouter.get('/matches', requireAuth, async (req: Request, res: Response) => {
     ]);
     const canonicalFixtures = await canonicalizeMyDomesticCupFixtures(fixtures, clubState.ownedClubs, seasonId);
     const statusFiltered = status ? canonicalFixtures.filter((fixture) => fixture.status === status) : canonicalFixtures;
-    res.json({ fixtures: sortMyMatches(statusFiltered) });
+    res.json({ fixtures: sortSeasonFixtures(statusFiltered) });
   } catch (err: any) {
     handleFirestoreError(res, err, 'GET /api/me/matches');
   }

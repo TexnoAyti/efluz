@@ -1,3 +1,4 @@
+import { nextSeasonFixture, sortSeasonFixtures } from '../lib/fixtureOrder';
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import {
   ArrowRight,
@@ -233,7 +234,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
     wins: standing.won, draws: standing.drawn, losses: standing.lost,
     goalsScored: standing.goalsFor, goalsConceded: standing.goalsAgainst,
   } : null;
-  const activeClubFixtures = useMemo(() => fixturesForClub(fixtures, activeClub?.id), [fixtures, activeClub?.id]);
+  const activeClubFixtures = useMemo(() => sortSeasonFixtures(fixturesForClub(fixtures, activeClub?.id)), [fixtures, activeClub?.id]);
   const loadRequest = useRef(0);
   const loadData = useCallback(async () => {
     const request = ++loadRequest.current;
@@ -267,21 +268,10 @@ export const MatchdayHomeView: React.FC<Props> = ({
   );
 
   // Hero match selection
-  const heroMatch = useMemo(() => {
-    const actionRequired = pendingFixtures.find(
-      (f) => f.status === 'PENDING_CONFIRMATION' || f.status === 'DISPUTED'
-    );
-    if (actionRequired) return actionRequired;
-
-    const nextPlayable = pendingFixtures.find(
-      (f) => f.isPlayable !== false && f.status === 'SCHEDULED'
-    );
-    if (nextPlayable) return nextPlayable;
-
-    if (pendingFixtures.length > 0) return pendingFixtures[0];
-    if (confirmedFixtures.length > 0) return confirmedFixtures[0];
-    return null;
-  }, [pendingFixtures, confirmedFixtures]);
+  const heroMatch = useMemo(
+    () => nextSeasonFixture(pendingFixtures) || confirmedFixtures[0] || null,
+    [pendingFixtures, confirmedFixtures]
+  );
 
   const otherUpcoming = useMemo(
     () => pendingFixtures.filter((f) => f.id !== heroMatch?.id).slice(0, 4),

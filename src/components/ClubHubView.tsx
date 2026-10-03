@@ -1,3 +1,4 @@
+import { nextSeasonFixture, sortSeasonFixtures } from '../lib/fixtureOrder';
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n, Language } from '../i18n';
@@ -324,7 +325,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
 
   // Filter fixtures belonging to the active club
   const activeClubFixtures = useMemo(
-    () => fixturesForClub(allFixtures, activeClub?.id),
+    () => sortSeasonFixtures(fixturesForClub(allFixtures, activeClub?.id)),
     [allFixtures, activeClub?.id]
   );
 
@@ -340,31 +341,10 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
   );
 
   // 3. NEXT MATCH / ACTION REQUIRED (Priority hierarchy)
-  const heroMatch = useMemo(() => {
-    // 1. Disputed match
-    const disputed = pendingFixtures.find((f) => f.status === 'DISPUTED');
-    if (disputed) return disputed;
-
-    // 2. Waiting confirmation
-    const waitingConfirm = pendingFixtures.find(
-      (f) => f.status === 'PENDING_CONFIRMATION' || Boolean(f.opponentSubmission)
-    );
-    if (waitingConfirm) return waitingConfirm;
-
-    // 3. Ready-to-play fixture
-    const readyToPlay = pendingFixtures.find(
-      (f) => f.isPlayable !== false && f.status === 'SCHEDULED'
-    );
-    if (readyToPlay) return readyToPlay;
-
-    // 4. Next scheduled fixture
-    if (pendingFixtures.length > 0) return pendingFixtures[0];
-
-    // 5. Recent confirmed result
-    if (confirmedFixtures.length > 0) return confirmedFixtures[0];
-
-    return null;
-  }, [pendingFixtures, confirmedFixtures]);
+  const heroMatch = useMemo(
+    () => nextSeasonFixture(pendingFixtures) || confirmedFixtures[0] || null,
+    [pendingFixtures, confirmedFixtures]
+  );
 
   // Opponent Telegram Username for Hero Match
   const opponentTelegram = useMemo(() => {
