@@ -38,7 +38,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
     markNotificationAsRead,
     refreshNotifications,
   } = useAuth();
-  const { t } = useI18n();
+  const { t, language } = useI18n();
 
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const [markingReadId, setMarkingReadId] = useState<string | null>(null);
@@ -112,13 +112,13 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
       const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
       const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-      if (diffMins < 1) return 'Just now';
-      if (diffMins < 60) return `${diffMins}m ago`;
-      if (diffHours < 24) return `${diffHours}h ago`;
-      if (diffDays === 1) return 'Yesterday';
-      if (diffDays < 7) return `${diffDays}d ago`;
+      if (diffMins < 1) return t.notificationsJustNow;
+      if (diffMins < 60) return t.notificationsMinutesAgo.replace('{count}', String(diffMins));
+      if (diffHours < 24) return t.notificationsHoursAgo.replace('{count}', String(diffHours));
+      if (diffDays === 1) return t.notificationsYesterday;
+      if (diffDays < 7) return t.notificationsDaysAgo.replace('{count}', String(diffDays));
 
-      return date.toLocaleDateString(undefined, {
+      return date.toLocaleDateString({ uz: 'uz-UZ', ru: 'ru-RU', en: 'en-GB' }[language], {
         month: 'short',
         day: 'numeric',
         hour: '2-digit',
@@ -171,12 +171,12 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
               <h2 className="text-lg sm:text-2xl font-black text-white efl-theme-text">{t.notificationsTitle}</h2>
               {unreadNotificationCount > 0 && (
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white shadow-[0_0_8px_rgba(244,63,94,0.4)]">
-                  {unreadNotificationCount > 9 ? '9+' : unreadNotificationCount} new
+                  {unreadNotificationCount > 9 ? '9+' : unreadNotificationCount} {t.notificationsNew}
                 </span>
               )}
             </div>
             <p className="text-[11px] sm:text-xs text-slate-400 efl-theme-text-2 mt-0.5">
-              Live updates on match submissions, consensus verifications, and disputes
+              {t.notificationsSubtitle}
             </p>
           </div>
         </div>
@@ -195,7 +195,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
               }`}
             >
               <CheckCheck className={`w-4 h-4 ${user?.isAdmin ? 'text-blue-600 efl-theme-blue dark:text-blue-400' : 'text-emerald-400 efl-theme-emerald'}`} />
-              <span>{isMarkingAll ? 'Marking...' : t.markAllRead}</span>
+              <span>{isMarkingAll ? t.notificationsMarking : t.markAllRead}</span>
             </button>
           )}
 
@@ -208,8 +208,8 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
                 ? 'bg-white efl-theme-surface dark:bg-[#171e2c] border-slate-200/80 efl-theme-border dark:border-white/10 text-slate-600 efl-theme-text-2 dark:text-slate-400 hover:text-slate-900 efl-theme-hover-text dark:hover:text-white shadow-xs'
                 : 'glass-card text-slate-300 efl-theme-text-2 hover:text-white efl-theme-hover-text border-white/[0.08] efl-theme-border'
             }`}
-            title="Refresh notifications"
-            aria-label="Refresh notifications"
+            title={t.notificationsRefresh}
+            aria-label={t.notificationsRefresh}
           >
             <RefreshCw
               className={`w-4 h-4 ${isNotificationsLoading ? 'animate-spin text-blue-500 efl-theme-blue' : ''}`}
@@ -233,7 +233,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
                 : 'glass-card text-slate-400 efl-theme-text-2 hover:text-slate-200 efl-theme-hover-text'
             }`}
           >
-            All ({notifications.length})
+            {t.notificationsAll} ({notifications.length})
           </button>
 
           <button
@@ -248,7 +248,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
                 : 'glass-card text-slate-400 efl-theme-text-2 hover:text-slate-200 efl-theme-hover-text'
             }`}
           >
-            <span>Unread</span>
+            <span>{t.notificationsUnread}</span>
             {unreadNotificationCount > 0 && (
               <span
                 className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
@@ -276,7 +276,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
                 : 'glass-card text-slate-400 efl-theme-text-2 hover:text-slate-200 efl-theme-hover-text'
             }`}
           >
-            Matches
+            {t.notificationsMatches}
           </button>
 
           <button
@@ -291,7 +291,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
                 : 'glass-card text-slate-400 efl-theme-text-2 hover:text-slate-200 efl-theme-hover-text'
             }`}
           >
-            Updates
+            {t.notificationsUpdates}
           </button>
         </div>
       )}
@@ -338,9 +338,9 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
             <AlertCircle className="w-6 h-6" />
           </div>
           <h3 className={`text-sm sm:text-base font-bold ${user?.isAdmin ? 'text-slate-900 efl-theme-text dark:text-white' : 'text-slate-200 efl-theme-text'}`}>
-            Couldn't load notifications
+            {t.notificationsLoadError}
           </h3>
-          <p className="text-slate-500 efl-theme-text-2 dark:text-slate-400 mt-1 mb-5">Please try again.</p>
+          <p className="text-slate-500 efl-theme-text-2 dark:text-slate-400 mt-1 mb-5">{t.notificationsTryAgain}</p>
           <button
             id="btn-retry-notifications"
             onClick={() => refreshNotifications(true)}
@@ -351,7 +351,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
             }`}
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            <span>Retry</span>
+            <span>{t.notificationsRetry}</span>
           </button>
         </div>
       ) : notifications.length === 0 ? (
@@ -373,10 +373,10 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
             <Bell className="w-6 h-6 opacity-60" />
           </div>
           <h3 className={`text-sm sm:text-base font-bold ${user?.isAdmin ? 'text-slate-900 efl-theme-text dark:text-white' : 'text-slate-200 efl-theme-text'}`}>
-            No notifications yet
+            {t.noNotifications}
           </h3>
           <p className="text-slate-500 efl-theme-text-2 dark:text-slate-400 mt-1 max-w-sm mx-auto leading-relaxed">
-            Important match and competition updates will appear here.
+            {t.notificationsEmptyHint}
           </p>
         </div>
       ) : filteredNotifications.length === 0 ? (
@@ -398,9 +398,9 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
             <CheckCircle2 className="w-5 h-5" />
           </div>
           <h3 className={`text-sm font-bold ${user?.isAdmin ? 'text-slate-900 efl-theme-text dark:text-white' : 'text-slate-200 efl-theme-text'}`}>
-            All caught up
+            {t.notificationsCaughtUp}
           </h3>
-          <p className="text-slate-500 efl-theme-text-2 dark:text-slate-400 mt-1 mb-4">No notifications match the selected filter.</p>
+          <p className="text-slate-500 efl-theme-text-2 dark:text-slate-400 mt-1 mb-4">{t.notificationsFilterEmpty}</p>
           <button
             onClick={() => setActiveFilter('all')}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors ${
@@ -409,7 +409,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
                 : 'glass-card text-slate-300 efl-theme-text-2 hover:text-white efl-theme-hover-text'
             }`}
           >
-            View all notifications
+            {t.notificationsViewAll}
           </button>
         </div>
       ) : (
@@ -490,7 +490,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
                           user?.isAdmin ? 'text-blue-600 efl-theme-blue dark:text-blue-400' : 'text-emerald-400 efl-theme-emerald'
                         }`}
                       >
-                        <span>View Match</span>
+                        <span>{t.notificationsViewMatch}</span>
                         <ExternalLink className="w-3 h-3" />
                       </span>
                     )}
@@ -501,7 +501,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
                           user?.isAdmin ? 'text-blue-600 efl-theme-blue dark:text-blue-400' : 'text-teal-400'
                         }`}
                       >
-                        <span>View Club</span>
+                        <span>{t.notificationsViewClub}</span>
                         <ExternalLink className="w-3 h-3" />
                       </span>
                     )}
@@ -519,8 +519,8 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
                       ? 'bg-white efl-theme-surface dark:bg-[#171e2c] border border-slate-200/80 efl-theme-border dark:border-white/10 text-slate-400 efl-theme-text-2 hover:text-blue-600 dark:hover:text-blue-400 shadow-xs'
                       : 'glass-button text-slate-400 efl-theme-text-2 hover:text-emerald-400 hover:border-emerald-500/40'
                   }`}
-                  title="Mark as read"
-                  aria-label="Mark as read"
+                  title={t.notificationsMarkRead}
+                  aria-label={t.notificationsMarkRead}
                 >
                   <Check className="w-3.5 h-3.5" />
                 </button>
