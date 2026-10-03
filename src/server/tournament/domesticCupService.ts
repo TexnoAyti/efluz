@@ -1145,6 +1145,9 @@ export async function advanceDomesticCupWinnerSafe(
 
   const winnerClubId = fixture.winnerClubId;
   const compId = fixture.competitionId;
+  if (![fixture.homeClubId, fixture.awayClubId].includes(winnerClubId)) {
+    throw Object.assign(new Error('INVALID_CUP_WINNER: winner must be a participant.'), { statusCode: 409 });
+  }
 
   // Calculate next round node
   let targetFixtureId = '';
@@ -1164,6 +1167,15 @@ export async function advanceDomesticCupWinnerSafe(
   const is18Teams = expectedTeams === 18;
   const is16Teams = expectedTeams === 16;
   const pureByeMatches = is18Teams ? 6 : 4;
+  const finalRound = is16Teams ? 4 : 5;
+  const finalFixtureId = `fix-${compId}-r${finalRound}-m0`;
+  const isFinalNode = fixture.id === finalFixtureId && fixtureId === finalFixtureId;
+  if ((!r1Match && !r2Match && !r3Match && !r4Match) || (is16Teams && r4Match)) {
+    if (!isFinalNode || (fixture.roundName && fixture.roundName !== 'Final') ||
+        (fixture.matchday != null && fixture.matchday !== finalRound)) {
+      throw Object.assign(new Error('INVALID_CUP_FINAL_FIXTURE: only the configured final can crown a champion.'), { statusCode: 409 });
+    }
+  }
 
   if (r1Match) {
     const idx = parseInt(r1Match[1], 10);

@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import { getFirestoreDb } from '../firebase/admin';
+import { COLLECTIONS } from '../firebase/collections';
+import { advanceDomesticCupWinnerSafe } from '../tournament/domesticCupService';
+
+const db = getFirestoreDb();
+const competitionId = 'comp-fa-cup-2026';
+const seasonId = 'season-2026-27';
+const actor = { adminUserId: 'isolated-cup-final-audit' };
+const base = { competitionId, seasonId, status: 'CONFIRMED', homeClubId: 'club-arsenal', awayClubId: 'club-chelsea', homeScore: 2, awayScore: 1, winnerClubId: 'club-arsenal', roundName: 'Final', matchday: 5, resultConfirmedAt: new Date().toISOString() };
+const save = async (id: string, values: any = {}) => db.collection(COLLECTIONS.FIXTURES).doc(id).set({ ...base, id, ...values });
+await save('fix-comp-fa-cup-2026-unknown');
+await assert.rejects(() => advanceDomesticCupWinnerSafe('fix-comp-fa-cup-2026-unknown', actor), /INVALID_CUP_FINAL_FIXTURE/);
+const finalId = 'fix-comp-fa-cup-2026-r5-m0';
+await save(finalId, { winnerClubId: 'club-liverpool' });
+await assert.rejects(() => advanceDomesticCupWinnerSafe(finalId, actor), /INVALID_CUP_WINNER/);
+await save(finalId, { status: 'SCHEDULED' });
+await assert.rejects(() => advanceDomesticCupWinnerSafe(finalId, actor), /Must be 'CONFIRMED'/);
+await save(finalId);
+const first = await advanceDomesticCupWinnerSafe(finalId, actor);
+const second = await advanceDomesticCupWinnerSafe(finalId, actor);
+assert.equal(first.success, true);
+assert.equal(first.advanced, false);
+assert.equal(second.advanced, false);
+assert.equal((await db.collection(COLLECTIONS.FIXTURES).doc(finalId).get()).data()?.winnerClubId, 'club-arsenal');
+console.log('PASS final validation: unknown node and outsider winner rejected; unplayed final rejected; valid confirmed final accepted without creating another round. Isolated storage only.');
