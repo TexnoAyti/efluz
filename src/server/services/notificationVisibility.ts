@@ -2,6 +2,7 @@ import type { Notification } from '../../types';
 import { getUpstashClient } from '../readModel/readModelStore';
 import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS } from '../firebase/collections';
+import { getBroadcastHistory, getBroadcastDetails } from './telegramNotificationQueue';
 
 export type NotificationControl = 'visible' | 'hidden' | 'deleted';
 export type NotificationControls = Record<string, NotificationControl>;
@@ -33,9 +34,35 @@ async function save(field: string, value: NotificationControl): Promise<void> {
 }
 
 export function notificationVisible(notification: Notification, controls: NotificationControls): boolean {
+  const broadcastId = notification.broadcastId || (notification as any).data?.broadcastId
+    || (notification.id.startsWith('notif-') && notification.id.endsWith('-' + notification.userId)
+      ? notification.id.slice(6, -(notification.userId.length + 1)) : undefined);
   return controls['type:' + notification.type] !== 'hidden'
+    && (!broadcastId || !['hidden', 'deleted'].includes(controls['broadcast:' + broadcastId]))
     && !['hidden', 'deleted'].includes(controls['notification:' + notification.id])
     && !(notification as any).hidden && !(notification as any).deleted;
+}
+
+export async function listAdminNotificationMessages(cursor?: string) {
+  const controls = await getNotificationControls();
+  const records = (await getBroadcastHistory(Number.MAX_SAFE_INTEGER))
+    .filter(record => !record.createdById?.startsWith('system:'))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+  const cursorIndex = cursor ? records.findIndex(record => record.id === cursor) : -1;
+  if (cursor && cursorIndex < 0) throw new Error('INVALID_NOTIFICATION_CURSOR');
+  const page = records.slice(cursorIndex + 1, cursorIndex + 101);
+  const notifications = page.filter(record => controls['broadcast:' + record.id] !== 'deleted').map(record => ({
+    id: record.id, type: record.type, title: record.title, message: record.body, createdAt: record.createdAt,
+    recipientCount: record.metrics.totalRecipients, visibility: controls['broadcast:' + record.id] || 'visible',
+  }));
+  const types = [...new Set([...defaults, ...records.map(record => record.type), ...Object.keys(controls).filter(field => field.startsWith('type:')).map(field => field.slice(5))])].sort();
+  return { notifications, types: types.map(type => ({ type, visible: controls['type:' + type] !== 'hidden' })), limit: 100, nextCursor: page.length === 100 ? page.at(-1)!.id : null };
+}
+
+export async function setBroadcastVisibility(id: string, visibility: NotificationControl): Promise<void> {
+  const record = await getBroadcastDetails(id);
+  if (!record || record.createdById?.startsWith('system:')) throw new Error('NOTIFICATION_NOT_FOUND');
+  await save('broadcast:' + id, visibility);
 }
 
 export async function listAdminNotifications(cursor?: string) {

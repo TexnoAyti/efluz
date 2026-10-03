@@ -371,8 +371,8 @@ export const api = {
     return request(url, { cacheTtlMs: 15000, skipCache });
   },
 
-  async getAdminNotifications(cursor?: string): Promise<{ notifications: Array<Notification & { visibility: 'visible' | 'hidden' }>; types: Array<{ type: string; visible: boolean }>; limit: number; nextCursor: string | null }> {
-    return request('/api/admin/notifications' + (cursor ? '?cursor=' + encodeURIComponent(cursor) : ''), { skipCache: true });
+  async getAdminNotifications(cursor?: string): Promise<{ notifications: Array<{ id: string; type: string; title: string; message: string; createdAt: string; recipientCount: number; visibility: 'visible' | 'hidden' }>; types: Array<{ type: string; visible: boolean }>; limit: number; nextCursor: string | null }> {
+    return request('/api/admin/notifications/messages' + (cursor ? '?cursor=' + encodeURIComponent(cursor) : ''), { skipCache: true });
   },
 
   async setNotificationTypeVisibility(type: string, visible: boolean): Promise<{ success: boolean }> {
@@ -382,7 +382,7 @@ export const api = {
 
   async setNotificationVisibility(id: string, visibility: 'visible' | 'hidden' | 'deleted'): Promise<{ success: boolean }> {
     invalidateClientCache('/api/me/notifications');
-    return request('/api/admin/notifications/' + encodeURIComponent(id), { method: 'PATCH', body: JSON.stringify({ visibility }), skipCache: true });
+    return request('/api/admin/notifications/messages/' + encodeURIComponent(id), { method: 'PATCH', body: JSON.stringify({ visibility }), skipCache: true });
   },
 
   async getMyNotifications(skipCache = false): Promise<{ notifications: Notification[] }> {

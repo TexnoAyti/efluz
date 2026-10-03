@@ -5761,6 +5761,7 @@ export async function getUserNotificationsFirestore(userId: string, limit = 30):
         id: d.id,
         userId: data.userId,
         type: notifType,
+        broadcastId: data.broadcastId || notifData.broadcastId || undefined,
         title: data.title,
         message: data.message,
         fixtureId: data.fixtureId || notifData.fixtureId || undefined,

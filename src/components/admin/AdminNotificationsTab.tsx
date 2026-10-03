@@ -4,11 +4,14 @@ import { useI18n } from '../../i18n';
 import { Bell, Eye, EyeOff, RefreshCw, Trash2 } from 'lucide-react';
 
 const copy = {
-  uz: { title: 'Bildirishnomalar', note: 'Ilovadagi bildirishnomalarni boshqaring. Telegramga yuborilgan xabarlar o‘zgarmaydi.', types: 'Bildirishnoma turlari', more: 'Oldingi bildirishnomalar', recent: 'Bildirishnomalar tarixi', search: 'Matn yoki foydalanuvchi ID bo‘yicha qidirish', visible: 'Ko‘rinadi', hidden: 'Yashirilgan', hide: 'Yashirish', show: 'Ko‘rsatish', remove: 'O‘chirish', confirm: 'Bu bildirishnoma foydalanuvchi bo‘limidan o‘chiriladi.', cancel: 'Bekor qilish', empty: 'Bildirishnoma topilmadi', error: 'Amal bajarilmadi. Qayta urinib ko‘ring.', refresh: 'Yangilash' },
-  ru: { title: 'Уведомления', note: 'Управление уведомлениями в приложении. Отправленные сообщения Telegram не изменяются.', types: 'Типы уведомлений', more: 'Предыдущие уведомления', recent: 'История уведомлений', search: 'Поиск по тексту или ID пользователя', visible: 'Видно', hidden: 'Скрыто', hide: 'Скрыть', show: 'Показать', remove: 'Удалить', confirm: 'Уведомление будет удалено из раздела пользователя.', cancel: 'Отмена', empty: 'Уведомлений нет', error: 'Не удалось выполнить действие. Попробуйте ещё раз.', refresh: 'Обновить' },
-  en: { title: 'Notifications', note: 'Manage in-app notifications. Previously sent Telegram messages are unchanged.', types: 'Notification types', more: 'Older notifications', recent: 'Notification history', search: 'Search text or user ID', visible: 'Visible', hidden: 'Hidden', hide: 'Hide', show: 'Show', remove: 'Delete', confirm: 'This notification will be removed from the user’s notification list.', cancel: 'Cancel', empty: 'No notifications found', error: 'Action failed. Please try again.', refresh: 'Refresh' },
+  uz: { title: 'Bildirishnomalar', note: 'Ilovadagi bildirishnomalarni boshqaring. Telegramga yuborilgan xabarlar o‘zgarmaydi.', types: 'Bildirishnoma turlari', more: 'Oldingi bildirishnomalar', recipients: 'Qabul qiluvchilar', recent: 'Yuborilgan xabarlar', search: 'Yuborilgan xabarni qidirish', visible: 'Ko‘rinadi', hidden: 'Yashirilgan', hide: 'Yashirish', show: 'Ko‘rsatish', remove: 'O‘chirish', confirm: 'Bu xabar barcha qabul qiluvchilarning bildirishnomalaridan o‘chiriladi.', cancel: 'Bekor qilish', empty: 'Bildirishnoma topilmadi', error: 'Amal bajarilmadi. Qayta urinib ko‘ring.', refresh: 'Yangilash' },
+  ru: { title: 'Уведомления', note: 'Управление уведомлениями в приложении. Отправленные сообщения Telegram не изменяются.', types: 'Типы уведомлений', more: 'Предыдущие уведомления', recipients: 'Получатели', recent: 'Отправленные сообщения', search: 'Поиск отправленного сообщения', visible: 'Видно', hidden: 'Скрыто', hide: 'Скрыть', show: 'Показать', remove: 'Удалить', confirm: 'Сообщение будет удалено из уведомлений всех получателей.', cancel: 'Отмена', empty: 'Уведомлений нет', error: 'Не удалось выполнить действие. Попробуйте ещё раз.', refresh: 'Обновить' },
+  en: { title: 'Notifications', note: 'Manage in-app notifications. Previously sent Telegram messages are unchanged.', types: 'Notification types', more: 'Older notifications', recipients: 'Recipients', recent: 'Sent messages', search: 'Search sent messages', visible: 'Visible', hidden: 'Hidden', hide: 'Hide', show: 'Show', remove: 'Delete', confirm: 'This message will be removed from every recipient’s notification list.', cancel: 'Cancel', empty: 'No notifications found', error: 'Action failed. Please try again.', refresh: 'Refresh' },
 };
 const labels: Record<string, [string, string, string]> = {
+  NEW_MATCHDAY: ['Yangi tur', 'Новый тур', 'New matchday'],
+  UPCOMING_MATCH: ['Navbatdagi o‘yin', 'Предстоящий матч', 'Upcoming match'],
+  CUSTOM_ALERT: ['Admin xabari', 'Сообщение администратора', 'Admin message'],
   MATCH_SCHEDULED: ['O‘yin belgilandi', 'Матч назначен', 'Match scheduled'],
   RESULT_SUBMITTED: ['Natija yuborildi', 'Результат отправлен', 'Result submitted'],
   RESULT_CONFIRMED: ['Natija tasdiqlandi', 'Результат подтверждён', 'Result confirmed'],
@@ -41,7 +44,7 @@ export function AdminNotificationsTab() {
     setData(previous => previous ? { ...page, notifications: [...previous.notifications, ...page.notifications].filter((item, index, all) => all.findIndex(n => n.id === item.id) === index) } : page);
   };
   const label = (type: string) => labels[type]?.[language === 'ru' ? 1 : language === 'en' ? 2 : 0] || type.replaceAll('_', ' ');
-  const notifications = data?.notifications.filter(n => [n.title, n.message, n.userId].some(value => value?.toLowerCase().includes(search.toLowerCase()))) || [];
+  const notifications = data?.notifications.filter(n => [n.title, n.message].some(value => value?.toLowerCase().includes(search.toLowerCase()))) || [];
   return <section className="space-y-5">
     <div className="glass-card p-5 rounded-2xl">
       <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-bold flex items-center gap-2"><Bell size={20} />{c.title}</h2><button aria-label={c.refresh} disabled={!!busy} onClick={() => act('refresh', load)} className="p-2 rounded-xl glass-card"><RefreshCw size={18} /></button></div>
@@ -64,7 +67,7 @@ export function AdminNotificationsTab() {
         const typeVisible = data?.types.find(item => item.type === n.type)?.visible !== false;
         return <article key={n.id} className="border border-slate-600/30 rounded-xl p-4 space-y-2">
           <div className="flex justify-between gap-2"><strong className="text-sm">{n.title}</strong><span className="text-xs text-slate-400">{n.visibility === 'hidden' || !typeVisible ? c.hidden : c.visible}</span></div>
-          <p className="text-sm break-words">{n.message}</p><p className="text-xs text-slate-400 break-all">{n.userId} · {new Date(n.createdAt).toLocaleString(language === 'uz' ? 'uz-UZ' : language)}</p>
+          <p className="text-sm break-words">{n.message}</p><p className="text-xs text-slate-400 break-all">{c.recipients}: {n.recipientCount} · {new Date(n.createdAt).toLocaleString(language === 'uz' ? 'uz-UZ' : language)}</p>
           <div className="flex gap-2 flex-wrap">
             <button disabled={!!busy || !typeVisible} onClick={() => act(n.id, () => api.setNotificationVisibility(n.id, n.visibility === 'hidden' ? 'visible' : 'hidden'))} className="glass-card text-xs px-3 py-2 rounded-lg">{n.visibility === 'hidden' ? c.show : c.hide}</button>
             <button disabled={!!busy} onClick={() => setDeleting(n.id)} className="text-red-400 text-xs px-3 py-2 rounded-lg flex gap-1 items-center"><Trash2 size={14} />{c.remove}</button>

@@ -5,7 +5,7 @@ import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS } from '../firebase/collections';
 import { adminNotificationsRouter } from '../routes/adminNotifications.routes';
 import { getUserNotificationsFirestore, invalidateFirestoreCache } from '../firebase/firestoreStore';
-import { redisSetRaw, redisDelRaw, getFreshKey, clearProcessMemoryForTest } from '../readModel/readModelStore';
+import { redisSetRaw, redisDelRaw, getFreshKey, clearProcessMemoryForTest, getUpstashClient } from '../readModel/readModelStore';
 
 await initDatabase();
 const db = getFirestoreDb();
@@ -67,6 +67,42 @@ try {
   assert.equal(ids.filter(id => id.startsWith('moderation-page-')).length, 105, 'Older notifications remain manageable through pagination');
   assert.equal(new Set(ids).size, ids.length, 'Pagination cannot duplicate items');
   assert.equal((await request('?cursor=missing-document')).status, 400);
+  const redis = getUpstashClient();
+  if (redis) {
+    const broadcast = (id: string, createdById = 'moderator-admin') => ({ id, seasonId: 'season-2026-27', title: 'Same sent message', body: 'Same body', type: 'CUSTOM_ALERT', createdById, createdByUsername: 'Admin', createdAt: '2026-02-01T00:00:00.000Z', metrics: { totalRecipients: 2 }, recipients: [] });
+    await redis.hset('efluz:v1:telegram:broadcasts', {
+      'moderation-broadcast-one': broadcast('moderation-broadcast-one'),
+      'moderation-broadcast-two': broadcast('moderation-broadcast-two'),
+      'smart-moderation-recipient': broadcast('smart-moderation-recipient', 'system:smart-notifications'),
+    });
+    const recipients = ['broadcast-recipient-one', 'broadcast-recipient-two'];
+    const copies = (userId: string) => ['moderation-broadcast-one', 'moderation-broadcast-two'].map(id => ({ ...original, id: 'notif-' + id + '-' + userId, userId, type: 'CUSTOM_ALERT' }));
+    for (const userId of recipients) await redisSetRaw('efluz:v1:user:' + userId + ':notifications:30', { data: copies(userId) });
+    await redisSetRaw('efluz:v1:user:' + recipients[0] + ':notifications:20', { data: copies(recipients[0]) });
+    let messages = await (await request('/messages')).json();
+    assert.equal(messages.notifications.filter((n: any) => n.id === 'moderation-broadcast-one').length, 1, 'One sent message is one row for all recipients');
+    assert.equal(messages.notifications.find((n: any) => n.id === 'moderation-broadcast-one').recipientCount, 2);
+    assert.ok(!messages.notifications.some((n: any) => n.id === 'smart-moderation-recipient'));
+    assert.ok(messages.notifications.some((n: any) => n.id === 'moderation-broadcast-two'), 'Identical text from a second send must remain a separate message');
+    assert.equal((await request('/messages/moderation-broadcast-one', 'PATCH', { visibility: 'hidden' }, 'moderator-player')).status, 403);
+    assert.equal((await request('/messages/moderation-broadcast-one', 'PATCH', { visibility: 'hidden' })).status, 200);
+    for (const userId of recipients) assert.equal((await getUserNotificationsFirestore(userId)).length, 1);
+    assert.equal((await getUserNotificationsFirestore(recipients[0], 20)).length, 1, 'Group control covers all cached page sizes');
+    assert.equal((await request('/messages/moderation-broadcast-one', 'PATCH', { visibility: 'visible' })).status, 200);
+    for (const userId of recipients) assert.equal((await getUserNotificationsFirestore(userId)).length, 2);
+    assert.equal((await request('/messages/moderation-broadcast-one', 'PATCH', { visibility: 'deleted' })).status, 200);
+    for (const userId of recipients) {
+      await redisDelRaw(getFreshKey('efluz:v1:user:' + userId + ':notifications:30'));
+      clearProcessMemoryForTest(); invalidateFirestoreCache();
+      assert.equal((await getUserNotificationsFirestore(userId)).length, 1, 'Group deletion removes every recipient copy from stale snapshots');
+    }
+    assert.equal((await request('/messages/moderation-broadcast-one', 'PATCH', { visibility: 'visible' })).status, 409);
+    messages = await (await request('/messages')).json();
+    assert.ok(!messages.notifications.some((n: any) => n.id === 'moderation-broadcast-one'));
+    assert.ok(messages.notifications.some((n: any) => n.id === 'moderation-broadcast-two'));
+    assert.equal((await request('/messages/smart-moderation-recipient', 'PATCH', { visibility: 'hidden' })).status, 404);
+    console.log('PASS actual Redis: sent message rows, distinct duplicate-text sends, hide/show/delete across all recipients and stale page sizes');
+  }
   await db.collection(COLLECTIONS.USERS).doc('moderator-admin').update({ isAdmin: false });
   assert.equal((await request('/types/SYSTEM', 'PATCH', { visible: false })).status, 403);
   console.log('PASS: admin authorization, revoked role, hide/show, type and future controls, durable deletion and stale-cache filtering');

@@ -277,6 +277,7 @@ export interface ResultSubmission {
 
 export interface Notification {
   id: string;
+  broadcastId?: string;
   userId: string;
   title: string;
   message: string;
