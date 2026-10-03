@@ -27,7 +27,7 @@ import { CompetitionHubView } from './components/CompetitionHubView';
 import { ClubHubView } from './components/ClubHubView';
 import { GlobalSearchModal } from './components/GlobalSearchModal';
 import { APP_BUILD_ID } from './context/AuthContext';
-import { Fixture } from './types';
+import { Fixture, AdminPermissions } from './types';
 import { api } from './lib/api';
 import { isDesignPreview } from './designPreview';
 import { Loader2, CheckCircle2, AlertCircle, Info } from 'lucide-react';
@@ -52,6 +52,19 @@ const AppContent: React.FC = () => {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchNavigationRevision, setSearchNavigationRevision] = useState(0);
   const [openDisputesCount, setOpenDisputesCount] = useState(0);
+  const [adminAccess, setAdminAccess] = useState<{ userId: string; permissions: AdminPermissions } | null>(null);
+  const canUseGlobalAdminTools = Boolean(user?.isAdmin && adminAccess?.userId === user.id && adminAccess.permissions.scope === 'ALL');
+  useEffect(() => {
+    let cancelled = false;
+    setAdminAccess(null);
+    if (user?.isAdmin && !isDesignPreview) {
+      api.getAdminAccess().then(result => {
+        if (!cancelled) setAdminAccess({ userId: user.id, permissions: result.adminPermissions });
+      }).catch(() => {});
+    }
+    return () => { cancelled = true; };
+  }, [user?.id, user?.isAdmin, user?.adminPermissions?.scope, activeTab]);
+
   const [welcomeCompletedFor, setWelcomeCompletedFor] = useState<string | null>(null);
   const welcomeCompleted = useMemo(() => {
     if (!user) return false;
@@ -119,12 +132,12 @@ const AppContent: React.FC = () => {
       if (document.hidden) return;
       try { const res = await api.getAdminDisputes('OPEN'); setOpenDisputesCount(res.disputes.length); } catch {}
     }
-    if (user?.isAdmin && !isDesignPreview && activeTab === 'admin') {
+    if (canUseGlobalAdminTools && !isDesignPreview && activeTab === 'admin') {
       checkDisputes();
       const interval = setInterval(checkDisputes, 300000);
       return () => clearInterval(interval);
     }
-  }, [user?.isAdmin, activeTab]);
+  }, [canUseGlobalAdminTools, activeTab]);
 
   if (isLoading) return <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white"><div className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-slate-950 font-black text-3xl mb-4 shadow-2xl shadow-emerald-500/20 animate-pulse">eF</div><div className="flex items-center gap-2 text-slate-300 text-sm font-semibold"><Loader2 className="w-4 h-4 animate-spin text-emerald-400" /><span>{t.loading}</span></div></div>;
 
@@ -174,14 +187,14 @@ const AppContent: React.FC = () => {
         onOpenSearch={() => setIsSearchOpen(true)}
       />
       <Navigation activeTab={currentTab} onTabChange={setActiveTab} openDisputesCount={openDisputesCount} />
-      {!isDesignPreview && user?.isAdmin && <OfflineSyncBanner />}
+      {!isDesignPreview && canUseGlobalAdminTools && <OfflineSyncBanner />}
       <main data-preview-page={user?.isAdmin ? currentTab : undefined} className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-4 md:px-6 py-4 sm:py-6 min-w-0">
         {user?.isAdmin ? (
           /* ==============================================================
              ADMIN ONLY: EFL UZ PREMIUM BROADCAST REDESIGN
              ============================================================== */
           <>
-            {currentTab === 'admin' && <div className="mb-5"><AdminMatchOperationsV4Panel /></div>}
+            {currentTab === 'admin' && canUseGlobalAdminTools && <div className="mb-5"><AdminMatchOperationsV4Panel /></div>}
 
             {/* HOME: Active Club Broadcast Hub with Hero Match Card */}
             {currentTab === 'dashboard' && (
@@ -256,7 +269,7 @@ const AppContent: React.FC = () => {
       </main>
       <footer className="border-t border-slate-900 bg-slate-950/80 px-4 py-3 pb-24 lg:pb-3 text-[11px] text-slate-400"><div className="max-w-7xl mx-auto flex items-center justify-between gap-2"><div className="flex items-center gap-2"><span className="font-bold text-slate-300">EFL UZ</span><span className="text-slate-600">•</span><span>Official 2026/27 European Competitions</span></div><div className="flex items-center gap-3"><span className="font-mono text-emerald-400 font-semibold">{APP_BUILD_ID}</span></div></div></footer>
       <NotificationModal isOpen={isNotificationOpen} onClose={() => setIsNotificationOpen(false)} />
-      {user?.isAdmin && <TelegramDiagnosticsModal isOpen={isDiagnosticsOpen} onClose={() => setIsDiagnosticsOpen(false)} currentRoute={activeTab} />}
+      {canUseGlobalAdminTools && <TelegramDiagnosticsModal isOpen={isDiagnosticsOpen} onClose={() => setIsDiagnosticsOpen(false)} currentRoute={activeTab} />}
       <GlobalSearchModal
         isOpen={isSearchOpen}
         onClose={() => setIsSearchOpen(false)}
