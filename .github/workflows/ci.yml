@@ -69,6 +69,7 @@ jobs:
           node scripts/run-isolated-test.mjs src/server/tests/fixtureDeletionFailureRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/resultHttpLifecycleRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/domesticCupFinalGuardRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/notificationReadPersistenceRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/notificationBackupRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/smartNotificationRecoveryRegressionTest.ts
 

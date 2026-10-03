@@ -77,6 +77,7 @@ async function main() {
     assert.equal(await model.redisGetFresh('atomic-test'),null);
     assert.equal((await model.redisGetLkg<any[]>('atomic-test'))?.data[0].id,'kept');
     console.log('PASS: actual Redis Lua publishes atomically and preserves permanent snapshot');
+    await import('./notificationReadPersistenceRegressionTest');
 
     const fixture={id:'fixture-real',seasonId,competitionId:'comp-fa-cup-2026',status:'SCHEDULED',homeClubId:null,awayClubId:null,matchday:1,updatedAt:'2026-01-01T00:00:00.000Z'};
     await db.collection(COLLECTIONS.FIXTURES).doc(fixture.id).set(fixture);

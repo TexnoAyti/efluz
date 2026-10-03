@@ -258,6 +258,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           id: 'season-2026-27', name: '2026/27', status: 'active',
           startDate: '2026-08-01', createdAt: '',
         };
+        const { demoClubs } = await import('../lib/designPreviewData');
+        setOwnedClubs(demoClubs);
+        setCurrentClub(resolveActiveClub(demoClubs, demoClubs[0], 'design-preview', season.id, clubPreferenceStorage()));
         setSeasons([season]);
         setCurrentSeason(season);
         setAuthStatus('AUTHENTICATED');
@@ -506,14 +509,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const markNotificationAsRead = async (notificationId: string) => {
-    // Optimistic UI update: immediately mark specific notification as read
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === notificationId ? { ...n, isRead: true } : n))
-    );
+    setNotificationsError(null);
     try {
       await api.markNotificationsRead(notificationId);
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === notificationId ? { ...n, isRead: true } : n))
+      );
     } catch (err: any) {
       console.error('Failed to mark notification as read:', err);
+      setNotificationsError(err.message || 'Failed to mark notification as read');
     }
   };
 
@@ -522,12 +526,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await markNotificationAsRead(notificationId);
       return;
     }
-    // Optimistic UI update: mark all as read
-    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    setNotificationsError(null);
+    const readIds = new Set(notifications.map((notification) => notification.id));
     try {
       await api.markNotificationsRead();
+      setNotifications((prev) => prev.map((n) => readIds.has(n.id) ? { ...n, isRead: true } : n));
     } catch (err: any) {
       console.error('Failed to mark notifications read:', err);
+      setNotificationsError(err.message || 'Failed to mark notifications read');
     }
   };
 
@@ -588,4 +594,3 @@ export function useAuth(): AuthContextType {
   }
   return context;
 }
-

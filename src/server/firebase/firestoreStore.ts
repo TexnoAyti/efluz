@@ -1,4 +1,5 @@
 import { Firestore, FieldValue, FieldPath } from 'firebase-admin/firestore';
+import { getNotificationReadState, applyNotificationReadState, persistNotificationReadState } from '../services/notificationReadState';
 import { getFirestoreDb } from './admin';
 import { analyzeLeaguePairs } from '../services/leaguePairIntegrity';
 import { queryAll, queryGet, queryRun, dbTransaction, upsertFixtureToSqlite } from '../db';
@@ -5702,18 +5703,20 @@ export async function createNotificationFirestore(
 }
 
 export async function getUserNotificationsFirestore(userId: string, limit = 30): Promise<Notification[]> {
+  const readState = await getNotificationReadState(userId).catch(() => null);
+  const applyReadState = (notifications: Notification[]) => readState ? applyNotificationReadState(notifications, readState) : notifications;
   const cacheKey = `firestore:notifications:${userId}:${limit}`;
   const cached = getFromCache<Notification[]>(cacheKey);
-  if (cached) return cached;
+  if (cached && readState) return applyReadState(cached);
 
   const durableNotificationKey = `efluz:v1:user:${userId}:notifications:${limit}`;
   try {
     const { redisGetFresh, redisGetLkg } = await import('../readModel/readModelStore');
     const durable = (await redisGetFresh<Notification[]>(durableNotificationKey)) ||
       (await redisGetLkg<Notification[]>(durableNotificationKey));
-    if (durable && Array.isArray(durable.data)) {
+    if (readState && durable && Array.isArray(durable.data)) {
       setInCache(cacheKey, durable.data, 300000);
-      return durable.data;
+      return applyReadState(durable.data);
     }
   } catch {}
 
@@ -5774,7 +5777,7 @@ export async function getUserNotificationsFirestore(userId: string, limit = 30):
         actualCount: notifications.length,
       }, 300);
     } catch {}
-    return notifications;
+    return applyReadState(notifications);
   } catch (err: any) {
     console.warn('[FIRESTORE FALLBACK] getUserNotificationsFirestore:', err.message);
     const rows = queryAll<any>(
@@ -5795,12 +5798,13 @@ export async function getUserNotificationsFirestore(userId: string, limit = 30):
       };
     });
     setInCache(cacheKey, fallbackNotifs, 30000);
-    return fallbackNotifs;
+    return applyReadState(fallbackNotifs);
   }
 }
 
 export async function markSingleNotificationReadFirestore(userId: string, notificationId: string): Promise<void> {
   const now = new Date().toISOString();
+  let authoritativeRead = false;
   invalidateFirestoreCache(`firestore:notifications:${userId}`);
 
   // 1. Verify ownership locally if notification exists in SQLite
@@ -5824,7 +5828,7 @@ export async function markSingleNotificationReadFirestore(userId: string, notifi
           queryRun(`UPDATE notifications SET is_read = 1 WHERE user_id = ? AND id = ?`, [userId, notificationId]);
         } catch {}
         firestoreCircuitBreaker.recordSuccess();
-        return;
+        authoritativeRead = true;
       }
     } catch (err: any) {
       if (err.message?.includes('OWNERSHIP_MISMATCH')) {
@@ -5836,6 +5840,10 @@ export async function markSingleNotificationReadFirestore(userId: string, notifi
   }
 
   // 3. Fallback: update local SQLite only for matching user and enqueue mutation
+  if (authoritativeRead) {
+    await persistNotificationReadState(userId, now, notificationId);
+    return;
+  }
   try {
     queryRun(`UPDATE notifications SET is_read = 1 WHERE user_id = ? AND id = ?`, [userId, notificationId]);
   } catch {}
@@ -5848,10 +5856,12 @@ export async function markSingleNotificationReadFirestore(userId: string, notifi
     payload: { userId, notificationId, readAt: now },
     createdAt: now,
   });
+  await persistNotificationReadState(userId, now, notificationId);
 }
 
 export async function markNotificationsReadFirestore(userId: string): Promise<void> {
   const now = new Date().toISOString();
+  let authoritativeRead = false;
   invalidateFirestoreCache(`firestore:notifications:${userId}`);
 
   try {
@@ -5871,13 +5881,18 @@ export async function markNotificationsReadFirestore(userId: string): Promise<vo
         const batch = db.batch();
         snap.docs.forEach((doc) => batch.update(doc.ref, { isRead: true, readAt: now }));
         await batch.commit();
-        firestoreCircuitBreaker.recordSuccess();
-        return;
       }
+      firestoreCircuitBreaker.recordSuccess();
+      authoritativeRead = true;
     } catch (err: any) {
       console.warn('[FIRESTORE FALLBACK] markNotificationsReadFirestore:', err.message);
       firestoreCircuitBreaker.recordFailure(err);
     }
+  }
+
+  if (authoritativeRead) {
+    await persistNotificationReadState(userId, now);
+    return;
   }
 
   enqueueMutation({
@@ -5888,6 +5903,7 @@ export async function markNotificationsReadFirestore(userId: string): Promise<vo
     payload: { userId, readAt: now },
     createdAt: now,
   });
+  await persistNotificationReadState(userId, now);
 }
 
 /**
