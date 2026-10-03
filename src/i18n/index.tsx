@@ -138,6 +138,29 @@ export interface Translations {
 
   // Notifications
   notificationsTitle: string;
+  notificationsSubtitle: string;
+  notificationsNew: string;
+  notificationsMarking: string;
+  notificationsRefresh: string;
+  notificationsAll: string;
+  notificationsUnread: string;
+  notificationsMatches: string;
+  notificationsUpdates: string;
+  notificationsLoadError: string;
+  notificationsTryAgain: string;
+  notificationsRetry: string;
+  notificationsEmptyHint: string;
+  notificationsCaughtUp: string;
+  notificationsFilterEmpty: string;
+  notificationsViewAll: string;
+  notificationsViewMatch: string;
+  notificationsViewClub: string;
+  notificationsMarkRead: string;
+  notificationsJustNow: string;
+  notificationsMinutesAgo: string;
+  notificationsHoursAgo: string;
+  notificationsYesterday: string;
+  notificationsDaysAgo: string;
   noNotifications: string;
   markAllRead: string;
   newFixture: string;
@@ -390,6 +413,29 @@ export const translations: Record<Language, Translations> = {
     superCupTitle: 'Milliy Superkubok',
 
     notificationsTitle: 'Bildirishnomalar',
+    notificationsSubtitle: "O‘yin natijalari, tasdiqlar va bahslar haqidagi yangiliklar",
+    notificationsNew: "yangi",
+    notificationsMarking: "Belgilanmoqda…",
+    notificationsRefresh: "Bildirishnomalarni yangilash",
+    notificationsAll: "Barchasi",
+    notificationsUnread: "O‘qilmagan",
+    notificationsMatches: "O‘yinlar",
+    notificationsUpdates: "Yangiliklar",
+    notificationsLoadError: "Bildirishnomalarni yuklab bo‘lmadi",
+    notificationsTryAgain: "Qayta urinib ko‘ring.",
+    notificationsRetry: "Qayta urinish",
+    notificationsEmptyHint: "O‘yinlar va turnirlar haqidagi muhim yangiliklar shu yerda ko‘rinadi.",
+    notificationsCaughtUp: "Yangi bildirishnoma yo‘q",
+    notificationsFilterEmpty: "Tanlangan filtrga mos bildirishnoma yo‘q.",
+    notificationsViewAll: "Barcha bildirishnomalarni ko‘rish",
+    notificationsViewMatch: "O‘yinni ko‘rish",
+    notificationsViewClub: "Klubni ko‘rish",
+    notificationsMarkRead: "O‘qilgan deb belgilash",
+    notificationsJustNow: "Hozirgina",
+    notificationsMinutesAgo: "{count} daqiqa oldin",
+    notificationsHoursAgo: "{count} soat oldin",
+    notificationsYesterday: "Kecha",
+    notificationsDaysAgo: "{count} kun oldin",
     noNotifications: 'Hozircha bildirishnomalar mavjud emas',
     markAllRead: 'Barchasini o‘qilgan deb belgilash',
     newFixture: 'Yangi o‘yin rejalashtirildi',
@@ -637,6 +683,29 @@ export const translations: Record<Language, Translations> = {
     superCupTitle: 'Национальный Суперкубок',
 
     notificationsTitle: 'Уведомления',
+    notificationsSubtitle: "Обновления о результатах матчей, подтверждениях и спорах",
+    notificationsNew: "новых",
+    notificationsMarking: "Отмечаем…",
+    notificationsRefresh: "Обновить уведомления",
+    notificationsAll: "Все",
+    notificationsUnread: "Непрочитанные",
+    notificationsMatches: "Матчи",
+    notificationsUpdates: "Обновления",
+    notificationsLoadError: "Не удалось загрузить уведомления",
+    notificationsTryAgain: "Попробуйте ещё раз.",
+    notificationsRetry: "Повторить",
+    notificationsEmptyHint: "Здесь появятся важные обновления о матчах и турнирах.",
+    notificationsCaughtUp: "Новых уведомлений нет",
+    notificationsFilterEmpty: "Нет уведомлений для выбранного фильтра.",
+    notificationsViewAll: "Все уведомления",
+    notificationsViewMatch: "Открыть матч",
+    notificationsViewClub: "Открыть клуб",
+    notificationsMarkRead: "Отметить как прочитанное",
+    notificationsJustNow: "Только что",
+    notificationsMinutesAgo: "{count} мин. назад",
+    notificationsHoursAgo: "{count} ч. назад",
+    notificationsYesterday: "Вчера",
+    notificationsDaysAgo: "{count} дн. назад",
     noNotifications: 'Нет новых уведомлений',
     markAllRead: 'Прочитать все',
     newFixture: 'Назначен новый матч',
@@ -884,6 +953,29 @@ export const translations: Record<Language, Translations> = {
     superCupTitle: 'Domestic Super Cup',
 
     notificationsTitle: 'Notifications',
+    notificationsSubtitle: "Live updates on match submissions, consensus verifications, and disputes",
+    notificationsNew: "new",
+    notificationsMarking: "Marking...",
+    notificationsRefresh: "Refresh notifications",
+    notificationsAll: "All",
+    notificationsUnread: "Unread",
+    notificationsMatches: "Matches",
+    notificationsUpdates: "Updates",
+    notificationsLoadError: "Couldn't load notifications",
+    notificationsTryAgain: "Please try again.",
+    notificationsRetry: "Retry",
+    notificationsEmptyHint: "Important match and competition updates will appear here.",
+    notificationsCaughtUp: "All caught up",
+    notificationsFilterEmpty: "No notifications match the selected filter.",
+    notificationsViewAll: "View all notifications",
+    notificationsViewMatch: "View Match",
+    notificationsViewClub: "View Club",
+    notificationsMarkRead: "Mark as read",
+    notificationsJustNow: "Just now",
+    notificationsMinutesAgo: "{count}m ago",
+    notificationsHoursAgo: "{count}h ago",
+    notificationsYesterday: "Yesterday",
+    notificationsDaysAgo: "{count}d ago",
     noNotifications: 'No notifications at this time',
     markAllRead: 'Mark all as read',
     newFixture: 'New fixture scheduled',
