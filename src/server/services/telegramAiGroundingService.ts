@@ -265,7 +265,7 @@ export async function buildAiGroundingContext(
         }
 
         // Filter fixtures: confirmed matches or matches involving detected clubs
-        const relevantFixtures = fixtures.filter((f) => {
+        const matchingFixtures = fixtures.filter((f) => {
           const homeName = (f.homeClub?.name || (f as any).homeClubName || allClubs.find(c => c.id === f.homeClubId)?.name || f.homeClubId || '').toLowerCase();
           const awayName = (f.awayClub?.name || (f as any).awayClubName || allClubs.find(c => c.id === f.awayClubId)?.name || f.awayClubId || '').toLowerCase();
           if (detectedClubs.length > 0) {
@@ -274,7 +274,17 @@ export async function buildAiGroundingContext(
             );
           }
           return f.status === 'CONFIRMED';
-        }).slice(-5); // last 5 relevant fixtures
+        });
+        // Future fixtures must not crowd confirmed results out of prediction context.
+        const confirmedFixtures = matchingFixtures.filter(f => f.status === 'CONFIRMED' &&
+          Number.isInteger(f.homeScore) && Number.isInteger(f.awayScore) && f.homeScore! >= 0 && f.awayScore! >= 0)
+          .sort((a, b) => (Number(a.matchday) || 0) - (Number(b.matchday) || 0) ||
+            String(a.updatedAt || '').localeCompare(String(b.updatedAt || '')) || a.id.localeCompare(b.id))
+          .slice(-5);
+        const upcomingFixtures = matchingFixtures.filter(f => f.status !== 'CONFIRMED')
+          .sort((a, b) => (Number(a.matchday) || 0) - (Number(b.matchday) || 0) || a.id.localeCompare(b.id))
+          .slice(0, 2);
+        const relevantFixtures = [...confirmedFixtures, ...upcomingFixtures];
 
         if (relevantFixtures.length > 0) {
           const fixLines = relevantFixtures.map((f) => {

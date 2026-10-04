@@ -301,6 +301,12 @@ async function runTests() {
       } as any,
     ];
 
+    // A long list of future games must not hide confirmed form or leak unconfirmed scores.
+    for (let round = 2; round <= 13; round++) {
+      mockFixtures.push({ ...mockFixtures[0], id: `scheduled-${round}`, matchday: round,
+        status: 'SCHEDULED', homeScore: 99, awayScore: 98 } as any);
+    }
+
     setTestGroundingOverride({
       standings: { 'comp-premier-league': mockStandings },
       fixtures: { 'comp-premier-league': mockFixtures },
@@ -314,6 +320,7 @@ async function runTests() {
       grounding.factsSummary.includes('[CONFIRMED] MD 1: Arsenal 2 - 1 Chelsea'),
       'Grounding factsSummary must include exact CONFIRMED match status and score'
     );
+    assert.ok(!grounding.factsSummary.includes('99 - 98'), 'Unconfirmed scores must never become prediction facts');
     console.log('✅ TEST 6 PASSED: Exact club name, points, and CONFIRMED score strictly asserted in grounding.\n');
 
     // -------------------------------------------------------------------------
