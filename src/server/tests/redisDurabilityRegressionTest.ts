@@ -223,6 +223,8 @@ async function main() {
     await assert.rejects(backup.recoverBackupNotifications(25, client, client), /UNCONFIRMED/);
     assert.equal(await client.zcard(`${model.KEY_PREFIX}:telegram:backup:pending`), 1);
     console.log('PASS actual Redis Lua: durable backup, duplicate and late replay, incomplete primary write retains backup.');
+    await import('./approvedFixtureRestorationRegressionTest');
+    console.log('PASS actual Redis Lua: one-time approved fixture restore appends to durable snapshots and survives retry.');
     console.log('Redis durability regression passed; Telegram transport was mocked, no real messages sent.');
   } finally { globalThis.fetch = isolatedFetch; bridge.close(); }
 }

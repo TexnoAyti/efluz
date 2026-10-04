@@ -1699,6 +1699,9 @@ export async function getCompetitionFixturesFromReadModel(
     ? { matchday: optionsOrMatchday, seasonId: fallbackSeasonId }
     : optionsOrMatchday || {};
   const seasonId = options.seasonId || fallbackSeasonId;
+  // Explicit one-time owner-approved recovery; durable checkpoint prevents recurrence.
+  const { runApprovedFixtureRestoration } = await import('../services/approvedFixtureRestoration');
+  await runApprovedFixtureRestoration(competitionId, seasonId);
   let rawFixtures: Fixture[] = [];
   let source = 'memory';
   let stale = false;
