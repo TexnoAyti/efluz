@@ -319,7 +319,6 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
         </div>
       )}
 
-      <AdminTournamentImageExport competition={activeCup} kind="matchday" availableFixtures={cupFixtures} disabled={isLoading || !cupFixtures.length} />
       {isLoading && cupFixtures.length === 0 ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {[0, 1, 2, 3].map((index) => <div key={index} className="h-40 animate-pulse rounded-3xl border border-white/[0.06] efl-theme-border bg-white/[0.025] efl-theme-surface-2" />)}
@@ -341,6 +340,8 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
           competition={activeCup}
         />
       )}
+
+      <AdminTournamentImageExport competition={activeCup} kind="matchday" availableFixtures={cupFixtures} disabled={isLoading || !cupFixtures.length} />
 
       {selectedFixtureForSubmit && (
         <ResultSubmissionModal

@@ -428,8 +428,6 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
           </div>
 
           {/* TAB 1: League Phase Table & Participants */}
-          {activeTab === 'STANDINGS' && <AdminTournamentImageExport competition={selectedTournament} kind="standings" disabled={isLoading} />}
-          <AdminTournamentImageExport competition={selectedTournament} kind="matchday" availableFixtures={fixtures} disabled={isLoading} />
           {activeTab === 'STANDINGS' && (
             <div className="space-y-4">
               <div className="preview-surface rounded-2xl border border-slate-200/80 efl-theme-border dark:border-white/10 overflow-hidden shadow-xs">
@@ -750,6 +748,8 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
           </div>
         </div>
       )}
+      {activeTab === 'STANDINGS' && <AdminTournamentImageExport competition={selectedTournament} kind="standings" disabled={isLoading} />}
+      <AdminTournamentImageExport competition={selectedTournament} kind="matchday" availableFixtures={fixtures} disabled={isLoading} />
         </>
       )}
     </div>

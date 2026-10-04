@@ -142,7 +142,6 @@ export const StandingsView: React.FC = () => {
         </div>
       </div>
 
-      <AdminTournamentImageExport competition={activeComp} kind="standings" disabled={isLoading} />
       {/* Standings Table Container */}
       <div className="glass-panel shadow-xl overflow-hidden max-w-full">
         {/* Table Title Bar */}
@@ -366,6 +365,7 @@ export const StandingsView: React.FC = () => {
           </div>
         )}
       </div>
+      <AdminTournamentImageExport competition={activeComp} kind="standings" disabled={isLoading} />
     </div>
   );
 };

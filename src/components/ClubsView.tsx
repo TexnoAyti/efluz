@@ -892,7 +892,6 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
       {/* TAB B: MATCHES / FIXTURES */}
       {activeLeagueTab === 'MATCHES' && (
         <div className="space-y-4">
-          <AdminTournamentImageExport competition={currentComp} kind="matchday" matchday={selectedMatchday} disabled={isLoadingFixtures} />
           {/* Matchday Selector */}
           {matchdays.length > 0 && (
             <div className="p-2.5 rounded-2xl bg-[var(--efl-surface)] border border-[var(--efl-border)] flex items-center gap-2 overflow-x-auto scrollbar-none shadow-xs">
@@ -1056,13 +1055,13 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
               })}
             </div>
           )}
+          <AdminTournamentImageExport competition={currentComp} kind="matchday" matchday={selectedMatchday} disabled={isLoadingFixtures} />
         </div>
       )}
 
       {/* TAB C: STANDINGS TABLE */}
       {activeLeagueTab === 'STANDINGS' && (
         <div className={`space-y-4 ${user?.isAdmin ? `efl-standings efl-standings--${standingsView}` : ''}`}>
-          <AdminTournamentImageExport competition={currentComp} kind="standings" disabled={isLoadingStandings} />
           {user?.isAdmin && (
             <div className="efl-standings-toolbar">
               <div role="group" aria-label={standingsLabels.view} className="efl-standings-view-switch">
@@ -1239,6 +1238,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
               </div>
             </div>
           )}
+          <AdminTournamentImageExport competition={currentComp} kind="standings" disabled={isLoadingStandings} />
         </div>
       )}
 

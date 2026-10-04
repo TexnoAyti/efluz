@@ -318,7 +318,6 @@ export const FixturesView: React.FC = () => {
 
       {/* Filter Tabs */}
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <AdminTournamentImageExport competition={activeComp} kind="matchday" matchday={selectedMatchday} disabled={isLoading} />
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
           <button
             onClick={() => setFilterMode('ALL')}
@@ -663,6 +662,8 @@ export const FixturesView: React.FC = () => {
           })}
         </div>
       )}
+
+      <AdminTournamentImageExport competition={activeComp} kind="matchday" matchday={selectedMatchday} disabled={isLoading} />
 
       {/* Result Submission Modal */}
       {selectedFixtureForSubmit && (
