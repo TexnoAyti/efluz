@@ -338,6 +338,36 @@ async function main() {
     } finally { globalThis.fetch = healthyFetch; }
     console.log('PASS actual Redis Lua: AI assistant atomic rate limiting, delivery claim transitions, and reply indexing.');
 
+    const adminAI = await import('../services/telegramAiAdminService');
+    const aiConfig = await import('../services/telegramAiConfigService');
+    aiConfig.setTestConfigOverride({ ...aiConfig.DEFAULT_AI_CONFIG, enabled: true, allowedChatId: -100123, allowedThreadId: 3503 });
+    const adminPayload = (text: string) => ({ updateId: 99222, messageId: 1, chatId: -100123, threadId: 3503, fromUser: { id: 5209126900 }, text });
+    let adminExecutions = 0;
+    adminAI.setTestAiAdminHooks(async () => { adminExecutions++; await new Promise(resolve => setTimeout(resolve, 20)); return { status: 200, data: { success: true } }; });
+    const adminSignal = new AbortController().signal;
+    const adminProposal = await adminAI.handleAiAdminCommand(adminPayload('/ai_admin {"action":"club_release","targetId":"club-arsenal"}'), adminSignal);
+    const adminToken = /\/ai_confirm ([a-f0-9]{24})/.exec(adminProposal)![1];
+    await Promise.all(Array.from({ length: 8 }, () => adminAI.handleAiAdminCommand(adminPayload('/ai_confirm ' + adminToken), adminSignal)));
+    assert.equal(adminExecutions, 1, 'Actual Redis Lua must claim exactly one admin mutation');
+    const adminKey = 'efluz:v1:telegram:ai:admin:' + adminToken;
+    assert.equal((await client.get<any>(adminKey)).state, 'done');
+    assert.equal(await client.ttl(adminKey), -1, 'Execution record is permanent; delivery retries cannot erase mutation deduplication');
+    const expiredProposal = await adminAI.handleAiAdminCommand(adminPayload('/ai_admin {"action":"club_release","targetId":"club-arsenal"}'), adminSignal);
+    const expiredToken = /\/ai_confirm ([a-f0-9]{24})/.exec(expiredProposal)![1];
+    const expiredKey = 'efluz:v1:telegram:ai:admin:' + expiredToken;
+    const expiredRecord = await client.get<any>(expiredKey);
+    await client.set(expiredKey, JSON.stringify({ ...expiredRecord, expiresAt: Date.now() - 1 }));
+    assert.match(await adminAI.handleAiAdminCommand(adminPayload('/ai_confirm ' + expiredToken), adminSignal), /muddati/);
+    assert.equal(adminExecutions, 1);
+    const adminFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = async () => { throw new Error('Redis unavailable'); };
+      await adminAI.handleAiAdminCommand(adminPayload('/ai_confirm ' + adminToken), adminSignal);
+      const unavailablePlan = await adminAI.handleAiAdminCommand(adminPayload('/ai_admin {"action":"club_release","targetId":"club-arsenal"}'), adminSignal);
+      assert.ok(!unavailablePlan.includes('/ai_confirm ')); assert.equal(adminExecutions, 1);
+    } finally { globalThis.fetch = adminFetch; adminAI.setTestAiAdminHooks(); aiConfig.setTestConfigOverride(null); }
+    console.log('PASS actual Redis Lua: owner admin confirmation concurrency, permanent claim, expiry, Redis outage fail-closed; no real mutations or Telegram messages');
+
     console.log('Redis durability regression passed; Telegram transport was mocked, no real messages sent.');
   } finally { globalThis.fetch = isolatedFetch; bridge.close(); }
 }

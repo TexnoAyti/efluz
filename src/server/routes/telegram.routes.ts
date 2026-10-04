@@ -29,6 +29,7 @@ import {
 } from '../services/telegramAiConfigService';
 import { getAiRateLimitMetrics } from '../services/telegramAiRateLimitService';
 import { handleTelegramAiMessage } from '../services/telegramAiService';
+import { isAiAdminCommand } from '../services/telegramAiAdminCatalog';
 
 export const telegramRouter = Router();
 // A processing lease is separate from acknowledgement: failed work remains retryable.
@@ -212,13 +213,15 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
             });
             response = { ok: true, handled: 'ai_status' };
           }
-        } else if (!command && Number.isSafeInteger(message.message_thread_id)) {
+        } else if (!command && (Number.isSafeInteger(message.message_thread_id) || isAiAdminCommand(message.text) && isPrimaryOwner(message.from.id) && message.chat.id === message.from.id)) {
           // Regular user message in a forum topic thread: delegate to AI assistant
           const aiResult = await handleTelegramAiMessage({
             updateId: update.update_id,
             messageId: message.message_id,
             chatId: message.chat.id,
-            threadId: message.message_thread_id,
+            threadId: message.message_thread_id || 0,
+            senderChat: Boolean(message.sender_chat),
+            forwarded: Boolean(message.forward_origin || message.forward_from || message.forward_from_chat),
             fromUser: message.from,
             text: message.text,
             replyToMessage: message.reply_to_message,

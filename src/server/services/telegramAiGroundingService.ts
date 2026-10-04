@@ -8,6 +8,7 @@
 
 import { ReadModelKeys, OwnerNeutralClub } from '../readModel/readModelStore';
 import { createAiSnapshotReader } from './telegramAiSnapshotReader';
+import { matchesAiCompetition } from './telegramAiDataService';
 import { filterRetiredFixtures } from './retiredFixtureService';
 import { SEED_COMPETITIONS, SEED_CLUBS } from '../db/seed';
 import { Competition, StandingsRow, Fixture, Club } from '../../types';
@@ -122,7 +123,7 @@ export async function buildAiGroundingContext(
   }
   const ids = new Set(matched.map(c => c.id));
   const normalized = normalizeAiEntity(query);
-  let explicitCompetitions = competitions.filter(c => containsAiEntity(normalized, c.name) ||
+  let explicitCompetitions = competitions.filter(c => matchesAiCompetition(query, c) || containsAiEntity(normalized, c.name) ||
     Object.entries(LEAGUE_KEYWORDS).some(([prefix, words]) => (c.id === prefix || c.id.startsWith(prefix + '-')) &&
       words.some(word => containsAiEntity(normalized, word))));
   if(requestedStage){

@@ -23,6 +23,10 @@ import { getTelegramAiConfig } from './telegramAiConfigService';
 import { checkAndIncrementAiRateLimits } from './telegramAiRateLimitService';
 import { buildAiGroundingContext } from './telegramAiGroundingService';
 import { buildTelegramAiSystemPrompt } from './telegramAiPrompt';
+import { generateGroundedTelegramAnswer } from './telegramAiReadTools';
+import { isAiAdminCommand } from './telegramAiAdminCatalog';
+import { handleAiAdminCommand, isOwnerAdminPrivateChat } from './telegramAiAdminService';
+import { isPrimaryOwner } from './telegramAiConfigService';
 import { sendTelegramMessage } from './telegramBotService';
 
 export interface TelegramAiMessagePayload {
@@ -37,6 +41,8 @@ export interface TelegramAiMessagePayload {
     is_bot?: boolean;
   };
   text: string;
+  senderChat?: boolean;
+  forwarded?: boolean;
   replyToMessage?: {
     message_id: number;
     from?: {
@@ -413,8 +419,7 @@ async function dispatchTelegramAiReply(
     (process.env.NODE_ENV === 'production' && !freshRedis) ||
     freshConfig.allowedChatId === null ||
     freshConfig.allowedThreadId === null ||
-    Number(freshConfig.allowedChatId) !== Number(payload.chatId) ||
-    Number(freshConfig.allowedThreadId) !== Number(payload.threadId)
+    (Number(freshConfig.allowedChatId) !== Number(payload.chatId) || Number(freshConfig.allowedThreadId) !== Number(payload.threadId)) && !(isAiAdminCommand(payload.text) && isOwnerAdminPrivateChat(payload))
   ) {
     console.warn('[AI DISPATCH] Pre-send re-check failed; aborting send to Telegram');
     await claimDeliveryState(payload.updateId, 'sent', { signal });
@@ -473,7 +478,7 @@ export async function handleTelegramAiMessage(
 
   // 2. Start unified 6-second processing timeout BEFORE reading configuration (Requirement 2)
   const rootController = new AbortController();
-  const globalTimeout = setTimeout(() => rootController.abort(), GLOBAL_TIMEOUT_MS);
+  const globalTimeout = setTimeout(() => rootController.abort(), isAiAdminCommand(payload.text) && isPrimaryOwner(payload.fromUser.id) ? 30000 : GLOBAL_TIMEOUT_MS);
 
   try {
     // 3. Load configuration under deadline with fail-closed guarantee
@@ -489,8 +494,7 @@ export async function handleTelegramAiMessage(
     if (
       config.allowedChatId === null ||
       config.allowedThreadId === null ||
-      Number(payload.chatId) !== Number(config.allowedChatId) ||
-      Number(payload.threadId) !== Number(config.allowedThreadId)
+      (Number(payload.chatId) !== Number(config.allowedChatId) || Number(payload.threadId) !== Number(config.allowedThreadId)) && !(isAiAdminCommand(payload.text) && isOwnerAdminPrivateChat(payload))
     ) {
       return { ok: true, handled: false, ignored: 'topic_not_authorized' };
     }
@@ -529,6 +533,17 @@ export async function handleTelegramAiMessage(
         await claimDeliveryState(payload.updateId, 'sent', { signal: rootController.signal });
       }
       return { ok: true, handled: true, ignored: rateLimit.reason };
+    }
+
+    // Admin execution is a separate owner-only, explicit-command flow. The public model has no write tools.
+    if (isAiAdminCommand(payload.text)) {
+      let facts = '';
+      if (isPrimaryOwner(payload.fromUser.id) && !payload.senderChat && !payload.forwarded && /^\/ai_admin(?:@[a-zA-Z0-9_]+)?\s+(?!\{)/i.test(payload.text)) {
+        facts = (await buildAiGroundingContext(payload.text, undefined, { signal: rootController.signal })).factsSummary;
+      }
+      const text = await handleAiAdminCommand(payload, rootController.signal, facts);
+      const result = await dispatchTelegramAiReply(payload, text, rootController.signal, { parse_mode: null });
+      return { ok: true, handled: true, replySent: result.replySent, ignored: result.ignored };
     }
 
     // 7. Check blatant off-topic before calling Gemini to save quota
@@ -599,17 +614,7 @@ export async function handleTelegramAiMessage(
         ];
 
         try {
-          const aiResponse = await withinAiDeadline(rootController.signal, () => ai.models.generateContent({
-            model: modelName,
-            contents,
-            config: {
-              systemInstruction: systemPrompt,
-              temperature: 0.4,
-              maxOutputTokens: 400,
-              abortSignal: rootController.signal, // Cancels Gemini API call when deadline aborts
-            },
-          }));
-          replyText = aiResponse.text?.trim() || '';
+          replyText = await generateGroundedTelegramAnswer({ ai, model: modelName, contents, systemPrompt, signal: rootController.signal });
         } catch (apiErr: any) {
           const errMsg = String(apiErr?.message || '');
           if (rootController.signal.aborted) {
