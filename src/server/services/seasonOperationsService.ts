@@ -1,3 +1,4 @@
+import { filterRetiredFixtures } from './retiredFixtureService';
 import { Fixture, Competition, StandingsRow } from '../../types';
 import { queryAll } from '../db';
 import { SEED_CLUBS, SEED_COMPETITIONS } from '../db/seed';
@@ -95,13 +96,13 @@ export async function loadSeasonOperationsFixtures(seasonId = 'season-2026-27') 
   const key = ReadModelKeys.adminFixtures(seasonId);
   const snapshot = (await redisGetFresh<Fixture[]>(key)) || (await redisGetLkg<Fixture[]>(key));
   if (Array.isArray(snapshot?.data) && snapshot!.data.length > 0) {
-    return { fixtures: snapshot!.data, source: snapshot!.source || 'redis', stale: Boolean(snapshot!.stale) };
+    return { fixtures: filterRetiredFixtures(snapshot!.data, seasonId), source: snapshot!.source || 'redis', stale: Boolean(snapshot!.stale) };
   }
   const rows = queryAll<any>(
     `SELECT * FROM fixtures WHERE season_id = ? OR season_id IS NULL ORDER BY matchday ASC, scheduled_at ASC, id ASC`,
     [seasonId]
   );
-  return { fixtures: rows.map((row) => normalizeSqliteFixture(row, seasonId)), source: 'sqlite', stale: true };
+  return { fixtures: filterRetiredFixtures(rows.map((row) => normalizeSqliteFixture(row, seasonId)), seasonId), source: 'sqlite', stale: true };
 }
 
 function phaseOf(fixture: Fixture): SeasonPhaseId {

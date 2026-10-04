@@ -1,3 +1,4 @@
+import { filterRetiredFixtures, isRetiredFixture, assertFixtureNotRetired, RETIRED_FIXTURES } from '../services/retiredFixtureService';
 import { resolveMatchdayGate } from '../../lib/matchdayState';
 import { Firestore, FieldValue, FieldPath } from 'firebase-admin/firestore';
 import { getNotificationControls, notificationVisible } from '../services/notificationVisibility';
@@ -1542,7 +1543,11 @@ export function checkFixturePlayability(
   return { isPlayable: matchday === activeMatchday, activeMatchday };
 }
 
-export async function getFixturesFirestore(filter: {
+export async function getFixturesFirestore(filter: Parameters<typeof getFixturesFirestoreUnfiltered>[0]): Promise<Fixture[]> {
+  return filterRetiredFixtures(await getFixturesFirestoreUnfiltered(filter), filter.seasonId || 'season-2026-27');
+}
+
+async function getFixturesFirestoreUnfiltered(filter: {
   competitionId?: string;
   seasonId?: string;
   matchday?: number;
@@ -1998,6 +2003,10 @@ export interface AdminFixturesPageResult {
 export function executeAdminFixturesPagedFallback(options: AdminFixturesQueryOptions, pageSize: number): AdminFixturesPageResult {
   const conditions: string[] = ['1=1'];
   const params: any[] = [];
+  for (const retired of RETIRED_FIXTURES) {
+    conditions.push('(f.id != ? OR COALESCE(f.season_id, ?) != ?)');
+    params.push(retired.id, retired.seasonId, retired.seasonId);
+  }
 
   if (options.competitionId) {
     conditions.push('f.competition_id = ?');
@@ -2119,6 +2128,7 @@ export async function getAdminFixturesPagedFirestore(options: AdminFixturesQuery
 }
 
 export async function getFixtureByIdFirestore(fixtureId: string, currentUserId?: string): Promise<Fixture | null> {
+  if (isRetiredFixture(fixtureId)) return null;
   const cacheKey = `firestore:fixture:${fixtureId}:${currentUserId || 'anon'}`;
   const cached = getFromCache<Fixture>(cacheKey);
   if (cached) return cached;
@@ -3943,6 +3953,7 @@ export async function submitFixtureResultFirestore(
   awayScore: number,
   proofUrl?: string
 ): Promise<Fixture> {
+  assertFixtureNotRetired(fixtureId);
   assertNoSyntheticIdsInProduction('submitFixtureResultFirestore', [userId, fixtureId]);
   guardAgainstTestEntityCreation('submission', fixtureId, userId);
 
@@ -4816,6 +4827,7 @@ export async function reopenFixtureFirestore(
   notes?: string,
   options?: { authoritativeOnly?: boolean }
 ): Promise<{ success: boolean; fixtureId: string; authoritative?: boolean; isFallback?: boolean; pendingSync?: boolean }> {
+  assertFixtureNotRetired(fixtureId);
   assertNoSyntheticIdsInProduction('reopenFixtureFirestore', [adminUserId, fixtureId]);
   const now = new Date().toISOString();
 
@@ -6100,6 +6112,7 @@ export async function adminApproveFixtureResultFirestore(
   notes?: string,
   options?: { authoritativeOnly?: boolean }
 ): Promise<{ success: boolean; message: string; fixture: Fixture; authoritative?: boolean; isFallback?: boolean; pendingSync?: boolean }> {
+  assertFixtureNotRetired(fixtureId);
   assertNoSyntheticIdsInProduction('adminApproveFixtureResultFirestore', [adminUserId, fixtureId]);
   const now = new Date().toISOString();
   let winnerClubId: string | null = null;
@@ -6398,6 +6411,7 @@ export async function adminEditFixtureResultFirestore(
     idempotencyKey?: string;
   }
 ): Promise<{ success: boolean; message: string; fixture: Fixture; pendingSync?: boolean }> {
+  assertFixtureNotRetired(fixtureId);
   if (params.homeScore < 0 || params.awayScore < 0) {
     throw new Error('Scores must be non-negative integers.');
   }
@@ -6656,6 +6670,7 @@ export async function adminDeleteFixtureResultFirestore(
     idempotencyKey?: string;
   }
 ): Promise<{ success: boolean; message: string; fixture: Fixture; pendingSync?: boolean }> {
+  assertFixtureNotRetired(fixtureId);
   const now = new Date().toISOString();
   const mutationId =
     options?.idempotencyKey ||

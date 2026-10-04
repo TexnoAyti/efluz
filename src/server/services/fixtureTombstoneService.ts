@@ -1,3 +1,4 @@
+import { filterRetiredFixtures, isRetiredFixture } from './retiredFixtureService';
 import { Fixture, StandingsRow } from '../../types';
 import {
   ReadModelKeys,
@@ -51,6 +52,7 @@ export async function addFixtureTombstone(input: FixtureTombstone): Promise<void
 }
 
 export async function filterTombstonedFixtures<T extends { id: string }>(fixtures: T[], seasonId = 'season-2026-27'): Promise<T[]> {
+  fixtures = filterRetiredFixtures(fixtures, seasonId);
   if (!fixtures.length) return fixtures;
   const tombstones = await getFixtureTombstones(seasonId);
   if (!tombstones.length) return fixtures;
@@ -59,6 +61,7 @@ export async function filterTombstonedFixtures<T extends { id: string }>(fixture
 }
 
 export async function isFixtureTombstoned(fixtureId: string, seasonId = 'season-2026-27'): Promise<boolean> {
+  if (isRetiredFixture(fixtureId, seasonId)) return true;
   const tombstones = await getFixtureTombstones(seasonId);
   return tombstones.some((row) => row.fixtureId === fixtureId);
 }

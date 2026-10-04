@@ -1,3 +1,4 @@
+import { filterRetiredFixtures } from './retiredFixtureService';
 import crypto from 'crypto';
 import { Fixture } from '../../types';
 import {
@@ -209,7 +210,7 @@ async function fixtureReplyMarkup(fixture: Fixture, opponentUserId?: string, inc
 async function getCompetitionFixtureSnapshot(competitionId: string, seasonId: string): Promise<Fixture[]> {
   const key = ReadModelKeys.competitionFixtures(competitionId, seasonId);
   const snapshot = (await redisGetFresh<Fixture[]>(key)) || (await redisGetLkg<Fixture[]>(key));
-  return Array.isArray(snapshot?.data) ? snapshot!.data : [];
+  return Array.isArray(snapshot?.data) ? filterRetiredFixtures(snapshot!.data, seasonId) : [];
 }
 
 async function getCachedRecipient(userId: string, seasonId: string): Promise<RecipientDirectoryEntry | null> {

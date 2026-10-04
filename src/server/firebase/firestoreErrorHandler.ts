@@ -34,6 +34,9 @@ export function parseFirestoreError(err: any): FormattedFirestoreError {
       details: err.details || rawMsg,
     };
   }
+  if (strCode === 'FIXTURE_RETIRED') {
+    return { error: strCode, code: strCode, message: rawMsg, httpStatus: 409 };
+  }
   if (strCode === 'AUTHORITATIVE_WRITE_REQUIRED') {
     return { error: strCode, code: strCode, message: 'O‘zgarish saqlanmadi. Baza tiklangandan keyin qayta urinib ko‘ring.', httpStatus: 503 };
   }

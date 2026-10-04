@@ -1,3 +1,4 @@
+import { filterRetiredFixtures } from './retiredFixtureService';
 import { randomUUID } from 'node:crypto';
 import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS, FirestoreCompetitionDoc, FirestoreMatchdayLockDoc, FirestoreFixtureDoc } from '../firebase/collections';
@@ -24,7 +25,7 @@ async function loadCompetition(competitionId: string) {
   const competition = { ...doc.data(), id: competitionId } as FirestoreCompetitionDoc;
   const fixtureDocs = await db.collection(COLLECTIONS.FIXTURES).where('competitionId', '==', competitionId).get();
   const fixtures = fixtureDocs.docs.filter(d => !d.data().seasonId || d.data().seasonId === competition.seasonId).map(d => ({ ...d.data(), id: d.id } as FirestoreFixtureDoc));
-  return { db, ref, competition, fixtures };
+  return { db, ref, competition, fixtures: filterRetiredFixtures(fixtures, competition.seasonId) };
 }
 export async function getCompetitionMatchdayControl(competitionId: string) {
   const { db, competition, fixtures } = await loadCompetition(competitionId);

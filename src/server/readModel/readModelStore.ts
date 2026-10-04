@@ -1,3 +1,4 @@
+import { filterRetiredFixtures } from '../services/retiredFixtureService';
 /**
  * DURABLE UPSTASH REDIS READ MODEL STORE
  *
@@ -1804,7 +1805,7 @@ export async function getCompetitionFixturesFromReadModel(
     }
   }
 
-  let fixtures = rawFixtures;
+  let fixtures = filterRetiredFixtures(rawFixtures, seasonId);
   if (options.matchday !== undefined) {
     fixtures = fixtures.filter((fixture) => Number(fixture.matchday) === Number(options.matchday));
   }
@@ -1979,7 +1980,7 @@ export async function getAdminFixturesFromReadModel(
     effectiveSnapshotRes = { ...effectiveSnapshotRes, data: merged };
   }
 
-  let allFixtures = [...effectiveSnapshotRes.data].sort((a,b) => compareAdminFixtures(a,b));
+  let allFixtures = filterRetiredFixtures(effectiveSnapshotRes.data, seasonId).sort((a,b) => compareAdminFixtures(a,b));
 
   if (options.competitionId && options.competitionId !== 'ALL') {
     allFixtures = allFixtures.filter((f) => f.competitionId === options.competitionId);
