@@ -36,6 +36,7 @@ import { telegramRouter } from './routes/telegram.routes';
 import { premiumPrivateRouter } from './routes/premiumPrivate.routes';
 import { competitionConsistencyRouter, adminConsistencyRouter } from './routes/consistencyGuard.routes';
 import { seasonLifecycleRouter, adminSeasonLifecycleRouter } from './routes/seasonLifecycle.routes';
+import { adminAiConfigRouter } from './routes/adminAiConfig.routes';
 
 let dbInitPromise: Promise<void> | null = null;
 let dbReady = false;
@@ -173,6 +174,7 @@ export function createApp() {
   app.use('/api/admin', adminMatchControlRouter);
   app.use('/api/admin', adminConsistencyRouter);
   app.use('/api/admin', adminRouter);
+  app.use('/api/admin/telegram-ai', adminAiConfigRouter);
   app.use('/api/telegram', telegramRouter);
   app.use('/api/premium', premiumPrivateRouter);
 

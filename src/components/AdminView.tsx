@@ -67,15 +67,17 @@ import {
   Ban,
   UserX,
   Send,
+  Bot,
 } from 'lucide-react';
 import { AdminDomesticCupsTab } from './admin/AdminDomesticCupsTab';
 import { AdminEuropeanTab } from './admin/AdminEuropeanTab';
 import { AdminTelegramTab } from './admin/AdminTelegramTab';
 import { AdminNotificationsTab } from './admin/AdminNotificationsTab';
+import { AdminTelegramAiTab } from './admin/AdminTelegramAiTab';
 import { AdminClubIntegrityPanel } from './admin/AdminClubIntegrityPanel';
 import { AdminClubAdmissionPanel } from './admin/AdminClubAdmissionPanel';
 
-type AdminTab = 'overview' | 'clubs' | 'matches' | 'results' | 'competitions' | 'domestic_cups' | 'european' | 'telegram' | 'notifications' | 'users' | 'system';
+type AdminTab = 'overview' | 'clubs' | 'matches' | 'results' | 'competitions' | 'domestic_cups' | 'european' | 'telegram' | 'telegram_ai' | 'notifications' | 'users' | 'system';
 
 interface PendingFixtureItem extends Fixture {
   submissions?: {
@@ -1004,6 +1006,20 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
         >
           <Send className="w-4 h-4 text-sky-400" />
           <span>{t.adminTelegramBot}</span>
+        </button>)}
+
+        {/* 5D. TELEGRAM AI ASSISTANT */}
+        {!isScoped && (<button
+          id="tab-admin-telegram-ai"
+          onClick={() => setActiveAdminTab('telegram_ai')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all min-h-[40px] ${
+            activeAdminTab === 'telegram_ai'
+              ? 'btn-glass-primary text-slate-950 font-black shadow-lg shadow-emerald-500/25 scale-[1.02]'
+              : 'glass-card text-slate-300 hover:text-white'
+          }`}
+        >
+          <Bot className="w-4 h-4 text-emerald-400" />
+          <span>Telegram AI</span>
         </button>)}
 
         {/* 6. PLAYERS */}
@@ -2308,6 +2324,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
       {/* 5C. TELEGRAM NOTIFICATIONS SECTION */}
       {/* ========================================================================= */}
       {activeAdminTab === 'telegram' && <AdminTelegramTab />}
+      {activeAdminTab === 'telegram_ai' && <AdminTelegramAiTab />}
       {activeAdminTab === 'notifications' && <AdminNotificationsTab />}
 
       {/* ========================================================================= */}

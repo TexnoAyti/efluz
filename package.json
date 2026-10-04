@@ -17,6 +17,7 @@
     "test:tournament-control-v2": "node scripts/run-isolated-test.mjs src/server/tests/tournamentControlV2ContractTest.ts",
     "test:season-operations-v3": "node scripts/run-isolated-test.mjs src/server/tests/seasonOperationsV3ContractTest.ts",
     "test:match-operations-v4": "node scripts/run-isolated-test.mjs src/server/tests/matchOperationsV4ContractTest.ts",
+    "test:telegram-ai": "node scripts/run-isolated-test.mjs src/server/tests/telegramAiAssistantRegressionTest.ts",
     "dev": "tsx server.ts",
     "build": "vite build && node --import tsx src/server/buildAssets.ts && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && esbuild src/server/apiEntry.ts --bundle --platform=node --format=esm --packages=external --sourcemap --outfile=api/index.js && node scripts/run-isolated-test.mjs src/server/tests/deploymentSelfCheck.ts",
     "build:assets": "node --import tsx src/server/buildAssets.ts",

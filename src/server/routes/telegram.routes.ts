@@ -21,6 +21,14 @@ import {
   listPremiumEntitlements,
   revokePremiumEntitlement,
 } from '../services/premiumService';
+import {
+  PRIMARY_OWNER_TELEGRAM_ID,
+  isPrimaryOwner,
+  getTelegramAiConfig,
+  bindTelegramAiTopic,
+} from '../services/telegramAiConfigService';
+import { getAiRateLimitMetrics } from '../services/telegramAiRateLimitService';
+import { handleTelegramAiMessage } from '../services/telegramAiService';
 
 export const telegramRouter = Router();
 // A processing lease is separate from acknowledgement: failed work remains retryable.
@@ -124,7 +132,7 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
         }
         response = { ok: true, handled: 'premium_successful_payment', result };
       } else if (typeof message?.text === 'string' && Number.isSafeInteger(message.chat?.id) && Number.isSafeInteger(message.from?.id)) {
-        const command = /^\/(start|help|paysupport)(?:@[a-zA-Z0-9_]+)?(?:\s|$)/.exec(message.text.trim())?.[1];
+        const command = /^\/(start|help|paysupport|bind_ai_topic|ai_status)(?:@[a-zA-Z0-9_]+)?(?:\s|$)/.exec(message.text.trim())?.[1];
         if (command === 'start') {
           const result = await handleTelegramStart(message.chat.id, message.from);
           if (!result.ok || !result.messageSent) throw new Error('START_MESSAGE_NOT_SENT');
@@ -139,6 +147,83 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
           });
           if (!result.ok) throw new Error('SUPPORT_MESSAGE_NOT_SENT');
           response = { ok: true, handled: command };
+        } else if (command === 'bind_ai_topic') {
+          if (message.sender_chat || !isPrimaryOwner(message.from?.id)) {
+            await sendTelegramMessage(message.chat.id, `Faqat asosiy admin (ID: ${PRIMARY_OWNER_TELEGRAM_ID}) bu buyruqni ishlatishi mumkin. Anonim admin rejimidan foydalanish taqiqlangan.`, {
+              message_thread_id: message.message_thread_id,
+              reply_to_message_id: message.message_id,
+              parse_mode: null,
+            }).catch(() => undefined);
+            response = { ok: true, handled: 'bind_ai_topic', rejected: 'unauthorized_owner_only' };
+          } else if (!message.message_thread_id) {
+            await sendTelegramMessage(message.chat.id, "Ushbu buyruqni faqat guruhning AI yordamchi uchun mo'ljallangan mavzusi (forum topic) ichida yozish kerak.", {
+              reply_to_message_id: message.message_id,
+              parse_mode: null,
+            }).catch(() => undefined);
+            response = { ok: true, handled: 'bind_ai_topic', rejected: 'thread_id_missing' };
+          } else {
+            const bindResult = await bindTelegramAiTopic(message.chat.id, message.message_thread_id, message.from.id);
+            if (!bindResult.success) {
+              await sendTelegramMessage(message.chat.id, `Xatolik: mavzuni bog'lab bo'lmadi (${bindResult.error}). Redis xizmati ulanganligini tekshiring.`, {
+                message_thread_id: message.message_thread_id,
+                reply_to_message_id: message.message_id,
+                parse_mode: null,
+              }).catch(() => undefined);
+              response = { ok: true, handled: 'bind_ai_topic', error: bindResult.error };
+            } else {
+              const replyMsg =
+                `✅ <b>Mavzu muvaffaqiyatli bog'landi!</b>\n\n` +
+                `• Chat ID: <code>${message.chat.id}</code>\n` +
+                `• Topic/Thread ID: <code>${message.message_thread_id}</code>\n\n` +
+                `<i>Eslatma: Xavfsizlik uchun AI dastlab o'chiq (OFF) holatda qoladi. Uni faollashtirish uchun veb Admin paneldagi Telegram AI bo'limidan 'Yoqish' tugmasini bosing.</i>`;
+              await sendTelegramMessage(message.chat.id, replyMsg, {
+                message_thread_id: message.message_thread_id,
+                reply_to_message_id: message.message_id,
+                parse_mode: 'HTML',
+              });
+              response = { ok: true, handled: 'bind_ai_topic', bound: true, config: bindResult.config };
+            }
+          }
+        } else if (command === 'ai_status') {
+          if (message.sender_chat || !isPrimaryOwner(message.from?.id)) {
+            await sendTelegramMessage(message.chat.id, `Faqat asosiy admin (ID: ${PRIMARY_OWNER_TELEGRAM_ID}) bu buyruqni ishlatishi mumkin. Anonim admin rejimidan foydalanish taqiqlangan.`, {
+              message_thread_id: message.message_thread_id,
+              reply_to_message_id: message.message_id,
+              parse_mode: null,
+            }).catch(() => undefined);
+            response = { ok: true, handled: 'ai_status', rejected: 'unauthorized_owner_only' };
+          } else {
+            const { config, redisAvailable } = await getTelegramAiConfig();
+            const rateMetrics = await getAiRateLimitMetrics();
+            const statusMsg =
+              `🤖 <b>EFL UZ Telegram AI Holati:</b>\n\n` +
+              `• AI Xizmati: <b>${config.enabled ? '🟢 FAOL (ON)' : "🔴 O'CHIQ (OFF)"}</b>\n` +
+              `• Bog'langan Chat ID: <code>${config.allowedChatId ?? "Bog'lanmagan"}</code>\n` +
+              `• Bog'langan Thread ID: <code>${config.allowedThreadId ?? "Bog'lanmagan"}</code>\n` +
+              `• Redis Holati: <b>${redisAvailable ? 'Ulangan' : 'Uzilgan (Fail-Closed)'}</b>\n` +
+              `• Bugungi so'rovlar: <code>${rateMetrics.dailyRequests}/${config.maxDailyRequests}</code>\n` +
+              `• User so'rov limiti: <code>${config.rateLimitUserPerMin} req/min</code>\n` +
+              `• Mavzu limiti: <code>${config.rateLimitTopicPerMin} req/min</code>\n\n` +
+              `<i>/ai_status faqat ma'lumot beradi va mavzuni o'zgartirmaydi.</i>`;
+            await sendTelegramMessage(message.chat.id, statusMsg, {
+              message_thread_id: message.message_thread_id,
+              reply_to_message_id: message.message_id,
+              parse_mode: 'HTML',
+            });
+            response = { ok: true, handled: 'ai_status' };
+          }
+        } else if (!command && Number.isSafeInteger(message.message_thread_id)) {
+          // Regular user message in a forum topic thread: delegate to AI assistant
+          const aiResult = await handleTelegramAiMessage({
+            updateId: update.update_id,
+            messageId: message.message_id,
+            chatId: message.chat.id,
+            threadId: message.message_thread_id,
+            fromUser: message.from,
+            text: message.text,
+            replyToMessage: message.reply_to_message,
+          });
+          response = { ok: true, handled: 'ai_topic_message', result: aiResult };
         }
       }
     }

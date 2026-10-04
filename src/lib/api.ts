@@ -1253,4 +1253,75 @@ export const api = {
   async processTelegramQueue(): Promise<any> {
     return request('/api/admin/telegram-notifications/process-queue', { method: 'POST', skipCache: true });
   },
+
+  async getTelegramAiConfig(): Promise<{
+    success: boolean;
+    config: {
+      enabled: boolean;
+      allowedChatId: number | null;
+      allowedThreadId: number | null;
+      groupUsername: string;
+      rateLimitUserPerMin: number;
+      rateLimitTopicPerMin: number;
+      maxDailyRequests: number;
+      updatedAt: string;
+      updatedBy: string;
+    };
+    redisAvailable: boolean;
+    model: {
+      name: string;
+      apiKeyConfigured: boolean;
+      billingNotice: string;
+    };
+  }> {
+    return request('/api/admin/telegram-ai/config', { skipCache: true });
+  },
+
+  async updateTelegramAiConfig(updates: {
+    enabled?: boolean;
+    allowedChatId?: number | null;
+    allowedThreadId?: number | null;
+    rateLimitUserPerMin?: number;
+    rateLimitTopicPerMin?: number;
+    maxDailyRequests?: number;
+  }): Promise<{ success: boolean; config: any }> {
+    return request('/api/admin/telegram-ai/config', {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+      skipCache: true,
+    });
+  },
+
+  async getTelegramAiDiagnostics(): Promise<{
+    success: boolean;
+    config: any;
+    redisAvailable: boolean;
+    metrics: {
+      todayRequests: number;
+      dailyLimit: number;
+      remainingDaily: number;
+    };
+    model: {
+      configuredModel: string;
+      apiKeyConfigured: boolean;
+      billingNotice: string;
+    };
+  }> {
+    return request('/api/admin/telegram-ai/diagnostics', { skipCache: true });
+  },
+
+  async testTelegramAiQuery(query: string): Promise<{
+    success: boolean;
+    query: string;
+    detectedClubs: string[];
+    detectedCompetitions: string[];
+    hasStaleData: boolean;
+    factsSummary: string;
+  }> {
+    return request('/api/admin/telegram-ai/test-query', {
+      method: 'POST',
+      body: JSON.stringify({ query }),
+      skipCache: true,
+    });
+  },
 };

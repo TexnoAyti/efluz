@@ -131,13 +131,21 @@ export async function verifyTelegramGroupMembership(
   }
 }
 
+export interface TelegramSendMessageOptions {
+  parse_mode?: string | null;
+  reply_markup?: any;
+  message_thread_id?: number | null;
+  reply_to_message_id?: number | null;
+  signal?: AbortSignal;
+}
+
 /**
  * Sends a Telegram text message using the Bot API
  */
 export async function sendTelegramMessage(
   chatId: number | string,
   text: string,
-  options: { parse_mode?: string; reply_markup?: any } = {}
+  options: TelegramSendMessageOptions = {}
 ): Promise<{ ok: boolean; result?: any; error?: string; error_code?: number; parameters?: { retry_after?: number } }> {
   const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
   if (!botToken) {
@@ -146,16 +154,28 @@ export async function sendTelegramMessage(
 
   const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
   try {
+    const body: Record<string, any> = {
+      chat_id: chatId,
+      text,
+    };
+    if (options.parse_mode !== null && options.parse_mode !== undefined) {
+      body.parse_mode = options.parse_mode || 'HTML';
+    }
+    if (options.reply_markup) {
+      body.reply_markup = options.reply_markup;
+    }
+    if (options.message_thread_id) {
+      body.message_thread_id = options.message_thread_id;
+    }
+    if (options.reply_to_message_id) {
+      body.reply_to_message_id = options.reply_to_message_id;
+    }
+
     const res = await fetch(url, {
-      signal: AbortSignal.timeout(10000),
+      signal: options.signal || AbortSignal.timeout(10000),
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text,
-        parse_mode: options.parse_mode || 'HTML',
-        reply_markup: options.reply_markup,
-      }),
+      body: JSON.stringify(body),
     });
     const data: any = await res.json();
     return { ...data, error: data.description || data.error };
