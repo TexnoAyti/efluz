@@ -13,9 +13,13 @@ const fixture=(id:string,status:string,matchday=10,seasonId='season-2026-27'):Fi
 const matches=matchdayImageModel('Serie A','season-2026-27',[fixture('id-md1','CONFIRMED'),fixture('pending','PENDING_CONFIRMATION'),fixture('disputed','DISPUTED'),fixture('old','CONFIRMED',10,'season-2025-26'),fixture('wrong-round','CONFIRMED',1)],10,'uz');
 assert.equal(matches.rows.length,3);assert.equal(matches.rows.find(row=>row.score==='0 : 0')?.id,'club-inter');
 assert.equal(matches.rows.filter(row=>row.score==='VS'&&row.status==='Tekshiruvda').length,2);
-assert.equal(matches.round,'Tur 10');assert.equal(imageFilename('../comp:x','matchday',10),'efluz-compx-matchday-10.png');
+assert.equal(matches.round,'10-tur');assert.equal(imageFilename('../comp:x','matchday',10),'efluz-compx-matchday-10.png');
+assert.equal(matchdayImageModel('Serie A','season-2026-27',[{...fixture('round','CONFIRMED'),roundName:'Matchday 10'}],10,'uz').round,'10-tur');
+assert.equal(matchdayImageModel('Cup','season-2026-27',[{...fixture('cup','CONFIRMED'),roundName:'Final'}],10,'uz').round,'Final');
+assert.equal(matchdayImageModel('League','season-2026-27',[{...fixture('win','CONFIRMED'),homeScore:3,awayScore:1}],10,'uz').rows[0].winner,'home');
+assert.equal(matchdayImageModel('League','season-2026-27',[{...fixture('pending-win','PENDING_CONFIRMATION'),homeScore:3,awayScore:1}],10,'uz').rows[0].winner,undefined);
 const drawn:string[]=[];
-const ctx:any={canvas:{width:0,height:0},fillRect(){},measureText(text:string){return{width:text.length*10}},fillText(text:string){drawn.push(text)},drawImage(){}};
+const ctx:any={canvas:{width:0,height:0},fillRect(){},beginPath(){},roundRect(){},fill(){},measureText(text:string){return{width:text.length*10}},fillText(text:string){drawn.push(text)},drawImage(){}};
 paintTournamentImage(ctx,table);
 assert.equal(ctx.canvas.width,1080);assert.ok(ctx.canvas.height>1500);
 for(const row of standings)assert.ok(drawn.includes(row.clubName),'All table rows included, without viewport clipping');
