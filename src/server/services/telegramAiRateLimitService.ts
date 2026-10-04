@@ -1,3 +1,4 @@
+import { getAiRedisClient, withinAiDeadline } from './telegramAiDeadline';
 /**
  * Telegram AI Rate Limit & Quota Service
  *
@@ -8,7 +9,7 @@
  * 4. Production fail-closed contract when Redis is unreachable
  */
 
-import { getUpstashClient, KEY_PREFIX } from '../readModel/readModelStore';
+import { KEY_PREFIX } from '../readModel/readModelStore';
 
 export interface RateLimitCheckResult {
   allowed: boolean;
@@ -174,7 +175,7 @@ export async function checkAndIncrementAiRateLimits(params: {
     return { allowed: false, reason: 'REDIS_UNAVAILABLE' };
   }
 
-  const client = getUpstashClient();
+  const client = getAiRedisClient(params.signal);
   const isProd = process.env.NODE_ENV === 'production';
 
   const today = new Date().toISOString().slice(0, 10);
@@ -235,10 +236,7 @@ export async function checkAndIncrementAiRateLimits(params: {
     return { allowed: false, reason: 'USER_LIMIT_EXCEEDED', current: count, limit: params.userLimitPerMin, shouldNotifyUser: false };
   } catch (err: any) {
     console.error('[AI RATE LIMIT] Redis atomic rate limit evaluation failed:', err?.message || err);
-    if (isProd) {
-      return { allowed: false, reason: 'REDIS_UNAVAILABLE' };
-    }
-    return { allowed: true };
+    return { allowed: false, reason: 'REDIS_UNAVAILABLE' };
   }
 }
 
@@ -250,7 +248,7 @@ export async function getAiRateLimitMetrics(todayStr?: string): Promise<{
   date: string;
 }> {
   const date = todayStr || new Date().toISOString().slice(0, 10);
-  const client = getUpstashClient();
+  const client = getAiRedisClient();
   if (!client) {
     const dailyKey = `${KEY_PREFIX}:telegram:ai:daily:${date}`;
     const memory = testMemoryCounters.get(dailyKey);

@@ -1,3 +1,4 @@
+import { getAiRedisClient, withinAiDeadline } from './telegramAiDeadline';
 /**
  * Telegram AI Assistant Configuration Service
  *
@@ -8,7 +9,7 @@
  * 4. Topic binding without auto-enabling AI
  */
 
-import { getUpstashClient, KEY_PREFIX } from '../readModel/readModelStore';
+import { KEY_PREFIX } from '../readModel/readModelStore';
 
 export const PRIMARY_OWNER_TELEGRAM_ID = '5209126900';
 
@@ -68,7 +69,7 @@ export async function getTelegramAiConfig(options?: { signal?: AbortSignal }): P
     return { config: { ...testConfigOverride }, redisAvailable: true };
   }
 
-  const client = getUpstashClient();
+  const client = getAiRedisClient(options?.signal);
   if (!client) {
     // Fail-closed: do not allow AI to run if Redis is unavailable in production
     return {
@@ -81,8 +82,9 @@ export async function getTelegramAiConfig(options?: { signal?: AbortSignal }): P
     const raw = await client.get<string | TelegramAiConfig>(getAiConfigRedisKey());
     if (!raw) {
       // Store default configuration atomically
-      await client.set(getAiConfigRedisKey(), JSON.stringify(DEFAULT_AI_CONFIG));
-      return { config: { ...DEFAULT_AI_CONFIG }, redisAvailable: true };
+      await client.set(getAiConfigRedisKey(), JSON.stringify(DEFAULT_AI_CONFIG), { nx: true });
+      return getTelegramAiConfig(options);
+
     }
 
     const parsed: TelegramAiConfig = typeof raw === 'string' ? JSON.parse(raw) : raw;
@@ -121,7 +123,7 @@ export async function updateTelegramAiConfig(
     return { success: false, error: 'OWNER_ONLY_UNAUTHORIZED' };
   }
 
-  const client = getUpstashClient();
+  const client = getAiRedisClient();
   if (!client && !testConfigOverride) {
     return { success: false, error: 'REDIS_UNAVAILABLE_CANNOT_PERSIST' };
   }

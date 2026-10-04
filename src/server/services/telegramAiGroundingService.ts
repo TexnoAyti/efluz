@@ -6,14 +6,25 @@
  * Formats exact positions, scores, and standings server-side with stale disclosures.
  */
 
-import {
-  getCompetitionsFromReadModel,
-  getCompetitionStandingsFromReadModel,
-  getCompetitionFixturesFromReadModel,
-  getAdminClubsFromReadModel,
-} from '../readModel/readModelStore';
+import { ReadModelKeys, getFreshKey, getLkgKey, getDirtyKey, ReadModelSnapshot } from '../readModel/readModelStore';
+import { getAiRedisClient } from './telegramAiDeadline';
 import { SEED_COMPETITIONS, SEED_CLUBS } from '../db/seed';
 import { Competition, StandingsRow, Fixture, Club } from '../../types';
+
+/** AI reads cached snapshots only; cache misses never trigger Firestore refreshes. */
+async function readAiSnapshot<T>(key: string, signal?: AbortSignal): Promise<{ data: T[]; stale: boolean }> {
+  const client = getAiRedisClient(signal);
+  if (!client || signal?.aborted) return { data: [], stale: true };
+  const [freshRaw, dirty] = await client.mget<unknown[]>(getFreshKey(key), getDirtyKey(key));
+  const decode = (raw: unknown): ReadModelSnapshot<T[]> | null => {
+    const snapshot = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return snapshot && typeof snapshot === 'object' && Array.isArray(snapshot.data) ? snapshot : null;
+  };
+  const fresh = decode(freshRaw);
+  if (fresh && !dirty) return { data: fresh.data, stale: false };
+  const lkg = decode(await client.get(getLkgKey(key)));
+  return { data: lkg?.data || fresh?.data || [], stale: true };
+}
 
 export interface GroundingContext {
   factsSummary: string;
@@ -75,9 +86,9 @@ export async function buildAiGroundingContext(
       competitions = testGroundingOverride.competitions;
     } else {
       try {
-        const compsResult = await getCompetitionsFromReadModel(seasonId);
+        const compsResult = await readAiSnapshot<Competition>(ReadModelKeys.competitions(seasonId), options?.signal);
         if (compsResult.stale) hasStaleData = true;
-        competitions = compsResult.competitions || [];
+        competitions = compsResult.data.length ? compsResult.data : SEED_COMPETITIONS as unknown as Competition[];
       } catch {
         hasStaleData = true;
         competitions = (SEED_COMPETITIONS as any[]) || [];
@@ -100,8 +111,9 @@ export async function buildAiGroundingContext(
     // 2. Fetch clubs to detect club mentions (covers bottom/mid-table clubs as well)
     let allClubs: Club[] = [];
     try {
-      const clubsResult = await getAdminClubsFromReadModel();
-      allClubs = clubsResult.clubs || [];
+      const clubsResult = await readAiSnapshot<Club>(ReadModelKeys.clubsWithOwners(seasonId), options?.signal);
+      if (clubsResult.stale) hasStaleData = true;
+      allClubs = clubsResult.data.length ? clubsResult.data : SEED_CLUBS as unknown as Club[];
     } catch {
       allClubs = (SEED_CLUBS as any[]) || [];
     }
@@ -153,9 +165,9 @@ export async function buildAiGroundingContext(
           );
           if (matchKey) rows = testGroundingOverride.standings[matchKey];
         } else {
-          const standingsResult = await getCompetitionStandingsFromReadModel(compId, seasonId);
+          const standingsResult = await readAiSnapshot<StandingsRow>(ReadModelKeys.standings(compId, seasonId), options?.signal);
           if (standingsResult.stale) hasStaleData = true;
-          rows = standingsResult.standings || [];
+          rows = standingsResult.data;
         }
 
         if (rows.length > 0) {
@@ -189,15 +201,19 @@ export async function buildAiGroundingContext(
           );
           if (matchKey) fixtures = testGroundingOverride.fixtures[matchKey];
         } else {
-          const fixturesResult = await getCompetitionFixturesFromReadModel(compId, { seasonId });
+          let fixturesResult = await readAiSnapshot<Fixture>(ReadModelKeys.competitionFixtures(compId, seasonId), options?.signal);
+          if (!fixturesResult.data.length) {
+            const adminSnapshot = await readAiSnapshot<Fixture>(ReadModelKeys.adminFixtures(seasonId), options?.signal);
+            fixturesResult = { data: adminSnapshot.data.filter(f => f.competitionId === compId), stale: adminSnapshot.stale };
+          }
           if (fixturesResult.stale) hasStaleData = true;
-          fixtures = fixturesResult.fixtures || [];
+          fixtures = fixturesResult.data;
         }
 
         // Filter fixtures: confirmed matches or matches involving detected clubs
         const relevantFixtures = fixtures.filter((f) => {
-          const homeName = (f.homeClub?.name || (f as any).homeClubName || f.homeClubId || '').toLowerCase();
-          const awayName = (f.awayClub?.name || (f as any).awayClubName || f.awayClubId || '').toLowerCase();
+          const homeName = (f.homeClub?.name || (f as any).homeClubName || allClubs.find(c => c.id === f.homeClubId)?.name || f.homeClubId || '').toLowerCase();
+          const awayName = (f.awayClub?.name || (f as any).awayClubName || allClubs.find(c => c.id === f.awayClubId)?.name || f.awayClubId || '').toLowerCase();
           if (detectedClubs.length > 0) {
             return detectedClubs.some(
               (dc) => homeName.includes(dc.toLowerCase()) || awayName.includes(dc.toLowerCase())
@@ -208,8 +224,8 @@ export async function buildAiGroundingContext(
 
         if (relevantFixtures.length > 0) {
           const fixLines = relevantFixtures.map((f) => {
-            const homeName = f.homeClub?.name || (f as any).homeClubName || f.homeClubId || 'Home';
-            const awayName = f.awayClub?.name || (f as any).awayClubName || f.awayClubId || 'Away';
+            const homeName = f.homeClub?.name || (f as any).homeClubName || allClubs.find(c => c.id === f.homeClubId)?.name || f.homeClubId || 'Home';
+            const awayName = f.awayClub?.name || (f as any).awayClubName || allClubs.find(c => c.id === f.awayClubId)?.name || f.awayClubId || 'Away';
             if (f.status === 'CONFIRMED') {
               return `[CONFIRMED] MD ${f.matchday}: ${homeName} ${f.homeScore} - ${f.awayScore} ${awayName}`;
             }

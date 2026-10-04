@@ -552,6 +552,21 @@ async function runTests() {
     console.log('✅ TEST 10 PASSED: Lua concurrency for rate limits and delivery claims verified.\n');
 
     console.log('================================================================');
+    // A stalled model must return at the global deadline without dispatching later.
+    clearTestAiState();
+    clearTestRateLimitState();
+    sentTelegramMessages.length = 0;
+    await updateTelegramAiConfig({ enabled: true }, PRIMARY_OWNER_TELEGRAM_ID);
+    setTestAiResponder(() => new Promise<string>(() => {}));
+    const deadlineStarted = Date.now();
+    const stalled = await handleTelegramAiMessage({
+      updateId: 991122, messageId: 991122, chatId: -100999888, threadId: 3503,
+      fromUser: { id: 991122 }, text: 'Arsenal haqida ayting',
+    });
+    assert.equal(stalled.error, 'TIMEOUT_ABORTED');
+    assert.ok(Date.now() - deadlineStarted < 7500, 'A stalled model must not hold the webhook indefinitely');
+    assert.equal(sentTelegramMessages.length, 0, 'Deadline expiry must prevent all dispatches');
+    console.log('PASS global deadline: stalled model returns without Telegram dispatch.');
     console.log('   ALL 10 TELEGRAM AI ASSISTANT REGRESSION SUITES PASSED!      ');
     console.log('================================================================');
   } finally {

@@ -1,3 +1,4 @@
+import { getAiRedisClient, withinAiDeadline } from './telegramAiDeadline';
 /**
  * Telegram AI Assistant Main Orchestration Service
  *
@@ -17,7 +18,7 @@
  */
 
 import { GoogleGenAI } from '@google/genai';
-import { getUpstashClient, KEY_PREFIX } from '../readModel/readModelStore';
+import { KEY_PREFIX } from '../readModel/readModelStore';
 import { getTelegramAiConfig } from './telegramAiConfigService';
 import { checkAndIncrementAiRateLimits } from './telegramAiRateLimitService';
 import { buildAiGroundingContext } from './telegramAiGroundingService';
@@ -132,8 +133,9 @@ export async function claimDeliveryState(
     return 'redis_error';
   }
 
-  const client = getUpstashClient();
+  const client = getAiRedisClient(options?.signal);
   if (!client) {
+    if (process.env.NODE_ENV !== 'test') return 'redis_error';
     const existing = testDeliveryStore.get(updateId);
     if (targetState === 'pending') {
       if (existing === 'sending' || existing === 'sent' || existing === 'unknown_timeout') {
@@ -200,8 +202,8 @@ export async function indexBotSentMessage(
   targetUserId: number,
   options?: { signal?: AbortSignal }
 ): Promise<void> {
-  const client = getUpstashClient();
-  const key = `${KEY_PREFIX}:telegram:ai:botmsg:${messageId}`;
+  const client = getAiRedisClient(options?.signal);
+  const key = `${KEY_PREFIX}:telegram:ai:botmsg:${chatId}:${threadId}:${messageId}`;
   const payload = JSON.stringify({ chatId, threadId, userId: targetUserId });
 
   if (!client) {
@@ -251,8 +253,8 @@ export async function isReplyToOurBotForUser(
   }
 
   // 2. Check if the message ID was indexed for this chat, thread, and user
-  const client = getUpstashClient();
-  const msgKey = `${KEY_PREFIX}:telegram:ai:botmsg:${replyToMessage.message_id}`;
+  const client = getAiRedisClient(options?.signal);
+  const msgKey = `${KEY_PREFIX}:telegram:ai:botmsg:${currentChatId}:${currentThreadId}:${replyToMessage.message_id}`;
 
   if (!client) {
     const record = testBotMessageStore.get(replyToMessage.message_id);
@@ -298,7 +300,7 @@ async function getConversationContext(
 ): Promise<ConversationTurn[]> {
   if (testRedisOutage || options?.signal?.aborted) return [];
 
-  const client = getUpstashClient();
+  const client = getAiRedisClient(options?.signal);
   const contextKey = `${KEY_PREFIX}:telegram:ai:context:${chatId}:${threadId}:${userId}`;
 
   if (!client) {
@@ -335,7 +337,7 @@ async function saveConversationContext(
 ): Promise<void> {
   if (testRedisOutage || options?.signal?.aborted) return;
 
-  const client = getUpstashClient();
+  const client = getAiRedisClient(options?.signal);
   const contextKey = `${KEY_PREFIX}:telegram:ai:context:${chatId}:${threadId}:${userId}`;
 
   const existing = await getConversationContext(chatId, threadId, userId, options);
@@ -397,7 +399,7 @@ async function dispatchTelegramAiReply(
   // 1. Deadline check
   if (signal.aborted) {
     console.warn('[AI DISPATCH] Request timed out before message dispatch');
-    await claimDeliveryState(payload.updateId, 'unknown_timeout');
+    await claimDeliveryState(payload.updateId, 'unknown_timeout', { signal });
     return { ok: false, replySent: false, ignored: 'TIMEOUT_ABORTED' };
   }
 
@@ -412,7 +414,7 @@ async function dispatchTelegramAiReply(
     Number(freshConfig.allowedThreadId) !== Number(payload.threadId)
   ) {
     console.warn('[AI DISPATCH] Pre-send re-check failed; aborting send to Telegram');
-    await claimDeliveryState(payload.updateId, 'sent');
+    await claimDeliveryState(payload.updateId, 'sent', { signal });
     return { ok: false, replySent: false, ignored: 'disabled_or_unauthorized_pre_send' };
   }
 
@@ -442,7 +444,7 @@ async function dispatchTelegramAiReply(
   });
 
   if (sendResult.ok) {
-    await claimDeliveryState(payload.updateId, 'sent');
+    await claimDeliveryState(payload.updateId, 'sent', { signal });
     const botMsgId = sendResult.result?.message_id;
     if (Number.isSafeInteger(botMsgId)) {
       await indexBotSentMessage(botMsgId, payload.chatId, payload.threadId, payload.fromUser.id, { signal });
@@ -450,7 +452,7 @@ async function dispatchTelegramAiReply(
     return { ok: true, replySent: true };
   } else {
     console.warn('[AI DISPATCH] Telegram send failed/uncertain:', sendResult.error);
-    await claimDeliveryState(payload.updateId, 'unknown_timeout');
+    await claimDeliveryState(payload.updateId, 'unknown_timeout', { signal });
     return { ok: false, replySent: false, error: sendResult.error };
   }
 }
@@ -521,7 +523,7 @@ export async function handleTelegramAiMessage(
           { parse_mode: null }
         );
       } else {
-        await claimDeliveryState(payload.updateId, 'sent');
+        await claimDeliveryState(payload.updateId, 'sent', { signal: rootController.signal });
       }
       return { ok: true, handled: true, ignored: rateLimit.reason };
     }
@@ -558,6 +560,8 @@ export async function handleTelegramAiMessage(
       }
     }
 
+    if (rootController.signal.aborted) throw new Error('TIMEOUT_ABORTED');
+
     // Save history capture for test verification
     lastModelCallHistory = history;
 
@@ -565,7 +569,7 @@ export async function handleTelegramAiMessage(
     let replyText = '';
 
     if (testAiResponder) {
-      replyText = await testAiResponder(payload.text, grounding.factsSummary, history);
+      replyText = await withinAiDeadline(rootController.signal, () => testAiResponder!(payload.text, grounding.factsSummary, history));
     } else {
       const apiKey = process.env.GEMINI_API_KEY?.trim();
       if (!apiKey) {
@@ -596,7 +600,7 @@ ${grounding.factsSummary}`;
         ];
 
         try {
-          const aiResponse = await ai.models.generateContent({
+          const aiResponse = await withinAiDeadline(rootController.signal, () => ai.models.generateContent({
             model: modelName,
             contents,
             config: {
@@ -605,13 +609,13 @@ ${grounding.factsSummary}`;
               maxOutputTokens: 400,
               abortSignal: rootController.signal, // Cancels Gemini API call when deadline aborts
             },
-          });
+          }));
           replyText = aiResponse.text?.trim() || '';
         } catch (apiErr: any) {
           const errMsg = String(apiErr?.message || '');
           if (rootController.signal.aborted) {
             console.warn('[AI GEMINI] Gemini call cancelled due to deadline timeout');
-            await claimDeliveryState(payload.updateId, 'unknown_timeout');
+            await claimDeliveryState(payload.updateId, 'unknown_timeout', { signal: rootController.signal });
             return { ok: false, handled: false, error: 'TIMEOUT_ABORTED' };
           }
           if (errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('quota')) {
@@ -659,7 +663,7 @@ ${grounding.factsSummary}`;
     }
   } catch (err: any) {
     console.error('[AI HANDLER ERROR]', err?.message || err);
-    await claimDeliveryState(payload.updateId, 'unknown_timeout');
+    await claimDeliveryState(payload.updateId, 'unknown_timeout', { signal: rootController.signal });
     return { ok: false, handled: false, error: err?.message || 'UNKNOWN_ERROR' };
   } finally {
     clearTimeout(globalTimeout);

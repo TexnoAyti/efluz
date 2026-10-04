@@ -262,7 +262,8 @@ async function main() {
     assert.equal(realClaimOk, 1, 'Real Redis Lua must allow exactly one claim to sending state');
     assert.equal(realClaimHandled, 2, 'Concurrent delivery claims must return already_handled');
 
-    // 3. Bot message indexing in real Redis
+    // 3. Bot message indexing in real Redis (isolated dummy bot identity)
+    process.env.TELEGRAM_BOT_TOKEN = '123456:isolated_redis_test_token';
     await aiService.indexBotSentMessage(888777, -100999888, 3503, 12345);
     const isReplyMatch = await aiService.isReplyToOurBotForUser(
       { message_id: 888777, from: { id: aiService.getConfiguredBotUserId() || 123456, is_bot: true } },
@@ -279,6 +280,29 @@ async function main() {
       99999
     );
     assert.equal(isWrongUserMatch, false, 'Different user must NOT match bot message index');
+    // Fail closed on transport errors and cancel an in-flight Redis request.
+    const healthyFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = async () => { throw new Error('isolated Redis transport outage'); };
+      assert.equal(await aiService.claimDeliveryState(777998, 'sending'), 'redis_error');
+      const blockedRate = await aiRateService.checkAndIncrementAiRateLimits({
+        chatId: -100999888, threadId: 3503, userId: 12345,
+        userLimitPerMin: 3, topicLimitPerMin: 15, maxDailyRequests: 500,
+      });
+      assert.equal(blockedRate.allowed, false);
+      let transportAborted = false;
+      globalThis.fetch = async (_input: any, init?: any) => new Promise<Response>((_resolve, reject) => {
+        const onAbort = () => { transportAborted = true; reject(new Error('isolated Redis request aborted')); };
+        if (init?.signal?.aborted) onAbort();
+        else init?.signal?.addEventListener('abort', onAbort, { once: true });
+      });
+      const controller = new AbortController();
+      const pendingClaim = aiService.claimDeliveryState(777997, 'sending', { signal: controller.signal });
+      await new Promise(resolve => setTimeout(resolve, 20));
+      controller.abort();
+      assert.equal(await pendingClaim, 'redis_error');
+      assert.equal(transportAborted, true, 'Abort must reach the actual Redis fetch transport');
+    } finally { globalThis.fetch = healthyFetch; }
     console.log('PASS actual Redis Lua: AI assistant atomic rate limiting, delivery claim transitions, and reply indexing.');
 
     console.log('Redis durability regression passed; Telegram transport was mocked, no real messages sent.');
