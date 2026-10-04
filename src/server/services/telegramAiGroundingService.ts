@@ -6,7 +6,7 @@
  * Formats exact positions, scores, and standings server-side with stale disclosures.
  */
 
-import { ReadModelKeys, getFreshKey, getLkgKey, getDirtyKey, ReadModelSnapshot } from '../readModel/readModelStore';
+import { ReadModelKeys, getFreshKey, getLkgKey, getDirtyKey, ReadModelSnapshot, OwnerNeutralClub } from '../readModel/readModelStore';
 import { getAiRedisClient } from './telegramAiDeadline';
 import { SEED_COMPETITIONS, SEED_CLUBS } from '../db/seed';
 import { Competition, StandingsRow, Fixture, Club } from '../../types';
@@ -31,10 +31,13 @@ export interface GroundingContext {
   hasStaleData: boolean;
   detectedClubs: string[];
   detectedCompetitions: string[];
+  ownershipAnswer?: string;
 }
 
 export interface TestGroundingOverride {
   competitions?: Competition[];
+  clubs?: OwnerNeutralClub[];
+  clubsStale?: boolean;
   standings?: Record<string, StandingsRow[]>;
   fixtures?: Record<string, Fixture[]>;
 }
@@ -66,13 +69,41 @@ const LEAGUE_KEYWORDS: Record<string, string[]> = {
   'comp-ucl': ['champions league', 'chempionlar ligasi', 'ucl', 'yechl'],
 };
 
+export function isClubOwnershipQuestion(query: string): boolean {
+  return /egasi|kimniki|kimga\s+biriktiril|kim\s+boshqar|owner|manager|владел|менеджер|кто\s+(?:играет|управляет)/i.test(query);
+}
+
+function matchClubs(query: string, clubs: Club[]): Club[] {
+  const words = query.toLowerCase().split(/[^\p{L}\p{N}]+/u);
+  return clubs.filter(club => query.toLowerCase().includes(club.name.toLowerCase()) ||
+    Boolean(club.shortName && words.includes(club.shortName.toLowerCase())));
+}
+
+/** Ownership is formatted by the server; the model never chooses a username. */
+function ownershipLine(club: Club, authoritative: boolean, stale: boolean): string {
+  const record = club as OwnerNeutralClub;
+  if (!authoritative || !Object.prototype.hasOwnProperty.call(record, 'ownerUserId')) {
+    return `${club.name}: klub egasi haqida tasdiqlangan ma’lumot yo‘q.`;
+  }
+  let answer: string;
+  if (!record.ownerUserId) {
+    answer = `${club.name}: snapshotda klub hech kimga biriktirilmagan.`;
+  } else {
+    const username = record.ownerUsername?.replace(/^@+/, '').trim();
+    const valid = username && /^[a-zA-Z0-9_]{5,32}$/.test(username) && !/^(tg_|user_)/i.test(username);
+    answer = valid ? `${club.name} egasi: @${username}.`
+      : `${club.name}: klub biriktirilgan, lekin egasining Telegram username’i ko‘rsatilmagan.`;
+  }
+  return stale ? `${answer} Ma’lumot eski snapshotdan; hozirgi egasi tasdiqlanmagan.` : answer;
+}
+
 /**
  * Searches and formats grounding data relevant to the user query.
  */
 export async function buildAiGroundingContext(
   query: string,
   seasonId = DEFAULT_SEASON_ID,
-  options?: { signal?: AbortSignal }
+  options?: { signal?: AbortSignal; previousUserQueries?: string[] }
 ): Promise<GroundingContext> {
   const normalized = query.toLowerCase();
   let hasStaleData = false;
@@ -110,17 +141,34 @@ export async function buildAiGroundingContext(
 
     // 2. Fetch clubs to detect club mentions (covers bottom/mid-table clubs as well)
     let allClubs: Club[] = [];
+    let ownershipAvailable = false;
+    let ownershipStale = true;
     try {
+      if (testGroundingOverride?.clubs) {
+        allClubs = testGroundingOverride.clubs;
+        ownershipAvailable = true;
+        ownershipStale = Boolean(testGroundingOverride.clubsStale);
+      } else {
       const clubsResult = await readAiSnapshot<Club>(ReadModelKeys.clubsWithOwners(seasonId), options?.signal);
+      ownershipAvailable = clubsResult.data.length > 0;
+      ownershipStale = clubsResult.stale;
       if (clubsResult.stale) hasStaleData = true;
       allClubs = clubsResult.data.length ? clubsResult.data : SEED_CLUBS as unknown as Club[];
+      }
     } catch {
+      hasStaleData = true;
       allClubs = (SEED_CLUBS as any[]) || [];
     }
 
-    for (const club of allClubs) {
-      const clubNameLower = club.name.toLowerCase();
-      if (normalized.includes(clubNameLower) || (club.shortName && normalized.includes(club.shortName.toLowerCase()))) {
+    let matchedClubs = matchClubs(query, allClubs);
+    const refersBack = /\buni(?:ng)?\b|\bu\b|\bits\b|\bthat\b|его|этого/i.test(query) || /^\s*(?:klubning\s+)?egasi\s+kim\s*[?!.]*\s*$/i.test(query);
+    if (!matchedClubs.length && refersBack) {
+      for (const previous of [...(options?.previousUserQueries || [])].reverse()) {
+        const matches = matchClubs(previous, allClubs);
+        if (matches.length) { matchedClubs = matches; break; }
+      }
+    }
+    for (const club of matchedClubs) {
         detectedClubs.push(club.name);
         const matchingComp = competitions.find(
           (c) => c.id === (club as any).competitionId || (c as any).leagueId === club.leagueId || c.id === club.leagueId
@@ -129,8 +177,13 @@ export async function buildAiGroundingContext(
         if (compId && !detectedCompetitions.includes(compId)) {
           detectedCompetitions.push(compId);
         }
-      }
     }
+
+    const ownershipLines = matchedClubs.map(club => ownershipLine(club, ownershipAvailable, ownershipStale));
+    const ownershipAnswer = isClubOwnershipQuestion(query)
+      ? ownershipLines.length ? ownershipLines.join('\n')
+        : 'Qaysi klubning egasini so‘rayapsiz? Klub nomini yozing; tasdiqlangan egasi ma’lumotini tekshiraman.'
+      : undefined;
 
     // Fallback: If no competition detected, load top 2 major competitions by default
     const targetCompIds = detectedCompetitions.length > 0
@@ -138,6 +191,7 @@ export async function buildAiGroundingContext(
       : competitions.slice(0, 2).map((c) => c.id);
 
     const contextSections: string[] = [];
+    if (ownershipLines.length) contextSections.push(`KLUB EGALARI (faqat snapshotdagi faktlar):\n${ownershipLines.join('\n')}`);
 
     // General platform rules snippet
     contextSections.push(
@@ -244,6 +298,7 @@ export async function buildAiGroundingContext(
 
     return {
       factsSummary: contextSections.join('\n\n'),
+      ownershipAnswer,
       hasStaleData,
       detectedClubs,
       detectedCompetitions,
@@ -252,6 +307,7 @@ export async function buildAiGroundingContext(
     console.warn('[AI GROUNDING] Error building grounding context:', err?.message || err);
     return {
       factsSummary: CORE_RULES_SUMMARY,
+      ownershipAnswer: isClubOwnershipQuestion(query) ? 'Klub egasi haqida tasdiqlangan ma’lumotni hozir tekshirib bo‘lmadi.' : undefined,
       hasStaleData: true,
       detectedClubs: [],
       detectedCompetitions: [],

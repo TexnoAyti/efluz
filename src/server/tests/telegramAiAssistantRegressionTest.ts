@@ -552,6 +552,38 @@ async function runTests() {
     console.log('✅ TEST 10 PASSED: Lua concurrency for rate limits and delivery claims verified.\n');
 
     console.log('================================================================');
+    // Ownership answers use exact cached usernames and resolve follow-ups within one user.
+    clearTestAiState();
+    clearTestRateLimitState();
+    sentTelegramMessages.length = 0;
+    const ownedClub = { id: 'club-arsenal', name: 'Arsenal', shortName: 'ARS',
+      leagueId: 'league-premier-league', ownerUserId: 'user-owner', ownerUsername: 'verified_owner' } as any;
+    setTestGroundingOverride({ clubs: [ownedClub], standings: {}, fixtures: {} });
+    let modelCalls = 0;
+    setTestAiResponder(async () => { modelCalls++; return 'Jadval haqidagi javob'; });
+    const ownerUser = 998877;
+    const baseOwnerPayload = { chatId: -100999888, threadId: 3503, fromUser: { id: ownerUser } };
+    await handleTelegramAiMessage({ ...baseOwnerPayload, updateId: 998871, messageId: 998871, text: 'Arsenal nechanchi o‘rinda?' });
+    await handleTelegramAiMessage({ ...baseOwnerPayload, updateId: 998872, messageId: 998872, text: 'Uni egasi kim?' });
+    assert.equal(sentTelegramMessages.at(-1)?.text, 'Arsenal egasi: @verified_owner.');
+    assert.equal(modelCalls, 1, 'Owner answer must bypass the model, even without replying to the bot');
+    await handleTelegramAiMessage({ ...baseOwnerPayload, fromUser: { id: ownerUser + 1 }, updateId: 998873, messageId: 998873, text: 'Uni egasi kim?' });
+    assert.ok(sentTelegramMessages.at(-1)?.text.includes('Qaysi klub'), 'Another user must not inherit the club');
+    const explicitUnknown = await buildAiGroundingContext('Ipswich Town egasi kim?', undefined, { previousUserQueries: ['Arsenal nechanchi?'] });
+    assert.ok(!explicitUnknown.ownershipAnswer?.includes('@verified_owner'), 'An unknown explicitly named club must not resolve to an older club');
+    setTestGroundingOverride({ clubs: [{ ...ownedClub, ownerUsername: null }], standings: {}, fixtures: {} });
+    const missingUsername = await buildAiGroundingContext('Arsenal egasi kim?');
+    assert.ok(missingUsername.ownershipAnswer?.includes('ko‘rsatilmagan'));
+    assert.ok(!missingUsername.ownershipAnswer?.includes('@'));
+    setTestGroundingOverride({ clubs: [{ ...ownedClub, ownerUserId: null, ownerUsername: null }], standings: {}, fixtures: {} });
+    assert.ok((await buildAiGroundingContext('Arsenal egasi kim?')).ownershipAnswer?.includes('hech kimga'));
+    setTestGroundingOverride({ clubs: [ownedClub], clubsStale: true, standings: {}, fixtures: {} });
+    assert.ok((await buildAiGroundingContext('Arsenal egasi kim?')).ownershipAnswer?.includes('eski snapshot'));
+    setTestGroundingOverride({ clubs: [{ id: 'club-arsenal', name: 'Arsenal' } as any], standings: {}, fixtures: {} });
+    assert.ok((await buildAiGroundingContext('Arsenal egasi kim?')).ownershipAnswer?.includes('tasdiqlangan ma’lumot yo‘q'));
+    setTestGroundingOverride(null);
+    console.log('PASS verified ownership: exact username, own follow-up, missing/unassigned/stale data and no model fabrication.');
+
     // A stalled model must return at the global deadline without dispatching later.
     clearTestAiState();
     clearTestRateLimitState();
