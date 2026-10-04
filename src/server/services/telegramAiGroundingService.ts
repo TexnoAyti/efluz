@@ -10,6 +10,9 @@ import { ReadModelKeys, getFreshKey, getLkgKey, getDirtyKey, ReadModelSnapshot, 
 import { getAiRedisClient } from './telegramAiDeadline';
 import { SEED_COMPETITIONS, SEED_CLUBS } from '../db/seed';
 import { Competition, StandingsRow, Fixture, Club } from '../../types';
+import { sortSeasonFixtures } from '../../lib/fixtureOrder';
+import { withSeasonQualificationPolicy } from '../../lib/seasonQualificationPolicy';
+import { resolveAiClubs, normalizeAiEntity, containsAiEntity } from './telegramAiEntities';
 
 /** AI reads cached snapshots only; cache misses never trigger Firestore refreshes. */
 async function readAiSnapshot<T>(key: string, signal?: AbortSignal): Promise<{ data: T[]; stale: boolean }> {
@@ -32,6 +35,8 @@ export interface GroundingContext {
   detectedClubs: string[];
   detectedCompetitions: string[];
   ownershipAnswer?: string;
+  factualAnswer?: string;
+  selectedClubIds: string[];
 }
 
 export interface TestGroundingOverride {
@@ -50,33 +55,30 @@ export function setTestGroundingOverride(override: TestGroundingOverride | null)
 
 const DEFAULT_SEASON_ID = 'season-2026-27';
 
-const CORE_RULES_SUMMARY =
-`EFL UZ ASOSIY QOIDALARI:
-- Mavsum: 2026/27 (Top 5 Yevropa ligalari, milliy kuboklar va Chempionlar Ligasi).
-- Har bir o'yinchiga faqat 1 ta klub biriktiriladi.
-- Uchrashuvlar muddati (matchday): odatda 30 soat.
-- Natijani kiritish: O'yin tugagach, har ikki ishtirokchi eFootball hisobini skrinshot bilan tasdiqlaydi.
-- Faqat CONFIRMED (tasdiqlangan) holatdagi natijalar yakuniy hisoblanadi.
-- Ochkolar: G'alaba - 3 ochko, Durang - 1 ochko, Mag'lubiyat - 0 ochko.`;
+const CORE_RULES_SUMMARY = `EFL UZ — eFootball turniri; real futbol statistikasi bilan aralashtirmang.
+- Faqat CONFIRMED natijalar yakuniy. Tasdiqlanmagan hisoblarni aytmang.
+- Liga ochkolari musobaqaning formatConfig sozlamalariga bog‘liq.
+- Natija ishtirokchilar tomonidan kiritiladi; mos kelmagan natija ko‘rib chiqiladi. Dalil havolasi ixtiyoriy.
+- Klub olish imkoniyati foydalanuvchining amaldagi ruxsatiga bog‘liq. Barcha foydalanuvchiga ikkinchi klub va’da qilmang.
+- Tur muddati va ochiqligi musobaqa sozlamalaridan olinadi; ma’lumot bo‘lmasa soat yoki deadline to‘qimang.`;
 
-// League keywords mapping
 const LEAGUE_KEYWORDS: Record<string, string[]> = {
-  'comp-premier-league': ['premier league', 'apl', 'angliya', 'arsenal', 'chelsea', 'liverpool', 'man city', 'manchester united', 'tottenham'],
-  'comp-la-liga': ['la liga', 'laliga', 'ispaniya', 'real madrid', 'barcelona', 'atletico', 'valencia', 'sevilla'],
-  'comp-serie-a': ['serie a', 'italiya', 'inter', 'milan', 'juventus', 'roma', 'napoli', 'lazio'],
-  'comp-bundesliga': ['bundesliga', 'germaniya', 'bayern', 'bavariya', 'dortmund', 'leipzig', 'leverkusen'],
-  'comp-ligue-1': ['ligue 1', 'fransiya', 'psg', 'marseille', 'monaco', 'lyon', 'lille'],
-  'comp-ucl': ['champions league', 'chempionlar ligasi', 'ucl', 'yechl'],
+  'comp-premier-league': ['premier league', 'apl', 'angliya'],
+  'comp-la-liga': ['la liga', 'laliga', 'ispaniya'],
+  'comp-serie-a': ['serie a', 'italiya'],
+  'comp-bundesliga': ['bundesliga', 'germaniya'],
+  'comp-ligue-1': ['ligue 1', 'liga 1', 'fransiya'],
+  'comp-champions-league': ['champions league', 'chempionlar ligasi', 'ucl', 'yechl'],
+  'comp-europa-league': ['europa league', 'yevropa ligasi', 'uel'],
+  'comp-fa-cup': ['fa cup', 'angliya kubogi'],
+  'comp-copa-del-rey': ['copa del rey', 'ispaniya kubogi'],
+  'comp-coppa-italia': ['coppa italia', 'italiya kubogi'],
+  'comp-dfb-pokal': ['dfb pokal', 'germaniya kubogi'],
+  'comp-coupe-de-france': ['coupe de france', 'fransiya kubogi'],
 };
 
 export function isClubOwnershipQuestion(query: string): boolean {
   return /egasi|kimniki|kimga\s+biriktiril|kim\s+boshqar|owner|manager|владел|менеджер|кто\s+(?:играет|управляет)/i.test(query);
-}
-
-function matchClubs(query: string, clubs: Club[]): Club[] {
-  const words = query.toLowerCase().split(/[^\p{L}\p{N}]+/u);
-  return clubs.filter(club => query.toLowerCase().includes(club.name.toLowerCase()) ||
-    Boolean(club.shortName && words.includes(club.shortName.toLowerCase())));
 }
 
 /** Ownership is formatted by the server; the model never chooses a username. */
@@ -97,230 +99,179 @@ function ownershipLine(club: Club, authoritative: boolean, stale: boolean): stri
   return stale ? `${answer} Ma’lumot eski snapshotdan; hozirgi egasi tasdiqlanmagan.` : answer;
 }
 
-/**
- * Searches and formats grounding data relevant to the user query.
- */
+/** Reads bounded public read models. Never exposes private users, payments or disputes. */
 export async function buildAiGroundingContext(
   query: string,
   seasonId = DEFAULT_SEASON_ID,
-  options?: { signal?: AbortSignal; previousUserQueries?: string[] }
+  options?: { signal?: AbortSignal; previousUserQueries?: string[]; selectedClubIds?: string[] }
 ): Promise<GroundingContext> {
-  const normalized = query.toLowerCase();
   let hasStaleData = false;
-  const detectedClubs: string[] = [];
-  const detectedCompetitions: string[] = [];
-
-  try {
-    // 1. Fetch available competitions
-    let competitions: Competition[] = [];
-    if (testGroundingOverride?.competitions) {
-      competitions = testGroundingOverride.competitions;
-    } else {
-      try {
-        const compsResult = await readAiSnapshot<Competition>(ReadModelKeys.competitions(seasonId), options?.signal);
-        if (compsResult.stale) hasStaleData = true;
-        competitions = compsResult.data.length ? compsResult.data : SEED_COMPETITIONS as unknown as Competition[];
-      } catch {
-        hasStaleData = true;
-        competitions = (SEED_COMPETITIONS as any[]) || [];
-      }
-    }
-
-    // Match competitions from query
-    for (const comp of competitions) {
-      const compNameLower = comp.name.toLowerCase();
-      if (normalized.includes(compNameLower)) {
-        detectedCompetitions.push(comp.id);
-        continue;
-      }
-      const keywords = LEAGUE_KEYWORDS[comp.id] || [];
-      if (keywords.some((k) => normalized.includes(k))) {
-        detectedCompetitions.push(comp.id);
-      }
-    }
-
-    // 2. Fetch clubs to detect club mentions (covers bottom/mid-table clubs as well)
-    let allClubs: Club[] = [];
-    let ownershipAvailable = false;
-    let ownershipStale = true;
-    try {
-      if (testGroundingOverride?.clubs) {
-        allClubs = testGroundingOverride.clubs;
-        ownershipAvailable = true;
-        ownershipStale = Boolean(testGroundingOverride.clubsStale);
-      } else {
-      const clubsResult = await readAiSnapshot<Club>(ReadModelKeys.clubsWithOwners(seasonId), options?.signal);
-      ownershipAvailable = clubsResult.data.length > 0;
-      ownershipStale = clubsResult.stale;
-      if (clubsResult.stale) hasStaleData = true;
-      allClubs = clubsResult.data.length ? clubsResult.data : SEED_CLUBS as unknown as Club[];
-      }
-    } catch {
-      hasStaleData = true;
-      allClubs = (SEED_CLUBS as any[]) || [];
-    }
-
-    let matchedClubs = matchClubs(query, allClubs);
-    const refersBack = /\buni(?:ng)?\b|\bu\b|\bits\b|\bthat\b|его|этого/i.test(query) || /^\s*(?:klubning\s+)?egasi\s+kim\s*[?!.]*\s*$/i.test(query);
-    if (!matchedClubs.length && refersBack) {
-      for (const previous of [...(options?.previousUserQueries || [])].reverse()) {
-        const matches = matchClubs(previous, allClubs);
-        if (matches.length) { matchedClubs = matches; break; }
-      }
-    }
-    for (const club of matchedClubs) {
-        detectedClubs.push(club.name);
-        const matchingComp = competitions.find(
-          (c) => c.id === (club as any).competitionId || (c as any).leagueId === club.leagueId || c.id === club.leagueId
-        );
-        const compId = matchingComp ? matchingComp.id : ((club as any).competitionId || club.leagueId);
-        if (compId && !detectedCompetitions.includes(compId)) {
-          detectedCompetitions.push(compId);
-        }
-    }
-
-    const ownershipLines = matchedClubs.map(club => ownershipLine(club, ownershipAvailable, ownershipStale));
-    const ownershipAnswer = isClubOwnershipQuestion(query)
-      ? ownershipLines.length ? ownershipLines.join('\n')
-        : 'Qaysi klubning egasini so‘rayapsiz? Klub nomini yozing; tasdiqlangan egasi ma’lumotini tekshiraman.'
-      : undefined;
-
-    // Fallback: If no competition detected, load top 2 major competitions by default
-    const targetCompIds = detectedCompetitions.length > 0
-      ? detectedCompetitions.slice(0, 3)
-      : competitions.slice(0, 2).map((c) => c.id);
-
-    const contextSections: string[] = [];
-    if (ownershipLines.length) contextSections.push(`KLUB EGALARI (faqat snapshotdagi faktlar):\n${ownershipLines.join('\n')}`);
-
-    // General platform rules snippet
-    contextSections.push(
-`EFL UZ ASOSIY QOIDALARI:
-- Mavsum: 2026/27 (Top 5 Yevropa ligalari, milliy kuboklar va Chempionlar Ligasi).
-- Har bir o'yinchiga faqat 1 ta klub biriktiriladi.
-- Uchrashuvlar muddati (matchday): odatda 30 soat.
-- Natijani kiritish: O'yin tugagach, har ikki ishtirokchi eFootball hisobini skrinshot bilan tasdiqlaydi.
-- Faqat CONFIRMED (tasdiqlangan) holatdagi natijalar yakuniy hisoblanadi.
-- Ochkolar: G'alaba - 3 ochko, Durang - 1 ochko, Mag'lubiyat - 0 ochko.`);
-
-    // 3. Retrieve and format standings & confirmed fixtures for target competitions
-    for (const compId of targetCompIds) {
-      if (options?.signal?.aborted) break;
-      const comp = competitions.find((c) => c.id === compId);
-      const compTitle = comp?.name || compId;
-
-      try {
-        let rows: StandingsRow[] = [];
-        if (testGroundingOverride?.standings?.[compId]) {
-          rows = testGroundingOverride.standings[compId];
-        } else if (testGroundingOverride?.standings) {
-          const matchKey = Object.keys(testGroundingOverride.standings).find(
-            (k) => compId.includes(k) || k.includes(compId)
-          );
-          if (matchKey) rows = testGroundingOverride.standings[matchKey];
-        } else {
-          const standingsResult = await readAiSnapshot<StandingsRow>(ReadModelKeys.standings(compId, seasonId), options?.signal);
-          if (standingsResult.stale) hasStaleData = true;
-          rows = standingsResult.data;
-        }
-
-        if (rows.length > 0) {
-          // If specific clubs were detected, include them specifically, plus top 3
-          let relevantRows: StandingsRow[] = [];
-          if (detectedClubs.length > 0) {
-            relevantRows = rows.filter((r) =>
-              detectedClubs.some((dc) => r.clubName.toLowerCase().includes(dc.toLowerCase()))
-            );
-          }
-          // Always ensure top 3 are visible for reference
-          const top3 = rows.slice(0, 3);
-          const combined = Array.from(new Set([...top3, ...relevantRows]));
-          combined.sort((a, b) => a.position - b.position);
-
-          const tableLines = combined.map(
-            (r) => `${r.position}-o'rin: ${r.clubName} — ${r.points} ochko (O':${r.played}, G':${r.won}, D:${r.drawn}, M:${r.lost}, T/F:${r.goalsFor}-${r.goalsAgainst})`
-          );
-
-          contextSections.push(`TURNIR JADVALI (${compTitle}):\n${tableLines.join('\n')}`);
-        }
-      } catch {}
-
-      try {
-        let fixtures: Fixture[] = [];
-        if (testGroundingOverride?.fixtures?.[compId]) {
-          fixtures = testGroundingOverride.fixtures[compId];
-        } else if (testGroundingOverride?.fixtures) {
-          const matchKey = Object.keys(testGroundingOverride.fixtures).find(
-            (k) => compId.includes(k) || k.includes(compId)
-          );
-          if (matchKey) fixtures = testGroundingOverride.fixtures[matchKey];
-        } else {
-          let fixturesResult = await readAiSnapshot<Fixture>(ReadModelKeys.competitionFixtures(compId, seasonId), options?.signal);
-          if (!fixturesResult.data.length) {
-            const adminSnapshot = await readAiSnapshot<Fixture>(ReadModelKeys.adminFixtures(seasonId), options?.signal);
-            fixturesResult = { data: adminSnapshot.data.filter(f => f.competitionId === compId), stale: adminSnapshot.stale };
-          }
-          if (fixturesResult.stale) hasStaleData = true;
-          fixtures = fixturesResult.data;
-        }
-
-        // Filter fixtures: confirmed matches or matches involving detected clubs
-        const matchingFixtures = fixtures.filter((f) => {
-          const homeName = (f.homeClub?.name || (f as any).homeClubName || allClubs.find(c => c.id === f.homeClubId)?.name || f.homeClubId || '').toLowerCase();
-          const awayName = (f.awayClub?.name || (f as any).awayClubName || allClubs.find(c => c.id === f.awayClubId)?.name || f.awayClubId || '').toLowerCase();
-          if (detectedClubs.length > 0) {
-            return detectedClubs.some(
-              (dc) => homeName.includes(dc.toLowerCase()) || awayName.includes(dc.toLowerCase())
-            );
-          }
-          return f.status === 'CONFIRMED';
-        });
-        // Future fixtures must not crowd confirmed results out of prediction context.
-        const confirmedFixtures = matchingFixtures.filter(f => f.status === 'CONFIRMED' &&
-          Number.isInteger(f.homeScore) && Number.isInteger(f.awayScore) && f.homeScore! >= 0 && f.awayScore! >= 0)
-          .sort((a, b) => (Number(a.matchday) || 0) - (Number(b.matchday) || 0) ||
-            String(a.updatedAt || '').localeCompare(String(b.updatedAt || '')) || a.id.localeCompare(b.id))
-          .slice(-5);
-        const upcomingFixtures = matchingFixtures.filter(f => f.status !== 'CONFIRMED')
-          .sort((a, b) => (Number(a.matchday) || 0) - (Number(b.matchday) || 0) || a.id.localeCompare(b.id))
-          .slice(0, 2);
-        const relevantFixtures = [...confirmedFixtures, ...upcomingFixtures];
-
-        if (relevantFixtures.length > 0) {
-          const fixLines = relevantFixtures.map((f) => {
-            const homeName = f.homeClub?.name || (f as any).homeClubName || allClubs.find(c => c.id === f.homeClubId)?.name || f.homeClubId || 'Home';
-            const awayName = f.awayClub?.name || (f as any).awayClubName || allClubs.find(c => c.id === f.awayClubId)?.name || f.awayClubId || 'Away';
-            if (f.status === 'CONFIRMED') {
-              return `[CONFIRMED] MD ${f.matchday}: ${homeName} ${f.homeScore} - ${f.awayScore} ${awayName}`;
-            }
-            return `[${f.status}] MD ${f.matchday}: ${homeName} vs ${awayName} (Kutilmoqda)`;
-          });
-          contextSections.push(`UCHRASHUVLAR VA NATIJALAR (${compTitle}):\n${fixLines.join('\n')}`);
-        }
-      } catch {}
-    }
-
-    if (hasStaleData) {
-      contextSections.push(
-        "[DIQQAT: Ushbu ma'lumotlar vaqtinchalik keshdan/eskirgan snapshotdan olindi. Natijalar yangilanishi davom etmoqda.]"
-      );
-    }
-
-    return {
-      factsSummary: contextSections.join('\n\n'),
-      ownershipAnswer,
-      hasStaleData,
-      detectedClubs,
-      detectedCompetitions,
-    };
-  } catch (err: any) {
-    console.warn('[AI GROUNDING] Error building grounding context:', err?.message || err);
-    return {
-      factsSummary: CORE_RULES_SUMMARY,
-      ownershipAnswer: isClubOwnershipQuestion(query) ? 'Klub egasi haqida tasdiqlangan ma’lumotni hozir tekshirib bo‘lmadi.' : undefined,
-      hasStaleData: true,
-      detectedClubs: [],
-      detectedCompetitions: [],
-    };
+  const read = async <T>(key: string): Promise<{ data: T[]; stale: boolean }> => {
+    try { return await readAiSnapshot<T>(key, options?.signal); }
+    catch { return { data: [], stale: true }; }
+  };
+  const [compSnapshot, clubSnapshot] = await Promise.all([
+    testGroundingOverride?.competitions ? Promise.resolve({ data: testGroundingOverride.competitions, stale: false })
+      : read<Competition>(ReadModelKeys.competitions(seasonId)),
+    testGroundingOverride?.clubs ? Promise.resolve({ data: testGroundingOverride.clubs, stale: Boolean(testGroundingOverride.clubsStale) })
+      : read<OwnerNeutralClub>(ReadModelKeys.clubsWithOwners(seasonId)),
+  ]);
+  hasStaleData = compSnapshot.stale || clubSnapshot.stale;
+  const competitions = (compSnapshot.data.length ? compSnapshot.data : SEED_COMPETITIONS as unknown as Competition[])
+    .filter(c => !c.seasonId || c.seasonId === seasonId).map(c => withSeasonQualificationPolicy(c, seasonId));
+  const clubs = (clubSnapshot.data.length ? clubSnapshot.data : SEED_CLUBS as unknown as Club[])
+    .filter(c => !(c as Club & { seasonId?: string }).seasonId || (c as Club & { seasonId?: string }).seasonId === seasonId);
+  const selection = resolveAiClubs(query, clubs, options?.selectedClubIds, options?.previousUserQueries);
+  const matched = selection.clubs;
+  const ids = new Set(matched.map(c => c.id));
+  const normalized = normalizeAiEntity(query);
+  const explicitCompetitions = competitions.filter(c => containsAiEntity(normalized, c.name) ||
+    Object.entries(LEAGUE_KEYWORDS).some(([prefix, words]) => (c.id === prefix || c.id.startsWith(prefix + '-')) &&
+      words.some(word => containsAiEntity(normalized, word))));
+  const isLeagueForClub = (c: Competition, club: Club) => c.type === 'LEAGUE' &&
+    (c.id === (club as Club & { competitionId?: string }).competitionId || c.id === club.leagueId || c.leagueId === club.leagueId);
+  // The season-wide fixture snapshot also discovers cups and European participation by club ID.
+  let seasonFixtures = testGroundingOverride
+    ? { data: Object.values(testGroundingOverride.fixtures || {}).flat(), stale: false }
+    : await read<Fixture>(ReadModelKeys.adminFixtures(seasonId));
+  if (!testGroundingOverride && !seasonFixtures.data.length && matched.length) {
+    const snapshots = await Promise.all(competitions.map(c => read<Fixture>(ReadModelKeys.competitionFixtures(c.id, seasonId))));
+    seasonFixtures = { data: snapshots.flatMap(s => s.data), stale: snapshots.some(s => s.stale) };
   }
+  const validFixtures = seasonFixtures.data.filter(f => (!f.seasonId || f.seasonId === seasonId) && f.status !== 'CANCELLED');
+  const target = competitions.filter(c => explicitCompetitions.some(e => e.id === c.id) ||
+    matched.some(club => isLeagueForClub(c, club)) || validFixtures.some(f => f.competitionId === c.id &&
+      (ids.has(f.homeClubId || '') || ids.has(f.awayClubId || ''))));
+  // No arbitrary top-two league fallback. General league questions can use all public competitions.
+  const broad = /barcha|hamma|turnirlar|ligalar|chempionatlar/i.test(query);
+  const targets = target.length ? target : matched.length || selection.clarification ? [] : broad ? competitions : explicitCompetitions;
+  const overrideRows = <T>(map: Record<string, T[]> | undefined, id: string): T[] => {
+    if (!map) return [];
+    return map[id] || map[Object.keys(map).find(k => id === k || id.startsWith(k + '-')) || ''] || [];
+  };
+  const data = await Promise.all(targets.map(async comp => {
+    const [table, fixtureSnapshot] = await Promise.all([
+      testGroundingOverride ? Promise.resolve({ data: overrideRows(testGroundingOverride.standings, comp.id), stale: false })
+        : read<StandingsRow>(ReadModelKeys.standings(comp.id, seasonId)),
+      testGroundingOverride ? Promise.resolve({ data: overrideRows(testGroundingOverride.fixtures, comp.id), stale: false })
+        : seasonFixtures.data.length ? Promise.resolve({ data: validFixtures.filter(f => f.competitionId === comp.id), stale: seasonFixtures.stale })
+          : read<Fixture>(ReadModelKeys.competitionFixtures(comp.id, seasonId)),
+    ]);
+    const fixtures = fixtureSnapshot.data.filter(f => (!f.seasonId || f.seasonId === seasonId) && f.status !== 'CANCELLED');
+    return { comp, rows: table.data, fixtures, stale: table.stale || fixtureSnapshot.stale, fixturesStale: fixtureSnapshot.stale };
+  }));
+  hasStaleData ||= data.some(d => d.stale);
+  const allFixtures = [...new Map(data.flatMap(d => d.fixtures).map(f => [f.id, f])).values()];
+  const confirmed = allFixtures.filter(isConfirmedAiFixture).sort(compareConfirmed);
+  const clubName = (id: string | null, embedded?: Club | null) => clubs.find(c => c.id === id)?.name || embedded?.name || 'Raqib aniqlanmagan';
+  const fixtureLine = (f: Fixture) => `[${f.status}] MD ${f.matchday}: ${clubName(f.homeClubId, f.homeClub)} ${isConfirmedAiFixture(f) ? `${f.homeScore} - ${f.awayScore}` : 'vs'} ${clubName(f.awayClubId, f.awayClub)} (${competitions.find(c => c.id === f.competitionId)?.name || f.competitionId}${f.roundName ? ', ' + f.roundName : ''})${isConfirmedAiFixture(f) && f.winnerClubId ? '; tasdiqlangan g‘olib: ' + clubName(f.winnerClubId) : ''}`;
+  const involves = (f: Fixture, id: string) => f.homeClubId === id || f.awayClubId === id ||
+    Boolean(clubs.find(c => c.id === id && (normalizeAiEntity(c.name) === normalizeAiEntity(f.homeClub?.name || '') || normalizeAiEntity(c.name) === normalizeAiEntity(f.awayClub?.name || ''))));
+  const ownershipLines = matched.map(c => ownershipLine(c, clubSnapshot.data.length > 0, clubSnapshot.stale));
+  const sections = [CORE_RULES_SUMMARY, `MAVSUM: ${seasonId}.`, `SUHBATDAGI JAMOALAR: ${matched.map(c => c.name).join(', ') || 'tanlanmagan'}.`];
+  if (selection.clarification) sections.push('ANIQLASHTIRISH KERAK: ' + selection.clarification);
+  if (ownershipLines.length) sections.push('KLUB EGALARI (server faktlari):\n' + ownershipLines.join('\n'));
+  const wantsAvailable = /bo[‘’'`]?sh|biriktirilmagan|available|unclaimed/i.test(query);
+  if (wantsAvailable) {
+    const scope = explicitCompetitions.length ? clubs.filter(c => explicitCompetitions.some(comp => isLeagueForClub(comp, c))) : clubs;
+    const free = scope.filter(c => Object.hasOwn(c, 'ownerUserId') && !(c as OwnerNeutralClub).ownerUserId);
+    sections.push(clubSnapshot.data.length ? `SNAPSHOTDA BO‘SH KLUBLAR (${free.length}): ${free.map(c => c.name).join(', ') || 'yo‘q'}. Bu ro‘yxat klub olish kafolati emas.` : 'Bo‘sh klublar ro‘yxati tekshirilmagan.');
+  }
+  for (const { comp, rows, fixtures, fixturesStale } of data) {
+    const config = comp.formatConfig || {};
+    sections.push(`MUSOBAQA: ${comp.name}; holat: ${comp.status}; joriy tur: ${comp.currentMatchday ?? 'noma’lum'}; tur ochiq: ${comp.isMatchdayOpen === undefined ? 'noma’lum' : comp.isMatchdayOpen ? 'ha' : 'yo‘q'}; muddat: ${comp.matchdayDurationHours ?? 'noma’lum'} soat; keyingi ochilish: ${comp.nextMatchdayOpenAt || 'belgilanmagan'}; ochkolar G/D/M: ${config.pointsForWin ?? 'noma’lum'}/${config.pointsForDraw ?? 'noma’lum'}/${config.pointsForLoss ?? 'noma’lum'}; UCL joy: ${config.qualificationSpots ?? 'noma’lum'}; UEL joy: ${config.europaQualificationSpots ?? 'noma’lum'}.`);
+    sections.push(`TURNIR JADVALI (${comp.name}):\n` + (rows.length ? [...rows].sort((a,b) => a.position-b.position).map(r =>
+      `${r.position}-o'rin: ${r.clubName} — ${r.points} ochko (O':${r.played}, G':${r.won}, D:${r.drawn}, M:${r.lost}, T/F:${r.goalsFor}-${r.goalsAgainst}, farq:${r.goalDifference})`).join('\n') : 'Jadval ma’lumoti mavjud emas.'));
+    if (comp.type === 'LEAGUE' && Number.isInteger(config.qualificationSpots) && Number.isInteger(config.europaQualificationSpots)) {
+      sections.push(`${comp.name} saralash zonalari: UCL 1–${config.qualificationSpots}; UEL ${config.qualificationSpots!+1}–${config.qualificationSpots!+config.europaQualificationSpots!}. Bu hozirgi jadval zonasi, mavsum yakunidagi kafolat emas.`);
+    }
+    for (const club of matched) {
+      const clubGames = fixtures.filter(f => involves(f,club.id));
+      const results = clubGames.filter(isConfirmedAiFixture).sort(compareConfirmed);
+      const pending = sortSeasonFixtures(clubGames.filter(f => f.status !== 'CONFIRMED'));
+      sections.push(`MUSOBAQADAGI KLUB (${comp.name}, ${club.name}): ${results.length} tasdiqlangan o‘yin; ${pending.length} yakunlanmagan o‘yin.\n${[...results.slice(-3), ...pending.slice(0,3)].map(fixtureLine).join('\n') || 'uchrashuv ma’lumoti yo‘q'}. Kubokdan chiqish yoki keyingi bosqichga o‘tishni faqat tasdiqlangan g‘olib va bosqich ma’lumotidan aniqlang; yetishmasa taxmin qilmang.`);
+    }
+    if (fixturesStale) sections.push(`${comp.name} uchrashuvlari eski yoki mavjud emas; joriy natija deb ko‘rsatmang.`);
+  }
+  for (const club of matched) {
+    const games = confirmed.filter(f => involves(f, club.id));
+    const form = games.slice(-5).map(f => {
+      const delta = f.homeClubId === club.id ? f.homeScore! - f.awayScore! : f.awayScore! - f.homeScore!;
+      return delta > 0 ? 'G‘alaba' : delta < 0 ? 'Mag‘lubiyat' : 'Durang';
+    });
+    const next = sortSeasonFixtures(allFixtures.filter(f => involves(f, club.id) && f.status !== 'CONFIRMED'));
+    const gf = games.reduce((n,f) => n + (f.homeClubId === club.id ? f.homeScore! : f.awayScore!), 0);
+    const ga = games.reduce((n,f) => n + (f.homeClubId === club.id ? f.awayScore! : f.homeScore!), 0);
+    sections.push(`KLUB PROFILI: ${club.name}; barcha mavjud turnirlarda tasdiqlangan o‘yin: ${games.length}; urgan/o‘tkazgan gol: ${gf}/${ga}. Bu yig‘indi faqat yuklangan uchrashuvlardan; liga jadvalini almashtirmaydi.\nOXIRGI FORMA (eskidan yangiga): ${form.join(', ') || 'tasdiqlangan o‘yin yo‘q'}.\nOXIRGI NATIJALAR:\n${games.slice(-5).map(fixtureLine).join('\n') || 'mavjud emas'}\nKEYINGI UCHRASHUVLAR (mavsumning belgilangan ketma-ketligida, ochiq o‘yin degani emas):\n${next.slice(0,3).map(fixtureLine).join('\n') || 'ro‘yxatda topilmadi'}`);
+    const margin = (f: Fixture) => f.homeClubId === club.id ? f.homeScore!-f.awayScore! : f.awayScore!-f.homeScore!;
+    const sorted = [...games].sort((a,b) => margin(b)-margin(a));
+    sections.push(`ENG YIRIK G‘ALABA: ${sorted[0] && margin(sorted[0]) > 0 ? fixtureLine(sorted[0]) : 'tasdiqlangan g‘alaba yo‘q'}; ENG YIRIK MAG‘LUBIYAT: ${sorted.at(-1) && margin(sorted.at(-1)!) < 0 ? fixtureLine(sorted.at(-1)!) : 'tasdiqlangan mag‘lubiyat yo‘q'}.`);
+    for (const side of ['home','away'] as const) {
+      const sideGames = games.filter(f => side === 'home' ? f.homeClubId === club.id : f.awayClubId === club.id);
+      sections.push(`${club.name} ${side === 'home' ? 'UYDA' : 'SAFARDA'}: ${sideGames.length} tasdiqlangan o‘yin; G/D/M: ${sideGames.filter(f => margin(f)>0).length}/${sideGames.filter(f => margin(f)===0).length}/${sideGames.filter(f => margin(f)<0).length}.`);
+    }
+  }
+  if (matched.length === 2) {
+    const h2h = confirmed.filter(f => ids.has(f.homeClubId || '') && ids.has(f.awayClubId || ''));
+    sections.push(`O‘ZARO UCHRASHUVLAR (${h2h.length} tasdiqlangan):\n${h2h.slice(-10).map(fixtureLine).join('\n') || 'hali tasdiqlangan o‘zaro o‘yin yo‘q'}`);
+  }
+  if (!matched.length) {
+    const round = query.match(/(?:\b(\d{1,2})\s*(?:-\s*)?(?:tur|matchday)\b|(?:tur|matchday)\s*(\d{1,2}))/i);
+    const games = round ? allFixtures.filter(f => f.matchday === Number(round[1] || round[2])) : confirmed.slice(-10);
+    sections.push('UCHRASHUVLAR VA NATIJALAR:\n' + (games.slice(0,25).map(fixtureLine).join('\n') || 'mavjud emas'));
+  }
+  if (hasStaleData) sections.push('[ESKI YOKI TO‘LIQ EMAS: snapshot joriy holatni tasdiqlamaydi. Har bir tegishli javobda buni ayting. Ma’lumot yo‘qligi o‘yin o‘tkazilmaganini isbotlamaydi.]');
+  // A question about losses or a specific round must see more than the last five games.
+  const requestedRound = query.match(/(?:\b(\d{1,2})\s*(?:-\s*)?(?:tur|matchday)\b|(?:tur|matchday)\s*(\d{1,2}))/i);
+  for (const club of matched) {
+    const margin = (f: Fixture) => f.homeClubId === club.id ? f.homeScore! - f.awayScore! : f.awayScore! - f.homeScore!;
+    let relevant = allFixtures.filter(f => involves(f,club.id) && (!explicitCompetitions.length || explicitCompetitions.some(c => c.id === f.competitionId)));
+    if (requestedRound) relevant = relevant.filter(f => f.matchday === Number(requestedRound[1] || requestedRound[2]));
+    else if (/kimga|yutqaz|mag[‘’'`]?lub/i.test(query)) relevant = relevant.filter(f => isConfirmedAiFixture(f) && margin(f)<0);
+    else if (/kimni|yutgan|g[‘’'`]?alaba/i.test(query)) relevant = relevant.filter(f => isConfirmedAiFixture(f) && margin(f)>0);
+    else continue;
+    sections.push(`SAVOLGA MOS UCHRASHUVLAR (${club.name}, ${relevant.length}):\n${relevant.slice(0,30).map(fixtureLine).join('\n') || 'snapshotda topilmadi'}${relevant.length>30 ? '\nFaqat dastlabki 30 ta; qolgan o‘yinlar kiritilmadi.' : ''}`);
+  }
+  const ownershipAnswer = isClubOwnershipQuestion(query) ? ownershipLines.length ? ownershipLines.join('\n') : selection.clarification || 'Qaysi klubning egasini so‘rayapsiz? Klub nomini yozing; tasdiqlangan egasi ma’lumotini tekshiraman.' : undefined;
+  const leagueData = data.filter(d => matched.some(c => isLeagueForClub(d.comp,c)) &&
+    (!explicitCompetitions.length || explicitCompetitions.some(c => c.id === d.comp.id)));
+  const facts: string[] = [];
+  // Exact identity and simple statistical lookups bypass the model. Analytical questions use grounded Gemini.
+  const analytical = /nega|nima uchun|tahlil|o[‘’'`]?ylay|yutadimi|kim yut|yutadi|taxmin|prediction|qanday yaxsh|taktik|hazil|yumor|roast/i.test(query);
+  if (!analytical && matched.length) {
+    if (ownershipAnswer) facts.push(ownershipAnswer);
+    if (!/eng yirik|eng katta|oxirgi|kimga|kimni|uyda|safarda/i.test(query) && /nechanchi|o[‘’'`]?rin|ochko|g[‘’'`]?alaba|mag[‘’'`]?lub|nechta.*(?:durang|gol|o[‘’'`]?yin)|statistika|standing|points|position/i.test(query)) {
+      for (const club of matched) for (const {comp,rows,stale} of leagueData) {
+        const row = rows.find(r => r.clubId === club.id || normalizeAiEntity(r.clubName) === normalizeAiEntity(club.name));
+        if (row) facts.push(`${club.name} (${comp.name}): ${row.position}-o‘rin, ${row.points} ochko. ${row.played} o‘yin: ${row.won} g‘alaba, ${row.drawn} durang, ${row.lost} mag‘lubiyat. Gollar: ${row.goalsFor}:${row.goalsAgainst}, farq ${row.goalDifference}.${stale ? ' Ma’lumot eski snapshotdan; joriy holat tasdiqlanmagan.' : ''}`);
+      }
+    }
+    if (/keyingi|navbatdagi|next match/i.test(query) && !/ochil|qachon/i.test(query)) {
+      for (const club of matched) {
+        const next = sortSeasonFixtures(allFixtures.filter(f => involves(f,club.id) && f.status !== 'CONFIRMED' && (!explicitCompetitions.length || explicitCompetitions.some(c => c.id === f.competitionId))))[0];
+        facts.push(next ? `${club.name} uchun navbatdagi: ${fixtureLine(next)}. Bu mavsum tartibidagi o‘yin; hozir o‘ynash ruxsati tasdiqlanmagan.` : `${club.name}: navbatdagi o‘yin snapshotda topilmadi; jadval to‘liqligi tasdiqlanmagan.`);
+      }
+    }
+  }
+  // Bound prompt size at section boundaries, keeping team-specific facts ahead of broad tables.
+  const teamSections = sections.filter(s => !s.startsWith('TURNIR JADVALI'));
+  const tableSections = sections.filter(s => s.startsWith('TURNIR JADVALI'));
+  let summary = '';
+  for (const section of [...teamSections, ...tableSections]) {
+    if (summary.length + section.length > 24000) { hasStaleData = true; summary += '\n[Qo‘shimcha faktlar hajm sabab kiritilmadi; yetishmagan faktni taxmin qilmang.]'; break; }
+    summary += section + '\n\n';
+  }
+  return { factsSummary: summary, hasStaleData, detectedClubs: matched.map(c => c.name),
+    selectedClubIds: selection.clarification ? [] : matched.length ? matched.map(c => c.id) : options?.selectedClubIds || [], detectedCompetitions: targets.map(c => c.id),
+    ownershipAnswer, factualAnswer: selection.clarification || (facts.length ? facts.join('\n') + (hasStaleData && !(facts.length === 1 && facts[0] === ownershipAnswer) && !facts.some(f => /eski snapshot/.test(f)) ? '\nMa’lumot eski yoki to‘liq bo‘lmagan snapshotdan; joriy holat tasdiqlanmagan.' : '') : !analytical ? ownershipAnswer : undefined) };
+}
+
+function isConfirmedAiFixture(f: Fixture): boolean {
+  return f.status === 'CONFIRMED' && Number.isInteger(f.homeScore) && Number.isInteger(f.awayScore) && f.homeScore! >= 0 && f.awayScore! >= 0;
+}
+function compareConfirmed(a: Fixture, b: Fixture): number {
+  const time = (f: Fixture) => Date.parse(f.resultConfirmedAt || f.updatedAt || '') || 0;
+  const delta = time(a)-time(b);
+  if (delta || a.id === b.id) return delta;
+  return sortSeasonFixtures([a,b])[0].id === a.id ? -1 : 1;
 }
