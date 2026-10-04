@@ -53,7 +53,8 @@ if(process.env.REDIS_TEST_PORT){
   const ttl=await client.ttl(key);assert.ok(ttl>0&&ttl<=300);
   assert.deepEqual((await createTournamentImageDownloadService().get(token))!.png,png,'A different service instance reads the same real Redis PNG');
   await client.del(key);assert.equal(await actual.get(token),null);
-  const originalSet=client.set;(client as any).set=async()=>{throw new Error('Simulated durable storage failure');};
-  try{await assert.rejects(()=>actual.create(png.toString('base64'),filename));}finally{client.set=originalSet;}
+  const originalFetch=globalThis.fetch;
+  globalThis.fetch=async()=>{throw new Error('Simulated durable storage transport failure');};
+  try{await assert.rejects(()=>actual.create(png.toString('base64'),filename));}finally{globalThis.fetch=originalFetch;}
   console.log('PASS actual Redis image bytes, TTL, cross-instance download, deletion and fail-closed upload');
 }
