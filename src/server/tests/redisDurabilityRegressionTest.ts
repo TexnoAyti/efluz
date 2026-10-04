@@ -225,6 +225,7 @@ async function main() {
     console.log('PASS actual Redis Lua: durable backup, duplicate and late replay, incomplete primary write retains backup.');
     await import('./approvedFixtureRestorationRegressionTest');
     console.log('PASS actual Redis Lua: one-time approved fixture restore appends to durable snapshots and survives retry.');
+    await import('./tournamentImageDownloadRegressionTest');
     console.log('Redis durability regression passed; Telegram transport was mocked, no real messages sent.');
   } finally { globalThis.fetch = isolatedFetch; bridge.close(); }
 }

@@ -505,6 +505,9 @@ export const api = {
   },
 
   // Admin
+  async createTournamentImageDownload(pngBase64: string, filename: string): Promise<{ downloadPath: string; expiresAt: number }> {
+    return request('/api/admin/image-exports', { method: 'POST', body: JSON.stringify({ pngBase64, filename }), timeoutMs: 20000 });
+  },
   async getAdminAccess(): Promise<{ adminPermissions: AdminPermissions; canUseDangerZone: boolean }> {
     return request('/api/admin/access', { skipCache: true });
   },

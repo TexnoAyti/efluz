@@ -13,6 +13,7 @@ export async function enforceLeagueAdminScope(req: Request, res: Response, next:
   const path = new URL(req.originalUrl, 'https://efluz.invalid').pathname;
   const deny = () => { res.status(403).json({ error: 'ADMIN_SCOPE_FORBIDDEN', message: 'Sizda bu liga yoki amal uchun ruxsat yo‘q.' }); };
   if (req.method === 'GET' && path === '/api/admin/access') return next();
+  if (req.method === 'POST' && /^\/api\/admin\/image-exports\/?$/.test(path)) return next();
   if (!allowed.length) return deny();
   if (req.method === 'GET' && /^\/api\/admin\/competitions\/([^/]+)\/matchday\/control$/.test(path) && competitionIds.has(decodeURIComponent(path.split('/')[4]))) return next();
   if (req.method === 'GET' && ['/api/admin/scoped/overview', '/api/admin/scoped/users', '/api/admin/scoped/reviews'].includes(path)) return next();

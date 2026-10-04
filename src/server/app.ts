@@ -1,3 +1,4 @@
+import { adminImageExportsRouter, imageExportDownloadRouter } from './routes/tournamentImageDownload.routes';
 import express from 'express';
 import { timingSafeEqual } from 'node:crypto';
 import { drainNotificationQueue, scheduleNotificationQueueDrain } from './services/telegramNotificationQueue';
@@ -116,8 +117,10 @@ export function createApp() {
     next();
   });
 
+  app.use('/api/admin/image-exports', express.json({ limit: '1mb' }));
   app.use(express.json({ limit: '256kb' }));
   app.use('/api', rateLimit('api-global', 300, 60));
+  app.use('/api/image-exports', imageExportDownloadRouter);
 
   app.all('/api/internal/telegram-worker', async (req, res) => {
     const secret = process.env.CRON_SECRET;
@@ -162,6 +165,7 @@ export function createApp() {
   app.use('/api/me', meRouter);
   app.use('/api/users', usersRouter);
   app.use('/api/insights', seasonInsightsRouter);
+  app.use('/api/admin/image-exports', adminImageExportsRouter);
   app.use('/api/admin/cups', adminCupDrawRouter);
   app.use('/api/admin/season-lifecycle', adminSeasonLifecycleRouter);
   app.use('/api/admin/season-ops', adminSeasonOperationsRouter);
