@@ -1,3 +1,4 @@
+import { tournamentImageBranding } from '../lib/tournamentImageBranding';
 import { createPortal } from 'react-dom';
 import { pngBlobBase64, startTournamentImageDownload } from '../lib/tournamentImageDownload';
 import React, { useEffect, useRef, useState } from 'react';
@@ -40,6 +41,9 @@ export const AdminTournamentImageExport: React.FC<{ competition?: Pick<Competiti
     if(busy||!competition)return;setBusy(true);const requestScope=scope;
     try{
       let model;
+      const competitionData=await api.getCompetitions(activeSeasonId);
+      const authoritativeCompetition=competitionData.competitions.find(c=>c.id===competition.id);
+      if(!authoritativeCompetition)throw new Error(copy.failed);
       if(kind==='standings'){
         const data=await api.getCompetitionStandings(competition.id,true);
         model=standingsImageModel(competition.name,activeSeasonId,data.standings,language);
@@ -49,6 +53,7 @@ export const AdminTournamentImageExport: React.FC<{ competition?: Pick<Competiti
         model=matchdayImageModel(competition.name,activeSeasonId,data.fixtures,selectedRound,language);
         model.cached=Boolean((data as any).degraded||(data as any).stale);
       }
+      model.branding=tournamentImageBranding(authoritativeCompetition,competitionData.competitions,model.rows.length);
       const blob=await tournamentImageBlob(model);
       const filename=imageFilename(competition.id,kind,kind==='matchday'?selectedRound:undefined);
       const download=await api.createTournamentImageDownload(await pngBlobBase64(blob),filename);

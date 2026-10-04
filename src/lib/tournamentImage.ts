@@ -1,3 +1,4 @@
+import type { ImageBranding } from './tournamentImageBranding';
 import type { Fixture, StandingsRow, User } from '../types';
 export function canExportTournamentImage(user?: Pick<User, 'isAdmin' | 'isSuspended'> | null): boolean {
   return Boolean(user?.isAdmin && !user.isSuspended);
@@ -11,7 +12,7 @@ export const exportCopy = {
 export interface TournamentImageModel {
   kind: 'standings' | 'matchday'; title: string; seasonId: string; language: ExportLanguage; round?: string;
   rows: Array<{ id: string; name: string; position?: number; stats?: number[]; awayId?: string; awayName?: string; score?: string; status?: string; winner?: 'home' | 'away' }>;
-  createdAt: string; cached?: boolean;
+  createdAt: string; cached?: boolean; branding?:ImageBranding;
 }
 export function standingsImageModel(title: string, seasonId: string, standings: StandingsRow[], language: ExportLanguage): TournamentImageModel {
   return { kind: 'standings', title, seasonId, language, createdAt: new Date().toISOString(), rows: [...standings].sort((a,b) => a.position-b.position || a.clubId.localeCompare(b.clubId)).map(row => ({ id: row.clubId, name: row.clubName, position: row.position, stats: [row.played, row.won, row.drawn, row.lost, row.goalsFor, row.goalsAgainst, row.goalDifference, row.points] })) };
@@ -31,7 +32,9 @@ export function imageFilename(competitionId: string, kind: 'standings' | 'matchd
 export function paintTournamentImage(ctx: CanvasRenderingContext2D, model: TournamentImageModel, crests = new Map<string, CanvasImageSource>()) {
   const width = 1080, table = model.kind === 'standings';
   const rowHeight = table ? 60 : 92, top = table ? 270 : 234;
-  const height = top + model.rows.length * rowHeight + 88;
+  const zones=table?model.branding?.zones||[]:[];
+  const accent=model.branding?.accent||'#78aaff';
+  const height = top + model.rows.length * rowHeight + 88+(zones.length?44:0);
   ctx.canvas.width = width; ctx.canvas.height = height;
   ctx.fillStyle = '#091321'; ctx.fillRect(0,0,width,height);
   const box = (x:number,y:number,w:number,h:number,color:string,r=12) => {
@@ -56,29 +59,31 @@ export function paintTournamentImage(ctx: CanvasRenderingContext2D, model: Tourn
     box(x,y,size,size,'#23354b',8);text(name.replace(/^club-/,'').slice(0,2).toUpperCase(),x+size/2,y+size/2,16,'#adc0d7','center');
   };
   const copy=exportCopy[model.language];
-  ctx.fillStyle='#34d399';ctx.fillRect(0,0,width,6);
-  text('EFL UZ',44,54,30,'#55e1b1');
+  ctx.fillStyle=accent;ctx.fillRect(0,0,width,6);
+  text('EFL UZ',44,54,30,'#f1f5fc');
   text(copy[model.kind],1036,54,16,'#91a6bd','right');
-  text(model.title,44,119,43,'#ffffff','left',980);
+  text(model.title,44,119,43,'#ffffff','left',model.branding?.emblemUrl?820:980);
+  const emblem=crests.get('__competition__');
+  if(emblem)crest('__competition__','',924,83,104);
   const season=model.seasonId.replace('season-','').replace('-','/');
   box(44,158,126,36,'#192b40',9);text(season,107,176,19,'#becde0','center');
-  if(model.round){ctx.font='700 19px Arial, sans-serif';box(182,158,Math.min(800,ctx.measureText(model.round).width+44),36,'#143e36',9);text(model.round,200,176,19,'#65e6bb','left',780);}
+  if(model.round){ctx.font='700 19px Arial, sans-serif';box(182,158,Math.min(800,ctx.measureText(model.round).width+44),36,'#192b40',9);text(model.round,200,176,19,accent,'left',780);}
   ctx.fillStyle='#25364b';ctx.fillRect(44,212,992,1);
   if(table){
     text('#',75,242,16,'#8da3be','center');text(copy.club,151,242,17,'#8da3be');
-    copy.stats.forEach((label,index)=>text(label,517+index*69,242,16,index===7?'#65e6bb':'#8da3be','center'));
+    copy.stats.forEach((label,index)=>text(label,517+index*69,242,16,index===7?'#e8eef7':'#8da3be','center'));
   }
   model.rows.forEach((row,index)=>{
     const y=top+index*rowHeight;
     box(40,y,1000,rowHeight-6,index%2?'#101f31':'#14263a',10);
     if(table){
-      const leading=row.position!<=3, trailing=model.rows.length>=18&&row.position!>model.rows.length-3;
-      const accent=leading?'#55dfb0':trailing?'#dd8992':'#8da3be';
-      if(leading||trailing){ctx.fillStyle=accent;ctx.fillRect(40,y+12,3,rowHeight-30);}
+      const zone=zones.find(z=>row.position!>=z.start&&row.position!<=z.end);
+      const accent=zone?.color||'#9bafc7';
+      if(zone){box(40,y,1000,rowHeight-6,zone.tint,10);ctx.fillStyle=accent;ctx.fillRect(40,y+12,4,rowHeight-30);}
       text(row.position!,76,y+27,21,accent,'center');crest(row.id,row.name,103,y+8,38);
       text(row.name,151,y+27,21,'#f0f5fc','left',317);
-      box(970,y+7,65,40,leading?'#174c3e':'#1b3a38',9);
-      row.stats!.forEach((value,i)=>text(i===6&&value>0?`+${value}`:value,517+i*69,y+27,i===7?25:21,i===7?'#6becbe':i===6?(value>0?'#93ddc6':value<0?'#e0a2ab':'#b8c8dc'):'#d5e0ef','center'));
+      box(970,y+7,65,40,zone?'#0e1a2b':'#213249',9);
+      row.stats!.forEach((value,i)=>text(i===6&&value>0?`+${value}`:value,517+i*69,y+27,i===7?25:21,i===7?(zone?.color||'#f1f5fc'):i===6?(value>0?'#93ddc6':value<0?'#e0a2ab':'#b8c8dc'):'#d5e0ef','center'));
     }else{
       const center=y+(rowHeight-6)/2;
       crest(row.id,row.name,60,center-23,46);crest(row.awayId!,row.awayName!,974,center-23,46);
@@ -90,9 +95,12 @@ export function paintTournamentImage(ctx: CanvasRenderingContext2D, model: Tourn
       if(row.status)text(row.status,540,center+16,13,'#a8bdd3','center',138,500);
     }
   });
+  if(zones.length){let x=44;const y=top+model.rows.length*rowHeight+21;
+    zones.forEach(zone=>{ctx.fillStyle=zone.color;ctx.fillRect(x,y-5,10,10);const label=`${zone.label==='↓'?({uz:'Quyi zona',ru:'Нижняя зона',en:'Bottom zone'}[model.language]):zone.label} ${zone.start}–${zone.end}`;text(label,x+20,y,16,'#c9d5e6');x+=ctx.measureText(label).width+60;});
+  }
   const footer=height-31;
   ctx.fillStyle='#25364b';ctx.fillRect(44,height-61,992,1);
-  text('t.me/efluzbot',44,footer,18,'#55dfb0');
+  text('t.me/efluzbot',44,footer,18,accent);
   const locale={uz:'uz-UZ',ru:'ru-RU',en:'en-GB'}[model.language];
   text(`${model.cached?copy.cached+' • ':''}${copy.created}: ${new Date(model.createdAt).toLocaleString(locale,{timeZone:'Asia/Tashkent',dateStyle:'short',timeStyle:'short'})}`,1036,footer,14,'#8da3be','right',750,500);
 }
@@ -101,10 +109,11 @@ export async function tournamentImageBlob(model: TournamentImageModel): Promise<
   if (!ctx || !model.rows.length) throw new Error(exportCopy[model.language].empty);
   const ids = [...new Set(model.rows.flatMap(row => [row.id,row.awayId]).filter(Boolean) as string[])];
   const crests = new Map<string, CanvasImageSource>();
+  if(model.branding?.emblemUrl){ids.push('__competition__');}
   await Promise.all(ids.map(id => new Promise<void>(resolve => {
     const img = new Image(); const finish=()=>{clearTimeout(timeout);resolve();};
     const timeout=setTimeout(finish,4000);img.onload=()=>{crests.set(id,img);finish();};img.onerror=finish;
-    img.src=`/api/clubs/${encodeURIComponent(id)}/crest`;
+    img.src=id==='__competition__'?model.branding!.emblemUrl!:`/api/clubs/${encodeURIComponent(id)}/crest`;
   })));
   paintTournamentImage(ctx,model,crests);
   return new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error(exportCopy[model.language].failed)),'image/png'));
