@@ -1317,6 +1317,8 @@ export const api = {
     detectedCompetitions: string[];
     hasStaleData: boolean;
     factsSummary: string;
+    factualAnswer?: string;
+    dataDiagnostics?: { missingDatasets: string[]; failedDatasets: string[]; durationMs: number; fixturesCount: number };
   }> {
     return request('/api/admin/telegram-ai/test-query', {
       method: 'POST',

@@ -6,28 +6,14 @@
  * Formats exact positions, scores, and standings server-side with stale disclosures.
  */
 
-import { ReadModelKeys, getFreshKey, getLkgKey, getDirtyKey, ReadModelSnapshot, OwnerNeutralClub } from '../readModel/readModelStore';
-import { getAiRedisClient } from './telegramAiDeadline';
+import { ReadModelKeys, OwnerNeutralClub } from '../readModel/readModelStore';
+import { createAiSnapshotReader } from './telegramAiSnapshotReader';
+import { filterRetiredFixtures } from './retiredFixtureService';
 import { SEED_COMPETITIONS, SEED_CLUBS } from '../db/seed';
 import { Competition, StandingsRow, Fixture, Club } from '../../types';
 import { sortSeasonFixtures } from '../../lib/fixtureOrder';
 import { withSeasonQualificationPolicy } from '../../lib/seasonQualificationPolicy';
 import { resolveAiClubs, normalizeAiEntity, containsAiEntity } from './telegramAiEntities';
-
-/** AI reads cached snapshots only; cache misses never trigger Firestore refreshes. */
-async function readAiSnapshot<T>(key: string, signal?: AbortSignal): Promise<{ data: T[]; stale: boolean }> {
-  const client = getAiRedisClient(signal);
-  if (!client || signal?.aborted) return { data: [], stale: true };
-  const [freshRaw, dirty] = await client.mget<unknown[]>(getFreshKey(key), getDirtyKey(key));
-  const decode = (raw: unknown): ReadModelSnapshot<T[]> | null => {
-    const snapshot = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    return snapshot && typeof snapshot === 'object' && Array.isArray(snapshot.data) ? snapshot : null;
-  };
-  const fresh = decode(freshRaw);
-  if (fresh && !dirty) return { data: fresh.data, stale: false };
-  const lkg = decode(await client.get(getLkgKey(key)));
-  return { data: lkg?.data || fresh?.data || [], stale: true };
-}
 
 export interface GroundingContext {
   factsSummary: string;
@@ -37,6 +23,7 @@ export interface GroundingContext {
   ownershipAnswer?: string;
   factualAnswer?: string;
   selectedClubIds: string[];
+  dataDiagnostics?: { missingDatasets: string[]; failedDatasets: string[]; durationMs: number; fixturesCount: number };
 }
 
 export interface TestGroundingOverride {
@@ -106,10 +93,12 @@ export async function buildAiGroundingContext(
   options?: { signal?: AbortSignal; previousUserQueries?: string[]; selectedClubIds?: string[] }
 ): Promise<GroundingContext> {
   let hasStaleData = false;
-  const read = async <T>(key: string): Promise<{ data: T[]; stale: boolean }> => {
-    try { return await readAiSnapshot<T>(key, options?.signal); }
-    catch { return { data: [], stale: true }; }
-  };
+  const ownerOnly=isClubOwnershipQuestion(query) && !/nechanchi|ochko|o[‘’'`]?rin|natija|forma|statistika|yut|gol|o[‘’'`]?yin|keyingi|navbatdagi|kubok|ucl|uel|tahlil|hazil|qachon|qancha|nega/i.test(query);
+  const started=Date.now();
+  const reader=createAiSnapshotReader(options?.signal);
+  const tombstoneKey=`efluz:v1:season:${seasonId}:fixture-tombstones`;
+  if(!testGroundingOverride)await reader.load([ReadModelKeys.competitions(seasonId),ReadModelKeys.clubsWithOwners(seasonId),...(ownerOnly?[]:[ReadModelKeys.adminFixtures(seasonId),tombstoneKey])]);
+  const read=<T>(key:string)=>reader.read<T>(key);
   const [compSnapshot, clubSnapshot] = await Promise.all([
     testGroundingOverride?.competitions ? Promise.resolve({ data: testGroundingOverride.competitions, stale: false })
       : read<Competition>(ReadModelKeys.competitions(seasonId)),
@@ -123,6 +112,12 @@ export async function buildAiGroundingContext(
     .filter(c => !(c as Club & { seasonId?: string }).seasonId || (c as Club & { seasonId?: string }).seasonId === seasonId);
   const selection = resolveAiClubs(query, clubs, options?.selectedClubIds, options?.previousUserQueries);
   const matched = selection.clubs;
+  if(ownerOnly){
+    const answer=selection.clarification || (matched.length ? matched.map(c=>ownershipLine(c,clubSnapshot.data.length>0,clubSnapshot.stale)).join('\n') : 'Qaysi klubning egasini so‘rayapsiz? Klub nomini yozing; tasdiqlangan egasi ma’lumotini tekshiraman.');
+    return {factsSummary:CORE_RULES_SUMMARY+'\n'+answer,hasStaleData:clubSnapshot.stale,detectedClubs:matched.map(c=>c.name),detectedCompetitions:[],
+      selectedClubIds:selection.clarification?[]:matched.map(c=>c.id),ownershipAnswer:answer,factualAnswer:answer,
+      dataDiagnostics:{missingDatasets:reader.missingKeys(),failedDatasets:reader.failedKeys(),durationMs:Date.now()-started,fixturesCount:0}};
+  }
   const ids = new Set(matched.map(c => c.id));
   const normalized = normalizeAiEntity(query);
   const explicitCompetitions = competitions.filter(c => containsAiEntity(normalized, c.name) ||
@@ -134,13 +129,25 @@ export async function buildAiGroundingContext(
   let seasonFixtures = testGroundingOverride
     ? { data: Object.values(testGroundingOverride.fixtures || {}).flat(), stale: false }
     : await read<Fixture>(ReadModelKeys.adminFixtures(seasonId));
-  if (!testGroundingOverride && !seasonFixtures.data.length && matched.length) {
-    const snapshots = await Promise.all(competitions.map(c => read<Fixture>(ReadModelKeys.competitionFixtures(c.id, seasonId))));
-    seasonFixtures = { data: snapshots.flatMap(s => s.data), stale: snapshots.some(s => s.stale) };
+  const related=competitions.filter(c=>explicitCompetitions.some(e=>e.id===c.id) || matched.some(club=>c.leagueId===club.leagueId || isLeagueForClub(c,club)) ||
+    matched.length && (c.type==='EUROPEAN_LEAGUE_PHASE'||c.type==='EUROPEAN_KNOCKOUT') || /barcha|hamma|turnirlar|ligalar|chempionatlar/i.test(query));
+  if(!testGroundingOverride){
+    await reader.load(related.flatMap(c=>[ReadModelKeys.competitionFixtures(c.id,seasonId),...(['LEAGUE','EUROPEAN_LEAGUE_PHASE'].includes(c.type)?[ReadModelKeys.standings(c.id,seasonId)]:[])]));
+    const admin=await read<Fixture>(ReadModelKeys.adminFixtures(seasonId));
+    for(const comp of related){
+      const cached=await read<Fixture>(ReadModelKeys.competitionFixtures(comp.id,seasonId));
+      const adminHas=seasonFixtures.data.some(f=>f.competitionId===comp.id);
+      if(cached.available && (!adminHas || (Date.parse(cached.snapshotAt)||0)>=(Date.parse(admin.snapshotAt)||0))){
+        seasonFixtures={data:[...seasonFixtures.data.filter(f=>f.competitionId!==comp.id),...cached.data.filter(f=>f.competitionId===comp.id)],stale:seasonFixtures.stale||cached.stale};
+      }
+    }
+    const tombstones=await read<{fixtureId:string;restoredAt?:string}>(tombstoneKey);
+    const deleted=new Set(tombstones.data.filter(t=>!t.restoredAt).map(t=>t.fixtureId));
+    seasonFixtures.data=filterRetiredFixtures(seasonFixtures.data.filter(f=>!deleted.has(f.id)),seasonId);
   }
   const validFixtures = seasonFixtures.data.filter(f => (!f.seasonId || f.seasonId === seasonId) && f.status !== 'CANCELLED');
   const target = competitions.filter(c => explicitCompetitions.some(e => e.id === c.id) ||
-    matched.some(club => isLeagueForClub(c, club)) || validFixtures.some(f => f.competitionId === c.id &&
+    matched.some(club => isLeagueForClub(c, club)) || explicitCompetitions.some(e=>e.id===c.id) || validFixtures.some(f => f.competitionId === c.id &&
       (ids.has(f.homeClubId || '') || ids.has(f.awayClubId || ''))));
   // No arbitrary top-two league fallback. General league questions can use all public competitions.
   const broad = /barcha|hamma|turnirlar|ligalar|chempionatlar/i.test(query);
@@ -152,10 +159,9 @@ export async function buildAiGroundingContext(
   const data = await Promise.all(targets.map(async comp => {
     const [table, fixtureSnapshot] = await Promise.all([
       testGroundingOverride ? Promise.resolve({ data: overrideRows(testGroundingOverride.standings, comp.id), stale: false })
-        : read<StandingsRow>(ReadModelKeys.standings(comp.id, seasonId)),
+        : ['LEAGUE','EUROPEAN_LEAGUE_PHASE'].includes(comp.type) ? read<StandingsRow>(ReadModelKeys.standings(comp.id, seasonId)) : Promise.resolve({data:[] as StandingsRow[],stale:false}),
       testGroundingOverride ? Promise.resolve({ data: overrideRows(testGroundingOverride.fixtures, comp.id), stale: false })
-        : seasonFixtures.data.length ? Promise.resolve({ data: validFixtures.filter(f => f.competitionId === comp.id), stale: seasonFixtures.stale })
-          : read<Fixture>(ReadModelKeys.competitionFixtures(comp.id, seasonId)),
+        : Promise.resolve({ data: validFixtures.filter(f => f.competitionId === comp.id), stale: seasonFixtures.stale }),
     ]);
     const fixtures = fixtureSnapshot.data.filter(f => (!f.seasonId || f.seasonId === seasonId) && f.status !== 'CANCELLED');
     return { comp, rows: table.data, fixtures, stale: table.stale || fixtureSnapshot.stale, fixturesStale: fixtureSnapshot.stale };
@@ -180,7 +186,7 @@ export async function buildAiGroundingContext(
   for (const { comp, rows, fixtures, fixturesStale } of data) {
     const config = comp.formatConfig || {};
     sections.push(`MUSOBAQA: ${comp.name}; holat: ${comp.status}; joriy tur: ${comp.currentMatchday ?? 'noma’lum'}; tur ochiq: ${comp.isMatchdayOpen === undefined ? 'noma’lum' : comp.isMatchdayOpen ? 'ha' : 'yo‘q'}; muddat: ${comp.matchdayDurationHours ?? 'noma’lum'} soat; keyingi ochilish: ${comp.nextMatchdayOpenAt || 'belgilanmagan'}; ochkolar G/D/M: ${config.pointsForWin ?? 'noma’lum'}/${config.pointsForDraw ?? 'noma’lum'}/${config.pointsForLoss ?? 'noma’lum'}; UCL joy: ${config.qualificationSpots ?? 'noma’lum'}; UEL joy: ${config.europaQualificationSpots ?? 'noma’lum'}.`);
-    sections.push(`TURNIR JADVALI (${comp.name}):\n` + (rows.length ? [...rows].sort((a,b) => a.position-b.position).map(r =>
+    if(['LEAGUE','EUROPEAN_LEAGUE_PHASE'].includes(comp.type))sections.push(`TURNIR JADVALI (${comp.name}):\n` + (rows.length ? [...rows].sort((a,b) => a.position-b.position).map(r =>
       `${r.position}-o'rin: ${r.clubName} — ${r.points} ochko (O':${r.played}, G':${r.won}, D:${r.drawn}, M:${r.lost}, T/F:${r.goalsFor}-${r.goalsAgainst}, farq:${r.goalDifference})`).join('\n') : 'Jadval ma’lumoti mavjud emas.'));
     if (comp.type === 'LEAGUE' && Number.isInteger(config.qualificationSpots) && Number.isInteger(config.europaQualificationSpots)) {
       sections.push(`${comp.name} saralash zonalari: UCL 1–${config.qualificationSpots}; UEL ${config.qualificationSpots!+1}–${config.qualificationSpots!+config.europaQualificationSpots!}. Bu hozirgi jadval zonasi, mavsum yakunidagi kafolat emas.`);
@@ -261,7 +267,9 @@ export async function buildAiGroundingContext(
     if (summary.length + section.length > 24000) { hasStaleData = true; summary += '\n[Qo‘shimcha faktlar hajm sabab kiritilmadi; yetishmagan faktni taxmin qilmang.]'; break; }
     summary += section + '\n\n';
   }
-  return { factsSummary: summary, hasStaleData, detectedClubs: matched.map(c => c.name),
+  const dataDiagnostics={missingDatasets:reader.missingKeys(),failedDatasets:reader.failedKeys(),durationMs:Date.now()-started,fixturesCount:allFixtures.length};
+  if(!testGroundingOverride)console.info('[AI_GROUNDING]',JSON.stringify({durationMs:dataDiagnostics.durationMs,clubs:matched.length,competitions:targets.length,fixtures:allFixtures.length,missing:dataDiagnostics.missingDatasets.length,failed:dataDiagnostics.failedDatasets.length}));
+  return { dataDiagnostics, factsSummary: summary, hasStaleData, detectedClubs: matched.map(c => c.name),
     selectedClubIds: selection.clarification ? [] : matched.length ? matched.map(c => c.id) : options?.selectedClubIds || [], detectedCompetitions: targets.map(c => c.id),
     ownershipAnswer, factualAnswer: selection.clarification || (facts.length ? facts.join('\n') + (hasStaleData && !(facts.length === 1 && facts[0] === ownershipAnswer) && !facts.some(f => /eski snapshot/.test(f)) ? '\nMa’lumot eski yoki to‘liq bo‘lmagan snapshotdan; joriy holat tasdiqlanmagan.' : '') : !analytical ? ownershipAnswer : undefined) };
 }

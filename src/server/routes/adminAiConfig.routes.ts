@@ -40,7 +40,7 @@ adminAiConfigRouter.get('/config', requireAdmin, requirePrimaryOwner, async (_re
   try {
     const { config, redisAvailable } = await getTelegramAiConfig();
     const hasApiKey = Boolean(process.env.GEMINI_API_KEY?.trim());
-    const modelName = process.env.GEMINI_MODEL?.trim() || 'gemini-3.8-flash';
+    const modelName = process.env.GEMINI_MODEL?.trim() || 'gemini-3.1-flash-lite';
 
     res.json({
       success: true,
@@ -104,7 +104,7 @@ adminAiConfigRouter.get('/diagnostics', requireAdmin, requirePrimaryOwner, async
     const { config, redisAvailable } = await getTelegramAiConfig();
     const rateMetrics = await getAiRateLimitMetrics();
     const hasApiKey = Boolean(process.env.GEMINI_API_KEY?.trim());
-    const modelName = process.env.GEMINI_MODEL?.trim() || 'gemini-3.8-flash';
+    const modelName = process.env.GEMINI_MODEL?.trim() || 'gemini-3.1-flash-lite';
 
     res.json({
       success: true,
@@ -145,6 +145,8 @@ adminAiConfigRouter.post('/test-query', requireAdmin, requirePrimaryOwner, async
       detectedClubs: grounding.detectedClubs,
       detectedCompetitions: grounding.detectedCompetitions,
       hasStaleData: grounding.hasStaleData,
+      dataDiagnostics: grounding.dataDiagnostics,
+      factualAnswer: grounding.factualAnswer,
       factsSummary: grounding.factsSummary,
     });
   } catch (err: any) {

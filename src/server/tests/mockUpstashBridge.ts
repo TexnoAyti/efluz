@@ -32,6 +32,7 @@ export async function startMockUpstashBridge(): Promise<MockRedisServer> {
       store.set(String(args[1]), typeof args[2] === 'string' ? args[2] : JSON.stringify(args[2]));
       return 'OK';
     }
+    if (op === 'mget') return args.slice(1).map(key => store.get(String(key)) ?? null);
     if (op === 'get') {
       return store.has(String(args[1])) ? store.get(String(args[1])) : null;
     }

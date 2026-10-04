@@ -381,6 +381,14 @@ export const AdminTelegramAiTab: React.FC = () => {
                   <span>•</span>
                   <span>Kesh holati: <strong className={testResult.hasStaleData ? 'text-amber-400' : 'text-emerald-400'}>{testResult.hasStaleData ? 'Eskirgan snapshot (Stale)' : 'Yangi (Fresh)'}</strong></span>
                 </div>
+                {testResult.factualAnswer && <p className="whitespace-pre-wrap text-emerald-300">Aniq javob: {testResult.factualAnswer}</p>}
+                {testResult.dataDiagnostics && <div className="text-slate-400 space-y-1">
+                  <p>Ma’lumot olish: {testResult.dataDiagnostics.durationMs} ms · {testResult.dataDiagnostics.fixturesCount} o‘yin</p>
+                  {(testResult.dataDiagnostics.failedDatasets?.length > 0 || testResult.dataDiagnostics.missingDatasets?.length > 0) && <details>
+                    <summary className="cursor-pointer text-amber-400">Yetishmagan kesh: {testResult.dataDiagnostics.missingDatasets?.length || 0} · O‘qish xatosi: {testResult.dataDiagnostics.failedDatasets?.length || 0}</summary>
+                    <ul className="mt-1 space-y-1 break-all">{Array.from(new Set<string>([...(testResult.dataDiagnostics.missingDatasets || []), ...(testResult.dataDiagnostics.failedDatasets || [])])).map(key => <li key={key}>{key.replace(/^efluz:v1:/, '')}</li>)}</ul>
+                  </details>}
+                </div>}
                 <div className="mt-2 pt-2 border-t border-slate-900">
                   <span className="text-[10px] text-slate-500 uppercase tracking-wider block mb-1">Server Faktlar Konteksti:</span>
                   <pre className="text-[11px] text-slate-300 whitespace-pre-wrap font-mono bg-slate-900/60 p-3 rounded-lg border border-slate-800 max-h-48 overflow-y-auto">
