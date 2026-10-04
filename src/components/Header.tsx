@@ -1,3 +1,4 @@
+import { EFL_2_DESIGN_ENABLED } from '../releaseDesign';
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -53,7 +54,7 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className={`sticky top-0 z-40 bg-[#06090e]/90 backdrop-blur-xl border-b border-white/[0.08] text-white ${user?.isAdmin ? 'preview-app-header' : ''}`}>
+    <header className={`sticky top-0 z-40 bg-[#06090e]/90 backdrop-blur-xl border-b border-white/[0.08] text-white ${EFL_2_DESIGN_ENABLED ? 'preview-app-header' : ''}`}>
       {/* Sandbox Dev Switcher Banner (Collapsed & compact on mobile) */}
       {isDevMode && (
         <div className="bg-gradient-to-r from-emerald-950/80 via-slate-900/90 to-indigo-950/80 border-b border-emerald-500/20 px-3 py-1 text-xs backdrop-blur-md">
@@ -116,7 +117,7 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 h-13 sm:h-15 flex items-center justify-between gap-2 sm:gap-4">
         {/* Brand & Logo */}
         <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
-          {user?.isAdmin ? (
+          {EFL_2_DESIGN_ENABLED ? (
             <div className="preview-brand-logo shrink-0 cursor-pointer" onClick={() => onOpenProfile && onOpenProfile()}>
               <img className="preview-logo-dark" src="/efluz-logo.png" alt="EFL UZ" />
               <img className="preview-logo-light" src="/efluz-logo-light.png" alt="EFL UZ" aria-hidden="true" />
@@ -136,7 +137,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right Controls */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-          {user?.isAdmin ? (
+          {EFL_2_DESIGN_ENABLED ? (
             <>
               {/* Global Search Button */}
               <button

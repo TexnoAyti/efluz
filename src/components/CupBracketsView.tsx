@@ -1,3 +1,4 @@
+import { EFL_2_DESIGN_ENABLED } from '../releaseDesign';
 import { AdminTournamentImageExport } from './AdminTournamentImageExport';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -142,7 +143,7 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
 
   return (
     <div className="space-y-4 pb-20 animate-in fade-in duration-200">
-      {!user?.isAdmin && onNavigateTab && (
+      {!EFL_2_DESIGN_ENABLED && onNavigateTab && (
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
           <button
             onClick={() => onNavigateTab('leagues')}

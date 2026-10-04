@@ -29,6 +29,9 @@ jobs:
       - name: Run Lint
         run: bun run lint
 
+      - name: Verify public EFL 2.0 design and role boundaries
+        run: node scripts/verify-design-release.mjs
+
       - name: Run Build
         env:
           FIREBASE_FORCE_LOCAL_FALLBACK: "true"

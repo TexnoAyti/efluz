@@ -1,3 +1,4 @@
+import { EFL_2_DESIGN_ENABLED } from '../releaseDesign';
 import { AdminTournamentImageExport } from './AdminTournamentImageExport';
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -67,10 +68,10 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
   // League & Data states
   const [leagues, setLeagues] = useState<League[]>([]);
   const [selectedLeagueId, setSelectedLeagueId] = useState<string>(() => {
-    try { return user?.isAdmin && sessionStorage.getItem('efl:preview-league') || 'league-premier-league'; } catch { return 'league-premier-league'; }
+    try { return EFL_2_DESIGN_ENABLED && sessionStorage.getItem('efl:preview-league') || 'league-premier-league'; } catch { return 'league-premier-league'; }
   });
   const [activeLeagueTab, setActiveLeagueTab] = useState<'CLUBS' | 'MATCHES' | 'STANDINGS'>(() => {
-    if (!user?.isAdmin) return 'CLUBS';
+    if (!EFL_2_DESIGN_ENABLED) return 'CLUBS';
     try {
       const target = sessionStorage.getItem('efl:preview-league-tab');
       sessionStorage.removeItem('efl:preview-league-tab');
@@ -124,7 +125,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
   const [filterMode, setFilterMode] = useState<'ALL' | 'AVAILABLE' | 'CLAIMED'>('ALL');
 
   useEffect(() => {
-    if (!user?.isAdmin) return;
+    if (!EFL_2_DESIGN_ENABLED) return;
     try {
       if (sessionStorage.getItem('efl:preview-club-search') !== '1') return;
       sessionStorage.removeItem('efl:preview-club-search');
@@ -133,7 +134,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
       // A WebView may hide the focused input behind its software keyboard.
       window.setTimeout(() => searchInputRef.current?.focus({ preventScroll: true }), 300);
     } catch { /* storage may be unavailable in a WebView */ }
-  }, [user?.isAdmin]);
+  }, [EFL_2_DESIGN_ENABLED]);
 
   // Competition Fixtures & Standings state for the selected league
   const [leagueCompetitions, setLeagueCompetitions] = useState<Competition[]>([]);
@@ -284,7 +285,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
 
   const handleSelectLeague = (leagueId: string) => {
     setSelectedLeagueId(leagueId);
-    if (user?.isAdmin) try { sessionStorage.setItem('efl:preview-league', leagueId); } catch { /* storage may be unavailable in a WebView */ }
+    if (EFL_2_DESIGN_ENABLED) try { sessionStorage.setItem('efl:preview-league', leagueId); } catch { /* storage may be unavailable in a WebView */ }
     loadClubsForLeague(leagueId);
     if (activeLeagueTab === 'MATCHES') {
       loadLeagueFixtures(leagueId, selectedMatchday);
@@ -439,9 +440,9 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
 
 
   return (
-    <div className={`space-y-6 animate-in fade-in duration-300 pb-20 ${user?.isAdmin && activeLeagueTab === 'STANDINGS' ? 'efl-standings-page' : ''}`}>
+    <div className={`space-y-6 animate-in fade-in duration-300 pb-20 ${EFL_2_DESIGN_ENABLED && activeLeagueTab === 'STANDINGS' ? 'efl-standings-page' : ''}`}>
       {/* Category Quick Switcher Hub (Legacy Normal Players only) */}
-      {!user?.isAdmin && (
+      {!EFL_2_DESIGN_ENABLED && (
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
           <button
             className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-black btn-glass-primary text-slate-950 shadow-md min-h-[36px]"
@@ -475,7 +476,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
         <div className="efl-league-section-heading flex items-center justify-between">
           <div className="text-[11px] font-black text-[var(--efl-text-2)] uppercase tracking-wider flex items-center gap-1.5">
             <Shield className="w-3.5 h-3.5 text-[var(--efl-primary)]" />
-            <span>{user?.isAdmin ? previewText.domestic : 'Domestic Leagues'} (2026/27)</span>
+            <span>{EFL_2_DESIGN_ENABLED ? previewText.domestic : 'Domestic Leagues'} (2026/27)</span>
           </div>
           <button
             id="btn-refresh-clubs-view"
@@ -491,15 +492,15 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
             className="px-2.5 py-1 rounded-xl bg-[var(--efl-surface)] border border-[var(--efl-border)] text-[var(--efl-text-2)] hover:bg-[var(--efl-surface-2)] hover:text-[var(--efl-text)] font-bold text-[11px] flex items-center gap-1 transition-colors disabled:opacity-50 min-h-[32px] shadow-xs"
           >
             <RefreshCw className={`w-3 h-3 ${isLoadingClubs ? 'animate-spin text-[var(--efl-primary)]' : ''}`} />
-            <span>{user?.isAdmin ? previewText.refresh : 'Refresh'}</span>
+            <span>{EFL_2_DESIGN_ENABLED ? previewText.refresh : 'Refresh'}</span>
           </button>
         </div>
 
         {leagues.length > 0 && (
-          <div className={`flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none ${user?.isAdmin ? 'efl-league-icon-selector' : ''}`}>
+          <div className={`flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none ${EFL_2_DESIGN_ENABLED ? 'efl-league-icon-selector' : ''}`}>
             {leagues.map((league) => {
               const isSelected = selectedLeagueId === league.id;
-              const welcomeIcon = user?.isAdmin ? welcomeLeagueIcons[league.id] : undefined;
+              const welcomeIcon = EFL_2_DESIGN_ENABLED ? welcomeLeagueIcons[league.id] : undefined;
               const flag =
                 league.country === 'England'
                   ? '🏴󠁧󠁢󠁥󠁮󠁧󠁿'
@@ -533,7 +534,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                       (e.target as HTMLElement).style.display = 'none';
                     }}
                   />
-                  {!user?.isAdmin && <>
+                  {!EFL_2_DESIGN_ENABLED && <>
                   <span>{flag}</span>
                   <span>{league.name}</span>
                   <span
@@ -560,7 +561,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
             <div className="efl-league-banner-content flex items-center gap-4">
               <div className="efl-theme-league-logo w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-[var(--efl-surface-2)] p-2.5 border border-[var(--efl-border)] flex items-center justify-center shadow-xs shrink-0">
                 <img
-                  src={user?.isAdmin && welcomeLeagueIcons[currentLeague.id] ? `/welcome/${welcomeLeagueIcons[currentLeague.id]}.svg` : currentLeague.logoUrl}
+                  src={EFL_2_DESIGN_ENABLED && welcomeLeagueIcons[currentLeague.id] ? `/welcome/${welcomeLeagueIcons[currentLeague.id]}.svg` : currentLeague.logoUrl}
                   alt={currentLeague.name}
                   className="w-10 h-10 object-contain"
                   onError={(e) => {
@@ -572,10 +573,10 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
               <div>
                 <div className="efl-fit-wrap flex items-center gap-2">
                   <span className="text-xs font-bold text-[var(--efl-text-2)] uppercase tracking-wider">
-                    {currentLeague.country} • {user?.isAdmin ? previewText.tier : 'Tier'} {currentLeague.tier}
+                    {currentLeague.country} • {EFL_2_DESIGN_ENABLED ? previewText.tier : 'Tier'} {currentLeague.tier}
                   </span>
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-[var(--efl-primary-soft)] text-[var(--efl-primary)] border border-[var(--efl-primary)]/20">
-                    2026/27 {user?.isAdmin ? previewText.active : 'Active'}
+                    2026/27 {EFL_2_DESIGN_ENABLED ? previewText.active : 'Active'}
                   </span>
                 </div>
                 <h1 className="text-xl sm:text-2xl font-black text-[var(--efl-text)] tracking-tight mt-0.5">
@@ -584,12 +585,12 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                 <div className="efl-fit-wrap flex items-center gap-3 mt-1.5 text-xs text-[var(--efl-text-2)]">
                   <span className="flex items-center gap-1 font-semibold">
                     <Shield className="w-3.5 h-3.5 text-[var(--efl-primary)]" />
-                    <span>{clubs.length} {user?.isAdmin ? previewText.clubs : 'Clubs'}</span>
+                    <span>{clubs.length} {EFL_2_DESIGN_ENABLED ? previewText.clubs : 'Clubs'}</span>
                   </span>
                   <span>•</span>
-                  <span className="text-emerald-600 efl-theme-emerald dark:text-emerald-400 font-bold">{availableCount} {user?.isAdmin ? previewText.available : 'Available'}</span>
+                  <span className="text-emerald-600 efl-theme-emerald dark:text-emerald-400 font-bold">{availableCount} {EFL_2_DESIGN_ENABLED ? previewText.available : 'Available'}</span>
                   <span>•</span>
-                  <span className="text-blue-600 efl-theme-blue dark:text-blue-400 font-bold">{claimedCount} {user?.isAdmin ? previewText.claimed : 'Claimed'}</span>
+                  <span className="text-blue-600 efl-theme-blue dark:text-blue-400 font-bold">{claimedCount} {EFL_2_DESIGN_ENABLED ? previewText.claimed : 'Claimed'}</span>
                 </div>
               </div>
             </div>
@@ -634,7 +635,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
           }`}
         >
           <Shield className="w-4 h-4" />
-          <span>{user?.isAdmin ? previewText.clubs : 'Clubs'} ({clubs.length})</span>
+          <span>{EFL_2_DESIGN_ENABLED ? previewText.clubs : 'Clubs'} ({clubs.length})</span>
         </button>
 
         <button
@@ -646,7 +647,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
           }`}
         >
           <Swords className="w-4 h-4" />
-          <span>{user?.isAdmin ? previewText.matches : `Matches (${leagueFixtures.length})`}</span>
+          <span>{EFL_2_DESIGN_ENABLED ? previewText.matches : `Matches (${leagueFixtures.length})`}</span>
         </button>
 
         <button
@@ -658,7 +659,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
           }`}
         >
           <Trophy className="w-4 h-4" />
-          <span>{user?.isAdmin ? previewText.standings : 'Standings Table'}</span>
+          <span>{EFL_2_DESIGN_ENABLED ? previewText.standings : 'Standings Table'}</span>
         </button>
       </div>
 
@@ -896,7 +897,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
           {matchdays.length > 0 && (
             <div className="p-2.5 rounded-2xl bg-[var(--efl-surface)] border border-[var(--efl-border)] flex items-center gap-2 overflow-x-auto scrollbar-none shadow-xs">
               <span className="text-[11px] font-black text-[var(--efl-text-2)] uppercase tracking-wider shrink-0 mr-1">
-                {user?.isAdmin ? previewText.matchday : 'Matchday'}:
+                {EFL_2_DESIGN_ENABLED ? previewText.matchday : 'Matchday'}:
               </span>
               {matchdays.map((md) => (
                 <button
@@ -908,7 +909,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                       : 'bg-[var(--efl-surface-2)] border-[var(--efl-border)] text-[var(--efl-text-2)] hover:bg-[var(--efl-surface)] hover:text-[var(--efl-text)]'
                   }`}
                 >
-                  {user?.isAdmin ? previewText.matchday : 'MD'} {md}
+                  {EFL_2_DESIGN_ENABLED ? previewText.matchday : 'MD'} {md}
                 </button>
               ))}
             </div>
@@ -923,7 +924,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
             </div>
           ) : currentMatchdayFixtures.length === 0 ? (
             <div className="py-12 text-center rounded-2xl bg-[var(--efl-surface)] border border-[var(--efl-border)] text-[var(--efl-text-2)] text-xs shadow-xs">
-              {user?.isAdmin ? previewText.emptyFixtures : 'No fixtures scheduled for this matchday.'}
+              {EFL_2_DESIGN_ENABLED ? previewText.emptyFixtures : 'No fixtures scheduled for this matchday.'}
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -944,7 +945,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                     } ${isUserClub ? 'border-[var(--efl-primary)]/40 bg-[var(--efl-primary-soft)]/40' : ''}`}
                   >
                     <div className="flex items-center justify-between text-[11px] text-[var(--efl-text-2)] border-b border-[var(--efl-border)] pb-2">
-                      <span className="font-bold">{fix.roundName || `${user?.isAdmin ? previewText.matchday : 'Matchday'} ${fix.matchday}`}</span>
+                      <span className="font-bold">{fix.roundName || `${EFL_2_DESIGN_ENABLED ? previewText.matchday : 'Matchday'} ${fix.matchday}`}</span>
                       <span
                         className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
                           isConfirmed
@@ -954,7 +955,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                             : 'bg-[var(--efl-surface-2)] text-[var(--efl-text-2)] border border-[var(--efl-border)]'
                         }`}
                       >
-                        {user?.isAdmin ? fixtureStatusText[fix.status || 'UPCOMING'] || fix.status || fixtureStatusText.UPCOMING : isConfirmed ? 'CONFIRMED' : fix.status || 'UPCOMING'}
+                        {EFL_2_DESIGN_ENABLED ? fixtureStatusText[fix.status || 'UPCOMING'] || fix.status || fixtureStatusText.UPCOMING : isConfirmed ? 'CONFIRMED' : fix.status || 'UPCOMING'}
                       </span>
                     </div>
 
@@ -1061,8 +1062,8 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
 
       {/* TAB C: STANDINGS TABLE */}
       {activeLeagueTab === 'STANDINGS' && (
-        <div className={`space-y-4 ${user?.isAdmin ? `efl-standings efl-standings--${standingsView}` : ''}`}>
-          {user?.isAdmin && (
+        <div className={`space-y-4 ${EFL_2_DESIGN_ENABLED ? `efl-standings efl-standings--${standingsView}` : ''}`}>
+          {EFL_2_DESIGN_ENABLED && (
             <div className="efl-standings-toolbar">
               <div role="group" aria-label={standingsLabels.view} className="efl-standings-view-switch">
                 {(['short', 'full', 'form'] as const).map((view) => (
@@ -1086,7 +1087,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
             </div>
           ) : leagueStandings.length === 0 ? (
             <div className="py-12 text-center rounded-2xl bg-[var(--efl-surface)] border border-[var(--efl-border)] text-[var(--efl-text-2)] text-xs shadow-xs">
-              {user?.isAdmin ? previewText.emptyStandings : 'Standings are not available yet.'}
+              {EFL_2_DESIGN_ENABLED ? previewText.emptyStandings : 'Standings are not available yet.'}
             </div>
           ) : (
             <div className="preview-surface overflow-hidden shadow-sm rounded-2xl border border-[var(--efl-border)]">
@@ -1115,15 +1116,15 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                     <tr className="border-b border-[var(--efl-border)] bg-[var(--efl-surface-2)] text-[var(--efl-text-2)] font-bold uppercase text-[10px] tracking-wider">
                       <th className="py-3 px-3 w-12 text-center">#</th>
                       <th className="py-3 px-3">{t.club}</th>
-                      <th className="py-3 px-2 text-center font-bold text-[var(--efl-text)]">{user?.isAdmin ? standingsLabels.played : 'P'}</th>
-                      <th className="efl-col-won py-3 px-2 text-center">{user?.isAdmin ? standingsLabels.won : 'W'}</th>
-                      <th className="efl-col-drawn py-3 px-2 text-center">{user?.isAdmin ? standingsLabels.drawn : 'D'}</th>
-                      <th className="efl-col-lost py-3 px-2 text-center">{user?.isAdmin ? standingsLabels.lost : 'L'}</th>
+                      <th className="py-3 px-2 text-center font-bold text-[var(--efl-text)]">{EFL_2_DESIGN_ENABLED ? standingsLabels.played : 'P'}</th>
+                      <th className="efl-col-won py-3 px-2 text-center">{EFL_2_DESIGN_ENABLED ? standingsLabels.won : 'W'}</th>
+                      <th className="efl-col-drawn py-3 px-2 text-center">{EFL_2_DESIGN_ENABLED ? standingsLabels.drawn : 'D'}</th>
+                      <th className="efl-col-lost py-3 px-2 text-center">{EFL_2_DESIGN_ENABLED ? standingsLabels.lost : 'L'}</th>
                       <th className="efl-col-goalsFor py-3 px-2 text-center hidden sm:table-cell">GF</th>
                       <th className="efl-col-goalsAgainst py-3 px-2 text-center hidden sm:table-cell">GA</th>
-                      <th className="efl-col-goalDifference py-3 px-2 text-center">{user?.isAdmin ? standingsLabels.difference : 'GD'}</th>
-                      {user?.isAdmin && <th className="efl-col-form py-3 px-2 text-center">{standingsLabels.form}</th>}
-                      <th className="py-3 px-3 text-center font-black text-[var(--efl-primary)]">{user?.isAdmin ? standingsLabels.points : 'PTS'}</th>
+                      <th className="efl-col-goalDifference py-3 px-2 text-center">{EFL_2_DESIGN_ENABLED ? standingsLabels.difference : 'GD'}</th>
+                      {EFL_2_DESIGN_ENABLED && <th className="efl-col-form py-3 px-2 text-center">{standingsLabels.form}</th>}
+                      <th className="py-3 px-3 text-center font-black text-[var(--efl-primary)]">{EFL_2_DESIGN_ENABLED ? standingsLabels.points : 'PTS'}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[var(--efl-border)]">
@@ -1165,7 +1166,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                                   <PremiumClubBadge clubId={row.clubId} />
                                   {isMyClub && (
                                     <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-[var(--efl-primary)] text-white uppercase">
-                                      {user?.isAdmin ? ({ uz: 'Siz', ru: 'Вы', en: 'You' }[language]) : 'You'}
+                                      {EFL_2_DESIGN_ENABLED ? ({ uz: 'Siz', ru: 'Вы', en: 'You' }[language]) : 'You'}
                                     </span>
                                   )}
                                 </div>
@@ -1219,7 +1220,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                           <td className="efl-col-goalDifference py-2.5 px-2 text-center font-bold text-[var(--efl-text)]">
                             {row.goalDifference > 0 ? `+${row.goalDifference}` : row.goalDifference}
                           </td>
-                          {user?.isAdmin && <td className="efl-col-form py-2.5 px-2 text-center">
+                          {EFL_2_DESIGN_ENABLED && <td className="efl-col-form py-2.5 px-2 text-center">
                             <div className="efl-standings-form">
                               {(row.form?.length ? row.form : (row.recentForm || '').split('').filter((result): result is 'W' | 'D' | 'L' => result === 'W' || result === 'D' || result === 'L')).slice(-5).map((result, index) => (
                                 <span key={index} className={`efl-form-result efl-form-result--${result.toLowerCase()}`} title={result === 'W' ? standingsLabels.win : result === 'D' ? standingsLabels.draw : standingsLabels.loss}>

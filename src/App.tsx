@@ -5,24 +5,13 @@ import { UserProfileProvider } from './context/UserProfileContext';
 import { I18nProvider, useI18n } from './i18n';
 import { AppTheme, Header } from './components/Header';
 import { Navigation, TabType } from './components/Navigation';
-import { DashboardView } from './components/DashboardView';
 import { MatchdayHomeView } from './components/MatchdayHomeView';
-import { MyClubView } from './components/MyClubView';
-import { MyMatchesView } from './components/MyMatchesView';
-import { MatchOperationsV4Panel } from './components/MatchOperationsV4Panel';
-import { ClubsView } from './components/ClubsView';
-import { CupBracketsView } from './components/CupBracketsView';
-import { ChampionsLeagueView } from './components/ChampionsLeagueView';
-import { StandingsView } from './components/StandingsView';
-import { SeasonHubView } from './components/SeasonHubView';
 import { NotificationsView } from './components/NotificationsView';
-import { ProfileView } from './components/ProfileView';
 import { AdminView } from './components/AdminView';
 import { AdminMatchOperationsV4Panel } from './components/admin/AdminMatchOperationsV4Panel';
 import { NotificationModal } from './components/NotificationModal';
 import { TelegramDiagnosticsModal } from './components/TelegramDiagnosticsModal';
 import { OfflineSyncBanner } from './components/OfflineSyncBanner';
-import { SeasonLifecyclePanel } from './components/SeasonLifecyclePanel';
 import { CompetitionHubView } from './components/CompetitionHubView';
 import { ClubHubView } from './components/ClubHubView';
 import { GlobalSearchModal } from './components/GlobalSearchModal';
@@ -30,6 +19,7 @@ import { APP_BUILD_ID } from './context/AuthContext';
 import { Fixture, AdminPermissions } from './types';
 import { api } from './lib/api';
 import { isDesignPreview } from './designPreview';
+import { EFL_2_DESIGN_ENABLED, WELCOME_STORAGE_VERSION } from './releaseDesign';
 import { Loader2, CheckCircle2, AlertCircle, Info } from 'lucide-react';
 
 function getInitialTab(): TabType {
@@ -43,7 +33,7 @@ function getInitialTab(): TabType {
 }
 
 const AppContent: React.FC = () => {
-  const { isLoading, user, toastMessage, authStatus, authError, activeSeasonId } = useAuth();
+  const { isLoading, user, toastMessage, authStatus, authError } = useAuth();
   const { t } = useI18n();
   const [activeTab, setActiveTabState] = useState<TabType>(getInitialTab);
   const [selectedFixture, setSelectedFixture] = useState<Fixture | null>(null);
@@ -71,13 +61,13 @@ const AppContent: React.FC = () => {
     if (welcomeCompletedFor === user.id) return true;
     // Force only the existing, build-gated visual preview; never bypass Telegram auth.
     if (isDesignPreview && new URLSearchParams(window.location.search).get('welcome') === '1') return false;
-    try { return window.localStorage.getItem(`efluz-welcome-v1:${user.id}`) === 'done'; }
+    try { return window.localStorage.getItem(`efluz-welcome-${WELCOME_STORAGE_VERSION}:${user.id}`) === 'done'; }
     catch { return false; }
   }, [user?.id, welcomeCompletedFor]);
 
   const completeWelcome = () => {
     if (!user) return;
-    try { window.localStorage.setItem(`efluz-welcome-v1:${user.id}`, 'done'); } catch {}
+    try { window.localStorage.setItem(`efluz-welcome-${WELCOME_STORAGE_VERSION}:${user.id}`, 'done'); } catch {}
     setWelcomeCompletedFor(user.id);
   };
 
@@ -114,7 +104,7 @@ const AppContent: React.FC = () => {
   }, [activeTab]);
 
   useEffect(() => {
-    if (!user?.isAdmin) return;
+    if (!user) return;
     const previousBackground = document.body.style.backgroundColor;
     const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
     const previousThemeColor = themeColor?.content;
@@ -125,7 +115,7 @@ const AppContent: React.FC = () => {
       document.body.style.backgroundColor = previousBackground;
       if (themeColor && previousThemeColor !== undefined) themeColor.content = previousThemeColor;
     };
-  }, [user?.isAdmin, theme]);
+  }, [user?.id, theme]);
 
   useEffect(() => {
     async function checkDisputes() {
@@ -143,13 +133,13 @@ const AppContent: React.FC = () => {
 
   if (authStatus === 'AUTH_ANONYMOUS' || authStatus === 'AUTH_ERROR') return <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center px-5"><div className="w-full max-w-md rounded-3xl border border-slate-800 bg-slate-900/80 p-7 text-center shadow-2xl"><div className="mx-auto mb-5 h-16 w-16 rounded-2xl bg-emerald-400 text-slate-950 flex items-center justify-center text-2xl font-black">eF</div><h1 className="text-2xl font-black mb-2">EFL UZ</h1><p className="text-slate-300 text-sm leading-6">{authStatus === 'AUTH_ERROR' ? 'Telegram orqali kirish tasdiqlanmadi. Mini Appni Telegram ichidan qayta oching.' : 'Bu turnir platformasi Telegram Mini App orqali ishlaydi. Davom etish uchun uni Telegram ichidan oching.'}</p>{authError && <p className="mt-3 text-xs text-rose-300">{authError}</p>}<a href="https://t.me/efleagueuz" target="_blank" rel="noopener noreferrer" className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-emerald-400 px-5 py-3 text-sm font-black text-slate-950 hover:bg-emerald-300">Telegram kanaliga o‘tish</a></div></div>;
 
-  if (user?.isAdmin && !welcomeCompleted) return <WelcomeScreen theme={theme} onThemeChange={changeTheme} onStart={completeWelcome} />;
+  if (user && !welcomeCompleted) return <WelcomeScreen theme={theme} onThemeChange={changeTheme} onStart={completeWelcome} />;
 
   const currentTab = activeTab === 'home' ? 'dashboard' : activeTab;
   return (
     <div
       className={`min-h-screen flex flex-col font-sans selection:bg-blue-600 selection:text-white ${
-        user?.isAdmin
+        EFL_2_DESIGN_ENABLED
           ? `efl-preview theme-${theme} ${theme === 'dark' ? 'dark' : ''}`
           : 'bg-slate-950 text-slate-100'
       }`}
@@ -159,7 +149,7 @@ const AppContent: React.FC = () => {
         <div className="fixed top-14 right-4 z-50 animate-in slide-in-from-top-3 fade-in duration-200">
           <div
             className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-2xl text-xs font-bold border backdrop-blur-md ${
-              user?.isAdmin
+              EFL_2_DESIGN_ENABLED
                 ? toastMessage.type === 'success'
                   ? 'bg-emerald-50 text-emerald-800 border-emerald-300 shadow-emerald-500/10 dark:bg-emerald-950/90 dark:text-emerald-300 dark:border-emerald-500/40'
                   : toastMessage.type === 'error'
@@ -172,9 +162,9 @@ const AppContent: React.FC = () => {
                 : 'bg-slate-900/95 text-slate-200 border-slate-700 shadow-slate-900/40'
             }`}
           >
-            {toastMessage.type === 'success' && <CheckCircle2 className={`w-4 h-4 shrink-0 ${user?.isAdmin ? 'text-emerald-600 dark:text-emerald-400' : 'text-emerald-400'}`} />}
-            {toastMessage.type === 'error' && <AlertCircle className={`w-4 h-4 shrink-0 ${user?.isAdmin ? 'text-rose-600 dark:text-rose-400' : 'text-rose-400'}`} />}
-            {toastMessage.type === 'info' && <Info className={`w-4 h-4 shrink-0 ${user?.isAdmin ? 'text-blue-600 dark:text-sky-400' : 'text-sky-400'}`} />}
+            {toastMessage.type === 'success' && <CheckCircle2 className={`w-4 h-4 shrink-0 ${EFL_2_DESIGN_ENABLED ? 'text-emerald-600 dark:text-emerald-400' : 'text-emerald-400'}`} />}
+            {toastMessage.type === 'error' && <AlertCircle className={`w-4 h-4 shrink-0 ${EFL_2_DESIGN_ENABLED ? 'text-rose-600 dark:text-rose-400' : 'text-rose-400'}`} />}
+            {toastMessage.type === 'info' && <Info className={`w-4 h-4 shrink-0 ${EFL_2_DESIGN_ENABLED ? 'text-blue-600 dark:text-sky-400' : 'text-sky-400'}`} />}
             <span>{toastMessage.text}</span>
           </div>
         </div>
@@ -183,16 +173,12 @@ const AppContent: React.FC = () => {
         theme={theme}
         onThemeChange={changeTheme}
         onOpenNotifications={() => setActiveTab('notifications')}
-        onOpenProfile={() => setActiveTab(user?.isAdmin ? 'my-club' : 'profile')}
+        onOpenProfile={() => setActiveTab('my-club')}
         onOpenSearch={() => setIsSearchOpen(true)}
       />
       <Navigation activeTab={currentTab} onTabChange={setActiveTab} openDisputesCount={openDisputesCount} />
       {!isDesignPreview && canUseGlobalAdminTools && <OfflineSyncBanner />}
-      <main data-preview-page={user?.isAdmin ? currentTab : undefined} className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-4 md:px-6 py-4 sm:py-6 min-w-0">
-        {user?.isAdmin ? (
-          /* ==============================================================
-             ADMIN ONLY: EFL UZ PREMIUM BROADCAST REDESIGN
-             ============================================================== */
+      <main data-preview-page={EFL_2_DESIGN_ENABLED ? currentTab : undefined} className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-4 md:px-6 py-4 sm:py-6 min-w-0">
           <>
             {currentTab === 'admin' && canUseGlobalAdminTools && <div className="mb-5"><AdminMatchOperationsV4Panel /></div>}
 
@@ -237,35 +223,8 @@ const AppContent: React.FC = () => {
             )}
 
             {currentTab === 'notifications' && <NotificationsView onNavigateTab={setActiveTab} />}
-            {currentTab === 'admin' && <AdminView />}
+            {currentTab === 'admin' && user?.isAdmin && <AdminView />}
           </>
-        ) : (
-          /* ==============================================================
-             NORMAL PLAYERS: 100% UNTOUCHED ORIGINAL DESIGN & ROUTES
-             ============================================================== */
-          <>
-            {currentTab === 'my-matches' && <div className="mb-5"><SeasonLifecyclePanel seasonId={activeSeasonId} /></div>}
-            {currentTab === 'my-matches' && <div className="mb-5"><MatchOperationsV4Panel /></div>}
-            {currentTab === 'dashboard' && (
-              <DashboardView
-                onNavigateTab={setActiveTab}
-                onSelectFixtureForMatchCenter={(fix) => {
-                  setSelectedFixture(fix);
-                  setActiveTab('my-matches');
-                }}
-              />
-            )}
-            {currentTab === 'my-club' && <MyClubView onNavigateTab={setActiveTab} />}
-            {currentTab === 'my-matches' && <MyMatchesView initialSelectedFixture={selectedFixture} onNavigateTab={setActiveTab} />}
-            {currentTab === 'season-hub' && <SeasonHubView onNavigateTab={setActiveTab} />}
-            {currentTab === 'leagues' && <ClubsView onNavigateTab={setActiveTab} />}
-            {currentTab === 'cups' && <CupBracketsView onNavigateTab={setActiveTab} />}
-            {currentTab === 'champions-league' && <ChampionsLeagueView onNavigateTab={setActiveTab} />}
-            {currentTab === 'standings' && <StandingsView />}
-            {currentTab === 'notifications' && <NotificationsView onNavigateTab={setActiveTab} />}
-            {currentTab === 'profile' && <ProfileView onNavigateTab={setActiveTab} />}
-          </>
-        )}
       </main>
       <footer className="border-t border-slate-900 bg-slate-950/80 px-4 py-3 pb-24 lg:pb-3 text-[11px] text-slate-400"><div className="max-w-7xl mx-auto flex items-center justify-between gap-2"><div className="flex items-center gap-2"><span className="font-bold text-slate-300">EFL UZ</span><span className="text-slate-600">•</span><span>Official 2026/27 European Competitions</span></div><div className="flex items-center gap-3"><span className="font-mono text-emerald-400 font-semibold">{APP_BUILD_ID}</span></div></div></footer>
       <NotificationModal isOpen={isNotificationOpen} onClose={() => setIsNotificationOpen(false)} />
@@ -279,7 +238,7 @@ const AppContent: React.FC = () => {
         }}
         onSelectFixture={(fix) => {
           setSelectedFixture(fix);
-          setActiveTab(user?.isAdmin ? 'my-club' : 'my-matches');
+          setActiveTab('my-club');
         }}
       />
     </div>
