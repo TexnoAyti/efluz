@@ -194,7 +194,7 @@ export const SEED_COMPETITIONS: SeedCompetition[] = [
     name: 'Premier League',
     type: 'LEAGUE',
     scheduleMode: 'GENERATED_SCHEDULE',
-    formatConfig: { rounds: 19, homeAndAway: false, pointsForWin: 3, pointsForDraw: 1, pointsForLoss: 0, tieBreakers: ['points', 'goalDifference', 'goalsFor', 'headToHead'], qualificationSpots: 7 },
+    formatConfig: { rounds: 19, homeAndAway: false, pointsForWin: 3, pointsForDraw: 1, pointsForLoss: 0, tieBreakers: ['points', 'goalDifference', 'goalsFor', 'headToHead'], qualificationSpots: 7, europaQualificationSpots: 7 },
   },
   {
     id: 'comp-la-liga-2026',
@@ -203,7 +203,7 @@ export const SEED_COMPETITIONS: SeedCompetition[] = [
     name: 'La Liga',
     type: 'LEAGUE',
     scheduleMode: 'GENERATED_SCHEDULE',
-    formatConfig: { rounds: 19, homeAndAway: false, pointsForWin: 3, pointsForDraw: 1, pointsForLoss: 0, tieBreakers: ['points', 'headToHead', 'goalDifference', 'goalsFor'], qualificationSpots: 7 },
+    formatConfig: { rounds: 19, homeAndAway: false, pointsForWin: 3, pointsForDraw: 1, pointsForLoss: 0, tieBreakers: ['points', 'headToHead', 'goalDifference', 'goalsFor'], qualificationSpots: 7, europaQualificationSpots: 7 },
   },
   {
     id: 'comp-serie-a-2026',
@@ -212,7 +212,7 @@ export const SEED_COMPETITIONS: SeedCompetition[] = [
     name: 'Serie A',
     type: 'LEAGUE',
     scheduleMode: 'GENERATED_SCHEDULE',
-    formatConfig: { rounds: 19, homeAndAway: false, pointsForWin: 3, pointsForDraw: 1, pointsForLoss: 0, tieBreakers: ['points', 'headToHead', 'goalDifference', 'goalsFor'], qualificationSpots: 7 },
+    formatConfig: { rounds: 19, homeAndAway: false, pointsForWin: 3, pointsForDraw: 1, pointsForLoss: 0, tieBreakers: ['points', 'headToHead', 'goalDifference', 'goalsFor'], qualificationSpots: 6, europaQualificationSpots: 6 },
   },
   {
     id: 'comp-bundesliga-2026',
@@ -221,7 +221,7 @@ export const SEED_COMPETITIONS: SeedCompetition[] = [
     name: 'Bundesliga',
     type: 'LEAGUE',
     scheduleMode: 'GENERATED_SCHEDULE',
-    formatConfig: { rounds: 17, homeAndAway: false, pointsForWin: 3, pointsForDraw: 1, pointsForLoss: 0, tieBreakers: ['points', 'goalDifference', 'goalsFor', 'headToHead'], qualificationSpots: 6 },
+    formatConfig: { rounds: 17, homeAndAway: false, pointsForWin: 3, pointsForDraw: 1, pointsForLoss: 0, tieBreakers: ['points', 'goalDifference', 'goalsFor', 'headToHead'], qualificationSpots: 6, europaQualificationSpots: 6 },
   },
   {
     id: 'comp-ligue-1-2026',
@@ -230,7 +230,7 @@ export const SEED_COMPETITIONS: SeedCompetition[] = [
     name: 'Ligue 1',
     type: 'LEAGUE',
     scheduleMode: 'GENERATED_SCHEDULE',
-    formatConfig: { rounds: 17, homeAndAway: false, pointsForWin: 3, pointsForDraw: 1, pointsForLoss: 0, tieBreakers: ['points', 'goalDifference', 'goalsFor', 'headToHead'], qualificationSpots: 5 },
+    formatConfig: { rounds: 17, homeAndAway: false, pointsForWin: 3, pointsForDraw: 1, pointsForLoss: 0, tieBreakers: ['points', 'goalDifference', 'goalsFor', 'headToHead'], qualificationSpots: 6, europaQualificationSpots: 6 },
   },
 
   // --- NATIONAL CUPS ---

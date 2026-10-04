@@ -33,14 +33,6 @@ const EUROPEAN_LEAGUE_PHASE = new Set([
   'comp-europa-league-2026',
 ]);
 
-const UCL_ALLOCATION: Record<string, number> = {
-  'comp-premier-league-2026': 5,
-  'comp-la-liga-2026': 5,
-  'comp-serie-a-2026': 5,
-  'comp-bundesliga-2026': 5,
-  'comp-ligue-1-2026': 4,
-};
-
 export type SeasonPhaseId =
   | 'LEAGUE_MD_1_9'
   | 'DOMESTIC_CUPS'
@@ -283,17 +275,6 @@ export async function getHeadToHead(clubA: string, clubB: string, seasonId = 'se
   return { source, clubA, clubB, matches, summary: { played: matches.length, aWins, draws, bWins, aGoals, bGoals } };
 }
 
-function qualificationZone(row: StandingsRow, competition: Competition | undefined) {
-  const config: any = competition?.formatConfig || {};
-  const ucl = Number(config.qualificationSpots ?? UCL_ALLOCATION[row.clubId] ?? 0);
-  const uel = Number(config.europaQualificationSpots ?? 0);
-  const uecl = Number(config.conferenceQualificationSpots ?? 0);
-  if (row.position <= ucl) return 'UCL';
-  if (uel > 0 && row.position <= ucl + uel) return 'UEL';
-  if (uecl > 0 && row.position <= ucl + uel + uecl) return 'UECL';
-  return null;
-}
-
 export async function getQualificationTracker(seasonId = 'season-2026-27') {
   const competitionResult = await getCompetitionsFromReadModel(seasonId).catch(() => ({ competitions: [] as Competition[] } as any));
   const competitions = (competitionResult.competitions || []) as Competition[];
@@ -301,18 +282,17 @@ export async function getQualificationTracker(seasonId = 'season-2026-27') {
   const leagues = await Promise.all(Array.from(DOMESTIC_LEAGUES).map(async (competitionId) => {
     const standingsResult = await getCompetitionStandingsFromReadModel(competitionId, seasonId);
     const comp = byId.get(competitionId);
-    const uclFallback = UCL_ALLOCATION[competitionId] || 0;
     const config: any = comp?.formatConfig || {};
     return {
       competitionId,
       competitionName: comp?.name || competitionId,
       allocation: {
-        ucl: Number(config.qualificationSpots ?? uclFallback),
+        ucl: Number(config.qualificationSpots ?? 0),
         uel: Number(config.europaQualificationSpots ?? 0),
         uecl: Number(config.conferenceQualificationSpots ?? 0),
       },
       rows: standingsResult.standings.map((row) => ({ ...row, qualificationZone: (() => {
-        const ucl = Number(config.qualificationSpots ?? uclFallback);
+        const ucl = Number(config.qualificationSpots ?? 0);
         const uel = Number(config.europaQualificationSpots ?? 0);
         const uecl = Number(config.conferenceQualificationSpots ?? 0);
         if (row.position <= ucl) return 'UCL';

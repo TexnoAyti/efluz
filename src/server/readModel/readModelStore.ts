@@ -1,3 +1,4 @@
+import { withSeasonQualificationPolicy } from '../../lib/seasonQualificationPolicy';
 import { filterRetiredFixtures, hasFixtureMatchdayCorrection } from '../services/retiredFixtureService';
 /**
  * DURABLE UPSTASH REDIS READ MODEL STORE
@@ -1384,7 +1385,7 @@ export async function getCompetitionsFromReadModel(
   });
 
   return {
-    competitions: await (await import('../services/competitionFixtureCounts')).withVisibleFixtureCounts(result.data, seasonId),
+    competitions: await (await import('../services/competitionFixtureCounts')).withVisibleFixtureCounts(result.data.map(c=>withSeasonQualificationPolicy(c,seasonId)), seasonId),
     source: result.source,
     stale: Boolean(result.stale),
     degraded: Boolean(result.degraded),

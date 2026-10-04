@@ -1,3 +1,4 @@
+import {SEASON_2026_27_ALLOCATION,withSeasonQualificationPolicy} from '../../lib/seasonQualificationPolicy';
 import {tournamentImageBranding} from '../../lib/tournamentImageBranding';
 import assert from 'node:assert/strict';
 import { canExportTournamentImage, imageFilename, matchdayImageModel, standingsImageModel, paintTournamentImage } from '../../lib/tournamentImage';
@@ -29,13 +30,22 @@ drawn.length=0;paintTournamentImage(ctx,matches);assert.ok(drawn.includes('0 : 0
 assert.equal(matchdayImageModel('Cup','season-2026-27',[{...fixture('tbd','SCHEDULED'),homeClubId:null,awayClubId:null}],10,'en').rows[0].name,'TBD');
 console.log('PASS full-table PNG layout, stable standings statistics, canonical matchday selection, season isolation, zero-score draws, exclusion of unconfirmed scores and safe filenames');
 
-const league:any={id:'comp-premier-league-2026',leagueId:'league-premier-league',type:'LEAGUE',formatConfig:{qualificationSpots:5}};
+const league:any={seasonId:'season-2026-27',id:'comp-premier-league-2026',leagueId:'league-premier-league',type:'LEAGUE',formatConfig:{qualificationSpots:5}};
 const branding=tournamentImageBranding(league,[league],20);
-assert.deepEqual(branding.zones.map(z=>[z.label,z.start,z.end]),[['UCL',1,5],['UEL',6,10],['↓',18,20]]);
+assert.deepEqual(branding.zones.map(z=>[z.label,z.start,z.end]),[['UCL',1,7],['UEL',8,14],['↓',18,20]]);
 assert.equal(branding.emblemUrl,'/export-emblems/premier-league.svg');
 const overrides:any[]=[league,{id:'comp-champions-league-2026',formatConfig:{qualificationSlots:{[league.id]:7}}},{id:'comp-europa-league-2026',formatConfig:{qualificationSlots:{[league.id]:7}}}];
 assert.deepEqual(tournamentImageBranding(league,overrides,20).zones.slice(0,2).map(z=>[z.start,z.end]),[[1,7],[8,14]]);
 assert.equal(tournamentImageBranding({...league,type:'KNOCKOUT'},[league],20).zones.length,0);
-assert.equal(tournamentImageBranding({...league,formatConfig:{}},[],20).zones.some(z=>z.label==='UCL'),false);
-table.branding=branding;drawn.length=0;paintTournamentImage(ctx,table);assert.ok(drawn.includes('UCL 1–5'));assert.ok(drawn.includes('UEL 6–10'));
+assert.equal(tournamentImageBranding({...league,seasonId:'season-2027-28',formatConfig:{}},[],20).zones.some(z=>z.label==='UCL'),false);
+table.branding=branding;drawn.length=0;paintTournamentImage(ctx,table);assert.ok(drawn.includes('UCL 1–7'));assert.ok(drawn.includes('UEL 8–14'));
 console.log('PASS PNG qualification zones follow engine config/overrides, no invented allocation, transparent emblem selection and visible zone legend');
+
+assert.equal(Object.values(SEASON_2026_27_ALLOCATION).reduce((a,b)=>a+b,0),32);
+for(const [id,n] of Object.entries(SEASON_2026_27_ALLOCATION)){
+ const old:any={id,seasonId:'season-2026-27',leagueId:id.replace('comp-','league-').replace('-2026',''),type:'LEAGUE',formatConfig:{qualificationSpots:5}};
+ assert.deepEqual(tournamentImageBranding(old,[old],id.includes('bundesliga')||id.includes('ligue-1')?18:20).zones.slice(0,2).map(z=>[z.start,z.end]),[[1,n],[n+1,2*n]]);
+ assert.equal(old.formatConfig.qualificationSpots,5,'Normalization must not mutate cached snapshots');
+ assert.equal(withSeasonQualificationPolicy(old,'season-2027-28'),old,'Other seasons are unchanged');
+}
+console.log('PASS confirmed 7/7/6/6/6 zones, 32+32 totals, old-cache correction and season isolation');

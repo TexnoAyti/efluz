@@ -127,6 +127,8 @@ export interface Competition {
     tieBreakers?: Array<'points' | 'goalDifference' | 'goalsFor' | 'headToHead'>;
     maxTeams?: number;
     qualificationSpots?: number;
+    europaQualificationSpots?: number;
+    qualificationSlots?: Record<string,number>;
     leaguePhaseTeams?: number;
     matchesPerTeam?: number;
     directQualifiers?: number;

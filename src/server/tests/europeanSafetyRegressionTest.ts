@@ -1,3 +1,4 @@
+import {SEASON_2026_27_ALLOCATION} from '../../lib/seasonQualificationPolicy';
 import assert from 'node:assert/strict';
 import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS } from '../firebase/collections';
@@ -19,6 +20,15 @@ async function main() {
   assert.equal(preview.canApply,true);
   assert.equal(preview.projectedQualifications.find(q=>q.clubId==='club-arsenal')?.rank,1);
   assert.equal(preview.summary.ucl.totalTarget,32);
+  assert.equal(preview.projectedQualifications.length,64);
+  for(const [competitionId,count] of Object.entries(SEASON_2026_27_ALLOCATION)){
+    const selected=preview.projectedQualifications.filter(q=>q.sourceCompetitionId===competitionId);
+    const ucl=selected.filter(q=>q.targetCompetitionId==='comp-champions-league-2026');
+    const uel=selected.filter(q=>q.targetCompetitionId==='comp-europa-league-2026');
+    assert.equal(ucl.length,count);assert.equal(uel.length,count);
+    assert.deepEqual(ucl.map(q=>q.rank),Array.from({length:count},(_,i)=>i+1));
+    assert.deepEqual(uel.map(q=>q.rank),Array.from({length:count},(_,i)=>count+i+1));
+  }
   const apply=(token:string)=>applyEuropeanQualificationSync({previewToken:token,seasonId,confirmation:true,adminUserId:'real-admin'});
   await fixtureRef.update({homeScore:5});
   await assert.rejects(apply(preview.previewToken),/PREVIEW_DATA_CHANGED/);

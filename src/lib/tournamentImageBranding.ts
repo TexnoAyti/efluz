@@ -1,3 +1,4 @@
+import { withSeasonQualificationPolicy } from './seasonQualificationPolicy';
 import type { Competition } from '../types';
 export interface ImageZone { label:string; start:number; end:number; color:string; tint:string }
 export interface ImageBranding { emblemUrl?:string; accent:string; zones:ImageZone[] }
@@ -9,6 +10,8 @@ const domestic:Record<string,{icon:string;accent:string}>={
   'league-ligue-1':{icon:'ligue-1',accent:'#d7f451'},
 };
 export function tournamentImageBranding(competition:Competition,competitions:Competition[],teams:number):ImageBranding {
+  competitions=competitions.map(c=>withSeasonQualificationPolicy(c,competition.seasonId));
+  competition=withSeasonQualificationPolicy(competition,competition.seasonId);
   const brand=competition.leagueId?domestic[competition.leagueId]:undefined;
   const zones:ImageZone[]=[];
   const add=(label:string,start:number,end:number,color:string,tint:string)=>{if(Number.isInteger(start)&&Number.isInteger(end)&&start>0&&end>=start&&end<=teams)zones.push({label,start,end,color,tint});};
