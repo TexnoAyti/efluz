@@ -13,6 +13,7 @@ import { SEED_COMPETITIONS, SEED_CLUBS } from '../db/seed';
 import { Competition, StandingsRow, Fixture, Club } from '../../types';
 import { sortSeasonFixtures } from '../../lib/fixtureOrder';
 import { withSeasonQualificationPolicy } from '../../lib/seasonQualificationPolicy';
+import { detectAiCupStage, fixtureMatchesAiCupStage, AI_CUP_STAGE_LABELS, formatAiCupStageFixture } from './telegramAiCupStage';
 import { resolveAiClubs, normalizeAiEntity, containsAiEntity } from './telegramAiEntities';
 
 export interface GroundingContext {
@@ -110,6 +111,7 @@ export async function buildAiGroundingContext(
     .filter(c => !c.seasonId || c.seasonId === seasonId).map(c => withSeasonQualificationPolicy(c, seasonId));
   const clubs = (clubSnapshot.data.length ? clubSnapshot.data : SEED_CLUBS as unknown as Club[])
     .filter(c => !(c as Club & { seasonId?: string }).seasonId || (c as Club & { seasonId?: string }).seasonId === seasonId);
+  const requestedStage=detectAiCupStage(query);
   const selection = resolveAiClubs(query, clubs, options?.selectedClubIds, options?.previousUserQueries);
   const matched = selection.clubs;
   if(ownerOnly){
@@ -120,9 +122,19 @@ export async function buildAiGroundingContext(
   }
   const ids = new Set(matched.map(c => c.id));
   const normalized = normalizeAiEntity(query);
-  const explicitCompetitions = competitions.filter(c => containsAiEntity(normalized, c.name) ||
+  let explicitCompetitions = competitions.filter(c => containsAiEntity(normalized, c.name) ||
     Object.entries(LEAGUE_KEYWORDS).some(([prefix, words]) => (c.id === prefix || c.id.startsWith(prefix + '-')) &&
       words.some(word => containsAiEntity(normalized, word))));
+  if(requestedStage){
+    explicitCompetitions=explicitCompetitions.filter(c=>c.type!=='LEAGUE');
+    if(!explicitCompetitions.length){
+      for(const previous of [...(options?.previousUserQueries||[])].reverse()){
+        const previousQuery=normalizeAiEntity(previous);
+        const found=competitions.filter(c=>c.type!=='LEAGUE' && (containsAiEntity(previousQuery,c.name)||Object.entries(LEAGUE_KEYWORDS).some(([prefix,words])=>(c.id===prefix||c.id.startsWith(prefix+'-'))&&words.some(word=>containsAiEntity(previousQuery,word)))));
+        if(found.length){explicitCompetitions=found;break;}
+      }
+    }
+  }
   const isLeagueForClub = (c: Competition, club: Club) => c.type === 'LEAGUE' &&
     (c.id === (club as Club & { competitionId?: string }).competitionId || c.id === club.leagueId || c.leagueId === club.leagueId);
   // The season-wide fixture snapshot also discovers cups and European participation by club ID.
@@ -223,7 +235,7 @@ export async function buildAiGroundingContext(
   }
   if (!matched.length) {
     const round = query.match(/(?:\b(\d{1,2})\s*(?:-\s*)?(?:tur|matchday)\b|(?:tur|matchday)\s*(\d{1,2}))/i);
-    const games = round ? allFixtures.filter(f => f.matchday === Number(round[1] || round[2])) : confirmed.slice(-10);
+    const games = requestedStage ? allFixtures.filter(f=>fixtureMatchesAiCupStage(f,requestedStage)) : round ? allFixtures.filter(f => f.matchday === Number(round[1] || round[2])) : confirmed.slice(-10);
     sections.push('UCHRASHUVLAR VA NATIJALAR:\n' + (games.slice(0,25).map(fixtureLine).join('\n') || 'mavjud emas'));
   }
   if (hasStaleData) sections.push('[ESKI YOKI TO‘LIQ EMAS: snapshot joriy holatni tasdiqlamaydi. Har bir tegishli javobda buni ayting. Ma’lumot yo‘qligi o‘yin o‘tkazilmaganini isbotlamaydi.]');
@@ -241,6 +253,18 @@ export async function buildAiGroundingContext(
   const ownershipAnswer = isClubOwnershipQuestion(query) ? ownershipLines.length ? ownershipLines.join('\n') : selection.clarification || 'Qaysi klubning egasini so‘rayapsiz? Klub nomini yozing; tasdiqlangan egasi ma’lumotini tekshiraman.' : undefined;
   const leagueData = data.filter(d => matched.some(c => isLeagueForClub(d.comp,c)) &&
     (!explicitCompetitions.length || explicitCompetitions.some(c => c.id === d.comp.id)));
+  let stageAnswer:string|undefined;
+  if(requestedStage){
+    const requestedCups=explicitCompetitions.length?explicitCompetitions:targets.filter(c=>c.type!=='LEAGUE');
+    const stageSections=requestedCups.map(comp=>{
+      // An explicit cup-stage query covers the complete stage, regardless of an older selected team.
+      const games=allFixtures.filter(f=>f.competitionId===comp.id&&fixtureMatchesAiCupStage(f,requestedStage)).sort((a,b)=>a.id.localeCompare(b.id));
+      return `${comp.name} — ${AI_CUP_STAGE_LABELS[requestedStage]}:\n${games.length?games.map(f=>formatAiCupStageFixture(f,clubName)).join('\n'):'Bu bosqich o‘yinlari olingan snapshotda topilmadi; bu jadval hali yaratilmaganini isbotlamaydi.'}`;
+    });
+    if(!stageSections.length)stageSections.push(`Qaysi kubokning ${AI_CUP_STAGE_LABELS[requestedStage].toLowerCase()} bosqichini so‘rayapsiz? Kubok nomini yozing.`);
+    sections.push('SO‘RALGAN BOSQICH (SCHEDULED ham jadvalda mavjud o‘yin):\n'+stageSections.join('\n\n'));
+    stageAnswer=stageSections.join('\n\n')+(hasStaleData&&requestedCups.length?'\nOxirgi saqlangan jadval bo‘yicha; joriy holat qayta tekshirilmagan.':'');
+  }
   const facts: string[] = [];
   // Exact identity and simple statistical lookups bypass the model. Analytical questions use grounded Gemini.
   const analytical = /nega|nima uchun|tahlil|o[‘’'`]?ylay|yutadimi|kim yut|yutadi|taxmin|prediction|qanday yaxsh|taktik|hazil|yumor|roast/i.test(query);
@@ -260,7 +284,7 @@ export async function buildAiGroundingContext(
     }
   }
   // Bound prompt size at section boundaries, keeping team-specific facts ahead of broad tables.
-  const teamSections = sections.filter(s => !s.startsWith('TURNIR JADVALI'));
+  const teamSections = sections.filter(s => !s.startsWith('TURNIR JADVALI')).sort((a,b)=>Number(b.startsWith('SO‘RALGAN BOSQICH'))-Number(a.startsWith('SO‘RALGAN BOSQICH')));
   const tableSections = sections.filter(s => s.startsWith('TURNIR JADVALI'));
   let summary = '';
   for (const section of [...teamSections, ...tableSections]) {
@@ -271,7 +295,7 @@ export async function buildAiGroundingContext(
   if(!testGroundingOverride)console.info('[AI_GROUNDING]',JSON.stringify({durationMs:dataDiagnostics.durationMs,clubs:matched.length,competitions:targets.length,fixtures:allFixtures.length,missing:dataDiagnostics.missingDatasets.length,failed:dataDiagnostics.failedDatasets.length}));
   return { dataDiagnostics, factsSummary: summary, hasStaleData, detectedClubs: matched.map(c => c.name),
     selectedClubIds: selection.clarification ? [] : matched.length ? matched.map(c => c.id) : options?.selectedClubIds || [], detectedCompetitions: targets.map(c => c.id),
-    ownershipAnswer, factualAnswer: selection.clarification || (facts.length ? facts.join('\n') + (hasStaleData && !(facts.length === 1 && facts[0] === ownershipAnswer) && !facts.some(f => /eski snapshot/.test(f)) ? '\nMa’lumot eski yoki to‘liq bo‘lmagan snapshotdan; joriy holat tasdiqlanmagan.' : '') : !analytical ? ownershipAnswer : undefined) };
+    ownershipAnswer, factualAnswer: selection.clarification || (!analytical && stageAnswer ? stageAnswer : undefined) || (facts.length ? facts.join('\n') + (hasStaleData && !(facts.length === 1 && facts[0] === ownershipAnswer) && !facts.some(f => /eski snapshot/.test(f)) ? '\nMa’lumot eski yoki to‘liq bo‘lmagan snapshotdan; joriy holat tasdiqlanmagan.' : '') : !analytical ? ownershipAnswer : undefined) };
 }
 
 function isConfirmedAiFixture(f: Fixture): boolean {
