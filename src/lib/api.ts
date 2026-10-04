@@ -368,7 +368,7 @@ export const api = {
     return request(`/api/me?seasonId=${seasonId}`, { cacheTtlMs: 15000, skipCache });
   },
 
-  async getMyMatches(seasonId = 'season-2026-27', status?: string, skipCache = false): Promise<{ fixtures: Fixture[] }> {
+  async getMyMatches(seasonId = 'season-2026-27', status?: string, skipCache = false): Promise<{ fixtures: Fixture[]; stale?: boolean; degraded?: boolean; snapshotAt?: string }> {
     const url = `/api/me/matches?seasonId=${seasonId}${status ? `&status=${status}` : ''}`;
     return request(url, { cacheTtlMs: 15000, skipCache });
   },

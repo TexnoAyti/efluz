@@ -216,6 +216,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [stale, setStale] = useState(false);
   const [matchTab, setMatchTab] = useState<'upcoming' | 'results'>('upcoming');
   const [selectedFixtureForSubmit, setSelectedFixtureForSubmit] = useState<Fixture | null>(null);
 
@@ -243,7 +244,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
     setError(false);
     try {
       const res = await api.getMyMatches(activeSeasonId);
-      if (request === loadRequest.current) setFixtures(res.fixtures || []);
+      if (request === loadRequest.current) { setFixtures(res.fixtures || []); setStale(Boolean(res.stale || res.degraded)); }
     } catch {
       if (request === loadRequest.current) setError(true);
     } finally {
@@ -440,6 +441,8 @@ export const MatchdayHomeView: React.FC<Props> = ({
           </button>
         )}
       </div>
+
+      {stale && !error && <div role="status" className="text-xs text-[var(--efl-text-muted)]">{language === 'uz' ? 'Oxirgi saqlangan o‘yinlar va natijalar ko‘rsatilmoqda. Ma’lumotlar yangilanishi kutilmoqda.' : language === 'ru' ? 'Показаны последние сохранённые матчи и результаты. Ожидается обновление.' : 'Showing the last saved matches and results. Waiting for an update.'}</div>}
 
       {/* Network / Error banner */}
       {error && (

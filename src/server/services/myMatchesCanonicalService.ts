@@ -1,3 +1,4 @@
+import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
 import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS } from '../firebase/collections';
 import { enrichFixturesWithAuthoritativeOwners } from '../firebase/firestoreStore';
@@ -26,7 +27,11 @@ async function loadAuthoritativeCupFixtures(competitionId: string, seasonId: str
       .where('competitionId', '==', competitionId)
       .where('seasonId', '==', seasonId)
       .get();
-  } catch {
+  } catch (error: any) {
+    if (error?.code !== 9 && !/index|FAILED_PRECONDITION/i.test(String(error?.message))) {
+      firestoreCircuitBreaker.recordFailure(error);
+      throw error;
+    }
     // Avoid making the repair depend on a composite index being present.
     snap = await db.collection(COLLECTIONS.FIXTURES)
       .where('competitionId', '==', competitionId)
@@ -70,17 +75,20 @@ export async function canonicalizeMyDomesticCupFixtures(
   if (!cupId) return fixtures;
 
   let cupFixtures: Fixture[] = [];
+  let degradedCup = false;
   try {
     const readModel = await getCompetitionFixturesFromReadModel(cupId, { seasonId });
     cupFixtures = readModel.fixtures;
+    degradedCup = Boolean(readModel.stale || readModel.degraded);
     // A redraw invalidates Fresh Redis but deliberately preserves LKG. My Matches
     // must not keep serving that old opponent indefinitely, so a stale cup snapshot
     // is healed once from authoritative Firestore and written back to Redis.
-    if (readModel.stale || readModel.degraded) {
-      cupFixtures = await loadAuthoritativeCupFixtures(cupId, seasonId);
+    if ((readModel.stale || readModel.degraded) && firestoreCircuitBreaker.getStatus().state === 'CLOSED') {
+      try { cupFixtures = await loadAuthoritativeCupFixtures(cupId, seasonId); degradedCup = false; }
+      catch { /* Keep the last-known cup draw on quota/network failure. */ }
     }
   } catch {
-    cupFixtures = await loadAuthoritativeCupFixtures(cupId, seasonId).catch(() => []);
+    if (firestoreCircuitBreaker.getStatus().state === 'CLOSED') cupFixtures = await loadAuthoritativeCupFixtures(cupId, seasonId).catch(() => []);
   }
 
   if (cupFixtures.length === 0) return fixtures;
@@ -99,7 +107,7 @@ export async function canonicalizeMyDomesticCupFixtures(
       awayClub: canonical.awayClub,
       homeClubId: canonical.homeClubId,
       awayClubId: canonical.awayClubId,
-      isPlayable: canonical.status === 'SCHEDULED' && Boolean(canonical.homeClubId && canonical.awayClubId),
+      isPlayable: degradedCup ? previous?.isPlayable === true : canonical.status === 'SCHEDULED' && Boolean(canonical.homeClubId && canonical.awayClubId),
       activeMatchday: canonical.matchday,
     } as Fixture;
   });

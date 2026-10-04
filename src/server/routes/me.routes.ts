@@ -8,7 +8,7 @@ import {
 } from '../firebase/firestoreStore';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
 import { setOwnershipSensitiveHeaders } from '../middleware/ownershipCacheControl';
-import { getOptionalCurrentClub } from '../readModel/readModelStore';
+import { getOptionalCurrentClub, ReadModelNotWarmedError } from '../readModel/readModelStore';
 import { getDashboardLeagueStats } from '../services/dashboardLeagueStatsService';
 import { canonicalizeMyDomesticCupFixtures } from '../services/myMatchesCanonicalService';
 import {
@@ -17,6 +17,7 @@ import {
   scheduleDeadlineSweep,
 } from '../services/matchOperationsV4Service';
 import { sortSeasonFixtures } from '../../lib/fixtureOrder';
+import { getMyMatchesResilient } from '../services/myMatchesReadService';
 
 export const meRouter = Router();
 export const meResilientRouter = meRouter;
@@ -46,13 +47,13 @@ meRouter.get('/matches', requireAuth, async (req: Request, res: Response) => {
   const status = req.query.status as string | undefined;
 
   try {
-    const [fixtures, clubState] = await Promise.all([
-      getFixturesFirestore({ userId, seasonId, status }),
-      getOptionalCurrentClub(userId, seasonId),
-    ]);
-    const canonicalFixtures = await canonicalizeMyDomesticCupFixtures(fixtures, clubState.ownedClubs, seasonId);
-    const statusFiltered = status ? canonicalFixtures.filter((fixture) => fixture.status === status) : canonicalFixtures;
-    res.json({ fixtures: sortSeasonFixtures(statusFiltered) });
+    const clubState = await getOptionalCurrentClub(userId, seasonId);
+    if (clubState.currentClubStatus === 'unavailable') throw new ReadModelNotWarmedError('MY_MATCHES_OWNERSHIP_UNAVAILABLE');
+    const result = await getMyMatchesResilient(userId, clubState.ownedClubs, seasonId, status);
+    const canonicalFixtures = await canonicalizeMyDomesticCupFixtures(result.fixtures, clubState.ownedClubs, seasonId);
+    const safeFixtures = canonicalFixtures.map(({ userSubmission, opponentSubmission, ...fixture }) => fixture);
+    const statusFiltered = status ? safeFixtures.filter((fixture) => fixture.status === status) : safeFixtures;
+    res.json({ ...result, fixtures: sortSeasonFixtures(statusFiltered) });
   } catch (err: any) {
     handleFirestoreError(res, err, 'GET /api/me/matches');
   }
