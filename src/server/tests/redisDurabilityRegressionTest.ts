@@ -226,6 +226,61 @@ async function main() {
     await import('./approvedFixtureRestorationRegressionTest');
     console.log('PASS actual Redis Lua: one-time approved fixture restore appends to durable snapshots and survives retry.');
     await import('./tournamentImageDownloadRegressionTest');
+
+    // Real Redis Lua test for Telegram AI Rate Limiting & Delivery Claim Transitions
+    const aiRateService = await import('../services/telegramAiRateLimitService');
+    const aiService = await import('../services/telegramAiService');
+
+    // 1. Parallel rate limiting via atomic Redis Lua script on real Redis
+    const realUser = 999888;
+    const realParallelResults = await Promise.all(
+      Array.from({ length: 10 }, () =>
+        aiRateService.checkAndIncrementAiRateLimits({
+          chatId: -100999888,
+          threadId: 3503,
+          userId: realUser,
+          userLimitPerMin: 3,
+          topicLimitPerMin: 15,
+          maxDailyRequests: 500,
+        })
+      )
+    );
+    const realAllowed = realParallelResults.filter((r) => r.allowed).length;
+    const realBlocked = realParallelResults.filter((r) => !r.allowed).length;
+    assert.equal(realAllowed, 3, 'Real Redis Lua must permit exactly 3 requests');
+    assert.equal(realBlocked, 7, 'Real Redis Lua must atomically block remaining 7 requests');
+
+    // 2. Real Redis atomic delivery claim ('sending' state transition)
+    const realUpdateId = 777999;
+    const realClaims = await Promise.all([
+      aiService.claimDeliveryState(realUpdateId, 'sending'),
+      aiService.claimDeliveryState(realUpdateId, 'sending'),
+      aiService.claimDeliveryState(realUpdateId, 'sending'),
+    ]);
+    const realClaimOk = realClaims.filter((c) => c === 'ok').length;
+    const realClaimHandled = realClaims.filter((c) => c === 'already_handled').length;
+    assert.equal(realClaimOk, 1, 'Real Redis Lua must allow exactly one claim to sending state');
+    assert.equal(realClaimHandled, 2, 'Concurrent delivery claims must return already_handled');
+
+    // 3. Bot message indexing in real Redis
+    await aiService.indexBotSentMessage(888777, -100999888, 3503, 12345);
+    const isReplyMatch = await aiService.isReplyToOurBotForUser(
+      { message_id: 888777, from: { id: aiService.getConfiguredBotUserId() || 123456, is_bot: true } },
+      -100999888,
+      3503,
+      12345
+    );
+    assert.equal(isReplyMatch, true, 'Real Redis bot message index must match target chat/thread/user');
+
+    const isWrongUserMatch = await aiService.isReplyToOurBotForUser(
+      { message_id: 888777, from: { id: aiService.getConfiguredBotUserId() || 123456, is_bot: true } },
+      -100999888,
+      3503,
+      99999
+    );
+    assert.equal(isWrongUserMatch, false, 'Different user must NOT match bot message index');
+    console.log('PASS actual Redis Lua: AI assistant atomic rate limiting, delivery claim transitions, and reply indexing.');
+
     console.log('Redis durability regression passed; Telegram transport was mocked, no real messages sent.');
   } finally { globalThis.fetch = isolatedFetch; bridge.close(); }
 }

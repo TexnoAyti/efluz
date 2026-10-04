@@ -56,7 +56,14 @@ export function getAiConfigRedisKey(): string {
  * Retrieves the current AI configuration.
  * Fail-closed in production if Redis is unavailable.
  */
-export async function getTelegramAiConfig(): Promise<{ config: TelegramAiConfig; redisAvailable: boolean }> {
+export async function getTelegramAiConfig(options?: { signal?: AbortSignal }): Promise<{ config: TelegramAiConfig; redisAvailable: boolean }> {
+  if (options?.signal?.aborted) {
+    return {
+      config: { ...DEFAULT_AI_CONFIG, enabled: false },
+      redisAvailable: false,
+    };
+  }
+
   if (testConfigOverride) {
     return { config: { ...testConfigOverride }, redisAvailable: true };
   }

@@ -158,8 +158,13 @@ export async function sendTelegramMessage(
       chat_id: chatId,
       text,
     };
-    if (options.parse_mode !== null && options.parse_mode !== undefined) {
-      body.parse_mode = options.parse_mode || 'HTML';
+    if (options.parse_mode === null) {
+      // Explicit plain text: do not set parse_mode
+    } else if (options.parse_mode !== undefined) {
+      body.parse_mode = options.parse_mode;
+    } else {
+      // Preserve standard HTML default as before
+      body.parse_mode = 'HTML';
     }
     if (options.reply_markup) {
       body.reply_markup = options.reply_markup;

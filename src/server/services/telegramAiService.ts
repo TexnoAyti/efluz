@@ -2,15 +2,18 @@
  * Telegram AI Assistant Main Orchestration Service
  *
  * Enforces:
- * 1. Unified 6-second processing timeout via AbortController
+ * 1. Unified 6-second processing timeout starting before configuration loading
  * 2. Strict Delivery State transition (pending -> sending -> sent / unknown_timeout)
- *    Pre-dispatch atomic 'sending' state prevents duplicate sends if Telegram succeeds
- *    but Redis settlement fails.
- * 3. Context isolation per (chatId, threadId, userId) with max 4 turns and 10m TTL.
- *    Verifies reply is specifically addressed to OUR bot and matches bot-sent message ID.
- * 4. Mid-flight authorization re-check before dispatching message to Telegram.
- * 5. Safe HTML entity escaping and length limits (max 1000 chars).
- * 6. Free-tier quota error handling with polite Uzbek fallback.
+ *    Pre-dispatch atomic 'sending' state prevents duplicate sends on retries.
+ *    Redis outage or delivery claim error FAILS CLOSED: never sends to Telegram.
+ * 3. All replies (cooldown warnings, off-topic refusals, AI answers) dispatched
+ *    via a single, unified sending claim mechanism.
+ * 4. Mid-flight authorization & health re-check immediately before dispatching to Telegram
+ *    (enabled, redisAvailable, chatId, threadId).
+ * 5. Reply context verification: only loaded when specifically addressed to our exact bot ID
+ *    and matching the indexed message for (chatId, threadId, userId). Returns false on missing index or Redis error.
+ * 6. Safe HTML entity escaping and length limits (max 1000 chars), with parse_mode: null for plain text.
+ * 7. Gemini request abortSignal passing to ensure network requests are genuinely cancelled on timeout.
  */
 
 import { GoogleGenAI } from '@google/genai';
@@ -48,6 +51,8 @@ export interface ConversationTurn {
   text: string;
 }
 
+export type DeliveryClaimResult = 'ok' | 'already_handled' | 'redis_error';
+
 const GLOBAL_TIMEOUT_MS = 6000;
 const MAX_CONTEXT_TURNS = 4;
 const CONTEXT_TTL_SECONDS = 600; // 10 minutes
@@ -66,23 +71,35 @@ export function getConfiguredBotUserId(): number | null {
 }
 
 // Test mock hook for isolated offline tests
-type TestAiResponder = (text: string, grounding: string) => Promise<string>;
+export type TestAiResponder = (text: string, grounding: string, history?: ConversationTurn[]) => Promise<string>;
 let testAiResponder: TestAiResponder | null = null;
+let testRedisOutage = false;
+let lastModelCallHistory: ConversationTurn[] | null = null;
 
 export function setTestAiResponder(responder: TestAiResponder | null): void {
   testAiResponder = responder;
 }
 
+export function setTestRedisOutage(outage: boolean): void {
+  testRedisOutage = outage;
+}
+
+export function getLastModelCallHistory(): ConversationTurn[] | null {
+  return lastModelCallHistory;
+}
+
 // In-memory test store for delivery & context
 const testDeliveryStore = new Map<number, string>();
 const testContextStore = new Map<string, { turns: ConversationTurn[]; expiresAt: number }>();
-const testBotMessageStore = new Map<number, { userId: number; expiresAt: number }>();
+const testBotMessageStore = new Map<number, { chatId: number; threadId: number; userId: number; expiresAt: number }>();
 
 export function clearTestAiState(): void {
   testDeliveryStore.clear();
   testContextStore.clear();
   testBotMessageStore.clear();
   testAiResponder = null;
+  testRedisOutage = false;
+  lastModelCallHistory = null;
 }
 
 /**
@@ -103,11 +120,18 @@ export function escapeTelegramHtml(text: string): string {
  * - 'sent'    -> Telegram acknowledged message
  * - 'unknown_timeout' -> Delivery uncertain / timeout; DO NOT auto-retry
  * - 'failed'  -> Terminal failure
+ *
+ * FAILS CLOSED on Redis error: returns 'redis_error' so callers refuse to send.
  */
 export async function claimDeliveryState(
   updateId: number,
-  targetState: 'pending' | 'sending' | 'sent' | 'unknown_timeout' | 'failed'
-): Promise<'ok' | 'already_handled'> {
+  targetState: 'pending' | 'sending' | 'sent' | 'unknown_timeout' | 'failed',
+  options?: { signal?: AbortSignal }
+): Promise<DeliveryClaimResult> {
+  if (testRedisOutage || options?.signal?.aborted) {
+    return 'redis_error';
+  }
+
   const client = getUpstashClient();
   if (!client) {
     const existing = testDeliveryStore.get(updateId);
@@ -131,6 +155,8 @@ export async function claimDeliveryState(
 
   const key = `${KEY_PREFIX}:telegram:ai:delivery:${updateId}`;
   try {
+    if (options?.signal?.aborted) return 'redis_error';
+
     if (targetState === 'pending') {
       const setNx = await client.set(key, 'pending', { nx: true, ex: 86400 });
       if (!setNx) {
@@ -141,8 +167,9 @@ export async function claimDeliveryState(
       }
       return 'ok';
     }
+
     if (targetState === 'sending') {
-      // Atomic transition to 'sending': only allowed if not already sending/sent
+      // Atomic transition to 'sending': only allowed if not already sending/sent/timeout
       const res = await client.eval(`
         local cur = redis.call('GET', KEYS[1])
         if cur == 'sending' or cur == 'sent' or cur == 'unknown_timeout' then
@@ -153,24 +180,34 @@ export async function claimDeliveryState(
       `, [key], []);
       return res === 1 ? 'ok' : 'already_handled';
     }
+
     // Terminal states: 'sent', 'unknown_timeout', 'failed'
     await client.set(key, targetState, { ex: 86400 });
     return 'ok';
   } catch (err: any) {
-    console.warn('[AI DELIVERY STATE] Redis error checking delivery state:', err?.message || err);
-    return 'ok';
+    console.warn('[AI DELIVERY STATE] Redis error during delivery claim:', err?.message || err);
+    return 'redis_error';
   }
 }
 
 /**
- * Indexes a message sent by the bot to trace reply continuity strictly to the target user.
+ * Indexes a message sent by the bot to trace reply continuity strictly to the target user in specific chat & thread.
  */
-async function indexBotSentMessage(messageId: number, targetUserId: number): Promise<void> {
+export async function indexBotSentMessage(
+  messageId: number,
+  chatId: number,
+  threadId: number,
+  targetUserId: number,
+  options?: { signal?: AbortSignal }
+): Promise<void> {
   const client = getUpstashClient();
   const key = `${KEY_PREFIX}:telegram:ai:botmsg:${messageId}`;
+  const payload = JSON.stringify({ chatId, threadId, userId: targetUserId });
 
   if (!client) {
     testBotMessageStore.set(messageId, {
+      chatId,
+      threadId,
       userId: targetUserId,
       expiresAt: Date.now() + CONTEXT_TTL_SECONDS * 1000,
     });
@@ -178,7 +215,8 @@ async function indexBotSentMessage(messageId: number, targetUserId: number): Pro
   }
 
   try {
-    await client.set(key, String(targetUserId), { ex: CONTEXT_TTL_SECONDS });
+    if (options?.signal?.aborted) return;
+    await client.set(key, payload, { ex: CONTEXT_TTL_SECONDS });
   } catch (err: any) {
     console.warn('[AI BOT MSG INDEX] Failed to index bot message ID:', err?.message || err);
   }
@@ -186,43 +224,66 @@ async function indexBotSentMessage(messageId: number, targetUserId: number): Pro
 
 /**
  * Checks whether a reply was targeted specifically to our bot and originated
- * from a message previously addressed to this exact user.
+ * from a message previously addressed to this exact user in this exact chat & thread.
+ * Returns false if index is absent, expired, or if Redis encounters an error.
  */
-async function isReplyToOurBotForUser(
+export async function isReplyToOurBotForUser(
   replyToMessage: TelegramAiMessagePayload['replyToMessage'],
-  currentUserId: number
+  currentChatId: number,
+  currentThreadId: number,
+  currentUserId: number,
+  options?: { signal?: AbortSignal }
 ): Promise<boolean> {
   if (!replyToMessage) return false;
+  if (options?.signal?.aborted) return false;
 
   const botUserId = getConfiguredBotUserId();
   const repliedUser = replyToMessage.from;
 
-  // 1. Must be from a bot, and if botUserId is known, must match our bot ID
-  if (!repliedUser?.is_bot) return false;
-  if (botUserId !== null && repliedUser.id !== botUserId) return false;
+  // 1. Must be strictly from our bot ID
+  if (botUserId === null) return false;
+  if (!repliedUser?.is_bot || Number(repliedUser.id) !== Number(botUserId)) {
+    return false;
+  }
 
-  // 2. Check if the message ID was indexed for this user
+  if (testRedisOutage) {
+    return false;
+  }
+
+  // 2. Check if the message ID was indexed for this chat, thread, and user
   const client = getUpstashClient();
   const msgKey = `${KEY_PREFIX}:telegram:ai:botmsg:${replyToMessage.message_id}`;
 
   if (!client) {
     const record = testBotMessageStore.get(replyToMessage.message_id);
-    if (record && record.expiresAt > Date.now()) {
-      return record.userId === currentUserId;
+    if (!record || record.expiresAt <= Date.now()) {
+      return false;
     }
-    // If not found in index but is reply to our bot, allow if single user context
-    return true;
+    return (
+      Number(record.chatId) === Number(currentChatId) &&
+      Number(record.threadId) === Number(currentThreadId) &&
+      Number(record.userId) === Number(currentUserId)
+    );
   }
 
   try {
-    const recordedUserId = await client.get<string | number>(msgKey);
-    if (recordedUserId !== null && recordedUserId !== undefined) {
-      return Number(recordedUserId) === Number(currentUserId);
+    if (options?.signal?.aborted) return false;
+    const raw = await client.get<string | { chatId: number; threadId: number; userId: number }>(msgKey);
+    if (!raw) {
+      return false; // Indeks yo'q bo'lsa false qaytaring
     }
-    // If key expired but is reply to our bot
-    return true;
-  } catch {
-    return true;
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (!parsed || typeof parsed !== 'object') {
+      return false;
+    }
+    return (
+      Number(parsed.chatId) === Number(currentChatId) &&
+      Number(parsed.threadId) === Number(currentThreadId) &&
+      Number(parsed.userId) === Number(currentUserId)
+    );
+  } catch (err: any) {
+    console.warn('[AI BOT MSG INDEX] Redis error verifying bot reply index:', err?.message || err);
+    return false; // Redis xato bo'lsa false qaytaring!
   }
 }
 
@@ -232,8 +293,11 @@ async function isReplyToOurBotForUser(
 async function getConversationContext(
   chatId: number,
   threadId: number,
-  userId: number
+  userId: number,
+  options?: { signal?: AbortSignal }
 ): Promise<ConversationTurn[]> {
+  if (testRedisOutage || options?.signal?.aborted) return [];
+
   const client = getUpstashClient();
   const contextKey = `${KEY_PREFIX}:telegram:ai:context:${chatId}:${threadId}:${userId}`;
 
@@ -244,6 +308,7 @@ async function getConversationContext(
   }
 
   try {
+    if (options?.signal?.aborted) return [];
     const raw = await client.get<string | any[]>(contextKey);
     if (!raw) return [];
     const parsed: any = typeof raw === 'string' ? JSON.parse(raw) : raw;
@@ -265,12 +330,15 @@ async function saveConversationContext(
   threadId: number,
   userId: number,
   userText: string,
-  modelText: string
+  modelText: string,
+  options?: { signal?: AbortSignal }
 ): Promise<void> {
+  if (testRedisOutage || options?.signal?.aborted) return;
+
   const client = getUpstashClient();
   const contextKey = `${KEY_PREFIX}:telegram:ai:context:${chatId}:${threadId}:${userId}`;
 
-  const existing = await getConversationContext(chatId, threadId, userId);
+  const existing = await getConversationContext(chatId, threadId, userId, options);
   const updated: ConversationTurn[] = [
     ...existing,
     { role: 'user' as const, text: userText.slice(0, 300) },
@@ -286,6 +354,7 @@ async function saveConversationContext(
   }
 
   try {
+    if (options?.signal?.aborted) return;
     await client.set(contextKey, JSON.stringify(updated), { ex: CONTEXT_TTL_SECONDS });
   } catch (err: any) {
     console.warn('[AI CONTEXT] Error saving context to Redis:', err?.message || err);
@@ -306,6 +375,87 @@ export function isBlatantlyOffTopic(text: string): boolean {
 }
 
 /**
+ * Unified Dispatcher: All replies (cooldown warning, off-topic standard refusal, and AI answers)
+ * are routed through this single function.
+ *
+ * Guarantees:
+ * 1. Pre-send re-check: enabled, redisAvailable, chatId, threadId
+ * 2. Atomic claim transition to 'sending' before calling Telegram.
+ *    If claim returns 'already_handled' OR 'redis_error' (outage), fails closed: DOES NOT SEND.
+ * 3. Sends message with exact parse_mode (or null for plain text)
+ * 4. On send success: claims 'sent' and indexes bot message ID.
+ * 5. On send failure/timeout: marks 'unknown_timeout' to prevent duplicate retry spam.
+ */
+async function dispatchTelegramAiReply(
+  payload: TelegramAiMessagePayload,
+  replyText: string,
+  signal: AbortSignal,
+  options: {
+    parse_mode?: string | null;
+  } = {}
+): Promise<{ ok: boolean; replySent: boolean; ignored?: string; error?: string }> {
+  // 1. Deadline check
+  if (signal.aborted) {
+    console.warn('[AI DISPATCH] Request timed out before message dispatch');
+    await claimDeliveryState(payload.updateId, 'unknown_timeout');
+    return { ok: false, replySent: false, ignored: 'TIMEOUT_ABORTED' };
+  }
+
+  // 2. Pre-send re-check (Requirement 3): enabled, redisAvailable, chatId, threadId
+  const { config: freshConfig, redisAvailable: freshRedis } = await getTelegramAiConfig({ signal });
+  if (
+    !freshConfig.enabled ||
+    (process.env.NODE_ENV === 'production' && !freshRedis) ||
+    freshConfig.allowedChatId === null ||
+    freshConfig.allowedThreadId === null ||
+    Number(freshConfig.allowedChatId) !== Number(payload.chatId) ||
+    Number(freshConfig.allowedThreadId) !== Number(payload.threadId)
+  ) {
+    console.warn('[AI DISPATCH] Pre-send re-check failed; aborting send to Telegram');
+    await claimDeliveryState(payload.updateId, 'sent');
+    return { ok: false, replySent: false, ignored: 'disabled_or_unauthorized_pre_send' };
+  }
+
+  // 3. Pre-dispatch atomic transition to 'sending' (Requirement 1: fail-closed on Redis error)
+  const sendClaim = await claimDeliveryState(payload.updateId, 'sending', { signal });
+  if (sendClaim !== 'ok') {
+    console.warn(`[AI DISPATCH] Pre-dispatch claim was '${sendClaim}', failing closed (not sending)`);
+    return {
+      ok: false,
+      replySent: false,
+      ignored: sendClaim === 'already_handled' ? 'already_sending_or_sent' : 'delivery_claim_redis_error_fail_closed',
+    };
+  }
+
+  // 4. Format message text
+  const parseMode = options.parse_mode !== undefined ? options.parse_mode : 'HTML';
+  const textToSend = parseMode === 'HTML'
+    ? escapeTelegramHtml(replyText.slice(0, MAX_RESPONSE_CHARS))
+    : replyText.slice(0, MAX_RESPONSE_CHARS);
+
+  // 5. Dispatch message to Telegram
+  const sendResult = await sendTelegramMessage(payload.chatId, textToSend, {
+    parse_mode: parseMode,
+    message_thread_id: payload.threadId,
+    reply_to_message_id: payload.messageId,
+    signal,
+  });
+
+  if (sendResult.ok) {
+    await claimDeliveryState(payload.updateId, 'sent');
+    const botMsgId = sendResult.result?.message_id;
+    if (Number.isSafeInteger(botMsgId)) {
+      await indexBotSentMessage(botMsgId, payload.chatId, payload.threadId, payload.fromUser.id, { signal });
+    }
+    return { ok: true, replySent: true };
+  } else {
+    console.warn('[AI DISPATCH] Telegram send failed/uncertain:', sendResult.error);
+    await claimDeliveryState(payload.updateId, 'unknown_timeout');
+    return { ok: false, replySent: false, error: sendResult.error };
+  }
+}
+
+/**
  * Main AI Message Handler
  */
 export async function handleTelegramAiMessage(
@@ -316,36 +466,40 @@ export async function handleTelegramAiMessage(
     return { ok: true, handled: false, ignored: 'bot_or_empty' };
   }
 
-  // 2. Load configuration with fail-closed guarantee
-  const { config, redisAvailable } = await getTelegramAiConfig();
-  if (!config.enabled) {
-    return { ok: true, handled: false, ignored: 'ai_disabled' };
-  }
-  if (!redisAvailable && process.env.NODE_ENV === 'production') {
-    return { ok: true, handled: false, ignored: 'redis_unavailable_prod' };
-  }
-
-  // 3. Strict Boundary Validation: Chat ID and Thread ID must match configured allowed topic
-  if (
-    config.allowedChatId === null ||
-    config.allowedThreadId === null ||
-    Number(payload.chatId) !== Number(config.allowedChatId) ||
-    Number(payload.threadId) !== Number(config.allowedThreadId)
-  ) {
-    return { ok: true, handled: false, ignored: 'topic_not_authorized' };
-  }
-
-  // 4. Initial delivery check: prevent duplicate processing on webhook retry
-  const initDelivery = await claimDeliveryState(payload.updateId, 'pending');
-  if (initDelivery === 'already_handled') {
-    return { ok: true, handled: false, ignored: 'already_delivered' };
-  }
-
-  // 5. Global Timeout AbortController (6 seconds budget)
+  // 2. Start unified 6-second processing timeout BEFORE reading configuration (Requirement 2)
   const rootController = new AbortController();
   const globalTimeout = setTimeout(() => rootController.abort(), GLOBAL_TIMEOUT_MS);
 
   try {
+    // 3. Load configuration under deadline with fail-closed guarantee
+    const { config, redisAvailable } = await getTelegramAiConfig({ signal: rootController.signal });
+    if (!config.enabled) {
+      return { ok: true, handled: false, ignored: 'ai_disabled' };
+    }
+    if (!redisAvailable && process.env.NODE_ENV === 'production') {
+      return { ok: true, handled: false, ignored: 'redis_unavailable_prod' };
+    }
+
+    // 4. Strict Boundary Validation: Chat ID and Thread ID must match configured allowed topic
+    if (
+      config.allowedChatId === null ||
+      config.allowedThreadId === null ||
+      Number(payload.chatId) !== Number(config.allowedChatId) ||
+      Number(payload.threadId) !== Number(config.allowedThreadId)
+    ) {
+      return { ok: true, handled: false, ignored: 'topic_not_authorized' };
+    }
+
+    // 5. Initial delivery check: prevent duplicate processing on webhook retry
+    const initDelivery = await claimDeliveryState(payload.updateId, 'pending', { signal: rootController.signal });
+    if (initDelivery !== 'ok') {
+      return {
+        ok: true,
+        handled: false,
+        ignored: initDelivery === 'already_handled' ? 'already_delivered' : 'delivery_claim_redis_error_fail_closed',
+      };
+    }
+
     // 6. Multi-tier atomic rate limiting (Daily -> Topic -> User in ONE atomic Redis operation)
     const rateLimit = await checkAndIncrementAiRateLimits({
       chatId: payload.chatId,
@@ -354,56 +508,64 @@ export async function handleTelegramAiMessage(
       userLimitPerMin: config.rateLimitUserPerMin,
       topicLimitPerMin: config.rateLimitTopicPerMin,
       maxDailyRequests: config.maxDailyRequests,
+      signal: rootController.signal,
     });
 
     if (!rateLimit.allowed) {
       if (rateLimit.shouldNotifyUser) {
-        await sendTelegramMessage(payload.chatId, "Siz juda tez so'rov yubordingiz. Iltimos, biroz kuting (minutiga 3 ta so'rov ruxsat etilgan).", {
-          message_thread_id: payload.threadId,
-          reply_to_message_id: payload.messageId,
-          parse_mode: null,
-          signal: rootController.signal,
-        }).catch(() => undefined);
+        // Cooldown warning dispatched via unified dispatch path
+        await dispatchTelegramAiReply(
+          payload,
+          "Siz juda tez so'rov yubordingiz. Iltimos, biroz kuting (minutiga 3 ta so'rov ruxsat etilgan).",
+          rootController.signal,
+          { parse_mode: null }
+        );
+      } else {
+        await claimDeliveryState(payload.updateId, 'sent');
       }
-      await claimDeliveryState(payload.updateId, 'sent');
       return { ok: true, handled: true, ignored: rateLimit.reason };
     }
 
     // 7. Check blatant off-topic before calling Gemini to save quota
     if (isBlatantlyOffTopic(payload.text)) {
-      // Pre-dispatch atomic transition to 'sending'
-      const sendClaim = await claimDeliveryState(payload.updateId, 'sending');
-      if (sendClaim === 'already_handled') {
-        return { ok: true, handled: false, ignored: 'already_sending_or_sent' };
-      }
-
-      await sendTelegramMessage(payload.chatId, STANDARD_OFF_TOPIC_REPLY, {
-        message_thread_id: payload.threadId,
-        reply_to_message_id: payload.messageId,
-        parse_mode: null,
-        signal: rootController.signal,
-      });
-      await claimDeliveryState(payload.updateId, 'sent');
-      return { ok: true, handled: true, replySent: true };
+      // Off-topic refusal dispatched via unified dispatch path with parse_mode: null
+      const dispatchRes = await dispatchTelegramAiReply(
+        payload,
+        STANDARD_OFF_TOPIC_REPLY,
+        rootController.signal,
+        { parse_mode: null }
+      );
+      return { ok: true, handled: true, replySent: dispatchRes.replySent, ignored: dispatchRes.ignored };
     }
 
-    // 8. Build grounding context from Redis read-model
+    // 8. Build grounding context from Redis read-model under deadline
     const grounding = await buildAiGroundingContext(payload.text, undefined, { signal: rootController.signal });
 
-    // 9. Reply Context: verify reply is addressed specifically to our bot and belongs to this user
+    // 9. Reply Context: verify reply is addressed specifically to our bot and belongs to this user & chat & thread
     let history: ConversationTurn[] = [];
     if (payload.replyToMessage) {
-      const isOurReply = await isReplyToOurBotForUser(payload.replyToMessage, payload.fromUser.id);
+      const isOurReply = await isReplyToOurBotForUser(
+        payload.replyToMessage,
+        payload.chatId,
+        payload.threadId,
+        payload.fromUser.id,
+        { signal: rootController.signal }
+      );
       if (isOurReply) {
-        history = await getConversationContext(payload.chatId, payload.threadId, payload.fromUser.id);
+        history = await getConversationContext(payload.chatId, payload.threadId, payload.fromUser.id, {
+          signal: rootController.signal,
+        });
       }
     }
+
+    // Save history capture for test verification
+    lastModelCallHistory = history;
 
     // 10. Generate response via Gemini (or Test Mock)
     let replyText = '';
 
     if (testAiResponder) {
-      replyText = await testAiResponder(payload.text, grounding.factsSummary);
+      replyText = await testAiResponder(payload.text, grounding.factsSummary, history);
     } else {
       const apiKey = process.env.GEMINI_API_KEY?.trim();
       if (!apiKey) {
@@ -441,11 +603,17 @@ ${grounding.factsSummary}`;
               systemInstruction: systemPrompt,
               temperature: 0.2,
               maxOutputTokens: 400,
+              abortSignal: rootController.signal, // Cancels Gemini API call when deadline aborts
             },
           });
           replyText = aiResponse.text?.trim() || '';
         } catch (apiErr: any) {
           const errMsg = String(apiErr?.message || '');
+          if (rootController.signal.aborted) {
+            console.warn('[AI GEMINI] Gemini call cancelled due to deadline timeout');
+            await claimDeliveryState(payload.updateId, 'unknown_timeout');
+            return { ok: false, handled: false, error: 'TIMEOUT_ABORTED' };
+          }
           if (errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('quota')) {
             console.warn('[AI GEMINI] Quota exhausted for Gemini API:', errMsg);
             replyText = QUOTA_EXHAUSTED_REPLY;
@@ -461,53 +629,33 @@ ${grounding.factsSummary}`;
       replyText = SYSTEM_OUTAGE_REPLY;
     }
 
-    // 11. Check if global deadline has expired
-    if (rootController.signal.aborted) {
-      console.warn('[AI HANDLER] Request timed out before message dispatch');
-      await claimDeliveryState(payload.updateId, 'unknown_timeout');
-      return { ok: true, handled: false, error: 'TIMEOUT_ABORTED' };
-    }
+    // 11. Dispatch AI response via unified dispatch path
+    const dispatchRes = await dispatchTelegramAiReply(
+      payload,
+      replyText,
+      rootController.signal,
+      { parse_mode: 'HTML' }
+    );
 
-    // 12. Mid-flight authorization check: Ensure AI was not disabled during in-flight processing
-    const { config: latestConfig } = await getTelegramAiConfig();
-    if (!latestConfig.enabled || Number(latestConfig.allowedThreadId) !== Number(payload.threadId)) {
-      console.warn('[AI HANDLER] AI was disabled or topic unbound mid-flight; aborting send');
-      await claimDeliveryState(payload.updateId, 'sent');
-      return { ok: true, handled: false, ignored: 'disabled_mid_flight' };
-    }
-
-    // 13. Pre-dispatch atomic transition to 'sending'
-    const sendClaim = await claimDeliveryState(payload.updateId, 'sending');
-    if (sendClaim === 'already_handled') {
-      return { ok: true, handled: false, ignored: 'already_sending_or_sent' };
-    }
-
-    // 14. Format, escape, and clamp output to max 1000 characters
-    const safeOutput = escapeTelegramHtml(replyText.slice(0, MAX_RESPONSE_CHARS));
-
-    // 15. Dispatch message to Telegram
-    const sendResult = await sendTelegramMessage(payload.chatId, safeOutput, {
-      parse_mode: 'HTML',
-      message_thread_id: payload.threadId,
-      reply_to_message_id: payload.messageId,
-      signal: rootController.signal,
-    });
-
-    if (sendResult.ok) {
-      await claimDeliveryState(payload.updateId, 'sent');
-      // Index the sent bot message ID for future reply tracking
-      const botMsgId = sendResult.result?.message_id;
-      if (Number.isSafeInteger(botMsgId)) {
-        await indexBotSentMessage(botMsgId, payload.fromUser.id);
-      }
+    if (dispatchRes.replySent) {
       // Save context for future turns
-      await saveConversationContext(payload.chatId, payload.threadId, payload.fromUser.id, payload.text, replyText);
+      await saveConversationContext(
+        payload.chatId,
+        payload.threadId,
+        payload.fromUser.id,
+        payload.text,
+        replyText,
+        { signal: rootController.signal }
+      );
       return { ok: true, handled: true, replySent: true };
     } else {
-      console.warn('[AI SENDER] Telegram send failed/timeout:', sendResult.error);
-      // Mark as unknown_timeout to avoid automated duplicate retry spam
-      await claimDeliveryState(payload.updateId, 'unknown_timeout');
-      return { ok: false, handled: true, error: sendResult.error };
+      return {
+        ok: dispatchRes.ok,
+        handled: dispatchRes.ok || false,
+        replySent: false,
+        ignored: dispatchRes.ignored,
+        error: dispatchRes.error,
+      };
     }
   } catch (err: any) {
     console.error('[AI HANDLER ERROR]', err?.message || err);

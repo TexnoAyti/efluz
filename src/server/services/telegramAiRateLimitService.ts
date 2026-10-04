@@ -168,7 +168,12 @@ export async function checkAndIncrementAiRateLimits(params: {
   userLimitPerMin: number;
   topicLimitPerMin: number;
   maxDailyRequests: number;
+  signal?: AbortSignal;
 }): Promise<RateLimitCheckResult> {
+  if (params.signal?.aborted) {
+    return { allowed: false, reason: 'REDIS_UNAVAILABLE' };
+  }
+
   const client = getUpstashClient();
   const isProd = process.env.NODE_ENV === 'production';
 

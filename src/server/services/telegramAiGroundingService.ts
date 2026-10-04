@@ -22,6 +22,18 @@ export interface GroundingContext {
   detectedCompetitions: string[];
 }
 
+export interface TestGroundingOverride {
+  competitions?: Competition[];
+  standings?: Record<string, StandingsRow[]>;
+  fixtures?: Record<string, Fixture[]>;
+}
+
+let testGroundingOverride: TestGroundingOverride | null = null;
+
+export function setTestGroundingOverride(override: TestGroundingOverride | null): void {
+  testGroundingOverride = override;
+}
+
 const DEFAULT_SEASON_ID = 'season-2026-27';
 
 const CORE_RULES_SUMMARY =
@@ -59,13 +71,17 @@ export async function buildAiGroundingContext(
   try {
     // 1. Fetch available competitions
     let competitions: Competition[] = [];
-    try {
-      const compsResult = await getCompetitionsFromReadModel(seasonId);
-      if (compsResult.stale) hasStaleData = true;
-      competitions = compsResult.competitions || [];
-    } catch {
-      hasStaleData = true;
-      competitions = (SEED_COMPETITIONS as any[]) || [];
+    if (testGroundingOverride?.competitions) {
+      competitions = testGroundingOverride.competitions;
+    } else {
+      try {
+        const compsResult = await getCompetitionsFromReadModel(seasonId);
+        if (compsResult.stale) hasStaleData = true;
+        competitions = compsResult.competitions || [];
+      } catch {
+        hasStaleData = true;
+        competitions = (SEED_COMPETITIONS as any[]) || [];
+      }
     }
 
     // Match competitions from query
@@ -94,7 +110,10 @@ export async function buildAiGroundingContext(
       const clubNameLower = club.name.toLowerCase();
       if (normalized.includes(clubNameLower) || (club.shortName && normalized.includes(club.shortName.toLowerCase()))) {
         detectedClubs.push(club.name);
-        const compId = (club as any).competitionId || (club as any).leagueId;
+        const matchingComp = competitions.find(
+          (c) => c.id === (club as any).competitionId || (c as any).leagueId === club.leagueId || c.id === club.leagueId
+        );
+        const compId = matchingComp ? matchingComp.id : ((club as any).competitionId || club.leagueId);
         if (compId && !detectedCompetitions.includes(compId)) {
           detectedCompetitions.push(compId);
         }
@@ -125,9 +144,19 @@ export async function buildAiGroundingContext(
       const compTitle = comp?.name || compId;
 
       try {
-        const standingsResult = await getCompetitionStandingsFromReadModel(compId, seasonId);
-        if (standingsResult.stale) hasStaleData = true;
-        const rows: StandingsRow[] = standingsResult.standings || [];
+        let rows: StandingsRow[] = [];
+        if (testGroundingOverride?.standings?.[compId]) {
+          rows = testGroundingOverride.standings[compId];
+        } else if (testGroundingOverride?.standings) {
+          const matchKey = Object.keys(testGroundingOverride.standings).find(
+            (k) => compId.includes(k) || k.includes(compId)
+          );
+          if (matchKey) rows = testGroundingOverride.standings[matchKey];
+        } else {
+          const standingsResult = await getCompetitionStandingsFromReadModel(compId, seasonId);
+          if (standingsResult.stale) hasStaleData = true;
+          rows = standingsResult.standings || [];
+        }
 
         if (rows.length > 0) {
           // If specific clubs were detected, include them specifically, plus top 3
@@ -151,9 +180,19 @@ export async function buildAiGroundingContext(
       } catch {}
 
       try {
-        const fixturesResult = await getCompetitionFixturesFromReadModel(compId, { seasonId });
-        if (fixturesResult.stale) hasStaleData = true;
-        const fixtures: Fixture[] = fixturesResult.fixtures || [];
+        let fixtures: Fixture[] = [];
+        if (testGroundingOverride?.fixtures?.[compId]) {
+          fixtures = testGroundingOverride.fixtures[compId];
+        } else if (testGroundingOverride?.fixtures) {
+          const matchKey = Object.keys(testGroundingOverride.fixtures).find(
+            (k) => compId.includes(k) || k.includes(compId)
+          );
+          if (matchKey) fixtures = testGroundingOverride.fixtures[matchKey];
+        } else {
+          const fixturesResult = await getCompetitionFixturesFromReadModel(compId, { seasonId });
+          if (fixturesResult.stale) hasStaleData = true;
+          fixtures = fixturesResult.fixtures || [];
+        }
 
         // Filter fixtures: confirmed matches or matches involving detected clubs
         const relevantFixtures = fixtures.filter((f) => {
