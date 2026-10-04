@@ -28,6 +28,7 @@ export async function startMockUpstashBridge(): Promise<MockRedisServer> {
     const op = String(args[0]).toLowerCase();
     if (op === 'ping') return 'PONG';
     if (op === 'set') {
+      if (args.some(a => String(a).toLowerCase() === 'nx') && store.has(String(args[1]))) return null;
       store.set(String(args[1]), typeof args[2] === 'string' ? args[2] : JSON.stringify(args[2]));
       return 'OK';
     }
@@ -119,6 +120,24 @@ export async function startMockUpstashBridge(): Promise<MockRedisServer> {
       const numKeys = Number(args[2] || 0);
       const keys = args.slice(3, 3 + numKeys);
       const argv = args.slice(3 + numKeys);
+      if (String(args[1]).includes('EFL_OUTBOX_TRANSITION_V1')) {
+        const raw = store.get(String(keys[0]));
+        if (!raw || (JSON.parse(raw).revision || '') !== String(argv[1])) return 0;
+        store.set(String(keys[0]), String(argv[0]));
+        if (!zsets.has(String(keys[1]))) zsets.set(String(keys[1]), new Map());
+        if (argv[3] === 'SYNCED' || argv[3] === 'FAILED') zsets.get(String(keys[1]))!.delete(String(argv[2]));
+        else zsets.get(String(keys[1]))!.set(String(argv[2]), Number(argv[4]));
+        return 1;
+      }
+      if (String(args[1]).includes('EFL_OUTBOX_PERSIST_V1')) {
+        store.set(String(keys[0]), String(argv[0]));
+        if (!zsets.has(String(keys[1]))) zsets.set(String(keys[1]), new Map());
+        if (argv[3] === 'PENDING' || argv[3] === 'SYNCING') zsets.get(String(keys[1]))!.set(String(argv[2]), Number(argv[1]));
+        else zsets.get(String(keys[1]))!.delete(String(argv[2]));
+        if (!sets.has(String(keys[2]))) sets.set(String(keys[2]), new Set());
+        sets.get(String(keys[2]))!.add(String(argv[2]));
+        return 1;
+      }
       if (keys[1] && argv[0]) {
         store.set(String(keys[1]), typeof argv[0] === 'string' ? argv[0] : JSON.stringify(argv[0]));
       }

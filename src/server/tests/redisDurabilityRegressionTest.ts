@@ -92,6 +92,39 @@ async function main() {
     assert.equal(catalog.find(c => c.id === 'catalog-pl').currentMatchday, 4);
     assert.equal(await client.ttl(model.getLkgKey(catalogKey)), -1);
     console.log('PASS actual Redis Lua: parallel league controls retain both changes and reject stale round state.');
+    const outbox = await import('../outbox/redisOutbox');
+    const outboxId = 'atomic-outbox-real';
+    const outboxMutation = { mutationId: outboxId, operation: 'MARK_READ', entityType: 'NOTIFICATION_READ', entityId: 'atomic-outbox-notification', userId: 'atomic-outbox-owner', seasonId,
+      payload: { userId: 'atomic-outbox-owner', readAt: new Date().toISOString() }, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), retryCount: 0, nextRetryAt: Date.now(), lastError: null, status: 'PENDING' as const, revision: undefined as string | undefined };
+    // A malformed index must fail before publishing an unreachable record.
+    await client.set(outbox.OUTBOX_KEYS.pending(), 'invalid-index-type');
+    await assert.rejects(outbox.persistDurableMutation(outboxMutation), /OUTBOX_PENDING_TYPE_INVALID/);
+    assert.equal(await client.get(outbox.OUTBOX_KEYS.mutation(outboxId)), null);
+    assert.equal(await client.sismember(outbox.OUTBOX_KEYS.all(), outboxId), 0);
+    await client.del(outbox.OUTBOX_KEYS.pending());
+    await outbox.persistDurableMutation(outboxMutation);
+    assert.equal((await outbox.getDurableMutation(outboxId))?.status, 'PENDING');
+    assert.equal(await client.ttl(outbox.OUTBOX_KEYS.mutation(outboxId)), -1);
+    assert.equal(await client.zcard(outbox.OUTBOX_KEYS.pending()), 1);
+    assert.equal(await client.sismember(outbox.OUTBOX_KEYS.all(), outboxId), 1);
+    const oldRevision = outboxMutation.revision;
+    await outbox.markMutationSyncing(outboxId, oldRevision);
+    await outbox.persistDurableMutation(outboxMutation);
+    assert.notEqual(outboxMutation.revision, oldRevision);
+    assert.equal(await outbox.markMutationSynced(outboxId, oldRevision), false);
+    assert.equal((await outbox.getDurableMutation(outboxId))?.status, 'PENDING');
+    assert.equal(await client.zcard(outbox.OUTBOX_KEYS.pending()), 1);
+    await db.collection(COLLECTIONS.NOTIFICATIONS).doc(outboxMutation.entityId).set({ userId: outboxMutation.userId, isRead: false });
+    model.clearProcessMemoryForTest();
+    const recovery = await import('../sync/scheduleReconciliation');
+    const [recoveredA, recoveredB] = await Promise.all([recovery.reconcileDurableMutations(), recovery.reconcileDurableMutations()]);
+    assert.equal([recoveredA, recoveredB].filter(Boolean).length, 1);
+    assert.equal((recoveredA || recoveredB)?.synced, 1);
+    assert.equal((await outbox.getDurableMutation(outboxId))?.status, 'SYNCED');
+    assert.equal(await client.zcard(outbox.OUTBOX_KEYS.pending()), 0);
+    assert.equal((await db.collection(COLLECTIONS.NOTIFICATIONS).doc(outboxMutation.entityId).get()).data()?.isRead, true);
+    console.log('PASS actual Redis: atomic outbox rejects corrupt index before publication, retains permanent receipt and recovers from cold memory with one scheduled worker.');
+
     await import('./matchdayControlRegressionTest');
     await import('./notificationReadPersistenceRegressionTest');
     await import('./notificationModerationRegressionTest');

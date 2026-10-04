@@ -1212,97 +1212,6 @@ export async function claimClubAtomicFirestore(
     throw new Error('CIRCUIT_OPEN: Firestore circuit breaker is OPEN. Authoritative write cannot execute.');
   }
 
-  // Resilient Offline Claim with SQLite & mutation queue
-  return dbTransaction(() => {
-    const seed = SEED_CLUB_MAP.get(clubId);
-    const club = queryGet<any>('SELECT * FROM clubs WHERE id = ?', [clubId]);
-    if (!club && !seed) {
-      throw new ClubNotFoundError(`Club with ID '${clubId}' does not exist.`);
-    }
-
-    const existingMem = queryGet<any>(
-      "SELECT * FROM club_memberships WHERE user_id = ? AND season_id = ? AND status = 'active'",
-      [userId, seasonId]
-    );
-    if (existingMem) {
-      if (existingMem.club_id === clubId) {
-        const c = getClubByIdFirestore(clubId, seasonId, userId);
-        return { success: true, club: c as any, authoritative: false, isFallback: true };
-      }
-      throw new ClubConflictError(
-        'Your club selection is locked for this season. You have already claimed another club.',
-        'CLUB_SELECTION_LOCKED'
-      );
-    }
-
-    // Check local occupancy snapshot
-    const snapOccUserId = getClubOccupantUserIdLocally(seasonId, clubId);
-    if (snapOccUserId && snapOccUserId !== userId) {
-      throw new ClubConflictError(
-        'This club has already been selected by another player for this season.',
-        'CLUB_OCCUPIED'
-      );
-    }
-
-    const occupied = queryGet<any>(
-      "SELECT * FROM club_memberships WHERE club_id = ? AND season_id = ? AND status = 'active'",
-      [clubId, seasonId]
-    );
-    if (occupied && occupied.user_id !== userId) {
-      throw new ClubConflictError(
-        'This club has already been selected by another player for this season.',
-        'CLUB_OCCUPIED'
-      );
-    }
-
-    const memId = `cm-${seasonId}-${clubId}`;
-    queryRun(
-      `INSERT OR REPLACE INTO club_memberships (id, season_id, club_id, user_id, claimed_at, status, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'active', ?)`,
-      [memId, seasonId, clubId, userId, now, now]
-    );
-
-    updateOccupancyRecord({
-      clubId,
-      seasonId,
-      status: 'active',
-      claimedByUserId: userId,
-      claimedAt: now,
-      updatedAt: now,
-    });
-
-    // Enqueue durable mutation to sync to Firestore when quota recovers
-    enqueueMutation({
-      mutationId: `claim_${seasonId}_${clubId}_${userId}`,
-      entityType: 'CLUB_CLAIM',
-      entityId: clubId,
-      operation: 'CLAIM_CLUB',
-      payload: { clubId, seasonId, userId, claimedAt: now },
-      createdAt: now,
-    });
-
-    invalidateFirestoreCache();
-
-    const claimedClub: Club = {
-      id: clubId,
-      name: club?.name || seed?.name || clubId,
-      shortName: club?.short_name || seed?.shortName || clubId,
-      leagueId: club?.league_id || seed?.leagueId || '',
-      country: club?.country || seed?.country || '',
-      logoUrl: club?.logo_url || seed?.logoUrl || '',
-      active: true,
-      createdAt: now,
-      isTaken: true,
-      isCurrentUserClub: true,
-      claimedByUserId: userId,
-      occupancy: {
-        status: 'owned' as const,
-        userId,
-      },
-    };
-
-    return { success: true, club: claimedClub, authoritative: false, isFallback: true };
-  });
 }
 
 // ----------------------------------------------------
@@ -5641,11 +5550,7 @@ export async function markSingleNotificationReadFirestore(userId: string, notifi
     await persistNotificationReadState(userId, now, notificationId);
     return;
   }
-  try {
-    queryRun(`UPDATE notifications SET is_read = 1 WHERE user_id = ? AND id = ?`, [userId, notificationId]);
-  } catch {}
-
-  enqueueMutation({
+  await enqueueMutation({
     mutationId: `notif_read_${notificationId}_${userId}`,
     entityType: 'NOTIFICATION_READ',
     entityId: notificationId,
@@ -5654,16 +5559,13 @@ export async function markSingleNotificationReadFirestore(userId: string, notifi
     createdAt: now,
   });
   await persistNotificationReadState(userId, now, notificationId);
+  try { queryRun(`UPDATE notifications SET is_read = 1 WHERE user_id = ? AND id = ?`, [userId, notificationId]); } catch {}
 }
 
 export async function markNotificationsReadFirestore(userId: string): Promise<void> {
   const now = new Date().toISOString();
   let authoritativeRead = false;
   invalidateFirestoreCache(`firestore:notifications:${userId}`);
-
-  try {
-    queryRun(`UPDATE notifications SET is_read = 1 WHERE user_id = ?`, [userId]);
-  } catch {}
 
   if (firestoreCircuitBreaker.canExecute()) {
     try {
@@ -5692,7 +5594,7 @@ export async function markNotificationsReadFirestore(userId: string): Promise<vo
     return;
   }
 
-  enqueueMutation({
+  await enqueueMutation({
     mutationId: `notif_read_all_${userId}_${Date.now()}`,
     entityType: 'NOTIFICATION_READ_ALL',
     entityId: userId,
@@ -5701,6 +5603,7 @@ export async function markNotificationsReadFirestore(userId: string): Promise<vo
     createdAt: now,
   });
   await persistNotificationReadState(userId, now);
+  try { queryRun(`UPDATE notifications SET is_read = 1 WHERE user_id = ?`, [userId]); } catch {}
 }
 
 /**

@@ -47,7 +47,7 @@ async function main() {
   assert.equal(arsenal.played >= 1, true, 'Confirmed offline fixture must update played count');
 
   const mutationId = `offline-test-mutation-${Date.now()}`;
-  enqueueMutation({
+  await enqueueMutation({
     mutationId,
     entityType: 'MATCHDAY_OVERRIDE',
     entityId: competitionId,
@@ -89,7 +89,7 @@ async function main() {
   });
 
   const testMutationId = `admin-approve-test-${Date.now()}`;
-  enqueueMutation({
+  await enqueueMutation({
     mutationId: testMutationId,
     entityType: 'ADMIN_DECISION',
     entityId: testFixId,
@@ -225,7 +225,7 @@ async function main() {
 
   // Attempt 2: An unauthorized mutation is inserted into the queue attempting to spoof read as userA
   const spoofMutationId = `spoofed_notif_${Date.now()}`;
-  enqueueMutation({
+  await enqueueMutation({
     mutationId: spoofMutationId,
     entityType: 'NOTIFICATION_READ',
     entityId: notifB,

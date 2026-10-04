@@ -1,9 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import { getUpstashClient, KEY_PREFIX } from '../readModel/readModelStore';
 
 export type OutboxMutationStatus = 'PENDING' | 'SYNCING' | 'SYNCED' | 'FAILED';
 
 export interface DurableOutboxMutation<T = any> {
   mutationId: string;
+  revision?: string;
   operation: string;
   entityType: string;
   entityId: string;
@@ -60,12 +62,23 @@ export async function persistDurableMutation<T = any>(
   const allKey = OUTBOX_KEYS.all();
 
   try {
+    mutation.revision = randomUUID();
     const rawJson = JSON.stringify(mutation);
-    await client.set(mutationKey, rawJson);
-    if (mutation.status === 'PENDING' || mutation.status === 'SYNCING') {
-      await client.zadd(pendingKey, { score: mutation.nextRetryAt, member: mutation.mutationId });
-    }
-    await client.sadd(allKey, mutation.mutationId);
+    await client.eval(`
+      -- EFL_OUTBOX_PERSIST_V1: validate all key types before publishing.
+      local recordType = redis.call('TYPE', KEYS[1]).ok
+      local pendingType = redis.call('TYPE', KEYS[2]).ok
+      local allType = redis.call('TYPE', KEYS[3]).ok
+      if recordType ~= 'none' and recordType ~= 'string' then return redis.error_reply('OUTBOX_RECORD_TYPE_INVALID') end
+      if pendingType ~= 'none' and pendingType ~= 'zset' then return redis.error_reply('OUTBOX_PENDING_TYPE_INVALID') end
+      if allType ~= 'none' and allType ~= 'set' then return redis.error_reply('OUTBOX_ALL_TYPE_INVALID') end
+      redis.call('SET', KEYS[1], ARGV[1])
+      if ARGV[4] == 'PENDING' or ARGV[4] == 'SYNCING' then
+        redis.call('ZADD', KEYS[2], ARGV[2], ARGV[3])
+      else redis.call('ZREM', KEYS[2], ARGV[3]) end
+      redis.call('SADD', KEYS[3], ARGV[3])
+      return 1
+    `, [mutationKey, pendingKey, allKey], [rawJson, mutation.nextRetryAt, mutation.mutationId, mutation.status]);
     console.log(`[DURABLE_OUTBOX] Persisted mutation ${mutation.mutationId} (${mutation.operation}) to Redis`);
   } catch (err: any) {
     console.error(`[DURABLE_OUTBOX] Failed to persist mutation ${mutation.mutationId} to Redis:`, err?.message || err);
@@ -124,7 +137,7 @@ export async function getDuePendingMutations(limit = 25): Promise<DurableOutboxM
     const mutations: DurableOutboxMutation[] = [];
     for (const id of members) {
       const mut = await getDurableMutation(id);
-      if (mut && mut.status !== 'SYNCED') {
+      if (mut && (mut.status === 'PENDING' || mut.status === 'SYNCING')) {
         mutations.push(mut);
       }
     }
@@ -137,100 +150,72 @@ export async function getDuePendingMutations(limit = 25): Promise<DurableOutboxM
   }
 }
 
-/**
- * Marks mutation as SYNCING in Redis.
- */
-export async function markMutationSyncing(mutationId: string): Promise<boolean> {
+/** Change receipt + pending index atomically, and never acknowledge an older
+ * revision over a newly accepted edit with the same logical mutation ID. */
+async function transitionMutation(mut: DurableOutboxMutation, expectedRevision: string): Promise<boolean> {
   const client = getUpstashClient();
   if (!client) return false;
+  return Number(await client.eval(`
+    -- EFL_OUTBOX_TRANSITION_V1
+    local raw = redis.call('GET', KEYS[1])
+    if not raw then return 0 end
+    local current = cjson.decode(raw)
+    if (current.revision or '') ~= ARGV[2] then return 0 end
+    local pendingType = redis.call('TYPE', KEYS[2]).ok
+    if pendingType ~= 'none' and pendingType ~= 'zset' then return redis.error_reply('OUTBOX_PENDING_TYPE_INVALID') end
+    redis.call('SET', KEYS[1], ARGV[1])
+    if ARGV[4] == 'SYNCED' or ARGV[4] == 'FAILED' then
+      redis.call('ZREM', KEYS[2], ARGV[3])
+    else redis.call('ZADD', KEYS[2], ARGV[5], ARGV[3]) end
+    return 1
+  `, [OUTBOX_KEYS.mutation(mut.mutationId), OUTBOX_KEYS.pending()],
+  [JSON.stringify(mut), expectedRevision, mut.mutationId, mut.status, mut.nextRetryAt])) === 1;
+}
 
+async function matchingMutation(id: string, expectedRevision?: string): Promise<DurableOutboxMutation | null> {
+  const mut = await getDurableMutation(id);
+  if (!mut || (expectedRevision !== undefined && (mut.revision || '') !== expectedRevision)) return null;
+  return mut;
+}
+
+export async function markMutationSyncing(mutationId: string, expectedRevision?: string): Promise<boolean> {
   try {
-    const mut = await getDurableMutation(mutationId);
-    if (!mut || mut.status === 'SYNCED') return false;
-
+    const mut = await matchingMutation(mutationId, expectedRevision);
+    if (!mut || (mut.status !== 'PENDING' && mut.status !== 'SYNCING')) return false;
     mut.status = 'SYNCING';
     mut.updatedAt = new Date().toISOString();
-    await client.set(OUTBOX_KEYS.mutation(mutationId), JSON.stringify(mut));
-    return true;
-  } catch (err: any) {
-    console.warn(`[DURABLE_OUTBOX] Failed to mark mutation ${mutationId} as SYNCING:`, err?.message || err);
-    return false;
-  }
+    return await transitionMutation(mut, mut.revision || '');
+  } catch (err: any) { console.warn('[DURABLE_OUTBOX] Sync receipt deferred:', err?.message); return false; }
 }
 
-/**
- * Marks mutation as SYNCED in Redis and removes from pending sorted set.
- * The durable record itself is preserved for audit trail.
- */
-export async function markMutationSynced(mutationId: string): Promise<void> {
-  const client = getUpstashClient();
-  if (!client) return;
-
+export async function markMutationSynced(mutationId: string, expectedRevision?: string): Promise<boolean> {
   try {
-    const mut = await getDurableMutation(mutationId);
-    if (mut) {
-      mut.status = 'SYNCED';
-      mut.lastError = null;
-      mut.updatedAt = new Date().toISOString();
-      await client.set(OUTBOX_KEYS.mutation(mutationId), JSON.stringify(mut));
-    }
-    await client.zrem(OUTBOX_KEYS.pending(), mutationId);
-    console.log(`[DURABLE_OUTBOX] Mutation ${mutationId} marked SYNCED in Redis`);
-  } catch (err: any) {
-    console.warn(`[DURABLE_OUTBOX] Failed to mark mutation ${mutationId} as SYNCED:`, err?.message || err);
-  }
+    const mut = await matchingMutation(mutationId, expectedRevision);
+    if (!mut) return false;
+    mut.status = 'SYNCED'; mut.lastError = null; mut.updatedAt = new Date().toISOString();
+    return await transitionMutation(mut, mut.revision || '');
+  } catch (err: any) { console.warn('[DURABLE_OUTBOX] Completion receipt deferred:', err?.message); return false; }
 }
 
-/**
- * Marks mutation as retryable with exponential backoff on retryable error.
- */
-export async function markMutationRetryable(mutationId: string, errorMessage: string): Promise<void> {
-  const client = getUpstashClient();
-  if (!client) return;
-
+export async function markMutationRetryable(mutationId: string, errorMessage: string, expectedRevision?: string): Promise<boolean> {
   try {
-    const mut = await getDurableMutation(mutationId);
-    if (!mut) return;
-
+    const mut = await matchingMutation(mutationId, expectedRevision);
+    if (!mut) return false;
     const retryCount = (mut.retryCount || 0) + 1;
-    // Exponential backoff: 3s, 6s, 12s, 24s, 48s, capped at 300s (5m)
     const backoffMs = Math.min(300000, 3000 * Math.pow(2, Math.min(retryCount, 6)));
-    const nextRetryAt = Date.now() + backoffMs;
-
-    mut.status = 'PENDING';
-    mut.retryCount = retryCount;
-    mut.nextRetryAt = nextRetryAt;
-    mut.lastError = errorMessage;
-    mut.updatedAt = new Date().toISOString();
-
-    await client.set(OUTBOX_KEYS.mutation(mutationId), JSON.stringify(mut));
-    await client.zadd(OUTBOX_KEYS.pending(), { score: nextRetryAt, member: mutationId });
-    console.log(`[DURABLE_OUTBOX] Mutation ${mutationId} backed off (retry #${retryCount}, next at ${new Date(nextRetryAt).toISOString()})`);
-  } catch (err: any) {
-    console.warn(`[DURABLE_OUTBOX] Failed to set retryable on mutation ${mutationId}:`, err?.message || err);
-  }
+    mut.status = 'PENDING'; mut.retryCount = retryCount; mut.nextRetryAt = Date.now() + backoffMs;
+    mut.lastError = errorMessage; mut.updatedAt = new Date().toISOString();
+    return await transitionMutation(mut, mut.revision || '');
+  } catch (err: any) { console.warn('[DURABLE_OUTBOX] Retry receipt deferred:', err?.message); return false; }
 }
 
-/**
- * Marks mutation as permanently FAILED on terminal non-retryable error.
- */
-export async function markMutationFailed(mutationId: string, errorMessage: string): Promise<void> {
-  const client = getUpstashClient();
-  if (!client) return;
-
+export async function markMutationFailed(mutationId: string, errorMessage: string, expectedRevision?: string): Promise<boolean> {
   try {
-    const mut = await getDurableMutation(mutationId);
-    if (mut) {
-      mut.status = 'FAILED';
-      mut.lastError = errorMessage;
-      mut.updatedAt = new Date().toISOString();
-      await client.set(OUTBOX_KEYS.mutation(mutationId), JSON.stringify(mut));
-    }
-    await client.zrem(OUTBOX_KEYS.pending(), mutationId);
-    console.error(`[DURABLE_OUTBOX] Mutation ${mutationId} marked permanently FAILED:`, errorMessage);
-  } catch (err: any) {
-    console.warn(`[DURABLE_OUTBOX] Failed to mark mutation ${mutationId} as FAILED:`, err?.message || err);
-  }
+    const mut = await matchingMutation(mutationId, expectedRevision);
+    if (!mut) return false;
+    mut.status = 'FAILED'; mut.lastError = errorMessage; mut.updatedAt = new Date().toISOString();
+    return await transitionMutation(mut, mut.revision || '');
+  } catch (err: any) { console.warn('[DURABLE_OUTBOX] Failure receipt deferred:', err?.message); return false; }
 }
 
 /**

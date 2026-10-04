@@ -30,6 +30,7 @@ export type MutationStatus = 'PENDING' | 'SYNCING' | 'SYNCED' | 'FAILED';
 
 export interface PendingMutation<T = any> {
   mutationId: string;
+  revision?: string;
   entityType:
     | 'RESULT_SUBMISSION'
     | 'CLUB_CLAIM'
@@ -145,6 +146,7 @@ export async function enqueueDurableOutboxMutation<T = any>(
 
   // 1. MUST persist to durable Redis outbox FIRST
   await persistDurableMutation(durableMutation);
+  fullMutation.revision = durableMutation.revision;
 
   // 2. Only after Redis persistence succeeds, update local memory & SQLite mirror
   memoryQueue.set(mutation.mutationId, fullMutation);
@@ -176,83 +178,21 @@ export async function enqueueDurableOutboxMutation<T = any>(
   return fullMutation;
 }
 
+/** Legacy entry point still rejects missing Redis synchronously, but every caller
+ * must await the durable receipt before accepting the change. */
 export function enqueueMutation<T = any>(
   mutation: Omit<PendingMutation<T>, 'status' | 'retryCount' | 'lastError' | 'updatedAt'>
-): PendingMutation<T> {
-  // If Redis is not configured, we cannot durably accept the mutation.
+): Promise<PendingMutation<T>> {
   if (!isRedisOutboxConfigured()) {
-    throw Object.assign(
-      new DurablePersistenceUnavailableError('Remote database unavailable. Change was not accepted; retry when service recovers.'),
-      { code: 'DURABLE_PERSISTENCE_UNAVAILABLE', statusCode: 503 }
-    );
+    throw new DurablePersistenceUnavailableError('Remote database unavailable. Change was not accepted; retry when service recovers.');
   }
-
-  const now = new Date().toISOString();
-  const existing = memoryQueue.get(mutation.mutationId);
-
-  // Idempotency: if already exists and is SYNCED, do not re-enqueue
-  if (existing && existing.status === 'SYNCED') {
-    return existing;
-  }
-
-  const fullMutation: PendingMutation<T> = {
+  return enqueueDurableOutboxMutation({
     ...mutation,
-    status: 'PENDING',
-    retryCount: existing ? existing.retryCount : 0,
-    lastError: null,
-    updatedAt: now,
-  };
-
-  // Asynchronously persist to Redis
-  const durableMutation: DurableOutboxMutation<T> = {
-    mutationId: mutation.mutationId,
-    operation: mutation.operation,
-    entityType: mutation.entityType,
-    entityId: mutation.entityId,
     userId: (mutation.payload as any)?.userId,
     adminUserId: (mutation.payload as any)?.adminUserId,
     seasonId: (mutation.payload as any)?.seasonId || 'season-2026-27',
     competitionId: (mutation.payload as any)?.competitionId,
-    payload: mutation.payload,
-    createdAt: mutation.createdAt || now,
-    updatedAt: now,
-    retryCount: fullMutation.retryCount,
-    nextRetryAt: Date.now(),
-    lastError: null,
-    status: 'PENDING',
-  };
-  persistDurableMutation(durableMutation).catch((err) => {
-    console.warn('[MUTATION_QUEUE] Background Redis persistence failed:', err);
   });
-
-  memoryQueue.set(mutation.mutationId, fullMutation);
-  saveQueueBackupToFile();
-
-  // Persist into SQLite mirror
-  try {
-    queryRun(
-      `INSERT OR REPLACE INTO pending_mutations 
-       (mutation_id, entity_type, entity_id, operation, payload, status, retry_count, last_error, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        fullMutation.mutationId,
-        fullMutation.entityType,
-        fullMutation.entityId,
-        fullMutation.operation,
-        JSON.stringify(fullMutation.payload),
-        fullMutation.status,
-        fullMutation.retryCount,
-        fullMutation.lastError,
-        fullMutation.createdAt,
-        fullMutation.updatedAt,
-      ]
-    );
-  } catch (err) {
-    console.warn('[MUTATION_QUEUE] SQLite insert warning:', err);
-  }
-
-  console.log(`[MUTATION_QUEUE] Enqueued mutation: id=${fullMutation.mutationId} type=${fullMutation.entityType}`);
-  return fullMutation;
 }
 
 export function getPendingMutations(status?: MutationStatus): PendingMutation[] {
@@ -339,7 +279,7 @@ export function getQueueStats() {
  * Reconciles pending mutations to Firestore when Firestore is available.
  * Idempotent, safe, drains in creation order.
  */
-export async function processPendingMutations(): Promise<SyncResult> {
+export async function processPendingMutations(options: { deadline?: number } = {}): Promise<SyncResult> {
   if (isSyncInProgress) {
     console.log('[MUTATION_QUEUE] Sync already in progress, skipping duplicate call.');
     return {
@@ -347,21 +287,14 @@ export async function processPendingMutations(): Promise<SyncResult> {
       processed: 0,
       synced: 0,
       failed: 0,
-      circuitOpen: !firestoreCircuitBreaker.canExecute(),
+      circuitOpen: firestoreCircuitBreaker.getStatus().state !== 'CLOSED' || firestoreCircuitBreaker.getStatus().softLimitExceeded,
       errors: [],
     };
   }
 
-  if (!firestoreCircuitBreaker.canExecute()) {
-    console.log('[MUTATION_QUEUE] Circuit breaker is OPEN. Deferring sync.');
-    return {
-      totalPending: getPendingMutations('PENDING').length,
-      processed: 0,
-      synced: 0,
-      failed: 0,
-      circuitOpen: true,
-      errors: [],
-    };
+  const circuit = firestoreCircuitBreaker.getStatus();
+  if (circuit.softLimitExceeded || (circuit.state === 'OPEN' && circuit.cooldownRemainingMs > 0)) {
+    return { totalPending: getPendingMutations('PENDING').length, processed: 0, synced: 0, failed: 0, circuitOpen: true, errors: [] };
   }
 
   isSyncInProgress = true;
@@ -380,6 +313,7 @@ export async function processPendingMutations(): Promise<SyncResult> {
         const redisDue = await getDuePendingMutations(15);
         dueMutations = redisDue.map((m) => ({
           mutationId: m.mutationId,
+          revision: m.revision,
           entityType: m.entityType,
           entityId: m.entityId,
           operation: m.operation,
@@ -395,29 +329,39 @@ export async function processPendingMutations(): Promise<SyncResult> {
       }
     }
 
-    // 2. If Redis returned no items or is not configured, check local SQLite / memory fallback
-    if (dueMutations.length === 0) {
+    // Local mirrors must never bypass Redis backoff, terminal states or outage failures.
+    if (!isRedisOutboxConfigured()) {
       dueMutations = getPendingMutations('PENDING').sort(
         (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
       );
     }
 
     for (const item of dueMutations) {
+      if (options.deadline && Date.now() >= options.deadline) break;
       // Check circuit breaker before each mutation
       if (!firestoreCircuitBreaker.canExecute()) {
         console.warn('[MUTATION_QUEUE] Circuit breaker tripped during sync. Aborting remaining mutations.');
         break;
       }
 
+      if (isRedisOutboxConfigured() && !await markMutationSyncing(item.mutationId, item.revision || '')) {
+        // A failed Redis receipt must not start untracked replay or retain
+        // a half-open probe that no Firestore operation will complete.
+        if (firestoreCircuitBreaker.getStatus().state === 'HALF_OPEN') {
+          firestoreCircuitBreaker.recordFailure({ code: 14, message: 'UNAVAILABLE: durable replay receipt not acquired' });
+        }
+        break;
+      }
       processed++;
-      await markMutationSyncing(item.mutationId).catch(() => {});
       updateMutationStatus(item.mutationId, 'SYNCING');
 
       try {
         await executeSingleMutationSync(db, item);
-        await markMutationSynced(item.mutationId).catch(() => {});
-        updateMutationStatus(item.mutationId, 'SYNCED');
+        const acknowledged = await markMutationSynced(item.mutationId, item.revision || '');
         firestoreCircuitBreaker.recordSuccess();
+        // A newer revision or failed receipt remains in Redis for a later batch.
+        if (!acknowledged && isRedisOutboxConfigured()) continue;
+        updateMutationStatus(item.mutationId, 'SYNCED');
         synced++;
         console.log(`[MUTATION_QUEUE] Successfully synced mutation ${item.mutationId} (${item.entityType})`);
       } catch (err: any) {
@@ -430,9 +374,9 @@ export async function processPendingMutations(): Promise<SyncResult> {
         // Terminal permission/ownership mismatches must be marked FAILED.
         const nextStatus: MutationStatus = isTerminalError ? 'FAILED' : 'PENDING';
         if (isTerminalError) {
-          await markMutationFailed(item.mutationId, err.message).catch(() => {});
+          await markMutationFailed(item.mutationId, err.message, item.revision || '').catch(() => {});
         } else {
-          await markMutationRetryable(item.mutationId, err.message).catch(() => {});
+          await markMutationRetryable(item.mutationId, err.message, item.revision || '').catch(() => {});
         }
         updateMutationStatus(item.mutationId, nextStatus, err.message);
         failed++;
@@ -454,7 +398,7 @@ export async function processPendingMutations(): Promise<SyncResult> {
     processed,
     synced,
     failed,
-    circuitOpen: !firestoreCircuitBreaker.canExecute(),
+    circuitOpen: firestoreCircuitBreaker.getStatus().state !== 'CLOSED' || firestoreCircuitBreaker.getStatus().softLimitExceeded,
     errors,
   };
 }
@@ -1075,6 +1019,6 @@ async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: 
     }
 
     default:
-      console.warn(`[MUTATION_QUEUE] Unknown mutation entityType: ${entityType}`);
+      throw new Error(`UNSUPPORTED_MUTATION_TYPE: ${entityType}`);
   }
 }

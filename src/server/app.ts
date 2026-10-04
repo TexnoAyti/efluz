@@ -13,6 +13,7 @@ import { COLLECTIONS } from './firebase/collections';
 import { firestoreCircuitBreaker } from './firebase/circuitBreaker';
 import { loadSnapshotFromFile } from './firebase/occupancySnapshot';
 import { processPendingMutations } from './sync/mutationQueue';
+import { scheduleMutationReconciliation, reconcileDurableMutations } from './sync/scheduleReconciliation';
 
 // Route imports
 import { healthRouter } from './routes/health.routes';
@@ -132,8 +133,9 @@ export function createApp() {
     const hop = Number(req.query.hop || 0);
     if (!Number.isInteger(hop) || hop < 0 || hop > 256) { res.sendStatus(400); return; }
     try {
-      if (process.env.VERCEL === '1') { scheduleNotificationQueueDrain(hop); res.status(202).json({ accepted: true }); }
-      else { await drainNotificationQueue({ hop }); res.json({ drained: true }); }
+      await ensureDbReady();
+      if (process.env.VERCEL === '1') { scheduleMutationReconciliation(); scheduleNotificationQueueDrain(hop); res.status(202).json({ accepted: true }); }
+      else { await reconcileDurableMutations(); await drainNotificationQueue({ hop }); res.json({ drained: true }); }
     } catch { res.status(503).json({ error: 'NOTIFICATION_WORKER_UNAVAILABLE' }); }
   });
 
@@ -143,6 +145,12 @@ export function createApp() {
   });
 
   app.use(authMiddleware);
+  app.use('/api', (req, res, next) => {
+    res.once('finish', () => {
+      if (req.user && res.statusCode < 400 && !req.path.startsWith('/health')) scheduleMutationReconciliation();
+    });
+    next();
+  });
   app.use('/api/auth', rateLimit('auth', 20, 600));
   app.use('/api/clubs/crest-proxy', rateLimit('crest-proxy', 60, 60));
   app.use('/api/health/probe', rateLimit('health-probe', 3, 600));
