@@ -505,7 +505,7 @@ export const api = {
   },
 
   // Admin
-  async getAdminAccess(): Promise<{ adminPermissions: AdminPermissions }> {
+  async getAdminAccess(): Promise<{ adminPermissions: AdminPermissions; canUseDangerZone: boolean }> {
     return request('/api/admin/access', { skipCache: true });
   },
   async getLeagueAdminOverview(seasonId: string): Promise<{ leagues: { id: string; name: string; competitionId: string }[]; competitions: Competition[]; clubs: Club[]; fixtures: Fixture[] }> {

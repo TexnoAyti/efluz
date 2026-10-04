@@ -1,3 +1,4 @@
+import { canUseDangerZone } from '../lib/adminPermissions';
 import React, { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../context/UserProfileContext';
@@ -301,7 +302,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
   return (
     <div className="space-y-6 animate-in fade-in duration-300 pb-20">
       {/* Category Quick Switcher Hub */}
-      {!user?.isAdmin && onNavigateTab && (
+      {!canUseDangerZone(user) && onNavigateTab && (
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
           <button
             onClick={() => onNavigateTab('leagues')}
@@ -679,7 +680,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
                 32 jamoalik Liga bosqichi yakunlangach, 1–8-o‘rinlar to‘g‘ridan-to‘g‘ri Nimchorak finalga yo‘l oladi,
                 9–24-o‘rinlar esa 8 ta Play-off juftligida bellashadi.
               </p>
-              {user?.isAdmin && (
+              {canUseDangerZone(user) && (
                 <button
                   type="button"
                   onClick={handleGenerateKnockouts}

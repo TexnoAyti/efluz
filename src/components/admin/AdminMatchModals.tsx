@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 
 interface EditResultModalProps {
+  canUseDangerZone?: boolean;
   fixture: Fixture;
   isOpen: boolean;
   onClose: () => void;
@@ -56,7 +57,7 @@ function playerLabel(fixture: any, side: 'home' | 'away') {
   };
 }
 
-export const AdminEditResultModal: React.FC<EditResultModalProps> = ({ fixture, isOpen, onClose, onSave }) => {
+export const AdminEditResultModal: React.FC<EditResultModalProps> = ({ fixture, isOpen, onClose, onSave, canUseDangerZone = false }) => {
   const { language } = useI18n();
   const copy = {
     uz: { title: 'Uchrashuv boshqaruvi', matchday: 'Tur', current: 'Joriy hisob', competition: 'Musobaqa', round: 'Bosqich', deadline: 'Muddat', evidence: 'Dalillar', submissions: 'ta yuborish', notSet: 'Belgilanmagan', control: 'Boshqaruv', audit: 'Tarix', editor: 'Rasmiy natijani tahrirlash', editorHint: 'Amal tarixga yoziladi va turnir jadvali qayta hisoblanadi.', home: 'Uy', away: 'Mehmon', resultState: 'Natija holati', confirmed: 'Tasdiqlangan — rasmiy natija', awaiting: 'Natija kutilmoqda — qayta ochish', scheduled: 'Rejada — o‘ynalmagan', note: 'Admin izohi', notePlaceholder: 'Tuzatish sababi yoki tekshiruv izohi…', save: 'Rasmiy natijani saqlash', operations: 'Tezkor amallar', operationsHint: 'Faqat shu uchrashuv uchun amallar.', queueing: 'Navbatga qo‘yilmoqda…', remind: 'O‘yinchilarga eslatma yuborish', reopen: 'Uchrashuvni qayta ochish', reset: 'Natija va yuborilganlarni tozalash', danger: 'Xavfli amal', deleteReason: 'O‘chirish sababi majburiy…', delete: 'Uchrashuvni butunlay o‘chirish', evidenceTitle: 'Yuborilgan dalillar', evidenceHint: 'Ikkala o‘yinchining natijalari va skrinshotlari.', noSubmissions: 'Bu uchrashuv uchun natija yuborilmagan.', claim: 'Yuborilgan hisob', proof: 'Dalil', auditTitle: 'Uchrashuv amallari tarixi', auditHint: 'Shu uchrashuvga oid admin amallari.', noAudit: 'So‘nggi yozuvlarda bu uchrashuvga oid amal topilmadi.', confirmReopen: 'Uchrashuvni qayta ochib, tasdiqlangan natijani bekor qilasizmi?', confirmReset: 'Hisobni va yuborilgan natijalarni tozalaysizmi?', confirmDelete: 'Uchrashuvni butunlay o‘chirasizmi? Bu amalni qaytarib bo‘lmaydi.', reminderQueued: 'Eslatma navbatga qo‘yildi', players: 'o‘yinchi', reminderFailed: 'Eslatma yuborilmadi.', reopenFailed: 'Qayta ochib bo‘lmadi.', resetFailed: 'Natijani tozalab bo‘lmadi.', deleteFailed: 'Uchrashuvni o‘chirib bo‘lmadi.' },
@@ -157,7 +158,7 @@ export const AdminEditResultModal: React.FC<EditResultModalProps> = ({ fixture, 
   };
 
   const deleteFixture = async () => {
-    if (dangerReason.trim().length < 3) return;
+    if (!canUseDangerZone || dangerReason.trim().length < 3) return;
     if (!window.confirm(copy.confirmDelete)) return;
     setQuickBusy('delete');
     try {
@@ -226,11 +227,11 @@ export const AdminEditResultModal: React.FC<EditResultModalProps> = ({ fixture, 
                   {quickMessage && <div className="rounded-xl border border-white/[0.06] bg-black/20 p-2.5 text-[10px] text-slate-300">{quickMessage}</div>}
                 </div>
 
-                <div className="rounded-2xl border border-rose-500/15 bg-rose-500/[0.035] p-4 space-y-2.5">
+                {canUseDangerZone && (<div className="rounded-2xl border border-rose-500/15 bg-rose-500/[0.035] p-4 space-y-2.5">
                   <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-rose-300"><Trash2 className="w-3.5 h-3.5" /> {copy.danger}</div>
                   <input value={dangerReason} onChange={(e) => setDangerReason(e.target.value)} placeholder={copy.deleteReason} className="w-full px-3 py-2.5 bg-slate-950 border border-rose-500/15 rounded-xl text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-rose-500" />
                   <button onClick={deleteFixture} disabled={dangerReason.trim().length < 3 || Boolean(quickBusy)} className="w-full min-h-[40px] rounded-xl bg-rose-500/15 border border-rose-500/25 text-rose-200 text-xs font-black flex items-center justify-center gap-2 disabled:opacity-30"><Trash2 className="w-4 h-4" /> {copy.delete}</button>
-                </div>
+                </div>)}
               </div>
             </div>
           )}

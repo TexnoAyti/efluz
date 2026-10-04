@@ -1,3 +1,4 @@
+import { canUseDangerZone } from '../lib/adminPermissions';
 import React, { useEffect, useState, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../context/UserProfileContext';
@@ -370,7 +371,7 @@ export const FixturesView: React.FC = () => {
         </div>
 
         {/* Generate Berger schedule button if 0 fixtures */}
-        {fixtures.length === 0 && !isLoading && (
+        {canUseDangerZone(user) && fixtures.length === 0 && !isLoading && (
           <button
             disabled={isGenerating}
             onClick={handleGenerateFixtures}

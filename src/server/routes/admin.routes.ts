@@ -1,3 +1,4 @@
+import { canUseDangerZone, isLeagueAdmin, permittedAdminLeagues } from '../../lib/adminPermissions';
 import { matchesUserSearch } from '../../lib/userSearch';
 import { getAdminUserDirectory, resolveAdminUserReference } from '../services/adminUserDirectory';
 import { Router, Request, Response } from 'express';
@@ -111,7 +112,7 @@ adminRouter.use(requireAdmin);
 
 adminRouter.get('/access', (req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'private, no-store');
-  res.json({ adminPermissions: req.user!.adminPermissions || { scope: 'ALL', leagueIds: [] } });
+  res.json({ adminPermissions: req.user!.adminPermissions || { scope: 'ALL', leagueIds: [] }, canUseDangerZone: canUseDangerZone(req.user) });
 });
 adminRouter.get('/scoped/users', async (req: Request, res: Response) => {
   const search = String(req.query.search || '').trim().slice(0, 80);
@@ -1364,7 +1365,8 @@ adminRouter.get('/read-model/health', async (req: Request, res: Response) => {
 
 adminRouter.get('/cups', async (req: Request, res: Response) => {
   try {
-    const cups = Object.values(DOMESTIC_CUPS);
+    const allowedCupIds = new Set(permittedAdminLeagues(req.user!).map(league => league.cupCompetitionId));
+    const cups = Object.values(DOMESTIC_CUPS).filter(cup => !isLeagueAdmin(req.user!) || allowedCupIds.has(cup.id));
     res.json({ cups });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

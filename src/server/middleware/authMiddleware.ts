@@ -201,6 +201,8 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
     return;
   }
   try {
+    const { enforceAdminDangerZone } = await import('../services/adminDangerZone');
+    if (!enforceAdminDangerZone(req, res)) return;
     const { enforceLeagueAdminScope } = await import('../services/leagueAdminScope');
     await enforceLeagueAdminScope(req, res, next);
   } catch { res.status(503).json({ error: 'ADMIN_SCOPE_UNAVAILABLE', message: 'Ruxsatlarni tekshirib bo‘lmadi.' }); }

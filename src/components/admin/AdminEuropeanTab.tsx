@@ -66,7 +66,7 @@ interface QualificationPreviewData {
   expiresAt: string;
 }
 
-export const AdminEuropeanTab: React.FC = () => {
+export const AdminEuropeanTab: React.FC<{ canUseDangerZone?: boolean }> = ({ canUseDangerZone = false }) => {
   const { showToast } = useAuth();
   const { language } = useI18n();
   const loc = (uz: string, ru: string, en: string) => ({ uz, ru, en })[language];
@@ -435,7 +435,7 @@ export const AdminEuropeanTab: React.FC = () => {
             </div>
 
             {/* Apply Action Bar */}
-            {preview.canApply && (
+            {canUseDangerZone && preview.canApply && (
               <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
                 <label className="flex items-center gap-2.5 text-xs text-slate-300 cursor-pointer">
                   <input

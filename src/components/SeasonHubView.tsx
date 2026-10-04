@@ -1,3 +1,4 @@
+import { canUseDangerZone } from '../lib/adminPermissions';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
@@ -583,7 +584,7 @@ export const SeasonHubView: React.FC<SeasonHubViewProps> = ({ onNavigateTab }) =
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200/80 efl-theme-border dark:border-white/10 bg-white efl-theme-surface dark:bg-[#111722] p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+          {canUseDangerZone(user) && (<div className="rounded-xl border border-slate-200/80 efl-theme-border dark:border-white/10 bg-white efl-theme-surface dark:bg-[#111722] p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
             <div>
               <div className="text-xs font-black text-slate-900 efl-theme-text dark:text-white flex items-center gap-1.5">
                 <Trophy className="w-3.5 h-3.5 text-fuchsia-500 efl-theme-fuchsia" />
@@ -602,7 +603,7 @@ export const SeasonHubView: React.FC<SeasonHubViewProps> = ({ onNavigateTab }) =
             >
               Keyingi mavsum qobig‘ini yaratish
             </button>
-          </div>
+          </div>)}
         </section>
       )}
     </div>

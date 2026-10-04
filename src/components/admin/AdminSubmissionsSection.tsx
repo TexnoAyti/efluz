@@ -15,8 +15,9 @@ import {
 
 export const AdminSubmissionsSection: React.FC<{
   onSubmissionDeleted?: () => void;
+  canUseDangerZone?: boolean;
   showToast: (type: 'success' | 'error' | 'info', message: string) => void;
-}> = ({ onSubmissionDeleted, showToast }) => {
+}> = ({ onSubmissionDeleted, showToast, canUseDangerZone = false }) => {
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -167,14 +168,14 @@ export const AdminSubmissionsSection: React.FC<{
                       {sub.createdAt ? new Date(sub.createdAt).toLocaleString() : '—'}
                     </td>
                     <td className="p-3 text-right">
-                      <button
+                      {canUseDangerZone && (<button
                         type="button"
                         onClick={() => setSelectedSubForDelete(sub)}
                         className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 transition-colors"
                         title="Delete invalid submission"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      </button>)}
                     </td>
                   </tr>
                 ))}
@@ -185,7 +186,7 @@ export const AdminSubmissionsSection: React.FC<{
       )}
 
       {/* Delete Submission Modal */}
-      {selectedSubForDelete && (
+      {canUseDangerZone && selectedSubForDelete && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="glass-panel p-5 max-w-md w-full rounded-2xl border-rose-500/40 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">

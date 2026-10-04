@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import type { User } from '../../types';
-import { isLeagueAdmin, permittedAdminLeagues } from '../../lib/adminPermissions';
+import { isLeagueAdmin, permittedAdminLeagues, permittedAdminCompetitionIds } from '../../lib/adminPermissions';
 import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS } from '../firebase/collections';
 
@@ -8,7 +8,8 @@ export async function enforceLeagueAdminScope(req: Request, res: Response, next:
   if (!isLeagueAdmin(req.user!)) return next();
   const allowed = permittedAdminLeagues(req.user!);
   const leagueIds = new Set(allowed.map(league => league.id));
-  const competitionIds = new Set(allowed.map(league => league.competitionId));
+  const competitionIds = new Set(permittedAdminCompetitionIds(req.user!));
+  const cupIds = new Set(allowed.map(league => league.cupCompetitionId));
   const path = new URL(req.originalUrl, 'https://efluz.invalid').pathname;
   const deny = () => { res.status(403).json({ error: 'ADMIN_SCOPE_FORBIDDEN', message: 'Sizda bu liga yoki amal uchun ruxsat yo‘q.' }); };
   if (req.method === 'GET' && path === '/api/admin/access') return next();
@@ -16,6 +17,26 @@ export async function enforceLeagueAdminScope(req: Request, res: Response, next:
   if (req.method === 'GET' && /^\/api\/admin\/competitions\/([^/]+)\/matchday\/control$/.test(path) && competitionIds.has(decodeURIComponent(path.split('/')[4]))) return next();
   if (req.method === 'GET' && ['/api/admin/scoped/overview', '/api/admin/scoped/users'].includes(path)) return next();
   const db = getFirestoreDb();
+  if (req.method === 'GET' && path === '/api/admin/cups') return next();
+  const cupMatch = path.match(/^\/api\/admin\/cups\/([^/]+)(?:\/(health|reconcile|round|round\/advance|bracket\/preview))?$/);
+  if (cupMatch && cupIds.has(decodeURIComponent(cupMatch[1])) &&
+      ((req.method === 'GET' && (!cupMatch[2] || cupMatch[2] === 'health')) ||
+       (req.method === 'POST' && ['reconcile', 'round', 'round/advance', 'bracket/preview'].includes(cupMatch[2])))) return next();
+  const cupFixtureMatch = path.match(/^\/api\/admin\/cups\/matches\/([^/]+)\/advance$/);
+  const submissionsFixtureId = req.method === 'GET' && path === '/api/admin/submissions' && typeof req.query.fixtureId === 'string' ? req.query.fixtureId : null;
+  if ((req.method === 'POST' && cupFixtureMatch) || submissionsFixtureId) {
+    const fixtureId = submissionsFixtureId || decodeURIComponent(cupFixtureMatch![1]);
+    const fixture = await db.collection(COLLECTIONS.FIXTURES).doc(fixtureId).get();
+    const scope = submissionsFixtureId ? competitionIds : cupIds;
+    if (!fixture.exists || !scope.has(fixture.data()!.competitionId)) return deny();
+    return next();
+  }
+  const pairingMatch = path.match(/^\/api\/admin\/cups\/([^/]+)\/bracket\/fixture\/([^/]+)$/);
+  if (req.method === 'PATCH' && pairingMatch && cupIds.has(decodeURIComponent(pairingMatch[1]))) {
+    const fixture = await db.collection(COLLECTIONS.FIXTURES).doc(decodeURIComponent(pairingMatch[2])).get();
+    if (!fixture.exists || fixture.data()!.competitionId !== decodeURIComponent(pairingMatch[1])) return deny();
+    return next();
+  }
   const clubMatch = path.match(/^\/api\/admin\/clubs\/([^/]+)\/(assign|release)$/);
   if (req.method === 'POST' && clubMatch) {
     const club = await db.collection(COLLECTIONS.CLUBS).doc(decodeURIComponent(clubMatch[1])).get();
@@ -32,7 +53,7 @@ export async function enforceLeagueAdminScope(req: Request, res: Response, next:
     }
     return next();
   }
-  const fixtureMatch = path.match(/^\/api\/admin\/(?:fixtures|results)\/([^/]+)(?:\/(result|delete-result|reopen|approve|reject|deadline))?$/);
+  const fixtureMatch = path.match(/^\/api\/admin\/(?:fixtures|results)\/([^/]+)(?:\/(result|delete-result|reopen|approve|reject|deadline|remind))?$/);
   if (fixtureMatch && (req.method === 'POST' || req.method === 'DELETE')) {
     const fixture = await db.collection(COLLECTIONS.FIXTURES).doc(decodeURIComponent(fixtureMatch[1])).get();
     if (!fixture.exists || !competitionIds.has(fixture.data()!.competitionId)) return deny();
@@ -48,10 +69,11 @@ export async function getLeagueAdminOverview(user: User, seasonId: string) {
   const { getAdminClubsFromReadModel } = await import('../readModel/readModelStore');
   const { getFixturesFirestore, getAllCompetitionsFirestore } = await import('../firebase/firestoreStore');
   const allowed = permittedAdminLeagues(user);
-  const competitions = (await getAllCompetitionsFirestore(seasonId)).filter(competition => allowed.some(league => league.competitionId === competition.id));
+  const competitionIds = new Set(permittedAdminCompetitionIds(user));
+  const competitions = (await getAllCompetitionsFirestore(seasonId)).filter(competition => competitionIds.has(competition.id));
   const rows = await Promise.all(allowed.map(async league => {
-    const [clubs, fixtures] = await Promise.all([getAdminClubsFromReadModel(seasonId, league.id), getFixturesFirestore({ seasonId, competitionId: league.competitionId })]);
+    const [clubs, fixtures] = await Promise.all([getAdminClubsFromReadModel(seasonId, league.id), Promise.all([league.competitionId, league.cupCompetitionId].map(competitionId => getFixturesFirestore({ seasonId, competitionId }))).then(rows => rows.flat())]);
     return { clubs: clubs.clubs, fixtures };
   }));
-  return { leagues: allowed, competitions, clubs: rows.flatMap(row => row.clubs).filter(club => allowed.some(league => league.id === club.leagueId)), fixtures: rows.flatMap(row => row.fixtures).filter(fixture => allowed.some(league => league.competitionId === fixture.competitionId)) };
+  return { leagues: allowed, competitions, clubs: rows.flatMap(row => row.clubs).filter(club => allowed.some(league => league.id === club.leagueId)), fixtures: rows.flatMap(row => row.fixtures).filter(fixture => competitionIds.has(fixture.competitionId)) };
 }

@@ -12,8 +12,8 @@ import { getAdminUserDirectory } from '../services/adminUserDirectory';
 
 await initDatabase();
 const db = getFirestoreDb();
-for (const [id, isAdmin] of [['scope-root', true], ['user-555001', false], ['scope-player', false]] as const) {
-  await db.collection('users').doc(id).set({ id, telegramId: id === 'user-555001' ? '555001' : id, username: id, firstName: 'Test', isAdmin, isSuspended: false });
+for (const [id, isAdmin] of [['scope-root', true], ['user-5209126900', true], ['user-555001', false], ['scope-player', false]] as const) {
+  await db.collection('users').doc(id).set({ id, telegramId: id === 'user-5209126900' ? '5209126900' : id === 'user-555001' ? '555001' : id, username: id, firstName: 'Test', isAdmin, isSuspended: false });
 }
 const la = 'comp-la-liga-2026', pl = 'comp-premier-league-2026';
 await db.collection('clubs').doc('club-barcelona').set({ id: 'club-barcelona', name: 'Barcelona', leagueId: 'league-la-liga', isActive: true });
@@ -35,7 +35,7 @@ async function request(path: string, method = 'GET', body?: any, actor = 'user-5
   return fetch(base + path, { method, headers: { 'content-type': 'application/json', 'x-test-user': actor }, body: body === undefined ? undefined : JSON.stringify(body) });
 }
 try {
-  const grant = await request('/api/admin/users/user-555001/role', 'POST', { isAdmin: true, adminPermissions: { scope: 'LEAGUES', leagueIds: ['league-la-liga'] } }, 'scope-root');
+  const grant = await request('/api/admin/users/user-555001/role', 'POST', { isAdmin: true, adminPermissions: { scope: 'LEAGUES', leagueIds: ['league-la-liga'] } }, 'user-5209126900');
   assert.equal(grant.status, 200, JSON.stringify(await grant.json()));
   assert.deepEqual((await getAuthoritativeUserForAuthorization('user-555001'))!.adminPermissions, { scope: 'LEAGUES', leagueIds: ['league-la-liga'] });
   assert.deepEqual((await getAdminUserDirectory(true)).find(user => user.id === 'user-555001')!.adminPermissions?.leagueIds, ['league-la-liga']);
@@ -67,8 +67,8 @@ try {
   assert.equal(overviewResponse.status, 200);
   const overview = await overviewResponse.json();
   assert.ok(overview.clubs.every((club: any) => club.leagueId === 'league-la-liga'));
-  assert.ok(overview.fixtures.every((fixture: any) => fixture.competitionId === la));
-  assert.ok(overview.competitions.every((competition: any) => competition.id === la));
+  assert.ok(overview.fixtures.every((fixture: any) => [la, 'comp-copa-del-rey-2026'].includes(fixture.competitionId)));
+  assert.ok(overview.competitions.every((competition: any) => [la, 'comp-copa-del-rey-2026'].includes(competition.id)));
   assert.ok(overview.fixtures.some((fixture: any) => fixture.id === 'scope-la-fixture'));
   await db.collection('user_memberships').doc('season-2026-27_scope-player').set({ status: 'active', clubId: 'club-arsenal' });
   assert.equal((await request('/api/admin/clubs/club-barcelona/assign', 'POST', { targetUserId: 'scope-player' })).status, 403);
@@ -81,10 +81,11 @@ try {
   assert.equal((await request('/api/admin/fixtures/scope-pl-fixture/deadline', 'POST', {})).status, 200);
   await db.collection('users').doc('user-555001').update({ adminPermissions: { scope: 'LEAGUES', leagueIds: [] } });
   assert.equal((await request('/api/admin/scoped/overview')).status, 403);
-  assert.equal((await request('/api/admin/users/scope-player/role', 'POST', { isAdmin: true, adminPermissions: { scope: 'LEAGUES', leagueIds: [] } }, 'scope-root')).status, 400);
-  const lastRoot = await request('/api/admin/users/scope-root/role', 'POST', { isAdmin: true, adminPermissions: { scope: 'LEAGUES', leagueIds: ['league-la-liga'] } }, 'scope-root');
+  assert.equal((await request('/api/admin/users/scope-player/role', 'POST', { isAdmin: true, adminPermissions: { scope: 'LEAGUES', leagueIds: [] } }, 'user-5209126900')).status, 400);
+  await db.collection('users').doc('scope-root').update({ isAdmin: false });
+  const lastRoot = await request('/api/admin/users/user-5209126900/role', 'POST', { isAdmin: true, adminPermissions: { scope: 'LEAGUES', leagueIds: ['league-la-liga'] } }, 'user-5209126900');
   assert.ok(lastRoot.status >= 400);
-  assert.equal((await getAuthoritativeUserForAuthorization('scope-root'))!.adminPermissions, undefined);
+  assert.equal((await getAuthoritativeUserForAuthorization('user-5209126900'))!.adminPermissions, undefined);
   process.env.ADMIN_TELEGRAM_IDS = '555001';
   const collection = db.collection.bind(db);
   (db as any).collection = (name: string) => name === 'users' ? { doc: () => ({ get: async () => { throw Object.assign(new Error('RESOURCE_EXHAUSTED quota exceeded'), { code: 8 }); } }) } : collection(name);

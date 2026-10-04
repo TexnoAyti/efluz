@@ -7,7 +7,7 @@ import { adminConsistencyRouter } from '../routes/consistencyGuard.routes';
 
 await initDatabase();
 const db = getFirestoreDb();
-await db.collection('users').doc('deletion-test-admin').set({ telegramId: '123', username: 'admin', isAdmin: true, isSuspended: false });
+await db.collection('users').doc('user-5209126900').set({ telegramId: '5209126900', username: 'admin', isAdmin: true, isSuspended: false });
 const originalCollection = db.collection.bind(db);
 let destructiveCalls = 0;
 (db as any).collection = (name: string) => {
@@ -19,7 +19,7 @@ let destructiveCalls = 0;
 };
 const app = express();
 app.use(express.json());
-app.use((req: any, _res, next) => { req.user = { id: 'deletion-test-admin', telegramId: '123' }; next(); });
+app.use((req: any, _res, next) => { req.user = { id: 'user-5209126900', telegramId: '5209126900' }; next(); });
 app.use('/api/admin', adminConsistencyRouter);
 const server = app.listen(0, '127.0.0.1');
 await new Promise<void>(resolve => server.once('listening', resolve));

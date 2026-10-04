@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 
 interface UserDetailModalProps {
+  canUseDangerZone?: boolean;
   user: User;
   isOpen: boolean;
   onClose: () => void;
@@ -34,6 +35,7 @@ export const AdminUserDetailModal: React.FC<UserDetailModalProps> = ({
   isOpen,
   onClose,
   onToggleAdmin,
+  canUseDangerZone = false,
   onToggleSuspend,
 }) => {
   const { t, language } = useI18n();
@@ -211,7 +213,7 @@ export const AdminUserDetailModal: React.FC<UserDetailModalProps> = ({
             {/* Quick Actions Footer */}
             <div className="flex items-center justify-between pt-3 border-t border-white/[0.08]">
               <div className="flex items-center gap-2">
-                <button
+                {canUseDangerZone && (<button
                   type="button"
                   onClick={() => {
                     onClose();
@@ -225,7 +227,7 @@ export const AdminUserDetailModal: React.FC<UserDetailModalProps> = ({
                 >
                   <Shield className="w-3.5 h-3.5" />
                   {user.isAdmin ? t.adminDemote : t.adminPromote}
-                </button>
+                </button>)}
 
                 <button
                   type="button"

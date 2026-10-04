@@ -75,10 +75,10 @@ interface BracketPreview {
   }>;
 }
 
-export const AdminDomesticCupsTab: React.FC = () => {
+export const AdminDomesticCupsTab: React.FC<{ allowedCupIds?: string[]; canUseDangerZone?: boolean }> = ({ allowedCupIds, canUseDangerZone = false }) => {
   const { showToast } = useAuth();
   const [cups, setCups] = useState<CupItem[]>([]);
-  const [selectedCupId, setSelectedCupId] = useState('comp-fa-cup-2026');
+  const [selectedCupId, setSelectedCupId] = useState(allowedCupIds?.[0] || 'comp-fa-cup-2026');
   const [details, setDetails] = useState<CupDetails | null>(null);
   const [health, setHealth] = useState<CupBracketHealth | null>(null);
   const [loading, setLoading] = useState(true);
@@ -97,7 +97,7 @@ export const AdminDomesticCupsTab: React.FC = () => {
 
   async function loadCups() {
     const result = await api.getDomesticCups();
-    setCups(result.cups || []);
+    setCups((result.cups || []).filter((cup: CupItem) => !allowedCupIds || allowedCupIds.includes(cup.id)));
   }
 
   async function loadCup(cupId = selectedCupId) {
@@ -142,7 +142,7 @@ export const AdminDomesticCupsTab: React.FC = () => {
   }
 
   async function applyDraw() {
-    if (!preview?.drawSeed) return;
+    if (!canUseDangerZone || !preview?.drawSeed) return;
     setBusy('draw');
     try {
       const result = await adminCupDrawApi.confirm(selectedCupId, preview.drawSeed);
@@ -390,7 +390,7 @@ export const AdminDomesticCupsTab: React.FC = () => {
               <div className="grid md:grid-cols-2 gap-3"><SeedList title="Direct R16 Byes" clubs={preview.byeTeams} tone="emerald" /><SeedList title="Play-in Pool" clubs={preview.playInTeams} tone="amber" /></div>
               {(preview.rounds || []).map((round) => <div key={round.roundNumber} className="rounded-xl border border-slate-800 bg-slate-950/40 p-3"><div className="text-xs font-black text-amber-400 mb-2">{round.roundName}</div><div className="grid sm:grid-cols-2 gap-2">{round.pairings.map((pair, index) => <div key={index} className="rounded-lg bg-slate-900 border border-slate-800 p-2 text-[11px] text-slate-300"><div>{pair.homeClub.position ? `#${pair.homeClub.position} ` : ''}{pair.homeClub.name}</div><div className="text-slate-600">vs</div><div>{pair.awayClub.position ? `#${pair.awayClub.position} ` : ''}{pair.awayClub.name}</div></div>)}</div></div>)}
             </div>
-            <div className="p-4 border-t border-slate-800 flex items-center justify-between gap-3"><div className="text-[11px] text-slate-400">Seed: <span className="font-mono">{preview.drawSeed?.slice(-12)}</span></div><div className="flex gap-2"><button onClick={() => setPreview(null)} className="px-3 py-2 rounded-lg bg-slate-800 text-xs text-slate-300 font-bold">Cancel</button>{preview.canGenerate && (!confirmDraw ? <button onClick={() => setConfirmDraw(true)} className="px-3 py-2 rounded-lg bg-amber-500 text-slate-950 text-xs font-black">Confirm Draw</button> : <button onClick={applyDraw} disabled={busy === 'draw'} className="px-3 py-2 rounded-lg bg-rose-500 text-white text-xs font-black">Apply Exact Draw</button>)}</div></div>
+            <div className="p-4 border-t border-slate-800 flex items-center justify-between gap-3"><div className="text-[11px] text-slate-400">Seed: <span className="font-mono">{preview.drawSeed?.slice(-12)}</span></div><div className="flex gap-2"><button onClick={() => setPreview(null)} className="px-3 py-2 rounded-lg bg-slate-800 text-xs text-slate-300 font-bold">Cancel</button>{canUseDangerZone && preview.canGenerate && (!confirmDraw ? <button onClick={() => setConfirmDraw(true)} className="px-3 py-2 rounded-lg bg-amber-500 text-slate-950 text-xs font-black">Confirm Draw</button> : <button onClick={applyDraw} disabled={busy === 'draw'} className="px-3 py-2 rounded-lg bg-rose-500 text-white text-xs font-black">Apply Exact Draw</button>)}</div></div>
           </div>
         </div>
       )}

@@ -93,22 +93,23 @@ interface PendingFixtureItem extends Fixture {
 
 export const AdminView: React.FC = () => {
   const { user } = useAuth();
+  const [dangerAllowed, setDangerAllowed] = useState(false);
   const [permissions, setPermissions] = useState<AdminPermissions | null>(null);
   const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
   useEffect(() => {
     let cancelled = false;
-    setPermissions(null); setError('');
-    if (user?.isAdmin) api.getAdminAccess().then(result => { if (!cancelled) setPermissions(result.adminPermissions); }).catch(err => { if (!cancelled) setError(err.message); });
+    setPermissions(null); setDangerAllowed(false); setError('');
+    if (user?.isAdmin) api.getAdminAccess().then(result => { if (!cancelled) { setPermissions(result.adminPermissions); setDangerAllowed(result.canUseDangerZone === true); } }).catch(err => { if (!cancelled) setError(err.message); });
     return () => { cancelled = true; };
   }, [user?.id, user?.isAdmin, retry]);
   if (!user?.isAdmin) return <FullAdminView />;
   if (error) return <div role="alert" className="p-6 text-white">{error}<button className="ml-3 underline" onClick={() => setRetry(value => value + 1)}>Qayta tekshirish</button></div>;
   if (!permissions) return <div role="status" className="p-6 text-slate-300">Ruxsatlar tekshirilmoqda...</div>;
-  return <FullAdminView key={JSON.stringify(permissions)} permissions={permissions} />;
+  return <FullAdminView key={JSON.stringify(permissions)} permissions={permissions} canUseDangerZone={dangerAllowed} />;
 };
 
-const FullAdminView: React.FC<{ permissions?: AdminPermissions }> = ({ permissions }) => {
+const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone?: boolean }> = ({ permissions, canUseDangerZone = false }) => {
   const isScoped = Boolean(permissions && permissions.scope !== 'ALL');
   const allowedLeagues = permittedAdminLeagues({ adminPermissions: permissions });
   const [scopedFixtures, setScopedFixtures] = useState<Fixture[]>([]);
@@ -961,7 +962,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions }> = ({ permissio
         </button>
 
         {/* 5A. DOMESTIC CUPS */}
-        {!isScoped && (<button
+        <button
           id="tab-admin-domestic-cups"
           onClick={() => setActiveAdminTab('domestic_cups')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all min-h-[40px] ${
@@ -972,7 +973,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions }> = ({ permissio
         >
           <Trophy className="w-4 h-4 text-amber-400" />
           <span>{t.adminDomesticCups}</span>
-        </button>)}
+        </button>
 
         {/* 5B. EUROPEAN (UCL & UEL) */}
         {!isScoped && (<button
@@ -1709,13 +1710,13 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions }> = ({ permissio
                       )}
 
                       {/* Delete Match Fixture */}
-                      <button
+                      {canUseDangerZone && (<button
                         onClick={() => setSelectedFixtureForDelete(fix)}
                         className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg transition-colors"
                         title="Permanently delete fixture"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      </button>)}
                     </div>
                   </div>
                 );
@@ -1825,6 +1826,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions }> = ({ permissio
 
           {resultsSubTab === 'submissions' ? (
             <AdminSubmissionsSection
+          canUseDangerZone={canUseDangerZone}
               showToast={(type, msg) => showToast(msg, type === 'error' ? 'error' : 'success')}
               onSubmissionDeleted={() => loadAllAdminData(true)}
             />
@@ -2124,12 +2126,11 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions }> = ({ permissio
             </div>
           </div>
 
-          {!isScoped && <>
-          {/* 2. DOMESTIC CUPS (5) */}
+          {/* 2. DOMESTIC CUPS */}
           <div className="space-y-3 pt-2">
             <h3 className="text-xs font-black uppercase tracking-wider text-amber-400 flex items-center gap-2">
               <Trophy className="w-3.5 h-3.5" />
-              <span>National Cups (5) • FA Cup, Copa del Rey, Coppa Italia, DFB-Pokal, Coupe de France</span>
+              <span>{isScoped ? "Milliy kuboklar" : "National Cups (5) • FA Cup, Copa del Rey, Coppa Italia, DFB-Pokal, Coupe de France"}</span>
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -2164,6 +2165,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions }> = ({ permissio
             </div>
           </div>
 
+          {!isScoped && <>
           {/* 3. SUPER CUPS (5) */}
           <div className="space-y-3 pt-2">
             <h3 className="text-xs font-black uppercase tracking-wider text-indigo-400 flex items-center gap-2">
@@ -2284,12 +2286,12 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions }> = ({ permissio
       {/* ========================================================================= */}
       {/* 5A. DOMESTIC CUPS SECTION */}
       {/* ========================================================================= */}
-      {activeAdminTab === 'domestic_cups' && <AdminDomesticCupsTab />}
+      {activeAdminTab === 'domestic_cups' && <AdminDomesticCupsTab canUseDangerZone={canUseDangerZone} allowedCupIds={isScoped ? allowedLeagues.map(league => league.cupCompetitionId) : undefined} />}
 
       {/* ========================================================================= */}
       {/* 5B. UCL / UEL STANDINGS & QUALIFICATIONS SECTION */}
       {/* ========================================================================= */}
-      {activeAdminTab === 'european' && <AdminEuropeanTab />}
+      {activeAdminTab === 'european' && <AdminEuropeanTab canUseDangerZone={canUseDangerZone} />}
 
       {/* ========================================================================= */}
       {/* 5C. TELEGRAM NOTIFICATIONS SECTION */}
@@ -2366,7 +2368,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions }> = ({ permissio
                       </td>
                       <td className="p-3 font-mono text-slate-400">{u.telegramId || u.id}</td>
                       <td className="p-3">
-                        <button
+                        {canUseDangerZone && (<button
                           type="button"
                           onClick={() => setSelectedUserForRole(u)}
                           className={`px-2 py-0.5 rounded text-[9px] font-black uppercase transition-colors border ${
@@ -2377,7 +2379,8 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions }> = ({ permissio
                           title="Click to change role"
                         >
                           {u.isAdmin ? 'ADMIN' : 'PLAYER'}
-                        </button>
+                        </button>)}
+                        {!canUseDangerZone && <span className="text-[9px] font-bold text-slate-400">{u.isAdmin ? 'ADMIN' : 'PLAYER'}</span>}
                       </td>
                       <td className="p-3">
                         <button
@@ -2407,14 +2410,14 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions }> = ({ permissio
                             <Eye className="w-3.5 h-3.5 text-slate-400" />
                           </button>
 
-                          <button
+                          {canUseDangerZone && (<button
                             type="button"
                             onClick={() => setSelectedUserForRole(u)}
                             className="p-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 transition-colors"
                             title={u.isAdmin ? 'Admin ruxsatlarini boshqarish' : 'Admin tayinlash'}
                           >
                             <Shield className="w-3.5 h-3.5" />
-                          </button>
+                          </button>)}
 
                           <button
                             type="button"
@@ -2425,14 +2428,14 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions }> = ({ permissio
                             <Ban className="w-3.5 h-3.5" />
                           </button>
 
-                          <button
+                          {canUseDangerZone && (<button
                             type="button"
                             onClick={() => setSelectedUserForDelete(u)}
                             className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 transition-colors"
                             title="Safely delete user account"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          </button>)}
                         </div>
                       </td>
                     </tr>
@@ -3309,7 +3312,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions }> = ({ permissio
                         <span className="text-xs max-w-48 whitespace-normal break-words">
                           {loc('Mavjud jadvalni qayta tuzmang. Avval juftliklar va o‘chirish tarixini tekshiring.', 'Не пересоздавайте календарь. Сначала проверьте пары и историю удаления.', 'Review pairings and deletion history before changing the existing schedule.')}
                         </span>
-                      ) : (
+                      ) : canUseDangerZone ? (
                         <button
                           onClick={() => {
                             setShowValidationModal(false);
@@ -3319,7 +3322,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions }> = ({ permissio
                         >
                           {loc('Tuzish', 'Создать', 'Generate')} {l.expectedMatchdays} {loc('tur', 'туров', 'rounds')}
                         </button>
-                      )}
+                      ) : null}
                     </div>
                   </div>
                 ))}
@@ -3347,6 +3350,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions }> = ({ permissio
       {/* ========================================================================= */}
       {selectedFixtureForEditResult && (
         <AdminEditResultModal
+          canUseDangerZone={canUseDangerZone}
           fixture={selectedFixtureForEditResult}
           isOpen={!!selectedFixtureForEditResult}
           onClose={() => setSelectedFixtureForEditResult(null)}
@@ -3363,7 +3367,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions }> = ({ permissio
         />
       )}
 
-      {selectedFixtureForDelete && (
+      {canUseDangerZone && selectedFixtureForDelete && (
         <AdminDeleteFixtureModal
           fixture={selectedFixtureForDelete}
           isOpen={!!selectedFixtureForDelete}
@@ -3374,6 +3378,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions }> = ({ permissio
 
       {selectedUserForDetail && (
         <AdminUserDetailModal
+          canUseDangerZone={canUseDangerZone}
           user={selectedUserForDetail}
           isOpen={!!selectedUserForDetail}
           onClose={() => setSelectedUserForDetail(null)}
@@ -3382,7 +3387,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions }> = ({ permissio
         />
       )}
 
-      {selectedUserForRole && (
+      {canUseDangerZone && selectedUserForRole && (
         <AdminSetRoleModal
           key={selectedUserForRole.id}
           user={selectedUserForRole}
@@ -3401,7 +3406,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions }> = ({ permissio
         />
       )}
 
-      {selectedUserForDelete && (
+      {canUseDangerZone && selectedUserForDelete && (
         <AdminDeleteUserModal
           user={selectedUserForDelete}
           isOpen={!!selectedUserForDelete}
