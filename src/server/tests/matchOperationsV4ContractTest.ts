@@ -33,7 +33,7 @@ const checks: Array<[string, boolean]> = [
   ['admin Deadline Queue exists', admin.includes('Deadline Queue') && admin.includes('Run sweep')],
   ['admin no-show review exists', admin.includes('No-show Review Queue') && admin.includes('Home 3–0') && admin.includes('Away 0–3')],
   ['admin Dispute Center V2 exists', admin.includes('Dispute Center V2') && admin.includes('Manual score') && admin.includes('Cancel match')],
-  ['V4 panels scoped to My Matches and Admin', app.includes("currentTab === 'my-matches' && <div className=\"mb-5\"><MatchOperationsV4Panel") && app.includes("user?.isAdmin ? (") && app.includes("currentTab === 'admin' && canUseGlobalAdminTools && <div className=\"mb-5\"><AdminMatchOperationsV4Panel")],
+  ['V4 player tools stay in the public Club/Matches hub; admin tools require global permissions', app.includes("currentTab === 'my-club' || currentTab === 'profile' || currentTab === 'my-matches'") && app.includes('<MatchOperationsV4Panel />') && app.includes("currentTab === 'admin' && canUseGlobalAdminTools && <div className=\"mb-5\"><AdminMatchOperationsV4Panel")],
 ];
 
 const failed = checks.filter(([, ok]) => !ok);

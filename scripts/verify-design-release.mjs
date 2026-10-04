@@ -11,7 +11,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(path.join(root, 'package.json'));
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
-const views = ['MatchdayHomeView', 'CompetitionHubView', 'ClubHubView', 'NotificationsView', 'AdminView', 'AdminMatchOperationsV4Panel', 'NotificationModal', 'TelegramDiagnosticsModal', 'OfflineSyncBanner', 'GlobalSearchModal'];
+const views = ['MatchdayHomeView', 'CompetitionHubView', 'ClubHubView', 'NotificationsView', 'AdminView', 'AdminMatchOperationsV4Panel', 'NotificationModal', 'TelegramDiagnosticsModal', 'OfflineSyncBanner', 'GlobalSearchModal', 'MatchOperationsV4Panel', 'SeasonLifecyclePanel'];
 const result = await build({
   absWorkingDir: root, entryPoints: ['src/App.tsx'], bundle: true, write: false,
   platform: 'node', format: 'cjs', packages: 'external', loader: { '.css': 'empty' },
@@ -45,11 +45,11 @@ const App = context.module.exports.default;
 function render({ id = 'player-1', admin = false, route = '/', completed = true, theme = 'dark', anonymous = false } = {}) {
   context.releaseAuth = { user: anonymous ? null : { id, username: 'testplayer', isAdmin: admin }, isLoading: false,
     authStatus: anonymous ? 'AUTH_ANONYMOUS' : 'AUTHENTICATED', unreadNotificationCount: 2,
-    seasons: [], activeSeasonId: 'test-season', devProfiles: [], currentClub: null, isDevMode: false };
+    seasons: [], activeSeasonId: 'test-season', devProfiles: [], currentClub: { id: 'club-test', name: 'Test club' }, isDevMode: false };
   context.window.location.pathname = route;
   storage.set('efluz-theme-mode', theme);
-  storage.delete(`efluz-welcome-v2:${id}`);
-  if (completed) storage.set(`efluz-welcome-v2:${id}`, 'done');
+  if (completed !== 'stored') storage.delete(`efluz-welcome-v2:${id}`);
+  if (completed === true) storage.set(`efluz-welcome-v2:${id}`, 'done');
   return renderToStaticMarkup(React.createElement(App));
 }
 for (const admin of [false, true]) {
@@ -68,8 +68,13 @@ for (const admin of [false, true]) {
 assert.match(render({ theme: 'light' }), /efl-preview theme-light/);
 for (const route of ['/leagues', '/cups', '/champions-league', '/standings', '/season-hub'])
   assert.match(render({ route }), /data-test-view="CompetitionHubView"/);
-for (const route of ['/my-club', '/profile', '/my-matches'])
-  assert.match(render({ route }), /data-test-view="ClubHubView"/);
+for (const route of ['/my-club', '/profile', '/my-matches']) {
+  const club = render({ route });
+  assert.match(club, /data-test-view="ClubHubView"/);
+  assert.match(club, /data-test-view="MatchOperationsV4Panel"/);
+  assert.match(club, /data-test-view="SeasonLifecyclePanel"/);
+}
+assert.doesNotMatch(render(), /data-test-view="MatchOperationsV4Panel"/);
 assert.match(render({ route: '/notifications' }), /data-test-view="NotificationsView"/);
 assert.doesNotMatch(render({ route: '/admin' }), /data-test-view="AdminView"|data-test-view="AdminMatchOperationsV4Panel"|data-test-view="TelegramDiagnosticsModal"|data-test-view="OfflineSyncBanner"/);
 assert.match(render({ route: '/admin', admin: true }), /data-test-view="AdminView"/);

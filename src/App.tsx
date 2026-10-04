@@ -14,6 +14,8 @@ import { TelegramDiagnosticsModal } from './components/TelegramDiagnosticsModal'
 import { OfflineSyncBanner } from './components/OfflineSyncBanner';
 import { CompetitionHubView } from './components/CompetitionHubView';
 import { ClubHubView } from './components/ClubHubView';
+import { MatchOperationsV4Panel } from './components/MatchOperationsV4Panel';
+import { SeasonLifecyclePanel } from './components/SeasonLifecyclePanel';
 import { GlobalSearchModal } from './components/GlobalSearchModal';
 import { APP_BUILD_ID } from './context/AuthContext';
 import { Fixture, AdminPermissions } from './types';
@@ -33,7 +35,7 @@ function getInitialTab(): TabType {
 }
 
 const AppContent: React.FC = () => {
-  const { isLoading, user, toastMessage, authStatus, authError } = useAuth();
+  const { isLoading, user, toastMessage, authStatus, authError, activeSeasonId, currentClub } = useAuth();
   const { t } = useI18n();
   const [activeTab, setActiveTabState] = useState<TabType>(getInitialTab);
   const [selectedFixture, setSelectedFixture] = useState<Fixture | null>(null);
@@ -213,6 +215,7 @@ const AppContent: React.FC = () => {
 
             {/* CLUB: Replaces Profile & Matches - Active Club, Switcher, Matches, Stats, Settings */}
             {(currentTab === 'my-club' || currentTab === 'profile' || currentTab === 'my-matches') && (
+              <>
               <ClubHubView
                 onNavigateTab={setActiveTab}
                 onSelectFixtureForMatchCenter={(fix) => setSelectedFixture(fix)}
@@ -220,6 +223,14 @@ const AppContent: React.FC = () => {
                 theme={theme}
                 onThemeChange={changeTheme}
               />
+              {currentClub && <details className="preview-surface rounded-3xl border border-[var(--efl-border)] p-4 mb-5">
+                <summary className="cursor-pointer font-bold text-sm text-[var(--efl-text)]">O‘yin bo‘yicha yordam · Muddat · H2H · Dalillar</summary>
+                <div className="mt-4 space-y-4">
+                  <MatchOperationsV4Panel />
+                  <SeasonLifecyclePanel seasonId={activeSeasonId} />
+                </div>
+              </details>}
+              </>
             )}
 
             {currentTab === 'notifications' && <NotificationsView onNavigateTab={setActiveTab} />}
