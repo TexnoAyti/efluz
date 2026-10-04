@@ -46,6 +46,7 @@ jobs:
           node scripts/run-isolated-test.mjs src/server/tests/leagueAdminPermissionsRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/adminDangerZoneRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/scopedAdminReviewsRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/tournamentImageRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/matchdayControlRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/matchdayAdvanceGuardRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/telegramMembershipCacheTest.ts

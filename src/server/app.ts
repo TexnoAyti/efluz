@@ -108,7 +108,7 @@ export function createApp() {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://resources.premierleague.com https://crests.football-data.org https://t.me; connect-src 'self'; frame-ancestors 'self' https://web.telegram.org https://*.telegram.org");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://resources.premierleague.com https://crests.football-data.org https://t.me; connect-src 'self'; frame-ancestors 'self' https://web.telegram.org https://*.telegram.org");
     if (req.method === 'OPTIONS') {
       if (origin && !allowedOrigins.has(origin)) { res.sendStatus(403); return; }
       res.sendStatus(204); return;

@@ -1,3 +1,4 @@
+import { AdminTournamentImageExport } from './AdminTournamentImageExport';
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../context/UserProfileContext';
@@ -141,6 +142,7 @@ export const StandingsView: React.FC = () => {
         </div>
       </div>
 
+      <AdminTournamentImageExport competition={activeComp} kind="standings" disabled={isLoading} />
       {/* Standings Table Container */}
       <div className="glass-panel shadow-xl overflow-hidden max-w-full">
         {/* Table Title Bar */}

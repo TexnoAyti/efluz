@@ -1,3 +1,4 @@
+import { AdminTournamentImageExport } from './AdminTournamentImageExport';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n';
@@ -318,6 +319,7 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
         </div>
       )}
 
+      <AdminTournamentImageExport competition={activeCup} kind="matchday" availableFixtures={cupFixtures} disabled={isLoading || !cupFixtures.length} />
       {isLoading && cupFixtures.length === 0 ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {[0, 1, 2, 3].map((index) => <div key={index} className="h-40 animate-pulse rounded-3xl border border-white/[0.06] efl-theme-border bg-white/[0.025] efl-theme-surface-2" />)}
