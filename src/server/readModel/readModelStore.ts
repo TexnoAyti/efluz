@@ -1,4 +1,4 @@
-import { filterRetiredFixtures } from '../services/retiredFixtureService';
+import { filterRetiredFixtures, hasFixtureMatchdayCorrection } from '../services/retiredFixtureService';
 /**
  * DURABLE UPSTASH REDIS READ MODEL STORE
  *
@@ -1758,7 +1758,7 @@ export async function getCompetitionFixturesFromReadModel(
         conditions.push('(season_id = ? OR season_id IS NULL)');
         params.push(seasonId);
       }
-      if (options.matchday !== undefined) {
+      if (options.matchday !== undefined && !hasFixtureMatchdayCorrection(competitionId, seasonId)) {
         conditions.push('matchday = ?');
         params.push(options.matchday);
       }
@@ -1787,7 +1787,7 @@ export async function getCompetitionFixturesFromReadModel(
         let query: FirebaseFirestore.Query = db.collection(COLLECTIONS.FIXTURES)
           .where('seasonId', '==', seasonId)
           .where('competitionId', '==', competitionId);
-        if (options.matchday !== undefined) {
+        if (options.matchday !== undefined && !hasFixtureMatchdayCorrection(competitionId, seasonId)) {
           query = query.where('matchday', '==', options.matchday);
         }
         if (options.status && options.status !== 'ALL') {

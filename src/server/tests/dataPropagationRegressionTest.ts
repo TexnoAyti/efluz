@@ -14,6 +14,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { assertTestEnvironmentSafe } from '../utils/testGuard';
 import { initDatabase, queryRun, queryGet } from '../db/index';
 import {
   adminEditFixtureResultFirestore,
@@ -46,6 +47,7 @@ import { COLLECTIONS } from '../firebase/collections';
 import { startMockUpstashBridge } from './mockUpstashBridge';
 
 async function run() {
+  assertTestEnvironmentSafe('dataPropagationRegressionTest');
   console.log('================================================================');
   console.log('   DATA PROPAGATION & OWNER RESOLUTION REGRESSION TEST          ');
   console.log('================================================================');
@@ -55,7 +57,7 @@ async function run() {
   const db = getFirestoreDb();
   const seasonId = 'season-2026-27';
   const compId = 'comp-serie-a-2026';
-  const fixtureId = 'fix-comp-serie-a-2026-md1-inter-vs-milan';
+  const fixtureId = 'test-data-propagation-fixture';
 
   // Seed fixture into Firestore and SQLite if not present
   const now = new Date().toISOString();

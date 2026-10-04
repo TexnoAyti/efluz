@@ -1,4 +1,4 @@
-import { filterRetiredFixtures, isRetiredFixture, assertFixtureNotRetired, RETIRED_FIXTURES } from '../services/retiredFixtureService';
+import { filterRetiredFixtures, isRetiredFixture, assertFixtureNotRetired, RETIRED_FIXTURES, correctFixtureMatchday, hasFixtureMatchdayCorrection } from '../services/retiredFixtureService';
 import { resolveMatchdayGate } from '../../lib/matchdayState';
 import { Firestore, FieldValue, FieldPath } from 'firebase-admin/firestore';
 import { getNotificationControls, notificationVisible } from '../services/notificationVisibility';
@@ -1544,7 +1544,14 @@ export function checkFixturePlayability(
 }
 
 export async function getFixturesFirestore(filter: Parameters<typeof getFixturesFirestoreUnfiltered>[0]): Promise<Fixture[]> {
-  return filterRetiredFixtures(await getFixturesFirestoreUnfiltered(filter), filter.seasonId || 'season-2026-27');
+  const seasonId = filter.seasonId || 'season-2026-27';
+  // Apply corrections before a round filter; the retained document's historical ID
+  // contains md1, while its canonical round is 10. Never drop it at the raw query.
+  const needsCorrection = !filter.competitionId || hasFixtureMatchdayCorrection(filter.competitionId, seasonId);
+  const rawFilter = !needsCorrection || filter.matchday === undefined ? filter : { ...filter, matchday: undefined, limit: undefined };
+  let fixtures = filterRetiredFixtures(await getFixturesFirestoreUnfiltered(rawFilter), seasonId);
+  if (filter.matchday !== undefined) fixtures = fixtures.filter(f => f.matchday === filter.matchday);
+  return filter.limit ? fixtures.slice(0, filter.limit) : fixtures;
 }
 
 async function getFixturesFirestoreUnfiltered(filter: {
@@ -2020,7 +2027,8 @@ export function executeAdminFixturesPagedFallback(options: AdminFixturesQueryOpt
     params.push(options.status);
   }
   if (options.matchday) {
-    conditions.push('f.matchday = ?');
+    const correctedMatchday = RETIRED_FIXTURES.reduce((sql, row) => `CASE WHEN f.id = '${row.retainedFixtureId}' AND COALESCE(f.season_id, '${row.seasonId}') = '${row.seasonId}' THEN ${row.matchday} ELSE (${sql}) END`, 'f.matchday');
+    conditions.push(`${correctedMatchday} = ?`);
     params.push(options.matchday);
   }
 
@@ -2088,7 +2096,7 @@ export function executeAdminFixturesPagedFallback(options: AdminFixturesQueryOpt
   }));
 
   return {
-    fixtures,
+    fixtures: filterRetiredFixtures(fixtures, options.seasonId || 'season-2026-27'),
     total,
     hasMore,
     nextCursor,
@@ -2128,6 +2136,11 @@ export async function getAdminFixturesPagedFirestore(options: AdminFixturesQuery
 }
 
 export async function getFixtureByIdFirestore(fixtureId: string, currentUserId?: string): Promise<Fixture | null> {
+  const fixture = await getFixtureByIdFirestoreUncorrected(fixtureId, currentUserId);
+  return fixture ? correctFixtureMatchday(fixture) : null;
+}
+
+async function getFixtureByIdFirestoreUncorrected(fixtureId: string, currentUserId?: string): Promise<Fixture | null> {
   if (isRetiredFixture(fixtureId)) return null;
   const cacheKey = `firestore:fixture:${fixtureId}:${currentUserId || 'anon'}`;
   const cached = getFromCache<Fixture>(cacheKey);
