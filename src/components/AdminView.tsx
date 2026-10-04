@@ -231,7 +231,10 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
     setError(null);
 
     try {
-      if (isScoped) {
+      if (isScoped && tab === 'results') {
+        const reviews = await api.getLeagueAdminReviews(activeSeasonId);
+        setPendingResults(reviews.pendingFixtures as PendingFixtureItem[]); setDisputes(reviews.disputes);
+      } else if (isScoped) {
         const data = await api.getLeagueAdminOverview(activeSeasonId);
         setClubs(data.clubs); setCompetitions(data.competitions); setScopedFixtures(data.fixtures);
         if (tab === 'matches') {
@@ -929,7 +932,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
         </button>
 
         {/* 4. RESULTS */}
-        {!isScoped && (<button
+        <button
           id="tab-admin-results"
           onClick={() => setActiveAdminTab('results')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all min-h-[40px] ${
@@ -945,7 +948,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
               {pendingResults.length + disputes.length}
             </span>
           )}
-        </button>)}
+        </button>
 
         {/* 5. COMPETITIONS */}
         <button
@@ -1826,6 +1829,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
 
           {resultsSubTab === 'submissions' ? (
             <AdminSubmissionsSection
+              scopedSeasonId={isScoped ? activeSeasonId : undefined}
           canUseDangerZone={canUseDangerZone}
               showToast={(type, msg) => showToast(msg, type === 'error' ? 'error' : 'success')}
               onSubmissionDeleted={() => loadAllAdminData(true)}
@@ -1855,10 +1859,17 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
                     <div className="flex justify-end gap-2 pt-2 border-t border-white/[0.06]">
                       <button
                         type="button"
-                        onClick={() => setSelectedDisputeForResolve(disp)}
+                        onClick={() => {
+                          const review = pendingResults.find(fixture => fixture.id === disp.fixtureId);
+                          if (!review) { showToast(loc('Natija ma’lumotini yangilab qayta tekshiring.', 'Обновите данные результата.', 'Refresh the result data and try again.'), 'error'); return; }
+                          setSelectedPendingForApprove(review);
+                          setApproveHomeScore(review.submissions?.[0]?.homeScore ?? 0);
+                          setApproveAwayScore(review.submissions?.[0]?.awayScore ?? 0);
+                          setApproveNotes('');
+                        }}
                         className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-bold"
                       >
-                        Resolve Dispute
+                        {loc('Nizoli natijani ko‘rib chiqish', 'Проверить спорный результат', 'Review disputed result')}
                       </button>
                     </div>
                   </div>

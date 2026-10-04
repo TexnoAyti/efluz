@@ -16,8 +16,9 @@ import {
 export const AdminSubmissionsSection: React.FC<{
   onSubmissionDeleted?: () => void;
   canUseDangerZone?: boolean;
+  scopedSeasonId?: string;
   showToast: (type: 'success' | 'error' | 'info', message: string) => void;
-}> = ({ onSubmissionDeleted, showToast, canUseDangerZone = false }) => {
+}> = ({ onSubmissionDeleted, showToast, canUseDangerZone = false, scopedSeasonId }) => {
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -28,7 +29,7 @@ export const AdminSubmissionsSection: React.FC<{
   const fetchSubmissions = async () => {
     setLoading(true);
     try {
-      const res = await api.adminGetSubmissions({ limit: 100 });
+      const res = scopedSeasonId ? await api.getLeagueAdminReviews(scopedSeasonId, true) : await api.adminGetSubmissions({ limit: 100 });
       if (res?.submissions) {
         setSubmissions(res.submissions);
       }
@@ -42,7 +43,7 @@ export const AdminSubmissionsSection: React.FC<{
 
   useEffect(() => {
     fetchSubmissions();
-  }, []);
+  }, [scopedSeasonId]);
 
   const filteredSubmissions = submissions.filter((s) => {
     if (!search.trim()) return true;

@@ -508,6 +508,10 @@ export const api = {
   async getAdminAccess(): Promise<{ adminPermissions: AdminPermissions; canUseDangerZone: boolean }> {
     return request('/api/admin/access', { skipCache: true });
   },
+  async getLeagueAdminReviews(seasonId: string, includeArchive = false): Promise<{ pendingFixtures: (Fixture & { submissions: any[] })[]; disputes: Dispute[]; submissions: any[]; degraded: boolean }> {
+    return request('/api/admin/scoped/reviews?seasonId=' + encodeURIComponent(seasonId) + (includeArchive ? '&includeArchive=1' : ''), { skipCache: true });
+  },
+
   async getLeagueAdminOverview(seasonId: string): Promise<{ leagues: { id: string; name: string; competitionId: string }[]; competitions: Competition[]; clubs: Club[]; fixtures: Fixture[] }> {
     return request('/api/admin/scoped/overview?seasonId=' + encodeURIComponent(seasonId), { skipCache: true });
   },

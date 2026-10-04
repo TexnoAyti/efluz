@@ -123,6 +123,14 @@ adminRouter.get('/scoped/users', async (req: Request, res: Response) => {
     res.json({ users: users.map(user => ({ id: user.id, telegramId: user.telegramId, username: user.username, firstName: user.firstName, lastName: user.lastName, photoUrl: user.photoUrl, isSuspended: user.isSuspended })) });
   } catch (err: any) { handleFirestoreError(res, err, 'GET /api/admin/scoped/users'); }
 });
+adminRouter.get('/scoped/reviews', async (req: Request, res: Response) => {
+  try {
+    const { getScopedAdminReviews } = await import('../services/scopedAdminReviews');
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json(await getScopedAdminReviews(req.user!, String(req.query.seasonId || 'season-2026-27'), req.query.includeArchive === '1'));
+  } catch (err: any) { handleFirestoreError(res, err, 'GET /api/admin/scoped/reviews'); }
+});
+
 adminRouter.get('/scoped/overview', async (req: Request, res: Response) => {
   try {
     const { getLeagueAdminOverview } = await import('../services/leagueAdminScope');

@@ -15,7 +15,7 @@ export async function enforceLeagueAdminScope(req: Request, res: Response, next:
   if (req.method === 'GET' && path === '/api/admin/access') return next();
   if (!allowed.length) return deny();
   if (req.method === 'GET' && /^\/api\/admin\/competitions\/([^/]+)\/matchday\/control$/.test(path) && competitionIds.has(decodeURIComponent(path.split('/')[4]))) return next();
-  if (req.method === 'GET' && ['/api/admin/scoped/overview', '/api/admin/scoped/users'].includes(path)) return next();
+  if (req.method === 'GET' && ['/api/admin/scoped/overview', '/api/admin/scoped/users', '/api/admin/scoped/reviews'].includes(path)) return next();
   const db = getFirestoreDb();
   if (req.method === 'GET' && path === '/api/admin/cups') return next();
   const cupMatch = path.match(/^\/api\/admin\/cups\/([^/]+)(?:\/(health|reconcile|round|round\/advance|bracket\/preview))?$/);
@@ -35,6 +35,14 @@ export async function enforceLeagueAdminScope(req: Request, res: Response, next:
   if (req.method === 'PATCH' && pairingMatch && cupIds.has(decodeURIComponent(pairingMatch[1]))) {
     const fixture = await db.collection(COLLECTIONS.FIXTURES).doc(decodeURIComponent(pairingMatch[2])).get();
     if (!fixture.exists || fixture.data()!.competitionId !== decodeURIComponent(pairingMatch[1])) return deny();
+    return next();
+  }
+  const disputeMatch = path.match(/^\/api\/admin\/disputes\/([^/]+)\/resolve$/);
+  if (req.method === 'POST' && disputeMatch) {
+    const dispute = await db.collection(COLLECTIONS.DISPUTES).doc(decodeURIComponent(disputeMatch[1])).get();
+    if (!dispute.exists || typeof dispute.data()!.fixtureId !== 'string') return deny();
+    const fixture = await db.collection(COLLECTIONS.FIXTURES).doc(dispute.data()!.fixtureId).get();
+    if (!fixture.exists || !competitionIds.has(fixture.data()!.competitionId)) return deny();
     return next();
   }
   const clubMatch = path.match(/^\/api\/admin\/clubs\/([^/]+)\/(assign|release)$/);
