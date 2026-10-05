@@ -31,6 +31,7 @@ try {
  await redisSetRaw('efluz:v1:admin:user-directory',snapshot([{id:'user-123',username:'inter_fan',telegramId:'123'}]));
  const deps:NaturalPlannerDependencies={read:createAiTournamentReader(signal).read,users:async()=>[{id:'user-123',username:'inter_fan',telegramId:'123'}]};
  const cases:Array<[string,string,any]>=[
+  ['Nottingham 5-1 Arsenal 11-tur natijasini kirit','result_edit',{homeScore:5,awayScore:1,status:'CONFIRMED'}],
   ['Nottingham 5-1 Arsenal 11 tur buni kiritib qoygin','result_edit',{homeScore:5,awayScore:1,status:'CONFIRMED'}],
   ['Arsenal 1-5 Nottingham 11-tur natijasini saqla','result_edit',{homeScore:5,awayScore:1,status:'CONFIRMED'}],
   ['Nottingham Forest — Arsenal 11-tur 0:0 tasdiqla','result_approve',{homeScore:0,awayScore:0}],
@@ -93,6 +94,7 @@ try {
  assert.equal(detectNaturalAdminAction('Inter nechanchi o‘rinda?'),null);
  for(const [text,expected] of [
   ['Arsenal 5-1 11-tur natijasini saqla',/ikkala jamoa/],
+  ['Arsneal 1-5 Nottingham 11-tur natijasini kirit',/yozuv xatosi/],
   ['Unknown Club 5-1 Arsenal 11-tur natijasini saqla',/ikkala jamoa/],
   ['Inter Milan natijasini o‘chir',/Bir nechta o‘yin/],
   ['@inter_fan admin qil',/qaysi ligani/],

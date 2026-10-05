@@ -74,13 +74,18 @@ export function createAiTournamentReader(signal?: AbortSignal) {
     const q = parsed.data;
     const { competitions, clubs } = await loadCatalog();
     const selectedComps = q.competition ? competitions.filter(c => matchesAiCompetition(q.competition!, c)) : competitions;
-    const findClubs = (value: string) => { const exact = clubs.filter(c => c.id === value); if (exact.length) return exact; const ids = new Set(resolveAiClubs(value, clubs).clubs.map(c => c.id)); return clubs.filter(c => ids.has(c.id)); };
+    let clarification: string | undefined;
+    const findClubs = (value: string) => { const exact = clubs.filter(c => c.id === value); if (exact.length) return exact; const resolved=resolveAiClubs(value,clubs); clarification ||= resolved.clarification; const ids = new Set(resolved.clubs.map(c => c.id)); return clubs.filter(c => ids.has(c.id)); };
     const selectedClubs = q.club ? findClubs(q.club) : clubs;
     const opponents = q.opponent ? findClubs(q.opponent) : [];
+    if(clarification)return {error:'ENTITY_CLARIFICATION',message:clarification,data:[]};
+    if(q.competition && selectedComps.length>1)return {error:'AMBIGUOUS_COMPETITION',choices:selectedComps.map(c=>({id:c.id,name:c.name})),data:[]};
+    if ((q.competition && !selectedComps.length && reader.missingKeys().includes(ReadModelKeys.competitions(season))) || ((q.club || q.opponent) && !clubs.length && reader.missingKeys().includes(ReadModelKeys.clubsWithOwners(season))))
+      return {error:'DATA_UNAVAILABLE',message:'Kerakli snapshot o‘qilmadi. Bu jamoa yoki turnir mavjud emas degani emas.',missingDatasets:reader.missingKeys(),data:[]};
     if (q.competition && !selectedComps.length || q.club && !selectedClubs.length || q.opponent && !opponents.length)
       return { error: 'ENTITY_NOT_FOUND', message: 'Filter topilmadi; boshqa turnir yoki jamoaga o‘tib ketmang.' };
     if (q.club && selectedClubs.length > 1 || q.opponent && opponents.length > 1)
-      return { error: 'AMBIGUOUS_CLUB', choices: [...selectedClubs, ...opponents].map(c => ({ id: c.id, name: c.name })) };
+      return { error: 'AMBIGUOUS_CLUB', choices: [...(q.club?selectedClubs:[]), ...opponents].map(c => ({ id: c.id, name: c.name })) };
     let rows: Record<string, unknown>[] = [];
     const compIds = new Set(selectedComps.map(c => c.id));
     const clubIds = new Set(selectedClubs.map(c => c.id));
@@ -118,7 +123,7 @@ export function createAiTournamentReader(signal?: AbortSignal) {
       });
     }
     const offset = q.offset || 0, limit = q.limit || 20;
-    return { season, stale, total: rows.length, offset, nextOffset: offset + limit < rows.length ? offset + limit : null, data: rows.slice(offset, offset + limit), missingDatasets: reader.missingKeys(), failedDatasets: reader.failedKeys(), note: 'Faqat yuklangan snapshot. Yo‘q ma’lumot mavjud emasligini isbotlamaydi. Davom uchun nextOffset ishlating.' };
+    return { season, stale, complete:reader.missingKeys().length===0&&reader.failedKeys().length===0, snapshots:reader.snapshotStatus(), total: rows.length, offset, nextOffset: offset + limit < rows.length ? offset + limit : null, data: rows.slice(offset, offset + limit), missingDatasets: reader.missingKeys(), failedDatasets: reader.failedKeys(), note: 'Faqat yuklangan snapshot. Yo‘q ma’lumot mavjud emasligini isbotlamaydi. Davom uchun nextOffset ishlating.' };
   };
   return { read };
 }

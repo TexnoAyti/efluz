@@ -36,5 +36,6 @@ export function createAiSnapshotReader(signal?:AbortSignal) {
     }catch{pending.forEach(k=>{if(!memo.has(k))memo.set(k,missing());failed.add(k);});}
   };
   return {load,read:async<T>(key:string):Promise<AiSnapshot<T>>=>{await load([key]);return memo.get(key)||missing();},
+    snapshotStatus:()=>[...memo].map(([key,s])=>({key,available:s.available,stale:s.stale,snapshotAt:s.snapshotAt})),
     missingKeys:()=>[...memo].filter(([,s])=>!s.available).map(([k])=>k),failedKeys:()=>[...failed]};
 }

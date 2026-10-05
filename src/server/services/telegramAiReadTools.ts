@@ -4,7 +4,7 @@ import { withinAiDeadline } from './telegramAiDeadline';
 
 export const tournamentReadTool = {
   name: 'read_tournament_data',
-  description: 'Search the complete EFL UZ active-season database snapshots: all competitions, clubs and public owners, fixtures, standings, statistics. Use for facts missing from the initial packet; never assume missing initial facts mean missing database data. Supports exact IDs or full names, semifinal/final, matchday, opponent, owner username and pagination. No writes or private fields.',
+  description: 'Search the complete EFL UZ active-season database snapshots: all competitions, clubs and public owners, fixtures, standings, statistics. Use for facts missing from the initial packet; never assume missing initial facts mean missing database data. Errors ENTITY_CLARIFICATION/AMBIGUOUS_* require asking the user, never silently changing filters. complete=false means only partial cached coverage; disclose stale data, never claim missing fixtures are not scheduled. Supports exact IDs or full names, semifinal/final, matchday, opponent, owner username and pagination. No writes or private fields.',
   parametersJsonSchema: {
     type: 'object', required: ['dataset'], additionalProperties: false,
     properties: {
@@ -31,7 +31,20 @@ export async function generateGroundedTelegramAnswer(options: {
   if (calls.length > 4 || calls.some((call: any) => call.name !== tournamentReadTool.name)) return 'So‘rovni aniqroq yozing: jamoa, turnir va kerakli tur yoki bosqichni ko‘rsating.';
   const responses = [];
   for (const call of calls) {
-    const result = await withinAiDeadline(options.signal, () => read(call.args));
+    let result:any = await withinAiDeadline(options.signal, () => read(call.args));
+    // Continue a long list without another model call, bounded by the same global deadline.
+    if(!result.error && Array.isArray(result.data)){
+      result={...result,data:[...result.data]};
+      for(let page=1;page<3 && Number.isInteger(result.nextOffset);page++){
+        const next:any=await withinAiDeadline(options.signal,()=>read({...call.args,offset:result.nextOffset}));
+        if(next.error || !Array.isArray(next.data) || next.offset!==result.nextOffset || !next.data.length){
+          result={...result,complete:false,paginationError:next.error||'INCOMPLETE_PAGE'};break;
+        }
+        result={...result,data:[...result.data,...next.data],nextOffset:next.nextOffset,stale:Boolean(result.stale||next.stale),complete:result.complete!==false&&next.complete!==false,
+          missingDatasets:[...new Set([...(result.missingDatasets||[]),...(next.missingDatasets||[])])],failedDatasets:[...new Set([...(result.failedDatasets||[]),...(next.failedDatasets||[])])]};
+      }
+      result.truncated=Number.isInteger(result.nextOffset);
+    }
     responses.push({ functionResponse: { name: call.name, ...(call.id ? { id: call.id } : {}), response: { result } } });
   }
   const modelContent = first.candidates?.[0]?.content;

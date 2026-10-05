@@ -19,7 +19,7 @@ export interface NaturalPlannerDependencies {
 
 async function pages(read: NaturalPlannerDependencies['read'], query: any): Promise<any[]> {
   const first = await read({ ...query, limit: 30 });
-  if (first.error) clarify('So‘ralgan ma’lumot bazada aniqlanmadi. Klub, turnir yoki IDni tekshiring.');
+  if (first.error) clarify(first.message || (first.choices?.length ? 'Qaysi biri? '+first.choices.map((c:any)=>c.name).join(' yoki ')+'.' : 'So‘ralgan ma’lumot bazada aniqlanmadi. Klub, turnir yoki IDni tekshiring.'));
   const rows = [...(first.data || [])];
   for (let offset = 30; offset < (first.total || 0) && offset < 10000; offset += 30) {
     const next = await read({ ...query, offset, limit: 30 });

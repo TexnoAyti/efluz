@@ -16,6 +16,14 @@ export function containsAiEntity(normalizedQuery: string, alias: string): boolea
 const ALIASES: Record<string, string[]> = {
   'club-man-city': ['man city', 'manchester siti', 'man siti', 'mancity'],
   'club-man-utd': ['man united', 'man utd', 'manchester yunayted', 'myu'],
+  'club-chelsea': ['chelsi'],
+  'club-liverpool': ['liverpul'],
+  'club-leverkusen': ['leverkusen', 'leverkuzen'],
+  'club-newcastle': ['newcastle', 'nyukasl'],
+  'club-tottenham': ['tottenham', 'tottenhem', 'spurs'],
+  'club-wolves': ['wolves'],
+  'club-west-ham': ['west ham', 'vest hem'],
+  'club-aston-villa': ['aston villa'],
   'club-nottm-forest': ['nottingham', 'nottm forest', 'nottingem'],
   'club-ipswich': ['ipswich', 'ipsvich'],
   'club-inter': ['inter', 'internazionale'],
@@ -31,7 +39,7 @@ const ALIASES: Record<string, string[]> = {
 function aliases(club: Club): string[] {
   const stripped = club.name.replace(/^(?:FC|AFC|AC|AS|SSC|SC|SV|RB)\s+/i, '').replace(/\s+(?:FC|CF|Town|Hotspur)$/i, '');
   const seed = SEED_CLUBS.find(c => normalizeAiEntity(c.name) === normalizeAiEntity(club.name));
-  return [...new Set([club.name, stripped, ...(ALIASES[club.id] || ALIASES[seed?.id || ''] || [])])];
+  return [...new Set([club.name, stripped, ...[club.name,stripped].filter(name=>name.includes(' ')).map(name=>normalizeAiEntity(name).replace(/ /g,'')), ...(ALIASES[club.id] || ALIASES[seed?.id || ''] || [])])];
 }
 function matchClubs(query: string, clubs: Club[]): Club[] {
   // Preserve explicit team separators so “Inter — Milan” cannot collapse into “Inter Milan”.
@@ -51,6 +59,33 @@ function matchClubs(query: string, clubs: Club[]): Club[] {
   return [...new Map(maximal.sort((a,b) => a.start - b.start).map(h => [h.club.id, h.club])).values()];
 }
 
+/** Suggestions only: a misspelling never silently chooses a club for reads or writes. */
+function typoSuggestions(query: string, clubs: Club[]): Club[] {
+  const tokens = normalizeAiEntity(query.replace(/@\s*[A-Za-z0-9_]+/g, ' ')).split(' ');
+  const near = (a:string,b:string) => {
+    if(a.length<5 || b.length<5 || Math.abs(a.length-b.length)>1 || a===b)return false;
+    if(a.length===b.length){
+      const diff=[...a].map((v,i)=>v===b[i]?-1:i).filter(i=>i>=0);
+      return diff.length===1 || diff.length===2 && diff[1]===diff[0]+1 && a[diff[0]]===b[diff[1]] && a[diff[1]]===b[diff[0]];
+    }
+    const [short,long]=a.length<b.length?[a,b]:[b,a];
+    let i=0;while(i<short.length&&short[i]===long[i])i++;
+    return short.slice(i)===long.slice(i+1);
+  };
+  return clubs.filter(club=>aliases(club).some(alias=>{
+    const words=normalizeAiEntity(alias).split(' ');
+    if(words.length>4)return false;
+    for(let i=0;i<=tokens.length-words.length;i++){
+      let changes=0,valid=true;
+      for(let j=0;j<words.length;j++)if(tokens[i+j]!==words[j]){
+        if(near(tokens[i+j],words[j]))changes++;else{valid=false;break;}
+      }
+      if(valid&&changes===1)return true;
+    }
+    return false;
+  }));
+}
+
 export function resolveAiClubs(query: string, clubs: Club[], selectedIds: string[] | undefined = undefined, previous: string[] = []): {
   clubs: Club[]; clarification?: string;
 } {
@@ -64,6 +99,11 @@ export function resolveAiClubs(query: string, clubs: Club[], selectedIds: string
       !matched.some(other => other.id !== c.id && aliases(other).some(a => normalizeAiEntity(a) === normalizeAiEntity(alias)))));
     if (sharedOnly) return { clubs: [], clarification: `Qaysi jamoani nazarda tutdingiz: ${matched.map(c => c.name).join(' yoki ')}?` };
   }
+  // Explicitly named teams missing from the live roster must never resolve to an older team.
+  const missing = matchClubs(query, SEED_CLUBS as unknown as Club[]).filter(c => !clubs.some(live => normalizeAiEntity(live.name) === normalizeAiEntity(c.name)));
+  if (missing.length) return { clubs: [], clarification: `${missing.map(c => c.name).join(', ')}: joriy mavsum snapshotida klub ma’lumoti topilmadi. Oldingi jamoa ma’lumotini bunga qo‘llamayman.` };
+  const suggestions = typoSuggestions(query, clubs).filter(c=>!matched.some(m=>m.id===c.id));
+  if(suggestions.length) return {clubs:[],clarification:`Klub nomida yozuv xatosi bo‘lishi mumkin. ${suggestions.slice(0,4).map(c=>c.name).join(' yoki ')}ni nazarda tutdingizmi? To‘g‘ri nom bilan qayta yozing.`};
   if (matched.length) return { clubs: matched };
   const q = normalizeAiEntity(query);
   const ambiguousWord = ['manchester', 'real', 'borussia'].find(word => containsAiEntity(q,word));
@@ -72,9 +112,6 @@ export function resolveAiClubs(query: string, clubs: Club[], selectedIds: string
     if (candidates.length > 1) return { clubs: [], clarification: `Qaysi jamoani nazarda tutdingiz: ${candidates.map(c => c.name).join(' yoki ')}?` };
     if (candidates.length === 1) return { clubs: candidates };
   }
-  // Explicitly named teams missing from the live roster must never resolve to an older team.
-  const missing = matchClubs(query, SEED_CLUBS as unknown as Club[]).filter(c => !clubs.some(live => normalizeAiEntity(live.name) === normalizeAiEntity(c.name)));
-  if (missing.length) return { clubs: [], clarification: `${missing.map(c => c.name).join(', ')}: joriy mavsum snapshotida klub ma’lumoti topilmadi. Oldingi jamoa ma’lumotini bunga qo‘llamayman.` };
   // Carry the selected team only for a team follow-up, not unrelated league or general tactics questions.
   const contextual = /egasi|kimniki|kim boshqar|nechanchi|nechta|qancha|ochko|g[‘’'`]?alaba|mag[‘’'`]?lub|durang|gol|keyingi|navbatdagi|oxirgi|forma|statistika|kuchli|kuchsiz|uyda|safarda|o[‘’'`]?zaro|raqib|kubok|ucl|uel|yutad|uni(?:ng)?\b|kimga|kimni|tahlil|hazil|roast|taktik.*(?:unga|shu)|\bits\b|\bthat team\b|его|владел|очк|мест|следующ|owner|points|position|next match/i.test(query);
   // Proper names before the ownership phrase require explicit lookup/clarification.

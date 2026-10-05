@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { resolveAiClubs } from '../services/telegramAiEntities';
 import { initDatabase } from '../db';
 import { getFirestoreDb } from '../firebase/admin';
 import { startMockUpstashBridge } from './mockUpstashBridge';
@@ -31,7 +32,10 @@ let firestoreCalls = 0;
 db.collection = (() => { firestoreCalls++; throw new Error('RESOURCE_EXHAUSTED'); }) as any;
 try {
   const reader = createAiTournamentReader();
+  const misspelled:any=await reader.read({dataset:'clubs',club:'Arsneal'});
+  assert.equal(misspelled.error,'ENTITY_CLARIFICATION');assert.match(misspelled.message,/Arsenal/);
   const semis: any = await reader.read({ dataset: 'fixtures', competition: 'Angliya Kubogi', stage: 'yarim final' });
+  assert.equal(semis.complete,true);assert.ok(semis.snapshots.some((s:any)=>s.available&&s.snapshotAt===newer));
   assert.equal(semis.total, 1); assert.equal(semis.data[0].id, 'semi'); assert.equal(semis.data[0].homeScore, null);
   const sup: any = await reader.read({ dataset: 'fixtures', competition: 'Angliya superkubogi' }); assert.equal(sup.data[0].id, 'super-final');
   const byOwner: any = await reader.read({ dataset: 'clubs', ownerUsername: '@actual_owner' }); assert.equal(byOwner.total, 1); assert.equal(byOwner.data[0].name, 'Arsenal');
@@ -47,9 +51,40 @@ try {
   bridge.store.delete(getFreshKey(ReadModelKeys.competitions(season)));
   assert.equal((await createAiTournamentReader().read({ dataset: 'competitions' }) as any).stale, true);
   bridge.store.delete(getLkgKey(ReadModelKeys.competitions(season)));
-  assert.ok((await createAiTournamentReader().read({ dataset: 'competitions' }) as any).missingDatasets.length);
+  const incomplete:any=await createAiTournamentReader().read({dataset:'competitions'});
+  assert.equal(incomplete.complete,false);assert.ok(incomplete.missingDatasets.length);
+  assert.equal((await createAiTournamentReader().read({dataset:'fixtures',competition:league}) as any).error,'DATA_UNAVAILABLE');
   console.log('PASS all-season Redis reads, supercup aliases, exact late matchday, stage, owner, statistics, pagination, stale/missing truth, public field projection; zero Firestore');
 } finally { db.collection = collection; await bridge.close(); }
+
+const roster:any[]=[{id:'club-arsenal',name:'Arsenal'},{id:'club-chelsea',name:'Chelsea'},{id:'club-man-city',name:'Manchester City'},{id:'club-man-utd',name:'Manchester United'},{id:'club-nottm-forest',name:'Nottingham Forest'},{id:'club-tottenham',name:'Tottenham Hotspur'}];
+for(const typo of ['Arsneal','Arsenl','Arsenall']){
+ const resolution=resolveAiClubs(typo+' egasi kim?',roster,['club-chelsea']);
+ assert.equal(resolution.clubs.length,0);assert.match(resolution.clarification!,/Arsenal/);
+}
+assert.deepEqual(resolveAiClubs('ManchesterCity nechanchi?',roster).clubs.map(c=>c.id),['club-man-city']);
+assert.deepEqual(resolveAiClubs('Chelsi egasi kim?',roster).clubs.map(c=>c.id),['club-chelsea']);
+assert.deepEqual(resolveAiClubs('Spurs nechanchi?',roster).clubs.map(c=>c.id),['club-tottenham']);
+assert.deepEqual(resolveAiClubs('Nottingham 5-1 Arsenal',roster).clubs.map(c=>c.id),['club-nottm-forest','club-arsenal']);
+assert.match(resolveAiClubs('Manchester egasi kim?',roster,['club-arsenal']).clarification!,/Manchester City.*Manchester United/);
+assert.equal(resolveAiClubs('Arsneal 5-1 Chelsea',roster).clubs.length,0,'Partial exact match cannot silently drop a typo');
+assert.equal(resolveAiClubs('@Arsneal unga biriktir',roster).clarification,undefined,'Username is not a club spelling correction');
+
+let paginationGenerations=0,paginationReads=0;
+await generateGroundedTelegramAnswer({ai:{} as any,model:'mock',contents:[],systemPrompt:'test',signal:new AbortController().signal,
+ generate:async request=>{
+  if(++paginationGenerations===1)return {functionCalls:[{name:'read_tournament_data',args:{dataset:'fixtures',limit:30}}],candidates:[{content:{role:'model',parts:[{functionCall:{name:'read_tournament_data',args:{dataset:'fixtures',limit:30}}}]}}]};
+  const r=request.contents[1].parts[0].functionResponse.response.result;
+  assert.equal(r.data.length,65);assert.equal(r.truncated,false);assert.equal(r.nextOffset,null);assert.equal(r.stale,true);assert.equal(r.complete,false);
+  return {text:'Saqlangan ma’lumot: 65 ta o‘yin.'};
+ },read:async(args:any)=>{paginationReads++;const offset=args.offset||0;return {data:Array.from({length:Math.min(30,65-offset)},(_,i)=>({id:'match-'+(offset+i)})),offset,nextOffset:offset+30<65?offset+30:null,total:65,stale:offset===30,complete:offset!==30};}});
+assert.equal(paginationReads,3);assert.equal(paginationGenerations,2,'Pagination requires no additional model request');
+let boundedReads=0,boundedGenerations=0;
+await generateGroundedTelegramAnswer({ai:{} as any,model:'mock',contents:[],systemPrompt:'test',signal:new AbortController().signal,
+ generate:async request=>++boundedGenerations===1?{functionCalls:[{name:'read_tournament_data',args:{dataset:'fixtures'}}],candidates:[{content:{role:'model',parts:[]}}]}:(assert.equal(request.contents[1].parts[0].functionResponse.response.result.truncated,true),{text:'Ro‘yxat to‘liq emas.'}),
+ read:async(args:any)=>{boundedReads++;const offset=args.offset||0;return {data:Array.from({length:20},(_,i)=>({id:offset+i})),offset,nextOffset:offset+20,total:1000};}});
+assert.equal(boundedReads,3,'Broad requests cannot read indefinitely');
+console.log('PASS typo clarification without stale-context substitution, aliases, explicit team order, bounded pagination, stale/partial evidence and unchanged model call count');
 
 let generations = 0, queries = 0;
 const signal = new AbortController().signal;
