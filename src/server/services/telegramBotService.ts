@@ -139,6 +139,16 @@ export interface TelegramSendMessageOptions {
   signal?: AbortSignal;
 }
 
+export async function answerTelegramCallback(queryId: string, text: string, showAlert = false): Promise<void> {
+  const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
+  if (!token) return;
+  await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ callback_query_id: queryId, text: text.slice(0, 180), show_alert: showAlert }),
+    signal: AbortSignal.timeout(1500),
+  }).catch(() => undefined);
+}
+
 /**
  * Sends a Telegram text message using the Bot API
  */
@@ -226,7 +236,8 @@ export async function sendTelegramSticker(
  */
 export async function handleTelegramStart(
   chatId: number | string,
-  fromUser?: { id: number | string; first_name?: string; last_name?: string; username?: string }
+  fromUser?: { id: number | string; first_name?: string; last_name?: string; username?: string },
+  options: TelegramSendMessageOptions = {}
 ): Promise<{ ok: boolean; stickerSent?: boolean; messageSent: boolean; error?: string }> {
   const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
   if (!botToken) {
@@ -238,7 +249,7 @@ export async function handleTelegramStart(
   let stickerSent = false;
 
   // 1. Send welcome sticker if configured
-  if (stickerFileId) {
+  if (stickerFileId && Number(chatId) > 0) {
     try {
       const stickerRes = await sendTelegramSticker(chatId, stickerFileId);
       stickerSent = Boolean(stickerRes && stickerRes.ok);
@@ -281,7 +292,7 @@ Quyidagi tugma orqali ilovani oching va o‘z klubingizni band qiling!`;
       [
         {
           text: '⚽ Ilovani ochish (EFL UZ)',
-          web_app: { url: webAppUrl },
+          ...(Number(chatId) > 0 ? { web_app: { url: webAppUrl } } : { url: `https://t.me/${(process.env.TELEGRAM_BOT_USERNAME || 'efluzbot').trim().replace(/^@/, '')}?start=app` }),
         },
       ],
       [
@@ -294,6 +305,7 @@ Quyidagi tugma orqali ilovani oching va o‘z klubingizni band qiling!`;
   };
 
   const msgRes = await sendTelegramMessage(chatId, welcomeText, {
+    ...options,
     parse_mode: 'HTML',
     reply_markup: replyMarkup,
   });

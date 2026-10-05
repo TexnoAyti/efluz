@@ -32,7 +32,9 @@ export async function executeAiAdminRoute(plan: AdminPlan, ownerId: number, oper
   if (!isPrimaryOwner(ownerId) || !Number.isSafeInteger(ownerId)) throw new Error('OWNER_ONLY');
   plan = adminPlanSchema.parse(plan);
   const { getAuthoritativeUserForAuthorization } = await import('../firebase/firestoreStore');
-  const realOwner = await getAuthoritativeUserForAuthorization(`user-${PRIMARY_OWNER_TELEGRAM_ID}`);
+  let realOwner;
+  try { realOwner = await getAuthoritativeUserForAuthorization(`user-${PRIMARY_OWNER_TELEGRAM_ID}`); }
+  catch (error: any) { if (/RESOURCE_EXHAUSTED|quota|CIRCUIT_OPEN/i.test(error?.message || '')) throw new Error('ADMIN_DATABASE_QUOTA'); throw error; }
   if (!realOwner || !isPrimaryOwner(realOwner.telegramId) || !realOwner.isAdmin || realOwner.isSuspended) throw new Error('OWNER_AUTHORIZATION_UNAVAILABLE');
   if (signal?.aborted) throw new Error('TIMEOUT_ABORTED');
   const spec = AI_ADMIN_ACTIONS[plan.action];

@@ -25,8 +25,9 @@ import { buildAiGroundingContext } from './telegramAiGroundingService';
 import { buildTelegramAiSystemPrompt } from './telegramAiPrompt';
 import { generateGroundedTelegramAnswer } from './telegramAiReadTools';
 import { isAiAdminCommand } from './telegramAiAdminCatalog';
-import { handleAiAdminCommand, isOwnerAdminPrivateChat } from './telegramAiAdminService';
+import { handleAiAdminCommand, isOwnerAdminPrivateChat, rememberDeliveredAdminPlan } from './telegramAiAdminService';
 import { isPrimaryOwner } from './telegramAiConfigService';
+import { getConversationIntent, buildConversationTableReply, isSimpleConversationMatchdayRequest } from './telegramAiConversationCommands';
 import { sendTelegramMessage } from './telegramBotService';
 
 export interface TelegramAiMessagePayload {
@@ -58,6 +59,7 @@ export interface ConversationTurn {
   role: 'user' | 'model';
   text: string;
   selectedClubIds?: string[];
+  selectedCompetitionIds?: string[];
 }
 
 export type DeliveryClaimResult = 'ok' | 'already_handled' | 'redis_error';
@@ -327,6 +329,7 @@ async function getConversationContext(
       role: item?.role === 'model' ? 'model' : 'user',
       text: String(item?.text || ''),
       selectedClubIds: Array.isArray(item?.selectedClubIds) ? item.selectedClubIds.filter((id: unknown) => typeof id === 'string').slice(0, 4) : undefined,
+      selectedCompetitionIds: Array.isArray(item?.selectedCompetitionIds) ? item.selectedCompetitionIds.filter((id: unknown) => typeof id === 'string').slice(0, 5) : undefined,
     })).slice(-MAX_CONTEXT_TURNS);
   } catch {
     return [];
@@ -342,7 +345,7 @@ async function saveConversationContext(
   userId: number,
   userText: string,
   modelText: string,
-  options?: { signal?: AbortSignal; history?: ConversationTurn[]; selectedClubIds?: string[] }
+  options?: { signal?: AbortSignal; history?: ConversationTurn[]; selectedClubIds?: string[]; selectedCompetitionIds?: string[] }
 ): Promise<void> {
   if (testRedisOutage || options?.signal?.aborted) return;
 
@@ -352,7 +355,7 @@ async function saveConversationContext(
   const existing = options?.history || [];
   const updated: ConversationTurn[] = [
     ...existing,
-    { role: 'user' as const, text: userText.slice(0, 700), selectedClubIds: options?.selectedClubIds || [] },
+    { role: 'user' as const, text: userText.slice(0, 700), selectedClubIds: options?.selectedClubIds || [], selectedCompetitionIds: options?.selectedCompetitionIds || [] },
     { role: 'model' as const, text: modelText.slice(0, 500) },
   ].slice(-MAX_CONTEXT_TURNS);
 
@@ -403,8 +406,10 @@ async function dispatchTelegramAiReply(
   signal: AbortSignal,
   options: {
     parse_mode?: string | null;
+    reply_markup?: any;
+    maxChars?: number;
   } = {}
-): Promise<{ ok: boolean; replySent: boolean; ignored?: string; error?: string }> {
+): Promise<{ ok: boolean; replySent: boolean; ignored?: string; error?: string; botMessageId?: number }> {
   // 1. Deadline check
   if (signal.aborted) {
     console.warn('[AI DISPATCH] Request timed out before message dispatch');
@@ -419,7 +424,7 @@ async function dispatchTelegramAiReply(
     (process.env.NODE_ENV === 'production' && !freshRedis) ||
     freshConfig.allowedChatId === null ||
     freshConfig.allowedThreadId === null ||
-    (Number(freshConfig.allowedChatId) !== Number(payload.chatId) || Number(freshConfig.allowedThreadId) !== Number(payload.threadId)) && !(isAiAdminCommand(payload.text) && isOwnerAdminPrivateChat(payload))
+    (Number(freshConfig.allowedChatId) !== Number(payload.chatId) || Number(freshConfig.allowedThreadId) !== Number(payload.threadId)) && !(isOwnerAdminPrivateChat(payload))
   ) {
     console.warn('[AI DISPATCH] Pre-send re-check failed; aborting send to Telegram');
     await claimDeliveryState(payload.updateId, 'sent', { signal });
@@ -439,15 +444,17 @@ async function dispatchTelegramAiReply(
 
   // 4. Format message text
   const parseMode = options.parse_mode !== undefined ? options.parse_mode : 'HTML';
+  const maxChars = Math.min(options.maxChars || MAX_RESPONSE_CHARS, 4000);
   const textToSend = parseMode === 'HTML'
-    ? escapeTelegramHtml(replyText.slice(0, MAX_RESPONSE_CHARS))
-    : replyText.slice(0, MAX_RESPONSE_CHARS);
+    ? escapeTelegramHtml(replyText.slice(0, maxChars))
+    : replyText.slice(0, maxChars);
 
   // 5. Dispatch message to Telegram
   const sendResult = await sendTelegramMessage(payload.chatId, textToSend, {
     parse_mode: parseMode,
     message_thread_id: payload.threadId,
     reply_to_message_id: payload.messageId,
+    reply_markup: options.reply_markup,
     signal,
   });
 
@@ -457,7 +464,7 @@ async function dispatchTelegramAiReply(
     if (Number.isSafeInteger(botMsgId)) {
       await indexBotSentMessage(botMsgId, payload.chatId, payload.threadId, payload.fromUser.id, { signal });
     }
-    return { ok: true, replySent: true };
+    return { ok: true, replySent: true, botMessageId: botMsgId };
   } else {
     console.warn('[AI DISPATCH] Telegram send failed/uncertain:', sendResult.error);
     await claimDeliveryState(payload.updateId, 'unknown_timeout', { signal });
@@ -477,8 +484,12 @@ export async function handleTelegramAiMessage(
   }
 
   // 2. Start unified 6-second processing timeout BEFORE reading configuration (Requirement 2)
+  const intent = getConversationIntent(payload.text);
+  const owner = isPrimaryOwner(payload.fromUser.id);
+  const replyConfirmation = Boolean(payload.replyToMessage && /^(?:ha|xa|yes|xop)$/i.test(payload.text.trim()));
+  const ownerControl = owner && (isAiAdminCommand(payload.text) || ['admin','confirm','cancel','help'].includes(intent) || replyConfirmation);
   const rootController = new AbortController();
-  const globalTimeout = setTimeout(() => rootController.abort(), isAiAdminCommand(payload.text) && isPrimaryOwner(payload.fromUser.id) ? 30000 : GLOBAL_TIMEOUT_MS);
+  const globalTimeout = setTimeout(() => rootController.abort(), ownerControl ? 30000 : GLOBAL_TIMEOUT_MS);
 
   try {
     // 3. Load configuration under deadline with fail-closed guarantee
@@ -494,7 +505,7 @@ export async function handleTelegramAiMessage(
     if (
       config.allowedChatId === null ||
       config.allowedThreadId === null ||
-      (Number(payload.chatId) !== Number(config.allowedChatId) || Number(payload.threadId) !== Number(config.allowedThreadId)) && !(isAiAdminCommand(payload.text) && isOwnerAdminPrivateChat(payload))
+      (Number(payload.chatId) !== Number(config.allowedChatId) || Number(payload.threadId) !== Number(config.allowedThreadId)) && !(isOwnerAdminPrivateChat(payload))
     ) {
       return { ok: true, handled: false, ignored: 'topic_not_authorized' };
     }
@@ -514,8 +525,10 @@ export async function handleTelegramAiMessage(
       chatId: payload.chatId,
       threadId: payload.threadId,
       userId: payload.fromUser.id,
-      userLimitPerMin: config.rateLimitUserPerMin,
-      topicLimitPerMin: config.rateLimitTopicPerMin,
+      userLimitPerMin: ownerControl ? 20 : config.rateLimitUserPerMin,
+      topicLimitPerMin: ownerControl ? 20 : config.rateLimitTopicPerMin,
+      control: ownerControl,
+      countDaily: ownerControl ? /^\/ai_admin(?:@[a-zA-Z0-9_]+)?\s+(?!\{)/i.test(payload.text) && !isSimpleConversationMatchdayRequest(payload.text) || /^\/ai_read(?:@[a-zA-Z0-9_]+)?\s+(?!\{)/i.test(payload.text) || intent === 'admin' && !isSimpleConversationMatchdayRequest(payload.text) : intent === 'chat' && !replyConfirmation && !/^\//.test(payload.text),
       maxDailyRequests: config.maxDailyRequests,
       signal: rootController.signal,
     });
@@ -525,7 +538,7 @@ export async function handleTelegramAiMessage(
         // Cooldown warning dispatched via unified dispatch path
         await dispatchTelegramAiReply(
           payload,
-          "Siz juda tez so'rov yubordingiz. Iltimos, biroz kuting (minutiga 3 ta so'rov ruxsat etilgan).",
+          rateLimit.reason === 'DAILY_LIMIT_EXCEEDED' ? 'AI’ning bugungi so‘rov limiti tugagan. Bazadagi jadval va o‘yinlarni oddiy so‘rov bilan ko‘rish mumkin.' : rateLimit.reason === 'TOPIC_LIMIT_EXCEEDED' ? 'Bu mavzuda so‘rovlar ko‘payib ketdi. Bir daqiqadan keyin qayta yozing.' : `Bir daqiqada ${rateLimit.limit} ta so‘rov mumkin. Biroz kutib qayta yozing.`,
           rootController.signal,
           { parse_mode: null }
         );
@@ -533,29 +546,6 @@ export async function handleTelegramAiMessage(
         await claimDeliveryState(payload.updateId, 'sent', { signal: rootController.signal });
       }
       return { ok: true, handled: true, ignored: rateLimit.reason };
-    }
-
-    // Admin execution is a separate owner-only, explicit-command flow. The public model has no write tools.
-    if (isAiAdminCommand(payload.text)) {
-      let facts = '';
-      if (isPrimaryOwner(payload.fromUser.id) && !payload.senderChat && !payload.forwarded && /^\/ai_admin(?:@[a-zA-Z0-9_]+)?\s+(?!\{)/i.test(payload.text)) {
-        facts = (await buildAiGroundingContext(payload.text, undefined, { signal: rootController.signal })).factsSummary;
-      }
-      const text = await handleAiAdminCommand(payload, rootController.signal, facts);
-      const result = await dispatchTelegramAiReply(payload, text, rootController.signal, { parse_mode: null });
-      return { ok: true, handled: true, replySent: result.replySent, ignored: result.ignored };
-    }
-
-    // 7. Check blatant off-topic before calling Gemini to save quota
-    if (isBlatantlyOffTopic(payload.text)) {
-      // Off-topic refusal dispatched via unified dispatch path with parse_mode: null
-      const dispatchRes = await dispatchTelegramAiReply(
-        payload,
-        STANDARD_OFF_TOPIC_REPLY,
-        rootController.signal,
-        { parse_mode: null }
-      );
-      return { ok: true, handled: true, replySent: dispatchRes.replySent, ignored: dispatchRes.ignored };
     }
 
     // 9. Reply Context: verify reply is addressed specifically to our bot and belongs to this user & chat & thread
@@ -575,6 +565,44 @@ export async function handleTelegramAiMessage(
           signal: rootController.signal,
         });
       }
+    }
+
+    const scope = {
+      previousUserQueries: history.filter(turn => turn.role === 'user').map(turn => turn.text),
+      selectedClubIds: [...history].reverse().find(turn => turn.role === 'user' && turn.selectedClubIds !== undefined)?.selectedClubIds,
+      selectedCompetitionIds: [...history].reverse().find(turn => turn.role === 'user' && turn.selectedCompetitionIds !== undefined)?.selectedCompetitionIds,
+    };
+    if (intent === 'standings' || intent === 'fixtures') {
+      const table = await buildConversationTableReply(payload.text, intent, scope, rootController.signal);
+      const result = await dispatchTelegramAiReply(payload, table.text, rootController.signal, { parse_mode: null, maxChars: 4000 });
+      if (result.replySent) await saveConversationContext(payload.chatId, payload.threadId, payload.fromUser.id, payload.text, table.text, { signal: rootController.signal, history, selectedClubIds: scope.selectedClubIds, selectedCompetitionIds: table.competitionIds });
+      return { ok: result.ok, handled: true, replySent: result.replySent, ignored: result.ignored };
+    }
+    if (isAiAdminCommand(payload.text) || ['admin','confirm','cancel'].includes(intent) || replyConfirmation || intent === 'help' && owner) {
+      const text = await handleAiAdminCommand(payload, rootController.signal, JSON.stringify(scope), scope);
+      const token = /\/ai_confirm ([a-f0-9]{24})/.exec(text)?.[1];
+      const visible = token ? text.replace(/\n\/ai_(?:confirm|cancel) [a-f0-9]{24}/g, '') + '\n“Tasdiqlash” tugmasini bosing yoki “tasdiqlayman” deb yozing.' : text;
+      const result = await dispatchTelegramAiReply(payload, visible, rootController.signal, { parse_mode: null, reply_markup: token ? { inline_keyboard: [[{ text: 'Tasdiqlash', callback_data: 'ai:confirm:' + token }, { text: 'Bekor qilish', callback_data: 'ai:cancel:' + token }]] } : undefined });
+      if (result.replySent && token && result.botMessageId) await rememberDeliveredAdminPlan(payload, text, result.botMessageId, rootController.signal);
+      if (result.replySent && intent === 'admin') await saveConversationContext(payload.chatId, payload.threadId, payload.fromUser.id, payload.text, visible, { signal: rootController.signal, history, selectedClubIds: scope.selectedClubIds, selectedCompetitionIds: scope.selectedCompetitionIds });
+      return { ok: result.ok, handled: true, replySent: result.replySent, ignored: result.ignored };
+    }
+    if (intent === 'help' || /^\/[a-z_]+/i.test(payload.text)) {
+      const text = 'Jadval uchun “La Liga jadvalini tashla”, o‘yinlar uchun “Angliya Kubogi yarim final o‘yinlarini ko‘rsat” deb yozing. Liga haqida gaplashgan bo‘lsak, “jadval tashla” ham yetadi.';
+      const result = await dispatchTelegramAiReply(payload, text, rootController.signal, { parse_mode: null });
+      return { ok: result.ok, handled: true, replySent: result.replySent };
+    }
+
+    // 7. Check blatant off-topic before calling Gemini to save quota
+    if (isBlatantlyOffTopic(payload.text)) {
+      // Off-topic refusal dispatched via unified dispatch path with parse_mode: null
+      const dispatchRes = await dispatchTelegramAiReply(
+        payload,
+        STANDARD_OFF_TOPIC_REPLY,
+        rootController.signal,
+        { parse_mode: null }
+      );
+      return { ok: true, handled: true, replySent: dispatchRes.replySent, ignored: dispatchRes.ignored };
     }
 
     if (rootController.signal.aborted) throw new Error('TIMEOUT_ABORTED');
@@ -653,7 +681,7 @@ export async function handleTelegramAiMessage(
         payload.fromUser.id,
         payload.text,
         replyText,
-        { signal: rootController.signal, history, selectedClubIds: grounding.selectedClubIds }
+        { signal: rootController.signal, history, selectedClubIds: grounding.selectedClubIds, selectedCompetitionIds: grounding.detectedCompetitions }
       );
       return { ok: true, handled: true, replySent: true };
     } else {

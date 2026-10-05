@@ -54,17 +54,20 @@ local userWindow = tonumber(ARGV[4])
 local topicWindow = tonumber(ARGV[5])
 local dailyWindow = tonumber(ARGV[6])
 local cooldownWindow = tonumber(ARGV[7])
+local countDaily = ARGV[8] ~= '0'
 
 -- 1. Check daily limit
 local currentDaily = tonumber(redis.call('GET', dailyKey) or '0')
-if currentDaily >= dailyLimit then
-  return {0, "DAILY", currentDaily}
+if countDaily and currentDaily >= dailyLimit then
+  local notify = redis.call('SET', cooldownKey, '1', 'EX', cooldownWindow, 'NX')
+  return {0, notify and 'DAILY_NOTIFY' or 'DAILY', currentDaily}
 end
 
 -- 2. Check topic limit
 local currentTopic = tonumber(redis.call('GET', topicKey) or '0')
 if currentTopic >= topicLimit then
-  return {0, "TOPIC", currentTopic}
+  local notify = redis.call('SET', cooldownKey, '1', 'EX', cooldownWindow, 'NX')
+  return {0, notify and 'TOPIC_NOTIFY' or 'TOPIC', currentTopic}
 end
 
 -- 3. Check user limit
@@ -79,9 +82,9 @@ if currentUser >= userLimit then
 end
 
 -- All checks passed: atomically increment all three counters
-local nextDaily = redis.call('INCR', dailyKey)
-if nextDaily == 1 then
-  redis.call('EXPIRE', dailyKey, dailyWindow)
+if countDaily then
+  local nextDaily = redis.call('INCR', dailyKey)
+  if nextDaily == 1 then redis.call('EXPIRE', dailyKey, dailyWindow) end
 end
 
 local nextTopic = redis.call('INCR', topicKey)
@@ -120,21 +123,23 @@ function evaluateMemoryRateLimits(params: {
   topicLimit: number;
   dailyLimit: number;
   now: number;
+  countDaily?: boolean;
 }): RateLimitCheckResult {
   const { dailyKey, topicKey, userKey, cooldownKey, userLimit, topicLimit, dailyLimit, now } = params;
 
   // 1. Daily
   const dailyRecord = testMemoryCounters.get(dailyKey);
   const currentDaily = dailyRecord && dailyRecord.expiresAt > now ? dailyRecord.count : 0;
-  if (currentDaily >= dailyLimit) {
-    return { allowed: false, reason: 'DAILY_LIMIT_EXCEEDED', current: currentDaily, limit: dailyLimit };
+  const notify = () => { const current = testMemoryCounters.get(cooldownKey); if (current && current.expiresAt > now) return false; testMemoryCounters.set(cooldownKey, { count: 1, expiresAt: now + 300000 }); return true; };
+  if (params.countDaily !== false && currentDaily >= dailyLimit) {
+    return { allowed: false, reason: 'DAILY_LIMIT_EXCEEDED', current: currentDaily, limit: dailyLimit, shouldNotifyUser: notify() };
   }
 
   // 2. Topic
   const topicRecord = testMemoryCounters.get(topicKey);
   const currentTopic = topicRecord && topicRecord.expiresAt > now ? topicRecord.count : 0;
   if (currentTopic >= topicLimit) {
-    return { allowed: false, reason: 'TOPIC_LIMIT_EXCEEDED', current: currentTopic, limit: topicLimit };
+    return { allowed: false, reason: 'TOPIC_LIMIT_EXCEEDED', current: currentTopic, limit: topicLimit, shouldNotifyUser: notify() };
   }
 
   // 3. User
@@ -152,7 +157,7 @@ function evaluateMemoryRateLimits(params: {
   }
 
   // Atomically increment all
-  testMemoryCounters.set(dailyKey, { count: currentDaily + 1, expiresAt: dailyRecord && dailyRecord.expiresAt > now ? dailyRecord.expiresAt : now + 86400 * 1000 });
+  if (params.countDaily !== false) testMemoryCounters.set(dailyKey, { count: currentDaily + 1, expiresAt: dailyRecord && dailyRecord.expiresAt > now ? dailyRecord.expiresAt : now + 86400 * 1000 });
   testMemoryCounters.set(topicKey, { count: currentTopic + 1, expiresAt: topicRecord && topicRecord.expiresAt > now ? topicRecord.expiresAt : now + 60 * 1000 });
   testMemoryCounters.set(userKey, { count: currentUser + 1, expiresAt: userRecord && userRecord.expiresAt > now ? userRecord.expiresAt : now + 60 * 1000 });
 
@@ -169,6 +174,8 @@ export async function checkAndIncrementAiRateLimits(params: {
   userLimitPerMin: number;
   topicLimitPerMin: number;
   maxDailyRequests: number;
+  countDaily?: boolean;
+  control?: boolean;
   signal?: AbortSignal;
 }): Promise<RateLimitCheckResult> {
   if (params.signal?.aborted) {
@@ -180,9 +187,9 @@ export async function checkAndIncrementAiRateLimits(params: {
 
   const today = new Date().toISOString().slice(0, 10);
   const dailyKey = `${KEY_PREFIX}:telegram:ai:daily:${today}`;
-  const topicKey = `${KEY_PREFIX}:telegram:ai:rl:topic:${params.chatId}:${params.threadId}`;
-  const userKey = `${KEY_PREFIX}:telegram:ai:rl:user:${params.chatId}:${params.threadId}:${params.userId}`;
-  const cooldownKey = `${KEY_PREFIX}:telegram:ai:cooldown:${params.chatId}:${params.threadId}:${params.userId}`;
+  const topicKey = `${KEY_PREFIX}:telegram:ai:rl:topic:${params.chatId}:${params.threadId}${params.control ? ':control' : ''}`;
+  const userKey = `${KEY_PREFIX}:telegram:ai:rl:user:${params.chatId}:${params.threadId}:${params.userId}${params.control ? ':control' : ''}`;
+  const cooldownKey = `${KEY_PREFIX}:telegram:ai:cooldown:${params.chatId}:${params.threadId}:${params.userId}${params.control ? ':control' : ''}`;
 
   if (!client) {
     if (isProd) {
@@ -197,6 +204,7 @@ export async function checkAndIncrementAiRateLimits(params: {
       topicLimit: params.topicLimitPerMin,
       dailyLimit: params.maxDailyRequests,
       now: Date.now(),
+      countDaily: params.countDaily,
     });
   }
 
@@ -212,6 +220,7 @@ export async function checkAndIncrementAiRateLimits(params: {
         60,   // topic window
         86400, // daily window
         300,  // cooldown window (5 mins)
+        params.countDaily === false ? 0 : 1,
       ]
     );
 
@@ -223,11 +232,11 @@ export async function checkAndIncrementAiRateLimits(params: {
       return { allowed: true, current: count, limit: params.userLimitPerMin };
     }
 
-    if (code === 'DAILY') {
-      return { allowed: false, reason: 'DAILY_LIMIT_EXCEEDED', current: count, limit: params.maxDailyRequests };
+    if (code === 'DAILY' || code === 'DAILY_NOTIFY') {
+      return { allowed: false, reason: 'DAILY_LIMIT_EXCEEDED', current: count, limit: params.maxDailyRequests, shouldNotifyUser: code === 'DAILY_NOTIFY' };
     }
-    if (code === 'TOPIC') {
-      return { allowed: false, reason: 'TOPIC_LIMIT_EXCEEDED', current: count, limit: params.topicLimitPerMin };
+    if (code === 'TOPIC' || code === 'TOPIC_NOTIFY') {
+      return { allowed: false, reason: 'TOPIC_LIMIT_EXCEEDED', current: count, limit: params.topicLimitPerMin, shouldNotifyUser: code === 'TOPIC_NOTIFY' };
     }
     if (code === 'USER_NOTIFY') {
       return { allowed: false, reason: 'USER_LIMIT_EXCEEDED', current: count, limit: params.userLimitPerMin, shouldNotifyUser: true };

@@ -1,21 +1,62 @@
 import { randomBytes } from 'node:crypto';
 import { GoogleGenAI } from '@google/genai';
-import { AI_ADMIN_ACTIONS, adminPlanSchema, adminPlanPath, type AdminPlan } from './telegramAiAdminCatalog';
+import { AI_ADMIN_ACTIONS, adminPlanSchema, type AdminPlan } from './telegramAiAdminCatalog';
 import { getAiRedisClient, withinAiDeadline } from './telegramAiDeadline';
 import { getTelegramAiConfig, isPrimaryOwner } from './telegramAiConfigService';
 import { generateGroundedTelegramAnswer } from './telegramAiReadTools';
 import { executeAiAdminRoute } from './telegramAiAdminGateway';
 import { createAiTournamentReader } from './telegramAiDataService';
 import type { TelegramAiMessagePayload } from './telegramAiService';
+import { getConversationIntent, parseConversationMatchdayPlan, type ConversationScope } from './telegramAiConversationCommands';
 
-type Pending = { token: string; plan: AdminPlan; owner: number; chat: number; thread: number; expiresAt: number; state: 'pending'|'executing'|'cancelled'|'done'|'unknown'; result?: {status:number; data:any} };
+type Pending = { token: string; plan: AdminPlan; owner: number; chat: number; thread: number; expiresAt: number; state: 'pending'|'executing'|'cancelled'|'done'|'unknown'; description?: string; result?: {status:number; data:any} };
 const prefix = 'efluz:v1:telegram:ai:admin:';
 const testStore = new Map<string, Pending>();
+const testLatest = new Map<string, {token:string; botMessageId:number}>();
+const latestKey = (p: TelegramAiMessagePayload) => `${prefix}latest:${p.chatId}:${p.threadId}:${p.fromUser.id}`;
+export async function rememberDeliveredAdminPlan(p: TelegramAiMessagePayload, reply: string, botMessageId: number, signal: AbortSignal) {
+  const token = /\/ai_confirm ([a-f0-9]{24})/.exec(reply)?.[1];
+  if (!token || !isPrimaryOwner(p.fromUser.id)) return;
+  const record = await loadPending(token, signal);
+  if (!record || record.state !== 'pending') return;
+  const value = { token, botMessageId };
+  const client = getAiRedisClient(signal);
+  if (client) await client.set(latestKey(p), value, { ex: 300 });
+  else if (process.env.NODE_ENV === 'test') testLatest.set(latestKey(p), value);
+}
+async function getLatestDeliveredPlanToken(p: TelegramAiMessagePayload, signal: AbortSignal): Promise<string|null> {
+  const client = getAiRedisClient(signal);
+  const latest = client ? await client.get<{token:string; botMessageId:number}>(latestKey(p)) : process.env.NODE_ENV === 'test' ? testLatest.get(latestKey(p)) : null;
+  if (!latest) return null;
+  if (p.replyToMessage) {
+    const botId = Number(process.env.TELEGRAM_BOT_TOKEN?.split(':')[0]);
+    if (p.replyToMessage.from?.id !== botId || p.replyToMessage.message_id !== latest.botMessageId) return null;
+  }
+  const record = await loadPending(latest.token, signal);
+  return record?.state === 'pending' && record.expiresAt > Date.now() && record.chat === p.chatId && record.thread === p.threadId && record.owner === p.fromUser.id ? latest.token : null;
+}
+export function describeAiAdminPlan(plan: AdminPlan, label = ''): string {
+  const b = plan.body;
+  const target = label || plan.targetId || '';
+  if (plan.action === 'matchday_control' || plan.action === 'cup_round') {
+    const verbs: Record<string,string> = { LOCK:'qulflash', OPEN:'ochish', SELECT:'tanlash', EXTEND:'muddatini uzaytirish', RESTART:'qayta boshlash' };
+    return `${target}: ${b.matchday || b.roundNumber}-turni ${verbs[String(b.action)] || String(b.action)}${b.durationHours ? ', ' + b.durationHours + ' soat' : ''}.`;
+  }
+  if (plan.action === 'club_assign') return `${target} klubini ${String(b.targetUserId)} ga biriktirish.`;
+  if (plan.action === 'club_release') return `${target} klubini egasidan bo‘shatish.`;
+  if (['result_edit','result_approve'].includes(plan.action)) return `${target}: hisob ${b.homeScore}:${b.awayScore}, ${plan.action === 'result_approve' ? 'natijani tasdiqlash' : 'natijani saqlash'}.`;
+  if (plan.action === 'result_clear') return `${target}: natijani o‘chirish, uchrashuvni saqlash.`;
+  if (plan.action === 'fixture_delete') return `${target}: uchrashuvning o‘zini o‘chirish. Sabab: ${b.reason || 'ko‘rsatilmagan'}.`;
+  if (plan.action === 'user_role') return `${target}: ${b.isAdmin ? 'admin ruxsatini berish' : 'admin ruxsatini olib tashlash'}. Ruxsat: ${(b.adminPermissions as any)?.scope === 'ALL' ? 'barcha ligalar' : ((b.adminPermissions as any)?.leagueIds || []).join(', ') || 'liga ko‘rsatilmagan'}.`;
+  if (plan.action === 'user_suspend') return `${target}: ${b.isSuspended ? 'bloklash' : 'blokdan chiqarish'}.`;
+  const names: Record<string,string> = { result_reject:'Natijani rad etish', fixture_reopen:'Uchrashuvni qayta ochish', fixture_deadline:'O‘yin muddatini o‘zgartirish', fixture_remind:'O‘yin eslatmasini yuborish', user_delete:'Foydalanuvchini o‘chirish', premium_grant:'Premium berish', premium_revoke:'Premiumni bekor qilish', notification_message:'Xabarnoma ko‘rinishini o‘zgartirish', notification_type:'Xabarnoma turini boshqarish', broadcast:'Xabar yuborish', cup_generate:'Kubok qur’asini yaratish', cup_reconcile:'Kubok juftliklarini moslashtirish', standings_rebuild:'Jadvalni qayta hisoblash', season_archive:'Mavsumni arxivlash', season_rollover:'Keyingi mavsumni yaratish' };
+  return `${names[plan.action] || 'Admin amali'}${target ? ': ' + target : ''}.\n${Object.entries(b).map(([key,value]) => `${({reason:'Sabab',notes:'Izoh',homeScore:'Uy hisobi',awayScore:'Safar hisobi',title:'Sarlavha',body:'Xabar',userId:'Foydalanuvchi',visibility:'Ko‘rinishi',deadlineAt:'Muddat'} as any)[key] || key}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`).join('\n')}`;
+}
 let testExecutor: typeof executeAiAdminRoute | undefined;
 let testPlanner: ((request: string) => Promise<unknown>) | undefined;
 export function setTestAiAdminHooks(executor?: typeof executeAiAdminRoute, planner?: (request: string) => Promise<unknown>) {
   if (process.env.NODE_ENV !== 'test') throw new Error('TEST_ONLY');
-  testExecutor = executor; testPlanner = planner; testStore.clear();
+  testExecutor = executor; testPlanner = planner; testStore.clear(); testLatest.clear();
 }
 export function isOwnerAdminPrivateChat(payload: TelegramAiMessagePayload): boolean {
   return isPrimaryOwner(payload.fromUser.id) && payload.chatId === payload.fromUser.id && payload.threadId === 0 && !payload.senderChat && !payload.forwarded;
@@ -77,30 +118,35 @@ export async function planAiAdminAction(request: string, facts: string, signal: 
 
 /** Caller has already verified the webhook, allowed topic/owner DM, and rate limit.
  * Authority is derived from Telegram sender ID, never username, model text or chat admin status. */
-export async function handleAiAdminCommand(payload: TelegramAiMessagePayload, signal: AbortSignal, facts = ''): Promise<string> {
+export async function handleAiAdminCommand(payload: TelegramAiMessagePayload, signal: AbortSignal, facts = '', scope: ConversationScope = {}): Promise<string> {
   if (!isPrimaryOwner(payload.fromUser.id) || !Number.isSafeInteger(payload.fromUser.id) || payload.fromUser.is_bot || payload.senderChat || payload.forwarded)
     return 'AI orqali admin buyruqlarini faqat asosiy admin bera oladi.';
   const { config, redisAvailable } = await getTelegramAiConfig({ signal });
   const privateChat = isOwnerAdminPrivateChat(payload);
   if (!config.enabled || process.env.NODE_ENV === 'production' && !redisAvailable || !privateChat && (config.allowedChatId !== payload.chatId || config.allowedThreadId !== payload.threadId)) return 'AI admin boshqaruvi bu chatda faol emas.';
   const match = /^\/ai_(admin|confirm|cancel|actions|read)(?:@[a-zA-Z0-9_]+)?(?:\s+([\s\S]*))?$/i.exec(payload.text.trim());
-  if (!match) return 'Admin buyruq uchun /ai_admin yozing.';
-  const command = match[1].toLowerCase(), argument = match[2]?.trim() || '';
+  const intent = getConversationIntent(payload.text);
+  const command = match ? match[1].toLowerCase() : intent === 'confirm' || /^(?:ha|xa|yes|xop)$/i.test(payload.text.trim()) && payload.replyToMessage ? 'confirm' : intent === 'cancel' ? 'cancel' : intent === 'help' ? 'actions' : intent === 'admin' ? 'admin' : '';
+  let argument = match ? match[2]?.trim() || '' : command === 'admin' ? payload.text : '';
+  if (!command) return 'Nima qilishimni oddiy yozing. Masalan: “La Liga jadvalini tashla” yoki “La Liga 10-turni qulflang”.';
   try {
-    if (command === 'actions') return `Admin: /ai_admin <amalni aniq yozing>
-Bot reja va parametrlarni ko‘rsatadi. /ai_confirm <kod> bajaradi, /ai_cancel <kod> bekor qiladi. Reja 5 daqiqa amal qiladi.
-Natijalar, klublar, rollar, bloklash, turlar, kubok, qur’a, deadline, xabarnoma, Premium va mavsum amallari mavjud.
-Yopiq admin ma’lumotlari: botning shaxsiy chatida /ai_read {"action":"pending_results","body":{}}.
-Misol: /ai_admin La Liga 10-turni qulflang.
-Aniq JSON: /ai_admin {"action":"matchday_control","targetId":"comp-la-liga-2026","body":{"action":"LOCK","matchday":10}}`;
+    if (command === 'actions') return `Oddiy yozishingiz mumkin:
+• La Liga jadvalini tashla
+• Angliya Kubogi yarim final o‘yinlarini ko‘rsat
+• La Liga 10-turni qulflang
+• Arsenal klubini @username ga biriktir
+
+O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yoki “tasdiqlayman” deb yozing. “Bekor qil” rejani bekor qiladi. Bazani o‘zgartirish buyruqlari faqat asosiy admin uchun.`;
     if (command === 'read') {
       if (!privateChat) return 'Yopiq admin ma’lumotlarini olish uchun botning shaxsiy chatida /ai_read ishlating.';
-      const plan = adminPlanSchema.parse(JSON.parse(argument));
+      const plan = argument.startsWith('{') ? adminPlanSchema.parse(JSON.parse(argument)) : await planAiAdminAction(argument, facts, signal);
       if (AI_ADMIN_ACTIONS[plan.action].method !== 'GET') return '/ai_read faqat o‘qish uchun.';
       const result = await withinAiDeadline(signal, () => (testExecutor || executeAiAdminRoute)(plan, payload.fromUser.id, 'ai-read-' + payload.updateId, signal));
       return `HTTP ${result.status}\n${JSON.stringify(result.data).slice(0, 850)}\nKatta ro‘yxat uchun search/page/limit filtrlarini body ichida kiriting.`;
     }
     if (command === 'confirm' || command === 'cancel') {
+      if (!argument && !match) argument = await getLatestDeliveredPlanToken(payload, signal) || '';
+      if (!argument && !match) return 'Tasdiqlanadigan reja topilmadi. Avval nima qilishimni yozing; reja yuborsam uni tasdiqlang.';
       if (!/^[a-f0-9]{24}$/.test(argument)) return 'Tasdiqlash yoki bekor qilish uchun reja kodini aynan yuboring.';
       const record = await loadPending(argument, signal);
       if (!record || record.owner !== payload.fromUser.id || record.chat !== payload.chatId || record.thread !== payload.threadId || record.expiresAt <= Date.now()) return 'Reja topilmadi, muddati o‘tgan yoki bu chatga tegishli emas.';
@@ -115,16 +161,17 @@ Aniq JSON: /ai_admin {"action":"matchday_control","targetId":"comp-la-liga-2026"
         const result = await withinAiDeadline(signal, () => (testExecutor || executeAiAdminRoute)(record.plan, payload.fromUser.id, 'ai-admin-' + record.token, signal));
         await finish(record, result);
         return result.status >= 200 && result.status < 300 && result.data?.success !== false && !result.data?.error
-          ? `Bajarildi: ${record.plan.action}, ${record.plan.targetId || 'umumiy amal'}. Admin API muvaffaqiyatli javob berdi.`
+          ? `Bajarildi. ${record.description || describeAiAdminPlan(record.plan)}`
           : `Bajarish tasdiqlanmadi (HTTP ${result.status}): ${String(result.data?.message || result.data?.error || result.data?.code || 'server rad etdi').slice(0, 400)}. Holatni admin panelda tekshiring.`;
-      } catch {
+      } catch (error: any) {
+        if (error?.message === 'ADMIN_DATABASE_QUOTA') { await finish(record, { status: 503, data: { error: 'ADMIN_DATABASE_QUOTA' } }); return 'Baza limiti tugaganligi sababli amal bajarilmadi. Jadvalni ko‘rish mumkin; o‘zgarishlar uchun baza tiklanishi kerak.'; }
         await finish(record);
         return 'Amalning yakuniy holatini tasdiqlab bo‘lmadi. Takroran avtomatik bajarilmaydi; admin paneldagi holat va auditni tekshiring.';
       }
     }
     if (!argument) return '/ai_admin dan keyin amal, jamoa/turnir va kerakli parametrlarni yozing.';
-    const plan = await planAiAdminAction(argument, facts, signal);
-    if (AI_ADMIN_ACTIONS[plan.action].method === 'GET') return 'Bu o‘qish amali. Shaxsiy chatda /ai_read va JSON rejani yuboring: ' + JSON.stringify(plan);
+    const plan = await parseConversationMatchdayPlan(argument, scope, signal) || await planAiAdminAction(argument, facts, signal);
+    if (AI_ADMIN_ACTIONS[plan.action].method === 'GET') return privateChat ? await handleAiAdminCommand({ ...payload, text: '/ai_read ' + JSON.stringify(plan) }, signal, facts, scope) : 'Yopiq admin ma’lumotlarini botning shaxsiy chatida so‘rang. Ommaviy jadval uchun liga nomini yozing.';
     let targetLabel = '';
     const lookup = createAiTournamentReader(signal);
     const fixtureId = plan.secondaryId || (/^(fixture_|result_|cup_winner)/.test(plan.action) ? plan.targetId : undefined);
@@ -137,12 +184,14 @@ Aniq JSON: /ai_admin {"action":"matchday_control","targetId":"comp-la-liga-2026"
       if (found.data?.[0]?.name) targetLabel = found.data[0].name + '\n';
     }
     const token = randomBytes(12).toString('hex');
-    const preview = `Reja: ${plan.action}\n${targetLabel}${AI_ADMIN_ACTIONS[plan.action].method} ${adminPlanPath(plan)}\nParametrlar: ${JSON.stringify(plan.body)}\n/ai_confirm ${token}\n/ai_cancel ${token}\n5 daqiqa amal qiladi. Hali bajarilmadi.`;
+    const description = describeAiAdminPlan(plan, targetLabel.trim());
+    const preview = `Reja: ${description}\n\nHali bajarilmadi. Tasdiqlaysizmi?\n/ai_confirm ${token}\n/ai_cancel ${token}\n5 daqiqa amal qiladi.`;
     if (preview.length > 950) return 'Reja juda uzun. Buyruqni qisqartiring yoki admin paneldan bajaring; hech narsa o‘zgarmadi.';
-    await storePending({ token, plan, owner: payload.fromUser.id, chat: payload.chatId, thread: payload.threadId, expiresAt: Date.now() + 300000, state: 'pending' }, signal);
+    await storePending({ token, plan, owner: payload.fromUser.id, chat: payload.chatId, thread: payload.threadId, expiresAt: Date.now() + 300000, state: 'pending', description }, signal);
     return preview;
   } catch (error: any) {
     if (String(error.message).startsWith('CLARIFY:')) return error.message.slice(8);
-    return 'Reja tuzilmadi yoki saqlanmadi. Amalni aniqroq yozing; /ai_actions yordam beradi. Hech qanday admin amal bajarilmadi.';
+    console.warn('[AI_ADMIN_PLAN_FAILED]', String(error?.message || '').slice(0, 120));
+    return 'Rejani tayyorlab bo‘lmadi. Liga yoki jamoa va kerakli amalni aniq yozing. Hech narsa o‘zgarmadi.';
   }
 }

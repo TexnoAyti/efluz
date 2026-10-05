@@ -336,6 +336,19 @@ async function main() {
       assert.equal(await pendingClaim, 'redis_error');
       assert.equal(transportAborted, true, 'Abort must reach the actual Redis fetch transport');
     } finally { globalThis.fetch = healthyFetch; }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const dailyKey = 'efluz:v1:telegram:ai:daily:' + today;
+    const beforeBudget = Number(await client.get(dailyKey));
+    const budgetParams = { chatId: -100555777, threadId: 3503, userId: 555, userLimitPerMin: 20, topicLimitPerMin: 1, maxDailyRequests: beforeBudget };
+    const dailyNotice = await aiRateService.checkAndIncrementAiRateLimits(budgetParams);
+    assert.equal(dailyNotice.reason, 'DAILY_LIMIT_EXCEEDED'); assert.equal(dailyNotice.shouldNotifyUser, true);
+    assert.equal((await aiRateService.checkAndIncrementAiRateLimits(budgetParams)).shouldNotifyUser, false);
+    assert.equal((await aiRateService.checkAndIncrementAiRateLimits({ ...budgetParams, countDaily: false })).allowed, true);
+    assert.equal(Number(await client.get(dailyKey)), beforeBudget, 'Deterministic commands do not consume Gemini budget');
+    assert.equal((await aiRateService.checkAndIncrementAiRateLimits({ ...budgetParams, countDaily: false, userId: 556 })).reason, 'TOPIC_LIMIT_EXCEEDED');
+    assert.equal((await aiRateService.checkAndIncrementAiRateLimits({ ...budgetParams, countDaily: false, control: true })).allowed, true, 'Owner controls have bounded separate bucket');
+    console.log('PASS actual Redis Lua: cached reads remain available after model daily budget, daily/topic warning cooldown, isolated owner control bucket');
     console.log('PASS actual Redis Lua: AI assistant atomic rate limiting, delivery claim transitions, and reply indexing.');
 
     const adminAI = await import('../services/telegramAiAdminService');

@@ -5,6 +5,7 @@ import {
   verifyTelegramGroupMembership,
   TelegramMembershipResult,
   sendTelegramMessage,
+  answerTelegramCallback,
 } from '../services/telegramBotService';
 import { requireAdmin, requireAuth } from '../middleware/authMiddleware';
 import { getUpstashClient, KEY_PREFIX } from '../readModel/readModelStore';
@@ -116,7 +117,23 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
     }
     claimed = true;
     let response: Record<string, unknown> = { ok: true, ignored: 'unhandled_update_type' };
-    if (update.pre_checkout_query) {
+    if (typeof update.callback_query?.data === 'string' && /^ai:(confirm|cancel):[a-f0-9]{24}$/.test(update.callback_query.data)) {
+      const callback = update.callback_query;
+      const message = callback.message;
+      if (!message || !Number.isSafeInteger(message.chat?.id) || !Number.isSafeInteger(callback.from?.id)) {
+        response = { ok: true, ignored: 'invalid_ai_callback' };
+      } else {
+        const [, command, token] = callback.data.split(':');
+        const result = await handleTelegramAiMessage({
+          updateId: update.update_id, messageId: message.message_id,
+          chatId: message.chat.id, threadId: message.message_thread_id || 0,
+          fromUser: callback.from, text: `/ai_${command} ${token}`,
+        });
+        await answerTelegramCallback(callback.id, isPrimaryOwner(callback.from.id) ? result.replySent ? 'Javob yuborildi' : 'Buyruq bajarilishi tasdiqlanmadi. Bot holatini tekshiring.' : 'Bu tugma faqat asosiy admin uchun.', !isPrimaryOwner(callback.from.id));
+        console.info('[TELEGRAM_AI_OUTCOME]', JSON.stringify({ handled: result.handled, replySent: result.replySent, ignored: result.ignored, error: result.error }));
+        response = { ok: true, handled: 'ai_admin_callback', result };
+      }
+    } else if (update.pre_checkout_query) {
       const result = await answerPremiumPreCheckout(update.pre_checkout_query);
       response = { ok: true, handled: 'premium_pre_checkout', result };
     } else {
@@ -133,9 +150,9 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
         }
         response = { ok: true, handled: 'premium_successful_payment', result };
       } else if (typeof message?.text === 'string' && Number.isSafeInteger(message.chat?.id) && Number.isSafeInteger(message.from?.id)) {
-        const command = /^\/(start|help|paysupport|bind_ai_topic|ai_status)(?:@[a-zA-Z0-9_]+)?(?:\s|$)/.exec(message.text.trim())?.[1];
+        const command = /^\/(start|help|paysupport|bind_ai_topic|ai_status)(?:@[a-zA-Z0-9_]+)?(?:\s|$)/i.exec(message.text.trim())?.[1]?.toLowerCase();
         if (command === 'start') {
-          const result = await handleTelegramStart(message.chat.id, message.from);
+          const result = await handleTelegramStart(message.chat.id, message.from, { message_thread_id: message.message_thread_id, reply_to_message_id: message.message_id });
           if (!result.ok || !result.messageSent) throw new Error('START_MESSAGE_NOT_SENT');
           response = { ok: true, handled: 'start', result };
         } else if (command === 'help' || command === 'paysupport') {
@@ -144,6 +161,8 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
             ? 'Premium to‘lovi yoki faollashishi bilan muammo bo‘lsa, rasmiy guruhdagi administratorga murojaat qiling. To‘lov sanasi va Telegram to‘lov chekingizni yuboring. Parol va tasdiqlash kodlarini yubormang.'
             : 'EFL UZ’ni ochish uchun /start bosing. Ilovada klub tanlash, uchrashuvlar va turnir jadvalini ko‘rishingiz mumkin. Yordam uchun rasmiy guruhdagi administratorga murojaat qiling.';
           const result = await sendTelegramMessage(message.chat.id, text, {
+            message_thread_id: message.message_thread_id,
+            reply_to_message_id: message.message_id,
             reply_markup: { inline_keyboard: [[{ text: 'Administrator bilan bog‘lanish', url: `https://t.me/${group}` }]] },
           });
           if (!result.ok) throw new Error('SUPPORT_MESSAGE_NOT_SENT');
@@ -213,7 +232,7 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
             });
             response = { ok: true, handled: 'ai_status' };
           }
-        } else if (!command && (Number.isSafeInteger(message.message_thread_id) || isAiAdminCommand(message.text) && isPrimaryOwner(message.from.id) && message.chat.id === message.from.id)) {
+        } else if (!command && (Number.isSafeInteger(message.message_thread_id) || isPrimaryOwner(message.from.id) && message.chat.id === message.from.id)) {
           // Regular user message in a forum topic thread: delegate to AI assistant
           const aiResult = await handleTelegramAiMessage({
             updateId: update.update_id,
@@ -226,6 +245,7 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
             text: message.text,
             replyToMessage: message.reply_to_message,
           });
+          console.info('[TELEGRAM_AI_OUTCOME]', JSON.stringify({ handled: aiResult.handled, replySent: aiResult.replySent, ignored: aiResult.ignored, error: aiResult.error }));
           response = { ok: true, handled: 'ai_topic_message', result: aiResult };
         }
       }
