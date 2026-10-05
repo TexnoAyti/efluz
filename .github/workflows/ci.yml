@@ -90,6 +90,7 @@ jobs:
           node scripts/run-isolated-test.mjs src/server/tests/smartNotificationRecoveryRegressionTest.ts
           bun run test:telegram-ai
           node scripts/run-isolated-test.mjs src/server/tests/telegramAiKnowledgeRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/telegramAiCommunitySourcesRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/telegramAiRedisGroundingRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/telegramAiCupStageRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/telegramAiFullAccessRegressionTest.ts

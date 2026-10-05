@@ -32,6 +32,7 @@ import {
 import { getAiRateLimitMetrics } from '../services/telegramAiRateLimitService';
 import { handleTelegramAiMessage } from '../services/telegramAiService';
 import { isAiAdminCommand } from '../services/telegramAiAdminCatalog';
+import { archiveCommunityMessage } from '../services/telegramAiCommunitySources';
 
 export const telegramRouter = Router();
 // A processing lease is separate from acknowledgement: failed work remains retryable.
@@ -117,6 +118,11 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
       return;
     }
     claimed = true;
+    const sourceMessage = update.channel_post || update.edited_channel_post || update.edited_message || update.message;
+    if (sourceMessage) {
+      try { await archiveCommunityMessage(sourceMessage); }
+      catch { console.warn('[AI_COMMUNITY_ARCHIVE_UNAVAILABLE]'); }
+    }
     console.info('[TELEGRAM_UPDATE_RECEIVED]', JSON.stringify({ updateId: update.update_id, kind: update.callback_query ? 'callback' : update.message ? 'message' : Object.keys(update).filter(key => key !== 'update_id').join(','), chatId: update.message?.chat?.id ?? update.callback_query?.message?.chat?.id ?? null, threadId: update.message?.message_thread_id ?? update.callback_query?.message?.message_thread_id ?? null, hasText: typeof update.message?.text === 'string', command: /^\/([a-z_]+)/i.exec(update.message?.text || '')?.[1] || null, anonymous: Boolean(update.message?.sender_chat) }));
     let response: Record<string, unknown> = { ok: true, ignored: 'unhandled_update_type' };
     if (typeof update.callback_query?.data === 'string' && /^ai:(confirm|cancel):[a-f0-9]{24}$/.test(update.callback_query.data)) {

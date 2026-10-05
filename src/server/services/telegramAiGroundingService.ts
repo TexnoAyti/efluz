@@ -16,6 +16,7 @@ import { sortSeasonFixtures } from '../../lib/fixtureOrder';
 import { withSeasonQualificationPolicy } from '../../lib/seasonQualificationPolicy';
 import { detectAiCupStage, fixtureMatchesAiCupStage, AI_CUP_STAGE_LABELS, formatAiCupStageFixture } from './telegramAiCupStage';
 import { resolveAiClubs, normalizeAiEntity, containsAiEntity } from './telegramAiEntities';
+import { communityFacts, communitySmallTalkAnswer } from './telegramAiCommunitySources';
 
 export interface GroundingContext {
   factsSummary: string;
@@ -113,6 +114,7 @@ export async function buildAiGroundingContext(
   const clubs = (clubSnapshot.data.length ? clubSnapshot.data : SEED_CLUBS as unknown as Club[])
     .filter(c => !(c as Club & { seasonId?: string }).seasonId || (c as Club & { seasonId?: string }).seasonId === seasonId);
   const requestedStage=detectAiCupStage(query);
+  const finalistQuestion = /finalchi|finalist|finalga\s+(?:kim|qaysi\s+jamoa)|finalga\s+chiq/i.test(query);
   const selection = resolveAiClubs(query, clubs, options?.selectedClubIds, options?.previousUserQueries);
   const matched = selection.clubs;
   if(ownerOnly){
@@ -126,7 +128,7 @@ export async function buildAiGroundingContext(
   let explicitCompetitions = competitions.filter(c => matchesAiCompetition(query, c) || containsAiEntity(normalized, c.name) ||
     Object.entries(LEAGUE_KEYWORDS).some(([prefix, words]) => (c.id === prefix || c.id.startsWith(prefix + '-')) &&
       words.some(word => containsAiEntity(normalized, word))));
-  if(requestedStage){
+  if(requestedStage || finalistQuestion){
     explicitCompetitions=explicitCompetitions.filter(c=>c.type!=='LEAGUE');
     if(!explicitCompetitions.length){
       for(const previous of [...(options?.previousUserQueries||[])].reverse()){
@@ -188,6 +190,10 @@ export async function buildAiGroundingContext(
     Boolean(clubs.find(c => c.id === id && (normalizeAiEntity(c.name) === normalizeAiEntity(f.homeClub?.name || '') || normalizeAiEntity(c.name) === normalizeAiEntity(f.awayClub?.name || ''))));
   const ownershipLines = matched.map(c => ownershipLine(c, clubSnapshot.data.length > 0, clubSnapshot.stale));
   const sections = [CORE_RULES_SUMMARY, `MAVSUM: ${seasonId}.`, `SUHBATDAGI JAMOALAR: ${matched.map(c => c.name).join(', ') || 'tanlanmagan'}.`];
+  if (!testGroundingOverride) {
+    const community = await communityFacts(query, options?.signal);
+    if (community) sections.push(community);
+  }
   if (selection.clarification) sections.push('ANIQLASHTIRISH KERAK: ' + selection.clarification);
   if (ownershipLines.length) sections.push('KLUB EGALARI (server faktlari):\n' + ownershipLines.join('\n'));
   const wantsAvailable = /bo[‘’'`]?sh|biriktirilmagan|available|unclaimed/i.test(query);
@@ -256,7 +262,6 @@ export async function buildAiGroundingContext(
     (!explicitCompetitions.length || explicitCompetitions.some(c => c.id === d.comp.id)));
   // Finalist questions are factual lookups and must not depend on Gemini availability.
   // A semifinal result can identify one finalist even while the other tie is pending.
-  const finalistQuestion = /finalchi|finalchisi|finalga\s+(?:kim|qaysi\s+jamoa)|finalga\s+chiq/i.test(query);
   let finalistAnswer: string | undefined;
   if (finalistQuestion) {
     const cupData = data.filter(d => d.comp.type !== 'LEAGUE' &&
@@ -264,15 +269,16 @@ export async function buildAiGroundingContext(
     const lines = cupData.flatMap(({ comp, fixtures }) => {
       const semi = fixtures.filter(f => fixtureMatchesAiCupStage(f, 'semi') && isConfirmedAiFixture(f));
       const winners = semi.map(f => {
-        if (f.winnerClubId) return { fixture: f, clubId: f.winnerClubId };
+        if (f.winnerClubId && [f.homeClubId, f.awayClubId].includes(f.winnerClubId)) return { fixture: f, clubId: f.winnerClubId };
         if (f.homeScore! === f.awayScore!) return null;
         return { fixture: f, clubId: f.homeScore! > f.awayScore! ? f.homeClubId : f.awayClubId };
       }).filter((x): x is { fixture: Fixture; clubId: string | null } => Boolean(x?.clubId));
       if (!winners.length) return [];
       const names = winners.map(({ fixture, clubId }) => clubName(clubId, clubId === fixture.homeClubId ? fixture.homeClub : fixture.awayClub));
-      return [`${comp.name}: ${names.length === 1 ? '1-finalchi' : 'Aniqlangan finalchilar'} — ${names.join(', ')}. ${names.length === 1 ? 'Ikkinchi yarim final natijasi hali tasdiqlanmagan.' : ''}`];
+      return [`${comp.name}: aniqlangan finalchilar — ${[...new Set(names)].join(', ')}. ${names.length === 1 ? 'Snapshotda bitta finalchi tasdiqlangan.' : ''}`];
     });
-    finalistAnswer = lines.length ? lines.join('\n') : 'Tasdiqlangan yarim final natijasi topilmadi; finalchi hali aniqlanmagan.';
+    finalistAnswer = !cupData.length ? 'Qaysi kubok? Kubok nomini yozing.' : lines.length ? lines.join('\n') : 'Snapshotda tasdiqlangan yarim final g‘olibi topilmadi; hozirgi finalchini tasdiqlay olmayman.';
+    if (hasStaleData && cupData.length) finalistAnswer += '\nOxirgi saqlangan ma’lumot bo‘yicha; joriy holat qayta tekshirilmagan.';
   }
   let stageAnswer:string|undefined;
   if(requestedStage){
@@ -316,7 +322,7 @@ export async function buildAiGroundingContext(
   if(!testGroundingOverride)console.info('[AI_GROUNDING]',JSON.stringify({durationMs:dataDiagnostics.durationMs,clubs:matched.length,competitions:targets.length,fixtures:allFixtures.length,missing:dataDiagnostics.missingDatasets.length,failed:dataDiagnostics.failedDatasets.length}));
   return { dataDiagnostics, factsSummary: summary, hasStaleData, detectedClubs: matched.map(c => c.name),
     selectedClubIds: selection.clarification ? [] : matched.length ? matched.map(c => c.id) : options?.selectedClubIds || [], detectedCompetitions: targets.map(c => c.id),
-    ownershipAnswer, factualAnswer: selection.clarification || finalistAnswer || (!analytical && stageAnswer ? stageAnswer : undefined) || (facts.length ? facts.join('\n') + (hasStaleData && !(facts.length === 1 && facts[0] === ownershipAnswer) && !facts.some(f => /eski snapshot/.test(f)) ? '\nMa’lumot eski yoki to‘liq bo‘lmagan snapshotdan; joriy holat tasdiqlanmagan.' : '') : !analytical ? ownershipAnswer : undefined) };
+    ownershipAnswer, factualAnswer: communitySmallTalkAnswer(query) || selection.clarification || finalistAnswer || (!analytical && stageAnswer ? stageAnswer : undefined) || (facts.length ? facts.join('\n') + (hasStaleData && !(facts.length === 1 && facts[0] === ownershipAnswer) && !facts.some(f => /eski snapshot/.test(f)) ? '\nMa’lumot eski yoki to‘liq bo‘lmagan snapshotdan; joriy holat tasdiqlanmagan.' : '') : !analytical ? ownershipAnswer : undefined) };
 }
 
 function isConfirmedAiFixture(f: Fixture): boolean {

@@ -4,8 +4,8 @@ export type AiCupStage = 'preliminary'|'round16'|'quarter'|'semi'|'final';
 export function detectAiCupStage(text:string):AiCupStage|null {
   const q=text.toLowerCase().replace(/[‘’ʻʼ'`]/g,'').replace(/[-–—]/g,' ');
   if(/round\s*(?:of\s*)?16|last\s*16|1\s*\/\s*8|nimchorak\s*final/.test(q))return 'round16';
-  if(/chorak\s*final|quarter\s*final|четвертьфинал|1\s*\/\s*4/.test(q))return 'quarter';
-  if(/yarim\s*final|semi\s*final|semifinal|полуфинал|1\s*\/\s*2/.test(q))return 'semi';
+  if(/\bchorak\b|quarter\s*final|\bqf\b|четвертьфинал|1\s*\/\s*4/.test(q))return 'quarter';
+  if(/\byarim\b|semi\s*final|semifinal|\bsf\b|полуфинал|1\s*\/\s*2/.test(q))return 'semi';
   if(/preliminary|saralash\s*bosqich|предварительн/.test(q))return 'preliminary';
   if(/\bfinal(?:s|da|dagi|ning|ni|ga)?\b|финал/.test(q))return 'final';
   return null;
