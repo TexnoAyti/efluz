@@ -7,7 +7,7 @@ import { generateGroundedTelegramAnswer } from './telegramAiReadTools';
 import { executeAiAdminRoute } from './telegramAiAdminGateway';
 import { createAiTournamentReader } from './telegramAiDataService';
 import type { TelegramAiMessagePayload } from './telegramAiService';
-import { getConversationIntent, parseConversationMatchdayPlan, type ConversationScope } from './telegramAiConversationCommands';
+import { getConversationIntent, parseConversationClubAssignmentPlan, parseConversationMatchdayPlan, type ConversationScope } from './telegramAiConversationCommands';
 
 type Pending = { token: string; plan: AdminPlan; owner: number; chat: number; thread: number; expiresAt: number; state: 'pending'|'executing'|'cancelled'|'done'|'unknown'; description?: string; result?: {status:number; data:any} };
 const prefix = 'efluz:v1:telegram:ai:admin:';
@@ -170,7 +170,10 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
       }
     }
     if (!argument) return '/ai_admin dan keyin amal, jamoa/turnir va kerakli parametrlarni yozing.';
-    const plan = await parseConversationMatchdayPlan(argument, scope, signal) || await planAiAdminAction(argument, facts, signal);
+    // Explicit test planners replace planning only in isolated tests; production always resolves cached club IDs.
+    const plan = testPlanner ? await planAiAdminAction(argument, facts, signal)
+      : await parseConversationClubAssignmentPlan(argument, signal)
+        || await parseConversationMatchdayPlan(argument, scope, signal) || await planAiAdminAction(argument, facts, signal);
     if (AI_ADMIN_ACTIONS[plan.action].method === 'GET') return privateChat ? await handleAiAdminCommand({ ...payload, text: '/ai_read ' + JSON.stringify(plan) }, signal, facts, scope) : 'Yopiq admin ma’lumotlarini botning shaxsiy chatida so‘rang. Ommaviy jadval uchun liga nomini yozing.';
     let targetLabel = '';
     const lookup = createAiTournamentReader(signal);

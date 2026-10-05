@@ -24,6 +24,7 @@ const ALIASES: Record<string, string[]> = {
   'club-real-madrid': ['real madrid'],
   'club-barcelona': ['barcelona', 'barselona', 'barca', 'barsa'],
   'club-atletico-madrid': ['atletico', 'atletiko'],
+  'club-heidenheim': ['heidenheim', 'fc heidenheim', '1 fc heidenheim 1846'],
   'club-dortmund': ['dortmund', 'borussiya dortmund'],
 };
 function aliases(club: Club): string[] {

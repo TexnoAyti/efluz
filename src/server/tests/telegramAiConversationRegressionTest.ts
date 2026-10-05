@@ -4,7 +4,7 @@ import { initDatabase } from '../db';
 import { getFirestoreDb } from '../firebase/admin';
 import { startMockUpstashBridge } from './mockUpstashBridge';
 import { ReadModelKeys, redisSetRaw } from '../readModel/readModelStore';
-import { buildConversationTableReply, getConversationIntent, parseConversationMatchdayPlan } from '../services/telegramAiConversationCommands';
+import { buildConversationTableReply, getConversationIntent, parseConversationMatchdayPlan, parseConversationClubAssignmentPlan, clubAssignmentPlanFromRoster, isSimpleConversationClubAssignmentRequest } from '../services/telegramAiConversationCommands';
 import { handleTelegramAiMessage, clearTestAiState } from '../services/telegramAiService';
 import { setTestConfigOverride, DEFAULT_AI_CONFIG } from '../services/telegramAiConfigService';
 import { setTestAiAdminHooks, handleAiAdminCommand, rememberDeliveredAdminPlan } from '../services/telegramAiAdminService';
@@ -14,7 +14,7 @@ const season = 'season-2026-27', liga = 'comp-la-liga-2026', ucl = 'comp-champio
 const signal = new AbortController().signal;
 const bridge = await startMockUpstashBridge();
 await redisSetRaw(ReadModelKeys.competitions(season), { data: [{ id: liga, name: 'La Liga', type: 'LEAGUE', seasonId: season, leagueId: 'league-la-liga', currentMatchday: 10 }, { id: ucl, name: 'UEFA Champions League', type: 'EUROPEAN_LEAGUE_PHASE', seasonId: season }], generatedAt: new Date().toISOString() });
-await redisSetRaw(ReadModelKeys.clubsWithOwners(season), { data: [], generatedAt: new Date().toISOString() });
+await redisSetRaw(ReadModelKeys.clubsWithOwners(season), { data: [{id:'club-heidenheim',name:'1. FC Heidenheim',shortName:'HDH',leagueId:'league-bundesliga'},{id:'club-inter',name:'Inter Milan',leagueId:'league-serie-a'},{id:'club-milan',name:'AC Milan',leagueId:'league-serie-a'}], generatedAt: new Date().toISOString() });
 for (const [id, count] of [[liga,20],[ucl,32]] as const) await redisSetRaw(ReadModelKeys.standings(id,season), { data: Array.from({length:count},(_,i)=>({clubId:'club-'+i,clubName:'Team '+(i+1),position:i+1,points:42-i,played:18,goalDifference:20-i})), generatedAt:new Date().toISOString() });
 await redisSetRaw(ReadModelKeys.competitionFixtures(liga,season), { data:[{id:'game-10',competitionId:liga,seasonId:season,matchday:10,status:'SCHEDULED',homeClubId:'club-1',awayClubId:'club-2',homeClubName:'Team 2',awayClubName:'Team 3',homeScore:8,awayScore:9}],generatedAt:new Date().toISOString() });
 const db=getFirestoreDb(), collection=db.collection.bind(db); let firestore=0;
@@ -31,9 +31,29 @@ try {
  assert.match((await buildConversationTableReply('jadval tashla','standings',{},signal)).text,/Qaysi liga/);
  const games=await buildConversationTableReply('La Liga 10 tur oyinlar jadvali','fixtures',{},signal); assert.ok(!games.text.includes('8:9')); assert.match(games.text,/rejalashtirilgan/);
  assert.deepEqual(await parseConversationMatchdayPlan('La Liga 10-turni qulflang',{},signal),{action:'matchday_control',targetId:liga,body:{action:'LOCK',matchday:10}});
+ const exactAssignment={action:'club_assign',targetId:'club-heidenheim',body:{targetUserId:'@inter_fan'}};
+ for(const text of ['@inter_fan Heidenheim klubiga biriktir','Heidenheimga @inter_fan ni biriktiring','@ inter_fan 1. FC Heidenheim klubiga biriktirib ber','/ai_admin@efluzbot @inter_fan Heidenheim klubiga biriktir']) {
+  assert.equal(isSimpleConversationClubAssignmentRequest(text),true);
+  assert.deepEqual(await parseConversationClubAssignmentPlan(text,signal),exactAssignment);
+ }
+ assert.equal(getConversationIntent('@inter_fan Heidenheimga biriktirib ber'),'admin');
+ await assert.rejects(parseConversationClubAssignmentPlan('@actual_owner-invalid Heidenheimga biriktir',signal),/Kimga biriktiray/);
+ await assert.rejects(parseConversationClubAssignmentPlan('Heidenheim klubiga biriktir',signal),/Kimga biriktiray/);
+ await assert.rejects(parseConversationClubAssignmentPlan('@actual_owner @other_owner Heidenheimga biriktir',signal),/Bitta Telegram/);
+ await assert.rejects(parseConversationClubAssignmentPlan('@actual_owner Inter va Milan klubiga biriktir',signal),/Qaysi bitta klub/);
+ await assert.rejects(parseConversationClubAssignmentPlan('@inter_fan NomaLumFC klubiga biriktir',signal),/Qaysi klubga/);
+ assert.throws(()=>clubAssignmentPlanFromRoster('@actual_owner Heidenheimga biriktir',[]),/ro‘yxati hozir o‘qilmadi/);
+ setTestConfigOverride({...DEFAULT_AI_CONFIG,enabled:true,allowedChatId:-1001,allowedThreadId:3503});
+ setTestAiAdminHooks();
+ const assignmentPayload={updateId:88001,messageId:1,chatId:-1001,threadId:3503,fromUser:{id:5209126900},text:'@inter_fan Heidenheim klubiga biriktir'};
+ const exactPreview=await handleAiAdminCommand(assignmentPayload,signal);
+ assert.match(exactPreview,/1\. FC Heidenheim.*@inter_fan/);
+ assert.match(exactPreview,/\/ai_confirm [a-f0-9]{24}/);
+ assert.ok(!/\/ai_confirm/.test(await handleAiAdminCommand({...assignmentPayload,fromUser:{id:123}},signal)));
+ setTestConfigOverride(null);
  assert.equal(firestore,0);
 } finally {db.collection=collection;await bridge.close();}
-console.log('PASS natural table requests, context, all 32 standings rows, exact matchday, hidden unconfirmed scores; zero Firestore/model calls');
+console.log('PASS exact username/Heidenheim assignment with no model, owner-only preview, ambiguity/missing data clarification, natural table requests, context, all 32 standings rows, exact matchday, hidden unconfirmed scores; zero Firestore/model calls');
 setTestConfigOverride({...DEFAULT_AI_CONFIG,enabled:true,allowedChatId:-1001,allowedThreadId:3503});
 process.env.TELEGRAM_BOT_TOKEN='123456:isolated-conversation-test'; process.env.TELEGRAM_WEBHOOK_SECRET='isolated-conversation-secret';
 const payload=(text:string,id=5209126900,extra={})=>({updateId:++update,messageId:1,chatId:-1001,threadId:3503,fromUser:{id},text,...extra}); let update=910000;
@@ -46,6 +66,8 @@ const original=global.fetch;const sent:any[]=[];
 global.fetch=async(input:any,init?:any)=>String(input).includes('api.telegram.org')?({ok:true,json:async()=>{const body=JSON.parse(init?.body||'{}');sent.push({method:String(input).split('/').pop(),...body});return {ok:true,result:{message_id:60000+sent.length}};}} as any):original(input,init);
 try {
  clearTestAiState();clearTestRateLimitState();
+ setTestConfigOverride({...DEFAULT_AI_CONFIG,enabled:true,allowedChatId:-1001,allowedThreadId:3503,maxDailyRequests:1});
+ assert.equal((await checkAndIncrementAiRateLimits({chatId:-1001,threadId:3503,userId:700,userLimitPerMin:3,topicLimitPerMin:15,maxDailyRequests:1})).allowed,true);
  assert.equal((await handleTelegramAiMessage(payload('Arsenal klubini @actual_owner ga biriktir'))).replySent,true);
  const preview=sent.at(-1); assert.match(preview.text,/Arsenal|club-arsenal/);assert.ok(!/\/ai_confirm|HTTP|"action"/.test(preview.text));assert.equal(preview.message_thread_id,3503);
  assert.ok(preview.reply_markup.inline_keyboard[0][0].callback_data.startsWith('ai:confirm:'));

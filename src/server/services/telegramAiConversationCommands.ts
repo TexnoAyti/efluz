@@ -11,8 +11,9 @@ export function getConversationIntent(text: string): ConversationIntent {
   if (/^(?:bekor qil|bekor qiling|bekor qilish|cancel)$/.test(q)) return 'cancel';
   if (/^(?:yordam|buyruqlar|nima qila olasan|help)$/.test(q)) return 'help';
   if (/\b(?:nechanchi|qaysi\s+orinda|nima\s+uchun|nega|tahlil|taxmin|kim\s+yutadi)\b/.test(q)) return 'chat';
+  if (isSimpleConversationClubAssignmentRequest(text)) return 'admin';
   const nouns = /\b(?:liga\w*|tur\w*|matchday|natija\w*|hisob\w*|oyin\w*|uchrashuv\w*|klub\w*|jamoa\w*|admin\w*|premium|xabarnoma\w*|xabar\w*|qura\w*|kubok\w*|mavsum\w*|deadline|muddat\w*)\b/;
-  const writes = /\b(?:qulfla(?:ng)?|yop(?:ing)?|och(?:ing)?|ochib ber|ochir(?:ing)?|olib tashla(?:ng)?|biriktir(?:ing)?|biriktirib ber|tasdiqla(?:ng)?|rad et(?:ing)?|qayta boshla(?:ng)?|uzaytir(?:ing)?|blokla(?:ng)?|blokdan chiqar(?:ing)?|jonat(?:ing)?|yubor(?:ing)?|generatsiya qil|qura tashla|admin qil|premium ber)\b/;
+  const writes = /\b(?:qulfla(?:ng)?|yop(?:ing)?|och(?:ing)?|ochib ber|ochir(?:ing)?|olib tashla(?:ng)?|biriktir(?:ing)?|biriktirib ber|biriktirib ber|tasdiqla(?:ng)?|rad et(?:ing)?|qayta boshla(?:ng)?|uzaytir(?:ing)?|blokla(?:ng)?|blokdan chiqar(?:ing)?|jonat(?:ing)?|yubor(?:ing)?|generatsiya qil|qura tashla|admin qil|premium ber)\b/;
   if (/\b\d{1,2}\s*[:\-]\s*\d{1,2}\s+(?:qil|qiling|qoy|qoying|saqla)\b/.test(q)) return 'admin';
   const destructive = /\b(?:ochir(?:ing)?|qulfla(?:ng)?|yop(?:ing)?|biriktir(?:ing)?|tasdiqla(?:ng)?|rad et|blokla(?:ng)?)\b/.test(q);
   if ((nouns.test(q) || /\b(?:biriktir(?:ing)?|blokla(?:ng)?|blokdan chiqar(?:ing)?|admin qil|premium ber)\b/.test(q)) && writes.test(q) && !(/\b(?:jadval\w*|table|standings|oyinlar\w*|uchrashuvlar\w*)\b/.test(q) && !destructive)) return 'admin';
@@ -98,3 +99,36 @@ export async function parseConversationMatchdayPlan(text: string, scope: Convers
 }
 
 export function isSimpleConversationMatchdayRequest(text: string): boolean { const q = normalizeAiEntity(text); return /\btur\w*\b|matchday/.test(q) && /\b(?:qulfla(?:ng)?|yop(?:ing)?|och(?:ing)?|ochib ber|uzaytir(?:ing)?|qayta boshla(?:ng)?)\b/.test(q); }
+
+/** Owner assignments are exact, single-target plans, never model guesses. */
+export function isSimpleConversationClubAssignmentRequest(text: string): boolean {
+  return /\bbiriktir(?:ing|ib(?: ber(?:ing)?| qoy(?:ing)?)?)?\b/.test(normalizeAiEntity(text));
+}
+export function clubAssignmentPlanFromRoster(text: string, clubs: Club[]): AdminPlan|null {
+  if (!isSimpleConversationClubAssignmentRequest(text)) return null;
+  const request = text.replace(/^\/ai_admin(?:@[A-Za-z0-9_]+)?\s*/i, '');
+  const mentions = [...request.matchAll(/@\s*([A-Za-z0-9_]+)/g)];
+  if (mentions.length !== 1 || !/^[A-Za-z][A-Za-z0-9_]{4,31}$/.test(mentions[0][1]) || /[\p{L}\p{N}_-]/u.test(request.charAt(mentions[0].index! + mentions[0][0].length)))
+    throw new Error('CLARIFY:Kimga biriktiray? Bitta Telegram @username yozing. Masalan: “@username Heidenheim klubiga biriktir”.');
+  // A username such as @inter_fan is not a club name. Never carry an old club into a mutation.
+  const query = request.replace(/@\s*[A-Za-z0-9_]+/g, ' ');
+  const q = normalizeAiEntity(query);
+  if (/\b(?:ochir(?:ing)?|olib tashla|blokla|admin qil|premium ber|qulfla|yop|och)\b/.test(q))
+    throw new Error('CLARIFY:Bir vaqtning o‘zida bitta amalni bajaraylik. Hozir faqat klub biriktirishni yozing.');
+  if (!clubs.length) throw new Error('CLARIFY:Klublarning saqlangan ro‘yxati hozir o‘qilmadi. Hech narsa o‘zgarmadi; qayta urinib ko‘ring.');
+  const resolved = resolveAiClubs(query, clubs);
+  if (resolved.clubs.length !== 1)
+    throw new Error('CLARIFY:' + (resolved.clarification || (resolved.clubs.length > 1
+      ? 'Qaysi bitta klubni biriktiray: ' + resolved.clubs.map(c => c.name).join(' yoki ') + '?'
+      : 'Qaysi klubga biriktiray? Klub nomini yozing. Masalan: “@username Heidenheim klubiga biriktir”.')));
+  return { action: 'club_assign', targetId: resolved.clubs[0].id, body: { targetUserId: '@' + mentions[0][1] } };
+}
+export async function parseConversationClubAssignmentPlan(text: string, signal?: AbortSignal): Promise<AdminPlan|null> {
+  if (!isSimpleConversationClubAssignmentRequest(text)) return null;
+  const reader = createAiTournamentReader(signal);
+  const first: any = await reader.read({ dataset: 'clubs', limit: 30 });
+  const clubs: Club[] = [...(first.data || [])];
+  for (let offset = 30; offset < (first.total || 0); offset += 30)
+    clubs.push(...((await reader.read({ dataset: 'clubs', offset, limit: 30 }) as any).data || []));
+  return clubAssignmentPlanFromRoster(text, clubs);
+}
