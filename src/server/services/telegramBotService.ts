@@ -183,7 +183,7 @@ export async function sendTelegramMessage(
       body.message_thread_id = options.message_thread_id;
     }
     if (options.reply_to_message_id) {
-      body.reply_to_message_id = options.reply_to_message_id;
+      body.reply_parameters = { message_id: options.reply_to_message_id, allow_sending_without_reply: true };
     }
 
     const res = await fetch(url, {
@@ -193,6 +193,7 @@ export async function sendTelegramMessage(
       body: JSON.stringify(body),
     });
     const data: any = await res.json();
+    if (!data.ok) console.warn('[TELEGRAM_SEND_REJECTED]', JSON.stringify({ chatId, threadId: options.message_thread_id || null, errorCode: data.error_code, reason: String(data.description || data.error || 'unknown').replace(/bot[0-9]+:[A-Za-z0-9_-]+/g, 'bot[redacted]').slice(0, 240) }));
     return { ...data, error: data.description || data.error };
   } catch (err: any) {
     return { ok: false, error: err.message };
@@ -316,4 +317,29 @@ Quyidagi tugma orqali ilovani oching va o‘z klubingizni band qiling!`;
     messageSent: msgRes.ok,
     error: msgRes.error,
   };
+}
+
+
+let connectionCheck: { expiresAt: number; value: Record<string, unknown> } | undefined;
+let connectionInFlight: Promise<Record<string, unknown>> | undefined;
+/** Bounded read-only Telegram inspection, cached per process. No messages or webhook changes. */
+export async function inspectTelegramConnection(chatId: number | null, threadId: number | null): Promise<Record<string, unknown>> {
+  if (connectionCheck && connectionCheck.expiresAt > Date.now()) return connectionCheck.value;
+  if (connectionInFlight) return connectionInFlight;
+  connectionInFlight = (async () => {
+    const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
+    if (!token) return { configured: false };
+    const signal = AbortSignal.timeout(3500);
+    const read = async (method: string, body = {}) => {
+      try { const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body), signal }); return await response.json() as any; }
+      catch { return { ok:false, description:'connection_unavailable' }; }
+    };
+    const [me, webhook, chat] = await Promise.all([read('getMe'), read('getWebhookInfo'), chatId ? read('getChat', { chat_id: chatId }) : Promise.resolve(null)]);
+    const member = me.ok && chatId ? await read('getChatMember', { chat_id: chatId, user_id: me.result.id }) : null;
+    const result = { botUsername: me.result?.username || null, readsAllGroupMessages: me.result?.can_read_all_group_messages === true, bound: Boolean(chatId && threadId), groupAccessible: chat?.ok === true, forum: chat?.result?.is_forum === true, memberStatus: member?.result?.status || null, canSendMessages: member?.result?.status === 'restricted' ? member.result.can_send_messages === true : ['creator','administrator','member'].includes(member?.result?.status), pendingUpdates: webhook.result?.pending_update_count ?? null, webhookError: webhook.result?.last_error_message || null, chatError: chat && !chat.ok ? chat.description : null };
+    console.info('[TELEGRAM_CONNECTION]', JSON.stringify({ ...result, chatId, threadId, webhookUrl: webhook.result?.url || null }));
+    connectionCheck = { value: result, expiresAt: Date.now() + 60000 };
+    return result;
+  })().finally(() => { connectionInFlight = undefined; });
+  return connectionInFlight;
 }

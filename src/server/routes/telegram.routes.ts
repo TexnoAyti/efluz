@@ -6,6 +6,7 @@ import {
   TelegramMembershipResult,
   sendTelegramMessage,
   answerTelegramCallback,
+  inspectTelegramConnection,
 } from '../services/telegramBotService';
 import { requireAdmin, requireAuth } from '../middleware/authMiddleware';
 import { getUpstashClient, KEY_PREFIX } from '../readModel/readModelStore';
@@ -116,6 +117,7 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
       return;
     }
     claimed = true;
+    console.info('[TELEGRAM_UPDATE_RECEIVED]', JSON.stringify({ updateId: update.update_id, kind: update.callback_query ? 'callback' : update.message ? 'message' : Object.keys(update).filter(key => key !== 'update_id').join(','), chatId: update.message?.chat?.id ?? update.callback_query?.message?.chat?.id ?? null, threadId: update.message?.message_thread_id ?? update.callback_query?.message?.message_thread_id ?? null, hasText: typeof update.message?.text === 'string', command: /^\/([a-z_]+)/i.exec(update.message?.text || '')?.[1] || null, anonymous: Boolean(update.message?.sender_chat) }));
     let response: Record<string, unknown> = { ok: true, ignored: 'unhandled_update_type' };
     if (typeof update.callback_query?.data === 'string' && /^ai:(confirm|cancel):[a-f0-9]{24}$/.test(update.callback_query.data)) {
       const callback = update.callback_query;
@@ -153,7 +155,7 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
         const command = /^\/(start|help|paysupport|bind_ai_topic|ai_status)(?:@[a-zA-Z0-9_]+)?(?:\s|$)/i.exec(message.text.trim())?.[1]?.toLowerCase();
         if (command === 'start') {
           const result = await handleTelegramStart(message.chat.id, message.from, { message_thread_id: message.message_thread_id, reply_to_message_id: message.message_id });
-          if (!result.ok || !result.messageSent) throw new Error('START_MESSAGE_NOT_SENT');
+          if (!result.ok || !result.messageSent) throw new Error('START_MESSAGE_NOT_SENT: ' + (result.error || 'unknown')); 
           response = { ok: true, handled: 'start', result };
         } else if (command === 'help' || command === 'paysupport') {
           const group = (process.env.TELEGRAM_GROUP_USERNAME || '@efleagueuz').trim().replace(/^@/, '');
@@ -265,14 +267,19 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
 /**
  * Status of Telegram Bot configuration
  */
-telegramRouter.get('/status', (req: Request, res: Response) => {
+telegramRouter.get('/status', async (req: Request, res: Response) => {
   const hasToken = Boolean(process.env.TELEGRAM_BOT_TOKEN);
   const hasSticker = Boolean(process.env.TELEGRAM_WELCOME_STICKER_FILE_ID);
   const group = process.env.TELEGRAM_GROUP_USERNAME || '@efleagueuz';
   const webAppUrl = process.env.TELEGRAM_WEBAPP_URL || process.env.APP_URL || 'https://efluz.vercel.app';
 
+  const { config, redisAvailable } = await getTelegramAiConfig();
+  const connection = await inspectTelegramConnection(config.allowedChatId, config.allowedThreadId);
   res.json({
     status: 'ok',
+    aiEnabled: config.enabled,
+    redisAvailable,
+    connection,
     configured: hasToken,
     hasSticker,
     group,

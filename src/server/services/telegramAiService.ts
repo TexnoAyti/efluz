@@ -501,6 +501,7 @@ export async function handleTelegramAiMessage(
       return { ok: true, handled: false, ignored: 'redis_unavailable_prod' };
     }
 
+    console.info('[TELEGRAM_AI_SCOPE]', JSON.stringify({ chatId: payload.chatId, threadId: payload.threadId, allowedChatId: config.allowedChatId, allowedThreadId: config.allowedThreadId, enabled: config.enabled }));
     // 4. Strict Boundary Validation: Chat ID and Thread ID must match configured allowed topic
     if (
       config.allowedChatId === null ||
