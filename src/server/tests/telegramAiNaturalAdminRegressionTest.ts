@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { contextualFixturePlan } from '../services/telegramAiFixtureContext';
 import { planNaturalAdminRequest, type NaturalPlannerDependencies } from '../services/telegramAiNaturalAdminPlanner';
 import { detectNaturalAdminAction } from '../services/telegramAiAdminLanguage';
 import { getConversationIntent } from '../services/telegramAiConversationCommands';
@@ -30,6 +31,13 @@ try {
  await redisSetRaw(ReadModelKeys.competitionFixtures(epl,season),snapshot([{id:'forest-11',competitionId:epl,seasonId:season,matchday:11,status:'SCHEDULED',homeClubId:'club-nottm-forest',awayClubId:'club-arsenal',homeClubName:'Nottingham Forest',awayClubName:'Arsenal'}]));
  await redisSetRaw('efluz:v1:admin:user-directory',snapshot([{id:'user-123',username:'inter_fan',telegramId:'123'}]));
  const deps:NaturalPlannerDependencies={read:createAiTournamentReader(signal).read,users:async()=>[{id:'user-123',username:'inter_fan',telegramId:'123'}]};
+ const followup=await contextualFixturePlan('hisobni 3-2 qil',['game-10'],signal);
+ assert.deepEqual(followup,{action:'result_edit',targetId:'game-10',body:{homeScore:3,awayScore:2,status:'CONFIRMED'}});
+ await assert.rejects(contextualFixturePlan('hisobni 3-2 qil',[],signal),/Qaysi o‘yin/);
+ await assert.rejects(contextualFixturePlan('hisobni 3-2 qil',['game-10','game-1'],signal),/Qaysi o‘yin/);
+ await assert.rejects(contextualFixturePlan('hisobni 3-2 qil',['deleted-fixture'],signal),/hozir bazada/);
+ assert.equal(await contextualFixturePlan('shu Nottingham 5-1 Arsenal 11-tur natijasini saqla',['game-10'],signal),null);
+ assert.equal(await contextualFixturePlan('natijani UnknownClub 3-2 qil',['game-10'],signal),null);
  const cases:Array<[string,string,any]>=[
   ['Nottingham 5-1 Arsenal 11-tur natijasini kirit','result_edit',{homeScore:5,awayScore:1,status:'CONFIRMED'}],
   ['Nottingham 5-1 Arsenal 11 tur buni kiritib qoygin','result_edit',{homeScore:5,awayScore:1,status:'CONFIRMED'}],
@@ -118,6 +126,11 @@ try {
  assert.match(await handleAiAdminCommand(payload('Inter Milan natijasini o‘chir'),signal),/Bir nechta o‘yin/);
  assert.match(await handleAiAdminCommand(payload('@inter_fan ni blokla',123),signal),/faqat asosiy admin/);
  assert.match(await handleAiAdminCommand(payload('foydalanuvchilarni ko‘rsat'),signal),/shaxsiy chat/);
+ const contextPreview=await handleAiAdminCommand(payload('Inter — Milan 10-tur natijasini 2-1 qil'),signal);
+ await rememberDeliveredAdminPlan(payload('x'),contextPreview,444,signal);
+ const changedPreview=await handleAiAdminCommand(payload('hisobni 3-2 qil'),signal);
+ assert.match(changedPreview,/AC Milan 3:2 Inter Milan/);assert.match(changedPreview,/Hali bajarilmadi/);
+ assert.match(await handleAiAdminCommand({...payload('hisobni 3-2 qil'),threadId:999},signal),/faol emas/);
  assert.equal(writes,0);assert.equal(firestore,0);
  console.log('PASS 36 native action phrases, exact score orientation, full ambiguity/missing-field checks, owner-only cached previews, zero model/Firestore/writes');
 } finally {db.collection=originalCollection;await bridge.close();setTestAiAdminHooks();}

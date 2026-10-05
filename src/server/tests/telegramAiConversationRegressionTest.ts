@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { contextualFixturePlan } from '../services/telegramAiFixtureContext';
 import express from 'express';
 import { initDatabase } from '../db';
 import { getFirestoreDb } from '../firebase/admin';
@@ -29,7 +30,15 @@ try {
  assert.match(europe.text,/32\. Team 32/); assert.ok(europe.text.length>1000);
  assert.match((await buildConversationTableReply('jadval tashla','standings',{previousUserQueries:['La Liga jadvalini tashla']},signal)).text,/La Liga/);
  assert.match((await buildConversationTableReply('jadval tashla','standings',{},signal)).text,/Qaysi liga/);
+ assert.match((await buildConversationTableReply('Inter jadvalini tashla','standings',{selectedCompetitionIds:[liga]},signal)).text,/Boshqa ligaga/);
+ assert.match((await buildConversationTableReply('jadval tashla','standings',{selectedCompetitionIds:[],selectedClubIds:[],previousUserQueries:['La Liga jadvalini tashla']},signal)).text,/Qaysi liga/);
+ assert.match((await buildConversationTableReply('Brazil ligasi jadvalini tashla','standings',{selectedCompetitionIds:[liga]},signal)).text,/Bu nom/);
+ assert.equal(getConversationIntent('o‘sha o‘yinni ko‘rsat'),'fixtures');
  const games=await buildConversationTableReply('La Liga 10 tur oyinlar jadvali','fixtures',{},signal); assert.ok(!games.text.includes('8:9')); assert.match(games.text,/rejalashtirilgan/);
+ assert.deepEqual(games.fixtureIds,['game-10']);
+ const same=await buildConversationTableReply('o‘sha o‘yinni ko‘rsat','fixtures',{selectedFixtureIds:games.fixtureIds},signal);
+ assert.deepEqual(same.fixtureIds,['game-10']);
+ assert.match((await buildConversationTableReply('o‘sha o‘yinni ko‘rsat','fixtures',{},signal)).text,/Qaysi o‘yin/);
  assert.deepEqual(await parseConversationMatchdayPlan('La Liga 10-turni qulflang',{},signal),{action:'matchday_control',targetId:liga,body:{action:'LOCK',matchday:10}});
  const exactAssignment={action:'club_assign',targetId:'club-heidenheim',body:{targetUserId:'@inter_fan'}};
  for(const text of ['@inter_fan Heidenheim klubiga biriktir','Heidenheimga @inter_fan ni biriktiring','@ inter_fan 1. FC Heidenheim klubiga biriktirib ber','/ai_admin@efluzbot @inter_fan Heidenheim klubiga biriktir']) {

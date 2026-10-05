@@ -61,7 +61,7 @@ export interface ConversationTurn {
   role: 'user' | 'model';
   text: string;
   selectedClubIds?: string[];
-  selectedCompetitionIds?: string[];
+  selectedCompetitionIds?: string[]; selectedFixtureIds?:string[];
 }
 
 export type DeliveryClaimResult = 'ok' | 'already_handled' | 'redis_error';
@@ -331,6 +331,7 @@ async function getConversationContext(
       role: item?.role === 'model' ? 'model' : 'user',
       text: String(item?.text || ''),
       selectedClubIds: Array.isArray(item?.selectedClubIds) ? item.selectedClubIds.filter((id: unknown) => typeof id === 'string').slice(0, 4) : undefined,
+      selectedFixtureIds:Array.isArray(item?.selectedFixtureIds)?item.selectedFixtureIds.filter((id:unknown)=>typeof id==='string').slice(0,2):undefined,
       selectedCompetitionIds: Array.isArray(item?.selectedCompetitionIds) ? item.selectedCompetitionIds.filter((id: unknown) => typeof id === 'string').slice(0, 5) : undefined,
     })).slice(-MAX_CONTEXT_TURNS);
   } catch {
@@ -347,7 +348,7 @@ async function saveConversationContext(
   userId: number,
   userText: string,
   modelText: string,
-  options?: { signal?: AbortSignal; history?: ConversationTurn[]; selectedClubIds?: string[]; selectedCompetitionIds?: string[] }
+  options?: { signal?: AbortSignal; history?: ConversationTurn[]; selectedClubIds?: string[]; selectedCompetitionIds?: string[]; selectedFixtureIds?:string[] }
 ): Promise<void> {
   if (testRedisOutage || options?.signal?.aborted) return;
 
@@ -357,7 +358,7 @@ async function saveConversationContext(
   const existing = options?.history || [];
   const updated: ConversationTurn[] = [
     ...existing,
-    { role: 'user' as const, text: userText.slice(0, 700), selectedClubIds: options?.selectedClubIds || [], selectedCompetitionIds: options?.selectedCompetitionIds || [] },
+    { role: 'user' as const, text: userText.slice(0, 700), selectedClubIds: options?.selectedClubIds || [], selectedFixtureIds:options?.selectedFixtureIds||[], selectedCompetitionIds: options?.selectedCompetitionIds || [] },
     { role: 'model' as const, text: modelText.slice(0, 500) },
   ].slice(-MAX_CONTEXT_TURNS);
 
@@ -573,6 +574,7 @@ export async function handleTelegramAiMessage(
     const scope = {
       previousUserQueries: history.filter(turn => turn.role === 'user').map(turn => turn.text),
       selectedClubIds: [...history].reverse().find(turn => turn.role === 'user' && turn.selectedClubIds !== undefined)?.selectedClubIds,
+      selectedFixtureIds:[...history].reverse().find(turn=>turn.role==='user'&&turn.selectedFixtureIds!==undefined)?.selectedFixtureIds,
       selectedCompetitionIds: [...history].reverse().find(turn => turn.role === 'user' && turn.selectedCompetitionIds !== undefined)?.selectedCompetitionIds,
     };
     if (isPersonalFixtureQuestion(payload.text) && !['admin','confirm','cancel','help'].includes(intent)) {
@@ -580,13 +582,13 @@ export async function handleTelegramAiMessage(
         ? {text:'Raqibingizni aniqlash uchun shaxsiy Telegram akkauntingizdan o‘zingiz yozing.',clubIds:[]}
         : await buildPersonalFixtureReply(payload.text,payload.fromUser.id,rootController.signal);
       const result = await dispatchTelegramAiReply(payload,personal.text,rootController.signal,{parse_mode:null});
-      if(result.replySent) await saveConversationContext(payload.chatId,payload.threadId,payload.fromUser.id,payload.text,personal.text,{signal:rootController.signal,history,selectedClubIds:personal.clubIds});
+      if(result.replySent) await saveConversationContext(payload.chatId,payload.threadId,payload.fromUser.id,payload.text,personal.text,{signal:rootController.signal,history,selectedClubIds:personal.clubIds,selectedFixtureIds:'fixtureIds' in personal?personal.fixtureIds:[]});
       return {ok:result.ok,handled:true,replySent:result.replySent,ignored:result.ignored};
     }
     if (intent === 'standings' || intent === 'fixtures') {
       const table = await buildConversationTableReply(payload.text, intent, scope, rootController.signal);
       const result = await dispatchTelegramAiReply(payload, table.text, rootController.signal, { parse_mode: null, maxChars: 4000 });
-      if (result.replySent) await saveConversationContext(payload.chatId, payload.threadId, payload.fromUser.id, payload.text, table.text, { signal: rootController.signal, history, selectedClubIds: scope.selectedClubIds, selectedCompetitionIds: table.competitionIds });
+      if (result.replySent) await saveConversationContext(payload.chatId, payload.threadId, payload.fromUser.id, payload.text, table.text, { signal: rootController.signal, history, selectedClubIds: table.clubIds||[], selectedCompetitionIds: table.competitionIds, selectedFixtureIds:table.fixtureIds });
       return { ok: result.ok, handled: true, replySent: result.replySent, ignored: result.ignored };
     }
     if (isAiAdminCommand(payload.text) || ['admin','confirm','cancel'].includes(intent) || replyConfirmation || intent === 'help' && owner) {

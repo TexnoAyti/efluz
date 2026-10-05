@@ -13,7 +13,7 @@ export function isPersonalFixtureQuestion(text: string): boolean {
 }
 
 /** Caller ID is Telegram's verified sender, never an @username or previous chat selection. */
-export async function buildPersonalFixtureReply(text: string, senderId: number, signal?: AbortSignal): Promise<{text:string;clubIds:string[]}> {
+export async function buildPersonalFixtureReply(text: string, senderId: number, signal?: AbortSignal): Promise<{text:string;clubIds:string[];fixtureIds?:string[]}> {
   const season='season-2026-27';
   if (!Number.isSafeInteger(senderId) || senderId<=0) return {text:'Telegram akkauntingizni aniqlab bo‘lmadi. Shaxsiy akkauntingizdan yozing.',clubIds:[]};
   const ownership=await createAiSnapshotReader(signal).read<OwnerNeutralClub>(ReadModelKeys.clubsWithOwners(season));
@@ -26,6 +26,7 @@ export async function buildPersonalFixtureReply(text: string, senderId: number, 
   if (!named.length && findConversationCompetitions(text,SEED_COMPETITIONS as unknown as Competition[]).length) return {text:'So‘ralgan turnir saqlangan musobaqalar ro‘yxatida topilmadi. Boshqa turnirdagi raqibni bunga almashtirmayman.',clubIds:owned.map(c=>c.id)};
   const round=requestedMatchday(text);
   const blocks:string[]=[];
+  const fixtureIds:string[]=[];
   let stale=ownership.stale || Boolean(catalog.stale);
   for (const club of owned) {
     const query={dataset:'fixtures',club:club.id,...(named.length===1?{competition:named[0].id}:{}),...(round?{matchday:round}:{})};
@@ -39,6 +40,7 @@ export async function buildPersonalFixtureReply(text: string, senderId: number, 
       blocks.push(`${club.name}: ${round?round+'-turdagi':'navbatdagi'} yakunlanmagan o‘yin saqlangan jadvalda topilmadi. Bu boshqa o‘yin yo‘qligini kafolatlamaydi.`);
       continue;
     }
+    fixtureIds.push(next.id);
     const f=games.find(g=>g.id===next.id)!;
     const atHome=f.homeClubId===club.id;
     const opponentId=atHome?f.awayClubId:f.homeClubId;
@@ -53,5 +55,5 @@ export async function buildPersonalFixtureReply(text: string, senderId: number, 
     const state:Record<string,string>={SCHEDULED:'rejalashtirilgan',POSTPONED:'qoldirilgan',AWAITING_RESULT:'natija kutilmoqda',PENDING_CONFIRMATION:'natija tasdiqlanishi kutilmoqda',DISPUTED:'natija ko‘rib chiqilmoqda'};
     blocks.push(`Sizning klubingiz: ${club.name}.\nRaqibingiz: ${opponentName}.${owner}\n${f.competition || 'Turnir'} · ${f.roundName || f.matchday+'-tur'} · ${atHome?'uyda':'safarda'}.\nHolat: ${state[f.status] || f.status}.`);
   }
-  return {text:blocks.join('\n\n')+(stale?'\n\nOxirgi saqlangan ma’lumot; joriy holat qayta tekshirilmagan.':''),clubIds:owned.map(c=>c.id)};
+  return {text:blocks.join('\n\n')+(stale?'\n\nOxirgi saqlangan ma’lumot; joriy holat qayta tekshirilmagan.':''),clubIds:owned.map(c=>c.id),fixtureIds:[...new Set(fixtureIds)]};
 }

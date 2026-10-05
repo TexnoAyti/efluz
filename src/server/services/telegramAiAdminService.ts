@@ -1,4 +1,5 @@
 import { assertAdminPlanReady, validateModelAdminPlan } from './telegramAiAdminPlanReadiness';
+import { contextualFixturePlan } from './telegramAiFixtureContext';
 import { parseNaturalAdminPlan } from './telegramAiNaturalAdminPlanner';
 import { randomBytes } from 'node:crypto';
 import { GoogleGenAI } from '@google/genai';
@@ -203,9 +204,14 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
       }
     }
     if (!argument) return '/ai_admin dan keyin amal, jamoa/turnir va kerakli parametrlarni yozing.';
+    const latestClient=getAiRedisClient(signal);
+    const latest=latestClient?await latestClient.get<{token:string}>(latestKey(payload)):process.env.NODE_ENV==='test'?testLatest.get(latestKey(payload)):null;
+    const recent=latest?await loadPending(latest.token,signal):null;
+    const recentFixture=recent && recent.owner===payload.fromUser.id&&recent.chat===payload.chatId&&recent.thread===payload.threadId&&recent.expiresAt>Date.now()&&['pending','done'].includes(recent.state)&&/^(fixture_|result_)/.test(recent.plan.action)?recent.plan.targetId:undefined;
     // Explicit test planners replace planning only in isolated tests; production always resolves cached club IDs.
     const plan = testPlanner ? await planAiAdminAction(argument, facts, signal)
-      : await parseConversationClubAssignmentPlan(argument, signal)
+      : await contextualFixturePlan(argument,recentFixture?[recentFixture]:scope.selectedFixtureIds||[],signal)
+        || await parseConversationClubAssignmentPlan(argument, signal)
         || await parseNaturalAdminPlan(argument, signal) || await parseConversationMatchdayPlan(argument, scope, signal) || await planAiAdminAction(argument, facts, signal);
     assertAiAdminActionAllowed(payload.fromUser.id, plan);
     assertAdminPlanReady(plan);

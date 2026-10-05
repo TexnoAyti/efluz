@@ -21,6 +21,7 @@ export function getConversationIntent(text: string): ConversationIntent {
   if ((nouns.test(q) || /\b(?:biriktir(?:ing)?|blokla(?:ng)?|blokdan chiqar(?:ing)?|admin qil|premium ber)\b/.test(q)) && writes.test(q) && !(/\b(?:jadval\w*|table|standings|oyinlar\w*|uchrashuvlar\w*)\b/.test(q) && !destructive)) return 'admin';
   if (/\b(?:jadval\w*|table|standings|tablica|таблица)\b/.test(q))
     return /\b(?:oyinlar\w*|uchrashuvlar\w*|fixtures|matchday|tur(?:ni|dagi|da)?)\b/.test(q) || detectAiCupStage(text) ? 'fixtures' : 'standings';
+  if (/\b(?:osha|shu)\s+(?:oyin|uchrashuv)\w*\b/.test(q) && /korsat|tashla|ber/.test(q))return 'fixtures';
   if (/\b(?:oyinlar\w*|uchrashuvlar\w*|fixtures|schedule|taqvim\w*)\b/.test(q) && /\b(?:tashla\w*|yubor\w*|korsat\w*|ber|chiqar\w*)\b/.test(q)) return 'fixtures';
   if (/^\/(?:jadval|table|standings)\b/i.test(text)) return 'standings';
   if (/^\/(?:matches|fixtures|matchday)\b/i.test(text)) return 'fixtures';
@@ -37,30 +38,55 @@ export function findConversationCompetitions(text: string, comps: Competition[])
   const q = normalizeAiEntity(text);
   return comps.filter(c => c.type === 'LEAGUE' && Object.entries(countries).some(([word, prefix]) => c.id.startsWith(prefix) && new RegExp(`\\b${word}\\b`).test(q)));
 }
-export interface ConversationScope { previousUserQueries?: string[]; selectedClubIds?: string[]; selectedCompetitionIds?: string[]; }
+export interface ConversationScope { previousUserQueries?: string[]; selectedClubIds?: string[]; selectedCompetitionIds?: string[]; selectedFixtureIds?: string[]; }
 export async function resolveConversationCompetition(text: string, scope: ConversationScope, signal?: AbortSignal) {
   const reader = createAiTournamentReader(signal);
   const catalog: any = await reader.read({ dataset: 'competitions', limit: 30 });
   const comps = (catalog.data || []) as Competition[];
   let found = findConversationCompetitions(text, comps);
-  if (!found.length) for (const previous of [...(scope.previousUserQueries || [])].reverse()) {
-    found = findConversationCompetitions(previous, comps); if (found.length) break;
+  let clarification:string|undefined;
+  let clubIds:string[]=[];
+  if(!found.length){
+    const page:any=await reader.read({dataset:'clubs',limit:30});
+    const all:Club[]=[...(page.data||[])];
+    for(let offset=30;offset<(page.total||0);offset+=30)all.push(...((await reader.read({dataset:'clubs',offset,limit:30}) as any).data||[]));
+    const explicit=resolveAiClubs(text,all);
+    clarification=explicit.clarification;
+    clubIds=explicit.clubs.map(c=>c.id);
+    if(explicit.clubs.length)found=comps.filter(c=>c.type==='LEAGUE'&&explicit.clubs.some(club=>club.leagueId===c.leagueId));
+    const prefix=normalizeAiEntity(text).match(/^(.*?)\s+(?:liga\w*|kubok\w*)\b/);
+    if(explicit.clubs.length&&!found.length&&!clarification)clarification='Bu klubning ligasi joriy snapshotda aniqlanmadi. Boshqa ligaga o‘tib ketmayman.';
+    if(!found.length&&!clarification&&prefix&&prefix[1].split(' ').some(word=>!/^(?:shu|osha|uning|bu|endi|jadval|jadvalni)$/.test(word)))clarification='Qaysi liga yoki kubok? Bu nom joriy bazada aniqlanmadi.';
+    if(!found.length&&!clarification){
+      if(scope.selectedCompetitionIds!==undefined)found=comps.filter(c=>scope.selectedCompetitionIds!.includes(c.id));
+      else for(const previous of [...(scope.previousUserQueries||[])].reverse()){
+        found=findConversationCompetitions(previous,comps);if(found.length)break;
+      }
+      if(found.length)clubIds=all.filter(c=>(scope.selectedClubIds||[]).includes(c.id)&&found.some(comp=>comp.leagueId===c.leagueId)).map(c=>c.id);
+      if(!found.length){
+        const selected=resolveAiClubs(text,all,scope.selectedClubIds,scope.previousUserQueries);
+        clarification=selected.clarification;
+        clubIds=selected.clubs.map(c=>c.id);
+        found=comps.filter(c=>c.type==='LEAGUE'&&selected.clubs.some(club=>c.leagueId===club.leagueId));
+      }
+    }
   }
-  if (!found.length && scope.selectedCompetitionIds?.length) found = comps.filter(c => scope.selectedCompetitionIds!.includes(c.id));
-  if (!found.length) {
-    const clubs: any = await reader.read({ dataset: 'clubs', limit: 30 });
-    const all: Club[] = [...(clubs.data || [])];
-    for (let offset = 30; offset < (clubs.total || 0); offset += 30) all.push(...((await reader.read({ dataset: 'clubs', offset, limit: 30 }) as any).data || []));
-    const selected = resolveAiClubs(text, all, scope.selectedClubIds, scope.previousUserQueries).clubs;
-    found = comps.filter(c => c.type === 'LEAGUE' && selected.some(club => c.leagueId === club.leagueId));
-  }
-  return { reader, catalog, competitions: found };
+  return { reader, catalog, competitions: found, clarification, clubIds };
 }
 
 /** Exact table/list formatting, no Gemini call and no Firestore reads. */
-export async function buildConversationTableReply(text: string, intent: 'standings'|'fixtures', scope: ConversationScope, signal?: AbortSignal): Promise<{ text: string; competitionIds: string[] }> {
+export async function buildConversationTableReply(text: string, intent: 'standings'|'fixtures', scope: ConversationScope, signal?: AbortSignal): Promise<{ text: string; competitionIds: string[]; fixtureIds?:string[]; clubIds?:string[] }> {
   const resolved = await resolveConversationCompetition(text, scope, signal);
   const { reader, catalog } = resolved;
+  if(resolved.clarification)return {text:resolved.clarification,competitionIds:[],fixtureIds:[]};
+  if(intent==='fixtures' && /^(?:endi\s+)?(?:osha|shu)\s+(?:oyin|uchrashuv)\w*\s+(?:korsat\w*|tashla\w*|ber)$/.test(normalizeAiEntity(text))){
+    const ids=[...new Set(scope.selectedFixtureIds||[])];
+    if(ids.length!==1)return {text:'Qaysi o‘yin? Jamoalar va turni yozing.',competitionIds:[],fixtureIds:[]};
+    const f:any=await reader.read({dataset:'fixtures',fixtureId:ids[0],limit:1});
+    if(f.error||f.data?.length!==1)return {text:'Oldingi o‘yin hozir bazada aniqlanmadi. Jamoalar va turni qayta yozing.',competitionIds:[],fixtureIds:[]};
+    const row=f.data[0];
+    return {text:`${row.home} ${row.homeScore!==null?row.homeScore+':'+row.awayScore:'—'} ${row.away} · ${row.competition} · ${row.roundName||row.matchday+'-tur'} · ${row.status}${f.stale?'\nOxirgi saqlangan ma’lumot.':''}`,competitionIds:[row.competitionId],fixtureIds:[row.id],clubIds:[row.homeClubId,row.awayClubId].filter(Boolean)};
+  }
   let competitions = resolved.competitions;
   if (intent === 'standings' && competitions.length > 1 && !findConversationCompetitions(text, catalog.data || []).length) { const league = competitions.filter(c => c.type === 'LEAGUE'); if (league.length === 1) competitions = league; }
   const ids = competitions.map(c => c.id);
@@ -82,7 +108,7 @@ export async function buildConversationTableReply(text: string, intent: 'standin
   for (const line of lines) { if (body.length + line.length > 3600) break; body += line + '\n'; shown++; }
   if (shown < result.total) body += `\n${shown}/${result.total} ta ko‘rsatildi. Aniq tur yoki bosqichni yozing.\n`;
   if (result.stale) body += '\nOxirgi saqlangan ma’lumot; joriy holat qayta tekshirilmagan.';
-  return { text: body.trim(), competitionIds: ids };
+  return { text: body.trim(), competitionIds: ids, clubIds:resolved.clubIds, fixtureIds:!standings&&result.total===1?[result.data[0].id]:[] };
 }
 
 /** Common matchday commands work without the model; ambiguous requests ask one question. */
