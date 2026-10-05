@@ -36,9 +36,32 @@ const ALIASES: Record<string, string[]> = {
   'club-atletico-madrid': ['atletico', 'atletiko'],
   'club-heidenheim': ['heidenheim', 'fc heidenheim', '1 fc heidenheim 1846'],
   'club-dortmund': ['dortmund', 'borussiya dortmund'],
+  'club-leeds': ['leeds', 'lids'],
+  'club-coventry': ['coventry', 'koventri'],
+  'club-hull': ['hull'],
+  'club-alaves': ['alaves'],
+  'club-athletic-club': ['athletic', 'athletic bilbao', 'bilbao'],
+  'club-celta-vigo': ['celta', 'celta vigo'],
+  'club-mallorca': ['mallorca'],
+  'club-rayo-vallecano': ['rayo'],
+  'club-real-betis': ['betis'],
+  'club-real-sociedad': ['sociedad'],
+  'club-verona': ['verona'],
+  'club-gladbach': ['gladbach', 'monchengladbach'],
+  'club-eintracht-frankfurt': ['frankfurt', 'eintracht'],
+  'club-mainz': ['mainz', 'mayns'],
+  'club-werder-bremen': ['werder', 'bremen'],
+  'club-union-berlin': ['union berlin'],
+  'club-brest': ['brest', 'brestois'],
+  'club-lyon': ['lyon', 'lion'],
+  'club-marseille': ['marseille', 'marsel'],
+  'club-rennes': ['rennes', 'renn'],
+  'club-reims': ['reims'],
+  'club-strasbourg': ['strasbourg', 'strasburg'],
+  'club-montpellier': ['montpellier'],
 };
 function aliases(club: Club): string[] {
-  const stripped = club.name.replace(/^(?:FC|AFC|AC|AS|SSC|SC|SV|RB)\s+/i, '').replace(/\s+(?:FC|CF|Town|Hotspur)$/i, '');
+  const stripped = club.name.replace(/^(?:\d+\.\s*)?(?:FC|AFC|ACF|AC|AS|SSC|SS|US|SC|SV|RB|RC|RCD|UD|CA|AJ|LOSC|OGC|ESTAC|VfL|VfB|TSG|FSV)\s+/i, '').replace(/\s+(?:FC|CF|CFC|HSC|Calcio|Town|Hotspur)$/i, '');
   const seed = SEED_CLUBS.find(c => normalizeAiEntity(c.name) === normalizeAiEntity(club.name));
   return [...new Set([club.name, stripped, ...[club.name,stripped].filter(name=>name.includes(' ')).map(name=>normalizeAiEntity(name).replace(/ /g,'')), ...(ALIASES[club.id] || ALIASES[seed?.id || ''] || [])])];
 }
@@ -49,7 +72,7 @@ function matchClubs(query: string, clubs: Club[]): Club[] {
   for (const club of clubs) {
     const names = aliases(club);
     // Common English words such as NEW are codes only when explicitly capitalized.
-    if (club.shortName && (query.includes(club.shortName.toUpperCase()) || /^(?:PSG|UCL|ARS|MCI|MUN|IPS)$/i.test(club.shortName))) names.push(club.shortName);
+    if (club.shortName && (new RegExp(`(?:^|[^A-Za-z0-9])${escapeRegex(club.shortName.toUpperCase())}(?=$|[^A-Za-z0-9])`).test(query) || /^(?:PSG|ARS|MCI|MUN|IPS)$/i.test(club.shortName))) names.push(club.shortName);
     for (const name of names) for (const m of q.matchAll(entityRegex(name))) {
       const start = m.index! + (m[0].startsWith(' ') ? 1 : 0);
       hits.push({ club, start, end: start + m[1].length });
