@@ -17,6 +17,7 @@ const ALIASES: Record<string, string[]> = {
   'club-man-city': ['man city', 'manchester siti', 'man siti', 'mancity'],
   'club-man-utd': ['man united', 'man utd', 'manchester yunayted', 'myu'],
   'club-chelsea': ['chelsi'],
+  'club-brighton': ['brighton', 'brayton', 'brighton and hove albion'],
   'club-liverpool': ['liverpul'],
   'club-leverkusen': ['leverkusen', 'leverkuzen'],
   'club-newcastle': ['newcastle', 'nyukasl'],
