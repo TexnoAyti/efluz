@@ -16,6 +16,7 @@ export function containsAiEntity(normalizedQuery: string, alias: string): boolea
 const ALIASES: Record<string, string[]> = {
   'club-man-city': ['man city', 'manchester siti', 'man siti', 'mancity'],
   'club-man-utd': ['man united', 'man utd', 'manchester yunayted', 'myu'],
+  'club-nottm-forest': ['nottingham', 'nottm forest', 'nottingem'],
   'club-ipswich': ['ipswich', 'ipsvich'],
   'club-inter': ['inter', 'internazionale'],
   'club-milan': ['milan', 'ac milan'],
@@ -33,7 +34,8 @@ function aliases(club: Club): string[] {
   return [...new Set([club.name, stripped, ...(ALIASES[club.id] || ALIASES[seed?.id || ''] || [])])];
 }
 function matchClubs(query: string, clubs: Club[]): Club[] {
-  const q = normalizeAiEntity(query);
+  // Preserve explicit team separators so “Inter — Milan” cannot collapse into “Inter Milan”.
+  const q = normalizeAiEntity(query.replace(/[—–]|\s-\s/g, ' vs '));
   const hits: Array<{ club: Club; start: number; end: number }> = [];
   for (const club of clubs) {
     const names = aliases(club);

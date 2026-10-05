@@ -7,14 +7,14 @@ import { createAiTournamentReader } from '../services/telegramAiDataService';
 import { startMockUpstashBridge } from './mockUpstashBridge';
 import { redisSetRaw, ReadModelKeys } from '../readModel/readModelStore';
 import { getFirestoreDb } from '../firebase/admin';
-import { handleAiAdminCommand, setTestAiAdminHooks, rememberDeliveredAdminPlan } from '../services/telegramAiAdminService';
+import { describeAiAdminPlan, handleAiAdminCommand, setTestAiAdminHooks, rememberDeliveredAdminPlan } from '../services/telegramAiAdminService';
 import { DEFAULT_AI_CONFIG, setTestConfigOverride } from '../services/telegramAiConfigService';
 import type { AdminPlan } from '../services/telegramAiAdminCatalog';
 
-const season='season-2026-27', serie='comp-serie-a-2026', liga='comp-la-liga-2026', cup='comp-fa-cup-2026';
-const comps=[{id:serie,name:'Serie A',type:'LEAGUE',leagueId:'league-serie-a',seasonId:season},{id:liga,name:'La Liga',type:'LEAGUE',leagueId:'league-la-liga',seasonId:season},{id:cup,name:'FA Cup',type:'DOMESTIC_CUP',seasonId:season}];
+const season='season-2026-27', serie='comp-serie-a-2026', liga='comp-la-liga-2026', cup='comp-fa-cup-2026', epl='comp-premier-league-2026';
+const comps=[{id:epl,name:'Premier League',type:'LEAGUE',leagueId:'league-premier-league',seasonId:season},{id:serie,name:'Serie A',type:'LEAGUE',leagueId:'league-serie-a',seasonId:season},{id:liga,name:'La Liga',type:'LEAGUE',leagueId:'league-la-liga',seasonId:season},{id:cup,name:'FA Cup',type:'DOMESTIC_CUP',seasonId:season}];
 // Roster order deliberately differs from user-specified score order.
-const clubs=[{id:'club-milan',name:'AC Milan',leagueId:'league-serie-a'},{id:'club-inter',name:'Inter Milan',leagueId:'league-serie-a'},{id:'club-heidenheim',name:'1. FC Heidenheim',leagueId:'league-bundesliga'}];
+const clubs=[{id:'club-arsenal',name:'Arsenal',shortName:'ARS',leagueId:'league-premier-league'},{id:'club-nottm-forest',name:'Nottingham Forest',shortName:'NFO',leagueId:'league-premier-league'},{id:'club-milan',name:'AC Milan',leagueId:'league-serie-a'},{id:'club-inter',name:'Inter Milan',leagueId:'league-serie-a'},{id:'club-heidenheim',name:'1. FC Heidenheim',leagueId:'league-bundesliga'}];
 const fixtures=[1,10].map(matchday=>({id:'game-'+matchday,competitionId:serie,seasonId:season,matchday,status:'CONFIRMED',homeClubId:'club-milan',awayClubId:'club-inter',homeClubName:'AC Milan',awayClubName:'Inter Milan',homeScore:0,awayScore:1}));
 const bridge=await startMockUpstashBridge();
 const signal=new AbortController().signal;
@@ -27,9 +27,14 @@ try {
  await redisSetRaw(ReadModelKeys.competitions(season),snapshot(comps));
  await redisSetRaw(ReadModelKeys.clubsWithOwners(season),snapshot(clubs));
  await redisSetRaw(ReadModelKeys.competitionFixtures(serie,season),snapshot(fixtures));
+ await redisSetRaw(ReadModelKeys.competitionFixtures(epl,season),snapshot([{id:'forest-11',competitionId:epl,seasonId:season,matchday:11,status:'SCHEDULED',homeClubId:'club-nottm-forest',awayClubId:'club-arsenal',homeClubName:'Nottingham Forest',awayClubName:'Arsenal'}]));
  await redisSetRaw('efluz:v1:admin:user-directory',snapshot([{id:'user-123',username:'inter_fan',telegramId:'123'}]));
  const deps:NaturalPlannerDependencies={read:createAiTournamentReader(signal).read,users:async()=>[{id:'user-123',username:'inter_fan',telegramId:'123'}]};
  const cases:Array<[string,string,any]>=[
+  ['Nottingham 5-1 Arsenal 11 tur buni kiritib qoygin','result_edit',{homeScore:5,awayScore:1,status:'CONFIRMED'}],
+  ['Arsenal 1-5 Nottingham 11-tur natijasini saqla','result_edit',{homeScore:5,awayScore:1,status:'CONFIRMED'}],
+  ['Nottingham Forest — Arsenal 11-tur 0:0 tasdiqla','result_approve',{homeScore:0,awayScore:0}],
+  ['Arsenal 1-5 Nottingham fixture id: forest-11 natijasini saqla','result_edit',{homeScore:5,awayScore:1,status:'CONFIRMED'}],
   ['Inter — Milan 10-tur natijasini 2-1 qil','result_edit',{homeScore:1,awayScore:2,status:'CONFIRMED'}],
   ['Milan — Inter 10-tur natijasini 3-2 tasdiqla','result_approve',{homeScore:3,awayScore:2}],
   ['Inter va Milan 10-tur natijasini o‘chir','result_clear',{}],
@@ -69,18 +74,26 @@ try {
  ];
  for(const [text,action,body] of cases){
   assert.equal(getConversationIntent(text),'admin',text);
-  const plan=await planNaturalAdminRequest(text,deps);
+  const plan=await planNaturalAdminRequest(text,deps).catch(error=>{throw new Error(text+': '+error.message)});
   const expectedBody = /^user_|^premium_/.test(action) && text.includes('@inter_fan') ? {...body,expectedUsername:'inter_fan'} : body;
   assert.equal(plan?.action,action,text);assert.deepEqual(plan?.body,expectedBody,text);assertAdminPlanReady(plan!);
   const slash=await planNaturalAdminRequest('/ai_admin@efluzbot '+text,deps);
   assert.equal(slash?.action,action,'slash '+text);assert.deepEqual(slash?.body,expectedBody,'slash '+text);
  }
+ const scorePreview=describeAiAdminPlan({action:'result_edit',targetId:'forest-11',body:{homeScore:5,awayScore:1}},'Nottingham Forest — Arsenal, Premier League, Matchday 11, SCHEDULED');
+ assert.match(scorePreview,/Nottingham Forest 5:1 Arsenal/);assert.match(scorePreview,/G‘olib: Nottingham Forest/);
+ const wrongModel:AdminPlan={action:'result_edit',targetId:'forest-11',body:{homeScore:1,awayScore:5,status:'CONFIRMED'}};
+ await validateModelAdminPlan(wrongModel,'Nottingham 5-1 Arsenal 11 tur buni kiritib qoygin',signal);
+ assert.deepEqual(wrongModel.body,{homeScore:5,awayScore:1,status:'CONFIRMED'},'Model score order cannot override explicit named teams');
+ await assert.rejects(validateModelAdminPlan({action:'result_edit',targetId:'forest-11',body:{homeScore:5,awayScore:1}},'Arsenal 5-1 11-tur natijasini saqla',signal),/ikkala jamoa/);
  const announce=await planNaturalAdminRequest('Hammaga e’lon yubor\nSarlavha: Yangi tur\nMatn: Inter — Milan natijasini o‘chir degan buyruqni yozmang.',deps);
  assert.equal(announce?.action,'broadcast');assert.equal(announce?.body.targetAudience,'ALL_USERS');
  const personal=await planNaturalAdminRequest('@inter_fan ga xabar yubor\nSarlavha: Eslatma\nMatn: O‘yin vaqti',deps);
  assert.equal(personal?.body.targetAudience,'SELECTED_RECIPIENTS');assert.deepEqual(personal?.body.selectedUserIds,['user-123']);assert.equal(personal?.body.expectedUsername,'inter_fan');
  assert.equal(detectNaturalAdminAction('Inter nechanchi o‘rinda?'),null);
  for(const [text,expected] of [
+  ['Arsenal 5-1 11-tur natijasini saqla',/ikkala jamoa/],
+  ['Unknown Club 5-1 Arsenal 11-tur natijasini saqla',/ikkala jamoa/],
   ['Inter Milan natijasini o‘chir',/Bir nechta o‘yin/],
   ['@inter_fan admin qil',/qaysi ligani/],
   ['@unknown_user ni blokla',/topilmadi/],

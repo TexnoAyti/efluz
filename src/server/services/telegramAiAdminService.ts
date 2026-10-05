@@ -46,7 +46,12 @@ export function describeAiAdminPlan(plan: AdminPlan, label = ''): string {
   }
   if (plan.action === 'club_assign') return `${target} klubini ${String(b.targetUserId)} ga biriktirish.`;
   if (plan.action === 'club_release') return `${target} klubini egasidan bo‘shatish.`;
-  if (['result_edit','result_approve'].includes(plan.action)) return `${target}: hisob ${b.homeScore}:${b.awayScore}, ${plan.action === 'result_approve' ? 'natijani tasdiqlash' : 'natijani saqlash'}.`;
+  if (['result_edit','result_approve'].includes(plan.action)) {
+    const teams = target.split(',')[0].split(' — ');
+    const score = teams.length === 2 ? `${teams[0]} ${b.homeScore}:${b.awayScore} ${teams[1]}` : `Uy jamoasi ${b.homeScore}:${b.awayScore} safar jamoasi`;
+    const outcome = b.homeScore === b.awayScore ? 'Durang.' : teams.length === 2 ? `G‘olib: ${Number(b.homeScore) > Number(b.awayScore) ? teams[0] : teams[1]}.` : '';
+    return `${target}\nYangi natija: ${score}. ${outcome}\n${plan.action === 'result_approve' ? 'Natijani tasdiqlash' : 'Natijani saqlash'}.`;
+  }
   if (plan.action === 'result_clear') return `${target}: natijani o‘chirish, uchrashuvni saqlash.`;
   if (plan.action === 'fixture_delete') return `${target}: uchrashuvning o‘zini o‘chirish. Sabab: ${b.reason || 'ko‘rsatilmagan'}.`;
   if (plan.action === 'cup_preview') return `${target}: kubok qur’asini oldindan ko‘rish. O‘yinlar hali yaratilmaydi.`;
@@ -211,7 +216,7 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
     if (fixtureId) {
       const found = await lookup.read({ dataset: 'fixtures', fixtureId, limit: 1 }) as any;
       const f = found.data?.[0];
-      if (f) targetLabel = `${f.home} — ${f.away}, ${f.competition}, ${f.roundName || f.matchday + '-tur'}, ${f.status}${f.homeScore !== null ? ', ' + f.homeScore + ':' + f.awayScore : ''}\n`;
+      if (f) targetLabel = `${f.home} — ${f.away}, ${f.competition}, ${f.roundName || f.matchday + '-tur'}, ${f.status}${f.homeScore != null && !['result_edit','result_approve'].includes(plan.action) ? ', ' + f.homeScore + ':' + f.awayScore : ''}\n`;
     } else if (plan.targetId && /^(club_|matchday_|cup_|standings_)/.test(plan.action)) {
       const found = await lookup.read(plan.action.startsWith('club_') ? { dataset: 'clubs', club: plan.targetId, limit: 1 } : { dataset: 'competitions', competition: plan.targetId, limit: 1 }) as any;
       if (found.data?.[0]?.name) targetLabel = found.data[0].name + '\n';

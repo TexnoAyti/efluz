@@ -42,6 +42,18 @@ async function userId(text: string, deps: NaturalPlannerDependencies): Promise<s
   return matches[0].id;
 }
 
+
+/** Score order always follows the two explicitly named clubs, even with a fixture ID. */
+export function resolveAdminScore(text: string, clubs: Club[], fixture: {homeClubId:string;awayClubId:string}) {
+  const scores = [...text.matchAll(/\b(\d{1,2})\s*[:-]\s*(\d{1,2})\b/g)];
+  if (scores.length !== 1) clarify('Qaysi hisobni saqlay yoki tasdiqlay? Masalan: “Inter — Milan 10-tur natijasini 2-1 qil”.');
+  if (clubs.length !== 2 || new Set(clubs.map(c=>c.id)).size !== 2 || !clubs.every(c=>[fixture.homeClubId,fixture.awayClubId].includes(c.id)))
+    clarify('Hisobni qaysi jamoaga tegishli ekanini aniqlash uchun ikkala jamoa nomini yozing. Masalan: “Nottingham Forest 5-1 Arsenal 11-tur natijasini kirit”.');
+  const [a,b] = [Number(scores[0][1]),Number(scores[0][2])];
+  const reversed = clubs[0].id === fixture.awayClubId;
+  return {homeScore:reversed?b:a,awayScore:reversed?a:b};
+}
+
 /** Pure planning: uses cached read models and verified user lookup, never executes a write. */
 export async function planNaturalAdminRequest(text: string, deps: NaturalPlannerDependencies): Promise<AdminPlan|null> {
   text = text.replace(/^\/ai_(?:admin|read)(?:@[A-Za-z0-9_]+)?\s*/i, '');
@@ -121,11 +133,7 @@ export async function planNaturalAdminRequest(text: string, deps: NaturalPlanner
     const fixture = matches[0];
     let body: Record<string,unknown> = note ? { notes: note } : {};
     if (action === 'result_edit' || action === 'result_approve') {
-      const scores = [...text.matchAll(/\b(\d{1,2})\s*[:-]\s*(\d{1,2})\b/g)];
-      if (scores.length !== 1) clarify('Qaysi hisobni saqlay yoki tasdiqlay? Masalan: “Inter — Milan 10-tur natijasini 2-1 qil”.');
-      const [a,b] = [Number(scores[0][1]),Number(scores[0][2])];
-      const reversed = !fixtureId && selected.clubs[0]?.id === fixture.awayClubId;
-      body = { ...body, homeScore: reversed ? b : a, awayScore: reversed ? a : b, ...(action === 'result_edit' ? { status: 'CONFIRMED' } : {}) };
+      body = { ...body, ...resolveAdminScore(text, selected.clubs, fixture), ...(action === 'result_edit' ? { status: 'CONFIRMED' } : {}) };
     }
     if (action === 'fixture_delete') {
       if (!note || note.length < 3) clarify('O‘yinning o‘zini o‘chirish uchun sabab yozing: “sabab: ...”. Faqat hisobni o‘chirish uchun “natijasini o‘chir” deng.');

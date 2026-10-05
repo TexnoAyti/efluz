@@ -1,5 +1,6 @@
 import { type AdminPlan, AI_ADMIN_ACTIONS } from './telegramAiAdminCatalog';
-import { normalizeAiEntity } from './telegramAiEntities';
+import { resolveAdminScore } from './telegramAiNaturalAdminPlanner';
+import { normalizeAiEntity, resolveAiClubs } from './telegramAiEntities';
 import { createAiTournamentReader } from './telegramAiDataService';
 
 const required: Record<string,string[]> = {
@@ -44,6 +45,21 @@ export async function validateModelAdminPlan(plan: AdminPlan, request: string, s
     else if (/^(?:fixture_|result_|cup_winner)/.test(plan.action)) await check(plan.targetId, 'fixtures');
     else if (/^(?:matchday_|cup_|standings_)/.test(plan.action)) await check(plan.targetId, 'competitions');
     else if (!request.includes(plan.targetId)) throw new Error('CLARIFY:Bu yopiq ma’lumot uchun aniq IDni yozing; uni taxmin qilmayman.');
+  }
+  if (['result_edit','result_approve'].includes(plan.action)) {
+    const fixtureResult:any = await reader.read({dataset:'fixtures',fixtureId:plan.targetId,limit:1});
+    const allClubs:any[] = [];
+    for(let offset=0;offset<10000;offset+=30){
+      const page:any=await reader.read({dataset:'clubs',offset,limit:30});
+      if(page.error || !page.data?.length)throw new Error('CLARIFY:Klublar ro‘yxati to‘liq o‘qilmadi. Hisobni taxmin qilmayman.');
+      allClubs.push(...page.data);
+      if(allClubs.length >= page.total || page.data.length < 30)break;
+    }
+    const selected=resolveAiClubs(request,allClubs);
+    if(selected.clarification)throw new Error('CLARIFY:'+selected.clarification);
+    const score=resolveAdminScore(request,selected.clubs,fixtureResult.data[0]);
+    // The language model cannot override score orientation from explicit club names.
+    Object.assign(plan.body,score);
   }
   if (plan.body.competitionId) await check(String(plan.body.competitionId), 'competitions');
   if (plan.secondaryId) await check(plan.secondaryId, 'fixtures');
