@@ -5,7 +5,7 @@ import { startMockUpstashBridge } from './mockUpstashBridge';
 import { ReadModelKeys, redisSetRaw, getFreshKey, getLkgKey } from '../readModel/readModelStore';
 import { createAiTournamentReader } from '../services/telegramAiDataService';
 import { generateGroundedTelegramAnswer } from '../services/telegramAiReadTools';
-import { handleAiAdminCommand, setTestAiAdminHooks } from '../services/telegramAiAdminService';
+import { handleAiAdminCommand, setTestAiAdminHooks, rememberDeliveredAdminPlan, isOwnerAdminPrivateChat } from '../services/telegramAiAdminService';
 import { adminPlanSchema } from '../services/telegramAiAdminCatalog';
 import { executeAiAdminRoute } from '../services/telegramAiAdminGateway';
 import { setTestConfigOverride, DEFAULT_AI_CONFIG } from '../services/telegramAiConfigService';
@@ -110,6 +110,21 @@ try {
 } finally { global.fetch = originalFetch; setTestAiAdminHooks(); }
 console.log('PASS complete AI dispatch: private read sent to verified owner DM only, outsider blocked, Telegram transport mocked');
 
+// Explicit AI delegation supports isolated plans and binds confirmation to the actor.
+setTestAiAdminHooks(async()=>({status:200,data:{success:true}}),async()=>({action:'result_edit',targetId:'league-1',body:{homeScore:5,awayScore:1,status:'CONFIRMED'}}));
+const delegatedPayload=payload('Arsenal 5-1 Chelsea 2-tur natijasini saqla',7573478198);
+const delegatedPreview=await handleAiAdminCommand(delegatedPayload,signal);
+assert.match(delegatedPreview,/ai_confirm/);
+await rememberDeliveredAdminPlan(delegatedPayload,delegatedPreview,90001,signal);
+const delegatedToken=/ai_confirm ([a-f0-9]{24})/.exec(delegatedPreview)![1];
+assert.match(await handleAiAdminCommand(payload('/ai_confirm '+delegatedToken,5209126900),signal),/tegishli emas/);
+assert.match(await handleAiAdminCommand({...delegatedPayload,text:'tasdiqlayman'},signal),/Bajarildi/);
+assert.equal(isOwnerAdminPrivateChat(payload('/ai_actions',7573478198,{chatId:7573478198,threadId:0})),true);
+assert.equal(isOwnerAdminPrivateChat(payload('/ai_actions',123,{chatId:123,threadId:0})),false);
+setTestAiAdminHooks(undefined,async()=>({action:'fixture_delete',targetId:'league-1',body:{reason:'test'}}));
+assert.match(await handleAiAdminCommand(delegatedPayload,signal),/faqat asosiy admin/);
+setTestAiAdminHooks();
+
 // Exercise the actual gateway and original middleware/route, not a mocked executor.
 const owner = 'user-5209126900';
 await db.collection('users').doc(owner).set({ id: owner, telegramId: '5209126900', isAdmin: true, isSuspended: false, adminPermissions: { scope: 'ALL', leagueIds: [] } });
@@ -121,6 +136,20 @@ const staleIdentity = await executeAiAdminRoute({action:'user_suspend',targetId:
 assert.equal(staleIdentity.status,409);assert.equal(staleIdentity.data.error,'USER_REFERENCE_CHANGED');
 assert.equal((await db.collection('users').doc('test-target').get()).data()?.isSuspended,true);
 await assert.rejects(executeAiAdminRoute({ action: 'user_suspend', targetId: 'test-target', body: { isSuspended: false } }, 123, 'unauthorized', signal), /OWNER_ONLY/);
+const delegatedId='user-7573478198';
+await db.collection('users').doc(delegatedId).set({id:delegatedId,telegramId:'7573478198',isAdmin:true,isSuspended:false,adminPermissions:{scope:'LEAGUES',leagueIds:['league-premier-league']}});
+await db.collection('fixtures').doc('delegate-own').set(fixture('delegate-own',league,2));
+await db.collection('fixtures').doc('delegate-foreign').set(fixture('delegate-foreign','comp-la-liga-2026',2));
+const ownReminder=await executeAiAdminRoute({action:'fixture_remind',targetId:'delegate-own',body:{}},7573478198,'delegate-own',signal);
+assert.equal(ownReminder.status,409,JSON.stringify(ownReminder.data)); // Allowed route, already confirmed: no reminder sent.
+const foreignReminder=await executeAiAdminRoute({action:'fixture_remind',targetId:'delegate-foreign',body:{}},7573478198,'delegate-foreign',signal);
+assert.equal(foreignReminder.status,403,'Real delegated identity preserves league permissions');
+for(const action of ['fixture_delete','user_role','ai_config','season_archive']){
+ const plan:any={action,targetId:'delegate-own',body:{}};
+ await assert.rejects(executeAiAdminRoute(plan,7573478198,'danger',signal),/faqat asosiy admin/);
+}
+await db.collection('users').doc(delegatedId).update({isAdmin:false});
+await assert.rejects(executeAiAdminRoute({action:'fixture_remind',targetId:'delegate-own',body:{}},7573478198,'revoked-delegate',signal),/OWNER_AUTHORIZATION_UNAVAILABLE/);
 await db.collection('users').doc(owner).update({ isSuspended: true });
 await assert.rejects(executeAiAdminRoute({ action: 'user_suspend', targetId: 'test-target', body: { isSuspended: false } }, 5209126900, 'revoked-owner', signal), /OWNER_AUTHORIZATION_UNAVAILABLE/);
 setTestConfigOverride(null);

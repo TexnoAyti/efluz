@@ -3,7 +3,7 @@ import { IncomingMessage, ServerResponse } from 'node:http';
 import { Socket } from 'node:net';
 import type { AdminPlan } from './telegramAiAdminCatalog';
 import { AI_ADMIN_ACTIONS, adminPlanPath, adminPlanSchema } from './telegramAiAdminCatalog';
-import { isPrimaryOwner, PRIMARY_OWNER_TELEGRAM_ID } from './telegramAiConfigService';
+import { isAiAdminActor, assertAiAdminActionAllowed } from './telegramAiAdminAccess';
 
 let gatewayPromise: Promise<ReturnType<typeof express>> | undefined;
 async function getGateway() {
@@ -29,13 +29,14 @@ async function getGateway() {
 /** In-process route dispatch, no network or minted sessions. requireAdmin re-reads
  * the real account, scope/danger guards, validation, cache invalidation and audit run unchanged. */
 export async function executeAiAdminRoute(plan: AdminPlan, ownerId: number, operationId: string, signal?: AbortSignal): Promise<{ status: number; data: any }> {
-  if (!isPrimaryOwner(ownerId) || !Number.isSafeInteger(ownerId)) throw new Error('OWNER_ONLY');
+  if (!isAiAdminActor(ownerId) || !Number.isSafeInteger(ownerId)) throw new Error('OWNER_ONLY');
   plan = adminPlanSchema.parse(plan);
+  assertAiAdminActionAllowed(ownerId, plan);
   const { getAuthoritativeUserForAuthorization } = await import('../firebase/firestoreStore');
   let realOwner;
-  try { realOwner = await getAuthoritativeUserForAuthorization(`user-${PRIMARY_OWNER_TELEGRAM_ID}`); }
+  try { realOwner = await getAuthoritativeUserForAuthorization(`user-${ownerId}`); }
   catch (error: any) { if (/RESOURCE_EXHAUSTED|quota|CIRCUIT_OPEN/i.test(error?.message || '')) throw new Error('ADMIN_DATABASE_QUOTA'); throw error; }
-  if (!realOwner || !isPrimaryOwner(realOwner.telegramId) || !realOwner.isAdmin || realOwner.isSuspended) throw new Error('OWNER_AUTHORIZATION_UNAVAILABLE');
+  if (!realOwner || String(realOwner.telegramId) !== String(ownerId) || !realOwner.isAdmin || realOwner.isSuspended) throw new Error('OWNER_AUTHORIZATION_UNAVAILABLE');
   if (signal?.aborted) throw new Error('TIMEOUT_ABORTED');
   if (plan.body.expectedUsername !== undefined) {
     const target = plan.targetId || String(plan.body.userId || (Array.isArray(plan.body.selectedUserIds) && plan.body.selectedUserIds.length === 1 ? plan.body.selectedUserIds[0] : '') || '');

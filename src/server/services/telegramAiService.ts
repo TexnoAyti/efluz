@@ -26,7 +26,7 @@ import { buildTelegramAiSystemPrompt } from './telegramAiPrompt';
 import { generateGroundedTelegramAnswer } from './telegramAiReadTools';
 import { isAiAdminCommand } from './telegramAiAdminCatalog';
 import { handleAiAdminCommand, isOwnerAdminPrivateChat, rememberDeliveredAdminPlan } from './telegramAiAdminService';
-import { isPrimaryOwner } from './telegramAiConfigService';
+import { isAiAdminActor } from './telegramAiAdminAccess';
 import { isPersonalFixtureQuestion, buildPersonalFixtureReply } from './telegramAiPersonalFixtureService';
 import { detectNaturalAdminAction } from './telegramAiAdminLanguage';
 import { getConversationIntent, buildConversationTableReply, isSimpleConversationClubAssignmentRequest, isSimpleConversationMatchdayRequest } from './telegramAiConversationCommands';
@@ -487,7 +487,7 @@ export async function handleTelegramAiMessage(
 
   // 2. Start unified 6-second processing timeout BEFORE reading configuration (Requirement 2)
   const intent = getConversationIntent(payload.text);
-  const owner = isPrimaryOwner(payload.fromUser.id);
+  const owner = isAiAdminActor(payload.fromUser.id);
   const replyConfirmation = Boolean(payload.replyToMessage && /^(?:ha|xa|yes|xop)$/i.test(payload.text.trim()));
   const ownerControl = owner && (isAiAdminCommand(payload.text) || ['admin','confirm','cancel','help'].includes(intent) || replyConfirmation);
   const rootController = new AbortController();

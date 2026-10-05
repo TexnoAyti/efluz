@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { GoogleGenAI } from '@google/genai';
 import { AI_ADMIN_ACTIONS, adminPlanSchema, type AdminPlan } from './telegramAiAdminCatalog';
 import { getAiRedisClient, withinAiDeadline } from './telegramAiDeadline';
+import { isAiAdminActor, assertAiAdminActionAllowed } from './telegramAiAdminAccess';
 import { getTelegramAiConfig, isPrimaryOwner } from './telegramAiConfigService';
 import { generateGroundedTelegramAnswer } from './telegramAiReadTools';
 import { executeAiAdminRoute } from './telegramAiAdminGateway';
@@ -18,7 +19,7 @@ const testLatest = new Map<string, {token:string; botMessageId:number}>();
 const latestKey = (p: TelegramAiMessagePayload) => `${prefix}latest:${p.chatId}:${p.threadId}:${p.fromUser.id}`;
 export async function rememberDeliveredAdminPlan(p: TelegramAiMessagePayload, reply: string, botMessageId: number, signal: AbortSignal) {
   const token = /\/ai_confirm ([a-f0-9]{24})/.exec(reply)?.[1];
-  if (!token || !isPrimaryOwner(p.fromUser.id)) return;
+  if (!token || !isAiAdminActor(p.fromUser.id)) return;
   const record = await loadPending(token, signal);
   if (!record || record.state !== 'pending') return;
   const value = { token, botMessageId };
@@ -69,7 +70,7 @@ export function setTestAiAdminHooks(executor?: typeof executeAiAdminRoute, plann
   testExecutor = executor; testPlanner = planner; testStore.clear(); testLatest.clear();
 }
 export function isOwnerAdminPrivateChat(payload: TelegramAiMessagePayload): boolean {
-  return isPrimaryOwner(payload.fromUser.id) && payload.chatId === payload.fromUser.id && payload.threadId === 0 && !payload.senderChat && !payload.forwarded;
+  return isAiAdminActor(payload.fromUser.id) && payload.chatId === payload.fromUser.id && payload.threadId === 0 && !payload.senderChat && !payload.forwarded;
 }
 async function storePending(record: Pending, signal: AbortSignal) {
   const client = getAiRedisClient(signal);
@@ -131,7 +132,7 @@ export async function planAiAdminAction(request: string, facts: string, signal: 
 /** Caller has already verified the webhook, allowed topic/owner DM, and rate limit.
  * Authority is derived from Telegram sender ID, never username, model text or chat admin status. */
 export async function handleAiAdminCommand(payload: TelegramAiMessagePayload, signal: AbortSignal, facts = '', scope: ConversationScope = {}): Promise<string> {
-  if (!isPrimaryOwner(payload.fromUser.id) || !Number.isSafeInteger(payload.fromUser.id) || payload.fromUser.is_bot || payload.senderChat || payload.forwarded)
+  if (!isAiAdminActor(payload.fromUser.id) || !Number.isSafeInteger(payload.fromUser.id) || payload.fromUser.is_bot || payload.senderChat || payload.forwarded)
     return 'AI orqali admin buyruqlarini faqat asosiy admin bera oladi.';
   const { config, redisAvailable } = await getTelegramAiConfig({ signal });
   const privateChat = isOwnerAdminPrivateChat(payload);
@@ -142,6 +143,7 @@ export async function handleAiAdminCommand(payload: TelegramAiMessagePayload, si
   let argument = match ? match[2]?.trim() || '' : command === 'admin' ? payload.text : '';
   if (!command) return 'Nima qilishimni oddiy yozing. Masalan: “La Liga jadvalini tashla” yoki “La Liga 10-turni qulflang”.';
   try {
+    if (command === 'actions' && !isPrimaryOwner(payload.fromUser.id)) return 'Liga va kubok bo‘yicha mavjud admin ruxsatlaringiz doirasida oddiy yozing: natijani kiritish/tasdiqlash, klub biriktirish, turni boshqarish, kubok qur’asini ko‘rish. Har bir o‘zgarish avval reja va sizning tasdig‘ingizni talab qiladi. Xavfli va umumiy tizim amallari faqat asosiy admin uchun.';
     if (command === 'actions') return `Oddiy yozishingiz mumkin:
 • La Liga jadvalini tashla
 • Angliya Kubogi yarim final o‘yinlarini ko‘rsat
@@ -161,6 +163,7 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
     if (command === 'read') {
       if (!privateChat) return 'Yopiq admin ma’lumotlarini olish uchun botning shaxsiy chatida /ai_read ishlating.';
       const plan = argument.startsWith('{') ? adminPlanSchema.parse(JSON.parse(argument)) : await parseNaturalAdminPlan(argument, signal) || await planAiAdminAction(argument, facts, signal);
+      assertAiAdminActionAllowed(payload.fromUser.id, plan);
       if (AI_ADMIN_ACTIONS[plan.action].method !== 'GET') return '/ai_read faqat o‘qish uchun.';
       const result = await withinAiDeadline(signal, () => (testExecutor || executeAiAdminRoute)(plan, payload.fromUser.id, 'ai-read-' + payload.updateId, signal));
       return `HTTP ${result.status}\n${JSON.stringify(result.data).slice(0, 850)}\nKatta ro‘yxat uchun search/page/limit filtrlarini body ichida kiriting.`;
@@ -171,6 +174,7 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
       if (!/^[a-f0-9]{24}$/.test(argument)) return 'Tasdiqlash yoki bekor qilish uchun reja kodini aynan yuboring.';
       const record = await loadPending(argument, signal);
       if (!record || record.owner !== payload.fromUser.id || record.chat !== payload.chatId || record.thread !== payload.threadId || record.expiresAt <= Date.now()) return 'Reja topilmadi, muddati o‘tgan yoki bu chatga tegishli emas.';
+      assertAiAdminActionAllowed(payload.fromUser.id, record.plan);
       if (!await claim(record, command === 'cancel' ? 'cancelled' : 'executing', signal)) return 'Bu reja allaqachon ishlatilgan yoki bekor qilingan. Takroran bajarilmadi.';
       if (command === 'cancel') return 'Reja bekor qilindi. O‘zgarish bajarilmadi.';
       try {
@@ -203,6 +207,7 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
     const plan = testPlanner ? await planAiAdminAction(argument, facts, signal)
       : await parseConversationClubAssignmentPlan(argument, signal)
         || await parseNaturalAdminPlan(argument, signal) || await parseConversationMatchdayPlan(argument, scope, signal) || await planAiAdminAction(argument, facts, signal);
+    assertAiAdminActionAllowed(payload.fromUser.id, plan);
     assertAdminPlanReady(plan);
     if (AI_ADMIN_ACTIONS[plan.action].method === 'GET') {
       if (!privateChat) return 'Yopiq admin ma’lumotlarini botning shaxsiy chatida so‘rang. Ommaviy jadval uchun liga nomini yozing.';
