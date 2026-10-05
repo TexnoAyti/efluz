@@ -22,6 +22,7 @@
   ],
   "functions": {
     "api/index.js": {
+      "includeFiles": "{public/export-emblems/*.svg,node_modules/dejavu-fonts-ttf/{package.json,ttf/DejaVuSans{,-Bold}.ttf},node_modules/@napi-rs/canvas-linux-x64-gnu/*.node}",
       "maxDuration": 60
     }
   }

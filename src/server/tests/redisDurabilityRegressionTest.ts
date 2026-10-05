@@ -381,6 +381,71 @@ async function main() {
     } finally { globalThis.fetch = adminFetch; adminAI.setTestAiAdminHooks(); aiConfig.setTestConfigOverride(null); }
     console.log('PASS actual Redis Lua: owner admin confirmation concurrency, permanent claim, expiry, Redis outage fail-closed; no real mutations or Telegram messages');
 
+    const channel = await import('../services/matchdayChannelPost');
+    // Previous backup tests intentionally queued an empty synthetic job.
+    await client.del(`${model.KEY_PREFIX}:telegram:queue`);
+    const { SEED_CLUBS } = await import('../db/seed');
+    const channelClubs = SEED_CLUBS.map((club, index) => ({ ...club, active: true, createdAt: '', claimedByUserId: 'channel-owner-' + index, claimedByUsername: 'manager' + index, isTaken: true }));
+    await model.redisSetRaw(model.ReadModelKeys.clubsWithOwners(seasonId), { data: channelClubs });
+    const bundes = channelClubs.filter(c => c.leagueId === 'league-bundesliga');
+    const channelCompetition: any = { id: 'channel-bundes-test', leagueId: 'league-bundesliga', seasonId, type: 'LEAGUE', status: 'active', name: 'Bundesliga', formatConfig: {}, currentMatchday: 12 };
+    const channelFixtures: any[] = Array.from({ length: 9 }, (_, index) => ({ id: 'channel-fixture-' + index, seasonId, competitionId: channelCompetition.id, matchday: 12, status: 'SCHEDULED', homeClubId: bundes[index * 2].id, awayClubId: bundes[index * 2 + 1].id }));
+    const channelParams = { competition: channelCompetition, fixtures: channelFixtures, matchday: 12, deadlineAt: new Date(Date.now() + 30 * 3600000).toISOString() };
+    const channelResults = await Promise.all(Array.from({ length: 8 }, () => channel.enqueueMatchdayChannelPost(channelParams)));
+    assert.equal(channelResults.filter(result => result === 'QUEUED').length, 1);
+    assert.equal(await channel.enqueueMatchdayChannelPost({ ...channelParams, deadlineAt: new Date(Date.now() + 48 * 3600000).toISOString() }), 'EXISTS');
+    const channelId = channel.channelMatchdayId(channelCompetition.id, seasonId, 12);
+    const channelRecord = await client.hget<any>(`${model.KEY_PREFIX}:telegram:broadcasts`, channelId);
+    assert.equal(channelRecord.recipients.length, 1);
+    assert.equal(channelRecord.recipients[0].userId, 'channel:efl_uz');
+    await db.collection(COLLECTIONS.COMPETITIONS).doc(channelCompetition.id).set(channelCompetition);
+    for (const fixture of channelFixtures) await db.collection(COLLECTIONS.FIXTURES).doc(fixture.id).set(fixture);
+    const { controlCompetitionMatchday } = await import('../services/competitionMatchdayService');
+    assert.equal((await controlCompetitionMatchday(channelCompetition.id, { action: 'OPEN', matchday: 12 })).channelPost, 'EXISTS', 'Common control hook must enqueue/deduplicate outside the HTTP route');
+    assert.equal((await controlCompetitionMatchday(channelCompetition.id, { action: 'LOCK', matchday: 12 })).channelPost, 'SKIPPED');
+    let photoSends = 0, rejectPhoto = false, timeoutPhoto = false;
+    const channelFetch = globalThis.fetch;
+    globalThis.fetch = async (input: any, init?: any) => {
+      const url = new URL(String(input));
+      if (url.hostname === 'api.telegram.org') {
+        assert.ok(url.pathname.endsWith('/sendPhoto'), 'Channel job must send a photo, not a text broadcast');
+        assert.equal(init.body.get('chat_id'), '@efl_uz');
+        const state = await client.hget<any>(`${model.KEY_PREFIX}:telegram:broadcasts`, channel.channelMatchdayId(channelCompetition.id, seasonId, init.body.get('caption').includes('13 tur') ? 13 : 12));
+        assert.equal(state.recipients[0].status, 'SENDING', 'Persist dispatch state before calling Telegram');
+        photoSends++;
+        if (timeoutPhoto) throw Error('Unknown timeout');
+        if (rejectPhoto) return new Response(JSON.stringify({ ok: false, error_code: 429, description: 'Too Many Requests', parameters: { retry_after: 1 } }));
+        return new Response(JSON.stringify({ ok: true, result: { message_id: 321 } }));
+      }
+      if (url.hostname !== 'redis.test.invalid') return new Response('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="40"><rect width="20" height="40" fill="green"/></svg>');
+      return channelFetch(input, init);
+    };
+    try {
+      await queue.processNotificationQueue();
+      assert.equal(photoSends, 1);
+      assert.equal((await client.hget<any>(`${model.KEY_PREFIX}:telegram:broadcasts`, channelId)).recipients[0].status, 'SENT');
+      assert.equal(await channel.enqueueMatchdayChannelPost(channelParams), 'EXISTS');
+      await queue.processNotificationQueue();
+      assert.equal(photoSends, 1);
+      const nextParams = { ...channelParams, matchday: 13, fixtures: channelFixtures.map(f => ({ ...f, matchday: 13 })) };
+      assert.equal(await channel.enqueueMatchdayChannelPost(nextParams), 'QUEUED');
+      rejectPhoto = true;
+      await queue.processNotificationQueue();
+      const nextId = channel.channelMatchdayId(channelCompetition.id, seasonId, 13);
+      assert.equal((await client.hget<any>(`${model.KEY_PREFIX}:telegram:broadcasts`, nextId)).recipients[0].status, 'PENDING');
+      const waiting = await client.lrange<string[]>(`${model.KEY_PREFIX}:telegram:queue`, 0, -1);
+      await client.del(`${model.KEY_PREFIX}:telegram:queue`);
+      for (const raw of waiting) { const job = typeof raw === 'string' ? JSON.parse(raw) : raw; job.availableAt = 0; await client.rpush(`${model.KEY_PREFIX}:telegram:queue`, JSON.stringify(job)); }
+      rejectPhoto = false; timeoutPhoto = true;
+      await queue.processNotificationQueue();
+      assert.equal((await client.hget<any>(`${model.KEY_PREFIX}:telegram:broadcasts`, nextId)).recipients[0].status, 'FAILED');
+      const afterTimeout = photoSends;
+      await queue.processNotificationQueue();
+      assert.equal(photoSends, afterTimeout, 'Unknown delivery must never automatically resend');
+    } finally { globalThis.fetch = channelFetch; }
+    assert.equal(await channel.enqueueMatchdayChannelPost({ ...channelParams, competition: { ...channelCompetition, type: 'KNOCKOUT' } }), 'SKIPPED');
+    console.log('PASS actual Redis: 8 concurrent round opens enqueue one channel photo; reopen/deadline changes deduplicate, next round posts, SENDING persists before dispatch, 429 retry and unknown-timeout no resend.');
+
     await import('./durableClubClaimRegressionTest');
     console.log('Redis durability regression passed; Telegram transport was mocked, no real messages sent.');
   } finally { globalThis.fetch = isolatedFetch; bridge.close(); }

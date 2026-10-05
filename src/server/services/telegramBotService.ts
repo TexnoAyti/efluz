@@ -203,6 +203,21 @@ export async function sendTelegramMessage(
 /**
  * Sends a Telegram sticker using the Bot API
  */
+export async function sendTelegramPhoto(chatId: number | string, photo: Buffer, caption: string): Promise<{ ok: boolean; result?: any; error?: string; error_code?: number; parameters?: { retry_after?: number } }> {
+  const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
+  if (!token) return { ok: false, error: 'TELEGRAM_BOT_TOKEN is not configured' };
+  const form = new FormData();
+  form.set('chat_id', String(chatId));
+  form.set('caption', caption);
+  form.set('parse_mode', 'HTML');
+  form.set('photo', new Blob([new Uint8Array(photo)], { type: 'image/png' }), 'efluz-matchday.png');
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, { method: 'POST', body: form, signal: AbortSignal.timeout(10000) });
+    const data: any = await response.json();
+    return { ...data, error: data.description || data.error };
+  } catch { return { ok: false, error: 'PHOTO_DELIVERY_UNKNOWN' }; }
+}
+
 export async function sendTelegramSticker(
   chatId: number | string,
   stickerFileId: string

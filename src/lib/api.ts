@@ -956,8 +956,8 @@ export const api = {
     return request(`/api/admin/competitions/${competitionId}/matchday/control`, { cacheTtlMs: 0 });
   },
 
-  async controlMatchday(competitionId: string, params: { action: MatchdayControlAction; matchday: number; durationHours: number; expectedUpdatedAt: string | null }): Promise<{ success: boolean }> {
-    const result = await request<{ success: boolean }>(`/api/admin/competitions/${competitionId}/matchday/control`, { method: 'POST', body: JSON.stringify(params) });
+  async controlMatchday(competitionId: string, params: { action: MatchdayControlAction; matchday: number; durationHours: number; expectedUpdatedAt: string | null }): Promise<{ success: boolean; channelPost?: 'QUEUED' | 'EXISTS' | 'SKIPPED' | 'FAILED' }> {
+    const result = await request<{ success: boolean; channelPost?: 'QUEUED' | 'EXISTS' | 'SKIPPED' | 'FAILED' }>(`/api/admin/competitions/${competitionId}/matchday/control`, { method: 'POST', body: JSON.stringify(params) });
     invalidateClientCache();
     return result;
   },

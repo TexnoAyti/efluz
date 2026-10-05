@@ -55,6 +55,7 @@
     "test:matchday-reminder": "node scripts/run-isolated-test.mjs src/server/tests/matchdayReminderRegressionTest.ts"
   },
   "dependencies": {
+    "@napi-rs/canvas": "0.1.80",
     "@google/genai": "^2.4.0",
     "@react-three/drei": "^10.7.4",
     "@react-three/fiber": "^9.3.0",
@@ -66,6 +67,7 @@
     "canvas-confetti": "^1.9.4",
     "clsx": "^2.1.1",
     "dotenv": "^17.2.3",
+    "dejavu-fonts-ttf": "2.37.3",
     "express": "^4.21.2",
     "firebase-admin": "14.3.0",
     "lucide-react": "^0.546.0",

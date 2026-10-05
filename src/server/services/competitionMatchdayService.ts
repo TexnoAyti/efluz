@@ -111,5 +111,15 @@ export async function controlCompetitionMatchday(competitionId: string, params: 
     return { competition: { ...comp, ...changes }, locks, deadlineAt: deadline };
   });
   await syncCompetitionMatchdayState(result.competition as FirestoreCompetitionDoc, result.locks);
-  return { success: true, competitionId, currentMatchday: result.competition.currentMatchday || 1, matchday: target, isMatchdayOpen: params.action !== 'LOCK', nextMatchdayOpenAt: result.deadlineAt, totalMatchdays: totalRounds(competition, fixtures) };
+  let channelPost: 'QUEUED' | 'EXISTS' | 'SKIPPED' | 'FAILED' = 'SKIPPED';
+  if (['SELECT', 'OPEN', 'RESTART'].includes(params.action)) {
+    try {
+      const { enqueueMatchdayChannelPost } = await import('./matchdayChannelPost');
+      channelPost = await enqueueMatchdayChannelPost({ competition: result.competition as any, fixtures: fixtures.map(f => ({ ...f, seasonId: f.seasonId || seasonId })) as any, matchday: target, deadlineAt: result.deadlineAt });
+    } catch (error: any) {
+      channelPost = 'FAILED';
+      console.warn('[MATCHDAY_CHANNEL_ENQUEUE_FAILED]', { competitionId, matchday: target, reason: error?.message });
+    }
+  }
+  return { success: true, competitionId, currentMatchday: result.competition.currentMatchday || 1, matchday: target, isMatchdayOpen: params.action !== 'LOCK', nextMatchdayOpenAt: result.deadlineAt, totalMatchdays: totalRounds(competition, fixtures), channelPost };
 }

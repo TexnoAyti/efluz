@@ -1,6 +1,7 @@
 import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS, FirestoreClubDoc, FirestoreUserDoc } from '../firebase/collections';
-import { sendTelegramMessage } from './telegramBotService';
+import { sendTelegramMessage, sendTelegramPhoto } from './telegramBotService';
+import type { TournamentImageModel } from '../../lib/tournamentImage';
 import { createAuditLog } from './adminService';
 import {
   redisGetRaw,
@@ -77,6 +78,7 @@ export interface TelegramBroadcastRecord {
 }
 
 export interface NotificationQueueJob {
+  photoModel?: TournamentImageModel;
   jobId: string;
   broadcastId: string;
   userId: string;
@@ -507,7 +509,9 @@ export async function processNotificationQueue(batchSize = 25, stopClaimingAt = 
     const abandoned = await client.hgetall<Record<string, NotificationQueueJob & { claimedAt?: number }>>(PROCESSING_KEY);
     for (const job of Object.values(abandoned || {})) {
       if ((job.claimedAt || 0) + 120000 > Date.now()) continue;
-      if (job.requiresRecipientLookup) {
+      const photoRecord = job.photoModel ? await getBroadcastDetails(job.broadcastId) : null;
+      const photoNotDispatched = Boolean(photoRecord?.recipients.find(r => r.userId === job.userId && r.status === 'PENDING'));
+      if (job.requiresRecipientLookup || photoNotDispatched) {
         job.availableAt = Date.now() + 300000;
         await client.rpush(QUEUE_KEY, JSON.stringify(job));
       } else {
@@ -566,10 +570,29 @@ export async function processNotificationQueue(batchSize = 25, stopClaimingAt = 
         // Crash recovery must know when a resolved job may have started sending.
         await client.hset(PROCESSING_KEY, { [job.jobId]: { ...job, claimedAt: Date.now() } });
       }
+      let photo: Buffer | undefined;
+      if (job.photoModel) {
+        try {
+          const { renderTournamentImagePng } = await import('./tournamentImageRenderer');
+          photo = await renderTournamentImagePng(job.photoModel);
+        } catch {
+          // Rendering happens before dispatch: it is safe to retry here.
+          if (job.retryCount < job.maxRetries) {
+            job.retryCount++;
+            job.availableAt = Date.now() + 30000;
+            await client.rpush(QUEUE_KEY, JSON.stringify(job));
+          } else {
+            await updateBroadcastRecipientState(job.broadcastId, job.userId, 'FAILED', 'PHOTO_RENDER_FAILED');
+            failed++;
+          }
+          await client.hdel(PROCESSING_KEY, job.jobId);
+          continue;
+        }
+      }
       recipient.status = 'SENDING';
       record.status = 'PROCESSING';
       await client.hset(BROADCASTS_KEY, { [record.id]: record });
-      const result = await sendTelegramMessage(
+      const result = photo ? await sendTelegramPhoto(job.telegramId!, photo, job.body) : await sendTelegramMessage(
         job.telegramId!,
         formatTelegramMessage(job.title, job.body, job.type, Boolean(job.bodyIsHtml)),
         { parse_mode: 'HTML', reply_markup: job.replyMarkup }

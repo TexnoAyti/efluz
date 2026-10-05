@@ -28,8 +28,10 @@ export function AdminMatchdayControl({ competitionId, onChanged }: { competition
     if (!state) return;
     setBusy(true); setError(''); setFeedback(''); setBlockers([]);
     try {
-      await api.controlMatchday(competitionId, { action, matchday: selected, durationHours: Number(hours), expectedUpdatedAt: state.updatedAt });
-      setFeedback(action === 'LOCK' ? `${selected}-tur yopildi.` : action === 'SELECT' ? `${selected}-tur faol qilindi va ochildi.` : `${selected}-tur holati va muddati yangilandi.`);
+      const result = await api.controlMatchday(competitionId, { action, matchday: selected, durationHours: Number(hours), expectedUpdatedAt: state.updatedAt });
+      const updated = action === 'LOCK' ? `${selected}-tur yopildi.` : action === 'SELECT' ? `${selected}-tur faol qilindi va ochildi.` : `${selected}-tur holati va muddati yangilandi.`;
+      setFeedback(updated + (result.channelPost === 'QUEUED' ? ' Kanal posti yuborish navbatiga qo‘yildi.' : result.channelPost === 'EXISTS' ? ' Bu turning kanal posti avval navbatga qo‘yilgan.' : ''));
+      if (result.channelPost === 'FAILED') setError('Tur saqlandi, lekin kanal postini navbatga qo‘yib bo‘lmadi. Turni qayta ochish orqali takror urinishingiz mumkin.');
       await load(true);
       await onChanged();
     } catch (err) {
