@@ -251,7 +251,7 @@ export const PlayerSeasonProfile: React.FC<PlayerSeasonProfileProps> = ({ userId
         </div>
 
         {user?.isAdmin && <div className="rounded-xl border border-amber-400/10 bg-amber-400/[0.035] px-3 py-2 text-[9px] leading-4 text-amber-200/65">
-          Trophy Cabinet, competition-by-competition Career history, streak analytics and deeper performance breakdown stay inside the private Premium Career layer.
+          Deep Career analytics and Trophy Cabinet remain Premium.
         </div>}
       </div>
     </section>
