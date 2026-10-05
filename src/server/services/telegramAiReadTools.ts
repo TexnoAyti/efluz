@@ -14,14 +14,6 @@ export function aiProviderFailureKind(error: any): 'busy' | 'quota' | 'connectio
   return 'connection';
 }
 
-export function aiProviderFailureReply(error: unknown): string {
-  switch (aiProviderFailureKind(error)) {
-    case 'busy': return 'AI hozir band. Birozdan keyin qayta yozing.';
-    case 'quota': return 'AI so‘rovlar limiti tugadi. Birozdan keyin qayta urinib ko‘ring.';
-    default: return 'AI’dan javob olishda xatolik bo‘ldi. Birozdan keyin qayta yozing.';
-  }
-}
-
 function answerText(response: any): string {
   const text = response.text?.trim();
   if (text) return text;

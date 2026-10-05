@@ -24,7 +24,8 @@ import { checkAndIncrementAiRateLimits } from './telegramAiRateLimitService';
 import { buildAiGroundingContext } from './telegramAiGroundingService';
 import { buildTelegramAiSystemPrompt } from './telegramAiPrompt';
 import { resolveAiSpeaker, addressAiFact, aiSocialReply } from './telegramAiPersonality';
-import { generateGroundedTelegramAnswer, AI_CLARIFICATION_REPLY, aiProviderFailureKind, aiProviderFailureReply } from './telegramAiReadTools';
+import { generateGroundedTelegramAnswer, AI_CLARIFICATION_REPLY, aiProviderFailureKind } from './telegramAiReadTools';
+import { buildAiFallbackReply } from './telegramAiFallback';
 import { isAiAdminCommand } from './telegramAiAdminCatalog';
 import { decorateAiCustomEmoji } from './telegramAiCustomEmoji';
 import { handleAiAdminCommand, isOwnerAdminPrivateChat, rememberDeliveredAdminPlan } from './telegramAiAdminService';
@@ -73,7 +74,6 @@ const MAX_CONTEXT_TURNS = 4;
 const CONTEXT_TTL_SECONDS = 3600; // Sliding one-hour TTL; scoped to user/chat/topic
 const MAX_RESPONSE_CHARS = 1000;
 const STANDARD_OFF_TOPIC_REPLY = "Men faqat eFootball va EFL UZ bo‘yicha yordam beraman.";
-const AI_CONFIGURATION_REPLY = 'AI ulanishi sozlanmagan. Admin sozlamalarni tekshirishi kerak.';
 
 // Extracts the Telegram Bot User ID from the configured token (<bot_id>:<token_secret>)
 export function getConfiguredBotUserId(): number | null {
@@ -641,15 +641,20 @@ export async function handleTelegramAiMessage(
 
     // 10. Generate response via Gemini (or Test Mock)
     let replyText = '';
+    const modelController = new AbortController();
+    const modelTimeout = setTimeout(() => modelController.abort(), Math.max(0, deadlineAt - Date.now() - 1800));
+    const modelSignal = AbortSignal.any([rootController.signal, modelController.signal]);
 
+    try {
     if (grounding.factualAnswer) {
       replyText = addressAiFact(grounding.factualAnswer, speaker, payload.messageId, history.filter(h => h.role === 'model').map(h => h.text));
     } else if (testAiResponder) {
-      replyText = await withinAiDeadline(rootController.signal, () => testAiResponder!(payload.text, grounding.factsSummary, history));
+      replyText = await withinAiDeadline(modelSignal, () => testAiResponder!(payload.text, grounding.factsSummary, history));
     } else {
       const apiKey = process.env.GEMINI_API_KEY?.trim();
       if (!apiKey) {
-        replyText = AI_CONFIGURATION_REPLY;
+        console.error('[AI GEMINI] Missing API configuration; using local reply');
+        replyText = buildAiFallbackReply(payload.text, grounding);
       } else {
         const modelName = process.env.GEMINI_MODEL?.trim() || 'gemini-3.1-flash-lite';
         const ai = new GoogleGenAI({ apiKey });
@@ -665,7 +670,7 @@ export async function handleTelegramAiMessage(
         ];
 
         try {
-          replyText = await generateGroundedTelegramAnswer({ ai, model: modelName, contents, systemPrompt, signal: rootController.signal, deadlineAt });
+          replyText = await generateGroundedTelegramAnswer({ ai, model: modelName, contents, systemPrompt, signal: modelSignal, deadlineAt: deadlineAt - 1800 });
         } catch (apiErr: any) {
           const errMsg = String(apiErr?.message || '');
           if (rootController.signal.aborted) {
@@ -674,9 +679,16 @@ export async function handleTelegramAiMessage(
             return { ok: false, handled: false, error: 'TIMEOUT_ABORTED' };
           }
           console.error('[AI GEMINI]', aiProviderFailureKind(apiErr), 'Error calling Gemini:', errMsg);
-          replyText = aiProviderFailureReply(apiErr);
+          replyText = buildAiFallbackReply(payload.text, grounding);
         }
       }
+    }
+    } catch (error) {
+      if (rootController.signal.aborted) throw error;
+      console.warn('[AI LOCAL_REPLY] Generation failed or exceeded model budget');
+      replyText = buildAiFallbackReply(payload.text, grounding);
+    } finally {
+      clearTimeout(modelTimeout);
     }
 
     if (!replyText?.trim()) {

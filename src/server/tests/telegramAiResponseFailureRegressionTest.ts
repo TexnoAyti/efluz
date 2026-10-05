@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { generateGroundedTelegramAnswer, AI_CLARIFICATION_REPLY, aiProviderFailureKind, aiProviderFailureReply } from '../services/telegramAiReadTools';
+import { generateGroundedTelegramAnswer, AI_CLARIFICATION_REPLY, aiProviderFailureKind } from '../services/telegramAiReadTools';
+import { buildAiFallbackReply } from '../services/telegramAiFallback';
 import { handleTelegramAiMessage, clearTestAiState, setTestAiResponder } from '../services/telegramAiService';
 import { DEFAULT_AI_CONFIG, setTestConfigOverride } from '../services/telegramAiConfigService';
 import { setTestGroundingOverride } from '../services/telegramAiGroundingService';
@@ -8,11 +9,16 @@ import { clearTestRateLimitState } from '../services/telegramAiRateLimitService'
 const busy = new Error(JSON.stringify({ error: { code: 503, status: 'UNAVAILABLE', message: 'High demand' } }));
 const quota = Object.assign(new Error('RESOURCE_EXHAUSTED'), { status: 429 });
 assert.equal(aiProviderFailureKind(busy), 'busy');
-assert.match(aiProviderFailureReply(busy), /hozir band/);
 assert.equal(aiProviderFailureKind(quota), 'quota');
-assert.match(aiProviderFailureReply(quota), /limiti tugadi/);
 assert.equal(aiProviderFailureKind(new Error('Unauthorized')), 'connection');
 const base = { ai: {} as any, model: 'mock', contents: [], systemPrompt: 'test', signal: new AbortController().signal };
+const grounding = { factsSummary: 'Private prompt instructions', hasStaleData: true, detectedClubs: ['Arsenal'], detectedCompetitions: [], selectedClubIds: [] };
+const evidence = 'Oxirgi saqlangan ma’lumot; joriy holat qayta tasdiqlanmagan.\nArsenal: 3-o‘rin, 20 ochko.';
+assert.match(buildAiFallbackReply('Arsenal kim yutadi', { ...grounding, fallbackFacts: evidence }), /3-o‘rin, 20 ochko/);
+assert.match(buildAiFallbackReply('Arsenal kim yutadi', { ...grounding, fallbackFacts: evidence }), /joriy holat qayta tasdiqlanmagan/);
+assert.ok(!buildAiFallbackReply('Arsenal kim yutadi', grounding).includes('Private prompt'));
+assert.match(buildAiFallbackReply('taktika kerak', grounding), /Umumiy eFootball maslahati/);
+assert.equal(buildAiFallbackReply('Arsenal egasi', { ...grounding, factualAnswer: '@actual_owner' }), '@actual_owner');
 assert.equal(await generateGroundedTelegramAnswer({ ...base, generate: async () => ({}) }), AI_CLARIFICATION_REPLY);
 assert.equal(await generateGroundedTelegramAnswer({ ...base, generate: async () => ({ text: '  ' }) }), AI_CLARIFICATION_REPLY);
 assert.match(await generateGroundedTelegramAnswer({ ...base, generate: async () => ({ promptFeedback: { blockReason: 'SAFETY' } }) }), /Boshqacha yozib/);
@@ -51,6 +57,10 @@ try {
   assert.equal(sent.at(-1).text, AI_CLARIFICATION_REPLY);
   await handleTelegramAiMessage(payload);
   assert.equal(sent.length, 1, 'Fallback respects delivery deduplication');
+  setTestAiResponder(async () => { throw busy; });
+  assert.equal((await handleTelegramAiMessage({ ...payload, updateId: 81018, messageId: 32, text: 'efootball taktika kerak' })).replySent, true);
+  assert.match(sent.at(-1).text, /Umumiy eFootball maslahati/);
+  assert.ok(!sent.at(-1).text.includes('band'));
 } finally {
   global.fetch = original; setTestAiResponder(undefined); setTestGroundingOverride(null); setTestConfigOverride(null);
   clearTestAiState(); clearTestRateLimitState();

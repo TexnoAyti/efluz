@@ -52,6 +52,10 @@ async function run() {
   assert.ok(rank.detectedCompetitions.includes(cup) && rank.detectedCompetitions.includes(europe));
   assert.ok(rank.factsSummary.includes('Ipswich Town 3 - 2 Inter Milan'));
   assert.ok(!rank.factsSummary.includes('99 - 98') && !rank.factsSummary.includes('77 - 76') && !rank.factsSummary.includes('66 - 65'));
+  const analysisFallback = await buildAiGroundingContext('Ipswich kim yutadi?');
+  assert.ok(analysisFallback.fallbackFacts?.includes('14-o‘rin, 18 ochko'));
+  assert.ok(!analysisFallback.fallbackFacts?.includes('99 - 98'), 'Fallback never shows a scheduled score as confirmed');
+  assert.ok(!analysisFallback.fallbackFacts?.includes('private-user-id'));
   const next = await buildAiGroundingContext('keyingi o‘yini?',undefined,{ selectedClubIds:['club-ipswich'] });
   assert.ok(next.factualAnswer?.includes('Liverpool') && next.factualAnswer?.includes('FA Cup'), 'Cup follows league round 9 before round 10');
   assert.ok(!next.factualAnswer?.includes('77') && !next.factualAnswer?.includes('99'));

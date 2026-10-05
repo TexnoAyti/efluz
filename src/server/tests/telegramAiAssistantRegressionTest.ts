@@ -591,7 +591,7 @@ async function runTests() {
     setTestGroundingOverride(null);
     console.log('PASS verified ownership: exact username, own follow-up, missing/unassigned/stale data and no model fabrication.');
 
-    // A stalled model must return at the global deadline without dispatching later.
+    // A stalled model must leave time for one local reply before the global deadline.
     clearTestAiState();
     clearTestRateLimitState();
     sentTelegramMessages.length = 0;
@@ -602,10 +602,12 @@ async function runTests() {
       updateId: 991122, messageId: 991122, chatId: -100999888, threadId: 3503,
       fromUser: { id: 991122 }, text: 'Arsenal haqida ayting',
     });
-    assert.equal(stalled.error, 'TIMEOUT_ABORTED');
+    assert.equal(stalled.replySent, true);
     assert.ok(Date.now() - deadlineStarted < 7500, 'A stalled model must not hold the webhook indefinitely');
-    assert.equal(sentTelegramMessages.length, 0, 'Deadline expiry must prevent all dispatches');
-    console.log('PASS global deadline: stalled model returns without Telegram dispatch.');
+    assert.equal(sentTelegramMessages.length, 1, 'Model timeout dispatches one local response');
+    assert.ok(!sentTelegramMessages[0].text.includes('band'));
+    assert.ok(!sentTelegramMessages[0].text.includes('faol emas'));
+    console.log('PASS global deadline: stalled model returns with one local reply.');
     console.log('   ALL 10 TELEGRAM AI ASSISTANT REGRESSION SUITES PASSED!      ');
     console.log('================================================================');
   } finally {
