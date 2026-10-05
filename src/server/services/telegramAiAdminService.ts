@@ -1,4 +1,5 @@
 import { assertAdminPlanReady, validateModelAdminPlan } from './telegramAiAdminPlanReadiness';
+import { buildConversationTableReply } from './telegramAiConversationCommands';
 import { contextualFixturePlan } from './telegramAiFixtureContext';
 import { parseNaturalAdminPlan } from './telegramAiNaturalAdminPlanner';
 import { randomBytes } from 'node:crypto';
@@ -194,9 +195,20 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
           await storePending({token,plan,owner:record.owner,chat:record.chat,thread:record.thread,expiresAt:Date.now()+300000,state:'pending',description},signal);
           return `Qur’a oldindan ko‘rildi: ${result.data.competitionName || record.plan.targetId}, ${result.data.totalParticipants || result.data.totalTeams} ta jamoa.\n${result.data.mode === 'REDRAW' ? 'Mavjud qur’a almashtiriladi.' : 'Yangi o‘yinlar yaratiladi.'}\n\nReja: ${description}\nHali o‘yinlar yaratilmagan. Tasdiqlaysizmi?\n/ai_confirm ${token}\n/ai_cancel ${token}\n5 daqiqa amal qiladi.`;
         }
-        return result.status >= 200 && result.status < 300 && result.data?.success !== false && !result.data?.error
-          ? `Bajarildi. ${record.description || describeAiAdminPlan(record.plan)}`
-          : `Bajarish tasdiqlanmadi (HTTP ${result.status}): ${String(result.data?.message || result.data?.error || result.data?.code || 'server rad etdi').slice(0, 400)}. Holatni admin panelda tekshiring.`;
+        if (result.status >= 200 && result.status < 300 && result.data?.success !== false && !result.data?.error) {
+          let followUp = '';
+          if (['result_edit','result_approve'].includes(record.plan.action) && result.data?.fixture?.competitionId) {
+            const fixture = result.data.fixture;
+            const competitionName = fixture.competitionName || fixture.competition || fixture.competitionId;
+            const round = fixture.matchday ? ` ${fixture.matchday}-tur jadvalini tashla` : ' jadvalini tashla';
+            try {
+              const table = await buildConversationTableReply(`${competitionName}${round}`, 'standings', {}, signal);
+              followUp = `\n\nYangilangan jadval:\n${table.text}`;
+            } catch { followUp = '\n\nNatija saqlandi, lekin yangilangan jadvalni hozir yuborib bo‘lmadi.'; }
+          }
+          return `Bajarildi. ${record.description || describeAiAdminPlan(record.plan)}${followUp}`;
+        }
+        return `Bajarish tasdiqlanmadi (HTTP ${result.status}): ${String(result.data?.message || result.data?.error || result.data?.code || 'server rad etdi').slice(0, 400)}. Holatni admin panelda tekshiring.`;
       } catch (error: any) {
         if (error?.message === 'ADMIN_DATABASE_QUOTA') { await finish(record, { status: 503, data: { error: 'ADMIN_DATABASE_QUOTA' } }); return 'Baza limiti tugaganligi sababli amal bajarilmadi. Jadvalni ko‘rish mumkin; o‘zgarishlar uchun baza tiklanishi kerak.'; }
         await finish(record);
