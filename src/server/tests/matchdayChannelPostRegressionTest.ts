@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
-import { channelMatchdayCaption, channelMatchdayId, MATCHDAY_CHANNEL_LEAGUES } from '../services/matchdayChannelPost';
+import { channelMatchdayCaption, channelMatchdayId, MATCHDAY_CHANNEL_LEAGUES, MATCHDAY_POST_RECIPIENT } from '../services/matchdayChannelPost';
 import { renderTournamentImagePng } from '../services/tournamentImageRenderer';
 import { matchdayImageModel } from '../../lib/tournamentImage';
 import { tournamentImageBranding } from '../../lib/tournamentImageBranding';
@@ -8,6 +8,7 @@ import { SEED_CLUBS } from '../db/seed';
 import { sendTelegramPhoto } from '../services/telegramBotService';
 
 const deadline = '2026-10-05T18:59:00.000Z';
+assert.equal(MATCHDAY_POST_RECIPIENT, '5209126900');
 for (const [index, leagueId] of Object.keys(MATCHDAY_CHANNEL_LEAGUES).entries()) {
   const caption = channelMatchdayCaption(leagueId, 11, deadline);
   assert.ok(caption.includes(`https://t.me/efleagueuz/${index + 2}`));
@@ -45,16 +46,16 @@ let sends = 0;
 globalThis.fetch = async (input: any, init: any) => {
   assert.ok(String(input).endsWith('/sendPhoto'));
   assert.ok(init.body instanceof FormData);
-  assert.equal(init.body.get('chat_id'), '@efl_uz');
+  assert.equal(init.body.get('chat_id'), '5209126900');
   assert.equal(init.body.get('caption'), channelMatchdayCaption('league-bundesliga', 12, deadline));
   assert.equal(init.body.get('parse_mode'), 'HTML');
   assert.equal(init.body.get('photo').type, 'image/png');
   sends++;
   return new Response(JSON.stringify({ ok: true, result: { message_id: 42 } }));
 };
-assert.equal((await sendTelegramPhoto('@efl_uz', png, channelMatchdayCaption('league-bundesliga', 12, deadline))).ok, true);
+assert.equal((await sendTelegramPhoto(MATCHDAY_POST_RECIPIENT, png, channelMatchdayCaption('league-bundesliga', 12, deadline))).ok, true);
 globalThis.fetch = async () => { throw Error('Unknown timeout'); };
-assert.equal((await sendTelegramPhoto('@efl_uz', png, 'Test')).error_code, undefined);
+assert.equal((await sendTelegramPhoto(MATCHDAY_POST_RECIPIENT, png, 'Test')).error_code, undefined);
 assert.equal(sends, 1);
 globalThis.fetch = originalFetch;
 console.log('PASS all five channel templates, verified links, Tashkent deadline, stable event IDs, owners, real PNG renderer and multipart photo transport; no production messages.');

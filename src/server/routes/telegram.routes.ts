@@ -154,7 +154,7 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
         !/[\p{L}\p{N}]/u.test(emojiText)) {
         const count = await saveAiCustomEmoji(emojiPalette);
         const sent = await sendTelegramMessage(message.chat.id,
-          `${count} ta premium emoji saqlandi. AI javobida mos oddiy emoji bo‘lsa, shu premium variant ishlatiladi.`,
+          `${count} ta premium emoji saqlandi. AI javoblari va sizga shaxsiy yuboriladigan tur postlarida mos premium variant ishlatiladi.`,
           { parse_mode: null, reply_to_message_id: message.message_id });
         if (!sent.ok) throw new Error('EMOJI_CONFIRMATION_NOT_SENT');
         response = { ok: true, handled: 'ai_custom_emoji_saved', count };

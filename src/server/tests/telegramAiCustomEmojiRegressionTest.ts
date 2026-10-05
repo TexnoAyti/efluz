@@ -8,6 +8,8 @@ assert.equal(extractAiCustomEmoji(text, [{ type: 'custom_emoji', offset: -1, len
 assert.equal(extractAiCustomEmoji(text, [{ type: 'custom_emoji', offset: 3, length: 2, custom_emoji_id: '1" onclick="bad' }]).length, 0);
 assert.equal(renderAiCustomEmoji('&lt;script&gt; 🏆', palette).startsWith('&lt;script&gt;'), true);
 assert.equal((renderAiCustomEmoji('🏆🏆🏆🏆', palette).match(/<tg-emoji/g) || []).length, 3);
+assert.equal((renderAiCustomEmoji('🏆🏆🏆🏆', palette, 16).match(/<tg-emoji/g) || []).length, 4, 'Private post captions can decorate more than three emojis');
+assert.equal((renderAiCustomEmoji('🏆'.repeat(40), palette, 100).match(/<tg-emoji/g) || []).length, 32);
 assert.equal(renderAiCustomEmoji('🏆', [{ emoji: '🏆', id: '<bad>' }]), '🏆');
 assert.equal(renderAiCustomEmoji('No emoji', palette), 'No emoji');
 console.log('PASS custom emoji extraction, UTF-16, validation, escaping and bounded rendering');

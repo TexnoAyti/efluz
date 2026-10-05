@@ -26,7 +26,7 @@ export async function saveAiCustomEmoji(palette: AiCustomEmoji[]): Promise<numbe
   `, [key], palette.flatMap(e => [e.emoji, `id:${e.id}`]));
   return Number(count);
 }
-export function renderAiCustomEmoji(escapedHtml: string, palette: AiCustomEmoji[]): string {
+export function renderAiCustomEmoji(escapedHtml: string, palette: AiCustomEmoji[], maxEmojis = 3): string {
   // Replace escaped, plain text only. Model-generated tags are never accepted.
   const valid = palette.filter(e => /^\d{1,24}$/.test(e.id) && e.emoji.length <= 20 &&
     /[\p{Extended_Pictographic}\p{Regional_Indicator}]/u.test(e.emoji) && !/[<>&\s]/.test(e.emoji));
@@ -34,11 +34,12 @@ export function renderAiCustomEmoji(escapedHtml: string, palette: AiCustomEmoji[
   const alternatives = [...map.keys()].sort((a, b) => b.length - a.length)
     .map(e => e.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   if (!alternatives.length) return escapedHtml;
+  const limit = Number.isFinite(maxEmojis) ? Math.max(0, Math.min(32, Math.floor(maxEmojis))) : 3;
   let count = 0;
   return escapedHtml.replace(new RegExp(alternatives.join('|'), 'gu'), emoji =>
-    ++count <= 3 ? `<tg-emoji emoji-id="${map.get(emoji)}">${emoji}</tg-emoji>` : emoji);
+    ++count <= limit ? `<tg-emoji emoji-id="${map.get(emoji)}">${emoji}</tg-emoji>` : emoji);
 }
-export async function decorateAiCustomEmoji(escapedHtml: string, signal: AbortSignal): Promise<string> {
+export async function decorateAiCustomEmoji(escapedHtml: string, signal: AbortSignal, maxEmojis = 3): Promise<string> {
   const redis = getAiRedisClient(signal);
   if (!redis || signal.aborted) return escapedHtml;
   try {
@@ -46,6 +47,6 @@ export async function decorateAiCustomEmoji(escapedHtml: string, signal: AbortSi
     const values = Array.isArray(raw) ? raw : [];
     const palette: AiCustomEmoji[] = [];
     for (let i = 0; i + 1 < values.length; i += 2) palette.push({ emoji: String(values[i]), id: String(values[i+1]).replace(/^id:/, '') });
-    return renderAiCustomEmoji(escapedHtml, palette);
+    return renderAiCustomEmoji(escapedHtml, palette, maxEmojis);
   } catch { return escapedHtml; }
 }

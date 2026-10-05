@@ -2,6 +2,8 @@ import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS, FirestoreClubDoc, FirestoreUserDoc } from '../firebase/collections';
 import { sendTelegramMessage, sendTelegramPhoto } from './telegramBotService';
 import type { TournamentImageModel } from '../../lib/tournamentImage';
+import { PRIMARY_OWNER_TELEGRAM_ID } from './telegramAiConfigService';
+import { decorateAiCustomEmoji } from './telegramAiCustomEmoji';
 import { createAuditLog } from './adminService';
 import {
   redisGetRaw,
@@ -571,10 +573,16 @@ export async function processNotificationQueue(batchSize = 25, stopClaimingAt = 
         await client.hset(PROCESSING_KEY, { [job.jobId]: { ...job, claimedAt: Date.now() } });
       }
       let photo: Buffer | undefined;
+      let photoCaption = job.body;
       if (job.photoModel) {
+        // Also reroute old queued channel jobs. No matchday photo may be sent
+        // to a channel or to a league/delegated admin after this change.
+        job.telegramId = PRIMARY_OWNER_TELEGRAM_ID;
+        await client.hset(PROCESSING_KEY, { [job.jobId]: { ...job, claimedAt: Date.now() } });
         try {
           const { renderTournamentImagePng } = await import('./tournamentImageRenderer');
           photo = await renderTournamentImagePng(job.photoModel);
+          photoCaption = await decorateAiCustomEmoji(job.body, AbortSignal.timeout(3000), 16);
         } catch {
           // Rendering happens before dispatch: it is safe to retry here.
           if (job.retryCount < job.maxRetries) {
@@ -592,7 +600,7 @@ export async function processNotificationQueue(batchSize = 25, stopClaimingAt = 
       recipient.status = 'SENDING';
       record.status = 'PROCESSING';
       await client.hset(BROADCASTS_KEY, { [record.id]: record });
-      const result = photo ? await sendTelegramPhoto(job.telegramId!, photo, job.body) : await sendTelegramMessage(
+      const result = photo ? await sendTelegramPhoto(job.telegramId!, photo, photoCaption) : await sendTelegramMessage(
         job.telegramId!,
         formatTelegramMessage(job.title, job.body, job.type, Boolean(job.bodyIsHtml)),
         { parse_mode: 'HTML', reply_markup: job.replyMarkup }

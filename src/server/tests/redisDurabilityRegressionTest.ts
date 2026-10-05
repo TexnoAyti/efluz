@@ -397,7 +397,12 @@ async function main() {
     const channelId = channel.channelMatchdayId(channelCompetition.id, seasonId, 12);
     const channelRecord = await client.hget<any>(`${model.KEY_PREFIX}:telegram:broadcasts`, channelId);
     assert.equal(channelRecord.recipients.length, 1);
-    assert.equal(channelRecord.recipients[0].userId, 'channel:efl_uz');
+    assert.equal(channelRecord.recipients[0].userId, 'owner:5209126900');
+    await client.hset(`${model.KEY_PREFIX}:ai:custom-emoji`, { '🏆': 'id:5368324170671202286', '✅': 'id:5368324170671202287', '⚠️': 'id:5368324170671202288', '📋': 'id:5368324170671202289', '📊': 'id:5368324170671202290' });
+    // Simulate an unsent job from the previous channel-based deployment.
+    const legacyJobs = await client.lrange<any>(`${model.KEY_PREFIX}:telegram:queue`, 0, -1);
+    await client.del(`${model.KEY_PREFIX}:telegram:queue`);
+    for (const raw of legacyJobs) { const job = typeof raw === 'string' ? JSON.parse(raw) : raw; job.telegramId = '@efl_uz'; await client.rpush(`${model.KEY_PREFIX}:telegram:queue`, JSON.stringify(job)); }
     await db.collection(COLLECTIONS.COMPETITIONS).doc(channelCompetition.id).set(channelCompetition);
     for (const fixture of channelFixtures) await db.collection(COLLECTIONS.FIXTURES).doc(fixture.id).set(fixture);
     const { controlCompetitionMatchday } = await import('../services/competitionMatchdayService');
@@ -409,7 +414,8 @@ async function main() {
       const url = new URL(String(input));
       if (url.hostname === 'api.telegram.org') {
         assert.ok(url.pathname.endsWith('/sendPhoto'), 'Channel job must send a photo, not a text broadcast');
-        assert.equal(init.body.get('chat_id'), '@efl_uz');
+        assert.equal(init.body.get('chat_id'), '5209126900', 'Even legacy queued channel jobs must go only to the primary owner');
+        assert.equal((init.body.get('caption').match(/<tg-emoji/g) || []).length, 5, 'All saved caption emoji mappings must render');
         const state = await client.hget<any>(`${model.KEY_PREFIX}:telegram:broadcasts`, channel.channelMatchdayId(channelCompetition.id, seasonId, init.body.get('caption').includes('13 tur') ? 13 : 12));
         assert.equal(state.recipients[0].status, 'SENDING', 'Persist dispatch state before calling Telegram');
         photoSends++;

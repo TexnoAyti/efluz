@@ -5,8 +5,10 @@ import { tournamentImageBranding } from '../../lib/tournamentImageBranding';
 import { getUpstashClient, KEY_PREFIX, ReadModelKeys, redisGetFresh, redisGetLkg } from '../readModel/readModelStore';
 import { SMART_ENQUEUE_SCRIPT, persistBackupNotification } from './notificationBackupQueue';
 import { scheduleNotificationQueueDrain, type NotificationQueueJob, type TelegramBroadcastRecord } from './telegramNotificationQueue';
+import { PRIMARY_OWNER_TELEGRAM_ID } from './telegramAiConfigService';
 
-export const MATCHDAY_CHANNEL = '@efl_uz';
+// Matchday drafts are sent only to the primary owner's private chat.
+export const MATCHDAY_POST_RECIPIENT = PRIMARY_OWNER_TELEGRAM_ID;
 export const MATCHDAY_RULES_URL = 'https://t.me/efluz_cards/16';
 export const MATCHDAY_CHANNEL_LEAGUES: Record<string, { title: string; topic: number }> = {
   'league-premier-league': { title: 'PREMIER LEAGUE', topic: 2 },
@@ -25,7 +27,7 @@ export function channelMatchdayCaption(leagueId: string, matchday: number, deadl
 
 /** Stable across reopen/restart/deadline changes; separate for each season. */
 export function channelMatchdayId(competitionId: string, seasonId: string, matchday: number): string {
-  return `channel-matchday-${createHash('sha256').update(JSON.stringify([competitionId, seasonId, matchday])).digest('hex').slice(0, 32)}`;
+  return `owner-matchday-${createHash('sha256').update(JSON.stringify([competitionId, seasonId, matchday])).digest('hex').slice(0, 32)}`;
 }
 
 /** Called only after a successful matchday change, with its already loaded fixtures.
@@ -58,15 +60,15 @@ export async function enqueueMatchdayChannelPost(params: {
   model.round = `${matchday}-tur`;
   model.branding = tournamentImageBranding(competition as Competition, [], clubs.filter(c => c.leagueId === competition.leagueId).length);
   const body = channelMatchdayCaption(competition.leagueId!, matchday, deadlineAt);
-  const userId = 'channel:efl_uz', createdAt = new Date().toISOString();
+  const userId = `owner:${MATCHDAY_POST_RECIPIENT}`, createdAt = new Date().toISOString();
   const record: TelegramBroadcastRecord = {
     id, seasonId: competition.seasonId, title: `${competition.name} ${matchday}-tur`, body, type: 'NEW_MATCHDAY',
     targetAudience: 'SELECTED_RECIPIENTS', createdById: 'system', createdByUsername: 'system', createdAt, status: 'QUEUED', bodyIsHtml: true,
     metrics: { totalRecipients: 1, sentCount: 0, failedCount: 0, skippedCount: 0 },
-    recipients: [{ userId, username: 'efl_uz', displayName: 'EFL UZ channel', status: 'PENDING', retryCount: 0 }],
+    recipients: [{ userId, username: '', displayName: 'Asosiy admin', status: 'PENDING', retryCount: 0 }],
   };
   const job: NotificationQueueJob = {
-    jobId: id, broadcastId: id, userId, username: 'efl_uz', displayName: 'EFL UZ channel', telegramId: MATCHDAY_CHANNEL,
+    jobId: id, broadcastId: id, userId, username: '', displayName: 'Asosiy admin', telegramId: MATCHDAY_POST_RECIPIENT,
     seasonId: competition.seasonId, title: record.title, body, type: 'NEW_MATCHDAY', status: 'QUEUED', retryCount: 0, maxRetries: 3,
     createdAt, availableAt: 0, bodyIsHtml: true, photoModel: model,
   };
