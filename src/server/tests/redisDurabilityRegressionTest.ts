@@ -381,6 +381,7 @@ async function main() {
     } finally { globalThis.fetch = adminFetch; adminAI.setTestAiAdminHooks(); aiConfig.setTestConfigOverride(null); }
     console.log('PASS actual Redis Lua: owner admin confirmation concurrency, permanent claim, expiry, Redis outage fail-closed; no real mutations or Telegram messages');
 
+    await import('./durableClubClaimRegressionTest');
     console.log('Redis durability regression passed; Telegram transport was mocked, no real messages sent.');
   } finally { globalThis.fetch = isolatedFetch; bridge.close(); }
 }

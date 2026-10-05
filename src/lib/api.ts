@@ -2,6 +2,9 @@ import type { MatchdayControlAction, MatchdayControlOverview } from './matchdayS
 import type { AdminPermissions } from '../types';
 import { User, Club, Season, League, Competition, Fixture, StandingsRow, Dispute, Notification, AuditLog, UserStats } from '../types';
 
+export interface ClubClaimReceipt { id: string; clubId: string; clubName: string; status: 'PENDING'|'SYNCING'|'SYNCED'|'FAILED'; pendingSync: boolean; createdAt: string; message: string; }
+export interface ClubClaimResponse { success: boolean; message: string; club: Pick<Club, 'id'|'name'>; pendingSync?: boolean; request?: ClubClaimReceipt; }
+
 export interface ClubAdmissionStatus {
   seasonId: string;
   enabled: boolean;
@@ -427,11 +430,15 @@ export const api = {
     return request(`/api/clubs/${clubId}?seasonId=${seasonId}`, { cacheTtlMs: 120000, skipCache });
   },
 
-  async claimClub(clubId: string, seasonId = 'season-2026-27'): Promise<{ success: boolean; message: string; club: Club }> {
+  async getClubClaimStatus(seasonId = 'season-2026-27'): Promise<{request: ClubClaimReceipt|null}> {
+    return request(`/api/clubs/claim-status?seasonId=${seasonId}`, {skipCache:true});
+  },
+
+  async claimClub(clubId: string, seasonId = 'season-2026-27'): Promise<ClubClaimResponse> {
     if (!clubId || clubId === 'undefined' || clubId === 'null' || !clubId.startsWith('club-')) {
       throw new Error('INVALID_CLUB_ID: Invalid club identifier provided.');
     }
-    const res = await request<{ success: boolean; message: string; club: Club }>(`/api/clubs/${clubId}/claim`, {
+    const res = await request<ClubClaimResponse>(`/api/clubs/${clubId}/claim`, {
       method: 'POST',
       body: JSON.stringify({ seasonId }),
     });

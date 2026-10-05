@@ -989,12 +989,12 @@ export async function claimClubAtomicFirestore(
   userId: string,
   clubId: string,
   seasonId = 'season-2026-27',
-  options?: { authoritativeOnly?: boolean }
+  options?: { authoritativeOnly?: boolean; circuitProbeReserved?: boolean; requiresActiveUser?: boolean }
 ): Promise<{ success: boolean; club: Club; authoritative?: boolean; isFallback?: boolean }> {
   assertNoSyntheticIdsInProduction('claimClubAtomicFirestore', [userId, clubId, seasonId]);
   const now = new Date().toISOString();
 
-  if (firestoreCircuitBreaker.canExecute()) {
+  if (options?.circuitProbeReserved && firestoreCircuitBreaker.getStatus().state === 'HALF_OPEN' || firestoreCircuitBreaker.canExecute()) {
     try {
       const db = getFirestoreDb();
 
@@ -1017,6 +1017,10 @@ export async function claimClubAtomicFirestore(
       }
 
       const claimResult = await db.runTransaction(async (transaction) => {
+        if (options?.requiresActiveUser) {
+          const actor = await transaction.get(db.collection(COLLECTIONS.USERS).doc(userId));
+          if (!actor.exists || actor.data()?.isSuspended === true) throw new ClubConflictError('CLAIM_AUTHORIZATION_REVOKED', 'CLAIM_AUTHORIZATION_REVOKED');
+        }
         const userMemRef = db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${seasonId}_${userId}`);
         const clubOccRef = db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_${clubId}`);
         const membershipRef = db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).doc(`${seasonId}_${clubId}`);

@@ -367,8 +367,9 @@ export async function processPendingMutations(options: { deadline?: number } = {
       } catch (err: any) {
         const isQuota = firestoreCircuitBreaker.isQuotaExhaustedError(err);
         const isOwnershipMismatch = err.message?.includes('OWNERSHIP_MISMATCH');
-        const isTerminalError = isOwnershipMismatch;
-        firestoreCircuitBreaker.recordFailure(err);
+        const isTerminalError = isOwnershipMismatch || item.entityType === 'CLUB_CLAIM' && (['CLUB_OCCUPIED','CLUB_SELECTION_LOCKED','CLUB_LEAGUE_LIMIT','OWNERSHIP_INCONSISTENT','CLUB_ADMISSION_CLOSED','CLAIM_AUTHORIZATION_REVOKED'].includes(err.code) || err.name === 'ClubNotFoundError' || /CLAIM_AUTHORIZATION_REVOKED/.test(err.message || ''));
+        if (isTerminalError) firestoreCircuitBreaker.recordSuccess();
+        else firestoreCircuitBreaker.recordFailure(err);
 
         // Failed or fallback-only replay must remain PENDING for retry.
         // Terminal permission/ownership mismatches must be marked FAILED.
@@ -918,7 +919,10 @@ async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: 
     case 'CLUB_CLAIM': {
       // payload: { clubId, seasonId, userId, claimedAt }
       const { claimClubAtomicFirestore } = await import('../firebase/firestoreStore');
-      const res = await claimClubAtomicFirestore(payload.userId, payload.clubId, payload.seasonId, { authoritativeOnly: true });
+      const res = await claimClubAtomicFirestore(payload.userId, payload.clubId, payload.seasonId, { authoritativeOnly: true, circuitProbeReserved: firestoreCircuitBreaker.getStatus().state === 'HALF_OPEN', requiresActiveUser: payload.requiresActiveUser === true });
+      await (await import('../readModel/readModelStore')).invalidateClubReadModels(payload.seasonId).catch(() => {});
+      await (await import('../readModel/readModelStore')).invalidateUserMembershipReadModel(payload.userId,payload.seasonId).catch(() => {});
+      if (payload.requiresActiveUser) await (await import('../readModel/readModelStore')).buildClubsSnapshot(payload.seasonId);
       if (!res || !res.authoritative || (res as any).isFallback) {
         throw new Error('AUTHORITATIVE_WRITE_FAILED: Remote claim write did not succeed.');
       }

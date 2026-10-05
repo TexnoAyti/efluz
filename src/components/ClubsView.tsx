@@ -4,7 +4,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../context/UserProfileContext';
 import { useI18n } from '../i18n';
-import { api, type ClubAdmissionStatus } from '../lib/api';
+import { api, type ClubAdmissionStatus, type ClubClaimReceipt } from '../lib/api';
 import { premiumApi } from '../lib/premiumApi';
 import { League, Club, Fixture, StandingsRow, Competition } from '../types';
 import { ClubCrest } from './ClubCrest';
@@ -88,6 +88,36 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
 
   // Clubs state
   const [clubs, setClubs] = useState<Club[]>([]);
+  const [claimReceipt, setClaimReceipt] = useState<ClubClaimReceipt | null>(null);
+  const claimPollCount = useRef(0);
+  const receiptScopeRef = useRef('');
+  receiptScopeRef.current = `${user?.id || ''}:${activeSeasonId}`;
+  const receiptMessage = {
+    uz: { pending: 'Klub tanlash so‘rovi saqlandi. Tasdiq kutilmoqda; yakuniy egalik hali biriktirilmagan.', failed: 'So‘rov bajarilmadi. Holatni yangilang yoki administratorga murojaat qiling.', check: 'Holatni tekshirish' },
+    ru: { pending: 'Заявка на клуб сохранена. Ожидается подтверждение; владение ещё не назначено.', failed: 'Заявка не выполнена. Обновите данные или обратитесь к администратору.', check: 'Проверить статус' },
+    en: { pending: 'Your club request is saved. Confirmation is pending; ownership has not been assigned yet.', failed: 'The request was not completed. Refresh or contact an administrator.', check: 'Check status' },
+  }[language];
+  const loadClaimReceipt = useCallback(async () => {
+    if (!user?.id) return;
+    const expectedScope = `${user.id}:${activeSeasonId}`;
+    try { const result = await api.getClubClaimStatus(activeSeasonId); if (receiptScopeRef.current === expectedScope) setClaimReceipt(result.request); }
+    catch { /* A failed status read must never clear a previously saved request. */ }
+  }, [user?.id, activeSeasonId]);
+  useEffect(() => { setClaimReceipt(null); void loadClaimReceipt(); window.addEventListener('focus', loadClaimReceipt); return () => window.removeEventListener('focus',loadClaimReceipt); }, [loadClaimReceipt]);
+  useEffect(() => {
+    if (!claimReceipt?.pendingSync) return;
+    claimPollCount.current = 0;
+    const timer = window.setInterval(() => { if (++claimPollCount.current > 12) { window.clearInterval(timer); return; } void loadClaimReceipt(); }, 5000);
+    return () => window.clearInterval(timer);
+  }, [claimReceipt?.id, claimReceipt?.pendingSync, loadClaimReceipt]);
+  const refreshedClaim = useRef<string | null>(null);
+  useEffect(() => {
+    if (claimReceipt?.status === 'SYNCED' && refreshedClaim.current !== claimReceipt.id) {
+      refreshedClaim.current = claimReceipt.id;
+      void refreshUserData();
+      void loadClubsForLeague(selectedLeagueId, true);
+    }
+  }, [claimReceipt?.id, claimReceipt?.status, selectedLeagueId, refreshUserData]);
   const [admission, setAdmission] = useState<ClubAdmissionStatus | null>(null);
   const [admissionError, setAdmissionError] = useState(false);
   const loadAdmission = useCallback(async () => {
@@ -305,6 +335,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
       setClubToClaim(null);
       return;
     }
+    if (claimReceipt?.pendingSync) { showToast(receiptMessage.pending, 'error'); setClubToClaim(null); return; }
     if (!admission || admission.enabled && admission.activeLeagueId !== club.leagueId) {
       showToast(admissionText.closed, 'error');
       setClubToClaim(null);
@@ -318,6 +349,12 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
     setIsClaiming(true);
     try {
       const res = await api.claimClub(clubId, activeSeasonId);
+      if (res.pendingSync && res.request) {
+        setClaimReceipt(res.request);
+        showToast(receiptMessage.pending, 'success');
+        setClubToClaim(null); setMembershipModal(null);
+        return;
+      }
       confetti({
         particleCount: 100,
         spread: 80,

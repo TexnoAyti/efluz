@@ -4,7 +4,6 @@ import { setOwnershipSensitiveHeaders } from '../middleware/ownershipCacheContro
 import {
   getClubByIdFirestore,
   getAvailableClubsFirestore,
-  claimClubAtomicFirestore,
   ClubConflictError,
   ClubNotFoundError,
 } from '../firebase/firestoreStore';
@@ -14,13 +13,22 @@ import { verifyTelegramGroupMembership } from '../services/telegramBotService';
 import { ClubAdmissionConflictError, getClubAdmissionStatus } from '../services/clubAdmission';
 import {
   ReadModelNotWarmedError,
-  invalidateClubReadModels,
-  invalidateUserMembershipReadModel,
   getAvailableClubsFromReadModel,
   getClubByIdFromReadModel,
 } from '../readModel/readModelStore';
 
+import { requestDurableClubClaim, getClubClaimReceipt } from '../services/durableClubClaim';
+import { scheduleMutationReconciliation } from '../sync/scheduleReconciliation';
+
 export const clubsRouter = Router();
+
+clubsRouter.get('/claim-status', requireAuth, async (req: Request, res: Response) => {
+  const seasonId = String(req.query.seasonId || 'season-2026-27');
+  if (!/^season-[a-z0-9-]+$/.test(seasonId)) { res.status(400).json({code:'INVALID_SEASON_ID'}); return; }
+  res.setHeader('Cache-Control','no-store');
+  try { res.json({request: await getClubClaimReceipt(req.user!.id,seasonId)}); }
+  catch(error) { handleFirestoreError(res,error,'GET /api/clubs/claim-status'); }
+});
 
 clubsRouter.get('/admission', async (req: Request, res: Response) => {
   const seasonId = String(req.query.seasonId || 'season-2026-27');
@@ -377,14 +385,9 @@ clubsRouter.post('/:id/claim', requireAuth, async (req: Request, res: Response) 
   }
 
   try {
-    const result = await claimClubAtomicFirestore(userId, clubId, seasonId, { authoritativeOnly: true });
-    await invalidateClubReadModels(seasonId).catch(() => {});
-    await invalidateUserMembershipReadModel(userId, seasonId).catch(() => {});
-    res.json({
-      success: true,
-      message: `Successfully claimed ${result.club.name}!`,
-      club: result.club,
-    });
+    const result = await requestDurableClubClaim(userId, clubId, seasonId);
+    res.status(202).json({ success: true, accepted: true, pendingSync: result.pendingSync, message: result.request.message, request: result.request, club: result.club });
+    scheduleMutationReconciliation();
   } catch (err: any) {
     if (err instanceof ClubAdmissionConflictError) {
       res.status(409).json({ code: err.code, message: err.message });
