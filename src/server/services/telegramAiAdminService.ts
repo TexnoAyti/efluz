@@ -1,3 +1,5 @@
+import { assertAdminPlanReady, validateModelAdminPlan } from './telegramAiAdminPlanReadiness';
+import { parseNaturalAdminPlan } from './telegramAiNaturalAdminPlanner';
 import { randomBytes } from 'node:crypto';
 import { GoogleGenAI } from '@google/genai';
 import { AI_ADMIN_ACTIONS, adminPlanSchema, type AdminPlan } from './telegramAiAdminCatalog';
@@ -47,10 +49,13 @@ export function describeAiAdminPlan(plan: AdminPlan, label = ''): string {
   if (['result_edit','result_approve'].includes(plan.action)) return `${target}: hisob ${b.homeScore}:${b.awayScore}, ${plan.action === 'result_approve' ? 'natijani tasdiqlash' : 'natijani saqlash'}.`;
   if (plan.action === 'result_clear') return `${target}: natijani o‘chirish, uchrashuvni saqlash.`;
   if (plan.action === 'fixture_delete') return `${target}: uchrashuvning o‘zini o‘chirish. Sabab: ${b.reason || 'ko‘rsatilmagan'}.`;
-  if (plan.action === 'user_role') return `${target}: ${b.isAdmin ? 'admin ruxsatini berish' : 'admin ruxsatini olib tashlash'}. Ruxsat: ${(b.adminPermissions as any)?.scope === 'ALL' ? 'barcha ligalar' : ((b.adminPermissions as any)?.leagueIds || []).join(', ') || 'liga ko‘rsatilmagan'}.`;
+  if (plan.action === 'cup_preview') return `${target}: kubok qur’asini oldindan ko‘rish. O‘yinlar hali yaratilmaydi.`;
+  if (plan.action === 'ai_config') return `AI yordamchini ${b.enabled ? 'yoqish' : 'o‘chirish'}.`;
+  if (plan.action === 'broadcast') return `Xabar yuborish: ${b.title}\n${String(b.body)}\nQabul qiluvchilar: ${b.targetAudience === 'ALL_USERS' ? 'barcha foydalanuvchilar' : b.targetAudience === 'LEAGUE_OWNERS' ? b.targetLeagueId : b.targetAudience === 'CLUB_OWNERS' ? 'klub egalari' : (b.selectedUserIds as string[] || []).join(', ')}.`;
+  if (plan.action === 'user_role') return `${target}: ${b.isAdmin ? 'admin ruxsatini berish' : 'admin ruxsatini olib tashlash'}. Ruxsat: ${(b.adminPermissions as any)?.scope === 'ALL' ? 'barcha ligalar' : ((b.adminPermissions as any)?.leagueIds || []).map((id:string) => ({'league-premier-league':'Premier League','league-la-liga':'La Liga','league-serie-a':'Serie A','league-bundesliga':'Bundesliga','league-ligue-1':'Ligue 1'} as any)[id] || id).join(', ') || 'liga ko‘rsatilmagan'}.`;
   if (plan.action === 'user_suspend') return `${target}: ${b.isSuspended ? 'bloklash' : 'blokdan chiqarish'}.`;
-  const names: Record<string,string> = { result_reject:'Natijani rad etish', fixture_reopen:'Uchrashuvni qayta ochish', fixture_deadline:'O‘yin muddatini o‘zgartirish', fixture_remind:'O‘yin eslatmasini yuborish', user_delete:'Foydalanuvchini o‘chirish', premium_grant:'Premium berish', premium_revoke:'Premiumni bekor qilish', notification_message:'Xabarnoma ko‘rinishini o‘zgartirish', notification_type:'Xabarnoma turini boshqarish', broadcast:'Xabar yuborish', cup_generate:'Kubok qur’asini yaratish', cup_reconcile:'Kubok juftliklarini moslashtirish', standings_rebuild:'Jadvalni qayta hisoblash', season_archive:'Mavsumni arxivlash', season_rollover:'Keyingi mavsumni yaratish' };
-  return `${names[plan.action] || 'Admin amali'}${target ? ': ' + target : ''}.\n${Object.entries(b).map(([key,value]) => `${({reason:'Sabab',notes:'Izoh',homeScore:'Uy hisobi',awayScore:'Safar hisobi',title:'Sarlavha',body:'Xabar',userId:'Foydalanuvchi',visibility:'Ko‘rinishi',deadlineAt:'Muddat'} as any)[key] || key}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`).join('\n')}`;
+  const names: Record<string,string> = { result_reject:'Natijani rad etish', fixture_reopen:'Uchrashuvni qayta ochish', fixture_deadline:'O‘yin muddatini o‘zgartirish', fixture_remind:'O‘yin eslatmasini yuborish', user_delete:'Foydalanuvchini o‘chirish', premium_grant:'Premium berish', premium_revoke:'Premiumni bekor qilish', notification_message:'Xabarnoma ko‘rinishini o‘zgartirish', notification_type:'Xabarnoma turini boshqarish', broadcast:'Xabar yuborish', cup_generate:'Kubok qur’asini yaratish', cup_advance:'Kubokni keyingi bosqichga o‘tkazish', matchday_advance:'Keyingi turga o‘tkazish', fixtures_generate:'O‘yinlar jadvalini yaratish', sync:'Saqlangan o‘zgarishlarni sinxronlash', read_model_rebuild:'Saqlangan bazaviy ma’lumotlarni yangilash', notification_queue:'Xabarnoma navbatini ishlash', deadline_sweep:'O‘yin muddatlarini tekshirish', cup_reconcile:'Kubok juftliklarini moslashtirish', standings_rebuild:'Jadvalni qayta hisoblash', season_archive:'Mavsumni arxivlash', season_rollover:'Keyingi mavsumni yaratish' };
+  return `${names[plan.action] || 'Admin amali'}${target ? ': ' + target : ''}.\n${Object.entries(b).map(([key,value]) => `${({expectedUsername:'Username',reason:'Sabab',notes:'Izoh',homeScore:'Uy hisobi',awayScore:'Safar hisobi',title:'Sarlavha',body:'Xabar',userId:'Foydalanuvchi',visibility:'Ko‘rinishi',deadlineAt:'Muddat'} as any)[key] || key}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`).join('\n')}`;
 }
 let testExecutor: typeof executeAiAdminRoute | undefined;
 let testPlanner: ((request: string) => Promise<unknown>) | undefined;
@@ -113,7 +118,9 @@ export async function planAiAdminAction(request: string, facts: string, signal: 
   });
   const raw = JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, '').trim());
   if (typeof raw.clarification === 'string') throw new Error('CLARIFY:' + raw.clarification.slice(0, 300));
-  return adminPlanSchema.parse(raw);
+  const plan = adminPlanSchema.parse(raw);
+  await validateModelAdminPlan(plan, request, signal);
+  return plan;
 }
 
 /** Caller has already verified the webhook, allowed topic/owner DM, and rate limit.
@@ -135,11 +142,20 @@ export async function handleAiAdminCommand(payload: TelegramAiMessagePayload, si
 • Angliya Kubogi yarim final o‘yinlarini ko‘rsat
 • La Liga 10-turni qulflang
 • Arsenal klubini @username ga biriktir
+• Inter — Milan 10-tur natijasini 2-1 qil
+• Inter — Milan 10-tur natijasini o‘chir
+• Heidenheim klubini egasidan bo‘shat
+• @username faqat La Liga uchun admin qil
+• @username ni blokla / blokdan chiqar
+• @username ga premium ber
+• La Liga jadvalini qayta hisobla
+• Angliya Kubogi qur’asini ko‘rib chiq
+• AI yordamchini o‘chir
 
 O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yoki “tasdiqlayman” deb yozing. “Bekor qil” rejani bekor qiladi. Bazani o‘zgartirish buyruqlari faqat asosiy admin uchun.`;
     if (command === 'read') {
       if (!privateChat) return 'Yopiq admin ma’lumotlarini olish uchun botning shaxsiy chatida /ai_read ishlating.';
-      const plan = argument.startsWith('{') ? adminPlanSchema.parse(JSON.parse(argument)) : await planAiAdminAction(argument, facts, signal);
+      const plan = argument.startsWith('{') ? adminPlanSchema.parse(JSON.parse(argument)) : await parseNaturalAdminPlan(argument, signal) || await planAiAdminAction(argument, facts, signal);
       if (AI_ADMIN_ACTIONS[plan.action].method !== 'GET') return '/ai_read faqat o‘qish uchun.';
       const result = await withinAiDeadline(signal, () => (testExecutor || executeAiAdminRoute)(plan, payload.fromUser.id, 'ai-read-' + payload.updateId, signal));
       return `HTTP ${result.status}\n${JSON.stringify(result.data).slice(0, 850)}\nKatta ro‘yxat uchun search/page/limit filtrlarini body ichida kiriting.`;
@@ -160,6 +176,14 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
         }
         const result = await withinAiDeadline(signal, () => (testExecutor || executeAiAdminRoute)(record.plan, payload.fromUser.id, 'ai-admin-' + record.token, signal));
         await finish(record, result);
+        if (record.plan.action === 'cup_preview' && result.status >= 200 && result.status < 300 && result.data?.canGenerate === true && typeof result.data.drawSeed === 'string') {
+          // Only the authoritative server preview supplies the seed. Generation needs a second delivered confirmation.
+          const plan = adminPlanSchema.parse({ action: 'cup_generate', targetId: record.plan.targetId, body: { ...record.plan.body, drawSeed: result.data.drawSeed, confirmation: true } });
+          const token = randomBytes(12).toString('hex');
+          const description = describeAiAdminPlan(plan, result.data.competitionName || record.plan.targetId);
+          await storePending({token,plan,owner:record.owner,chat:record.chat,thread:record.thread,expiresAt:Date.now()+300000,state:'pending',description},signal);
+          return `Qur’a oldindan ko‘rildi: ${result.data.competitionName || record.plan.targetId}, ${result.data.totalParticipants || result.data.totalTeams} ta jamoa.\n${result.data.mode === 'REDRAW' ? 'Mavjud qur’a almashtiriladi.' : 'Yangi o‘yinlar yaratiladi.'}\n\nReja: ${description}\nHali o‘yinlar yaratilmagan. Tasdiqlaysizmi?\n/ai_confirm ${token}\n/ai_cancel ${token}\n5 daqiqa amal qiladi.`;
+        }
         return result.status >= 200 && result.status < 300 && result.data?.success !== false && !result.data?.error
           ? `Bajarildi. ${record.description || describeAiAdminPlan(record.plan)}`
           : `Bajarish tasdiqlanmadi (HTTP ${result.status}): ${String(result.data?.message || result.data?.error || result.data?.code || 'server rad etdi').slice(0, 400)}. Holatni admin panelda tekshiring.`;
@@ -173,8 +197,14 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
     // Explicit test planners replace planning only in isolated tests; production always resolves cached club IDs.
     const plan = testPlanner ? await planAiAdminAction(argument, facts, signal)
       : await parseConversationClubAssignmentPlan(argument, signal)
-        || await parseConversationMatchdayPlan(argument, scope, signal) || await planAiAdminAction(argument, facts, signal);
-    if (AI_ADMIN_ACTIONS[plan.action].method === 'GET') return privateChat ? await handleAiAdminCommand({ ...payload, text: '/ai_read ' + JSON.stringify(plan) }, signal, facts, scope) : 'Yopiq admin ma’lumotlarini botning shaxsiy chatida so‘rang. Ommaviy jadval uchun liga nomini yozing.';
+        || await parseNaturalAdminPlan(argument, signal) || await parseConversationMatchdayPlan(argument, scope, signal) || await planAiAdminAction(argument, facts, signal);
+    assertAdminPlanReady(plan);
+    if (AI_ADMIN_ACTIONS[plan.action].method === 'GET') {
+      if (!privateChat) return 'Yopiq admin ma’lumotlarini botning shaxsiy chatida so‘rang. Ommaviy jadval uchun liga nomini yozing.';
+      const result = await withinAiDeadline(signal, () => (testExecutor || executeAiAdminRoute)(plan,payload.fromUser.id,'ai-read-'+payload.updateId,signal));
+      if (result.status < 200 || result.status >= 300) return `Ma’lumotni o‘qib bo‘lmadi: ${String(result.data?.message || result.data?.error || 'server rad etdi').slice(0,400)}.`;
+      return formatNaturalAdminRead(plan.action,result.data);
+    }
     let targetLabel = '';
     const lookup = createAiTournamentReader(signal);
     const fixtureId = plan.secondaryId || (/^(fixture_|result_|cup_winner)/.test(plan.action) ? plan.targetId : undefined);
@@ -186,6 +216,10 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
       const found = await lookup.read(plan.action.startsWith('club_') ? { dataset: 'clubs', club: plan.targetId, limit: 1 } : { dataset: 'competitions', competition: plan.targetId, limit: 1 }) as any;
       if (found.data?.[0]?.name) targetLabel = found.data[0].name + '\n';
     }
+    if (/^user_/.test(plan.action)) {
+      const username = /@\s*([A-Za-z0-9_]+)/.exec(argument.replace(/^\/ai_admin(?:@[A-Za-z0-9_]+)?\s*/i,''))?.[1];
+      if (username) targetLabel = '@' + username + ' (' + plan.targetId + ')';
+    }
     const token = randomBytes(12).toString('hex');
     const description = describeAiAdminPlan(plan, targetLabel.trim());
     const preview = `Reja: ${description}\n\nHali bajarilmadi. Tasdiqlaysizmi?\n/ai_confirm ${token}\n/ai_cancel ${token}\n5 daqiqa amal qiladi.`;
@@ -193,8 +227,28 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
     await storePending({ token, plan, owner: payload.fromUser.id, chat: payload.chatId, thread: payload.threadId, expiresAt: Date.now() + 300000, state: 'pending', description }, signal);
     return preview;
   } catch (error: any) {
+    if (/ADMIN_DATABASE_QUOTA|RESOURCE_EXHAUSTED|CIRCUIT_OPEN/i.test(error?.message || '')) return 'Baza limiti sababli bu amalni hozir bajarib yoki o‘qib bo‘lmaydi. Saqlangan jadvallarni ko‘rish mumkin. Hech narsa o‘zgarmadi.';
     if (String(error.message).startsWith('CLARIFY:')) return error.message.slice(8);
     console.warn('[AI_ADMIN_PLAN_FAILED]', String(error?.message || '').slice(0, 120));
-    return 'Rejani tayyorlab bo‘lmadi. Liga yoki jamoa va kerakli amalni aniq yozing. Hech narsa o‘zgarmadi.';
+    if (/GEMINI_NOT_CONFIGURED/.test(error?.message || '')) return 'Bu murakkab so‘rov uchun AI modeli sozlanmagan. Oddiy buyruq bilan amal, klub/turnir va parametrlarni yozing yoki admin paneldan foydalaning. Hech narsa o‘zgarmadi.';
+    if (/TIMEOUT|ABORT/i.test(error?.message || '')) return 'Reja tayyorlash vaqti tugadi. So‘rovni bitta amal qilib qisqartiring. Hech narsa o‘zgarmadi.';
+    return 'So‘rovni aniq rejaga aylantirib bo‘lmadi. Amal, qaysi klub/o‘yin/foydalanuvchi va kerakli parametrni yozing. “Yordam” orqali misollarni ko‘ring. Hech narsa o‘zgarmadi.';
   }
+}
+
+function formatNaturalAdminRead(action: string, data: any): string {
+  const titles: Record<string,string> = {users:'Foydalanuvchilar',ai_settings:'AI sozlamalari',premium_overview:'Premium holati',broadcasts:'Yuborilgan xabarlar',notification_messages:'Xabarnomalar',health:'Baza holati',season_control:'Mavsum holati'};
+  const labels: Record<string,string> = {enabled:'Faol',allowedChatId:'Guruh ID',allowedThreadId:'Mavzu ID',rateLimitUserPerMin:'Foydalanuvchi limiti / daqiqa',rateLimitTopicPerMin:'Mavzu limiti / daqiqa',maxDailyRequests:'Kunlik AI limiti',total:'Jami',totalUsers:'Foydalanuvchilar soni',username:'Username',id:'ID',firstName:'Ism',isAdmin:'Admin',isSuspended:'Bloklangan',title:'Sarlavha',body:'Matn',status:'Holat',seasonId:'Mavsum',stage:'Bosqich',active:'Faol',revoked:'Bekor qilingan',generatedAt:'Yangilangan',redisAvailable:'Redis mavjud',stale:'Eskirgan nusxa'};
+  const lines=[titles[action] || 'So‘ralgan ma’lumot'];
+  const add=(value:any,depth=0)=>{
+    if(depth>2 || lines.length>=18)return;
+    if(Array.isArray(value)){ if(!value.length)lines.push('Ro‘yxat bo‘sh.'); for(const row of value.slice(0,8))add(row,depth+1); if(value.length>8)lines.push('Qolganini admin panelda ko‘ring.'); return; }
+    if(value && typeof value==='object')for(const [key,item] of Object.entries(value)){
+      if(/token|secret|apikey|password/i.test(key))continue;
+      if(item && typeof item==='object'){add(item,depth+1);continue;}
+      if(lines.length>=18)break;
+      lines.push(`${labels[key] || key}: ${typeof item==='boolean' ? item ? 'ha':'yo‘q' : item ?? '—'}`);
+    }
+  };
+  add(data);return lines.join('\n').slice(0,950);
 }

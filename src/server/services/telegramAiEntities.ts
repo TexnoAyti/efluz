@@ -46,7 +46,7 @@ function matchClubs(query: string, clubs: Club[]): Club[] {
   }
   // “Inter Milan” must not also select AC Milan; “Inter va Milan” selects both.
   const maximal = hits.filter(h => !hits.some(other => other.start <= h.start && other.end >= h.end && other.end-other.start > h.end-h.start));
-  return [...new Map(maximal.map(h => [h.club.id, h.club])).values()];
+  return [...new Map(maximal.sort((a,b) => a.start - b.start).map(h => [h.club.id, h.club])).values()];
 }
 
 export function resolveAiClubs(query: string, clubs: Club[], selectedIds: string[] | undefined = undefined, previous: string[] = []): {

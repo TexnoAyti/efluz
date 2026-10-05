@@ -37,6 +37,16 @@ export async function executeAiAdminRoute(plan: AdminPlan, ownerId: number, oper
   catch (error: any) { if (/RESOURCE_EXHAUSTED|quota|CIRCUIT_OPEN/i.test(error?.message || '')) throw new Error('ADMIN_DATABASE_QUOTA'); throw error; }
   if (!realOwner || !isPrimaryOwner(realOwner.telegramId) || !realOwner.isAdmin || realOwner.isSuspended) throw new Error('OWNER_AUTHORIZATION_UNAVAILABLE');
   if (signal?.aborted) throw new Error('TIMEOUT_ABORTED');
+  if (plan.body.expectedUsername !== undefined) {
+    const target = plan.targetId || String(plan.body.userId || (Array.isArray(plan.body.selectedUserIds) && plan.body.selectedUserIds.length === 1 ? plan.body.selectedUserIds[0] : '') || '');
+    let user;
+    try { user = target === realOwner.id ? realOwner : await getAuthoritativeUserForAuthorization(target); }
+    catch(error:any) { if (/RESOURCE_EXHAUSTED|quota|CIRCUIT_OPEN/i.test(error?.message || '')) throw new Error('ADMIN_DATABASE_QUOTA'); throw error; }
+    if (!user || (user.username || '').replace(/^@/,'').toLowerCase() !== String(plan.body.expectedUsername).toLowerCase())
+      return {status:409,data:{error:'USER_REFERENCE_CHANGED',message:'Username yoki akkaunt o‘zgargan. Amal bajarilmadi; username orqali yangi reja tayyorlang.'}};
+    plan = {...plan,body:{...plan.body}};
+    delete plan.body.expectedUsername;
+  }
   const spec = AI_ADMIN_ACTIONS[plan.action];
   const path = adminPlanPath(plan);
   const url = path.startsWith('@telegram') ? '/api/telegram' + path.slice('@telegram'.length) : '/api/admin' + path;

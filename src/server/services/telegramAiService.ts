@@ -27,6 +27,7 @@ import { generateGroundedTelegramAnswer } from './telegramAiReadTools';
 import { isAiAdminCommand } from './telegramAiAdminCatalog';
 import { handleAiAdminCommand, isOwnerAdminPrivateChat, rememberDeliveredAdminPlan } from './telegramAiAdminService';
 import { isPrimaryOwner } from './telegramAiConfigService';
+import { detectNaturalAdminAction } from './telegramAiAdminLanguage';
 import { getConversationIntent, buildConversationTableReply, isSimpleConversationClubAssignmentRequest, isSimpleConversationMatchdayRequest } from './telegramAiConversationCommands';
 import { sendTelegramMessage } from './telegramBotService';
 
@@ -529,7 +530,7 @@ export async function handleTelegramAiMessage(
       userLimitPerMin: ownerControl ? 20 : config.rateLimitUserPerMin,
       topicLimitPerMin: ownerControl ? 20 : config.rateLimitTopicPerMin,
       control: ownerControl,
-      countDaily: ownerControl ? /^\/ai_admin(?:@[a-zA-Z0-9_]+)?\s+(?!\{)/i.test(payload.text) && !(isSimpleConversationMatchdayRequest(payload.text) || isSimpleConversationClubAssignmentRequest(payload.text)) || /^\/ai_read(?:@[a-zA-Z0-9_]+)?\s+(?!\{)/i.test(payload.text) || intent === 'admin' && !(isSimpleConversationMatchdayRequest(payload.text) || isSimpleConversationClubAssignmentRequest(payload.text)) : intent === 'chat' && !replyConfirmation && !/^\//.test(payload.text),
+      countDaily: ownerControl ? /^\/ai_admin(?:@[a-zA-Z0-9_]+)?\s+(?!\{)/i.test(payload.text) && !(isSimpleConversationMatchdayRequest(payload.text) || isSimpleConversationClubAssignmentRequest(payload.text) || detectNaturalAdminAction(payload.text)) || /^\/ai_read(?:@[a-zA-Z0-9_]+)?\s+(?!\{)/i.test(payload.text) && !detectNaturalAdminAction(payload.text) || intent === 'admin' && !(isSimpleConversationMatchdayRequest(payload.text) || isSimpleConversationClubAssignmentRequest(payload.text) || detectNaturalAdminAction(payload.text)) : intent === 'chat' && !replyConfirmation && !/^\//.test(payload.text),
       maxDailyRequests: config.maxDailyRequests,
       signal: rootController.signal,
     });

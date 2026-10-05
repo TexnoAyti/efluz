@@ -1,3 +1,4 @@
+import { detectNaturalAdminAction } from './telegramAiAdminLanguage';
 import { normalizeAiEntity, resolveAiClubs } from './telegramAiEntities';
 import { createAiTournamentReader, matchesAiCompetition } from './telegramAiDataService';
 import { detectAiCupStage } from './telegramAiCupStage';
@@ -11,9 +12,10 @@ export function getConversationIntent(text: string): ConversationIntent {
   if (/^(?:bekor qil|bekor qiling|bekor qilish|cancel)$/.test(q)) return 'cancel';
   if (/^(?:yordam|buyruqlar|nima qila olasan|help)$/.test(q)) return 'help';
   if (/\b(?:nechanchi|qaysi\s+orinda|nima\s+uchun|nega|tahlil|taxmin|kim\s+yutadi)\b/.test(q)) return 'chat';
+  if (detectNaturalAdminAction(text)) return 'admin';
   if (isSimpleConversationClubAssignmentRequest(text)) return 'admin';
   const nouns = /\b(?:liga\w*|tur\w*|matchday|natija\w*|hisob\w*|oyin\w*|uchrashuv\w*|klub\w*|jamoa\w*|admin\w*|premium|xabarnoma\w*|xabar\w*|qura\w*|kubok\w*|mavsum\w*|deadline|muddat\w*)\b/;
-  const writes = /\b(?:qulfla(?:ng)?|yop(?:ing)?|och(?:ing)?|ochib ber|ochir(?:ing)?|olib tashla(?:ng)?|biriktir(?:ing)?|biriktirib ber|biriktirib ber|tasdiqla(?:ng)?|rad et(?:ing)?|qayta boshla(?:ng)?|uzaytir(?:ing)?|blokla(?:ng)?|blokdan chiqar(?:ing)?|jonat(?:ing)?|yubor(?:ing)?|generatsiya qil|qura tashla|admin qil|premium ber)\b/;
+  const writes = /\b(?:qulfla(?:ng)?|yop(?:ing)?|och(?:ing)?|ochib ber|ochir(?:ing)?|olib tashla(?:ng)?|biriktir(?:ing)?|biriktirib ber|tasdiqla(?:ng)?|rad et(?:ing)?|qayta boshla(?:ng)?|uzaytir(?:ing)?|blokla(?:ng)?|blokdan chiqar(?:ing)?|jonat(?:ing)?|yubor(?:ing)?|generatsiya qil|qura tashla|admin qil|premium ber)\b/;
   if (/\b\d{1,2}\s*[:\-]\s*\d{1,2}\s+(?:qil|qiling|qoy|qoying|saqla)\b/.test(q)) return 'admin';
   const destructive = /\b(?:ochir(?:ing)?|qulfla(?:ng)?|yop(?:ing)?|biriktir(?:ing)?|tasdiqla(?:ng)?|rad et|blokla(?:ng)?)\b/.test(q);
   if ((nouns.test(q) || /\b(?:biriktir(?:ing)?|blokla(?:ng)?|blokdan chiqar(?:ing)?|admin qil|premium ber)\b/.test(q)) && writes.test(q) && !(/\b(?:jadval\w*|table|standings|oyinlar\w*|uchrashuvlar\w*)\b/.test(q) && !destructive)) return 'admin';
@@ -90,9 +92,10 @@ export async function parseConversationMatchdayPlan(text: string, scope: Convers
   if (!action || !/\btur\w*\b|matchday/.test(q)) return null;
   const round = requestedMatchday(text);
   if (!round || round > 100) throw new Error('CLARIFY:Qaysi turni boshqaray? Tur raqamini yozing.');
-  const { competitions } = await resolveConversationCompetition(text, scope, signal);
+  const { competitions } = await resolveConversationCompetition(text, {}, signal);
   if (competitions.length !== 1) throw new Error('CLARIFY:Qaysi liga yoki kubok? Masalan: “La Liga 10-turni qulflang”.');
   const hours = q.match(/\b(\d+)\s*soat(?:ga)?\b/);
+  if (action === 'EXTEND' && (!hours || Number(hours[1]) < 1)) throw new Error('CLARIFY:Necha soatga uzaytiray? Masalan: “La Liga 10-turni 24 soatga uzaytir”.');
   const comp = competitions[0];
   if (!['LEAGUE', 'EUROPEAN_LEAGUE_PHASE'].includes(comp.type) && ['OPEN','LOCK'].includes(action)) return { action: 'cup_round', targetId: comp.id, body: { roundNumber: round, action } };
   return { action: 'matchday_control', targetId: comp.id, body: { action, matchday: round, ...(hours ? { durationHours: Number(hours[1]) } : {}) } };

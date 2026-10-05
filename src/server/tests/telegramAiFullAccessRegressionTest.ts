@@ -113,10 +113,13 @@ console.log('PASS complete AI dispatch: private read sent to verified owner DM o
 // Exercise the actual gateway and original middleware/route, not a mocked executor.
 const owner = 'user-5209126900';
 await db.collection('users').doc(owner).set({ id: owner, telegramId: '5209126900', isAdmin: true, isSuspended: false, adminPermissions: { scope: 'ALL', leagueIds: [] } });
-await db.collection('users').doc('test-target').set({ id: 'test-target', telegramId: '123', isAdmin: false, isSuspended: false });
-const changed = await executeAiAdminRoute({ action: 'user_suspend', targetId: 'test-target', body: { isSuspended: true, reason: 'isolated regression' } }, 5209126900, 'test-operation', signal);
+await db.collection('users').doc('test-target').set({ id: 'test-target', telegramId: '123', username: 'actual_owner', isAdmin: false, isSuspended: false });
+const changed = await executeAiAdminRoute({ action: 'user_suspend', targetId: 'test-target', body: { isSuspended: true, reason: 'isolated regression', expectedUsername: 'actual_owner' } }, 5209126900, 'test-operation', signal);
 assert.equal(changed.status, 200, JSON.stringify(changed.data));
 assert.equal((await db.collection('users').doc('test-target').get()).data()?.isSuspended, true);
+const staleIdentity = await executeAiAdminRoute({action:'user_suspend',targetId:'test-target',body:{isSuspended:false,expectedUsername:'old_owner'}},5209126900,'stale-identity',signal);
+assert.equal(staleIdentity.status,409);assert.equal(staleIdentity.data.error,'USER_REFERENCE_CHANGED');
+assert.equal((await db.collection('users').doc('test-target').get()).data()?.isSuspended,true);
 await assert.rejects(executeAiAdminRoute({ action: 'user_suspend', targetId: 'test-target', body: { isSuspended: false } }, 123, 'unauthorized', signal), /OWNER_ONLY/);
 await db.collection('users').doc(owner).update({ isSuspended: true });
 await assert.rejects(executeAiAdminRoute({ action: 'user_suspend', targetId: 'test-target', body: { isSuspended: false } }, 5209126900, 'revoked-owner', signal), /OWNER_AUTHORIZATION_UNAVAILABLE/);
