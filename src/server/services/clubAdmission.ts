@@ -64,6 +64,10 @@ async function loadClubAdmissionStatus(seasonId: string): Promise<ClubAdmissionS
     const snapshot = await redisGetLkg<ClubAdmissionStatus>(key);
     return snapshot?.data ? { ...admissionStatus(seasonId, snapshot.data as unknown as Record<string, unknown>), stale: true } : null;
   };
+  // Every admission mutation publishes this durable snapshot. A cached UI status
+  // must not probe an exhausted database on each cold server; claims revalidate in a transaction.
+  const saved = await lastKnown();
+  if (saved) return saved;
   if (!firestoreCircuitBreaker.canExecute()) {
     const cached = await lastKnown();
     if (cached) return cached;
