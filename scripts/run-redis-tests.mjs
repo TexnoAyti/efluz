@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
 const serverBin = process.env.REDIS_SERVER_BIN || 'redis-server';
+if (process.argv[2] && process.argv[2] !== '--scaling') throw new Error('Expected --scaling or no argument');
 const cliBin = process.env.REDIS_CLI_BIN || (serverBin.includes('/') ? path.join(path.dirname(serverBin),'redis-cli') : 'redis-cli');
 const directory = mkdtempSync(path.join(tmpdir(), 'efluz-redis-'));
 const socket = path.join(directory,'redis.sock');
@@ -23,7 +24,7 @@ try {
   if (!ready) throw startError || new Error('Local Redis did not start; set REDIS_SERVER_BIN');
   const result = spawnSync(process.execPath, ['--require','./scripts/block-external-network.cjs','--import','tsx','src/server/tests/redisDurabilityRegressionTest.ts'], {
     stdio:'inherit', timeout:120000,
-    env:{ PATH:process.env.PATH, NODE_ENV:'test', FIREBASE_FORCE_LOCAL_FALLBACK:'true', DATA_DIR:directory, REDIS_TEST_PORT:String(port), REDIS_TEST_CLI:cliBin },
+    env:{ PATH:process.env.PATH, NODE_ENV:'test', FIREBASE_FORCE_LOCAL_FALLBACK:'true', DATA_DIR:directory, REDIS_TEST_PORT:String(port), REDIS_TEST_CLI:cliBin, REDIS_SCALING_ONLY:process.argv[2] === '--scaling' ? 'true' : 'false' },
   });
   if (result.error) console.error(result.error.message);
   process.exitCode=result.status ?? 1;

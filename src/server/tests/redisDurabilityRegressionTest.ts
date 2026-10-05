@@ -63,6 +63,13 @@ async function main() {
   const model=await import('../readModel/readModelStore');
   const client=model.getUpstashClient()!;
   assert.ok(client, 'Redis test must use the real Redis bridge, never in-memory fallback');
+  if (process.env.REDIS_SCALING_ONLY === 'true') {
+    try {
+      const { runScaling1000Regression } = await import('./scaling1000Regression');
+      await runScaling1000Regression();
+    } finally { globalThis.fetch = isolatedFetch; bridge.close(); }
+    return;
+  }
   const firebase=await import('../firebase/admin');
   const {COLLECTIONS}=await import('../firebase/collections');
   const queue=await import('../services/telegramNotificationQueue');
@@ -75,8 +82,8 @@ async function main() {
       deadlineQueries++; await new Promise(r => setTimeout(r, 20));
       return Array.from({ length: 300 }, (_, i) => ({ id: `deadline-${i}` }));
     };
-    const burst = await Promise.all(Array.from({ length: 100 }, () => quotaCache.quotaCachedRead('burst-deadlines', 3600, loadDeadlines)));
-    assert.equal(deadlineQueries, 1, '100 parallel visitors share one 300-document query');
+    const burst = await Promise.all(Array.from({ length: 1000 }, () => quotaCache.quotaCachedRead('burst-deadlines', 3600, loadDeadlines)));
+    assert.equal(deadlineQueries, 1, '1000 parallel visitors share one 300-document query');
     assert.ok(burst.every(rows => rows.length === 300));
     await quotaCache.quotaCachedRead('burst-deadlines', 3600, loadDeadlines);
     assert.equal(deadlineQueries, 1, 'Warm repeat costs zero Firestore queries');
@@ -104,7 +111,7 @@ async function main() {
     releaseRead(); await oldRead;
     assert.equal(await client.get(`${model.KEY_PREFIX}:quota-read:mutation-race:fresh`), null, 'Pre-mutation reader cannot publish old snapshot');
     assert.deepEqual(await quotaCache.quotaCachedRead('mutation-race', 3600, async () => ['new']), ['new']);
-    console.log('PASS actual Redis quota cache: 100 visitors / one query, empty caching, user isolation, mutation refresh, other-worker lease and atomic stale-reader rejection');
+    console.log('PASS actual Redis quota cache: 1000 visitors / one query, empty caching, user isolation, mutation refresh, other-worker lease and atomic stale-reader rejection');
     const community = await import('../services/telegramAiCommunitySources');
     const oldPost = { message_id: 900, date: Math.floor(Date.now() / 1000) - 60 * 86400, text: 'Kubok yarim final kanal e’loni', chat: { id: -1001, type: 'channel', username: 'efl_uz' } };
     const imported = await community.archiveCommunityMessage({ message_id: 123, date: Math.floor(Date.now() / 1000), text: oldPost.text,
