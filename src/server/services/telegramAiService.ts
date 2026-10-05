@@ -27,6 +27,7 @@ import { generateGroundedTelegramAnswer } from './telegramAiReadTools';
 import { isAiAdminCommand } from './telegramAiAdminCatalog';
 import { handleAiAdminCommand, isOwnerAdminPrivateChat, rememberDeliveredAdminPlan } from './telegramAiAdminService';
 import { isPrimaryOwner } from './telegramAiConfigService';
+import { isPersonalFixtureQuestion, buildPersonalFixtureReply } from './telegramAiPersonalFixtureService';
 import { detectNaturalAdminAction } from './telegramAiAdminLanguage';
 import { getConversationIntent, buildConversationTableReply, isSimpleConversationClubAssignmentRequest, isSimpleConversationMatchdayRequest } from './telegramAiConversationCommands';
 import { sendTelegramMessage } from './telegramBotService';
@@ -530,7 +531,7 @@ export async function handleTelegramAiMessage(
       userLimitPerMin: ownerControl ? 20 : config.rateLimitUserPerMin,
       topicLimitPerMin: ownerControl ? 20 : config.rateLimitTopicPerMin,
       control: ownerControl,
-      countDaily: ownerControl ? /^\/ai_admin(?:@[a-zA-Z0-9_]+)?\s+(?!\{)/i.test(payload.text) && !(isSimpleConversationMatchdayRequest(payload.text) || isSimpleConversationClubAssignmentRequest(payload.text) || detectNaturalAdminAction(payload.text)) || /^\/ai_read(?:@[a-zA-Z0-9_]+)?\s+(?!\{)/i.test(payload.text) && !detectNaturalAdminAction(payload.text) || intent === 'admin' && !(isSimpleConversationMatchdayRequest(payload.text) || isSimpleConversationClubAssignmentRequest(payload.text) || detectNaturalAdminAction(payload.text)) : intent === 'chat' && !replyConfirmation && !/^\//.test(payload.text),
+      countDaily: ownerControl ? /^\/ai_admin(?:@[a-zA-Z0-9_]+)?\s+(?!\{)/i.test(payload.text) && !(isSimpleConversationMatchdayRequest(payload.text) || isSimpleConversationClubAssignmentRequest(payload.text) || detectNaturalAdminAction(payload.text)) || /^\/ai_read(?:@[a-zA-Z0-9_]+)?\s+(?!\{)/i.test(payload.text) && !detectNaturalAdminAction(payload.text) || intent === 'admin' && !(isSimpleConversationMatchdayRequest(payload.text) || isSimpleConversationClubAssignmentRequest(payload.text) || detectNaturalAdminAction(payload.text)) : intent === 'chat' && !isPersonalFixtureQuestion(payload.text) && !replyConfirmation && !/^\//.test(payload.text),
       maxDailyRequests: config.maxDailyRequests,
       signal: rootController.signal,
     });
@@ -574,6 +575,14 @@ export async function handleTelegramAiMessage(
       selectedClubIds: [...history].reverse().find(turn => turn.role === 'user' && turn.selectedClubIds !== undefined)?.selectedClubIds,
       selectedCompetitionIds: [...history].reverse().find(turn => turn.role === 'user' && turn.selectedCompetitionIds !== undefined)?.selectedCompetitionIds,
     };
+    if (isPersonalFixtureQuestion(payload.text) && !['admin','confirm','cancel','help'].includes(intent)) {
+      const personal = payload.senderChat || payload.forwarded
+        ? {text:'Raqibingizni aniqlash uchun shaxsiy Telegram akkauntingizdan o‘zingiz yozing.',clubIds:[]}
+        : await buildPersonalFixtureReply(payload.text,payload.fromUser.id,rootController.signal);
+      const result = await dispatchTelegramAiReply(payload,personal.text,rootController.signal,{parse_mode:null});
+      if(result.replySent) await saveConversationContext(payload.chatId,payload.threadId,payload.fromUser.id,payload.text,personal.text,{signal:rootController.signal,history,selectedClubIds:personal.clubIds});
+      return {ok:result.ok,handled:true,replySent:result.replySent,ignored:result.ignored};
+    }
     if (intent === 'standings' || intent === 'fixtures') {
       const table = await buildConversationTableReply(payload.text, intent, scope, rootController.signal);
       const result = await dispatchTelegramAiReply(payload, table.text, rootController.signal, { parse_mode: null, maxChars: 4000 });

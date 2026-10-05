@@ -95,6 +95,7 @@ jobs:
           node scripts/run-isolated-test.mjs src/server/tests/telegramAiFullAccessRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/telegramAiConversationRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/telegramAiNaturalAdminRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/telegramAiPersonalFixtureRegressionTest.ts
           bun run test:phase2-durability
           node scripts/run-isolated-test.mjs src/server/tests/quotaDurableRecoveryRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/myMatchesQuotaRegressionTest.ts
