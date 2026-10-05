@@ -69,6 +69,42 @@ async function main() {
   const db=firebase.getFirestoreDb();
   const seasonId='season-2026-27';
   try {
+    const quotaCache = await import('../services/quotaReadCache');
+    let deadlineQueries = 0;
+    const loadDeadlines = async () => {
+      deadlineQueries++; await new Promise(r => setTimeout(r, 20));
+      return Array.from({ length: 300 }, (_, i) => ({ id: `deadline-${i}` }));
+    };
+    const burst = await Promise.all(Array.from({ length: 100 }, () => quotaCache.quotaCachedRead('burst-deadlines', 3600, loadDeadlines)));
+    assert.equal(deadlineQueries, 1, '100 parallel visitors share one 300-document query');
+    assert.ok(burst.every(rows => rows.length === 300));
+    await quotaCache.quotaCachedRead('burst-deadlines', 3600, loadDeadlines);
+    assert.equal(deadlineQueries, 1, 'Warm repeat costs zero Firestore queries');
+    await quotaCache.invalidateQuotaRead('burst-deadlines');
+    await quotaCache.quotaCachedRead('burst-deadlines', 3600, loadDeadlines);
+    assert.equal(deadlineQueries, 2, 'Mutation triggers a targeted refresh');
+    const emptyReports = await quotaCache.quotaCachedRead('empty-reports', 900, async () => []);
+    assert.deepEqual(emptyReports, []);
+    assert.deepEqual(await quotaCache.quotaCachedRead('empty-reports', 900, async () => { throw new Error('EMPTY_CACHE_MUST_HIT'); }), []);
+    assert.deepEqual(await quotaCache.quotaCachedRead('user-A-reports', 900, async () => ['private-A']), ['private-A']);
+    assert.deepEqual(await quotaCache.quotaCachedRead('user-B-reports', 900, async () => ['private-B']), ['private-B']);
+    // Simulate another Vercel worker owning the refresh: this process must not query Firestore.
+    const quotaPrefix = `${model.KEY_PREFIX}:quota-read:burst-deadlines`;
+    await client.del(`${quotaPrefix}:fresh`);
+    await client.set(`${quotaPrefix}:lease`, 'other-worker', { ex: 15 });
+    assert.equal((await quotaCache.quotaCachedRead<Array<{ id: string }>>('burst-deadlines', 3600, async () => { throw new Error('LEASE_MUST_PREVENT_FETCH'); })).length, 300);
+    assert.equal(await client.get(`${quotaPrefix}:lease`), 'other-worker', 'Reader cannot release another worker lease');
+    await client.del(`${quotaPrefix}:lease`);
+    let releaseRead!: () => void, startedRead!: () => void;
+    const started = new Promise<void>(r => { startedRead = r; });
+    const blocked = new Promise<void>(r => { releaseRead = r; });
+    const oldRead = quotaCache.quotaCachedRead('mutation-race', 3600, async () => { startedRead(); await blocked; return ['old']; });
+    await started;
+    await quotaCache.invalidateQuotaRead('mutation-race');
+    releaseRead(); await oldRead;
+    assert.equal(await client.get(`${model.KEY_PREFIX}:quota-read:mutation-race:fresh`), null, 'Pre-mutation reader cannot publish old snapshot');
+    assert.deepEqual(await quotaCache.quotaCachedRead('mutation-race', 3600, async () => ['new']), ['new']);
+    console.log('PASS actual Redis quota cache: 100 visitors / one query, empty caching, user isolation, mutation refresh, other-worker lease and atomic stale-reader rejection');
     const community = await import('../services/telegramAiCommunitySources');
     const oldPost = { message_id: 900, date: Math.floor(Date.now() / 1000) - 60 * 86400, text: 'Kubok yarim final kanal e’loni', chat: { id: -1001, type: 'channel', username: 'efl_uz' } };
     const imported = await community.archiveCommunityMessage({ message_id: 123, date: Math.floor(Date.now() / 1000), text: oldPost.text,

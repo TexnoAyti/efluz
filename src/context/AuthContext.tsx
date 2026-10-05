@@ -463,18 +463,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Rotate the short-lived session token while the Telegram Mini App remains open.
   useEffect(() => {
     if (authStatus !== 'AUTHENTICATED') return;
+    let lastRefreshAt = Date.now();
+    let refreshing = false;
     const refreshToken = async () => {
+      if (document.visibilityState !== 'visible' || refreshing || Date.now() - lastRefreshAt < 9 * 60 * 1000) return;
       const initData = getTelegramInitData();
       if (!initData) return;
+      refreshing = true;
       try {
         const authRes = await api.authenticateTelegram(initData);
         setSessionToken(authRes.token);
+        lastRefreshAt = Date.now();
       } catch (err: any) {
         console.warn('Session refresh failed:', err?.message || 'unknown error');
+      } finally {
+        refreshing = false;
       }
     };
+    const onVisible = () => { if (document.visibilityState === 'visible') void refreshToken(); };
     const interval = window.setInterval(refreshToken, 10 * 60 * 1000);
-    return () => window.clearInterval(interval);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { window.clearInterval(interval); document.removeEventListener('visibilitychange', onVisible); };
   }, [authStatus]);
 
   const switchDevUser = async (devUserId: string) => {
@@ -592,4 +601,3 @@ export function useAuth(): AuthContextType {
   }
   return context;
 }
-

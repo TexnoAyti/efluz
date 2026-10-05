@@ -20,6 +20,7 @@ import {
 } from './adminService';
 import { enqueueSmartTelegramNotification } from './smartNotificationService';
 import { telegramMiniAppButton } from './telegramMiniAppButton';
+import { quotaCachedRead, invalidateQuotaRead } from './quotaReadCache';
 
 const DEADLINE_COLLECTION = 'match_deadlines';
 const NO_SHOW_COLLECTION = 'no_show_reports';
@@ -78,19 +79,23 @@ export function getDeadlineState(deadlineAt?: string | null, fixtureStatus?: str
 }
 
 async function readSeasonDeadlines(seasonId: string): Promise<any[]> {
+  return quotaCachedRead(`deadlines:${seasonId}`, 3600, async () => {
   const db = getFirestoreDb();
   const snap = await db.collection(DEADLINE_COLLECTION).where('seasonId', '==', seasonId).limit(300).get();
-  trackFirestoreRead(DEADLINE_COLLECTION, snap.size, 'matchOperationsV4:readSeasonDeadlines');
+  trackFirestoreRead(DEADLINE_COLLECTION, Math.max(1, snap.size), 'matchOperationsV4:readSeasonDeadlines');
   return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+  });
 }
 
 async function readUserNoShows(userId: string, seasonId: string): Promise<any[]> {
+  return quotaCachedRead(`no-shows:${seasonId}:${userId}`, 900, async () => {
   const db = getFirestoreDb();
   const snap = await db.collection(NO_SHOW_COLLECTION).where('reporterUserId', '==', userId).limit(100).get();
-  trackFirestoreRead(NO_SHOW_COLLECTION, snap.size, 'matchOperationsV4:readUserNoShows');
+  trackFirestoreRead(NO_SHOW_COLLECTION, Math.max(1, snap.size), 'matchOperationsV4:readUserNoShows');
   return snap.docs
     .map((doc) => ({ id: doc.id, ...doc.data() }))
     .filter((item: any) => !item.seasonId || item.seasonId === seasonId);
+  });
 }
 
 export async function setFixtureDeadline(params: {
@@ -140,6 +145,7 @@ export async function setFixtureDeadline(params: {
   };
   await ref.set(record, { merge: true });
   trackFirestoreWrite(DEADLINE_COLLECTION, 1, 'matchOperationsV4:setDeadline');
+  await invalidateQuotaRead(`deadlines:${record.seasonId}`).catch(() => {});
   await createAuditLog(
     params.actorUserId,
     'FIXTURE_DEADLINE_SET',
@@ -155,8 +161,9 @@ export async function setFixtureDeadline(params: {
 }
 
 export async function getMyMatchOperations(userId: string, seasonId = 'season-2026-27') {
-  const [fixtures, deadlines, reports] = await Promise.all([
-    getFixturesFirestore({ userId, seasonId }),
+  const fixtures = await getFixturesFirestore({ userId, seasonId });
+  if (!fixtures.length) return { seasonId, rows: [], generatedAt: new Date().toISOString() };
+  const [deadlines, reports] = await Promise.all([
     readSeasonDeadlines(seasonId).catch(() => []),
     readUserNoShows(userId, seasonId).catch(() => []),
   ]);
@@ -237,6 +244,7 @@ export async function reportNoShowV4(params: {
   };
   await ref.set(report, { merge: false });
   trackFirestoreWrite(NO_SHOW_COLLECTION, 1, 'matchOperationsV4:reportNoShow');
+  await invalidateQuotaRead(`no-shows:${report.seasonId}:${params.userId}`).catch(() => {});
   await createAuditLog(
     params.userId,
     'NO_SHOW_REPORTED',
@@ -344,6 +352,7 @@ export async function runDeadlineSweep(seasonId = 'season-2026-27', force = fals
     await db.collection(DEADLINE_COLLECTION).doc(deadline.fixtureId).set({ [field]: new Date().toISOString(), updatedAt: new Date().toISOString() }, { merge: true });
     trackFirestoreWrite(DEADLINE_COLLECTION, 1, `matchOperationsV4:sweep:${kind}`);
   }
+  if (reminders) await invalidateQuotaRead(`deadlines:${seasonId}`).catch(() => {});
   return { skipped: false, checked, reminders };
 }
 
@@ -408,9 +417,14 @@ export async function resolveNoShowV4(params: {
     const batch = db.batch();
     for (const doc of related.docs) batch.set(doc.ref, resolution, { merge: true });
     await batch.commit();
+    await Promise.all(related.docs.map(doc => {
+      const row = doc.data();
+      return row.reporterUserId ? invalidateQuotaRead(`no-shows:${row.seasonId || 'season-2026-27'}:${row.reporterUserId}`).catch(() => {}) : Promise.resolve();
+    }));
     trackFirestoreWrite(NO_SHOW_COLLECTION, related.size, 'matchOperationsV4:resolveNoShow:related');
   } else {
     await ref.set(resolution, { merge: true });
+    await invalidateQuotaRead(`no-shows:${report.seasonId || 'season-2026-27'}:${report.reporterUserId}`).catch(() => {});
     trackFirestoreWrite(NO_SHOW_COLLECTION, 1, 'matchOperationsV4:resolveNoShow:single');
   }
   await createAuditLog(
