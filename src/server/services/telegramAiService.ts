@@ -24,7 +24,7 @@ import { checkAndIncrementAiRateLimits } from './telegramAiRateLimitService';
 import { buildAiGroundingContext } from './telegramAiGroundingService';
 import { buildTelegramAiSystemPrompt } from './telegramAiPrompt';
 import { resolveAiSpeaker, addressAiFact, aiSocialReply } from './telegramAiPersonality';
-import { generateGroundedTelegramAnswer } from './telegramAiReadTools';
+import { generateGroundedTelegramAnswer, AI_CLARIFICATION_REPLY, aiProviderFailureKind, aiProviderFailureReply } from './telegramAiReadTools';
 import { isAiAdminCommand } from './telegramAiAdminCatalog';
 import { decorateAiCustomEmoji } from './telegramAiCustomEmoji';
 import { handleAiAdminCommand, isOwnerAdminPrivateChat, rememberDeliveredAdminPlan } from './telegramAiAdminService';
@@ -73,8 +73,7 @@ const MAX_CONTEXT_TURNS = 4;
 const CONTEXT_TTL_SECONDS = 3600; // Sliding one-hour TTL; scoped to user/chat/topic
 const MAX_RESPONSE_CHARS = 1000;
 const STANDARD_OFF_TOPIC_REPLY = "Men faqat eFootball va EFL UZ bo‘yicha yordam beraman.";
-const QUOTA_EXHAUSTED_REPLY = "Hozirda AI xizmatining vaqtinchalik so'rovlar limiti to'lgan yoki xizmat band. Iltimos, birozdan keyin qayta urinib ko'ring.";
-const SYSTEM_OUTAGE_REPLY = "Hozirda AI xizmati vaqtincha faol emas. Iltimos, keyinroq qayta urinib ko'ring.";
+const AI_CONFIGURATION_REPLY = 'AI ulanishi sozlanmagan. Admin sozlamalarni tekshirishi kerak.';
 
 // Extracts the Telegram Bot User ID from the configured token (<bot_id>:<token_secret>)
 export function getConfiguredBotUserId(): number | null {
@@ -494,6 +493,7 @@ export async function handleTelegramAiMessage(
   const replyConfirmation = Boolean(payload.replyToMessage && /^(?:ha|xa|yes|xop)$/i.test(payload.text.trim()));
   const ownerControl = owner && (isAiAdminCommand(payload.text) || ['admin','confirm','cancel','help'].includes(intent) || replyConfirmation);
   const rootController = new AbortController();
+  const deadlineAt = Date.now() + (ownerControl ? 30000 : GLOBAL_TIMEOUT_MS);
   const globalTimeout = setTimeout(() => rootController.abort(), ownerControl ? 30000 : GLOBAL_TIMEOUT_MS);
 
   try {
@@ -649,7 +649,7 @@ export async function handleTelegramAiMessage(
     } else {
       const apiKey = process.env.GEMINI_API_KEY?.trim();
       if (!apiKey) {
-        replyText = SYSTEM_OUTAGE_REPLY;
+        replyText = AI_CONFIGURATION_REPLY;
       } else {
         const modelName = process.env.GEMINI_MODEL?.trim() || 'gemini-3.1-flash-lite';
         const ai = new GoogleGenAI({ apiKey });
@@ -665,7 +665,7 @@ export async function handleTelegramAiMessage(
         ];
 
         try {
-          replyText = await generateGroundedTelegramAnswer({ ai, model: modelName, contents, systemPrompt, signal: rootController.signal });
+          replyText = await generateGroundedTelegramAnswer({ ai, model: modelName, contents, systemPrompt, signal: rootController.signal, deadlineAt });
         } catch (apiErr: any) {
           const errMsg = String(apiErr?.message || '');
           if (rootController.signal.aborted) {
@@ -673,19 +673,14 @@ export async function handleTelegramAiMessage(
             await claimDeliveryState(payload.updateId, 'unknown_timeout', { signal: rootController.signal });
             return { ok: false, handled: false, error: 'TIMEOUT_ABORTED' };
           }
-          if (errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('quota')) {
-            console.warn('[AI GEMINI] Quota exhausted for Gemini API:', errMsg);
-            replyText = QUOTA_EXHAUSTED_REPLY;
-          } else {
-            console.error('[AI GEMINI] Error calling Gemini:', errMsg);
-            replyText = SYSTEM_OUTAGE_REPLY;
-          }
+          console.error('[AI GEMINI]', aiProviderFailureKind(apiErr), 'Error calling Gemini:', errMsg);
+          replyText = aiProviderFailureReply(apiErr);
         }
       }
     }
 
-    if (!replyText) {
-      replyText = SYSTEM_OUTAGE_REPLY;
+    if (!replyText?.trim()) {
+      replyText = AI_CLARIFICATION_REPLY;
     }
 
     // 11. Dispatch AI response via unified dispatch path

@@ -2,6 +2,35 @@ import type { GoogleGenAI } from '@google/genai';
 import { createAiTournamentReader } from './telegramAiDataService';
 import { withinAiDeadline } from './telegramAiDeadline';
 
+export const AI_CLARIFICATION_REPLY = 'Savolni aniq tushunmadim. Qaysi jamoa yoki turnir haqida, nimani bilmoqchisiz?';
+
+export function aiProviderFailureKind(error: any): 'busy' | 'quota' | 'connection' {
+  let details = error;
+  try { details = JSON.parse(String(error?.message || '')); } catch { /* SDK may expose a plain message. */ }
+  const code = Number(details?.error?.code || details?.code || error?.status || error?.code);
+  const message = String(error?.message || '').toLowerCase();
+  if (code === 429 || /resource_exhausted|quota|\b429\b/.test(message)) return 'quota';
+  if (code === 503 || /\b503\b|unavailable|high demand/.test(message)) return 'busy';
+  return 'connection';
+}
+
+export function aiProviderFailureReply(error: unknown): string {
+  switch (aiProviderFailureKind(error)) {
+    case 'busy': return 'AI hozir band. Birozdan keyin qayta yozing.';
+    case 'quota': return 'AI so‘rovlar limiti tugadi. Birozdan keyin qayta urinib ko‘ring.';
+    default: return 'AI’dan javob olishda xatolik bo‘ldi. Birozdan keyin qayta yozing.';
+  }
+}
+
+function answerText(response: any): string {
+  const text = response.text?.trim();
+  if (text) return text;
+  if (response.promptFeedback?.blockReason || response.candidates?.some((c: any) => ['SAFETY', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'RECITATION'].includes(c.finishReason))) {
+    return 'Bu savolga javob tayyorlay olmadim. Boshqacha yozib ko‘ring.';
+  }
+  return AI_CLARIFICATION_REPLY;
+}
+
 export const tournamentReadTool = {
   name: 'read_tournament_data',
   description: 'Search the complete EFL UZ active-season database snapshots: all competitions, clubs and public owners, fixtures, standings, statistics. Use for facts missing from the initial packet; never assume missing initial facts mean missing database data. Errors ENTITY_CLARIFICATION/AMBIGUOUS_* require asking the user, never silently changing filters. complete=false means only partial cached coverage; disclose stale data, never claim missing fixtures are not scheduled. Supports exact IDs or full names, semifinal/final, matchday, opponent, owner username and pagination. No writes or private fields.',
@@ -20,14 +49,25 @@ export const tournamentReadTool = {
  * Tool calls cannot request arbitrary database paths or execute administration. */
 export async function generateGroundedTelegramAnswer(options: {
   ai: GoogleGenAI; model: string; contents: any[]; systemPrompt: string; signal: AbortSignal;
-  generate?: (request: any) => Promise<any>; read?: (args: unknown) => Promise<unknown>;
+  generate?: (request: any) => Promise<any>; read?: (args: unknown) => Promise<unknown>; deadlineAt?: number;
 }): Promise<string> {
   const generate = options.generate || ((request: any) => options.ai.models.generateContent(request));
   const read = options.read || createAiTournamentReader(options.signal).read;
+  let retriedBusy = false;
+  const requestModel = async (request: any): Promise<any> => {
+    try { return await withinAiDeadline(options.signal, () => generate(request)); }
+    catch (error) {
+      // Read-only generation only: one retry across both rounds, with time reserved for delivery.
+      if (retriedBusy || options.signal.aborted || aiProviderFailureKind(error) !== 'busy' || !options.deadlineAt || options.deadlineAt - Date.now() < 2500) throw error;
+      retriedBusy = true;
+      console.warn('[AI GEMINI RETRY] Busy provider; one bounded retry');
+      return withinAiDeadline(options.signal, () => generate(request));
+    }
+  };
   const config = { systemInstruction: options.systemPrompt, temperature: 0.65, maxOutputTokens: 400, abortSignal: options.signal };
-  const first = await withinAiDeadline(options.signal, () => generate({ model: options.model, contents: options.contents, config: { ...config, tools: [{ functionDeclarations: [tournamentReadTool] }] } }));
+  const first = await requestModel({ model: options.model, contents: options.contents, config: { ...config, tools: [{ functionDeclarations: [tournamentReadTool] }] } });
   const calls = first.functionCalls || [];
-  if (!calls.length) return first.text?.trim() || '';
+  if (!calls.length) return answerText(first);
   if (calls.length > 4 || calls.some((call: any) => call.name !== tournamentReadTool.name)) return 'So‘rovni aniqroq yozing: jamoa, turnir va kerakli tur yoki bosqichni ko‘rsating.';
   const responses = [];
   for (const call of calls) {
@@ -49,6 +89,6 @@ export async function generateGroundedTelegramAnswer(options: {
   }
   const modelContent = first.candidates?.[0]?.content;
   if (!modelContent) return 'Ma’lumot so‘rovini yakunlab bo‘lmadi. Qayta urinib ko‘ring.';
-  const final = await withinAiDeadline(options.signal, () => generate({ model: options.model, contents: [...options.contents, modelContent, { role: 'user', parts: responses }], config }));
-  return final.text?.trim() || '';
+  const final = await requestModel({ model: options.model, contents: [...options.contents, modelContent, { role: 'user', parts: responses }], config });
+  return answerText(final);
 }
