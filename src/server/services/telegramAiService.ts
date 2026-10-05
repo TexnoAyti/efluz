@@ -25,6 +25,7 @@ import { buildAiGroundingContext } from './telegramAiGroundingService';
 import { buildTelegramAiSystemPrompt } from './telegramAiPrompt';
 import { generateGroundedTelegramAnswer } from './telegramAiReadTools';
 import { isAiAdminCommand } from './telegramAiAdminCatalog';
+import { decorateAiCustomEmoji } from './telegramAiCustomEmoji';
 import { handleAiAdminCommand, isOwnerAdminPrivateChat, rememberDeliveredAdminPlan } from './telegramAiAdminService';
 import { isAiAdminActor } from './telegramAiAdminAccess';
 import { isPersonalFixtureQuestion, buildPersonalFixtureReply } from './telegramAiPersonalFixtureService';
@@ -449,7 +450,7 @@ async function dispatchTelegramAiReply(
   const parseMode = options.parse_mode !== undefined ? options.parse_mode : 'HTML';
   const maxChars = Math.min(options.maxChars || MAX_RESPONSE_CHARS, 4000);
   const textToSend = parseMode === 'HTML'
-    ? escapeTelegramHtml(replyText.slice(0, maxChars))
+    ? await decorateAiCustomEmoji(escapeTelegramHtml(replyText.slice(0, maxChars)), signal)
     : replyText.slice(0, maxChars);
 
   // 5. Dispatch message to Telegram

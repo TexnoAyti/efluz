@@ -33,6 +33,7 @@ import { getAiRateLimitMetrics } from '../services/telegramAiRateLimitService';
 import { handleTelegramAiMessage } from '../services/telegramAiService';
 import { isAiAdminCommand } from '../services/telegramAiAdminCatalog';
 import { archiveCommunityMessage } from '../services/telegramAiCommunitySources';
+import { extractAiCustomEmoji, saveAiCustomEmoji } from '../services/telegramAiCustomEmoji';
 
 export const telegramRouter = Router();
 // A processing lease is separate from acknowledgement: failed work remains retryable.
@@ -146,7 +147,17 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
       response = { ok: true, handled: 'premium_pre_checkout', result };
     } else {
       const message = update.message;
-      if (message?.successful_payment) {
+      const emojiText = message?.text || message?.caption || '';
+      const emojiPalette = extractAiCustomEmoji(emojiText, message?.entities || message?.caption_entities || []);
+      if (message?.chat?.type === 'private' && isPrimaryOwner(message?.from?.id) &&
+        !message.sender_chat && Number(message.chat.id) === Number(message.from.id) && emojiPalette.length) {
+        const count = await saveAiCustomEmoji(emojiPalette);
+        const sent = await sendTelegramMessage(message.chat.id,
+          `${count} ta premium emoji saqlandi. AI javobida mos oddiy emoji bo‘lsa, shu premium variant ishlatiladi.`,
+          { parse_mode: null, reply_to_message_id: message.message_id });
+        if (!sent.ok) throw new Error('EMOJI_CONFIRMATION_NOT_SENT');
+        response = { ok: true, handled: 'ai_custom_emoji_saved', count };
+      } else if (message?.successful_payment) {
         const result = await handlePremiumSuccessfulPayment(message);
         // The transaction deduplicates by charge ID, including retries after a Redis outage.
         if (result?.handled && result?.userId && !result?.idempotent) {

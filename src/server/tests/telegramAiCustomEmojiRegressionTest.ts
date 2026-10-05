@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import { extractAiCustomEmoji, renderAiCustomEmoji } from '../services/telegramAiCustomEmoji';
+const text = 'Hi 🏆 😄';
+const palette = extractAiCustomEmoji(text, [{ type: 'custom_emoji', offset: 3, length: 2, custom_emoji_id: '5368324170671202286' }]);
+assert.equal(palette[0].emoji, '🏆', 'Telegram offsets use UTF-16');
+assert.equal(renderAiCustomEmoji('🏆', palette), '<tg-emoji emoji-id="5368324170671202286">🏆</tg-emoji>');
+assert.equal(extractAiCustomEmoji(text, [{ type: 'custom_emoji', offset: -1, length: 2, custom_emoji_id: '1' }]).length, 0);
+assert.equal(extractAiCustomEmoji(text, [{ type: 'custom_emoji', offset: 3, length: 2, custom_emoji_id: '1" onclick="bad' }]).length, 0);
+assert.equal(renderAiCustomEmoji('&lt;script&gt; 🏆', palette).startsWith('&lt;script&gt;'), true);
+assert.equal((renderAiCustomEmoji('🏆🏆🏆🏆', palette).match(/<tg-emoji/g) || []).length, 3);
+assert.equal(renderAiCustomEmoji('🏆', [{ emoji: '🏆', id: '<bad>' }]), '🏆');
+assert.equal(renderAiCustomEmoji('No emoji', palette), 'No emoji');
+console.log('PASS custom emoji extraction, UTF-16, validation, escaping and bounded rendering');
