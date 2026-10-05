@@ -1,5 +1,6 @@
 import type { ImageBranding } from './tournamentImageBranding';
-import type { Fixture, StandingsRow, User } from '../types';
+import { getClubOwnerDisplay } from './ownerUtils';
+import type { Club, Fixture, StandingsRow, User } from '../types';
 export function canExportTournamentImage(user?: Pick<User, 'isAdmin' | 'isSuspended'> | null): boolean {
   return Boolean(user?.isAdmin && !user.isSuspended);
 }
@@ -11,19 +12,28 @@ export const exportCopy = {
 };
 export interface TournamentImageModel {
   kind: 'standings' | 'matchday'; title: string; seasonId: string; language: ExportLanguage; round?: string;
-  rows: Array<{ id: string; name: string; position?: number; stats?: number[]; awayId?: string; awayName?: string; score?: string; status?: string; winner?: 'home' | 'away' }>;
+  rows: Array<{ id: string; name: string; ownerUsername?: string; awayOwnerUsername?: string; position?: number; stats?: number[]; awayId?: string; awayName?: string; score?: string; status?: string; winner?: 'home' | 'away' }>;
   createdAt: string; cached?: boolean; branding?:ImageBranding;
 }
-export function standingsImageModel(title: string, seasonId: string, standings: StandingsRow[], language: ExportLanguage): TournamentImageModel {
-  return { kind: 'standings', title, seasonId, language, createdAt: new Date().toISOString(), rows: [...standings].sort((a,b) => a.position-b.position || a.clubId.localeCompare(b.clubId)).map(row => ({ id: row.clubId, name: row.clubName, position: row.position, stats: [row.played, row.won, row.drawn, row.lost, row.goalsFor, row.goalsAgainst, row.goalDifference, row.points] })) };
+function imageOwnerUsername(club?: Club | null, fixtureUser?: Fixture['homeUser']): string | undefined {
+  return getClubOwnerDisplay(club, fixtureUser).username ?? undefined;
 }
-export function matchdayImageModel(title: string, seasonId: string, fixtures: Fixture[], matchday: number, language: ExportLanguage): TournamentImageModel {
+export function standingsImageModel(title: string, seasonId: string, standings: StandingsRow[], language: ExportLanguage, clubs: Club[] = []): TournamentImageModel {
+  return { kind: 'standings', title, seasonId, language, createdAt: new Date().toISOString(), rows: [...standings].sort((a,b) => a.position-b.position || a.clubId.localeCompare(b.clubId)).map(row => ({ id: row.clubId, name: row.clubName, ownerUsername: imageOwnerUsername(clubs.find(club => club.id === row.clubId)), position: row.position, stats: [row.played, row.won, row.drawn, row.lost, row.goalsFor, row.goalsAgainst, row.goalDifference, row.points] })) };
+}
+export function matchdayImageModel(title: string, seasonId: string, fixtures: Fixture[], matchday: number, language: ExportLanguage, clubs: Club[] = []): TournamentImageModel {
   const copy = exportCopy[language];
+  const owners = new Map(clubs.map(club => [club.id, club]));
   const selected = fixtures.filter(fixture => fixture.matchday === matchday && fixture.seasonId === seasonId).sort((a,b) => a.id.localeCompare(b.id));
   const roundNames = [...new Set(selected.map(fixture => fixture.roundName).filter(Boolean))];
   return { kind: 'matchday', title, seasonId, language, round: roundNames.length === 1 && !/^(matchday|tur|тур)\s*\d+$/i.test(roundNames[0]!) ? roundNames[0] : language === 'uz' ? `${matchday}-tur` : `${copy.round} ${matchday}`, createdAt: new Date().toISOString(), rows: selected.map(fixture => {
     const official = fixture.status === 'CONFIRMED' && fixture.homeScore != null && fixture.awayScore != null;
-    return { id: fixture.homeClubId || '', name: fixture.homeClub?.name || fixture.homeClubId || 'TBD', awayId: fixture.awayClubId || '', awayName: fixture.awayClub?.name || fixture.awayClubId || 'TBD', score: official ? `${fixture.homeScore} : ${fixture.awayScore}` : 'VS', winner: official && fixture.homeScore !== fixture.awayScore ? (fixture.homeScore! > fixture.awayScore! ? 'home' : 'away') : undefined, status: official ? '' : ['DISPUTED', 'PENDING_CONFIRMATION'].includes(fixture.status) ? copy.pending : fixture.status === 'POSTPONED' ? copy.postponed : copy.scheduled };
+    const home = owners.get(fixture.homeClubId || '');
+    const away = owners.get(fixture.awayClubId || '');
+    // A current club snapshot overrides historical fixture ownership, including released clubs.
+    const ownerUsername = home ? imageOwnerUsername(home) : imageOwnerUsername(fixture.homeClub, fixture.homeUser);
+    const awayOwnerUsername = away ? imageOwnerUsername(away) : imageOwnerUsername(fixture.awayClub, fixture.awayUser);
+    return { ownerUsername, awayOwnerUsername, id: fixture.homeClubId || '', name: fixture.homeClub?.name || fixture.homeClubId || 'TBD', awayId: fixture.awayClubId || '', awayName: fixture.awayClub?.name || fixture.awayClubId || 'TBD', score: official ? `${fixture.homeScore} : ${fixture.awayScore}` : 'VS', winner: official && fixture.homeScore !== fixture.awayScore ? (fixture.homeScore! > fixture.awayScore! ? 'home' : 'away') : undefined, status: official ? '' : ['DISPUTED', 'PENDING_CONFIRMATION'].includes(fixture.status) ? copy.pending : fixture.status === 'POSTPONED' ? copy.postponed : copy.scheduled };
   }) };
 }
 export function imageFilename(competitionId: string, kind: 'standings' | 'matchday', matchday?: number) {
@@ -81,14 +91,17 @@ export function paintTournamentImage(ctx: CanvasRenderingContext2D, model: Tourn
       const accent=zone?.color||'#9bafc7';
       if(zone){box(40,y,1000,rowHeight-6,zone.tint,10);ctx.fillStyle=accent;ctx.fillRect(40,y+12,4,rowHeight-30);}
       text(row.position!,76,y+27,21,accent,'center');crest(row.id,row.name,103,y+8,38);
-      text(row.name,151,y+27,21,'#f0f5fc','left',317);
+      text(row.name,151,y+(row.ownerUsername?18:27),21,'#f0f5fc','left',317);
+      if(row.ownerUsername)text(`@${row.ownerUsername}`,151,y+40,15,'#a8bdd3','left',317,500);
       box(970,y+7,65,40,zone?'#0e1a2b':'#213249',9);
       row.stats!.forEach((value,i)=>text(i===6&&value>0?`+${value}`:value,517+i*69,y+27,i===7?25:21,i===7?(zone?.color||'#f1f5fc'):i===6?(value>0?'#93ddc6':value<0?'#e0a2ab':'#b8c8dc'):'#d5e0ef','center'));
     }else{
       const center=y+(rowHeight-6)/2;
       crest(row.id,row.name,60,center-23,46);crest(row.awayId!,row.awayName!,974,center-23,46);
-      text(row.name,119,center,21,row.winner==='home'?'#6becbe':'#edf3fb','left',320);
-      text(row.awayName!,961,center,21,row.winner==='away'?'#6becbe':'#edf3fb','right',320);
+      text(row.name,119,center-(row.ownerUsername?11:0),21,row.winner==='home'?'#6becbe':'#edf3fb','left',320);
+      text(row.awayName!,961,center-(row.awayOwnerUsername?11:0),21,row.winner==='away'?'#6becbe':'#edf3fb','right',320);
+      if(row.ownerUsername)text(`@${row.ownerUsername}`,119,center+16,16,'#a8bdd3','left',320,500);
+      if(row.awayOwnerUsername)text(`@${row.awayOwnerUsername}`,961,center+16,16,'#a8bdd3','right',320,500);
       const official=row.score!=='VS';
       box(465,center-29,150,58,official?'#18483d':'#203249',12);
       text(row.score!,540,center-(row.status?8:0),official?31:24,official?'#7af1c6':'#b6c8de','center');

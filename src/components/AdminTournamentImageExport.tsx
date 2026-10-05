@@ -44,14 +44,21 @@ export const AdminTournamentImageExport: React.FC<{ competition?: Pick<Competiti
       const competitionData=await api.getCompetitions(activeSeasonId);
       const authoritativeCompetition=competitionData.competitions.find(c=>c.id===competition.id);
       if(!authoritativeCompetition)throw new Error(copy.failed);
+      // Public ownership read models also cover championships outside this admin's mutation scope.
+      const allLeagueIds = [...new Set(competitionData.competitions.filter(c=>c.type==='LEAGUE').map(c=>c.leagueId).filter((id): id is string=>Boolean(id)))];
+      const leagueIds = authoritativeCompetition.leagueId && allLeagueIds.includes(authoritativeCompetition.leagueId)
+        ? [authoritativeCompetition.leagueId] : allLeagueIds;
+      const ownership = await Promise.all(leagueIds.map(id=>api.getLeagueClubs(id,activeSeasonId,true)));
+      const clubs = ownership.flatMap(data=>data.clubs);
+      const ownersCached = ownership.some(data=>Boolean((data as any).degraded||(data as any).stale));
       if(kind==='standings'){
         const data=await api.getCompetitionStandings(competition.id,true);
-        model=standingsImageModel(competition.name,activeSeasonId,data.standings,language);
-        model.cached=Boolean((data as any).degraded||(data as any).stale);
+        model=standingsImageModel(competition.name,activeSeasonId,data.standings,language,clubs);
+        model.cached=ownersCached||Boolean((data as any).degraded||(data as any).stale);
       }else{
         const data=await api.getCompetitionFixtures(competition.id,selectedRound,undefined,true);
-        model=matchdayImageModel(competition.name,activeSeasonId,data.fixtures,selectedRound,language);
-        model.cached=Boolean((data as any).degraded||(data as any).stale);
+        model=matchdayImageModel(competition.name,activeSeasonId,data.fixtures,selectedRound,language,clubs);
+        model.cached=ownersCached||Boolean((data as any).degraded||(data as any).stale);
       }
       model.branding=tournamentImageBranding(authoritativeCompetition,competitionData.competitions,model.rows.length);
       const blob=await tournamentImageBlob(model);

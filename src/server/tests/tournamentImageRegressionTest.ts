@@ -2,7 +2,7 @@ import {SEASON_2026_27_ALLOCATION,withSeasonQualificationPolicy} from '../../lib
 import {tournamentImageBranding} from '../../lib/tournamentImageBranding';
 import assert from 'node:assert/strict';
 import { canExportTournamentImage, imageFilename, matchdayImageModel, standingsImageModel, paintTournamentImage } from '../../lib/tournamentImage';
-import type { Fixture, StandingsRow } from '../../types';
+import type { Club, Fixture, StandingsRow } from '../../types';
 assert.equal(canExportTournamentImage(null),false);
 assert.equal(canExportTournamentImage({isAdmin:false,isSuspended:false}),false);
 assert.equal(canExportTournamentImage({isAdmin:true,isSuspended:true}),false);
@@ -49,3 +49,33 @@ for(const [id,n] of Object.entries(SEASON_2026_27_ALLOCATION)){
  assert.equal(withSeasonQualificationPolicy(old,'season-2027-28'),old,'Other seasons are unchanged');
 }
 console.log('PASS confirmed 7/7/6/6/6 zones, 32+32 totals, old-cache correction and season isolation');
+
+// Ownership is joined by club ID, independently of row sorting and home/away orientation.
+const ownedClubs = [
+  {id:'club-19',claimedByUsername:'@@table_owner'},
+  {id:'club-inter',claimedByUsername:'@inter_owner'},
+  {id:'club-milan',occupancy:{status:'owned',username:'milan_owner'}},
+] as Club[];
+const ownedTable=standingsImageModel('League','season-2026-27',standings,'uz',ownedClubs);
+assert.equal(ownedTable.rows[0].ownerUsername,'table_owner');
+assert.equal(ownedTable.rows[1].ownerUsername,undefined);
+assert.deepEqual(ownedTable.rows.map(r=>r.stats),table.rows.map(r=>r.stats));
+const historicFixture={...fixture('owned','CONFIRMED'),homeUser:{id:'old',username:'old_owner'},awayUser:{id:'wrong',username:'wrong_owner'}} as Fixture;
+const ownedMatches=matchdayImageModel('League','season-2026-27',[historicFixture],10,'uz',ownedClubs);
+assert.equal(ownedMatches.rows[0].ownerUsername,'inter_owner');
+assert.equal(ownedMatches.rows[0].awayOwnerUsername,'milan_owner');
+assert.equal(matchdayImageModel('League','season-2026-27',[historicFixture],10,'uz').rows[0].ownerUsername,'old_owner','Embedded ownership is used only without a current club snapshot');
+const released=matchdayImageModel('League','season-2026-27',[historicFixture],10,'uz',[{id:'club-inter',occupancy:{status:'available'}} as Club]);
+assert.equal(released.rows[0].ownerUsername,undefined,'Released clubs must not retain a historical owner');
+for(const username of ['tg_123456','user_123456','not a username','<script>']){
+  assert.equal(standingsImageModel('League','season-2026-27',standings,'uz',[{id:'club-19',claimedByUsername:username} as Club]).rows[0].ownerUsername,undefined);
+}
+drawn.length=0;paintTournamentImage(ctx,ownedTable);assert.ok(drawn.includes('@table_owner'));
+drawn.length=0;paintTournamentImage(ctx,ownedMatches);
+assert.ok(drawn.includes('@inter_owner'));assert.ok(drawn.includes('@milan_owner'));assert.ok(!drawn.includes('@old_owner'));assert.ok(drawn.includes('0 : 0'));
+// Long handles stay inside their club cell and never reach statistics or the score column.
+const longModel=standingsImageModel('League','season-2026-27',standings,'uz',[{id:'club-19',claimedByUsername:'a'.repeat(32)} as Club]);
+drawn.length=0;paintTournamentImage(ctx,longModel);
+const handle=drawn.find(value=>value.startsWith('@'))!;
+assert.ok(handle.endsWith('…'));assert.ok(ctx.measureText(handle).width<=317);
+console.log('PASS current owner usernames by club ID, home/away separation, released and invalid owners omitted, owner text clipping and unchanged statistics/scores');
