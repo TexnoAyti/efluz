@@ -74,7 +74,8 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function usePremiumClubIds(): string[] {
-  return useContext(AuthContext)?.premiumClubIds || [];
+  const context = useContext(AuthContext);
+  return context?.user?.isAdmin ? context.premiumClubIds : [];
 }
 
 // Helper to poll for Telegram WebApp readiness in mobile/desktop webviews
@@ -542,7 +543,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         currentClub,
         ownedClubs,
-        premiumClubIds,
+        premiumClubIds: user?.isAdmin ? premiumClubIds : [],
         selectCurrentClub: (clubId) => {
           const club = ownedClubs.find((item) => item.id === clubId);
           if (club && user) {

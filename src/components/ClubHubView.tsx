@@ -1128,7 +1128,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
               {copy.appearance}
             </div>
             <div className="text-[11px] text-[var(--efl-text-2)]">
-              EFL UZ Premium Broadcast Design
+              EFL UZ 2.0
             </div>
           </div>
 

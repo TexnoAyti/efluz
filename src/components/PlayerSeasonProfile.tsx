@@ -1,3 +1,4 @@
+import { useAuth } from '../context/AuthContext';
 import React, { useEffect, useState } from 'react';
 import {
   Activity,
@@ -92,6 +93,7 @@ const outcomeClass: Record<'W' | 'D' | 'L', string> = {
 };
 
 export const PlayerSeasonProfile: React.FC<PlayerSeasonProfileProps> = ({ userId, seasonId = 'season-2026-27' }) => {
+  const { user } = useAuth();
   const [data, setData] = useState<InsightData | null>(null);
   const [seasonData, setSeasonData] = useState<SeasonData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -165,7 +167,7 @@ export const PlayerSeasonProfile: React.FC<PlayerSeasonProfileProps> = ({ userId
               <Sparkles className="h-3.5 w-3.5" /> Public Season Profile
             </div>
             <h2 className="mt-1.5 text-xl font-black tracking-tight text-white sm:text-2xl">2026/27 Performance</h2>
-            <p className="mt-1 text-[11px] leading-5 text-slate-400">Basic confirmed-match form is public. Deep Career analytics and Trophy Cabinet remain Premium.</p>
+            <p className="mt-1 text-[11px] leading-5 text-slate-400">Basic confirmed-match form is public.</p>
           </div>
           <div className="flex items-center gap-2 self-start rounded-xl border border-white/[0.06] bg-black/20 px-3 py-2 text-[10px] font-bold text-slate-400 sm:self-auto">
             <CircleDot className="h-3 w-3 text-emerald-400" /> Live season data
@@ -248,9 +250,9 @@ export const PlayerSeasonProfile: React.FC<PlayerSeasonProfileProps> = ({ userId
           </div>
         </div>
 
-        <div className="rounded-xl border border-amber-400/10 bg-amber-400/[0.035] px-3 py-2 text-[9px] leading-4 text-amber-200/65">
+        {user?.isAdmin && <div className="rounded-xl border border-amber-400/10 bg-amber-400/[0.035] px-3 py-2 text-[9px] leading-4 text-amber-200/65">
           Trophy Cabinet, competition-by-competition Career history, streak analytics and deeper performance breakdown stay inside the private Premium Career layer.
-        </div>
+        </div>}
       </div>
     </section>
   );
