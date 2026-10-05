@@ -150,7 +150,8 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
       const emojiText = message?.text || message?.caption || '';
       const emojiPalette = extractAiCustomEmoji(emojiText, message?.entities || message?.caption_entities || []);
       if (message?.chat?.type === 'private' && isPrimaryOwner(message?.from?.id) &&
-        !message.sender_chat && Number(message.chat.id) === Number(message.from.id) && emojiPalette.length) {
+        !message.sender_chat && Number(message.chat.id) === Number(message.from.id) && emojiPalette.length &&
+        !/[\p{L}\p{N}]/u.test(emojiText)) {
         const count = await saveAiCustomEmoji(emojiPalette);
         const sent = await sendTelegramMessage(message.chat.id,
           `${count} ta premium emoji saqlandi. AI javobida mos oddiy emoji bo‘lsa, shu premium variant ishlatiladi.`,
