@@ -385,7 +385,7 @@ clubsRouter.post('/:id/claim', requireAuth, async (req: Request, res: Response) 
   }
 
   try {
-    const result = await requestDurableClubClaim(userId, clubId, seasonId);
+    const result = await requestDurableClubClaim(userId, clubId, seasonId, req.user);
     res.status(202).json({ success: true, accepted: true, pendingSync: result.pendingSync, message: result.request.message, request: result.request, club: result.club });
     scheduleMutationReconciliation();
   } catch (err: any) {

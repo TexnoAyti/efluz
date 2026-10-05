@@ -53,7 +53,9 @@ export async function getClubClaimReceipt(userId: string, seasonId: string): Pro
   return receipt(record);
 }
 /** Accepts a durable request, never fabricates confirmed ownership from a stale snapshot. */
-export async function requestDurableClubClaim(userId: string, clubId: string, seasonId: string) {
+export type ClaimActorProfile = { id: string; telegramId: string; username?: string; firstName?: string; lastName?: string };
+export async function requestDurableClubClaim(userId: string, clubId: string, seasonId: string, actor?: ClaimActorProfile) {
+  const verifiedProfile = actor && actor.id === userId && /^\d{1,20}$/.test(String(actor.telegramId)) && userId === `user-${actor.telegramId}` ? { id:userId, telegramId:String(actor.telegramId), username:String(actor.username || '').slice(0,64), firstName:String(actor.firstName || '').slice(0,100), lastName:String(actor.lastName || '').slice(0,100) } : undefined;
   const client = getUpstashClient();
   if (!client) throw new DurablePersistenceUnavailableError('Klub tanlash so‘rovi saqlanmadi: doimiy saqlash xizmati ulanmagan.');
   const last = await getClubClaimReceipt(userId,seasonId);
@@ -68,7 +70,7 @@ export async function requestDurableClubClaim(userId: string, clubId: string, se
   if (!admission?.data) throw new DurablePersistenceUnavailableError('Klub qabuli holati saqlanmagan. Qayta urinib ko‘ring.');
   assertClubAdmissionOpen(admissionStatus(seasonId,admission.data),club.leagueId);
   const now = new Date().toISOString(), id='cc-'+randomUUID();
-  const mutation: DurableOutboxMutation = { mutationId:id, revision:randomUUID(), entityType:'CLUB_CLAIM', entityId:clubId, operation:'claim', userId, seasonId, payload:{userId,clubId,seasonId,clubName:club.name,requiresActiveUser:true}, createdAt:now,updatedAt:now,retryCount:0,nextRetryAt:Date.now(),lastError:null,status:'PENDING' };
+  const mutation: DurableOutboxMutation = { mutationId:id, revision:randomUUID(), entityType:'CLUB_CLAIM', entityId:clubId, operation:'claim', userId, seasonId, payload:{userId,clubId,seasonId,clubName:club.name,requiresActiveUser:true,...(verifiedProfile ? {verifiedProfile} : {})}, createdAt:now,updatedAt:now,retryCount:0,nextRetryAt:Date.now(),lastError:null,status:'PENDING' };
   let result: any;
   try { result = await client.eval(CLUB_CLAIM_RESERVE_LUA, [CLUB_CLAIM_KEYS.user(seasonId,userId),CLUB_CLAIM_KEYS.club(seasonId,clubId),CLUB_CLAIM_KEYS.latest(seasonId,userId),OUTBOX_KEYS.mutation(id),OUTBOX_KEYS.pending(),OUTBOX_KEYS.all()], [JSON.stringify(mutation),mutation.nextRetryAt,id,`${KEY_PREFIX}:outbox:mutation:`]); }
   catch { throw new DurablePersistenceUnavailableError('So‘rov saqlanganligini tasdiqlab bo‘lmadi. Holatni tekshirib, qayta urinib ko‘ring.'); }

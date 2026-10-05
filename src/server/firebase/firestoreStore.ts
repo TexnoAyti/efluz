@@ -989,7 +989,7 @@ export async function claimClubAtomicFirestore(
   userId: string,
   clubId: string,
   seasonId = 'season-2026-27',
-  options?: { authoritativeOnly?: boolean; circuitProbeReserved?: boolean; requiresActiveUser?: boolean }
+  options?: { authoritativeOnly?: boolean; circuitProbeReserved?: boolean; requiresActiveUser?: boolean; verifiedProfile?: { id:string; telegramId:string; username?:string; firstName?:string; lastName?:string } }
 ): Promise<{ success: boolean; club: Club; authoritative?: boolean; isFallback?: boolean }> {
   assertNoSyntheticIdsInProduction('claimClubAtomicFirestore', [userId, clubId, seasonId]);
   const now = new Date().toISOString();
@@ -1017,9 +1017,18 @@ export async function claimClubAtomicFirestore(
       }
 
       const claimResult = await db.runTransaction(async (transaction) => {
+        let newVerifiedActor: Record<string, unknown> | undefined;
         if (options?.requiresActiveUser) {
           const actor = await transaction.get(db.collection(COLLECTIONS.USERS).doc(userId));
-          if (!actor.exists || actor.data()?.isSuspended === true) throw new ClubConflictError('CLAIM_AUTHORIZATION_REVOKED', 'CLAIM_AUTHORIZATION_REVOKED');
+          if (actor.data()?.isSuspended === true) throw new ClubConflictError('CLAIM_AUTHORIZATION_REVOKED', 'CLAIM_AUTHORIZATION_REVOKED');
+          if (!actor.exists) {
+            // Older authenticated outbox receipts have only the canonical Telegram user ID.
+            // Recover a basic profile for those receipts, preserving existing suspension/roles.
+            const canonicalTelegramId = /^user-(\d{1,20})$/.exec(userId)?.[1];
+            const profile = options.verifiedProfile || (canonicalTelegramId ? { id:userId, telegramId:canonicalTelegramId } : undefined);
+            if (!profile || profile.id !== userId || !/^\d{1,20}$/.test(profile.telegramId) || userId !== `user-${profile.telegramId}`) throw new ClubConflictError('CLAIM_AUTHORIZATION_REVOKED', 'CLAIM_AUTHORIZATION_REVOKED');
+            newVerifiedActor = { id:userId, telegramId:profile.telegramId, username:profile.username || '', firstName:profile.firstName || '', lastName:profile.lastName || '', photoUrl:'', isAdmin:false, isSuspended:false, createdAt:now, updatedAt:now };
+          }
         }
         const userMemRef = db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${seasonId}_${userId}`);
         const clubOccRef = db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_${clubId}`);
@@ -1110,6 +1119,9 @@ export async function claimClubAtomicFirestore(
             );
           }
         }
+
+        // All reads finish before creating a previously offline authenticated user.
+        if (newVerifiedActor) transaction.set(db.collection(COLLECTIONS.USERS).doc(userId), newVerifiedActor);
 
         // 4. Atomically commit the claim
         const membershipPayload: FirestoreClubMembershipDoc = {

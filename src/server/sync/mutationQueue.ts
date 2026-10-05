@@ -919,7 +919,7 @@ async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: 
     case 'CLUB_CLAIM': {
       // payload: { clubId, seasonId, userId, claimedAt }
       const { claimClubAtomicFirestore } = await import('../firebase/firestoreStore');
-      const res = await claimClubAtomicFirestore(payload.userId, payload.clubId, payload.seasonId, { authoritativeOnly: true, circuitProbeReserved: firestoreCircuitBreaker.getStatus().state === 'HALF_OPEN', requiresActiveUser: payload.requiresActiveUser === true });
+      const res = await claimClubAtomicFirestore(payload.userId, payload.clubId, payload.seasonId, { authoritativeOnly: true, circuitProbeReserved: firestoreCircuitBreaker.getStatus().state === 'HALF_OPEN', requiresActiveUser: payload.requiresActiveUser === true, verifiedProfile: payload.verifiedProfile });
       await (await import('../readModel/readModelStore')).invalidateClubReadModels(payload.seasonId).catch(() => {});
       await (await import('../readModel/readModelStore')).invalidateUserMembershipReadModel(payload.userId,payload.seasonId).catch(() => {});
       if (payload.requiresActiveUser) await (await import('../readModel/readModelStore')).buildClubsSnapshot(payload.seasonId);

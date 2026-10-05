@@ -84,3 +84,13 @@ firestoreCircuitBreaker.forceState('CLOSED');
 await client.del(OUTBOX_KEYS.pending());await client.set(OUTBOX_KEYS.pending(),'invalid-type');
 try { await assert.rejects(requestDurableClubClaim('claim-type-user',clubs[2],season)); assert.equal(await client.get(CLUB_CLAIM_KEYS.latest(season,'claim-type-user')),null,'Wrong outbox key type cannot leave a reservation without replay data'); }finally{await client.del(OUTBOX_KEYS.pending());}
 console.log('PASS actual Redis: invalid outbox type rejects atomically without orphan reservation');
+await redisSetRaw(ReadModelKeys.clubsWithOwners(season),{data:catalog});
+const newId='user-700401';assert.equal((await db.collection(COLLECTIONS.USERS).doc(newId).get()).exists,false);
+await requestDurableClubClaim(newId,clubs[2],season,{id:newId,telegramId:'700401',username:'verified-new-player',firstName:'New',isAdmin:true,adminPermissions:{scope:'ALL'}} as any);
+assert.equal((await db.collection(COLLECTIONS.USERS).doc(newId).get()).exists,false,'Acceptance creates no remote user during quota');
+firestoreCircuitBreaker.forceState('CLOSED');await processPendingMutations();
+assert.equal((await getClubClaimReceipt(newId,season))?.status,'SYNCED');
+const newProfile=(await db.collection(COLLECTIONS.USERS).doc(newId).get()).data();assert.equal(newProfile?.telegramId,'700401');assert.equal(newProfile?.isAdmin,false);assert.equal(newProfile?.adminPermissions,undefined);
+assert.equal((await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${season}_${clubs[2]}`).get()).data()?.userId,newId);
+console.log('PASS first-time offline Telegram user: verified basic profile + club committed atomically, no admin privilege copied');
+
