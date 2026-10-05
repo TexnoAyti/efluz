@@ -69,6 +69,23 @@ async function main() {
   const db=firebase.getFirestoreDb();
   const seasonId='season-2026-27';
   try {
+    const community = await import('../services/telegramAiCommunitySources');
+    const oldPost = { message_id: 900, date: Math.floor(Date.now() / 1000) - 60 * 86400, text: 'Kubok yarim final kanal e’loni', chat: { id: -1001, type: 'channel', username: 'efl_uz' } };
+    const imported = await community.archiveCommunityMessage({ message_id: 123, date: Math.floor(Date.now() / 1000), text: oldPost.text,
+      chat: { id: 5209126900, type: 'private' }, from: { id: 5209126900 },
+      forward_origin: { type: 'channel', message_id: oldPost.message_id, date: oldPost.date, chat: oldPost.chat } });
+    assert.equal(imported?.url, 'https://t.me/efl_uz/900');
+    await community.archiveCommunityMessage({ ...oldPost, edit_date: oldPost.date + 100, text: 'Kubok yarim final tahrirlangan kanal e’loni' });
+    await community.archiveCommunityMessage(oldPost);
+    await community.archiveCommunityMessage({ ...oldPost, date: Math.floor(Date.now() / 1000), text: 'Kubok yarim final guruh gapi', chat: { ...oldPost.chat, type: 'supergroup', username: 'efleagueuz' } });
+    const channelEvidence = await community.communityFacts('@efl_uz yarim final');
+    assert.ok(channelEvidence.includes('tahrirlangan kanal'));
+    assert.ok(!channelEvidence.includes('guruh gapi'));
+    assert.ok(channelEvidence.includes('https://t.me/efl_uz/900'), 'Historical forwarded post remains readable using archive time');
+    const counts = await community.communitySourceStats();
+    assert.equal(counts.find(s => s.source === 'efl_uz')?.count, 1);
+    assert.equal(counts.find(s => s.source === 'efleagueuz')?.count, 1);
+    console.log('PASS actual Redis Lua: historical channel import, original URL, late edit protection, channel-only retrieval, separate source counts');
     await model.redisSetRaw('atomic-test',{data:[{id:'kept'}]});
     await assert.rejects(model.redisSetRaw('atomic-test',{data:[]}),/SNAPSHOT_REJECTED/);
     assert.equal(await client.ttl(model.getLkgKey('atomic-test')),-1);

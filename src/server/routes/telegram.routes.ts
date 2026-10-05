@@ -30,9 +30,9 @@ import {
   bindTelegramAiTopic,
 } from '../services/telegramAiConfigService';
 import { getAiRateLimitMetrics } from '../services/telegramAiRateLimitService';
-import { handleTelegramAiMessage } from '../services/telegramAiService';
+import { handleTelegramAiMessage, escapeTelegramHtml } from '../services/telegramAiService';
 import { isAiAdminCommand } from '../services/telegramAiAdminCatalog';
-import { archiveCommunityMessage } from '../services/telegramAiCommunitySources';
+import { archiveCommunityMessage, communityPost, communitySourceStats } from '../services/telegramAiCommunitySources';
 import { extractAiCustomEmoji, saveAiCustomEmoji } from '../services/telegramAiCustomEmoji';
 
 export const telegramRouter = Router();
@@ -120,9 +120,14 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
     }
     claimed = true;
     const sourceMessage = update.channel_post || update.edited_channel_post || update.edited_message || update.message;
+    let archivedCommunityPost: Awaited<ReturnType<typeof archiveCommunityMessage>> = null;
     if (sourceMessage) {
-      try { await archiveCommunityMessage(sourceMessage); }
-      catch { console.warn('[AI_COMMUNITY_ARCHIVE_UNAVAILABLE]'); }
+      try { archivedCommunityPost = await archiveCommunityMessage(sourceMessage); }
+      catch (error) {
+        console.warn('[AI_COMMUNITY_ARCHIVE_UNAVAILABLE]');
+        // Preserve channel/import updates for Telegram retry instead of acknowledging lost facts.
+        if (communityPost(sourceMessage) && (update.channel_post || update.edited_channel_post || sourceMessage.chat?.type === 'private')) throw error;
+      }
     }
     console.info('[TELEGRAM_UPDATE_RECEIVED]', JSON.stringify({ updateId: update.update_id, kind: update.callback_query ? 'callback' : update.message ? 'message' : Object.keys(update).filter(key => key !== 'update_id').join(','), chatId: update.message?.chat?.id ?? update.callback_query?.message?.chat?.id ?? null, threadId: update.message?.message_thread_id ?? update.callback_query?.message?.message_thread_id ?? null, hasText: typeof update.message?.text === 'string', command: /^\/([a-z_]+)/i.exec(update.message?.text || '')?.[1] || null, anonymous: Boolean(update.message?.sender_chat) }));
     let response: Record<string, unknown> = { ok: true, ignored: 'unhandled_update_type' };
@@ -149,7 +154,10 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
       const message = update.message;
       const emojiText = message?.text || message?.caption || '';
       const emojiPalette = extractAiCustomEmoji(emojiText, message?.entities || message?.caption_entities || []);
-      if (message?.chat?.type === 'private' && isPrimaryOwner(message?.from?.id) &&
+      if (archivedCommunityPost && message?.chat?.type === 'private' && isPrimaryOwner(message?.from?.id) && message.forward_origin?.type === 'channel') {
+        await sendTelegramMessage(message.chat.id, `Kanal posti AI manbasiga saqlandi:\n${archivedCommunityPost.url}\nMatn yoki rasm ostidagi yozuv o‘qildi. Rasm ichidagi matn avtomatik o‘qilmaydi.`, { parse_mode: null, reply_to_message_id: message.message_id });
+        response = { ok: true, handled: 'ai_channel_post_imported' };
+      } else if (message?.chat?.type === 'private' && isPrimaryOwner(message?.from?.id) &&
         !message.sender_chat && Number(message.chat.id) === Number(message.from.id) && emojiPalette.length &&
         !/[\p{L}\p{N}]/u.test(emojiText)) {
         const count = await saveAiCustomEmoji(emojiPalette);
@@ -235,6 +243,9 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
           } else {
             const { config, redisAvailable } = await getTelegramAiConfig();
             const rateMetrics = await getAiRateLimitMetrics();
+            const sources = await communitySourceStats();
+            const connection = await inspectTelegramConnection(config.allowedChatId, config.allowedThreadId);
+            const channel = connection.channelSource as { memberStatus?: string; receivesPosts?: boolean | null; receivesEdits?: boolean | null } | undefined;
             const statusMsg =
               `🤖 <b>EFL UZ Telegram AI Holati:</b>\n\n` +
               `• AI Xizmati: <b>${config.enabled ? '🟢 FAOL (ON)' : "🔴 O'CHIQ (OFF)"}</b>\n` +
@@ -244,6 +255,10 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
               `• Bugungi so'rovlar: <code>${rateMetrics.dailyRequests}/${config.maxDailyRequests}</code>\n` +
               `• User so'rov limiti: <code>${config.rateLimitUserPerMin} req/min</code>\n` +
               `• Mavzu limiti: <code>${config.rateLimitTopicPerMin} req/min</code>\n\n` +
+              sources.map(s => `• @${s.source}: ${s.count === null ? 'manba tekshiruvi ishlamadi' : s.count + ' ta saqlangan post'}`).join('\n') + '\n' +
+              `• Kanaldagi bot holati: ${escapeTelegramHtml(channel?.memberStatus || 'tasdiqlanmadi')}\n` +
+              `• Kanal post update’lari: ${channel?.receivesPosts === true ? 'yoqilgan' : channel?.receivesPosts === false ? 'o‘chirilgan' : 'tekshirib bo‘lmadi'}\n` +
+              'Kanal postlari kelmasa, botni @efl_uz kanaliga admin qilib qo‘shing va webhook channel_post/edited_channel_post ni qabul qilishini tekshiring. Eski postlarni botning shaxsiy chatiga asl kanalidan forward qiling.\n\n' +
               `<i>/ai_status faqat ma'lumot beradi va mavzuni o'zgartirmaydi.</i>`;
             await sendTelegramMessage(message.chat.id, statusMsg, {
               message_thread_id: message.message_thread_id,

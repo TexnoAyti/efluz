@@ -16,7 +16,7 @@ import { sortSeasonFixtures } from '../../lib/fixtureOrder';
 import { withSeasonQualificationPolicy } from '../../lib/seasonQualificationPolicy';
 import { detectAiCupStage, fixtureMatchesAiCupStage, AI_CUP_STAGE_LABELS, formatAiCupStageFixture } from './telegramAiCupStage';
 import { resolveAiClubs, normalizeAiEntity, containsAiEntity } from './telegramAiEntities';
-import { communityFacts, communitySmallTalkAnswer } from './telegramAiCommunitySources';
+import { communityFacts, communitySmallTalkAnswer, communityFallback } from './telegramAiCommunitySources';
 
 export interface GroundingContext {
   factsSummary: string;
@@ -26,6 +26,7 @@ export interface GroundingContext {
   ownershipAnswer?: string;
   factualAnswer?: string;
   fallbackFacts?: string;
+  communityAnswer?: string;
   selectedClubIds: string[];
   dataDiagnostics?: { missingDatasets: string[]; failedDatasets: string[]; durationMs: number; fixturesCount: number };
 }
@@ -191,9 +192,11 @@ export async function buildAiGroundingContext(
     Boolean(clubs.find(c => c.id === id && (normalizeAiEntity(c.name) === normalizeAiEntity(f.homeClub?.name || '') || normalizeAiEntity(c.name) === normalizeAiEntity(f.awayClub?.name || ''))));
   const ownershipLines = matched.map(c => ownershipLine(c, clubSnapshot.data.length > 0, clubSnapshot.stale));
   const sections = [CORE_RULES_SUMMARY, `MAVSUM: ${seasonId}.`, `SUHBATDAGI JAMOALAR: ${matched.map(c => c.name).join(', ') || 'tanlanmagan'}.`];
+  let communityAnswer: string | undefined;
   if (!testGroundingOverride) {
     const community = await communityFacts(query, options?.signal);
     if (community) sections.push(community);
+    communityAnswer = communityFallback(query, community);
   }
   if (selection.clarification) sections.push('ANIQLASHTIRISH KERAK: ' + selection.clarification);
   if (ownershipLines.length) sections.push('KLUB EGALARI (server faktlari):\n' + ownershipLines.join('\n'));
@@ -333,7 +336,7 @@ export async function buildAiGroundingContext(
   const fallbackBody = stageAnswer || (fallbackLines.length ? fallbackLines.join('\n') : undefined);
   const fallbackFacts = fallbackBody ? (hasStaleData ? 'Oxirgi saqlangan ma’lumot; joriy holat qayta tasdiqlanmagan.\n' : '') + fallbackBody : undefined;
   if(!testGroundingOverride)console.info('[AI_GROUNDING]',JSON.stringify({durationMs:dataDiagnostics.durationMs,clubs:matched.length,competitions:targets.length,fixtures:allFixtures.length,missing:dataDiagnostics.missingDatasets.length,failed:dataDiagnostics.failedDatasets.length}));
-  return { dataDiagnostics, factsSummary: summary, fallbackFacts, hasStaleData, detectedClubs: matched.map(c => c.name),
+  return { dataDiagnostics, factsSummary: summary, fallbackFacts, communityAnswer, hasStaleData, detectedClubs: matched.map(c => c.name),
     selectedClubIds: selection.clarification ? [] : matched.length ? matched.map(c => c.id) : options?.selectedClubIds || [], detectedCompetitions: targets.map(c => c.id),
     ownershipAnswer, factualAnswer: communitySmallTalkAnswer(query, options?.replyVariation) || selection.clarification || finalistAnswer || (!analytical && stageAnswer ? stageAnswer : undefined) || (facts.length ? facts.join('\n') + (hasStaleData && !(facts.length === 1 && facts[0] === ownershipAnswer) && !facts.some(f => /eski snapshot/.test(f)) ? '\nMa’lumot eski yoki to‘liq bo‘lmagan snapshotdan; joriy holat tasdiqlanmagan.' : '') : !analytical ? ownershipAnswer : undefined) };
 }

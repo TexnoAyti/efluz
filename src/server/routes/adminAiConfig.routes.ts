@@ -16,6 +16,7 @@ import {
 } from '../services/telegramAiConfigService';
 import { getAiRateLimitMetrics } from '../services/telegramAiRateLimitService';
 import { buildAiGroundingContext } from '../services/telegramAiGroundingService';
+import { communitySourceStats } from '../services/telegramAiCommunitySources';
 
 export const adminAiConfigRouter = Router();
 
@@ -46,6 +47,7 @@ adminAiConfigRouter.get('/config', requireAdmin, requirePrimaryOwner, async (_re
       success: true,
       config,
       redisAvailable,
+      communitySources: await communitySourceStats(),
       model: {
         name: modelName,
         apiKeyConfigured: hasApiKey,

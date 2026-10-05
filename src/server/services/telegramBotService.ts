@@ -349,12 +349,17 @@ export async function inspectTelegramConnection(chatId: number | null, threadId:
       try { const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body), signal }); return await response.json() as any; }
       catch { return { ok:false, description:'connection_unavailable' }; }
     };
-    const [me, webhook, chat] = await Promise.all([read('getMe'), read('getWebhookInfo'), chatId ? read('getChat', { chat_id: chatId }) : Promise.resolve(null)]);
+    const [me, webhook, chat, channel] = await Promise.all([read('getMe'), read('getWebhookInfo'), chatId ? read('getChat', { chat_id: chatId }) : Promise.resolve(null), read('getChat', { chat_id: '@efl_uz' })]);
     const member = me.ok && chatId ? await read('getChatMember', { chat_id: chatId, user_id: me.result.id }) : null;
+    const channelMember = me.ok ? await read('getChatMember', { chat_id: '@efl_uz', user_id: me.result.id }) : null;
+    const allowed = webhook.result?.allowed_updates;
+    const channelSource = { accessible: channel.ok === true, memberStatus: channelMember?.result?.status || null,
+      receivesPosts: webhook.ok ? !allowed?.length || allowed.includes('channel_post') : null,
+      receivesEdits: webhook.ok ? !allowed?.length || allowed.includes('edited_channel_post') : null };
     const result = { botUsername: me.result?.username || null, readsAllGroupMessages: me.result?.can_read_all_group_messages === true, bound: Boolean(chatId && threadId), groupAccessible: chat?.ok === true, forum: chat?.result?.is_forum === true, memberStatus: member?.result?.status || null, canSendMessages: member?.result?.status === 'restricted' ? member.result.can_send_messages === true : ['creator','administrator','member'].includes(member?.result?.status), pendingUpdates: webhook.result?.pending_update_count ?? null, webhookError: webhook.result?.last_error_message || null, chatError: chat && !chat.ok ? chat.description : null };
     console.info('[TELEGRAM_CONNECTION]', JSON.stringify({ ...result, chatId, threadId, webhookUrl: webhook.result?.url || null }));
-    connectionCheck = { value: result, expiresAt: Date.now() + 60000 };
-    return result;
+    connectionCheck = { value: { ...result, channelSource }, expiresAt: Date.now() + 60000 };
+    return connectionCheck.value;
   })().finally(() => { connectionInFlight = undefined; });
   return connectionInFlight;
 }

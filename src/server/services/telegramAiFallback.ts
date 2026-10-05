@@ -3,6 +3,7 @@ import type { GroundingContext } from './telegramAiGroundingService';
 /** Local read-only response: no invented analysis, permissions or database writes. */
 export function buildAiFallbackReply(query: string, grounding: GroundingContext): string {
   if (grounding.factualAnswer) return grounding.factualAnswer;
+  if (grounding.communityAnswer) return grounding.communityAnswer;
   if (grounding.fallbackFacts) {
     return 'Chuqur tahlilni hozir tayyorlay olmadim. Tekshirilgan ma’lumotlar:\n' + grounding.fallbackFacts.slice(0, 750);
   }
