@@ -23,6 +23,7 @@ import { getTelegramAiConfig } from './telegramAiConfigService';
 import { checkAndIncrementAiRateLimits } from './telegramAiRateLimitService';
 import { buildAiGroundingContext } from './telegramAiGroundingService';
 import { buildTelegramAiSystemPrompt } from './telegramAiPrompt';
+import { resolveAiSpeaker, addressAiFact, aiSocialReply } from './telegramAiPersonality';
 import { generateGroundedTelegramAnswer } from './telegramAiReadTools';
 import { isAiAdminCommand } from './telegramAiAdminCatalog';
 import { decorateAiCustomEmoji } from './telegramAiCustomEmoji';
@@ -621,8 +622,16 @@ export async function handleTelegramAiMessage(
 
     if (rootController.signal.aborted) throw new Error('TIMEOUT_ABORTED');
 
+    const speaker = resolveAiSpeaker(payload);
+    const social = aiSocialReply(payload.text, speaker, payload.messageId);
+    if (social) {
+      const result = await dispatchTelegramAiReply(payload, social, rootController.signal, { parse_mode: 'HTML' });
+      if (result.replySent) await saveConversationContext(payload.chatId, payload.threadId, payload.fromUser.id, payload.text, social, { signal: rootController.signal, history });
+      return { ok: result.ok, handled: true, replySent: result.replySent, ignored: result.ignored };
+    }
     const grounding = await buildAiGroundingContext(payload.text, undefined, {
       signal: rootController.signal,
+      replyVariation: payload.messageId,
       previousUserQueries: history.filter(turn => turn.role === 'user').map(turn => turn.text),
       selectedClubIds: [...history].reverse().find(turn => turn.role === 'user' && turn.selectedClubIds !== undefined)?.selectedClubIds,
     });
@@ -634,7 +643,7 @@ export async function handleTelegramAiMessage(
     let replyText = '';
 
     if (grounding.factualAnswer) {
-      replyText = grounding.factualAnswer;
+      replyText = addressAiFact(grounding.factualAnswer, speaker, payload.messageId, history.filter(h => h.role === 'model').map(h => h.text));
     } else if (testAiResponder) {
       replyText = await withinAiDeadline(rootController.signal, () => testAiResponder!(payload.text, grounding.factsSummary, history));
     } else {
@@ -645,7 +654,7 @@ export async function handleTelegramAiMessage(
         const modelName = process.env.GEMINI_MODEL?.trim() || 'gemini-3.1-flash-lite';
         const ai = new GoogleGenAI({ apiKey });
 
-        const systemPrompt = buildTelegramAiSystemPrompt(grounding.factsSummary);
+        const systemPrompt = buildTelegramAiSystemPrompt(grounding.factsSummary, speaker);
 
         const contents = [
           ...history.map((h) => ({

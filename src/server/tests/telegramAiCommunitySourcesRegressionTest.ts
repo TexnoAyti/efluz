@@ -19,12 +19,13 @@ async function run() {
   assert.equal(selectCommunityPosts('yarim final', [post]).length, 1);
   assert.equal(selectCommunityPosts('Barcelona', [post]).length, 0);
   assert.equal(selectCommunityPosts('kanal', Array.from({ length: 10 }, (_, i) => ({ ...post, date: i }))).length, 6);
-  assert.ok(communitySmallTalkAnswer('eng zo‘r admin kim?')?.includes('rasmiy reyting emas'));
+  assert.ok(communitySmallTalkAnswer('eng zo‘r admin kim?')?.includes('Rasmiy reyting emas'));
+  assert.notEqual(communitySmallTalkAnswer('eng zo‘r admin kim?', 0), communitySmallTalkAnswer('eng zo‘r admin kim?', 1));
   assert.equal(communitySmallTalkAnswer('klub egasi kim?'), undefined);
   setTestGroundingOverride({ competitions: [], clubs: [], fixtures: {} });
   try {
     const context = await buildAiGroundingContext('Eng zo‘r admin kim?');
-    assert.ok(context.factualAnswer?.includes('Hazil tariqasida'));
+    assert.ok(context.factualAnswer?.includes('Eng zo‘ri?'));
     assert.ok(!context.factualAnswer?.includes('@'), 'No invented username');
   } finally { setTestGroundingOverride(null); }
   console.log('PASS community allowlist, captions, edits, bounds, search and subjective admin reply');

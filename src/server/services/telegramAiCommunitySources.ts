@@ -59,10 +59,15 @@ export function selectCommunityPosts(query: string, posts: CommunityPost[]): Com
     .slice(0, 6).map(hit => hit.post);
 }
 
-export function communitySmallTalkAnswer(query: string): string | undefined {
+export function communitySmallTalkAnswer(query: string, variation = 0): string | undefined {
   const q = normalizeAiEntity(query);
   if (/eng\s+(?:zor|yaxshi|kuchli)\s+admin|best\s+admin/.test(q)) {
-    return 'Hazil tariqasida: natijalarni vaqtida tasdiqlab, bahslarni adolatli hal qiladigan admin 😄 Bu rasmiy reyting emas.';
+    const answers = [
+      'Eng zo‘ri? Natijani vaqtida tasdiqlab, bahsni adolatli hal qiladigani 😄 Rasmiy reyting emas, futbolcha fikrim.',
+      'Natijalarni kutdirib qo‘ymaydigan admin — mening nomzodim shu 😄 Bu reyting emas.',
+      'Bahsni VAR’dan ham tez va adolatli hal qilsa, o‘sha admin zo‘r 😄 Rasmiy reytingimiz yo‘q.',
+    ];
+    return answers[Math.abs(Math.trunc(Number.isFinite(variation) ? variation : 0)) % answers.length];
   }
   return undefined;
 }

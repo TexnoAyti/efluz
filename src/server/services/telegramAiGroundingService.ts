@@ -93,7 +93,7 @@ function ownershipLine(club: Club, authoritative: boolean, stale: boolean): stri
 export async function buildAiGroundingContext(
   query: string,
   seasonId = DEFAULT_SEASON_ID,
-  options?: { signal?: AbortSignal; previousUserQueries?: string[]; selectedClubIds?: string[] }
+  options?: { signal?: AbortSignal; previousUserQueries?: string[]; selectedClubIds?: string[]; replyVariation?: number }
 ): Promise<GroundingContext> {
   let hasStaleData = false;
   const ownerOnly=isClubOwnershipQuestion(query) && !/nechanchi|ochko|o[‘’'`]?rin|natija|forma|statistika|yut|gol|o[‘’'`]?yin|keyingi|navbatdagi|kubok|ucl|uel|tahlil|hazil|qachon|qancha|nega/i.test(query);
@@ -322,7 +322,7 @@ export async function buildAiGroundingContext(
   if(!testGroundingOverride)console.info('[AI_GROUNDING]',JSON.stringify({durationMs:dataDiagnostics.durationMs,clubs:matched.length,competitions:targets.length,fixtures:allFixtures.length,missing:dataDiagnostics.missingDatasets.length,failed:dataDiagnostics.failedDatasets.length}));
   return { dataDiagnostics, factsSummary: summary, hasStaleData, detectedClubs: matched.map(c => c.name),
     selectedClubIds: selection.clarification ? [] : matched.length ? matched.map(c => c.id) : options?.selectedClubIds || [], detectedCompetitions: targets.map(c => c.id),
-    ownershipAnswer, factualAnswer: communitySmallTalkAnswer(query) || selection.clarification || finalistAnswer || (!analytical && stageAnswer ? stageAnswer : undefined) || (facts.length ? facts.join('\n') + (hasStaleData && !(facts.length === 1 && facts[0] === ownershipAnswer) && !facts.some(f => /eski snapshot/.test(f)) ? '\nMa’lumot eski yoki to‘liq bo‘lmagan snapshotdan; joriy holat tasdiqlanmagan.' : '') : !analytical ? ownershipAnswer : undefined) };
+    ownershipAnswer, factualAnswer: communitySmallTalkAnswer(query, options?.replyVariation) || selection.clarification || finalistAnswer || (!analytical && stageAnswer ? stageAnswer : undefined) || (facts.length ? facts.join('\n') + (hasStaleData && !(facts.length === 1 && facts[0] === ownershipAnswer) && !facts.some(f => /eski snapshot/.test(f)) ? '\nMa’lumot eski yoki to‘liq bo‘lmagan snapshotdan; joriy holat tasdiqlanmagan.' : '') : !analytical ? ownershipAnswer : undefined) };
 }
 
 function isConfirmedAiFixture(f: Fixture): boolean {

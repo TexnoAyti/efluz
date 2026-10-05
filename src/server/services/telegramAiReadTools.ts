@@ -24,7 +24,7 @@ export async function generateGroundedTelegramAnswer(options: {
 }): Promise<string> {
   const generate = options.generate || ((request: any) => options.ai.models.generateContent(request));
   const read = options.read || createAiTournamentReader(options.signal).read;
-  const config = { systemInstruction: options.systemPrompt, temperature: 0.4, maxOutputTokens: 400, abortSignal: options.signal };
+  const config = { systemInstruction: options.systemPrompt, temperature: 0.65, maxOutputTokens: 400, abortSignal: options.signal };
   const first = await withinAiDeadline(options.signal, () => generate({ model: options.model, contents: options.contents, config: { ...config, tools: [{ functionDeclarations: [tournamentReadTool] }] } }));
   const calls = first.functionCalls || [];
   if (!calls.length) return first.text?.trim() || '';
