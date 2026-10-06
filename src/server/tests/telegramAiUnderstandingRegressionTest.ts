@@ -4,7 +4,8 @@ import { initDatabase } from '../db';
 import { getFirestoreDb } from '../firebase/admin';
 import { startMockUpstashBridge } from './mockUpstashBridge';
 import { ReadModelKeys, redisSetRaw } from '../readModel/readModelStore';
-import { buildConversationTableReply, getConversationIntent, requestedMatchday, expandConversationReadFollowUp } from '../services/telegramAiConversationCommands';
+import { buildConversationTableReply, getConversationIntent, requestedMatchday, expandConversationReadFollowUp, parseConversationMatchdayPlan } from '../services/telegramAiConversationCommands';
+import { assertSingleNaturalAdminRequest } from '../services/telegramAiAdminLanguage';
 
 await initDatabase();
 const bridge = await startMockUpstashBridge();
@@ -17,6 +18,8 @@ try {
   for (const [id, text, expected] of understandingCases) assert.equal(getConversationIntent(text), expected, id + ': ' + text);
   assert.equal(requestedMatchday('11 turdagichi?'), 11);
   assert.equal(requestedMatchday('10 turgacha?'), 10);
+  assert.throws(() => assertSingleNaturalAdminRequest('APL 10 turgacha natijani 2-1 qil'), /bir nechta tur/);
+  await assert.rejects(parseConversationMatchdayPlan('APL 10 turgacha qulflang', {}, signal), /bir nechta tur/);
   await redisSetRaw(ReadModelKeys.competitions(season), { data: [{ id: league, name: 'Premier League', seasonId: season, type: 'LEAGUE', leagueId: 'league-premier-league', currentMatchday: 11 }] });
   await redisSetRaw(ReadModelKeys.clubsWithOwners(season), { data: [{ id: 'club-everton', name: 'Everton', leagueId: 'league-premier-league' }, { id: 'club-leeds', name: 'Leeds United', leagueId: 'league-premier-league' }, { id: 'club-liverpool', name: 'Liverpool', leagueId: 'league-premier-league' }, { id: 'club-chelsea', name: 'Chelsea', leagueId: 'league-premier-league' }] });
   const game = (id: string, matchday: number, status: string, home = 'club-everton', away = 'club-leeds') => ({ id, competitionId: league, seasonId: season, matchday, status, homeClubId: home, awayClubId: away, homeScore: 2, awayScore: 1 });

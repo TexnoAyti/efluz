@@ -198,6 +198,7 @@ export async function parseConversationMatchdayPlan(text: string, scope: Convers
   const q = normalizeAiEntity(text);
   const action = /\b(?:qulfla(?:ng)?|yop(?:ing)?)\b/.test(q) ? 'LOCK' : /\b(?:och(?:ing)?|ochib ber)\b/.test(q) ? 'OPEN' : /\buzaytir(?:ing)?\b/.test(q) ? 'EXTEND' : /\bqayta boshla(?:ng)?\b/.test(q) ? 'RESTART' : null;
   if (!action || !/\btur\w*\b|matchday/.test(q)) return null;
+  assertSingleNaturalAdminRequest(text);
   const round = requestedMatchday(text);
   if (!round || round > 100) throw new Error('CLARIFY:Qaysi turni boshqaray? Tur raqamini yozing.');
   const { competitions } = await resolveConversationCompetition(text, {}, signal);
