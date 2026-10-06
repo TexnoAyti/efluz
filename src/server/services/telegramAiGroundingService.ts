@@ -296,6 +296,22 @@ export async function buildAiGroundingContext(
     sections.push('SO‘RALGAN BOSQICH (SCHEDULED ham jadvalda mavjud o‘yin):\n'+stageSections.join('\n\n'));
     stageAnswer=stageSections.join('\n\n')+(hasStaleData&&requestedCups.length?'\nOxirgi saqlangan jadval bo‘yicha; joriy holat qayta tekshirilmagan.':'');
   }
+  // “Qaysi o‘yinlar qoldi?” is a complete competition query, not a request for
+  // the last few results. Keep every scheduled/pending fixture for the named
+  // competition so the model cannot mistake a partial snapshot for the full list.
+  let unplayedAnswer: string | undefined;
+  if (/qol(?:gan|ib)|o[‘’'`]?ynalmagan|hali\s+(?:o[‘’'`]?ynalmagan|o[‘’'`]?ynalmadi)|pending|scheduled/i.test(query) && !matched.length) {
+    const scopes = explicitCompetitions.length ? explicitCompetitions : targets;
+    if (scopes.length === 1) {
+      const comp = scopes[0];
+      const pending = validFixtures.filter(f => f.competitionId === comp.id && !isConfirmedAiFixture(f));
+      const lines = sortSeasonFixtures(pending).map(fixtureLine);
+      unplayedAnswer = `${comp.name}: ${pending.length} ta o‘yin hali tasdiqlanmagan.` +
+        (lines.length ? `\n${lines.join('\n')}` : '\nSaqlangan snapshotda qoldiq o‘yin topilmadi; bu barcha o‘yinlar o‘ynalganini isbotlamaydi.') +
+        (hasStaleData ? '\nMa’lumot eski snapshotdan; joriy holat qayta tekshirilmagan.' : '');
+      sections.push('O‘YNALMAGAN YOKI TASDIQLANMAGAN O‘YINLAR:\n' + unplayedAnswer);
+    }
+  }
   const facts: string[] = [];
   // Exact identity and simple statistical lookups bypass the model. Analytical questions use grounded Gemini.
   const analytical = /nega|nima uchun|tahlil|o[‘’'`]?ylay|yutadimi|kim yut|yutadi|taxmin|prediction|qanday yaxsh|taktik|hazil|yumor|roast/i.test(query);
@@ -338,7 +354,7 @@ export async function buildAiGroundingContext(
   if(!testGroundingOverride)console.info('[AI_GROUNDING]',JSON.stringify({durationMs:dataDiagnostics.durationMs,clubs:matched.length,competitions:targets.length,fixtures:allFixtures.length,missing:dataDiagnostics.missingDatasets.length,failed:dataDiagnostics.failedDatasets.length}));
   return { dataDiagnostics, factsSummary: summary, fallbackFacts, communityAnswer, hasStaleData, detectedClubs: matched.map(c => c.name),
     selectedClubIds: selection.clarification ? [] : matched.length ? matched.map(c => c.id) : options?.selectedClubIds || [], detectedCompetitions: targets.map(c => c.id),
-    ownershipAnswer, factualAnswer: communitySmallTalkAnswer(query, options?.replyVariation) || selection.clarification || finalistAnswer || (!analytical && stageAnswer ? stageAnswer : undefined) || (facts.length ? facts.join('\n') + (hasStaleData && !(facts.length === 1 && facts[0] === ownershipAnswer) && !facts.some(f => /eski snapshot/.test(f)) ? '\nMa’lumot eski yoki to‘liq bo‘lmagan snapshotdan; joriy holat tasdiqlanmagan.' : '') : !analytical ? ownershipAnswer : undefined) };
+    ownershipAnswer, factualAnswer: communitySmallTalkAnswer(query, options?.replyVariation) || selection.clarification || finalistAnswer || (!analytical && stageAnswer ? stageAnswer : undefined) || (!analytical && unplayedAnswer ? unplayedAnswer : undefined) || (facts.length ? facts.join('\n') + (hasStaleData && !(facts.length === 1 && facts[0] === ownershipAnswer) && !facts.some(f => /eski snapshot/.test(f)) ? '\nMa’lumot eski yoki to‘liq bo‘lmagan snapshotdan; joriy holat tasdiqlanmagan.' : '') : !analytical ? ownershipAnswer : undefined) };
 }
 
 function isConfirmedAiFixture(f: Fixture): boolean {

@@ -52,6 +52,10 @@ async function run() {
   assert.ok(rank.detectedCompetitions.includes(cup) && rank.detectedCompetitions.includes(europe));
   assert.ok(rank.factsSummary.includes('Ipswich Town 3 - 2 Inter Milan'));
   assert.ok(!rank.factsSummary.includes('99 - 98') && !rank.factsSummary.includes('77 - 76') && !rank.factsSummary.includes('66 - 65'));
+  const remaining = await buildAiGroundingContext('APLda qaysi o‘yinlar qoldi o‘ynalmagan?');
+  assert.ok(remaining.factualAnswer?.includes('1 ta o‘yin hali tasdiqlanmagan'));
+  assert.ok(remaining.factualAnswer?.includes('Ipswich Town vs Arsenal'));
+  assert.ok(!remaining.factualAnswer?.includes('CANCELLED'), 'Cancelled fixtures are never counted as remaining');
   const analysisFallback = await buildAiGroundingContext('Ipswich kim yutadi?');
   assert.ok(analysisFallback.fallbackFacts?.includes('14-o‘rin, 18 ochko'));
   assert.ok(!analysisFallback.fallbackFacts?.includes('99 - 98'), 'Fallback never shows a scheduled score as confirmed');
