@@ -33,7 +33,7 @@ import { handleAiAdminCommand, isOwnerAdminPrivateChat, rememberDeliveredAdminPl
 import { isAiAdminActor } from './telegramAiAdminAccess';
 import { isPersonalFixtureQuestion, buildPersonalFixtureReply } from './telegramAiPersonalFixtureService';
 import { detectNaturalAdminAction } from './telegramAiAdminLanguage';
-import { getConversationIntent, buildConversationTableReply, isSimpleConversationClubAssignmentRequest, isSimpleConversationMatchdayRequest } from './telegramAiConversationCommands';
+import { getConversationIntent, buildConversationTableReply, expandConversationReadFollowUp, isSimpleConversationClubAssignmentRequest, isSimpleConversationMatchdayRequest } from './telegramAiConversationCommands';
 import { sendTelegramMessage } from './telegramBotService';
 
 export interface TelegramAiMessagePayload {
@@ -594,7 +594,7 @@ export async function handleTelegramAiMessage(
     if (intent === 'standings' || intent === 'fixtures') {
       const table = await buildConversationTableReply(payload.text, intent, scope, rootController.signal);
       const result = await dispatchTelegramAiReply(payload, table.text, rootController.signal, { parse_mode: null, maxChars: 4000 });
-      if (result.replySent) await saveConversationContext(payload.chatId, payload.threadId, payload.fromUser.id, payload.text, table.text, { signal: rootController.signal, history, selectedClubIds: table.clubIds||[], selectedCompetitionIds: table.competitionIds, selectedFixtureIds:table.fixtureIds });
+      if (result.replySent) await saveConversationContext(payload.chatId, payload.threadId, payload.fromUser.id, expandConversationReadFollowUp(payload.text, scope), table.text, { signal: rootController.signal, history, selectedClubIds: table.clubIds||[], selectedCompetitionIds: table.competitionIds, selectedFixtureIds:table.fixtureIds });
       return { ok: result.ok, handled: true, replySent: result.replySent, ignored: result.ignored };
     }
     if (isAiAdminCommand(payload.text) || ['admin','confirm','cancel'].includes(intent) || replyConfirmation || intent === 'help' && owner) {

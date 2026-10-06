@@ -8,8 +8,28 @@ import type { AdminPlan } from './telegramAiAdminCatalog';
 export type ConversationIntent = 'standings'|'fixtures'|'admin'|'confirm'|'cancel'|'help'|'chat';
 export function isRemainingFixturesQuestion(text: string): boolean {
   const q = normalizeAiEntity(text);
-  return /\b(?:oynalmagan\w*|otkazilmagan\w*|yakunlanmagan\w*|tugamagan\w*|unplayed|unfinished)\b/.test(q) ||
+  return /\b(?:oynalmagan\w*|oynamagan\w*|otkazilmagan\w*|yakunlanmagan\w*|tugamagan\w*|unplayed|unfinished)\b/.test(q) ||
     /\b(?:oyin\w*|uchrashuv\w*|match\w*|fixtures)\b/.test(q) && /\b(?:qoldi\w*|qolgan\w*|qolib ket\w*|remaining|hali oynal\w*)\b/.test(q);
+}
+export function isFixtureResultsQuestion(text: string): boolean {
+  const q = normalizeAiEntity(text);
+  return /\b(?:natijalar\w*|results|oynalgan\w*|yakunlangan\w*|tugagan\w*)\b/.test(q) && !/nega|nima uchun|tahlil|taxmin/.test(q);
+}
+const shortReadFollowUp = (q: string) => /^(?:endi\s+)?(?:\d{1,3}\s*(?:tur(?:dagi|da|gacha)?(?:chi)?|matchday)|(?:natijalar|oynalganlar|oynalmaganlar|qolganlar|jadval)(?:chi)?)[? ]*$/.test(q);
+/** Only a short read follow-up inherits the latest verified read topic.
+ * No admin verb or unrelated history is imported into a new request. */
+export function expandConversationReadFollowUp(text: string, scope: ConversationScope): string {
+  const q = normalizeAiEntity(text);
+  if (!shortReadFollowUp(q)) return text;
+  const previous = scope.previousUserQueries?.at(-1);
+  if (!previous || !['fixtures', 'standings'].includes(getConversationIntent(previous))) return text;
+  if (/^(?:endi )?\d/.test(q)) {
+    const base = normalizeAiEntity(previous).replace(/\b\d{1,3}\s*(?:tur\w*|matchday)\b|\b(?:tur|matchday)\s*\d{1,3}\b/g, ' ');
+    return `${base} ${q}`;
+  }
+  // A changed read kind must not retain the previous unplayed/results filter.
+  const base = normalizeAiEntity(previous).replace(/\b(?:hali oynal\w*|qolib ket\w*|oynalmagan\w*|oynamagan\w*|otkazilmagan\w*|tugamagan\w*|qolgan\w*|qoldi\w*|yakunlanmagan\w*|unplayed|unfinished|remaining|natijalar\w*|results|oynalgan\w*|yakunlangan\w*|tugagan\w*|jadval\w*)\b/g, ' ');
+  return `${base} ${q}`;
 }
 export function getConversationIntent(text: string): ConversationIntent {
   const q = normalizeAiEntity(text);
@@ -20,6 +40,7 @@ export function getConversationIntent(text: string): ConversationIntent {
   if (detectNaturalAdminAction(text)) return 'admin';
   if (isSimpleConversationClubAssignmentRequest(text)) return 'admin';
   if (isRemainingFixturesQuestion(text)) return 'fixtures';
+  if (isFixtureResultsQuestion(text) || shortReadFollowUp(q) && !/^jadval/.test(q)) return 'fixtures';
   const nouns = /\b(?:liga\w*|tur\w*|matchday|natija\w*|hisob\w*|oyin\w*|uchrashuv\w*|klub\w*|jamoa\w*|admin\w*|premium|xabarnoma\w*|xabar\w*|qura\w*|kubok\w*|mavsum\w*|deadline|muddat\w*)\b/;
   const writes = /\b(?:qulfla(?:ng)?|yop(?:ing)?|och(?:ing)?|ochib ber|ochir(?:ing)?|olib tashla(?:ng)?|biriktir(?:ing)?|biriktirib ber|tasdiqla(?:ng)?|rad et(?:ing)?|qayta boshla(?:ng)?|uzaytir(?:ing)?|blokla(?:ng)?|blokdan chiqar(?:ing)?|jonat(?:ing)?|yubor(?:ing)?|generatsiya qil|qura tashla|admin qil|premium ber)\b/;
   if (/\b\d{1,2}\s*[:\-]\s*\d{1,2}\s+(?:qil|qiling|qoy|qoying|saqla)\b/.test(q)) return 'admin';
@@ -39,7 +60,7 @@ export function getConversationIntent(text: string): ConversationIntent {
   return 'chat';
 }
 export const requestedMatchday = (text: string): number|undefined => {
-  const m = normalizeAiEntity(text).match(/\b(\d{1,3})\s*(?:tur(?:ni|ga|da|dagi)?|matchday)\b|\b(?:tur|matchday)\s*(\d{1,3})\b/);
+  const m = normalizeAiEntity(text).match(/\b(\d{1,3})\s*(?:tur(?:ni|ga|da|dagi|gacha)?(?:chi)?|matchday)\b|\b(?:tur|matchday)\s*(\d{1,3})\b/);
   return m ? Number(m[1] || m[2]) : undefined;
 };
 const countries: Record<string, string> = { angliya: 'comp-premier-league-', ispaniya: 'comp-la-liga-', italiya: 'comp-serie-a-', germaniya: 'comp-bundesliga-', fransiya: 'comp-ligue-1-' };
@@ -87,6 +108,7 @@ export async function resolveConversationCompetition(text: string, scope: Conver
 
 /** Exact table/list formatting, no Gemini call and no Firestore reads. */
 export async function buildConversationTableReply(text: string, intent: 'standings'|'fixtures', scope: ConversationScope, signal?: AbortSignal): Promise<{ text: string; competitionIds: string[]; fixtureIds?:string[]; clubIds?:string[] }> {
+  text = expandConversationReadFollowUp(text, scope);
   const resolved = await resolveConversationCompetition(text, scope, signal);
   const { reader, catalog } = resolved;
   if(resolved.clarification)return {text:resolved.clarification,competitionIds:[],fixtureIds:[]};
@@ -105,9 +127,11 @@ export async function buildConversationTableReply(text: string, intent: 'standin
   if (competitions.length !== 1) return { text: competitions.length ? 'Qaysi birining jadvalini yuboray: ' + competitions.map(c => c.name).join(', ') + '?' : 'Qaysi liga yoki kubok jadvalini yuboray? Masalan: “La Liga jadvalini tashla”.', competitionIds: [] };
   const comp = competitions[0];
   if (intent === 'fixtures' && isRemainingFixturesQuestion(text)) {
-    const round = requestedMatchday(text);
+    const number = requestedMatchday(text);
+    const through = /\b\d{1,3}\s*turgacha\b/.test(normalizeAiEntity(text));
+    const round = through ? undefined : number;
     const allSeason = /\b(?:butun mavsum|mavsum boyicha|barcha turlar|all season)\b/.test(normalizeAiEntity(text));
-    const upper = round || (allSeason ? undefined : comp.currentMatchday);
+    const upper = number || (allSeason ? undefined : comp.currentMatchday);
     if (!allSeason && (!Number.isInteger(upper) || upper! < 1 || upper! > 100))
       return { text: `${comp.name}: joriy tur aniqlanmadi. Qaysi turgacha bo‘lgan o‘yinlarni ko‘rsatishim kerak?`, competitionIds: ids };
     const query = { dataset: 'fixtures', competition: comp.id, fixtureState: 'unfinished', ...(round ? { matchday: round } : upper ? { matchdayTo: upper } : {}), limit: 30 };
@@ -124,7 +148,7 @@ export async function buildConversationTableReply(text: string, intent: 'standin
     const unplayed = games.filter(f => ['SCHEDULED', 'POSTPONED'].includes(f.status));
     const pending = games.filter(f => f.status === 'PENDING_CONFIRMATION');
     const disputed = games.filter(f => f.status === 'DISPUTED');
-    const range = round ? `${round}-tur` : allSeason ? 'butun mavsum' : `1–${upper}-turlar, joriy turgacha`;
+    const range = round ? `${round}-tur` : allSeason ? 'butun mavsum' : `1–${upper}-turlar${through ? '' : ', joriy turgacha'}`;
     const sections = [
       { title: 'O‘ynalmagan', rows: unplayed },
       { title: 'Natijasi tasdiq kutilmoqda', rows: pending },
@@ -150,19 +174,22 @@ export async function buildConversationTableReply(text: string, intent: 'standin
   }
   const standings = intent === 'standings' && ['LEAGUE', 'EUROPEAN_LEAGUE_PHASE'].includes(comp.type);
   const round = requestedMatchday(text), stage = detectAiCupStage(text);
-  const query = standings ? { dataset: 'standings', competition: comp.id, limit: 30 } : { dataset: 'fixtures', competition: comp.id, matchday: round ?? (stage ? undefined : comp.currentMatchday), stage: stage || undefined, limit: 30 };
+  const results = !standings && isFixtureResultsQuestion(text);
+  const through = /\b\d{1,3}\s*turgacha\b/.test(normalizeAiEntity(text));
+  const query = standings ? { dataset: 'standings', competition: comp.id, limit: 30 } : { dataset: 'fixtures', competition: comp.id, matchday: through ? undefined : round ?? (stage ? undefined : comp.currentMatchday), ...(through ? { matchdayTo: round } : {}), ...(results ? { fixtureState: 'confirmed' } : {}), stage: stage || undefined, limit: 30 };
   const result: any = await reader.read(query);
   if (result.error) return { text: 'Bu jadvalni o‘qib bo‘lmadi. Liga yoki kubok nomini aniqroq yozing.', competitionIds: ids };
   if (!result.data?.length) return { text: `${comp.name}: ${standings ? 'turnir jadvali' : 'so‘ralgan o‘yinlar'} saqlangan ma’lumotda topilmadi.`, competitionIds: ids };
-  if (standings) for (let offset = result.data.length; offset < result.total && offset < 100; offset += 30) { const page: any = await reader.read({ ...query, offset }); result.data.push(...(page.data || [])); }
+  if (standings || results) for (let offset = result.data.length; offset < result.total && offset < 1000; offset += 30) { const page: any = await reader.read({ ...query, offset }); if (page.error || !page.data?.length) { result.complete = false; break; } result.data.push(...page.data); result.stale ||= page.stale; }
   const lines = standings ? result.data.map((r: any) => `${r.position}. ${r.clubName} — ${r.points} ochko | O‘:${r.played} | TF:${r.goalDifference > 0 ? '+' : ''}${r.goalDifference}`)
     : result.data.map((f: any) => `${f.home} ${f.homeScore !== null && f.awayScore !== null ? `${f.homeScore}:${f.awayScore}` : '—'} ${f.away}${f.roundName ? ' · ' + f.roundName : ' · ' + f.matchday + '-tur'}${f.status === 'CONFIRMED' ? '' : ' · ' + (({SCHEDULED:'rejalashtirilgan',POSTPONED:'qoldirilgan',DISPUTED:'bahsli',PENDING_CONFIRMATION:'tasdiq kutilmoqda'} as any)[f.status] || f.status)}`);
-  const header = `${comp.name} — ${standings ? 'turnir jadvali' : round ? round + '-tur' : 'uchrashuvlar'}\n`;
+  const header = `${comp.name} — ${standings ? 'turnir jadvali' : round ? (through ? '1–' + round + '-turlar' : round + '-tur') : 'uchrashuvlar'}${results ? ' · tasdiqlangan natijalar' : ''}\n`;
   let body = header;
   let shown = 0;
   for (const line of lines) { if (body.length + line.length > 3600) break; body += line + '\n'; shown++; }
   if (shown < result.total) body += `\n${shown}/${result.total} ta ko‘rsatildi. Aniq tur yoki bosqichni yozing.\n`;
   if (result.stale) body += '\nOxirgi saqlangan ma’lumot; joriy holat qayta tekshirilmagan.';
+  if (result.complete === false) body += '\nRo‘yxat saqlangan ma’lumotdan; manbalar to‘liq o‘qilmadi.';
   return { text: body.trim(), competitionIds: ids, clubIds:resolved.clubIds, fixtureIds:!standings&&result.total===1?[result.data[0].id]:[] };
 }
 

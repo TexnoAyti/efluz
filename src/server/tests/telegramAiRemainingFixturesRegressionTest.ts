@@ -64,12 +64,19 @@ try {
     return originalFetch(input, init);
   };
   process.env.TELEGRAM_BOT_TOKEN = '777:test-only';
-  setTestConfigOverride({ ...DEFAULT_AI_CONFIG, enabled: true, allowedChatId: -1001, allowedThreadId: 3503 });
+  setTestConfigOverride({ ...DEFAULT_AI_CONFIG, enabled: true, allowedChatId: -1001, allowedThreadId: 3503, rateLimitUserPerMin: 10 });
   setTestAiResponder(async () => { model++; throw new Error('MUST_NOT_CALL_MODEL_FOR_REMAINING_FIXTURES'); });
   clearTestAiState(); clearTestRateLimitState();
   const result = await handleTelegramAiMessage({ updateId: 9910901, messageId: 77, chatId: -1001, threadId: 3503, fromUser: { id: 5209126900 }, text: question });
   assert.equal(result.replySent, true, JSON.stringify(result)); assert.equal(sent.length, 1); assert.equal(sent[0].message_thread_id, 3503);
   assert.match(sent[0].text, /10-tur: Everton — Leeds United/); assert.match(sent[0].text, /O‘ynalmagan: 3 ta/);
+  let updateId = 9910901;
+  for (const [text, expected] of [['10 turdagichi?', /10-tur: Everton — Leeds United/], ['11 turdagichi?', /11-tur: Liverpool — Chelsea/], ['natijalarchi?', /Arsenal 8:9 Chelsea/]] as const) {
+    const follow = await handleTelegramAiMessage({ updateId: ++updateId, messageId: 80 + updateId, chatId: -1001, threadId: 3503, fromUser: { id: 5209126900 }, text });
+    assert.equal(follow.replySent, true, text + JSON.stringify(follow)); assert.match(sent.at(-1).text, expected);
+  }
+  const outsider = await handleTelegramAiMessage({ updateId: ++updateId, messageId: 90, chatId: -1001, threadId: 3503, fromUser: { id: 123 }, text: '11 turdagichi?' });
+  assert.equal(outsider.replySent, true); assert.match(sent.at(-1).text, /Qaysi liga/);
   assert.equal(model, 0); assert.equal(firestore, 0);
   console.log('PASS exact remaining APL query: prior/current rounds, future/confirmed/cancelled/deleted exclusion, submitted/disputed separation, scoped completeness, pagination, stale/missing/empty truth, Telegram dispatch; zero model/Firestore, Telegram mocked');
 } finally {
