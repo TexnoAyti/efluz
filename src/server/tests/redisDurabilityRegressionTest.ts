@@ -514,6 +514,7 @@ async function main() {
 
     await import('./durableClubClaimRegressionTest');
     await import('./telegramAiPlanRevisionRegressionTest');
+    await import('./adminReadCostRegressionTest');
     console.log('Redis durability regression passed; Telegram transport was mocked, no real messages sent.');
   } finally { globalThis.fetch = isolatedFetch; bridge.close(); }
 }

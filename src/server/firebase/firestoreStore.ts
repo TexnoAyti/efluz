@@ -1,4 +1,5 @@
 import { filterRetiredFixtures, isRetiredFixture, assertFixtureNotRetired, RETIRED_FIXTURES, correctFixtureMatchday, hasFixtureMatchdayCorrection } from '../services/retiredFixtureService';
+import { recordDurableRead } from '../services/durableReadCosts';
 import { resolveMatchdayGate } from '../../lib/matchdayState';
 import { Firestore, FieldValue, FieldPath } from 'firebase-admin/firestore';
 import { getNotificationControls, notificationVisible } from '../services/notificationVisibility';
@@ -177,6 +178,7 @@ const readMetrics = {
 };
 
 export function trackFirestoreRead(collectionName: string, count = 1, caller = 'unknown') {
+  recordDurableRead(collectionName, count, caller);
   readMetrics.sessionReads += count;
   readMetrics.readsByCollection[collectionName] = (readMetrics.readsByCollection[collectionName] || 0) + count;
   readMetrics.readsByFunction[caller] = (readMetrics.readsByFunction[caller] || 0) + count;
@@ -186,6 +188,7 @@ export function trackFirestoreRead(collectionName: string, count = 1, caller = '
 }
 
 export function trackFirestoreAggregation(collectionName: string, count = 1, caller = 'unknown') {
+  recordDurableRead(collectionName, count, 'aggregation:' + caller);
   readMetrics.sessionReads += count;
   readMetrics.aggregationReads = (readMetrics.aggregationReads || 0) + count;
   readMetrics.readsByCollection[collectionName] = (readMetrics.readsByCollection[collectionName] || 0) + count;

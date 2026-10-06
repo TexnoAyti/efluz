@@ -1,5 +1,6 @@
 import { adminImageExportsRouter, imageExportDownloadRouter } from './routes/tournamentImageDownload.routes';
 import express from 'express';
+import { readCostMiddleware } from './services/durableReadCosts';
 import { timingSafeEqual } from 'node:crypto';
 import { drainNotificationQueue, scheduleNotificationQueueDrain } from './services/telegramNotificationQueue';
 import { initDatabase, queryGet, getDbFilePath } from './db';
@@ -93,6 +94,7 @@ export async function ensureDbReady(): Promise<void> {
 export function createApp() {
   const app = express();
   app.disable('x-powered-by');
+  app.use(readCostMiddleware);
   const localDevHost = 'local' + 'host';
 
   const allowedOrigins = new Set([

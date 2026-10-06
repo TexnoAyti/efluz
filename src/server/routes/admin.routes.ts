@@ -48,6 +48,7 @@ import {
   getFromCache,
   setInCache,
   recordEndpointCall,
+  trackFirestoreAggregation,
 } from '../firebase/firestoreStore';
 import { SEED_CLUBS, SEED_LEAGUES } from '../db/seed';
 import { migrateSqliteToFirestore } from '../firebase/migrateSqliteToFirestore';
@@ -661,20 +662,27 @@ adminRouter.delete('/users/:id', validateBody(adminDeleteUserSchema), async (req
   }
 });
 
-adminRouter.get('/read-metrics', (req: Request, res: Response) => {
+adminRouter.get('/read-metrics', async (req: Request, res: Response) => {
+  const { getDurableReadCosts } = await import('../services/durableReadCosts');
+  let durable;
+  try { durable = await getDurableReadCosts(req.query.from as string | undefined, req.query.to as string | undefined); }
+  catch { res.status(400).json({ error: 'INVALID_READ_COST_WINDOW', message: '1–24 soatlik, oxirgi 7 kun ichidagi vaqt oralig‘ini yozing.' }); return; }
   res.json({
     metrics: getReadMetrics(),
+    durable,
     timestamp: new Date().toISOString(),
   });
 });
 
 adminRouter.get('/firestore-diagnostics', async (req: Request, res: Response) => {
+  const { getDurableReadCosts } = await import('../services/durableReadCosts');
+  const send = async (payload: any) => res.json({ ...payload, durableReadCosts: await getDurableReadCosts() });
   const isRefresh = req.query.refresh === 'true';
   const cacheKey = 'firestore:admin_diagnostics';
   const cached = getFromCache<any>(cacheKey);
 
   if (!isRefresh && cached) {
-    res.json(cached);
+    await send(cached);
     return;
   }
 
@@ -703,22 +711,27 @@ adminRouter.get('/firestore-diagnostics', async (req: Request, res: Response) =>
         competitions: compCount,
       },
     };
-    res.json(fallbackResult);
+    await send(fallbackResult);
     return;
   }
 
   try {
     const status = getFirebaseStatus();
     const db = getFirestoreDb();
+    const countCollection = async (collection: string) => {
+      const value = await db.collection(collection).count().get().catch(() => null);
+      if (value) trackFirestoreAggregation(collection, Math.max(1, Math.ceil(value.data().count / 1000)), 'firestoreDiagnostics');
+      return value;
+    };
 
-    // Use count() aggregations (only 1 read or zero cost) instead of downloading full document collections
+    // Count aggregations avoid downloading documents; track the billed read units.
     const [usersCount, clubsCount, occCount, memCount, fixCount, compCount] = await Promise.all([
-      db.collection(COLLECTIONS.USERS).count().get().catch(() => null),
-      db.collection(COLLECTIONS.CLUBS).count().get().catch(() => null),
-      db.collection(COLLECTIONS.CLUB_OCCUPANCIES).count().get().catch(() => null),
-      db.collection(COLLECTIONS.USER_MEMBERSHIPS).count().get().catch(() => null),
-      db.collection(COLLECTIONS.FIXTURES).count().get().catch(() => null),
-      db.collection(COLLECTIONS.COMPETITIONS).count().get().catch(() => null),
+      countCollection(COLLECTIONS.USERS),
+      countCollection(COLLECTIONS.CLUBS),
+      countCollection(COLLECTIONS.CLUB_OCCUPANCIES),
+      countCollection(COLLECTIONS.USER_MEMBERSHIPS),
+      countCollection(COLLECTIONS.FIXTURES),
+      countCollection(COLLECTIONS.COMPETITIONS),
     ]);
 
     const result = {
@@ -741,7 +754,7 @@ adminRouter.get('/firestore-diagnostics', async (req: Request, res: Response) =>
     };
 
     setInCache(cacheKey, result, 600000); // 10 minutes cache
-    res.json(result);
+    await send(result);
   } catch (err: any) {
     firestoreCircuitBreaker.recordFailure(err);
     const usersCount = queryGet<{ count: number }>('SELECT COUNT(*) as count FROM users')?.count || 0;
@@ -750,7 +763,8 @@ adminRouter.get('/firestore-diagnostics', async (req: Request, res: Response) =>
     const fixCount = queryGet<{ count: number }>('SELECT COUNT(*) as count FROM fixtures')?.count || 0;
     const compCount = queryGet<{ count: number }>('SELECT COUNT(*) as count FROM competitions')?.count || 0;
 
-    res.status(200).json({
+    res.status(200);
+    await send({
       projectId: 'sqlite-fallback',
       databaseId: '(default)',
       connected: false,
@@ -1315,10 +1329,6 @@ adminRouter.get('/fixtures/validation', async (req: Request, res: Response) => {
   } catch (err: any) {
     handleFirestoreError(res, err, `GET /api/admin/fixtures/validation`);
   }
-});
-
-adminRouter.get('/read-metrics', async (_req: Request, res: Response) => {
-  res.json(getReadMetrics());
 });
 
 adminRouter.post('/read-metrics/reset', async (_req: Request, res: Response) => {

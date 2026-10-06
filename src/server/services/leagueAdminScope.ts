@@ -75,14 +75,14 @@ export async function enforceLeagueAdminScope(req: Request, res: Response, next:
 }
 
 export async function getLeagueAdminOverview(user: User, seasonId: string) {
-  const { getAdminClubsFromReadModel } = await import('../readModel/readModelStore');
-  const { getFixturesFirestore, getAllCompetitionsFirestore } = await import('../firebase/firestoreStore');
+  const { getAdminClubsFromReadModel, getCompetitionFixturesFromReadModel, getCompetitionsFromReadModel } = await import('../readModel/readModelStore');
   const allowed = permittedAdminLeagues(user);
   const competitionIds = new Set(permittedAdminCompetitionIds(user));
-  const competitions = (await getAllCompetitionsFirestore(seasonId)).filter(competition => competitionIds.has(competition.id));
+  const catalog = await getCompetitionsFromReadModel(seasonId);
+  const competitions = catalog.competitions.filter(competition => competitionIds.has(competition.id));
   const rows = await Promise.all(allowed.map(async league => {
-    const [clubs, fixtures] = await Promise.all([getAdminClubsFromReadModel(seasonId, league.id), Promise.all([league.competitionId, league.cupCompetitionId].map(competitionId => getFixturesFirestore({ seasonId, competitionId }))).then(rows => rows.flat())]);
-    return { clubs: clubs.clubs, fixtures };
+    const [clubs, fixtureSnapshots] = await Promise.all([getAdminClubsFromReadModel(seasonId, league.id), Promise.all([league.competitionId, league.cupCompetitionId].map(competitionId => getCompetitionFixturesFromReadModel(competitionId, { seasonId })))]);
+    return { clubs: clubs.clubs, fixtures: fixtureSnapshots.flatMap(snapshot => snapshot.fixtures), stale: clubs.stale || fixtureSnapshots.some(snapshot => snapshot.stale), degraded: clubs.degraded || fixtureSnapshots.some(snapshot => snapshot.degraded) };
   }));
-  return { leagues: allowed, competitions, clubs: rows.flatMap(row => row.clubs).filter(club => allowed.some(league => league.id === club.leagueId)), fixtures: rows.flatMap(row => row.fixtures).filter(fixture => competitionIds.has(fixture.competitionId)) };
+  return { leagues: allowed, competitions, clubs: rows.flatMap(row => row.clubs).filter(club => allowed.some(league => league.id === club.leagueId)), fixtures: rows.flatMap(row => row.fixtures).filter(fixture => competitionIds.has(fixture.competitionId)), stale: catalog.stale || rows.some(row => row.stale), degraded: catalog.degraded || rows.some(row => row.degraded) };
 }

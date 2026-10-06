@@ -1,3 +1,4 @@
+import { ReadModelKeys, redisSetRaw } from '../readModel/readModelStore';
 import assert from 'node:assert/strict';
 import express from 'express';
 import { initDatabase } from '../db';
@@ -22,6 +23,12 @@ for (const [id, competitionId] of [['scope-la-fixture', la], ['scope-pl-fixture'
 await db.collection('competitions').doc(la).set({ id: la, seasonId: 'season-2026-27', name: 'La Liga', leagueId: 'league-la-liga', type: 'LEAGUE', currentMatchday: 1 });
 await db.collection('competitions').doc(pl).set({ id: pl, seasonId: 'season-2026-27', name: 'Premier League', leagueId: 'league-premier-league', type: 'LEAGUE', currentMatchday: 1 });
 
+// Publish the test fixture snapshot: overview/reviews must not scan Firestore fixtures.
+const fixtureDocs = await db.collection('fixtures').get();
+const snapshotFixtures = fixtureDocs.docs.map(doc => ({ ...doc.data(), id: doc.id } as any)).filter(row => row.seasonId === 'season-2026-27');
+for (const competitionId of new Set(snapshotFixtures.map(row => row.competitionId))) {
+  await redisSetRaw(ReadModelKeys.competitionFixtures(competitionId, 'season-2026-27'), { data: snapshotFixtures.filter(row => row.competitionId === competitionId) });
+}
 const app = express(); app.use(express.json());
 app.use((req: any, _res, next) => { req.user = { id: String(req.headers['x-test-user'] || 'user-555001'), telegramId: '555001', username: 'LeagueManager', isAdmin: true, adminPermissions: { scope: 'ALL', leagueIds: [] } }; next(); });
 // A probe after the real authoritative middleware isolates authorization from mutations.

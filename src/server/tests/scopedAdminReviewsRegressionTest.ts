@@ -1,3 +1,4 @@
+import { ReadModelKeys, redisSetRaw } from '../readModel/readModelStore';
 import assert from 'node:assert/strict';
 import express from 'express';
 import { initDatabase, queryRun } from '../db';
@@ -25,6 +26,12 @@ for (const [id, competitionId, status] of rows) {
   await db.collection('disputes').doc('dispute-' + id).set({ fixtureId: id, status: id === 'reviews-complete' ? 'RESOLVED' : 'OPEN', seasonId, createdAt: '2026-10-04T00:00:00Z' });
 }
 await db.collection('disputes').doc('dispute-malformed').set({ status: 'OPEN' });
+// Publish the test fixture snapshot: overview/reviews must not scan Firestore fixtures.
+const fixtureDocs = await db.collection('fixtures').get();
+const snapshotFixtures = fixtureDocs.docs.map(doc => ({ ...doc.data(), id: doc.id } as any)).filter(row => row.seasonId === 'season-2026-27');
+for (const competitionId of new Set(snapshotFixtures.map(row => row.competitionId))) {
+  await redisSetRaw(ReadModelKeys.competitionFixtures(competitionId, 'season-2026-27'), { data: snapshotFixtures.filter(row => row.competitionId === competitionId) });
+}
 const app = express(); app.use(express.json());
 app.use((req: any, _res, next) => { req.user = { id: manager, telegramId: '5209126900', isAdmin: true, adminPermissions: { scope: 'ALL', leagueIds: [] } }; next(); });
 app.post('/api/admin/disputes/:id/resolve', requireAdmin, (_req, res) => res.json({ authorized: true }));
