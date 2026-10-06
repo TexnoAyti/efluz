@@ -39,7 +39,7 @@ export async function executeAiAdminRoute(plan: AdminPlan, ownerId: number, oper
   if (!realOwner || String(realOwner.telegramId) !== String(ownerId) || !realOwner.isAdmin || realOwner.isSuspended) throw new Error('OWNER_AUTHORIZATION_UNAVAILABLE');
   if (signal?.aborted) throw new Error('TIMEOUT_ABORTED');
   if (plan.body.expectedUsername !== undefined) {
-    const target = plan.targetId || String(plan.body.userId || (Array.isArray(plan.body.selectedUserIds) && plan.body.selectedUserIds.length === 1 ? plan.body.selectedUserIds[0] : '') || '');
+    const target = plan.action === 'club_assign' ? String(plan.body.targetUserId || '') : plan.targetId || String(plan.body.userId || (Array.isArray(plan.body.selectedUserIds) && plan.body.selectedUserIds.length === 1 ? plan.body.selectedUserIds[0] : '') || '');
     let user;
     try { user = target === realOwner.id ? realOwner : await getAuthoritativeUserForAuthorization(target); }
     catch(error:any) { if (/RESOURCE_EXHAUSTED|quota|CIRCUIT_OPEN/i.test(error?.message || '')) throw new Error('ADMIN_DATABASE_QUOTA'); throw error; }

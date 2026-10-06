@@ -1,4 +1,5 @@
 import { getAiRedisClient, withinAiDeadline } from './telegramAiDeadline';
+import { getDeliveredAiAdminDraft, rememberDeliveredAiAdminDraft } from './telegramAiAdminDraft';
 /**
  * Telegram AI Assistant Main Orchestration Service
  *
@@ -488,13 +489,13 @@ export async function handleTelegramAiMessage(
   }
 
   // 2. Start unified 6-second processing timeout BEFORE reading configuration (Requirement 2)
-  const intent = getConversationIntent(payload.text);
+  let intent = getConversationIntent(payload.text);
   const owner = isAiAdminActor(payload.fromUser.id);
   const replyConfirmation = Boolean(payload.replyToMessage && /^(?:ha|xa|yes|xop)$/i.test(payload.text.trim()));
-  const ownerControl = owner && (isAiAdminCommand(payload.text) || ['admin','confirm','cancel','help'].includes(intent) || replyConfirmation);
+  let ownerControl = owner && (isAiAdminCommand(payload.text) || ['admin','confirm','cancel','help'].includes(intent) || replyConfirmation);
   const rootController = new AbortController();
-  const deadlineAt = Date.now() + (ownerControl ? 30000 : GLOBAL_TIMEOUT_MS);
-  const globalTimeout = setTimeout(() => rootController.abort(), ownerControl ? 30000 : GLOBAL_TIMEOUT_MS);
+  const deadlineAt = Date.now() + (owner ? 30000 : GLOBAL_TIMEOUT_MS);
+  const globalTimeout = setTimeout(() => rootController.abort(), owner ? 30000 : GLOBAL_TIMEOUT_MS);
 
   try {
     // 3. Load configuration under deadline with fail-closed guarantee
@@ -516,6 +517,9 @@ export async function handleTelegramAiMessage(
       return { ok: true, handled: false, ignored: 'topic_not_authorized' };
     }
 
+    if (owner && intent === 'chat' && await getDeliveredAiAdminDraft(payload, rootController.signal)) {
+      intent = 'admin'; ownerControl = true;
+    }
     // 5. Initial delivery check: prevent duplicate processing on webhook retry
     const initDelivery = await claimDeliveryState(payload.updateId, 'pending', { signal: rootController.signal });
     if (initDelivery !== 'ok') {
@@ -599,6 +603,7 @@ export async function handleTelegramAiMessage(
       const visible = token ? text.replace(/\n\/ai_(?:confirm|cancel) [a-f0-9]{24}/g, '') + '\n“Tasdiqlash” tugmasini bosing yoki “tasdiqlayman” deb yozing.' : text;
       const result = await dispatchTelegramAiReply(payload, visible, rootController.signal, { parse_mode: null, reply_markup: token ? { inline_keyboard: [[{ text: 'Tasdiqlash', callback_data: 'ai:confirm:' + token }, { text: 'Bekor qilish', callback_data: 'ai:cancel:' + token }]] } : undefined });
       if (result.replySent && token && result.botMessageId) await rememberDeliveredAdminPlan(payload, text, result.botMessageId, rootController.signal);
+      if (result.replySent && !token && result.botMessageId && owner) await rememberDeliveredAiAdminDraft(payload, text, result.botMessageId, rootController.signal);
       if (result.replySent && intent === 'admin') await saveConversationContext(payload.chatId, payload.threadId, payload.fromUser.id, payload.text, visible, { signal: rootController.signal, history, selectedClubIds: scope.selectedClubIds, selectedCompetitionIds: scope.selectedCompetitionIds });
       return { ok: result.ok, handled: true, replySent: result.replySent, ignored: result.ignored };
     }

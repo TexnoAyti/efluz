@@ -37,11 +37,14 @@ export const tournamentReadTool = {
   },
 };
 
-/** Exactly one read-tool round, at most four validated queries, then an answer.
+/** Public requests use one read-tool round; admin planning permits up to three.
+ * At most four validated queries per round and eight overall, then an answer.
  * Tool calls cannot request arbitrary database paths or execute administration. */
 export async function generateGroundedTelegramAnswer(options: {
   ai: GoogleGenAI; model: string; contents: any[]; systemPrompt: string; signal: AbortSignal;
   generate?: (request: any) => Promise<any>; read?: (args: unknown) => Promise<unknown>; deadlineAt?: number;
+  maxToolRounds?: number;
+  extraReadTools?: Array<{ declaration: any; run: (args: unknown) => Promise<unknown> }>;
 }): Promise<string> {
   const generate = options.generate || ((request: any) => options.ai.models.generateContent(request));
   const read = options.read || createAiTournamentReader(options.signal).read;
@@ -57,15 +60,22 @@ export async function generateGroundedTelegramAnswer(options: {
     }
   };
   const config = { systemInstruction: options.systemPrompt, temperature: 0.65, maxOutputTokens: 400, abortSignal: options.signal };
-  const first = await requestModel({ model: options.model, contents: options.contents, config: { ...config, tools: [{ functionDeclarations: [tournamentReadTool] }] } });
+  const rounds = Math.min(3, Math.max(1, options.maxToolRounds || 1));
+  const declarations = [tournamentReadTool, ...(options.extraReadTools || []).map(tool => tool.declaration)];
+  let contents = [...options.contents];
+  let first = await requestModel({ model: options.model, contents, config: { ...config, tools: [{ functionDeclarations: declarations }] } });
+  let totalCalls = 0;
+  for (let round = 0; round < rounds; round++) {
   const calls = first.functionCalls || [];
   if (!calls.length) return answerText(first);
-  if (calls.length > 4 || calls.some((call: any) => call.name !== tournamentReadTool.name)) return 'So‘rovni aniqroq yozing: jamoa, turnir va kerakli tur yoki bosqichni ko‘rsating.';
+  totalCalls += calls.length;
+  if (calls.length > 4 || totalCalls > 8 || calls.some((call: any) => !declarations.some(tool => tool.name === call.name))) return 'So‘rovni aniqroq yozing: jamoa, turnir va kerakli tur yoki bosqichni ko‘rsating.';
   const responses = [];
   for (const call of calls) {
-    let result:any = await withinAiDeadline(options.signal, () => read(call.args));
+    const extra = options.extraReadTools?.find(tool => tool.declaration.name === call.name);
+    let result:any = await withinAiDeadline(options.signal, () => extra ? extra.run(call.args) : read(call.args));
     // Continue a long list without another model call, bounded by the same global deadline.
-    if(!result.error && Array.isArray(result.data)){
+    if(!extra && !result.error && Array.isArray(result.data)){
       result={...result,data:[...result.data]};
       for(let page=1;page<3 && Number.isInteger(result.nextOffset);page++){
         const next:any=await withinAiDeadline(options.signal,()=>read({...call.args,offset:result.nextOffset}));
@@ -81,6 +91,9 @@ export async function generateGroundedTelegramAnswer(options: {
   }
   const modelContent = first.candidates?.[0]?.content;
   if (!modelContent) return 'Ma’lumot so‘rovini yakunlab bo‘lmadi. Qayta urinib ko‘ring.';
-  const final = await requestModel({ model: options.model, contents: [...options.contents, modelContent, { role: 'user', parts: responses }], config });
-  return answerText(final);
+  contents = [...contents, modelContent, { role: 'user', parts: responses }];
+  first = await requestModel({ model: options.model, contents, config: round + 1 < rounds ? { ...config, tools: [{ functionDeclarations: declarations }] } : config });
+  }
+  if (first.functionCalls?.length) throw new Error('CLARIFY:Qidiruvni bitta amal bilan aniqlashtiring. Klub, foydalanuvchi yoki turdan qaysi biri kerak?');
+  return answerText(first);
 }

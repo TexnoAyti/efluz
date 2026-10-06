@@ -9,7 +9,7 @@ function adminCommandText(text: string): string {
 /** Applies before EVERY native write parser, including club assignment. */
 export function assertSingleNaturalAdminRequest(text: string): void {
   const q = adminCommandText(text);
-  if (/\b(?:qilma\w*|ochirma\w*|yuborma\w*|biriktirma\w*|berma\w*|ulama\w*|boshatma\w*|chiqarma\w*|otkazma\w*|yozma\w*)\b/.test(q) ||
+  if (/\b(?:qilma\w*|ochirma\w*|yuborma\w*|biriktirma\w*|berma\w*|ulama\w*|boshatma\w*|chiqarma\w*|otkazma\w*|yozma\w*)\b/.test(q) || /\b(?:do not|dont|never)\s+(?:assign|release|delete|remove|give)\b/.test(q) || /(?:^|\s)не\s+(?:назнач|удал|освобод)[\p{L}]*/u.test(q) ||
       /\b(?:ochir|blokla|ber|yubor|biriktir|qulfla|yarat|hisobla|boshat|chiqar|ula|otkaz)\w*\b.*\b(?:va|keyin|song|hamda)\s+.*\b(?:ochir|blokla|ber|yubor|biriktir|qulfla|yarat|boshat|chiqar|ula|otkaz)\w*\b/.test(q)) {
     throw new Error('CLARIFY:Bitta aniq amalni yozing. Bir nechta yoki inkor qilingan amalni birgalikda bajarmayman.');
   }

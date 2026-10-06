@@ -2,6 +2,7 @@ import { type AdminPlan, AI_ADMIN_ACTIONS } from './telegramAiAdminCatalog';
 import { resolveAdminScore } from './telegramAiNaturalAdminPlanner';
 import { normalizeAiEntity, resolveAiClubs } from './telegramAiEntities';
 import { createAiTournamentReader } from './telegramAiDataService';
+import { requestedMatchday } from './telegramAiConversationCommands';
 
 const required: Record<string,string[]> = {
   result_edit:['homeScore','awayScore'], result_approve:['homeScore','awayScore'], fixture_delete:['reason'], fixture_deadline:['deadlineAt'],
@@ -45,6 +46,26 @@ export async function validateModelAdminPlan(plan: AdminPlan, request: string, s
     else if (/^(?:fixture_|result_|cup_winner)/.test(plan.action)) await check(plan.targetId, 'fixtures');
     else if (/^(?:matchday_|cup_|standings_)/.test(plan.action)) await check(plan.targetId, 'competitions');
     else if (!request.includes(plan.targetId)) throw new Error('CLARIFY:Bu yopiq ma’lumot uchun aniq IDni yozing; uni taxmin qilmayman.');
+  }
+  if (plan.targetId && /^club_|^fixture_|^result_/.test(plan.action)) {
+    const roster: any[] = [];
+    for (let offset = 0; offset < 300; offset += 30) {
+      const page: any = await reader.read({ dataset: 'clubs', offset, limit: 30 });
+      if (page.error) throw new Error('CLARIFY:Klublar ro‘yxati o‘qilmadi. Klub yoki o‘yin nomini tekshiring.');
+      roster.push(...(page.data || []));
+      if (roster.length >= page.total || !page.data?.length) break;
+    }
+    const selected = resolveAiClubs(request, roster);
+    if (selected.clarification) throw new Error('CLARIFY:' + selected.clarification);
+    if (/^club_/.test(plan.action) && selected.clubs.length && !selected.clubs.some(club => club.id === plan.targetId))
+      throw new Error('CLARIFY:Rejadagi klub siz yozgan klubga mos kelmadi. Klub nomini aniqlashtiring.');
+    if (/^fixture_|^result_/.test(plan.action)) {
+      const found: any = await reader.read({ dataset: 'fixtures', fixtureId: plan.targetId, limit: 1 });
+      const fixture = found.data?.[0];
+      const round = requestedMatchday(request);
+      if (!fixture || selected.clubs.some(club => ![fixture.homeClubId, fixture.awayClubId].includes(club.id)) || round && Number(fixture.matchday) !== round)
+        throw new Error('CLARIFY:Rejadagi o‘yin jamoalar yoki turga mos kelmadi. O‘yinni aniqlashtiring.');
+    }
   }
   if (['result_edit','result_approve'].includes(plan.action)) {
     const fixtureResult:any = await reader.read({dataset:'fixtures',fixtureId:plan.targetId,limit:1});

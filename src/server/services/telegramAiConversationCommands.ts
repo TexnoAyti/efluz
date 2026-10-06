@@ -25,6 +25,11 @@ export function getConversationIntent(text: string): ConversationIntent {
   if (/\b(?:oyinlar\w*|uchrashuvlar\w*|fixtures|schedule|taqvim\w*)\b/.test(q) && /\b(?:tashla\w*|yubor\w*|korsat\w*|ber|chiqar\w*)\b/.test(q)) return 'fixtures';
   if (/^\/(?:jadval|table|standings)\b/i.test(text)) return 'standings';
   if (/^\/(?:matches|fixtures|matchday)\b/i.test(text)) return 'fixtures';
+  // Route unfamiliar action phrasing to the grounded semantic planner. This
+  // only selects planning; it cannot grant authority or execute a mutation.
+  if (!/\b(?:hazil|roast|taktika\w*|maslahat\w*)\b/.test(q) &&
+      /@|\b(?:bola\w*|akkaunt\w*|foydalanuvchi\w*|user|owner|club|team|score|round|match|klub\w*|jamoa\w*|liga\w*|tur\w*|natija\w*|hisob\w*|oyin\w*|admin\w*|premium\w*|команд\w*|игрок\w*|матч\w*)\b/.test(text.toLowerCase()) &&
+      (/\b(?:yoz\w*|tayinla\w*|ber\w*|ula\w*|otkaz\w*|almashtir\w*|tuzat\w*|saqla\w*|kirit\w*|qil\w*|assign|release|remove|delete|update|set|change|give)\b/.test(q) || /(?:^|\s)(?:назнач|удал|убер|освобод|постав|измени)[\p{L}]*/u.test(q))) return 'admin';
   return 'chat';
 }
 export const requestedMatchday = (text: string): number|undefined => {
