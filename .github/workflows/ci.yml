@@ -98,6 +98,7 @@ jobs:
           node scripts/run-isolated-test.mjs src/server/tests/telegramAiRedisGroundingRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/telegramAiCupStageRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/telegramAiFullAccessRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/telegramAiAdminReadToolsRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/telegramAiConversationRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/telegramAiNaturalAdminRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/telegramAiClubLanguageRegressionTest.ts

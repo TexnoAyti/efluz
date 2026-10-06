@@ -33,6 +33,7 @@ import { isAiAdminCommand } from './telegramAiAdminCatalog';
 import { decorateAiCustomEmoji } from './telegramAiCustomEmoji';
 import { handleAiAdminCommand, isOwnerAdminPrivateChat, rememberDeliveredAdminPlan } from './telegramAiAdminService';
 import { isAiAdminActor } from './telegramAiAdminAccess';
+import { createAiAdminReadTools } from './telegramAiAdminReadTools';
 import { isPersonalFixtureQuestion, buildPersonalFixtureReply } from './telegramAiPersonalFixtureService';
 import { detectNaturalAdminAction } from './telegramAiAdminLanguage';
 import { getConversationIntent, buildConversationTableReply, expandConversationReadFollowUp, isSimpleConversationClubAssignmentRequest, isSimpleConversationMatchdayRequest } from './telegramAiConversationCommands';
@@ -675,7 +676,8 @@ export async function handleTelegramAiMessage(
         const modelName = process.env.GEMINI_MODEL?.trim() || 'gemini-3.1-flash-lite';
         const ai = new GoogleGenAI({ apiKey });
 
-        const systemPrompt = buildTelegramAiSystemPrompt(grounding.factsSummary, speaker);
+        const privateAdmin = isOwnerAdminPrivateChat(payload);
+        const systemPrompt = buildTelegramAiSystemPrompt(grounding.factsSummary, speaker, { privateAdmin });
 
         const contents = [
           ...history.map((h) => ({
@@ -686,7 +688,8 @@ export async function handleTelegramAiMessage(
         ];
 
         try {
-          replyText = await generateGroundedTelegramAnswer({ ai, model: modelName, contents, systemPrompt, signal: modelSignal, deadlineAt: deadlineAt - 1800 });
+          replyText = await generateGroundedTelegramAnswer({ ai, model: modelName, contents, systemPrompt, signal: modelSignal, deadlineAt: deadlineAt - 1800,
+            maxToolRounds: privateAdmin ? 3 : 1, extraReadTools: createAiAdminReadTools(payload, modelSignal) });
         } catch (apiErr: any) {
           const errMsg = String(apiErr?.message || '');
           if (rootController.signal.aborted) {

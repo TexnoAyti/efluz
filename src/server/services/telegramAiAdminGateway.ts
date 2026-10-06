@@ -22,6 +22,7 @@ async function getGateway() {
     app.use('/api/admin/season-ops', seasons.adminSeasonOperationsRouter);
     app.use('/api/admin', cupOps.adminCupOpsRouter, matches.adminMatchControlRouter, consistency.adminConsistencyRouter, main.adminRouter);
     app.use('/api/telegram', telegram.telegramRouter);
+    app.use('/api/season-ops', seasons.seasonOperationsRouter);
     return app;
   })();
 }
@@ -50,7 +51,8 @@ export async function executeAiAdminRoute(plan: AdminPlan, ownerId: number, oper
   }
   const spec = AI_ADMIN_ACTIONS[plan.action];
   const path = adminPlanPath(plan);
-  const url = path.startsWith('@telegram') ? '/api/telegram' + path.slice('@telegram'.length) : '/api/admin' + path;
+  const url = path.startsWith('@telegram') ? '/api/telegram' + path.slice('@telegram'.length)
+    : path.startsWith('@season') ? '/api/season-ops' + path.slice('@season'.length) : '/api/admin' + path;
   const app = await getGateway();
   if (signal?.aborted) throw new Error('TIMEOUT_ABORTED');
   return new Promise((resolve, reject) => {

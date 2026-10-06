@@ -11,6 +11,7 @@ const LEAGUE_OPERATIONS = new Set([
   'fixture_reopen','fixture_deadline','fixture_remind','club_assign','club_release',
   'matchday_control','matchday_advance','matchday_open_now','matchday_override','matchday_timer','matchday_remind',
   'standings_rebuild','cup_preview','cup_generate','cup_advance','cup_reconcile',
+  'admin_access','scoped_users','scoped_reviews','scoped_overview',
   'clubs','fixtures','pending_results','submissions','matchday_status','cup_details','cup_health',
 ]);
 export function assertAiAdminActionAllowed(id: number, plan: AdminPlan): void {
