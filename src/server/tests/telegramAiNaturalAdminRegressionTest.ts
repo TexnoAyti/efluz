@@ -129,7 +129,8 @@ try {
  const contextPreview=await handleAiAdminCommand(payload('Inter — Milan 10-tur natijasini 2-1 qil'),signal);
  await rememberDeliveredAdminPlan(payload('x'),contextPreview,444,signal);
  const changedPreview=await handleAiAdminCommand(payload('hisobni 3-2 qil'),signal);
- assert.match(changedPreview,/AC Milan 3:2 Inter Milan/);assert.match(changedPreview,/Hali bajarilmadi/);
+ // A pending correction retains the original user order (Inter then Milan).
+ assert.match(changedPreview,/AC Milan 2:3 Inter Milan/);assert.match(changedPreview,/Hali bajarilmadi/);
  assert.match(await handleAiAdminCommand({...payload('hisobni 3-2 qil'),threadId:999},signal),/faol emas/);
  assert.equal(writes,0);assert.equal(firestore,0);
  console.log('PASS 36 native action phrases, exact score orientation, full ambiguity/missing-field checks, owner-only cached previews, zero model/Firestore/writes');

@@ -1,6 +1,7 @@
 import { getAiRedisClient, withinAiDeadline } from './telegramAiDeadline';
 import { getDeliveredAiAdminDraft, rememberDeliveredAiAdminDraft } from './telegramAiAdminDraft';
 import { continueAiAdminClarification } from './telegramAiAdminClarification';
+import { parseAiPlanRevision } from './telegramAiPlanRevision';
 /**
  * Telegram AI Assistant Main Orchestration Service
  *
@@ -526,6 +527,9 @@ export async function handleTelegramAiMessage(
         intent = 'admin'; ownerControl = true;
         nativeClarification = Boolean(detectNaturalAdminAction(continuation) || isSimpleConversationMatchdayRequest(continuation) || isSimpleConversationClubAssignmentRequest(continuation));
       }
+    }
+    if (owner && parseAiPlanRevision(payload.text)) {
+      intent = 'admin'; ownerControl = true; nativeClarification = true;
     }
     // 5. Initial delivery check: prevent duplicate processing on webhook retry
     const initDelivery = await claimDeliveryState(payload.updateId, 'pending', { signal: rootController.signal });

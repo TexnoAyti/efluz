@@ -4,6 +4,8 @@ import { contextualFixturePlan } from './telegramAiFixtureContext';
 import { parseNaturalAdminPlan } from './telegramAiNaturalAdminPlanner';
 import { getDeliveredAiAdminDraft, saveAiAdminDraft, clearAiAdminDraft } from './telegramAiAdminDraft';
 import { continueAiAdminClarification } from './telegramAiAdminClarification';
+import { parseAiPlanRevision, reviseAiAdminPlan, AI_ADMIN_PLAN_REPLACE_LUA } from './telegramAiPlanRevision';
+import { resolveAiClubs, normalizeAiEntity } from './telegramAiEntities';
 import { createAiSnapshotReader } from './telegramAiSnapshotReader';
 import { getAdminUserDirectory } from './adminUserDirectory';
 import { assertSingleNaturalAdminRequest } from './telegramAiAdminLanguage';
@@ -19,7 +21,7 @@ import { createAiTournamentReader } from './telegramAiDataService';
 import type { TelegramAiMessagePayload } from './telegramAiService';
 import { getConversationIntent, parseConversationClubAssignmentPlan, parseConversationMatchdayPlan, type ConversationScope } from './telegramAiConversationCommands';
 
-type Pending = { token: string; plan: AdminPlan; owner: number; chat: number; thread: number; expiresAt: number; state: 'pending'|'executing'|'cancelled'|'done'|'unknown'; description?: string; result?: {status:number; data:any} };
+type Pending = { token: string; plan: AdminPlan; owner: number; chat: number; thread: number; expiresAt: number; state: 'pending'|'executing'|'cancelled'|'done'|'unknown'; description?: string; scoreHomeFirst?: boolean; result?: {status:number; data:any} };
 const prefix = 'efluz:v1:telegram:ai:admin:';
 const testStore = new Map<string, Pending>();
 const testLatest = new Map<string, {token:string; botMessageId:number}>();
@@ -107,6 +109,18 @@ async function loadPending(token: string, signal: AbortSignal): Promise<Pending|
   }
   const raw = await client.get<Pending|string>(prefix + token);
   return raw ? typeof raw === 'string' ? JSON.parse(raw) : raw : null;
+}
+async function replacePending(previous: Pending, replacement: Pending, payload: TelegramAiMessagePayload, signal: AbortSignal): Promise<boolean> {
+  const client = getAiRedisClient(signal);
+  if (client) return Number(await client.eval(AI_ADMIN_PLAN_REPLACE_LUA,
+    [prefix + previous.token, prefix + replacement.token, latestKey(payload)],
+    [Date.now(), payload.fromUser.id, payload.chatId, payload.threadId, previous.token, JSON.stringify(replacement)])) === 1;
+  if (process.env.NODE_ENV !== 'test') throw new Error('REDIS_REQUIRED');
+  const current = testStore.get(previous.token);
+  if (current?.state !== 'pending' || current.expiresAt <= Date.now() || testLatest.get(latestKey(payload))?.token !== previous.token || testStore.has(replacement.token)) return false;
+  testStore.set(previous.token, { ...current, state: 'cancelled' });
+  testStore.set(replacement.token, replacement);
+  return true;
 }
 async function claim(record: Pending, state: 'executing'|'cancelled', signal: AbortSignal): Promise<boolean> {
   const client = getAiRedisClient(signal);
@@ -201,6 +215,8 @@ export async function handleAiAdminCommand(payload: TelegramAiMessagePayload, si
   const draft = !command ? await getDeliveredAiAdminDraft(payload, signal) : null;
   const continuation = draft ? continueAiAdminClarification(draft, payload.text) : null;
   if (continuation) { command = 'admin'; argument = continuation; }
+  const correction = !match && !continuation && !['confirm','cancel','actions'].includes(command) ? parseAiPlanRevision(payload.text) : null;
+  if (correction) { command = 'admin'; argument = payload.text; }
   if (!command) return 'Nima qilishimni oddiy yozing. Masalan: “La Liga jadvalini tashla” yoki “La Liga 10-turni qulflang”.';
   try {
     if (command === 'actions' && !isPrimaryOwner(payload.fromUser.id)) return 'Liga va kubok bo‘yicha mavjud admin ruxsatlaringiz doirasida oddiy yozing: natijani kiritish/tasdiqlash, klub biriktirish, turni boshqarish, kubok qur’asini ko‘rish. Har bir o‘zgarish avval reja va sizning tasdig‘ingizni talab qiladi. Xavfli va umumiy tizim amallari faqat asosiy admin uchun.';
@@ -227,8 +243,9 @@ export async function handleAiAdminCommand(payload: TelegramAiMessagePayload, si
 • Angliya Kubogi qur’asini ko‘rib chiq
 • AI yordamchini o‘chir
 • AI o‘chiq bo‘lsa qayta yoqish: /ai_on (asosiy admin)
+• Tasdiqlashdan oldin: “yo‘q, hisob 3-1”, “12-tur bo‘lsin”, “muddat 48 soat bo‘lsin”, “yo‘q @username”, “matn: “Yangi tur ochildi””
 
-O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yoki “tasdiqlayman” deb yozing. “Bekor qil” rejani bekor qiladi. Bazani o‘zgartirish buyruqlari faqat asosiy admin uchun.`;
+O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yoki “tasdiqlayman” deb yozing. “Bekor qil” rejani bekor qiladi. Tuzatilgan reja alohida tasdiq talab qiladi; eski tugma bekor bo‘ladi. Hisob tartibi dastlab yozgan jamoalaringiz bo‘yicha saqlanadi. Bazani o‘zgartirish buyruqlari faqat asosiy admin uchun.`;
     if (command === 'read') {
       if (!privateChat) return 'Yopiq admin ma’lumotlarini olish uchun botning shaxsiy chatida /ai_read ishlating.';
       const plan = argument.startsWith('{') ? adminPlanSchema.parse(JSON.parse(argument)) : await parseNaturalAdminPlan(argument, signal) || await planAiAdminAction(argument, facts, signal);
@@ -286,12 +303,16 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
       }
     }
     if (!argument) return '/ai_admin dan keyin amal, jamoa/turnir va kerakli parametrlarni yozing.';
+    const correctionToken = correction ? await getLatestDeliveredPlanToken(payload, signal) : null;
+    const correctionSource = correctionToken ? await loadPending(correctionToken, signal) : null;
+    if (correction && !correctionSource && (intent !== 'admin' || payload.replyToMessage || /^(?:yoq|aslida)\b/.test(normalizeAiEntity(payload.text)))) return 'Bu chatda tasdiq kutilayotgan reja topilmadi. Amal, jamoa yoki liga va parametrlarni to‘liq yozing.';
     const latestClient=getAiRedisClient(signal);
     const latest=latestClient?await latestClient.get<{token:string}>(latestKey(payload)):process.env.NODE_ENV==='test'?testLatest.get(latestKey(payload)):null;
     const recent=latest?await loadPending(latest.token,signal):null;
     const recentFixture=recent && recent.owner===payload.fromUser.id&&recent.chat===payload.chatId&&recent.thread===payload.threadId&&recent.expiresAt>Date.now()&&['pending','done'].includes(recent.state)&&/^(fixture_|result_)/.test(recent.plan.action)?recent.plan.targetId:undefined;
     // Explicit test planners replace planning only in isolated tests; production always resolves cached club IDs.
-    const plan = testPlanner ? await planAiAdminAction(argument, facts, signal)
+    const plan = correctionSource && correction ? reviseAiAdminPlan(correctionSource.plan, correction, correctionSource.scoreHomeFirst)
+      : testPlanner ? await planAiAdminAction(argument, facts, signal)
       : await contextualFixturePlan(argument,recentFixture?[recentFixture]:scope.selectedFixtureIds||[],signal)
         || await parseConversationClubAssignmentPlan(argument, signal)
         || await parseNaturalAdminPlan(argument, signal) || await parseConversationMatchdayPlan(argument, scope, signal) || await planAiAdminAction(argument, facts, signal);
@@ -305,12 +326,20 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
       return formatNaturalAdminRead(plan.action,result.data);
     }
     let targetLabel = '';
+    let scoreHomeFirst = correctionSource?.scoreHomeFirst;
     const lookup = createAiTournamentReader(signal);
     const fixtureId = plan.secondaryId || (/^(fixture_|result_|cup_winner)/.test(plan.action) ? plan.targetId : undefined);
     if (fixtureId) {
       const found = await lookup.read({ dataset: 'fixtures', fixtureId, limit: 1 }) as any;
       const f = found.data?.[0];
       if (f) targetLabel = `${f.home} — ${f.away}, ${f.competition}, ${f.roundName || f.matchday + '-tur'}, ${f.status}${f.homeScore != null && !['result_edit','result_approve'].includes(plan.action) ? ', ' + f.homeScore + ':' + f.awayScore : ''}\n`;
+      if (f && !correctionSource && ['result_edit','result_approve'].includes(plan.action)) {
+        const teams = await Promise.all([f.homeClubId, f.awayClubId].map(club => lookup.read({ dataset: 'clubs', club, limit: 1 })));
+        const roster = teams.flatMap((page: any) => page.data || []);
+        const named = resolveAiClubs(argument, roster);
+        if (!named.clarification && named.clubs.length === 2) scoreHomeFirst = named.clubs[0].id === f.homeClubId;
+        else if (/^(?:endi\s+)?(?:shu|osha|uning|uni|hisobni|natijani)\b/.test(normalizeAiEntity(argument))) scoreHomeFirst = true;
+      }
     } else if (plan.targetId && /^(club_|matchday_|cup_|standings_)/.test(plan.action)) {
       const found = await lookup.read(plan.action.startsWith('club_') ? { dataset: 'clubs', club: plan.targetId, limit: 1 } : { dataset: 'competitions', competition: plan.targetId, limit: 1 }) as any;
       if (found.data?.[0]?.name) targetLabel = found.data[0].name + '\n';
@@ -321,9 +350,12 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
     }
     const token = randomBytes(12).toString('hex');
     const description = describeAiAdminPlan(plan, targetLabel.trim());
-    const preview = `Reja: ${description}\n\nHali bajarilmadi. Tasdiqlaysizmi?\n/ai_confirm ${token}\n/ai_cancel ${token}\n5 daqiqa amal qiladi.`;
+    const preview = `${correctionSource ? 'Reja tuzatildi. Oldingi tasdiqlash tugmasi bekor qilindi.\n' : ''}Reja: ${description}\n\nHali bajarilmadi. Tasdiqlaysizmi?\n/ai_confirm ${token}\n/ai_cancel ${token}\n5 daqiqa amal qiladi.`;
     if (preview.length > 950) return 'Reja juda uzun. Buyruqni qisqartiring yoki admin paneldan bajaring; hech narsa o‘zgarmadi.';
-    await storePending({ token, plan, owner: payload.fromUser.id, chat: payload.chatId, thread: payload.threadId, expiresAt: Date.now() + 300000, state: 'pending', description }, signal);
+    const record: Pending = { token, plan, owner: payload.fromUser.id, chat: payload.chatId, thread: payload.threadId, expiresAt: Date.now() + 300000, state: 'pending', description, ...(scoreHomeFirst !== undefined ? { scoreHomeFirst } : {}) };
+    if (correctionSource) {
+      if (!await replacePending(correctionSource, record, payload, signal)) return 'Oldingi reja allaqachon ishlatilgan yoki yangilangan. Tuzatish bajarilmadi; hozirgi holatni tekshirib, topshiriqni qayta yozing.';
+    } else await storePending(record, signal);
     return preview;
   } catch (error: any) {
     if (/ADMIN_DATABASE_QUOTA|RESOURCE_EXHAUSTED|CIRCUIT_OPEN/i.test(error?.message || '')) return 'Baza limiti sababli bu amalni hozir bajarib yoki o‘qib bo‘lmaydi. Saqlangan jadvallarni ko‘rish mumkin. Hech narsa o‘zgarmadi.';

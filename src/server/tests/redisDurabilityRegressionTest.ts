@@ -513,6 +513,7 @@ async function main() {
     console.log('PASS actual Redis: 8 concurrent round opens enqueue one channel photo; reopen/deadline changes deduplicate, next round posts, SENDING persists before dispatch, 429 retry and unknown-timeout no resend.');
 
     await import('./durableClubClaimRegressionTest');
+    await import('./telegramAiPlanRevisionRegressionTest');
     console.log('Redis durability regression passed; Telegram transport was mocked, no real messages sent.');
   } finally { globalThis.fetch = isolatedFetch; bridge.close(); }
 }
