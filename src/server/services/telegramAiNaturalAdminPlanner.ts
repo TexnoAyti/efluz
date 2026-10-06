@@ -91,6 +91,7 @@ export async function planNaturalAdminRequest(text: string, deps: NaturalPlanner
   }
   if (action === 'ai_enable' || action === 'ai_disable') return make('ai_config', undefined, { enabled: action === 'ai_enable' });
   if (['sync','notification_queue','read_model_rebuild','deadline_sweep'].includes(action)) return make(action);
+  if (['european_rebuild','qualifications_evaluate'].includes(action)) return make(action);
   if (action === 'season_archive' || action === 'season_rollover') {
     const season = /\bseason-\d{4}-\d{2}\b/.exec(text)?.[0];
     if (!season) clarify('Qaysi mavsum? season-2026-27 ko‘rinishidagi aniq mavsum IDni yozing.');
@@ -174,6 +175,34 @@ export async function planNaturalAdminRequest(text: string, deps: NaturalPlanner
   }
   if (named.length !== 1) clarify('Qaysi liga yoki kubok? Bitta turnir nomini yozing; oldingi suhbatdan taxmin qilmayman.');
   const comp = named[0];
+  if (['fixtures_restore','fixtures_reset','knockout_generate'].includes(action)) {
+    if (action === 'fixtures_reset' && !/\b(?:tasdiq|tasdiqlayman|reset|boshidan)\b/.test(q))
+      clarify('Jadvalni butunlay qayta yaratish xavfli amal. “reset” yoki “tasdiqlayman” so‘zini aniq qo‘shing.');
+    if (action === 'fixtures_reset') return make(action, undefined, { competitionId: comp.id, confirmation: true });
+    return make(action, undefined, { competitionId: comp.id });
+  }
+  if (action === 'cup_round') {
+    if (['LEAGUE','EUROPEAN_LEAGUE_PHASE'].includes(comp.type)) clarify('Bosqichni ochish/qulflash uchun kubok nomini yozing.');
+    const round = /\b(?:bosqich|round)\s*(\d{1,2})\b|\b(\d{1,2})\s*(?:-?bosqich\w*|round)\b/.exec(q);
+    if (!round) clarify('Qaysi kubok bosqichi? Masalan: “FA Cup 2-bosqichni och”.');
+    const roundNumber = Number(round[1] || round[2]);
+    if (roundNumber < 1 || roundNumber > 20) clarify('Bosqich raqami 1–20 orasida bo‘lsin.');
+    const actionName = /qulf/.test(q) ? 'LOCK' : /och/.test(q) ? 'OPEN' : null;
+    if (!actionName) clarify('Bosqichni “och” yoki “qulfla” deb aniq yozing.');
+    return make(action, comp.id, { roundNumber, action: actionName });
+  }
+  if (action === 'cup_winner_advance') {
+    const id = /\b(?:fixture|match|o\s*yin)\s*id\s*[:=]\s*([A-Za-z0-9_:-]+)/i.exec(text)?.[1];
+    if (!id) clarify('Qaysi kubok o‘yini? Xavfsiz o‘tkazish uchun “fixture id: ...” ni yozing.');
+    return make(action, id);
+  }
+  if (action === 'matchday_open_now') {
+    if (!['LEAGUE','EUROPEAN_LEAGUE_PHASE'].includes(comp.type)) clarify('Bu amal liga turini ochish uchun.');
+    const round = requestedMatchday(clean);
+    const hours = /\b(\d+)\s*soat\w*\b/.exec(q)?.[1];
+    if (hours && (Number(hours) < 1 || Number(hours) > 720)) clarify('Muddat 1–720 soat orasida bo‘lsin.');
+    return make(action, comp.id, { ...(round ? { matchday: round } : {}), ...(hours ? { durationHours: Number(hours) } : {}) });
+  }
   if (action === 'matchday_select') {
     const round = requestedMatchday(clean);
     if (!round || round > 100) clarify('Qaysi tur? 1–100 orasidagi tur raqamini yozing.');

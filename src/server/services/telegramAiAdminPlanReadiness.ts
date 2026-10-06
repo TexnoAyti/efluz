@@ -10,7 +10,7 @@ const required: Record<string,string[]> = {
   club_assign:['targetUserId'], user_role:['isAdmin'], user_suspend:['isSuspended'], dispute_resolve:['action'],
   matchday_control:['action','matchday'], matchday_override:['overrideStatus'],
   matchday_remind:['matchday'],
-  fixtures_generate:['competitionId'], fixtures_reset:['competitionId','confirmation'], knockout_generate:['competitionId'],
+  fixtures_generate:['competitionId'], fixtures_restore:['competitionId'], fixtures_reset:['competitionId','confirmation'], knockout_generate:['competitionId'],
   cup_generate:['confirmation','drawSeed'], cup_round:['roundNumber','action'], european_apply:['previewToken','confirmation'],
   notification_message:['visibility'], notification_type:['visible'], notification_item:['visibility'], broadcast:['title','body','targetAudience'],
   admission_advance:['expectedStage'], no_show_resolve:['action'], match_dispute_resolve:['action'],

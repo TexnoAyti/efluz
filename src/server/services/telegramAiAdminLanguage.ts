@@ -43,6 +43,7 @@ export function detectNaturalAdminAction(text: string): string|null {
     if (/\btasdiqla\w*\b/.test(q)) return 'result_approve';
     if (/\b(?:kirit\w*|saqla\w*|yoz\w*|ozgartir\w*|qil\w*)\b/.test(q)) return 'result_edit';
   }
+  if (/\b(?:pley.?off|knockout|knokaut)\b/.test(q) && /yarat\w*|generatsiya|tuz\w*/.test(q)) return 'knockout_generate';
   if (/\b\d{1,2}\s*[:–—−-]\s*\d{1,2}\b/.test(command) && !/\d{4}-\d{2}-\d{2}T/.test(command) && /\b(?:qil\w*|qoy\w*|saqla\w*|kirit\w*|qosh\w*|yoz\w*|ozgartir\w*|tasdiqla\w*)\b/.test(q)) return /tasdiqla/.test(q) ? 'result_approve' : 'result_edit';
   if (/\b(?:oyin\w*|uchrashuv\w*)\b/.test(q)) {
     if (remove) return 'fixture_delete';
@@ -61,11 +62,18 @@ export function detectNaturalAdminAction(text: string): string|null {
   if (/\badmin\w*\b/.test(q) && /\b(?:qil\w*|ber\w*|ol\w*|ochir\w*|bekor qil\w*)\b/.test(q)) return remove || /\bol\w*\b/.test(q) ? 'user_role_remove' : 'user_role';
   if (/\bpremium\w*\b/.test(q) && /\b(?:ber\w*|ula\w*|ol\w*|ochir\w*|bekor qil\w*)\b/.test(q)) return remove || /\bol\w*\b/.test(q) ? 'premium_revoke' : 'premium_grant';
   if (/\bfoydalanuvchi\w*\b/.test(q) && remove) return 'user_delete';
+  if (/\b(?:yevropa|european)\b/.test(q) && /jadval\w*.*(?:qayta|hisob)|qayta.*(?:yevropa|european)/.test(q)) return 'european_rebuild';
   if (/\b(?:jadval\w*|standings)\b/.test(q) && /qayta hisobla\w*|qayta qur\w*|tikla\w*/.test(q)) return 'standings_rebuild';
+  if (/\b(?:juftlik\w*|o\s*yinlar\w*|fixture\w*)\b/.test(q) && /yetishmayotgan|qolib ketgan|tikla\w*|restore/.test(q)) return 'fixtures_restore';
+  if (/\b(?:jadval\w*|fixture\w*|o\s*yinlar\w*)\b/.test(q) && /reset|tozalab qayta|boshidan yarat|qayta yarat/.test(q)) return 'fixtures_reset';
+  if (/\b(?:saralash\w*|qualification\w*)\b/.test(q) && /hisobla\w*|bahola\w*|evaluate/.test(q)) return 'qualifications_evaluate';
+  if (/\b(?:kub(?:ok|og)\w*|cup)\b/.test(q) && /bosqich\w*.*(?:och|qulf)|(?:och|qulf).*bosqich/.test(q)) return 'cup_round';
+  if (/\b(?:kub(?:ok|og)\w*|cup)\b/.test(q) && /g.olib\w*.*(?:otkaz|keyingi)|winner.*(?:advance|otkaz)/.test(q)) return 'cup_winner_advance';
   if (/\b(?:kub(?:ok|og)\w*|qura\w*)\b/.test(q) && /juftlik\w*.*mosla\w*|reconcile/.test(q)) return 'cup_reconcile';
   if (/\bqura\w*\b/.test(q) && /yarat|tashla|korib chiq|tekshir/.test(q)) return 'cup_preview';
   if (/\b(?:kub(?:ok|og)\w*|bosqich\w*)\b/.test(q) && /keyingi.*(?:otkaz|ot)|oldinga otkaz/.test(q)) return 'cup_advance';
   if (/\b(?:tur\w*|matchday)\b/.test(q) && /keyingi.*(?:otkaz|ot)|oldinga otkaz/.test(q)) return 'matchday_advance';
+  if (/\b(?:tur\w*|matchday)\b/.test(q) && /hozir.*och|majburiy.*och|ochib ber/.test(q)) return 'matchday_open_now';
   if (/\b(?:tur\w*|matchday)\b/.test(q) && /\b(?:tanla\w*|qoy\w*|otkaz\w*)\b/.test(q)) return 'matchday_select';
   if (/\bai\b/.test(q) && /\b(?:yoq\w*|ochir\w*)\b/.test(q)) return /ochir/.test(q) ? 'ai_disable' : 'ai_enable';
   if (/\b(?:xabarnoma\w*|bildirishnoma\w*|notifikatsiya\w*|notification\w*)\b/.test(q) && /\b(?:yashir\w*|korsat\w*|ochir\w*)\b/.test(q)) return 'notification_control';
