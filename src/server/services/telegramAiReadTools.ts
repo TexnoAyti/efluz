@@ -32,7 +32,9 @@ export const tournamentReadTool = {
       dataset: { type: 'string', enum: ['competitions', 'clubs', 'fixtures', 'standings', 'statistics'] },
       competition: { type: 'string' }, club: { type: 'string' }, opponent: { type: 'string' },
       ownerUsername: { type: 'string' }, fixtureId: { type: 'string' }, stage: { type: 'string' },
-      matchday: { type: 'integer' }, status: { type: 'string' }, offset: { type: 'integer' }, limit: { type: 'integer' },
+      matchday: { type: 'integer' }, matchdayTo: { type: 'integer', description: 'Inclusive upper round bound; hozirgacha means up to currentMatchday, including earlier rounds, excluding future rounds.' },
+      fixtureState: { type: 'string', enum: ['unplayed', 'awaiting_confirmation', 'disputed', 'unfinished', 'confirmed'], description: 'unplayed = SCHEDULED/POSTPONED only. Submitted/disputed games are not proven unplayed. unfinished = all non-confirmed games.' },
+      status: { type: 'string' }, offset: { type: 'integer' }, limit: { type: 'integer' },
     },
   },
 };

@@ -6,6 +6,11 @@ import type { Competition, Club } from '../../types';
 import type { AdminPlan } from './telegramAiAdminCatalog';
 
 export type ConversationIntent = 'standings'|'fixtures'|'admin'|'confirm'|'cancel'|'help'|'chat';
+export function isRemainingFixturesQuestion(text: string): boolean {
+  const q = normalizeAiEntity(text);
+  return /\b(?:oynalmagan\w*|otkazilmagan\w*|yakunlanmagan\w*|tugamagan\w*|unplayed|unfinished)\b/.test(q) ||
+    /\b(?:oyin\w*|uchrashuv\w*|match\w*|fixtures)\b/.test(q) && /\b(?:qoldi\w*|qolgan\w*|qolib ket\w*|remaining|hali oynal\w*)\b/.test(q);
+}
 export function getConversationIntent(text: string): ConversationIntent {
   const q = normalizeAiEntity(text);
   if (/^(?:tasdiqlayman|tasdiqla|bajar|bajaring|ha bajar|xa bajar)$/.test(q)) return 'confirm';
@@ -14,6 +19,7 @@ export function getConversationIntent(text: string): ConversationIntent {
   if (/\b(?:nechanchi|qaysi\s+orinda|nima\s+uchun|nega|tahlil|taxmin|kim\s+yutadi)\b/.test(q)) return 'chat';
   if (detectNaturalAdminAction(text)) return 'admin';
   if (isSimpleConversationClubAssignmentRequest(text)) return 'admin';
+  if (isRemainingFixturesQuestion(text)) return 'fixtures';
   const nouns = /\b(?:liga\w*|tur\w*|matchday|natija\w*|hisob\w*|oyin\w*|uchrashuv\w*|klub\w*|jamoa\w*|admin\w*|premium|xabarnoma\w*|xabar\w*|qura\w*|kubok\w*|mavsum\w*|deadline|muddat\w*)\b/;
   const writes = /\b(?:qulfla(?:ng)?|yop(?:ing)?|och(?:ing)?|ochib ber|ochir(?:ing)?|olib tashla(?:ng)?|biriktir(?:ing)?|biriktirib ber|tasdiqla(?:ng)?|rad et(?:ing)?|qayta boshla(?:ng)?|uzaytir(?:ing)?|blokla(?:ng)?|blokdan chiqar(?:ing)?|jonat(?:ing)?|yubor(?:ing)?|generatsiya qil|qura tashla|admin qil|premium ber)\b/;
   if (/\b\d{1,2}\s*[:\-]\s*\d{1,2}\s+(?:qil|qiling|qoy|qoying|saqla)\b/.test(q)) return 'admin';
@@ -98,6 +104,50 @@ export async function buildConversationTableReply(text: string, intent: 'standin
   if (!catalog.data?.length) return { text: 'Musobaqalar jadvali hozir o‘qilmadi. Qayta urinib ko‘ring.', competitionIds: [] };
   if (competitions.length !== 1) return { text: competitions.length ? 'Qaysi birining jadvalini yuboray: ' + competitions.map(c => c.name).join(', ') + '?' : 'Qaysi liga yoki kubok jadvalini yuboray? Masalan: “La Liga jadvalini tashla”.', competitionIds: [] };
   const comp = competitions[0];
+  if (intent === 'fixtures' && isRemainingFixturesQuestion(text)) {
+    const round = requestedMatchday(text);
+    const allSeason = /\b(?:butun mavsum|mavsum boyicha|barcha turlar|all season)\b/.test(normalizeAiEntity(text));
+    const upper = round || (allSeason ? undefined : comp.currentMatchday);
+    if (!allSeason && (!Number.isInteger(upper) || upper! < 1 || upper! > 100))
+      return { text: `${comp.name}: joriy tur aniqlanmadi. Qaysi turgacha bo‘lgan o‘yinlarni ko‘rsatishim kerak?`, competitionIds: ids };
+    const query = { dataset: 'fixtures', competition: comp.id, fixtureState: 'unfinished', ...(round ? { matchday: round } : upper ? { matchdayTo: upper } : {}), limit: 30 };
+    const result: any = await reader.read(query);
+    if (result.error) return { text: `${comp.name}: o‘yinlar ro‘yxatini o‘qib bo‘lmadi.`, competitionIds: ids };
+    const games: any[] = [...(result.data || [])];
+    let next = result.nextOffset;
+    while (Number.isInteger(next) && games.length < 1000) {
+      const page: any = await reader.read({ ...query, offset: next });
+      if (page.error || page.offset !== next || !page.data?.length) { result.complete = false; break; }
+      games.push(...page.data); result.stale ||= page.stale; result.complete &&= page.complete; next = page.nextOffset;
+    }
+    if (Number.isInteger(next)) result.complete = false;
+    const unplayed = games.filter(f => ['SCHEDULED', 'POSTPONED'].includes(f.status));
+    const pending = games.filter(f => f.status === 'PENDING_CONFIRMATION');
+    const disputed = games.filter(f => f.status === 'DISPUTED');
+    const range = round ? `${round}-tur` : allSeason ? 'butun mavsum' : `1–${upper}-turlar, joriy turgacha`;
+    const sections = [
+      { title: 'O‘ynalmagan', rows: unplayed },
+      { title: 'Natijasi tasdiq kutilmoqda', rows: pending },
+      { title: 'Natijasi bahsli', rows: disputed },
+      { title: 'Boshqa yakunlanmagan holat', rows: games.filter(f => !['SCHEDULED', 'POSTPONED', 'PENDING_CONFIRMATION', 'DISPUTED'].includes(f.status)) },
+    ];
+    let body = `${comp.name} — ${range}\nO‘ynalmagan: ${unplayed.length} ta${!result.complete ? ' (mavjud nusxada)' : ''}. Tasdiq kutilmoqda: ${pending.length} ta. Bahsli: ${disputed.length} ta.\n`;
+    let shown = 0;
+    for (const section of sections) {
+      if (!section.rows.length) continue;
+      body += `\n${section.title}:\n`;
+      for (const f of section.rows) {
+        const line = `${f.matchday}-tur: ${f.home} — ${f.away}${f.status === 'POSTPONED' ? ' (qoldirilgan)' : ''}\n`;
+        if (body.length + line.length > 3400) break;
+        body += line; shown++;
+      }
+    }
+    if (!games.length) body += result.complete ? '\nBu oraliqda yakunlanmagan o‘yin qolmagan.' : '\nSaqlangan nusxada o‘yin topilmadi; hammasi o‘ynalgan deb tasdiqlay olmayman.';
+    if (shown < games.length) body += `\nJuftliklardan ${shown}/${games.length} tasi ko‘rsatildi. To‘liqroq ro‘yxat uchun tur raqamini yozing.`;
+    if (!result.complete) body += '\nO‘yinlar manbasi to‘liq o‘qilmadi; ro‘yxat to‘liq bo‘lmasligi mumkin.';
+    if (result.stale) body += '\nOxirgi saqlangan ma’lumot; joriy holat qayta tekshirilmagan.';
+    return { text: body.trim(), competitionIds: ids, fixtureIds: [], clubIds: [] };
+  }
   const standings = intent === 'standings' && ['LEAGUE', 'EUROPEAN_LEAGUE_PHASE'].includes(comp.type);
   const round = requestedMatchday(text), stage = detectAiCupStage(text);
   const query = standings ? { dataset: 'standings', competition: comp.id, limit: 30 } : { dataset: 'fixtures', competition: comp.id, matchday: round ?? (stage ? undefined : comp.currentMatchday), stage: stage || undefined, limit: 30 };
