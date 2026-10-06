@@ -24,6 +24,9 @@ export function detectNaturalAdminAction(text: string): string|null {
   const q = normalizeAiEntity(command.replace(/@\s*[A-Za-z0-9_]+/g, ' '));
   const extended = detectExtendedAdminControl(command);
   if (extended) return extended;
+  if (/\b(?:no show|kelmaganlik\w*|kelmagan\w*)\b/.test(q) && /hal qil|hal et|texnik|rad et|resolve/.test(q)) return 'no_show_resolve';
+  if (/\b(?:nizo\w*|bahs\w*)\b/.test(q) && /hal qil|hal et|resolve/.test(q)) return 'dispute_resolve';
+  if (/\b(?:ariza\w*|submission\w*)\b/.test(q) && /ochir|olib tashla/.test(q)) return 'submission_delete';
   const remove = /\b(?:ochir\w*|olib tashla\w*|bekor qil\w*)\b/.test(q);
   if (/ko?rsat|korib chiq|holati|royxat|statistika/.test(q)) {
     if (/foydalanuvchilar\w*|userlar\w*/.test(q)) return 'users';
@@ -40,7 +43,7 @@ export function detectNaturalAdminAction(text: string): string|null {
     if (/\btasdiqla\w*\b/.test(q)) return 'result_approve';
     if (/\b(?:kirit\w*|saqla\w*|yoz\w*|ozgartir\w*|qil\w*)\b/.test(q)) return 'result_edit';
   }
-  if (/\b\d{1,2}\s*[:-]\s*\d{1,2}\b/.test(command) && !/\d{4}-\d{2}-\d{2}T/.test(command) && /\b(?:qil\w*|qoy\w*|saqla\w*|kirit\w*|qosh\w*|yoz\w*|ozgartir\w*|tasdiqla\w*)\b/.test(q)) return /tasdiqla/.test(q) ? 'result_approve' : 'result_edit';
+  if (/\b\d{1,2}\s*[:–—−-]\s*\d{1,2}\b/.test(command) && !/\d{4}-\d{2}-\d{2}T/.test(command) && /\b(?:qil\w*|qoy\w*|saqla\w*|kirit\w*|qosh\w*|yoz\w*|ozgartir\w*|tasdiqla\w*)\b/.test(q)) return /tasdiqla/.test(q) ? 'result_approve' : 'result_edit';
   if (/\b(?:oyin\w*|uchrashuv\w*)\b/.test(q)) {
     if (remove) return 'fixture_delete';
     if (/qayta och/.test(q)) return 'fixture_reopen';
@@ -48,6 +51,7 @@ export function detectNaturalAdminAction(text: string): string|null {
     if (/muddat\w*|deadline/.test(q) && /ozgartir|belgila/.test(q)) return 'fixture_deadline';
     if (/yarat\w*|generatsiya qil/.test(q)) return 'fixtures_generate';
   }
+  if (/\begasini\b/.test(q) && /\b(?:chiqar\w*|boshat\w*)\b/.test(q)) return 'club_release';
   if (/\b(?:boshat\w*|egasidan ol\w*|biriktirishni bekor qil\w*)\b/.test(q) ||
       /\b(?:klubdan|jamoadan|klubidan|jamoasidan|klub egasini|jamoa egasini)\b/.test(q) && /\b(?:chiqar\w*|ol\w*|ochir\w*)\b/.test(q) ||
       /\b(?:egasini|egasidan|egaligini|biriktirishni)\b/.test(q) && remove) return 'club_release';

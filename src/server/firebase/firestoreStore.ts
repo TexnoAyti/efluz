@@ -4892,86 +4892,24 @@ export async function resolveDisputeFirestore(
     manualAwayScore?: number;
     notes?: string;
   }
-): Promise<{ success: boolean; dispute: any }> {
-  const db = getFirestoreDb();
-  const disputeRef = db.collection(COLLECTIONS.DISPUTES).doc(disputeId);
-  const disputeDoc = await disputeRef.get();
-  if (!disputeDoc.exists) {
-    throw new Error(`Dispute '${disputeId}' not found.`);
-  }
-
-  const dispData = disputeDoc.data() as FirestoreDisputeDoc;
-  const fixtureRef = db.collection(COLLECTIONS.FIXTURES).doc(dispData.fixtureId);
-  const fixtureDoc = await fixtureRef.get();
-  if (!fixtureDoc.exists) {
-    throw new Error(`Fixture '${dispData.fixtureId}' not found.`);
-  }
-
-  const fixture = fixtureDoc.data() as FirestoreFixtureDoc;
-  const now = new Date().toISOString();
-
-  let newHomeScore: number | null = null;
-  let newAwayScore: number | null = null;
-  let winnerClubId: string | null = null;
-  let newStatus = 'CONFIRMED';
-
-  if (params.action === 'MANUAL_SCORE') {
-    newHomeScore = params.manualHomeScore ?? 0;
-    newAwayScore = params.manualAwayScore ?? 0;
-    if (newHomeScore > newAwayScore) winnerClubId = fixture.homeClubId;
-    else if (newAwayScore > newHomeScore) winnerClubId = fixture.awayClubId;
-  } else if (params.action === 'CANCEL_MATCH') {
-    newStatus = 'POSTPONED';
-  }
-
-  await fixtureRef.update({
-    status: newStatus,
-    homeScore: newHomeScore,
-    awayScore: newAwayScore,
-    winnerClubId,
-    resultConfirmedAt: now,
-    updatedAt: now,
-  });
-
-  if (newStatus === 'CONFIRMED' && winnerClubId) {
+): Promise<{ success: boolean; dispute: any; fixture: any }> {
+  const { resolveDisputeAtomically } = await import('../services/disputeResolution');
+  const result = await resolveDisputeAtomically(getFirestoreDb(), adminUserId, disputeId, params, collection => trackFirestoreRead(collection, 1, 'resolveDisputeFirestore'));
+  for (const collection of [COLLECTIONS.FIXTURES, COLLECTIONS.DISPUTES, COLLECTIONS.AUDIT_LOGS]) trackFirestoreWrite(collection, 1, 'resolveDisputeFirestore');
+  invalidateFirestoreCache('firestore:disputes:');
+  invalidateFirestoreCache('firestore:fixture');
+  await invalidateSharedAdminData().catch(() => {});
+  if (result.fixture.status === 'CONFIRMED' && result.fixture.winnerClubId) {
     try {
       const { advanceKnockoutWinnerFirestore } = await import('../tournament/knockoutEngine');
-      await advanceKnockoutWinnerFirestore(dispData.fixtureId);
-    } catch (err) {
-      console.warn('[KNOCKOUT_ADVANCE] Non-blocking advance error on dispute resolution:', err);
-    }
+      await advanceKnockoutWinnerFirestore(result.fixture.id);
+    } catch { console.warn('[DISPUTE_DERIVED_UPDATE]', 'knockout_refresh_failed'); }
   }
-
-  if (fixture.competitionId) {
-    try {
-      await rebuildCompetitionStandingsFirestore(fixture.competitionId);
-    } catch (standingsErr) {
-      console.warn('[STANDINGS_UPDATE] Non-blocking standings update error on dispute resolution:', standingsErr);
-    }
+  if (result.fixture.competitionId) {
+    await rebuildCompetitionStandingsFirestore(result.fixture.competitionId).catch(() => console.warn('[DISPUTE_DERIVED_UPDATE]', 'standings_refresh_failed'));
+    await refreshChangedFixtureReadModel(result.fixture.id).catch(() => invalidateFixtureReadModels(result.fixture.competitionId, result.fixture.seasonId || 'season-2026-27')).catch(() => {});
   }
-
-  const updatedDispute = {
-    ...dispData,
-    status: 'RESOLVED',
-    resolvedByUserId: adminUserId,
-    resolutionNotes: params.notes || null,
-    resolvedAt: now,
-  };
-
-  await disputeRef.update(updatedDispute);
-
-  const auditId = `audit_resolve_dispute_${disputeId}`;
-  await db.collection(COLLECTIONS.AUDIT_LOGS).doc(auditId).set({
-    id: auditId,
-    actorUserId: adminUserId,
-    action: 'RESOLVE_DISPUTE',
-    entityType: 'dispute',
-    entityId: disputeId,
-    notes: params.notes || null,
-    createdAt: now,
-  }, { merge: true });
-
-  return { success: true, dispute: updatedDispute };
+  return { success: result.success, dispute: result.dispute, fixture: result.fixture };
 }
 
 export function getLocalDisputes(status = 'OPEN', limitCount = 50): Dispute[] {

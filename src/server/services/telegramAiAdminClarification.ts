@@ -16,7 +16,7 @@ export function continueAiAdminClarification(draft: Clarification, answer: strin
   if (/qaysi foydalanuvchi|qaysi akkaunt|kimga biriktiray|bitta.*username|toliq.*username/.test(q)) {
     if (/^@[A-Za-z][A-Za-z0-9_]{4,31}$/.test(value) || /^user-\d+$/.test(value)) field = value;
   } else if (/qaysi hisob|hisobni.*yozing/.test(q)) {
-    if (/^\d{1,2}\s*[:-]\s*\d{1,2}$/.test(value) && !/\b\d{1,2}\s*[:-]\s*\d{1,2}\b/.test(draft.request)) field = value;
+    if (/^\d{1,2}\s*[:–—−-]\s*\d{1,2}$/.test(value) && !/\b\d{1,2}\s*[:–—−-]\s*\d{1,2}\b/.test(draft.request)) field = value;
   } else if (/sabab yozing/.test(q)) {
     if (value.length >= 3 && !/\b(?:biriktir\w*|ochir\w*|yubor\w*|blokla\w*|qil\w*)\b/.test(a)) field = 'sabab: ' + value;
   } else if (/sana.*vaqt.*yozing/.test(q)) {

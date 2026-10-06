@@ -204,7 +204,7 @@ export async function claimDeliveryState(
     await client.set(key, targetState, { ex: 86400 });
     return 'ok';
   } catch (err: any) {
-    console.warn('[AI DELIVERY STATE] Redis error during delivery claim:', err?.message || err);
+    console.warn('[AI DELIVERY STATE] Redis error during delivery claim:', aiProviderFailureKind(err));
     return 'redis_error';
   }
 }
@@ -237,7 +237,7 @@ export async function indexBotSentMessage(
     if (options?.signal?.aborted) return;
     await client.set(key, payload, { ex: CONTEXT_TTL_SECONDS });
   } catch (err: any) {
-    console.warn('[AI BOT MSG INDEX] Failed to index bot message ID:', err?.message || err);
+    console.warn('[AI BOT MSG INDEX] Failed to index bot message ID:', aiProviderFailureKind(err));
   }
 }
 
@@ -301,7 +301,7 @@ export async function isReplyToOurBotForUser(
       Number(parsed.userId) === Number(currentUserId)
     );
   } catch (err: any) {
-    console.warn('[AI BOT MSG INDEX] Redis error verifying bot reply index:', err?.message || err);
+    console.warn('[AI BOT MSG INDEX] Redis error verifying bot reply index:', aiProviderFailureKind(err));
     return false; // Redis xato bo'lsa false qaytaring!
   }
 }
@@ -379,7 +379,7 @@ async function saveConversationContext(
     if (options?.signal?.aborted) return;
     await client.set(contextKey, JSON.stringify(updated), { ex: CONTEXT_TTL_SECONDS });
   } catch (err: any) {
-    console.warn('[AI CONTEXT] Error saving context to Redis:', err?.message || err);
+    console.warn('[AI CONTEXT] Error saving context to Redis:', aiProviderFailureKind(err));
   }
 }
 
@@ -474,7 +474,7 @@ async function dispatchTelegramAiReply(
     }
     return { ok: true, replySent: true, botMessageId: botMsgId };
   } else {
-    console.warn('[AI DISPATCH] Telegram send failed/uncertain:', sendResult.error);
+    console.warn('[AI DISPATCH] Telegram send failed/uncertain');
     await claimDeliveryState(payload.updateId, 'unknown_timeout', { signal });
     return { ok: false, replySent: false, error: sendResult.error };
   }
@@ -511,7 +511,7 @@ export async function handleTelegramAiMessage(
       return { ok: true, handled: false, ignored: 'redis_unavailable_prod' };
     }
 
-    console.info('[TELEGRAM_AI_SCOPE]', JSON.stringify({ chatId: payload.chatId, threadId: payload.threadId, allowedChatId: config.allowedChatId, allowedThreadId: config.allowedThreadId, enabled: config.enabled }));
+    console.info('[TELEGRAM_AI_SCOPE]', JSON.stringify({ topicMatched: payload.chatId === config.allowedChatId && payload.threadId === config.allowedThreadId, privateAdmin: isOwnerAdminPrivateChat(payload), enabled: config.enabled }));
     // 4. Strict Boundary Validation: Chat ID and Thread ID must match configured allowed topic
     if (
       config.allowedChatId === null ||
@@ -689,15 +689,14 @@ export async function handleTelegramAiMessage(
 
         try {
           replyText = await generateGroundedTelegramAnswer({ ai, model: modelName, contents, systemPrompt, signal: modelSignal, deadlineAt: deadlineAt - 1800,
-            maxToolRounds: privateAdmin ? 3 : 1, extraReadTools: createAiAdminReadTools(payload, modelSignal) });
+            maxToolRounds: privateAdmin ? 3 : 2, extraReadTools: createAiAdminReadTools(payload, modelSignal) });
         } catch (apiErr: any) {
-          const errMsg = String(apiErr?.message || '');
           if (rootController.signal.aborted) {
             console.warn('[AI GEMINI] Gemini call cancelled due to deadline timeout');
             await claimDeliveryState(payload.updateId, 'unknown_timeout', { signal: rootController.signal });
             return { ok: false, handled: false, error: 'TIMEOUT_ABORTED' };
           }
-          console.error('[AI GEMINI]', aiProviderFailureKind(apiErr), 'Error calling Gemini:', errMsg);
+          console.error('[AI GEMINI]', aiProviderFailureKind(apiErr), 'Generation failed');
           replyText = buildAiFallbackReply(payload.text, grounding);
         }
       }
@@ -743,7 +742,7 @@ export async function handleTelegramAiMessage(
       };
     }
   } catch (err: any) {
-    console.error('[AI HANDLER ERROR]', err?.message || err);
+    console.error('[AI HANDLER ERROR]', aiProviderFailureKind(err));
     await claimDeliveryState(payload.updateId, 'unknown_timeout', { signal: rootController.signal });
     return { ok: false, handled: false, error: err?.message || 'UNKNOWN_ERROR' };
   } finally {

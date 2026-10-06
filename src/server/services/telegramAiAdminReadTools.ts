@@ -41,13 +41,17 @@ export function projectAiAdminData(value: unknown): { data: unknown; truncated: 
   return { data, truncated };
 }
 
+export function isAiPrivateActorChat(payload: TelegramAiMessagePayload): boolean {
+  return Number.isSafeInteger(payload.fromUser?.id) && isAiAdminActor(payload.fromUser.id)
+    && !payload.fromUser.is_bot && payload.chatId === payload.fromUser.id && payload.threadId === 0
+    && !payload.senderChat && !payload.forwarded;
+}
+
 /** Only direct, verified actor DMs get private tools. The real route rechecks current
  * account, suspension and league permissions on EVERY read, never model authority. */
 export function createAiAdminReadTools(payload: TelegramAiMessagePayload, signal: AbortSignal,
   execute: typeof executeAiAdminRoute = executeAiAdminRoute) {
-  const privateActor = () => Number.isSafeInteger(payload.fromUser?.id) && isAiAdminActor(payload.fromUser.id)
-    && !payload.fromUser.is_bot && payload.chatId === payload.fromUser.id && payload.threadId === 0
-    && !payload.senderChat && !payload.forwarded;
+  const privateActor = () => isAiPrivateActorChat(payload);
   if (!privateActor()) return [];
   return [{ declaration: {
     name: 'read_admin_data',

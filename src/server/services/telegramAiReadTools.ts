@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { GoogleGenAI } from '@google/genai';
 import { createAiTournamentReader } from './telegramAiDataService';
 import { withinAiDeadline } from './telegramAiDeadline';
@@ -39,7 +40,7 @@ export const tournamentReadTool = {
   },
 };
 
-/** Public requests use one read-tool round; admin planning permits up to three.
+/** Public requests use up to two read-tool rounds; admin planning permits up to three.
  * At most four validated queries per round and eight overall, then an answer.
  * Tool calls cannot request arbitrary database paths or execute administration. */
 export async function generateGroundedTelegramAnswer(options: {
@@ -49,7 +50,25 @@ export async function generateGroundedTelegramAnswer(options: {
   extraReadTools?: Array<{ declaration: any; run: (args: unknown) => Promise<unknown> }>;
 }): Promise<string> {
   const generate = options.generate || ((request: any) => options.ai.models.generateContent(request));
-  const read = options.read || createAiTournamentReader(options.signal).read;
+  const rawRead = options.read || createAiTournamentReader(options.signal).read;
+  const memo = new Map<string, unknown>();
+  let cacheHits = 0;
+  const traceId = randomUUID();
+  const read = async (args: any): Promise<any> => {
+    const key = JSON.stringify(args && typeof args === 'object' ? Object.fromEntries(Object.entries(args).sort(([a], [b]) => a.localeCompare(b))) : args);
+    if (key && memo.has(key)) { cacheHits++; return memo.get(key); }
+    const result: any = await rawRead(args);
+    if (key && result && !result.error) memo.set(key, result);
+    return result;
+  };
+  const safeRead = async (operation: () => Promise<any>): Promise<any> => {
+    try { return await withinAiDeadline(options.signal, operation) || { error: 'READ_EMPTY_RESPONSE' }; }
+    catch (error: any) {
+      if (options.signal.aborted) throw new Error('TIMEOUT_ABORTED');
+      if (String(error?.message || '').startsWith('CLARIFY:')) return { error: 'ENTITY_CLARIFICATION', message: error.message.slice(8, 308), complete: false };
+      return { error: 'READ_UNAVAILABLE', complete: false, message: 'So‘ralgan manba hozir o‘qilmadi. Yo‘q ma’lumotni taxmin qilmang.' };
+    }
+  };
   let retriedBusy = false;
   const requestModel = async (request: any): Promise<any> => {
     try { return await withinAiDeadline(options.signal, () => generate(request)); }
@@ -62,7 +81,7 @@ export async function generateGroundedTelegramAnswer(options: {
     }
   };
   const config = { systemInstruction: options.systemPrompt, temperature: 0.65, maxOutputTokens: 400, abortSignal: options.signal };
-  const rounds = Math.min(3, Math.max(1, options.maxToolRounds || 1));
+  const rounds = Math.min(3, Math.max(1, options.maxToolRounds || 2));
   const declarations = [tournamentReadTool, ...(options.extraReadTools || []).map(tool => tool.declaration)];
   let contents = [...options.contents];
   let first = await requestModel({ model: options.model, contents, config: { ...config, tools: [{ functionDeclarations: declarations }] } });
@@ -75,12 +94,13 @@ export async function generateGroundedTelegramAnswer(options: {
   const responses = [];
   for (const call of calls) {
     const extra = options.extraReadTools?.find(tool => tool.declaration.name === call.name);
-    let result:any = await withinAiDeadline(options.signal, () => extra ? extra.run(call.args) : read(call.args));
+    const startedAt = Date.now(), previousCacheHits = cacheHits;
+    let result:any = await safeRead(() => extra ? extra.run(call.args) : read(call.args));
     // Continue a long list without another model call, bounded by the same global deadline.
     if(!extra && !result.error && Array.isArray(result.data)){
       result={...result,data:[...result.data]};
       for(let page=1;page<3 && Number.isInteger(result.nextOffset);page++){
-        const next:any=await withinAiDeadline(options.signal,()=>read({...call.args,offset:result.nextOffset}));
+        const next:any=await safeRead(()=>read({...call.args,offset:result.nextOffset}));
         if(next.error || !Array.isArray(next.data) || next.offset!==result.nextOffset || !next.data.length){
           result={...result,complete:false,paginationError:next.error||'INCOMPLETE_PAGE'};break;
         }
@@ -89,12 +109,16 @@ export async function generateGroundedTelegramAnswer(options: {
       }
       result.truncated=Number.isInteger(result.nextOffset);
     }
+    console.info('[AI_READ_TOOL]', JSON.stringify({ traceId, tool: call.name, round: round + 1, durationMs: Date.now() - startedAt,
+      outcome: result.error ? 'error' : 'ok', cacheHits: cacheHits - previousCacheHits,
+      rowsReturned: Array.isArray(result.data) ? result.data.length : undefined,
+      stale: result.stale === true, incomplete: result.complete === false || result.truncated === true }));
     responses.push({ functionResponse: { name: call.name, ...(call.id ? { id: call.id } : {}), response: { result } } });
   }
   const modelContent = first.candidates?.[0]?.content;
   if (!modelContent) return 'Ma’lumot so‘rovini yakunlab bo‘lmadi. Qayta urinib ko‘ring.';
   contents = [...contents, modelContent, { role: 'user', parts: responses }];
-  first = await requestModel({ model: options.model, contents, config: round + 1 < rounds ? { ...config, tools: [{ functionDeclarations: declarations }] } : config });
+  first = await requestModel({ model: options.model, contents, config: round + 1 < rounds && (!options.deadlineAt || options.deadlineAt - Date.now() >= 1800) ? { ...config, tools: [{ functionDeclarations: declarations }] } : config });
   }
   if (first.functionCalls?.length) throw new Error('CLARIFY:Qidiruvni bitta amal bilan aniqlashtiring. Klub, foydalanuvchi yoki turdan qaysi biri kerak?');
   return answerText(first);

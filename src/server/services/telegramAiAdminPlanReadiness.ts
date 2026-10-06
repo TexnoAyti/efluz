@@ -2,7 +2,8 @@ import { type AdminPlan, AI_ADMIN_ACTIONS } from './telegramAiAdminCatalog';
 import { resolveAdminScore } from './telegramAiNaturalAdminPlanner';
 import { normalizeAiEntity, resolveAiClubs } from './telegramAiEntities';
 import { createAiTournamentReader } from './telegramAiDataService';
-import { requestedMatchday } from './telegramAiConversationCommands';
+import { detectAiCupStage, fixtureMatchesAiCupStage } from './telegramAiCupStage';
+import { requestedMatchday, findConversationCompetitions } from './telegramAiConversationCommands';
 
 const required: Record<string,string[]> = {
   result_edit:['homeScore','awayScore'], result_approve:['homeScore','awayScore'], fixture_delete:['reason'], fixture_deadline:['deadlineAt'],
@@ -17,6 +18,7 @@ const required: Record<string,string[]> = {
 };
 const names: Record<string,string> = {homeScore:'uy jamoasi hisobi',awayScore:'safar jamoasi hisobi',reason:'sabab',deadlineAt:'sana/vaqt va vaqt zonasi',targetUserId:'foydalanuvchi @username yoki ID',isAdmin:'admin berish yoki olib tashlash',isSuspended:'bloklash yoki blokdan chiqarish',action:'amal turi',matchday:'tur raqami',competitionId:'turnir',drawSeed:'server bergan qura kodi',previewToken:'server bergan oldindan ko‘rish kodi',title:'sarlavha',body:'xabar matni',targetAudience:'qabul qiluvchilar',userId:'foydalanuvchi ID',seasonId:'mavsum ID',confirmation:'shu amal uchun aniq tasdiq',roundNumber:'bosqich raqami'};
 export function assertAdminPlanReady(plan: AdminPlan) {
+  if (['dispute_resolve','match_dispute_resolve'].includes(plan.action) && plan.body.action === 'MANUAL_SCORE' && ['manualHomeScore','manualAwayScore'].some(key => !Number.isInteger(plan.body[key]) || Number(plan.body[key]) < 0)) throw new Error('CLARIFY:Nizoni qo‘lda hal qilish uchun ikkala jamoa hisobini aniq yozing.');
   if (plan.action === 'ai_config') {
     if (!Object.keys(plan.body).some(k => ['enabled','allowedChatId','allowedThreadId','rateLimitUserPerMin','rateLimitTopicPerMin','maxDailyRequests'].includes(k))) throw new Error('CLARIFY:Qaysi AI sozlamasini o‘zgartiray?');
     for (const [key,min,max] of [['rateLimitUserPerMin',1,20],['rateLimitTopicPerMin',1,60],['maxDailyRequests',10,5000]] as const) {
@@ -35,8 +37,8 @@ export function assertAdminPlanReady(plan: AdminPlan) {
   }
 }
 
-/** Model plans must use real cached public IDs; private IDs must be explicitly provided. */
-export async function validateModelAdminPlan(plan: AdminPlan, request: string, signal: AbortSignal) {
+/** Model plans must use real cached public IDs; private IDs must be explicit or resolved by the protected record tool. */
+export async function validateModelAdminPlan(plan: AdminPlan, request: string, signal: AbortSignal, verifiedTargets: ReadonlySet<string> = new Set()) {
   assertAdminPlanReady(plan);
   const q = normalizeAiEntity(request);
   if (plan.action === 'fixture_delete' && /\b(?:natija\w*|hisob\w*)\b/.test(q)) throw new Error('CLARIFY:Faqat natijani o‘chirasizmi yoki uchrashuvning o‘zini? Natija o‘chirilsa uchrashuv saqlanadi.');
@@ -53,7 +55,7 @@ export async function validateModelAdminPlan(plan: AdminPlan, request: string, s
     if (/^club_/.test(plan.action)) await check(plan.targetId, 'clubs');
     else if (/^(?:fixture_|result_|cup_winner)/.test(plan.action)) await check(plan.targetId, 'fixtures');
     else if (/^(?:matchday_|cup_|standings_)/.test(plan.action)) await check(plan.targetId, 'competitions');
-    else if (!request.includes(plan.targetId)) throw new Error('CLARIFY:Bu yopiq ma’lumot uchun aniq IDni yozing; uni taxmin qilmayman.');
+    else if (!request.includes(plan.targetId) && !verifiedTargets.has(`${plan.action}:${plan.targetId}`)) throw new Error('CLARIFY:Bu yopiq ma’lumot uchun aniq IDni yozing; uni taxmin qilmayman.');
   }
   if (plan.targetId && /^club_|^fixture_|^result_/.test(plan.action)) {
     const roster: any[] = [];
@@ -71,6 +73,12 @@ export async function validateModelAdminPlan(plan: AdminPlan, request: string, s
       const found: any = await reader.read({ dataset: 'fixtures', fixtureId: plan.targetId, limit: 1 });
       const fixture = found.data?.[0];
       const round = requestedMatchday(request);
+      const competitions: any = await reader.read({ dataset: 'competitions', limit: 30 });
+      if (competitions.error || !Array.isArray(competitions.data)) throw new Error('CLARIFY:Turnirlar manbasi o‘qilmadi. Amal nishonini tekshirib bo‘lmadi.');
+      const namedCompetitions = findConversationCompetitions(request, competitions.data);
+      const stage = detectAiCupStage(request);
+      if (namedCompetitions.length > 1 || namedCompetitions.length === 1 && fixture?.competitionId !== namedCompetitions[0].id || stage && fixture && !fixtureMatchesAiCupStage(fixture, stage))
+        throw new Error('CLARIFY:Rejadagi o‘yin siz yozgan turnir yoki bosqichga mos kelmadi. Turnir va bosqichni aniqlashtiring.');
       if (!fixture || selected.clubs.some(club => ![fixture.homeClubId, fixture.awayClubId].includes(club.id)) || round && Number(fixture.matchday) !== round)
         throw new Error('CLARIFY:Rejadagi o‘yin jamoalar yoki turga mos kelmadi. O‘yinni aniqlashtiring.');
     }

@@ -88,7 +88,7 @@ console.log('PASS typo clarification without stale-context substitution, aliases
 
 let generations = 0, queries = 0;
 const signal = new AbortController().signal;
-const answer = await generateGroundedTelegramAnswer({ ai: {} as any, model: 'mock', contents: [], systemPrompt: 'test', signal,
+const answer = await generateGroundedTelegramAnswer({ ai: {} as any, model: 'mock', contents: [], systemPrompt: 'test', signal, maxToolRounds: 1,
   generate: async request => {
     generations++;
     if (generations === 1) return { functionCalls: [{ name: 'read_tournament_data', args: { dataset: 'fixtures', matchday: 28 } }], candidates: [{ content: { role: 'model', parts: [{ functionCall: { name: 'read_tournament_data', args: { dataset: 'fixtures', matchday: 28 } }, thoughtSignature: 'keep-signature' }] } }] };
@@ -153,7 +153,7 @@ assert.match(delegatedPreview,/ai_confirm/);
 await rememberDeliveredAdminPlan(delegatedPayload,delegatedPreview,90001,signal);
 const delegatedToken=/ai_confirm ([a-f0-9]{24})/.exec(delegatedPreview)![1];
 assert.match(await handleAiAdminCommand(payload('/ai_confirm '+delegatedToken,5209126900),signal),/tegishli emas/);
-assert.match(await handleAiAdminCommand({...delegatedPayload,text:'tasdiqlayman'},signal),/Bajarildi/);
+assert.match(await handleAiAdminCommand({...delegatedPayload,text:'tasdiqlayman'},signal),/Server amalni qabul qildi.*yakuniy holat qayta tekshirilmagan/);
 assert.equal(isOwnerAdminPrivateChat(payload('/ai_actions',7573478198,{chatId:7573478198,threadId:0})),true);
 assert.equal(isOwnerAdminPrivateChat(payload('/ai_actions',123,{chatId:123,threadId:0})),false);
 setTestAiAdminHooks(undefined,async()=>({action:'fixture_delete',targetId:'league-1',body:{reason:'test'}}));

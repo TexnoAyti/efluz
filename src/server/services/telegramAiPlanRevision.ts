@@ -7,7 +7,7 @@ export type AiPlanRevision = { kind: 'score'; first: number; second: number } |
 export function parseAiPlanRevision(text: string): AiPlanRevision | null {
   if (text.length > 800 || /[\n;]/.test(text) || /^[\/]/.test(text.trim())) return null;
   const raw = text.trim().replace(/^(?:yo[‘’ʻʼ'`]?q|aslida)\s*[,!:]?\s*/i, '').replace(/\s+(?:bo[‘’ʻʼ'`]?lsin|edi|qil|qiling|qo[‘’ʻʼ'`]?y|qo[‘’ʻʼ'`]?ying)\s*[.!]?$/i, '').trim();
-  const score = /^(?:(?:hisob(?:ni)?|natija(?:ni)?)\s*[:=]?\s*)?(\d{1,2})\s*[:-]\s*(\d{1,2})$/.exec(raw);
+  const score = /^(?:(?:hisob(?:ni)?|natija(?:ni)?)\s*[:=]?\s*)?(\d{1,2})\s*[:–—−-]\s*(\d{1,2})$/.exec(raw);
   if (score) return { kind: 'score', first: Number(score[1]), second: Number(score[2]) };
   const round = /^(?:tur(?:ni)?\s*[:=]?\s*(\d{1,3})|(\d{1,3})\s*-?\s*tur(?:ni)?)$/i.exec(raw);
   if (round) return { kind: 'round', value: Number(round[1] || round[2]) };

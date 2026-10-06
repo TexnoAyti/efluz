@@ -34,7 +34,7 @@ export function expandConversationReadFollowUp(text: string, scope: Conversation
 export function getConversationIntent(text: string): ConversationIntent {
   const q = normalizeAiEntity(text);
   if (/^(?:tasdiqlayman|tasdiqla|bajar|bajaring|ha bajar|xa bajar)$/.test(q)) return 'confirm';
-  if (/^(?:bekor qil|bekor qiling|bekor qilish|cancel)$/.test(q)) return 'cancel';
+  if (/^(?:(?:shu|shuni|buni|uni|rejani|shu rejani|topshiriqni)\s+)?(?:bekor qil|bekor qiling|bekor qilish|cancel)$/.test(q)) return 'cancel';
   if (/^(?:yordam|buyruqlar|nima qila olasan|help)$/.test(q)) return 'help';
   if (/\b(?:nechanchi|qaysi\s+orinda|nima\s+uchun|nega|tahlil|taxmin|kim\s+yutadi)\b/.test(q)) return 'chat';
   if (detectNaturalAdminAction(text)) return 'admin';
@@ -43,7 +43,7 @@ export function getConversationIntent(text: string): ConversationIntent {
   if (isFixtureResultsQuestion(text) || shortReadFollowUp(q) && !/^jadval/.test(q)) return 'fixtures';
   const nouns = /\b(?:liga\w*|tur\w*|matchday|natija\w*|hisob\w*|oyin\w*|uchrashuv\w*|klub\w*|jamoa\w*|admin\w*|premium|xabarnoma\w*|xabar\w*|qura\w*|kubok\w*|mavsum\w*|deadline|muddat\w*)\b/;
   const writes = /\b(?:qulfla(?:ng)?|yop(?:ing)?|och(?:ing)?|ochib ber|ochir(?:ing)?|olib tashla(?:ng)?|biriktir(?:ing)?|biriktirib ber|tasdiqla(?:ng)?|rad et(?:ing)?|qayta boshla(?:ng)?|uzaytir(?:ing)?|blokla(?:ng)?|blokdan chiqar(?:ing)?|jonat(?:ing)?|yubor(?:ing)?|generatsiya qil|qura tashla|admin qil|premium ber)\b/;
-  if (/\b\d{1,2}\s*[:\-]\s*\d{1,2}\s+(?:qil|qiling|qoy|qoying|saqla)\b/.test(q)) return 'admin';
+  if (/\b\d{1,2}\s*[:–—−\-]\s*\d{1,2}\s+(?:qil|qiling|qoy|qoying|saqla)\b/.test(q)) return 'admin';
   const destructive = /\b(?:ochir(?:ing)?|qulfla(?:ng)?|yop(?:ing)?|biriktir(?:ing)?|tasdiqla(?:ng)?|rad et|blokla(?:ng)?)\b/.test(q);
   if ((nouns.test(q) || /\b(?:biriktir(?:ing)?|blokla(?:ng)?|blokdan chiqar(?:ing)?|admin qil|premium ber)\b/.test(q)) && writes.test(q) && !(/\b(?:jadval\w*|table|standings|oyinlar\w*|uchrashuvlar\w*)\b/.test(q) && !destructive)) return 'admin';
   if (/\b(?:jadval\w*|table|standings|tablica|таблица)\b/.test(q))

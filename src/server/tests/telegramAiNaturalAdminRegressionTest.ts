@@ -31,6 +31,11 @@ try {
  await redisSetRaw(ReadModelKeys.competitionFixtures(epl,season),snapshot([{id:'forest-11',competitionId:epl,seasonId:season,matchday:11,status:'SCHEDULED',homeClubId:'club-nottm-forest',awayClubId:'club-arsenal',homeClubName:'Nottingham Forest',awayClubName:'Arsenal'}]));
  await redisSetRaw('efluz:v1:admin:user-directory',snapshot([{id:'user-123',username:'inter_fan',telegramId:'123'}]));
  const deps:NaturalPlannerDependencies={read:createAiTournamentReader(signal).read,users:async()=>[{id:'user-123',username:'inter_fan',telegramId:'123'}]};
+ assert.equal((await contextualFixturePlan('Shu o‘yinning faqat natijasini o‘chir',['game-10'],signal))?.action,'result_clear');
+ assert.equal(getConversationIntent('shuni bekor qil'),'cancel');
+ assert.equal(getConversationIntent('shu o‘yinni bekor qil'),'admin');
+ assert.equal((await planNaturalAdminRequest('Arsenal egasini chiqar',deps))?.action,'club_release');
+ assert.equal((await planNaturalAdminRequest('@inter_fan’ni Heidenheim’ga biriktir',deps))?.body.targetUserId,'@inter_fan');
  const followup=await contextualFixturePlan('hisobni 3-2 qil',['game-10'],signal);
  assert.deepEqual(followup,{action:'result_edit',targetId:'game-10',body:{homeScore:3,awayScore:2,status:'CONFIRMED'}});
  await assert.rejects(contextualFixturePlan('hisobni 3-2 qil',[],signal),/Qaysi o‘yin/);
@@ -39,6 +44,8 @@ try {
  assert.equal(await contextualFixturePlan('shu Nottingham 5-1 Arsenal 11-tur natijasini saqla',['game-10'],signal),null);
  assert.equal(await contextualFixturePlan('natijani UnknownClub 3-2 qil',['game-10'],signal),null);
  const cases:Array<[string,string,any]>=[
+  ['Nottingham 5–1 Arsenal 11-tur kiritib qo‘y','result_edit',{homeScore:5,awayScore:1,status:'CONFIRMED'}],
+  ['Arsenal 1−5 Nottingham 11-tur saqla','result_edit',{homeScore:5,awayScore:1,status:'CONFIRMED'}],
   ['Nottingham 5-1 Arsenal 11-tur natijasini kirit','result_edit',{homeScore:5,awayScore:1,status:'CONFIRMED'}],
   ['Nottingham 5-1 Arsenal 11 tur buni kiritib qoygin','result_edit',{homeScore:5,awayScore:1,status:'CONFIRMED'}],
   ['Arsenal 1-5 Nottingham 11-tur natijasini saqla','result_edit',{homeScore:5,awayScore:1,status:'CONFIRMED'}],
@@ -91,6 +98,8 @@ try {
  }
  const scorePreview=describeAiAdminPlan({action:'result_edit',targetId:'forest-11',body:{homeScore:5,awayScore:1}},'Nottingham Forest — Arsenal, Premier League, Matchday 11, SCHEDULED');
  assert.match(scorePreview,/Nottingham Forest 5:1 Arsenal/);assert.match(scorePreview,/G‘olib: Nottingham Forest/);
+ await assert.rejects(validateModelAdminPlan({action:'result_clear',targetId:'forest-11',body:{}},'Arsenal Nottingham Angliya Kubogi 11-tur natijasini ochir',signal),/turnir yoki bosqich/);
+ await assert.rejects(validateModelAdminPlan({action:'result_clear',targetId:'forest-11',body:{}},'Arsenal Nottingham yarim final natijasini ochir',signal),/turnir yoki bosqich/);
  const wrongModel:AdminPlan={action:'result_edit',targetId:'forest-11',body:{homeScore:1,awayScore:5,status:'CONFIRMED'}};
  await validateModelAdminPlan(wrongModel,'Nottingham 5-1 Arsenal 11 tur buni kiritib qoygin',signal);
  assert.deepEqual(wrongModel.body,{homeScore:5,awayScore:1,status:'CONFIRMED'},'Model score order cannot override explicit named teams');

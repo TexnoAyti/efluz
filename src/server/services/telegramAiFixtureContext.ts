@@ -8,8 +8,8 @@ import type { Club } from '../../types';
 /** Only an explicit follow-up may use a uniquely selected, freshly re-read fixture. */
 export async function contextualFixturePlan(text:string, fixtureIds:string[], signal:AbortSignal):Promise<AdminPlan|null> {
   const q=normalizeAiEntity(text);
-  if(!/^(?:endi\s+)?(?:shu|osha|uning|uni|hisobni|natijani)\b/.test(q))return null;
-  if(q.split(' ').some(word=>!/^\d+$/.test(word)&&!/^(?:endi|shu|osha|uning|uni|buni|oyin\w*|uchrashuv\w*|hisob\w*|natija\w*|qil\w*|qoy\w*|kirit\w*|ozgartir\w*|saqla\w*|tasdiqla\w*|ochir\w*|och\w*|qayta|rad|et\w*|iltimos)$/.test(word)))return null;
+  if(!/^(?:endi\s+)?(?:shu|osha|uning|uni|shuni|buni|hisobni|natijani)\b/.test(q))return null;
+  if(q.split(' ').some(word=>!/^\d+$/.test(word)&&!/^(?:endi|shu|shuni|osha|uning|uni|buni|faqat|oyin\w*|uchrashuv\w*|hisob\w*|natija\w*|qil\w*|qoy\w*|kirit\w*|ozgartir\w*|saqla\w*|tasdiqla\w*|ochir\w*|och\w*|qayta|rad|et\w*|iltimos)$/.test(word)))return null;
   const action=detectNaturalAdminAction(text);
   if(!action || !['result_edit','result_approve','result_clear','result_reject','fixture_reopen'].includes(action))return null;
   const reader=createAiTournamentReader(signal);

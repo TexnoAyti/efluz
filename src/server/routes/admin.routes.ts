@@ -905,6 +905,7 @@ adminRouter.post('/disputes/:id/resolve', validateBody(resolveDisputeSchema), as
       success: true,
       message: 'Dispute resolved successfully.',
       dispute: result.dispute,
+      fixture: result.fixture,
     });
   } catch (err: any) {
     handleFirestoreError(res, err, `POST /api/admin/disputes/${disputeId}/resolve`);

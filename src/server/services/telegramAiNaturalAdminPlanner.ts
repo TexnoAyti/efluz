@@ -46,7 +46,7 @@ async function userId(text: string, deps: NaturalPlannerDependencies): Promise<s
 
 /** Score order always follows the two explicitly named clubs, even with a fixture ID. */
 export function resolveAdminScore(text: string, clubs: Club[], fixture: {homeClubId:string;awayClubId:string}) {
-  const scores = [...text.matchAll(/\b(\d{1,2})\s*[:-]\s*(\d{1,2})\b/g)];
+  const scores = [...text.matchAll(/\b(\d{1,2})\s*[:–—−-]\s*(\d{1,2})\b/g)];
   if (scores.length !== 1) clarify('Qaysi hisobni saqlay yoki tasdiqlay? Masalan: “Inter — Milan 10-tur natijasini 2-1 qil”.');
   if (clubs.length !== 2 || new Set(clubs.map(c=>c.id)).size !== 2 || !clubs.every(c=>[fixture.homeClubId,fixture.awayClubId].includes(c.id)))
     clarify('Hisobni qaysi jamoaga tegishli ekanini aniqlash uchun ikkala jamoa nomini yozing. Masalan: “Nottingham Forest 5-1 Arsenal 11-tur natijasini kirit”.');
@@ -59,7 +59,7 @@ export function resolveAdminScore(text: string, clubs: Club[], fixture: {homeClu
 export async function planNaturalAdminRequest(text: string, deps: NaturalPlannerDependencies): Promise<AdminPlan|null> {
   text = text.replace(/^\/ai_(?:admin|read)(?:@[A-Za-z0-9_]+)?\s*/i, '');
   const action = detectNaturalAdminAction(text);
-  if (!action) return null;
+  if (!action || ['dispute_resolve', 'submission_delete', 'no_show_resolve'].includes(action)) return null;
   const clean = maskUser(text).replace(/"[^"]*"|“[^”]*”/g, ' ').split(/(?:sarlavha|matn|sabab|izoh)\s*:/i)[0];
   const q = normalizeAiEntity(clean), note = reason(text);
   const make = (action: string, targetId?: string, body: Record<string,unknown> = {}) => adminPlanSchema.parse({ action, ...(targetId ? { targetId } : {}), body });
