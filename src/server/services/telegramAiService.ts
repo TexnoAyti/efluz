@@ -1,5 +1,6 @@
 import { getAiRedisClient, withinAiDeadline } from './telegramAiDeadline';
 import { getDeliveredAiAdminDraft, rememberDeliveredAiAdminDraft } from './telegramAiAdminDraft';
+import { continueAiAdminClarification } from './telegramAiAdminClarification';
 /**
  * Telegram AI Assistant Main Orchestration Service
  *
@@ -493,6 +494,7 @@ export async function handleTelegramAiMessage(
   const owner = isAiAdminActor(payload.fromUser.id);
   const replyConfirmation = Boolean(payload.replyToMessage && /^(?:ha|xa|yes|xop)$/i.test(payload.text.trim()));
   let ownerControl = owner && (isAiAdminCommand(payload.text) || ['admin','confirm','cancel','help'].includes(intent) || replyConfirmation);
+  let nativeClarification = false;
   const rootController = new AbortController();
   const deadlineAt = Date.now() + (owner ? 30000 : GLOBAL_TIMEOUT_MS);
   const globalTimeout = setTimeout(() => rootController.abort(), owner ? 30000 : GLOBAL_TIMEOUT_MS);
@@ -517,8 +519,13 @@ export async function handleTelegramAiMessage(
       return { ok: true, handled: false, ignored: 'topic_not_authorized' };
     }
 
-    if (owner && intent === 'chat' && await getDeliveredAiAdminDraft(payload, rootController.signal)) {
-      intent = 'admin'; ownerControl = true;
+    if (owner && ['chat', 'fixtures', 'standings'].includes(intent)) {
+      const draft = await getDeliveredAiAdminDraft(payload, rootController.signal);
+      const continuation = draft ? continueAiAdminClarification(draft, payload.text) : null;
+      if (continuation) {
+        intent = 'admin'; ownerControl = true;
+        nativeClarification = Boolean(detectNaturalAdminAction(continuation) || isSimpleConversationMatchdayRequest(continuation) || isSimpleConversationClubAssignmentRequest(continuation));
+      }
     }
     // 5. Initial delivery check: prevent duplicate processing on webhook retry
     const initDelivery = await claimDeliveryState(payload.updateId, 'pending', { signal: rootController.signal });
@@ -538,7 +545,7 @@ export async function handleTelegramAiMessage(
       userLimitPerMin: ownerControl ? 20 : config.rateLimitUserPerMin,
       topicLimitPerMin: ownerControl ? 20 : config.rateLimitTopicPerMin,
       control: ownerControl,
-      countDaily: ownerControl ? /^\/ai_admin(?:@[a-zA-Z0-9_]+)?\s+(?!\{)/i.test(payload.text) && !(isSimpleConversationMatchdayRequest(payload.text) || isSimpleConversationClubAssignmentRequest(payload.text) || detectNaturalAdminAction(payload.text)) || /^\/ai_read(?:@[a-zA-Z0-9_]+)?\s+(?!\{)/i.test(payload.text) && !detectNaturalAdminAction(payload.text) || intent === 'admin' && !(isSimpleConversationMatchdayRequest(payload.text) || isSimpleConversationClubAssignmentRequest(payload.text) || detectNaturalAdminAction(payload.text)) : intent === 'chat' && !isPersonalFixtureQuestion(payload.text) && !replyConfirmation && !/^\//.test(payload.text),
+      countDaily: nativeClarification ? false : ownerControl ? /^\/ai_admin(?:@[a-zA-Z0-9_]+)?\s+(?!\{)/i.test(payload.text) && !(isSimpleConversationMatchdayRequest(payload.text) || isSimpleConversationClubAssignmentRequest(payload.text) || detectNaturalAdminAction(payload.text)) || /^\/ai_read(?:@[a-zA-Z0-9_]+)?\s+(?!\{)/i.test(payload.text) && !detectNaturalAdminAction(payload.text) || intent === 'admin' && !(isSimpleConversationMatchdayRequest(payload.text) || isSimpleConversationClubAssignmentRequest(payload.text) || detectNaturalAdminAction(payload.text)) : intent === 'chat' && !isPersonalFixtureQuestion(payload.text) && !replyConfirmation && !/^\//.test(payload.text),
       maxDailyRequests: config.maxDailyRequests,
       signal: rootController.signal,
     });

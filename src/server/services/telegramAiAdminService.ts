@@ -3,6 +3,7 @@ import { buildConversationTableReply } from './telegramAiConversationCommands';
 import { contextualFixturePlan } from './telegramAiFixtureContext';
 import { parseNaturalAdminPlan } from './telegramAiNaturalAdminPlanner';
 import { getDeliveredAiAdminDraft, saveAiAdminDraft, clearAiAdminDraft } from './telegramAiAdminDraft';
+import { continueAiAdminClarification } from './telegramAiAdminClarification';
 import { createAiSnapshotReader } from './telegramAiSnapshotReader';
 import { getAdminUserDirectory } from './adminUserDirectory';
 import { assertSingleNaturalAdminRequest } from './telegramAiAdminLanguage';
@@ -197,8 +198,9 @@ export async function handleAiAdminCommand(payload: TelegramAiMessagePayload, si
   const intent = getConversationIntent(payload.text);
   let command = match ? match[1].toLowerCase() : intent === 'confirm' || /^(?:ha|xa|yes|xop)$/i.test(payload.text.trim()) && payload.replyToMessage ? 'confirm' : intent === 'cancel' ? 'cancel' : intent === 'help' ? 'actions' : intent === 'admin' ? 'admin' : '';
   let argument = match ? match[2]?.trim() || '' : command === 'admin' ? payload.text : '';
-  const draft = !command && intent === 'chat' ? await getDeliveredAiAdminDraft(payload, signal) : null;
-  if (draft) { command = 'admin'; argument = `${draft.request}\nAniqlashtirish javobi: ${payload.text}`; }
+  const draft = !command ? await getDeliveredAiAdminDraft(payload, signal) : null;
+  const continuation = draft ? continueAiAdminClarification(draft, payload.text) : null;
+  if (continuation) { command = 'admin'; argument = continuation; }
   if (!command) return 'Nima qilishimni oddiy yozing. Masalan: “La Liga jadvalini tashla” yoki “La Liga 10-turni qulflang”.';
   try {
     if (command === 'actions' && !isPrimaryOwner(payload.fromUser.id)) return 'Liga va kubok bo‘yicha mavjud admin ruxsatlaringiz doirasida oddiy yozing: natijani kiritish/tasdiqlash, klub biriktirish, turni boshqarish, kubok qur’asini ko‘rish. Har bir o‘zgarish avval reja va sizning tasdig‘ingizni talab qiladi. Xavfli va umumiy tizim amallari faqat asosiy admin uchun.';
@@ -236,8 +238,10 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
       return `HTTP ${result.status}\n${JSON.stringify(result.data).slice(0, 850)}\nKatta ro‘yxat uchun search/page/limit filtrlarini body ichida kiriting.`;
     }
     if (command === 'confirm' || command === 'cancel') {
+      const cancelledDraft = command === 'cancel' ? await getDeliveredAiAdminDraft(payload, signal) : null;
       await clearAiAdminDraft(payload, signal);
       if (!argument && !match) argument = await getLatestDeliveredPlanToken(payload, signal) || '';
+      if (!argument && command === 'cancel' && cancelledDraft) return 'Topshiriq bekor qilindi. Hech narsa o‘zgarmadi.';
       if (!argument && !match) return 'Tasdiqlanadigan reja topilmadi. Avval nima qilishimni yozing; reja yuborsam uni tasdiqlang.';
       if (!/^[a-f0-9]{24}$/.test(argument)) return 'Tasdiqlash yoki bekor qilish uchun reja kodini aynan yuboring.';
       const record = await loadPending(argument, signal);

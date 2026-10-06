@@ -38,6 +38,7 @@ export function detectNaturalAdminAction(text: string): string|null {
     if (remove) return 'result_clear';
     if (/\brad et\w*\b/.test(q)) return 'result_reject';
     if (/\btasdiqla\w*\b/.test(q)) return 'result_approve';
+    if (/\b(?:kirit\w*|saqla\w*|yoz\w*|ozgartir\w*|qil\w*)\b/.test(q)) return 'result_edit';
   }
   if (/\b\d{1,2}\s*[:-]\s*\d{1,2}\b/.test(command) && !/\d{4}-\d{2}-\d{2}T/.test(command) && /\b(?:qil\w*|qoy\w*|saqla\w*|kirit\w*|qosh\w*|yoz\w*|ozgartir\w*|tasdiqla\w*)\b/.test(q)) return /tasdiqla/.test(q) ? 'result_approve' : 'result_edit';
   if (/\b(?:oyin\w*|uchrashuv\w*)\b/.test(q)) {
