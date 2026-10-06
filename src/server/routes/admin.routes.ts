@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { readSharedAdminData } from '../services/adminReviewCache';
 import { canUseDangerZone, isLeagueAdmin, permittedAdminLeagues } from '../../lib/adminPermissions';
 import { matchesUserSearch } from '../../lib/userSearch';
 import { getAdminUserDirectory, resolveAdminUserReference } from '../services/adminUserDirectory';
@@ -279,85 +281,81 @@ adminRouter.get('/overview', async (req: Request, res: Response) => {
   const seasonId = (req.query.seasonId as string) || 'season-2026-27';
   recordEndpointCall('/api/admin/overview', 'ADMIN', 1);
 
-  const cacheKey = `firestore:admin_overview:${seasonId}`;
-  const cached = getFromCache<any>(cacheKey);
-  if (cached) {
-    res.json(cached);
-    return;
-  }
-
-  if (!firestoreCircuitBreaker.canExecute()) {
-    const fallback = getFallbackAdminOverview(seasonId);
-    setInCache(cacheKey, fallback, 60000);
-    res.json(fallback);
-    return;
-  }
-
   try {
-    const status = getFirebaseStatus();
-    const db = getFirestoreDb();
-
-    // Bounded queries with limits
-    const [usersCountSnap, occCountSnap, competitions, disputes, auditLogs, pendingData] = await Promise.all([
-      db.collection(COLLECTIONS.USERS).count().get().catch(() => null),
-      db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where('seasonId', '==', seasonId).where('status', '==', 'active').count().get().catch(() => null),
-      getAllCompetitionsFirestore(seasonId).catch(() => []),
-      getDisputes('OPEN').catch(() => []),
-      getAuditLogs(10).catch(() => []),
-      getPendingResultsFirestore(seasonId).catch(() => ({ pendingFixtures: [], total: 0 })),
-    ]);
-
-    const registeredUsers = usersCountSnap?.data().count ?? 0;
-    const activeOccupancies = occCountSnap?.data().count ?? 0;
-
-    const domesticLeagues = competitions.filter((c) => String(c.type) === 'LEAGUE' || String(c.type) === 'league');
-    const domesticCups = competitions.filter((c) => String(c.type) === 'DOMESTIC_CUP' || String(c.type) === 'cup');
-    const europeanComps = competitions.filter(
-      (c) => ['EUROPEAN_LEAGUE_PHASE', 'champions_league', 'europa_league', 'conference_league'].includes(String(c.type))
-    );
-
-    const payload = {
-      season: {
-        id: seasonId,
-        name: '2026/27 Season',
-        status: 'ACTIVE',
-      },
-      counts: {
-        totalClubs: 96,
-        occupiedClubs: activeOccupancies,
-        availableClubs: Math.max(0, 96 - activeOccupancies),
-        domesticLeaguesCount: 5,
-        domesticCupsCount: domesticCups.length,
-        europeanCompetitionsCount: europeanComps.length,
-        totalCompetitions: competitions.length,
-        totalUsers: registeredUsers,
-        registeredUsers,
-        activeOccupancies,
-        openDisputes: disputes.length,
-        pendingResultConfirmations: pendingData.total,
-        recentAuditLogs: auditLogs.length,
-      },
-      systemHealth: {
-        projectId: status.projectId,
-        databaseId: status.databaseId,
-        connected: true,
-        authMode: status.authMode,
-        timestamp: new Date().toISOString(),
-      },
-      openDisputes: disputes.slice(0, 10),
-      pendingFixturesPreview: pendingData.pendingFixtures.slice(0, 5),
-      source: 'firestore',
-      degraded: false,
-      stale: false,
-      generatedAt: new Date().toISOString(),
-    };
-
-    setInCache(cacheKey, payload, 60000); // 60s cache
+    const payload = await readSharedAdminData(`efluz:v1:admin:overview:${seasonId}`, async () => {
+      if (!firestoreCircuitBreaker.canExecute()) return getFallbackAdminOverview(seasonId);
+      const status = getFirebaseStatus();
+      const db = getFirestoreDb();
+  
+      let countsUnavailable = false;
+      const count = async (collection: string, query: any) => {
+        try {
+          const snap = await query.count().get();
+          trackFirestoreAggregation(collection, Math.max(1, Math.ceil(snap.data().count / 1000)), 'adminOverview');
+          return snap;
+        } catch (error) { countsUnavailable = true; firestoreCircuitBreaker.recordFailure(error); return null; }
+      };
+      // Bounded queries with limits
+      const [usersCountSnap, occCountSnap, competitions, disputes, auditLogs, pendingData] = await Promise.all([
+        count(COLLECTIONS.USERS, db.collection(COLLECTIONS.USERS)),
+        count(COLLECTIONS.CLUB_OCCUPANCIES, db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where('seasonId', '==', seasonId).where('status', '==', 'active')),
+        getAllCompetitionsFirestore(seasonId).catch(() => { countsUnavailable = true; return []; }),
+        getDisputes('OPEN').catch(() => { countsUnavailable = true; return []; }),
+        getAuditLogs(10).catch(() => { countsUnavailable = true; return []; }),
+        getPendingResultsFirestore(seasonId).catch(() => { countsUnavailable = true; return { pendingFixtures: [], total: 0 }; }),
+      ]);
+  
+      const registeredUsers = usersCountSnap?.data().count ?? 0;
+      const activeOccupancies = occCountSnap?.data().count ?? 0;
+  
+      const domesticLeagues = competitions.filter((c) => String(c.type) === 'LEAGUE' || String(c.type) === 'league');
+      const domesticCups = competitions.filter((c) => String(c.type) === 'DOMESTIC_CUP' || String(c.type) === 'cup');
+      const europeanComps = competitions.filter(
+        (c) => ['EUROPEAN_LEAGUE_PHASE', 'champions_league', 'europa_league', 'conference_league'].includes(String(c.type))
+      );
+  
+      const payload = {
+        season: {
+          id: seasonId,
+          name: '2026/27 Season',
+          status: 'ACTIVE',
+        },
+        counts: {
+          totalClubs: 96,
+          occupiedClubs: activeOccupancies,
+          availableClubs: Math.max(0, 96 - activeOccupancies),
+          domesticLeaguesCount: 5,
+          domesticCupsCount: domesticCups.length,
+          europeanCompetitionsCount: europeanComps.length,
+          totalCompetitions: competitions.length,
+          totalUsers: registeredUsers,
+          registeredUsers,
+          activeOccupancies,
+          openDisputes: disputes.length,
+          pendingResultConfirmations: pendingData.total,
+          recentAuditLogs: auditLogs.length,
+        },
+        systemHealth: {
+          projectId: status.projectId,
+          databaseId: status.databaseId,
+          connected: true,
+          authMode: status.authMode,
+          timestamp: new Date().toISOString(),
+        },
+        openDisputes: disputes.slice(0, 10),
+        pendingFixturesPreview: pendingData.pendingFixtures.slice(0, 5),
+        source: 'firestore',
+        degraded: countsUnavailable || !firestoreCircuitBreaker.canExecute(),
+        stale: countsUnavailable || !firestoreCircuitBreaker.canExecute(),
+        generatedAt: new Date().toISOString(),
+      };
+  
+      return payload;
+    }, 60);
     res.json(payload);
   } catch (err: any) {
     firestoreCircuitBreaker.recordFailure(err);
     const fallback = getFallbackAdminOverview(seasonId);
-    setInCache(cacheKey, fallback, 60000);
     res.status(200).json(fallback);
   }
 });
@@ -535,11 +533,15 @@ adminRouter.delete('/fixtures/:id', validateBody(adminDeleteFixtureSchema), asyn
 adminRouter.get('/submissions', async (req: Request, res: Response) => {
   const fixtureId = req.query.fixtureId as string | undefined;
   const userId = req.query.userId as string | undefined;
-  const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 100;
+  const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit || ''), 10) || 100));
 
   try {
-    const submissions = await getResultSubmissions({ fixtureId, userId, limit });
-    res.json({ submissions, total: submissions.length, source: 'firestore', degraded: false, stale: false });
+    const signature = createHash('sha256').update(JSON.stringify([fixtureId || null, userId || null, limit])).digest('hex');
+    const payload = await readSharedAdminData('efluz:v1:admin:submissions:' + signature, async () => {
+      const submissions = await getResultSubmissions({ fixtureId, userId, limit });
+      return { submissions, total: submissions.length, source: 'firestore', degraded: false, stale: false };
+    });
+    res.json(payload);
   } catch (err: any) {
     firestoreCircuitBreaker.recordFailure(err);
     const submissions = getLocalSubmissions({ fixtureId, userId, limit });
@@ -871,7 +873,7 @@ adminRouter.get('/users', async (req: Request, res: Response) => {
 
 adminRouter.get('/disputes', async (req: Request, res: Response) => {
   const status = (req.query.status as string) || 'OPEN';
-  const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+  const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit || ''), 10) || 50));
 
   if (!firestoreCircuitBreaker.canExecute()) {
     const disputes = getLocalDisputes(status, limit);
@@ -880,8 +882,12 @@ adminRouter.get('/disputes', async (req: Request, res: Response) => {
   }
 
   try {
-    const disputes = await getDisputes(status);
-    res.json({ disputes, source: 'firestore', degraded: false, stale: false });
+    const payload = await readSharedAdminData(`efluz:v1:admin:disputes:${status}:${limit}`, async () => {
+      const disputes = await getDisputes(status, limit);
+      const degraded = !firestoreCircuitBreaker.canExecute();
+      return { disputes, source: degraded ? 'sqlite' : 'firestore', degraded, stale: degraded };
+    });
+    res.json(payload);
   } catch (err: any) {
     firestoreCircuitBreaker.recordFailure(err);
     const disputes = getLocalDisputes(status, limit);
@@ -922,7 +928,7 @@ adminRouter.post('/fixtures/:id/reopen', validateBody(reopenFixtureSchema), asyn
 });
 
 adminRouter.get('/audit-logs', async (req: Request, res: Response) => {
-  const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+  const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit || ''), 10) || 50));
 
   if (!firestoreCircuitBreaker.canExecute()) {
     const rows = queryAll<any>('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT ?', [limit]);
@@ -948,8 +954,8 @@ adminRouter.get('/audit-logs', async (req: Request, res: Response) => {
   }
 
   try {
-    const logs = await getAuditLogs(limit);
-    res.json({ logs, source: 'firestore', degraded: false, stale: false });
+    const payload = await readSharedAdminData(`efluz:v1:admin:audit:${limit}`, async () => ({ logs: await getAuditLogs(limit), source: 'firestore', degraded: false, stale: false }));
+    res.json(payload);
   } catch (err: any) {
     firestoreCircuitBreaker.recordFailure(err);
     const rows = queryAll<any>('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT ?', [limit]);
@@ -1116,7 +1122,7 @@ adminRouter.post('/clubs/:id/assign', async (req: Request, res: Response) => {
 // Results & Pending Workflow Endpoints
 adminRouter.get('/results/pending', async (req: Request, res: Response) => {
   const seasonId = (req.query.seasonId as string) || 'season-2026-27';
-  const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+  const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit || ''), 10) || 50));
 
   if (!firestoreCircuitBreaker.canExecute()) {
     const result = getLocalPendingResults(seasonId, limit);
@@ -1125,8 +1131,12 @@ adminRouter.get('/results/pending', async (req: Request, res: Response) => {
   }
 
   try {
-    const result = await getPendingResultsFirestore(seasonId);
-    res.json({ ...result, source: 'firestore', degraded: false, stale: false });
+    const payload = await readSharedAdminData(`efluz:v1:admin:pending:${seasonId}`, async () => {
+      const result = await getPendingResultsFirestore(seasonId);
+      const degraded = !firestoreCircuitBreaker.canExecute();
+      return { ...result, source: degraded ? 'sqlite' : 'firestore', degraded, stale: degraded };
+    });
+    res.json(payload);
   } catch (err: any) {
     firestoreCircuitBreaker.recordFailure(err);
     const result = getLocalPendingResults(seasonId, limit);
@@ -1615,7 +1625,7 @@ adminRouter.post('/telegram-notifications/broadcasts/:broadcastId/retry-failed',
 });
 
 adminRouter.get('/telegram-notifications/broadcasts', async (req: Request, res: Response) => {
-  const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
+  const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit || ''), 10) || 20));
   try {
     const broadcasts = await getBroadcastHistory(limit);
     res.json({ broadcasts });

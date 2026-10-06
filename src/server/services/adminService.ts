@@ -38,8 +38,8 @@ export async function createAuditLog(
   await createAuditLogFirestore(actorUserId, action, entityType, entityId, oldValue, newValue, ipAddress, actorUsername, notes);
 }
 
-export async function getDisputes(status = 'OPEN'): Promise<Dispute[]> {
-  return await getDisputesFirestore(status);
+export async function getDisputes(status = 'OPEN', limit = 50): Promise<Dispute[]> {
+  return await getDisputesFirestore(status, Math.min(100, Math.max(1, limit)));
 }
 
 export async function resolveDispute(

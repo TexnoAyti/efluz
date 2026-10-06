@@ -132,7 +132,7 @@ export async function listPremiumEntitlements(
     .where('seasonId', '==', seasonId)
     .limit(500)
     .get();
-  trackFirestoreRead(ENTITLEMENTS_COLLECTION, snap.size, 'listPremiumEntitlements');
+  trackFirestoreRead(ENTITLEMENTS_COLLECTION, Math.max(1, snap.size), 'listPremiumEntitlements');
   return snap.docs.map((doc) => ({ id: doc.id, ...(doc.data() as Omit<PremiumEntitlement, 'id'>) }));
 }
 

@@ -1,7 +1,9 @@
+import { createHash } from 'node:crypto';
+import { readSharedAdminData } from './adminReviewCache';
 import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
 import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS } from '../firebase/collections';
-import { enrichFixturesWithAuthoritativeOwners } from '../firebase/firestoreStore';
+import { enrichFixturesWithAuthoritativeOwners, trackFirestoreRead, refreshFixtureMatchdayRules } from '../firebase/firestoreStore';
 import {
   getCompetitionFixturesFromReadModel,
   normalizeFixtureSnapshot,
@@ -38,6 +40,7 @@ async function loadAuthoritativeCupFixtures(competitionId: string, seasonId: str
       .get();
   }
 
+  trackFirestoreRead(COLLECTIONS.FIXTURES, Math.max(1, snap.docs.length), 'myMatches:cupHeal');
   const fixtures = snap.docs
     .map((doc) => normalizeFixtureSnapshot({ id: doc.id, ...doc.data() }, seasonId))
     .filter((fixture) => !fixture.seasonId || fixture.seasonId === seasonId);
@@ -77,19 +80,22 @@ export async function canonicalizeMyDomesticCupFixtures(
   let cupFixtures: Fixture[] = [];
   let degradedCup = false;
   try {
-    const readModel = await getCompetitionFixturesFromReadModel(cupId, { seasonId });
+    const readModel = await getCompetitionFixturesFromReadModel(cupId, { seasonId, allowFirestore: false });
     cupFixtures = readModel.fixtures;
     degradedCup = Boolean(readModel.stale || readModel.degraded);
     // A redraw invalidates Fresh Redis but deliberately preserves LKG. My Matches
     // must not keep serving that old opponent indefinitely, so a stale cup snapshot
     // is healed once from authoritative Firestore and written back to Redis.
     if ((readModel.stale || readModel.degraded) && firestoreCircuitBreaker.getStatus().state === 'CLOSED') {
-      try { cupFixtures = await loadAuthoritativeCupFixtures(cupId, seasonId); degradedCup = false; }
+      try {
+        const signature = createHash('sha256').update(JSON.stringify([seasonId, cupId, readModel.snapshotAt, cupFixtures.map(f => [f.id, f.updatedAt, f.status])])).digest('hex');
+        const healed = await readSharedAdminData('efluz:v1:cup-heal:' + signature, async () => ({ fixtures: await loadAuthoritativeCupFixtures(cupId, seasonId), stale: false, degraded: false, source: 'firestore' }), 60);
+        if (healed.fixtures.length) cupFixtures = healed.fixtures;
+        degradedCup = healed.stale || healed.degraded;
+      }
       catch { /* Keep the last-known cup draw on quota/network failure. */ }
     }
-  } catch {
-    if (firestoreCircuitBreaker.getStatus().state === 'CLOSED') cupFixtures = await loadAuthoritativeCupFixtures(cupId, seasonId).catch(() => []);
-  }
+  } catch { /* Preserve the known fixture list; never scan on every cache miss. */ }
 
   if (cupFixtures.length === 0) return fixtures;
 
@@ -107,12 +113,13 @@ export async function canonicalizeMyDomesticCupFixtures(
       awayClub: canonical.awayClub,
       homeClubId: canonical.homeClubId,
       awayClubId: canonical.awayClubId,
-      isPlayable: degradedCup ? previous?.isPlayable === true : canonical.status === 'SCHEDULED' && Boolean(canonical.homeClubId && canonical.awayClubId),
+      isPlayable: degradedCup ? previous?.isPlayable === true : canonical.isPlayable === true,
       activeMatchday: canonical.matchday,
     } as Fixture;
   });
 
-  const enrichedCup = await enrichFixturesWithAuthoritativeOwners(mergedCup, seasonId).catch(() => mergedCup);
+  const gatedCup = degradedCup ? mergedCup : await refreshFixtureMatchdayRules(mergedCup, seasonId);
+  const enrichedCup = await enrichFixturesWithAuthoritativeOwners(gatedCup, seasonId).catch(() => gatedCup);
   const nonCup = fixtures.filter((fixture) => fixture.competitionId !== cupId);
   return [...nonCup, ...enrichedCup];
 }

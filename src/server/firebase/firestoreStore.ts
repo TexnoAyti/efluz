@@ -1,3 +1,4 @@
+import { invalidateSharedAdminData } from '../services/adminReviewCache';
 import { filterRetiredFixtures, isRetiredFixture, assertFixtureNotRetired, RETIRED_FIXTURES, correctFixtureMatchday, hasFixtureMatchdayCorrection } from '../services/retiredFixtureService';
 import { recordDurableRead } from '../services/durableReadCosts';
 import { resolveMatchdayGate } from '../../lib/matchdayState';
@@ -293,6 +294,7 @@ export function resetReadMetrics(): void {
 }
 
 export function invalidateFirestoreCache(prefix?: string) {
+  if (!prefix || /(?:fixture|comp|admin|dispute|submission|audit|users|occupanc)/.test(prefix)) void invalidateSharedAdminData();
   if (!prefix) {
     serverCache.clear();
     return;
@@ -5033,7 +5035,7 @@ export async function getDisputesFirestore(status = 'OPEN', limitCount = 50): Pr
     for (let i = 0; i < fixtureIds.length; i += 30) {
       const chunk = fixtureIds.slice(i, i + 30);
       try {
-        const fSnap = await db.collection(COLLECTIONS.FIXTURES).where(FirebaseFirestore.FieldPath.documentId(), 'in', chunk).get();
+        const fSnap = await db.collection(COLLECTIONS.FIXTURES).where(FieldPath.documentId(), 'in', chunk).get();
         trackFirestoreRead(COLLECTIONS.FIXTURES, fSnap.empty ? 1 : fSnap.docs.length, 'getDisputesFirestore:fixturesBatch');
         for (const doc of fSnap.docs) {
           const fData = doc.data() as FirestoreFixtureDoc;

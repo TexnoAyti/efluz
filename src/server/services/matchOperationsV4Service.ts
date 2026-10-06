@@ -266,7 +266,7 @@ export async function getAdminMatchOperations(seasonId = 'season-2026-27') {
     db.collection(NO_SHOW_COLLECTION).where('seasonId', '==', seasonId).limit(150).get(),
     getDisputes('OPEN').catch(() => []),
   ]);
-  trackFirestoreRead(NO_SHOW_COLLECTION, noShowSnap.size, 'matchOperationsV4:adminControl:noShows');
+  trackFirestoreRead(NO_SHOW_COLLECTION, Math.max(1, noShowSnap.size), 'matchOperationsV4:adminControl:noShows');
   const noShowReports = noShowSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
   const now = Date.now();
   const hydratedDeadlines = deadlines
@@ -413,7 +413,7 @@ export async function resolveNoShowV4(params: {
   };
   const related = await db.collection(NO_SHOW_COLLECTION).where('fixtureId', '==', report.fixtureId).limit(4).get().catch(() => null);
   if (related) {
-    trackFirestoreRead(NO_SHOW_COLLECTION, related.size, 'matchOperationsV4:resolveNoShow:related');
+    trackFirestoreRead(NO_SHOW_COLLECTION, Math.max(1, related.size), 'matchOperationsV4:resolveNoShow:related');
     const batch = db.batch();
     for (const doc of related.docs) batch.set(doc.ref, resolution, { merge: true });
     await batch.commit();

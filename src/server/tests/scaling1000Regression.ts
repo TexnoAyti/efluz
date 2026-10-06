@@ -68,8 +68,8 @@ export async function runScaling1000Regression() {
   const db = getFirestoreDb();
   const original = db.collection.bind(db);
   let firestoreCalls = 0;
-  db.collection = (() => { firestoreCalls++; throw new Error('WARM_READ_MUST_NOT_ACCESS_FIRESTORE'); }) as any;
-  firestoreCircuitBreaker.forceState('OPEN');
+  db.collection = ((name: string) => { firestoreCalls++; if (firestoreCalls === 1) console.error('[UNEXPECTED_WARM_READ]', name, new Error().stack); throw new Error('WARM_READ_MUST_NOT_ACCESS_FIRESTORE'); }) as any;
+  firestoreCircuitBreaker.forceState('CLOSED');
   const server = createApp().listen(0, '127.0.0.1');
   await once(server, 'listening');
   const base = `http://127.0.0.1:${(server.address() as any).port}`;
@@ -107,7 +107,7 @@ export async function runScaling1000Regression() {
         durations.push(performance.now() - begin);
       }));
     }
-    assert.equal(firestoreCalls, 0, '7000 warm HTTP requests must make zero Firestore collection calls');
+    assert.equal(firestoreCalls, 0, '7000 warm HTTP requests with a CLOSED breaker must make zero Firestore collection calls');
     assert.equal((await fetch(base + '/api/me')).status, 401);
     durations.sort((a, b) => a - b);
     console.log(`PASS scaling HTTP: 1000 signed users on one IP, 96 owners + 904 spectators, 7000 successful requests, zero Firestore calls; local elapsed=${Math.round(performance.now() - started)}ms p95=${Math.round(durations[Math.floor(durations.length * .95)])}ms`);

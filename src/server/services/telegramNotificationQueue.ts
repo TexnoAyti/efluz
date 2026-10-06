@@ -1,3 +1,4 @@
+import { trackFirestoreRead } from '../firebase/firestoreStore';
 import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS, FirestoreClubDoc, FirestoreUserDoc } from '../firebase/collections';
 import { sendTelegramMessage, sendTelegramPhoto } from './telegramBotService';
@@ -216,6 +217,8 @@ export async function syncRecipientDirectory(seasonId = 'season-2026-27'): Promi
       db.collection(COLLECTIONS.USERS).limit(1001).get(),
       db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where('seasonId', '==', seasonId).get(),
     ]);
+    trackFirestoreRead(COLLECTIONS.USERS, Math.max(1, usersSnap.size), 'syncRecipientDirectory:users');
+    trackFirestoreRead(COLLECTIONS.CLUB_OCCUPANCIES, Math.max(1, occSnap.size), 'syncRecipientDirectory:owners');
     if (usersSnap.size > 1000) throw new Error('RECIPIENT_DIRECTORY_TOO_LARGE');
 
     const occupancyMap = new Map<string, { clubId: string; claimedAt: string }>();

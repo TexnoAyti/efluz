@@ -1,5 +1,5 @@
 import { initializeApp, getApps, cert, applicationDefault, App } from 'firebase-admin/app';
-import { getFirestore, Firestore } from 'firebase-admin/firestore';
+import { getFirestore, Firestore, FieldPath } from 'firebase-admin/firestore';
 import fs from 'fs';
 import path from 'path';
 
@@ -318,14 +318,14 @@ function createMemoryFirestore() {
   }
 
   class MemQuery {
-    protected filters: Array<{ field: string; op: string; val: any }> = [];
+    protected filters: Array<{ field: string | FieldPath; op: string; val: any }> = [];
     protected orderBys: Array<{ field: any; dir: 'asc' | 'desc' }> = [];
     protected limitVal: number | null = null;
     protected cursorVal: string | null = null;
 
     constructor(public colName: string) {}
 
-    where(field: string, op: string, val: any) {
+    where(field: string | FieldPath, op: string, val: any) {
       const q = new MemQuery(this.colName);
       q.filters = [...this.filters, { field, op, val }];
       q.orderBys = [...this.orderBys];
@@ -384,7 +384,8 @@ function createMemoryFirestore() {
       // Apply where filters
       for (const f of this.filters) {
         docs = docs.filter((d) => {
-          const val = d.data()[f.field];
+          const documentId = f.field === '__name__' || (f.field instanceof FieldPath && f.field.isEqual(FieldPath.documentId()));
+          const val = documentId ? d.id : d.data()[String(f.field)];
           if (f.op === '==' || f.op === '===') return val === f.val;
           if (f.op === '!=') return val !== f.val;
           if (f.op === '>') return val > f.val;

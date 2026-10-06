@@ -1,3 +1,4 @@
+import { trackFirestoreRead } from '../firebase/firestoreStore';
 import type { Request, Response, NextFunction } from 'express';
 import type { User } from '../../types';
 import { isLeagueAdmin, permittedAdminLeagues, permittedAdminCompetitionIds } from '../../lib/adminPermissions';
@@ -28,6 +29,7 @@ export async function enforceLeagueAdminScope(req: Request, res: Response, next:
   if ((req.method === 'POST' && cupFixtureMatch) || submissionsFixtureId) {
     const fixtureId = submissionsFixtureId || decodeURIComponent(cupFixtureMatch![1]);
     const fixture = await db.collection(COLLECTIONS.FIXTURES).doc(fixtureId).get();
+    trackFirestoreRead(COLLECTIONS.FIXTURES, 1, 'enforceLeagueAdminScope');
     const scope = submissionsFixtureId ? competitionIds : cupIds;
     if (!fixture.exists || !scope.has(fixture.data()!.competitionId)) return deny();
     return next();
@@ -35,28 +37,34 @@ export async function enforceLeagueAdminScope(req: Request, res: Response, next:
   const pairingMatch = path.match(/^\/api\/admin\/cups\/([^/]+)\/bracket\/fixture\/([^/]+)$/);
   if (req.method === 'PATCH' && pairingMatch && cupIds.has(decodeURIComponent(pairingMatch[1]))) {
     const fixture = await db.collection(COLLECTIONS.FIXTURES).doc(decodeURIComponent(pairingMatch[2])).get();
+    trackFirestoreRead(COLLECTIONS.FIXTURES, 1, 'enforceLeagueAdminScope');
     if (!fixture.exists || fixture.data()!.competitionId !== decodeURIComponent(pairingMatch[1])) return deny();
     return next();
   }
   const disputeMatch = path.match(/^\/api\/admin\/disputes\/([^/]+)\/resolve$/);
   if (req.method === 'POST' && disputeMatch) {
     const dispute = await db.collection(COLLECTIONS.DISPUTES).doc(decodeURIComponent(disputeMatch[1])).get();
+    trackFirestoreRead(COLLECTIONS.DISPUTES, 1, 'enforceLeagueAdminScope');
     if (!dispute.exists || typeof dispute.data()!.fixtureId !== 'string') return deny();
     const fixture = await db.collection(COLLECTIONS.FIXTURES).doc(dispute.data()!.fixtureId).get();
+    trackFirestoreRead(COLLECTIONS.FIXTURES, 1, 'enforceLeagueAdminScope');
     if (!fixture.exists || !competitionIds.has(fixture.data()!.competitionId)) return deny();
     return next();
   }
   const clubMatch = path.match(/^\/api\/admin\/clubs\/([^/]+)\/(assign|release)$/);
   if (req.method === 'POST' && clubMatch) {
     const club = await db.collection(COLLECTIONS.CLUBS).doc(decodeURIComponent(clubMatch[1])).get();
+    trackFirestoreRead(COLLECTIONS.CLUBS, 1, 'enforceLeagueAdminScope');
     if (!club.exists || !leagueIds.has(club.data()!.leagueId)) return deny();
     if (clubMatch[2] === 'assign') {
       const { resolveAdminUserReference } = await import('./adminUserDirectory');
       const targetId = await resolveAdminUserReference(String(req.body?.targetUserId || ''));
       req.body.targetUserId = targetId;
       const membership = await db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${String(req.body?.seasonId || 'season-2026-27')}_${targetId}`).get();
+    trackFirestoreRead(COLLECTIONS.USER_MEMBERSHIPS, 1, 'enforceLeagueAdminScope');
       if (membership.exists && membership.data()!.status === 'active') {
         const previous = await db.collection(COLLECTIONS.CLUBS).doc(membership.data()!.clubId).get();
+    trackFirestoreRead(COLLECTIONS.CLUBS, 1, 'enforceLeagueAdminScope');
         if (!previous.exists || !leagueIds.has(previous.data()!.leagueId)) return deny();
       }
     }
@@ -65,6 +73,7 @@ export async function enforceLeagueAdminScope(req: Request, res: Response, next:
   const fixtureMatch = path.match(/^\/api\/admin\/(?:fixtures|results)\/([^/]+)(?:\/(result|delete-result|reopen|approve|reject|deadline|remind))?$/);
   if (fixtureMatch && (req.method === 'POST' || req.method === 'DELETE')) {
     const fixture = await db.collection(COLLECTIONS.FIXTURES).doc(decodeURIComponent(fixtureMatch[1])).get();
+    trackFirestoreRead(COLLECTIONS.FIXTURES, 1, 'enforceLeagueAdminScope');
     if (!fixture.exists || !competitionIds.has(fixture.data()!.competitionId)) return deny();
     return next();
   }

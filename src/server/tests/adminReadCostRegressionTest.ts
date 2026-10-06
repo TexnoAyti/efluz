@@ -67,12 +67,13 @@ if (process.env.REDIS_TEST_PORT) {
     // A held lease must return a marked stale snapshot, never duplicate a DB load.
     const client = getBoundedRedisClient()!;
     const key = 'efluz:v1:test:review-lease';
-    await client.set(key + ':lock', 'another-instance', { ex: 30 });
-    await client.set(key + ':lkg', { savedAt: Date.now(), result: { pendingFixtures: [], submissions: [], disputes: [], stale: false, degraded: false, source: 'firestore' } }, { ex: 300 });
+    const leaseKey = key + ':epoch:' + String(await client.get('efluz:v1:admin:read-epoch') || '0');
+    await client.set(leaseKey + ':lock', 'another-instance', { ex: 30 });
+    await client.set(leaseKey + ':lkg', { savedAt: Date.now(), result: { pendingFixtures: [], submissions: [], disputes: [], stale: false, degraded: false, source: 'firestore' } }, { ex: 300 });
     let duplicate = 0;
     const stale = await readSharedAdminReview(key, async () => { duplicate++; throw Error('MUST_NOT_LOAD'); });
     assert.equal(stale.stale, true); assert.equal(stale.degraded, true); assert.equal(duplicate, 0);
-    await client.del(key + ':lkg');
+    await client.del(leaseKey + ':lkg');
     await assert.rejects(readSharedAdminReview(key, async () => { duplicate++; throw Error('MUST_NOT_LOAD'); }), /ADMIN_REVIEWS_REFRESHING/);
     assert.equal(duplicate, 0);
     firestoreCircuitBreaker.forceState('OPEN');

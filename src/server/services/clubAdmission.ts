@@ -1,3 +1,4 @@
+import { trackFirestoreRead } from '../firebase/firestoreStore';
 import { getFirestoreDb } from '../firebase/admin';
 import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
 import { SEED_LEAGUES } from '../db/seed';
@@ -77,6 +78,7 @@ async function loadClubAdmissionStatus(seasonId: string): Promise<ClubAdmissionS
   let status: ClubAdmissionStatus;
   try {
     const doc = await getFirestoreDb().collection(COLLECTION).doc(seasonId).get();
+    trackFirestoreRead(COLLECTION, 1, 'getClubAdmissionStatus');
     status = admissionStatus(seasonId, doc.data());
     firestoreCircuitBreaker.recordSuccess();
   } catch (error) {

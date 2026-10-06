@@ -1693,7 +1693,7 @@ export async function getCompetitionStandingsFromReadModel(
  */
 export async function getCompetitionFixturesFromReadModel(
   competitionId: string,
-  optionsOrMatchday: number | { matchday?: number; status?: string; seasonId?: string } = {},
+  optionsOrMatchday: number | { matchday?: number; status?: string; seasonId?: string; allowFirestore?: boolean } = {},
   fallbackSeasonId = 'season-2026-27'
 ): Promise<{ fixtures: Fixture[]; source: string; stale: boolean; degraded: boolean; snapshotAt: string }> {
   const options = typeof optionsOrMatchday === 'number'
@@ -1786,7 +1786,7 @@ export async function getCompetitionFixturesFromReadModel(
   // 5. Bounded Firestore query as last online fallback (NEVER a full-season scan!)
   if (rawFixtures.length === 0) {
     const db = getFirestoreDb();
-    if (db && firestoreCircuitBreaker.canExecute()) {
+    if (options.allowFirestore !== false && db && firestoreCircuitBreaker.canExecute()) {
       try {
         let query: FirebaseFirestore.Query = db.collection(COLLECTIONS.FIXTURES)
           .where('seasonId', '==', seasonId)
@@ -1798,7 +1798,7 @@ export async function getCompetitionFixturesFromReadModel(
           query = query.where('status', '==', options.status);
         }
         const snap = await query.get();
-        trackFirestoreRead(COLLECTIONS.FIXTURES, snap.docs.length, 'getCompetitionFixturesBoundedFirestore');
+        trackFirestoreRead(COLLECTIONS.FIXTURES, Math.max(1, snap.docs.length), 'getCompetitionFixturesBoundedFirestore');
         rawFixtures = snap.docs.map((d) => normalizeFixtureSnapshot({ id: d.id, ...d.data() }, seasonId));
         source = 'firestore_bounded';
         stale = false;
