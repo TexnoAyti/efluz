@@ -13,7 +13,8 @@ import { DEFAULT_AI_CONFIG, setTestConfigOverride } from '../services/telegramAi
 import type { AdminPlan } from '../services/telegramAiAdminCatalog';
 
 const season='season-2026-27', serie='comp-serie-a-2026', liga='comp-la-liga-2026', cup='comp-fa-cup-2026', epl='comp-premier-league-2026';
-const comps=[{id:epl,name:'Premier League',type:'LEAGUE',leagueId:'league-premier-league',seasonId:season},{id:serie,name:'Serie A',type:'LEAGUE',leagueId:'league-serie-a',seasonId:season},{id:liga,name:'La Liga',type:'LEAGUE',leagueId:'league-la-liga',seasonId:season},{id:cup,name:'FA Cup',type:'DOMESTIC_CUP',seasonId:season}];
+const copa='comp-copa-del-rey-2026';
+const comps=[{id:epl,name:'Premier League',type:'LEAGUE',leagueId:'league-premier-league',seasonId:season},{id:serie,name:'Serie A',type:'LEAGUE',leagueId:'league-serie-a',seasonId:season},{id:liga,name:'La Liga',type:'LEAGUE',leagueId:'league-la-liga',seasonId:season},{id:cup,name:'FA Cup',type:'DOMESTIC_CUP',seasonId:season},{id:copa,name:'Copa del Rey',type:'DOMESTIC_CUP',seasonId:season}];
 // Roster order deliberately differs from user-specified score order.
 const clubs=[{id:'club-arsenal',name:'Arsenal',shortName:'ARS',leagueId:'league-premier-league'},{id:'club-nottm-forest',name:'Nottingham Forest',shortName:'NFO',leagueId:'league-premier-league'},{id:'club-milan',name:'AC Milan',leagueId:'league-serie-a'},{id:'club-inter',name:'Inter Milan',leagueId:'league-serie-a'},{id:'club-heidenheim',name:'1. FC Heidenheim',leagueId:'league-bundesliga'}];
 const fixtures=[1,10].map(matchday=>({id:'game-'+matchday,competitionId:serie,seasonId:season,matchday,status:'CONFIRMED',homeClubId:'club-milan',awayClubId:'club-inter',homeClubName:'AC Milan',awayClubName:'Inter Milan',homeScore:0,awayScore:1}));
@@ -78,6 +79,7 @@ try {
   ['Angliya Kubogi o‘yinlarini yarat','cup_preview',{}],
   ['Angliya Kubogi juftliklarini moslashtir','cup_reconcile',{}],
   ['Angliya Kubogini keyingi bosqichga o‘tkaz','cup_advance',{}],
+  ['Ispaniya Kubogi start ber','cup_round',{roundNumber:1,action:'OPEN'}],
   ['FA Cup 2-bosqichni och','cup_round',{roundNumber:2,action:'OPEN'}],
   ['La Liga 11-turni hozir och 24 soat','matchday_open_now',{matchday:11,durationHours:24}],
   ['La Liga 10-turni tanla','matchday_control',{action:'SELECT',matchday:10}],

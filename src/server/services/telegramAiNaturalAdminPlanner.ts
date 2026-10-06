@@ -184,10 +184,10 @@ export async function planNaturalAdminRequest(text: string, deps: NaturalPlanner
   if (action === 'cup_round') {
     if (['LEAGUE','EUROPEAN_LEAGUE_PHASE'].includes(comp.type)) clarify('Bosqichni ochish/qulflash uchun kubok nomini yozing.');
     const round = /\b(?:bosqich|round)\s*(\d{1,2})\b|\b(\d{1,2})\s*(?:-?bosqich\w*|round)\b/.exec(q);
-    if (!round) clarify('Qaysi kubok bosqichi? Masalan: “FA Cup 2-bosqichni och”.');
-    const roundNumber = Number(round[1] || round[2]);
+    const roundNumber = round ? Number(round[1] || round[2]) : /start\s*ber|boshlab\s*ber/.test(q) ? 1 : NaN;
+    if (!Number.isInteger(roundNumber)) clarify('Qaysi kubok bosqichi? Masalan: “FA Cup 2-bosqichni och”. “Start ber” birinchi bosqichni ochadi.');
     if (roundNumber < 1 || roundNumber > 20) clarify('Bosqich raqami 1–20 orasida bo‘lsin.');
-    const actionName = /qulf/.test(q) ? 'LOCK' : /och/.test(q) ? 'OPEN' : null;
+    const actionName = /qulf/.test(q) ? 'LOCK' : /och|start\s*ber|boshlab\s*ber/.test(q) ? 'OPEN' : null;
     if (!actionName) clarify('Bosqichni “och” yoki “qulfla” deb aniq yozing.');
     return make(action, comp.id, { roundNumber, action: actionName });
   }
