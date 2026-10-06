@@ -1,5 +1,20 @@
 import { normalizeAiEntity } from './telegramAiEntities';
 
+function adminCommandText(text: string): string {
+  return normalizeAiEntity(text.replace(/^\/ai_(?:admin|read)(?:@[A-Za-z0-9_]+)?\s*/i, '')
+    .replace(/@\s*[A-Za-z0-9_]+/g, ' ').replace(/"[^"]*"|“[^”]*”/g, ' ')
+    .split(/(?:sarlavha|matn|sabab|izoh)\s*:/i)[0].replace(/[;\n]+/g, ' keyin '));
+}
+
+/** Applies before EVERY native write parser, including club assignment. */
+export function assertSingleNaturalAdminRequest(text: string): void {
+  const q = adminCommandText(text);
+  if (/\b(?:qilma\w*|ochirma\w*|yuborma\w*|biriktirma\w*|berma\w*|ulama\w*|boshatma\w*|chiqarma\w*|otkazma\w*|yozma\w*)\b/.test(q) ||
+      /\b(?:ochir|blokla|ber|yubor|biriktir|qulfla|yarat|hisobla|boshat|chiqar|ula|otkaz)\w*\b.*\b(?:va|keyin|song|hamda)\s+.*\b(?:ochir|blokla|ber|yubor|biriktir|qulfla|yarat|boshat|chiqar|ula|otkaz)\w*\b/.test(q)) {
+    throw new Error('CLARIFY:Bitta aniq amalni yozing. Bir nechta yoki inkor qilingan amalni birgalikda bajarmayman.');
+  }
+}
+
 /** Ordered explicit intents; score removal always precedes match deletion. */
 export function detectNaturalAdminAction(text: string): string|null {
   const command = text.replace(/^\/ai_(?:admin|read)(?:@[A-Za-z0-9_]+)?\s*/i, '').replace(/"[^"]*"|“[^”]*”/g, ' ').split(/(?:sarlavha|matn|sabab|izoh)\s*:/i)[0];
@@ -27,9 +42,12 @@ export function detectNaturalAdminAction(text: string): string|null {
     if (/muddat\w*|deadline/.test(q) && /ozgartir|belgila/.test(q)) return 'fixture_deadline';
     if (/yarat\w*|generatsiya qil/.test(q)) return 'fixtures_generate';
   }
-  if (/\b(?:klub\w*|jamoa\w*)\b/.test(q) && /\b(?:boshat\w*|egasidan ol\w*|biriktirishni bekor qil)\b/.test(q)) return 'club_release';
+  if (/\b(?:boshat\w*|egasidan ol\w*|biriktirishni bekor qil\w*)\b/.test(q) ||
+      /\b(?:klubdan|jamoadan|klubidan|jamoasidan|klub egasini|jamoa egasini)\b/.test(q) && /\b(?:chiqar\w*|ol\w*|ochir\w*)\b/.test(q) ||
+      /\b(?:egasini|egasidan|egaligini|biriktirishni)\b/.test(q) && remove) return 'club_release';
   if (/\bblokdan chiqar\w*\b/.test(q)) return 'user_unsuspend';
   if (/\bblokla\w*\b/.test(q)) return 'user_suspend';
+  if (/@\s*[A-Za-z0-9_]+|\buser-\d+\b/.test(command) && /\bchiqar\w*\b/.test(q)) return 'club_release';
   if (/\badmin\w*\b/.test(q) && /\b(?:qil\w*|ber\w*|ol\w*|ochir\w*|bekor qil\w*)\b/.test(q)) return remove || /\bol\w*\b/.test(q) ? 'user_role_remove' : 'user_role';
   if (/\bpremium\w*\b/.test(q) && /\b(?:ber\w*|ula\w*|ol\w*|ochir\w*|bekor qil\w*)\b/.test(q)) return remove || /\bol\w*\b/.test(q) ? 'premium_revoke' : 'premium_grant';
   if (/\bfoydalanuvchi\w*\b/.test(q) && remove) return 'user_delete';
@@ -48,5 +66,11 @@ export function detectNaturalAdminAction(text: string): string|null {
   if (/\b(?:keyingi|yangi) mavsum\w*\b/.test(q) && /yarat/.test(q)) return 'season_rollover';
   if (/\b(?:deadline|muddat\w*)\b/.test(q) && /tekshir/.test(q)) return 'deadline_sweep';
   if (/\b(?:xabarnoma\w*|bildirishnoma\w*|notifikatsiya\w*|notification\w*)\b/.test(q) && /navbat\w*/.test(q) && /qayta yubor|ishla|yubor/.test(q)) return 'notification_queue';
+  // Native ownership commands do not need a model to interpret Uzbek suffixes.
+  // Other nouns (premium/admin/results/messages) have already won above.
+  if (/\bbiriktir\w*\b/.test(q) && !/\bbiriktirish\w*\b/.test(q) ||
+      /@\s*[A-Za-z0-9_]+|\buser-\d+\b/.test(command) && /\b(?:ber\w*|ula\w*|tayinla\w*|otkaz\w*|yoz\w*)\b/.test(q)) return 'club_assign';
+  // "Arsenalni o‘chir" is ambiguous: never silently delete a club or release it.
+  if (remove) return 'club_remove_clarify';
   return null;
 }

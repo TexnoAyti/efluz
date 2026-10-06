@@ -48,7 +48,7 @@ export function describeAiAdminPlan(plan: AdminPlan, label = ''): string {
     return `${target}: ${b.matchday || b.roundNumber}-turni ${verbs[String(b.action)] || String(b.action)}${b.durationHours ? ', ' + b.durationHours + ' soat' : ''}.`;
   }
   if (plan.action === 'club_assign') return `${target} klubini ${String(b.targetUserId)} ga biriktirish.`;
-  if (plan.action === 'club_release') return `${target} klubini egasidan bo‘shatish.`;
+  if (plan.action === 'club_release') return `${target} klubini egasidan bo‘shatish.${b.expectedOwnerUserId ? ' Foydalanuvchi: ' + b.expectedOwnerUserId + '.' : ''}\nKlub, o‘yinlar va natijalar saqlanadi.`;
   if (['result_edit','result_approve'].includes(plan.action)) {
     const teams = target.split(',')[0].split(' — ');
     const score = teams.length === 2 ? `${teams[0]} ${b.homeScore}:${b.awayScore} ${teams[1]}` : `Uy jamoasi ${b.homeScore}:${b.awayScore} safar jamoasi`;

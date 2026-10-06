@@ -1057,12 +1057,19 @@ adminRouter.post('/clubs/:id/release', async (req: Request, res: Response) => {
   const adminUserId = req.user!.id;
   const clubId = req.params.id;
   const seasonId = (req.body.seasonId as string) || 'season-2026-27';
+  const expectedOwnerUserId = req.body.expectedOwnerUserId;
+  if (expectedOwnerUserId !== undefined && (typeof expectedOwnerUserId !== 'string' || !/^user-\d+$/.test(expectedOwnerUserId))) {
+    res.status(400).json({ error: 'INVALID_EXPECTED_OWNER' }); return;
+  }
 
   try {
-    const result = await adminReleaseClubFirestore(adminUserId, clubId, seasonId);
+    const result = await adminReleaseClubFirestore(adminUserId, clubId, seasonId, { expectedOwnerUserId });
     await invalidateClubReadModels(seasonId).catch(() => {});
     res.json(result);
   } catch (err: any) {
+    if (err.code === 'CLUB_CONFLICT') {
+      res.status(409).json({ error: err.code, message: err.message }); return;
+    }
     handleFirestoreError(res, err, `POST /api/admin/clubs/${clubId}/release`);
   }
 });

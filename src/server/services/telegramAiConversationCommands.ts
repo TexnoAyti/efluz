@@ -1,4 +1,4 @@
-import { detectNaturalAdminAction } from './telegramAiAdminLanguage';
+import { detectNaturalAdminAction, assertSingleNaturalAdminRequest } from './telegramAiAdminLanguage';
 import { normalizeAiEntity, resolveAiClubs } from './telegramAiEntities';
 import { createAiTournamentReader, matchesAiCompetition } from './telegramAiDataService';
 import { detectAiCupStage } from './telegramAiCupStage';
@@ -131,16 +131,18 @@ export function isSimpleConversationMatchdayRequest(text: string): boolean { con
 
 /** Owner assignments are exact, single-target plans, never model guesses. */
 export function isSimpleConversationClubAssignmentRequest(text: string): boolean {
-  return /\bbiriktir(?:ing|ib(?: ber(?:ing)?| qoy(?:ing)?)?)?\b/.test(normalizeAiEntity(text));
+  return detectNaturalAdminAction(text) === 'club_assign';
 }
 export function clubAssignmentPlanFromRoster(text: string, clubs: Club[]): AdminPlan|null {
   if (!isSimpleConversationClubAssignmentRequest(text)) return null;
+  assertSingleNaturalAdminRequest(text);
   const request = text.replace(/^\/ai_admin(?:@[A-Za-z0-9_]+)?\s*/i, '');
   const mentions = [...request.matchAll(/@\s*([A-Za-z0-9_]+)/g)];
-  if (mentions.length !== 1 || !/^[A-Za-z][A-Za-z0-9_]{4,31}$/.test(mentions[0][1]) || /[\p{L}\p{N}_-]/u.test(request.charAt(mentions[0].index! + mentions[0][0].length)))
+  const ids = [...request.matchAll(/\buser-\d+\b/g)];
+  if (mentions.length + ids.length !== 1 || mentions.length && (!/^[A-Za-z][A-Za-z0-9_]{4,31}$/.test(mentions[0][1]) || /[\p{L}\p{N}_-]/u.test(request.charAt(mentions[0].index! + mentions[0][0].length))))
     throw new Error('CLARIFY:Kimga biriktiray? Bitta Telegram @username yozing. Masalan: “@username Heidenheim klubiga biriktir”.');
   // A username such as @inter_fan is not a club name. Never carry an old club into a mutation.
-  const query = request.replace(/@\s*[A-Za-z0-9_]+/g, ' ');
+  const query = request.replace(/@\s*[A-Za-z0-9_]+|\buser-\d+\b/g, ' ');
   const q = normalizeAiEntity(query);
   if (/\b(?:ochir(?:ing)?|olib tashla|blokla|admin qil|premium ber|qulfla|yop|och)\b/.test(q))
     throw new Error('CLARIFY:Bir vaqtning o‘zida bitta amalni bajaraylik. Hozir faqat klub biriktirishni yozing.');
@@ -150,7 +152,7 @@ export function clubAssignmentPlanFromRoster(text: string, clubs: Club[]): Admin
     throw new Error('CLARIFY:' + (resolved.clarification || (resolved.clubs.length > 1
       ? 'Qaysi bitta klubni biriktiray: ' + resolved.clubs.map(c => c.name).join(' yoki ') + '?'
       : 'Qaysi klubga biriktiray? Klub nomini yozing. Masalan: “@username Heidenheim klubiga biriktir”.')));
-  return { action: 'club_assign', targetId: resolved.clubs[0].id, body: { targetUserId: '@' + mentions[0][1] } };
+  return { action: 'club_assign', targetId: resolved.clubs[0].id, body: { targetUserId: ids.length ? ids[0][0] : '@' + mentions[0][1] } };
 }
 export async function parseConversationClubAssignmentPlan(text: string, signal?: AbortSignal): Promise<AdminPlan|null> {
   if (!isSimpleConversationClubAssignmentRequest(text)) return null;

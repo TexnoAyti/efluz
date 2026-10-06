@@ -1,8 +1,8 @@
-import { detectNaturalAdminAction } from './telegramAiAdminLanguage';
+import { detectNaturalAdminAction, assertSingleNaturalAdminRequest } from './telegramAiAdminLanguage';
 import { adminPlanSchema, type AdminPlan } from './telegramAiAdminCatalog';
 import { normalizeAiEntity, resolveAiClubs } from './telegramAiEntities';
 import { createAiTournamentReader } from './telegramAiDataService';
-import { findConversationCompetitions, requestedMatchday } from './telegramAiConversationCommands';
+import { findConversationCompetitions, requestedMatchday, clubAssignmentPlanFromRoster } from './telegramAiConversationCommands';
 import { detectAiCupStage } from './telegramAiCupStage';
 import { createAiSnapshotReader } from './telegramAiSnapshotReader';
 import { getAdminUserDirectory } from './adminUserDirectory';
@@ -67,8 +67,7 @@ export async function planNaturalAdminRequest(text: string, deps: NaturalPlanner
     return make(action, undefined, action === 'users' ? { limit: 10, ...(search ? { search } : {}) } : {});
   }
   // Explicitly contradictory or multiple writes must not silently become the first action.
-  if (/\b(?:qilma\w*|ochirma\w*|yuborma\w*|biriktirma\w*)\b/.test(q) || /\b(?:ochir|blokla|ber|yubor|biriktir|qulfla|yarat|hisobla)\w*\b.*\b(?:va|keyin|song)\s+.*\b(?:ochir|blokla|ber|yubor|biriktir|qulfla|yarat)\w*\b/.test(q))
-    clarify('Bitta aniq amalni yozing. Bir nechta yoki inkor qilingan amalni birgalikda bajarmayman.');
+  assertSingleNaturalAdminRequest(text);
   if (['user_role','user_role_remove','user_suspend','user_unsuspend','user_delete','premium_grant','premium_revoke'].includes(action)) {
     const id = await userId(text, deps);
     const expectedUsername = /@\s*([A-Za-z0-9_]+)/.exec(text)?.[1];
@@ -114,13 +113,31 @@ export async function planNaturalAdminRequest(text: string, deps: NaturalPlanner
     if (!audience) clarify('Kimga yuboray: hammaga, klub egalariga, qaysi liga egalariga yoki bitta @username ga?');
     return make('broadcast', undefined, { title, body, targetAudience: audience, ...(audience === 'LEAGUE_OWNERS' ? { targetLeagueId: leagues[0].leagueId } : {}) });
   }
-  const needsClubs = action === 'club_release' || action.startsWith('result_') || action.startsWith('fixture_');
-  const clubs: Club[] = needsClubs ? await pages(deps.read, { dataset: 'clubs' }) : [];
+  const needsClubs = action === 'club_assign' || action === 'club_release' || action === 'club_remove_clarify' || action.startsWith('result_') || action.startsWith('fixture_');
+  const clubs: Array<Club & { ownerUsername?: string }> = needsClubs ? await pages(deps.read, { dataset: 'clubs' }) : [];
+  if (action === 'club_assign') return clubAssignmentPlanFromRoster(text, clubs);
   const selected: {clubs:Club[];clarification?:string} = needsClubs ? resolveAiClubs(clean, clubs) : {clubs:[]};
   if (selected.clarification) clarify(selected.clarification);
+  if (action === 'club_remove_clarify') {
+    clarify(selected.clubs.length === 1
+      ? `${selected.clubs[0].name} egasini klubdan chiqarishni nazarda tutdingizmi? “${selected.clubs[0].name}ni bo‘shat” deb yozing. Klub va uning o‘yinlari saqlanadi. Natijani o‘chirish uchun o‘yin va turni yozing.`
+      : 'Nimani o‘chiray: klub egasinimi, o‘yin natijasinimi yoki o‘yinning o‘zinimi? Klub yoki jamoalar nomini ham yozing.');
+  }
   if (action === 'club_release') {
+    if (/\b(?:butunlay|bazadan|royxatdan)\b/.test(q)) clarify('Klubning o‘zini bazadan o‘chirishni bu buyruq bilan bajarmayman. Faqat egasidan bo‘shatish uchun klub nomi bilan “bo‘shat” deb yozing.');
+    let expectedOwnerUserId: string | undefined;
+    if (/@\s*[A-Za-z0-9_]+|\buser-\d+\b/.test(text)) {
+      expectedOwnerUserId = await userId(text, deps);
+      const username = /@\s*([A-Za-z0-9_]+)/.exec(text)?.[1] ||
+        (await deps.users()).find(user => user.id === expectedOwnerUserId)?.username;
+      if (!username) clarify('Bu foydalanuvchining klub egasi ma’lumoti aniqlanmadi. @username va klub nomini yozing.');
+      const owned = clubs.filter(club => club.ownerUsername?.replace(/^@/, '').toLowerCase() === username.toLowerCase());
+      if (!selected.clubs.length) selected.clubs = owned;
+      if (selected.clubs.some(club => !owned.some(ownerClub => ownerClub.id === club.id)))
+        clarify('Bu klubning saqlangan egasi siz yozgan foydalanuvchiga mos kelmadi. Hech narsa o‘zgarmadi; klub va username’ni tekshiring.');
+    }
     if (selected.clubs.length !== 1) clarify('Qaysi bitta klubni egasidan bo‘shatay? Klub nomini yozing.');
-    return make('club_release', selected.clubs[0].id);
+    return make('club_release', selected.clubs[0].id, expectedOwnerUserId ? { expectedOwnerUserId } : {});
   }
   const comps: Competition[] = await pages(deps.read, { dataset: 'competitions' });
   const named = findConversationCompetitions(clean, comps);

@@ -5703,7 +5703,7 @@ export async function adminReleaseClubFirestore(
   adminUserId: string,
   clubId: string,
   seasonId = 'season-2026-27',
-  options?: { authoritativeOnly?: boolean }
+  options?: { authoritativeOnly?: boolean; expectedOwnerUserId?: string }
 ): Promise<{ success: boolean; message: string; club: Club; authoritative?: boolean; isFallback?: boolean }> {
   assertNoSyntheticIdsInProduction('adminReleaseClubFirestore', [adminUserId, clubId, seasonId]);
   const now = new Date().toISOString();
@@ -5712,13 +5712,14 @@ export async function adminReleaseClubFirestore(
     const clubRef = db.collection(COLLECTIONS.CLUBS).doc(clubId);
     const clubOccRef = db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_${clubId}`);
     
-    const clubOccDoc = await clubOccRef.get();
+    await db.runTransaction(async batch => {
+    const clubOccDoc = await batch.get(clubOccRef);
     const previousUserId = clubOccDoc.exists ? clubOccDoc.data()?.userId : null;
+    if (options?.expectedOwnerUserId && previousUserId !== options.expectedOwnerUserId)
+      throw new ClubConflictError('Klub egasi reja tuzilgandan keyin o‘zgargan. Amal bajarilmadi; yangi reja tuzing.');
     const previousUserMem = previousUserId
-      ? await db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${seasonId}_${previousUserId}`).get()
+      ? await batch.get(db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${seasonId}_${previousUserId}`))
       : null;
-
-    const batch = db.batch();
 
     // Release club occupancy
     batch.set(clubOccRef, {
@@ -5766,7 +5767,7 @@ export async function adminReleaseClubFirestore(
       createdAt: now,
     });
 
-    await batch.commit();
+    });
     removeOccupancyRecord(seasonId, clubId);
 
     try {
@@ -5785,7 +5786,7 @@ export async function adminReleaseClubFirestore(
       isFallback: false,
     };
   } catch (err: any) {
-    if (options?.authoritativeOnly || isHostedEnvironment()) {
+    if (options?.authoritativeOnly || options?.expectedOwnerUserId || isHostedEnvironment()) {
       throw err;
     }
     console.warn('[FIRESTORE FALLBACK] adminReleaseClubFirestore:', err.message);
