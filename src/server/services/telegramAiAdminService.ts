@@ -62,7 +62,16 @@ export function describeAiAdminPlan(plan: AdminPlan, label = ''): string {
   if (plan.action === 'result_clear') return `${target}: natijani o‘chirish, uchrashuvni saqlash.`;
   if (plan.action === 'fixture_delete') return `${target}: uchrashuvning o‘zini o‘chirish. Sabab: ${b.reason || 'ko‘rsatilmagan'}.`;
   if (plan.action === 'cup_preview') return `${target}: kubok qur’asini oldindan ko‘rish. O‘yinlar hali yaratilmaydi.`;
-  if (plan.action === 'ai_config') return `AI yordamchini ${b.enabled ? 'yoqish' : 'o‘chirish'}.`;
+  if (plan.action === 'ai_config') {
+    const labels: Record<string,string> = { rateLimitUserPerMin:'Foydalanuvchi uchun so‘rov/daqiqa', rateLimitTopicPerMin:'Mavzu uchun so‘rov/daqiqa', maxDailyRequests:'Kunlik AI so‘rovlari', allowedChatId:'Guruh ID', allowedThreadId:'Mavzu ID' };
+    return ['AI sozlamalarini o‘zgartirish.', ...(typeof b.enabled === 'boolean' ? [`Yordamchi: ${b.enabled ? 'yoqish' : 'o‘chirish'}.`] : []), ...Object.entries(b).filter(([key]) => key in labels).map(([key,value]) => `${labels[key]}: ${value}.`)].join('\n');
+  }
+  if (plan.action === 'matchday_override') return `${target}: tur boshqaruvini ${({PAUSED:'pauzaga qo‘yish',AUTO:'avtomatik rejimga qaytarish',FORCE_OPEN:'majburiy ochish',FORCE_LOCKED:'majburiy qulflash'} as any)[String(b.overrideStatus)] || b.overrideStatus}.`;
+  if (plan.action === 'matchday_timer') return `${target}: ${b.currentMatchday ? b.currentMatchday + '-tur, ' : ''}tur muddatini ${b.durationHours} soat qilib belgilash.`;
+  if (plan.action === 'matchday_remind') return `${target}: ${b.matchday}-turdagi o‘yini yakunlanmagan klub egalariga eslatma yuborish.`;
+  if (plan.action === 'broadcast_retry') return `${target}: yuborilmagan e’lon xabarlarini qayta jo‘natishga urinish.`;
+  if (plan.action === 'recipients_refresh') return 'Telegram xabarnomalarining qabul qiluvchilar ro‘yxatini yangilash.';
+  if (plan.action === 'metrics_reset') return 'O‘qish hisoblagichlarini nolga tushirish.';
   if (plan.action === 'broadcast') return `Xabar yuborish: ${b.title}\n${String(b.body)}\nQabul qiluvchilar: ${b.targetAudience === 'ALL_USERS' ? 'barcha foydalanuvchilar' : b.targetAudience === 'LEAGUE_OWNERS' ? b.targetLeagueId : b.targetAudience === 'CLUB_OWNERS' ? 'klub egalari' : (b.selectedUserIds as string[] || []).join(', ')}.`;
   if (plan.action === 'user_role') return `${target}: ${b.isAdmin ? 'admin ruxsatini berish' : 'admin ruxsatini olib tashlash'}. Ruxsat: ${(b.adminPermissions as any)?.scope === 'ALL' ? 'barcha ligalar' : ((b.adminPermissions as any)?.leagueIds || []).map((id:string) => ({'league-premier-league':'Premier League','league-la-liga':'La Liga','league-serie-a':'Serie A','league-bundesliga':'Bundesliga','league-ligue-1':'Ligue 1'} as any)[id] || id).join(', ') || 'liga ko‘rsatilmagan'}.`;
   if (plan.action === 'user_suspend') return `${target}: ${b.isSuspended ? 'bloklash' : 'blokdan chiqarish'}.`;
@@ -205,8 +214,17 @@ export async function handleAiAdminCommand(payload: TelegramAiMessagePayload, si
 • @username ni blokla / blokdan chiqar
 • @username ga premium ber
 • La Liga jadvalini qayta hisobla
+• APL ligasini pauzaga qo‘y / avtomatik rejimga qaytar
+• APL tur muddatini 30 soat qil
+• APL 11-turga eslatma yubor
+• AI foydalanuvchi limitini 5 qil
+• AI kunlik limitini 1000 qil
+• Hammaga “Yangi tur ochildi” deb xabar yubor
+• Audit tarixini ko‘rsat (shaxsiy chatda)
+• Tasdiq kutayotgan natijalarni ko‘rsat (shaxsiy chatda)
 • Angliya Kubogi qur’asini ko‘rib chiq
 • AI yordamchini o‘chir
+• AI o‘chiq bo‘lsa qayta yoqish: /ai_on (asosiy admin)
 
 O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yoki “tasdiqlayman” deb yozing. “Bekor qil” rejani bekor qiladi. Bazani o‘zgartirish buyruqlari faqat asosiy admin uchun.`;
     if (command === 'read') {
@@ -318,7 +336,7 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
 }
 
 function formatNaturalAdminRead(action: string, data: any): string {
-  const titles: Record<string,string> = {users:'Foydalanuvchilar',ai_settings:'AI sozlamalari',premium_overview:'Premium holati',broadcasts:'Yuborilgan xabarlar',notification_messages:'Xabarnomalar',health:'Baza holati',season_control:'Mavsum holati'};
+  const titles: Record<string,string> = {users:'Foydalanuvchilar',ai_settings:'AI sozlamalari',premium_overview:'Premium holati',broadcasts:'Yuborilgan xabarlar',notification_messages:'Xabarnomalar',health:'Baza holati',season_control:'Mavsum holati',audit:'Admin amallari tarixi',overview:'Platforma holati',metrics:'O‘qish statistikasi',pending_results:'Tasdiq kutayotgan natijalar',disputes:'Bahsli natijalar',notification_types:'Xabarnoma turlari',admission:'Klublarni qabul qilish navbati',european_preview:'Yevropa saralashi oldindan ko‘rish',matchday_status:'Tur boshqaruvi holati',cup_health:'Kubok holati'};
   const labels: Record<string,string> = {enabled:'Faol',allowedChatId:'Guruh ID',allowedThreadId:'Mavzu ID',rateLimitUserPerMin:'Foydalanuvchi limiti / daqiqa',rateLimitTopicPerMin:'Mavzu limiti / daqiqa',maxDailyRequests:'Kunlik AI limiti',total:'Jami',totalUsers:'Foydalanuvchilar soni',username:'Username',id:'ID',firstName:'Ism',isAdmin:'Admin',isSuspended:'Bloklangan',title:'Sarlavha',body:'Matn',status:'Holat',seasonId:'Mavsum',stage:'Bosqich',active:'Faol',revoked:'Bekor qilingan',generatedAt:'Yangilangan',redisAvailable:'Redis mavjud',stale:'Eskirgan nusxa'};
   const lines=[titles[action] || 'So‘ralgan ma’lumot'];
   const add=(value:any,depth=0)=>{

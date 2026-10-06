@@ -8,6 +8,7 @@ const required: Record<string,string[]> = {
   result_edit:['homeScore','awayScore'], result_approve:['homeScore','awayScore'], fixture_delete:['reason'], fixture_deadline:['deadlineAt'],
   club_assign:['targetUserId'], user_role:['isAdmin'], user_suspend:['isSuspended'], dispute_resolve:['action'],
   matchday_control:['action','matchday'], matchday_override:['overrideStatus'],
+  matchday_remind:['matchday'],
   fixtures_generate:['competitionId'], fixtures_reset:['competitionId','confirmation'], knockout_generate:['competitionId'],
   cup_generate:['confirmation','drawSeed'], cup_round:['roundNumber','action'], european_apply:['previewToken','confirmation'],
   notification_message:['visibility'], notification_type:['visible'], notification_item:['visibility'], broadcast:['title','body','targetAudience'],
@@ -16,6 +17,13 @@ const required: Record<string,string[]> = {
 };
 const names: Record<string,string> = {homeScore:'uy jamoasi hisobi',awayScore:'safar jamoasi hisobi',reason:'sabab',deadlineAt:'sana/vaqt va vaqt zonasi',targetUserId:'foydalanuvchi @username yoki ID',isAdmin:'admin berish yoki olib tashlash',isSuspended:'bloklash yoki blokdan chiqarish',action:'amal turi',matchday:'tur raqami',competitionId:'turnir',drawSeed:'server bergan qura kodi',previewToken:'server bergan oldindan ko‘rish kodi',title:'sarlavha',body:'xabar matni',targetAudience:'qabul qiluvchilar',userId:'foydalanuvchi ID',seasonId:'mavsum ID',confirmation:'shu amal uchun aniq tasdiq',roundNumber:'bosqich raqami'};
 export function assertAdminPlanReady(plan: AdminPlan) {
+  if (plan.action === 'ai_config') {
+    if (!Object.keys(plan.body).some(k => ['enabled','allowedChatId','allowedThreadId','rateLimitUserPerMin','rateLimitTopicPerMin','maxDailyRequests'].includes(k))) throw new Error('CLARIFY:Qaysi AI sozlamasini o‘zgartiray?');
+    for (const [key,min,max] of [['rateLimitUserPerMin',1,20],['rateLimitTopicPerMin',1,60],['maxDailyRequests',10,5000]] as const) {
+      const n = plan.body[key];
+      if (n !== undefined && (!Number.isInteger(n) || Number(n) < min || Number(n) > max)) throw new Error(`CLARIFY:${key} ${min}–${max} orasidagi butun son bo‘lsin.`);
+    }
+  }
   const missing = (required[plan.action] || []).filter(key => plan.body[key] === undefined || plan.body[key] === null || plan.body[key] === '');
   if (missing.length) throw new Error('CLARIFY:Reja uchun quyidagini aniqlang: ' + missing.map(k => names[k] || k).join(', ') + '.');
   for (const key of ['homeScore','awayScore','matchday','roundNumber']) if (plan.body[key] !== undefined && (!Number.isInteger(plan.body[key]) || Number(plan.body[key]) < (key.includes('Score') ? 0 : 1))) throw new Error('CLARIFY:' + (names[key] || key) + ' uchun to‘g‘ri butun son yozing.');

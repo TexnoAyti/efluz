@@ -8,6 +8,7 @@ import { createAiSnapshotReader } from './telegramAiSnapshotReader';
 import { getAdminUserDirectory } from './adminUserDirectory';
 import { withinAiDeadline } from './telegramAiDeadline';
 import type { Club, Competition, User } from '../../types';
+import { planExtendedAdminControl } from './telegramAiControlLanguage';
 
 const clarify = (message: string): never => { throw new Error('CLARIFY:' + message); };
 const maskUser = (text: string) => text.replace(/@\s*[A-Za-z0-9_]+/g, ' ');
@@ -62,6 +63,11 @@ export async function planNaturalAdminRequest(text: string, deps: NaturalPlanner
   const clean = maskUser(text).replace(/"[^"]*"|“[^”]*”/g, ' ').split(/(?:sarlavha|matn|sabab|izoh)\s*:/i)[0];
   const q = normalizeAiEntity(clean), note = reason(text);
   const make = (action: string, targetId?: string, body: Record<string,unknown> = {}) => adminPlanSchema.parse({ action, ...(targetId ? { targetId } : {}), body });
+  if (action !== 'ai_settings') {
+    assertSingleNaturalAdminRequest(text);
+    const extended = await planExtendedAdminControl(text, deps.read);
+    if (extended) return extended;
+  }
   if (['users','ai_settings','premium_overview','broadcasts','notification_messages','health','season_control'].includes(action)) {
     const search = /@\s*([A-Za-z0-9_]+)/.exec(text)?.[1];
     return make(action, undefined, action === 'users' ? { limit: 10, ...(search ? { search } : {}) } : {});
@@ -98,14 +104,17 @@ export async function planNaturalAdminRequest(text: string, deps: NaturalPlanner
     return make(/\bbitta\b|\bshaxsiy\b/.test(q) ? 'notification_item' : 'notification_message', id, { visibility: deleted ? 'deleted' : visible ? 'visible' : 'hidden' });
   }
   if (action === 'broadcast') {
-    const title = /(?:sarlavha)\s*:\s*([^\n]+)/i.exec(text)?.[1]?.trim();
-    const body = /(?:matn)\s*:\s*([\s\S]+)/i.exec(text)?.[1]?.trim();
+    let title = /(?:sarlavha)\s*:\s*([^\n]+)/i.exec(text)?.[1]?.trim();
+    let body = /(?:matn)\s*:\s*([\s\S]+)/i.exec(text)?.[1]?.trim();
+    const quoted = [...text.matchAll(/"([^"\n]+)"|“([^”\n]+)”/g)];
+    if (!title && !body && quoted.length === 1) { title = 'EFL UZ'; body = (quoted[0][1] || quoted[0][2]).trim(); }
     if (!title || !body) clarify('Xabar sarlavhasi, matni va kimga yuborishni yozing. Masalan: “Hammaga e’lon yubor\nSarlavha: Yangi tur\nMatn: 10-tur ochildi”.');
     const comps: Competition[] = await pages(deps.read, { dataset: 'competitions' });
     const leagues = findConversationCompetitions(clean.split(/sarlavha\s*:/i)[0], comps).filter(c => c.type === 'LEAGUE');
     const audience = /\bhammaga\b|\bbarcha foydalanuvchi\w*\b/.test(q) ? 'ALL_USERS' : leagues.length === 1 ? 'LEAGUE_OWNERS' : /\bklub egalari\w*\b/.test(q) ? 'CLUB_OWNERS' : null;
-    if (!audience && /@\s*[A-Za-z0-9_]+|\buser-\d+\b/.test(clean + text.split(/sarlavha\s*:/i)[0])) {
-      const head=text.split(/sarlavha\s*:/i)[0];
+    const recipientHead = text.replace(/"[^"]*"|“[^”]*”/g, ' ').split(/(?:sarlavha|matn)\s*:/i)[0];
+    if (!audience && /@\s*[A-Za-z0-9_]+|\buser-\d+\b/.test(recipientHead)) {
+      const head=recipientHead;
       const id=await userId(head,deps);
       const expectedUsername=/@\s*([A-Za-z0-9_]+)/.exec(head)?.[1];
       return make('broadcast',undefined,{title,body,targetAudience:'SELECTED_RECIPIENTS',selectedUserIds:[id],...(expectedUsername ? {expectedUsername} : {})});

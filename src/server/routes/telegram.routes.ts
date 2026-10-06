@@ -28,6 +28,7 @@ import {
   isPrimaryOwner,
   getTelegramAiConfig,
   bindTelegramAiTopic,
+  updateTelegramAiConfig,
 } from '../services/telegramAiConfigService';
 import { getAiRateLimitMetrics } from '../services/telegramAiRateLimitService';
 import { handleTelegramAiMessage, escapeTelegramHtml } from '../services/telegramAiService';
@@ -178,7 +179,7 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
         }
         response = { ok: true, handled: 'premium_successful_payment', result };
       } else if (typeof message?.text === 'string' && Number.isSafeInteger(message.chat?.id) && Number.isSafeInteger(message.from?.id)) {
-        const command = /^\/(start|help|paysupport|bind_ai_topic|ai_status)(?:@[a-zA-Z0-9_]+)?(?:\s|$)/i.exec(message.text.trim())?.[1]?.toLowerCase();
+        const command = /^\/(start|help|paysupport|bind_ai_topic|ai_status|ai_on|ai_off)(?:@[a-zA-Z0-9_]+)?(?:\s|$)/i.exec(message.text.trim())?.[1]?.toLowerCase();
         if (command === 'start') {
           const result = await handleTelegramStart(message.chat.id, message.from, { message_thread_id: message.message_thread_id, reply_to_message_id: message.message_id });
           if (!result.ok || !result.messageSent) throw new Error('START_MESSAGE_NOT_SENT: ' + (result.error || 'unknown')); 
@@ -195,6 +196,18 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
           });
           if (!result.ok) throw new Error('SUPPORT_MESSAGE_NOT_SENT');
           response = { ok: true, handled: command };
+        } else if (command === 'ai_on' || command === 'ai_off') {
+          const { config, redisAvailable } = await getTelegramAiConfig();
+          const primary = isPrimaryOwner(message.from.id) && !message.from.is_bot && !message.sender_chat && !message.forward_origin && !message.forward_from && !message.forward_from_chat;
+          const authorizedPlace = message.chat.type === 'private' && message.chat.id === message.from.id || message.chat.id === config.allowedChatId && message.message_thread_id === config.allowedThreadId;
+          if (!primary || !authorizedPlace || process.env.NODE_ENV === 'production' && !redisAvailable) {
+            response = { ok: true, handled: command, rejected: !primary ? 'owner_only' : !authorizedPlace ? 'wrong_chat_or_topic' : 'redis_unavailable' };
+          } else {
+            const result = await updateTelegramAiConfig({ enabled: command === 'ai_on' }, message.from.id);
+            response = { ok: true, handled: command, success: result.success, error: result.error };
+            const sent = await sendTelegramMessage(message.chat.id, result.success ? command === 'ai_on' ? 'AI yordamchi yoqildi. Mavzu bog‘langan bo‘lsa, savollarga javob beradi.' : 'AI yordamchi o‘chirildi. Qayta yoqish: /ai_on.' : 'AI holatini saqlab bo‘lmadi: ' + result.error, { parse_mode: null, message_thread_id: message.message_thread_id, reply_to_message_id: message.message_id });
+            if (!sent.ok) throw new Error('AI_CONTROL_REPLY_NOT_SENT');
+          }
         } else if (command === 'bind_ai_topic') {
           if (message.sender_chat || !isPrimaryOwner(message.from?.id)) {
             await sendTelegramMessage(message.chat.id, `Faqat asosiy admin (ID: ${PRIMARY_OWNER_TELEGRAM_ID}) bu buyruqni ishlatishi mumkin. Anonim admin rejimidan foydalanish taqiqlangan.`, {
