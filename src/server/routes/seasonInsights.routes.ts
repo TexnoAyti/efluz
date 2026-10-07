@@ -1,8 +1,25 @@
 import { Router, Request, Response } from 'express';
 import { getPlayerSeasonInsights, getSeasonInsights } from '../services/seasonInsightsService';
 import { getUserActiveClubFromReadModel } from '../readModel/readModelStore';
+import { getPlayerTrophyCabinet } from '../services/playerTrophyService';
 
 export const seasonInsightsRouter = Router();
+
+seasonInsightsRouter.get('/player/:userId/trophies', async (req: Request, res: Response) => {
+  const userId = String(req.params.userId || '').trim();
+  const seasonId = String(req.query.seasonId || 'season-2026-27');
+  if (!userId || userId.length > 128 || !/^season-\d{4}-\d{2}$/.test(seasonId)) {
+    res.status(400).json({ error: 'INVALID_TROPHY_REQUEST' }); return;
+  }
+  try {
+    const cabinet = await getPlayerTrophyCabinet(userId, seasonId);
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(cabinet);
+  } catch (error: unknown) {
+    console.warn('[PLAYER_TROPHIES_UNAVAILABLE]', error instanceof Error ? error.message : String(error));
+    res.status(503).json({ error: 'PLAYER_TROPHIES_UNAVAILABLE' });
+  }
+});
 
 seasonInsightsRouter.get('/season', async (req: Request, res: Response) => {
   const seasonId = String(req.query.seasonId || 'season-2026-27');

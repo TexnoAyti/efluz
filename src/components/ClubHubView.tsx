@@ -1,4 +1,5 @@
 import { nextSeasonFixture, sortSeasonFixtures } from '../lib/fixtureOrder';
+import { PlayerTrophyCabinet } from './PlayerTrophyCabinet';
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n, Language } from '../i18n';
@@ -482,6 +483,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
           <Shield className="w-4 h-4" />
           <span>{copy.exploreLeagues}</span>
         </button>
+        {user?.id && <PlayerTrophyCabinet userId={user.id} seasonId={activeSeasonId} />}
       </div>
     );
   }
@@ -1081,6 +1083,8 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
         </div>
       </section>
 
+      {user?.id && <PlayerTrophyCabinet userId={user.id} seasonId={activeSeasonId} />}
+
       {/* ==============================================================
           7. ACCOUNT / SETTINGS (Lower in the page, secondary)
           ============================================================== */}
@@ -1275,4 +1279,3 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
     </div>
   );
 };
-

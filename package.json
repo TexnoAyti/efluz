@@ -54,7 +54,8 @@
     "test:admin-authorization": "node scripts/run-isolated-test.mjs src/server/tests/adminAuthorizationRegressionTest.ts",
     "test:matchday-locks": "node scripts/run-isolated-test.mjs src/server/tests/verifyMatchdayLockRegression.ts",
     "test:read-after-write": "tsx src/server/tests/readAfterWriteConsistencyRegressionTest.ts",
-    "test:matchday-reminder": "node scripts/run-isolated-test.mjs src/server/tests/matchdayReminderRegressionTest.ts"
+    "test:matchday-reminder": "node scripts/run-isolated-test.mjs src/server/tests/matchdayReminderRegressionTest.ts",
+    "test:player-trophies": "node scripts/run-isolated-test.mjs src/server/tests/playerTrophyRegressionTest.ts"
   },
   "dependencies": {
     "@napi-rs/canvas": "0.1.80",

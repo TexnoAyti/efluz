@@ -5,6 +5,7 @@ import { ClubCrest } from './ClubCrest';
 import { PremiumClubBadge } from './PremiumClubBadge';
 import { EflCareerCard } from './EflCareerCard';
 import { PlayerSeasonProfile } from './PlayerSeasonProfile';
+import { PlayerTrophyCabinet } from './PlayerTrophyCabinet';
 import {
   User,
   Shield,
@@ -62,6 +63,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigateTab }) => {
         </div>
       </div>
 
+      {user?.id && <PlayerTrophyCabinet userId={user.id} seasonId={activeSeasonId} />}
       {user?.id && <PlayerSeasonProfile userId={user.id} seasonId={activeSeasonId} />}
 
       <button onClick={() => onNavigateTab('season-hub')} className="w-full text-left glass-panel p-5 sm:p-6 shadow-xl border-sky-500/25 bg-gradient-to-r from-sky-950/20 via-slate-900/40 to-slate-900/80 hover:border-sky-500/50 transition-all group">

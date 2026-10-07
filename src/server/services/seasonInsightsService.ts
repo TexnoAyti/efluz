@@ -9,17 +9,8 @@ import {
   redisGetLkg,
 } from '../readModel/readModelStore';
 
-export interface TrophyRecord {
-  competitionId: string;
-  competitionName: string;
-  seasonId: string;
-  clubId: string;
-  clubName: string;
-  winnerUserId?: string;
-  winnerUsername?: string;
-  decidedBy: 'FINAL' | 'LEAGUE_TABLE' | 'ONE_MATCH_FINAL';
-  confirmedAt?: string | null;
-}
+import type { TrophyRecord } from '../../types/trophies';
+export type { TrophyRecord } from '../../types/trophies';
 
 export interface SeasonAwardLeader {
   clubId: string;
@@ -88,9 +79,10 @@ function normalizeSqliteFixture(row: any, seasonId: string): Fixture {
 
 async function loadSeasonFixtures(seasonId: string): Promise<{ fixtures: Fixture[]; source: string }> {
   const key = ReadModelKeys.adminFixtures(seasonId);
-  const snapshot = (await redisGetFresh<Fixture[]>(key)) || (await redisGetLkg<Fixture[]>(key));
+  const fresh = await redisGetFresh<Fixture[]>(key);
+  const snapshot = fresh || (await redisGetLkg<Fixture[]>(key));
   if (Array.isArray(snapshot?.data) && snapshot!.data.length > 0) {
-    return { fixtures: snapshot!.data, source: snapshot!.source || 'redis' };
+    return { fixtures: snapshot!.data, source: fresh ? 'redis' : 'redis_stale' };
   }
 
   const rows = queryAll<any>(
@@ -183,8 +175,9 @@ function aggregateClub(fixtures: Fixture[], clubId: string): ClubAggregate {
 }
 
 function resolveWinnerClubId(fixture: Fixture): string | null {
-  if (fixture.winnerClubId) return fixture.winnerClubId;
-  if (fixture.homeScore === null || fixture.homeScore === undefined || fixture.awayScore === null || fixture.awayScore === undefined) return null;
+  if (!Number.isInteger(fixture.homeScore) || !Number.isInteger(fixture.awayScore) ||
+    fixture.homeScore! < 0 || fixture.awayScore! < 0 || !fixture.homeClubId || !fixture.awayClubId || fixture.homeClubId === fixture.awayClubId) return null;
+  if (fixture.winnerClubId && [fixture.homeClubId, fixture.awayClubId].includes(fixture.winnerClubId)) return fixture.winnerClubId;
   if (fixture.homeScore > fixture.awayScore) return fixture.homeClubId || null;
   if (fixture.awayScore > fixture.homeScore) return fixture.awayClubId || null;
   return null;
@@ -196,7 +189,7 @@ export function isCompleteLeagueFixtureSet(fixtures: Fixture[], competitionId: s
   const competitionFixtures = fixtures.filter((fixture) => fixture.competitionId === competitionId);
   if (competitionFixtures.length !== expectedClubs * (expectedClubs - 1) / 2) return false;
   if (competitionFixtures.some((fixture) => fixture.status !== 'CONFIRMED' ||
-    !Number.isInteger(fixture.homeScore) || !Number.isInteger(fixture.awayScore) ||
+    !Number.isInteger(fixture.homeScore) || !Number.isInteger(fixture.awayScore) || fixture.homeScore! < 0 || fixture.awayScore! < 0 ||
     !fixture.homeClubId || !fixture.awayClubId || fixture.homeClubId === fixture.awayClubId)) return false;
   const clubIds = Array.from(new Set(competitionFixtures.flatMap((fixture) => [fixture.homeClubId, fixture.awayClubId]).filter(Boolean) as string[]));
   if (clubIds.length !== expectedClubs) return false;
@@ -220,11 +213,16 @@ export function isConfirmedFinalFixture(fixture: Fixture): boolean {
   return fixture.status === 'CONFIRMED' && /^final(?:\s|$)/i.test(String(fixture.roundName || '').trim());
 }
 
-export async function getSeasonTrophies(seasonId = 'season-2026-27'): Promise<{ trophies: TrophyRecord[]; source: string }> {
-  const [{ fixtures, source }, owners] = await Promise.all([loadSeasonFixtures(seasonId), loadOwners(seasonId)]);
+export async function getSeasonTrophies(seasonId = 'season-2026-27', options?: { fixtures: Fixture[]; competitionId: string }): Promise<{ trophies: TrophyRecord[]; source: string; unavailableCompetitions: string[] }> {
+  const [{ fixtures, source }, owners] = await Promise.all([
+    options ? Promise.resolve({ fixtures: options.fixtures, source: 'redis' }) : loadSeasonFixtures(seasonId),
+    loadOwners(seasonId),
+  ]);
   const ownerByClub = new Map(owners.map((owner) => [owner.id, owner]));
   const grouped = new Map<string, Fixture[]>();
   for (const fixture of fixtures) {
+    if (fixture.seasonId && fixture.seasonId !== seasonId) continue;
+    if (options && fixture.competitionId !== options.competitionId) continue;
     if (!fixture.competitionId) continue;
     const list = grouped.get(fixture.competitionId) || [];
     list.push(fixture);
@@ -232,6 +230,7 @@ export async function getSeasonTrophies(seasonId = 'season-2026-27'): Promise<{ 
   }
 
   const trophies: TrophyRecord[] = [];
+  const unavailableCompetitions: string[] = [];
   for (const [competitionId, competitionFixtures] of grouped) {
     let winnerClubId: string | null = null;
     let decidedBy: TrophyRecord['decidedBy'] = 'FINAL';
@@ -239,6 +238,7 @@ export async function getSeasonTrophies(seasonId = 'season-2026-27'): Promise<{ 
 
     if (domesticLeagueIds.has(competitionId)) {
       winnerClubId = await deriveLeagueChampion(fixtures, competitionId, seasonId);
+      if (!winnerClubId && isCompleteLeagueFixtureSet(fixtures, competitionId)) unavailableCompetitions.push(competitionId);
       decidedBy = 'LEAGUE_TABLE';
       confirmedAt = winnerClubId ? competitionFixtures.map((fixture) => fixture.resultConfirmedAt || '').sort().at(-1) || null : null;
     } else {
@@ -246,7 +246,8 @@ export async function getSeasonTrophies(seasonId = 'season-2026-27'): Promise<{ 
         .filter(isConfirmedFinalFixture)
         .sort((a, b) => Number(b.matchday || 0) - Number(a.matchday || 0));
       let finalFixture = finals[0];
-      if (!finalFixture && competitionFixtures.length === 1 && competitionFixtures[0].status === 'CONFIRMED') {
+      const definition = competitionMap.get(competitionId);
+      if (!finalFixture && definition?.type === 'SUPER_CUP' && definition.formatConfig.teams === 2 && competitionFixtures.length === 1 && competitionFixtures[0].status === 'CONFIRMED') {
         finalFixture = competitionFixtures[0];
         decidedBy = 'ONE_MATCH_FINAL';
       }
@@ -272,7 +273,7 @@ export async function getSeasonTrophies(seasonId = 'season-2026-27'): Promise<{ 
   }
 
   trophies.sort((a, b) => a.competitionName.localeCompare(b.competitionName));
-  return { trophies, source };
+  return { trophies, source, unavailableCompetitions };
 }
 
 function leadersFor(
@@ -443,7 +444,7 @@ export async function getPlayerSeasonInsights(
     };
   }
 
-  const trophies = trophyResult.trophies.filter((trophy) => trophy.winnerUserId === userId || clubIds.includes(trophy.clubId));
+  const trophies = trophyResult.trophies.filter((trophy) => trophy.winnerUserId === userId);
   const awardsHeld = awardResult.awards
     .map((award) => ({ ...award, leaders: award.leaders.filter((leader) => leader.userId === userId || clubIds.includes(leader.clubId)) }))
     .filter((award) => award.leaders.length > 0);

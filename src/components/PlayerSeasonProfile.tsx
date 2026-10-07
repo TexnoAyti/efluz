@@ -251,7 +251,7 @@ export const PlayerSeasonProfile: React.FC<PlayerSeasonProfileProps> = ({ userId
         </div>
 
         {user?.isAdmin && <div className="rounded-xl border border-amber-400/10 bg-amber-400/[0.035] px-3 py-2 text-[9px] leading-4 text-amber-200/65">
-          Deep Career analytics and Trophy Cabinet remain Premium.
+          Deep Career analytics remain Premium.
         </div>}
       </div>
     </section>
