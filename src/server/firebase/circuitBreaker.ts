@@ -156,6 +156,14 @@ class FirestoreCircuitBreaker {
     return false;
   }
 
+  /** Release a reserved probe when a cache/lease satisfied the read instead. */
+  public cancelProbe(): void {
+    if (this.state === 'HALF_OPEN') {
+      this.halfOpenProbeInFlight = false;
+      this.state = 'OPEN';
+    }
+  }
+
   public recordSuccess() {
     this.consecutiveFailures = 0;
     this.halfOpenProbeInFlight = false;

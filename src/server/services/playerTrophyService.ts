@@ -5,9 +5,12 @@ import { trackFirestoreRead, trackFirestoreWrite } from '../firebase/firestoreSt
 import { SEED_COMPETITIONS } from '../db/seed';
 import { DOMESTIC_LEAGUE_CONFIG, ReadModelKeys, invalidateDataset, redisGetFresh, redisGetLkg, redisIsDirty, redisSetRaw } from '../readModel/readModelStore';
 import { getSeasonTrophies } from './seasonInsightsService';
+import { sharedReadRefresh } from '../readModel/sharedReadRefresh';
+import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
 
 const COLLECTION = 'player_trophies';
 const HISTORY_KEY = 'player-trophies:history';
+const HISTORY_TTL_SECONDS = 300;
 export interface RecordedTrophy extends PlayerTrophy {
   active: boolean;
   evaluatedAt: string;
@@ -57,20 +60,32 @@ async function readHistory(): Promise<{ data: TrophyHistory; stale: boolean }> {
     const fresh = await redisGetFresh<TrophyHistory>(HISTORY_KEY);
     if (fresh && !(await redisIsDirty(HISTORY_KEY))) return { data: fresh.data, stale: false };
     try {
-      const db = getFirestoreDb();
-      // These are small, shared official trophy/archive collections, never a fixture scan.
-      const [records, archives] = await Promise.all([db.collection(COLLECTION).get(), db.collection('season_archives').get()]);
-      trackFirestoreRead(COLLECTION, records.size, 'playerTrophyHistory');
-      trackFirestoreRead('season_archives', archives.size, 'playerTrophyHistory');
-      const data: TrophyHistory = {
-        records: records.docs.map(doc => doc.data() as RecordedTrophy),
-        archives: archives.docs.map(doc => ({ seasonId: doc.id, trophies: (doc.data().trophies || []) as TrophyRecord[] })),
-      };
-      if (generation === historyEpoch) {
-        cachedHistory = { data, expiresAt: Date.now() + 30_000 };
-        await redisSetRaw(HISTORY_KEY, { data, sourceVersion: 'firestore-trophy-history' }, 30).catch(() => {});
-      }
-      return { data, stale: false };
+      return await sharedReadRefresh(HISTORY_KEY, async () => {
+        // Another server may have published the cache between our first read and lease.
+        const newer = await redisGetFresh<TrophyHistory>(HISTORY_KEY);
+        if (newer && !(await redisIsDirty(HISTORY_KEY))) return { data: newer.data, stale: false };
+        if (!firestoreCircuitBreaker.canExecute()) throw new Error('READ_REFRESH_FIRESTORE_COOLDOWN');
+        const db = getFirestoreDb();
+        let records, archives;
+        try {
+          [records, archives] = await Promise.all([db.collection(COLLECTION).get(), db.collection('season_archives').get()]);
+          firestoreCircuitBreaker.recordSuccess();
+        } catch (error) {
+          firestoreCircuitBreaker.recordFailure(error);
+          throw error;
+        }
+        trackFirestoreRead(COLLECTION, Math.max(1, records.size), 'playerTrophyHistory');
+        trackFirestoreRead('season_archives', Math.max(1, archives.size), 'playerTrophyHistory');
+        const data: TrophyHistory = {
+          records: records.docs.map(doc => doc.data() as RecordedTrophy),
+          archives: archives.docs.map(doc => ({ seasonId: doc.id, trophies: (doc.data().trophies || []) as TrophyRecord[] })),
+        };
+        if (generation === historyEpoch) {
+          await redisSetRaw(HISTORY_KEY, { data, sourceVersion: 'firestore-trophy-history' }, HISTORY_TTL_SECONDS);
+          cachedHistory = { data, expiresAt: Date.now() + HISTORY_TTL_SECONDS * 1000 };
+        }
+        return { data, stale: false };
+      });
     } catch (error) {
       const last = await redisGetLkg<TrophyHistory>(HISTORY_KEY);
       if (last) return { data: last.data, stale: true };
