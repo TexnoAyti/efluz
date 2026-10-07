@@ -136,6 +136,19 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
   const [clubs, setClubs] = useState<Club[]>([]);
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
   const [diagnostics, setDiagnostics] = useState<any>(null);
+  const [readCostReport, setReadCostReport] = useState<any>(null);
+  const [readCostLoading, setReadCostLoading] = useState(false);
+  const loadReadCostReport = async () => {
+    setReadCostLoading(true);
+    try {
+      const result = await api.getReadMetrics();
+      setReadCostReport(result.durable || null);
+    } catch {
+      setReadCostReport(null);
+    } finally {
+      setReadCostLoading(false);
+    }
+  };
 
   // Filter States - Matches
   const [matchCompFilter, setMatchCompFilter] = useState<string>('ALL');
@@ -309,6 +322,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
         const [diagRes, rmHealthRes] = await Promise.all([
           api.getAdminDiagnostics().catch(() => null),
           api.getReadModelHealth(activeSeasonId).catch(() => null),
+          loadReadCostReport(),
         ]);
         if (diagRes) setDiagnostics(diagRes);
         if (rmHealthRes) setReadModelHealth(rmHealthRes);
@@ -2535,28 +2549,29 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
             </div>
 
             {/* Read Budget & Telemetry Widget */}
-            {diagnostics?.durableReadCosts && (
               <div className="mt-4 pt-4 border-t border-white/[0.08] space-y-3">
                 <div className="text-xs font-black text-slate-300">{loc('Barcha serverlar bo‘yicha o‘qishlar · oxirgi 24 soat', 'Чтения всех серверов · последние 24 часа', 'Reads across servers · last 24 hours')}</div>
-                {diagnostics.durableReadCosts.available ? (
+                {readCostReport?.available ? (
                   <>
-                    <div className="text-xl font-black text-emerald-400">{Number(diagnostics.durableReadCosts.totalReads || 0).toLocaleString()}</div>
+                    <div className="text-xl font-black text-emerald-400">{Number(readCostReport.totalReads || 0).toLocaleString()}</div>
                     <p className="text-[10px] text-slate-500">{loc('Faqat hisoblagich orqali qayd etilgan o‘qishlar. Soatlar to‘liq hisoblanadi. Oldingi davr tiklanmaydi; Firebase hisob-kitobi bilan bir xil bo‘lishi kafolatlanmaydi. Tarix 7 kun saqlanadi.', 'Только учтённые чтения. Учитываются полные часы. Прошлые данные не восстанавливаются; значения могут отличаться от биллинга Firebase. История хранится 7 дней.', 'Instrumented reads only. Overlapping hours are counted in full. Earlier data is not recovered; totals may differ from Firebase billing. History is retained for 7 days.')}</p>
-                    <details className="text-xs text-slate-300">
+                    <details open className="text-xs text-slate-300">
                       <summary className="cursor-pointer font-bold">{loc('Soatlar va eng ko‘p o‘qigan so‘rovlar', 'Часы и запросы с наибольшим числом чтений', 'Hours and requests with most reads')}</summary>
                       <div className="mt-2 space-y-1">
-                        {(diagnostics.durableReadCosts.hours || []).filter((hour: any) => hour.observed).slice().reverse().map((hour: any) => (
+                        {(readCostReport.hours || []).filter((hour: any) => hour.observed).slice().reverse().map((hour: any) => (
                           <div key={hour.utcHour} className="flex justify-between gap-3 text-[11px]"><span>{hour.tashkentHour} · Toshkent</span><strong>{hour.totalReads}</strong></div>
                         ))}
-                        {Object.entries(diagnostics.durableReadCosts.byEndpoint || {}).sort((a, b) => Number(b[1]) - Number(a[1])).slice(0, 5).map(([endpoint, count]) => (
+                        {Object.entries(readCostReport.byEndpoint || {}).sort((a, b) => Number(b[1]) - Number(a[1])).slice(0, 5).map(([endpoint, count]) => (
                           <div key={endpoint} className="flex justify-between gap-3 text-[10px]"><span className="font-mono break-all">{endpoint}</span><strong>{Number(count)}</strong></div>
                         ))}
                       </div>
                     </details>
                   </>
-                ) : <p className="text-xs text-amber-400">{loc('Umumiy o‘qish hisoblagichi hozir mavjud emas.', 'Общий счётчик чтений сейчас недоступен.', 'The shared read counter is currently unavailable.')}</p>}
+                ) : <p className="text-xs text-amber-400">{readCostLoading ? loc('O‘qishlar hisoblagichi yuklanmoqda...', 'Загрузка счётчика чтений...', 'Loading read counter...') : loc('Umumiy o‘qish hisoblagichi hozir mavjud emas.', 'Общий счётчик чтений сейчас недоступен.', 'The shared read counter is currently unavailable.')}</p>}
+                <button type="button" disabled={readCostLoading} onClick={() => void loadReadCostReport()} className="min-h-[36px] px-3 py-1.5 rounded-lg border border-white/10 text-xs text-slate-300 disabled:opacity-50">
+                  {loc('O‘qishlarni yangilash', 'Обновить чтения', 'Refresh read counter')}
+                </button>
               </div>
-            )}
             {diagnostics?.readMetrics && (
               <div className="mt-4 pt-4 border-t border-white/[0.08] space-y-3">
                 <div className="flex items-center justify-between">
