@@ -1,11 +1,10 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { TabType } from './Navigation';
-import { LucideIcon } from 'lucide-react';
 
 export interface NavTabItem {
   id: TabType;
   label: string;
-  icon: LucideIcon;
+  icon: React.ComponentType<{ className?: string }>;
   isActive: boolean;
   badge?: number;
 }
