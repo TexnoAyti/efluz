@@ -22,6 +22,7 @@ import { filterRetiredFixtures, hasFixtureMatchdayCorrection } from '../services
  */
 
 import { Redis } from '@upstash/redis';
+import { sharedReadRefresh, isReadRefreshUnavailable } from './sharedReadRefresh';
 import { resolveRedisConfig } from './redisConfig';
 import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
 import { getFirestoreDb } from '../firebase/admin';
@@ -628,13 +629,14 @@ export async function readThroughReadModel<T>(options: TieredReadOptions<T>): Pr
   const { key, ttlSeconds = 86400, expectedCount, firestoreFetcher, validateData } = options;
   const cleanKey = getRawDatasetKey(key);
 
-  const canQueryFirestore = firestoreCircuitBreaker.canExecute();
+  const breakerStatus = firestoreCircuitBreaker.getStatus();
+  const firestoreHealthy = breakerStatus.state === 'CLOSED' && !breakerStatus.softLimitExceeded;
   const isDirty = await redisIsDirty(cleanKey);
 
   // 1. Process Memory Cache (Level 1)
   const memoryHit = getFromProcessMemory<ReadModelSnapshot<T>>(cleanKey);
   if (!isDirty && memoryHit && memoryHit.data !== undefined && Date.now() - Date.parse(memoryHit.generatedAt) < ttlSeconds * 1000) {
-    if (!canQueryFirestore) {
+    if (!firestoreHealthy) {
       return {
         data: memoryHit.data,
         source: 'memory_stale',
@@ -659,6 +661,24 @@ export async function readThroughReadModel<T>(options: TieredReadOptions<T>): Pr
   if (!isDirty) {
     freshSnapshot = await redisGetFresh<T>(cleanKey);
   }
+
+  // Return valid cached data before reserving a Firestore recovery probe.
+  if (freshSnapshot && freshSnapshot.data !== undefined) {
+    const ageMs = Date.now() - new Date(freshSnapshot.generatedAt).getTime();
+    if (ageMs < ttlSeconds * 1000) {
+      setInProcessMemory(cleanKey, freshSnapshot);
+      return {
+        data: freshSnapshot.data,
+        source: 'redis_fresh',
+        generatedAt: freshSnapshot.generatedAt,
+        sourceVersion: freshSnapshot.sourceVersion,
+        stale: !firestoreHealthy,
+        degraded: !firestoreHealthy,
+      };
+    }
+  }
+
+  const canQueryFirestore = firestoreCircuitBreaker.canExecute();
 
   // If circuit breaker is OPEN, do NOT hit Firestore; immediately return LKG or fresh snapshot
   if (!canQueryFirestore) {
@@ -692,22 +712,6 @@ export async function readThroughReadModel<T>(options: TieredReadOptions<T>): Pr
     );
   }
 
-  // If fresh snapshot exists and is recent (< 10 minutes), return it!
-  if (freshSnapshot && freshSnapshot.data !== undefined) {
-    const ageMs = Date.now() - new Date(freshSnapshot.generatedAt).getTime();
-    if (ageMs < ttlSeconds * 1000) {
-      setInProcessMemory(cleanKey, freshSnapshot);
-      return {
-        data: freshSnapshot.data,
-        source: 'redis_fresh',
-        generatedAt: freshSnapshot.generatedAt,
-        sourceVersion: freshSnapshot.sourceVersion,
-        stale: false,
-        degraded: false,
-      };
-    }
-  }
-
   // 3. Firestore Read with Request Coalescing
   let loader = inFlightLoaders.get(cleanKey) as Promise<T> | undefined;
   if (!loader) {
@@ -738,7 +742,8 @@ export async function readThroughReadModel<T>(options: TieredReadOptions<T>): Pr
 
         return freshData;
       } catch (err: any) {
-        firestoreCircuitBreaker.recordFailure(err);
+        if (isReadRefreshUnavailable(err)) firestoreCircuitBreaker.cancelProbe();
+        else firestoreCircuitBreaker.recordFailure(err);
         throw err;
       } finally {
         inFlightLoaders.delete(cleanKey);
@@ -888,6 +893,20 @@ export interface UserMembershipSentinel {
  * If Firestore fails and no LKG exists, throws READ_MODEL_NOT_WARMED.
  */
 export async function buildClubsSnapshot(seasonId = 'season-2026-27'): Promise<ReadModelSnapshot<OwnerNeutralClub[]>> {
+  return sharedReadRefresh(ReadModelKeys.clubsWithOwners(seasonId), () => buildClubsSnapshotAuthoritative(seasonId));
+}
+
+async function getClubsSnapshotForRead(seasonId: string): Promise<ReadModelSnapshot<OwnerNeutralClub[]>> {
+  const key = ReadModelKeys.clubsWithOwners(seasonId);
+  const fresh = await redisGetFresh<OwnerNeutralClub[]>(key);
+  if (Array.isArray(fresh?.data) && fresh.data.length === 96 && !(await redisIsDirty(key))) {
+    firestoreCircuitBreaker.cancelProbe();
+    return fresh;
+  }
+  return buildClubsSnapshot(seasonId);
+}
+
+async function buildClubsSnapshotAuthoritative(seasonId: string): Promise<ReadModelSnapshot<OwnerNeutralClub[]>> {
   const occMap = new Map<string, { userId: string }>();
   const userMap = new Map<string, { username: string | null; firstName?: string | null; lastName?: string | null; displayName?: string | null }>();
   const existingLkg = await redisGetLkg<OwnerNeutralClub[]>(ReadModelKeys.clubsWithOwners(seasonId));
@@ -903,6 +922,7 @@ export async function buildClubsSnapshot(seasonId = 'season-2026-27'): Promise<R
         .where('seasonId', '==', seasonId)
         .get();
       occupancyDocumentsSeen = occSnap.size;
+      trackFirestoreRead(COLLECTIONS.CLUB_OCCUPANCIES, Math.max(1, occSnap.size), 'buildClubsSnapshot');
 
       for (const doc of occSnap.docs) {
         const data = doc.data();
@@ -917,6 +937,7 @@ export async function buildClubsSnapshot(seasonId = 'season-2026-27'): Promise<R
         ownerUserIds.map(async (uid) => {
           try {
             const uDoc = await db.collection(COLLECTIONS.USERS).doc(uid).get();
+            trackFirestoreRead(COLLECTIONS.USERS, 1, 'buildClubsSnapshot:owner');
             if (uDoc.exists) {
               const uData = uDoc.data();
               const uname = uData?.username ? String(uData.username).replace(/^@+/, '').trim() : null;
@@ -1406,7 +1427,7 @@ export async function getAdminClubsFromReadModel(
     seasonId,
     expectedCount: 96,
     firestoreFetcher: async () => {
-      const snap = await buildClubsSnapshot(seasonId);
+      const snap = await getClubsSnapshotForRead(seasonId);
       return snap.data;
     },
     validateData: (data) => Array.isArray(data) && data.length > 0,
@@ -1460,7 +1481,7 @@ export async function getLeagueClubsFromReadModel(
 ): Promise<{ clubs: Club[]; source: string; stale: boolean; degraded: boolean; snapshotAt: string }> {
   const result = await readThroughReadModel<OwnerNeutralClub[]>({
     key: ReadModelKeys.clubsWithOwners(seasonId), seasonId, expectedCount: 96,
-    firestoreFetcher: async () => (await buildClubsSnapshot(seasonId)).data,
+    firestoreFetcher: async () => (await getClubsSnapshotForRead(seasonId)).data,
     validateData: data => Array.isArray(data) && data.length > 0,
   });
   return {
@@ -1482,7 +1503,7 @@ export async function getAvailableClubsFromReadModel(
     seasonId,
     expectedCount: 96,
     firestoreFetcher: async () => {
-      const snap = await buildClubsSnapshot(seasonId);
+      const snap = await getClubsSnapshotForRead(seasonId);
       return snap.data;
     },
     validateData: (data) => Array.isArray(data) && data.length > 0,
@@ -1515,7 +1536,7 @@ export async function getClubByIdFromReadModel(
     seasonId,
     expectedCount: 96,
     firestoreFetcher: async () => {
-      const snap = await buildClubsSnapshot(seasonId);
+      const snap = await getClubsSnapshotForRead(seasonId);
       return snap.data;
     },
     validateData: (data) => Array.isArray(data) && data.length > 0,
@@ -1545,7 +1566,7 @@ export async function getUserActiveClubFromReadModel(
     key: ReadModelKeys.clubsWithOwners(seasonId),
     seasonId,
     expectedCount: 96,
-    firestoreFetcher: async () => (await buildClubsSnapshot(seasonId)).data,
+    firestoreFetcher: async () => (await getClubsSnapshotForRead(seasonId)).data,
     validateData: data => Array.isArray(data) && data.length > 0,
   });
   const owner = result.data.find(c => (c.ownerUserId || c.claimedByUserId) === userId);
@@ -1604,7 +1625,7 @@ export async function getCompetitionStandingsFromReadModel(
       key: ReadModelKeys.clubsWithOwners(seasonId),
       seasonId,
       expectedCount: 96,
-      firestoreFetcher: async () => (await buildClubsSnapshot(seasonId)).data,
+      firestoreFetcher: async () => (await getClubsSnapshotForRead(seasonId)).data,
       validateData: (data) => Array.isArray(data) && data.length > 0,
     });
   } catch {}
@@ -1829,7 +1850,7 @@ export async function getCompetitionFixturesFromReadModel(
       key: ReadModelKeys.clubsWithOwners(seasonId),
       seasonId,
       expectedCount: 96,
-      firestoreFetcher: async () => (await buildClubsSnapshot(seasonId)).data,
+      firestoreFetcher: async () => (await getClubsSnapshotForRead(seasonId)).data,
       validateData: (data) => Array.isArray(data) && data.length > 0,
     });
   } catch {}

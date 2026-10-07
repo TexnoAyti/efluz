@@ -375,6 +375,57 @@ var init_seasonQualificationPolicy = __esm({
   }
 });
 
+// src/server/readModel/sharedReadRefresh.ts
+import { randomUUID as randomUUID2 } from "node:crypto";
+function isReadRefreshUnavailable(error) {
+  return error instanceof Error && error.message.startsWith("READ_REFRESH_");
+}
+function createSharedReadRefresh(getClient = getBoundedRedisClient) {
+  const flights2 = /* @__PURE__ */ new Map();
+  return async function refresh(key4, load) {
+    const existing = flights2.get(key4);
+    if (existing) return existing;
+    const work = (async () => {
+      const client = getClient();
+      const leaseKey = `efluz:v1:read-refresh:${key4}`;
+      const token = randomUUID2();
+      if (!client && (process.env.NODE_ENV === "production" || process.env.VERCEL)) throw new Error("READ_REFRESH_REDIS_UNAVAILABLE");
+      if (client) {
+        let acquired;
+        try {
+          acquired = await client.set(leaseKey, token, { nx: true, ex: 90 });
+        } catch {
+          throw new Error("READ_REFRESH_REDIS_UNAVAILABLE");
+        }
+        if (!acquired) throw new Error("READ_REFRESH_BUSY");
+      }
+      try {
+        return await load();
+      } finally {
+        if (client) await client.eval(RELEASE_READ_REFRESH, [leaseKey], [token]).catch(() => {
+        });
+      }
+    })();
+    flights2.set(key4, work);
+    try {
+      return await work;
+    } finally {
+      if (flights2.get(key4) === work) flights2.delete(key4);
+    }
+  };
+}
+var RELEASE_READ_REFRESH, sharedReadRefresh;
+var init_sharedReadRefresh = __esm({
+  "src/server/readModel/sharedReadRefresh.ts"() {
+    init_boundedRedis();
+    RELEASE_READ_REFRESH = `
+if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end
+return 0
+`;
+    sharedReadRefresh = createSharedReadRefresh();
+  }
+});
+
 // src/server/firebase/circuitBreaker.ts
 var DEFAULT_COOLDOWN_MS, CONSECUTIVE_FAILURES_THRESHOLD, FIRESTORE_READ_SOFT_LIMIT, FirestoreCircuitBreaker, firestoreCircuitBreaker;
 var init_circuitBreaker = __esm({
@@ -472,6 +523,13 @@ var init_circuitBreaker = __esm({
         }
         this.skippedReadsCount++;
         return false;
+      }
+      /** Release a reserved probe when a cache/lease satisfied the read instead. */
+      cancelProbe() {
+        if (this.state === "HALF_OPEN") {
+          this.halfOpenProbeInFlight = false;
+          this.state = "OPEN";
+        }
       }
       recordSuccess() {
         this.consecutiveFailures = 0;
@@ -2761,20 +2819,31 @@ async function readHistory() {
     const fresh = await redisGetFresh(HISTORY_KEY);
     if (fresh && !await redisIsDirty(HISTORY_KEY)) return { data: fresh.data, stale: false };
     try {
-      const db = getFirestoreDb();
-      const [records, archives] = await Promise.all([db.collection(COLLECTION).get(), db.collection("season_archives").get()]);
-      trackFirestoreRead(COLLECTION, records.size, "playerTrophyHistory");
-      trackFirestoreRead("season_archives", archives.size, "playerTrophyHistory");
-      const data = {
-        records: records.docs.map((doc) => doc.data()),
-        archives: archives.docs.map((doc) => ({ seasonId: doc.id, trophies: doc.data().trophies || [] }))
-      };
-      if (generation === historyEpoch) {
-        cachedHistory = { data, expiresAt: Date.now() + 3e4 };
-        await redisSetRaw(HISTORY_KEY, { data, sourceVersion: "firestore-trophy-history" }, 30).catch(() => {
-        });
-      }
-      return { data, stale: false };
+      return await sharedReadRefresh(HISTORY_KEY, async () => {
+        const newer = await redisGetFresh(HISTORY_KEY);
+        if (newer && !await redisIsDirty(HISTORY_KEY)) return { data: newer.data, stale: false };
+        if (!firestoreCircuitBreaker.canExecute()) throw new Error("READ_REFRESH_FIRESTORE_COOLDOWN");
+        const db = getFirestoreDb();
+        let records, archives;
+        try {
+          [records, archives] = await Promise.all([db.collection(COLLECTION).get(), db.collection("season_archives").get()]);
+          firestoreCircuitBreaker.recordSuccess();
+        } catch (error) {
+          firestoreCircuitBreaker.recordFailure(error);
+          throw error;
+        }
+        trackFirestoreRead(COLLECTION, Math.max(1, records.size), "playerTrophyHistory");
+        trackFirestoreRead("season_archives", Math.max(1, archives.size), "playerTrophyHistory");
+        const data = {
+          records: records.docs.map((doc) => doc.data()),
+          archives: archives.docs.map((doc) => ({ seasonId: doc.id, trophies: doc.data().trophies || [] }))
+        };
+        if (generation === historyEpoch) {
+          await redisSetRaw(HISTORY_KEY, { data, sourceVersion: "firestore-trophy-history" }, HISTORY_TTL_SECONDS);
+          cachedHistory = { data, expiresAt: Date.now() + HISTORY_TTL_SECONDS * 1e3 };
+        }
+        return { data, stale: false };
+      });
     } catch (error) {
       const last = await redisGetLkg(HISTORY_KEY);
       if (last) return { data: last.data, stale: true };
@@ -2888,7 +2957,7 @@ async function preserveRecordedTrophyOwners(trophies) {
     return { ...trophy, winnerUserId: record.winnerUserId, winnerUsername: record.winnerUsername };
   });
 }
-var COLLECTION, HISTORY_KEY, memoryRecords, cachedHistory, historyFlight, historyEpoch, localMode;
+var COLLECTION, HISTORY_KEY, HISTORY_TTL_SECONDS, memoryRecords, cachedHistory, historyFlight, historyEpoch, localMode;
 var init_playerTrophyService = __esm({
   "src/server/services/playerTrophyService.ts"() {
     init_trophies();
@@ -2897,8 +2966,11 @@ var init_playerTrophyService = __esm({
     init_seed();
     init_readModelStore();
     init_seasonInsightsService();
+    init_sharedReadRefresh();
+    init_circuitBreaker();
     COLLECTION = "player_trophies";
     HISTORY_KEY = "player-trophies:history";
+    HISTORY_TTL_SECONDS = 300;
     memoryRecords = /* @__PURE__ */ new Map();
     cachedHistory = null;
     historyFlight = null;
@@ -6233,11 +6305,12 @@ function decodeFixtureCursor(cursorStr) {
 async function readThroughReadModel2(options) {
   const { key: key4, ttlSeconds = 86400, expectedCount, firestoreFetcher, validateData } = options;
   const cleanKey = getRawDatasetKey(key4);
-  const canQueryFirestore = firestoreCircuitBreaker.canExecute();
+  const breakerStatus = firestoreCircuitBreaker.getStatus();
+  const firestoreHealthy = breakerStatus.state === "CLOSED" && !breakerStatus.softLimitExceeded;
   const isDirty = await redisIsDirty(cleanKey);
   const memoryHit = getFromProcessMemory(cleanKey);
   if (!isDirty && memoryHit && memoryHit.data !== void 0 && Date.now() - Date.parse(memoryHit.generatedAt) < ttlSeconds * 1e3) {
-    if (!canQueryFirestore) {
+    if (!firestoreHealthy) {
       return {
         data: memoryHit.data,
         source: "memory_stale",
@@ -6260,6 +6333,21 @@ async function readThroughReadModel2(options) {
   if (!isDirty) {
     freshSnapshot = await redisGetFresh(cleanKey);
   }
+  if (freshSnapshot && freshSnapshot.data !== void 0) {
+    const ageMs = Date.now() - new Date(freshSnapshot.generatedAt).getTime();
+    if (ageMs < ttlSeconds * 1e3) {
+      setInProcessMemory(cleanKey, freshSnapshot);
+      return {
+        data: freshSnapshot.data,
+        source: "redis_fresh",
+        generatedAt: freshSnapshot.generatedAt,
+        sourceVersion: freshSnapshot.sourceVersion,
+        stale: !firestoreHealthy,
+        degraded: !firestoreHealthy
+      };
+    }
+  }
+  const canQueryFirestore = firestoreCircuitBreaker.canExecute();
   if (!canQueryFirestore) {
     if (freshSnapshot && freshSnapshot.data !== void 0) {
       setInProcessMemory(cleanKey, freshSnapshot);
@@ -6288,20 +6376,6 @@ async function readThroughReadModel2(options) {
       `Firestore circuit breaker is OPEN and no warmed Redis snapshot exists for key: ${key4}`
     );
   }
-  if (freshSnapshot && freshSnapshot.data !== void 0) {
-    const ageMs = Date.now() - new Date(freshSnapshot.generatedAt).getTime();
-    if (ageMs < ttlSeconds * 1e3) {
-      setInProcessMemory(cleanKey, freshSnapshot);
-      return {
-        data: freshSnapshot.data,
-        source: "redis_fresh",
-        generatedAt: freshSnapshot.generatedAt,
-        sourceVersion: freshSnapshot.sourceVersion,
-        stale: false,
-        degraded: false
-      };
-    }
-  }
   let loader = inFlightLoaders.get(cleanKey);
   if (!loader) {
     loader = (async () => {
@@ -6325,7 +6399,8 @@ async function readThroughReadModel2(options) {
         firestoreCircuitBreaker.recordSuccess();
         return freshData;
       } catch (err) {
-        firestoreCircuitBreaker.recordFailure(err);
+        if (isReadRefreshUnavailable(err)) firestoreCircuitBreaker.cancelProbe();
+        else firestoreCircuitBreaker.recordFailure(err);
         throw err;
       } finally {
         inFlightLoaders.delete(cleanKey);
@@ -6434,6 +6509,18 @@ async function patchCompetitionMatchdayCatalog(competition) {
   inProcessMemoryCache.delete(key4);
 }
 async function buildClubsSnapshot(seasonId2 = "season-2026-27") {
+  return sharedReadRefresh(ReadModelKeys.clubsWithOwners(seasonId2), () => buildClubsSnapshotAuthoritative(seasonId2));
+}
+async function getClubsSnapshotForRead(seasonId2) {
+  const key4 = ReadModelKeys.clubsWithOwners(seasonId2);
+  const fresh = await redisGetFresh(key4);
+  if (Array.isArray(fresh?.data) && fresh.data.length === 96 && !await redisIsDirty(key4)) {
+    firestoreCircuitBreaker.cancelProbe();
+    return fresh;
+  }
+  return buildClubsSnapshot(seasonId2);
+}
+async function buildClubsSnapshotAuthoritative(seasonId2) {
   const occMap = /* @__PURE__ */ new Map();
   const userMap = /* @__PURE__ */ new Map();
   const existingLkg = await redisGetLkg(ReadModelKeys.clubsWithOwners(seasonId2));
@@ -6444,6 +6531,7 @@ async function buildClubsSnapshot(seasonId2 = "season-2026-27") {
     if (db) {
       const occSnap = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where("seasonId", "==", seasonId2).get();
       occupancyDocumentsSeen = occSnap.size;
+      trackFirestoreRead(COLLECTIONS.CLUB_OCCUPANCIES, Math.max(1, occSnap.size), "buildClubsSnapshot");
       for (const doc of occSnap.docs) {
         const data = doc.data();
         if (data.clubId && data.userId && !["released", "inactive"].includes(data.status)) {
@@ -6455,6 +6543,7 @@ async function buildClubsSnapshot(seasonId2 = "season-2026-27") {
         ownerUserIds.map(async (uid) => {
           try {
             const uDoc = await db.collection(COLLECTIONS.USERS).doc(uid).get();
+            trackFirestoreRead(COLLECTIONS.USERS, 1, "buildClubsSnapshot:owner");
             if (uDoc.exists) {
               const uData = uDoc.data();
               const uname = uData?.username ? String(uData.username).replace(/^@+/, "").trim() : null;
@@ -6854,7 +6943,7 @@ async function getAdminClubsFromReadModel(seasonId2 = "season-2026-27", leagueId
     seasonId: seasonId2,
     expectedCount: 96,
     firestoreFetcher: async () => {
-      const snap = await buildClubsSnapshot(seasonId2);
+      const snap = await getClubsSnapshotForRead(seasonId2);
       return snap.data;
     },
     validateData: (data) => Array.isArray(data) && data.length > 0
@@ -6898,7 +6987,7 @@ async function getLeagueClubsFromReadModel(leagueId, seasonId2 = "season-2026-27
     key: ReadModelKeys.clubsWithOwners(seasonId2),
     seasonId: seasonId2,
     expectedCount: 96,
-    firestoreFetcher: async () => (await buildClubsSnapshot(seasonId2)).data,
+    firestoreFetcher: async () => (await getClubsSnapshotForRead(seasonId2)).data,
     validateData: (data) => Array.isArray(data) && data.length > 0
   });
   return {
@@ -6915,7 +7004,7 @@ async function getAvailableClubsFromReadModel(seasonId2 = "season-2026-27", curr
     seasonId: seasonId2,
     expectedCount: 96,
     firestoreFetcher: async () => {
-      const snap = await buildClubsSnapshot(seasonId2);
+      const snap = await getClubsSnapshotForRead(seasonId2);
       return snap.data;
     },
     validateData: (data) => Array.isArray(data) && data.length > 0
@@ -6935,7 +7024,7 @@ async function getClubByIdFromReadModel(clubId, seasonId2 = "season-2026-27", cu
     seasonId: seasonId2,
     expectedCount: 96,
     firestoreFetcher: async () => {
-      const snap = await buildClubsSnapshot(seasonId2);
+      const snap = await getClubsSnapshotForRead(seasonId2);
       return snap.data;
     },
     validateData: (data) => Array.isArray(data) && data.length > 0
@@ -6952,7 +7041,7 @@ async function getUserActiveClubFromReadModel(userId2, seasonId2 = "season-2026-
     key: ReadModelKeys.clubsWithOwners(seasonId2),
     seasonId: seasonId2,
     expectedCount: 96,
-    firestoreFetcher: async () => (await buildClubsSnapshot(seasonId2)).data,
+    firestoreFetcher: async () => (await getClubsSnapshotForRead(seasonId2)).data,
     validateData: (data) => Array.isArray(data) && data.length > 0
   });
   const owner = result.data.find((c) => (c.ownerUserId || c.claimedByUserId) === userId2);
@@ -6991,7 +7080,7 @@ async function getCompetitionStandingsFromReadModel(competitionId, seasonId2 = "
       key: ReadModelKeys.clubsWithOwners(seasonId2),
       seasonId: seasonId2,
       expectedCount: 96,
-      firestoreFetcher: async () => (await buildClubsSnapshot(seasonId2)).data,
+      firestoreFetcher: async () => (await getClubsSnapshotForRead(seasonId2)).data,
       validateData: (data) => Array.isArray(data) && data.length > 0
     });
   } catch {
@@ -7186,7 +7275,7 @@ async function getCompetitionFixturesFromReadModel(competitionId, optionsOrMatch
       key: ReadModelKeys.clubsWithOwners(seasonId2),
       seasonId: seasonId2,
       expectedCount: 96,
-      firestoreFetcher: async () => (await buildClubsSnapshot(seasonId2)).data,
+      firestoreFetcher: async () => (await getClubsSnapshotForRead(seasonId2)).data,
       validateData: (data) => Array.isArray(data) && data.length > 0
     });
   } catch {
@@ -7679,6 +7768,7 @@ var init_readModelStore = __esm({
   "src/server/readModel/readModelStore.ts"() {
     init_seasonQualificationPolicy();
     init_retiredFixtureService();
+    init_sharedReadRefresh();
     init_redisConfig();
     init_circuitBreaker();
     init_admin();
@@ -8544,7 +8634,7 @@ var init_testGuard = __esm({
 });
 
 // src/server/outbox/redisOutbox.ts
-import { randomUUID as randomUUID2 } from "node:crypto";
+import { randomUUID as randomUUID3 } from "node:crypto";
 function isRedisOutboxConfigured() {
   return getUpstashClient() !== null;
 }
@@ -8559,7 +8649,7 @@ async function persistDurableMutation(mutation) {
   const pendingKey = OUTBOX_KEYS.pending();
   const allKey = OUTBOX_KEYS.all();
   try {
-    mutation.revision = randomUUID2();
+    mutation.revision = randomUUID3();
     const rawJson = JSON.stringify(mutation);
     await client.eval(`
       -- EFL_OUTBOX_PERSIST_V1: validate all key types before publishing.
@@ -11538,7 +11628,7 @@ __export(competitionMatchdayService_exports, {
   controlCompetitionMatchday: () => controlCompetitionMatchday,
   getCompetitionMatchdayControl: () => getCompetitionMatchdayControl
 });
-import { randomUUID as randomUUID3 } from "node:crypto";
+import { randomUUID as randomUUID4 } from "node:crypto";
 function totalRounds(comp, fixtures) {
   if (comp.type === "LEAGUE") {
     const teams = Number(comp.formatConfig?.totalClubs || (comp.leagueId === "league-bundesliga" || comp.leagueId === "league-ligue-1" ? 18 : 20));
@@ -11644,7 +11734,7 @@ async function controlCompetitionMatchday(competitionId, params) {
     }
     for (const item of locks) tx.set(db.collection(COLLECTIONS.MATCHDAY_LOCKS).doc(item.id), item);
     tx.update(ref, changes);
-    tx.set(db.collection(COLLECTIONS.AUDIT_LOGS).doc(randomUUID3()), { action: "MATCHDAY_CONTROL", competitionId, seasonId: seasonId2, matchday: target, operation: params.action, adminUserId: params.adminUserId || null, previousMatchday: current, createdAt: now });
+    tx.set(db.collection(COLLECTIONS.AUDIT_LOGS).doc(randomUUID4()), { action: "MATCHDAY_CONTROL", competitionId, seasonId: seasonId2, matchday: target, operation: params.action, adminUserId: params.adminUserId || null, previousMatchday: current, createdAt: now });
     return { competition: { ...comp, ...changes }, locks, deadlineAt: deadline };
   });
   await syncCompetitionMatchdayState(result.competition, result.locks);
@@ -11825,80 +11915,8 @@ __export(firestoreStore_exports, {
   markNotificationsReadFirestore: () => markNotificationsReadFirestore,
   markSingleNotificationReadFirestore: () => markSingleNotificationReadFirestore,
   openCompetitionMatchdayNowFirestore: () => openCompetitionMatchdayNowFirestore,
-  rebuildCompetitionStandingsFirestore: () => rebuildCompetitionStandingsFirestore2,
-  recordEndpointCall: () => recordEndpointCall,
-  recordFallbackUsage: () => recordFallbackUsage,
-  refreshFixtureMatchdayRules: () => refreshFixtureMatchdayRules,
-  reopenFixtureFirestore: () => reopenFixtureFirestore,
-  resetFirestoreReadMetrics: () => resetFirestoreReadMetrics,
-  resetReadMetrics: () => resetReadMetrics,
-  resolveClubOwnersForSeason: () => resolveClubOwnersForSeason,
-  resolveDisputeFirestore: () => resolveDisputeFirestore,
-  resolveOwnerUserRecord: () => resolveOwnerUserRecord,
-  setCompetitionMatchdayOverrideFirestore: () => setCompetitionMatchdayOverrideFirestore,
-  setCompetitionMatchdayTimerFirestore: () => setCompetitionMatchdayTimerFirestore,
-  setInCache: () => setInCache,
-  setMatchdayLockFirestore: () => setMatchdayLockFirestore,
-  submitFixtureResultFirestore: () => submitFixtureResultFirestore,
-  syncCompetitionMatchdayState: () => syncCompetitionMatchdayState,
-  syncFirestoreClubCrests: () => syncFirestoreClubCrests,
-  trackFirestoreAggregation: () => trackFirestoreAggregation,
-  trackFirestoreRead: () => trackFirestoreRead,
-  trackFirestoreWrite: () => trackFirestoreWrite,
-  validateDomesticFixturesFirestore: () => validateDomesticFixturesFirestore,
-  verifyUserClubConsistency: () => verifyUserClubConsistency
-});
-import { FieldPath as FieldPath2 } from "firebase-admin/firestore";
-function trackFirestoreRead(collectionName, count = 1, caller = "unknown") {
-  recordDurableRead(collectionName, count, caller);
-  readMetrics.sessionReads += count;
-  readMetrics.readsByCollection[collectionName] = (readMetrics.readsByCollection[collectionName] || 0) + count;
-  readMetrics.readsByFunction[caller] = (readMetrics.readsByFunction[caller] || 0) + count;
-  if (count >= 100) {
-    console.warn("[FIRESTORE_HIGH_READ]", JSON.stringify({ collection: collectionName, count, caller }));
-  }
-}
-function trackFirestoreAggregation(collectionName, count = 1, caller = "unknown") {
-  recordDurableRead(collectionName, count, "aggregation:" + caller);
-  readMetrics.sessionReads += count;
-  readMetrics.aggregationReads = (readMetrics.aggregationReads || 0) + count;
-  readMetrics.readsByCollection[collectionName] = (readMetrics.readsByCollection[collectionName] || 0) + count;
-  readMetrics.readsByFunction[`aggregation:${caller}`] = (readMetrics.readsByFunction[`aggregation:${caller}`] || 0) + count;
-}
-function trackFirestoreWrite(collectionName, count = 1, caller = "unknown") {
-  readMetrics.sessionWrites += count;
-  readMetrics.readsByFunction[`write:${caller}`] = (readMetrics.readsByFunction[`write:${caller}`] || 0) + count;
-}
-function recordEndpointCall(endpoint, category, estimatedReads = 0) {
-  readMetrics.classifications[category] = (readMetrics.classifications[category] || 0) + 1;
-  if (!readMetrics.endpointMetrics[endpoint]) {
-    readMetrics.endpointMetrics[endpoint] = {
-      requestCount: 0,
-      category,
-      estimatedReads: 0
-    };
-  }
-  readMetrics.endpointMetrics[endpoint].requestCount += 1;
-  readMetrics.endpointMetrics[endpoint].estimatedReads += estimatedReads;
-}
-function recordFallbackUsage() {
-  readMetrics.fallbackCount += 1;
-}
-function getReadMetrics() {
-  const elapsedMs = Math.max(1e3, Date.now() - new Date(readMetrics.startedAt).getTime());
-  const elapsedMinutes = elapsedMs / 6e4;
-  const projectedDailyConsumption = Math.round(readMetrics.sessionReads / Math.max(0.1, elapsedMinutes) * 1440);
-  let highestReadEndpoint = "None";
-  let maxReads = -1;
-  for (const [ep, meta] of Object.entries(readMetrics.endpointMetrics)) {
-    if (meta.estimatedReads > maxReads) {
-      maxReads = meta.estimatedReads;
-      highestReadEndpoint = ep;
-    }
-  }
-  const freeTierDailyLimit = 5e4;
-  const percentageConsumed = Number((readMetrics.sessionReads /
-... 448294 bytes omitted ...
+  rebuildCompetitionStandingsFirestore: () => rebuildCompetitionStandingsFirestore
+... 452034 bytes omitted ...
 eAdminScope(), leagueAdminScope_exports));
         res.json(await getLeagueAdminOverview2(req.user, String(req.query.seasonId || "season-2026-27")));
       } catch (err) {
@@ -14887,7 +14905,7 @@ var init_telegramAiPrompt = __esm({
 });
 
 // src/server/services/telegramAiReadTools.ts
-import { randomUUID as randomUUID7 } from "node:crypto";
+import { randomUUID as randomUUID8 } from "node:crypto";
 function aiProviderFailureKind(error) {
   let details = error;
   try {
@@ -14913,7 +14931,7 @@ async function generateGroundedTelegramAnswer(options) {
   const rawRead = options.read || createAiTournamentReader(options.signal).read;
   const memo = /* @__PURE__ */ new Map();
   let cacheHits = 0;
-  const traceId = randomUUID7();
+  const traceId = randomUUID8();
   const read2 = async (args) => {
     const key4 = JSON.stringify(args && typeof args === "object" ? Object.fromEntries(Object.entries(args).sort(([a], [b]) => a.localeCompare(b))) : args);
     if (key4 && memo.has(key4)) {
@@ -17464,7 +17482,7 @@ var telegram_routes_exports = {};
 __export(telegram_routes_exports, {
   telegramRouter: () => telegramRouter
 });
-import { randomUUID as randomUUID8 } from "node:crypto";
+import { randomUUID as randomUUID9 } from "node:crypto";
 import { Router as Router23 } from "express";
 async function claimTelegramUpdate(updateId, owner) {
   const client = getUpstashClient();
@@ -17536,7 +17554,7 @@ var init_telegram_routes = __esm({
         res.status(200).json({ ok: true, ignored: "invalid_update_id" });
         return;
       }
-      const owner = randomUUID8();
+      const owner = randomUUID9();
       let claimed = false;
       try {
         const claim2 = await claimTelegramUpdate(update.update_id, owner);
@@ -18455,7 +18473,7 @@ init_readModelStore();
 init_redisOutbox();
 init_clubAdmission();
 init_firestoreStore();
-import { randomUUID as randomUUID4 } from "node:crypto";
+import { randomUUID as randomUUID5 } from "node:crypto";
 var CLUB_CLAIM_KEYS = {
   user: (season, user) => `${KEY_PREFIX}:club-claim:${season}:user:${user}`,
   club: (season, club) => `${KEY_PREFIX}:club-claim:${season}:club:${club}`,
@@ -18525,8 +18543,8 @@ async function requestDurableClubClaim(userId2, clubId, seasonId2, actor) {
   const admission = await redisGetFresh(ReadModelKeys.clubAdmission(seasonId2)) || await redisGetLkg(ReadModelKeys.clubAdmission(seasonId2));
   if (!admission?.data) throw new DurablePersistenceUnavailableError("Klub qabuli holati saqlanmagan. Qayta urinib ko\u2018ring.");
   assertClubAdmissionOpen(admissionStatus(seasonId2, admission.data), club.leagueId);
-  const now = (/* @__PURE__ */ new Date()).toISOString(), id = "cc-" + randomUUID4();
-  const mutation = { mutationId: id, revision: randomUUID4(), entityType: "CLUB_CLAIM", entityId: clubId, operation: "claim", userId: userId2, seasonId: seasonId2, payload: { userId: userId2, clubId, seasonId: seasonId2, clubName: club.name, requiresActiveUser: true, ...verifiedProfile ? { verifiedProfile } : {} }, createdAt: now, updatedAt: now, retryCount: 0, nextRetryAt: Date.now(), lastError: null, status: "PENDING" };
+  const now = (/* @__PURE__ */ new Date()).toISOString(), id = "cc-" + randomUUID5();
+  const mutation = { mutationId: id, revision: randomUUID5(), entityType: "CLUB_CLAIM", entityId: clubId, operation: "claim", userId: userId2, seasonId: seasonId2, payload: { userId: userId2, clubId, seasonId: seasonId2, clubName: club.name, requiresActiveUser: true, ...verifiedProfile ? { verifiedProfile } : {} }, createdAt: now, updatedAt: now, retryCount: 0, nextRetryAt: Date.now(), lastError: null, status: "PENDING" };
   let result;
   try {
     result = await client.eval(CLUB_CLAIM_RESERVE_LUA, [CLUB_CLAIM_KEYS.user(seasonId2, userId2), CLUB_CLAIM_KEYS.club(seasonId2, clubId), CLUB_CLAIM_KEYS.latest(seasonId2, userId2), OUTBOX_KEYS.mutation(id), OUTBOX_KEYS.pending(), OUTBOX_KEYS.all()], [JSON.stringify(mutation), mutation.nextRetryAt, id, `${KEY_PREFIX}:outbox:mutation:`]);
