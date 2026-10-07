@@ -3,7 +3,7 @@ import {
   Home,
   Shield,
   Swords,
-  Trophy,
+  createLucideIcon,
   Award,
   Globe2,
   Bell,
@@ -15,6 +15,13 @@ import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n';
 import { GlassSurface } from './GlassSurface';
 import { ElasticNavIndicator } from './ElasticNavIndicator';
+
+const UclTrophyIcon = createLucideIcon('UclTrophy', [
+  ['path', { d: 'M7 6C5 1 1.5 1 2 5c.4 4 2.1 7.5 5.7 8.5', key: 'left-handle' }],
+  ['path', { d: 'M17 6c2-5 5.5-5 5-1-.4 4-2.1 7.5-5.7 8.5', key: 'right-handle' }],
+  ['path', { d: 'M6.5 5h11l-1 8.5c-.3 2.5-2 4-4.5 4s-4.2-1.5-4.5-4L6.5 5Z', key: 'cup' }],
+  ['path', { d: 'M10 17.2V20h4v-2.8M8 20h8l1 2H7l1-2Z', key: 'base' }],
+]);
 
 export type TabType =
   | 'dashboard'
@@ -49,7 +56,7 @@ export const Navigation: React.FC<NavigationProps> = ({
   // Everyone uses the same public destinations; admin access stays role-based.
   const desktopNavItems = [
     { id: 'dashboard' as TabType, label: t.navHome || 'Home', icon: Home, badge: 0 },
-    { id: 'leagues' as TabType, label: t.navLeagues || 'Leagues', icon: Trophy, badge: 0 },
+    { id: 'leagues' as TabType, label: t.navLeagues || 'Leagues', icon: UclTrophyIcon, badge: 0 },
     { id: 'my-club' as TabType, label: language === 'uz' ? 'Klub' : language === 'ru' ? 'Клуб' : 'Club', icon: Shield, badge: 0 },
     ...(user?.isAdmin ? [{ id: 'admin' as TabType, label: t.navAdmin || 'Admin', icon: SlidersHorizontal, badge: openDisputesCount }] : []),
   ];
@@ -77,7 +84,7 @@ export const Navigation: React.FC<NavigationProps> = ({
     {
       id: 'leagues' as TabType,
       label: t.navLeagues || 'Leagues',
-      icon: Trophy,
+      icon: UclTrophyIcon,
       isActive: isLeaguesActive,
     },
     {
