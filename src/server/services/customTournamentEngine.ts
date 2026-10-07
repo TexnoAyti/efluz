@@ -186,7 +186,7 @@ export function generateRoundRobinFixtures(
           groupIndex,
           roundOrMatchday: matchday,
           matchIndex: matchCounter,
-          leg: davra,
+          leg: davra === 1 ? 1 : 2,
           homeClubId: home.clubId,
           awayClubId: away.clubId,
           homeClubName: home.clubName,
