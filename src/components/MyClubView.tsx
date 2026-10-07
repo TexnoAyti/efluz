@@ -46,6 +46,14 @@ export const MyClubView: React.FC<MyClubViewProps> = ({
   const [competitions, setCompetitions] = useState<Competition[]>([]);
   const [upcomingFixtures, setUpcomingFixtures] = useState<Fixture[]>([]);
   const [recentFixtures, setRecentFixtures] = useState<Fixture[]>([]);
+  const [customTournamentClubs, setCustomTournamentClubs] = useState<{
+    tournamentId: string;
+    tournamentName: string;
+    clubId: string;
+    clubName: string;
+    clubLogoUrl: string;
+    format: string;
+  }[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -53,14 +61,41 @@ export const MyClubView: React.FC<MyClubViewProps> = ({
     setIsLoading(true);
     setError(null);
     try {
-      const [meRes, matchesRes, compsRes] = await Promise.all([
+      const [meRes, matchesRes, compsRes, customRes] = await Promise.all([
         api.getMe(activeSeasonId).catch(() => ({ stats: null })),
         api.getMyMatches(activeSeasonId).catch(() => ({ fixtures: [] })),
         api.getCompetitions(activeSeasonId).catch(() => ({ competitions: [] })),
+        fetch('/api/custom-tournaments/my')
+          .then((r) => r.json())
+          .catch(() => ({ ok: false, tournaments: [] })),
       ]);
 
       if (meRes.stats) setStats(meRes.stats);
       if (compsRes.competitions) setCompetitions(compsRes.competitions);
+
+      // Extract custom tournament clubs
+      if (customRes.ok && Array.isArray(customRes.tournaments) && user) {
+        const found: any[] = [];
+        for (const t of customRes.tournaments) {
+          try {
+            const detRes = await fetch(`/api/custom-tournaments/${t.id}`).then((r) => r.json());
+            if (detRes.ok && Array.isArray(detRes.participants)) {
+              const part = detRes.participants.find((p: any) => p.userId === user.id);
+              if (part) {
+                found.push({
+                  tournamentId: t.id,
+                  tournamentName: t.name,
+                  clubId: part.clubId,
+                  clubName: part.clubName,
+                  clubLogoUrl: part.clubLogoUrl,
+                  format: t.format,
+                });
+              }
+            }
+          } catch {}
+        }
+        setCustomTournamentClubs(found);
+      }
 
       const matches = matchesRes.fixtures || [];
       const pending = matches.filter(
@@ -80,7 +115,8 @@ export const MyClubView: React.FC<MyClubViewProps> = ({
 
   useEffect(() => {
     loadClubData();
-  }, [activeSeasonId, currentClub?.id]);
+  }, [activeSeasonId, currentClub?.id, user?.id]);
+
 
   if (!currentClub) {
     return (
@@ -360,7 +396,59 @@ export const MyClubView: React.FC<MyClubViewProps> = ({
             ))}
           </div>
         )}
+
+        {/* Custom Tournament Clubs (User-created tournaments) */}
+        {customTournamentClubs.length > 0 && (
+          <div className="space-y-3 pt-4 border-t border-white/[0.08]">
+            <div className="flex items-center justify-between px-1">
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                <Trophy className="w-4 h-4 text-emerald-400" />
+                <span>Jamoa Turnirlaridagi Klublaringiz</span>
+              </h3>
+              <span className="text-[10px] text-slate-400">
+                {customTournamentClubs.length} ta turnir
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {customTournamentClubs.map((ct) => (
+                <div
+                  key={`${ct.tournamentId}_${ct.clubId}`}
+                  onClick={() => onNavigateTab('leagues')}
+                  className="glass-card hover:border-emerald-500/30 cursor-pointer p-4 flex items-center justify-between gap-4 transition-all group"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-slate-950/80 p-2 border border-white/[0.08] flex items-center justify-center shrink-0">
+                      <ClubCrest
+                        clubId={ct.clubId}
+                        logoUrl={ct.clubLogoUrl}
+                        name={ct.clubName}
+                        size="md"
+                        className="w-full h-full"
+                      />
+                    </div>
+                    <div className="truncate">
+                      <div className="text-xs font-bold text-white group-hover:text-emerald-400 transition-colors truncate">
+                        {ct.clubName}
+                      </div>
+                      <div className="text-[11px] text-emerald-400/90 font-medium truncate flex items-center gap-1.5 mt-0.5">
+                        <span className="px-1.5 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-bold">
+                          Turnir: {ct.tournamentName}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <span className="px-2.5 py-1 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold shrink-0 group-hover:bg-emerald-500 group-hover:text-slate-950 transition-colors">
+                    O‘tish
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
+
 };

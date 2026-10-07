@@ -4,11 +4,12 @@ import { ClubsView } from './ClubsView';
 import { CupBracketsView } from './CupBracketsView';
 import { ChampionsLeagueView } from './ChampionsLeagueView';
 import { SeasonHubView } from './SeasonHubView';
-import { Trophy, Award, Globe2, CalendarDays } from 'lucide-react';
+import { TournamentListView } from './customTournaments/TournamentListView';
+import { Trophy, Award, Globe2, CalendarDays, Sparkles } from 'lucide-react';
 
 interface CompetitionHubViewProps {
   onNavigateTab: (tab: any) => void;
-  initialSubTab?: 'leagues' | 'cups' | 'european' | 'season';
+  initialSubTab?: 'leagues' | 'cups' | 'european' | 'season' | 'custom';
 }
 
 export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
@@ -16,12 +17,12 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
   initialSubTab = 'leagues',
 }) => {
   const { language } = useI18n();
-  const [subTab, setSubTab] = useState<'leagues' | 'cups' | 'european' | 'season'>(() => {
+  const [subTab, setSubTab] = useState<'leagues' | 'cups' | 'european' | 'season' | 'custom'>(() => {
     try {
       const saved = sessionStorage.getItem('efl:competition-hub-subtab');
-      if (saved === 'leagues' || saved === 'cups' || saved === 'european' || saved === 'season') {
+      if (saved === 'leagues' || saved === 'cups' || saved === 'european' || saved === 'season' || saved === 'custom') {
         sessionStorage.removeItem('efl:competition-hub-subtab');
-        return saved;
+        return saved as any;
       }
     } catch {}
     return initialSubTab;
@@ -41,6 +42,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
       cups: 'Kuboklar',
       european: 'Yevrokuboklar',
       season: 'Mavsum',
+      custom: 'Jamoa turnirlari',
     },
     ru: {
       heading: 'Турниры',
@@ -48,6 +50,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
       cups: 'Кубки',
       european: 'Еврокубки',
       season: 'Сезон',
+      custom: 'Пользовательские',
     },
     en: {
       heading: 'Competitions',
@@ -55,6 +58,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
       cups: 'Cups',
       european: 'Europe',
       season: 'Season',
+      custom: 'Custom Tournaments',
     },
   }[language] || {
     heading: 'Competitions',
@@ -62,6 +66,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
     cups: 'Cups',
     european: 'Europe',
     season: 'Season',
+    custom: 'Jamoa turnirlari',
   };
 
   const navItems = [
@@ -69,6 +74,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
     { id: 'cups' as const, label: titles.cups, icon: Award },
     { id: 'european' as const, label: titles.european, icon: Globe2 },
     { id: 'season' as const, label: titles.season, icon: CalendarDays },
+    { id: 'custom' as const, label: titles.custom, icon: Sparkles },
   ];
 
   return (
@@ -109,7 +115,9 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
         {subTab === 'cups' && <CupBracketsView onNavigateTab={onNavigateTab} />}
         {subTab === 'european' && <ChampionsLeagueView onNavigateTab={onNavigateTab} />}
         {subTab === 'season' && <SeasonHubView onNavigateTab={onNavigateTab} />}
+        {subTab === 'custom' && <TournamentListView />}
       </div>
     </div>
   );
 };
+
