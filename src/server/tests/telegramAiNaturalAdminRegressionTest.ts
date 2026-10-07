@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { contextualFixturePlan } from '../services/telegramAiFixtureContext';
 import { planNaturalAdminRequest, type NaturalPlannerDependencies } from '../services/telegramAiNaturalAdminPlanner';
 import { detectNaturalAdminAction } from '../services/telegramAiAdminLanguage';
-import { getConversationIntent } from '../services/telegramAiConversationCommands';
+import { getConversationIntent, findConversationCompetitions } from '../services/telegramAiConversationCommands';
+import { handleTelegramAiMessage, setTestAiResponder, clearTestAiState } from '../services/telegramAiService';
 import { assertAdminPlanReady, validateModelAdminPlan } from '../services/telegramAiAdminPlanReadiness';
 import { createAiTournamentReader } from '../services/telegramAiDataService';
 import { startMockUpstashBridge } from './mockUpstashBridge';
@@ -20,6 +21,25 @@ const clubs=[{id:'club-arsenal',name:'Arsenal',shortName:'ARS',leagueId:'league-
 const fixtures=[1,10].map(matchday=>({id:'game-'+matchday,competitionId:serie,seasonId:season,matchday,status:'CONFIRMED',homeClubId:'club-milan',awayClubId:'club-inter',homeClubName:'AC Milan',awayClubName:'Inter Milan',homeScore:0,awayScore:1}));
 const bridge=await startMockUpstashBridge();
 const signal=new AbortController().signal;
+const originalFetch = global.fetch;
+const sent: any[] = [];
+process.env.TELEGRAM_BOT_TOKEN = '123456:isolated-cup-test';
+global.fetch = async (input: any, init?: any) => {
+ const url = typeof input === 'string' ? input : input?.url || '';
+ // The snapshot bridge does not emulate the rate-limit Lua script. Rate limits
+ // have their own regression suite; allow this one request through that gate.
+ if (url.includes('redis.test.invalid') && init?.body) {
+  const command = JSON.parse(init.body);
+  if (String(command[0]).toLowerCase() === 'eval' && String(command[1]).includes('local userLimit ='))
+   return new Response(JSON.stringify({result:[1,'OK',1]}), {status:200});
+ }
+ if (url.startsWith('https://api.telegram.org/')) {
+  assert.match(url, /\/sendMessage$/);
+  sent.push(JSON.parse(init?.body || '{}'));
+  return new Response(JSON.stringify({ok:true,result:{message_id:8000+sent.length}}), {status:200});
+ }
+ return originalFetch(input, init);
+};
 let writes=0,firestore=0;
 const db=getFirestoreDb(), originalCollection=db.collection.bind(db);
 db.collection=(()=>{firestore++;throw new Error('RESOURCE_EXHAUSTED');}) as any;
@@ -29,6 +49,8 @@ try {
  await redisSetRaw(ReadModelKeys.competitions(season),snapshot(comps));
  await redisSetRaw(ReadModelKeys.clubsWithOwners(season),snapshot(clubs));
  await redisSetRaw(ReadModelKeys.competitionFixtures(serie,season),snapshot(fixtures));
+ await redisSetRaw(ReadModelKeys.competitionFixtures(liga,season),snapshot([]));
+ for (const competitionId of [cup,copa]) await redisSetRaw(ReadModelKeys.competitionFixtures(competitionId,season),snapshot([1,2].map(matchday=>({id:competitionId+'-'+matchday,competitionId,seasonId:season,matchday,status:'SCHEDULED',homeClubId:'club-arsenal',awayClubId:'club-nottm-forest'}))));
  await redisSetRaw(ReadModelKeys.competitionFixtures(epl,season),snapshot([{id:'forest-11',competitionId:epl,seasonId:season,matchday:11,status:'SCHEDULED',homeClubId:'club-nottm-forest',awayClubId:'club-arsenal',homeClubName:'Nottingham Forest',awayClubName:'Arsenal'}]));
  await redisSetRaw('efluz:v1:admin:user-directory',snapshot([{id:'user-123',username:'inter_fan',telegramId:'123'}]));
  const deps:NaturalPlannerDependencies={read:createAiTournamentReader(signal).read,users:async()=>[{id:'user-123',username:'inter_fan',telegramId:'123'}]};
@@ -80,6 +102,8 @@ try {
   ['Angliya Kubogi juftliklarini moslashtir','cup_reconcile',{}],
   ['Angliya Kubogini keyingi bosqichga o‘tkaz','cup_advance',{}],
   ['Ispaniya Kubogi start ber','cup_round',{roundNumber:1,action:'OPEN'}],
+  ['Ispaniya kubogini boshlagin','cup_round',{roundNumber:1,action:'OPEN'}],
+  ['Copa del Rey ishga tushir','cup_round',{roundNumber:1,action:'OPEN'}],
   ['FA Cup 2-bosqichni och','cup_round',{roundNumber:2,action:'OPEN'}],
   ['La Liga 11-turni hozir och 24 soat','matchday_open_now',{matchday:11,durationHours:24}],
   ['La Liga 10-turni tanla','matchday_control',{action:'SELECT',matchday:10}],
@@ -139,6 +163,19 @@ try {
  await assert.rejects(validateModelAdminPlan({action:'cup_generate',targetId:cup,body:{confirmation:true,drawSeed:'invented'}},'Angliya Kubogi qur’a yarat',signal),/server bergan/);
  setTestConfigOverride({...DEFAULT_AI_CONFIG,enabled:true,allowedChatId:-1001,allowedThreadId:3503});
  setTestAiAdminHooks(async()=>{writes++;return {status:200,data:{success:true}};});
+ assert.deepEqual(findConversationCompetitions('Ispaniya Kubogi start ber',comps.filter(c=>c.id!==copa) as any),[], 'Missing cup must not select La Liga');
+ await assert.rejects(planNaturalAdminRequest('Ispaniya Kubogi start ber',{...deps,read:async()=>({complete:false,data:[]})}),/to‘liq o‘qilmadi/);
+ await assert.rejects(planNaturalAdminRequest('Ispaniya Kubogi start ber',{...deps,read:async(q)=>q.dataset==='fixtures'?{complete:true,total:0,data:[]}:deps.read(q)}),/qur’asini ko‘rib chiq/);
+ await assert.rejects(planNaturalAdminRequest('Ispaniya Kubogi start ber',{...deps,read:async(q)=>q.dataset==='fixtures'?{complete:true,data:[{matchday:1,status:'CONFIRMED'}]}:deps.read(q)}),/tasdiqlangan natijalar bor/);
+ let modelCalls=0;
+ clearTestAiState();
+ setTestAiResponder(async()=>{modelCalls++;throw new Error('Cup start must not use conversational model');});
+ const delivered = await handleTelegramAiMessage({...payload('Ispaniya Kubogi start ber'),updateId:890001,messageId:890001});
+ assert.equal(delivered.replySent,true,JSON.stringify(delivered));
+ assert.match(sent.at(-1).text,/Copa del Rey: 1-bosqichni ochish/);
+ assert.match(sent.at(-1).text,/Hali bajarilmadi/);
+ assert.ok(sent.at(-1).reply_markup.inline_keyboard[0][0].callback_data.startsWith('ai:confirm:'));
+ assert.equal(modelCalls,0);assert.equal(writes,0);
  for(const text of ['Inter — Milan 10-tur natijasini 2-1 qil','@inter_fan faqat La Liga uchun admin qil','@inter_fan ga premium ber','Heidenheim klubini egasidan bo‘shat'])assert.match(await handleAiAdminCommand(payload(text),signal),/\/ai_confirm/);
  assert.match(await handleAiAdminCommand(payload('Inter Milan natijasini o‘chir'),signal),/Bir nechta o‘yin/);
  assert.match(await handleAiAdminCommand(payload('@inter_fan ni blokla',123),signal),/faqat asosiy admin/);
@@ -150,8 +187,8 @@ try {
  assert.match(changedPreview,/AC Milan 2:3 Inter Milan/);assert.match(changedPreview,/Hali bajarilmadi/);
  assert.match(await handleAiAdminCommand({...payload('hisobni 3-2 qil'),threadId:999},signal),/faol emas/);
  assert.equal(writes,0);assert.equal(firestore,0);
- console.log('PASS 36 native action phrases, exact score orientation, full ambiguity/missing-field checks, owner-only cached previews, zero model/Firestore/writes');
-} finally {db.collection=originalCollection;await bridge.close();setTestAiAdminHooks();}
+ console.log('PASS native action phrases, cup start full dispatch/buttons, missing cup isolation, incomplete cache and missing bracket clarification, existing result safety, exact scores; zero model/Firestore/writes, Telegram mocked');
+} finally {global.fetch=originalFetch;setTestAiResponder(null);db.collection=originalCollection;await bridge.close();setTestAiAdminHooks();}
 const executed:AdminPlan[]=[];
 setTestAiAdminHooks(async(plan)=>{executed.push(plan);return plan.action==='cup_preview' ? {status:200,data:{canGenerate:true,drawSeed:'server-only-seed',competitionName:'FA Cup',totalTeams:20,mode:'CREATE'}} : {status:200,data:{success:true}};},async()=>({action:'cup_preview',targetId:cup,body:{}}));
 try {

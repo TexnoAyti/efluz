@@ -142,7 +142,8 @@ export function createAiTournamentReader(signal?: AbortSignal) {
     const offset = q.offset || 0, limit = q.limit || 20;
     const fixturesDataset = q.dataset === 'fixtures' || q.dataset === 'statistics';
     const catalogComplete = !reader.missingKeys().some(k => [ReadModelKeys.competitions(season), ReadModelKeys.clubsWithOwners(season)].includes(k));
-    const complete = fixturesDataset ? catalogComplete && fixtureCoverage.get(selectedComps.map(c => c.id).sort().join('|')) === true : reader.missingKeys().length===0&&reader.failedKeys().length===0;
+    const catalogKey = q.dataset === 'competitions' ? ReadModelKeys.competitions(season) : q.dataset === 'clubs' ? ReadModelKeys.clubsWithOwners(season) : null;
+    const complete = catalogKey ? !reader.missingKeys().includes(catalogKey) && !reader.failedKeys().includes(catalogKey) : fixturesDataset ? catalogComplete && fixtureCoverage.get(selectedComps.map(c => c.id).sort().join('|')) === true : reader.missingKeys().length===0&&reader.failedKeys().length===0;
     return { season, stale, complete, snapshots:reader.snapshotStatus(), total: rows.length, offset, nextOffset: offset + limit < rows.length ? offset + limit : null, data: rows.slice(offset, offset + limit), missingDatasets: reader.missingKeys(), failedDatasets: reader.failedKeys(), note: 'complete tanlangan so‘rov manbalarining mavjudligini bildiradi. stale bo‘lsa joriy holat tasdiqlanmagan. Davom uchun nextOffset ishlating.' };
   };
   return { read };

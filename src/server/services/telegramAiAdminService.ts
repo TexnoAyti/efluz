@@ -55,7 +55,7 @@ export function describeAiAdminPlan(plan: AdminPlan, label = ''): string {
   const target = label || plan.targetId || '';
   if (plan.action === 'matchday_control' || plan.action === 'cup_round') {
     const verbs: Record<string,string> = { LOCK:'qulflash', OPEN:'ochish', SELECT:'tanlash', EXTEND:'muddatini uzaytirish', RESTART:'qayta boshlash' };
-    return `${target}: ${b.matchday || b.roundNumber}-turni ${verbs[String(b.action)] || String(b.action)}${b.durationHours ? ', ' + b.durationHours + ' soat' : ''}.`;
+    return `${target}: ${b.matchday || b.roundNumber}-${plan.action === 'cup_round' ? 'bosqichni' : 'turni'} ${verbs[String(b.action)] || String(b.action)}${b.durationHours ? ', ' + b.durationHours + ' soat' : ''}.`;
   }
   if (plan.action === 'club_assign') return `${target} klubini ${String(b.targetUserId)} ga biriktirish.`;
   if (plan.action === 'club_release') return `${target} klubini egasidan bo‘shatish.${b.expectedOwnerUserId ? ' Foydalanuvchi: ' + b.expectedOwnerUserId + '.' : ''}\nKlub, o‘yinlar va natijalar saqlanadi.`;

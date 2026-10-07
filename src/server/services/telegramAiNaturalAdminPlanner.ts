@@ -1,4 +1,4 @@
-import { detectNaturalAdminAction, assertSingleNaturalAdminRequest } from './telegramAiAdminLanguage';
+import { detectNaturalAdminAction, assertSingleNaturalAdminRequest, isNaturalCupStart } from './telegramAiAdminLanguage';
 import { adminPlanSchema, type AdminPlan } from './telegramAiAdminCatalog';
 import { normalizeAiEntity, resolveAiClubs } from './telegramAiEntities';
 import { createAiTournamentReader } from './telegramAiDataService';
@@ -21,10 +21,11 @@ export interface NaturalPlannerDependencies {
 async function pages(read: NaturalPlannerDependencies['read'], query: any): Promise<any[]> {
   const first = await read({ ...query, limit: 30 });
   if (first.error) clarify(first.message || (first.choices?.length ? 'Qaysi biri? '+first.choices.map((c:any)=>c.name).join(' yoki ')+'.' : 'So‘ralgan ma’lumot bazada aniqlanmadi. Klub, turnir yoki IDni tekshiring.'));
+  if (first.complete === false) clarify('Kerakli baza nusxasi to‘liq o‘qilmadi. Bu ma’lumot yo‘q degani emas. Hozir amalni ishonchli rejalashtirib bo‘lmaydi; hech narsa o‘zgarmadi.');
   const rows = [...(first.data || [])];
   for (let offset = 30; offset < (first.total || 0) && offset < 10000; offset += 30) {
     const next = await read({ ...query, offset, limit: 30 });
-    if (next.error || !next.data?.length) clarify('Ro‘yxat to‘liq o‘qilmadi. Hozir amalni aniq rejalashtirib bo‘lmaydi.');
+    if (next.error || next.complete === false || !next.data?.length) clarify('Ro‘yxat to‘liq o‘qilmadi. Hozir amalni aniq rejalashtirib bo‘lmaydi.');
     rows.push(...next.data);
   }
   return rows;
@@ -173,7 +174,7 @@ export async function planNaturalAdminRequest(text: string, deps: NaturalPlanner
     }
     return make(action, fixture.id, body);
   }
-  if (named.length !== 1) clarify('Qaysi liga yoki kubok? Bitta turnir nomini yozing; oldingi suhbatdan taxmin qilmayman.');
+  if (named.length !== 1) clarify(named.length > 1 ? `Bitta turnir tanlang: ${named.map(c => c.name).join(' yoki ')}.` : 'Yozilgan turnir nomi saqlangan ro‘yxatga mos kelmadi. Turnirning aniq nomini yozing; boshqa ligaga o‘tmayman.');
   const comp = named[0];
   if (['fixtures_restore','fixtures_reset','knockout_generate'].includes(action)) {
     if (action === 'fixtures_reset' && !/\b(?:tasdiq|tasdiqlayman|reset|boshidan)\b/.test(q))
@@ -184,11 +185,14 @@ export async function planNaturalAdminRequest(text: string, deps: NaturalPlanner
   if (action === 'cup_round') {
     if (['LEAGUE','EUROPEAN_LEAGUE_PHASE'].includes(comp.type)) clarify('Bosqichni ochish/qulflash uchun kubok nomini yozing.');
     const round = /\b(?:bosqich|round)\s*(\d{1,2})\b|\b(\d{1,2})\s*(?:-?bosqich\w*|round)\b/.exec(q);
-    const roundNumber = round ? Number(round[1] || round[2]) : /start\s*ber|boshlab\s*ber/.test(q) ? 1 : NaN;
+    const roundNumber = round ? Number(round[1] || round[2]) : isNaturalCupStart(q) ? 1 : NaN;
     if (!Number.isInteger(roundNumber)) clarify('Qaysi kubok bosqichi? Masalan: “FA Cup 2-bosqichni och”. “Start ber” birinchi bosqichni ochadi.');
     if (roundNumber < 1 || roundNumber > 20) clarify('Bosqich raqami 1–20 orasida bo‘lsin.');
-    const actionName = /qulf/.test(q) ? 'LOCK' : /och|start\s*ber|boshlab\s*ber/.test(q) ? 'OPEN' : null;
+    const actionName = /qulf/.test(q) ? 'LOCK' : /och/.test(q) || isNaturalCupStart(q) ? 'OPEN' : null;
     if (!actionName) clarify('Bosqichni “och” yoki “qulfla” deb aniq yozing.');
+    const games = await pages(deps.read, { dataset: 'fixtures', competition: comp.id });
+    if (!games.some(f => Number(f.matchday || 1) === roundNumber)) clarify(`${comp.name} ${roundNumber}-bosqich o‘yinlari saqlangan ro‘yxatda topilmadi. Avval “${comp.name} qur’asini ko‘rib chiq” deb yozing; yangi qur’a alohida tasdiqlanadi.`);
+    if (isNaturalCupStart(q) && !round && games.some(f => f.status === 'CONFIRMED')) clarify(`${comp.name}da tasdiqlangan natijalar bor. Birinchi bosqichni qayta ochmayman. Qaysi bosqichni ochay? Masalan: “${comp.name} 2-bosqichni och”.`);
     return make(action, comp.id, { roundNumber, action: actionName });
   }
   if (action === 'cup_winner_advance') {

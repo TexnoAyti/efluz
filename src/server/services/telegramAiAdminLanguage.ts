@@ -7,6 +7,11 @@ function adminCommandText(text: string): string {
     .split(/(?:sarlavha|matn|sabab|izoh)\s*:/i)[0].replace(/[;\n]+/g, ' keyin '));
 }
 
+export function isNaturalCupStart(text: string): boolean {
+  const q = normalizeAiEntity(text);
+  return !/\b(?:boshlama\w*|tushirma\w*|berma\w*)\b/.test(q) && /\b(?:start\s*ber\w*|boshla\w*|ishga\s*tushir\w*)\b/.test(q);
+}
+
 /** Applies before EVERY native write parser, including club assignment. */
 export function assertSingleNaturalAdminRequest(text: string): void {
   const q = adminCommandText(text);
@@ -67,7 +72,7 @@ export function detectNaturalAdminAction(text: string): string|null {
   if (/\b(?:juftlik\w*|o\s*yinlar\w*|fixture\w*)\b/.test(q) && /yetishmayotgan|qolib ketgan|tikla\w*|restore/.test(q)) return 'fixtures_restore';
   if (/\b(?:jadval\w*|fixture\w*|o\s*yinlar\w*)\b/.test(q) && /reset|tozalab qayta|boshidan yarat|qayta yarat/.test(q)) return 'fixtures_reset';
   if (/\b(?:saralash\w*|qualification\w*)\b/.test(q) && /hisobla\w*|bahola\w*|evaluate/.test(q)) return 'qualifications_evaluate';
-  if (/\b(?:kub(?:ok|og)\w*|cup)\b/.test(q) && /(?:start\s*ber|boshlab\s*ber|bosqich\w*.*(?:och|qulf)|(?:och|qulf).*bosqich)/.test(q)) return 'cup_round';
+  if (/\b(?:kub(?:ok|og)\w*|cup|copa|pokal)\b/.test(q) && (isNaturalCupStart(q) || /(?:bosqich\w*.*(?:och|qulf)|(?:och|qulf).*bosqich)/.test(q))) return 'cup_round';
   if (/\b(?:kub(?:ok|og)\w*|cup)\b/.test(q) && /g.olib\w*.*(?:otkaz|keyingi)|winner.*(?:advance|otkaz)/.test(q)) return 'cup_winner_advance';
   if (/\b(?:kub(?:ok|og)\w*|qura\w*)\b/.test(q) && /juftlik\w*.*mosla\w*|reconcile/.test(q)) return 'cup_reconcile';
   if (/\bqura\w*\b/.test(q) && /yarat|tashla|korib chiq|tekshir/.test(q)) return 'cup_preview';

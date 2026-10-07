@@ -68,6 +68,8 @@ export function findConversationCompetitions(text: string, comps: Competition[])
   const named = comps.filter(c => matchesAiCompetition(text, c));
   if (named.length) return named;
   const q = normalizeAiEntity(text);
+  // An explicitly requested cup must never resolve to the country's league.
+  if (/\b(?:kub(?:ok|og)\w*|cup|copa|pokal)\b/.test(q)) return [];
   return comps.filter(c => c.type === 'LEAGUE' && Object.entries(countries).some(([word, prefix]) => c.id.startsWith(prefix) && new RegExp(`\\b${word}\\b`).test(q)));
 }
 export interface ConversationScope { previousUserQueries?: string[]; selectedClubIds?: string[]; selectedCompetitionIds?: string[]; selectedFixtureIds?: string[]; }
