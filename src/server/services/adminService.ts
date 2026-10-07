@@ -110,6 +110,12 @@ export async function deleteFixture(
   await addFixtureTombstone({ fixtureId, seasonId, competitionId, deletedAt: new Date().toISOString(), deletedBy: adminUserId, reason }).catch(() => {});
   await removeFixtureFromDurableSnapshots(fixtureId, competitionId, seasonId).catch(() => []);
   await refreshDerivedCompetitionState(competitionId, seasonId).catch(() => {});
+  if (competitionId) {
+    const { syncCompetitionTrophy } = await import('./playerTrophyService');
+    await syncCompetitionTrophy(competitionId, seasonId).catch((error: unknown) => {
+      console.warn('[PLAYER_TROPHY_DELETE_SYNC_FAILED]', fixtureId, error instanceof Error ? error.message : String(error));
+    });
+  }
   return result;
 }
 

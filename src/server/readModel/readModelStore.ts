@@ -2130,6 +2130,12 @@ export async function refreshChangedFixtureReadModel(fixtureId: string): Promise
   if (!adminPatched) await invalidateDataset(adminKey);
   if (!competitionPatched) await invalidateDataset(competitionKey);
   await invalidateDataset(ReadModelKeys.standings(fixture.competitionId, fixture.seasonId));
+  // Await the trophy snapshot while the serverless invocation is alive. A trophy
+  // failure must not undo a successfully persisted match result.
+  const { syncCompetitionTrophy } = await import('../services/playerTrophyService');
+  await syncCompetitionTrophy(fixture.competitionId, fixture.seasonId, fixture).catch((error: unknown) => {
+    console.warn('[PLAYER_TROPHY_SYNC_FAILED]', fixture.id, error instanceof Error ? error.message : String(error));
+  });
 }
 
 export async function invalidateFixtureReadModels(

@@ -5,6 +5,7 @@ import { createAuditLog } from './adminService';
 import { getSeasonTrophies, getSeasonAwards, TrophyRecord } from './seasonInsightsService';
 import { getQualificationTracker, getSeasonRolloverPreview } from './seasonOperationsService';
 import { DOMESTIC_LEAGUE_CONFIG } from '../readModel/readModelStore';
+import { invalidateTrophyHistory, preserveRecordedTrophyOwners } from './playerTrophyService';
 
 const COLLECTION = 'season_archives';
 
@@ -67,7 +68,7 @@ export async function archiveCompletedSeason(seasonId: string, actorUserId: stri
 
   const archive: SeasonArchive = {
     seasonId, status: 'ARCHIVED', archivedAt: new Date().toISOString(), archivedBy: actorUserId,
-    trophies: trophyResult.trophies, awards: awardResult.awards, finalStandings: qualification.leagues,
+    trophies: await preserveRecordedTrophyOwners(trophyResult.trophies), awards: awardResult.awards, finalStandings: qualification.leagues,
   };
   const ref = getFirestoreDb().collection(COLLECTION).doc(seasonId);
   const created = await getFirestoreDb().runTransaction(async (transaction) => {
@@ -78,6 +79,7 @@ export async function archiveCompletedSeason(seasonId: string, actorUserId: stri
   });
   if (created) {
     trackFirestoreWrite(COLLECTION, 1, 'archiveCompletedSeason');
+    await invalidateTrophyHistory().catch(() => {});
     await createAuditLog(actorUserId, 'SEASON_ARCHIVED', 'SEASON', seasonId, undefined,
       { archivedAt: archive.archivedAt, trophies: archive.trophies.length }, undefined, actorUsername,
       'Immutable season trophy and final standings snapshot created.').catch(() => {});

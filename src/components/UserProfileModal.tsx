@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { ClubCrest } from './ClubCrest';
+import { PlayerTrophyCabinet } from './PlayerTrophyCabinet';
 import {
   User as UserIcon,
   X,
@@ -97,7 +98,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
       <div
-        className="w-full max-w-md glass-panel p-6 shadow-2xl relative border border-white/[0.1] bg-slate-900/95 overflow-hidden"
+        className="w-full max-w-md max-h-[90dvh] glass-panel p-6 shadow-2xl relative border border-white/[0.1] bg-slate-900/95 overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="absolute top-0 right-0 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -241,6 +242,8 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 </div>
               </div>
             </div>
+
+            <PlayerTrophyCabinet userId={profileData.user.id} />
 
             {/* Bottom Actions */}
             <div className="pt-2 flex justify-end">
