@@ -3,7 +3,7 @@ import {
   Home,
   Shield,
   Swords,
-  Layers,
+  Trophy,
   Award,
   Globe2,
   Bell,
@@ -49,7 +49,7 @@ export const Navigation: React.FC<NavigationProps> = ({
   // Everyone uses the same public destinations; admin access stays role-based.
   const desktopNavItems = [
     { id: 'dashboard' as TabType, label: t.navHome || 'Home', icon: Home, badge: 0 },
-    { id: 'leagues' as TabType, label: t.navLeagues || 'Leagues', icon: Layers, badge: 0 },
+    { id: 'leagues' as TabType, label: t.navLeagues || 'Leagues', icon: Trophy, badge: 0 },
     { id: 'my-club' as TabType, label: language === 'uz' ? 'Klub' : language === 'ru' ? 'Клуб' : 'Club', icon: Shield, badge: 0 },
     ...(user?.isAdmin ? [{ id: 'admin' as TabType, label: t.navAdmin || 'Admin', icon: SlidersHorizontal, badge: openDisputesCount }] : []),
   ];
@@ -77,7 +77,7 @@ export const Navigation: React.FC<NavigationProps> = ({
     {
       id: 'leagues' as TabType,
       label: t.navLeagues || 'Leagues',
-      icon: Layers,
+      icon: Trophy,
       isActive: isLeaguesActive,
     },
     {
