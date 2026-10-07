@@ -164,6 +164,7 @@ try {
  setTestConfigOverride({...DEFAULT_AI_CONFIG,enabled:true,allowedChatId:-1001,allowedThreadId:3503});
  setTestAiAdminHooks(async()=>{writes++;return {status:200,data:{success:true}};});
  assert.deepEqual(findConversationCompetitions('Ispaniya Kubogi start ber',comps.filter(c=>c.id!==copa) as any),[], 'Missing cup must not select La Liga');
+ for (const question of ['Ispaniya Kubogi qachon boshlanadi?', 'Copa del Rey boshlanish sanasi', 'Ispaniya Kubogi start berma']) assert.notEqual(getConversationIntent(question),'admin',question);
  await assert.rejects(planNaturalAdminRequest('Ispaniya Kubogi start ber',{...deps,read:async()=>({complete:false,data:[]})}),/to‘liq o‘qilmadi/);
  await assert.rejects(planNaturalAdminRequest('Ispaniya Kubogi start ber',{...deps,read:async(q)=>q.dataset==='fixtures'?{complete:true,total:0,data:[]}:deps.read(q)}),/qur’asini ko‘rib chiq/);
  await assert.rejects(planNaturalAdminRequest('Ispaniya Kubogi start ber',{...deps,read:async(q)=>q.dataset==='fixtures'?{complete:true,data:[{matchday:1,status:'CONFIRMED'}]}:deps.read(q)}),/tasdiqlangan natijalar bor/);

@@ -9,7 +9,7 @@ function adminCommandText(text: string): string {
 
 export function isNaturalCupStart(text: string): boolean {
   const q = normalizeAiEntity(text);
-  return !/\b(?:boshlama\w*|tushirma\w*|berma\w*)\b/.test(q) && /\b(?:start\s*ber\w*|boshla\w*|ishga\s*tushir\w*)\b/.test(q);
+  return !/\b(?:boshlama\w*|tushirma\w*|berma\w*)\b/.test(q) && /\b(?:start\s*ber(?:gin|ing)?|boshla(?:gin|ng)?|boshlat(?:gin|ing)?|boshlab\s*ber(?:gin|ing)?|ishga\s*tushir(?:gin|ing)?)\b/.test(q);
 }
 
 /** Applies before EVERY native write parser, including club assignment. */
