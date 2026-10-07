@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   Home,
+  createLucideIcon,
   Shield,
   Swords,
   Award,
@@ -15,16 +16,13 @@ import { useI18n } from '../i18n';
 import { GlassSurface } from './GlassSurface';
 import { ElasticNavIndicator } from './ElasticNavIndicator';
 
-const UclTrophyIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <span className={className} aria-hidden="true">
-    <img
-      src="/navigation/ucl-trophy.svg"
-      alt=""
-      draggable={false}
-      className="w-full h-full object-contain scale-125 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]"
-    />
-  </span>
-);
+// Match the other navigation icons: 24px, currentColor and inherited stroke width.
+const UclTrophyIcon = createLucideIcon('UclTrophy', [
+  ['path', { d: 'M7.5 8c-3 0 0-3 0-4.5C7.5.5 3.8 1 2.6 4 1.2 7.5 3.5 14.5 7.8 16.5', key: 'left-ear' }],
+  ['path', { d: 'M16.5 8c3 0 0-3 0-4.5C16.5.5 20.2 1 21.4 4c1.4 3.5-.9 10.5-5.2 12.5', key: 'right-ear' }],
+  ['path', { d: 'M7 6.5h10l-.3 3c.7 3.5-1 8.5-4.7 8.5s-5.4-5-4.7-8.5L7 6.5Z', key: 'cup' }],
+  ['path', { d: 'M10.5 18v2c0 1-1.5 1.2-2.5 2h8c-1-.8-2.5-1-2.5-2v-2', key: 'pedestal' }],
+]);
 
 export type TabType =
   | 'dashboard'
