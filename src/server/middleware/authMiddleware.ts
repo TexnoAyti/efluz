@@ -15,10 +15,14 @@ declare global {
 // In-memory cache to prevent redundant Firestore lookups if a caller supplies initData or dev headers
 const cachedUserByTelegramId = new Map<string, { user: User; expiresAt: number }>();
 const cachedUserByDevId = new Map<string, { user: User; expiresAt: number }>();
+// Router guards can run several times on one request. Share only that request's
+// authoritative lookup; a new request always rechecks the account.
+let adminLookupByRequest = new WeakMap<Request, { userId: string; lookup: Promise<User | null> }>();
 
 export function clearAuthMiddlewareCache(): void {
   cachedUserByTelegramId.clear();
   cachedUserByDevId.clear();
+  adminLookupByRequest = new WeakMap();
 }
 
 export async function authMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -155,7 +159,12 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
   // for their full lifetime. Re-read the authoritative account before acting.
   let authoritativeUser: User | null = null;
   try {
-    authoritativeUser = await getAuthoritativeUserForAuthorization(req.user.id);
+    let verification = adminLookupByRequest.get(req);
+    if (!verification || verification.userId !== req.user.id) {
+      verification = { userId: req.user.id, lookup: getAuthoritativeUserForAuthorization(req.user.id) };
+      adminLookupByRequest.set(req, verification);
+    }
+    authoritativeUser = await verification.lookup;
     firestoreCircuitBreaker.recordSuccess();
   } catch (err: any) {
     firestoreCircuitBreaker.recordFailure(err);
