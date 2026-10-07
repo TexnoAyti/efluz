@@ -76,6 +76,7 @@ import { AdminNotificationsTab } from './admin/AdminNotificationsTab';
 import { AdminTelegramAiTab } from './admin/AdminTelegramAiTab';
 import { AdminClubIntegrityPanel } from './admin/AdminClubIntegrityPanel';
 import { AdminClubAdmissionPanel } from './admin/AdminClubAdmissionPanel';
+import { AdminTicketManagementModal } from './customTournaments/AdminTicketManagementModal';
 
 type AdminTab = 'overview' | 'clubs' | 'matches' | 'results' | 'competitions' | 'domestic_cups' | 'european' | 'telegram' | 'telegram_ai' | 'notifications' | 'users' | 'system';
 
@@ -116,6 +117,8 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
   const allowedLeagues = permittedAdminLeagues({ adminPermissions: permissions });
   const [scopedFixtures, setScopedFixtures] = useState<Fixture[]>([]);
   const { user, activeSeasonId, showToast } = useAuth();
+  const isPrimaryOwner = String(user?.telegramId || '').trim() === '5209126900';
+  const [showTicketManagement, setShowTicketManagement] = useState(false);
   const { t, language } = useI18n();
   const loc = (uz: string, ru: string, en: string) => ({ uz, ru, en })[language];
 
@@ -821,6 +824,12 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
 
   return (
     <div className="space-y-5 animate-in fade-in duration-300 pb-24 max-w-7xl mx-auto">
+      {isPrimaryOwner && (
+        <AdminTicketManagementModal
+          isOpen={showTicketManagement}
+          onClose={() => setShowTicketManagement(false)}
+        />
+      )}
       {/* ========================================================================= */}
       {/* TOP HEADER & SYSTEM BANNER */}
       {/* ========================================================================= */}
@@ -1023,6 +1032,17 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
         </button>)}
 
         {/* 6. PLAYERS */}
+        {isPrimaryOwner && (
+          <button
+            id="button-admin-tournament-tickets"
+            type="button"
+            onClick={() => setShowTicketManagement(true)}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap min-h-[44px] glass-card text-slate-300 hover:text-white"
+          >
+            <Layers className="w-4 h-4 text-amber-400" />
+            <span>{loc('Turnir chiptalari', 'Билеты турниров', 'Tournament tickets')}</span>
+          </button>
+        )}
         {!isScoped && (<button id="tab-admin-notifications" onClick={() => setActiveAdminTab('notifications')} className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap min-h-[40px] ${activeAdminTab === 'notifications' ? 'bg-sky-500 text-slate-950' : 'glass-card text-slate-300 hover:text-white'}`}>
           <Eye className="w-4 h-4" /><span>{loc('Bildirishnomalar', 'Уведомления', 'Notifications')}</span>
         </button>)}

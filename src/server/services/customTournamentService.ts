@@ -847,7 +847,7 @@ export async function correctCustomMatchScore(params: {
     id: `log_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     tournamentId: params.tournamentId,
     action: 'DISPUTE_RESOLVED',
-    actorUserId: params.adminUserId,
+    performedByUserId: params.adminUserId,
     details: {
       fixtureId: params.fixtureId,
       homeScore: params.homeScore,
@@ -892,4 +892,3 @@ export async function getTournamentAuditLogs(tournamentId: string): Promise<Cust
     .get();
   return snap.docs.map((d) => d.data() as CustomTournamentAuditLog);
 }
-
