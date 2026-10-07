@@ -23,7 +23,8 @@ export async function buildPersonalFixtureReply(text: string, senderId: number, 
   const reader=createAiTournamentReader(signal);
   const catalog:any=await reader.read({dataset:'competitions',limit:30});
   const named=findConversationCompetitions(text,(catalog.data||[]) as Competition[]);
-  if (!named.length && findConversationCompetitions(text,SEED_COMPETITIONS as unknown as Competition[]).length) return {text:'So‘ralgan turnir saqlangan musobaqalar ro‘yxatida topilmadi. Boshqa turnirdagi raqibni bunga almashtirmayman.',clubIds:owned.map(c=>c.id)};
+  const explicitCup = /\b(?:kub(?:ok|og)\w*|cup|copa|pokal)\b/.test(normalizeAiEntity(text));
+  if (!named.length && (explicitCup || findConversationCompetitions(text,SEED_COMPETITIONS as unknown as Competition[]).length)) return {text:'So‘ralgan turnir saqlangan musobaqalar ro‘yxatida topilmadi. Boshqa turnirdagi raqibni bunga almashtirmayman.',clubIds:owned.map(c=>c.id)};
   const round=requestedMatchday(text);
   const blocks:string[]=[];
   const fixtureIds:string[]=[];
