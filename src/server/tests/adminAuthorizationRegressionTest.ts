@@ -21,7 +21,14 @@ const originalCollection = db.collection.bind(db);
 async function authorize(expected: boolean) {
   let allowed = false;
   const res: any = { status() { return this; }, json() {} };
-  await requireAdmin({ user: cached } as any, res, () => { allowed = true; });
+  const req: any = { user: cached };
+  // The production /api/admin chain has four guards. It must read once, while
+  // the next request still detects a revoked/suspended/deleted account.
+  for (let guard = 0; guard < 4; guard++) {
+    allowed = false;
+    await requireAdmin(req, res, () => { allowed = true; });
+    assert.equal(allowed, expected);
+  }
   assert.equal(allowed, expected);
 }
 await authorize(true);
@@ -33,7 +40,7 @@ await ref.update({ isSuspended: true });
 await authorize(false);
 await ref.delete();
 await authorize(false);
-assert.equal(documentReads, 5, 'Exactly one document read per authorization');
+assert.equal(documentReads, 5, 'Exactly one document read per request across four guards');
 assert.equal((await getUserByIdFirestore(ref.id))?.isAdmin, true, 'Profile cache remains independent');
 assert.equal(documentReads, 5, 'Cached profile adds no read');
 (db as any).collection = () => { throw new Error('quota unavailable'); };
