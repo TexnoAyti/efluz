@@ -232,7 +232,7 @@ function add(entries, key4, amount) {
 function label(value) {
   return value.replace(/[^a-zA-Z0-9_:/ .-]/g, "_").slice(0, 120) || "unknown";
 }
-function collect(buckets, collection, count, caller) {
+function collect(buckets, collection2, count, caller) {
   const hour = Math.floor(Date.now() / 36e5) * 36e5;
   let entries = buckets.get(hour);
   if (!entries) {
@@ -240,7 +240,7 @@ function collect(buckets, collection, count, caller) {
     buckets.set(hour, entries);
   }
   add(entries, "totalReads", count);
-  add(entries, "collection:" + label(collection), count);
+  add(entries, "collection:" + label(collection2), count);
   add(entries, "caller:" + label(caller), count);
 }
 async function persist(entries, endpoint, time = Date.now()) {
@@ -263,11 +263,11 @@ function keepAlive(work) {
   if (process.env.VERCEL === "1") waitUntil2(safe);
   else void safe;
 }
-function recordDurableRead(collection, count, caller) {
+function recordDurableRead(collection2, count, caller) {
   if (!Number.isSafeInteger(count) || count <= 0) return;
   const active = context.getStore();
   if (active && !active.closed) {
-    collect(active.buckets, collection, count, caller);
+    collect(active.buckets, collection2, count, caller);
     return;
   }
   if (!background) {
@@ -278,7 +278,7 @@ function recordDurableRead(collection, count, caller) {
       await persistBuckets(buffer, "background");
     }));
   }
-  collect(background, collection, count, caller);
+  collect(background, collection2, count, caller);
 }
 function readCostMiddleware(req, res, next) {
   const active = {
@@ -5341,7 +5341,7 @@ async function applyEuropeanQualificationSync(params) {
   await db.runTransaction(async (transaction) => {
     const collections = [COLLECTIONS.COMPETITIONS, COLLECTIONS.COMPETITION_PARTICIPANTS, COLLECTIONS.FIXTURES, COLLECTIONS.CLUB_OCCUPANCIES];
     const snapshots = [];
-    for (const collection of collections) snapshots.push(await transaction.get(db.collection(collection).where("seasonId", "==", preview.seasonId)));
+    for (const collection2 of collections) snapshots.push(await transaction.get(db.collection(collection2).where("seasonId", "==", preview.seasonId)));
     const applicationRef = db.collection("qualification_applications").doc(params.previewToken);
     const application = await transaction.get(applicationRef);
     if (application.exists) throw new Error("PREVIEW_ALREADY_APPLIED");
@@ -7889,10 +7889,10 @@ async function setBroadcastVisibility(id, visibility) {
 }
 async function listAdminNotifications(cursor) {
   const controls = await getNotificationControls();
-  const collection = getFirestoreDb().collection(COLLECTIONS.NOTIFICATIONS);
-  let query = collection.orderBy("createdAt", "desc");
+  const collection2 = getFirestoreDb().collection(COLLECTIONS.NOTIFICATIONS);
+  let query = collection2.orderBy("createdAt", "desc");
   if (cursor) {
-    const previous = await collection.doc(cursor).get();
+    const previous = await collection2.doc(cursor).get();
     if (!previous.exists) throw new Error("INVALID_NOTIFICATION_CURSOR");
     query = query.startAfter(previous);
   }
@@ -11915,66 +11915,9 @@ __export(firestoreStore_exports, {
   markNotificationsReadFirestore: () => markNotificationsReadFirestore,
   markSingleNotificationReadFirestore: () => markSingleNotificationReadFirestore,
   openCompetitionMatchdayNowFirestore: () => openCompetitionMatchdayNowFirestore,
-  rebuildCompetitionStandingsFirestore: () => rebuildCompetitionStandingsFirestore
-... 452034 bytes omitted ...
-eAdminScope(), leagueAdminScope_exports));
-        res.json(await getLeagueAdminOverview2(req.user, String(req.query.seasonId || "season-2026-27")));
-      } catch (err) {
-        handleFirestoreError(res, err, "GET /api/admin/scoped/overview");
-      }
-    });
-    adminRouter.get("/clubs/admission", async (req, res) => {
-      const seasonId2 = String(req.query.seasonId || "season-2026-27");
-      try {
-        res.setHeader("Cache-Control", "no-store");
-        res.json({ admission: await getClubAdmissionStatus(seasonId2) });
-      } catch (err) {
-        if (err instanceof ReadModelNotWarmedError) {
-          res.setHeader("X-Data-Degraded", "true");
-          res.json({ admission: null, unavailable: true });
-          return;
-        }
-        handleFirestoreError(res, err, "GET /api/admin/clubs/admission");
-      }
-    });
-    adminRouter.post("/clubs/admission/advance", async (req, res) => {
-      const seasonId2 = String(req.body?.seasonId || "season-2026-27");
-      const expectedStage = req.body?.expectedStage;
-      if (!/^season-[a-z0-9-]+$/.test(seasonId2) || !Number.isInteger(expectedStage) || expectedStage < -1 || expectedStage > CLUB_ADMISSION_LEAGUES.length) {
-        res.status(400).json({ code: "INVALID_ADMISSION_STAGE" });
-        return;
-      }
-      try {
-        res.setHeader("Cache-Control", "no-store");
-        res.json({ admission: await advanceClubAdmission(seasonId2, expectedStage, req.user.id) });
-      } catch (err) {
-        if (err instanceof ClubAdmissionConflict) {
-          res.status(409).json({ code: err.code, message: err.message });
-          return;
-        }
-        handleFirestoreError(res, err, "POST /api/admin/clubs/admission/advance");
-      }
-    });
-    smartNotificationSettingsSchema = z5.object({
-      seasonId: z5.string().min(1).optional(),
-      enabled: z5.boolean(),
-      events: z5.object({
-        resultVerification: z5.boolean(),
-        resultConfirmed: z5.boolean(),
-        resultDisputed: z5.boolean(),
-        nextOpponent: z5.boolean(),
-        matchdayOpened: z5.boolean(),
-        cupProgress: z5.boolean(),
-        qualification: z5.boolean(),
-        europeanOutcome: z5.boolean()
-      })
-    });
-    adminRouter.get("/telegram/smart-settings", async (req, res) => {
-      const seasonId2 = req.query.seasonId || "season-2026-27";
-      try {
-        const settings = await getSmartNotificationSettings(seasonId2);
-        res.json({ settings, defaults: DEFAULT_SMART_NOTIFICATION_EVENTS, source: "redis-or-defaults" });
-      } catch (err) {
+  rebuildCompetitionStandingsFirestore: () => rebuildCompetitionStanding
+... 455070 bytes omitted ...
+rr) {
         res.status(503).json({ error: err?.message || "SMART_NOTIFICATION_SETTINGS_UNAVAILABLE" });
       }
     });
@@ -12003,10 +11946,10 @@ eAdminScope(), leagueAdminScope_exports));
           const status = getFirebaseStatus();
           const db = getFirestoreDb();
           let countsUnavailable = false;
-          const count = async (collection, query) => {
+          const count = async (collection2, query) => {
             try {
               const snap = await query.count().get();
-              trackFirestoreAggregation(collection, Math.max(1, Math.ceil(snap.data().count / 1e3)), "adminOverview");
+              trackFirestoreAggregation(collection2, Math.max(1, Math.ceil(snap.data().count / 1e3)), "adminOverview");
               return snap;
             } catch (error) {
               countsUnavailable = true;
@@ -12403,9 +12346,9 @@ eAdminScope(), leagueAdminScope_exports));
       try {
         const status = getFirebaseStatus();
         const db = getFirestoreDb();
-        const countCollection = async (collection) => {
-          const value = await db.collection(collection).count().get().catch(() => null);
-          if (value) trackFirestoreAggregation(collection, Math.max(1, Math.ceil(value.data().count / 1e3)), "firestoreDiagnostics");
+        const countCollection = async (collection2) => {
+          const value = await db.collection(collection2).count().get().catch(() => null);
+          if (value) trackFirestoreAggregation(collection2, Math.max(1, Math.ceil(value.data().count / 1e3)), "firestoreDiagnostics");
           return value;
         };
         const [usersCount, clubsCount, occCount, memCount, fixCount, compCount] = await Promise.all([
@@ -13255,6 +13198,84 @@ eAdminScope(), leagueAdminScope_exports));
   }
 });
 
+// src/server/services/telegramWebhookLease.ts
+function isBasicBotUpdate(update) {
+  const message = update?.message;
+  return !update?.callback_query && !update?.pre_checkout_query && !message?.successful_payment && !message?.sender_chat && !message?.forward_origin && !message?.forward_from && !message?.forward_from_chat && Number.isSafeInteger(message?.chat?.id) && Number.isSafeInteger(message?.from?.id) && typeof message?.text === "string" && /^\/(start|help|paysupport)(?:@[a-zA-Z0-9_]+)?(?:\s|$)/i.test(message.text.trim());
+}
+function createWebhookLease(getRedis = getBoundedRedisClient, getDb2 = getFirestoreDb) {
+  return {
+    async claim(updateId, owner, basic) {
+      const client = getRedis();
+      if (client && !basic) {
+        try {
+          if (await client.set(prefix2 + updateId, owner, { nx: true, ex: leaseMs / 1e3 })) return { status: "claimed", storage: "redis" };
+          const value = await client.get(prefix2 + updateId);
+          return { status: value === "done" || value === "1" ? "done" : "busy", storage: "redis" };
+        } catch {
+          if (!basic) throw new Error("REDIS_WEBHOOK_UNAVAILABLE");
+        }
+      } else if (!basic && process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
+        const now = Date.now();
+        for (const [id, value] of local3) if (value.expiresAt <= now) local3.delete(id);
+        const prior = local3.get(updateId);
+        if (prior) return { status: prior.value === "done" ? "done" : "busy", storage: "memory" };
+        local3.set(updateId, { value: owner, expiresAt: now + leaseMs });
+        return { status: "claimed", storage: "memory" };
+      } else if (!basic) throw new Error("REDIS_WEBHOOK_UNAVAILABLE");
+      const db = getDb2(), ref = db.collection(collection).doc(String(updateId));
+      const status = await db.runTransaction(async (tx) => {
+        const previous = await tx.get(ref);
+        recordDurableRead(collection, 1, "telegramWebhookLease:claim");
+        const data = previous.data();
+        if (data?.expiresAt > Date.now()) return data.value === "done" ? "done" : "busy";
+        tx.set(ref, { value: owner, expiresAt: Date.now() + leaseMs, deleteAfter: new Date(Date.now() + doneMs) });
+        return "claimed";
+      });
+      return { status, storage: "firestore" };
+    },
+    async settle(updateId, owner, completed, lease) {
+      if (lease.storage === "redis") {
+        const client = getRedis();
+        if (!client) throw new Error("REDIS_WEBHOOK_UNAVAILABLE");
+        await client.eval(`
+          if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end
+          if ARGV[2] == 'done' then return redis.call('SET', KEYS[1], 'done', 'EX', ARGV[3]) end
+          return redis.call('DEL', KEYS[1])
+        `, [prefix2 + updateId], [owner, completed ? "done" : "release", doneMs / 1e3]);
+      } else if (lease.storage === "firestore") {
+        const db = getDb2(), ref = db.collection(collection).doc(String(updateId));
+        await db.runTransaction(async (tx) => {
+          const previous = await tx.get(ref);
+          recordDurableRead(collection, 1, "telegramWebhookLease:settle");
+          if (previous.data()?.value !== owner) return;
+          if (completed) tx.set(ref, { value: "done", expiresAt: Date.now() + doneMs, deleteAfter: new Date(Date.now() + doneMs) });
+          else tx.delete(ref);
+        });
+      } else if (local3.get(updateId)?.value === owner) {
+        if (completed) local3.set(updateId, { value: "done", expiresAt: Date.now() + doneMs });
+        else local3.delete(updateId);
+      }
+    }
+  };
+}
+var local3, prefix2, collection, leaseMs, doneMs, coordinator, claimTelegramUpdate, settleTelegramUpdate;
+var init_telegramWebhookLease = __esm({
+  "src/server/services/telegramWebhookLease.ts"() {
+    init_boundedRedis();
+    init_admin();
+    init_durableReadCosts();
+    local3 = /* @__PURE__ */ new Map();
+    prefix2 = "efluz:v1:telegram:webhook-update:";
+    collection = "telegram_webhook_leases";
+    leaseMs = 12e4;
+    doneMs = 864e5;
+    coordinator = createWebhookLease();
+    claimTelegramUpdate = coordinator.claim;
+    settleTelegramUpdate = coordinator.settle;
+  }
+});
+
 // src/server/services/telegramAiRateLimitService.ts
 function evaluateMemoryRateLimits(params) {
   const { dailyKey, topicKey, userKey, cooldownKey, userLimit, topicLimit, dailyLimit, now } = params;
@@ -13495,13 +13516,13 @@ var init_telegramAiAdminAccess = __esm({
 async function read(p, signal) {
   if (!isAiAdminActor(p.fromUser.id) || p.fromUser.is_bot || p.senderChat || p.forwarded) return null;
   const client = getAiRedisClient(signal);
-  const draft = client ? await client.get(key3(p)) : process.env.NODE_ENV === "test" ? local3.get(key3(p)) : null;
+  const draft = client ? await client.get(key3(p)) : process.env.NODE_ENV === "test" ? local4.get(key3(p)) : null;
   return draft && draft.expiresAt > Date.now() ? draft : null;
 }
 async function write(p, draft, signal) {
   const client = getAiRedisClient(signal);
   if (client) await client.set(key3(p), draft, { ex: Math.max(1, Math.ceil((draft.expiresAt - Date.now()) / 1e3)) });
-  else if (process.env.NODE_ENV === "test") local3.set(key3(p), draft);
+  else if (process.env.NODE_ENV === "test") local4.set(key3(p), draft);
 }
 async function getDeliveredAiAdminDraft(p, signal) {
   const draft = await read(p, signal);
@@ -13527,14 +13548,14 @@ async function rememberDeliveredAiAdminDraft(p, reply, botMessageId, signal) {
 async function clearAiAdminDraft(p, signal) {
   const client = getAiRedisClient(signal);
   if (client) await client.del(key3(p));
-  local3.delete(key3(p));
+  local4.delete(key3(p));
 }
-var local3, key3;
+var local4, key3;
 var init_telegramAiAdminDraft = __esm({
   "src/server/services/telegramAiAdminDraft.ts"() {
     init_telegramAiDeadline();
     init_telegramAiAdminAccess();
-    local3 = /* @__PURE__ */ new Map();
+    local4 = /* @__PURE__ */ new Map();
     key3 = (p) => `efluz:v1:telegram:ai:draft:${p.chatId}:${p.threadId}:${p.fromUser.id}`;
   }
 });
@@ -14397,7 +14418,7 @@ async function archiveCommunityMessage(message) {
   const redis = getAiRedisClient();
   if (!redis) throw new Error("COMMUNITY_REDIS_UNAVAILABLE");
   post.archivedAt = Math.floor(Date.now() / 1e3);
-  const prefix3 = `${KEY_PREFIX}:ai:community:${post.source}`;
+  const prefix4 = `${KEY_PREFIX}:ai:community:${post.source}`;
   await redis.eval(
     `
     local existing = redis.call('HGET', KEYS[1], ARGV[1])
@@ -14417,7 +14438,7 @@ async function archiveCommunityMessage(message) {
     redis.call('EXPIRE', KEYS[1], ARGV[6]); redis.call('EXPIRE', KEYS[2], ARGV[6])
     return 1
   `,
-    [`${prefix3}:posts`, `${prefix3}:order`],
+    [`${prefix4}:posts`, `${prefix4}:order`],
     [Number(post.url.split("/").at(-1)), JSON.stringify(post), post.updated, post.archivedAt, post.archivedAt - TTL_SECONDS, TTL_SECONDS]
   );
   console.info("[AI_COMMUNITY_ARCHIVED]", JSON.stringify({ source: post.source, messageId: Number(post.url.split("/").at(-1)) }));
@@ -14476,12 +14497,12 @@ async function communityFacts(query, signal) {
   if (!redis || signal?.aborted) return "";
   try {
     const rows = await Promise.allSettled(AI_COMMUNITY_SOURCES.map((source) => {
-      const prefix3 = `${KEY_PREFIX}:ai:community:${source}`;
+      const prefix4 = `${KEY_PREFIX}:ai:community:${source}`;
       return redis.eval(`
         local ids = redis.call('ZREVRANGE', KEYS[2], 0, 199)
         if #ids == 0 then return {} end
         return redis.call('HMGET', KEYS[1], unpack(ids))
-      `, [`${prefix3}:posts`, `${prefix3}:order`], []);
+      `, [`${prefix4}:posts`, `${prefix4}:order`], []);
     }));
     const posts = [];
     for (const raw of rows.flatMap((row) => row.status === "fulfilled" ? row.value : [])) {
@@ -14562,13 +14583,13 @@ async function buildAiGroundingContext(query, seasonId2 = DEFAULT_SEASON_ID, opt
   }
   const ids = new Set(matched.map((c) => c.id));
   const normalized = normalizeAiEntity(query);
-  let explicitCompetitions = competitions.filter((c) => matchesAiCompetition(query, c) || containsAiEntity(normalized, c.name) || Object.entries(LEAGUE_KEYWORDS).some(([prefix3, words]) => (c.id === prefix3 || c.id.startsWith(prefix3 + "-")) && words.some((word) => containsAiEntity(normalized, word))));
+  let explicitCompetitions = competitions.filter((c) => matchesAiCompetition(query, c) || containsAiEntity(normalized, c.name) || Object.entries(LEAGUE_KEYWORDS).some(([prefix4, words]) => (c.id === prefix4 || c.id.startsWith(prefix4 + "-")) && words.some((word) => containsAiEntity(normalized, word))));
   if (requestedStage || finalistQuestion) {
     explicitCompetitions = explicitCompetitions.filter((c) => c.type !== "LEAGUE");
     if (!explicitCompetitions.length) {
       for (const previous of [...options?.previousUserQueries || []].reverse()) {
         const previousQuery = normalizeAiEntity(previous);
-        const found = competitions.filter((c) => c.type !== "LEAGUE" && (containsAiEntity(previousQuery, c.name) || Object.entries(LEAGUE_KEYWORDS).some(([prefix3, words]) => (c.id === prefix3 || c.id.startsWith(prefix3 + "-")) && words.some((word) => containsAiEntity(previousQuery, word)))));
+        const found = competitions.filter((c) => c.type !== "LEAGUE" && (containsAiEntity(previousQuery, c.name) || Object.entries(LEAGUE_KEYWORDS).some(([prefix4, words]) => (c.id === prefix4 || c.id.startsWith(prefix4 + "-")) && words.some((word) => containsAiEntity(previousQuery, word)))));
         if (found.length) {
           explicitCompetitions = found;
           break;
@@ -15183,7 +15204,7 @@ var init_consistencyGuard_routes = __esm({
         res.status(400).json({ error: "A reason of at least 3 characters is required to delete a fixture." });
         return;
       }
-      const local4 = queryGet("SELECT * FROM fixtures WHERE id = ?", [fixtureId2]);
+      const local5 = queryGet("SELECT * FROM fixtures WHERE id = ?", [fixtureId2]);
       let authoritative;
       try {
         authoritative = await getFixtureByIdFirestore(fixtureId2, req.user?.id);
@@ -15191,8 +15212,8 @@ var init_consistencyGuard_routes = __esm({
         handleFirestoreError(res, error, `DELETE /api/admin/fixtures/${fixtureId2}`);
         return;
       }
-      const seasonId2 = authoritative?.seasonId || local4?.season_id || "season-2026-27";
-      const competitionId = authoritative?.competitionId || local4?.competition_id || "";
+      const seasonId2 = authoritative?.seasonId || local5?.season_id || "season-2026-27";
+      const competitionId = authoritative?.competitionId || local5?.competition_id || "";
       const persistDeletion = async () => {
         await addFixtureTombstone({
           fixtureId: fixtureId2,
@@ -15201,8 +15222,8 @@ var init_consistencyGuard_routes = __esm({
           deletedAt: (/* @__PURE__ */ new Date()).toISOString(),
           deletedBy: req.user.id,
           reason: reason2,
-          homeClubId: authoritative?.homeClubId || local4?.home_club_id || null,
-          awayClubId: authoritative?.awayClubId || local4?.away_club_id || null
+          homeClubId: authoritative?.homeClubId || local5?.home_club_id || null,
+          awayClubId: authoritative?.awayClubId || local5?.away_club_id || null
         });
         queryRun("DELETE FROM result_submissions WHERE fixture_id = ?", [fixtureId2]);
         queryRun("DELETE FROM disputes WHERE fixture_id = ?", [fixtureId2]);
@@ -15236,7 +15257,7 @@ var init_consistencyGuard_routes = __esm({
             "ADMIN_PURGE_STALE_FIXTURE",
             "fixture",
             fixtureId2,
-            local4 || authoritative || void 0,
+            local5 || authoritative || void 0,
             null,
             void 0,
             req.user.username || "admin",
@@ -15732,7 +15753,7 @@ function findConversationCompetitions(text, comps) {
   if (named.length) return named;
   const q = normalizeAiEntity(text);
   if (/\b(?:kub(?:ok|og)\w*|cup|copa|pokal)\b/.test(q)) return [];
-  return comps.filter((c) => c.type === "LEAGUE" && Object.entries(countries).some(([word, prefix3]) => c.id.startsWith(prefix3) && new RegExp(`\\b${word}\\b`).test(q)));
+  return comps.filter((c) => c.type === "LEAGUE" && Object.entries(countries).some(([word, prefix4]) => c.id.startsWith(prefix4) && new RegExp(`\\b${word}\\b`).test(q)));
 }
 async function resolveConversationCompetition(text, scope, signal) {
   const reader = createAiTournamentReader(signal);
@@ -15749,9 +15770,9 @@ async function resolveConversationCompetition(text, scope, signal) {
     clarification = explicit.clarification;
     clubIds = explicit.clubs.map((c) => c.id);
     if (explicit.clubs.length) found = comps.filter((c) => c.type === "LEAGUE" && explicit.clubs.some((club) => club.leagueId === c.leagueId));
-    const prefix3 = normalizeAiEntity(text).match(/^(.*?)\s+(?:liga\w*|kubok\w*)\b/);
+    const prefix4 = normalizeAiEntity(text).match(/^(.*?)\s+(?:liga\w*|kubok\w*)\b/);
     if (explicit.clubs.length && !found.length && !clarification) clarification = "Bu klubning ligasi joriy snapshotda aniqlanmadi. Boshqa ligaga o\u2018tib ketmayman.";
-    if (!found.length && !clarification && prefix3 && prefix3[1].split(" ").some((word) => !/^(?:shu|osha|uning|bu|endi|jadval|jadvalni)$/.test(word))) clarification = "Qaysi liga yoki kubok? Bu nom joriy bazada aniqlanmadi.";
+    if (!found.length && !clarification && prefix4 && prefix4[1].split(" ").some((word) => !/^(?:shu|osha|uning|bu|endi|jadval|jadvalni)$/.test(word))) clarification = "Qaysi liga yoki kubok? Bu nom joriy bazada aniqlanmadi.";
     if (!found.length && !clarification) {
       if (scope.selectedCompetitionIds !== void 0) found = comps.filter((c) => scope.selectedCompetitionIds.includes(c.id));
       else for (const previous of [...scope.previousUserQueries || []].reverse()) {
@@ -16511,7 +16532,7 @@ function isOwnerAdminPrivateChat(payload) {
 async function storePending(record, signal) {
   const client = getAiRedisClient(signal);
   if (client) {
-    if (!await client.set(prefix2 + record.token, JSON.stringify(record), { nx: true, ex: 300 })) throw new Error("PLAN_COLLISION");
+    if (!await client.set(prefix3 + record.token, JSON.stringify(record), { nx: true, ex: 300 })) throw new Error("PLAN_COLLISION");
     return;
   }
   if (process.env.NODE_ENV !== "test") throw new Error("REDIS_REQUIRED");
@@ -16523,14 +16544,14 @@ async function loadPending(token, signal) {
     if (process.env.NODE_ENV !== "test") throw new Error("REDIS_REQUIRED");
     return testStore.get(token) || null;
   }
-  const raw = await client.get(prefix2 + token);
+  const raw = await client.get(prefix3 + token);
   return raw ? typeof raw === "string" ? JSON.parse(raw) : raw : null;
 }
 async function replacePending(previous, replacement, payload, signal) {
   const client = getAiRedisClient(signal);
   if (client) return Number(await client.eval(
     AI_ADMIN_PLAN_REPLACE_LUA,
-    [prefix2 + previous.token, prefix2 + replacement.token, latestKey(payload)],
+    [prefix3 + previous.token, prefix3 + replacement.token, latestKey(payload)],
     [Date.now(), payload.fromUser.id, payload.chatId, payload.threadId, previous.token, JSON.stringify(replacement)]
   )) === 1;
   if (process.env.NODE_ENV !== "test") throw new Error("REDIS_REQUIRED");
@@ -16557,12 +16578,12 @@ async function claim(record, state, signal) {
     p.state = ARGV[5]
     redis.call('SET', KEYS[1], cjson.encode(p))
     return 1
-  `, [prefix2 + record.token], [Date.now(), record.owner, record.chat, record.thread, state])) === 1;
+  `, [prefix3 + record.token], [Date.now(), record.owner, record.chat, record.thread, state])) === 1;
 }
 async function finish(record, result) {
   const final = { ...record, state: result ? "done" : "unknown", result };
   const client = getAiRedisClient();
-  if (client) await client.set(prefix2 + record.token, JSON.stringify(final)).catch(() => void 0);
+  if (client) await client.set(prefix3 + record.token, JSON.stringify(final)).catch(() => void 0);
   else if (process.env.NODE_ENV === "test") testStore.set(record.token, final);
 }
 async function planAiAdminAction(request, facts, signal, payload) {
@@ -16858,7 +16879,7 @@ function formatNaturalAdminRead(action2, data) {
   add2(data);
   return lines.join("\n").slice(0, 950);
 }
-var prefix2, testStore, testLatest, latestKey, testExecutor, testPlanner, testModelGenerator;
+var prefix3, testStore, testLatest, latestKey, testExecutor, testPlanner, testModelGenerator;
 var init_telegramAiAdminService = __esm({
   "src/server/services/telegramAiAdminService.ts"() {
     init_telegramAiAdminRecordResolver();
@@ -16883,10 +16904,10 @@ var init_telegramAiAdminService = __esm({
     init_telegramAiAdminGateway();
     init_telegramAiDataService();
     init_telegramAiConversationCommands();
-    prefix2 = "efluz:v1:telegram:ai:admin:";
+    prefix3 = "efluz:v1:telegram:ai:admin:";
     testStore = /* @__PURE__ */ new Map();
     testLatest = /* @__PURE__ */ new Map();
-    latestKey = (p) => `${prefix2}latest:${p.chatId}:${p.threadId}:${p.fromUser.id}`;
+    latestKey = (p) => `${prefix3}latest:${p.chatId}:${p.threadId}:${p.fromUser.id}`;
   }
 });
 
@@ -16965,8 +16986,8 @@ import { GoogleGenAI as GoogleGenAI2 } from "@google/genai";
 function getConfiguredBotUserId() {
   const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
   if (!token) return null;
-  const prefix3 = token.split(":")[0];
-  const id = parseInt(prefix3, 10);
+  const prefix4 = token.split(":")[0];
+  const id = parseInt(prefix4, 10);
   return Number.isSafeInteger(id) ? id : null;
 }
 function escapeTelegramHtml(text) {
@@ -17484,46 +17505,15 @@ __export(telegram_routes_exports, {
 });
 import { randomUUID as randomUUID9 } from "node:crypto";
 import { Router as Router23 } from "express";
-async function claimTelegramUpdate(updateId, owner) {
-  const client = getUpstashClient();
-  const key4 = `${KEY_PREFIX}:telegram:webhook-update:${updateId}`;
-  if (client) {
-    if (await client.set(key4, owner, { nx: true, ex: WEBHOOK_LEASE_SECONDS })) return "claimed";
-    const value = await client.get(key4);
-    return value === "done" || value === "1" ? "done" : "busy";
-  }
-  const now = Date.now();
-  for (const [id, record2] of recentWebhookUpdates) if (record2.expiresAt <= now) recentWebhookUpdates.delete(id);
-  const record = recentWebhookUpdates.get(updateId);
-  if (record) return record.value === "done" ? "done" : "busy";
-  recentWebhookUpdates.set(updateId, { value: owner, expiresAt: now + WEBHOOK_LEASE_SECONDS * 1e3 });
-  return "claimed";
-}
-async function settleTelegramUpdate(updateId, owner, completed) {
-  const client = getUpstashClient();
-  if (client) {
-    await client.eval(`
-      if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end
-      if ARGV[2] == 'done' then
-        return redis.call('SET', KEYS[1], 'done', 'EX', ARGV[3])
-      end
-      return redis.call('DEL', KEYS[1])
-    `, [`${KEY_PREFIX}:telegram:webhook-update:${updateId}`], [owner, completed ? "done" : "release", WEBHOOK_DONE_SECONDS]);
-    return;
-  }
-  if (recentWebhookUpdates.get(updateId)?.value !== owner) return;
-  if (completed) recentWebhookUpdates.set(updateId, { value: "done", expiresAt: Date.now() + WEBHOOK_DONE_SECONDS * 1e3 });
-  else recentWebhookUpdates.delete(updateId);
-}
 function normalizedSeasonId(value) {
   return typeof value === "string" && value.trim() ? value.trim() : PREMIUM_DEFAULT_SEASON_ID;
 }
-var telegramRouter, recentWebhookUpdates, WEBHOOK_LEASE_SECONDS, WEBHOOK_DONE_SECONDS;
+var telegramRouter;
 var init_telegram_routes = __esm({
   "src/server/routes/telegram.routes.ts"() {
     init_telegramBotService();
     init_authMiddleware();
-    init_readModelStore();
+    init_telegramWebhookLease();
     init_premiumService();
     init_telegramAiConfigService();
     init_telegramAiRateLimitService();
@@ -17531,9 +17521,6 @@ var init_telegram_routes = __esm({
     init_telegramAiCommunitySources();
     init_telegramAiCustomEmoji();
     telegramRouter = Router23();
-    recentWebhookUpdates = /* @__PURE__ */ new Map();
-    WEBHOOK_LEASE_SECONDS = 120;
-    WEBHOOK_DONE_SECONDS = 86400;
     telegramRouter.post("/webhook", async (req, res) => {
       const secretToken = req.headers["x-telegram-bot-api-secret-token"];
       const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
@@ -17555,9 +17542,10 @@ var init_telegram_routes = __esm({
         return;
       }
       const owner = randomUUID9();
-      let claimed = false;
+      let lease;
       try {
-        const claim2 = await claimTelegramUpdate(update.update_id, owner);
+        lease = await claimTelegramUpdate(update.update_id, owner, isBasicBotUpdate(update));
+        const claim2 = lease.status;
         if (claim2 === "done") {
           res.status(200).json({ ok: true, ignored: "duplicate_update" });
           return;
@@ -17566,7 +17554,6 @@ var init_telegram_routes = __esm({
           res.status(503).json({ ok: false, error: "update_in_progress" });
           return;
         }
-        claimed = true;
         const sourceMessage = update.channel_post || update.edited_channel_post || update.edited_message || update.message;
         let archivedCommunityPost = null;
         if (sourceMessage) {
@@ -17754,11 +17741,11 @@ Kanal postlari kelmasa, botni @efl_uz kanaliga admin qilib qo\u2018shing va webh
             }
           }
         }
-        await settleTelegramUpdate(update.update_id, owner, true);
+        await settleTelegramUpdate(update.update_id, owner, true, lease);
         res.status(200).json(response);
       } catch (err) {
         console.error("[TELEGRAM WEBHOOK ERROR]", err?.message || err);
-        if (claimed) await settleTelegramUpdate(update.update_id, owner, false).catch((releaseError) => {
+        if (lease?.status === "claimed") await settleTelegramUpdate(update.update_id, owner, false, lease).catch((releaseError) => {
           console.error("[TELEGRAM WEBHOOK LEASE RELEASE ERROR]", releaseError?.message || releaseError);
         });
         res.status(503).json({ ok: false, error: "webhook_processing_failed" });
@@ -20541,8 +20528,8 @@ var memoryParticipants = /* @__PURE__ */ new Map();
 var memoryFixtures = /* @__PURE__ */ new Map();
 var memoryAuditLogs = /* @__PURE__ */ new Map();
 var memoryClubClaims = /* @__PURE__ */ new Map();
-function generateSecureToken(prefix3) {
-  return `${prefix3}_${crypto7.randomBytes(12).toString("hex")}`;
+function generateSecureToken(prefix4) {
+  return `${prefix4}_${crypto7.randomBytes(12).toString("hex")}`;
 }
 async function createTournamentDraft(params) {
   const isFallback = process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true" || process.env.NODE_ENV === "test";

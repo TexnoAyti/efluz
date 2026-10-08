@@ -9,7 +9,7 @@ import {
   inspectTelegramConnection,
 } from '../services/telegramBotService';
 import { requireAdmin, requireAuth } from '../middleware/authMiddleware';
-import { getUpstashClient, KEY_PREFIX } from '../readModel/readModelStore';
+import { claimTelegramUpdate, settleTelegramUpdate, isBasicBotUpdate, type WebhookLease } from '../services/telegramWebhookLease';
 import {
   PREMIUM_DEFAULT_SEASON_ID,
   PREMIUM_PRICE_STARS,
@@ -37,46 +37,6 @@ import { archiveCommunityMessage, communityPost, communitySourceStats } from '..
 import { extractAiCustomEmoji, saveAiCustomEmoji } from '../services/telegramAiCustomEmoji';
 
 export const telegramRouter = Router();
-// A processing lease is separate from acknowledgement: failed work remains retryable.
-const recentWebhookUpdates = new Map<number, { value: string; expiresAt: number }>();
-const WEBHOOK_LEASE_SECONDS = 120;
-const WEBHOOK_DONE_SECONDS = 86400;
-
-async function claimTelegramUpdate(updateId: number, owner: string): Promise<'claimed' | 'done' | 'busy'> {
-  const client = getUpstashClient();
-  const key = `${KEY_PREFIX}:telegram:webhook-update:${updateId}`;
-  if (client) {
-    if (await client.set(key, owner, { nx: true, ex: WEBHOOK_LEASE_SECONDS })) return 'claimed';
-    const value = await client.get<string>(key);
-    // '1' is the completed marker used by the previous implementation.
-    return value === 'done' || value === '1' ? 'done' : 'busy';
-  }
-  const now = Date.now();
-  for (const [id, record] of recentWebhookUpdates) if (record.expiresAt <= now) recentWebhookUpdates.delete(id);
-  const record = recentWebhookUpdates.get(updateId);
-  if (record) return record.value === 'done' ? 'done' : 'busy';
-  recentWebhookUpdates.set(updateId, { value: owner, expiresAt: now + WEBHOOK_LEASE_SECONDS * 1000 });
-  return 'claimed';
-}
-
-async function settleTelegramUpdate(updateId: number, owner: string, completed: boolean): Promise<void> {
-  const client = getUpstashClient();
-  if (client) {
-    // Ownership checks stop an expired worker from completing/releasing a newer lease.
-    await client.eval(`
-      if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end
-      if ARGV[2] == 'done' then
-        return redis.call('SET', KEYS[1], 'done', 'EX', ARGV[3])
-      end
-      return redis.call('DEL', KEYS[1])
-    `, [`${KEY_PREFIX}:telegram:webhook-update:${updateId}`], [owner, completed ? 'done' : 'release', WEBHOOK_DONE_SECONDS]);
-    return;
-  }
-  if (recentWebhookUpdates.get(updateId)?.value !== owner) return;
-  if (completed) recentWebhookUpdates.set(updateId, { value: 'done', expiresAt: Date.now() + WEBHOOK_DONE_SECONDS * 1000 });
-  else recentWebhookUpdates.delete(updateId);
-}
-
 function normalizedSeasonId(value: unknown): string {
   return typeof value === 'string' && value.trim() ? value.trim() : PREMIUM_DEFAULT_SEASON_ID;
 }
@@ -108,9 +68,10 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
     return;
   }
   const owner = randomUUID();
-  let claimed = false;
+  let lease: WebhookLease | undefined;
   try {
-    const claim = await claimTelegramUpdate(update.update_id, owner);
+    lease = await claimTelegramUpdate(update.update_id, owner, isBasicBotUpdate(update));
+    const claim = lease.status;
     if (claim === 'done') {
       res.status(200).json({ ok: true, ignored: 'duplicate_update' });
       return;
@@ -119,7 +80,7 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
       res.status(503).json({ ok: false, error: 'update_in_progress' });
       return;
     }
-    claimed = true;
+
     const sourceMessage = update.channel_post || update.edited_channel_post || update.edited_message || update.message;
     let archivedCommunityPost: Awaited<ReturnType<typeof archiveCommunityMessage>> = null;
     if (sourceMessage) {
@@ -298,11 +259,11 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
         }
       }
     }
-    await settleTelegramUpdate(update.update_id, owner, true);
+    await settleTelegramUpdate(update.update_id, owner, true, lease);
     res.status(200).json(response);
   } catch (err: any) {
     console.error('[TELEGRAM WEBHOOK ERROR]', err?.message || err);
-    if (claimed) await settleTelegramUpdate(update.update_id, owner, false).catch((releaseError) => {
+    if (lease?.status === 'claimed') await settleTelegramUpdate(update.update_id, owner, false, lease).catch((releaseError) => {
       console.error('[TELEGRAM WEBHOOK LEASE RELEASE ERROR]', releaseError?.message || releaseError);
     });
     // Non-2xx lets Telegram retry; never acknowledge an unprocessed payment.
