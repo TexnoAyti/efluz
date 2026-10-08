@@ -3,13 +3,19 @@ import type { FirestoreArchive } from './firestoreArchive';
 import { validateArchive } from './firestoreArchive';
 
 export type MigrationRpc = (name: string, body: Record<string, unknown>) => Promise<any>;
+export function migrationHeaders(rawKey: string): Record<string,string> {
+  const key=rawKey.trim();
+  if(!key || key.startsWith('sb_publishable_')) throw new Error('SUPABASE_SERVER_KEY_REQUIRED');
+  // Opaque secret keys are API keys, not JWTs. A Bearer header would reject them.
+  return {apikey:key,'Content-Type':'application/json',...(key.startsWith('sb_secret_')?{}:{Authorization:`Bearer ${key}`})};
+}
 export function supabaseMigrationRpc(): MigrationRpc {
   const url = process.env.SUPABASE_URL, key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) throw new Error('SUPABASE_SERVER_CREDENTIALS_REQUIRED');
   if (new URL(url).protocol !== 'https:') throw new Error('SUPABASE_HTTPS_REQUIRED');
   return async (name, body) => {
     const response = await fetch(`${url.replace(/\/$/, '')}/rest/v1/rpc/${name}`, {
-      method: 'POST', headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      method: 'POST', headers: migrationHeaders(key),
       body: JSON.stringify(body), signal: AbortSignal.timeout(30_000),
     });
     // Never print response bodies that might contain private document data.
