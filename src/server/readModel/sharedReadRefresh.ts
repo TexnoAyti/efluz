@@ -11,23 +11,35 @@ export function isReadRefreshUnavailable(error: unknown): boolean {
 /** Shared only for read-model rebuilds, never authoritative mutation checks. */
 export function createSharedReadRefresh(getClient = getBoundedRedisClient) {
   const flights = new Map<string, Promise<unknown>>();
+  const failures = new Map<string, { until: number; error: unknown }>();
+  let redisRetryAt = 0;
   return async function refresh<T>(key: string, load: () => Promise<T>): Promise<T> {
     const existing = flights.get(key);
     if (existing) return existing as Promise<T>;
+    const failed = failures.get(key);
+    if (failed && failed.until > Date.now()) throw failed.error;
     const work = (async () => {
-      const client = getClient();
+      const client = Date.now() >= redisRetryAt ? getClient() : null;
       const leaseKey = `efluz:v1:read-refresh:${key}`;
       const token = randomUUID();
-      if (!client && (process.env.NODE_ENV === 'production' || process.env.VERCEL)) throw new Error('READ_REFRESH_REDIS_UNAVAILABLE');
+      let ownsLease = false;
       if (client) {
         let acquired;
         try { acquired = await client.set(leaseKey, token, { nx: true, ex: 90 }); }
-        catch { throw new Error('READ_REFRESH_REDIS_UNAVAILABLE'); }
+        catch { redisRetryAt = Date.now() + 60_000; acquired = 'local'; }
         if (!acquired) throw new Error('READ_REFRESH_BUSY');
+        ownsLease = acquired !== 'local';
       }
-      try { return await load(); }
+      try {
+        const result = await load();
+        failures.delete(key);
+        return result;
+      } catch (error) {
+        failures.set(key, { until: Date.now() + 60_000, error });
+        throw error;
+      }
       finally {
-        if (client) await client.eval(RELEASE_READ_REFRESH, [leaseKey], [token]).catch(() => {});
+        if (client && ownsLease) await client.eval(RELEASE_READ_REFRESH, [leaseKey], [token]).catch(() => {});
       }
     })();
     flights.set(key, work);

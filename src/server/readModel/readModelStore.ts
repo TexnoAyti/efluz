@@ -191,9 +191,12 @@ export function resetUpstashClient(): void {
   upstashClient = null;
   isUpstashConfigured = false;
   reportedRedisConfig = false;
+  redisRetryAt = 0;
 }
 
+let redisRetryAt = 0;
 export function getUpstashClient(): Redis | null {
+  if (Date.now() < redisRetryAt) return null;
   if (upstashClient) return upstashClient;
   const config = resolveRedisConfig(process.env);
   if (!reportedRedisConfig) {
@@ -204,7 +207,7 @@ export function getUpstashClient(): Redis | null {
   }
   if (config) {
     try {
-      upstashClient = new Redis({ url: config.url, token: config.token });
+      upstashClient = new Redis({ url: config.url, token: config.token, retry: false, enableAutoPipelining: false, signal: () => AbortSignal.timeout(1200) });
       isUpstashConfigured = true;
       return upstashClient;
     } catch {
@@ -257,6 +260,7 @@ export async function redisGetExact<T>(key: string): Promise<ReadModelSnapshot<T
       }
       return null;
     } catch (err: any) {
+      redisRetryAt = Date.now() + 60_000;
       console.warn(`[READ_MODEL_STORE] Redis get error for key ${key}:`, err?.message || err);
     }
   }
@@ -297,6 +301,7 @@ export async function redisIsDirty(datasetKey: string): Promise<boolean> {
       const exists = await client.exists(dirtyKey);
       if (exists > 0) return true;
     } catch {
+      redisRetryAt = Date.now() + 60_000;
       // fallback
     }
   }
@@ -348,6 +353,37 @@ export async function redisGetRaw<T>(key: string): Promise<ReadModelSnapshot<T> 
  * - validates complete metadata (schemaVersion, generatedAt, sourceVersion, expectedCount, actualCount).
  * - LKG protection: "never replace non-empty lkg with empty data."
  */
+/** Optional publication of a verified read result. Never used as mutation durability. */
+export async function persistReadSnapshot<T>(
+  datasetKey: string,
+  snapshot: Partial<ReadModelSnapshot<T>> & { data: T },
+  ttlSeconds = 86400,
+): Promise<void> {
+  try { await redisSetRaw(datasetKey, snapshot, ttlSeconds); return; }
+  catch (error) {
+    if (error instanceof Error && error.message.startsWith('SNAPSHOT_REJECTED:')) throw error;
+    redisRetryAt = Date.now() + 60_000;
+  }
+  const cleanKey = getRawDatasetKey(datasetKey);
+  const actualCount = Array.isArray(snapshot.data) ? snapshot.data.length : snapshot.data == null ? 0 : 1;
+  const previous = memoryRedisStorage.get(getLkgKey(cleanKey))?.snapshot;
+  const generatedAt = snapshot.generatedAt || new Date().toISOString();
+  if (previous && (previous.actualCount > 0 && actualCount === 0 || previous.generatedAt > generatedAt)) throw new Error(`SNAPSHOT_REJECTED: ${cleanKey}`);
+  const value: ReadModelSnapshot<T> = {
+    ...snapshot, schemaVersion: snapshot.schemaVersion || SCHEMA_VERSION,
+    generatedAt, sourceVersion: snapshot.sourceVersion || 'firestore-authoritative',
+    expectedCount: snapshot.expectedCount ?? actualCount, actualCount,
+    data: snapshot.data, degraded: true,
+  };
+  // Bounded per-process cache; it does not survive a cold start or claim durability.
+  const expiresAt = Date.now() + Math.min(ttlSeconds, 300) * 1000;
+  memoryRedisStorage.set(getFreshKey(cleanKey), { snapshot: value, expiresAt });
+  memoryRedisStorage.set(getLkgKey(cleanKey), { snapshot: value, expiresAt });
+  memoryRedisStorage.delete(getDirtyKey(cleanKey));
+  setInProcessMemory(cleanKey, value);
+  console.warn(`[READ_MODEL_DEGRADED] Serving verified read result from process cache: ${cleanKey}`);
+}
+
 export async function redisSetRaw<T>(
   datasetKey: string,
   snapshot: Partial<ReadModelSnapshot<T>> & { data: T },
@@ -394,7 +430,7 @@ export async function redisSetRaw<T>(
     `, [freshKey, lkgKey, dirtyKey], [JSON.stringify(fullSnapshot), Math.max(1, ttlSeconds), actualCount, now]);
     if (Number(accepted) !== 1) throw new Error(`SNAPSHOT_REJECTED: ${cleanKey}`);
   } else {
-    if (process.env.NODE_ENV === 'production' || process.env.VERCEL || process.env.K_SERVICE) throw new Error('REDIS_REQUIRED_FOR_DURABLE_SNAPSHOT');
+    if (isUpstashConfigured || process.env.NODE_ENV === 'production' || process.env.VERCEL || process.env.K_SERVICE) throw new Error('REDIS_REQUIRED_FOR_DURABLE_SNAPSHOT');
     const previous = await redisGetLkg<T>(cleanKey);
     if (previous && (previous.actualCount > 0 && actualCount === 0 || previous.generatedAt > now)) throw new Error(`SNAPSHOT_REJECTED: ${cleanKey}`);
   }
@@ -651,8 +687,8 @@ export async function readThroughReadModel<T>(options: TieredReadOptions<T>): Pr
       source: 'memory',
       generatedAt: memoryHit.generatedAt,
       sourceVersion: memoryHit.sourceVersion,
-      stale: false,
-      degraded: false,
+      stale: Boolean(memoryHit.stale),
+      degraded: Boolean(memoryHit.degraded),
     };
   }
 
@@ -672,8 +708,8 @@ export async function readThroughReadModel<T>(options: TieredReadOptions<T>): Pr
         source: 'redis_fresh',
         generatedAt: freshSnapshot.generatedAt,
         sourceVersion: freshSnapshot.sourceVersion,
-        stale: !firestoreHealthy,
-        degraded: !firestoreHealthy,
+        stale: !firestoreHealthy || Boolean(freshSnapshot.stale),
+        degraded: !firestoreHealthy || Boolean(freshSnapshot.degraded),
       };
     }
   }
@@ -737,7 +773,7 @@ export async function readThroughReadModel<T>(options: TieredReadOptions<T>): Pr
         };
 
         // Persist to fresh (with TTL) and LKG (no TTL)
-        await redisSetRaw(cleanKey, snapshot, ttlSeconds);
+        await persistReadSnapshot(cleanKey, snapshot, ttlSeconds);
         firestoreCircuitBreaker.recordSuccess();
 
         return freshData;
@@ -760,7 +796,7 @@ export async function readThroughReadModel<T>(options: TieredReadOptions<T>): Pr
       generatedAt: new Date().toISOString(),
       sourceVersion: options.sourceVersion || 'firestore-authoritative',
       stale: false,
-      degraded: false,
+      degraded: Boolean(memoryRedisStorage.get(getFreshKey(cleanKey))?.snapshot.degraded),
     };
   } catch (firestoreErr: any) {
     // 4. Stale Redis LKG Snapshot on Firestore failure
@@ -821,7 +857,7 @@ export async function buildCompetitionsSnapshot(seasonId = 'season-2026-27'): Pr
     sourceVersion: 'firestore-catalog', expectedCount: competitions.length,
     actualCount: competitions.length, data: competitions,
   };
-  await redisSetRaw(ReadModelKeys.competitions(seasonId), snapshot, 3600);
+  await persistReadSnapshot(ReadModelKeys.competitions(seasonId), snapshot, 3600);
   return snapshot;
 }
 
@@ -1039,7 +1075,7 @@ async function buildClubsSnapshotAuthoritative(seasonId: string): Promise<ReadMo
   };
 
   const key = ReadModelKeys.clubsWithOwners(seasonId);
-  await redisSetRaw(key, snapshot, 86400);
+  await persistReadSnapshot(key, snapshot, 86400);
 
   // Also write per-league snapshots
   for (const league of SEED_LEAGUES) {
@@ -1054,7 +1090,7 @@ async function buildClubsSnapshotAuthoritative(seasonId: string): Promise<ReadMo
       data: leagueClubs,
     };
     const leagueKey = ReadModelKeys.leagueClubs(league.id, seasonId);
-    await redisSetRaw(leagueKey, leagueSnapshot, 86400);
+    await persistReadSnapshot(leagueKey, leagueSnapshot, 86400);
   }
 
   return snapshot;
@@ -1206,7 +1242,7 @@ export async function buildAdminFixturesSnapshot(seasonId = 'season-2026-27'): P
   };
 
   const key = ReadModelKeys.adminFixtures(seasonId);
-  await redisSetRaw(key, snapshot, 86400);
+  await persistReadSnapshot(key, snapshot, 86400);
 
   // Group and persist per-competition fixture snapshots
   const compsSet = new Set(fixtures.map((f) => f.competitionId));
@@ -1223,7 +1259,7 @@ export async function buildAdminFixturesSnapshot(seasonId = 'season-2026-27'): P
       actualCount: compFixtures.length,
       data: compFixtures,
     };
-    await redisSetRaw(compKey, compSnapshot, 86400);
+    await persistReadSnapshot(compKey, compSnapshot, 86400);
   }
 
   return snapshot;
@@ -1380,7 +1416,7 @@ export async function buildStandingsSnapshot(
     data: rows,
   };
 
-  await redisSetRaw(key, snapshot, 86400);
+  await persistReadSnapshot(key, snapshot, 86400);
   return snapshot;
 }
 
