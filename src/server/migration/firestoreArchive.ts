@@ -7,7 +7,7 @@ export function encodeValue(value: any): EncodedValue {
   if (value === null) return { type: 'null' };
   if (value instanceof Timestamp) return { type: 'timestamp', value: [String(value.seconds), value.nanoseconds] };
   if (value instanceof GeoPoint) return { type: 'geopoint', value: [value.latitude, value.longitude] };
-  if (value instanceof DocumentReference) return { type: 'reference', value: { path: value.path, projectId: value.firestore.projectId, databaseId: value.firestore.databaseId } };
+  if (value instanceof DocumentReference) return { type: 'reference', value: { path: value.path, projectId: (value.firestore as unknown as { projectId: string }).projectId, databaseId: value.firestore.databaseId } };
   if (Buffer.isBuffer(value) || value instanceof Uint8Array) return { type: 'bytes', value: Buffer.from(value).toString('base64') };
   if (value instanceof Date) return { type: 'date', value: value.toISOString() };
   if (typeof value === 'bigint') return { type: 'integer', value: String(value) };
