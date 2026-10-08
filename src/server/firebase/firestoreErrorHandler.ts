@@ -25,6 +25,10 @@ export function parseFirestoreError(err: any): FormattedFirestoreError {
   const rawCode = err.code ?? (err.status ?? '');
   const rawMsg = err.message || String(err);
   const strCode = String(rawCode).toUpperCase();
+  if (rawMsg.includes('Upstash') || rawMsg.startsWith('REDIS_') || rawMsg.startsWith('READ_REFRESH_') || rawMsg === 'NOTIFICATION_CONTROLS_UNAVAILABLE') {
+    return { error: 'CACHE_TEMPORARILY_UNAVAILABLE', code: 'CACHE_TEMPORARILY_UNAVAILABLE',
+      message: 'Kesh xizmati vaqtincha ishlamayapti. Keyinroq qayta urinib ko‘ring.', httpStatus: 503 };
+  }
   if (strCode === 'DURABLE_PERSISTENCE_UNAVAILABLE' || rawMsg.includes('DURABLE_PERSISTENCE_UNAVAILABLE')) {
     return {
       error: 'DURABLE_PERSISTENCE_UNAVAILABLE',
@@ -194,6 +198,7 @@ export function parseFirestoreError(err: any): FormattedFirestoreError {
 
 export function handleFirestoreError(res: Response, err: any, context = 'Firestore operation'): void {
   const parsed = parseFirestoreError(err);
-  console.error(`[FIRESTORE ERROR] [${context}] code=${parsed.code} status=${parsed.httpStatus} message="${parsed.message}" raw="${err?.message || err}"`);
+  const source = parsed.code === 'CACHE_TEMPORARILY_UNAVAILABLE' ? 'CACHE ERROR' : 'FIRESTORE ERROR';
+  console.error(`[${source}] [${context}] code=${parsed.code} status=${parsed.httpStatus} message="${parsed.message}" raw="${err?.message || err}"`);
   res.status(parsed.httpStatus).json(parsed);
 }
