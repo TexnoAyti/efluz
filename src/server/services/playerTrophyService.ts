@@ -3,7 +3,7 @@ import { trophyId, type PlayerTrophy, type PlayerTrophyCabinet, type TrophyRecor
 import { getFirestoreDb } from '../firebase/admin';
 import { trackFirestoreRead, trackFirestoreWrite } from '../firebase/firestoreStore';
 import { SEED_COMPETITIONS } from '../db/seed';
-import { DOMESTIC_LEAGUE_CONFIG, ReadModelKeys, invalidateDataset, redisGetFresh, redisGetLkg, redisIsDirty, redisSetRaw } from '../readModel/readModelStore';
+import { DOMESTIC_LEAGUE_CONFIG, ReadModelKeys, invalidateDataset, redisGetFresh, redisGetLkg, redisIsDirty, persistReadSnapshot } from '../readModel/readModelStore';
 import { getSeasonTrophies } from './seasonInsightsService';
 import { sharedReadRefresh } from '../readModel/sharedReadRefresh';
 import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
@@ -58,12 +58,12 @@ async function readHistory(): Promise<{ data: TrophyHistory; stale: boolean }> {
   const generation = historyEpoch;
   const work = (async () => {
     const fresh = await redisGetFresh<TrophyHistory>(HISTORY_KEY);
-    if (fresh && !(await redisIsDirty(HISTORY_KEY))) return { data: fresh.data, stale: false };
+    if (fresh && !(await redisIsDirty(HISTORY_KEY))) return { data: fresh.data, stale: Boolean(fresh.degraded || fresh.stale) };
     try {
       return await sharedReadRefresh(HISTORY_KEY, async () => {
         // Another server may have published the cache between our first read and lease.
         const newer = await redisGetFresh<TrophyHistory>(HISTORY_KEY);
-        if (newer && !(await redisIsDirty(HISTORY_KEY))) return { data: newer.data, stale: false };
+        if (newer && !(await redisIsDirty(HISTORY_KEY))) return { data: newer.data, stale: Boolean(newer.degraded || newer.stale) };
         if (!firestoreCircuitBreaker.canExecute()) throw new Error('READ_REFRESH_FIRESTORE_COOLDOWN');
         const db = getFirestoreDb();
         let records, archives;
@@ -81,7 +81,7 @@ async function readHistory(): Promise<{ data: TrophyHistory; stale: boolean }> {
           archives: archives.docs.map(doc => ({ seasonId: doc.id, trophies: (doc.data().trophies || []) as TrophyRecord[] })),
         };
         if (generation === historyEpoch) {
-          await redisSetRaw(HISTORY_KEY, { data, sourceVersion: 'firestore-trophy-history' }, HISTORY_TTL_SECONDS);
+          await persistReadSnapshot(HISTORY_KEY, { data, sourceVersion: 'firestore-trophy-history' }, HISTORY_TTL_SECONDS);
           cachedHistory = { data, expiresAt: Date.now() + HISTORY_TTL_SECONDS * 1000 };
         }
         return { data, stale: false };

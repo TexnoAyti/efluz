@@ -382,27 +382,38 @@ function isReadRefreshUnavailable(error) {
 }
 function createSharedReadRefresh(getClient = getBoundedRedisClient) {
   const flights2 = /* @__PURE__ */ new Map();
+  const failures = /* @__PURE__ */ new Map();
+  let redisRetryAt2 = 0;
   return async function refresh(key4, load) {
     const existing = flights2.get(key4);
     if (existing) return existing;
+    const failed = failures.get(key4);
+    if (failed && failed.until > Date.now()) throw failed.error;
     const work = (async () => {
-      const client = getClient();
+      const client = Date.now() >= redisRetryAt2 ? getClient() : null;
       const leaseKey = `efluz:v1:read-refresh:${key4}`;
       const token = randomUUID2();
-      if (!client && (process.env.NODE_ENV === "production" || process.env.VERCEL)) throw new Error("READ_REFRESH_REDIS_UNAVAILABLE");
+      let ownsLease = false;
       if (client) {
         let acquired;
         try {
           acquired = await client.set(leaseKey, token, { nx: true, ex: 90 });
         } catch {
-          throw new Error("READ_REFRESH_REDIS_UNAVAILABLE");
+          redisRetryAt2 = Date.now() + 6e4;
+          acquired = "local";
         }
         if (!acquired) throw new Error("READ_REFRESH_BUSY");
+        ownsLease = acquired !== "local";
       }
       try {
-        return await load();
+        const result = await load();
+        failures.delete(key4);
+        return result;
+      } catch (error) {
+        failures.set(key4, { until: Date.now() + 6e4, error });
+        throw error;
       } finally {
-        if (client) await client.eval(RELEASE_READ_REFRESH, [leaseKey], [token]).catch(() => {
+        if (client && ownsLease) await client.eval(RELEASE_READ_REFRESH, [leaseKey], [token]).catch(() => {
         });
       }
     })();
@@ -2817,11 +2828,11 @@ async function readHistory() {
   const generation = historyEpoch;
   const work = (async () => {
     const fresh = await redisGetFresh(HISTORY_KEY);
-    if (fresh && !await redisIsDirty(HISTORY_KEY)) return { data: fresh.data, stale: false };
+    if (fresh && !await redisIsDirty(HISTORY_KEY)) return { data: fresh.data, stale: Boolean(fresh.degraded || fresh.stale) };
     try {
       return await sharedReadRefresh(HISTORY_KEY, async () => {
         const newer = await redisGetFresh(HISTORY_KEY);
-        if (newer && !await redisIsDirty(HISTORY_KEY)) return { data: newer.data, stale: false };
+        if (newer && !await redisIsDirty(HISTORY_KEY)) return { data: newer.data, stale: Boolean(newer.degraded || newer.stale) };
         if (!firestoreCircuitBreaker.canExecute()) throw new Error("READ_REFRESH_FIRESTORE_COOLDOWN");
         const db = getFirestoreDb();
         let records, archives;
@@ -2839,7 +2850,7 @@ async function readHistory() {
           archives: archives.docs.map((doc) => ({ seasonId: doc.id, trophies: doc.data().trophies || [] }))
         };
         if (generation === historyEpoch) {
-          await redisSetRaw(HISTORY_KEY, { data, sourceVersion: "firestore-trophy-history" }, HISTORY_TTL_SECONDS);
+          await persistReadSnapshot(HISTORY_KEY, { data, sourceVersion: "firestore-trophy-history" }, HISTORY_TTL_SECONDS);
           cachedHistory = { data, expiresAt: Date.now() + HISTORY_TTL_SECONDS * 1e3 };
         }
         return { data, stale: false };
@@ -5981,6 +5992,7 @@ __export(readModelStore_exports, {
   memoryRedisStorage: () => memoryRedisStorage2,
   normalizeFixtureSnapshot: () => normalizeFixtureSnapshot,
   patchCompetitionMatchdayCatalog: () => patchCompetitionMatchdayCatalog,
+  persistReadSnapshot: () => persistReadSnapshot,
   readThroughReadModel: () => readThroughReadModel2,
   rebuildAllReadModels: () => rebuildAllReadModels,
   redisDelRaw: () => redisDelRaw,
@@ -6017,8 +6029,10 @@ function resetUpstashClient() {
   upstashClient = null;
   isUpstashConfigured = false;
   reportedRedisConfig = false;
+  redisRetryAt = 0;
 }
 function getUpstashClient() {
+  if (Date.now() < redisRetryAt) return null;
   if (upstashClient) return upstashClient;
   const config = resolveRedisConfig(process.env);
   if (!reportedRedisConfig) {
@@ -6027,7 +6041,7 @@ function getUpstashClient() {
   }
   if (config) {
     try {
-      upstashClient = new Redis4({ url: config.url, token: config.token });
+      upstashClient = new Redis4({ url: config.url, token: config.token, retry: false, enableAutoPipelining: false, signal: () => AbortSignal.timeout(1200) });
       isUpstashConfigured = true;
       return upstashClient;
     } catch {
@@ -6065,6 +6079,7 @@ async function redisGetExact(key4) {
       }
       return null;
     } catch (err) {
+      redisRetryAt = Date.now() + 6e4;
       console.warn(`[READ_MODEL_STORE] Redis get error for key ${key4}:`, err?.message || err);
     }
   }
@@ -6092,6 +6107,7 @@ async function redisIsDirty(datasetKey) {
       const exists = await client.exists(dirtyKey);
       if (exists > 0) return true;
     } catch {
+      redisRetryAt = Date.now() + 6e4;
     }
   }
   const entry = memoryRedisStorage2.get(dirtyKey);
@@ -6120,6 +6136,36 @@ async function redisGetRaw3(key4) {
   const legacy = await redisGetExact(key4);
   if (legacy) return legacy;
   return null;
+}
+async function persistReadSnapshot(datasetKey, snapshot, ttlSeconds = 86400) {
+  try {
+    await redisSetRaw(datasetKey, snapshot, ttlSeconds);
+    return;
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("SNAPSHOT_REJECTED:")) throw error;
+    redisRetryAt = Date.now() + 6e4;
+  }
+  const cleanKey = getRawDatasetKey(datasetKey);
+  const actualCount = Array.isArray(snapshot.data) ? snapshot.data.length : snapshot.data == null ? 0 : 1;
+  const previous = memoryRedisStorage2.get(getLkgKey(cleanKey))?.snapshot;
+  const generatedAt = snapshot.generatedAt || (/* @__PURE__ */ new Date()).toISOString();
+  if (previous && (previous.actualCount > 0 && actualCount === 0 || previous.generatedAt > generatedAt)) throw new Error(`SNAPSHOT_REJECTED: ${cleanKey}`);
+  const value = {
+    ...snapshot,
+    schemaVersion: snapshot.schemaVersion || SCHEMA_VERSION2,
+    generatedAt,
+    sourceVersion: snapshot.sourceVersion || "firestore-authoritative",
+    expectedCount: snapshot.expectedCount ?? actualCount,
+    actualCount,
+    data: snapshot.data,
+    degraded: true
+  };
+  const expiresAt = Date.now() + Math.min(ttlSeconds, 300) * 1e3;
+  memoryRedisStorage2.set(getFreshKey(cleanKey), { snapshot: value, expiresAt });
+  memoryRedisStorage2.set(getLkgKey(cleanKey), { snapshot: value, expiresAt });
+  memoryRedisStorage2.delete(getDirtyKey(cleanKey));
+  setInProcessMemory(cleanKey, value);
+  console.warn(`[READ_MODEL_DEGRADED] Serving verified read result from process cache: ${cleanKey}`);
 }
 async function redisSetRaw(datasetKey, snapshot, ttlSeconds = 86400) {
   const cleanKey = getRawDatasetKey(datasetKey);
@@ -6153,7 +6199,7 @@ async function redisSetRaw(datasetKey, snapshot, ttlSeconds = 86400) {
     `, [freshKey, lkgKey, dirtyKey], [JSON.stringify(fullSnapshot), Math.max(1, ttlSeconds), actualCount, now]);
     if (Number(accepted) !== 1) throw new Error(`SNAPSHOT_REJECTED: ${cleanKey}`);
   } else {
-    if (process.env.NODE_ENV === "production" || process.env.VERCEL || process.env.K_SERVICE) throw new Error("REDIS_REQUIRED_FOR_DURABLE_SNAPSHOT");
+    if (isUpstashConfigured || process.env.NODE_ENV === "production" || process.env.VERCEL || process.env.K_SERVICE) throw new Error("REDIS_REQUIRED_FOR_DURABLE_SNAPSHOT");
     const previous = await redisGetLkg(cleanKey);
     if (previous && (previous.actualCount > 0 && actualCount === 0 || previous.generatedAt > now)) throw new Error(`SNAPSHOT_REJECTED: ${cleanKey}`);
   }
@@ -6325,8 +6371,8 @@ async function readThroughReadModel2(options) {
       source: "memory",
       generatedAt: memoryHit.generatedAt,
       sourceVersion: memoryHit.sourceVersion,
-      stale: false,
-      degraded: false
+      stale: Boolean(memoryHit.stale),
+      degraded: Boolean(memoryHit.degraded)
     };
   }
   let freshSnapshot = null;
@@ -6342,8 +6388,8 @@ async function readThroughReadModel2(options) {
         source: "redis_fresh",
         generatedAt: freshSnapshot.generatedAt,
         sourceVersion: freshSnapshot.sourceVersion,
-        stale: !firestoreHealthy,
-        degraded: !firestoreHealthy
+        stale: !firestoreHealthy || Boolean(freshSnapshot.stale),
+        degraded: !firestoreHealthy || Boolean(freshSnapshot.degraded)
       };
     }
   }
@@ -6395,7 +6441,7 @@ async function readThroughReadModel2(options) {
           actualCount,
           data: freshData
         };
-        await redisSetRaw(cleanKey, snapshot, ttlSeconds);
+        await persistReadSnapshot(cleanKey, snapshot, ttlSeconds);
         firestoreCircuitBreaker.recordSuccess();
         return freshData;
       } catch (err) {
@@ -6416,7 +6462,7 @@ async function readThroughReadModel2(options) {
       generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
       sourceVersion: options.sourceVersion || "firestore-authoritative",
       stale: false,
-      degraded: false
+      degraded: Boolean(memoryRedisStorage2.get(getFreshKey(cleanKey))?.snapshot.degraded)
     };
   } catch (firestoreErr) {
     const lkgSnapshot = await redisGetLkg(cleanKey);
@@ -6469,7 +6515,7 @@ async function buildCompetitionsSnapshot(seasonId2 = "season-2026-27") {
     actualCount: competitions.length,
     data: competitions
   };
-  await redisSetRaw(ReadModelKeys.competitions(seasonId2), snapshot, 3600);
+  await persistReadSnapshot(ReadModelKeys.competitions(seasonId2), snapshot, 3600);
   return snapshot;
 }
 async function patchCompetitionMatchdayCatalog(competition) {
@@ -6636,7 +6682,7 @@ async function buildClubsSnapshotAuthoritative(seasonId2) {
     data: neutralClubs
   };
   const key4 = ReadModelKeys.clubsWithOwners(seasonId2);
-  await redisSetRaw(key4, snapshot, 86400);
+  await persistReadSnapshot(key4, snapshot, 86400);
   for (const league of SEED_LEAGUES) {
     const leagueClubs = neutralClubs.filter((c) => c.leagueId === league.id);
     const expectedLeagueCount = league.id.includes("bundesliga") || league.id.includes("ligue-1") ? 18 : 20;
@@ -6649,7 +6695,7 @@ async function buildClubsSnapshotAuthoritative(seasonId2) {
       data: leagueClubs
     };
     const leagueKey = ReadModelKeys.leagueClubs(league.id, seasonId2);
-    await redisSetRaw(leagueKey, leagueSnapshot, 86400);
+    await persistReadSnapshot(leagueKey, leagueSnapshot, 86400);
   }
   return snapshot;
 }
@@ -6786,7 +6832,7 @@ async function buildAdminFixturesSnapshot(seasonId2 = "season-2026-27") {
     data: fixtures
   };
   const key4 = ReadModelKeys.adminFixtures(seasonId2);
-  await redisSetRaw(key4, snapshot, 86400);
+  await persistReadSnapshot(key4, snapshot, 86400);
   const compsSet = new Set(fixtures.map((f) => f.competitionId));
   for (const compId of compsSet) {
     const compFixtures = fixtures.filter((f) => f.competitionId === compId);
@@ -6800,7 +6846,7 @@ async function buildAdminFixturesSnapshot(seasonId2 = "season-2026-27") {
       actualCount: compFixtures.length,
       data: compFixtures
     };
-    await redisSetRaw(compKey, compSnapshot, 86400);
+    await persistReadSnapshot(compKey, compSnapshot, 86400);
   }
   return snapshot;
 }
@@ -6915,7 +6961,7 @@ async function buildStandingsSnapshot(competitionId, seasonId2 = "season-2026-27
     actualCount: rows.length,
     data: rows
   };
-  await redisSetRaw(key4, snapshot, 86400);
+  await persistReadSnapshot(key4, snapshot, 86400);
   return snapshot;
 }
 async function getCompetitionsFromReadModel(seasonId2 = "season-2026-27") {
@@ -7763,7 +7809,7 @@ async function getReadModelHealthStatus(seasonId2 = "season-2026-27") {
     coreDatasets
   };
 }
-var SCHEMA_VERSION2, KEY_PREFIX, ReadModelNotWarmedError, DOMESTIC_LEAGUE_CONFIG, CANONICAL_COMPETITION_ORDER, ReadModelKeys, upstashClient, isUpstashConfigured, reportedRedisConfig, memoryRedisStorage2, inProcessMemoryCache, PROCESS_MEMORY_TTL_MS, inFlightLoaders, globalLastSnapshotAt, clearProcessMemoryForTest;
+var SCHEMA_VERSION2, KEY_PREFIX, ReadModelNotWarmedError, DOMESTIC_LEAGUE_CONFIG, CANONICAL_COMPETITION_ORDER, ReadModelKeys, upstashClient, isUpstashConfigured, reportedRedisConfig, memoryRedisStorage2, inProcessMemoryCache, PROCESS_MEMORY_TTL_MS, inFlightLoaders, globalLastSnapshotAt, redisRetryAt, clearProcessMemoryForTest;
 var init_readModelStore = __esm({
   "src/server/readModel/readModelStore.ts"() {
     init_seasonQualificationPolicy();
@@ -7832,6 +7878,7 @@ var init_readModelStore = __esm({
     PROCESS_MEMORY_TTL_MS = 15e3;
     inFlightLoaders = /* @__PURE__ */ new Map();
     globalLastSnapshotAt = null;
+    redisRetryAt = 0;
     clearProcessMemoryForTest = clearProcessMemoryCache;
   }
 });
@@ -11875,48 +11922,8 @@ __export(firestoreStore_exports, {
   getAllLeaguesFirestore: () => getAllLeaguesFirestore,
   getAllSeasonsFirestore: () => getAllSeasonsFirestore,
   getAllUsersFirestore: () => getAllUsersFirestore,
-  getAnyCached: () => getAnyCached,
-  getAuditLogsFirestore: () => getAuditLogsFirestore,
-  getAuthoritativeUserForAuthorization: () => getAuthoritativeUserForAuthorization,
-  getAvailableClubsFirestore: () => getAvailableClubsFirestore,
-  getCanonicalTelegramUserId: () => getCanonicalTelegramUserId,
-  getClubByIdFirestore: () => getClubByIdFirestore,
-  getClubsByLeagueFirestore: () => getClubsByLeagueFirestore,
-  getCompetitionByIdFirestore: () => getCompetitionByIdFirestore,
-  getCompetitionMatchdayLocksFirestore: () => getCompetitionMatchdayLocksFirestore,
-  getCompetitionParticipantsFirestore: () => getCompetitionParticipantsFirestore,
-  getCompetitionStandingsFirestore: () => getCompetitionStandingsFirestore,
-  getDisputesFirestore: () => getDisputesFirestore,
-  getFirestoreReadMetrics: () => getFirestoreReadMetrics,
-  getFirestoreTelemetry: () => getFirestoreTelemetry,
-  getFixtureByIdFirestore: () => getFixtureByIdFirestore,
-  getFixturesFirestore: () => getFixturesFirestore,
-  getFromCache: () => getFromCache,
-  getLocalDisputes: () => getLocalDisputes,
-  getLocalPendingResults: () => getLocalPendingResults,
-  getLocalSubmissions: () => getLocalSubmissions,
-  getMatchdayLockFirestore: () => getMatchdayLockFirestore,
-  getMatchdayLockKey: () => getMatchdayLockKey,
-  getOrCreateDevUserFirestore: () => getOrCreateDevUserFirestore,
-  getOrCreateTelegramUserFirestore: () => getOrCreateTelegramUserFirestore,
-  getPendingResultsFirestore: () => getPendingResultsFirestore,
-  getRawClubFixturesFirestore: () => getRawClubFixturesFirestore,
-  getReadMetrics: () => getReadMetrics,
-  getUserActiveClubFirestore: () => getUserActiveClubFirestore,
-  getUserByIdFirestore: () => getUserByIdFirestore,
-  getUserNotificationsFirestore: () => getUserNotificationsFirestore,
-  guardAgainstTestEntityCreation: () => guardAgainstTestEntityCreation,
-  invalidateFirestoreCache: () => invalidateFirestoreCache,
-  invalidateMatchdayLockCache: () => invalidateMatchdayLockCache,
-  invalidateOwnershipCache: () => invalidateOwnershipCache,
-  isMatchdayPlayableKey: () => isMatchdayPlayableKey,
-  lastKnownGoodFixtures: () => lastKnownGoodFixtures,
-  lastKnownGoodStandings: () => lastKnownGoodStandings,
-  markNotificationsReadFirestore: () => markNotificationsReadFirestore,
-  markSingleNotificationReadFirestore: () => markSingleNotificationReadFirestore,
-  openCompetitionMatchdayNowFirestore: () => openCompetitionMatchdayNowFirestore,
-  rebuildCompetitionStandingsFirestore: () => rebuildCompetitionStanding
-... 455070 bytes omitted ...
+  getAny
+... 457582 bytes omitted ...
 rr) {
         res.status(503).json({ error: err?.message || "SMART_NOTIFICATION_SETTINGS_UNAVAILABLE" });
       }

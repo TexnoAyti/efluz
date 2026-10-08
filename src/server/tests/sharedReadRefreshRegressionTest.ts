@@ -36,7 +36,11 @@ assert.equal(leases.size, 0, 'Failed loads release their lease');
 await firstServer('lease-owner', async () => { leases.set('efluz:v1:read-refresh:lease-owner', 'replacement'); return 1; });
 assert.equal(leases.get('efluz:v1:read-refresh:lease-owner'), 'replacement', 'Old owner cannot delete a replacement lease');
 const unavailable = createSharedReadRefresh(() => ({ set: async () => { throw new Error('Redis down'); } }) as any);
-await assert.rejects(unavailable('outage', async () => { throw new Error('Firestore scan must not run'); }), /READ_REFRESH_REDIS_UNAVAILABLE/);
+assert.equal(await unavailable('outage', async () => 42), 42, 'Optional Redis lease outage must not block a verified read');
+let outageLoads = 0;
+await assert.rejects(unavailable('failed-outage', async () => { outageLoads++; throw new Error('Firestore unavailable'); }), /Firestore unavailable/);
+await assert.rejects(unavailable('failed-outage', async () => { outageLoads++; return 0; }), /Firestore unavailable/);
+assert.equal(outageLoads, 1, 'Failed fallback refreshes have a cooldown');
 
 // A Redis hit must not reserve the circuit breaker's recovery probe.
 firestoreCircuitBreaker.reset();
