@@ -344,7 +344,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 username: authRes.user.username,
                 isAdmin: authRes.user.isAdmin,
               }));
-              await refreshNotifications(false);
+              void refreshNotifications(false);
             }
           } catch (tErr: any) {
             console.error('Telegram authentication failed:', tErr);
@@ -396,7 +396,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               username: authRes.user.username,
               isAdmin: authRes.user.isAdmin,
             }));
-            await refreshNotifications(false);
+            void refreshNotifications(false);
           }
         } else {
           // 6. Production web session outside Telegram
@@ -419,7 +419,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 username: meRes.user?.username || null,
                 isAdmin: Boolean(meRes.user?.isAdmin),
               }));
-              await fetchUserData(targetSeasonId);
+              void fetchUserData(targetSeasonId);
             }
           } catch {
             if (isMounted) {

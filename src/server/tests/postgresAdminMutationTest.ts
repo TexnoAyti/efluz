@@ -6,6 +6,7 @@ import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS } from '../firebase/collections';
 import { redisSetRaw, redisGetFresh, ReadModelKeys, refreshChangedFixtureReadModel, patchCompetitionMatchdayCatalog, clearProcessMemoryCache, getUpstashClient } from '../readModel/readModelStore';
 import { getNotificationControls, setNotificationTypeVisibility, setNotificationVisibility } from '../services/notificationVisibility';
+import { getNotificationReadState, persistNotificationReadState } from '../services/notificationReadState';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { createSessionToken } from '../auth/sessionToken';
 import { adminRouter } from '../routes/admin.routes';
@@ -34,6 +35,10 @@ assert.equal((await redisGetFresh<any[]>(ReadModelKeys.competitions(seasonId)))?
 await setNotificationTypeVisibility('SYSTEM',false);
 await setNotificationTypeVisibility('RESULT_CONFIRMED',false);
 assert.equal((await getNotificationControls())['type:SYSTEM'],'hidden');
+await persistNotificationReadState('test-admin','2026-10-09T01:00:00Z');
+await persistNotificationReadState('test-admin','2026-10-09T00:00:00Z');
+assert.equal((await getNotificationReadState('test-admin')).all,'2026-10-09T01:00:00Z');
+assert.deepEqual(await getNotificationReadState('other-user'),{});
 await db.collection(COLLECTIONS.NOTIFICATIONS).doc('notice').set({userId:'test-admin',type:'SYSTEM',title:'Test',message:'Test',createdAt:'2026-10-09T00:00:00Z'});
 await setNotificationVisibility('notice','deleted','test-admin');
 await assert.rejects(setNotificationVisibility('notice','visible','test-admin'),/NOTIFICATION_DELETED/);
