@@ -8,7 +8,7 @@ const key = 'postgres-snapshot-regression';
 const fetchOriginal = globalThis.fetch;
 globalThis.fetch = async () => { throw new Error('Redis must not be called'); };
 try {
-  await redisSetRaw(key, { data: [{ id: 'club' }], generatedAt: '2026-10-09T10:00:00Z' });
+  await redisSetRaw(key, { data: [{ id: 'club', owner: undefined }], generatedAt: '2026-10-09T10:00:00Z' });
   clearProcessMemoryCache(); resetMemoryRedisStore();
   assert.equal((await redisGetFresh<any[]>(key))?.data.length, 1);
   assert.equal((await redisGetLkg<any[]>(key))?.data.length, 1);

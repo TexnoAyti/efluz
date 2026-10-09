@@ -8,11 +8,13 @@ export async function readPostgresSnapshot(key: string): Promise<any | null> {
   return value && (value.expiresAt === null || value.expiresAt > Date.now()) ? value.snapshot : null;
 }
 export async function publishPostgresSnapshot(fresh: string, lkg: string, dirty: string, snapshot: any, ttl: number) {
+  // Snapshot payloads historically use JSON wire semantics (omit optional undefined fields).
+  const durable = JSON.parse(JSON.stringify(snapshot));
   await getFirestoreDb().runTransaction(async tx => {
     const previous = (await tx.get(ref(lkg))).data()?.snapshot;
     if (previous && (previous.actualCount > 0 && snapshot.actualCount === 0 || previous.generatedAt > snapshot.generatedAt)) throw new Error('SNAPSHOT_REJECTED: ' + lkg);
-    tx.set(ref(fresh), { snapshot, expiresAt: Date.now() + Math.max(1, ttl) * 1000 });
-    tx.set(ref(lkg), { snapshot, expiresAt: null });
+    tx.set(ref(fresh), { snapshot: durable, expiresAt: Date.now() + Math.max(1, ttl) * 1000 });
+    tx.set(ref(lkg), { snapshot: durable, expiresAt: null });
     tx.delete(ref(dirty));
   });
 }
