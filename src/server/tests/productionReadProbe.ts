@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { Request, Response } from 'express';
 import { getFirestoreDb } from '../firebase/admin';
-import { getAdminClubsFromReadModel, getAdminFixturesFromReadModel } from '../readModel/readModelStore';
+import { buildAdminFixturesSnapshot, getAdminClubsFromReadModel, getAdminFixturesFromReadModel } from '../readModel/readModelStore';
 import { refreshRecipientDirectoryIfStale } from '../services/recipientDirectoryRefreshService';
 import { getSafeEligibleRecipients } from '../services/telegramNotificationQueue';
 export async function productionReadProbe(req: Request, res: Response) {
@@ -11,6 +11,7 @@ export async function productionReadProbe(req: Request, res: Response) {
  try {
   await step('users-count',async()=> (await getFirestoreDb().collection('users').count().get()).data().count);
   await step('admin-clubs',async()=> {const r=await getAdminClubsFromReadModel();return {total:r.total,degraded:r.degraded};});
+  if(req.body?.refresh===true) await step('admin-fixtures-refresh',async()=>{const r=await buildAdminFixturesSnapshot('season-2026-27',false);return {total:r.actualCount};});
   await step('admin-fixtures',async()=> {const r=await getAdminFixturesFromReadModel({limit:25});return {total:r.total,page:r.fixtures.length,degraded:r.degraded};});
   await step('recipients',async()=> {await refreshRecipientDirectoryIfStale();return (await getSafeEligibleRecipients()).length;});
   res.json({ok:true,steps});
