@@ -35,3 +35,23 @@ export async function postgresSnapshotTtl(key: string) {
   if (value.expiresAt === null) return -1;
   return value.expiresAt > Date.now() ? Math.floor((value.expiresAt - Date.now()) / 1000) : -2;
 }
+
+/** Patch a single row under the same transaction as fresh/LKG publication. */
+export async function patchPostgresSnapshot(fresh: string, lkg: string, dirty: string, row: any, merge: boolean, ttl: number, version: string): Promise<boolean> {
+  return getFirestoreDb().runTransaction(async tx => {
+    const previous = (await tx.get(ref(lkg))).data()?.snapshot
+      || (await tx.get(ref(fresh))).data()?.snapshot;
+    if (!Array.isArray(previous?.data)) return false;
+    const index = previous.data.findIndex((item: any) => item.id === row.id);
+    if (index < 0) return false;
+    const old = previous.data[index];
+    if (old.updatedAt && row.updatedAt && old.updatedAt > row.updatedAt) return true;
+    const data = previous.data.slice();
+    data[index] = merge ? { ...old, ...row } : row;
+    const snapshot = JSON.parse(JSON.stringify({ ...previous, data, actualCount: data.length, generatedAt: new Date().toISOString(), sourceVersion: version }));
+    tx.set(ref(fresh), { snapshot, expiresAt: Date.now() + ttl * 1000 });
+    tx.set(ref(lkg), { snapshot, expiresAt: null });
+    tx.delete(ref(dirty));
+    return true;
+  });
+}

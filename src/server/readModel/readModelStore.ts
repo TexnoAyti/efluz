@@ -22,7 +22,7 @@ import { filterRetiredFixtures, hasFixtureMatchdayCorrection } from '../services
  */
 
 import { Redis } from '@upstash/redis';
-import { usesPostgresSnapshots, readPostgresSnapshot, publishPostgresSnapshot, invalidatePostgresSnapshot, deletePostgresSnapshots, postgresSnapshotTtl } from './postgresSnapshots';
+import { usesPostgresSnapshots, readPostgresSnapshot, publishPostgresSnapshot, invalidatePostgresSnapshot, deletePostgresSnapshots, postgresSnapshotTtl, patchPostgresSnapshot } from './postgresSnapshots';
 import { sharedReadRefresh, isReadRefreshUnavailable } from './sharedReadRefresh';
 import { resolveRedisConfig } from './redisConfig';
 import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
@@ -877,7 +877,9 @@ export async function patchCompetitionMatchdayCatalog(competition: FirestoreComp
   const key = ReadModelKeys.competitions(competition.seasonId);
   const clean = getRawDatasetKey(key), fresh = getFreshKey(clean), lkg = getLkgKey(clean);
   const now = new Date().toISOString(), client = getUpstashClient();
-  if (client) {
+  if (usesPostgresSnapshots()) {
+    await patchPostgresSnapshot(fresh, lkg, getDirtyKey(clean), competition, true, 3600, 'matchday-control');
+  } else if (client) {
     await client.eval(`
       local raw = redis.call('GET', KEYS[2]) or redis.call('GET', KEYS[1])
       if not raw then return 0 end
@@ -2145,6 +2147,12 @@ export async function refreshChangedFixtureReadModel(fixtureId: string): Promise
   const fixture = normalizeFixtureSnapshot({ ...document.data(), id: document.id } as FirestoreFixtureDoc);
 
   const patchDataset = async (key: string): Promise<boolean> => {
+    if (usesPostgresSnapshots()) {
+      const patched = await patchPostgresSnapshot(getFreshKey(key), getLkgKey(key), getDirtyKey(key), fixture, false, 86400, `fixture-patch-${fixture.id}`);
+      inProcessMemoryCache.delete(getRawDatasetKey(key));
+      inProcessMemoryCache.delete(key);
+      return patched;
+    }
     const client = getUpstashClient();
     if (client) {
       const result = await client.eval(`
@@ -2283,9 +2291,9 @@ export interface RebuildResult {
  * Admin-triggered action; never run automatically on production startup.
  */
 export async function rebuildAllReadModels(seasonId = 'season-2026-27'): Promise<RebuildResult> {
-  const client = getUpstashClient();
+  const client = usesPostgresSnapshots() ? null : getUpstashClient();
   const hosted = Boolean(process.env.VERCEL || process.env.K_SERVICE || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NODE_ENV === 'production');
-  if (hosted && !client) throw new Error('REDIS_NOT_CONFIGURED: Production uchun Redis URL va token juftligini tekshiring.');
+  if (hosted && !client && !usesPostgresSnapshots()) throw new Error('REDIS_NOT_CONFIGURED: Production uchun Redis URL va token juftligini tekshiring.');
   if (client && await client.ping() !== 'PONG') throw new Error('REDIS_UNAVAILABLE');
   if (!firestoreCircuitBreaker.canExecute()) throw new Error('FIRESTORE_COOLDOWN: Baza cheklovi faol. Keyinroq qayta urinib ko‘ring.');
   const assertReadable = () => {

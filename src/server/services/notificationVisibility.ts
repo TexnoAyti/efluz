@@ -8,8 +8,10 @@ export type NotificationControls = Record<string, NotificationControl>;
 const key = 'efluz:v1:notification-visibility';
 const local: NotificationControls = {};
 const defaults = ['MATCH_SCHEDULED', 'RESULT_SUBMITTED', 'RESULT_CONFIRMED', 'DISPUTE_OPENED', 'DISPUTE_RESOLVED', 'CLUB_ASSIGNED', 'NEXT_ROUND_MATCH', 'QUALIFICATION_CONFIRMED', 'COMPETITION_UPDATE', 'SYSTEM'];
+const postgresControls = () => getFirestoreDb().collection('runtime_settings').doc('notification-visibility');
 
 export async function getNotificationControls(): Promise<NotificationControls> {
+  if (process.env.DATABASE_PROVIDER === 'supabase') return (await postgresControls().get()).data()?.controls || {};
   const redis = getUpstashClient();
   if (redis) return await redis.hgetall<NotificationControls>(key) || {};
   if (process.env.NODE_ENV === 'production' || process.env.VERCEL || process.env.K_SERVICE) throw new Error('NOTIFICATION_CONTROLS_UNAVAILABLE');
@@ -17,6 +19,15 @@ export async function getNotificationControls(): Promise<NotificationControls> {
 }
 
 async function save(field: string, value: NotificationControl): Promise<void> {
+  if (process.env.DATABASE_PROVIDER === 'supabase') {
+    await getFirestoreDb().runTransaction(async tx => {
+      const ref = postgresControls();
+      const controls = (await tx.get(ref)).data()?.controls || {};
+      if (controls[field] === 'deleted' && value !== 'deleted') throw new Error('NOTIFICATION_DELETED');
+      tx.set(ref, { controls: { ...controls, [field]: value }, updatedAt: new Date().toISOString() });
+    });
+    return;
+  }
   const redis = getUpstashClient();
   if (redis) {
     const accepted = await redis.eval(`
