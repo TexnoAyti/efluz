@@ -1,4 +1,3 @@
-import {resultCacheProbe} from './tests/resultCacheProbe';
 import { adminImageExportsRouter, imageExportDownloadRouter } from './routes/tournamentImageDownload.routes';
 import express from 'express';
 import { readCostMiddleware } from './services/durableReadCosts';
@@ -164,7 +163,7 @@ export function createApp() {
   app.use(authMiddleware);
   app.use('/api', (req, res, next) => {
     res.once('finish', () => {
-      if (req.user && res.statusCode < 400 && !req.path.startsWith('/health')) scheduleMutationReconciliation();
+      if (req.user && res.statusCode < 400 && !req.originalUrl.split('?')[0].startsWith('/api/health')) scheduleMutationReconciliation();
     });
     next();
   });
@@ -183,7 +182,6 @@ export function createApp() {
   app.use('/api/season-ops', seasonOperationsConsistencyRouter);
   app.use('/api/season-ops', seasonOperationsRouter);
   app.use('/api/leagues', leaguesRouter);
-  app.post('/api/internal/result-cache-probe',resultCacheProbe);
   app.use('/api/clubs', clubsRouter);
   app.use('/api/competitions', competitionConsistencyRouter);
   app.use('/api/competitions', competitionsRouter);
