@@ -21,6 +21,14 @@ const failed = await first.claim(802, 'a', true);
 await first.settle(802, 'a', false, failed);
 assert.equal((await second.claim(802, 'b', true)).status, 'claimed');
 await assert.rejects(first.claim(803, 'a', false), /REDIS_WEBHOOK_UNAVAILABLE/);
+process.env.DATABASE_PROVIDER = 'supabase';
+try {
+  const [left, right] = await Promise.all([first.claim(806, 'left', false), second.claim(806, 'right', false)]);
+  assert.deepEqual([left.status, right.status].sort(), ['busy', 'claimed']);
+  const winner = left.status === 'claimed' ? 'left' : 'right';
+  await first.settle(806, winner, true, left);
+  assert.equal((await second.claim(806, 'retry', false)).status, 'done');
+} finally { delete process.env.DATABASE_PROVIDER; }
 assert.equal(isBasicBotUpdate({message:{chat:{id:1},from:{id:1},text:'/start'}}), true);
 for (const message of [{text:'/ai_on'}, {text:'/start',successful_payment:{}}, {text:'/start',sender_chat:{id:2}}, {text:'/start',forward_origin:{}}]) {
   assert.equal(isBasicBotUpdate({message:{chat:{id:1},from:{id:1},...message}}), false);
