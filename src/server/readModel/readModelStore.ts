@@ -132,22 +132,24 @@ export const CANONICAL_COMPETITION_ORDER: Record<string, number> = {
 // ----------------------------------------------------
 
 export function getRawDatasetKey(key: string): string {
-  return key.replace(/^efluz:v1:(fresh:|lkg:|dirty:)?/, '').replace(/^efluz:v1:/, '');
+  return key.replace(/^efluz:v1:pg:(preview|production):(fresh:|lkg:|dirty:)?/, '').replace(/^efluz:v1:(fresh:|lkg:|dirty:)?/, '').replace(/^efluz:v1:/, '');
 }
+const readCachePrefix = () => process.env.DATABASE_PROVIDER === 'supabase'
+  ? `${KEY_PREFIX}:pg:${process.env.SUPABASE_DATA_NAMESPACE}` : KEY_PREFIX;
 
 export function getFreshKey(datasetKey: string): string {
   const clean = getRawDatasetKey(datasetKey);
-  return `${KEY_PREFIX}:fresh:${clean}`;
+  return `${readCachePrefix()}:fresh:${clean}`;
 }
 
 export function getLkgKey(datasetKey: string): string {
   const clean = getRawDatasetKey(datasetKey);
-  return `${KEY_PREFIX}:lkg:${clean}`;
+  return `${readCachePrefix()}:lkg:${clean}`;
 }
 
 export function getDirtyKey(datasetKey: string): string {
   const clean = getRawDatasetKey(datasetKey);
-  return `${KEY_PREFIX}:dirty:${clean}`;
+  return `${readCachePrefix()}:dirty:${clean}`;
 }
 
 // Canonical dataset key generators
@@ -878,1645 +880,195 @@ export async function patchCompetitionMatchdayCatalog(competition: FirestoreComp
         if item.id == patch.id then
           if item.updatedAt and patch.updatedAt and item.updatedAt > patch.updatedAt then return 0 end
           for k, v in pairs(patch) do item[k] = v end
-          found = true
-        end
-      end
-      if not found then return 0 end
-      snapshot.generatedAt = ARGV[2]
-      snapshot.sourceVersion = 'matchday-control'
-      local updated = cjson.encode(snapshot)
-      redis.call('SET', KEYS[2], updated)
-      redis.call('SET', KEYS[1], updated, 'EX', 3600)
-      redis.call('DEL', KEYS[3])
-      return 1
-    `, [fresh, lkg, getDirtyKey(clean)], [JSON.stringify(competition), now]);
-    memoryRedisStorage.delete(fresh); memoryRedisStorage.delete(lkg);
-  } else {
-    const snapshot = await redisGetFresh<Competition[]>(key) || await redisGetLkg<Competition[]>(key);
-    if (snapshot?.data?.length) await redisSetRaw(key, { ...snapshot, generatedAt: now, data: snapshot.data.map(c => c.id === competition.id && (!c.updatedAt || !competition.updatedAt || c.updatedAt <= competition.updatedAt) ? { ...c, ...competition } as Competition : c) }, 3600);
-  }
-  inProcessMemoryCache.delete(clean); inProcessMemoryCache.delete(key);
-}
-
-export interface OwnerNeutralClub extends Club {
-  ownerUserId: string | null;
-  ownerUsername: string | null;
-  ownerFirstName?: string | null;
-  ownerLastName?: string | null;
-  ownerDisplayName?: string | null;
-  claimedByUserId?: string | null;
-  claimedByUsername?: string | null;
-  managerUserId?: string | null;
-  managerUsername?: string | null;
-  managerFirstName?: string | null;
-  managerLastName?: string | null;
-  managerDisplayName?: string | null;
-  isClaimed?: boolean;
-  isAvailable?: boolean;
-  isOccupied: boolean;
-  isTaken?: boolean;
-}
-
-export interface UserMembershipSentinel {
-  hasClub: boolean;
-  clubId: string | null;
-  club: Club | null;
-}
-
-/**
- * Builds owner-neutral clubs snapshot from authoritative Firestore occupancies.
- * Never converts claimed clubs into available clubs.
- * If Firestore fails and no LKG exists, throws READ_MODEL_NOT_WARMED.
- */
-export async function buildClubsSnapshot(seasonId = 'season-2026-27'): Promise<ReadModelSnapshot<OwnerNeutralClub[]>> {
-  return sharedReadRefresh(ReadModelKeys.clubsWithOwners(seasonId), () => buildClubsSnapshotAuthoritative(seasonId));
-}
-
-async function getClubsSnapshotForRead(seasonId: string): Promise<ReadModelSnapshot<OwnerNeutralClub[]>> {
-  const key = ReadModelKeys.clubsWithOwners(seasonId);
-  const fresh = await redisGetFresh<OwnerNeutralClub[]>(key);
-  if (Array.isArray(fresh?.data) && fresh.data.length === 96 && !(await redisIsDirty(key))) {
-    firestoreCircuitBreaker.cancelProbe();
-    return fresh;
-  }
-  return buildClubsSnapshot(seasonId);
-}
-
-async function buildClubsSnapshotAuthoritative(seasonId: string): Promise<ReadModelSnapshot<OwnerNeutralClub[]>> {
-  const occMap = new Map<string, { userId: string }>();
-  const userMap = new Map<string, { username: string | null; firstName?: string | null; lastName?: string | null; displayName?: string | null }>();
-  const existingLkg = await redisGetLkg<OwnerNeutralClub[]>(ReadModelKeys.clubsWithOwners(seasonId));
-
-  let firestoreFailed = false;
-  let occupancyDocumentsSeen = 0;
-  try {
-    const db = getFirestoreDb();
-    if (db) {
-      // 1. Fetch club occupancies bounded by seasonId and active status (avoid unbounded collection scan)
-      const occSnap = await db
-        .collection(COLLECTIONS.CLUB_OCCUPANCIES)
-        .where('seasonId', '==', seasonId)
-        .get();
-      occupancyDocumentsSeen = occSnap.size;
-      trackFirestoreRead(COLLECTIONS.CLUB_OCCUPANCIES, Math.max(1, occSnap.size), 'buildClubsSnapshot');
-
-      for (const doc of occSnap.docs) {
-        const data = doc.data();
-        if (data.clubId && data.userId && !['released', 'inactive'].includes(data.status)) {
-          occMap.set(data.clubId, { userId: data.userId });
-        }
-      }
-
-      // 2. Fetch only the users who own clubs (avoids full USERS collection scan)
-      const ownerUserIds = Array.from(new Set(Array.from(occMap.values()).map((o) => o.userId)));
-      await Promise.all(
-        ownerUserIds.map(async (uid) => {
-          try {
-            const uDoc = await db.collection(COLLECTIONS.USERS).doc(uid).get();
-            trackFirestoreRead(COLLECTIONS.USERS, 1, 'buildClubsSnapshot:owner');
-            if (uDoc.exists) {
-              const uData = uDoc.data();
-              const uname = uData?.username ? String(uData.username).replace(/^@+/, '').trim() : null;
-              const isSynth = uname ? (uname.startsWith('tg_') || uname.startsWith('user_')) : false;
-              const validUname = isSynth ? null : uname;
-              const fname = uData?.firstName ? String(uData.firstName).trim() : null;
-              const lname = uData?.lastName ? String(uData.lastName).trim() : null;
-              const dname = [fname, lname].filter(Boolean).join(' ') || fname || (validUname ? `@${validUname}` : `User #${uid}`);
-              userMap.set(uid, {
-                username: validUname,
-                firstName: fname,
-                lastName: lname,
-                displayName: dname,
-              });
-            }
-          } catch {
-            const previous = existingLkg?.data.find(c => c.ownerUserId === uid);
-            if (previous) {
-              userMap.set(uid, {
-                username: previous.ownerUsername,
-                firstName: previous.ownerFirstName,
-                lastName: previous.ownerLastName,
-                displayName: previous.ownerDisplayName,
-              });
-            }
-          }
-        })
+          found…24653 tokens truncated…_KEY, { [record.id]: record });
+      const result = photo ? await sendTelegramPhoto(job.telegramId!, photo, photoCaption) : await sendTelegramMessage(
+        job.telegramId!,
+        formatTelegramMessage(job.title, job.body, job.type, Boolean(job.bodyIsHtml)),
+        { parse_mode: 'HTML', reply_markup: job.replyMarkup }
       );
-    }
-  } catch (err: any) {
-    firestoreCircuitBreaker.recordFailure(err);
-    firestoreFailed = true;
-    console.warn('[READ_MODEL_STORE] Firestore occupancies fetch error in buildClubsSnapshot:', err?.message || err);
-  }
-
-  if (firestoreFailed) {
-    // If Firestore fails, NEVER create an all-available snapshot! Serve LKG if populated, otherwise throw READ_MODEL_NOT_WARMED
-    if (existingLkg && Array.isArray(existingLkg.data) && existingLkg.data.length > 0) {
-      throw new ReadModelNotWarmedError('Authoritative refresh unavailable; preserve last-known-good snapshot');
-    }
-    throw new ReadModelNotWarmedError(
-      'READ_MODEL_NOT_WARMED: Firestore club/occupancy read failed and no populated clubs-with-owners LKG exists.'
-    );
-  }
-
-  // If Firestore succeeded but occupancies are 0 while existing LKG had occupancies, protect LKG against transient wipe
-  if (occMap.size === 0 && occupancyDocumentsSeen === 0 && existingLkg && Array.isArray(existingLkg.data) && existingLkg.data.some((c) => c.isOccupied)) {
-    console.warn('[READ_MODEL_STORE] Firestore returned 0 occupancies while LKG had active owners; preserving LKG snapshot.');
-    throw new ReadModelNotWarmedError('Authoritative refresh unavailable; preserve last-known-good snapshot');
-  }
-
-  // Build owner-neutral clubs for all 96 canonical clubs (strictly omitting private telegram IDs)
-  const neutralClubs: OwnerNeutralClub[] = SEED_CLUBS.map((seed) => {
-    const occ = occMap.get(seed.id);
-    const ownerUserId = occ ? occ.userId : null;
-    const userDetail = ownerUserId ? userMap.get(ownerUserId) : null;
-    const isOccupied = Boolean(ownerUserId);
-
-    return {
-      id: seed.id,
-      name: seed.name,
-      shortName: seed.shortName,
-      country: seed.country,
-      leagueId: seed.leagueId,
-      logoUrl: seed.logoUrl,
-      active: true,
-      createdAt: new Date().toISOString(),
-      ownerUserId,
-      ownerUsername: userDetail?.username || null,
-      ownerFirstName: userDetail?.firstName || null,
-      ownerLastName: userDetail?.lastName || null,
-      ownerDisplayName: userDetail?.displayName || null,
-      claimedByUserId: ownerUserId,
-      claimedByUsername: userDetail?.username || null,
-      managerUserId: ownerUserId,
-      managerUsername: userDetail?.username || null,
-      managerFirstName: userDetail?.firstName || null,
-      managerLastName: userDetail?.lastName || null,
-      managerDisplayName: userDetail?.displayName || null,
-      isClaimed: isOccupied,
-      isAvailable: !isOccupied,
-      isOccupied,
-      isTaken: isOccupied,
-      occupancy: {
-        status: isOccupied ? 'occupied' : 'available',
-        userId: ownerUserId || undefined,
-        username: userDetail?.username || undefined,
-      },
-    };
-  });
-
-  const snapshot: ReadModelSnapshot<OwnerNeutralClub[]> = {
-    schemaVersion: SCHEMA_VERSION,
-    generatedAt: new Date().toISOString(),
-    sourceVersion: `occupancies-${occMap.size}`,
-    expectedCount: 96,
-    actualCount: neutralClubs.length,
-    data: neutralClubs,
-  };
-
-  const key = ReadModelKeys.clubsWithOwners(seasonId);
-  await persistReadSnapshot(key, snapshot, 86400);
-
-  // Also write per-league snapshots
-  for (const league of SEED_LEAGUES) {
-    const leagueClubs = neutralClubs.filter((c) => c.leagueId === league.id);
-    const expectedLeagueCount = league.id.includes('bundesliga') || league.id.includes('ligue-1') ? 18 : 20;
-    const leagueSnapshot: ReadModelSnapshot<OwnerNeutralClub[]> = {
-      schemaVersion: SCHEMA_VERSION,
-      generatedAt: new Date().toISOString(),
-      sourceVersion: `occupancies-${occMap.size}`,
-      expectedCount: expectedLeagueCount,
-      actualCount: leagueClubs.length,
-      data: leagueClubs,
-    };
-    const leagueKey = ReadModelKeys.leagueClubs(league.id, seasonId);
-    await persistReadSnapshot(leagueKey, leagueSnapshot, 86400);
-  }
-
-  return snapshot;
-}
-
-/**
- * Derives user-specific fields from an owner-neutral club.
- * Never leaks cross-user state into shared cache.
- */
-export function enrichClubForUser(club: OwnerNeutralClub, currentUserId?: string): Club & Pick<OwnerNeutralClub, 'ownerUserId' | 'ownerUsername' | 'isOccupied'> {
-  const isCurrentUserClub = Boolean(currentUserId && club.ownerUserId === currentUserId);
-  const isOccupied = Boolean(club.ownerUserId || club.isOccupied || club.isTaken);
-
-  return {
-    id: club.id, name: club.name, shortName: club.shortName, country: club.country,
-    leagueId: club.leagueId, leagueName: club.leagueName, logoUrl: club.logoUrl,
-    active: club.active, stadium: club.stadium, createdAt: club.createdAt,
-    ownerUserId: club.ownerUserId, ownerUsername: club.ownerUsername, isOccupied,
-    owner: club.owner ? { userId: club.owner.userId, username: club.owner.username,
-      firstName: club.owner.firstName, claimedAt: club.owner.claimedAt } : undefined,
-    isCurrentUserClub,
-    isTaken: isOccupied,
-    claimedByUserId: club.ownerUserId,
-    claimedByUsername: club.ownerUsername,
-    managerUsername: club.ownerUsername,
-    occupancy: {
-      status: isCurrentUserClub ? 'owned' : isOccupied ? 'occupied' : 'available',
-      userId: club.ownerUserId || undefined,
-      username: club.ownerUsername || undefined,
-    },
-  };
-}
-
-/**
- * Builds materialized fixture snapshot sorted with stable tuple:
- * 1. canonical numeric competitionOrder
- * 2. numeric matchday
- * 3. scheduledAt
- * 4. fixture id as final tie-breaker
- */
-export function normalizeFixtureSnapshot(doc: any, seasonId = 'season-2026-27'): Fixture {
-    const homeClubId = doc.homeClubId ?? doc.home_club_id;
-    const awayClubId = doc.awayClubId ?? doc.away_club_id;
-    const competitionId = doc.competitionId ?? doc.competition_id;
-    const competitionName = doc.competitionName ?? doc.competition_name;
-    const scheduledAt = doc.scheduledAt ?? doc.scheduled_at;
-    const homeScore = doc.homeScore ?? doc.home_score;
-    const awayScore = doc.awayScore ?? doc.away_score;
-    const winnerClubId = doc.winnerClubId ?? doc.winner_club_id;
-    const resultConfirmedAt = doc.resultConfirmedAt ?? doc.result_confirmed_at;
-    const roundName = doc.roundName ?? doc.round_name;
-    const createdAt = doc.createdAt ?? doc.created_at;
-    const updatedAt = doc.updatedAt ?? doc.updated_at;
-    const docSeasonId = doc.seasonId ?? doc.season_id;
-
-    const homeClubSeed = SEED_CLUBS.find((c) => c.id === homeClubId);
-    const awayClubSeed = SEED_CLUBS.find((c) => c.id === awayClubId);
-
-    return {
-      id: doc.id,
-      seasonId: docSeasonId || seasonId,
-      competitionId: competitionId,
-      competitionName: competitionName || competitionId,
-      matchday: doc.matchday,
-      roundName: roundName,
-      sourceFixtureId: doc.sourceFixtureId ?? doc.source_fixture_id ?? null,
-      sourceWinnerSlot: doc.sourceWinnerSlot ?? doc.source_winner_slot ?? null,
-      homeSourceFixtureId: doc.homeSourceFixtureId ?? doc.home_source_fixture_id ?? null,
-      awaySourceFixtureId: doc.awaySourceFixtureId ?? doc.away_source_fixture_id ?? null,
-      homeSourceWinnerSlot: doc.homeSourceWinnerSlot ?? doc.home_source_winner_slot ?? null,
-      awaySourceWinnerSlot: doc.awaySourceWinnerSlot ?? doc.away_source_winner_slot ?? null,
-      homeClubId: homeClubId && homeClubId !== 'TBD' ? homeClubId : null,
-      awayClubId: awayClubId && awayClubId !== 'TBD' ? awayClubId : null,
-      homeClub: homeClubId && homeClubId !== 'TBD' ? {
-        id: homeClubId,
-        name: homeClubSeed?.name || homeClubId,
-        shortName: homeClubSeed?.shortName || homeClubId.substring(0, 3).toUpperCase(),
-        country: homeClubSeed?.country || 'England',
-        leagueId: homeClubSeed?.leagueId || 'league-premier-league',
-        logoUrl: homeClubSeed?.logoUrl || '',
-        active: true,
-        createdAt: '',
-      } : undefined,
-      awayClub: awayClubId && awayClubId !== 'TBD' ? {
-        id: awayClubId,
-        name: awayClubSeed?.name || awayClubId,
-        shortName: awayClubSeed?.shortName || awayClubId.substring(0, 3).toUpperCase(),
-        country: awayClubSeed?.country || 'England',
-        leagueId: awayClubSeed?.leagueId || 'league-premier-league',
-        logoUrl: awayClubSeed?.logoUrl || '',
-        active: true,
-        createdAt: '',
-      } : undefined,
-      scheduledAt: scheduledAt,
-      homeScore: homeScore ?? undefined,
-      awayScore: awayScore ?? undefined,
-      winnerClubId: winnerClubId ?? undefined,
-      status: (doc.status || 'SCHEDULED') as any,
-      resultConfirmedAt: resultConfirmedAt || undefined,
-      homeOwnerId: doc.homeOwnerId ?? doc.home_owner_id,
-      awayOwnerId: doc.awayOwnerId ?? doc.away_owner_id,
-      createdAt: createdAt || new Date().toISOString(),
-      updatedAt: updatedAt || createdAt || new Date().toISOString(),
-    };
-}
-
-export async function buildAdminFixturesSnapshot(seasonId = 'season-2026-27'): Promise<ReadModelSnapshot<Fixture[]>> {
-  const db = getFirestoreDb();
-  let fixDocs: FirestoreFixtureDoc[] = [];
-
-  if (db) {
-    try {
-      const fixSnap = await db.collection(COLLECTIONS.FIXTURES).where('seasonId', '==', seasonId).get();
-      trackFirestoreRead(COLLECTIONS.FIXTURES, fixSnap.docs.length, 'buildAdminFixturesSnapshot');
-      fixDocs = fixSnap.docs
-        .map((d) => ({ id: d.id, ...d.data() } as FirestoreFixtureDoc))
-        .filter((f) => !f.competitionId.includes('efl-cup'));
-    } catch (err: any) {
-      firestoreCircuitBreaker.recordFailure(err);
-      console.warn('[READ_MODEL_STORE] Error fetching fixtures in buildAdminFixturesSnapshot:', err?.message || err);
-      // Fallback to existing LKG snapshot if available
-      const existingLkg = await redisGetLkg<Fixture[]>(ReadModelKeys.adminFixtures(seasonId));
-      if (existingLkg && existingLkg.data) {
-        throw new ReadModelNotWarmedError('Authoritative refresh unavailable; preserve last-known-good snapshot');
-      }
-      throw new ReadModelNotWarmedError('Authoritative fixture read failed and no snapshot exists');
-    }
-  } else throw new ReadModelNotWarmedError('Firestore unavailable for fixture refresh');
-
-  let fixtures: Fixture[] = fixDocs.map(doc => normalizeFixtureSnapshot(doc, seasonId));
-
-  try {
-    const { enrichFixturesWithAuthoritativeOwners } = await import('../firebase/firestoreStore');
-    fixtures = await enrichFixturesWithAuthoritativeOwners(fixtures, seasonId);
-  } catch (enrichErr) {
-    console.warn('[BUILD_FIXTURES_SNAPSHOT] Non-blocking ownership enrichment fallback:', enrichErr);
-  }
-
-  // Sort strictly using stable tuple
-  fixtures.sort((a, b) => compareAdminFixtures(a, b, false));
-
-  const snapshot: ReadModelSnapshot<Fixture[]> = {
-    schemaVersion: SCHEMA_VERSION,
-    generatedAt: new Date().toISOString(),
-    sourceVersion: `fixtures-${fixtures.length}`,
-    expectedCount: fixtures.length,
-    actualCount: fixtures.length,
-    data: fixtures,
-  };
-
-  const key = ReadModelKeys.adminFixtures(seasonId);
-  await persistReadSnapshot(key, snapshot, 86400);
-
-  // Group and persist per-competition fixture snapshots
-  const compsSet = new Set(fixtures.map((f) => f.competitionId));
-  for (const compId of compsSet) {
-    const compFixtures = fixtures.filter((f) => f.competitionId === compId);
-    compFixtures.sort((a, b) => compareAdminFixtures(a, b, true));
-
-    const compKey = ReadModelKeys.competitionFixtures(compId, seasonId);
-    const compSnapshot: ReadModelSnapshot<Fixture[]> = {
-      schemaVersion: SCHEMA_VERSION,
-      generatedAt: new Date().toISOString(),
-      sourceVersion: `fixtures-${compFixtures.length}`,
-      expectedCount: compFixtures.length,
-      actualCount: compFixtures.length,
-      data: compFixtures,
-    };
-    await persistReadSnapshot(compKey, compSnapshot, 86400);
-  }
-
-  return snapshot;
-}
-
-/**
- * Generates zero-value standings rows for an active domestic league.
- * Never generates an empty array for an active domestic league.
- */
-export function generateZeroValueStandings(
-  competitionId: string,
-  seasonId = 'season-2026-27'
-): StandingsRow[] {
-  const config = DOMESTIC_LEAGUE_CONFIG[competitionId];
-  let clubs = config ? SEED_CLUBS.filter((c) => c.leagueId === config.leagueId) : [];
-  if (clubs.length === 0) {
-    clubs = SEED_CLUBS.slice(0, 20);
-  }
-
-  return clubs.map((club, idx) => ({
-    position: idx + 1,
-    clubId: club.id,
-    clubName: club.name,
-    shortName: club.shortName,
-    logoUrl: club.logoUrl,
-    played: 0,
-    won: 0,
-    drawn: 0,
-    lost: 0,
-    goalsFor: 0,
-    goalsAgainst: 0,
-    goalDifference: 0,
-    points: 0,
-    form: [] as Array<'W' | 'D' | 'L'>,
-    streak: '',
-    competitionId,
-    seasonId,
-  }));
-}
-
-/**
- * Builds competition standings snapshot.
- * Ensures active domestic leagues receive exact expected row counts:
- * Premier League: 20
- * La Liga: 20
- * Serie A: 20
- * Bundesliga: 18
- * Ligue 1: 18
- */
-export async function buildStandingsSnapshot(
-  competitionId: string,
-  seasonId = 'season-2026-27'
-): Promise<ReadModelSnapshot<StandingsRow[]>> {
-  if (['comp-champions-league-2026', 'comp-europa-league-2026'].includes(competitionId)) {
-    const { calculateEuropeanStandingsFromSqlite, rebuildEuropeanStandings } = await import('../tournament/qualificationEngine');
-    const sqliteRows = calculateEuropeanStandingsFromSqlite(competitionId, seasonId);
-    if (sqliteRows && sqliteRows.length > 0) {
-      return {
-        schemaVersion: SCHEMA_VERSION,
-        generatedAt: new Date().toISOString(),
-        sourceVersion: 'european-sqlite-local',
-        expectedCount: sqliteRows.length,
-        actualCount: sqliteRows.length,
-        data: sqliteRows as unknown as StandingsRow[],
-      };
-    }
-    const rows = await rebuildEuropeanStandings(competitionId, seasonId);
-    return { schemaVersion: SCHEMA_VERSION, generatedAt: new Date().toISOString(), sourceVersion: 'european-authoritative', expectedCount: rows.length, actualCount: rows.length, data: rows as unknown as StandingsRow[] };
-  }
-  const config = DOMESTIC_LEAGUE_CONFIG[competitionId];
-  const expectedCount = config ? config.expectedCount : 20;
-  const key = ReadModelKeys.standings(competitionId, seasonId);
-  const existingLkg = await redisGetLkg<StandingsRow[]>(key);
-
-  let rows: StandingsRow[] = [];
-  let firestoreFailed = false;
-
-  try {
-    const db = getFirestoreDb();
-    if (db) {
-      const stdDoc = await db.collection(COLLECTIONS.STANDINGS).doc(competitionId).get();
-      trackFirestoreRead(COLLECTIONS.STANDINGS, stdDoc.exists ? 1 : 0, 'buildStandingsSnapshot');
-      if (stdDoc.exists) {
-        const data = stdDoc.data();
-        if (Array.isArray(data?.rows) && data.rows.length > 0) {
-          rows = data.rows as StandingsRow[];
-        }
-      }
-    }
-  } catch (err: any) {
-    firestoreFailed = true;
-    firestoreCircuitBreaker.recordFailure(err);
-    console.warn(`[READ_MODEL_STORE] Error fetching standings for ${competitionId}:`, err?.message || err);
-  }
-
-  // 1. If Firestore failed: NEVER generate zero-value standings and NEVER overwrite existing populated LKG!
-  if (firestoreFailed) {
-    if (existingLkg && Array.isArray(existingLkg.data) && existingLkg.data.length > 0) {
-      throw new ReadModelNotWarmedError('Authoritative refresh unavailable; preserve last-known-good snapshot');
-    }
-    throw new ReadModelNotWarmedError(
-      `READ_MODEL_NOT_WARMED: Firestore standings retrieval failed for ${competitionId} and no valid LKG snapshot exists.`
-    );
-  }
-
-  // 2. If standings doc in Firestore is missing or has empty rows:
-  if (rows.length === 0) {
-    // If a populated LKG already exists, NEVER overwrite it with zero-value rows!
-    if (existingLkg && Array.isArray(existingLkg.data) && existingLkg.data.length > 0) {
-      throw new ReadModelNotWarmedError('Authoritative refresh unavailable; preserve last-known-good snapshot');
-    }
-
-    // Check if confirmed fixtures exist for this competition
-    let hasConfirmedFixtures = false;
-    try {
-      const db = getFirestoreDb();
-      if (db) {
-        const competition = await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get();
-        if (!competition.exists || competition.data()?.seasonId !== seasonId) {
-          throw new ReadModelNotWarmedError('Cannot initialize standings without an authoritative competition for this season');
-        }
-        const fixSnap = await db
-          .collection(COLLECTIONS.FIXTURES)
-          .where('competitionId', '==', competitionId)
-          .where('status', '==', 'CONFIRMED')
-          .limit(1)
-          .get();
-        hasConfirmedFixtures = !fixSnap.empty;
+      if (result.ok) {
+        await updateBroadcastRecipientState(job.broadcastId, job.userId, 'SENT', undefined, new Date().toISOString());
+        succeeded++;
       } else {
-        throw new Error('Firestore unavailable: cannot verify empty standings');
-      }
-    } catch (error) {
-      throw error;
-    }
-
-    // Only allow zero standings for a genuinely new competition proven to have no confirmed fixtures and no existing standings
-    if (!hasConfirmedFixtures && config) {
-      rows = generateZeroValueStandings(competitionId, seasonId);
-    } else if (hasConfirmedFixtures) {
-      throw new Error(
-        `Standings for ${competitionId} cannot be zeroed: competition has confirmed fixtures recorded in Firestore.`
-      );
-    }
-  }
-
-  rows.sort((a, b) => a.position - b.position);
-
-  const snapshot: ReadModelSnapshot<StandingsRow[]> = {
-    schemaVersion: SCHEMA_VERSION,
-    generatedAt: new Date().toISOString(),
-    sourceVersion: `standings-${rows.length}`,
-    expectedCount,
-    actualCount: rows.length,
-    data: rows,
-  };
-
-  await persistReadSnapshot(key, snapshot, 86400);
-  return snapshot;
-}
-
-// ----------------------------------------------------
-// ROUTE-FACING READ-MODEL METHODS
-// ----------------------------------------------------
-
-/**
- * Reads competitions catalog from durable read model.
- */
-export async function getCompetitionsFromReadModel(
-  seasonId = 'season-2026-27'
-): Promise<{ competitions: Competition[]; source: string; stale: boolean; degraded: boolean; snapshotAt: string }> {
-  const result = await readThroughReadModel<Competition[]>({
-    key: ReadModelKeys.competitions(seasonId),
-    seasonId,
-    expectedCount: 17,
-    firestoreFetcher: async () => {
-      const snap = await buildCompetitionsSnapshot(seasonId);
-      return snap.data;
-    },
-    validateData: (data) => Array.isArray(data) && data.length > 0,
-  });
-
-  return {
-    competitions: await (await import('../services/competitionFixtureCounts')).withVisibleFixtureCounts(result.data.map(c=>withSeasonQualificationPolicy(c,seasonId)), seasonId),
-    source: result.source,
-    stale: Boolean(result.stale),
-    degraded: Boolean(result.degraded),
-    snapshotAt: result.generatedAt,
-  };
-}
-
-/**
- * Reads clubs for admin route with real ownership data preserved.
- */
-export async function getAdminClubsFromReadModel(
-  seasonId = 'season-2026-27',
-  leagueId?: string,
-  currentUserId?: string
-): Promise<{ clubs: any[]; total: number; source: string; degraded: boolean; stale: boolean; snapshotAt: string }> {
-  const result = await readThroughReadModel<OwnerNeutralClub[]>({
-    key: ReadModelKeys.clubsWithOwners(seasonId),
-    seasonId,
-    expectedCount: 96,
-    firestoreFetcher: async () => {
-      const snap = await getClubsSnapshotForRead(seasonId);
-      return snap.data;
-    },
-    validateData: (data) => Array.isArray(data) && data.length > 0,
-  });
-
-  let clubs = result.data;
-  if (leagueId && leagueId !== 'ALL') {
-    clubs = clubs.filter((c) => c.leagueId === leagueId);
-  }
-
-  const adminClubs = clubs.map((c) => {
-    const isCurrentUserClub = Boolean(currentUserId && c.ownerUserId === currentUserId);
-    return {
-      ...c,
-      seasonId,
-      isOccupied: Boolean(c.ownerUserId),
-      occupiedByUserId: c.ownerUserId,
-      occupiedByUsername: c.ownerUsername,
-      claimedByUserId: c.ownerUserId,
-      claimedByUsername: c.ownerUsername,
-      managerUserId: c.ownerUserId,
-      managerUsername: c.ownerUsername,
-      isTaken: Boolean(c.ownerUserId),
-      isCurrentUserClub,
-      occupancy: {
-        status: isCurrentUserClub ? 'owned' : c.ownerUserId ? 'occupied' : 'available',
-        userId: c.ownerUserId || undefined,
-        username: c.ownerUsername || undefined,
-      },
-    };
-  });
-
-  return {
-    clubs: adminClubs,
-    total: adminClubs.length,
-    source: result.source,
-    degraded: Boolean(result.degraded),
-    stale: Boolean(result.stale),
-    snapshotAt: result.generatedAt,
-  };
-}
-
-/**
- * Reads clubs by league with real owners and user-specific field enrichment.
- * If per-league snapshot is missing but clubs-with-owners LKG exists, derives from LKG without querying Firestore.
- */
-export async function getLeagueClubsFromReadModel(
-  leagueId: string,
-  seasonId = 'season-2026-27',
-  currentUserId?: string
-): Promise<{ clubs: Club[]; source: string; stale: boolean; degraded: boolean; snapshotAt: string }> {
-  const result = await readThroughReadModel<OwnerNeutralClub[]>({
-    key: ReadModelKeys.clubsWithOwners(seasonId), seasonId, expectedCount: 96,
-    firestoreFetcher: async () => (await getClubsSnapshotForRead(seasonId)).data,
-    validateData: data => Array.isArray(data) && data.length > 0,
-  });
-  return {
-    clubs: result.data.filter(c => c.leagueId === leagueId).map(c => enrichClubForUser(c, currentUserId)),
-    source: result.source, stale: Boolean(result.stale), degraded: Boolean(result.degraded),
-    snapshotAt: result.generatedAt,
-  };
-}
-
-/**
- * Reads available clubs. Claimed clubs NEVER become available even when Firestore fails!
- */
-export async function getAvailableClubsFromReadModel(
-  seasonId = 'season-2026-27',
-  currentUserId?: string
-): Promise<{ clubs: Club[]; source: string; stale: boolean; degraded: boolean; snapshotAt: string }> {
-  const result = await readThroughReadModel<OwnerNeutralClub[]>({
-    key: ReadModelKeys.clubsWithOwners(seasonId),
-    seasonId,
-    expectedCount: 96,
-    firestoreFetcher: async () => {
-      const snap = await getClubsSnapshotForRead(seasonId);
-      return snap.data;
-    },
-    validateData: (data) => Array.isArray(data) && data.length > 0,
-  });
-
-  // Filter out occupied/claimed clubs; claimed clubs NEVER become available!
-  const availableClubs = result.data
-    .filter((c) => !c.ownerUserId && !c.isOccupied && !c.isTaken)
-    .map((c) => enrichClubForUser(c, currentUserId));
-
-  return {
-    clubs: availableClubs,
-    source: result.source,
-    stale: Boolean(result.stale),
-    degraded: Boolean(result.degraded),
-    snapshotAt: result.generatedAt,
-  };
-}
-
-/**
- * Reads a single club by ID.
- */
-export async function getClubByIdFromReadModel(
-  clubId: string,
-  seasonId = 'season-2026-27',
-  currentUserId?: string
-): Promise<{ club: Club | null; source: string; stale: boolean; degraded: boolean }> {
-  const result = await readThroughReadModel<OwnerNeutralClub[]>({
-    key: ReadModelKeys.clubsWithOwners(seasonId),
-    seasonId,
-    expectedCount: 96,
-    firestoreFetcher: async () => {
-      const snap = await getClubsSnapshotForRead(seasonId);
-      return snap.data;
-    },
-    validateData: (data) => Array.isArray(data) && data.length > 0,
-  });
-
-  const neutral = result.data.find((c) => c.id === clubId);
-  if (!neutral) {
-    return { club: null, source: result.source, stale: Boolean(result.stale), degraded: Boolean(result.degraded) };
-  }
-
-  const club = enrichClubForUser(neutral, currentUserId);
-  return { club, source: result.source, stale: Boolean(result.stale), degraded: Boolean(result.degraded) };
-}
-
-/**
- * Reads user's active club from read model or derives from clubs-with-owners snapshot.
- * - Represents users with no club using a valid cached sentinel: { hasClub: false, clubId: null, club: null }
- * - Derives membership from clubs-with-owners LKG before querying Firestore.
- */
-export async function getUserActiveClubFromReadModel(
-  userId: string,
-  seasonId = 'season-2026-27'
-): Promise<Club | null> {
-  // Derive identity from the same versioned ownership snapshot used by club lists.
-  // Never promote an old negative membership sentinel to a new authoritative answer.
-  const result = await readThroughReadModel<OwnerNeutralClub[]>({
-    key: ReadModelKeys.clubsWithOwners(seasonId),
-    seasonId,
-    expectedCount: 96,
-    firestoreFetcher: async () => (await getClubsSnapshotForRead(seasonId)).data,
-    validateData: data => Array.isArray(data) && data.length > 0,
-  });
-  const owner = result.data.find(c => (c.ownerUserId || c.claimedByUserId) === userId);
-  return owner ? enrichClubForUser(owner, userId) : null;
-}
-
-export async function getUserActiveClubsFromReadModel(userId: string, seasonId = 'season-2026-27'): Promise<Club[]> {
-  const ownership = await getAdminClubsFromReadModel(seasonId);
-  return ownership.clubs.filter((club) => club.ownerUserId === userId).map((club) => enrichClubForUser(club, userId));
-}
-
-/** Membership is optional profile data; its outage must not invalidate verified identity. */
-export async function getOptionalCurrentClub(userId: string, seasonId = 'season-2026-27') {
-  try {
-    const ownedClubs = await getUserActiveClubsFromReadModel(userId, seasonId);
-    const currentClub = ownedClubs[0] || null;
-    return { currentClub, ownedClubs, currentClubStatus: 'resolved' as const, degraded: false };
-  } catch (error) {
-    if (!(error instanceof ReadModelNotWarmedError)) throw error;
-    return { currentClub: null, ownedClubs: [], currentClubStatus: 'unavailable' as const, degraded: true };
-  }
-}
-
-/**
- * Reads competition standings using Tiered Read-Through:
- * memory → fresh Redis → Firestore refresh → stale Redis last-known-good
- * Returns: { standings, source, stale, degraded, snapshotAt }
- */
-export async function getCompetitionStandingsFromReadModel(
-  competitionId: string,
-  seasonId = 'season-2026-27'
-): Promise<{
-  standings: StandingsRow[];
-  source: string;
-  stale: boolean;
-  degraded: boolean;
-  snapshotAt: string;
-}> {
-  const config = DOMESTIC_LEAGUE_CONFIG[competitionId];
-  const expectedCount = config ? config.expectedCount : 20;
-
-  const result = await readThroughReadModel<StandingsRow[]>({
-    key: ReadModelKeys.standings(competitionId, seasonId),
-    seasonId,
-    expectedCount,
-    firestoreFetcher: async () => {
-      const snap = await buildStandingsSnapshot(competitionId, seasonId);
-      return snap.data;
-    },
-    validateData: (rows) => Array.isArray(rows) && rows.length > 0,
-  });
-
-  let clubsResult: any = null;
-  try {
-    clubsResult = await readThroughReadModel<OwnerNeutralClub[]>({
-      key: ReadModelKeys.clubsWithOwners(seasonId),
-      seasonId,
-      expectedCount: 96,
-      firestoreFetcher: async () => (await getClubsSnapshotForRead(seasonId)).data,
-      validateData: (data) => Array.isArray(data) && data.length > 0,
-    });
-  } catch {}
-
-  const ownersByClub = new Map<string, OwnerNeutralClub>(
-    clubsResult?.data ? clubsResult.data.map((club: OwnerNeutralClub) => [club.id, club]) : []
-  );
-
-  // Fallback to SQLite membership/user data if needed
-  try {
-    const { queryAll } = await import('../db/index');
-    const localRows = queryAll<any>(
-      `SELECT cm.club_id, cm.user_id, u.username, u.first_name, u.last_name
-       FROM club_memberships cm
-       LEFT JOIN users u ON cm.user_id = u.id
-       WHERE cm.season_id = ? AND cm.status = 'active'`,
-      [seasonId]
-    );
-    for (const r of localRows) {
-      if (r.club_id && !ownersByClub.has(r.club_id)) {
-        const cleanUname = r.username ? r.username.replace(/^@+/, '').trim() : null;
-        const isSynth = cleanUname?.startsWith('tg_') || cleanUname?.startsWith('user_');
-        const validUname = isSynth ? null : cleanUname;
-        const fname = r.first_name || null;
-        const lname = r.last_name || null;
-        const dname = [fname, lname].filter(Boolean).join(' ') || fname || (validUname ? `@${validUname}` : `User #${r.user_id}`);
-        ownersByClub.set(r.club_id, {
-          id: r.club_id,
-          ownerUserId: r.user_id,
-          ownerUsername: validUname,
-          ownerFirstName: fname,
-          ownerLastName: lname,
-          ownerDisplayName: dname,
-          managerUserId: r.user_id,
-          managerUsername: validUname,
-          managerFirstName: fname,
-          managerLastName: lname,
-          managerDisplayName: dname,
-        } as any);
-      }
-    }
-  } catch {}
-
-  const enrichedStandings: StandingsRow[] = (result.data || []).map((row) => {
-    const owner = ownersByClub.get(row.clubId);
-    if (!owner || !owner.ownerUserId) {
-      return {
-        ...row,
-        managerUserId: undefined,
-        managerUsername: undefined,
-        managerFirstName: undefined,
-        managerLastName: undefined,
-        managerDisplayName: undefined,
-      };
-    }
-
-    const cleanUname = owner.ownerUsername ? owner.ownerUsername.replace(/^@+/, '').trim() : null;
-    const isSynth = cleanUname?.startsWith('tg_') || cleanUname?.startsWith('user_');
-    const validUname = isSynth ? null : cleanUname;
-    const fname = owner.ownerFirstName || (owner as any).firstName || undefined;
-    const lname = owner.ownerLastName || (owner as any).lastName || undefined;
-    const dname = owner.ownerDisplayName || (owner as any).displayName || [fname, lname].filter(Boolean).join(' ') || fname || (validUname ? `@${validUname}` : undefined);
-
-    return {
-      ...row,
-      managerUserId: owner.ownerUserId || undefined,
-      managerUsername: validUname || undefined,
-      managerFirstName: fname,
-      managerLastName: lname,
-      managerDisplayName: dname,
-    };
-  });
-
-  return {
-    standings: enrichedStandings,
-    source: result.source,
-    stale: Boolean(result.stale),
-    degraded: Boolean(result.degraded),
-    snapshotAt: result.generatedAt,
-  };
-}
-
-/**
- * Reads competition fixtures from read model.
- * If competition fixtures snapshot is missing but admin-fixtures LKG exists, derives from admin-fixtures without querying Firestore.
- */
-export async function getCompetitionFixturesFromReadModel(
-  competitionId: string,
-  optionsOrMatchday: number | { matchday?: number; status?: string; seasonId?: string; allowFirestore?: boolean } = {},
-  fallbackSeasonId = 'season-2026-27'
-): Promise<{ fixtures: Fixture[]; source: string; stale: boolean; degraded: boolean; snapshotAt: string }> {
-  const options = typeof optionsOrMatchday === 'number'
-    ? { matchday: optionsOrMatchday, seasonId: fallbackSeasonId }
-    : optionsOrMatchday || {};
-  const seasonId = options.seasonId || fallbackSeasonId;
-  // Explicit one-time owner-approved recovery; durable checkpoint prevents recurrence.
-  const { runApprovedFixtureRestoration } = await import('../services/approvedFixtureRestoration');
-  await runApprovedFixtureRestoration(competitionId, seasonId);
-  let rawFixtures: Fixture[] = [];
-  let source = 'memory';
-  let stale = false;
-  let degraded = false;
-  let generatedAt = new Date().toISOString();
-
-  // 1. Tier-1 memory & 2. Redis fresh
-  const compKey = ReadModelKeys.competitionFixtures(competitionId, seasonId);
-  const adminKey = ReadModelKeys.adminFixtures(seasonId);
-
-  let redisFresh = await redisGetFresh<Fixture[]>(compKey);
-  if (!redisFresh) {
-    const adminFresh = await redisGetFresh<Fixture[]>(adminKey);
-    if (adminFresh && Array.isArray(adminFresh.data)) {
-      redisFresh = {
-        ...adminFresh,
-        data: adminFresh.data.filter((f) => f.competitionId === competitionId),
-      };
-    }
-  }
-
-  if (redisFresh && Array.isArray(redisFresh.data) && redisFresh.data.length > 0) {
-    rawFixtures = redisFresh.data;
-    source = redisFresh.source;
-    stale = Boolean(redisFresh.stale);
-    degraded = Boolean(redisFresh.degraded);
-    generatedAt = redisFresh.generatedAt;
-  }
-
-  // 3. Redis LKG
-  if (rawFixtures.length === 0) {
-    let redisLkg = await redisGetLkg<Fixture[]>(compKey);
-    if (!redisLkg) {
-      const adminLkg = await redisGetLkg<Fixture[]>(adminKey);
-      if (adminLkg && Array.isArray(adminLkg.data)) {
-        redisLkg = {
-          ...adminLkg,
-          data: adminLkg.data.filter((f) => f.competitionId === competitionId),
-        };
-      }
-    }
-    if (redisLkg && Array.isArray(redisLkg.data) && redisLkg.data.length > 0) {
-      rawFixtures = redisLkg.data;
-      source = redisLkg.source;
-      stale = true;
-      degraded = true;
-      generatedAt = redisLkg.generatedAt;
-    }
-  }
-
-  // 4. SQLite local read model
-  if (rawFixtures.length === 0) {
-    try {
-      const conditions: string[] = ['competition_id = ?'];
-      const params: any[] = [competitionId];
-      if (seasonId) {
-        conditions.push('(season_id = ? OR season_id IS NULL)');
-        params.push(seasonId);
-      }
-      if (options.matchday !== undefined && !hasFixtureMatchdayCorrection(competitionId, seasonId)) {
-        conditions.push('matchday = ?');
-        params.push(options.matchday);
-      }
-      if (options.status && options.status !== 'ALL') {
-        conditions.push('status = ?');
-        params.push(options.status);
-      }
-      const sqliteRows = queryAll<any>(
-        `SELECT * FROM fixtures WHERE ${conditions.join(' AND ')} ORDER BY matchday ASC, scheduled_at ASC, id ASC`,
-        params
-      );
-      if (sqliteRows && sqliteRows.length > 0) {
-        rawFixtures = sqliteRows.map((r) => normalizeFixtureSnapshot(r, seasonId));
-        source = 'sqlite';
-        stale = true;
-        degraded = true;
-      }
-    } catch {}
-  }
-
-  // 5. Bounded Firestore query as last online fallback (NEVER a full-season scan!)
-  if (rawFixtures.length === 0) {
-    const db = getFirestoreDb();
-    if (options.allowFirestore !== false && db && firestoreCircuitBreaker.canExecute()) {
-      try {
-        let query: FirebaseFirestore.Query = db.collection(COLLECTIONS.FIXTURES)
-          .where('seasonId', '==', seasonId)
-          .where('competitionId', '==', competitionId);
-        if (options.matchday !== undefined && !hasFixtureMatchdayCorrection(competitionId, seasonId)) {
-          query = query.where('matchday', '==', options.matchday);
+        const errorText = result.error_code
+          ? `TELEGRAM_${result.error_code}: ${result.error || 'Rejected'}${result.parameters?.retry_after ? '; retry after ' + result.parameters.retry_after + ' seconds' : ''}`
+          : 'DELIVERY_UNKNOWN: ' + (result.error || 'No response');
+        const definitelyRejected = Boolean(result.error_code);
+        const retryable = result.error_code === 429 || Boolean(result.error_code && result.error_code >= 500);
+        if (definitelyRejected && retryable && job.retryCount < job.maxRetries) {
+          job.retryCount += 1;
+          const retryAfterSeconds = Math.max(Number(result.parameters?.retry_after || 0), 2 ** job.retryCount);
+          job.availableAt = Date.now() + retryAfterSeconds * 1000;
+          job.status = 'QUEUED';
+          await updateBroadcastRecipientState(job.broadcastId, job.userId, 'PENDING', errorText, undefined, job.retryCount);
+          await client.rpush(QUEUE_KEY, JSON.stringify(job));
+        } else {
+          // Ambiguous timeouts are never retried automatically because Telegram
+          // may have accepted the message before the connection was lost.
+          await updateBroadcastRecipientState(job.broadcastId, job.userId, 'FAILED', errorText, undefined, job.retryCount);
+          failed++;
         }
-        if (options.status && options.status !== 'ALL') {
-          query = query.where('status', '==', options.status);
-        }
-        const snap = await query.get();
-        trackFirestoreRead(COLLECTIONS.FIXTURES, Math.max(1, snap.docs.length), 'getCompetitionFixturesBoundedFirestore');
-        rawFixtures = snap.docs.map((d) => normalizeFixtureSnapshot({ id: d.id, ...d.data() }, seasonId));
-        source = 'firestore_bounded';
-        stale = false;
-        degraded = false;
-      } catch (err: any) {
-        firestoreCircuitBreaker.recordFailure(err);
       }
+      await client.hdel(PROCESSING_KEY, job.jobId);
+      await new Promise(resolve => setTimeout(resolve, 50));
     }
-  }
-
-  let fixtures = filterRetiredFixtures(rawFixtures, seasonId);
-  if (options.matchday !== undefined) {
-    fixtures = fixtures.filter((fixture) => Number(fixture.matchday) === Number(options.matchday));
-  }
-  if (options.status && options.status !== 'ALL') {
-    fixtures = fixtures.filter((fixture) => fixture.status === options.status);
-  }
-  if (['comp-champions-league-2026', 'comp-europa-league-2026'].includes(competitionId)) {
-    const leaguePhaseFixtures = fixtures.filter((fixture) => Number(fixture.matchday) >= 1 && Number(fixture.matchday) <= 8);
-    if (leaguePhaseFixtures.length > 0 && leaguePhaseFixtures.some((fixture) => fixture.status !== 'CONFIRMED')) {
-      fixtures = leaguePhaseFixtures;
-    }
-  }
-
-  let clubsResult: any = null;
-  try {
-    clubsResult = await readThroughReadModel<OwnerNeutralClub[]>({
-      key: ReadModelKeys.clubsWithOwners(seasonId),
-      seasonId,
-      expectedCount: 96,
-      firestoreFetcher: async () => (await getClubsSnapshotForRead(seasonId)).data,
-      validateData: (data) => Array.isArray(data) && data.length > 0,
-    });
-  } catch {}
-
-  const ownersByClub = new Map<string, OwnerNeutralClub>(
-    clubsResult?.data ? clubsResult.data.map((club: OwnerNeutralClub) => [club.id, club]) : []
-  );
-  fixtures = fixtures.map((fixture) => {
-    const homeOwner = fixture.homeClubId ? ownersByClub.get(fixture.homeClubId) : undefined;
-    const awayOwner = fixture.awayClubId ? ownersByClub.get(fixture.awayClubId) : undefined;
-    const enrichFixtureClub = (club: Fixture['homeClub'], owner?: OwnerNeutralClub) => club ? ({
-      ...club,
-      claimedByUserId: owner?.ownerUserId || null,
-      claimedByUsername: owner?.ownerUsername || null,
-      managerUsername: owner?.ownerUsername || undefined,
-      isTaken: Boolean(owner?.ownerUserId),
-      occupancy: {
-        status: owner?.ownerUserId ? 'occupied' as const : 'available' as const,
-        userId: owner?.ownerUserId || undefined,
-        username: owner?.ownerUsername || undefined,
-      },
-    }) : club;
-    const toFixtureUser = (owner?: OwnerNeutralClub) => owner?.ownerUserId ? ({
-      id: owner.ownerUserId,
-      username: owner.ownerUsername || '',
-      displayName: owner.ownerUsername ? `@${owner.ownerUsername}` : `User #${owner.ownerUserId}`,
-    }) : null;
-    return {
-      ...fixture,
-      homeClub: enrichFixtureClub(fixture.homeClub, homeOwner),
-      awayClub: enrichFixtureClub(fixture.awayClub, awayOwner),
-      homeOwnerId: homeOwner?.ownerUserId || undefined,
-      awayOwnerId: awayOwner?.ownerUserId || undefined,
-      homeUser: toFixtureUser(homeOwner),
-      awayUser: toFixtureUser(awayOwner),
-    };
-  });
-  if (options.matchday !== undefined) fixtures = fixtures.filter(f => Number(f.matchday) === Number(options.matchday));
-  if (options.status && options.status !== 'ALL') fixtures = fixtures.filter(f => f.status === options.status);
-  try {
-    const { enrichFixturesWithAuthoritativeOwners } = await import('../firebase/firestoreStore');
-    fixtures = await enrichFixturesWithAuthoritativeOwners(fixtures, seasonId);
-  } catch (err) {
-    console.warn('[COMPETITION_FIXTURES] Ownership enrichment fallback:', err);
-  }
-  return {
-    fixtures: fixtures.sort((a,b) => compareAdminFixtures(a,b,true)),
-    source,
-    stale: Boolean(stale || clubsResult?.stale),
-    degraded: Boolean(degraded || clubsResult?.degraded),
-    snapshotAt: generatedAt,
-  };
-}
-
-/**
- * Paginated admin fixtures query via read model.
- */
-export interface AdminFixturesReadModelOptions {
-  seasonId?: string;
-  competitionId?: string;
-  status?: string;
-  matchday?: number;
-  clubId?: string;
-  userId?: string;
-  search?: string;
-  cursor?: string;
-  limit?: number;
-}
-
-export interface AdminFixturesReadModelResult {
-  fixtures: Fixture[];
-  total: number;
-  hasMore: boolean;
-  nextCursor?: string;
-  limit: number;
-  source: string;
-  degraded: boolean;
-  stale: boolean;
-  generatedAt: string;
-}
-
-export async function getAdminFixturesFromReadModel(
-  options: AdminFixturesReadModelOptions = {}
-): Promise<AdminFixturesReadModelResult> {
-  const seasonId = options.seasonId || 'season-2026-27';
-  const limit = Math.min(Math.max(options.limit || 25, 1), 100);
-
-  // 1. Check Redis fresh or LKG snapshot first
-  const redisFresh = await redisGetFresh<Fixture[]>(ReadModelKeys.adminFixtures(seasonId));
-  const redisLkg = !redisFresh ? await redisGetLkg<Fixture[]>(ReadModelKeys.adminFixtures(seasonId)) : null;
-  const snapshotRes = redisFresh || redisLkg;
-
-  if (!snapshotRes || !Array.isArray(snapshotRes.data) || snapshotRes.data.length === 0) {
-    // 2. Redis miss: Fallback to SQLite local read model BEFORE scanning Firestore!
-    try {
-      const { executeAdminFixturesPagedFallback } = await import('../firebase/firestoreStore');
-      const fallbackRes = executeAdminFixturesPagedFallback(options, limit);
-      if (fallbackRes.total > 0 || !firestoreCircuitBreaker.canExecute()) {
-        return {
-          fixtures: fallbackRes.fixtures,
-          total: fallbackRes.total,
-          hasMore: fallbackRes.hasMore,
-          nextCursor: fallbackRes.nextCursor,
-          limit: fallbackRes.limit,
-          source: 'sqlite',
-          degraded: true,
-          stale: true,
-          generatedAt: fallbackRes.generatedAt,
-        };
-      }
-    } catch {}
-  }
-
-  if (!snapshotRes || !Array.isArray(snapshotRes.data) || snapshotRes.data.length === 0) {
-    const hosted = Boolean(process.env.VERCEL || process.env.K_SERVICE || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NODE_ENV === 'production');
-    if (hosted) {
-      console.warn('[FIRESTORE_BROAD_READ_BLOCKED]', JSON.stringify({ dataset: 'adminFixtures', seasonId }));
-      throw new ReadModelNotWarmedError(
-        'Admin fixture read model is not warmed. Automatic full-season Firestore scans are disabled in hosted production.'
-      );
-    }
-  }
-
-  let effectiveSnapshotRes = snapshotRes || (await readThroughReadModel<Fixture[]>({
-    key: ReadModelKeys.adminFixtures(seasonId),
-    seasonId,
-    firestoreFetcher: async () => {
-      const snap = await buildAdminFixturesSnapshot(seasonId);
-      return snap.data;
-    },
-    validateData: (fixtures) => Array.isArray(fixtures) && fixtures.length > 0,
-  }));
-
-  // A cup's authoritative refresh may already be newer than an old admin LKG
-  // (for example after a redraw performed before this fix was deployed).
-  // Repair that one slice from Redis without scanning the whole Firestore season.
-  if (await redisIsDirty(ReadModelKeys.adminFixtures(seasonId))) {
-    const cupIds = [
-      'comp-fa-cup-2026', 'comp-copa-del-rey-2026', 'comp-coppa-italia-2026',
-      'comp-dfb-pokal-2026', 'comp-coupe-de-france-2026',
-    ];
-    const candidateIds = options.competitionId ? [options.competitionId] : cupIds;
-    const snapshots = await Promise.all(candidateIds.map(async (cupId) => ({
-      cupId,
-      snapshot: await redisGetFresh<Fixture[]>(ReadModelKeys.competitionFixtures(cupId, seasonId)),
-    })));
-    let merged = effectiveSnapshotRes.data;
-    for (const { cupId, snapshot } of snapshots) {
-      if (!snapshot || !Array.isArray(snapshot.data)) continue;
-      merged = merged.filter((fixture) => fixture.competitionId !== cupId).concat(snapshot.data);
-    }
-    effectiveSnapshotRes = { ...effectiveSnapshotRes, data: merged };
-  }
-
-  let allFixtures = filterRetiredFixtures(effectiveSnapshotRes.data, seasonId).sort((a,b) => compareAdminFixtures(a,b));
-
-  if (options.competitionId && options.competitionId !== 'ALL') {
-    allFixtures = allFixtures.filter((f) => f.competitionId === options.competitionId);
-  }
-  if (options.status && options.status !== 'ALL') {
-    allFixtures = allFixtures.filter((f) => f.status === options.status);
-  }
-  if (options.matchday !== undefined) {
-    allFixtures = allFixtures.filter((f) => f.matchday === options.matchday);
-  }
-  if (options.clubId) {
-    allFixtures = allFixtures.filter((f) => f.homeClubId === options.clubId || f.awayClubId === options.clubId);
-  }
-  if (options.search) {
-    const q = options.search.toLowerCase();
-    allFixtures = allFixtures.filter(
-      (f) =>
-        f.homeClub?.name.toLowerCase().includes(q) ||
-        f.awayClub?.name.toLowerCase().includes(q) ||
-        f.roundName?.toLowerCase().includes(q) ||
-        f.id.toLowerCase().includes(q)
-    );
-  }
-
-  const total = allFixtures.length;
-
-  let startIndex = 0;
-  if (options.cursor) {
-    const tuple = decodeFixtureCursor(options.cursor);
-    if (tuple) {
-      const foundIdx = allFixtures.findIndex(f => {
-        const order = CANONICAL_COMPETITION_ORDER[f.competitionId] ?? 999;
-        if (order !== tuple.competitionOrder) return order > tuple.competitionOrder;
-        const matchday = Number(f.matchday) || 0;
-        if (matchday !== tuple.matchday) return matchday > tuple.matchday;
-        const time = Date.parse(f.scheduledAt) || 0, previous = Date.parse(tuple.scheduledAt) || 0;
-        return time !== previous ? time > previous : f.id.localeCompare(tuple.id) > 0;
-      });
-      startIndex = foundIdx < 0 ? allFixtures.length : foundIdx;
-    } else {
-      const rawIdx = allFixtures.findIndex((f) => f.id === options.cursor);
-      if (rawIdx >= 0) {
-        startIndex = rawIdx + 1;
-      } else throw Object.assign(new Error('INVALID_FIXTURE_CURSOR'), { statusCode: 400 });
-    }
-  }
-
-  const pagedFixtures = allFixtures.slice(startIndex, startIndex + limit);
-  const hasMore = startIndex + limit < allFixtures.length;
-  const nextCursor =
-    hasMore && pagedFixtures.length > 0
-      ? encodeFixtureCursor(pagedFixtures[pagedFixtures.length - 1])
-      : undefined;
-
-  let enrichedPagedFixtures = pagedFixtures;
-  try {
-    const { enrichFixturesWithAuthoritativeOwners } = await import('../firebase/firestoreStore');
-    enrichedPagedFixtures = await enrichFixturesWithAuthoritativeOwners(pagedFixtures, seasonId);
-  } catch {}
-
-  return {
-    fixtures: enrichedPagedFixtures,
-    total,
-    hasMore,
-    nextCursor,
-    limit,
-    source: effectiveSnapshotRes.source,
-    degraded: effectiveSnapshotRes.source === 'redis_stale',
-    stale: effectiveSnapshotRes.source === 'redis_stale',
-    generatedAt: effectiveSnapshotRes.generatedAt,
-  };
-}
-
-// ----------------------------------------------------
-// NON-DESTRUCTIVE INVALIDATION HOOKS
-// ----------------------------------------------------
-
-export async function invalidateClubReadModels(seasonId = 'season-2026-27'): Promise<void> {
-  await invalidateDataset(ReadModelKeys.clubsWithOwners(seasonId));
-  for (const l of SEED_LEAGUES) {
-    await invalidateDataset(ReadModelKeys.leagueClubs(l.id, seasonId));
-  }
-  await invalidateDataset(ReadModelKeys.adminFixtures(seasonId));
-}
-
-/** Refresh one changed fixture with one document read instead of scanning the season. */
-export async function refreshChangedFixtureReadModel(fixtureId: string): Promise<void> {
-  const document = await getFirestoreDb().collection(COLLECTIONS.FIXTURES).doc(fixtureId).get();
-  trackFirestoreRead(COLLECTIONS.FIXTURES, document.exists ? 1 : 0, 'refreshChangedFixtureReadModel');
-  if (!document.exists) throw new Error('FIXTURE_NOT_FOUND');
-  const fixture = normalizeFixtureSnapshot({ ...document.data(), id: document.id } as FirestoreFixtureDoc);
-
-  const patchDataset = async (key: string): Promise<boolean> => {
-    const client = getUpstashClient();
-    if (client) {
-      const result = await client.eval(`
-        local raw = redis.call('GET', KEYS[2])
-        if not raw then raw = redis.call('GET', KEYS[1]) end
-        if not raw then return 0 end
-        local snapshot = cjson.decode(raw)
-        local changed = cjson.decode(ARGV[1])
-        local found = false
-        for i, row in ipairs(snapshot.data or {}) do
-          if row.id == changed.id then
-            if row.updatedAt and changed.updatedAt and row.updatedAt > changed.updatedAt then return 1 end
-            snapshot.data[i] = changed
-            found = true
-            break
-          end
-        end
-        if not found then return 0 end
-        snapshot.generatedAt = ARGV[2]
-        snapshot.sourceVersion = ARGV[3]
-        snapshot.actualCount = #(snapshot.data or {})
-        local updated = cjson.encode(snapshot)
-        redis.call('SET', KEYS[2], updated)
-        local ttl = redis.call('TTL', KEYS[1])
-        if ttl and ttl > 0 then redis.call('SET', KEYS[1], updated, 'EX', ttl)
-        else redis.call('SET', KEYS[1], updated, 'EX', 86400) end
-        redis.call('DEL', KEYS[3])
-        return 1
-      `, [getFreshKey(key), getLkgKey(key), getDirtyKey(key)], [JSON.stringify(fixture), new Date().toISOString(), `fixture-patch-${fixture.id}-${fixture.updatedAt || Date.now()}`]);
-      inProcessMemoryCache.delete(getRawDatasetKey(key));
-      inProcessMemoryCache.delete(key);
-      memoryRedisStorage.delete(getFreshKey(key));
-      memoryRedisStorage.delete(getLkgKey(key));
-      return Number(result) === 1;
-    }
-    const existing = (await redisGetFresh<Fixture[]>(key)) || (await redisGetLkg<Fixture[]>(key));
-    if (!existing || !Array.isArray(existing.data)) return false;
-    let found = false;
-    const data = existing.data.map((row) => row.id === fixture.id ? (found = true, fixture) : row);
-    if (!found) return false;
-    await redisSetRaw(key, { ...existing, generatedAt: new Date().toISOString(), sourceVersion: `fixture-patch-${fixture.id}-${fixture.updatedAt || Date.now()}`, data }, 86400);
-    inProcessMemoryCache.delete(getRawDatasetKey(key));
-    inProcessMemoryCache.delete(key);
-    return true;
-  };
-
-  const adminKey = ReadModelKeys.adminFixtures(fixture.seasonId);
-  const competitionKey = ReadModelKeys.competitionFixtures(fixture.competitionId, fixture.seasonId);
-  const [adminPatched, competitionPatched] = await Promise.all([patchDataset(adminKey), patchDataset(competitionKey)]);
-  if (!adminPatched) await invalidateDataset(adminKey);
-  if (!competitionPatched) await invalidateDataset(competitionKey);
-  await invalidateDataset(ReadModelKeys.standings(fixture.competitionId, fixture.seasonId));
-  // Await the trophy snapshot while the serverless invocation is alive. A trophy
-  // failure must not undo a successfully persisted match result.
-  const { syncCompetitionTrophy } = await import('../services/playerTrophyService');
-  await syncCompetitionTrophy(fixture.competitionId, fixture.seasonId, fixture).catch((error: unknown) => {
-    console.warn('[PLAYER_TROPHY_SYNC_FAILED]', fixture.id, error instanceof Error ? error.message : String(error));
-  });
-}
-
-export async function invalidateFixtureReadModels(
-  competitionId: string,
-  seasonId = 'season-2026-27'
-): Promise<void> {
-  await invalidateDataset(ReadModelKeys.adminFixtures(seasonId));
-  if (competitionId) {
-    await invalidateDataset(ReadModelKeys.competitionFixtures(competitionId, seasonId));
-    await invalidateDataset(ReadModelKeys.standings(competitionId, seasonId));
+    return { processed, succeeded, failed };
+  } finally {
+    await client.eval("if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0", [WORKER_LOCK], [token]);
   }
 }
 
-/** Replace one cup in the admin snapshot after an authoritative redraw. */
-export async function replaceCupFixturesInAdminSnapshot(
-  competitionId: string,
-  seasonId: string,
-  cupFixtures: Fixture[]
-): Promise<void> {
-  const key = ReadModelKeys.adminFixtures(seasonId);
-  const previous = await redisGetFresh<Fixture[]>(key) || await redisGetLkg<Fixture[]>(key);
-  if (!previous || !Array.isArray(previous.data)) {
-    await invalidateDataset(key);
-    return;
-  }
-  const fixtures = previous.data.filter((fixture) => fixture.competitionId !== competitionId)
-    .concat(cupFixtures)
-    .sort((a, b) => compareAdminFixtures(a, b));
-  await redisSetRaw(key, {
-    schemaVersion: SCHEMA_VERSION,
-    generatedAt: new Date().toISOString(),
-    sourceVersion: `cup-redraw:${competitionId}`,
-    expectedCount: fixtures.length,
-    data: fixtures,
-  });
+function formatTelegramMessage(title: string, body: string, type: string, bodyIsHtml = false): string {
+  let icon = '📢';
+  if (type === 'NEW_MATCHDAY') icon = '⚽';
+  if (type === 'UPCOMING_MATCH') icon = '⏰';
+  if (type === 'COMPETITION_UPDATE') icon = '🏆';
+
+  // No permanent "Official Alert" header/footer. Smart bodies are generated server-side
+  // and may contain a small, controlled HTML subset; admin-entered bodies stay escaped.
+  const safeBody = bodyIsHtml ? body : escapeHtml(body);
+  return `<b>${icon} ${escapeHtml(title)}</b>\n\n${safeBody}`;
 }
 
-export async function invalidateStandingsReadModels(
-  competitionId: string,
-  seasonId = 'season-2026-27'
-): Promise<void> {
-  await invalidateDataset(ReadModelKeys.standings(competitionId, seasonId));
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
-export async function invalidateCompetitionReadModels(seasonId = 'season-2026-27'): Promise<void> {
-  await invalidateDataset(ReadModelKeys.competitions(seasonId));
-}
-
-export async function invalidateUserMembershipReadModel(
+async function updateBroadcastRecipientState(
+  broadcastId: string,
   userId: string,
-  seasonId = 'season-2026-27'
-): Promise<void> {
-  await invalidateDataset(ReadModelKeys.userMembership(userId, seasonId));
-}
+  status: 'PENDING' | 'SENT' | 'FAILED' | 'SKIPPED_NO_TELEGRAM',
+  error?: string,
+  sentAt?: string,
+  retryCount?: number
+) {
+  const bcast = await getBroadcastDetails(broadcastId);
+  if (!bcast) throw new Error('BROADCAST_RECORD_MISSING');
 
-// ----------------------------------------------------
-// COMPLETE READ MODEL REBUILD (ADMIN ACTION)
-// ----------------------------------------------------
+  const r = bcast.recipients.find((rec) => rec.userId === userId);
+  if (r) {
+    r.status = status;
+    if (error) r.error = error;
+    if (sentAt) r.sentAt = sentAt;
+    if (retryCount !== undefined) r.retryCount = retryCount;
+  }
 
-export interface RebuildResult {
-  success: boolean;
-  generatedAt: string;
-  warmedLkgKeys: string[];
-  warmedKeys?: string[];
-  counts: {
-    competitions: number;
-    clubs: number;
-    fixtures: number;
-    standings: number;
-    userMemberships?: number;
-    standingsPerLeague?: Record<string, number>;
-  };
-  errors?: string[];
-}
+  bcast.metrics.sentCount = bcast.recipients.filter(r => r.status === 'SENT').length;
+  bcast.metrics.failedCount = bcast.recipients.filter(r => r.status === 'FAILED').length;
+  bcast.metrics.skippedCount = bcast.recipients.filter(r => r.status === 'SKIPPED_NO_TELEGRAM').length;
 
-/**
- * Rebuilds all core read models into Redis (both fresh and LKG).
- * Admin-triggered action; never run automatically on production startup.
- */
-export async function rebuildAllReadModels(seasonId = 'season-2026-27'): Promise<RebuildResult> {
+  const totalFinished = bcast.metrics.sentCount + bcast.metrics.failedCount + bcast.metrics.skippedCount;
+  if (totalFinished >= bcast.metrics.totalRecipients) {
+    bcast.status = bcast.metrics.failedCount > 0 ? 'PARTIALLY_FAILED' : 'COMPLETED';
+  }
+
+  // Also persist to Redis if available
   const client = getUpstashClient();
-  const hosted = Boolean(process.env.VERCEL || process.env.K_SERVICE || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NODE_ENV === 'production');
-  if (hosted && !client) throw new Error('REDIS_NOT_CONFIGURED: Production uchun Redis URL va token juftligini tekshiring.');
-  if (client && await client.ping() !== 'PONG') throw new Error('REDIS_UNAVAILABLE');
-  if (!firestoreCircuitBreaker.canExecute()) throw new Error('FIRESTORE_COOLDOWN: Baza cheklovi faol. Keyinroq qayta urinib ko‘ring.');
-  const assertReadable = () => {
-    if (firestoreCircuitBreaker.getStatus().state === 'OPEN') throw new Error('FIRESTORE_COOLDOWN');
-  };
-
-  const warmedLkgKeys: string[] = [];
-  const errors: string[] = [];
-  const standingsPerLeague: Record<string, number> = {};
-
-  // 1. Competitions catalog
-  let compCount = 0;
-  try {
-    assertReadable();
-    const compSnap = await buildCompetitionsSnapshot(seasonId);
-    compCount = compSnap.data.length;
-    warmedLkgKeys.push(getLkgKey(ReadModelKeys.competitions(seasonId)));
-  } catch (err: any) {
-    firestoreCircuitBreaker.recordFailure(err);
-    errors.push(`Competitions rebuild error: ${err.message}`);
+  if (client) {
+    await client.hset(BROADCASTS_KEY, { [broadcastId]: bcast });
   }
-
-  // 2. Clubs & occupancies (owner-neutral, all 96 clubs)
-  let clubCount = 0;
-  let rebuiltClubs: OwnerNeutralClub[] = [];
-  try {
-    assertReadable();
-    const clubSnap = await buildClubsSnapshot(seasonId);
-    rebuiltClubs = clubSnap.data;
-    clubCount = clubSnap.data.length;
-    warmedLkgKeys.push(getLkgKey(ReadModelKeys.clubsWithOwners(seasonId)));
-    for (const l of SEED_LEAGUES) {
-      warmedLkgKeys.push(getLkgKey(ReadModelKeys.leagueClubs(l.id, seasonId)));
-    }
-  } catch (err: any) {
-    firestoreCircuitBreaker.recordFailure(err);
-    errors.push(`Clubs rebuild error: ${err.message}`);
-  }
-
-  // 3. Admin & competition fixtures (sorted by canonical tuple)
-  let fixtureCount = 0;
-  try {
-    assertReadable();
-    const fixSnap = await buildAdminFixturesSnapshot(seasonId);
-    fixtureCount = fixSnap.data.length;
-    warmedLkgKeys.push(getLkgKey(ReadModelKeys.adminFixtures(seasonId)));
-    const uniqueCompIds = Array.from(new Set(fixSnap.data.map((f) => f.competitionId)));
-    for (const cId of uniqueCompIds) {
-      warmedLkgKeys.push(getLkgKey(ReadModelKeys.competitionFixtures(cId, seasonId)));
-    }
-  } catch (err: any) {
-    firestoreCircuitBreaker.recordFailure(err);
-    errors.push(`Fixtures rebuild error: ${err.message}`);
-  }
-
-  // 4. Standings for the 5 domestic leagues
-  let standingsCount = 0;
-  for (const cId of Object.keys(DOMESTIC_LEAGUE_CONFIG)) {
-    try {
-      assertReadable();
-      const stdSnap = await buildStandingsSnapshot(cId, seasonId);
-      standingsCount += stdSnap.data.length;
-      standingsPerLeague[DOMESTIC_LEAGUE_CONFIG[cId].name] = stdSnap.data.length;
-      warmedLkgKeys.push(getLkgKey(ReadModelKeys.standings(cId, seasonId)));
-    } catch (err: any) {
-    firestoreCircuitBreaker.recordFailure(err);
-      errors.push(`Standings rebuild error for ${cId}: ${err.message}`);
-    }
-  }
-
-  // 5. Active user memberships
-  let membershipCount = 0;
-  try {
-    for (const club of rebuiltClubs) {
-      if (club.ownerUserId) {
-          const occ = { userId: club.ownerUserId };
-          const membershipData: UserMembershipSentinel = {
-            hasClub: true, clubId: club.id, club: enrichClubForUser(club, club.ownerUserId),
-          };
-          const memKey = ReadModelKeys.userMembership(occ.userId, seasonId);
-          const memSnap: ReadModelSnapshot<UserMembershipSentinel> = {
-            schemaVersion: SCHEMA_VERSION,
-            generatedAt: new Date().toISOString(),
-            sourceVersion: `ownership-${club.id}`,
-            expectedCount: 1,
-            actualCount: 1,
-            data: membershipData,
-          };
-          await redisSetRaw(memKey, memSnap, 86400);
-          warmedLkgKeys.push(getLkgKey(memKey));
-          membershipCount++;
-      }
-    }
-  } catch (err: any) {
-    firestoreCircuitBreaker.recordFailure(err);
-    errors.push(`User memberships rebuild error: ${err.message}`);
-  }
-
-  if (errors.length === 0) firestoreCircuitBreaker.recordSuccess();
-  return {
-    success: errors.length === 0,
-    generatedAt: new Date().toISOString(),
-    warmedLkgKeys,
-    warmedKeys: warmedLkgKeys,
-    counts: {
-      competitions: compCount,
-      clubs: clubCount,
-      fixtures: fixtureCount,
-      standings: standingsCount,
-      userMemberships: membershipCount,
-      standingsPerLeague,
-    },
-    errors: errors.length > 0 ? errors : undefined,
-  };
+  memoryBroadcasts.set(broadcastId, bcast);
 }
 
-// ----------------------------------------------------
-// READ MODEL HEALTH STATUS
-// ----------------------------------------------------
-
 /**
- * Health endpoint that reads snapshot metadata directly from Redis,
- * surviving Vercel cold starts without relying solely on process memory.
+ * Returns past broadcasts list.
  */
-export async function getReadModelHealthStatus(seasonId = 'season-2026-27'): Promise<ReadModelHealthInfo> {
-  const cb = firestoreCircuitBreaker.getStatus();
-
-  let redisState: 'CONNECTED' | 'IN_MEMORY_FALLBACK' | 'ERROR' = 'IN_MEMORY_FALLBACK';
+export async function getBroadcastHistory(limit = 20): Promise<TelegramBroadcastRecord[]> {
   const client = getUpstashClient();
   if (client) {
     try {
-      const ping = await client.ping();
-      redisState = ping === 'PONG' || ping ? 'CONNECTED' : 'ERROR';
-    } catch {
-      redisState = 'ERROR';
-    }
-  }
-
-  // Define core datasets to inspect
-  const coreDatasetDefinitions: Array<{
-    name: string;
-    rawKey: string;
-    expectedCount: number;
-  }> = [
-    { name: 'competitions', rawKey: ReadModelKeys.competitions(seasonId), expectedCount: 17 },
-    { name: 'clubs-with-owners', rawKey: ReadModelKeys.clubsWithOwners(seasonId), expectedCount: 96 },
-    { name: 'admin-fixtures', rawKey: ReadModelKeys.adminFixtures(seasonId), expectedCount: 0 },
-    ...SEED_LEAGUES.map((l) => ({
-      name: `league-${l.id}-clubs`,
-      rawKey: ReadModelKeys.leagueClubs(l.id, seasonId),
-      expectedCount: l.id.includes('bundesliga') || l.id.includes('ligue-1') ? 18 : 20,
-    })),
-    ...Object.entries(DOMESTIC_LEAGUE_CONFIG).map(([compId, conf]) => ({
-      name: `standings-${conf.name}`,
-      rawKey: ReadModelKeys.standings(compId, seasonId),
-      expectedCount: conf.expectedCount,
-    })),
-  ];
-
-  const freshKeys: string[] = [];
-  const lkgKeys: string[] = [];
-  const dirtyKeys: string[] = [];
-  const missingKeys: string[] = [];
-  const coreDatasets: Record<string, CoreDatasetHealth> = {};
-
-  let newestSnapshotTime: string | null = globalLastSnapshotAt;
-
-  for (const def of coreDatasetDefinitions) {
-    const cleanKey = getRawDatasetKey(def.rawKey);
-    const fresh = await redisGetFresh(cleanKey);
-    const lkg = await redisGetLkg(cleanKey);
-    const isDirty = await redisIsDirty(cleanKey);
-
-    const hasFresh = Boolean(fresh && fresh.data !== undefined);
-    const hasLkg = Boolean(lkg && lkg.data !== undefined);
-
-    if (hasFresh) freshKeys.push(getFreshKey(cleanKey));
-    if (hasLkg) lkgKeys.push(getLkgKey(cleanKey));
-    if (isDirty) dirtyKeys.push(getDirtyKey(cleanKey));
-    if (!hasFresh && !hasLkg) missingKeys.push(cleanKey);
-
-    // Pick newest timestamp between fresh, LKG, and existing
-    const snap = fresh || lkg;
-    if (snap?.generatedAt) {
-      if (!newestSnapshotTime || new Date(snap.generatedAt) > new Date(newestSnapshotTime)) {
-        newestSnapshotTime = snap.generatedAt;
+      const records = await client.hgetall<Record<string, TelegramBroadcastRecord>>(BROADCASTS_KEY);
+      if (records) {
+        const list = Object.values(records) as TelegramBroadcastRecord[];
+        return list
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+          .slice(0, limit);
       }
-    }
-
-    const snapTimestamp = snap?.generatedAt || null;
-    const snapAge = snapTimestamp ? Math.floor((Date.now() - new Date(snapTimestamp).getTime()) / 1000) : null;
-    const actualCount = snap?.actualCount ?? 0;
-
-    let status: CoreDatasetHealth['status'] = 'MISSING';
-    if (hasFresh && !isDirty) {
-      status = 'FRESH';
-    } else if (isDirty) {
-      status = 'DIRTY';
-    } else if (hasLkg) {
-      status = 'LKG_STALE';
-    }
-
-    coreDatasets[def.name] = {
-      key: cleanKey,
-      expectedCount: def.expectedCount,
-      actualCount,
-      snapshotTimestamp: snapTimestamp,
-      snapshotAgeSeconds: snapAge,
-      hasFresh,
-      hasLkg,
-      isDirty,
-      status,
-    };
+    } catch {}
   }
 
-  const now = Date.now();
-  const snapshotAgeSeconds = newestSnapshotTime
-    ? Math.floor((now - new Date(newestSnapshotTime).getTime()) / 1000)
-    : null;
+  return Array.from(memoryBroadcasts.values())
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, limit);
+}
 
-  return {
-    firestoreState: cb.state as any,
-    redisState,
-    circuitBreakerState: {
-      state: cb.state,
-      consecutiveFailures: cb.consecutiveFailures,
-      resourceExhaustedCount: cb.resourceExhaustedCount,
-      lastFailureTime: cb.lastFailureTime,
-      lastError: cb.lastError,
-    },
-    lastSnapshotAt: newestSnapshotTime,
-    snapshotAgeSeconds,
-    freshKeys,
-    lkgKeys,
-    dirtyKeys,
-    missingKeys,
-    'fresh keys': freshKeys,
-    'lkg keys': lkgKeys,
-    'dirty keys': dirtyKeys,
-    'missing keys': missingKeys,
-    warmedKeys: lkgKeys,
-    coreDatasets,
-  };
+/** Retry FAILED recipients without re-sending already successful deliveries. */
+export async function retryFailedBroadcastRecipients(
+  broadcastId: string,
+  userId?: string
+): Promise<{ retried: number; skipped: number }> {
+  const client = getUpstashClient();
+  if (!client) throw new Error('REDIS_REQUIRED');
+  const record = await getBroadcastDetails(broadcastId);
+  if (!record) throw new Error('BROADCAST_NOT_FOUND');
+
+  const directory = await client.get<RecipientDirectoryEntry[]>(`${RECIPIENT_DIR_KEY}:${record.seasonId}`);
+  const byUser = new Map((Array.isArray(directory) ? directory : []).map((entry) => [entry.userId, entry]));
+  const targets = record.recipients.filter((recipient) =>
+    recipient.status === 'FAILED' && (!userId || recipient.userId === userId)
+  );
+  if (userId && targets.length === 0) throw new Error('FAILED_RECIPIENT_NOT_FOUND');
+
+  let retried = 0;
+  let skipped = 0;
+  for (const recipient of targets) {
+    const directoryEntry = byUser.get(recipient.userId);
+    if (!directoryEntry?.messageable || !directoryEntry.telegramId) {
+      skipped++;
+      continue;
+    }
+    const now = new Date().toISOString();
+    const retryNumber = Number(recipient.retryCount || 0) + 1;
+    const job: NotificationQueueJob = {
+      jobId: `job-retry-${broadcastId}-${recipient.userId}-${Date.now()}-${retryNumber}`,
+      broadcastId,
+      userId: recipient.userId,
+      username: recipient.username || directoryEntry.username || 'player',
+      displayName: recipient.displayName || directoryEntry.displayName || 'EFL Player',
+      telegramId: directoryEntry.telegramId,
+      title: record.title,
+      body: record.body,
+      type: record.type,
+      status: 'QUEUED',
+      retryCount: 0,
+      maxRetries: 3,
+      createdAt: now,
+      availableAt: Date.now(),
+      bodyIsHtml: Boolean(record.bodyIsHtml),
+      replyMarkup: record.replyMarkup,
+    };
+    recipient.status = 'PENDING';
+    recipient.retryCount = retryNumber;
+    delete recipient.error;
+    delete recipient.sentAt;
+    await client.rpush(QUEUE_KEY, JSON.stringify(job));
+    retried++;
+  }
+
+  if (retried > 0) {
+    record.metrics.failedCount = Math.max(0, Number(record.metrics.failedCount || 0) - retried);
+    record.status = 'QUEUED';
+    await client.hset(BROADCASTS_KEY, { [record.id]: record });
+    memoryBroadcasts.set(record.id, record);
+    scheduleNotificationQueueDrain();
+  }
+  return { retried, skipped };
+}
+
+/**
+ * Returns single broadcast record by ID.
+ */
+export async function getBroadcastDetails(broadcastId: string): Promise<TelegramBroadcastRecord | null> {
+  const client = getUpstashClient();
+  if (client) {
+    try {
+      const record = await client.hget<TelegramBroadcastRecord>(BROADCASTS_KEY, broadcastId);
+      if (record) return record;
+    } catch {}
+  }
+  return memoryBroadcasts.get(broadcastId) || null;
 }

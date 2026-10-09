@@ -52,6 +52,7 @@ class FirestoreCircuitBreaker {
   }
 
   public checkSoftLimit(currentReads: number): boolean {
+    if (process.env.DATABASE_PROVIDER === 'supabase') return false;
     if (currentReads >= FIRESTORE_READ_SOFT_LIMIT) {
       if (!this.softLimitExceeded) {
         this.softLimitExceeded = true;

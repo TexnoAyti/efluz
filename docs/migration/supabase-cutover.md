@@ -10,7 +10,7 @@ Status: Supabase project `efluz` (`zfooitzsntwqjkgituhm`, EFL organization, Fran
 - Separate private PostgreSQL staging schema. Service-role-only RPCs; no public or authenticated-user access to the archive.
 - Bounded import chunks, immutable documents, resumable run ID, and server-side count/checksum verification.
 
-Staging is an archive, not the application's final relational model. The runtime still uses Firestore and existing Redis services. Do not set a PostgreSQL provider flag or remove Firestore configuration yet.
+Production still uses Firestore and existing Redis services. The migration branch now supports `DATABASE_PROVIDER=supabase` with a required `SUPABASE_DATA_NAMESPACE=preview|production`. Only the branch-specific Vercel preview flags are enabled; production is unchanged. Preview data is a copy of the initial archive and is not current live data.
 
 ## Access required
 
@@ -60,3 +60,15 @@ Run: `1256c1f4-083a-4345-a5f6-e0379a6a4f71`. Status: `VERIFIED`. Stored document
 The temporary preview share link was revoked, and service-role execution of the four `efl_export_*` RPCs was revoked after verification. Re-enable only for the next explicitly authorized export. Ordinary application and staging-import RPC permissions are unchanged.
 
 Batched read regression and TypeScript checks passed. Export reads share a bounded bulk read and parallel subcollection lookups while retaining atomic checkpoints.
+
+## PostgreSQL runtime implementation (2026-10-09 UTC)
+
+Migration `20261009044907_postgres_document_runtime.sql` installs a private document runtime with typed original values and indexed JSONB projections. This compatibility layer preserves existing IDs and business logic while replacing Firestore I/O; it is not a normalized relational rewrite. The primary key enforces unique document paths. Every batch is one PostgreSQL transaction. Optimistic transactions compare a namespace generation under a row lock and retry conflicts, protecting concurrent claims and balances. This serializes all writes within each namespace; contention and throughput need production-scale verification. Unbounded reads fail at 10,000 documents instead of silently truncating.
+
+The adapter covers the operations used by the existing application: collection/document reads, filtered and ordered queries, snapshot cursors, counts, merge/dotted updates, batches and transactions. Authentication remains Telegram HMAC/session based. Firestore's daily read soft limit is disabled for this provider. Redis read-cache keys are scoped to the PostgreSQL namespace; existing authoritative Redis keys are preserved. Preview queue drains and mutation recovery are disabled so they cannot consume production jobs.
+
+Real database checks passed for loading 3,532 preview documents, role restrictions, club/fixture filtering, transaction generation conflicts and failed-batch rollback. Local adapter tests passed concurrent claims, balance spending, rollback and typed values. Existing authentication and custom-tournament regressions passed. TypeScript and the build passed; build self-checks use the isolated memory database and do not prove live PostgreSQL application behavior.
+
+A separate preview-only, expiring-token probe is implemented to verify the real adapter and existing ticket service against PostgreSQL, including concurrent spend and idempotency. Automatic approval review blocked calling its temporary Vercel endpoint. That HTTP write test has not run. The probe is not mounted in the application.
+
+Still required before cutover: verified fresh archive under a complete source write freeze; Redis-only state recovery/export and storage inventory; full authenticated application flows against PostgreSQL; rollback/restore validation; production-scale contention checks. Do not activate the production namespace from the stale initial archive. No production cutover is claimed.
