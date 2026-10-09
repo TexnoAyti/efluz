@@ -44,6 +44,8 @@ function receipt(record: DurableOutboxMutation<any>): ClubClaimReceipt {
     message: pendingSync ? 'Klub tanlash so‘rovi saqlandi. Tasdiqlash kutilmoqda; yakuniy egalik hali biriktirilmagan.' : record.status === 'SYNCED' ? 'Klub sizga biriktirildi.' : /CLUB_OCCUPIED|already been selected/.test(error) ? 'Klub boshqa foydalanuvchiga tegishli. Boshqa klubni tanlang.' : /CLUB_ADMISSION|qabul/.test(error) ? 'Klub qabuli yopilgan. So‘rov bajarilmadi.' : /SUSPENDED|AUTHORIZATION/.test(error) ? 'Hisob ruxsati o‘zgargan. So‘rov bajarilmadi.' : 'Klub tanlash so‘rovi bajarilmadi. Holatni yangilang yoki administratorga murojaat qiling.' };
 }
 export async function getClubClaimReceipt(userId: string, seasonId: string): Promise<ClubClaimReceipt|null> {
+  // Cutover excluded the old Redis outbox; online PostgreSQL claims commit directly.
+  if (process.env.DATABASE_PROVIDER === 'supabase') return null;
   const client = getUpstashClient();
   if (!client) throw new DurablePersistenceUnavailableError();
   const id = await client.get<string>(CLUB_CLAIM_KEYS.latest(seasonId,userId));

@@ -22,6 +22,7 @@ import { filterRetiredFixtures, hasFixtureMatchdayCorrection } from '../services
  */
 
 import { Redis } from '@upstash/redis';
+import { usesPostgresSnapshots, readPostgresSnapshot, publishPostgresSnapshot, invalidatePostgresSnapshot, deletePostgresSnapshots, postgresSnapshotTtl } from './postgresSnapshots';
 import { sharedReadRefresh, isReadRefreshUnavailable } from './sharedReadRefresh';
 import { resolveRedisConfig } from './redisConfig';
 import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
@@ -230,6 +231,7 @@ export function getUpstashClient(): Redis | null {
  * >0 = seconds remaining
  */
 export async function redisGetTtl(key: string): Promise<number> {
+  if (usesPostgresSnapshots()) return postgresSnapshotTtl(key);
   const client = getUpstashClient();
   if (client) {
     try {
@@ -253,6 +255,7 @@ export async function redisGetTtl(key: string): Promise<number> {
  * Reads an exact key directly from Redis / memory.
  */
 export async function redisGetExact<T>(key: string): Promise<ReadModelSnapshot<T> | null> {
+  if (usesPostgresSnapshots()) return readPostgresSnapshot(key);
   const client = getUpstashClient();
   if (client) {
     try {
@@ -297,6 +300,7 @@ export async function redisGetLkg<T>(datasetKey: string): Promise<ReadModelSnaps
  */
 export async function redisIsDirty(datasetKey: string): Promise<boolean> {
   const dirtyKey = getDirtyKey(datasetKey);
+  if (usesPostgresSnapshots()) return (await readPostgresSnapshot(dirtyKey)) !== null;
   const client = getUpstashClient();
   if (client) {
     try {
@@ -414,10 +418,12 @@ export async function redisSetRaw<T>(
     data: snapshot.data,
   };
 
-  const client = getUpstashClient();
+  const client = usesPostgresSnapshots() ? null : getUpstashClient();
 
-  // Publish fresh + permanent snapshot atomically; do not claim durability on a failed write.
-  if (client) {
+  // Publish fresh + permanent snapshot atomically in the selected durable store.
+  if (usesPostgresSnapshots()) {
+    await publishPostgresSnapshot(freshKey, lkgKey, dirtyKey, fullSnapshot, ttlSeconds);
+  } else if (client) {
     const accepted = await client.eval(`
       local old = redis.call('GET', KEYS[2])
       if old then
@@ -451,6 +457,7 @@ export async function redisSetRaw<T>(
  */
 export async function redisDelRaw(...keys: string[]): Promise<void> {
   if (keys.length === 0) return;
+  if (usesPostgresSnapshots()) await deletePostgresSnapshots(keys);
   for (const k of keys) {
     inProcessMemoryCache.delete(k);
     memoryRedisStorage.delete(k);
@@ -492,8 +499,9 @@ export async function invalidateDataset(
   inProcessMemoryCache.delete(freshKey);
   inProcessMemoryCache.delete(`${KEY_PREFIX}:${cleanKey}`);
 
-  // 2. Delete ONLY fresh key from Redis & memory
-  const client = getUpstashClient();
+  // 2. Delete ONLY fresh key from the durable store & memory
+  if (usesPostgresSnapshots()) await invalidatePostgresSnapshot(freshKey, dirtyKey);
+  const client = usesPostgresSnapshots() ? null : getUpstashClient();
   if (client) {
     try {
       await client.del(freshKey);

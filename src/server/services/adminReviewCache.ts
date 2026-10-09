@@ -61,7 +61,10 @@ export function readSharedAdminData<T extends SharedResult>(key: string, loader:
     };
     const loadLocally = async () => {
       const saved = localResults.get(key);
-      if (!bypassFresh && saved && saved.epoch === localEpoch && Date.now() - saved.savedAt < ttlSeconds * 1000) return { ...saved.result, stale: true, degraded: true, source: 'process_stale' } as T;
+      if (!bypassFresh && saved && saved.epoch === localEpoch && Date.now() - saved.savedAt < ttlSeconds * 1000) {
+        if (process.env.DATABASE_PROVIDER === 'supabase') return saved.result as T;
+        return { ...saved.result, stale: true, degraded: true, source: 'process_stale' } as T;
+      }
       return remember(await loader());
     };
     const client = getBoundedRedisClient();
