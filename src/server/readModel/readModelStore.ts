@@ -22,6 +22,7 @@ import { filterRetiredFixtures, hasFixtureMatchdayCorrection } from '../services
  */
 
 import { Redis } from '@upstash/redis';
+import { FieldPath } from 'firebase-admin/firestore';
 import { usesPostgresSnapshots, readPostgresSnapshot, publishPostgresSnapshot, invalidatePostgresSnapshot, deletePostgresSnapshots, postgresSnapshotTtl, patchPostgresSnapshot } from './postgresSnapshots';
 import { sharedReadRefresh, isReadRefreshUnavailable } from './sharedReadRefresh';
 import { resolveRedisConfig } from './redisConfig';
@@ -981,12 +982,25 @@ async function buildClubsSnapshotAuthoritative(seasonId: string): Promise<ReadMo
 
       // 2. Fetch only the users who own clubs (avoids full USERS collection scan)
       const ownerUserIds = Array.from(new Set(Array.from(occMap.values()).map((o) => o.userId)));
+      let postgresOwners: Map<string, any> | null = null;
+      let postgresOwnersFailed = false;
+      if (usesPostgresSnapshots()) {
+        postgresOwners = new Map();
+        if (ownerUserIds.length) {
+          try {
+            const rows = await db.collection(COLLECTIONS.USERS).where(FieldPath.documentId(), 'in', ownerUserIds).get();
+            trackFirestoreRead(COLLECTIONS.USERS, rows.size, 'buildClubsSnapshot:ownersBatch');
+            rows.docs.forEach(doc => postgresOwners!.set(doc.id, doc));
+          } catch { postgresOwnersFailed = true; }
+        }
+      }
       await Promise.all(
         ownerUserIds.map(async (uid) => {
           try {
-            const uDoc = await db.collection(COLLECTIONS.USERS).doc(uid).get();
-            trackFirestoreRead(COLLECTIONS.USERS, 1, 'buildClubsSnapshot:owner');
-            if (uDoc.exists) {
+            if (postgresOwnersFailed) throw new Error('OWNERS_BATCH_UNAVAILABLE');
+            const uDoc = postgresOwners ? postgresOwners.get(uid) : await db.collection(COLLECTIONS.USERS).doc(uid).get();
+            if (!postgresOwners) trackFirestoreRead(COLLECTIONS.USERS, 1, 'buildClubsSnapshot:owner');
+            if (uDoc?.exists) {
               const uData = uDoc.data();
               const uname = uData?.username ? String(uData.username).replace(/^@+/, '').trim() : null;
               const isSynth = uname ? (uname.startsWith('tg_') || uname.startsWith('user_')) : false;

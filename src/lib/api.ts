@@ -192,7 +192,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
   const method = (options.method || 'GET').toUpperCase();
   const isGet = method === 'GET';
   const cacheTtl = options.cacheTtlMs ?? (isGet ? 15000 : 0); // Default 15s cache for GETs to conserve free-tier quota
-  const timeoutMs = options.timeoutMs ?? (endpoint.startsWith('/api/admin/') ? 45000 : 14000);
+  const timeoutMs = options.timeoutMs ?? 14000;
 
   const authCacheIdentity = getSessionToken()?.slice(0, 32) || getTelegramInitData().slice(0, 32);
   const cacheKey = `${endpoint}::${getDevUserId() || ''}::${authCacheIdentity}`;
