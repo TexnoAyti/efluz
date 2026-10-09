@@ -146,6 +146,9 @@ export async function drainNotificationQueue(options: {
   hop?: number;
   continueDrain?: (hop: number) => Promise<void>;
 } = {}): Promise<void> {
+  if (process.env.MIGRATION_WRITE_FREEZE === 'true') return;
+  // The preview uses a copied database, but the Redis notification queue is live.
+  if (process.env.DATABASE_PROVIDER === 'supabase' && process.env.SUPABASE_DATA_NAMESPACE === 'preview') return;
   const hop = options.hop || 0;
   const deadline = Math.min(options.deadline ?? Date.now() + DRAIN_BUDGET_MS,
     (getDeadline()?.getTime() ?? Infinity) - 15000);
@@ -501,6 +504,7 @@ export async function processNotificationQueue(batchSize = 25, stopClaimingAt = 
   failed: number;
   locked?: boolean;
 }> {
+  if (process.env.MIGRATION_WRITE_FREEZE === 'true') return { processed: 0, succeeded: 0, failed: 0, locked: true };
   const client = getUpstashClient();
   if (!client) throw new Error('REDIS_REQUIRED');
   const token = crypto.randomUUID();

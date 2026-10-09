@@ -2,6 +2,7 @@ import { initializeApp, getApps, cert, applicationDefault, App } from 'firebase-
 import { getFirestore, Firestore, FieldPath } from 'firebase-admin/firestore';
 import fs from 'fs';
 import path from 'path';
+import { PostgresDocumentStore } from '../postgres/documentStore';
 
 let cachedDb: Firestore | null = null;
 let cachedInfo: FirebaseConfigInfo | null = null;
@@ -11,7 +12,7 @@ export interface FirebaseConfigInfo {
   isConfigured: boolean;
   projectId?: string;
   databaseId?: string;
-  authMode: 'service_account' | 'credentials' | 'application_default' | 'local_fallback' | 'not_configured';
+  authMode: 'service_account' | 'credentials' | 'application_default' | 'local_fallback' | 'not_configured' | 'supabase';
   error?: string;
   verifiedAt?: string;
 }
@@ -67,6 +68,15 @@ export function initializeFirebaseAdmin(): { db: Firestore | null; info: Firebas
   if (cachedInfo?.authMode === 'local_fallback') {
     cachedDb = null;
     cachedInfo = null;
+  }
+
+  if (process.env.DATABASE_PROVIDER === 'supabase') {
+    if (!cachedDb || cachedInfo?.authMode !== 'supabase') {
+      const postgres = new PostgresDocumentStore();
+      cachedDb = postgres as unknown as Firestore;
+      cachedInfo = { isConfigured: true, projectId: postgres.projectId, databaseId: postgres.databaseId, authMode: 'supabase' };
+    }
+    return { db: cachedDb, info: cachedInfo };
   }
 
   if (cachedDb && cachedInfo && cachedInfo.isConfigured) {

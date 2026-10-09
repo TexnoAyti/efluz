@@ -132,22 +132,24 @@ export const CANONICAL_COMPETITION_ORDER: Record<string, number> = {
 // ----------------------------------------------------
 
 export function getRawDatasetKey(key: string): string {
-  return key.replace(/^efluz:v1:(fresh:|lkg:|dirty:)?/, '').replace(/^efluz:v1:/, '');
+  return key.replace(/^efluz:v1:pg:(preview|production):(fresh:|lkg:|dirty:)?/, '').replace(/^efluz:v1:(fresh:|lkg:|dirty:)?/, '').replace(/^efluz:v1:/, '');
 }
+const readCachePrefix = () => process.env.DATABASE_PROVIDER === 'supabase'
+  ? `${KEY_PREFIX}:pg:${process.env.SUPABASE_DATA_NAMESPACE}` : KEY_PREFIX;
 
 export function getFreshKey(datasetKey: string): string {
   const clean = getRawDatasetKey(datasetKey);
-  return `${KEY_PREFIX}:fresh:${clean}`;
+  return `${readCachePrefix()}:fresh:${clean}`;
 }
 
 export function getLkgKey(datasetKey: string): string {
   const clean = getRawDatasetKey(datasetKey);
-  return `${KEY_PREFIX}:lkg:${clean}`;
+  return `${readCachePrefix()}:lkg:${clean}`;
 }
 
 export function getDirtyKey(datasetKey: string): string {
   const clean = getRawDatasetKey(datasetKey);
-  return `${KEY_PREFIX}:dirty:${clean}`;
+  return `${readCachePrefix()}:dirty:${clean}`;
 }
 
 // Canonical dataset key generators
