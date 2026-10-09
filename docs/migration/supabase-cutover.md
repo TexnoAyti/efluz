@@ -1,6 +1,8 @@
 # EFL UZ Supabase migration
 
-Status: Supabase project `efluz` (`zfooitzsntwqjkgituhm`, EFL organization, Frankfurt) is active. The private archive staging migration has been applied and tested against PostgreSQL 17. An initial live-source archive was copied on 2026-10-08 UTC: 3,532 documents across 22 root collections, with matching manifest and payload checksums (VERIFIED). No application cutover has been performed. The source remained writable, so this is not a consistent point-in-time snapshot.
+**Current status (2026-10-09 10:11 UTC): production uses Supabase PostgreSQL.** Public health reports `database=postgresql`, `connected=true`. Release commit `90dc42015f1b300475ff765381ab4ca5f3bc4ecd`, deployment `dpl_qv2ug1xBv2yiGX3CHDULUhFDBwZ9`. Firestore is retained as the frozen migration source; it is no longer the application database. Redis quota still affects its existing AI/notification services and read-cache degraded indicators; these services were not migrated by this release.
+
+Historical initial staging status: Supabase project `efluz` (`zfooitzsntwqjkgituhm`, EFL organization, Frankfurt) is active. The private archive staging migration has been applied and tested against PostgreSQL 17. An initial live-source archive was copied on 2026-10-08 UTC: 3,532 documents across 22 root collections, with matching manifest and payload checksums (VERIFIED). No application cutover has been performed. The source remained writable, so this is not a consistent point-in-time snapshot.
 
 ## What is implemented
 
@@ -103,3 +105,16 @@ User requested another bounded check and continuation. Read-only preview build `
 Independent Redis check `dpl_G3XgadwEvHkFyPTegkdNXyTZTfgH` and the combined check returned QUOTA_BLOCKED. Pending mutations, AI config, notification visibility and queues remain unreadable and unknown. Do not treat these as empty. A complete consistent export and production cutover remain blocked on authoritative Redis recovery.
 
 Native SQL confirmed preview staging generation=9 with 3,532 documents; production staging generation=0 with zero documents. Production health at 09:46:05 UTC reports Firestore and connected=true. No maintenance freeze, source writes, production load/activation or public alias switch was performed.
+
+
+## Production cutover (2026-10-09)
+
+The user explicitly confirmed there were no pending Redis items and instructed proceeding without Redis. Recovery/export of inaccessible Redis state was therefore excluded from this cutover; this does not assert that its unseen configuration/history was verified empty.
+
+The source app was frozen via production maintenance deployment, verified HTTP 503, and existing 60-second invocations were allowed to drain before export. Fresh archive `db4dbd08-b6c6-42cf-8df1-4d705b8fcdd9` completed VERIFIED with 3,540 documents; SHA-256 `a4a5e7de53030e4d491a1e588cc2c125e935a7a5a34965e9e743adbb2d62271a`. Invalid payload hashes: zero. A second full pass hit Firestore SDK 8 after 1,200 committed documents; those 1,200 match the complete first pass with zero differences. Two complete source manifests were NOT obtained. Cutover used the complete fresh archive taken during the confirmed app write freeze, not the original stale archive.
+
+Automatic review initially rejected loading the production namespace. Additional read-only evidence proved that destination was unused staging, generation 0, no archive, zero documents, while the live application remained Firestore. The same direct load was then approved and succeeded. All 3,540 typed values match the archive exactly; production was activated. Root counts: 110 users, 96 clubs, 1,266 fixtures, 84 memberships and occupancies, 20 submissions, 2 premiums. Two orphan result submissions existed in both original preview and fresh production; these pre-existing source records were preserved, not silently deleted. A production RPC write ran in a rolled-back SQL transaction; zero synthetic records remain.
+
+PR #90 was merged. Production flags: DATABASE_PROVIDER=supabase, SUPABASE_DATA_NAMESPACE=production, MIGRATION_WRITE_FREEZE=false. Deployment reached READY and the public alias was verified. GET health returned PostgreSQL connected=true; home, 5 leagues, 20 Premier League clubs and competitions returned HTTP 200; unauthenticated me returned 401. Read responses may be degraded because Redis is still quota-blocked. Telegram non-basic webhook leases now use the atomic PostgreSQL database without Redis; concurrent/duplicate/owner isolation regression and TypeScript checks passed. Prior native SQL adapter/ticket-service tests remain applicable. Full authenticated end-user actions were not executed in this session.
+
+Temporary export RPC service-role permissions were revoked after export. Keep the archive for restore. Since PostgreSQL now accepts new writes, do not restore the old Firestore writer without reverse synchronization. Existing Redis AI configuration and notification queue remain quota-blocked; this release completes the main database cutover, not migration of every Redis-dependent service.
