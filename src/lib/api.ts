@@ -129,6 +129,7 @@ export function getTelegramInitData(): string {
 
 export class ApiError extends Error {
   httpStatus: number;
+  endpoint?: string;
   data?: any;
   isQuota?: boolean;
 
@@ -191,7 +192,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
   const method = (options.method || 'GET').toUpperCase();
   const isGet = method === 'GET';
   const cacheTtl = options.cacheTtlMs ?? (isGet ? 15000 : 0); // Default 15s cache for GETs to conserve free-tier quota
-  const timeoutMs = options.timeoutMs ?? 14000; // 14s timeout prevents indefinite hangs on slow mobile/Telegram connections
+  const timeoutMs = options.timeoutMs ?? (endpoint.startsWith('/api/admin/') ? 45000 : 14000);
 
   const authCacheIdentity = getSessionToken()?.slice(0, 32) || getTelegramInitData().slice(0, 32);
   const cacheKey = `${endpoint}::${getDevUserId() || ''}::${authCacheIdentity}`;
@@ -283,6 +284,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
         return data as T;
       } catch (err: any) {
         clearTimeout(timeoutId);
+        err.endpoint = endpoint.split('?')[0];
 
         // Stale cache preservation: If we have existing cached data for this GET request,
         // preserve and return it on network timeout or quota exhaustion rather than crashing the view

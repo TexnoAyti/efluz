@@ -331,9 +331,10 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
       setLoadedTabs((prev) => new Set(prev).add(tab));
     } catch (err: any) {
       console.error(`Failed to load admin data for ${tab}:`, err);
-      setError(err?.httpStatus === 503
+      const diagnostic = [err?.endpoint, err?.httpStatus ? `HTTP ${err.httpStatus}` : 'TIMEOUT/NETWORK', /^[A-Z_]+$/.test(err?.data?.errorCode || '') ? err.data.errorCode : null].filter(Boolean).join(' · ');
+      setError((err?.httpStatus === 503
         ? 'Admin ma’lumotlari vaqtincha mavjud emas (baza limiti yoki ulanish). Keyinroq qayta urinib ko‘ring.'
-        : 'Admin ma’lumotlarini yuklab bo‘lmadi. Qayta urinib ko‘ring.');
+        : 'Admin ma’lumotlarini yuklab bo‘lmadi. Qayta urinib ko‘ring.') + ` [${diagnostic}]`);
     } finally {
       setIsLoading(false);
     }

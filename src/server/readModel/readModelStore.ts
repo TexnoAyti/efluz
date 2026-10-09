@@ -1209,7 +1209,7 @@ export function normalizeFixtureSnapshot(doc: any, seasonId = 'season-2026-27'):
     };
 }
 
-export async function buildAdminFixturesSnapshot(seasonId = 'season-2026-27'): Promise<ReadModelSnapshot<Fixture[]>> {
+export async function buildAdminFixturesSnapshot(seasonId = 'season-2026-27', publishCompetitionSlices = true): Promise<ReadModelSnapshot<Fixture[]>> {
   const db = getFirestoreDb();
   let fixDocs: FirestoreFixtureDoc[] = [];
 
@@ -1255,6 +1255,10 @@ export async function buildAdminFixturesSnapshot(seasonId = 'season-2026-27'): P
 
   const key = ReadModelKeys.adminFixtures(seasonId);
   await persistReadSnapshot(key, snapshot, 86400);
+
+  // Interactive admin reads need one season snapshot, not a sequential rebuild
+  // of every competition. Competition reads can build their own slices.
+  if (!publishCompetitionSlices) return snapshot;
 
   // Group and persist per-competition fixture snapshots
   const compsSet = new Set(fixtures.map((f) => f.competitionId));
@@ -2026,7 +2030,7 @@ export async function getAdminFixturesFromReadModel(
     key: ReadModelKeys.adminFixtures(seasonId),
     seasonId,
     firestoreFetcher: async () => {
-      const snap = await buildAdminFixturesSnapshot(seasonId);
+      const snap = await buildAdminFixturesSnapshot(seasonId, false);
       return snap.data;
     },
     validateData: (fixtures) => Array.isArray(fixtures) && fixtures.length > 0,

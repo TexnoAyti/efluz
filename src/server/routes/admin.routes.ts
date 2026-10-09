@@ -427,6 +427,7 @@ adminRouter.get('/fixtures', async (req: Request, res: Response) => {
     });
   } catch (err: any) {
     if (err instanceof ReadModelNotWarmedError || err?.errorCode === 'READ_MODEL_NOT_WARMED') {
+      console.error('[ADMIN_FIXTURES_NOT_WARMED]', { seasonId, message: err?.message });
       res.status(503).json({
         errorCode: 'READ_MODEL_NOT_WARMED',
         message: 'Read model is not warmed and authoritative database is unreachable.',
