@@ -51,7 +51,12 @@ export async function postgresSnapshotTtl(key: string) {
 
 /** Patch a single row under the same transaction as fresh/LKG publication. */
 export async function patchPostgresSnapshot(fresh: string, lkg: string, dirty: string, row: any, merge: boolean, ttl: number, version: string): Promise<boolean> {
-  return getFirestoreDb().runTransaction(async tx => {
+  const db = getFirestoreDb();
+  // Native adapter sends a small row delta; the database patches both copies.
+  if (typeof (db as any).patchSnapshot === 'function') return (db as any).patchSnapshot(
+    [fresh,lkg,dirty].map(key => createHash('sha256').update(key).digest('hex')), row, merge, ttl, version
+  );
+  return db.runTransaction(async tx => {
     const previous = unpack((await tx.get(ref(lkg))).data())
       || unpack((await tx.get(ref(fresh))).data());
     if (!Array.isArray(previous?.data)) return false;

@@ -31,7 +31,7 @@ export function runtimeRpc(): RuntimeRpc {
   if(!url||!key||new URL(url).protocol!=='https:') throw new Error('SUPABASE_SERVER_CONFIG_REQUIRED');
   return async(name,body)=>{
     const started = Date.now();
-    const target = body.p_query?.collection || body.p_query?.path?.split('/').slice(0,-1).join('/') || 'commit';
+    const target = body.p_ids ? 'durable_read_snapshots' : body.p_operations?.map((op: any) => op.path.split('/').slice(0,-1).join('/')).filter((value: string, index: number, values: string[]) => values.indexOf(value) === index).join(',') || body.p_query?.collection || body.p_query?.path?.split('/').slice(0,-1).join('/') || 'commit';
     try {
     const response=await fetch(`${url.replace(/\/$/,'')}/rest/v1/rpc/${name}`,{
       method:'POST',headers:migrationHeaders(key),body:JSON.stringify(body),signal:AbortSignal.timeout(15000),
@@ -133,6 +133,9 @@ export class PostgresDocumentStore {
     return result;
   }
   write(operations:Write[],generation?:string){return this.rpc('efl_runtime_commit',{p_space:this.databaseId,p_operations:operations,p_generation:generation??null});}
+  patchSnapshot(ids: string[], row: any, merge: boolean, ttl: number, version: string): Promise<boolean> {
+    return this.rpc('efl_runtime_patch_snapshot', {p_space:this.databaseId,p_ids:ids,p_row:clean(row),p_merge:merge,p_ttl:ttl,p_version:version});
+  }
   async runTransaction<T>(callback:(transaction:Transaction)=>Promise<T>):Promise<T>{
     for(let attempt=0;attempt<7;attempt++){
       const tx=new Transaction(this);

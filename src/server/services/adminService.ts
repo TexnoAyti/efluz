@@ -16,7 +16,6 @@ import {
   adminDeleteResultSubmissionFirestore,
   getFixtureByIdFirestore,
 } from '../firebase/firestoreStore';
-import { refreshChangedFixtureReadModel } from '../readModel/readModelStore';
 import {
   addFixtureTombstone,
   removeFixtureFromDurableSnapshots,
@@ -76,7 +75,6 @@ export async function editFixtureResult(
   }
 ): Promise<{ success: boolean; message: string; fixture: Fixture; pendingSync?: boolean }> {
   const result = await adminEditFixtureResultFirestore(adminUserId, adminUsername, fixtureId, params);
-  await refreshChangedFixtureReadModel(fixtureId).catch(() => {});
   await refreshDerivedCompetitionState(result.fixture.competitionId, result.fixture.seasonId || 'season-2026-27').catch(() => {});
   return result;
 }
@@ -92,7 +90,6 @@ export async function deleteFixtureResult(
   }
 ): Promise<{ success: boolean; message: string; fixture: Fixture; pendingSync?: boolean }> {
   const result = await adminDeleteFixtureResultFirestore(adminUserId, adminUsername, fixtureId, options);
-  await refreshChangedFixtureReadModel(fixtureId).catch(() => {});
   await refreshDerivedCompetitionState(result.fixture.competitionId, result.fixture.seasonId || 'season-2026-27').catch(() => {});
   return result;
 }

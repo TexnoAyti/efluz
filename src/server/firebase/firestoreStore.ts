@@ -6513,9 +6513,10 @@ export async function adminEditFixtureResultFirestore(
 
     invalidateFirestoreCache();
     // Critical: propagate changed fixture and invalidate scoped read models
-    await refreshChangedFixtureReadModel(fixtureId).catch(() => {});
-    await invalidateFixtureReadModels(existing.competitionId, existing.seasonId || 'season-2026-27').catch(() => {});
-    await invalidateStandingsReadModels(existing.competitionId, existing.seasonId || 'season-2026-27').catch(() => {});
+    await refreshChangedFixtureReadModel(fixtureId).catch(async () => {
+      await invalidateFixtureReadModels(existing.competitionId, existing.seasonId || 'season-2026-27').catch(() => {});
+      await invalidateStandingsReadModels(existing.competitionId, existing.seasonId || 'season-2026-27').catch(() => {});
+    });
     console.log('[ADMIN_RESULT_READMODEL_REFRESHED]', JSON.stringify({ fixtureId, competitionId: existing.competitionId, seasonId: existing.seasonId }));
 
     const updated = await getFixtureByIdFirestore(fixtureId);
@@ -6758,9 +6759,10 @@ export async function adminDeleteFixtureResultFirestore(
     );
 
     invalidateFirestoreCache();
-    await refreshChangedFixtureReadModel(fixtureId).catch(() => {});
-    await invalidateFixtureReadModels(existing.competitionId, existing.seasonId || 'season-2026-27').catch(() => {});
-    await invalidateStandingsReadModels(existing.competitionId, existing.seasonId || 'season-2026-27').catch(() => {});
+    await refreshChangedFixtureReadModel(fixtureId).catch(async () => {
+      await invalidateFixtureReadModels(existing.competitionId, existing.seasonId || 'season-2026-27').catch(() => {});
+      await invalidateStandingsReadModels(existing.competitionId, existing.seasonId || 'season-2026-27').catch(() => {});
+    });
     console.log('[ADMIN_RESULT_READMODEL_REFRESHED]', JSON.stringify({ fixtureId, operation: 'ADMIN_DELETE_RESULT' }));
 
     const updated = await getFixtureByIdFirestore(fixtureId);
