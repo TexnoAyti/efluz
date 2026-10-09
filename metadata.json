@@ -1,0 +1,6 @@
+{
+  "name": "eFootball Tournament Platform",
+  "description": "Telegram Mini App & competitive eFootball tournament management system with real leagues, automated fixtures, live results, standings, knockout cups, and admin dispute center.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,3505 @@
+import { AdminMatchdayControl } from './admin/AdminMatchdayControl';
+import type { AdminPermissions } from '../types';
+import { permittedAdminLeagues } from '../lib/adminPermissions';
+import { getScopedAdminFixturePage } from '../lib/scopedAdminFixtures';
+import { matchesUserSearch } from '../lib/userSearch';
+import React, { useEffect, useState, useMemo } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { useI18n } from '../i18n';
+import { api } from '../lib/api';
+import { Dispute, AuditLog, Competition, User, Club, Fixture } from '../types';
+import { ClubCrest } from './ClubCrest';
+import {
+  AdminEditResultModal,
+  AdminDeleteResultModal,
+  AdminDeleteFixtureModal,
+} from './admin/AdminMatchModals';
+import {
+  AdminUserDetailModal,
+  AdminSetRoleModal,
+  AdminSuspendModal,
+  AdminDeleteUserModal,
+} from './admin/AdminUserModals';
+import { AdminSubmissionsSection } from './admin/AdminSubmissionsSection';
+import {
+  SlidersHorizontal,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  FileText,
+  Shield,
+  RefreshCw,
+  Sparkles,
+  Link,
+  Loader2,
+  Clock,
+  UserCheck,
+  Calendar,
+  Layers,
+  Award,
+  Globe2,
+  Trophy,
+  Database,
+  Search,
+  Filter,
+  Eye,
+  Activity,
+  RotateCcw,
+  ChevronRight,
+  ChevronLeft,
+  ChevronDown,
+  Info,
+  Sliders,
+  Check,
+  UserMinus,
+  UserPlus,
+  ExternalLink,
+  FileCheck,
+  X,
+  Flame,
+  ArrowRight,
+  Lock,
+  Unlock,
+  Trash2,
+  Edit3,
+  ShieldAlert,
+  ShieldCheck,
+  Ban,
+  UserX,
+  Send,
+  Bot,
+} from 'lucide-react';
+import { AdminDomesticCupsTab } from './admin/AdminDomesticCupsTab';
+import { AdminEuropeanTab } from './admin/AdminEuropeanTab';
+import { AdminTelegramTab } from './admin/AdminTelegramTab';
+import { AdminNotificationsTab } from './admin/AdminNotificationsTab';
+import { AdminTelegramAiTab } from './admin/AdminTelegramAiTab';
+import { AdminClubIntegrityPanel } from './admin/AdminClubIntegrityPanel';
+import { AdminClubAdmissionPanel } from './admin/AdminClubAdmissionPanel';
+import { AdminTicketManagementModal } from './customTournaments/AdminTicketManagementModal';
+
+type AdminTab = 'overview' | 'clubs' | 'matches' | 'results' | 'competitions' | 'domestic_cups' | 'european' | 'telegram' | 'telegram_ai' | 'notifications' | 'users' | 'system';
+
+interface PendingFixtureItem extends Fixture {
+  submissions?: {
+    id: string;
+    submittedByUserId: string;
+    submitterUsername: string;
+    submitterName: string;
+    clubId: string;
+    homeScore: number;
+    awayScore: number;
+    proofUrl?: string;
+    createdAt: string;
+  }[];
+}
+
+export const AdminView: React.FC = () => {
+  const { user } = useAuth();
+  const [dangerAllowed, setDangerAllowed] = useState(false);
+  const [permissions, setPermissions] = useState<AdminPermissions | null>(null);
+  const [error, setError] = useState('');
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    setPermissions(null); setDangerAllowed(false); setError('');
+    if (user?.isAdmin) api.getAdminAccess().then(result => { if (!cancelled) { setPermissions(result.adminPermissions); setDangerAllowed(result.canUseDangerZone === true); } }).catch(err => { if (!cancelled) setError(err.message); });
+    return () => { cancelled = true; };
+  }, [user?.id, user?.isAdmin, retry]);
+  if (!user?.isAdmin) return <FullAdminView />;
+  if (error) return <div role="alert" className="p-6 text-white">{error}<button className="ml-3 underline" onClick={() => setRetry(value => value + 1)}>Qayta tekshirish</button></div>;
+  if (!permissions) return <div role="status" className="p-6 text-slate-300">Ruxsatlar tekshirilmoqda...</div>;
+  return <FullAdminView key={JSON.stringify(permissions)} permissions={permissions} canUseDangerZone={dangerAllowed} />;
+};
+
+const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone?: boolean }> = ({ permissions, canUseDangerZone = false }) => {
+  const isScoped = Boolean(permissions && permissions.scope !== 'ALL');
+  const allowedLeagues = permittedAdminLeagues({ adminPermissions: permissions });
+  const [scopedFixtures, setScopedFixtures] = useState<Fixture[]>([]);
+  const { user, activeSeasonId, showToast } = useAuth();
+  const isPrimaryOwner = String(user?.telegramId || '').trim() === '5209126900';
+  const [showTicketManagement, setShowTicketManagement] = useState(false);
+  const { t, language } = useI18n();
+  const loc = (uz: string, ru: string, en: string) => ({ uz, ru, en })[language];
+
+  const [activeAdminTab, setActiveAdminTab] = useState<AdminTab>(isScoped ? 'matches' : 'overview');
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Core Data
+  const [overviewData, setOverviewData] = useState<any>(null);
+  const [disputes, setDisputes] = useState<Dispute[]>([]);
+  const [pendingResults, setPendingResults] = useState<PendingFixtureItem[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [competitions, setCompetitions] = useState<Competition[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [clubs, setClubs] = useState<Club[]>([]);
+  const [fixtures, setFixtures] = useState<Fixture[]>([]);
+  const [diagnostics, setDiagnostics] = useState<any>(null);
+  const [readCostReport, setReadCostReport] = useState<any>(null);
+  const [readCostLoading, setReadCostLoading] = useState(false);
+  const loadReadCostReport = async () => {
+    setReadCostLoading(true);
+    try {
+      const result = await api.getReadMetrics();
+      setReadCostReport(result.durable || null);
+    } catch {
+      setReadCostReport(null);
+    } finally {
+      setReadCostLoading(false);
+    }
+  };
+
+  // Filter States - Matches
+  const [matchCompFilter, setMatchCompFilter] = useState<string>('ALL');
+  const [matchStatusFilter, setMatchStatusFilter] = useState<string>('ALL');
+  const [matchClubFilter, setMatchClubFilter] = useState<string>('ALL');
+  const [matchdayFilter, setMatchdayFilter] = useState<string>('ALL');
+  const [matchSearch, setMatchSearch] = useState<string>('');
+  const [matchPage, setMatchPage] = useState<number>(1);
+  const [matchPageSize, setMatchPageSize] = useState<number>(25);
+  const [fixturesTotal, setFixturesTotal] = useState<number>(0);
+  const [fixturesNextCursor, setFixturesNextCursor] = useState<string | undefined>(undefined);
+  const [fixturesHasMore, setFixturesHasMore] = useState<boolean>(false);
+  const [pageCursors, setPageCursors] = useState<{ [page: number]: string | undefined }>({ 1: undefined });
+  const [isMatchesLoading, setIsMatchesLoading] = useState<boolean>(false);
+
+  // Match Action Modals
+  const [selectedFixtureForEditResult, setSelectedFixtureForEditResult] = useState<Fixture | null>(null);
+  const [selectedFixtureForDeleteResult, setSelectedFixtureForDeleteResult] = useState<Fixture | null>(null);
+  const [selectedFixtureForDelete, setSelectedFixtureForDelete] = useState<Fixture | null>(null);
+
+  // User Management Modals
+  const [selectedUserForDetail, setSelectedUserForDetail] = useState<User | null>(null);
+  const [selectedUserForRole, setSelectedUserForRole] = useState<User | null>(null);
+  const [selectedUserForSuspend, setSelectedUserForSuspend] = useState<User | null>(null);
+  const [selectedUserForDelete, setSelectedUserForDelete] = useState<User | null>(null);
+
+  // Results Sub-tabs ('pending' | 'disputes' | 'submissions')
+  const [resultsSubTab, setResultsSubTab] = useState<'pending' | 'disputes' | 'submissions'>('pending');
+
+  // Filter States - Clubs
+  const [clubLeagueFilter, setClubLeagueFilter] = useState<string>('ALL');
+  const [clubOccupancyFilter, setClubOccupancyFilter] = useState<string>('ALL');
+  const [clubSearch, setClubSearch] = useState<string>('');
+
+  // Filter States - Users
+  const [userSearch, setUserSearch] = useState<string>('');
+  const [userRoleFilter, setUserRoleFilter] = useState<string>('ALL');
+
+  // Club Ownership Management Modals
+  const [selectedClubForAssign, setSelectedClubForAssign] = useState<Club | null>(null);
+  const [assignTargetUserId, setAssignTargetUserId] = useState<string>('');
+  const [assignUserSearch, setAssignUserSearch] = useState<string>('');
+  const [selectedClubForRelease, setSelectedClubForRelease] = useState<Club | null>(null);
+
+  // Results Management Modals
+  const [selectedPendingForApprove, setSelectedPendingForApprove] = useState<PendingFixtureItem | null>(null);
+  const [approveHomeScore, setApproveHomeScore] = useState<number>(0);
+  const [approveAwayScore, setApproveAwayScore] = useState<number>(0);
+  const [approveNotes, setApproveNotes] = useState<string>('');
+
+  const [selectedPendingForReject, setSelectedPendingForReject] = useState<PendingFixtureItem | null>(null);
+  const [rejectNotes, setRejectNotes] = useState<string>('');
+
+  const [selectedPendingForInspect, setSelectedPendingForInspect] = useState<PendingFixtureItem | null>(null);
+
+  // Dispute Resolution Modal State
+  const [selectedDisputeForResolve, setSelectedDisputeForResolve] = useState<Dispute | null>(null);
+  const [manualHomeScore, setManualHomeScore] = useState<number>(0);
+  const [manualAwayScore, setManualAwayScore] = useState<number>(0);
+  const [resolutionNotes, setResolutionNotes] = useState<string>('');
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  // Fixture Reopen & Inspect State
+  const [selectedFixtureForReopen, setSelectedFixtureForReopen] = useState<Fixture | null>(null);
+  const [reopenNotes, setReopenNotes] = useState<string>('');
+  const [selectedFixtureForInspect, setSelectedFixtureForInspect] = useState<Fixture | null>(null);
+
+  // Competition Action State
+  const [generatingCompId, setGeneratingCompId] = useState<string | null>(null);
+  const [rebuildingStandingsCompId, setRebuildingStandingsCompId] = useState<string | null>(null);
+
+  // Fixture Validation Diagnostic State
+  const [fixtureValidationReport, setFixtureValidationReport] = useState<any>(null);
+  const [isValidatingFixtures, setIsValidatingFixtures] = useState(false);
+  const [showValidationModal, setShowValidationModal] = useState(false);
+
+  // Read Model Health & Rebuild State
+  const [readModelHealth, setReadModelHealth] = useState<any>(null);
+  const [isRebuildingReadModels, setIsRebuildingReadModels] = useState(false);
+  const readModelStatus = !readModelHealth ? 'UNKNOWN'
+    : readModelHealth.redisState !== 'CONNECTED' ? 'DOWN'
+    : readModelHealth.missingKeys?.length || readModelHealth.dirtyKeys?.length || readModelHealth.firestoreState !== 'CLOSED' ? 'DEGRADED' : 'HEALTHY';
+
+  const [readModelRebuildMsg, setReadModelRebuildMsg] = useState<string | null>(null);
+
+  const [loadedTabs, setLoadedTabs] = useState<Set<string>>(new Set());
+
+  const loadTabData = async (tab: AdminTab, skipCache = false) => {
+    if (!user?.isAdmin) {
+      setIsLoading(false);
+      return;
+    }
+    if (!skipCache && tab !== 'matches' && loadedTabs.has(tab)) {
+      // Warm tab navigation: preserve already fetched state with 0 reads
+      return;
+    }
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      if (isScoped && tab === 'results') {
+        const reviews = await api.getLeagueAdminReviews(activeSeasonId);
+        setPendingResults(reviews.pendingFixtures as PendingFixtureItem[]); setDisputes(reviews.disputes);
+      } else if (isScoped) {
+        const data = await api.getLeagueAdminOverview(activeSeasonId);
+        setClubs(data.clubs); setCompetitions(data.competitions); setScopedFixtures(data.fixtures);
+        if (tab === 'matches') {
+          const page = getScopedAdminFixturePage(data.fixtures, { competitionId: matchCompFilter, status: matchStatusFilter, clubId: matchClubFilter, matchday: matchdayFilter, search: matchSearch, limit: matchPageSize });
+          setFixtures(page.fixtures); setFixturesTotal(page.total); setFixturesHasMore(page.hasMore); setFixturesNextCursor(undefined); setMatchPage(1); setPageCursors({ 1: undefined });
+        }
+      } else if (tab === 'overview') {
+        const overviewRes = await api.getAdminOverview(activeSeasonId, skipCache);
+        if (overviewRes) {
+          setOverviewData(overviewRes);
+          if (overviewRes.openDisputes) setDisputes(overviewRes.openDisputes);
+          if (overviewRes.pendingFixturesPreview) setPendingResults(overviewRes.pendingFixturesPreview as any);
+        }
+      } else if (tab === 'clubs') {
+        const [clubsRes, usersRes] = await Promise.all([
+          api.getAdminClubs(activeSeasonId, undefined, skipCache),
+          users.length === 0 ? api.getAdminUserDirectory(skipCache) : Promise.resolve(null),
+        ]);
+        if (clubsRes?.clubs) setClubs(clubsRes.clubs);
+        if (usersRes?.users) setUsers(usersRes.users);
+      } else if (tab === 'matches') {
+        const [fixturesRes, compsRes, clubsRes] = await Promise.all([
+          api.getAdminFixtures(
+            {
+              seasonId: activeSeasonId,
+              competitionId: matchCompFilter !== 'ALL' ? matchCompFilter : undefined,
+              status: matchStatusFilter !== 'ALL' ? matchStatusFilter : undefined,
+              clubId: matchClubFilter !== 'ALL' ? matchClubFilter : undefined,
+              matchday: matchdayFilter !== 'ALL' ? parseInt(matchdayFilter, 10) : undefined,
+              search: matchSearch.trim() || undefined,
+              limit: matchPageSize,
+              page: 1,
+            },
+            undefined,
+            undefined,
+            undefined,
+            matchPageSize,
+            skipCache
+          ),
+          competitions.length === 0 ? api.getCompetitions(activeSeasonId, skipCache).catch(() => ({ competitions: [] })) : Promise.resolve(null),
+          clubs.length === 0 ? api.getAdminClubs(activeSeasonId, undefined, skipCache).catch(() => ({ clubs: [] })) : Promise.resolve(null),
+        ]);
+        if (fixturesRes?.fixtures) {
+          setFixtures(fixturesRes.fixtures);
+          setFixturesTotal(fixturesRes.total ?? fixturesRes.fixtures.length);
+          setFixturesNextCursor(fixturesRes.nextCursor);
+          setFixturesHasMore(Boolean(fixturesRes.hasMore));
+          setMatchPage(1);
+          setPageCursors({ 1: undefined, 2: fixturesRes.nextCursor });
+        }
+        if (compsRes?.competitions) setCompetitions(compsRes.competitions);
+        if (clubsRes?.clubs) setClubs(clubsRes.clubs);
+      } else if (tab === 'results') {
+        const [pendingRes, disputesRes] = await Promise.all([
+          api.getAdminPendingResults(activeSeasonId, skipCache),
+          api.getAdminDisputes('OPEN', skipCache).catch(() => ({ disputes: [] })),
+        ]);
+        if (pendingRes?.pendingFixtures) setPendingResults(pendingRes.pendingFixtures as any);
+        if (disputesRes?.disputes) setDisputes(disputesRes.disputes);
+      } else if (tab === 'competitions') {
+        const compsRes = await api.getCompetitions(activeSeasonId, skipCache);
+        if (compsRes?.competitions) setCompetitions(compsRes.competitions);
+      } else if (tab === 'users') {
+        const usersRes = await api.getAdminUserDirectory(skipCache);
+        if (usersRes?.users) setUsers(usersRes.users);
+      } else if (tab === 'system') {
+        const [diagRes, rmHealthRes] = await Promise.all([
+          api.getAdminDiagnostics().catch(() => null),
+          api.getReadModelHealth(activeSeasonId).catch(() => null),
+          loadReadCostReport(),
+        ]);
+        if (diagRes) setDiagnostics(diagRes);
+        if (rmHealthRes) setReadModelHealth(rmHealthRes);
+      }
+
+      setLoadedTabs((prev) => new Set(prev).add(tab));
+    } catch (err: any) {
+      console.error(`Failed to load admin data for ${tab}:`, err);
+      const diagnostic = [err?.endpoint, err?.httpStatus ? `HTTP ${err.httpStatus}` : 'TIMEOUT/NETWORK', /^[A-Z_]+$/.test(err?.data?.errorCode || '') ? err.data.errorCode : null].filter(Boolean).join(' · ');
+      setError((err?.httpStatus === 503
+        ? 'Admin ma’lumotlari vaqtincha mavjud emas (baza limiti yoki ulanish). Keyinroq qayta urinib ko‘ring.'
+        : 'Admin ma’lumotlarini yuklab bo‘lmadi. Qayta urinib ko‘ring.') + ` [${diagnostic}]`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRebuildReadModels = async () => {
+    setIsRebuildingReadModels(true);
+    setReadModelRebuildMsg(null);
+    try {
+      const res = await api.rebuildReadModels(activeSeasonId);
+      if (res?.success) {
+        setReadModelRebuildMsg(`${loc('Yangilandi', 'Обновлено', 'Updated')}: ${res.counts?.clubs ?? 0} ${loc('klub', 'клубов', 'clubs')}, ${res.counts?.fixtures ?? 0} ${loc('uchrashuv', 'матчей', 'fixtures')}, ${res.counts?.standings ?? 0} ${loc('jadval qatori', 'строк таблицы', 'standings rows')}. ${res.warmedLkgKeys?.length ?? 0} ${loc('nusxa', 'копий', 'snapshots')}.`);
+        const updatedHealth = await api.getReadModelHealth(activeSeasonId).catch(() => null);
+        if (updatedHealth) setReadModelHealth(updatedHealth);
+      } else {
+        setReadModelRebuildMsg(`${loc('Qayta tuzilmadi', 'Не удалось перестроить', 'Rebuild failed')}: ${res?.errors?.join('; ') || res?.error || loc('Noma’lum xato', 'Неизвестная ошибка', 'Unknown error')}`);
+      }
+    } catch (err: any) {
+      setReadModelRebuildMsg(`${loc('Qayta tuzilmadi', 'Не удалось перестроить', 'Rebuild failed')}: ${err.message}`);
+    } finally {
+      setIsRebuildingReadModels(false);
+    }
+  };
+
+  const loadAllAdminData = async (skipCache = false) => {
+    await loadTabData(activeAdminTab, skipCache);
+  };
+
+  useEffect(() => {
+    if (user?.isAdmin) {
+      loadTabData(activeAdminTab, false);
+    } else {
+      setIsLoading(false);
+    }
+  }, [activeAdminTab, activeSeasonId, user?.isAdmin]);
+
+  const fetchAdminMatches = async (targetPage = 1, cursor?: string, append = false, skipCache = false) => {
+    setIsMatchesLoading(true);
+    try {
+      const source = isScoped && skipCache ? await api.getLeagueAdminOverview(activeSeasonId) : null;
+      if (source) { setScopedFixtures(source.fixtures); setClubs(source.clubs); setCompetitions(source.competitions); }
+      const res = isScoped ? getScopedAdminFixturePage(source?.fixtures || scopedFixtures, { competitionId: matchCompFilter, status: matchStatusFilter, clubId: matchClubFilter, matchday: matchdayFilter, search: matchSearch, page: targetPage, limit: matchPageSize }) : await api.getAdminFixtures(
+        {
+          seasonId: activeSeasonId,
+          competitionId: matchCompFilter !== 'ALL' ? matchCompFilter : undefined,
+          status: matchStatusFilter !== 'ALL' ? matchStatusFilter : undefined,
+          clubId: matchClubFilter !== 'ALL' ? matchClubFilter : undefined,
+          matchday: matchdayFilter !== 'ALL' ? parseInt(matchdayFilter, 10) : undefined,
+          search: matchSearch.trim() || undefined,
+          cursor,
+          page: targetPage,
+          limit: matchPageSize,
+        },
+        undefined,
+        undefined,
+        undefined,
+        matchPageSize,
+        skipCache
+      );
+
+      if (append) {
+        setFixtures((prev) => [...prev, ...(res.fixtures || [])]);
+      } else {
+        setFixtures(res.fixtures || []);
+      }
+      setFixturesTotal(res.total ?? (res.fixtures?.length || 0));
+      setFixturesNextCursor(res.nextCursor);
+      setFixturesHasMore(Boolean(res.hasMore));
+      setMatchPage(targetPage);
+      if (res.nextCursor) {
+        setPageCursors((prev) => ({ ...prev, [targetPage + 1]: res.nextCursor }));
+      }
+    } catch (err: any) {
+      console.error('Failed to fetch admin matches:', err);
+      showToast('Failed to load fixtures for the selected criteria.', 'error');
+    } finally {
+      setIsMatchesLoading(false);
+    }
+  };
+
+  // Reset pagination and fetch page 1 when any match filter changes
+  useEffect(() => {
+    if (activeAdminTab === 'matches' && loadedTabs.has('matches')) {
+      const timer = setTimeout(() => {
+        setPageCursors({ 1: undefined });
+        fetchAdminMatches(1, undefined, false, !isScoped);
+      }, 250);
+      return () => clearTimeout(timer);
+    }
+  }, [matchCompFilter, matchStatusFilter, matchClubFilter, matchdayFilter, matchSearch, matchPageSize]);
+
+  useEffect(() => {
+    if (!isScoped || !selectedClubForAssign) return;
+    let cancelled = false;
+    setUsers([]); setAssignTargetUserId('');
+    if (assignUserSearch.trim().length < 2) return;
+    const timer = setTimeout(() => {
+      api.getLeagueAdminAssignees(assignUserSearch).then(data => { if (!cancelled) setUsers(data.users); }).catch(err => { if (!cancelled) showToast(err.message, 'error'); });
+    }, 250);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [isScoped, selectedClubForAssign?.id, assignUserSearch]);
+
+  // =========================================================================
+  // CLUB OWNERSHIP ACTIONS
+  // =========================================================================
+  const handleAssignClub = async () => {
+    if (!selectedClubForAssign || !assignTargetUserId) return;
+    setIsProcessing(true);
+    try {
+      const res = await api.adminAssignClub(selectedClubForAssign.id, assignTargetUserId, activeSeasonId);
+      showToast(res.message || `Club '${selectedClubForAssign.name}' successfully assigned.`, 'success');
+      setSelectedClubForAssign(null);
+      setAssignTargetUserId('');
+      setAssignUserSearch('');
+      await loadAllAdminData(true);
+    } catch (err: any) {
+      showToast(err.message || 'Failed to assign club.', 'error');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleReleaseClub = async () => {
+    if (!selectedClubForRelease) return;
+    setIsProcessing(true);
+    try {
+      const res = await api.adminReleaseClub(selectedClubForRelease.id, activeSeasonId);
+      showToast(res.message || `Club '${selectedClubForRelease.name}' has been released.`, 'success');
+      setSelectedClubForRelease(null);
+      await loadAllAdminData(true);
+    } catch (err: any) {
+      showToast(err.message || 'Failed to release club.', 'error');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // =========================================================================
+  // RESULTS & APPROVAL ACTIONS
+  // =========================================================================
+  const handleApproveResult = async () => {
+    if (!selectedPendingForApprove) return;
+    setIsProcessing(true);
+    try {
+      const res = await api.adminApproveResult(
+        selectedPendingForApprove.id,
+        approveHomeScore,
+        approveAwayScore,
+        approveNotes || 'Result approved and confirmed by competition administrator.'
+      );
+      showToast(res.message || 'Result confirmed and standings updated.', 'success');
+      setSelectedPendingForApprove(null);
+      setApproveNotes('');
+      await loadAllAdminData(true);
+    } catch (err: any) {
+      showToast(err.message || 'Failed to approve match result.', 'error');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleRejectResult = async () => {
+    if (!selectedPendingForReject) return;
+    setIsProcessing(true);
+    try {
+      const res = await api.adminRejectResult(
+        selectedPendingForReject.id,
+        rejectNotes || 'Submission rejected by tournament admin. Please re-enter correct score.'
+      );
+      showToast(res.message || 'Match reopened for fresh submission.', 'success');
+      setSelectedPendingForReject(null);
+      setRejectNotes('');
+      await loadAllAdminData(true);
+    } catch (err: any) {
+      showToast(err.message || 'Failed to reject result.', 'error');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Dispute Resolution Action
+  const handleResolveDispute = async (
+    action: 'CONFIRM_HOME_SUBMISSION' | 'CONFIRM_AWAY_SUBMISSION' | 'MANUAL_SCORE' | 'CANCEL_MATCH'
+  ) => {
+    if (!selectedDisputeForResolve) return;
+    setIsProcessing(true);
+    try {
+      await api.resolveAdminDispute(selectedDisputeForResolve.id, {
+        action,
+        manualHomeScore: action === 'MANUAL_SCORE' ? manualHomeScore : undefined,
+        manualAwayScore: action === 'MANUAL_SCORE' ? manualAwayScore : undefined,
+        notes: resolutionNotes || `Resolved with ${action} by tournament admin`,
+      });
+      showToast('Dispute resolved successfully! Standings and fixture updated.', 'success');
+      setSelectedDisputeForResolve(null);
+      setResolutionNotes('');
+      await loadAllAdminData(true);
+    } catch (err: any) {
+      showToast(err.message || 'Failed to resolve dispute.', 'error');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Reopen Fixture Action
+  const handleReopenFixture = async (fixtureId: string, notes?: string) => {
+    setIsProcessing(true);
+    try {
+      await api.reopenFixture(fixtureId, notes || 'Reopened by tournament administrator');
+      showToast('Fixture successfully reopened for fresh score submission.', 'success');
+      setSelectedFixtureForReopen(null);
+      setReopenNotes('');
+      await loadAllAdminData(true);
+    } catch (err: any) {
+      showToast(err.message || 'Failed to reopen fixture.', 'error');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Competition Actions
+  const handleGenerateCompetition = async (compId: string) => {
+    setGeneratingCompId(compId);
+    try {
+      const res = await api.generateCompetitionFixtures(compId, true);
+      showToast(res.message || 'Schedule generated and persisted in Firestore.', 'success');
+      await loadAllAdminData(true);
+    } catch (err: any) {
+      showToast(err.message || 'Failed to generate schedule.', 'error');
+    } finally {
+      setGeneratingCompId(null);
+    }
+  };
+
+  const handleRebuildStandings = async (compId: string) => {
+    setRebuildingStandingsCompId(compId);
+    try {
+      const res = isScoped ? await api.rebuildLeagueAdminStandings(compId, activeSeasonId) : await api.rebuildStandings(compId);
+      showToast(res.message || 'Standings recalculated from confirmed fixtures.', 'success');
+      await loadAllAdminData(true);
+    } catch (err: any) {
+      showToast(err.message || 'Failed to rebuild standings.', 'error');
+    } finally {
+      setRebuildingStandingsCompId(null);
+    }
+  };
+
+  const handleEvaluateQualifications = async () => {
+    setIsProcessing(true);
+    try {
+      const res = await api.evaluateSeasonQualifications(activeSeasonId);
+      showToast(res.message || 'European qualifications calculated and persisted!', 'success');
+      await loadAllAdminData(true);
+    } catch (err: any) {
+      showToast(err.message || 'Failed to evaluate qualifications.', 'error');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleRunFixtureValidation = async () => {
+    setIsValidatingFixtures(true);
+    try {
+      const report = await api.getFixtureValidationReport(activeSeasonId);
+      setFixtureValidationReport(report);
+      setShowValidationModal(true);
+      if (report.allValid) {
+        showToast('All 5 domestic leagues verified! 100% single round-robin compliance.', 'success');
+      } else {
+        showToast('Fixture validation finished with issues. See details.', 'info');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to run fixture validation.', 'error');
+    } finally {
+      setIsValidatingFixtures(false);
+    }
+  };
+
+  const handleSendMatchdayReminder = async (compId: string, matchday: number, deadlineAt?: string | null) => {
+    setIsProcessing(true);
+    try {
+      const res = await api.sendMatchdayReminders(compId, {
+        matchday,
+        seasonId: activeSeasonId,
+        deadlineAt: deadlineAt || null,
+      });
+      const status = res.overdue ? 'OVERDUE' : 'active deadline';
+      showToast(
+        `MD ${matchday} ${status}: ${res.queued}/${res.outstandingPlayers} outstanding player reminder(s) queued.`,
+        res.queued > 0 ? 'success' : 'info'
+      );
+    } catch (err: any) {
+      showToast(err.message || 'Failed to send matchday reminders.', 'error');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleSaveFixtureResult = async (params: { homeScore: number; awayScore: number; status?: string; notes?: string }) => {
+    if (!selectedFixtureForEditResult) return;
+    try {
+      const res = await api.adminEditFixtureResult(selectedFixtureForEditResult.id, params);
+      if (res.success) {
+        showToast(res.message || 'Fixture result updated and standings recalculated.', 'success');
+        setFixtures((prev) => prev.map((f) => (f.id === res.fixture.id ? { ...f, ...res.fixture } : f)));
+        if (isScoped) setScopedFixtures(prev => prev.map(f => f.id === res.fixture.id ? { ...f, ...res.fixture } : f));
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to update fixture result.', 'error');
+      throw err;
+    }
+  };
+
+  const handleDeleteFixtureResult = async (options: { deleteSubmissions: boolean; notes?: string }) => {
+    if (!selectedFixtureForDeleteResult) return;
+    try {
+      const res = await api.adminDeleteFixtureResult(selectedFixtureForDeleteResult.id, options);
+      if (res.success) {
+        showToast(res.message || 'Fixture result reset to SCHEDULED.', 'success');
+        setFixtures((prev) => prev.map((f) => (f.id === res.fixture.id ? { ...f, ...res.fixture } : f)));
+        if (isScoped) setScopedFixtures(prev => prev.map(f => f.id === res.fixture.id ? { ...f, ...res.fixture } : f));
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to reset fixture result.', 'error');
+      throw err;
+    }
+  };
+
+  const handleDeleteFixture = async (reason: string) => {
+    if (!selectedFixtureForDelete) return;
+    try {
+      const res = await api.adminDeleteFixture(selectedFixtureForDelete.id, reason);
+      if (res.success) {
+        showToast(res.message || 'Fixture deleted.', 'success');
+        setFixtures((prev) => prev.filter((f) => f.id !== selectedFixtureForDelete.id));
+        if (isScoped) setScopedFixtures(prev => prev.filter(f => f.id !== selectedFixtureForDelete.id));
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to delete fixture.', 'error');
+      throw err;
+    }
+  };
+
+  const handleSetUserRole = async (isAdmin: boolean, adminPermissions?: AdminPermissions) => {
+    if (!selectedUserForRole) return;
+    try {
+      const res = await api.adminSetUserRole(selectedUserForRole.id, isAdmin, adminPermissions);
+      if (res.success) {
+        showToast(res.message || 'User role updated.', 'success');
+        setUsers((prev) =>
+          prev.map((u) => (u.id === res.user.id ? { ...u, isAdmin: res.user.isAdmin, adminPermissions: res.user.adminPermissions } : u))
+        );
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to change user role.', 'error');
+      throw err;
+    }
+  };
+
+  const handleSetUserSuspension = async (isSuspended: boolean, reason?: string) => {
+    if (!selectedUserForSuspend) return;
+    try {
+      const res = await api.adminSetUserSuspension(selectedUserForSuspend.id, isSuspended, reason);
+      if (res.success) {
+        showToast(res.message || 'User suspension status updated.', 'success');
+        setUsers((prev) =>
+          prev.map((u) => (u.id === res.user.id ? { ...u, isSuspended: res.user.isSuspended } : u))
+        );
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to update user suspension.', 'error');
+      throw err;
+    }
+  };
+
+  const handleDeleteUser = async (reason?: string) => {
+    if (!selectedUserForDelete) return;
+    try {
+      const res = await api.adminDeleteUser(selectedUserForDelete.id, reason);
+      if (res.success) {
+        showToast(res.message || 'User safely deleted.', 'success');
+        setUsers((prev) => prev.filter((u) => u.id !== selectedUserForDelete.id));
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to delete user.', 'error');
+      throw err;
+    }
+  };
+
+  // =========================================================================
+  // FILTERED DATASETS
+  // =========================================================================
+  const totalMatchPages = useMemo(() => {
+    if (matchPageSize <= 0) return 1;
+    return Math.ceil(fixturesTotal / matchPageSize) || 1;
+  }, [fixturesTotal, matchPageSize]);
+
+  // Server-side cursor pagination: paginatedFixtures is directly the server paged fixtures
+  const paginatedFixtures = fixtures;
+
+  const filteredClubs = useMemo(() => {
+    return clubs.filter((c) => {
+      if (clubLeagueFilter !== 'ALL' && c.leagueId !== clubLeagueFilter) return false;
+      if (clubOccupancyFilter === 'OCCUPIED' && !c.isTaken && !c.claimedByUserId) return false;
+      if (clubOccupancyFilter === 'AVAILABLE' && (c.isTaken || c.claimedByUserId)) return false;
+      if (clubSearch.trim()) {
+        const q = clubSearch.toLowerCase();
+        const nameMatch = c.name.toLowerCase().includes(q) || c.shortName.toLowerCase().includes(q);
+        const managerMatch = c.claimedByUsername?.toLowerCase().includes(q) || c.managerUsername?.toLowerCase().includes(q);
+        if (!nameMatch && !managerMatch) return false;
+      }
+      return true;
+    });
+  }, [clubs, clubLeagueFilter, clubOccupancyFilter, clubSearch]);
+
+  const filteredUsers = useMemo(() => {
+    return users.filter((u) => {
+      if (userRoleFilter === 'ADMIN' && !u.isAdmin) return false;
+      if (userRoleFilter === 'PLAYER' && u.isAdmin) return false;
+      if (userRoleFilter === 'SUSPENDED' && !u.isSuspended) return false;
+      if (!matchesUserSearch(u, userSearch)) return false;
+      return true;
+    });
+  }, [users, userRoleFilter, userSearch]);
+
+  const assignableUsers = useMemo(() => users.filter(user => matchesUserSearch(user, assignUserSearch)).slice(0, assignUserSearch.trim() ? 20 : 15), [users, assignUserSearch]);
+
+  // Clean, official competition categorization
+  const groupedCompetitions = useMemo(() => {
+    // 1. Domestic Leagues (5)
+    const domesticLeagues = competitions.filter(
+      (c) =>
+        c.type === 'LEAGUE' ||
+        (c.type as string) === 'league' ||
+        c.id.includes('premier-league') ||
+        c.id.includes('la-liga') ||
+        c.id.includes('serie-a') ||
+        c.id.includes('bundesliga') ||
+        c.id.includes('ligue-1')
+    );
+
+    // 2. Domestic Cups (5)
+    const domesticCups = competitions.filter(
+      (c) =>
+        c.id.includes('fa-cup') ||
+        c.id.includes('copa-del-rey') ||
+        c.id.includes('coppa-italia') ||
+        c.id.includes('dfb-pokal') ||
+        c.id.includes('coupe-de-france')
+    );
+
+    // 3. Super Cups (5) - strictly exclude Trophée des Champions
+    const superCups = competitions.filter(
+      (c) =>
+        (c.id.includes('community-shield') ||
+          c.id.includes('supercopa-espana') ||
+          c.id.includes('supercoppa-italiana') ||
+          c.id.includes('dfl-supercup') ||
+          c.id.includes('uefa-super-cup')) &&
+        !c.id.includes('trophee-des-champions')
+    );
+
+    // 4. European Competitions (2: UCL & UEL)
+    const european = competitions.filter(
+      (c) =>
+        (c.id.includes('champions-league') || c.id.includes('europa-league') || c.id.includes('ucl') || c.id.includes('uel')) &&
+        !c.id.includes('conference-league') &&
+        !c.id.includes('uecl') &&
+        !c.id.includes('uefa-super-cup')
+    );
+
+    return { domesticLeagues, domesticCups, superCups, european };
+  }, [competitions]);
+
+  // Match Status Metrics
+  const matchMetrics = useMemo(() => {
+    const upcoming = fixtures.filter((f) => f.status === 'SCHEDULED' || f.status === 'AWAITING_RESULT').length;
+    const completed = fixtures.filter((f) => f.status === 'CONFIRMED').length;
+    const pendingConfirm = fixtures.filter((f) => f.status === 'PENDING_CONFIRMATION').length;
+    const disputed = fixtures.filter((f) => f.status === 'DISPUTED').length;
+    const postponed = fixtures.filter((f) => f.status === 'POSTPONED').length;
+    return { upcoming, completed, pendingConfirm, disputed, postponed };
+  }, [fixtures]);
+
+  const occupiedClubsCount = clubs.filter((c) => c.isTaken || c.claimedByUserId).length;
+  const availableClubsCount = Math.max(0, (clubs.length || 96) - occupiedClubsCount);
+
+  // Unauthorized Screen
+  if (!user?.isAdmin) {
+    return (
+      <div className="py-16 px-4 max-w-lg mx-auto text-center animate-in fade-in duration-300">
+        <div className="w-16 h-16 rounded-3xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 mx-auto mb-4 shadow-xl">
+          <Shield className="w-8 h-8" />
+        </div>
+        <h3 className="text-lg font-black text-white">{t.adminAuthorizationRequired}</h3>
+        <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+          The active account (Telegram ID: <span className="font-mono text-emerald-400 font-bold">{user?.telegramId || 'Unauthenticated'}</span>, Username: <span className="font-mono text-emerald-400 font-bold">@{user?.username || 'player'}</span>) does not possess administrative privileges.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5 animate-in fade-in duration-300 pb-24 max-w-7xl mx-auto">
+      {isPrimaryOwner && (
+        <AdminTicketManagementModal
+          isOpen={showTicketManagement}
+          onClose={() => setShowTicketManagement(false)}
+        />
+      )}
+      {/* ========================================================================= */}
+      {/* TOP HEADER & SYSTEM BANNER */}
+      {/* ========================================================================= */}
+      <div className="glass-panel p-4 sm:p-6 shadow-2xl relative overflow-hidden border-slate-800">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center gap-1">
+                <Shield className="w-3 h-3" />
+                {t.adminPanel}
+              </span>
+              {isScoped && <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/15 text-emerald-300 border border-emerald-500/20">{allowedLeagues.map(league => league.name).join(', ')}</span>}
+              <span className="text-[11px] font-semibold text-slate-400">
+                {t.adminOfficer}: <strong className="text-emerald-400">@{user?.username}</strong> ({user?.id})
+              </span>
+              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/15 text-emerald-300 border border-emerald-500/20 font-mono">
+                {t.season} 2026/27 · FAOL
+              </span>
+            </div>
+            <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2.5">
+              <SlidersHorizontal className="w-6 h-6 text-amber-400 shrink-0" />
+              <span>{t.adminDashboardTitle}</span>
+            </h1>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              id="btn-admin-refresh-data"
+              onClick={() => loadAllAdminData(true)}
+              disabled={isLoading}
+              className="px-4 py-2 glass-card text-slate-200 hover:text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-md min-h-[40px] touch-manipulation hover:border-emerald-500/40"
+            >
+              <RefreshCw className={`w-4 h-4 text-emerald-400 ${isLoading ? 'animate-spin' : ''}`} />
+              <span>{t.adminRefreshCenter}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Global Error Banner if any */}
+        {error && (
+          <div className="mt-4 p-3 bg-rose-950/70 border border-rose-500/40 rounded-xl flex items-center justify-between gap-2 text-xs text-rose-200">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+              <span>{error}</span>
+            </div>
+            <button
+              onClick={() => loadAllAdminData(true)}
+              className="px-2.5 py-1 bg-rose-800 hover:bg-rose-700 text-white rounded-lg font-bold text-[11px]"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+        {overviewData?.degraded && !error && (
+          <div role="status" className="mt-4 rounded-xl border border-amber-500/40 bg-amber-950/50 p-3 text-xs font-semibold text-amber-100">
+            Ma’lumotlar bazasi vaqtincha cheklangan. Bu ko‘rsatkichlar eski nusxadan olingan bo‘lishi mumkin; o‘zgartirish amallari vaqtincha ishlamaydi.
+          </div>
+        )}
+      </div>
+
+      {/* ========================================================================= */}
+      {/* SECTION TABS (HIGH DENSITY NAVIGATION) */}
+      {/* ========================================================================= */}
+      <p className="px-1 text-[11px] font-semibold text-slate-400 sm:hidden">{t.adminSectionsHint}</p>
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+        {/* 1. OVERVIEW */}
+        {!isScoped && (<button
+          id="tab-admin-overview"
+          onClick={() => setActiveAdminTab('overview')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all min-h-[40px] ${
+            activeAdminTab === 'overview'
+              ? 'bg-amber-500 text-slate-950 font-black shadow-lg shadow-amber-500/25 scale-[1.02]'
+              : 'glass-card text-slate-300 hover:text-white'
+          }`}
+        >
+          <Activity className="w-4 h-4" />
+          <span>{t.adminOverview}</span>
+          {pendingResults.length > 0 && (
+            <span className="px-1.5 py-0.2 bg-amber-600 text-slate-950 rounded-full font-black text-[10px]">
+              {pendingResults.length}
+            </span>
+          )}
+        </button>)}
+
+        {/* 2. CLUBS */}
+        <button
+          id="tab-admin-clubs"
+          onClick={() => setActiveAdminTab('clubs')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all min-h-[40px] ${
+            activeAdminTab === 'clubs'
+              ? 'btn-glass-primary text-slate-950 font-black shadow-lg shadow-emerald-500/25 scale-[1.02]'
+              : 'glass-card text-slate-300 hover:text-white'
+          }`}
+        >
+          <Shield className="w-4 h-4" />
+          <span>Clubs ({isScoped ? clubs.length : clubs.length || 96})</span>
+        </button>
+
+        {/* 3. MATCHES */}
+        <button
+          id="tab-admin-matches"
+          onClick={() => setActiveAdminTab('matches')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all min-h-[40px] ${
+            activeAdminTab === 'matches'
+              ? 'btn-glass-primary text-slate-950 font-black shadow-lg shadow-emerald-500/25 scale-[1.02]'
+              : 'glass-card text-slate-300 hover:text-white'
+          }`}
+        >
+          <Calendar className="w-4 h-4" />
+          <span>Matches ({fixturesTotal || fixtures.length})</span>
+        </button>
+
+        {/* 4. RESULTS */}
+        <button
+          id="tab-admin-results"
+          onClick={() => setActiveAdminTab('results')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all min-h-[40px] ${
+            activeAdminTab === 'results'
+              ? 'bg-rose-500 text-slate-950 font-black shadow-lg shadow-rose-500/25 scale-[1.02]'
+              : 'glass-card text-slate-300 hover:text-white'
+          }`}
+        >
+          <FileCheck className="w-4 h-4" />
+          <span>{t.adminResultsReview}</span>
+          {(pendingResults.length > 0 || disputes.length > 0) && (
+            <span className="px-1.5 py-0.2 bg-rose-600 text-white rounded-full font-black text-[10px] animate-pulse">
+              {pendingResults.length + disputes.length}
+            </span>
+          )}
+        </button>
+
+        {/* 5. COMPETITIONS */}
+        <button
+          id="tab-admin-competitions"
+          onClick={() => setActiveAdminTab('competitions')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all min-h-[40px] ${
+            activeAdminTab === 'competitions'
+              ? 'btn-glass-primary text-slate-950 font-black shadow-lg shadow-emerald-500/25 scale-[1.02]'
+              : 'glass-card text-slate-300 hover:text-white'
+          }`}
+        >
+          <Trophy className="w-4 h-4" />
+          <span>{t.adminCompetitions}</span>
+        </button>
+
+        {/* 5A. DOMESTIC CUPS */}
+        <button
+          id="tab-admin-domestic-cups"
+          onClick={() => setActiveAdminTab('domestic_cups')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all min-h-[40px] ${
+            activeAdminTab === 'domestic_cups'
+              ? 'bg-amber-500 text-slate-950 font-black shadow-lg shadow-amber-500/25 scale-[1.02]'
+              : 'glass-card text-slate-300 hover:text-white'
+          }`}
+        >
+          <Trophy className="w-4 h-4 text-amber-400" />
+          <span>{t.adminDomesticCups}</span>
+        </button>
+
+        {/* 5B. EUROPEAN (UCL & UEL) */}
+        {!isScoped && (<button
+          id="tab-admin-european"
+          onClick={() => setActiveAdminTab('european')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all min-h-[40px] ${
+            activeAdminTab === 'european'
+              ? 'bg-blue-600 text-white font-black shadow-lg shadow-blue-600/25 scale-[1.02]'
+              : 'glass-card text-slate-300 hover:text-white'
+          }`}
+        >
+          <Globe2 className="w-4 h-4 text-blue-300" />
+          <span>{t.adminEuropeanCompetitions}</span>
+        </button>)}
+
+        {/* 5C. TELEGRAM NOTIFICATIONS */}
+        {!isScoped && (<button
+          id="tab-admin-telegram"
+          onClick={() => setActiveAdminTab('telegram')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all min-h-[40px] ${
+            activeAdminTab === 'telegram'
+              ? 'bg-sky-500 text-slate-950 font-black shadow-lg shadow-sky-500/25 scale-[1.02]'
+              : 'glass-card text-slate-300 hover:text-white'
+          }`}
+        >
+          <Send className="w-4 h-4 text-sky-400" />
+          <span>{t.adminTelegramBot}</span>
+        </button>)}
+
+        {/* 5D. TELEGRAM AI ASSISTANT */}
+        {!isScoped && (<button
+          id="tab-admin-telegram-ai"
+          onClick={() => setActiveAdminTab('telegram_ai')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all min-h-[40px] ${
+            activeAdminTab === 'telegram_ai'
+              ? 'btn-glass-primary text-slate-950 font-black shadow-lg shadow-emerald-500/25 scale-[1.02]'
+              : 'glass-card text-slate-300 hover:text-white'
+          }`}
+        >
+          <Bot className="w-4 h-4 text-emerald-400" />
+          <span>Telegram AI</span>
+        </button>)}
+
+        {/* 6. PLAYERS */}
+        {isPrimaryOwner && (
+          <button
+            id="button-admin-tournament-tickets"
+            type="button"
+            onClick={() => setShowTicketManagement(true)}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap min-h-[44px] glass-card text-slate-300 hover:text-white"
+          >
+            <Layers className="w-4 h-4 text-amber-400" />
+            <span>{loc('Turnir chiptalari', 'Билеты турниров', 'Tournament tickets')}</span>
+          </button>
+        )}
+        {!isScoped && (<button id="tab-admin-notifications" onClick={() => setActiveAdminTab('notifications')} className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap min-h-[40px] ${activeAdminTab === 'notifications' ? 'bg-sky-500 text-slate-950' : 'glass-card text-slate-300 hover:text-white'}`}>
+          <Eye className="w-4 h-4" /><span>{loc('Bildirishnomalar', 'Уведомления', 'Notifications')}</span>
+        </button>)}
+        {!isScoped && (<button
+          id="tab-admin-users"
+          onClick={() => setActiveAdminTab('users')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all min-h-[40px] ${
+            activeAdminTab === 'users'
+              ? 'btn-glass-primary text-slate-950 font-black shadow-lg shadow-emerald-500/25 scale-[1.02]'
+              : 'glass-card text-slate-300 hover:text-white'
+          }`}
+        >
+          <UserCheck className="w-4 h-4" />
+          <span>{t.adminPlayers} ({users.length})</span>
+        </button>)}
+
+        {/* 7. SYSTEM & AUDIT */}
+        {!isScoped && (<button
+          id="tab-admin-system"
+          onClick={() => setActiveAdminTab('system')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all min-h-[40px] ${
+            activeAdminTab === 'system'
+              ? 'btn-glass-primary text-slate-950 font-black shadow-lg shadow-emerald-500/25 scale-[1.02]'
+              : 'glass-card text-slate-300 hover:text-white'
+          }`}
+        >
+          <Database className="w-4 h-4" />
+          <span>{t.adminSystemDiagnostics}</span>
+        </button>)}
+      </div>
+
+      {/* ========================================================================= */}
+      {/* 1. OVERVIEW SECTION */}
+      {/* ========================================================================= */}
+      {activeAdminTab === 'overview' && (
+        <div className="space-y-6">
+          {/* Top KPI Metrics Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {/* Active Season */}
+            <div className="glass-card p-4 rounded-2xl relative overflow-hidden border-emerald-500/30">
+              <div className="text-[10px] font-black text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5" />
+                Faol mavsum
+              </div>
+              <div className="text-xl sm:text-2xl font-black text-white mt-1">2026/27</div>
+              <div className="text-[10px] text-emerald-400 font-semibold mt-0.5">Holat: FAOL • 5 ta liga</div>
+            </div>
+
+            {/* Total Users */}
+            <div className="glass-card p-4 rounded-2xl relative overflow-hidden border-slate-800">
+              <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                <UserCheck className="w-3.5 h-3.5" />
+                Ro‘yxatdan o‘tgan foydalanuvchilar
+              </div>
+              <div className="text-xl sm:text-2xl font-black text-white mt-1 tabular-nums">
+                {overviewData?.counts?.totalUsers || users.length || 0}
+              </div>
+              <div className="text-[10px] text-slate-400 mt-0.5">Telegram tasdiqlagan o‘yinchilar</div>
+            </div>
+
+            {/* Registered Clubs (96) */}
+            <div className="glass-card p-4 rounded-2xl relative overflow-hidden border-slate-800">
+              <div className="text-[10px] font-black text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Shield className="w-3.5 h-3.5" />
+                Ro‘yxatdan o‘tgan klublar
+              </div>
+              <div className="text-xl sm:text-2xl font-black text-white mt-1 tabular-nums">96</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">
+                <span className="text-emerald-400 font-bold">{occupiedClubsCount} Occupied</span> •{' '}
+                <span className="text-amber-400 font-bold">{availableClubsCount} Available</span>
+              </div>
+            </div>
+
+            {/* Active Competitions */}
+            <div className="glass-card p-4 rounded-2xl relative overflow-hidden border-amber-500/30">
+              <div className="text-[10px] font-black text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Trophy className="w-3.5 h-3.5" />
+                Faol musobaqalar
+              </div>
+              <div className="text-xl sm:text-2xl font-black text-white mt-1 tabular-nums">{competitions.length}</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">{competitions.filter((c) => c.type === 'LEAGUE').length} liga • {competitions.filter((c) => c.type === 'KNOCKOUT').length} kubok • {competitions.filter((c) => c.type === 'SUPER_CUP').length} superkubok • {competitions.filter((c) => c.type === 'EUROPEAN_LEAGUE_PHASE' || c.type === 'EUROPEAN_KNOCKOUT').length} UEFA</div>
+            </div>
+          </div>
+
+          {/* Match & Result KPI Row */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {/* Upcoming Matches */}
+            <div className="glass-card p-4 rounded-2xl border-slate-800">
+              <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Kutilayotgan o‘yinlar</div>
+              <div className="text-xl font-black text-white mt-1 tabular-nums">{matchMetrics.upcoming}</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">Rejalashtirilgan va jarayondagi</div>
+            </div>
+
+            {/* Completed Matches */}
+            <div className="glass-card p-4 rounded-2xl border-slate-800">
+              <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Yakunlangan o‘yinlar</div>
+              <div className="text-xl font-black text-emerald-400 mt-1 tabular-nums">{matchMetrics.completed}</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">Tasdiqlangan va jadvalda</div>
+            </div>
+
+            {/* Pending Confirmations */}
+            <div className="glass-card p-4 rounded-2xl border-amber-500/30 bg-amber-950/10">
+              <div className="text-[10px] font-black text-amber-400 uppercase tracking-wider flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                Tasdiq kutilmoqda
+              </div>
+              <div className="text-xl font-black text-amber-300 mt-1 tabular-nums">{pendingResults.length}</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">Ko‘rib chiqish yoki tasdiq kutilmoqda</div>
+            </div>
+
+            {/* Open Disputes */}
+            <div className="glass-card p-4 rounded-2xl border-rose-500/30 bg-rose-950/10">
+              <div className="text-[10px] font-black text-rose-400 uppercase tracking-wider flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" />
+                Ochiq bahslar
+              </div>
+              <div className="text-xl font-black text-rose-300 mt-1 tabular-nums">{disputes.length}</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">Hisoblar mos kelmagan</div>
+            </div>
+          </div>
+
+          {/* ACTION CENTER / NEEDS ATTENTION */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xs font-black uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                <Flame className="w-4 h-4 text-amber-400" />
+                <span>Action Center • Urgent Reviews ({pendingResults.length + disputes.length})</span>
+              </h2>
+              <button
+                onClick={() => setActiveAdminTab('results')}
+                className="text-xs text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1"
+              >
+                <span>View Results Center</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {pendingResults.length === 0 && disputes.length === 0 ? (
+              <div className="glass-panel p-6 text-center border-emerald-500/30 bg-emerald-950/10 shadow-xl">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 mx-auto mb-2">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+                <h3 className="text-sm font-bold text-white">All Tournament Matches Clear</h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  No pending score submissions or unresolved match disputes require administrator attention.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {/* Pending Results Preview */}
+                {pendingResults.slice(0, 4).map((fix) => (
+                  <div key={fix.id} className="glass-card p-4 rounded-xl border-amber-500/30 space-y-2">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-bold text-amber-400 uppercase tracking-wide">
+                        {fix.competitionName || 'Tournament'} • MD {fix.matchday}
+                      </span>
+                      <span className="px-2 py-0.5 rounded text-[9px] font-black bg-amber-500/20 text-amber-300">
+                        {fix.status}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs py-1">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <ClubCrest clubId={fix.homeClubId} logoUrl={fix.homeClub?.logoUrl} name={fix.homeClub?.name} size="xs" />
+                        <span className="font-bold text-white truncate">{fix.homeClub?.name}</span>
+                      </div>
+                      <span className="font-black text-slate-400 px-2">vs</span>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="font-bold text-white truncate">{fix.awayClub?.name}</span>
+                        <ClubCrest clubId={fix.awayClubId} logoUrl={fix.awayClub?.logoUrl} name={fix.awayClub?.name} size="xs" />
+                      </div>
+                    </div>
+
+                    {fix.submissions && fix.submissions.length > 0 && (
+                      <div className="text-[11px] text-slate-400 bg-slate-950/60 p-2 rounded-lg border border-white/[0.05]">
+                        Claimed: <strong className="text-emerald-400 font-mono">{fix.submissions[0].homeScore} - {fix.submissions[0].awayScore}</strong> by @{fix.submissions[0].submitterUsername}
+                      </div>
+                    )}
+
+                    <button
+                      onClick={() => {
+                        setSelectedPendingForApprove(fix);
+                        setApproveHomeScore(fix.submissions?.[0]?.homeScore ?? 0);
+                        setApproveAwayScore(fix.submissions?.[0]?.awayScore ?? 0);
+                      }}
+                      className="w-full py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-xs font-black transition-all shadow"
+                    >
+                      Review & Confirm
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Quick Shortcuts Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+            <button
+              onClick={() => setActiveAdminTab('clubs')}
+              className="glass-card p-4 rounded-xl text-left hover:border-emerald-500/40 transition-all space-y-1 group"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <Shield className="w-4 h-4 text-emerald-400" />
+                  Manage 96 Clubs
+                </span>
+                <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-emerald-400 transition-colors" />
+              </div>
+              <p className="text-[11px] text-slate-400">
+                Inspect club owners, availability, assign new players or release occupied teams.
+              </p>
+            </button>
+
+            <button
+              onClick={() => setActiveAdminTab('matches')}
+              className="glass-card p-4 rounded-xl text-left hover:border-emerald-500/40 transition-all space-y-1 group"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4 text-emerald-400" />
+                  Match Engine
+                </span>
+                <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-emerald-400 transition-colors" />
+              </div>
+              <p className="text-[11px] text-slate-400">
+                Inspect schedule across all {competitions.length} tournaments, check scores, reopen matches if needed.
+              </p>
+            </button>
+
+            <button
+              onClick={handleEvaluateQualifications}
+              disabled={isProcessing}
+              className="glass-card p-4 rounded-xl text-left hover:border-emerald-500/40 transition-all space-y-1 group"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-amber-400" />
+                  European Qualifications
+                </span>
+                <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-amber-400 transition-colors" />
+              </div>
+              <p className="text-[11px] text-slate-400">
+                Calculate UEFA Champions League and Europa League (32-team format) allocations.
+              </p>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 2. CLUBS SECTION */}
+      {/* ========================================================================= */}
+      {activeAdminTab === 'clubs' && (
+        <div className="space-y-4">
+          {!isScoped && <AdminClubAdmissionPanel seasonId={activeSeasonId} />}
+          <AdminClubIntegrityPanel clubs={clubs} />
+          {/* Controls Bar */}
+          <div className="glass-panel p-4 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-black text-white flex items-center gap-2">
+                  <Shield className="w-4 h-4 text-emerald-400" />
+                  <span>{isScoped ? `${clubs.length} ${loc('klub', 'клубов', 'clubs')} · ${allowedLeagues.map(league => league.name).join(', ')}` : '96 Official European Clubs'}</span>
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Safely manage club occupancy, assign registered users, or release clubs. Deletion is protected.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 text-xs font-bold">
+                <span className="px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/20">
+                  {occupiedClubsCount} Occupied
+                </span>
+                <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300">
+                  {availableClubsCount} Available
+                </span>
+              </div>
+            </div>
+
+            {/* Filter Row */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-white/[0.06]">
+              {/* Search */}
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={clubSearch}
+                  onChange={(e) => setClubSearch(e.target.value)}
+                  placeholder="Search club name or owner..."
+                  className="w-full pl-9 pr-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              {/* League Filter */}
+              <select
+                value={clubLeagueFilter}
+                onChange={(e) => setClubLeagueFilter(e.target.value)}
+                className="px-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-semibold"
+              >
+                <option value="ALL">{isScoped ? loc('Ruxsat berilgan ligalar', 'Доступные лиги', 'Permitted leagues') : 'All Leagues (96 Clubs)'}</option>
+                {allowedLeagues.map(league => <option key={league.id} value={league.id}>{league.name}</option>)}
+              </select>
+
+              {/* Occupancy Filter */}
+              <select
+                value={clubOccupancyFilter}
+                onChange={(e) => setClubOccupancyFilter(e.target.value)}
+                className="px-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-semibold"
+              >
+                <option value="ALL">All Availability</option>
+                <option value="OCCUPIED">Occupied Only</option>
+                <option value="AVAILABLE">Available Only</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Clubs Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            {filteredClubs.map((club) => {
+              const isOccupied = club.isTaken || Boolean(club.claimedByUserId);
+              return (
+                <div
+                  key={club.id}
+                  className={`glass-card p-3.5 rounded-2xl flex flex-col justify-between space-y-3 transition-all border ${
+                    isOccupied ? 'border-emerald-500/30' : 'border-slate-800/80'
+                  }`}
+                >
+                  <div className="space-y-2">
+                    {/* Crest & Header */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <ClubCrest
+                          clubId={club.id}
+                          logoUrl={club.logoUrl}
+                          name={club.name}
+                          shortName={club.shortName}
+                          size="md"
+                          className="shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <h3 className="text-xs font-black text-white truncate leading-tight">{club.name}</h3>
+                          <span className="text-[10px] text-slate-400 font-mono font-bold">{club.shortName} • {club.country}</span>
+                        </div>
+                      </div>
+
+                      <span
+                        className={`px-2 py-0.5 rounded text-[9px] font-black uppercase shrink-0 ${
+                          isOccupied
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                            : 'bg-slate-800 text-slate-400'
+                        }`}
+                      >
+                        {isOccupied ? 'Occupied' : 'Free'}
+                      </span>
+                    </div>
+
+                    {/* Owner details */}
+                    <div className="bg-slate-950/70 p-2.5 rounded-xl border border-white/[0.05] space-y-1">
+                      <div className="text-[9px] uppercase font-black text-slate-500">Current Manager</div>
+                      {isOccupied ? (
+                        <div className="space-y-0.5">
+                          <div className="text-xs font-black text-emerald-400 truncate flex items-center gap-1">
+                            <UserCheck className="w-3 h-3 shrink-0" />
+                            <span>@{club.claimedByUsername || club.managerUsername || 'player'}</span>
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-mono truncate">
+                            ID: {club.claimedByUserId || club.managerUserId || '—'}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-[11px] text-slate-500 italic font-semibold">Available for assignment</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Actions Bar */}
+                  <div className="pt-2 border-t border-white/[0.06] flex items-center gap-2">
+                    {isOccupied ? (
+                      <>
+                        <button
+                          onClick={() => setSelectedClubForRelease(club)}
+                          className="flex-1 py-1.5 px-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-lg text-[11px] font-black flex items-center justify-center gap-1 transition-all"
+                        >
+                          <UserMinus className="w-3 h-3" />
+                          <span>Release</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedClubForAssign(club);
+                            setAssignTargetUserId(club.claimedByUserId || '');
+                          }}
+                          className="flex-1 py-1.5 px-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 transition-all"
+                        >
+                          <UserPlus className="w-3 h-3" />
+                          <span>Reassign</span>
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setSelectedClubForAssign(club);
+                          setAssignTargetUserId('');
+                        }}
+                        className="w-full py-1.5 px-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-lg text-[11px] font-black flex items-center justify-center gap-1.5 transition-all shadow"
+                      >
+                        <UserPlus className="w-3 h-3" />
+                        <span>Assign Player</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 3. MATCHES SECTION */}
+      {/* ========================================================================= */}
+      {activeAdminTab === 'matches' && (
+        <div className="space-y-4">
+          {/* Filters Bar */}
+          <div className="glass-panel p-4 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-black text-white flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-emerald-400" />
+                  <span>Fixture Management & Schedule Inspector</span>
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Inspect results, review status, identify postponed/problematic matches, or reopen for corrections.
+                </p>
+              </div>
+
+              <div className="text-xs font-bold text-slate-400 font-mono">
+                Showing <strong className="text-emerald-400">{fixtures.length}</strong> of <strong className="text-white">{fixturesTotal}</strong> matches
+              </div>
+            </div>
+
+            {/* Filter Controls */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 pt-2 border-t border-white/[0.06]">
+              <div className="relative lg:col-span-1">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={matchSearch}
+                  onChange={(e) => {
+                    setMatchSearch(e.target.value);
+                    setMatchPage(1);
+                  }}
+                  placeholder="Search club or fixture ID..."
+                  className="w-full pl-9 pr-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              {/* Competition Filter */}
+              <select
+                value={matchCompFilter}
+                onChange={(e) => {
+                  setMatchCompFilter(e.target.value);
+                  setMatchPage(1);
+                }}
+                className="px-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-semibold"
+              >
+                <option value="ALL">All Competitions ({competitions.length})</option>
+                {competitions.map((comp) => (
+                  <option key={comp.id} value={comp.id}>
+                    {comp.name}
+                  </option>
+                ))}
+              </select>
+
+              {/* Status Filter */}
+              <select
+                value={matchStatusFilter}
+                onChange={(e) => {
+                  setMatchStatusFilter(e.target.value);
+                  setMatchPage(1);
+                }}
+                className="px-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-semibold"
+              >
+                <option value="ALL">All Match Statuses</option>
+                <option value="SCHEDULED">SCHEDULED (Upcoming)</option>
+                <option value="AWAITING_RESULT">AWAITING_RESULT (In Play)</option>
+                <option value="PENDING_CONFIRMATION">PENDING_CONFIRMATION (1 Submission)</option>
+                <option value="CONFIRMED">CONFIRMED (Final)</option>
+                <option value="DISPUTED">DISPUTED (Conflict)</option>
+                <option value="POSTPONED">POSTPONED</option>
+              </select>
+
+              {/* Club Filter */}
+              <select
+                value={matchClubFilter}
+                onChange={(e) => {
+                  setMatchClubFilter(e.target.value);
+                  setMatchPage(1);
+                }}
+                className="px-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-semibold"
+              >
+                <option value="ALL">All Clubs ({clubs.length || 96})</option>
+                {clubs.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+
+              {/* Matchday Filter */}
+              <select
+                value={matchdayFilter}
+                onChange={(e) => {
+                  setMatchdayFilter(e.target.value);
+                  setMatchPage(1);
+                }}
+                className="px-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-semibold"
+              >
+                <option value="ALL">All Matchdays</option>
+                {Array.from({ length: 38 }, (_, i) => i + 1).map((md) => (
+                  <option key={md} value={String(md)}>
+                    Matchday {md}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Pagination & Page Size Toolbar */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/[0.04] text-xs">
+              <div className="flex items-center gap-2">
+                <span className="text-slate-400 text-[11px]">Show per page:</span>
+                <select
+                  value={matchPageSize}
+                  onChange={(e) => {
+                    const newSize = parseInt(e.target.value, 10) || 25;
+                    setMatchPageSize(newSize);
+                    setMatchPage(1);
+                  }}
+                  className="px-2 py-1 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-300 font-bold"
+                >
+                  <option value="25">25</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                </select>
+                <span className="text-slate-500 font-mono text-[11px]">
+                  Showing {fixtures.length} of {fixturesTotal} matches
+                </span>
+                {isMatchesLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-400" />}
+              </div>
+
+              {(totalMatchPages > 1 || fixturesHasMore || matchPage > 1) && (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => fetchAdminMatches(matchPage - 1, pageCursors[matchPage - 1])}
+                    disabled={matchPage <= 1 || isMatchesLoading}
+                    className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-30 text-slate-300 border border-slate-800"
+                    title="Previous page"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="text-xs font-mono font-bold text-slate-300 px-2">
+                    Page {matchPage} of {totalMatchPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => fetchAdminMatches(matchPage + 1, fixturesNextCursor)}
+                    disabled={!fixturesHasMore || isMatchesLoading}
+                    className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-30 text-slate-300 border border-slate-800"
+                    title="Next page"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Fixtures List */}
+          <div className="space-y-2.5">
+            {paginatedFixtures.length === 0 ? (
+              <div className="glass-panel p-8 text-center border-slate-800 text-slate-400 text-xs">
+                No fixtures matched the selected filters.
+              </div>
+            ) : (
+              paginatedFixtures.map((fix) => {
+                const isConfirmed = fix.status === 'CONFIRMED';
+                const isDisputed = fix.status === 'DISPUTED';
+                const isPending = fix.status === 'PENDING_CONFIRMATION';
+                const hasScore = fix.homeScore !== undefined && fix.homeScore !== null;
+
+                return (
+                  <div
+                    key={fix.id}
+                    className={`glass-card p-3 sm:p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 border transition-all ${
+                      isDisputed
+                        ? 'border-rose-500/40 bg-rose-950/10'
+                        : isPending
+                        ? 'border-amber-500/40 bg-amber-950/10'
+                        : 'border-slate-800/80 hover:border-slate-700'
+                    }`}
+                  >
+                    {/* Left: Tournament Badge & Teams */}
+                    <div className="space-y-1.5 flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[10px] font-black uppercase text-amber-400 bg-amber-500/15 px-2 py-0.5 rounded">
+                          {fix.competitionName || fix.competitionId}
+                        </span>
+                        {fix.matchday && (
+                          <span className="text-[10px] font-bold text-slate-400 font-mono">
+                            Matchday {fix.matchday}
+                          </span>
+                        )}
+                        {fix.roundName && (
+                          <span className="text-[10px] font-bold text-slate-400">
+                            • {fix.roundName}
+                          </span>
+                        )}
+                        <span
+                          className={`px-2 py-0.2 text-[9px] font-black uppercase rounded ${
+                            isConfirmed
+                              ? 'bg-emerald-500/20 text-emerald-300'
+                              : isDisputed
+                              ? 'bg-rose-500/20 text-rose-400'
+                              : isPending
+                              ? 'bg-amber-500/20 text-amber-300'
+                              : 'bg-slate-800 text-slate-400'
+                          }`}
+                        >
+                          {fix.status}
+                        </span>
+                        <span className="text-[10px] font-mono text-slate-500 ml-auto hidden sm:inline">
+                          ID: {fix.id}
+                        </span>
+                      </div>
+
+                      {/* Scoreline */}
+                      <div className="flex items-center gap-3 text-xs sm:text-sm font-bold text-white">
+                        <div className="flex items-center gap-2 flex-1 justify-end min-w-0">
+                          <span className="truncate">{fix.homeClub?.name || fix.homeClubId}</span>
+                          <ClubCrest
+                            clubId={fix.homeClubId}
+                            logoUrl={fix.homeClub?.logoUrl}
+                            name={fix.homeClub?.name}
+                            size="xs"
+                            className="shrink-0"
+                          />
+                        </div>
+
+                        {/* Middle Score / Time */}
+                        <div className="px-3 py-1 bg-slate-950/80 rounded-lg border border-white/[0.08] font-mono font-black text-center min-w-[58px]">
+                          {hasScore ? (
+                            <span className="text-emerald-400">
+                              {fix.homeScore} - {fix.awayScore}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 text-xs">VS</span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 flex-1 justify-start min-w-0">
+                          <ClubCrest
+                            clubId={fix.awayClubId}
+                            logoUrl={fix.awayClub?.logoUrl}
+                            name={fix.awayClub?.name}
+                            size="xs"
+                            className="shrink-0"
+                          />
+                          <span className="truncate">{fix.awayClub?.name || fix.awayClubId}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right: Actions */}
+                    <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center flex-wrap">
+                      <button
+                        onClick={() => setSelectedFixtureForInspect(fix)}
+                        className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors"
+                        title="Inspect fixture details"
+                      >
+                        <Eye className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Inspect</span>
+                      </button>
+
+                      {/* Edit Result Button */}
+                      <button
+                        onClick={() => setSelectedFixtureForEditResult(fix)}
+                        className="px-2.5 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors"
+                        title="Enter or edit match result"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>{hasScore ? 'Edit Score' : 'Set Score'}</span>
+                      </button>
+
+                      {/* Reset Result Button (if scored or confirmed) */}
+                      {(hasScore || isConfirmed) && (
+                        <button
+                          onClick={() => setSelectedFixtureForDeleteResult(fix)}
+                          className="px-2.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors"
+                          title="Reset score and return match to scheduled"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Reset</span>
+                        </button>
+                      )}
+
+                      {/* Delete Match Fixture */}
+                      {canUseDangerZone && (<button
+                        onClick={() => setSelectedFixtureForDelete(fix)}
+                        className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg transition-colors"
+                        title="Permanently delete fixture"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>)}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Load More Button */}
+          {fixturesHasMore && (
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => fetchAdminMatches(matchPage + 1, fixturesNextCursor, true)}
+                disabled={isMatchesLoading}
+                className="w-full py-3 px-4 rounded-xl border border-slate-800 bg-slate-900/80 hover:bg-slate-800 disabled:opacity-50 text-slate-200 font-bold text-xs transition-colors flex items-center justify-center gap-2"
+              >
+                {isMatchesLoading ? <Loader2 className="w-4 h-4 animate-spin text-emerald-400" /> : <ChevronDown className="w-4 h-4 text-emerald-400" />}
+                <span>Load More Matches</span>
+              </button>
+            </div>
+          )}
+
+          {/* Bottom Pagination */}
+          {(totalMatchPages > 1 || fixturesHasMore || matchPage > 1) && (
+            <div className="flex items-center justify-between p-3 glass-panel border-white/[0.04] text-xs">
+              <span className="text-slate-400 font-mono">
+                Showing page {matchPage} of {totalMatchPages} ({fixturesTotal} total fixtures)
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => fetchAdminMatches(matchPage - 1, pageCursors[matchPage - 1])}
+                  disabled={matchPage <= 1 || isMatchesLoading}
+                  className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-30 text-slate-300 border border-slate-800 font-bold flex items-center gap-1"
+                >
+                  {isMatchesLoading && <Loader2 className="w-3 h-3 animate-spin" />}
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fetchAdminMatches(matchPage + 1, fixturesNextCursor)}
+                  disabled={!fixturesHasMore || isMatchesLoading}
+                  className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-30 text-slate-300 border border-slate-800 font-bold flex items-center gap-1"
+                >
+                  {isMatchesLoading && <Loader2 className="w-3 h-3 animate-spin" />}
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 4. RESULTS SECTION (DEDICATED PENDING REVIEW WORKFLOW) */}
+      {/* ========================================================================= */}
+      {activeAdminTab === 'results' && (
+        <div className="space-y-4">
+          <div className="glass-panel p-4 space-y-1">
+            <h2 className="text-sm font-black text-white flex items-center gap-2">
+              <FileCheck className="w-4 h-4 text-amber-400" />
+              <span>Results Review & Submissions Management</span>
+            </h2>
+            <p className="text-xs text-slate-400">
+              Arbitrate conflicting player claims, approve pending match submissions, or manage the score submission archive.
+            </p>
+          </div>
+
+          {/* Sub Navigation */}
+          <div className="flex items-center gap-2 border-b border-white/[0.08] pb-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setResultsSubTab('pending')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-black transition-colors ${
+                resultsSubTab === 'pending'
+                  ? 'bg-amber-500 text-slate-950 shadow'
+                  : 'bg-slate-900 text-slate-400 hover:text-white'
+              }`}
+            >
+              Pending Submissions ({pendingResults.length})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setResultsSubTab('disputes')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-black transition-colors ${
+                resultsSubTab === 'disputes'
+                  ? 'bg-rose-500 text-white shadow'
+                  : 'bg-slate-900 text-slate-400 hover:text-white'
+              }`}
+            >
+              Open Disputes ({disputes.length})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setResultsSubTab('submissions')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-black transition-colors ${
+                resultsSubTab === 'submissions'
+                  ? 'bg-emerald-500 text-slate-950 shadow'
+                  : 'bg-slate-900 text-slate-400 hover:text-white'
+              }`}
+            >
+              Submissions Archive
+            </button>
+          </div>
+
+          {resultsSubTab === 'submissions' ? (
+            <AdminSubmissionsSection
+              scopedSeasonId={isScoped ? activeSeasonId : undefined}
+          canUseDangerZone={canUseDangerZone}
+              showToast={(type, msg) => showToast(msg, type === 'error' ? 'error' : 'success')}
+              onSubmissionDeleted={() => loadAllAdminData(true)}
+            />
+          ) : resultsSubTab === 'disputes' ? (
+            /* Disputes List */
+            <div className="space-y-3">
+              {disputes.length === 0 ? (
+                <div className="glass-panel p-8 text-center border-emerald-500/30 bg-emerald-950/10 text-slate-400 text-xs">
+                  No unresolved disputes currently logged.
+                </div>
+              ) : (
+                disputes.map((disp) => (
+                  <div key={disp.id} className="glass-card p-4 rounded-2xl border-rose-500/40 bg-rose-950/10 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-rose-400 uppercase">
+                        Dispute: {disp.fixtureId}
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        {new Date(disp.createdAt).toLocaleString()}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-300">
+                      Disputed by: <strong className="text-white font-mono">{disp.reportedByUserId}</strong>
+                    </p>
+                    <p className="text-xs text-slate-400 italic">"{disp.reason || 'Conflicting score reports'}"</p>
+                    <div className="flex justify-end gap-2 pt-2 border-t border-white/[0.06]">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const review = pendingResults.find(fixture => fixture.id === disp.fixtureId);
+                          if (!review) { showToast(loc('Natija ma’lumotini yangilab qayta tekshiring.', 'Обновите данные результата.', 'Refresh the result data and try again.'), 'error'); return; }
+                          setSelectedPendingForApprove(review);
+                          setApproveHomeScore(review.submissions?.[0]?.homeScore ?? 0);
+                          setApproveAwayScore(review.submissions?.[0]?.awayScore ?? 0);
+                          setApproveNotes('');
+                        }}
+                        className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-bold"
+                      >
+                        {loc('Nizoli natijani ko‘rib chiqish', 'Проверить спорный результат', 'Review disputed result')}
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          ) : (
+            /* Pending Submissions List */
+            <div className="space-y-3">
+              {pendingResults.length === 0 ? (
+                <div className="glass-panel p-10 text-center border-emerald-500/30 bg-emerald-950/10">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 mx-auto mb-3">
+                    <CheckCircle2 className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-base font-bold text-white">No Pending Result Confirmations</h3>
+                  <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
+                    All match submissions have either achieved two-player consensus or been confirmed by tournament officials.
+                  </p>
+                </div>
+              ) : (
+                pendingResults.map((fix) => {
+                  const sub = fix.submissions?.[0];
+                  return (
+                    <div
+                      key={fix.id}
+                      className="glass-panel p-4 sm:p-5 rounded-2xl border-amber-500/40 shadow-xl space-y-3 bg-amber-950/10"
+                    >
+                      {/* Header */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/[0.08] pb-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                            {fix.status}
+                          </span>
+                          <span className="text-xs font-black text-white">
+                            {fix.competitionName || 'Tournament'} • Matchday {fix.matchday}
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-400">({fix.id})</span>
+                        </div>
+
+                        {sub && (
+                          <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-slate-500" />
+                            <span>Submitted: {new Date(sub.createdAt).toLocaleString()}</span>
+                          </div>
+                        )}
+                      </div>
+
+                    {/* Clubs and Score Claim */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-center">
+                      {/* Match Matchup */}
+                      <div className="flex items-center justify-between bg-slate-950/70 p-3 rounded-xl border border-white/[0.06]">
+                        <div className="flex items-center gap-2">
+                          <ClubCrest clubId={fix.homeClubId} logoUrl={fix.homeClub?.logoUrl} name={fix.homeClub?.name} size="sm" />
+                          <div>
+                            <div className="text-xs font-bold text-white">{fix.homeClub?.name}</div>
+                            <div className="text-[10px] text-slate-400">@{fix.homeClub?.claimedByUsername || 'player'}</div>
+                          </div>
+                        </div>
+                        <span className="text-xs font-black text-slate-500 px-2">VS</span>
+                        <div className="flex items-center gap-2 text-right">
+                          <div>
+                            <div className="text-xs font-bold text-white">{fix.awayClub?.name}</div>
+                            <div className="text-[10px] text-slate-400">@{fix.awayClub?.claimedByUsername || 'player'}</div>
+                          </div>
+                          <ClubCrest clubId={fix.awayClubId} logoUrl={fix.awayClub?.logoUrl} name={fix.awayClub?.name} size="sm" />
+                        </div>
+                      </div>
+
+                      {/* Submitted Score Details */}
+                      <div className="bg-slate-950/70 p-3 rounded-xl border border-white/[0.06] flex items-center justify-between">
+                        <div>
+                          <span className="text-[10px] uppercase font-black text-slate-500 block">Submitted Score Claim</span>
+                          <span className="text-lg font-black text-emerald-400 font-mono">
+                            {sub ? `${sub.homeScore} - ${sub.awayScore}` : 'Pending entry'}
+                          </span>
+                          <span className="text-[10px] text-slate-400 block">
+                            By @{sub?.submitterUsername || 'player'}
+                          </span>
+                        </div>
+
+                        {sub?.proofUrl && (
+                          <a
+                            href={sub.proofUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-3 py-1.5 bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30 rounded-lg text-xs font-bold flex items-center gap-1.5"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>Proof Screenshot</span>
+                          </a>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Admin Action Bar */}
+                    <div className="pt-2 flex flex-wrap items-center justify-end gap-2">
+                      <button
+                        onClick={() => setSelectedPendingForInspect(fix)}
+                        className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold flex items-center gap-1.5"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>Inspect Full Record</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setSelectedPendingForReject(fix);
+                          setRejectNotes('');
+                        }}
+                        className="px-3.5 py-2 bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 rounded-xl text-xs font-bold flex items-center gap-1.5"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        <span>Reject & Reopen</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setSelectedPendingForApprove(fix);
+                          setApproveHomeScore(sub?.homeScore ?? 0);
+                          setApproveAwayScore(sub?.awayScore ?? 0);
+                          setApproveNotes('');
+                        }}
+                        className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-lg shadow-emerald-500/20"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Approve Result</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 5. COMPETITIONS SECTION */}
+      {/* ========================================================================= */}
+      {activeAdminTab === 'competitions' && (
+        <div className="space-y-6">
+          <div className="glass-panel p-4 space-y-1">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-black text-white flex items-center gap-2">
+                  <Trophy className="w-4 h-4 text-amber-400" />
+                  <span>{isScoped ? allowedLeagues.map(league => league.name).join(', ') : '18 Official Tournament Competitions'}</span>
+                </h2>
+                <p className="text-xs text-slate-400">
+                  {isScoped ? loc('Tanlangan liga boshqaruvi', 'Управление выбранной лигой', 'Selected league management') : '5 Single Round-Robin Domestic Leagues, 6 National Cups, 5 Super Cups, and 2 32-Team European Competitions.'}
+                </p>
+              </div>
+
+{!isScoped && (              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={handleRunFixtureValidation}
+                  disabled={isValidatingFixtures}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow transition-all disabled:opacity-50"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>{isValidatingFixtures ? 'Validating...' : 'Validate 19/17 MD Formats'}</span>
+                </button>
+
+                <button
+                  onClick={handleEvaluateQualifications}
+                  disabled={isProcessing}
+                  className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-black flex items-center gap-1.5 shadow"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Evaluate European Spots</span>
+                </button>
+              </div>)}
+            </div>
+          </div>
+
+          {/* 1. DOMESTIC LEAGUES (5) */}
+          <div className="space-y-3">
+            <h3 className="text-xs font-black uppercase tracking-wider text-emerald-400 flex items-center gap-2">
+              <Globe2 className="w-3.5 h-3.5" />
+              <span>{isScoped ? loc('Liga boshqaruvi', 'Управление лигой', 'League management') : 'Domestic Leagues (5) • Single Round-Robin (19 MDs for 20 teams, 17 MDs for 18 teams)'}</span>
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {groupedCompetitions.domesticLeagues.map((comp) => {
+                const totalMds = comp.totalMatchdays || (comp.leagueId?.includes('bundesliga') || comp.leagueId?.includes('ligue-1') ? 17 : 19);
+                const currentMd = comp.currentMatchday || 1;
+                const override = comp.adminOverrideStatus || 'AUTO';
+                const isOpen = override !== 'FORCE_LOCKED' && override !== 'PAUSED' && Boolean(comp.isMatchdayOpen) && (!comp.nextMatchdayOpenAt || Date.parse(comp.nextMatchdayOpenAt) > Date.now());
+                const deadlineIsOverdue = Boolean(comp.nextMatchdayOpenAt && Date.now() > new Date(comp.nextMatchdayOpenAt).getTime());
+
+                return (
+                  <div key={comp.id} className="glass-card p-4 rounded-2xl border-slate-800 space-y-3 flex flex-col justify-between">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black text-white">{comp.name}</span>
+                        <div className="flex items-center gap-1">
+                          <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${
+                            override === 'FORCE_OPEN'
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                              : override === 'FORCE_LOCKED'
+                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                              : isOpen
+                              ? 'bg-emerald-500/15 text-emerald-300'
+                              : 'bg-slate-700 text-slate-300'
+                          }`}>
+                            {override !== 'AUTO' ? override : isOpen ? 'MD Open (30h)' : 'MD Locked'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] text-slate-400 bg-slate-900/60 p-2 rounded-xl border border-white/[0.04]">
+                        <span className="font-bold text-white">Matchday {currentMd} / {totalMds}</span>
+                        <span>{comp.formatConfig?.qualificationSpots || 4} European Spots</span>
+                      </div>
+
+                      {comp.nextMatchdayOpenAt && (
+                        <div className={`text-[10px] flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 border ${deadlineIsOverdue ? 'text-rose-300 bg-rose-500/10 border-rose-500/25' : 'text-slate-300 bg-slate-900/50 border-white/[0.04]'}`}>
+                          <span className="flex items-center gap-1">
+                            <Clock className={`w-3 h-3 ${deadlineIsOverdue ? 'text-rose-400' : 'text-slate-500'}`} />
+                            Deadline: {new Date(comp.nextMatchdayOpenAt).toLocaleString()}
+                          </span>
+                          {deadlineIsOverdue && <span className="font-black text-[9px] uppercase">Overdue</span>}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-2 border-t border-white/[0.06] space-y-2">
+                      <AdminMatchdayControl competitionId={comp.id} onChanged={async () => { const data = await api.getCompetitions(activeSeasonId, true); setCompetitions(prev => prev.map(c => data.competitions.find(updated => updated.id === c.id) || c)); }} />
+
+                      <button
+                        onClick={() => handleSendMatchdayReminder(comp.id, currentMd, comp.nextMatchdayOpenAt)}
+                        disabled={isProcessing}
+                        className={`w-full py-1.5 px-2 rounded-lg text-[10px] font-black flex items-center justify-center gap-1.5 border ${deadlineIsOverdue ? 'bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border-rose-500/30' : 'bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border-amber-500/30'}`}
+                        title="Only players who have not submitted this matchday are notified"
+                      >
+                        <Send className="w-3 h-3" />
+                        <span>{deadlineIsOverdue ? 'Remind Overdue Players' : 'Remind Unfinished Players'}</span>
+                      </button>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => handleRebuildStandings(comp.id)}
+                          disabled={rebuildingStandingsCompId === comp.id}
+                          className="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-bold flex items-center justify-center gap-1"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${rebuildingStandingsCompId === comp.id ? 'animate-spin' : ''}`} />
+                          <span>Rebuild Table</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setMatchCompFilter(comp.id);
+                            setActiveAdminTab('matches');
+                          }}
+                          className="px-3 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 rounded-lg text-xs font-bold flex items-center gap-1"
+                        >
+                          <Eye className="w-3 h-3" />
+                          <span>Fixtures</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 2. DOMESTIC CUPS */}
+          <div className="space-y-3 pt-2">
+            <h3 className="text-xs font-black uppercase tracking-wider text-amber-400 flex items-center gap-2">
+              <Trophy className="w-3.5 h-3.5" />
+              <span>{isScoped ? "Milliy kuboklar" : "National Cups (5) • FA Cup, Copa del Rey, Coppa Italia, DFB-Pokal, Coupe de France"}</span>
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {groupedCompetitions.domesticCups.map((comp) => (
+                <div key={comp.id} className="glass-card p-4 rounded-2xl border-slate-800 space-y-3 flex flex-col justify-between">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-white">{comp.name}</span>
+                      <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-amber-500/15 text-amber-300">
+                        Knockout Cup
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      Single Leg Elimination with Extra Time & Penalties
+                    </p>
+                  </div>
+
+                  <div className="pt-2 border-t border-white/[0.06] flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setMatchCompFilter(comp.id);
+                        setActiveAdminTab('matches');
+                      }}
+                      className="w-full py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-bold flex items-center justify-center gap-1"
+                    >
+                      <Eye className="w-3 h-3" />
+                      <span>Inspect Brackets & Fixtures</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {!isScoped && <>
+          {/* 3. SUPER CUPS (5) */}
+          <div className="space-y-3 pt-2">
+            <h3 className="text-xs font-black uppercase tracking-wider text-indigo-400 flex items-center gap-2">
+              <Award className="w-3.5 h-3.5" />
+              <span>Super Cups (5) • FA Community Shield, Supercopa de España, Supercoppa Italiana, DFL-Supercup, UEFA Super Cup</span>
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {groupedCompetitions.superCups.map((comp) => (
+                <div key={comp.id} className="glass-card p-4 rounded-2xl border-slate-800 space-y-3 flex flex-col justify-between">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-white">{comp.name}</span>
+                      <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-indigo-500/15 text-indigo-300">
+                        Super Cup
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      Season Opener Showcase Match
+                    </p>
+                  </div>
+
+                  <div className="pt-2 border-t border-white/[0.06] flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setMatchCompFilter(comp.id);
+                        setActiveAdminTab('matches');
+                      }}
+                      className="w-full py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-bold flex items-center justify-center gap-1"
+                    >
+                      <Eye className="w-3 h-3" />
+                      <span>View Match</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 4. EUROPEAN COMPETITIONS (2: UCL & UEL) */}
+          <div className="space-y-3 pt-2">
+            <h3 className="text-xs font-black uppercase tracking-wider text-rose-400 flex items-center gap-2">
+              <Globe2 className="w-3.5 h-3.5" />
+              <span>European Competitions (2) • UEFA Champions League & UEFA Europa League</span>
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {groupedCompetitions.european.map((comp) => {
+                const totalMds = comp.totalMatchdays || 8;
+                const currentMd = comp.currentMatchday || 1;
+                const override = comp.adminOverrideStatus || 'AUTO';
+                const isOpen = override !== 'FORCE_LOCKED' && override !== 'PAUSED' && Boolean(comp.isMatchdayOpen) && (!comp.nextMatchdayOpenAt || Date.parse(comp.nextMatchdayOpenAt) > Date.now());
+
+                return (
+                  <div key={comp.id} className="glass-card p-4 rounded-2xl border-slate-800 space-y-3 flex flex-col justify-between">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black text-white">{comp.name}</span>
+                        <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${
+                          override === 'FORCE_OPEN'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                            : override === 'FORCE_LOCKED'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                            : isOpen
+                            ? 'bg-rose-500/15 text-rose-300'
+                            : 'bg-slate-700 text-slate-300'
+                        }`}>
+                          {override !== 'AUTO' ? override : isOpen ? 'MD Open (30h)' : 'MD Locked'}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] text-slate-400 bg-slate-900/60 p-2 rounded-xl border border-white/[0.04]">
+                        <span className="font-bold text-white">Matchday {currentMd} / {totalMds}</span>
+                        <span>32 Teams • 8 Rounds (4H / 4A)</span>
+                      </div>
+
+                      {comp.nextMatchdayOpenAt && (
+                        <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-slate-500" />
+                          <span>Timer: {new Date(comp.nextMatchdayOpenAt).toLocaleString()}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-2 border-t border-white/[0.06] space-y-2">
+                      <AdminMatchdayControl competitionId={comp.id} onChanged={async () => { const data = await api.getCompetitions(activeSeasonId, true); setCompetitions(prev => prev.map(c => data.competitions.find(updated => updated.id === c.id) || c)); }} />
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => handleRebuildStandings(comp.id)}
+                          disabled={rebuildingStandingsCompId === comp.id}
+                          className="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-bold flex items-center justify-center gap-1"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${rebuildingStandingsCompId === comp.id ? 'animate-spin' : ''}`} />
+                          <span>Rebuild Table</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setMatchCompFilter(comp.id);
+                            setActiveAdminTab('matches');
+                          }}
+                          className="px-3 py-1.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 rounded-lg text-xs font-bold flex items-center gap-1"
+                        >
+                          <Eye className="w-3 h-3" />
+                          <span>Fixtures</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          </>}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 5A. DOMESTIC CUPS SECTION */}
+      {/* ========================================================================= */}
+      {activeAdminTab === 'domestic_cups' && <AdminDomesticCupsTab canUseDangerZone={canUseDangerZone} allowedCupIds={isScoped ? allowedLeagues.map(league => league.cupCompetitionId) : undefined} />}
+
+      {/* ========================================================================= */}
+      {/* 5B. UCL / UEL STANDINGS & QUALIFICATIONS SECTION */}
+      {/* ========================================================================= */}
+      {activeAdminTab === 'european' && <AdminEuropeanTab canUseDangerZone={canUseDangerZone} />}
+
+      {/* ========================================================================= */}
+      {/* 5C. TELEGRAM NOTIFICATIONS SECTION */}
+      {/* ========================================================================= */}
+      {activeAdminTab === 'telegram' && <AdminTelegramTab />}
+      {activeAdminTab === 'telegram_ai' && <AdminTelegramAiTab />}
+      {activeAdminTab === 'notifications' && <AdminNotificationsTab />}
+
+      {/* ========================================================================= */}
+      {/* 6. PLAYERS & ROSTER SECTION */}
+      {/* ========================================================================= */}
+      {activeAdminTab === 'users' && (
+        <div className="space-y-4">
+          <div className="glass-panel p-4 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-black text-white flex items-center gap-2">
+                  <UserCheck className="w-4 h-4 text-emerald-400" />
+                  <span>Registered Telegram Players ({users.length})</span>
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Inspect telegram user authentication, claimed clubs, and role permissions.
+                </p>
+              </div>
+            </div>
+
+            {/* Filter */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-white/[0.06]">
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={userSearch}
+                  onChange={(e) => setUserSearch(e.target.value)}
+                  placeholder={loc('Username, @username yoki ID...', 'Username, @username или ID...', 'Username, @username or ID...')}
+                  className="w-full pl-9 pr-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <select
+                value={userRoleFilter}
+                onChange={(e) => setUserRoleFilter(e.target.value)}
+                className="px-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-semibold"
+              >
+                <option value="ALL">All Roles ({users.length})</option>
+                <option value="ADMIN">Administrators</option>
+                <option value="PLAYER">Standard Players</option>
+                <option value="SUSPENDED">Suspended Accounts</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Users Table */}
+          <div className="glass-panel overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-white/[0.08] text-[10px] uppercase font-black text-slate-400 bg-slate-950/40">
+                    <th className="p-3">Player</th>
+                    <th className="p-3">Telegram ID</th>
+                    <th className="p-3">Role</th>
+                    <th className="p-3">Status</th>
+                    <th className="p-3">Joined</th>
+                    <th className="p-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/[0.04]">
+                  {filteredUsers.map((u) => (
+                    <tr key={u.id} className="hover:bg-white/[0.02] transition-colors">
+                      <td className="p-3">
+                        <div className="font-bold text-white">@{u.username || 'unknown'}</div>
+                        <div className="text-[10px] text-slate-400">
+                          {u.firstName} {u.lastName}
+                        </div>
+                      </td>
+                      <td className="p-3 font-mono text-slate-400">{u.telegramId || u.id}</td>
+                      <td className="p-3">
+                        {canUseDangerZone && (<button
+                          type="button"
+                          onClick={() => setSelectedUserForRole(u)}
+                          className={`px-2 py-0.5 rounded text-[9px] font-black uppercase transition-colors border ${
+                            u.isAdmin
+                              ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30'
+                              : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+                          }`}
+                          title="Click to change role"
+                        >
+                          {u.isAdmin ? 'ADMIN' : 'PLAYER'}
+                        </button>)}
+                        {!canUseDangerZone && <span className="text-[9px] font-bold text-slate-400">{u.isAdmin ? 'ADMIN' : 'PLAYER'}</span>}
+                      </td>
+                      <td className="p-3">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedUserForSuspend(u)}
+                          className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase transition-colors border ${
+                            u.isSuspended
+                              ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 hover:bg-rose-500/30'
+                              : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
+                          }`}
+                          title="Click to toggle suspension"
+                        >
+                          {u.isSuspended ? 'SUSPENDED' : 'ACTIVE'}
+                        </button>
+                      </td>
+                      <td className="p-3 text-slate-400 font-mono text-[11px]">
+                        {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}
+                      </td>
+                      <td className="p-3 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedUserForDetail(u)}
+                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+                            title="Inspect user details and history"
+                          >
+                            <Eye className="w-3.5 h-3.5 text-slate-400" />
+                          </button>
+
+                          {canUseDangerZone && (<button
+                            type="button"
+                            onClick={() => setSelectedUserForRole(u)}
+                            className="p-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 transition-colors"
+                            title={u.isAdmin ? 'Admin ruxsatlarini boshqarish' : 'Admin tayinlash'}
+                          >
+                            <Shield className="w-3.5 h-3.5" />
+                          </button>)}
+
+                          <button
+                            type="button"
+                            onClick={() => setSelectedUserForSuspend(u)}
+                            className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 transition-colors"
+                            title={u.isSuspended ? 'Lift suspension' : 'Suspend player'}
+                          >
+                            <Ban className="w-3.5 h-3.5" />
+                          </button>
+
+                          {canUseDangerZone && (<button
+                            type="button"
+                            onClick={() => setSelectedUserForDelete(u)}
+                            className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 transition-colors"
+                            title="Safely delete user account"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>)}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 7. SYSTEM & AUDIT SECTION */}
+      {/* ========================================================================= */}
+      {activeAdminTab === 'system' && (
+        <div className="space-y-4">
+          {/* Health & DB Status */}
+          <div className="glass-panel p-4 space-y-3">
+            <h2 className="text-sm font-black text-white flex items-center gap-2">
+              <Database className="w-4 h-4 text-emerald-400" />
+              <span>{loc('Firestore tizim holati va diagnostika', 'Состояние Firestore и диагностика', 'Firestore System Health & Diagnostics')}</span>
+            </h2>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+              <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
+                <div className="text-[10px] uppercase font-black text-slate-500">{loc('Baza aloqasi', 'Подключение к базе', 'Database Connection')}</div>
+                <div className={`text-xs font-black mt-1 flex items-center gap-1.5 ${diagnostics?.connected ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  {diagnostics?.connected ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}
+                  <span>{diagnostics?.connected ? loc('ULANGAN', 'ПОДКЛЮЧЕНО', 'CONNECTED') : loc('TASDIQLANMAGAN', 'НЕ ПОДТВЕРЖДЕНО', 'UNVERIFIED')}</span>
+                </div>
+              </div>
+
+              <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
+                <div className="text-[10px] uppercase font-black text-slate-500">{loc('Loyiha ID', 'ID проекта', 'Project ID')}</div>
+                <div className="text-xs font-mono font-bold text-white mt-1 truncate">
+                  {diagnostics?.projectId || overviewData?.systemHealth?.projectId || loc('Noma’lum loyiha', 'Неизвестный проект', 'Unknown project')}
+                </div>
+              </div>
+
+              <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
+                <div className="text-[10px] uppercase font-black text-slate-500">{loc('Audit yozuvlari', 'Записи аудита', 'Audit Logs')}</div>
+                <div className="text-xs font-black text-white mt-1">{auditLogs.length} {loc('yozuv', 'записей', 'records')}</div>
+              </div>
+
+              <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
+                <div className="text-[10px] uppercase font-black text-slate-500">{loc('Kirish usuli', 'Способ входа', 'Auth Mode')}</div>
+                <div className="text-xs font-mono font-bold text-emerald-400 mt-1">{diagnostics?.authMode || loc('Noma’lum', 'Неизвестно', 'Unknown')}</div>
+              </div>
+            </div>
+
+            {/* Read Budget & Telemetry Widget */}
+              <div className="mt-4 pt-4 border-t border-white/[0.08] space-y-3">
+                <div className="text-xs font-black text-slate-300">{loc('Barcha serverlar bo‘yicha o‘qishlar · oxirgi 24 soat', 'Чтения всех серверов · последние 24 часа', 'Reads across servers · last 24 hours')}</div>
+                {readCostReport?.available ? (
+                  <>
+                    <div className="text-xl font-black text-emerald-400">{Number(readCostReport.totalReads || 0).toLocaleString()}</div>
+                    <p className="text-[10px] text-slate-500">{loc('Faqat hisoblagich orqali qayd etilgan o‘qishlar. Soatlar to‘liq hisoblanadi. Oldingi davr tiklanmaydi; Firebase hisob-kitobi bilan bir xil bo‘lishi kafolatlanmaydi. Tarix 7 kun saqlanadi.', 'Только учтённые чтения. Учитываются полные часы. Прошлые данные не восстанавливаются; значения могут отличаться от биллинга Firebase. История хранится 7 дней.', 'Instrumented reads only. Overlapping hours are counted in full. Earlier data is not recovered; totals may differ from Firebase billing. History is retained for 7 days.')}</p>
+                    <details open className="text-xs text-slate-300">
+                      <summary className="cursor-pointer font-bold">{loc('Soatlar va eng ko‘p o‘qigan so‘rovlar', 'Часы и запросы с наибольшим числом чтений', 'Hours and requests with most reads')}</summary>
+                      <div className="mt-2 space-y-1">
+                        {(readCostReport.hours || []).filter((hour: any) => hour.observed).slice().reverse().map((hour: any) => (
+                          <div key={hour.utcHour} className="flex justify-between gap-3 text-[11px]"><span>{hour.tashkentHour} · Toshkent</span><strong>{hour.totalReads}</strong></div>
+                        ))}
+                        {Object.entries(readCostReport.byEndpoint || {}).sort((a, b) => Number(b[1]) - Number(a[1])).slice(0, 5).map(([endpoint, count]) => (
+                          <div key={endpoint} className="flex justify-between gap-3 text-[10px]"><span className="font-mono break-all">{endpoint}</span><strong>{Number(count)}</strong></div>
+                        ))}
+                      </div>
+                    </details>
+                  </>
+                ) : <p className="text-xs text-amber-400">{readCostLoading ? loc('O‘qishlar hisoblagichi yuklanmoqda...', 'Загрузка счётчика чтений...', 'Loading read counter...') : loc('Umumiy o‘qish hisoblagichi hozir mavjud emas.', 'Общий счётчик чтений сейчас недоступен.', 'The shared read counter is currently unavailable.')}</p>}
+                <button type="button" disabled={readCostLoading} onClick={() => void loadReadCostReport()} className="min-h-[36px] px-3 py-1.5 rounded-lg border border-white/10 text-xs text-slate-300 disabled:opacity-50">
+                  {loc('O‘qishlarni yangilash', 'Обновить чтения', 'Refresh read counter')}
+                </button>
+              </div>
+            {diagnostics?.readMetrics && (
+              <div className="mt-4 pt-4 border-t border-white/[0.08] space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-black uppercase text-slate-300 flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-emerald-400" />
+                    <span>{loc('Firestore o‘qish ko‘rsatkichlari', 'Показатели чтения Firestore', 'Firestore Read Telemetry')}</span>
+                  </div>
+                  <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                    {loc('Bepul limit: kuniga 50 000 gacha', 'Бесплатный лимит: до 50 000 в день', 'Free limit: up to 50,000/day')}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="bg-slate-950/80 p-3 rounded-xl border border-white/[0.05]">
+                    <div className="text-[10px] uppercase font-black text-slate-500">{loc('Sessiya o‘qishlari', 'Чтения за сеанс', 'Session Reads')}</div>
+                    <div className="text-base font-black text-emerald-400 mt-0.5">
+                      {diagnostics.readMetrics.sessionReads}
+                    </div>
+                    <div className="text-[9px] text-slate-500">{loc('Qayd etilgan o‘qishlar', 'Учтённые чтения', 'Reads tracked')}</div>
+                  </div>
+
+                  <div className="bg-slate-950/80 p-3 rounded-xl border border-white/[0.05]">
+                    <div className="text-[10px] uppercase font-black text-slate-500">{loc('Keshga tushish ulushi', 'Доля попаданий в кеш', 'Cache Hit Ratio')}</div>
+                    <div className="text-base font-black text-sky-400 mt-0.5">
+                      {diagnostics.readMetrics.cacheHits + diagnostics.readMetrics.cacheMisses > 0
+                        ? `${Math.round(
+                            (diagnostics.readMetrics.cacheHits /
+                              (diagnostics.readMetrics.cacheHits + diagnostics.readMetrics.cacheMisses)) *
+                              100
+                          )}%`
+                        : '100%'}
+                    </div>
+                    <div className="text-[9px] text-slate-500">{diagnostics.readMetrics.cacheHits} {loc('topildi', 'попаданий', 'hits')} / {diagnostics.readMetrics.cacheMisses} {loc('topilmadi', 'промахов', 'misses')}</div>
+                  </div>
+
+                  <div className="bg-slate-950/80 p-3 rounded-xl border border-white/[0.05]">
+                    <div className="text-[10px] uppercase font-black text-slate-500">{loc('Bepul limit ishlatilishi', 'Использование бесплатного лимита', 'Free Quota Used')}</div>
+                    <div className="text-base font-black text-amber-400 mt-0.5">
+                      {diagnostics.readMetrics.budget?.percentageConsumed ?? 0}%
+                    </div>
+                    <div className="text-[9px] text-slate-500">{loc('Limit: kuniga 50 000', 'Лимит: 50 000 в день', 'Limit: 50,000/day')}</div>
+                  </div>
+
+                  <div className="bg-slate-950/80 p-3 rounded-xl border border-white/[0.05]">
+                    <div className="text-[10px] uppercase font-black text-slate-500">{loc('Sessiyadagi o‘rtacha o‘qish', 'Среднее чтений за сеанс', 'Avg Reads / Session')}</div>
+                    <div className="text-base font-black text-purple-400 mt-0.5">
+                      {diagnostics.readMetrics.budget?.estimatedReadsPerUserSession ?? 2}
+                    </div>
+                    <div className="text-[9px] text-slate-500">{loc('Maqsad: 100 dan kam', 'Цель: меньше 100', 'Target: under 100')}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Redis Read-Model Health & Rebuild Panel */}
+          <div className="glass-panel p-4 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/[0.08] pb-3">
+              <div>
+                <h2 className="text-sm font-black text-white flex items-center gap-2">
+                  <Database className="w-4 h-4 text-sky-400" />
+                  <span>{loc('Redis o‘qish modeli va nusxalar holati', 'Состояние моделей чтения Redis и снимков', 'Redis Read-Model Health & Snapshots')}</span>
+                </h2>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  {loc('Redis kesh va zaxira nusxalarini tekshiring, kerak bo‘lsa qayta tuzing.', 'Проверьте кеш Redis и резервные снимки, при необходимости перестройте.', 'Inspect Redis caches and fallback snapshots; rebuild when needed.')}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => loadTabData('system', true)}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all"
+                  title={loc('Holatni yangilash', 'Обновить состояние', 'Refresh read model health')}
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>{loc('Yangilash', 'Обновить', 'Refresh')}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRebuildReadModels}
+                  disabled={isRebuildingReadModels || readModelHealth?.redisState !== 'CONNECTED'}
+                  className="px-3.5 py-1.5 bg-sky-500 hover:bg-sky-400 text-slate-950 rounded-xl text-xs font-black shadow flex items-center gap-1.5 transition-all disabled:opacity-50"
+                  title={loc('Redis modellarini Firestoredan qayta tuzish', 'Перестроить модели Redis из Firestore', 'Rebuild Redis read models from Firestore')}
+                >
+                  {isRebuildingReadModels ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>{loc('Qayta tuzilmoqda…', 'Перестраивается…', 'Rebuilding...')}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>{loc('O‘qish modellarini qayta tuzish', 'Перестроить модели чтения', 'Rebuild Read Models')}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {readModelRebuildMsg && (
+              <div className="p-3 rounded-xl bg-sky-500/10 border border-sky-500/30 text-xs text-sky-300 flex items-center gap-2">
+                <Info className="w-4 h-4 shrink-0 text-sky-400" />
+                <span>{readModelRebuildMsg}</span>
+              </div>
+            )}
+
+            {readModelHealth ? (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
+                    <div className="text-[10px] uppercase font-black text-slate-500">{loc('O‘qish modeli holati', 'Состояние модели чтения', 'Read-Model Status')}</div>
+                    <div className="text-xs font-black mt-1 flex items-center gap-1.5">
+                      {readModelStatus === 'HEALTHY' ? (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                          <span className="text-emerald-400">{loc('SOZ', 'ИСПРАВНО', 'HEALTHY')}</span>
+                        </>
+                      ) : readModelStatus === 'DEGRADED' ? (
+                        <>
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                          <span className="text-amber-400">{loc('CHEKLANGAN', 'ЧАСТИЧНО', 'DEGRADED')}</span>
+                        </>
+                      ) : (
+                        <>
+                          <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                          <span className="text-rose-400">{loc('ISHLAMAYAPTI', 'НЕ РАБОТАЕТ', 'DOWN')}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
+                    <div className="text-[10px] uppercase font-black text-slate-500">{loc('Redis aloqasi', 'Подключение Redis', 'Redis Connectivity')}</div>
+                    <div className="text-xs font-black mt-1">
+                      {readModelHealth.redisState === 'CONNECTED' ? (
+                        <span className="text-emerald-400">{loc('ULANGAN', 'ПОДКЛЮЧЕНО', 'CONNECTED')}</span>
+                      ) : (
+                        <span className="text-rose-400">{readModelHealth.redisState === 'IN_MEMORY_FALLBACK' ? loc('SOZLANMAGAN', 'НЕ НАСТРОЕН', 'NOT CONFIGURED') : loc('ALOQA XATOSI', 'ОШИБКА ПОДКЛЮЧЕНИЯ', 'CONNECTION ERROR')}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
+                    <div className="text-[10px] uppercase font-black text-slate-500">{loc('Ma’lumot to‘plamlari', 'Наборы данных', 'Total Datasets')}</div>
+                    <div className="text-xs font-black text-white mt-1">
+                      {Object.keys(readModelHealth.coreDatasets || {}).length} {loc('model', 'моделей', 'models')}
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
+                    <div className="text-[10px] uppercase font-black text-slate-500">{loc('Oxirgi qayta tuzish', 'Последняя перестройка', 'Last Rebuild')}</div>
+                    <div className="text-xs font-mono font-bold text-slate-300 mt-1 truncate">
+                      {readModelHealth.lastSnapshotAt
+                        ? new Date(readModelHealth.lastSnapshotAt).toLocaleTimeString()
+                        : loc('Hali bo‘lmagan', 'Не было', 'Never')}
+                    </div>
+                  </div>
+                </div>
+
+                {readModelHealth.recommendation && (
+                  <div className="text-[11px] text-slate-400 bg-slate-950/40 px-3 py-2 rounded-lg border border-white/[0.04]">
+                    <span className="font-bold text-slate-300">{loc('Tavsiya', 'Рекомендация', 'Recommendation')}:</span> {readModelHealth.recommendation}
+                  </div>
+                )}
+
+                <div className="overflow-x-auto rounded-xl border border-white/[0.06]">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-white/[0.08] text-[10px] uppercase font-black text-slate-400 bg-slate-950/60">
+                        <th className="p-2.5">{loc('To‘plam', 'Набор', 'Dataset')}</th>
+                        <th className="p-2.5">Redis {loc('kaliti', 'ключ', 'key')}</th>
+                        <th className="p-2.5">{loc('Yangi kesh', 'Свежий кеш', 'Fresh Cache')}</th>
+                        <th className="p-2.5">{loc('Zaxira nusxa', 'Резервный снимок', 'Fallback Snapshot')}</th>
+                        <th className="p-2.5">{loc('Nusxa yoshi', 'Возраст снимка', 'Snapshot age')}</th>
+                        <th className="p-2.5">{loc('Holat', 'Состояние', 'State')}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/[0.04] bg-slate-950/30 font-mono text-[11px]">
+                      {Object.entries(readModelHealth.coreDatasets || {}).map(([name, value]) => { const ds = value as any; return (
+                        <tr key={ds.key} className="hover:bg-white/[0.02]">
+                          <td className="p-2.5 font-bold text-white font-sans">{name}</td>
+                          <td className="p-2.5 text-slate-400">{ds.key}</td>
+                          <td className="p-2.5">
+                            {ds.hasFresh ? (
+                              <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                                {loc('YANGI', 'СВЕЖИЙ', 'FRESH')}
+                              </span>
+                            ) : (
+                              <span className="text-slate-600 text-[10px]">{loc('muddati o‘tgan', 'истёк', 'expired')}</span>
+                            )}
+                          </td>
+                          <td className="p-2.5">
+                            {ds.hasLkg ? (
+                              <span className="text-sky-400 font-bold">
+                                {loc('BOR', 'ЕСТЬ', 'YES')} <span className="text-slate-500 text-[10px]">({ds.actualCount} {loc('yozuv', 'записей', 'records')})</span>
+                              </span>
+                            ) : (
+                              <span className="text-rose-400 text-[10px]">{loc('YO‘Q', 'НЕТ', 'MISSING')}</span>
+                            )}
+                          </td>
+                          <td className="p-2.5">
+                            {ds.snapshotAgeSeconds == null ? '—' : `${ds.snapshotAgeSeconds}s`}
+                          </td>
+                          <td className="p-2.5">
+                            {ds.isDirty ? (
+                              <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                                {loc('YANGILANISHI KERAK', 'ТРЕБУЕТ ОБНОВЛЕНИЯ', 'DIRTY')}
+                              </span>
+                            ) : ds.hasFresh ? (
+                              <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                                {loc('YANGI', 'СВЕЖИЙ', 'FRESH')}
+                              </span>
+                            ) : ds.hasLkg ? (
+                              <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-sky-500/10 text-sky-400 border border-sky-500/30">
+                                {loc('ESKI ZAXIRA', 'УСТАРЕВШИЙ СНИМОК', 'LKG STALE')}
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/30">
+                                {loc('TAYYORLANMAGAN', 'НЕ ЗАГРУЖЕН', 'UNWARMED')}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      )})}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              <div className="text-xs text-slate-500 py-4 text-center">{loc('O‘qish modeli holati yuklanmoqda…', 'Загрузка состояния модели чтения…', 'Loading read-model status...')}</div>
+            )}
+          </div>
+
+          {/* Audit Logs Table */}
+          <div className="glass-panel p-4 space-y-3">
+            <h3 className="text-xs font-black uppercase tracking-wider text-slate-300 flex items-center gap-2">
+              <FileText className="w-4 h-4 text-amber-400" />
+              <span>{loc('Admin amallari auditi', 'Журнал действий администраторов', 'Administrative Audit Log')}</span>
+            </h3>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-white/[0.08] text-[10px] uppercase font-black text-slate-400 bg-slate-950/40">
+                    <th className="p-2.5">{loc('Vaqt', 'Время', 'Time')}</th>
+                    <th className="p-2.5">{loc('Bajaruvchi', 'Исполнитель', 'Actor')}</th>
+                    <th className="p-2.5">{loc('Amal', 'Действие', 'Action')}</th>
+                    <th className="p-2.5">{loc('Nishon', 'Объект', 'Target')}</th>
+                    <th className="p-2.5">{loc('Izoh', 'Заметки', 'Notes')}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/[0.04]">
+                  {auditLogs.slice(0, 30).map((log) => (
+                    <tr key={log.id} className="hover:bg-white/[0.02]">
+                      <td className="p-2.5 text-slate-400 font-mono text-[10px] whitespace-nowrap">
+                        {new Date(log.createdAt).toLocaleString()}
+                      </td>
+                      <td className="p-2.5 font-bold text-emerald-400">{log.actorUserId}</td>
+                      <td className="p-2.5">
+                        <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-slate-800 text-slate-300 font-mono">
+                          {log.action}
+                        </span>
+                      </td>
+                      <td className="p-2.5 text-slate-300 font-mono text-[11px]">
+                        {log.entityType}:{log.entityId}
+                      </td>
+                      <td className="p-2.5 text-slate-400 text-[11px] max-w-xs truncate">{log.notes || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: ASSIGN CLUB */}
+      {/* ========================================================================= */}
+      {selectedClubForAssign && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-panel p-5 max-w-md w-full rounded-2xl border-emerald-500/40 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+              <div className="flex items-center gap-2">
+                <ClubCrest
+                  clubId={selectedClubForAssign.id}
+                  logoUrl={selectedClubForAssign.logoUrl}
+                  name={selectedClubForAssign.name}
+                  size="sm"
+                />
+                <div>
+                  <h3 className="text-sm font-black text-white">{loc('Klubga o‘yinchi biriktirish', 'Назначить игрока клубу', 'Assign Club Manager')}</h3>
+                  <p className="text-[10px] text-slate-400">{selectedClubForAssign.name}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedClubForAssign(null)}
+                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-xs font-bold text-slate-300 block">{loc('Ro‘yxatdan o‘tgan o‘yinchini tanlang', 'Выберите зарегистрированного игрока', 'Select Registered Player')}</label>
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={assignUserSearch}
+                  onChange={(e) => setAssignUserSearch(e.target.value)}
+                  placeholder={loc('Username, @username yoki Telegram ID…', 'Username, @username или Telegram ID…', 'Username, @username or Telegram ID...')}
+                  className="w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
+                {assignableUsers.map((u) => {
+                  const isSelected = assignTargetUserId === u.id;
+                  return (
+                    <button
+                      key={u.id}
+                      type="button"
+                      onClick={() => setAssignTargetUserId(u.id)}
+                      className={`w-full p-2.5 rounded-xl text-left text-xs transition-all flex items-center justify-between ${
+                        isSelected
+                          ? 'bg-emerald-500/20 border border-emerald-500/40 text-white font-bold'
+                          : 'bg-slate-900/60 hover:bg-slate-800 text-slate-300'
+                      }`}
+                    >
+                      <div>
+                        <div className="font-bold text-white">@{u.username || 'unknown'}</div>
+                        <div className="text-[10px] text-slate-400 font-mono">ID: {u.telegramId || u.id}</div>
+                      </div>
+                      {isSelected && <Check className="w-4 h-4 text-emerald-400" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.08]">
+              <button
+                type="button"
+                onClick={() => setSelectedClubForAssign(null)}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold"
+              >
+                {t.cancel}
+              </button>
+              <button
+                type="button"
+                onClick={handleAssignClub}
+                disabled={!assignTargetUserId || isProcessing}
+                className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl text-xs font-black shadow transition-all disabled:opacity-50"
+              >
+                {isProcessing ? loc('Biriktirilmoqda…', 'Назначается…', 'Assigning...') : loc('Biriktirishni tasdiqlash', 'Подтвердить назначение', 'Confirm Assignment')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: RELEASE CLUB */}
+      {/* ========================================================================= */}
+      {selectedClubForRelease && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-panel p-5 max-w-md w-full rounded-2xl border-rose-500/40 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 shrink-0">
+                <UserMinus className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-white">{loc('Klubni bo‘shatish', 'Освободить клуб', 'Release Club Ownership')}</h3>
+                <p className="text-xs text-slate-400">{selectedClubForRelease.name}</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed bg-slate-950/60 p-3 rounded-xl border border-white/[0.06]">
+              {loc('Klubni foydalanuvchidan bo‘shatasizmi', 'Освободить клуб от игрока', 'Release club from player')} <strong>{selectedClubForRelease.name}</strong> —{' '}
+              <strong className="text-rose-400">@{selectedClubForRelease.claimedByUsername || selectedClubForRelease.claimedByUserId}</strong>?{' '}
+              {loc('Klub darhol boshqa o‘yinchilar uchun ochiladi.', 'Клуб сразу станет доступен другим игрокам.', 'The club will immediately become available to other players.')}
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.08]">
+              <button
+                type="button"
+                onClick={() => setSelectedClubForRelease(null)}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold"
+              >
+                {t.cancel}
+              </button>
+              <button
+                type="button"
+                onClick={handleReleaseClub}
+                disabled={isProcessing}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-black shadow transition-all disabled:opacity-50"
+              >
+                {isProcessing ? loc('Bo‘shatilmoqda…', 'Освобождается…', 'Releasing...') : loc('Bo‘shatishni tasdiqlash', 'Подтвердить освобождение', 'Confirm Release')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: APPROVE RESULT */}
+      {/* ========================================================================= */}
+      {selectedPendingForApprove && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-panel p-5 max-w-md w-full rounded-2xl border-emerald-500/40 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+              <div className="flex items-center gap-2">
+                <FileCheck className="w-5 h-5 text-emerald-400" />
+                <div>
+                  <h3 className="text-sm font-black text-white">{loc('Uchrashuv natijasini tasdiqlash', 'Подтвердить результат матча', 'Approve Match Result')}</h3>
+                  <p className="text-[10px] text-slate-400">
+                    {selectedPendingForApprove.competitionName} • {loc('Tur', 'Тур', 'Matchday')} {selectedPendingForApprove.matchday}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedPendingForApprove(null)}
+                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Score Inputs */}
+            <div className="bg-slate-950/70 p-4 rounded-xl border border-white/[0.06] space-y-3">
+              <div className="grid grid-cols-2 gap-4 text-center">
+                <div>
+                  <ClubCrest
+                    clubId={selectedPendingForApprove.homeClubId}
+                    logoUrl={selectedPendingForApprove.homeClub?.logoUrl}
+                    name={selectedPendingForApprove.homeClub?.name}
+                    size="sm"
+                    className="mx-auto mb-1"
+                  />
+                  <div className="text-xs font-bold text-white truncate">{selectedPendingForApprove.homeClub?.name}</div>
+                  <input
+                    type="number"
+                    min={0}
+                    value={approveHomeScore}
+                    onChange={(e) => setApproveHomeScore(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                    className="w-16 py-2 text-center text-lg font-black bg-slate-900 border border-slate-700 rounded-xl text-emerald-400 mt-2 focus:outline-none focus:border-emerald-500 font-mono"
+                  />
+                </div>
+
+                <div>
+                  <ClubCrest
+                    clubId={selectedPendingForApprove.awayClubId}
+                    logoUrl={selectedPendingForApprove.awayClub?.logoUrl}
+                    name={selectedPendingForApprove.awayClub?.name}
+                    size="sm"
+                    className="mx-auto mb-1"
+                  />
+                  <div className="text-xs font-bold text-white truncate">{selectedPendingForApprove.awayClub?.name}</div>
+                  <input
+                    type="number"
+                    min={0}
+                    value={approveAwayScore}
+                    onChange={(e) => setApproveAwayScore(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                    className="w-16 py-2 text-center text-lg font-black bg-slate-900 border border-slate-700 rounded-xl text-emerald-400 mt-2 focus:outline-none focus:border-emerald-500 font-mono"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[11px] font-bold text-slate-300 block mb-1">{loc('Admin izohi', 'Заметка администратора', 'Administrative Note')}</label>
+              <input
+                type="text"
+                value={approveNotes}
+                onChange={(e) => setApproveNotes(e.target.value)}
+                placeholder={loc('Tasdiqlash izohi (ixtiyoriy)…', 'Заметка о подтверждении (необязательно)…', 'Optional confirmation note...')}
+                className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.08]">
+              <button
+                type="button"
+                onClick={() => setSelectedPendingForApprove(null)}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold"
+              >
+                {t.cancel}
+              </button>
+              <button
+                type="button"
+                onClick={handleApproveResult}
+                disabled={isProcessing}
+                className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl text-xs font-black shadow transition-all disabled:opacity-50"
+              >
+                {isProcessing ? loc('Tasdiqlanmoqda…', 'Подтверждается…', 'Confirming...') : loc('Tasdiqlash va jadvalni yangilash', 'Подтвердить и обновить таблицу', 'Confirm & Update Standings')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: REJECT RESULT */}
+      {/* ========================================================================= */}
+      {selectedPendingForReject && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-panel p-5 max-w-md w-full rounded-2xl border-rose-500/40 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+              <div className="flex items-center gap-2">
+                <XCircle className="w-5 h-5 text-rose-400" />
+                <div>
+                  <h3 className="text-sm font-black text-white">{loc('Yuborilgan natijani rad etish', 'Отклонить отправленный результат', 'Reject Result Submission')}</h3>
+                  <p className="text-[10px] text-slate-400">
+                    {selectedPendingForReject.homeClub?.name} vs {selectedPendingForReject.awayClub?.name}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedPendingForReject(null)}
+                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300">
+              {loc('Natija rad etilsa, yuborilgan hisob bekor qilinadi va ikkala o‘yinchi qayta yuborishi uchun uchrashuv ochiladi.', 'При отклонении результат удалится, а матч снова откроется для подачи счёта обоими игроками.', 'Rejecting this result discards the submission and reopens the fixture for both players to submit again.')}
+            </p>
+
+            <div>
+              <label className="text-[11px] font-bold text-slate-300 block mb-1">{loc('Sabab / o‘yinchilarga izoh', 'Причина / сообщение игрокам', 'Reason / Note to Players')}</label>
+              <textarea
+                rows={2}
+                value={rejectNotes}
+                onChange={(e) => setRejectNotes(e.target.value)}
+                placeholder={loc('Masalan: noto‘g‘ri hisob yoki yaroqsiz skrinshot…', 'Например: неверный счёт или неподходящий скриншот…', 'e.g. Incorrect score or invalid screenshot...')}
+                className="w-full p-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-rose-500 resize-none"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.08]">
+              <button
+                type="button"
+                onClick={() => setSelectedPendingForReject(null)}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold"
+              >
+                {t.cancel}
+              </button>
+              <button
+                type="button"
+                onClick={handleRejectResult}
+                disabled={isProcessing}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-black shadow transition-all disabled:opacity-50"
+              >
+                {isProcessing ? loc('Rad etilmoqda…', 'Отклоняется…', 'Rejecting...') : loc('Rad etish va uchrashuvni ochish', 'Отклонить и открыть матч', 'Reject & Reopen Match')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: INSPECT FIXTURE */}
+      {/* ========================================================================= */}
+      {(selectedFixtureForInspect || selectedPendingForInspect) && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-panel p-5 max-w-lg w-full rounded-2xl border-slate-800 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150">
+            {(() => {
+              const fix = selectedFixtureForInspect || selectedPendingForInspect!;
+              return (
+                <>
+                  <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+                    <div className="flex items-center gap-2">
+                      <Eye className="w-5 h-5 text-indigo-400" />
+                      <div>
+                        <h3 className="text-sm font-black text-white">{loc('Uchrashuv tafsilotlari', 'Данные матча', 'Match Inspector Record')}</h3>
+                        <p className="text-[10px] text-slate-400 font-mono">{loc('Uchrashuv ID', 'ID матча', 'Fixture ID')}: {fix.id}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setSelectedFixtureForInspect(null);
+                        setSelectedPendingForInspect(null);
+                      }}
+                      className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Metadata Grid */}
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="bg-slate-950/60 p-2.5 rounded-xl border border-white/[0.05]">
+                      <span className="text-[9px] uppercase font-black text-slate-500 block">{loc('Musobaqa', 'Турнир', 'Competition')}</span>
+                      <span className="font-bold text-white">{fix.competitionName || fix.competitionId}</span>
+                    </div>
+                    <div className="bg-slate-950/60 p-2.5 rounded-xl border border-white/[0.05]">
+                      <span className="text-[9px] uppercase font-black text-slate-500 block">{t.status}</span>
+                      <span className="font-bold text-emerald-400 font-mono">{fix.status}</span>
+                    </div>
+                    <div className="bg-slate-950/60 p-2.5 rounded-xl border border-white/[0.05]">
+                      <span className="text-[9px] uppercase font-black text-slate-500 block">{loc('Uy jamoasi', 'Хозяева', 'Home Team')}</span>
+                      <span className="font-bold text-white">{fix.homeClub?.name}</span>
+                    </div>
+                    <div className="bg-slate-950/60 p-2.5 rounded-xl border border-white/[0.05]">
+                      <span className="text-[9px] uppercase font-black text-slate-500 block">{loc('Mehmon jamoa', 'Гости', 'Away Team')}</span>
+                      <span className="font-bold text-white">{fix.awayClub?.name}</span>
+                    </div>
+                  </div>
+
+                  {/* Submissions if any */}
+                  {(fix as any).submissions && (fix as any).submissions.length > 0 && (
+                    <div className="space-y-2">
+                      <span className="text-[10px] uppercase font-black text-slate-400 block">{loc('O‘yinchilar yuborgan natijalar', 'Результаты игроков', 'Raw Player Submissions')}</span>
+                      <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                        {(fix as any).submissions.map((sub: any, idx: number) => (
+                          <div key={idx} className="bg-slate-950/80 p-2.5 rounded-xl border border-white/[0.05] text-xs flex items-center justify-between">
+                            <div>
+                              <div className="font-bold text-emerald-400">@{sub.submitterUsername}</div>
+                              <div className="text-[10px] text-slate-400 font-mono">
+                                {loc('Hisob', 'Счёт', 'Claimed')}: {sub.homeScore} - {sub.awayScore} • {new Date(sub.createdAt).toLocaleTimeString()}
+                              </div>
+                            </div>
+                            {sub.proofUrl && (
+                              <a
+                                href={sub.proofUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-[11px] text-indigo-400 hover:underline flex items-center gap-1"
+                              >
+                                <ExternalLink className="w-3 h-3" />
+                                <span>{loc('Dalil', 'Доказательство', 'Proof')}</span>
+                              </a>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="pt-2 border-t border-white/[0.08] flex justify-end">
+                    <button
+                      onClick={() => {
+                        setSelectedFixtureForInspect(null);
+                        setSelectedPendingForInspect(null);
+                      }}
+                      className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold"
+                    >
+                      {t.close}
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: REOPEN FIXTURE */}
+      {/* ========================================================================= */}
+      {selectedFixtureForReopen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-panel p-5 max-w-md w-full rounded-2xl border-rose-500/40 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 shrink-0">
+                <RotateCcw className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-white">{loc('Tasdiqlangan uchrashuvni qayta ochish', 'Открыть подтверждённый матч заново', 'Reopen Confirmed Fixture')}</h3>
+                <p className="text-xs text-slate-400">
+                  {selectedFixtureForReopen.homeClub?.name} vs {selectedFixtureForReopen.awayClub?.name}
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              {loc('Qayta ochish tasdiqlangan hisobni rasmiy jadvaldan olib tashlaydi va tuzatilgan hisob yuborilishi uchun uchrashuv holatini', 'Повторное открытие удалит подтверждённый счёт из таблицы и изменит статус матча на', 'Reopening removes the confirmed score from standings and sets the fixture status to')} <strong>AWAITING_RESULT</strong> {loc('holatiga qaytaradi.', 'для отправки исправленного счёта.', 'for a corrected submission.')}
+            </p>
+
+            <div>
+              <label className="text-[11px] font-bold text-slate-300 block mb-1">{loc('Qayta ochish sababi', 'Причина повторного открытия', 'Reason for Reopening')}</label>
+              <input
+                type="text"
+                value={reopenNotes}
+                onChange={(e) => setReopenNotes(e.target.value)}
+                placeholder={loc('Masalan: bahsli hisob yoki xato yuborish…', 'Например: спорный счёт или случайная отправка…', 'e.g. Disputed score or accidental submission...')}
+                className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-rose-500"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.08]">
+              <button
+                type="button"
+                onClick={() => setSelectedFixtureForReopen(null)}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold"
+              >
+                {t.cancel}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleReopenFixture(selectedFixtureForReopen.id, reopenNotes)}
+                disabled={isProcessing}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-black shadow transition-all disabled:opacity-50"
+              >
+                {isProcessing ? loc('Qayta ochilmoqda…', 'Открывается…', 'Reopening...') : loc('Tasdiqlash va qayta ochish', 'Подтвердить и открыть', 'Confirm & Reopen')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: FIXTURE VALIDATION DIAGNOSTIC */}
+      {/* ========================================================================= */}
+      {showValidationModal && fixtureValidationReport && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-panel p-6 max-w-3xl w-full rounded-2xl border-emerald-500/40 shadow-2xl space-y-5 animate-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-white/[0.08] pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-white">{loc('Ichki liga bir davrali jadval diagnostikasi', 'Проверка однокругового календаря лиги', 'Domestic League Single Round-Robin Diagnostic')}</h3>
+                  <p className="text-xs text-slate-400">
+                    {loc('Maqsad: 20 klub → 19 tur (190 o‘yin) | 18 klub → 17 tur (153 o‘yin)', 'Цель: 20 клубов → 19 туров (190 матчей) | 18 клубов → 17 туров (153 матча)', 'Target: 20 clubs → 19 rounds (190 matches) | 18 clubs → 17 rounds (153 matches)')}
+                  </p>
+                </div>
+              </div>
+              <span
+                className={`px-3 py-1 rounded-full text-xs font-black uppercase ${
+                  fixtureValidationReport.allValid
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                    : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                }`}
+              >
+                {fixtureValidationReport.allValid ? loc('100% to‘g‘ri', '100% корректно', '100% Valid') : loc('Tekshirish kerak', 'Требуется проверка', 'Review required')}
+              </span>
+            </div>
+
+            {/* Summary KPI Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-slate-900/60 p-3 rounded-xl border border-white/[0.04] text-center">
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">{loc('Jami klublar', 'Всего клубов', 'Total Clubs')}</span>
+                <span className="text-base font-black text-white">{fixtureValidationReport.summary?.totalClubs || 96}</span>
+              </div>
+              <div className="bg-slate-900/60 p-3 rounded-xl border border-white/[0.04] text-center">
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">{loc('Kutilgan o‘yinlar', 'Ожидаемые матчи', 'Expected Matches')}</span>
+                <span className="text-base font-black text-white">{fixtureValidationReport.summary?.expectedTotalFixtures || 876}</span>
+              </div>
+              <div className="bg-slate-900/60 p-3 rounded-xl border border-white/[0.04] text-center">
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">{loc('Mavjud o‘yinlar', 'Фактические матчи', 'Actual Matches')}</span>
+                <span className="text-base font-black text-emerald-400">{fixtureValidationReport.summary?.actualTotalFixtures || 0}</span>
+              </div>
+              <div className="bg-slate-900/60 p-3 rounded-xl border border-white/[0.04] text-center">
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">{loc('Tasdiqlangan natijalar', 'Подтверждённые результаты', 'Confirmed Results')}</span>
+                <span className="text-base font-black text-amber-400">{fixtureValidationReport.summary?.totalConfirmed || 0}</span>
+              </div>
+            </div>
+
+            {/* Per League Diagnostic Table */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-black uppercase text-slate-300">{loc('Ligalar bo‘yicha', 'По лигам', 'League Breakdown')}</h4>
+              <div className="space-y-2">
+                {fixtureValidationReport.leagues?.map((l: any) => (
+                  <div
+                    key={l.competitionId}
+                    className={`p-3 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                      l.isValid
+                        ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-200'
+                        : 'bg-amber-950/20 border-amber-500/30 text-amber-200'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-black text-white">{l.name}</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-slate-900 font-bold text-slate-300">
+                          {l.clubCount} {loc('klub', 'клубов', 'clubs')}
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-400 mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <span>{loc('Turlar', 'Туры', 'Matchdays')}: <strong className="text-white">{l.actualMatchdays} / {l.expectedMatchdays}</strong></span>
+                        <span>{loc('O‘yinlar', 'Матчи', 'Matches')}: <strong className="text-white">{l.actualFixtureCount} / {l.expectedFixtureCount}</strong></span>
+                        <span>{loc('Takrorlar', 'Дубли', 'Duplicates')}: <strong className="text-white">{l.duplicatePairCount}</strong></span>
+                        <span>{loc('Teskari juftliklar', 'Обратные пары', 'Reverse pairs')}: <strong className="text-white">{l.reverseFixtureCount}</strong></span>
+                      </div>
+                      {l.issues?.length > 0 && (
+                        <div className="text-[11px] text-amber-400 mt-1.5 space-y-0.5">
+                          {l.issues.map((issue: string, idx: number) => (
+                            <div key={idx} className="flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3 shrink-0" />
+                              <span>{issue}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {l.missingPairs?.length > 0 && (
+                        <div className="text-xs mt-2 space-y-1 break-words">
+                          <strong>{loc('Yetishmayotgan juftliklar', 'Отсутствующие пары', 'Missing pairings')}</strong>
+                          {l.missingPairs.map((pair: any) => (
+                            <div key={`${pair.homeClubId}:${pair.awayClubId}`}>{pair.homeClubName} — {pair.awayClubName}</div>
+                          ))}
+                        </div>
+                      )}
+                      {l.deletedFixtures?.length > 0 && (
+                        <div className="text-xs mt-2 space-y-1 break-words">
+                          <strong>{loc('O‘chirish tarixi', 'История удаления', 'Deletion history')}</strong>
+                          {l.deletedFixtures.map((row: any) => (
+                            <div key={row.fixtureId}>{row.fixtureId} · {row.reason || loc('Sabab yozilmagan', 'Причина не указана', 'No reason recorded')} · {row.deletedAt}</div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      {l.isValid ? (
+                        <span className="px-3 py-1 rounded-lg text-xs font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5" /> {loc('19/17 tur to‘g‘ri', '19/17 туров корректно', 'Perfect 19/17 rounds')}
+                        </span>
+                      ) : l.actualFixtureCount > 0 ? (
+                        <span className="text-xs max-w-48 whitespace-normal break-words">
+                          {loc('Mavjud jadvalni qayta tuzmang. Avval juftliklar va o‘chirish tarixini tekshiring.', 'Не пересоздавайте календарь. Сначала проверьте пары и историю удаления.', 'Review pairings and deletion history before changing the existing schedule.')}
+                        </span>
+                      ) : canUseDangerZone ? (
+                        <button
+                          onClick={() => {
+                            setShowValidationModal(false);
+                            handleGenerateCompetition(l.competitionId);
+                          }}
+                          className="px-3 py-1.5 rounded-lg text-xs font-black bg-amber-500 hover:bg-amber-400 text-slate-950 shadow"
+                        >
+                          {loc('Tuzish', 'Создать', 'Generate')} {l.expectedMatchdays} {loc('tur', 'туров', 'rounds')}
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-3 border-t border-white/[0.08]">
+              <span className="text-[11px] text-slate-500">
+                {loc('Tekshiruv vaqti', 'Время проверки', 'Diagnostic generated at')}: {new Date(fixtureValidationReport.timestamp).toLocaleTimeString()}
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowValidationModal(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold"
+              >
+                {loc('Tekshiruvni yopish', 'Закрыть проверку', 'Close Diagnostic')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* ADMIN PRODUCTION MANAGEMENT MODALS */}
+      {/* ========================================================================= */}
+      {selectedFixtureForEditResult && (
+        <AdminEditResultModal
+          canUseDangerZone={canUseDangerZone}
+          fixture={selectedFixtureForEditResult}
+          isOpen={!!selectedFixtureForEditResult}
+          onClose={() => setSelectedFixtureForEditResult(null)}
+          onSave={handleSaveFixtureResult}
+        />
+      )}
+
+      {selectedFixtureForDeleteResult && (
+        <AdminDeleteResultModal
+          fixture={selectedFixtureForDeleteResult}
+          isOpen={!!selectedFixtureForDeleteResult}
+          onClose={() => setSelectedFixtureForDeleteResult(null)}
+          onConfirm={handleDeleteFixtureResult}
+        />
+      )}
+
+      {canUseDangerZone && selectedFixtureForDelete && (
+        <AdminDeleteFixtureModal
+          fixture={selectedFixtureForDelete}
+          isOpen={!!selectedFixtureForDelete}
+          onClose={() => setSelectedFixtureForDelete(null)}
+          onConfirm={handleDeleteFixture}
+        />
+      )}
+
+      {selectedUserForDetail && (
+        <AdminUserDetailModal
+          canUseDangerZone={canUseDangerZone}
+          user={selectedUserForDetail}
+          isOpen={!!selectedUserForDetail}
+          onClose={() => setSelectedUserForDetail(null)}
+          onToggleAdmin={(u) => setSelectedUserForRole(u)}
+          onToggleSuspend={(u) => setSelectedUserForSuspend(u)}
+        />
+      )}
+
+      {canUseDangerZone && selectedUserForRole && (
+        <AdminSetRoleModal
+          key={selectedUserForRole.id}
+          user={selectedUserForRole}
+          isOpen={!!selectedUserForRole}
+          onClose={() => setSelectedUserForRole(null)}
+          onConfirm={handleSetUserRole}
+        />
+      )}
+
+      {selectedUserForSuspend && (
+        <AdminSuspendModal
+          user={selectedUserForSuspend}
+          isOpen={!!selectedUserForSuspend}
+          onClose={() => setSelectedUserForSuspend(null)}
+          onConfirm={handleSetUserSuspension}
+        />
+      )}
+
+      {canUseDangerZone && selectedUserForDelete && (
+        <AdminDeleteUserModal
+          user={selectedUserForDelete}
+          isOpen={!!selectedUserForDelete}
+          onClose={() => setSelectedUserForDelete(null)}
+          onConfirm={handleDeleteUser}
+        />
+      )}
+    </div>
+  );
+};

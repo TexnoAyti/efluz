@@ -1,0 +1,67 @@
+.efl-welcome {
+  --efl-bg: #f4f5f7;
+  --efl-surface: #fff;
+  --efl-surface-2: #eef1f5;
+  --efl-border: #e2e6ec;
+  --efl-text: #111827;
+  --efl-text-2: #667085;
+  --efl-muted: #98a2b3;
+  --efl-primary: #2563eb;
+  --welcome-accent: #059669;
+  background: var(--efl-bg);
+  color: var(--efl-text);
+  min-height: 100vh;
+  min-height: 100svh;
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+  color-scheme: light;
+}
+.efl-welcome--dark {
+  --efl-bg: #080b12;
+  --efl-surface: #111722;
+  --efl-surface-2: #171e2c;
+  --efl-border: #263142;
+  --efl-text: #f8fafc;
+  --efl-text-2: #94a3b8;
+  --efl-muted: #64748b;
+  --efl-primary: #3b82f6;
+  --welcome-accent: #10b981;
+  color-scheme: dark;
+}
+.efl-welcome * { box-sizing: border-box; }
+.efl-welcome .welcome-layout {
+  width: 100%; max-width: 430px; margin: 0 auto;
+  min-height: 100vh; min-height: 100svh;
+  padding: max(24px, env(safe-area-inset-top)) 24px max(20px, env(safe-area-inset-bottom));
+  display: flex; flex-direction: column;
+}
+.efl-welcome .welcome-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.efl-welcome .welcome-brand { width: 124px; height: 44px; object-fit: contain; object-position: left center; }
+.efl-welcome .welcome-controls { display: flex; gap: 8px; align-items: center; }
+.efl-welcome .welcome-theme, .efl-welcome .welcome-language {
+  border: 1px solid var(--efl-border); background: var(--efl-surface); color: var(--efl-text-2);
+  min-height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+}
+.efl-welcome .welcome-theme { width: 40px; cursor: pointer; }
+.efl-welcome .welcome-language { gap: 5px; padding-left: 10px; }
+.efl-welcome .welcome-language select { background: transparent; color: inherit; border: 0; font: inherit; font-size: 12px; font-weight: 600; min-height: 40px; padding: 0 6px 0 0; }
+.efl-welcome .welcome-content { flex: 1; padding: 0; margin-top: 32px; width: 100%; max-width: none; }
+.efl-welcome .welcome-eyebrow, .efl-welcome .welcome-leagues h2 { margin: 0; color: var(--efl-text-2); font-size: 11px; line-height: 16px; font-weight: 700; letter-spacing: .085em; }
+.efl-welcome h1 { margin: 14px 0; font-size: clamp(32px, 8.8vw, 39px); font-weight: 800; line-height: 1.08; letter-spacing: -.04em; }
+.efl-welcome h1 span { display: block; }
+.efl-welcome .welcome-accent { color: var(--welcome-accent); }
+.efl-welcome .welcome-description { margin: 0; max-width: 32ch; color: var(--efl-text-2); font-size: 14px; line-height: 1.6; }
+.efl-welcome .welcome-pitch { display: block; width: 100%; height: 68px; margin: 24px 0; stroke: var(--efl-border); stroke-width: 1.2; }
+.efl-welcome .welcome-league-icons { padding: 0; margin: 10px 0 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; list-style: none; }
+.efl-welcome .welcome-league-icons li { display: flex; justify-content: center; align-items: center; height: 68px; background: var(--efl-surface); border: 1px solid var(--efl-border); border-radius: 12px; }
+.efl-welcome .welcome-league-icons img { width: 36px; height: 42px; object-fit: contain; }
+.efl-welcome--dark .welcome-monochrome { filter: brightness(0) invert(1); }
+.efl-welcome .welcome-steps { padding: 0; margin: 22px 0 0; list-style: none; }
+.efl-welcome .welcome-steps li { display: flex; align-items: center; gap: 24px; min-height: 50px; padding: 12px 0; border-top: 1px solid var(--efl-border); font-size: 14px; font-weight: 600; }
+.efl-welcome .welcome-steps li > span:first-child { flex: 0 0 24px; color: var(--efl-text-2); font-size: 12px; font-variant-numeric: tabular-nums; }
+.efl-welcome .welcome-footer { margin-top: 24px; }
+.efl-welcome .welcome-start { display: flex; align-items: center; justify-content: center; position: relative; width: 100%; min-height: 54px; border: 0; border-radius: 12px; background: var(--efl-primary); color: #fff; font: inherit; font-weight: 700; font-size: 16px; cursor: pointer; }
+.efl-welcome .welcome-start svg { position: absolute; right: 18px; }
+.efl-welcome .welcome-footer p { color: var(--efl-text-2); text-align: center; margin: 16px 0 0; font-size: 11px; line-height: 16px; }
+.efl-welcome button:focus-visible, .efl-welcome select:focus-visible { outline: 2px solid var(--efl-primary); outline-offset: 4px; }
+@media (max-width: 370px) { .efl-welcome .welcome-layout { padding-left: 20px; padding-right: 20px; } }
+@media (prefers-reduced-motion: no-preference) { .efl-welcome .welcome-start { transition: opacity .15s; } .efl-welcome .welcome-start:hover { opacity: .9; } }

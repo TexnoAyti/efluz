@@ -1,0 +1,76 @@
+import assert from 'node:assert/strict';
+import express from 'express';
+process.env.TELEGRAM_BOT_TOKEN='123456:isolated-audit-fake-token';
+process.env.TELEGRAM_WEBHOOK_SECRET='isolated-audit-secret';
+const originalFetch=globalThis.fetch;
+let rejectSend=false;
+const telegramCalls:any[]=[];
+globalThis.fetch=async (input:any, options:any={})=>{
+ const url=String(input);
+ if(new URL(url).hostname==='api.telegram.org'){
+  const body=JSON.parse(options.body||'{}');telegramCalls.push({method:url.split('/').pop(),body});
+  return new Response(JSON.stringify(rejectSend?{ok:false,error_code:503,description:'Mock Telegram unavailable'}:{ok:true,result:true}),{status:200,headers:{'content-type':'application/json'}});
+ }
+ return originalFetch(input,options);
+};
+const { telegramRouter }=await import('../routes/telegram.routes');
+const { getFirestoreDb }=await import('../firebase/admin');
+const { handlePremiumSuccessfulPayment,answerPremiumPreCheckout }=await import('../services/premiumService');
+const { initDatabase }=await import('../db');
+await initDatabase();
+const app=express();app.use(express.json());app.use('/api/telegram',telegramRouter);
+const server=app.listen(0,'127.0.0.1');await new Promise<void>(r=>server.once('listening',r));
+const base=`http://127.0.0.1:${(server.address() as any).port}/api/telegram/webhook`;
+const post=async(update:any,secret='isolated-audit-secret')=>{
+ const r=await originalFetch(base,{method:'POST',headers:{'content-type':'application/json','x-telegram-bot-api-secret-token':secret},body:JSON.stringify(update)});return {status:r.status,body:await r.json()};
+};
+const db=getFirestoreDb();
+const order=async(id:string)=>db.collection('premium_orders').doc(id).set({orderId:id,userId:'user-bot-audit',telegramId:'10001',seasonId:'season-2026-27',amount:89,currency:'XTR',status:'PENDING',createdAt:new Date().toISOString()});
+const payment=(id:string,charge:string)=>({chat:{id:10001,type:'private'},from:{id:10001},successful_payment:{invoice_payload:'eflp:'+id,currency:'XTR',total_amount:89,telegram_payment_charge_id:charge}});
+try{
+ assert.equal((await post({update_id:1},'wrong-secret')).status,401);
+ assert.equal((await post({update_id:'invalid'})).body.ignored,'invalid_update_id');
+ const start={update_id:100,message:{text:'/start',chat:{id:10001,type:'private'},from:{id:10001,first_name:'Audit'}}};
+ assert.equal((await post(start)).body.result.messageSent,true);
+ assert.equal(telegramCalls.at(-1).body.reply_markup.inline_keyboard[0][0].web_app.url,'https://efluz.vercel.app');
+ assert.equal((await post(start)).body.ignored,'duplicate_update');
+ console.log('PASS secret protection, invalid update, normal /start, WebApp launch button, successful deduplication.');
+ rejectSend=true;
+ const failure={...start,update_id:101};
+ const a=await post(failure);assert.equal(a.status,503);
+ rejectSend=false;
+ const b=await post(failure);assert.equal(b.status,200);assert.equal(b.body.result.messageSent,true);
+ console.log('PASS failed /start is retried successfully with the same update ID.');
+ const prefix={...start,update_id:102,message:{...start.message,text:'/starter'}};
+ assert.equal((await post(prefix)).body.ignored,'unhandled_update_type');
+ console.log('PASS /starter is not parsed as /start.');
+ await order('failureOrder');
+ const transaction=db.runTransaction.bind(db);db.runTransaction=async()=>{throw Error('AUDIT_SIMULATED_FIRESTORE_UNAVAILABLE');};
+ const paid={update_id:200,message:payment('failureOrder','charge-failure-audit')};
+ const pf=await post(paid);assert.equal(pf.status,503);assert.equal(pf.body.error,'webhook_processing_failed');
+ db.runTransaction=transaction;
+ const pr=await post(paid);assert.equal(pr.status,200);assert.equal(pr.body.result.handled,true);
+ assert.equal((await db.collection('premium_orders').doc('failureOrder').get()).data()?.status,'PAID');
+ assert.equal((await db.collection('premium_entitlements').doc('season-2026-27__user-bot-audit').get()).exists,true);
+ console.log('PASS storage failure returns 503; same payment update activates Premium after recovery.');
+ assert.equal((await post(paid)).body.ignored,'duplicate_update');
+ await order('validOrder');
+ const success=await handlePremiumSuccessfulPayment(payment('validOrder','charge-valid-audit'));
+ assert.equal(success.handled,true);assert.equal(success.idempotent,false);
+ assert.equal((await handlePremiumSuccessfulPayment(payment('validOrder','charge-valid-audit'))).idempotent,true);
+ await assert.rejects(handlePremiumSuccessfulPayment({...payment('validOrder','wrong-charge'),from:{id:99999}}),/USER_MISMATCH/);
+ await assert.rejects(handlePremiumSuccessfulPayment({...payment('validOrder','amount-charge'),successful_payment:{...payment('validOrder','amount-charge').successful_payment,total_amount:90}}),/AMOUNT_MISMATCH/);
+ console.log('PASS successful payment grants Premium; duplicate charge idempotent; wrong account and amount rejected.');
+ const unknown=await answerPremiumPreCheckout({id:'pre-checkout-audit',invoice_payload:'eflp:missingOrder',currency:'XTR',total_amount:89,from:{id:10001}});
+ assert.equal(unknown.accepted,false);assert.equal(telegramCalls.at(-1).body.ok,false);
+ console.log('PASS invalid checkout refused.');
+ const help={...start,update_id:103,message:{...start.message,text:'/help'}};
+ assert.equal((await post(help)).body.handled,'help');
+ const support={...help,update_id:104,message:{...help.message,text:'/paysupport'}};
+ assert.equal((await post(support)).body.handled,'paysupport');
+ assert.ok(telegramCalls.at(-1).body.reply_markup.inline_keyboard[0][0].url.includes('efleagueuz'));
+ console.log('PASS Uzbek help and payment support responses.');
+ const html={...start,update_id:105,message:{...start.message,from:{id:10001,first_name:'A&B <C>'}}};
+ await post(html);assert.ok(telegramCalls.at(-1).body.text.includes('A&amp;B &lt;C&gt;'));
+ console.log('ALL LOCAL BOT AUDIT ASSERTIONS COMPLETE. No external messages or payments performed.');
+}finally{globalThis.fetch=originalFetch;await new Promise<void>(r=>server.close(()=>r()));}

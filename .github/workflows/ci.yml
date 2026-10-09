@@ -1,0 +1,131 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        timeout-minutes: 3
+        run: bun install
+
+      - name: Run Lint
+        run: bun run lint
+
+      - name: Verify public EFL 2.0 design and role boundaries
+        run: node scripts/verify-design-release.mjs
+
+      - name: Run Build
+        env:
+          FIREBASE_FORCE_LOCAL_FALLBACK: "true"
+          NODE_ENV: "test"
+        run: bun run build
+
+      - name: Run Vercel Self-Check & Verification Suites
+        timeout-minutes: 8
+        env:
+          FIREBASE_FORCE_LOCAL_FALLBACK: "true"
+          NODE_ENV: "test"
+        run: |
+          node --require ./scripts/block-external-network.cjs --import tsx src/lib/__tests__/fixtureOrderRegressionTest.ts
+          node --require ./scripts/block-external-network.cjs --import tsx src/lib/__tests__/scopedAdminFixturesRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/leagueAdminPermissionsRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/adminDangerZoneRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/scopedAdminReviewsRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/tournamentImageRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/tournamentImageDownloadRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/matchdayChannelPostRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/matchdayControlRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/matchdayAdvanceGuardRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/telegramMembershipCacheTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/adminUsernameAndRepairRegressionTest.ts
+          bun run test:deployment-selfcheck
+          bun run test:tournament-architecture
+          bun run test:quota-audit
+          bun run test:vercel
+          bun run test:critical-safety
+          bun run test:auth-quota
+          bun run test:security-http
+          bun run test:european-safety
+          bun run test:domestic-cup:isolated
+          ./node_modules/.bin/tsx src/server/tests/domesticCupFlowRegressionTest.ts
+          bun run test:read-model
+          bun run test:standings-initialization
+          bun run test:startup-preservation
+          bun run test:admin-authorization
+          bun run test:matchday-locks
+          bun run test:tournament-control-v2
+          ./node_modules/.bin/tsx src/server/tests/seasonLifecycleRegressionTest.ts
+          bun run test:season-operations-v3
+          bun run test:match-operations-v4
+          node scripts/run-isolated-test.mjs src/server/tests/premiumPrivateLabRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/premiumSecondClubRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/clubAdmissionRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/visibleFixtureCountsRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/leaguePairIntegrityRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/retiredFixtureRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/approvedFixtureRestorationRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/fixtureDeletionFailureRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/resultHttpLifecycleRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/domesticCupFinalGuardRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/notificationReadPersistenceRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/notificationModerationRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/notificationBackupRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/smartNotificationRecoveryRegressionTest.ts
+          bun run test:telegram-ai
+          node scripts/run-isolated-test.mjs src/server/tests/telegramAiKnowledgeRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/telegramAiCommunitySourcesRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/telegramAiCustomEmojiRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/telegramAiPersonalityRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/telegramAiResponseFailureRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/telegramAiRedisGroundingRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/telegramAiCupStageRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/telegramAiFullAccessRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/telegramAiAdminReadToolsRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/telegramAiReliabilityRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/disputeResolutionRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/telegramAiConversationRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/telegramAiNaturalAdminRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/telegramAiClubLanguageRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/telegramAiSemanticAdminRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/telegramAiRemainingFixturesRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/telegramAiUnderstandingRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/telegramAiControlRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/telegramAiRecoveryControlRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/telegramAiClarificationRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/telegramAiPlanRevisionRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/adminReadCostRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/telegramAiPersonalFixtureRegressionTest.ts
+          bun run test:phase2-durability
+          node scripts/run-isolated-test.mjs src/server/tests/quotaDurableRecoveryRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/myMatchesQuotaRegressionTest.ts
+
+      - name: Install Redis test dependency
+        timeout-minutes: 3
+        run: sudo apt-get update && sudo apt-get install -y redis-server
+
+      - name: Run Redis durability regression
+        timeout-minutes: 3
+        env:
+          FIREBASE_FORCE_LOCAL_FALLBACK: "true"
+          NODE_ENV: "test"
+        run: |
+          bun run test:redis-durability
+          bun run test:scaling-1000
