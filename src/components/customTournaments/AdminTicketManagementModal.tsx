@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { X, Ticket, PlusCircle, RotateCcw, AlertTriangle, CheckCircle2, History } from 'lucide-react';
 import { customTournamentApi } from '../../lib/customTournamentApi';
 import { TicketTransaction } from '../../types/customTournament';
@@ -12,6 +12,7 @@ export const AdminTicketManagementModal: React.FC<AdminTicketManagementModalProp
   isOpen,
   onClose,
 }) => {
+  const grantRequest=useRef<{signature:string;key:string}|null>(null);
   const [activeTab, setActiveTab] = useState<'grant' | 'refund' | 'history'>('grant');
   const [targetUserId, setTargetUserId] = useState('');
   const [targetTelegramId, setTargetTelegramId] = useState('');
@@ -29,18 +30,22 @@ export const AdminTicketManagementModal: React.FC<AdminTicketManagementModalProp
 
   const handleGrant = async () => {
     if (!targetUserId.trim()) {
-      setStatusMsg({ type: 'error', text: 'targetUserId kiritilishi shart.' });
+      setStatusMsg({ type: 'error', text: 'Foydalanuvchi ID yoki @username kiriting.' });
       return;
     }
     try {
       setIsLoading(true);
       setStatusMsg(null);
+      const signature=JSON.stringify([targetUserId.trim(),targetTelegramId.trim(),amount,note.trim()]);
+      if(grantRequest.current?.signature!==signature)grantRequest.current={signature,key:crypto.randomUUID()};
       await customTournamentApi.grantTickets({
+        idempotencyKey:grantRequest.current.key,
         targetUserId: targetUserId.trim(),
         targetTelegramId: targetTelegramId.trim() || undefined,
         amount: Number(amount),
         note: note.trim() || 'Admin tomonidan berilgan chipta (15 000 so‘m)',
       });
+      grantRequest.current=null;
       setStatusMsg({ type: 'success', text: `Muvaffaqiyatli ${amount} ta chipta berildi!` });
       setTargetUserId('');
     } catch (err: any) {
@@ -148,10 +153,10 @@ export const AdminTicketManagementModal: React.FC<AdminTicketManagementModalProp
         {activeTab === 'grant' && (
           <div className="space-y-3">
             <div>
-              <label className="text-[11px] text-slate-400 block mb-1">Foydalanuvchi IDsi (userId)</label>
+              <label className="text-[11px] text-slate-400 block mb-1">Foydalanuvchi ID / Telegram ID / @username</label>
               <input
                 type="text"
-                placeholder="Masalan: user_12345"
+                placeholder="Masalan: user-12345 yoki @username"
                 value={targetUserId}
                 onChange={(e) => setTargetUserId(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200"
@@ -205,7 +210,7 @@ export const AdminTicketManagementModal: React.FC<AdminTicketManagementModalProp
               <label className="text-[11px] text-slate-400 block mb-1">Foydalanuvchi IDsi</label>
               <input
                 type="text"
-                placeholder="user_12345"
+                placeholder="user-12345 yoki @username"
                 value={targetUserId}
                 onChange={(e) => setTargetUserId(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200"

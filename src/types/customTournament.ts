@@ -24,7 +24,7 @@ export interface TicketTransaction {
   id: string;
   userId: string;
   type: 'GRANT' | 'SPEND' | 'REFUND';
-  amount: 1;
+  amount: number;
   tournamentId?: string;
   idempotencyKey: string;
   performedByAdminId?: string;

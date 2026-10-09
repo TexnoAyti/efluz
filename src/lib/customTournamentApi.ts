@@ -230,6 +230,7 @@ export const customTournamentApi = {
   },
 
   async grantTickets(payload: {
+    idempotencyKey?: string;
     targetUserId: string;
     targetTelegramId?: string;
     amount: number;

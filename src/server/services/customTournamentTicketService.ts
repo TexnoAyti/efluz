@@ -75,6 +75,7 @@ export async function grantUserTickets(params: {
   targetTelegramId?: string;
   adminTelegramId: string | number;
   amount: number;
+  idempotencyKey?: string;
   note?: string;
 }): Promise<{ success: boolean; account: UserTicketAccount; transactionId: string }> {
   if (!isPrimaryOwner(params.adminTelegramId)) {
@@ -93,11 +94,16 @@ export async function grantUserTickets(params: {
 
   const now = new Date().toISOString();
   const txId = `tx_grant_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const idempotencyKey = `grant_${params.targetUserId}_${txId}`;
+  const idempotencyKey = params.idempotencyKey || `grant_${params.targetUserId}_${txId}`;
 
   const isFallback = process.env.FIREBASE_FORCE_LOCAL_FALLBACK === 'true' || process.env.NODE_ENV === 'test';
 
   if (isFallback) {
+    const previous=[...memoryTicketTransactions.values()].find(tx=>tx.type==='GRANT'&&tx.idempotencyKey===idempotencyKey);
+    if(previous){
+      if(previous.userId!==params.targetUserId||previous.amount!==params.amount)throw Object.assign(new Error('IDEMPOTENCY_CONFLICT'),{statusCode:409});
+      return {success:true,account:{...memoryTicketAccounts.get(params.targetUserId)!},transactionId:previous.id};
+    }
     const current = memoryTicketAccounts.get(params.targetUserId) || {
       userId: params.targetUserId,
       telegramId: params.targetTelegramId || '',
@@ -119,7 +125,7 @@ export async function grantUserTickets(params: {
       id: txId,
       userId: params.targetUserId,
       type: 'GRANT',
-      amount: 1,
+      amount: params.amount,
       idempotencyKey,
       performedByAdminId: String(params.adminTelegramId),
       note: params.note || 'Ticket grant by primary owner',
@@ -135,7 +141,14 @@ export async function grantUserTickets(params: {
   const txRef = db.collection('ticket_transactions').doc(txId);
 
   const updatedAccount = await db.runTransaction(async (transaction) => {
+    const dedupeRef=db.collection('ticket_grant_idempotency').doc(idempotencyKey);
+    const previous=await transaction.get(dedupeRef);
     const userDoc = await transaction.get(userRef);
+    if(previous.exists){
+      const saved=previous.data()!;
+      if(saved.userId!==params.targetUserId||saved.amount!==params.amount)throw Object.assign(new Error('IDEMPOTENCY_CONFLICT'),{statusCode:409});
+      return {account:userDoc.data() as UserTicketAccount,transactionId:saved.transactionId};
+    }
     const existing: UserTicketAccount = userDoc.exists
       ? (userDoc.data() as UserTicketAccount)
       : {
@@ -165,7 +178,7 @@ export async function grantUserTickets(params: {
       id: txId,
       userId: params.targetUserId,
       type: 'GRANT',
-      amount: 1,
+      amount: params.amount,
       idempotencyKey,
       performedByAdminId: String(params.adminTelegramId),
       note: params.note || 'Ticket grant by primary owner',
@@ -173,10 +186,11 @@ export async function grantUserTickets(params: {
     };
     transaction.set(txRef, txData);
 
-    return accountData;
+    transaction.set(dedupeRef,{userId:params.targetUserId,amount:params.amount,transactionId:txId});
+    return {account:accountData,transactionId:txId};
   });
 
-  return { success: true, account: updatedAccount, transactionId: txId };
+  return { success: true, account: updatedAccount.account, transactionId: updatedAccount.transactionId };
 }
 
 /**
@@ -326,6 +340,8 @@ export async function refundSpentTicket(params: {
       }
     }
 
+    if (!spendTx) throw Object.assign(new Error('Bu turnir uchun sarflangan chipta topilmadi.'), {statusCode:404,code:'TICKET_SPEND_NOT_FOUND'});
+
     const current = memoryTicketAccounts.get(params.targetUserId);
     if (!current) {
       throw Object.assign(new Error('User ticket account not found.'), { statusCode: 404 });
@@ -370,6 +386,12 @@ export async function refundSpentTicket(params: {
     if (!userDoc.exists) {
       throw Object.assign(new Error('User ticket account not found.'), { statusCode: 404 });
     }
+
+    const spend = await transaction.get(db.collection('ticket_transactions')
+      .where('userId','==',params.targetUserId)
+      .where('tournamentId','==',params.tournamentId)
+      .where('type','==','SPEND').limit(1));
+    if (spend.empty) throw Object.assign(new Error('Bu turnir uchun sarflangan chipta topilmadi.'), {statusCode:404,code:'TICKET_SPEND_NOT_FOUND'});
 
     const account = userDoc.data() as UserTicketAccount;
     const nextBalance = account.balance + 1;

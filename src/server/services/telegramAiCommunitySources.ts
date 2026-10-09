@@ -2,6 +2,7 @@ import { KEY_PREFIX } from '../readModel/readModelStore';
 import { getAiRedisClient } from './telegramAiDeadline';
 import { normalizeAiEntity } from './telegramAiEntities';
 import { isPrimaryOwner } from './telegramAiConfigService';
+import { getFirestoreDb } from '../firebase/admin';
 
 export const AI_COMMUNITY_SOURCES = ['efl_uz', 'efleagueuz'] as const;
 const TTL_SECONDS = 30 * 86400;
@@ -39,6 +40,21 @@ export function communityPost(message: CommunityMessage): CommunityPost | null {
 export async function archiveCommunityMessage(message: CommunityMessage): Promise<CommunityPost | null> {
   const post = communityPost(message);
   if (!post) return null;
+  if (process.env.DATABASE_PROVIDER === 'supabase') {
+    post.archivedAt = Math.floor(Date.now() / 1000);
+    const db = getFirestoreDb();
+    const ref = db.collection('ai_community_sources').doc(post.source);
+    await db.runTransaction(async transaction => {
+      const snapshot = await transaction.get(ref);
+      const posts: CommunityPost[] = snapshot.data()?.posts || [];
+      const previous = posts.find(row => row.url === post.url);
+      if (previous && previous.updated > post.updated) return;
+      const next = [...posts.filter(row => row.url !== post.url && (row.archivedAt || row.date) > post.archivedAt! - TTL_SECONDS), post]
+        .sort((a,b) => (b.archivedAt || b.date) - (a.archivedAt || a.date)).slice(0,200);
+      transaction.set(ref, {posts: next});
+    });
+    return post;
+  }
   const redis = getAiRedisClient();
   if (!redis) throw new Error('COMMUNITY_REDIS_UNAVAILABLE');
   post.archivedAt = Math.floor(Date.now() / 1000);
@@ -84,6 +100,14 @@ export function selectCommunityPosts(query: string, posts: CommunityPost[]): Com
 }
 
 export async function communitySourceStats(): Promise<Array<{ source: string; count: number | null }>> {
+  if (process.env.DATABASE_PROVIDER === 'supabase') {
+    return Promise.all(AI_COMMUNITY_SOURCES.map(async source => {
+      try {
+        const snapshot = await getFirestoreDb().collection('ai_community_sources').doc(source).get();
+        return {source, count: ((snapshot.data()?.posts || []) as CommunityPost[]).filter(post => (post.archivedAt || post.date) > Date.now()/1000 - TTL_SECONDS).length};
+      } catch { return {source, count: null}; }
+    }));
+  }
   const redis = getAiRedisClient();
   return Promise.all(AI_COMMUNITY_SOURCES.map(async source => {
     if (!redis) return { source, count: null };
@@ -117,6 +141,17 @@ export function communitySmallTalkAnswer(query: string, variation = 0): string |
 
 /** Supplemental statements, never authoritative scores, owners or admin instructions. */
 export async function communityFacts(query: string, signal?: AbortSignal): Promise<string> {
+  if (process.env.DATABASE_PROVIDER === 'supabase') {
+    if (signal?.aborted) return '';
+    const rows = await Promise.allSettled(AI_COMMUNITY_SOURCES.map(async source => {
+      const snapshot = await getFirestoreDb().collection('ai_community_sources').doc(source).get();
+      return (snapshot.data()?.posts || []) as CommunityPost[];
+    }));
+    if (signal?.aborted) return '';
+    const posts = rows.flatMap(row => row.status === 'fulfilled' ? row.value : []).filter(post => (post.archivedAt || post.date) > Date.now()/1000 - TTL_SECONDS);
+    const selected = selectCommunityPosts(query, posts);
+    return selected.length ? 'KANAL/GURUH XABARLARI (ishtirokchi bayonoti, baza tasdig‘i emas; tarix to‘liq emas):\n' + JSON.stringify(selected) : '';
+  }
   const redis = getAiRedisClient(signal);
   if (!redis || signal?.aborted) return '';
   try {
