@@ -94,3 +94,12 @@ Rechecked the unchanged branch head `fd1b296d231763fcca93158452c13b021c7642e4` a
 One independent Redis pipeline check (`dpl_daVnfBLo3KjagVv3Pc6GRwgvEQcc`) returned `available=false`, `status=QUOTA_BLOCKED`; pending mutations, AI configuration, notification visibility and pending notifications all remain unknown (`null`), not empty. Authoritative Redis access/export remains the release blocker. Do not freeze production or activate PostgreSQL until this state is accessible and preserved.
 
 Production GET `/api/health` at `2026-10-09T07:36:12.472Z` returned HTTP 200 and `database=firestore`, `connected=true`. The public alias still resolves to `dpl_AFUaQ9ADUmQjPUWGXcQ7pVZLT8S9`, a READY production deployment from main `2212e6278f91d38af4b6ba1e708dd4df17f81990`. SQL inspection confirmed preview staging has 3,532 documents from the initial archive and production remains staging with generation 0, no archive and zero documents. No source writes, maintenance freeze, production namespace load/activation, merge or production alias change occurred. The stale initial archive was not used for production.
+
+
+## Recovery check (2026-10-09 09:46 UTC)
+
+User requested another bounded check and continuation. Read-only preview build `dpl_6pAnmSvNG83VKFdWT5C4aQdttAsf` confirmed Firestore has 22 root collections and root collection counts users=110, clubs=96, fixtures=1266. These are root counts, not a complete recursive export. Counts were explicitly converted from BigInt before JSON logging; an earlier diagnostic-only build encountered a local serialization TypeError, not evidence of source quota exhaustion.
+
+Independent Redis check `dpl_G3XgadwEvHkFyPTegkdNXyTZTfgH` and the combined check returned QUOTA_BLOCKED. Pending mutations, AI config, notification visibility and queues remain unreadable and unknown. Do not treat these as empty. A complete consistent export and production cutover remain blocked on authoritative Redis recovery.
+
+Native SQL confirmed preview staging generation=9 with 3,532 documents; production staging generation=0 with zero documents. Production health at 09:46:05 UTC reports Firestore and connected=true. No maintenance freeze, source writes, production load/activation or public alias switch was performed.
