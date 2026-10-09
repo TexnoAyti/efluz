@@ -683,7 +683,7 @@ export async function readThroughReadModel<T>(options: TieredReadOptions<T>): Pr
 
   // 1. Process Memory Cache (Level 1)
   const memoryHit = getFromProcessMemory<ReadModelSnapshot<T>>(cleanKey);
-  if (!isDirty && memoryHit && memoryHit.data !== undefined && Date.now() - Date.parse(memoryHit.generatedAt) < ttlSeconds * 1000) {
+  if (!(postgresBundle && cleanKey.endsWith(':fixtures')) && !isDirty && memoryHit && memoryHit.data !== undefined && Date.now() - Date.parse(memoryHit.generatedAt) < ttlSeconds * 1000) {
     if (!firestoreHealthy) {
       return {
         data: memoryHit.data,
@@ -2166,6 +2166,15 @@ export async function refreshChangedFixtureReadModel(fixtureId: string): Promise
   trackFirestoreRead(COLLECTIONS.FIXTURES, document.exists ? 1 : 0, 'refreshChangedFixtureReadModel');
   if (!document.exists) throw new Error('FIXTURE_NOT_FOUND');
   const fixture = normalizeFixtureSnapshot({ ...document.data(), id: document.id } as FirestoreFixtureDoc);
+
+  const db = getFirestoreDb();
+  if (usesPostgresSnapshots() && typeof (db as any).saveFixtureDelta === 'function') {
+    await (db as any).saveFixtureDelta(fixture);
+    await invalidateDataset(ReadModelKeys.standings(fixture.competitionId, fixture.seasonId));
+    const {syncCompetitionTrophy} = await import('../services/playerTrophyService');
+    await syncCompetitionTrophy(fixture.competitionId,fixture.seasonId,fixture).catch(() => {});
+    return;
+  }
 
   const patchDataset = async (key: string): Promise<boolean> => {
     if (usesPostgresSnapshots()) {

@@ -14,6 +14,8 @@ import { adminRouter } from '../routes/admin.routes';
 await initDatabase();
 const db = getFirestoreDb();
 process.env.DATABASE_PROVIDER = 'supabase';
+let deltaWrites=0;
+(db as any).saveFixtureDelta=async(row:any)=>{deltaWrites++;await db.collection('durable_fixture_overrides').doc(row.id).set(row);return true;};
 process.env.UPSTASH_REDIS_REST_URL = 'https://redis-outage.invalid';
 process.env.UPSTASH_REDIS_REST_TOKEN = 'isolated-token';
 const client = getUpstashClient()!;
@@ -48,10 +50,12 @@ const app=express();app.use(express.json());app.use(authMiddleware);app.use('/ap
 const server=app.listen(0,'127.0.0.1');await once(server,'listening');
 const token=createSessionToken({id:'test-admin',telegramId:'123',username:'test',isAdmin:true,isSuspended:false,firstName:'',lastName:'',photoUrl:'',createdAt:'',updatedAt:''});
 try {
+  const writesBefore=deltaWrites;
   const saved=await fetch(`http://127.0.0.1:${(server.address() as any).port}/api/admin/fixtures/${fixture.id}/result`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({homeScore:2,awayScore:1,status:'CONFIRMED',idempotencyKey:'isolated-postgres-admin-result'})});
   const savedBody:any=await saved.json();
   assert.equal(saved.status,200,JSON.stringify(savedBody));
   assert.equal(savedBody.success,true);
+  assert.equal(deltaWrites-writesBefore,1,'One saved result must publish exactly one small fixture delta');
   assert.equal((await db.collection(COLLECTIONS.FIXTURES).doc(fixture.id).get()).data()?.homeScore,2);
   assert.equal((await redisGetFresh<any[]>(ReadModelKeys.adminFixtures(seasonId)))?.data[0].homeScore,2);
   for(const path of ['notifications','notifications/messages','telegram-notifications/recipients']) {

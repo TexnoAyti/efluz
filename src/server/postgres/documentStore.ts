@@ -133,6 +133,10 @@ export class PostgresDocumentStore {
     return result;
   }
   write(operations:Write[],generation?:string){return this.rpc('efl_runtime_commit',{p_space:this.databaseId,p_operations:operations,p_generation:generation??null});}
+  saveFixtureDelta(row: any): Promise<boolean> {
+    const value=clean(row);
+    return this.rpc('efl_runtime_save_fixture_delta',{p_space:this.databaseId,p_row:value,p_encoded:encodeValue(value)});
+  }
   patchSnapshot(ids: string[], row: any, merge: boolean, ttl: number, version: string): Promise<boolean> {
     return this.rpc('efl_runtime_patch_snapshot', {p_space:this.databaseId,p_ids:ids,p_row:clean(row),p_merge:merge,p_ttl:ttl,p_version:version});
   }

@@ -25,4 +25,13 @@ begin
  if has_function_privilege('anon','public.efl_runtime_patch_snapshot(text,text[],jsonb,boolean,integer,text)','execute') or has_function_privilege('authenticated','public.efl_runtime_patch_snapshot(text,text[],jsonb,boolean,integer,text)','execute') then raise exception 'PUBLIC_EXECUTE_GRANTED';end if;
  raise notice 'PASS full-season row patch, stale guard, missing row, fresh repair and private execution; ms=%',extract(epoch from clock_timestamp()-t)*1000;
 end $$;
+do $$
+declare row jsonb:='{"id":"synthetic-delta","seasonId":"test-season","competitionId":"test-comp","updatedAt":"2026-10-09T02:00:00Z","homeScore":2}'; stored jsonb;
+begin
+ perform public.efl_runtime_save_fixture_delta('preview',row,'{"type":"map","value":{}}');
+ perform public.efl_runtime_save_fixture_delta('preview',row||'{"updatedAt":"2026-10-09T01:00:00Z","homeScore":9}','{"type":"map","value":{}}');
+ select data into stored from efl_runtime.documents where space='preview' and collection_path='durable_fixture_overrides' and document_id='synthetic-delta';
+ if stored->>'homeScore'<>'2' then raise exception 'STALE_DELTA_OVERWRITE';end if;
+ if has_function_privilege('anon','public.efl_runtime_save_fixture_delta(text,jsonb,jsonb)','execute') then raise exception 'PUBLIC_DELTA_EXECUTE';end if;
+end $$;
 rollback;

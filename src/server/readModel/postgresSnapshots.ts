@@ -4,21 +4,44 @@ import { getFirestoreDb } from '../firebase/admin';
 
 const ref = (key: string) => getFirestoreDb().collection('durable_read_snapshots').doc(createHash('sha256').update(key).digest('hex'));
 const unpack = (value: any) => typeof value?.snapshotJson === 'string' ? JSON.parse(value.snapshotJson) : value?.snapshot;
+
+async function fixtureOverrides(key: string): Promise<Map<string, any>> {
+  if (!key.endsWith(':fixtures')) return new Map();
+  const seasonId = key.match(/:season:([^:]+):/)?.[1];
+  if (!seasonId) return new Map();
+  let query = getFirestoreDb().collection('durable_fixture_overrides').where('seasonId', '==', seasonId);
+  const competitionId = key.match(/:competition:([^:]+):fixtures$/)?.[1];
+  if (competitionId) query = query.where('competitionId', '==', competitionId);
+  const rows = await query.get();
+  return new Map(rows.docs.map(doc => [doc.id, doc.data()]));
+}
+function overlay(snapshot: any, changes: Map<string, any>): any {
+  if (!Array.isArray(snapshot?.data) || !changes.size) return snapshot;
+  return {...snapshot,data:snapshot.data.map((row: any) => {
+    const changed = changes.get(row.id);
+    return changed && (!row.updatedAt || changed.updatedAt >= row.updatedAt) ? changed : row;
+  })};
+}
+
 export const usesPostgresSnapshots = () => process.env.DATABASE_PROVIDER === 'supabase';
 export async function readPostgresSnapshotBundle(fresh: string, lkg: string, dirty: string): Promise<{ fresh: any; lkg: any; dirty: any }> {
   const keys = [fresh, lkg, dirty];
   const ids = keys.map(key => createHash('sha256').update(key).digest('hex'));
-  const rows = await getFirestoreDb().collection('durable_read_snapshots').where(FieldPath.documentId(), 'in', ids).get();
+  const [rows, changes] = await Promise.all([
+    getFirestoreDb().collection('durable_read_snapshots').where(FieldPath.documentId(), 'in', ids).get(),
+    fixtureOverrides(fresh),
+  ]);
   const values = new Map(rows.docs.map(doc => [doc.id, doc.data()]));
   const snapshots = ids.map(id => {
     const value = values.get(id);
     return value && (value.expiresAt === null || value.expiresAt > Date.now()) ? unpack(value) : null;
   });
-  return { fresh: snapshots[0], lkg: snapshots[1], dirty: snapshots[2] };
+  return { fresh: overlay(snapshots[0], changes), lkg: overlay(snapshots[1], changes), dirty: snapshots[2] };
 }
 export async function readPostgresSnapshot(key: string): Promise<any | null> {
-  const value = (await ref(key).get()).data();
-  return value && (value.expiresAt === null || value.expiresAt > Date.now()) ? unpack(value) : null;
+  const [document,changes] = await Promise.all([ref(key).get(),fixtureOverrides(key)]);
+  const value = document.data();
+  return value && (value.expiresAt === null || value.expiresAt > Date.now()) ? overlay(unpack(value), changes) : null;
 }
 export async function publishPostgresSnapshot(fresh: string, lkg: string, dirty: string, snapshot: any, ttl: number) {
   // Snapshot payloads historically use JSON wire semantics (omit optional undefined fields).
