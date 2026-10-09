@@ -8,8 +8,8 @@ const prefix = 'efluz:v1:telegram:webhook-update:';
 const collection = 'telegram_webhook_leases';
 const leaseMs = 120_000, doneMs = 86_400_000;
 
-// Only read-only navigation commands may use the outage fallback. AI controls,
-// payments, callbacks and imports retain their existing Redis prerequisite.
+// The PostgreSQL runtime supplies atomic shared leases for all update types.
+// Legacy Firestore keeps the existing basic-command outage policy.
 export function isBasicBotUpdate(update: any): boolean {
   const message = update?.message;
   return !update?.callback_query && !update?.pre_checkout_query && !message?.successful_payment
@@ -22,7 +22,8 @@ export function isBasicBotUpdate(update: any): boolean {
 export function createWebhookLease(getRedis = getBoundedRedisClient, getDb = getFirestoreDb) {
   return {
     async claim(updateId: number, owner: string, basic: boolean): Promise<WebhookLease> {
-      const client = getRedis();
+      const durableDatabase = process.env.DATABASE_PROVIDER === 'supabase';
+      const client = durableDatabase ? null : getRedis();
       if (client && !basic) {
         try {
           if (await client.set(prefix + updateId, owner, { nx: true, ex: leaseMs / 1000 })) return { status: 'claimed', storage: 'redis' };
@@ -31,14 +32,14 @@ export function createWebhookLease(getRedis = getBoundedRedisClient, getDb = get
         } catch {
           if (!basic) throw new Error('REDIS_WEBHOOK_UNAVAILABLE');
         }
-      } else if (!basic && process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+      } else if (!basic && !durableDatabase && process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
         const now = Date.now();
         for (const [id, value] of local) if (value.expiresAt <= now) local.delete(id);
         const prior = local.get(updateId);
         if (prior) return { status: prior.value === 'done' ? 'done' : 'busy', storage: 'memory' };
         local.set(updateId, { value: owner, expiresAt: now + leaseMs });
         return { status: 'claimed', storage: 'memory' };
-      } else if (!basic) throw new Error('REDIS_WEBHOOK_UNAVAILABLE');
+      } else if (!basic && !durableDatabase) throw new Error('REDIS_WEBHOOK_UNAVAILABLE');
 
       // Basic commands always use the same durable store, including after Redis
       // recovers, so an outage-era completed update cannot be replayed in Redis.
