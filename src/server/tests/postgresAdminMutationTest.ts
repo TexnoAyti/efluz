@@ -55,9 +55,25 @@ try {
   const savedBody:any=await saved.json();
   assert.equal(saved.status,200,JSON.stringify(savedBody));
   assert.equal(savedBody.success,true);
-  assert.equal(deltaWrites-writesBefore,1,'One saved result must publish exactly one small fixture delta');
+  assert.equal(deltaWrites-writesBefore,0,'The result and visible delta must commit in one batch before background work');
+  assert.equal(savedBody.derivedPending,true);
+  assert.equal((await db.collection('result_refresh_jobs').doc(fixture.id).get()).exists,true);
+  assert.equal((await db.collection(COLLECTIONS.AUDIT_LOGS).doc('audit_isolated-postgres-admin-result').get()).exists,true);
   assert.equal((await db.collection(COLLECTIONS.FIXTURES).doc(fixture.id).get()).data()?.homeScore,2);
   assert.equal((await redisGetFresh<any[]>(ReadModelKeys.adminFixtures(seasonId)))?.data[0].homeScore,2);
+  const {processPendingResultRefresh}=await import('../services/resultRefreshJobs');
+  const originalCollection=db.collection.bind(db);
+  (db as any).collection=(path:string)=>{
+    const collection=originalCollection(path);
+    if(path!==COLLECTIONS.STANDINGS)return collection;
+    return {doc:(id:string)=>{const ref=collection.doc(id);return {...ref,set:async()=>{throw Error('simulated standings outage');},get:async()=>{throw Error('simulated standings outage');}};}};
+  };
+  try {await processPendingResultRefresh();}finally{(db as any).collection=originalCollection;}
+  assert.equal((await db.collection('result_refresh_jobs').doc(fixture.id).get()).exists,true,'Failed derived updates must remain durable');
+  assert.equal((await db.collection(COLLECTIONS.FIXTURES).doc(fixture.id).get()).data()?.homeScore,2);
+  await db.collection('result_refresh_jobs').doc(fixture.id).update({leaseUntil:0});
+  await processPendingResultRefresh();
+  assert.equal((await db.collection('result_refresh_jobs').doc(fixture.id).get()).exists,false);
   for(const path of ['notifications','notifications/messages','telegram-notifications/recipients']) {
     const res=await fetch(`http://127.0.0.1:${(server.address() as any).port}/api/admin/${path}`,{headers:{Authorization:`Bearer ${token}`}});
     const body:any = await res.json();

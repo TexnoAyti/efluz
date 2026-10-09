@@ -75,7 +75,7 @@ export async function editFixtureResult(
   }
 ): Promise<{ success: boolean; message: string; fixture: Fixture; pendingSync?: boolean }> {
   const result = await adminEditFixtureResultFirestore(adminUserId, adminUsername, fixtureId, params);
-  await refreshDerivedCompetitionState(result.fixture.competitionId, result.fixture.seasonId || 'season-2026-27').catch(() => {});
+  if (!(result as any).derivedPending) await refreshDerivedCompetitionState(result.fixture.competitionId, result.fixture.seasonId || 'season-2026-27').catch(() => {});
   return result;
 }
 

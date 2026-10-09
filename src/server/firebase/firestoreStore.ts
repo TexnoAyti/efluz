@@ -40,6 +40,7 @@ import {
   getAdminFixturesFromReadModel,
   getAdminClubsFromReadModel,
   refreshChangedFixtureReadModel,
+  normalizeFixtureSnapshot,
   invalidateFixtureReadModels,
   invalidateStandingsReadModels,
 } from '../readModel/readModelStore';
@@ -6286,7 +6287,7 @@ export async function adminEditFixtureResultFirestore(
     notes?: string;
     idempotencyKey?: string;
   }
-): Promise<{ success: boolean; message: string; fixture: Fixture; pendingSync?: boolean }> {
+): Promise<{ success: boolean; message: string; fixture: Fixture; pendingSync?: boolean; derivedPending?: boolean }> {
   assertFixtureNotRetired(fixtureId);
   if (params.homeScore < 0 || params.awayScore < 0) {
     throw new Error('Scores must be non-negative integers.');
@@ -6434,6 +6435,23 @@ export async function adminEditFixtureResultFirestore(
     let winnerClubId: string | null = null;
     if (params.homeScore > params.awayScore) winnerClubId = existing.homeClubId;
     else if (params.awayScore > params.homeScore) winnerClubId = existing.awayClubId;
+
+    if (process.env.DATABASE_PROVIDER === 'supabase') {
+      const changed={status:targetStatus,homeScore:params.homeScore,awayScore:params.awayScore,winnerClubId,resultConfirmedAt:targetStatus==='CONFIRMED'?now:null,updatedAt:now};
+      const next={...existing,...changed,id:fixtureId};
+      const fixture=normalizeFixtureSnapshot(next);
+      const auditId=`audit_${mutationId}`;
+      const batch=db.batch();
+      batch.update(fixRef,changed);
+      batch.set(db.collection('durable_fixture_overrides').doc(fixtureId),JSON.parse(JSON.stringify(fixture)));
+      batch.set(db.collection(COLLECTIONS.AUDIT_LOGS).doc(auditId),{id:auditId,actorUserId:adminUserId,actorUsername:adminUsername||null,action:existing.status==='CONFIRMED'||existing.homeScore!=null?'ADMIN_EDIT_RESULT':'ADMIN_SET_RESULT',entityType:'fixture',entityId:fixtureId,oldValueJson:JSON.stringify(oldScore),newValueJson:JSON.stringify(changed),ipAddress:null,notes:params.notes||`Admin set result ${params.homeScore}-${params.awayScore}`,createdAt:now});
+      batch.set(db.collection('result_refresh_jobs').doc(fixtureId),{fixtureId,competitionId:existing.competitionId,seasonId:existing.seasonId,version:now,status:'pending',leaseUntil:0});
+      await batch.commit();
+      try{upsertFixtureToSqlite(next);}catch{}
+      invalidateFirestoreCache();
+      console.info('[ADMIN_RESULT_COMMITTED]',{fixtureId,homeScore:params.homeScore,awayScore:params.awayScore,derivedPending:true});
+      return {success:true,message:'Natija saqlandi. Turnir jadvali yangilanmoqda.',fixture,derivedPending:true};
+    }
 
     await fixRef.update({
       status: targetStatus,

@@ -691,6 +691,7 @@ export const api = {
       `/api/admin/fixtures/${fixtureId}/result`,
       {
         method: 'POST',
+        timeoutMs: 30000,
         body: JSON.stringify(params),
       }
     );
@@ -709,6 +710,7 @@ export const api = {
       `/api/admin/fixtures/${fixtureId}/delete-result`,
       {
         method: 'POST',
+        timeoutMs: 30000,
         body: JSON.stringify(options || {}),
       }
     );

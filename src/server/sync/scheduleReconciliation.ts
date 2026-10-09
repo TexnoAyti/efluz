@@ -9,6 +9,11 @@ export const RECONCILIATION_COOLDOWN_KEY = `${KEY_PREFIX}:outbox:recovery-cooldo
  * Firestore reads when the durable outbox is empty, no timers in serverless. */
 export async function reconcileDurableMutations(): Promise<SyncResult | null> {
   if (process.env.MIGRATION_WRITE_FREEZE === 'true') return null;
+  if (process.env.DATABASE_PROVIDER === 'supabase') {
+    const {processPendingResultRefresh}=await import('../services/resultRefreshJobs');
+    await processPendingResultRefresh();
+    return null;
+  }
   // Migration previews must never consume the production Redis outbox.
   if (process.env.DATABASE_PROVIDER === 'supabase' && process.env.SUPABASE_DATA_NAMESPACE === 'preview') return null;
   const circuit = firestoreCircuitBreaker.getStatus();
