@@ -146,6 +146,8 @@ export async function drainNotificationQueue(options: {
   hop?: number;
   continueDrain?: (hop: number) => Promise<void>;
 } = {}): Promise<void> {
+  // The preview uses a copied database, but the Redis notification queue is live.
+  if (process.env.DATABASE_PROVIDER === 'supabase' && process.env.SUPABASE_DATA_NAMESPACE === 'preview') return;
   const hop = options.hop || 0;
   const deadline = Math.min(options.deadline ?? Date.now() + DRAIN_BUDGET_MS,
     (getDeadline()?.getTime() ?? Infinity) - 15000);

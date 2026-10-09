@@ -8,6 +8,8 @@ export const RECONCILIATION_COOLDOWN_KEY = `${KEY_PREFIX}:outbox:recovery-cooldo
 /** Request/cron-driven recovery: one batch per minute across instances, no new
  * Firestore reads when the durable outbox is empty, no timers in serverless. */
 export async function reconcileDurableMutations(): Promise<SyncResult | null> {
+  // Migration previews must never consume the production Redis outbox.
+  if (process.env.DATABASE_PROVIDER === 'supabase' && process.env.SUPABASE_DATA_NAMESPACE === 'preview') return null;
   const circuit = firestoreCircuitBreaker.getStatus();
   if (circuit.softLimitExceeded || (circuit.state === 'OPEN' && circuit.cooldownRemainingMs > 0)) return null;
   const client = getUpstashClient();

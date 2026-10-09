@@ -26,7 +26,7 @@ healthRouter.get('/', async (req: Request, res: Response) => {
 
   res.status(200).json({
     status: 'ok',
-    database: 'firestore',
+    database: status.authMode === 'supabase' ? 'postgresql' : 'firestore',
     connected: isConnected,
     isOffline,
     circuitBreaker: {
@@ -36,7 +36,7 @@ healthRouter.get('/', async (req: Request, res: Response) => {
     firebaseConfigured: status.isConfigured,
     warning: connectionWarning || undefined,
     timestamp: new Date().toISOString(),
-    version: '2.0.0-firestore-production',
+    version: status.authMode === 'supabase' ? '2.0.0-postgresql-production' : '2.0.0-firestore-production',
   });
 });
 
