@@ -23,7 +23,7 @@ import { filterRetiredFixtures, hasFixtureMatchdayCorrection } from '../services
 
 import { Redis } from '@upstash/redis';
 import { FieldPath } from 'firebase-admin/firestore';
-import { usesPostgresSnapshots, readPostgresSnapshot, publishPostgresSnapshot, invalidatePostgresSnapshot, deletePostgresSnapshots, postgresSnapshotTtl, patchPostgresSnapshot } from './postgresSnapshots';
+import { usesPostgresSnapshots, readPostgresSnapshot, publishPostgresSnapshot, invalidatePostgresSnapshot, deletePostgresSnapshots, postgresSnapshotTtl, patchPostgresSnapshot, readPostgresSnapshotBundle } from './postgresSnapshots';
 import { sharedReadRefresh, isReadRefreshUnavailable } from './sharedReadRefresh';
 import { resolveRedisConfig } from './redisConfig';
 import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
@@ -678,7 +678,8 @@ export async function readThroughReadModel<T>(options: TieredReadOptions<T>): Pr
 
   const breakerStatus = firestoreCircuitBreaker.getStatus();
   const firestoreHealthy = breakerStatus.state === 'CLOSED' && !breakerStatus.softLimitExceeded;
-  const isDirty = await redisIsDirty(cleanKey);
+  const postgresBundle = usesPostgresSnapshots() ? await readPostgresSnapshotBundle(getFreshKey(cleanKey), getLkgKey(cleanKey), getDirtyKey(cleanKey)) : null;
+  const isDirty = postgresBundle ? Boolean(postgresBundle.dirty?.data) : await redisIsDirty(cleanKey);
 
   // 1. Process Memory Cache (Level 1)
   const memoryHit = getFromProcessMemory<ReadModelSnapshot<T>>(cleanKey);
@@ -706,7 +707,7 @@ export async function readThroughReadModel<T>(options: TieredReadOptions<T>): Pr
   // 2. Fresh Redis Snapshot (Level 2)
   let freshSnapshot: ReadModelSnapshot<T> | null = null;
   if (!isDirty) {
-    freshSnapshot = await redisGetFresh<T>(cleanKey);
+    freshSnapshot = postgresBundle ? postgresBundle.fresh : await redisGetFresh<T>(cleanKey);
   }
 
   // Return valid cached data before reserving a Firestore recovery probe.
@@ -741,7 +742,7 @@ export async function readThroughReadModel<T>(options: TieredReadOptions<T>): Pr
       };
     }
     // Try LKG
-    const lkgSnapshot = await redisGetLkg<T>(cleanKey);
+    const lkgSnapshot = postgresBundle ? postgresBundle.lkg : await redisGetLkg<T>(cleanKey);
     if (lkgSnapshot && lkgSnapshot.data !== undefined) {
       setInProcessMemory(cleanKey, lkgSnapshot);
       return {
@@ -811,7 +812,7 @@ export async function readThroughReadModel<T>(options: TieredReadOptions<T>): Pr
     };
   } catch (firestoreErr: any) {
     // 4. Stale Redis LKG Snapshot on Firestore failure
-    const lkgSnapshot = await redisGetLkg<T>(cleanKey);
+    const lkgSnapshot = postgresBundle ? postgresBundle.lkg : await redisGetLkg<T>(cleanKey);
     if (lkgSnapshot && lkgSnapshot.data !== undefined) {
       console.warn(
         `[READ_MODEL] Firestore failed for ${key}, serving stale Redis LKG snapshot. Cause:`,
@@ -1223,7 +1224,7 @@ export function normalizeFixtureSnapshot(doc: any, seasonId = 'season-2026-27'):
     };
 }
 
-export async function buildAdminFixturesSnapshot(seasonId = 'season-2026-27', publishCompetitionSlices = true): Promise<ReadModelSnapshot<Fixture[]>> {
+export async function buildAdminFixturesSnapshot(seasonId = 'season-2026-27', publishCompetitionSlices = true, persistSeasonSnapshot = true): Promise<ReadModelSnapshot<Fixture[]>> {
   const db = getFirestoreDb();
   let fixDocs: FirestoreFixtureDoc[] = [];
 
@@ -1268,7 +1269,7 @@ export async function buildAdminFixturesSnapshot(seasonId = 'season-2026-27', pu
   };
 
   const key = ReadModelKeys.adminFixtures(seasonId);
-  await persistReadSnapshot(key, snapshot, 86400);
+  if (persistSeasonSnapshot) await persistReadSnapshot(key, snapshot, 86400);
 
   // Interactive admin reads need one season snapshot, not a sequential rebuild
   // of every competition. Competition reads can build their own slices.
@@ -2005,8 +2006,10 @@ export async function getAdminFixturesFromReadModel(
   const limit = Math.min(Math.max(options.limit || 25, 1), 100);
 
   // 1. Check Redis fresh or LKG snapshot first
-  const redisFresh = await redisGetFresh<Fixture[]>(ReadModelKeys.adminFixtures(seasonId));
-  const redisLkg = !redisFresh ? await redisGetLkg<Fixture[]>(ReadModelKeys.adminFixtures(seasonId)) : null;
+  const datasetKey = ReadModelKeys.adminFixtures(seasonId);
+  const postgresBundle = usesPostgresSnapshots() ? await readPostgresSnapshotBundle(getFreshKey(datasetKey), getLkgKey(datasetKey), getDirtyKey(datasetKey)) : null;
+  const redisFresh: ReadModelSnapshot<Fixture[]> | null = postgresBundle ? postgresBundle.fresh : await redisGetFresh<Fixture[]>(datasetKey);
+  const redisLkg: ReadModelSnapshot<Fixture[]> | null = !redisFresh ? (postgresBundle ? postgresBundle.lkg : await redisGetLkg<Fixture[]>(datasetKey)) : null;
   const snapshotRes = redisFresh || redisLkg;
 
   if (!usesPostgresSnapshots() && (!snapshotRes || !Array.isArray(snapshotRes.data) || snapshotRes.data.length === 0)) {
@@ -2044,7 +2047,7 @@ export async function getAdminFixturesFromReadModel(
     key: ReadModelKeys.adminFixtures(seasonId),
     seasonId,
     firestoreFetcher: async () => {
-      const snap = await buildAdminFixturesSnapshot(seasonId, false);
+      const snap = await buildAdminFixturesSnapshot(seasonId, false, false);
       return snap.data;
     },
     validateData: (fixtures) => Array.isArray(fixtures) && fixtures.length > 0,
@@ -2053,7 +2056,7 @@ export async function getAdminFixturesFromReadModel(
   // A cup's authoritative refresh may already be newer than an old admin LKG
   // (for example after a redraw performed before this fix was deployed).
   // Repair that one slice from Redis without scanning the whole Firestore season.
-  if (await redisIsDirty(ReadModelKeys.adminFixtures(seasonId))) {
+  if (postgresBundle ? Boolean(postgresBundle.dirty?.data) : await redisIsDirty(ReadModelKeys.adminFixtures(seasonId))) {
     const cupIds = [
       'comp-fa-cup-2026', 'comp-copa-del-rey-2026', 'comp-coppa-italia-2026',
       'comp-dfb-pokal-2026', 'comp-coupe-de-france-2026',

@@ -54,9 +54,12 @@ try {
   assert.equal(savedBody.success,true);
   assert.equal((await db.collection(COLLECTIONS.FIXTURES).doc(fixture.id).get()).data()?.homeScore,2);
   assert.equal((await redisGetFresh<any[]>(ReadModelKeys.adminFixtures(seasonId)))?.data[0].homeScore,2);
-  for(const path of ['notifications','notifications/messages']) {
+  for(const path of ['notifications','notifications/messages','telegram-notifications/recipients']) {
     const res=await fetch(`http://127.0.0.1:${(server.address() as any).port}/api/admin/${path}`,{headers:{Authorization:`Bearer ${token}`}});
-    assert.equal(res.status,200);assert.ok(Array.isArray((await res.json() as any).notifications));
+    const body:any = await res.json();
+    assert.equal(res.status,200,JSON.stringify(body));
+    assert.ok(Array.isArray(path.includes('recipients') ? body.recipients : body.notifications));
+    if (path.includes('recipients')) { assert.equal(body.total,1); assert.equal('telegramId' in body.recipients[0],false); }
   }
 } finally {server.close();}
 console.log('PASS authenticated result POST, PostgreSQL result snapshots, matchday patch, visibility tombstones, and notification routes with broken Redis');

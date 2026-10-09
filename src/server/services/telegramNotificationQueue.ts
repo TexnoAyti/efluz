@@ -265,9 +265,11 @@ export async function syncRecipientDirectory(seasonId = 'season-2026-27'): Promi
 
   // Persist into private Redis directory
   const entriesArray = Array.from(dirMap.values());
-  const client = getUpstashClient();
-  if (client) {
-    await client.set(`${RECIPIENT_DIR_KEY}:${seasonId}`, entriesArray);
+  if (process.env.DATABASE_PROVIDER === 'supabase') {
+    await getFirestoreDb().collection('runtime_settings').doc(`recipient-directory-${seasonId}`).set({ entries: entriesArray, updatedAt: now });
+  } else {
+    const client = getUpstashClient();
+    if (client) await client.set(`${RECIPIENT_DIR_KEY}:${seasonId}`, entriesArray);
   }
   memoryRecipientDirectory.clear();
   for (const entry of entriesArray) memoryRecipientDirectory.set(entry.userId, entry);
@@ -287,8 +289,20 @@ export async function getSafeEligibleRecipients(
   if (memoryRecipientSeason !== seasonId) memoryRecipientDirectory.clear();
   const client = getUpstashClient();
   let entries: RecipientDirectoryEntry[] = [];
+  let durableDirectoryLoaded = false;
 
-  if (client) {
+  if (process.env.DATABASE_PROVIDER === 'supabase') {
+    const directory = (await getFirestoreDb().collection('runtime_settings').doc(`recipient-directory-${seasonId}`).get()).data();
+    if (Array.isArray(directory?.entries)) {
+      entries = directory.entries;
+      durableDirectoryLoaded = true;
+      memoryRecipientDirectory.clear();
+      entries.forEach(entry => memoryRecipientDirectory.set(entry.userId, entry));
+      memoryRecipientSeason = seasonId;
+    }
+  }
+
+  if (client && process.env.DATABASE_PROVIDER !== 'supabase') {
     try {
       const cached = await client.get<RecipientDirectoryEntry[]>(`${RECIPIENT_DIR_KEY}:${seasonId}`);
       if (Array.isArray(cached) && cached.length > 0) {
@@ -300,7 +314,7 @@ export async function getSafeEligibleRecipients(
     } catch {}
   }
 
-  if (entries.length === 0) {
+  if (entries.length === 0 && !durableDirectoryLoaded) {
     // A missing snapshot is an explicit admin refresh condition. Never start
     // an unbounded Firestore scan from a read path during quota exhaustion.
     if (memoryRecipientDirectory.size === 0) throw new Error('RECIPIENT_DIRECTORY_UNAVAILABLE');

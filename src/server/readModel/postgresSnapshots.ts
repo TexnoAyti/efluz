@@ -1,8 +1,20 @@
 import { createHash } from 'node:crypto';
+import { FieldPath } from 'firebase-admin/firestore';
 import { getFirestoreDb } from '../firebase/admin';
 
 const ref = (key: string) => getFirestoreDb().collection('durable_read_snapshots').doc(createHash('sha256').update(key).digest('hex'));
 export const usesPostgresSnapshots = () => process.env.DATABASE_PROVIDER === 'supabase';
+export async function readPostgresSnapshotBundle(fresh: string, lkg: string, dirty: string): Promise<{ fresh: any; lkg: any; dirty: any }> {
+  const keys = [fresh, lkg, dirty];
+  const ids = keys.map(key => createHash('sha256').update(key).digest('hex'));
+  const rows = await getFirestoreDb().collection('durable_read_snapshots').where(FieldPath.documentId(), 'in', ids).get();
+  const values = new Map(rows.docs.map(doc => [doc.id, doc.data()]));
+  const snapshots = ids.map(id => {
+    const value = values.get(id);
+    return value && (value.expiresAt === null || value.expiresAt > Date.now()) ? value.snapshot : null;
+  });
+  return { fresh: snapshots[0], lkg: snapshots[1], dirty: snapshots[2] };
+}
 export async function readPostgresSnapshot(key: string): Promise<any | null> {
   const value = (await ref(key).get()).data();
   return value && (value.expiresAt === null || value.expiresAt > Date.now()) ? value.snapshot : null;

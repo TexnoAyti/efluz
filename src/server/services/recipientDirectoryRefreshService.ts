@@ -1,5 +1,6 @@
 import { getUpstashClient, KEY_PREFIX } from '../readModel/readModelStore';
 import { syncRecipientDirectory } from './telegramNotificationQueue';
+import { getFirestoreDb } from '../firebase/admin';
 
 const DEFAULT_REFRESH_INTERVAL_SECONDS = 5 * 60;
 
@@ -20,6 +21,12 @@ export async function refreshRecipientDirectoryIfStale(
   seasonId = 'season-2026-27',
   intervalSeconds = DEFAULT_REFRESH_INTERVAL_SECONDS
 ): Promise<RecipientDirectoryRefreshResult> {
+  if (process.env.DATABASE_PROVIDER === 'supabase') {
+    const previous = (await getFirestoreDb().collection('runtime_settings').doc(`recipient-directory-${seasonId}`).get()).data();
+    if (Array.isArray(previous?.entries) && Date.now() - Date.parse(previous.updatedAt) < intervalSeconds * 1000) return { refreshed: false, reason: 'recently-refreshed' };
+    const count = await syncRecipientDirectory(seasonId);
+    return { refreshed: true, count, reason: 'refreshed' };
+  }
   const client = getUpstashClient();
   if (!client) return { refreshed: false, reason: 'redis-unavailable' };
 

@@ -30,6 +30,9 @@ export function runtimeRpc(): RuntimeRpc {
   const url=process.env.SUPABASE_URL,key=process.env.SUPABASE_SERVICE_ROLE_KEY;
   if(!url||!key||new URL(url).protocol!=='https:') throw new Error('SUPABASE_SERVER_CONFIG_REQUIRED');
   return async(name,body)=>{
+    const started = Date.now();
+    const target = body.p_query?.collection || body.p_query?.path?.split('/').slice(0,-1).join('/') || 'commit';
+    try {
     const response=await fetch(`${url.replace(/\/$/,'')}/rest/v1/rpc/${name}`,{
       method:'POST',headers:migrationHeaders(key),body:JSON.stringify(body),signal:AbortSignal.timeout(15000),
     });
@@ -40,7 +43,13 @@ export function runtimeRpc(): RuntimeRpc {
       const code=safe.includes(error.message)?error.message:`POSTGRES_RPC_HTTP_${response.status}`;
       throw Object.assign(new Error(code),{code:error.message==='DOCUMENT_NOT_FOUND'?5:error.message==='DOCUMENT_ALREADY_EXISTS'?6:undefined});
     }
-    return response.json();
+    const result = await response.json();
+    if (Date.now()-started > 2000) console.warn('[POSTGRES_RPC_SLOW]', {name,target,ms:Date.now()-started});
+    return result;
+    } catch (error: any) {
+      console.error('[POSTGRES_RPC_FAILED]', {name,target,ms:Date.now()-started,message:error?.message});
+      throw error;
+    }
   };
 }
 
