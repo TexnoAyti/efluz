@@ -3,6 +3,7 @@ import { FieldPath } from 'firebase-admin/firestore';
 import { getFirestoreDb } from '../firebase/admin';
 
 const ref = (key: string) => getFirestoreDb().collection('durable_read_snapshots').doc(createHash('sha256').update(key).digest('hex'));
+const unpack = (value: any) => typeof value?.snapshotJson === 'string' ? JSON.parse(value.snapshotJson) : value?.snapshot;
 export const usesPostgresSnapshots = () => process.env.DATABASE_PROVIDER === 'supabase';
 export async function readPostgresSnapshotBundle(fresh: string, lkg: string, dirty: string): Promise<{ fresh: any; lkg: any; dirty: any }> {
   const keys = [fresh, lkg, dirty];
@@ -11,22 +12,22 @@ export async function readPostgresSnapshotBundle(fresh: string, lkg: string, dir
   const values = new Map(rows.docs.map(doc => [doc.id, doc.data()]));
   const snapshots = ids.map(id => {
     const value = values.get(id);
-    return value && (value.expiresAt === null || value.expiresAt > Date.now()) ? value.snapshot : null;
+    return value && (value.expiresAt === null || value.expiresAt > Date.now()) ? unpack(value) : null;
   });
   return { fresh: snapshots[0], lkg: snapshots[1], dirty: snapshots[2] };
 }
 export async function readPostgresSnapshot(key: string): Promise<any | null> {
   const value = (await ref(key).get()).data();
-  return value && (value.expiresAt === null || value.expiresAt > Date.now()) ? value.snapshot : null;
+  return value && (value.expiresAt === null || value.expiresAt > Date.now()) ? unpack(value) : null;
 }
 export async function publishPostgresSnapshot(fresh: string, lkg: string, dirty: string, snapshot: any, ttl: number) {
   // Snapshot payloads historically use JSON wire semantics (omit optional undefined fields).
   const durable = JSON.parse(JSON.stringify(snapshot));
   await getFirestoreDb().runTransaction(async tx => {
-    const previous = (await tx.get(ref(lkg))).data()?.snapshot;
+    const previous = unpack((await tx.get(ref(lkg))).data());
     if (previous && (previous.actualCount > 0 && snapshot.actualCount === 0 || previous.generatedAt > snapshot.generatedAt)) throw new Error('SNAPSHOT_REJECTED: ' + lkg);
-    tx.set(ref(fresh), { snapshot: durable, expiresAt: Date.now() + Math.max(1, ttl) * 1000 });
-    tx.set(ref(lkg), { snapshot: durable, expiresAt: null });
+    tx.set(ref(fresh), { snapshotJson: JSON.stringify(durable), expiresAt: Date.now() + Math.max(1, ttl) * 1000 });
+    tx.set(ref(lkg), { snapshotJson: JSON.stringify(durable), expiresAt: null });
     tx.delete(ref(dirty));
   });
 }
@@ -51,8 +52,8 @@ export async function postgresSnapshotTtl(key: string) {
 /** Patch a single row under the same transaction as fresh/LKG publication. */
 export async function patchPostgresSnapshot(fresh: string, lkg: string, dirty: string, row: any, merge: boolean, ttl: number, version: string): Promise<boolean> {
   return getFirestoreDb().runTransaction(async tx => {
-    const previous = (await tx.get(ref(lkg))).data()?.snapshot
-      || (await tx.get(ref(fresh))).data()?.snapshot;
+    const previous = unpack((await tx.get(ref(lkg))).data())
+      || unpack((await tx.get(ref(fresh))).data());
     if (!Array.isArray(previous?.data)) return false;
     const index = previous.data.findIndex((item: any) => item.id === row.id);
     if (index < 0) return false;
@@ -61,8 +62,8 @@ export async function patchPostgresSnapshot(fresh: string, lkg: string, dirty: s
     const data = previous.data.slice();
     data[index] = merge ? { ...old, ...row } : row;
     const snapshot = JSON.parse(JSON.stringify({ ...previous, data, actualCount: data.length, generatedAt: new Date().toISOString(), sourceVersion: version }));
-    tx.set(ref(fresh), { snapshot, expiresAt: Date.now() + ttl * 1000 });
-    tx.set(ref(lkg), { snapshot, expiresAt: null });
+    tx.set(ref(fresh), { snapshotJson: JSON.stringify(snapshot), expiresAt: Date.now() + ttl * 1000 });
+    tx.set(ref(lkg), { snapshotJson: JSON.stringify(snapshot), expiresAt: null });
     tx.delete(ref(dirty));
     return true;
   });
