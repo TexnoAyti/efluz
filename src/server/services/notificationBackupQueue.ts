@@ -3,6 +3,7 @@ import { getUpstashClient, KEY_PREFIX } from '../readModel/readModelStore';
 import { resolveRedisConfig } from '../readModel/redisConfig';
 
 export const SMART_ENQUEUE_SCRIPT = `
+  -- EFL_NOTIFY_SMART_ENQUEUE_V1
   if redis.call('HEXISTS', KEYS[2], ARGV[2]) == 1 then return 0 end
   local accepted = redis.call('SET', KEYS[1], '1', 'NX', 'EX', ARGV[1])
   if not accepted then return -1 end
@@ -47,6 +48,7 @@ export async function persistBackupNotification(envelope: BackupEnvelope, backup
 }
 
 export async function pendingBackupNotifications(): Promise<number> {
+  if(process.env.DATABASE_PROVIDER==='supabase')return 0;
   const backup = getNotificationBackupClient();
   if (!backup) return 0;
   try { return await backup.zcard(PENDING); }
@@ -60,7 +62,7 @@ export async function pendingBackupNotifications(): Promise<number> {
  * The primary broadcast ID also deduplicates retries after the short TTL expires.
  */
 export async function recoverBackupNotifications(batchSize = 25, primary = getUpstashClient(), backup = getNotificationBackupClient()): Promise<number> {
-  if (!primary || !backup) return 0;
+  if (process.env.DATABASE_PROVIDER==='supabase' || !primary || !backup) return 0;
   const ids = await backup.zrange<string[]>(PENDING, 0, Math.max(1, Math.min(batchSize, 100)) - 1);
   let recovered = 0;
   for (const id of ids) {

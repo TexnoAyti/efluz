@@ -121,6 +121,9 @@ export async function startMockUpstashBridge(): Promise<MockRedisServer> {
       const numKeys = Number(args[2] || 0);
       const keys = args.slice(3, 3 + numKeys);
       const argv = args.slice(3 + numKeys);
+      if (String(args[1]).includes("redis.call('GET', KEYS[1]) == ARGV[1]")) {
+        return store.get(String(keys[0])) === String(argv[0]) ? Number(store.delete(String(keys[0]))) : 0;
+      }
       if (String(args[1]).includes('EFL_OUTBOX_TRANSITION_V1')) {
         const raw = store.get(String(keys[0]));
         if (!raw || (JSON.parse(raw).revision || '') !== String(argv[1])) return 0;

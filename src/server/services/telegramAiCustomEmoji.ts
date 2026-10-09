@@ -16,6 +16,7 @@ export async function saveAiCustomEmoji(palette: AiCustomEmoji[]): Promise<numbe
   if (!redis) throw new Error('EMOJI_REDIS_UNAVAILABLE');
   if (!palette.length) return 0;
   const count = await redis.eval(`
+    -- EFL_AI_EMOJI_SAVE_V1
     local count = 0
     for i = 1, #ARGV, 2 do
       if redis.call('HEXISTS', KEYS[1], ARGV[i]) == 1 or redis.call('HLEN', KEYS[1]) < 32 then
@@ -43,7 +44,7 @@ export async function decorateAiCustomEmoji(escapedHtml: string, signal: AbortSi
   const redis = getAiRedisClient(signal);
   if (!redis || signal.aborted) return escapedHtml;
   try {
-    const raw = await redis.eval("return redis.call('HGETALL', KEYS[1])", [key], []);
+    const raw = await redis.eval("-- EFL_AI_EMOJI_READ_V1\nreturn redis.call('HGETALL', KEYS[1])", [key], []);
     const values = Array.isArray(raw) ? raw : [];
     const palette: AiCustomEmoji[] = [];
     for (let i = 0; i + 1 < values.length; i += 2) palette.push({ emoji: String(values[i]), id: String(values[i+1]).replace(/^id:/, '') });

@@ -216,7 +216,7 @@ export const AdminTelegramAiTab: React.FC = () => {
             <div className="pt-2">
               <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl space-y-1.5 text-[11px]">
                 <div className="flex items-center justify-between text-slate-400">
-                  <span>Redis Read-Model:</span>
+                  <span>AI holati bazasi:</span>
                   <span className={`font-semibold ${redisAvailable ? 'text-emerald-400' : 'text-rose-400'}`}>
                     {redisAvailable ? 'Ulangan (Online)' : 'Uzilgan (Fail-Closed)'}
                   </span>

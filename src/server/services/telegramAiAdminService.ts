@@ -139,6 +139,7 @@ async function claim(record: Pending, state: 'executing'|'cancelled', signal: Ab
   }
   // Durable claim BEFORE the mutation: uncertain DB outcomes are never automatically retried.
   return Number(await client.eval(`
+    -- EFL_AI_PLAN_CLAIM_V1
     local raw = redis.call('GET', KEYS[1])
     if not raw then return 0 end
     local p = cjson.decode(raw)

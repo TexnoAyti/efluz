@@ -19,7 +19,7 @@ const profile = read('src/components/PlayerSeasonProfile.tsx');
 for (const marker of ['Public Season Profile', 'Recent Form', 'Next Assignment', 'Season Awards']) {
   assert(profile.includes(marker), `player profile missing ${marker}`);
 }
-assert(profile.includes('Trophy Cabinet remain Premium'), 'public profile must state the Premium career boundary');
+assert(profile.includes('Deep Career analytics remain Premium'), 'public profile must state the Premium career boundary');
 assert(!profile.includes('Strongest Competition'), 'advanced competition analysis must not leak into the free profile');
 
 const matchControl = read('src/components/admin/AdminMatchModals.tsx');

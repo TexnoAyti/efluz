@@ -51,6 +51,7 @@ export function reviseAiAdminPlan(plan: AdminPlan, revision: AiPlanRevision, sco
 /** Replacement and invalidation are one transaction, racing confirmations safely.
  * A replacement is not confirmable through the latest pointer until delivered. */
 export const AI_ADMIN_PLAN_REPLACE_LUA = `
+-- EFL_AI_PLAN_REPLACE_V1
 local raw = redis.call('GET', KEYS[1])
 local latest = redis.call('GET', KEYS[3])
 if not raw or not latest then return 0 end

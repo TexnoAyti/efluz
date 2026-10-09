@@ -186,7 +186,7 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
           } else {
             const bindResult = await bindTelegramAiTopic(message.chat.id, message.message_thread_id, message.from.id);
             if (!bindResult.success) {
-              await sendTelegramMessage(message.chat.id, `Xatolik: mavzuni bog'lab bo'lmadi (${bindResult.error}). Redis xizmati ulanganligini tekshiring.`, {
+              await sendTelegramMessage(message.chat.id, `Xatolik: mavzuni bog'lab bo'lmadi (${bindResult.error}). AI holati bazasi ulanganligini tekshiring.`, {
                 message_thread_id: message.message_thread_id,
                 reply_to_message_id: message.message_id,
                 parse_mode: null,
@@ -225,7 +225,7 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
               `• AI Xizmati: <b>${config.enabled ? '🟢 FAOL (ON)' : "🔴 O'CHIQ (OFF)"}</b>\n` +
               `• Bog'langan Chat ID: <code>${config.allowedChatId ?? "Bog'lanmagan"}</code>\n` +
               `• Bog'langan Thread ID: <code>${config.allowedThreadId ?? "Bog'lanmagan"}</code>\n` +
-              `• Redis Holati: <b>${redisAvailable ? 'Ulangan' : 'Uzilgan (Fail-Closed)'}</b>\n` +
+              `• AI holati bazasi: <b>${redisAvailable ? 'Ulangan' : 'Uzilgan (Fail-Closed)'}</b>\n` +
               `• Bugungi so'rovlar: <code>${rateMetrics.dailyRequests}/${config.maxDailyRequests}</code>\n` +
               `• User so'rov limiti: <code>${config.rateLimitUserPerMin} req/min</code>\n` +
               `• Mavzu limiti: <code>${config.rateLimitTopicPerMin} req/min</code>\n\n` +

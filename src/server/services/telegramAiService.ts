@@ -190,6 +190,7 @@ export async function claimDeliveryState(
     if (targetState === 'sending') {
       // Atomic transition to 'sending': only allowed if not already sending/sent/timeout
       const res = await client.eval(`
+        -- EFL_AI_DELIVERY_V1
         local cur = redis.call('GET', KEYS[1])
         if cur == 'sending' or cur == 'sent' or cur == 'unknown_timeout' then
           return 0
@@ -498,8 +499,9 @@ export async function handleTelegramAiMessage(
   let ownerControl = owner && (isAiAdminCommand(payload.text) || ['admin','confirm','cancel','help'].includes(intent) || replyConfirmation);
   let nativeClarification = false;
   const rootController = new AbortController();
-  const deadlineAt = Date.now() + (owner ? 30000 : GLOBAL_TIMEOUT_MS);
-  const globalTimeout = setTimeout(() => rootController.abort(), owner ? 30000 : GLOBAL_TIMEOUT_MS);
+  const requestBudget = owner || process.env.DATABASE_PROVIDER === 'supabase' ? 30000 : GLOBAL_TIMEOUT_MS;
+  const deadlineAt = Date.now() + requestBudget;
+  const globalTimeout = setTimeout(() => rootController.abort(), requestBudget);
 
   try {
     // 3. Load configuration under deadline with fail-closed guarantee

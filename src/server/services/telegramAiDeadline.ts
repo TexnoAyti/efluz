@@ -1,8 +1,10 @@
+import {PostgresAiStore} from './postgresAiStore';
 import { Redis } from '@upstash/redis';
 import { resolveRedisConfig } from '../readModel/redisConfig';
 
-/** Dedicated AI transport: cancellation never changes the shared payment/cache client. */
+/** Dedicated AI state transport: PostgreSQL in migrated deployments, optional Redis elsewhere. */
 export function getAiRedisClient(signal?: AbortSignal): Redis | null {
+  if (process.env.DATABASE_PROVIDER === 'supabase') return new PostgresAiStore(signal) as unknown as Redis;
   const config = resolveRedisConfig(process.env);
   if (!config) return null;
   const client = new Redis({

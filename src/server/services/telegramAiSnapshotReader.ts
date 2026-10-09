@@ -1,5 +1,6 @@
 import { getFreshKey, getLkgKey, getDirtyKey, type ReadModelSnapshot } from '../readModel/readModelStore';
 import { getAiRedisClient } from './telegramAiDeadline';
+import {readPostgresSnapshotBundle} from '../readModel/postgresSnapshots';
 
 export interface AiSnapshot<T> { data:T[]; stale:boolean; available:boolean; snapshotAt:string; }
 const missing = ():AiSnapshot<any> => ({data:[],stale:true,available:false,snapshotAt:''});
@@ -17,6 +18,19 @@ export function createAiSnapshotReader(signal?:AbortSignal) {
   const load=async(keys:string[])=>{
     const pending=[...new Set(keys)].filter(k=>!memo.has(k));
     if(!pending.length)return;
+    if(process.env.DATABASE_PROVIDER==='supabase'){
+      await Promise.all(pending.map(async key=>{
+        if(signal?.aborted){memo.set(key,missing());return;}
+        try{
+          const bundle=await readPostgresSnapshotBundle(getFreshKey(key),getLkgKey(key),getDirtyKey(key));
+          if(signal?.aborted){memo.set(key,missing());return;}
+          const fresh=decode(bundle.fresh),lkg=decode(bundle.lkg);
+          const snapshot=fresh&&!bundle.dirty?fresh:lkg;
+          memo.set(key,snapshot?{data:snapshot.data,stale:Boolean(bundle.dirty||!fresh||snapshot.stale||snapshot.degraded),available:true,snapshotAt:snapshot.generatedAt||''}:missing());
+        }catch{memo.set(key,missing());failed.add(key);}
+      }));
+      return;
+    }
     if(!client || signal?.aborted){pending.forEach(k=>memo.set(k,missing()));return;}
     try{
       const raw=await client.mget<unknown[]>(...pending.flatMap(k=>[getFreshKey(k),getDirtyKey(k)]));

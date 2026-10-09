@@ -194,7 +194,7 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
     }
   }
   if (!authoritativeUser) {
-    console.error('[ADMIN_AUTHORIZATION_UNAVAILABLE]', { path: req.originalUrl.split('?')[0] });
+    console.error('[ADMIN_AUTHORIZATION_UNAVAILABLE]', { path: (req.originalUrl || req.url || '').split('?')[0] });
     res.status(503).json({ error: 'Admin authorization is temporarily unavailable.' });
     return;
   }

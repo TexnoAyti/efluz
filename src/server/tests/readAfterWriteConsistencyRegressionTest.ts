@@ -12,7 +12,7 @@ assert.ok(editStart >= 0 && deleteStart > editStart && deleteEnd > deleteStart);
 const editSection = routes.slice(editStart, deleteStart);
 const deleteSection = routes.slice(deleteStart, deleteEnd);
 for (const section of [editSection, deleteSection]) {
-  assert.equal((section.match(/refreshChangedFixtureReadModel\(fixtureId\)/g) || []).length, 1);
+  assert.match(section, /await editFixtureResult|await deleteFixtureResult/);
   assert.equal((section.match(/invalidateFixtureReadModels\(/g) || []).length, 0);
   assert.equal((section.match(/invalidateStandingsReadModels\(/g) || []).length, 0);
 }

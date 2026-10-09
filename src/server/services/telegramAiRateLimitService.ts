@@ -42,6 +42,7 @@ export interface RateLimitCheckResult {
  * [0, "USER_SILENT", userCount]
  */
 const UNIFIED_ATOMIC_RATE_LIMIT_LUA = `
+-- EFL_AI_RATE_LIMIT_V1
 local userKey = KEYS[1]
 local topicKey = KEYS[2]
 local dailyKey = KEYS[3]

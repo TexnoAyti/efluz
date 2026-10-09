@@ -1242,6 +1242,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(params),
       skipCache: true,
+      timeoutMs: 45000,
     });
   },
 
@@ -1250,6 +1251,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(userId ? { userId } : {}),
       skipCache: true,
+      timeoutMs: 45000,
     });
   },
 
@@ -1285,7 +1287,7 @@ export const api = {
       billingNotice: string;
     };
   }> {
-    return request('/api/admin/telegram-ai/config', { skipCache: true });
+    return request('/api/admin/telegram-ai/config', { skipCache: true, timeoutMs: 30000 });
   },
 
   async updateTelegramAiConfig(updates: {
@@ -1300,6 +1302,7 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(updates),
       skipCache: true,
+      timeoutMs: 30000,
     });
   },
 
@@ -1318,7 +1321,7 @@ export const api = {
       billingNotice: string;
     };
   }> {
-    return request('/api/admin/telegram-ai/diagnostics', { skipCache: true });
+    return request('/api/admin/telegram-ai/diagnostics', { skipCache: true, timeoutMs: 30000 });
   },
 
   async testTelegramAiQuery(query: string): Promise<{

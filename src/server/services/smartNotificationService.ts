@@ -1,3 +1,4 @@
+import {getNotificationStore} from './postgresNotificationStore';
 import { filterRetiredFixtures } from './retiredFixtureService';
 import crypto from 'crypto';
 import { Fixture } from '../../types';
@@ -214,7 +215,7 @@ async function getCompetitionFixtureSnapshot(competitionId: string, seasonId: st
 }
 
 async function getCachedRecipient(userId: string, seasonId: string): Promise<RecipientDirectoryEntry | null> {
-  const client = getUpstashClient();
+  const client = getNotificationStore();
   if (!client) return null;
   try {
     const entries = await client.get<RecipientDirectoryEntry[]>(`${RECIPIENT_DIR_KEY}:${seasonId}`);
@@ -227,7 +228,7 @@ async function getCachedRecipient(userId: string, seasonId: string): Promise<Rec
 }
 
 async function getCachedRecipientByClubId(clubId: string, seasonId: string): Promise<RecipientDirectoryEntry | null> {
-  const client = getUpstashClient();
+  const client = getNotificationStore();
   if (!client) return null;
   try {
     const entries = await client.get<RecipientDirectoryEntry[]>(`${RECIPIENT_DIR_KEY}:${seasonId}`);
@@ -253,7 +254,7 @@ export async function enqueueSmartTelegramNotification(params: {
     return false;
   }
 
-  const client = getUpstashClient();
+  const client = getNotificationStore();
   const recipient = await getCachedRecipient(params.userId, params.seasonId);
   if (recipient && (!recipient.messageable || !recipient.telegramId)) {
     console.info('[SMART_NOTIFY] Recipient not messageable', { userId: params.userId, seasonId: params.seasonId });

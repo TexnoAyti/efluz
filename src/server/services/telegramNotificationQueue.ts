@@ -1,3 +1,4 @@
+import {getNotificationStore} from './postgresNotificationStore';
 import { trackFirestoreRead } from '../firebase/firestoreStore';
 import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS, FirestoreClubDoc, FirestoreUserDoc } from '../firebase/collections';
@@ -121,9 +122,10 @@ const DRAIN_BUDGET_MS = 45000;
 
 /** Inspect only the existing Redis queue; no recipient/Firestore refresh. */
 async function pendingQueueState(): Promise<{ pending: number; nextAt: number }> {
-  const client = getUpstashClient();
+  const client = getNotificationStore();
   if (!client) throw new Error('REDIS_REQUIRED');
   const state: { pending: number; nextAt: number } = await client.eval(`
+    -- EFL_NOTIFY_PENDING_V1
     local jobs = redis.call('LRANGE', KEYS[1], 0, -1)
     local nextAt = 0
     for _, raw in ipairs(jobs) do
@@ -268,7 +270,7 @@ export async function syncRecipientDirectory(seasonId = 'season-2026-27'): Promi
   if (process.env.DATABASE_PROVIDER === 'supabase') {
     await getFirestoreDb().collection('runtime_settings').doc(`recipient-directory-${seasonId}`).set({ entries: entriesArray, updatedAt: now });
   } else {
-    const client = getUpstashClient();
+    const client = getNotificationStore();
     if (client) await client.set(`${RECIPIENT_DIR_KEY}:${seasonId}`, entriesArray);
   }
   memoryRecipientDirectory.clear();
@@ -287,7 +289,7 @@ export async function getSafeEligibleRecipients(
   seasonId = 'season-2026-27'
 ): Promise<PublicRecipientView[]> {
   if (memoryRecipientSeason !== seasonId) memoryRecipientDirectory.clear();
-  const client = getUpstashClient();
+  const client = getNotificationStore();
   let entries: RecipientDirectoryEntry[] = [];
   let durableDirectoryLoaded = false;
 
@@ -359,7 +361,7 @@ export async function enqueueTelegramBroadcast(params: {
   requestId?: string;
 }): Promise<TelegramBroadcastRecord> {
   const seasonId = params.seasonId || 'season-2026-27';
-  const durableClient = getUpstashClient();
+  const durableClient = getNotificationStore();
   if (!durableClient) throw new Error('REDIS_REQUIRED: durable notification storage is unavailable');
   if (!['ALL_USERS', 'CLUB_OWNERS', 'LEAGUE_OWNERS', 'SELECTED_RECIPIENTS'].includes(params.targetAudience)) throw new Error('INVALID_AUDIENCE');
   if (params.targetAudience === 'LEAGUE_OWNERS' && !params.targetLeagueId) throw new Error('LEAGUE_REQUIRED');
@@ -449,6 +451,7 @@ export async function enqueueTelegramBroadcast(params: {
 
   // One atomic write: a returned broadcast always has a durable queue.
   const persistedRecord = await durableClient.eval<unknown[], TelegramBroadcastRecord>(`
+    -- EFL_NOTIFY_ENQUEUE_V1
     local existing = redis.call('HGET', KEYS[1], ARGV[1])
     if existing then return existing end
     redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
@@ -519,7 +522,7 @@ export async function processNotificationQueue(batchSize = 25, stopClaimingAt = 
   locked?: boolean;
 }> {
   if (process.env.MIGRATION_WRITE_FREEZE === 'true') return { processed: 0, succeeded: 0, failed: 0, locked: true };
-  const client = getUpstashClient();
+  const client = getNotificationStore();
   if (!client) throw new Error('REDIS_REQUIRED');
   const token = crypto.randomUUID();
   if (!await client.set(WORKER_LOCK, token, { nx: true, ex: 120 })) return { processed: 0, succeeded: 0, failed: 0, locked: true };
@@ -544,6 +547,7 @@ export async function processNotificationQueue(batchSize = 25, stopClaimingAt = 
     }
     for (let i = 0; i < Math.min(Math.max(batchSize, 1), 25) && Date.now() < deadline; i++) {
       const job = await client.eval<unknown[], NotificationQueueJob>(`
+        -- EFL_NOTIFY_CLAIM_V1
         if redis.call('GET', KEYS[3]) ~= ARGV[1] then return nil end
         local count = redis.call('LLEN', KEYS[1])
         for i = 1, count do
@@ -654,7 +658,7 @@ export async function processNotificationQueue(batchSize = 25, stopClaimingAt = 
     }
     return { processed, succeeded, failed };
   } finally {
-    await client.eval("if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0", [WORKER_LOCK], [token]);
+    await client.eval("-- EFL_NOTIFY_RELEASE_V1\nif redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0", [WORKER_LOCK], [token]);
   }
 }
 
@@ -707,7 +711,7 @@ async function updateBroadcastRecipientState(
   }
 
   // Also persist to Redis if available
-  const client = getUpstashClient();
+  const client = getNotificationStore();
   if (client) {
     await client.hset(BROADCASTS_KEY, { [broadcastId]: bcast });
   }
@@ -718,7 +722,7 @@ async function updateBroadcastRecipientState(
  * Returns past broadcasts list.
  */
 export async function getBroadcastHistory(limit = 20): Promise<TelegramBroadcastRecord[]> {
-  const client = getUpstashClient();
+  const client = getNotificationStore();
   if (client) {
     try {
       const records = await client.hgetall<Record<string, TelegramBroadcastRecord>>(BROADCASTS_KEY);
@@ -741,7 +745,7 @@ export async function retryFailedBroadcastRecipients(
   broadcastId: string,
   userId?: string
 ): Promise<{ retried: number; skipped: number }> {
-  const client = getUpstashClient();
+  const client = getNotificationStore();
   if (!client) throw new Error('REDIS_REQUIRED');
   const record = await getBroadcastDetails(broadcastId);
   if (!record) throw new Error('BROADCAST_NOT_FOUND');
@@ -803,7 +807,7 @@ export async function retryFailedBroadcastRecipients(
  * Returns single broadcast record by ID.
  */
 export async function getBroadcastDetails(broadcastId: string): Promise<TelegramBroadcastRecord | null> {
-  const client = getUpstashClient();
+  const client = getNotificationStore();
   if (client) {
     try {
       const record = await client.hget<TelegramBroadcastRecord>(BROADCASTS_KEY, broadcastId);

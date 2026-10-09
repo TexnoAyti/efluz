@@ -5,7 +5,7 @@ import { getAiRedisClient, withinAiDeadline } from './telegramAiDeadline';
  * Enforces:
  * 1. Strict primary owner authorization (Telegram ID: 5209126900)
  * 2. Disabled by default initialization
- * 3. Redis-backed durable persistence with fail-closed behavior on outage
+ * 3. Durable PostgreSQL/Redis persistence with fail-closed behavior on outage
  * 4. Topic binding without auto-enabling AI
  */
 
@@ -55,7 +55,7 @@ export function getAiConfigRedisKey(): string {
 
 /**
  * Retrieves the current AI configuration.
- * Fail-closed in production if Redis is unavailable.
+ * Fail-closed in production if the durable state store is unavailable.
  */
 export async function getTelegramAiConfig(options?: { signal?: AbortSignal }): Promise<{ config: TelegramAiConfig; redisAvailable: boolean }> {
   if (options?.signal?.aborted) {
@@ -81,6 +81,9 @@ export async function getTelegramAiConfig(options?: { signal?: AbortSignal }): P
   try {
     const raw = await client.get<string | TelegramAiConfig>(getAiConfigRedisKey());
     if (!raw) {
+      // A new PostgreSQL installation stays disabled until the owner configures
+      // it. Do not invent a topic or enable sending while importing old state.
+      if (process.env.DATABASE_PROVIDER === 'supabase') return {config:{...DEFAULT_AI_CONFIG},redisAvailable:true};
       // Store default configuration atomically
       await client.set(getAiConfigRedisKey(), JSON.stringify(DEFAULT_AI_CONFIG), { nx: true });
       return getTelegramAiConfig(options);
@@ -103,7 +106,7 @@ export async function getTelegramAiConfig(options?: { signal?: AbortSignal }): P
       redisAvailable: true,
     };
   } catch (err: any) {
-    console.error('[AI CONFIG] Failed to read from Redis, failing closed:', err?.message || err);
+    console.error('[AI CONFIG] Failed to read durable state, failing closed:', err?.message || err);
     return {
       config: { ...DEFAULT_AI_CONFIG, enabled: false },
       redisAvailable: false,
@@ -147,7 +150,7 @@ export async function updateTelegramAiConfig(
     await client!.set(getAiConfigRedisKey(), JSON.stringify(nextConfig));
     return { success: true, config: nextConfig };
   } catch (err: any) {
-    console.error('[AI CONFIG] Failed to save config to Redis:', err?.message || err);
+    console.error('[AI CONFIG] Failed to save durable config:', err?.message || err);
     return { success: false, error: 'REDIS_PERSISTENCE_FAILED' };
   }
 }
