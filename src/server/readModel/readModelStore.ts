@@ -1989,7 +1989,7 @@ export async function getAdminFixturesFromReadModel(
   const redisLkg = !redisFresh ? await redisGetLkg<Fixture[]>(ReadModelKeys.adminFixtures(seasonId)) : null;
   const snapshotRes = redisFresh || redisLkg;
 
-  if (!snapshotRes || !Array.isArray(snapshotRes.data) || snapshotRes.data.length === 0) {
+  if (!usesPostgresSnapshots() && (!snapshotRes || !Array.isArray(snapshotRes.data) || snapshotRes.data.length === 0)) {
     // 2. Redis miss: Fallback to SQLite local read model BEFORE scanning Firestore!
     try {
       const { executeAdminFixturesPagedFallback } = await import('../firebase/firestoreStore');
@@ -2012,7 +2012,7 @@ export async function getAdminFixturesFromReadModel(
 
   if (!snapshotRes || !Array.isArray(snapshotRes.data) || snapshotRes.data.length === 0) {
     const hosted = Boolean(process.env.VERCEL || process.env.K_SERVICE || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NODE_ENV === 'production');
-    if (hosted) {
+    if (hosted && !usesPostgresSnapshots()) {
       console.warn('[FIRESTORE_BROAD_READ_BLOCKED]', JSON.stringify({ dataset: 'adminFixtures', seasonId }));
       throw new ReadModelNotWarmedError(
         'Admin fixture read model is not warmed. Automatic full-season Firestore scans are disabled in hosted production.'
