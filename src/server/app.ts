@@ -96,6 +96,18 @@ export async function ensureDbReady(): Promise<void> {
 export function createApp() {
   const app = express();
   app.disable('x-powered-by');
+  // Stop webhooks, cron, authentication writes and all application mutations
+  // before initialization or background scheduling during database cutover.
+  app.use((req, res, next) => {
+    if (process.env.MIGRATION_WRITE_FREEZE === 'true' && req.path.startsWith('/api') &&
+        !(req.method === 'GET' && req.path === '/api/health')) {
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('Retry-After', '30');
+      res.status(503).json({ error: 'MAINTENANCE', code: 'MAINTENANCE', message: 'Tizim yangilanmoqda. Birozdan so‘ng qayta urinib ko‘ring.' });
+      return;
+    }
+    next();
+  });
   app.use(readCostMiddleware);
   const localDevHost = 'local' + 'host';
 

@@ -280,6 +280,7 @@ export function getQueueStats() {
  * Idempotent, safe, drains in creation order.
  */
 export async function processPendingMutations(options: { deadline?: number } = {}): Promise<SyncResult> {
+  if (process.env.MIGRATION_WRITE_FREEZE === 'true') throw new Error('MIGRATION_WRITES_FROZEN');
   if (isSyncInProgress) {
     console.log('[MUTATION_QUEUE] Sync already in progress, skipping duplicate call.');
     return {
