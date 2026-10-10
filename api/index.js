@@ -328,6 +328,9 @@ var init_documentStore = __esm({
       write(operations, generation) {
         return this.rpc("efl_runtime_commit", { p_space: this.databaseId, p_operations: operations, p_generation: generation ?? null });
       }
+      readSnapshotDocuments(ids, versions2) {
+        return this.rpc("efl_runtime_snapshot_read", { p_space: this.databaseId, p_ids: ids, p_versions: versions2 });
+      }
       saveFixtureDelta(row) {
         const value = clean(row);
         return this.rpc("efl_runtime_save_fixture_delta", { p_space: this.databaseId, p_row: value, p_encoded: encodeValue(value) });
@@ -1327,6 +1330,60 @@ var init_seasonQualificationPolicy = __esm({
 // src/server/readModel/postgresSnapshots.ts
 import { createHash as createHash2 } from "node:crypto";
 import { FieldPath as FieldPath4 } from "firebase-admin/firestore";
+async function snapshotDocuments(ids) {
+  const db = getFirestoreDb();
+  if (typeof db.readSnapshotDocuments !== "function") {
+    const rows = await db.collection("durable_read_snapshots").where(FieldPath4.documentId(), "in", ids).get();
+    return new Map(rows.docs.map((doc) => [doc.id, doc.data()]));
+  }
+  const scope = process.env.SUPABASE_URL + ":" + db.databaseId + ":";
+  const flightKey = scope + ids.join(",");
+  const pending2 = flights2.get(flightKey);
+  if (pending2) return pending2;
+  const read2 = (async () => {
+    const versions2 = {};
+    const previous = /* @__PURE__ */ new Map();
+    for (const id of ids) {
+      const cached3 = payloads.get(scope + id);
+      if (cached3 && Date.now() - cached3.at < 3e5) {
+        versions2[id] = cached3.version;
+        previous.set(id, cached3);
+      }
+    }
+    const result = await db.readSnapshotDocuments(ids, versions2);
+    const values = /* @__PURE__ */ new Map();
+    for (const row of result.documents) {
+      const key4 = scope + row.id;
+      const old = payloads.get(key4);
+      if (old) {
+        payloadBytes -= old.bytes;
+        payloads.delete(key4);
+      }
+      const value = row.unchanged ? previous.get(row.id)?.value : row.value;
+      if (row.unchanged && value === void 0) throw Error("SNAPSHOT_REVISION_WITHOUT_PAYLOAD");
+      values.set(row.id, value);
+      if (value != null) {
+        const bytes = row.unchanged ? previous.get(row.id).bytes : Buffer.byteLength(JSON.stringify(value));
+        if (bytes <= 4 * 1024 * 1024) {
+          payloads.set(key4, { version: row.version, value, bytes, at: row.unchanged ? previous.get(row.id).at : Date.now() });
+          payloadBytes += bytes;
+          while (payloadBytes > 8 * 1024 * 1024 || payloads.size > 128) {
+            const oldest = payloads.keys().next().value;
+            payloadBytes -= payloads.get(oldest).bytes;
+            payloads.delete(oldest);
+          }
+        }
+      }
+    }
+    return values;
+  })();
+  flights2.set(flightKey, read2);
+  try {
+    return await read2;
+  } finally {
+    if (flights2.get(flightKey) === read2) flights2.delete(flightKey);
+  }
+}
 async function fixtureOverrides(key4) {
   if (!key4.endsWith(":fixtures")) return /* @__PURE__ */ new Map();
   const seasonId2 = key4.match(/:season:([^:]+):/)?.[1];
@@ -1345,22 +1402,23 @@ function overlay(snapshot, changes) {
   }) };
 }
 async function readPostgresSnapshotBundle(fresh, lkg, dirty) {
-  const keys2 = [fresh, lkg, dirty];
+  const keys2 = [fresh, dirty];
   const ids = keys2.map((key4) => createHash2("sha256").update(key4).digest("hex"));
   const [rows, changes] = await Promise.all([
-    getFirestoreDb().collection("durable_read_snapshots").where(FieldPath4.documentId(), "in", ids).get(),
+    snapshotDocuments(ids),
     fixtureOverrides(fresh)
   ]);
-  const values = new Map(rows.docs.map((doc) => [doc.id, doc.data()]));
   const snapshots = ids.map((id) => {
-    const value = values.get(id);
+    const value = rows.get(id);
     return value && (value.expiresAt === null || value.expiresAt > Date.now()) ? unpack(value) : null;
   });
-  return { fresh: overlay(snapshots[0], changes), lkg: overlay(snapshots[1], changes), dirty: snapshots[2] };
+  const fallback = !snapshots[0] || snapshots[1]?.data ? await readPostgresSnapshot(lkg) : null;
+  return { fresh: overlay(snapshots[0], changes), lkg: fallback, dirty: snapshots[1] };
 }
 async function readPostgresSnapshot(key4) {
-  const [document2, changes] = await Promise.all([ref(key4).get(), fixtureOverrides(key4)]);
-  const value = document2.data();
+  const id = createHash2("sha256").update(key4).digest("hex");
+  const [documents, changes] = await Promise.all([snapshotDocuments([id]), fixtureOverrides(key4)]);
+  const value = documents.get(id);
   return value && (value.expiresAt === null || value.expiresAt > Date.now()) ? overlay(unpack(value), changes) : null;
 }
 async function publishPostgresSnapshot(fresh, lkg, dirty, snapshot, ttl) {
@@ -1415,12 +1473,15 @@ async function patchPostgresSnapshot(fresh, lkg, dirty, row, merge, ttl, version
     return true;
   });
 }
-var ref, unpack, usesPostgresSnapshots;
+var ref, unpack, payloads, flights2, payloadBytes, usesPostgresSnapshots;
 var init_postgresSnapshots = __esm({
   "src/server/readModel/postgresSnapshots.ts"() {
     init_admin();
     ref = (key4) => getFirestoreDb().collection("durable_read_snapshots").doc(createHash2("sha256").update(key4).digest("hex"));
     unpack = (value) => typeof value?.snapshotJson === "string" ? JSON.parse(value.snapshotJson) : value?.snapshot;
+    payloads = /* @__PURE__ */ new Map();
+    flights2 = /* @__PURE__ */ new Map();
+    payloadBytes = 0;
     usesPostgresSnapshots = () => process.env.DATABASE_PROVIDER === "supabase";
   }
 });
@@ -1431,11 +1492,11 @@ function isReadRefreshUnavailable(error) {
   return error instanceof Error && error.message.startsWith("READ_REFRESH_");
 }
 function createSharedReadRefresh(getClient = getBoundedRedisClient) {
-  const flights2 = /* @__PURE__ */ new Map();
+  const flights3 = /* @__PURE__ */ new Map();
   const failures = /* @__PURE__ */ new Map();
   let redisRetryAt2 = 0;
   return async function refresh(key4, load) {
-    const existing = flights2.get(key4);
+    const existing = flights3.get(key4);
     if (existing) return existing;
     const failed = failures.get(key4);
     if (failed && failed.until > Date.now()) throw failed.error;
@@ -1467,11 +1528,11 @@ function createSharedReadRefresh(getClient = getBoundedRedisClient) {
         });
       }
     })();
-    flights2.set(key4, work);
+    flights3.set(key4, work);
     try {
       return await work;
     } finally {
-      if (flights2.get(key4) === work) flights2.delete(key4);
+      if (flights3.get(key4) === work) flights3.delete(key4);
     }
   };
 }
@@ -7253,7 +7314,7 @@ async function readThroughReadModel2(options) {
         degraded: true
       };
     }
-    const lkgSnapshot = postgresBundle ? postgresBundle.lkg : await redisGetLkg(cleanKey);
+    const lkgSnapshot = postgresBundle ? postgresBundle.lkg || await readPostgresSnapshot(getLkgKey(cleanKey)) : await redisGetLkg(cleanKey);
     if (lkgSnapshot && lkgSnapshot.data !== void 0) {
       setInProcessMemory(cleanKey, lkgSnapshot);
       return {
@@ -7312,7 +7373,7 @@ async function readThroughReadModel2(options) {
       degraded: Boolean(memoryRedisStorage2.get(getFreshKey(cleanKey))?.snapshot.degraded)
     };
   } catch (firestoreErr) {
-    const lkgSnapshot = postgresBundle ? postgresBundle.lkg : await redisGetLkg(cleanKey);
+    const lkgSnapshot = postgresBundle ? postgresBundle.lkg || await readPostgresSnapshot(getLkgKey(cleanKey)) : await redisGetLkg(cleanKey);
     if (lkgSnapshot && lkgSnapshot.data !== void 0) {
       console.warn(
         `[READ_MODEL] Firestore failed for ${key4}, serving stale Redis LKG snapshot. Cause:`,
@@ -8116,7 +8177,7 @@ async function getCompetitionFixturesFromReadModel(competitionId, optionsOrMatch
       generatedAt = redisLkg.generatedAt;
     }
   }
-  if (rawFixtures.length === 0) {
+  if (rawFixtures.length === 0 && !usesPostgresSnapshots()) {
     try {
       const conditions = ["competition_id = ?"];
       const params = [competitionId];
