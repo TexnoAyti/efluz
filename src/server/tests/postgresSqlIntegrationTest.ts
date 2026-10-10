@@ -9,6 +9,8 @@ import { SMART_ENQUEUE_SCRIPT } from '../services/notificationBackupQueue';
 import { quotaCachedRead, invalidateQuotaRead } from '../services/quotaReadCache';
 import { initDatabase } from '../db';
 import { adminAssignClubFirestore } from '../firebase/firestoreStore';
+import { grantUserTickets, getUserTicketBalance } from '../services/customTournamentTicketService';
+import { publishTournament } from '../services/customTournamentService';
 
 // Native PostgreSQL WASM engine with repository SQL, not a JS query emulator.
 // The HTTP envelope is simulated; this cannot prove hosted PostgREST latency.
@@ -25,7 +27,7 @@ assert.deepEqual(privilege, { anonymous: false, authenticated: false, service: t
 await assert.rejects(pg.query("select public.efl_runtime_commit('preview','[]'::jsonb,'-1')"), (error:any) => error.code === 'PT409', 'Legacy CAS conflicts must not trigger PostgREST serialization retries');
 await pg.exec('set role service_role;');
 const originalFetch = globalThis.fetch;
-let conflicts = 0, legacyHttpCommits = 0, failAssignment = false;
+let conflicts = 0, legacyHttpCommits = 0, failAssignment = false, failPublish = false;
 globalThis.fetch = (async (input: any, init: any) => {
   const url = new URL(String(input));
   assert.equal(url.origin, 'https://isolated-postgres.invalid');
@@ -35,6 +37,9 @@ globalThis.fetch = (async (input: any, init: any) => {
     if (name === 'efl_runtime_read') result = await pg.query('select public.efl_runtime_read($1,$2::jsonb) as value', [body.p_space, JSON.stringify(body.p_query)]);
     else if (name === 'efl_runtime_commit_safe') {
       if (failAssignment && body.p_operations.some((op: any) => op.path.startsWith('audit_logs/'))) throw Error('ASSIGNMENT_COMMIT_UNAVAILABLE');
+      if (failPublish && body.p_operations.some((op:any)=>op.path.startsWith('custom_tournaments/'))) {
+        body.p_operations.push({kind:'create',path:'runtime_probes/balance',encoded:encodeValue({balance:999})});
+      }
       result = await pg.query('select public.efl_runtime_commit_safe($1,$2::jsonb,$3) as value', [body.p_space, JSON.stringify(body.p_operations), body.p_generation]);
     }
     else { legacyHttpCommits++; throw Error('LEGACY_COMMIT_ENDPOINT_FORBIDDEN'); }
@@ -99,5 +104,23 @@ try {
   const simultaneous=await Promise.allSettled(['user-900004','user-900005'].map(user=>adminAssignClubFirestore('user-900001','club-monaco',user,'season-2026-27',{authoritativeOnly:true})));
   assert.equal(simultaneous.filter(r=>r.status==='fulfilled').length,1,'Concurrent admin assignments must not overwrite a winner');
   console.log('PASS native PostgreSQL admin transfers: atomic failure preserves old club, previous membership releases, existing owner preserved, concurrent assignments have one winner');
+  process.env.NODE_ENV='production'; // Exercise durable ticket paths, never memory fallback.
+  await grantUserTickets({targetUserId:'user-900006',adminTelegramId:'5209126900',amount:3,idempotencyKey:'native-publish-grant'});
+  await db.collection('custom_tournaments').doc('ct-native-publish').set({id:'ct-native-publish',organizerUserId:'user-900006',status:'DRAFT'});
+  failPublish=true;
+  await assert.rejects(publishTournament({tournamentId:'ct-native-publish',userId:'user-900006',idempotencyKey:'native-publish-failed'}),/DOCUMENT_ALREADY_EXISTS/);
+  failPublish=false;
+  assert.equal((await getUserTicketBalance('user-900006')).balance,3,'A failed publication must not spend a ticket');
+  assert.equal((await db.collection('custom_tournaments').doc('ct-native-publish').get()).data().status,'DRAFT');
+  const publications=await Promise.all(['native-publish-a','native-publish-b'].map(idempotencyKey=>publishTournament({tournamentId:'ct-native-publish',userId:'user-900006',idempotencyKey})));
+  assert.equal((await getUserTicketBalance('user-900006')).balance,2,'Concurrent publish clicks with different keys spend one ticket');
+  assert.equal(publications[0].ticketSpentTransactionId,publications[1].ticketSpentTransactionId);
+  await db.collection('custom_tournaments').doc('ct-native-key-reuse').set({id:'ct-native-key-reuse',organizerUserId:'user-900006',status:'DRAFT'});
+  const usedKey=(await db.collection('ticket_transactions').doc(publications[0].ticketSpentTransactionId!).get()).data().idempotencyKey;
+  await assert.rejects(publishTournament({tournamentId:'ct-native-key-reuse',userId:'user-900006',idempotencyKey:usedKey}),/IDEMPOTENCY_CONFLICT/);
+  assert.equal((await getUserTicketBalance('user-900006')).balance,2);
+  assert.equal((await db.collection('custom_tournaments').doc('ct-native-key-reuse').get()).data().status,'DRAFT');
+  process.env.NODE_ENV='test';
+  console.log('PASS native PostgreSQL ticket publication: actual batch failure restores wallet and draft; parallel different-key publishes spend exactly once');
   console.log('PASS native PostgreSQL SQL: private invoker grants, 12 concurrent NX attempts, atomic counters, cache invalidation, conflict retry with no stale writes, double-spend exclusion, full batch rollback, queue dedupe and worker claim; HTTP transport simulated');
 } finally { globalThis.fetch = originalFetch; await pg.close(); }

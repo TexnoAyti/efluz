@@ -48,8 +48,8 @@ globalThis.fetch=async(input:any,init?:any)=>{
   if(q.limit)documents=documents.slice(0,q.limit);
   return Response.json({generation:String(generation),documents,count:documents.length});
  }
- if(url.pathname.endsWith('/efl_runtime_commit')){
-  if(body.p_generation!==null&&body.p_generation!==String(generation))return Response.json({code:'40001'},{status:409});
+ if(url.pathname.endsWith('/efl_runtime_commit_safe')){
+  if(body.p_generation!==null&&body.p_generation!==String(generation))return Response.json({conflict:true});
   const next=new Map(rows);
   for(const op of body.p_operations){
    if(op.kind==='delete')next.delete(op.path);
