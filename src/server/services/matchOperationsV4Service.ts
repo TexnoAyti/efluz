@@ -1,3 +1,4 @@
+import { getRuntimeStateStore } from '../readModel/runtimeStateStore';
 import { waitUntil } from '@vercel/functions';
 import { Fixture } from '../../types';
 import { getFirestoreDb } from '../firebase/admin';
@@ -8,7 +9,6 @@ import {
   trackFirestoreWrite,
 } from '../firebase/firestoreStore';
 import {
-  getUpstashClient,
   KEY_PREFIX,
   refreshChangedFixtureReadModel,
 } from '../readModel/readModelStore';
@@ -325,7 +325,7 @@ async function sendDeadlineReminder(deadline: any, kind: '24h' | '6h' | 'overdue
 }
 
 export async function runDeadlineSweep(seasonId = 'season-2026-27', force = false) {
-  const client = getUpstashClient();
+  const client = getRuntimeStateStore();
   if (!client) return { skipped: true, reason: 'REDIS_REQUIRED', checked: 0, reminders: 0 };
   const lockKey = `${SWEEP_LOCK_PREFIX}:${seasonId}`;
   if (!force) {
@@ -343,7 +343,7 @@ export async function runDeadlineSweep(seasonId = 'season-2026-27', force = fals
     checked++;
     const result = await sendDeadlineReminder(deadline, kind);
     if (!result.attempted) continue;
-    // If delivery could not be queued (Redis recipient directory/settings), leave the
+    // If delivery could not be queued (recipient directory/settings), leave the
     // marker empty so the next hourly event-driven sweep can retry safely. Smart
     // notification event IDs are deterministic, so successful recipients dedupe.
     if (result.queued <= 0) continue;

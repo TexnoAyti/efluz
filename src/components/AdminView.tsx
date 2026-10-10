@@ -229,7 +229,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
   const [readModelHealth, setReadModelHealth] = useState<any>(null);
   const [isRebuildingReadModels, setIsRebuildingReadModels] = useState(false);
   const readModelStatus = !readModelHealth ? 'UNKNOWN'
-    : readModelHealth.redisState !== 'CONNECTED' ? 'DOWN'
+    : (readModelHealth.storageState || readModelHealth.redisState) !== 'CONNECTED' ? 'DOWN'
     : readModelHealth.missingKeys?.length || readModelHealth.dirtyKeys?.length || readModelHealth.firestoreState !== 'CLOSED' ? 'DEGRADED' : 'HEALTHY';
 
   const [readModelRebuildMsg, setReadModelRebuildMsg] = useState<string | null>(null);
@@ -2634,10 +2634,10 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
               <div>
                 <h2 className="text-sm font-black text-white flex items-center gap-2">
                   <Database className="w-4 h-4 text-sky-400" />
-                  <span>{loc('Redis o‘qish modeli va nusxalar holati', 'Состояние моделей чтения Redis и снимков', 'Redis Read-Model Health & Snapshots')}</span>
+                  <span>{loc('O‘qish modeli va nusxalar holati', 'Состояние моделей чтения и снимков', 'Read-Model Health & Snapshots')}</span>
                 </h2>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  {loc('Redis kesh va zaxira nusxalarini tekshiring, kerak bo‘lsa qayta tuzing.', 'Проверьте кеш Redis и резервные снимки, при необходимости перестройте.', 'Inspect Redis caches and fallback snapshots; rebuild when needed.')}
+                  {loc('Kesh va zaxira nusxalarini tekshiring, kerak bo‘lsa qayta tuzing.', 'Проверьте кеш и резервные снимки, при необходимости перестройте.', 'Inspect caches and fallback snapshots; rebuild when needed.')}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -2653,9 +2653,9 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
                 <button
                   type="button"
                   onClick={handleRebuildReadModels}
-                  disabled={isRebuildingReadModels || readModelHealth?.redisState !== 'CONNECTED'}
+                  disabled={isRebuildingReadModels || (readModelHealth?.storageState || readModelHealth?.redisState) !== 'CONNECTED'}
                   className="px-3.5 py-1.5 bg-sky-500 hover:bg-sky-400 text-slate-950 rounded-xl text-xs font-black shadow flex items-center gap-1.5 transition-all disabled:opacity-50"
-                  title={loc('Redis modellarini Firestoredan qayta tuzish', 'Перестроить модели Redis из Firestore', 'Rebuild Redis read models from Firestore')}
+                  title={loc('O‘qish modellarini bazadan qayta tuzish', 'Перестроить модели чтения из базы данных', 'Rebuild read models from the database')}
                 >
                   {isRebuildingReadModels ? (
                     <>
@@ -2705,9 +2705,9 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
                   </div>
 
                   <div className="bg-slate-950/60 p-3 rounded-xl border border-white/[0.05]">
-                    <div className="text-[10px] uppercase font-black text-slate-500">{loc('Redis aloqasi', 'Подключение Redis', 'Redis Connectivity')}</div>
+                    <div className="text-[10px] uppercase font-black text-slate-500">{readModelHealth.storageProvider === 'postgresql' ? 'PostgreSQL' : loc('Redis aloqasi', 'Подключение Redis', 'Redis Connectivity')}</div>
                     <div className="text-xs font-black mt-1">
-                      {readModelHealth.redisState === 'CONNECTED' ? (
+                      {(readModelHealth.storageState || readModelHealth.redisState) === 'CONNECTED' ? (
                         <span className="text-emerald-400">{loc('ULANGAN', 'ПОДКЛЮЧЕНО', 'CONNECTED')}</span>
                       ) : (
                         <span className="text-rose-400">{readModelHealth.redisState === 'IN_MEMORY_FALLBACK' ? loc('SOZLANMAGAN', 'НЕ НАСТРОЕН', 'NOT CONFIGURED') : loc('ALOQA XATOSI', 'ОШИБКА ПОДКЛЮЧЕНИЯ', 'CONNECTION ERROR')}</span>

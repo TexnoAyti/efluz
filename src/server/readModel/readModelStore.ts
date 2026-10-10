@@ -62,6 +62,8 @@ export interface CoreDatasetHealth {
 }
 
 export interface ReadModelHealthInfo {
+  storageProvider: 'postgresql' | 'redis';
+  storageState: 'CONNECTED' | 'IN_MEMORY_FALLBACK' | 'ERROR';
   firestoreState: 'CLOSED' | 'OPEN' | 'HALF_OPEN';
   redisState: 'CONNECTED' | 'IN_MEMORY_FALLBACK' | 'ERROR';
   circuitBreakerState: {
@@ -200,6 +202,8 @@ export function resetUpstashClient(): void {
 
 let redisRetryAt = 0;
 export function getUpstashClient(): Redis | null {
+  // Legacy outbox/fallback paths cannot contact the old datastore after cutover.
+  if (usesPostgresSnapshots()) return null;
   if (Date.now() < redisRetryAt) return null;
   if (upstashClient) return upstashClient;
   const config = resolveRedisConfig(process.env);
@@ -2547,6 +2551,9 @@ export async function getReadModelHealthStatus(seasonId = 'season-2026-27'): Pro
   return {
     firestoreState: cb.state as any,
     redisState,
+    storageProvider: usesPostgresSnapshots() ? 'postgresql' : 'redis',
+    // All PostgreSQL snapshots above were read successfully before returning.
+    storageState: usesPostgresSnapshots() ? 'CONNECTED' : redisState,
     circuitBreakerState: {
       state: cb.state,
       consecutiveFailures: cb.consecutiveFailures,

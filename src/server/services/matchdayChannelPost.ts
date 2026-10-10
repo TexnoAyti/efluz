@@ -1,8 +1,9 @@
+import { getNotificationStore } from './postgresNotificationStore';
 import { createHash } from 'node:crypto';
 import type { Club, Competition, Fixture } from '../../types';
 import { matchdayImageModel } from '../../lib/tournamentImage';
 import { tournamentImageBranding } from '../../lib/tournamentImageBranding';
-import { getUpstashClient, KEY_PREFIX, ReadModelKeys, redisGetFresh, redisGetLkg } from '../readModel/readModelStore';
+import { KEY_PREFIX, ReadModelKeys, redisGetFresh, redisGetLkg } from '../readModel/readModelStore';
 import { SMART_ENQUEUE_SCRIPT, persistBackupNotification } from './notificationBackupQueue';
 import { scheduleNotificationQueueDrain, type NotificationQueueJob, type TelegramBroadcastRecord } from './telegramNotificationQueue';
 import { PRIMARY_OWNER_TELEGRAM_ID } from './telegramAiConfigService';
@@ -39,7 +40,7 @@ export async function enqueueMatchdayChannelPost(params: {
   const { competition, matchday, deadlineAt } = params;
   if (competition.type !== 'LEAGUE' || competition.status === 'completed' || !MATCHDAY_CHANNEL_LEAGUES[competition.leagueId || '']) return 'SKIPPED';
   if (!deadlineAt || !Number.isFinite(Date.parse(deadlineAt)) || Date.parse(deadlineAt) <= Date.now()) return 'SKIPPED';
-  const client = getUpstashClient();
+  const client = getNotificationStore();
   if (!client) return 'FAILED';
   const id = channelMatchdayId(competition.id, competition.seasonId, matchday);
   const broadcastsKey = `${KEY_PREFIX}:telegram:broadcasts`;

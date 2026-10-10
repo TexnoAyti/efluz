@@ -1,5 +1,6 @@
+import { getRuntimeStateStore } from '../readModel/runtimeStateStore';
 import { randomUUID } from 'node:crypto';
-import { getUpstashClient, KEY_PREFIX } from '../readModel/readModelStore';
+import { KEY_PREFIX } from '../readModel/readModelStore';
 
 interface Cached<T> { data: T; cachedAt: number; }
 const local = new Map<string, Cached<unknown>>();
@@ -22,7 +23,7 @@ export async function quotaCachedRead<T>(key: string, ttlSeconds: number, load: 
     return snapshot.data;
   };
   const work = (async () => {
-    const client = getUpstashClient();
+    const client = getRuntimeStateStore();
     const [freshKey, lkgKey, versionKey, leaseKey] = keys(key);
     if (!client) {
       const cached = local.get(key) as Cached<T> | undefined;
@@ -58,6 +59,7 @@ export async function quotaCachedRead<T>(key: string, ttlSeconds: number, load: 
       const snapshot = JSON.stringify(cached);
       // A mutation or expired lease must prevent a slow reader from publishing old data.
       const published = await client.eval(`
+        -- EFL_QUOTA_CACHE_PUBLISH_V1
         if redis.call('GET', KEYS[4]) ~= ARGV[1] then return 0 end
         if (redis.call('GET', KEYS[3]) or '0') ~= ARGV[2] then return 0 end
         redis.call('SET', KEYS[1], ARGV[3], 'EX', ARGV[4])
@@ -73,7 +75,7 @@ export async function quotaCachedRead<T>(key: string, ttlSeconds: number, load: 
       if (cached && Date.now() - cached.cachedAt < ttlSeconds * 1000) return cached.data;
       throw error;
     } finally {
-      if (owned) await client.eval(`if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0`, [leaseKey], [owner]).catch(() => {});
+      if (owned) await client.eval(`-- EFL_STATE_RELEASE_V1\nif redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0`, [leaseKey], [owner]).catch(() => {});
     }
   })();
   pending.set(key, work);
@@ -83,8 +85,8 @@ export async function quotaCachedRead<T>(key: string, ttlSeconds: number, load: 
 export async function invalidateQuotaRead(key: string): Promise<void> {
   pending.delete(key);
   local.delete(key); versions.set(key, (versions.get(key) || 0) + 1);
-  const client = getUpstashClient();
+  const client = getRuntimeStateStore();
   if (!client) return;
   const [freshKey, , versionKey] = keys(key);
-  await client.eval(`redis.call('INCR', KEYS[2]); redis.call('DEL', KEYS[1]); return 1`, [freshKey, versionKey], []);
+  await client.eval(`-- EFL_QUOTA_CACHE_INVALIDATE_V1\nredis.call('INCR', KEYS[2]); redis.call('DEL', KEYS[1]); return 1`, [freshKey, versionKey], []);
 }

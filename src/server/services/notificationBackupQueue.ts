@@ -24,6 +24,7 @@ const PENDING = `${KEY_PREFIX}:telegram:backup:pending`;
 let backupClient: Redis | null = null;
 
 export function getNotificationBackupClient(): Redis | null {
+  if (process.env.DATABASE_PROVIDER === 'supabase') return null;
   if (backupClient) return backupClient;
   const url = process.env.NOTIFICATION_BACKUP_REDIS_REST_URL?.trim();
   const token = process.env.NOTIFICATION_BACKUP_REDIS_REST_TOKEN?.trim();

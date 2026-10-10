@@ -1,13 +1,13 @@
 import { randomBytes } from 'node:crypto';
-import { getUpstashClient } from '../readModel/readModelStore';
+import { getRuntimeStateStore } from '../readModel/runtimeStateStore';
 export const IMAGE_EXPORT_TTL_SECONDS = 300;
 export interface StoredImageExport { pngBase64: string; filename: string; expiresAt: number }
 export interface ImageExportStorage { set(key:string,value:StoredImageExport,ttl:number):Promise<void>; get(key:string):Promise<StoredImageExport|null> }
 const localExports = new Map<string, StoredImageExport>();
 const keyFor=(token:string)=>`efluz:image-export:${token}`;
 const defaultStorage:ImageExportStorage={
-  async set(key,value,ttl){const client=getUpstashClient();if(client){await client.set(key,value,{ex:ttl});return;}if(process.env.NODE_ENV==='production'||process.env.VERCEL)throw new Error('IMAGE_EXPORT_STORAGE_UNAVAILABLE');localExports.set(key,value);},
-  async get(key){const client=getUpstashClient();if(client)return await client.get<StoredImageExport>(key);if(process.env.NODE_ENV==='production'||process.env.VERCEL)throw new Error('IMAGE_EXPORT_STORAGE_UNAVAILABLE');const entry=localExports.get(key);if(entry&&entry.expiresAt<=Date.now()){localExports.delete(key);return null;}return entry||null;},
+  async set(key,value,ttl){const client=getRuntimeStateStore();if(client){await client.set(key,value,{ex:ttl});return;}if(process.env.NODE_ENV==='production'||process.env.VERCEL)throw new Error('IMAGE_EXPORT_STORAGE_UNAVAILABLE');localExports.set(key,value);},
+  async get(key){const client=getRuntimeStateStore();if(client)return await client.get<StoredImageExport>(key);if(process.env.NODE_ENV==='production'||process.env.VERCEL)throw new Error('IMAGE_EXPORT_STORAGE_UNAVAILABLE');const entry=localExports.get(key);if(entry&&entry.expiresAt<=Date.now()){localExports.delete(key);return null;}return entry||null;},
 };
 export function validateImageExport(pngBase64:unknown, filename:unknown) {
   if(typeof filename!=='string'||filename.length>180||!/^efluz-[a-zA-Z0-9_-]+\.png$/.test(filename))throw new Error('INVALID_IMAGE_FILENAME');

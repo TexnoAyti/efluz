@@ -14,6 +14,7 @@ export class PostgresNotificationStore extends PostgresAiStore {
  }
  async hget<T=any>(key:string,field:string):Promise<T|null>{return (await super.get<any>(key))?.[field]||null;}
  async hgetall<T=any>(key:string):Promise<T|null>{return super.get<T>(key);}
+ async hexists(key:string,field:string):Promise<number>{return Number(Object.hasOwn((await super.get<any>(key))||{},field));}
  async hset(key:string,fields:Record<string,any>){return this.atomic([key],(values,put)=>{put(key,{...(parse(values.get(key)?.value)||{}),...fields});return Object.keys(fields).length;});}
  async hdel(key:string,field:string){return this.atomic([key],(values,put)=>{const hash={...(parse(values.get(key)?.value)||{})};const exists=field in hash;delete hash[field];put(key,hash);return Number(exists);});}
  async rpush(key:string,value:any){return this.atomic([key],(values,put)=>{const queue=[...(parse(values.get(key)?.value)||[]),parse(value)];put(key,queue);return queue.length;});}

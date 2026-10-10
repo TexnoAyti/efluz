@@ -9,6 +9,7 @@ const context = new AsyncLocalStorage<CostContext>();
 const prefix = 'efluz:v1:read-cost:';
 const hourKey = (time: number) => prefix + new Date(time).toISOString().slice(0, 13);
 export const READ_COST_INCREMENT_LUA = `
+-- EFL_READ_COST_INCREMENT_V1
 for i = 1, #ARGV, 2 do redis.call('HINCRBY', KEYS[1], ARGV[i], ARGV[i + 1]) end
 redis.call('EXPIRE', KEYS[1], 604800)
 return 1
@@ -37,7 +38,7 @@ async function persistBuckets(buckets: Buckets, endpoint: string) {
   await Promise.all([...buckets].map(([time, entries]) => persist(entries, endpoint, time)));
 }
 function keepAlive(work: Promise<unknown>) {
-  const safe = work.catch(() => { console.warn('[READ_COST_TELEMETRY_UNAVAILABLE] Redis write failed; no Firestore fallback.'); });
+  const safe = work.catch(() => { console.warn('[READ_COST_TELEMETRY_UNAVAILABLE] State write failed; request remains available.'); });
   if (process.env.VERCEL === '1') waitUntil(safe);
   else void safe;
 }

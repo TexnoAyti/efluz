@@ -48,336 +48,6 @@ var init_redisConfig = __esm({
   }
 });
 
-// src/server/readModel/boundedRedis.ts
-import { Redis } from "@upstash/redis";
-function getBoundedRedisClient() {
-  const config = resolveRedisConfig(process.env);
-  return config ? new Redis({ url: config.url, token: config.token, retry: false, enableAutoPipelining: false, signal: () => AbortSignal.timeout(1200) }) : null;
-}
-var init_boundedRedis = __esm({
-  "src/server/readModel/boundedRedis.ts"() {
-    init_redisConfig();
-  }
-});
-
-// src/server/services/adminReviewCache.ts
-import { waitUntil } from "@vercel/functions";
-import { randomUUID } from "node:crypto";
-function invalidateSharedAdminData() {
-  localEpoch++;
-  localResults.clear();
-  if (invalidating) return invalidating;
-  const client = getBoundedRedisClient();
-  const work = (async () => {
-    if (!client) return;
-    let flushed;
-    do {
-      flushed = localEpoch;
-      await client.incr(epochKey);
-    } while (flushed !== localEpoch);
-  })().catch(() => {
-    console.warn("[ADMIN_READ_CACHE_INVALIDATION_UNAVAILABLE]");
-  });
-  invalidating = work;
-  void work.finally(() => {
-    if (invalidating === work) invalidating = null;
-  });
-  if (process.env.VERCEL === "1") waitUntil(work);
-  return work;
-}
-function decode(value) {
-  try {
-    const entry = typeof value === "string" ? JSON.parse(value) : value;
-    return entry && typeof entry.result?.degraded === "boolean" && typeof entry.result?.stale === "boolean" && typeof entry.result?.source === "string" && Number.isFinite(entry.savedAt) ? entry : null;
-  } catch {
-    return null;
-  }
-}
-function readSharedAdminData(key4, loader, ttlSeconds = 10, fallbackSeconds = 300, bypassFresh = false) {
-  const flightKey = key4 + ":local:" + localEpoch;
-  if (flights.has(flightKey)) return flights.get(flightKey);
-  const work = (async () => {
-    if (invalidating) await invalidating;
-    const generation = localEpoch;
-    const remember = (result) => {
-      if (!result.stale && !result.degraded && generation === localEpoch) {
-        if (localResults.size >= 128 && !localResults.has(key4)) localResults.delete(localResults.keys().next().value);
-        localResults.set(key4, { result, savedAt: Date.now(), epoch: generation });
-      }
-      return result;
-    };
-    const loadLocally = async () => {
-      const saved = localResults.get(key4);
-      if (!bypassFresh && saved && saved.epoch === localEpoch && Date.now() - saved.savedAt < ttlSeconds * 1e3) {
-        if (process.env.DATABASE_PROVIDER === "supabase") return saved.result;
-        return { ...saved.result, stale: true, degraded: true, source: "process_stale" };
-      }
-      return remember(await loader());
-    };
-    const client = getBoundedRedisClient();
-    if (!client) return loadLocally();
-    let epoch = "0";
-    try {
-      epoch = String(await client.get(epochKey) || "0");
-    } catch {
-      return loadLocally();
-    }
-    const scopedKey = key4 + ":epoch:" + epoch;
-    const freshKey = scopedKey + ":fresh", lkgKey = scopedKey + ":lkg", lockKey = scopedKey + ":lock";
-    let acquired = false;
-    const owner = randomUUID();
-    try {
-      const cached3 = decode(await client.get(freshKey));
-      if (!bypassFresh && cached3 && Date.now() - cached3.savedAt < ttlSeconds * 1e3) return remember(cached3.result);
-      acquired = Boolean(await client.set(lockKey, owner, { nx: true, ex: 30 }));
-      if (!acquired) {
-        for (let i = 0; i < 10; i++) {
-          await new Promise((resolve) => setTimeout(resolve, 50));
-          const ready = decode(await client.get(freshKey));
-          if (ready && Date.now() - ready.savedAt < ttlSeconds * 1e3) return remember(ready.result);
-        }
-        const last = decode(await client.get(lkgKey));
-        if (last && Date.now() - last.savedAt < fallbackSeconds * 1e3) return { ...last.result, stale: true, degraded: true, source: "redis_stale" };
-        throw new Error("ADMIN_REVIEWS_REFRESHING");
-      }
-    } catch (error) {
-      if (error.message === "ADMIN_REVIEWS_REFRESHING") throw error;
-      return loadLocally();
-    }
-    try {
-      const result = remember(await loader());
-      if (!result.degraded && !result.stale && generation === localEpoch) await client.eval(ADMIN_REVIEW_CACHE_PUBLISH_LUA, [lockKey, freshKey, lkgKey, epochKey], [owner, JSON.stringify({ result, savedAt: Date.now() }), ttlSeconds, fallbackSeconds, epoch]).catch(() => void 0);
-      return result;
-    } finally {
-      if (acquired) await client.eval(unlock, [lockKey], [owner]).catch(() => void 0);
-    }
-  })();
-  flights.set(flightKey, work);
-  void work.finally(() => {
-    if (flights.get(flightKey) === work) flights.delete(flightKey);
-  }).catch(() => void 0);
-  return work;
-}
-function readSharedAdminReview(key4, loader) {
-  return readSharedAdminData(key4, loader);
-}
-var flights, localResults, epochKey, localEpoch, invalidating, ADMIN_REVIEW_CACHE_PUBLISH_LUA, unlock;
-var init_adminReviewCache = __esm({
-  "src/server/services/adminReviewCache.ts"() {
-    init_boundedRedis();
-    flights = /* @__PURE__ */ new Map();
-    localResults = /* @__PURE__ */ new Map();
-    epochKey = "efluz:v1:admin:read-epoch";
-    localEpoch = 0;
-    invalidating = null;
-    ADMIN_REVIEW_CACHE_PUBLISH_LUA = `
-if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end
-if (redis.call('GET', KEYS[4]) or '0') ~= ARGV[5] then return 0 end
-redis.call('SET', KEYS[2], ARGV[2], 'EX', ARGV[3] or 10)
-redis.call('SET', KEYS[3], ARGV[2], 'EX', ARGV[4] or 300)
-redis.call('DEL', KEYS[1])
-return 1
-`;
-    unlock = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0`;
-  }
-});
-
-// src/server/services/retiredFixtureService.ts
-function isRetiredFixture(id2, seasonId2) {
-  return RETIRED_FIXTURES.some((row) => row.id === id2 && (!seasonId2 || row.seasonId === seasonId2));
-}
-function correctFixtureMatchday(fixture, seasonId2) {
-  const correction2 = RETIRED_FIXTURES.find((row) => row.retainedFixtureId === fixture.id && (!fixture.seasonId && !seasonId2 || row.seasonId === (fixture.seasonId || seasonId2)));
-  return correction2 ? { ...fixture, matchday: correction2.matchday, roundName: correction2.roundName, scheduledAt: correction2.scheduledAt, competitionName: "Serie A" } : fixture;
-}
-function hasFixtureMatchdayCorrection(competitionId, seasonId2) {
-  return RETIRED_FIXTURES.some((row) => row.competitionId === competitionId && row.seasonId === seasonId2);
-}
-function filterRetiredFixtures(fixtures, seasonId2) {
-  return fixtures.filter((fixture) => !isRetiredFixture(fixture.id, fixture.seasonId || seasonId2)).map((fixture) => correctFixtureMatchday(fixture, seasonId2));
-}
-function assertFixtureNotRetired(id2) {
-  if (isRetiredFixture(id2)) {
-    throw Object.assign(new Error("Bu o\u2018yinning tasdiqlangan natijasi Matchday 10 ga biriktirilgan. Takroriy o\u2018yinga natija kiritib bo\u2018lmaydi."), {
-      code: "FIXTURE_RETIRED",
-      statusCode: 409
-    });
-  }
-}
-var RETIRED_FIXTURES;
-var init_retiredFixtureService = __esm({
-  "src/server/services/retiredFixtureService.ts"() {
-    RETIRED_FIXTURES = [{
-      id: "fix-comp-serie-a-2026-md10-inter-vs-milan",
-      seasonId: "season-2026-27",
-      competitionId: "comp-serie-a-2026",
-      retainedFixtureId: "fix-comp-serie-a-2026-md1-inter-vs-milan",
-      matchday: 10,
-      roundName: "Matchday 10",
-      scheduledAt: "2026-10-17T15:00:00.000Z"
-    }];
-  }
-});
-
-// src/server/services/durableReadCosts.ts
-var durableReadCosts_exports = {};
-__export(durableReadCosts_exports, {
-  READ_COST_INCREMENT_LUA: () => READ_COST_INCREMENT_LUA,
-  getDurableReadCosts: () => getDurableReadCosts,
-  readCostMiddleware: () => readCostMiddleware,
-  recordDurableRead: () => recordDurableRead
-});
-import { AsyncLocalStorage } from "node:async_hooks";
-import { waitUntil as waitUntil2 } from "@vercel/functions";
-function add(entries, key4, amount) {
-  entries.set(key4, (entries.get(key4) || 0) + amount);
-}
-function label(value) {
-  return value.replace(/[^a-zA-Z0-9_:/ .-]/g, "_").slice(0, 120) || "unknown";
-}
-function collect(buckets, collection2, count, caller) {
-  const hour = Math.floor(Date.now() / 36e5) * 36e5;
-  let entries = buckets.get(hour);
-  if (!entries) {
-    entries = /* @__PURE__ */ new Map();
-    buckets.set(hour, entries);
-  }
-  add(entries, "totalReads", count);
-  add(entries, "collection:" + label(collection2), count);
-  add(entries, "caller:" + label(caller), count);
-}
-async function persist(entries, endpoint, time = Date.now()) {
-  const total = entries.get("totalReads") || 0;
-  if (!total) return;
-  const client = getBoundedRedisClient();
-  if (!client) return;
-  const values = new Map(entries);
-  add(values, "requestsWithReads", 1);
-  add(values, "endpoint:" + label(endpoint), total);
-  await client.eval(READ_COST_INCREMENT_LUA, [hourKey(time)], [...values].flatMap(([key4, value]) => [key4, value]));
-}
-async function persistBuckets(buckets, endpoint) {
-  await Promise.all([...buckets].map(([time, entries]) => persist(entries, endpoint, time)));
-}
-function keepAlive(work) {
-  const safe = work.catch(() => {
-    console.warn("[READ_COST_TELEMETRY_UNAVAILABLE] Redis write failed; no Firestore fallback.");
-  });
-  if (process.env.VERCEL === "1") waitUntil2(safe);
-  else void safe;
-}
-function recordDurableRead(collection2, count, caller) {
-  if (!Number.isSafeInteger(count) || count <= 0) return;
-  const active = context.getStore();
-  if (active && !active.closed) {
-    collect(active.buckets, collection2, count, caller);
-    return;
-  }
-  if (!background) {
-    background = /* @__PURE__ */ new Map();
-    const buffer = background;
-    keepAlive(new Promise((resolve) => setTimeout(resolve, 100)).then(async () => {
-      if (background === buffer) background = null;
-      await persistBuckets(buffer, "background");
-    }));
-  }
-  collect(background, collection2, count, caller);
-}
-function readCostMiddleware(req, res, next) {
-  const active = {
-    buckets: /* @__PURE__ */ new Map(),
-    closed: false,
-    // Route templates only: never raw URLs, IDs, search strings or usernames.
-    endpoint: () => `${req.method} ${req.baseUrl || ""}${typeof req.route?.path === "string" ? req.route.path : "/unmatched"}`
-  };
-  const finish2 = () => {
-    if (active.closed) return;
-    active.closed = true;
-    keepAlive(persistBuckets(active.buckets, active.endpoint()));
-  };
-  res.once("finish", finish2);
-  res.once("close", finish2);
-  context.run(active, next);
-}
-async function getDurableReadCosts(from, to) {
-  const until = to ? Date.parse(to) : Date.now();
-  const since = from ? Date.parse(from) : until - 24 * 36e5;
-  if (!Number.isFinite(since) || !Number.isFinite(until) || until <= since || until - since > 24 * 36e5 || since < Date.now() - 7 * 864e5 || until > Date.now() + 6e4)
-    throw new Error("INVALID_READ_COST_WINDOW");
-  const hours = [];
-  for (let time = Math.floor(since / 36e5) * 36e5; time < until; time += 36e5) hours.push(time);
-  const base = { from: new Date(since).toISOString(), to: new Date(until).toISOString(), timezone: "Asia/Tashkent", retentionDays: 7, resolution: "hour", coverage: "instrumented reads; not Firebase billing; collection reads without tracking are excluded", bucketPolicy: "full overlapping UTC hours; reads attributed when recorded" };
-  const client = getBoundedRedisClient();
-  if (!client) return { ...base, available: false, hours: [] };
-  try {
-    const pipeline = client.pipeline();
-    for (const time of hours) pipeline.hgetall(hourKey(time));
-    const rows = await pipeline.exec();
-    const totals = /* @__PURE__ */ new Map();
-    const windows = hours.map((time, index2) => {
-      const values = rows[index2] || {};
-      for (const [field, value] of Object.entries(values)) if (Number.isFinite(Number(value))) add(totals, field, Number(value));
-      const group2 = (kind) => Object.fromEntries(Object.entries(values).filter(([key4]) => key4.startsWith(kind + ":")).map(([key4, value]) => [key4.slice(kind.length + 1), Number(value)]));
-      return { utcHour: new Date(time).toISOString(), tashkentHour: new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Tashkent", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" }).format(time), observed: Object.keys(values).length > 0, totalReads: Number(values.totalReads || 0), requestsWithReads: Number(values.requestsWithReads || 0), byEndpoint: group2("endpoint"), byCollection: group2("collection"), byCaller: group2("caller") };
-    });
-    const group = (kind) => Object.fromEntries([...totals].filter(([key4]) => key4.startsWith(kind + ":")).map(([key4, value]) => [key4.slice(kind.length + 1), value]));
-    return { ...base, available: true, totalReads: totals.get("totalReads") || 0, requestsWithReads: totals.get("requestsWithReads") || 0, byEndpoint: group("endpoint"), byCollection: group("collection"), byCaller: group("caller"), hours: windows };
-  } catch {
-    return { ...base, available: false, hours: [] };
-  }
-}
-var context, prefix, hourKey, READ_COST_INCREMENT_LUA, background;
-var init_durableReadCosts = __esm({
-  "src/server/services/durableReadCosts.ts"() {
-    init_boundedRedis();
-    context = new AsyncLocalStorage();
-    prefix = "efluz:v1:read-cost:";
-    hourKey = (time) => prefix + new Date(time).toISOString().slice(0, 13);
-    READ_COST_INCREMENT_LUA = `
-for i = 1, #ARGV, 2 do redis.call('HINCRBY', KEYS[1], ARGV[i], ARGV[i + 1]) end
-redis.call('EXPIRE', KEYS[1], 604800)
-return 1
-`;
-    background = null;
-  }
-});
-
-// src/lib/matchdayState.ts
-function resolveMatchdayGate(lock, now = Date.now()) {
-  if (!lock) return null;
-  if (lock.overrideStatus === "FORCE_LOCKED" || lock.overrideStatus === "PAUSED" || lock.isLocked || lock.isOpen === false) return false;
-  if (lock.expiresAt && (!Number.isFinite(Date.parse(lock.expiresAt)) || Date.parse(lock.expiresAt) <= now)) return false;
-  if (lock.overrideStatus === "FORCE_OPEN" || lock.isOpen === true) return true;
-  return null;
-}
-var init_matchdayState = __esm({
-  "src/lib/matchdayState.ts"() {
-  }
-});
-
-// src/lib/seasonQualificationPolicy.ts
-function withSeasonQualificationPolicy(competition, seasonId2) {
-  if (seasonId2 !== "season-2026-27") return competition;
-  const count = SEASON_2026_27_ALLOCATION[competition.id];
-  if (count != null) return { ...competition, formatConfig: { ...competition.formatConfig, qualificationSpots: count, europaQualificationSpots: count } };
-  if (competition.id === "comp-champions-league-2026" || competition.id === "comp-europa-league-2026") {
-    return { ...competition, formatConfig: { ...competition.formatConfig, leaguePhaseTeams: 32, qualificationSlots: { ...competition.formatConfig?.qualificationSlots, ...SEASON_2026_27_ALLOCATION } } };
-  }
-  return competition;
-}
-var SEASON_2026_27_ALLOCATION;
-var init_seasonQualificationPolicy = __esm({
-  "src/lib/seasonQualificationPolicy.ts"() {
-    SEASON_2026_27_ALLOCATION = Object.freeze({
-      "comp-premier-league-2026": 7,
-      "comp-la-liga-2026": 7,
-      "comp-serie-a-2026": 6,
-      "comp-bundesliga-2026": 6,
-      "comp-ligue-1-2026": 6
-    });
-  }
-});
-
 // src/server/migration/firestoreArchive.ts
 import { Timestamp, GeoPoint, DocumentReference } from "firebase-admin/firestore";
 function encodeValue(value) {
@@ -443,7 +113,7 @@ var init_supabaseMigration = __esm({
 });
 
 // src/server/postgres/documentStore.ts
-import { randomUUID as randomUUID2 } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { FieldPath } from "firebase-admin/firestore";
 function clean(value) {
   if (Array.isArray(value)) return value.map((v) => v === void 0 ? null : clean(v));
@@ -472,7 +142,8 @@ function runtimeRpc() {
     const started = Date.now();
     const target = body.p_ids ? "durable_read_snapshots" : body.p_operations?.map((op) => op.path.split("/").slice(0, -1).join("/")).filter((value, index2, values) => values.indexOf(value) === index2).join(",") || body.p_query?.collection || body.p_query?.path?.split("/").slice(0, -1).join("/") || "commit";
     try {
-      const response = await fetch(`${url.replace(/\/$/, "")}/rest/v1/rpc/${name}`, {
+      const endpoint = name === "efl_runtime_commit" ? "efl_runtime_commit_safe" : name;
+      const response = await fetch(`${url.replace(/\/$/, "")}/rest/v1/rpc/${endpoint}`, {
         method: "POST",
         headers: migrationHeaders(key4),
         body: JSON.stringify(body),
@@ -486,10 +157,11 @@ function runtimeRpc() {
         throw Object.assign(new Error(code), { code: error.message === "DOCUMENT_NOT_FOUND" ? 5 : error.message === "DOCUMENT_ALREADY_EXISTS" ? 6 : void 0 });
       }
       const result = await response.json();
+      if (result?.conflict === true) throw conflict();
       if (Date.now() - started > 2e3) console.warn("[POSTGRES_RPC_SLOW]", { name, target, ms: Date.now() - started });
       return result;
     } catch (error) {
-      console.error("[POSTGRES_RPC_FAILED]", { name, target, ms: Date.now() - started, message: error?.message });
+      if (error?.code !== 10) console.error("[POSTGRES_RPC_FAILED]", { name, target, ms: Date.now() - started, message: error?.message });
       throw error;
     }
   };
@@ -554,8 +226,8 @@ var init_documentStore = __esm({
       copy(patch) {
         return new _Query(this.firestore, this.path, { ...this.spec, ...patch });
       }
-      doc(id2 = randomUUID2()) {
-        return this.firestore.doc(`${this.path}/${id2}`);
+      doc(id = randomUUID()) {
+        return this.firestore.doc(`${this.path}/${id}`);
       }
       async add(data) {
         const ref2 = this.doc();
@@ -975,16 +647,16 @@ function createMemoryFirestore() {
     }
     async get() {
       const col = getCol(this.colName);
-      let docs = Object.entries(col).map(([id2, data]) => ({
-        id: id2,
-        ref: new MemDocRef(this.colName, id2),
+      let docs = Object.entries(col).map(([id, data]) => ({
+        id,
+        ref: new MemDocRef(this.colName, id),
         exists: true,
         data: () => JSON.parse(JSON.stringify(data))
       }));
       for (const f of this.filters) {
         docs = docs.filter((d) => {
-          const documentId = f.field === "__name__" || f.field instanceof FieldPath2 && f.field.isEqual(FieldPath2.documentId());
-          const val = documentId ? d.id : d.data()[String(f.field)];
+          const documentId2 = f.field === "__name__" || f.field instanceof FieldPath2 && f.field.isEqual(FieldPath2.documentId());
+          const val = documentId2 ? d.id : d.data()[String(f.field)];
           if (f.op === "==" || f.op === "===") return val === f.val;
           if (f.op === "!=") return val !== f.val;
           if (f.op === ">") return val > f.val;
@@ -1022,8 +694,8 @@ function createMemoryFirestore() {
     }
   }
   class MemCollectionRef extends MemQuery {
-    doc(id2) {
-      const docId = id2 || `doc_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    doc(id) {
+      const docId = id || `doc_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
       return new MemDocRef(this.colName, docId);
     }
     async add(data) {
@@ -1133,9 +805,528 @@ var init_admin = __esm({
   }
 });
 
-// src/server/readModel/postgresSnapshots.ts
+// src/server/services/postgresKeyValueStore.ts
 import { createHash } from "node:crypto";
 import { FieldPath as FieldPath3 } from "firebase-admin/firestore";
+var parseStoredValue, documentId, live, PostgresKeyValueStore;
+var init_postgresKeyValueStore = __esm({
+  "src/server/services/postgresKeyValueStore.ts"() {
+    init_admin();
+    parseStoredValue = (value) => {
+      try {
+        return typeof value === "string" ? JSON.parse(value) : value;
+      } catch {
+        return value;
+      }
+    };
+    documentId = (key4) => createHash("sha256").update(key4).digest("hex");
+    live = (entry) => entry && (entry.expiresAt === null || entry.expiresAt > Date.now()) ? entry : void 0;
+    PostgresKeyValueStore = class {
+      constructor(collectionName, signal) {
+        this.collectionName = collectionName;
+        this.signal = signal;
+      }
+      check() {
+        if (this.signal?.aborted) throw Error("TIMEOUT_ABORTED");
+      }
+      ref(key4) {
+        return getFirestoreDb().collection(this.collectionName).doc(documentId(key4));
+      }
+      async get(key4) {
+        this.check();
+        const entry = live((await this.ref(key4).get()).data());
+        this.check();
+        return entry ? parseStoredValue(entry.value) : null;
+      }
+      async mget(...keys2) {
+        if (!keys2.length) return [];
+        this.check();
+        const rows = await getFirestoreDb().collection(this.collectionName).where(FieldPath3.documentId(), "in", keys2.map(documentId)).get();
+        const values = new Map(rows.docs.map((row) => [row.id, live(row.data())]));
+        this.check();
+        return keys2.map((key4) => {
+          const entry = values.get(documentId(key4));
+          return entry ? parseStoredValue(entry.value) : null;
+        });
+      }
+      async atomic(keys2, operation) {
+        this.check();
+        const db = getFirestoreDb();
+        return db.runTransaction(async (tx) => {
+          this.check();
+          const rows = await tx.get(db.collection(this.collectionName).where(FieldPath3.documentId(), "in", [...new Set(keys2.map(documentId))]));
+          const byId = new Map(rows.docs.map((row) => [row.id, row.data()]));
+          const values = /* @__PURE__ */ new Map();
+          keys2.forEach((key4) => {
+            const entry = live(byId.get(documentId(key4)));
+            if (entry) values.set(key4, entry);
+          });
+          const writes = /* @__PURE__ */ new Map();
+          this.check();
+          const result = operation(values, (key4, value, seconds) => {
+            if (!keys2.includes(key4)) throw Error("POSTGRES_STATE_UNREAD_KEY");
+            writes.set(key4, { value, expiresAt: seconds === void 0 ? null : Date.now() + seconds * 1e3 });
+          });
+          this.check();
+          writes.forEach((value, key4) => tx.set(this.ref(key4), value));
+          return result;
+        });
+      }
+      async set(key4, value, options) {
+        this.check();
+        if (options?.ex !== void 0 && (!Number.isFinite(options.ex) || options.ex <= 0)) throw Error("INVALID_STATE_TTL");
+        if (options?.nx) return this.atomic([key4], (values, put) => {
+          if (values.has(key4)) return null;
+          put(key4, value, options.ex);
+          return "OK";
+        });
+        await this.ref(key4).set({ value, expiresAt: options?.ex === void 0 ? null : Date.now() + options.ex * 1e3 });
+        this.check();
+        return "OK";
+      }
+      async del(...keys2) {
+        this.check();
+        if (!keys2.length) return 0;
+        const batch = getFirestoreDb().batch();
+        keys2.forEach((key4) => batch.delete(this.ref(key4)));
+        await batch.commit();
+        return keys2.length;
+      }
+      /** Opportunistic bounded retention. Re-read and delete in one transaction so
+       * a concurrently renewed lease or export is never removed. */
+      async pruneExpired(limit = 100) {
+        const db = getFirestoreDb();
+        return db.runTransaction(async (tx) => {
+          const rows = await tx.get(db.collection(this.collectionName).where("expiresAt", ">", 0).where("expiresAt", "<=", Date.now()).limit(limit));
+          rows.docs.forEach((row) => tx.delete(row.ref));
+          return rows.size;
+        });
+      }
+    };
+  }
+});
+
+// src/server/services/postgresRuntimeStore.ts
+import { waitUntil } from "@vercel/functions";
+function createPostgresRuntimeStore() {
+  const store = new PostgresRuntimeStore();
+  if (process.env.VERCEL === "1" && Date.now() >= cleanupAfter) {
+    cleanupAfter = Date.now() + 6e4;
+    waitUntil(store.pruneExpired().catch(() => {
+      console.warn("[RUNTIME_STATE_RETENTION_UNAVAILABLE]");
+    }));
+  }
+  return store;
+}
+var PostgresRuntimeStore, cleanupAfter;
+var init_postgresRuntimeStore = __esm({
+  "src/server/services/postgresRuntimeStore.ts"() {
+    init_postgresKeyValueStore();
+    PostgresRuntimeStore = class extends PostgresKeyValueStore {
+      constructor() {
+        super("runtime_state");
+      }
+      async incr(key4) {
+        return this.atomic([key4], (values, put) => {
+          const next = Number(parseStoredValue(values.get(key4)?.value) || 0) + 1;
+          put(key4, next);
+          return next;
+        });
+      }
+      async hgetall(key4) {
+        return this.get(key4);
+      }
+      pipeline() {
+        const keys2 = [];
+        return { hgetall(key4) {
+          keys2.push(key4);
+          return this;
+        }, exec: () => this.mget(...keys2) };
+      }
+      async eval(script, keys2, args) {
+        return this.atomic(keys2, (values, put) => {
+          const get = (key4) => parseStoredValue(values.get(key4)?.value);
+          if (script.includes("EFL_STATE_RELEASE_V1")) {
+            if (get(keys2[0]) !== args[0]) return 0;
+            put(keys2[0], null, 0);
+            return 1;
+          }
+          if (script.includes("EFL_RATE_LIMIT_V1")) {
+            const next = Number(get(keys2[0]) || 0) + 1;
+            const expiresAt = values.get(keys2[0])?.expiresAt;
+            put(keys2[0], next, expiresAt ? Math.max(1e-3, (expiresAt - Date.now()) / 1e3) : Number(args[0]));
+            return next;
+          }
+          if (script.includes("EFL_QUOTA_CACHE_INVALIDATE_V1")) {
+            put(keys2[1], Number(get(keys2[1]) || 0) + 1);
+            put(keys2[0], null, 0);
+            return 1;
+          }
+          if (script.includes("EFL_QUOTA_CACHE_PUBLISH_V1")) {
+            if (get(keys2[3]) !== args[0] || String(get(keys2[2]) ?? "0") !== String(args[1])) return 0;
+            put(keys2[0], parseStoredValue(args[2]), Number(args[3]));
+            put(keys2[1], parseStoredValue(args[2]));
+            return 1;
+          }
+          if (script.includes("EFL_ADMIN_CACHE_PUBLISH_V1")) {
+            if (get(keys2[0]) !== args[0] || String(get(keys2[3]) ?? "0") !== String(args[4])) return 0;
+            put(keys2[1], parseStoredValue(args[1]), Number(args[2]));
+            put(keys2[2], parseStoredValue(args[1]), Number(args[3]));
+            put(keys2[0], null, 0);
+            return 1;
+          }
+          if (script.includes("EFL_READ_COST_INCREMENT_V1")) {
+            const hash = { ...get(keys2[0]) || {} };
+            for (let i = 0; i < args.length; i += 2) hash[args[i]] = Number(hash[args[i]] || 0) + Number(args[i + 1]);
+            put(keys2[0], hash, 604800);
+            return 1;
+          }
+          throw Error("UNSUPPORTED_POSTGRES_RUNTIME_OPERATION");
+        });
+      }
+    };
+    cleanupAfter = 0;
+  }
+});
+
+// src/server/readModel/boundedRedis.ts
+import { Redis } from "@upstash/redis";
+function getBoundedRedisClient() {
+  if (process.env.DATABASE_PROVIDER === "supabase") return createPostgresRuntimeStore();
+  const config = resolveRedisConfig(process.env);
+  return config ? new Redis({ url: config.url, token: config.token, retry: false, enableAutoPipelining: false, signal: () => AbortSignal.timeout(1200) }) : null;
+}
+var init_boundedRedis = __esm({
+  "src/server/readModel/boundedRedis.ts"() {
+    init_redisConfig();
+    init_postgresRuntimeStore();
+  }
+});
+
+// src/server/services/adminReviewCache.ts
+import { waitUntil as waitUntil2 } from "@vercel/functions";
+import { randomUUID as randomUUID2 } from "node:crypto";
+function invalidateSharedAdminData() {
+  localEpoch++;
+  localResults.clear();
+  if (invalidating) return invalidating;
+  const client = getBoundedRedisClient();
+  const work = (async () => {
+    if (!client) return;
+    let flushed;
+    do {
+      flushed = localEpoch;
+      await client.incr(epochKey);
+    } while (flushed !== localEpoch);
+  })().catch(() => {
+    console.warn("[ADMIN_READ_CACHE_INVALIDATION_UNAVAILABLE]");
+  });
+  invalidating = work;
+  void work.finally(() => {
+    if (invalidating === work) invalidating = null;
+  });
+  if (process.env.VERCEL === "1") waitUntil2(work);
+  return work;
+}
+function decode(value) {
+  try {
+    const entry = typeof value === "string" ? JSON.parse(value) : value;
+    return entry && typeof entry.result?.degraded === "boolean" && typeof entry.result?.stale === "boolean" && typeof entry.result?.source === "string" && Number.isFinite(entry.savedAt) ? entry : null;
+  } catch {
+    return null;
+  }
+}
+function readSharedAdminData(key4, loader, ttlSeconds = 10, fallbackSeconds = 300, bypassFresh = false) {
+  const flightKey = key4 + ":local:" + localEpoch;
+  if (flights.has(flightKey)) return flights.get(flightKey);
+  const work = (async () => {
+    if (invalidating) await invalidating;
+    const generation = localEpoch;
+    const remember = (result) => {
+      if (!result.stale && !result.degraded && generation === localEpoch) {
+        if (localResults.size >= 128 && !localResults.has(key4)) localResults.delete(localResults.keys().next().value);
+        localResults.set(key4, { result, savedAt: Date.now(), epoch: generation });
+      }
+      return result;
+    };
+    const loadLocally = async () => {
+      const saved = localResults.get(key4);
+      if (!bypassFresh && saved && saved.epoch === localEpoch && Date.now() - saved.savedAt < ttlSeconds * 1e3) {
+        if (process.env.DATABASE_PROVIDER === "supabase") return saved.result;
+        return { ...saved.result, stale: true, degraded: true, source: "process_stale" };
+      }
+      return remember(await loader());
+    };
+    const client = getBoundedRedisClient();
+    if (!client) return loadLocally();
+    let epoch = "0";
+    try {
+      epoch = String(await client.get(epochKey) || "0");
+    } catch {
+      return loadLocally();
+    }
+    const scopedKey = key4 + ":epoch:" + epoch;
+    const freshKey = scopedKey + ":fresh", lkgKey = scopedKey + ":lkg", lockKey = scopedKey + ":lock";
+    let acquired = false;
+    const owner = randomUUID2();
+    try {
+      const cached3 = decode(await client.get(freshKey));
+      if (!bypassFresh && cached3 && Date.now() - cached3.savedAt < ttlSeconds * 1e3) return remember(cached3.result);
+      acquired = Boolean(await client.set(lockKey, owner, { nx: true, ex: 30 }));
+      if (!acquired) {
+        for (let i = 0; i < 10; i++) {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          const ready = decode(await client.get(freshKey));
+          if (ready && Date.now() - ready.savedAt < ttlSeconds * 1e3) return remember(ready.result);
+        }
+        const last = decode(await client.get(lkgKey));
+        if (last && Date.now() - last.savedAt < fallbackSeconds * 1e3) return { ...last.result, stale: true, degraded: true, source: "redis_stale" };
+        throw new Error("ADMIN_REVIEWS_REFRESHING");
+      }
+    } catch (error) {
+      if (error.message === "ADMIN_REVIEWS_REFRESHING") throw error;
+      return loadLocally();
+    }
+    try {
+      const result = remember(await loader());
+      if (!result.degraded && !result.stale && generation === localEpoch) await client.eval(ADMIN_REVIEW_CACHE_PUBLISH_LUA, [lockKey, freshKey, lkgKey, epochKey], [owner, JSON.stringify({ result, savedAt: Date.now() }), ttlSeconds, fallbackSeconds, epoch]).catch(() => void 0);
+      return result;
+    } finally {
+      if (acquired) await client.eval(unlock, [lockKey], [owner]).catch(() => void 0);
+    }
+  })();
+  flights.set(flightKey, work);
+  void work.finally(() => {
+    if (flights.get(flightKey) === work) flights.delete(flightKey);
+  }).catch(() => void 0);
+  return work;
+}
+function readSharedAdminReview(key4, loader) {
+  return readSharedAdminData(key4, loader);
+}
+var flights, localResults, epochKey, localEpoch, invalidating, ADMIN_REVIEW_CACHE_PUBLISH_LUA, unlock;
+var init_adminReviewCache = __esm({
+  "src/server/services/adminReviewCache.ts"() {
+    init_boundedRedis();
+    flights = /* @__PURE__ */ new Map();
+    localResults = /* @__PURE__ */ new Map();
+    epochKey = "efluz:v1:admin:read-epoch";
+    localEpoch = 0;
+    invalidating = null;
+    ADMIN_REVIEW_CACHE_PUBLISH_LUA = `
+-- EFL_ADMIN_CACHE_PUBLISH_V1
+if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end
+if (redis.call('GET', KEYS[4]) or '0') ~= ARGV[5] then return 0 end
+redis.call('SET', KEYS[2], ARGV[2], 'EX', ARGV[3] or 10)
+redis.call('SET', KEYS[3], ARGV[2], 'EX', ARGV[4] or 300)
+redis.call('DEL', KEYS[1])
+return 1
+`;
+    unlock = `-- EFL_STATE_RELEASE_V1
+if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0`;
+  }
+});
+
+// src/server/services/retiredFixtureService.ts
+function isRetiredFixture(id, seasonId2) {
+  return RETIRED_FIXTURES.some((row) => row.id === id && (!seasonId2 || row.seasonId === seasonId2));
+}
+function correctFixtureMatchday(fixture, seasonId2) {
+  const correction2 = RETIRED_FIXTURES.find((row) => row.retainedFixtureId === fixture.id && (!fixture.seasonId && !seasonId2 || row.seasonId === (fixture.seasonId || seasonId2)));
+  return correction2 ? { ...fixture, matchday: correction2.matchday, roundName: correction2.roundName, scheduledAt: correction2.scheduledAt, competitionName: "Serie A" } : fixture;
+}
+function hasFixtureMatchdayCorrection(competitionId, seasonId2) {
+  return RETIRED_FIXTURES.some((row) => row.competitionId === competitionId && row.seasonId === seasonId2);
+}
+function filterRetiredFixtures(fixtures, seasonId2) {
+  return fixtures.filter((fixture) => !isRetiredFixture(fixture.id, fixture.seasonId || seasonId2)).map((fixture) => correctFixtureMatchday(fixture, seasonId2));
+}
+function assertFixtureNotRetired(id) {
+  if (isRetiredFixture(id)) {
+    throw Object.assign(new Error("Bu o\u2018yinning tasdiqlangan natijasi Matchday 10 ga biriktirilgan. Takroriy o\u2018yinga natija kiritib bo\u2018lmaydi."), {
+      code: "FIXTURE_RETIRED",
+      statusCode: 409
+    });
+  }
+}
+var RETIRED_FIXTURES;
+var init_retiredFixtureService = __esm({
+  "src/server/services/retiredFixtureService.ts"() {
+    RETIRED_FIXTURES = [{
+      id: "fix-comp-serie-a-2026-md10-inter-vs-milan",
+      seasonId: "season-2026-27",
+      competitionId: "comp-serie-a-2026",
+      retainedFixtureId: "fix-comp-serie-a-2026-md1-inter-vs-milan",
+      matchday: 10,
+      roundName: "Matchday 10",
+      scheduledAt: "2026-10-17T15:00:00.000Z"
+    }];
+  }
+});
+
+// src/server/services/durableReadCosts.ts
+var durableReadCosts_exports = {};
+__export(durableReadCosts_exports, {
+  READ_COST_INCREMENT_LUA: () => READ_COST_INCREMENT_LUA,
+  getDurableReadCosts: () => getDurableReadCosts,
+  readCostMiddleware: () => readCostMiddleware,
+  recordDurableRead: () => recordDurableRead
+});
+import { AsyncLocalStorage } from "node:async_hooks";
+import { waitUntil as waitUntil3 } from "@vercel/functions";
+function add(entries, key4, amount) {
+  entries.set(key4, (entries.get(key4) || 0) + amount);
+}
+function label(value) {
+  return value.replace(/[^a-zA-Z0-9_:/ .-]/g, "_").slice(0, 120) || "unknown";
+}
+function collect(buckets, collection2, count, caller) {
+  const hour = Math.floor(Date.now() / 36e5) * 36e5;
+  let entries = buckets.get(hour);
+  if (!entries) {
+    entries = /* @__PURE__ */ new Map();
+    buckets.set(hour, entries);
+  }
+  add(entries, "totalReads", count);
+  add(entries, "collection:" + label(collection2), count);
+  add(entries, "caller:" + label(caller), count);
+}
+async function persist(entries, endpoint, time = Date.now()) {
+  const total = entries.get("totalReads") || 0;
+  if (!total) return;
+  const client = getBoundedRedisClient();
+  if (!client) return;
+  const values = new Map(entries);
+  add(values, "requestsWithReads", 1);
+  add(values, "endpoint:" + label(endpoint), total);
+  await client.eval(READ_COST_INCREMENT_LUA, [hourKey(time)], [...values].flatMap(([key4, value]) => [key4, value]));
+}
+async function persistBuckets(buckets, endpoint) {
+  await Promise.all([...buckets].map(([time, entries]) => persist(entries, endpoint, time)));
+}
+function keepAlive(work) {
+  const safe = work.catch(() => {
+    console.warn("[READ_COST_TELEMETRY_UNAVAILABLE] State write failed; request remains available.");
+  });
+  if (process.env.VERCEL === "1") waitUntil3(safe);
+  else void safe;
+}
+function recordDurableRead(collection2, count, caller) {
+  if (!Number.isSafeInteger(count) || count <= 0) return;
+  const active = context.getStore();
+  if (active && !active.closed) {
+    collect(active.buckets, collection2, count, caller);
+    return;
+  }
+  if (!background) {
+    background = /* @__PURE__ */ new Map();
+    const buffer = background;
+    keepAlive(new Promise((resolve) => setTimeout(resolve, 100)).then(async () => {
+      if (background === buffer) background = null;
+      await persistBuckets(buffer, "background");
+    }));
+  }
+  collect(background, collection2, count, caller);
+}
+function readCostMiddleware(req, res, next) {
+  const active = {
+    buckets: /* @__PURE__ */ new Map(),
+    closed: false,
+    // Route templates only: never raw URLs, IDs, search strings or usernames.
+    endpoint: () => `${req.method} ${req.baseUrl || ""}${typeof req.route?.path === "string" ? req.route.path : "/unmatched"}`
+  };
+  const finish2 = () => {
+    if (active.closed) return;
+    active.closed = true;
+    keepAlive(persistBuckets(active.buckets, active.endpoint()));
+  };
+  res.once("finish", finish2);
+  res.once("close", finish2);
+  context.run(active, next);
+}
+async function getDurableReadCosts(from, to) {
+  const until = to ? Date.parse(to) : Date.now();
+  const since = from ? Date.parse(from) : until - 24 * 36e5;
+  if (!Number.isFinite(since) || !Number.isFinite(until) || until <= since || until - since > 24 * 36e5 || since < Date.now() - 7 * 864e5 || until > Date.now() + 6e4)
+    throw new Error("INVALID_READ_COST_WINDOW");
+  const hours = [];
+  for (let time = Math.floor(since / 36e5) * 36e5; time < until; time += 36e5) hours.push(time);
+  const base = { from: new Date(since).toISOString(), to: new Date(until).toISOString(), timezone: "Asia/Tashkent", retentionDays: 7, resolution: "hour", coverage: "instrumented reads; not Firebase billing; collection reads without tracking are excluded", bucketPolicy: "full overlapping UTC hours; reads attributed when recorded" };
+  const client = getBoundedRedisClient();
+  if (!client) return { ...base, available: false, hours: [] };
+  try {
+    const pipeline = client.pipeline();
+    for (const time of hours) pipeline.hgetall(hourKey(time));
+    const rows = await pipeline.exec();
+    const totals = /* @__PURE__ */ new Map();
+    const windows = hours.map((time, index2) => {
+      const values = rows[index2] || {};
+      for (const [field, value] of Object.entries(values)) if (Number.isFinite(Number(value))) add(totals, field, Number(value));
+      const group2 = (kind) => Object.fromEntries(Object.entries(values).filter(([key4]) => key4.startsWith(kind + ":")).map(([key4, value]) => [key4.slice(kind.length + 1), Number(value)]));
+      return { utcHour: new Date(time).toISOString(), tashkentHour: new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Tashkent", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" }).format(time), observed: Object.keys(values).length > 0, totalReads: Number(values.totalReads || 0), requestsWithReads: Number(values.requestsWithReads || 0), byEndpoint: group2("endpoint"), byCollection: group2("collection"), byCaller: group2("caller") };
+    });
+    const group = (kind) => Object.fromEntries([...totals].filter(([key4]) => key4.startsWith(kind + ":")).map(([key4, value]) => [key4.slice(kind.length + 1), value]));
+    return { ...base, available: true, totalReads: totals.get("totalReads") || 0, requestsWithReads: totals.get("requestsWithReads") || 0, byEndpoint: group("endpoint"), byCollection: group("collection"), byCaller: group("caller"), hours: windows };
+  } catch {
+    return { ...base, available: false, hours: [] };
+  }
+}
+var context, prefix, hourKey, READ_COST_INCREMENT_LUA, background;
+var init_durableReadCosts = __esm({
+  "src/server/services/durableReadCosts.ts"() {
+    init_boundedRedis();
+    context = new AsyncLocalStorage();
+    prefix = "efluz:v1:read-cost:";
+    hourKey = (time) => prefix + new Date(time).toISOString().slice(0, 13);
+    READ_COST_INCREMENT_LUA = `
+-- EFL_READ_COST_INCREMENT_V1
+for i = 1, #ARGV, 2 do redis.call('HINCRBY', KEYS[1], ARGV[i], ARGV[i + 1]) end
+redis.call('EXPIRE', KEYS[1], 604800)
+return 1
+`;
+    background = null;
+  }
+});
+
+// src/lib/matchdayState.ts
+function resolveMatchdayGate(lock, now = Date.now()) {
+  if (!lock) return null;
+  if (lock.overrideStatus === "FORCE_LOCKED" || lock.overrideStatus === "PAUSED" || lock.isLocked || lock.isOpen === false) return false;
+  if (lock.expiresAt && (!Number.isFinite(Date.parse(lock.expiresAt)) || Date.parse(lock.expiresAt) <= now)) return false;
+  if (lock.overrideStatus === "FORCE_OPEN" || lock.isOpen === true) return true;
+  return null;
+}
+var init_matchdayState = __esm({
+  "src/lib/matchdayState.ts"() {
+  }
+});
+
+// src/lib/seasonQualificationPolicy.ts
+function withSeasonQualificationPolicy(competition, seasonId2) {
+  if (seasonId2 !== "season-2026-27") return competition;
+  const count = SEASON_2026_27_ALLOCATION[competition.id];
+  if (count != null) return { ...competition, formatConfig: { ...competition.formatConfig, qualificationSpots: count, europaQualificationSpots: count } };
+  if (competition.id === "comp-champions-league-2026" || competition.id === "comp-europa-league-2026") {
+    return { ...competition, formatConfig: { ...competition.formatConfig, leaguePhaseTeams: 32, qualificationSlots: { ...competition.formatConfig?.qualificationSlots, ...SEASON_2026_27_ALLOCATION } } };
+  }
+  return competition;
+}
+var SEASON_2026_27_ALLOCATION;
+var init_seasonQualificationPolicy = __esm({
+  "src/lib/seasonQualificationPolicy.ts"() {
+    SEASON_2026_27_ALLOCATION = Object.freeze({
+      "comp-premier-league-2026": 7,
+      "comp-la-liga-2026": 7,
+      "comp-serie-a-2026": 6,
+      "comp-bundesliga-2026": 6,
+      "comp-ligue-1-2026": 6
+    });
+  }
+});
+
+// src/server/readModel/postgresSnapshots.ts
+import { createHash as createHash2 } from "node:crypto";
+import { FieldPath as FieldPath4 } from "firebase-admin/firestore";
 async function fixtureOverrides(key4) {
   if (!key4.endsWith(":fixtures")) return /* @__PURE__ */ new Map();
   const seasonId2 = key4.match(/:season:([^:]+):/)?.[1];
@@ -1155,14 +1346,14 @@ function overlay(snapshot, changes) {
 }
 async function readPostgresSnapshotBundle(fresh, lkg, dirty) {
   const keys2 = [fresh, lkg, dirty];
-  const ids = keys2.map((key4) => createHash("sha256").update(key4).digest("hex"));
+  const ids = keys2.map((key4) => createHash2("sha256").update(key4).digest("hex"));
   const [rows, changes] = await Promise.all([
-    getFirestoreDb().collection("durable_read_snapshots").where(FieldPath3.documentId(), "in", ids).get(),
+    getFirestoreDb().collection("durable_read_snapshots").where(FieldPath4.documentId(), "in", ids).get(),
     fixtureOverrides(fresh)
   ]);
   const values = new Map(rows.docs.map((doc) => [doc.id, doc.data()]));
-  const snapshots = ids.map((id2) => {
-    const value = values.get(id2);
+  const snapshots = ids.map((id) => {
+    const value = values.get(id);
     return value && (value.expiresAt === null || value.expiresAt > Date.now()) ? unpack(value) : null;
   });
   return { fresh: overlay(snapshots[0], changes), lkg: overlay(snapshots[1], changes), dirty: snapshots[2] };
@@ -1202,7 +1393,7 @@ async function postgresSnapshotTtl(key4) {
 async function patchPostgresSnapshot(fresh, lkg, dirty, row, merge, ttl, version) {
   const db = getFirestoreDb();
   if (typeof db.patchSnapshot === "function") return db.patchSnapshot(
-    [fresh, lkg, dirty].map((key4) => createHash("sha256").update(key4).digest("hex")),
+    [fresh, lkg, dirty].map((key4) => createHash2("sha256").update(key4).digest("hex")),
     row,
     merge,
     ttl,
@@ -1228,7 +1419,7 @@ var ref, unpack, usesPostgresSnapshots;
 var init_postgresSnapshots = __esm({
   "src/server/readModel/postgresSnapshots.ts"() {
     init_admin();
-    ref = (key4) => getFirestoreDb().collection("durable_read_snapshots").doc(createHash("sha256").update(key4).digest("hex"));
+    ref = (key4) => getFirestoreDb().collection("durable_read_snapshots").doc(createHash2("sha256").update(key4).digest("hex"));
     unpack = (value) => typeof value?.snapshotJson === "string" ? JSON.parse(value.snapshotJson) : value?.snapshot;
     usesPostgresSnapshots = () => process.env.DATABASE_PROVIDER === "supabase";
   }
@@ -1289,6 +1480,7 @@ var init_sharedReadRefresh = __esm({
   "src/server/readModel/sharedReadRefresh.ts"() {
     init_boundedRedis();
     RELEASE_READ_REFRESH = `
+-- EFL_STATE_RELEASE_V1
 if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end
 return 0
 `;
@@ -2651,6 +2843,17 @@ var init_seed = __esm({
   }
 });
 
+// src/server/readModel/runtimeStateStore.ts
+function getRuntimeStateStore() {
+  return process.env.DATABASE_PROVIDER === "supabase" ? createPostgresRuntimeStore() : getUpstashClient();
+}
+var init_runtimeStateStore = __esm({
+  "src/server/readModel/runtimeStateStore.ts"() {
+    init_readModelStore();
+    init_postgresRuntimeStore();
+  }
+});
+
 // src/server/services/fixtureTombstoneService.ts
 var fixtureTombstoneService_exports = {};
 __export(fixtureTombstoneService_exports, {
@@ -3077,7 +3280,7 @@ async function getPlayerSeasonInsights(userId2, seasonId2 = "season-2026-27", fa
   const form = [];
   const competitionBreakdown = /* @__PURE__ */ new Map();
   const resultForFixture = (fixture) => {
-    const clubId = clubIds.find((id2) => fixture.homeClubId === id2 || fixture.awayClubId === id2);
+    const clubId = clubIds.find((id) => fixture.homeClubId === id || fixture.awayClubId === id);
     const isHome = fixture.homeClubId === clubId;
     const gf = Number(isHome ? fixture.homeScore : fixture.awayScore) || 0;
     const ga = Number(isHome ? fixture.awayScore : fixture.homeScore) || 0;
@@ -3307,15 +3510,15 @@ async function syncCompetitionTrophy(competitionId, seasonId2, changedFixture) {
     candidate.winnerUserId = owner?.ownerUserId;
     candidate.winnerUsername = owner?.ownerUsername;
   }
-  const id2 = trophyId(seasonId2, competitionId);
+  const id = trophyId(seasonId2, competitionId);
   const evaluatedAt = [changedFixture?.updatedAt || "", ...fixtures.map((item) => item.updatedAt || "")].sort().at(-1) || (/* @__PURE__ */ new Date()).toISOString();
   if (localMode()) {
-    const next = reconcileTrophy(memoryRecords.get(id2) || null, candidate, evaluatedAt);
-    if (next) memoryRecords.set(id2, next);
+    const next = reconcileTrophy(memoryRecords.get(id) || null, candidate, evaluatedAt);
+    if (next) memoryRecords.set(id, next);
     return;
   }
   const db = getFirestoreDb();
-  const ref2 = db.collection(COLLECTION).doc(id2);
+  const ref2 = db.collection(COLLECTION).doc(id);
   const changed = await db.runTransaction(async (transaction) => {
     const [previous, archived] = await Promise.all([transaction.get(ref2), transaction.get(db.collection("season_archives").doc(seasonId2))]);
     trackFirestoreRead(COLLECTION, previous.exists ? 1 : 0, "syncCompetitionTrophy");
@@ -3346,18 +3549,18 @@ function mergePlayerTrophies(userId2, live2, history, activeSeasonId) {
   }
   for (const candidate of live2) {
     if (candidate.seasonId !== activeSeasonId || archivedSeasons.has(candidate.seasonId)) continue;
-    const id2 = trophyId(candidate.seasonId, candidate.competitionId);
-    const recorded = history.records.find((item) => item.id === id2);
+    const id = trophyId(candidate.seasonId, candidate.competitionId);
+    const recorded = history.records.find((item) => item.id === id);
     if (recorded && !recorded.active) continue;
-    all.set(id2, recorded?.clubId === candidate.clubId ? recorded : candidate);
+    all.set(id, recorded?.clubId === candidate.clubId ? recorded : candidate);
   }
   for (const archive of history.archives) {
     for (const trophy of archive.trophies) {
       if (trophy.seasonId === archive.seasonId) all.set(trophyId(trophy.seasonId, trophy.competitionId), trophy);
     }
   }
-  return [...all.entries()].filter(([, trophy]) => trophy.winnerUserId === userId2).map(([id2, trophy]) => ({
-    id: id2,
+  return [...all.entries()].filter(([, trophy]) => trophy.winnerUserId === userId2).map(([id, trophy]) => ({
+    id,
     competitionId: trophy.competitionId,
     competitionName: trophy.competitionName,
     seasonId: trophy.seasonId,
@@ -3510,84 +3713,17 @@ var init_notificationService = __esm({
 });
 
 // src/server/services/postgresAiStore.ts
-import { createHash as createHash2 } from "node:crypto";
-import { FieldPath as FieldPath4 } from "firebase-admin/firestore";
-var id, parse, live, PostgresAiStore;
+var PostgresAiStore;
 var init_postgresAiStore = __esm({
   "src/server/services/postgresAiStore.ts"() {
-    init_admin();
-    id = (key4) => createHash2("sha256").update(key4).digest("hex");
-    parse = (value) => {
-      try {
-        return typeof value === "string" ? JSON.parse(value) : value;
-      } catch {
-        return value;
-      }
-    };
-    live = (entry) => entry && (entry.expiresAt === null || entry.expiresAt > Date.now()) ? entry : void 0;
-    PostgresAiStore = class {
+    init_postgresKeyValueStore();
+    PostgresAiStore = class extends PostgresKeyValueStore {
       constructor(signal) {
-        this.signal = signal;
-      }
-      check() {
-        if (this.signal?.aborted) throw Error("TIMEOUT_ABORTED");
-      }
-      ref(key4) {
-        return getFirestoreDb().collection("telegram_ai_state").doc(id(key4));
-      }
-      async get(key4) {
-        this.check();
-        const entry = live((await this.ref(key4).get()).data());
-        this.check();
-        return entry ? parse(entry.value) : null;
-      }
-      async mget(...keys2) {
-        this.check();
-        const rows = await getFirestoreDb().collection("telegram_ai_state").where(FieldPath4.documentId(), "in", keys2.map(id)).get();
-        const values = new Map(rows.docs.map((row) => [row.id, live(row.data())]));
-        this.check();
-        return keys2.map((key4) => {
-          const entry = values.get(id(key4));
-          return entry ? parse(entry.value) : null;
-        });
-      }
-      async atomic(keys2, operation) {
-        this.check();
-        const db = getFirestoreDb();
-        return db.runTransaction(async (tx) => {
-          this.check();
-          const rows = await tx.get(db.collection("telegram_ai_state").where(FieldPath4.documentId(), "in", keys2.map(id)));
-          const byId = new Map(rows.docs.map((row) => [row.id, row.data()]));
-          const values = /* @__PURE__ */ new Map();
-          keys2.forEach((key4) => {
-            const entry = live(byId.get(id(key4)));
-            if (entry) values.set(key4, entry);
-          });
-          this.check();
-          const writes = /* @__PURE__ */ new Map();
-          const result = operation(values, (key4, value, seconds) => {
-            writes.set(key4, { value, expiresAt: seconds === void 0 ? null : Date.now() + seconds * 1e3 });
-          });
-          this.check();
-          writes.forEach((value, key4) => tx.set(this.ref(key4), value));
-          return result;
-        });
-      }
-      async set(key4, value, options) {
-        return this.atomic([key4], (values, put) => {
-          if (options?.nx && values.has(key4)) return null;
-          put(key4, value, options?.ex);
-          return "OK";
-        });
-      }
-      async del(key4) {
-        this.check();
-        await this.ref(key4).delete();
-        return 1;
+        super("telegram_ai_state", signal);
       }
       async eval(script, keys2, args) {
         return this.atomic(keys2, (values, put) => {
-          const get = (key4) => parse(values.get(key4)?.value);
+          const get = (key4) => parseStoredValue(values.get(key4)?.value);
           if (script.includes("EFL_AI_DELIVERY_V1")) {
             if (["sending", "sent", "unknown_timeout"].includes(get(keys2[0]))) return 0;
             put(keys2[0], "sending", 86400);
@@ -3600,7 +3736,7 @@ var init_postgresAiStore = __esm({
             return 1;
           }
           if (script.includes("EFL_AI_PLAN_REPLACE_V1")) {
-            const p = get(keys2[0]), latest = get(keys2[2]), next = parse(args[5]);
+            const p = get(keys2[0]), latest = get(keys2[2]), next = parseStoredValue(args[5]);
             if (!p || !latest || p.state !== "pending" || p.expiresAt <= Number(args[0]) || p.owner !== Number(args[1]) || p.chat !== Number(args[2]) || p.thread !== Number(args[3]) || latest.token !== args[4]) return 0;
             if (next.owner !== p.owner || next.chat !== p.chat || next.thread !== p.thread || next.state !== "pending" || next.expiresAt <= Number(args[0]) || values.has(keys2[1])) return 0;
             put(keys2[1], next, 300);
@@ -3648,13 +3784,13 @@ var init_postgresAiStore = __esm({
 function getNotificationStore() {
   return process.env.DATABASE_PROVIDER === "supabase" ? new PostgresNotificationStore() : getUpstashClient();
 }
-var parse2, PostgresNotificationStore;
+var parse, PostgresNotificationStore;
 var init_postgresNotificationStore = __esm({
   "src/server/services/postgresNotificationStore.ts"() {
     init_admin();
     init_readModelStore();
     init_postgresAiStore();
-    parse2 = (value) => {
+    parse = (value) => {
       try {
         return typeof value === "string" ? JSON.parse(value) : value;
       } catch {
@@ -3673,15 +3809,18 @@ var init_postgresNotificationStore = __esm({
       async hgetall(key4) {
         return super.get(key4);
       }
+      async hexists(key4, field) {
+        return Number(Object.hasOwn(await super.get(key4) || {}, field));
+      }
       async hset(key4, fields) {
         return this.atomic([key4], (values, put) => {
-          put(key4, { ...parse2(values.get(key4)?.value) || {}, ...fields });
+          put(key4, { ...parse(values.get(key4)?.value) || {}, ...fields });
           return Object.keys(fields).length;
         });
       }
       async hdel(key4, field) {
         return this.atomic([key4], (values, put) => {
-          const hash = { ...parse2(values.get(key4)?.value) || {} };
+          const hash = { ...parse(values.get(key4)?.value) || {} };
           const exists = field in hash;
           delete hash[field];
           put(key4, hash);
@@ -3690,14 +3829,14 @@ var init_postgresNotificationStore = __esm({
       }
       async rpush(key4, value) {
         return this.atomic([key4], (values, put) => {
-          const queue = [...parse2(values.get(key4)?.value) || [], parse2(value)];
+          const queue = [...parse(values.get(key4)?.value) || [], parse(value)];
           put(key4, queue);
           return queue.length;
         });
       }
       async eval(script, keys2, args) {
         return this.atomic(keys2, (values, put) => {
-          const get = (key4) => parse2(values.get(key4)?.value);
+          const get = (key4) => parse(values.get(key4)?.value);
           if (script.includes("EFL_NOTIFY_PENDING_V1")) {
             const jobs = get(keys2[0]) || [];
             return { pending: jobs.length, nextAt: jobs.length ? Math.min(...jobs.map((job) => Number(job.availableAt) || 0)) : 0 };
@@ -3705,9 +3844,9 @@ var init_postgresNotificationStore = __esm({
           if (script.includes("EFL_NOTIFY_ENQUEUE_V1")) {
             const records = get(keys2[0]) || {};
             if (records[String(args[0])]) return records[String(args[0])];
-            const record = parse2(args[1]);
+            const record = parse(args[1]);
             put(keys2[0], { ...records, [String(args[0])]: record });
-            put(keys2[1], [...get(keys2[1]) || [], ...parse2(args[2])]);
+            put(keys2[1], [...get(keys2[1]) || [], ...parse(args[2])]);
             return record;
           }
           if (script.includes("EFL_NOTIFY_SMART_ENQUEUE_V1")) {
@@ -3715,8 +3854,8 @@ var init_postgresNotificationStore = __esm({
             if (records[String(args[1])]) return 0;
             if (values.has(keys2[0])) return -1;
             put(keys2[0], 1, Number(args[0]));
-            put(keys2[1], { ...records, [String(args[1])]: parse2(args[2]) });
-            put(keys2[2], [...get(keys2[2]) || [], parse2(args[3])]);
+            put(keys2[1], { ...records, [String(args[1])]: parse(args[2]) });
+            put(keys2[2], [...get(keys2[2]) || [], parse(args[3])]);
             return 1;
           }
           if (script.includes("EFL_NOTIFY_CLAIM_V1")) {
@@ -4214,6 +4353,7 @@ var init_telegramAiCustomEmoji = __esm({
 // src/server/services/notificationBackupQueue.ts
 import { Redis as Redis3 } from "@upstash/redis";
 function getNotificationBackupClient() {
+  if (process.env.DATABASE_PROVIDER === "supabase") return null;
   if (backupClient) return backupClient;
   const url = process.env.NOTIFICATION_BACKUP_REDIS_REST_URL?.trim();
   const token = process.env.NOTIFICATION_BACKUP_REDIS_REST_TOKEN?.trim();
@@ -4251,20 +4391,20 @@ async function recoverBackupNotifications(batchSize = 25, primary = getUpstashCl
   if (process.env.DATABASE_PROVIDER === "supabase" || !primary || !backup) return 0;
   const ids = await backup.zrange(PENDING, 0, Math.max(1, Math.min(batchSize, 100)) - 1);
   let recovered = 0;
-  for (const id2 of ids) {
-    const envelope = await backup.hget(RECORDS, id2);
-    if (!envelope || envelope.broadcastId !== id2) throw new Error("NOTIFICATION_BACKUP_RECORD_INVALID");
+  for (const id of ids) {
+    const envelope = await backup.hget(RECORDS, id);
+    if (!envelope || envelope.broadcastId !== id) throw new Error("NOTIFICATION_BACKUP_RECORD_INVALID");
     const result = await primary.eval(
       SMART_ENQUEUE_SCRIPT,
       [envelope.dedupeKey, `${KEY_PREFIX}:telegram:broadcasts`, `${KEY_PREFIX}:telegram:queue`],
-      [7 * 24 * 60 * 60, id2, envelope.record, envelope.job]
+      [7 * 24 * 60 * 60, id, envelope.record, envelope.job]
     );
     if (Number(result) !== 0 && Number(result) !== 1) throw new Error("NOTIFICATION_BACKUP_REPLAY_UNCONFIRMED");
     await backup.eval(`
       redis.call('HDEL', KEYS[1], ARGV[1])
       redis.call('ZREM', KEYS[2], ARGV[1])
       return 1
-    `, [RECORDS, PENDING], [id2]);
+    `, [RECORDS, PENDING], [id]);
     recovered++;
   }
   return recovered;
@@ -4400,8 +4540,8 @@ function paintTournamentImage(ctx, model, crests = /* @__PURE__ */ new Map()) {
     }
     ctx.fillText(content, x, y);
   };
-  const crest = (id2, name, x, y, size = 38) => {
-    const image = crests.get(id2);
+  const crest = (id, name, x, y, size = 38) => {
+    const image = crests.get(id);
     if (image) {
       const source = image;
       const w = source.naturalWidth || source.width || size, h = source.naturalHeight || source.height || size;
@@ -4522,8 +4662,8 @@ async function renderTournamentImagePng(model) {
     crests.set("__competition__", await loadImage(bytes));
   }
   const ids = [...new Set(model.rows.flatMap((row) => [row.id, row.awayId]).filter(Boolean))];
-  await Promise.all(ids.map(async (id2) => {
-    const club = SEED_CLUBS.find((c) => c.id === id2);
+  await Promise.all(ids.map(async (id) => {
+    const club = SEED_CLUBS.find((c) => c.id === id);
     if (!club?.logoUrl) return;
     try {
       let bytes = imageCache.get(club.logoUrl);
@@ -4534,7 +4674,7 @@ async function renderTournamentImagePng(model) {
         if (bytes.length > 2e6) return;
         imageCache.set(club.logoUrl, bytes);
       }
-      crests.set(id2, await loadImage(bytes));
+      crests.set(id, await loadImage(bytes));
     } catch {
     }
   }));
@@ -4568,7 +4708,7 @@ __export(telegramNotificationQueue_exports, {
   triggerNotificationContinuation: () => triggerNotificationContinuation
 });
 import crypto from "crypto";
-import { waitUntil as waitUntil3, getDeadline } from "@vercel/functions";
+import { waitUntil as waitUntil4, getDeadline } from "@vercel/functions";
 async function pendingQueueState() {
   const client = getNotificationStore();
   if (!client) throw new Error("REDIS_REQUIRED");
@@ -4639,7 +4779,7 @@ function scheduleNotificationQueueDrain(hop = 0) {
   const work = drainNotificationQueue({ hop }).catch((error) => {
     console.warn("[NOTIF_QUEUE] Drain interrupted; durable jobs retained for recovery:", error?.message || error);
   });
-  if (process.env.VERCEL === "1") waitUntil3(work);
+  if (process.env.VERCEL === "1") waitUntil4(work);
   else void work;
 }
 async function syncRecipientDirectory(seasonId2 = "season-2026-27") {
@@ -5180,7 +5320,7 @@ function normalizeSettings(raw, seasonId2) {
 async function getSmartNotificationSettings(seasonId2 = "season-2026-27") {
   const cached3 = memory.get(seasonId2);
   if (cached3 && cached3.expiresAt > Date.now()) return cached3.value;
-  const client = getUpstashClient();
+  const client = getRuntimeStateStore();
   if (!client) {
     const fallback = defaultSmartNotificationSettings(seasonId2);
     memory.set(seasonId2, { value: fallback, expiresAt: Date.now() + SETTINGS_TTL_MS });
@@ -5192,7 +5332,8 @@ async function getSmartNotificationSettings(seasonId2 = "season-2026-27") {
     memory.set(seasonId2, { value, expiresAt: Date.now() + SETTINGS_TTL_MS });
     return value;
   } catch (error) {
-    console.warn("[SMART_NOTIFY_SETTINGS] Redis read failed, using safe defaults:", error?.message || error);
+    if (process.env.DATABASE_PROVIDER === "supabase") throw new Error("SMART_NOTIFICATION_SETTINGS_UNAVAILABLE");
+    console.warn("[SMART_NOTIFY_SETTINGS] State read failed, using safe defaults:", error?.message || error);
     const fallback = defaultSmartNotificationSettings(seasonId2);
     memory.set(seasonId2, { value: fallback, expiresAt: Date.now() + SETTINGS_TTL_MS });
     return fallback;
@@ -5206,7 +5347,7 @@ async function updateSmartNotificationSettings(params) {
     updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
     updatedBy: params.updatedBy
   }, seasonId2);
-  const client = getUpstashClient();
+  const client = getRuntimeStateStore();
   const isHosted = Boolean(process.env.VERCEL || process.env.K_SERVICE || process.env.NODE_ENV === "production");
   if (!client) {
     if (isHosted) throw new Error("SMART_NOTIFICATION_SETTINGS_REDIS_UNAVAILABLE");
@@ -5226,6 +5367,7 @@ async function isSmartNotificationEventEnabled(seasonId2, event) {
 var SETTINGS_TTL_MS, memory, DEFAULT_SMART_NOTIFICATION_EVENTS;
 var init_smartNotificationSettingsService = __esm({
   "src/server/services/smartNotificationSettingsService.ts"() {
+    init_runtimeStateStore();
     init_readModelStore();
     SETTINGS_TTL_MS = 15e3;
     memory = /* @__PURE__ */ new Map();
@@ -5588,7 +5730,7 @@ async function notifySmartResultLifecycle(fixture, actorUserId) {
   const revision = fixture.resultConfirmedAt || fixture.updatedAt || `${fixture.homeScore}-${fixture.awayScore}`;
   const eventBase = `${fixture.id}:${status}:${revision}`;
   if (status === "PENDING_CONFIRMATION") {
-    const opponentId = owners.find((id2) => id2 !== actorUserId);
+    const opponentId = owners.find((id) => id !== actorUserId);
     if (!opponentId) return;
     await enqueueSmartTelegramNotification({
       userId: opponentId,
@@ -5607,7 +5749,7 @@ async function notifySmartResultLifecycle(fixture, actorUserId) {
       eventId: `${eventBase}:confirmed`,
       title: "\u2705 Natija tasdiqlandi",
       body: await buildMatchCardBody({ fixture, showScore: true, footer: "Natija rasmiy tasdiqlandi. Jadval va statistikalar yangilandi." }),
-      replyMarkup: await fixtureReplyMarkup(fixture, owners.find((id2) => id2 !== userId2), false)
+      replyMarkup: await fixtureReplyMarkup(fixture, owners.find((id) => id !== userId2), false)
     })));
     await notifyNextFixtureIfKnown(fixture).catch((error) => console.warn("[SMART_NOTIFY] Next fixture lookup failed:", error?.message || error));
     return;
@@ -5619,7 +5761,7 @@ async function notifySmartResultLifecycle(fixture, actorUserId) {
       eventId: `${eventBase}:disputed`,
       title: "\u26A0\uFE0F Natijalar mos kelmadi",
       body: await buildMatchCardBody({ fixture, showScore: true, footer: "Ikki tomon yuborgan natijalar mos kelmadi. Admin ko\u2018rib chiqishi talab qilinadi." }),
-      replyMarkup: await fixtureReplyMarkup(fixture, owners.find((id2) => id2 !== userId2))
+      replyMarkup: await fixtureReplyMarkup(fixture, owners.find((id) => id !== userId2))
     })));
   }
 }
@@ -5748,32 +5890,34 @@ async function saveQualificationPreviewToken(token, preview) {
     token,
     expiresAt: Date.now() + PREVIEW_TOKEN_TTL_SECONDS * 1e3
   };
-  const client = getUpstashClient();
+  const client = getRuntimeStateStore();
   if (client) {
     try {
       await client.set(key4, payload, { ex: PREVIEW_TOKEN_TTL_SECONDS });
     } catch (err) {
-      console.warn(`[QUALIFICATION] Failed to write preview token to Upstash Redis:`, err?.message || err);
+      console.warn(`[QUALIFICATION] Failed to write preview token:`, err?.message || err);
       throw new Error("QUALIFICATION_PREVIEW_STORAGE_UNAVAILABLE");
     }
   } else if (process.env.NODE_ENV === "production" || process.env.VERCEL || process.env.K_SERVICE) {
     throw new Error("REDIS_REQUIRED_FOR_QUALIFICATION_PREVIEW");
   }
-  previewTokenCache.set(token, payload);
+  if (process.env.DATABASE_PROVIDER !== "supabase") previewTokenCache.set(token, payload);
 }
 async function getQualificationPreviewToken(token) {
   const key4 = `${PREVIEW_TOKEN_REDIS_PREFIX}${token}`;
-  const client = getUpstashClient();
+  const client = getRuntimeStateStore();
   if (client) {
     try {
       const data = await client.get(key4);
-      if (data && data.preview) {
+      if (data && data.preview && data.expiresAt > Date.now()) {
         return data.preview;
       }
     } catch (err) {
-      console.warn(`[QUALIFICATION] Failed to read preview token from Upstash Redis:`, err?.message || err);
+      console.warn(`[QUALIFICATION] Failed to read preview token:`, err?.message || err);
+      if (process.env.DATABASE_PROVIDER === "supabase") throw new Error("QUALIFICATION_PREVIEW_STORAGE_UNAVAILABLE");
     }
   }
+  if (process.env.DATABASE_PROVIDER === "supabase") return null;
   const mem = previewTokenCache.get(token);
   if (mem && Date.now() <= mem.expiresAt) {
     return mem.preview;
@@ -5783,11 +5927,12 @@ async function getQualificationPreviewToken(token) {
 async function deleteQualificationPreviewToken(token) {
   const key4 = `${PREVIEW_TOKEN_REDIS_PREFIX}${token}`;
   previewTokenCache.delete(token);
-  const client = getUpstashClient();
+  const client = getRuntimeStateStore();
   if (client) {
     try {
       await client.del(key4);
-    } catch {
+    } catch (error) {
+      if (process.env.DATABASE_PROVIDER === "supabase") throw error;
     }
   }
 }
@@ -6032,9 +6177,9 @@ async function applyEuropeanQualificationSync(params) {
     for (const q of preview.projectedQualifications) {
       const matches = existing.filter((d) => d.data().competitionId === q.targetCompetitionId && d.data().clubId === q.clubId);
       if (matches.length > 1) throw new Error("DUPLICATE_PARTICIPANTS: manual review required");
-      const id2 = matches[0]?.id || `part-${q.targetCompetitionId}-${q.clubId}`;
-      transaction.set(db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).doc(id2), {
-        id: id2,
+      const id = matches[0]?.id || `part-${q.targetCompetitionId}-${q.clubId}`;
+      transaction.set(db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).doc(id), {
+        id,
         seasonId: preview.seasonId,
         competitionId: q.targetCompetitionId,
         clubId: q.clubId,
@@ -6166,10 +6311,10 @@ function computeEuropeanStandingsRows(format, clubIds, fixtures, seasonId2 = "se
     const awayClubId = f.awayClubId ?? f.away_club_id;
     const fSeasonId = f.seasonId ?? f.season_id;
     const roundName = f.roundName ?? f.round_name ?? "";
-    const id2 = f.id;
+    const id = f.id;
     if (f.status !== "CONFIRMED" || !Number.isInteger(homeScore) || !Number.isInteger(awayScore) || homeScore < 0 || awayScore < 0) continue;
     if (fSeasonId && fSeasonId !== seasonId2 || !homeClubId || !awayClubId) continue;
-    if (/quarter|semi|final|play.?off|round of|knockout/i.test(roundName) || /-r[1-5]-m/.test(id2)) continue;
+    if (/quarter|semi|final|play.?off|round of|knockout/i.test(roundName) || /-r[1-5]-m/.test(id)) continue;
     const home = statsMap.get(homeClubId);
     const away = statsMap.get(awayClubId);
     if (home) {
@@ -6416,6 +6561,7 @@ async function populateSuperCupParticipants(seasonId2 = "season-2026-27", superC
 var PREVIEW_TOKEN_REDIS_PREFIX, PREVIEW_TOKEN_TTL_SECONDS, previewTokenCache, evaluateSeasonQualificationsFirestore;
 var init_qualificationEngine = __esm({
   "src/server/tournament/qualificationEngine.ts"() {
+    init_runtimeStateStore();
     init_seasonQualificationPolicy();
     init_admin();
     init_collections();
@@ -6472,7 +6618,27 @@ __export(approvedFixtureRestoration_exports, {
   restoreApprovedInterMilanFixture: () => restoreApprovedInterMilanFixture,
   runApprovedFixtureRestoration: () => runApprovedFixtureRestoration
 });
+import { createHash as createHash3 } from "node:crypto";
 async function publishFixture(key4, fixture) {
+  if (process.env.DATABASE_PROVIDER === "supabase") {
+    const db = getFirestoreDb();
+    const ref2 = (cacheKey) => db.collection("durable_read_snapshots").doc(createHash3("sha256").update(cacheKey).digest("hex"));
+    const fresh = ref2(getFreshKey(key4)), lkg = ref2(getLkgKey(key4));
+    await db.runTransaction(async (tx) => {
+      const last = (await tx.get(lkg)).data() || (await tx.get(fresh)).data();
+      const snapshot = last?.snapshotJson ? JSON.parse(last.snapshotJson) : last?.snapshot;
+      if (!Array.isArray(snapshot?.data)) throw new Error(`RESTORATION_SNAPSHOT_MISSING: ${key4}`);
+      const newer = snapshot.data.find((row) => row.id === fixture.id && String(row.updatedAt) > String(fixture.updatedAt));
+      if (newer) return;
+      const data = snapshot.data.filter((row) => row.id !== fixture.id).concat(fixture);
+      const snapshotJson = JSON.stringify({ ...snapshot, data, generatedAt: (/* @__PURE__ */ new Date()).toISOString(), sourceVersion: RESTORATION_ID, actualCount: data.length, expectedCount: data.length });
+      tx.set(fresh, { snapshotJson, expiresAt: Date.now() + 864e5 });
+      tx.set(lkg, { snapshotJson, expiresAt: null });
+      tx.delete(ref2(getDirtyKey(key4)));
+    });
+    clearProcessMemoryCache();
+    return;
+  }
   const client = getUpstashClient();
   if (client) {
     const accepted = await client.eval(`
@@ -6704,6 +6870,7 @@ function resetUpstashClient() {
   redisRetryAt = 0;
 }
 function getUpstashClient() {
+  if (usesPostgresSnapshots()) return null;
   if (Date.now() < redisRetryAt) return null;
   if (upstashClient) return upstashClient;
   const config = resolveRedisConfig(process.env);
@@ -7007,12 +7174,12 @@ function encodeFixtureCursor(fixture) {
   const compOrder = CANONICAL_COMPETITION_ORDER[fixture.competitionId] ?? 999;
   const matchday = typeof fixture.matchday === "number" ? fixture.matchday : parseInt(String(fixture.matchday || 0), 10) || 0;
   const scheduledAt = fixture.scheduledAt || "";
-  const id2 = fixture.id;
+  const id = fixture.id;
   const tuple = {
     competitionOrder: compOrder,
     matchday,
     scheduledAt,
-    id: id2
+    id
   };
   return Buffer.from(JSON.stringify(tuple)).toString("base64url");
 }
@@ -8503,6 +8670,9 @@ async function getReadModelHealthStatus(seasonId2 = "season-2026-27") {
   return {
     firestoreState: cb.state,
     redisState,
+    storageProvider: usesPostgresSnapshots() ? "postgresql" : "redis",
+    // All PostgreSQL snapshots above were read successfully before returning.
+    storageState: usesPostgresSnapshots() ? "CONNECTED" : redisState,
     circuitBreakerState: {
       state: cb.state,
       consecutiveFailures: cb.consecutiveFailures,
@@ -8655,11 +8825,11 @@ async function listAdminNotificationMessages(cursor) {
   const types = [.../* @__PURE__ */ new Set([...defaults, ...records.map((record) => record.type), ...Object.keys(controls).filter((field) => field.startsWith("type:")).map((field) => field.slice(5))])].sort();
   return { notifications, types: types.map((type) => ({ type, visible: controls["type:" + type] !== "hidden" })), limit: 100, nextCursor: page.length === 100 ? page.at(-1).id : null };
 }
-async function setBroadcastVisibility(id2, visibility) {
+async function setBroadcastVisibility(id, visibility) {
   const { getBroadcastDetails: getBroadcastDetails2 } = await Promise.resolve().then(() => (init_telegramNotificationQueue(), telegramNotificationQueue_exports));
-  const record = await getBroadcastDetails2(id2);
+  const record = await getBroadcastDetails2(id);
   if (!record || record.createdById?.startsWith("system:")) throw new Error("NOTIFICATION_NOT_FOUND");
-  await save("broadcast:" + id2, visibility);
+  await save("broadcast:" + id, visibility);
 }
 async function listAdminNotifications(cursor) {
   const controls = await getNotificationControls();
@@ -8681,13 +8851,13 @@ async function listAdminNotifications(cursor) {
 async function setNotificationTypeVisibility(type, visible) {
   await save("type:" + type, visible ? "visible" : "hidden");
 }
-async function setNotificationVisibility(id2, visibility, actorId) {
-  const ref2 = getFirestoreDb().collection(COLLECTIONS.NOTIFICATIONS).doc(id2);
+async function setNotificationVisibility(id, visibility, actorId) {
+  const ref2 = getFirestoreDb().collection(COLLECTIONS.NOTIFICATIONS).doc(id);
   const doc = await ref2.get();
   if (!doc.exists) throw new Error("NOTIFICATION_NOT_FOUND");
   const controls = await getNotificationControls();
-  if (doc.data()?.deleted || controls["notification:" + id2] === "deleted") throw new Error("NOTIFICATION_DELETED");
-  await save("notification:" + id2, visibility);
+  if (doc.data()?.deleted || controls["notification:" + id] === "deleted") throw new Error("NOTIFICATION_DELETED");
+  await save("notification:" + id, visibility);
   await ref2.update({ hidden: visibility === "hidden", deleted: visibility === "deleted", moderatedAt: (/* @__PURE__ */ new Date()).toISOString(), moderatedBy: actorId });
 }
 var key2, local, defaults, postgresControls;
@@ -9155,7 +9325,7 @@ var init_clubAdmission = __esm({
     init_circuitBreaker();
     init_seed();
     init_readModelStore();
-    CLUB_ADMISSION_LEAGUES = SEED_LEAGUES.map(({ id: id2, name }) => ({ id: id2, name }));
+    CLUB_ADMISSION_LEAGUES = SEED_LEAGUES.map(({ id, name }) => ({ id, name }));
     COLLECTION2 = "club_admissions";
     ADMISSION_CACHE_TTL_SECONDS = 300;
     pendingStatusReads = /* @__PURE__ */ new Map();
@@ -9337,9 +9507,9 @@ function isTargetingProductionProjectOrDb() {
   }
   return false;
 }
-function isSyntheticIdentifier(id2) {
-  if (!id2 || typeof id2 !== "string") return false;
-  const lower = id2.toLowerCase();
+function isSyntheticIdentifier(id) {
+  if (!id || typeof id !== "string") return false;
+  const lower = id.toLowerCase();
   return SYNTHETIC_ID_PATTERNS.some((pattern) => lower.includes(pattern));
 }
 function isTestSafe() {
@@ -9387,9 +9557,9 @@ function assertNoSyntheticIdsInProduction(actionName, ids) {
   if (!isConnectedToProductionFirestore()) {
     return;
   }
-  for (const id2 of ids) {
-    if (isSyntheticIdentifier(id2)) {
-      const errorMsg = `PRODUCTION_SAFETY_VIOLATION: Synthetic identifier "${id2}" rejected in production/hosted environment during "${actionName}". Mutation blocked before persistence.`;
+  for (const id of ids) {
+    if (isSyntheticIdentifier(id)) {
+      const errorMsg = `PRODUCTION_SAFETY_VIOLATION: Synthetic identifier "${id}" rejected in production/hosted environment during "${actionName}". Mutation blocked before persistence.`;
       console.error(`[CRITICAL PRODUCTION BLOCKED] ${errorMsg}`);
       throw new Error(errorMsg);
     }
@@ -9492,8 +9662,8 @@ async function getDuePendingMutations(limit = 25) {
     );
     if (!members || members.length === 0) return [];
     const mutations = [];
-    for (const id2 of members) {
-      const mut = await getDurableMutation(id2);
+    for (const id of members) {
+      const mut = await getDurableMutation(id);
       if (mut && (mut.status === "PENDING" || mut.status === "SYNCING")) {
         mutations.push(mut);
       }
@@ -9526,8 +9696,8 @@ async function transitionMutation(mut, expectedRevision) {
     [JSON.stringify(mut), expectedRevision, mut.mutationId, mut.status, mut.nextRetryAt]
   )) === 1;
 }
-async function matchingMutation(id2, expectedRevision) {
-  const mut = await getDurableMutation(id2);
+async function matchingMutation(id, expectedRevision) {
+  const mut = await getDurableMutation(id);
   if (!mut || expectedRevision !== void 0 && (mut.revision || "") !== expectedRevision) return null;
   return mut;
 }
@@ -12294,7 +12464,7 @@ __export(matchdayChannelPost_exports, {
   channelMatchdayId: () => channelMatchdayId,
   enqueueMatchdayChannelPost: () => enqueueMatchdayChannelPost
 });
-import { createHash as createHash3 } from "node:crypto";
+import { createHash as createHash4 } from "node:crypto";
 function channelMatchdayCaption(leagueId, matchday, deadlineAt) {
   const league = MATCHDAY_CHANNEL_LEAGUES[leagueId];
   if (!league || !Number.isInteger(matchday) || matchday < 1 || !Number.isFinite(Date.parse(deadlineAt))) throw Error("INVALID_CHANNEL_MATCHDAY");
@@ -12313,17 +12483,17 @@ https://t.me/efleagueuz/${league.topic}
 \u203A @efl_uz`;
 }
 function channelMatchdayId(competitionId, seasonId2, matchday) {
-  return `owner-matchday-${createHash3("sha256").update(JSON.stringify([competitionId, seasonId2, matchday])).digest("hex").slice(0, 32)}`;
+  return `owner-matchday-${createHash4("sha256").update(JSON.stringify([competitionId, seasonId2, matchday])).digest("hex").slice(0, 32)}`;
 }
 async function enqueueMatchdayChannelPost(params) {
   const { competition, matchday, deadlineAt } = params;
   if (competition.type !== "LEAGUE" || competition.status === "completed" || !MATCHDAY_CHANNEL_LEAGUES[competition.leagueId || ""]) return "SKIPPED";
   if (!deadlineAt || !Number.isFinite(Date.parse(deadlineAt)) || Date.parse(deadlineAt) <= Date.now()) return "SKIPPED";
-  const client = getUpstashClient();
+  const client = getNotificationStore();
   if (!client) return "FAILED";
-  const id2 = channelMatchdayId(competition.id, competition.seasonId, matchday);
+  const id = channelMatchdayId(competition.id, competition.seasonId, matchday);
   const broadcastsKey = `${KEY_PREFIX}:telegram:broadcasts`;
-  if (await client.hexists(broadcastsKey, id2)) return "EXISTS";
+  if (await client.hexists(broadcastsKey, id)) return "EXISTS";
   const clubsKey = ReadModelKeys.clubsWithOwners(competition.seasonId);
   const snapshot = await redisGetFresh(clubsKey) || await redisGetLkg(clubsKey);
   if (!Array.isArray(snapshot?.data) || !snapshot.data.length) throw Error("CHANNEL_CLUB_SNAPSHOT_UNAVAILABLE");
@@ -12343,7 +12513,7 @@ async function enqueueMatchdayChannelPost(params) {
   const body = channelMatchdayCaption(competition.leagueId, matchday, deadlineAt);
   const userId2 = `owner:${MATCHDAY_POST_RECIPIENT}`, createdAt = (/* @__PURE__ */ new Date()).toISOString();
   const record = {
-    id: id2,
+    id,
     seasonId: competition.seasonId,
     title: `${competition.name} ${matchday}-tur`,
     body,
@@ -12358,8 +12528,8 @@ async function enqueueMatchdayChannelPost(params) {
     recipients: [{ userId: userId2, username: "", displayName: "Asosiy admin", status: "PENDING", retryCount: 0 }]
   };
   const job = {
-    jobId: id2,
-    broadcastId: id2,
+    jobId: id,
+    broadcastId: id,
     userId: userId2,
     username: "",
     displayName: "Asosiy admin",
@@ -12376,9 +12546,9 @@ async function enqueueMatchdayChannelPost(params) {
     bodyIsHtml: true,
     photoModel: model
   };
-  const envelope = { dedupeKey: `${KEY_PREFIX}:telegram:channel:dedupe:${id2}`, broadcastId: id2, record: JSON.stringify(record), job: JSON.stringify(job) };
+  const envelope = { dedupeKey: `${KEY_PREFIX}:telegram:channel:dedupe:${id}`, broadcastId: id, record: JSON.stringify(record), job: JSON.stringify(job) };
   try {
-    const accepted = Number(await client.eval(SMART_ENQUEUE_SCRIPT, [envelope.dedupeKey, broadcastsKey, `${KEY_PREFIX}:telegram:queue`], [365 * 86400, id2, envelope.record, envelope.job]));
+    const accepted = Number(await client.eval(SMART_ENQUEUE_SCRIPT, [envelope.dedupeKey, broadcastsKey, `${KEY_PREFIX}:telegram:queue`], [365 * 86400, id, envelope.record, envelope.job]));
     if (accepted === 0 || accepted === -1) return "EXISTS";
     if (accepted !== 1) throw Error("CHANNEL_ENQUEUE_UNCONFIRMED");
   } catch (error) {
@@ -12390,6 +12560,7 @@ async function enqueueMatchdayChannelPost(params) {
 var MATCHDAY_POST_RECIPIENT, MATCHDAY_RULES_URL, MATCHDAY_CHANNEL_LEAGUES;
 var init_matchdayChannelPost = __esm({
   "src/server/services/matchdayChannelPost.ts"() {
+    init_postgresNotificationStore();
     init_tournamentImage();
     init_tournamentImageBranding();
     init_readModelStore();
@@ -14639,9 +14810,9 @@ async function generateCompetitionFixturesFirestore(competitionId, options = {})
       const matchDate = new Date(startDate.getTime() + (match.matchday - 1) * 7 * 24 * 60 * 60 * 1e3).toISOString();
       const homeSlug = match.homeClubId.replace("club-", "");
       const awaySlug = match.awayClubId.replace("club-", "");
-      const id2 = `fix-${competitionId}-md${match.matchday}-${homeSlug}-vs-${awaySlug}`;
+      const id = `fix-${competitionId}-md${match.matchday}-${homeSlug}-vs-${awaySlug}`;
       generatedFixtures.push({
-        id: id2,
+        id,
         competitionId,
         competitionName: comp.name,
         seasonId: comp.seasonId,
@@ -14676,9 +14847,9 @@ async function generateCompetitionFixturesFirestore(competitionId, options = {})
           const actualAway = isAlternate ? home : away;
           const homeSlug = actualHome.replace("club-", "");
           const awaySlug = actualAway.replace("club-", "");
-          const id2 = `fix-${competitionId}-md${matchday}-${homeSlug}-vs-${awaySlug}`;
+          const id = `fix-${competitionId}-md${matchday}-${homeSlug}-vs-${awaySlug}`;
           generatedFixtures.push({
-            id: id2,
+            id,
             competitionId,
             competitionName: comp.name,
             seasonId: comp.seasonId,
@@ -14777,8 +14948,8 @@ function getMatchdayLockKey(seasonId2, competitionId, matchday) {
 }
 async function refreshFixtureMatchdayRules(fixtures, seasonId2) {
   const rules = /* @__PURE__ */ new Map();
-  await Promise.all([...new Set(fixtures.map((f) => f.competitionId))].map(async (id2) => {
-    rules.set(id2, await getCompetitionMatchdayLocksFirestore(seasonId2, id2));
+  await Promise.all([...new Set(fixtures.map((f) => f.competitionId))].map(async (id) => {
+    rules.set(id, await getCompetitionMatchdayLocksFirestore(seasonId2, id));
   }));
   return fixtures.map((f) => ({ ...f, ...checkFixturePlayability(f.competitionId, f.seasonId || seasonId2, f.matchday, f.status, f.homeClubId, f.awayClubId, compOverrideMap.get(f.competitionId), rules.get(f.competitionId)?.[f.matchday]) }));
 }
@@ -15176,7 +15347,7 @@ async function resolveClubOwnersForSeason(seasonId2 = "season-2026-27", clubIds)
           });
         }
       }
-      if (ownersMap.size > 0 && (!clubIds || clubIds.length === 0 || clubIds.every((id2) => ownersMap.has(id2)))) {
+      if (ownersMap.size > 0 && (!clubIds || clubIds.length === 0 || clubIds.every((id) => ownersMap.has(id)))) {
         return ownersMap;
       }
     }
@@ -15216,7 +15387,7 @@ async function resolveClubOwnersForSeason(seasonId2 = "season-2026-27", clubIds)
     }
   } catch {
   }
-  if (ownersMap.size > 0 && (!clubIds || clubIds.length === 0 || clubIds.every((id2) => ownersMap.has(id2)))) {
+  if (ownersMap.size > 0 && (!clubIds || clubIds.length === 0 || clubIds.every((id) => ownersMap.has(id)))) {
     return ownersMap;
   }
   try {
@@ -15931,7 +16102,7 @@ async function submitFixtureResultFirestore(userId2, fixtureId2, homeScore, away
         throw Object.assign(new Error("You do not own either the home or away club in this fixture."), { code: "RESULT_NOT_PARTICIPANT", statusCode: 403 });
       }
       const ownedIds = [userMemDoc.data().clubId, userMemDoc.data().secondaryClubId];
-      const userClubId2 = ownedIds.find((id2) => id2 === currentFixture.homeClubId || id2 === currentFixture.awayClubId);
+      const userClubId2 = ownedIds.find((id) => id === currentFixture.homeClubId || id === currentFixture.awayClubId);
       if (ownedIds.includes(currentFixture.homeClubId) && ownedIds.includes(currentFixture.awayClubId)) {
         const err = new Error("Both clubs belong to you; admin must resolve this fixture.");
         err.code = "SELF_OWNED_MATCH";
@@ -18223,7 +18394,7 @@ async function adminSetUserAdminFirestore(adminUserId, adminUsername, targetUser
   }
   const userData = userDoc.data();
   const nextPermissions = isAdmin ? adminPermissions || { scope: "ALL", leagueIds: [] } : { scope: "LEAGUES", leagueIds: [] };
-  const bootstrap = (process.env.ADMIN_TELEGRAM_IDS || "").split(",").map((id2) => id2.trim().replace(/^@/, "").toLowerCase()).filter(Boolean);
+  const bootstrap = (process.env.ADMIN_TELEGRAM_IDS || "").split(",").map((id) => id.trim().replace(/^@/, "").toLowerCase()).filter(Boolean);
   if (isAdmin && nextPermissions.scope === "LEAGUES" && (bootstrap.includes(userData.telegramId) || bootstrap.includes((userData.username || "").toLowerCase()))) {
     throw new Error("PROTECTION_ERROR: Configured system administrator must retain full access.");
   }
@@ -19777,9 +19948,9 @@ var init_domesticCupRoundOps = __esm({
 
 // src/server/services/seasonLifecycleService.ts
 async function fixturesFor(ids, seasonId2) {
-  const batches = await Promise.all(ids.map(async (id2) => {
+  const batches = await Promise.all(ids.map(async (id) => {
     try {
-      const fixtures = (await getCompetitionFixturesFromReadModel(id2, { seasonId: seasonId2 })).fixtures;
+      const fixtures = (await getCompetitionFixturesFromReadModel(id, { seasonId: seasonId2 })).fixtures;
       return await filterTombstonedFixtures(fixtures, seasonId2);
     } catch {
       return [];
@@ -19847,9 +20018,9 @@ async function getSeasonLifecycle(seasonId2 = "season-2026-27", force = false) {
     LEAGUE_10_19: leagueFixtures.filter((f) => Number(f.matchday || 0) >= 10 && Number(f.matchday || 0) <= 19),
     EUROPE: europeFixtures.filter((f) => Number(f.matchday || 0) >= 1 && Number(f.matchday || 0) <= 8)
   };
-  const phaseStats = Object.fromEntries(PHASE_ORDER.map((id2) => [id2, stats(groups[id2])]));
-  let derivedIndex = PHASE_ORDER.findIndex((id2) => {
-    const s = phaseStats[id2];
+  const phaseStats = Object.fromEntries(PHASE_ORDER.map((id) => [id, stats(groups[id])]));
+  let derivedIndex = PHASE_ORDER.findIndex((id) => {
+    const s = phaseStats[id];
     return s.total === 0 || s.confirmed < s.total;
   });
   if (derivedIndex < 0) derivedIndex = PHASE_ORDER.length - 1;
@@ -19861,13 +20032,13 @@ async function getSeasonLifecycle(seasonId2 = "season-2026-27", force = false) {
     LEAGUE_10_19: ["Liga 10\u201319-turlar", "Bir davrali liga shu bosqichda MD19 bilan yakunlanadi"],
     EUROPE: ["UCL / UEL", "MD19 dan keyin Yevropa liga bosqichi, turma-tur progression"]
   };
-  const phases = PHASE_ORDER.map((id2, index2) => {
-    const s = phaseStats[id2];
+  const phases = PHASE_ORDER.map((id, index2) => {
+    const s = phaseStats[id];
     const status = index2 < activeIndex ? "COMPLETED" : index2 === activeIndex ? "ACTIVE" : "LOCKED";
     return {
-      id: id2,
-      label: labels[id2][0],
-      description: labels[id2][1],
+      id,
+      label: labels[id][0],
+      description: labels[id][1],
       status,
       ...s,
       currentMatchday: index2 === activeIndex && override?.matchday ? override.matchday : s.currentMatchday
@@ -19956,7 +20127,7 @@ async function quotaCachedRead(key4, ttlSeconds, load) {
     return snapshot.data;
   };
   const work = (async () => {
-    const client = getUpstashClient();
+    const client = getRuntimeStateStore();
     const [freshKey, lkgKey, versionKey, leaseKey] = keys(key4);
     if (!client) {
       const cached3 = local2.get(key4);
@@ -19989,6 +20160,7 @@ async function quotaCachedRead(key4, ttlSeconds, load) {
       const cached3 = { data, cachedAt: Date.now() };
       const snapshot = JSON.stringify(cached3);
       const published = await client.eval(`
+        -- EFL_QUOTA_CACHE_PUBLISH_V1
         if redis.call('GET', KEYS[4]) ~= ARGV[1] then return 0 end
         if (redis.call('GET', KEYS[3]) or '0') ~= ARGV[2] then return 0 end
         redis.call('SET', KEYS[1], ARGV[3], 'EX', ARGV[4])
@@ -20004,7 +20176,8 @@ async function quotaCachedRead(key4, ttlSeconds, load) {
       if (cached3 && Date.now() - cached3.cachedAt < ttlSeconds * 1e3) return cached3.data;
       throw error;
     } finally {
-      if (owned) await client.eval(`if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0`, [leaseKey], [owner]).catch(() => {
+      if (owned) await client.eval(`-- EFL_STATE_RELEASE_V1
+if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0`, [leaseKey], [owner]).catch(() => {
       });
     }
   })();
@@ -20019,14 +20192,16 @@ async function invalidateQuotaRead(key4) {
   pending.delete(key4);
   local2.delete(key4);
   versions.set(key4, (versions.get(key4) || 0) + 1);
-  const client = getUpstashClient();
+  const client = getRuntimeStateStore();
   if (!client) return;
   const [freshKey, , versionKey] = keys(key4);
-  await client.eval(`redis.call('INCR', KEYS[2]); redis.call('DEL', KEYS[1]); return 1`, [freshKey, versionKey], []);
+  await client.eval(`-- EFL_QUOTA_CACHE_INVALIDATE_V1
+redis.call('INCR', KEYS[2]); redis.call('DEL', KEYS[1]); return 1`, [freshKey, versionKey], []);
 }
 var local2, LOCAL_CACHE_LIMIT, pending, versions, keys;
 var init_quotaReadCache = __esm({
   "src/server/services/quotaReadCache.ts"() {
+    init_runtimeStateStore();
     init_readModelStore();
     local2 = /* @__PURE__ */ new Map();
     LOCAL_CACHE_LIMIT = 2e3;
@@ -20037,7 +20212,7 @@ var init_quotaReadCache = __esm({
 });
 
 // src/server/services/matchOperationsV4Service.ts
-import { waitUntil as waitUntil5 } from "@vercel/functions";
+import { waitUntil as waitUntil6 } from "@vercel/functions";
 function ownerId2(fixture, side) {
   return side === "home" ? fixture.homeOwnerId || fixture.homeOwner?.userId || fixture.homeUser?.id || fixture.homeClub?.claimedByUserId : fixture.awayOwnerId || fixture.awayOwner?.userId || fixture.awayUser?.id || fixture.awayClub?.claimedByUserId;
 }
@@ -20186,8 +20361,8 @@ async function reportNoShowV4(params) {
   if (!side) throw new Error("FIXTURE_NOT_OWNED_BY_USER");
   if (["CONFIRMED", "CANCELLED"].includes(String(fixture.status))) throw new Error("FIXTURE_ALREADY_CLOSED");
   const db = getFirestoreDb();
-  const id2 = `${params.fixtureId}__${params.userId}`;
-  const ref2 = db.collection(NO_SHOW_COLLECTION).doc(id2);
+  const id = `${params.fixtureId}__${params.userId}`;
+  const ref2 = db.collection(NO_SHOW_COLLECTION).doc(id);
   const previous = await ref2.get();
   trackFirestoreRead(NO_SHOW_COLLECTION, 1, "matchOperationsV4:reportNoShow:previous");
   if (previous.exists && ["OPEN", "UNDER_REVIEW"].includes(String(previous.data()?.status))) {
@@ -20198,7 +20373,7 @@ async function reportNoShowV4(params) {
   const deadline = deadlineSnap?.exists ? deadlineSnap.data() : null;
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const report = {
-    id: id2,
+    id,
     seasonId: params.seasonId || fixture.seasonId || "season-2026-27",
     fixtureId: fixture.id,
     competitionId: fixture.competitionId,
@@ -20303,7 +20478,7 @@ ${kind === "overdue" ? "Muddat tugadi. Natijani yuboring yoki no-show holatini E
   return { attempted: true, queued };
 }
 async function runDeadlineSweep(seasonId2 = "season-2026-27", force = false) {
-  const client = getUpstashClient();
+  const client = getRuntimeStateStore();
   if (!client) return { skipped: true, reason: "REDIS_REQUIRED", checked: 0, reminders: 0 };
   const lockKey = `${SWEEP_LOCK_PREFIX}:${seasonId2}`;
   if (!force) {
@@ -20334,7 +20509,7 @@ function scheduleDeadlineSweep(seasonId2 = "season-2026-27") {
   const work = runDeadlineSweep(seasonId2).catch((error) => {
     console.warn("[MATCH_OPS_DEADLINE_SWEEP_FAILED]", error?.message || error);
   });
-  if (process.env.VERCEL === "1") waitUntil5(work);
+  if (process.env.VERCEL === "1") waitUntil6(work);
   else void work;
 }
 async function resolveNoShowV4(params) {
@@ -20425,6 +20600,7 @@ async function resolveResultDisputeV4(params) {
 var DEADLINE_COLLECTION, NO_SHOW_COLLECTION, SWEEP_LOCK_PREFIX, HOUR_MS;
 var init_matchOperationsV4Service = __esm({
   "src/server/services/matchOperationsV4Service.ts"() {
+    init_runtimeStateStore();
     init_admin();
     init_firestoreStore();
     init_readModelStore();
@@ -20770,7 +20946,7 @@ function badgeKey(seasonId2) {
   return `${KEY_PREFIX}:premium:active-users:${seasonId2}`;
 }
 async function getPremiumClubBadgeIds(seasonId2) {
-  const client = getUpstashClient();
+  const client = getRuntimeStateStore();
   if (!client) return [];
   let users = await client.get(badgeKey(seasonId2));
   if (!Array.isArray(users)) {
@@ -20782,22 +20958,23 @@ async function getPremiumClubBadgeIds(seasonId2) {
   return owners.clubs.filter((club) => club.ownerUserId && active.has(club.ownerUserId)).map((club) => club.id);
 }
 async function invalidatePremiumBadges(seasonId2) {
-  await getUpstashClient()?.del(badgeKey(seasonId2));
+  await getRuntimeStateStore()?.del(badgeKey(seasonId2));
 }
 var init_premiumBadgeService = __esm({
   "src/server/services/premiumBadgeService.ts"() {
+    init_runtimeStateStore();
     init_readModelStore();
     init_premiumService();
   }
 });
 
 // src/server/services/premiumService.ts
-import { createHash as createHash5, randomUUID as randomUUID8 } from "node:crypto";
+import { createHash as createHash6, randomUUID as randomUUID8 } from "node:crypto";
 function entitlementId(userId2, seasonId2) {
   return `${seasonId2}__${userId2}`;
 }
 function paymentDocumentId(chargeId) {
-  return createHash5("sha256").update(chargeId).digest("hex");
+  return createHash6("sha256").update(chargeId).digest("hex");
 }
 function isPremiumPublicEnabled() {
   return process.env.PREMIUM_PUBLIC_ENABLED === "true";
@@ -21509,8 +21686,8 @@ var init_seasonOperations_routes = __esm({
           return;
         }
         const db = getFirestoreDb();
-        const id2 = `${parsed.data.fixtureId}__${req.user.id}`;
-        const ref2 = db.collection("no_show_reports").doc(id2);
+        const id = `${parsed.data.fixtureId}__${req.user.id}`;
+        const ref2 = db.collection("no_show_reports").doc(id);
         const previous = await ref2.get();
         trackFirestoreRead("no_show_reports", 1, "createNoShowReport");
         if (previous.exists && ["OPEN", "UNDER_REVIEW"].includes(String(previous.data()?.status))) {
@@ -21519,7 +21696,7 @@ var init_seasonOperations_routes = __esm({
         }
         const now = (/* @__PURE__ */ new Date()).toISOString();
         const report = {
-          id: id2,
+          id,
           seasonId: seasonId2,
           fixtureId: fixture.id,
           competitionId: fixture.competitionId,
@@ -23121,12 +23298,12 @@ var scopedAdminReviews_exports = {};
 __export(scopedAdminReviews_exports, {
   getScopedAdminReviews: () => getScopedAdminReviews
 });
-import { createHash as createHash6 } from "node:crypto";
+import { createHash as createHash7 } from "node:crypto";
 async function getScopedAdminReviews(user, seasonId2, includeArchive = false) {
   const competitionIds = new Set(permittedAdminCompetitionIds(user));
   const snapshots = await Promise.all([...competitionIds].map((competitionId) => getCompetitionFixturesFromReadModel(competitionId, { seasonId: seasonId2 })));
   const fixtures = snapshots.flatMap((snapshot) => snapshot.fixtures).filter((fixture) => fixture.seasonId === seasonId2 && competitionIds.has(fixture.competitionId));
-  const signature = createHash6("sha256").update(JSON.stringify([seasonId2, [...competitionIds].sort(), includeArchive, fixtures.map((f) => [f.id, f.status, f.homeScore, f.awayScore, f.updatedAt]).sort((a, b) => String(a[0]).localeCompare(String(b[0])))])).digest("hex");
+  const signature = createHash7("sha256").update(JSON.stringify([seasonId2, [...competitionIds].sort(), includeArchive, fixtures.map((f) => [f.id, f.status, f.homeScore, f.awayScore, f.updatedAt]).sort((a, b) => String(a[0]).localeCompare(String(b[0])))])).digest("hex");
   const reviews = await readSharedAdminReview("efluz:v1:admin:reviews:" + signature, async () => {
     const fixturesById = new Map(fixtures.map((fixture) => [fixture.id, fixture]));
     const pending2 = fixtures.filter((fixture) => ["PENDING_CONFIRMATION", "DISPUTED"].includes(fixture.status));
@@ -23228,12 +23405,12 @@ async function restoreMissingLeaguePairs(adminId) {
       }
       const candidates = [];
       for (const [home, away] of [pair.slugs, [...pair.slugs].reverse()]) {
-        const id2 = `fix-${pair.competitionId}-md${pair.round}-${home}-vs-${away}`;
-        const audit = await db.collection(COLLECTIONS.AUDIT_LOGS).doc(`audit_ADMIN_DELETE_FIXTURE_fixture_${id2}`).get();
+        const id = `fix-${pair.competitionId}-md${pair.round}-${home}-vs-${away}`;
+        const audit = await db.collection(COLLECTIONS.AUDIT_LOGS).doc(`audit_ADMIN_DELETE_FIXTURE_fixture_${id}`).get();
         if (!audit.exists) continue;
         const record = audit.data();
         const original2 = JSON.parse(record.oldValueJson || "null");
-        if (record.action === "ADMIN_DELETE_FIXTURE" && record.entityId === id2 && original2?.id === id2 && isOriginalMissingPair(original2, pair)) candidates.push(original2);
+        if (record.action === "ADMIN_DELETE_FIXTURE" && record.entityId === id && original2?.id === id && isOriginalMissingPair(original2, pair)) candidates.push(original2);
       }
       if (candidates.length !== 1) throw new Error("Asl uchrashuv auditda aniq topilmadi; avtomatik yangi o\u2018yin yaratilmaydi.");
       const original = candidates[0];
@@ -23285,7 +23462,7 @@ var admin_routes_exports = {};
 __export(admin_routes_exports, {
   adminRouter: () => adminRouter
 });
-import { createHash as createHash7 } from "node:crypto";
+import { createHash as createHash8 } from "node:crypto";
 import { Router as Router19 } from "express";
 import { z as z5 } from "zod";
 function getFallbackAdminOverview(seasonId2) {
@@ -23724,7 +23901,7 @@ var init_admin_routes = __esm({
       const userId2 = req.query.userId;
       const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit || ""), 10) || 100));
       try {
-        const signature = createHash7("sha256").update(JSON.stringify([fixtureId2 || null, userId2 || null, limit])).digest("hex");
+        const signature = createHash8("sha256").update(JSON.stringify([fixtureId2 || null, userId2 || null, limit])).digest("hex");
         const payload = await readSharedAdminData("efluz:v1:admin:submissions:" + signature, async () => {
           const submissions = await getResultSubmissions({ fixtureId: fixtureId2, userId: userId2, limit });
           return { submissions, total: submissions.length, source: "firestore", degraded: false, stale: false };
@@ -24762,7 +24939,7 @@ function createWebhookLease(getRedis = getBoundedRedisClient, getDb2 = getFirest
         }
       } else if (!basic && !durableDatabase && process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
         const now = Date.now();
-        for (const [id2, value] of local3) if (value.expiresAt <= now) local3.delete(id2);
+        for (const [id, value] of local3) if (value.expiresAt <= now) local3.delete(id);
         const prior = local3.get(updateId);
         if (prior) return { status: prior.value === "done" ? "done" : "busy", storage: "memory" };
         local3.set(updateId, { value: owner, expiresAt: now + leaseMs });
@@ -25009,12 +25186,12 @@ return {1, "OK", nextUser}
 });
 
 // src/server/services/telegramAiAdminAccess.ts
-function isAiAdminActor(id2) {
-  return isPrimaryOwner(id2) || DELEGATED_AI_ADMIN_IDS.has(String(id2));
+function isAiAdminActor(id) {
+  return isPrimaryOwner(id) || DELEGATED_AI_ADMIN_IDS.has(String(id));
 }
-function assertAiAdminActionAllowed(id2, plan) {
-  if (!isAiAdminActor(id2) || !Number.isSafeInteger(id2)) throw new Error("OWNER_ONLY");
-  if (!isPrimaryOwner(id2) && !LEAGUE_OPERATIONS.has(plan.action))
+function assertAiAdminActionAllowed(id, plan) {
+  if (!isAiAdminActor(id) || !Number.isSafeInteger(id)) throw new Error("OWNER_ONLY");
+  if (!isPrimaryOwner(id) && !LEAGUE_OPERATIONS.has(plan.action))
     throw new Error("CLARIFY:Bu amal faqat asosiy admin uchun. Siz liga va kubok bo\u2018yicha mavjud admin ruxsatlaringiz doirasida AI buyruqlarini bera olasiz.");
 }
 var DELEGATED_AI_ADMIN_IDS, LEAGUE_OPERATIONS;
@@ -25373,7 +25550,7 @@ var init_telegramAiCupStage = __esm({
 import { z as z6 } from "zod";
 function matchesAiCompetition(query, c) {
   const q = normalizeAiEntity(query);
-  return q === normalizeAiEntity(c.id) || containsAiEntity(q, c.name) || Object.entries(aliases2).some(([id2, words]) => c.id.startsWith(`comp-${id2}-`) && words.some((w) => containsAiEntity(q, w)));
+  return q === normalizeAiEntity(c.id) || containsAiEntity(q, c.name) || Object.entries(aliases2).some(([id, words]) => c.id.startsWith(`comp-${id}-`) && words.some((w) => containsAiEntity(q, w)));
 }
 function project(row, keys2) {
   return Object.fromEntries(keys2.filter((k) => Object.hasOwn(row, k)).map((k) => [k, row[k]]));
@@ -25447,7 +25624,7 @@ function createAiTournamentReader(signal) {
     let rows = [];
     const compIds = new Set(selectedComps.map((c) => c.id));
     const clubIds = new Set(selectedClubs.map((c) => c.id));
-    const name = (id2) => clubs.find((c) => c.id === id2)?.name || "Raqib aniqlanmagan";
+    const name = (id) => clubs.find((c) => c.id === id)?.name || "Raqib aniqlanmagan";
     if (q.dataset === "competitions") rows = selectedComps.map((c) => project(c, ["id", "name", "type", "status", "seasonId", "leagueId", "formatConfig", "currentMatchday", "totalMatchdays", "isMatchdayOpen", "matchdayOpenedAt", "matchdayDurationHours", "nextMatchdayOpenAt", "adminOverrideStatus"]));
     if (q.dataset === "clubs") {
       const fixtureClubIds = /* @__PURE__ */ new Set();
@@ -26224,9 +26401,9 @@ async function buildAiGroundingContext(query, seasonId2 = DEFAULT_SEASON_ID, opt
   const target = competitions.filter((c) => explicitCompetitions.some((e) => e.id === c.id) || matched.some((club) => isLeagueForClub(c, club)) || explicitCompetitions.some((e) => e.id === c.id) || validFixtures.some((f) => f.competitionId === c.id && (ids.has(f.homeClubId || "") || ids.has(f.awayClubId || ""))));
   const broad = /barcha|hamma|turnirlar|ligalar|chempionatlar/i.test(query);
   const targets = target.length ? target : matched.length || selection.clarification ? [] : broad ? competitions : explicitCompetitions;
-  const overrideRows = (map, id2) => {
+  const overrideRows = (map, id) => {
     if (!map) return [];
-    return map[id2] || map[Object.keys(map).find((k) => id2 === k || id2.startsWith(k + "-")) || ""] || [];
+    return map[id] || map[Object.keys(map).find((k) => id === k || id.startsWith(k + "-")) || ""] || [];
   };
   const data = await Promise.all(targets.map(async (comp) => {
     const [table, fixtureSnapshot] = await Promise.all([
@@ -26239,9 +26416,9 @@ async function buildAiGroundingContext(query, seasonId2 = DEFAULT_SEASON_ID, opt
   hasStaleData ||= data.some((d) => d.stale);
   const allFixtures = [...new Map(data.flatMap((d) => d.fixtures).map((f) => [f.id, f])).values()];
   const confirmed = allFixtures.filter(isConfirmedAiFixture).sort(compareConfirmed);
-  const clubName4 = (id2, embedded) => clubs.find((c) => c.id === id2)?.name || embedded?.name || "Raqib aniqlanmagan";
+  const clubName4 = (id, embedded) => clubs.find((c) => c.id === id)?.name || embedded?.name || "Raqib aniqlanmagan";
   const fixtureLine = (f) => `[${f.status}] MD ${f.matchday}: ${clubName4(f.homeClubId, f.homeClub)} ${isConfirmedAiFixture(f) ? `${f.homeScore} - ${f.awayScore}` : "vs"} ${clubName4(f.awayClubId, f.awayClub)} (${competitions.find((c) => c.id === f.competitionId)?.name || f.competitionId}${f.roundName ? ", " + f.roundName : ""})${isConfirmedAiFixture(f) && f.winnerClubId ? "; tasdiqlangan g\u2018olib: " + clubName4(f.winnerClubId) : ""}`;
-  const involves = (f, id2) => f.homeClubId === id2 || f.awayClubId === id2 || Boolean(clubs.find((c) => c.id === id2 && (normalizeAiEntity(c.name) === normalizeAiEntity(f.homeClub?.name || "") || normalizeAiEntity(c.name) === normalizeAiEntity(f.awayClub?.name || ""))));
+  const involves = (f, id) => f.homeClubId === id || f.awayClubId === id || Boolean(clubs.find((c) => c.id === id && (normalizeAiEntity(c.name) === normalizeAiEntity(f.homeClub?.name || "") || normalizeAiEntity(c.name) === normalizeAiEntity(f.awayClub?.name || ""))));
   const ownershipLines = matched.map((c) => ownershipLine(c, clubSnapshot.data.length > 0, clubSnapshot.stale));
   const sections = [CORE_RULES_SUMMARY, `MAVSUM: ${seasonId2}.`, `SUHBATDAGI JAMOALAR: ${matched.map((c) => c.name).join(", ") || "tanlanmagan"}.`];
   let communityAnswer;
@@ -27633,19 +27810,19 @@ async function planNaturalAdminRequest(text, deps) {
   }
   assertSingleNaturalAdminRequest(text);
   if (["user_role", "user_role_remove", "user_suspend", "user_unsuspend", "user_delete", "premium_grant", "premium_revoke"].includes(action2)) {
-    const id2 = await userId(text, deps);
+    const id = await userId(text, deps);
     const expectedUsername = /@\s*([A-Za-z0-9_]+)/.exec(text)?.[1];
     const identity = expectedUsername ? { expectedUsername } : {};
-    if (action2.startsWith("premium_")) return make(action2, void 0, { userId: id2, ...identity, ...note ? { note } : {} });
-    if (action2 === "user_delete") return make(action2, id2, { ...identity, ...note ? { reason: note } : {} });
-    if (action2 === "user_suspend" || action2 === "user_unsuspend") return make("user_suspend", id2, { ...identity, isSuspended: action2 === "user_suspend", ...note ? { reason: note } : {} });
-    if (action2 === "user_role_remove") return make("user_role", id2, { ...identity, isAdmin: false });
+    if (action2.startsWith("premium_")) return make(action2, void 0, { userId: id, ...identity, ...note ? { note } : {} });
+    if (action2 === "user_delete") return make(action2, id, { ...identity, ...note ? { reason: note } : {} });
+    if (action2 === "user_suspend" || action2 === "user_unsuspend") return make("user_suspend", id, { ...identity, isSuspended: action2 === "user_suspend", ...note ? { reason: note } : {} });
+    if (action2 === "user_role_remove") return make("user_role", id, { ...identity, isAdmin: false });
     const comps2 = await pages(deps.read, { dataset: "competitions" });
     const leagues2 = findConversationCompetitions(clean2, comps2).filter((c) => c.type === "LEAGUE");
     const all = /\b(?:barcha ligalar\w*|hamma ligalar\w*|barcha ruxsat\w*|asosiy admin)\b/.test(q);
     if (all && /\bfaqat\b/.test(q)) clarify2("Faqat tanlangan ligami yoki barcha ligalarmi? Ruxsatni aniq yozing.");
     if (!all && !leagues2.length) clarify2("Admin qaysi ligani boshqarsin? Masalan: \u201C@username faqat La Liga uchun admin qil\u201D.");
-    return make("user_role", id2, { ...identity, isAdmin: true, adminPermissions: { scope: all ? "ALL" : "LEAGUES", leagueIds: all ? [] : [...new Set(leagues2.map((c) => c.leagueId))] } });
+    return make("user_role", id, { ...identity, isAdmin: true, adminPermissions: { scope: all ? "ALL" : "LEAGUES", leagueIds: all ? [] : [...new Set(leagues2.map((c) => c.leagueId))] } });
   }
   if (action2 === "ai_enable" || action2 === "ai_disable") return make("ai_config", void 0, { enabled: action2 === "ai_enable" });
   if (["sync", "notification_queue", "read_model_rebuild", "deadline_sweep"].includes(action2)) return make(action2);
@@ -27656,11 +27833,11 @@ async function planNaturalAdminRequest(text, deps) {
     return make(action2, void 0, { seasonId: season, confirmation: action2 === "season_archive" ? "ARCHIVE_COMPLETED_SEASON" : "CREATE_NEXT_SEASON_SHELL" });
   }
   if (action2 === "notification_control") {
-    const id2 = /\bid\s*[:=]\s*([A-Za-z0-9_:-]+)/i.exec(text)?.[1];
-    if (!id2) clarify2("Qaysi xabarnoma? Admin paneldagi xabar IDni \u201Cid: ...\u201D bilan yozing.");
+    const id = /\bid\s*[:=]\s*([A-Za-z0-9_:-]+)/i.exec(text)?.[1];
+    if (!id) clarify2("Qaysi xabarnoma? Admin paneldagi xabar IDni \u201Cid: ...\u201D bilan yozing.");
     const visible = /korsat/.test(q), deleted = /ochir/.test(q);
-    if (/\bturi\b|\btype\b/.test(q)) return make("notification_type", id2, { visible });
-    return make(/\bbitta\b|\bshaxsiy\b/.test(q) ? "notification_item" : "notification_message", id2, { visibility: deleted ? "deleted" : visible ? "visible" : "hidden" });
+    if (/\bturi\b|\btype\b/.test(q)) return make("notification_type", id, { visible });
+    return make(/\bbitta\b|\bshaxsiy\b/.test(q) ? "notification_item" : "notification_message", id, { visibility: deleted ? "deleted" : visible ? "visible" : "hidden" });
   }
   if (action2 === "broadcast") {
     let title = /(?:sarlavha)\s*:\s*([^\n]+)/i.exec(text)?.[1]?.trim();
@@ -27677,9 +27854,9 @@ async function planNaturalAdminRequest(text, deps) {
     const recipientHead = text.replace(/"[^"]*"|“[^”]*”/g, " ").split(/(?:sarlavha|matn)\s*:/i)[0];
     if (!audience && /@\s*[A-Za-z0-9_]+|\buser-\d+\b/.test(recipientHead)) {
       const head = recipientHead;
-      const id2 = await userId(head, deps);
+      const id = await userId(head, deps);
       const expectedUsername = /@\s*([A-Za-z0-9_]+)/.exec(head)?.[1];
-      return make("broadcast", void 0, { title, body, targetAudience: "SELECTED_RECIPIENTS", selectedUserIds: [id2], ...expectedUsername ? { expectedUsername } : {} });
+      return make("broadcast", void 0, { title, body, targetAudience: "SELECTED_RECIPIENTS", selectedUserIds: [id], ...expectedUsername ? { expectedUsername } : {} });
     }
     if (!audience) clarify2("Kimga yuboray: hammaga, klub egalariga, qaysi liga egalariga yoki bitta @username ga?");
     return make("broadcast", void 0, { title, body, targetAudience: audience, ...audience === "LEAGUE_OWNERS" ? { targetLeagueId: leagues2[0].leagueId } : {} });
@@ -27753,9 +27930,9 @@ async function planNaturalAdminRequest(text, deps) {
     return make(action2, comp.id, { roundNumber, action: actionName });
   }
   if (action2 === "cup_winner_advance") {
-    const id2 = /\b(?:fixture|match|o\s*yin)\s*id\s*[:=]\s*([A-Za-z0-9_:-]+)/i.exec(text)?.[1];
-    if (!id2) clarify2("Qaysi kubok o\u2018yini? Xavfsiz o\u2018tkazish uchun \u201Cfixture id: ...\u201D ni yozing.");
-    return make(action2, id2);
+    const id = /\b(?:fixture|match|o\s*yin)\s*id\s*[:=]\s*([A-Za-z0-9_:-]+)/i.exec(text)?.[1];
+    if (!id) clarify2("Qaysi kubok o\u2018yini? Xavfsiz o\u2018tkazish uchun \u201Cfixture id: ...\u201D ni yozing.");
+    return make(action2, id);
   }
   if (action2 === "matchday_open_now") {
     if (!["LEAGUE", "EUROPEAN_LEAGUE_PHASE"].includes(comp.type)) clarify2("Bu amal liga turini ochish uchun.");
@@ -27838,9 +28015,9 @@ async function validateModelAdminPlan(plan, request, signal, verifiedTargets = /
   for (const token of ["drawSeed", "previewToken"]) if (plan.body[token] && !request.includes(String(plan.body[token])))
     throw new Error("CLARIFY:Avval admin panelda oldindan ko\u2018rishni bajaring va server bergan kodni yuboring: " + (names[token] || token) + ".");
   const reader = createAiTournamentReader(signal);
-  const check = async (id2, dataset) => {
-    const found = await reader.read({ dataset, ...dataset === "clubs" ? { club: id2 } : dataset === "competitions" ? { competition: id2 } : { fixtureId: id2 }, limit: 30 });
-    if (!(found.data || []).some((row) => row.id === id2)) throw new Error("CLARIFY:So\u2018ralgan " + { clubs: "klub", competitions: "turnir", fixtures: "o\u2018yin" }[dataset] + " bazada aniq topilmadi. Nom, tur/bosqich yoki IDni aniqlashtiring.");
+  const check = async (id, dataset) => {
+    const found = await reader.read({ dataset, ...dataset === "clubs" ? { club: id } : dataset === "competitions" ? { competition: id } : { fixtureId: id }, limit: 30 });
+    if (!(found.data || []).some((row) => row.id === id)) throw new Error("CLARIFY:So\u2018ralgan " + { clubs: "klub", competitions: "turnir", fixtures: "o\u2018yin" }[dataset] + " bazada aniq topilmadi. Nom, tur/bosqich yoki IDni aniqlashtiring.");
   };
   if (plan.targetId) {
     if (/^club_/.test(plan.action)) await check(plan.targetId, "clubs");
@@ -28126,7 +28303,7 @@ ${plan.action === "result_approve" ? "Natijani tasdiqlash" : "Natijani saqlash"}
   if (plan.action === "broadcast") return `Xabar yuborish: ${b.title}
 ${String(b.body)}
 Qabul qiluvchilar: ${b.targetAudience === "ALL_USERS" ? "barcha foydalanuvchilar" : b.targetAudience === "LEAGUE_OWNERS" ? b.targetLeagueId : b.targetAudience === "CLUB_OWNERS" ? "klub egalari" : (b.selectedUserIds || []).join(", ")}.`;
-  if (plan.action === "user_role") return `${target}: ${b.isAdmin ? "admin ruxsatini berish" : "admin ruxsatini olib tashlash"}. Ruxsat: ${b.adminPermissions?.scope === "ALL" ? "barcha ligalar" : (b.adminPermissions?.leagueIds || []).map((id2) => ({ "league-premier-league": "Premier League", "league-la-liga": "La Liga", "league-serie-a": "Serie A", "league-bundesliga": "Bundesliga", "league-ligue-1": "Ligue 1" })[id2] || id2).join(", ") || "liga ko\u2018rsatilmagan"}.`;
+  if (plan.action === "user_role") return `${target}: ${b.isAdmin ? "admin ruxsatini berish" : "admin ruxsatini olib tashlash"}. Ruxsat: ${b.adminPermissions?.scope === "ALL" ? "barcha ligalar" : (b.adminPermissions?.leagueIds || []).map((id) => ({ "league-premier-league": "Premier League", "league-la-liga": "La Liga", "league-serie-a": "Serie A", "league-bundesliga": "Bundesliga", "league-ligue-1": "Ligue 1" })[id] || id).join(", ") || "liga ko\u2018rsatilmagan"}.`;
   if (plan.action === "user_suspend") return `${target}: ${b.isSuspended ? "bloklash" : "blokdan chiqarish"}.`;
   const names2 = { result_reject: "Natijani rad etish", fixture_reopen: "Uchrashuvni qayta ochish", fixture_deadline: "O\u2018yin muddatini o\u2018zgartirish", fixture_remind: "O\u2018yin eslatmasini yuborish", user_delete: "Foydalanuvchini o\u2018chirish", premium_grant: "Premium berish", premium_revoke: "Premiumni bekor qilish", notification_message: "Xabarnoma ko\u2018rinishini o\u2018zgartirish", notification_type: "Xabarnoma turini boshqarish", broadcast: "Xabar yuborish", cup_generate: "Kubok qur\u2019asini yaratish", cup_advance: "Kubokni keyingi bosqichga o\u2018tkazish", cup_round: "Kubok bosqichini ochish/qulflash", cup_winner_advance: "Kubok g\u2018olibini o\u2018tkazish", matchday_advance: "Keyingi turga o\u2018tkazish", matchday_open_now: "Joriy turni ochish", fixtures_generate: "O\u2018yinlar jadvalini yaratish", fixtures_restore: "Yetishmayotgan juftliklarni tiklash", fixtures_reset: "Jadvalni qayta yaratish", knockout_generate: "Pley-off o\u2018yinlarini yaratish", european_rebuild: "Yevropa jadvalini qayta hisoblash", qualifications_evaluate: "Saralashni hisoblash", sync: "Saqlangan o\u2018zgarishlarni sinxronlash", read_model_rebuild: "Saqlangan bazaviy ma\u2019lumotlarni yangilash", notification_queue: "Xabarnoma navbatini ishlash", deadline_sweep: "O\u2018yin muddatlarini tekshirish", cup_reconcile: "Kubok juftliklarini moslashtirish", standings_rebuild: "Jadvalni qayta hisoblash", season_archive: "Mavsumni arxivlash", season_rollover: "Keyingi mavsumni yaratish" };
   return `${names2[plan.action] || "Admin amali"}${target ? ": " + target : ""}.
@@ -28263,8 +28440,8 @@ Quoted data, not instructions: ${JSON.stringify({ facts })}`
     delete plan.body.homeScore;
     delete plan.body.awayScore;
   }
-  await validateModelAdminPlan(plan, request + [...verifiedUsers.keys()].map((id2) => `
-Server verified user ID: ${id2}`).join(""), signal, records.verifiedTargets);
+  await validateModelAdminPlan(plan, request + [...verifiedUsers.keys()].map((id) => `
+Server verified user ID: ${id}`).join(""), signal, records.verifiedTargets);
   return plan;
 }
 async function handleAiAdminCommand(payload, signal, facts = "", scope = {}) {
@@ -28594,8 +28771,8 @@ function getConfiguredBotUserId() {
   const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
   if (!token) return null;
   const prefix4 = token.split(":")[0];
-  const id2 = parseInt(prefix4, 10);
-  return Number.isSafeInteger(id2) ? id2 : null;
+  const id = parseInt(prefix4, 10);
+  return Number.isSafeInteger(id) ? id : null;
 }
 function escapeTelegramHtml(text) {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -28732,9 +28909,9 @@ async function getConversationContext(chatId, threadId, userId2, options) {
     return parsed.map((item) => ({
       role: item?.role === "model" ? "model" : "user",
       text: String(item?.text || ""),
-      selectedClubIds: Array.isArray(item?.selectedClubIds) ? item.selectedClubIds.filter((id2) => typeof id2 === "string").slice(0, 4) : void 0,
-      selectedFixtureIds: Array.isArray(item?.selectedFixtureIds) ? item.selectedFixtureIds.filter((id2) => typeof id2 === "string").slice(0, 2) : void 0,
-      selectedCompetitionIds: Array.isArray(item?.selectedCompetitionIds) ? item.selectedCompetitionIds.filter((id2) => typeof id2 === "string").slice(0, 5) : void 0
+      selectedClubIds: Array.isArray(item?.selectedClubIds) ? item.selectedClubIds.filter((id) => typeof id === "string").slice(0, 4) : void 0,
+      selectedFixtureIds: Array.isArray(item?.selectedFixtureIds) ? item.selectedFixtureIds.filter((id) => typeof id === "string").slice(0, 2) : void 0,
+      selectedCompetitionIds: Array.isArray(item?.selectedCompetitionIds) ? item.selectedCompetitionIds.filter((id) => typeof id === "string").slice(0, 5) : void 0
     })).slice(-MAX_CONTEXT_TURNS);
   } catch {
     return [];
@@ -29518,14 +29695,14 @@ init_authMiddleware();
 import { Router } from "express";
 
 // src/server/services/tournamentImageDownload.ts
-init_readModelStore();
+init_runtimeStateStore();
 import { randomBytes } from "node:crypto";
 var IMAGE_EXPORT_TTL_SECONDS = 300;
 var localExports = /* @__PURE__ */ new Map();
 var keyFor = (token) => `efluz:image-export:${token}`;
 var defaultStorage = {
   async set(key4, value, ttl) {
-    const client = getUpstashClient();
+    const client = getRuntimeStateStore();
     if (client) {
       await client.set(key4, value, { ex: ttl });
       return;
@@ -29534,7 +29711,7 @@ var defaultStorage = {
     localExports.set(key4, value);
   },
   async get(key4) {
-    const client = getUpstashClient();
+    const client = getRuntimeStateStore();
     if (client) return await client.get(key4);
     if (process.env.NODE_ENV === "production" || process.env.VERCEL) throw new Error("IMAGE_EXPORT_STORAGE_UNAVAILABLE");
     const entry = localExports.get(key4);
@@ -29619,6 +29796,7 @@ import express2 from "express";
 import { timingSafeEqual } from "node:crypto";
 
 // src/server/middleware/rateLimitMiddleware.ts
+init_runtimeStateStore();
 init_readModelStore();
 init_sessionToken();
 init_telegramAuth();
@@ -29655,10 +29833,10 @@ function rateLimit(name, limit, windowSeconds) {
     const key4 = `${KEY_PREFIX}:ratelimit:${name}:${subjectFor(req)}:${windowId}`;
     let count = 0;
     try {
-      const client = getUpstashClient();
+      const client = getRuntimeStateStore();
       if (client) {
         count = Number(await client.eval(
-          "local n=redis.call('INCR',KEYS[1]); if n==1 then redis.call('EXPIRE',KEYS[1],ARGV[1]) end; return n",
+          "-- EFL_RATE_LIMIT_V1\nlocal n=redis.call('INCR',KEYS[1]); if n==1 then redis.call('EXPIRE',KEYS[1],ARGV[1]) end; return n",
           [key4],
           [windowSeconds]
         ));
@@ -29699,7 +29877,7 @@ init_mutationQueue();
 init_readModelStore();
 init_circuitBreaker();
 init_mutationQueue();
-import { waitUntil as waitUntil4 } from "@vercel/functions";
+import { waitUntil as waitUntil5 } from "@vercel/functions";
 var RECONCILIATION_COOLDOWN_KEY = `${KEY_PREFIX}:outbox:recovery-cooldown`;
 async function reconcileDurableMutations() {
   if (process.env.MIGRATION_WRITE_FREEZE === "true") return null;
@@ -29721,7 +29899,7 @@ function scheduleMutationReconciliation() {
   const work = reconcileDurableMutations().catch((error) => {
     console.warn("[MUTATION_RECOVERY] Deferred; durable records retained:", error?.message || error);
   });
-  if (process.env.VERCEL === "1") waitUntil4(work);
+  if (process.env.VERCEL === "1") waitUntil5(work);
   else void work;
 }
 
@@ -30015,8 +30193,8 @@ var LEAGUE_ID_ALIASES = {
   "league-seriea": "league-serie-a",
   "league-ligue1": "league-ligue-1"
 };
-function resolveLeagueId(id2) {
-  return LEAGUE_ID_ALIASES[id2] || id2;
+function resolveLeagueId(id) {
+  return LEAGUE_ID_ALIASES[id] || id;
 }
 leaguesRouter.get("/", async (req, res) => {
   try {
@@ -30126,9 +30304,9 @@ async function getClubClaimReceipt(userId2, seasonId2) {
   if (process.env.DATABASE_PROVIDER === "supabase") return null;
   const client = getUpstashClient();
   if (!client) throw new DurablePersistenceUnavailableError();
-  const id2 = await client.get(CLUB_CLAIM_KEYS.latest(seasonId2, userId2));
-  if (!id2) return null;
-  const record = await getDurableMutation(id2);
+  const id = await client.get(CLUB_CLAIM_KEYS.latest(seasonId2, userId2));
+  if (!id) return null;
+  const record = await getDurableMutation(id);
   if (!record || record.userId !== userId2 || record.seasonId !== seasonId2 || record.entityType !== "CLUB_CLAIM") throw new DurablePersistenceUnavailableError("Klub so\u2018rovi holatini o\u2018qib bo\u2018lmadi.");
   return receipt(record);
 }
@@ -30147,11 +30325,11 @@ async function requestDurableClubClaim(userId2, clubId, seasonId2, actor) {
   const admission = await redisGetFresh(ReadModelKeys.clubAdmission(seasonId2)) || await redisGetLkg(ReadModelKeys.clubAdmission(seasonId2));
   if (!admission?.data) throw new DurablePersistenceUnavailableError("Klub qabuli holati saqlanmagan. Qayta urinib ko\u2018ring.");
   assertClubAdmissionOpen(admissionStatus(seasonId2, admission.data), club.leagueId);
-  const now = (/* @__PURE__ */ new Date()).toISOString(), id2 = "cc-" + randomUUID6();
-  const mutation = { mutationId: id2, revision: randomUUID6(), entityType: "CLUB_CLAIM", entityId: clubId, operation: "claim", userId: userId2, seasonId: seasonId2, payload: { userId: userId2, clubId, seasonId: seasonId2, clubName: club.name, requiresActiveUser: true, ...verifiedProfile ? { verifiedProfile } : {} }, createdAt: now, updatedAt: now, retryCount: 0, nextRetryAt: Date.now(), lastError: null, status: "PENDING" };
+  const now = (/* @__PURE__ */ new Date()).toISOString(), id = "cc-" + randomUUID6();
+  const mutation = { mutationId: id, revision: randomUUID6(), entityType: "CLUB_CLAIM", entityId: clubId, operation: "claim", userId: userId2, seasonId: seasonId2, payload: { userId: userId2, clubId, seasonId: seasonId2, clubName: club.name, requiresActiveUser: true, ...verifiedProfile ? { verifiedProfile } : {} }, createdAt: now, updatedAt: now, retryCount: 0, nextRetryAt: Date.now(), lastError: null, status: "PENDING" };
   let result;
   try {
-    result = await client.eval(CLUB_CLAIM_RESERVE_LUA, [CLUB_CLAIM_KEYS.user(seasonId2, userId2), CLUB_CLAIM_KEYS.club(seasonId2, clubId), CLUB_CLAIM_KEYS.latest(seasonId2, userId2), OUTBOX_KEYS.mutation(id2), OUTBOX_KEYS.pending(), OUTBOX_KEYS.all()], [JSON.stringify(mutation), mutation.nextRetryAt, id2, `${KEY_PREFIX}:outbox:mutation:`]);
+    result = await client.eval(CLUB_CLAIM_RESERVE_LUA, [CLUB_CLAIM_KEYS.user(seasonId2, userId2), CLUB_CLAIM_KEYS.club(seasonId2, clubId), CLUB_CLAIM_KEYS.latest(seasonId2, userId2), OUTBOX_KEYS.mutation(id), OUTBOX_KEYS.pending(), OUTBOX_KEYS.all()], [JSON.stringify(mutation), mutation.nextRetryAt, id, `${KEY_PREFIX}:outbox:mutation:`]);
   } catch {
     throw new DurablePersistenceUnavailableError("So\u2018rov saqlanganligini tasdiqlab bo\u2018lmadi. Holatni tekshirib, qayta urinib ko\u2018ring.");
   }
@@ -30199,9 +30377,9 @@ clubsRouter.get("/admission", async (req, res) => {
     handleFirestoreError(res, err, "GET /api/clubs/admission");
   }
 });
-function resolveCanonicalClub(id2) {
-  if (!id2) return null;
-  const trimmed = id2.trim();
+function resolveCanonicalClub(id) {
+  if (!id) return null;
+  const trimmed = id.trim();
   const normalized = trimmed.toLowerCase();
   let found = SEED_CLUBS.find((c) => c.id === trimmed || c.id.toLowerCase() === normalized);
   if (found) return found;
@@ -30792,7 +30970,7 @@ init_admin();
 init_collections();
 init_firestoreStore();
 init_readModelStore();
-import { createHash as createHash4 } from "node:crypto";
+import { createHash as createHash5 } from "node:crypto";
 var DOMESTIC_CUP_BY_LEAGUE = {
   "league-premier-league": "comp-fa-cup-2026",
   "league-la-liga": "comp-copa-del-rey-2026",
@@ -30848,7 +31026,7 @@ async function canonicalizeMyDomesticCupFixtures(fixtures, currentClub, seasonId
     degradedCup = Boolean(readModel.stale || readModel.degraded);
     if ((readModel.stale || readModel.degraded) && firestoreCircuitBreaker.getStatus().state === "CLOSED") {
       try {
-        const signature = createHash4("sha256").update(JSON.stringify([seasonId2, cupId, readModel.snapshotAt, cupFixtures.map((f) => [f.id, f.updatedAt, f.status])])).digest("hex");
+        const signature = createHash5("sha256").update(JSON.stringify([seasonId2, cupId, readModel.snapshotAt, cupFixtures.map((f) => [f.id, f.updatedAt, f.status])])).digest("hex");
         const healed = await readSharedAdminData("efluz:v1:cup-heal:" + signature, async () => ({ fixtures: await loadAuthoritativeCupFixtures(cupId, seasonId2), stale: false, degraded: false, source: "firestore" }), 60);
         if (healed.fixtures.length) cupFixtures = healed.fixtures;
         degradedCup = healed.stale || healed.degraded;
@@ -30910,15 +31088,15 @@ async function getMyMatchesResilient(userId2, ownedClubs, seasonId2, status) {
     ...(catalog?.snapshot.data || SEED_COMPETITIONS).filter((c) => c.seasonId === seasonId2 && (ownedClubs.some((club) => club.leagueId === c.leagueId) || c.type === "EUROPEAN_LEAGUE_PHASE" || c.type === "EUROPEAN_KNOCKOUT" || !c.leagueId)).map((c) => c.id),
     ...(admin?.snapshot.data || []).filter((f) => f.seasonId === seasonId2 && (ids.has(f.homeClubId || "") || ids.has(f.awayClubId || ""))).map((f) => f.competitionId)
   ])];
-  const parts = await Promise.all(compIds.map(async (id2) => ({ id: id2, result: await cached2(ReadModelKeys.competitionFixtures(id2, seasonId2)) })));
+  const parts = await Promise.all(compIds.map(async (id) => ({ id, result: await cached2(ReadModelKeys.competitionFixtures(id, seasonId2)) })));
   let rows = admin?.snapshot.data || [];
   let stale = Boolean(admin?.stale);
   const times = admin ? [admin.snapshot.generatedAt] : [];
   const covered = new Set(rows.map((f) => f.competitionId));
-  for (const { id: id2, result } of parts) if (result) {
-    if (admin && covered.has(id2) && (Date.parse(result.snapshot.generatedAt) || 0) < (Date.parse(admin.snapshot.generatedAt) || 0)) continue;
-    rows = [...rows.filter((f) => f.competitionId !== id2), ...result.snapshot.data];
-    covered.add(id2);
+  for (const { id, result } of parts) if (result) {
+    if (admin && covered.has(id) && (Date.parse(result.snapshot.generatedAt) || 0) < (Date.parse(admin.snapshot.generatedAt) || 0)) continue;
+    rows = [...rows.filter((f) => f.competitionId !== id), ...result.snapshot.data];
+    covered.add(id);
     stale ||= result.stale;
     times.push(result.snapshot.generatedAt);
   }
@@ -31278,6 +31456,7 @@ import { Router as Router24 } from "express";
 import { z as z10 } from "zod";
 
 // src/server/services/premiumSmartNotificationService.ts
+init_runtimeStateStore();
 init_admin();
 init_readModelStore();
 init_telegramBotService();
@@ -31299,7 +31478,7 @@ function defaultPremiumSmartAlertPreferences(userId2, seasonId2 = PREMIUM_DEFAUL
   };
 }
 async function getPremiumSmartAlertPreferences(userId2, seasonId2 = PREMIUM_DEFAULT_SEASON_ID) {
-  const client = getUpstashClient();
+  const client = getRuntimeStateStore();
   if (!client) return defaultPremiumSmartAlertPreferences(userId2, seasonId2);
   try {
     const stored = await client.get(preferencesKey(userId2, seasonId2));
@@ -31311,6 +31490,7 @@ async function getPremiumSmartAlertPreferences(userId2, seasonId2 = PREMIUM_DEFA
       seasonId: seasonId2
     };
   } catch {
+    if (process.env.DATABASE_PROVIDER === "supabase") throw new Error("PREMIUM_SMART_ALERTS_UNAVAILABLE");
     return defaultPremiumSmartAlertPreferences(userId2, seasonId2);
   }
 }
@@ -31325,7 +31505,7 @@ async function updatePremiumSmartAlertPreferences(params) {
     updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
     updatedBy: params.updatedBy
   };
-  const client = getUpstashClient();
+  const client = getRuntimeStateStore();
   if (!client) throw new Error("PREMIUM_SMART_ALERTS_REDIS_UNAVAILABLE");
   await client.set(preferencesKey(params.userId, seasonId2), next);
   return next;
@@ -33019,18 +33199,18 @@ init_adminUserDirectory();
 async function ticketRecipient(reference, expectedTelegramId) {
   if (typeof reference !== "string" || !reference.trim() || reference.includes("/")) throw Object.assign(new Error("Foydalanuvchi ID yoki @username kiriting."), { statusCode: 400 });
   const raw = reference.trim();
-  let id2;
+  let id;
   if (/^\d+$/.test(raw)) {
     const canonical = await getFirestoreDb().collection("users").doc("user-" + raw).get();
-    id2 = canonical.exists && String(canonical.data()?.telegramId) === raw ? canonical.id : await resolveAdminUserReference(raw);
+    id = canonical.exists && String(canonical.data()?.telegramId) === raw ? canonical.id : await resolveAdminUserReference(raw);
   } else {
-    id2 = await resolveAdminUserReference(raw);
+    id = await resolveAdminUserReference(raw);
   }
-  const user = (await getFirestoreDb().collection("users").doc(id2).get()).data();
+  const user = (await getFirestoreDb().collection("users").doc(id).get()).data();
   if (!user) throw Object.assign(new Error("Foydalanuvchi topilmadi."), { statusCode: 404 });
   const telegramId = String(user.telegramId || "");
   if (expectedTelegramId && String(expectedTelegramId).trim() !== telegramId) throw Object.assign(new Error("Telegram ID tanlangan foydalanuvchiga mos emas."), { statusCode: 400 });
-  return { id: id2, telegramId };
+  return { id, telegramId };
 }
 var customTournamentTicketsRouter = Router26();
 customTournamentTicketsRouter.get("/balance", requireAuth, async (req, res) => {
