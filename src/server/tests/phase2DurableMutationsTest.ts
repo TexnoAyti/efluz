@@ -20,7 +20,7 @@ import {
 } from '../outbox/redisOutbox';
 import { processPendingMutations } from '../sync/mutationQueue';
 import { startMockUpstashBridge, MockRedisServer } from './mockUpstashBridge';
-import { inProcessMemoryCache, memoryRedisStorage } from '../readModel/readModelStore';
+import { inProcessMemoryCache, memoryRedisStorage, resetUpstashClient } from '../readModel/readModelStore';
 
 async function main() {
   console.log('\n================================================================');
@@ -177,6 +177,9 @@ async function main() {
 
     // Restore Redis health
     mockRedis.simulateFailure(false);
+    // Begin the independent replay scenario with a fresh client, without the
+    // transport cooldown deliberately triggered by the outage scenario above.
+    resetUpstashClient();
 
     // -------------------------------------------------------------------
     // TEST D: Replay 5 times -> identical outcome, 0 duplicates

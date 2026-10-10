@@ -1,4 +1,5 @@
-import { getUpstashClient, KEY_PREFIX } from '../readModel/readModelStore';
+import { getRuntimeStateStore } from '../readModel/runtimeStateStore';
+import { KEY_PREFIX } from '../readModel/readModelStore';
 
 export type SmartNotificationEvent =
   | 'resultVerification'
@@ -65,7 +66,7 @@ export async function getSmartNotificationSettings(
   const cached = memory.get(seasonId);
   if (cached && cached.expiresAt > Date.now()) return cached.value;
 
-  const client = getUpstashClient();
+  const client = getRuntimeStateStore();
   if (!client) {
     const fallback = defaultSmartNotificationSettings(seasonId);
     memory.set(seasonId, { value: fallback, expiresAt: Date.now() + SETTINGS_TTL_MS });
@@ -78,7 +79,9 @@ export async function getSmartNotificationSettings(
     memory.set(seasonId, { value, expiresAt: Date.now() + SETTINGS_TTL_MS });
     return value;
   } catch (error: any) {
-    console.warn('[SMART_NOTIFY_SETTINGS] Redis read failed, using safe defaults:', error?.message || error);
+    // Never replace a persisted off switch with enabled defaults on a DB outage.
+    if (process.env.DATABASE_PROVIDER === 'supabase') throw new Error('SMART_NOTIFICATION_SETTINGS_UNAVAILABLE');
+    console.warn('[SMART_NOTIFY_SETTINGS] State read failed, using safe defaults:', error?.message || error);
     const fallback = defaultSmartNotificationSettings(seasonId);
     memory.set(seasonId, { value: fallback, expiresAt: Date.now() + SETTINGS_TTL_MS });
     return fallback;
@@ -99,7 +102,7 @@ export async function updateSmartNotificationSettings(params: {
     updatedBy: params.updatedBy,
   }, seasonId);
 
-  const client = getUpstashClient();
+  const client = getRuntimeStateStore();
   const isHosted = Boolean(process.env.VERCEL || process.env.K_SERVICE || process.env.NODE_ENV === 'production');
   if (!client) {
     if (isHosted) throw new Error('SMART_NOTIFICATION_SETTINGS_REDIS_UNAVAILABLE');

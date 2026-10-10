@@ -186,6 +186,7 @@ interface RequestOptions extends RequestInit {
   skipCache?: boolean;
   retries?: number;
   timeoutMs?: number;
+  skipAuthentication?: boolean;
 }
 
 async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
@@ -194,8 +195,8 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
   const cacheTtl = options.cacheTtlMs ?? (isGet ? 15000 : 0); // Default 15s cache for GETs to conserve free-tier quota
   const timeoutMs = options.timeoutMs ?? 14000;
 
-  const authCacheIdentity = getSessionToken()?.slice(0, 32) || getTelegramInitData().slice(0, 32);
-  const cacheKey = `${endpoint}::${getDevUserId() || ''}::${authCacheIdentity}`;
+  const authCacheIdentity = options.skipAuthentication ? 'public' : getSessionToken()?.slice(0, 32) || getTelegramInitData().slice(0, 32);
+  const cacheKey = `${endpoint}::${options.skipAuthentication ? '' : getDevUserId() || ''}::${authCacheIdentity}`;
 
   // 1. Check in-memory cache for GET
   if (isGet && !options.skipCache && cacheTtl > 0) {
@@ -227,13 +228,13 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
           ...(options.headers as Record<string, string> || {}),
         };
 
-        const sessionToken = getSessionToken();
-        const tgInitData = getTelegramInitData();
+        const sessionToken = options.skipAuthentication ? null : getSessionToken();
+        const tgInitData = options.skipAuthentication ? '' : getTelegramInitData();
         if (sessionToken) {
           headers.Authorization = `Bearer ${sessionToken}`;
         } else if (tgInitData) {
           headers['x-telegram-init-data'] = tgInitData;
-        } else {
+        } else if (!options.skipAuthentication) {
           const devId = getDevUserId();
           if (devId) {
             headers['x-dev-user-id'] = devId;
@@ -332,6 +333,8 @@ export const api = {
     return request('/api/auth/telegram', {
       method: 'POST',
       body: JSON.stringify({ initData }),
+      // This route validates its body. An initData header causes a duplicate user lookup.
+      skipAuthentication: true,
     });
   },
 
@@ -340,11 +343,12 @@ export const api = {
     return request('/api/auth/dev', {
       method: 'POST',
       body: JSON.stringify({ devUserId }),
+      skipAuthentication: true,
     });
   },
 
   async getDevProfiles(): Promise<{ profiles: Array<{ id: string; username: string; firstName: string; isAdmin: boolean }> }> {
-    return request('/api/auth/dev-profiles', { cacheTtlMs: 60000 });
+    return request('/api/auth/dev-profiles', { cacheTtlMs: 60000, retries: 0, skipAuthentication: true });
   },
 
   async checkTelegramMembership(): Promise<{ isMember: boolean; status?: string; error?: string; cached?: boolean }> {
@@ -406,7 +410,7 @@ export const api = {
 
   // Seasons & Leagues (Catalog Data - Static TTL 30 minutes to eliminate repetitive reads)
   async getSeasons(): Promise<{ seasons: Season[] }> {
-    return request('/api/seasons', { cacheTtlMs: 1800000 });
+    return request('/api/seasons', { cacheTtlMs: 1800000, skipAuthentication: true });
   },
 
   async getLeagues(): Promise<{ leagues: League[] }> {

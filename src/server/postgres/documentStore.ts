@@ -33,7 +33,11 @@ export function runtimeRpc(): RuntimeRpc {
     const started = Date.now();
     const target = body.p_ids ? 'durable_read_snapshots' : body.p_operations?.map((op: any) => op.path.split('/').slice(0,-1).join('/')).filter((value: string, index: number, values: string[]) => values.indexOf(value) === index).join(',') || body.p_query?.collection || body.p_query?.path?.split('/').slice(0,-1).join('/') || 'commit';
     try {
-    const response=await fetch(`${url.replace(/\/$/,'')}/rest/v1/rpc/${name}`,{
+    // Generation mismatch is an application CAS conflict. Returning it as SQL
+    // 40001 caused the HTTP database layer to repeatedly retry the same stale
+    // generation instead of letting this client re-read and retry the callback.
+    const endpoint = name === 'efl_runtime_commit' ? 'efl_runtime_commit_safe' : name;
+    const response=await fetch(`${url.replace(/\/$/,'')}/rest/v1/rpc/${endpoint}`,{
       method:'POST',headers:migrationHeaders(key),body:JSON.stringify(body),signal:AbortSignal.timeout(15000),
     });
     if(!response.ok) {
@@ -44,10 +48,11 @@ export function runtimeRpc(): RuntimeRpc {
       throw Object.assign(new Error(code),{code:error.message==='DOCUMENT_NOT_FOUND'?5:error.message==='DOCUMENT_ALREADY_EXISTS'?6:undefined});
     }
     const result = await response.json();
+    if (result?.conflict === true) throw conflict();
     if (Date.now()-started > 2000) console.warn('[POSTGRES_RPC_SLOW]', {name,target,ms:Date.now()-started});
     return result;
     } catch (error: any) {
-      console.error('[POSTGRES_RPC_FAILED]', {name,target,ms:Date.now()-started,message:error?.message});
+      if (error?.code !== 10) console.error('[POSTGRES_RPC_FAILED]', {name,target,ms:Date.now()-started,message:error?.message});
       throw error;
     }
   };

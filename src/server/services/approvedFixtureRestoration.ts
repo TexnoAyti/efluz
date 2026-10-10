@@ -1,4 +1,5 @@
 import { getFirestoreDb } from '../firebase/admin';
+import { createHash } from 'node:crypto';
 import { COLLECTIONS } from '../firebase/collections';
 import { upsertFixtureToSqlite } from '../db';
 import { Fixture } from '../../types';
@@ -16,6 +17,25 @@ const fixtureId = correction.retainedFixtureId;
 const checkpointKey = `approved-restoration:${RESTORATION_ID}`;
 
 async function publishFixture(key: string, fixture: Fixture): Promise<void> {
+  if (process.env.DATABASE_PROVIDER === 'supabase') {
+    const db = getFirestoreDb();
+    const ref = (cacheKey: string) => db.collection('durable_read_snapshots').doc(createHash('sha256').update(cacheKey).digest('hex'));
+    const fresh = ref(getFreshKey(key)), lkg = ref(getLkgKey(key));
+    await db.runTransaction(async tx => {
+      const last = (await tx.get(lkg)).data() || (await tx.get(fresh)).data();
+      const snapshot = last?.snapshotJson ? JSON.parse(last.snapshotJson) : last?.snapshot;
+      if (!Array.isArray(snapshot?.data)) throw new Error(`RESTORATION_SNAPSHOT_MISSING: ${key}`);
+      const newer = snapshot.data.find((row: Fixture) => row.id === fixture.id && String(row.updatedAt) > String(fixture.updatedAt));
+      if (newer) return;
+      const data = snapshot.data.filter((row: Fixture) => row.id !== fixture.id).concat(fixture);
+      const snapshotJson = JSON.stringify({ ...snapshot, data, generatedAt: new Date().toISOString(), sourceVersion: RESTORATION_ID, actualCount: data.length, expectedCount: data.length });
+      tx.set(fresh, { snapshotJson, expiresAt: Date.now() + 86400000 });
+      tx.set(lkg, { snapshotJson, expiresAt: null });
+      tx.delete(ref(getDirtyKey(key)));
+    });
+    clearProcessMemoryCache();
+    return;
+  }
   const client = getUpstashClient();
   if (client) {
     const accepted = await client.eval(`

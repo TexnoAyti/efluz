@@ -1,3 +1,4 @@
+import { getRuntimeStateStore } from '../readModel/runtimeStateStore';
 import { withSeasonQualificationPolicy } from '../../lib/seasonQualificationPolicy';
 import { getFirestoreDb } from '../firebase/admin';
 import {
@@ -20,7 +21,6 @@ import {
   redisGetLkg,
   invalidateDataset,
   readThroughReadModel,
-  getUpstashClient,
   ReadModelKeys,
   SCHEMA_VERSION,
 } from '../readModel/readModelStore';
@@ -90,7 +90,7 @@ export interface EuropeanStandingsRow {
 }
 
 // ----------------------------------------------------
-// REDIS PREVIEW TOKEN STORE (15-Minute TTL)
+// DURABLE PREVIEW TOKEN STORE (15-Minute TTL)
 // ----------------------------------------------------
 const PREVIEW_TOKEN_REDIS_PREFIX = 'qualification:preview:';
 const PREVIEW_TOKEN_TTL_SECONDS = 900; // 15 minutes
@@ -113,35 +113,37 @@ export async function saveQualificationPreviewToken(
     token,
     expiresAt: Date.now() + PREVIEW_TOKEN_TTL_SECONDS * 1000,
   };
-  const client = getUpstashClient();
+  const client = getRuntimeStateStore();
   if (client) {
     try {
       await client.set(key, payload, { ex: PREVIEW_TOKEN_TTL_SECONDS });
     } catch (err: any) {
-      console.warn(`[QUALIFICATION] Failed to write preview token to Upstash Redis:`, err?.message || err);
+      console.warn(`[QUALIFICATION] Failed to write preview token:`, err?.message || err);
       throw new Error('QUALIFICATION_PREVIEW_STORAGE_UNAVAILABLE');
     }
   } else if (process.env.NODE_ENV === 'production' || process.env.VERCEL || process.env.K_SERVICE) {
     throw new Error('REDIS_REQUIRED_FOR_QUALIFICATION_PREVIEW');
   }
-  previewTokenCache.set(token, payload);
+  if (process.env.DATABASE_PROVIDER !== 'supabase') previewTokenCache.set(token, payload);
 }
 
 export async function getQualificationPreviewToken(
   token: string
 ): Promise<EuropeanQualificationPreview | null> {
   const key = `${PREVIEW_TOKEN_REDIS_PREFIX}${token}`;
-  const client = getUpstashClient();
+  const client = getRuntimeStateStore();
   if (client) {
     try {
       const data = await client.get<any>(key);
-      if (data && data.preview) {
+      if (data && data.preview && data.expiresAt > Date.now()) {
         return data.preview;
       }
     } catch (err: any) {
-      console.warn(`[QUALIFICATION] Failed to read preview token from Upstash Redis:`, err?.message || err);
+      console.warn(`[QUALIFICATION] Failed to read preview token:`, err?.message || err);
+      if (process.env.DATABASE_PROVIDER === 'supabase') throw new Error('QUALIFICATION_PREVIEW_STORAGE_UNAVAILABLE');
     }
   }
+  if (process.env.DATABASE_PROVIDER === 'supabase') return null;
   const mem = previewTokenCache.get(token);
   if (mem && Date.now() <= mem.expiresAt) {
     return mem.preview;
@@ -152,11 +154,11 @@ export async function getQualificationPreviewToken(
 export async function deleteQualificationPreviewToken(token: string): Promise<void> {
   const key = `${PREVIEW_TOKEN_REDIS_PREFIX}${token}`;
   previewTokenCache.delete(token);
-  const client = getUpstashClient();
+  const client = getRuntimeStateStore();
   if (client) {
     try {
       await client.del(key);
-    } catch {}
+    } catch (error) { if (process.env.DATABASE_PROVIDER === 'supabase') throw error; }
   }
 }
 

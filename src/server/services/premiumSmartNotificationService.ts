@@ -1,5 +1,6 @@
+import { getRuntimeStateStore } from '../readModel/runtimeStateStore';
 import { getFirestoreDb } from '../firebase/admin';
-import { getUpstashClient, KEY_PREFIX } from '../readModel/readModelStore';
+import { KEY_PREFIX } from '../readModel/readModelStore';
 import { sendTelegramMessage } from './telegramBotService';
 import {
   PREMIUM_DEFAULT_SEASON_ID,
@@ -45,7 +46,7 @@ export async function getPremiumSmartAlertPreferences(
   userId: string,
   seasonId = PREMIUM_DEFAULT_SEASON_ID
 ): Promise<PremiumSmartAlertPreferences> {
-  const client = getUpstashClient();
+  const client = getRuntimeStateStore();
   if (!client) return defaultPremiumSmartAlertPreferences(userId, seasonId);
   try {
     const stored = await client.get<PremiumSmartAlertPreferences>(preferencesKey(userId, seasonId));
@@ -57,6 +58,7 @@ export async function getPremiumSmartAlertPreferences(
       seasonId,
     };
   } catch {
+    if (process.env.DATABASE_PROVIDER === 'supabase') throw new Error('PREMIUM_SMART_ALERTS_UNAVAILABLE');
     return defaultPremiumSmartAlertPreferences(userId, seasonId);
   }
 }
@@ -78,7 +80,7 @@ export async function updatePremiumSmartAlertPreferences(params: {
     updatedAt: new Date().toISOString(),
     updatedBy: params.updatedBy,
   };
-  const client = getUpstashClient();
+  const client = getRuntimeStateStore();
   if (!client) throw new Error('PREMIUM_SMART_ALERTS_REDIS_UNAVAILABLE');
   await client.set(preferencesKey(params.userId, seasonId), next);
   return next;

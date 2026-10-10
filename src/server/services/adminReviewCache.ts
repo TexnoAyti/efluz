@@ -28,6 +28,7 @@ export function invalidateSharedAdminData(): Promise<void> {
 }
 
 export const ADMIN_REVIEW_CACHE_PUBLISH_LUA = `
+-- EFL_ADMIN_CACHE_PUBLISH_V1
 if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end
 if (redis.call('GET', KEYS[4]) or '0') ~= ARGV[5] then return 0 end
 redis.call('SET', KEYS[2], ARGV[2], 'EX', ARGV[3] or 10)
@@ -35,7 +36,7 @@ redis.call('SET', KEYS[3], ARGV[2], 'EX', ARGV[4] or 300)
 redis.call('DEL', KEYS[1])
 return 1
 `;
-const unlock = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0`;
+const unlock = `-- EFL_STATE_RELEASE_V1\nif redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0`;
 type Result = { pendingFixtures: any[]; submissions: any[]; disputes: any[]; degraded: boolean; stale: boolean; source: string };
 type SharedResult = { degraded: boolean; stale: boolean; source: string };
 function decode<T extends SharedResult>(value: unknown): { result: T; savedAt: number } | null {

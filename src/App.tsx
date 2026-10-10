@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { lazy, useState, useEffect, useMemo } from 'react';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { UserProfileProvider } from './context/UserProfileContext';
@@ -6,23 +6,25 @@ import { I18nProvider, useI18n } from './i18n';
 import { AppTheme, Header } from './components/Header';
 import { Navigation, TabType } from './components/Navigation';
 import { MatchdayHomeView } from './components/MatchdayHomeView';
-import { NotificationsView } from './components/NotificationsView';
-import { AdminView } from './components/AdminView';
-import { AdminMatchOperationsV4Panel } from './components/admin/AdminMatchOperationsV4Panel';
-import { NotificationModal } from './components/NotificationModal';
-import { TelegramDiagnosticsModal } from './components/TelegramDiagnosticsModal';
-import { OfflineSyncBanner } from './components/OfflineSyncBanner';
-import { CompetitionHubView } from './components/CompetitionHubView';
-import { ClubHubView } from './components/ClubHubView';
-import { MatchOperationsV4Panel } from './components/MatchOperationsV4Panel';
-import { SeasonLifecyclePanel } from './components/SeasonLifecyclePanel';
-import { GlobalSearchModal } from './components/GlobalSearchModal';
+import { ContentBoundary } from './components/ContentBoundary';
 import { APP_BUILD_ID } from './context/AuthContext';
 import { Fixture, AdminPermissions } from './types';
 import { api } from './lib/api';
 import { isDesignPreview } from './designPreview';
 import { EFL_2_DESIGN_ENABLED, WELCOME_STORAGE_VERSION } from './releaseDesign';
 import { Loader2, CheckCircle2, AlertCircle, Info } from 'lucide-react';
+
+const NotificationsView = lazy(() => import('./components/NotificationsView').then(module => ({ default: module.NotificationsView })));
+const AdminView = lazy(() => import('./components/AdminView').then(module => ({ default: module.AdminView })));
+const AdminMatchOperationsV4Panel = lazy(() => import('./components/admin/AdminMatchOperationsV4Panel').then(module => ({ default: module.AdminMatchOperationsV4Panel })));
+const NotificationModal = lazy(() => import('./components/NotificationModal').then(module => ({ default: module.NotificationModal })));
+const TelegramDiagnosticsModal = lazy(() => import('./components/TelegramDiagnosticsModal').then(module => ({ default: module.TelegramDiagnosticsModal })));
+const OfflineSyncBanner = lazy(() => import('./components/OfflineSyncBanner').then(module => ({ default: module.OfflineSyncBanner })));
+const CompetitionHubView = lazy(() => import('./components/CompetitionHubView').then(module => ({ default: module.CompetitionHubView })));
+const ClubHubView = lazy(() => import('./components/ClubHubView').then(module => ({ default: module.ClubHubView })));
+const MatchOperationsV4Panel = lazy(() => import('./components/MatchOperationsV4Panel').then(module => ({ default: module.MatchOperationsV4Panel })));
+const SeasonLifecyclePanel = lazy(() => import('./components/SeasonLifecyclePanel').then(module => ({ default: module.SeasonLifecyclePanel })));
+const GlobalSearchModal = lazy(() => import('./components/GlobalSearchModal').then(module => ({ default: module.GlobalSearchModal })));
 
 function getInitialTab(): TabType {
   if (typeof window !== 'undefined') {
@@ -179,9 +181,9 @@ const AppContent: React.FC = () => {
         onOpenSearch={() => setIsSearchOpen(true)}
       />
       <Navigation activeTab={currentTab} onTabChange={setActiveTab} openDisputesCount={openDisputesCount} />
-      {!isDesignPreview && canUseGlobalAdminTools && <OfflineSyncBanner />}
+      {!isDesignPreview && canUseGlobalAdminTools && <ContentBoundary><OfflineSyncBanner /></ContentBoundary>}
       <main data-preview-page={EFL_2_DESIGN_ENABLED ? currentTab : undefined} className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-4 md:px-6 py-4 sm:py-6 min-w-0">
-          <>
+          <ContentBoundary key={currentTab}>
             {currentTab === 'admin' && canUseGlobalAdminTools && <div className="mb-5"><AdminMatchOperationsV4Panel /></div>}
 
             {/* HOME: Active Club Broadcast Hub with Hero Match Card */}
@@ -235,12 +237,12 @@ const AppContent: React.FC = () => {
 
             {currentTab === 'notifications' && <NotificationsView onNavigateTab={setActiveTab} />}
             {currentTab === 'admin' && user?.isAdmin && <AdminView />}
-          </>
+          </ContentBoundary>
       </main>
       <footer className="border-t border-slate-900 bg-slate-950/80 px-4 py-3 pb-24 lg:pb-3 text-[11px] text-slate-400"><div className="max-w-7xl mx-auto flex items-center justify-between gap-2"><div className="flex items-center gap-2"><span className="font-bold text-slate-300">EFL UZ</span><span className="text-slate-600">•</span><span>Official 2026/27 European Competitions</span></div><div className="flex items-center gap-3"><span className="font-mono text-emerald-400 font-semibold">{APP_BUILD_ID}</span></div></div></footer>
-      <NotificationModal isOpen={isNotificationOpen} onClose={() => setIsNotificationOpen(false)} />
-      {canUseGlobalAdminTools && <TelegramDiagnosticsModal isOpen={isDiagnosticsOpen} onClose={() => setIsDiagnosticsOpen(false)} currentRoute={activeTab} />}
-      <GlobalSearchModal
+      {isNotificationOpen && <ContentBoundary><NotificationModal isOpen onClose={() => setIsNotificationOpen(false)} /></ContentBoundary>}
+      {canUseGlobalAdminTools && isDiagnosticsOpen && <ContentBoundary><TelegramDiagnosticsModal isOpen onClose={() => setIsDiagnosticsOpen(false)} currentRoute={activeTab} /></ContentBoundary>}
+      {isSearchOpen && <ContentBoundary><GlobalSearchModal
         isOpen={isSearchOpen}
         onClose={() => setIsSearchOpen(false)}
         onNavigateTab={(tab) => {
@@ -251,7 +253,7 @@ const AppContent: React.FC = () => {
           setSelectedFixture(fix);
           setActiveTab('my-club');
         }}
-      />
+      /></ContentBoundary>}
     </div>
   );
 };

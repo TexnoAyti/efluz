@@ -112,6 +112,24 @@ async function main() {
     assert.equal(await client.get(`${model.KEY_PREFIX}:quota-read:mutation-race:fresh`), null, 'Pre-mutation reader cannot publish old snapshot');
     assert.deepEqual(await quotaCache.quotaCachedRead('mutation-race', 3600, async () => ['new']), ['new']);
     console.log('PASS actual Redis quota cache: 1000 visitors / one query, empty caching, user isolation, mutation refresh, other-worker lease and atomic stale-reader rejection');
+    await quotaCache.quotaCachedRead('quota-outage-invalidate', 900, async () => ['before']);
+    await client.set(`${model.KEY_PREFIX}:quota-read:quota-ttl-guard:fresh`, JSON.stringify({ data: ['expired'], cachedAt: Date.now() - 10000 }));
+    await quotaCache.quotaCachedRead('quota-ttl-guard', 2, async () => { throw Error('FRESH_REDIS_CACHE_MUST_HIT'); });
+    const quotaFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = async () => { throw Error('isolated quota Redis outage'); };
+      // The shared Redis client enters its bounded transport cooldown.
+      await model.redisGetExact('quota-outage-probe');
+      const noAuthority = async () => { throw Error('WARM_QUOTA_READ_MUST_NOT_QUERY_AUTHORITY'); };
+      assert.deepEqual(await quotaCache.quotaCachedRead('empty-reports', 900, noAuthority), []);
+      assert.deepEqual(await quotaCache.quotaCachedRead('user-A-reports', 900, noAuthority), ['private-A']);
+      assert.deepEqual(await quotaCache.quotaCachedRead('user-B-reports', 900, noAuthority), ['private-B']);
+      assert.deepEqual(await quotaCache.quotaCachedRead('mutation-race', 3600, noAuthority), ['new']);
+      await quotaCache.invalidateQuotaRead('quota-outage-invalidate');
+      await assert.rejects(quotaCache.quotaCachedRead('quota-outage-invalidate', 900, noAuthority), /WARM_QUOTA_READ/);
+      assert.deepEqual(await quotaCache.quotaCachedRead('quota-ttl-guard', 2, async () => ['refreshed']), ['refreshed']);
+      console.log('PASS quota Redis outage: warm empty/user-specific data reused, mutation invalidation and original snapshot age preserved');
+    } finally { globalThis.fetch = quotaFetch; model.resetUpstashClient(); }
     const community = await import('../services/telegramAiCommunitySources');
     const oldPost = { message_id: 900, date: Math.floor(Date.now() / 1000) - 60 * 86400, text: 'Kubok yarim final kanal e’loni', chat: { id: -1001, type: 'channel', username: 'efl_uz' } };
     const imported = await community.archiveCommunityMessage({ message_id: 123, date: Math.floor(Date.now() / 1000), text: oldPost.text,

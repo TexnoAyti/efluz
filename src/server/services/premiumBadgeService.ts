@@ -1,4 +1,5 @@
-import { getUpstashClient, KEY_PREFIX, getAdminClubsFromReadModel } from '../readModel/readModelStore';
+import { getRuntimeStateStore } from '../readModel/runtimeStateStore';
+import { KEY_PREFIX, getAdminClubsFromReadModel } from '../readModel/readModelStore';
 import { listPremiumEntitlements } from './premiumService';
 
 function badgeKey(seasonId: string) {
@@ -7,7 +8,7 @@ function badgeKey(seasonId: string) {
 
 /** Rebuild once on a cold cache, then invalidate only when an entitlement changes. */
 export async function getPremiumClubBadgeIds(seasonId: string): Promise<string[]> {
-  const client = getUpstashClient();
+  const client = getRuntimeStateStore();
   if (!client) return [];
   let users = await client.get<string[]>(badgeKey(seasonId));
   if (!Array.isArray(users)) {
@@ -22,5 +23,5 @@ export async function getPremiumClubBadgeIds(seasonId: string): Promise<string[]
 }
 
 export async function invalidatePremiumBadges(seasonId: string): Promise<void> {
-  await getUpstashClient()?.del(badgeKey(seasonId));
+  await getRuntimeStateStore()?.del(badgeKey(seasonId));
 }

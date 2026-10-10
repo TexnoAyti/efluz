@@ -62,6 +62,7 @@ jobs:
           bun run test:vercel
           bun run test:critical-safety
           bun run test:auth-quota
+          bun run test:client-startup
           bun run test:security-http
           bun run test:european-safety
           bun run test:domestic-cup:isolated
@@ -89,6 +90,12 @@ jobs:
           node scripts/run-isolated-test.mjs src/server/tests/notificationModerationRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/notificationBackupRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/smartNotificationRecoveryRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/postgresAdapterRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/postgresSnapshotsRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/postgresAdminColdStartTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/postgresAdminMutationTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/postgresRuntimeServicesRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/postgresSqlIntegrationTest.ts
           bun run test:telegram-ai
           node scripts/run-isolated-test.mjs src/server/tests/telegramAiKnowledgeRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/telegramAiCommunitySourcesRegressionTest.ts

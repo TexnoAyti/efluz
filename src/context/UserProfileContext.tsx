@@ -1,5 +1,7 @@
-import React, { createContext, useContext, useState } from 'react';
-import { UserProfileModal } from '../components/UserProfileModal';
+import React, { createContext, lazy, useContext, useState } from 'react';
+import { ContentBoundary } from '../components/ContentBoundary';
+
+const UserProfileModal = lazy(() => import('../components/UserProfileModal').then(module => ({ default: module.UserProfileModal })));
 
 interface UserProfileContextType {
   openUserProfile: (userId: string) => void;
@@ -32,11 +34,11 @@ export const UserProfileProvider: React.FC<UserProfileProviderProps> = ({
   return (
     <UserProfileContext.Provider value={{ openUserProfile, closeUserProfile }}>
       {children}
-      <UserProfileModal
+      {selectedUserId && <ContentBoundary><UserProfileModal
         userId={selectedUserId}
         onClose={closeUserProfile}
         onSelectClub={onSelectClub}
-      />
+      /></ContentBoundary>}
     </UserProfileContext.Provider>
   );
 };

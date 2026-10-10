@@ -1,7 +1,8 @@
+import { getRuntimeStateStore } from '../readModel/runtimeStateStore';
 import crypto from 'crypto';
 import { isIP } from 'node:net';
 import { NextFunction, Request, Response } from 'express';
-import { getUpstashClient, KEY_PREFIX } from '../readModel/readModelStore';
+import { KEY_PREFIX } from '../readModel/readModelStore';
 import { verifySessionToken } from '../auth/sessionToken';
 import { verifyTelegramWebAppData } from '../auth/telegramAuth';
 
@@ -45,10 +46,10 @@ export function rateLimit(name: string, limit: number, windowSeconds: number) {
     let count = 0;
 
     try {
-      const client = getUpstashClient();
+      const client = getRuntimeStateStore();
       if (client) {
         count = Number(await client.eval(
-          "local n=redis.call('INCR',KEYS[1]); if n==1 then redis.call('EXPIRE',KEYS[1],ARGV[1]) end; return n",
+          "-- EFL_RATE_LIMIT_V1\nlocal n=redis.call('INCR',KEYS[1]); if n==1 then redis.call('EXPIRE',KEYS[1],ARGV[1]) end; return n",
           [key],
           [windowSeconds]
         ));
