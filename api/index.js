@@ -31788,11 +31788,15 @@ async function spendTicketForTournament(params) {
   const isFallback = process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true" || process.env.NODE_ENV === "test";
   const now = (/* @__PURE__ */ new Date()).toISOString();
   if (isFallback) {
-    for (const tx2 of memoryTicketTransactions.values()) {
-      if (tx2.idempotencyKey === params.idempotencyKey) {
-        const acc = memoryTicketAccounts.get(params.userId);
-        return { success: true, transactionId: tx2.id, newBalance: acc ? acc.balance : 0 };
-      }
+    const spends = [...memoryTicketTransactions.values()].filter((tx2) => tx2.type === "SPEND");
+    const sameKey = spends.find((tx2) => tx2.idempotencyKey === params.idempotencyKey);
+    if (sameKey && (sameKey.userId !== params.userId || sameKey.tournamentId !== params.tournamentId)) {
+      throw Object.assign(new Error("IDEMPOTENCY_CONFLICT"), { statusCode: 409, code: "IDEMPOTENCY_CONFLICT" });
+    }
+    const previousSpend = spends.find((tx2) => tx2.userId === params.userId && tx2.tournamentId === params.tournamentId);
+    if (previousSpend) {
+      const acc = memoryTicketAccounts.get(params.userId);
+      return { success: true, transactionId: previousSpend.id, newBalance: acc ? acc.balance : 0 };
     }
     const current = memoryTicketAccounts.get(params.userId);
     if (!current || current.balance < 1) {
@@ -31819,52 +31823,58 @@ async function spendTicketForTournament(params) {
     return { success: true, transactionId: txId, newBalance: current.balance };
   }
   const db = getFirestoreDb();
+  return db.runTransaction((transaction) => spendTicketInTransaction(params, transaction));
+}
+async function spendTicketInTransaction(params, transaction) {
+  const db = getFirestoreDb();
+  const now = (/* @__PURE__ */ new Date()).toISOString();
   const userRef = db.collection("user_tickets").doc(params.userId);
   const dedupeRef = db.collection("ticket_transactions_idempotency").doc(params.idempotencyKey);
-  const result = await db.runTransaction(async (transaction) => {
-    const dedupeDoc = await transaction.get(dedupeRef);
-    if (dedupeDoc.exists) {
-      const data = dedupeDoc.data();
-      const userDoc2 = await transaction.get(userRef);
-      const balance = userDoc2.exists ? userDoc2.data().balance : 0;
-      return { success: true, transactionId: data?.transactionId, newBalance: balance };
+  const dedupeDoc = await transaction.get(dedupeRef);
+  if (dedupeDoc.exists) {
+    const data = dedupeDoc.data();
+    const savedTransaction = data?.userId ? data : (await transaction.get(db.collection("ticket_transactions").doc(data.transactionId))).data();
+    if (data?.tournamentId !== params.tournamentId || savedTransaction?.userId !== params.userId) {
+      throw Object.assign(new Error("IDEMPOTENCY_CONFLICT"), { statusCode: 409, code: "IDEMPOTENCY_CONFLICT" });
     }
-    const userDoc = await transaction.get(userRef);
-    if (!userDoc.exists) {
-      throw Object.assign(new Error("Chipta hisobi topilmadi. Chipta olish uchun @texnoadmin bilan bog\u2018laning."), {
-        statusCode: 402,
-        code: "INSUFFICIENT_TICKETS"
-      });
-    }
-    const account = userDoc.data();
-    if (account.balance < 1) {
-      throw Object.assign(new Error("Sizda yetarli turnir chiptasi (ticket) mavjud emas. Chipta olish uchun @texnoadmin bilan bog\u2018laning."), {
-        statusCode: 402,
-        code: "INSUFFICIENT_TICKETS"
-      });
-    }
-    const nextBalance = account.balance - 1;
-    const nextTotalSpent = (account.totalSpent || 0) + 1;
-    const txId = `tx_spend_${params.tournamentId}_${Date.now()}`;
-    transaction.update(userRef, {
-      balance: nextBalance,
-      totalSpent: nextTotalSpent,
-      updatedAt: now
+    const userDoc2 = await transaction.get(userRef);
+    const balance = userDoc2.exists ? userDoc2.data().balance : 0;
+    return { success: true, transactionId: data.transactionId, newBalance: balance };
+  }
+  const userDoc = await transaction.get(userRef);
+  if (!userDoc.exists) {
+    throw Object.assign(new Error("Chipta hisobi topilmadi. Chipta olish uchun @texnoadmin bilan bog\u2018laning."), {
+      statusCode: 402,
+      code: "INSUFFICIENT_TICKETS"
     });
-    const txData = {
-      id: txId,
-      userId: params.userId,
-      type: "SPEND",
-      amount: 1,
-      tournamentId: params.tournamentId,
-      idempotencyKey: params.idempotencyKey,
-      createdAt: now
-    };
-    transaction.set(db.collection("ticket_transactions").doc(txId), txData);
-    transaction.set(dedupeRef, { transactionId: txId, tournamentId: params.tournamentId, createdAt: now });
-    return { success: true, transactionId: txId, newBalance: nextBalance };
+  }
+  const account = userDoc.data();
+  if (account.balance < 1) {
+    throw Object.assign(new Error("Sizda yetarli turnir chiptasi (ticket) mavjud emas. Chipta olish uchun @texnoadmin bilan bog\u2018laning."), {
+      statusCode: 402,
+      code: "INSUFFICIENT_TICKETS"
+    });
+  }
+  const nextBalance = account.balance - 1;
+  const nextTotalSpent = (account.totalSpent || 0) + 1;
+  const txId = `tx_spend_${params.tournamentId}_${Date.now()}`;
+  transaction.update(userRef, {
+    balance: nextBalance,
+    totalSpent: nextTotalSpent,
+    updatedAt: now
   });
-  return result;
+  const txData = {
+    id: txId,
+    userId: params.userId,
+    type: "SPEND",
+    amount: 1,
+    tournamentId: params.tournamentId,
+    idempotencyKey: params.idempotencyKey,
+    createdAt: now
+  };
+  transaction.set(db.collection("ticket_transactions").doc(txId), txData);
+  transaction.set(dedupeRef, { transactionId: txId, userId: params.userId, tournamentId: params.tournamentId, createdAt: now });
+  return { success: true, transactionId: txId, newBalance: nextBalance };
 }
 async function refundSpentTicket(params) {
   if (!isPrimaryOwner2(params.adminTelegramId)) {
@@ -32414,7 +32424,33 @@ async function createTournamentDraft(params) {
 }
 async function publishTournament(params) {
   const isFallback = process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true" || process.env.NODE_ENV === "test";
-  const tournament = isFallback ? memoryTournaments.get(params.tournamentId) : (await getFirestoreDb().collection("custom_tournaments").doc(params.tournamentId).get()).data();
+  if (!isFallback) {
+    const db = getFirestoreDb();
+    const tournamentRef = db.collection("custom_tournaments").doc(params.tournamentId);
+    return db.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(tournamentRef);
+      const tournament2 = snapshot.data();
+      if (!tournament2) throw Object.assign(new Error("Turnir topilmadi."), { statusCode: 404, code: "NOT_FOUND" });
+      if (tournament2.organizerUserId !== params.userId) {
+        throw Object.assign(new Error("Faqat tashkilotchi turnirni e\u2018lon qila oladi."), { statusCode: 403, code: "UNAUTHORIZED" });
+      }
+      if (tournament2.status !== "DRAFT") return tournament2;
+      const spend = await spendTicketInTransaction(params, transaction);
+      const published = {
+        ...tournament2,
+        status: "REGISTRATION_OPEN",
+        ticketSpentTransactionId: spend.transactionId,
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      transaction.update(tournamentRef, {
+        status: published.status,
+        ticketSpentTransactionId: published.ticketSpentTransactionId,
+        updatedAt: published.updatedAt
+      });
+      return published;
+    });
+  }
+  const tournament = memoryTournaments.get(params.tournamentId);
   if (!tournament) {
     throw Object.assign(new Error("Turnir topilmadi."), { statusCode: 404, code: "NOT_FOUND" });
   }
@@ -32436,17 +32472,8 @@ async function publishTournament(params) {
   tournament.status = "REGISTRATION_OPEN";
   tournament.ticketSpentTransactionId = spendResult.transactionId;
   tournament.updatedAt = now;
-  if (isFallback) {
-    memoryTournaments.set(params.tournamentId, tournament);
-    return { ...tournament };
-  }
-  const db = getFirestoreDb();
-  await db.collection("custom_tournaments").doc(params.tournamentId).update({
-    status: "REGISTRATION_OPEN",
-    ticketSpentTransactionId: spendResult.transactionId,
-    updatedAt: now
-  });
-  return tournament;
+  memoryTournaments.set(params.tournamentId, tournament);
+  return { ...tournament };
 }
 async function claimTournamentClub(params) {
   const isFallback = process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true" || process.env.NODE_ENV === "test";

@@ -96,6 +96,7 @@ jobs:
           node scripts/run-isolated-test.mjs src/server/tests/postgresAdminMutationTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/postgresRuntimeServicesRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/postgresSqlIntegrationTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/ticketRecipientRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/legacyMembershipRepairRegressionTest.ts
           bun run test:telegram-ai
           node scripts/run-isolated-test.mjs src/server/tests/telegramAiKnowledgeRegressionTest.ts

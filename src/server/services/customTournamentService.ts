@@ -14,7 +14,7 @@ import {
   CustomTournamentStandingsRow,
   CustomTournamentAuditLog,
 } from '../../types/customTournament';
-import { spendTicketForTournament } from './customTournamentTicketService';
+import { spendTicketForTournament, spendTicketInTransaction } from './customTournamentTicketService';
 import {
   generateRoundRobinFixtures,
   generatePlayoffBracketFixtures,
@@ -114,9 +114,28 @@ export async function publishTournament(params: {
   idempotencyKey: string;
 }): Promise<CustomTournament> {
   const isFallback = process.env.FIREBASE_FORCE_LOCAL_FALLBACK === 'true' || process.env.NODE_ENV === 'test';
-  const tournament = isFallback
-    ? memoryTournaments.get(params.tournamentId)
-    : ((await getFirestoreDb().collection('custom_tournaments').doc(params.tournamentId).get()).data() as CustomTournament);
+  if (!isFallback) {
+    const db = getFirestoreDb();
+    const tournamentRef = db.collection('custom_tournaments').doc(params.tournamentId);
+    return db.runTransaction(async transaction => {
+      const snapshot = await transaction.get(tournamentRef);
+      const tournament = snapshot.data() as CustomTournament | undefined;
+      if (!tournament) throw Object.assign(new Error('Turnir topilmadi.'), { statusCode: 404, code: 'NOT_FOUND' });
+      if (tournament.organizerUserId !== params.userId) {
+        throw Object.assign(new Error('Faqat tashkilotchi turnirni e‘lon qila oladi.'), { statusCode: 403, code: 'UNAUTHORIZED' });
+      }
+      if (tournament.status !== 'DRAFT') return tournament;
+      const spend = await spendTicketInTransaction(params, transaction);
+      const published: CustomTournament = {
+        ...tournament, status: 'REGISTRATION_OPEN', ticketSpentTransactionId: spend.transactionId, updatedAt: new Date().toISOString(),
+      };
+      transaction.update(tournamentRef, {
+        status: published.status, ticketSpentTransactionId: published.ticketSpentTransactionId, updatedAt: published.updatedAt,
+      });
+      return published;
+    });
+  }
+  const tournament = memoryTournaments.get(params.tournamentId);
 
   if (!tournament) {
     throw Object.assign(new Error('Turnir topilmadi.'), { statusCode: 404, code: 'NOT_FOUND' });
@@ -145,19 +164,8 @@ export async function publishTournament(params: {
   tournament.ticketSpentTransactionId = spendResult.transactionId;
   tournament.updatedAt = now;
 
-  if (isFallback) {
-    memoryTournaments.set(params.tournamentId, tournament);
-    return { ...tournament };
-  }
-
-  const db = getFirestoreDb();
-  await db.collection('custom_tournaments').doc(params.tournamentId).update({
-    status: 'REGISTRATION_OPEN',
-    ticketSpentTransactionId: spendResult.transactionId,
-    updatedAt: now,
-  });
-
-  return tournament;
+  memoryTournaments.set(params.tournamentId, tournament);
+  return { ...tournament };
 }
 
 /**

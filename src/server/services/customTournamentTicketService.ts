@@ -206,12 +206,15 @@ export async function spendTicketForTournament(params: {
   const now = new Date().toISOString();
 
   if (isFallback) {
-    // Check if transaction with this idempotencyKey already exists
-    for (const tx of memoryTicketTransactions.values()) {
-      if (tx.idempotencyKey === params.idempotencyKey) {
-        const acc = memoryTicketAccounts.get(params.userId);
-        return { success: true, transactionId: tx.id, newBalance: acc ? acc.balance : 0 };
-      }
+    const spends = [...memoryTicketTransactions.values()].filter(tx => tx.type === 'SPEND');
+    const sameKey = spends.find(tx => tx.idempotencyKey === params.idempotencyKey);
+    if (sameKey && (sameKey.userId !== params.userId || sameKey.tournamentId !== params.tournamentId)) {
+      throw Object.assign(new Error('IDEMPOTENCY_CONFLICT'), { statusCode: 409, code: 'IDEMPOTENCY_CONFLICT' });
+    }
+    const previousSpend = spends.find(tx => tx.userId === params.userId && tx.tournamentId === params.tournamentId);
+    if (previousSpend) {
+      const acc = memoryTicketAccounts.get(params.userId);
+      return { success: true, transactionId: previousSpend.id, newBalance: acc ? acc.balance : 0 };
     }
 
     const current = memoryTicketAccounts.get(params.userId);
@@ -243,62 +246,73 @@ export async function spendTicketForTournament(params: {
   }
 
   const db = getFirestoreDb();
+  return db.runTransaction(transaction => spendTicketInTransaction(params, transaction));
+}
+
+/** Shared debit used inside the publication transaction; never commits on its own. */
+export async function spendTicketInTransaction(params: {
+  userId: string;
+  tournamentId: string;
+  idempotencyKey: string;
+}, transaction: any): Promise<{ success: boolean; transactionId: string; newBalance: number }> {
+  const db = getFirestoreDb();
+  const now = new Date().toISOString();
   const userRef = db.collection('user_tickets').doc(params.userId);
   const dedupeRef = db.collection('ticket_transactions_idempotency').doc(params.idempotencyKey);
-
-  const result = await db.runTransaction(async (transaction) => {
-    // 1. Check idempotency record
-    const dedupeDoc = await transaction.get(dedupeRef);
-    if (dedupeDoc.exists) {
-      const data = dedupeDoc.data();
-      const userDoc = await transaction.get(userRef);
-      const balance = userDoc.exists ? (userDoc.data() as UserTicketAccount).balance : 0;
-      return { success: true, transactionId: data?.transactionId, newBalance: balance };
+  // 1. Check idempotency record
+  const dedupeDoc = await transaction.get(dedupeRef);
+  if (dedupeDoc.exists) {
+    const data = dedupeDoc.data();
+    const savedTransaction = data?.userId ? data :
+      (await transaction.get(db.collection('ticket_transactions').doc(data!.transactionId))).data();
+    if (data?.tournamentId !== params.tournamentId || savedTransaction?.userId !== params.userId) {
+      throw Object.assign(new Error('IDEMPOTENCY_CONFLICT'), { statusCode: 409, code: 'IDEMPOTENCY_CONFLICT' });
     }
-
-    // 2. Check user balance
     const userDoc = await transaction.get(userRef);
-    if (!userDoc.exists) {
-      throw Object.assign(new Error('Chipta hisobi topilmadi. Chipta olish uchun @texnoadmin bilan bog‘laning.'), {
-        statusCode: 402,
-        code: 'INSUFFICIENT_TICKETS',
-      });
-    }
+    const balance = userDoc.exists ? (userDoc.data() as UserTicketAccount).balance : 0;
+    return { success: true, transactionId: data!.transactionId, newBalance: balance };
+  }
 
-    const account = userDoc.data() as UserTicketAccount;
-    if (account.balance < 1) {
-      throw Object.assign(new Error('Sizda yetarli turnir chiptasi (ticket) mavjud emas. Chipta olish uchun @texnoadmin bilan bog‘laning.'), {
-        statusCode: 402,
-        code: 'INSUFFICIENT_TICKETS',
-      });
-    }
-
-    const nextBalance = account.balance - 1;
-    const nextTotalSpent = (account.totalSpent || 0) + 1;
-    const txId = `tx_spend_${params.tournamentId}_${Date.now()}`;
-
-    transaction.update(userRef, {
-      balance: nextBalance,
-      totalSpent: nextTotalSpent,
-      updatedAt: now,
+  // 2. Check user balance
+  const userDoc = await transaction.get(userRef);
+  if (!userDoc.exists) {
+    throw Object.assign(new Error('Chipta hisobi topilmadi. Chipta olish uchun @texnoadmin bilan bog‘laning.'), {
+      statusCode: 402,
+      code: 'INSUFFICIENT_TICKETS',
     });
+  }
 
-    const txData: TicketTransaction = {
-      id: txId,
-      userId: params.userId,
-      type: 'SPEND',
-      amount: 1,
-      tournamentId: params.tournamentId,
-      idempotencyKey: params.idempotencyKey,
-      createdAt: now,
-    };
-    transaction.set(db.collection('ticket_transactions').doc(txId), txData);
-    transaction.set(dedupeRef, { transactionId: txId, tournamentId: params.tournamentId, createdAt: now });
+  const account = userDoc.data() as UserTicketAccount;
+  if (account.balance < 1) {
+    throw Object.assign(new Error('Sizda yetarli turnir chiptasi (ticket) mavjud emas. Chipta olish uchun @texnoadmin bilan bog‘laning.'), {
+      statusCode: 402,
+      code: 'INSUFFICIENT_TICKETS',
+    });
+  }
 
-    return { success: true, transactionId: txId, newBalance: nextBalance };
+  const nextBalance = account.balance - 1;
+  const nextTotalSpent = (account.totalSpent || 0) + 1;
+  const txId = `tx_spend_${params.tournamentId}_${Date.now()}`;
+
+  transaction.update(userRef, {
+    balance: nextBalance,
+    totalSpent: nextTotalSpent,
+    updatedAt: now,
   });
 
-  return result;
+  const txData: TicketTransaction = {
+    id: txId,
+    userId: params.userId,
+    type: 'SPEND',
+    amount: 1,
+    tournamentId: params.tournamentId,
+    idempotencyKey: params.idempotencyKey,
+    createdAt: now,
+  };
+  transaction.set(db.collection('ticket_transactions').doc(txId), txData);
+  transaction.set(dedupeRef, { transactionId: txId, userId: params.userId, tournamentId: params.tournamentId, createdAt: now });
+
+  return { success: true, transactionId: txId, newBalance: nextBalance };
 }
 
 /**
