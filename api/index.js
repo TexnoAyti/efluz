@@ -19946,49 +19946,62 @@ import { randomUUID as randomUUID7 } from "node:crypto";
 async function quotaCachedRead(key4, ttlSeconds, load) {
   const current = pending.get(key4);
   if (current) return current;
+  const localVersion = versions.get(key4) || 0;
+  const remember = (snapshot) => {
+    if ((versions.get(key4) || 0) === localVersion) {
+      local2.delete(key4);
+      local2.set(key4, snapshot);
+      if (local2.size > LOCAL_CACHE_LIMIT) local2.delete(local2.keys().next().value);
+    }
+    return snapshot.data;
+  };
   const work = (async () => {
     const client = getUpstashClient();
     const [freshKey, lkgKey, versionKey, leaseKey] = keys(key4);
     if (!client) {
       const cached3 = local2.get(key4);
       if (cached3 && Date.now() - cached3.cachedAt < ttlSeconds * 1e3) return cached3.data;
-      const version = versions.get(key4) || 0;
+      local2.delete(key4);
       const data = await load();
-      if ((versions.get(key4) || 0) === version) local2.set(key4, { data, cachedAt: Date.now() });
+      remember({ data, cachedAt: Date.now() });
       return data;
     }
     const owner = randomUUID7();
     let owned = false;
     try {
       const fresh = await client.get(freshKey);
-      if (fresh && Object.hasOwn(fresh, "data")) return fresh.data;
+      if (fresh && Object.hasOwn(fresh, "data")) return remember(fresh);
       owned = Boolean(await client.set(leaseKey, owner, { nx: true, ex: 15 }));
       if (!owned) {
         const lkg = await client.get(lkgKey);
-        if (lkg && Object.hasOwn(lkg, "data")) return lkg.data;
+        if (lkg && Object.hasOwn(lkg, "data")) return remember(lkg);
         for (let attempt = 0; attempt < 12; attempt++) {
           await new Promise((resolve) => setTimeout(resolve, 150));
           const next = await client.get(freshKey);
-          if (next && Object.hasOwn(next, "data")) return next.data;
+          if (next && Object.hasOwn(next, "data")) return remember(next);
         }
         throw new Error("QUOTA_CACHE_REFRESH_IN_PROGRESS");
       }
       const recheck = await client.get(freshKey);
-      if (recheck && Object.hasOwn(recheck, "data")) return recheck.data;
+      if (recheck && Object.hasOwn(recheck, "data")) return remember(recheck);
       const version = String(await client.get(versionKey) ?? "0");
       const data = await load();
-      const snapshot = JSON.stringify({ data, cachedAt: Date.now() });
-      await client.eval(`
+      const cached3 = { data, cachedAt: Date.now() };
+      const snapshot = JSON.stringify(cached3);
+      const published = await client.eval(`
         if redis.call('GET', KEYS[4]) ~= ARGV[1] then return 0 end
         if (redis.call('GET', KEYS[3]) or '0') ~= ARGV[2] then return 0 end
         redis.call('SET', KEYS[1], ARGV[3], 'EX', ARGV[4])
         redis.call('SET', KEYS[2], ARGV[3])
         return 1
       `, [freshKey, lkgKey, versionKey, leaseKey], [owner, version, snapshot, ttlSeconds]);
+      if (Number(published) === 1) remember(cached3);
       return data;
     } catch (error) {
       const lkg = await client.get(lkgKey).catch(() => null);
-      if (lkg && Object.hasOwn(lkg, "data")) return lkg.data;
+      if (lkg && Object.hasOwn(lkg, "data")) return remember(lkg);
+      const cached3 = local2.get(key4);
+      if (cached3 && Date.now() - cached3.cachedAt < ttlSeconds * 1e3) return cached3.data;
       throw error;
     } finally {
       if (owned) await client.eval(`if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0`, [leaseKey], [owner]).catch(() => {
@@ -20011,11 +20024,12 @@ async function invalidateQuotaRead(key4) {
   const [freshKey, , versionKey] = keys(key4);
   await client.eval(`redis.call('INCR', KEYS[2]); redis.call('DEL', KEYS[1]); return 1`, [freshKey, versionKey], []);
 }
-var local2, pending, versions, keys;
+var local2, LOCAL_CACHE_LIMIT, pending, versions, keys;
 var init_quotaReadCache = __esm({
   "src/server/services/quotaReadCache.ts"() {
     init_readModelStore();
     local2 = /* @__PURE__ */ new Map();
+    LOCAL_CACHE_LIMIT = 2e3;
     pending = /* @__PURE__ */ new Map();
     versions = /* @__PURE__ */ new Map();
     keys = (key4) => ["fresh", "lkg", "version", "lease"].map((part) => `${KEY_PREFIX}:quota-read:${key4}:${part}`);
