@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(path.join(root, 'package.json'));
 const React = require('react');
-const { renderToStaticMarkup } = require('react-dom/server');
+const { renderToReadableStream } = require('react-dom/server');
 const views = ['MatchdayHomeView', 'CompetitionHubView', 'ClubHubView', 'NotificationsView', 'AdminView', 'AdminMatchOperationsV4Panel', 'NotificationModal', 'TelegramDiagnosticsModal', 'OfflineSyncBanner', 'GlobalSearchModal', 'MatchOperationsV4Panel', 'SeasonLifecyclePanel'];
 const result = await build({
   absWorkingDir: root, entryPoints: ['src/App.tsx'], bundle: true, write: false,
@@ -42,7 +42,7 @@ context.exports = context.module.exports;
 vm.createContext(context);
 vm.runInContext(result.outputFiles[0].text, context);
 const App = context.module.exports.default;
-function render({ id = 'player-1', admin = false, route = '/', completed = true, theme = 'dark', anonymous = false } = {}) {
+async function render({ id = 'player-1', admin = false, route = '/', completed = true, theme = 'dark', anonymous = false } = {}) {
   context.releaseAuth = { user: anonymous ? null : { id, username: 'testplayer', isAdmin: admin }, isLoading: false,
     authStatus: anonymous ? 'AUTH_ANONYMOUS' : 'AUTHENTICATED', unreadNotificationCount: 2,
     seasons: [], activeSeasonId: 'test-season', devProfiles: [], currentClub: { id: 'club-test', name: 'Test club' }, isDevMode: false };
@@ -50,14 +50,17 @@ function render({ id = 'player-1', admin = false, route = '/', completed = true,
   storage.set('efluz-theme-mode', theme);
   if (completed !== 'stored') storage.delete(`efluz-welcome-v2:${id}`);
   if (completed === true) storage.set(`efluz-welcome-v2:${id}`, 'done');
-  return renderToStaticMarkup(React.createElement(App));
+  // Lazy sections suspend during the first render; verify their completed output.
+  const stream = await renderToReadableStream(React.createElement(App));
+  await stream.allReady;
+  return new Response(stream).text();
 }
 for (const admin of [false, true]) {
   storage.set('efluz-welcome-v1:player-1', 'done');
-  const welcome = render({ admin, completed: false });
+  const welcome = await render({ admin, completed: false });
   assert.match(welcome, />Boshlash</, 'every role must see the version 2 welcome despite a version 1 completion');
   assert.doesNotMatch(welcome, /data-test-view="MatchdayHomeView"/);
-  const home = render({ admin });
+  const home = await render({ admin });
   assert.match(home, /data-test-view="MatchdayHomeView"/);
   assert.match(home, /efl-preview theme-dark dark/);
   assert.match(home, /id="btn-global-search"/);
@@ -65,19 +68,19 @@ for (const admin of [false, true]) {
   assert.match(home, /efl-bottom-glass/);
   assert.equal(home.includes('id="nav-tab-admin"'), admin);
 }
-assert.match(render({ theme: 'light' }), /efl-preview theme-light/);
+assert.match(await render({ theme: 'light' }), /efl-preview theme-light/);
 for (const route of ['/leagues', '/cups', '/champions-league', '/standings', '/season-hub'])
-  assert.match(render({ route }), /data-test-view="CompetitionHubView"/);
+  assert.match(await render({ route }), /data-test-view="CompetitionHubView"/);
 for (const route of ['/my-club', '/profile', '/my-matches']) {
-  const club = render({ route });
+  const club = await render({ route });
   assert.match(club, /data-test-view="ClubHubView"/);
   assert.match(club, /data-test-view="MatchOperationsV4Panel"/);
   assert.match(club, /data-test-view="SeasonLifecyclePanel"/);
 }
-assert.doesNotMatch(render(), /data-test-view="MatchOperationsV4Panel"/);
-assert.match(render({ route: '/notifications' }), /data-test-view="NotificationsView"/);
-assert.doesNotMatch(render({ route: '/admin' }), /data-test-view="AdminView"|data-test-view="AdminMatchOperationsV4Panel"|data-test-view="TelegramDiagnosticsModal"|data-test-view="OfflineSyncBanner"/);
-assert.match(render({ route: '/admin', admin: true }), /data-test-view="AdminView"/);
-assert.doesNotMatch(render({ id: 'player-2', completed: false }), /data-test-view="MatchdayHomeView"/);
-assert.doesNotMatch(render({ anonymous: true }), /efl-welcome|data-test-view="MatchdayHomeView"/);
+assert.doesNotMatch(await render(), /data-test-view="MatchOperationsV4Panel"/);
+assert.match(await render({ route: '/notifications' }), /data-test-view="NotificationsView"/);
+assert.doesNotMatch(await render({ route: '/admin' }), /data-test-view="AdminView"|data-test-view="AdminMatchOperationsV4Panel"|data-test-view="TelegramDiagnosticsModal"|data-test-view="OfflineSyncBanner"/);
+assert.match(await render({ route: '/admin', admin: true }), /data-test-view="AdminView"/);
+assert.doesNotMatch(await render({ id: 'player-2', completed: false }), /data-test-view="MatchdayHomeView"/);
+assert.doesNotMatch(await render({ anonymous: true }), /efl-welcome|data-test-view="MatchdayHomeView"/);
 console.log('PASS EFL 2.0: every role gets versioned welcome, public design/themes/navigation/routes; administrator routes remain restricted; anonymous auth remains intact.');

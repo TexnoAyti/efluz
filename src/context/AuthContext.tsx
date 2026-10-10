@@ -3,6 +3,7 @@ import { User, Club, Season, Notification } from '../types';
 import { api, getDevUserId, setDevUserId, getTelegramInitData, setTelegramInitData, setSessionToken } from '../lib/api';
 import { resolveActiveClub, saveActiveClub } from '../lib/activeClub';
 import { premiumApi } from '../lib/premiumApi';
+import { loadLoginBootstrap } from '../lib/loginBootstrap';
 import { isDesignPreview } from '../designPreview';
 
 function clubPreferenceStorage(): Storage | undefined {
@@ -287,153 +288,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
-        // 2. Load seasons metadata
+        if (tgCtx.initData) setTelegramInitData(tgCtx.initData);
         let targetSeasonId = 'season-2026-27';
-        try {
-          const seasonsRes = await api.getSeasons();
-          if (isMounted) {
-            setSeasons(seasonsRes.seasons);
-            if (seasonsRes.seasons.length > 0) {
-              const defaultSeason = seasonsRes.seasons.find((s) => s.status === 'registration' || s.status === 'active') || seasonsRes.seasons[0];
-              targetSeasonId = defaultSeason.id;
-              setActiveSeasonId(targetSeasonId);
-              setCurrentSeason(defaultSeason);
-            }
+        const result = await loadLoginBootstrap(api, tgCtx.initData, getDevUserId() || 'user-dev-a', seasons => {
+          if (!isMounted) return;
+          setSeasons(seasons);
+          const season = seasons.find(item => item.status === 'registration' || item.status === 'active') || seasons[0];
+          if (season) {
+            targetSeasonId = season.id;
+            setActiveSeasonId(season.id);
+            setCurrentSeason(season);
           }
-        } catch (sErr) {
-          console.error('Failed to load seasons:', sErr);
-        }
+        });
+        if (!isMounted) return;
 
-        // 3. Check if development sandbox profiles are enabled on backend
-        let devAvailable = false;
-        try {
-          const profRes = await api.getDevProfiles();
-          if (profRes.profiles && profRes.profiles.length > 0) {
-            if (isMounted) {
-              setDevProfiles(profRes.profiles);
-              setIsDevMode(true);
-            }
-            devAvailable = true;
-          }
-        } catch {
-          if (isMounted) {
-            setIsDevMode(false);
-          }
-          devAvailable = false;
-        }
+        setDevProfiles(result.profiles);
+        setIsDevMode(result.mode === 'dev');
 
-        // 4. Primary: Telegram WebApp Authentication
-        if (isTgInitDataPresent && tgCtx.initData) {
-          setTelegramInitData(tgCtx.initData);
-          try {
-            const authRes = await api.authenticateTelegram(tgCtx.initData);
-            if (isMounted) {
-              setSessionToken(authRes.token);
-              setTelegramInitData(null);
-              setUser(authRes.user);
-              setClubUnavailable(authRes.currentClubStatus === 'unavailable');
-              setCurrentClub(resolveActiveClub(authRes.ownedClubs || (authRes.currentClub ? [authRes.currentClub] : []), authRes.currentClub, authRes.user.id, targetSeasonId, clubPreferenceStorage()));
-              setOwnedClubs(authRes.ownedClubs || (authRes.currentClub ? [authRes.currentClub] : []));
-              if (authRes.stats) setUserStats(authRes.stats);
-              setAuthStatus('AUTHENTICATED');
-              setTelegramDiagnostics((prev) => ({
-                ...prev,
-                authStatus: 'AUTHENTICATED',
-                authHttpStatus: 200,
-                telegramId: authRes.user.telegramId,
-                username: authRes.user.username,
-                isAdmin: authRes.user.isAdmin,
-              }));
-              void refreshNotifications(false);
-            }
-          } catch (tErr: any) {
-            console.error('Telegram authentication failed:', tErr);
-            if (isMounted) {
-              const status = tErr.httpStatus || 401;
-              setAuthError(tErr.message || 'Telegram authentication failed');
-              setTelegramDiagnostics((prev) => ({
-                ...prev,
-                authStatus: 'AUTH_ERROR',
-                authHttpStatus: status,
-                authError: tErr.message || 'Telegram authentication failed',
-              }));
-
-              if (devAvailable) {
-                // Fallback to dev profile only if server explicitly allows dev auth
-                const devId = getDevUserId() || 'user-dev-a';
-                const authRes = await api.authenticateDev(devId);
-                setSessionToken(authRes.token);
-                setUser(authRes.user);
-                setClubUnavailable(authRes.currentClubStatus === 'unavailable');
-                setCurrentClub(resolveActiveClub(authRes.ownedClubs || (authRes.currentClub ? [authRes.currentClub] : []), authRes.currentClub, authRes.user.id, targetSeasonId, clubPreferenceStorage()));
-                setOwnedClubs(authRes.ownedClubs || (authRes.currentClub ? [authRes.currentClub] : []));
-                if (authRes.stats) setUserStats(authRes.stats);
-                setAuthStatus('AUTHENTICATED');
-                await refreshNotifications(false);
-              } else {
-                setAuthStatus('AUTH_ERROR');
-              }
-            }
+        const identity = result.identity;
+        if (identity) {
+          if ('token' in identity) {
+            setSessionToken(identity.token);
+            setTelegramInitData(null);
           }
-        } else if (devAvailable) {
-          // 5. Development sandbox mode (when opened outside Telegram during local dev)
-          const devId = getDevUserId() || 'user-dev-a';
-          setDevUserId(devId);
-          const authRes = await api.authenticateDev(devId);
-          if (isMounted) {
-            setSessionToken(authRes.token);
-            setUser(authRes.user);
-            setClubUnavailable(authRes.currentClubStatus === 'unavailable');
-            setCurrentClub(resolveActiveClub(authRes.ownedClubs || (authRes.currentClub ? [authRes.currentClub] : []), authRes.currentClub, authRes.user.id, targetSeasonId, clubPreferenceStorage()));
-            setOwnedClubs(authRes.ownedClubs || (authRes.currentClub ? [authRes.currentClub] : []));
-            if (authRes.stats) setUserStats(authRes.stats);
-            setAuthStatus('AUTHENTICATED');
-            setTelegramDiagnostics((prev) => ({
-              ...prev,
-              authStatus: 'AUTHENTICATED',
-              authHttpStatus: 200,
-              telegramId: authRes.user.telegramId,
-              username: authRes.user.username,
-              isAdmin: authRes.user.isAdmin,
-            }));
-            void refreshNotifications(false);
+          if (result.mode === 'dev') setDevUserId(getDevUserId() || 'user-dev-a');
+          setUser(identity.user);
+          setClubUnavailable(identity.currentClubStatus === 'unavailable');
+          if (identity.currentClubStatus !== 'unavailable') {
+            const clubs = identity.ownedClubs || (identity.currentClub ? [identity.currentClub] : []);
+            setOwnedClubs(clubs);
+            setCurrentClub(resolveActiveClub(clubs, identity.currentClub, identity.user.id, targetSeasonId, clubPreferenceStorage()));
           }
+          if (identity.stats) setUserStats(identity.stats);
+          setAuthStatus('AUTHENTICATED');
+          setTelegramDiagnostics(prev => ({
+            ...prev,
+            authStatus: 'AUTHENTICATED',
+            authHttpStatus: 200,
+            telegramId: identity.user.telegramId,
+            username: identity.user.username || null,
+            isAdmin: Boolean(identity.user.isAdmin),
+          }));
+          void refreshNotifications(false);
         } else {
-          // 6. Production web session outside Telegram
-          try {
-            const meRes = await api.getMe(targetSeasonId);
-            if (isMounted) {
-              setUser(meRes.user);
-              setClubUnavailable(meRes.currentClubStatus === 'unavailable');
-      if (meRes.currentClubStatus !== 'unavailable') {
-        const clubs = meRes.ownedClubs || (meRes.currentClub ? [meRes.currentClub] : []);
-        setOwnedClubs(clubs);
-        setCurrentClub(resolveActiveClub(clubs, meRes.currentClub, meRes.user.id, targetSeasonId, clubPreferenceStorage()));
-      }
-              setAuthStatus('AUTHENTICATED');
-              setTelegramDiagnostics((prev) => ({
-                ...prev,
-                authStatus: 'AUTHENTICATED',
-                authHttpStatus: 200,
-                telegramId: meRes.user?.telegramId || null,
-                username: meRes.user?.username || null,
-                isAdmin: Boolean(meRes.user?.isAdmin),
-              }));
-              void fetchUserData(targetSeasonId);
-            }
-          } catch {
-            if (isMounted) {
-              setUser(null);
-              setCurrentClub(null);
-              setOwnedClubs([]);
-              setAuthStatus('AUTH_ANONYMOUS');
-              setTelegramDiagnostics((prev) => ({
-                ...prev,
-                authStatus: 'AUTH_ANONYMOUS',
-                authHttpStatus: 401,
-              }));
-            }
-          }
+          setUser(null);
+          setCurrentClub(null);
+          setOwnedClubs([]);
+          setAuthStatus('AUTH_ANONYMOUS');
+          setTelegramDiagnostics(prev => ({ ...prev, authStatus: 'AUTH_ANONYMOUS', authHttpStatus: 401 }));
         }
       } catch (err: any) {
         console.error('Initialization error:', err);
@@ -444,6 +346,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             ...prev,
             authStatus: 'AUTH_ERROR',
             authError: err.message,
+            authHttpStatus: err.httpStatus || 401,
           }));
         }
       } finally {

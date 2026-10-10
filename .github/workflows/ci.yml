@@ -62,6 +62,7 @@ jobs:
           bun run test:vercel
           bun run test:critical-safety
           bun run test:auth-quota
+          bun run test:client-startup
           bun run test:security-http
           bun run test:european-safety
           bun run test:domestic-cup:isolated
