@@ -55,4 +55,34 @@ try {
   await assert.rejects(pg.exec(sql), /MEMBERSHIP_EVIDENCE_CHANGED/);
   assert.deepEqual(await snapshot(),rows); assert.deepEqual(await generation(),afterGeneration);
   console.log('PASS native PostgreSQL legacy repair: five exact archives, three releases, two quarantined results, current Arsenal preserved, changed evidence and repeat execution abort atomically');
+  const staleSql=await readFile('scripts/sql/repair-2026-10-10-stale-user-memberships.sql','utf8');
+  for(const [season,user,club,owner,date] of [
+    ['season-2026-27','user-5244022908','club-fulham','user-5505701796','2026-09-11T18:37:41.465Z'],
+    ['season-2026-27','user-5598192866','club-bournemouth','user-1683208173','2026-09-16T10:01:56.616Z'],
+    ['season-2026-27','user-5779196113','club-chelsea','user-5606917523','2026-09-29T11:07:33.832Z'],
+    ['season-2026-27','user-7573478198','club-crystal-palace','user-8574301555','2026-10-05T11:59:23.940Z'],
+    ['season-2026-27','user-cup-away','club-man-utd','user-2062473991','2026-09-05T15:59:57.152Z'],
+    ['season-2027-28','user-test-2','club-arsenal',null,'2026-09-17T15:33:22.384Z'],
+  ]) {
+    await put(`user_memberships/${season}_${user}`,{seasonId:season,userId:user,clubId:club,status:'active',claimedAt:'2026-08-01T00:00:00Z'});
+    for(const collection of ['club_occupancies','club_memberships']) await put(`${collection}/${season}_${club}`,{status:owner?'active':'released',userId:owner,updatedAt:date});
+    if(owner) await put(`user_memberships/${season}_${owner}`,{status:'active',clubId:club});
+  }
+  // Missing users may be quarantined only while they remain demonstrably synthetic.
+  await put('users/user-cup-away',{id:'user-cup-away'});
+  const beforeStale=await snapshot(), beforeStaleGeneration=await generation();
+  await assert.rejects(pg.exec(staleSql),/SYNTHETIC_USER_NOW_EXISTS/);
+  assert.deepEqual(await snapshot(),beforeStale); assert.deepEqual(await generation(),beforeStaleGeneration);
+  await pg.exec("delete from efl_runtime.documents where collection_path='users' and document_id='user-cup-away'");
+  await pg.exec(staleSql);
+  const staleRows:any[]=await snapshot();
+  const staleArchives=staleRows.filter(r=>r.collection_path==='legacy_recovery_archive' && r.data.sourcePath.startsWith('user_memberships/'));
+  assert.equal(staleArchives.length,6);
+  for(const archive of staleArchives) assert.deepEqual(archive.encoded.value.original,source.get(archive.data.sourcePath));
+  assert.equal(staleRows.filter(r=>r.collection_path==='user_memberships' && r.data.supersededAt).length,4);
+  assert.equal(staleRows.some(r=>r.collection_path==='user_memberships' && ['user-cup-away','user-test-2'].includes(r.data.userId)),false);
+  for(const row of staleRows.filter(r=>['club_memberships','club_occupancies'].includes(r.collection_path))) assert.deepEqual(row.encoded,beforeStale.find(r=>r.collection_path===row.collection_path && r.document_id===row.document_id)?.encoded);
+  await assert.rejects(pg.exec(staleSql),/STALE_USER_EVIDENCE_CHANGED/);
+  assert.deepEqual(await snapshot(),staleRows);
+  console.log('PASS native PostgreSQL reverse audit repair: six exact archives, four superseded user links, two synthetic links quarantined, current ownership preserved, changed evidence and repeats abort');
 } finally { await pg.close(); }
