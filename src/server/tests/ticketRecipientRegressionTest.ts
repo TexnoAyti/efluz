@@ -41,6 +41,9 @@ globalThis.fetch=async(input:any,init?:any)=>{
  }
  if(url.origin!=='https://ticket.test.invalid')return originalFetch(input,init);
  const body=JSON.parse(init.body);
+ if(url.pathname.endsWith('/efl_runtime_snapshot_read')){
+  return Response.json({documents:body.p_ids.map((id:string)=>({id,version:String(generation),value:rows.has('durable_read_snapshots/'+id)?decodeValue(rows.get('durable_read_snapshots/'+id)):null}))});
+ }
  if(url.pathname.endsWith('/efl_runtime_read')){
   const q=body.p_query;
   let documents=[...rows].filter(([path])=>q.path?path===q.path:path.split('/').slice(0,-1).join('/')===q.collection).map(([path,encoded])=>({id:path.split('/').at(-1)!,encoded}));
