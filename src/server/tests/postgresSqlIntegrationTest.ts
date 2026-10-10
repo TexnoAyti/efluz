@@ -14,7 +14,7 @@ import { adminAssignClubFirestore } from '../firebase/firestoreStore';
 // The HTTP envelope is simulated; this cannot prove hosted PostgREST latency.
 const pg = new PGlite();
 await pg.exec('create role anon; create role authenticated; create role service_role bypassrls;');
-for (const path of ['20261009044907_postgres_document_runtime.sql', '20261009125000_nonblocking_runtime_reads.sql', '20261010091409_application_runtime_commit_conflicts.sql']) {
+for (const path of ['20261009044907_postgres_document_runtime.sql', '20261009125000_nonblocking_runtime_reads.sql', '20261010091409_application_runtime_commit_conflicts.sql', '20261010161456_stop_postgrest_conflict_retries.sql']) {
   await pg.exec(await readFile('supabase/migrations/' + path, 'utf8'));
 }
 const privilege: any = (await pg.query(`select has_function_privilege('anon','public.efl_runtime_commit_safe(text,jsonb,text)','execute') as anonymous,
@@ -22,6 +22,7 @@ const privilege: any = (await pg.query(`select has_function_privilege('anon','pu
   has_function_privilege('service_role','public.efl_runtime_commit_safe(text,jsonb,text)','execute') as service,
   (select prosecdef from pg_proc where oid='public.efl_runtime_commit_safe(text,jsonb,text)'::regprocedure) as definer;`)).rows[0];
 assert.deepEqual(privilege, { anonymous: false, authenticated: false, service: true, definer: false });
+await assert.rejects(pg.query("select public.efl_runtime_commit('preview','[]'::jsonb,'-1')"), (error:any) => error.code === 'PT409', 'Legacy CAS conflicts must not trigger PostgREST serialization retries');
 await pg.exec('set role service_role;');
 const originalFetch = globalThis.fetch;
 let conflicts = 0, legacyHttpCommits = 0, failAssignment = false;
