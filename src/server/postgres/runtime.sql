@@ -58,7 +58,7 @@ begin
  select generation,mode into current_generation,current_mode from efl_runtime.spaces where name=p_space for update;
  if not found then raise exception 'UNKNOWN_RUNTIME_SPACE';end if;
  if current_mode='frozen' then raise exception 'RUNTIME_FROZEN';end if;
- if p_generation is not null and current_generation<>p_generation::bigint then raise exception 'TRANSACTION_CONFLICT' using errcode='40001';end if;
+ if p_generation is not null and current_generation<>p_generation::bigint then raise exception 'TRANSACTION_CONFLICT' using errcode='PT409';end if;
  if jsonb_typeof(p_operations)<>'array' or jsonb_array_length(p_operations)>500 then raise exception 'INVALID_OPERATIONS';end if;
  for op in select value from jsonb_array_elements(p_operations) loop
   parts:=string_to_array(op->>'path','/');
