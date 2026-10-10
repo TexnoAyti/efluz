@@ -17469,60 +17469,85 @@ async function adminAssignClubFirestore(adminUserId, clubId, targetUserId, seaso
     const clubOccRef = db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId2}_${clubId}`);
     const userMemRef = db.collection(COLLECTIONS.USER_MEMBERSHIPS).doc(`${seasonId2}_${targetUserId}`);
     const membershipRef = db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).doc(`${seasonId2}_${clubId}`);
-    const existingUserMem = await userMemRef.get();
-    if (existingUserMem.exists && existingUserMem.data()?.status === "active") {
-      if (existingUserMem.data()?.secondaryClubId) {
-        throw new ClubConflictError("This player owns two clubs. Review ownership before assigning another.", "CLUB_SELECTION_LOCKED");
+    await db.runTransaction(async (batch) => {
+      const currentClub = await batch.get(clubRef);
+      if (!currentClub.exists) throw new ClubNotFoundError(`Club with ID '${clubId}' not found.`);
+      const currentOccupancy = await batch.get(clubOccRef);
+      const currentMembership = await batch.get(membershipRef);
+      for (const record of [currentOccupancy, currentMembership]) {
+        if (record.data()?.status === "active" && record.data()?.userId !== targetUserId) {
+          throw new ClubConflictError("This club already belongs to another player. Release it before assigning it.");
+        }
       }
-      const prevClubId = existingUserMem.data().clubId;
-      if (prevClubId && prevClubId !== clubId) {
-        const prevOccRef = db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId2}_${prevClubId}`);
-        const prevClubRef = db.collection(COLLECTIONS.CLUBS).doc(prevClubId);
-        await prevOccRef.set({ status: "released", updatedAt: now }, { merge: true });
-        await prevClubRef.update({ isTaken: false, claimedByUserId: null, updatedAt: now });
+      const existingUserMem = await batch.get(userMemRef);
+      let previousClubId = null;
+      if (existingUserMem.exists && existingUserMem.data()?.status === "active") {
+        if (existingUserMem.data()?.secondaryClubId) {
+          throw new ClubConflictError("This player owns two clubs. Review ownership before assigning another.", "CLUB_SELECTION_LOCKED");
+        }
+        const prevClubId = existingUserMem.data().clubId;
+        if (prevClubId && prevClubId !== clubId) {
+          const prevOccRef = db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId2}_${prevClubId}`);
+          const prevClubRef = db.collection(COLLECTIONS.CLUBS).doc(prevClubId);
+          const prevMembershipRef = db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).doc(`${seasonId2}_${prevClubId}`);
+          const prevOccupancy = await batch.get(prevOccRef);
+          const prevMembership = await batch.get(prevMembershipRef);
+          const prevClub = await batch.get(prevClubRef);
+          if (!prevClub.exists) throw new ClubNotFoundError(`Club with ID '${prevClubId}' not found.`);
+          for (const record of [prevOccupancy, prevMembership]) {
+            if (record.data()?.status === "active" && record.data()?.userId !== targetUserId) {
+              throw new ClubConflictError("Previous club ownership changed. Review ownership before assigning another.");
+            }
+          }
+          previousClubId = prevClubId;
+        }
       }
-    }
-    const batch = db.batch();
-    batch.set(clubOccRef, {
-      clubId,
-      userId: targetUserId,
-      seasonId: seasonId2,
-      status: "active",
-      claimedAt: now,
-      updatedAt: now
+      if (previousClubId) {
+        const release = { status: "released", releasedAt: now, releasedByUserId: adminUserId, updatedAt: now };
+        batch.set(db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId2}_${previousClubId}`), { ...release, userId: null }, { merge: true });
+        batch.set(db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).doc(`${seasonId2}_${previousClubId}`), release, { merge: true });
+        batch.update(db.collection(COLLECTIONS.CLUBS).doc(previousClubId), { isTaken: false, claimedByUserId: null, updatedAt: now });
+      }
+      batch.set(clubOccRef, {
+        clubId,
+        userId: targetUserId,
+        seasonId: seasonId2,
+        status: "active",
+        claimedAt: now,
+        updatedAt: now
+      });
+      batch.set(userMemRef, {
+        userId: targetUserId,
+        clubId,
+        seasonId: seasonId2,
+        status: "active",
+        claimedAt: now,
+        updatedAt: now
+      });
+      batch.set(membershipRef, {
+        id: `cm-${seasonId2}-${clubId}`,
+        seasonId: seasonId2,
+        clubId,
+        userId: targetUserId,
+        claimedAt: now,
+        status: "active",
+        updatedAt: now
+      });
+      batch.update(clubRef, {
+        isTaken: true,
+        claimedByUserId: targetUserId,
+        updatedAt: now
+      });
+      const auditRef = db.collection(COLLECTIONS.AUDIT_LOGS).doc();
+      batch.set(auditRef, {
+        actorUserId: adminUserId,
+        action: "ADMIN_ASSIGN_CLUB",
+        entityType: "club",
+        entityId: clubId,
+        notes: `Admin assigned club to user '${targetUserId}'`,
+        createdAt: now
+      });
     });
-    batch.set(userMemRef, {
-      userId: targetUserId,
-      clubId,
-      seasonId: seasonId2,
-      status: "active",
-      claimedAt: now,
-      updatedAt: now
-    });
-    batch.set(membershipRef, {
-      id: `cm-${seasonId2}-${clubId}`,
-      seasonId: seasonId2,
-      clubId,
-      userId: targetUserId,
-      claimedAt: now,
-      status: "active",
-      updatedAt: now
-    });
-    batch.update(clubRef, {
-      isTaken: true,
-      claimedByUserId: targetUserId,
-      updatedAt: now
-    });
-    const auditRef = db.collection(COLLECTIONS.AUDIT_LOGS).doc();
-    batch.set(auditRef, {
-      actorUserId: adminUserId,
-      action: "ADMIN_ASSIGN_CLUB",
-      entityType: "club",
-      entityId: clubId,
-      notes: `Admin assigned club to user '${targetUserId}'`,
-      createdAt: now
-    });
-    await batch.commit();
     invalidateFirestoreCache();
     const updatedClub2 = await getClubByIdFirestore(clubId, seasonId2);
     return {

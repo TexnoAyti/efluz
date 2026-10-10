@@ -7,6 +7,8 @@ import { PostgresNotificationStore } from '../services/postgresNotificationStore
 import { encodeValue } from '../migration/firestoreArchive';
 import { SMART_ENQUEUE_SCRIPT } from '../services/notificationBackupQueue';
 import { quotaCachedRead, invalidateQuotaRead } from '../services/quotaReadCache';
+import { initDatabase } from '../db';
+import { adminAssignClubFirestore } from '../firebase/firestoreStore';
 
 // Native PostgreSQL WASM engine with repository SQL, not a JS query emulator.
 // The HTTP envelope is simulated; this cannot prove hosted PostgREST latency.
@@ -22,7 +24,7 @@ const privilege: any = (await pg.query(`select has_function_privilege('anon','pu
 assert.deepEqual(privilege, { anonymous: false, authenticated: false, service: true, definer: false });
 await pg.exec('set role service_role;');
 const originalFetch = globalThis.fetch;
-let conflicts = 0, legacyHttpCommits = 0;
+let conflicts = 0, legacyHttpCommits = 0, failAssignment = false;
 globalThis.fetch = (async (input: any, init: any) => {
   const url = new URL(String(input));
   assert.equal(url.origin, 'https://isolated-postgres.invalid');
@@ -30,13 +32,17 @@ globalThis.fetch = (async (input: any, init: any) => {
   try {
     let result;
     if (name === 'efl_runtime_read') result = await pg.query('select public.efl_runtime_read($1,$2::jsonb) as value', [body.p_space, JSON.stringify(body.p_query)]);
-    else if (name === 'efl_runtime_commit_safe') result = await pg.query('select public.efl_runtime_commit_safe($1,$2::jsonb,$3) as value', [body.p_space, JSON.stringify(body.p_operations), body.p_generation]);
+    else if (name === 'efl_runtime_commit_safe') {
+      if (failAssignment && body.p_operations.some((op: any) => op.path.startsWith('audit_logs/'))) throw Error('ASSIGNMENT_COMMIT_UNAVAILABLE');
+      result = await pg.query('select public.efl_runtime_commit_safe($1,$2::jsonb,$3) as value', [body.p_space, JSON.stringify(body.p_operations), body.p_generation]);
+    }
     else { legacyHttpCommits++; throw Error('LEGACY_COMMIT_ENDPOINT_FORBIDDEN'); }
     const value: any = result.rows[0].value;
     if (value.conflict) conflicts++;
     return new Response(JSON.stringify(value), { status: 200 });
   } catch (error: any) { return new Response(JSON.stringify({ code: error.code, message: error.message }), { status: 400 }); }
 }) as typeof fetch;
+await initDatabase();
 delete process.env.FIREBASE_FORCE_LOCAL_FALLBACK;
 process.env.DATABASE_PROVIDER = 'supabase'; process.env.SUPABASE_DATA_NAMESPACE = 'preview';
 process.env.SUPABASE_URL = 'https://isolated-postgres.invalid'; process.env.SUPABASE_SERVICE_ROLE_KEY = 'isolated-only';
@@ -77,5 +83,20 @@ try {
   const claimed = await notifications.eval<any[], any>('EFL_NOTIFY_CLAIM_V1', ['queue', 'processing', 'worker'], ['owner', Date.now()]);
   assert.equal(claimed.jobId, 'job'); assert.deepEqual(await notifications.get('queue'), []);
   assert.equal(legacyHttpCommits, 0);
+  for (const id of ['club-toulouse','club-alaves','club-monaco']) await db.collection('clubs').doc(id).set({id,name:id,leagueId:'league-ligue-1',isActive:true});
+  await adminAssignClubFirestore('user-900001','club-toulouse','user-900002','season-2026-27',{authoritativeOnly:true});
+  const ownershipSnapshot=async()=> (await pg.query("select collection_path,document_id,encoded from efl_runtime.documents where space='preview' and collection_path in ('clubs','club_occupancies','club_memberships','user_memberships','audit_logs') order by collection_path,document_id")).rows;
+  const beforeFailure=await ownershipSnapshot();
+  failAssignment=true;
+  await assert.rejects(adminAssignClubFirestore('user-900001','club-alaves','user-900002','season-2026-27',{authoritativeOnly:true}),/POSTGRES_RPC_HTTP_400/);
+  failAssignment=false;
+  assert.deepEqual(await ownershipSnapshot(),beforeFailure,'Failed assignment must not release the previous club');
+  await adminAssignClubFirestore('user-900001','club-alaves','user-900002','season-2026-27',{authoritativeOnly:true});
+  for(const collection of ['club_occupancies','club_memberships']) assert.equal((await db.collection(collection).doc('season-2026-27_club-toulouse').get()).data().status,'released');
+  assert.equal((await db.collection('user_memberships').doc('season-2026-27_user-900002').get()).data().clubId,'club-alaves');
+  await assert.rejects(adminAssignClubFirestore('user-900001','club-alaves','user-900003','season-2026-27',{authoritativeOnly:true}),/already belongs/);
+  const simultaneous=await Promise.allSettled(['user-900004','user-900005'].map(user=>adminAssignClubFirestore('user-900001','club-monaco',user,'season-2026-27',{authoritativeOnly:true})));
+  assert.equal(simultaneous.filter(r=>r.status==='fulfilled').length,1,'Concurrent admin assignments must not overwrite a winner');
+  console.log('PASS native PostgreSQL admin transfers: atomic failure preserves old club, previous membership releases, existing owner preserved, concurrent assignments have one winner');
   console.log('PASS native PostgreSQL SQL: private invoker grants, 12 concurrent NX attempts, atomic counters, cache invalidation, conflict retry with no stale writes, double-spend exclusion, full batch rollback, queue dedupe and worker claim; HTTP transport simulated');
 } finally { globalThis.fetch = originalFetch; await pg.close(); }
