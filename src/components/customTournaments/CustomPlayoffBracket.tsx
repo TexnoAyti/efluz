@@ -11,6 +11,8 @@ const roundNames: Record<string, string> = {
 export function CustomPlayoffBracket({ fixtures }: { fixtures: CustomTournamentFixture[] }) {
   const matches = useMemo(() => fixtures.filter(f => roundNames[f.stage] && f.leg === 1).map(f => {
     const second = fixtures.find(other => other.id === f.id.replace(/_l1$/, '_l2'));
+    const finished = f.status === 'BYE_AUTO_ADVANCED' || (f.status === 'CONFIRMED' && (!second || second.status === 'CONFIRMED'));
+    const status = finished ? 'CONFIRMED' : f.status === 'DISPUTED' || second?.status === 'DISPUTED' ? 'DISPUTED' : second && f.status === 'CONFIRMED' ? second.status : f.status;
     const club = (id: string, name: string, logoUrl?: string): Club => ({
       id, name, shortName: name, logoUrl: logoUrl || '', leagueId: '', country: '', active: true, createdAt: '',
     });
@@ -21,8 +23,8 @@ export function CustomPlayoffBracket({ fixtures }: { fixtures: CustomTournamentF
       awayClubId: f.awayClubId === 'TBD' ? null : f.awayClubId,
       homeClub: club(f.homeClubId, f.homeClubName, f.homeClubLogoUrl),
       awayClub: club(f.awayClubId, f.awayClubName, f.awayClubLogoUrl),
-      status: f.status === 'BYE_AUTO_ADVANCED' ? 'CONFIRMED' : f.status,
-      homeScore: f.homeScore, awayScore: f.awayScore, winnerClubId: f.winnerClubId,
+      status: status === 'BYE_AUTO_ADVANCED' ? 'CONFIRMED' : status,
+      homeScore: f.homeScore, awayScore: f.awayScore, winnerClubId: finished ? f.winnerClubId || second?.winnerClubId : null,
       scheduledAt: f.deadlineAt, createdAt: '', updatedAt: '',
       nextMatchFixtureId: f.nextMatchFixtureId,
       penaltyHomeScore: f.penaltyHomeScore, penaltyAwayScore: f.penaltyAwayScore,

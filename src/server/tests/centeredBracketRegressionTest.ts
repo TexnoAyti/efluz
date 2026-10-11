@@ -33,6 +33,12 @@ for (const size of [4, 6, 8, 16, 20, 32]) {
   assert.equal((html.match(/data-fixture-id=/g)||[]).length,first.length,'Each tie renders once, including BYEs and the final');
   if(mode==='TWO_LEG')assert.equal((html.match(/title="2-o/g)||[]).length,first.length-1,'Second-leg results remain visible');
   assert.equal(JSON.stringify(fixtures),before,'Presentation never changes pairings or results');
+  if(size===8 && mode==='TWO_LEG'){
+   fixtures[0].status='CONFIRMED';
+   fixtures[0].winnerClubId=fixtures[0].homeClubId;
+   const partial=renderToStaticMarkup(React.createElement(CustomPlayoffBracket,{fixtures}));
+   assert.equal(partial.includes('Finished'),false,'A completed first leg cannot mark an unfinished tie as finished');
+  }
  }
 }
 // Domestic play-in links can feed only one half of a seeded R16 bracket.
