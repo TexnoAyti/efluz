@@ -386,8 +386,8 @@ clubsRouter.post('/:id/claim', requireAuth, async (req: Request, res: Response) 
 
   try {
     const result = await requestDurableClubClaim(userId, clubId, seasonId, req.user);
-    res.status(202).json({ success: true, accepted: true, pendingSync: result.pendingSync, message: result.request.message, request: result.request, club: result.club });
-    scheduleMutationReconciliation();
+    res.status(result.pendingSync ? 202 : 200).json({ success: true, accepted: true, pendingSync: result.pendingSync, message: result.request?.message || 'Klub sizga biriktirildi.', request: result.request, club: result.club });
+    if (result.pendingSync) scheduleMutationReconciliation();
   } catch (err: any) {
     if (err instanceof ClubAdmissionConflictError) {
       res.status(409).json({ code: err.code, message: err.message });

@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { getUpstashClient, KEY_PREFIX, ReadModelKeys, redisGetFresh, redisGetLkg, type OwnerNeutralClub } from '../readModel/readModelStore';
+import { getUpstashClient, KEY_PREFIX, ReadModelKeys, redisGetFresh, redisGetLkg, invalidateClubReadModels, invalidateUserMembershipReadModel, type OwnerNeutralClub } from '../readModel/readModelStore';
 import { OUTBOX_KEYS, getDurableMutation, DurablePersistenceUnavailableError, type DurableOutboxMutation } from '../outbox/redisOutbox';
 import { admissionStatus, assertClubAdmissionOpen } from './clubAdmission';
-import { ClubConflictError, ClubNotFoundError } from '../firebase/firestoreStore';
+import { claimClubAtomicFirestore, ClubConflictError, ClubNotFoundError } from '../firebase/firestoreStore';
 
 export const CLUB_CLAIM_KEYS = {
   user: (season: string, user: string) => `${KEY_PREFIX}:club-claim:${season}:user:${user}`,
@@ -58,6 +58,20 @@ export async function getClubClaimReceipt(userId: string, seasonId: string): Pro
 export type ClaimActorProfile = { id: string; telegramId: string; username?: string; firstName?: string; lastName?: string };
 export async function requestDurableClubClaim(userId: string, clubId: string, seasonId: string, actor?: ClaimActorProfile) {
   const verifiedProfile = actor && actor.id === userId && /^\d{1,20}$/.test(String(actor.telegramId)) && userId === `user-${actor.telegramId}` ? { id:userId, telegramId:String(actor.telegramId), username:String(actor.username || '').slice(0,64), firstName:String(actor.firstName || '').slice(0,100), lastName:String(actor.lastName || '').slice(0,100) } : undefined;
+  if (process.env.DATABASE_PROVIDER === 'supabase') {
+    // PostgreSQL is the authoritative store after cutover. The Redis intent
+    // queue and its warmed snapshots must not gate an online transaction.
+    const result = await claimClubAtomicFirestore(userId, clubId, seasonId, {
+      authoritativeOnly: true, requiresActiveUser: true, verifiedProfile,
+    });
+    if (!result.authoritative || result.isFallback) throw new DurablePersistenceUnavailableError();
+    // Cache maintenance cannot turn an already committed claim into a rejection.
+    await Promise.allSettled([
+      invalidateClubReadModels(seasonId),
+      invalidateUserMembershipReadModel(userId, seasonId),
+    ]);
+    return { club: result.club, pendingSync: false, request: undefined };
+  }
   const client = getUpstashClient();
   if (!client) throw new DurablePersistenceUnavailableError('Klub tanlash so‘rovi saqlanmadi: doimiy saqlash xizmati ulanmagan.');
   const last = await getClubClaimReceipt(userId,seasonId);

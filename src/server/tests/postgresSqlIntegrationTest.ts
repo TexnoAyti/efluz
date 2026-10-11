@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {verifyPostgresClubClaimHttp} from './postgresClubClaimHttpTest';
 import {verifyCustomTournamentLifecycle} from './customTournamentLifecycleAudit';
 import { readFile } from 'node:fs/promises';
 import { PGlite } from '@electric-sql/pglite';
@@ -30,10 +31,12 @@ assert.deepEqual(privilege, { anonymous: false, authenticated: false, service: t
 await assert.rejects(pg.query("select public.efl_runtime_commit('preview','[]'::jsonb,'-1')"), (error:any) => error.code === 'PT409', 'Legacy CAS conflicts must not trigger PostgREST serialization retries');
 await pg.exec('set role service_role;');
 const originalFetch = globalThis.fetch;
-let conflicts = 0, legacyHttpCommits = 0, failAssignment = false, failPublish = false, failStartChunk = false;
+let conflicts = 0, legacyHttpCommits = 0, failAssignment = false, failPublish = false, failStartChunk = false, failClaimCommit = false;
 let snapshotResponses: {bytes:number;ids:string[]}[]=[];
 globalThis.fetch = (async (input: any, init: any) => {
   const url = new URL(String(input));
+  if (url.origin.startsWith('http://127.0.0.1:')) return originalFetch(input, init);
+  if (url.origin === 'https://api.telegram.org' && url.pathname.startsWith('/botisolated-claim-test/')) return Response.json({ok:true,result:{status:'member'}});
   assert.equal(url.origin, 'https://isolated-postgres.invalid');
   const name = url.pathname.split('/').at(-1), body = JSON.parse(init.body);
   try {
@@ -42,6 +45,7 @@ globalThis.fetch = (async (input: any, init: any) => {
     else if (name === 'efl_runtime_read') result = await pg.query('select public.efl_runtime_read($1,$2::jsonb) as value', [body.p_space, JSON.stringify(body.p_query)]);
     else if (name === 'efl_runtime_commit_safe') {
       if (failStartChunk && body.p_operations.filter((op:any)=>op.path.startsWith('custom_tournament_fixtures/')).length === 200) { failStartChunk = false; throw Error('START_CHUNK_UNAVAILABLE'); }
+      if (failClaimCommit && body.p_operations.some((op:any)=>op.path.startsWith('club_occupancies/'))) { failClaimCommit=false; throw Error('CLAIM_COMMIT_UNAVAILABLE'); }
       if (failAssignment && body.p_operations.some((op: any) => op.path.startsWith('audit_logs/'))) throw Error('ASSIGNMENT_COMMIT_UNAVAILABLE');
       if (failPublish && body.p_operations.some((op:any)=>op.path.startsWith('custom_tournaments/'))) {
         body.p_operations.push({kind:'create',path:'runtime_probes/balance',encoded:encodeValue({balance:999})});
@@ -207,6 +211,7 @@ try {
   await assert.rejects(claimTournamentClub(claim),/taklif havolasi/);
   await assert.rejects(claimTournamentClub({...claim,inviteToken:privateDraft.spectatorToken}),/taklif havolasi/);
   await claimTournamentClub({...claim,inviteToken:privateDraft.inviteToken});
+  await verifyPostgresClubClaimHttp(() => { failClaimCommit=true; });
   await verifyCustomTournamentLifecycle(() => { failStartChunk = true; });
   console.log('PASS native PostgreSQL draft reopen/assistant discovery, publication, private invitation versus spectator access and atomic authorized claim');
   console.log('PASS native PostgreSQL ticket publication: actual batch failure restores wallet and draft; parallel different-key publishes spend exactly once');
