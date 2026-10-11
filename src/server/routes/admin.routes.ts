@@ -1192,8 +1192,8 @@ adminRouter.post('/competitions/:id/matchday/control', async (req: Request, res:
     const { controlCompetitionMatchday } = await import('../services/competitionMatchdayService');
     const { action, matchday, durationHours, expectedUpdatedAt } = req.body;
     const result = await controlCompetitionMatchday(req.params.id, { action, matchday, durationHours, expectedUpdatedAt, adminUserId: req.user!.id });
-    let smartNotificationsQueued = 0;
-    if (action === 'SELECT' || action === 'OPEN' || action === 'RESTART') {
+    let smartNotificationsQueued = (result as any).smartNotificationsQueued || 0;
+    if (process.env.DATABASE_PROVIDER !== 'supabase' && (action === 'SELECT' || action === 'OPEN' || action === 'RESTART')) {
       try {
         const doc = await getFirestoreDb().collection(COLLECTIONS.COMPETITIONS).doc(req.params.id).get();
         smartNotificationsQueued = await notifySmartMatchdayOpened({ competitionId: req.params.id, seasonId: doc.data()?.seasonId || 'season-2026-27', matchday, deadlineAt: result.nextMatchdayOpenAt });
@@ -1217,8 +1217,8 @@ adminRouter.post('/competitions/:id/matchday/override', async (req: Request, res
       seasonId: typeof seasonId === 'string' ? seasonId : undefined,
       adminUserId: req.user?.id,
     });
-    let smartNotificationsQueued = 0;
-    if (overrideStatus === 'FORCE_OPEN') {
+    let smartNotificationsQueued = (result as any).smartNotificationsQueued || 0;
+    if (process.env.DATABASE_PROVIDER !== 'supabase' && overrideStatus === 'FORCE_OPEN') {
       try {
         const resolvedMatchday = Number((result as any)?.matchday ?? matchday ?? (result as any)?.currentMatchday ?? 0);
         if (resolvedMatchday > 0) {
@@ -1245,10 +1245,10 @@ adminRouter.post('/competitions/:id/matchday/advance', async (req: Request, res:
 
   try {
     const result = await advanceCompetitionMatchdayFirestore(competitionId, { durationHours, seasonId });
-    let smartNotificationsQueued = 0;
+    let smartNotificationsQueued = (result as any).smartNotificationsQueued || 0;
     try {
       const resolvedMatchday = Number((result as any)?.currentMatchday || 0);
-      if (resolvedMatchday > 0) {
+      if (process.env.DATABASE_PROVIDER !== 'supabase' && resolvedMatchday > 0) {
         smartNotificationsQueued = await notifySmartMatchdayOpened({
           competitionId,
           seasonId: typeof seasonId === 'string' ? seasonId : 'season-2026-27',
@@ -1276,9 +1276,9 @@ adminRouter.post('/competitions/:id/matchday/open-now', async (req: Request, res
       typeof matchday === 'number' ? matchday : undefined,
       typeof seasonId === 'string' ? seasonId : undefined
     );
-    let smartNotificationsQueued = 0;
+    let smartNotificationsQueued = (result as any).smartNotificationsQueued || 0;
     try {
-      smartNotificationsQueued = await notifySmartMatchdayOpened({
+      if (process.env.DATABASE_PROVIDER !== 'supabase') smartNotificationsQueued = await notifySmartMatchdayOpened({
         competitionId,
         seasonId: typeof seasonId === 'string' ? seasonId : 'season-2026-27',
         matchday: Number(result.matchday),

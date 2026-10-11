@@ -1,5 +1,6 @@
+import {MATCHDAY_NOTIFICATION_JOBS, processMatchdayNotificationJob} from './matchdayNotificationJobs';
 import { filterRetiredFixtures } from './retiredFixtureService';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS, FirestoreCompetitionDoc, FirestoreMatchdayLockDoc, FirestoreFixtureDoc } from '../firebase/collections';
 import { resolveMatchdayGate } from '../../lib/matchdayState';
@@ -108,7 +109,12 @@ export async function controlCompetitionMatchday(competitionId: string, params: 
     for (const item of locks) tx.set(db.collection(COLLECTIONS.MATCHDAY_LOCKS).doc(item.id), item);
     tx.update(ref, changes);
     tx.set(db.collection(COLLECTIONS.AUDIT_LOGS).doc(randomUUID()), { action: 'MATCHDAY_CONTROL', competitionId, seasonId, matchday: target, operation: params.action, adminUserId: params.adminUserId || null, previousMatchday: current, createdAt: now });
-    return { competition: { ...comp, ...changes }, locks, deadlineAt: deadline };
+    let notificationJobId: string | null = null;
+    if (process.env.DATABASE_PROVIDER === 'supabase' && ['SELECT', 'OPEN', 'RESTART'].includes(params.action)) {
+      notificationJobId = createHash('sha256').update(`${seasonId}:${competitionId}:${target}:${deadline}`).digest('hex');
+      tx.set(db.collection(MATCHDAY_NOTIFICATION_JOBS).doc(notificationJobId), {competitionId, seasonId, matchday: target, deadlineAt: deadline, status: 'PENDING', createdAt: now});
+    }
+    return { competition: { ...comp, ...changes }, locks, deadlineAt: deadline, notificationJobId };
   });
   await syncCompetitionMatchdayState(result.competition as FirestoreCompetitionDoc, result.locks);
   let channelPost: 'QUEUED' | 'EXISTS' | 'SKIPPED' | 'FAILED' = 'SKIPPED';
@@ -121,5 +127,6 @@ export async function controlCompetitionMatchday(competitionId: string, params: 
       console.warn('[MATCHDAY_CHANNEL_ENQUEUE_FAILED]', { competitionId, matchday: target, reason: error?.message });
     }
   }
-  return { success: true, competitionId, currentMatchday: result.competition.currentMatchday || 1, matchday: target, isMatchdayOpen: params.action !== 'LOCK', nextMatchdayOpenAt: result.deadlineAt, totalMatchdays: totalRounds(competition, fixtures), channelPost };
+  const notifications = result.notificationJobId ? await processMatchdayNotificationJob(result.notificationJobId) : {queued: 0, status: 'SKIPPED' as const};
+  return { smartNotificationsQueued: notifications.queued, smartNotificationsStatus: notifications.status, success: true, competitionId, currentMatchday: result.competition.currentMatchday || 1, matchday: target, isMatchdayOpen: params.action !== 'LOCK', nextMatchdayOpenAt: result.deadlineAt, totalMatchdays: totalRounds(competition, fixtures), channelPost };
 }

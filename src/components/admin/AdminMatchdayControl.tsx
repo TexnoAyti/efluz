@@ -30,7 +30,8 @@ export function AdminMatchdayControl({ competitionId, onChanged }: { competition
     try {
       const result = await api.controlMatchday(competitionId, { action, matchday: selected, durationHours: Number(hours), expectedUpdatedAt: state.updatedAt });
       const updated = action === 'LOCK' ? `${selected}-tur yopildi.` : action === 'SELECT' ? `${selected}-tur faol qilindi va ochildi.` : `${selected}-tur holati va muddati yangilandi.`;
-      setFeedback(updated + (result.channelPost === 'QUEUED' ? ' Tur posti asosiy adminga shaxsiy yuborish navbatiga qo‘yildi.' : result.channelPost === 'EXISTS' ? ' Bu turning posti asosiy admin uchun avval navbatga qo‘yilgan.' : ''));
+      setFeedback(updated + (result.smartNotificationsQueued ? ` ${result.smartNotificationsQueued} ta futbolchi bildirishnomasi navbatga qo‘yildi.` : '') + (result.channelPost === 'QUEUED' ? ' Tur posti asosiy adminga shaxsiy yuborish navbatiga qo‘yildi.' : result.channelPost === 'EXISTS' ? ' Bu turning posti asosiy admin uchun avval navbatga qo‘yilgan.' : ''));
+      if (result.smartNotificationsStatus === 'PENDING') setError('Tur saqlandi. Futbolchilarga bildirishnoma yuborish kechikmoqda; tizim saqlangan navbatni qayta ishlaydi.');
       if (result.channelPost === 'FAILED') setError('Tur saqlandi, lekin asosiy adminga post yuborishni navbatga qo‘yib bo‘lmadi. Turni qayta ochish orqali takror urinishingiz mumkin.');
       await load(true);
       await onChanged();

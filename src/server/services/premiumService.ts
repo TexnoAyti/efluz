@@ -1,3 +1,4 @@
+import {loadPostgresSeasonOwners} from './postgresSeasonRead';
 import { createHash, randomUUID } from 'node:crypto';
 import { getFirestoreDb } from '../firebase/admin';
 import {
@@ -378,10 +379,17 @@ export async function getPremiumCareerSnapshot(
 ): Promise<PremiumCareerSnapshot> {
   let clubs: any[] = [];
   let ownershipResolved = false;
+  if (process.env.DATABASE_PROVIDER === 'supabase') {
+    const owners = await loadPostgresSeasonOwners(seasonId);
+    clubs = owners.filter(owner => owner.ownerUserId === userId).map(owner => SEED_CLUBS.find(club => club.id === owner.id) || {id: owner.id, name: owner.id});
+    ownershipResolved = true;
+  }
   try {
+    if (!ownershipResolved) {
     const ownership = await getAdminClubsFromReadModel(seasonId);
     clubs = ownership.clubs.filter((club) => club.ownerUserId === userId);
     ownershipResolved = true;
+    }
   } catch {}
   if (!ownershipResolved) {
     const rows = queryAll<{ club_id: string }>(

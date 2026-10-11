@@ -1,3 +1,4 @@
+import {loadPostgresSeasonFixtures, loadPostgresSeasonOwners} from './postgresSeasonRead';
 import { Fixture } from '../../types';
 import { queryAll } from '../db';
 import { SEED_CLUBS, SEED_COMPETITIONS } from '../db/seed';
@@ -82,9 +83,10 @@ async function loadSeasonFixtures(seasonId: string): Promise<{ fixtures: Fixture
   const fresh = await redisGetFresh<Fixture[]>(key);
   const snapshot = fresh || (await redisGetLkg<Fixture[]>(key));
   if (Array.isArray(snapshot?.data) && snapshot!.data.length > 0) {
-    return { fixtures: snapshot!.data, source: fresh ? 'redis' : 'redis_stale' };
+    return { fixtures: snapshot!.data, source: process.env.DATABASE_PROVIDER === 'supabase' ? 'postgresql' : fresh ? 'redis' : 'redis_stale' };
   }
 
+  if (process.env.DATABASE_PROVIDER === 'supabase') return {fixtures: await loadPostgresSeasonFixtures(seasonId), source: 'postgresql'};
   const rows = queryAll<any>(
     `SELECT * FROM fixtures WHERE season_id = ? OR season_id IS NULL ORDER BY matchday ASC, scheduled_at ASC, id ASC`,
     [seasonId]
@@ -93,6 +95,7 @@ async function loadSeasonFixtures(seasonId: string): Promise<{ fixtures: Fixture
 }
 
 async function loadOwners(seasonId: string): Promise<OwnerEntry[]> {
+  if (process.env.DATABASE_PROVIDER === 'supabase') return loadPostgresSeasonOwners(seasonId);
   const key = ReadModelKeys.clubsWithOwners(seasonId);
   const snapshot = (await redisGetFresh<OwnerEntry[]>(key)) || (await redisGetLkg<OwnerEntry[]>(key));
   if (Array.isArray(snapshot?.data) && snapshot!.data.length > 0) return snapshot!.data;

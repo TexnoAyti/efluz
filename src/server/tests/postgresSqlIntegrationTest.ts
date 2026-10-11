@@ -1,3 +1,4 @@
+import {verifyPostgresMatchdayNotifications} from './postgresMatchdayNotificationTest';
 import assert from 'node:assert/strict';
 import {verifyPostgresClubClaimHttp} from './postgresClubClaimHttpTest';
 import {verifyCustomTournamentLifecycle} from './customTournamentLifecycleAudit';
@@ -20,7 +21,7 @@ import { readPostgresSnapshotBundle, clearPostgresSnapshotCache } from '../readM
 // The HTTP envelope is simulated; this cannot prove hosted PostgREST latency.
 const pg = new PGlite();
 await pg.exec('create role anon; create role authenticated; create role service_role bypassrls;');
-for (const path of ['20261009044907_postgres_document_runtime.sql', '20261009125000_nonblocking_runtime_reads.sql', '20261010091409_application_runtime_commit_conflicts.sql', '20261010161456_stop_postgrest_conflict_retries.sql', '20261010172440_conditional_snapshot_reads.sql']) {
+for (const path of ['20261009044907_postgres_document_runtime.sql', '20261009125000_nonblocking_runtime_reads.sql', '20261009134500_patch_snapshot_rows.sql', '20261010091409_application_runtime_commit_conflicts.sql', '20261010161456_stop_postgrest_conflict_retries.sql', '20261010172440_conditional_snapshot_reads.sql']) {
   await pg.exec(await readFile('supabase/migrations/' + path, 'utf8'));
 }
 const privilege: any = (await pg.query(`select has_function_privilege('anon','public.efl_runtime_commit_safe(text,jsonb,text)','execute') as anonymous,
@@ -32,18 +33,25 @@ await assert.rejects(pg.query("select public.efl_runtime_commit('preview','[]'::
 await pg.exec('set role service_role;');
 const originalFetch = globalThis.fetch;
 let conflicts = 0, legacyHttpCommits = 0, failAssignment = false, failPublish = false, failStartChunk = false, failClaimCommit = false;
+let failNotificationCommit = false;
+const telegramDeliveries: string[] = [];
 let snapshotResponses: {bytes:number;ids:string[]}[]=[];
 globalThis.fetch = (async (input: any, init: any) => {
   const url = new URL(String(input));
   if (url.origin.startsWith('http://127.0.0.1:')) return originalFetch(input, init);
-  if (url.origin === 'https://api.telegram.org' && url.pathname.startsWith('/botisolated-claim-test/')) return Response.json({ok:true,result:{status:'member'}});
+  if (url.origin === 'https://api.telegram.org' && url.pathname.startsWith('/botisolated-claim-test/')) {
+    if (url.pathname.endsWith('/sendMessage')) { telegramDeliveries.push(String(JSON.parse(init.body).chat_id)); return Response.json({ok:true,result:{message_id:telegramDeliveries.length}}); }
+    return Response.json({ok:true,result:{status:'member'}});
+  }
   assert.equal(url.origin, 'https://isolated-postgres.invalid');
   const name = url.pathname.split('/').at(-1), body = JSON.parse(init.body);
   try {
     let result;
     if(name==='efl_runtime_snapshot_read') result=await pg.query('select public.efl_runtime_snapshot_read($1,$2::jsonb,$3::jsonb) as value',[body.p_space,JSON.stringify(body.p_ids),JSON.stringify(body.p_versions)]);
+    else if (name === 'efl_runtime_patch_snapshot') result = await pg.query('select public.efl_runtime_patch_snapshot($1,$2::text[],$3::jsonb,$4,$5,$6) as value', [body.p_space, body.p_ids, JSON.stringify(body.p_row), body.p_merge, body.p_ttl, body.p_version]);
     else if (name === 'efl_runtime_read') result = await pg.query('select public.efl_runtime_read($1,$2::jsonb) as value', [body.p_space, JSON.stringify(body.p_query)]);
     else if (name === 'efl_runtime_commit_safe') {
+      if (failNotificationCommit && body.p_operations.some((op:any)=>op.path.startsWith('telegram_ai_state/'))) { failNotificationCommit=false; throw Error('NOTIFICATION_COMMIT_UNAVAILABLE'); }
       if (failStartChunk && body.p_operations.filter((op:any)=>op.path.startsWith('custom_tournament_fixtures/')).length === 200) { failStartChunk = false; throw Error('START_CHUNK_UNAVAILABLE'); }
       if (failClaimCommit && body.p_operations.some((op:any)=>op.path.startsWith('club_occupancies/'))) { failClaimCommit=false; throw Error('CLAIM_COMMIT_UNAVAILABLE'); }
       if (failAssignment && body.p_operations.some((op: any) => op.path.startsWith('audit_logs/'))) throw Error('ASSIGNMENT_COMMIT_UNAVAILABLE');
@@ -212,6 +220,7 @@ try {
   await assert.rejects(claimTournamentClub({...claim,inviteToken:privateDraft.spectatorToken}),/taklif havolasi/);
   await claimTournamentClub({...claim,inviteToken:privateDraft.inviteToken});
   await verifyPostgresClubClaimHttp(() => { failClaimCommit=true; });
+  await verifyPostgresMatchdayNotifications(() => { failNotificationCommit=true; }, telegramDeliveries);
   await verifyCustomTournamentLifecycle(() => { failStartChunk = true; });
   console.log('PASS native PostgreSQL draft reopen/assistant discovery, publication, private invitation versus spectator access and atomic authorized claim');
   console.log('PASS native PostgreSQL ticket publication: actual batch failure restores wallet and draft; parallel different-key publishes spend exactly once');

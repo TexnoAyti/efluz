@@ -5471,6 +5471,14 @@ export async function getUserNotificationsFirestore(userId: string, limit = 30):
 }
 
 export async function markSingleNotificationReadFirestore(userId: string, notificationId: string): Promise<void> {
+  if (process.env.DATABASE_PROVIDER === 'supabase') {
+    const doc = await getFirestoreDb().collection(COLLECTIONS.NOTIFICATIONS).doc(notificationId).get();
+    if (!doc.exists) throw Object.assign(new Error('Notification not found'), {statusCode: 404});
+    if (doc.data()?.userId !== userId) throw new Error('OWNERSHIP_MISMATCH');
+    await persistNotificationReadState(userId, new Date().toISOString(), notificationId);
+    invalidateFirestoreCache(`firestore:notifications:${userId}`);
+    return;
+  }
   const now = new Date().toISOString();
   let authoritativeRead = false;
   invalidateFirestoreCache(`firestore:notifications:${userId}`);
@@ -5525,6 +5533,11 @@ export async function markSingleNotificationReadFirestore(userId: string, notifi
 }
 
 export async function markNotificationsReadFirestore(userId: string): Promise<void> {
+  if (process.env.DATABASE_PROVIDER === 'supabase') {
+    await persistNotificationReadState(userId, new Date().toISOString());
+    invalidateFirestoreCache(`firestore:notifications:${userId}`);
+    return;
+  }
   const now = new Date().toISOString();
   let authoritativeRead = false;
   invalidateFirestoreCache(`firestore:notifications:${userId}`);
