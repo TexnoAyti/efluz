@@ -137,7 +137,7 @@ export function resolveAiClubs(query: string, clubs: Club[], selectedIds: string
     if (candidates.length === 1) return { clubs: candidates };
   }
   // Carry the selected team only for a team follow-up, not unrelated league or general tactics questions.
-  const contextual = /egasi|kimniki|kim boshqar|nechanchi|nechta|qancha|ochko|g[‘’'`]?alaba|mag[‘’'`]?lub|durang|gol|keyingi|navbatdagi|oxirgi|forma|statistika|kuchli|kuchsiz|uyda|safarda|o[‘’'`]?zaro|raqib|kubok|ucl|uel|yutad|uni(?:ng)?\b|kimga|kimni|tahlil|hazil|roast|taktik.*(?:unga|shu)|\bits\b|\bthat team\b|его|владел|очк|мест|следующ|owner|points|position|next match/i.test(query);
+  const contextual = /egasi|kimniki|kim boshqar|nechanchi|nechta|qancha|ochko|g[‘’'`]?alaba|mag[‘’'`]?lub|durang|gol|keyingi|navbatdagi|oxirgi|forma|statistika|kuchli|kuchsiz|uyda|safarda|o[‘’'`]?zaro|raqib|kubok|ucl|uel|yutad|uni(?:ng)?\b|kimga|kimni|tahlil|batafsil|taqqosla|solishtir|подроб|анализ|сравни|detail|analy[sz]|compar|hazil|roast|taktik.*(?:unga|shu)|\bits\b|\bthat team\b|его|владел|очк|мест|следующ|owner|points|position|next match/i.test(query);
   // Proper names before the ownership phrase require explicit lookup/clarification.
   const ownerPrefix = q.match(/^(.*?)\s+(?:egasi|kimniki|owner|nechanchi|keyingi|navbatdagi|haqida|statistikasi|oyini|nechta|nega)\b/);
   if (ownerPrefix && !ownerPrefix[1].split(' ').every(word => /^(?:u|uni|uning|klub|klubning|jamoa|jamoaning|shu|bu|hozir|bugun|oxirgi|keyingi|barcha|hamma|bizning|mening|forma|oyin|oyini|oyinlar|natija|natijalar|jadval|taktika|taktikasi|tahlil|ochko|gollar|galaba|kubok|liga|efl|uz|efootball)$/.test(word))) {

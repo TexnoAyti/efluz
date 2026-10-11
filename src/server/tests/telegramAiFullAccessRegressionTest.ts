@@ -107,13 +107,13 @@ setTestConfigOverride({ ...DEFAULT_AI_CONFIG, enabled: true, allowedChatId: -100
 const payload = (text: string, id = 5209126900, extra = {}): TelegramAiMessagePayload => ({ updateId: 100, messageId: 1, chatId: -1001, threadId: 3503, fromUser: { id }, text, ...extra });
 let writes = 0, plans = 0;
 setTestAiAdminHooks(async () => { writes++; return { status: 200, data: { success: true } }; }, async () => { plans++; return { action: 'club_assign', targetId: 'club-arsenal', body: { targetUserId: '@actual_owner' } }; });
-assert.match(await handleAiAdminCommand(payload('/ai_admin Arsenalni biriktir', 123), signal), /faqat asosiy admin/);
-assert.match(await handleAiAdminCommand(payload('/ai_admin Arsenalni biriktir', 5209126900, { senderChat: true }), signal), /faqat asosiy admin/);
-assert.match(await handleAiAdminCommand(payload('/ai_admin Arsenalni biriktir', 5209126900, { forwarded: true }), signal), /faqat asosiy admin/);
+assert.match(await handleAiAdminCommand(payload('/ai_admin Arsenalni biriktir', 123), signal), /ruxsat berilgan adminlar/);
+assert.match(await handleAiAdminCommand(payload('/ai_admin Arsenalni biriktir', 5209126900, { senderChat: true }), signal), /ruxsat berilgan adminlar/);
+assert.match(await handleAiAdminCommand(payload('/ai_admin Arsenalni biriktir', 5209126900, { forwarded: true }), signal), /ruxsat berilgan adminlar/);
 assert.equal(plans, 0); assert.equal(writes, 0);
 const proposal = await handleAiAdminCommand(payload('/ai_admin Arsenalni biriktir'), signal);
 const token = /\/ai_confirm ([a-f0-9]{24})/.exec(proposal)![1]; assert.equal(writes, 0);
-assert.match(await handleAiAdminCommand(payload('/ai_confirm ' + token, 123), signal), /faqat asosiy admin/);
+assert.match(await handleAiAdminCommand(payload('/ai_confirm ' + token, 123), signal), /ruxsat berilgan adminlar/);
 assert.match(await handleAiAdminCommand(payload('/ai_confirm ' + token, 5209126900, { threadId: 7 }), signal), /faol emas/);
 await Promise.all(Array.from({ length: 5 }, () => handleAiAdminCommand(payload('/ai_confirm ' + token), signal))); assert.equal(writes, 1);
 const cancel = await handleAiAdminCommand(payload('/ai_admin Arsenalni biriktir'), signal); const cancelledToken = /\/ai_confirm ([a-f0-9]{24})/.exec(cancel)![1];

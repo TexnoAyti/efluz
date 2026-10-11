@@ -314,7 +314,7 @@ export async function buildAiGroundingContext(
   }
   const facts: string[] = [];
   // Exact identity and simple statistical lookups bypass the model. Analytical questions use grounded Gemini.
-  const analytical = /nega|nima uchun|tahlil|o[‘’'`]?ylay|yutadimi|kim yut|yutadi|taxmin|prediction|qanday yaxsh|taktik|hazil|yumor|roast/i.test(query);
+  const analytical = /nega|nima uchun|tahlil|batafsil|taqqosla|solishtir|подроб|анализ|сравни|detail|analy[sz]|compar|o[‘’'`]?ylay|yutadimi|kim yut|yutadi|taxmin|prediction|qanday yaxsh|taktik|hazil|yumor|roast/i.test(query);
   if (!analytical && matched.length) {
     if (ownershipAnswer) facts.push(ownershipAnswer);
     if (!/eng yirik|eng katta|oxirgi|kimga|kimni|uyda|safarda/i.test(query) && /nechanchi|o[‘’'`]?rin|ochko|g[‘’'`]?alaba|mag[‘’'`]?lub|nechta.*(?:durang|gol|o[‘’'`]?yin)|statistika|standing|points|position/i.test(query)) {
