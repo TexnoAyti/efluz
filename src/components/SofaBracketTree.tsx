@@ -1,17 +1,22 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useEffect, useState } from 'react';
 import { Competition, Fixture } from '../types';
 import { ClubCrest } from './ClubCrest';
+import { layoutKnockout } from '../lib/knockoutLayout';
 import { GitBranch, Maximize2, Trophy } from 'lucide-react';
 
-type BracketFixture = Fixture & {
+export type BracketFixture = Fixture & {
   isProjected?: boolean;
   homeSourceLabel?: string;
   awaySourceLabel?: string;
   homeSeedPosition?: number;
   awaySeedPosition?: number;
+  nextMatchFixtureId?: string | null;
+  secondLegLabel?: string;
+  penaltyHomeScore?: number | null;
+  penaltyAwayScore?: number | null;
 };
 
-type RoundKey = 'PRELIM' | 'PLAYOFF' | 'R16' | 'QF' | 'SF' | 'FINAL';
+type RoundKey = 'PRELIM' | 'R32' | 'PLAYOFF' | 'R16' | 'QF' | 'SF' | 'FINAL';
 
 interface Props {
   fixtures: Fixture[];
@@ -37,14 +42,14 @@ interface PositionedMatch {
 // Mobile-first canvas metrics. These keep the original connected tree while
 // cutting the old ~1200px tall bracket to a much denser canvas.
 const CARD_WIDTH = 204;
-const CARD_HEIGHT = 88;
+const CARD_HEIGHT = 108;
 const COLUMN_GAP = 54;
-const SLOT_HEIGHT = 104;
-const HEADER_HEIGHT = 40;
+const SLOT_HEIGHT = 128;
 
 function classifyRound(fixture: Fixture): RoundKey | null {
   const round = String(fixture.roundName || '').toLowerCase();
   const id = String(fixture.id || '').toLowerCase();
+  if (round.includes('round of 32')) return 'R32';
   if (round.includes('round of 16') || round.includes('1/8') || id.includes('-r16-m') || (id.includes('-r2-m') && Number(fixture.matchday) === 2)) return 'R16';
   if (round.includes('quarter') || round.includes('1/4') || id.includes('-qf-m') || (id.includes('-r3-m') && Number(fixture.matchday) === 3)) return 'QF';
   if ((round.includes('semi') || round.includes('1/2')) && !round.includes('quarter')) return 'SF';
@@ -56,7 +61,7 @@ function classifyRound(fixture: Fixture): RoundKey | null {
 }
 
 function fixtureIndex(fixture: Fixture): number {
-  const match = String(fixture.id || '').match(/-m(\d+)$/i);
+  const match = String(fixture.id || '').match(/(?:-m|_m)(\d+)(?:_l\d+)?$/i);
   return match ? Number(match[1]) : 0;
 }
 
@@ -69,6 +74,7 @@ function sourceIds(fixture: BracketFixture): string[] {
 }
 
 function inferredTargetId(source: BracketFixture, all: BracketFixture[]): string | null {
+  if (source.nextMatchFixtureId) return source.nextMatchFixtureId;
   for (const candidate of all) {
     if (sourceIds(candidate).includes(source.id)) return candidate.id;
   }
@@ -111,11 +117,14 @@ function sourceLabel(fixture: BracketFixture, side: 'home' | 'away'): string {
 
 export const SofaBracketTree: React.FC<Props> = ({ fixtures, competition, currentClubId, onSelectFixture }) => {
   const bracketFixtures = fixtures as BracketFixture[];
+  const viewport = useRef<HTMLDivElement>(null);
+  const [zoom, setZoom] = useState(1);
 
   const rounds = useMemo<RoundColumn[]>(() => {
-    const order: RoundKey[] = ['PRELIM', 'PLAYOFF', 'R16', 'QF', 'SF', 'FINAL'];
+    const order: RoundKey[] = ['PRELIM', 'R32', 'PLAYOFF', 'R16', 'QF', 'SF', 'FINAL'];
     const labels: Record<RoundKey, string> = {
       PRELIM: 'Play-in',
+      R32: 'Round of 32',
       PLAYOFF: 'Playoff',
       R16: 'Round of 16',
       QF: 'Quarter-final',
@@ -132,38 +141,14 @@ export const SofaBracketTree: React.FC<Props> = ({ fixtures, competition, curren
   }, [bracketFixtures]);
 
   const layout = useMemo(() => {
-    if (!rounds.length) return { positions: [] as PositionedMatch[], connectors: [] as Array<[PositionedMatch, PositionedMatch]>, width: 0, height: 0 };
+    if (!rounds.length) return { positions: [] as PositionedMatch[], connectors: [] as Array<[PositionedMatch, PositionedMatch]>, columns: [] as Array<{ key: string; x: number; side: string; count: number }>, width: 0, height: 0 };
 
-    const mainRound = rounds.find((round) => round.key === 'R16') || rounds.reduce((best, round) => round.fixtures.length > best.fixtures.length ? round : best, rounds[0]);
-    const baseCount = Math.max(1, mainRound.fixtures.length);
-    const centers = new Map<string, number>();
-    const roundX = new Map<RoundKey, number>();
-    rounds.forEach((round, index) => roundX.set(round.key, index * (CARD_WIDTH + COLUMN_GAP)));
-
-    mainRound.fixtures.forEach((fixture, index) => centers.set(fixture.id, HEADER_HEIGHT + index * SLOT_HEIGHT + SLOT_HEIGHT / 2));
-
-    for (const round of rounds.slice(rounds.indexOf(mainRound) + 1)) {
-      for (const fixture of round.fixtures) {
-        const sourceCenters = sourceIds(fixture).map((id) => centers.get(id)).filter((value): value is number => typeof value === 'number');
-        if (sourceCenters.length) centers.set(fixture.id, sourceCenters.reduce((a, b) => a + b, 0) / sourceCenters.length);
-        else centers.set(fixture.id, HEADER_HEIGHT + ((fixtureIndex(fixture) + 0.5) * baseCount / Math.max(1, round.fixtures.length)) * SLOT_HEIGHT);
-      }
-    }
-
-    for (const round of rounds.slice(0, rounds.indexOf(mainRound)).reverse()) {
-      for (const fixture of round.fixtures) {
-        const targetId = inferredTargetId(fixture, bracketFixtures);
-        const targetCenter = targetId ? centers.get(targetId) : undefined;
-        centers.set(fixture.id, targetCenter ?? HEADER_HEIGHT + ((fixtureIndex(fixture) + 0.5) * baseCount / Math.max(1, round.fixtures.length)) * SLOT_HEIGHT);
-      }
-    }
-
-    const positions: PositionedMatch[] = rounds.flatMap((round) => round.fixtures.map((fixture, index) => ({
-      fixture,
-      round: round.key,
-      index,
-      x: roundX.get(round.key) || 0,
-      y: (centers.get(fixture.id) || HEADER_HEIGHT + SLOT_HEIGHT / 2) - CARD_HEIGHT / 2,
+    const mirrored = layoutKnockout(rounds.map(round => ({
+      key: round.key,
+      nodes: round.fixtures.map(fixture => ({ id: fixture.id, round: round.key, targetId: inferredTargetId(fixture, bracketFixtures) })),
+    })), CARD_WIDTH, CARD_HEIGHT, COLUMN_GAP, SLOT_HEIGHT);
+    const positions: PositionedMatch[] = rounds.flatMap(round => round.fixtures.map((fixture, index) => ({
+      fixture, round: round.key, index, ...mirrored.positions.get(fixture.id)!,
     })));
     const positionById = new Map(positions.map((position) => [position.fixture.id, position]));
     const connectors: Array<[PositionedMatch, PositionedMatch]> = [];
@@ -176,10 +161,16 @@ export const SofaBracketTree: React.FC<Props> = ({ fixtures, competition, curren
     return {
       positions,
       connectors,
-      width: rounds.length * CARD_WIDTH + Math.max(0, rounds.length - 1) * COLUMN_GAP,
-      height: HEADER_HEIGHT + baseCount * SLOT_HEIGHT + 12,
+      columns: mirrored.columns,
+      width: mirrored.width,
+      height: mirrored.height,
     };
   }, [bracketFixtures, rounds]);
+
+  useEffect(() => {
+    const element = viewport.current;
+    if (element) element.scrollLeft = Math.max(0, (layout.width * zoom - element.clientWidth) / 2);
+  }, [layout.width, zoom]);
 
   if (!rounds.length) return null;
 
@@ -188,17 +179,18 @@ export const SofaBracketTree: React.FC<Props> = ({ fixtures, competition, curren
       <div className="efl-fit-wrap flex items-center justify-between gap-3 px-3 pb-2 pt-3 sm:px-5 sm:pt-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.18em] text-blue-300 efl-theme-blue sm:text-[10px]">
-            <GitBranch className="h-3.5 w-3.5" /> Connected knockout map
+            <GitBranch className="h-3.5 w-3.5" /> Pley-off yo‘li
           </div>
-          <p className="mt-1 text-[9px] text-slate-500 efl-theme-muted sm:text-[10px]">{competition?.name || 'Cup'} • swipe horizontally to follow the full path</p>
+          <p className="mt-1 text-[9px] text-slate-500 efl-theme-muted sm:text-[10px]">{competition?.name || 'Kubok'} • 1-tomon → Final ← 2-tomon</p>
         </div>
-        <div className="flex shrink-0 items-center gap-1 rounded-xl border border-white/[0.07] efl-theme-border bg-white/[0.03] efl-theme-surface-2 px-2 py-1.5 text-[8px] font-black text-slate-400 efl-theme-text-2 sm:text-[9px]">
-          <Maximize2 className="h-3 w-3" /> FULL TREE
-        </div>
+        <button type="button" onClick={() => setZoom(zoom < 1 ? 1 : Math.min(1, Math.max(.1, ((viewport.current?.clientWidth || layout.width) - 24) / layout.width)))} className="flex min-h-[44px] shrink-0 items-center gap-1 rounded-xl border border-white/[0.07] efl-theme-border bg-white/[0.03] efl-theme-surface-2 px-2 py-1.5 text-[9px] font-black text-slate-400 efl-theme-text-2" aria-label={zoom < 1 ? 'Bracketni kattalashtirish' : 'Butun bracketni ko‘rsatish'}>
+          <Maximize2 className="h-3 w-3" /> {zoom < 1 ? 'Kattalashtirish' : 'Butun bracket'}
+        </button>
       </div>
 
-      <div className="overflow-x-auto overscroll-x-contain px-2.5 pb-4 scrollbar-thin sm:px-5 sm:pb-5">
-        <div className="relative" style={{ width: layout.width, height: layout.height }}>
+      <div ref={viewport} className="overflow-x-auto overscroll-x-contain px-2.5 pb-4 scrollbar-thin sm:px-5 sm:pb-5" tabIndex={0} aria-label="Pley-off bracketi: chap va o‘ng tomon, markazda final">
+        <div style={{ width: layout.width * zoom, height: layout.height * zoom, marginInline: 'auto' }}>
+        <div className="relative" style={{ width: layout.width, height: layout.height, transform: `scale(${zoom})`, transformOrigin: 'top left' }}>
           <svg className="pointer-events-none absolute inset-0 z-0" width={layout.width} height={layout.height} aria-hidden="true">
             <defs>
               <linearGradient id="bracketLineCompact" x1="0" y1="0" x2="1" y2="0">
@@ -207,20 +199,21 @@ export const SofaBracketTree: React.FC<Props> = ({ fixtures, competition, curren
               </linearGradient>
             </defs>
             {layout.connectors.map(([from, to]) => {
-              const x1 = from.x + CARD_WIDTH;
+              const towardRight = to.x > from.x;
+              const x1 = from.x + (towardRight ? CARD_WIDTH : 0);
               const y1 = from.y + CARD_HEIGHT / 2;
-              const x2 = to.x;
+              const x2 = to.x + (towardRight ? 0 : CARD_WIDTH);
               const y2 = to.y + CARD_HEIGHT / 2;
               const mid = x1 + (x2 - x1) / 2;
               return <path key={`${from.fixture.id}->${to.fixture.id}`} d={`M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`} fill="none" stroke="url(#bracketLineCompact)" strokeWidth="1.5" />;
             })}
           </svg>
 
-          {rounds.map((round, roundIndex) => (
-            <div key={round.key} className="absolute top-0 z-10" style={{ left: roundIndex * (CARD_WIDTH + COLUMN_GAP), width: CARD_WIDTH }}>
+          {layout.columns.map((column) => (
+            <div key={`${column.key}-${column.side}`} className="absolute top-0 z-10" style={{ left: column.x, width: CARD_WIDTH }}>
               <div className="flex h-8 items-center justify-between border-b border-white/[0.06] efl-theme-border px-1">
-                <span className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-300 efl-theme-text-2">{round.label}</span>
-                <span className="rounded-full bg-white/[0.04] efl-theme-surface-2 px-1.5 py-0.5 text-[7px] font-black text-slate-600 efl-theme-muted">{round.fixtures.length}</span>
+                <span className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-300 efl-theme-text-2">{rounds.find(r => r.key === column.key)?.label}</span>
+                <span className="rounded-full bg-white/[0.04] efl-theme-surface-2 px-1.5 py-0.5 text-[7px] font-black text-slate-600 efl-theme-muted">{column.count}</span>
               </div>
             </div>
           ))}
@@ -236,13 +229,13 @@ export const SofaBracketTree: React.FC<Props> = ({ fixtures, competition, curren
               const isWinner = Boolean(clubId && fixture.winnerClubId === clubId);
               return (
                 <div className={`flex h-[29px] items-center gap-1.5 rounded-lg px-1.5 ${isWinner ? 'bg-emerald-400/[0.10]' : 'bg-white/[0.018] efl-theme-surface-2'}`}>
-                  {clubId && clubId !== 'TBD' ? (
+                  {clubId && clubId !== 'TBD' && clubId !== 'BYE' ? (
                     <ClubCrest clubId={club?.id || clubId} logoUrl={club?.logoUrl} name={club?.name || clubId} shortName={club?.shortName} size="xs" className="h-4.5 w-4.5 shrink-0" />
                   ) : (
                     <div className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border border-dashed border-white/[0.12] efl-theme-border text-[7px] text-slate-600 efl-theme-muted">?</div>
                   )}
                   <span title={clubId ? club?.name || clubId : sourceLabel(fixture, side)} className={`min-w-0 flex-1 truncate text-[9px] ${isWinner ? 'font-black text-emerald-300 efl-theme-emerald' : clubId ? 'font-bold text-slate-200 efl-theme-text' : 'italic text-slate-500 efl-theme-muted'}`}>
-                    {clubId ? compactName(club?.name || clubId) : sourceLabel(fixture, side)}
+                    {clubId === 'BYE' ? 'BYE' : clubId && clubId !== 'TBD' ? compactName(club?.name || clubId) : sourceLabel(fixture, side)}
                   </span>
                   <span className="w-4 text-right font-mono text-[10px] font-black text-slate-300 efl-theme-text-2">{score == null ? '–' : score}</span>
                 </div>
@@ -252,8 +245,9 @@ export const SofaBracketTree: React.FC<Props> = ({ fixtures, competition, curren
             return (
               <button
                 key={fixture.id}
+                data-fixture-id={fixture.id}
                 type="button"
-                disabled={projected}
+                disabled={projected || !onSelectFixture}
                 onClick={() => { if (!projected) onSelectFixture?.(fixture); }}
                 className={`absolute z-10 rounded-xl border p-1.5 text-left shadow-xl transition ${round === 'FINAL' ? 'border-amber-300/35 bg-gradient-to-br from-amber-500/[0.13] to-[#09111f] efl-theme-final shadow-amber-500/10' : 'border-white/[0.09] efl-theme-border bg-[#09111f]/95 efl-theme-surface'} ${isMine ? 'ring-1 ring-amber-300/55' : ''} ${projected ? 'cursor-default' : 'hover:-translate-y-0.5 hover:border-blue-300/30'}`}
                 style={{ left: x, top: y, width: CARD_WIDTH, height: CARD_HEIGHT }}
@@ -267,9 +261,11 @@ export const SofaBracketTree: React.FC<Props> = ({ fixtures, competition, curren
                   </span>
                 </div>
                 <div className="space-y-1">{renderTeam('home')}{renderTeam('away')}</div>
+                {fixture.secondLegLabel ? <p className="mt-1 truncate text-[8px] text-slate-400 efl-theme-text-2" title={fixture.secondLegLabel}>{fixture.secondLegLabel}</p> : fixture.penaltyHomeScore != null ? <p className="mt-1 text-[8px] text-amber-300 efl-theme-amber">Pen: {fixture.penaltyHomeScore}–{fixture.penaltyAwayScore}</p> : null}
               </button>
             );
           })}
+        </div>
         </div>
       </div>
     </div>
