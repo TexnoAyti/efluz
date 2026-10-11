@@ -4559,6 +4559,8 @@ export async function getOrCreateTelegramUserFirestore(tgUser: {
         createdAt: now,
         updatedAt: now,
       };
+      const { ensureFreeTournamentTicket } = await import('../services/customTournamentTicketService');
+      await ensureFreeTournamentTicket(docId, telegramId);
       setInCache(`firestore:user:${docId}`, createdUser, 300000);
       return createdUser;
     } else {

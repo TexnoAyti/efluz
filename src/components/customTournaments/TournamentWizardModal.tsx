@@ -24,7 +24,7 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
 }) => {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [isAdvancedMode, setIsAdvancedMode] = useState<boolean>(false);
-  const savedDraft = useRef<{ signature: string; id: string } | null>(null);
+  const creationKey = useRef<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -55,7 +55,7 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      savedDraft.current = null;
+      creationKey.current = crypto.randomUUID();
       fetchTicketBalance();
     }
   }, [isOpen]);
@@ -89,12 +89,12 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleCreateDraft = async (shouldPublishNow = false) => {
+  const handleCreateTournament = async () => {
     try {
       setIsLoading(true);
       setErrorMessage(null);
 
-      // 1. Create draft
+      // One authenticated, atomic create request
       const payload = {
           name,
           description,
@@ -112,19 +112,12 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
             matchDurationHours,
           },
       };
-      const signature = JSON.stringify(payload);
-      const tournamentId = savedDraft.current?.signature === signature ? savedDraft.current.id : (await customTournamentApi.createDraft(payload)).id;
-      savedDraft.current = { signature, id: tournamentId };
-
-      // 2. Publish if requested and tickets available
-      if (shouldPublishNow) {
-        await customTournamentApi.publishTournament(tournamentId, `client_pub_${tournamentId}_${Date.now()}`);
-      }
-
+      const tournament = await customTournamentApi.createTournament({...payload, idempotencyKey: creationKey.current});
+      const tournamentId = tournament.id;
       onTournamentCreated(tournamentId);
       onClose();
     } catch (err: any) {
-      setErrorMessage(`${savedDraft.current ? 'Qoralama saqlangan. ' : ''}${err.message || 'Xatolik yuz berdi.'}`);
+      setErrorMessage(err.message || 'Xatolik yuz berdi.');
     } finally {
       setIsLoading(false);
     }
@@ -511,13 +504,13 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
                   <p className="text-[11px] text-slate-300">Chipta balansi tekshirilmoqda...</p>
                 ) : ticketBalance !== null && ticketBalance >= 1 ? (
                   <p className="text-[11px] text-slate-300">
-                    Turnirni rasman e‘lon qilish uchun <strong>1 ta chipta</strong> sarflanadi.
+                    Turnir yaratish uchun <strong>1 ta chipta</strong> sarflanadi.
                   </p>
                 ) : (
                   <div className="text-[11px] text-amber-300 space-y-1.5 pt-1">
                     <p>Sizda turnir e‘lon qilish uchun chipta yo‘q (1 turnir = 15 000 so‘m).</p>
                     <p className="text-slate-400">
-                      Chipta olish uchun Telegram orqali <a href="https://t.me/texnoadmin" target="_blank" rel="noreferrer" className="text-emerald-400 font-bold underline">@texnoadmin</a> bilan bog‘laning. Qoralamani hozir bepul saqlab qo‘yishingiz mumkin.
+                      Chipta olish uchun Telegram orqali <a href="https://t.me/texnoadmin" target="_blank" rel="noreferrer" className="text-emerald-400 font-bold underline">@texnoadmin</a> bilan bog‘laning.
                     </p>
                   </div>
                 )}
@@ -552,24 +545,15 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
               </button>
             ) : (
               <>
-                <button
-                  type="button"
-                  disabled={isLoading}
-                  onClick={() => handleCreateDraft(false)}
-                  className="px-3.5 py-2.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs font-semibold min-h-[44px]"
-                >
-                  Qoralama saqlash (0 ticket)
-                </button>
-
                 {ticketBalance !== null && ticketBalance >= 1 && !loadingTickets && !ticketError && (
                   <button
                     type="button"
                     disabled={isLoading}
-                    onClick={() => handleCreateDraft(true)}
+                    onClick={handleCreateTournament}
                     className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-extrabold shadow-lg disabled:opacity-50 min-h-[44px] flex items-center gap-1.5"
                   >
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>E‘lon qilish (1 ticket)</span>
+                    <span>Turnir yaratish (1 ticket)</span>
                   </button>
                 )}
               </>

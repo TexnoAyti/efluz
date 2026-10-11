@@ -7,7 +7,7 @@
 import { Router, Request, Response } from 'express';
 import { requireAuth } from '../middleware/authMiddleware';
 import {
-  getUserTicketBalance,
+  ensureFreeTournamentTicket,
   grantUserTickets,
   refundSpentTicket,
   getTicketTransactions,
@@ -36,7 +36,7 @@ export const customTournamentTicketsRouter = Router();
 customTournamentTicketsRouter.get('/balance', requireAuth, async (req: Request, res: Response) => {
   try {
     const user = req.user!;
-    const account = await getUserTicketBalance(user.id);
+    const account = await ensureFreeTournamentTicket(user.id, user.telegramId || '');
     res.json({ ok: true, account });
   } catch (err: any) {
     res.status(err.statusCode || (['USER_NOT_FOUND','AMBIGUOUS_USER_REFERENCE'].includes(err.message)?400:500)).json({ ok: false, error: err.message });

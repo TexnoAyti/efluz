@@ -8,7 +8,7 @@
 import { Router, Request, Response } from 'express';
 import { requireAuth } from '../middleware/authMiddleware';
 import {
-  createTournamentDraft,
+  createTournament,
   publishTournament,
   claimTournamentClub,
   startTournament,
@@ -86,8 +86,12 @@ customTournamentsRouter.get('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/custom-tournaments/draft - create draft (0 tickets)
-customTournamentsRouter.post('/draft', requireAuth, async (req: Request, res: Response) => {
+// Legacy draft creation is disabled. Direct creation debits the ticket atomically.
+customTournamentsRouter.post('/draft', requireAuth, (_req: Request, res: Response) => {
+  res.status(410).json({ok:false,error:'Qoralama olib tashlangan. Ilovani yangilang.',code:'DRAFT_DISABLED'});
+});
+
+customTournamentsRouter.post('/create', requireAuth, async (req: Request, res: Response) => {
   try {
     const user = req.user!;
     const {
@@ -102,12 +106,12 @@ customTournamentsRouter.post('/draft', requireAuth, async (req: Request, res: Re
       spectatorAccess,
     } = req.body;
 
-    if (!name?.trim()) {
+    if (typeof name !== 'string' || !name.trim()) {
       res.status(400).json({ ok: false, error: 'Turnir nomi kiritilishi shart.' });
       return;
     }
 
-    const tournament = await createTournamentDraft({
+    const tournament = await createTournament({
       name,
       description,
       organizerUserId: user.id,
@@ -120,7 +124,7 @@ customTournamentsRouter.post('/draft', requireAuth, async (req: Request, res: Re
       rules: rules || { roundsCount: 1, playoffLegMode: 'SINGLE_LEG', matchDurationHours: 36 },
       visibility,
       spectatorAccess,
-    });
+    }, req.body.idempotencyKey);
 
     res.json({ ok: true, tournament });
   } catch (err: any) {

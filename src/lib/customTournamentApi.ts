@@ -91,14 +91,14 @@ export const customTournamentApi = {
     return data;
   },
 
-  async createDraft(payload: any): Promise<CustomTournament> {
-    const res = await fetch('/api/custom-tournaments/draft', {
+  async createTournament(payload: any): Promise<CustomTournament> {
+    const res = await fetch('/api/custom-tournaments/create', {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(payload),
     });
     const data = await res.json();
-    if (!res.ok || !data.ok) throw new Error(data.error || 'Qoralamani yaratib bo‘lmadi.');
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Turnirni yaratib bo‘lmadi.');
     return data.tournament;
   },
 

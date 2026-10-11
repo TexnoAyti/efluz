@@ -28,6 +28,40 @@ export function clearMemoryTicketStore(): void {
   memoryTicketTransactions.clear();
 }
 
+/** One welcome ticket per account, with a durable marker and audit record. */
+export async function ensureFreeTournamentTicket(userId: string, telegramId = ''): Promise<UserTicketAccount> {
+  const now = new Date().toISOString();
+  const txId = `welcome_${userId}`;
+  const apply = (existing?: UserTicketAccount): UserTicketAccount => ({
+    ...(existing || { userId, telegramId, balance: 0, totalGranted: 0, totalSpent: 0, totalRefunded: 0 }),
+    balance: (existing?.balance || 0) + 1,
+    totalGranted: (existing?.totalGranted || 0) + 1,
+    freeTicketGrantedAt: now, updatedAt: now,
+  });
+  const audit: TicketTransaction = {id: txId, userId, type: 'GRANT', amount: 1,
+    idempotencyKey: txId, note: 'One-time free welcome tournament ticket', createdAt: now};
+  if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === 'true' || process.env.NODE_ENV === 'test') {
+    const existing = memoryTicketAccounts.get(userId);
+    if (existing?.freeTicketGrantedAt) return {...existing};
+    const account = apply(existing);
+    memoryTicketAccounts.set(userId, account); memoryTicketTransactions.set(txId, audit);
+    return {...account};
+  }
+  const db = getFirestoreDb();
+  const ref = db.collection('user_tickets').doc(userId);
+  // Avoid a write transaction on subsequent balance reads.
+  const existing = (await ref.get()).data() as UserTicketAccount | undefined;
+  if (existing?.freeTicketGrantedAt) return existing;
+  return db.runTransaction(async transaction => {
+    const current = (await transaction.get(ref)).data() as UserTicketAccount | undefined;
+    if (current?.freeTicketGrantedAt) return current;
+    const account = apply(current);
+    transaction.set(ref, account);
+    transaction.set(db.collection('ticket_transactions').doc(txId), audit);
+    return account;
+  });
+}
+
 /**
  * Gets a user's current ticket balance and transaction summary.
  */
