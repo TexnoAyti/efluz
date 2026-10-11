@@ -9,6 +9,7 @@ import {
   TournamentFormatPreview,
 } from '../../types/customTournament';
 import { generateTournamentPreview } from '../../lib/customTournamentEngine';
+import { customTournamentApi } from '../../lib/customTournamentApi';
 
 interface TournamentWizardModalProps {
   isOpen: boolean;
@@ -27,7 +28,8 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Ticket balance
-  const [ticketBalance, setTicketBalance] = useState<number>(0);
+  const [ticketBalance, setTicketBalance] = useState<number | null>(null);
+  const [ticketError, setTicketError] = useState<string | null>(null);
   const [loadingTickets, setLoadingTickets] = useState<boolean>(true);
 
   // Form fields
@@ -72,13 +74,12 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
   const fetchTicketBalance = async () => {
     try {
       setLoadingTickets(true);
-      const res = await fetch('/api/custom-tournaments/tickets/balance');
-      const data = await res.json();
-      if (data.ok && data.account) {
-        setTicketBalance(data.account.balance || 0);
-      }
-    } catch {
-      setTicketBalance(0);
+      setTicketError(null);
+      setTicketBalance(null);
+      const account = await customTournamentApi.getTicketBalance();
+      setTicketBalance(account.balance);
+    } catch (err) {
+      setTicketError(err instanceof Error ? err.message : 'Chipta balansini yuklab bo‘lmadi.');
     } finally {
       setLoadingTickets(false);
     }
@@ -92,10 +93,7 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
       setErrorMessage(null);
 
       // 1. Create draft
-      const draftRes = await fetch('/api/custom-tournaments/draft', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const tournament = await customTournamentApi.createDraft({
           name,
           description,
           format,
@@ -111,29 +109,12 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
             groupsCount: format === 'LEAGUE_AND_PLAYOFF' && groupStageMode === 'GROUPS' ? groupsCount : undefined,
             matchDurationHours,
           },
-        }),
       });
-
-      const draftData = await draftRes.json();
-      if (!draftData.ok || !draftData.tournament) {
-        throw new Error(draftData.error || 'Qoralamani yaratishda xatolik.');
-      }
-
-      const tournamentId = draftData.tournament.id;
+      const tournamentId = tournament.id;
 
       // 2. Publish if requested and tickets available
       if (shouldPublishNow) {
-        const pubRes = await fetch(`/api/custom-tournaments/${tournamentId}/publish`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            idempotencyKey: `client_pub_${tournamentId}_${Date.now()}`,
-          }),
-        });
-        const pubData = await pubRes.json();
-        if (!pubData.ok) {
-          throw new Error(pubData.error || 'Turnirni e‘lon qilishda xatolik yuz berdi.');
-        }
+        await customTournamentApi.publishTournament(tournamentId, `client_pub_${tournamentId}_${Date.now()}`);
       }
 
       onTournamentCreated(tournamentId);
@@ -513,11 +494,18 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
                     <span>Sizdagi chiptalar (Tickets):</span>
                   </div>
                   <span className="font-extrabold text-sm text-emerald-300">
-                    {loadingTickets ? '...' : `${ticketBalance} ta`}
+                    {loadingTickets ? '...' : ticketBalance === null ? '—' : `${ticketBalance} ta`}
                   </span>
                 </div>
 
-                {ticketBalance >= 1 ? (
+                {ticketError ? (
+                  <div role="alert" className="text-[11px] text-amber-300 space-y-2">
+                    <p>{ticketError}</p>
+                    <button type="button" onClick={fetchTicketBalance} className="underline font-bold min-h-[44px]">Qayta urinish</button>
+                  </div>
+                ) : loadingTickets ? (
+                  <p className="text-[11px] text-slate-300">Chipta balansi tekshirilmoqda...</p>
+                ) : ticketBalance !== null && ticketBalance >= 1 ? (
                   <p className="text-[11px] text-slate-300">
                     Turnirni rasman e‘lon qilish uchun <strong>1 ta chipta</strong> sarflanadi.
                   </p>
@@ -569,7 +557,7 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
                   Qoralama saqlash (0 ticket)
                 </button>
 
-                {ticketBalance >= 1 && (
+                {ticketBalance !== null && ticketBalance >= 1 && !loadingTickets && !ticketError && (
                   <button
                     type="button"
                     disabled={isLoading}

@@ -6,6 +6,8 @@ import {getFirestoreDb,resetFirebaseAdminCache} from '../firebase/admin';
 import {authMiddleware,requireAdmin} from '../middleware/authMiddleware';
 import {createSessionToken} from '../auth/sessionToken';
 import {customTournamentTicketsRouter} from '../routes/customTournamentTickets.routes';
+import {customTournamentsRouter} from '../routes/customTournaments.routes';
+import {customTournamentApi} from '../../lib/customTournamentApi';
 import {spendTicketForTournament} from '../services/customTournamentTicketService';
 import {archiveCommunityMessage,communityFacts,communitySourceStats} from '../services/telegramAiCommunitySources';
 import {getTelegramAiConfig,updateTelegramAiConfig} from '../services/telegramAiConfigService';
@@ -34,6 +36,7 @@ const originalFetch=globalThis.fetch;
 let telegramRequests=0;
 let telegramReject=true;
 globalThis.fetch=async(input:any,init?:any)=>{
+ if(typeof input==='string'&&input.startsWith('/api/'))return originalFetch(base+input,init);
  const url=new URL(typeof input==='string'?input:input.url);
  if(url.origin==='https://api.telegram.org'){
   telegramRequests++;
@@ -69,6 +72,7 @@ for(const u of [owner,recipient,other])await db.collection('users').doc(u.id).se
 const app=express();app.use(express.json());app.use(authMiddleware);
 app.use('/api/admin/custom-tournaments/tickets',requireAdmin,customTournamentTicketsRouter);
 app.use('/api/custom-tournaments/tickets',customTournamentTicketsRouter);
+app.use('/api/custom-tournaments',customTournamentsRouter);
 const server=app.listen(0,'127.0.0.1');await once(server,'listening');
 const base='http://127.0.0.1:'+(server.address() as any).port;
 const post=async(path:string,body:any,actor=owner)=>{
@@ -147,4 +151,32 @@ try{
  console.log('PASS PostgreSQL smart notification queue: duplicate event protection, mocked 429 retry, durable receipt and no resend after completion; no real Telegram messages.');
  console.log('PASS PostgreSQL AI config/owner checks, rate-limit concurrency/control exemption, at-most-once delivery, plan replacement, fixture deltas and cancelled writes with no Redis/model/Telegram network.');
  console.log('PASS authenticated ticket grant, canonical recipient, visible balance, correct audit amount, retry dedupe/conflict, invalid recipient rejection, owner restriction, spend/retry/refund.');
+ // Exercise the actual browser API against authenticated HTTP routes, rather than
+ // manually constructing headers as the wizard used to do incorrectly.
+ const savedWindow=(globalThis as any).window;
+ const savedSession=(globalThis as any).sessionStorage;
+ const savedLocal=(globalThis as any).localStorage;
+ try{
+  (globalThis as any).window={};
+  const values=new Map<string,string>();
+  (globalThis as any).sessionStorage={getItem:(key:string)=>values.get(key)||null};
+  (globalThis as any).localStorage={getItem:()=>null};
+  await assert.rejects(customTournamentApi.getTicketBalance(),/Unauthorized/,'Missing authentication is an error, not a zero balance');
+  values.set('efootball_session_token',createSessionToken(recipient));
+  const before=await customTournamentApi.getTicketBalance();
+  assert.equal(before.balance,3);
+  const draft=await customTournamentApi.createDraft({name:'Authenticated wizard test',format:'LEAGUE',leagueScope:'TOP5_ALL',maxParticipants:8,visibility:'PUBLIC_OPEN',rules:{roundsCount:1,playoffLegMode:'SINGLE_LEG',matchDurationHours:36}});
+  assert.equal(draft.organizerUserId,recipient.id);
+  assert.equal(draft.status,'DRAFT');
+  assert.equal((await customTournamentApi.getTicketBalance()).balance,3,'Saving a draft is free');
+  const published=await customTournamentApi.publishTournament(draft.id,'wizard-auth-publish');
+  assert.equal(published.status,'REGISTRATION_OPEN');
+  await customTournamentApi.publishTournament(draft.id,'wizard-auth-publish');
+  assert.equal((await customTournamentApi.getTicketBalance()).balance,2,'Publishing and retry spend exactly one ticket');
+  console.log('PASS actual browser API: unauthorized balance rejects, authenticated balance/draft/publish succeed, retry spends one ticket.');
+ }finally{
+  (globalThis as any).window=savedWindow;
+  (globalThis as any).sessionStorage=savedSession;
+  (globalThis as any).localStorage=savedLocal;
+ }
 }finally{server.close();globalThis.fetch=originalFetch;}
