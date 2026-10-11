@@ -50,7 +50,7 @@ globalThis.fetch=async(input:any,init?:any)=>{
  if(url.pathname.endsWith('/efl_runtime_read')){
   const q=body.p_query;
   let documents=[...rows].filter(([path])=>q.path?path===q.path:path.split('/').slice(0,-1).join('/')===q.collection).map(([path,encoded])=>({id:path.split('/').at(-1)!,encoded}));
-  for(const f of q.filters||[])documents=documents.filter(d=>{const value=f.field==='__name__'?d.id:decodeValue(d.encoded)[f.field];return f.op==='in'?f.value.includes(value):value===f.value;});
+  for(const f of q.filters||[])documents=documents.filter(d=>{const value=f.field==='__name__'?d.id:decodeValue(d.encoded)[f.field];return f.op==='in'?f.value.includes(value):f.op==='!='?value!==f.value:f.op==='array-contains'?Array.isArray(value)&&value.includes(f.value):value===f.value;});
   if(q.limit)documents=documents.slice(0,q.limit);
   return Response.json({generation:String(generation),documents,count:documents.length});
  }
@@ -168,9 +168,13 @@ try{
   const draft=await customTournamentApi.createDraft({name:'Authenticated wizard test',format:'LEAGUE',leagueScope:'TOP5_ALL',maxParticipants:8,visibility:'PUBLIC_OPEN',rules:{roundsCount:1,playoffLegMode:'SINGLE_LEG',matchDurationHours:36}});
   assert.equal(draft.organizerUserId,recipient.id);
   assert.equal(draft.status,'DRAFT');
+  assert.ok((await customTournamentApi.getMyTournaments()).some(t=>t.id===draft.id),'Saved draft is discoverable after leaving the wizard');
+  assert.equal((await customTournamentApi.getTournamentDetails(draft.id)).canManage,true,'Saved draft reopens for organizer');
+  assert.equal((await customTournamentApi.getPublicTournaments()).some(t=>t.id===draft.id),false,'Draft cannot leak into the public catalog');
   assert.equal((await customTournamentApi.getTicketBalance()).balance,3,'Saving a draft is free');
   const published=await customTournamentApi.publishTournament(draft.id,'wizard-auth-publish');
   assert.equal(published.status,'REGISTRATION_OPEN');
+  assert.equal((await customTournamentApi.getTournamentDetails(draft.id)).tournament.status,'REGISTRATION_OPEN');
   await customTournamentApi.publishTournament(draft.id,'wizard-auth-publish');
   assert.equal((await customTournamentApi.getTicketBalance()).balance,2,'Publishing and retry spend exactly one ticket');
   console.log('PASS actual browser API: unauthorized balance rejects, authenticated balance/draft/publish succeed, retry spends one ticket.');

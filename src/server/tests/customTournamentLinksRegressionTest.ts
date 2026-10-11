@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import React from 'react';
+import {renderToStaticMarkup} from 'react-dom/server';
+import {tournamentTelegramLink,tournamentStartParam,parseTournamentStartParam,readTournamentLaunch} from '../../lib/customTournamentLinks';
+import {TournamentAdminDrawer} from '../../components/customTournaments/TournamentAdminDrawer';
+import type {CustomTournament} from '../../types/customTournament';
+const id='ct_1791709534564_ea566fbb',token='inv_123456abcdef';
+const url=new URL(tournamentTelegramLink(id,token));
+assert.equal(url.origin,'https://t.me');assert.equal(url.pathname,'/efluzbot');
+assert.deepEqual(parseTournamentStartParam(url.searchParams.get('startapp')),{tournamentId:id,token});
+assert.ok(/^[A-Za-z0-9_-]{1,512}$/.test(url.searchParams.get('startapp')!));
+for(const bad of ['ct1_','ct1_???','ct1_'+btoa(JSON.stringify(['../../../admin','token'])),'ct1_'+btoa(JSON.stringify([id,token,'extra']))])assert.equal(parseTournamentStartParam(bad),null);
+assert.throws(()=>tournamentTelegramLink('https://evil.invalid',token));
+assert.equal(tournamentTelegramLink(id).includes('startapp=ct1_'),true);
+const oldWindow=(globalThis as any).window,oldSession=(globalThis as any).sessionStorage;
+try{
+ (globalThis as any).sessionStorage={getItem:()=>null};
+ (globalThis as any).window={location:{search:'?tgWebAppStartParam='+tournamentStartParam(id,token)}};
+ assert.deepEqual(readTournamentLaunch(),{tournamentId:id,token});
+ (globalThis as any).window={location:{search:''},Telegram:{WebApp:{initDataUnsafe:{start_param:tournamentStartParam(id,token)}}}};
+ assert.deepEqual(readTournamentLaunch(),{tournamentId:id,token});
+ (globalThis as any).window={location:{search:''},Telegram:{WebApp:{initData:new URLSearchParams({start_param:tournamentStartParam(id,token)}).toString()}}};
+ assert.deepEqual(readTournamentLaunch(),{tournamentId:id,token});
+ const tournament={id,status:'DRAFT',inviteToken:token,spectatorToken:'spec_abcdef',assistantAdminIds:[],maxParticipants:8,rules:{roundsCount:1,playoffLegMode:'SINGLE_LEG',matchDurationHours:36}} as CustomTournament;
+ const html=renderToStaticMarkup(React.createElement(TournamentAdminDrawer,{isOpen:true,canPublishDraft:true,onClose:()=>{},tournament,participants:[],fixtures:[],onRefresh:()=>{}}));
+ assert.ok(html.includes('Qoralamani e’lon qilish')&&html.includes('1 ticket'));
+ assert.ok(html.includes('https://t.me/efluzbot?startapp='));
+ assert.equal(html.includes('/?inv='),false);
+}finally{(globalThis as any).window=oldWindow;(globalThis as any).sessionStorage=oldSession;}
+console.log('PASS Telegram tournament links: URL encoding/validation, SDK/signed-data/query launch inputs, draft publication UI and invite/spectator links. No Telegram messages or production writes.');

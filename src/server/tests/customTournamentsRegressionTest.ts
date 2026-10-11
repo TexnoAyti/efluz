@@ -261,7 +261,8 @@ describe('Custom Tournaments & Tickets Test Suite', () => {
       rules: { roundsCount: 1, playoffLegMode: 'SINGLE_LEG', matchDurationHours: 36 },
       visibility: 'PRIVATE',
     });
-    privTournament.status = 'REGISTRATION_OPEN';
+    await grantUserTickets({targetUserId:hostUserId,adminTelegramId:PRIMARY_OWNER_TELEGRAM_ID,amount:1});
+    await publishTournament({tournamentId:privTournament.id,userId:hostUserId,idempotencyKey:'private-isolation-publish'});
 
     // Must NOT appear in public catalog
     const publicList = await getPublicTournaments();

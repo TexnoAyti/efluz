@@ -19,6 +19,7 @@ import {
   CustomTournamentFixture,
   CustomTournamentAuditLog,
 } from '../../types/customTournament';
+import { tournamentTelegramLink } from '../../lib/customTournamentLinks';
 import { customTournamentApi } from '../../lib/customTournamentApi';
 
 interface TournamentAdminDrawerProps {
@@ -28,6 +29,7 @@ interface TournamentAdminDrawerProps {
   participants: CustomTournamentParticipant[];
   fixtures: CustomTournamentFixture[];
   onRefresh: () => void;
+  canPublishDraft?: boolean;
 }
 
 export const TournamentAdminDrawer: React.FC<TournamentAdminDrawerProps> = ({
@@ -37,6 +39,7 @@ export const TournamentAdminDrawer: React.FC<TournamentAdminDrawerProps> = ({
   participants,
   fixtures,
   onRefresh,
+  canPublishDraft = false,
 }) => {
   const [activeTab, setActiveTab] = useState<'control' | 'assistants' | 'disputes' | 'audit'>('control');
   const [isLoading, setIsLoading] = useState(false);
@@ -80,6 +83,20 @@ export const TournamentAdminDrawer: React.FC<TournamentAdminDrawerProps> = ({
   };
 
   if (!isOpen) return null;
+
+  const handlePublishDraft = async () => {
+    try {
+      setIsLoading(true);
+      setStatusMessage(null);
+      const account = await customTournamentApi.getTicketBalance();
+      if (account.balance < 1) throw new Error('E’lon qilish uchun 1 ta ticket kerak.');
+      await customTournamentApi.publishTournament(tournament.id, `publish_${tournament.id}`);
+      setStatusMessage({ type: 'success', text: 'Turnir e’lon qilindi. Qabul ochiq.' });
+      onRefresh();
+    } catch (err) {
+      setStatusMessage({ type: 'error', text: err instanceof Error ? err.message : 'Turnirni e’lon qilib bo‘lmadi.' });
+    } finally { setIsLoading(false); }
+  };
 
   const handleStartTournament = async () => {
     if (participants.length < 4) {
@@ -151,8 +168,8 @@ export const TournamentAdminDrawer: React.FC<TournamentAdminDrawerProps> = ({
     }
   };
 
-  const copyToClipboard = (text: string, isInvite: boolean) => {
-    navigator.clipboard.writeText(text);
+  const copyToClipboard = async (text: string, isInvite: boolean) => {
+    try { await navigator.clipboard.writeText(text); } catch { setStatusMessage({ type: 'error', text: 'Nusxalab bo‘lmadi. Havolani tanlab, qo‘lda nusxalang.' }); return; }
     if (isInvite) {
       setCopiedInvite(true);
       setTimeout(() => setCopiedInvite(false), 2000);
@@ -162,8 +179,8 @@ export const TournamentAdminDrawer: React.FC<TournamentAdminDrawerProps> = ({
     }
   };
 
-  const inviteUrl = `${window.location.origin}/?inv=${tournament.inviteToken}`;
-  const specUrl = `${window.location.origin}/?spec=${tournament.spectatorToken}`;
+  const inviteUrl = tournamentTelegramLink(tournament.id, tournament.inviteToken);
+  const specUrl = tournamentTelegramLink(tournament.id, tournament.spectatorToken);
 
   const disputedFixtures = fixtures.filter((f) => f.status === 'DISPUTED' || f.status === 'PENDING_CONFIRMATION');
 
@@ -253,6 +270,13 @@ export const TournamentAdminDrawer: React.FC<TournamentAdminDrawerProps> = ({
           {/* TAB 1: CONTROL */}
           {activeTab === 'control' && (
             <div className="space-y-4">
+              {tournament.status === 'DRAFT' && canPublishDraft && (
+                <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 space-y-3">
+                  <h4 className="font-bold text-slate-100 text-sm">Qoralamani e’lon qilish</h4>
+                  <p className="text-xs text-slate-300">Qoralama saqlangan. E’lon qilinganda 1 ta ticket sarflanadi va qatnashchilar klub tanlay oladi.</p>
+                  <button type="button" disabled={isLoading} onClick={handlePublishDraft} className="min-h-[44px] px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 text-xs font-bold disabled:opacity-50">E’lon qilish (1 ticket)</button>
+                </div>
+              )}
               {/* Start Tournament Card */}
               {tournament.status === 'REGISTRATION_OPEN' && (
                 <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 space-y-3">

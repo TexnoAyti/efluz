@@ -18,14 +18,19 @@ import { TournamentCard } from './TournamentCard';
 import { TournamentWizardModal } from './TournamentWizardModal';
 import { TournamentDetailView } from './TournamentDetailView';
 import { AdminTicketManagementModal } from './AdminTicketManagementModal';
+import { readTournamentLaunch } from '../../lib/customTournamentLinks';
 import { useAuth } from '../../context/AuthContext';
 
 export const TournamentListView: React.FC = () => {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'all' | 'my'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'my'>(() => { try { return sessionStorage.getItem(`efl:custom-tab:${user?.id}`) === 'my' ? 'my' : 'all'; } catch { return 'all'; } });
   const [tournaments, setTournaments] = useState<CustomTournament[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedTournamentId, setSelectedTournamentId] = useState<string | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
+  const [ticketError, setTicketError] = useState<string | null>(null);
+  const [selectedTournamentId, setSelectedTournamentId] = useState<string | null>(() => readTournamentLaunch()?.tournamentId || null);
+
+  const [launchToken, setLaunchToken] = useState(() => readTournamentLaunch()?.token);
 
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
@@ -33,7 +38,7 @@ export const TournamentListView: React.FC = () => {
   const [formatFilter, setFormatFilter] = useState<string>('ALL');
 
   // Ticket balance
-  const [ticketBalance, setTicketBalance] = useState<number>(0);
+  const [ticketBalance, setTicketBalance] = useState<number | null>(null);
   const [loadingTickets, setLoadingTickets] = useState(true);
 
   // Modals
@@ -45,6 +50,7 @@ export const TournamentListView: React.FC = () => {
   const fetchTournaments = async () => {
     try {
       setIsLoading(true);
+      setListError(null);
       if (activeTab === 'all') {
         const list = await customTournamentApi.getPublicTournaments(40);
         setTournaments(list);
@@ -53,8 +59,7 @@ export const TournamentListView: React.FC = () => {
         setTournaments(list);
       }
     } catch (err) {
-      console.error('Failed to load tournaments:', err);
-      setTournaments([]);
+      setListError(err instanceof Error ? err.message : 'Turnirlarni yuklab bo‘lmadi.');
     } finally {
       setIsLoading(false);
     }
@@ -63,16 +68,19 @@ export const TournamentListView: React.FC = () => {
   const fetchTickets = async () => {
     try {
       setLoadingTickets(true);
+      setTicketError(null);
       const acc = await customTournamentApi.getTicketBalance();
       setTicketBalance(acc?.balance || 0);
-    } catch {
-      setTicketBalance(0);
+    } catch (err) {
+      setTicketBalance(null);
+      setTicketError(err instanceof Error ? err.message : 'Balansni yuklab bo‘lmadi.');
     } finally {
       setLoadingTickets(false);
     }
   };
 
   useEffect(() => {
+    try { sessionStorage.setItem(`efl:custom-tab:${user?.id}`, activeTab); } catch {}
     fetchTournaments();
   }, [activeTab]);
 
@@ -95,9 +103,12 @@ export const TournamentListView: React.FC = () => {
     return (
       <TournamentDetailView
         tournamentId={selectedTournamentId}
+        inviteToken={launchToken}
         onBack={() => {
           setSelectedTournamentId(null);
+          setLaunchToken(undefined);
           fetchTournaments();
+          fetchTickets();
         }}
       />
     );
@@ -123,7 +134,7 @@ export const TournamentListView: React.FC = () => {
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950/70 border border-slate-800 text-xs">
               <Ticket className="w-3.5 h-3.5 text-amber-400" />
               <span className="text-slate-400">Chiptalar:</span>
-              <strong className="text-slate-100 font-bold">{loadingTickets ? '...' : ticketBalance}</strong>
+              <strong className="text-slate-100 font-bold">{loadingTickets ? '...' : ticketBalance ?? '—'}</strong>
             </div>
 
             {isPrimaryOwner && (
@@ -145,6 +156,7 @@ export const TournamentListView: React.FC = () => {
           </div>
         </div>
 
+        {ticketError && <div role="alert" className="text-xs text-amber-300"><p>{ticketError}</p><button type="button" onClick={fetchTickets} className="min-h-[44px] font-bold underline">Qayta urinish</button></div>}
         {/* Informative notice on how to get tickets if user has 0 */}
         {ticketBalance === 0 && !loadingTickets && (
           <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-between gap-2 text-xs">
@@ -244,6 +256,8 @@ export const TournamentListView: React.FC = () => {
           <RefreshCw className="w-6 h-6 animate-spin mx-auto text-emerald-400" />
           <p className="text-xs">Turnirlar yuklanmoqda...</p>
         </div>
+      ) : listError ? (
+        <div role="alert" className="p-4 text-sm text-amber-300"><p>{listError}</p><button type="button" onClick={fetchTournaments} className="min-h-[44px] font-bold underline">Qayta urinish</button></div>
       ) : filteredTournaments.length === 0 ? (
         <div className="p-12 rounded-3xl bg-slate-900/50 border border-slate-800/80 text-center space-y-3">
           <Trophy className="w-10 h-10 text-slate-600 mx-auto" />
@@ -267,7 +281,7 @@ export const TournamentListView: React.FC = () => {
             <TournamentCard
               key={t.id}
               tournament={t}
-              onClick={() => setSelectedTournamentId(t.id)}
+              onClick={() => { setLaunchToken(undefined); setSelectedTournamentId(t.id); }}
             />
           ))}
         </div>
@@ -279,6 +293,8 @@ export const TournamentListView: React.FC = () => {
         onClose={() => setShowWizardModal(false)}
         onTournamentCreated={(newId) => {
           setShowWizardModal(false);
+          setActiveTab('my');
+          setLaunchToken(undefined);
           setSelectedTournamentId(newId);
           fetchTournaments();
           fetchTickets();

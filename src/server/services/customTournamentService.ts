@@ -182,6 +182,7 @@ export async function claimTournamentClub(params: {
   username?: string;
   firstName?: string;
   clubId: string;
+  inviteToken?: string;
 }): Promise<CustomTournamentParticipant> {
   const isFallback = process.env.FIREBASE_FORCE_LOCAL_FALLBACK === 'true' || process.env.NODE_ENV === 'test';
   const now = new Date().toISOString();
@@ -195,6 +196,9 @@ export async function claimTournamentClub(params: {
   if (isFallback) {
     const tournament = memoryTournaments.get(params.tournamentId);
     if (!tournament) throw Object.assign(new Error('Turnir topilmadi.'), { statusCode: 404 });
+    if (tournament.visibility === 'PRIVATE' && tournament.organizerUserId !== params.userId && !tournament.assistantAdminIds.includes(params.userId) && (!params.inviteToken || params.inviteToken !== tournament.inviteToken)) {
+      throw Object.assign(new Error('Klub tanlash uchun qatnashish taklif havolasi kerak.'), { statusCode: 403, code: 'INVITE_REQUIRED' });
+    }
     if (tournament.status !== 'REGISTRATION_OPEN') {
       throw Object.assign(new Error('Ushbu turnirda ro‘yxatdan o‘tish yopilgan yoki turnir boshlangan.'), {
         statusCode: 400,
@@ -270,6 +274,9 @@ export async function claimTournamentClub(params: {
     if (!tournDoc.exists) throw Object.assign(new Error('Turnir topilmadi.'), { statusCode: 404 });
     const tournament = tournDoc.data() as CustomTournament;
 
+    if (tournament.visibility === 'PRIVATE' && tournament.organizerUserId !== params.userId && !tournament.assistantAdminIds.includes(params.userId) && (!params.inviteToken || params.inviteToken !== tournament.inviteToken)) {
+      throw Object.assign(new Error('Klub tanlash uchun qatnashish taklif havolasi kerak.'), { statusCode: 403, code: 'INVITE_REQUIRED' });
+    }
     if (tournament.status !== 'REGISTRATION_OPEN') {
       throw Object.assign(new Error('Turnirda ro‘yxatdan o‘tish yopilgan.'), { statusCode: 400, code: 'REGISTRATION_CLOSED' });
     }
@@ -559,7 +566,7 @@ export async function getPublicTournaments(limitCount = 20): Promise<CustomTourn
 
   if (isFallback) {
     return Array.from(memoryTournaments.values())
-      .filter((t) => t.visibility === 'PUBLIC_OPEN' || t.visibility === 'PUBLIC_MODERATED')
+      .filter((t) => t.status !== 'DRAFT' && (t.visibility === 'PUBLIC_OPEN' || t.visibility === 'PUBLIC_MODERATED'))
       .slice(0, limitCount);
   }
 
@@ -567,6 +574,7 @@ export async function getPublicTournaments(limitCount = 20): Promise<CustomTourn
   const snap = await db
     .collection('custom_tournaments')
     .where('visibility', 'in', ['PUBLIC_OPEN', 'PUBLIC_MODERATED'])
+    .where('status', '!=', 'DRAFT')
     .orderBy('createdAt', 'desc')
     .limit(limitCount)
     .get();
@@ -596,6 +604,9 @@ export async function getMyTournaments(userId: string): Promise<CustomTournament
   const myTourns = new Map<string, CustomTournament>();
   orgSnap.docs.forEach((d) => myTourns.set(d.id, d.data() as CustomTournament));
 
+  const assistantSnap = await db.collection('custom_tournaments').where('assistantAdminIds', 'array-contains', userId).get();
+  assistantSnap.docs.forEach(d => myTourns.set(d.id, d.data() as CustomTournament));
+
   // Query where participant
   const partSnap = await db.collection('custom_tournament_participants').where('userId', '==', userId).get();
   for (const p of partSnap.docs) {
@@ -622,6 +633,7 @@ export async function getTournamentByIdWithAccess(
   fixtures: CustomTournamentFixture[];
   standings?: CustomTournamentStandingsRow[];
   canManage: boolean;
+  canJoin: boolean;
 }> {
   const isFallback = process.env.FIREBASE_FORCE_LOCAL_FALLBACK === 'true' || process.env.NODE_ENV === 'test';
 
@@ -650,6 +662,8 @@ export async function getTournamentByIdWithAccess(
   const isParticipant = requesterUserId ? participants.some((p) => p.userId === requesterUserId) : false;
   const isTokenMatch = token ? tournament.inviteToken === token || tournament.spectatorToken === token : false;
 
+  if (tournament.status === 'DRAFT' && !isOrganizer && !isAssistant) throw Object.assign(new Error('Qoralamani faqat tashkilotchi va yordamchi ko‘ra oladi.'), { statusCode: 403 });
+
   // Private tournament security boundary
   if (tournament.visibility === 'PRIVATE' && !isOrganizer && !isAssistant && !isParticipant && !isTokenMatch) {
     throw Object.assign(new Error('Bu yopiq (private) turnir. Ko‘rish uchun taklif havolasi talab qilinadi.'), {
@@ -665,11 +679,12 @@ export async function getTournamentByIdWithAccess(
   }
 
   return {
-    tournament,
+    tournament: isOrganizer || isAssistant ? tournament : { ...tournament, inviteToken: '', spectatorToken: '' },
     participants,
     fixtures,
     standings,
     canManage: isOrganizer || isAssistant,
+    canJoin: tournament.status === 'REGISTRATION_OPEN' && (tournament.visibility !== 'PRIVATE' || isOrganizer || isAssistant || Boolean(token && token === tournament.inviteToken)),
   };
 }
 
