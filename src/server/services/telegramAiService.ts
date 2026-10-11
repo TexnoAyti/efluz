@@ -21,6 +21,8 @@ import { parseAiPlanRevision } from './telegramAiPlanRevision';
  */
 
 import { GoogleGenAI } from '@google/genai';
+import { appendAiExchange, normalizeAiHistory, AI_CONTEXT_TTL_SECONDS } from './telegramAiConversationMemory';
+import { getAiResponsePolicy, limitAiReply } from './telegramAiResponsePolicy';
 import { KEY_PREFIX } from '../readModel/readModelStore';
 import { getTelegramAiConfig } from './telegramAiConfigService';
 import { checkAndIncrementAiRateLimits } from './telegramAiRateLimitService';
@@ -74,8 +76,7 @@ export interface ConversationTurn {
 export type DeliveryClaimResult = 'ok' | 'already_handled' | 'redis_error';
 
 const GLOBAL_TIMEOUT_MS = 6000;
-const MAX_CONTEXT_TURNS = 4;
-const CONTEXT_TTL_SECONDS = 3600; // Sliding one-hour TTL; scoped to user/chat/topic
+const CONTEXT_TTL_SECONDS = AI_CONTEXT_TTL_SECONDS;
 const MAX_RESPONSE_CHARS = 1000;
 const STANDARD_OFF_TOPIC_REPLY = "Men faqat eFootball va EFL UZ bo‘yicha yordam beraman.";
 
@@ -324,7 +325,7 @@ async function getConversationContext(
   if (!client) {
     const record = testContextStore.get(contextKey);
     if (!record || record.expiresAt <= Date.now()) return [];
-    return record.turns;
+    return normalizeAiHistory(record.turns);
   }
 
   try {
@@ -333,13 +334,7 @@ async function getConversationContext(
     if (!raw) return [];
     const parsed: any = typeof raw === 'string' ? JSON.parse(raw) : raw;
     if (!Array.isArray(parsed)) return [];
-    return parsed.map((item: any): ConversationTurn => ({
-      role: item?.role === 'model' ? 'model' : 'user',
-      text: String(item?.text || ''),
-      selectedClubIds: Array.isArray(item?.selectedClubIds) ? item.selectedClubIds.filter((id: unknown) => typeof id === 'string').slice(0, 4) : undefined,
-      selectedFixtureIds:Array.isArray(item?.selectedFixtureIds)?item.selectedFixtureIds.filter((id:unknown)=>typeof id==='string').slice(0,2):undefined,
-      selectedCompetitionIds: Array.isArray(item?.selectedCompetitionIds) ? item.selectedCompetitionIds.filter((id: unknown) => typeof id === 'string').slice(0, 5) : undefined,
-    })).slice(-MAX_CONTEXT_TURNS);
+    return normalizeAiHistory(parsed);
   } catch {
     return [];
   }
@@ -361,12 +356,7 @@ async function saveConversationContext(
   const client = getAiRedisClient(options?.signal);
   const contextKey = `${KEY_PREFIX}:telegram:ai:context:${chatId}:${threadId}:${userId}`;
 
-  const existing = options?.history || [];
-  const updated: ConversationTurn[] = [
-    ...existing,
-    { role: 'user' as const, text: userText.slice(0, 700), selectedClubIds: options?.selectedClubIds || [], selectedFixtureIds:options?.selectedFixtureIds||[], selectedCompetitionIds: options?.selectedCompetitionIds || [] },
-    { role: 'model' as const, text: modelText.slice(0, 500) },
-  ].slice(-MAX_CONTEXT_TURNS);
+  const updated = appendAiExchange(options?.history || [], userText, modelText, options);
 
   if (!client) {
     testContextStore.set(contextKey, {
@@ -455,8 +445,8 @@ async function dispatchTelegramAiReply(
   const parseMode = options.parse_mode !== undefined ? options.parse_mode : 'HTML';
   const maxChars = Math.min(options.maxChars || MAX_RESPONSE_CHARS, 4000);
   const textToSend = parseMode === 'HTML'
-    ? await decorateAiCustomEmoji(escapeTelegramHtml(replyText.slice(0, maxChars)), signal)
-    : replyText.slice(0, maxChars);
+    ? await decorateAiCustomEmoji(escapeTelegramHtml(limitAiReply(replyText, maxChars)), signal)
+    : limitAiReply(replyText, maxChars);
 
   // 5. Dispatch message to Telegram
   const sendResult = await sendTelegramMessage(payload.chatId, textToSend, {
@@ -615,7 +605,7 @@ export async function handleTelegramAiMessage(
       const text = await handleAiAdminCommand(payload, rootController.signal, JSON.stringify(scope), scope);
       const token = /\/ai_confirm ([a-f0-9]{24})/.exec(text)?.[1];
       const visible = token ? text.replace(/\n\/ai_(?:confirm|cancel) [a-f0-9]{24}/g, '') + '\n“Tasdiqlash” tugmasini bosing yoki “tasdiqlayman” deb yozing.' : text;
-      const result = await dispatchTelegramAiReply(payload, visible, rootController.signal, { parse_mode: null, reply_markup: token ? { inline_keyboard: [[{ text: 'Tasdiqlash', callback_data: 'ai:confirm:' + token }, { text: 'Bekor qilish', callback_data: 'ai:cancel:' + token }]] } : undefined });
+      const result = await dispatchTelegramAiReply(payload, visible, rootController.signal, { parse_mode: null, maxChars: intent === 'help' || /^\/ai_actions(?:@|\s|$)/i.test(payload.text) ? 4000 : 1000, reply_markup: token ? { inline_keyboard: [[{ text: 'Tasdiqlash', callback_data: 'ai:confirm:' + token }, { text: 'Bekor qilish', callback_data: 'ai:cancel:' + token }]] } : undefined });
       if (result.replySent && token && result.botMessageId) await rememberDeliveredAdminPlan(payload, text, result.botMessageId, rootController.signal);
       if (result.replySent && !token && result.botMessageId && owner) await rememberDeliveredAiAdminDraft(payload, text, result.botMessageId, rootController.signal);
       if (result.replySent && intent === 'admin') await saveConversationContext(payload.chatId, payload.threadId, payload.fromUser.id, payload.text, visible, { signal: rootController.signal, history, selectedClubIds: scope.selectedClubIds, selectedCompetitionIds: scope.selectedCompetitionIds });
@@ -679,19 +669,20 @@ export async function handleTelegramAiMessage(
         const ai = new GoogleGenAI({ apiKey });
 
         const privateAdmin = isOwnerAdminPrivateChat(payload);
-        const systemPrompt = buildTelegramAiSystemPrompt(grounding.factsSummary, speaker, { privateAdmin });
+        const responsePolicy = getAiResponsePolicy(payload.text);
+        const systemPrompt = buildTelegramAiSystemPrompt(grounding.factsSummary, speaker, { privateAdmin, responsePolicy });
 
         const contents = [
           ...history.map((h) => ({
             role: h.role,
             parts: [{ text: h.text }],
           })),
-          { role: 'user', parts: [{ text: payload.text.slice(0, 700) }] },
+          { role: 'user', parts: [{ text: Array.from(payload.text).slice(0, 1200).join('') }] },
         ];
 
         try {
           replyText = await generateGroundedTelegramAnswer({ ai, model: modelName, contents, systemPrompt, signal: modelSignal, deadlineAt: deadlineAt - 1800,
-            maxToolRounds: privateAdmin ? 3 : 2, extraReadTools: createAiAdminReadTools(payload, modelSignal) });
+            responsePolicy, maxToolRounds: Math.max(privateAdmin ? 3 : 0, responsePolicy.maxToolRounds), extraReadTools: createAiAdminReadTools(payload, modelSignal) });
         } catch (apiErr: any) {
           if (rootController.signal.aborted) {
             console.warn('[AI GEMINI] Gemini call cancelled due to deadline timeout');
@@ -720,7 +711,7 @@ export async function handleTelegramAiMessage(
       payload,
       replyText,
       rootController.signal,
-      { parse_mode: 'HTML' }
+      { parse_mode: 'HTML', maxChars: getAiResponsePolicy(payload.text).maxChars }
     );
 
     if (dispatchRes.replySent) {
@@ -730,7 +721,7 @@ export async function handleTelegramAiMessage(
         payload.threadId,
         payload.fromUser.id,
         payload.text,
-        replyText,
+        limitAiReply(replyText, getAiResponsePolicy(payload.text).maxChars),
         { signal: rootController.signal, history, selectedClubIds: grounding.selectedClubIds, selectedCompetitionIds: grounding.detectedCompetitions }
       );
       return { ok: true, handled: true, replySent: true };

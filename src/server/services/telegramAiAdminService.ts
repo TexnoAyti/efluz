@@ -227,7 +227,7 @@ export async function planAiAdminAction(request: string, facts: string, signal: 
  * Authority is derived from Telegram sender ID, never username, model text or chat admin status. */
 export async function handleAiAdminCommand(payload: TelegramAiMessagePayload, signal: AbortSignal, facts = '', scope: ConversationScope = {}): Promise<string> {
   if (!isAiAdminActor(payload.fromUser.id) || !Number.isSafeInteger(payload.fromUser.id) || payload.fromUser.is_bot || payload.senderChat || payload.forwarded)
-    return 'AI orqali admin buyruqlarini faqat asosiy admin bera oladi.';
+    return 'AI orqali admin buyruqlari faqat ruxsat berilgan adminlar uchun.';
   const { config, redisAvailable } = await getTelegramAiConfig({ signal });
   const privateChat = isOwnerAdminPrivateChat(payload);
   if (!config.enabled || process.env.NODE_ENV === 'production' && !redisAvailable || !privateChat && (config.allowedChatId !== payload.chatId || config.allowedThreadId !== payload.threadId)) return 'AI admin boshqaruvi bu chatda faol emas.';
@@ -268,7 +268,7 @@ export async function handleAiAdminCommand(payload: TelegramAiMessagePayload, si
 • AI o‘chiq bo‘lsa qayta yoqish: /ai_on (asosiy admin)
 • Tasdiqlashdan oldin: “yo‘q, hisob 3-1”, “12-tur bo‘lsin”, “muddat 48 soat bo‘lsin”, “yo‘q @username”, “matn: “Yangi tur ochildi””
 
-O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yoki “tasdiqlayman” deb yozing. “Bekor qil” rejani bekor qiladi. Tuzatilgan reja alohida tasdiq talab qiladi; eski tugma bekor bo‘ladi. Hisob tartibi dastlab yozgan jamoalaringiz bo‘yicha saqlanadi. Bazani o‘zgartirish buyruqlari faqat asosiy admin uchun.`;
+O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yoki “tasdiqlayman” deb yozing. “Bekor qil” rejani bekor qiladi. Tuzatilgan reja alohida tasdiq talab qiladi; eski tugma bekor bo‘ladi. Hisob tartibi dastlab yozgan jamoalaringiz bo‘yicha saqlanadi. Amallar mavjud admin ruxsatlari doirasida bajariladi. Vakolat berilgan admin liga va kubok amallaridan foydalanadi; xavfli va umumiy tizim amallari faqat asosiy admin uchun.`;
     if (command === 'read') {
       if (!privateChat) return 'Yopiq admin ma’lumotlarini olish uchun botning shaxsiy chatida /ai_read ishlating.';
       const plan = argument.startsWith('{') ? adminPlanSchema.parse(JSON.parse(argument)) : await parseNaturalAdminPlan(argument, signal) || await planAiAdminAction(argument, facts, signal, payload);

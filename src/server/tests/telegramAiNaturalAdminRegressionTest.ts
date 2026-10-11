@@ -179,7 +179,7 @@ try {
  assert.equal(modelCalls,0);assert.equal(writes,0);
  for(const text of ['Inter — Milan 10-tur natijasini 2-1 qil','@inter_fan faqat La Liga uchun admin qil','@inter_fan ga premium ber','Heidenheim klubini egasidan bo‘shat'])assert.match(await handleAiAdminCommand(payload(text),signal),/\/ai_confirm/);
  assert.match(await handleAiAdminCommand(payload('Inter Milan natijasini o‘chir'),signal),/Bir nechta o‘yin/);
- assert.match(await handleAiAdminCommand(payload('@inter_fan ni blokla',123),signal),/faqat asosiy admin/);
+ assert.match(await handleAiAdminCommand(payload('@inter_fan ni blokla',123),signal),/ruxsat berilgan adminlar/);
  assert.match(await handleAiAdminCommand(payload('foydalanuvchilarni ko‘rsat'),signal),/shaxsiy chat/);
  const contextPreview=await handleAiAdminCommand(payload('Inter — Milan 10-tur natijasini 2-1 qil'),signal);
  await rememberDeliveredAdminPlan(payload('x'),contextPreview,444,signal);

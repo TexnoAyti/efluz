@@ -39,6 +39,7 @@ export function getConversationIntent(text: string): ConversationIntent {
   if (/\b(?:nechanchi|qaysi\s+orinda|nima\s+uchun|nega|tahlil|taxmin|kim\s+yutadi)\b/.test(q)) return 'chat';
   if (detectNaturalAdminAction(text)) return 'admin';
   if (isSimpleConversationClubAssignmentRequest(text)) return 'admin';
+  if (/taqqosla|solishtir|подроб|анализ|сравни|detail|analy[sz]|compar/i.test(q)) return 'chat';
   if (isRemainingFixturesQuestion(text)) return 'fixtures';
   if (isFixtureResultsQuestion(text) || shortReadFollowUp(q) && !/^jadval/.test(q)) return 'fixtures';
   const nouns = /\b(?:liga\w*|tur\w*|matchday|natija\w*|hisob\w*|oyin\w*|uchrashuv\w*|klub\w*|jamoa\w*|admin\w*|premium|xabarnoma\w*|xabar\w*|qura\w*|kubok\w*|mavsum\w*|deadline|muddat\w*)\b/;
