@@ -17,6 +17,9 @@ for (const size of [4, 6, 8, 16, 20, 32]) {
   const stages=[...new Set(first.map(f=>f.stage))];
   const rounds=stages.map(stage=>({key:stage==='PLAYOFF_FINAL'?'FINAL':stage,nodes:first.filter(f=>f.stage===stage).map(f=>({id:f.id,round:stage,targetId:f.nextMatchFixtureId||null}))}));
   const layout=layoutKnockout(rounds);
+  const compact=layoutKnockout(rounds,176,100,18,110);
+  assert.ok(compact.width<layout.width&&compact.height<layout.height,'Compact cards/gaps reduce canvas dimensions');
+  for(const p of compact.positions.values())assert.ok(p.y>=32&&p.y+100<=compact.height,'Compact layout does not clip cards');
   const final=first.find(f=>f.stage==='PLAYOFF_FINAL')!;
   const center=layout.positions.get(final.id)!;
   assert.equal(center.x+102,layout.width/2,'Final is exactly centered');

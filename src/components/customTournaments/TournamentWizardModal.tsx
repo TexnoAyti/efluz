@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, Trophy, Layers, CheckCircle2, Ticket, Sparkles, AlertCircle, HelpCircle } from 'lucide-react';
 import {
   CustomTournamentFormat,
@@ -24,6 +24,7 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
 }) => {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [isAdvancedMode, setIsAdvancedMode] = useState<boolean>(false);
+  const savedDraft = useRef<{ signature: string; id: string } | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -54,6 +55,7 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
+      savedDraft.current = null;
       fetchTicketBalance();
     }
   }, [isOpen]);
@@ -93,7 +95,7 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
       setErrorMessage(null);
 
       // 1. Create draft
-      const tournament = await customTournamentApi.createDraft({
+      const payload = {
           name,
           description,
           format,
@@ -109,8 +111,10 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
             groupsCount: format === 'LEAGUE_AND_PLAYOFF' && groupStageMode === 'GROUPS' ? groupsCount : undefined,
             matchDurationHours,
           },
-      });
-      const tournamentId = tournament.id;
+      };
+      const signature = JSON.stringify(payload);
+      const tournamentId = savedDraft.current?.signature === signature ? savedDraft.current.id : (await customTournamentApi.createDraft(payload)).id;
+      savedDraft.current = { signature, id: tournamentId };
 
       // 2. Publish if requested and tickets available
       if (shouldPublishNow) {
@@ -120,7 +124,7 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
       onTournamentCreated(tournamentId);
       onClose();
     } catch (err: any) {
-      setErrorMessage(err.message || 'Xatolik yuz berdi.');
+      setErrorMessage(`${savedDraft.current ? 'Qoralama saqlangan. ' : ''}${err.message || 'Xatolik yuz berdi.'}`);
     } finally {
       setIsLoading(false);
     }

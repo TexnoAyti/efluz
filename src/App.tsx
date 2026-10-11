@@ -9,6 +9,7 @@ import { MatchdayHomeView } from './components/MatchdayHomeView';
 import { ContentBoundary } from './components/ContentBoundary';
 import { APP_BUILD_ID } from './context/AuthContext';
 import { Fixture, AdminPermissions } from './types';
+import { readTournamentLaunch } from './lib/customTournamentLinks';
 import { api } from './lib/api';
 import { isDesignPreview } from './designPreview';
 import { EFL_2_DESIGN_ENABLED, WELCOME_STORAGE_VERSION } from './releaseDesign';
@@ -28,6 +29,7 @@ const GlobalSearchModal = lazy(() => import('./components/GlobalSearchModal').th
 
 function getInitialTab(): TabType {
   if (typeof window !== 'undefined') {
+    if (readTournamentLaunch()) return 'leagues';
     const path = window.location.pathname.replace(/^\/+/, '').split('/')[0] || window.location.hash.replace(/^#\/?/, '');
     const validTabs: TabType[] = ['dashboard','home','my-club','my-matches','leagues','cups','champions-league','standings','season-hub','notifications','profile','admin'];
     if (path === 'home') return 'dashboard';
@@ -204,7 +206,7 @@ const AppContent: React.FC = () => {
                 key={searchNavigationRevision}
                 onNavigateTab={setActiveTab}
                 initialSubTab={
-                  currentTab === 'cups'
+                  readTournamentLaunch() ? 'custom' : currentTab === 'cups'
                     ? 'cups'
                     : currentTab === 'champions-league'
                     ? 'european'

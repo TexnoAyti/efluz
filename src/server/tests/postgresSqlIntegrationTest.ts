@@ -10,7 +10,7 @@ import { quotaCachedRead, invalidateQuotaRead } from '../services/quotaReadCache
 import { initDatabase } from '../db';
 import { adminAssignClubFirestore } from '../firebase/firestoreStore';
 import { grantUserTickets, getUserTicketBalance } from '../services/customTournamentTicketService';
-import { publishTournament } from '../services/customTournamentService';
+import { publishTournament, createTournamentDraft, getMyTournaments, getPublicTournaments, getTournamentByIdWithAccess, claimTournamentClub } from '../services/customTournamentService';
 import { createHash } from 'node:crypto';
 import { readPostgresSnapshotBundle, clearPostgresSnapshotCache } from '../readModel/postgresSnapshots';
 
@@ -164,6 +164,23 @@ try {
   assert.deepEqual(access,{anon:false,authenticated:false});
   console.log('CAPACITY_SNAPSHOT_BENCHMARK',JSON.stringify({syntheticFixtures:1266,coldBytes,warmTenReadsBytes:warmBytes,localWarmCpuMs:(cpu.user+cpu.system)/1000,note:'Local Node plus PGlite CPU; not hosted Vercel CPU or a complete user session'}));
   console.log('PASS conditional snapshot reads: one concurrent fetch, no duplicate LKG, bounded warm payloads, update/delete/expiry/dirty visibility, private RPC');
+  process.env.NODE_ENV='production';
+  const privateDraft=await createTournamentDraft({name:'Native draft/link audit',organizerUserId:'user-900006',organizerTelegramId:'900006',format:'PLAYOFF',leagueScope:'TOP5_ALL',maxParticipants:8,rules:{roundsCount:1,playoffLegMode:'SINGLE_LEG',matchDurationHours:36},visibility:'PRIVATE'});
+  await db.collection('custom_tournaments').doc(privateDraft.id).update({assistantAdminIds:['user-900005']});
+  assert.ok((await getMyTournaments('user-900006')).some(t=>t.id===privateDraft.id));
+  assert.ok((await getMyTournaments('user-900005')).some(t=>t.id===privateDraft.id),'Assistant can find their saved draft');
+  assert.equal((await getTournamentByIdWithAccess(privateDraft.id,'user-900006')).canManage,true);
+  await assert.rejects(getTournamentByIdWithAccess(privateDraft.id,'user-900004',privateDraft.inviteToken),/Qoralamani/);
+  assert.equal((await getPublicTournaments()).some(t=>t.id===privateDraft.id),false);
+  await publishTournament({tournamentId:privateDraft.id,userId:'user-900006',idempotencyKey:'native-private-publish'});
+  const spectator=await getTournamentByIdWithAccess(privateDraft.id,'user-900004',privateDraft.spectatorToken);
+  assert.equal(spectator.canJoin,false);assert.equal(spectator.tournament.inviteToken,'','Spectators cannot extract a participant token');
+  assert.equal((await getTournamentByIdWithAccess(privateDraft.id,'user-900004',privateDraft.inviteToken)).canJoin,true);
+  const claim={tournamentId:privateDraft.id,userId:'user-900004',telegramId:'900004',clubId:'club-arsenal'};
+  await assert.rejects(claimTournamentClub(claim),/taklif havolasi/);
+  await assert.rejects(claimTournamentClub({...claim,inviteToken:privateDraft.spectatorToken}),/taklif havolasi/);
+  await claimTournamentClub({...claim,inviteToken:privateDraft.inviteToken});
+  console.log('PASS native PostgreSQL draft reopen/assistant discovery, publication, private invitation versus spectator access and atomic authorized claim');
   console.log('PASS native PostgreSQL ticket publication: actual batch failure restores wallet and draft; parallel different-key publishes spend exactly once');
   console.log('PASS native PostgreSQL SQL: private invoker grants, 12 concurrent NX attempts, atomic counters, cache invalidation, conflict retry with no stale writes, double-spend exclusion, full batch rollback, queue dedupe and worker claim; HTTP transport simulated');
 } finally { globalThis.fetch = originalFetch; await pg.close(); }

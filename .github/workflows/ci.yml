@@ -98,6 +98,7 @@ jobs:
           node scripts/run-isolated-test.mjs src/server/tests/postgresSqlIntegrationTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/ticketRecipientRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/centeredBracketRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/customTournamentLinksRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/legacyMembershipRepairRegressionTest.ts
           bun run test:telegram-ai
           node scripts/run-isolated-test.mjs src/server/tests/telegramAiKnowledgeRegressionTest.ts

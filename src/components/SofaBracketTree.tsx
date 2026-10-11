@@ -41,10 +41,10 @@ interface PositionedMatch {
 
 // Mobile-first canvas metrics. These keep the original connected tree while
 // cutting the old ~1200px tall bracket to a much denser canvas.
-const CARD_WIDTH = 204;
-const CARD_HEIGHT = 108;
-const COLUMN_GAP = 54;
-const SLOT_HEIGHT = 128;
+const CARD_WIDTH = 176;
+const CARD_HEIGHT = 100;
+const COLUMN_GAP = 18;
+const SLOT_HEIGHT = 110;
 
 function classifyRound(fixture: Fixture): RoundKey | null {
   const round = String(fixture.roundName || '').toLowerCase();
@@ -249,7 +249,7 @@ export const SofaBracketTree: React.FC<Props> = ({ fixtures, competition, curren
                 type="button"
                 disabled={projected || !onSelectFixture}
                 onClick={() => { if (!projected) onSelectFixture?.(fixture); }}
-                className={`absolute z-10 rounded-xl border p-1.5 text-left shadow-xl transition ${round === 'FINAL' ? 'border-amber-300/35 bg-gradient-to-br from-amber-500/[0.13] to-[#09111f] efl-theme-final shadow-amber-500/10' : 'border-white/[0.09] efl-theme-border bg-[#09111f]/95 efl-theme-surface'} ${isMine ? 'ring-1 ring-amber-300/55' : ''} ${projected ? 'cursor-default' : 'hover:-translate-y-0.5 hover:border-blue-300/30'}`}
+                className={`absolute z-10 rounded-xl border p-1 text-left shadow-xl transition ${round === 'FINAL' ? 'border-amber-300/35 bg-gradient-to-br from-amber-500/[0.13] to-[#09111f] efl-theme-final shadow-amber-500/10' : 'border-white/[0.09] efl-theme-border bg-[#09111f]/95 efl-theme-surface'} ${isMine ? 'ring-1 ring-amber-300/55' : ''} ${projected ? 'cursor-default' : 'hover:-translate-y-0.5 hover:border-blue-300/30'}`}
                 style={{ left: x, top: y, width: CARD_WIDTH, height: CARD_HEIGHT }}
               >
                 <div className="mb-1 flex items-center justify-between px-0.5">
@@ -261,7 +261,7 @@ export const SofaBracketTree: React.FC<Props> = ({ fixtures, competition, curren
                   </span>
                 </div>
                 <div className="space-y-1">{renderTeam('home')}{renderTeam('away')}</div>
-                {fixture.secondLegLabel ? <p className="mt-1 truncate text-[8px] text-slate-400 efl-theme-text-2" title={fixture.secondLegLabel}>{fixture.secondLegLabel}</p> : fixture.penaltyHomeScore != null ? <p className="mt-1 text-[8px] text-amber-300 efl-theme-amber">Pen: {fixture.penaltyHomeScore}–{fixture.penaltyAwayScore}</p> : null}
+                {fixture.secondLegLabel ? <p className="mt-1 truncate text-[8px] leading-[10px] text-slate-400 efl-theme-text-2" title={fixture.secondLegLabel}>{fixture.secondLegLabel}</p> : fixture.penaltyHomeScore != null ? <p className="mt-1 text-[8px] leading-[10px] text-amber-300 efl-theme-amber">Pen: {fixture.penaltyHomeScore}–{fixture.penaltyAwayScore}</p> : null}
               </button>
             );
           })}

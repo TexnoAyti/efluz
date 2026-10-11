@@ -152,7 +152,7 @@ customTournamentsRouter.post('/:id/join', requireAuth, async (req: Request, res:
   try {
     const user = req.user!;
     const tournamentId = req.params.id;
-    const { clubId } = req.body;
+    const { clubId, inviteToken } = req.body;
 
     if (!clubId) {
       res.status(400).json({ ok: false, error: 'Klub tanlanishi shart.' });
@@ -166,6 +166,7 @@ customTournamentsRouter.post('/:id/join', requireAuth, async (req: Request, res:
       username: user.username,
       firstName: user.firstName,
       clubId,
+      inviteToken: typeof inviteToken === 'string' ? inviteToken : undefined,
     });
 
     res.json({ ok: true, participant });

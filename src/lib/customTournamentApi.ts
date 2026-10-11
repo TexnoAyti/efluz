@@ -80,6 +80,7 @@ export const customTournamentApi = {
     fixtures: CustomTournamentFixture[];
     standings?: CustomTournamentStandingsRow[];
     canManage: boolean;
+    canJoin: boolean;
   }> {
     const search = token ? `?token=${encodeURIComponent(token)}` : '';
     const res = await fetch(`/api/custom-tournaments/${id}${search}`, {
@@ -112,11 +113,11 @@ export const customTournamentApi = {
     return data.tournament;
   },
 
-  async joinClub(tournamentId: string, clubId: string): Promise<CustomTournamentParticipant> {
+  async joinClub(tournamentId: string, clubId: string, inviteToken?: string): Promise<CustomTournamentParticipant> {
     const res = await fetch(`/api/custom-tournaments/${tournamentId}/join`, {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ clubId }),
+      body: JSON.stringify({ clubId, inviteToken }),
     });
     const data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || 'Klubni band qilib bo‘lmadi.');

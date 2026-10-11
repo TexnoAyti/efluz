@@ -52,6 +52,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
   const [fixtures, setFixtures] = useState<CustomTournamentFixture[]>([]);
   const [standings, setStandings] = useState<CustomTournamentStandingsRow[] | undefined>();
   const [canManage, setCanManage] = useState(false);
+  const [canJoin, setCanJoin] = useState(false);
 
   // Modals
   const [showAdminDrawer, setShowAdminDrawer] = useState(false);
@@ -80,6 +81,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
       setFixtures(res.fixtures);
       setStandings(res.standings);
       setCanManage(res.canManage);
+      setCanJoin(res.canJoin);
     } catch (err: any) {
       setErrorMessage(err.message || 'Turnir ma’lumotlarini yuklab bo‘lmadi.');
     } finally {
@@ -105,6 +107,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
       <div className="p-6 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-center space-y-3">
         <AlertTriangle className="w-8 h-8 text-rose-400 mx-auto" />
         <p className="text-sm font-bold text-rose-300">{errorMessage || 'Turnir topilmadi.'}</p>
+        <button type="button" onClick={loadData} className="min-h-[44px] px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 text-xs font-bold">Qayta urinish</button>
         <button
           onClick={onBack}
           className="px-4 py-2 rounded-xl bg-slate-800 text-slate-200 text-xs font-bold hover:bg-slate-700 transition-colors"
@@ -135,7 +138,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
   const handleClaimClub = async (clubId: string) => {
     try {
       setClaimingClubId(clubId);
-      await customTournamentApi.joinClub(tournament.id, clubId);
+      await customTournamentApi.joinClub(tournament.id, clubId, inviteToken);
       setShowClubPickerModal(false);
       loadData();
     } catch (err: any) {
@@ -216,7 +219,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
                 {tournament.format === 'LEAGUE' ? 'Liga' : tournament.format === 'PLAYOFF' ? 'Pley-off' : 'Liga + Pley-off'}
               </span>
               <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 font-medium">
-                {tournament.status === 'REGISTRATION_OPEN' ? 'Qabul ochiq' : tournament.status === 'IN_PROGRESS' ? 'Davom etmoqda' : tournament.status}
+                {tournament.status === 'DRAFT' ? 'Qoralama' : tournament.status === 'REGISTRATION_OPEN' ? 'Qabul ochiq' : tournament.status === 'IN_PROGRESS' ? 'Davom etmoqda' : tournament.status}
               </span>
               {tournament.visibility === 'PRIVATE' && (
                 <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 font-medium border border-amber-500/20 flex items-center gap-1">
@@ -267,7 +270,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
                 </button>
               )}
             </div>
-          ) : tournament.status === 'REGISTRATION_OPEN' ? (
+          ) : canJoin ? (
             <button
               onClick={() => setShowClubPickerModal(true)}
               className="py-2.5 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs transition-all flex items-center gap-2 shadow-lg shadow-emerald-500/20"
@@ -276,7 +279,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
               Klub tanlash va qo‘shilish
             </button>
           ) : (
-            <span className="text-xs text-slate-500 italic">Ro‘yxatdan o‘tish yopilgan</span>
+            <span className="text-xs text-slate-500 italic">{tournament.status === 'DRAFT' ? 'Qoralama saqlangan. Boshqaruv orqali e’lon qiling.' : tournament.status === 'REGISTRATION_OPEN' ? 'Qo‘shilish uchun qatnashish taklif havolasi kerak.' : 'Ro‘yxatdan o‘tish yopilgan'}</span>
           )}
         </div>
       </div>
@@ -509,6 +512,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
           isOpen={showAdminDrawer}
           onClose={() => setShowAdminDrawer(false)}
           tournament={tournament}
+          canPublishDraft={tournament.organizerUserId === user?.id}
           participants={participants}
           fixtures={fixtures}
           onRefresh={loadData}

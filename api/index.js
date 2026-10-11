@@ -32546,6 +32546,9 @@ async function claimTournamentClub(params) {
   if (isFallback) {
     const tournament = memoryTournaments.get(params.tournamentId);
     if (!tournament) throw Object.assign(new Error("Turnir topilmadi."), { statusCode: 404 });
+    if (tournament.visibility === "PRIVATE" && tournament.organizerUserId !== params.userId && !tournament.assistantAdminIds.includes(params.userId) && (!params.inviteToken || params.inviteToken !== tournament.inviteToken)) {
+      throw Object.assign(new Error("Klub tanlash uchun qatnashish taklif havolasi kerak."), { statusCode: 403, code: "INVITE_REQUIRED" });
+    }
     if (tournament.status !== "REGISTRATION_OPEN") {
       throw Object.assign(new Error("Ushbu turnirda ro\u2018yxatdan o\u2018tish yopilgan yoki turnir boshlangan."), {
         statusCode: 400,
@@ -32606,6 +32609,9 @@ async function claimTournamentClub(params) {
     const tournDoc = await transaction.get(tournRef);
     if (!tournDoc.exists) throw Object.assign(new Error("Turnir topilmadi."), { statusCode: 404 });
     const tournament = tournDoc.data();
+    if (tournament.visibility === "PRIVATE" && tournament.organizerUserId !== params.userId && !tournament.assistantAdminIds.includes(params.userId) && (!params.inviteToken || params.inviteToken !== tournament.inviteToken)) {
+      throw Object.assign(new Error("Klub tanlash uchun qatnashish taklif havolasi kerak."), { statusCode: 403, code: "INVITE_REQUIRED" });
+    }
     if (tournament.status !== "REGISTRATION_OPEN") {
       throw Object.assign(new Error("Turnirda ro\u2018yxatdan o\u2018tish yopilgan."), { statusCode: 400, code: "REGISTRATION_CLOSED" });
     }
@@ -32825,10 +32831,10 @@ async function submitCustomMatchResult(params) {
 async function getPublicTournaments(limitCount = 20) {
   const isFallback = process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true" || process.env.NODE_ENV === "test";
   if (isFallback) {
-    return Array.from(memoryTournaments.values()).filter((t) => t.visibility === "PUBLIC_OPEN" || t.visibility === "PUBLIC_MODERATED").slice(0, limitCount);
+    return Array.from(memoryTournaments.values()).filter((t) => t.status !== "DRAFT" && (t.visibility === "PUBLIC_OPEN" || t.visibility === "PUBLIC_MODERATED")).slice(0, limitCount);
   }
   const db = getFirestoreDb();
-  const snap = await db.collection("custom_tournaments").where("visibility", "in", ["PUBLIC_OPEN", "PUBLIC_MODERATED"]).orderBy("createdAt", "desc").limit(limitCount).get();
+  const snap = await db.collection("custom_tournaments").where("visibility", "in", ["PUBLIC_OPEN", "PUBLIC_MODERATED"]).where("status", "!=", "DRAFT").orderBy("createdAt", "desc").limit(limitCount).get();
   return snap.docs.map((d) => d.data());
 }
 async function getMyTournaments(userId2) {
@@ -32846,6 +32852,8 @@ async function getMyTournaments(userId2) {
   const orgSnap = await db.collection("custom_tournaments").where("organizerUserId", "==", userId2).get();
   const myTourns = /* @__PURE__ */ new Map();
   orgSnap.docs.forEach((d) => myTourns.set(d.id, d.data()));
+  const assistantSnap = await db.collection("custom_tournaments").where("assistantAdminIds", "array-contains", userId2).get();
+  assistantSnap.docs.forEach((d) => myTourns.set(d.id, d.data()));
   const partSnap = await db.collection("custom_tournament_participants").where("userId", "==", userId2).get();
   for (const p of partSnap.docs) {
     const tId = p.data().tournamentId;
@@ -32879,6 +32887,7 @@ async function getTournamentByIdWithAccess(tournamentId, requesterUserId, token)
   const isAssistant = requesterUserId ? tournament.assistantAdminIds.includes(requesterUserId) : false;
   const isParticipant = requesterUserId ? participants.some((p) => p.userId === requesterUserId) : false;
   const isTokenMatch = token ? tournament.inviteToken === token || tournament.spectatorToken === token : false;
+  if (tournament.status === "DRAFT" && !isOrganizer && !isAssistant) throw Object.assign(new Error("Qoralamani faqat tashkilotchi va yordamchi ko\u2018ra oladi."), { statusCode: 403 });
   if (tournament.visibility === "PRIVATE" && !isOrganizer && !isAssistant && !isParticipant && !isTokenMatch) {
     throw Object.assign(new Error("Bu yopiq (private) turnir. Ko\u2018rish uchun taklif havolasi talab qilinadi."), {
       statusCode: 403,
@@ -32890,11 +32899,12 @@ async function getTournamentByIdWithAccess(tournamentId, requesterUserId, token)
     standings = calculateCustomStandings(participants, fixtures);
   }
   return {
-    tournament,
+    tournament: isOrganizer || isAssistant ? tournament : { ...tournament, inviteToken: "", spectatorToken: "" },
     participants,
     fixtures,
     standings,
-    canManage: isOrganizer || isAssistant
+    canManage: isOrganizer || isAssistant,
+    canJoin: tournament.status === "REGISTRATION_OPEN" && (tournament.visibility !== "PRIVATE" || isOrganizer || isAssistant || Boolean(token && token === tournament.inviteToken))
   };
 }
 async function leaveTournamentClub(params) {
@@ -33164,7 +33174,7 @@ customTournamentsRouter.post("/:id/join", requireAuth, async (req, res) => {
   try {
     const user = req.user;
     const tournamentId = req.params.id;
-    const { clubId } = req.body;
+    const { clubId, inviteToken } = req.body;
     if (!clubId) {
       res.status(400).json({ ok: false, error: "Klub tanlanishi shart." });
       return;
@@ -33175,7 +33185,8 @@ customTournamentsRouter.post("/:id/join", requireAuth, async (req, res) => {
       telegramId: user.telegramId || "",
       username: user.username,
       firstName: user.firstName,
-      clubId
+      clubId,
+      inviteToken: typeof inviteToken === "string" ? inviteToken : void 0
     });
     res.json({ ok: true, participant });
   } catch (err) {
