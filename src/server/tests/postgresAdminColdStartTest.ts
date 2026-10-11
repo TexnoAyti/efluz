@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { initDatabase } from '../db';
 import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS } from '../firebase/collections';
-import { getAdminFixturesFromReadModel, getAdminClubsFromReadModel, clearProcessMemoryCache, resetMemoryRedisStore } from '../readModel/readModelStore';
+import { getAdminFixturesFromReadModel, getAdminClubsFromReadModel, getCompetitionFixturesFromReadModel, clearProcessMemoryCache, resetMemoryRedisStore } from '../readModel/readModelStore';
 import { getAdminUserDirectory } from '../services/adminUserDirectory';
 
 await initDatabase();
@@ -33,3 +33,7 @@ assert.equal(clubs.total, 96);
 assert.equal(clubs.clubs.find(club => club.id === 'club-arsenal')?.ownerUsername, 'owner_arsenal');
 assert.equal(clubs.clubs.find(club => club.id === 'club-chelsea')?.ownerUsername, 'owner_chelsea');
 console.log('PASS hosted PostgreSQL admin cold-start fixtures, durable restart, user directory, and clubs');
+const emptyHosted=await getCompetitionFixturesFromReadModel('comp-premier-league-2026',{seasonId:'season-2026-27'});
+assert.equal(emptyHosted.fixtures.length,0,'Missing PostgreSQL fixtures must never resurrect the bundled SQLite season');
+assert.notEqual(emptyHosted.source,'sqlite');
+console.log('PASS hosted PostgreSQL empty competition never falls back to packaged SQLite fixtures');

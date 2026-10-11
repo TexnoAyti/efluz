@@ -746,7 +746,7 @@ export async function readThroughReadModel<T>(options: TieredReadOptions<T>): Pr
       };
     }
     // Try LKG
-    const lkgSnapshot = postgresBundle ? postgresBundle.lkg : await redisGetLkg<T>(cleanKey);
+    const lkgSnapshot = postgresBundle ? postgresBundle.lkg || await readPostgresSnapshot(getLkgKey(cleanKey)) : await redisGetLkg<T>(cleanKey);
     if (lkgSnapshot && lkgSnapshot.data !== undefined) {
       setInProcessMemory(cleanKey, lkgSnapshot);
       return {
@@ -816,7 +816,7 @@ export async function readThroughReadModel<T>(options: TieredReadOptions<T>): Pr
     };
   } catch (firestoreErr: any) {
     // 4. Stale Redis LKG Snapshot on Firestore failure
-    const lkgSnapshot = postgresBundle ? postgresBundle.lkg : await redisGetLkg<T>(cleanKey);
+    const lkgSnapshot = postgresBundle ? postgresBundle.lkg || await readPostgresSnapshot(getLkgKey(cleanKey)) : await redisGetLkg<T>(cleanKey);
     if (lkgSnapshot && lkgSnapshot.data !== undefined) {
       console.warn(
         `[READ_MODEL] Firestore failed for ${key}, serving stale Redis LKG snapshot. Cause:`,
@@ -1846,7 +1846,7 @@ export async function getCompetitionFixturesFromReadModel(
   }
 
   // 4. SQLite local read model
-  if (rawFixtures.length === 0) {
+  if (rawFixtures.length === 0 && !usesPostgresSnapshots()) {
     try {
       const conditions: string[] = ['competition_id = ?'];
       const params: any[] = [competitionId];

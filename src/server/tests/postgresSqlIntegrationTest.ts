@@ -11,12 +11,14 @@ import { initDatabase } from '../db';
 import { adminAssignClubFirestore } from '../firebase/firestoreStore';
 import { grantUserTickets, getUserTicketBalance } from '../services/customTournamentTicketService';
 import { publishTournament } from '../services/customTournamentService';
+import { createHash } from 'node:crypto';
+import { readPostgresSnapshotBundle, clearPostgresSnapshotCache } from '../readModel/postgresSnapshots';
 
 // Native PostgreSQL WASM engine with repository SQL, not a JS query emulator.
 // The HTTP envelope is simulated; this cannot prove hosted PostgREST latency.
 const pg = new PGlite();
 await pg.exec('create role anon; create role authenticated; create role service_role bypassrls;');
-for (const path of ['20261009044907_postgres_document_runtime.sql', '20261009125000_nonblocking_runtime_reads.sql', '20261010091409_application_runtime_commit_conflicts.sql', '20261010161456_stop_postgrest_conflict_retries.sql']) {
+for (const path of ['20261009044907_postgres_document_runtime.sql', '20261009125000_nonblocking_runtime_reads.sql', '20261010091409_application_runtime_commit_conflicts.sql', '20261010161456_stop_postgrest_conflict_retries.sql', '20261010172440_conditional_snapshot_reads.sql']) {
   await pg.exec(await readFile('supabase/migrations/' + path, 'utf8'));
 }
 const privilege: any = (await pg.query(`select has_function_privilege('anon','public.efl_runtime_commit_safe(text,jsonb,text)','execute') as anonymous,
@@ -28,13 +30,15 @@ await assert.rejects(pg.query("select public.efl_runtime_commit('preview','[]'::
 await pg.exec('set role service_role;');
 const originalFetch = globalThis.fetch;
 let conflicts = 0, legacyHttpCommits = 0, failAssignment = false, failPublish = false;
+let snapshotResponses: {bytes:number;ids:string[]}[]=[];
 globalThis.fetch = (async (input: any, init: any) => {
   const url = new URL(String(input));
   assert.equal(url.origin, 'https://isolated-postgres.invalid');
   const name = url.pathname.split('/').at(-1), body = JSON.parse(init.body);
   try {
     let result;
-    if (name === 'efl_runtime_read') result = await pg.query('select public.efl_runtime_read($1,$2::jsonb) as value', [body.p_space, JSON.stringify(body.p_query)]);
+    if(name==='efl_runtime_snapshot_read') result=await pg.query('select public.efl_runtime_snapshot_read($1,$2::jsonb,$3::jsonb) as value',[body.p_space,JSON.stringify(body.p_ids),JSON.stringify(body.p_versions)]);
+    else if (name === 'efl_runtime_read') result = await pg.query('select public.efl_runtime_read($1,$2::jsonb) as value', [body.p_space, JSON.stringify(body.p_query)]);
     else if (name === 'efl_runtime_commit_safe') {
       if (failAssignment && body.p_operations.some((op: any) => op.path.startsWith('audit_logs/'))) throw Error('ASSIGNMENT_COMMIT_UNAVAILABLE');
       if (failPublish && body.p_operations.some((op:any)=>op.path.startsWith('custom_tournaments/'))) {
@@ -45,6 +49,7 @@ globalThis.fetch = (async (input: any, init: any) => {
     else { legacyHttpCommits++; throw Error('LEGACY_COMMIT_ENDPOINT_FORBIDDEN'); }
     const value: any = result.rows[0].value;
     if (value.conflict) conflicts++;
+    if(name==='efl_runtime_snapshot_read')snapshotResponses.push({bytes:Buffer.byteLength(JSON.stringify(value)),ids:body.p_ids});
     return new Response(JSON.stringify(value), { status: 200 });
   } catch (error: any) { return new Response(JSON.stringify({ code: error.code, message: error.message }), { status: 400 }); }
 }) as typeof fetch;
@@ -121,6 +126,44 @@ try {
   assert.equal((await getUserTicketBalance('user-900006')).balance,2);
   assert.equal((await db.collection('custom_tournaments').doc('ct-native-key-reuse').get()).data().status,'DRAFT');
   process.env.NODE_ENV='test';
+  const snapshotKeys=['capacity:fresh','capacity:lkg','capacity:dirty'];
+  const snapshotIds=snapshotKeys.map(key=>createHash('sha256').update(key).digest('hex'));
+  const fixtureRows=Array.from({length:1266},(_,i)=>({id:'fixture-'+i,matchday:i%38+1,status:'SCHEDULED',homeClubId:'club-'+i%96,awayClubId:'club-'+(i+1)%96,metadata:'x'.repeat(1600)}));
+  const largeSnapshot={data:fixtureRows,generatedAt:new Date().toISOString()};
+  const snapshotRef=(index:number)=>db.collection('durable_read_snapshots').doc(snapshotIds[index]);
+  await snapshotRef(0).set({snapshotJson:JSON.stringify(largeSnapshot),expiresAt:Date.now()+60000});
+  await snapshotRef(1).set({snapshotJson:JSON.stringify(largeSnapshot),expiresAt:null});
+  clearPostgresSnapshotCache();snapshotResponses=[];
+  const burst=await Promise.all(Array.from({length:8},()=>readPostgresSnapshotBundle(...snapshotKeys as [string,string,string])));
+  assert.equal(burst[0].fresh.data.length,1266);
+  assert.equal(snapshotResponses.length,1,'Concurrent readers share one payload fetch');
+  assert.deepEqual(snapshotResponses[0].ids,[snapshotIds[0],snapshotIds[2]],'Fresh reads must not fetch the duplicate LKG');
+  const coldBytes=snapshotResponses[0].bytes;
+  snapshotResponses=[];
+  const cpuStart=process.cpuUsage();
+  for(let i=0;i<10;i++)await readPostgresSnapshotBundle(...snapshotKeys as [string,string,string]);
+  const cpu=process.cpuUsage(cpuStart);
+  const warmBytes=snapshotResponses.reduce((sum,row)=>sum+row.bytes,0);
+  assert.ok(warmBytes<5000,'Unchanged warm reads transfer metadata only');
+  const ledgerVersion=(await db.collection('user_tickets').doc('user-900006').get()).data();
+  await db.collection('runtime_probes').doc('unrelated').set({value:1});
+  snapshotResponses=[];
+  await readPostgresSnapshotBundle(...snapshotKeys as [string,string,string]);
+  assert.ok(snapshotResponses[0].bytes<500,'Unrelated writes must not invalidate large cached payloads');
+  await snapshotRef(0).set({snapshotJson:JSON.stringify({...largeSnapshot,data:[{id:'changed'}]}),expiresAt:Date.now()+60000});
+  assert.equal((await readPostgresSnapshotBundle(...snapshotKeys as [string,string,string])).fresh.data[0].id,'changed','Changed rows invalidate across instances through the database revision');
+  await snapshotRef(0).delete();
+  assert.equal((await readPostgresSnapshotBundle(...snapshotKeys as [string,string,string])).lkg.data.length,1266,'Missing fresh retains LKG');
+  await snapshotRef(0).set({snapshotJson:JSON.stringify({...largeSnapshot,data:[{id:'fresh'}]}),expiresAt:Date.now()-1});
+  assert.equal((await readPostgresSnapshotBundle(...snapshotKeys as [string,string,string])).fresh,null,'Expiry is checked even for cached documents');
+  await snapshotRef(0).update({expiresAt:Date.now()+60000});
+  await snapshotRef(2).set({snapshot:{data:true},expiresAt:Date.now()+60000});
+  assert.equal((await readPostgresSnapshotBundle(...snapshotKeys as [string,string,string])).dirty.data,true);
+  assert.deepEqual((await db.collection('user_tickets').doc('user-900006').get()).data(),ledgerVersion,'Read optimization never modifies business records');
+  const access:any=(await pg.query("select has_function_privilege('anon','public.efl_runtime_snapshot_read(text,jsonb,jsonb)','execute') as anon,has_function_privilege('authenticated','public.efl_runtime_snapshot_read(text,jsonb,jsonb)','execute') as authenticated")).rows[0];
+  assert.deepEqual(access,{anon:false,authenticated:false});
+  console.log('CAPACITY_SNAPSHOT_BENCHMARK',JSON.stringify({syntheticFixtures:1266,coldBytes,warmTenReadsBytes:warmBytes,localWarmCpuMs:(cpu.user+cpu.system)/1000,note:'Local Node plus PGlite CPU; not hosted Vercel CPU or a complete user session'}));
+  console.log('PASS conditional snapshot reads: one concurrent fetch, no duplicate LKG, bounded warm payloads, update/delete/expiry/dirty visibility, private RPC');
   console.log('PASS native PostgreSQL ticket publication: actual batch failure restores wallet and draft; parallel different-key publishes spend exactly once');
   console.log('PASS native PostgreSQL SQL: private invoker grants, 12 concurrent NX attempts, atomic counters, cache invalidation, conflict retry with no stale writes, double-spend exclusion, full batch rollback, queue dedupe and worker claim; HTTP transport simulated');
 } finally { globalThis.fetch = originalFetch; await pg.close(); }
