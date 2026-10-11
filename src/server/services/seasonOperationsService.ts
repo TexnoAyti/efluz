@@ -1,3 +1,4 @@
+import {loadPostgresSeasonFixtures} from './postgresSeasonRead';
 import { filterRetiredFixtures } from './retiredFixtureService';
 import { Fixture, Competition, StandingsRow } from '../../types';
 import { queryAll } from '../db';
@@ -90,6 +91,7 @@ export async function loadSeasonOperationsFixtures(seasonId = 'season-2026-27') 
   if (Array.isArray(snapshot?.data) && snapshot!.data.length > 0) {
     return { fixtures: filterRetiredFixtures(snapshot!.data, seasonId), source: snapshot!.source || 'redis', stale: Boolean(snapshot!.stale) };
   }
+  if (process.env.DATABASE_PROVIDER === 'supabase') return {fixtures: await loadPostgresSeasonFixtures(seasonId), source: 'postgresql', stale: false};
   const rows = queryAll<any>(
     `SELECT * FROM fixtures WHERE season_id = ? OR season_id IS NULL ORDER BY matchday ASC, scheduled_at ASC, id ASC`,
     [seasonId]

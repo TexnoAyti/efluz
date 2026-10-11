@@ -1,13 +1,17 @@
+import {AsyncLocalStorage} from 'node:async_hooks';
+import {FieldPath} from 'firebase-admin/firestore';
+import {getFirestoreDb} from '../firebase/admin';
+import {getPostgresNotificationRecipient} from './postgresNotificationRecipients';
 import {getNotificationStore} from './postgresNotificationStore';
-import { filterRetiredFixtures } from './retiredFixtureService';
+import { filterRetiredFixtures, hasFixtureMatchdayCorrection } from './retiredFixtureService';
 import crypto from 'crypto';
 import { Fixture } from '../../types';
 import {
-  getUpstashClient,
   KEY_PREFIX,
   ReadModelKeys,
   redisGetFresh,
   redisGetLkg,
+  normalizeFixtureSnapshot,
 } from '../readModel/readModelStore';
 import { scheduleNotificationQueueDrain } from './telegramNotificationQueue';
 import { isSmartNotificationEventEnabled, SmartNotificationEvent } from './smartNotificationSettingsService';
@@ -208,13 +212,38 @@ async function fixtureReplyMarkup(fixture: Fixture, opponentUserId?: string, inc
   return { inline_keyboard: rows };
 }
 
-async function getCompetitionFixtureSnapshot(competitionId: string, seasonId: string): Promise<Fixture[]> {
+async function getCompetitionFixtureSnapshot(competitionId: string, seasonId: string, matchday?: number): Promise<Fixture[]> {
+  if (process.env.DATABASE_PROVIDER === 'supabase') {
+    const db = getFirestoreDb();
+    let query = db.collection('fixtures').where('competitionId', '==', competitionId).where('seasonId', '==', seasonId);
+    if (matchday !== undefined && !hasFixtureMatchdayCorrection(competitionId, seasonId)) query = query.where('matchday', '==', matchday);
+    const docs = await query.get();
+    const fixtures = filterRetiredFixtures(docs.docs.map(doc => normalizeFixtureSnapshot({...doc.data(), id: doc.id}, seasonId)), seasonId);
+    const clubs = [...new Set(fixtures.flatMap(f => [f.homeClubId, f.awayClubId]).filter(id => id && id !== 'TBD'))] as string[];
+    const owners = new Map<string, string>();
+    for (let i = 0; i < clubs.length; i += 30) {
+      const rows = await db.collection('club_occupancies').where(FieldPath.documentId(), 'in', clubs.slice(i, i + 30).map(id => `${seasonId}_${id}`)).get();
+      for (const doc of rows.docs) {
+        const row = doc.data();
+        if (row.userId && !['released', 'inactive'].includes(row.status)) owners.set(row.clubId, row.userId);
+      }
+    }
+    // Strip historical owner fields when a club has been released or transferred.
+    return fixtures.map(f => ({...f, homeOwnerId: owners.get(f.homeClubId!), awayOwnerId: owners.get(f.awayClubId!), homeOwner: null, awayOwner: null, homeUser: null, awayUser: null}));
+  }
   const key = ReadModelKeys.competitionFixtures(competitionId, seasonId);
   const snapshot = (await redisGetFresh<Fixture[]>(key)) || (await redisGetLkg<Fixture[]>(key));
   return Array.isArray(snapshot?.data) ? filterRetiredFixtures(snapshot!.data, seasonId) : [];
 }
 
+const recipientContext = new AsyncLocalStorage<Map<string, Promise<RecipientDirectoryEntry | null>>>();
 async function getCachedRecipient(userId: string, seasonId: string): Promise<RecipientDirectoryEntry | null> {
+  if (process.env.DATABASE_PROVIDER === 'supabase') {
+    const context = recipientContext.getStore();
+    let work = context?.get(userId);
+    if (!work) { work = getPostgresNotificationRecipient(userId); context?.set(userId, work); }
+    return work;
+  }
   const client = getNotificationStore();
   if (!client) return null;
   try {
@@ -228,6 +257,10 @@ async function getCachedRecipient(userId: string, seasonId: string): Promise<Rec
 }
 
 async function getCachedRecipientByClubId(clubId: string, seasonId: string): Promise<RecipientDirectoryEntry | null> {
+  if (process.env.DATABASE_PROVIDER === 'supabase') {
+    const owner = (await getFirestoreDb().collection('club_occupancies').doc(`${seasonId}_${clubId}`).get()).data();
+    return owner?.userId && !['released', 'inactive'].includes(owner.status) ? getCachedRecipient(owner.userId, seasonId) : null;
+  }
   const client = getNotificationStore();
   if (!client) return null;
   try {
@@ -324,6 +357,7 @@ export async function enqueueSmartTelegramNotification(params: {
       console.error('[SMART_NOTIFY_BACKUP_FAILED]', backupError?.message || backupError);
     }
     console.error('[SMART_NOTIFY_NOT_PERSISTED]', { broadcastId, reason: error?.message || 'PRIMARY_REDIS_UNAVAILABLE' });
+    if (process.env.DATABASE_PROVIDER === 'supabase') throw new Error('SMART_NOTIFICATION_NOT_PERSISTED');
     return false;
   }
 }
@@ -334,15 +368,19 @@ export async function notifySmartMatchdayOpened(params: {
   matchday: number;
   deadlineAt?: string | null;
 }): Promise<number> {
-  const fixtures = await getCompetitionFixtureSnapshot(params.competitionId, params.seasonId);
+  return recipientContext.run(new Map(), () => enqueueMatchdayNotifications(params));
+}
+async function enqueueMatchdayNotifications(params: {competitionId: string; seasonId: string; matchday: number; deadlineAt?: string | null}): Promise<number> {
+  if (!(await isSmartNotificationEventEnabled(params.seasonId, 'matchdayOpened'))) return 0;
+  const fixtures = await getCompetitionFixtureSnapshot(params.competitionId, params.seasonId, params.matchday);
   const matchdayFixtures = fixtures.filter((fixture) => Number(fixture.matchday) === Number(params.matchday));
   if (matchdayFixtures.length === 0) return 0;
-  const tasks: Array<Promise<boolean>> = [];
+  const tasks: Array<() => Promise<boolean>> = [];
 
   for (const fixture of matchdayFixtures) {
     const homeUserId = ownerId(fixture, 'home');
     const awayUserId = ownerId(fixture, 'away');
-    if (homeUserId) tasks.push(enqueueSmartTelegramNotification({
+    if (homeUserId) tasks.push(async () => enqueueSmartTelegramNotification({
       userId: homeUserId,
       seasonId: params.seasonId,
       eventId: `matchday-open:${params.competitionId}:${params.matchday}:${fixture.id}:${params.deadlineAt || ''}`,
@@ -350,7 +388,7 @@ export async function notifySmartMatchdayOpened(params: {
       body: await buildMatchCardBody({ fixture, viewerSide: 'home', deadlineAt: params.deadlineAt, footer: 'O‘yinni o‘tkazing va natijani yuboring.' }),
       replyMarkup: await fixtureReplyMarkup(fixture, awayUserId),
     }));
-    if (awayUserId) tasks.push(enqueueSmartTelegramNotification({
+    if (awayUserId) tasks.push(async () => enqueueSmartTelegramNotification({
       userId: awayUserId,
       seasonId: params.seasonId,
       eventId: `matchday-open:${params.competitionId}:${params.matchday}:${fixture.id}:${params.deadlineAt || ''}`,
@@ -359,7 +397,14 @@ export async function notifySmartMatchdayOpened(params: {
       replyMarkup: await fixtureReplyMarkup(fixture, homeUserId),
     }));
   }
-  const results = await Promise.allSettled(tasks);
+  // Each PostgreSQL enqueue updates the same queue/receipt documents. Serial writes
+  // avoid exhausting the CAS retry budget when all 20 players share a round.
+  if (process.env.DATABASE_PROVIDER === 'supabase') {
+    let queued = 0;
+    for (const task of tasks) if (await task()) queued++;
+    return queued;
+  }
+  const results = await Promise.allSettled(tasks.map(task => task()));
   return results.filter((result) => result.status === 'fulfilled' && result.value).length;
 }
 
@@ -446,7 +491,7 @@ export async function notifySmartEuropeanZones(params: {
   seasonId: string;
   rows: Array<{ clubId: string; clubName: string; position: number; zone: 'DIRECT_R16' | 'KNOCKOUT_PLAYOFF' | 'ELIMINATED'; zoneLabel: string }>;
 }): Promise<number> {
-  const tasks: Array<Promise<boolean>> = [];
+  const tasks: Array<() => Promise<boolean>> = [];
   let fixtures: Fixture[] | undefined;
   for (const row of params.rows) {
     const recipient = await getCachedRecipientByClubId(row.clubId, params.seasonId);
@@ -454,7 +499,7 @@ export async function notifySmartEuropeanZones(params: {
     const userId = recipient?.userId || ownerOfClub(fixtures || [], row.clubId);
     if (!userId) continue;
     const title = row.zone === 'DIRECT_R16' ? '🌟 To‘g‘ridan-to‘g‘ri yo‘llanma' : row.zone === 'KNOCKOUT_PLAYOFF' ? '⚔️ Play-off yo‘llanmasi' : '📋 Liga bosqichi yakunlandi';
-    tasks.push(enqueueSmartTelegramNotification({
+    tasks.push(() => enqueueSmartTelegramNotification({
       userId,
       seasonId: params.seasonId,
       eventId: `european-zone:${params.competitionId}:${row.clubId}:${row.zone}:${row.position}`,
@@ -463,7 +508,12 @@ export async function notifySmartEuropeanZones(params: {
       replyMarkup: { inline_keyboard: [[telegramMiniAppButton()]] },
     }));
   }
-  const results = await Promise.allSettled(tasks);
+  if (process.env.DATABASE_PROVIDER === 'supabase') {
+    let queued = 0;
+    for (const task of tasks) if (await task()) queued++;
+    return queued;
+  }
+  const results = await Promise.allSettled(tasks.map(task => task()));
   return results.filter((result) => result.status === 'fulfilled' && result.value).length;
 }
 

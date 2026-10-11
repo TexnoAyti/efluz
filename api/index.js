@@ -3084,6 +3084,34 @@ var init_trophies = __esm({
   }
 });
 
+// src/server/services/postgresSeasonRead.ts
+import { FieldPath as FieldPath5 } from "firebase-admin/firestore";
+async function loadPostgresSeasonFixtures(seasonId2) {
+  const rows = await getFirestoreDb().collection("fixtures").where("seasonId", "==", seasonId2).get();
+  return filterRetiredFixtures(rows.docs.map((doc) => normalizeFixtureSnapshot({ ...doc.data(), id: doc.id }, seasonId2)), seasonId2);
+}
+async function loadPostgresSeasonOwners(seasonId2) {
+  const db = getFirestoreDb();
+  const occupancies = (await db.collection("club_occupancies").where("seasonId", "==", seasonId2).get()).docs.map((doc) => doc.data()).filter((row) => row.userId && row.clubId && !["released", "inactive"].includes(row.status));
+  const ids = [...new Set(occupancies.map((row) => row.userId))];
+  const users = /* @__PURE__ */ new Map();
+  for (let i = 0; i < ids.length; i += 30) {
+    const rows = await db.collection("users").where(FieldPath5.documentId(), "in", ids.slice(i, i + 30)).get();
+    rows.docs.forEach((doc) => users.set(doc.id, doc.data()));
+  }
+  return occupancies.map((row) => {
+    const user = users.get(row.userId);
+    return { id: row.clubId, ownerUserId: row.userId, ownerUsername: user?.username || null, ownerDisplayName: [user?.firstName, user?.lastName].filter(Boolean).join(" ") || user?.username || row.userId };
+  });
+}
+var init_postgresSeasonRead = __esm({
+  "src/server/services/postgresSeasonRead.ts"() {
+    init_admin();
+    init_readModelStore();
+    init_retiredFixtureService();
+  }
+});
+
 // src/server/services/seasonInsightsService.ts
 function normalizeSqliteFixture(row, seasonId2) {
   const home = row.home_club_id ? clubMap.get(row.home_club_id) : void 0;
@@ -3114,8 +3142,9 @@ async function loadSeasonFixtures(seasonId2) {
   const fresh = await redisGetFresh(key4);
   const snapshot = fresh || await redisGetLkg(key4);
   if (Array.isArray(snapshot?.data) && snapshot.data.length > 0) {
-    return { fixtures: snapshot.data, source: fresh ? "redis" : "redis_stale" };
+    return { fixtures: snapshot.data, source: process.env.DATABASE_PROVIDER === "supabase" ? "postgresql" : fresh ? "redis" : "redis_stale" };
   }
+  if (process.env.DATABASE_PROVIDER === "supabase") return { fixtures: await loadPostgresSeasonFixtures(seasonId2), source: "postgresql" };
   const rows = queryAll(
     `SELECT * FROM fixtures WHERE season_id = ? OR season_id IS NULL ORDER BY matchday ASC, scheduled_at ASC, id ASC`,
     [seasonId2]
@@ -3123,6 +3152,7 @@ async function loadSeasonFixtures(seasonId2) {
   return { fixtures: rows.map((row) => normalizeSqliteFixture(row, seasonId2)), source: "sqlite" };
 }
 async function loadOwners(seasonId2) {
+  if (process.env.DATABASE_PROVIDER === "supabase") return loadPostgresSeasonOwners(seasonId2);
   const key4 = ReadModelKeys.clubsWithOwners(seasonId2);
   const snapshot = await redisGetFresh(key4) || await redisGetLkg(key4);
   if (Array.isArray(snapshot?.data) && snapshot.data.length > 0) return snapshot.data;
@@ -3454,6 +3484,7 @@ async function getSeasonInsights(seasonId2 = "season-2026-27") {
 var clubMap, competitionMap, domesticLeagueIds;
 var init_seasonInsightsService = __esm({
   "src/server/services/seasonInsightsService.ts"() {
+    init_postgresSeasonRead();
     init_db();
     init_seed();
     init_readModelStore();
@@ -3770,6 +3801,25 @@ async function createNotification(userId2, type, title, message, data) {
 var init_notificationService = __esm({
   "src/server/services/notificationService.ts"() {
     init_firestoreStore();
+  }
+});
+
+// src/server/services/postgresNotificationRecipients.ts
+async function getPostgresNotificationRecipient(userId2) {
+  const user = (await getFirestoreDb().collection("users").doc(userId2).get()).data();
+  if (!user) return null;
+  return {
+    userId: userId2,
+    username: user.username || "",
+    displayName: [user.firstName, user.lastName].filter(Boolean).join(" ") || user.username || "EFL Player",
+    telegramId: user.telegramId || null,
+    messageable: Boolean(String(user.telegramId || "").trim()) && !user.isSuspended,
+    updatedAt: user.updatedAt || ""
+  };
+}
+var init_postgresNotificationRecipients = __esm({
+  "src/server/services/postgresNotificationRecipients.ts"() {
+    init_admin();
   }
 });
 
@@ -4490,6 +4540,54 @@ var init_notificationBackupQueue = __esm({
   }
 });
 
+// src/server/services/matchdayNotificationJobs.ts
+var matchdayNotificationJobs_exports = {};
+__export(matchdayNotificationJobs_exports, {
+  MATCHDAY_NOTIFICATION_JOBS: () => MATCHDAY_NOTIFICATION_JOBS,
+  processMatchdayNotificationJob: () => processMatchdayNotificationJob,
+  processPendingMatchdayNotifications: () => processPendingMatchdayNotifications
+});
+import { randomUUID as randomUUID4 } from "node:crypto";
+async function processMatchdayNotificationJob(id) {
+  const db = getFirestoreDb(), ref2 = db.collection(MATCHDAY_NOTIFICATION_JOBS).doc(id);
+  const store = getRuntimeStateStore();
+  const lease = `efluz:v1:matchday-notification-job:${id}`;
+  const token = randomUUID4();
+  if (!await store.set(lease, token, { nx: true, ex: 120 })) return { queued: 0, status: "PENDING" };
+  try {
+    const job = (await ref2.get()).data();
+    if (!job || job.status !== "PENDING") return { queued: 0, status: "SKIPPED" };
+    const lock = (await db.collection("matchday_locks").doc(`${job.seasonId}:${job.competitionId}:${job.matchday}`).get()).data();
+    if (!lock?.isOpen || lock.expiresAt !== job.deadlineAt || Date.parse(job.deadlineAt) <= Date.now()) {
+      await ref2.update({ status: "SUPERSEDED", updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
+      return { queued: 0, status: "SKIPPED" };
+    }
+    const queued = await notifySmartMatchdayOpened(job);
+    await ref2.update({ status: "QUEUED", queued, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
+    return { queued, status: "QUEUED" };
+  } catch (error) {
+    console.warn("[MATCHDAY_NOTIFICATION_RETRY_PENDING]", { id, reason: error?.message });
+    return { queued: 0, status: "PENDING" };
+  } finally {
+    await store.eval("EFL_STATE_RELEASE_V1", [lease], [token]).catch(() => {
+    });
+  }
+}
+async function processPendingMatchdayNotifications() {
+  if (process.env.DATABASE_PROVIDER !== "supabase" || process.env.MIGRATION_WRITE_FREEZE === "true") return;
+  const docs = await getFirestoreDb().collection(MATCHDAY_NOTIFICATION_JOBS).where("status", "==", "PENDING").limit(5).get();
+  for (const doc of docs.docs) await processMatchdayNotificationJob(doc.id);
+}
+var MATCHDAY_NOTIFICATION_JOBS;
+var init_matchdayNotificationJobs = __esm({
+  "src/server/services/matchdayNotificationJobs.ts"() {
+    init_admin();
+    init_runtimeStateStore();
+    init_smartNotificationService();
+    MATCHDAY_NOTIFICATION_JOBS = "matchday_notification_jobs";
+  }
+});
+
 // src/lib/telegramUtils.ts
 function isValidTelegramUsername(username) {
   if (!username) return false;
@@ -4791,6 +4889,8 @@ async function pendingQueueState() {
 async function drainNotificationQueue(options = {}) {
   if (process.env.MIGRATION_WRITE_FREEZE === "true") return;
   if (process.env.DATABASE_PROVIDER === "supabase" && process.env.SUPABASE_DATA_NAMESPACE === "preview") return;
+  const { processPendingMatchdayNotifications: processPendingMatchdayNotifications2 } = await Promise.resolve().then(() => (init_matchdayNotificationJobs(), matchdayNotificationJobs_exports));
+  await processPendingMatchdayNotifications2();
   const hop = options.hop || 0;
   const deadline = Math.min(
     options.deadline ?? Date.now() + DRAIN_BUDGET_MS,
@@ -5136,9 +5236,9 @@ async function processNotificationQueue(batchSize = 25, stopClaimingAt = Infinit
         await client.hdel(PROCESSING_KEY, job.jobId);
         continue;
       }
-      if (job.requiresRecipientLookup) {
-        const entries = await client.get(`${RECIPIENT_DIR_KEY}:${job.seasonId || record.seasonId}`);
-        const entry = Array.isArray(entries) ? entries.find((item) => item.userId === job.userId) : void 0;
+      if (job.requiresRecipientLookup || process.env.DATABASE_PROVIDER === "supabase" && !job.photoModel) {
+        const entries = process.env.DATABASE_PROVIDER === "supabase" ? null : await client.get(`${RECIPIENT_DIR_KEY}:${job.seasonId || record.seasonId}`);
+        const entry = process.env.DATABASE_PROVIDER === "supabase" ? await getPostgresNotificationRecipient(job.userId) : Array.isArray(entries) ? entries.find((item) => item.userId === job.userId) : void 0;
         if (!entry) {
           job.availableAt = Date.now() + 3e5;
           await client.rpush(QUEUE_KEY, JSON.stringify(job));
@@ -5330,6 +5430,7 @@ async function getBroadcastDetails(broadcastId) {
 var BROADCASTS_KEY, QUEUE_KEY, PROCESSING_KEY, WORKER_LOCK, RECIPIENT_DIR_KEY, memoryBroadcasts, memoryRecipientDirectory, memoryRecipientSeason, MAX_CONTINUATION_HOPS, DRAIN_BUDGET_MS;
 var init_telegramNotificationQueue = __esm({
   "src/server/services/telegramNotificationQueue.ts"() {
+    init_postgresNotificationRecipients();
     init_postgresNotificationStore();
     init_firestoreStore();
     init_admin();
@@ -5456,6 +5557,8 @@ var init_telegramMiniAppButton = __esm({
 });
 
 // src/server/services/smartNotificationService.ts
+import { AsyncLocalStorage as AsyncLocalStorage2 } from "node:async_hooks";
+import { FieldPath as FieldPath6 } from "firebase-admin/firestore";
 import crypto2 from "crypto";
 function inferSmartEvent(eventId) {
   const value = String(eventId || "").toLowerCase();
@@ -5559,12 +5662,38 @@ async function fixtureReplyMarkup(fixture, opponentUserId, includeResultAction =
   rows.push([telegramMiniAppButton()]);
   return { inline_keyboard: rows };
 }
-async function getCompetitionFixtureSnapshot(competitionId, seasonId2) {
+async function getCompetitionFixtureSnapshot(competitionId, seasonId2, matchday) {
+  if (process.env.DATABASE_PROVIDER === "supabase") {
+    const db = getFirestoreDb();
+    let query = db.collection("fixtures").where("competitionId", "==", competitionId).where("seasonId", "==", seasonId2);
+    if (matchday !== void 0 && !hasFixtureMatchdayCorrection(competitionId, seasonId2)) query = query.where("matchday", "==", matchday);
+    const docs = await query.get();
+    const fixtures = filterRetiredFixtures(docs.docs.map((doc) => normalizeFixtureSnapshot({ ...doc.data(), id: doc.id }, seasonId2)), seasonId2);
+    const clubs = [...new Set(fixtures.flatMap((f) => [f.homeClubId, f.awayClubId]).filter((id) => id && id !== "TBD"))];
+    const owners = /* @__PURE__ */ new Map();
+    for (let i = 0; i < clubs.length; i += 30) {
+      const rows = await db.collection("club_occupancies").where(FieldPath6.documentId(), "in", clubs.slice(i, i + 30).map((id) => `${seasonId2}_${id}`)).get();
+      for (const doc of rows.docs) {
+        const row = doc.data();
+        if (row.userId && !["released", "inactive"].includes(row.status)) owners.set(row.clubId, row.userId);
+      }
+    }
+    return fixtures.map((f) => ({ ...f, homeOwnerId: owners.get(f.homeClubId), awayOwnerId: owners.get(f.awayClubId), homeOwner: null, awayOwner: null, homeUser: null, awayUser: null }));
+  }
   const key4 = ReadModelKeys.competitionFixtures(competitionId, seasonId2);
   const snapshot = await redisGetFresh(key4) || await redisGetLkg(key4);
   return Array.isArray(snapshot?.data) ? filterRetiredFixtures(snapshot.data, seasonId2) : [];
 }
 async function getCachedRecipient(userId2, seasonId2) {
+  if (process.env.DATABASE_PROVIDER === "supabase") {
+    const context2 = recipientContext.getStore();
+    let work = context2?.get(userId2);
+    if (!work) {
+      work = getPostgresNotificationRecipient(userId2);
+      context2?.set(userId2, work);
+    }
+    return work;
+  }
   const client = getNotificationStore();
   if (!client) return null;
   try {
@@ -5577,6 +5706,10 @@ async function getCachedRecipient(userId2, seasonId2) {
   }
 }
 async function getCachedRecipientByClubId(clubId, seasonId2) {
+  if (process.env.DATABASE_PROVIDER === "supabase") {
+    const owner = (await getFirestoreDb().collection("club_occupancies").doc(`${seasonId2}_${clubId}`).get()).data();
+    return owner?.userId && !["released", "inactive"].includes(owner.status) ? getCachedRecipient(owner.userId, seasonId2) : null;
+  }
   const client = getNotificationStore();
   if (!client) return null;
   try {
@@ -5661,18 +5794,23 @@ async function enqueueSmartTelegramNotification(params) {
       console.error("[SMART_NOTIFY_BACKUP_FAILED]", backupError?.message || backupError);
     }
     console.error("[SMART_NOTIFY_NOT_PERSISTED]", { broadcastId, reason: error?.message || "PRIMARY_REDIS_UNAVAILABLE" });
+    if (process.env.DATABASE_PROVIDER === "supabase") throw new Error("SMART_NOTIFICATION_NOT_PERSISTED");
     return false;
   }
 }
 async function notifySmartMatchdayOpened(params) {
-  const fixtures = await getCompetitionFixtureSnapshot(params.competitionId, params.seasonId);
+  return recipientContext.run(/* @__PURE__ */ new Map(), () => enqueueMatchdayNotifications(params));
+}
+async function enqueueMatchdayNotifications(params) {
+  if (!await isSmartNotificationEventEnabled(params.seasonId, "matchdayOpened")) return 0;
+  const fixtures = await getCompetitionFixtureSnapshot(params.competitionId, params.seasonId, params.matchday);
   const matchdayFixtures = fixtures.filter((fixture) => Number(fixture.matchday) === Number(params.matchday));
   if (matchdayFixtures.length === 0) return 0;
   const tasks = [];
   for (const fixture of matchdayFixtures) {
     const homeUserId = ownerId(fixture, "home");
     const awayUserId = ownerId(fixture, "away");
-    if (homeUserId) tasks.push(enqueueSmartTelegramNotification({
+    if (homeUserId) tasks.push(async () => enqueueSmartTelegramNotification({
       userId: homeUserId,
       seasonId: params.seasonId,
       eventId: `matchday-open:${params.competitionId}:${params.matchday}:${fixture.id}:${params.deadlineAt || ""}`,
@@ -5680,7 +5818,7 @@ async function notifySmartMatchdayOpened(params) {
       body: await buildMatchCardBody({ fixture, viewerSide: "home", deadlineAt: params.deadlineAt, footer: "O\u2018yinni o\u2018tkazing va natijani yuboring." }),
       replyMarkup: await fixtureReplyMarkup(fixture, awayUserId)
     }));
-    if (awayUserId) tasks.push(enqueueSmartTelegramNotification({
+    if (awayUserId) tasks.push(async () => enqueueSmartTelegramNotification({
       userId: awayUserId,
       seasonId: params.seasonId,
       eventId: `matchday-open:${params.competitionId}:${params.matchday}:${fixture.id}:${params.deadlineAt || ""}`,
@@ -5689,7 +5827,12 @@ async function notifySmartMatchdayOpened(params) {
       replyMarkup: await fixtureReplyMarkup(fixture, homeUserId)
     }));
   }
-  const results = await Promise.allSettled(tasks);
+  if (process.env.DATABASE_PROVIDER === "supabase") {
+    let queued = 0;
+    for (const task of tasks) if (await task()) queued++;
+    return queued;
+  }
+  const results = await Promise.allSettled(tasks.map((task) => task()));
   return results.filter((result) => result.status === "fulfilled" && result.value).length;
 }
 async function notifyNextFixtureIfKnown(fixture) {
@@ -5765,7 +5908,7 @@ async function notifySmartEuropeanZones(params) {
     const userId2 = recipient?.userId || ownerOfClub(fixtures || [], row.clubId);
     if (!userId2) continue;
     const title = row.zone === "DIRECT_R16" ? "\u{1F31F} To\u2018g\u2018ridan-to\u2018g\u2018ri yo\u2018llanma" : row.zone === "KNOCKOUT_PLAYOFF" ? "\u2694\uFE0F Play-off yo\u2018llanmasi" : "\u{1F4CB} Liga bosqichi yakunlandi";
-    tasks.push(enqueueSmartTelegramNotification({
+    tasks.push(() => enqueueSmartTelegramNotification({
       userId: userId2,
       seasonId: params.seasonId,
       eventId: `european-zone:${params.competitionId}:${row.clubId}:${row.zone}:${row.position}`,
@@ -5778,7 +5921,12 @@ Yevrokubok holatingiz EFL UZ ilovasida yangilandi.`,
       replyMarkup: { inline_keyboard: [[telegramMiniAppButton()]] }
     }));
   }
-  const results = await Promise.allSettled(tasks);
+  if (process.env.DATABASE_PROVIDER === "supabase") {
+    let queued = 0;
+    for (const task of tasks) if (await task()) queued++;
+    return queued;
+  }
+  const results = await Promise.allSettled(tasks.map((task) => task()));
   return results.filter((result) => result.status === "fulfilled" && result.value).length;
 }
 async function notifySmartResultLifecycle(fixture, actorUserId) {
@@ -5826,9 +5974,11 @@ async function notifySmartResultLifecycle(fixture, actorUserId) {
     })));
   }
 }
-var BROADCASTS_KEY2, QUEUE_KEY2, RECIPIENT_DIR_KEY2, SMART_DEDUPE_PREFIX, SMART_DEDUPE_TTL_SECONDS, RESULT_TOPIC_BY_LEAGUE;
+var BROADCASTS_KEY2, QUEUE_KEY2, RECIPIENT_DIR_KEY2, SMART_DEDUPE_PREFIX, SMART_DEDUPE_TTL_SECONDS, RESULT_TOPIC_BY_LEAGUE, recipientContext;
 var init_smartNotificationService = __esm({
   "src/server/services/smartNotificationService.ts"() {
+    init_admin();
+    init_postgresNotificationRecipients();
     init_postgresNotificationStore();
     init_retiredFixtureService();
     init_readModelStore();
@@ -5848,6 +5998,7 @@ var init_smartNotificationService = __esm({
       "league-bundesliga": "https://t.me/efleagueuz/5",
       "league-ligue-1": "https://t.me/efleagueuz/6"
     };
+    recipientContext = new AsyncLocalStorage2();
   }
 });
 
@@ -6908,7 +7059,7 @@ __export(readModelStore_exports, {
   setInProcessMemory: () => setInProcessMemory
 });
 import { Redis as Redis4 } from "@upstash/redis";
-import { FieldPath as FieldPath5 } from "firebase-admin/firestore";
+import { FieldPath as FieldPath7 } from "firebase-admin/firestore";
 function getRawDatasetKey(key4) {
   return key4.replace(/^efluz:v1:pg:(preview|production):(fresh:|lkg:|dirty:)?/, "").replace(/^efluz:v1:(fresh:|lkg:|dirty:)?/, "").replace(/^efluz:v1:/, "");
 }
@@ -7501,7 +7652,7 @@ async function buildClubsSnapshotAuthoritative(seasonId2) {
         postgresOwners = /* @__PURE__ */ new Map();
         if (ownerUserIds.length) {
           try {
-            const rows = await db.collection(COLLECTIONS.USERS).where(FieldPath5.documentId(), "in", ownerUserIds).get();
+            const rows = await db.collection(COLLECTIONS.USERS).where(FieldPath7.documentId(), "in", ownerUserIds).get();
             trackFirestoreRead(COLLECTIONS.USERS, rows.size, "buildClubsSnapshot:ownersBatch");
             rows.docs.forEach((doc) => postgresOwners.set(doc.id, doc));
           } catch {
@@ -9651,7 +9802,7 @@ var init_testGuard = __esm({
 });
 
 // src/server/outbox/redisOutbox.ts
-import { randomUUID as randomUUID4 } from "node:crypto";
+import { randomUUID as randomUUID5 } from "node:crypto";
 function isRedisOutboxConfigured() {
   return getUpstashClient() !== null;
 }
@@ -9666,7 +9817,7 @@ async function persistDurableMutation(mutation) {
   const pendingKey = OUTBOX_KEYS.pending();
   const allKey = OUTBOX_KEYS.all();
   try {
-    mutation.revision = randomUUID4();
+    mutation.revision = randomUUID5();
     const rawJson = JSON.stringify(mutation);
     await client.eval(`
       -- EFL_OUTBOX_PERSIST_V1: validate all key types before publishing.
@@ -12647,7 +12798,7 @@ __export(competitionMatchdayService_exports, {
   controlCompetitionMatchday: () => controlCompetitionMatchday,
   getCompetitionMatchdayControl: () => getCompetitionMatchdayControl
 });
-import { randomUUID as randomUUID5 } from "node:crypto";
+import { createHash as createHash5, randomUUID as randomUUID6 } from "node:crypto";
 function totalRounds(comp, fixtures) {
   if (comp.type === "LEAGUE") {
     const teams = Number(comp.formatConfig?.totalClubs || (comp.leagueId === "league-bundesliga" || comp.leagueId === "league-ligue-1" ? 18 : 20));
@@ -12753,8 +12904,13 @@ async function controlCompetitionMatchday(competitionId, params) {
     }
     for (const item of locks) tx.set(db.collection(COLLECTIONS.MATCHDAY_LOCKS).doc(item.id), item);
     tx.update(ref2, changes);
-    tx.set(db.collection(COLLECTIONS.AUDIT_LOGS).doc(randomUUID5()), { action: "MATCHDAY_CONTROL", competitionId, seasonId: seasonId2, matchday: target, operation: params.action, adminUserId: params.adminUserId || null, previousMatchday: current, createdAt: now });
-    return { competition: { ...comp, ...changes }, locks, deadlineAt: deadline };
+    tx.set(db.collection(COLLECTIONS.AUDIT_LOGS).doc(randomUUID6()), { action: "MATCHDAY_CONTROL", competitionId, seasonId: seasonId2, matchday: target, operation: params.action, adminUserId: params.adminUserId || null, previousMatchday: current, createdAt: now });
+    let notificationJobId = null;
+    if (process.env.DATABASE_PROVIDER === "supabase" && ["SELECT", "OPEN", "RESTART"].includes(params.action)) {
+      notificationJobId = createHash5("sha256").update(`${seasonId2}:${competitionId}:${target}:${deadline}`).digest("hex");
+      tx.set(db.collection(MATCHDAY_NOTIFICATION_JOBS).doc(notificationJobId), { competitionId, seasonId: seasonId2, matchday: target, deadlineAt: deadline, status: "PENDING", createdAt: now });
+    }
+    return { competition: { ...comp, ...changes }, locks, deadlineAt: deadline, notificationJobId };
   });
   await syncCompetitionMatchdayState(result.competition, result.locks);
   let channelPost = "SKIPPED";
@@ -12767,11 +12923,13 @@ async function controlCompetitionMatchday(competitionId, params) {
       console.warn("[MATCHDAY_CHANNEL_ENQUEUE_FAILED]", { competitionId, matchday: target, reason: error?.message });
     }
   }
-  return { success: true, competitionId, currentMatchday: result.competition.currentMatchday || 1, matchday: target, isMatchdayOpen: params.action !== "LOCK", nextMatchdayOpenAt: result.deadlineAt, totalMatchdays: totalRounds(competition, fixtures), channelPost };
+  const notifications = result.notificationJobId ? await processMatchdayNotificationJob(result.notificationJobId) : { queued: 0, status: "SKIPPED" };
+  return { smartNotificationsQueued: notifications.queued, smartNotificationsStatus: notifications.status, success: true, competitionId, currentMatchday: result.competition.currentMatchday || 1, matchday: target, isMatchdayOpen: params.action !== "LOCK", nextMatchdayOpenAt: result.deadlineAt, totalMatchdays: totalRounds(competition, fixtures), channelPost };
 }
 var MatchdayControlError, finalStatuses;
 var init_competitionMatchdayService = __esm({
   "src/server/services/competitionMatchdayService.ts"() {
+    init_matchdayNotificationJobs();
     init_retiredFixtureService();
     init_admin();
     init_collections();
@@ -13356,7 +13514,7 @@ __export(firestoreStore_exports, {
   validateDomesticFixturesFirestore: () => validateDomesticFixturesFirestore,
   verifyUserClubConsistency: () => verifyUserClubConsistency
 });
-import { FieldPath as FieldPath6 } from "firebase-admin/firestore";
+import { FieldPath as FieldPath8 } from "firebase-admin/firestore";
 function trackFirestoreRead(collectionName, count = 1, caller = "unknown") {
   recordDurableRead(collectionName, count, caller);
   readMetrics.sessionReads += count;
@@ -17253,7 +17411,7 @@ async function getDisputesFirestore(status = "OPEN", limitCount = 50) {
     for (let i = 0; i < fixtureIds.length; i += 30) {
       const chunk = fixtureIds.slice(i, i + 30);
       try {
-        const fSnap = await db.collection(COLLECTIONS.FIXTURES).where(FieldPath6.documentId(), "in", chunk).get();
+        const fSnap = await db.collection(COLLECTIONS.FIXTURES).where(FieldPath8.documentId(), "in", chunk).get();
         trackFirestoreRead(COLLECTIONS.FIXTURES, fSnap.empty ? 1 : fSnap.docs.length, "getDisputesFirestore:fixturesBatch");
         for (const doc of fSnap.docs) {
           const fData = doc.data();
@@ -17665,6 +17823,14 @@ async function getUserNotificationsFirestore(userId2, limit = 30) {
   }
 }
 async function markSingleNotificationReadFirestore(userId2, notificationId) {
+  if (process.env.DATABASE_PROVIDER === "supabase") {
+    const doc = await getFirestoreDb().collection(COLLECTIONS.NOTIFICATIONS).doc(notificationId).get();
+    if (!doc.exists) throw Object.assign(new Error("Notification not found"), { statusCode: 404 });
+    if (doc.data()?.userId !== userId2) throw new Error("OWNERSHIP_MISMATCH");
+    await persistNotificationReadState(userId2, (/* @__PURE__ */ new Date()).toISOString(), notificationId);
+    invalidateFirestoreCache(`firestore:notifications:${userId2}`);
+    return;
+  }
   const now = (/* @__PURE__ */ new Date()).toISOString();
   let authoritativeRead = false;
   invalidateFirestoreCache(`firestore:notifications:${userId2}`);
@@ -17716,6 +17882,11 @@ async function markSingleNotificationReadFirestore(userId2, notificationId) {
   }
 }
 async function markNotificationsReadFirestore(userId2) {
+  if (process.env.DATABASE_PROVIDER === "supabase") {
+    await persistNotificationReadState(userId2, (/* @__PURE__ */ new Date()).toISOString());
+    invalidateFirestoreCache(`firestore:notifications:${userId2}`);
+    return;
+  }
   const now = (/* @__PURE__ */ new Date()).toISOString();
   let authoritativeRead = false;
   invalidateFirestoreCache(`firestore:notifications:${userId2}`);
@@ -19549,7 +19720,7 @@ __export(adminUserDirectory_exports, {
   getAdminUserDirectory: () => getAdminUserDirectory,
   resolveAdminUserReference: () => resolveAdminUserReference
 });
-import { FieldPath as FieldPath7 } from "firebase-admin/firestore";
+import { FieldPath as FieldPath9 } from "firebase-admin/firestore";
 async function getAdminUserDirectory(skipCache = false) {
   const key4 = "efluz:v1:admin:user-directory";
   const cached3 = skipCache ? null : await redisGetFresh(key4);
@@ -19561,7 +19732,7 @@ async function getAdminUserDirectory(skipCache = false) {
     const users = [];
     let previous;
     for (let page = 0; page < 50; page++) {
-      let query = collection2.orderBy(FieldPath7.documentId());
+      let query = collection2.orderBy(FieldPath9.documentId());
       if (previous) query = query.startAfter(previous);
       const snapshot = await query.limit(100).get();
       trackFirestoreRead(COLLECTIONS.USERS, Math.max(1, snapshot.docs.length), "getAdminUserDirectory");
@@ -20600,7 +20771,7 @@ var init_seasonLifecycleService = __esm({
 });
 
 // src/server/services/quotaReadCache.ts
-import { randomUUID as randomUUID7 } from "node:crypto";
+import { randomUUID as randomUUID8 } from "node:crypto";
 async function quotaCachedRead(key4, ttlSeconds, load) {
   const current = pending.get(key4);
   if (current) return current;
@@ -20624,7 +20795,7 @@ async function quotaCachedRead(key4, ttlSeconds, load) {
       remember({ data, cachedAt: Date.now() });
       return data;
     }
-    const owner = randomUUID7();
+    const owner = randomUUID8();
     let owned = false;
     try {
       const fresh = await client.get(freshKey);
@@ -21164,6 +21335,7 @@ async function loadSeasonOperationsFixtures(seasonId2 = "season-2026-27") {
   if (Array.isArray(snapshot?.data) && snapshot.data.length > 0) {
     return { fixtures: filterRetiredFixtures(snapshot.data, seasonId2), source: snapshot.source || "redis", stale: Boolean(snapshot.stale) };
   }
+  if (process.env.DATABASE_PROVIDER === "supabase") return { fixtures: await loadPostgresSeasonFixtures(seasonId2), source: "postgresql", stale: false };
   const rows = queryAll(
     `SELECT * FROM fixtures WHERE season_id = ? OR season_id IS NULL ORDER BY matchday ASC, scheduled_at ASC, id ASC`,
     [seasonId2]
@@ -21389,6 +21561,7 @@ async function getSeasonRolloverPreview(seasonId2 = "season-2026-27") {
 var DOMESTIC_LEAGUES, DOMESTIC_CUPS2, EUROPEAN_LEAGUE_PHASE, PHASE_DEFS;
 var init_seasonOperationsService = __esm({
   "src/server/services/seasonOperationsService.ts"() {
+    init_postgresSeasonRead();
     init_retiredFixtureService();
     init_db();
     init_seed();
@@ -21456,12 +21629,12 @@ var init_premiumBadgeService = __esm({
 });
 
 // src/server/services/premiumService.ts
-import { createHash as createHash6, randomUUID as randomUUID8 } from "node:crypto";
+import { createHash as createHash7, randomUUID as randomUUID9 } from "node:crypto";
 function entitlementId(userId2, seasonId2) {
   return `${seasonId2}__${userId2}`;
 }
 function paymentDocumentId(chargeId) {
-  return createHash6("sha256").update(chargeId).digest("hex");
+  return createHash7("sha256").update(chargeId).digest("hex");
 }
 function isPremiumPublicEnabled() {
   return process.env.PREMIUM_PUBLIC_ENABLED === "true";
@@ -21693,10 +21866,17 @@ function selectCareerFixtures(fixtures, clubIds) {
 async function getPremiumCareerSnapshot(userId2, seasonId2 = PREMIUM_DEFAULT_SEASON_ID) {
   let clubs = [];
   let ownershipResolved = false;
-  try {
-    const ownership = await getAdminClubsFromReadModel(seasonId2);
-    clubs = ownership.clubs.filter((club) => club.ownerUserId === userId2);
+  if (process.env.DATABASE_PROVIDER === "supabase") {
+    const owners = await loadPostgresSeasonOwners(seasonId2);
+    clubs = owners.filter((owner) => owner.ownerUserId === userId2).map((owner) => SEED_CLUBS.find((club) => club.id === owner.id) || { id: owner.id, name: owner.id });
     ownershipResolved = true;
+  }
+  try {
+    if (!ownershipResolved) {
+      const ownership = await getAdminClubsFromReadModel(seasonId2);
+      clubs = ownership.clubs.filter((club) => club.ownerUserId === userId2);
+      ownershipResolved = true;
+    }
   } catch {
   }
   if (!ownershipResolved) {
@@ -21772,7 +21952,7 @@ async function telegramBotCall(method, payload) {
 }
 async function createPremiumStarsInvoice(params) {
   const seasonId2 = params.seasonId || PREMIUM_DEFAULT_SEASON_ID;
-  const orderId = randomUUID8().replace(/-/g, "").slice(0, 24);
+  const orderId = randomUUID9().replace(/-/g, "").slice(0, 24);
   const payload = makePremiumPayload(orderId);
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const db = getFirestoreDb();
@@ -21922,6 +22102,7 @@ async function handlePremiumSuccessfulPayment(message) {
 var PREMIUM_PRICE_STARS, PREMIUM_DEFAULT_SEASON_ID, ENTITLEMENTS_COLLECTION, PAYMENTS_COLLECTION, ORDERS_COLLECTION, PREMIUM_ORDER_TTL_MS;
 var init_premiumService = __esm({
   "src/server/services/premiumService.ts"() {
+    init_postgresSeasonRead();
     init_admin();
     init_firestoreStore();
     init_db();
@@ -23785,12 +23966,12 @@ var scopedAdminReviews_exports = {};
 __export(scopedAdminReviews_exports, {
   getScopedAdminReviews: () => getScopedAdminReviews
 });
-import { createHash as createHash7 } from "node:crypto";
+import { createHash as createHash8 } from "node:crypto";
 async function getScopedAdminReviews(user, seasonId2, includeArchive = false) {
   const competitionIds = new Set(permittedAdminCompetitionIds(user));
   const snapshots = await Promise.all([...competitionIds].map((competitionId) => getCompetitionFixturesFromReadModel(competitionId, { seasonId: seasonId2 })));
   const fixtures = snapshots.flatMap((snapshot) => snapshot.fixtures).filter((fixture) => fixture.seasonId === seasonId2 && competitionIds.has(fixture.competitionId));
-  const signature = createHash7("sha256").update(JSON.stringify([seasonId2, [...competitionIds].sort(), includeArchive, fixtures.map((f) => [f.id, f.status, f.homeScore, f.awayScore, f.updatedAt]).sort((a, b) => String(a[0]).localeCompare(String(b[0])))])).digest("hex");
+  const signature = createHash8("sha256").update(JSON.stringify([seasonId2, [...competitionIds].sort(), includeArchive, fixtures.map((f) => [f.id, f.status, f.homeScore, f.awayScore, f.updatedAt]).sort((a, b) => String(a[0]).localeCompare(String(b[0])))])).digest("hex");
   const reviews = await readSharedAdminReview("efluz:v1:admin:reviews:" + signature, async () => {
     const fixturesById = new Map(fixtures.map((fixture) => [fixture.id, fixture]));
     const pending2 = fixtures.filter((fixture) => ["PENDING_CONFIRMATION", "DISPUTED"].includes(fixture.status));
@@ -23949,7 +24130,7 @@ var admin_routes_exports = {};
 __export(admin_routes_exports, {
   adminRouter: () => adminRouter
 });
-import { createHash as createHash8 } from "node:crypto";
+import { createHash as createHash9 } from "node:crypto";
 import { Router as Router19 } from "express";
 import { z as z5 } from "zod";
 function getFallbackAdminOverview(seasonId2) {
@@ -24388,7 +24569,7 @@ var init_admin_routes = __esm({
       const userId2 = req.query.userId;
       const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit || ""), 10) || 100));
       try {
-        const signature = createHash8("sha256").update(JSON.stringify([fixtureId2 || null, userId2 || null, limit])).digest("hex");
+        const signature = createHash9("sha256").update(JSON.stringify([fixtureId2 || null, userId2 || null, limit])).digest("hex");
         const payload = await readSharedAdminData("efluz:v1:admin:submissions:" + signature, async () => {
           const submissions = await getResultSubmissions({ fixtureId: fixtureId2, userId: userId2, limit });
           return { submissions, total: submissions.length, source: "firestore", degraded: false, stale: false };
@@ -24995,8 +25176,8 @@ var init_admin_routes = __esm({
         const { controlCompetitionMatchday: controlCompetitionMatchday2 } = await Promise.resolve().then(() => (init_competitionMatchdayService(), competitionMatchdayService_exports));
         const { action: action2, matchday, durationHours, expectedUpdatedAt } = req.body;
         const result = await controlCompetitionMatchday2(req.params.id, { action: action2, matchday, durationHours, expectedUpdatedAt, adminUserId: req.user.id });
-        let smartNotificationsQueued = 0;
-        if (action2 === "SELECT" || action2 === "OPEN" || action2 === "RESTART") {
+        let smartNotificationsQueued = result.smartNotificationsQueued || 0;
+        if (process.env.DATABASE_PROVIDER !== "supabase" && (action2 === "SELECT" || action2 === "OPEN" || action2 === "RESTART")) {
           try {
             const doc = await getFirestoreDb().collection(COLLECTIONS.COMPETITIONS).doc(req.params.id).get();
             smartNotificationsQueued = await notifySmartMatchdayOpened({ competitionId: req.params.id, seasonId: doc.data()?.seasonId || "season-2026-27", matchday, deadlineAt: result.nextMatchdayOpenAt });
@@ -25023,8 +25204,8 @@ var init_admin_routes = __esm({
           seasonId: typeof seasonId2 === "string" ? seasonId2 : void 0,
           adminUserId: req.user?.id
         });
-        let smartNotificationsQueued = 0;
-        if (overrideStatus === "FORCE_OPEN") {
+        let smartNotificationsQueued = result.smartNotificationsQueued || 0;
+        if (process.env.DATABASE_PROVIDER !== "supabase" && overrideStatus === "FORCE_OPEN") {
           try {
             const resolvedMatchday = Number(result?.matchday ?? matchday ?? result?.currentMatchday ?? 0);
             if (resolvedMatchday > 0) {
@@ -25049,10 +25230,10 @@ var init_admin_routes = __esm({
       const { durationHours, seasonId: seasonId2 } = req.body;
       try {
         const result = await advanceCompetitionMatchdayFirestore(competitionId, { durationHours, seasonId: seasonId2 });
-        let smartNotificationsQueued = 0;
+        let smartNotificationsQueued = result.smartNotificationsQueued || 0;
         try {
           const resolvedMatchday = Number(result?.currentMatchday || 0);
-          if (resolvedMatchday > 0) {
+          if (process.env.DATABASE_PROVIDER !== "supabase" && resolvedMatchday > 0) {
             smartNotificationsQueued = await notifySmartMatchdayOpened({
               competitionId,
               seasonId: typeof seasonId2 === "string" ? seasonId2 : "season-2026-27",
@@ -25078,9 +25259,9 @@ var init_admin_routes = __esm({
           typeof matchday === "number" ? matchday : void 0,
           typeof seasonId2 === "string" ? seasonId2 : void 0
         );
-        let smartNotificationsQueued = 0;
+        let smartNotificationsQueued = result.smartNotificationsQueued || 0;
         try {
-          smartNotificationsQueued = await notifySmartMatchdayOpened({
+          if (process.env.DATABASE_PROVIDER !== "supabase") smartNotificationsQueued = await notifySmartMatchdayOpened({
             competitionId,
             seasonId: typeof seasonId2 === "string" ? seasonId2 : "season-2026-27",
             matchday: Number(result.matchday),
@@ -27196,7 +27377,7 @@ var init_telegramAiPrompt = __esm({
 });
 
 // src/server/services/telegramAiReadTools.ts
-import { randomUUID as randomUUID9 } from "node:crypto";
+import { randomUUID as randomUUID10 } from "node:crypto";
 function aiProviderFailureKind(error) {
   let details = error;
   try {
@@ -27222,7 +27403,7 @@ async function generateGroundedTelegramAnswer(options) {
   const rawRead = options.read || createAiTournamentReader(options.signal).read;
   const memo = /* @__PURE__ */ new Map();
   let cacheHits = 0;
-  const traceId = randomUUID9();
+  const traceId = randomUUID10();
   const read2 = async (args) => {
     const key4 = JSON.stringify(args && typeof args === "object" ? Object.fromEntries(Object.entries(args).sort(([a], [b]) => a.localeCompare(b))) : args);
     if (key4 && memo.has(key4)) {
@@ -29776,7 +29957,7 @@ var telegram_routes_exports = {};
 __export(telegram_routes_exports, {
   telegramRouter: () => telegramRouter
 });
-import { randomUUID as randomUUID10 } from "node:crypto";
+import { randomUUID as randomUUID11 } from "node:crypto";
 import { Router as Router23 } from "express";
 function normalizedSeasonId(value) {
   return typeof value === "string" && value.trim() ? value.trim() : PREMIUM_DEFAULT_SEASON_ID;
@@ -29814,7 +29995,7 @@ var init_telegram_routes = __esm({
         res.status(200).json({ ok: true, ignored: "invalid_update_id" });
         return;
       }
-      const owner = randomUUID10();
+      const owner = randomUUID11();
       let lease;
       try {
         lease = await claimTelegramUpdate(update.update_id, owner, isBasicBotUpdate(update));
@@ -30371,6 +30552,8 @@ async function reconcileDurableMutations() {
   if (process.env.DATABASE_PROVIDER === "supabase") {
     const { processPendingResultRefresh: processPendingResultRefresh2 } = await Promise.resolve().then(() => (init_resultRefreshJobs(), resultRefreshJobs_exports));
     await processPendingResultRefresh2();
+    const { processPendingMatchdayNotifications: processPendingMatchdayNotifications2 } = await Promise.resolve().then(() => (init_matchdayNotificationJobs(), matchdayNotificationJobs_exports));
+    await processPendingMatchdayNotifications2();
     return null;
   }
   if (process.env.DATABASE_PROVIDER === "supabase" && process.env.SUPABASE_DATA_NAMESPACE === "preview") return null;
@@ -30741,7 +30924,7 @@ init_readModelStore();
 init_redisOutbox();
 init_clubAdmission();
 init_firestoreStore();
-import { randomUUID as randomUUID6 } from "node:crypto";
+import { randomUUID as randomUUID7 } from "node:crypto";
 var CLUB_CLAIM_KEYS = {
   user: (season, user) => `${KEY_PREFIX}:club-claim:${season}:user:${user}`,
   club: (season, club) => `${KEY_PREFIX}:club-claim:${season}:club:${club}`,
@@ -30825,8 +31008,8 @@ async function requestDurableClubClaim(userId2, clubId, seasonId2, actor) {
   const admission = await redisGetFresh(ReadModelKeys.clubAdmission(seasonId2)) || await redisGetLkg(ReadModelKeys.clubAdmission(seasonId2));
   if (!admission?.data) throw new DurablePersistenceUnavailableError("Klub qabuli holati saqlanmagan. Qayta urinib ko\u2018ring.");
   assertClubAdmissionOpen(admissionStatus(seasonId2, admission.data), club.leagueId);
-  const now = (/* @__PURE__ */ new Date()).toISOString(), id = "cc-" + randomUUID6();
-  const mutation = { mutationId: id, revision: randomUUID6(), entityType: "CLUB_CLAIM", entityId: clubId, operation: "claim", userId: userId2, seasonId: seasonId2, payload: { userId: userId2, clubId, seasonId: seasonId2, clubName: club.name, requiresActiveUser: true, ...verifiedProfile ? { verifiedProfile } : {} }, createdAt: now, updatedAt: now, retryCount: 0, nextRetryAt: Date.now(), lastError: null, status: "PENDING" };
+  const now = (/* @__PURE__ */ new Date()).toISOString(), id = "cc-" + randomUUID7();
+  const mutation = { mutationId: id, revision: randomUUID7(), entityType: "CLUB_CLAIM", entityId: clubId, operation: "claim", userId: userId2, seasonId: seasonId2, payload: { userId: userId2, clubId, seasonId: seasonId2, clubName: club.name, requiresActiveUser: true, ...verifiedProfile ? { verifiedProfile } : {} }, createdAt: now, updatedAt: now, retryCount: 0, nextRetryAt: Date.now(), lastError: null, status: "PENDING" };
   let result;
   try {
     result = await client.eval(CLUB_CLAIM_RESERVE_LUA, [CLUB_CLAIM_KEYS.user(seasonId2, userId2), CLUB_CLAIM_KEYS.club(seasonId2, clubId), CLUB_CLAIM_KEYS.latest(seasonId2, userId2), OUTBOX_KEYS.mutation(id), OUTBOX_KEYS.pending(), OUTBOX_KEYS.all()], [JSON.stringify(mutation), mutation.nextRetryAt, id, `${KEY_PREFIX}:outbox:mutation:`]);
@@ -31470,7 +31653,7 @@ init_admin();
 init_collections();
 init_firestoreStore();
 init_readModelStore();
-import { createHash as createHash5 } from "node:crypto";
+import { createHash as createHash6 } from "node:crypto";
 var DOMESTIC_CUP_BY_LEAGUE = {
   "league-premier-league": "comp-fa-cup-2026",
   "league-la-liga": "comp-copa-del-rey-2026",
@@ -31526,7 +31709,7 @@ async function canonicalizeMyDomesticCupFixtures(fixtures, currentClub, seasonId
     degradedCup = Boolean(readModel.stale || readModel.degraded);
     if ((readModel.stale || readModel.degraded) && firestoreCircuitBreaker.getStatus().state === "CLOSED") {
       try {
-        const signature = createHash5("sha256").update(JSON.stringify([seasonId2, cupId, readModel.snapshotAt, cupFixtures.map((f) => [f.id, f.updatedAt, f.status])])).digest("hex");
+        const signature = createHash6("sha256").update(JSON.stringify([seasonId2, cupId, readModel.snapshotAt, cupFixtures.map((f) => [f.id, f.updatedAt, f.status])])).digest("hex");
         const healed = await readSharedAdminData("efluz:v1:cup-heal:" + signature, async () => ({ fixtures: await loadAuthoritativeCupFixtures(cupId, seasonId2), stale: false, degraded: false, source: "firestore" }), 60);
         if (healed.fixtures.length) cupFixtures = healed.fixtures;
         degradedCup = healed.stale || healed.degraded;

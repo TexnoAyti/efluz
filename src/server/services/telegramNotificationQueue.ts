@@ -1,3 +1,4 @@
+import {getPostgresNotificationRecipient} from './postgresNotificationRecipients';
 import {getNotificationStore} from './postgresNotificationStore';
 import { trackFirestoreRead } from '../firebase/firestoreStore';
 import { getFirestoreDb } from '../firebase/admin';
@@ -151,6 +152,8 @@ export async function drainNotificationQueue(options: {
   if (process.env.MIGRATION_WRITE_FREEZE === 'true') return;
   // The preview uses a copied database, but the Redis notification queue is live.
   if (process.env.DATABASE_PROVIDER === 'supabase' && process.env.SUPABASE_DATA_NAMESPACE === 'preview') return;
+  const {processPendingMatchdayNotifications} = await import('./matchdayNotificationJobs');
+  await processPendingMatchdayNotifications();
   const hop = options.hop || 0;
   const deadline = Math.min(options.deadline ?? Date.now() + DRAIN_BUDGET_MS,
     (getDeadline()?.getTime() ?? Infinity) - 15000);
@@ -576,9 +579,9 @@ export async function processNotificationQueue(batchSize = 25, stopClaimingAt = 
         await client.hdel(PROCESSING_KEY, job.jobId);
         continue;
       }
-      if (job.requiresRecipientLookup) {
-        const entries = await client.get<RecipientDirectoryEntry[]>(`${RECIPIENT_DIR_KEY}:${job.seasonId || record.seasonId}`);
-        const entry = Array.isArray(entries) ? entries.find((item) => item.userId === job.userId) : undefined;
+      if (job.requiresRecipientLookup || (process.env.DATABASE_PROVIDER === 'supabase' && !job.photoModel)) {
+        const entries = process.env.DATABASE_PROVIDER === 'supabase' ? null : await client.get<RecipientDirectoryEntry[]>(`${RECIPIENT_DIR_KEY}:${job.seasonId || record.seasonId}`);
+        const entry = process.env.DATABASE_PROVIDER === 'supabase' ? await getPostgresNotificationRecipient(job.userId) : Array.isArray(entries) ? entries.find((item) => item.userId === job.userId) : undefined;
         if (!entry) {
           // Keep the event durable until the existing directory sync catches up.
           // This worker never warms the directory through extra Firestore reads.

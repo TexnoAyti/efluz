@@ -12,6 +12,8 @@ export async function reconcileDurableMutations(): Promise<SyncResult | null> {
   if (process.env.DATABASE_PROVIDER === 'supabase') {
     const {processPendingResultRefresh}=await import('../services/resultRefreshJobs');
     await processPendingResultRefresh();
+    const {processPendingMatchdayNotifications}=await import('../services/matchdayNotificationJobs');
+    await processPendingMatchdayNotifications();
     return null;
   }
   // Migration previews must never consume the production Redis outbox.
