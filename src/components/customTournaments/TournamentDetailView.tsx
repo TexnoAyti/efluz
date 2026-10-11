@@ -24,6 +24,7 @@ import {
   CustomTournamentFixture,
   CustomTournamentStandingsRow,
 } from '../../types/customTournament';
+import { CustomPlayoffBracket } from './CustomPlayoffBracket';
 import { customTournamentApi } from '../../lib/customTournamentApi';
 import { TournamentAdminDrawer } from './TournamentAdminDrawer';
 import { ClubCrest } from '../ClubCrest';
@@ -329,34 +330,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
               {fixtures.length === 0 ? (
                 <p className="text-xs text-slate-500 italic p-6 text-center">Turnir boshlangach bracket tuziladi.</p>
               ) : (
-                <div className="space-y-2.5">
-                  {fixtures.map((f) => (
-                    <div
-                      key={f.id}
-                      className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between text-xs"
-                    >
-                      <div className="flex items-center gap-2 flex-1">
-                        <span className="font-bold text-slate-200">{f.homeClubName}</span>
-                        <span className="text-slate-500">vs</span>
-                        <span className="font-bold text-slate-200">{f.awayClubName}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {f.status === 'CONFIRMED' ? (
-                          <span className="font-black text-emerald-400 text-sm">
-                            {f.homeScore} - {f.awayScore}
-                            {f.penaltyHomeScore !== null && f.penaltyHomeScore !== undefined && (
-                              <span className="text-[10px] text-amber-400 ml-1">
-                                (pen: {f.penaltyHomeScore}-{f.penaltyAwayScore})
-                              </span>
-                            )}
-                          </span>
-                        ) : (
-                          <span className="text-slate-500 text-[11px]">{f.status}</span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <CustomPlayoffBracket fixtures={fixtures} />
               )}
             </div>
           ) : (
@@ -409,6 +383,10 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
             </div>
           )}
         </div>
+      )}
+
+      {activeTab === 'standings' && tournament.format === 'LEAGUE_AND_PLAYOFF' && fixtures.some(f => f.stage.startsWith('PLAYOFF_')) && (
+        <CustomPlayoffBracket fixtures={fixtures} />
       )}
 
       {/* TAB 2: FIXTURES */}
