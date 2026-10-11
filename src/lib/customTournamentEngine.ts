@@ -45,7 +45,7 @@ export function generateTournamentPreview(
     }
     const byeCount = powerOfTwo - n;
     const totalRounds = Math.log2(powerOfTwo);
-    const totalPlayoffMatches = (powerOfTwo - 1 - byeCount) * legMultiplier;
+    const totalPlayoffMatches = (n - 2) * legMultiplier + 1;
 
     let stageName = 'Chorak final (QF)';
     if (powerOfTwo === 4) stageName = 'Yarim final (SF)';
@@ -73,18 +73,17 @@ export function generateTournamentPreview(
   let breakdown: any[] | undefined;
 
   if (groupMode === 'GROUPS') {
-    const perGroup = Math.floor(n / groupsCount);
-    groupStageMatches = groupsCount * ((perGroup * (perGroup - 1)) / 2) * roundsCount;
     breakdown = Array.from({ length: groupsCount }, (_, i) => ({
       groupName: `${String.fromCharCode(65 + i)}-guruhi`,
-      teamsCount: perGroup + (i === 0 ? n % groupsCount : 0),
+      teamsCount: Math.floor(n / groupsCount) + (i < n % groupsCount ? 1 : 0),
       qualifiersCount: Math.floor(qualifiers / groupsCount),
     }));
+    groupStageMatches = breakdown.reduce((sum, group) => sum + group.teamsCount * (group.teamsCount - 1) / 2 * roundsCount, 0);
   } else {
     groupStageMatches = ((n * (n - 1)) / 2) * roundsCount;
   }
 
-  const playoffMatches = (qualifiers - 1) * legMultiplier;
+  const playoffMatches = (qualifiers - 2) * legMultiplier + 1;
 
   return {
     format: 'LEAGUE_AND_PLAYOFF',

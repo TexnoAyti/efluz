@@ -3,7 +3,7 @@
  */
 
 export type CustomTournamentFormat = 'LEAGUE' | 'PLAYOFF' | 'LEAGUE_AND_PLAYOFF';
-export type CustomTournamentStatus = 'DRAFT' | 'REGISTRATION_OPEN' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+export type CustomTournamentStatus = 'DRAFT' | 'STARTING' | 'REGISTRATION_OPEN' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
 export type CustomTournamentVisibility = 'PRIVATE' | 'PUBLIC_OPEN' | 'PUBLIC_MODERATED';
 export type CustomTournamentSpectatorAccess = 'MEMBERS_ONLY' | 'PUBLIC_LINK';
 export type CustomTournamentLeagueScope = 'TOP5_ALL' | 'SINGLE_LEAGUE';
@@ -66,6 +66,11 @@ export interface CustomTournament {
 
   ticketSpentTransactionId?: string;
   creationFingerprint?: string;
+  startingAt?: string;
+  startParticipants?: CustomTournamentParticipant[];
+  expectedFixturesCount?: number;
+  confirmedFixturesCount?: number;
+  phase?: 'LEAGUE' | 'PLAYOFF';
   isRefunded?: boolean;
   createdAt: string;
   updatedAt: string;
@@ -88,7 +93,7 @@ export interface CustomTournamentParticipant {
   clubName: string;
   clubShortName: string;
   clubLogoUrl: string;
-  status: 'REGISTERED' | 'DISQUALIFIED' | 'LEFT';
+  status: 'REGISTERED' | 'PENDING_APPROVAL' | 'DISQUALIFIED' | 'LEFT';
   groupIndex?: number;
   seedNumber?: number;
   joinedAt: string;
@@ -159,6 +164,8 @@ export interface CustomTournamentAuditLog {
     | 'TOURNAMENT_PUBLISHED'
     | 'TOURNAMENT_STARTED'
     | 'TOURNAMENT_CANCELLED'
+    | 'PARTICIPANT_APPROVED'
+    | 'PARTICIPANT_REJECTED'
     | 'PARTICIPANT_JOINED'
     | 'PARTICIPANT_LEFT'
     | 'PARTICIPANT_DISQUALIFIED'

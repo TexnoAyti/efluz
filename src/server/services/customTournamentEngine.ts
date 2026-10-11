@@ -58,7 +58,7 @@ export function generateTournamentPreview(
     }
     const byeCount = powerOfTwo - n;
     const totalRounds = Math.log2(powerOfTwo);
-    const totalPlayoffMatches = (powerOfTwo - 1 - byeCount) * legMultiplier;
+    const totalPlayoffMatches = (n - 2) * legMultiplier + 1;
 
     let stageName = 'Chorak final (QF)';
     if (powerOfTwo === 4) stageName = 'Yarim final (SF)';
@@ -84,18 +84,17 @@ export function generateTournamentPreview(
   let breakdown: any[] | undefined;
 
   if (groupMode === 'GROUPS') {
-    const perGroup = Math.floor(n / groupsCount);
-    groupStageMatches = groupsCount * ((perGroup * (perGroup - 1)) / 2) * roundsCount;
     breakdown = Array.from({ length: groupsCount }, (_, i) => ({
       groupName: `${String.fromCharCode(65 + i)}-guruhi`,
-      teamsCount: perGroup + (i === 0 ? n % groupsCount : 0),
+      teamsCount: Math.floor(n / groupsCount) + (i < n % groupsCount ? 1 : 0),
       qualifiersCount: Math.floor(qualifiers / groupsCount),
     }));
+    groupStageMatches = breakdown.reduce((sum, group) => sum + group.teamsCount * (group.teamsCount - 1) / 2 * roundsCount, 0);
   } else {
     groupStageMatches = ((n * (n - 1)) / 2) * roundsCount;
   }
 
-  const playoffMatches = (qualifiers - 1) * legMultiplier;
+  const playoffMatches = (qualifiers - 2) * legMultiplier + 1;
 
   return {
     format: 'LEAGUE_AND_PLAYOFF',
@@ -115,11 +114,12 @@ export function generateRoundRobinFixtures(
   participants: CustomTournamentParticipant[],
   roundsCount: 1 | 2 = 1,
   matchDurationHours = 36,
-  groupIndex?: number
+  groupIndex?: number,
+  baseTime = Date.now()
 ): CustomTournamentFixture[] {
   const teams = [...participants];
   const fixtures: CustomTournamentFixture[] = [];
-  const now = Date.now();
+  const now = baseTime;
 
   // If odd number, add dummy BYE team
   let hasBye = false;
@@ -180,7 +180,7 @@ export function generateRoundRobinFixtures(
 
         matchCounter++;
         fixtures.push({
-          id: `ctf_${tournamentId}_r${matchday}_m${matchCounter}`,
+          id: `ctf_${tournamentId}${groupIndex === undefined ? '' : `_g${groupIndex}`}_r${matchday}_m${matchCounter}`,
           tournamentId,
           stage: groupIndex !== undefined ? 'GROUP_STAGE' : 'LEAGUE',
           groupIndex,
@@ -216,7 +216,8 @@ export function generatePlayoffBracketFixtures(
   tournamentId: string,
   participants: CustomTournamentParticipant[],
   playoffLegMode: 'SINGLE_LEG' | 'TWO_LEG' = 'SINGLE_LEG',
-  matchDurationHours = 36
+  matchDurationHours = 36,
+  baseTime = Date.now()
 ): CustomTournamentFixture[] {
   const n = participants.length;
   let powerOfTwo = 4;
@@ -226,7 +227,7 @@ export function generatePlayoffBracketFixtures(
 
   const byeCount = powerOfTwo - n;
   const fixtures: CustomTournamentFixture[] = [];
-  const now = Date.now();
+  const now = baseTime;
 
   // Create bracket node array of size powerOfTwo / 2 for Round 1
   const roundsTotal = Math.log2(powerOfTwo);
@@ -282,7 +283,8 @@ export function generatePlayoffBracketFixtures(
     const roundPairs = matchesByRound[r];
     const isRound1 = r === 0;
     const stage = getStageName(roundPairs.length);
-    const deadline = new Date(now + (r + 1) * matchDurationHours * 3600 * 1000).toISOString();
+    const roundWindow = matchDurationHours * (playoffLegMode === 'TWO_LEG' ? 2 : 1);
+    const deadline = new Date(now + (r * roundWindow + matchDurationHours) * 3600 * 1000).toISOString();
 
     for (let m = 0; m < roundPairs.length; m++) {
       matchIndex++;
@@ -348,7 +350,7 @@ export function generatePlayoffBracketFixtures(
           awayUserId: home && home !== 'BYE' ? home.userId : undefined,
           status,
           winnerClubId,
-          deadlineAt: new Date(new Date(deadline).getTime() + 24 * 3600 * 1000).toISOString(),
+          deadlineAt: new Date(new Date(deadline).getTime() + matchDurationHours * 3600 * 1000).toISOString(),
           nextMatchFixtureId: nextFixtureId,
         });
       }
@@ -398,7 +400,7 @@ export function calculateCustomStandings(
 
   const confirmedMatches = fixtures.filter(
     (f) =>
-      f.status === 'CONFIRMED' &&
+      f.status === 'CONFIRMED' && !f.stage?.startsWith('PLAYOFF') &&
       (groupIndex !== undefined ? f.groupIndex === groupIndex : true) &&
       f.homeScore !== null &&
       f.homeScore !== undefined &&

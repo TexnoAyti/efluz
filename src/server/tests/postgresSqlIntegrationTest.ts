@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {verifyCustomTournamentLifecycle} from './customTournamentLifecycleAudit';
 import { readFile } from 'node:fs/promises';
 import { PGlite } from '@electric-sql/pglite';
 import { getFirestoreDb } from '../firebase/admin';
@@ -29,7 +30,7 @@ assert.deepEqual(privilege, { anonymous: false, authenticated: false, service: t
 await assert.rejects(pg.query("select public.efl_runtime_commit('preview','[]'::jsonb,'-1')"), (error:any) => error.code === 'PT409', 'Legacy CAS conflicts must not trigger PostgREST serialization retries');
 await pg.exec('set role service_role;');
 const originalFetch = globalThis.fetch;
-let conflicts = 0, legacyHttpCommits = 0, failAssignment = false, failPublish = false;
+let conflicts = 0, legacyHttpCommits = 0, failAssignment = false, failPublish = false, failStartChunk = false;
 let snapshotResponses: {bytes:number;ids:string[]}[]=[];
 globalThis.fetch = (async (input: any, init: any) => {
   const url = new URL(String(input));
@@ -40,6 +41,7 @@ globalThis.fetch = (async (input: any, init: any) => {
     if(name==='efl_runtime_snapshot_read') result=await pg.query('select public.efl_runtime_snapshot_read($1,$2::jsonb,$3::jsonb) as value',[body.p_space,JSON.stringify(body.p_ids),JSON.stringify(body.p_versions)]);
     else if (name === 'efl_runtime_read') result = await pg.query('select public.efl_runtime_read($1,$2::jsonb) as value', [body.p_space, JSON.stringify(body.p_query)]);
     else if (name === 'efl_runtime_commit_safe') {
+      if (failStartChunk && body.p_operations.filter((op:any)=>op.path.startsWith('custom_tournament_fixtures/')).length === 200) { failStartChunk = false; throw Error('START_CHUNK_UNAVAILABLE'); }
       if (failAssignment && body.p_operations.some((op: any) => op.path.startsWith('audit_logs/'))) throw Error('ASSIGNMENT_COMMIT_UNAVAILABLE');
       if (failPublish && body.p_operations.some((op:any)=>op.path.startsWith('custom_tournaments/'))) {
         body.p_operations.push({kind:'create',path:'runtime_probes/balance',encoded:encodeValue({balance:999})});
@@ -205,6 +207,7 @@ try {
   await assert.rejects(claimTournamentClub(claim),/taklif havolasi/);
   await assert.rejects(claimTournamentClub({...claim,inviteToken:privateDraft.spectatorToken}),/taklif havolasi/);
   await claimTournamentClub({...claim,inviteToken:privateDraft.inviteToken});
+  await verifyCustomTournamentLifecycle(() => { failStartChunk = true; });
   console.log('PASS native PostgreSQL draft reopen/assistant discovery, publication, private invitation versus spectator access and atomic authorized claim');
   console.log('PASS native PostgreSQL ticket publication: actual batch failure restores wallet and draft; parallel different-key publishes spend exactly once');
   console.log('PASS native PostgreSQL SQL: private invoker grants, 12 concurrent NX attempts, atomic counters, cache invalidation, conflict retry with no stale writes, double-spend exclusion, full batch rollback, queue dedupe and worker claim; HTTP transport simulated');
