@@ -162,7 +162,7 @@ export const TournamentListView: React.FC = () => {
           <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-between gap-2 text-xs">
             <div className="flex items-center gap-2 text-amber-300">
               <Sparkles className="w-4 h-4 shrink-0" />
-              <span>1 ta turnir yaratish = 15 000 so‘m (1 chipta). Qoralama yaratish va sozlash mutlaqo bepul!</span>
+              <span>Har bir foydalanuvchiga bir martalik 1 ta bepul chipta beriladi. 1 turnir = 1 chipta.</span>
             </div>
             <a
               href="https://t.me/texnoadmin"

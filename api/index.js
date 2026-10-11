@@ -12789,6 +12789,405 @@ var init_competitionMatchdayService = __esm({
   }
 });
 
+// src/server/services/customTournamentTicketService.ts
+var customTournamentTicketService_exports = {};
+__export(customTournamentTicketService_exports, {
+  PRIMARY_OWNER_TELEGRAM_ID: () => PRIMARY_OWNER_TELEGRAM_ID2,
+  clearMemoryTicketStore: () => clearMemoryTicketStore,
+  ensureFreeTournamentTicket: () => ensureFreeTournamentTicket,
+  getTicketTransactions: () => getTicketTransactions,
+  getUserTicketBalance: () => getUserTicketBalance,
+  grantUserTickets: () => grantUserTickets,
+  isPrimaryOwner: () => isPrimaryOwner2,
+  refundSpentTicket: () => refundSpentTicket,
+  spendTicketForTournament: () => spendTicketForTournament,
+  spendTicketInTransaction: () => spendTicketInTransaction
+});
+function isPrimaryOwner2(telegramId) {
+  if (telegramId === void 0 || telegramId === null) return false;
+  return String(telegramId).trim() === PRIMARY_OWNER_TELEGRAM_ID2;
+}
+function clearMemoryTicketStore() {
+  memoryTicketAccounts.clear();
+  memoryTicketTransactions.clear();
+}
+async function ensureFreeTournamentTicket(userId2, telegramId = "") {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const txId = `welcome_${userId2}`;
+  const apply = (existing2) => ({
+    ...existing2 || { userId: userId2, telegramId, balance: 0, totalGranted: 0, totalSpent: 0, totalRefunded: 0 },
+    balance: (existing2?.balance || 0) + 1,
+    totalGranted: (existing2?.totalGranted || 0) + 1,
+    freeTicketGrantedAt: now,
+    updatedAt: now
+  });
+  const audit = {
+    id: txId,
+    userId: userId2,
+    type: "GRANT",
+    amount: 1,
+    idempotencyKey: txId,
+    note: "One-time free welcome tournament ticket",
+    createdAt: now
+  };
+  if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true" || process.env.NODE_ENV === "test") {
+    const existing2 = memoryTicketAccounts.get(userId2);
+    if (existing2?.freeTicketGrantedAt) return { ...existing2 };
+    const account = apply(existing2);
+    memoryTicketAccounts.set(userId2, account);
+    memoryTicketTransactions.set(txId, audit);
+    return { ...account };
+  }
+  const db = getFirestoreDb();
+  const ref2 = db.collection("user_tickets").doc(userId2);
+  const existing = (await ref2.get()).data();
+  if (existing?.freeTicketGrantedAt) return existing;
+  return db.runTransaction(async (transaction) => {
+    const current = (await transaction.get(ref2)).data();
+    if (current?.freeTicketGrantedAt) return current;
+    const account = apply(current);
+    transaction.set(ref2, account);
+    transaction.set(db.collection("ticket_transactions").doc(txId), audit);
+    return account;
+  });
+}
+async function getUserTicketBalance(userId2) {
+  const isFallback = process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true" || process.env.NODE_ENV === "test";
+  if (isFallback) {
+    const existing = memoryTicketAccounts.get(userId2);
+    if (existing) return { ...existing };
+    return {
+      userId: userId2,
+      telegramId: "",
+      balance: 0,
+      totalGranted: 0,
+      totalSpent: 0,
+      totalRefunded: 0,
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+  }
+  const db = getFirestoreDb();
+  const docRef = db.collection("user_tickets").doc(userId2);
+  const snap = await docRef.get();
+  if (!snap.exists) {
+    return {
+      userId: userId2,
+      telegramId: "",
+      balance: 0,
+      totalGranted: 0,
+      totalSpent: 0,
+      totalRefunded: 0,
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+  }
+  return snap.data();
+}
+async function grantUserTickets(params) {
+  if (!isPrimaryOwner2(params.adminTelegramId)) {
+    throw Object.assign(new Error("Only primary owner (5209126900) can grant tournament tickets."), {
+      statusCode: 403,
+      code: "OWNER_ONLY_UNAUTHORIZED"
+    });
+  }
+  if (!Number.isInteger(params.amount) || params.amount <= 0) {
+    throw Object.assign(new Error("Grant amount must be a positive integer."), {
+      statusCode: 400,
+      code: "INVALID_AMOUNT"
+    });
+  }
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const txId = `tx_grant_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const idempotencyKey = params.idempotencyKey || `grant_${params.targetUserId}_${txId}`;
+  const isFallback = process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true" || process.env.NODE_ENV === "test";
+  if (isFallback) {
+    const previous = [...memoryTicketTransactions.values()].find((tx2) => tx2.type === "GRANT" && tx2.idempotencyKey === idempotencyKey);
+    if (previous) {
+      if (previous.userId !== params.targetUserId || previous.amount !== params.amount) throw Object.assign(new Error("IDEMPOTENCY_CONFLICT"), { statusCode: 409 });
+      return { success: true, account: { ...memoryTicketAccounts.get(params.targetUserId) }, transactionId: previous.id };
+    }
+    const current = memoryTicketAccounts.get(params.targetUserId) || {
+      userId: params.targetUserId,
+      telegramId: params.targetTelegramId || "",
+      balance: 0,
+      totalGranted: 0,
+      totalSpent: 0,
+      totalRefunded: 0,
+      updatedAt: now
+    };
+    current.balance += params.amount;
+    current.totalGranted += params.amount;
+    current.updatedAt = now;
+    if (params.targetTelegramId) current.telegramId = params.targetTelegramId;
+    memoryTicketAccounts.set(params.targetUserId, current);
+    const tx = {
+      id: txId,
+      userId: params.targetUserId,
+      type: "GRANT",
+      amount: params.amount,
+      idempotencyKey,
+      performedByAdminId: String(params.adminTelegramId),
+      note: params.note || "Ticket grant by primary owner",
+      createdAt: now
+    };
+    memoryTicketTransactions.set(txId, tx);
+    return { success: true, account: { ...current }, transactionId: txId };
+  }
+  const db = getFirestoreDb();
+  const userRef = db.collection("user_tickets").doc(params.targetUserId);
+  const txRef = db.collection("ticket_transactions").doc(txId);
+  const updatedAccount = await db.runTransaction(async (transaction) => {
+    const dedupeRef = db.collection("ticket_grant_idempotency").doc(idempotencyKey);
+    const previous = await transaction.get(dedupeRef);
+    const userDoc = await transaction.get(userRef);
+    if (previous.exists) {
+      const saved = previous.data();
+      if (saved.userId !== params.targetUserId || saved.amount !== params.amount) throw Object.assign(new Error("IDEMPOTENCY_CONFLICT"), { statusCode: 409 });
+      return { account: userDoc.data(), transactionId: saved.transactionId };
+    }
+    const existing = userDoc.exists ? userDoc.data() : {
+      userId: params.targetUserId,
+      telegramId: params.targetTelegramId || "",
+      balance: 0,
+      totalGranted: 0,
+      totalSpent: 0,
+      totalRefunded: 0,
+      updatedAt: now
+    };
+    const nextBalance = existing.balance + params.amount;
+    const nextTotalGranted = existing.totalGranted + params.amount;
+    const accountData = {
+      ...existing,
+      balance: nextBalance,
+      totalGranted: nextTotalGranted,
+      updatedAt: now
+    };
+    if (params.targetTelegramId) accountData.telegramId = params.targetTelegramId;
+    transaction.set(userRef, accountData, { merge: true });
+    const txData = {
+      id: txId,
+      userId: params.targetUserId,
+      type: "GRANT",
+      amount: params.amount,
+      idempotencyKey,
+      performedByAdminId: String(params.adminTelegramId),
+      note: params.note || "Ticket grant by primary owner",
+      createdAt: now
+    };
+    transaction.set(txRef, txData);
+    transaction.set(dedupeRef, { userId: params.targetUserId, amount: params.amount, transactionId: txId });
+    return { account: accountData, transactionId: txId };
+  });
+  return { success: true, account: updatedAccount.account, transactionId: updatedAccount.transactionId };
+}
+async function spendTicketForTournament(params) {
+  const isFallback = process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true" || process.env.NODE_ENV === "test";
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  if (isFallback) {
+    const spends = [...memoryTicketTransactions.values()].filter((tx2) => tx2.type === "SPEND");
+    const sameKey = spends.find((tx2) => tx2.idempotencyKey === params.idempotencyKey);
+    if (sameKey && (sameKey.userId !== params.userId || sameKey.tournamentId !== params.tournamentId)) {
+      throw Object.assign(new Error("IDEMPOTENCY_CONFLICT"), { statusCode: 409, code: "IDEMPOTENCY_CONFLICT" });
+    }
+    const previousSpend = spends.find((tx2) => tx2.userId === params.userId && tx2.tournamentId === params.tournamentId);
+    if (previousSpend) {
+      const acc = memoryTicketAccounts.get(params.userId);
+      return { success: true, transactionId: previousSpend.id, newBalance: acc ? acc.balance : 0 };
+    }
+    const current = memoryTicketAccounts.get(params.userId);
+    if (!current || current.balance < 1) {
+      throw Object.assign(new Error("Sizda yetarli turnir chiptasi (ticket) mavjud emas. Chipta olish uchun @texnoadmin bilan bog\u2018laning."), {
+        statusCode: 402,
+        code: "INSUFFICIENT_TICKETS"
+      });
+    }
+    current.balance -= 1;
+    current.totalSpent += 1;
+    current.updatedAt = now;
+    memoryTicketAccounts.set(params.userId, current);
+    const txId = `tx_spend_${params.tournamentId}_${Date.now()}`;
+    const tx = {
+      id: txId,
+      userId: params.userId,
+      type: "SPEND",
+      amount: 1,
+      tournamentId: params.tournamentId,
+      idempotencyKey: params.idempotencyKey,
+      createdAt: now
+    };
+    memoryTicketTransactions.set(txId, tx);
+    return { success: true, transactionId: txId, newBalance: current.balance };
+  }
+  const db = getFirestoreDb();
+  return db.runTransaction((transaction) => spendTicketInTransaction(params, transaction));
+}
+async function spendTicketInTransaction(params, transaction) {
+  const db = getFirestoreDb();
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const userRef = db.collection("user_tickets").doc(params.userId);
+  const dedupeRef = db.collection("ticket_transactions_idempotency").doc(params.idempotencyKey);
+  const dedupeDoc = await transaction.get(dedupeRef);
+  if (dedupeDoc.exists) {
+    const data = dedupeDoc.data();
+    const savedTransaction = data?.userId ? data : (await transaction.get(db.collection("ticket_transactions").doc(data.transactionId))).data();
+    if (data?.tournamentId !== params.tournamentId || savedTransaction?.userId !== params.userId) {
+      throw Object.assign(new Error("IDEMPOTENCY_CONFLICT"), { statusCode: 409, code: "IDEMPOTENCY_CONFLICT" });
+    }
+    const userDoc2 = await transaction.get(userRef);
+    const balance = userDoc2.exists ? userDoc2.data().balance : 0;
+    return { success: true, transactionId: data.transactionId, newBalance: balance };
+  }
+  const userDoc = await transaction.get(userRef);
+  if (!userDoc.exists) {
+    throw Object.assign(new Error("Chipta hisobi topilmadi. Chipta olish uchun @texnoadmin bilan bog\u2018laning."), {
+      statusCode: 402,
+      code: "INSUFFICIENT_TICKETS"
+    });
+  }
+  const account = userDoc.data();
+  if (account.balance < 1) {
+    throw Object.assign(new Error("Sizda yetarli turnir chiptasi (ticket) mavjud emas. Chipta olish uchun @texnoadmin bilan bog\u2018laning."), {
+      statusCode: 402,
+      code: "INSUFFICIENT_TICKETS"
+    });
+  }
+  const nextBalance = account.balance - 1;
+  const nextTotalSpent = (account.totalSpent || 0) + 1;
+  const txId = `tx_spend_${params.tournamentId}_${Date.now()}`;
+  transaction.update(userRef, {
+    balance: nextBalance,
+    totalSpent: nextTotalSpent,
+    updatedAt: now
+  });
+  const txData = {
+    id: txId,
+    userId: params.userId,
+    type: "SPEND",
+    amount: 1,
+    tournamentId: params.tournamentId,
+    idempotencyKey: params.idempotencyKey,
+    createdAt: now
+  };
+  transaction.set(db.collection("ticket_transactions").doc(txId), txData);
+  transaction.set(dedupeRef, { transactionId: txId, userId: params.userId, tournamentId: params.tournamentId, createdAt: now });
+  return { success: true, transactionId: txId, newBalance: nextBalance };
+}
+async function refundSpentTicket(params) {
+  if (!isPrimaryOwner2(params.adminTelegramId)) {
+    throw Object.assign(new Error("Only primary owner (5209126900) can refund tickets."), {
+      statusCode: 403,
+      code: "OWNER_ONLY_UNAUTHORIZED"
+    });
+  }
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const isFallback = process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true" || process.env.NODE_ENV === "test";
+  if (isFallback) {
+    let spendTx;
+    for (const tx of memoryTicketTransactions.values()) {
+      if (tx.userId === params.targetUserId && tx.tournamentId === params.tournamentId && tx.type === "SPEND") {
+        spendTx = tx;
+        break;
+      }
+    }
+    for (const tx of memoryTicketTransactions.values()) {
+      if (tx.userId === params.targetUserId && tx.tournamentId === params.tournamentId && tx.type === "REFUND") {
+        throw Object.assign(new Error("Bu turnir uchun chipta allaqachon qaytarilgan."), {
+          statusCode: 409,
+          code: "ALREADY_REFUNDED"
+        });
+      }
+    }
+    if (!spendTx) throw Object.assign(new Error("Bu turnir uchun sarflangan chipta topilmadi."), { statusCode: 404, code: "TICKET_SPEND_NOT_FOUND" });
+    const current = memoryTicketAccounts.get(params.targetUserId);
+    if (!current) {
+      throw Object.assign(new Error("User ticket account not found."), { statusCode: 404 });
+    }
+    current.balance += 1;
+    current.totalRefunded += 1;
+    current.updatedAt = now;
+    memoryTicketAccounts.set(params.targetUserId, current);
+    const refundTxId = `tx_refund_${params.tournamentId}_${Date.now()}`;
+    const refundTx = {
+      id: refundTxId,
+      userId: params.targetUserId,
+      type: "REFUND",
+      amount: 1,
+      tournamentId: params.tournamentId,
+      idempotencyKey: `refund_${params.tournamentId}`,
+      performedByAdminId: String(params.adminTelegramId),
+      note: params.note || "Ticket refunded by primary owner",
+      createdAt: now
+    };
+    memoryTicketTransactions.set(refundTxId, refundTx);
+    return { success: true, transactionId: refundTxId, newBalance: current.balance };
+  }
+  const db = getFirestoreDb();
+  const userRef = db.collection("user_tickets").doc(params.targetUserId);
+  const refundDedupeRef = db.collection("ticket_transactions_refunds").doc(params.tournamentId);
+  const result = await db.runTransaction(async (transaction) => {
+    const refundDoc = await transaction.get(refundDedupeRef);
+    if (refundDoc.exists) {
+      throw Object.assign(new Error("Ushbu turnir uchun chipta allaqachon qaytarilgan."), {
+        statusCode: 409,
+        code: "ALREADY_REFUNDED"
+      });
+    }
+    const userDoc = await transaction.get(userRef);
+    if (!userDoc.exists) {
+      throw Object.assign(new Error("User ticket account not found."), { statusCode: 404 });
+    }
+    const spend = await transaction.get(db.collection("ticket_transactions").where("userId", "==", params.targetUserId).where("tournamentId", "==", params.tournamentId).where("type", "==", "SPEND").limit(1));
+    if (spend.empty) throw Object.assign(new Error("Bu turnir uchun sarflangan chipta topilmadi."), { statusCode: 404, code: "TICKET_SPEND_NOT_FOUND" });
+    const account = userDoc.data();
+    const nextBalance = account.balance + 1;
+    const nextTotalRefunded = (account.totalRefunded || 0) + 1;
+    const refundTxId = `tx_refund_${params.tournamentId}_${Date.now()}`;
+    transaction.update(userRef, {
+      balance: nextBalance,
+      totalRefunded: nextTotalRefunded,
+      updatedAt: now
+    });
+    const refundTxData = {
+      id: refundTxId,
+      userId: params.targetUserId,
+      type: "REFUND",
+      amount: 1,
+      tournamentId: params.tournamentId,
+      idempotencyKey: `refund_${params.tournamentId}`,
+      performedByAdminId: String(params.adminTelegramId),
+      note: params.note || "Ticket refunded by primary owner",
+      createdAt: now
+    };
+    transaction.set(db.collection("ticket_transactions").doc(refundTxId), refundTxData);
+    transaction.set(refundDedupeRef, { transactionId: refundTxId, refundedAt: now });
+    return { success: true, transactionId: refundTxId, newBalance: nextBalance };
+  });
+  return result;
+}
+async function getTicketTransactions(userId2) {
+  const isFallback = process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true" || process.env.NODE_ENV === "test";
+  if (isFallback) {
+    const list = Array.from(memoryTicketTransactions.values());
+    if (userId2) return list.filter((tx) => tx.userId === userId2);
+    return list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+  const db = getFirestoreDb();
+  let query = db.collection("ticket_transactions").orderBy("createdAt", "desc").limit(50);
+  if (userId2) {
+    query = db.collection("ticket_transactions").where("userId", "==", userId2).orderBy("createdAt", "desc").limit(50);
+  }
+  const snap = await query.get();
+  return snap.docs.map((d) => d.data());
+}
+var PRIMARY_OWNER_TELEGRAM_ID2, memoryTicketAccounts, memoryTicketTransactions;
+var init_customTournamentTicketService = __esm({
+  "src/server/services/customTournamentTicketService.ts"() {
+    init_admin();
+    PRIMARY_OWNER_TELEGRAM_ID2 = "5209126900";
+    memoryTicketAccounts = /* @__PURE__ */ new Map();
+    memoryTicketTransactions = /* @__PURE__ */ new Map();
+  }
+});
+
 // src/server/services/disputeResolution.ts
 var disputeResolution_exports = {};
 __export(disputeResolution_exports, {
@@ -16493,6 +16892,8 @@ async function getOrCreateTelegramUserFirestore(tgUser) {
         createdAt: now,
         updatedAt: now
       };
+      const { ensureFreeTournamentTicket: ensureFreeTournamentTicket2 } = await Promise.resolve().then(() => (init_customTournamentTicketService(), customTournamentTicketService_exports));
+      await ensureFreeTournamentTicket2(docId, telegramId);
       setInCache(`firestore:user:${docId}`, createdUser, 3e5);
       return createdUser;
     } else {
@@ -31706,344 +32107,8 @@ import { Router as Router25 } from "express";
 
 // src/server/services/customTournamentService.ts
 init_admin();
+init_customTournamentTicketService();
 import crypto7 from "node:crypto";
-
-// src/server/services/customTournamentTicketService.ts
-init_admin();
-var PRIMARY_OWNER_TELEGRAM_ID2 = "5209126900";
-function isPrimaryOwner2(telegramId) {
-  if (telegramId === void 0 || telegramId === null) return false;
-  return String(telegramId).trim() === PRIMARY_OWNER_TELEGRAM_ID2;
-}
-var memoryTicketAccounts = /* @__PURE__ */ new Map();
-var memoryTicketTransactions = /* @__PURE__ */ new Map();
-async function getUserTicketBalance(userId2) {
-  const isFallback = process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true" || process.env.NODE_ENV === "test";
-  if (isFallback) {
-    const existing = memoryTicketAccounts.get(userId2);
-    if (existing) return { ...existing };
-    return {
-      userId: userId2,
-      telegramId: "",
-      balance: 0,
-      totalGranted: 0,
-      totalSpent: 0,
-      totalRefunded: 0,
-      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-    };
-  }
-  const db = getFirestoreDb();
-  const docRef = db.collection("user_tickets").doc(userId2);
-  const snap = await docRef.get();
-  if (!snap.exists) {
-    return {
-      userId: userId2,
-      telegramId: "",
-      balance: 0,
-      totalGranted: 0,
-      totalSpent: 0,
-      totalRefunded: 0,
-      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-    };
-  }
-  return snap.data();
-}
-async function grantUserTickets(params) {
-  if (!isPrimaryOwner2(params.adminTelegramId)) {
-    throw Object.assign(new Error("Only primary owner (5209126900) can grant tournament tickets."), {
-      statusCode: 403,
-      code: "OWNER_ONLY_UNAUTHORIZED"
-    });
-  }
-  if (!Number.isInteger(params.amount) || params.amount <= 0) {
-    throw Object.assign(new Error("Grant amount must be a positive integer."), {
-      statusCode: 400,
-      code: "INVALID_AMOUNT"
-    });
-  }
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const txId = `tx_grant_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const idempotencyKey = params.idempotencyKey || `grant_${params.targetUserId}_${txId}`;
-  const isFallback = process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true" || process.env.NODE_ENV === "test";
-  if (isFallback) {
-    const previous = [...memoryTicketTransactions.values()].find((tx2) => tx2.type === "GRANT" && tx2.idempotencyKey === idempotencyKey);
-    if (previous) {
-      if (previous.userId !== params.targetUserId || previous.amount !== params.amount) throw Object.assign(new Error("IDEMPOTENCY_CONFLICT"), { statusCode: 409 });
-      return { success: true, account: { ...memoryTicketAccounts.get(params.targetUserId) }, transactionId: previous.id };
-    }
-    const current = memoryTicketAccounts.get(params.targetUserId) || {
-      userId: params.targetUserId,
-      telegramId: params.targetTelegramId || "",
-      balance: 0,
-      totalGranted: 0,
-      totalSpent: 0,
-      totalRefunded: 0,
-      updatedAt: now
-    };
-    current.balance += params.amount;
-    current.totalGranted += params.amount;
-    current.updatedAt = now;
-    if (params.targetTelegramId) current.telegramId = params.targetTelegramId;
-    memoryTicketAccounts.set(params.targetUserId, current);
-    const tx = {
-      id: txId,
-      userId: params.targetUserId,
-      type: "GRANT",
-      amount: params.amount,
-      idempotencyKey,
-      performedByAdminId: String(params.adminTelegramId),
-      note: params.note || "Ticket grant by primary owner",
-      createdAt: now
-    };
-    memoryTicketTransactions.set(txId, tx);
-    return { success: true, account: { ...current }, transactionId: txId };
-  }
-  const db = getFirestoreDb();
-  const userRef = db.collection("user_tickets").doc(params.targetUserId);
-  const txRef = db.collection("ticket_transactions").doc(txId);
-  const updatedAccount = await db.runTransaction(async (transaction) => {
-    const dedupeRef = db.collection("ticket_grant_idempotency").doc(idempotencyKey);
-    const previous = await transaction.get(dedupeRef);
-    const userDoc = await transaction.get(userRef);
-    if (previous.exists) {
-      const saved = previous.data();
-      if (saved.userId !== params.targetUserId || saved.amount !== params.amount) throw Object.assign(new Error("IDEMPOTENCY_CONFLICT"), { statusCode: 409 });
-      return { account: userDoc.data(), transactionId: saved.transactionId };
-    }
-    const existing = userDoc.exists ? userDoc.data() : {
-      userId: params.targetUserId,
-      telegramId: params.targetTelegramId || "",
-      balance: 0,
-      totalGranted: 0,
-      totalSpent: 0,
-      totalRefunded: 0,
-      updatedAt: now
-    };
-    const nextBalance = existing.balance + params.amount;
-    const nextTotalGranted = existing.totalGranted + params.amount;
-    const accountData = {
-      ...existing,
-      balance: nextBalance,
-      totalGranted: nextTotalGranted,
-      updatedAt: now
-    };
-    if (params.targetTelegramId) accountData.telegramId = params.targetTelegramId;
-    transaction.set(userRef, accountData, { merge: true });
-    const txData = {
-      id: txId,
-      userId: params.targetUserId,
-      type: "GRANT",
-      amount: params.amount,
-      idempotencyKey,
-      performedByAdminId: String(params.adminTelegramId),
-      note: params.note || "Ticket grant by primary owner",
-      createdAt: now
-    };
-    transaction.set(txRef, txData);
-    transaction.set(dedupeRef, { userId: params.targetUserId, amount: params.amount, transactionId: txId });
-    return { account: accountData, transactionId: txId };
-  });
-  return { success: true, account: updatedAccount.account, transactionId: updatedAccount.transactionId };
-}
-async function spendTicketForTournament(params) {
-  const isFallback = process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true" || process.env.NODE_ENV === "test";
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  if (isFallback) {
-    const spends = [...memoryTicketTransactions.values()].filter((tx2) => tx2.type === "SPEND");
-    const sameKey = spends.find((tx2) => tx2.idempotencyKey === params.idempotencyKey);
-    if (sameKey && (sameKey.userId !== params.userId || sameKey.tournamentId !== params.tournamentId)) {
-      throw Object.assign(new Error("IDEMPOTENCY_CONFLICT"), { statusCode: 409, code: "IDEMPOTENCY_CONFLICT" });
-    }
-    const previousSpend = spends.find((tx2) => tx2.userId === params.userId && tx2.tournamentId === params.tournamentId);
-    if (previousSpend) {
-      const acc = memoryTicketAccounts.get(params.userId);
-      return { success: true, transactionId: previousSpend.id, newBalance: acc ? acc.balance : 0 };
-    }
-    const current = memoryTicketAccounts.get(params.userId);
-    if (!current || current.balance < 1) {
-      throw Object.assign(new Error("Sizda yetarli turnir chiptasi (ticket) mavjud emas. Chipta olish uchun @texnoadmin bilan bog\u2018laning."), {
-        statusCode: 402,
-        code: "INSUFFICIENT_TICKETS"
-      });
-    }
-    current.balance -= 1;
-    current.totalSpent += 1;
-    current.updatedAt = now;
-    memoryTicketAccounts.set(params.userId, current);
-    const txId = `tx_spend_${params.tournamentId}_${Date.now()}`;
-    const tx = {
-      id: txId,
-      userId: params.userId,
-      type: "SPEND",
-      amount: 1,
-      tournamentId: params.tournamentId,
-      idempotencyKey: params.idempotencyKey,
-      createdAt: now
-    };
-    memoryTicketTransactions.set(txId, tx);
-    return { success: true, transactionId: txId, newBalance: current.balance };
-  }
-  const db = getFirestoreDb();
-  return db.runTransaction((transaction) => spendTicketInTransaction(params, transaction));
-}
-async function spendTicketInTransaction(params, transaction) {
-  const db = getFirestoreDb();
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const userRef = db.collection("user_tickets").doc(params.userId);
-  const dedupeRef = db.collection("ticket_transactions_idempotency").doc(params.idempotencyKey);
-  const dedupeDoc = await transaction.get(dedupeRef);
-  if (dedupeDoc.exists) {
-    const data = dedupeDoc.data();
-    const savedTransaction = data?.userId ? data : (await transaction.get(db.collection("ticket_transactions").doc(data.transactionId))).data();
-    if (data?.tournamentId !== params.tournamentId || savedTransaction?.userId !== params.userId) {
-      throw Object.assign(new Error("IDEMPOTENCY_CONFLICT"), { statusCode: 409, code: "IDEMPOTENCY_CONFLICT" });
-    }
-    const userDoc2 = await transaction.get(userRef);
-    const balance = userDoc2.exists ? userDoc2.data().balance : 0;
-    return { success: true, transactionId: data.transactionId, newBalance: balance };
-  }
-  const userDoc = await transaction.get(userRef);
-  if (!userDoc.exists) {
-    throw Object.assign(new Error("Chipta hisobi topilmadi. Chipta olish uchun @texnoadmin bilan bog\u2018laning."), {
-      statusCode: 402,
-      code: "INSUFFICIENT_TICKETS"
-    });
-  }
-  const account = userDoc.data();
-  if (account.balance < 1) {
-    throw Object.assign(new Error("Sizda yetarli turnir chiptasi (ticket) mavjud emas. Chipta olish uchun @texnoadmin bilan bog\u2018laning."), {
-      statusCode: 402,
-      code: "INSUFFICIENT_TICKETS"
-    });
-  }
-  const nextBalance = account.balance - 1;
-  const nextTotalSpent = (account.totalSpent || 0) + 1;
-  const txId = `tx_spend_${params.tournamentId}_${Date.now()}`;
-  transaction.update(userRef, {
-    balance: nextBalance,
-    totalSpent: nextTotalSpent,
-    updatedAt: now
-  });
-  const txData = {
-    id: txId,
-    userId: params.userId,
-    type: "SPEND",
-    amount: 1,
-    tournamentId: params.tournamentId,
-    idempotencyKey: params.idempotencyKey,
-    createdAt: now
-  };
-  transaction.set(db.collection("ticket_transactions").doc(txId), txData);
-  transaction.set(dedupeRef, { transactionId: txId, userId: params.userId, tournamentId: params.tournamentId, createdAt: now });
-  return { success: true, transactionId: txId, newBalance: nextBalance };
-}
-async function refundSpentTicket(params) {
-  if (!isPrimaryOwner2(params.adminTelegramId)) {
-    throw Object.assign(new Error("Only primary owner (5209126900) can refund tickets."), {
-      statusCode: 403,
-      code: "OWNER_ONLY_UNAUTHORIZED"
-    });
-  }
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const isFallback = process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true" || process.env.NODE_ENV === "test";
-  if (isFallback) {
-    let spendTx;
-    for (const tx of memoryTicketTransactions.values()) {
-      if (tx.userId === params.targetUserId && tx.tournamentId === params.tournamentId && tx.type === "SPEND") {
-        spendTx = tx;
-        break;
-      }
-    }
-    for (const tx of memoryTicketTransactions.values()) {
-      if (tx.userId === params.targetUserId && tx.tournamentId === params.tournamentId && tx.type === "REFUND") {
-        throw Object.assign(new Error("Bu turnir uchun chipta allaqachon qaytarilgan."), {
-          statusCode: 409,
-          code: "ALREADY_REFUNDED"
-        });
-      }
-    }
-    if (!spendTx) throw Object.assign(new Error("Bu turnir uchun sarflangan chipta topilmadi."), { statusCode: 404, code: "TICKET_SPEND_NOT_FOUND" });
-    const current = memoryTicketAccounts.get(params.targetUserId);
-    if (!current) {
-      throw Object.assign(new Error("User ticket account not found."), { statusCode: 404 });
-    }
-    current.balance += 1;
-    current.totalRefunded += 1;
-    current.updatedAt = now;
-    memoryTicketAccounts.set(params.targetUserId, current);
-    const refundTxId = `tx_refund_${params.tournamentId}_${Date.now()}`;
-    const refundTx = {
-      id: refundTxId,
-      userId: params.targetUserId,
-      type: "REFUND",
-      amount: 1,
-      tournamentId: params.tournamentId,
-      idempotencyKey: `refund_${params.tournamentId}`,
-      performedByAdminId: String(params.adminTelegramId),
-      note: params.note || "Ticket refunded by primary owner",
-      createdAt: now
-    };
-    memoryTicketTransactions.set(refundTxId, refundTx);
-    return { success: true, transactionId: refundTxId, newBalance: current.balance };
-  }
-  const db = getFirestoreDb();
-  const userRef = db.collection("user_tickets").doc(params.targetUserId);
-  const refundDedupeRef = db.collection("ticket_transactions_refunds").doc(params.tournamentId);
-  const result = await db.runTransaction(async (transaction) => {
-    const refundDoc = await transaction.get(refundDedupeRef);
-    if (refundDoc.exists) {
-      throw Object.assign(new Error("Ushbu turnir uchun chipta allaqachon qaytarilgan."), {
-        statusCode: 409,
-        code: "ALREADY_REFUNDED"
-      });
-    }
-    const userDoc = await transaction.get(userRef);
-    if (!userDoc.exists) {
-      throw Object.assign(new Error("User ticket account not found."), { statusCode: 404 });
-    }
-    const spend = await transaction.get(db.collection("ticket_transactions").where("userId", "==", params.targetUserId).where("tournamentId", "==", params.tournamentId).where("type", "==", "SPEND").limit(1));
-    if (spend.empty) throw Object.assign(new Error("Bu turnir uchun sarflangan chipta topilmadi."), { statusCode: 404, code: "TICKET_SPEND_NOT_FOUND" });
-    const account = userDoc.data();
-    const nextBalance = account.balance + 1;
-    const nextTotalRefunded = (account.totalRefunded || 0) + 1;
-    const refundTxId = `tx_refund_${params.tournamentId}_${Date.now()}`;
-    transaction.update(userRef, {
-      balance: nextBalance,
-      totalRefunded: nextTotalRefunded,
-      updatedAt: now
-    });
-    const refundTxData = {
-      id: refundTxId,
-      userId: params.targetUserId,
-      type: "REFUND",
-      amount: 1,
-      tournamentId: params.tournamentId,
-      idempotencyKey: `refund_${params.tournamentId}`,
-      performedByAdminId: String(params.adminTelegramId),
-      note: params.note || "Ticket refunded by primary owner",
-      createdAt: now
-    };
-    transaction.set(db.collection("ticket_transactions").doc(refundTxId), refundTxData);
-    transaction.set(refundDedupeRef, { transactionId: refundTxId, refundedAt: now });
-    return { success: true, transactionId: refundTxId, newBalance: nextBalance };
-  });
-  return result;
-}
-async function getTicketTransactions(userId2) {
-  const isFallback = process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true" || process.env.NODE_ENV === "test";
-  if (isFallback) {
-    const list = Array.from(memoryTicketTransactions.values());
-    if (userId2) return list.filter((tx) => tx.userId === userId2);
-    return list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }
-  const db = getFirestoreDb();
-  let query = db.collection("ticket_transactions").orderBy("createdAt", "desc").limit(50);
-  if (userId2) {
-    query = db.collection("ticket_transactions").where("userId", "==", userId2).orderBy("createdAt", "desc").limit(50);
-  }
-  const snap = await query.get();
-  return snap.docs.map((d) => d.data());
-}
 
 // src/server/services/customTournamentEngine.ts
 function generateTournamentPreview(format, participantsCount, rules = {}) {
@@ -32440,7 +32505,7 @@ var memoryClubClaims = /* @__PURE__ */ new Map();
 function generateSecureToken(prefix4) {
   return `${prefix4}_${crypto7.randomBytes(12).toString("hex")}`;
 }
-async function createTournamentDraft(params) {
+async function createTournamentDraft(params, persist2 = true) {
   const isFallback = process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true" || process.env.NODE_ENV === "test";
   const tournamentId = `ct_${Date.now()}_${crypto7.randomBytes(4).toString("hex")}`;
   const now = (/* @__PURE__ */ new Date()).toISOString();
@@ -32473,6 +32538,7 @@ async function createTournamentDraft(params) {
     createdAt: now,
     updatedAt: now
   };
+  if (!persist2) return tournament;
   if (isFallback) {
     memoryTournaments.set(tournamentId, tournament);
     memoryParticipants.set(tournamentId, []);
@@ -32482,6 +32548,58 @@ async function createTournamentDraft(params) {
   const db = getFirestoreDb();
   await db.collection("custom_tournaments").doc(tournamentId).set(tournament);
   return tournament;
+}
+async function createTournament(params, idempotencyKey) {
+  if (typeof idempotencyKey !== "string" || !/^[a-zA-Z0-9_-]{1,160}$/.test(idempotencyKey)) throw Object.assign(new Error("INVALID_IDEMPOTENCY_KEY"), { statusCode: 400 });
+  if (typeof params.name !== "string" || !params.name.trim() || params.name.trim().length > 60 || !["LEAGUE", "PLAYOFF", "LEAGUE_AND_PLAYOFF"].includes(params.format) || !["TOP5_ALL", "SINGLE_LEAGUE"].includes(params.leagueScope) || !Number.isInteger(params.maxParticipants) || params.maxParticipants < 4 || params.maxParticipants > 32 || params.visibility && !["PRIVATE", "PUBLIC_OPEN", "PUBLIC_MODERATED"].includes(params.visibility) || params.spectatorAccess && !["MEMBERS_ONLY", "PUBLIC_LINK"].includes(params.spectatorAccess) || params.leagueScope === "SINGLE_LEAGUE" && !SEED_CLUBS.some((club) => club.leagueId === params.selectedLeagueId)) {
+    throw Object.assign(new Error("Turnir sozlamalari noto\u2018g\u2018ri."), { statusCode: 400 });
+  }
+  const rules = params.rules;
+  const qualifiers = rules?.playoffQualifiersCount || 4;
+  const groups = rules?.groupsCount || 2;
+  if (!rules || ![1, 2].includes(rules.roundsCount) || !["SINGLE_LEG", "TWO_LEG"].includes(rules.playoffLegMode) || !Number.isInteger(rules.matchDurationHours) || rules.matchDurationHours < 1 || rules.matchDurationHours > 168 || params.format === "LEAGUE_AND_PLAYOFF" && (![2, 4, 8, 16].includes(qualifiers) || qualifiers > params.maxParticipants || rules.groupStageMode && !["SINGLE_TABLE", "GROUPS"].includes(rules.groupStageMode) || rules.groupStageMode === "GROUPS" && (![2, 4].includes(groups) || groups * 2 > params.maxParticipants || qualifiers % groups !== 0))) {
+    throw Object.assign(new Error("Turnir reglamenti noto\u2018g\u2018ri. Qatnashchilar, guruhlar va pley-off sonini tekshiring."), { statusCode: 400 });
+  }
+  const tournament = await createTournamentDraft(params, false);
+  const fingerprint = crypto7.createHash("sha256").update(JSON.stringify({
+    name: tournament.name,
+    description: tournament.description,
+    format: tournament.format,
+    leagueScope: tournament.leagueScope,
+    selectedLeagueId: tournament.selectedLeagueId,
+    maxParticipants: tournament.maxParticipants,
+    visibility: tournament.visibility,
+    spectatorAccess: tournament.spectatorAccess,
+    rules: tournament.rules
+  })).digest("hex");
+  tournament.id = "ct_" + crypto7.createHash("sha256").update(params.organizerUserId + ":" + idempotencyKey).digest("hex").slice(0, 24);
+  tournament.status = "REGISTRATION_OPEN";
+  tournament.creationFingerprint = fingerprint;
+  await ensureFreeTournamentTicket(params.organizerUserId, params.organizerTelegramId);
+  const replay = (existing) => {
+    if (existing.creationFingerprint !== fingerprint) throw Object.assign(new Error("IDEMPOTENCY_CONFLICT"), { statusCode: 409 });
+    return existing;
+  };
+  const spendParams = { userId: params.organizerUserId, tournamentId: tournament.id, idempotencyKey: "create_" + tournament.id };
+  if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true" || process.env.NODE_ENV === "test") {
+    const existing = memoryTournaments.get(tournament.id);
+    if (existing) return replay(existing);
+    const spend = await spendTicketForTournament(spendParams);
+    tournament.ticketSpentTransactionId = spend.transactionId;
+    memoryTournaments.set(tournament.id, tournament);
+    memoryParticipants.set(tournament.id, []);
+    memoryFixtures.set(tournament.id, []);
+    return { ...tournament };
+  }
+  const db = getFirestoreDb(), ref2 = db.collection("custom_tournaments").doc(tournament.id);
+  return db.runTransaction(async (transaction) => {
+    const existing = (await transaction.get(ref2)).data();
+    if (existing) return replay(existing);
+    const spend = await spendTicketInTransaction(spendParams, transaction);
+    const created = { ...tournament, ticketSpentTransactionId: spend.transactionId };
+    transaction.set(ref2, created);
+    return created;
+  });
 }
 async function publishTournament(params) {
   const isFallback = process.env.FIREBASE_FORCE_LOCAL_FALLBACK === "true" || process.env.NODE_ENV === "test";
@@ -33118,7 +33236,10 @@ customTournamentsRouter.get("/:id", async (req, res) => {
     res.status(err.statusCode || 500).json({ ok: false, error: err.message, code: err.code });
   }
 });
-customTournamentsRouter.post("/draft", requireAuth, async (req, res) => {
+customTournamentsRouter.post("/draft", requireAuth, (_req, res) => {
+  res.status(410).json({ ok: false, error: "Qoralama olib tashlangan. Ilovani yangilang.", code: "DRAFT_DISABLED" });
+});
+customTournamentsRouter.post("/create", requireAuth, async (req, res) => {
   try {
     const user = req.user;
     const {
@@ -33132,11 +33253,11 @@ customTournamentsRouter.post("/draft", requireAuth, async (req, res) => {
       visibility,
       spectatorAccess
     } = req.body;
-    if (!name?.trim()) {
+    if (typeof name !== "string" || !name.trim()) {
       res.status(400).json({ ok: false, error: "Turnir nomi kiritilishi shart." });
       return;
     }
-    const tournament = await createTournamentDraft({
+    const tournament = await createTournament({
       name,
       description,
       organizerUserId: user.id,
@@ -33149,7 +33270,7 @@ customTournamentsRouter.post("/draft", requireAuth, async (req, res) => {
       rules: rules || { roundsCount: 1, playoffLegMode: "SINGLE_LEG", matchDurationHours: 36 },
       visibility,
       spectatorAccess
-    });
+    }, req.body.idempotencyKey);
     res.json({ ok: true, tournament });
   } catch (err) {
     res.status(err.statusCode || 500).json({ ok: false, error: err.message });
@@ -33317,9 +33438,10 @@ customTournamentsRouter.get("/:id/audit-logs", requireAuth, async (req, res) => 
 
 // src/server/routes/customTournamentTickets.routes.ts
 init_authMiddleware();
-import { Router as Router26 } from "express";
+init_customTournamentTicketService();
 init_admin();
 init_adminUserDirectory();
+import { Router as Router26 } from "express";
 async function ticketRecipient(reference, expectedTelegramId) {
   if (typeof reference !== "string" || !reference.trim() || reference.includes("/")) throw Object.assign(new Error("Foydalanuvchi ID yoki @username kiriting."), { statusCode: 400 });
   const raw = reference.trim();
@@ -33340,7 +33462,7 @@ var customTournamentTicketsRouter = Router26();
 customTournamentTicketsRouter.get("/balance", requireAuth, async (req, res) => {
   try {
     const user = req.user;
-    const account = await getUserTicketBalance(user.id);
+    const account = await ensureFreeTournamentTicket(user.id, user.telegramId || "");
     res.json({ ok: true, account });
   } catch (err) {
     res.status(err.statusCode || (["USER_NOT_FOUND", "AMBIGUOUS_USER_REFERENCE"].includes(err.message) ? 400 : 500)).json({ ok: false, error: err.message });

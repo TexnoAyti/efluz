@@ -17,6 +17,7 @@ export interface UserTicketAccount {
   totalGranted: number;
   totalSpent: number;
   totalRefunded: number;
+  freeTicketGrantedAt?: string;
   updatedAt: string;
 }
 
@@ -64,6 +65,7 @@ export interface CustomTournament {
   rules: CustomTournamentRulesConfig;
 
   ticketSpentTransactionId?: string;
+  creationFingerprint?: string;
   isRefunded?: boolean;
   createdAt: string;
   updatedAt: string;

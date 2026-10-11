@@ -14,7 +14,7 @@ import {
   CustomTournamentStandingsRow,
   CustomTournamentAuditLog,
 } from '../../types/customTournament';
-import { spendTicketForTournament, spendTicketInTransaction } from './customTournamentTicketService';
+import { ensureFreeTournamentTicket, spendTicketForTournament, spendTicketInTransaction } from './customTournamentTicketService';
 import {
   generateRoundRobinFixtures,
   generatePlayoffBracketFixtures,
@@ -58,7 +58,7 @@ export async function createTournamentDraft(params: {
   rules: CustomTournament['rules'];
   visibility?: CustomTournament['visibility'];
   spectatorAccess?: CustomTournament['spectatorAccess'];
-}): Promise<CustomTournament> {
+}, persist = true): Promise<CustomTournament> {
   const isFallback = process.env.FIREBASE_FORCE_LOCAL_FALLBACK === 'true' || process.env.NODE_ENV === 'test';
   const tournamentId = `ct_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
   const now = new Date().toISOString();
@@ -93,6 +93,8 @@ export async function createTournamentDraft(params: {
     updatedAt: now,
   };
 
+  if (!persist) return tournament;
+
   if (isFallback) {
     memoryTournaments.set(tournamentId, tournament);
     memoryParticipants.set(tournamentId, []);
@@ -103,6 +105,63 @@ export async function createTournamentDraft(params: {
   const db = getFirestoreDb();
   await db.collection('custom_tournaments').doc(tournamentId).set(tournament);
   return tournament;
+}
+
+/** Create an open tournament and debit its ticket in one transaction. No saved draft. */
+export async function createTournament(params: Parameters<typeof createTournamentDraft>[0], idempotencyKey: string): Promise<CustomTournament> {
+  if (typeof idempotencyKey !== 'string' || !/^[a-zA-Z0-9_-]{1,160}$/.test(idempotencyKey)) throw Object.assign(new Error('INVALID_IDEMPOTENCY_KEY'), {statusCode: 400});
+  if (typeof params.name !== 'string' || !params.name.trim() || params.name.trim().length > 60 ||
+      !['LEAGUE','PLAYOFF','LEAGUE_AND_PLAYOFF'].includes(params.format) ||
+      !['TOP5_ALL','SINGLE_LEAGUE'].includes(params.leagueScope) ||
+      !Number.isInteger(params.maxParticipants) || params.maxParticipants < 4 || params.maxParticipants > 32 ||
+      (params.visibility && !['PRIVATE','PUBLIC_OPEN','PUBLIC_MODERATED'].includes(params.visibility)) ||
+      (params.spectatorAccess && !['MEMBERS_ONLY','PUBLIC_LINK'].includes(params.spectatorAccess)) ||
+      (params.leagueScope === 'SINGLE_LEAGUE' && !SEED_CLUBS.some(club => club.leagueId === params.selectedLeagueId))) {
+    throw Object.assign(new Error('Turnir sozlamalari noto‘g‘ri.'), {statusCode: 400});
+  }
+  const rules = params.rules;
+  const qualifiers = rules?.playoffQualifiersCount || 4;
+  const groups = rules?.groupsCount || 2;
+  if (!rules || ![1,2].includes(rules.roundsCount) ||
+      !['SINGLE_LEG','TWO_LEG'].includes(rules.playoffLegMode) ||
+      !Number.isInteger(rules.matchDurationHours) || rules.matchDurationHours < 1 || rules.matchDurationHours > 168 ||
+      (params.format === 'LEAGUE_AND_PLAYOFF' &&
+        (![2,4,8,16].includes(qualifiers) || qualifiers > params.maxParticipants ||
+         (rules.groupStageMode && !['SINGLE_TABLE','GROUPS'].includes(rules.groupStageMode)) ||
+         (rules.groupStageMode === 'GROUPS' && (![2,4].includes(groups) || groups*2 > params.maxParticipants || qualifiers%groups !== 0))))) {
+    throw Object.assign(new Error('Turnir reglamenti noto‘g‘ri. Qatnashchilar, guruhlar va pley-off sonini tekshiring.'), {statusCode:400});
+  }
+  const tournament = await createTournamentDraft(params, false);
+  const fingerprint = crypto.createHash('sha256').update(JSON.stringify({
+    name:tournament.name, description:tournament.description, format:tournament.format,
+    leagueScope:tournament.leagueScope, selectedLeagueId:tournament.selectedLeagueId,
+    maxParticipants:tournament.maxParticipants, visibility:tournament.visibility,
+    spectatorAccess:tournament.spectatorAccess, rules:tournament.rules,
+  })).digest('hex');
+  tournament.id = 'ct_' + crypto.createHash('sha256').update(params.organizerUserId + ':' + idempotencyKey).digest('hex').slice(0,24);
+  tournament.status = 'REGISTRATION_OPEN'; tournament.creationFingerprint = fingerprint;
+  await ensureFreeTournamentTicket(params.organizerUserId, params.organizerTelegramId);
+  const replay = (existing: CustomTournament) => {
+    if (existing.creationFingerprint !== fingerprint) throw Object.assign(new Error('IDEMPOTENCY_CONFLICT'), {statusCode:409});
+    return existing;
+  };
+  const spendParams = {userId:params.organizerUserId, tournamentId:tournament.id, idempotencyKey:'create_' + tournament.id};
+  if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === 'true' || process.env.NODE_ENV === 'test') {
+    const existing = memoryTournaments.get(tournament.id); if (existing) return replay(existing);
+    const spend = await spendTicketForTournament(spendParams);
+    tournament.ticketSpentTransactionId = spend.transactionId;
+    memoryTournaments.set(tournament.id,tournament); memoryParticipants.set(tournament.id,[]); memoryFixtures.set(tournament.id,[]);
+    return {...tournament};
+  }
+  const db = getFirestoreDb(), ref = db.collection('custom_tournaments').doc(tournament.id);
+  return db.runTransaction(async transaction => {
+    const existing = (await transaction.get(ref)).data() as CustomTournament | undefined;
+    if (existing) return replay(existing);
+    const spend = await spendTicketInTransaction(spendParams, transaction);
+    const created = {...tournament, ticketSpentTransactionId:spend.transactionId};
+    transaction.set(ref, created);
+    return created;
+  });
 }
 
 /**
