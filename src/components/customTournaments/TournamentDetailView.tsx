@@ -51,6 +51,8 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
   const [participants, setParticipants] = useState<CustomTournamentParticipant[]>([]);
   const [fixtures, setFixtures] = useState<CustomTournamentFixture[]>([]);
   const [standings, setStandings] = useState<CustomTournamentStandingsRow[] | undefined>();
+  const [selectedGroup, setSelectedGroup] = useState(0);
+  const [selectedRound, setSelectedRound] = useState('');
   const [canManage, setCanManage] = useState(false);
   const [canJoin, setCanJoin] = useState(false);
 
@@ -121,6 +123,11 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
   const myParticipant = user ? participants.find((p) => p.userId === user.id) : undefined;
   const isJoined = Boolean(myParticipant);
 
+  const groupIndexes = [...new Set((standings || []).map(r => r.groupIndex).filter((g): g is number => g !== undefined))].sort();
+  const displayedStandings = (standings || []).filter(r => !groupIndexes.length || r.groupIndex === selectedGroup);
+  const rounds = [...new Set(fixtures.map(f => `${f.stage}:${f.roundOrMatchday}`))];
+  const displayedFixtures = fixtures.filter(f => `${f.stage}:${f.roundOrMatchday}` === (selectedRound || rounds[0]));
+
   // Filter allowed clubs for claiming
   const allowedSeedClubs = TOP5_CLUBS.filter((c) => {
     if (tournament.leagueScope === 'SINGLE_LEAGUE' && tournament.selectedLeagueId) {
@@ -189,6 +196,10 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
 
   return (
     <div className="space-y-4 pb-20 animate-in fade-in duration-200">
+      {myParticipant?.status === 'PENDING_APPROVAL' && <p role="status" className="p-3 rounded-xl bg-amber-500/10 text-amber-300 text-xs">Arizangiz tashkilotchi tasdig‘ini kutmoqda. Klubingiz band qilingan.</p>}
+      {tournament.status === 'STARTING' && <p role="status" className="p-3 text-amber-300 text-xs">Turnir taqvimi tayyorlanmoqda. Tashkilotchi boshqaruv oynasidan jarayonni davom ettirishi mumkin.</p>}
+      {tournament.status === 'COMPLETED' && <p className="p-4 bg-emerald-500/10 rounded-2xl text-emerald-300 font-bold">🏆 G‘olib: {tournament.winnerClubName}</p>}
+      <button type="button" onClick={loadData} className="min-h-[44px] px-3 text-xs text-emerald-400">Ma’lumotlarni yangilash</button>
       {/* Top Header */}
       <div className="flex items-center justify-between">
         <button
@@ -311,7 +322,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
           }`}
         >
           <Users className="w-3.5 h-3.5" />
-          <span>Qatnashchilar ({participants.length})</span>
+          <span>A’zolar ({participants.length})</span>
         </button>
         <button
           onClick={() => setActiveTab('rules')}
@@ -338,6 +349,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
             </div>
           ) : (
             <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 overflow-x-auto shadow-sm">
+              {groupIndexes.length > 0 && <div className="flex gap-2 mb-3">{groupIndexes.map(g => <button key={g} onClick={() => setSelectedGroup(g)} className={`min-h-[44px] px-3 rounded-xl text-xs ${g === selectedGroup ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-300'}`}>{String.fromCharCode(65 + g)} guruhi</button>)}</div>}
               {!standings || standings.length === 0 ? (
                 <p className="text-xs text-slate-500 italic p-6 text-center">Jadval hali shakllanmagan.</p>
               ) : (
@@ -355,7 +367,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60">
-                    {standings.map((row) => (
+                    {displayedStandings.map((row) => (
                       <tr key={row.clubId} className="hover:bg-slate-800/40 transition-colors">
                         <td className="py-2.5 px-2 font-bold text-slate-400">{row.position}</td>
                         <td className="py-2.5 px-3 flex items-center gap-2 font-semibold text-slate-200">
@@ -395,12 +407,15 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
       {/* TAB 2: FIXTURES */}
       {activeTab === 'fixtures' && (
         <div className="space-y-3">
+          {rounds.length > 0 && <label className="block text-xs text-slate-300">Bosqich va tur
+            <select value={selectedRound || rounds[0]} onChange={e => setSelectedRound(e.target.value)} className="w-full p-3 mt-1 bg-slate-900 border border-slate-800 rounded-xl">{rounds.map(r => <option key={r} value={r}>{r.replace(':', ' · Tur ')}</option>)}</select>
+          </label>}
           {fixtures.length === 0 ? (
             <p className="text-xs text-slate-500 italic p-8 text-center bg-slate-900 rounded-2xl border border-slate-800">
               O‘yinlar hali rejalashtirilmagan. Turnir boshlanganda avtomatik shakllanadi.
             </p>
           ) : (
-            fixtures.map((fix) => {
+            displayedFixtures.map((fix) => {
               const isMyMatch = user ? fix.homeUserId === user.id || fix.awayUserId === user.id : false;
               return (
                 <div
@@ -436,7 +451,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
                       </span>
                     )}
 
-                    {(isMyMatch || canManage) && fix.status !== 'CONFIRMED' && (
+                    {tournament.status === 'IN_PROGRESS' && (isMyMatch || canManage) && !['CONFIRMED', 'BYE_AUTO_ADVANCED'].includes(fix.status) && !['TBD', 'BYE'].includes(fix.homeClubId) && !['TBD', 'BYE'].includes(fix.awayClubId) && (fix.status !== 'DISPUTED' || canManage) && (
                       <button
                         onClick={() => handleOpenScoreModal(fix)}
                         className="px-2.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs transition-colors"
@@ -474,7 +489,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
                 </div>
                 <div className="truncate flex-1">
                   <h4 className="font-bold text-slate-200 truncate">{p.clubName}</h4>
-                  <p className="text-[11px] text-slate-400 truncate">@{p.username || 'efl_user'}</p>
+                  <p className="text-[11px] text-slate-400 truncate">@{p.username || 'efl_user'}{p.status === 'PENDING_APPROVAL' ? ' · Tasdiq kutilmoqda' : ''}</p>
                 </div>
               </div>
             ))

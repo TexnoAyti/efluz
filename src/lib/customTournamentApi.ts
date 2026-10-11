@@ -134,6 +134,11 @@ export const customTournamentApi = {
     return data;
   },
 
+  async reviewParticipant(id:string,userId:string,action:'APPROVE'|'REJECT') {
+    const res=await fetch(`/api/custom-tournaments/${encodeURIComponent(id)}/participants/${encodeURIComponent(userId)}/review`,{method:'POST',headers:getAuthHeaders(),body:JSON.stringify({action})});
+    const data=await res.json();if(!res.ok||!data.ok)throw new Error(data.error||'Arizani boshqarib bo‘lmadi.');return data;
+  },
+
   async startTournament(tournamentId: string): Promise<{ tournament: CustomTournament; fixturesCount: number }> {
     const res = await fetch(`/api/custom-tournaments/${tournamentId}/start`, {
       method: 'POST',

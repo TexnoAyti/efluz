@@ -4,6 +4,7 @@ import {
   CustomTournamentFormat,
   CustomTournamentLeagueScope,
   CustomTournamentVisibility,
+  CustomTournamentSpectatorAccess,
   CustomTournamentPlayoffLegMode,
   CustomTournamentGroupStageMode,
   TournamentFormatPreview,
@@ -25,6 +26,7 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [isAdvancedMode, setIsAdvancedMode] = useState<boolean>(false);
   const creationKey = useRef<string>('');
+  const creationPayload = useRef<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -42,6 +44,9 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
   const [maxParticipants, setMaxParticipants] = useState<number>(8);
   const [visibility, setVisibility] = useState<CustomTournamentVisibility>('PUBLIC_OPEN');
 
+  const [spectatorAccess, setSpectatorAccess] = useState<CustomTournamentSpectatorAccess>('PUBLIC_LINK');
+  const participantLimit = leagueScope === 'TOP5_ALL' ? 32 : ['league-bundesliga', 'league-ligue-1'].includes(selectedLeagueId) ? 18 : 20;
+
   // Rules (Advanced)
   const [roundsCount, setRoundsCount] = useState<1 | 2>(1);
   const [playoffLegMode, setPlayoffLegMode] = useState<CustomTournamentPlayoffLegMode>('SINGLE_LEG');
@@ -56,6 +61,7 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       creationKey.current = crypto.randomUUID();
+      creationPayload.current = '';
       fetchTicketBalance();
     }
   }, [isOpen]);
@@ -72,6 +78,13 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
     });
     setPreview(p);
   }, [format, maxParticipants, roundsCount, playoffLegMode, playoffQualifiersCount, groupStageMode, groupsCount, matchDurationHours]);
+
+  useEffect(() => {
+    if (maxParticipants > participantLimit) setMaxParticipants(participantLimit);
+    if (groupsCount === 4 && maxParticipants < 8) setGroupsCount(2);
+    const valid = [2, 4, 8, 16].filter(n => n <= maxParticipants && (groupStageMode !== 'GROUPS' || n % groupsCount === 0));
+    if (!valid.includes(playoffQualifiersCount)) setPlayoffQualifiersCount(valid[0] as 2 | 4 | 8 | 16);
+  }, [participantLimit, maxParticipants, groupsCount, groupStageMode, playoffQualifiersCount]);
 
   const fetchTicketBalance = async () => {
     try {
@@ -103,6 +116,7 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
           selectedLeagueId: leagueScope === 'SINGLE_LEAGUE' ? selectedLeagueId : undefined,
           maxParticipants,
           visibility,
+          spectatorAccess,
           rules: {
             roundsCount,
             playoffLegMode,
@@ -112,6 +126,9 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
             matchDurationHours,
           },
       };
+      const signature = JSON.stringify(payload);
+      if (creationPayload.current && creationPayload.current !== signature) creationKey.current = crypto.randomUUID();
+      creationPayload.current = signature;
       const tournament = await customTournamentApi.createTournament({...payload, idempotencyKey: creationKey.current});
       const tournamentId = tournament.id;
       onTournamentCreated(tournamentId);
@@ -274,8 +291,8 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
                 <input
                   type="range"
                   min={4}
-                  max={32}
-                  step={format === 'PLAYOFF' ? 2 : 1}
+                  max={participantLimit}
+                  step={1}
                   value={maxParticipants}
                   onChange={(e) => setMaxParticipants(Number(e.target.value))}
                   className="w-full accent-emerald-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
@@ -283,10 +300,16 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
                 <div className="flex justify-between text-[10px] text-slate-500 mt-1">
                   <span>Min: 4 kishi</span>
                   <span>O‘rtacha: 8-16 kishi</span>
-                  <span>Max: 32 kishi</span>
+                  <span>Max: {participantLimit} kishi</span>
                 </div>
               </div>
 
+              <label className="block text-xs font-semibold text-slate-300">Turnirni kuzatish
+                <select value={spectatorAccess} onChange={e => setSpectatorAccess(e.target.value as CustomTournamentSpectatorAccess)} className="w-full mt-2 p-2 bg-slate-950 border border-slate-800 rounded-xl">
+                  <option value="PUBLIC_LINK">Kuzatuvchilar uchun ochiq</option>
+                  <option value="MEMBERS_ONLY">Faqat turnir a’zolari</option>
+                </select>
+              </label>
               {/* Visibility */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1.5">
@@ -327,7 +350,7 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setIsAdvancedMode(!isAdvancedMode)}
+                  onClick={() => { if (isAdvancedMode) { setRoundsCount(1); setPlayoffLegMode('SINGLE_LEG'); setPlayoffQualifiersCount(4); setGroupStageMode('SINGLE_TABLE'); setGroupsCount(2); setMatchDurationHours(36); } setIsAdvancedMode(!isAdvancedMode); }}
                   className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all min-h-[38px] ${
                     isAdvancedMode
                       ? 'bg-emerald-500 text-slate-950 shadow-md'
@@ -344,13 +367,13 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
                     <Sparkles className="w-4 h-4" />
                     <span>Standart qoidalar faol:</span>
                   </div>
-                  <p>• {format === 'LEAGUE' ? '1 davrali aylanma chempionat' : '1 o‘yinli pley-off (durangda penaltilar seriyasi)'}.</p>
+                  <p>• {format === 'LEAGUE' ? '1 davrali aylanma chempionat' : format === 'PLAYOFF' ? '1 o‘yinli pley-off (durangda penaltilar seriyasi)' : '1 davrali liga va eng yaxshi 4 klub uchun pley-off'}.</p>
                   <p>• Har bir o‘yinni o‘tkazish uchun 36 soat muhlat beriladi.</p>
                   <p>• Hisob va screenshotni ikki tomonlama tasdiqlash tizimi.</p>
                 </div>
               ) : (
                 <div className="space-y-3 p-3 bg-slate-950/60 border border-slate-800 rounded-2xl">
-                  {format === 'LEAGUE' && (
+                  {format !== 'PLAYOFF' && (
                     <div>
                       <label className="block text-xs font-semibold text-slate-300 mb-1">Davralar soni</label>
                       <div className="grid grid-cols-2 gap-2">
@@ -376,7 +399,7 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
                     </div>
                   )}
 
-                  {format === 'PLAYOFF' && (
+                  {format !== 'LEAGUE' && (
                     <div>
                       <label className="block text-xs font-semibold text-slate-300 mb-1">Pley-off bosqichi formati</label>
                       <div className="grid grid-cols-2 gap-2">
@@ -428,6 +451,12 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
                         </div>
                       </div>
 
+                      {groupStageMode === 'GROUPS' && <label className="block text-xs text-slate-300">Guruhlar soni
+                        <select value={groupsCount} onChange={e => setGroupsCount(Number(e.target.value) as 2 | 4)} className="w-full mt-1 p-2 bg-slate-900 border border-slate-800 rounded-xl">
+                          <option value={2}>2 ta guruh</option>
+                          {maxParticipants >= 8 && <option value={4}>4 ta guruh</option>}
+                        </select>
+                      </label>}
                       <div>
                         <label className="block text-xs font-semibold text-slate-300 mb-1">Pley-offga yo‘l oladiganlar</label>
                         <select
@@ -435,7 +464,7 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
                           onChange={(e) => setPlayoffQualifiersCount(Number(e.target.value) as any)}
                           className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 text-xs"
                         >
-                          <option value={2}>Top 2 (To‘g‘ridan-to‘g‘ri Final)</option>
+                          {(groupStageMode !== 'GROUPS' || groupsCount === 2) && <option value={2}>Top 2 (Final)</option>}
                           <option value={4}>Top 4 (Yarim final)</option>
                           {maxParticipants >= 8 && <option value={8}>Top 8 (Chorak final)</option>}
                           {maxParticipants >= 16 && <option value={16}>Top 16 (1/8 final)</option>}

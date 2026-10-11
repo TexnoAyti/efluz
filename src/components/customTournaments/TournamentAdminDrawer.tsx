@@ -75,8 +75,9 @@ export const TournamentAdminDrawer: React.FC<TournamentAdminDrawerProps> = ({
       setLoadingLogs(true);
       const logs = await customTournamentApi.getAuditLogs(tournament.id);
       setAuditLogs(logs);
-    } catch {
+    } catch (err) {
       setAuditLogs([]);
+      setStatusMessage({type: 'error', text: err instanceof Error ? err.message : 'Auditni yuklab bo‘lmadi.'});
     } finally {
       setLoadingLogs(false);
     }
@@ -114,6 +115,14 @@ export const TournamentAdminDrawer: React.FC<TournamentAdminDrawerProps> = ({
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const pendingParticipants = participants.filter(p => p.status === 'PENDING_APPROVAL');
+  const handleReview = async (userId: string, action: 'APPROVE' | 'REJECT') => {
+    setIsLoading(true); setStatusMessage(null);
+    try { await customTournamentApi.reviewParticipant(tournament.id, userId, action); onRefresh(); }
+    catch (err) { setStatusMessage({type: 'error', text: err instanceof Error ? err.message : 'Arizani ko‘rib bo‘lmadi.'}); }
+    finally { setIsLoading(false); }
   };
 
   const handleAddAssistant = async () => {
@@ -278,7 +287,7 @@ export const TournamentAdminDrawer: React.FC<TournamentAdminDrawerProps> = ({
                 </div>
               )}
               {/* Start Tournament Card */}
-              {tournament.status === 'REGISTRATION_OPEN' && (
+              {canPublishDraft && ['REGISTRATION_OPEN', 'STARTING'].includes(tournament.status) && (
                 <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 space-y-3">
                   <div className="flex items-start justify-between">
                     <div>
@@ -299,15 +308,25 @@ export const TournamentAdminDrawer: React.FC<TournamentAdminDrawerProps> = ({
 
                   <button
                     onClick={handleStartTournament}
-                    disabled={isLoading || participants.length < 4}
+                    disabled={isLoading || participants.length < 4 || pendingParticipants.length > 0}
                     className="w-full py-2.5 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-black text-xs transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
                   >
                     <Play className="w-4 h-4 fill-current" />
-                    Turnirni Boshlash ({participants.length} ta jamoa bilan)
+                    {tournament.status === 'STARTING' ? 'Boshlashni davom ettirish' : `Turnirni boshlash (${participants.length} ta jamoa bilan)`}
                   </button>
                 </div>
               )}
 
+              {tournament.status === 'REGISTRATION_OPEN' && pendingParticipants.length > 0 && <div className="p-4 rounded-2xl border border-amber-500/30 space-y-3">
+                <h4 className="text-sm font-bold text-amber-300">Kutilayotgan arizalar ({pendingParticipants.length})</h4>
+                {pendingParticipants.map(p => <div key={p.id} className="text-xs text-slate-200 space-y-2">
+                  <p>{p.clubName} · @{p.username || p.userId}</p>
+                  <div className="flex gap-2">
+                    <button disabled={isLoading} onClick={() => handleReview(p.userId, 'APPROVE')} className="min-h-[44px] px-3 bg-emerald-500 text-slate-950 rounded-xl disabled:opacity-50">Tasdiqlash</button>
+                    <button disabled={isLoading} onClick={() => handleReview(p.userId, 'REJECT')} className="min-h-[44px] px-3 bg-rose-500/20 text-rose-300 rounded-xl disabled:opacity-50">Rad etish</button>
+                  </div>
+                </div>)}
+              </div>}
               {/* Tournament Links */}
               <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-3">
                 <h4 className="font-bold text-slate-200 text-sm">Ulashish Havolalari</h4>
@@ -335,7 +354,7 @@ export const TournamentAdminDrawer: React.FC<TournamentAdminDrawerProps> = ({
                 </div>
 
                 {/* Spectator link */}
-                <div>
+                {tournament.spectatorAccess === 'MEMBERS_ONLY' ? <p className="text-xs text-slate-400">Kuzatish faqat turnir a’zolari uchun.</p> : <div>
                   <label className="text-[11px] font-semibold text-slate-400 block mb-1">
                     Kuzatuvchi havolasi (Faqat tomosha qilish uchun)
                   </label>
@@ -354,7 +373,7 @@ export const TournamentAdminDrawer: React.FC<TournamentAdminDrawerProps> = ({
                       {copiedSpec ? 'Nusxa olindi' : 'Nusxa'}
                     </button>
                   </div>
-                </div>
+                </div>}
               </div>
 
               {/* Status info */}

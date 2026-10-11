@@ -9,6 +9,7 @@ import { Router, Request, Response } from 'express';
 import { requireAuth } from '../middleware/authMiddleware';
 import {
   createTournament,
+  reviewTournamentParticipant,
   publishTournament,
   claimTournamentClub,
   startTournament,
@@ -179,6 +180,11 @@ customTournamentsRouter.post('/:id/join', requireAuth, async (req: Request, res:
   }
 });
 
+customTournamentsRouter.post('/:id/participants/:userId/review',requireAuth,async(req:Request,res:Response)=>{
+ try{const result=await reviewTournamentParticipant({tournamentId:req.params.id,targetUserId:req.params.userId,adminUserId:req.user!.id,action:req.body.action});res.json({ok:true,...result});}
+ catch(error:any){res.status(error.statusCode||500).json({ok:false,error:error.message});}
+});
+
 // POST /api/custom-tournaments/:id/start - organizer starts tournament
 customTournamentsRouter.post('/:id/start', requireAuth, async (req: Request, res: Response) => {
   try {
@@ -213,10 +219,10 @@ customTournamentsRouter.post('/:id/matches/:matchId/result', requireAuth, async 
       tournamentId,
       fixtureId,
       userId: user.id,
-      homeScore: Number(homeScore),
-      awayScore: Number(awayScore),
-      penaltyHomeScore: penaltyHomeScore !== undefined ? Number(penaltyHomeScore) : undefined,
-      penaltyAwayScore: penaltyAwayScore !== undefined ? Number(penaltyAwayScore) : undefined,
+      homeScore,
+      awayScore,
+      penaltyHomeScore,
+      penaltyAwayScore,
       proofUrl,
     });
 
@@ -305,10 +311,10 @@ customTournamentsRouter.post('/:id/matches/:matchId/correct', requireAuth, async
       tournamentId,
       fixtureId,
       adminUserId: user.id,
-      homeScore: Number(homeScore),
-      awayScore: Number(awayScore),
-      penaltyHomeScore: penaltyHomeScore !== undefined ? Number(penaltyHomeScore) : undefined,
-      penaltyAwayScore: penaltyAwayScore !== undefined ? Number(penaltyAwayScore) : undefined,
+      homeScore,
+      awayScore,
+      penaltyHomeScore,
+      penaltyAwayScore,
       note,
     });
 
@@ -322,7 +328,7 @@ customTournamentsRouter.post('/:id/matches/:matchId/correct', requireAuth, async
 customTournamentsRouter.get('/:id/audit-logs', requireAuth, async (req: Request, res: Response) => {
   try {
     const tournamentId = req.params.id;
-    const logs = await getTournamentAuditLogs(tournamentId);
+    const logs = await getTournamentAuditLogs(tournamentId, req.user!.id);
     res.json({ ok: true, logs });
   } catch (err: any) {
     res.status(err.statusCode || 500).json({ ok: false, error: err.message });
