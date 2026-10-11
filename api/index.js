@@ -30799,6 +30799,19 @@ async function getClubClaimReceipt(userId2, seasonId2) {
 }
 async function requestDurableClubClaim(userId2, clubId, seasonId2, actor) {
   const verifiedProfile = actor && actor.id === userId2 && /^\d{1,20}$/.test(String(actor.telegramId)) && userId2 === `user-${actor.telegramId}` ? { id: userId2, telegramId: String(actor.telegramId), username: String(actor.username || "").slice(0, 64), firstName: String(actor.firstName || "").slice(0, 100), lastName: String(actor.lastName || "").slice(0, 100) } : void 0;
+  if (process.env.DATABASE_PROVIDER === "supabase") {
+    const result2 = await claimClubAtomicFirestore(userId2, clubId, seasonId2, {
+      authoritativeOnly: true,
+      requiresActiveUser: true,
+      verifiedProfile
+    });
+    if (!result2.authoritative || result2.isFallback) throw new DurablePersistenceUnavailableError();
+    await Promise.allSettled([
+      invalidateClubReadModels(seasonId2),
+      invalidateUserMembershipReadModel(userId2, seasonId2)
+    ]);
+    return { club: result2.club, pendingSync: false, request: void 0 };
+  }
   const client = getUpstashClient();
   if (!client) throw new DurablePersistenceUnavailableError("Klub tanlash so\u2018rovi saqlanmadi: doimiy saqlash xizmati ulanmagan.");
   const last = await getClubClaimReceipt(userId2, seasonId2);
@@ -31141,8 +31154,8 @@ clubsRouter.post("/:id/claim", requireAuth, async (req, res) => {
   }
   try {
     const result = await requestDurableClubClaim(userId2, clubId, seasonId2, req.user);
-    res.status(202).json({ success: true, accepted: true, pendingSync: result.pendingSync, message: result.request.message, request: result.request, club: result.club });
-    scheduleMutationReconciliation();
+    res.status(result.pendingSync ? 202 : 200).json({ success: true, accepted: true, pendingSync: result.pendingSync, message: result.request?.message || "Klub sizga biriktirildi.", request: result.request, club: result.club });
+    if (result.pendingSync) scheduleMutationReconciliation();
   } catch (err) {
     if (err instanceof ClubAdmissionConflictError) {
       res.status(409).json({ code: err.code, message: err.message });
