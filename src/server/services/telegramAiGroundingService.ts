@@ -17,7 +17,7 @@ import { withSeasonQualificationPolicy } from '../../lib/seasonQualificationPoli
 import { detectAiCupStage, fixtureMatchesAiCupStage, AI_CUP_STAGE_LABELS, formatAiCupStageFixture } from './telegramAiCupStage';
 import { resolveAiClubs, normalizeAiEntity, containsAiEntity, type AiClubChoice } from './telegramAiEntities';
 import { communityFacts, communitySmallTalkAnswer, communityFallback } from './telegramAiCommunitySources';
-import { needsSemanticAiReadAnswer } from './telegramAiMessageUnderstanding';
+import { needsSemanticAiReadAnswer, isAiHypotheticalQuestion } from './telegramAiMessageUnderstanding';
 
 export interface GroundingContext {
   factsSummary: string;
@@ -100,7 +100,7 @@ export async function buildAiGroundingContext(
   options?: { signal?: AbortSignal; previousUserQueries?: string[]; selectedClubIds?: string[]; replyVariation?: number }
 ): Promise<GroundingContext> {
   let hasStaleData = false;
-  const multipleReadAspects = needsSemanticAiReadAnswer(query);
+  const multipleReadAspects = isAiHypotheticalQuestion(query) || needsSemanticAiReadAnswer(query);
   const ownerOnly=!multipleReadAspects && isClubOwnershipQuestion(query) && !/nechanchi|ochko|o[‘’'`]?rin|natija|forma|statistika|yut|gol|o[‘’'`]?yin|keyingi|navbatdagi|kubok|ucl|uel|tahlil|hazil|qachon|qancha|nega/i.test(query);
   const started=Date.now();
   const reader=createAiSnapshotReader(options?.signal);

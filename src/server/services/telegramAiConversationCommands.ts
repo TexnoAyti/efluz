@@ -4,7 +4,7 @@ import { createAiTournamentReader, matchesAiCompetition } from './telegramAiData
 import { detectAiCupStage } from './telegramAiCupStage';
 import type { Competition, Club } from '../../types';
 import type { AdminPlan } from './telegramAiAdminCatalog';
-import { aiReadAspects, hasMultipleAiReadAspects, wantsCombinedAiTables, isAiReadCourtesy } from './telegramAiMessageUnderstanding';
+import { aiReadAspects, hasMultipleAiReadAspects, wantsCombinedAiTables, isAiReadCourtesy, isAiHypotheticalQuestion } from './telegramAiMessageUnderstanding';
 import { limitAiReply } from './telegramAiResponsePolicy';
 
 export type ConversationIntent = 'standings'|'fixtures'|'admin'|'confirm'|'cancel'|'help'|'chat';
@@ -42,6 +42,7 @@ export function getConversationIntent(text: string): ConversationIntent {
   if (/^(?:tasdiqlayman|tasdiqla|bajar|bajaring|ha bajar|xa bajar)$/.test(q)) return 'confirm';
   if (/^(?:(?:shu|shuni|buni|uni|rejani|shu rejani|topshiriqni)\s+)?(?:bekor qil|bekor qiling|bekor qilish|cancel)$/.test(q)) return 'cancel';
   if (/^(?:yordam|buyruqlar|nima qila olasan|help)$/.test(q)) return 'help';
+  if (isAiHypotheticalQuestion(text)) return 'chat';
   if (/\b(?:nechanchi|qaysi\s+orinda|nima\s+uchun|nega|tahlil|taxmin|kim\s+yutadi)\b/.test(q)) return 'chat';
   if (detectNaturalAdminAction(text)) return 'admin';
   if (isSimpleConversationClubAssignmentRequest(text)) return 'admin';

@@ -36,8 +36,8 @@ for (const [request, question, answer, suffix] of cases)
 const draft = { request: 'APL turni qulflang', question: 'Qaysi turni boshqaray?' };
 for (const answer of ['kim yutadi?', 'APL jadval tashla', 'eng zor admin kim', '11 turgacha', '-11', '2.5', '0', '101', '11 keyin ochir', '11; blokla', '/ai_on', 'tasdiqlayman', 'bekor qil', 'qulflama', '11 emas', '11 yoki 12', '11 bo‘lsin; keyin ochir', '11\nbo‘lsin'])
   assert.equal(continueAiAdminClarification(draft, answer), null, answer);
-assert.equal(continueAiAdminClarification({ request: 'APL 10 turni qulflang', question: draft.question }, '11'), null);
-assert.equal(continueAiAdminClarification({ request: 'Inter Milan 2-1 natijani kirit', question: 'Qaysi hisob?' }, '5-1'), null);
+assert.equal(continueAiAdminClarification({ request: 'APL 10 turni qulflang', question: draft.question }, '11'), 'APL 11-tur qulflang');
+assert.equal(continueAiAdminClarification({ request: 'Inter Milan 2-1 natijani kirit', question: 'Qaysi hisob?' }, '5-1'), 'Inter Milan 5-1 natijani kirit');
 
 await initDatabase();
 const bridge = await startMockUpstashBridge();

@@ -1,5 +1,6 @@
 import { normalizeAiEntity } from './telegramAiEntities';
 import { detectExtendedAdminControl } from './telegramAiControlLanguage';
+import { isAiHypotheticalQuestion } from './telegramAiMessageUnderstanding';
 
 function adminCommandText(text: string): string {
   return normalizeAiEntity(text.replace(/^\/ai_(?:admin|read)(?:@[A-Za-z0-9_]+)?\s*/i, '')
@@ -24,6 +25,11 @@ export function isShorthandAiResultRequest(text: string): boolean {
 /** Applies before EVERY native write parser, including club assignment. */
 export function assertSingleNaturalAdminRequest(text: string): void {
   const q = adminCommandText(text);
+  if (isAiHypotheticalQuestion(text)) throw new Error('CLARIFY:Bu shartli holat yoki oqibat haqidagi savol. Hech narsa o‘zgarmadi. Bajarish kerak bo‘lsa bitta aniq amalni yozing.');
+  const rounds = [...q.matchAll(/\b(\d{1,3})\s*tur\w*\b|\btur\s*(\d{1,3})\b/g)].map(m => Number(m[1] || m[2]));
+  if (new Set(rounds).size > 1) throw new Error('CLARIFY:Bir xabarda tur raqamlari bir-biriga mos kelmadi. Qaysi bitta tur bilan ishlaymiz?');
+  const hours = [...q.matchAll(/\b(\d{1,3})\s*soat\w*\b/g)].map(m => Number(m[1]));
+  if (new Set(hours).size > 1) throw new Error('CLARIFY:Muddatlar bir-biriga mos kelmadi. Necha soat bo‘lsin? Bitta qiymat yozing.');
   if (/\b\d{1,3}\s*turgacha\b/.test(q))
     throw new Error('CLARIFY:Bu buyruq bir nechta turga tegishli. O‘zgartirish uchun bitta aniq turni yozing; “turgacha” faqat ro‘yxatni ko‘rishda ishlaydi.');
   if (/\b(?:kiritma\w*|saqlama\w*|ochma\w*|yopma\w*|qulflama\w*|uzaytirma\w*|qilma\w*|ochirma\w*|yuborma\w*|biriktirma\w*|berma\w*|ulama\w*|boshatma\w*|chiqarma\w*|otkazma\w*|yozma\w*|toxtatma\w*|yangilama\w*|belgilama\w*|ozgartirma\w*|qaytarma\w*|tozalama\w*|tushirma\w*)\b/.test(q) || /\b(?:do not|dont|never)\s+(?:assign|release|delete|remove|give)\b/.test(q) || /(?:^|\s)не\s+(?:назнач|удал|освобод)[\p{L}]*/u.test(q) ||
