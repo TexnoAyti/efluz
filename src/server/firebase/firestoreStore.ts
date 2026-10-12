@@ -4603,6 +4603,7 @@ export async function getOrCreateTelegramUserFirestore(tgUser: {
     }
   } catch (err: any) {
     console.warn('[FIRESTORE FALLBACK] getOrCreateTelegramUserFirestore:', err.message);
+    if (process.env.DATABASE_PROVIDER === 'supabase') throw err; // PostgreSQL identity must fail closed; no historical SQLite account.
   }
 
   // SQLite fallback

@@ -27,10 +27,9 @@ authRouter.post('/telegram', validateBody(telegramAuthSchema), async (req: Reque
         if (userRaw) {
           const user = await getOrCreateTelegramUser(JSON.parse(userRaw));
           const clubState = await getOptionalCurrentClub(user.id);
-          const stats = await getDashboardLeagueStats(clubState.currentClub);
           const token = createSessionToken(user);
           console.log(`[TELEGRAM AUTH - DEV SANDBOX] user=${user.username} (id: ${user.telegramId}), isAdmin=${user.isAdmin}`);
-          res.json({ success: true, user, ...clubState, stats, token });
+          res.json({ success: true, user, ...clubState, token });
           return;
         }
       } catch {
@@ -49,14 +48,19 @@ authRouter.post('/telegram', validateBody(telegramAuthSchema), async (req: Reque
   }
 
   try {
+    const started = performance.now();
     const user = await getOrCreateTelegramUser(verifyResult.user);
+    const identityMs = performance.now() - started;
     const clubState = await getOptionalCurrentClub(user.id);
-    const stats = await getDashboardLeagueStats(clubState.currentClub);
+    // Home and Club load standings independently. Do not rebuild/publish tables
+    // while the client is waiting for identity verification.
+    const previousTiming = res.getHeader('Server-Timing');
+    res.setHeader('Server-Timing', [previousTiming, `identity;dur=${identityMs.toFixed(1)}`, `ownership;dur=${(performance.now()-started-identityMs).toFixed(1)}`].filter(Boolean).join(', '));
     const token = createSessionToken(user);
 
     console.log(`[TELEGRAM AUTH]\ninitData received: YES\nparsed user id: ${verifyResult.user.id}\nusername: ${verifyResult.user.username || '(none)'}\nauth_date valid: ${verifyResult.authDate ? 'YES' : 'NO'}\nHMAC valid: YES\ninternal user: ${user.id}\nisAdmin: ${user.isAdmin ? 'YES' : 'NO'}`);
 
-    res.json({ success: true, user, ...clubState, stats, token });
+    res.json({ success: true, user, ...clubState, token });
   } catch (err: any) {
     res.status(500).json({ error: 'Authentication failed', message: err.message });
   }

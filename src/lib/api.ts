@@ -65,12 +65,23 @@ export function setTelegramInitData(data: string | null) {
   }
 }
 
+function clearTelegramLaunchCredentials() {
+  try {
+    const search = new URLSearchParams(window.location.search);
+    const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    search.delete('tgWebAppData'); search.delete('initData'); hash.delete('tgWebAppData');
+    const query = search.toString(), fragment = hash.toString();
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${query ? '?' + query : ''}${fragment ? '#' + fragment : ''}`);
+  } catch { /* launch data remains available to the SDK */ }
+}
+
 export function getTelegramInitData(): string {
   if (typeof window !== 'undefined') {
     // 1. Direct Telegram WebApp SDK
     const tgSdkData = (window as any).Telegram?.WebApp?.initData;
     if (tgSdkData && typeof tgSdkData === 'string' && tgSdkData.length > 0) {
       currentTelegramInitData = tgSdkData;
+      clearTelegramLaunchCredentials();
       return tgSdkData;
     }
 
@@ -96,9 +107,8 @@ export function getTelegramInitData(): string {
         const tgData = hashParams.get('tgWebAppData');
         if (tgData) {
           currentTelegramInitData = tgData;
-          hashParams.delete('tgWebAppData');
-          const cleanHash = hashParams.toString();
-          window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}${cleanHash ? `#${cleanHash}` : ''}`);
+          // The asynchronous SDK must read its launch hash before it is cleared.
+          if ((window as any).Telegram?.WebApp) clearTelegramLaunchCredentials();
           return tgData;
         }
       }
@@ -326,16 +336,20 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
   return executionPromise;
 }
 
+const telegramAuthFlights = new Map<string, Promise<any>>();
+
 export const api = {
   // Auth
   async authenticateTelegram(initData: string): Promise<{ success: boolean; user: User; currentClub: Club | null; ownedClubs?: Club[]; currentClubStatus?: 'resolved' | 'unavailable'; token: string; stats?: UserStats }> {
+    const pending = telegramAuthFlights.get(initData);
+    if (pending) return pending;
     invalidateClientCache();
-    return request('/api/auth/telegram', {
-      method: 'POST',
-      body: JSON.stringify({ initData }),
-      // This route validates its body. An initData header causes a duplicate user lookup.
-      skipAuthentication: true,
+    const work = request<any>('/api/auth/telegram', {
+      method: 'POST', body: JSON.stringify({ initData }), skipAuthentication: true,
     });
+    telegramAuthFlights.set(initData, work);
+    try { return await work; }
+    finally { if (telegramAuthFlights.get(initData) === work) telegramAuthFlights.delete(initData); }
   },
 
   async authenticateDev(devUserId: string): Promise<{ success: boolean; user: User; currentClub: Club | null; ownedClubs?: Club[]; currentClubStatus?: 'resolved' | 'unavailable'; token: string; stats?: UserStats }> {

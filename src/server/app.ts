@@ -156,7 +156,16 @@ export function createApp() {
   });
 
   app.use(async (req, res, next) => {
-    try { await ensureDbReady(); next(); }
+    const started = performance.now();
+    // Static catalog and PostgreSQL identity verification do not use SQLite.
+    // All fixture/mutation routes keep their existing initialization boundary.
+    const staticRead = req.method === 'GET' && ['/api/health', '/api/health/', '/api/seasons', '/api/seasons/active', '/api/leagues', '/api/auth/dev-profiles'].includes(req.path);
+    const postgresLogin = process.env.DATABASE_PROVIDER === 'supabase' && req.method === 'POST' && req.path === '/api/auth/telegram';
+    try {
+      if (!staticRead && !postgresLogin) await ensureDbReady();
+      res.setHeader('Server-Timing', `bootstrap;dur=${(performance.now()-started).toFixed(1)}`);
+      next();
+    }
     catch (err: any) { console.error('[SERVER] Database initialization failed on request:', err); res.status(500).json({ error: 'Database initialization failed', details: err.message }); }
   });
 
