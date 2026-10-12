@@ -15,7 +15,7 @@ import { Competition, StandingsRow, Fixture, Club } from '../../types';
 import { sortSeasonFixtures } from '../../lib/fixtureOrder';
 import { withSeasonQualificationPolicy } from '../../lib/seasonQualificationPolicy';
 import { detectAiCupStage, fixtureMatchesAiCupStage, AI_CUP_STAGE_LABELS, formatAiCupStageFixture } from './telegramAiCupStage';
-import { resolveAiClubs, normalizeAiEntity, containsAiEntity } from './telegramAiEntities';
+import { resolveAiClubs, normalizeAiEntity, containsAiEntity, type AiClubChoice } from './telegramAiEntities';
 import { communityFacts, communitySmallTalkAnswer, communityFallback } from './telegramAiCommunitySources';
 import { needsSemanticAiReadAnswer } from './telegramAiMessageUnderstanding';
 
@@ -26,6 +26,7 @@ export interface GroundingContext {
   detectedCompetitions: string[];
   ownershipAnswer?: string;
   factualAnswer?: string;
+  clubChoices?: AiClubChoice[];
   fallbackFacts?: string;
   communityAnswer?: string;
   selectedClubIds: string[];
@@ -124,7 +125,7 @@ export async function buildAiGroundingContext(
   if(ownerOnly){
     const answer=selection.clarification || (matched.length ? matched.map(c=>ownershipLine(c,clubSnapshot.data.length>0,clubSnapshot.stale)).join('\n') : 'Qaysi klubning egasini so‘rayapsiz? Klub nomini yozing; tasdiqlangan egasi ma’lumotini tekshiraman.');
     return {factsSummary:CORE_RULES_SUMMARY+'\n'+answer,hasStaleData:clubSnapshot.stale,detectedClubs:matched.map(c=>c.name),detectedCompetitions:[],
-      selectedClubIds:selection.clarification?[]:matched.map(c=>c.id),ownershipAnswer:answer,factualAnswer:answer,
+      selectedClubIds:selection.clarification?[]:matched.map(c=>c.id),ownershipAnswer:answer,factualAnswer:answer,clubChoices:selection.clubChoices,
       dataDiagnostics:{missingDatasets:reader.missingKeys(),failedDatasets:reader.failedKeys(),durationMs:Date.now()-started,fixturesCount:0}};
   }
   const ids = new Set(matched.map(c => c.id));
@@ -356,7 +357,7 @@ export async function buildAiGroundingContext(
   if(!testGroundingOverride)console.info('[AI_GROUNDING]',JSON.stringify({durationMs:dataDiagnostics.durationMs,clubs:matched.length,competitions:targets.length,fixtures:allFixtures.length,missing:dataDiagnostics.missingDatasets.length,failed:dataDiagnostics.failedDatasets.length}));
   return { dataDiagnostics, factsSummary: summary, fallbackFacts, communityAnswer, hasStaleData, detectedClubs: matched.map(c => c.name),
     selectedClubIds: selection.clarification ? [] : matched.length ? matched.map(c => c.id) : options?.selectedClubIds || [], detectedCompetitions: targets.map(c => c.id),
-    ownershipAnswer, factualAnswer: selection.clarification || (multipleReadAspects ? undefined : communitySmallTalkAnswer(query, options?.replyVariation) || finalistAnswer || (!analytical && stageAnswer ? stageAnswer : undefined) || (!analytical && unplayedAnswer ? unplayedAnswer : undefined) || (facts.length ? facts.join('\n') + (hasStaleData && !(facts.length === 1 && facts[0] === ownershipAnswer) && !facts.some(f => /eski snapshot/.test(f)) ? '\nMa’lumot eski yoki to‘liq bo‘lmagan snapshotdan; joriy holat tasdiqlanmagan.' : '') : !analytical ? ownershipAnswer : undefined)) };
+    ownershipAnswer, clubChoices:selection.clubChoices, factualAnswer: selection.clarification || (multipleReadAspects ? undefined : communitySmallTalkAnswer(query, options?.replyVariation) || finalistAnswer || (!analytical && stageAnswer ? stageAnswer : undefined) || (!analytical && unplayedAnswer ? unplayedAnswer : undefined) || (facts.length ? facts.join('\n') + (hasStaleData && !(facts.length === 1 && facts[0] === ownershipAnswer) && !facts.some(f => /eski snapshot/.test(f)) ? '\nMa’lumot eski yoki to‘liq bo‘lmagan snapshotdan; joriy holat tasdiqlanmagan.' : '') : !analytical ? ownershipAnswer : undefined)) };
 }
 
 function isConfirmedAiFixture(f: Fixture): boolean {

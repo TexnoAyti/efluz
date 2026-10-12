@@ -1,5 +1,5 @@
 import { getAiRedisClient, withinAiDeadline } from './telegramAiDeadline';
-import { getDeliveredAiAdminDraft, rememberDeliveredAiAdminDraft } from './telegramAiAdminDraft';
+import { getDeliveredAiAdminDraft, rememberDeliveredAiAdminDraft, getDeliveredAiReadClubDraft, saveDeliveredAiReadClubDraft, clearAiReadClubDraft } from './telegramAiAdminDraft';
 import { continueAiAdminClarification } from './telegramAiAdminClarification';
 import { parseAiPlanRevision } from './telegramAiPlanRevision';
 /**
@@ -486,9 +486,10 @@ export async function handleTelegramAiMessage(
   // 2. Start unified 6-second processing timeout BEFORE reading configuration (Requirement 2)
   let intent = getConversationIntent(payload.text);
   const owner = isAiAdminActor(payload.fromUser.id);
-  const replyConfirmation = Boolean(payload.replyToMessage && /^(?:ha|xa|yes|xop)$/i.test(payload.text.trim()));
+  let replyConfirmation = Boolean(payload.replyToMessage && /^(?:ha|xa|yes|xop)$/i.test(payload.text.trim()));
   let ownerControl = owner && (isAiAdminCommand(payload.text) || ['admin','confirm','cancel','help'].includes(intent) || replyConfirmation);
   let nativeClarification = false;
+  let activeReadDraft: Awaited<ReturnType<typeof getDeliveredAiReadClubDraft>> = null;
   const rootController = new AbortController();
   const requestBudget = owner || process.env.DATABASE_PROVIDER === 'supabase' ? 30000 : GLOBAL_TIMEOUT_MS;
   const deadlineAt = Date.now() + requestBudget;
@@ -524,6 +525,15 @@ export async function handleTelegramAiMessage(
     }
     if (owner && parseAiPlanRevision(payload.text)) {
       intent = 'admin'; ownerControl = true; nativeClarification = true;
+    }
+    if (!['admin','confirm','cancel','help'].includes(intent)) {
+      activeReadDraft = await getDeliveredAiReadClubDraft(payload, rootController.signal);
+      const continuation = activeReadDraft ? continueAiAdminClarification(activeReadDraft, payload.text) : null;
+      if (continuation && !['admin','confirm','cancel','help'].includes(getConversationIntent(continuation))) {
+        payload = { ...payload, text: continuation };
+        intent = getConversationIntent(continuation);
+        replyConfirmation = false; ownerControl = false;
+      }
     }
     // 5. Initial delivery check: prevent duplicate processing on webhook retry
     const initDelivery = await claimDeliveryState(payload.updateId, 'pending', { signal: rootController.signal });
@@ -599,10 +609,13 @@ export async function handleTelegramAiMessage(
     if (intent === 'standings' || intent === 'fixtures') {
       const table = await buildConversationReadReply(payload.text, intent, scope, rootController.signal);
       const result = await dispatchTelegramAiReply(payload, table.text, rootController.signal, { parse_mode: null, maxChars: 4000 });
+      if (result.replySent && result.botMessageId && table.clubChoices?.length) await saveDeliveredAiReadClubDraft(payload, table.text, table.clubChoices, result.botMessageId, rootController.signal);
+      else if (result.replySent && activeReadDraft) await clearAiReadClubDraft(payload, rootController.signal);
       if (result.replySent) await saveConversationContext(payload.chatId, payload.threadId, payload.fromUser.id, expandConversationReadFollowUp(payload.text, scope), table.text, { signal: rootController.signal, history, selectedClubIds: table.clubIds||[], selectedCompetitionIds: table.competitionIds, selectedFixtureIds:table.fixtureIds });
       return { ok: result.ok, handled: true, replySent: result.replySent, ignored: result.ignored };
     }
     if (isAiAdminCommand(payload.text) || ['admin','confirm','cancel'].includes(intent) || replyConfirmation || intent === 'help' && owner) {
+      await clearAiReadClubDraft(payload, rootController.signal);
       const text = await handleAiAdminCommand(payload, rootController.signal, JSON.stringify(scope), scope);
       const token = /\/ai_confirm ([a-f0-9]{24})/.exec(text)?.[1];
       const visible = token ? text.replace(/\n\/ai_(?:confirm|cancel) [a-f0-9]{24}/g, '') + '\n“Tasdiqlash” tugmasini bosing yoki “tasdiqlayman” deb yozing.' : text;
@@ -716,6 +729,8 @@ export async function handleTelegramAiMessage(
     );
 
     if (dispatchRes.replySent) {
+      if (dispatchRes.botMessageId && grounding.clubChoices?.length) await saveDeliveredAiReadClubDraft(payload, replyText, grounding.clubChoices, dispatchRes.botMessageId, rootController.signal);
+      else if (activeReadDraft) await clearAiReadClubDraft(payload, rootController.signal);
       // Save context for future turns
       await saveConversationContext(
         payload.chatId,

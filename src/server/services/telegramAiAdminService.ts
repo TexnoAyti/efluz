@@ -235,12 +235,13 @@ export async function handleAiAdminCommand(payload: TelegramAiMessagePayload, si
   const intent = getConversationIntent(payload.text);
   let command = match ? match[1].toLowerCase() : intent === 'confirm' || /^(?:ha|xa|yes|xop)$/i.test(payload.text.trim()) && payload.replyToMessage ? 'confirm' : intent === 'cancel' ? 'cancel' : intent === 'help' ? 'actions' : intent === 'admin' ? 'admin' : '';
   let argument = match ? match[2]?.trim() || '' : command === 'admin' ? payload.text : '';
-  const draft = !command ? await getDeliveredAiAdminDraft(payload, signal) : null;
+  const draft = !match && !['cancel','actions'].includes(command) ? await getDeliveredAiAdminDraft(payload, signal) : null;
   const continuation = draft ? continueAiAdminClarification(draft, payload.text) : null;
   if (continuation) { command = 'admin'; argument = continuation; }
-  const correction = !match && !continuation && !['confirm','cancel','actions'].includes(command) ? parseAiPlanRevision(payload.text) : null;
+  if (draft && !continuation && command === 'confirm') return draft.question;
+  const correction = !match && !draft && !continuation && !['confirm','cancel','actions'].includes(command) ? parseAiPlanRevision(payload.text) : null;
   if (correction) { command = 'admin'; argument = payload.text; }
-  if (!command) return 'Nima qilishimni oddiy yozing. Masalan: “La Liga jadvalini tashla” yoki “La Liga 10-turni qulflang”.';
+  if (!command) return draft?.question || 'Nima qilishimni oddiy yozing. Masalan: “La Liga jadvalini tashla” yoki “La Liga 10-turni qulflang”.';
   try {
     if (command === 'actions' && !isPrimaryOwner(payload.fromUser.id)) return 'Liga va kubok bo‘yicha mavjud admin ruxsatlaringiz doirasida oddiy yozing: natijani kiritish/tasdiqlash, klub biriktirish, turni boshqarish, kubok qur’asini ko‘rish. Har bir o‘zgarish avval reja va sizning tasdig‘ingizni talab qiladi. Xavfli va umumiy tizim amallari faqat asosiy admin uchun.';
     if (command === 'actions') return `Oddiy yozishingiz mumkin:
@@ -386,7 +387,7 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
     if (/ADMIN_DATABASE_QUOTA|RESOURCE_EXHAUSTED|CIRCUIT_OPEN/i.test(error?.message || '')) return 'Baza limiti sababli bu amalni hozir bajarib yoki o‘qib bo‘lmaydi. Saqlangan jadvallarni ko‘rish mumkin. Hech narsa o‘zgarmadi.';
     if (String(error.message).startsWith('CLARIFY:')) {
       const question = error.message.slice(8);
-      if (command === 'admin' && argument) await saveAiAdminDraft(payload, argument, question, signal).catch(() => {});
+      if (command === 'admin' && argument) await saveAiAdminDraft(payload, argument, question, signal, error.clubChoices).catch(() => {});
       return question;
     }
     console.warn('[AI_ADMIN_PLAN_FAILED]', /TIMEOUT|ABORT/i.test(String(error?.message || '')) ? 'timeout' : 'planning_failed');

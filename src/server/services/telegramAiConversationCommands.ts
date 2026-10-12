@@ -1,5 +1,5 @@
 import { detectNaturalAdminAction, assertSingleNaturalAdminRequest } from './telegramAiAdminLanguage';
-import { normalizeAiEntity, resolveAiClubs } from './telegramAiEntities';
+import { normalizeAiEntity, resolveAiClubs, throwAiClubClarification, type AiClubChoice } from './telegramAiEntities';
 import { createAiTournamentReader, matchesAiCompetition } from './telegramAiDataService';
 import { detectAiCupStage } from './telegramAiCupStage';
 import type { Competition, Club } from '../../types';
@@ -104,13 +104,14 @@ export async function resolveConversationCompetition(text: string, scope: Conver
   const comps = (catalog.data || []) as Competition[];
   let found = findConversationCompetitions(text, comps);
   let clarification:string|undefined;
+  let clubChoices:AiClubChoice[]|undefined;
   let clubIds:string[]=[];
   if(!found.length){
     const page:any=await reader.read({dataset:'clubs',limit:30});
     const all:Club[]=[...(page.data||[])];
     for(let offset=30;offset<(page.total||0);offset+=30)all.push(...((await reader.read({dataset:'clubs',offset,limit:30}) as any).data||[]));
     const explicit=resolveAiClubs(text,all);
-    clarification=explicit.clarification;
+    clarification=explicit.clarification; clubChoices=explicit.clubChoices;
     clubIds=explicit.clubs.map(c=>c.id);
     if(explicit.clubs.length)found=comps.filter(c=>c.type==='LEAGUE'&&explicit.clubs.some(club=>club.leagueId===c.leagueId));
     const prefix=normalizeAiEntity(text).match(/^(.*?)\s+(?:liga\w*|kubok\w*)\b/);
@@ -124,21 +125,21 @@ export async function resolveConversationCompetition(text: string, scope: Conver
       if(found.length)clubIds=all.filter(c=>(scope.selectedClubIds||[]).includes(c.id)&&found.some(comp=>comp.leagueId===c.leagueId)).map(c=>c.id);
       if(!found.length){
         const selected=resolveAiClubs(text,all,scope.selectedClubIds,scope.previousUserQueries);
-        clarification=selected.clarification;
+        clarification=selected.clarification; clubChoices=selected.clubChoices;
         clubIds=selected.clubs.map(c=>c.id);
         found=comps.filter(c=>c.type==='LEAGUE'&&selected.clubs.some(club=>c.leagueId===club.leagueId));
       }
     }
   }
-  return { reader, catalog, competitions: found, clarification, clubIds };
+  return { reader, catalog, competitions: found, clarification, clubIds, clubChoices };
 }
 
 /** Exact table/list formatting, no Gemini call and no Firestore reads. */
-export async function buildConversationTableReply(text: string, intent: 'standings'|'fixtures', scope: ConversationScope, signal?: AbortSignal): Promise<{ text: string; competitionIds: string[]; fixtureIds?:string[]; clubIds?:string[] }> {
+export async function buildConversationTableReply(text: string, intent: 'standings'|'fixtures', scope: ConversationScope, signal?: AbortSignal): Promise<{ text: string; competitionIds: string[]; fixtureIds?:string[]; clubIds?:string[]; clubChoices?:AiClubChoice[] }> {
   text = expandConversationReadFollowUp(text, scope);
   const resolved = await resolveConversationCompetition(text, scope, signal);
   const { reader, catalog } = resolved;
-  if(resolved.clarification)return {text:resolved.clarification,competitionIds:[],fixtureIds:[]};
+  if(resolved.clarification)return {text:resolved.clarification,competitionIds:[],fixtureIds:[],clubChoices:resolved.clubChoices};
   if(intent==='fixtures' && /^(?:endi\s+)?(?:osha|shu)\s+(?:oyin|uchrashuv)\w*\s+(?:korsat\w*|tashla\w*|ber)$/.test(normalizeAiEntity(text))){
     const ids=[...new Set(scope.selectedFixtureIds||[])];
     if(ids.length!==1)return {text:'Qaysi o‘yin? Jamoalar va turni yozing.',competitionIds:[],fixtureIds:[]};
@@ -258,6 +259,7 @@ export function clubAssignmentPlanFromRoster(text: string, clubs: Club[]): Admin
     throw new Error('CLARIFY:Bir vaqtning o‘zida bitta amalni bajaraylik. Hozir faqat klub biriktirishni yozing.');
   if (!clubs.length) throw new Error('CLARIFY:Klublarning saqlangan ro‘yxati hozir o‘qilmadi. Hech narsa o‘zgarmadi; qayta urinib ko‘ring.');
   const resolved = resolveAiClubs(query, clubs);
+  if (resolved.clarification) throwAiClubClarification(resolved);
   if (resolved.clubs.length !== 1)
     throw new Error('CLARIFY:' + (resolved.clarification || (resolved.clubs.length > 1
       ? 'Qaysi bitta klubni biriktiray: ' + resolved.clubs.map(c => c.name).join(' yoki ') + '?'
