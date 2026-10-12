@@ -24,11 +24,17 @@ const cases: Array<[string, string, string, string]> = [
   ['turni qulflang 11-tur', 'Qaysi liga yoki kubok?', 'APL', 'APL'],
   ['ligasini pauzaga qoy', 'Qaysi bitta liga yoki kubok?', 'Bundesliga', 'Bundesliga'],
   ['@actual_owner ga biriktir', 'Qaysi klubga biriktiray? Klub nomini yozing.', 'Brighton', 'Brighton'],
+  ['APL turni qulflang', 'Qaysi turni boshqaray?', '11-tur bo‘lsin', '11-tur'],
+  ['APL turni qulflang', 'Qaysi turni boshqaray?', 'iltimos, tur 11', '11-tur'],
+  ['APL turni uzaytir', 'Necha soatga uzaytiray?', '24 soatga bo‘lsin', '24 soat'],
+  ['natijani kirit', 'Qaysi hisobni saqlay?', 'hisob: 2–1 bo‘lsin', '2–1'],
+  ['turni qulflang 11-tur', 'Qaysi liga yoki kubok?', 'La Liga bo‘lsin', 'La Liga'],
+  ['Heidenheimga biriktir', 'Kimga biriktiray? Bitta Telegram @username yozing.', '@actual_owner ga', '@actual_owner'],
 ];
 for (const [request, question, answer, suffix] of cases)
   assert.equal(continueAiAdminClarification({ request, question }, answer), request + ' ' + suffix);
 const draft = { request: 'APL turni qulflang', question: 'Qaysi turni boshqaray?' };
-for (const answer of ['kim yutadi?', 'APL jadval tashla', 'eng zor admin kim', '11 turgacha', '-11', '2.5', '0', '101', '11 keyin ochir', '11; blokla', '/ai_on', 'tasdiqlayman', 'bekor qil', 'qulflama'])
+for (const answer of ['kim yutadi?', 'APL jadval tashla', 'eng zor admin kim', '11 turgacha', '-11', '2.5', '0', '101', '11 keyin ochir', '11; blokla', '/ai_on', 'tasdiqlayman', 'bekor qil', 'qulflama', '11 emas', '11 yoki 12', '11 bo‘lsin; keyin ochir', '11\nbo‘lsin'])
   assert.equal(continueAiAdminClarification(draft, answer), null, answer);
 assert.equal(continueAiAdminClarification({ request: 'APL 10 turni qulflang', question: draft.question }, '11'), null);
 assert.equal(continueAiAdminClarification({ request: 'Inter Milan 2-1 natijani kirit', question: 'Qaysi hisob?' }, '5-1'), null);
@@ -76,7 +82,7 @@ try {
     return originalFetch(input, init);
   };
   clearTestAiState();
-  for (const [text, expected] of [['turni qulflang', /Qaysi turni/], ['11-tur', /Qaysi liga/], ['APL', /Reja:.*Premier League/s]] as const) {
+  for (const [text, expected] of [['turni qulflang', /Qaysi turni/], ['11-tur bo‘lsin', /Qaysi liga/], ['APL bo‘lsin', /Reja:.*Premier League/s]] as const) {
     const result = await handleTelegramAiMessage(p(text));
     assert.equal(result.replySent, true, text + JSON.stringify(result));
     assert.match(sent.at(-1).text, expected);

@@ -1,4 +1,5 @@
-/** Bounded budgets: longer answers are reserved for analysis and explicit detail requests. */
+import { hasMultipleAiReadAspects } from './telegramAiMessageUnderstanding';
+/** Bounded budgets: longer answers are reserved for analysis and multiple read requirements. */
 export interface AiResponsePolicy {
   detailed: boolean;
   maxChars: number;
@@ -9,7 +10,7 @@ export interface AiResponsePolicy {
 }
 
 export function getAiResponsePolicy(query: string): AiResponsePolicy {
-  const detailed = /batafsil|tahlil|taqqosla|solishtir|qadam[\s-]*ba[\s-]*qadam|to[‘’'`]?liq\s+(?:tushuntir|izoh)|подроб|анализ|сравни|detail|analy[sz]|compar|step[\s-]by[\s-]step/i.test(query);
+  const detailed = hasMultipleAiReadAspects(query) || /batafsil|tahlil|taqqosla|solishtir|qadam[\s-]*ba[\s-]*qadam|to[‘’'`]?liq\s+(?:tushuntir|izoh)|подроб|анализ|сравни|detail|analy[sz]|compar|step[\s-]by[\s-]step/i.test(query);
   return detailed
     ? { detailed, maxChars: 3000, maxOutputTokens: 1200, maxToolRounds: 4, maxReadCalls: 12, maxReadPages: 5 }
     : { detailed, maxChars: 1000, maxOutputTokens: 400, maxToolRounds: 3, maxReadCalls: 8, maxReadPages: 3 };

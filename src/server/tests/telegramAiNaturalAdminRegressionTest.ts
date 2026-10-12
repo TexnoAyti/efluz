@@ -67,6 +67,8 @@ try {
  assert.equal(await contextualFixturePlan('shu Nottingham 5-1 Arsenal 11-tur natijasini saqla',['game-10'],signal),null);
  assert.equal(await contextualFixturePlan('natijani UnknownClub 3-2 qil',['game-10'],signal),null);
  const cases:Array<[string,string,any]>=[
+  ['Arsenal 1-5 Nottingham APL','result_edit',{homeScore:5,awayScore:1,status:'CONFIRMED'}],
+  ['Nottingham 5:1 Arsenal APL','result_edit',{homeScore:5,awayScore:1,status:'CONFIRMED'}],
   ['Nottingham 5–1 Arsenal 11-tur kiritib qo‘y','result_edit',{homeScore:5,awayScore:1,status:'CONFIRMED'}],
   ['Arsenal 1−5 Nottingham 11-tur saqla','result_edit',{homeScore:5,awayScore:1,status:'CONFIRMED'}],
   ['Nottingham 5-1 Arsenal 11-tur natijasini kirit','result_edit',{homeScore:5,awayScore:1,status:'CONFIRMED'}],

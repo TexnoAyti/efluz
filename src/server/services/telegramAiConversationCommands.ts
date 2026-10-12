@@ -4,6 +4,8 @@ import { createAiTournamentReader, matchesAiCompetition } from './telegramAiData
 import { detectAiCupStage } from './telegramAiCupStage';
 import type { Competition, Club } from '../../types';
 import type { AdminPlan } from './telegramAiAdminCatalog';
+import { aiReadAspects, hasMultipleAiReadAspects, wantsCombinedAiTables, isAiReadCourtesy } from './telegramAiMessageUnderstanding';
+import { limitAiReply } from './telegramAiResponsePolicy';
 
 export type ConversationIntent = 'standings'|'fixtures'|'admin'|'confirm'|'cancel'|'help'|'chat';
 export function isRemainingFixturesQuestion(text: string): boolean {
@@ -21,7 +23,11 @@ const shortReadFollowUp = (q: string) => /^(?:endi\s+)?(?:\d{1,3}\s*(?:tur(?:dag
 export function expandConversationReadFollowUp(text: string, scope: ConversationScope): string {
   const q = normalizeAiEntity(text);
   if (!shortReadFollowUp(q)) return text;
-  const previous = scope.previousUserQueries?.at(-1);
+  if (scope.selectedCompetitionIds?.length === 0) return text;
+  const recent = [...(scope.previousUserQueries || [])].reverse();
+  let skipped = 0;
+  while (recent.length && skipped < 2 && isAiReadCourtesy(recent[0])) { recent.shift(); skipped++; }
+  const previous = recent[0];
   if (!previous || !['fixtures', 'standings'].includes(getConversationIntent(previous))) return text;
   if (/^(?:endi )?\d/.test(q)) {
     const base = normalizeAiEntity(previous).replace(/\b\d{1,3}\s*(?:tur\w*|matchday)\b|\b(?:tur|matchday)\s*\d{1,3}\b/g, ' ');
@@ -40,6 +46,9 @@ export function getConversationIntent(text: string): ConversationIntent {
   if (detectNaturalAdminAction(text)) return 'admin';
   if (isSimpleConversationClubAssignmentRequest(text)) return 'admin';
   if (/taqqosla|solishtir|подроб|анализ|сравни|detail|analy[sz]|compar/i.test(q)) return 'chat';
+  if (hasMultipleAiReadAspects(text) && !wantsCombinedAiTables(text) &&
+      !(/\b(?:oyinlar\w*|uchrashuvlar\w*|fixtures)\s+jadval\w*\b/.test(q) &&
+        aiReadAspects(text).every(a => ['standings', 'fixtures'].includes(a)) && !/\b(?:va|hamda|and|also)\b/.test(q))) return 'chat';
   if (isRemainingFixturesQuestion(text)) return 'fixtures';
   if (isFixtureResultsQuestion(text) || shortReadFollowUp(q) && !/^jadval/.test(q)) return 'fixtures';
   const nouns = /\b(?:liga\w*|tur\w*|matchday|natija\w*|hisob\w*|oyin\w*|uchrashuv\w*|klub\w*|jamoa\w*|admin\w*|premium|xabarnoma\w*|xabar\w*|qura\w*|kubok\w*|mavsum\w*|deadline|muddat\w*)\b/;
@@ -74,6 +83,21 @@ export function findConversationCompetitions(text: string, comps: Competition[])
   return comps.filter(c => c.type === 'LEAGUE' && Object.entries(countries).some(([word, prefix]) => c.id.startsWith(prefix) && new RegExp(`\\b${word}\\b`).test(q)));
 }
 export interface ConversationScope { previousUserQueries?: string[]; selectedClubIds?: string[]; selectedCompetitionIds?: string[]; selectedFixtureIds?: string[]; }
+
+/** Each requested table keeps its own space so a long first part cannot hide the second. */
+export async function buildConversationReadReply(text: string, intent: 'standings'|'fixtures', scope: ConversationScope, signal?: AbortSignal) {
+  if (!wantsCombinedAiTables(text)) return buildConversationTableReply(text, intent, scope, signal);
+  const standings = await buildConversationTableReply(text, 'standings', scope, signal);
+  // A target clarification must be answered before either read can be claimed complete.
+  if (!standings.competitionIds.length) return standings;
+  const fixtures = await buildConversationTableReply(text, 'fixtures', scope, signal);
+  return {
+    text: `Jadval:\n${limitAiReply(standings.text, 1850)}\n\nNatijalar:\n${limitAiReply(fixtures.text, 1850)}`,
+    competitionIds: [...new Set([...standings.competitionIds, ...fixtures.competitionIds])],
+    clubIds: [...new Set([...(standings.clubIds || []), ...(fixtures.clubIds || [])])],
+    fixtureIds: fixtures.fixtureIds || [],
+  };
+}
 export async function resolveConversationCompetition(text: string, scope: ConversationScope, signal?: AbortSignal) {
   const reader = createAiTournamentReader(signal);
   const catalog: any = await reader.read({ dataset: 'competitions', limit: 30 });

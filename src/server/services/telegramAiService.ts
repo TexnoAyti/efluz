@@ -38,7 +38,8 @@ import { isAiAdminActor } from './telegramAiAdminAccess';
 import { createAiAdminReadTools } from './telegramAiAdminReadTools';
 import { isPersonalFixtureQuestion, buildPersonalFixtureReply } from './telegramAiPersonalFixtureService';
 import { detectNaturalAdminAction } from './telegramAiAdminLanguage';
-import { getConversationIntent, buildConversationTableReply, expandConversationReadFollowUp, isSimpleConversationClubAssignmentRequest, isSimpleConversationMatchdayRequest } from './telegramAiConversationCommands';
+import { getConversationIntent, buildConversationReadReply, expandConversationReadFollowUp, isSimpleConversationClubAssignmentRequest, isSimpleConversationMatchdayRequest } from './telegramAiConversationCommands';
+import { hasMultipleAiReadAspects } from './telegramAiMessageUnderstanding';
 import { sendTelegramMessage } from './telegramBotService';
 
 export interface TelegramAiMessagePayload {
@@ -587,7 +588,7 @@ export async function handleTelegramAiMessage(
       selectedFixtureIds:[...history].reverse().find(turn=>turn.role==='user'&&turn.selectedFixtureIds!==undefined)?.selectedFixtureIds,
       selectedCompetitionIds: [...history].reverse().find(turn => turn.role === 'user' && turn.selectedCompetitionIds !== undefined)?.selectedCompetitionIds,
     };
-    if (isPersonalFixtureQuestion(payload.text) && !['admin','confirm','cancel','help'].includes(intent)) {
+    if (isPersonalFixtureQuestion(payload.text) && !hasMultipleAiReadAspects(payload.text) && !['admin','confirm','cancel','help'].includes(intent)) {
       const personal = payload.senderChat || payload.forwarded
         ? {text:'Raqibingizni aniqlash uchun shaxsiy Telegram akkauntingizdan o‘zingiz yozing.',clubIds:[]}
         : await buildPersonalFixtureReply(payload.text,payload.fromUser.id,rootController.signal);
@@ -596,7 +597,7 @@ export async function handleTelegramAiMessage(
       return {ok:result.ok,handled:true,replySent:result.replySent,ignored:result.ignored};
     }
     if (intent === 'standings' || intent === 'fixtures') {
-      const table = await buildConversationTableReply(payload.text, intent, scope, rootController.signal);
+      const table = await buildConversationReadReply(payload.text, intent, scope, rootController.signal);
       const result = await dispatchTelegramAiReply(payload, table.text, rootController.signal, { parse_mode: null, maxChars: 4000 });
       if (result.replySent) await saveConversationContext(payload.chatId, payload.threadId, payload.fromUser.id, expandConversationReadFollowUp(payload.text, scope), table.text, { signal: rootController.signal, history, selectedClubIds: table.clubIds||[], selectedCompetitionIds: table.competitionIds, selectedFixtureIds:table.fixtureIds });
       return { ok: result.ok, handled: true, replySent: result.replySent, ignored: result.ignored };

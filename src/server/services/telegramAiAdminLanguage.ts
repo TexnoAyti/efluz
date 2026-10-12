@@ -12,13 +12,22 @@ export function isNaturalCupStart(text: string): boolean {
   return !/\b(?:boshlama\w*|tushirma\w*|berma\w*)\b/.test(q) && /\b(?:start\s*ber(?:gin|ing)?|boshla(?:gin|ng)?|boshlat(?:gin|ing)?|boshlab\s*ber(?:gin|ing)?|ishga\s*tushir(?:gin|ing)?)\b/.test(q);
 }
 
+/** A bare match score is a request to prepare a result plan, never a write itself. */
+export function isShorthandAiResultRequest(text: string): boolean {
+  const q = normalizeAiEntity(text);
+  if (text.length > 200 || /[\n;?@"“”]/.test(text) ||
+      /\b(?:taxmin\w*|prediction|predict\w*|boladimi|bolsa|mumkin|emas|nega|nima|qanday|kim|korsat\w*|tushuntir\w*|yozma\w*|kiritma\w*|saqlama\w*|dont|not|if)\b/.test(q)) return false;
+  // Both sides must contain names; timestamps and bare “1-1” are not match tasks.
+  return /^[\p{L}][\p{L}\p{N} .’'_-]*?\s+\d{1,2}\s*[:–—−-]\s*\d{1,2}\s+[\p{L}][\p{L}\p{N} .’'_-]*$/u.test(text.trim());
+}
+
 /** Applies before EVERY native write parser, including club assignment. */
 export function assertSingleNaturalAdminRequest(text: string): void {
   const q = adminCommandText(text);
   if (/\b\d{1,3}\s*turgacha\b/.test(q))
     throw new Error('CLARIFY:Bu buyruq bir nechta turga tegishli. O‘zgartirish uchun bitta aniq turni yozing; “turgacha” faqat ro‘yxatni ko‘rishda ishlaydi.');
-  if (/\b(?:qilma\w*|ochirma\w*|yuborma\w*|biriktirma\w*|berma\w*|ulama\w*|boshatma\w*|chiqarma\w*|otkazma\w*|yozma\w*|toxtatma\w*|yangilama\w*|belgilama\w*|ozgartirma\w*|qaytarma\w*|tozalama\w*|tushirma\w*)\b/.test(q) || /\b(?:do not|dont|never)\s+(?:assign|release|delete|remove|give)\b/.test(q) || /(?:^|\s)не\s+(?:назнач|удал|освобод)[\p{L}]*/u.test(q) ||
-      /\b(?:ochir|blokla|ber|yubor|biriktir|qulfla|yarat|hisobla|boshat|chiqar|ula|otkaz|qil|belgila|ozgartir|yangila|toxtat|qaytar|tozala|tushir)\w*\b.*\b(?:va|keyin|song|hamda)\s+.*\b(?:ochir|blokla|ber|yubor|biriktir|qulfla|yarat|boshat|chiqar|ula|otkaz|qil|belgila|ozgartir|yangila|toxtat|qaytar|tozala|tushir)\w*\b/.test(q)) {
+  if (/\b(?:kiritma\w*|saqlama\w*|ochma\w*|yopma\w*|qulflama\w*|uzaytirma\w*|qilma\w*|ochirma\w*|yuborma\w*|biriktirma\w*|berma\w*|ulama\w*|boshatma\w*|chiqarma\w*|otkazma\w*|yozma\w*|toxtatma\w*|yangilama\w*|belgilama\w*|ozgartirma\w*|qaytarma\w*|tozalama\w*|tushirma\w*)\b/.test(q) || /\b(?:do not|dont|never)\s+(?:assign|release|delete|remove|give)\b/.test(q) || /(?:^|\s)не\s+(?:назнач|удал|освобод)[\p{L}]*/u.test(q) ||
+      /\b(?:och|yop|uzaytir|ochir|blokla|ber|yubor|biriktir|qulfla|yarat|hisobla|boshat|chiqar|ula|otkaz|qil|belgila|ozgartir|yangila|toxtat|qaytar|tozala|tushir)\w*\b.*\b(?:va|keyin|song|hamda)\s+.*\b(?:och|yop|uzaytir|ochir|blokla|ber|yubor|biriktir|qulfla|yarat|boshat|chiqar|ula|otkaz|qil|belgila|ozgartir|yangila|toxtat|qaytar|tozala|tushir)\w*\b/.test(q)) {
     throw new Error('CLARIFY:Bitta aniq amalni yozing. Bir nechta yoki inkor qilingan amalni birgalikda bajarmayman.');
   }
 }
@@ -95,5 +104,6 @@ export function detectNaturalAdminAction(text: string): string|null {
       /@\s*[A-Za-z0-9_]+|\buser-\d+\b/.test(command) && /\b(?:ber\w*|ula\w*|tayinla\w*|otkaz\w*|yoz\w*)\b/.test(q)) return 'club_assign';
   // "Arsenalni o‘chir" is ambiguous: never silently delete a club or release it.
   if (remove) return 'club_remove_clarify';
+  if (isShorthandAiResultRequest(command)) return 'result_edit';
   return null;
 }
