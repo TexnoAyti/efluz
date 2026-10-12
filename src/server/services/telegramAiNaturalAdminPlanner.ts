@@ -1,6 +1,6 @@
 import { detectNaturalAdminAction, assertSingleNaturalAdminRequest, isNaturalCupStart } from './telegramAiAdminLanguage';
 import { adminPlanSchema, type AdminPlan } from './telegramAiAdminCatalog';
-import { normalizeAiEntity, resolveAiClubs } from './telegramAiEntities';
+import { normalizeAiEntity, resolveAiClubs, throwAiClubClarification } from './telegramAiEntities';
 import { createAiTournamentReader } from './telegramAiDataService';
 import { findConversationCompetitions, requestedMatchday, clubAssignmentPlanFromRoster } from './telegramAiConversationCommands';
 import { detectAiCupStage } from './telegramAiCupStage';
@@ -127,8 +127,8 @@ export async function planNaturalAdminRequest(text: string, deps: NaturalPlanner
   const needsClubs = action === 'club_assign' || action === 'club_release' || action === 'club_remove_clarify' || action.startsWith('result_') || action.startsWith('fixture_');
   const clubs: Array<Club & { ownerUsername?: string }> = needsClubs ? await pages(deps.read, { dataset: 'clubs' }) : [];
   if (action === 'club_assign') return clubAssignmentPlanFromRoster(text, clubs);
-  const selected: {clubs:Club[];clarification?:string} = needsClubs ? resolveAiClubs(clean, clubs) : {clubs:[]};
-  if (selected.clarification) clarify(selected.clarification);
+  const selected = needsClubs ? resolveAiClubs(clean, clubs) : {clubs:[]};
+  if (selected.clarification) throwAiClubClarification(selected);
   if (action === 'club_remove_clarify') {
     clarify(selected.clubs.length === 1
       ? `${selected.clubs[0].name} egasini klubdan chiqarishni nazarda tutdingizmi? “${selected.clubs[0].name}ni bo‘shat” deb yozing. Klub va uning o‘yinlari saqlanadi. Natijani o‘chirish uchun o‘yin va turni yozing.`
