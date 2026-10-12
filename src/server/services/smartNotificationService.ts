@@ -517,14 +517,24 @@ export async function notifySmartEuropeanZones(params: {
   return results.filter((result) => result.status === 'fulfilled' && result.value).length;
 }
 
-export async function notifySmartResultLifecycle(fixture: Fixture, actorUserId: string): Promise<void> {
+export async function notifySmartResultLifecycle(fixture: Fixture, actorUserId: string, eventVersion?: string): Promise<void> {
   const seasonId = fixture.seasonId || 'season-2026-27';
+  if (process.env.DATABASE_PROVIDER === 'supabase') {
+    // Committed admin fixtures are owner-neutral. Resolve current ownership;
+    // never notify an embedded historical owner after a club transfer.
+    const [home, away] = await Promise.all([
+      fixture.homeClubId ? getCachedRecipientByClubId(fixture.homeClubId, seasonId) : null,
+      fixture.awayClubId ? getCachedRecipientByClubId(fixture.awayClubId, seasonId) : null,
+    ]);
+    fixture = {...fixture, homeOwnerId: home?.userId, awayOwnerId: away?.userId,
+      homeOwner: undefined, awayOwner: undefined, homeUser: undefined, awayUser: undefined} as Fixture;
+  }
   const homeOwnerId = ownerId(fixture, 'home');
   const awayOwnerId = ownerId(fixture, 'away');
   const owners = [...new Set([homeOwnerId, awayOwnerId].filter(Boolean) as string[])];
   if (owners.length === 0) return;
   const status = fixture.status;
-  const revision = fixture.resultConfirmedAt || fixture.updatedAt || `${fixture.homeScore}-${fixture.awayScore}`;
+  const revision = eventVersion || fixture.resultConfirmedAt || fixture.updatedAt || `${fixture.homeScore}-${fixture.awayScore}`;
   const eventBase = `${fixture.id}:${status}:${revision}`;
 
   if (status === 'PENDING_CONFIRMATION') {
@@ -547,7 +557,7 @@ export async function notifySmartResultLifecycle(fixture: Fixture, actorUserId: 
       seasonId,
       eventId: `${eventBase}:confirmed`,
       title: '✅ Natija tasdiqlandi',
-      body: await buildMatchCardBody({ fixture, showScore: true, footer: 'Natija rasmiy tasdiqlandi. Jadval va statistikalar yangilandi.' }),
+      body: await buildMatchCardBody({ fixture, showScore: true, footer: 'Natija rasmiy tasdiqlandi va saqlandi.' }),
       replyMarkup: await fixtureReplyMarkup(fixture, owners.find((id) => id !== userId), false),
     })));
     await notifyNextFixtureIfKnown(fixture).catch((error: any) => console.warn('[SMART_NOTIFY] Next fixture lookup failed:', error?.message || error));

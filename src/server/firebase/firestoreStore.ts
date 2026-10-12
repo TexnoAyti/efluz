@@ -6049,14 +6049,18 @@ export async function adminApproveFixtureResultFirestore(
       if (homeScore > awayScore) winnerClubId = fixture.homeClubId;
       else if (awayScore > homeScore) winnerClubId = fixture.awayClubId;
 
-      await fixRef.update({
-        status: 'CONFIRMED',
-        homeScore,
-        awayScore,
-        winnerClubId,
-        resultConfirmedAt: now,
-        updatedAt: now,
-      });
+      const confirmed = {status: 'CONFIRMED', homeScore, awayScore, winnerClubId, resultConfirmedAt: now, updatedAt: now};
+      if (process.env.DATABASE_PROVIDER === 'supabase') {
+        const batch = db.batch();
+        batch.update(fixRef, confirmed);
+        batch.set(db.collection('result_refresh_jobs').doc(fixtureId), {
+          fixtureId, competitionId: fixture.competitionId, seasonId: fixture.seasonId || 'season-2026-27',
+          version: now, status: 'pending', leaseUntil: 0, notifyResult: true,
+          notificationActorId: adminUserId, notificationVersion: `admin-approve:${fixtureId}:${homeScore}:${awayScore}`,
+          notificationFixture: JSON.parse(JSON.stringify(normalizeFixtureSnapshot({...fixture, ...confirmed, id: fixtureId}))),
+        });
+        await batch.commit();
+      } else await fixRef.update(confirmed);
 
       // Resolve any open disputes on this fixture
       const disputesSnap = await db.collection(COLLECTIONS.DISPUTES).where('fixtureId', '==', fixtureId).get();
@@ -6487,7 +6491,7 @@ export async function adminEditFixtureResultFirestore(
       batch.update(fixRef,changed);
       batch.set(db.collection('durable_fixture_overrides').doc(fixtureId),JSON.parse(JSON.stringify(fixture)));
       batch.set(db.collection(COLLECTIONS.AUDIT_LOGS).doc(auditId),{id:auditId,actorUserId:adminUserId,actorUsername:adminUsername||null,action:existing.status==='CONFIRMED'||existing.homeScore!=null?'ADMIN_EDIT_RESULT':'ADMIN_SET_RESULT',entityType:'fixture',entityId:fixtureId,oldValueJson:JSON.stringify(oldScore),newValueJson:JSON.stringify(changed),ipAddress:null,notes:params.notes||`Admin set result ${params.homeScore}-${params.awayScore}`,createdAt:now});
-      batch.set(db.collection('result_refresh_jobs').doc(fixtureId),{fixtureId,competitionId:existing.competitionId,seasonId:existing.seasonId,version:now,status:'pending',leaseUntil:0});
+      batch.set(db.collection('result_refresh_jobs').doc(fixtureId),{fixtureId,competitionId:existing.competitionId,seasonId:existing.seasonId,version:now,status:'pending',leaseUntil:0,notifyResult:true,notificationActorId:adminUserId,notificationVersion:mutationId,notificationFixture:JSON.parse(JSON.stringify(fixture))});
       await batch.commit();
       try{upsertFixtureToSqlite(next);}catch{}
       invalidateFirestoreCache();
