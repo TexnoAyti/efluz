@@ -242,6 +242,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Initialize App & Telegram SDK with deterministic state transitions
   useEffect(() => {
     let isMounted = true;
+    // An async SDK must still dismiss Telegram's native loading overlay when it
+    // arrives after URL initData has already allowed authentication to start.
+    const sdkScript = document.getElementById('telegram-web-app-sdk');
+    const onSdkReady = () => {
+      const tg = (window as any).Telegram?.WebApp;
+      getTelegramInitData(); // SDK has now captured the hash; clear launch credentials safely.
+      try { tg?.ready(); tg?.expand(); } catch { /* SDK diagnostics remain available */ }
+    };
+    sdkScript?.addEventListener('load', onSdkReady);
 
     async function init() {
       setIsLoading(true);
@@ -360,6 +369,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       isMounted = false;
+      sdkScript?.removeEventListener('load', onSdkReady);
     };
   }, [fetchUserData]);
 
