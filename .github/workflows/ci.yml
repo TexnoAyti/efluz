@@ -92,6 +92,7 @@ jobs:
           node scripts/run-isolated-test.mjs src/server/tests/smartNotificationRecoveryRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/postgresAdapterRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/postgresSnapshotsRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/postgresFixtureFreshnessTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/postgresAdminColdStartTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/postgresAdminMutationTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/postgresRuntimeServicesRegressionTest.ts
