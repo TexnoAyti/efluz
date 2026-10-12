@@ -6,17 +6,27 @@ type Clarification = { request: string; question: string };
 /** Only fill the field the delivered question asked for. No history guesses,
  * action changes, or writes: the resulting request must be planned afresh. */
 export function continueAiAdminClarification(draft: Clarification, answer: string): string | null {
-  const value = answer.trim();
+  const raw = answer.trim();
+  // Human answers often repeat the requested field or end with “bo‘lsin”.
+  // Strip only anchored wrappers; usernames, scores, IDs and reasons stay exact.
+  const reasonQuestion = /sabab yozing/.test(normalizeAiEntity(draft.question));
+  const value = reasonQuestion ? raw : raw
+    .replace(/^(?:iltimos[, ]+|please[, ]+)/i, '')
+    .replace(/\s+(?:bo[‘’ʻʼ'`]?lsin|bolsin|edi|iltimos|please)[.!]?$/i, '')
+    .replace(/[.!]$/, '').trim();
   const q = normalizeAiEntity(draft.question);
   const a = normalizeAiEntity(value);
-  if (!value || value.length > 200 || /[\n;?]/.test(value) || /^\//.test(value) || /^[+-]\s*\d|\d[.,]\d/.test(value) ||
+  if (!value || raw.length > 200 || /[\n;?]/.test(raw) || /^\//.test(value) || /^[+-]\s*\d|\d[.,]\d/.test(value) ||
       /\b(?:kim|nega|qanday|nechanchi|nima|qachon|jadval\w*|natijalar\w*|oyinlar\w*|tasdiqla\w*|bekor|qilma\w*)\b/.test(a) ||
       detectNaturalAdminAction(value)) return null;
+  if (!reasonQuestion && /\b(?:emas|yoq|boshqa|yoki|or|not|нет|не)\b/.test(a)) return null;
   let field: string | null = null;
   if (/qaysi foydalanuvchi|qaysi akkaunt|kimga biriktiray|bitta.*username|toliq.*username/.test(q)) {
-    if (/^@[A-Za-z][A-Za-z0-9_]{4,31}$/.test(value) || /^user-\d+$/.test(value)) field = value;
+    const user = /^(?:foydalanuvchi\s+)?(@[A-Za-z][A-Za-z0-9_]{4,31}|user-\d+)(?:\s+ga)?$/.exec(value);
+    if (user) field = user[1];
   } else if (/qaysi hisob|hisobni.*yozing/.test(q)) {
-    if (/^\d{1,2}\s*[:–—−-]\s*\d{1,2}$/.test(value) && !/\b\d{1,2}\s*[:–—−-]\s*\d{1,2}\b/.test(draft.request)) field = value;
+    const score = /^(?:(?:hisob|natija)\s*:?\s*)?(\d{1,2}\s*[:–—−-]\s*\d{1,2})$/i.exec(value);
+    if (score && !/\b\d{1,2}\s*[:–—−-]\s*\d{1,2}\b/.test(draft.request)) field = score[1];
   } else if (/sabab yozing/.test(q)) {
     if (value.length >= 3 && !/\b(?:biriktir\w*|ochir\w*|yubor\w*|blokla\w*|qil\w*)\b/.test(a)) field = 'sabab: ' + value;
   } else if (/sana.*vaqt.*yozing/.test(q)) {
@@ -24,7 +34,7 @@ export function continueAiAdminClarification(draft: Clarification, answer: strin
   } else if (/qaysi mavsum/.test(q)) {
     if (/^season-\d{4}-\d{2}$/.test(value)) field = value;
   } else if (/qaysi tur|bir nechta oyin topildi/.test(q)) {
-    const round = /^(?:tur\s*)?(\d{1,3})(?:\s*-?\s*tur)?$/.exec(a);
+    const round = /^(?:tur\s*)?(\d{1,3})(?:\s*-?\s*tur(?:ni)?)?$/.exec(a);
     if (round && Number(round[1]) >= 1 && Number(round[1]) <= 100 && !/\b\d+\s*-?\s*tur\w*\b|\btur\s*\d+/.test(normalizeAiEntity(draft.request))) field = round[1] + '-tur';
   } else if (/necha soat|muddatni.*butun soat/.test(q)) {
     const hours = /^(\d{1,3})(?:\s*soat(?:ga)?)?$/.exec(a);

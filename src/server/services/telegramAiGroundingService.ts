@@ -17,6 +17,7 @@ import { withSeasonQualificationPolicy } from '../../lib/seasonQualificationPoli
 import { detectAiCupStage, fixtureMatchesAiCupStage, AI_CUP_STAGE_LABELS, formatAiCupStageFixture } from './telegramAiCupStage';
 import { resolveAiClubs, normalizeAiEntity, containsAiEntity } from './telegramAiEntities';
 import { communityFacts, communitySmallTalkAnswer, communityFallback } from './telegramAiCommunitySources';
+import { needsSemanticAiReadAnswer } from './telegramAiMessageUnderstanding';
 
 export interface GroundingContext {
   factsSummary: string;
@@ -98,7 +99,8 @@ export async function buildAiGroundingContext(
   options?: { signal?: AbortSignal; previousUserQueries?: string[]; selectedClubIds?: string[]; replyVariation?: number }
 ): Promise<GroundingContext> {
   let hasStaleData = false;
-  const ownerOnly=isClubOwnershipQuestion(query) && !/nechanchi|ochko|o[‘’'`]?rin|natija|forma|statistika|yut|gol|o[‘’'`]?yin|keyingi|navbatdagi|kubok|ucl|uel|tahlil|hazil|qachon|qancha|nega/i.test(query);
+  const multipleReadAspects = needsSemanticAiReadAnswer(query);
+  const ownerOnly=!multipleReadAspects && isClubOwnershipQuestion(query) && !/nechanchi|ochko|o[‘’'`]?rin|natija|forma|statistika|yut|gol|o[‘’'`]?yin|keyingi|navbatdagi|kubok|ucl|uel|tahlil|hazil|qachon|qancha|nega/i.test(query);
   const started=Date.now();
   const reader=createAiSnapshotReader(options?.signal);
   const tombstoneKey=`efluz:v1:season:${seasonId}:fixture-tombstones`;
@@ -314,7 +316,7 @@ export async function buildAiGroundingContext(
   }
   const facts: string[] = [];
   // Exact identity and simple statistical lookups bypass the model. Analytical questions use grounded Gemini.
-  const analytical = /nega|nima uchun|tahlil|batafsil|taqqosla|solishtir|подроб|анализ|сравни|detail|analy[sz]|compar|o[‘’'`]?ylay|yutadimi|kim yut|yutadi|taxmin|prediction|qanday yaxsh|taktik|hazil|yumor|roast/i.test(query);
+  const analytical = multipleReadAspects || /nega|nima uchun|tahlil|batafsil|taqqosla|solishtir|подроб|анализ|сравни|detail|analy[sz]|compar|o[‘’'`]?ylay|yutadimi|kim yut|yutadi|taxmin|prediction|qanday yaxsh|taktik|hazil|yumor|roast/i.test(query);
   if (!analytical && matched.length) {
     if (ownershipAnswer) facts.push(ownershipAnswer);
     if (!/eng yirik|eng katta|oxirgi|kimga|kimni|uyda|safarda/i.test(query) && /nechanchi|o[‘’'`]?rin|ochko|g[‘’'`]?alaba|mag[‘’'`]?lub|nechta.*(?:durang|gol|o[‘’'`]?yin)|statistika|standing|points|position/i.test(query)) {
@@ -354,7 +356,7 @@ export async function buildAiGroundingContext(
   if(!testGroundingOverride)console.info('[AI_GROUNDING]',JSON.stringify({durationMs:dataDiagnostics.durationMs,clubs:matched.length,competitions:targets.length,fixtures:allFixtures.length,missing:dataDiagnostics.missingDatasets.length,failed:dataDiagnostics.failedDatasets.length}));
   return { dataDiagnostics, factsSummary: summary, fallbackFacts, communityAnswer, hasStaleData, detectedClubs: matched.map(c => c.name),
     selectedClubIds: selection.clarification ? [] : matched.length ? matched.map(c => c.id) : options?.selectedClubIds || [], detectedCompetitions: targets.map(c => c.id),
-    ownershipAnswer, factualAnswer: communitySmallTalkAnswer(query, options?.replyVariation) || selection.clarification || finalistAnswer || (!analytical && stageAnswer ? stageAnswer : undefined) || (!analytical && unplayedAnswer ? unplayedAnswer : undefined) || (facts.length ? facts.join('\n') + (hasStaleData && !(facts.length === 1 && facts[0] === ownershipAnswer) && !facts.some(f => /eski snapshot/.test(f)) ? '\nMa’lumot eski yoki to‘liq bo‘lmagan snapshotdan; joriy holat tasdiqlanmagan.' : '') : !analytical ? ownershipAnswer : undefined) };
+    ownershipAnswer, factualAnswer: selection.clarification || (multipleReadAspects ? undefined : communitySmallTalkAnswer(query, options?.replyVariation) || finalistAnswer || (!analytical && stageAnswer ? stageAnswer : undefined) || (!analytical && unplayedAnswer ? unplayedAnswer : undefined) || (facts.length ? facts.join('\n') + (hasStaleData && !(facts.length === 1 && facts[0] === ownershipAnswer) && !facts.some(f => /eski snapshot/.test(f)) ? '\nMa’lumot eski yoki to‘liq bo‘lmagan snapshotdan; joriy holat tasdiqlanmagan.' : '') : !analytical ? ownershipAnswer : undefined)) };
 }
 
 function isConfirmedAiFixture(f: Fixture): boolean {
