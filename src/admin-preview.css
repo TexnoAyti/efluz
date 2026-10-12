@@ -921,3 +921,13 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 /* Opaque bright actions retain a dark foreground in either theme. */
 .efl-preview main[data-preview-page="admin"] :is([class~="bg-amber-500"], [class~="bg-yellow-500"], [class~="bg-emerald-500"], [class~="bg-green-500"], [class~="bg-cyan-500"], [class~="bg-sky-500"]):not(.btn-glass-primary),
 .efl-preview main[data-preview-page="admin"] :is([class~="bg-amber-500"], [class~="bg-yellow-500"], [class~="bg-emerald-500"], [class~="bg-green-500"], [class~="bg-cyan-500"], [class~="bg-sky-500"]):not(.btn-glass-primary) * { color: #0f172a !important; }
+
+/* Custom tournaments use the same light/dark surfaces as the competition hub. */
+.efl-preview .efl-custom-tournaments :is([class*="bg-slate-900"], [class*="bg-slate-950/"]) { background-color: var(--efl-surface) !important; }
+.efl-preview .efl-custom-tournaments :is([class~="bg-slate-950"], [class*="bg-slate-800"]) { background-color: var(--efl-surface-2) !important; }
+.efl-preview .efl-custom-tournaments :is([class*="border-slate-800"], [class*="border-slate-700"]) { border-color: var(--efl-border) !important; }
+.efl-preview .efl-custom-tournaments :is([class~="text-slate-100"], [class~="text-slate-200"]) { color: var(--efl-text) !important; }
+.efl-preview .efl-custom-tournaments :is([class~="text-slate-300"], [class~="text-slate-400"], [class~="text-slate-500"]) { color: var(--efl-text-2) !important; }
+.efl-preview.theme-light .efl-custom-tournaments [class~="text-emerald-400"] { color: #047857 !important; }
+.efl-preview.theme-light .efl-custom-tournaments :is([class~="text-rose-400"], [class~="text-rose-300"]) { color: #be123c !important; }
+.efl-preview.theme-light .efl-custom-tournaments :is([class~="text-amber-400"], [class~="text-amber-300"]) { color: #92400e !important; }

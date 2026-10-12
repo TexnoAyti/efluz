@@ -115,7 +115,7 @@ export const TournamentListView: React.FC = () => {
   }
 
   return (
-    <div className="space-y-4 pb-20 animate-in fade-in duration-200">
+    <div className="efl-custom-tournaments space-y-4 pb-20 animate-in fade-in duration-200">
       {/* 1. Header Banner & Ticket Balance Card */}
       <div className="p-4 sm:p-5 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-xl space-y-3 backdrop-blur-md">
         <div className="flex items-center justify-between gap-3 flex-wrap">
