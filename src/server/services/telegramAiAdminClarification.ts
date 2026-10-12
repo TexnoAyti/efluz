@@ -3,6 +3,19 @@ import { detectNaturalAdminAction } from './telegramAiAdminLanguage';
 
 type Clarification = { request: string; question: string; clubChoices?: AiClubChoice[] };
 
+/** An explicit answer replaces the requested field, preserving targets and quoted payloads. */
+function fillClarifiedField(request: string, pattern: RegExp, field: string): string | null {
+  const masked = request.replace(/@[A-Za-z0-9_]+|"[^"]*"|“[^”]*”/g, m => ' '.repeat(m.length));
+  const hits = [...masked.matchAll(pattern)];
+  if (!hits.length) return request.length + field.length + 1 <= 1800 ? `${request} ${field}` : null;
+  let result = request;
+  for (let i = hits.length - 1; i >= 0; i--) {
+    const hit = hits[i];
+    result = result.slice(0, hit.index!) + (i === 0 ? field : '') + result.slice(hit.index! + hit[0].length);
+  }
+  return result.trim().length <= 1800 ? result.trim() : null;
+}
+
 /** Only fill the field the delivered question asked for. No history guesses,
  * action changes, or writes: the resulting request must be planned afresh. */
 export function continueAiAdminClarification(draft: Clarification, answer: string): string | null {
@@ -39,21 +52,21 @@ export function continueAiAdminClarification(draft: Clarification, answer: strin
     if (user) field = user[1];
   } else if (/qaysi hisob|hisobni.*yozing/.test(q) && !/ikkala jamoa/.test(q)) {
     const score = /^(?:(?:hisob|natija)\s*:?\s*)?(\d{1,2}\s*[:–—−-]\s*\d{1,2})$/i.exec(value);
-    if (score && !/\b\d{1,2}\s*[:–—−-]\s*\d{1,2}\b/.test(draft.request)) field = score[1];
+    if (score) return fillClarifiedField(draft.request, /\b\d{1,2}\s*[:–—−-]\s*\d{1,2}\b/g, score[1]);
   } else if (/sabab yozing/.test(q)) {
     if (value.length >= 3 && !/\b(?:biriktir\w*|ochir\w*|yubor\w*|blokla\w*|qil\w*)\b/.test(a)) field = 'sabab: ' + value;
   } else if (/sana.*vaqt.*yozing/.test(q)) {
     if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:\d{2})$/.test(value) && Number.isFinite(Date.parse(value))) field = value;
   } else if (/qaysi mavsum/.test(q)) {
     if (/^season-\d{4}-\d{2}$/.test(value)) field = value;
-  } else if (/qaysi tur|nechanchi tur|tur raqamini|bir nechta oyin topildi/.test(q)) {
+  } else if (/qaysi (?:bitta )?tur|nechanchi tur|tur raqam|bir nechta oyin topildi/.test(q)) {
     const round = /^(?:tur\s*)?(\d{1,3})(?:\s*-?\s*tur(?:ni|dagi|da)?)?$/.exec(a);
-    if (round && Number(round[1]) >= 1 && Number(round[1]) <= 100 && !/\b\d+\s*-?\s*tur\w*\b|\btur\s*\d+/.test(normalizeAiEntity(draft.request))) field = round[1] + '-tur';
+    if (round && Number(round[1]) >= 1 && Number(round[1]) <= 100) return fillClarifiedField(draft.request, /\b\d{1,3}\s*-?\s*tur(?:ni|dagi|da)?\b|\btur\s*\d{1,3}\b/gi, round[1] + '-tur');
     else if (/turnirni yozing|tur yoki turnir/.test(q) && value.length <= 80 &&
         /^[\p{L}][\p{L}\p{N} .&’'_-]*$/u.test(value) && !/\b(?:ber\w*|yoz\w*|tashla\w*|qil\w*|korsat\w*|yubor\w*)\b/.test(a)) field = value;
   } else if (/necha soat|muddatni.*butun soat/.test(q)) {
     const hours = /^(\d{1,3})(?:\s*soat(?:ga)?)?$/.exec(a);
-    if (hours && Number(hours[1]) >= 1 && Number(hours[1]) <= 720 && !/\b\d+\s*soat/.test(normalizeAiEntity(draft.request))) field = hours[1] + ' soat';
+    if (hours && Number(hours[1]) >= 1 && Number(hours[1]) <= 720) return fillClarifiedField(draft.request, /\b\d{1,3}\s*soat(?:ga)?\b/gi, hours[1] + ' soat');
   } else if (/limit uchun bitta musbat butun son/.test(q)) {
     if (/^\d{1,4}$/.test(value) && Number(value) > 0 && Number(value) <= 5000 && !/\d/.test(draft.request)) field = value;
   } else if (/qaysi bitta ai limiti/.test(q)) {

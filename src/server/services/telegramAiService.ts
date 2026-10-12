@@ -684,7 +684,7 @@ export async function handleTelegramAiMessage(
 
         const privateAdmin = isOwnerAdminPrivateChat(payload);
         const responsePolicy = getAiResponsePolicy(payload.text);
-        const systemPrompt = buildTelegramAiSystemPrompt(grounding.factsSummary, speaker, { privateAdmin, responsePolicy });
+        const systemPrompt = buildTelegramAiSystemPrompt(grounding.factsSummary, speaker, { privateAdmin, responsePolicy, query: payload.text });
 
         const contents = [
           ...history.map((h) => ({

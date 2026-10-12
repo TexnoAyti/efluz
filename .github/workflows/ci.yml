@@ -107,6 +107,7 @@ jobs:
           node scripts/run-isolated-test.mjs src/server/tests/telegramAiUpgradeRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/telegramAiMessageMeaningRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/telegramAiFollowUpResolutionRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/telegramAiReasoningRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/telegramAiKnowledgeRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/telegramAiCommunitySourcesRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/telegramAiCustomEmojiRegressionTest.ts
