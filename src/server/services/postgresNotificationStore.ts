@@ -19,11 +19,13 @@ export class PostgresNotificationStore extends PostgresAiStore {
  async hdel(key:string,field:string){return this.atomic([key],(values,put)=>{const hash={...(parse(values.get(key)?.value)||{})};const exists=field in hash;delete hash[field];put(key,hash);return Number(exists);});}
  async rpush(key:string,value:any){return this.atomic([key],(values,put)=>{const queue=[...(parse(values.get(key)?.value)||[]),parse(value)];put(key,queue);return queue.length;});}
  async eval<TArgs extends unknown[]=unknown[],TResult=any>(script:string,keys:string[],args:TArgs):Promise<TResult>{
+  // Queue inspection is read-only: no optimistic write transaction or CAS retry.
+  if(script.includes('EFL_NOTIFY_PENDING_V1')){
+   const jobs=await super.get<any[]>(keys[0])||[];
+   return {pending:jobs.length,nextAt:jobs.length?Math.min(...jobs.map((job:any)=>Number(job.availableAt)||0)):0} as TResult;
+  }
   return this.atomic(keys,(values,put)=>{
    const get=(key:string)=>parse(values.get(key)?.value);
-   if(script.includes('EFL_NOTIFY_PENDING_V1')){
-    const jobs=get(keys[0])||[];return {pending:jobs.length,nextAt:jobs.length?Math.min(...jobs.map((job:any)=>Number(job.availableAt)||0)):0};
-   }
    if(script.includes('EFL_NOTIFY_ENQUEUE_V1')){
     const records=get(keys[0])||{};if(records[String(args[0])])return records[String(args[0])];
     const record=parse(args[1]);put(keys[0],{...records,[String(args[0])]:record});put(keys[1],[...(get(keys[1])||[]),...parse(args[2])]);return record;

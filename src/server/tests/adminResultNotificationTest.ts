@@ -5,7 +5,7 @@ import {SEED_CLUBS} from '../db/seed';
 import {ReadModelKeys,redisSetRaw} from '../readModel/readModelStore';
 import {adminEditFixtureResultFirestore,adminApproveFixtureResultFirestore} from '../firebase/firestoreStore';
 import {processPendingResultRefresh} from '../services/resultRefreshJobs';
-import {getNotificationStore} from '../services/postgresNotificationStore';
+import {PostgresNotificationStore,getNotificationStore} from '../services/postgresNotificationStore';
 import {processNotificationQueue} from '../services/telegramNotificationQueue';
 await initDatabase();const db=getFirestoreDb();
 process.env.DATABASE_PROVIDER='supabase';process.env.SUPABASE_DATA_NAMESPACE='preview';
@@ -26,12 +26,20 @@ assert.ok(jobs.every(j=>j.body.includes('2')&&j.body.includes('1')&&j.replyMarku
 assert.ok(!jobs.some(j=>j.userId==='old-owner'));
 await adminEditFixtureResultFirestore('admin','admin',fixtureId,{homeScore:2,awayScore:1,idempotencyKey:'admin-score-one'});
 await processPendingResultRefresh();jobs=await queue.get('efluz:v1:telegram:queue')||[];assert.equal(jobs.length,2,'Replay must not enqueue twice');
+// Read-only polling must not compete for the runtime transaction generation.
+const atomic = db.runTransaction.bind(db);
+(db as any).runTransaction=()=>{throw Error('UNEXPECTED_POLL_TRANSACTION');};
+try {assert.equal((await queue.eval<any,any>('EFL_NOTIFY_PENDING_V1',['efluz:v1:telegram:queue'],[])).pending,2);} finally {(db as any).runTransaction=atomic;}
+let receiptReads=0;
+const originalHget=PostgresNotificationStore.prototype.hget;
+PostgresNotificationStore.prototype.hget=async function(key,field){if(key.endsWith(':telegram:broadcasts'))receiptReads++;return originalHget.call(this,key,field);};
 const originalFetch=globalThis.fetch;const delivered:number[]=[];
 globalThis.fetch=(async(input:any,options:any)=>{
  assert.ok(String(input).startsWith('https://api.telegram.org/'));const body=JSON.parse(options.body);delivered.push(Number(body.chat_id));
  return new Response(JSON.stringify({ok:true,result:{message_id:delivered.length}}),{status:200});
 }) as typeof fetch;
-try {const sent=await processNotificationQueue();assert.equal(sent.succeeded,2);assert.deepEqual(delivered.sort(),[1001,1002]);}finally{globalThis.fetch=originalFetch;}
+try {const sent=await processNotificationQueue();assert.equal(sent.succeeded,2);assert.deepEqual(delivered.sort(),[1001,1002]);}finally{globalThis.fetch=originalFetch;PostgresNotificationStore.prototype.hget=originalHget;}
+assert.equal(receiptReads,2,'One durable receipt read per delivered job; no redundant post-send lookup');
 const approvalId='approved-result-notify';
 await db.collection('fixtures').doc(approvalId).set({id:approvalId,seasonId,competitionId,matchday:2,homeClubId:'club-arsenal',awayClubId:'club-chelsea',status:'SCHEDULED',scheduledAt:'2026-10-13T20:00:00Z',createdAt:'2026-10-12T00:00:00Z'});
 await adminApproveFixtureResultFirestore('admin',approvalId,1,1);

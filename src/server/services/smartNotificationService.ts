@@ -518,6 +518,10 @@ export async function notifySmartEuropeanZones(params: {
 }
 
 export async function notifySmartResultLifecycle(fixture: Fixture, actorUserId: string, eventVersion?: string): Promise<void> {
+  return recipientContext.run(new Map(), () => enqueueResultLifecycle(fixture, actorUserId, eventVersion));
+}
+
+async function enqueueResultLifecycle(fixture: Fixture, actorUserId: string, eventVersion?: string): Promise<void> {
   const seasonId = fixture.seasonId || 'season-2026-27';
   if (process.env.DATABASE_PROVIDER === 'supabase') {
     // Committed admin fixtures are owner-neutral. Resolve current ownership;
@@ -552,14 +556,17 @@ export async function notifySmartResultLifecycle(fixture: Fixture, actorUserId: 
   }
 
   if (status === 'CONFIRMED') {
-    await Promise.all(owners.map(async (userId) => enqueueSmartTelegramNotification({
+    const body = await buildMatchCardBody({ fixture, showScore: true, footer: 'Natija rasmiy tasdiqlandi va saqlandi.' });
+    // Both writes touch the same PostgreSQL queue/receipt documents. Serial
+    // enqueue avoids CAS conflicts between the two owners of one result.
+    for (const userId of owners) await enqueueSmartTelegramNotification({
       userId,
       seasonId,
       eventId: `${eventBase}:confirmed`,
       title: '✅ Natija tasdiqlandi',
-      body: await buildMatchCardBody({ fixture, showScore: true, footer: 'Natija rasmiy tasdiqlandi va saqlandi.' }),
+      body,
       replyMarkup: await fixtureReplyMarkup(fixture, owners.find((id) => id !== userId), false),
-    })));
+    });
     await notifyNextFixtureIfKnown(fixture).catch((error: any) => console.warn('[SMART_NOTIFY] Next fixture lookup failed:', error?.message || error));
     return;
   }

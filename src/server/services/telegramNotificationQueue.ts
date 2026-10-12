@@ -152,8 +152,8 @@ export async function drainNotificationQueue(options: {
   if (process.env.MIGRATION_WRITE_FREEZE === 'true') return;
   // The preview uses a copied database, but the Redis notification queue is live.
   if (process.env.DATABASE_PROVIDER === 'supabase' && process.env.SUPABASE_DATA_NAMESPACE === 'preview') return;
-  const {processPendingMatchdayNotifications} = await import('./matchdayNotificationJobs');
-  await processPendingMatchdayNotifications();
+  // Mutation reconciliation prepares matchday intents independently. Ready
+  // messages must not wait behind a full round's recipient/card generation.
   const hop = options.hop || 0;
   const deadline = Math.min(options.deadline ?? Date.now() + DRAIN_BUDGET_MS,
     (getDeadline()?.getTime() ?? Infinity) - 15000);
@@ -625,6 +625,7 @@ export async function processNotificationQueue(batchSize = 25, stopClaimingAt = 
           continue;
         }
       }
+      const dispatchStartedAt = Date.now();
       recipient.status = 'SENDING';
       record.status = 'PROCESSING';
       await client.hset(BROADCASTS_KEY, { [record.id]: record });
@@ -634,7 +635,8 @@ export async function processNotificationQueue(batchSize = 25, stopClaimingAt = 
         { parse_mode: 'HTML', reply_markup: job.replyMarkup }
       );
       if (result.ok) {
-        await updateBroadcastRecipientState(job.broadcastId, job.userId, 'SENT', undefined, new Date().toISOString());
+        await updateBroadcastRecipientState(job.broadcastId, job.userId, 'SENT', undefined, new Date().toISOString(), undefined, record);
+        console.info('[NOTIFICATION_DELIVERY_TIMING]', JSON.stringify({broadcastId: job.broadcastId, queueWaitMs: Math.max(0, dispatchStartedAt - Date.parse(job.createdAt)), deliveryMs: Date.now() - dispatchStartedAt}));
         succeeded++;
       } else {
         const errorText = result.error_code
@@ -647,12 +649,12 @@ export async function processNotificationQueue(batchSize = 25, stopClaimingAt = 
           const retryAfterSeconds = Math.max(Number(result.parameters?.retry_after || 0), 2 ** job.retryCount);
           job.availableAt = Date.now() + retryAfterSeconds * 1000;
           job.status = 'QUEUED';
-          await updateBroadcastRecipientState(job.broadcastId, job.userId, 'PENDING', errorText, undefined, job.retryCount);
+          await updateBroadcastRecipientState(job.broadcastId, job.userId, 'PENDING', errorText, undefined, job.retryCount, record);
           await client.rpush(QUEUE_KEY, JSON.stringify(job));
         } else {
           // Ambiguous timeouts are never retried automatically because Telegram
           // may have accepted the message before the connection was lost.
-          await updateBroadcastRecipientState(job.broadcastId, job.userId, 'FAILED', errorText, undefined, job.retryCount);
+          await updateBroadcastRecipientState(job.broadcastId, job.userId, 'FAILED', errorText, undefined, job.retryCount, record);
           failed++;
         }
       }
@@ -691,9 +693,12 @@ async function updateBroadcastRecipientState(
   status: 'PENDING' | 'SENT' | 'FAILED' | 'SKIPPED_NO_TELEGRAM',
   error?: string,
   sentAt?: string,
-  retryCount?: number
+  retryCount?: number,
+  currentRecord?: TelegramBroadcastRecord
 ) {
-  const bcast = await getBroadcastDetails(broadcastId);
+  // The exclusive worker already loaded this receipt before dispatch. Reuse it
+  // within this job only; the next job still reads the durable current state.
+  const bcast = currentRecord || await getBroadcastDetails(broadcastId);
   if (!bcast) throw new Error('BROADCAST_RECORD_MISSING');
 
   const r = bcast.recipients.find((rec) => rec.userId === userId);
