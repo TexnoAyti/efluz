@@ -13,6 +13,20 @@ export async function processPendingResultRefresh(): Promise<void> {
    tx.update(item.ref,{leaseUntil:Date.now()+90000});return current;
   });
   if(!job)continue;
+  let notificationPending = Boolean(job.notifyResult);
+  if (notificationPending && job.notificationFixture) {
+   try {
+    const {notifySmartResultLifecycle}=await import('./smartNotificationService');
+    await notifySmartResultLifecycle(job.notificationFixture, job.notificationActorId, job.notificationVersion);
+    notificationPending=false;
+    await db.runTransaction(async tx=>{
+     const latest=(await tx.get(item.ref)).data();
+     if(latest?.version===job.version)tx.update(item.ref,{notifyResult:false});
+    });
+   } catch(error:any) {
+    console.warn('[RESULT_NOTIFICATION_RETAINED]',{fixtureId:job.fixtureId,message:error?.message});
+   }
+  }
   try{
    const store=await import('../firebase/firestoreStore');
    const current=(await db.collection('fixtures').doc(job.fixtureId).get()).data();
@@ -27,7 +41,7 @@ export async function processPendingResultRefresh(): Promise<void> {
     const {refreshChangedFixtureReadModel}=await import('../readModel/readModelStore');await refreshChangedFixtureReadModel(job.fixtureId);
     const {refreshDerivedCompetitionState}=await import('./fixtureTombstoneService');await refreshDerivedCompetitionState(current.competitionId,current.seasonId);
    }
-   await db.runTransaction(async tx=>{const latest=(await tx.get(item.ref)).data();if(latest?.version===job.version)tx.delete(item.ref);});
+   await db.runTransaction(async tx=>{const latest=(await tx.get(item.ref)).data();if(latest?.version===job.version){if(notificationPending)tx.update(item.ref,{leaseUntil:Date.now()+30000});else tx.delete(item.ref);}});
    console.info('[RESULT_REFRESH_JOB_DONE]',{fixtureId:job.fixtureId});
   }catch(error:any){
    console.warn('[RESULT_REFRESH_JOB_RETAINED]',{fixtureId:job.fixtureId,message:error?.message});
