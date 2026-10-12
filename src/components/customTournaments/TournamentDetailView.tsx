@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   ArrowLeft,
   Trophy,
@@ -28,7 +28,7 @@ import { CustomPlayoffBracket } from './CustomPlayoffBracket';
 import { customTournamentApi } from '../../lib/customTournamentApi';
 import { TournamentAdminDrawer } from './TournamentAdminDrawer';
 import { ClubCrest } from '../ClubCrest';
-import { TOP5_CLUBS } from '../../constants/top5Clubs';
+import { TournamentClubPicker } from './TournamentClubPicker';
 import { useAuth } from '../../context/AuthContext';
 
 interface TournamentDetailViewProps {
@@ -43,6 +43,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
   onBack,
 }) => {
   const { user } = useAuth();
+  const requestSequence = useRef(0);
   const [activeTab, setActiveTab] = useState<'standings' | 'fixtures' | 'participants' | 'rules'>('standings');
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -70,14 +71,15 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
   const [isSubmittingScore, setIsSubmittingScore] = useState(false);
 
   // Club claim search
-  const [clubSearch, setClubSearch] = useState('');
+  const [claimError, setClaimError] = useState<string | null>(null);
   const [claimingClubId, setClaimingClubId] = useState<string | null>(null);
 
   const loadData = async () => {
+    const sequence = ++requestSequence.current;
     try {
-      setIsLoading(true);
       setErrorMessage(null);
       const res = await customTournamentApi.getTournamentDetails(tournamentId, inviteToken);
+      if (sequence !== requestSequence.current) return;
       setTournament(res.tournament);
       setParticipants(res.participants);
       setFixtures(res.fixtures);
@@ -85,15 +87,17 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
       setCanManage(res.canManage);
       setCanJoin(res.canJoin);
     } catch (err: any) {
-      setErrorMessage(err.message || 'Turnir ma’lumotlarini yuklab bo‘lmadi.');
+      if (sequence === requestSequence.current) setErrorMessage(err.message || 'Turnir ma’lumotlarini yuklab bo‘lmadi.');
     } finally {
-      setIsLoading(false);
+      if (sequence === requestSequence.current) setIsLoading(false);
     }
   };
 
   useEffect(() => {
+    setIsLoading(true);
     loadData();
-  }, [tournamentId, inviteToken]);
+    return () => { requestSequence.current++; };
+  }, [tournamentId, inviteToken, user?.id]);
 
   if (isLoading) {
     return (
@@ -104,7 +108,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
     );
   }
 
-  if (errorMessage || !tournament) {
+  if (!tournament) {
     return (
       <div className="p-6 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-center space-y-3">
         <AlertTriangle className="w-8 h-8 text-rose-400 mx-auto" />
@@ -128,28 +132,16 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
   const rounds = [...new Set(fixtures.map(f => `${f.stage}:${f.roundOrMatchday}`))];
   const displayedFixtures = fixtures.filter(f => `${f.stage}:${f.roundOrMatchday}` === (selectedRound || rounds[0]));
 
-  // Filter allowed clubs for claiming
-  const allowedSeedClubs = TOP5_CLUBS.filter((c) => {
-    if (tournament.leagueScope === 'SINGLE_LEAGUE' && tournament.selectedLeagueId) {
-      return c.leagueId === tournament.selectedLeagueId;
-    }
-    return true;
-  });
-
-  const availableClubs = allowedSeedClubs.filter(
-    (c) => !participants.some((p) => p.clubId === c.id) &&
-      (c.name.toLowerCase().includes(clubSearch.toLowerCase()) ||
-       c.shortName.toLowerCase().includes(clubSearch.toLowerCase()))
-  );
-
   const handleClaimClub = async (clubId: string) => {
+    if (claimingClubId) return;
+    setClaimError(null);
     try {
       setClaimingClubId(clubId);
       await customTournamentApi.joinClub(tournament.id, clubId, inviteToken);
       setShowClubPickerModal(false);
-      loadData();
+      await loadData();
     } catch (err: any) {
-      alert(err.message || 'Klubni band qilib bo‘lmadi.');
+      setClaimError(err.message || 'Klubni band qilib bo‘lmadi.');
     } finally {
       setClaimingClubId(null);
     }
@@ -195,7 +187,8 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
   };
 
   return (
-    <div className="space-y-4 pb-20 animate-in fade-in duration-200">
+    <div className="efl-custom-tournaments space-y-4 pb-20 animate-in fade-in duration-200">
+      {errorMessage && <div role="alert" className="p-3 rounded-xl text-xs text-rose-400">{errorMessage}<button type="button" onClick={loadData} className="min-h-[44px] px-3 underline">Qayta urinish</button></div>}
       {myParticipant?.status === 'PENDING_APPROVAL' && <p role="status" className="p-3 rounded-xl bg-amber-500/10 text-amber-300 text-xs">Arizangiz tashkilotchi tasdig‘ini kutmoqda. Klubingiz band qilingan.</p>}
       {tournament.status === 'STARTING' && <p role="status" className="p-3 text-amber-300 text-xs">Turnir taqvimi tayyorlanmoqda. Tashkilotchi boshqaruv oynasidan jarayonni davom ettirishi mumkin.</p>}
       {tournament.status === 'COMPLETED' && <p className="p-4 bg-emerald-500/10 rounded-2xl text-emerald-300 font-bold">🏆 G‘olib: {tournament.winnerClubName}</p>}
@@ -537,10 +530,12 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
       {/* CLUB PICKER MODAL */}
       {showClubPickerModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-5 space-y-4 shadow-2xl max-h-[85vh] flex flex-col">
+          <div role="dialog" aria-modal="true" aria-label="Turnir klubini tanlash" className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-5 space-y-4 shadow-2xl max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <h3 className="font-black text-slate-100 text-base">Bo‘sh Klubni Tanlang</h3>
               <button
+                aria-label="Klub tanlashni yopish"
+                disabled={!!claimingClubId}
                 onClick={() => setShowClubPickerModal(false)}
                 className="p-1 rounded-lg text-slate-400 hover:text-slate-200"
               >
@@ -548,46 +543,10 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
               </button>
             </div>
 
-            <input
-              type="text"
-              placeholder="Klub nomi bo‘yicha qidirish..."
-              value={clubSearch}
-              onChange={(e) => setClubSearch(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
-            />
-
-            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-              {availableClubs.length === 0 ? (
-                <p className="text-xs text-slate-500 italic p-6 text-center">Bo‘sh klub topilmadi.</p>
-              ) : (
-                availableClubs.map((club) => (
-                  <div
-                    key={club.id}
-                    onClick={() => handleClaimClub(club.id)}
-                    className="p-3 rounded-xl bg-slate-950/60 hover:bg-slate-800/80 border border-slate-800 hover:border-slate-700 flex items-center justify-between gap-3 cursor-pointer transition-all active:scale-[0.99]"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-slate-900 p-1 border border-slate-800 flex items-center justify-center">
-                        <ClubCrest
-                          clubId={club.id}
-                          logoUrl={club.logoUrl}
-                          name={club.name}
-                          shortName={club.shortName}
-                          size="xs"
-                        />
-                      </div>
-                      <span className="font-bold text-slate-200 text-xs">{club.name}</span>
-                    </div>
-
-                    <button
-                      disabled={claimingClubId === club.id}
-                      className="px-3 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500 hover:text-slate-950 font-bold text-xs transition-colors"
-                    >
-                      {claimingClubId === club.id ? 'Band qilinmoqda...' : 'Tanlash'}
-                    </button>
-                  </div>
-                ))
-              )}
+            {claimError && <p role="alert" className="text-xs text-rose-400">{claimError}</p>}
+            {claimingClubId && <p role="status" className="text-xs text-emerald-400">Klub band qilinmoqda…</p>}
+            <div className="overflow-y-auto min-h-0">
+              <TournamentClubPicker selectedLeagueId={tournament.leagueScope === 'SINGLE_LEAGUE' ? tournament.selectedLeagueId : undefined} participants={participants} busy={!!claimingClubId} onSelect={handleClaimClub} />
             </div>
           </div>
         </div>

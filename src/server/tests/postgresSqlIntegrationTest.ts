@@ -1,3 +1,4 @@
+import {verifyTournamentCreationHttp} from './customTournamentCreationHttpAudit';
 import {verifyPostgresMatchdayNotifications} from './postgresMatchdayNotificationTest';
 import assert from 'node:assert/strict';
 import {verifyPostgresClubClaimHttp} from './postgresClubClaimHttpTest';
@@ -33,7 +34,7 @@ await assert.rejects(pg.query("select public.efl_runtime_commit('preview','[]'::
 await pg.exec('set role service_role;');
 const originalFetch = globalThis.fetch;
 let conflicts = 0, legacyHttpCommits = 0, failAssignment = false, failPublish = false, failStartChunk = false, failClaimCommit = false;
-let failNotificationCommit = false;
+let failNotificationCommit = false, failTournamentCreate = false;
 const telegramDeliveries: string[] = [];
 let snapshotResponses: {bytes:number;ids:string[]}[]=[];
 globalThis.fetch = (async (input: any, init: any) => {
@@ -51,6 +52,7 @@ globalThis.fetch = (async (input: any, init: any) => {
     else if (name === 'efl_runtime_patch_snapshot') result = await pg.query('select public.efl_runtime_patch_snapshot($1,$2::text[],$3::jsonb,$4,$5,$6) as value', [body.p_space, body.p_ids, JSON.stringify(body.p_row), body.p_merge, body.p_ttl, body.p_version]);
     else if (name === 'efl_runtime_read') result = await pg.query('select public.efl_runtime_read($1,$2::jsonb) as value', [body.p_space, JSON.stringify(body.p_query)]);
     else if (name === 'efl_runtime_commit_safe') {
+      if (failTournamentCreate && body.p_operations.some((op:any)=>op.path.startsWith('custom_tournaments/'))) { failTournamentCreate=false; throw Error('TOURNAMENT_CREATE_UNAVAILABLE'); }
       if (failNotificationCommit && body.p_operations.some((op:any)=>op.path.startsWith('telegram_ai_state/'))) { failNotificationCommit=false; throw Error('NOTIFICATION_COMMIT_UNAVAILABLE'); }
       if (failStartChunk && body.p_operations.filter((op:any)=>op.path.startsWith('custom_tournament_fixtures/')).length === 200) { failStartChunk = false; throw Error('START_CHUNK_UNAVAILABLE'); }
       if (failClaimCommit && body.p_operations.some((op:any)=>op.path.startsWith('club_occupancies/'))) { failClaimCommit=false; throw Error('CLAIM_COMMIT_UNAVAILABLE'); }
@@ -221,6 +223,7 @@ try {
   await claimTournamentClub({...claim,inviteToken:privateDraft.inviteToken});
   await verifyPostgresClubClaimHttp(() => { failClaimCommit=true; });
   await verifyPostgresMatchdayNotifications(() => { failNotificationCommit=true; }, telegramDeliveries);
+  await verifyTournamentCreationHttp(() => { failTournamentCreate = true; });
   await verifyCustomTournamentLifecycle(() => { failStartChunk = true; });
   console.log('PASS native PostgreSQL draft reopen/assistant discovery, publication, private invitation versus spectator access and atomic authorized claim');
   console.log('PASS native PostgreSQL ticket publication: actual batch failure restores wallet and draft; parallel different-key publishes spend exactly once');
