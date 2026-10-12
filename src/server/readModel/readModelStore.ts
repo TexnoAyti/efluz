@@ -1783,6 +1783,24 @@ export async function getCompetitionStandingsFromReadModel(
  * Reads competition fixtures from read model.
  * If competition fixtures snapshot is missing but admin-fixtures LKG exists, derives from admin-fixtures without querying Firestore.
  */
+/** PostgreSQL fixture caches refresh on expiry/invalidation, including empty schedules.
+ * Keep the shared snapshot owner-neutral; callers enrich only their visible rows. */
+export async function getPostgresFixtureReadModel(seasonId: string, competitionId?: string): Promise<TieredReadResult<Fixture[]>> {
+  return readThroughReadModel<Fixture[]>({
+    key: competitionId ? ReadModelKeys.competitionFixtures(competitionId, seasonId) : ReadModelKeys.adminFixtures(seasonId),
+    seasonId,
+    sourceVersion: 'postgresql-fixtures-authoritative',
+    firestoreFetcher: async () => {
+      let query = getFirestoreDb().collection(COLLECTIONS.FIXTURES).where('seasonId', '==', seasonId);
+      if (competitionId) query = query.where('competitionId', '==', competitionId);
+      const rows = await query.get();
+      return filterRetiredFixtures(rows.docs.map(doc => normalizeFixtureSnapshot({id: doc.id, ...doc.data()}, seasonId)), seasonId)
+        .filter(f => !f.competitionId.includes('efl-cup'));
+    },
+    validateData: Array.isArray,
+  });
+}
+
 export async function getCompetitionFixturesFromReadModel(
   competitionId: string,
   optionsOrMatchday: number | { matchday?: number; status?: string; seasonId?: string; allowFirestore?: boolean } = {},
@@ -1805,6 +1823,14 @@ export async function getCompetitionFixturesFromReadModel(
   const compKey = ReadModelKeys.competitionFixtures(competitionId, seasonId);
   const adminKey = ReadModelKeys.adminFixtures(seasonId);
 
+  if (usesPostgresSnapshots() && options.allowFirestore !== false) {
+    const result = await getPostgresFixtureReadModel(seasonId, competitionId);
+    rawFixtures = result.data;
+    source = result.source;
+    stale = Boolean(result.stale);
+    degraded = Boolean(result.degraded);
+    generatedAt = result.generatedAt;
+  } else {
   let redisFresh = await redisGetFresh<Fixture[]>(compKey);
   if (!redisFresh) {
     const adminFresh = await redisGetFresh<Fixture[]>(adminKey);
@@ -1899,6 +1925,8 @@ export async function getCompetitionFixturesFromReadModel(
         firestoreCircuitBreaker.recordFailure(err);
       }
     }
+  }
+
   }
 
   let fixtures = filterRetiredFixtures(rawFixtures, seasonId);
@@ -2011,10 +2039,11 @@ export async function getAdminFixturesFromReadModel(
 
   // 1. Check Redis fresh or LKG snapshot first
   const datasetKey = ReadModelKeys.adminFixtures(seasonId);
-  const postgresBundle = usesPostgresSnapshots() ? await readPostgresSnapshotBundle(getFreshKey(datasetKey), getLkgKey(datasetKey), getDirtyKey(datasetKey)) : null;
-  const redisFresh: ReadModelSnapshot<Fixture[]> | null = postgresBundle ? postgresBundle.fresh : await redisGetFresh<Fixture[]>(datasetKey);
-  const redisLkg: ReadModelSnapshot<Fixture[]> | null = !redisFresh ? (postgresBundle ? postgresBundle.lkg : await redisGetLkg<Fixture[]>(datasetKey)) : null;
-  const snapshotRes = redisFresh || redisLkg;
+  const redisFresh: ReadModelSnapshot<Fixture[]> | null = usesPostgresSnapshots() ? null : await redisGetFresh<Fixture[]>(datasetKey);
+  const redisLkg: ReadModelSnapshot<Fixture[]> | null = !usesPostgresSnapshots() && !redisFresh ? await redisGetLkg<Fixture[]>(datasetKey) : null;
+  const snapshotRes = usesPostgresSnapshots()
+    ? await getPostgresFixtureReadModel(seasonId)
+    : redisFresh || redisLkg;
 
   if (!usesPostgresSnapshots() && (!snapshotRes || !Array.isArray(snapshotRes.data) || snapshotRes.data.length === 0)) {
     // 2. Redis miss: Fallback to SQLite local read model BEFORE scanning Firestore!
@@ -2060,7 +2089,7 @@ export async function getAdminFixturesFromReadModel(
   // A cup's authoritative refresh may already be newer than an old admin LKG
   // (for example after a redraw performed before this fix was deployed).
   // Repair that one slice from Redis without scanning the whole Firestore season.
-  if (postgresBundle ? Boolean(postgresBundle.dirty?.data) : await redisIsDirty(ReadModelKeys.adminFixtures(seasonId))) {
+  if (!usesPostgresSnapshots() && await redisIsDirty(ReadModelKeys.adminFixtures(seasonId))) {
     const cupIds = [
       'comp-fa-cup-2026', 'comp-copa-del-rey-2026', 'comp-coppa-italia-2026',
       'comp-dfb-pokal-2026', 'comp-coupe-de-france-2026',

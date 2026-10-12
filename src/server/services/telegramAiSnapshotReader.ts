@@ -1,5 +1,5 @@
-import { getFreshKey, getLkgKey, getDirtyKey, type ReadModelSnapshot } from '../readModel/readModelStore';
-import { getAiRedisClient } from './telegramAiDeadline';
+import { getFreshKey, getLkgKey, getDirtyKey, getRawDatasetKey, readThroughReadModel, buildCompetitionsSnapshot, buildClubsSnapshot, buildStandingsSnapshot, getPostgresFixtureReadModel, type ReadModelSnapshot } from '../readModel/readModelStore';
+import { getAiRedisClient, withinAiDeadline } from './telegramAiDeadline';
 import {readPostgresSnapshotBundle} from '../readModel/postgresSnapshots';
 
 export interface AiSnapshot<T> { data:T[]; stale:boolean; available:boolean; snapshotAt:string; }
@@ -15,6 +15,23 @@ export function createAiSnapshotReader(signal?:AbortSignal) {
       return s && typeof s==='object' && Array.isArray((s as any).data) ? s as ReadModelSnapshot<any[]> : null;
     } catch { return null; }
   };
+  const refreshPostgres = async (key: string): Promise<AiSnapshot<any> | null> => {
+    const raw = getRawDatasetKey(key);
+    const match = raw.match(/^season:([^:]+):(.+)$/);
+    if (!match) return null;
+    const [,seasonId,dataset] = match;
+    let result;
+    if (dataset === 'admin:fixtures' || /^competition:[^:]+:fixtures$/.test(dataset)) {
+      result = await getPostgresFixtureReadModel(seasonId, dataset === 'admin:fixtures' ? undefined : dataset.split(':')[1]);
+    } else {
+      const build = dataset === 'competitions' ? () => buildCompetitionsSnapshot(seasonId)
+        : dataset === 'clubs-with-owners' ? () => buildClubsSnapshot(seasonId)
+        : /^competition:[^:]+:standings$/.test(dataset) ? () => buildStandingsSnapshot(dataset.split(':')[1], seasonId) : null;
+      if (!build) return null;
+      result = await readThroughReadModel<any[]>({key, seasonId, firestoreFetcher: async () => (await build()).data, validateData: Array.isArray});
+    }
+    return {data: result.data, stale: Boolean(result.stale || result.degraded), available: true, snapshotAt: result.generatedAt};
+  };
   const load=async(keys:string[])=>{
     const pending=[...new Set(keys)].filter(k=>!memo.has(k));
     if(!pending.length)return;
@@ -22,11 +39,18 @@ export function createAiSnapshotReader(signal?:AbortSignal) {
       await Promise.all(pending.map(async key=>{
         if(signal?.aborted){memo.set(key,missing());return;}
         try{
-          const bundle=await readPostgresSnapshotBundle(getFreshKey(key),getLkgKey(key),getDirtyKey(key));
+          const bundle=await withinAiDeadline(signal, () => readPostgresSnapshotBundle(getFreshKey(key),getLkgKey(key),getDirtyKey(key)));
           if(signal?.aborted){memo.set(key,missing());return;}
           const fresh=decode(bundle.fresh),lkg=decode(bundle.lkg);
           const snapshot=fresh&&!bundle.dirty?fresh:lkg;
-          memo.set(key,snapshot?{data:snapshot.data,stale:Boolean(bundle.dirty||!fresh||snapshot.stale||snapshot.degraded),available:true,snapshotAt:snapshot.generatedAt||''}:missing());
+          const cached = snapshot?{data:snapshot.data,stale:Boolean(bundle.dirty?.data||!fresh||snapshot.stale||snapshot.degraded),available:true,snapshotAt:snapshot.generatedAt||''}:missing();
+          memo.set(key,cached);
+          if (cached.stale || !cached.available) {
+            try {
+              const refreshed = await withinAiDeadline(signal, () => refreshPostgres(key));
+              if (refreshed && !signal?.aborted) memo.set(key,refreshed);
+            } catch { failed.add(key); } // Preserve the honest stale fallback on outage/deadline.
+          }
         }catch{memo.set(key,missing());failed.add(key);}
       }));
       return;

@@ -1,6 +1,6 @@
 import type { Club, Competition, Fixture } from '../../types';
 import { SEED_COMPETITIONS } from '../db/seed';
-import { ReadModelKeys, redisGetFresh, redisGetLkg, normalizeFixtureSnapshot, ReadModelSnapshot, ReadModelNotWarmedError } from '../readModel/readModelStore';
+import { ReadModelKeys, redisGetFresh, redisGetLkg, normalizeFixtureSnapshot, ReadModelSnapshot, ReadModelNotWarmedError, getPostgresFixtureReadModel } from '../readModel/readModelStore';
 import { getFixturesFirestore, enrichFixturesWithAuthoritativeOwners, refreshFixtureMatchdayRules, getAllCompetitionsFirestore } from '../firebase/firestoreStore';
 import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
 import { filterTombstonedFixtures } from './fixtureTombstoneService';
@@ -18,6 +18,20 @@ async function cached<T>(key: string): Promise<Cached<T> | null> {
 export async function getMyMatchesResilient(userId: string, ownedClubs: Club[], seasonId: string, status?: string) {
   if (!ownedClubs.length) return { fixtures: [] as Fixture[], stale: false, degraded: false, source: 'no-club' };
   const ids = new Set(ownedClubs.map(c => c.id));
+  if (process.env.DATABASE_PROVIDER === 'supabase') {
+    // One complete, refreshed season read replaces serial fresh/LKG probes for
+    // every possible competition. Filter by verified ownership before enrichment.
+    const result = await getPostgresFixtureReadModel(seasonId);
+    let rows = result.data.filter(f => ids.has(f.homeClubId || '') || ids.has(f.awayClubId || ''));
+    rows = await filterTombstonedFixtures(rows, seasonId);
+    rows = await enrichFixturesWithAuthoritativeOwners(rows, seasonId);
+    rows = await refreshFixtureMatchdayRules(rows, seasonId);
+    rows = rows.map(({userSubmission, opponentSubmission, ...fixture}) => fixture);
+    if (status) rows = rows.filter(f => f.status === status);
+    return { fixtures: sortSeasonFixtures(rows), stale: Boolean(result.stale), degraded: Boolean(result.degraded),
+      partial: false, source: 'postgresql', snapshotAt: result.generatedAt };
+  }
+
   const [admin, catalog] = await Promise.all([
     cached<Fixture>(ReadModelKeys.adminFixtures(seasonId)),
     cached<Competition>(ReadModelKeys.competitions(seasonId)),
