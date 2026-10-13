@@ -1,4 +1,4 @@
-import type {CustomTournament, CustomTournamentAuditLog, CustomTournamentFixture} from '../types/customTournament';
+import type {CustomTournament, CustomTournamentAuditLog, CustomTournamentFixture, CustomTournamentFixtureStage} from '../types/customTournament';
 export const tournamentStatusLabel: Record<CustomTournament['status'], string> = {
   DRAFT:'Eski qoralama', STARTING:'Taqvim tayyorlanmoqda', REGISTRATION_OPEN:'Qabul ochiq', IN_PROGRESS:'Davom etmoqda', COMPLETED:'Yakunlangan', CANCELLED:'Bekor qilingan',
 };
@@ -16,3 +16,7 @@ export function tournamentStartBlocker(t:CustomTournament, participants:Array<{s
   if (t.format==='LEAGUE_AND_PLAYOFF' && (count<(t.rules.playoffQualifiersCount||4) || (t.rules.groupStageMode==='GROUPS' && count<(t.rules.groupsCount||2)*2))) return 'Qatnashchilar soni guruh yoki pley-off reglamentiga yetmaydi.';
   return null;
 }
+
+export const fixtureStageLabel: Record<CustomTournamentFixtureStage,string> = {
+  LEAGUE:'Liga', GROUP_STAGE:'Guruh bosqichi', PLAYOFF_R32:'1/16 final', PLAYOFF_R16:'1/8 final', PLAYOFF_QF:'Chorak final', PLAYOFF_SF:'Yarim final', PLAYOFF_FINAL:'Final', PLAYOFF_THIRD_PLACE:'3-o‘rin uchun',
+};
