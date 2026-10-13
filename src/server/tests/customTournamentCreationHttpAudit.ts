@@ -22,10 +22,9 @@ export async function verifyTournamentCreationHttp(failNextCommit: () => void) {
     const response = await fetch(base + path, {method:body === undefined ? 'GET' : 'POST', headers:{'content-type':'application/json',authorization:`Bearer ${createSessionToken(actors[actor])}`},body:body === undefined ? undefined : JSON.stringify(body)});
     return {status:response.status, data:await response.json() as any};
   };
-  const payload = {name:'Host club atomic HTTP',idempotencyKey:'host-club-create',organizerClubId:SEED_CLUBS[0].id,format:'PLAYOFF',leagueScope:'TOP5_ALL',maxParticipants:4,visibility:'PRIVATE',spectatorAccess:'PUBLIC_LINK',rules:{roundsCount:1,playoffLegMode:'SINGLE_LEG',matchDurationHours:24}};
+  const payload = {name:'Organizer joins later HTTP',idempotencyKey:'host-club-create',organizerClubId:SEED_CLUBS[0].id,format:'PLAYOFF',leagueScope:'TOP5_ALL',maxParticipants:4,visibility:'PRIVATE',spectatorAccess:'PUBLIC_LINK',rules:{roundsCount:1,playoffLegMode:'SINGLE_LEG',matchDurationHours:24}};
   try {
     assert.equal((await call('/tickets/balance',0)).data.account.balance,1);
-    assert.equal((await call('/create',0,{...payload,organizerClubId:'missing'})).status,400);
     assert.equal((await call('/create',0,{...payload,maxParticipants:0})).status,400);
     assert.equal((await call('/tickets/balance',0)).data.account.balance,1);
     failNextCommit();
@@ -36,12 +35,13 @@ export async function verifyTournamentCreationHttp(failNextCommit: () => void) {
     assert.ok(created.every(r => r.status === 200),JSON.stringify(created));
     const t = created[0].data.tournament;
     assert.equal(t.id,created[1].data.tournament.id);
-    assert.equal(t.currentParticipantsCount,1);
+    assert.equal(t.currentParticipantsCount,0);
     assert.equal((await call('/tickets/balance',0)).data.account.balance,0);
     let details = (await call('/'+t.id,0)).data;
-    assert.equal(details.participants.length,1); assert.equal(details.participants[0].status,'REGISTERED');
-    assert.equal(details.participants[0].username,actors[0].username);
-    assert.equal((await call('/create',0,{...payload,organizerClubId:SEED_CLUBS[1].id})).status,409);
+    assert.equal(details.participants.length,0,'Creating does not auto-enroll even an older client supplies organizerClubId');
+    assert.equal(details.canJoin,true,'Organizer joins through ordinary club picker');
+    assert.equal((await call('/'+t.id+'/join',0,{clubId:SEED_CLUBS[0].id})).status,200);
+    assert.equal((await call('/create',0,{...payload,name:'Different request'})).status,409);
     assert.equal((await call('/'+t.id,1)).status,403);
     assert.equal((await call('/'+t.id+'?token='+t.spectatorToken,1)).data.canJoin,false);
     assert.equal((await call('/'+t.id+'/join',1,{clubId:SEED_CLUBS[1].id,inviteToken:t.spectatorToken})).status,403);
@@ -64,6 +64,46 @@ export async function verifyTournamentCreationHttp(failNextCommit: () => void) {
     }
     assert.equal((await call('/'+t.id,0)).data.tournament.status,'COMPLETED');
     assert.equal((await call('/tickets/balance',1)).data.account.balance,1,'Joining remains free');
-    console.log('PASS signed tournament HTTP + native SQL: host club, failed create rollback, parallel retry, ticket exactly once, private/spectator boundaries, club/user exclusion, capacity, authorized start and completed playoff.');
+    const m = (await call('/create',5,{...payload,idempotencyKey:'management-flow',name:'Management',visibility:'PUBLIC_MODERATED',maxParticipants:6,format:'LEAGUE'})).data.tournament;
+    assert.ok(m.id);
+    for (const i of [0,1,2,3]) assert.equal((await call('/'+m.id+'/join',i,{clubId:SEED_CLUBS[i].id})).status,200);
+    assert.equal((await call('/'+m.id+'/participants/'+actors[0].id+'/review',5,{action:'APPROVE'})).status,200);
+    assert.equal((await call('/'+m.id+'/assistants',5,{assistantUserId:actors[0].id})).status,200);
+    assert.equal((await call('/'+m.id+'/management-users',0)).data.users.find((u:any)=>u.id===actors[0].id).username,actors[0].username);
+    assert.equal((await call('/'+m.id+'/management-users',4)).status,403);
+    const settings = {name:'Updated tournament',description:'Details',maxParticipants:6,visibility:'PUBLIC_MODERATED',spectatorAccess:'MEMBERS_ONLY',matchDurationHours:48};
+    assert.equal((await call('/'+m.id+'/settings',0,settings)).status,403,'Assistant cannot change owner settings');
+    assert.equal((await call('/'+m.id+'/settings',5,{...settings,maxParticipants:3})).status,400);
+    failNextCommit();
+    assert.ok((await call('/'+m.id+'/settings',5,settings)).status>=500);
+    assert.equal((await call('/'+m.id,5)).data.tournament.name,'Management','Settings rollback');
+    assert.equal((await call('/'+m.id+'/settings',5,settings)).status,200);
+    assert.equal((await call('/'+m.id+'/participants/'+actors[2].id+'/remove',4,{})).status,403);
+    failNextCommit();
+    assert.ok((await call('/'+m.id+'/participants/'+actors[2].id+'/remove',0,{})).status>=500);
+    assert.equal((await call('/'+m.id,5)).data.participants.length,4,'Failed removal preserves participant and club claim');
+    assert.equal((await call('/'+m.id+'/participants/'+actors[2].id+'/remove',0,{})).status,200);
+    assert.equal((await call('/'+m.id+'/join',2,{clubId:SEED_CLUBS[2].id})).status,200,'Removed user and club can rejoin');
+    for(const i of [1,2,3]) assert.equal((await call('/'+m.id+'/participants/'+actors[i].id+'/review',0,{action:'APPROVE'})).status,200);
+    assert.equal((await call('/'+m.id+'/start',0,{})).status,403,'Assistant cannot start');
+    assert.equal((await call('/'+m.id+'/start',5,{})).status,200);
+    assert.equal((await call('/'+m.id+'/settings',5,settings)).status,409,'Started structure is locked');
+    assert.equal((await call('/'+m.id+'/participants/'+actors[1].id+'/remove',5,{})).status,409);
+    assert.equal((await call('/'+m.id+'/cancel',0,{})).status,403);
+    const mf=(await call('/'+m.id,5)).data.fixtures[0];
+    assert.equal((await call('/'+m.id+'/matches/'+mf.id+'/correct',0,{homeScore:2,awayScore:1,note:'Verified result'})).status,200);
+    failNextCommit();
+    assert.ok((await call('/'+m.id+'/cancel',5,{})).status>=500);
+    assert.equal((await call('/'+m.id,5)).data.tournament.status,'IN_PROGRESS','Failed cancellation keeps tournament running');
+    assert.equal((await call('/'+m.id+'/cancel',5,{})).status,200);
+    assert.equal((await call('/'+m.id+'/cancel',5,{})).status,200,'Cancellation retry is safe');
+    assert.equal((await call('/'+m.id+'/join',4,{clubId:SEED_CLUBS[4].id})).status,400);
+    assert.equal((await call('/'+m.id+'/matches/'+mf.id+'/correct',5,{homeScore:3,awayScore:1})).status,409);
+    assert.equal((await call('/'+m.id,5)).data.fixtures.find((f:any)=>f.id===mf.id).homeScore,2,'Cancelled records retain results');
+    assert.equal((await call('/tickets/balance',5)).data.account.balance,0,'Cancellation does not silently refund');
+    const audit=(await call('/'+m.id+'/audit-logs',5)).data.logs;
+    for(const action of ['SETTINGS_UPDATED','PARTICIPANT_REMOVED','ASSISTANT_ADDED','TOURNAMENT_CANCELLED']) assert.ok(audit.some((l:any)=>l.action===action),action);
+    assert.equal(audit.filter((l:any)=>l.action==='TOURNAMENT_CANCELLED').length,1);
+    console.log('PASS signed tournament HTTP + native SQL: create without club, normal organizer join, tickets/retries, private/capacity/start/playoff; owner settings, assistant limits, remove/rejoin, cancellation, result retention and failed-management rollback.');
   } finally { server.close(); }
 }

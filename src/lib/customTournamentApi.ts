@@ -225,6 +225,22 @@ export const customTournamentApi = {
     return data.logs || [];
   },
 
+  async updateSettings(id: string, settings: {name:string;description?:string;maxParticipants:number;visibility:CustomTournament['visibility'];spectatorAccess:CustomTournament['spectatorAccess'];matchDurationHours:number}) {
+    const res = await fetch(`/api/custom-tournaments/${encodeURIComponent(id)}/settings`, {method:'POST',headers:getAuthHeaders(),body:JSON.stringify(settings)});
+    const data = await res.json(); if (!res.ok || !data.ok) throw new Error(data.error || 'Sozlamalarni saqlab bo‘lmadi.'); return data;
+  },
+  async removeParticipant(id: string, userId: string) {
+    const res = await fetch(`/api/custom-tournaments/${encodeURIComponent(id)}/participants/${encodeURIComponent(userId)}/remove`, {method:'POST',headers:getAuthHeaders(),body:'{}'});
+    const data = await res.json(); if (!res.ok || !data.ok) throw new Error(data.error || 'Qatnashchini chiqarib bo‘lmadi.'); return data;
+  },
+  async cancelTournament(id: string) {
+    const res = await fetch(`/api/custom-tournaments/${encodeURIComponent(id)}/cancel`, {method:'POST',headers:getAuthHeaders(),body:'{}'});
+    const data = await res.json(); if (!res.ok || !data.ok) throw new Error(data.error || 'Turnirni bekor qilib bo‘lmadi.'); return data;
+  },
+  async getManagementUsers(id: string): Promise<{users:Array<{id:string;username:string;firstName:string}>}> {
+    const res = await fetch(`/api/custom-tournaments/${encodeURIComponent(id)}/management-users`, {headers:getAuthHeaders()});
+    const data = await res.json(); if (!res.ok || !data.ok) throw new Error(data.error || 'Yordamchilarni yuklab bo‘lmadi.'); return data;
+  },
   // Tickets
   async getTicketBalance(): Promise<UserTicketAccount> {
     const res = await fetch('/api/custom-tournaments/tickets/balance', {

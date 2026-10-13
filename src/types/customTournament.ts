@@ -160,6 +160,8 @@ export interface CustomTournamentAuditLog {
   id: string;
   tournamentId: string;
   action:
+    | 'SETTINGS_UPDATED'
+    | 'PARTICIPANT_REMOVED'
     | 'TOURNAMENT_CREATED'
     | 'TOURNAMENT_PUBLISHED'
     | 'TOURNAMENT_STARTED'

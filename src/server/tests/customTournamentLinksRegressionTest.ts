@@ -22,9 +22,13 @@ try{
  (globalThis as any).window={location:{search:''},Telegram:{WebApp:{initData:new URLSearchParams({start_param:tournamentStartParam(id,token)}).toString()}}};
  assert.deepEqual(readTournamentLaunch(),{tournamentId:id,token});
  const tournament={id,status:'DRAFT',inviteToken:token,spectatorToken:'spec_abcdef',assistantAdminIds:[],maxParticipants:8,rules:{roundsCount:1,playoffLegMode:'SINGLE_LEG',matchDurationHours:36}} as CustomTournament;
- const html=renderToStaticMarkup(React.createElement(TournamentAdminDrawer,{isOpen:true,canPublishDraft:true,onClose:()=>{},tournament,participants:[],fixtures:[],onRefresh:()=>{}}));
- assert.ok(html.includes('Qoralamani e’lon qilish')&&html.includes('1 ticket'));
- assert.ok(html.includes('https://t.me/efluzbot?startapp='));
+ const html=renderToStaticMarkup(React.createElement(TournamentAdminDrawer,{isOpen:true,isOrganizer:true,onClose:()=>{},tournament,participants:[],fixtures:[],onRefresh:()=>{}}));
+ assert.ok(html.includes('Qabulni ochish')&&html.includes('1 ticket'));
+ const openHtml=renderToStaticMarkup(React.createElement(TournamentAdminDrawer,{isOpen:true,isOrganizer:true,onClose:()=>{},tournament:{...tournament,name:'A long tournament title that must wrap',format:'PLAYOFF',status:'REGISTRATION_OPEN',spectatorAccess:'PUBLIC_LINK',updatedAt:''},participants:[],fixtures:[],onRefresh:()=>{}}));
+ assert.ok(openHtml.includes('https://t.me/efluzbot?startapp='));
+ assert.ok(openHtml.includes('grid-cols-3 sm:grid-cols-5')&&openHtml.includes('min-w-0'));
+ assert.ok(!openHtml.includes('Foydalanuvchi IDsi'));
+ assert.ok(openHtml.includes('Qatnashchilar')&&openHtml.includes('Sozlamalar'));
  assert.equal(html.includes('/?inv='),false);
 }finally{(globalThis as any).window=oldWindow;(globalThis as any).sessionStorage=oldSession;}
 console.log('PASS Telegram tournament links: URL encoding/validation, SDK/signed-data/query launch inputs, draft publication UI and invite/spectator links. No Telegram messages or production writes.');

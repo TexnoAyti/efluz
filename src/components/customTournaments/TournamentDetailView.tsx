@@ -29,6 +29,7 @@ import { customTournamentApi } from '../../lib/customTournamentApi';
 import { TournamentAdminDrawer } from './TournamentAdminDrawer';
 import { ClubCrest } from '../ClubCrest';
 import { TournamentClubPicker } from './TournamentClubPicker';
+import {tournamentStatusLabel,fixtureStageLabel,fixtureStatusLabel} from '../../lib/customTournamentLabels';
 import { useAuth } from '../../context/AuthContext';
 
 interface TournamentDetailViewProps {
@@ -217,13 +218,13 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
       {/* Tournament Hero Card */}
       <div className="p-5 rounded-3xl bg-slate-900/90 border border-slate-800/80 shadow-xl space-y-4 backdrop-blur-md">
         <div className="flex items-start justify-between gap-3">
-          <div className="space-y-1">
+          <div className="space-y-1 min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30">
                 {tournament.format === 'LEAGUE' ? 'Liga' : tournament.format === 'PLAYOFF' ? 'Pley-off' : 'Liga + Pley-off'}
               </span>
               <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 font-medium">
-                {tournament.status === 'DRAFT' ? 'Qoralama' : tournament.status === 'REGISTRATION_OPEN' ? 'Qabul ochiq' : tournament.status === 'IN_PROGRESS' ? 'Davom etmoqda' : tournament.status}
+                {tournamentStatusLabel[tournament.status]}
               </span>
               {tournament.visibility === 'PRIVATE' && (
                 <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 font-medium border border-amber-500/20 flex items-center gap-1">
@@ -231,9 +232,9 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
                 </span>
               )}
             </div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-100 tracking-tight">{tournament.name}</h1>
+            <h1 className="text-xl sm:text-2xl font-black text-slate-100 tracking-tight break-words [overflow-wrap:anywhere]">{tournament.name}</h1>
             <p className="text-xs text-slate-400">
-              Tashkilotchi: <strong className="text-slate-300">@{tournament.organizerUsername || 'efl_user'}</strong> · Qatnashchilar: {participants.length}/{tournament.maxParticipants}
+              Tashkilotchi: <strong className="text-slate-300 break-words">{tournament.organizerUsername ? '@'+tournament.organizerUsername : 'Tashkilotchi'}</strong> · Qatnashchilar: {participants.length}/{tournament.maxParticipants}
             </p>
           </div>
 
@@ -289,10 +290,10 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
       </div>
 
       {/* Sub Tabs */}
-      <div className="p-1 rounded-2xl bg-slate-900 border border-slate-800 flex items-center gap-1">
+      <div className="p-1 rounded-2xl bg-slate-900 border border-slate-800 grid grid-cols-2 sm:grid-cols-4 gap-1">
         <button
           onClick={() => setActiveTab('standings')}
-          className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 ${
+          className={`min-w-0 min-h-[44px] py-2 px-2 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 ${
             activeTab === 'standings' ? 'bg-slate-800 text-emerald-400 shadow-sm' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
@@ -301,7 +302,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
         </button>
         <button
           onClick={() => setActiveTab('fixtures')}
-          className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 ${
+          className={`min-w-0 min-h-[44px] py-2 px-2 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 ${
             activeTab === 'fixtures' ? 'bg-slate-800 text-emerald-400 shadow-sm' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
@@ -310,7 +311,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
         </button>
         <button
           onClick={() => setActiveTab('participants')}
-          className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 ${
+          className={`min-w-0 min-h-[44px] py-2 px-2 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 ${
             activeTab === 'participants' ? 'bg-slate-800 text-emerald-400 shadow-sm' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
@@ -319,7 +320,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
         </button>
         <button
           onClick={() => setActiveTab('rules')}
-          className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 ${
+          className={`min-w-0 min-h-[44px] py-2 px-2 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 ${
             activeTab === 'rules' ? 'bg-slate-800 text-emerald-400 shadow-sm' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
@@ -401,7 +402,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
       {activeTab === 'fixtures' && (
         <div className="space-y-3">
           {rounds.length > 0 && <label className="block text-xs text-slate-300">Bosqich va tur
-            <select value={selectedRound || rounds[0]} onChange={e => setSelectedRound(e.target.value)} className="w-full p-3 mt-1 bg-slate-900 border border-slate-800 rounded-xl">{rounds.map(r => <option key={r} value={r}>{r.replace(':', ' · Tur ')}</option>)}</select>
+            <select value={selectedRound || rounds[0]} onChange={e => setSelectedRound(e.target.value)} className="w-full p-3 mt-1 bg-slate-900 border border-slate-800 rounded-xl">{rounds.map(r => <option key={r} value={r}>{fixtureStageLabel[r.split(':')[0] as CustomTournamentFixture['stage']]} · Tur {r.split(':')[1]}</option>)}</select>
           </label>}
           {fixtures.length === 0 ? (
             <p className="text-xs text-slate-500 italic p-8 text-center bg-slate-900 rounded-2xl border border-slate-800">
@@ -413,20 +414,20 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
               return (
                 <div
                   key={fix.id}
-                  className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between gap-3 text-xs"
+                  className="min-w-0 p-3.5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3 text-xs"
                 >
                   <div className="space-y-1 flex-1 min-w-0">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                      Tur: {fix.roundOrMatchday} · {fix.stage}
+                      Tur: {fix.roundOrMatchday} · {fixtureStageLabel[fix.stage]}
                     </span>
-                    <div className="flex items-center gap-2 text-slate-200">
-                      <span className="font-bold truncate">{fix.homeClubName}</span>
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 text-slate-200">
+                      <span className="font-bold break-words [overflow-wrap:anywhere]">{fix.homeClubName}</span>
                       <span className="text-slate-500 font-normal">vs</span>
-                      <span className="font-bold truncate">{fix.awayClubName}</span>
+                      <span className="font-bold break-words text-right [overflow-wrap:anywhere]">{fix.awayClubName}</span>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-3 shrink-0">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
                     {fix.status === 'CONFIRMED' ? (
                       <div className="text-right">
                         <span className="text-sm font-black text-emerald-400">
@@ -440,7 +441,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
                       </div>
                     ) : (
                       <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">
-                        {fix.status === 'PENDING_CONFIRMATION' ? 'Tasdiq kutilmoqda' : fix.status === 'DISPUTED' ? 'Nizo' : 'Rejada'}
+                        {fixtureStatusLabel[fix.status]}
                       </span>
                     )}
 
@@ -520,7 +521,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
           isOpen={showAdminDrawer}
           onClose={() => setShowAdminDrawer(false)}
           tournament={tournament}
-          canPublishDraft={tournament.organizerUserId === user?.id}
+          isOrganizer={tournament.organizerUserId === user?.id}
           participants={participants}
           fixtures={fixtures}
           onRefresh={loadData}
