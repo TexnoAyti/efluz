@@ -29,6 +29,7 @@ import { customTournamentApi } from '../../lib/customTournamentApi';
 import { TournamentAdminDrawer } from './TournamentAdminDrawer';
 import { ClubCrest } from '../ClubCrest';
 import { TournamentClubPicker } from './TournamentClubPicker';
+import {tournamentStatusLabel} from '../../lib/customTournamentLabels';
 import { useAuth } from '../../context/AuthContext';
 
 interface TournamentDetailViewProps {
@@ -223,7 +224,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
                 {tournament.format === 'LEAGUE' ? 'Liga' : tournament.format === 'PLAYOFF' ? 'Pley-off' : 'Liga + Pley-off'}
               </span>
               <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 font-medium">
-                {tournament.status === 'DRAFT' ? 'Qoralama' : tournament.status === 'REGISTRATION_OPEN' ? 'Qabul ochiq' : tournament.status === 'IN_PROGRESS' ? 'Davom etmoqda' : tournament.status}
+                {tournamentStatusLabel[tournament.status]}
               </span>
               {tournament.visibility === 'PRIVATE' && (
                 <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 font-medium border border-amber-500/20 flex items-center gap-1">
@@ -231,9 +232,9 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
                 </span>
               )}
             </div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-100 tracking-tight">{tournament.name}</h1>
+            <h1 className="text-xl sm:text-2xl font-black text-slate-100 tracking-tight break-words [overflow-wrap:anywhere]">{tournament.name}</h1>
             <p className="text-xs text-slate-400">
-              Tashkilotchi: <strong className="text-slate-300">@{tournament.organizerUsername || 'efl_user'}</strong> · Qatnashchilar: {participants.length}/{tournament.maxParticipants}
+              Tashkilotchi: <strong className="text-slate-300 break-words">{tournament.organizerUsername ? '@'+tournament.organizerUsername : 'Tashkilotchi'}</strong> · Qatnashchilar: {participants.length}/{tournament.maxParticipants}
             </p>
           </div>
 
@@ -289,10 +290,10 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
       </div>
 
       {/* Sub Tabs */}
-      <div className="p-1 rounded-2xl bg-slate-900 border border-slate-800 flex items-center gap-1">
+      <div className="p-1 rounded-2xl bg-slate-900 border border-slate-800 grid grid-cols-2 sm:grid-cols-4 gap-1">
         <button
           onClick={() => setActiveTab('standings')}
-          className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 ${
+          className={`min-w-0 min-h-[44px] py-2 px-2 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 ${
             activeTab === 'standings' ? 'bg-slate-800 text-emerald-400 shadow-sm' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
@@ -301,7 +302,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
         </button>
         <button
           onClick={() => setActiveTab('fixtures')}
-          className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 ${
+          className={`min-w-0 min-h-[44px] py-2 px-2 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 ${
             activeTab === 'fixtures' ? 'bg-slate-800 text-emerald-400 shadow-sm' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
@@ -310,7 +311,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
         </button>
         <button
           onClick={() => setActiveTab('participants')}
-          className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 ${
+          className={`min-w-0 min-h-[44px] py-2 px-2 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 ${
             activeTab === 'participants' ? 'bg-slate-800 text-emerald-400 shadow-sm' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
@@ -319,7 +320,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
         </button>
         <button
           onClick={() => setActiveTab('rules')}
-          className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 ${
+          className={`min-w-0 min-h-[44px] py-2 px-2 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 ${
             activeTab === 'rules' ? 'bg-slate-800 text-emerald-400 shadow-sm' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
@@ -520,7 +521,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
           isOpen={showAdminDrawer}
           onClose={() => setShowAdminDrawer(false)}
           tournament={tournament}
-          canPublishDraft={tournament.organizerUserId === user?.id}
+          isOrganizer={tournament.organizerUserId === user?.id}
           participants={participants}
           fixtures={fixtures}
           onRefresh={loadData}

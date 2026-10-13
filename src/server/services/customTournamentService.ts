@@ -52,8 +52,6 @@ export async function createTournamentDraft(params: {
   organizerUserId: string;
   organizerTelegramId: string;
   organizerUsername?: string;
-  organizerFirstName?: string;
-  organizerClubId?: string;
   format: CustomTournament['format'];
   leagueScope: CustomTournament['leagueScope'];
   selectedLeagueId?: string;
@@ -134,27 +132,15 @@ export async function createTournament(params: Parameters<typeof createTournamen
          (rules.groupStageMode === 'GROUPS' && (![2,4].includes(groups) || groups*2 > params.maxParticipants || qualifiers%groups !== 0))))) {
     throw Object.assign(new Error('Turnir reglamenti noto‘g‘ri. Qatnashchilar, guruhlar va pley-off sonini tekshiring.'), {statusCode:400});
   }
-  const organizerClub = params.organizerClubId === undefined ? undefined : SEED_CLUBS.find(c => c.id === params.organizerClubId);
-  if (params.organizerClubId !== undefined && (!organizerClub || (params.leagueScope === 'SINGLE_LEAGUE' && organizerClub.leagueId !== params.selectedLeagueId))) {
-    throw tournamentError('Tashkilotchi klubi turnir ligasiga mos kelmaydi.', 400);
-  }
   const tournament = await createTournamentDraft(params, false);
   const fingerprint = crypto.createHash('sha256').update(JSON.stringify({
     name:tournament.name, description:tournament.description, format:tournament.format,
     leagueScope:tournament.leagueScope, selectedLeagueId:tournament.selectedLeagueId,
     maxParticipants:tournament.maxParticipants, visibility:tournament.visibility,
-    spectatorAccess:tournament.spectatorAccess, rules:tournament.rules, organizerClubId:params.organizerClubId,
+    spectatorAccess:tournament.spectatorAccess, rules:tournament.rules,
   })).digest('hex');
   tournament.id = 'ct_' + crypto.createHash('sha256').update(params.organizerUserId + ':' + idempotencyKey).digest('hex').slice(0,24);
   tournament.status = 'REGISTRATION_OPEN'; tournament.creationFingerprint = fingerprint;
-  const organizerParticipant: CustomTournamentParticipant | undefined = organizerClub ? {
-    id: `${tournament.id}_${organizerClub.id}`, tournamentId: tournament.id,
-    userId: params.organizerUserId, telegramId: params.organizerTelegramId,
-    username: params.organizerUsername, firstName: params.organizerFirstName,
-    clubId: organizerClub.id, clubName: organizerClub.name, clubShortName: organizerClub.shortName,
-    clubLogoUrl: organizerClub.logoUrl, status: 'REGISTERED', joinedAt: tournament.createdAt,
-  } : undefined;
-  tournament.currentParticipantsCount = organizerParticipant ? 1 : 0;
   await ensureFreeTournamentTicket(params.organizerUserId, params.organizerTelegramId);
   const replay = (existing: CustomTournament) => {
     if (existing.creationFingerprint !== fingerprint) throw Object.assign(new Error('IDEMPOTENCY_CONFLICT'), {statusCode:409});
@@ -165,9 +151,8 @@ export async function createTournament(params: Parameters<typeof createTournamen
     const existing = memoryTournaments.get(tournament.id); if (existing) return replay(existing);
     const spend = await spendTicketForTournament(spendParams);
     tournament.ticketSpentTransactionId = spend.transactionId;
-    memoryTournaments.set(tournament.id,tournament); memoryParticipants.set(tournament.id,organizerParticipant ? [organizerParticipant] : []); memoryFixtures.set(tournament.id,[]);
+    memoryTournaments.set(tournament.id,tournament); memoryParticipants.set(tournament.id,[]); memoryFixtures.set(tournament.id,[]);
     memoryAuditLogs.set(tournament.id, [{id:`create_${tournament.id}`, tournamentId:tournament.id, action:'TOURNAMENT_CREATED', performedByUserId:params.organizerUserId, createdAt:tournament.createdAt}]);
-    if (organizerParticipant) memoryClubClaims.set(`${tournament.id}_${organizerParticipant.clubId}`, params.organizerUserId);
     return {...tournament};
   }
   const db = getFirestoreDb(), ref = db.collection('custom_tournaments').doc(tournament.id);
@@ -177,11 +162,6 @@ export async function createTournament(params: Parameters<typeof createTournamen
     const spend = await spendTicketInTransaction(spendParams, transaction);
     const created = {...tournament, ticketSpentTransactionId:spend.transactionId};
     transaction.set(ref, created);
-    if (organizerParticipant) {
-      transaction.set(db.collection('custom_tournament_participants').doc(organizerParticipant.id), organizerParticipant);
-      transaction.set(db.collection('custom_tournament_claims').doc(`${tournament.id}_user_${params.organizerUserId}`), {clubId:organizerParticipant.clubId, joinedAt:tournament.createdAt});
-      transaction.set(db.collection('custom_tournament_claims').doc(`${tournament.id}_club_${organizerParticipant.clubId}`), {userId:params.organizerUserId, joinedAt:tournament.createdAt});
-    }
     transaction.set(db.collection('custom_tournament_audit_logs').doc(`create_${tournament.id}`), {
       id:`create_${tournament.id}`, tournamentId:tournament.id, action:'TOURNAMENT_CREATED',
       performedByUserId:params.organizerUserId, createdAt:tournament.createdAt,
@@ -344,6 +324,8 @@ export async function claimTournamentClub(params: {
     tournament.updatedAt = now;
     memoryTournaments.set(params.tournamentId, tournament);
 
+    const log=managementLog(tournament,params.userId,'PARTICIPANT_JOINED',{clubName:seedClub.name});
+    memoryAuditLogs.set(tournament.id,[...(memoryAuditLogs.get(tournament.id)||[]),log]);
     return participant;
   }
 
@@ -409,6 +391,8 @@ export async function claimTournamentClub(params: {
       updatedAt: now,
     });
 
+    const log=managementLog({...tournament,updatedAt:now},params.userId,'PARTICIPANT_JOINED',{clubName:seedClub.name});
+    transaction.set(db.collection('custom_tournament_audit_logs').doc(log.id),log);
     return participant;
   });
 }
@@ -721,6 +705,8 @@ export async function leaveTournamentClub(params: {
     tournament.updatedAt = now;
     memoryTournaments.set(params.tournamentId, tournament);
 
+    const log=managementLog(tournament,params.userId,'PARTICIPANT_LEFT',{clubId:freedClubId});
+    memoryAuditLogs.set(tournament.id,[...(memoryAuditLogs.get(tournament.id)||[]),log]);
     return { success: true, freedClubId };
   }
 
@@ -757,6 +743,8 @@ export async function leaveTournamentClub(params: {
       updatedAt: now,
     });
 
+    const log=managementLog({...tournament,updatedAt:now},params.userId,'PARTICIPANT_LEFT',{clubId:freedClubId});
+    transaction.set(db.collection('custom_tournament_audit_logs').doc(log.id),log);
     return { success: true, freedClubId };
   });
 }
@@ -779,13 +767,19 @@ export async function updateAssistantAdmins(params: {
   };
   if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === 'true' || process.env.NODE_ENV === 'test') {
     const t = memoryTournaments.get(params.tournamentId), next = apply(t);
-    Object.assign(t!, next); return {assistantAdminIds: next.assistantAdminIds};
+    Object.assign(t!, next);
+    const log=managementLog(t!,params.organizerUserId,params.action==='ADD'?'ASSISTANT_ADDED':'ASSISTANT_REMOVED',{userId:params.assistantUserId});
+    memoryAuditLogs.set(t!.id,[...(memoryAuditLogs.get(t!.id)||[]),log]);
+    return {assistantAdminIds: next.assistantAdminIds};
   }
   const db = getFirestoreDb(), ref = db.collection('custom_tournaments').doc(params.tournamentId);
   return db.runTransaction(async tx => {
-    const next = apply((await tx.get(ref)).data() as CustomTournament | undefined);
+    const t=(await tx.get(ref)).data() as CustomTournament | undefined, next = apply(t);
     if (params.action === 'ADD' && !(await tx.get(db.collection('users').doc(params.assistantUserId))).exists) throw tournamentError('Foydalanuvchi topilmadi.', 404);
-    tx.update(ref, next); return {assistantAdminIds: next.assistantAdminIds};
+    tx.update(ref, next);
+    const log=managementLog({...t!,...next},params.organizerUserId,params.action==='ADD'?'ASSISTANT_ADDED':'ASSISTANT_REMOVED',{userId:params.assistantUserId});
+    tx.set(db.collection('custom_tournament_audit_logs').doc(log.id),log);
+    return {assistantAdminIds: next.assistantAdminIds};
   });
 }
 
@@ -840,4 +834,102 @@ export async function reviewTournamentParticipant(params:{tournamentId:string;ta
   else{tx.delete(partRef);tx.delete(claim);tx.delete(db.collection('custom_tournament_claims').doc(`${t.id}_club_${clubId}`));tx.update(ref,{currentParticipantsCount:Math.max(0,t.currentParticipantsCount-1),updatedAt:now});}
   tx.set(db.collection('custom_tournament_audit_logs').doc(log.id),log);return {success:true};
  });
+}
+
+export interface TournamentSettingsUpdate {
+  name: string;
+  description?: string;
+  maxParticipants: number;
+  visibility: CustomTournament['visibility'];
+  spectatorAccess: CustomTournament['spectatorAccess'];
+  matchDurationHours: number;
+}
+
+/** Every management mutation shares the tournament lock with join/start/result mutations. */
+async function mutateAdministration<T>(tournamentId: string, actorId: string, ownerOnly: boolean,
+  apply: (tournament: CustomTournament, participants: CustomTournamentParticipant[], logs: CustomTournamentAuditLog[]) => T): Promise<T> {
+  const authorize = (t: CustomTournament | undefined) => {
+    if (!t) throw tournamentError('Turnir topilmadi.', 404);
+    if (t.organizerUserId !== actorId && (ownerOnly || !t.assistantAdminIds.includes(actorId))) throw tournamentError('Bu amal uchun boshqaruv huquqi yo‘q.', 403);
+    return t;
+  };
+  if (process.env.FIREBASE_FORCE_LOCAL_FALLBACK === 'true' || process.env.NODE_ENV === 'test') {
+    const t = structuredClone(authorize(memoryTournaments.get(tournamentId)));
+    const before = memoryParticipants.get(tournamentId) || [], players = structuredClone(before), logs: CustomTournamentAuditLog[] = [];
+    const result = apply(t, players, logs);
+    memoryTournaments.set(tournamentId, t); memoryParticipants.set(tournamentId, players);
+    for (const p of before) if (!players.some(row => row.id === p.id)) memoryClubClaims.delete(`${tournamentId}_${p.clubId}`);
+    memoryAuditLogs.set(tournamentId, [...(memoryAuditLogs.get(tournamentId) || []), ...logs]);
+    return result;
+  }
+  const db = getFirestoreDb(), ref = db.collection('custom_tournaments').doc(tournamentId);
+  return db.runTransaction(async tx => {
+    const t = authorize((await tx.get(ref)).data() as CustomTournament | undefined);
+    const before = (await tx.get(db.collection('custom_tournament_participants').where('tournamentId', '==', tournamentId))).docs.map(d => d.data() as CustomTournamentParticipant);
+    const players = structuredClone(before), logs: CustomTournamentAuditLog[] = [];
+    const result = apply(t, players, logs);
+    tx.set(ref, t);
+    for (const p of before) if (!players.some(row => row.id === p.id)) {
+      tx.delete(db.collection('custom_tournament_participants').doc(p.id));
+      tx.delete(db.collection('custom_tournament_claims').doc(`${tournamentId}_user_${p.userId}`));
+      tx.delete(db.collection('custom_tournament_claims').doc(`${tournamentId}_club_${p.clubId}`));
+    }
+    for (const log of logs) tx.set(db.collection('custom_tournament_audit_logs').doc(log.id), log);
+    return result;
+  });
+}
+
+function managementLog(t: CustomTournament, actor: string, action: CustomTournamentAuditLog['action'], details?: Record<string, unknown>): CustomTournamentAuditLog {
+  return {id: 'manage_' + crypto.randomUUID(), tournamentId:t.id, action, performedByUserId:actor, createdAt:t.updatedAt, details:details || {}};
+}
+
+export async function updateTournamentSettings(tournamentId: string, actorId: string, settings: TournamentSettingsUpdate) {
+  return mutateAdministration(tournamentId, actorId, true, (t, players, logs) => {
+    if (t.status !== 'REGISTRATION_OPEN') throw tournamentError('Sozlamalarni faqat turnir boshlanishidan oldin o‘zgartirish mumkin.', 409);
+    const capacity = t.leagueScope === 'SINGLE_LEAGUE' ? SEED_CLUBS.filter(c => c.leagueId === t.selectedLeagueId).length : 32;
+    if (typeof settings.name !== 'string' || !settings.name.trim() || settings.name.trim().length > 60 ||
+      (settings.description !== undefined && (typeof settings.description !== 'string' || settings.description.length > 500)) ||
+      !Number.isInteger(settings.maxParticipants) || settings.maxParticipants < Math.max(4, players.length) || settings.maxParticipants > capacity ||
+      !['PRIVATE','PUBLIC_OPEN','PUBLIC_MODERATED'].includes(settings.visibility) || !['MEMBERS_ONLY','PUBLIC_LINK'].includes(settings.spectatorAccess) ||
+      !Number.isInteger(settings.matchDurationHours) || settings.matchDurationHours < 1 || settings.matchDurationHours > 168) throw tournamentError('Sozlamalar noto‘g‘ri. O‘rinlar band joylardan kam bo‘la olmaydi.');
+    if (t.format === 'LEAGUE_AND_PLAYOFF' && ((t.rules.playoffQualifiersCount || 4) > settings.maxParticipants || (t.rules.groupStageMode === 'GROUPS' && (t.rules.groupsCount || 2)*2 > settings.maxParticipants))) throw tournamentError('O‘rinlar soni guruh yoki pley-off reglamentiga yetmaydi.');
+    t.name = settings.name.trim(); t.description = settings.description?.trim() || '';
+    t.maxParticipants = settings.maxParticipants; t.visibility = settings.visibility; t.spectatorAccess = settings.spectatorAccess;
+    t.rules = {...t.rules, matchDurationHours:settings.matchDurationHours}; t.updatedAt = new Date().toISOString();
+    logs.push(managementLog(t, actorId, 'SETTINGS_UPDATED', {maxParticipants:t.maxParticipants, visibility:t.visibility, spectatorAccess:t.spectatorAccess}));
+    return {tournament:t};
+  });
+}
+
+export async function removeTournamentParticipant(tournamentId: string, actorId: string, targetUserId: string) {
+  return mutateAdministration(tournamentId, actorId, false, (t, players, logs) => {
+    if (t.status !== 'REGISTRATION_OPEN') throw tournamentError('Qatnashchini faqat turnir boshlanishidan oldin chiqarish mumkin.', 409);
+    const index = players.findIndex(p => p.userId === targetUserId);
+    if (index < 0) throw tournamentError('Qatnashchi topilmadi.', 404);
+    const [removed] = players.splice(index, 1); t.currentParticipantsCount = players.length; t.updatedAt = new Date().toISOString();
+    logs.push(managementLog(t, actorId, 'PARTICIPANT_REMOVED', {userId:removed.userId, clubName:removed.clubName}));
+    return {success:true, freedClubId:removed.clubId};
+  });
+}
+
+export async function cancelTournament(tournamentId: string, actorId: string) {
+  return mutateAdministration(tournamentId, actorId, true, (t, _players, logs) => {
+    if (t.status === 'CANCELLED') return {tournament:t};
+    if (!['DRAFT','REGISTRATION_OPEN','IN_PROGRESS'].includes(t.status)) throw tournamentError('Yakunlangan yoki taqvimi tayyorlanayotgan turnirni bekor qilib bo‘lmaydi.', 409);
+    t.status = 'CANCELLED'; t.cancelledAt = new Date().toISOString(); t.updatedAt = t.cancelledAt;
+    logs.push(managementLog(t, actorId, 'TOURNAMENT_CANCELLED'));
+    return {tournament:t};
+  });
+}
+
+export async function getTournamentManagementUsers(tournamentId: string, actorId: string) {
+  const fallback = process.env.FIREBASE_FORCE_LOCAL_FALLBACK === 'true' || process.env.NODE_ENV === 'test';
+  const t = fallback ? memoryTournaments.get(tournamentId) : (await getFirestoreDb().collection('custom_tournaments').doc(tournamentId).get()).data() as CustomTournament | undefined;
+  if (!t || (t.organizerUserId !== actorId && !t.assistantAdminIds.includes(actorId))) throw tournamentError('Boshqaruv huquqi kerak.', 403);
+  const ids = [...new Set([t.organizerUserId, ...t.assistantAdminIds])];
+  const users = await Promise.all(ids.map(async id => {
+    const profile = fallback ? (memoryParticipants.get(tournamentId) || []).find(p => p.userId === id) : (await getFirestoreDb().collection('users').doc(id).get()).data();
+    return {id, username:profile?.username || '', firstName:profile?.firstName || ''};
+  }));
+  return {users};
 }

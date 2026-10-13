@@ -8,6 +8,7 @@
 import { Router, Request, Response } from 'express';
 import { requireAuth } from '../middleware/authMiddleware';
 import {
+  updateTournamentSettings, removeTournamentParticipant, cancelTournament, getTournamentManagementUsers,
   createTournament,
   reviewTournamentParticipant,
   publishTournament,
@@ -118,8 +119,6 @@ customTournamentsRouter.post('/create', requireAuth, async (req: Request, res: R
       organizerUserId: user.id,
       organizerTelegramId: user.telegramId || '',
       organizerUsername: user.username,
-      organizerFirstName: user.firstName,
-      organizerClubId: req.body.organizerClubId,
       format: format || 'LEAGUE',
       leagueScope: leagueScope || 'TOP5_ALL',
       selectedLeagueId,
@@ -337,3 +336,20 @@ customTournamentsRouter.get('/:id/audit-logs', requireAuth, async (req: Request,
   }
 });
 
+
+customTournamentsRouter.post('/:id/settings', requireAuth, async (req: Request, res: Response) => {
+  try { res.json({ok:true, ...await updateTournamentSettings(req.params.id, req.user!.id, req.body)}); }
+  catch (error:any) { res.status(error.statusCode || 500).json({ok:false, error:error.message}); }
+});
+customTournamentsRouter.post('/:id/participants/:userId/remove', requireAuth, async (req: Request, res: Response) => {
+  try { res.json({ok:true, ...await removeTournamentParticipant(req.params.id, req.user!.id, req.params.userId)}); }
+  catch (error:any) { res.status(error.statusCode || 500).json({ok:false, error:error.message}); }
+});
+customTournamentsRouter.post('/:id/cancel', requireAuth, async (req: Request, res: Response) => {
+  try { res.json({ok:true, ...await cancelTournament(req.params.id, req.user!.id)}); }
+  catch (error:any) { res.status(error.statusCode || 500).json({ok:false, error:error.message}); }
+});
+customTournamentsRouter.get('/:id/management-users', requireAuth, async (req: Request, res: Response) => {
+  try { res.json({ok:true, ...await getTournamentManagementUsers(req.params.id, req.user!.id)}); }
+  catch (error:any) { res.status(error.statusCode || 500).json({ok:false, error:error.message}); }
+});

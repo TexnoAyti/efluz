@@ -1,607 +1,174 @@
-import React, { useState, useEffect } from 'react';
-import {
-  X,
-  Play,
-  UserPlus,
-  Trash2,
-  Shield,
-  Clock,
-  CheckCircle2,
-  AlertTriangle,
-  History,
-  Copy,
-  Check,
-  Users,
-} from 'lucide-react';
-import {
-  CustomTournament,
-  CustomTournamentParticipant,
-  CustomTournamentFixture,
-  CustomTournamentAuditLog,
-} from '../../types/customTournament';
-import { tournamentTelegramLink } from '../../lib/customTournamentLinks';
-import { customTournamentApi } from '../../lib/customTournamentApi';
+import React, {useEffect, useRef, useState} from 'react';
+import {X, Copy, Check, Shield, Play, Users, Swords, Settings, History, AlertTriangle, RefreshCw} from 'lucide-react';
+import type {CustomTournament, CustomTournamentParticipant, CustomTournamentFixture, CustomTournamentAuditLog} from '../../types/customTournament';
+import {customTournamentApi} from '../../lib/customTournamentApi';
+import {tournamentTelegramLink} from '../../lib/customTournamentLinks';
+import {auditActionLabel, fixtureStatusLabel, tournamentFormatLabel, tournamentStatusLabel, tournamentStartBlocker} from '../../lib/customTournamentLabels';
+import {TOP5_CLUBS} from '../../constants/top5Clubs';
 
-interface TournamentAdminDrawerProps {
-  isOpen: boolean;
-  onClose: () => void;
-  tournament: CustomTournament;
-  participants: CustomTournamentParticipant[];
-  fixtures: CustomTournamentFixture[];
-  onRefresh: () => void;
-  canPublishDraft?: boolean;
+type Tab = 'overview'|'participants'|'matches'|'settings'|'history';
+interface Props {
+  isOpen:boolean; onClose:()=>void; tournament:CustomTournament;
+  participants:CustomTournamentParticipant[]; fixtures:CustomTournamentFixture[];
+  onRefresh:()=>void|Promise<void>; isOrganizer?:boolean; initialTab?:Tab;
 }
+const inputClass = 'w-full min-w-0 min-h-[44px] rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-slate-200';
+const buttonClass = 'min-h-[44px] px-3 py-2 rounded-xl text-sm font-semibold disabled:opacity-40 whitespace-normal break-words';
+const cardClass = 'min-w-0 p-4 rounded-2xl border border-slate-800 bg-slate-950/60 space-y-3';
+const personLabel = (p?:{username?:string;firstName?:string}) => p?.username ? '@'+p.username : p?.firstName || 'Qatnashchi';
 
-export const TournamentAdminDrawer: React.FC<TournamentAdminDrawerProps> = ({
-  isOpen,
-  onClose,
-  tournament,
-  participants,
-  fixtures,
-  onRefresh,
-  canPublishDraft = false,
-}) => {
-  const [activeTab, setActiveTab] = useState<'control' | 'assistants' | 'disputes' | 'audit'>('control');
-  const [isLoading, setIsLoading] = useState(false);
-  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-
-  // Assistants state
-  const [assistantInput, setAssistantInput] = useState('');
-
-  // Disputes & correction state
-  const [selectedFixtureId, setSelectedFixtureId] = useState<string>('');
-  const [homeScore, setHomeScore] = useState<number>(0);
-  const [awayScore, setAwayScore] = useState<number>(0);
-  const [penHome, setPenHome] = useState<string>('');
-  const [penAway, setPenAway] = useState<string>('');
-  const [correctionNote, setCorrectionNote] = useState<string>('');
-
-  // Audit logs state
-  const [auditLogs, setAuditLogs] = useState<CustomTournamentAuditLog[]>([]);
-  const [loadingLogs, setLoadingLogs] = useState(false);
-
-  // Link copy status
-  const [copiedInvite, setCopiedInvite] = useState(false);
-  const [copiedSpec, setCopiedSpec] = useState(false);
-
-  useEffect(() => {
-    if (isOpen && activeTab === 'audit') {
-      fetchLogs();
-    }
-  }, [isOpen, activeTab]);
-
-  const fetchLogs = async () => {
-    try {
-      setLoadingLogs(true);
-      const logs = await customTournamentApi.getAuditLogs(tournament.id);
-      setAuditLogs(logs);
-    } catch (err) {
-      setAuditLogs([]);
-      setStatusMessage({type: 'error', text: err instanceof Error ? err.message : 'Auditni yuklab bo‘lmadi.'});
-    } finally {
-      setLoadingLogs(false);
-    }
+export function TournamentAdminDrawer({isOpen,onClose,tournament:t,participants,fixtures,onRefresh,isOrganizer=false,initialTab='overview'}:Props) {
+  const [tab,setTab]=useState<Tab>(initialTab), [busy,setBusy]=useState(false);
+  const [message,setMessage]=useState<{error:boolean;text:string}|null>(null);
+  const [confirmAction,setConfirmAction]=useState<{text:string;run:()=>Promise<unknown>;success:string}|null>(null);
+  const [copied,setCopied]=useState('');
+  const [logs,setLogs]=useState<CustomTournamentAuditLog[]>([]), [logsLoading,setLogsLoading]=useState(false), [logsError,setLogsError]=useState('');
+  const [managementUsers,setManagementUsers]=useState<Array<{id:string;username:string;firstName:string}>>([]);
+  const [managementError,setManagementError]=useState(''), [assistantId,setAssistantId]=useState('');
+  const [participantSearch,setParticipantSearch]=useState(''), [matchSearch,setMatchSearch]=useState('');
+  const [matchFilter,setMatchFilter]=useState('ATTENTION'), [page,setPage]=useState(0);
+  const [selectedId,setSelectedId]=useState(''), [home,setHome]=useState('0'), [away,setAway]=useState('0');
+  const [penHome,setPenHome]=useState(''), [penAway,setPenAway]=useState(''), [note,setNote]=useState('');
+  const scoreForm=useRef<HTMLFormElement>(null), confirmationPanel=useRef<HTMLDivElement>(null), dialog=useRef<HTMLElement>(null);
+  const [settings,setSettings]=useState(()=>({name:t.name,description:t.description||'',maxParticipants:t.maxParticipants,visibility:t.visibility,spectatorAccess:t.spectatorAccess,matchDurationHours:t.rules.matchDurationHours}));
+  useEffect(()=>{setSettings({name:t.name,description:t.description||'',maxParticipants:t.maxParticipants,visibility:t.visibility,spectatorAccess:t.spectatorAccess,matchDurationHours:t.rules.matchDurationHours});},[t.id,t.updatedAt]);
+  useEffect(()=>{setPage(0);},[matchSearch,matchFilter]);
+  useEffect(()=>{if(selectedId)scoreForm.current?.scrollIntoView({block:'nearest',behavior:'smooth'});},[selectedId]);
+  useEffect(()=>{if(confirmAction)confirmationPanel.current?.scrollIntoView({block:'nearest',behavior:'smooth'});},[confirmAction]);
+  useEffect(()=>{
+    if(!isOpen||tab!=='history')return;
+    let active=true;setLogsLoading(true);setLogsError('');
+    customTournamentApi.getAuditLogs(t.id).then(data=>{if(active)setLogs(data);}).catch(error=>{if(active)setLogsError(error.message);}).finally(()=>{if(active)setLogsLoading(false);});
+    return ()=>{active=false;};
+  },[isOpen,tab,t.id,t.updatedAt]);
+  const loadManagementUsers=async()=>{
+    setManagementError('');
+    try{setManagementUsers((await customTournamentApi.getManagementUsers(t.id)).users);}
+    catch(error){setManagementError(error instanceof Error?error.message:'Yordamchilarni yuklab bo‘lmadi.');}
   };
-
-  if (!isOpen) return null;
-
-  const handlePublishDraft = async () => {
-    try {
-      setIsLoading(true);
-      setStatusMessage(null);
-      const account = await customTournamentApi.getTicketBalance();
-      if (account.balance < 1) throw new Error('E’lon qilish uchun 1 ta ticket kerak.');
-      await customTournamentApi.publishTournament(tournament.id, `publish_${tournament.id}`);
-      setStatusMessage({ type: 'success', text: 'Turnir e’lon qilindi. Qabul ochiq.' });
-      onRefresh();
-    } catch (err) {
-      setStatusMessage({ type: 'error', text: err instanceof Error ? err.message : 'Turnirni e’lon qilib bo‘lmadi.' });
-    } finally { setIsLoading(false); }
+  useEffect(()=>{if(isOpen&&(tab==='settings'||tab==='history'))loadManagementUsers();},[isOpen,tab,t.id,t.updatedAt]);
+  useEffect(()=>{
+    if(!isOpen)return;
+    const escape=(event:KeyboardEvent)=>{
+      if(event.key==='Escape'&&!busy)onClose();
+      if(event.key==='Tab'){
+        const elements=Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href]')||[]).filter(el=>el.getClientRects().length>0);
+        const first=elements[0],last=elements.at(-1);
+        if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}
+        else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
+      }
+    };
+    document.addEventListener('keydown',escape);return()=>document.removeEventListener('keydown',escape);
+  },[isOpen,busy,onClose]);
+  useEffect(()=>{if(!isOpen)return;const previous=document.activeElement as HTMLElement|null;dialog.current?.querySelector<HTMLButtonElement>('button')?.focus();return()=>previous?.focus();},[isOpen]);
+  if(!isOpen)return null;
+  const run=async(action:()=>Promise<unknown>,success:string)=>{
+    if(busy)return;setBusy(true);setMessage(null);
+    try{await action();setConfirmAction(null);await onRefresh();setMessage({error:false,text:success});}
+    catch(error){setMessage({error:true,text:error instanceof Error?error.message:'Amal bajarilmadi.'});}
+    finally{setBusy(false);}
   };
-
-  const handleStartTournament = async () => {
-    if (participants.length < 4) {
-      setStatusMessage({ type: 'error', text: 'Boshlash uchun kamida 4 ta ishtirokchi zarur.' });
-      return;
-    }
-    try {
-      setIsLoading(true);
-      setStatusMessage(null);
-      await customTournamentApi.startTournament(tournament.id);
-      setStatusMessage({ type: 'success', text: 'Turnir muvaffaqiyatli boshlandi va taqvim shakllantirildi!' });
-      onRefresh();
-    } catch (err: any) {
-      setStatusMessage({ type: 'error', text: err.message || 'Turnirni boshlashda xatolik.' });
-    } finally {
-      setIsLoading(false);
-    }
+  const copy=async(value:string,key:string)=>{
+    try{await navigator.clipboard.writeText(value);setCopied(key);}
+    catch{setMessage({error:true,text:'Nusxalab bo‘lmadi. Havolani quyidagi maydondan nusxalang.'});}
   };
-
-  const pendingParticipants = participants.filter(p => p.status === 'PENDING_APPROVAL');
-  const handleReview = async (userId: string, action: 'APPROVE' | 'REJECT') => {
-    setIsLoading(true); setStatusMessage(null);
-    try { await customTournamentApi.reviewParticipant(tournament.id, userId, action); onRefresh(); }
-    catch (err) { setStatusMessage({type: 'error', text: err instanceof Error ? err.message : 'Arizani ko‘rib bo‘lmadi.'}); }
-    finally { setIsLoading(false); }
+  const registered=participants.filter(p=>p.status==='REGISTERED'), pending=participants.filter(p=>p.status==='PENDING_APPROVAL');
+  const blocker=tournamentStartBlocker(t,participants);
+  const canEdit=t.status==='REGISTRATION_OPEN';
+  const limit=t.leagueScope==='SINGLE_LEAGUE'?TOP5_CLUBS.filter(c=>c.leagueId===t.selectedLeagueId).length:32;
+  const selected=fixtures.find(f=>f.id===selectedId);
+  const editableMatches=fixtures.filter(f=>!['TBD','BYE'].includes(f.homeClubId)&&!['TBD','BYE'].includes(f.awayClubId)&&f.status!=='BYE_AUTO_ADVANCED');
+  const filteredMatches=editableMatches.filter(f=>(matchFilter==='ALL'||(matchFilter==='ATTENTION'?['DISPUTED','PENDING_CONFIRMATION'].includes(f.status):f.status===matchFilter))&&`${f.homeClubName} ${f.awayClubName}`.toLowerCase().includes(matchSearch.trim().toLowerCase()));
+  const currentPage=Math.min(page,Math.max(0,Math.ceil(filteredMatches.length/20)-1));
+  const selectMatch=(f:CustomTournamentFixture)=>{setSelectedId(f.id);setHome(String(f.homeScore??0));setAway(String(f.awayScore??0));setPenHome(f.penaltyHomeScore==null?'':String(f.penaltyHomeScore));setPenAway(f.penaltyAwayScore==null?'':String(f.penaltyAwayScore));setNote('');setMessage(null);};
+  const saveScore=(event:React.FormEvent)=>{
+    event.preventDefault();if(!selected)return;
+    const scores=[home,away],penalties=[penHome,penAway];
+    if(scores.some(x=>!/^\d{1,2}$/.test(x))||((penHome==='')!==(penAway===''))||penalties.some(x=>x!==''&&!/^\d{1,2}$/.test(x))||(penHome!==''&&Number(penHome)===Number(penAway))){setMessage({error:true,text:'Hisoblar 0–99 oralig‘ida bo‘lsin. Penalti kiritilsa, ikkala tomon va g‘olib ko‘rsatilishi kerak.'});return;}
+    run(async()=>{await customTournamentApi.correctMatchScore(t.id,selected.id,{homeScore:Number(home),awayScore:Number(away),penaltyHomeScore:penHome===''?undefined:Number(penHome),penaltyAwayScore:penAway===''?undefined:Number(penAway),note:note.trim()||'Turnir boshqaruvida rasmiy natija kiritildi'});setSelectedId('');},'Natija saqlandi. Jadval yangilandi.');
   };
-
-  const handleAddAssistant = async () => {
-    if (!assistantInput.trim()) return;
-    try {
-      setIsLoading(true);
-      setStatusMessage(null);
-      await customTournamentApi.updateAssistants(tournament.id, assistantInput.trim(), 'ADD');
-      setAssistantInput('');
-      setStatusMessage({ type: 'success', text: 'Yordamchi admin muvaffaqiyatli qo‘shildi.' });
-      onRefresh();
-    } catch (err: any) {
-      setStatusMessage({ type: 'error', text: err.message || 'Qo‘shishda xatolik.' });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleRemoveAssistant = async (id: string) => {
-    try {
-      setIsLoading(true);
-      setStatusMessage(null);
-      await customTournamentApi.updateAssistants(tournament.id, id, 'REMOVE');
-      setStatusMessage({ type: 'success', text: 'Yordamchi admin olib tashlandi.' });
-      onRefresh();
-    } catch (err: any) {
-      setStatusMessage({ type: 'error', text: err.message || 'Olib tashlashda xatolik.' });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleCorrectScore = async () => {
-    if (!selectedFixtureId) return;
-    try {
-      setIsLoading(true);
-      setStatusMessage(null);
-      await customTournamentApi.correctMatchScore(tournament.id, selectedFixtureId, {
-        homeScore: Number(homeScore),
-        awayScore: Number(awayScore),
-        penaltyHomeScore: penHome !== '' ? Number(penHome) : undefined,
-        penaltyAwayScore: penAway !== '' ? Number(penAway) : undefined,
-        note: correctionNote || 'Tashkilotchi tomonidan kiritilgan rasmiy hisob',
-      });
-      setStatusMessage({ type: 'success', text: 'Natija muvaffaqiyatli tasdiqlandi va jadval yangilandi.' });
-      setSelectedFixtureId('');
-      onRefresh();
-    } catch (err: any) {
-      setStatusMessage({ type: 'error', text: err.message || 'Xatolik yuz berdi.' });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const copyToClipboard = async (text: string, isInvite: boolean) => {
-    try { await navigator.clipboard.writeText(text); } catch { setStatusMessage({ type: 'error', text: 'Nusxalab bo‘lmadi. Havolani tanlab, qo‘lda nusxalang.' }); return; }
-    if (isInvite) {
-      setCopiedInvite(true);
-      setTimeout(() => setCopiedInvite(false), 2000);
-    } else {
-      setCopiedSpec(true);
-      setTimeout(() => setCopiedSpec(false), 2000);
-    }
-  };
-
-  const inviteUrl = tournamentTelegramLink(tournament.id, tournament.inviteToken);
-  const specUrl = tournamentTelegramLink(tournament.id, tournament.spectatorToken);
-
-  const disputedFixtures = fixtures.filter((f) => f.status === 'DISPUTED' || f.status === 'PENDING_CONFIRMATION');
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-end bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="w-full max-w-lg h-full bg-slate-900 border-l border-slate-800 flex flex-col shadow-2xl overflow-hidden">
-        {/* Header */}
-        <div className="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-              <Shield className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="font-black text-slate-100 text-lg leading-tight">Turnir Boshqaruvi</h2>
-              <p className="text-xs text-slate-400 truncate max-w-[260px]">{tournament.name}</p>
-            </div>
+  const tabs=[{id:'overview',label:'Umumiy',Icon:Play},{id:'participants',label:'Qatnashchilar',Icon:Users},{id:'matches',label:'O‘yinlar',Icon:Swords},{id:'settings',label:'Sozlamalar',Icon:Settings},{id:'history',label:'Tarix',Icon:History}] as const;
+  return <div className="efl-custom-tournaments fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex justify-end">
+    <section ref={dialog} role="dialog" aria-modal="true" aria-labelledby="tournament-management-title" className="w-full min-w-0 sm:max-w-xl h-[100dvh] bg-slate-900 border-l border-slate-800 flex flex-col overflow-hidden shadow-2xl">
+      <header className="shrink-0 flex items-start gap-3 p-4 border-b border-slate-800">
+        <Shield className="w-5 h-5 text-emerald-400 shrink-0 mt-1" />
+        <div className="min-w-0 flex-1"><h2 id="tournament-management-title" className="text-base font-bold text-slate-100">Turnir boshqaruvi</h2><p className="text-sm text-slate-400 break-words [overflow-wrap:anywhere]">{t.name}</p><p className="text-xs text-emerald-400 mt-1">{isOrganizer?'Tashkilotchi':'Yordamchi'} · {tournamentStatusLabel[t.status]}</p></div>
+        <button type="button" aria-label="Boshqaruvni yopish" disabled={busy} onClick={onClose} className="shrink-0 min-h-[44px] min-w-[44px] flex items-center justify-center text-slate-400"><X className="w-5 h-5" /></button>
+      </header>
+      <nav aria-label="Turnir boshqaruv bo‘limlari" className="shrink-0 grid grid-cols-3 sm:grid-cols-5 gap-1 p-2 border-b border-slate-800">
+        {tabs.map(({id,label,Icon})=><button key={id} type="button" disabled={busy} aria-pressed={tab===id} onClick={()=>{setTab(id);setMessage(null);setConfirmAction(null);}} className={`min-w-0 min-h-[52px] rounded-xl px-1 py-2 flex flex-col items-center justify-center gap-1 text-[11px] font-semibold ${tab===id?'bg-emerald-500/15 text-emerald-400':'text-slate-400 hover:bg-slate-800'}`}><Icon className="w-4 h-4 shrink-0" /><span className="break-words">{label}{id==='participants'&&pending.length>0?` (${pending.length})`:''}</span></button>)}
+      </nav>
+      <div className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden p-4 space-y-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        {message&&<div role={message.error?'alert':'status'} className={`text-sm p-3 rounded-xl break-words ${message.error?'bg-rose-500/10 text-rose-400':'bg-emerald-500/10 text-emerald-400'}`}>{message.text}</div>}
+        {confirmAction&&<div ref={confirmationPanel} className="p-4 border border-amber-500/40 rounded-2xl space-y-3"><p className="text-sm text-slate-200 break-words">{confirmAction.text}</p><div className="flex gap-2 flex-wrap"><button disabled={busy} onClick={()=>run(confirmAction.run,confirmAction.success)} className={`${buttonClass} bg-emerald-500 text-slate-950`}>{busy?'Bajarilmoqda…':'Tasdiqlash'}</button><button disabled={busy} onClick={()=>setConfirmAction(null)} className={`${buttonClass} bg-slate-800 text-slate-200`}>Qaytish</button></div></div>}
+        {tab==='overview'&&<>
+          <div className="grid grid-cols-2 gap-2">{[['Tasdiqlangan',registered.length],['Ariza kutilmoqda',pending.length],['Natija tasdiqlangan',fixtures.filter(f=>f.status==='CONFIRMED').length],['Nizoli o‘yin',fixtures.filter(f=>f.status==='DISPUTED').length]].map(([label,value])=><div key={label} className="p-3 rounded-xl bg-slate-950 border border-slate-800 min-w-0"><p className="text-xs text-slate-400 break-words">{label}</p><strong className="text-xl text-slate-100">{value}</strong></div>)}</div>
+          <div className={cardClass}><h3 className="font-bold text-sm text-slate-100">{tournamentFormatLabel[t.format]}</h3><p className="text-sm text-slate-400">{participants.length} / {t.maxParticipants} o‘rin band. Har o‘yin uchun {t.rules.matchDurationHours} soat.</p>
+            {t.status==='DRAFT'&&isOrganizer&&<><p className="text-sm text-slate-400">Eski qoralama. Qabulni ochish 1 ticket sarflaydi.</p><button disabled={busy} onClick={()=>run(()=>customTournamentApi.publishTournament(t.id,`publish_${t.id}`),'Qabul ochildi.')} className={`${buttonClass} bg-emerald-500 text-slate-950`}>Qabulni ochish (1 ticket)</button></>}
+            {isOrganizer&&['REGISTRATION_OPEN','STARTING'].includes(t.status)&&<>
+              {blocker&&<p className="text-sm text-amber-400">{blocker}</p>}
+              <button disabled={busy||!!blocker} onClick={()=>setConfirmAction({text:`${registered.length} klub bilan turnir boshlansinmi? Qabul yopiladi va taqvim yaratiladi.`,run:()=>customTournamentApi.startTournament(t.id),success:'Turnir boshlandi. Taqvim tayyor.'})} className={`${buttonClass} w-full bg-emerald-500 text-slate-950`}>{t.status==='STARTING'?'Taqvimni tayyorlashni davom ettirish':'Turnirni boshlash'}</button>
+            </>}
+            {t.status==='STARTING'&&<p className="text-sm text-amber-400">Taqvim tayyorlanmoqda. Jarayon uzilgan bo‘lsa, tashkilotchi davom ettirishi mumkin.</p>}
+            {t.status==='COMPLETED'&&<p className="text-sm text-emerald-400">G‘olib: {t.winnerClubName||'Belgilanmagan'}</p>}
+            {t.status==='CANCELLED'&&<p className="text-sm text-rose-400">Turnir bekor qilingan. Qabul va natija kiritish yopiq.</p>}
+            <button disabled={busy} type="button" onClick={()=>run(async()=>{},'Ma’lumotlar yangilandi.')} className={`${buttonClass} w-full bg-slate-800 text-slate-200 inline-flex items-center justify-center gap-2`}><RefreshCw className="w-4 h-4" />Yangilash</button>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Status banner */}
-        {statusMessage && (
-          <div
-            className={`p-3 text-xs font-medium flex items-center gap-2 ${
-              statusMessage.type === 'success'
-                ? 'bg-emerald-500/10 text-emerald-400 border-b border-emerald-500/20'
-                : 'bg-rose-500/10 text-rose-400 border-b border-rose-500/20'
-            }`}
-          >
-            {statusMessage.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}
-            <span>{statusMessage.text}</span>
+          {t.status==='REGISTRATION_OPEN'&&<div className={cardClass}><h3 className="text-sm font-bold text-slate-100">Qatnashish havolasi</h3><p className="text-xs text-slate-400">Telegram Mini App orqali klub tanlab qo‘shilish.</p><input readOnly aria-label="Qatnashish havolasi" value={tournamentTelegramLink(t.id,t.inviteToken)} className={inputClass} /><button type="button" onClick={()=>copy(tournamentTelegramLink(t.id,t.inviteToken),'invite')} className={`${buttonClass} w-full bg-slate-800 text-slate-200 flex items-center justify-center gap-2`}>{copied==='invite'?<Check className="w-4 h-4" />:<Copy className="w-4 h-4" />}{copied==='invite'?'Nusxa olindi':'Havolani nusxalash'}</button></div>}
+          {t.spectatorAccess==='PUBLIC_LINK'&&t.status!=='DRAFT'&&<div className={cardClass}><h3 className="text-sm font-bold text-slate-100">Kuzatish havolasi</h3><input readOnly aria-label="Kuzatish havolasi" value={tournamentTelegramLink(t.id,t.spectatorToken)} className={inputClass} /><button type="button" onClick={()=>copy(tournamentTelegramLink(t.id,t.spectatorToken),'spectator')} className={`${buttonClass} w-full bg-slate-800 text-slate-200`}>{copied==='spectator'?'Nusxa olindi':'Havolani nusxalash'}</button></div>}
+        </>}
+        {tab==='participants'&&<>
+          <input aria-label="Qatnashchi qidirish" placeholder="Ism yoki klub bo‘yicha qidirish" value={participantSearch} onChange={e=>setParticipantSearch(e.target.value)} className={inputClass} />
+          <p className="text-xs text-slate-400">{registered.length} tasdiqlangan · {pending.length} ariza. Turnir boshlangach, qatnashchilar ro‘yxati o‘zgarmaydi.</p>
+          {participants.filter(p=>`${p.firstName||''} ${p.username||''} ${p.clubName}`.toLowerCase().includes(participantSearch.trim().toLowerCase())).map(p=><div key={p.id} className={cardClass}>
+            <div className="min-w-0"><h3 className="text-sm font-bold text-slate-100 break-words">{p.clubName}</h3><p className="text-sm text-slate-400 break-words [overflow-wrap:anywhere]">{personLabel(p)}</p><p className={`text-xs mt-1 ${p.status==='PENDING_APPROVAL'?'text-amber-400':'text-emerald-400'}`}>{p.status==='PENDING_APPROVAL'?'Ariza kutilmoqda':'Tasdiqlangan'}{t.assistantAdminIds.includes(p.userId)?' · Yordamchi':''}</p></div>
+            {canEdit&&<div className="grid grid-cols-2 gap-2">{p.status==='PENDING_APPROVAL'?<><button disabled={busy} onClick={()=>run(()=>customTournamentApi.reviewParticipant(t.id,p.userId,'APPROVE'),'Ariza tasdiqlandi.')} className={`${buttonClass} bg-emerald-500 text-slate-950`}>Tasdiqlash</button><button disabled={busy} onClick={()=>setConfirmAction({text:`${p.clubName} arizasi rad etilsinmi? Klub va o‘rin bo‘shatiladi.`,run:()=>customTournamentApi.reviewParticipant(t.id,p.userId,'REJECT'),success:'Ariza rad etildi.'})} className={`${buttonClass} bg-rose-500/10 text-rose-400`}>Rad etish</button></>:<button disabled={busy} onClick={()=>setConfirmAction({text:`${personLabel(p)} turnirdan chiqarilsinmi? ${p.clubName} bo‘shatiladi.`,run:()=>customTournamentApi.removeParticipant(t.id,p.userId),success:'Qatnashchi chiqarildi. Klub bo‘shatildi.'})} className={`${buttonClass} col-span-2 bg-rose-500/10 text-rose-400`}>Turnirdan chiqarish</button>}</div>}
+          </div>)}
+          {participants.length===0&&<p className="text-sm text-slate-400">Hali qatnashchilar yo‘q. Taklif havolasini ulashing.</p>}
+        </>}
+        {tab==='matches'&&<>
+          {!['IN_PROGRESS','COMPLETED'].includes(t.status)?<p className="text-sm text-slate-400">O‘yinlar turnir boshlangach boshqariladi.</p>:<>
+            {selected&&<form ref={scoreForm} onSubmit={saveScore} className={cardClass}>
+              <div className="flex items-start gap-2"><h3 className="min-w-0 flex-1 text-sm font-bold text-slate-100 break-words">{selected.homeClubName} — {selected.awayClubName}</h3><button type="button" aria-label="Natija oynasini yopish" onClick={()=>setSelectedId('')} className="min-h-[44px] min-w-[44px] shrink-0 text-slate-400"><X className="w-4 h-4 mx-auto" /></button></div>
+              <p className="text-xs text-slate-400">{fixtureStatusLabel[selected.status]} · Tur {selected.roundOrMatchday}{t.rules.playoffLegMode==='TWO_LEG'?` · ${selected.leg}-o‘yin`:''}</p>
+              {selected.proofUrl&&/^https?:\/\//i.test(selected.proofUrl)&&<a href={selected.proofUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-emerald-400 underline">Yuborilgan dalilni ochish</a>}
+              <div className="grid grid-cols-2 gap-2"><label className="min-w-0 text-xs text-slate-400">Mezbon gollari<input required type="number" min={0} max={99} step={1} value={home} onChange={e=>setHome(e.target.value)} className={inputClass} /></label><label className="min-w-0 text-xs text-slate-400">Mehmon gollari<input required type="number" min={0} max={99} step={1} value={away} onChange={e=>setAway(e.target.value)} className={inputClass} /></label></div>
+              {selected.stage.startsWith('PLAYOFF')&&<><p className="text-xs text-slate-400">Hal qiluvchi durang uchun penaltilar. Oddiy hisobdan alohida kiriting.</p><div className="grid grid-cols-2 gap-2"><label className="min-w-0 text-xs text-slate-400">Mezbon penaltilari<input type="number" min={0} max={99} step={1} value={penHome} onChange={e=>setPenHome(e.target.value)} className={inputClass} /></label><label className="min-w-0 text-xs text-slate-400">Mehmon penaltilari<input type="number" min={0} max={99} step={1} value={penAway} onChange={e=>setPenAway(e.target.value)} className={inputClass} /></label></div></>}
+              <label className="block text-xs text-slate-400">Qaror izohi<textarea value={note} onChange={e=>setNote(e.target.value)} maxLength={500} rows={2} className={inputClass} /></label>
+              <p className="text-xs text-slate-400">Rasmiy hisob darhol tasdiqlanadi va boshqaruv tarixiga yoziladi.</p><button disabled={busy} className={`${buttonClass} w-full bg-emerald-500 text-slate-950`}>{busy?'Saqlanmoqda…':'Rasmiy natijani saqlash'}</button>
+            </form>}
+            <input aria-label="O‘yin qidirish" placeholder="Klub bo‘yicha qidirish" value={matchSearch} onChange={e=>setMatchSearch(e.target.value)} className={inputClass} />
+            <select aria-label="O‘yin holati" value={matchFilter} onChange={e=>setMatchFilter(e.target.value)} className={inputClass}><option value="ATTENTION">Tasdiq kutilmoqda va nizoli</option><option value="ALL">Barcha tayyor juftliklar</option><option value="SCHEDULED">Kutilayotgan o‘yinlar</option><option value="CONFIRMED">Tasdiqlangan natijalar</option></select>
+            {filteredMatches.slice(currentPage*20,currentPage*20+20).map(f=><button key={f.id} type="button" disabled={busy} onClick={()=>selectMatch(f)} className={`${cardClass} w-full text-left disabled:opacity-40`}><p className="text-xs text-slate-400">Tur {f.roundOrMatchday} · {fixtureStatusLabel[f.status]}{t.rules.playoffLegMode==='TWO_LEG'?` · ${f.leg}-o‘yin`:''}</p><div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 text-sm text-slate-100"><span className="break-words">{f.homeClubName}</span><strong className="whitespace-nowrap">{f.homeScore??'–'} : {f.awayScore??'–'}</strong><span className="break-words text-right">{f.awayClubName}</span></div></button>)}
+            {filteredMatches.length===0&&<p className="text-sm text-slate-400">Bu filtrda o‘yin yo‘q. Boshqa holatni tanlang.</p>}
+            {filteredMatches.length>20&&<div className="flex flex-wrap items-center justify-between gap-2"><button disabled={currentPage===0} onClick={()=>setPage(currentPage-1)} className={`${buttonClass} bg-slate-800 text-slate-200`}>Oldingi</button><span className="text-xs text-slate-400">{currentPage+1} / {Math.ceil(filteredMatches.length/20)}</span><button disabled={(currentPage+1)*20>=filteredMatches.length} onClick={()=>setPage(currentPage+1)} className={`${buttonClass} bg-slate-800 text-slate-200`}>Keyingi</button></div>}
+          </>}
+        </>}
+        {tab==='settings'&&<>
+          {isOrganizer?<form className={cardClass} onSubmit={e=>{e.preventDefault();run(()=>customTournamentApi.updateSettings(t.id,settings),'Sozlamalar saqlandi.');}}>
+            <h3 className="font-bold text-sm text-slate-100">Turnir sozlamalari</h3><p className="text-xs text-slate-400">{canEdit?'Format va klublar bazasi yaratishda belgilanadi. Qolgan sozlamalarni boshlashdan oldin tahrirlash mumkin.':'Turnir boshlangan yoki yopilgan. Sozlamalar tahriri yopiq.'}</p>
+            <fieldset disabled={!canEdit||busy} className="min-w-0 space-y-3 disabled:opacity-60">
+              <label className="block text-xs text-slate-400">Turnir nomi<input required maxLength={60} value={settings.name} onChange={e=>setSettings({...settings,name:e.target.value})} className={inputClass} /></label>
+              <label className="block text-xs text-slate-400">Tavsif<textarea rows={3} maxLength={500} value={settings.description} onChange={e=>setSettings({...settings,description:e.target.value})} className={inputClass} /></label>
+              <div className="grid grid-cols-2 gap-2"><label className="min-w-0 text-xs text-slate-400">O‘rinlar soni<input type="number" min={Math.max(4,participants.length)} max={limit} required value={settings.maxParticipants} onChange={e=>setSettings({...settings,maxParticipants:Number(e.target.value)})} className={inputClass} /></label><label className="min-w-0 text-xs text-slate-400">O‘yin muddati (soat)<input type="number" min={1} max={168} required value={settings.matchDurationHours} onChange={e=>setSettings({...settings,matchDurationHours:Number(e.target.value)})} className={inputClass} /></label></div>
+              <label className="block text-xs text-slate-400">Qo‘shilish<select value={settings.visibility} onChange={e=>setSettings({...settings,visibility:e.target.value as CustomTournament['visibility']})} className={inputClass}><option value="PUBLIC_OPEN">Ochiq</option><option value="PUBLIC_MODERATED">Ariza bilan</option><option value="PRIVATE">Taklif bilan, yopiq</option></select></label>
+              <label className="block text-xs text-slate-400">Kuzatish<select value={settings.spectatorAccess} onChange={e=>setSettings({...settings,spectatorAccess:e.target.value as CustomTournament['spectatorAccess']})} className={inputClass}><option value="PUBLIC_LINK">Havola orqali</option><option value="MEMBERS_ONLY">Faqat a’zolar</option></select></label>
+              <button className={`${buttonClass} w-full bg-emerald-500 text-slate-950`}>Sozlamalarni saqlash</button>
+            </fieldset>
+          </form>:<p className="text-sm text-slate-400">Sozlamalarni faqat turnir tashkilotchisi o‘zgartiradi.</p>}
+          <div className={cardClass}><h3 className="font-bold text-sm text-slate-100">Yordamchilar</h3><p className="text-xs text-slate-400">Arizalar, qatnashchilar va natijalarni boshqaradi. Sozlamalar va bekor qilish tashkilotchida qoladi.</p>
+            {managementError&&<p role="alert" className="text-xs text-rose-400">{managementError}<button type="button" onClick={loadManagementUsers} className={`${buttonClass} underline`}>Qayta urinish</button></p>}
+            {t.assistantAdminIds.length===0&&<p className="text-sm text-slate-400">Yordamchi tayinlanmagan.</p>}
+            {t.assistantAdminIds.map(id=><div key={id} className="flex flex-wrap items-center gap-2"><span className="min-w-0 flex-1 text-sm text-slate-200 break-words [overflow-wrap:anywhere]">{personLabel(managementUsers.find(u=>u.id===id)||participants.find(p=>p.userId===id))}</span>{isOrganizer&&<button disabled={busy} onClick={()=>run(()=>customTournamentApi.updateAssistants(t.id,id,'REMOVE'),'Yordamchi olib tashlandi.')} className={`${buttonClass} text-rose-400`}>Olib tashlash</button>}</div>)}
+            {isOrganizer&&!['COMPLETED','CANCELLED'].includes(t.status)&&<><label className="block text-xs text-slate-400">Qatnashchilar orasidan yordamchi<select value={assistantId} onChange={e=>setAssistantId(e.target.value)} className={inputClass}><option value="">Qatnashchini tanlang</option>{registered.filter(p=>p.userId!==t.organizerUserId&&!t.assistantAdminIds.includes(p.userId)).map(p=><option key={p.id} value={p.userId}>{personLabel(p)} · {p.clubName}</option>)}</select></label><button disabled={busy||!assistantId} onClick={()=>run(async()=>{await customTournamentApi.updateAssistants(t.id,assistantId,'ADD');setAssistantId('');},'Yordamchi tayinlandi.')} className={`${buttonClass} w-full bg-slate-800 text-slate-200`}>Yordamchi tayinlash</button></>}
           </div>
-        )}
-
-        {/* Tab switchers */}
-        <div className="flex border-b border-slate-800 bg-slate-950/50 p-1 gap-1">
-          <button
-            onClick={() => setActiveTab('control')}
-            className={`flex-1 py-2 px-3 text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 ${
-              activeTab === 'control'
-                ? 'bg-slate-800 text-slate-100 shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Play className="w-3.5 h-3.5" /> Boshqaruv
-          </button>
-          <button
-            onClick={() => setActiveTab('assistants')}
-            className={`flex-1 py-2 px-3 text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 ${
-              activeTab === 'assistants'
-                ? 'bg-slate-800 text-slate-100 shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <UserPlus className="w-3.5 h-3.5" /> Yordamchilar
-          </button>
-          <button
-            onClick={() => setActiveTab('disputes')}
-            className={`flex-1 py-2 px-3 text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 ${
-              activeTab === 'disputes'
-                ? 'bg-slate-800 text-slate-100 shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <AlertTriangle className="w-3.5 h-3.5" />
-            Nizolar {disputedFixtures.length > 0 && `(${disputedFixtures.length})`}
-          </button>
-          <button
-            onClick={() => setActiveTab('audit')}
-            className={`flex-1 py-2 px-3 text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 ${
-              activeTab === 'audit'
-                ? 'bg-slate-800 text-slate-100 shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <History className="w-3.5 h-3.5" /> Audit
-          </button>
-        </div>
-
-        {/* Body content */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
-          {/* TAB 1: CONTROL */}
-          {activeTab === 'control' && (
-            <div className="space-y-4">
-              {tournament.status === 'DRAFT' && canPublishDraft && (
-                <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 space-y-3">
-                  <h4 className="font-bold text-slate-100 text-sm">Qoralamani e’lon qilish</h4>
-                  <p className="text-xs text-slate-300">Qoralama saqlangan. E’lon qilinganda 1 ta ticket sarflanadi va qatnashchilar klub tanlay oladi.</p>
-                  <button type="button" disabled={isLoading} onClick={handlePublishDraft} className="min-h-[44px] px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 text-xs font-bold disabled:opacity-50">E’lon qilish (1 ticket)</button>
-                </div>
-              )}
-              {/* Start Tournament Card */}
-              {canPublishDraft && ['REGISTRATION_OPEN', 'STARTING'].includes(tournament.status) && (
-                <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 space-y-3">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h4 className="font-bold text-slate-100 text-sm">Turnirni boshlash</h4>
-                      <p className="text-xs text-slate-300 mt-0.5">
-                        Hozir {participants.length} / {tournament.maxParticipants} qatnashchi ro‘yxatdan o‘tgan.
-                      </p>
-                    </div>
-                    <span className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400">
-                      <Play className="w-4 h-4" />
-                    </span>
-                  </div>
-
-                  <p className="text-xs text-slate-400 leading-relaxed bg-slate-900/60 p-2.5 rounded-xl border border-slate-800/80">
-                    O‘rinlar to‘lmagan taqdirda ham, tashkilotchi sifatida o‘rinlar sonini mavjud qatnashchilarga moslab
-                    turnirni qo‘lda boshlashingiz mumkin.
-                  </p>
-
-                  <button
-                    onClick={handleStartTournament}
-                    disabled={isLoading || participants.length < 4 || pendingParticipants.length > 0}
-                    className="w-full py-2.5 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-black text-xs transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
-                  >
-                    <Play className="w-4 h-4 fill-current" />
-                    {tournament.status === 'STARTING' ? 'Boshlashni davom ettirish' : `Turnirni boshlash (${participants.length} ta jamoa bilan)`}
-                  </button>
-                </div>
-              )}
-
-              {tournament.status === 'REGISTRATION_OPEN' && pendingParticipants.length > 0 && <div className="p-4 rounded-2xl border border-amber-500/30 space-y-3">
-                <h4 className="text-sm font-bold text-amber-300">Kutilayotgan arizalar ({pendingParticipants.length})</h4>
-                {pendingParticipants.map(p => <div key={p.id} className="text-xs text-slate-200 space-y-2">
-                  <p>{p.clubName} · @{p.username || p.userId}</p>
-                  <div className="flex gap-2">
-                    <button disabled={isLoading} onClick={() => handleReview(p.userId, 'APPROVE')} className="min-h-[44px] px-3 bg-emerald-500 text-slate-950 rounded-xl disabled:opacity-50">Tasdiqlash</button>
-                    <button disabled={isLoading} onClick={() => handleReview(p.userId, 'REJECT')} className="min-h-[44px] px-3 bg-rose-500/20 text-rose-300 rounded-xl disabled:opacity-50">Rad etish</button>
-                  </div>
-                </div>)}
-              </div>}
-              {/* Tournament Links */}
-              <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-3">
-                <h4 className="font-bold text-slate-200 text-sm">Ulashish Havolalari</h4>
-
-                {/* Invite link */}
-                <div>
-                  <label className="text-[11px] font-semibold text-slate-400 block mb-1">
-                    Qatnashish uchun taklif havolasi (Ishtirokchi klub tanlashi uchun)
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      readOnly
-                      value={inviteUrl}
-                      className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-300 font-mono truncate"
-                    />
-                    <button
-                      onClick={() => copyToClipboard(inviteUrl, true)}
-                      className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1 transition-colors"
-                    >
-                      {copiedInvite ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                      {copiedInvite ? 'Nusxa olindi' : 'Nusxa'}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Spectator link */}
-                {tournament.spectatorAccess === 'MEMBERS_ONLY' ? <p className="text-xs text-slate-400">Kuzatish faqat turnir a’zolari uchun.</p> : <div>
-                  <label className="text-[11px] font-semibold text-slate-400 block mb-1">
-                    Kuzatuvchi havolasi (Faqat tomosha qilish uchun)
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      readOnly
-                      value={specUrl}
-                      className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-300 font-mono truncate"
-                    />
-                    <button
-                      onClick={() => copyToClipboard(specUrl, false)}
-                      className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1 transition-colors"
-                    >
-                      {copiedSpec ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                      {copiedSpec ? 'Nusxa olindi' : 'Nusxa'}
-                    </button>
-                  </div>
-                </div>}
-              </div>
-
-              {/* Status info */}
-              <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-2 text-xs text-slate-400">
-                <div className="flex justify-between">
-                  <span>Holat:</span>
-                  <span className="font-bold text-slate-200">{tournament.status}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Format:</span>
-                  <span className="font-bold text-slate-200">{tournament.format}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Ko‘rinishi:</span>
-                  <span className="font-bold text-slate-200">{tournament.visibility}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>O‘yin davomiyligi:</span>
-                  <span className="font-bold text-slate-200">{tournament.rules.matchDurationHours} soat / tur</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 2: ASSISTANTS */}
-          {activeTab === 'assistants' && (
-            <div className="space-y-4">
-              <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-3">
-                <h4 className="font-bold text-slate-200 text-sm">Yordamchi Admin Tayinlash</h4>
-                <p className="text-xs text-slate-400">
-                  Yordamchi admin faqat ushbu turnir doirasida natijalarni tasdiqlash va nizolarni hal qilish huquqiga ega bo‘ladi.
-                </p>
-
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    placeholder="Foydalanuvchi IDsi..."
-                    value={assistantInput}
-                    onChange={(e) => setAssistantInput(e.target.value)}
-                    className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
-                  />
-                  <button
-                    onClick={handleAddAssistant}
-                    disabled={isLoading || !assistantInput.trim()}
-                    className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-black text-xs transition-colors"
-                  >
-                    Qo‘shish
-                  </button>
-                </div>
-              </div>
-
-              {/* List of assistants */}
-              <div className="space-y-2">
-                <h5 className="text-xs font-bold text-slate-400 px-1">Amaldagi Yordamchilar</h5>
-                {(tournament.assistantAdminIds || []).length === 0 ? (
-                  <p className="text-xs text-slate-500 italic p-3 bg-slate-950/40 rounded-xl border border-slate-800/60">
-                    Hozircha yordamchi adminlar belgilanmagan.
-                  </p>
-                ) : (
-                  (tournament.assistantAdminIds || []).map((adminId) => (
-                    <div
-                      key={adminId}
-                      className="flex items-center justify-between p-3 rounded-xl bg-slate-950/60 border border-slate-800 text-xs"
-                    >
-                      <div className="flex items-center gap-2">
-                        <Shield className="w-3.5 h-3.5 text-sky-400" />
-                        <span className="font-mono text-slate-200">{adminId}</span>
-                      </div>
-                      <button
-                        onClick={() => handleRemoveAssistant(adminId)}
-                        disabled={isLoading}
-                        className="p-1.5 rounded-lg text-rose-400 hover:bg-rose-500/10 transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* TAB 3: DISPUTES & SCORE CORRECTION */}
-          {activeTab === 'disputes' && (
-            <div className="space-y-4">
-              <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-3">
-                <h4 className="font-bold text-slate-200 text-sm">Rasmiy Natijani Belgilash (Nizoni hal qilish)</h4>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  Tashkilotchi yoki yordamchi admin o‘yin hisobini rasman tasdiqlaydi. Agar pley-offda durang bo‘lsa, penaltilar
-                  seriyasini alohida kiriting.
-                </p>
-
-                {/* Select match */}
-                <div>
-                  <label className="text-[11px] font-semibold text-slate-400 block mb-1">O‘yinni tanlang</label>
-                  <select
-                    value={selectedFixtureId}
-                    onChange={(e) => {
-                      setSelectedFixtureId(e.target.value);
-                      const f = fixtures.find((fix) => fix.id === e.target.value);
-                      if (f) {
-                        setHomeScore(f.homeScore ?? 0);
-                        setAwayScore(f.awayScore ?? 0);
-                        setPenHome(f.penaltyHomeScore !== null && f.penaltyHomeScore !== undefined ? String(f.penaltyHomeScore) : '');
-                        setPenAway(f.penaltyAwayScore !== null && f.penaltyAwayScore !== undefined ? String(f.penaltyAwayScore) : '');
-                      }
-                    }}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
-                  >
-                    <option value="">-- O‘yinni tanlang --</option>
-                    {fixtures.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        [{f.status}] {f.homeClubName} vs {f.awayClubName} (Tur: {f.roundOrMatchday})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {selectedFixtureId && (
-                  <div className="space-y-3 pt-2 border-t border-slate-800">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-[11px] text-slate-400 block mb-1">Mezbon gollari</label>
-                        <input
-                          type="number"
-                          min="0"
-                          value={homeScore}
-                          onChange={(e) => setHomeScore(Number(e.target.value))}
-                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-100 font-bold"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[11px] text-slate-400 block mb-1">Mehmon gollari</label>
-                        <input
-                          type="number"
-                          min="0"
-                          value={awayScore}
-                          onChange={(e) => setAwayScore(Number(e.target.value))}
-                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-100 font-bold"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Penalty series (optional) */}
-                    <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800/80 space-y-2">
-                      <span className="text-[11px] font-bold text-amber-400 block">
-                        Penaltilar seriyasi (Pley-off durang bo‘lsa)
-                      </span>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <input
-                            type="number"
-                            min="0"
-                            placeholder="Mezbon penalti"
-                            value={penHome}
-                            onChange={(e) => setPenHome(e.target.value)}
-                            className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1 text-xs text-slate-200"
-                          />
-                        </div>
-                        <div>
-                          <input
-                            type="number"
-                            min="0"
-                            placeholder="Mehmon penalti"
-                            value={penAway}
-                            onChange={(e) => setPenAway(e.target.value)}
-                            className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1 text-xs text-slate-200"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="text-[11px] text-slate-400 block mb-1">Qaror izohi (Auditga yoziladi)</label>
-                      <input
-                        type="text"
-                        placeholder="Masalan: Raqib o‘yinga chiqmadi, texnik g‘alaba"
-                        value={correctionNote}
-                        onChange={(e) => setCorrectionNote(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200"
-                      />
-                    </div>
-
-                    <button
-                      onClick={handleCorrectScore}
-                      disabled={isLoading}
-                      className="w-full py-2 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs transition-colors"
-                    >
-                      Natijani Rasman Tasdiqlash
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* TAB 4: AUDIT LOG */}
-          {activeTab === 'audit' && (
-            <div className="space-y-3">
-              <h4 className="font-bold text-slate-200 text-sm px-1">Turnir Boshqaruv Tarixi</h4>
-              {loadingLogs ? (
-                <div className="p-8 text-center text-xs text-slate-400">Yuklanmoqda...</div>
-              ) : auditLogs.length === 0 ? (
-                <div className="p-6 text-center text-xs text-slate-500 italic bg-slate-950/40 rounded-2xl border border-slate-800">
-                  Audit yozuvlari hali mavjud emas.
-                </div>
-              ) : (
-                auditLogs.map((log) => (
-                  <div
-                    key={log.id}
-                    className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 space-y-1 text-xs"
-                  >
-                    <div className="flex items-center justify-between text-slate-400">
-                      <span className="font-bold text-emerald-400">{log.action}</span>
-                      <span className="text-[10px]">{new Date(log.createdAt).toLocaleString()}</span>
-                    </div>
-                    {log.details?.note && (
-                      <p className="text-slate-300 text-[11px] bg-slate-900/80 p-2 rounded-lg border border-slate-800/60">
-                        {log.details.note}
-                      </p>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
-          )}
-        </div>
+          {isOrganizer&&['DRAFT','REGISTRATION_OPEN','IN_PROGRESS'].includes(t.status)&&<div className="p-4 rounded-2xl border border-rose-500/30 space-y-3"><h3 className="text-sm font-bold text-rose-400">Turnirni bekor qilish</h3><p className="text-xs text-slate-400">Qabul va natija kiritish yopiladi. Mavjud natijalar saqlanadi. Ticket avtomatik qaytarilmaydi.</p><button disabled={busy} onClick={()=>setConfirmAction({text:'Turnir bekor qilinsinmi? Ushbu turnirni davom ettirish yopiladi.',run:()=>customTournamentApi.cancelTournament(t.id),success:'Turnir bekor qilindi.'})} className={`${buttonClass} w-full bg-rose-500/10 text-rose-400`}>Bekor qilish</button></div>}
+        </>}
+        {tab==='history'&&<>
+          <h3 className="font-bold text-sm text-slate-100">Boshqaruv tarixi</h3>
+          {logsLoading?<p className="text-sm text-slate-400">Yuklanmoqda…</p>:logsError?<p role="alert" className="text-sm text-rose-400">{logsError}</p>:logs.length===0?<p className="text-sm text-slate-400">Hali yozuv yo‘q.</p>:[...logs].sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).map(log=><div key={log.id} className={cardClass}><h4 className="text-sm font-semibold text-slate-100 break-words">{auditActionLabel[log.action]||'Boshqaruv amali'}</h4><p className="text-xs text-slate-400">{new Date(log.createdAt).toLocaleString('uz-UZ',{timeZone:'Asia/Tashkent'})}</p><p className="text-xs text-slate-400 break-words">{managementUsers.find(u=>u.id===log.performedByUserId)||participants.find(p=>p.userId===log.performedByUserId)?personLabel(managementUsers.find(u=>u.id===log.performedByUserId)||participants.find(p=>p.userId===log.performedByUserId)):'Boshqaruvchi'}</p>{log.details?.clubName&&<p className="text-sm text-slate-200 break-words">{log.details.clubName}</p>}{log.details?.note&&<p className="text-sm text-slate-200 break-words [overflow-wrap:anywhere]">{String(log.details.note)}</p>}</div>)}
+        </>}
       </div>
-    </div>
-  );
-};
+    </section>
+  </div>;
+}

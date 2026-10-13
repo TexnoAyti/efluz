@@ -11,7 +11,6 @@ import {
 } from '../../types/customTournament';
 import { generateTournamentPreview } from '../../lib/customTournamentEngine';
 import { customTournamentApi } from '../../lib/customTournamentApi';
-import { TournamentClubPicker } from './TournamentClubPicker';
 import { TOP5_CLUBS } from '../../constants/top5Clubs';
 
 interface TournamentWizardModalProps {
@@ -38,8 +37,6 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
   const [loadingTickets, setLoadingTickets] = useState<boolean>(true);
 
   // Form fields
-  const [organizerClubId, setOrganizerClubId] = useState<string>();
-  const [organizerOnly, setOrganizerOnly] = useState(false);
   const [name, setName] = useState<string>('');
   const [description, setDescription] = useState<string>('');
   const [format, setFormat] = useState<CustomTournamentFormat>('LEAGUE');
@@ -69,7 +66,6 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
       setMaxParticipants(8); setVisibility('PUBLIC_OPEN'); setSpectatorAccess('PUBLIC_LINK');
       setRoundsCount(1); setPlayoffLegMode('SINGLE_LEG'); setPlayoffQualifiersCount(4);
       setGroupStageMode('SINGLE_TABLE'); setGroupsCount(2); setMatchDurationHours(36); setIsAdvancedMode(false);
-      setOrganizerClubId(undefined); setOrganizerOnly(false);
       creationKey.current = crypto.randomUUID();
       creationPayload.current = '';
       fetchTicketBalance();
@@ -90,12 +86,11 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
   }, [format, maxParticipants, roundsCount, playoffLegMode, playoffQualifiersCount, groupStageMode, groupsCount, matchDurationHours]);
 
   useEffect(() => {
-    if (leagueScope === 'SINGLE_LEAGUE' && organizerClubId && !TOP5_CLUBS.some(c => c.id === organizerClubId && c.leagueId === selectedLeagueId)) setOrganizerClubId(undefined);
     if (maxParticipants > participantLimit) setMaxParticipants(participantLimit);
     if (groupsCount === 4 && maxParticipants < 8) setGroupsCount(2);
     const valid = [2, 4, 8, 16].filter(n => n <= maxParticipants && (groupStageMode !== 'GROUPS' || n % groupsCount === 0));
     if (!valid.includes(playoffQualifiersCount)) setPlayoffQualifiersCount(valid[0] as 2 | 4 | 8 | 16);
-  }, [participantLimit, maxParticipants, groupsCount, groupStageMode, playoffQualifiersCount, leagueScope, selectedLeagueId, organizerClubId]);
+  }, [participantLimit, maxParticipants, groupsCount, groupStageMode, playoffQualifiersCount]);
 
   const fetchTicketBalance = async () => {
     try {
@@ -114,7 +109,7 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
   if (!isOpen) return null;
 
   const handleCreateTournament = async () => {
-    if (isLoading || (!organizerOnly && !organizerClubId)) return;
+    if (isLoading) return;
     try {
       setIsLoading(true);
       setErrorMessage(null);
@@ -123,7 +118,6 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
       const payload = {
           name,
           description,
-          organizerClubId: organizerOnly ? undefined : organizerClubId,
           format,
           leagueScope,
           selectedLeagueId: leagueScope === 'SINGLE_LEAGUE' ? selectedLeagueId : undefined,
@@ -325,17 +319,7 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
                   <option value="MEMBERS_ONLY">Faqat turnir a’zolari</option>
                 </select>
               </label>
-              <div className="space-y-2">
-                <label className="flex items-center gap-2 text-xs text-slate-300 min-h-[44px]">
-                  <input type="checkbox" checked={organizerOnly} onChange={e => setOrganizerOnly(e.target.checked)} />
-                  Faqat tashkilotchi bo‘laman (o‘ynamayman)
-                </label>
-                {!organizerOnly && <>
-                  <p className="text-xs font-semibold text-slate-300">Sizning klubingiz *</p>
-                  <TournamentClubPicker selectedLeagueId={leagueScope === 'SINGLE_LEAGUE' ? selectedLeagueId : undefined} selectedClubId={organizerClubId} onSelect={setOrganizerClubId} />
-                </>}
-                <p className="text-[11px] text-slate-400">Bu turnirdagi klub asosiy ligadagi klubingizdan mustaqil. Qatnashish bepul.</p>
-              </div>
+              <p className="text-xs text-slate-400 leading-relaxed">Turnir ochilgach, o‘zingiz ham qatnashchilar kabi klub tanlab qo‘shilishingiz mumkin.</p>
               {/* Visibility */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1.5">
@@ -542,7 +526,7 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
                 <p className="font-bold">{name}</p>
                 <p>{maxParticipants} o‘rin · {visibility === 'PRIVATE' ? 'Yopiq, taklif orqali' : visibility === 'PUBLIC_MODERATED' ? 'Tashkilotchi tasdig‘i bilan' : 'Ochiq'}</p>
                 <p>{spectatorAccess === 'MEMBERS_ONLY' ? 'Faqat a’zolar kuzatadi' : 'Havola orqali kuzatish mumkin'}</p>
-                <p>{organizerOnly ? 'Siz faqat tashkilotchisiz' : `Sizning klubingiz: ${TOP5_CLUBS.find(c => c.id === organizerClubId)?.name || 'Tanlanmagan'}`}</p>
+                <p>O‘zingiz ham keyin klub tanlab qo‘shilasiz.</p>
                 <p className="text-slate-400">Hisob-kitob to‘liq {maxParticipants} qatnashchi uchun. Turnirni keyin boshqaruv oynasidan boshlaysiz.</p>
               </div>
               {/* Ticket status block */}
@@ -600,7 +584,7 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
             {step < 3 ? (
               <button
                 type="button"
-                disabled={!name.trim() || (!organizerOnly && !organizerClubId)}
+                disabled={!name.trim()}
                 onClick={() => setStep((s) => (s + 1) as any)}
                 className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-lg disabled:opacity-40 min-h-[44px]"
               >
@@ -611,7 +595,7 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
                 {ticketBalance !== null && ticketBalance >= 1 && !loadingTickets && !ticketError && (
                   <button
                     type="button"
-                    disabled={isLoading || (!organizerOnly && !organizerClubId)}
+                    disabled={isLoading}
                     onClick={handleCreateTournament}
                     className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-extrabold shadow-lg disabled:opacity-50 min-h-[44px] flex items-center gap-1.5"
                   >
