@@ -30,6 +30,7 @@ import { TournamentAdminDrawer } from './TournamentAdminDrawer';
 import { ClubCrest } from '../ClubCrest';
 import { TournamentClubPicker } from './TournamentClubPicker';
 import {tournamentStatusLabel,fixtureStageLabel,fixtureStatusLabel} from '../../lib/customTournamentLabels';
+import {TournamentOverview} from './TournamentOverview';
 import { useAuth } from '../../context/AuthContext';
 
 interface TournamentDetailViewProps {
@@ -60,6 +61,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
 
   // Modals
   const [showAdminDrawer, setShowAdminDrawer] = useState(false);
+  const [adminTab,setAdminTab] = useState<'overview'|'participants'|'matches'>('overview');
   const [showClubPickerModal, setShowClubPickerModal] = useState(false);
   const [selectedMatchForScore, setSelectedMatchForScore] = useState<CustomTournamentFixture | null>(null);
 
@@ -188,107 +190,10 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
   };
 
   return (
-    <div className="efl-custom-tournaments space-y-4 pb-20 animate-in fade-in duration-200">
+    <div className="efl-custom-tournaments tourney-page">
       {errorMessage && <div role="alert" className="p-3 rounded-xl text-xs text-rose-400">{errorMessage}<button type="button" onClick={loadData} className="min-h-[44px] px-3 underline">Qayta urinish</button></div>}
-      {myParticipant?.status === 'PENDING_APPROVAL' && <p role="status" className="p-3 rounded-xl bg-amber-500/10 text-amber-300 text-xs">Arizangiz tashkilotchi tasdig‘ini kutmoqda. Klubingiz band qilingan.</p>}
-      {tournament.status === 'STARTING' && <p role="status" className="p-3 text-amber-300 text-xs">Turnir taqvimi tayyorlanmoqda. Tashkilotchi boshqaruv oynasidan jarayonni davom ettirishi mumkin.</p>}
-      {tournament.status === 'COMPLETED' && <p className="p-4 bg-emerald-500/10 rounded-2xl text-emerald-300 font-bold">🏆 G‘olib: {tournament.winnerClubName}</p>}
-      <button type="button" onClick={loadData} className="min-h-[44px] px-3 text-xs text-emerald-400">Ma’lumotlarni yangilash</button>
-      {/* Top Header */}
-      <div className="flex items-center justify-between">
-        <button
-          onClick={onBack}
-          className="flex items-center gap-2 text-xs font-bold text-slate-400 hover:text-slate-100 transition-colors p-2 rounded-xl hover:bg-slate-800"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Barcha turnirlar</span>
-        </button>
-
-        {canManage && (
-          <button
-            onClick={() => setShowAdminDrawer(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 text-xs font-black transition-colors"
-          >
-            <Settings className="w-3.5 h-3.5" />
-            <span>Boshqaruv</span>
-          </button>
-        )}
-      </div>
-
-      {/* Tournament Hero Card */}
-      <div className="p-5 rounded-3xl bg-slate-900/90 border border-slate-800/80 shadow-xl space-y-4 backdrop-blur-md">
-        <div className="flex items-start justify-between gap-3">
-          <div className="space-y-1 min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30">
-                {tournament.format === 'LEAGUE' ? 'Liga' : tournament.format === 'PLAYOFF' ? 'Pley-off' : 'Liga + Pley-off'}
-              </span>
-              <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 font-medium">
-                {tournamentStatusLabel[tournament.status]}
-              </span>
-              {tournament.visibility === 'PRIVATE' && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 font-medium border border-amber-500/20 flex items-center gap-1">
-                  <Lock className="w-3 h-3" /> Yopiq
-                </span>
-              )}
-            </div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-100 tracking-tight break-words [overflow-wrap:anywhere]">{tournament.name}</h1>
-            <p className="text-xs text-slate-400">
-              Tashkilotchi: <strong className="text-slate-300 break-words">{tournament.organizerUsername ? '@'+tournament.organizerUsername : 'Tashkilotchi'}</strong> · Qatnashchilar: {participants.length}/{tournament.maxParticipants}
-            </p>
-          </div>
-
-          <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 shrink-0">
-            <Trophy className="w-6 h-6" />
-          </div>
-        </div>
-
-        {tournament.description && (
-          <p className="text-xs text-slate-300 leading-relaxed bg-slate-950/40 p-3 rounded-xl border border-slate-800/60">
-            {tournament.description}
-          </p>
-        )}
-
-        {/* User participation banner */}
-        <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-3 flex-wrap">
-          {isJoined && myParticipant ? (
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-xl bg-slate-950 p-1 border border-slate-800 flex items-center justify-center">
-                <ClubCrest
-                  clubId={myParticipant.clubId}
-                  logoUrl={myParticipant.clubLogoUrl}
-                  name={myParticipant.clubName}
-                  shortName={myParticipant.clubShortName}
-                  size="sm"
-                />
-              </div>
-              <div className="text-xs">
-                <span className="text-slate-400">Sizning klubingiz: </span>
-                <strong className="text-emerald-400">{myParticipant.clubName}</strong>
-              </div>
-              {tournament.status === 'REGISTRATION_OPEN' && (
-                <button
-                  onClick={handleLeaveTournament}
-                  className="text-xs text-rose-400 hover:text-rose-300 ml-2 flex items-center gap-1 font-semibold"
-                >
-                  <LogOut className="w-3.5 h-3.5" /> Chiqish
-                </button>
-              )}
-            </div>
-          ) : canJoin ? (
-            <button
-              onClick={() => setShowClubPickerModal(true)}
-              className="py-2.5 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs transition-all flex items-center gap-2 shadow-lg shadow-emerald-500/20"
-            >
-              <Users className="w-4 h-4" />
-              Klub tanlash va qo‘shilish
-            </button>
-          ) : (
-            <span className="text-xs text-slate-500 italic">{tournament.status === 'DRAFT' ? 'Qoralama saqlangan. Boshqaruv orqali e’lon qiling.' : tournament.status === 'REGISTRATION_OPEN' ? 'Qo‘shilish uchun qatnashish taklif havolasi kerak.' : 'Ro‘yxatdan o‘tish yopilgan'}</span>
-          )}
-        </div>
-      </div>
-
+      <TournamentOverview tournament={tournament} participants={participants} fixtures={fixtures} userId={user?.id} canManage={canManage} canJoin={canJoin} onBack={onBack} onManage={tab=>{setAdminTab(tab);setShowAdminDrawer(true);}} onJoin={()=>{setClaimError(null);setShowClubPickerModal(true);}} onMatch={handleOpenScoreModal} onRefresh={loadData}/>
+      {myParticipant&&tournament.status==='REGISTRATION_OPEN'&&<button onClick={handleLeaveTournament} className="tourney-muted min-h-[44px] underline justify-self-start">Turnirdan chiqish</button>}
       {/* Sub Tabs */}
       <div className="p-1 rounded-2xl bg-slate-900 border border-slate-800 grid grid-cols-2 sm:grid-cols-4 gap-1">
         <button
@@ -298,7 +203,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
           }`}
         >
           <Trophy className="w-3.5 h-3.5" />
-          <span>{tournament.format === 'PLAYOFF' ? 'Bracket' : 'Jadval'}</span>
+          <span>{tournament.format === 'PLAYOFF' ? 'Pley-off' : 'Jadval'}</span>
         </button>
         <button
           onClick={() => setActiveTab('fixtures')}
@@ -336,7 +241,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
             <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
               <h3 className="font-bold text-slate-200 text-sm">Pley-off Juftliklari</h3>
               {fixtures.length === 0 ? (
-                <p className="text-xs text-slate-500 italic p-6 text-center">Turnir boshlangach bracket tuziladi.</p>
+                <p className="text-xs text-slate-500 italic p-6 text-center">Turnir boshlangach juftliklar tuziladi.</p>
               ) : (
                 <CustomPlayoffBracket fixtures={fixtures} />
               )}
@@ -521,6 +426,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
           isOpen={showAdminDrawer}
           onClose={() => setShowAdminDrawer(false)}
           tournament={tournament}
+          initialTab={adminTab}
           isOrganizer={tournament.organizerUserId === user?.id}
           participants={participants}
           fixtures={fixtures}

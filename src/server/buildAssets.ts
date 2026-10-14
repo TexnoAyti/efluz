@@ -1,3 +1,4 @@
+import {writeTournamentDesignReview} from './tests/tournamentDesignReview';
 import fs from 'fs';
 import path from 'path';
 
@@ -20,6 +21,8 @@ export function copyProductionAssets() {
     const stat = fs.statSync(destWasm);
     console.log(` [ASSET] Copied sql-wasm.wasm -> ${path.relative(root, destWasm)} (${(stat.size / 1024).toFixed(1)} KB)`);
   }
+
+  writeTournamentDesignReview();
 
   // Never ship a developer/test SQLite database as production tournament state.
   // The original data/efootball.sqlite is untouched; only remove an old generated copy.

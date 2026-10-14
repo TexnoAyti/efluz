@@ -11,20 +11,22 @@ import {
 } from '../../types/customTournament';
 import { generateTournamentPreview } from '../../lib/customTournamentEngine';
 import { customTournamentApi } from '../../lib/customTournamentApi';
-import { TOP5_CLUBS } from '../../constants/top5Clubs';
+import { TOP5_CLUBS, TOP5_LEAGUES } from '../../constants/top5Clubs';
 
 interface TournamentWizardModalProps {
   isOpen: boolean;
   onClose: () => void;
   onTournamentCreated: (tournamentId: string) => void;
+  initialStep?: 1 | 2 | 3;
 }
 
 export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
   isOpen,
   onClose,
   onTournamentCreated,
+  initialStep = 1,
 }) => {
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2 | 3>(initialStep);
   const [isAdvancedMode, setIsAdvancedMode] = useState<boolean>(false);
   const creationKey = useRef<string>('');
   const creationPayload = useRef<string>('');
@@ -56,8 +58,7 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
   const [groupsCount, setGroupsCount] = useState<2 | 4>(2);
   const [matchDurationHours, setMatchDurationHours] = useState<number>(36);
 
-  // Real-time Preview
-  const [preview, setPreview] = useState<TournamentFormatPreview | null>(null);
+  const preview = generateTournamentPreview(format, maxParticipants, {roundsCount,playoffLegMode,playoffQualifiersCount,groupStageMode,groupsCount,matchDurationHours});
 
   useEffect(() => {
     if (isOpen) {
@@ -71,19 +72,6 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
       fetchTicketBalance();
     }
   }, [isOpen]);
-
-  useEffect(() => {
-    // Generate live preview instantaneously
-    const p = generateTournamentPreview(format, maxParticipants, {
-      roundsCount,
-      playoffLegMode,
-      playoffQualifiersCount,
-      groupStageMode,
-      groupsCount,
-      matchDurationHours,
-    });
-    setPreview(p);
-  }, [format, maxParticipants, roundsCount, playoffLegMode, playoffQualifiersCount, groupStageMode, groupsCount, matchDurationHours]);
 
   useEffect(() => {
     if (maxParticipants > participantLimit) setMaxParticipants(participantLimit);
@@ -147,467 +135,44 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
     }
   };
 
-  return (
-    <div className="efl-custom-tournaments fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
-      <div role="dialog" aria-modal="true" aria-label="Yangi turnir yaratish" className="relative w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-800/80 bg-slate-950/40">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              <Trophy className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-base sm:text-lg font-bold text-slate-100">Yangi Turnir Yaratish</h2>
-              <p className="text-xs text-slate-400">
-                {step === 1 && '1-qadam: Asosiy ma‘lumotlar va format'}
-                {step === 2 && '2-qadam: Aniq reglament va sozlamalar'}
-                {step === 3 && '3-qadam: Preview va e‘lon qilish'}
-              </p>
-            </div>
-          </div>
-          <button
-            aria-label="Turnir yaratishni yopish"
-            onClick={onClose}
-            disabled={isLoading}
-            className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-xl transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Content Body */}
-        <div className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1 text-sm text-slate-200">
-          {errorMessage && (
-            <div className="p-3 bg-rose-500/15 border border-rose-500/30 rounded-2xl flex items-start gap-2.5 text-xs text-rose-300">
-              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-              <span>{errorMessage}</span>
-            </div>
-          )}
-
-          {/* STEP 1: Basic Info */}
-          {step === 1 && (
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                  Turnir nomi <span className="text-emerald-400">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Masalan: EFL Do'stlar Chempionati #1"
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl focus:border-emerald-500 focus:outline-none text-slate-100 text-sm"
-                  maxLength={60}
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                  Qisqacha tavsif (ixtiyoriy)
-                </label>
-                <textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Turnir maqsadi, do'stona qoidalar..."
-                  rows={2}
-                  className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl focus:border-emerald-500 focus:outline-none text-slate-100 text-xs resize-none"
-                  maxLength={160}
-                />
-              </div>
-
-              {/* Format selection */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                  Musobaqa formati
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: 'LEAGUE', label: 'Liga', desc: 'Aylanma jadval' },
-                    { id: 'PLAYOFF', label: 'Pley-off', desc: 'Kubok (Bracket)' },
-                    { id: 'LEAGUE_AND_PLAYOFF', label: 'Liga + Pley-off', desc: 'Guruh + Final' },
-                  ].map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => setFormat(item.id as any)}
-                      className={`p-2.5 rounded-2xl border text-left transition-all min-h-[44px] ${
-                        format === item.id
-                          ? 'bg-emerald-500/15 border-emerald-500/60 text-slate-100 shadow-sm'
-                          : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-700'
-                      }`}
-                    >
-                      <div className="font-semibold text-xs text-slate-200">{item.label}</div>
-                      <div className="text-[10px] text-slate-400 mt-0.5">{item.desc}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Scope & Clubs */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                  Klublar bazasi
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setLeagueScope('TOP5_ALL')}
-                    className={`p-2.5 rounded-2xl border text-left transition-all min-h-[44px] ${
-                      leagueScope === 'TOP5_ALL'
-                        ? 'bg-emerald-500/15 border-emerald-500/60 text-slate-100'
-                        : 'bg-slate-950/60 border-slate-800 text-slate-400'
-                    }`}
-                  >
-                    <div className="font-semibold text-xs text-slate-200">Top 5 barcha klublar</div>
-                    <div className="text-[10px] text-slate-400">{TOP5_CLUBS.length} ta klub (PL, La Liga, Serie A...)</div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setLeagueScope('SINGLE_LEAGUE')}
-                    className={`p-2.5 rounded-2xl border text-left transition-all min-h-[44px] ${
-                      leagueScope === 'SINGLE_LEAGUE'
-                        ? 'bg-emerald-500/15 border-emerald-500/60 text-slate-100'
-                        : 'bg-slate-950/60 border-slate-800 text-slate-400'
-                    }`}
-                  >
-                    <div className="font-semibold text-xs text-slate-200">Bitta tanlangan liga</div>
-                    <div className="text-[10px] text-slate-400">Faqat 1 ta liga klublari</div>
-                  </button>
-                </div>
-
-                {leagueScope === 'SINGLE_LEAGUE' && (
-                  <select
-                    value={selectedLeagueId}
-                    onChange={(e) => setSelectedLeagueId(e.target.value)}
-                    className="w-full mt-2 px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-200 text-xs"
-                  >
-                    <option value="league-premier-league">Premier League (20 klub)</option>
-                    <option value="league-la-liga">La Liga (20 klub)</option>
-                    <option value="league-serie-a">Serie A (20 klub)</option>
-                    <option value="league-bundesliga">Bundesliga (18 klub)</option>
-                    <option value="league-ligue-1">Ligue 1 (18 klub)</option>
-                  </select>
-                )}
-              </div>
-
-              {/* Participants count slider */}
-              <div>
-                <div className="flex items-center justify-between text-xs mb-1.5">
-                  <span className="font-semibold text-slate-300">Qatnashchilar chegarasi:</span>
-                  <strong className="text-emerald-400 text-sm">{maxParticipants} kishi</strong>
-                </div>
-                <input
-                  type="range"
-                  min={4}
-                  max={participantLimit}
-                  step={1}
-                  value={maxParticipants}
-                  onChange={(e) => setMaxParticipants(Number(e.target.value))}
-                  className="w-full accent-emerald-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
-                />
-                <div className="flex justify-between text-[10px] text-slate-500 mt-1">
-                  <span>Min: 4 kishi</span>
-                  <span>O‘rtacha: 8-16 kishi</span>
-                  <span>Max: {participantLimit} kishi</span>
-                </div>
-              </div>
-
-              <label className="block text-xs font-semibold text-slate-300">Turnirni kuzatish
-                <select value={spectatorAccess} onChange={e => setSpectatorAccess(e.target.value as CustomTournamentSpectatorAccess)} className="w-full mt-2 p-2 bg-slate-950 border border-slate-800 rounded-xl">
-                  <option value="PUBLIC_LINK">Kuzatuvchilar uchun ochiq</option>
-                  <option value="MEMBERS_ONLY">Faqat turnir a’zolari</option>
-                </select>
-              </label>
-              <p className="text-xs text-slate-400 leading-relaxed">Turnir ochilgach, o‘zingiz ham qatnashchilar kabi klub tanlab qo‘shilishingiz mumkin.</p>
-              {/* Visibility */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                  Kirish va qatnashish qoidasi
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: 'PUBLIC_OPEN', label: 'Ochiq', desc: 'Erkin qo‘shilish' },
-                    { id: 'PUBLIC_MODERATED', label: 'Tasdiqli', desc: 'Ariza asosida' },
-                    { id: 'PRIVATE', label: 'Yopiq', desc: 'Faqat taklif bilan' },
-                  ].map((v) => (
-                    <button
-                      key={v.id}
-                      type="button"
-                      onClick={() => setVisibility(v.id as any)}
-                      className={`p-2 rounded-xl border text-left transition-all min-h-[44px] ${
-                        visibility === v.id
-                          ? 'bg-emerald-500/15 border-emerald-500/60 text-slate-100'
-                          : 'bg-slate-950/60 border-slate-800 text-slate-400'
-                      }`}
-                    >
-                      <div className="font-semibold text-xs text-slate-200">{v.label}</div>
-                      <div className="text-[10px] text-slate-400">{v.desc}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* STEP 2: Settings (Oddiy vs Kengaytirilgan) */}
-          {step === 2 && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-3 bg-slate-950/60 border border-slate-800 rounded-2xl">
-                <div>
-                  <h4 className="font-bold text-xs text-slate-200">Kengaytirilgan sozlamalar</h4>
-                  <p className="text-[11px] text-slate-400">Davralar soni, o‘yin muddatlari va pley-off turlari</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => { if (isAdvancedMode) { setRoundsCount(1); setPlayoffLegMode('SINGLE_LEG'); setPlayoffQualifiersCount(4); setGroupStageMode('SINGLE_TABLE'); setGroupsCount(2); setMatchDurationHours(36); } setIsAdvancedMode(!isAdvancedMode); }}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all min-h-[38px] ${
-                    isAdvancedMode
-                      ? 'bg-emerald-500 text-slate-950 shadow-md'
-                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                  }`}
-                >
-                  {isAdvancedMode ? 'Yoqilgan' : 'Oddiy rejim'}
-                </button>
-              </div>
-
-              {!isAdvancedMode ? (
-                <div className="p-3.5 bg-slate-950/40 border border-slate-800/80 rounded-2xl space-y-2 text-xs text-slate-300">
-                  <div className="flex items-center gap-2 text-emerald-400 font-semibold">
-                    <Sparkles className="w-4 h-4" />
-                    <span>Standart qoidalar faol:</span>
-                  </div>
-                  <p>• {format === 'LEAGUE' ? '1 davrali aylanma chempionat' : format === 'PLAYOFF' ? '1 o‘yinli pley-off (durangda penaltilar seriyasi)' : '1 davrali liga va eng yaxshi 4 klub uchun pley-off'}.</p>
-                  <p>• Har bir o‘yinni o‘tkazish uchun 36 soat muhlat beriladi.</p>
-                  <p>• Hisob va screenshotni ikki tomonlama tasdiqlash tizimi.</p>
-                </div>
-              ) : (
-                <div className="space-y-3 p-3 bg-slate-950/60 border border-slate-800 rounded-2xl">
-                  {format !== 'PLAYOFF' && (
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">Davralar soni</label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setRoundsCount(1)}
-                          className={`p-2 rounded-xl border text-xs font-semibold ${
-                            roundsCount === 1 ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300' : 'bg-slate-900 border-slate-800 text-slate-400'
-                          }`}
-                        >
-                          1 davrali (1 marta o‘yin)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setRoundsCount(2)}
-                          className={`p-2 rounded-xl border text-xs font-semibold ${
-                            roundsCount === 2 ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300' : 'bg-slate-900 border-slate-800 text-slate-400'
-                          }`}
-                        >
-                          2 davrali (Uy / Safar)
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {format !== 'LEAGUE' && (
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">Pley-off bosqichi formati</label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setPlayoffLegMode('SINGLE_LEG')}
-                          className={`p-2 rounded-xl border text-xs font-semibold ${
-                            playoffLegMode === 'SINGLE_LEG' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300' : 'bg-slate-900 border-slate-800 text-slate-400'
-                          }`}
-                        >
-                          1 ta o‘yin (Yakka bahs)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setPlayoffLegMode('TWO_LEG')}
-                          className={`p-2 rounded-xl border text-xs font-semibold ${
-                            playoffLegMode === 'TWO_LEG' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300' : 'bg-slate-900 border-slate-800 text-slate-400'
-                          }`}
-                        >
-                          2 ta o‘yin (Umumiy hisob)
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {format === 'LEAGUE_AND_PLAYOFF' && (
-                    <>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-300 mb-1">Dastlabki liga bosqichi</label>
-                        <div className="grid grid-cols-2 gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setGroupStageMode('SINGLE_TABLE')}
-                            className={`p-2 rounded-xl border text-xs font-semibold ${
-                              groupStageMode === 'SINGLE_TABLE' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300' : 'bg-slate-900 border-slate-800 text-slate-400'
-                            }`}
-                          >
-                            Yagona umumiy jadval
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setGroupStageMode('GROUPS')}
-                            className={`p-2 rounded-xl border text-xs font-semibold ${
-                              groupStageMode === 'GROUPS' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300' : 'bg-slate-900 border-slate-800 text-slate-400'
-                            }`}
-                          >
-                            Guruhlarga bo‘lish
-                          </button>
-                        </div>
-                      </div>
-
-                      {groupStageMode === 'GROUPS' && <label className="block text-xs text-slate-300">Guruhlar soni
-                        <select value={groupsCount} onChange={e => setGroupsCount(Number(e.target.value) as 2 | 4)} className="w-full mt-1 p-2 bg-slate-900 border border-slate-800 rounded-xl">
-                          <option value={2}>2 ta guruh</option>
-                          {maxParticipants >= 8 && <option value={4}>4 ta guruh</option>}
-                        </select>
-                      </label>}
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-300 mb-1">Pley-offga yo‘l oladiganlar</label>
-                        <select
-                          value={playoffQualifiersCount}
-                          onChange={(e) => setPlayoffQualifiersCount(Number(e.target.value) as any)}
-                          className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 text-xs"
-                        >
-                          {(groupStageMode !== 'GROUPS' || groupsCount === 2) && <option value={2}>Top 2 (Final)</option>}
-                          <option value={4}>Top 4 (Yarim final)</option>
-                          {maxParticipants >= 8 && <option value={8}>Top 8 (Chorak final)</option>}
-                          {maxParticipants >= 16 && <option value={16}>Top 16 (1/8 final)</option>}
-                        </select>
-                      </div>
-                    </>
-                  )}
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">O‘yin o‘tkazish muddati</label>
-                    <select
-                      value={matchDurationHours}
-                      onChange={(e) => setMatchDurationHours(Number(e.target.value))}
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 text-xs"
-                    >
-                      <option value={24}>24 soat (Tezkor turnir)</option>
-                      <option value={36}>36 soat (Standart)</option>
-                      <option value={48}>48 soat (Erkin vaqt)</option>
-                    </select>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* STEP 3: Live Preview & Action */}
-          {step === 3 && preview && (
-            <div className="space-y-4">
-              <div className="p-4 bg-slate-950 border border-slate-800 rounded-2xl space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-400">Jami o‘yinlar soni:</span>
-                  <strong className="text-emerald-400 text-sm">{preview.totalMatches} ta o‘yin</strong>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-400">Bosqichlar / Turlar:</span>
-                  <span className="text-slate-200 font-semibold text-xs">{preview.totalStagesOrRounds} ta tur</span>
-                </div>
-                <div className="text-xs text-slate-300 pt-2 border-t border-slate-800/80">
-                  <p>{preview.stagesDescription}</p>
-                  {preview.byeCount ? (
-                    <p className="text-amber-400 text-[11px] mt-1">
-                      ℹ️ Ishtirokchilar soni {maxParticipants} nafar bo‘lgani sababli, 1-bosqichda {preview.byeCount} ta ishtirokchi o‘yinsiz keyingi bosqichga o‘tadi (BYE).
-                    </p>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="p-3 border border-slate-800 rounded-xl text-xs text-slate-300 space-y-1">
-                <p className="font-bold">{name}</p>
-                <p>{maxParticipants} o‘rin · {visibility === 'PRIVATE' ? 'Yopiq, taklif orqali' : visibility === 'PUBLIC_MODERATED' ? 'Tashkilotchi tasdig‘i bilan' : 'Ochiq'}</p>
-                <p>{spectatorAccess === 'MEMBERS_ONLY' ? 'Faqat a’zolar kuzatadi' : 'Havola orqali kuzatish mumkin'}</p>
-                <p>O‘zingiz ham keyin klub tanlab qo‘shilasiz.</p>
-                <p className="text-slate-400">Hisob-kitob to‘liq {maxParticipants} qatnashchi uchun. Turnirni keyin boshqaruv oynasidan boshlaysiz.</p>
-              </div>
-              {/* Ticket status block */}
-              <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
-                    <Ticket className="w-4 h-4" />
-                    <span>Sizdagi chiptalar (Tickets):</span>
-                  </div>
-                  <span className="font-extrabold text-sm text-emerald-300">
-                    {loadingTickets ? '...' : ticketBalance === null ? '—' : `${ticketBalance} ta`}
-                  </span>
-                </div>
-
-                {ticketError ? (
-                  <div role="alert" className="text-[11px] text-amber-300 space-y-2">
-                    <p>{ticketError}</p>
-                    <button type="button" onClick={fetchTicketBalance} className="underline font-bold min-h-[44px]">Qayta urinish</button>
-                  </div>
-                ) : loadingTickets ? (
-                  <p className="text-[11px] text-slate-300">Chipta balansi tekshirilmoqda...</p>
-                ) : ticketBalance !== null && ticketBalance >= 1 ? (
-                  <p className="text-[11px] text-slate-300">
-                    Turnir yaratish uchun <strong>1 ta chipta</strong> sarflanadi.
-                  </p>
-                ) : (
-                  <div className="text-[11px] text-amber-300 space-y-1.5 pt-1">
-                    <p>Sizda turnir e‘lon qilish uchun chipta yo‘q (1 turnir = 15 000 so‘m).</p>
-                    <p className="text-slate-400">
-                      Chipta olish uchun Telegram orqali <a href="https://t.me/texnoadmin" target="_blank" rel="noreferrer" className="text-emerald-400 font-bold underline">@texnoadmin</a> bilan bog‘laning.
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Footer Navigation */}
-        <div className="p-4 sm:p-5 border-t border-slate-800/80 bg-slate-950/60 flex items-center justify-between gap-3">
-          {step > 1 ? (
-            <button
-              type="button"
-              disabled={isLoading}
-              onClick={() => setStep((s) => (s - 1) as any)}
-              className="px-4 py-2.5 rounded-xl border border-slate-800 text-slate-300 hover:bg-slate-800 text-xs font-semibold min-h-[44px]"
-            >
-              Orqaga
-            </button>
-          ) : (
-            <div />
-          )}
-
-          <div className="flex items-center gap-2">
-            {step < 3 ? (
-              <button
-                type="button"
-                disabled={!name.trim()}
-                onClick={() => setStep((s) => (s + 1) as any)}
-                className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-lg disabled:opacity-40 min-h-[44px]"
-              >
-                Keyingisi
-              </button>
-            ) : (
-              <>
-                {ticketBalance !== null && ticketBalance >= 1 && !loadingTickets && !ticketError && (
-                  <button
-                    type="button"
-                    disabled={isLoading}
-                    onClick={handleCreateTournament}
-                    className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-extrabold shadow-lg disabled:opacity-50 min-h-[44px] flex items-center gap-1.5"
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Turnir yaratish (1 ticket)</span>
-                  </button>
-                )}
-              </>
-            )}
-          </div>
-        </div>
+  const formats = [
+    {id:'LEAGUE',label:'Liga',description:'Har bir klub boshqalar bilan o‘ynaydi. Ochko bo‘yicha g‘olib aniqlanadi.'},
+    {id:'PLAYOFF',label:'Pley-off',description:'Mag‘lub klub chiqib ketadi. G‘olib finalgacha davom etadi.'},
+    {id:'LEAGUE_AND_PLAYOFF',label:'Liga + pley-off',description:'Avval liga yoki guruhlar, keyin eng yaxshilar pley-offga chiqadi.'},
+  ] as const;
+  return <div className="efl-custom-tournaments tourney-dialog-backdrop">
+    <section role="dialog" aria-modal="true" aria-label="Yangi turnir yaratish" className="tourney-dialog">
+      <header><div><p className="tourney-eyebrow">{step} / 3 · {step===1?'Asosiy ma’lumot':step===2?'Qatnashish qoidalari':'Tekshirish'}</p><h2>Turnir yaratish</h2></div><button aria-label="Turnir yaratishni yopish" disabled={isLoading} onClick={onClose} className="tourney-button !p-2"><X size={18}/></button></header>
+      <div className="tourney-dialog-body">
+        <div className="tourney-steps" aria-label="Yaratish bosqichlari">{[1,2,3].map(n=><span key={n} className={`tourney-step ${n<=step?'active':''}`}/>)}</div>
+        {errorMessage&&<p role="alert" className="tourney-note error">{errorMessage}</p>}
+        {step===1&&<>
+          <label className="tourney-field">Turnir nomi<input autoFocus required maxLength={60} placeholder="Masalan: Do‘stlar kubogi" value={name} onChange={e=>setName(e.target.value)}/></label>
+          <label className="tourney-field">Qisqa tavsif · ixtiyoriy<textarea maxLength={160} rows={2} value={description} placeholder="Ishtirokchilar bilishi kerak bo‘lgan ma’lumot" onChange={e=>setDescription(e.target.value)}/></label>
+          <div><p className="tourney-field mb-2">Format</p><div className="tourney-choice-grid">{formats.map(f=><button key={f.id} aria-pressed={format===f.id} onClick={()=>setFormat(f.id)} className="tourney-choice"><Trophy size={18}/><div><strong>{f.label}</strong><p>{f.description}</p></div></button>)}</div></div>
+          <p className="tourney-note">O‘zingiz ham turnir ochilgach, boshqalar kabi klub tanlab qo‘shilasiz.</p>
+        </>}
+        {step===2&&<>
+          <div className="tourney-meta-grid"><label className="tourney-field">Qatnashchilar limiti<input type="number" min={4} max={participantLimit} value={maxParticipants} onChange={e=>setMaxParticipants(Math.max(4,Math.min(participantLimit,Number(e.target.value))))}/></label><label className="tourney-field">O‘yin uchun muddat<select value={matchDurationHours} onChange={e=>setMatchDurationHours(Number(e.target.value))}>{[12,24,36,48,72].map(h=><option key={h} value={h}>{h} soat</option>)}</select></label></div>
+          <label className="tourney-field">Klublar bazasi<select value={leagueScope==='TOP5_ALL'?'ALL':selectedLeagueId} onChange={e=>{setLeagueScope(e.target.value==='ALL'?'TOP5_ALL':'SINGLE_LEAGUE');if(e.target.value!=='ALL')setSelectedLeagueId(e.target.value);}}><option value="ALL">Top-5 barcha ligalar</option>{TOP5_LEAGUES.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</select></label>
+          <label className="tourney-field">Kim qo‘shila oladi?<select value={visibility} onChange={e=>setVisibility(e.target.value as CustomTournamentVisibility)}><option value="PUBLIC_OPEN">Hamma · erkin qo‘shilish</option><option value="PUBLIC_MODERATED">Hamma · tashkilotchi tasdig‘i bilan</option><option value="PRIVATE">Faqat taklif havolasi orqali</option></select></label>
+          <label className="tourney-field">Kim kuzata oladi?<select value={spectatorAccess} onChange={e=>setSpectatorAccess(e.target.value as CustomTournamentSpectatorAccess)}><option value="PUBLIC_LINK">Havolasi bor kuzatuvchilar</option><option value="MEMBERS_ONLY">Faqat turnir a’zolari</option></select></label>
+          {format==='LEAGUE_AND_PLAYOFF'&&<label className="tourney-field">Pley-offga chiqadigan klublar<select value={playoffQualifiersCount} onChange={e=>setPlayoffQualifiersCount(Number(e.target.value) as 2|4|8|16)}>{[2,4,8,16].filter(n=>n<=maxParticipants&&(groupStageMode!=='GROUPS'||n%groupsCount===0)).map(n=><option key={n} value={n}>{n} klub</option>)}</select></label>}
+          <details open={isAdvancedMode} onToggle={e=>setIsAdvancedMode(e.currentTarget.open)}><summary className="tourney-muted cursor-pointer min-h-[44px] flex items-center">Qo‘shimcha reglament</summary><div className="grid gap-3 pt-3">
+            {format!=='PLAYOFF'&&<label className="tourney-field">Liga o‘yinlari<select value={roundsCount} onChange={e=>setRoundsCount(Number(e.target.value) as 1|2)}><option value={1}>Har raqib bilan 1 o‘yin</option><option value={2}>Har raqib bilan 2 o‘yin</option></select></label>}
+            {format!=='LEAGUE'&&<label className="tourney-field">Pley-off juftligi<select value={playoffLegMode} onChange={e=>setPlayoffLegMode(e.target.value as CustomTournamentPlayoffLegMode)}><option value="SINGLE_LEG">1 o‘yin</option><option value="TWO_LEG">2 o‘yin · final 1 o‘yin</option></select></label>}
+            {format==='LEAGUE_AND_PLAYOFF'&&<><label className="tourney-field">Liga bosqichi<select value={groupStageMode} onChange={e=>setGroupStageMode(e.target.value as CustomTournamentGroupStageMode)}><option value="SINGLE_TABLE">Umumiy jadval</option><option value="GROUPS">Guruhlar</option></select></label>{groupStageMode==='GROUPS'&&<label className="tourney-field">Guruhlar soni<select value={groupsCount} onChange={e=>setGroupsCount(Number(e.target.value) as 2|4)}><option value={2}>2 guruh</option>{maxParticipants>=8&&<option value={4}>4 guruh</option>}</select></label>}</>}
+          </div></details>
+        </>}
+        {step===3&&<>
+          <h3 className="text-xl font-bold break-words">{name||'Turnir rejasi'}</h3>
+          {[['Format',formats.find(f=>f.id===format)?.label],['Qatnashchilar',`${maxParticipants} klubgacha`],['Qo‘shilish',visibility==='PRIVATE'?'Taklif bilan':visibility==='PUBLIC_MODERATED'?'Tasdiq bilan':'Ochiq'],['Kuzatish',spectatorAccess==='MEMBERS_ONLY'?'Faqat a’zolar':'Havola orqali'],['Taqvim',`${preview.totalMatches} o‘yin · ${preview.totalStagesOrRounds} tur`]].map(([label,value])=><div key={label} className="tourney-summary-row"><span>{label}</span><strong>{value}</strong></div>)}
+          <p className="tourney-muted">Taqvim to‘liq {maxParticipants} klub uchun hisoblandi. Kamroq klub bilan boshlasangiz, taqvim moslashadi.</p>
+          <div className="tourney-note"><strong className="block">Yaratish — 1 ticket</strong><span>Qabul darhol ochiladi. Turnirni keyin boshqaruvdan boshlaysiz. Qatnashish bepul.</span></div>
+          {loadingTickets?<p className="tourney-muted">Ticket balansi tekshirilmoqda…</p>:ticketError?<div className="tourney-note error">{ticketError}<button onClick={fetchTicketBalance} className="tourney-button mt-2">Qayta urinish</button></div>:<p className="tourney-muted">Balansingiz: {ticketBalance} ticket.{ticketBalance===0&&<> Yangi ticket uchun <a className="underline" href="https://t.me/texnoadmin" target="_blank" rel="noreferrer">@texnoadmin</a> bilan bog‘laning.</>}</p>}
+        </>}
       </div>
-    </div>
-  );
+      <footer><button disabled={isLoading} className="tourney-button" onClick={()=>step===1?onClose():setStep(step-1 as 1|2|3)}>{step===1?'Bekor qilish':'Orqaga'}</button>{step<3?<button className="tourney-button primary" disabled={!name.trim()} onClick={()=>setStep(step+1 as 1|2|3)}>Davom etish</button>:<button className="tourney-button primary" disabled={isLoading||loadingTickets||!!ticketError||ticketBalance===null||ticketBalance<1} onClick={handleCreateTournament}>{isLoading?'Yaratilmoqda…':'Yaratish · 1 ticket'}</button>}</footer>
+    </section>
+  </div>;
 };
