@@ -21,3 +21,5 @@
 @media(max-width:600px){.tourney-grid{grid-template-columns:1fr}.tourney-heading h1,.tourney-heading h2{font-size:22px}.tourney-dialog-backdrop{padding:0;align-items:stretch}.tourney-dialog{max-height:100dvh;min-height:100dvh;border:0;border-radius:0;max-width:none}.tourney-dialog-body{padding:18px}.tourney-dialog footer{padding-bottom:max(14px,env(safe-area-inset-bottom))}.tourney-surface{padding:16px}}
 
 .tourney-management-overlay{justify-content:flex-end;align-items:stretch}
+/* The global preview dialog rule styles overlays; tournament panels are opaque surfaces. */
+.efl-preview .efl-custom-tournaments .tourney-dialog[role="dialog"]{background-color:var(--t-bg)!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
