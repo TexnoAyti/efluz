@@ -1,3 +1,4 @@
+import {filterPublishedEuropeanFixtures} from '../services/europeanFixtureGate';
 import { createHash } from 'node:crypto';
 import { FieldPath } from 'firebase-admin/firestore';
 import { getFirestoreDb } from '../firebase/admin';
@@ -69,6 +70,8 @@ function overlay(snapshot: any, changes: Map<string, any>): any {
   })};
 }
 
+const keyFixtures = (key:string) => key.endsWith(':fixtures');
+
 export const usesPostgresSnapshots = () => process.env.DATABASE_PROVIDER === 'supabase';
 export async function readPostgresSnapshotBundle(fresh: string, lkg: string, dirty: string): Promise<{ fresh: any; lkg: any; dirty: any }> {
   const keys = [fresh, dirty];
@@ -82,13 +85,15 @@ export async function readPostgresSnapshotBundle(fresh: string, lkg: string, dir
     return value && (value.expiresAt === null || value.expiresAt > Date.now()) ? unpack(value) : null;
   });
   const fallback = !snapshots[0] || snapshots[1]?.data ? await readPostgresSnapshot(lkg) : null;
-  return { fresh: overlay(snapshots[0], changes), lkg: fallback, dirty: snapshots[1] };
+  const visible = async (snapshot:any) => keyFixtures(fresh) && Array.isArray(snapshot?.data) ? {...snapshot,data:await filterPublishedEuropeanFixtures(snapshot.data)} : snapshot;
+  return { fresh: await visible(overlay(snapshots[0], changes)), lkg: await visible(fallback), dirty: snapshots[1] };
 }
 export async function readPostgresSnapshot(key: string): Promise<any | null> {
   const id=createHash('sha256').update(key).digest('hex');
   const [documents,changes] = await Promise.all([snapshotDocuments([id]),fixtureOverrides(key)]);
   const value = documents.get(id);
-  return value && (value.expiresAt === null || value.expiresAt > Date.now()) ? overlay(unpack(value), changes) : null;
+  const snapshot = value && (value.expiresAt === null || value.expiresAt > Date.now()) ? overlay(unpack(value), changes) : null;
+  return keyFixtures(key) && Array.isArray(snapshot?.data) ? {...snapshot,data:await filterPublishedEuropeanFixtures(snapshot.data)} : snapshot;
 }
 export async function publishPostgresSnapshot(fresh: string, lkg: string, dirty: string, snapshot: any, ttl: number) {
   // Snapshot payloads historically use JSON wire semantics (omit optional undefined fields).

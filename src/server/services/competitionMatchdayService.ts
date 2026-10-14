@@ -1,3 +1,4 @@
+import {assertEuropeanDrawPublished,europeanDrawPublished,isEuropeanFixtureCompetition} from './europeanFixtureGate';
 import {MATCHDAY_NOTIFICATION_JOBS, processMatchdayNotificationJob} from './matchdayNotificationJobs';
 import { filterRetiredFixtures } from './retiredFixtureService';
 import { createHash, randomUUID } from 'node:crypto';
@@ -45,7 +46,7 @@ export async function getCompetitionMatchdayControl(competitionId: string) {
       const round = fixtures.filter(f => Number(f.matchday) === matchday);
       const explicit = resolveMatchdayGate(lock);
       const fallback = matchday === (competition.currentMatchday || 1) && competition.isMatchdayOpen !== false && !['FORCE_LOCKED', 'PAUSED'].includes(competition.adminOverrideStatus || '') && (!competition.nextMatchdayOpenAt || Date.parse(competition.nextMatchdayOpenAt) > Date.now());
-      return { matchday, isOpen: explicit ?? fallback, deadlineAt: lock ? lock.expiresAt || null : matchday === (competition.currentMatchday || 1) ? competition.nextMatchdayOpenAt || null : null,
+      return { matchday, isOpen: (!isEuropeanFixtureCompetition(competitionId) || europeanDrawPublished(competition)) && (explicit ?? fallback), deadlineAt: lock ? lock.expiresAt || null : matchday === (competition.currentMatchday || 1) ? competition.nextMatchdayOpenAt || null : null,
         fixtureCount: round.length, unfinished: round.filter(f => !finalStatuses.has(String(f.status))).map(f => ({ id: f.id, status: String(f.status) })) };
     }),
   };
@@ -59,6 +60,7 @@ export async function controlCompetitionMatchday(competitionId: string, params: 
   const hours = params.durationHours ?? 30;
   if (!Number.isFinite(hours) || hours <= 0 || hours > 720) throw new MatchdayControlError('BAD_DURATION', 'Muddat 0 dan katta va 720 soatdan oshmasligi kerak.');
   const { db, ref, competition, fixtures } = await loadCompetition(competitionId);
+  if (isEuropeanFixtureCompetition(competitionId) && params.action !== 'LOCK') assertEuropeanDrawPublished(competition);
   const target = params.matchday, current = competition.currentMatchday || 1;
   if (target > totalRounds(competition, fixtures)) throw new MatchdayControlError('BAD_MATCHDAY', 'Bu tur musobaqada mavjud emas.');
   if (!fixtures.some(f => Number(f.matchday) === target)) throw new MatchdayControlError('MATCHDAY_EMPTY', `${target}-turda o‘yinlar yo‘q.`, 409);
@@ -71,6 +73,7 @@ export async function controlCompetitionMatchday(competitionId: string, params: 
     const selected = await tx.get(lockRef);
     if (!latest.exists) throw new MatchdayControlError('COMPETITION_NOT_FOUND', 'Musobaqa topilmadi.', 404);
     const comp = latest.data() as FirestoreCompetitionDoc;
+    if (isEuropeanFixtureCompetition(competitionId) && params.action !== 'LOCK') assertEuropeanDrawPublished(comp);
     if ((comp.currentMatchday || 1) !== current || comp.updatedAt !== competition.updatedAt || (params.expectedUpdatedAt !== undefined && (comp.updatedAt || null) !== params.expectedUpdatedAt)) {
       throw new MatchdayControlError('MATCHDAY_CHANGED', 'Tur holati boshqa admin tomonidan o‘zgargan. Yangilab qayta urinib ko‘ring.', 409);
     }

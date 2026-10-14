@@ -113,6 +113,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
   };
 
   const handleSelectTournament = (comp: Competition) => {
+    setFixtures([]); setStandings([]); setParticipants([]);
     setSelectedTournament(comp);
     loadTournamentDetails(comp.id, activeTab === 'BRACKET');
   };
@@ -178,15 +179,16 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
     return standings;
   }, [standings, participants]);
 
+  const drawPublished = selectedTournament?.europeanDrawPublished === true;
   const actualKnockoutFixtures = useMemo(
-    () => fixtures.filter((f) =>
+    () => drawPublished ? fixtures.filter((f) => f.competitionId === selectedTournament?.id && (
       f.id.includes('-po-') ||
       f.id.includes('-r16-') ||
       f.id.includes('-qf-') ||
       f.id.includes('-sf-') ||
       f.id.includes('-final-')
-    ),
-    [fixtures]
+    )) : [],
+    [fixtures, drawPublished, selectedTournament?.id]
   );
 
   /**
@@ -195,6 +197,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
    * Once authoritative knockout fixtures exist, they replace this projection automatically.
    */
   const projectedKnockoutFixtures = useMemo<Fixture[]>(() => {
+    if (!drawPublished) return [];
     if (actualKnockoutFixtures.length > 0 || displayStandings.length < 24 || !selectedTournament) return [];
 
     const ranked = [...displayStandings]
@@ -295,7 +298,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
     out.push(final);
 
     return out;
-  }, [actualKnockoutFixtures.length, displayStandings, selectedTournament]);
+  }, [actualKnockoutFixtures.length, displayStandings, selectedTournament, drawPublished]);
 
   const bracketFixtures = actualKnockoutFixtures.length > 0 ? actualKnockoutFixtures : projectedKnockoutFixtures;
   const isLiveProjection = actualKnockoutFixtures.length === 0 && projectedKnockoutFixtures.length > 0;
@@ -676,12 +679,11 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
           {bracketFixtures.length === 0 && (
             <div className="glass-panel p-5 rounded-2xl border-indigo-500/30 bg-indigo-950/20 text-center space-y-3">
               <Sparkles className="w-8 h-8 text-indigo-400 efl-theme-indigo mx-auto" />
-              <h4 className="text-sm font-bold text-white efl-theme-text">Knockout bosqichi kutilmoqda</h4>
+              <h4 className="text-sm font-bold text-white efl-theme-text">{drawPublished ? 'Knockout bosqichi kutilmoqda' : 'Yevropa qur’asi kutilmoqda'}</h4>
               <p className="text-xs text-slate-300 efl-theme-text-2 max-w-md mx-auto">
-                32 jamoalik Liga bosqichi yakunlangach, 1–8-o‘rinlar to‘g‘ridan-to‘g‘ri Nimchorak finalga yo‘l oladi,
-                9–24-o‘rinlar esa 8 ta Play-off juftligida bellashadi.
+                {drawPublished ? '32 jamoalik Liga bosqichi yakunlangach, 1–8-o‘rinlar Nimchorak finalga, 9–24-o‘rinlar Play-offga yo‘l oladi.' : 'Ichki ligalar yakunlanib, yakuniy saralash tasdiqlangach va qur’a yaratilgach o‘yinlar chiqadi.'}
               </p>
-              {canUseDangerZone(user) && (
+              {drawPublished && canUseDangerZone(user) && (
                 <button
                   type="button"
                   onClick={handleGenerateKnockouts}

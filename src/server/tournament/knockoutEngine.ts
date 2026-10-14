@@ -1,3 +1,4 @@
+import {assertEuropeanDrawPublished} from '../services/europeanFixtureGate';
 import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS, FirestoreCompetitionDoc, FirestoreFixtureDoc, FirestoreCompetitionParticipantDoc, FirestoreClubDoc } from '../firebase/collections';
 import { createNotification } from '../services/notificationService';
@@ -415,6 +416,7 @@ export async function generateUCLKnockoutBracket(
     throw new Error(`Competition '${competitionId}' not found.`);
   }
   const comp = compDoc.data() as FirestoreCompetitionDoc;
+  assertEuropeanDrawPublished(comp);
 
   const now = new Date().toISOString();
   let totalGenerated = 0;
@@ -431,6 +433,7 @@ export async function generateUCLKnockoutBracket(
     const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
 
     batch.set(fixRef, {
+      europeanDrawId: (comp as any).europeanDrawId,
       id: fixtureId,
       seasonId: comp.seasonId,
       competitionId,
@@ -458,6 +461,7 @@ export async function generateUCLKnockoutBracket(
     const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
 
     batch.set(fixRef, {
+      europeanDrawId: (comp as any).europeanDrawId,
       id: fixtureId,
       seasonId: comp.seasonId,
       competitionId,
@@ -486,6 +490,7 @@ export async function generateUCLKnockoutBracket(
     const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
 
     batch.set(fixRef, {
+      europeanDrawId: (comp as any).europeanDrawId,
       id: fixtureId,
       seasonId: comp.seasonId,
       competitionId,
@@ -516,6 +521,7 @@ export async function generateUCLKnockoutBracket(
     const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(fixtureId);
 
     batch.set(fixRef, {
+      europeanDrawId: (comp as any).europeanDrawId,
       id: fixtureId,
       seasonId: comp.seasonId,
       competitionId,
@@ -544,6 +550,7 @@ export async function generateUCLKnockoutBracket(
   const finalFixtureId = `fix-${competitionId}-final-m0`;
   const finalRef = db.collection(COLLECTIONS.FIXTURES).doc(finalFixtureId);
   batch.set(finalRef, {
+    europeanDrawId: (comp as any).europeanDrawId,
     id: finalFixtureId,
     seasonId: comp.seasonId,
     competitionId,

@@ -1,3 +1,5 @@
+import {assertEuropeanDrawReady, domesticSeasonComplete, europeanDrawPublished, filterPublishedEuropeanFixtures, isEuropeanFixtureCompetition} from '../services/europeanFixtureGate';
+import {randomUUID as europeanDrawUUID} from 'node:crypto';
 import { assertTopicResultCurrent, type ExpectedTopicFixture } from '../services/topicResultGuard';
 import { invalidateSharedAdminData } from '../services/adminReviewCache';
 import { filterRetiredFixtures, isRetiredFixture, assertFixtureNotRetired, RETIRED_FIXTURES, correctFixtureMatchday, hasFixtureMatchdayCorrection } from '../services/retiredFixtureService';
@@ -1482,6 +1484,7 @@ export async function getFixturesFirestore(filter: Parameters<typeof getFixtures
   const needsCorrection = !filter.competitionId || hasFixtureMatchdayCorrection(filter.competitionId, seasonId);
   const rawFilter = !needsCorrection || filter.matchday === undefined ? filter : { ...filter, matchday: undefined, limit: undefined };
   let fixtures = filterRetiredFixtures(await getFixturesFirestoreUnfiltered(rawFilter), seasonId);
+  fixtures = await filterPublishedEuropeanFixtures(fixtures);
   if (filter.matchday !== undefined) fixtures = fixtures.filter(f => f.matchday === filter.matchday);
   return filter.limit ? fixtures.slice(0, filter.limit) : fixtures;
 }
@@ -1665,6 +1668,7 @@ async function getFixturesFirestoreUnfiltered(filter: {
         id: r.id,
         seasonId: r.seasonId,
         competitionId: r.competitionId,
+        ...((r as any).europeanDrawId ? {europeanDrawId: (r as any).europeanDrawId} : {}),
         competitionName: r.competitionName || r.competitionId,
         matchday: r.matchday,
         roundName: r.roundName,
@@ -2069,7 +2073,7 @@ export async function getAdminFixturesPagedFirestore(options: AdminFixturesQuery
 
 export async function getFixtureByIdFirestore(fixtureId: string, currentUserId?: string): Promise<Fixture | null> {
   const fixture = await getFixtureByIdFirestoreUncorrected(fixtureId, currentUserId);
-  return fixture ? correctFixtureMatchday(fixture) : null;
+  return fixture && (await filterPublishedEuropeanFixtures([fixture])).length ? correctFixtureMatchday(fixture) : null;
 }
 
 async function getFixtureByIdFirestoreUncorrected(fixtureId: string, currentUserId?: string): Promise<Fixture | null> {
@@ -2154,6 +2158,7 @@ async function getFixtureByIdFirestoreUncorrected(fixtureId: string, currentUser
           id: doc.id,
           seasonId: r.seasonId,
           competitionId: r.competitionId,
+          ...((r as any).europeanDrawId ? {europeanDrawId: (r as any).europeanDrawId} : {}),
           competitionName: r.competitionName || r.competitionId,
           matchday: r.matchday,
           roundName: r.roundName,
@@ -2463,9 +2468,13 @@ export async function generateCompetitionFixturesFirestore(
     );
   }
 
+  const european = comp.type === 'EUROPEAN_LEAGUE_PHASE' || isEuropeanFixtureCompetition(competitionId);
+  if (european) await assertEuropeanDrawReady(comp);
+  const drawId = european ? europeanDrawUUID() : undefined;
+
   // Check existing fixtures
   const existingSnap = await db.collection(COLLECTIONS.FIXTURES).where('competitionId', '==', competitionId).get();
-  if (!existingSnap.empty && !options.force) {
+  if (!existingSnap.empty && !options.force && (!european || europeanDrawPublished(comp))) {
     const matchdays = new Set(existingSnap.docs.map((d) => d.data().matchday)).size;
     return { generated: existingSnap.size, matchdays };
   }
@@ -2515,7 +2524,7 @@ export async function generateCompetitionFixturesFirestore(
     updatedAt: string;
   }> = [];
 
-  const startDate = new Date('2026-08-15T15:00:00.000Z');
+  const startDate = european ? new Date() : new Date('2026-08-15T15:00:00.000Z');
   const now = new Date().toISOString();
   let totalRounds = 0;
 
@@ -2613,7 +2622,7 @@ export async function generateCompetitionFixturesFirestore(
     const batch = db.batch();
     for (const fix of chunk) {
       const ref = db.collection(COLLECTIONS.FIXTURES).doc(fix.id);
-      batch.set(ref, fix);
+      batch.set(ref, european ? {...fix, europeanDrawId: drawId} : fix);
     }
     await batch.commit();
   }
@@ -2641,7 +2650,8 @@ export async function generateCompetitionFixturesFirestore(
 
   // 6. Update competition document in Firestore with matchday timer & persistent status
   const nextOpenAt = new Date(Date.now() + 30 * 3600 * 1000).toISOString();
-  await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).update({
+  const competitionUpdate = {
+    ...(european ? {europeanDrawId: drawId, europeanDrawQualificationToken: (comp as any).europeanQualificationToken, europeanDrawnAt: now} : {}),
     status: 'active',
     hasFixtures: true,
     fixtureCount: verifySnap.size,
@@ -2655,7 +2665,21 @@ export async function generateCompetitionFixturesFirestore(
     nextMatchdayOpenAt: nextOpenAt,
     adminOverrideStatus: 'AUTO',
     updatedAt: now,
-  });
+  };
+  if (european) {
+    // Publish only a complete tagged draw under the still-current finalization.
+    await db.runTransaction(async tx => {
+      const comps = await tx.get(db.collection(COLLECTIONS.COMPETITIONS).where('seasonId','==',comp.seasonId));
+      const fixtures = await tx.get(db.collection(COLLECTIONS.FIXTURES).where('seasonId','==',comp.seasonId));
+      const latest = comps.docs.find(d=>d.id===competitionId)?.data();
+      const rows = fixtures.docs.filter(d=>d.data().competitionId===competitionId);
+      if (latest?.europeanQualificationToken !== (comp as any).europeanQualificationToken || latest?.europeanQualificationMode !== 'final' ||
+          !domesticSeasonComplete(comps.docs.map(d=>({...d.data(),id:d.id})),fixtures.docs.map(d=>({...d.data(),id:d.id})),comp.seasonId) ||
+          rows.length !== generatedFixtures.length || rows.some(d=>d.data().europeanDrawId !== drawId))
+        throw new Error('EUROPEAN_DRAW_CHANGED: refresh qualification and regenerate the draw');
+      tx.update(db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId),competitionUpdate);
+    });
+  } else await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).update(competitionUpdate);
 
   // Also sync to SQLite for offline resilience
   try {
@@ -2683,6 +2707,12 @@ export async function generateCompetitionFixturesFirestore(
   }
 
   invalidateFirestoreCache('firestore:comp');
+  invalidateFirestoreCache('firestore:fixtures:');
+  invalidateFirestoreCache('firestore:fixture:');
+  if (european) {
+    const {invalidateDataset,ReadModelKeys}=await import('../readModel/readModelStore');
+    await Promise.all([ReadModelKeys.competitionFixtures(competitionId,comp.seasonId),ReadModelKeys.adminFixtures(comp.seasonId),ReadModelKeys.competitions(comp.seasonId)].map(key=>invalidateDataset(key)));
+  }
   return { generated: verifySnap.size, matchdays: totalRounds };
 }
 
@@ -6266,6 +6296,7 @@ export async function getPendingResultsFirestore(seasonId = 'season-2026-27'): P
         id: doc.id,
         seasonId: r.seasonId,
         competitionId: r.competitionId,
+        ...((r as any).europeanDrawId ? {europeanDrawId: (r as any).europeanDrawId} : {}),
         competitionName: r.competitionName || r.competitionId,
         matchday: r.matchday,
         roundName: r.roundName,
