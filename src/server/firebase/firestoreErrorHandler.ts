@@ -38,7 +38,7 @@ export function parseFirestoreError(err: any): FormattedFirestoreError {
       details: err.details || rawMsg,
     };
   }
-  if (strCode === 'FIXTURE_RETIRED') {
+  if (['DOMESTIC_LEAGUES_INCOMPLETE','EUROPEAN_QUALIFICATION_NOT_FINAL','EUROPEAN_DRAW_NOT_PUBLISHED','FIXTURE_RETIRED'].includes(strCode)) {
     return { error: strCode, code: strCode, message: rawMsg, httpStatus: 409 };
   }
   if (strCode === 'AUTHORITATIVE_WRITE_REQUIRED') {

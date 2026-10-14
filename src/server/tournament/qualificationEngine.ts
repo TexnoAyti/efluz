@@ -1,3 +1,4 @@
+import {domesticSeasonComplete} from '../services/europeanFixtureGate';
 import { getRuntimeStateStore } from '../readModel/runtimeStateStore';
 import { withSeasonQualificationPolicy } from '../../lib/seasonQualificationPolicy';
 import { getFirestoreDb } from '../firebase/admin';
@@ -249,7 +250,7 @@ export async function previewEuropeanQualificationSync(
   const leagueIds = new Set(leagues.map((l) => l.id));
   const leagueFixtures = allFixtures.filter((f) => leagueIds.has(f.competitionId));
   const unplayedLeagueMatchesCount = leagueFixtures.filter((f) => f.status !== 'CONFIRMED').length;
-  const domesticLeaguesCompleted = leagueFixtures.length > 0 && unplayedLeagueMatchesCount === 0;
+  const domesticLeaguesCompleted = domesticSeasonComplete(allComps, allFixtures, seasonId);
 
   let canApply = true;
   let blockReason: string | undefined;
@@ -496,6 +497,15 @@ export async function applyEuropeanQualificationSync(params: {
     const application = await transaction.get(applicationRef);
     if (application.exists) throw new Error('PREVIEW_ALREADY_APPLIED');
     if (fingerprintSnapshots(snapshots) !== preview.sourceFingerprint) throw new Error('PREVIEW_DATA_CHANGED: refresh and review the new preview');
+    if (preview.mode === 'final' && !domesticSeasonComplete(
+      snapshots[0].docs.map(d=>({...d.data(),id:d.id})), snapshots[2].docs.map(d=>({...d.data(),id:d.id})), preview.seasonId))
+      throw new Error('DOMESTIC_LEAGUES_INCOMPLETE');
+    for (const diff of [preview.diff.ucl, preview.diff.uel]) transaction.update(db.collection(COLLECTIONS.COMPETITIONS).doc(diff.competitionId), {
+      europeanQualificationMode: preview.mode, europeanQualificationToken: params.previewToken,
+      europeanQualificationFinalizedAt: preview.mode === 'final' ? now : null,
+      europeanDrawId: null, europeanDrawQualificationToken: null, europeanDrawnAt: null,
+      status: 'upcoming', isMatchdayOpen: false, hasFixtures: false, updatedAt: now,
+    });
     const existing = snapshots[1].docs;
     for (const q of preview.projectedQualifications) {
       const matches = existing.filter(d => d.data().competitionId === q.targetCompetitionId && d.data().clubId === q.clubId);

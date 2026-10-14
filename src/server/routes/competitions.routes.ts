@@ -1,3 +1,5 @@
+import {getFirestoreDb} from '../firebase/admin';
+import {europeanDrawPublished,isEuropeanFixtureCompetition} from '../services/europeanFixtureGate';
 import { Router, Request, Response } from 'express';
 import { requireAdmin } from '../middleware/authMiddleware';
 import {
@@ -57,6 +59,8 @@ competitionsRouter.get('/:id', async (req: Request, res: Response) => {
 
 competitionsRouter.get('/:id/participants', async (req: Request, res: Response) => {
   try {
+    const comp = isEuropeanFixtureCompetition(req.params.id) ? (await getFirestoreDb().collection('competitions').doc(req.params.id).get()).data() : null;
+    if (isEuropeanFixtureCompetition(req.params.id) && comp?.europeanQualificationMode !== 'final') {res.json({participants:[]}); return;}
     const participants = await getCompetitionParticipantsFirestore(req.params.id);
     res.json({ participants });
   } catch (err: any) {
@@ -67,6 +71,9 @@ competitionsRouter.get('/:id/participants', async (req: Request, res: Response) 
 competitionsRouter.get('/:id/standings', async (req: Request, res: Response) => {
   const seasonId = (req.query.seasonId as string) || 'season-2026-27';
   try {
+    if (isEuropeanFixtureCompetition(req.params.id) && !europeanDrawPublished((await getFirestoreDb().collection('competitions').doc(req.params.id).get()).data())) {
+      res.json({standings:[],source:'european-draw-pending',stale:false,degraded:false}); return;
+    }
     const [result, fixtureResult] = await Promise.all([
       getCompetitionStandingsFromReadModel(req.params.id, seasonId),
       getCompetitionFixturesFromReadModel(req.params.id, { seasonId }),

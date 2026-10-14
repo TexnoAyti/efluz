@@ -1,3 +1,4 @@
+import {filterPublishedEuropeanFixtures} from './europeanFixtureGate';
 import type { Club, Competition, Fixture } from '../../types';
 import { SEED_COMPETITIONS } from '../db/seed';
 import { ReadModelKeys, redisGetFresh, redisGetLkg, normalizeFixtureSnapshot, ReadModelSnapshot, ReadModelNotWarmedError, getPostgresFixtureReadModel } from '../readModel/readModelStore';
@@ -23,6 +24,7 @@ export async function getMyMatchesResilient(userId: string, ownedClubs: Club[], 
     // every possible competition. Filter by verified ownership before enrichment.
     const result = await getPostgresFixtureReadModel(seasonId);
     let rows = result.data.filter(f => ids.has(f.homeClubId || '') || ids.has(f.awayClubId || ''));
+    rows = await filterPublishedEuropeanFixtures(rows);
     rows = await filterTombstonedFixtures(rows, seasonId);
     rows = await enrichFixturesWithAuthoritativeOwners(rows, seasonId);
     rows = await refreshFixtureMatchdayRules(rows, seasonId);
@@ -65,6 +67,7 @@ export async function getMyMatchesResilient(userId: string, ownedClubs: Club[], 
     return { fixtures: await getFixturesFirestore({userId,seasonId,status}),stale:false,degraded:false,source:'firestore' };
   }
   rows = rows.map(f => ({ ...normalizeFixtureSnapshot(f,seasonId), ...f }));
+  rows = await filterPublishedEuropeanFixtures(rows);
   rows = await filterTombstonedFixtures(rows,seasonId);
   rows = await enrichFixturesWithAuthoritativeOwners(rows,seasonId);
   await getAllCompetitionsFirestore(seasonId);

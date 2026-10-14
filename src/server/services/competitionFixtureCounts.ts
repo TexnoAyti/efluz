@@ -1,3 +1,5 @@
+import {getFirestoreDb} from '../firebase/admin';
+import {europeanDrawPublished,isEuropeanFixtureCompetition} from './europeanFixtureGate';
 import { Competition, Fixture } from '../../types';
 import { ReadModelKeys, redisGetFresh, redisGetLkg } from '../readModel/readModelStore';
 import { filterTombstonedFixtures } from './fixtureTombstoneService';
@@ -7,6 +9,12 @@ import { filterTombstonedFixtures } from './fixtureTombstoneService';
  */
 export async function withVisibleFixtureCounts(competitions: Competition[], seasonId: string): Promise<Competition[]> {
   return Promise.all(competitions.map(async competition => {
+    if (isEuropeanFixtureCompetition(competition.id)) {
+      const current = (await getFirestoreDb().collection('competitions').doc(competition.id).get()).data();
+      const published = europeanDrawPublished(current);
+      return {...competition, europeanDrawPublished: published,
+        ...(published ? {} : {status:'upcoming',fixtureCount:0,fixturesCount:0,hasFixtures:false,isMatchdayOpen:false})} as Competition;
+    }
     if (competition.type !== 'LEAGUE') return competition;
     const key = ReadModelKeys.competitionFixtures(competition.id, seasonId);
     const snapshot = (await redisGetFresh<Fixture[]>(key)) || (await redisGetLkg<Fixture[]>(key));

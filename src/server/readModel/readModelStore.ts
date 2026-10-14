@@ -1,3 +1,4 @@
+import {filterPublishedEuropeanFixtures} from '../services/europeanFixtureGate';
 import { withSeasonQualificationPolicy } from '../../lib/seasonQualificationPolicy';
 import { filterRetiredFixtures, hasFixtureMatchdayCorrection } from '../services/retiredFixtureService';
 /**
@@ -1184,6 +1185,7 @@ export function normalizeFixtureSnapshot(doc: any, seasonId = 'season-2026-27'):
       id: doc.id,
       seasonId: docSeasonId || seasonId,
       competitionId: competitionId,
+      ...(doc.europeanDrawId ? {europeanDrawId:doc.europeanDrawId} : {}),
       competitionName: competitionName || competitionId,
       matchday: doc.matchday,
       roundName: roundName,
@@ -1929,7 +1931,7 @@ export async function getCompetitionFixturesFromReadModel(
 
   }
 
-  let fixtures = filterRetiredFixtures(rawFixtures, seasonId);
+  let fixtures = await filterPublishedEuropeanFixtures(filterRetiredFixtures(rawFixtures, seasonId));
   if (options.matchday !== undefined) {
     fixtures = fixtures.filter((fixture) => Number(fixture.matchday) === Number(options.matchday));
   }

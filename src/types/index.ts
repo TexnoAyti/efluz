@@ -98,6 +98,7 @@ export interface ClubMembership {
 }
 
 export interface Competition {
+  europeanDrawPublished?: boolean;
   updatedAt?: string;
   id: string;
   seasonId: string;
