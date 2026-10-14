@@ -27,6 +27,26 @@ await assert.rejects(planTopicResult('Real Madrid 2-1 Barca La Liga',1001,8,sign
 await assert.rejects(planTopicResult('Real Madrid 2-1 Barca',9999,3,signal), /klub biriktirilganligi/);
 await assert.rejects(planTopicResult('Real Madrid 1-1 Barca',1001,8,signal), /penalti/);
 assert.equal(await planTopicResult('Agar Real Madrid 2-1 Barca bo‘lsa nima bo‘ladi?',1001,3,signal), null);
+// Real production failure: named teams played round 6 while the league clock was 5.
+// Verify planning, ownership and score orientation in every domestic league.
+const originalGames=games;
+for (const [leagueId,name,thread] of [['league-premier-league','Premier League',2],['league-la-liga','La Liga',3],['league-serie-a','Serie A',4],['league-bundesliga','Bundesliga',5],['league-ligue-1','Ligue 1',6]] as const) {
+  const comp={id:'round-test-'+leagueId,name,type:'LEAGUE',leagueId,seasonId,currentMatchday:5};
+  const home={id:'club-torino',name:'Torino',leagueId,ownerUserId:'user-1001'};
+  const away={id:'club-monza',name:'Monza',leagueId,ownerUserId:'user-1002'};
+  competitions.push(comp); clubs.push(home,away);
+  games=[{...fixture('round-six-'+leagueId,comp.id),homeClubId:away.id,awayClubId:home.id,home:'Monza',away:'Torino',matchday:6}];
+  const planned=await planTopicResult('Torino 4-3 Monza',1001,thread,signal);
+  assert.equal(planned?.plan.targetId,games[0].id); assert.equal(planned?.plan.body.homeScore,3); assert.equal(planned?.plan.body.awayScore,4);
+  await assert.rejects(planTopicResult('Torino 4-3 Monza 5-tur',1001,thread,signal),/topilmadi/);
+  assert.equal((await planTopicResult('Torino 4-3 Monza 6-tur',1001,thread,signal))?.plan.targetId,games[0].id);
+  games.push({...games[0],id:'return-leg-'+leagueId,matchday:25});
+  await assert.rejects(planTopicResult('Torino 4-3 Monza',1001,thread,signal),/Bir nechta/);
+  games[1].status='CONFIRMED';
+  assert.equal((await planTopicResult('Torino 4-3 Monza',1001,thread,signal))?.plan.targetId,games[0].id);
+  competitions.pop(); clubs.splice(-2);
+}
+games=originalGames;
 games.push(fixture('second-cup-game',cup));
 await assert.rejects(planTopicResult('Real Madrid 2-1 Barca',1001,8,signal), /Bir nechta/); games.pop();
 const originalFetch = global.fetch, sent: any[] = [], alerts: any[] = [];
