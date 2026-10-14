@@ -1,3 +1,4 @@
+import { assertTopicResultCurrent, type ExpectedTopicFixture } from '../services/topicResultGuard';
 import { invalidateSharedAdminData } from '../services/adminReviewCache';
 import { filterRetiredFixtures, isRetiredFixture, assertFixtureNotRetired, RETIRED_FIXTURES, correctFixtureMatchday, hasFixtureMatchdayCorrection } from '../services/retiredFixtureService';
 import { recordDurableRead } from '../services/durableReadCosts';
@@ -6332,6 +6333,7 @@ export async function adminEditFixtureResultFirestore(
     status?: string;
     notes?: string;
     idempotencyKey?: string;
+    expectedFixture?: ExpectedTopicFixture;
   }
 ): Promise<{ success: boolean; message: string; fixture: Fixture; pendingSync?: boolean; derivedPending?: boolean }> {
   assertFixtureNotRetired(fixtureId);
@@ -6348,6 +6350,7 @@ export async function adminEditFixtureResultFirestore(
 
   // Helper for Phase 2 durable fallback when Firestore is unavailable
   const executeDurableFallbackEdit = async (existingData?: Partial<FirestoreFixtureDoc>) => {
+    if (params.expectedFixture) throw new Error('Guarded topic results require the authoritative database.');
     recordFallbackUsage();
     const sqliteRow = queryGet<any>('SELECT * FROM fixtures WHERE id = ?', [fixtureId]);
     const seasonId = existingData?.seasonId || sqliteRow?.season_id || 'season-2026-27';
@@ -6471,6 +6474,10 @@ export async function adminEditFixtureResultFirestore(
     }
 
     const existing = fixDoc.data() as FirestoreFixtureDoc;
+    if (params.expectedFixture) {
+      if (process.env.DATABASE_PROVIDER !== 'supabase') throw new Error('Guarded topic results require the PostgreSQL runtime.');
+      assertTopicResultCurrent(existing, params.expectedFixture);
+    }
     const oldScore = {
       homeScore: existing.homeScore,
       awayScore: existing.awayScore,
@@ -6492,7 +6499,16 @@ export async function adminEditFixtureResultFirestore(
       batch.set(db.collection('durable_fixture_overrides').doc(fixtureId),JSON.parse(JSON.stringify(fixture)));
       batch.set(db.collection(COLLECTIONS.AUDIT_LOGS).doc(auditId),{id:auditId,actorUserId:adminUserId,actorUsername:adminUsername||null,action:existing.status==='CONFIRMED'||existing.homeScore!=null?'ADMIN_EDIT_RESULT':'ADMIN_SET_RESULT',entityType:'fixture',entityId:fixtureId,oldValueJson:JSON.stringify(oldScore),newValueJson:JSON.stringify(changed),ipAddress:null,notes:params.notes||`Admin set result ${params.homeScore}-${params.awayScore}`,createdAt:now});
       batch.set(db.collection('result_refresh_jobs').doc(fixtureId),{fixtureId,competitionId:existing.competitionId,seasonId:existing.seasonId,version:now,status:'pending',leaseUntil:0,notifyResult:true,notificationActorId:adminUserId,notificationVersion:mutationId,notificationFixture:JSON.parse(JSON.stringify(fixture))});
-      await batch.commit();
+      if (params.expectedFixture) {
+        await db.runTransaction(async tx => {
+          const fresh = await tx.get(fixRef);
+          assertTopicResultCurrent(fresh.exists ? fresh.data() : null, params.expectedFixture!);
+          tx.update(fixRef, changed);
+          tx.set(db.collection('durable_fixture_overrides').doc(fixtureId), JSON.parse(JSON.stringify(fixture)));
+          tx.set(db.collection(COLLECTIONS.AUDIT_LOGS).doc(auditId), {id:auditId,actorUserId:adminUserId,actorUsername:adminUsername||null,action:'ADMIN_SET_RESULT',entityType:'fixture',entityId:fixtureId,oldValueJson:JSON.stringify(oldScore),newValueJson:JSON.stringify(changed),ipAddress:null,notes:params.notes||'Telegram topic result approved',createdAt:now});
+          tx.set(db.collection('result_refresh_jobs').doc(fixtureId), {fixtureId,competitionId:existing.competitionId,seasonId:existing.seasonId,version:now,status:'pending',leaseUntil:0,notifyResult:true,notificationActorId:adminUserId,notificationVersion:mutationId,notificationFixture:JSON.parse(JSON.stringify(fixture))});
+        });
+      } else await batch.commit();
       try{upsertFixtureToSqlite(next);}catch{}
       invalidateFirestoreCache();
       console.info('[ADMIN_RESULT_COMMITTED]',{fixtureId,homeScore:params.homeScore,awayScore:params.awayScore,derivedPending:true});
@@ -6591,6 +6607,7 @@ export async function adminEditFixtureResultFirestore(
       fixture: updated!,
     };
   } catch (err: any) {
+    if (params.expectedFixture) throw err;
     console.error('[ADMIN_RESULT_FIRESTORE_FAILURE]', JSON.stringify({ fixtureId, error: err?.message }));
     firestoreCircuitBreaker.recordFailure(err);
     if (!firestoreCircuitBreaker.canExecute()) {

@@ -458,6 +458,7 @@ const adminEditResultSchema = z.object({
   status: z.enum(['CONFIRMED', 'AWAITING_RESULT', 'SCHEDULED']).optional(),
   notes: z.string().optional(),
   idempotencyKey: z.string().optional(),
+  expectedFixture: z.object({competitionId:z.string(),homeClubId:z.string(),awayClubId:z.string(),status:z.string(),updatedAt:z.string().nullable()}).strict().optional(),
 });
 
 adminRouter.post('/fixtures/:id/result', validateBody(adminEditResultSchema), async (req: Request, res: Response) => {
@@ -474,6 +475,7 @@ adminRouter.post('/fixtures/:id/result', validateBody(adminEditResultSchema), as
     });
     res.json(result);
   } catch (err: any) {
+    if (err?.code === 'TOPIC_RESULT_CHANGED') { res.status(409).json({error:err.code,message:err.message}); return; }
     console.error('[ADMIN_RESULT_SAVE_FAILED]', JSON.stringify({ fixtureId, error: err?.message }));
     handleFirestoreError(res, err, `POST /api/admin/fixtures/${fixtureId}/result`);
   }

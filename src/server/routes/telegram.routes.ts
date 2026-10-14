@@ -32,6 +32,7 @@ import {
 } from '../services/telegramAiConfigService';
 import { getAiRateLimitMetrics } from '../services/telegramAiRateLimitService';
 import { handleTelegramAiMessage, escapeTelegramHtml } from '../services/telegramAiService';
+import { handleTopicResultUpdate } from '../services/telegramTopicResults';
 import { isAiAdminCommand } from '../services/telegramAiAdminCatalog';
 import { archiveCommunityMessage, communityPost, communitySourceStats } from '../services/telegramAiCommunitySources';
 import { extractAiCustomEmoji, saveAiCustomEmoji } from '../services/telegramAiCustomEmoji';
@@ -93,7 +94,10 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
     }
     console.info('[TELEGRAM_UPDATE_RECEIVED]', JSON.stringify({ updateId: update.update_id, kind: update.callback_query ? 'callback' : update.message ? 'message' : Object.keys(update).filter(key => key !== 'update_id').join(','), chatId: update.message?.chat?.id ?? update.callback_query?.message?.chat?.id ?? null, threadId: update.message?.message_thread_id ?? update.callback_query?.message?.message_thread_id ?? null, hasText: typeof update.message?.text === 'string', command: /^\/([a-z_]+)/i.exec(update.message?.text || '')?.[1] || null, anonymous: Boolean(update.message?.sender_chat) }));
     let response: Record<string, unknown> = { ok: true, ignored: 'unhandled_update_type' };
-    if (typeof update.callback_query?.data === 'string' && /^ai:(confirm|cancel):[a-f0-9]{24}$/.test(update.callback_query.data)) {
+    const topicResult = await handleTopicResultUpdate(update);
+    if (topicResult.handled) {
+      response = {ok:true,handled:'topic_result',result:topicResult.result};
+    } else if (typeof update.callback_query?.data === 'string' && /^ai:(confirm|cancel):[a-f0-9]{24}$/.test(update.callback_query.data)) {
       const callback = update.callback_query;
       const message = callback.message;
       if (!message || !Number.isSafeInteger(message.chat?.id) || !Number.isSafeInteger(callback.from?.id)) {

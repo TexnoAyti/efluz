@@ -6,6 +6,18 @@ export class PostgresAiStore extends PostgresKeyValueStore {
  async eval<T=any>(script:string,keys:string[],args:any[]):Promise<T>{
   return this.atomic(keys,(values,put)=>{
    const get=(key:string)=>parse(values.get(key)?.value);
+   if(script.includes('EFL_TOPIC_RESULT_PUBLISH_V1')){
+    const previous=get(keys[1]), updateId=Number(args[1]);
+    if(previous && (previous.updateId>updateId || args[2]!=='1' || previous.updateId===updateId && (args[0]==='' || previous.token!==null)))return 0;
+    if(args[0]!=='')put(keys[0],parse(args[0]),Number(args[3]));
+    put(keys[1],parse(args[4]),Number(args[3]));return 1;
+   }
+   if(script.includes('EFL_TOPIC_RESULT_CLAIM_V1')){
+    const p=get(keys[0]),source=get(keys[2]);
+    if(!p||!source||p.state!=='pending'||p.expiresAt<=Number(args[0])||p.chat!==Number(args[1])||p.thread!==Number(args[2])||p.deliveredMessage!==Number(args[3])||source.token!==p.token)return 0;
+    if(args[4]==='executing'){if(values.has(keys[1]))return 0;put(keys[1],p.token,Number(args[5]));}
+    put(keys[0],{...p,state:args[4]},Number(args[5]));return 1;
+   }
    if(script.includes('EFL_AI_DELIVERY_V1')){
     if(['sending','sent','unknown_timeout'].includes(get(keys[0])))return 0;
     put(keys[0],'sending',86400);return 1;
