@@ -90,7 +90,10 @@ export async function planTopicResult(text: string, sender: number, thread: numb
   if (!own.length && !isAiAdminActor(sender)) throw Error('CLARIFY:Bu akkauntga klub biriktirilganligi topilmadi. Natijani o‘yin ishtirokchisi yuborsin.');
   const games: any[] = [];
   for (const c of competitions) {
-    const round = requestedMatchday(text) ?? (c.type === 'LEAGUE' ? c.currentMatchday : undefined);
+    // Named opponents identify the fixture across rounds, including reports played
+    // ahead of the league clock. Only an explicit round may narrow that search.
+    // A bare score still needs the current round to avoid guessing an opponent.
+    const round = requestedMatchday(text) ?? (c.type === 'LEAGUE' && !selected.clubs.length ? c.currentMatchday : undefined);
     const stage = detectAiCupStage(text);
     const filter = { dataset: 'fixtures', competition: c.id, ...(round ? { matchday: round } : {}), ...(stage ? {stage} : {}), ...(selected.clubs.length ? { club: selected.clubs[0].id, opponent: selected.clubs[1].id } : {}), limit: 30 };
     let offset = 0;
