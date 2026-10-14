@@ -6,6 +6,15 @@ export class PostgresAiStore extends PostgresKeyValueStore {
  async eval<T=any>(script:string,keys:string[],args:any[]):Promise<T>{
   return this.atomic(keys,(values,put)=>{
    const get=(key:string)=>parse(values.get(key)?.value);
+   if(script.includes('EFL_TOPIC_RESULT_CONTEXT_V1')){
+    const c=get(keys[0]);
+    if(args[0]==='publish'){const next=parse(args[1]);if(c&&c.updateId>=next.updateId)return 0;put(keys[0],next,900);return 1;}
+    if(!c||c.token!==args[1]||c.state!=='awaiting')return 0;
+    if(args[0]==='deliver')c.deliveredMessage=Number(args[2]);
+    else if(args[0]==='cancel')c.state='cancelled';
+    else{const source=get(keys[1]);if(c.expiresAt<=Number(args[2])||!c.deliveredMessage||source&&source.updateId>c.sourceUpdateId)return 0;c.state='consumed';}
+    put(keys[0],c,900);return 1;
+   }
    if(script.includes('EFL_TOPIC_RESULT_PUBLISH_V1')){
     const previous=get(keys[1]), updateId=Number(args[1]);
     if(previous && (previous.updateId>updateId || args[2]!=='1' || previous.updateId===updateId && (args[0]==='' || previous.token!==null)))return 0;
@@ -15,6 +24,8 @@ export class PostgresAiStore extends PostgresKeyValueStore {
    if(script.includes('EFL_TOPIC_RESULT_CLAIM_V1')){
     const p=get(keys[0]),source=get(keys[2]);
     if(!p||!source||p.state!=='pending'||p.expiresAt<=Number(args[0])||p.chat!==Number(args[1])||p.thread!==Number(args[2])||p.deliveredMessage!==Number(args[3])||source.token!==p.token)return 0;
+    const origin=p.originalSourceMessage?get(keys[3]):null;
+    if(origin&&origin.updateId>p.originalSourceUpdateId)return 0;
     if(args[4]==='executing'){if(values.has(keys[1]))return 0;put(keys[1],p.token,Number(args[5]));}
     put(keys[0],{...p,state:args[4]},Number(args[5]));return 1;
    }
