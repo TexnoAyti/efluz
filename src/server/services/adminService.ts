@@ -1,3 +1,4 @@
+import type { ExpectedTopicFixture } from './topicResultGuard';
 import {
   getDisputesFirestore,
   resolveDisputeFirestore,
@@ -72,6 +73,7 @@ export async function editFixtureResult(
     status?: string;
     notes?: string;
     idempotencyKey?: string;
+    expectedFixture?: ExpectedTopicFixture;
   }
 ): Promise<{ success: boolean; message: string; fixture: Fixture; pendingSync?: boolean }> {
   const result = await adminEditFixtureResultFirestore(adminUserId, adminUsername, fixtureId, params);
