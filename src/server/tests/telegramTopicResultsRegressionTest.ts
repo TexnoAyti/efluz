@@ -38,15 +38,25 @@ for (const [leagueId,name,thread] of [['league-premier-league','Premier League',
   games=[{...fixture('round-six-'+leagueId,comp.id),homeClubId:away.id,awayClubId:home.id,home:'Monza',away:'Torino',matchday:6}];
   const planned=await planTopicResult('Torino 4-3 Monza',1001,thread,signal);
   assert.equal(planned?.plan.targetId,games[0].id); assert.equal(planned?.plan.body.homeScore,3); assert.equal(planned?.plan.body.awayScore,4);
-  await assert.rejects(planTopicResult('Torino 4-3 Monza 5-tur',1001,thread,signal),/topilmadi/);
+  await assert.rejects(planTopicResult('Torino 4-3 Monza 5-tur',1001,thread,signal),error => {
+    assert.match(String(error),/5-tur.*shu turda o‘yin topilmadi/s); assert.match(String(error),/Monza — Torino.*6-tur/s); return true;
+  });
   assert.equal((await planTopicResult('Torino 4-3 Monza 6-tur',1001,thread,signal))?.plan.targetId,games[0].id);
   games.push({...games[0],id:'return-leg-'+leagueId,matchday:25});
-  await assert.rejects(planTopicResult('Torino 4-3 Monza',1001,thread,signal),/Bir nechta/);
+  await assert.rejects(planTopicResult('Torino 4-3 Monza',1001,thread,signal),error => {
+    assert.match(String(error),/Bir nechta.*6-tur.*25-tur/s); return true;
+  });
   games[1].status='CONFIRMED';
   assert.equal((await planTopicResult('Torino 4-3 Monza',1001,thread,signal))?.plan.targetId,games[0].id);
   competitions.pop(); clubs.splice(-2);
 }
 games=originalGames;
+const reported=games[0];
+Object.assign(reported,{status:'CONFIRMED',homeScore:3,awayScore:2});
+await assert.rejects(planTopicResult('Real Madrid 4-1 Barca',1001,3,signal),/allaqachon tasdiqlangan.*Real Madrid 3:2 Barcelona/s);
+reported.status='DISPUTED';
+await assert.rejects(planTopicResult('Real Madrid 4-1 Barca',1001,3,signal),/natija nizoli.*Admin ko‘rib chiqishi kerak/s);
+reported.status='SCHEDULED'; delete reported.homeScore; delete reported.awayScore;
 games.push(fixture('second-cup-game',cup));
 await assert.rejects(planTopicResult('Real Madrid 2-1 Barca',1001,8,signal), /Bir nechta/); games.pop();
 const originalFetch = global.fetch, sent: any[] = [], alerts: any[] = [];
@@ -72,6 +82,7 @@ try {
   assert.equal((await handleTopicResultUpdate(source)).result, 'duplicate_source');
   const race = await Promise.all([handleTopicResultUpdate(callback(first,token)),handleTopicResultUpdate(callback(first,token))]);
   assert.equal(race.filter(r=>r.result==='executing').length,1); assert.equal(executions,1);
+  assert.match(sent.at(-1).text,/Natija saqlandi:.*Real Madrid — Barcelona.*La Liga.*11-tur.*Hisob: 1:2/s);
   assert.equal((await handleTopicResultUpdate(callback(first,token))).result, 'already_processed');
   const cupSource = update('Barca 2-3 Real Madrid',8,1002);
   assert.equal((await handleTopicResultUpdate(cupSource)).result, 'proposal_sent');

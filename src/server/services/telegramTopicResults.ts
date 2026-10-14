@@ -20,8 +20,10 @@ import type { AdminPlan } from './telegramAiAdminCatalog';
 const season = 'season-2026-27', ttl = 86400, prefix = 'efluz:v1:telegram:topic-result:';
 const proposalKey = (token: string) => prefix + 'proposal:' + token;
 const sourceKey = (chat: number, thread: number, message: number) => `${prefix}source:${chat}:${thread}:${message}`;
-export type TopicResultProposal = { token: string; chat: number; thread: number; sourceMessage: number; submitter: number; updateId: number; expiresAt: number; state: string; plan: AdminPlan; deliveredMessage?: number; expectedFixture: any };
+export type TopicResultProposal = { token: string; chat: number; thread: number; sourceMessage: number; submitter: number; updateId: number; expiresAt: number; state: string; plan: AdminPlan; deliveredMessage?: number; expectedFixture: any; summary?: string };
 const editable = new Set(['SCHEDULED', 'POSTPONED', 'AWAITING_RESULT', 'PENDING_CONFIRMATION']);
+const roundLabel = (f: any) => f.roundName || (Number.isInteger(f.matchday) ? `${f.matchday}-tur` : 'Tur ma’lumoti yo‘q');
+const fixtureLabel = (f: any) => `${f.home} — ${f.away} · ${f.competition} · ${roundLabel(f)}`;
 
 /** The same verified group/topic links used by the app's result notifications. */
 export function competitionResultTopic(c: Competition): number | null {
@@ -88,14 +90,16 @@ export async function planTopicResult(text: string, sender: number, thread: numb
   if (selected.clarification) throw Error('CLARIFY:' + selected.clarification);
   if (selected.clubs.length && selected.clubs.length !== 2) throw Error('CLARIFY:Ikkala jamoa va hisobni yozing. Yoki faqat hisobni yozing — birinchi son sizning klubingiz uchun bo‘ladi.');
   if (!own.length && !isAiAdminActor(sender)) throw Error('CLARIFY:Bu akkauntga klub biriktirilganligi topilmadi. Natijani o‘yin ishtirokchisi yuborsin.');
-  const games: any[] = [];
+  const games: any[] = [], rounds = new Map<string, number | undefined>();
   for (const c of competitions) {
     // Named opponents identify the fixture across rounds, including reports played
     // ahead of the league clock. Only an explicit round may narrow that search.
     // A bare score still needs the current round to avoid guessing an opponent.
     const round = requestedMatchday(text) ?? (c.type === 'LEAGUE' && !selected.clubs.length ? c.currentMatchday : undefined);
+    rounds.set(c.id, round);
     const stage = detectAiCupStage(text);
-    const filter = { dataset: 'fixtures', competition: c.id, ...(round ? { matchday: round } : {}), ...(stage ? {stage} : {}), ...(selected.clubs.length ? { club: selected.clubs[0].id, opponent: selected.clubs[1].id } : {}), limit: 30 };
+    // Keep verified other rounds for diagnosis; never silently change an explicit round.
+    const filter = { dataset: 'fixtures', competition: c.id, ...(round && !selected.clubs.length ? { matchday: round } : {}), ...(stage ? {stage} : {}), ...(selected.clubs.length ? { club: selected.clubs[0].id, opponent: selected.clubs[1].id } : {}), limit: 30 };
     let offset = 0;
     do {
       const page: any = await reader.read({ ...filter, offset });
@@ -106,8 +110,20 @@ export async function planTopicResult(text: string, sender: number, thread: numb
       offset = page.nextOffset;
     } while (true);
   }
-  const candidates = games.filter(f => editable.has(f.status));
-  if (candidates.length !== 1) throw Error('CLARIFY:' + (candidates.length ? 'Bir nechta o‘yin mos keldi. Jamoalar, tur yoki kubok bosqichini hisob bilan birga yozing.' : 'Bu mavzuda mos tasdiq kutayotgan o‘yin topilmadi. Jamoalar va turni tekshiring; tasdiqlangan hisob almashtirilmaydi.'));
+  const scoped = games.filter(f => !rounds.get(f.competitionId) || f.matchday === rounds.get(f.competitionId));
+  const candidates = scoped.filter(f => editable.has(f.status));
+  if (candidates.length > 1) throw Error('CLARIFY:Bir nechta o‘yin mos keldi:\n' + candidates.slice(0,5).map(fixtureLabel).join('\n') + (candidates.length > 5 ? `\nJami ${candidates.length} ta mos o‘yin.` : '') + '\nHisob bilan kerakli tur yoki kubok bosqichini ko‘rsating. Natija saqlanmadi.');
+  if (!candidates.length) {
+    const checked = `${selected.clubs.length ? selected.clubs.map(c => c.name).join(' — ') : own.map(c => c.name).join(', ')} · ${competitions.map(c => c.name + (rounds.get(c.id) ? ` · ${rounds.get(c.id)}-tur` : '')).join('; ')}`;
+    let reason = `${checked}: jadvalda mos o‘yin topilmadi. Natija saqlanmadi.`;
+    if (!scoped.length && games.length) reason = `${checked}: shu turda o‘yin topilmadi. Jadvaldagi juftlik:\n${games.slice(0,5).map(fixtureLabel).join('\n')}\nSiz yozgan tur avtomatik almashtirilmadi. Natija saqlanmadi.`;
+    else if (scoped.length) reason = scoped.slice(0,5).map(f => {
+      if (f.status === 'CONFIRMED') return `${fixtureLabel(f)}: natija allaqachon tasdiqlangan.${Number.isInteger(f.homeScore) && Number.isInteger(f.awayScore) ? ` Saqlangan hisob: ${f.home} ${f.homeScore}:${f.awayScore} ${f.away}.` : ' Saqlangan hisob bu manbada ko‘rsatilmagan.'}`;
+      if (f.status === 'DISPUTED') return `${fixtureLabel(f)}: natija nizoli. Admin ko‘rib chiqishi kerak.`;
+      return `${fixtureLabel(f)}: o‘yin holati ${f.status}; bu holatda yangi tasdiqlash taklifi ochilmaydi.`;
+    }).join('\n') + '\nNatija o‘zgartirilmadi.';
+    throw Error('CLARIFY:' + reason);
+  }
   const f = candidates[0];
   if (!own.some(c => [f.homeClubId,f.awayClubId].includes(c.id)) && !isAiAdminActor(sender)) throw Error('CLARIFY:Natijani faqat shu o‘yindagi klub egasi yuborishi mumkin.');
   const firstClub = selected.clubs[0] || (own.filter(c => [f.homeClubId,f.awayClubId].includes(c.id)).length === 1 ? own.find(c => [f.homeClubId,f.awayClubId].includes(c.id)) : null);
@@ -145,7 +161,10 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
       if (action === 'approve') {
         try {
           const result = await withinAiDeadline(signal, () => (testDependencies.execute || executeAiAdminRoute)(p.plan,actor,'topic-result-'+token,signal));
-          reply = result.status >= 200 && result.status < 300 && result.data?.success !== false && !result.data?.error ? inspectAiAdminOutcome(p.plan,result.data).message : 'Natija saqlanmadi: ' + String(result.data?.message || result.data?.error || 'server rad etdi').slice(0,250);
+          if (result.status >= 200 && result.status < 300 && result.data?.success !== false && !result.data?.error) {
+            const outcome = inspectAiAdminOutcome(p.plan,result.data);
+            reply = outcome.state === 'verified' ? `Natija saqlandi:\n${p.summary || 'O‘yin: '+p.plan.targetId}\nHisob: ${p.plan.body.homeScore}:${p.plan.body.awayScore}.${result.data?.derivedPending ? '\nTurnir jadvali yangilanish navbatiga qo‘yildi.' : ''}` : outcome.message;
+          } else reply = 'Natija saqlanmadi: ' + String(result.data?.message || result.data?.error || 'server rad etdi').slice(0,250);
           await client.set(proposalKey(token), { ...p, state: 'done', receipt: {status:result.status} }, {ex:ttl});
         } catch {
           await client.set(proposalKey(token), { ...p, state: 'unknown' }, {ex:ttl});
@@ -178,7 +197,7 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
     }
     if (!planned) return {handled:false};
     const token = randomBytes(12).toString('hex'), f = planned.fixture;
-    const p: TopicResultProposal = {token,chat:m.chat.id,thread:m.message_thread_id,sourceMessage:m.message_id,submitter:m.from.id,updateId:update.update_id,expiresAt:Date.now()+ttl*1000,state:'pending',plan:planned.plan,expectedFixture:planned.expectedFixture};
+    const p: TopicResultProposal = {token,chat:m.chat.id,thread:m.message_thread_id,sourceMessage:m.message_id,submitter:m.from.id,updateId:update.update_id,expiresAt:Date.now()+ttl*1000,state:'pending',plan:planned.plan,expectedFixture:planned.expectedFixture,summary:fixtureLabel(f)};
     const published = await client.eval(TOPIC_RESULT_PUBLISH,[proposalKey(token),latestKey],[JSON.stringify(p),update.update_id,update.edited_message?'1':'0',ttl,JSON.stringify({token,updateId:update.update_id,hash:createHash('sha256').update(text).digest('hex')})]);
     if (Number(published) !== 1) return {handled:true,result:'duplicate_source'};
     const reply = `Tasdiqlash uchun natija:\n${f.home} ${planned.plan.body.homeScore}:${planned.plan.body.awayScore} ${f.away}\n${f.competition} · ${f.roundName || f.matchday+'-tur'}\n\nHali bazaga yozilmadi. Faqat vakolatli admin tasdiqlaydi.\n24 soat amal qiladi.`;
