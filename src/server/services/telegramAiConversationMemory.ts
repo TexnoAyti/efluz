@@ -3,14 +3,15 @@ import type { ConversationTurn } from './telegramAiService';
 export const AI_CONTEXT_TTL_SECONDS = 3600;
 const MAX_TURNS = 12; // Six complete exchanges, scoped by the existing user/chat/topic key.
 const MAX_TEXT_CHARS = 12000;
+export interface AiMemoryLimits { maxTurns: number; maxTextChars: number; }
 const USER_CHARS = 1200;
 const MODEL_CHARS = 3000;
 type Selection = Pick<ConversationTurn, 'selectedClubIds' | 'selectedCompetitionIds' | 'selectedFixtureIds'>;
 
 /** Old array records remain readable; malformed/unbounded stored data never reaches the model. */
-export function normalizeAiHistory(value: unknown): ConversationTurn[] {
+export function normalizeAiHistory(value: unknown, limits: AiMemoryLimits = { maxTurns: MAX_TURNS, maxTextChars: MAX_TEXT_CHARS }): ConversationTurn[] {
   if (!Array.isArray(value)) return [];
-  const turns: ConversationTurn[] = value.slice(-MAX_TURNS).filter(item =>
+  const turns: ConversationTurn[] = value.slice(-limits.maxTurns).filter(item =>
     item && (item.role === 'user' || item.role === 'model') && typeof item.text === 'string'
   ).map(item => {
     const ids = (key: keyof Selection, limit: number) => Array.isArray(item[key])
@@ -22,15 +23,15 @@ export function normalizeAiHistory(value: unknown): ConversationTurn[] {
   });
   // Remove oldest complete exchanges first; never start a model conversation with an orphan answer.
   let size = turns.reduce((sum, turn) => sum + turn.text.length, 0);
-  while (turns.length && (turns[0].role !== 'user' || size > MAX_TEXT_CHARS)) {
+  while (turns.length && (turns[0].role !== 'user' || size > limits.maxTextChars)) {
     size -= turns.shift()!.text.length;
     while (turns[0]?.role === 'model') size -= turns.shift()!.text.length;
   }
   return turns;
 }
 
-export function appendAiExchange(history: ConversationTurn[], userText: string, modelText: string, selection: Selection = {}): ConversationTurn[] {
-  const previous = normalizeAiHistory(history);
+export function appendAiExchange(history: ConversationTurn[], userText: string, modelText: string, selection: Selection = {}, limits?: AiMemoryLimits): ConversationTurn[] {
+  const previous = normalizeAiHistory(history, limits);
   const retained: Selection = {};
   for (const key of ['selectedClubIds', 'selectedCompetitionIds', 'selectedFixtureIds'] as const) {
     // An explicit [] clears selection. Greetings/other turns with no selection preserve it.
@@ -38,5 +39,5 @@ export function appendAiExchange(history: ConversationTurn[], userText: string, 
   }
   return normalizeAiHistory([
     ...previous, { role: 'user', text: userText, ...retained }, { role: 'model', text: modelText },
-  ]);
+  ], limits);
 }
