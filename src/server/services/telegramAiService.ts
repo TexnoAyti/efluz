@@ -1,4 +1,5 @@
 import { getAiRedisClient, withinAiDeadline } from './telegramAiDeadline';
+import {generateMunfizPrivateAnswer,munfizPrivateChatEnabled,munfizPrivateChatScope} from './munfizPrivateChat';
 import { getDeliveredAiAdminDraft, rememberDeliveredAiAdminDraft, getDeliveredAiReadClubDraft, saveDeliveredAiReadClubDraft, clearAiReadClubDraft } from './telegramAiAdminDraft';
 import { continueAiAdminClarification } from './telegramAiAdminClarification';
 import { parseAiPlanRevision } from './telegramAiPlanRevision';
@@ -632,7 +633,7 @@ export async function handleTelegramAiMessage(
     }
 
     // 7. Check blatant off-topic before calling Gemini to save quota
-    if (isBlatantlyOffTopic(payload.text)) {
+    if (isBlatantlyOffTopic(payload.text) && !(munfizPrivateChatEnabled() && munfizPrivateChatScope(payload))) {
       // Off-topic refusal dispatched via unified dispatch path with parse_mode: null
       const dispatchRes = await dispatchTelegramAiReply(
         payload,
@@ -647,7 +648,7 @@ export async function handleTelegramAiMessage(
 
     const speaker = resolveAiSpeaker(payload);
     const social = aiSocialReply(payload.text, speaker, payload.messageId);
-    if (social) {
+    if (social && !(munfizPrivateChatEnabled() && munfizPrivateChatScope(payload))) {
       const result = await dispatchTelegramAiReply(payload, social, rootController.signal, { parse_mode: 'HTML' });
       if (result.replySent) await saveConversationContext(payload.chatId, payload.threadId, payload.fromUser.id, payload.text, social, { signal: rootController.signal, history });
       return { ok: result.ok, handled: true, replySent: result.replySent, ignored: result.ignored };
@@ -664,6 +665,7 @@ export async function handleTelegramAiMessage(
 
     // 10. Generate response via Gemini (or Test Mock)
     let replyText = '';
+    let munfizReply=false;
     const modelController = new AbortController();
     const modelTimeout = setTimeout(() => modelController.abort(), Math.max(0, deadlineAt - Date.now() - 1800));
     const modelSignal = AbortSignal.any([rootController.signal, modelController.signal]);
@@ -673,6 +675,12 @@ export async function handleTelegramAiMessage(
       replyText = addressAiFact(grounding.factualAnswer, speaker, payload.messageId, history.filter(h => h.role === 'model').map(h => h.text));
     } else if (testAiResponder) {
       replyText = await withinAiDeadline(modelSignal, () => testAiResponder!(payload.text, grounding.factsSummary, history));
+    } else if (munfizPrivateChatEnabled() && munfizPrivateChatScope(payload)) {
+      munfizReply=true;
+      try {replyText=await generateMunfizPrivateAnswer(payload,grounding.factsSummary,modelSignal);}
+      catch (error:any) {
+        replyText=/^MUNFIZ_(?:NOT_CONFIGURED|INVALID_URL|BOT_ID_REQUIRED)$/.test(error?.message) ? 'Munfiz ulanish sozlamalari to‘liq emas. Xizmat manzili va API kaliti sozlanishi kerak.' : 'Munfiz javobi olinmadi. So‘rov avtomatik qayta bajarilmaydi; Munfiz xizmatidagi holatini tekshiring.';
+      }
     } else {
       const apiKey = process.env.GEMINI_API_KEY?.trim();
       if (!apiKey) {
@@ -725,7 +733,7 @@ export async function handleTelegramAiMessage(
       payload,
       replyText,
       rootController.signal,
-      { parse_mode: 'HTML', maxChars: getAiResponsePolicy(payload.text).maxChars }
+      { parse_mode: munfizReply ? null : 'HTML', maxChars: getAiResponsePolicy(payload.text).maxChars }
     );
 
     if (dispatchRes.replySent) {
