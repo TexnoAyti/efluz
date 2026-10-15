@@ -1,6 +1,20 @@
 # Munfiz and EFL UZ private chat
 
-## Verified source and current state
+## Native assistant (selected deployment)
+
+The selected approach runs text conversation directly in EFL, using its existing Gemini provider and `telegram_ai_state` PostgreSQL store (or configured Redis). No Munfiz server, Railway service, additional AI subscription or new paid resource is provisioned. Existing provider quotas and hosting limits still apply; this does not make model usage unlimited or guarantee free operation beyond those limits.
+
+`EFL_PRIVATE_ASSISTANT_ENABLED` defaults to enabled; set it to `false` to restore the old owner DM behavior. Scope is the primary owner's genuine direct messages only, excluding forwarded/anonymous messages and delegate admins. Group behavior stays football-only. The optional external CowAgent adapter below stays disabled unless explicitly configured separately.
+
+Native memory retains up to 24 exchanges (48 turns), 32000 UTF-16 characters total, 1200 Unicode code points per user turn and 3000 per assistant turn. It expires 30 days after the last successful save. It uses keys scoped by environment, bot and sender, separately from older one-hour group histories. It is a bounded transcript, not unlimited autobiographical memory or semantic retrieval. Prior answers are not evidence of completed actions. PostgreSQL/Redis outages can prevent memory reads/writes; no disk inside Vercel is used.
+
+`/forget`, `xotirani tozala`, `kontekstni tozala` or `yangi suhbat` clears native chat history. It does not erase Telegram messages, payment/audit records or pending admin plans. Use `bekor qil` to cancel a pending plan. The reset only claims success after state storage confirms it.
+
+General text, translation, planning and code questions can use the existing model. Short replies inherit verified conversation history, and a plain affirmation replying to a normal assistant answer is not routed into admin confirmation. An actual delivered pending admin plan retains its confirmation flow. EFL writes require the existing validated plan and confirmation. Web browsing, shell execution, CowAgent plugins, attachment processing, background work and artifact delivery have not been ported. Existing request deadlines, provider limits, delivery replay guards and read tools remain in force.
+
+The tests mock model and Telegram calls and exercise durable state through the selected storage interface. They do not prove subjective model quality or a live Telegram conversation.
+
+## External CowAgent adapter: verified source and current state
 
 Reviewed `TexnoAyti/munfiz` at `396d22618090659480650719cf236c57598a8b82` (default branch `master`). It is a CowAgent fork, not an EFL backend. Its `docs/extensions/chat-api.mdx` and `channel/web/api/openai_compat.py` implement bearer-authenticated `POST /v1/chat/completions`, `agent_id`, and stateful `conversation_id`.
 

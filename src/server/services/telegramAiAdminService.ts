@@ -39,7 +39,7 @@ export async function rememberDeliveredAdminPlan(p: TelegramAiMessagePayload, re
   if (client) await client.set(latestKey(p), value, { ex: 300 });
   else if (process.env.NODE_ENV === 'test') testLatest.set(latestKey(p), value);
 }
-async function getLatestDeliveredPlanToken(p: TelegramAiMessagePayload, signal: AbortSignal): Promise<string|null> {
+export async function getLatestDeliveredPlanToken(p: TelegramAiMessagePayload, signal: AbortSignal): Promise<string|null> {
   const client = getAiRedisClient(signal);
   const latest = client ? await client.get<{token:string; botMessageId:number}>(latestKey(p)) : process.env.NODE_ENV === 'test' ? testLatest.get(latestKey(p)) : null;
   if (!latest) return null;
