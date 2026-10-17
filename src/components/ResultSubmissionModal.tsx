@@ -1,3 +1,5 @@
+import { isDomesticCupResult } from '../lib/cupResult';
+import { CupMatchModal } from './CupMatchModal';
 import { EFL_2_DESIGN_ENABLED } from '../releaseDesign';
 import React, { useState } from 'react';
 import { Fixture } from '../types';
@@ -58,6 +60,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   if (!isOpen) return null;
+  if (isDomesticCupResult(fixture.competitionId)) return <CupMatchModal fixture={fixture} onClose={onClose} onSuccess={(updated) => { onSuccess(updated); onClose(); }} />;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

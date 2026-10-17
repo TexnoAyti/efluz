@@ -1,3 +1,4 @@
+import { isDomesticCupResult, resolveCupResult } from '../../lib/cupResult';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Fixture } from '../../types';
 import { ClubCrest } from '../ClubCrest';
@@ -29,7 +30,7 @@ interface EditResultModalProps {
   fixture: Fixture;
   isOpen: boolean;
   onClose: () => void;
-  onSave: (params: { homeScore: number; awayScore: number; status?: string; notes?: string }) => Promise<void>;
+  onSave: (params: { homeScore: number; awayScore: number; homeExtraTimeScore?: number | null; awayExtraTimeScore?: number | null; homePenaltyScore?: number | null; awayPenaltyScore?: number | null; status?: string; notes?: string }) => Promise<void>;
 }
 
 async function adminFetch(path: string, body?: any) {
@@ -66,6 +67,13 @@ export const AdminEditResultModal: React.FC<EditResultModalProps> = ({ fixture, 
   }[language];
   const [homeScore, setHomeScore] = useState<number>(fixture.homeScore ?? 0);
   const [awayScore, setAwayScore] = useState<number>(fixture.awayScore ?? 0);
+  const isCup = isDomesticCupResult(fixture.competitionId);
+  const [extraTime, setExtraTime] = useState(fixture.homeExtraTimeScore != null);
+  const [penalties, setPenalties] = useState(fixture.homePenaltyScore != null);
+  const [homeExtraTimeScore, setHomeExtraTimeScore] = useState(fixture.homeExtraTimeScore ?? 0);
+  const [awayExtraTimeScore, setAwayExtraTimeScore] = useState(fixture.awayExtraTimeScore ?? 0);
+  const [homePenaltyScore, setHomePenaltyScore] = useState(fixture.homePenaltyScore ?? 0);
+  const [awayPenaltyScore, setAwayPenaltyScore] = useState(fixture.awayPenaltyScore ?? 0);
   const [status, setStatus] = useState<string>(fixture.status === 'CONFIRMED' ? 'CONFIRMED' : 'CONFIRMED');
   const [notes, setNotes] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
@@ -84,6 +92,13 @@ export const AdminEditResultModal: React.FC<EditResultModalProps> = ({ fixture, 
   useEffect(() => {
     if (!isOpen) return;
     setHomeScore(fixture.homeScore ?? 0);
+    setExtraTime(fixture.homeExtraTimeScore != null);
+    setPenalties(fixture.homePenaltyScore != null);
+    setHomeExtraTimeScore(fixture.homeExtraTimeScore ?? 0);
+    setAwayExtraTimeScore(fixture.awayExtraTimeScore ?? 0);
+    setHomePenaltyScore(fixture.homePenaltyScore ?? 0);
+    setAwayPenaltyScore(fixture.awayPenaltyScore ?? 0);
+
     setAwayScore(fixture.awayScore ?? 0);
     setStatus(fixture.status === 'CONFIRMED' ? 'CONFIRMED' : 'CONFIRMED');
     setNotes('');
@@ -111,10 +126,12 @@ export const AdminEditResultModal: React.FC<EditResultModalProps> = ({ fixture, 
     e.preventDefault();
     setIsSaving(true);
     try {
-      await onSave({ homeScore: Number(homeScore), awayScore: Number(awayScore), status, notes: notes.trim() || undefined });
+      const scores = { homeScore: Number(homeScore), awayScore: Number(awayScore), homeExtraTimeScore: extraTime ? homeExtraTimeScore : null, awayExtraTimeScore: extraTime ? awayExtraTimeScore : null, homePenaltyScore: penalties ? homePenaltyScore : null, awayPenaltyScore: penalties ? awayPenaltyScore : null };
+      resolveCupResult(scores, fixture, isCup, status);
+      await onSave({ ...scores, status, notes: notes.trim() || undefined });
       onClose();
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      setQuickMessage(err?.message || 'Natijani saqlab bo‘lmadi.');
     } finally {
       setIsSaving(false);
     }
@@ -213,6 +230,14 @@ export const AdminEditResultModal: React.FC<EditResultModalProps> = ({ fixture, 
                   <ScoreField label={fixture.homeClub?.shortName || fixture.homeClub?.name || copy.home} value={homeScore} setValue={setHomeScore} />
                   <ScoreField label={fixture.awayClub?.shortName || fixture.awayClub?.name || copy.away} value={awayScore} setValue={setAwayScore} />
                 </div>
+                {isCup && <div className="space-y-3 text-xs text-white">
+                  <p>Asosiy vaqt hisobi yuqorida. Penaltilar unga qo‘shilmaydi.</p>
+                  <label className="flex gap-2"><input type="checkbox" checked={extraTime} onChange={(e) => { setExtraTime(e.target.checked); if (e.target.checked) { setHomeExtraTimeScore(homeScore); setAwayExtraTimeScore(awayScore); } }} />Qo‘shimcha vaqt o‘ynaldi</label>
+                  {extraTime && <><p>Qo‘shimcha vaqtdan keyingi umumiy hisob</p><div className="grid grid-cols-2 gap-3"><ScoreField label={copy.home} value={homeExtraTimeScore} setValue={setHomeExtraTimeScore} /><ScoreField label={copy.away} value={awayExtraTimeScore} setValue={setAwayExtraTimeScore} /></div></>}
+                  <label className="flex gap-2"><input type="checkbox" checked={penalties} onChange={(e) => setPenalties(e.target.checked)} />Penaltilar seriyasi</label>
+                  {penalties && <div className="grid grid-cols-2 gap-3"><ScoreField label={copy.home} value={homePenaltyScore} setValue={setHomePenaltyScore} /><ScoreField label={copy.away} value={awayPenaltyScore} setValue={setAwayPenaltyScore} /></div>}
+                </div>}
+                {quickMessage && <p role="alert" className="text-xs text-amber-300">{quickMessage}</p>}
                 <div><label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">{copy.resultState}</label><select value={status} onChange={(e) => setStatus(e.target.value)} className="w-full px-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs font-semibold text-white focus:outline-none focus:border-emerald-500"><option value="CONFIRMED">{copy.confirmed}</option><option value="AWAITING_RESULT">{copy.awaiting}</option><option value="SCHEDULED">{copy.scheduled}</option></select></div>
                 <div><label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">{copy.note}</label><input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={copy.notePlaceholder} className="w-full px-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-emerald-500" /></div>
                 <button type="submit" disabled={isSaving} className="w-full min-h-[42px] rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black flex items-center justify-center gap-2 disabled:opacity-50">{isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} {copy.save}</button>

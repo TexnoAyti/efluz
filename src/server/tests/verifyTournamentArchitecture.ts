@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { rejects } from 'node:assert/strict';
 import fs from 'fs';
 import { initDatabase, getDb, saveDatabaseSync, queryGet, queryAll, queryRun } from '../db';
 import { seedDatabase, SEED_CLUBS, SEED_LEAGUES, SEED_COMPETITIONS } from '../db/seed';
@@ -11,7 +12,7 @@ import { generateCompetitionFixtures, getFixtures } from '../services/fixtureSer
 import { generateEuropean32LeaguePhaseSchedule } from '../tournament/fixtureEngine';
 import { validateOfficialFixtures, importOfficialFixtures, OfficialFixtureRecord } from '../tournament/officialFixtureImporter';
 
-import { getOrCreateTelegramUserFirestore } from '../firebase/firestoreStore';
+import { getOrCreateTelegramUserFirestore, adminEditFixtureResultFirestore } from '../firebase/firestoreStore';
 import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS } from '../firebase/collections';
 import { assertTestEnvironmentSafe } from '../utils/testGuard';
@@ -425,12 +426,13 @@ export async function runTournamentArchitectureTests() {
     await d.ref.delete();
   }
 
-  await submitFixtureResult(homeManagerId, r1Match.id, 2, 0);
-  const updatedR1 = await submitFixtureResult(awayManagerId, r1Match.id, 2, 0);
+  await rejects(() => submitFixtureResult(homeManagerId, r1Match.id, 2, 0), /faqat admin/);
+  await rejects(() => submitFixtureResult(awayManagerId, r1Match.id, 2, 0), /faqat admin/);
+  const { fixture: updatedR1 } = await adminEditFixtureResultFirestore('architecture-admin', 'architecture-admin', r1Match.id, { homeScore: 2, awayScore: 0 });
 
   assert(
-    'Section 7: Cup Result Consensus & Winner Confirmation',
-    'Winner recorded after mutual agreement',
+    'Section 7: Admin-Only Cup Result & Winner Confirmation',
+    'Player submissions rejected; winner recorded by admin',
     `Winner: ${updatedR1.winnerClubId}, Status: ${updatedR1.status}`,
     updatedR1.status === 'CONFIRMED' && updatedR1.winnerClubId === updatedR1.homeClubId
   );

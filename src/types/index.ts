@@ -190,6 +190,10 @@ export interface Fixture {
   status: MatchStatus;
   homeScore?: number | null;
   awayScore?: number | null;
+  homeExtraTimeScore?: number | null;
+  awayExtraTimeScore?: number | null;
+  homePenaltyScore?: number | null;
+  awayPenaltyScore?: number | null;
   winnerClubId?: string | null;
   proofUrl?: string | null;
   resultConfirmedAt?: string | null;

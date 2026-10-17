@@ -22,6 +22,7 @@ export function parseFirestoreError(err: any): FormattedFirestoreError {
     return { error: 'READ_MODEL_NOT_WARMED', code: 'READ_MODEL_NOT_WARMED',
       message: 'Ma’lumotlar vaqtincha mavjud emas. Keyinroq qayta urinib ko‘ring.', httpStatus: 503 };
   }
+  if (['INVALID_CUP_RESULT', 'CUP_ADMIN_ONLY'].includes(err.code)) return { error: err.code, code: err.code, message: err.message, httpStatus: err.statusCode };
   const rawCode = err.code ?? (err.status ?? '');
   const rawMsg = err.message || String(err);
   const strCode = String(rawCode).toUpperCase();

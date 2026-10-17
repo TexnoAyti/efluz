@@ -1,3 +1,5 @@
+import { isDomesticCupResult as isResultCup } from '../../lib/cupResult';
+import { resolveCupResult } from '../../lib/cupResult';
 import {assertEuropeanDrawReady, domesticSeasonComplete, europeanDrawPublished, filterPublishedEuropeanFixtures, isEuropeanFixtureCompetition} from '../services/europeanFixtureGate';
 import {randomUUID as europeanDrawUUID} from 'node:crypto';
 import { assertTopicResultCurrent, type ExpectedTopicFixture } from '../services/topicResultGuard';
@@ -1710,6 +1712,10 @@ async function getFixturesFirestoreUnfiltered(filter: {
         opponentSubmission,
         scheduledAt: r.scheduledAt,
         status: r.status as any,
+        homeExtraTimeScore: r.homeExtraTimeScore ?? null,
+        awayExtraTimeScore: r.awayExtraTimeScore ?? null,
+        homePenaltyScore: r.homePenaltyScore ?? null,
+        awayPenaltyScore: r.awayPenaltyScore ?? null,
         homeScore: r.homeScore ?? undefined,
         awayScore: r.awayScore ?? undefined,
         winnerClubId: r.winnerClubId ?? undefined,
@@ -1900,6 +1906,10 @@ async function executeFixturesFallback(
       opponentSubmission,
       scheduledAt: r.scheduled_at,
       status: r.status,
+      homeExtraTimeScore: r.home_extra_time_score ?? null,
+      awayExtraTimeScore: r.away_extra_time_score ?? null,
+      homePenaltyScore: r.home_penalty_score ?? null,
+      awayPenaltyScore: r.away_penalty_score ?? null,
       homeScore: r.home_score !== null && r.home_score !== undefined ? r.home_score : undefined,
       awayScore: r.away_score !== null && r.away_score !== undefined ? r.away_score : undefined,
       winnerClubId: r.winner_club_id || undefined,
@@ -2206,6 +2216,10 @@ async function getFixtureByIdFirestoreUncorrected(fixtureId: string, currentUser
           opponentSubmission,
           scheduledAt: r.scheduledAt,
           status: r.status as any,
+          homeExtraTimeScore: r.homeExtraTimeScore ?? null,
+          awayExtraTimeScore: r.awayExtraTimeScore ?? null,
+          homePenaltyScore: r.homePenaltyScore ?? null,
+          awayPenaltyScore: r.awayPenaltyScore ?? null,
           homeScore: r.homeScore ?? undefined,
           awayScore: r.awayScore ?? undefined,
           winnerClubId: r.winnerClubId ?? undefined,
@@ -2332,6 +2346,10 @@ async function getFixtureByIdFirestoreUncorrected(fixtureId: string, currentUser
     opponentSubmission,
     scheduledAt: r.scheduled_at,
     status: r.status,
+    homeExtraTimeScore: r.home_extra_time_score ?? null,
+    awayExtraTimeScore: r.away_extra_time_score ?? null,
+    homePenaltyScore: r.home_penalty_score ?? null,
+    awayPenaltyScore: r.away_penalty_score ?? null,
     homeScore: r.home_score !== null && r.home_score !== undefined ? r.home_score : undefined,
     awayScore: r.away_score !== null && r.away_score !== undefined ? r.away_score : undefined,
     winnerClubId: r.winner_club_id || undefined,
@@ -3947,6 +3965,8 @@ export async function submitFixtureResultFirestore(
       throw new Error(`Fixture with ID '${fixtureId}' not found.`);
     }
 
+    if (isResultCup(row.competition_id)) throw Object.assign(new Error('Kubok hisobini faqat admin kirita oladi.'), { code: 'CUP_ADMIN_ONLY', statusCode: 403 });
+
     // Isolated competition-specific matchday lock check FIRST
     await assertMatchdayPlayableFirestore(row.season_id || 'season-2026-27', row.competition_id, row.matchday);
 
@@ -4083,6 +4103,7 @@ export async function submitFixtureResultFirestore(
     }
 
     const fixture = fixDoc.data() as FirestoreFixtureDoc;
+    if (isResultCup(fixture.competitionId)) throw Object.assign(new Error('Kubok hisobini faqat admin kirita oladi.'), { code: 'CUP_ADMIN_ONLY', statusCode: 403 });
 
     // Authoritative Server-Side Isolated Matchday Lock Check FIRST
     if (fixture.competitionId && fixture.matchday) {
@@ -4282,6 +4303,7 @@ export async function submitFixtureResultFirestore(
 
     // If error is user-validation error, rethrow directly
     if (
+      firestoreErr?.code === 'CUP_ADMIN_ONLY' ||
       firestoreErr?.code === 'SELF_OWNED_MATCH' ||
       errMsg.includes('not found') ||
       errMsg.includes('already CONFIRMED') ||
@@ -4821,6 +4843,10 @@ export async function reopenFixtureFirestore(
       // Reset fixture to SCHEDULED
       await fixRef.update({
         status: 'SCHEDULED',
+        homeExtraTimeScore: null,
+        awayExtraTimeScore: null,
+        homePenaltyScore: null,
+        awayPenaltyScore: null,
         homeScore: null,
         awayScore: null,
         winnerClubId: null,
@@ -4908,7 +4934,7 @@ export async function reopenFixtureFirestore(
   // 2. Only after Redis persistence succeeds, update local SQLite
   queryRun(
     `UPDATE fixtures 
-     SET status = 'SCHEDULED', home_score = NULL, away_score = NULL, winner_club_id = NULL, result_confirmed_at = NULL, updated_at = ? 
+     SET status = 'SCHEDULED', home_score = NULL, away_score = NULL, home_extra_time_score = NULL, away_extra_time_score = NULL, home_penalty_score = NULL, away_penalty_score = NULL, winner_club_id = NULL, result_confirmed_at = NULL, updated_at = ?
      WHERE id = ?`,
     [now, fixtureId]
   );
@@ -6077,6 +6103,7 @@ export async function adminApproveFixtureResultFirestore(
       }
 
       const fixture = fixDoc.data() as FirestoreFixtureDoc;
+      resolveCupResult({ homeScore, awayScore }, fixture, isResultCup(fixture.competitionId));
       if (homeScore > awayScore) winnerClubId = fixture.homeClubId;
       else if (awayScore > homeScore) winnerClubId = fixture.awayClubId;
 
@@ -6145,7 +6172,7 @@ export async function adminApproveFixtureResultFirestore(
         isFallback: false,
       };
     } catch (err: any) {
-      if (options?.authoritativeOnly) {
+      if (options?.authoritativeOnly || err?.code === 'INVALID_CUP_RESULT') {
         throw err;
       }
       firestoreCircuitBreaker.recordFailure(err);
@@ -6165,6 +6192,7 @@ export async function adminApproveFixtureResultFirestore(
     throw new Error(`Fixture '${fixtureId}' not found in local database.`);
   }
 
+  resolveCupResult({ homeScore, awayScore }, { homeClubId: localFix.home_club_id, awayClubId: localFix.away_club_id }, isResultCup(localFix.competition_id));
   if (homeScore > awayScore) winnerClubId = localFix.home_club_id;
   else if (awayScore > homeScore) winnerClubId = localFix.away_club_id;
 
@@ -6195,7 +6223,7 @@ export async function adminApproveFixtureResultFirestore(
   // 2. Only after Redis persistence succeeds, update local SQLite
   queryRun(
     `UPDATE fixtures 
-     SET status = 'CONFIRMED', home_score = ?, away_score = ?, winner_club_id = ?, result_confirmed_at = ?, updated_at = ? 
+     SET status = 'CONFIRMED', home_score = ?, away_score = ?, winner_club_id = ?, result_confirmed_at = ?, updated_at = ?
      WHERE id = ?`,
     [homeScore, awayScore, winnerClubId, now, now, fixtureId]
   );
@@ -6326,6 +6354,10 @@ export async function getPendingResultsFirestore(seasonId = 'season-2026-27'): P
         awayOwnerId: r.awayOwnerId,
         scheduledAt: r.scheduledAt,
         status: r.status as any,
+        homeExtraTimeScore: r.homeExtraTimeScore ?? null,
+        awayExtraTimeScore: r.awayExtraTimeScore ?? null,
+        homePenaltyScore: r.homePenaltyScore ?? null,
+        awayPenaltyScore: r.awayPenaltyScore ?? null,
         homeScore: r.homeScore ?? undefined,
         awayScore: r.awayScore ?? undefined,
         winnerClubId: r.winnerClubId ?? undefined,
@@ -6361,6 +6393,10 @@ export async function adminEditFixtureResultFirestore(
   params: {
     homeScore: number;
     awayScore: number;
+    homeExtraTimeScore?: number | null;
+    awayExtraTimeScore?: number | null;
+    homePenaltyScore?: number | null;
+    awayPenaltyScore?: number | null;
     status?: string;
     notes?: string;
     idempotencyKey?: string;
@@ -6375,7 +6411,7 @@ export async function adminEditFixtureResultFirestore(
   const targetStatus = params.status || 'CONFIRMED';
   const mutationId =
     params.idempotencyKey ||
-    `admin_edit_${fixtureId}_${targetStatus}_${params.homeScore}_${params.awayScore}`;
+    `admin_edit_${fixtureId}_${targetStatus}_${params.homeScore}_${params.awayScore}_${params.homeExtraTimeScore ?? "none"}_${params.awayExtraTimeScore ?? "none"}_${params.homePenaltyScore ?? "none"}_${params.awayPenaltyScore ?? "none"}`;
 
   console.log('[ADMIN_RESULT_SAVE_START]', JSON.stringify({ fixtureId, adminUserId, homeScore: params.homeScore, awayScore: params.awayScore, status: targetStatus, mutationId }));
 
@@ -6392,9 +6428,8 @@ export async function adminEditFixtureResultFirestore(
     const roundName = existingData?.roundName || sqliteRow?.round_name || `Matchday ${matchday}`;
     const scheduledAt = existingData?.scheduledAt || sqliteRow?.scheduled_at || now;
 
-    let winnerClubId: string | null = null;
-    if (params.homeScore > params.awayScore) winnerClubId = homeClubId;
-    else if (params.awayScore > params.homeScore) winnerClubId = awayClubId;
+    const resolution = resolveCupResult(params, { homeClubId, awayClubId }, isResultCup(compId), targetStatus);
+    const { winnerClubId } = resolution;
 
     const mutationPayload = {
       fixtureId,
@@ -6411,7 +6446,7 @@ export async function adminEditFixtureResultFirestore(
       homeClubId,
       awayClubId,
       scheduledAt,
-      winnerClubId,
+      ...resolution,
       resultConfirmedAt: targetStatus === 'CONFIRMED' ? now : null,
       createdAt: now,
     };
@@ -6443,7 +6478,7 @@ export async function adminEditFixtureResultFirestore(
       status: targetStatus,
       homeScore: params.homeScore,
       awayScore: params.awayScore,
-      winnerClubId,
+      ...resolution,
       resultConfirmedAt: targetStatus === 'CONFIRMED' ? now : null,
       updatedAt: now,
     });
@@ -6516,12 +6551,11 @@ export async function adminEditFixtureResultFirestore(
       winnerClubId: existing.winnerClubId,
     };
 
-    let winnerClubId: string | null = null;
-    if (params.homeScore > params.awayScore) winnerClubId = existing.homeClubId;
-    else if (params.awayScore > params.homeScore) winnerClubId = existing.awayClubId;
+    const resolution = resolveCupResult(params, existing, isResultCup(existing.competitionId), targetStatus);
+    const { winnerClubId } = resolution;
 
     if (process.env.DATABASE_PROVIDER === 'supabase') {
-      const changed={status:targetStatus,homeScore:params.homeScore,awayScore:params.awayScore,winnerClubId,resultConfirmedAt:targetStatus==='CONFIRMED'?now:null,updatedAt:now};
+      const changed={status:targetStatus,homeScore:params.homeScore,awayScore:params.awayScore,...resolution,resultConfirmedAt:targetStatus==='CONFIRMED'?now:null,updatedAt:now};
       const next={...existing,...changed,id:fixtureId};
       const fixture=normalizeFixtureSnapshot(next);
       const auditId=`audit_${mutationId}`;
@@ -6550,7 +6584,7 @@ export async function adminEditFixtureResultFirestore(
       status: targetStatus,
       homeScore: params.homeScore,
       awayScore: params.awayScore,
-      winnerClubId,
+      ...resolution,
       resultConfirmedAt: targetStatus === 'CONFIRMED' ? now : null,
       updatedAt: now,
     });
@@ -6570,7 +6604,7 @@ export async function adminEditFixtureResultFirestore(
         status: targetStatus,
         homeScore: params.homeScore,
         awayScore: params.awayScore,
-        winnerClubId,
+        ...resolution,
         resultConfirmedAt: targetStatus === 'CONFIRMED' ? now : null,
         updatedAt: now,
       });
@@ -6615,7 +6649,7 @@ export async function adminEditFixtureResultFirestore(
       'fixture',
       fixtureId,
       oldScore,
-      { homeScore: params.homeScore, awayScore: params.awayScore, winnerClubId, status: targetStatus },
+      { homeScore: params.homeScore, awayScore: params.awayScore, ...resolution, status: targetStatus },
       undefined,
       adminUsername,
       params.notes || `Admin set result ${params.homeScore}-${params.awayScore}`,
@@ -6638,7 +6672,7 @@ export async function adminEditFixtureResultFirestore(
       fixture: updated!,
     };
   } catch (err: any) {
-    if (params.expectedFixture) throw err;
+    if (params.expectedFixture || err?.code === 'INVALID_CUP_RESULT') throw err;
     console.error('[ADMIN_RESULT_FIRESTORE_FAILURE]', JSON.stringify({ fixtureId, error: err?.message }));
     firestoreCircuitBreaker.recordFailure(err);
     if (!firestoreCircuitBreaker.canExecute()) {
@@ -6719,6 +6753,10 @@ export async function adminDeleteFixtureResultFirestore(
       awayClubId,
       scheduledAt,
       status: 'SCHEDULED',
+      homeExtraTimeScore: null,
+      awayExtraTimeScore: null,
+      homePenaltyScore: null,
+      awayPenaltyScore: null,
       homeScore: null,
       awayScore: null,
       winnerClubId: null,
@@ -6765,6 +6803,10 @@ export async function adminDeleteFixtureResultFirestore(
         homeClubId: homeClubId || '',
         awayClubId: awayClubId || '',
         status: 'SCHEDULED' as any,
+        homeExtraTimeScore: null,
+        awayExtraTimeScore: null,
+        homePenaltyScore: null,
+        awayPenaltyScore: null,
         homeScore: null,
         awayScore: null,
         winnerClubId: undefined,
@@ -6798,6 +6840,10 @@ export async function adminDeleteFixtureResultFirestore(
 
     await fixRef.update({
       status: 'SCHEDULED',
+      homeExtraTimeScore: null,
+      awayExtraTimeScore: null,
+      homePenaltyScore: null,
+      awayPenaltyScore: null,
       homeScore: null,
       awayScore: null,
       winnerClubId: null,
@@ -6818,6 +6864,10 @@ export async function adminDeleteFixtureResultFirestore(
         awayClubId: existing.awayClubId,
         scheduledAt: existing.scheduledAt,
         status: 'SCHEDULED',
+        homeExtraTimeScore: null,
+        awayExtraTimeScore: null,
+        homePenaltyScore: null,
+        awayPenaltyScore: null,
         homeScore: null,
         awayScore: null,
         winnerClubId: null,
