@@ -26,7 +26,7 @@ try{
  assert.ok(html.includes('Qabulni ochish')&&html.includes('1 ticket'));
  const openHtml=renderToStaticMarkup(React.createElement(TournamentAdminDrawer,{isOpen:true,isOrganizer:true,onClose:()=>{},tournament:{...tournament,name:'A long tournament title that must wrap',format:'PLAYOFF',status:'REGISTRATION_OPEN',spectatorAccess:'PUBLIC_LINK',updatedAt:''},participants:[],fixtures:[],onRefresh:()=>{}}));
  assert.ok(openHtml.includes('https://t.me/efluzbot?startapp='));
- assert.ok(openHtml.includes('grid-cols-3 sm:grid-cols-5')&&openHtml.includes('min-w-0'));
+ assert.ok(openHtml.includes('overflow-x-auto')&&openHtml.includes('min-w-0'));
  assert.ok(!openHtml.includes('Foydalanuvchi IDsi'));
  assert.ok(openHtml.includes('Qatnashchilar')&&openHtml.includes('Sozlamalar'));
  assert.equal(html.includes('/?inv='),false);

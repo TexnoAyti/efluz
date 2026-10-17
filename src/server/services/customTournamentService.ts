@@ -1,3 +1,4 @@
+import {customMatchNeedsPenalties} from '../../lib/customTournamentMatches';
 /**
  * Custom Tournament Core Service
  *
@@ -502,7 +503,10 @@ function applyScore(state:LifecycleState,params:{tournamentId:string;fixtureId:s
   const first=state.fixtures.find(row=>row.id===f.id.replace(/_l2$/,'_l1'));
   if(!first||first.status!=='CONFIRMED')throw tournamentError('Avval birinchi o‘yin natijasini tasdiqlang.',409);
  }
- const wasConfirmed=f.status==='CONFIRMED',now=new Date().toISOString();
+ const needsPenalties=customMatchNeedsPenalties(f,state.fixtures,params.homeScore,params.awayScore);
+ if(needsPenalties&&params.penaltyHomeScore==null)throw tournamentError('Hal qiluvchi durang uchun penalti hisobini kiriting.');
+ if(!needsPenalties&&params.penaltyHomeScore!=null)throw tournamentError('Penaltilar faqat hal qiluvchi durangda kiritiladi.');
+ const wasConfirmed=f.status==='CONFIRMED',wasDisputed=f.status==='DISPUTED',now=new Date().toISOString();
  if(!f.submittedByUserId||f.submittedByUserId===actor||manager){
   f.homeScore=params.homeScore;f.awayScore=params.awayScore;f.penaltyHomeScore=params.penaltyHomeScore??null;f.penaltyAwayScore=params.penaltyAwayScore??null;
   f.proofUrl=params.proofUrl??f.proofUrl??null;f.submittedByUserId=actor;
@@ -518,7 +522,7 @@ function applyScore(state:LifecycleState,params:{tournamentId:string;fixtureId:s
   if((t.confirmedFixturesCount||0)>=(t.expectedFixturesCount||Infinity))reconcileLeague(t,state.participants,state.fixtures,now);
  }
  t.updatedAt=now;
- if(manager)state.logs.push({id:'log_'+crypto.randomUUID(),tournamentId:t.id,action:correction?'DISPUTE_RESOLVED':'RESULT_OVERRIDDEN',performedByUserId:actor,createdAt:now,details:{fixtureId:f.id,homeScore:f.homeScore,awayScore:f.awayScore,penaltyHomeScore:f.penaltyHomeScore,penaltyAwayScore:f.penaltyAwayScore,note:params.note||''}});
+ if(manager)state.logs.push({id:'log_'+crypto.randomUUID(),tournamentId:t.id,action:correction&&wasDisputed?'DISPUTE_RESOLVED':'RESULT_OVERRIDDEN',performedByUserId:actor,createdAt:now,details:{fixtureId:f.id,homeScore:f.homeScore,awayScore:f.awayScore,penaltyHomeScore:f.penaltyHomeScore,penaltyAwayScore:f.penaltyAwayScore,note:params.note||''}});
  return {fixture:f,tournamentCompleted:t.status==='COMPLETED'};
 }
 

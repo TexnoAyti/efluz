@@ -33,7 +33,7 @@ export function generateTournamentPreview(
       participantsCount: n,
       totalMatches,
       totalStagesOrRounds: totalRounds,
-      stagesDescription: `${roundsCount} davrali liga: ${totalRounds} ta tur, har bir qatnashchi ${totalRounds} ta uchrashuv o'tkazadi`,
+      stagesDescription: `${roundsCount} davrali liga: ${totalRounds} ta tur, har bir qatnashchi ${(n - 1) * roundsCount} ta uchrashuv o'tkazadi`,
       byeCount: isOdd ? 1 : 0,
     };
   }
@@ -83,13 +83,15 @@ export function generateTournamentPreview(
     groupStageMatches = ((n * (n - 1)) / 2) * roundsCount;
   }
 
+  const largestGroup = groupMode === 'GROUPS' ? Math.ceil(n / groupsCount) : n;
+  const leagueRounds = (largestGroup % 2 ? largestGroup : largestGroup - 1) * roundsCount;
   const playoffMatches = (qualifiers - 2) * legMultiplier + 1;
 
   return {
     format: 'LEAGUE_AND_PLAYOFF',
     participantsCount: n,
     totalMatches: groupStageMatches + playoffMatches,
-    totalStagesOrRounds: Math.log2(qualifiers) + 1,
+    totalStagesOrRounds: leagueRounds + Math.log2(qualifiers),
     stagesDescription: `${
       groupMode === 'GROUPS' ? `${groupsCount} ta guruh bosqichi` : 'Yagona liga jadvali'
     } + ${qualifiers} talik Pley-off bosqichi`,
