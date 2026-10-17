@@ -143,6 +143,16 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
           ).catch(() => undefined);
         }
         response = { ok: true, handled: 'premium_successful_payment', result };
+      } else if (message?.photo?.length && message.chat?.type === 'private' && isPrimaryOwner(message.from?.id) &&
+        message.chat.id === message.from.id && !message.sender_chat && !message.from.is_bot &&
+        !message.forward_origin && !message.forward_from && !message.forward_from_chat) {
+        const photos = message.photo.filter((p: any) => typeof p.file_id === 'string' && p.file_id.length <= 256 && (!p.file_size || p.file_size <= 4 * 1024 * 1024));
+        const photo = photos.at(-1);
+        if (photo) {
+          const result = await handleTelegramAiMessage({ updateId: update.update_id, messageId: message.message_id,
+            chatId: message.chat.id, threadId: 0, fromUser: message.from, text: 'Rasmdagi o‘yin natijasini o‘qi', photoFileId: photo.file_id });
+          response = { ok: true, handled: 'ai_result_photo', result };
+        }
       } else if (typeof message?.text === 'string' && Number.isSafeInteger(message.chat?.id) && Number.isSafeInteger(message.from?.id)) {
         const command = /^\/(start|help|paysupport|bind_ai_topic|ai_status|ai_on|ai_off)(?:@[a-zA-Z0-9_]+)?(?:\s|$)/i.exec(message.text.trim())?.[1]?.toLowerCase();
         if (command === 'start') {

@@ -25,6 +25,7 @@ export function reviseAiAdminPlan(plan: AdminPlan, revision: AiPlanRevision, sco
   if (revision.kind === 'score') {
     if (!['result_edit', 'result_approve'].includes(plan.action)) reject('Bu reja hisob kiritish uchun emas. O‘yin va kerakli amalni to‘liq yozing.');
     if (scoreHomeFirst === undefined) reject('Hisob tartibini aniqlash uchun ikkala jamoa nomi va hisobni to‘liq yozing.');
+    delete next.body.homePenaltyScore; delete next.body.awayPenaltyScore; delete next.body.homeExtraTimeScore; delete next.body.awayExtraTimeScore;
     Object.assign(next.body, { homeScore: scoreHomeFirst ? revision.first : revision.second, awayScore: scoreHomeFirst ? revision.second : revision.first });
   } else if (revision.kind === 'round') {
     if (revision.value < 1 || revision.value > 100) reject('Tur raqamini 1–100 orasida yozing.');

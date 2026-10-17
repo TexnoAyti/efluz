@@ -14,7 +14,7 @@ export function inspectAiAdminOutcome(plan: AdminPlan, data: any): { state: 'que
     if (!fixture) return { state: 'accepted', message: 'Server amalni qabul qildi. Saqlangan o‘yin holati javobda qaytmadi; yakuniy holat qayta tekshirilmagan.' };
     const matches = fixture.id === plan.targetId && (plan.action === 'result_clear'
       ? fixture.homeScore == null && fixture.awayScore == null && fixture.status === 'SCHEDULED'
-      : fixture.homeScore === plan.body.homeScore && fixture.awayScore === plan.body.awayScore && fixture.status === (plan.action === 'result_approve' ? 'CONFIRMED' : plan.body.status || 'CONFIRMED'));
+      : (plan.body.homeExtraTimeScore == null || fixture.homeExtraTimeScore === plan.body.homeExtraTimeScore && fixture.awayExtraTimeScore === plan.body.awayExtraTimeScore) && fixture.homeScore === plan.body.homeScore && fixture.awayScore === plan.body.awayScore && (plan.body.homePenaltyScore == null || fixture.homePenaltyScore === plan.body.homePenaltyScore && fixture.awayPenaltyScore === plan.body.awayPenaltyScore && fixture.winnerClubId === (Number(plan.body.homePenaltyScore) > Number(plan.body.awayPenaltyScore) ? fixture.homeClubId : fixture.awayClubId)) && fixture.status === (plan.action === 'result_approve' ? 'CONFIRMED' : plan.body.status || 'CONFIRMED'));
     if (!matches) return { state: 'unverified', message: 'Server qaytargan o‘yin holati tasdiqlangan rejaga mos kelmadi. Natijani admin panelda tekshiring; amal avtomatik takrorlanmaydi.' };
     return { state: 'verified', message: 'Bajarildi. Server qaytargan saqlangan natija reja bilan mosligi tekshirildi.' };
   }
