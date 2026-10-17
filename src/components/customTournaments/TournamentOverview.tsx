@@ -1,3 +1,4 @@
+import {isCustomMatchReady} from '../../lib/customTournamentMatches';
 import React from 'react';
 import {ArrowLeft,Settings,RefreshCw,ArrowRight} from 'lucide-react';
 import type {CustomTournament,CustomTournamentParticipant,CustomTournamentFixture} from '../../types/customTournament';
@@ -5,7 +6,7 @@ import {tournamentFormatLabel,tournamentStatusLabel} from '../../lib/customTourn
 export function TournamentOverview({tournament:t,participants,fixtures,userId,canManage,canJoin,onBack,onManage,onJoin,onMatch,onRefresh}:{tournament:CustomTournament;participants:CustomTournamentParticipant[];fixtures:CustomTournamentFixture[];userId?:string;canManage:boolean;canJoin:boolean;onBack:()=>void;onManage:(tab:'overview'|'participants'|'matches')=>void;onJoin:()=>void;onMatch:(f:CustomTournamentFixture)=>void;onRefresh:()=>void}){
  const mine=participants.find(p=>p.userId===userId), pending=participants.filter(p=>p.status==='PENDING_APPROVAL').length;
  const review=fixtures.filter(f=>f.status==='DISPUTED'||f.status==='PENDING_CONFIRMATION').length;
- const next=fixtures.filter(f=>!!userId&&(f.homeUserId===userId||f.awayUserId===userId)&&!['CONFIRMED','BYE_AUTO_ADVANCED'].includes(f.status)&&!['TBD','BYE'].includes(f.homeClubId)&&!['TBD','BYE'].includes(f.awayClubId)&&!(f.status==='DISPUTED'&&!canManage)&&(f.leg!==2||fixtures.some(first=>first.id===f.id.replace(/_l2$/,'_l1')&&first.status==='CONFIRMED'))).sort((a,b)=>a.roundOrMatchday-b.roundOrMatchday||a.leg-b.leg)[0];
+ const next=fixtures.filter(f=>!!userId&&(f.homeUserId===userId||f.awayUserId===userId)&&!['CONFIRMED','BYE_AUTO_ADVANCED'].includes(f.status)&&isCustomMatchReady(f,fixtures)&&!(f.status==='DISPUTED'&&!canManage)).sort((a,b)=>a.roundOrMatchday-b.roundOrMatchday||a.leg-b.leg)[0];
  const finished=t.status==='COMPLETED'||t.status==='CANCELLED';
  return <>
   <div className="tourney-heading"><button className="tourney-button !px-3" onClick={onBack}><ArrowLeft size={16}/>Turnirlar</button><div className="tourney-action-row"><button className="tourney-button !p-3" aria-label="Turnirni yangilash" onClick={onRefresh}><RefreshCw size={16}/></button>{canManage&&<button className="tourney-button" onClick={()=>onManage('overview')}><Settings size={15}/>Boshqaruv</button>}</div></div>

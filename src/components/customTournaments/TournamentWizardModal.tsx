@@ -28,6 +28,7 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
 }) => {
   const [step, setStep] = useState<1 | 2 | 3>(initialStep);
   const [isAdvancedMode, setIsAdvancedMode] = useState<boolean>(false);
+  const submitting = useRef(false);
   const creationKey = useRef<string>('');
   const creationPayload = useRef<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -58,11 +59,12 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
   const [groupsCount, setGroupsCount] = useState<2 | 4>(2);
   const [matchDurationHours, setMatchDurationHours] = useState<number>(36);
 
+  const validParticipants=Number.isInteger(maxParticipants)&&maxParticipants>=4&&maxParticipants<=participantLimit;
   const preview = generateTournamentPreview(format, maxParticipants, {roundsCount,playoffLegMode,playoffQualifiersCount,groupStageMode,groupsCount,matchDurationHours});
 
   useEffect(() => {
     if (isOpen) {
-      setStep(1); setErrorMessage(null); setName(''); setDescription('');
+      setStep(initialStep); setErrorMessage(null); setName(''); setDescription('');
       setFormat('LEAGUE'); setLeagueScope('TOP5_ALL'); setSelectedLeagueId('league-premier-league');
       setMaxParticipants(8); setVisibility('PUBLIC_OPEN'); setSpectatorAccess('PUBLIC_LINK');
       setRoundsCount(1); setPlayoffLegMode('SINGLE_LEG'); setPlayoffQualifiersCount(4);
@@ -74,7 +76,8 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
   }, [isOpen]);
 
   useEffect(() => {
-    if (maxParticipants > participantLimit) setMaxParticipants(participantLimit);
+    if (maxParticipants > participantLimit) {setMaxParticipants(participantLimit);return;}
+    if (!Number.isInteger(maxParticipants)||maxParticipants<4) return;
     if (groupsCount === 4 && maxParticipants < 8) setGroupsCount(2);
     const valid = [2, 4, 8, 16].filter(n => n <= maxParticipants && (groupStageMode !== 'GROUPS' || n % groupsCount === 0));
     if (!valid.includes(playoffQualifiersCount)) setPlayoffQualifiersCount(valid[0] as 2 | 4 | 8 | 16);
@@ -97,7 +100,8 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
   if (!isOpen) return null;
 
   const handleCreateTournament = async () => {
-    if (isLoading) return;
+    if (submitting.current||!name.trim()||!validParticipants) return;
+    submitting.current=true;
     try {
       setIsLoading(true);
       setErrorMessage(null);
@@ -131,6 +135,7 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
     } catch (err: any) {
       setErrorMessage(err.message || 'Xatolik yuz berdi.');
     } finally {
+      submitting.current=false;
       setIsLoading(false);
     }
   };
@@ -153,7 +158,8 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
           <p className="tourney-note">O‘zingiz ham turnir ochilgach, boshqalar kabi klub tanlab qo‘shilasiz.</p>
         </>}
         {step===2&&<>
-          <div className="tourney-meta-grid"><label className="tourney-field">Qatnashchilar limiti<input type="number" min={4} max={participantLimit} value={maxParticipants} onChange={e=>setMaxParticipants(Math.max(4,Math.min(participantLimit,Number(e.target.value))))}/></label><label className="tourney-field">O‘yin uchun muddat<select value={matchDurationHours} onChange={e=>setMatchDurationHours(Number(e.target.value))}>{[12,24,36,48,72].map(h=><option key={h} value={h}>{h} soat</option>)}</select></label></div>
+          <div className="tourney-meta-grid"><label className="tourney-field">Qatnashchilar limiti<input type="number" min={4} max={participantLimit} step={1} value={maxParticipants||''} onChange={e=>setMaxParticipants(Number(e.target.value))}/></label><label className="tourney-field">O‘yin uchun muddat<select value={matchDurationHours} onChange={e=>setMatchDurationHours(Number(e.target.value))}>{[12,24,36,48,72].map(h=><option key={h} value={h}>{h} soat</option>)}</select></label></div>
+          {!validParticipants&&<p role="alert" className="tourney-note error">Qatnashchilar soni 4–{participantLimit} oralig‘idagi butun son bo‘lsin.</p>}
           <label className="tourney-field">Klublar bazasi<select value={leagueScope==='TOP5_ALL'?'ALL':selectedLeagueId} onChange={e=>{setLeagueScope(e.target.value==='ALL'?'TOP5_ALL':'SINGLE_LEAGUE');if(e.target.value!=='ALL')setSelectedLeagueId(e.target.value);}}><option value="ALL">Top-5 barcha ligalar</option>{TOP5_LEAGUES.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</select></label>
           <label className="tourney-field">Kim qo‘shila oladi?<select value={visibility} onChange={e=>setVisibility(e.target.value as CustomTournamentVisibility)}><option value="PUBLIC_OPEN">Hamma · erkin qo‘shilish</option><option value="PUBLIC_MODERATED">Hamma · tashkilotchi tasdig‘i bilan</option><option value="PRIVATE">Faqat taklif havolasi orqali</option></select></label>
           <label className="tourney-field">Kim kuzata oladi?<select value={spectatorAccess} onChange={e=>setSpectatorAccess(e.target.value as CustomTournamentSpectatorAccess)}><option value="PUBLIC_LINK">Havolasi bor kuzatuvchilar</option><option value="MEMBERS_ONLY">Faqat turnir a’zolari</option></select></label>
@@ -172,7 +178,7 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
           {loadingTickets?<p className="tourney-muted">Ticket balansi tekshirilmoqda…</p>:ticketError?<div className="tourney-note error">{ticketError}<button onClick={fetchTicketBalance} className="tourney-button mt-2">Qayta urinish</button></div>:<p className="tourney-muted">Balansingiz: {ticketBalance} ticket.{ticketBalance===0&&<> Yangi ticket uchun <a className="underline" href="https://t.me/texnoadmin" target="_blank" rel="noreferrer">@texnoadmin</a> bilan bog‘laning.</>}</p>}
         </>}
       </div>
-      <footer><button disabled={isLoading} className="tourney-button" onClick={()=>step===1?onClose():setStep(step-1 as 1|2|3)}>{step===1?'Bekor qilish':'Orqaga'}</button>{step<3?<button className="tourney-button primary" disabled={!name.trim()} onClick={()=>setStep(step+1 as 1|2|3)}>Davom etish</button>:<button className="tourney-button primary" disabled={isLoading||loadingTickets||!!ticketError||ticketBalance===null||ticketBalance<1} onClick={handleCreateTournament}>{isLoading?'Yaratilmoqda…':'Yaratish · 1 ticket'}</button>}</footer>
+      <footer><button disabled={isLoading} className="tourney-button" onClick={()=>step===1?onClose():setStep(step-1 as 1|2|3)}>{step===1?'Bekor qilish':'Orqaga'}</button>{step<3?<button className="tourney-button primary" disabled={!name.trim()||(step===2&&!validParticipants)} onClick={()=>setStep(step+1 as 1|2|3)}>Davom etish</button>:<button className="tourney-button primary" disabled={!validParticipants||!name.trim()||isLoading||loadingTickets||!!ticketError||ticketBalance===null||ticketBalance<1} onClick={handleCreateTournament}>{isLoading?'Yaratilmoqda…':'Yaratish · 1 ticket'}</button>}</footer>
     </section>
   </div>;
 };

@@ -20,10 +20,35 @@ import type { AdminPlan } from './telegramAiAdminCatalog';
 const season = 'season-2026-27', ttl = 86400, prefix = 'efluz:v1:telegram:topic-result:';
 const proposalKey = (token: string) => prefix + 'proposal:' + token;
 const sourceKey = (chat: number, thread: number, message: number) => `${prefix}source:${chat}:${thread}:${message}`;
-export type TopicResultProposal = { token: string; chat: number; thread: number; sourceMessage: number; submitter: number; updateId: number; expiresAt: number; state: string; plan: AdminPlan; deliveredMessage?: number; expectedFixture: any; summary?: string };
+export type TopicResultProposal = { token: string; chat: number; thread: number; sourceMessage: number; submitter: number; updateId: number; expiresAt: number; state: string; plan: AdminPlan; deliveredMessage?: number; expectedFixture: any; summary?: string; originalSourceMessage?:number; originalSourceUpdateId?:number };
 const editable = new Set(['SCHEDULED', 'POSTPONED', 'AWAITING_RESULT', 'PENDING_CONFIRMATION']);
 const roundLabel = (f: any) => f.roundName || (Number.isInteger(f.matchday) ? `${f.matchday}-tur` : 'Tur ma’lumoti yo‘q');
 const fixtureLabel = (f: any) => `${f.home} — ${f.away} · ${f.competition} · ${roundLabel(f)}`;
+const contextKey = (chat: number, thread: number, user: number) => `${prefix}context:${chat}:${thread}:${user}`;
+type FollowupChoice = {id:string;matchday:number;label:string};
+type ResultContext = {token:string;state:string;text:string;kind:'fixture'|'clubs';choices:FollowupChoice[];sourceMessage:number;sourceUpdateId:number;updateId:number;expiresAt:number;deliveredMessage?:number};
+function askResult(message:string, kind:ResultContext['kind'], fixtures:any[]=[]):never {
+  throw Object.assign(Error('CLARIFY:'+message),{followup:{kind,choices:fixtures.slice(0,5).map(f=>({id:f.id,matchday:f.matchday,label:fixtureLabel(f)}))}});
+}
+export const TOPIC_RESULT_CONTEXT = `-- EFL_TOPIC_RESULT_CONTEXT_V1
+local raw = redis.call('GET', KEYS[1])
+local c = raw and cjson.decode(raw) or nil
+if ARGV[1] == 'publish' then
+ local next = cjson.decode(ARGV[2])
+ if c and c.updateId >= next.updateId then return 0 end
+ redis.call('SET', KEYS[1], ARGV[2], 'EX', 900)
+ return 1
+end
+if not c or c.token ~= ARGV[2] or c.state ~= 'awaiting' then return 0 end
+if ARGV[1] == 'deliver' then c.deliveredMessage = tonumber(ARGV[3])
+elseif ARGV[1] == 'cancel' then c.state = 'cancelled'
+else
+ local source = redis.call('GET', KEYS[2])
+ if c.expiresAt <= tonumber(ARGV[3]) or not c.deliveredMessage or (source and cjson.decode(source).updateId > c.sourceUpdateId) then return 0 end
+ c.state = 'consumed'
+end
+redis.call('SET', KEYS[1], cjson.encode(c), 'EX', 900)
+return 1`;
 
 /** The same verified group/topic links used by the app's result notifications. */
 export function competitionResultTopic(c: Competition): number | null {
@@ -49,6 +74,10 @@ local source = redis.call('GET', KEYS[3])
 if not raw or not source then return 0 end
 local p = cjson.decode(raw)
 if p.state ~= 'pending' or p.expiresAt <= tonumber(ARGV[1]) or p.chat ~= tonumber(ARGV[2]) or p.thread ~= tonumber(ARGV[3]) or p.deliveredMessage ~= tonumber(ARGV[4]) or cjson.decode(source).token ~= p.token then return 0 end
+if p.originalSourceMessage then
+ local origin = redis.call('GET', KEYS[4])
+ if origin and cjson.decode(origin).updateId > p.originalSourceUpdateId then return 0 end
+end
 if ARGV[5] == 'executing' then
  if redis.call('GET', KEYS[2]) then return 0 end
  redis.call('SET', KEYS[2], p.token, 'EX', ARGV[6])
@@ -69,7 +98,7 @@ async function authorize(id: number) {
 }
 
 /** Planning reads verified public data; member identity comes only from Telegram. */
-export async function planTopicResult(text: string, sender: number, thread: number, signal: AbortSignal) {
+export async function planTopicResult(text: string, sender: number, thread: number, signal: AbortSignal, resolution?:{fixtureId:string}) {
   const scores = [...text.matchAll(/\b(\d{1,2})\s*[:–—−-]\s*(\d{1,2})\b/g)];
   if (scores.length !== 1 || isAiHypotheticalQuestion(text)) return null;
   const bare = /^\s*(?:(?:hisob|natija)\s*:?\s*)?\d{1,2}\s*[:–—−-]\s*\d{1,2}(?:\s+\d{1,3}\s*-?\s*tur)?[.! ]*$/i.test(text);
@@ -87,15 +116,15 @@ export async function planTopicResult(text: string, sender: number, thread: numb
   if (!ownership.available || ownership.stale) throw Error('CLARIFY:Klub egaligi hozir tasdiqlanmadi. Natija rejasini taxmin qilib ochmayman.');
   const own = ownership.data.filter(c => c.ownerUserId === `user-${sender}`);
   const selected = resolveAiClubs(text, ownership.data as any);
-  if (selected.clarification) throw Error('CLARIFY:' + selected.clarification);
-  if (selected.clubs.length && selected.clubs.length !== 2) throw Error('CLARIFY:Ikkala jamoa va hisobni yozing. Yoki faqat hisobni yozing — birinchi son sizning klubingiz uchun bo‘ladi.');
+  if (selected.clarification) askResult(selected.clarification,'clubs');
+  if (selected.clubs.length && selected.clubs.length !== 2) askResult(`${selected.clubs[0].name} tushunildi. Raqib nomini shu xabarga javob qilib yozing; hisobni qayta yozish shart emas.`,'clubs');
   if (!own.length && !isAiAdminActor(sender)) throw Error('CLARIFY:Bu akkauntga klub biriktirilganligi topilmadi. Natijani o‘yin ishtirokchisi yuborsin.');
   const games: any[] = [], rounds = new Map<string, number | undefined>();
   for (const c of competitions) {
     // Named opponents identify the fixture across rounds, including reports played
     // ahead of the league clock. Only an explicit round may narrow that search.
     // A bare score still needs the current round to avoid guessing an opponent.
-    const round = requestedMatchday(text) ?? (c.type === 'LEAGUE' && !selected.clubs.length ? c.currentMatchday : undefined);
+    const round = resolution ? undefined : requestedMatchday(text) ?? (c.type === 'LEAGUE' && !selected.clubs.length ? c.currentMatchday : undefined);
     rounds.set(c.id, round);
     const stage = detectAiCupStage(text);
     // Keep verified other rounds for diagnosis; never silently change an explicit round.
@@ -110,13 +139,13 @@ export async function planTopicResult(text: string, sender: number, thread: numb
       offset = page.nextOffset;
     } while (true);
   }
-  const scoped = games.filter(f => !rounds.get(f.competitionId) || f.matchday === rounds.get(f.competitionId));
+  const scoped = games.filter(f => resolution ? f.id === resolution.fixtureId : !rounds.get(f.competitionId) || f.matchday === rounds.get(f.competitionId));
   const candidates = scoped.filter(f => editable.has(f.status));
-  if (candidates.length > 1) throw Error('CLARIFY:Bir nechta o‘yin mos keldi:\n' + candidates.slice(0,5).map(fixtureLabel).join('\n') + (candidates.length > 5 ? `\nJami ${candidates.length} ta mos o‘yin.` : '') + '\nHisob bilan kerakli tur yoki kubok bosqichini ko‘rsating. Natija saqlanmadi.');
+  if (candidates.length > 1) askResult('Bir nechta o‘yin mos keldi:\n' + candidates.slice(0,5).map((f,i)=>`${i+1}. ${fixtureLabel(f)}`).join('\n') + (candidates.length > 5 ? `\nJami ${candidates.length} ta mos o‘yin.` : '') + '\nVariant raqamini yoki masalan “6-tur” deb javob yozing. Oldingi hisob eslab qolindi, natija hali bazaga yozilmadi.','fixture',candidates);
   if (!candidates.length) {
     const checked = `${selected.clubs.length ? selected.clubs.map(c => c.name).join(' — ') : own.map(c => c.name).join(', ')} · ${competitions.map(c => c.name + (rounds.get(c.id) ? ` · ${rounds.get(c.id)}-tur` : '')).join('; ')}`;
     let reason = `${checked}: jadvalda mos o‘yin topilmadi. Natija saqlanmadi.`;
-    if (!scoped.length && games.length) reason = `${checked}: shu turda o‘yin topilmadi. Jadvaldagi juftlik:\n${games.slice(0,5).map(fixtureLabel).join('\n')}\nSiz yozgan tur avtomatik almashtirilmadi. Natija saqlanmadi.`;
+    if (!scoped.length && games.length && !resolution) askResult(`${checked}: shu turda o‘yin topilmadi. Jadvaldagi juftlik:\n${games.slice(0,5).map((f,i)=>`${i+1}. ${fixtureLabel(f)}`).join('\n')}\nVariant raqamini yoki turni javob qilib yozing.${games.length===1?' Shu o‘yin bo‘lsa “ha” ham yetadi.':''} Natija hali bazaga yozilmadi.`,'fixture',games);
     else if (scoped.length) reason = scoped.slice(0,5).map(f => {
       if (f.status === 'CONFIRMED') return `${fixtureLabel(f)}: natija allaqachon tasdiqlangan.${Number.isInteger(f.homeScore) && Number.isInteger(f.awayScore) ? ` Saqlangan hisob: ${f.home} ${f.homeScore}:${f.awayScore} ${f.away}.` : ' Saqlangan hisob bu manbada ko‘rsatilmagan.'}`;
       if (f.status === 'DISPUTED') return `${fixtureLabel(f)}: natija nizoli. Admin ko‘rib chiqishi kerak.`;
@@ -155,7 +184,7 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
         await answerTelegramCallback(callback.id, 'Taklif topilmadi yoki muddati o‘tgan.', true); return { handled: true, result: 'invalid' };
       }
       const state = action === 'approve' ? 'executing' : 'cancelled';
-      const claimed = await client.eval(TOPIC_RESULT_CLAIM, [proposalKey(token), prefix+'fixture:'+p.plan.targetId, sourceKey(p.chat,p.thread,p.sourceMessage)], [Date.now(),p.chat,p.thread,p.deliveredMessage,state,ttl]);
+      const claimed = await client.eval(TOPIC_RESULT_CLAIM, [proposalKey(token), prefix+'fixture:'+p.plan.targetId, sourceKey(p.chat,p.thread,p.sourceMessage),sourceKey(p.chat,p.thread,p.originalSourceMessage||p.sourceMessage)], [Date.now(),p.chat,p.thread,p.deliveredMessage,state,ttl]);
       if (Number(claimed) !== 1) { await answerTelegramCallback(callback.id, 'Taklif eskirgan yoki allaqachon ko‘rib chiqilgan.', true); return { handled: true, result: 'already_processed' }; }
       let reply = 'Taklif rad etildi. Natija o‘zgarmadi.';
       if (action === 'approve') {
@@ -177,10 +206,44 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
     }
     const m = update.edited_message || update.message;
     if (!m || m.chat?.username?.toLowerCase() !== 'efleagueuz' || ![2,3,4,5,6,7,8,2335].includes(m.message_thread_id) || !Number.isSafeInteger(m.from?.id) || m.from.id <= 0 || m.from.is_bot || m.sender_chat || m.forward_origin || m.forward_from || m.forward_from_chat) return {handled:false};
-    const text = String(m.text || m.caption || '').trim();
-    if (!update.edited_message && (!text || !/\d{1,2}\s*[:–—−-]\s*\d{1,2}/.test(text))) return {handled:false};
+    let text = String(m.text || m.caption || '').trim();
+    if (!text && !update.edited_message) return {handled:false};
     const client = getAiRedisClient(signal);
     if (!client) throw Error('RESULT_STATE_UNAVAILABLE');
+    const ctxKey = contextKey(m.chat.id,m.message_thread_id,m.from.id);
+    let continuation:ResultContext|null=null, resolution:{fixtureId:string}|undefined;
+    if (!update.edited_message && !/\d{1,2}\s*[:–—−-]\s*\d{1,2}/.test(text)) {
+      const context=await client.get<ResultContext>(ctxKey);
+      if (!context || context.state!=='awaiting' || context.expiresAt<=Date.now() || !context.deliveredMessage) return {handled:false};
+      const replied=m.reply_to_message;
+      if (replied && replied.message_id!==context.deliveredMessage && replied.message_id!==context.sourceMessage) return {handled:false};
+      const q=normalizeAiEntity(text);
+      if (/^(?:bekor|bekor qil|yoq|yoq bekor)$/.test(q)) {
+        await client.eval(TOPIC_RESULT_CONTEXT,[ctxKey],['cancel',context.token]);
+        await sendTelegramMessage(m.chat.id,'Oldingi hisob bo‘yicha aniqlashtirish bekor qilindi. Natija bazaga yozilmadi.',{parse_mode:null,message_thread_id:m.message_thread_id,reply_to_message_id:m.message_id,signal});
+        return {handled:true,result:'context_cancelled'};
+      }
+      if (context.kind==='fixture') {
+        const number=/^(?:variant\s*)?(\d{1,2})(?:\s*(?:variant|chisi))?$/.exec(q);
+        const round=requestedMatchday(text);
+        let choices:FollowupChoice[]=[];
+        if (number) choices=context.choices[Number(number[1])-1] ? [context.choices[Number(number[1])-1]] : context.choices.filter(c=>c.matchday===Number(number[1]));
+        else if (round && /^(?:\d{1,3}\s*tur(?:da|dagi|ga)?(?:\s+edi)?|tur\s*\d{1,3})$/.test(q)) choices=context.choices.filter(c=>c.matchday===round);
+        else if (/^(?:ha|xa|shu|osha|shu oyin|osha oyin)$/.test(q)) choices=context.choices.length===1?context.choices:[];
+        else return {handled:false};
+        if (choices.length!==1) {
+          await sendTelegramMessage(m.chat.id,'Bu javob bitta variantni aniqlamadi. Bot ko‘rsatgan variant raqamini yozing; oldingi hisobni qayta yozish shart emas.',{parse_mode:null,message_thread_id:m.message_thread_id,reply_to_message_id:m.message_id,signal});
+          return {handled:true,result:'clarification'};
+        }
+        resolution={fixtureId:choices[0].id}; text=context.text;
+      } else {
+        if (text.length>100 || isAiHypotheticalQuestion(text)) return {handled:false};
+        const ownership=testDependencies.ownership ? await testDependencies.ownership() : await createAiSnapshotReader(signal).read<OwnerNeutralClub>(ReadModelKeys.clubsWithOwners(season));
+        if (!ownership.available || ownership.stale || resolveAiClubs(text,ownership.data as any).clubs.length!==1) return {handled:false};
+        text=context.text+' '+text;
+      }
+      continuation=context;
+    }
     const latestKey = sourceKey(m.chat.id,m.message_thread_id,m.message_id);
     if (update.edited_message) await client.eval(TOPIC_RESULT_PUBLISH,[proposalKey('invalidated'),latestKey],['',update.update_id,'1',ttl,JSON.stringify({token:null,updateId:update.update_id})]);
     if (!text || !/\d{1,2}\s*[:–—−-]\s*\d{1,2}/.test(text)) return {handled:false};
@@ -188,16 +251,32 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
     if (previous?.token || previous?.updateId > update.update_id) return {handled:true,result:'duplicate_source'};
     const rate = await checkAndIncrementAiRateLimits({ chatId:m.chat.id,threadId:m.message_thread_id,userId:m.from.id,userLimitPerMin:5,topicLimitPerMin:60,maxDailyRequests:500,countDaily:false,signal });
     if (!rate.allowed) return {handled:true,result:'rate_limited'};
+    if(continuation){
+      const claimed=await client.eval(TOPIC_RESULT_CONTEXT,[ctxKey,sourceKey(m.chat.id,m.message_thread_id,continuation.sourceMessage)],['claim',continuation.token,Date.now()]);
+      if(Number(claimed)!==1)return {handled:true,result:'context_expired'};
+    }
     let planned;
-    try { planned = await planTopicResult(text,m.from.id,m.message_thread_id,signal); }
+    try { planned = await planTopicResult(text,m.from.id,m.message_thread_id,signal,resolution); }
     catch (error: any) {
       if (!String(error.message).startsWith('CLARIFY:')) throw error;
-      await sendTelegramMessage(m.chat.id,error.message.slice(8),{parse_mode:null,message_thread_id:m.message_thread_id,reply_to_message_id:m.message_id,signal});
+      let context:ResultContext|undefined;
+      if (error.followup) {
+        context={token:randomBytes(12).toString('hex'),state:'awaiting',text,kind:error.followup.kind,choices:error.followup.choices,sourceMessage:continuation?.sourceMessage||m.message_id,sourceUpdateId:continuation?.sourceUpdateId||update.update_id,updateId:update.update_id,expiresAt:Date.now()+900000};
+        const published=await client.eval(TOPIC_RESULT_CONTEXT,[ctxKey],['publish',JSON.stringify(context)]);
+        if (Number(published)!==1) return {handled:true,result:'duplicate_source'};
+      } else {
+        const old=await client.get<ResultContext>(ctxKey);
+        if(old && old.updateId<=update.update_id)await client.eval(TOPIC_RESULT_CONTEXT,[ctxKey],['cancel',old.token]);
+      }
+      const sent=await sendTelegramMessage(m.chat.id,error.message.slice(8),{parse_mode:null,message_thread_id:m.message_thread_id,reply_to_message_id:m.message_id,signal});
+      if(context && sent.ok && Number.isSafeInteger(sent.result?.message_id))await client.eval(TOPIC_RESULT_CONTEXT,[ctxKey],['deliver',context.token,sent.result.message_id]);
       return {handled:true,result:'clarification'};
     }
     if (!planned) return {handled:false};
+    const old=await client.get<ResultContext>(ctxKey);
+    if(old && old.updateId<=update.update_id)await client.eval(TOPIC_RESULT_CONTEXT,[ctxKey],['cancel',old.token]);
     const token = randomBytes(12).toString('hex'), f = planned.fixture;
-    const p: TopicResultProposal = {token,chat:m.chat.id,thread:m.message_thread_id,sourceMessage:m.message_id,submitter:m.from.id,updateId:update.update_id,expiresAt:Date.now()+ttl*1000,state:'pending',plan:planned.plan,expectedFixture:planned.expectedFixture,summary:fixtureLabel(f)};
+    const p: TopicResultProposal = {token,chat:m.chat.id,thread:m.message_thread_id,sourceMessage:m.message_id,submitter:m.from.id,updateId:update.update_id,expiresAt:Date.now()+ttl*1000,state:'pending',plan:planned.plan,expectedFixture:planned.expectedFixture,summary:fixtureLabel(f),...(continuation?{originalSourceMessage:continuation.sourceMessage,originalSourceUpdateId:continuation.sourceUpdateId}:{})};
     const published = await client.eval(TOPIC_RESULT_PUBLISH,[proposalKey(token),latestKey],[JSON.stringify(p),update.update_id,update.edited_message?'1':'0',ttl,JSON.stringify({token,updateId:update.update_id,hash:createHash('sha256').update(text).digest('hex')})]);
     if (Number(published) !== 1) return {handled:true,result:'duplicate_source'};
     const reply = `Tasdiqlash uchun natija:\n${f.home} ${planned.plan.body.homeScore}:${planned.plan.body.awayScore} ${f.away}\n${f.competition} · ${f.roundName || f.matchday+'-tur'}\n\nHali bazaga yozilmadi. Faqat vakolatli admin tasdiqlaydi.\n24 soat amal qiladi.`;

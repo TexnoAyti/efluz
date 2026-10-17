@@ -105,6 +105,7 @@ jobs:
           node scripts/run-isolated-test.mjs src/server/tests/customTournamentLinksRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/customTournamentManagementUiTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/tournamentUxRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/customTournamentWorkflowRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/legacyMembershipRepairRegressionTest.ts
           bun run test:telegram-ai
           node scripts/run-isolated-test.mjs src/server/tests/telegramAiUpgradeRegressionTest.ts
@@ -112,6 +113,9 @@ jobs:
           node scripts/run-isolated-test.mjs src/server/tests/telegramAiFollowUpResolutionRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/telegramAiReasoningRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/telegramTopicResultsRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/telegramTopicResultFollowupRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/telegramAiMunfizRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/telegramAiNativePrivateRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/telegramAiKnowledgeRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/telegramAiCommunitySourcesRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/telegramAiCustomEmojiRegressionTest.ts

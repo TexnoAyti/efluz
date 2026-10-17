@@ -1,5 +1,7 @@
+import { isNativePrivateAssistant, isPrivateMemoryReset, privateAssistantContextKey, PRIVATE_AI_MEMORY } from './telegramAiPrivateAssistant';
 import { getAiRedisClient, withinAiDeadline } from './telegramAiDeadline';
-import { getDeliveredAiAdminDraft, rememberDeliveredAiAdminDraft, getDeliveredAiReadClubDraft, saveDeliveredAiReadClubDraft, clearAiReadClubDraft } from './telegramAiAdminDraft';
+import {generateMunfizPrivateAnswer,munfizPrivateChatEnabled,munfizPrivateChatScope} from './munfizPrivateChat';
+import { getDeliveredAiAdminDraft, rememberDeliveredAiAdminDraft, clearAiAdminDraft, getDeliveredAiReadClubDraft, saveDeliveredAiReadClubDraft, clearAiReadClubDraft } from './telegramAiAdminDraft';
 import { continueAiAdminClarification } from './telegramAiAdminClarification';
 import { parseAiPlanRevision } from './telegramAiPlanRevision';
 /**
@@ -33,7 +35,7 @@ import { generateGroundedTelegramAnswer, AI_CLARIFICATION_REPLY, aiProviderFailu
 import { buildAiFallbackReply } from './telegramAiFallback';
 import { isAiAdminCommand } from './telegramAiAdminCatalog';
 import { decorateAiCustomEmoji } from './telegramAiCustomEmoji';
-import { handleAiAdminCommand, isOwnerAdminPrivateChat, rememberDeliveredAdminPlan } from './telegramAiAdminService';
+import { handleAiAdminCommand, isOwnerAdminPrivateChat, rememberDeliveredAdminPlan, getLatestDeliveredPlanToken } from './telegramAiAdminService';
 import { isAiAdminActor } from './telegramAiAdminAccess';
 import { createAiAdminReadTools } from './telegramAiAdminReadTools';
 import { isPersonalFixtureQuestion, buildPersonalFixtureReply } from './telegramAiPersonalFixtureService';
@@ -224,6 +226,7 @@ export async function indexBotSentMessage(
 ): Promise<void> {
   const client = getAiRedisClient(options?.signal);
   const key = `${KEY_PREFIX}:telegram:ai:botmsg:${chatId}:${threadId}:${messageId}`;
+  const privateKey = privateAssistantContextKey(chatId, threadId, targetUserId);
   const payload = JSON.stringify({ chatId, threadId, userId: targetUserId });
 
   if (!client) {
@@ -231,14 +234,14 @@ export async function indexBotSentMessage(
       chatId,
       threadId,
       userId: targetUserId,
-      expiresAt: Date.now() + CONTEXT_TTL_SECONDS * 1000,
+      expiresAt: Date.now() + (privateKey ? PRIVATE_AI_MEMORY.ttlSeconds : CONTEXT_TTL_SECONDS) * 1000,
     });
     return;
   }
 
   try {
     if (options?.signal?.aborted) return;
-    await client.set(key, payload, { ex: CONTEXT_TTL_SECONDS });
+    await client.set(key, payload, { ex: privateKey ? PRIVATE_AI_MEMORY.ttlSeconds : CONTEXT_TTL_SECONDS });
   } catch (err: any) {
     console.warn('[AI BOT MSG INDEX] Failed to index bot message ID:', aiProviderFailureKind(err));
   }
@@ -321,12 +324,14 @@ async function getConversationContext(
   if (testRedisOutage || options?.signal?.aborted) return [];
 
   const client = getAiRedisClient(options?.signal);
-  const contextKey = `${KEY_PREFIX}:telegram:ai:context:${chatId}:${threadId}:${userId}`;
+  const privateKey = privateAssistantContextKey(chatId, threadId, userId);
+  const contextKey = privateKey || `${KEY_PREFIX}:telegram:ai:context:${chatId}:${threadId}:${userId}`;
+  const limits = privateKey ? PRIVATE_AI_MEMORY : undefined;
 
   if (!client) {
     const record = testContextStore.get(contextKey);
     if (!record || record.expiresAt <= Date.now()) return [];
-    return normalizeAiHistory(record.turns);
+    return normalizeAiHistory(record.turns, limits);
   }
 
   try {
@@ -335,7 +340,7 @@ async function getConversationContext(
     if (!raw) return [];
     const parsed: any = typeof raw === 'string' ? JSON.parse(raw) : raw;
     if (!Array.isArray(parsed)) return [];
-    return normalizeAiHistory(parsed);
+    return normalizeAiHistory(parsed, limits);
   } catch {
     return [];
   }
@@ -355,21 +360,23 @@ async function saveConversationContext(
   if (testRedisOutage || options?.signal?.aborted) return;
 
   const client = getAiRedisClient(options?.signal);
-  const contextKey = `${KEY_PREFIX}:telegram:ai:context:${chatId}:${threadId}:${userId}`;
+  const privateKey = privateAssistantContextKey(chatId, threadId, userId);
+  const contextKey = privateKey || `${KEY_PREFIX}:telegram:ai:context:${chatId}:${threadId}:${userId}`;
+  const limits = privateKey ? PRIVATE_AI_MEMORY : undefined;
 
-  const updated = appendAiExchange(options?.history || [], userText, modelText, options);
+  const updated = appendAiExchange(options?.history || [], userText, modelText, options, limits);
 
   if (!client) {
     testContextStore.set(contextKey, {
       turns: updated,
-      expiresAt: Date.now() + CONTEXT_TTL_SECONDS * 1000,
+      expiresAt: Date.now() + (privateKey ? PRIVATE_AI_MEMORY.ttlSeconds : CONTEXT_TTL_SECONDS) * 1000,
     });
     return;
   }
 
   try {
     if (options?.signal?.aborted) return;
-    await client.set(contextKey, JSON.stringify(updated), { ex: CONTEXT_TTL_SECONDS });
+    await client.set(contextKey, JSON.stringify(updated), { ex: privateKey ? PRIVATE_AI_MEMORY.ttlSeconds : CONTEXT_TTL_SECONDS });
   } catch (err: any) {
     console.warn('[AI CONTEXT] Error saving context to Redis:', aiProviderFailureKind(err));
   }
@@ -484,6 +491,8 @@ export async function handleTelegramAiMessage(
   }
 
   // 2. Start unified 6-second processing timeout BEFORE reading configuration (Requirement 2)
+  const nativePrivate = isNativePrivateAssistant(payload);
+  const resetMemory = nativePrivate && isPrivateMemoryReset(payload.text);
   let intent = getConversationIntent(payload.text);
   const owner = isAiAdminActor(payload.fromUser.id);
   let replyConfirmation = Boolean(payload.replyToMessage && /^(?:ha|xa|yes|xop)$/i.test(payload.text.trim()));
@@ -515,7 +524,12 @@ export async function handleTelegramAiMessage(
       return { ok: true, handled: false, ignored: 'topic_not_authorized' };
     }
 
-    if (owner && ['chat', 'fixtures', 'standings'].includes(intent)) {
+    if (nativePrivate && replyConfirmation) {
+      replyConfirmation = Boolean(await getLatestDeliveredPlanToken(payload, rootController.signal));
+      ownerControl = owner && (isAiAdminCommand(payload.text) || ['admin','confirm','cancel','help'].includes(intent) || replyConfirmation);
+    }
+
+    if (!resetMemory && owner && ['chat', 'fixtures', 'standings'].includes(intent)) {
       const draft = await getDeliveredAiAdminDraft(payload, rootController.signal);
       const continuation = draft ? continueAiAdminClarification(draft, payload.text) : null;
       if (continuation) {
@@ -526,7 +540,7 @@ export async function handleTelegramAiMessage(
     if (owner && parseAiPlanRevision(payload.text)) {
       intent = 'admin'; ownerControl = true; nativeClarification = true;
     }
-    if (!['admin','confirm','cancel','help'].includes(intent)) {
+    if (!resetMemory && !['admin','confirm','cancel','help'].includes(intent)) {
       activeReadDraft = await getDeliveredAiReadClubDraft(payload, rootController.signal);
       const continuation = activeReadDraft ? continueAiAdminClarification(activeReadDraft, payload.text) : null;
       if (continuation && !['admin','confirm','cancel','help'].includes(getConversationIntent(continuation))) {
@@ -553,7 +567,7 @@ export async function handleTelegramAiMessage(
       userLimitPerMin: ownerControl ? 20 : config.rateLimitUserPerMin,
       topicLimitPerMin: ownerControl ? 20 : config.rateLimitTopicPerMin,
       control: ownerControl,
-      countDaily: nativeClarification ? false : ownerControl ? /^\/ai_admin(?:@[a-zA-Z0-9_]+)?\s+(?!\{)/i.test(payload.text) && !(isSimpleConversationMatchdayRequest(payload.text) || isSimpleConversationClubAssignmentRequest(payload.text) || detectNaturalAdminAction(payload.text)) || /^\/ai_read(?:@[a-zA-Z0-9_]+)?\s+(?!\{)/i.test(payload.text) && !detectNaturalAdminAction(payload.text) || intent === 'admin' && !(isSimpleConversationMatchdayRequest(payload.text) || isSimpleConversationClubAssignmentRequest(payload.text) || detectNaturalAdminAction(payload.text)) : intent === 'chat' && !isPersonalFixtureQuestion(payload.text) && !replyConfirmation && !/^\//.test(payload.text),
+      countDaily: resetMemory ? false : nativeClarification ? false : ownerControl ? /^\/ai_admin(?:@[a-zA-Z0-9_]+)?\s+(?!\{)/i.test(payload.text) && !(isSimpleConversationMatchdayRequest(payload.text) || isSimpleConversationClubAssignmentRequest(payload.text) || detectNaturalAdminAction(payload.text)) || /^\/ai_read(?:@[a-zA-Z0-9_]+)?\s+(?!\{)/i.test(payload.text) && !detectNaturalAdminAction(payload.text) || intent === 'admin' && !(isSimpleConversationMatchdayRequest(payload.text) || isSimpleConversationClubAssignmentRequest(payload.text) || detectNaturalAdminAction(payload.text)) : intent === 'chat' && !isPersonalFixtureQuestion(payload.text) && !replyConfirmation && !/^\//.test(payload.text),
       maxDailyRequests: config.maxDailyRequests,
       signal: rootController.signal,
     });
@@ -571,6 +585,26 @@ export async function handleTelegramAiMessage(
         await claimDeliveryState(payload.updateId, 'sent', { signal: rootController.signal });
       }
       return { ok: true, handled: true, ignored: rateLimit.reason };
+    }
+
+    if (resetMemory) {
+      let cleared = false;
+      const key = privateAssistantContextKey(payload.chatId, payload.threadId, payload.fromUser.id);
+      try {
+        const client = getAiRedisClient(rootController.signal);
+        if (key && client) { await client.set(key, '[]', { ex: PRIVATE_AI_MEMORY.ttlSeconds }); cleared = true; }
+        else if (key && process.env.NODE_ENV === 'test' && !testRedisOutage) { testContextStore.delete(key); cleared = true; }
+        if (cleared) {
+          cleared = false;
+          await clearAiReadClubDraft(payload, rootController.signal);
+          await clearAiAdminDraft(payload, rootController.signal);
+          cleared = true;
+        }
+      } catch { /* Never claim deletion when the durable store failed. */ }
+      const result = await dispatchTelegramAiReply(payload, cleared
+        ? 'Shaxsiy suhbat xotirasi tozalandi. Yangi suhbat boshlashingiz mumkin. Kutilayotgan admin rejasini bekor qilish uchun “bekor qil” deb yozing.'
+        : 'Suhbat xotirasini tozalash tasdiqlanmadi. Birozdan keyin /forget orqali qayta urinib ko‘ring.', rootController.signal, { parse_mode: null });
+      return { ok: result.ok, handled: true, replySent: result.replySent };
     }
 
     // 9. Reply Context: verify reply is addressed specifically to our bot and belongs to this user & chat & thread
@@ -632,7 +666,7 @@ export async function handleTelegramAiMessage(
     }
 
     // 7. Check blatant off-topic before calling Gemini to save quota
-    if (isBlatantlyOffTopic(payload.text)) {
+    if (isBlatantlyOffTopic(payload.text) && !nativePrivate && !(munfizPrivateChatEnabled() && munfizPrivateChatScope(payload))) {
       // Off-topic refusal dispatched via unified dispatch path with parse_mode: null
       const dispatchRes = await dispatchTelegramAiReply(
         payload,
@@ -647,7 +681,7 @@ export async function handleTelegramAiMessage(
 
     const speaker = resolveAiSpeaker(payload);
     const social = aiSocialReply(payload.text, speaker, payload.messageId);
-    if (social) {
+    if (social && !nativePrivate && !(munfizPrivateChatEnabled() && munfizPrivateChatScope(payload))) {
       const result = await dispatchTelegramAiReply(payload, social, rootController.signal, { parse_mode: 'HTML' });
       if (result.replySent) await saveConversationContext(payload.chatId, payload.threadId, payload.fromUser.id, payload.text, social, { signal: rootController.signal, history });
       return { ok: result.ok, handled: true, replySent: result.replySent, ignored: result.ignored };
@@ -664,6 +698,7 @@ export async function handleTelegramAiMessage(
 
     // 10. Generate response via Gemini (or Test Mock)
     let replyText = '';
+    let munfizReply=false;
     const modelController = new AbortController();
     const modelTimeout = setTimeout(() => modelController.abort(), Math.max(0, deadlineAt - Date.now() - 1800));
     const modelSignal = AbortSignal.any([rootController.signal, modelController.signal]);
@@ -673,18 +708,24 @@ export async function handleTelegramAiMessage(
       replyText = addressAiFact(grounding.factualAnswer, speaker, payload.messageId, history.filter(h => h.role === 'model').map(h => h.text));
     } else if (testAiResponder) {
       replyText = await withinAiDeadline(modelSignal, () => testAiResponder!(payload.text, grounding.factsSummary, history));
+    } else if (munfizPrivateChatEnabled() && munfizPrivateChatScope(payload)) {
+      munfizReply=true;
+      try {replyText=await generateMunfizPrivateAnswer(payload,grounding.factsSummary,modelSignal);}
+      catch (error:any) {
+        replyText=/^MUNFIZ_(?:NOT_CONFIGURED|INVALID_URL|BOT_ID_REQUIRED)$/.test(error?.message) ? 'Munfiz ulanish sozlamalari to‘liq emas. Xizmat manzili va API kaliti sozlanishi kerak.' : 'Munfiz javobi olinmadi. So‘rov avtomatik qayta bajarilmaydi; Munfiz xizmatidagi holatini tekshiring.';
+      }
     } else {
       const apiKey = process.env.GEMINI_API_KEY?.trim();
       if (!apiKey) {
         console.error('[AI GEMINI] Missing API configuration; using local reply');
-        replyText = buildAiFallbackReply(payload.text, grounding);
+        replyText = nativePrivate && !grounding.factualAnswer ? 'AI javobi hozir olinmadi. Vazifa bajarilgani tasdiqlanmadi; birozdan keyin qayta yozing.' : buildAiFallbackReply(payload.text, grounding);
       } else {
         const modelName = process.env.GEMINI_MODEL?.trim() || 'gemini-3.1-flash-lite';
         const ai = new GoogleGenAI({ apiKey });
 
         const privateAdmin = isOwnerAdminPrivateChat(payload);
         const responsePolicy = getAiResponsePolicy(payload.text);
-        const systemPrompt = buildTelegramAiSystemPrompt(grounding.factsSummary, speaker, { privateAdmin, responsePolicy, query: payload.text });
+        const systemPrompt = buildTelegramAiSystemPrompt(grounding.factsSummary, speaker, { privateAdmin, privateAssistant: nativePrivate, responsePolicy, query: payload.text });
 
         const contents = [
           ...history.map((h) => ({
@@ -704,14 +745,14 @@ export async function handleTelegramAiMessage(
             return { ok: false, handled: false, error: 'TIMEOUT_ABORTED' };
           }
           console.error('[AI GEMINI]', aiProviderFailureKind(apiErr), 'Generation failed');
-          replyText = buildAiFallbackReply(payload.text, grounding);
+          replyText = nativePrivate && !grounding.factualAnswer ? 'AI javobi hozir olinmadi. Vazifa bajarilgani tasdiqlanmadi; birozdan keyin qayta yozing.' : buildAiFallbackReply(payload.text, grounding);
         }
       }
     }
     } catch (error) {
       if (rootController.signal.aborted) throw error;
       console.warn('[AI LOCAL_REPLY] Generation failed or exceeded model budget');
-      replyText = buildAiFallbackReply(payload.text, grounding);
+      replyText = nativePrivate && !grounding.factualAnswer ? 'AI javobi hozir olinmadi. Vazifa bajarilgani tasdiqlanmadi; birozdan keyin qayta yozing.' : buildAiFallbackReply(payload.text, grounding);
     } finally {
       clearTimeout(modelTimeout);
     }
@@ -725,7 +766,7 @@ export async function handleTelegramAiMessage(
       payload,
       replyText,
       rootController.signal,
-      { parse_mode: 'HTML', maxChars: getAiResponsePolicy(payload.text).maxChars }
+      { parse_mode: munfizReply ? null : 'HTML', maxChars: getAiResponsePolicy(payload.text).maxChars }
     );
 
     if (dispatchRes.replySent) {
