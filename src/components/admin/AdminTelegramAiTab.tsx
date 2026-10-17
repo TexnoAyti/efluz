@@ -13,6 +13,10 @@ export const AdminTelegramAiTab: React.FC = () => {
   const [redisAvailable, setRedisAvailable] = useState<boolean>(true);
   const [modelInfo, setModelInfo] = useState<any>(null);
   const [metrics, setMetrics] = useState<any>(null);
+  const [observability, setObservability] = useState<any>(null);
+  const [dailyReportEnabled, setDailyReportEnabled] = useState(false);
+  const [report, setReport] = useState<string>('');
+  const [reportLoading, setReportLoading] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Form states
@@ -44,6 +48,7 @@ export const AdminTelegramAiTab: React.FC = () => {
         setRedisAvailable(cfgRes.redisAvailable);
         setModelInfo(cfgRes.model);
         setEnabled(cfgRes.config.enabled);
+        setDailyReportEnabled(Boolean(cfgRes.config.dailyReportEnabled));
         setAllowedChatId(cfgRes.config.allowedChatId !== null ? String(cfgRes.config.allowedChatId) : '');
         setAllowedThreadId(cfgRes.config.allowedThreadId !== null ? String(cfgRes.config.allowedThreadId) : '');
         setRateLimitUser(cfgRes.config.rateLimitUserPerMin || 3);
@@ -52,6 +57,7 @@ export const AdminTelegramAiTab: React.FC = () => {
       }
       if (diagRes?.metrics) {
         setMetrics(diagRes.metrics);
+        setObservability(diagRes.observability);
       }
     } catch (err: any) {
       setFeedback({ type: 'error', message: err.message || "Ma'lumotlarni yuklab bo'lmadi" });
@@ -70,7 +76,7 @@ export const AdminTelegramAiTab: React.FC = () => {
     setFeedback(null);
     try {
       const res = await api.updateTelegramAiConfig({
-        enabled,
+        enabled, dailyReportEnabled,
         allowedChatId: allowedChatId.trim() ? Number(allowedChatId.trim()) : null,
         allowedThreadId: allowedThreadId.trim() ? Number(allowedThreadId.trim()) : null,
         rateLimitUserPerMin: Number(rateLimitUser),
@@ -136,13 +142,13 @@ export const AdminTelegramAiTab: React.FC = () => {
           </div>
           <div>
             <h2 className="text-sm font-bold text-white flex items-center gap-2">
-              Telegram Guruh AI Yordamchisi (@efleagueuz)
+              Telegram AI yordamchisi
               <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${enabled ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400 border border-slate-700'}`}>
                 {enabled ? 'FAOL (ON)' : "O'CHIQ (OFF)"}
               </span>
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              Faqat belgilangan mavzuda ishlaydigan, natijalar bilan asoslangan AI yordamchi
+              Guruhda EFL UZ ma’lumotlari, shaxsiy chatda admin va umumiy yordamchi
             </p>
           </div>
         </div>
@@ -300,6 +306,25 @@ export const AdminTelegramAiTab: React.FC = () => {
         </div>
       </form>
 
+      <section className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 space-y-4">
+        <h3 className="text-sm font-bold text-white">AI ishlash holati · bugun (UTC)</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs text-slate-300">
+          <div>Javoblar<p className="text-xl text-emerald-300">{observability?.data?.replies ?? '—'}</p></div>
+          <div>O‘rtacha javob vaqti<p className="text-xl">{observability?.data ? `${(observability.data.averageResponseMs/1000).toFixed(1)} s` : '—'}</p></div>
+          <div>Model xatolari<p className="text-xl text-amber-300">{observability?.data?.providerFailures ?? '—'}</p></div>
+          <div>Yetkazish/holat xatolari<p className="text-xl text-amber-300">{observability?.data?.failures ?? '—'}</p></div>
+        </div>
+        <p className="text-xs text-slate-400">{observability?.available ? observability.data ? `Oxirgi yangilanish: ${new Date(observability.data.updatedAt).toLocaleString()}` : 'Bugun hali kuzatuv ma’lumoti yo‘q.' : 'Kuzatuv bazasi hozir o‘qilmadi.'}</p>
+        {observability?.data?.lastError && <p className="text-xs text-amber-300">Oxirgi xato: {observability.data.lastError.kind} · {new Date(observability.data.lastError.at).toLocaleString()}</p>}
+        <p className="text-xs text-slate-400">Xabar: 12 000 belgigacha. Shaxsiy xotira: 24 savol-javob va eski suhbatdan 4000 belgigacha parcha, 30 kun. Natija rasmini botning shaxsiy chatiga yuboring.</p>
+      </section>
+      <section className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 space-y-3">
+        <h3 className="text-sm font-bold text-white">Kunlik admin hisoboti</h3>
+        <label className="flex gap-2 text-xs text-slate-300"><input type="checkbox" checked={dailyReportEnabled} onChange={e=>setDailyReportEnabled(e.target.checked)} />Har kuni 08:00 (Toshkent) da shaxsiy Telegram chatimga yuborish</label>
+        <p className="text-xs text-slate-400">Yoqish yoki o‘chirishdan keyin «Sozlamalarni saqlash» tugmasini bosing. Hisobot joriy turlar, kutilayotgan natijalar, bahsli o‘yinlar va g‘olibsiz kuboklarni ko‘rsatadi.</p>
+        <button type="button" disabled={reportLoading} className="px-3 py-2 rounded-lg bg-slate-800 text-xs text-white disabled:opacity-50" onClick={async()=>{setReportLoading(true);try{const data=await api.getTelegramAiDailyReport();setReport(data.text);}catch{setReport('Hisobotni hozir o‘qib bo‘lmadi.');}finally{setReportLoading(false);}}}>{reportLoading?'Tayyorlanmoqda…':'Hisobotni ko‘rish'}</button>
+        {report&&<pre className="text-xs text-slate-300 whitespace-pre-wrap break-words">{report}</pre>}
+      </section>
       {/* Model & Billing Notice */}
       <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5">
         <div className="flex items-start gap-3">
@@ -309,7 +334,7 @@ export const AdminTelegramAiTab: React.FC = () => {
           <div className="space-y-1">
             <h4 className="text-xs font-bold text-white">Model va Billing Eslatmasi</h4>
             <p className="text-[11px] text-slate-300">
-              Joriy model: <strong className="text-sky-300">{modelInfo?.name || 'gemini-3.8-flash'}</strong> • API kalit:{' '}
+              Joriy model: <strong className="text-sky-300">{modelInfo?.name || 'gemini-3.1-flash-lite'}</strong> • API kalit:{' '}
               <span className={modelInfo?.apiKeyConfigured ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
                 {modelInfo?.apiKeyConfigured ? 'Mavjud' : 'Kiritilmagan'}
               </span>

@@ -1299,6 +1299,7 @@ export const api = {
       rateLimitUserPerMin: number;
       rateLimitTopicPerMin: number;
       maxDailyRequests: number;
+      dailyReportEnabled?: boolean;
       updatedAt: string;
       updatedBy: string;
     };
@@ -1319,6 +1320,7 @@ export const api = {
     rateLimitUserPerMin?: number;
     rateLimitTopicPerMin?: number;
     maxDailyRequests?: number;
+    dailyReportEnabled?: boolean;
   }): Promise<{ success: boolean; config: any }> {
     return request('/api/admin/telegram-ai/config', {
       method: 'PUT',
@@ -1328,10 +1330,15 @@ export const api = {
     });
   },
 
+  async getTelegramAiDailyReport(): Promise<{success:boolean;text:string;complete:boolean;stale:boolean}> {
+    return request('/api/admin/telegram-ai/daily-report', {skipCache:true,timeoutMs:15000});
+  },
+
   async getTelegramAiDiagnostics(): Promise<{
     success: boolean;
     config: any;
     redisAvailable: boolean;
+    observability?: any;
     metrics: {
       todayRequests: number;
       dailyLimit: number;

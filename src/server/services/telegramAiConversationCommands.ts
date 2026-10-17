@@ -1,3 +1,4 @@
+import { aiPenaltySuffix } from './telegramAiScore';
 import { detectNaturalAdminAction, assertSingleNaturalAdminRequest } from './telegramAiAdminLanguage';
 import { normalizeAiEntity, resolveAiClubs, throwAiClubClarification, type AiClubChoice } from './telegramAiEntities';
 import { createAiTournamentReader, matchesAiCompetition } from './telegramAiDataService';
@@ -147,7 +148,7 @@ export async function buildConversationTableReply(text: string, intent: 'standin
     const f:any=await reader.read({dataset:'fixtures',fixtureId:ids[0],limit:1});
     if(f.error||f.data?.length!==1)return {text:'Oldingi o‘yin hozir bazada aniqlanmadi. Jamoalar va turni qayta yozing.',competitionIds:[],fixtureIds:[]};
     const row=f.data[0];
-    return {text:`${row.home} ${row.homeScore!==null?row.homeScore+':'+row.awayScore:'—'} ${row.away} · ${row.competition} · ${row.roundName||row.matchday+'-tur'} · ${row.status}${f.stale?'\nOxirgi saqlangan ma’lumot.':''}`,competitionIds:[row.competitionId],fixtureIds:[row.id],clubIds:[row.homeClubId,row.awayClubId].filter(Boolean)};
+    return {text:`${row.home} ${row.homeScore!==null?row.homeScore+':'+row.awayScore:'—'} ${row.away}${aiPenaltySuffix(row)} · ${row.competition} · ${row.roundName||row.matchday+'-tur'} · ${row.status}${f.stale?'\nOxirgi saqlangan ma’lumot.':''}`,competitionIds:[row.competitionId],fixtureIds:[row.id],clubIds:[row.homeClubId,row.awayClubId].filter(Boolean)};
   }
   let competitions = resolved.competitions;
   if (intent === 'standings' && competitions.length > 1 && !findConversationCompetitions(text, catalog.data || []).length) { const league = competitions.filter(c => c.type === 'LEAGUE'); if (league.length === 1) competitions = league; }
@@ -211,7 +212,7 @@ export async function buildConversationTableReply(text: string, intent: 'standin
   if (!result.data?.length) return { text: `${comp.name}: ${standings ? 'turnir jadvali' : 'so‘ralgan o‘yinlar'} saqlangan ma’lumotda topilmadi.`, competitionIds: ids };
   if (standings || results) for (let offset = result.data.length; offset < result.total && offset < 1000; offset += 30) { const page: any = await reader.read({ ...query, offset }); if (page.error || !page.data?.length) { result.complete = false; break; } result.data.push(...page.data); result.stale ||= page.stale; }
   const lines = standings ? result.data.map((r: any) => `${r.position}. ${r.clubName} — ${r.points} ochko | O‘:${r.played} | TF:${r.goalDifference > 0 ? '+' : ''}${r.goalDifference}`)
-    : result.data.map((f: any) => `${f.home} ${f.homeScore !== null && f.awayScore !== null ? `${f.homeScore}:${f.awayScore}` : '—'} ${f.away}${f.roundName ? ' · ' + f.roundName : ' · ' + f.matchday + '-tur'}${f.status === 'CONFIRMED' ? '' : ' · ' + (({SCHEDULED:'rejalashtirilgan',POSTPONED:'qoldirilgan',DISPUTED:'bahsli',PENDING_CONFIRMATION:'tasdiq kutilmoqda'} as any)[f.status] || f.status)}`);
+    : result.data.map((f: any) => `${f.home} ${f.homeScore !== null && f.awayScore !== null ? `${f.homeScore}:${f.awayScore}` : '—'} ${f.away}${aiPenaltySuffix(f)}${f.roundName ? ' · ' + f.roundName : ' · ' + f.matchday + '-tur'}${f.status === 'CONFIRMED' ? '' : ' · ' + (({SCHEDULED:'rejalashtirilgan',POSTPONED:'qoldirilgan',DISPUTED:'bahsli',PENDING_CONFIRMATION:'tasdiq kutilmoqda'} as any)[f.status] || f.status)}`);
   const header = `${comp.name} — ${standings ? 'turnir jadvali' : round ? (through ? '1–' + round + '-turlar' : round + '-tur') : 'uchrashuvlar'}${results ? ' · tasdiqlangan natijalar' : ''}\n`;
   let body = header;
   let shown = 0;

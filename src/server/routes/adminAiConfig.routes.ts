@@ -1,3 +1,5 @@
+import { buildAiDailyReport } from '../services/telegramAiDailyReport';
+import { getAiObservability } from '../services/telegramAiObservability';
 /**
  * Admin Telegram AI Configuration & Diagnostics Router
  *
@@ -69,6 +71,7 @@ adminAiConfigRouter.put('/config', requireAdmin, requirePrimaryOwner, async (req
     const body = req.body || {};
 
     const updates: any = {};
+    if (typeof body.dailyReportEnabled === 'boolean') updates.dailyReportEnabled = body.dailyReportEnabled;
     if (typeof body.enabled === 'boolean') updates.enabled = body.enabled;
     if (body.allowedChatId !== undefined) {
       updates.allowedChatId = body.allowedChatId === null || body.allowedChatId === '' ? null : Number(body.allowedChatId);
@@ -112,6 +115,8 @@ adminAiConfigRouter.get('/diagnostics', requireAdmin, requirePrimaryOwner, async
       success: true,
       config,
       redisAvailable,
+      observability: await getAiObservability(),
+      capabilities: { inputMaxChars: 12000, memoryExchanges: 24, memorySummaryChars: 4000, memoryDays: 30, resultPhotos: true, dailyReportHour: '08:00 Asia/Tashkent' },
       metrics: {
         todayRequests: rateMetrics.dailyRequests,
         dailyLimit: config.maxDailyRequests,
@@ -154,4 +159,9 @@ adminAiConfigRouter.post('/test-query', requireAdmin, requirePrimaryOwner, async
   } catch (err: any) {
     res.status(500).json({ error: 'TEST_QUERY_FAILED', message: err?.message || err });
   }
+});
+
+adminAiConfigRouter.get('/daily-report', requireAdmin, requirePrimaryOwner, async (_req, res) => {
+  try {res.json({success:true,...await buildAiDailyReport()});}
+  catch {res.status(503).json({error:'REPORT_UNAVAILABLE'});}
 });

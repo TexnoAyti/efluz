@@ -1,3 +1,4 @@
+import { scheduleAiDailyReport } from './services/telegramAiDailyReport';
 import { adminImageExportsRouter, imageExportDownloadRouter } from './routes/tournamentImageDownload.routes';
 import express from 'express';
 import { readCostMiddleware } from './services/durableReadCosts';
@@ -150,6 +151,7 @@ export function createApp() {
     if (!Number.isInteger(hop) || hop < 0 || hop > 256) { res.sendStatus(400); return; }
     try {
       await ensureDbReady();
+      if (hop === 0) { if (process.env.VERCEL === '1') scheduleAiDailyReport(); else await scheduleAiDailyReport(); }
       if (process.env.VERCEL === '1') { scheduleMutationReconciliation(); scheduleNotificationQueueDrain(hop); res.status(202).json({ accepted: true }); }
       else { await reconcileDurableMutations(); await drainNotificationQueue({ hop }); res.json({ drained: true }); }
     } catch { res.status(503).json({ error: 'NOTIFICATION_WORKER_UNAVAILABLE' }); }

@@ -46,6 +46,15 @@ export function continueAiAdminClarification(draft: Clarification, answer: strin
     const request = selected ? replaceAiClubChoice(draft.request, selected) : null;
     return request && request.length <= 1800 ? request : null;
   }
+  // Missing shootout scores append only the explicitly requested field; the main score stays intact.
+  if (/penalti/.test(q) && /kubok durang/.test(q)) {
+    const penalty = /^(?:pen(?:alti\w*)?(?:\s+seriya\w*)?\s*[:=]?\s*)?(\d{1,2})\s*[:–—−-]\s*(\d{1,2})$/i.exec(value);
+    if (penalty && penalty[1] !== penalty[2] && draft.request.length + value.length < 1800) {
+      const base = draft.request.replace(/(?:pen(?:alti\w*)?(?:\s+seriya\w*)?)\s*[:=]?\s*(?:\d{1,2}\s*[:–—−-]\s*\d{1,2})?/gi, '').trim();
+      return `${base}, penalti ${penalty[1]}-${penalty[2]}`;
+    }
+    return null;
+  }
   let field: string | null = null;
   if (/qaysi foydalanuvchi|qaysi akkaunt|kimga biriktiray|bitta.*username|toliq.*username|username.*(?:yozing|kiriting)/.test(q)) {
     const user = /^(?:foydalanuvchi\s+)?(@[A-Za-z][A-Za-z0-9_]{4,31}|user-\d+)(?:\s+ga)?$/.exec(value);
