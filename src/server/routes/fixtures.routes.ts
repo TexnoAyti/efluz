@@ -49,6 +49,10 @@ fixturesRouter.post('/:id/result', requireAuth, validateBody(resultSubmissionSch
       res.status(404).json({ error: 'Fixture not found', code: 'NOT_FOUND' });
       return;
     }
+    if (isDomesticCup(existingFixture.competitionId)) {
+      res.status(403).json({ error: 'CUP_ADMIN_ONLY', code: 'CUP_ADMIN_ONLY', message: 'Kubok hisobini faqat admin kirita oladi.' });
+      return;
+    }
     await assertFixtureLifecycleOpen(existingFixture);
 
     const updatedFixture = await submitFixtureResultFirestore(userId, fixtureId, homeScore, awayScore, proofUrl);

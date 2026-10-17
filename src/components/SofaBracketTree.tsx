@@ -225,7 +225,7 @@ export const SofaBracketTree: React.FC<Props> = ({ fixtures, competition, curren
               const home = side === 'home';
               const clubId = home ? fixture.homeClubId : fixture.awayClubId;
               const club = home ? fixture.homeClub : fixture.awayClub;
-              const score = home ? fixture.homeScore : fixture.awayScore;
+              const score = home ? (fixture.homeExtraTimeScore ?? fixture.homeScore) : (fixture.awayExtraTimeScore ?? fixture.awayScore);
               const isWinner = Boolean(clubId && fixture.winnerClubId === clubId);
               return (
                 <div className={`flex h-[29px] items-center gap-1.5 rounded-lg px-1.5 ${isWinner ? 'bg-emerald-400/[0.10]' : 'bg-white/[0.018] efl-theme-surface-2'}`}>
@@ -261,7 +261,7 @@ export const SofaBracketTree: React.FC<Props> = ({ fixtures, competition, curren
                   </span>
                 </div>
                 <div className="space-y-1">{renderTeam('home')}{renderTeam('away')}</div>
-                {fixture.secondLegLabel ? <p className="mt-1 truncate text-[8px] leading-[10px] text-slate-400 efl-theme-text-2" title={fixture.secondLegLabel}>{fixture.secondLegLabel}</p> : fixture.penaltyHomeScore != null ? <p className="mt-1 text-[8px] leading-[10px] text-amber-300 efl-theme-amber">Pen: {fixture.penaltyHomeScore}–{fixture.penaltyAwayScore}</p> : null}
+                {fixture.secondLegLabel ? <p className="mt-1 truncate text-[8px] leading-[10px] text-slate-400 efl-theme-text-2" title={fixture.secondLegLabel}>{fixture.secondLegLabel}</p> : (fixture.homePenaltyScore ?? fixture.penaltyHomeScore) != null ? <p className="mt-1 text-[8px] leading-[10px] text-amber-300 efl-theme-amber">Pen: {fixture.homePenaltyScore ?? fixture.penaltyHomeScore}–{fixture.awayPenaltyScore ?? fixture.penaltyAwayScore}</p> : null}
               </button>
             );
           })}

@@ -701,6 +701,10 @@ export const api = {
     params: {
       homeScore: number;
       awayScore: number;
+      homeExtraTimeScore?: number | null;
+      awayExtraTimeScore?: number | null;
+      homePenaltyScore?: number | null;
+      awayPenaltyScore?: number | null;
       status?: string;
       notes?: string;
     }

@@ -6,7 +6,7 @@ import { useI18n } from '../i18n';
 import { api } from '../lib/api';
 import { Competition, Fixture } from '../types';
 import { ClubCrest } from './ClubCrest';
-import { ResultSubmissionModal } from './ResultSubmissionModal';
+import { CupMatchModal } from './CupMatchModal';
 import { TournamentBracket } from './TournamentBracket';
 import {
   AlertTriangle,
@@ -345,8 +345,7 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
       <AdminTournamentImageExport competition={activeCup} kind="matchday" availableFixtures={cupFixtures} disabled={isLoading || !cupFixtures.length} />
 
       {selectedFixtureForSubmit && (
-        <ResultSubmissionModal
-          isOpen={true}
+        <CupMatchModal
           fixture={selectedFixtureForSubmit}
           onClose={() => setSelectedFixtureForSubmit(null)}
           onSuccess={() => {
