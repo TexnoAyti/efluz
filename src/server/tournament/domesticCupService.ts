@@ -243,16 +243,22 @@ export async function getDomesticCupDetails(
   // 2. Fetch authoritative details from Firestore
   try {
     const db = getFirestoreDb();
-    const [compDoc, partSnap, fixSnap, occSnap] = await Promise.all([
+    // Fixtures are the bracket truth. Optional participant/ownership reads must
+    // never make an authoritative bracket fall back to bundled SQLite data.
+    const [compDoc, fixSnap] = await Promise.all([
       db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get(),
-      db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where('competitionId', '==', competitionId).get(),
       db.collection(COLLECTIONS.FIXTURES).where('competitionId', '==', competitionId).get(),
+    ]);
+    const [participantsResult, occupanciesResult] = await Promise.allSettled([
+      db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where('competitionId', '==', competitionId).get(),
       db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where('seasonId', '==', seasonId).get(),
     ]);
+    const partSnap = participantsResult.status === 'fulfilled' ? participantsResult.value : null;
+    const occSnap = occupanciesResult.status === 'fulfilled' ? occupanciesResult.value : null;
 
     const compData = compDoc.exists ? (compDoc.data() as FirestoreCompetitionDoc) : null;
     const occupancyUserMap = new Map<string, string>();
-    for (const d of occSnap.docs) {
+    for (const d of occSnap?.docs || []) {
       const occ = d.data();
       if (occ.clubId && occ.userId) {
         occupancyUserMap.set(occ.clubId, occ.userId);
@@ -263,7 +269,7 @@ export async function getDomesticCupDetails(
 
     // Participants
     const participants: DomesticCupDetails['participants'] = [];
-    if (!partSnap.empty) {
+    if (partSnap && !partSnap.empty) {
       for (const d of partSnap.docs) {
         const part = d.data() as FirestoreCompetitionParticipantDoc;
         const club = clubsMap.get(part.clubId);
@@ -418,6 +424,16 @@ export async function getDomesticCupDetails(
     return result;
   } catch (err: any) {
     firestoreCircuitBreaker.recordFailure(err);
+
+    // A previously verified bracket is safer than the bundled SQLite baseline,
+    // which can contain an older draw in serverless deployments.
+    if (rawLkg?.data?.rounds?.length) {
+      return {
+        ...rawLkg.data,
+        source: 'redis-lkg',
+        degraded: true,
+      };
+    }
 
     // Fallback to SQLite
     const compRow = queryGet<any>('SELECT * FROM competitions WHERE id = ?', [competitionId]);
