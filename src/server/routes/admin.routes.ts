@@ -453,6 +453,11 @@ adminRouter.get('/fixtures', async (req: Request, res: Response) => {
 
 // Admin manually enter or edit fixture result
 const adminEditResultSchema = z.object({
+  homeExtraTimeScore: z.number().int().min(0).max(99).nullable().optional(),
+  awayExtraTimeScore: z.number().int().min(0).max(99).nullable().optional(),
+  homePenaltyScore: z.number().int().min(0).max(99).nullable().optional(),
+  awayPenaltyScore: z.number().int().min(0).max(99).nullable().optional(),
+
   homeScore: z.number().int().min(0, 'Home score must be >= 0'),
   awayScore: z.number().int().min(0, 'Away score must be >= 0'),
   status: z.enum(['CONFIRMED', 'AWAITING_RESULT', 'SCHEDULED']).optional(),

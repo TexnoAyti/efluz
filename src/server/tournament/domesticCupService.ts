@@ -1,3 +1,4 @@
+import { isDomesticCupResult } from '../../lib/cupResult';
 import { getFirestoreDb } from '../firebase/admin';
 import {
   COLLECTIONS,
@@ -73,7 +74,7 @@ export function isDomesticCup(competitionId: string): boolean {
   if (competitionId.toLowerCase().includes('efl-cup') || competitionId.toLowerCase().includes('carabao')) {
     return false;
   }
-  return Boolean(DOMESTIC_CUPS[competitionId]);
+  return isDomesticCupResult(competitionId);
 }
 
 export function validateDomesticCupId(competitionId: string): DomesticCupConfig {
@@ -101,6 +102,8 @@ export interface CupBracketNode {
   status: string;
   homeScore: number | null;
   awayScore: number | null;
+  homeExtraTimeScore?: number | null;
+  awayExtraTimeScore?: number | null;
   homePenaltyScore?: number | null;
   awayPenaltyScore?: number | null;
   winnerClubId: string | null;
@@ -326,6 +329,8 @@ export async function getDomesticCupDetails(
         status: f.status,
         homeScore: f.homeScore,
         awayScore: f.awayScore,
+        homeExtraTimeScore: f.homeExtraTimeScore ?? null,
+        awayExtraTimeScore: f.awayExtraTimeScore ?? null,
         homePenaltyScore: (f as any).homePenaltyScore ?? null,
         awayPenaltyScore: (f as any).awayPenaltyScore ?? null,
         winnerClubId: f.winnerClubId,
@@ -453,6 +458,8 @@ export async function getDomesticCupDetails(
         status: f.status,
         homeScore: f.home_score,
         awayScore: f.away_score,
+        homeExtraTimeScore: f.home_extra_time_score ?? null,
+        awayExtraTimeScore: f.away_extra_time_score ?? null,
         homePenaltyScore: f.home_penalty_score ?? null,
         awayPenaltyScore: f.away_penalty_score ?? null,
         winnerClubId: f.winner_club_id,

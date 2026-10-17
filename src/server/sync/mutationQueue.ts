@@ -1,3 +1,5 @@
+import { resolveCupResult } from '../../lib/cupResult';
+import { isDomesticCupResult as isDomesticCup } from '../../lib/cupResult';
 import fs from 'fs';
 import path from 'path';
 import { queryAll, queryGet, queryRun } from '../db';
@@ -557,6 +559,7 @@ async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: 
       }
 
       const fixData = fixDoc.data()!;
+      resolveCupResult({ homeScore: payload.homeScore, awayScore: payload.awayScore }, fixData as any, isDomesticCup(fixData.competitionId));
       const now = new Date().toISOString();
       let winnerClubId: string | null = null;
       if (payload.homeScore > payload.awayScore) winnerClubId = fixData.homeClubId;
@@ -656,6 +659,10 @@ async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: 
       const now = new Date().toISOString();
       await fixRef.update({
         status: 'SCHEDULED',
+        homeExtraTimeScore: null,
+        awayExtraTimeScore: null,
+        homePenaltyScore: null,
+        awayPenaltyScore: null,
         homeScore: null,
         awayScore: null,
         winnerClubId: null,
@@ -676,6 +683,10 @@ async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: 
           awayClubId: fixDoc.data()?.awayClubId,
           scheduledAt: fixDoc.data()?.scheduledAt || now,
           status: 'SCHEDULED',
+          homeExtraTimeScore: null,
+          awayExtraTimeScore: null,
+          homePenaltyScore: null,
+          awayPenaltyScore: null,
           homeScore: null,
           awayScore: null,
           winnerClubId: null,
@@ -741,15 +752,14 @@ async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: 
       const fixData = fixDoc.data()!;
       const now = new Date().toISOString();
       const targetStatus = payload.status || 'CONFIRMED';
-      let winnerClubId: string | null = null;
-      if (payload.homeScore > payload.awayScore) winnerClubId = fixData.homeClubId || payload.homeClubId;
-      else if (payload.awayScore > payload.homeScore) winnerClubId = fixData.awayClubId || payload.awayClubId;
+      const resolution = resolveCupResult(payload, fixData as any, isDomesticCup(fixData.competitionId || payload.competitionId), targetStatus);
+      const { winnerClubId } = resolution;
 
       await fixRef.update({
         status: targetStatus,
         homeScore: payload.homeScore,
         awayScore: payload.awayScore,
-        winnerClubId,
+        ...resolution,
         resultConfirmedAt: targetStatus === 'CONFIRMED' ? now : null,
         updatedAt: now,
       });
@@ -771,7 +781,7 @@ async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: 
           status: targetStatus,
           homeScore: payload.homeScore,
           awayScore: payload.awayScore,
-          winnerClubId,
+          ...resolution,
           resultConfirmedAt: targetStatus === 'CONFIRMED' ? now : null,
           updatedAt: now,
         });
@@ -835,6 +845,10 @@ async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: 
       const now = new Date().toISOString();
       await fixRef.update({
         status: 'SCHEDULED',
+        homeExtraTimeScore: null,
+        awayExtraTimeScore: null,
+        homePenaltyScore: null,
+        awayPenaltyScore: null,
         homeScore: null,
         awayScore: null,
         winnerClubId: null,
@@ -857,6 +871,10 @@ async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: 
           awayClubId: fixData.awayClubId || payload.awayClubId,
           scheduledAt: fixData.scheduledAt || payload.scheduledAt || now,
           status: 'SCHEDULED',
+          homeExtraTimeScore: null,
+          awayExtraTimeScore: null,
+          homePenaltyScore: null,
+          awayPenaltyScore: null,
           homeScore: null,
           awayScore: null,
           winnerClubId: null,

@@ -123,7 +123,7 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
     const home = side === 'home';
     const clubId = home ? fixture.homeClubId : fixture.awayClubId;
     const club = home ? fixture.homeClub : fixture.awayClub;
-    const score = home ? fixture.homeScore : fixture.awayScore;
+    const score = home ? (fixture.homeExtraTimeScore ?? fixture.homeScore) : (fixture.awayExtraTimeScore ?? fixture.awayScore);
     const owner = home ? (fixture.homeOwner || fixture.homeUser) : (fixture.awayOwner || fixture.awayUser);
     const ownerId = home ? fixture.homeOwnerId : fixture.awayOwnerId;
     const tbd = !clubId || clubId === 'TBD' || club?.name === 'TBD';
@@ -174,6 +174,7 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
           </span>
         </div>
         <div className="space-y-1.5">{renderClubRow(fixture, 'home')}{renderClubRow(fixture, 'away')}</div>
+        {fixture.homePenaltyScore != null && <p className="mt-2 text-[10px] text-amber-300">Pen: {fixture.homePenaltyScore}–{fixture.awayPenaltyScore}</p>}
         {round.key === 'FINAL' && <div className="mt-2 flex items-center justify-center gap-1 text-[9px] font-black uppercase tracking-[0.18em] text-amber-300/70 efl-theme-amber"><Trophy className="h-3 w-3" />Road to Champion</div>}
       </button>
     );

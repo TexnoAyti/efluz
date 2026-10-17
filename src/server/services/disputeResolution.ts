@@ -1,3 +1,4 @@
+import { isDomesticCupResult, resolveCupResult } from '../../lib/cupResult';
 import type { Firestore } from 'firebase-admin/firestore';
 import { COLLECTIONS } from '../firebase/collections';
 
@@ -40,6 +41,7 @@ export async function resolveDisputeAtomically(db: Firestore, actorId: string, d
     } else if (params.action !== 'CANCEL_MATCH') throw new Error('INVALID_DISPUTE_RESOLUTION');
     const now = new Date().toISOString();
     const confirmed = params.action !== 'CANCEL_MATCH';
+    if (confirmed) resolveCupResult({ homeScore: homeScore!, awayScore: awayScore! }, fixture as any, isDomesticCupResult(fixture.competitionId));
     const patch = { status: confirmed ? 'CONFIRMED' : 'POSTPONED', homeScore, awayScore,
       winnerClubId: confirmed && homeScore !== awayScore ? (homeScore! > awayScore! ? fixture.homeClubId : fixture.awayClubId) : null,
       resultConfirmedAt: confirmed ? now : null, updatedAt: now };

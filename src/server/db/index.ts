@@ -269,6 +269,9 @@ export async function initDatabase(): Promise<Database> {
       ALTER TABLE club_memberships ADD COLUMN updated_at TEXT;
     `);
   } catch {}
+  for (const column of ['home_extra_time_score', 'away_extra_time_score', 'home_penalty_score', 'away_penalty_score']) {
+    try { dbInstance.exec(`ALTER TABLE fixtures ADD COLUMN ${column} INTEGER;`); } catch {}
+  }
   // Legacy databases enforced one club per user. The claim transaction now enforces
   // the season entitlement and different-league limit before writing either club.
   try {
@@ -540,6 +543,10 @@ export interface SqliteFixtureUpsertInput {
   status?: string;
   homeScore?: number | null;
   awayScore?: number | null;
+  homeExtraTimeScore?: number | null;
+  awayExtraTimeScore?: number | null;
+  homePenaltyScore?: number | null;
+  awayPenaltyScore?: number | null;
   winnerClubId?: string | null;
   resultConfirmedAt?: string | null;
   fixtureSource?: string;
@@ -596,8 +603,8 @@ export function upsertFixtureToSqlite(fixture: SqliteFixtureUpsertInput): void {
       home_club_id, away_club_id, scheduled_at, status,
       home_score, away_score, winner_club_id, result_confirmed_at,
       fixture_source, source_fixture_id, source_winner_slot,
-      created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      created_at, updated_at, home_extra_time_score, away_extra_time_score, home_penalty_score, away_penalty_score
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       fixture.id,
       seasonId,
@@ -617,6 +624,10 @@ export function upsertFixtureToSqlite(fixture: SqliteFixtureUpsertInput): void {
       sourceWinnerSlot,
       createdAt,
       updatedAt,
+      fixture.homeExtraTimeScore !== undefined ? fixture.homeExtraTimeScore : ((existing as any)?.home_extra_time_score ?? null),
+      fixture.awayExtraTimeScore !== undefined ? fixture.awayExtraTimeScore : ((existing as any)?.away_extra_time_score ?? null),
+      fixture.homePenaltyScore !== undefined ? fixture.homePenaltyScore : ((existing as any)?.home_penalty_score ?? null),
+      fixture.awayPenaltyScore !== undefined ? fixture.awayPenaltyScore : ((existing as any)?.away_penalty_score ?? null),
     ]
   );
   saveDatabaseSync();

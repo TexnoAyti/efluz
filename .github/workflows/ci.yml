@@ -67,6 +67,7 @@ jobs:
           bun run test:security-http
           bun run test:european-safety
           node scripts/run-isolated-test.mjs src/server/tests/europeanDrawGateRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/cupResultRegressionTest.ts
           bun run test:domestic-cup:isolated
           ./node_modules/.bin/tsx src/server/tests/domesticCupFlowRegressionTest.ts
           bun run test:read-model
