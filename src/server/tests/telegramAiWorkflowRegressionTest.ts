@@ -48,9 +48,12 @@ const before=await getAiWorkflow(start,signal);assert.equal(before?.state,'waiti
 // Simulate failed delivery of the next preview: resume reuses its exact unexecuted token.
 const resumed=await handleAiAdminCommand(p('davom et'),signal);assert.equal(token(resumed),token(one));assert.equal(writes,1);
 await rememberDeliveredAdminPlan(start,resumed,6002,signal);
-const finish=await handleAiAdminCommand(p('/ai_confirm '+token(one)),signal);assert.equal(writes,2);assert.match(finish,/Topshiriqlar tugadi/);assert.deepEqual(executed,['LOCK','OPEN']);
+const finish=await handleAiAdminCommand(p('/AI_CONFIRM '+token(one)),signal);assert.equal(writes,2);assert.match(finish,/Topshiriqlar tugadi/);assert.deepEqual(executed,['LOCK','OPEN']);
 await handleAiAdminCommand(p('/ai_confirm '+token(first)),signal);assert.equal(writes,2,'Replayed approvals do not execute or advance again');
 assert.equal((await getAiWorkflow(start,signal))?.state,'done');
+const done=await getAiWorkflow(start,signal);
+assert.equal(await saveAiWorkflow(start,done!,{...done!,version:done!.version+1,index:1,state:'waiting',token:token(one)},signal),true);
+const recovered=await handleAiAdminCommand(p('davom et'),signal);assert.match(recovered,/Topshiriqlar tugadi/);assert.equal(writes,2,'Recovery after a committed receipt does not re-plan the completed write');
 const races=await Promise.all([saveAiWorkflow(start,before!,{...before!,version:before!.version+1,state:'cancelled'},signal),saveAiWorkflow(start,before!,{...before!,version:before!.version+1,state:'planning'},signal)]);
 assert.ok(races.every(x=>!x),'Stale queue revisions cannot replace completed work');
 // A rejection pauses later steps; a bare resume cannot silently retry the action.

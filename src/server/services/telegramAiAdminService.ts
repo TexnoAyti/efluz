@@ -472,6 +472,16 @@ export async function handleAiAdminCommand(payload: TelegramAiMessagePayload, si
     if(workflow.state==='blocked'&&workflow.token)return workflowHeading(workflow)+'\nOldingi amal yakuni tasdiqlanmagan. Avval admin panel va auditni tekshiring; qolgan qadamlar bajarilmaydi.';
     if(workflow.state==='waiting'&&workflow.token){
       const record=await loadPending(workflow.token,signal);
+      if(!record){await change(workflow,{state:'blocked'});return workflowHeading(workflow)+'\nOldingi reja yozuvi topilmadi. Avval admin panel va auditni tekshiring; shu amal avtomatik qayta rejalashtirilmaydi.';}
+      if(record.state==='cancelled'){await change(workflow,{state:'cancelled'});return 'Joriy reja va qolgan navbat bekor qilingan.';}
+      if(record.state==='done'){
+        const result=record.result, outcome=result?inspectAiAdminOutcome(record.plan,result.data):null;
+        if(!result||result.status<200||result.status>=300||result.data?.success===false||result.data?.error||!outcome||['queued','unverified'].includes(outcome.state)||record.plan.action==='cup_preview'){
+          await change(workflow,{state:'blocked'});return workflowHeading(workflow)+'\nOldingi amal yakunini avval admin panel va auditdan tekshiring. Takroran bajarilmaydi.';
+        }
+        const recovered=await change(workflow,{index:workflow.index+1,token:null,state:workflow.index+1>=workflow.steps.length?'done':'planning'});
+        return recovered?(recovered.state==='done'?'Topshiriqlar tugadi · '+recovered.steps.length+'/'+recovered.steps.length:prepare(recovered)):'Navbat boshqa so‘rovda yangilangan. Holatini tekshiring.';
+      }
       if(record?.state==='pending'&&record.expiresAt>Date.now())return workflowHeading(workflow)+'\n\nReja: '+(record.description||describeAiAdminPlan(record.plan))+`\nHali bajarilmadi. Tasdiqlaysizmi?\n/ai_confirm ${record.token}\n/ai_cancel ${record.token}`;
       if(record&&['executing','unknown'].includes(record.state))return workflowHeading(workflow)+'\nOldingi amal holati noaniq. Avval admin panel va auditni tekshiring; avtomatik takrorlamayman.';
     }
@@ -482,8 +492,8 @@ export async function handleAiAdminCommand(payload: TelegramAiMessagePayload, si
   const latest=await getLatestDeliveredPlanToken(payload,signal);
   const explicit=/^\/ai_(confirm|cancel)(?:@[A-Za-z0-9_]+)?\s+([a-f0-9]{24})$/i.exec(payload.text.trim());
   const intent=getConversationIntent(payload.text);
-  const confirming=explicit?.[1]==='confirm'||intent==='confirm'||Boolean(payload.replyToMessage&&/^(ha|xa|yes|xop)$/i.test(payload.text.trim()));
-  const cancelling=explicit?.[1]==='cancel'||intent==='cancel';
+  const confirming=explicit?.[1].toLowerCase()==='confirm'||intent==='confirm'||Boolean(payload.replyToMessage&&/^(ha|xa|yes|xop)$/i.test(payload.text.trim()));
+  const cancelling=explicit?.[1].toLowerCase()==='cancel'||intent==='cancel';
   const token=explicit?.[2]||latest;
   const draft=workflow?.state==='blocked'?await getDeliveredAiAdminDraft(payload,signal):null;
   const filled=draft&&draft.request===workflow?.steps[workflow.index]?continueAiAdminClarification(draft,payload.text):null;
