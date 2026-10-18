@@ -35,3 +35,22 @@ export async function contextualFixturePlan(text:string, fixtureIds:string[], si
   }
   return {action,targetId:fixture.id,body};
 }
+
+/** A pronoun can select only one freshly-read club from the latest explicit club discussion. */
+export async function contextualClubPlan(text:string, clubIds:string[], previousQueries:string[], signal:AbortSignal, read:(query:any)=>Promise<any>=createAiTournamentReader(signal).read):Promise<AdminPlan|null> {
+  const q=normalizeAiEntity(text.replace(/@[A-Za-z0-9_]+/g,' '));
+  if(!/^(?:endi\s+)?(?:shu|osha|uning|uni|unga|shuni|buni)\b/.test(q))return null;
+  if(q.split(' ').some(word=>!/^(?:endi|shu|shuni|osha|uning|uni|unga|buni|faqat|klub\w*|jamoa\w*|egasi\w*|egasini|egasidan|biriktir\w*|ber\w*|boshat\w*|chiqar\w*|iltimos|qil\w*|ga)$/.test(word)))return null;
+  const action=detectNaturalAdminAction(text);
+  if(!action||!['club_assign','club_release'].includes(action))return null;
+  if(new Set(clubIds).size!==1)throw new Error('CLARIFY:Qaysi klub? Suhbatda bitta klub aniq tanlanmagan. Klub nomini yozing.');
+  const found:any=await read({dataset:'clubs',club:clubIds[0],limit:1});
+  const club=found.data?.[0];
+  if(found.error||found.complete===false||found.stale||!club)throw new Error('CLARIFY:Oldingi klubning joriy holati o‘qilmadi. Klubni aniq yozing yoki birozdan keyin urinib ko‘ring.');
+  const latest=[...previousQueries].reverse().find(t=>!/^(?:salom|rahmat|katta rahmat|tushunarli|zor|ok)[.!?]*$/i.test(normalizeAiEntity(t)));
+  if(!latest||!normalizeAiEntity(latest).includes(normalizeAiEntity(club.name)))throw new Error('CLARIFY:Qaysi klubni nazarda tutdingiz? Oldingi mavzudan klubni taxmin qilib o‘zgartirmayman.');
+  if(action==='club_release')return {action,targetId:club.id,body:{}};
+  const refs=text.match(/@[A-Za-z][A-Za-z0-9_]{4,31}/g)||[];
+  if(refs.length!==1)throw new Error('CLARIFY:Kimga biriktiray? Bitta aniq @username yozing.');
+  return {action,targetId:club.id,body:{targetUserId:refs[0]}};
+}

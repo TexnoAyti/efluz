@@ -29,6 +29,12 @@ export class PostgresAiStore extends PostgresKeyValueStore {
     if(args[4]==='executing'){if(values.has(keys[1]))return 0;put(keys[1],p.token,Number(args[5]));}
     put(keys[0],{...p,state:args[4]},Number(args[5]));return 1;
    }
+   if(script.includes('EFL_AI_WORKFLOW_CAS_V1')){
+    const old=get(keys[0]);
+    if(args[0]==='new'){if(old&&old.expiresAt>Number(args[3])&&!['done','cancelled'].includes(old.state))return 0;}
+    else if(!old||old.id!==args[1]||old.version!==Number(args[0]))return 0;
+    put(keys[0],parse(args[2]),1800);return 1;
+   }
    if(script.includes('EFL_AI_METRIC_V1')){
     if(values.has(keys[1]))return 0;
     put(keys[1],1,172800);

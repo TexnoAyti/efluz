@@ -1,0 +1,100 @@
+import {getFirestoreDb} from '../firebase/admin';
+import {contextualClubPlan} from '../services/telegramAiFixtureContext';
+import {AI_ADMIN_ACTIONS} from '../services/telegramAiAdminCatalog';
+import assert from 'node:assert/strict';
+import {initDatabase} from '../db';
+import {DEFAULT_AI_CONFIG,setTestConfigOverride} from '../services/telegramAiConfigService';
+import {getAiWorkflow,splitAiWorkflow,saveAiWorkflow,newAiWorkflow} from '../services/telegramAiWorkflow';
+import {handleAiAdminCommand,rememberDeliveredAdminPlan,setTestAiAdminHooks} from '../services/telegramAiAdminService';
+import {routeAiMessageMeaning,needsAiMeaningRouter} from '../services/telegramAiMeaningRouter';
+import {getAiRedisClient} from '../services/telegramAiDeadline';
+import {clearTestRateLimitState} from '../services/telegramAiRateLimitService';
+import {handleTelegramAiMessage,clearTestAiState,setTestAiResponder} from '../services/telegramAiService';
+import {setTestGroundingOverride} from '../services/telegramAiGroundingService';
+
+await initDatabase();process.env.DATABASE_PROVIDER='supabase';process.env.SUPABASE_DATA_NAMESPACE='workflow-test';process.env.TELEGRAM_BOT_TOKEN='777:isolated-workflow';
+setTestConfigOverride({...DEFAULT_AI_CONFIG,enabled:true,allowedChatId:-1001,allowedThreadId:3503,rateLimitUserPerMin:20,rateLimitTopicPerMin:60});
+setTestGroundingOverride({competitions:[],clubs:[],fixtures:{},standings:{}});
+const signal=new AbortController().signal;
+for(const [id,name] of [['comp-la-liga-2026','La Liga'],['comp-premier-league-2026','Premier League']])await getFirestoreDb().collection('competitions').doc(id).set({id,name,seasonId:'season-2026-27',type:'LEAGUE',currentMatchday:10});
+const readClub:any=async()=>({complete:true,stale:false,data:[{id:'club-arsenal',name:'Arsenal'}]});
+assert.equal((await contextualClubPlan('shu klubni egasidan bo‘shat',['club-arsenal'],['Arsenal egasi kim?'],signal,readClub))?.targetId,'club-arsenal');
+await assert.rejects(contextualClubPlan('shu klubni egasidan bo‘shat',['club-arsenal','club-inter'],['Arsenal egasi kim?'],signal,readClub),/Qaysi klub/);
+await assert.rejects(contextualClubPlan('shu klubni egasidan bo‘shat',['club-arsenal'],['Python kod yoz'],signal,readClub),/Qaysi klub/);
+await assert.rejects(contextualClubPlan('shu klubni egasidan bo‘shat',['club-arsenal'],['Arsenal egasi kim?'],signal,async()=>({complete:true,stale:true,data:[{id:'club-arsenal',name:'Arsenal'}]})),/joriy holati/);
+
+let update=510000,writes=0;const executed:string[]=[];
+const p=(text:string,extra:any={})=>({chatId:5209126900,threadId:0,fromUser:{id:5209126900},text,updateId:++update,messageId:update,...extra});
+const token=(text:string)=>/\/ai_confirm ([a-f0-9]{24})/.exec(text)?.[1]||'';
+assert.deepEqual(splitAiWorkflow('1. La Liga 10-turni qulfla\n2. APL 11-turni och'),['La Liga 10-turni qulfla','APL 11-turni och']);
+assert.deepEqual(splitAiWorkflow('La Liga 10-turni qulfla\nAPL 11-turni och'),['La Liga 10-turni qulfla','APL 11-turni och']);
+assert.equal(splitAiWorkflow('Hammaga “APL; keyin La Liga” deb xabar yubor'),null);
+assert.equal(splitAiWorkflow('Hammaga \"La Liga 10-turni qulfla; APL 11-turni och'),null,'Unclosed quoted payload is not treated as commands');
+assert.equal(splitAiWorkflow('Hammaga \"APL\\\"; La Liga 10-turni qulfla\" yubor'),null,'Escaped quotes require a single unambiguous request');
+assert.equal(splitAiWorkflow('Agar La Liga 10-turni qulflasam; APL 11-turni ochsam nima bo‘ladi?'),null);
+assert.equal(splitAiWorkflow('La Liga 10-turni qulfla va APL 11-turni och'),null,'Ordinary va is not guessed as a task separator');
+assert.equal(splitAiWorkflow(Array(5).fill('La Liga 10-turni qulfla').join('; ')),null);
+setTestAiAdminHooks(async(plan)=>{writes++;executed.push(String(plan.body.action));return{status:200,data:{success:true}};},async(request)=>({action:'matchday_control',targetId:'comp-la-liga-2026',body:{action:/qulfla/.test(request)?'LOCK':'OPEN',matchday:/11/.test(request)?11:10}}));
+const start=p('La Liga 10-turni qulfla; APL 11-turni och');
+const first=await handleAiAdminCommand(start,signal);assert.match(first,/Topshiriqlar/);assert.ok(token(first));assert.equal(writes,0);
+await rememberDeliveredAdminPlan(start,first,6001,signal);
+const concurrent=await Promise.all([handleAiAdminCommand(p('/ai_confirm '+token(first)),signal),handleAiAdminCommand(p('/ai_confirm '+token(first)),signal)]);
+const one=concurrent.find(answer=>token(answer))!;assert.ok(one);assert.equal(writes,1);assert.ok(token(one));assert.notEqual(token(one),token(first));
+assert.equal((await getAiWorkflow(start,signal))?.index,1);
+assert.equal((await getAiWorkflow(p('x',{fromUser:{id:7573478198},chatId:7573478198}),signal)),null,'Another actor cannot see the queue');
+assert.equal((await getAiWorkflow(p('x',{chatId:-1001,threadId:3503}),signal)),null,'Group/topic context is separate');
+await handleAiAdminCommand(p('/ai_cancel '+token(first)),signal);assert.equal((await getAiWorkflow(start,signal))?.state,'waiting','An old cancel button cannot cancel the current queue');
+const before=await getAiWorkflow(start,signal);assert.equal(before?.state,'waiting');
+// Simulate failed delivery of the next preview: resume reuses its exact unexecuted token.
+const resumed=await handleAiAdminCommand(p('davom et'),signal);assert.equal(token(resumed),token(one));assert.equal(writes,1);
+await rememberDeliveredAdminPlan(start,resumed,6002,signal);
+const finish=await handleAiAdminCommand(p('/ai_confirm '+token(one)),signal);assert.equal(writes,2);assert.match(finish,/Topshiriqlar tugadi/);assert.deepEqual(executed,['LOCK','OPEN']);
+await handleAiAdminCommand(p('/ai_confirm '+token(first)),signal);assert.equal(writes,2,'Replayed approvals do not execute or advance again');
+assert.equal((await getAiWorkflow(start,signal))?.state,'done');
+const races=await Promise.all([saveAiWorkflow(start,before!,{...before!,version:before!.version+1,state:'cancelled'},signal),saveAiWorkflow(start,before!,{...before!,version:before!.version+1,state:'planning'},signal)]);
+assert.ok(races.every(x=>!x),'Stale queue revisions cannot replace completed work');
+// A rejection pauses later steps; a bare resume cannot silently retry the action.
+setTestAiAdminHooks(async()=>{writes++;return{status:409,data:{error:'STATE_CHANGED'}};},async()=>({action:'matchday_control',targetId:'comp-la-liga-2026',body:{action:'LOCK',matchday:10}}));
+const second=p('La Liga 10-turni qulfla; APL 11-turni och');const preview=await handleAiAdminCommand(second,signal);
+await rememberDeliveredAdminPlan(second,preview,6010,signal);
+const rejected=await handleAiAdminCommand(p('/ai_confirm '+token(preview)),signal);assert.match(rejected,/to‘xtadi/);const failedWrites=writes;
+await handleAiAdminCommand(p('davom et'),signal);assert.equal(writes,failedWrites);assert.equal((await getAiWorkflow(second,signal))?.index,0);
+await handleAiAdminCommand(p('bekor qil'),signal);assert.equal((await getAiWorkflow(second,signal))?.state,'cancelled');
+setTestAiAdminHooks(async(plan)=>{if(AI_ADMIN_ACTIONS[plan.action].method!=='GET')writes++;return{status:200,data:{success:true,enabled:true}};},async()=>({action:'matchday_control',targetId:'comp-la-liga-2026',body:{action:'LOCK',matchday:10}}));
+const writesBeforeRead=writes;
+const readQueue=await handleAiAdminCommand(p('AI holatini ko‘rsat; La Liga 10-turni qulfla'),signal);
+assert.ok(token(readQueue));assert.equal(writes,writesBeforeRead,'Read steps do not write or require approval');
+assert.equal((await getAiWorkflow(start,signal))?.index,1);
+await handleAiAdminCommand(p('/ai_cancel '+token(readQueue)),signal);
+const classifiers:any[]=[];
+assert.equal(needsAiMeaningRouter('shu klub masalasini to‘g‘rilab qo‘yish kerak'),true);
+assert.equal(needsAiMeaningRouter('Этот клуб надо настроить'),true);
+assert.equal(needsAiMeaningRouter('this club needs fixing'),true);
+assert.equal(needsAiMeaningRouter('Если клуб надо настроить что будет?'),false);
+assert.equal(needsAiMeaningRouter('Python kod yozishni o‘rgat'),false);
+assert.equal(needsAiMeaningRouter('Agar shu klubni bo‘shatsam nima bo‘ladi?'),false);
+const semantic=await routeAiMessageMeaning('shu klub masalasini to‘g‘rilab qo‘yish kerak',[],signal,async req=>{classifiers.push(req);return{text:'{"mode":"admin"}'};});
+assert.equal(semantic.mode,'admin');assert.equal(classifiers[0].config.tools,undefined,'Meaning classifier has no execution/read tools');
+assert.equal((await routeAiMessageMeaning('shu klubni sozlash kerak',[],signal,async()=>({text:'{"mode":"admin","targetId":"invented"}'}))).mode,'chat','Unknown model fields are refused');
+// Full Telegram dispatch preserves the buttons and exact next-step token.
+clearTestAiState();clearTestRateLimitState();setTestAiResponder(async()=> 'Suhbat');
+setTestAiAdminHooks(async()=>({status:200,data:{success:true}}),async()=>({action:'matchday_control',targetId:'comp-la-liga-2026',body:{action:'LOCK',matchday:10}}));
+const originalFetch=global.fetch;const sent:any[]=[];
+global.fetch=async(input:any,init?:any)=>{assert.match(String(input),/api.telegram.org/);sent.push(JSON.parse(init.body));return Response.json({ok:true,result:{message_id:7000+sent.length}});};
+try{
+ const live=p('La Liga 10-turni qulfla; APL 11-turni och');assert.equal((await handleTelegramAiMessage(live)).replySent,true);
+ const old=sent.at(-1).reply_markup.inline_keyboard[0][0].callback_data;
+ assert.match(old,/ai:confirm:/);assert.match(sent.at(-1).text,/Topshiriqlar/);
+ const confirm=p('/ai_confirm '+old.split(':')[2]);clearTestRateLimitState();assert.equal((await handleTelegramAiMessage(confirm)).replySent,true);
+ assert.notEqual(sent.at(-1).reply_markup.inline_keyboard[0][0].callback_data,old);
+ setTestAiResponder(null);process.env.GEMINI_API_KEY='isolated-meaning';let meaningCalls=0;
+ const telegramFetch=global.fetch;
+ global.fetch=async(input:any,init?:any)=>{
+   if(String(input).includes('generativelanguage.googleapis.com')){meaningCalls++;return Response.json({candidates:[{content:{role:'model',parts:[{text:'{"mode":"admin"}'}]},finishReason:'STOP'}]});}
+   return telegramFetch(input,init);
+ };
+ clearTestRateLimitState();assert.equal((await handleTelegramAiMessage(p('shu klub masalasini to‘g‘rilab qo‘yish kerak'))).replySent,true);
+ assert.equal(meaningCalls,1);assert.match(sent.at(-1).reply_markup.inline_keyboard[0][0].callback_data,/ai:confirm:/);
+ delete process.env.GEMINI_API_KEY;
+}finally{global.fetch=originalFetch;setTestAiAdminHooks();setTestConfigOverride(null);setTestGroundingOverride(null);clearTestAiState();}
+console.log('PASS quoted task boundaries, owner/chat isolation, durable ordered approvals, failed-delivery resume, replay/stale CAS protection, rejection/cancel pause, strict meaning JSON and actual Telegram button orchestration; model/Telegram mocked');

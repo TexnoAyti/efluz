@@ -1,9 +1,11 @@
+import { limitAiReply } from './telegramAiResponsePolicy';
+import { getAiWorkflow, saveAiWorkflow, newAiWorkflow, splitAiWorkflow, isAiWorkflowControl, workflowHeading, type AiWorkflow } from './telegramAiWorkflow';
 import { createAiAdminRecordResolver } from './telegramAiAdminRecordResolver';
 import { inspectAiAdminOutcome } from './telegramAiAdminOutcome';
 import { createAiAdminReadTools } from './telegramAiAdminReadTools';
 import { assertAdminPlanReady, validateModelAdminPlan } from './telegramAiAdminPlanReadiness';
 import { buildConversationTableReply } from './telegramAiConversationCommands';
-import { contextualFixturePlan } from './telegramAiFixtureContext';
+import { contextualFixturePlan, contextualClubPlan } from './telegramAiFixtureContext';
 import { parseNaturalAdminPlan, resolveAdminScore } from './telegramAiNaturalAdminPlanner';
 import { getDeliveredAiAdminDraft, saveAiAdminDraft, clearAiAdminDraft } from './telegramAiAdminDraft';
 import { continueAiAdminClarification } from './telegramAiAdminClarification';
@@ -227,7 +229,7 @@ export async function planAiAdminAction(request: string, facts: string, signal: 
 
 /** Caller has already verified the webhook, allowed topic/owner DM, and rate limit.
  * Authority is derived from Telegram sender ID, never username, model text or chat admin status. */
-export async function handleAiAdminCommand(payload: TelegramAiMessagePayload, signal: AbortSignal, facts = '', scope: ConversationScope = {}): Promise<string> {
+async function handleAiAdminCommandInternal(payload: TelegramAiMessagePayload, signal: AbortSignal, facts = '', scope: ConversationScope = {}): Promise<string> {
   if (!isAiAdminActor(payload.fromUser.id) || !Number.isSafeInteger(payload.fromUser.id) || payload.fromUser.is_bot || payload.senderChat || payload.forwarded)
     return 'AI orqali admin buyruqlari faqat ruxsat berilgan adminlar uchun.';
   const { config, redisAvailable } = await getTelegramAiConfig({ signal });
@@ -342,6 +344,7 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
     const plan = correctionSource && correction ? reviseAiAdminPlan(correctionSource.plan, correction, correctionSource.scoreHomeFirst)
       : testPlanner ? await planAiAdminAction(argument, facts, signal, payload)
       : await contextualFixturePlan(argument,recentFixture?[recentFixture]:scope.selectedFixtureIds||[],signal)
+        || await contextualClubPlan(argument,scope.selectedClubIds||[],scope.previousUserQueries||[],signal)
         || await parseConversationClubAssignmentPlan(argument, signal)
         || await parseNaturalAdminPlan(argument, signal) || await parseConversationMatchdayPlan(argument, scope, signal) || await planAiAdminAction(argument, facts, signal, payload);
     assertAiAdminActionAllowed(payload.fromUser.id, plan);
@@ -422,4 +425,93 @@ function formatNaturalAdminRead(action: string, data: any): string {
     }
   };
   add(data);return lines.join('\n').slice(0,950);
+}
+
+/** A queue holds requests, never unconfirmed execution rights. Each step keeps existing authorization and approval. */
+export async function handleAiAdminCommand(payload: TelegramAiMessagePayload, signal: AbortSignal, facts = '', scope: ConversationScope = {}): Promise<string> {
+  if (!isOwnerAdminPrivateChat(payload) || payload.fromUser.is_bot) return handleAiAdminCommandInternal(payload,signal,facts,scope);
+  const {config,redisAvailable}=await getTelegramAiConfig({signal});
+  if(!config.enabled || process.env.NODE_ENV==='production'&&!redisAvailable)return handleAiAdminCommandInternal(payload,signal,facts,scope);
+  const steps=splitAiWorkflow(payload.text);
+  let workflow=await getAiWorkflow(payload,signal);
+  const control=isAiWorkflowControl(payload.text);
+  const change=async(previous:AiWorkflow,next:Partial<AiWorkflow>)=>{
+    const updated={...previous,...next,version:previous.version+1,updatedAt:Date.now()};
+    return await saveAiWorkflow(payload,previous,updated,signal)?updated:null;
+  };
+  const prepare=async(w:AiWorkflow):Promise<string>=>{
+    try {
+      const readPlan=await parseNaturalAdminPlan(w.steps[w.index],signal).catch(()=>null);
+      if(readPlan&&AI_ADMIN_ACTIONS[readPlan.action].method==='GET'){
+        assertAiAdminActionAllowed(payload.fromUser.id,readPlan);
+        const result=await withinAiDeadline(signal,()=>(testExecutor||executeAiAdminRoute)(readPlan,payload.fromUser.id,'ai-workflow-read-'+w.id+'-'+w.index,signal));
+        if(result.status>=200&&result.status<300&&!result.data?.error){
+          const next=await change(w,{index:w.index+1,state:w.index+1>=w.steps.length?'done':'planning'});
+          const answer=formatNaturalAdminRead(readPlan.action,result.data);
+          if(!next)return answer;
+          return 'Topshiriqlar · '+(w.index+1)+'-qadam tekshirildi.\n'+limitAiReply(answer,350)+'\n\n'+(next.state==='done'?'Topshiriqlar tugadi · '+next.steps.length+'/'+next.steps.length:await prepare(next));
+        }
+      }
+      const answer=await handleAiAdminCommandInternal({...payload,text:'/ai_admin '+w.steps[w.index],replyToMessage:undefined},signal,facts,scope);
+      const token=/\/ai_confirm ([a-f0-9]{24})/.exec(answer)?.[1]||null;
+      const next=await change(w,{token,state:token?'waiting':'blocked'});
+      return next?workflowHeading(next)+'\n\n'+answer:answer+'\nNavbat yangilangan. “Topshiriqlar holati” deb tekshiring.';
+    } catch {
+      await change(w,{state:'blocked'}).catch(()=>undefined);
+      return workflowHeading(w)+'\nKeyingi reja hozir tayyorlanmadi. “Davom et” deb qayta so‘rang. Hali navbatdagi amal bajarilmadi.';
+    }
+  };
+  if(steps){
+    const created=newAiWorkflow(steps);
+    if(!await saveAiWorkflow(payload,null,created,signal))return (workflow?workflowHeading(workflow):'Boshqa navbat tayyorlanmoqda.')+'\nAvval shu navbatni davom ettiring yoki “bekor qil” deb yozing.';
+    return prepare(created);
+  }
+  if(control){
+    if(!workflow || ['done','cancelled'].includes(workflow.state))return workflow?.state==='done'?'Navbatdagi barcha topshiriqlar tugagan.':'Faol topshiriqlar navbati yo‘q. Yangi topshiriqni yozing.';
+    if(/holati$/i.test(payload.text.trim()))return workflowHeading(workflow)+'\nHolat: '+({planning:'reja tayyorlanmoqda',waiting:'joriy qadam tasdig‘i kutilmoqda',blocked:'aniqlashtirish yoki qayta tekshirish kerak',done:'tugagan',cancelled:'bekor qilingan'})[workflow.state];
+    if(workflow.state==='blocked'&&workflow.token)return workflowHeading(workflow)+'\nOldingi amal yakuni tasdiqlanmagan. Avval admin panel va auditni tekshiring; qolgan qadamlar bajarilmaydi.';
+    if(workflow.state==='waiting'&&workflow.token){
+      const record=await loadPending(workflow.token,signal);
+      if(record?.state==='pending'&&record.expiresAt>Date.now())return workflowHeading(workflow)+'\n\nReja: '+(record.description||describeAiAdminPlan(record.plan))+`\nHali bajarilmadi. Tasdiqlaysizmi?\n/ai_confirm ${record.token}\n/ai_cancel ${record.token}`;
+      if(record&&['executing','unknown'].includes(record.state))return workflowHeading(workflow)+'\nOldingi amal holati noaniq. Avval admin panel va auditni tekshiring; avtomatik takrorlamayman.';
+    }
+    if(workflow.state==='planning'&&Date.now()-workflow.updatedAt<35000)return workflowHeading(workflow)+'\nReja hali tayyorlanmoqda. Birozdan keyin davom ettiring.';
+    const reserved=await change(workflow,{state:'planning',token:null});
+    return reserved?prepare(reserved):'Navbat boshqa so‘rovda yangilangan. Holatini tekshiring.';
+  }
+  const latest=await getLatestDeliveredPlanToken(payload,signal);
+  const explicit=/^\/ai_(confirm|cancel)(?:@[A-Za-z0-9_]+)?\s+([a-f0-9]{24})$/i.exec(payload.text.trim());
+  const intent=getConversationIntent(payload.text);
+  const confirming=explicit?.[1]==='confirm'||intent==='confirm'||Boolean(payload.replyToMessage&&/^(ha|xa|yes|xop)$/i.test(payload.text.trim()));
+  const cancelling=explicit?.[1]==='cancel'||intent==='cancel';
+  const token=explicit?.[2]||latest;
+  const draft=workflow?.state==='blocked'?await getDeliveredAiAdminDraft(payload,signal):null;
+  const filled=draft&&draft.request===workflow?.steps[workflow.index]?continueAiAdminClarification(draft,payload.text):null;
+  const revision=Boolean(workflow?.token===latest&&parseAiPlanRevision(payload.text));
+  const cancelQueue=Boolean(cancelling&&workflow&&!['done','cancelled'].includes(workflow.state)&&(!explicit||token===workflow.token));
+  const innerPayload=cancelQueue&&workflow?.token?{...payload,text:'/ai_cancel '+workflow.token}:payload;
+  const answer=await handleAiAdminCommandInternal(innerPayload,signal,facts,scope);
+  if(!workflow||['done','cancelled'].includes(workflow.state))return answer;
+  if(cancelQueue){await change(workflow,{state:'cancelled'});return answer+'\nQolgan topshiriqlar navbati ham bekor qilindi.';}
+  const replacement=/\/ai_confirm ([a-f0-9]{24})/.exec(answer)?.[1];
+  if(replacement&&(filled||revision)){
+    const tasks=[...workflow.steps];if(filled)tasks[workflow.index]=filled;
+    await change(workflow,{token:replacement,state:'waiting',steps:tasks});return workflowHeading(workflow)+'\n\n'+answer;
+  }
+  if(!confirming||token!==workflow.token)return answer;
+  const record=token?await loadPending(token,signal):null;
+  if(record?.state==='unknown'){await change(workflow,{state:'blocked'});return answer+'\nQolgan navbat to‘xtatildi; avval amal holatini tekshiring.';}
+  if(!record||record.state!=='done'||!record.result)return answer;
+  const result=record.result, outcome=inspectAiAdminOutcome(record.plan,result.data);
+  if(result.status<200||result.status>=300||result.data?.success===false||result.data?.error||['queued','unverified'].includes(outcome.state)){
+    await change(workflow,{state:'blocked'});
+    return answer+'\nNavbat shu qadamda to‘xtadi. Keyingi topshiriqlar bajarilmadi.';
+  }
+  // A cup draw preview creates its own second approval. Keep the same queue step until it completes.
+  if(replacement){await change(workflow,{token:replacement,state:'waiting'});return workflowHeading(workflow)+'\n\n'+answer;}
+  const next=await change(workflow,{index:workflow.index+1,token:null,state:workflow.index+1>=workflow.steps.length?'done':'planning'});
+  if(!next)return answer;
+  if(next.state==='done')return 'Topshiriqlar tugadi · '+next.steps.length+'/'+next.steps.length+'\n'+answer;
+  const nextAnswer=await prepare(next);
+  return 'Topshiriqlar · '+next.index+'-qadam bajarildi.\n'+answer.slice(0,900)+'\n\n'+nextAnswer;
 }
