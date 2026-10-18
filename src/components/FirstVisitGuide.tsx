@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, Compass, Search, Shield, Trophy, Bell, Swords, X } from 'lucide-react';
 import { useI18n } from '../i18n';
-import { guidePlacement, type GuideRect, type GuideStatus } from '../lib/firstVisitGuide';
+import { findGuideTarget, guidePlacement, type GuideRect, type GuideStatus } from '../lib/firstVisitGuide';
 import './first-visit-guide.css';
 
 const content = {
@@ -30,10 +30,10 @@ const content = {
     ['Important notifications', 'Result confirmations, match updates and tournament news appear here. Check your messages for the next action.'],
   ] },
 };
-const targets = ['[data-guide="nav-dashboard"]', '[data-guide="nav-leagues"]', '[data-guide="nav-my-club"]', '[data-guide="match-actions"], [data-guide="nav-my-club"]', '#btn-global-search', '#btn-notifications'];
+const targets = ['[data-guide="nav-dashboard"]', '[data-guide="nav-leagues"]', '[data-guide="nav-my-club"]', '[data-guide="score-entry"], [data-guide="nav-my-club"]', '#btn-global-search', '#btn-notifications'];
 const icons = [Compass, Trophy, Shield, Swords, Search, Bell];
 
-export function FirstVisitGuide({ onFinish }: { onFinish: (status: GuideStatus) => void }) {
+export function FirstVisitGuide({ onFinish, onShowScoreEntry }: { onFinish: (status: GuideStatus) => void; onShowScoreEntry?: () => void }) {
   const { language } = useI18n();
   const c = content[language] || content.uz;
   const [step, setStep] = useState(0);
@@ -44,14 +44,22 @@ export function FirstVisitGuide({ onFinish }: { onFinish: (status: GuideStatus) 
   const layer = useRef<HTMLDivElement>(null), card = useRef<HTMLDivElement>(null), next = useRef<HTMLButtonElement>(null);
   const originalFocus = useRef(typeof document === 'undefined' ? null : document.activeElement as HTMLElement | null);
   const finish = useRef(onFinish); finish.current = onFinish;
+  const showScoreEntry = useRef(onShowScoreEntry); showScoreEntry.current = onShowScoreEntry;
   const Icon = icons[step];
+
+  useEffect(() => {
+    if (step === 3 && !findGuideTarget(document, '[data-guide="score-entry"]')) showScoreEntry.current?.();
+  }, [step]);
 
   useLayoutEffect(() => {
     let frame = 0;
+    let scrolled: HTMLElement | undefined;
     const update = () => {
-      const candidate = targets[step].split(',').flatMap(selector => Array.from(document.querySelectorAll<HTMLElement>(selector.trim()))).find(el => {
-        const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < window.innerHeight;
-      });
+      const candidate = findGuideTarget(document, targets[step]);
+      if (candidate && candidate !== scrolled && candidate.dataset.guide === 'score-entry') {
+        scrolled = candidate;
+        candidate.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
+      }
       const r = candidate?.getBoundingClientRect();
       const rect = r ? { top: r.top - 5, left: r.left - 5, width: r.width + 10, height: r.height + 10 } : null;
       setTarget(rect);
@@ -59,9 +67,9 @@ export function FirstVisitGuide({ onFinish }: { onFinish: (status: GuideStatus) 
       const position = guidePlacement(rect, window.innerWidth, window.innerHeight, height);
       const isMobile = window.innerWidth < 680;
       setMobile(isMobile); setPlacement(position);
-      const above = rect && position.top + height <= rect.top;
+      const above = rect && position.top + Math.min(height, position.maxHeight) <= rect.top;
       const below = rect && position.top >= rect.top + rect.height;
-      setPointer(rect && !isMobile && (above || below) ? { side: above ? 'bottom' : 'top', left: Math.max(24, Math.min(position.width - 24, rect.left + rect.width / 2 - position.left)) } : null);
+      setPointer(rect && (above || below) ? { side: above ? 'bottom' : 'top', left: Math.max(24, Math.min(position.width - 24, rect.left + rect.width / 2 - position.left)) } : null);
     };
     const schedule = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(update); };
     update(); next.current?.focus({ preventScroll: true });

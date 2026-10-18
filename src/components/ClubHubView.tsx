@@ -745,6 +745,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
               <button
                 type="button"
                 disabled={heroMatch.isPlayable === false}
+                data-guide="score-entry"
                 onClick={() => setSelectedFixtureForModal(heroMatch)}
                 className={`flex-1 min-h-[40px] py-2.5 px-4 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all ${
                   heroMatch.isPlayable === false

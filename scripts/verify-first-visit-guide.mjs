@@ -34,6 +34,20 @@ const mobileNav={left:70,top:760,width:90,height:50};
 const mobile=helper.guidePlacement(mobileNav,390,844,330);
 assert.ok(mobile.top+330<mobileNav.top,'The mobile sheet leaves the highlighted bottom navigation visible');
 assert.equal(mobile.left,12,'Mobile uses the app’s 12px side spacing');
+// The score button may be below the fold while the club navigation is visible.
+const button={getBoundingClientRect:()=>({width:140,height:40,top:1100,bottom:1140})};
+const nav={getBoundingClientRect:()=>({width:90,height:50,top:760,bottom:810})};
+const hidden={getBoundingClientRect:()=>({width:0,height:0,top:0,bottom:0})};
+const rootWithControls={querySelectorAll:selector=>selector==='score'?[hidden,button]:[nav]};
+assert.equal(helper.findGuideTarget(rootWithControls,'score, nav'),button,'The offscreen score button wins over the visible club navigation');
+assert.equal(helper.findGuideTarget({querySelectorAll:()=>[]},'score'),undefined,'Missing fixtures do not manufacture a score action');
+for(const height of [568,844])for(const top of [170,Math.floor(height/2),height-150]){
+ const target={left:30,top,width:220,height:48};
+ const p=helper.guidePlacement(target,390,height,330);
+ const bottom=p.top+Math.min(330,p.maxHeight);
+ assert.ok(bottom<=target.top || p.top>=target.top+target.height,'The mobile guide must not cover the score button');
+ assert.ok(bottom<=height && p.top>=16,'The targeted mobile guide stays in the viewport');
+}
 const desktop=helper.guidePlacement({left:200,top:70,width:90,height:40},1440,900,330);
 assert.ok(desktop.top>=110,'Desktop coachmark sits beside its target rather than covering it');
 const globalCss=readFileSync(path.join(root,'src/admin-preview.css'),'utf8');
