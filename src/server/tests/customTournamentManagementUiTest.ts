@@ -14,7 +14,7 @@ function render(tab:'overview'|'participants'|'matches'|'settings'|'history',own
 for(const tab of ['overview','participants','matches','settings','history'] as const){
  const html=render(tab,true,tab==='matches'?'IN_PROGRESS':'REGISTRATION_OPEN');
  assert.ok(html.includes('role="dialog"')&&html.includes('100dvh'));
- assert.ok(html.includes('grid-cols-3 sm:grid-cols-5')&&html.includes('overflow-x-hidden')&&html.includes('min-w-0'));
+ assert.ok(html.includes('overflow-x-auto')&&html.includes('overflow-x-hidden')&&html.includes('min-w-0'));
  const visible=html.replace(/<[^>]*>/g,'');
  for(const code of ['PUBLIC_MODERATED','IN_PROGRESS','PENDING_CONFIRMATION','DISPUTED','Foydalanuvchi IDsi'])assert.equal(visible.includes(code),false,tab+': raw internal labels');
 }
@@ -32,5 +32,5 @@ const wizard=renderToStaticMarkup(React.createElement(TournamentWizardModal,{isO
 assert.equal(wizard.includes('Sizning klubingiz *'),false);
 assert.equal(wizard.includes('Faqat tashkilotchi bo‘laman'),false);
 assert.equal(wizard.includes('Klub qidirish'),false);
-assert.ok(wizard.includes('o‘zingiz ham qatnashchilar kabi klub tanlab qo‘shilishingiz mumkin'));
+assert.ok(wizard.includes('boshqalar kabi klub tanlab qo‘shilasiz'));
 console.log('PASS management UI: owner/assistant controls, lifecycle locks, qualifier start blocker, readable labels, responsive structural constraints, and creation without a club. SSR checks do not prove browser layout.');

@@ -1,315 +1,40 @@
-import React, { useState, useEffect } from 'react';
-import {
-  Trophy,
-  Plus,
-  Ticket,
-  Search,
-  Filter,
-  Users,
-  ExternalLink,
-  Shield,
-  Layers,
-  Sparkles,
-  RefreshCw,
-} from 'lucide-react';
-import { CustomTournament, CustomTournamentFormat, CustomTournamentStatus } from '../../types/customTournament';
-import { customTournamentApi } from '../../lib/customTournamentApi';
-import { TournamentCard } from './TournamentCard';
-import { TournamentWizardModal } from './TournamentWizardModal';
-import { TournamentDetailView } from './TournamentDetailView';
-import { AdminTicketManagementModal } from './AdminTicketManagementModal';
-import { readTournamentLaunch } from '../../lib/customTournamentLinks';
-import { useAuth } from '../../context/AuthContext';
-
-export const TournamentListView: React.FC = () => {
-  const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'all' | 'my'>(() => { try { return sessionStorage.getItem(`efl:custom-tab:${user?.id}`) === 'my' ? 'my' : 'all'; } catch { return 'all'; } });
-  const [tournaments, setTournaments] = useState<CustomTournament[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [listError, setListError] = useState<string | null>(null);
-  const [ticketError, setTicketError] = useState<string | null>(null);
-  const [selectedTournamentId, setSelectedTournamentId] = useState<string | null>(() => readTournamentLaunch()?.tournamentId || null);
-
-  const [launchToken, setLaunchToken] = useState(() => readTournamentLaunch()?.token);
-
-  // Filters & Search
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('ALL');
-  const [formatFilter, setFormatFilter] = useState<string>('ALL');
-
-  // Ticket balance
-  const [ticketBalance, setTicketBalance] = useState<number | null>(null);
-  const [loadingTickets, setLoadingTickets] = useState(true);
-
-  // Modals
-  const [showWizardModal, setShowWizardModal] = useState(false);
-  const [showAdminTicketModal, setShowAdminTicketModal] = useState(false);
-
-  const isPrimaryOwner = String(user?.telegramId || '').trim() === '5209126900';
-
-  const fetchTournaments = async () => {
-    try {
-      setIsLoading(true);
-      setListError(null);
-      if (activeTab === 'all') {
-        const list = await customTournamentApi.getPublicTournaments(40);
-        setTournaments(list);
-      } else {
-        const list = await customTournamentApi.getMyTournaments();
-        setTournaments(list);
-      }
-    } catch (err) {
-      setListError(err instanceof Error ? err.message : 'Turnirlarni yuklab bo‘lmadi.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const fetchTickets = async () => {
-    try {
-      setLoadingTickets(true);
-      setTicketError(null);
-      const acc = await customTournamentApi.getTicketBalance();
-      setTicketBalance(acc?.balance || 0);
-    } catch (err) {
-      setTicketBalance(null);
-      setTicketError(err instanceof Error ? err.message : 'Balansni yuklab bo‘lmadi.');
-    } finally {
-      setLoadingTickets(false);
-    }
-  };
-
-  useEffect(() => {
-    try { sessionStorage.setItem(`efl:custom-tab:${user?.id}`, activeTab); } catch {}
-    fetchTournaments();
-  }, [activeTab]);
-
-  useEffect(() => {
-    fetchTickets();
-  }, []);
-
-  // Filter tournaments
-  const filteredTournaments = tournaments.filter((t) => {
-    const matchesSearch = t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (t.description && t.description.toLowerCase().includes(searchQuery.toLowerCase()));
-
-    const matchesStatus = statusFilter === 'ALL' || t.status === statusFilter;
-    const matchesFormat = formatFilter === 'ALL' || t.format === formatFilter;
-
-    return matchesSearch && matchesStatus && matchesFormat;
-  });
-
-  if (selectedTournamentId) {
-    return (
-      <TournamentDetailView
-        tournamentId={selectedTournamentId}
-        inviteToken={launchToken}
-        onBack={() => {
-          setSelectedTournamentId(null);
-          setLaunchToken(undefined);
-          fetchTournaments();
-          fetchTickets();
-        }}
-      />
-    );
-  }
-
-  return (
-    <div className="efl-custom-tournaments space-y-4 pb-20 animate-in fade-in duration-200">
-      {/* 1. Header Banner & Ticket Balance Card */}
-      <div className="p-4 sm:p-5 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-xl space-y-3 backdrop-blur-md">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-              <Trophy className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-base sm:text-lg font-black text-slate-100 tracking-tight">Jamoa Turnirlari</h2>
-              <p className="text-xs text-slate-400">O‘z ligangizni yarating yoki do‘stlaringiz bilan kubok o‘ynang</p>
-            </div>
-          </div>
-
-          {/* Ticket Balance & Action */}
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950/70 border border-slate-800 text-xs">
-              <Ticket className="w-3.5 h-3.5 text-amber-400" />
-              <span className="text-slate-400">Chiptalar:</span>
-              <strong className="text-slate-100 font-bold">{loadingTickets ? '...' : ticketBalance ?? '—'}</strong>
-            </div>
-
-            {isPrimaryOwner && (
-              <button
-                onClick={() => setShowAdminTicketModal(true)}
-                className="px-2.5 py-1.5 rounded-xl bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 text-xs font-bold border border-amber-500/30 transition-colors"
-              >
-                Admin
-              </button>
-            )}
-
-            <button
-              onClick={() => setShowWizardModal(true)}
-              className="py-1.5 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs transition-all flex items-center gap-1 shadow-md shadow-emerald-500/20"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Turnir yaratish</span>
-            </button>
-          </div>
-        </div>
-
-        {ticketError && <div role="alert" className="text-xs text-amber-300"><p>{ticketError}</p><button type="button" onClick={fetchTickets} className="min-h-[44px] font-bold underline">Qayta urinish</button></div>}
-        {/* Informative notice on how to get tickets if user has 0 */}
-        {ticketBalance === 0 && !loadingTickets && (
-          <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-between gap-2 text-xs">
-            <div className="flex items-center gap-2 text-amber-300">
-              <Sparkles className="w-4 h-4 shrink-0" />
-              <span>Har bir foydalanuvchiga bir martalik 1 ta bepul chipta beriladi. 1 turnir = 1 chipta.</span>
-            </div>
-            <a
-              href="https://t.me/texnoadmin"
-              target="_blank"
-              rel="noreferrer"
-              className="px-2.5 py-1 rounded-xl bg-amber-400 text-slate-950 font-black text-[11px] shrink-0 hover:bg-amber-300 transition-colors flex items-center gap-1"
-            >
-              <span>@texnoadmin</span>
-              <ExternalLink className="w-3 h-3" />
-            </a>
-          </div>
-        )}
-      </div>
-
-      {/* 2. Section Selector: Barcha turnirlar vs Mening turnirlarim */}
-      <div className="p-1 rounded-2xl bg-slate-900 border border-slate-800 flex items-center gap-1 shadow-xs">
-        <button
-          onClick={() => setActiveTab('all')}
-          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-            activeTab === 'all'
-              ? 'bg-slate-800 text-emerald-400 shadow-sm font-black'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Layers className="w-3.5 h-3.5" />
-          <span>Barcha turnirlar</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('my')}
-          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-            activeTab === 'my'
-              ? 'bg-slate-800 text-emerald-400 shadow-sm font-black'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Users className="w-3.5 h-3.5" />
-          <span>Mening turnirlarim</span>
-        </button>
-      </div>
-
-      {/* 3. Search & Filter Bar */}
-      <div className="space-y-2">
-        <div className="relative">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder="Turnir nomi bo‘yicha qidirish..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-slate-900 border border-slate-800 rounded-2xl pl-10 pr-4 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500 shadow-xs"
-          />
-        </div>
-
-        {/* Chips for filters */}
-        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-1">
-          {['ALL', 'REGISTRATION_OPEN', 'IN_PROGRESS', 'COMPLETED'].map((st) => (
-            <button
-              key={st}
-              onClick={() => setStatusFilter(st)}
-              className={`px-3 py-1 rounded-full text-[11px] font-bold whitespace-nowrap transition-colors ${
-                statusFilter === st
-                  ? 'bg-emerald-500 text-slate-950 shadow-sm'
-                  : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-slate-200'
-              }`}
-            >
-              {st === 'ALL' ? 'Barcha holatlar' : st === 'REGISTRATION_OPEN' ? 'Qabul ochiq' : st === 'IN_PROGRESS' ? 'Davom etmoqda' : 'Yakunlangan'}
-            </button>
-          ))}
-
-          <div className="w-px h-4 bg-slate-800 shrink-0 mx-1" />
-
-          {['ALL', 'LEAGUE', 'PLAYOFF', 'LEAGUE_AND_PLAYOFF'].map((fmt) => (
-            <button
-              key={fmt}
-              onClick={() => setFormatFilter(fmt)}
-              className={`px-3 py-1 rounded-full text-[11px] font-bold whitespace-nowrap transition-colors ${
-                formatFilter === fmt
-                  ? 'bg-sky-500 text-slate-950 shadow-sm'
-                  : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-slate-200'
-              }`}
-            >
-              {fmt === 'ALL' ? 'Barcha formatlar' : fmt === 'LEAGUE' ? 'Liga' : fmt === 'PLAYOFF' ? 'Pley-off' : 'Liga + Pley-off'}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* 4. Tournament Grid */}
-      {isLoading ? (
-        <div className="p-12 text-center text-slate-400 space-y-2">
-          <RefreshCw className="w-6 h-6 animate-spin mx-auto text-emerald-400" />
-          <p className="text-xs">Turnirlar yuklanmoqda...</p>
-        </div>
-      ) : listError ? (
-        <div role="alert" className="p-4 text-sm text-amber-300"><p>{listError}</p><button type="button" onClick={fetchTournaments} className="min-h-[44px] font-bold underline">Qayta urinish</button></div>
-      ) : filteredTournaments.length === 0 ? (
-        <div className="p-12 rounded-3xl bg-slate-900/50 border border-slate-800/80 text-center space-y-3">
-          <Trophy className="w-10 h-10 text-slate-600 mx-auto" />
-          <p className="text-sm font-bold text-slate-300">Turnirlar topilmadi</p>
-          <p className="text-xs text-slate-500 max-w-sm mx-auto">
-            {activeTab === 'my'
-              ? 'Siz hali hech qanday turnir yaratmagansiz yoki unga qo‘shilmagansiz.'
-              : 'Qidiruv bo‘yicha mos turnirlar mavjud emas.'}
-          </p>
-          <button
-            onClick={() => setShowWizardModal(true)}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs transition-colors"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Yangi turnir yaratish</span>
-          </button>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-          {filteredTournaments.map((t) => (
-            <TournamentCard
-              key={t.id}
-              tournament={t}
-              onClick={() => { setLaunchToken(undefined); setSelectedTournamentId(t.id); }}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Modals */}
-      <TournamentWizardModal
-        isOpen={showWizardModal}
-        onClose={() => setShowWizardModal(false)}
-        onTournamentCreated={(newId) => {
-          setShowWizardModal(false);
-          setActiveTab('my');
-          setLaunchToken(undefined);
-          setSelectedTournamentId(newId);
-          fetchTournaments();
-          fetchTickets();
-        }}
-      />
-
-      {isPrimaryOwner && (
-        <AdminTicketManagementModal
-          isOpen={showAdminTicketModal}
-          onClose={() => {
-            setShowAdminTicketModal(false);
-            fetchTickets();
-          }}
-        />
-      )}
-    </div>
-  );
-};
+import React,{useState,useEffect,useRef} from 'react';
+import {Plus,Ticket,Search,SlidersHorizontal,Trophy,RefreshCw} from 'lucide-react';
+import type {CustomTournament} from '../../types/customTournament';
+import {customTournamentApi} from '../../lib/customTournamentApi';
+import {TournamentCard} from './TournamentCard';
+import {TournamentWizardModal} from './TournamentWizardModal';
+import {TournamentDetailView} from './TournamentDetailView';
+import {AdminTicketManagementModal} from './AdminTicketManagementModal';
+import {readTournamentLaunch} from '../../lib/customTournamentLinks';
+import {useAuth} from '../../context/AuthContext';
+export function TournamentListView(){
+ const {user}=useAuth();
+ const [tab,setTab]=useState<'all'|'my'>(()=>{try{return sessionStorage.getItem(`efl:custom-tab:${user?.id}`)==='all'?'all':'my';}catch{return 'my';}});
+ const [items,setItems]=useState<CustomTournament[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState('');
+ const [balance,setBalance]=useState<number|null>(null),[ticketError,setTicketError]=useState('');
+ const [selected,setSelected]=useState<string|null>(()=>readTournamentLaunch()?.tournamentId||null),[token,setToken]=useState(()=>readTournamentLaunch()?.token);
+ const [wizard,setWizard]=useState(false),[ticketAdmin,setTicketAdmin]=useState(false),[filters,setFilters]=useState(false);
+ const [search,setSearch]=useState(''),[status,setStatus]=useState('ALL'),[format,setFormat]=useState('ALL');
+ const sequence=useRef(0);
+ const load=async()=>{const id=++sequence.current;setLoading(true);setError('');try{const data=tab==='my'?await customTournamentApi.getMyTournaments():await customTournamentApi.getPublicTournaments(100);if(id===sequence.current)setItems(data);}catch(e){if(id===sequence.current)setError(e instanceof Error?e.message:'Turnirlarni yuklab bo‘lmadi.');}finally{if(id===sequence.current)setLoading(false);}};
+ const tickets=async()=>{setTicketError('');try{setBalance((await customTournamentApi.getTicketBalance()).balance);}catch(e){setTicketError(e instanceof Error?e.message:'Balans yuklanmadi.');}};
+ useEffect(()=>{try{sessionStorage.setItem(`efl:custom-tab:${user?.id}`,tab);}catch{}load();return()=>{sequence.current++;};},[tab,user?.id]);
+ useEffect(()=>{tickets();},[user?.id]);
+ const visible=items.filter(t=>`${t.name} ${t.description||''}`.toLowerCase().includes(search.trim().toLowerCase())&&(status==='ALL'||t.status===status)&&(format==='ALL'||t.format===format));
+ const filtered=!!search.trim()||status!=='ALL'||format!=='ALL';
+ if(selected)return <TournamentDetailView tournamentId={selected} inviteToken={token} onBack={()=>{setSelected(null);setToken(undefined);load();tickets();}}/>;
+ return <div className="efl-custom-tournaments tourney-page">
+  <header className="tourney-heading"><div><p className="tourney-eyebrow">Do‘stlar bilan musobaqa</p><h1>O‘z turniringiz</h1></div><button className="tourney-button primary" onClick={()=>setWizard(true)}><Plus size={16}/>Yaratish</button></header>
+  <div className="tourney-ticket"><Ticket size={15}/><span>Balans: <strong>{balance??'—'} ticket</strong></span><span>· Yaratish 1 ticket, qatnashish bepul</span>{user?.telegramId==='5209126900'&&<button className="underline min-h-[44px]" onClick={()=>setTicketAdmin(true)}>Ticket boshqaruvi</button>}</div>
+  {ticketError&&<div role="alert" className="tourney-note error">{ticketError}<button className="tourney-button mt-2" onClick={tickets}>Qayta urinish</button></div>}
+  {balance===0&&<div className="tourney-note">Bepul ticket bir marta beriladi. Qatnashish uchun ticket kerak emas. Yana turnir ochish uchun <a href="https://t.me/texnoadmin" target="_blank" rel="noreferrer" className="underline">@texnoadmin</a> bilan bog‘laning.</div>}
+  <nav className="tourney-tabs" aria-label="Turnir ro‘yxati"><button aria-pressed={tab==='my'} onClick={()=>setTab('my')}>Mening turnirlarim</button><button aria-pressed={tab==='all'} onClick={()=>setTab('all')}>Ochiq turnirlar</button></nav>
+  <div className="tourney-toolbar"><label className="tourney-search"><Search size={16}/><input aria-label="Turnir qidirish" placeholder="Nomi bo‘yicha qidirish" value={search} onChange={e=>setSearch(e.target.value)}/></label><button aria-label="Turnir filtrlarini ochish" aria-expanded={filters} className="tourney-button" onClick={()=>setFilters(!filters)}><SlidersHorizontal size={16}/></button></div>
+  {filters&&<div className="tourney-filters"><label className="tourney-field">Holat<select value={status} onChange={e=>setStatus(e.target.value)}><option value="ALL">Barcha holatlar</option><option value="REGISTRATION_OPEN">Qabul ochiq</option><option value="IN_PROGRESS">Davom etmoqda</option><option value="COMPLETED">Yakunlangan</option><option value="CANCELLED">Bekor qilingan</option></select></label><label className="tourney-field">Format<select value={format} onChange={e=>setFormat(e.target.value)}><option value="ALL">Barcha formatlar</option><option value="LEAGUE">Liga</option><option value="PLAYOFF">Pley-off</option><option value="LEAGUE_AND_PLAYOFF">Liga + pley-off</option></select></label></div>}
+  {filtered&&<button className="tourney-button justify-self-start" onClick={()=>{setSearch('');setStatus('ALL');setFormat('ALL');}}>Filtrlarni tozalash</button>}
+  {loading?<div className="tourney-empty"><RefreshCw size={20} className="mx-auto animate-spin"/><p className="mt-3">Turnirlar yuklanmoqda…</p></div>:error?<div role="alert" className="tourney-note error">{error}<button className="tourney-button mt-3" onClick={load}>Qayta urinish</button></div>:visible.length===0?<div className="tourney-empty"><Trophy size={28} className="mx-auto"/><h3>{filtered?'Mos turnir topilmadi':tab==='my'?'Hali turniringiz yo‘q':'Qabul ochiq turnirlar yo‘q'}</h3><p>{filtered?'Qidiruvni yoki filtrlarni o‘zgartiring.':tab==='my'?'Turnir yarating yoki ochiq turnirga qo‘shiling. Taklif havolasi orqali yopiq turnirga ham kira olasiz.':'Yangi turnir yaratib, do‘stlaringizni taklif qiling.'}</p>{!filtered&&<div className="tourney-action-row justify-center"><button className="tourney-button primary" onClick={()=>setWizard(true)}>Turnir yaratish</button>{tab==='my'&&<button className="tourney-button" onClick={()=>setTab('all')}>Ochiq turnirlar</button>}</div>}</div>:<div className="tourney-grid">{visible.map(t=><TournamentCard key={t.id} tournament={t} roleLabel={tab==='my'?(t.organizerUserId===user?.id?'Tashkilotchi':t.assistantAdminIds.includes(user?.id||'')?'Yordamchi':'Qatnashchi'):undefined} onClick={()=>{setToken(undefined);setSelected(t.id);}}/>)}</div>}
+  <TournamentWizardModal isOpen={wizard} onClose={()=>setWizard(false)} onTournamentCreated={id=>{setWizard(false);setTab('my');setToken(undefined);setSelected(id);tickets();}}/>
+  {user?.telegramId==='5209126900'&&<AdminTicketManagementModal isOpen={ticketAdmin} onClose={()=>{setTicketAdmin(false);tickets();}}/>}
+ </div>;
+}
