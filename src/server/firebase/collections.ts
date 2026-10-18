@@ -133,6 +133,7 @@ export interface FirestoreCompetitionParticipantDoc {
 }
 
 export interface FirestoreFixtureDoc {
+  adminScheduledAt?: string;
   id: string;
   competitionId: string;
   competitionName?: string;
@@ -141,6 +142,7 @@ export interface FirestoreFixtureDoc {
   roundName: string;
   homeClubId: string | null;
   awayClubId: string | null;
+  venue?: string | null;
   scheduledAt: string;
   status: string;
   homeScore?: number | null;

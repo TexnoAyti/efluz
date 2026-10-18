@@ -1,3 +1,4 @@
+import { clubStadium } from '../../constants/clubStadiums';
 import { isDomesticCupResult as isResultCup } from '../../lib/cupResult';
 import { cupScoreMetadata, sameResultScores, type CupTieBreakScores, resolveCupResult } from '../../lib/cupResult';
 import {assertEuropeanDrawReady, domesticSeasonComplete, europeanDrawPublished, filterPublishedEuropeanFixtures, isEuropeanFixtureCompetition} from '../services/europeanFixtureGate';
@@ -1712,6 +1713,8 @@ async function getFixturesFirestoreUnfiltered(filter: {
         userSubmission,
         opponentSubmission,
         scheduledAt: r.scheduledAt,
+        venue: r.venue ?? null,
+        adminScheduledAt: r.adminScheduledAt ?? undefined,
         status: r.status as any,
         homeExtraTimeScore: r.homeExtraTimeScore ?? null,
         awayExtraTimeScore: r.awayExtraTimeScore ?? null,
@@ -1910,6 +1913,8 @@ async function executeFixturesFallback(
       userSubmission,
       opponentSubmission,
       scheduledAt: r.scheduled_at,
+    venue: r.venue ?? null,
+        adminScheduledAt: r.admin_scheduled_at ?? undefined,
       status: r.status,
       homeExtraTimeScore: r.home_extra_time_score ?? null,
       awayExtraTimeScore: r.away_extra_time_score ?? null,
@@ -2022,6 +2027,8 @@ export function executeAdminFixturesPagedFallback(options: AdminFixturesQueryOpt
     awayScore: r.away_score,
     status: r.status as MatchStatus,
     scheduledAt: r.scheduled_at,
+    venue: r.venue ?? null,
+        adminScheduledAt: r.admin_scheduled_at ?? undefined,
     homeClub: {
       id: r.home_club_id,
       name: r.home_name || r.home_club_id,
@@ -2221,6 +2228,8 @@ async function getFixtureByIdFirestoreUncorrected(fixtureId: string, currentUser
           userSubmission,
           opponentSubmission,
           scheduledAt: r.scheduledAt,
+        venue: r.venue ?? null,
+        adminScheduledAt: r.adminScheduledAt ?? undefined,
           status: r.status as any,
           homeExtraTimeScore: r.homeExtraTimeScore ?? null,
           awayExtraTimeScore: r.awayExtraTimeScore ?? null,
@@ -2355,6 +2364,8 @@ async function getFixtureByIdFirestoreUncorrected(fixtureId: string, currentUser
     userSubmission,
     opponentSubmission,
     scheduledAt: r.scheduled_at,
+    venue: r.venue ?? null,
+        adminScheduledAt: r.admin_scheduled_at ?? undefined,
     status: r.status,
     homeExtraTimeScore: r.home_extra_time_score ?? null,
     awayExtraTimeScore: r.away_extra_time_score ?? null,
@@ -3501,6 +3512,7 @@ export async function enrichFixturesWithAuthoritativeOwners(
 
     const homeClub = f.homeClub ? {
       ...f.homeClub,
+      stadium: clubStadium(f.homeClubId, f.homeClub.stadium),
       isTaken: Boolean(homeOwner),
       claimedByUserId: homeOwner?.userId || null,
       claimedByUsername: homeOwner?.username || null,
@@ -3515,6 +3527,7 @@ export async function enrichFixturesWithAuthoritativeOwners(
 
     const awayClub = f.awayClub ? {
       ...f.awayClub,
+      stadium: clubStadium(f.awayClubId, f.awayClub.stadium),
       isTaken: Boolean(awayOwner),
       claimedByUserId: awayOwner?.userId || null,
       claimedByUsername: awayOwner?.username || null,
@@ -6066,6 +6079,8 @@ export function getLocalPendingResults(seasonId: string, limitCount = 50): {
         homeOwnerId: r.home_owner_id,
         awayOwnerId: r.away_owner_id,
         scheduledAt: r.scheduled_at,
+    venue: r.venue ?? null,
+        adminScheduledAt: r.admin_scheduled_at ?? undefined,
         status: r.status as any,
         homeScore: r.home_score ?? undefined,
         awayScore: r.away_score ?? undefined,
@@ -6361,6 +6376,8 @@ export async function getPendingResultsFirestore(seasonId = 'season-2026-27'): P
         homeOwnerId: r.homeOwnerId,
         awayOwnerId: r.awayOwnerId,
         scheduledAt: r.scheduledAt,
+        venue: r.venue ?? null,
+        adminScheduledAt: r.adminScheduledAt ?? undefined,
         status: r.status as any,
         homeExtraTimeScore: r.homeExtraTimeScore ?? null,
         awayExtraTimeScore: r.awayExtraTimeScore ?? null,

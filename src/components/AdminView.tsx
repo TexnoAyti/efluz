@@ -1,3 +1,4 @@
+import { AdminFixtureSchedule } from './admin/AdminFixtureSchedule';
 import { AdminMatchdayControl } from './admin/AdminMatchdayControl';
 import type { AdminPermissions } from '../types';
 import { permittedAdminLeagues } from '../lib/adminPermissions';
@@ -2096,6 +2097,8 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
               </div>)}
             </div>
           </div>
+
+          <AdminFixtureSchedule competitions={competitions} />
 
           {/* 1. DOMESTIC LEAGUES (5) */}
           <div className="space-y-3">

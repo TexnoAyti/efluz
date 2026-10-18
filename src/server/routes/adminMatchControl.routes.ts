@@ -1,3 +1,5 @@
+import { z } from 'zod';
+import { previewFixtureSchedule, updateFixtureSchedule } from '../services/fixtureScheduleService';
 import { Router, Request, Response } from 'express';
 import { requireAdmin } from '../middleware/authMiddleware';
 import { getFixtureByIdFirestore } from '../firebase/firestoreStore';
@@ -186,4 +188,25 @@ adminMatchControlRouter.post('/fixtures/:id/remind', async (req: Request, res: R
     console.error('[ADMIN_FIXTURE_REMINDER_FAILED]', JSON.stringify({ fixtureId, error: error?.message || String(error) }));
     res.status(500).json({ error: error?.message || 'Failed to queue fixture reminder.' });
   }
+});
+const scheduleSelector = z.object({
+  seasonId:z.string().min(1).max(100),fixtureId:z.string().min(1).max(200).optional(),competitionId:z.string().min(1).max(200).optional(),
+  includeCompleted:z.preprocess(v=>v==='true'?true:v==='false'?false:v,z.boolean().optional()),
+  category:z.enum(['ALL','LEAGUE','KNOCKOUT','SUPER_CUP','EUROPEAN']).optional(),matchday:z.coerce.number().int().min(1).max(100).optional(),
+});
+const scheduleBody = scheduleSelector.extend({
+  scheduledAt:z.string().datetime({offset:true}).nullable(),venue:z.string().trim().max(150).nullable().optional(),
+  expected:z.array(z.object({id:z.string(),updatedAt:z.string().nullable(),scheduledAt:z.string(),status:z.string()})).min(1).max(5000),
+});
+adminMatchControlRouter.get('/fixture-schedules',async(req,res)=>{
+  const parsed=scheduleSelector.safeParse(req.query);
+  if(!parsed.success){res.status(400).json({error:'INVALID_SCHEDULE_SELECTOR'});return;}
+  try{res.setHeader('Cache-Control','no-store');res.json(await previewFixtureSchedule(req.user!,parsed.data));}
+  catch(error:any){res.status(error.statusCode||503).json({error:error.code||'SCHEDULE_UNAVAILABLE',message:error.message});}
+});
+adminMatchControlRouter.post('/fixture-schedules',async(req,res)=>{
+  const parsed=scheduleBody.safeParse(req.body);
+  if(!parsed.success){res.status(400).json({error:'INVALID_SCHEDULE_INPUT'});return;}
+  try{const {scheduledAt,expected,venue,...selector}=parsed.data;const result=await updateFixtureSchedule(req.user!,selector,scheduledAt,expected.map(f=>({...f,updatedAt:f.updatedAt??null})),venue);res.status(result.partial?409:200).json(result);}
+  catch(error:any){res.status(error.statusCode||503).json({error:error.code||'SCHEDULE_UPDATE_FAILED',message:error.message});}
 });

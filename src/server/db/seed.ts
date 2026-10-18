@@ -1,6 +1,7 @@
 import { queryGet, queryAll, queryRun, dbTransaction } from './index';
 
 interface SeedClub {
+  stadium?: string;
   id: string;
   name: string;
   shortName: string;

@@ -21,7 +21,7 @@ export function isRetiredFixture(id: string, seasonId?: string): boolean {
 
 export function correctFixtureMatchday<T extends { id: string; seasonId?: string }>(fixture: T, seasonId?: string): T {
   const correction = RETIRED_FIXTURES.find(row => row.retainedFixtureId === fixture.id && ((!fixture.seasonId && !seasonId) || row.seasonId === (fixture.seasonId || seasonId)));
-  return correction ? { ...fixture, matchday: correction.matchday, roundName: correction.roundName, scheduledAt: correction.scheduledAt, competitionName: 'Serie A' } : fixture;
+  return correction ? { ...fixture, matchday: correction.matchday, roundName: correction.roundName, scheduledAt: (fixture as any).adminScheduledAt ?? correction.scheduledAt, competitionName: 'Serie A' } : fixture;
 }
 
 export function hasFixtureMatchdayCorrection(competitionId: string, seasonId: string): boolean {
