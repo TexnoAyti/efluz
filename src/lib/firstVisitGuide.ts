@@ -12,7 +12,12 @@ export function saveGuideStatus(userId: string, status: GuideStatus, storage?: G
 
 export type GuideRect = { top: number; left: number; width: number; height: number };
 export function guidePlacement(target: GuideRect | null, width: number, height: number, cardHeight: number) {
-  const cardWidth = Math.min(360, Math.max(0, width - 32));
+  const mobile = width < 680;
+  const cardWidth = Math.min(mobile ? 400 : 380, Math.max(0, width - (mobile ? 24 : 32)));
+  if (mobile) {
+    const bottom = target && target.top > height - 132 ? height - target.top + 16 : height >= 560 ? 104 : 16;
+    return { left: (width - cardWidth) / 2, top: Math.max(16, height - bottom - cardHeight), width: cardWidth, maxHeight: Math.max(1, height - bottom - 16) };
+  }
   const maxTop = Math.max(16, height - cardHeight - 16);
   const left = target ? Math.min(Math.max(16, target.left + target.width / 2 - cardWidth / 2), Math.max(16, width - cardWidth - 16)) : (width - cardWidth) / 2;
   const below = target ? target.top + target.height + 18 : (height - cardHeight) / 2;
