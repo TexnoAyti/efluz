@@ -1,5 +1,5 @@
 import { isDomesticCupResult as isResultCup } from '../../lib/cupResult';
-import { resolveCupResult } from '../../lib/cupResult';
+import { cupScoreMetadata, sameResultScores, type CupTieBreakScores, resolveCupResult } from '../../lib/cupResult';
 import {assertEuropeanDrawReady, domesticSeasonComplete, europeanDrawPublished, filterPublishedEuropeanFixtures, isEuropeanFixtureCompetition} from '../services/europeanFixtureGate';
 import {randomUUID as europeanDrawUUID} from 'node:crypto';
 import { assertTopicResultCurrent, type ExpectedTopicFixture } from '../services/topicResultGuard';
@@ -12,7 +12,7 @@ import { getNotificationControls, notificationVisible } from '../services/notifi
 import { getNotificationReadState, applyNotificationReadState, persistNotificationReadState } from '../services/notificationReadState';
 import { getFirestoreDb } from './admin';
 import { analyzeLeaguePairs } from '../services/leaguePairIntegrity';
-import { queryAll, queryGet, queryRun, dbTransaction, upsertFixtureToSqlite } from '../db';
+import { queryAll, queryGet, queryRun, dbTransaction, upsertFixtureToSqlite, upsertResultSubmissionToSqlite } from '../db';
 import { refreshMaterializedStandingsForCompetition } from '../db/sqliteStandings';
 import { SEED_CLUBS, SEED_LEAGUES, SEED_COMPETITIONS, SEED_SEASONS, SEED_SEASON } from '../db/seed';
 import { checkClubClaimLimit } from '../services/premiumClubRule';
@@ -1620,7 +1620,8 @@ async function getFixturesFirestoreUnfiltered(filter: {
               userId: subData.submittedByUserId,
               submittedByUserId: subData.submittedByUserId,
               clubId: subData.clubId,
-              homeScore: subData.homeScore,
+              ...cupScoreMetadata(subData),
+                homeScore: subData.homeScore,
               awayScore: subData.awayScore,
               proofUrl: subData.proofUrl || null,
               createdAt: subData.createdAt,
@@ -1819,6 +1820,10 @@ async function executeFixturesFallback(
           userId: s.submitted_by_user_id,
           submittedByUserId: s.submitted_by_user_id,
           clubId: s.club_id,
+          homeExtraTimeScore: s.home_extra_time_score ?? null,
+          awayExtraTimeScore: s.away_extra_time_score ?? null,
+          homePenaltyScore: s.home_penalty_score ?? null,
+          awayPenaltyScore: s.away_penalty_score ?? null,
           homeScore: s.home_score,
           awayScore: s.away_score,
           proofUrl: s.proof_url || null,
@@ -2150,6 +2155,7 @@ async function getFixtureByIdFirestoreUncorrected(fixtureId: string, currentUser
                 userId: sData.submittedByUserId,
                 submittedByUserId: sData.submittedByUserId,
                 clubId: sData.clubId,
+                ...cupScoreMetadata(sData),
                 homeScore: sData.homeScore,
                 awayScore: sData.awayScore,
                 proofUrl: sData.proofUrl || null,
@@ -2271,7 +2277,11 @@ async function getFixtureByIdFirestoreUncorrected(fixtureId: string, currentUser
         userId: s.submitted_by_user_id,
         submittedByUserId: s.submitted_by_user_id,
         clubId: s.club_id,
-        homeScore: s.home_score,
+        homeExtraTimeScore: s.home_extra_time_score ?? null,
+          awayExtraTimeScore: s.away_extra_time_score ?? null,
+          homePenaltyScore: s.home_penalty_score ?? null,
+          awayPenaltyScore: s.away_penalty_score ?? null,
+          homeScore: s.home_score,
         awayScore: s.away_score,
         proofUrl: s.proof_url || null,
         createdAt: s.created_at,
@@ -3944,7 +3954,9 @@ export async function submitFixtureResultFirestore(
   fixtureId: string,
   homeScore: number,
   awayScore: number,
-  proofUrl?: string
+  proofUrl?: string,
+  cupScores: CupTieBreakScores = {},
+  options?: { authoritativeOnly?: boolean },
 ): Promise<Fixture> {
   assertFixtureNotRetired(fixtureId);
   assertNoSyntheticIdsInProduction('submitFixtureResultFirestore', [userId, fixtureId]);
@@ -3965,7 +3977,7 @@ export async function submitFixtureResultFirestore(
       throw new Error(`Fixture with ID '${fixtureId}' not found.`);
     }
 
-    if (isResultCup(row.competition_id)) throw Object.assign(new Error('Kubok hisobini faqat admin kirita oladi.'), { code: 'CUP_ADMIN_ONLY', statusCode: 403 });
+
 
     // Isolated competition-specific matchday lock check FIRST
     await assertMatchdayPlayableFirestore(row.season_id || 'season-2026-27', row.competition_id, row.matchday);
@@ -4010,8 +4022,9 @@ export async function submitFixtureResultFirestore(
       throw err;
     }
 
+    const resolution = resolveCupResult({ homeScore, awayScore, ...cupScoreMetadata(cupScores) }, { homeClubId: row.home_club_id, awayClubId: row.away_club_id }, isResultCup(row.competition_id));
     const existingSubs = queryAll<any>('SELECT * FROM result_submissions WHERE fixture_id = ?', [fixtureId]);
-    const otherSub = existingSubs.find((s) => s.submitted_by_user_id !== userId);
+    const otherSub = existingSubs.find((s) => s.submitted_by_user_id !== userId && s.club_id === (userClubId === row.home_club_id ? row.away_club_id : row.home_club_id));
     let newStatus = 'PENDING_CONFIRMATION';
     let confirmedHomeScore: number | null = null;
     let confirmedAwayScore: number | null = null;
@@ -4019,13 +4032,12 @@ export async function submitFixtureResultFirestore(
     let confirmedAt: string | null = null;
 
     if (otherSub) {
-      if (otherSub.home_score === homeScore && otherSub.away_score === awayScore) {
+      if (sameResultScores({ homeScore: otherSub.home_score, awayScore: otherSub.away_score, homeExtraTimeScore: otherSub.home_extra_time_score, awayExtraTimeScore: otherSub.away_extra_time_score, homePenaltyScore: otherSub.home_penalty_score, awayPenaltyScore: otherSub.away_penalty_score }, { homeScore, awayScore, ...cupScoreMetadata(cupScores) })) {
         newStatus = 'CONFIRMED';
         confirmedHomeScore = homeScore;
         confirmedAwayScore = awayScore;
         confirmedAt = now;
-        if (confirmedHomeScore > confirmedAwayScore) winnerClubId = row.home_club_id;
-        else if (confirmedAwayScore > confirmedHomeScore) winnerClubId = row.away_club_id;
+        winnerClubId = resolution.winnerClubId;
       } else {
         newStatus = 'DISPUTED';
       }
@@ -4038,6 +4050,7 @@ export async function submitFixtureResultFirestore(
       userClubId,
       homeScore,
       awayScore,
+      ...cupScoreMetadata(cupScores),
       proofUrl: proofUrl || null,
       submissionId,
       seasonId: row.season_id || 'season-2026-27',
@@ -4068,16 +4081,8 @@ export async function submitFixtureResultFirestore(
     });
 
     // 2. Only after Redis persistence succeeds: update local SQLite/read model
-    queryRun(
-      `INSERT OR REPLACE INTO result_submissions (id, fixture_id, submitted_by_user_id, club_id, home_score, away_score, proof_url, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [submissionId, fixtureId, userId, userClubId, homeScore, awayScore, proofUrl || null, now]
-    );
-
-    queryRun(
-      `UPDATE fixtures SET status = ?, home_score = ?, away_score = ?, winner_club_id = ?, result_confirmed_at = ?, updated_at = ? WHERE id = ?`,
-      [newStatus, confirmedHomeScore, confirmedAwayScore, winnerClubId, confirmedAt, now, fixtureId]
-    );
+    upsertResultSubmissionToSqlite({ id: submissionId, fixtureId, submittedByUserId: userId, clubId: userClubId, homeScore, awayScore, proofUrl, createdAt: now, ...cupScoreMetadata(cupScores) });
+    upsertFixtureToSqlite({ id: fixtureId, status: newStatus, homeScore: confirmedHomeScore, awayScore: confirmedAwayScore, winnerClubId, resultConfirmedAt: confirmedAt, updatedAt: now, ...cupScoreMetadata(newStatus === 'CONFIRMED' ? cupScores : {}) });
 
     invalidateFirestoreCache(`firestore:fixture:${fixtureId}:`);
     invalidateFirestoreCache('firestore:fixtures');
@@ -4090,6 +4095,7 @@ export async function submitFixtureResultFirestore(
   };
 
   if (!firestoreCircuitBreaker.canExecute()) {
+    if (options?.authoritativeOnly) throw new Error('AUTHORITATIVE_WRITE_REQUIRED');
     recordFallbackUsage();
     return await executeFallbackSubmit();
   }
@@ -4103,7 +4109,7 @@ export async function submitFixtureResultFirestore(
     }
 
     const fixture = fixDoc.data() as FirestoreFixtureDoc;
-    if (isResultCup(fixture.competitionId)) throw Object.assign(new Error('Kubok hisobini faqat admin kirita oladi.'), { code: 'CUP_ADMIN_ONLY', statusCode: 403 });
+
 
     // Authoritative Server-Side Isolated Matchday Lock Check FIRST
     if (fixture.competitionId && fixture.matchday) {
@@ -4137,6 +4143,7 @@ export async function submitFixtureResultFirestore(
       confirmedAwayScore: number | null;
       winnerClubId: string | null;
       confirmedAt: string | null;
+      confirmedCupScores: ReturnType<typeof cupScoreMetadata>;
     };
 
     // Submission, consensus, dispute and fixture state are one serializable unit.
@@ -4174,6 +4181,7 @@ export async function submitFixtureResultFirestore(
         throw Object.assign(new Error('You do not own either the home or away club in this fixture.'), { code: 'RESULT_NOT_PARTICIPANT', statusCode: 403 });
       }
 
+      const resolution = resolveCupResult({ homeScore, awayScore, ...cupScoreMetadata(cupScores) }, currentFixture, isResultCup(currentFixture.competitionId));
       const currentSubmission: FirestoreResultSubmissionDoc = {
         id: submissionId,
         fixtureId,
@@ -4181,6 +4189,7 @@ export async function submitFixtureResultFirestore(
         clubId: userClubId,
         homeScore,
         awayScore,
+        ...cupScoreMetadata(cupScores),
         proofUrl: proofUrl || null,
         createdAt: now,
       };
@@ -4205,13 +4214,12 @@ export async function submitFixtureResultFirestore(
       let confirmedAt: string | null = null;
 
       if (homeSubmission && awaySubmission) {
-        if (homeSubmission.homeScore === awaySubmission.homeScore && homeSubmission.awayScore === awaySubmission.awayScore) {
+        if (sameResultScores(homeSubmission, awaySubmission)) {
           newStatus = 'CONFIRMED';
           confirmedHomeScore = homeSubmission.homeScore;
           confirmedAwayScore = homeSubmission.awayScore;
           confirmedAt = now;
-          if (confirmedHomeScore > confirmedAwayScore) winnerClubId = currentFixture.homeClubId;
-          else if (confirmedAwayScore > confirmedHomeScore) winnerClubId = currentFixture.awayClubId;
+          winnerClubId = resolution.winnerClubId;
           transaction.set(disputeRef, {
             id: `disp-${fixtureId}`,
             fixtureId,
@@ -4237,17 +4245,19 @@ export async function submitFixtureResultFirestore(
         }
       }
 
+      const confirmedCupScores = cupScoreMetadata(newStatus === 'CONFIRMED' ? cupScores : {});
       transaction.set(subRef, currentSubmission);
       transaction.update(fixRef, {
         status: newStatus,
         homeScore: confirmedHomeScore,
         awayScore: confirmedAwayScore,
         winnerClubId,
+        ...confirmedCupScores,
         resultConfirmedAt: confirmedAt,
         updatedAt: now,
       });
 
-      return { fixture: currentFixture, userClubId, newStatus, confirmedHomeScore, confirmedAwayScore, winnerClubId, confirmedAt };
+      return { fixture: currentFixture, userClubId, newStatus, confirmedHomeScore, confirmedAwayScore, winnerClubId, confirmedAt, confirmedCupScores };
     });
 
     const { userClubId, newStatus, confirmedHomeScore, confirmedAwayScore, winnerClubId, confirmedAt } = consensus;
@@ -4262,15 +4272,8 @@ export async function submitFixtureResultFirestore(
 
     // Also persist in SQLite for offline resilience
     try {
-      queryRun(
-        `INSERT OR REPLACE INTO result_submissions (id, fixture_id, submitted_by_user_id, club_id, home_score, away_score, proof_url, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [submissionId, fixtureId, userId, userClubId, homeScore, awayScore, proofUrl || null, now]
-      );
-      queryRun(
-        `UPDATE fixtures SET status = ?, home_score = ?, away_score = ?, winner_club_id = ?, result_confirmed_at = ?, updated_at = ? WHERE id = ?`,
-        [newStatus, confirmedHomeScore, confirmedAwayScore, winnerClubId, confirmedAt, now, fixtureId]
-      );
+      upsertResultSubmissionToSqlite({ id: submissionId, fixtureId, submittedByUserId: userId, clubId: userClubId, homeScore, awayScore, proofUrl, createdAt: now, ...cupScoreMetadata(cupScores) });
+      upsertFixtureToSqlite({ id: fixtureId, seasonId: consensus.fixture.seasonId, competitionId: consensus.fixture.competitionId, homeClubId: consensus.fixture.homeClubId, awayClubId: consensus.fixture.awayClubId, matchday: consensus.fixture.matchday, status: newStatus, homeScore: confirmedHomeScore, awayScore: confirmedAwayScore, winnerClubId, resultConfirmedAt: confirmedAt, updatedAt: now, ...consensus.confirmedCupScores });
     } catch (sqliteErr) {
       console.warn('[SQLITE_SYNC] Non-blocking SQLite sync error on result submit:', sqliteErr);
     }
@@ -4303,7 +4306,7 @@ export async function submitFixtureResultFirestore(
 
     // If error is user-validation error, rethrow directly
     if (
-      firestoreErr?.code === 'CUP_ADMIN_ONLY' ||
+      options?.authoritativeOnly || firestoreErr?.code === 'INVALID_CUP_RESULT' ||
       firestoreErr?.code === 'SELF_OWNED_MATCH' ||
       errMsg.includes('not found') ||
       errMsg.includes('already CONFIRMED') ||
@@ -6020,7 +6023,11 @@ export function getLocalPendingResults(seasonId: string, limitCount = 50): {
         submitterUsername: s.submitted_by_user_id,
         submitterName: s.submitted_by_user_id,
         clubId: s.club_id,
-        homeScore: s.home_score,
+        homeExtraTimeScore: s.home_extra_time_score ?? null,
+          awayExtraTimeScore: s.away_extra_time_score ?? null,
+          homePenaltyScore: s.home_penalty_score ?? null,
+          awayPenaltyScore: s.away_penalty_score ?? null,
+          homeScore: s.home_score,
         awayScore: s.away_score,
         proofUrl: s.proof_url,
         createdAt: s.created_at,
@@ -6305,7 +6312,8 @@ export async function getPendingResultsFirestore(seasonId = 'season-2026-27'): P
           submitterUsername: subData.submittedByUserId,
           submitterName: subData.submittedByUserId,
           clubId: subData.clubId,
-          homeScore: subData.homeScore,
+          ...cupScoreMetadata(subData),
+                homeScore: subData.homeScore,
           awayScore: subData.awayScore,
           proofUrl: subData.proofUrl,
           createdAt: subData.createdAt,

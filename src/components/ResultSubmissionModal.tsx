@@ -1,7 +1,8 @@
-import { isDomesticCupResult } from '../lib/cupResult';
+import { CupTieBreakFields, CupScoreSummary } from './CupTieBreakFields';
+import { cupScoreMetadata, resolveCupResult, isDomesticCupResult } from '../lib/cupResult';
 import { CupMatchModal } from './CupMatchModal';
 import { EFL_2_DESIGN_ENABLED } from '../releaseDesign';
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Fixture } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
@@ -34,7 +35,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
   onClose,
   onSuccess,
 }) => {
-  const { user, showToast } = useAuth();
+  const { user, showToast, ownedClubs } = useAuth();
   const { language } = useI18n();
   const previewCopy = {
     uz: { title: 'Natijani kiritish', matchday: 'tur', you: 'Siz', claimed: 'Tanlangan', unclaimed: 'Egasi yo‘q', opponent: 'Raqib kiritgan natija', opponentHint: 'Hisoblar bir xil bo‘lsa natija tasdiqlanadi. Farq qilsa nizo ko‘rib chiqiladi.', score: 'eFootball o‘yinidagi yakuniy hisob', proof: 'O‘yin skrinshoti havolasi (ixtiyoriy)', proofHint: 'Skrinshot kelishmovchilik bo‘lsa natijani tekshirishga yordam beradi.', cancel: 'Bekor qilish', sending: 'Yuborilmoqda...', submit: 'Hisobni yuborish', confirmed: 'Natija tasdiqlandi va jadval yangilandi.', disputed: 'Hisoblar farq qildi. Nizo adminga yuborildi.', pending: 'Natija yuborildi. Raqib tasdig‘i kutilmoqda.', failed: 'Natijani yuborib bo‘lmadi.' },
@@ -53,14 +54,35 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
   const [awayScore, setAwayScore] = useState<number>(
     fixture.userSubmission ? fixture.userSubmission.awayScore : 0
   );
+  const isCup = isDomesticCupResult(fixture.competitionId);
+  const isParticipant = Boolean(user && (isHomeOwner || isAwayOwner || ownedClubs.some(club => club.id === fixture.homeClubId || club.id === fixture.awayClubId)));
+  const [cupScores, setCupScores] = useState(cupScoreMetadata(fixture.userSubmission || {}));
   const [proofUrl, setProofUrl] = useState<string>(
     fixture.userSubmission?.proofUrl || ''
   );
+  const [opponentSubmission, setOpponentSubmission] = useState(fixture.opponentSubmission);
+  const formChanged = useRef(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!isOpen || !isCup || !isParticipant) return;
+    let cancelled = false;
+    api.getFixture(fixture.id, true).then(({ fixture: latest }) => {
+      if (cancelled) return;
+      setOpponentSubmission(latest.opponentSubmission);
+      if (!formChanged.current && latest.userSubmission) {
+        setHomeScore(latest.userSubmission.homeScore);
+        setAwayScore(latest.userSubmission.awayScore);
+        setCupScores(cupScoreMetadata(latest.userSubmission));
+        setProofUrl(latest.userSubmission.proofUrl || '');
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [fixture.id, isOpen, isCup, isParticipant]);
+
   if (!isOpen) return null;
-  if (isDomesticCupResult(fixture.competitionId)) return <CupMatchModal fixture={fixture} onClose={onClose} onSuccess={(updated) => { onSuccess(updated); onClose(); }} />;
+  if (isCup && (!isParticipant || fixture.status === 'CONFIRMED')) return <CupMatchModal fixture={fixture} onClose={onClose} onSuccess={(updated) => { onSuccess(updated); onClose(); }} />;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,7 +90,8 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
     setErrorMsg(null);
 
     try {
-      const res = await api.submitFixtureResult(fixture.id, homeScore, awayScore, proofUrl.trim() || undefined);
+      if (isCup) resolveCupResult({ homeScore, awayScore, ...cupScores }, fixture, true);
+      const res = await api.submitFixtureResult(fixture.id, homeScore, awayScore, proofUrl.trim() || undefined, isCup ? cupScores : {});
 
       if (res.fixture.status === 'CONFIRMED') {
         // Trigger celebratory confetti
@@ -146,7 +169,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
         </div>
 
         {/* Content Body */}
-        <form onSubmit={handleSubmit} className="p-5 overflow-y-auto space-y-4">
+        <form onChange={() => { formChanged.current = true; }} onSubmit={handleSubmit} className="p-5 overflow-y-auto space-y-4">
           {/* Match Teams Banner */}
           <div
             className={`p-4 rounded-2xl border ${
@@ -232,7 +255,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
           </div>
 
           {/* Opponent Submission Status Notification */}
-          {fixture.opponentSubmission && (
+          {opponentSubmission && (
             <div
               className={`p-3.5 rounded-2xl border text-xs space-y-1.5 ${
                 EFL_2_DESIGN_ENABLED
@@ -247,7 +270,8 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
               >
                 <Clock className="w-4 h-4 text-blue-500 efl-theme-blue dark:text-blue-400 shrink-0" />
                 <span>
-                  {c?.opponent || 'Opponent Submitted'}: {fixture.opponentSubmission.homeScore} - {fixture.opponentSubmission.awayScore}
+                  {c?.opponent || 'Opponent Submitted'}: {opponentSubmission.homeScore} - {opponentSubmission.awayScore}
+                  {isCup && <CupScoreSummary scores={opponentSubmission} />}
                 </span>
               </div>
               <p
@@ -267,7 +291,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
                 EFL_2_DESIGN_ENABLED ? 'text-slate-600 efl-theme-text-2 dark:text-slate-400' : 'text-slate-300 efl-theme-text-2'
               }`}
             >
-              {c?.score || 'Official Match Score'}
+              {isCup ? (language === 'uz' ? 'Asosiy vaqt hisobi' : language === 'ru' ? 'Счёт основного времени' : 'Regulation time score') : c?.score || 'Official Match Score'}
             </label>
             <div
               className={`grid grid-cols-2 gap-3 p-4 rounded-2xl border ${
@@ -373,6 +397,8 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
               </div>
             </div>
           </div>
+
+          {isCup && <CupTieBreakFields value={cupScores} onChange={(value) => setCupScores(cupScoreMetadata(value))} homeScore={homeScore} awayScore={awayScore} homeLabel={fixture.homeClub?.name || "Home"} awayLabel={fixture.awayClub?.name || "Away"} />}
 
           {/* Screenshot / Proof URL */}
           <div>

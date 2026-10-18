@@ -1,3 +1,4 @@
+import { cupScoreMetadata, type CupTieBreakScores } from '../../lib/cupResult';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -271,6 +272,7 @@ export async function initDatabase(): Promise<Database> {
   } catch {}
   for (const column of ['home_extra_time_score', 'away_extra_time_score', 'home_penalty_score', 'away_penalty_score']) {
     try { dbInstance.exec(`ALTER TABLE fixtures ADD COLUMN ${column} INTEGER;`); } catch {}
+    try { dbInstance.exec(`ALTER TABLE result_submissions ADD COLUMN ${column} INTEGER;`); } catch {}
   }
   // Legacy databases enforced one club per user. The claim transaction now enforces
   // the season entitlement and different-league limit before writing either club.
@@ -631,4 +633,13 @@ export function upsertFixtureToSqlite(fixture: SqliteFixtureUpsertInput): void {
     ]
   );
   saveDatabaseSync();
+}
+
+export function upsertResultSubmissionToSqlite(submission: CupTieBreakScores & { id: string; fixtureId: string; submittedByUserId: string; clubId: string; homeScore: number; awayScore: number; proofUrl?: string | null; createdAt: string }): void {
+  const metadata = cupScoreMetadata(submission);
+  queryRun(`INSERT OR REPLACE INTO result_submissions
+    (id, fixture_id, submitted_by_user_id, club_id, home_score, away_score, proof_url, created_at, home_extra_time_score, away_extra_time_score, home_penalty_score, away_penalty_score)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [submission.id, submission.fixtureId, submission.submittedByUserId, submission.clubId, submission.homeScore, submission.awayScore, submission.proofUrl || null, submission.createdAt,
+      metadata.homeExtraTimeScore, metadata.awayExtraTimeScore, metadata.homePenaltyScore, metadata.awayPenaltyScore]);
 }

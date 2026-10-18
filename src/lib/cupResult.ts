@@ -45,3 +45,19 @@ export function resolveCupResult(
   if (status !== 'CONFIRMED') winnerClubId = null;
   return { homeExtraTimeScore, awayExtraTimeScore, homePenaltyScore, awayPenaltyScore, winnerClubId };
 }
+
+export type CupTieBreakScores = Omit<CupResultScores, 'homeScore' | 'awayScore'>;
+
+export function cupScoreMetadata(scores: CupTieBreakScores = {}) {
+  return {
+    homeExtraTimeScore: scores.homeExtraTimeScore ?? null,
+    awayExtraTimeScore: scores.awayExtraTimeScore ?? null,
+    homePenaltyScore: scores.homePenaltyScore ?? null,
+    awayPenaltyScore: scores.awayPenaltyScore ?? null,
+  };
+}
+
+export function sameResultScores(a: CupResultScores, b: CupResultScores): boolean {
+  return a.homeScore === b.homeScore && a.awayScore === b.awayScore &&
+    (Object.keys(cupScoreMetadata()) as (keyof CupTieBreakScores)[]).every(key => (a[key] ?? null) === (b[key] ?? null));
+}

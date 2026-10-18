@@ -1,4 +1,4 @@
-import { isDomesticCupResult, resolveCupResult } from '../../lib/cupResult';
+import { cupScoreMetadata, isDomesticCupResult, resolveCupResult } from '../../lib/cupResult';
 import type { Firestore } from 'firebase-admin/firestore';
 import { COLLECTIONS } from '../firebase/collections';
 
@@ -25,6 +25,7 @@ export async function resolveDisputeAtomically(db: Firestore, actorId: string, d
     const fixture: any = fixtureDoc.data();
     if (fixture.status !== 'DISPUTED') throw new Error('DISPUTE_FIXTURE_CHANGED');
     let homeScore: number | null = null, awayScore: number | null = null;
+    let tieBreak = cupScoreMetadata();
     if (params.action === 'MANUAL_SCORE') {
       if (!validScore(params.manualHomeScore) || !validScore(params.manualAwayScore)) throw new Error('DISPUTE_MANUAL_SCORE_REQUIRED');
       homeScore = params.manualHomeScore; awayScore = params.manualAwayScore;
@@ -38,12 +39,13 @@ export async function resolveDisputeAtomically(db: Firestore, actorId: string, d
       if (!submissionDoc.exists || submission?.fixtureId !== dispute.fixtureId || submission?.clubId !== (home ? fixture.homeClubId : fixture.awayClubId)) throw new Error('DISPUTE_SUBMISSION_MISMATCH');
       if (!validScore(submission.homeScore) || !validScore(submission.awayScore)) throw new Error('DISPUTE_SUBMISSION_SCORE_INVALID');
       homeScore = submission.homeScore; awayScore = submission.awayScore;
+      tieBreak = cupScoreMetadata(submission);
     } else if (params.action !== 'CANCEL_MATCH') throw new Error('INVALID_DISPUTE_RESOLUTION');
     const now = new Date().toISOString();
     const confirmed = params.action !== 'CANCEL_MATCH';
-    if (confirmed) resolveCupResult({ homeScore: homeScore!, awayScore: awayScore! }, fixture as any, isDomesticCupResult(fixture.competitionId));
+    const result = confirmed ? resolveCupResult({ homeScore: homeScore!, awayScore: awayScore!, ...tieBreak }, fixture as any, isDomesticCupResult(fixture.competitionId)) : { ...cupScoreMetadata(), winnerClubId: null };
     const patch = { status: confirmed ? 'CONFIRMED' : 'POSTPONED', homeScore, awayScore,
-      winnerClubId: confirmed && homeScore !== awayScore ? (homeScore! > awayScore! ? fixture.homeClubId : fixture.awayClubId) : null,
+      ...result,
       resultConfirmedAt: confirmed ? now : null, updatedAt: now };
     const resolution = { status: 'RESOLVED', resolvedByUserId: actorId, resolutionNotes: params.notes || null, resolvedAt: now };
     transaction.update(fixtureRef, patch);

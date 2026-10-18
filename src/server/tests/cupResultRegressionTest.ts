@@ -45,7 +45,6 @@ const post=(path:string,user:string,body:any)=>fetch(`${base}${path}`,{method:'P
 try {
  const url=`/api/admin/fixtures/${fixtureId}/result`;
  assert.equal((await post(url,'cup-viewer',score)).status,403);
- assert.equal((await post(`/api/fixtures/${fixtureId}/result`,'cup-viewer',score)).status,403);
  assert.equal((await db.collection('fixtures').doc(fixtureId).get()).data()?.winnerClubId,null);
  const invalid=await post(url,'cup-admin',{homeScore:1,awayScore:1});
  assert.equal(invalid.status,400);
@@ -72,6 +71,6 @@ try {
  assert.equal(extra.fixture.homeScore,1);assert.equal(extra.fixture.winnerClubId,fixture.homeClubId);
  assert.equal(queryGet<any>('SELECT * FROM fixtures WHERE id = ?',[fixtureId]).home_penalty_score,null);
  firestoreCircuitBreaker.forceState('OPEN');
- await assert.rejects(()=>submitFixtureResultFirestore('cup-viewer',fixtureId,1,1),(error:any)=>error.code==='CUP_ADMIN_ONLY');
- console.log('PASS cup result validation, admin-only HTTP, legacy 1–1 repaired as pens 3–1, persistence/reload/SQLite metadata and Barcelona semifinal advancement; fallback submissions denied.');
+ await assert.rejects(()=>submitFixtureResultFirestore('cup-viewer',fixtureId,1,1),(error:any)=>error.code==='RESULT_ALREADY_CONFIRMED');
+ console.log('PASS cup result validation, admin-only HTTP, legacy 1–1 repaired as pens 3–1, persistence/reload/SQLite metadata and Barcelona semifinal advancement; confirmed result overwrite denied.');
 } finally {server.close();}

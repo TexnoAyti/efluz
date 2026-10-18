@@ -17,6 +17,11 @@ export const fixturesRouter = Router();
 export const fixturesResilientRouter = fixturesRouter;
 
 const resultSubmissionSchema = z.object({
+  homeExtraTimeScore: z.number().int().min(0).max(99).nullable().optional(),
+  awayExtraTimeScore: z.number().int().min(0).max(99).nullable().optional(),
+  homePenaltyScore: z.number().int().min(0).max(99).nullable().optional(),
+  awayPenaltyScore: z.number().int().min(0).max(99).nullable().optional(),
+
   homeScore: z.number().int().min(0, 'Home score must be >= 0').max(99, 'Home score must be <= 99'),
   awayScore: z.number().int().min(0, 'Away score must be >= 0').max(99, 'Away score must be <= 99'),
   proofUrl: z.string().url().max(2048).refine((value) => new URL(value).protocol === 'https:', {
@@ -41,7 +46,7 @@ fixturesRouter.get('/:id', async (req: Request, res: Response) => {
 fixturesRouter.post('/:id/result', requireAuth, validateBody(resultSubmissionSchema), async (req: Request, res: Response) => {
   const userId = req.user!.id;
   const fixtureId = req.params.id;
-  const { homeScore, awayScore, proofUrl } = req.body;
+  const { homeScore, awayScore, proofUrl, homeExtraTimeScore, awayExtraTimeScore, homePenaltyScore, awayPenaltyScore } = req.body;
 
   try {
     const existingFixture = await getFixtureByIdFirestore(fixtureId, userId);
@@ -49,13 +54,9 @@ fixturesRouter.post('/:id/result', requireAuth, validateBody(resultSubmissionSch
       res.status(404).json({ error: 'Fixture not found', code: 'NOT_FOUND' });
       return;
     }
-    if (isDomesticCup(existingFixture.competitionId)) {
-      res.status(403).json({ error: 'CUP_ADMIN_ONLY', code: 'CUP_ADMIN_ONLY', message: 'Kubok hisobini faqat admin kirita oladi.' });
-      return;
-    }
     await assertFixtureLifecycleOpen(existingFixture);
 
-    const updatedFixture = await submitFixtureResultFirestore(userId, fixtureId, homeScore, awayScore, proofUrl);
+    const updatedFixture = await submitFixtureResultFirestore(userId, fixtureId, homeScore, awayScore, proofUrl, { homeExtraTimeScore, awayExtraTimeScore, homePenaltyScore, awayPenaltyScore });
 
     if (updatedFixture.status === 'CONFIRMED' && isDomesticCup(updatedFixture.competitionId)) {
       await advanceDomesticCupWinnerSafe(fixtureId, {
