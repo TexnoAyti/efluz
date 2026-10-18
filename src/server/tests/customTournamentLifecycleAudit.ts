@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {getFirestoreDb} from '../firebase/admin';
-import {createTournament,claimTournamentClub,startTournament,submitCustomMatchResult,getTournamentByIdWithAccess,correctCustomMatchScore,getPublicTournaments,getTournamentAuditLogs,reviewTournamentParticipant,updateAssistantAdmins} from '../services/customTournamentService';
+import {createTournament,claimTournamentClub,startTournament,submitCustomMatchResult,getTournamentByIdWithAccess,correctCustomMatchScore,getPublicTournaments,getTournamentAuditLogs,reviewTournamentParticipant,updateAssistantAdmins,updateTournamentSettings} from '../services/customTournamentService';
 import {generateRoundRobinFixtures,generateTournamentPreview} from '../services/customTournamentEngine';
 import {SEED_CLUBS} from '../db/seed';
 export async function verifyCustomTournamentLifecycle(failNextStartChunk:()=>void){
@@ -106,6 +106,22 @@ export async function verifyCustomTournamentLifecycle(failNextStartChunk:()=>voi
  assert.equal(fd.tournament.status,'COMPLETED');assert.equal(fd.tournament.winnerClubId,finals[0].homeClubId);
  await assert.rejects(correctCustomMatchScore({...finalScore,adminUserId:directFinal.organizerUserId,homeScore:2,awayScore:0,penaltyHomeScore:3,penaltyAwayScore:1}),/penalti/i,'Non-tied game cannot carry a shootout');
  assert.equal((await getTournamentByIdWithAccess(directFinal.id,directFinal.organizerUserId)).tournament.winnerClubId,finals[0].homeClubId,'Rejected correction preserves champion');
+ const editable=await prepare('LEAGUE_AND_PLAYOFF',8,{playoffQualifiersCount:4});
+ const edits={name:'Edited groups',maxParticipants:8,visibility:editable.visibility,spectatorAccess:editable.spectatorAccess,matchDurationHours:48,rules:{...editable.rules,groupStageMode:'GROUPS' as const,groupsCount:4 as const,playoffQualifiersCount:4 as const,roundsCount:2 as const}};
+ await assert.rejects(updateTournamentSettings(editable.id,'outsider',edits),/huquq/i);
+ await assert.rejects(updateTournamentSettings(editable.id,editable.organizerUserId,{...edits,rules:{...edits.rules,playoffQualifiersCount:2}}),/guruh/i);
+ assert.equal((await getTournamentByIdWithAccess(editable.id,editable.organizerUserId)).tournament.rules.groupStageMode??'SINGLE_TABLE','SINGLE_TABLE','Invalid rule edit has no partial writes');
+ await updateTournamentSettings(editable.id,editable.organizerUserId,edits);
+ let ed=await getTournamentByIdWithAccess(editable.id,editable.organizerUserId);
+ assert.equal(ed.tournament.rules.groupsCount,4);assert.equal(ed.tournament.rules.roundsCount,2);assert.equal(ed.tournament.rules.matchDurationHours,48);
+ assert.equal(ed.fixtures.length,0,'Pre-start rule edits do not prematurely generate a schedule');
+ assert.equal(ed.participants.length,8,'Rule edits preserve club claims and participants');
+ await startTournament({tournamentId:editable.id,userId:editable.organizerUserId});
+ ed=await getTournamentByIdWithAccess(editable.id,editable.organizerUserId);
+ assert.equal(ed.fixtures.length,8,'Four groups of two clubs play both home and away after edited rules');
+ assert.equal(new Set(ed.participants.map(p=>p.groupIndex)).size,4);
+ await assert.rejects(updateTournamentSettings(editable.id,editable.organizerUserId,edits),/boshlanishidan/i);
+ assert.ok((await getTournamentAuditLogs(editable.id,editable.organizerUserId)).some(log=>log.action==='SETTINGS_UPDATED'&&log.details?.rules?.groupsCount===4));
  const resume=await prepare('LEAGUE',22,{roundsCount:2});
  failNextStartChunk();
  await assert.rejects(startTournament({tournamentId:resume.id,userId:resume.organizerUserId}),/POSTGRES_RPC_HTTP_400/);

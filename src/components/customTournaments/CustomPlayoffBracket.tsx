@@ -1,3 +1,4 @@
+import {customAggregateScore} from '../../lib/customTournamentMatches';
 import React, { useMemo } from 'react';
 import { SofaBracketTree, type BracketFixture } from '../SofaBracketTree';
 import type { Club } from '../../types';
@@ -8,9 +9,10 @@ const roundNames: Record<string, string> = {
   PLAYOFF_QF: 'Quarter-final', PLAYOFF_SF: 'Semi-final', PLAYOFF_FINAL: 'Final',
 };
 
-export function CustomPlayoffBracket({ fixtures }: { fixtures: CustomTournamentFixture[] }) {
-  const matches = useMemo(() => fixtures.filter(f => roundNames[f.stage] && f.leg === 1).map(f => {
+export function buildCustomBracketFixtures(fixtures:CustomTournamentFixture[]):BracketFixture[]{
+  return fixtures.filter(f => roundNames[f.stage] && f.leg === 1).map(f => {
     const second = fixtures.find(other => other.id === f.id.replace(/_l1$/, '_l2'));
+    const aggregate=customAggregateScore(f,second);
     const finished = f.status === 'BYE_AUTO_ADVANCED' || (f.status === 'CONFIRMED' && (!second || second.status === 'CONFIRMED'));
     const status = finished ? 'CONFIRMED' : f.status === 'DISPUTED' || second?.status === 'DISPUTED' ? 'DISPUTED' : second && f.status === 'CONFIRMED' ? second.status : f.status;
     const club = (id: string, name: string, logoUrl?: string): Club => ({
@@ -24,12 +26,16 @@ export function CustomPlayoffBracket({ fixtures }: { fixtures: CustomTournamentF
       homeClub: club(f.homeClubId, f.homeClubName, f.homeClubLogoUrl),
       awayClub: club(f.awayClubId, f.awayClubName, f.awayClubLogoUrl),
       status: status === 'BYE_AUTO_ADVANCED' ? 'CONFIRMED' : status,
-      homeScore: f.homeScore, awayScore: f.awayScore, winnerClubId: finished ? f.winnerClubId || second?.winnerClubId : null,
+      homeScore: aggregate?.home??f.homeScore, awayScore: aggregate?.away??f.awayScore, winnerClubId: finished ? f.winnerClubId || second?.winnerClubId : null,
       scheduledAt: f.deadlineAt, createdAt: '', updatedAt: '',
       nextMatchFixtureId: f.nextMatchFixtureId,
-      penaltyHomeScore: f.penaltyHomeScore, penaltyAwayScore: f.penaltyAwayScore,
-      secondLegLabel: second ? `2-o‘yin: ${second.homeClubName} ${second.homeScore ?? '–'}:${second.awayScore ?? '–'} ${second.awayClubName}${second.penaltyHomeScore != null ? ` (pen: ${second.penaltyHomeScore}:${second.penaltyAwayScore})` : ''}` : undefined,
+      penaltyHomeScore: second?second.penaltyAwayScore:f.penaltyHomeScore, penaltyAwayScore: second?second.penaltyHomeScore:f.penaltyAwayScore,
+      secondLegLabel: second ? `${aggregate?'Umumiy hisob · ':''}2-o‘yin: ${second.homeClubName} ${second.homeScore ?? '–'}:${second.awayScore ?? '–'} ${second.awayClubName}${second.penaltyHomeScore != null ? ` (pen: ${second.penaltyHomeScore}:${second.penaltyAwayScore})` : ''}` : undefined,
     } satisfies BracketFixture;
-  }), [fixtures]);
-  return <SofaBracketTree fixtures={matches} />;
+  });
+}
+
+export function CustomPlayoffBracket({fixtures}:{fixtures:CustomTournamentFixture[]}){
+  const matches=useMemo(()=>buildCustomBracketFixtures(fixtures),[fixtures]);
+  return <SofaBracketTree fixtures={matches}/>;
 }
