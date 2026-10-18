@@ -19,6 +19,7 @@ import {
 
 import { requestDurableClubClaim, getClubClaimReceipt } from '../services/durableClubClaim';
 import { scheduleMutationReconciliation } from '../sync/scheduleReconciliation';
+import { getPublicClubFixtures } from '../services/publicClubFixtures';
 
 export const clubsRouter = Router();
 
@@ -326,6 +327,16 @@ clubsRouter.get('/:id/crest', async (req: Request, res: Response) => {
 });
 
 // 3. Club by ID endpoint
+clubsRouter.get('/:id/fixtures', async (req: Request, res: Response) => {
+  const seasonId = String(req.query.seasonId || 'season-2026-27');
+  if (!/^season-[a-z0-9-]+$/.test(seasonId) || !/^club-[a-z0-9_-]+$/i.test(req.params.id)) {
+    res.status(400).json({ code: 'INVALID_CLUB_OR_SEASON' }); return;
+  }
+  res.setHeader('Cache-Control', 'private, no-store');
+  try { res.json(await getPublicClubFixtures(req.params.id, seasonId)); }
+  catch (error) { handleFirestoreError(res, error, 'GET /api/clubs/:id/fixtures'); }
+});
+
 clubsRouter.get('/:id', async (req: Request, res: Response) => {
   setOwnershipSensitiveHeaders(res);
   const seasonId = (req.query.seasonId as string) || 'season-2026-27';

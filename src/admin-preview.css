@@ -757,6 +757,9 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 .efl-preview.theme-dark .efl-league-icon-monochrome {
   filter: brightness(0) invert(1);
 }
+.efl-preview.theme-dark .club-mark-monochrome {
+  filter: brightness(0) invert(1);
+}
 
 /* Admin standings views only; existing standings data and player table stay intact. */
 .efl-preview .efl-standings-page { gap: 12px; }

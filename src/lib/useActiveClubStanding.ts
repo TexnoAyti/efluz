@@ -6,7 +6,7 @@ export async function loadActiveClubStanding(clubId: string, leagueId: string, s
   const { competitions } = await client.getCompetitions(seasonId);
   const competition = competitions.find((entry) => entry.type === 'LEAGUE' && entry.leagueId === leagueId);
   if (!competition) return null;
-  const { standings } = await client.getCompetitionStandings(competition.id);
+  const { standings } = await client.getCompetitionStandings(competition.id, false, seasonId);
   return standings.find((row) => row.clubId === clubId) || null;
 }
 

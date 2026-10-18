@@ -22,9 +22,11 @@ import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n';
 import { fixturesForClub } from '../lib/activeClub';
 import { useActiveClubStanding } from '../lib/useActiveClubStanding';
+import { useFixtureClubPositions } from '../lib/useFixtureClubPositions';
 import { api } from '../lib/api';
 import { Fixture } from '../types';
 import { ClubCrest } from './ClubCrest';
+import { CompetitionMark } from './CompetitionMark';
 import { isValidTelegramUsername, openTelegramChat } from '../lib/telegramUtils';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
 
@@ -276,6 +278,8 @@ export const MatchdayHomeView: React.FC<Props> = ({
     [pendingFixtures, confirmedFixtures]
   );
 
+  const heroPositions = useFixtureClubPositions(heroMatch, activeSeasonId);
+
   const otherUpcoming = useMemo(
     () => pendingFixtures.filter((f) => f.id !== heroMatch?.id).slice(0, 4),
     [pendingFixtures, heroMatch]
@@ -492,6 +496,10 @@ export const MatchdayHomeView: React.FC<Props> = ({
           </div>
         ) : heroMatch && homeTeam && awayTeam ? (
           <div className="p-4 sm:p-5 rounded-2xl bg-[var(--efl-surface)] border border-[var(--efl-border)] shadow-xs relative overflow-hidden">
+            <div className="flex items-center gap-2 mb-3 text-xs font-black text-[var(--efl-text)]">
+              <CompetitionMark competitionId={heroMatch.competitionId} className="h-6 w-6" />
+              <span>{heroMatch.competitionName || heroMatch.competitionId}</span>
+            </div>
             {/* Top Bar inside Card matching reference video: Matchday Tag on Left, Countdown on Right */}
             <div className="flex items-center justify-between gap-2 mb-3">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-500/10 text-rose-600 efl-theme-rose dark:text-rose-400 border border-rose-500/20">
@@ -514,7 +522,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
             <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:gap-4 my-2 text-center">
               {/* Home Team */}
               <div className="flex flex-col items-center gap-1.5 min-w-0">
-                <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)] p-2 flex items-center justify-center shadow-xs">
+                <div className="w-14 h-14 sm:w-16 sm:h-16 flex items-center justify-center">
                   <ClubCrest
                     clubId={homeTeam.id}
                     logoUrl={homeTeam.logoUrl}
@@ -530,7 +538,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
                   </span>
                   <div className="flex items-center justify-center gap-1 mt-0.5">
                     <span className="text-[10px] font-medium text-[var(--efl-text-2)]">
-                      {isUserHome && userStats?.leaguePosition ? `${userStats.leaguePosition}${c.rankSuffix}` : c.homeTag}
+                      {homeTeam.id && heroPositions[homeTeam.id] ? `${heroPositions[homeTeam.id]}${c.rankSuffix}` : '—'}
                     </span>
                   </div>
                 </div>
@@ -561,7 +569,6 @@ export const MatchdayHomeView: React.FC<Props> = ({
                     <span className="text-2xl sm:text-3xl font-black text-[var(--efl-text)] tabular-nums tracking-tight my-0.5">
                       {scheduleInfo?.timeStr}
                     </span>
-                    <span className="text-[9px] text-[var(--efl-muted)]">Toshkent (UTC+5)</span>
                     <span className="text-[10px] text-[var(--efl-muted)] efl-theme-meta truncate max-w-[100px]">
                       {heroMatch.venue || homeTeam.stadium || (language === 'uz' ? 'Stadion belgilanmagan' : language === 'ru' ? 'Стадион не назначен' : 'Venue not set')}
                     </span>
@@ -571,7 +578,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
 
               {/* Away Team */}
               <div className="flex flex-col items-center gap-1.5 min-w-0">
-                <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)] p-2 flex items-center justify-center shadow-xs">
+                <div className="w-14 h-14 sm:w-16 sm:h-16 flex items-center justify-center">
                   <ClubCrest
                     clubId={awayTeam.id}
                     logoUrl={awayTeam.logoUrl}
@@ -587,7 +594,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
                   </span>
                   <div className="flex items-center justify-center gap-1 mt-0.5">
                     <span className="text-[10px] font-medium text-[var(--efl-text-2)]">
-                      {!isUserHome && userStats?.leaguePosition ? `${userStats.leaguePosition}${c.rankSuffix}` : c.awayTag}
+                      {awayTeam.id && heroPositions[awayTeam.id] ? `${heroPositions[awayTeam.id]}${c.rankSuffix}` : '—'}
                     </span>
                   </div>
                 </div>

@@ -5,9 +5,11 @@ import { useAuth } from '../context/AuthContext';
 import { useI18n, Language } from '../i18n';
 import { fixturesForClub } from '../lib/activeClub';
 import { useActiveClubStanding } from '../lib/useActiveClubStanding';
+import { useFixtureClubPositions } from '../lib/useFixtureClubPositions';
 import { api } from '../lib/api';
 import { Fixture, Club, Competition } from '../types';
 import { ClubCrest } from './ClubCrest';
+import { CompetitionMark } from './CompetitionMark';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
 import { MatchdayCountdown } from './MatchdayCountdown';
 import { FluidGlassExperiment } from './FluidGlassExperiment';
@@ -347,6 +349,8 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
     [pendingFixtures, confirmedFixtures]
   );
 
+  const heroPositions = useFixtureClubPositions(heroMatch, activeSeasonId);
+
   // Opponent Telegram Username for Hero Match
   const opponentTelegram = useMemo(() => {
     if (!heroMatch) return null;
@@ -608,7 +612,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
           {/* Header row */}
           <div className="flex items-center justify-between gap-2 border-b border-[var(--efl-border)] pb-3">
             <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-[var(--efl-text-2)]">
-              <Swords className="w-3.5 h-3.5 text-[var(--efl-primary)]" />
+              <CompetitionMark competitionId={heroMatch.competitionId} className="w-5 h-5" />
               <span>
                 {heroMatch.competitionName || 'Domestic League'} • {copy.matchday} {heroMatch.matchday}
               </span>
@@ -646,9 +650,9 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
                 <div className="text-xs font-black text-[var(--efl-text)] truncate">
                   {heroMatch.homeClub?.name || 'Home Club'}
                 </div>
-                <div className="text-[10px] text-[var(--efl-muted)] font-bold uppercase">{copy.homeTag}</div>
+                <div className="text-[10px] text-[var(--efl-muted)] font-bold">{heroMatch.homeClubId && heroPositions[heroMatch.homeClubId] ? `${heroPositions[heroMatch.homeClubId]} ${copy.position}` : '—'}</div>
               </div>
-              <div className="order-1 sm:order-2 w-12 h-12 rounded-xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)] p-1.5 flex items-center justify-center shrink-0 mb-1 sm:mb-0">
+              <div className="order-1 sm:order-2 w-12 h-12 flex items-center justify-center shrink-0 mb-1 sm:mb-0">
                 <ClubCrest
                   clubId={heroMatch.homeClubId || heroMatch.homeClub?.id}
                   logoUrl={heroMatch.homeClub?.logoUrl}
@@ -679,7 +683,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
 
             {/* Away Team (Cols 3) */}
             <div className="col-span-3 flex flex-col sm:flex-row items-center justify-start sm:gap-3 text-center sm:text-left">
-              <div className="w-12 h-12 rounded-xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)] p-1.5 flex items-center justify-center shrink-0 mb-1 sm:mb-0">
+              <div className="w-12 h-12 flex items-center justify-center shrink-0 mb-1 sm:mb-0">
                 <ClubCrest
                   clubId={heroMatch.awayClubId || heroMatch.awayClub?.id}
                   logoUrl={heroMatch.awayClub?.logoUrl}
@@ -693,7 +697,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
                 <div className="text-xs font-black text-[var(--efl-text)] truncate">
                   {heroMatch.awayClub?.name || 'Away Club'}
                 </div>
-                <div className="text-[10px] text-[var(--efl-muted)] font-bold uppercase">{copy.awayTag}</div>
+                <div className="text-[10px] text-[var(--efl-muted)] font-bold">{heroMatch.awayClubId && heroPositions[heroMatch.awayClubId] ? `${heroPositions[heroMatch.awayClubId]} ${copy.position}` : '—'}</div>
               </div>
             </div>
           </div>
