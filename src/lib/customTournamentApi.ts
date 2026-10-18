@@ -225,7 +225,7 @@ export const customTournamentApi = {
     return data.logs || [];
   },
 
-  async updateSettings(id: string, settings: {name:string;description?:string;maxParticipants:number;visibility:CustomTournament['visibility'];spectatorAccess:CustomTournament['spectatorAccess'];matchDurationHours:number}) {
+  async updateSettings(id: string, settings: {name:string;description?:string;maxParticipants:number;visibility:CustomTournament['visibility'];spectatorAccess:CustomTournament['spectatorAccess'];matchDurationHours:number;rules?:CustomTournament['rules']}) {
     const res = await fetch(`/api/custom-tournaments/${encodeURIComponent(id)}/settings`, {method:'POST',headers:getAuthHeaders(),body:JSON.stringify(settings)});
     const data = await res.json(); if (!res.ok || !data.ok) throw new Error(data.error || 'Sozlamalarni saqlab bo‘lmadi.'); return data;
   },

@@ -1,3 +1,4 @@
+import {tournamentRulesError,canonicalTournamentRules} from '../../lib/customTournamentRules';
 import {customMatchNeedsPenalties} from '../../lib/customTournamentMatches';
 /**
  * Custom Tournament Core Service
@@ -122,17 +123,8 @@ export async function createTournament(params: Parameters<typeof createTournamen
     throw Object.assign(new Error('Turnir sozlamalari noto‘g‘ri.'), {statusCode: 400});
   }
   const rules = params.rules;
-  const qualifiers = rules?.playoffQualifiersCount ?? 4;
-  const groups = rules?.groupsCount ?? 2;
-  if (!rules || ![1,2].includes(rules.roundsCount) ||
-      !['SINGLE_LEG','TWO_LEG'].includes(rules.playoffLegMode) ||
-      !Number.isInteger(rules.matchDurationHours) || rules.matchDurationHours < 1 || rules.matchDurationHours > 168 ||
-      (params.format === 'LEAGUE_AND_PLAYOFF' &&
-        (![2,4,8,16].includes(qualifiers) || qualifiers > params.maxParticipants ||
-         (rules.groupStageMode && !['SINGLE_TABLE','GROUPS'].includes(rules.groupStageMode)) ||
-         (rules.groupStageMode === 'GROUPS' && (![2,4].includes(groups) || groups*2 > params.maxParticipants || qualifiers%groups !== 0))))) {
-    throw Object.assign(new Error('Turnir reglamenti noto‘g‘ri. Qatnashchilar, guruhlar va pley-off sonini tekshiring.'), {statusCode:400});
-  }
+  const rulesError=tournamentRulesError(params.format,params.maxParticipants,rules);
+  if(rulesError)throw tournamentError(rulesError);
   const tournament = await createTournamentDraft(params, false);
   const fingerprint = crypto.createHash('sha256').update(JSON.stringify({
     name:tournament.name, description:tournament.description, format:tournament.format,
@@ -140,6 +132,7 @@ export async function createTournament(params: Parameters<typeof createTournamen
     maxParticipants:tournament.maxParticipants, visibility:tournament.visibility,
     spectatorAccess:tournament.spectatorAccess, rules:tournament.rules,
   })).digest('hex');
+  tournament.rules=canonicalTournamentRules(params.format,rules);
   tournament.id = 'ct_' + crypto.createHash('sha256').update(params.organizerUserId + ':' + idempotencyKey).digest('hex').slice(0,24);
   tournament.status = 'REGISTRATION_OPEN'; tournament.creationFingerprint = fingerprint;
   await ensureFreeTournamentTicket(params.organizerUserId, params.organizerTelegramId);
@@ -661,7 +654,7 @@ export async function getTournamentByIdWithAccess(
   // Calculate standings if league stage exists
   let standings: CustomTournamentStandingsRow[] | undefined;
   if (tournament.format === 'LEAGUE' || tournament.format === 'LEAGUE_AND_PLAYOFF') {
-    standings = tournament.rules.groupStageMode==='GROUPS'?Array.from({length:tournament.rules.groupsCount||2},(_,g)=>calculateCustomStandings(participants.filter(p=>p.status==='REGISTERED'),fixtures,g)).flat():calculateCustomStandings(participants.filter(p=>p.status==='REGISTERED'),fixtures);
+    standings = tournament.format==='LEAGUE_AND_PLAYOFF'&&tournament.rules.groupStageMode==='GROUPS'?Array.from({length:tournament.rules.groupsCount||2},(_,g)=>calculateCustomStandings(participants.filter(p=>p.status==='REGISTERED'),fixtures,g)).flat():calculateCustomStandings(participants.filter(p=>p.status==='REGISTERED'),fixtures);
   }
 
   return {
@@ -847,6 +840,7 @@ export interface TournamentSettingsUpdate {
   visibility: CustomTournament['visibility'];
   spectatorAccess: CustomTournament['spectatorAccess'];
   matchDurationHours: number;
+  rules?: CustomTournament['rules'];
 }
 
 /** Every management mutation shares the tournament lock with join/start/result mutations. */
@@ -896,11 +890,14 @@ export async function updateTournamentSettings(tournamentId: string, actorId: st
       !Number.isInteger(settings.maxParticipants) || settings.maxParticipants < Math.max(4, players.length) || settings.maxParticipants > capacity ||
       !['PRIVATE','PUBLIC_OPEN','PUBLIC_MODERATED'].includes(settings.visibility) || !['MEMBERS_ONLY','PUBLIC_LINK'].includes(settings.spectatorAccess) ||
       !Number.isInteger(settings.matchDurationHours) || settings.matchDurationHours < 1 || settings.matchDurationHours > 168) throw tournamentError('Sozlamalar noto‘g‘ri. O‘rinlar band joylardan kam bo‘la olmaydi.');
-    if (t.format === 'LEAGUE_AND_PLAYOFF' && ((t.rules.playoffQualifiersCount || 4) > settings.maxParticipants || (t.rules.groupStageMode === 'GROUPS' && (t.rules.groupsCount || 2)*2 > settings.maxParticipants))) throw tournamentError('O‘rinlar soni guruh yoki pley-off reglamentiga yetmaydi.');
+    if(settings.rules!==undefined&&(!settings.rules||typeof settings.rules!=='object'||Array.isArray(settings.rules)))throw tournamentError('Turnir reglamenti noto‘g‘ri.');
+    const nextRules={...(settings.rules??t.rules),matchDurationHours:settings.matchDurationHours};
+    const rulesError=tournamentRulesError(t.format,settings.maxParticipants,nextRules);
+    if(rulesError)throw tournamentError(rulesError);
     t.name = settings.name.trim(); t.description = settings.description?.trim() || '';
     t.maxParticipants = settings.maxParticipants; t.visibility = settings.visibility; t.spectatorAccess = settings.spectatorAccess;
-    t.rules = {...t.rules, matchDurationHours:settings.matchDurationHours}; t.updatedAt = new Date().toISOString();
-    logs.push(managementLog(t, actorId, 'SETTINGS_UPDATED', {maxParticipants:t.maxParticipants, visibility:t.visibility, spectatorAccess:t.spectatorAccess}));
+    t.rules = canonicalTournamentRules(t.format,nextRules); t.updatedAt = new Date().toISOString();
+    logs.push(managementLog(t, actorId, 'SETTINGS_UPDATED', {maxParticipants:t.maxParticipants, visibility:t.visibility, spectatorAccess:t.spectatorAccess, rules:t.rules}));
     return {tournament:t};
   });
 }

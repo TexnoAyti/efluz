@@ -1,3 +1,4 @@
+import {TournamentRulesSummary} from './TournamentRulesSummary';
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Trophy, Layers, CheckCircle2, Ticket, Sparkles, AlertCircle, HelpCircle } from 'lucide-react';
 import {
@@ -173,6 +174,7 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
         {step===3&&<>
           <h3 className="text-xl font-bold break-words">{name||'Turnir rejasi'}</h3>
           {[['Format',formats.find(f=>f.id===format)?.label],['Qatnashchilar',`${maxParticipants} klubgacha`],['Qo‘shilish',visibility==='PRIVATE'?'Taklif bilan':visibility==='PUBLIC_MODERATED'?'Tasdiq bilan':'Ochiq'],['Kuzatish',spectatorAccess==='MEMBERS_ONLY'?'Faqat a’zolar':'Havola orqali'],['Taqvim',`${preview.totalMatches} o‘yin · ${preview.totalStagesOrRounds} tur`]].map(([label,value])=><div key={label} className="tourney-summary-row"><span>{label}</span><strong>{value}</strong></div>)}
+          <TournamentRulesSummary format={format} rules={{roundsCount,playoffLegMode,playoffQualifiersCount,groupStageMode,groupsCount,matchDurationHours}}/>
           <p className="tourney-muted">Taqvim to‘liq {maxParticipants} klub uchun hisoblandi. Kamroq klub bilan boshlasangiz, taqvim moslashadi.</p>
           <div className="tourney-note"><strong className="block">Yaratish — 1 ticket</strong><span>Qabul darhol ochiladi. Turnirni keyin boshqaruvdan boshlaysiz. Qatnashish bepul.</span></div>
           {loadingTickets?<p className="tourney-muted">Ticket balansi tekshirilmoqda…</p>:ticketError?<div className="tourney-note error">{ticketError}<button onClick={fetchTicketBalance} className="tourney-button mt-2">Qayta urinish</button></div>:<p className="tourney-muted">Balansingiz: {ticketBalance} ticket.{ticketBalance===0&&<> Yangi ticket uchun <a className="underline" href="https://t.me/texnoadmin" target="_blank" rel="noreferrer">@texnoadmin</a> bilan bog‘laning.</>}</p>}

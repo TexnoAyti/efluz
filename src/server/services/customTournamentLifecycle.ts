@@ -1,3 +1,4 @@
+import {tournamentRulesError} from '../../lib/customTournamentRules';
 import type {CustomTournament,CustomTournamentParticipant,CustomTournamentFixture} from '../../types/customTournament';
 import {generateRoundRobinFixtures,generatePlayoffBracketFixtures,calculateCustomStandings,resolvePlayoffWinner} from './customTournamentEngine';
 export const tournamentError=(message:string,statusCode=400)=>Object.assign(new Error(message),{statusCode});
@@ -8,10 +9,7 @@ export function assertScore(home:number,away:number,penHome?:number,penAway?:num
 export function validateActualParticipants(t:CustomTournament,p:CustomTournamentParticipant[]){
  if(p.some(row=>row.status==='PENDING_APPROVAL'))throw tournamentError('Avval kutilayotgan arizalarni tasdiqlang yoki rad eting.');
  if(p.length<4)throw tournamentError('Turnirni boshlash uchun kamida 4 ta qatnashchi zarur.');
- if(t.format==='LEAGUE_AND_PLAYOFF'){
-  const q=t.rules.playoffQualifiersCount||4,g=t.rules.groupsCount||2;
-  if(q>p.length||(t.rules.groupStageMode==='GROUPS'&&(g*2>p.length||q%g!==0)))throw tournamentError('Qatnashchilar soni guruh yoki pley-off reglamentiga yetmaydi.');
- }
+ if(tournamentRulesError(t.format,p.length,t.rules))throw tournamentError('Qatnashchilar soni guruh yoki pley-off reglamentiga yetmaydi.');
 }
 export function initialSchedule(t:CustomTournament,p:CustomTournamentParticipant[],baseTime:number){
  if(t.format==='PLAYOFF')return generatePlayoffBracketFixtures(t.id,p,t.rules.playoffLegMode,t.rules.matchDurationHours,baseTime);

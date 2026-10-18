@@ -1,3 +1,6 @@
+import {TournamentRulesFields} from './TournamentRulesFields';
+import {tournamentRulesError} from '../../lib/customTournamentRules';
+import {generateTournamentPreview} from '../../lib/customTournamentEngine';
 import {isCustomMatchReady,customMatchNeedsPenalties} from '../../lib/customTournamentMatches';
 import React, {useEffect, useRef, useState} from 'react';
 import {X, Copy, Check, Shield, Play, Users, Swords, Settings, History, AlertTriangle, RefreshCw} from 'lucide-react';
@@ -31,8 +34,8 @@ export function TournamentAdminDrawer({isOpen,onClose,tournament:t,participants,
   const [selectedId,setSelectedId]=useState(initialFixtureId), [home,setHome]=useState(()=>String(fixtures.find(f=>f.id===initialFixtureId)?.homeScore??0)), [away,setAway]=useState(()=>String(fixtures.find(f=>f.id===initialFixtureId)?.awayScore??0));
   const [penHome,setPenHome]=useState(()=>{const v=fixtures.find(f=>f.id===initialFixtureId)?.penaltyHomeScore;return v==null?'':String(v);}), [penAway,setPenAway]=useState(()=>{const v=fixtures.find(f=>f.id===initialFixtureId)?.penaltyAwayScore;return v==null?'':String(v);}), [note,setNote]=useState('');
   const scoreForm=useRef<HTMLFormElement>(null), confirmationPanel=useRef<HTMLDivElement>(null), dialog=useRef<HTMLElement>(null);
-  const [settings,setSettings]=useState(()=>({name:t.name,description:t.description||'',maxParticipants:t.maxParticipants,visibility:t.visibility,spectatorAccess:t.spectatorAccess,matchDurationHours:t.rules.matchDurationHours}));
-  useEffect(()=>{setSettings({name:t.name,description:t.description||'',maxParticipants:t.maxParticipants,visibility:t.visibility,spectatorAccess:t.spectatorAccess,matchDurationHours:t.rules.matchDurationHours});},[t.id,t.updatedAt]);
+  const [settings,setSettings]=useState(()=>({name:t.name,description:t.description||'',maxParticipants:t.maxParticipants,visibility:t.visibility,spectatorAccess:t.spectatorAccess,matchDurationHours:t.rules.matchDurationHours,rules:{...t.rules}}));
+  useEffect(()=>{setSettings({name:t.name,description:t.description||'',maxParticipants:t.maxParticipants,visibility:t.visibility,spectatorAccess:t.spectatorAccess,matchDurationHours:t.rules.matchDurationHours,rules:{...t.rules}});},[t.id,t.updatedAt]);
   useEffect(()=>{setPage(0);},[matchSearch,matchFilter]);
   useEffect(()=>{if(selectedId)scoreForm.current?.scrollIntoView({block:'nearest',behavior:'smooth'});},[selectedId]);
   useEffect(()=>{if(confirmAction)confirmationPanel.current?.scrollIntoView({block:'nearest',behavior:'smooth'});},[confirmAction]);
@@ -76,6 +79,8 @@ export function TournamentAdminDrawer({isOpen,onClose,tournament:t,participants,
   const registered=participants.filter(p=>p.status==='REGISTERED'), pending=participants.filter(p=>p.status==='PENDING_APPROVAL');
   const blocker=tournamentStartBlocker(t,participants);
   const canEdit=t.status==='REGISTRATION_OPEN';
+  const settingsError=tournamentRulesError(t.format,settings.maxParticipants,{...settings.rules,matchDurationHours:settings.matchDurationHours});
+  const settingsPreview=generateTournamentPreview(t.format,settings.maxParticipants,settings.rules);
   const limit=t.leagueScope==='SINGLE_LEAGUE'?TOP5_CLUBS.filter(c=>c.leagueId===t.selectedLeagueId).length:32;
   const selected=fixtures.find(f=>f.id===selectedId&&isCustomMatchReady(f,fixtures));
   const needsPenalties=!!selected&&customMatchNeedsPenalties(selected,fixtures,Number(home),Number(away));
@@ -147,15 +152,17 @@ export function TournamentAdminDrawer({isOpen,onClose,tournament:t,participants,
           </>}
         </>}
         {tab==='settings'&&<>
-          {isOrganizer?<form className={cardClass} onSubmit={e=>{e.preventDefault();run(()=>customTournamentApi.updateSettings(t.id,settings),'Sozlamalar saqlandi.');}}>
-            <h3 className="font-bold text-sm text-slate-100">Turnir sozlamalari</h3><p className="text-xs text-slate-400">{canEdit?'Format va klublar bazasi yaratishda belgilanadi. Qolgan sozlamalarni boshlashdan oldin tahrirlash mumkin.':'Turnir boshlangan yoki yopilgan. Sozlamalar tahriri yopiq.'}</p>
+          {isOrganizer?<form className={cardClass} onSubmit={e=>{e.preventDefault();if(settingsError){setMessage({error:true,text:settingsError});return;}run(()=>customTournamentApi.updateSettings(t.id,settings),'Sozlamalar saqlandi.');}}>
+            <h3 className="font-bold text-sm text-slate-100">Turnir sozlamalari</h3><p className="text-xs text-slate-400">{canEdit?'Format va klublar bazasi o‘zgarmaydi. Davra, guruh va pley-off qoidalarini turnir boshlanishidan oldin tahrirlang.':'Turnir boshlangan yoki yopilgan. Sozlamalar tahriri yopiq.'}</p>
             <fieldset disabled={!canEdit||busy} className="min-w-0 space-y-3 disabled:opacity-60">
               <label className="block text-xs text-slate-400">Turnir nomi<input required maxLength={60} value={settings.name} onChange={e=>setSettings({...settings,name:e.target.value})} className={inputClass} /></label>
               <label className="block text-xs text-slate-400">Tavsif<textarea rows={3} maxLength={500} value={settings.description} onChange={e=>setSettings({...settings,description:e.target.value})} className={inputClass} /></label>
               <div className="grid grid-cols-2 gap-2"><label className="min-w-0 text-xs text-slate-400">O‘rinlar soni<input type="number" min={Math.max(4,participants.length)} max={limit} required value={settings.maxParticipants} onChange={e=>setSettings({...settings,maxParticipants:Number(e.target.value)})} className={inputClass} /></label><label className="min-w-0 text-xs text-slate-400">O‘yin muddati (soat)<input type="number" min={1} max={168} required value={settings.matchDurationHours} onChange={e=>setSettings({...settings,matchDurationHours:Number(e.target.value)})} className={inputClass} /></label></div>
               <label className="block text-xs text-slate-400">Qo‘shilish<select value={settings.visibility} onChange={e=>setSettings({...settings,visibility:e.target.value as CustomTournament['visibility']})} className={inputClass}><option value="PUBLIC_OPEN">Ochiq</option><option value="PUBLIC_MODERATED">Ariza bilan</option><option value="PRIVATE">Taklif bilan, yopiq</option></select></label>
               <label className="block text-xs text-slate-400">Kuzatish<select value={settings.spectatorAccess} onChange={e=>setSettings({...settings,spectatorAccess:e.target.value as CustomTournament['spectatorAccess']})} className={inputClass}><option value="PUBLIC_LINK">Havola orqali</option><option value="MEMBERS_ONLY">Faqat a’zolar</option></select></label>
-              <button className={`${buttonClass} w-full bg-emerald-500 text-slate-950`}>Sozlamalarni saqlash</button>
+              <TournamentRulesFields format={t.format} maxParticipants={settings.maxParticipants} rules={settings.rules} onChange={rules=>setSettings({...settings,rules})} inputClass={inputClass}/>
+              {settingsError?<p role="alert" className="text-xs text-rose-400">{settingsError}</p>:<p className="text-xs text-slate-400">To‘liq {settings.maxParticipants} klub bilan: {settingsPreview.totalMatches} o‘yin · {settingsPreview.totalStagesOrRounds} tur/bosqich. Taqvim boshlashda tuziladi.</p>}
+              <button disabled={!!settingsError} className={`${buttonClass} w-full bg-emerald-500 text-slate-950`}>Sozlamalarni saqlash</button>
             </fieldset>
           </form>:<p className="text-sm text-slate-400">Sozlamalarni faqat turnir tashkilotchisi o‘zgartiradi.</p>}
           <div className={cardClass}><h3 className="font-bold text-sm text-slate-100">Yordamchilar</h3><p className="text-xs text-slate-400">Arizalar, qatnashchilar va natijalarni boshqaradi. Sozlamalar va bekor qilish tashkilotchida qoladi.</p>

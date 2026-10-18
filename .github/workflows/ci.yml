@@ -109,6 +109,7 @@ jobs:
           node scripts/run-isolated-test.mjs src/server/tests/customTournamentManagementUiTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/tournamentUxRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/customTournamentWorkflowRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/customTournamentCompletionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/legacyMembershipRepairRegressionTest.ts
           bun run test:telegram-ai
           node scripts/run-isolated-test.mjs src/server/tests/telegramAiUpgradeRegressionTest.ts

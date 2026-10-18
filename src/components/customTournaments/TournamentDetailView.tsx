@@ -1,4 +1,5 @@
-import {isCustomMatchReady,customMatchNeedsPenalties} from '../../lib/customTournamentMatches';
+import {TournamentRulesSummary} from './TournamentRulesSummary';
+import {isCustomMatchReady,customMatchNeedsPenalties,customScheduleView} from '../../lib/customTournamentMatches';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   ArrowLeft,
@@ -47,6 +48,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
 }) => {
   const { user } = useAuth();
   const requestSequence = useRef(0);
+  const lastLoadedAt=useRef(0);
   const [activeTab, setActiveTab] = useState<'standings' | 'fixtures' | 'participants' | 'rules'>('standings');
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -57,6 +59,8 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
   const [standings, setStandings] = useState<CustomTournamentStandingsRow[] | undefined>();
   const [selectedGroup, setSelectedGroup] = useState(0);
   const [selectedRound, setSelectedRound] = useState('');
+  const [onlyMyMatches,setOnlyMyMatches]=useState(false);
+  const [fixtureGroup,setFixtureGroup]=useState<number|undefined>();
   const [canManage, setCanManage] = useState(false);
   const [canJoin, setCanJoin] = useState(false);
 
@@ -81,6 +85,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
   const [claimingClubId, setClaimingClubId] = useState<string | null>(null);
 
   const loadData = async () => {
+    lastLoadedAt.current=Date.now();
     const sequence = ++requestSequence.current;
     try {
       setErrorMessage(null);
@@ -104,6 +109,16 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
     loadData();
     return () => { requestSequence.current++; };
   }, [tournamentId, inviteToken, user?.id]);
+
+  useEffect(()=>{
+    const refreshOnReturn=()=>{
+      if(document.visibilityState!=='visible'||showAdminDrawer||showClubPickerModal||selectedMatchForScore||Date.now()-lastLoadedAt.current<15000)return;
+      loadData();
+    };
+    window.addEventListener('focus',refreshOnReturn);
+    document.addEventListener('visibilitychange',refreshOnReturn);
+    return()=>{window.removeEventListener('focus',refreshOnReturn);document.removeEventListener('visibilitychange',refreshOnReturn);};
+  },[tournamentId,inviteToken,user?.id,showAdminDrawer,showClubPickerModal,selectedMatchForScore]);
 
   if (isLoading) {
     return (
@@ -135,8 +150,8 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
 
   const groupIndexes = [...new Set((standings || []).map(r => r.groupIndex).filter((g): g is number => g !== undefined))].sort();
   const displayedStandings = (standings || []).filter(r => !groupIndexes.length || r.groupIndex === selectedGroup);
-  const rounds = [...new Set(fixtures.map(f => `${f.stage}:${f.roundOrMatchday}`))];
-  const displayedFixtures = fixtures.filter(f => `${f.stage}:${f.roundOrMatchday}` === (selectedRound || rounds[0]));
+  const schedule=customScheduleView(fixtures,{userId:user?.id,mine:onlyMyMatches,group:fixtureGroup,round:selectedRound});
+  const rounds=schedule.rounds,displayedFixtures=schedule.fixtures;
 
   const handleClaimClub = async (clubId: string) => {
     if (claimingClubId) return;
@@ -314,12 +329,14 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
       {/* TAB 2: FIXTURES */}
       {activeTab === 'fixtures' && (
         <div className="space-y-3">
+          {myParticipant&&<div className="tourney-tabs" aria-label="O‘yinlar filtri"><button aria-pressed={!onlyMyMatches} onClick={()=>{setOnlyMyMatches(false);setSelectedRound('');}}>Barcha o‘yinlar</button><button aria-pressed={onlyMyMatches} onClick={()=>{setOnlyMyMatches(true);setSelectedRound('');}}>Mening o‘yinlarim</button></div>}
+          {tournament.rules.groupStageMode==='GROUPS'&&<label className="block text-xs text-slate-300">Guruh bo‘yicha<select className="w-full p-3 mt-1 bg-slate-900 border border-slate-800 rounded-xl" value={fixtureGroup??'ALL'} onChange={e=>{setFixtureGroup(e.target.value==='ALL'?undefined:Number(e.target.value));setSelectedRound('');}}><option value="ALL">Barcha guruhlar</option>{Array.from({length:tournament.rules.groupsCount??2},(_,g)=><option key={g} value={g}>{String.fromCharCode(65+g)} guruhi</option>)}</select></label>}
           {rounds.length > 0 && <label className="block text-xs text-slate-300">Bosqich va tur
-            <select value={selectedRound || rounds[0]} onChange={e => setSelectedRound(e.target.value)} className="w-full p-3 mt-1 bg-slate-900 border border-slate-800 rounded-xl">{rounds.map(r => <option key={r} value={r}>{fixtureStageLabel[r.split(':')[0] as CustomTournamentFixture['stage']]} · Tur {r.split(':')[1]}</option>)}</select>
+            <select value={schedule.round} onChange={e => setSelectedRound(e.target.value)} className="w-full p-3 mt-1 bg-slate-900 border border-slate-800 rounded-xl">{rounds.map(r => <option key={r} value={r}>{fixtureStageLabel[r.split(':')[0] as CustomTournamentFixture['stage']]} · Tur {r.split(':')[1]}</option>)}</select>
           </label>}
-          {fixtures.length === 0 ? (
+          {displayedFixtures.length === 0 ? (
             <p className="text-xs text-slate-500 italic p-8 text-center bg-slate-900 rounded-2xl border border-slate-800">
-              O‘yinlar hali rejalashtirilmagan. Turnir boshlanganda avtomatik shakllanadi.
+              {fixtures.length===0?'O‘yinlar hali rejalashtirilmagan. Turnir boshlanganda avtomatik shakllanadi.':'Bu filtrda o‘yin yo‘q. Boshqa guruh yoki barcha o‘yinlarni tanlang.'}
             </p>
           ) : (
             displayedFixtures.map((fix) => {
@@ -331,7 +348,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
                 >
                   <div className="space-y-1 flex-1 min-w-0">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                      Tur: {fix.roundOrMatchday} · {fixtureStageLabel[fix.stage]}
+                      Tur: {fix.roundOrMatchday} · {fixtureStageLabel[fix.stage]}{fix.groupIndex!==undefined?` · ${String.fromCharCode(65+fix.groupIndex)} guruhi`:''}{fix.stage.startsWith('PLAYOFF')&&tournament.rules.playoffLegMode==='TWO_LEG'&&fix.stage!=='PLAYOFF_FINAL'?` · ${fix.leg}-o‘yin`:''}
                     </span>
                     <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 text-slate-200">
                       <span className="font-bold break-words [overflow-wrap:anywhere]">{fix.homeClubName}</span>
@@ -340,6 +357,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
                     </div>
                   </div>
 
+                  {!isCustomMatchReady(fix,fixtures)&&fix.status!=='BYE_AUTO_ADVANCED'&&<p className="text-xs text-amber-400">{['TBD','BYE'].includes(fix.homeClubId)||['TBD','BYE'].includes(fix.awayClubId)?'Oldingi bosqich g‘olibi kutilmoqda.':'Avval birinchi o‘yin natijasi tasdiqlanishi kerak.'}</p>}
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     {fix.status === 'CONFIRMED' ? (
                       <div className="text-right">
@@ -408,6 +426,7 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
       {activeTab === 'rules' && (
         <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4 text-xs text-slate-300 leading-relaxed">
           <h3 className="font-bold text-slate-100 text-sm">Turnir Reglamenti</h3>
+          <TournamentRulesSummary format={tournament.format} rules={tournament.rules}/>
           <ul className="list-disc pl-5 space-y-2">
             <li>
               <strong>Liga bosqichi tenglik qoidasi:</strong> Ochko → To‘plar farqi → Urilgan gollar → O‘zaro uchrashuv natijasi.

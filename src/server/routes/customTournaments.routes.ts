@@ -1,3 +1,4 @@
+import {tournamentRulesError} from '../../lib/customTournamentRules';
 /**
  * Custom Tournaments Express Router
  *
@@ -53,13 +54,16 @@ customTournamentsRouter.get('/my', requireAuth, async (req: Request, res: Respon
 customTournamentsRouter.get('/preview', (req: Request, res: Response) => {
   try {
     const format = (req.query.format as any) || 'LEAGUE';
-    const participantsCount = Number(req.query.participantsCount) || 8;
-    const roundsCount = Number(req.query.roundsCount) === 2 ? 2 : 1;
+    const participantsCount = req.query.participantsCount===undefined?8:Number(req.query.participantsCount);
+    const roundsCount = (req.query.roundsCount===undefined?1:Number(req.query.roundsCount)) as 1|2;
     const playoffLegMode = (req.query.playoffLegMode as any) || 'SINGLE_LEG';
-    const playoffQualifiersCount = Number(req.query.playoffQualifiersCount) || undefined;
+    const playoffQualifiersCount = req.query.playoffQualifiersCount===undefined?undefined:Number(req.query.playoffQualifiersCount);
     const groupStageMode = (req.query.groupStageMode as any) || 'SINGLE_TABLE';
-    const groupsCount = Number(req.query.groupsCount) || undefined;
+    const groupsCount = req.query.groupsCount===undefined?undefined:Number(req.query.groupsCount);
 
+    if(!['LEAGUE','PLAYOFF','LEAGUE_AND_PLAYOFF'].includes(format))throw new Error('Turnir formati noto‘g‘ri.');
+    const invalid=tournamentRulesError(format,participantsCount,{roundsCount,playoffLegMode,playoffQualifiersCount:playoffQualifiersCount as any,groupStageMode,groupsCount:groupsCount as any,matchDurationHours:36});
+    if(invalid)throw new Error(invalid);
     const preview = generateTournamentPreview(format, participantsCount, {
       roundsCount,
       playoffLegMode,

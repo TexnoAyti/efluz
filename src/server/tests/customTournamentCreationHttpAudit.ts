@@ -24,6 +24,9 @@ export async function verifyTournamentCreationHttp(failNextCommit: () => void) {
   };
   const payload = {name:'Organizer joins later HTTP',idempotencyKey:'host-club-create',organizerClubId:SEED_CLUBS[0].id,format:'PLAYOFF',leagueScope:'TOP5_ALL',maxParticipants:4,visibility:'PRIVATE',spectatorAccess:'PUBLIC_LINK',rules:{roundsCount:1,playoffLegMode:'SINGLE_LEG',matchDurationHours:24}};
   try {
+    for(const query of ['format=UNKNOWN','participantsCount=0','participantsCount=4.5','roundsCount=3','format=LEAGUE_AND_PLAYOFF&groupStageMode=GROUPS&groupsCount=100000'])assert.equal((await call('/preview?'+query,0)).status,400,'Invalid preview is rejected before allocating a schedule');
+    const preview=(await call('/preview?format=LEAGUE_AND_PLAYOFF&participantsCount=8&groupStageMode=GROUPS&groupsCount=2&playoffQualifiersCount=4',0)).data.preview;
+    assert.equal(preview.totalMatches,15);assert.equal(preview.totalStagesOrRounds,5);
     assert.equal((await call('/tickets/balance',0)).data.account.balance,1);
     assert.equal((await call('/create',0,{...payload,maxParticipants:0})).status,400);
     assert.equal((await call('/tickets/balance',0)).data.account.balance,1);
@@ -78,6 +81,14 @@ export async function verifyTournamentCreationHttp(failNextCommit: () => void) {
     assert.ok((await call('/'+m.id+'/settings',5,settings)).status>=500);
     assert.equal((await call('/'+m.id,5)).data.tournament.name,'Management','Settings rollback');
     assert.equal((await call('/'+m.id+'/settings',5,settings)).status,200);
+    const rulesEdit={...settings,rules:{roundsCount:2,playoffLegMode:'SINGLE_LEG',matchDurationHours:48}};
+    assert.equal((await call('/'+m.id+'/settings',0,rulesEdit)).status,403,'Assistant cannot alter the structure');
+    assert.equal((await call('/'+m.id+'/settings',5,{...rulesEdit,rules:{...rulesEdit.rules,roundsCount:3}})).status,400);
+    failNextCommit();
+    assert.ok((await call('/'+m.id+'/settings',5,rulesEdit)).status>=500);
+    assert.equal((await call('/'+m.id,5)).data.tournament.rules.roundsCount,1,'Rule edit failure rolls back');
+    assert.equal((await call('/'+m.id+'/settings',5,rulesEdit)).status,200);
+    assert.equal((await call('/'+m.id,5)).data.tournament.rules.roundsCount,2);
     assert.equal((await call('/'+m.id+'/participants/'+actors[2].id+'/remove',4,{})).status,403);
     failNextCommit();
     assert.ok((await call('/'+m.id+'/participants/'+actors[2].id+'/remove',0,{})).status>=500);

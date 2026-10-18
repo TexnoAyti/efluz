@@ -1,3 +1,4 @@
+import {tournamentRulesError} from './customTournamentRules';
 import type {CustomTournament, CustomTournamentAuditLog, CustomTournamentFixture, CustomTournamentFixtureStage} from '../types/customTournament';
 export const tournamentStatusLabel: Record<CustomTournament['status'], string> = {
   DRAFT:'Eski qoralama', STARTING:'Taqvim tayyorlanmoqda', REGISTRATION_OPEN:'Qabul ochiq', IN_PROGRESS:'Davom etmoqda', COMPLETED:'Yakunlangan', CANCELLED:'Bekor qilingan',
@@ -13,7 +14,7 @@ export function tournamentStartBlocker(t:CustomTournament, participants:Array<{s
   if (participants.some(p=>p.status==='PENDING_APPROVAL')) return 'Avval kutilayotgan arizalarni ko‘rib chiqing.';
   const count=participants.filter(p=>p.status==='REGISTERED').length;
   if (count<4) return 'Boshlash uchun kamida 4 ta qatnashchi kerak.';
-  if (t.format==='LEAGUE_AND_PLAYOFF' && (count<(t.rules.playoffQualifiersCount||4) || (t.rules.groupStageMode==='GROUPS' && count<(t.rules.groupsCount||2)*2))) return 'Qatnashchilar soni guruh yoki pley-off reglamentiga yetmaydi.';
+  if (tournamentRulesError(t.format,count,t.rules)) return 'Qatnashchilar soni guruh yoki pley-off reglamentiga yetmaydi.';
   return null;
 }
 
