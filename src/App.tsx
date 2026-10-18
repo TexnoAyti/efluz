@@ -10,6 +10,7 @@ import { ContentBoundary } from './components/ContentBoundary';
 import { APP_BUILD_ID } from './context/AuthContext';
 import { Fixture, AdminPermissions } from './types';
 import { readTournamentLaunch } from './lib/customTournamentLinks';
+import { clubPagePath, readClubPageId } from './lib/clubNavigation';
 import { api } from './lib/api';
 import { isDesignPreview } from './designPreview';
 import { EFL_2_DESIGN_ENABLED, WELCOME_STORAGE_VERSION } from './releaseDesign';
@@ -26,6 +27,7 @@ const ClubHubView = lazy(() => import('./components/ClubHubView').then(module =>
 const MatchOperationsV4Panel = lazy(() => import('./components/MatchOperationsV4Panel').then(module => ({ default: module.MatchOperationsV4Panel })));
 const SeasonLifecyclePanel = lazy(() => import('./components/SeasonLifecyclePanel').then(module => ({ default: module.SeasonLifecyclePanel })));
 const GlobalSearchModal = lazy(() => import('./components/GlobalSearchModal').then(module => ({ default: module.GlobalSearchModal })));
+const PublicClubView = lazy(() => import('./components/PublicClubView').then(module => ({ default: module.PublicClubView })));
 
 function getInitialTab(): TabType {
   if (typeof window !== 'undefined') {
@@ -46,6 +48,7 @@ const AppContent: React.FC = () => {
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [publicClubId, setPublicClubId] = useState(() => readClubPageId(window.location.pathname));
   const [searchNavigationRevision, setSearchNavigationRevision] = useState(0);
   const [openDisputesCount, setOpenDisputesCount] = useState(0);
   const [adminAccess, setAdminAccess] = useState<{ userId: string; permissions: AdminPermissions } | null>(null);
@@ -90,6 +93,7 @@ const AppContent: React.FC = () => {
   };
 
   const setActiveTab = (tab: TabType) => {
+    setPublicClubId(null);
     const resolvedTab = tab === 'home' ? 'dashboard' : tab;
     setActiveTabState(resolvedTab);
     if (typeof window !== 'undefined') {
@@ -100,14 +104,14 @@ const AppContent: React.FC = () => {
   };
 
   useEffect(() => {
-    const handlePopState = () => setActiveTabState(getInitialTab());
+    const handlePopState = () => { setActiveTabState(getInitialTab()); setPublicClubId(readClubPageId(window.location.pathname)); };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-  }, [activeTab]);
+  }, [activeTab, publicClubId]);
 
   useEffect(() => {
     if (!user) return;
@@ -185,7 +189,11 @@ const AppContent: React.FC = () => {
       <Navigation activeTab={currentTab} onTabChange={setActiveTab} openDisputesCount={openDisputesCount} />
       {!isDesignPreview && canUseGlobalAdminTools && <ContentBoundary><OfflineSyncBanner /></ContentBoundary>}
       <main data-preview-page={EFL_2_DESIGN_ENABLED ? currentTab : undefined} className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-4 md:px-6 py-4 sm:py-6 min-w-0">
-          <ContentBoundary key={currentTab}>
+          <ContentBoundary key={publicClubId || currentTab}>
+            {publicClubId ? <PublicClubView clubId={publicClubId} onBack={() => {
+              if (window.history.state?.publicClub) window.history.back();
+              else setActiveTab('leagues');
+            }} /> : <>
             {currentTab === 'admin' && canUseGlobalAdminTools && <div className="mb-5"><AdminMatchOperationsV4Panel /></div>}
 
             {/* HOME: Active Club Broadcast Hub with Hero Match Card */}
@@ -239,6 +247,7 @@ const AppContent: React.FC = () => {
 
             {currentTab === 'notifications' && <NotificationsView onNavigateTab={setActiveTab} />}
             {currentTab === 'admin' && user?.isAdmin && <AdminView />}
+            </>}
           </ContentBoundary>
       </main>
       <footer className="border-t border-slate-900 bg-slate-950/80 px-4 py-3 pb-24 lg:pb-3 text-[11px] text-slate-400"><div className="max-w-7xl mx-auto flex items-center justify-between gap-2"><div className="flex items-center gap-2"><span className="font-bold text-slate-300">EFL UZ</span><span className="text-slate-600">•</span><span>Official 2026/27 European Competitions</span></div><div className="flex items-center gap-3"><span className="font-mono text-emerald-400 font-semibold">{APP_BUILD_ID}</span></div></div></footer>
@@ -247,6 +256,11 @@ const AppContent: React.FC = () => {
       {isSearchOpen && <ContentBoundary><GlobalSearchModal
         isOpen={isSearchOpen}
         onClose={() => setIsSearchOpen(false)}
+        onSelectClub={(club) => {
+          setPublicClubId(club.id);
+          const path = clubPagePath(club.id);
+          if (window.location.pathname !== path) window.history.pushState({ publicClub: true }, '', isDesignPreview ? `${path}?designPreview=1` : path);
+        }}
         onNavigateTab={(tab) => {
           setSearchNavigationRevision((revision) => revision + 1);
           setActiveTab(tab);

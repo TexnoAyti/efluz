@@ -11,7 +11,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(path.join(root, 'package.json'));
 const React = require('react');
 const { renderToReadableStream } = require('react-dom/server');
-const views = ['MatchdayHomeView', 'CompetitionHubView', 'ClubHubView', 'NotificationsView', 'AdminView', 'AdminMatchOperationsV4Panel', 'NotificationModal', 'TelegramDiagnosticsModal', 'OfflineSyncBanner', 'GlobalSearchModal', 'MatchOperationsV4Panel', 'SeasonLifecyclePanel'];
+const views = ['MatchdayHomeView', 'CompetitionHubView', 'ClubHubView', 'PublicClubView', 'NotificationsView', 'AdminView', 'AdminMatchOperationsV4Panel', 'NotificationModal', 'TelegramDiagnosticsModal', 'OfflineSyncBanner', 'GlobalSearchModal', 'MatchOperationsV4Panel', 'SeasonLifecyclePanel'];
 const result = await build({
   absWorkingDir: root, entryPoints: ['src/App.tsx'], bundle: true, write: false,
   platform: 'node', format: 'cjs', packages: 'external', loader: { '.css': 'empty' },
@@ -69,6 +69,13 @@ for (const admin of [false, true]) {
   assert.equal(home.includes('id="nav-tab-admin"'), admin);
 }
 assert.match(await render({ theme: 'light' }), /efl-preview theme-light/);
+for (const admin of [false, true]) {
+  const clubPage = await render({ route: '/clubs/club-barcelona', admin });
+  assert.match(clubPage, /data-test-view="PublicClubView"/, 'club URLs render the public club page for either role');
+  assert.doesNotMatch(clubPage, /data-test-view="ClubHubView"|data-test-view="CompetitionHubView"|data-test-view="MatchdayHomeView"/, 'public club pages do not fall through to another screen');
+}
+assert.doesNotMatch(await render({ route: '/clubs/club-barcelona', anonymous: true }), /data-test-view="PublicClubView"/, 'club links preserve Telegram authentication');
+assert.doesNotMatch(await render({ route: '/clubs/%zz' }), /data-test-view="PublicClubView"/, 'malformed club links are rejected safely');
 for (const route of ['/leagues', '/cups', '/champions-league', '/standings', '/season-hub'])
   assert.match(await render({ route }), /data-test-view="CompetitionHubView"/);
 for (const route of ['/my-club', '/profile', '/my-matches']) {
