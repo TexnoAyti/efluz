@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import { isLeagueSelectionOpen } from '../../lib/clubAdmission';
 import { trackFirestoreRead } from '../firebase/firestoreStore';
 import { getFirestoreDb } from '../firebase/admin';
 import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
@@ -17,11 +19,13 @@ export interface ClubAdmissionStatus {
   leagues: typeof CLUB_ADMISSION_LEAGUES;
   updatedAt: string | null;
   stale?: boolean;
+  leagueOverrides: Record<string, boolean>;
+  revision: string | null;
 }
 
 export class ClubAdmissionConflict extends Error {
-  constructor(public readonly code: 'ADMISSION_STAGE_CHANGED' | 'ADMISSION_FINISHED') {
-    super(code === 'ADMISSION_FINISHED' ? 'Klub qabuli yakunlangan.' : 'Qabul bosqichi o‘zgargan. Sahifani yangilang.');
+  constructor(public readonly code: 'ADMISSION_STAGE_CHANGED' | 'ADMISSION_FINISHED' | 'ADMISSION_STATE_CHANGED') {
+    super(code === 'ADMISSION_FINISHED' ? 'Klub qabuli yakunlangan.' : 'Qabul holati o‘zgargan. Sahifani yangilang.');
   }
 }
 
@@ -38,6 +42,8 @@ export function admissionStatus(seasonId: string, data?: Record<string, unknown>
     stage,
     activeLeagueId: stage >= 0 ? CLUB_ADMISSION_LEAGUES[stage]?.id || null : null,
     leagues: CLUB_ADMISSION_LEAGUES,
+    leagueOverrides: Object.fromEntries(CLUB_ADMISSION_LEAGUES.filter(league => typeof (data?.leagueOverrides as any)?.[league.id] === 'boolean').map(league => [league.id, (data!.leagueOverrides as Record<string, boolean>)[league.id]])),
+    revision: typeof data?.revision === 'string' ? data.revision : typeof data?.updatedAt === 'string' ? data.updatedAt : null,
     updatedAt: typeof data?.updatedAt === 'string' ? data.updatedAt : null,
   };
 }
@@ -107,8 +113,9 @@ export async function advanceClubAdmission(seasonId: string, expectedStage: numb
     if (current.stage >= CLUB_ADMISSION_LEAGUES.length) throw new ClubAdmissionConflict('ADMISSION_FINISHED');
     const stage = current.stage + 1;
     const updatedAt = new Date().toISOString();
-    transaction.set(ref, { seasonId, enabled: true, stage, updatedAt, updatedBy: actorId });
-    return admissionStatus(seasonId, { enabled: true, stage, updatedAt });
+    const revision = randomUUID();
+    transaction.set(ref, { seasonId, enabled: true, stage, updatedAt, revision, updatedBy: actorId });
+    return admissionStatus(seasonId, { enabled: true, stage, updatedAt, revision });
   });
   try {
     await redisSetRaw(ReadModelKeys.clubAdmission(seasonId), { data: status, sourceVersion: `club-admission-${status.updatedAt}` }, ADMISSION_CACHE_TTL_SECONDS);
@@ -119,10 +126,28 @@ export async function advanceClubAdmission(seasonId: string, expectedStage: numb
   return status;
 }
 
+export async function setLeagueClubSelection(seasonId: string, leagueId: string, open: boolean, expectedRevision: string | null, actorId: string): Promise<ClubAdmissionStatus> {
+  if (!CLUB_ADMISSION_LEAGUES.some(league => league.id === leagueId) || typeof open !== 'boolean') throw new Error('INVALID_LEAGUE_SELECTION');
+  const db = getFirestoreDb();
+  const ref = db.collection(COLLECTION).doc(seasonId);
+  const status = await db.runTransaction(async transaction => {
+    const current = admissionStatus(seasonId, (await transaction.get(ref)).data());
+    if (current.revision !== expectedRevision) throw new ClubAdmissionConflict('ADMISSION_STATE_CHANGED');
+    const data = { seasonId, enabled: current.enabled, stage: current.stage, leagueOverrides: { ...current.leagueOverrides, [leagueId]: open }, updatedAt: new Date().toISOString(), revision: randomUUID(), updatedBy: actorId };
+    transaction.set(ref, data);
+    return admissionStatus(seasonId, data);
+  });
+  try {
+    await redisSetRaw(ReadModelKeys.clubAdmission(seasonId), { data: status, sourceVersion: `club-admission-${status.revision}` }, ADMISSION_CACHE_TTL_SECONDS);
+  } catch (error) {
+    console.warn('[CLUB_ADMISSION] League selection changed but cache update failed:', error);
+  }
+  return status;
+}
+
 export function assertClubAdmissionOpen(status: ClubAdmissionStatus, leagueId: string): void {
-  if (status.enabled && status.activeLeagueId !== leagueId) {
-    const active = status.leagues.find((league) => league.id === status.activeLeagueId);
-    throw new ClubAdmissionConflictError(active ? `Hozir faqat ${active.name} klublari uchun qabul ochiq.` : 'Bu mavsum uchun klub qabuli yakunlangan.');
+  if (!isLeagueSelectionOpen(status, leagueId)) {
+    throw new ClubAdmissionConflictError('Bu liga uchun klub tanlash admin tomonidan yopilgan.');
   }
 }
 

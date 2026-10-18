@@ -29,6 +29,10 @@ try{
  firestoreCircuitBreaker.forceState('CLOSED');
  assert.equal((await getClubAdmissionStatus(season)).stale,true);assert.equal(firestoreReads,0,'Cold admission read uses durable cache without database probe');
  firestoreCircuitBreaker.forceState('OPEN');
+ await redisSetRaw(ReadModelKeys.clubAdmission(season),{data:{enabled:false,stage:-1,leagueOverrides:{'league-bundesliga':false}}});
+ await assert.rejects(requestDurableClubClaim('claim-manually-closed',clubs[0],season),(e:any)=>e.code==='CLUB_ADMISSION_CLOSED');
+ assert.equal(await client.get(CLUB_CLAIM_KEYS.latest(season,'claim-manually-closed')),null,'A closed league creates no pending reservation');
+ await redisSetRaw(ReadModelKeys.clubAdmission(season),{data:{enabled:false,stage:-1}});
  const parallel=await Promise.allSettled(Array.from({length:12},(_,i)=>requestDurableClubClaim('claim-user-'+i,clubs[0],season)));
  const winners=parallel.map((r,i)=>({r,i})).filter(x=>x.r.status==='fulfilled');assert.equal(winners.length,1);
  accepted=(winners[0].r as PromiseFulfilledResult<any>).value;actor='claim-user-'+winners[0].i;
@@ -62,6 +66,16 @@ await processPendingMutations();assert.equal((await getClubClaimReceipt(actor,se
 db.collection=(()=>{throw new Error('Quota after successful commit');}) as any;
 try { assert.equal((await getUserActiveClubFromReadModel(actor,season))?.id,clubs[0],'Committed owner is published durably before synced receipt'); }finally{db.collection=originalCollection;}
 console.log('PASS actual Redis + original Firestore transaction: half-open recovery, exact owner, synced receipt and idempotent replay');
+// A league closed after acceptance must also reject the queued claim on replay.
+await redisSetRaw(ReadModelKeys.clubsWithOwners(season),{data:catalog});
+await requestDurableClubClaim('claim-closed-after-acceptance',clubs[2],season);
+await db.collection(COLLECTIONS.USERS).doc('claim-closed-after-acceptance').set({id:'claim-closed-after-acceptance',isSuspended:false});
+await db.collection('club_admissions').doc(season).set({enabled:false,stage:-1,leagueOverrides:{'league-bundesliga':false}});
+firestoreCircuitBreaker.forceState('CLOSED');await processPendingMutations();
+assert.equal((await getClubClaimReceipt('claim-closed-after-acceptance',season))?.status,'FAILED');
+assert.equal((await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${season}_${clubs[2]}`).get()).exists,false,'Closure during the queue never creates an owner');
+await db.collection('club_admissions').doc(season).set({enabled:false,stage:-1});
+console.log('PASS manual league closure: cached request rejected, queued request revalidated before ownership');
 // A previously free cached club may have been assigned while disconnected: authoritative conflict is terminal.
 await redisSetRaw(ReadModelKeys.clubsWithOwners(season),{data:catalog});
 const conflict=await requestDurableClubClaim('claim-conflict-user',clubs[1],season);

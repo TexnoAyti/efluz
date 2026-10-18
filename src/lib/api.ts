@@ -11,6 +11,8 @@ export interface ClubAdmissionStatus {
   enabled: boolean;
   stage: number;
   activeLeagueId: string | null;
+  leagueOverrides?: Record<string, boolean>;
+  revision?: string | null;
   leagues: { id: string; name: string }[];
   updatedAt: string | null;
   stale?: boolean;
@@ -439,6 +441,10 @@ export const api = {
   // Clubs
   async getClubAdmission(seasonId = 'season-2026-27'): Promise<{ admission: ClubAdmissionStatus | null; unavailable?: boolean }> {
     return request(`/api/clubs/admission?seasonId=${encodeURIComponent(seasonId)}`, { skipCache: true });
+  },
+
+  async setLeagueClubSelection(seasonId: string, leagueId: string, open: boolean, expectedRevision: string | null): Promise<{ admission: ClubAdmissionStatus }> {
+    return request('/api/admin/clubs/admission/league', { method: 'POST', body: JSON.stringify({ seasonId, leagueId, open, expectedRevision }) });
   },
 
   async advanceClubAdmission(seasonId: string, expectedStage: number): Promise<{ admission: ClubAdmissionStatus }> {
