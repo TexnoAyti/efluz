@@ -18,6 +18,8 @@ export async function enforceLeagueAdminScope(req: Request, res: Response, next:
   if (!allowed.length) return deny();
   if (req.method === 'GET' && /^\/api\/admin\/competitions\/([^/]+)\/matchday\/control$/.test(path) && competitionIds.has(decodeURIComponent(path.split('/')[4]))) return next();
   if (req.method === 'GET' && ['/api/admin/scoped/overview', '/api/admin/scoped/users', '/api/admin/scoped/reviews'].includes(path)) return next();
+  // The schedule service resolves and checks every target against authoritative grants.
+  if (['GET', 'POST'].includes(req.method) && path === '/api/admin/fixture-schedules') return next();
   const db = getFirestoreDb();
   if (req.method === 'GET' && path === '/api/admin/cups') return next();
   const cupMatch = path.match(/^\/api\/admin\/cups\/([^/]+)(?:\/(health|reconcile|round|round\/advance|bracket\/preview))?$/);

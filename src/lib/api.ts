@@ -511,6 +511,15 @@ export const api = {
     return res;
   },
 
+  async previewFixtureSchedule(selector: {seasonId:string;fixtureId?:string;competitionId?:string;category?:string;matchday?:number;includeCompleted?:boolean}): Promise<{fixtures:Fixture[];expected:Array<{id:string;updatedAt:string|null;scheduledAt:string;status:string}>;count:number}> {
+    const query = new URLSearchParams(Object.entries(selector).filter(([,v])=>v!==undefined).map(([k,v])=>[k,String(v)]));
+    return request(`/api/admin/fixture-schedules?${query}`,{skipCache:true});
+  },
+  async updateFixtureSchedule(body: {seasonId:string;fixtureId?:string;competitionId?:string;category?:string;matchday?:number;includeCompleted?:boolean;scheduledAt:string|null;venue?:string|null;expected:Array<{id:string;updatedAt:string|null;scheduledAt:string;status:string}>}): Promise<{success:boolean;updated:number;total:number;scheduledAt:string;venue?:string|null}> {
+    try {return await request('/api/admin/fixture-schedules',{method:'POST',body:JSON.stringify(body),timeoutMs:60000});}
+    finally {invalidateClientCache();}
+  },
+
   // Fixtures & Results
   async getFixture(fixtureId: string, skipCache = false): Promise<{ fixture: Fixture }> {
     return request(`/api/fixtures/${fixtureId}`, { cacheTtlMs: 30000, skipCache });

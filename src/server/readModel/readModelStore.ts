@@ -1,3 +1,4 @@
+import { clubStadium } from '../../constants/clubStadiums';
 import {filterPublishedEuropeanFixtures} from '../services/europeanFixtureGate';
 import { withSeasonQualificationPolicy } from '../../lib/seasonQualificationPolicy';
 import { filterRetiredFixtures, hasFixtureMatchdayCorrection } from '../services/retiredFixtureService';
@@ -1071,6 +1072,7 @@ async function buildClubsSnapshotAuthoritative(seasonId: string): Promise<ReadMo
       country: seed.country,
       leagueId: seed.leagueId,
       logoUrl: seed.logoUrl,
+      stadium: clubStadium(seed.id),
       active: true,
       createdAt: new Date().toISOString(),
       ownerUserId,
@@ -1139,7 +1141,7 @@ export function enrichClubForUser(club: OwnerNeutralClub, currentUserId?: string
   return {
     id: club.id, name: club.name, shortName: club.shortName, country: club.country,
     leagueId: club.leagueId, leagueName: club.leagueName, logoUrl: club.logoUrl,
-    active: club.active, stadium: club.stadium, createdAt: club.createdAt,
+    active: club.active, stadium: clubStadium(club.id, club.stadium), createdAt: club.createdAt,
     ownerUserId: club.ownerUserId, ownerUsername: club.ownerUsername, isOccupied,
     owner: club.owner ? { userId: club.owner.userId, username: club.owner.username,
       firstName: club.owner.firstName, claimedAt: club.owner.claimedAt } : undefined,
@@ -1204,6 +1206,7 @@ export function normalizeFixtureSnapshot(doc: any, seasonId = 'season-2026-27'):
         country: homeClubSeed?.country || 'England',
         leagueId: homeClubSeed?.leagueId || 'league-premier-league',
         logoUrl: homeClubSeed?.logoUrl || '',
+        stadium: clubStadium(homeClubId, doc.homeClub?.stadium),
         active: true,
         createdAt: '',
       } : undefined,
@@ -1214,10 +1217,13 @@ export function normalizeFixtureSnapshot(doc: any, seasonId = 'season-2026-27'):
         country: awayClubSeed?.country || 'England',
         leagueId: awayClubSeed?.leagueId || 'league-premier-league',
         logoUrl: awayClubSeed?.logoUrl || '',
+        stadium: clubStadium(awayClubId, doc.awayClub?.stadium),
         active: true,
         createdAt: '',
       } : undefined,
       scheduledAt: scheduledAt,
+      venue: doc.venue ?? null,
+      adminScheduledAt: doc.adminScheduledAt ?? doc.admin_scheduled_at ?? undefined,
       homeScore: homeScore ?? undefined,
       awayScore: awayScore ?? undefined,
       homeExtraTimeScore: doc.homeExtraTimeScore ?? doc.home_extra_time_score ?? null,

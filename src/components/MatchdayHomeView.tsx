@@ -1,3 +1,5 @@
+import { clubStadium } from '../constants/clubStadiums';
+import { SCHEDULE_TIME_ZONE } from '../lib/fixtureScheduling';
 import { nextSeasonFixture, sortSeasonFixtures } from '../lib/fixtureOrder';
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import {
@@ -195,7 +197,7 @@ function getClubDisplay(fixture: Fixture, side: 'home' | 'away') {
     name: club?.shortName || club?.name || (side === 'home' ? fixture.homeClubId : fixture.awayClubId) || 'TBD',
     fullName: club?.name || '',
     logoUrl: club?.logoUrl,
-    stadium: club?.stadium || (side === 'home' ? 'Home Ground' : ''),
+    stadium: clubStadium(side === 'home' ? fixture.homeClubId : fixture.awayClubId, club?.stadium),
   };
 }
 
@@ -314,26 +316,28 @@ export const MatchdayHomeView: React.FC<Props> = ({
     if (!fixture.scheduledAt) {
       return {
         dateStr: fixture.roundName || `${fixture.matchday}-${c.matchday}`,
-        timeStr: '21:00',
+        timeStr: '—',
         relativeTime: null,
       };
     }
     const d = new Date(fixture.scheduledAt);
-    if (Number.isNaN(d.getTime()) || d.getFullYear() < 2026) {
+    if (Number.isNaN(d.getTime())) {
       return {
         dateStr: fixture.roundName || `${fixture.matchday}-${c.matchday}`,
-        timeStr: '21:00',
+        timeStr: '—',
         relativeTime: null,
       };
     }
 
     const dayName = new Intl.DateTimeFormat(language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-GB', {
+      timeZone: SCHEDULE_TIME_ZONE,
       weekday: 'short',
       day: 'numeric',
       month: 'short',
     }).format(d).toUpperCase();
 
     const time = new Intl.DateTimeFormat('en-GB', {
+      timeZone: SCHEDULE_TIME_ZONE,
       hour: '2-digit',
       minute: '2-digit',
     }).format(d);
@@ -557,8 +561,9 @@ export const MatchdayHomeView: React.FC<Props> = ({
                     <span className="text-2xl sm:text-3xl font-black text-[var(--efl-text)] tabular-nums tracking-tight my-0.5">
                       {scheduleInfo?.timeStr}
                     </span>
+                    <span className="text-[9px] text-[var(--efl-muted)]">Toshkent (UTC+5)</span>
                     <span className="text-[10px] text-[var(--efl-muted)] efl-theme-meta truncate max-w-[100px]">
-                      {homeTeam.stadium || 'Camp Nou'}
+                      {heroMatch.venue || homeTeam.stadium || (language === 'uz' ? 'Stadion belgilanmagan' : language === 'ru' ? 'Стадион не назначен' : 'Venue not set')}
                     </span>
                   </div>
                 )}

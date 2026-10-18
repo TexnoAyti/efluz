@@ -160,6 +160,8 @@ export interface FixtureUserInfo {
 }
 
 export interface Fixture {
+  venue?: string | null;
+  adminScheduledAt?: string;
   id: string;
   seasonId: string;
   competitionId: string;

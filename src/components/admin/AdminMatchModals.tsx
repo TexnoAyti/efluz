@@ -1,3 +1,5 @@
+import { AdminFixtureSchedule } from './AdminFixtureSchedule';
+import { toTashkentInput } from '../../lib/fixtureScheduling';
 import { isDomesticCupResult, resolveCupResult } from '../../lib/cupResult';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Fixture } from '../../types';
@@ -74,6 +76,7 @@ export const AdminEditResultModal: React.FC<EditResultModalProps> = ({ fixture, 
   const [awayExtraTimeScore, setAwayExtraTimeScore] = useState(fixture.awayExtraTimeScore ?? 0);
   const [homePenaltyScore, setHomePenaltyScore] = useState(fixture.homePenaltyScore ?? 0);
   const [awayPenaltyScore, setAwayPenaltyScore] = useState(fixture.awayPenaltyScore ?? 0);
+  const [scheduledAt, setScheduledAt] = useState(fixture.scheduledAt);
   const [status, setStatus] = useState<string>(fixture.status === 'CONFIRMED' ? 'CONFIRMED' : 'CONFIRMED');
   const [notes, setNotes] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
@@ -91,6 +94,7 @@ export const AdminEditResultModal: React.FC<EditResultModalProps> = ({ fixture, 
 
   useEffect(() => {
     if (!isOpen) return;
+    setScheduledAt(fixture.scheduledAt);
     setHomeScore(fixture.homeScore ?? 0);
     setExtraTime(fixture.homeExtraTimeScore != null);
     setPenalties(fixture.homePenaltyScore != null);
@@ -212,7 +216,7 @@ export const AdminEditResultModal: React.FC<EditResultModalProps> = ({ fixture, 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <Meta icon={<Layers className="w-3.5 h-3.5" />} label={copy.competition} value={fixture.competitionName || fixture.competitionId} />
             <Meta icon={<Calendar className="w-3.5 h-3.5" />} label={copy.round} value={fixture.roundName || `${copy.matchday} ${fixture.matchday || 1}`} />
-            <Meta icon={<Clock className="w-3.5 h-3.5" />} label={copy.deadline} value={fixture.scheduledAt ? new Date(fixture.scheduledAt).toLocaleString() : copy.notSet} />
+            <Meta icon={<Clock className="w-3.5 h-3.5" />} label="O‘yin vaqti (Toshkent)" value={toTashkentInput(scheduledAt).replace("T"," ") || copy.notSet} />
             <Meta icon={<ShieldAlert className="w-3.5 h-3.5" />} label={copy.evidence} value={`${submissions.length} ${copy.submissions}`} />
           </div>
 
@@ -222,6 +226,7 @@ export const AdminEditResultModal: React.FC<EditResultModalProps> = ({ fixture, 
             ))}
           </div>
 
+          {pane === 'control' && <AdminFixtureSchedule fixture={fixture} onSaved={setScheduledAt} />}
           {pane === 'control' && (
             <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
               <form onSubmit={handleSubmit} className="rounded-2xl border border-white/[0.07] bg-black/20 p-4 space-y-4">

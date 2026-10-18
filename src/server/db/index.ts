@@ -274,6 +274,8 @@ export async function initDatabase(): Promise<Database> {
     try { dbInstance.exec(`ALTER TABLE fixtures ADD COLUMN ${column} INTEGER;`); } catch {}
     try { dbInstance.exec(`ALTER TABLE result_submissions ADD COLUMN ${column} INTEGER;`); } catch {}
   }
+  try { dbInstance.exec('ALTER TABLE fixtures ADD COLUMN venue TEXT;'); } catch {}
+  try { dbInstance.exec('ALTER TABLE fixtures ADD COLUMN admin_scheduled_at TEXT;'); } catch {}
   // Legacy databases enforced one club per user. The claim transaction now enforces
   // the season entitlement and different-league limit before writing either club.
   try {
@@ -534,6 +536,7 @@ export function dbTransaction<T>(callback: () => T): T {
 }
 
 export interface SqliteFixtureUpsertInput {
+  adminScheduledAt?: string;
   id: string;
   seasonId?: string;
   competitionId?: string;
@@ -541,6 +544,7 @@ export interface SqliteFixtureUpsertInput {
   roundName?: string | null;
   homeClubId?: string | null;
   awayClubId?: string | null;
+  venue?: string | null;
   scheduledAt?: string;
   status?: string;
   homeScore?: number | null;
@@ -587,7 +591,7 @@ export function upsertFixtureToSqlite(fixture: SqliteFixtureUpsertInput): void {
   const roundName = fixture.roundName !== undefined ? fixture.roundName : (existing?.round_name ?? `Matchday ${matchday}`);
   const homeClubId = fixture.homeClubId !== undefined ? fixture.homeClubId : (existing?.home_club_id ?? null);
   const awayClubId = fixture.awayClubId !== undefined ? fixture.awayClubId : (existing?.away_club_id ?? null);
-  const scheduledAt = fixture.scheduledAt || existing?.scheduled_at || now;
+  const scheduledAt = fixture.scheduledAt !== undefined ? fixture.scheduledAt : existing?.scheduled_at || now;
   const status = fixture.status || existing?.status || 'SCHEDULED';
   const homeScore = fixture.homeScore !== undefined ? fixture.homeScore : (existing?.home_score ?? null);
   const awayScore = fixture.awayScore !== undefined ? fixture.awayScore : (existing?.away_score ?? null);
@@ -605,8 +609,8 @@ export function upsertFixtureToSqlite(fixture: SqliteFixtureUpsertInput): void {
       home_club_id, away_club_id, scheduled_at, status,
       home_score, away_score, winner_club_id, result_confirmed_at,
       fixture_source, source_fixture_id, source_winner_slot,
-      created_at, updated_at, home_extra_time_score, away_extra_time_score, home_penalty_score, away_penalty_score
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      created_at, updated_at, home_extra_time_score, away_extra_time_score, home_penalty_score, away_penalty_score, venue, admin_scheduled_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       fixture.id,
       seasonId,
@@ -630,6 +634,8 @@ export function upsertFixtureToSqlite(fixture: SqliteFixtureUpsertInput): void {
       fixture.awayExtraTimeScore !== undefined ? fixture.awayExtraTimeScore : ((existing as any)?.away_extra_time_score ?? null),
       fixture.homePenaltyScore !== undefined ? fixture.homePenaltyScore : ((existing as any)?.home_penalty_score ?? null),
       fixture.awayPenaltyScore !== undefined ? fixture.awayPenaltyScore : ((existing as any)?.away_penalty_score ?? null),
+      fixture.venue !== undefined ? fixture.venue : ((existing as any)?.venue ?? null),
+      fixture.adminScheduledAt !== undefined ? fixture.adminScheduledAt : ((existing as any)?.admin_scheduled_at ?? null),
     ]
   );
   saveDatabaseSync();
