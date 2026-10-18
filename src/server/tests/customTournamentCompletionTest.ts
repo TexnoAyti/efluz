@@ -1,3 +1,4 @@
+import {generateTournamentPreview} from '../../lib/customTournamentEngine';
 import {TournamentRulesSummary} from '../../components/customTournaments/TournamentRulesSummary';
 import assert from 'node:assert/strict';
 import React from 'react';
@@ -14,6 +15,7 @@ const rules={roundsCount:1 as const,playoffLegMode:'TWO_LEG' as const,matchDurat
 const t:CustomTournament={id:'completion',name:'Completion',organizerUserId:'host',organizerTelegramId:'',assistantAdminIds:[],status:'REGISTRATION_OPEN',format:'LEAGUE_AND_PLAYOFF',leagueScope:'TOP5_ALL',maxParticipants:8,currentParticipantsCount:4,visibility:'PUBLIC_OPEN',spectatorAccess:'PUBLIC_LINK',inviteToken:'',spectatorToken:'',rules,createdAt:'',updatedAt:''};
 const participants:CustomTournamentParticipant[]=Array.from({length:8},(_,i)=>({id:'p'+i,tournamentId:t.id,userId:'u'+i,telegramId:'',clubId:'c'+i,clubName:'Club '+i,clubShortName:'C'+i,clubLogoUrl:'',status:'REGISTERED',joinedAt:'',groupIndex:i%2}));
 assert.equal(tournamentRulesError(t.format,8,rules),null);
+assert.equal(generateTournamentPreview('LEAGUE_AND_PLAYOFF',16).totalMatches,123,'Omitted qualification rule matches the server default of four finalists');
 for(const count of [0,3,4.5,33,NaN])assert.ok(tournamentRulesError(t.format,count,rules));
 assert.equal(canonicalTournamentRules('LEAGUE',rules).groupStageMode,undefined,'League does not inherit stale group rules');
 assert.equal(canonicalTournamentRules(t.format,{...rules,groupStageMode:'SINGLE_TABLE'}).groupsCount,undefined);

@@ -34247,7 +34247,7 @@ function generateTournamentPreview(format, participantsCount, rules = {}) {
       byeCount
     };
   }
-  const qualifiers = rules.playoffQualifiersCount || (n >= 16 ? 8 : 4);
+  const qualifiers = rules.playoffQualifiersCount ?? 4;
   const groupMode = rules.groupStageMode || "SINGLE_TABLE";
   const groupsCount = rules.groupsCount || 2;
   let groupStageMatches = 0;
