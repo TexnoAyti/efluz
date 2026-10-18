@@ -124,7 +124,7 @@ function scoreLine(fixture: Fixture): string {
   const away = escapeHtml(clubName(fixture, 'away'));
   const homeScore = fixture.homeScore ?? '–';
   const awayScore = fixture.awayScore ?? '–';
-  return `⚽ <b>${home}</b>  ${homeScore}–${awayScore}  <b>${away}</b>`;
+  return `⚽ <b>${home}</b>  ${homeScore}–${awayScore}  <b>${away}</b>${fixture.homePenaltyScore != null && fixture.awayPenaltyScore != null ? `\nPenalti: ${fixture.homePenaltyScore}–${fixture.awayPenaltyScore}` : ''}`;
 }
 
 function formatTashkentTime(value?: string | null): string | null {

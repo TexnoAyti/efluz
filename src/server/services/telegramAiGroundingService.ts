@@ -1,3 +1,4 @@
+import { aiPenaltySuffix } from './telegramAiScore';
 /**
  * Telegram AI Grounding Service
  *
@@ -190,7 +191,7 @@ export async function buildAiGroundingContext(
   const allFixtures = [...new Map(data.flatMap(d => d.fixtures).map(f => [f.id, f])).values()];
   const confirmed = allFixtures.filter(isConfirmedAiFixture).sort(compareConfirmed);
   const clubName = (id: string | null, embedded?: Club | null) => clubs.find(c => c.id === id)?.name || embedded?.name || 'Raqib aniqlanmagan';
-  const fixtureLine = (f: Fixture) => `[${f.status}] MD ${f.matchday}: ${clubName(f.homeClubId, f.homeClub)} ${isConfirmedAiFixture(f) ? `${f.homeScore} - ${f.awayScore}` : 'vs'} ${clubName(f.awayClubId, f.awayClub)} (${competitions.find(c => c.id === f.competitionId)?.name || f.competitionId}${f.roundName ? ', ' + f.roundName : ''})${isConfirmedAiFixture(f) && f.winnerClubId ? '; tasdiqlangan g‘olib: ' + clubName(f.winnerClubId) : ''}`;
+  const fixtureLine = (f: Fixture) => `[${f.status}] MD ${f.matchday}: ${clubName(f.homeClubId, f.homeClub)} ${isConfirmedAiFixture(f) ? `${f.homeScore} - ${f.awayScore}` : 'vs'} ${clubName(f.awayClubId, f.awayClub)}${aiPenaltySuffix(f)} (${competitions.find(c => c.id === f.competitionId)?.name || f.competitionId}${f.roundName ? ', ' + f.roundName : ''})${isConfirmedAiFixture(f) && f.winnerClubId ? '; tasdiqlangan g‘olib: ' + clubName(f.winnerClubId) : ''}`;
   const involves = (f: Fixture, id: string) => f.homeClubId === id || f.awayClubId === id ||
     Boolean(clubs.find(c => c.id === id && (normalizeAiEntity(c.name) === normalizeAiEntity(f.homeClub?.name || '') || normalizeAiEntity(c.name) === normalizeAiEntity(f.awayClub?.name || ''))));
   const ownershipLines = matched.map(c => ownershipLine(c, clubSnapshot.data.length > 0, clubSnapshot.stale));

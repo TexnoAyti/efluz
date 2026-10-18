@@ -21,6 +21,7 @@ export interface TelegramAiConfig {
   rateLimitUserPerMin: number;
   rateLimitTopicPerMin: number;
   maxDailyRequests: number;
+  dailyReportEnabled?: boolean;
   updatedAt: string;
   updatedBy: string;
 }
@@ -33,6 +34,7 @@ export const DEFAULT_AI_CONFIG: TelegramAiConfig = {
   rateLimitUserPerMin: 3,
   rateLimitTopicPerMin: 15,
   maxDailyRequests: 500,
+  dailyReportEnabled: false,
   updatedAt: new Date().toISOString(),
   updatedBy: 'system_default',
 };
@@ -97,6 +99,7 @@ export async function getTelegramAiConfig(options?: { signal?: AbortSignal }): P
         ...parsed,
         // Guarantee numbers and booleans
         enabled: Boolean(parsed.enabled),
+        dailyReportEnabled: parsed.dailyReportEnabled === true,
         allowedChatId: parsed.allowedChatId !== null ? Number(parsed.allowedChatId) : null,
         allowedThreadId: parsed.allowedThreadId !== null ? Number(parsed.allowedThreadId) : null,
         rateLimitUserPerMin: Number(parsed.rateLimitUserPerMin) || DEFAULT_AI_CONFIG.rateLimitUserPerMin,

@@ -26,6 +26,10 @@ export function assertAdminPlanReady(plan: AdminPlan) {
       if (n !== undefined && (!Number.isInteger(n) || Number(n) < min || Number(n) > max)) throw new Error(`CLARIFY:${key} ${min}–${max} orasidagi butun son bo‘lsin.`);
     }
   }
+  if (plan.body.homePenaltyScore != null || plan.body.awayPenaltyScore != null) {
+    const b=plan.body;
+    if (plan.action !== 'result_edit' || b.homeScore !== b.awayScore || ![b.homePenaltyScore,b.awayPenaltyScore].every(n=>Number.isInteger(n)&&Number(n)>=0&&Number(n)<=99) || b.homePenaltyScore===b.awayPenaltyScore) throw new Error('CLARIFY:Penalti faqat durang kubok natijasi uchun, ikkala tomon va g‘olib bilan kiritiladi.');
+  }
   const missing = (required[plan.action] || []).filter(key => plan.body[key] === undefined || plan.body[key] === null || plan.body[key] === '');
   if (missing.length) throw new Error('CLARIFY:Reja uchun quyidagini aniqlang: ' + missing.map(k => names[k] || k).join(', ') + '.');
   for (const key of ['homeScore','awayScore','matchday','roundNumber']) if (plan.body[key] !== undefined && (!Number.isInteger(plan.body[key]) || Number(plan.body[key]) < (key.includes('Score') ? 0 : 1))) throw new Error('CLARIFY:' + (names[key] || key) + ' uchun to‘g‘ri butun son yozing.');
@@ -96,7 +100,9 @@ export async function validateModelAdminPlan(plan: AdminPlan, request: string, s
     if(selected.clarification)throw new Error('CLARIFY:'+selected.clarification);
     const score=resolveAdminScore(request,selected.clubs,fixtureResult.data[0]);
     // The language model cannot override score orientation from explicit club names.
+    delete plan.body.homePenaltyScore; delete plan.body.awayPenaltyScore; delete plan.body.homeExtraTimeScore; delete plan.body.awayExtraTimeScore;
     Object.assign(plan.body,score);
+    if ((score.homePenaltyScore != null || score.homeExtraTimeScore != null) && plan.action === 'result_approve') { plan.action = 'result_edit'; plan.body.status = 'CONFIRMED'; }
   }
   if (plan.body.competitionId) await check(String(plan.body.competitionId), 'competitions');
   if (plan.secondaryId) await check(plan.secondaryId, 'fixtures');
