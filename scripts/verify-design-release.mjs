@@ -64,6 +64,7 @@ for (const admin of [false, true]) {
   assert.match(home, /data-test-view="MatchdayHomeView"/);
   assert.match(home, /efl-preview theme-dark dark/);
   assert.match(home, /id="btn-global-search"/);
+  assert.match(home, /id="btn-first-visit-guide"/);
   assert.match(home, /id="btn-theme-toggle"/);
   assert.match(home, /efl-bottom-glass/);
   assert.equal(home.includes('id="nav-tab-admin"'), admin);
@@ -90,4 +91,5 @@ assert.doesNotMatch(await render({ route: '/admin' }), /data-test-view="AdminVie
 assert.match(await render({ route: '/admin', admin: true }), /data-test-view="AdminView"/);
 assert.doesNotMatch(await render({ id: 'player-2', completed: false }), /data-test-view="MatchdayHomeView"/);
 assert.doesNotMatch(await render({ anonymous: true }), /efl-welcome|data-test-view="MatchdayHomeView"/);
+assert.doesNotMatch(await render({ anonymous: true }), /id="btn-first-visit-guide"/);
 console.log('PASS EFL 2.0: every role gets versioned welcome, public design/themes/navigation/routes; administrator routes remain restricted; anonymous auth remains intact.');

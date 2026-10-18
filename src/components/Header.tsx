@@ -11,6 +11,7 @@ import {
   Search,
   Sun,
   Moon,
+  CircleHelp,
 } from 'lucide-react';
 import { ClubCrest } from './ClubCrest';
 
@@ -20,6 +21,7 @@ interface HeaderProps {
   onOpenNotifications: () => void;
   onOpenProfile?: () => void;
   onOpenSearch?: () => void;
+  onOpenGuide?: () => void;
   theme: AppTheme;
   onThemeChange: (theme: AppTheme) => void;
 }
@@ -28,6 +30,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenNotifications,
   onOpenProfile,
   onOpenSearch,
+  onOpenGuide,
   theme,
   onThemeChange,
 }) => {
@@ -137,6 +140,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right Controls */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {onOpenGuide && <button type="button" id="btn-first-visit-guide" onClick={onOpenGuide} title="Yo‘riqnoma" aria-label="Yo‘riqnomani ochish" className="preview-search-trigger p-2 rounded-xl flex items-center justify-center min-w-[34px] min-h-[38px] transition-colors"><CircleHelp className="w-4 h-4" /></button>}
           {EFL_2_DESIGN_ENABLED ? (
             <>
               {/* Global Search Button */}

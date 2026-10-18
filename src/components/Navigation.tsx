@@ -115,6 +115,7 @@ export const Navigation: React.FC<NavigationProps> = ({
                 <button
                   key={item.id}
                   id={`nav-tab-${item.id}`}
+                  data-guide={`nav-${item.id}`}
                   onClick={() => onTabChange(item.id)}
                   className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 min-h-[38px] ${
                     isActive
