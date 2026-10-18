@@ -1,3 +1,5 @@
+import { needsAiMeaningRouter, routeAiMessageMeaning } from './telegramAiMeaningRouter';
+import { isAiWorkflowControl, getAiWorkflow } from './telegramAiWorkflow';
 import { recordAiObservation } from './telegramAiObservability';
 import { readTelegramResultPhoto } from './telegramAiVision';
 import { isNativePrivateAssistant, isPrivateMemoryReset, privateAssistantContextKey, PRIVATE_AI_MEMORY } from './telegramAiPrivateAssistant';
@@ -650,6 +652,23 @@ async function handleTelegramAiMessageInternal(
       selectedFixtureIds:[...history].reverse().find(turn=>turn.role==='user'&&turn.selectedFixtureIds!==undefined)?.selectedFixtureIds,
       selectedCompetitionIds: [...history].reverse().find(turn => turn.role === 'user' && turn.selectedCompetitionIds !== undefined)?.selectedCompetitionIds,
     };
+    let semanticAdminRequest = false;
+    if (isOwnerAdminPrivateChat(payload) && isAiWorkflowControl(payload.text)) {
+      const workflow = await getAiWorkflow(payload, rootController.signal);
+      if (workflow && !['done','cancelled'].includes(workflow.state)) intent = 'admin';
+    }
+    if (nativePrivate && intent === 'chat' && !testAiResponder && needsAiMeaningRouter(payload.text)) {
+      try {
+        const meaningSignal = AbortSignal.any([rootController.signal, AbortSignal.timeout(Math.max(1, Math.min(4500, deadlineAt-Date.now()-10000)))]);
+        const meaning = await withinAiDeadline(meaningSignal, () => routeAiMessageMeaning(payload.text, history, meaningSignal));
+        if (meaning.mode === 'admin') { intent = 'admin'; semanticAdminRequest = true; }
+        if (meaning.mode === 'clarify') {
+          const result = await dispatchTelegramAiReply(payload, meaning.question!, rootController.signal, {parse_mode:null});
+          if (result.replySent) await saveConversationContext(payload.chatId,payload.threadId,payload.fromUser.id,payload.text,meaning.question!,{signal:rootController.signal,history});
+          return {ok:result.ok,handled:true,replySent:result.replySent};
+        }
+      } catch { /* Provider classification failure falls back to the existing read-only conversation. */ }
+    }
     if (isPersonalFixtureQuestion(payload.text) && !hasMultipleAiReadAspects(payload.text) && !['admin','confirm','cancel','help'].includes(intent)) {
       const personal = payload.senderChat || payload.forwarded
         ? {text:'Raqibingizni aniqlash uchun shaxsiy Telegram akkauntingizdan o‘zingiz yozing.',clubIds:[]}
@@ -668,10 +687,10 @@ async function handleTelegramAiMessageInternal(
     }
     if (isAiAdminCommand(payload.text) || ['admin','confirm','cancel'].includes(intent) || replyConfirmation || intent === 'help' && owner) {
       await clearAiReadClubDraft(payload, rootController.signal);
-      const text = await handleAiAdminCommand(payload, rootController.signal, JSON.stringify(scope), scope);
+      const text = await handleAiAdminCommand(semanticAdminRequest ? {...payload,text:'/ai_admin '+payload.text} : payload, rootController.signal, JSON.stringify(scope), scope);
       const token = /\/ai_confirm ([a-f0-9]{24})/.exec(text)?.[1];
       const visible = token ? text.replace(/\n\/ai_(?:confirm|cancel) [a-f0-9]{24}/g, '') + '\n“Tasdiqlash” tugmasini bosing yoki “tasdiqlayman” deb yozing.' : text;
-      const result = await dispatchTelegramAiReply(payload, visible, rootController.signal, { parse_mode: null, maxChars: intent === 'help' || /^\/ai_actions(?:@|\s|$)/i.test(payload.text) ? 4000 : 1000, reply_markup: token ? { inline_keyboard: [[{ text: 'Tasdiqlash', callback_data: 'ai:confirm:' + token }, { text: 'Bekor qilish', callback_data: 'ai:cancel:' + token }]] } : undefined });
+      const result = await dispatchTelegramAiReply(payload, visible, rootController.signal, { parse_mode: null, maxChars: /^Topshiriqlar/.test(text) || isAiWorkflowControl(payload.text) || intent === 'help' || /^\/ai_actions(?:@|\s|$)/i.test(payload.text) ? 4000 : 1000, reply_markup: token ? { inline_keyboard: [[{ text: 'Tasdiqlash', callback_data: 'ai:confirm:' + token }, { text: 'Bekor qilish', callback_data: 'ai:cancel:' + token }]] } : undefined });
       if (result.replySent && token && result.botMessageId) await rememberDeliveredAdminPlan(payload, text, result.botMessageId, rootController.signal);
       if (result.replySent && !token && result.botMessageId && owner) await rememberDeliveredAiAdminDraft(payload, text, result.botMessageId, rootController.signal);
       if (result.replySent && intent === 'admin') await saveConversationContext(payload.chatId, payload.threadId, payload.fromUser.id, payload.text, visible, { signal: rootController.signal, history, selectedClubIds: scope.selectedClubIds, selectedCompetitionIds: scope.selectedCompetitionIds });
