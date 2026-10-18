@@ -852,6 +852,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
           </div>
           <button
             type="button"
+            data-guide="standings-entry"
             onClick={() => openActiveLeague(true)}
             className="text-xs font-semibold text-[var(--efl-primary)] hover:underline inline-flex items-center gap-1"
           >

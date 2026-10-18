@@ -1053,6 +1053,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
             return (
               <div
                 key={comp.id}
+                data-guide={comp.targetTab === 'leagues' ? 'standings-entry' : undefined}
                 onClick={() => {
                   if (comp.targetTab === 'leagues' && activeClub?.leagueId) {
                     try {

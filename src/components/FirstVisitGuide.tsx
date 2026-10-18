@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, Compass, Search, Shield, Trophy, Bell, Swords, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Compass, Search, Shield, Trophy, Bell, Swords, ListOrdered, X } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { findGuideTarget, guidePlacement, type GuideRect, type GuideStatus } from '../lib/firstVisitGuide';
 import './first-visit-guide.css';
@@ -10,6 +10,7 @@ const content = {
     ['Turnirlar va klub tanlash', 'Ligalar, kuboklar va yevrokuboklar shu bo‘limda. Liga ichidan klublar, o‘yinlar va turnir jadvalini oching. Klub tanlash qabul holati va sizga berilgan ruxsatga bog‘liq.'],
     ['Sizning klubingiz', 'Tanlagan klublaringiz, o‘yinlaringiz va statistikangiz shu yerda. Bir nechta klubingiz bo‘lsa, ular orasida almashishingiz mumkin.'],
     ['Hisob qanday kiritiladi?', 'O‘yin tugagach, klub bo‘limidagi uchrashuvdan “Hisobni kiritish”ni oching. Natijani yuboring; raqib tasdiqlagach hisob rasmiylashadi. Tur yopiq bo‘lsa, uning ochilishini kuting.'],
+    ['Turnir jadvali', 'Bu yerdan ligadagi o‘rningiz, ochkolar, g‘alabalar va to‘plar farqini ko‘rasiz. Boshqa liga jadvali uchun “Turnirlar”dan ligani tanlab, “Jadval” bo‘limini oching.'],
     ['Klubni tez toping', 'Qidiruvga klub nomini yozing va natijani bosing — o‘sha klubning sahifasi ochiladi. Unda barcha turnirlardagi o‘yinlar va natijalarni ko‘rasiz.'],
     ['Muhim xabarlar', 'Natija tasdig‘i, uchrashuvlar va turnir yangiliklari shu yerga keladi. Xabarlarni kuzatib boring — navbatdagi amalni o‘tkazib yubormaysiz.'],
   ] },
@@ -18,6 +19,7 @@ const content = {
     ['Турниры и выбор клуба', 'Здесь лиги, кубки и еврокубки. Откройте лигу, чтобы увидеть клубы, матчи и таблицу. Выбор клуба зависит от приёма и вашего допуска.'],
     ['Ваш клуб', 'Ваши клубы, матчи и статистика. Если клубов несколько, здесь можно переключаться между ними.'],
     ['Как отправить счёт?', 'После игры откройте матч в разделе клуба и нажмите ввод счёта. Соперник подтверждает результат. Если тур закрыт, дождитесь открытия.'],
+    ['Турнирная таблица', 'Здесь можно открыть место клуба, очки, победы и разницу мячей. Для другой лиги выберите её в разделе турниров и откройте таблицу.'],
     ['Быстрый поиск', 'Введите название клуба и выберите результат. Откроется страница клуба с матчами и результатами во всех турнирах.'],
     ['Важные уведомления', 'Здесь подтверждения результатов, матчи и новости турниров. Следите за сообщениями, чтобы не пропустить следующий шаг.'],
   ] },
@@ -26,14 +28,15 @@ const content = {
     ['Competitions and club selection', 'Find leagues, cups and European competitions here. Open a league for clubs, fixtures and standings. Club selection depends on admission and your access.'],
     ['Your club', 'Your clubs, matches and statistics. If you have several clubs, switch between them here.'],
     ['How to submit a score', 'After playing, open the match in your club section and choose score submission. Your opponent confirms the result. Wait for the round to open if it is locked.'],
+    ['League standings', 'Open the league table here to see positions, points, wins and goal difference. For another league, select it under Competitions and open Standings.'],
     ['Find a club quickly', 'Search for a club and select the result to open its page with matches and results across every competition.'],
     ['Important notifications', 'Result confirmations, match updates and tournament news appear here. Check your messages for the next action.'],
   ] },
 };
-const targets = ['[data-guide="nav-dashboard"]', '[data-guide="nav-leagues"]', '[data-guide="nav-my-club"]', '[data-guide="score-entry"], [data-guide="nav-my-club"]', '#btn-global-search', '#btn-notifications'];
-const icons = [Compass, Trophy, Shield, Swords, Search, Bell];
+const targets = ['[data-guide="nav-dashboard"]', '[data-guide="nav-leagues"]', '[data-guide="nav-my-club"]', '[data-guide="score-entry"], [data-guide="nav-my-club"]', '[data-guide="standings-entry"], [data-guide="nav-leagues"]', '#btn-global-search', '#btn-notifications'];
+const icons = [Compass, Trophy, Shield, Swords, ListOrdered, Search, Bell];
 
-export function FirstVisitGuide({ onFinish, onShowScoreEntry }: { onFinish: (status: GuideStatus) => void; onShowScoreEntry?: () => void }) {
+export function FirstVisitGuide({ onFinish, onShowScoreEntry, onShowStandings }: { onFinish: (status: GuideStatus) => void; onShowScoreEntry?: () => void; onShowStandings?: () => void }) {
   const { language } = useI18n();
   const c = content[language] || content.uz;
   const [step, setStep] = useState(0);
@@ -45,10 +48,12 @@ export function FirstVisitGuide({ onFinish, onShowScoreEntry }: { onFinish: (sta
   const originalFocus = useRef(typeof document === 'undefined' ? null : document.activeElement as HTMLElement | null);
   const finish = useRef(onFinish); finish.current = onFinish;
   const showScoreEntry = useRef(onShowScoreEntry); showScoreEntry.current = onShowScoreEntry;
+  const showStandings = useRef(onShowStandings); showStandings.current = onShowStandings;
   const Icon = icons[step];
 
   useEffect(() => {
     if (step === 3 && !findGuideTarget(document, '[data-guide="score-entry"]')) showScoreEntry.current?.();
+    if (step === 4 && !findGuideTarget(document, '[data-guide="standings-entry"]')) showStandings.current?.();
   }, [step]);
 
   useLayoutEffect(() => {
@@ -56,7 +61,7 @@ export function FirstVisitGuide({ onFinish, onShowScoreEntry }: { onFinish: (sta
     let scrolled: HTMLElement | undefined;
     const update = () => {
       const candidate = findGuideTarget(document, targets[step]);
-      if (candidate && candidate !== scrolled && candidate.dataset.guide === 'score-entry') {
+      if (candidate && candidate !== scrolled && ['score-entry', 'standings-entry'].includes(candidate.dataset.guide || '')) {
         scrolled = candidate;
         candidate.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
       }
