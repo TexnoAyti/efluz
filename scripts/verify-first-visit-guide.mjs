@@ -4,6 +4,7 @@ import {createRequire} from 'node:module';
 import vm from 'node:vm';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {readFileSync,writeFileSync} from 'node:fs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const require=createRequire(path.join(root,'package.json'));
 const React=require('react'),{renderToStaticMarkup}=require('react-dom/server');
@@ -29,12 +30,24 @@ for(const width of [320,390,768,1440])for(const height of [220,568,844])for(cons
  assert.ok(p.left>=0&&p.left+p.width<=width,`card fits ${width}px screen`);
  assert.ok(p.top>=0&&p.top+Math.min(330,p.maxHeight)<=height,`card fits ${height}px viewport`);
 }
+const mobileNav={left:70,top:760,width:90,height:50};
+const mobile=helper.guidePlacement(mobileNav,390,844,330);
+assert.ok(mobile.top+330<mobileNav.top,'The mobile sheet leaves the highlighted bottom navigation visible');
+assert.equal(mobile.left,12,'Mobile uses the app’s 12px side spacing');
+const desktop=helper.guidePlacement({left:200,top:70,width:90,height:40},1440,900,330);
+assert.ok(desktop.top>=110,'Desktop coachmark sits beside its target rather than covering it');
+const globalCss=readFileSync(path.join(root,'src/admin-preview.css'),'utf8');
+const dialogSelectors=globalCss.match(/[^{}]*\[role="dialog"\][^{}]*\{/g)||[];
+assert.ok(dialogSelectors.length>0);
+assert.ok(dialogSelectors.every(selector=>selector.includes('[role="dialog"]:not(:where(.efl-guide-card))')),'The overlay theme must never paint the solid coachmark as a transparent backdrop');
 for(const language of ['uz','ru','en']){
  component.guideLanguage=language;
  const html=renderToStaticMarkup(React.createElement(component.module.exports.FirstVisitGuide,{onFinish:()=>{throw new Error('Rendering never changes data');}}));
  assert.match(html,/role="dialog"/);assert.match(html,/aria-modal="true"/);assert.match(html,/aria-live="polite"/);
+ assert.match(html,/efl-guide-card-scroll/);assert.match(html,/efluz-logo-light.png/);assert.match(html,/btn-glass-primary/);
  assert.equal((html.match(/data-active=/g)||[]).length,6,'All six steps are represented');
  assert.doesNotMatch(html,/Admin|\/api\//,'Public guidance never exposes admin controls or performs requests');
  if(language==='uz'){assert.match(html,/Bosh sahifa/);assert.match(html,/Keyingi/);assert.match(html,/O‘tkazib yuborish/);}
+ if(language==='uz'&&process.env.EFL_GUIDE_REVIEW_HTML)writeFileSync(process.env.EFL_GUIDE_REVIEW_HTML,html);
 }
 console.log('PASS first-visit guide: account-isolated completed/skipped state, blocked storage, card placement on mobile/desktop/short viewports, accessible localized modal and public-only instructions.');
