@@ -1,4 +1,4 @@
-import React, { lazy, useState, useEffect, useMemo } from 'react';
+import React, { lazy, useState, useEffect, useMemo, useRef } from 'react';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { UserProfileProvider } from './context/UserProfileContext';
@@ -12,6 +12,8 @@ import { Fixture, AdminPermissions } from './types';
 import { readTournamentLaunch } from './lib/customTournamentLinks';
 import { clubPagePath, readClubPageId } from './lib/clubNavigation';
 import { api } from './lib/api';
+import { FirstVisitGuide } from './components/FirstVisitGuide';
+import { readGuideStatus, saveGuideStatus, type GuideStatus } from './lib/firstVisitGuide';
 import { isDesignPreview } from './designPreview';
 import { EFL_2_DESIGN_ENABLED, WELCOME_STORAGE_VERSION } from './releaseDesign';
 import { Loader2, CheckCircle2, AlertCircle, Info } from 'lucide-react';
@@ -65,6 +67,8 @@ const AppContent: React.FC = () => {
   }, [user?.id, user?.isAdmin, user?.adminPermissions?.scope, activeTab]);
 
   const [welcomeCompletedFor, setWelcomeCompletedFor] = useState<string | null>(null);
+  const [guideUserId, setGuideUserId] = useState<string | null>(null);
+  const guideSeenInSession = useRef(new Set<string>());
   const welcomeCompleted = useMemo(() => {
     if (!user) return false;
     if (welcomeCompletedFor === user.id) return true;
@@ -78,6 +82,28 @@ const AppContent: React.FC = () => {
     if (!user) return;
     try { window.localStorage.setItem(`efluz-welcome-${WELCOME_STORAGE_VERSION}:${user.id}`, 'done'); } catch {}
     setWelcomeCompletedFor(user.id);
+  };
+
+  useEffect(() => {
+    if (!user || isLoading || authStatus !== 'AUTHENTICATED' || !welcomeCompleted) return;
+    if (isDesignPreview || guideSeenInSession.current.has(user.id)) return;
+    guideSeenInSession.current.add(user.id);
+    let status: GuideStatus | null = null;
+    try { status = readGuideStatus(user.id, window.localStorage); } catch {}
+    if (!status) setGuideUserId(user.id);
+  }, [user?.id, isLoading, authStatus, welcomeCompleted]);
+
+  const finishGuide = (status: GuideStatus) => {
+    if (!user) return;
+    try { saveGuideStatus(user.id, status, window.localStorage); } catch {}
+    guideSeenInSession.current.add(user.id);
+    setGuideUserId(null);
+  };
+
+  const openGuide = () => {
+    if (!user) return;
+    setIsSearchOpen(false); setIsNotificationOpen(false); setIsDiagnosticsOpen(false);
+    setGuideUserId(user.id);
   };
 
   // EFL UZ Broadcast Redesign: Light and Dark mode only
@@ -185,6 +211,7 @@ const AppContent: React.FC = () => {
         onOpenNotifications={() => setActiveTab('notifications')}
         onOpenProfile={() => setActiveTab('my-club')}
         onOpenSearch={() => setIsSearchOpen(true)}
+        onOpenGuide={openGuide}
       />
       <Navigation activeTab={currentTab} onTabChange={setActiveTab} openDisputesCount={openDisputesCount} />
       {!isDesignPreview && canUseGlobalAdminTools && <ContentBoundary><OfflineSyncBanner /></ContentBoundary>}
@@ -270,6 +297,7 @@ const AppContent: React.FC = () => {
           setActiveTab('my-club');
         }}
       /></ContentBoundary>}
+      {user && guideUserId === user.id && <FirstVisitGuide key={user.id} onFinish={finishGuide} />}
     </div>
   );
 };

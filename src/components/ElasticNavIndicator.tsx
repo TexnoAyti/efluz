@@ -411,6 +411,7 @@ export const ElasticNavIndicator: React.FC<ElasticNavIndicatorProps> = ({
               btnRefs.current[idx] = el;
             }}
             id={`admin-tab-${item.id}`}
+            data-guide={`nav-${item.id}`}
             role="tab"
             aria-selected={isSelected}
             aria-label={item.label}

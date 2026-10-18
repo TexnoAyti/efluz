@@ -33,6 +33,7 @@ jobs:
         run: |
           node scripts/verify-design-release.mjs
           node scripts/verify-club-profile.mjs
+          node scripts/verify-first-visit-guide.mjs
 
       - name: Run Build
         env:
