@@ -451,6 +451,10 @@ export const api = {
     return request(`/api/clubs/${clubId}?seasonId=${seasonId}`, { cacheTtlMs: 120000, skipCache });
   },
 
+  async getClubFixtures(clubId: string, seasonId: string, skipCache = false): Promise<{ fixtures: Fixture[]; stale: boolean; degraded: boolean }> {
+    return request(`/api/clubs/${encodeURIComponent(clubId)}/fixtures?seasonId=${encodeURIComponent(seasonId)}`, { cacheTtlMs: 30000, skipCache });
+  },
+
   async getClubClaimStatus(seasonId = 'season-2026-27'): Promise<{request: ClubClaimReceipt|null}> {
     return request(`/api/clubs/claim-status?seasonId=${seasonId}`, {skipCache:true});
   },
@@ -475,8 +479,8 @@ export const api = {
     return request(`/api/competitions?seasonId=${seasonId}`, { cacheTtlMs: 15000, skipCache });
   },
 
-  async getCompetitionStandings(competitionId: string, skipCache = false): Promise<{ standings: StandingsRow[] }> {
-    return request(`/api/competitions/${competitionId}/standings`, { cacheTtlMs: 120000, skipCache });
+  async getCompetitionStandings(competitionId: string, skipCache = false, seasonId?: string): Promise<{ standings: StandingsRow[] }> {
+    return request(`/api/competitions/${competitionId}/standings${seasonId ? `?seasonId=${encodeURIComponent(seasonId)}` : ''}`, { cacheTtlMs: 120000, skipCache });
   },
 
   async getCompetitionParticipants(competitionId: string, skipCache = false): Promise<{ participants: any[] }> {

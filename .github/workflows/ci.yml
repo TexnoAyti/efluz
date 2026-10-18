@@ -30,7 +30,9 @@ jobs:
         run: bun run lint
 
       - name: Verify public EFL 2.0 design and role boundaries
-        run: node scripts/verify-design-release.mjs
+        run: |
+          node scripts/verify-design-release.mjs
+          node scripts/verify-club-profile.mjs
 
       - name: Run Build
         env:
@@ -88,6 +90,7 @@ jobs:
           node scripts/run-isolated-test.mjs src/server/tests/retiredFixtureRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/approvedFixtureRestorationRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/fixtureScheduleRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/publicClubProfileRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/fixtureDeletionFailureRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/resultHttpLifecycleRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/domesticCupFinalGuardRegressionTest.ts

@@ -47,7 +47,7 @@ export function AdminFixtureSchedule({ fixture, competitionId: initialCompetitio
   return <section className="rounded-2xl border border-blue-400/20 bg-slate-900/70 p-4 space-y-3">
     <button type="button" className="text-xs font-black text-blue-200" aria-expanded={expanded} onClick={()=>setExpanded(!expanded)}>O‘yin vaqtini {fixture?'tahrirlash':'guruh bo‘yicha belgilash'}</button>
     {expanded && <div className="space-y-3">
-      <p className="text-xs text-slate-400">Toshkent vaqti (UTC+5). Hisoblar va natijalar o‘zgarmaydi.</p>
+      <p className="text-xs text-slate-400">Toshkent vaqti. Hisoblar va natijalar o‘zgarmaydi.</p>
       {!fixture && <div className="grid gap-3 sm:grid-cols-3">
         <label className="text-xs text-slate-300">Kategoriya<select className={input} value={category} disabled={busy} onChange={e=>{setCategory(e.target.value);setCompetitionId('');clearPreview();}}>{[['ALL','Barchasi'],['LEAGUE','Ligalar'],['KNOCKOUT','Kuboklar'],['SUPER_CUP','Superkuboklar'],['EUROPEAN','Yevropa musobaqalari']].map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></label>
         <label className="text-xs text-slate-300">Musobaqa<select className={input} value={competitionId} disabled={busy || !!initialCompetitionId} onChange={e=>{setCompetitionId(e.target.value);clearPreview();}}><option value="">Tanlangan kategoriyadagi barchasi</option>{competitions.filter(c=>category==='ALL'||(category==='EUROPEAN'?c.type.startsWith('EUROPEAN'):c.type===category)).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}{initialCompetitionId&&!competitions.some(c=>c.id===initialCompetitionId)&&<option value={initialCompetitionId}>{initialCompetitionId}</option>}</select></label>
