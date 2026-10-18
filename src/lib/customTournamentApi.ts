@@ -13,7 +13,7 @@ import {
   TournamentFormatPreview,
 } from '../types/customTournament';
 
-function getAuthHeaders(): HeadersInit {
+export function getAuthHeaders(): HeadersInit {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
