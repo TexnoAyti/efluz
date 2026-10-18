@@ -647,7 +647,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
                       handleOpenMatch(heroMatch);
                     }
                   }}
-                  data-guide="match-actions"
+                  data-guide={heroMatch.status === 'SCHEDULED' && heroMatch.isPlayable !== false ? 'score-entry' : 'match-actions'}
                   className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-5 py-2 rounded-xl btn-glass-primary text-xs shadow-xs active:scale-95 transition-all min-h-[38px]"
                 >
                   <span>
@@ -852,6 +852,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
           </div>
           <button
             type="button"
+            data-guide="standings-entry"
             onClick={() => openActiveLeague(true)}
             className="text-xs font-semibold text-[var(--efl-primary)] hover:underline inline-flex items-center gap-1"
           >

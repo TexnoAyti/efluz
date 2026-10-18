@@ -11,12 +11,28 @@ export function saveGuideStatus(userId: string, status: GuideStatus, storage?: G
 }
 
 export type GuideRect = { top: number; left: number; width: number; height: number };
+// Prefer the real control even when it needs scrolling; a visible navigation fallback
+// must not steal the score step from its actual button.
+export function findGuideTarget(root: Pick<Document, 'querySelectorAll'>, selectors: string) {
+  return selectors.split(',').flatMap(selector => Array.from(root.querySelectorAll<HTMLElement>(selector.trim())))
+    .find(el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+}
 export function guidePlacement(target: GuideRect | null, width: number, height: number, cardHeight: number) {
   const mobile = width < 680;
   const cardWidth = Math.min(mobile ? 400 : 380, Math.max(0, width - (mobile ? 24 : 32)));
   if (mobile) {
-    const bottom = target && target.top > height - 132 ? height - target.top + 16 : height >= 560 ? 104 : 16;
-    return { left: (width - cardWidth) / 2, top: Math.max(16, height - bottom - cardHeight), width: cardWidth, maxHeight: Math.max(1, height - bottom - 16) };
+    const safeBottom = height >= 560 ? 104 : 16;
+    if (target) {
+      const above = Math.max(1, target.top - 34);
+      const belowTop = target.top + target.height + 18;
+      const below = Math.max(1, height - safeBottom - belowTop);
+      if (above >= cardHeight || above >= below) {
+        const maxHeight = above;
+        return { left: (width - cardWidth) / 2, top: Math.max(16, target.top - 18 - Math.min(cardHeight, maxHeight)), width: cardWidth, maxHeight };
+      }
+      return { left: (width - cardWidth) / 2, top: Math.max(16, Math.min(belowTop, height - 17)), width: cardWidth, maxHeight: below };
+    }
+    return { left: (width - cardWidth) / 2, top: Math.max(16, height - safeBottom - cardHeight), width: cardWidth, maxHeight: Math.max(1, height - safeBottom - 16) };
   }
   const maxTop = Math.max(16, height - cardHeight - 16);
   const left = target ? Math.min(Math.max(16, target.left + target.width / 2 - cardWidth / 2), Math.max(16, width - cardWidth - 16)) : (width - cardWidth) / 2;

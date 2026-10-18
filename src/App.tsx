@@ -297,7 +297,7 @@ const AppContent: React.FC = () => {
           setActiveTab('my-club');
         }}
       /></ContentBoundary>}
-      {user && guideUserId === user.id && <FirstVisitGuide key={user.id} onFinish={finishGuide} />}
+      {user && guideUserId === user.id && <FirstVisitGuide key={user.id} onFinish={finishGuide} onShowScoreEntry={() => setActiveTab('my-club')} onShowStandings={() => setActiveTab('dashboard')} />}
     </div>
   );
 };

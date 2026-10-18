@@ -12,7 +12,12 @@ const result=await build({absWorkingDir:root,entryPoints:['src/components/FirstV
  build.onResolve({filter:/\/i18n$/},()=>({path:'i18n',namespace:'guide-test'}));
  build.onLoad({filter:/.*/,namespace:'guide-test'},()=>({contents:'export const useI18n=()=>({language:globalThis.guideLanguage});'}));
 }}]});
-function module(file){const context={require,module:{exports:{}},exports:{},console,window:{innerWidth:390,innerHeight:844},guideLanguage:'uz'};context.exports=context.module.exports;vm.createContext(context);vm.runInContext(file.text,context);return context;}
+function module(file){
+ const context={module:{exports:{}},exports:{},console,window:{innerWidth:390,innerHeight:844},guideLanguage:'uz',guideStep:0,guideStateIndex:0};
+ const react={...React,useState(initial){const state=React.useState(initial);return context.guideStateIndex++===0?[context.guideStep,state[1]]:state;}};
+ context.require=name=>name==='react'?react:require(name);
+ context.exports=context.module.exports;vm.createContext(context);vm.runInContext(file.text,context);return context;
+}
 const helper=module(result.outputFiles.find(f=>f.path.endsWith('/firstVisitGuide.js'))).module.exports;
 const component=module(result.outputFiles.find(f=>f.path.endsWith('/FirstVisitGuide.js')));
 const map=new Map(),storage={getItem:key=>map.get(key)||null,setItem:(key,value)=>map.set(key,value)};
@@ -34,6 +39,21 @@ const mobileNav={left:70,top:760,width:90,height:50};
 const mobile=helper.guidePlacement(mobileNav,390,844,330);
 assert.ok(mobile.top+330<mobileNav.top,'The mobile sheet leaves the highlighted bottom navigation visible');
 assert.equal(mobile.left,12,'Mobile uses the app’s 12px side spacing');
+// The score button may be below the fold while the club navigation is visible.
+const button={getBoundingClientRect:()=>({width:140,height:40,top:1100,bottom:1140})};
+const nav={getBoundingClientRect:()=>({width:90,height:50,top:760,bottom:810})};
+const hidden={getBoundingClientRect:()=>({width:0,height:0,top:0,bottom:0})};
+const rootWithControls={querySelectorAll:selector=>selector==='score'?[hidden,button]:[nav]};
+assert.equal(helper.findGuideTarget(rootWithControls,'score, nav'),button,'The offscreen score button wins over the visible club navigation');
+assert.equal(helper.findGuideTarget({querySelectorAll:selector=>selector==='standings'?[button]:[nav]},'standings, nav'),button,'The standings control also wins over visible navigation');
+assert.equal(helper.findGuideTarget({querySelectorAll:()=>[]},'score'),undefined,'Missing fixtures do not manufacture a score action');
+for(const height of [568,844])for(const top of [170,Math.floor(height/2),height-150]){
+ const target={left:30,top,width:220,height:48};
+ const p=helper.guidePlacement(target,390,height,330);
+ const bottom=p.top+Math.min(330,p.maxHeight);
+ assert.ok(bottom<=target.top || p.top>=target.top+target.height,'The mobile guide must not cover the score button');
+ assert.ok(bottom<=height && p.top>=16,'The targeted mobile guide stays in the viewport');
+}
 const desktop=helper.guidePlacement({left:200,top:70,width:90,height:40},1440,900,330);
 assert.ok(desktop.top>=110,'Desktop coachmark sits beside its target rather than covering it');
 const globalCss=readFileSync(path.join(root,'src/admin-preview.css'),'utf8');
@@ -41,13 +61,20 @@ const dialogSelectors=globalCss.match(/[^{}]*\[role="dialog"\][^{}]*\{/g)||[];
 assert.ok(dialogSelectors.length>0);
 assert.ok(dialogSelectors.every(selector=>selector.includes('[role="dialog"]:not(:where(.efl-guide-card))')),'The overlay theme must never paint the solid coachmark as a transparent backdrop');
 for(const language of ['uz','ru','en']){
- component.guideLanguage=language;
+ component.guideLanguage=language; component.guideStep=0; component.guideStateIndex=0;
  const html=renderToStaticMarkup(React.createElement(component.module.exports.FirstVisitGuide,{onFinish:()=>{throw new Error('Rendering never changes data');}}));
  assert.match(html,/role="dialog"/);assert.match(html,/aria-modal="true"/);assert.match(html,/aria-live="polite"/);
  assert.match(html,/efl-guide-card-scroll/);assert.match(html,/efluz-logo-light.png/);assert.match(html,/btn-glass-primary/);
- assert.equal((html.match(/data-active=/g)||[]).length,6,'All six steps are represented');
+ assert.equal((html.match(/data-active=/g)||[]).length,7,'All seven steps are represented');
  assert.doesNotMatch(html,/Admin|\/api\//,'Public guidance never exposes admin controls or performs requests');
  if(language==='uz'){assert.match(html,/Bosh sahifa/);assert.match(html,/Keyingi/);assert.match(html,/O‘tkazib yuborish/);}
+ const headings={uz:['Hisob qanday kiritiladi?','Turnir jadvali','Muhim xabarlar'],ru:['Как отправить счёт?','Турнирная таблица','Важные уведомления'],en:['How to submit a score','League standings','Important notifications']};
+ for(const [index,step] of [3,4,6].entries()){
+   component.guideStep=step;component.guideStateIndex=0;
+   const stepHtml=renderToStaticMarkup(React.createElement(component.module.exports.FirstVisitGuide,{onFinish:()=>{throw new Error('Rendering never changes data');}}));
+   assert.ok(stepHtml.includes(headings[language][index]),`Score, standings and final notification steps remain aligned in ${language}`);
+   assert.equal(stepHtml.includes('efl-guide-replay-hint'),step===6,'Only the seventh and final step shows replay help');
+ }
  if(language==='uz'&&process.env.EFL_GUIDE_REVIEW_HTML)writeFileSync(process.env.EFL_GUIDE_REVIEW_HTML,html);
 }
 console.log('PASS first-visit guide: account-isolated completed/skipped state, blocked storage, card placement on mobile/desktop/short viewports, accessible localized modal and public-only instructions.');
