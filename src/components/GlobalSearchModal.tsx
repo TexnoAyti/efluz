@@ -10,6 +10,7 @@ interface GlobalSearchModalProps {
   isOpen: boolean;
   onClose: () => void;
   onNavigateTab: (tab: any) => void;
+  onSelectClub: (club: Club) => void;
   onSelectFixture?: (fixture: Fixture) => void;
 }
 
@@ -32,6 +33,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
   isOpen,
   onClose,
   onNavigateTab,
+  onSelectClub,
   onSelectFixture,
 }) => {
   const { activeSeasonId, devProfiles } = useAuth();
@@ -174,12 +176,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
   };
 
   const handleSelectClub = (club: Club) => {
-    try {
-      sessionStorage.setItem('efl:preview-league', club.leagueId || 'league-premier-league');
-      sessionStorage.setItem('efl:preview-selected-club', club.id);
-      sessionStorage.setItem('efl:competition-hub-subtab', 'leagues');
-    } catch {}
-    onNavigateTab('leagues');
+    onSelectClub(club);
     onClose();
   };
 
@@ -213,6 +210,12 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter' || e.nativeEvent.isComposing) return;
+                const exact = filteredClubs.filter(c => c.name.toLowerCase() === trimmed || c.shortName?.toLowerCase() === trimmed);
+                const target = exact.length === 1 ? exact[0] : filteredClubs.length === 1 ? filteredClubs[0] : null;
+                if (target) { e.preventDefault(); handleSelectClub(target); }
+              }}
               placeholder={
                 language === 'uz'
                   ? 'Klub, turnir, o‘yinchi yoki o‘yin qidirish...'
