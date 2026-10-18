@@ -1,3 +1,6 @@
+import {useAuth} from '../context/AuthContext';
+import {canSeeTeamPreview} from '../types/teamLeaguePreview';
+import {TeamLeaguePreviewView} from './teamLeaguePreview/TeamLeaguePreviewView';
 import React, { useState, useEffect } from 'react';
 import { useI18n } from '../i18n';
 import { ClubsView } from './ClubsView';
@@ -17,7 +20,9 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
   initialSubTab = 'leagues',
 }) => {
   const { language } = useI18n();
-  const [subTab, setSubTab] = useState<'leagues' | 'cups' | 'european' | 'season' | 'custom'>(() => {
+  const {user}=useAuth();
+  const teamPreview=canSeeTeamPreview(user?.telegramId);
+  const [subTab, setSubTab] = useState<'leagues' | 'cups' | 'european' | 'season' | 'custom' | 'teams'>(() => {
     try {
       const saved = sessionStorage.getItem('efl:competition-hub-subtab');
       if (saved === 'leagues' || saved === 'cups' || saved === 'european' || saved === 'season' || saved === 'custom') {
@@ -75,6 +80,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
     { id: 'european' as const, label: titles.european, icon: Globe2 },
     { id: 'season' as const, label: titles.season, icon: CalendarDays },
     { id: 'custom' as const, label: titles.custom, icon: Sparkles },
+    ...(teamPreview ? [{id:'teams' as const,label:'Team vs Team',icon:Trophy}] : []),
   ];
 
   return (
@@ -116,6 +122,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
         {subTab === 'european' && <ChampionsLeagueView onNavigateTab={onNavigateTab} />}
         {subTab === 'season' && <SeasonHubView onNavigateTab={onNavigateTab} />}
         {subTab === 'custom' && <TournamentListView />}
+        {subTab === 'teams' && teamPreview && <TeamLeaguePreviewView />}
       </div>
     </div>
   );
