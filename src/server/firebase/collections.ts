@@ -170,6 +170,10 @@ export interface FirestoreResultSubmissionDoc {
   clubId: string;
   homeScore: number;
   awayScore: number;
+  homeExtraTimeScore?: number | null;
+  awayExtraTimeScore?: number | null;
+  homePenaltyScore?: number | null;
+  awayPenaltyScore?: number | null;
   proofUrl?: string | null;
   createdAt: string;
 }

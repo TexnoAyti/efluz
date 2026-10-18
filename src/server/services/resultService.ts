@@ -1,3 +1,4 @@
+import type { CupTieBreakScores } from '../../lib/cupResult';
 import {
   submitFixtureResultFirestore,
 } from '../firebase/firestoreStore';
@@ -16,10 +17,11 @@ export async function submitFixtureResult(
   fixtureId: string,
   homeScore: number,
   awayScore: number,
-  proofUrl?: string
+  proofUrl?: string,
+  cupScores: CupTieBreakScores = {},
 ): Promise<Fixture> {
   try {
-    const fixture = await submitFixtureResultFirestore(userId, fixtureId, homeScore, awayScore, proofUrl);
+    const fixture = await submitFixtureResultFirestore(userId, fixtureId, homeScore, awayScore, proofUrl, cupScores);
 
     // Smart Telegram delivery is best-effort and quota-independent. Never let a
     // notification failure make a successfully persisted match result fail.

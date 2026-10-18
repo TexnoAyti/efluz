@@ -1,4 +1,4 @@
-import { resolveCupResult } from '../../lib/cupResult';
+import { cupScoreMetadata, resolveCupResult } from '../../lib/cupResult';
 import { isDomesticCupResult as isDomesticCup } from '../../lib/cupResult';
 import fs from 'fs';
 import path from 'path';
@@ -433,6 +433,14 @@ async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: 
       }
 
       const fixData = fixDoc.data()!;
+      if (isDomesticCup(fixData.competitionId)) {
+        if (fixData.status === 'CONFIRMED') break;
+        const { submitFixtureResultFirestore } = await import('../firebase/firestoreStore');
+        const fixture = await submitFixtureResultFirestore(payload.userId, entityId, payload.homeScore, payload.awayScore, payload.proofUrl || undefined, cupScoreMetadata(payload), { authoritativeOnly: true });
+        const { notifySmartResultLifecycle } = await import('../services/smartNotificationService');
+        await notifySmartResultLifecycle(fixture, payload.userId).catch(() => {});
+        break;
+      }
       const subRef = db.collection(COLLECTIONS.RESULT_SUBMISSIONS).doc(payload.submissionId);
 
       // Write submission doc

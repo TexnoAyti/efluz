@@ -1,3 +1,4 @@
+import type { CupTieBreakScores } from './cupResult';
 import type { MatchdayControlAction, MatchdayControlOverview } from './matchdayState';
 import type { AdminPermissions } from '../types';
 import { User, Club, Season, League, Competition, Fixture, StandingsRow, Dispute, Notification, AuditLog, UserStats } from '../types';
@@ -519,11 +520,12 @@ export const api = {
     fixtureId: string,
     homeScore: number,
     awayScore: number,
-    proofUrl?: string
+    proofUrl?: string,
+    cupScores: CupTieBreakScores = {}
   ): Promise<{ success: boolean; message: string; fixture: Fixture }> {
     const res = await request<{ success: boolean; message: string; fixture: Fixture }>(`/api/fixtures/${fixtureId}/result`, {
       method: 'POST',
-      body: JSON.stringify({ homeScore, awayScore, proofUrl }),
+      body: JSON.stringify({ ...cupScores, homeScore, awayScore, proofUrl }),
     });
     invalidateClientCache('/api/fixtures');
     invalidateClientCache('/api/competitions');
