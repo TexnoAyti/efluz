@@ -92,7 +92,7 @@ import {
 } from '../services/smartNotificationSettingsService';
 import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
 import { refreshRecipientDirectoryIfStale } from '../services/recipientDirectoryRefreshService';
-import { advanceClubAdmission, CLUB_ADMISSION_LEAGUES, ClubAdmissionConflict, getClubAdmissionStatus } from '../services/clubAdmission';
+import { setLeagueClubSelection, advanceClubAdmission, CLUB_ADMISSION_LEAGUES, ClubAdmissionConflict, getClubAdmissionStatus } from '../services/clubAdmission';
 import { queryAll, queryGet } from '../db/index';
 import {
   rebuildAllReadModels,
@@ -153,6 +153,20 @@ adminRouter.get('/clubs/admission', async (req: Request, res: Response) => {
       return;
     }
     handleFirestoreError(res, err, 'GET /api/admin/clubs/admission');
+  }
+});
+
+adminRouter.post('/clubs/admission/league', async (req: Request, res: Response) => {
+  const { seasonId, leagueId, open, expectedRevision } = req.body || {};
+  if (typeof seasonId !== 'string' || !/^season-[a-z0-9-]+$/.test(seasonId) || !CLUB_ADMISSION_LEAGUES.some(league => league.id === leagueId) || typeof open !== 'boolean' || !(expectedRevision === null || typeof expectedRevision === 'string' && expectedRevision.length <= 100)) {
+    res.status(400).json({ code: 'INVALID_LEAGUE_SELECTION' }); return;
+  }
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ admission: await setLeagueClubSelection(seasonId, leagueId, open, expectedRevision, req.user!.id) });
+  } catch (err: any) {
+    if (err instanceof ClubAdmissionConflict) { res.status(409).json({ code: err.code, message: err.message }); return; }
+    handleFirestoreError(res, err, 'POST /api/admin/clubs/admission/league');
   }
 });
 

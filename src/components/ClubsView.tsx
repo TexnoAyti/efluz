@@ -1,3 +1,4 @@
+import { isLeagueSelectionOpen } from '../lib/clubAdmission';
 import { EFL_2_DESIGN_ENABLED } from '../releaseDesign';
 import { AdminTournamentImageExport } from './AdminTournamentImageExport';
 import React, { useEffect, useState, useCallback, useRef } from 'react';
@@ -120,12 +121,17 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
   }, [claimReceipt?.id, claimReceipt?.status, selectedLeagueId, refreshUserData]);
   const [admission, setAdmission] = useState<ClubAdmissionStatus | null>(null);
   const [admissionError, setAdmissionError] = useState(false);
+  const admissionSeason = useRef(activeSeasonId); admissionSeason.current = activeSeasonId;
+  const admissionRequest = useRef(0);
   const loadAdmission = useCallback(async () => {
+    const version = ++admissionRequest.current;
     try {
       const result = await api.getClubAdmission(activeSeasonId);
+      if (admissionSeason.current !== activeSeasonId || admissionRequest.current !== version) return;
       setAdmission(result.admission);
       setAdmissionError(false);
     } catch {
+      if (admissionSeason.current !== activeSeasonId || admissionRequest.current !== version) return;
       setAdmission(null);
       setAdmissionError(true);
     }
@@ -133,8 +139,9 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
   useEffect(() => {
     setAdmission(null);
     void loadAdmission();
+    const timer = window.setInterval(() => { if (!document.hidden) void loadAdmission(); }, 30000);
     window.addEventListener('focus', loadAdmission);
-    return () => window.removeEventListener('focus', loadAdmission);
+    return () => { admissionRequest.current++; window.clearInterval(timer); window.removeEventListener('focus', loadAdmission); };
   }, [loadAdmission]);
   const [premiumActive, setPremiumActive] = useState(false);
   const [premiumStatusReady, setPremiumStatusReady] = useState(false);
@@ -336,7 +343,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
       return;
     }
     if (claimReceipt?.pendingSync) { showToast(receiptMessage.pending, 'error'); setClubToClaim(null); return; }
-    if (!admission || admission.enabled && admission.activeLeagueId !== club.leagueId) {
+    if (!isLeagueSelectionOpen(admission, club.leagueId)) {
       showToast(admissionText.closed, 'error');
       setClubToClaim(null);
       return;
@@ -706,7 +713,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
       {activeLeagueTab === 'CLUBS' && (
         <div className="space-y-4">
           <div className="p-3 rounded-xl bg-[var(--efl-surface)] border border-[var(--efl-border)] text-xs text-[var(--efl-text-2)] flex items-center justify-between gap-3 shadow-xs">
-            <span>{admissionError ? admissionText.unavailable : !admission ? admissionText.checking : !admission.enabled ? admissionText.open : admission.activeLeagueId === selectedLeagueId ? admissionText.leagueOpen : admission.activeLeagueId ? admissionText.otherLeague(admission.leagues[admission.stage].name) : admissionText.finished}</span>
+            <span>{admissionError ? admissionText.unavailable : !admission ? admissionText.checking : isLeagueSelectionOpen(admission, selectedLeagueId) ? admissionText.leagueOpen : admissionText.closed}</span>
             {admissionError && <button type="button" onClick={() => void loadAdmission()} className="text-emerald-600 efl-theme-emerald dark:text-emerald-400 font-bold">{admissionText.retry}</button>}
           </div>
           {/* Search & Filter Toolbar */}
@@ -896,13 +903,13 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                             <span className="font-semibold text-[var(--efl-text)] truncate">{ownerInfo.displayText}</span>
                           )}
                         </div>
-                      ) : !admission || admission.enabled && admission.activeLeagueId !== club.leagueId || !premiumStatusReady || ownedClubs.some((owned) => owned.leagueId === club.leagueId) || ownedClubs.length >= (premiumActive ? 2 : 1) ? (
+                      ) : !isLeagueSelectionOpen(admission, club.leagueId) || !premiumStatusReady || ownedClubs.some((owned) => owned.leagueId === club.leagueId) || ownedClubs.length >= (premiumActive ? 2 : 1) ? (
                         <button
                           disabled={true}
                           className="w-full py-2 bg-[var(--efl-surface-2)] border border-[var(--efl-border)] text-[var(--efl-muted)] efl-theme-meta font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-not-allowed opacity-75 min-h-[38px]"
                         >
                           <Lock className="w-3.5 h-3.5 text-[var(--efl-muted)] efl-theme-meta" />
-                          <span>{admission?.enabled && admission.activeLeagueId !== club.leagueId ? admissionText.closed : t.clubLocked}</span>
+                          <span>{!isLeagueSelectionOpen(admission, club.leagueId) ? admissionText.closed : t.clubLocked}</span>
                         </button>
                       ) : (
                         <button

@@ -42,6 +42,14 @@ async function request(path: string, method = 'GET', body?: any, actor = 'user-5
   return fetch(base + path, { method, headers: { 'content-type': 'application/json', 'x-test-user': actor }, body: body === undefined ? undefined : JSON.stringify(body) });
 }
 try {
+  const selectionBody = { seasonId: 'season-2026-27', leagueId: 'league-la-liga', open: false, expectedRevision: null };
+  assert.equal((await request('/api/admin/clubs/admission/league', 'POST', selectionBody, 'scope-player')).status, 403, 'Players cannot forge admin access');
+  assert.equal((await request('/api/admin/clubs/admission/league', 'POST', { ...selectionBody, open: 'false' }, 'scope-root')).status, 400, 'Boolean selection is strictly validated');
+  assert.equal((await request('/api/admin/clubs/admission/league', 'POST', { ...selectionBody, leagueId: 'league-fake' }, 'scope-root')).status, 400);
+  const selection = await request('/api/admin/clubs/admission/league', 'POST', selectionBody, 'scope-root');
+  assert.equal(selection.status, 200);
+  assert.equal((await selection.json()).admission.leagueOverrides['league-la-liga'], false);
+  assert.equal((await request('/api/admin/clubs/admission/league', 'POST', selectionBody, 'scope-root')).status, 409, 'A stale admin revision is rejected');
   const grant = await request('/api/admin/users/user-555001/role', 'POST', { isAdmin: true, adminPermissions: { scope: 'LEAGUES', leagueIds: ['league-la-liga'] } }, 'user-5209126900');
   assert.equal(grant.status, 200, JSON.stringify(await grant.json()));
   assert.deepEqual((await getAuthoritativeUserForAuthorization('user-555001'))!.adminPermissions, { scope: 'LEAGUES', leagueIds: ['league-la-liga'] });
@@ -56,6 +64,7 @@ try {
   assert.equal((await request(`/api/admin/competitions/${pl}/matchday/override`, 'POST', { competitionId: la })).status, 403);
   assert.equal((await request(`/api/competitions/${pl}/reset-fixtures`, 'POST', {})).status, 403);
   for (const [path, method, body] of [
+    ['/api/admin/clubs/admission/league', 'POST', selectionBody],
     ['/api/admin/overview', 'GET'], ['/api/admin/users/directory', 'GET'], ['/api/admin/notifications/messages', 'GET'],
     ['/api/admin/users/scope-player/role', 'POST', { isAdmin: true }], ['/api/admin/users/scope-root/suspend', 'POST', { isSuspended: true }],
     ['/api/admin/fixtures/reset', 'POST', {}], ['/api/admin/fixtures/restore-missing-pairs', 'POST', {}],
