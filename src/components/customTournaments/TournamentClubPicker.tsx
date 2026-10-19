@@ -26,23 +26,23 @@ export function TournamentClubPicker({ selectedLeagueId, selectedClubId, partici
   );
   return <div className="space-y-3">
     {!selectedLeagueId && <div className="flex gap-2 overflow-x-auto pb-1" aria-label="Liga filtri">
-      {[{id:'ALL',name:'Barchasi'}, ...TOP5_LEAGUES].map(l => <button key={l.id} type="button" aria-pressed={leagueId === l.id} onClick={() => setLeagueId(l.id)} className={`shrink-0 min-h-[44px] px-3 rounded-xl text-xs font-bold border ${leagueId === l.id ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400' : 'border-slate-800 text-slate-400'}`}>{l.name}</button>)}
+      {[{id:'ALL',name:'Barchasi'}, ...TOP5_LEAGUES].map(l => <button key={l.id} type="button" aria-pressed={leagueId === l.id} onClick={() => setLeagueId(l.id)} className={`shrink-0 min-h-[44px] px-3 rounded-xl text-xs font-bold border ${leagueId === l.id ? 'border-[var(--efl-primary)] bg-[var(--efl-primary)]/15 text-[var(--efl-primary)]' : 'border-[var(--efl-border)] text-[var(--efl-text-2)]'}`}>{l.name}</button>)}
     </div>}
     <label className="relative block">
-      <Search className="absolute left-3 top-3.5 w-4 h-4 text-slate-400" />
-      <input aria-label="Klub qidirish" value={search} onChange={e => setSearch(e.target.value)} placeholder="Klub nomi bo‘yicha qidirish" className="w-full min-h-[44px] rounded-xl bg-slate-950 border border-slate-800 pl-10 pr-3 text-sm text-slate-200" />
+      <Search className="absolute left-3 top-3.5 w-4 h-4 text-[var(--efl-text-2)]" />
+      <input aria-label="Klub qidirish" value={search} onChange={e => setSearch(e.target.value)} placeholder="Klub nomi bo‘yicha qidirish" className="w-full min-h-[44px] rounded-xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)] pl-10 pr-3 text-sm text-[var(--efl-text)]" />
     </label>
-    {participants.length > 0 && <label className="flex gap-2 items-center min-h-[44px] text-xs text-slate-400"><input type="checkbox" checked={onlyAvailable} onChange={e => setOnlyAvailable(e.target.checked)} />Faqat bo‘sh klublar</label>}
+    {participants.length > 0 && <label className="flex gap-2 items-center min-h-[44px] text-xs text-[var(--efl-text-2)]"><input type="checkbox" checked={onlyAvailable} onChange={e => setOnlyAvailable(e.target.checked)} />Faqat bo‘sh klublar</label>}
     <div className="grid grid-cols-2 gap-2 max-h-[38vh] overflow-y-auto">
       {clubs.map(c => {
         const owner = owners.get(c.id), selected = c.id === selectedClubId;
-        return <button key={c.id} type="button" disabled={busy || !!owner} aria-pressed={selected} onClick={() => onSelect(c.id)} className={`min-h-[88px] p-3 rounded-2xl border text-left flex gap-2 items-center disabled:cursor-default ${selected ? 'bg-emerald-500/15 border-emerald-500' : 'bg-slate-950/60 border-slate-800'} ${owner ? 'opacity-60' : ''}`}>
+        return <button key={c.id} type="button" disabled={busy || !!owner} aria-pressed={selected} onClick={() => onSelect(c.id)} className={`min-h-[88px] p-3 rounded-2xl border text-left flex gap-2 items-center disabled:cursor-default ${selected ? 'bg-[var(--efl-primary)]/15 border-[var(--efl-primary)]' : 'bg-[var(--efl-surface-2)]/60 border-[var(--efl-border)]'} ${owner ? 'opacity-60' : ''}`}>
           <ClubCrest clubId={c.id} logoUrl={c.logoUrl} name={c.name} shortName={c.shortName} size="sm" />
-          <span className="min-w-0 flex-1"><span className="block text-xs font-bold text-slate-200 break-words">{c.name}</span><span className="block text-[10px] text-slate-400 mt-1 break-words">{owner ? `Band: ${owner.username ? '@' + owner.username : owner.firstName || 'Ishtirokchi'}` : selected ? 'Tanlandi' : 'Bo‘sh'}</span></span>
-          {owner ? <Lock className="w-3 h-3 shrink-0 text-slate-400" /> : selected ? <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" /> : null}
+          <span className="min-w-0 flex-1"><span className="block text-xs font-bold text-[var(--efl-text)] break-words">{c.name}</span><span className="block text-[10px] text-[var(--efl-text-2)] mt-1 break-words">{owner ? `Band: ${owner.username ? '@' + owner.username : owner.firstName || 'Ishtirokchi'}` : selected ? 'Tanlandi' : 'Bo‘sh'}</span></span>
+          {owner ? <Lock className="w-3 h-3 shrink-0 text-[var(--efl-text-2)]" /> : selected ? <CheckCircle2 className="w-4 h-4 shrink-0 text-[var(--efl-primary)]" /> : null}
         </button>;
       })}
     </div>
-    {clubs.length === 0 && <p className="p-4 text-center text-xs text-slate-400">Klub topilmadi.</p>}
+    {clubs.length === 0 && <p className="p-4 text-center text-xs text-[var(--efl-text-2)]">Klub topilmadi.</p>}
   </div>;
 }

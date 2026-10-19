@@ -13,7 +13,7 @@
 .team-tournaments .tourney-button{min-height:38px;font-size:12px;border-radius:12px;padding:8px 12px}
 .team-tournaments .tourney-surface,.team-tournaments .tourney-card{box-shadow:var(--efl-shadow);border-radius:16px;padding:14px}
 .team-tournaments .tourney-card{gap:12px}
-.team-tournaments .tourney-card h3{font-size:17px;font-weight:900}
+.team-tournaments .tourney-card h3{font-size:14px;font-weight:900}
 .team-tournaments .team-crest{background:transparent;border:0;border-radius:0}
 .team-tournaments .team-crest img{padding:0}
 .team-tournaments .tourney-ticket{font-size:10px;justify-content:flex-end;color:var(--efl-muted)}
@@ -85,10 +85,6 @@
 .team-step-labels{display:flex;gap:8px;margin-top:-10px}
 .team-step-labels span{flex:1;font-size:9px;color:var(--efl-muted);font-weight:700}
 .team-step-labels .active{color:var(--efl-primary)}
-.team-tournaments .tourney-choice{padding:16px;border-radius:14px;align-items:center;min-height:85px}
-.team-tournaments .tourney-choice>svg:first-child{width:36px;height:36px;padding:7px;background:var(--efl-surface-2);border-radius:10px;color:var(--efl-primary)}
-.team-tournaments .tourney-choice p{font-size:11px;line-height:1.5}
-.team-tournaments .tourney-choice[aria-pressed=true]{box-shadow:0 0 0 1px var(--efl-primary)}
 @media(max-width:600px){
  .team-competition-banner{padding:14px!important}
  .team-competition-banner h1{font-size:19px}
@@ -164,3 +160,18 @@
  .team-individual-result>summary{font-size:10px;gap:6px}
 }
 .team-wizard-fields{border:0;padding:0;margin:0;min-width:0}
+
+/* Match the shared dialog padding and league roster/table density. */
+.team-tournaments .team-field{min-height:38px;font-size:12px;padding:8px 10px;border-radius:12px}
+.team-wizard-body,.team-form,.team-form fieldset{gap:14px}
+.team-wizard-footer{bottom:-16px;margin:14px -16px -16px;padding:12px 16px!important}
+.team-tournaments .team-section-title{font-size:13px;font-weight:800}
+.team-roster>div{padding:9px 0}
+.team-table th{padding:8px 4px}
+.team-table td{padding:5px 4px;height:32px}
+.team-table td strong{font-size:12px}
+.team-table-team .team-crest{width:20px;height:20px}
+.team-picker{padding:10px;gap:8px}
+.team-picker .team-crest{width:28px;height:28px}
+.team-picker strong{font-size:12px}
+.team-picker small{font-size:10px}
