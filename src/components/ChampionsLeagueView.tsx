@@ -24,10 +24,11 @@ import {
 } from 'lucide-react';
 
 interface ChampionsLeagueViewProps {
+  initialCompetitionId?: string;
   onNavigateTab?: (tab: any) => void;
 }
 
-export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavigateTab }) => {
+export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavigateTab, initialCompetitionId }) => {
   const { user, currentClub, ownedClubs = [], activeSeasonId } = useAuth();
   const { openUserProfile } = useUserProfile();
   const { t } = useI18n();
@@ -75,7 +76,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
       setTournaments(uefaComps);
 
       if (uefaComps.length > 0) {
-        const defaultComp = uefaComps.find((c) => c.id.includes('champions')) || uefaComps[0];
+        const defaultComp = uefaComps.find(c=>c.id===initialCompetitionId)||uefaComps.find((c) => c.id.includes('champions')) || uefaComps[0];
         setSelectedTournament(defaultComp);
         loadTournamentDetails(defaultComp.id);
       }

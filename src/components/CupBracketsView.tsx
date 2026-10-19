@@ -20,11 +20,13 @@ import {
 } from 'lucide-react';
 
 interface CupBracketsViewProps {
+  initialCompetitionId?: string;
   onNavigateTab?: (tab: any) => void;
 }
 
 function expectedTeamsForCup(cup?: Competition | null): number {
   if (!cup) return 20;
+  if(cup.type==='SUPER_CUP')return cup.totalTeams??cup.formatConfig?.maxTeams??2;
   const haystack = `${cup.id || ''} ${cup.name || ''}`.toLowerCase();
   if (haystack.includes('dfb') || haystack.includes('bundesliga') || haystack.includes('coupe-de-france') || haystack.includes('coupe de france') || haystack.includes('ligue-1')) {
     return 18;
@@ -32,7 +34,7 @@ function expectedTeamsForCup(cup?: Competition | null): number {
   return 20;
 }
 
-export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab }) => {
+export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab, initialCompetitionId }) => {
   const { user, currentClub, ownedClubs = [], activeSeasonId } = useAuth();
   const { t } = useI18n();
 
@@ -56,12 +58,12 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
       setError(null);
       try {
         const res = await api.getCompetitions(activeSeasonId);
-        const cups = (res.competitions || []).filter((competition: Competition) => competition.type === 'KNOCKOUT');
+        const cups = (res.competitions || []).filter((competition: Competition) => competition.type === 'KNOCKOUT'||competition.type === 'SUPER_CUP');
         if (cancelled) return;
         setCupCompetitions(cups);
         setSelectedCupId((current) => {
           if (current && cups.some((cup: Competition) => cup.id === current)) return current;
-          return cups[0]?.id || '';
+          return cups.find(c=>c.id===initialCompetitionId)?.id || cups[0]?.id || '';
         });
         if (cups.length === 0) setIsLoading(false);
       } catch (err) {
@@ -77,7 +79,7 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
     return () => {
       cancelled = true;
     };
-  }, [activeSeasonId]);
+  }, [activeSeasonId,initialCompetitionId]);
 
   const loadCupFixtures = useCallback(async () => {
     if (currentFixtureScope.current !== fixtureScope) return;
