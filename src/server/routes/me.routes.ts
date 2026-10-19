@@ -29,7 +29,9 @@ meRouter.use((req: Request, res: Response, next) => {
 });
 
 meRouter.get('/bootstrap', requireAuth, async (req: Request, res: Response) => {
-  res.json({ authenticated: true, user: req.user!, ...await getLoginClubState(req.user!.id) });
+  const seasonId = String(req.query.seasonId || 'season-2026-27');
+  if (!/^season-[a-z0-9-]+$/.test(seasonId)) { res.status(400).json({ code: 'INVALID_SEASON_ID' }); return; }
+  res.json({ authenticated: true, user: req.user!, ...await getLoginClubState(req.user!.id, 1200, seasonId) });
 });
 
 // The opening screen can hydrate ownership without rebuilding league statistics.

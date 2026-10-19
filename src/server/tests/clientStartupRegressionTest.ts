@@ -55,6 +55,11 @@ const noSessionCatalog = makeClient({getSeasons: () => sessionCatalog.promise});
 assert.equal((await loadLoginBootstrap(noSessionCatalog.client, '', 'dev', () => {})).mode, 'session', 'Optional season data never blocks session verification');
 sessionCatalog.resolve({seasons:[season]});
 
+let verifiedSeason='';
+const anotherSeason=makeClient({getSeasons:async()=>({seasons:[{...season,id:'season-2027-28'}]}),getMe:async id=>{verifiedSeason=id;return identity;}});
+await loadLoginBootstrap(anotherSeason.client,'','dev',()=>{});
+assert.equal(verifiedSeason,'season-2027-28','Already-available season metadata is honored without waiting for it');
+
 const failedCatalog = makeClient({ getSeasons: async () => { throw new Error('catalog unavailable'); } });
 assert.equal((await loadLoginBootstrap(failedCatalog.client, 'signed-init-data', 'dev', () => {})).identity, identity);
 

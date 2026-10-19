@@ -7,7 +7,9 @@ type DevProfiles = Awaited<ReturnType<LoginApi['getDevProfiles']>>['profiles'];
 
 /** Start identity verification immediately; season discovery runs alongside it. */
 export async function loadLoginBootstrap(client: LoginApi, initData: string, devUserId: string, onSeasons: (seasons: Season[]) => void, hasSession = false) {
+  let seasonId = 'season-2026-27';
   void client.getSeasons().then(result => {
+    seasonId = (result.seasons.find(season => season.status === 'registration' || season.status === 'active') || result.seasons[0])?.id || seasonId;
     onSeasons(result.seasons);
     return result.seasons;
   }).catch(() => [] as Season[]);
@@ -31,7 +33,7 @@ export async function loadLoginBootstrap(client: LoginApi, initData: string, dev
       mode = 'dev';
     }
   } else if (hasSession) {
-    try { identity = await client.getSessionBootstrap(); mode = 'session'; }
+    try { identity = await client.getSessionBootstrap(seasonId); mode = 'session'; }
     catch {
       if (await discoverDevProfiles()) { identity = await client.authenticateDev(devUserId); mode = 'dev'; }
     }
@@ -40,7 +42,7 @@ export async function loadLoginBootstrap(client: LoginApi, initData: string, dev
     mode = 'dev';
   } else {
     try {
-      identity = await client.getMe('season-2026-27');
+      identity = await client.getMe(seasonId);
       mode = 'session';
     } catch {
       // No verified Telegram data or valid session: never synthesize an identity.

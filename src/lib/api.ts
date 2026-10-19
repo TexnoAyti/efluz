@@ -375,8 +375,8 @@ export const api = {
   },
 
   // Me
-  async getSessionBootstrap(): Promise<{ stats?: UserStats; user: User; currentClub: Club | null; ownedClubs: Club[]; currentClubStatus: 'resolved' | 'unavailable' }> {
-    return request('/api/me/bootstrap', { skipCache: true, retries: 0 });
+  async getSessionBootstrap(seasonId = 'season-2026-27'): Promise<{ stats?: UserStats; user: User; currentClub: Club | null; ownedClubs: Club[]; currentClubStatus: 'resolved' | 'unavailable' }> {
+    return request(`/api/me/bootstrap?seasonId=${encodeURIComponent(seasonId)}`, { skipCache: true, retries: 0 });
   },
 
   async getMyClubState(seasonId = 'season-2026-27'): Promise<{ currentClub: Club | null; ownedClubs: Club[]; currentClubStatus: 'resolved' | 'unavailable'; degraded: boolean }> {
