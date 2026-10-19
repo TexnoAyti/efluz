@@ -34592,6 +34592,51 @@ function teamFixtureScore(f) {
   }
   return { home, away, draws, played, complete: f.bouts.length > 0 && played === f.bouts.length };
 }
+function teamStandings(l) {
+  const rows = new Map(l.teamIds.map((teamId) => [teamId, { teamId, name: l.teams[teamId]?.name || teamId, position: 0, played: 0, won: 0, drawn: 0, lost: 0, winsFor: 0, winsAgainst: 0, points: 0 }]));
+  for (const f of l.fixtures) {
+    if (f.stage === "PLAYOFF") continue;
+    const s = teamFixtureScore(f);
+    if (!s.complete) continue;
+    const h = rows.get(f.homeTeamId), a = rows.get(f.awayTeamId);
+    h.played++;
+    a.played++;
+    h.winsFor += s.home;
+    h.winsAgainst += s.away;
+    a.winsFor += s.away;
+    a.winsAgainst += s.home;
+    if (s.home > s.away) {
+      h.won++;
+      h.points += 3;
+      a.lost++;
+    } else if (s.home < s.away) {
+      a.won++;
+      a.points += 3;
+      h.lost++;
+    } else {
+      h.drawn++;
+      a.drawn++;
+      h.points++;
+      a.points++;
+    }
+  }
+  return [...rows.values()].sort((a, b) => b.points - a.points || b.winsFor - b.winsAgainst - (a.winsFor - a.winsAgainst) || b.winsFor - a.winsFor || a.name.localeCompare(b.name)).map((r, i) => ({ ...r, position: i + 1 }));
+}
+function teamFixtureWinner(f) {
+  const s = teamFixtureScore(f);
+  if (!s.complete) return null;
+  if (s.home > s.away) return f.homeTeamId;
+  if (s.away > s.home) return f.awayTeamId;
+  return [f.homeTeamId, f.awayTeamId].includes(f.tieBreakWinnerId || "") ? f.tieBreakWinnerId : null;
+}
+function makeTeamPlayoffRound(id, seeds, round) {
+  if (seeds.length < 2 || !Number.isInteger(Math.log2(seeds.length))) throw Error("Pley-off uchun 2, 4, 8 yoki 16 team kerak.");
+  return Array.from({ length: seeds.length / 2 }, (_, i) => ({ id: `${id}_p${round}_m${i}`, stage: "PLAYOFF", round, homeTeamId: seeds[i], awayTeamId: seeds[seeds.length - 1 - i], homeLineup: null, awayLineup: null, bouts: [] }));
+}
+function teamFormatPreview(count, format = "LEAGUE", rounds = 1, qualifiers = 4) {
+  const leagueRounds = (count % 2 ? count : count - 1) * rounds, leagueMatches = count * (count - 1) / 2 * rounds;
+  return { matches: format === "PLAYOFF" ? count - 1 : leagueMatches + (format === "LEAGUE_AND_PLAYOFF" ? qualifiers - 1 : 0), rounds: format === "PLAYOFF" ? Math.log2(count) : leagueRounds + (format === "LEAGUE_AND_PLAYOFF" ? Math.log2(qualifiers) : 0) };
+}
 
 // src/server/services/teamLeaguePreview.ts
 var TEAM_COLLECTION = "team_league_preview_teams";
@@ -34606,7 +34651,7 @@ var identifier = (v) => {
   return v;
 };
 var owned = (v, ownerId5) => {
-  if (!v || v.ownerId !== ownerId5) throw error("Team yoki liga topilmadi.", 404);
+  if (!v || v.ownerId !== ownerId5) throw error("Team yoki turnir topilmadi.", 404);
   return v;
 };
 var now = () => (/* @__PURE__ */ new Date()).toISOString();
@@ -34645,7 +34690,7 @@ async function savePreviewTeam(ownerId5, input) {
     if (leagues2.docs.some((d) => {
       const l = d.data();
       return l.status === "ACTIVE" && l.teamIds.includes(id);
-    })) throw error("Team faol ligada qatnashyapti. Tarkib va logoni liga tugagach tahrirlang.", 409);
+    })) throw error("Team faol turnirda qatnashyapti. Tarkib va logoni turnir tugagach tahrirlang.", 409);
     const teams = await tx.get(db.collection(TEAM_COLLECTION).where("ownerId", "==", ownerId5));
     if (!old && teams.size >= 32) throw error("Testda ko\u2018pi bilan 32 team yarating.");
     const payload = { name, logo: image, members, captainMemberId: input.captainMemberId };
@@ -34658,24 +34703,29 @@ async function savePreviewTeam(ownerId5, input) {
 }
 async function savePreviewLeague(ownerId5, input) {
   const id = identifier(input.id), name = text(input.name), ids = input.teamIds;
+  const format = input.format ?? "LEAGUE", description = typeof input.description === "string" ? input.description.trim() : "";
+  if (!["LEAGUE", "PLAYOFF", "LEAGUE_AND_PLAYOFF"].includes(format) || description.length > 1e3) throw error("Format yoki tavsif noto\u2018g\u2018ri.");
+  const qualifiers = format === "LEAGUE_AND_PLAYOFF" ? input.qualifiers : 2;
   if (!Array.isArray(ids) || ids.length < 2 || ids.length > 16 || new Set(ids).size !== ids.length) throw error("2\u201316 ta turli team tanlang.");
   ids.forEach(identifier);
+  if (format === "PLAYOFF" && ![2, 4, 8, 16].includes(ids.length)) throw error("Pley-off uchun 2, 4, 8 yoki 16 team tanlang.");
+  if (format === "LEAGUE_AND_PLAYOFF" && (![2, 4, 8, 16].includes(qualifiers) || qualifiers > ids.length)) throw error("Pley-offga chiqadigan teamlar sonini to\u2018g\u2018ri tanlang.");
   if (!Number.isInteger(input.starterCount) || input.starterCount < 1 || input.starterCount > 16 || ![1, 2].includes(input.rounds)) throw error("Asosiy tarkib 1\u201316 o\u2018yinchi, davra 1 yoki 2 bo\u2018lsin.");
   const db = getFirestoreDb(), ref2 = db.collection(LEAGUE_COLLECTION).doc(id);
   return db.runTransaction(async (tx) => {
     const old = (await tx.get(ref2)).data();
     if (old) owned(old, ownerId5);
     const all = await tx.get(db.collection(LEAGUE_COLLECTION).where("ownerId", "==", ownerId5));
-    if (!old && all.size >= 8) throw error("Testda ko\u2018pi bilan 8 ta liga yarating.");
-    if (old && old.status !== "DRAFT") throw error("Boshlangan liga reglamenti yopiq.", 409);
+    if (!old && all.size >= 8) throw error("Testda ko\u2018pi bilan 8 ta turnir yarating.");
+    if (old && old.status !== "DRAFT") throw error("Boshlangan turnir reglamenti yopiq.", 409);
     const snapshots = await Promise.all(ids.map((tid) => tx.get(db.collection(TEAM_COLLECTION).doc(tid))));
     for (const doc of snapshots) {
       const t = owned(doc.data(), ownerId5);
       if (t.members.length < input.starterCount) throw error(`${t.name}: asosiy tarkib uchun o\u2018yinchi yetmaydi.`);
     }
-    if (old && old.name === name && old.starterCount === input.starterCount && old.rounds === input.rounds && JSON.stringify(old.teamIds) === JSON.stringify(ids)) return old;
-    if ((old?.version ?? 0) !== input.version) throw error("Liga yangilangan. Qayta yuklang.", 409);
-    const l = { id, ownerId: ownerId5, name, teamIds: ids, starterCount: input.starterCount, rounds: input.rounds, status: "DRAFT", currentRound: 0, totalRounds: 0, fixtures: [], teams: {}, version: (old?.version ?? 0) + 1, updatedAt: now(), audit: old?.audit ?? [] };
+    if (old && (old.format ?? "LEAGUE") === format && (old.description ?? "") === description && (old.qualifiers ?? 2) === qualifiers && old.name === name && old.starterCount === input.starterCount && old.rounds === input.rounds && JSON.stringify(old.teamIds) === JSON.stringify(ids)) return old;
+    if ((old?.version ?? 0) !== input.version) throw error("Turnir yangilangan. Qayta yuklang.", 409);
+    const l = { id, ownerId: ownerId5, name, format, description, qualifiers, teamIds: ids, starterCount: input.starterCount, rounds: input.rounds, status: "DRAFT", currentRound: 0, totalRounds: 0, fixtures: [], teams: {}, version: (old?.version ?? 0) + 1, updatedAt: now(), audit: old?.audit ?? [] };
     tx.set(ref2, l);
     return l;
   });
@@ -34699,32 +34749,41 @@ async function actOnTeamLeague(ownerId5, id, input) {
   const db = getFirestoreDb(), ref2 = db.collection(LEAGUE_COLLECTION).doc(id);
   return db.runTransaction(async (tx) => {
     const l = owned((await tx.get(ref2)).data(), ownerId5);
-    if (!["START", "LINEUP", "PAIR", "RESET", "SUBSTITUTE", "SCORE", "NEXT", "CANCEL"].includes(input.action)) throw error("Noma\u2019lum amal.");
-    if (l.version !== input.version) throw error("Liga holati o\u2018zgargan. Yangilab qayta urining.", 409);
+    if (!["START", "LINEUP", "PAIR", "RESET", "SUBSTITUTE", "SCORE", "NEXT", "CANCEL", "TIEBREAK"].includes(input.action)) throw error("Noma\u2019lum amal.");
+    if (l.version !== input.version) throw error("Turnir holati o\u2018zgargan. Yangilab qayta urining.", 409);
     if (input.action === "START") {
-      if (l.status !== "DRAFT") throw error("Liga allaqachon boshlangan.", 409);
+      if (l.status !== "DRAFT") throw error("Turnir allaqachon boshlangan.", 409);
       const docs = await Promise.all(l.teamIds.map((tid) => tx.get(db.collection(TEAM_COLLECTION).doc(tid))));
       for (const doc of docs) {
         const t = owned(doc.data(), ownerId5);
         if (t.members.length < l.starterCount) throw error(`${t.name}: o\u2018yinchi yetmaydi.`);
         l.teams[t.id] = { id: t.id, name: t.name, members: t.members, captainMemberId: t.captainMemberId };
       }
-      l.fixtures = makeTeamSchedule(l.id, l.teamIds, l.rounds);
-      l.totalRounds = Math.max(...l.fixtures.map((f) => f.round));
+      l.fixtures = l.format === "PLAYOFF" ? makeTeamPlayoffRound(l.id, shuffled2(l.teamIds), 1) : makeTeamSchedule(l.id, l.teamIds, l.rounds);
+      l.totalRounds = teamFormatPreview(l.teamIds.length, l.format, l.rounds, l.qualifiers ?? 2).rounds;
       l.currentRound = 1;
       l.status = "ACTIVE";
     } else if (input.action === "CANCEL") {
-      if (!["DRAFT", "ACTIVE"].includes(l.status)) throw error("Liga yopilgan.", 409);
+      if (!["DRAFT", "ACTIVE"].includes(l.status)) throw error("Turnir yopilgan.", 409);
       l.status = "CANCELLED";
     } else if (input.action === "NEXT") {
       if (l.status !== "ACTIVE" || l.fixtures.filter((f) => f.round === l.currentRound).some((f) => !teamFixtureScore(f).complete)) throw error("Joriy turdagi barcha o\u2018yinlarni yakunlang.", 409);
       if (l.currentRound >= l.totalRounds) throw error("Oxirgi tur.", 409);
+      const current = l.fixtures.filter((f) => f.round === l.currentRound);
+      if (current[0]?.stage === "PLAYOFF") {
+        const winners = current.map(teamFixtureWinner);
+        if (winners.some((w) => !w)) throw error("Durang uchrashuvning hal qiluvchi g\u2018olibini tasdiqlang.", 409);
+        l.fixtures.push(...makeTeamPlayoffRound(l.id, winners, l.currentRound + 1));
+      } else if (l.format === "LEAGUE_AND_PLAYOFF" && l.currentRound === Math.max(...l.fixtures.filter((f) => f.stage !== "PLAYOFF").map((f) => f.round))) {
+        const seeds = teamStandings(l).slice(0, l.qualifiers ?? 2).map((r) => r.teamId);
+        l.fixtures.push(...makeTeamPlayoffRound(l.id, seeds, l.currentRound + 1));
+      }
       l.currentRound++;
     } else {
       const f = l.fixtures.find((f2) => f2.id === input.fixtureId);
       if (!f) throw error("Uchrashuv topilmadi.", 404);
       if (l.status === "CANCELLED" || l.status === "DRAFT" || f.round > l.currentRound) throw error("Ushbu tur hali ochilmagan.", 409);
-      if (input.action !== "SCORE" && (l.status !== "ACTIVE" || f.round !== l.currentRound)) throw error("Tarkibni faqat joriy turda boshqaring.", 409);
+      if (!["SCORE", "TIEBREAK"].includes(input.action) && (l.status !== "ACTIVE" || f.round !== l.currentRound)) throw error("Tarkibni faqat joriy turda boshqaring.", 409);
       if (input.action === "LINEUP") {
         if (f.bouts.length) throw error("Juftliklar tayyor. Avval tarkibni qayta oching yoki zaxiradan almashtiring.", 409);
         if (!["home", "away"].includes(input.side)) throw error("Team tomoni noto\u2018g\u2018ri.");
@@ -34747,15 +34806,25 @@ async function actOnTeamLeague(ownerId5, id, input) {
         line.starters = line.starters.map((p) => p === old ? input.memberId : p);
         line.reserves = line.reserves.map((p) => p === input.memberId ? old : p);
         b[key5] = input.memberId;
+      } else if (input.action === "TIEBREAK") {
+        if (f.stage !== "PLAYOFF" || f.round !== l.currentRound || l.status !== "ACTIVE") throw error("Hal qiluvchi natija faqat joriy pley-off turida kiritiladi.", 409);
+        const score2 = teamFixtureScore(f);
+        if (!score2.complete || score2.home !== score2.away || ![f.homeTeamId, f.awayTeamId].includes(input.winnerTeamId)) throw error("Avval durang uchrashuvning barcha hisoblarini kiriting.");
+        f.tieBreakWinnerId = input.winnerTeamId;
+        f.tieBreakReason = text(input.reason, 200);
       } else if (input.action === "SCORE") {
+        if (f.round < l.currentRound && (f.stage === "PLAYOFF" || l.format === "LEAGUE_AND_PLAYOFF" && l.fixtures.some((g) => g.stage === "PLAYOFF"))) throw error("Keyingi bosqich tuzilgan. Oldingi bosqich natijalari yopilgan.", 409);
         const b = f.bouts.find((b2) => b2.id === input.boutId);
         if (!b) throw error("Juftlik tuzilmagan.", 409);
         if (![input.homeScore, input.awayScore].every((n) => Number.isInteger(n) && n >= 0 && n <= 99)) throw error("Hisob 0\u201399 oralig\u2018idagi butun son bo\u2018lsin.");
         b.homeScore = input.homeScore;
         b.awayScore = input.awayScore;
-        if (l.fixtures.every((f2) => teamFixtureScore(f2).complete)) l.status = "COMPLETED";
+        if (f.stage === "PLAYOFF") l.status = "ACTIVE";
+        delete f.tieBreakWinnerId;
+        delete f.tieBreakReason;
       }
     }
+    if (["SCORE", "TIEBREAK"].includes(input.action) && l.currentRound === l.totalRounds && l.fixtures.every((f) => teamFixtureScore(f).complete && (f.stage !== "PLAYOFF" || !!teamFixtureWinner(f)))) l.status = "COMPLETED";
     l.version++;
     l.updatedAt = now();
     l.audit = [...l.audit, { at: l.updatedAt, action: input.action, detail: typeof input.fixtureId === "string" ? input.fixtureId : l.name }].slice(-200);
