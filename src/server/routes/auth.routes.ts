@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { validateBody } from '../middleware/validationMiddleware';
 import { verifyTelegramWebAppData, getOrCreateTelegramUser, getOrCreateDevUser, createSessionToken, DEV_PROFILES } from '../auth/telegramAuth';
 import { getOptionalCurrentClub } from '../readModel/readModelStore';
+import { getLoginClubState } from '../services/loginClubState';
 import { getDashboardLeagueStats } from '../services/dashboardLeagueStatsService';
 
 export const authRouter = Router();
@@ -51,7 +52,7 @@ authRouter.post('/telegram', validateBody(telegramAuthSchema), async (req: Reque
     const started = performance.now();
     const user = await getOrCreateTelegramUser(verifyResult.user);
     const identityMs = performance.now() - started;
-    const clubState = await getOptionalCurrentClub(user.id);
+    const clubState = await getLoginClubState(user.id);
     // Home and Club load standings independently. Do not rebuild/publish tables
     // while the client is waiting for identity verification.
     const previousTiming = res.getHeader('Server-Timing');

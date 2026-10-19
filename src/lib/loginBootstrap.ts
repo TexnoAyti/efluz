@@ -1,13 +1,13 @@
 import type { api } from './api';
 import type { Season } from '../types';
 
-type LoginApi = Pick<typeof api, 'getSeasons' | 'getDevProfiles' | 'authenticateTelegram' | 'authenticateDev' | 'getMe'>;
-type Identity = Awaited<ReturnType<LoginApi['authenticateTelegram']>> | Awaited<ReturnType<LoginApi['getMe']>>;
+type LoginApi = Pick<typeof api, 'getSeasons' | 'getDevProfiles' | 'authenticateTelegram' | 'authenticateDev' | 'getMe' | 'getSessionBootstrap'>;
+type Identity = Awaited<ReturnType<LoginApi['authenticateTelegram']>> | Awaited<ReturnType<LoginApi['getMe']>> | Awaited<ReturnType<LoginApi['getSessionBootstrap']>>;
 type DevProfiles = Awaited<ReturnType<LoginApi['getDevProfiles']>>['profiles'];
 
 /** Start identity verification immediately; season discovery runs alongside it. */
-export async function loadLoginBootstrap(client: LoginApi, initData: string, devUserId: string, onSeasons: (seasons: Season[]) => void) {
-  const seasonsReady = client.getSeasons().then(result => {
+export async function loadLoginBootstrap(client: LoginApi, initData: string, devUserId: string, onSeasons: (seasons: Season[]) => void, hasSession = false) {
+  void client.getSeasons().then(result => {
     onSeasons(result.seasons);
     return result.seasons;
   }).catch(() => [] as Season[]);
@@ -30,14 +30,17 @@ export async function loadLoginBootstrap(client: LoginApi, initData: string, dev
       identity = await client.authenticateDev(devUserId);
       mode = 'dev';
     }
+  } else if (hasSession) {
+    try { identity = await client.getSessionBootstrap(); mode = 'session'; }
+    catch {
+      if (await discoverDevProfiles()) { identity = await client.authenticateDev(devUserId); mode = 'dev'; }
+    }
   } else if (await discoverDevProfiles()) {
     identity = await client.authenticateDev(devUserId);
     mode = 'dev';
   } else {
-    const seasons = await seasonsReady;
-    const season = selectSeason(seasons);
     try {
-      identity = await client.getMe(season?.id || 'season-2026-27');
+      identity = await client.getMe('season-2026-27');
       mode = 'session';
     } catch {
       // No verified Telegram data or valid session: never synthesize an identity.
@@ -46,8 +49,4 @@ export async function loadLoginBootstrap(client: LoginApi, initData: string, dev
 
   // Telegram/dev login must not wait for optional catalog metadata to finish.
   return { identity, mode, profiles };
-}
-
-function selectSeason(seasons: Season[]) {
-  return seasons.find(season => season.status === 'registration' || season.status === 'active') || seasons[0];
 }

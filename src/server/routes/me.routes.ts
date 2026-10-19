@@ -1,3 +1,4 @@
+import { getLoginClubState } from '../services/loginClubState';
 import { Router, Request, Response } from 'express';
 import { requireAuth } from '../middleware/authMiddleware';
 import {
@@ -25,6 +26,18 @@ export const meResilientRouter = meRouter;
 meRouter.use((req: Request, res: Response, next) => {
   setOwnershipSensitiveHeaders(res);
   next();
+});
+
+meRouter.get('/bootstrap', requireAuth, async (req: Request, res: Response) => {
+  res.json({ authenticated: true, user: req.user!, ...await getLoginClubState(req.user!.id) });
+});
+
+// The opening screen can hydrate ownership without rebuilding league statistics.
+meRouter.get('/club', requireAuth, async (req: Request, res: Response) => {
+  const seasonId = String(req.query.seasonId || 'season-2026-27');
+  if (!/^season-[a-z0-9-]+$/.test(seasonId)) { res.status(400).json({ code: 'INVALID_SEASON_ID' }); return; }
+  try { res.json(await getOptionalCurrentClub(req.user!.id, seasonId)); }
+  catch (err: any) { handleFirestoreError(res, err, 'GET /api/me/club'); }
 });
 
 meRouter.get('/', requireAuth, async (req: Request, res: Response) => {

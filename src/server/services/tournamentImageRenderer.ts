@@ -1,7 +1,6 @@
 import { createRequire } from 'node:module';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { createCanvas, GlobalFonts, loadImage } from '@napi-rs/canvas';
 import { paintTournamentImage, type TournamentImageModel } from '../../lib/tournamentImage';
 import { SEED_CLUBS } from '../db/seed';
 
@@ -12,6 +11,7 @@ const imageCache = new Map<string, Buffer>();
 /** Use the same painter as the admin PNG download; never stretch badges. */
 export async function renderTournamentImagePng(model: TournamentImageModel): Promise<Buffer> {
   if (!model.rows.length || model.rows.length > 40) throw Error('INVALID_TOURNAMENT_IMAGE_ROWS');
+  const { createCanvas, GlobalFonts, loadImage } = await import('@napi-rs/canvas');
   if (!fontsReady) {
     const fonts = path.dirname(require.resolve('dejavu-fonts-ttf/package.json'));
     for (const name of ['DejaVuSans.ttf', 'DejaVuSans-Bold.ttf']) {
