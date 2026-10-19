@@ -16,4 +16,6 @@ Send commands to your own **Saved Messages** chat:
 - `/campaign https://t.me/channel/123` sends the greeting and forwards the post once per stored author, subject to the daily limit.
 - `/userbot_status` displays the current state.
 
+With `GEMINI_API_KEY` configured, the same actions can be requested in ordinary Uzbek, for example: `@efootballnextgroup guruhidagi oxirgi 1000 xabardan mualliflarni yig‘`. The AI planner may select only the worker's implemented actions; it cannot invent arbitrary Telegram privileges.
+
 The worker does not bypass Telegram flood controls. Keep the delay and daily limit conservative, and use campaigns only for recipients who agreed to receive them.

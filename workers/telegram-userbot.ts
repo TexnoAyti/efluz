@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { TelegramClient } from 'teleproto';
 import { StringSession } from 'teleproto/sessions';
 import { NewMessage } from 'teleproto/events';
+import { GoogleGenAI } from '@google/genai';
 import { loadTelegramUserbotState, resetDailyCounter, saveTelegramUserbotState } from '../src/server/services/telegramUserbotState';
 
 const required = (name: string): string => {
@@ -18,6 +19,7 @@ const statePath = process.env.TELEGRAM_USERBOT_STATE_PATH?.trim() || './data/tel
 const allowedChats = new Set((process.env.TELEGRAM_USERBOT_ALLOWED_CHATS || '').split(',').map(v => v.trim().replace(/^@/, '').toLowerCase()).filter(Boolean));
 const dailyLimit = Math.max(1, Number(process.env.TELEGRAM_USERBOT_DAILY_SEND_LIMIT || 40));
 const delayMs = Math.max(30_000, Number(process.env.TELEGRAM_USERBOT_SEND_DELAY_MS || 45_000));
+const geminiKey = process.env.GEMINI_API_KEY?.trim();
 
 if (!Number.isInteger(apiId)) throw new Error('TELEGRAM_API_ID must be an integer');
 if (!allowedChats.size) throw new Error('TELEGRAM_USERBOT_ALLOWED_CHATS must contain at least one chat');
@@ -86,6 +88,48 @@ async function sendCampaign(message: any, postLink: string) {
   await reply(message, `Kampaniya to‘xtadi. Bugun yuborildi: ${state.daily.count}/${dailyLimit}. Jami yuborilgan: ${Object.keys(state.sent).length}.`);
 }
 
+type AssistantPlan =
+  | { action: 'collect'; chat: string; limit: number }
+  | { action: 'campaign'; postLink: string }
+  | { action: 'status' }
+  | { action: 'unknown'; explanation: string };
+
+async function understandNaturalCommand(text: string): Promise<AssistantPlan> {
+  if (!geminiKey) return { action: 'unknown', explanation: 'GEMINI_API_KEY sozlanmagan.' };
+  const ai = new GoogleGenAI({ apiKey: geminiKey });
+  const response = await ai.models.generateContent({
+    model: process.env.GEMINI_MODEL?.trim() || 'gemini-3.1-flash-lite',
+    contents: [{ role: 'user', parts: [{ text }] }],
+    config: {
+      responseMimeType: 'application/json',
+      systemInstruction: `Siz EFLUZ shaxsiy Telegram yordamchisining buyruq rejalashtiruvchisisiz.
+Faqat quyidagi amallardan bittasini JSON qaytaring:
+1) {"action":"collect","chat":"@username","limit":500} — guruhning yaqindagi xabar mualliflarini yig‘ish.
+2) {"action":"campaign","postLink":"https://t.me/channel/123"} — oldin yig‘ilgan, rozilik bergan qabul qiluvchilarga salom va post yuborish.
+3) {"action":"status"} — holatni ko‘rsatish.
+4) {"action":"unknown","explanation":"..."} — mavjud vositalar bajara olmaydigan topshiriq.
+Hech qanday qo‘shimcha matn yoki yangi amal o‘ylab topmang.`,
+    },
+  });
+  try {
+    const plan = JSON.parse(response.text || '{}');
+    if (plan.action === 'collect' && typeof plan.chat === 'string') {
+      return { action: 'collect', chat: plan.chat, limit: Math.min(Math.max(Number(plan.limit) || 500, 1), 5000) };
+    }
+    if (plan.action === 'campaign' && typeof plan.postLink === 'string') return { action: 'campaign', postLink: plan.postLink };
+    if (plan.action === 'status') return { action: 'status' };
+    return { action: 'unknown', explanation: String(plan.explanation || 'Topshiriq uchun hali vosita mavjud emas.') };
+  } catch {
+    return { action: 'unknown', explanation: 'AI topshiriqni aniq rejaga aylantira olmadi.' };
+  }
+}
+
+async function showStatus(message: any) {
+  const state = await loadTelegramUserbotState(statePath);
+  resetDailyCounter(state);
+  return reply(message, `Userbot ishlayapti. Mualliflar: ${Object.keys(state.recipients).length}. Yuborilgan: ${Object.keys(state.sent).length}. Bugun: ${state.daily.count}/${dailyLimit}.`);
+}
+
 client.addEventHandler(async (event: any) => {
   const message = event.message;
   if (!message?.out || !message?.isPrivate || String(message.senderId || '') !== ownerId) return;
@@ -94,13 +138,15 @@ client.addEventHandler(async (event: any) => {
   if (collect) return collectAuthors(message, collect[1], Number(collect[2] || 500));
   const campaign = text.match(/^\/campaign\s+(https?:\/\/t\.me\/\S+)$/i);
   if (campaign) return sendCampaign(message, campaign[1]);
-  if (text === '/userbot_status') {
-    const state = await loadTelegramUserbotState(statePath);
-    resetDailyCounter(state);
-    return reply(message, `Userbot ishlayapti. Mualliflar: ${Object.keys(state.recipients).length}. Yuborilgan: ${Object.keys(state.sent).length}. Bugun: ${state.daily.count}/${dailyLimit}.`);
-  }
+  if (text === '/userbot_status') return showStatus(message);
+  if (!text || text.startsWith('/')) return;
+  const plan = await understandNaturalCommand(text);
+  if (plan.action === 'collect') return collectAuthors(message, plan.chat, plan.limit);
+  if (plan.action === 'campaign') return sendCampaign(message, plan.postLink);
+  if (plan.action === 'status') return showStatus(message);
+  return reply(message, plan.explanation);
 }, new NewMessage({ outgoing: true }));
 
 console.log(`[TELEGRAM USERBOT] Connected as ${me.username ? `@${me.username}` : ownerId}`);
-console.log('[TELEGRAM USERBOT] Commands: /collect @group 500 | /campaign https://t.me/channel/123 | /userbot_status');
+console.log('[TELEGRAM USERBOT] Natural Uzbek instructions and commands: /collect @group 500 | /campaign https://t.me/channel/123 | /userbot_status');
 await new Promise(() => undefined);
