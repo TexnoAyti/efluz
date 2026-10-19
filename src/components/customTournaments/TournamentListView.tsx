@@ -1,7 +1,8 @@
+import {CompetitionTabs} from '../CompetitionChrome';
 import {TeamLeaguePreviewView} from '../teamLeaguePreview/TeamLeaguePreviewView';
 import {canSeeTeamPreview} from '../../types/teamLeaguePreview';
 import React,{useState,useEffect,useRef} from 'react';
-import {Plus,Ticket,Search,SlidersHorizontal,Trophy,RefreshCw} from 'lucide-react';
+import {Plus,Ticket,Search,SlidersHorizontal,Trophy,RefreshCw,Users,UserRound} from 'lucide-react';
 import type {CustomTournament} from '../../types/customTournament';
 import {customTournamentApi} from '../../lib/customTournamentApi';
 import {TournamentCard} from './TournamentCard';
@@ -13,7 +14,7 @@ import {useAuth} from '../../context/AuthContext';
 export function TournamentListView(){
  const {user}=useAuth();
  const [teamMode,setTeamMode]=useState(false);
- const modeSwitch=canSeeTeamPreview(user?.telegramId)?<nav className="tourney-tabs" aria-label="Turnir o‘yin turi"><button aria-pressed={!teamMode} onClick={()=>setTeamMode(false)}>Yakka o‘yin</button><button aria-pressed={teamMode} onClick={()=>setTeamMode(true)}>Team vs Team</button></nav>:null;
+ const modeSwitch=canSeeTeamPreview(user?.telegramId)?<CompetitionTabs value={teamMode?'team':'single'} onChange={id=>setTeamMode(id==='team')} label="Turnir o‘yin turi" items={[{id:'single',label:'Yakka o‘yin',icon:UserRound},{id:'team',label:'Team vs Team',icon:Users}]}/>:null;
  const [tab,setTab]=useState<'all'|'my'>(()=>{try{return sessionStorage.getItem(`efl:custom-tab:${user?.id}`)==='all'?'all':'my';}catch{return 'my';}});
  const [items,setItems]=useState<CustomTournament[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState('');
  const [balance,setBalance]=useState<number|null>(null),[ticketError,setTicketError]=useState('');
@@ -27,7 +28,7 @@ export function TournamentListView(){
  useEffect(()=>{tickets();},[user?.id]);
  const visible=items.filter(t=>`${t.name} ${t.description||''}`.toLowerCase().includes(search.trim().toLowerCase())&&(status==='ALL'||t.status===status)&&(format==='ALL'||t.format===format));
  const filtered=!!search.trim()||status!=='ALL'||format!=='ALL';
- if(teamMode&&canSeeTeamPreview(user?.telegramId))return <div className="efl-custom-tournaments tourney-page !pb-0">{modeSwitch}<TeamLeaguePreviewView/></div>;
+ if(teamMode&&canSeeTeamPreview(user?.telegramId))return <div className="efl-custom-tournaments tourney-page team-mode-page !pb-0">{modeSwitch}<TeamLeaguePreviewView/></div>;
  if(selected)return <TournamentDetailView tournamentId={selected} inviteToken={token} onBack={()=>{setSelected(null);setToken(undefined);load();tickets();}}/>;
  return <div className="efl-custom-tournaments tourney-page">
   {modeSwitch}

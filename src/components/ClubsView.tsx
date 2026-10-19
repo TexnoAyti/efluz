@@ -1,3 +1,4 @@
+import {CompetitionBanner, CompetitionTabs} from './CompetitionChrome';
 import { isLeagueSelectionOpen } from '../lib/clubAdmission';
 import { EFL_2_DESIGN_ENABLED } from '../releaseDesign';
 import { AdminTournamentImageExport } from './AdminTournamentImageExport';
@@ -600,7 +601,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
 
       {/* 2. Dedicated Selected League Header Banner */}
       {currentLeague && (
-        <div className="relative overflow-hidden p-4 sm:p-6 shadow-xs border border-[var(--efl-border)] bg-[var(--efl-surface)] rounded-2xl preview-league-banner">
+        <CompetitionBanner>
           <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="efl-league-banner-content flex items-center gap-4">
               <div className="efl-theme-league-logo w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-[var(--efl-surface-2)] p-2.5 border border-[var(--efl-border)] flex items-center justify-center shadow-xs shrink-0">
@@ -665,47 +666,15 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
               </div>
             )}
           </div>
-        </div>
+        </CompetitionBanner>
       )}
 
       {/* 3. Sub-Navigation Tabs: Clubs | Matches | Standings */}
-      <div className="efl-league-tabs flex items-center gap-2 border-b border-[var(--efl-border)] pb-2 overflow-x-auto scrollbar-none">
-        <button
-          onClick={() => setActiveLeagueTab('CLUBS')}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all min-h-[38px] border ${
-            activeLeagueTab === 'CLUBS'
-              ? 'bg-[var(--efl-primary-soft)] border-[var(--efl-primary)]/30 text-[var(--efl-primary)] font-black shadow-xs'
-              : 'bg-[var(--efl-surface)] border-[var(--efl-border)] text-[var(--efl-text-2)] hover:bg-[var(--efl-surface-2)] hover:text-[var(--efl-text)]'
-          }`}
-        >
-          <Shield className="w-4 h-4" />
-          <span>{EFL_2_DESIGN_ENABLED ? previewText.clubs : 'Clubs'} ({clubs.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveLeagueTab('MATCHES')}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all min-h-[38px] border ${
-            activeLeagueTab === 'MATCHES'
-              ? 'bg-[var(--efl-primary-soft)] border-[var(--efl-primary)]/30 text-[var(--efl-primary)] font-black shadow-xs'
-              : 'bg-[var(--efl-surface)] border-[var(--efl-border)] text-[var(--efl-text-2)] hover:bg-[var(--efl-surface-2)] hover:text-[var(--efl-text)]'
-          }`}
-        >
-          <Swords className="w-4 h-4" />
-          <span>{EFL_2_DESIGN_ENABLED ? previewText.matches : `Matches (${leagueFixtures.length})`}</span>
-        </button>
-
-        <button
-          onClick={() => setActiveLeagueTab('STANDINGS')}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all min-h-[38px] border ${
-            activeLeagueTab === 'STANDINGS'
-              ? 'bg-[var(--efl-primary-soft)] border-[var(--efl-primary)]/30 text-[var(--efl-primary)] font-black shadow-xs'
-              : 'bg-[var(--efl-surface)] border-[var(--efl-border)] text-[var(--efl-text-2)] hover:bg-[var(--efl-surface-2)] hover:text-[var(--efl-text)]'
-          }`}
-        >
-          <Trophy className="w-4 h-4" />
-          <span>{EFL_2_DESIGN_ENABLED ? previewText.standings : 'Standings Table'}</span>
-        </button>
-      </div>
+      <CompetitionTabs<'CLUBS'|'MATCHES'|'STANDINGS'> value={activeLeagueTab} onChange={setActiveLeagueTab} label="Liga bo‘limlari" items={[
+        {id:'CLUBS',label:`${EFL_2_DESIGN_ENABLED ? previewText.clubs : 'Clubs'} (${clubs.length})`,icon:Shield},
+        {id:'MATCHES',label:EFL_2_DESIGN_ENABLED ? previewText.matches : `Matches (${leagueFixtures.length})`,icon:Swords},
+        {id:'STANDINGS',label:EFL_2_DESIGN_ENABLED ? previewText.standings : 'Standings Table',icon:Trophy},
+      ]}/>
 
       {/* 4. Sub-Tab Content */}
 
