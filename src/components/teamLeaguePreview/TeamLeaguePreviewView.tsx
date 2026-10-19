@@ -44,8 +44,11 @@ export function TeamLeaguePreviewView({onDetailChange}:{onDetailChange?:(open:bo
  useEffect(()=>()=>onDetailChange?.(false),[onDetailChange]);
  const lock=useRef(false),mounted=useRef(true),selectedRef=useRef(selected),requestSequence=useRef(0);selectedRef.current=selected;
  const refresh=async()=>{const sequence=++requestSequence.current,id=selectedRef.current;const next=await loadTeamPreview();if(id){try{const detail=await teamPreviewRequest<TeamLeague>(`/leagues/${id}`);next.leagues=next.leagues.map(l=>l.id===id?detail:l);}catch(e:any){if(e.status!==404)throw e;if(mounted.current&&sequence===requestSequence.current){setSelected('');setState(next);}return;}}if(mounted.current&&sequence===requestSequence.current&&selectedRef.current===id)setState(next);};
- useEffect(()=>{mounted.current=true;if(allowed){setLoading(true);refresh().catch(e=>setError(e.message)).finally(()=>setLoading(false));}return()=>{mounted.current=false;requestSequence.current++;};},[allowed]);
- useEffect(()=>{if(!selected)return;setLoading(true);setError('');refresh().catch(e=>setError(e.message)).finally(()=>setLoading(false));},[selected]);
+ useEffect(()=>{
+  mounted.current=true;let cancelled=false;
+  if(allowed){setLoading(true);setError('');const sequence=requestSequence.current+1;void refresh().catch(e=>{if(!cancelled&&sequence===requestSequence.current)setError(e.message);}).finally(()=>{if(!cancelled&&sequence===requestSequence.current)setLoading(false);});}
+  return()=>{cancelled=true;mounted.current=false;requestSequence.current++;};
+ },[allowed,selected]);
  const mutate=async<T,>(path:string,body:unknown,closeDialog=true):Promise<T|undefined>=>{if(lock.current)return;lock.current=true;setBusy(true);setError('');try{const saved=await teamPreviewRequest<T>(path,body);const record=saved as unknown as PreviewTeam|TeamLeague;setState(current=>{const key=path==='/teams'?'teams':'leagues';return {...current,[key]:[...current[key].filter(item=>item.id!==record.id),record]};});try{await refresh();}catch(e:any){setError(`Saqlandi. Ro‘yxatni yangilab bo‘lmadi: ${e.message}`);}if(closeDialog)setModal(null);setConfirmation(null);return saved;}catch(e:any){if(e.status===409){try{await refresh();}catch{}}setError(e.message);return undefined;}finally{lock.current=false;setBusy(false);}};
  const saveLeague=async(body:unknown)=>{const saved=await mutate<TeamLeague>('/leagues',body);if(saved)setSelected(saved.id);};
  if(!allowed)return null;const league=state.leagues.find(l=>l.id===selected);const act=(body:any)=>{if(league)void mutate(`/leagues/${league.id}/actions`,{...body,version:league.version});};
