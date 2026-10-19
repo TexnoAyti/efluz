@@ -17,7 +17,7 @@ const session = required('TELEGRAM_USER_SESSION');
 const ownerId = required('TELEGRAM_OWNER_ID');
 const statePath = process.env.TELEGRAM_USERBOT_STATE_PATH?.trim() || './data/telegram-userbot-state.json';
 const allowedChats = new Set((process.env.TELEGRAM_USERBOT_ALLOWED_CHATS || '').split(',').map(v => v.trim().replace(/^@/, '').toLowerCase()).filter(Boolean));
-const dailyLimit = Math.max(1, Number(process.env.TELEGRAM_USERBOT_DAILY_SEND_LIMIT || 40));
+const dailyLimit = Math.max(1, Number(process.env.TELEGRAM_USERBOT_DAILY_SEND_LIMIT || 100));
 const delayMs = Math.max(30_000, Number(process.env.TELEGRAM_USERBOT_SEND_DELAY_MS || 45_000));
 const geminiKey = process.env.GEMINI_API_KEY?.trim();
 

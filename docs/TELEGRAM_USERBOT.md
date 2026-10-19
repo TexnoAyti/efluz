@@ -19,3 +19,4 @@ Send commands to your own **Saved Messages** chat:
 With `GEMINI_API_KEY` configured, the same actions can be requested in ordinary Uzbek, for example: `@efootballnextgroup guruhidagi oxirgi 1000 xabardan mualliflarni yig‘`. The AI planner may select only the worker's implemented actions; it cannot invent arbitrary Telegram privileges.
 
 The worker does not bypass Telegram flood controls. Keep the delay and daily limit conservative, and use campaigns only for recipients who agreed to receive them.
+The default campaign ceiling is 100 successful recipients per day with at least 45 seconds between recipients.
