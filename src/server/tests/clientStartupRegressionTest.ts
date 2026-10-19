@@ -7,7 +7,7 @@ type Client = Parameters<typeof loadLoginBootstrap>[0];
 const season = { id: 'season-2026-27', name: '2026/27', status: 'active' as const, startDate: '2026-08-01', createdAt: '' };
 const stats = { matchesPlayed: 0, wins: 0, draws: 0, losses: 0, goalsScored: 0, goalsConceded: 0, points: 0, trophies: 0, leaguePosition: 0 };
 const identity = {
-  success: true, token: 'verified-test-token', currentClub: null, ownedClubs: [], stats,
+  success: true, token: 'verified-test-token', currentClubStatus: 'resolved' as const, currentClub: null, ownedClubs: [], stats,
   user: { id: 'user-123', telegramId: '123', username: 'verified', firstName: 'Verified', isAdmin: false, isSuspended: false, createdAt: '', updatedAt: '' },
 };
 function deferred<T>() {
@@ -23,6 +23,7 @@ function makeClient(overrides: Partial<Client> = {}) {
     getDevProfiles: async () => { calls.push('dev-profiles'); return { profiles: [] }; },
     authenticateTelegram: async () => { calls.push('telegram'); return identity; },
     authenticateDev: async () => { calls.push('dev'); return identity; },
+    getSessionBootstrap: async () => { calls.push('session-bootstrap'); return identity; },
     getMe: async () => { calls.push('session'); return identity; },
     ...overrides,
   };
@@ -45,6 +46,19 @@ assert.equal(metadata, undefined);
 catalog.resolve({ seasons: [season] });
 await catalog.promise;
 assert.deepEqual(metadata, [season], 'Season metadata still arrives after login');
+
+const sessionCatalog = deferred<{ seasons: Season[] }>();
+const storedSession = makeClient({ getSeasons: () => sessionCatalog.promise, getDevProfiles: async () => { throw Error('Existing sessions must not wait for dev discovery'); } });
+assert.equal((await loadLoginBootstrap(storedSession.client, '', 'dev', () => {}, true)).mode, 'session');
+assert.deepEqual(storedSession.calls, ['session-bootstrap']);
+const noSessionCatalog = makeClient({getSeasons: () => sessionCatalog.promise});
+assert.equal((await loadLoginBootstrap(noSessionCatalog.client, '', 'dev', () => {})).mode, 'session', 'Optional season data never blocks session verification');
+sessionCatalog.resolve({seasons:[season]});
+
+let verifiedSeason='';
+const anotherSeason=makeClient({getSeasons:async()=>({seasons:[{...season,id:'season-2027-28'}]}),getMe:async id=>{verifiedSeason=id;return identity;}});
+await loadLoginBootstrap(anotherSeason.client,'','dev',()=>{});
+assert.equal(verifiedSeason,'season-2027-28','Already-available season metadata is honored without waiting for it');
 
 const failedCatalog = makeClient({ getSeasons: async () => { throw new Error('catalog unavailable'); } });
 assert.equal((await loadLoginBootstrap(failedCatalog.client, 'signed-init-data', 'dev', () => {})).identity, identity);
@@ -97,6 +111,16 @@ try {
   assert.equal(JSON.parse(String(requests[2].options.body)).initData, 'signed-init-data');
   assert.equal(JSON.parse(String(requests[3].options.body)).devUserId, 'user-dev-a');
   assert.equal(new Headers(requests[4].options.headers).get('authorization'), 'Bearer existing-session');
+  // Headers alone do not mean the response finished: a stalled body must abort.
+  invalidateClientCache();
+  globalThis.fetch = (async (_input, options:any={}) => new Response(new ReadableStream({
+    start(controller) { options.signal.addEventListener('abort',()=>controller.error(new DOMException('Timed out','AbortError')),{once:true}); }
+  }),{status:200})) as typeof fetch;
+  let responseTimeout:ReturnType<typeof setTimeout>;
+  await assert.rejects(Promise.race([
+    api.getDevProfiles(),
+    new Promise<never>((_,reject)=>{responseTimeout=setTimeout(()=>reject(Error('Response body bypassed request timeout')),3500);})
+  ]).finally(()=>clearTimeout(responseTimeout)),(error:any)=>error.message!=='Response body bypassed request timeout');
 } finally {
   globalThis.fetch = originalFetch;
   setSessionToken(null); setTelegramInitData(null); setDevUserId(null); invalidateClientCache();

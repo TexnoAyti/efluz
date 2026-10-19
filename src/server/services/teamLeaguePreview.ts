@@ -1,5 +1,4 @@
 import crypto from 'node:crypto';
-import {loadImage} from '@napi-rs/canvas';
 import {getFirestoreDb} from '../firebase/admin';
 import type {PreviewTeam,TeamLeague,TeamLineup} from '../../types/teamLeaguePreview';
 import {makeTeamSchedule,teamFixtureScore,teamStandings,makeTeamPlayoffRound,teamFixtureWinner,teamFormatPreview} from '../../lib/teamLeagueEngine';
@@ -13,7 +12,7 @@ async function logo(v:unknown){
  if(v==='')return '';if(typeof v!=='string'||!/^data:image\/png;base64,[A-Za-z0-9+/]+=*$/.test(v))throw error('Logo PNG rasm bo‘lishi kerak.');
  const bytes=Buffer.from(v.split(',')[1],'base64');
  if(bytes.length<24||bytes.length>60000||bytes.subarray(0,8).toString('hex')!=='89504e470d0a1a0a'||bytes.readUInt32BE(16)>512||bytes.readUInt32BE(20)>512)throw error('Logo 512×512 va 60 KB dan oshmasin.');
- try{await loadImage(bytes);}catch{throw error('Logo rasmini o‘qib bo‘lmadi.');}return v;
+ try{const {loadImage}=await import('@napi-rs/canvas');await loadImage(bytes);}catch{throw error('Logo rasmini o‘qib bo‘lmadi.');}return v;
 }
 export async function getTeamPreview(ownerId:string){
  const db=getFirestoreDb();const [ts,ls]=await Promise.all([db.collection(TEAM_COLLECTION).where('ownerId','==',ownerId).limit(32).get(),db.collection(LEAGUE_COLLECTION).where('ownerId','==',ownerId).limit(8).get()]);

@@ -1,4 +1,3 @@
-import { GoogleGenAI } from '@google/genai';
 import { z } from 'zod';
 import { normalizeAiEntity } from './telegramAiEntities';
 import { isAiHypotheticalQuestion } from './telegramAiMessageUnderstanding';
@@ -15,7 +14,7 @@ export function needsAiMeaningRouter(text: string): boolean {
 export async function routeAiMessageMeaning(text: string, history: ConversationTurn[], signal: AbortSignal,
   generate?: (request: any) => Promise<any>): Promise<{mode:'chat'|'admin'|'clarify';question?:string}> {
   if (!needsAiMeaningRouter(text) || !process.env.GEMINI_API_KEY && !generate) return {mode:'chat'};
-  const response = await (generate || (request => new GoogleGenAI({apiKey:process.env.GEMINI_API_KEY}).models.generateContent(request)))({
+  const response = await (generate || (async request => { const { GoogleGenAI } = await import('@google/genai'); return new GoogleGenAI({apiKey:process.env.GEMINI_API_KEY}).models.generateContent(request); }))({
     model:process.env.GEMINI_MODEL?.trim() || 'gemini-3.1-flash-lite',
     contents:[{role:'user',parts:[{text:JSON.stringify({currentMessage:text,quotedHistory:history.slice(-6).map(t=>({role:t.role,text:t.text.slice(0,700)}))})}]}],
     config:{temperature:0,maxOutputTokens:220,responseMimeType:'application/json',abortSignal:signal,

@@ -26,7 +26,6 @@ import { parseAiPlanRevision } from './telegramAiPlanRevision';
  * 7. Gemini request abortSignal passing to ensure network requests are genuinely cancelled on timeout.
  */
 
-import { GoogleGenAI } from '@google/genai';
 import { appendAiExchange, normalizeAiHistory, AI_CONTEXT_TTL_SECONDS, AI_INPUT_MAX_CHARS } from './telegramAiConversationMemory';
 import { getAiResponsePolicy, limitAiReply } from './telegramAiResponsePolicy';
 import { KEY_PREFIX } from '../readModel/readModelStore';
@@ -758,6 +757,7 @@ async function handleTelegramAiMessageInternal(
         replyText = nativePrivate && !grounding.factualAnswer ? 'AI javobi hozir olinmadi. Vazifa bajarilgani tasdiqlanmadi; birozdan keyin qayta yozing.' : buildAiFallbackReply(payload.text, grounding);
       } else {
         const modelName = process.env.GEMINI_MODEL?.trim() || 'gemini-3.1-flash-lite';
+        const { GoogleGenAI } = await import('@google/genai');
         const ai = new GoogleGenAI({ apiKey });
 
         const privateAdmin = isOwnerAdminPrivateChat(payload);

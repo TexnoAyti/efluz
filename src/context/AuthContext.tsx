@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { User, Club, Season, Notification } from '../types';
-import { api, getDevUserId, setDevUserId, getTelegramInitData, setTelegramInitData, setSessionToken } from '../lib/api';
+import { api, getDevUserId, setDevUserId, getTelegramInitData, setTelegramInitData, setSessionToken, getSessionToken } from '../lib/api';
 import { resolveActiveClub, saveActiveClub } from '../lib/activeClub';
 import { premiumApi } from '../lib/premiumApi';
 import { loadLoginBootstrap } from '../lib/loginBootstrap';
@@ -308,7 +308,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setActiveSeasonId(season.id);
             setCurrentSeason(season);
           }
-        });
+        }, Boolean(getSessionToken()));
         if (!isMounted) return;
 
         setDevProfiles(result.profiles);
@@ -372,6 +372,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       sdkScript?.removeEventListener('load', onSdkReady);
     };
   }, [fetchUserData]);
+
+  // Recover optional ownership after the account is already usable. Never turn
+  // a slow club lookup into a fabricated "no club" result or another auth spinner.
+  useEffect(() => {
+    if (!user || authStatus !== 'AUTHENTICATED' || !clubUnavailable || isDesignPreview) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let attempts = 0;
+    const recover = async () => {
+      attempts++;
+      try {
+        const result = await api.getMyClubState(activeSeasonId);
+        if (cancelled) return;
+        if (result.currentClubStatus === 'resolved') {
+          setOwnedClubs(result.ownedClubs);
+          setCurrentClub(previous => resolveActiveClub(result.ownedClubs, previous || result.currentClub, user.id, activeSeasonId, clubPreferenceStorage()));
+          setClubUnavailable(false);
+          return;
+        }
+      } catch { /* Keep existing ownership until a verified response arrives. */ }
+      if (!cancelled && attempts < 3) timer = setTimeout(recover, attempts * 2000);
+    };
+    void recover();
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+  }, [user?.id, authStatus, clubUnavailable, activeSeasonId]);
 
   // Rotate the short-lived session token while the Telegram Mini App remains open.
   useEffect(() => {

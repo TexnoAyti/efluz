@@ -260,9 +260,8 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
           signal: controller.signal,
         });
 
-        clearTimeout(timeoutId);
-
         const rawText = await response.text();
+        clearTimeout(timeoutId);
 
         if (!rawText || !rawText.trim()) {
           throw new ApiError(
@@ -365,7 +364,7 @@ export const api = {
   },
 
   async getDevProfiles(): Promise<{ profiles: Array<{ id: string; username: string; firstName: string; isAdmin: boolean }> }> {
-    return request('/api/auth/dev-profiles', { cacheTtlMs: 60000, retries: 0, skipAuthentication: true });
+    return request('/api/auth/dev-profiles', { cacheTtlMs: 60000, retries: 0, timeoutMs: 2000, skipAuthentication: true });
   },
 
   async checkTelegramMembership(): Promise<{ isMember: boolean; status?: string; error?: string; cached?: boolean }> {
@@ -376,6 +375,14 @@ export const api = {
   },
 
   // Me
+  async getSessionBootstrap(seasonId = 'season-2026-27'): Promise<{ stats?: UserStats; user: User; currentClub: Club | null; ownedClubs: Club[]; currentClubStatus: 'resolved' | 'unavailable' }> {
+    return request(`/api/me/bootstrap?seasonId=${encodeURIComponent(seasonId)}`, { skipCache: true, retries: 0 });
+  },
+
+  async getMyClubState(seasonId = 'season-2026-27'): Promise<{ currentClub: Club | null; ownedClubs: Club[]; currentClubStatus: 'resolved' | 'unavailable'; degraded: boolean }> {
+    return request(`/api/me/club?seasonId=${encodeURIComponent(seasonId)}`, { skipCache: true, retries: 0 });
+  },
+
   async getMe(seasonId = 'season-2026-27', skipCache = false): Promise<{
     user: User;
     currentClub: Club | null; ownedClubs: Club[]; currentClubStatus?: 'resolved' | 'unavailable';
