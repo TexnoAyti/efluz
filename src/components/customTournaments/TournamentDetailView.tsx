@@ -1,4 +1,3 @@
-import {CompetitionTabs} from '../CompetitionChrome';
 import {TournamentRulesSummary} from './TournamentRulesSummary';
 import {isCustomMatchReady,customMatchNeedsPenalties,customScheduleView} from '../../lib/customTournamentMatches';
 import React, { useState, useEffect, useRef } from 'react';
@@ -218,12 +217,45 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
       {errorMessage && <div role="alert" className="p-3 rounded-xl text-xs text-rose-400">{errorMessage}<button type="button" onClick={loadData} className="min-h-[44px] px-3 underline">Qayta urinish</button></div>}
       <TournamentOverview tournament={tournament} participants={participants} fixtures={fixtures} userId={user?.id} canManage={canManage} canJoin={canJoin} onBack={onBack} onManage={tab=>{setAdminFixtureId('');setAdminTab(tab);setShowAdminDrawer(true);}} onJoin={()=>{setClaimError(null);setShowClubPickerModal(true);}} onMatch={handleOpenScoreModal} onRefresh={loadData}/>
       {myParticipant&&tournament.status==='REGISTRATION_OPEN'&&<button onClick={handleLeaveTournament} className="tourney-muted min-h-[44px] underline justify-self-start">Turnirdan chiqish</button>}
-      <CompetitionTabs<'participants'|'fixtures'|'standings'|'rules'> value={activeTab} onChange={setActiveTab} label="Turnir bo‘limlari" items={[
-        {id:'participants',label:`Klublar (${participants.length})`,icon:Users},
-        {id:'fixtures',label:'O‘yinlar',icon:Swords},
-        {id:'standings',label:tournament.format==='PLAYOFF'?'Setka':'Jadval',icon:Trophy},
-        {id:'rules',label:'Reglament',icon:Shield},
-      ]}/>
+      {/* Sub Tabs */}
+      <div className="p-1 rounded-2xl bg-slate-900 border border-slate-800 grid grid-cols-2 sm:grid-cols-4 gap-1">
+        <button
+          onClick={() => setActiveTab('standings')}
+          className={`min-w-0 min-h-[44px] py-2 px-2 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 ${
+            activeTab === 'standings' ? 'bg-slate-800 text-emerald-400 shadow-sm' : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Trophy className="w-3.5 h-3.5" />
+          <span>{tournament.format === 'PLAYOFF' ? 'Pley-off' : 'Jadval'}</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('fixtures')}
+          className={`min-w-0 min-h-[44px] py-2 px-2 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 ${
+            activeTab === 'fixtures' ? 'bg-slate-800 text-emerald-400 shadow-sm' : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Swords className="w-3.5 h-3.5" />
+          <span>O‘yinlar ({fixtures.length})</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('participants')}
+          className={`min-w-0 min-h-[44px] py-2 px-2 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 ${
+            activeTab === 'participants' ? 'bg-slate-800 text-emerald-400 shadow-sm' : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Users className="w-3.5 h-3.5" />
+          <span>A’zolar ({participants.length})</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('rules')}
+          className={`min-w-0 min-h-[44px] py-2 px-2 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 ${
+            activeTab === 'rules' ? 'bg-slate-800 text-emerald-400 shadow-sm' : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Shield className="w-3.5 h-3.5" />
+          <span>Reglament</span>
+        </button>
+      </div>
 
       {/* TAB 1: STANDINGS OR PLAYOFF BRACKET */}
       {activeTab === 'standings' && (
