@@ -18,7 +18,7 @@ const ownerId = required('TELEGRAM_OWNER_ID');
 const statePath = process.env.TELEGRAM_USERBOT_STATE_PATH?.trim() || './data/telegram-userbot-state.json';
 const allowedChats = new Set((process.env.TELEGRAM_USERBOT_ALLOWED_CHATS || '').split(',').map(v => v.trim().replace(/^@/, '').toLowerCase()).filter(Boolean));
 const dailyLimit = Math.max(1, Number(process.env.TELEGRAM_USERBOT_DAILY_SEND_LIMIT || 100));
-const delayMs = Math.max(30_000, Number(process.env.TELEGRAM_USERBOT_SEND_DELAY_MS || 45_000));
+const delayMs = Math.max(15_000, Number(process.env.TELEGRAM_USERBOT_SEND_DELAY_MS || 15_000));
 const geminiKey = process.env.GEMINI_API_KEY?.trim();
 
 if (!Number.isInteger(apiId)) throw new Error('TELEGRAM_API_ID must be an integer');
@@ -81,7 +81,14 @@ async function sendCampaign(message: any, postLink: string) {
       await saveTelegramUserbotState(statePath, state);
       await sleep(delayMs);
     } catch (error: any) {
-      console.warn('[USERBOT SEND]', recipient.id, error?.errorMessage || error?.message || String(error));
+      const detail = error?.errorMessage || error?.message || String(error);
+      console.warn('[USERBOT SEND]', recipient.id, detail);
+      const floodSeconds = Number(error?.seconds || String(detail).match(/FLOOD_WAIT_?(\d+)/i)?.[1] || 0);
+      if (floodSeconds > 0) {
+        await saveTelegramUserbotState(statePath, state);
+        await reply(message, `Telegram FLOOD_WAIT qaytardi. Kampaniya to‘xtatildi; ${floodSeconds} soniyadan keyin qayta urinishingiz mumkin.`);
+        return;
+      }
     }
   }
   await saveTelegramUserbotState(statePath, state);
