@@ -13,8 +13,9 @@ import {readTournamentLaunch} from '../../lib/customTournamentLinks';
 import {useAuth} from '../../context/AuthContext';
 export function TournamentListView(){
  const {user}=useAuth();
- const [teamMode,setTeamMode]=useState(false);
- const modeSwitch=canSeeTeamPreview(user?.telegramId)?<CompetitionTabs value={teamMode?'team':'single'} onChange={id=>setTeamMode(id==='team')} label="Turnir o‘yin turi" items={[{id:'single',label:'Yakka o‘yin',icon:UserRound},{id:'team',label:'Team vs Team',icon:Users}]}/>:null;
+ const [teamMode,setTeamMode]=useState(()=>{try{return canSeeTeamPreview(user?.telegramId)&&sessionStorage.getItem(`efl:turnir-mode:${user?.id}`)==='team';}catch{return false;}}),[teamDetail,setTeamDetail]=useState(false);
+ useEffect(()=>{try{sessionStorage.setItem(`efl:turnir-mode:${user?.id}`,teamMode?'team':'single');}catch{}},[teamMode,user?.id]);
+ const modeSwitch=canSeeTeamPreview(user?.telegramId)&&!teamDetail?<CompetitionTabs value={teamMode?'team':'single'} onChange={id=>setTeamMode(id==='team')} label="Turnir o‘yin turi" items={[{id:'single',label:'Yakka o‘yin',icon:UserRound},{id:'team',label:'Team vs Team',icon:Users}]}/>:null;
  const [tab,setTab]=useState<'all'|'my'>(()=>{try{return sessionStorage.getItem(`efl:custom-tab:${user?.id}`)==='all'?'all':'my';}catch{return 'my';}});
  const [items,setItems]=useState<CustomTournament[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState('');
  const [balance,setBalance]=useState<number|null>(null),[ticketError,setTicketError]=useState('');
@@ -24,11 +25,11 @@ export function TournamentListView(){
  const sequence=useRef(0);
  const load=async()=>{const id=++sequence.current;setLoading(true);setError('');try{const data=tab==='my'?await customTournamentApi.getMyTournaments():await customTournamentApi.getPublicTournaments(100);if(id===sequence.current)setItems(data);}catch(e){if(id===sequence.current)setError(e instanceof Error?e.message:'Turnirlarni yuklab bo‘lmadi.');}finally{if(id===sequence.current)setLoading(false);}};
  const tickets=async()=>{setTicketError('');try{setBalance((await customTournamentApi.getTicketBalance()).balance);}catch(e){setTicketError(e instanceof Error?e.message:'Balans yuklanmadi.');}};
- useEffect(()=>{try{sessionStorage.setItem(`efl:custom-tab:${user?.id}`,tab);}catch{}load();return()=>{sequence.current++;};},[tab,user?.id]);
- useEffect(()=>{tickets();},[user?.id]);
+ useEffect(()=>{if(teamMode)return;try{sessionStorage.setItem(`efl:custom-tab:${user?.id}`,tab);}catch{}load();return()=>{sequence.current++;};},[tab,user?.id,teamMode]);
+ useEffect(()=>{if(!teamMode)tickets();},[user?.id,teamMode]);
  const visible=items.filter(t=>`${t.name} ${t.description||''}`.toLowerCase().includes(search.trim().toLowerCase())&&(status==='ALL'||t.status===status)&&(format==='ALL'||t.format===format));
  const filtered=!!search.trim()||status!=='ALL'||format!=='ALL';
- if(teamMode&&canSeeTeamPreview(user?.telegramId))return <div className="efl-custom-tournaments tourney-page team-mode-page !pb-0">{modeSwitch}<TeamLeaguePreviewView/></div>;
+ if(teamMode&&canSeeTeamPreview(user?.telegramId))return <div className="efl-custom-tournaments tourney-page team-mode-page !pb-0">{modeSwitch}<TeamLeaguePreviewView onDetailChange={setTeamDetail}/></div>;
  if(selected)return <TournamentDetailView tournamentId={selected} inviteToken={token} onBack={()=>{setSelected(null);setToken(undefined);load();tickets();}}/>;
  return <div className="efl-custom-tournaments tourney-page">
   {modeSwitch}
