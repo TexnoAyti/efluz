@@ -43,10 +43,11 @@ const welcomeLeagueIcons: Record<string, string> = {
 };
 
 interface ClubsViewProps {
+  initialLeagueId?: string;
   onNavigateTab?: (tab: any) => void;
 }
 
-export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
+export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab, initialLeagueId }) => {
   const { user, currentClub, ownedClubs, activeSeasonId, refreshUserData, showToast } = useAuth();
   const { openUserProfile } = useUserProfile();
   const { t, language } = useI18n();
@@ -70,6 +71,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
   // League & Data states
   const [leagues, setLeagues] = useState<League[]>([]);
   const [selectedLeagueId, setSelectedLeagueId] = useState<string>(() => {
+    if(initialLeagueId)return initialLeagueId;
     try { return EFL_2_DESIGN_ENABLED && sessionStorage.getItem('efl:preview-league') || 'league-premier-league'; } catch { return 'league-premier-league'; }
   });
   const [activeLeagueTab, setActiveLeagueTab] = useState<'CLUBS' | 'MATCHES' | 'STANDINGS'>(() => {

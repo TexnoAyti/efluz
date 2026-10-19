@@ -247,7 +247,7 @@ const AppContent: React.FC = () => {
                     ? 'european'
                     : currentTab === 'season-hub'
                     ? 'season'
-                    : 'leagues'
+                    : currentTab === 'standings' ? 'leagues' : 'all'
                 }
               />
             )}
