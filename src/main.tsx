@@ -4,6 +4,7 @@ import {Analytics} from '@vercel/analytics/react';
 import App from './App.tsx';
 import './index.css';
 import './admin-preview.css';
+import './components/competition-content.css';
 import './components/customTournaments/tournaments.css';
 
 createRoot(document.getElementById('root')!).render(

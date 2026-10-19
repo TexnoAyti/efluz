@@ -33,9 +33,6 @@
 .team-secondary-nav{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
 .team-secondary-nav button{display:flex;align-items:center;gap:5px;min-height:34px;padding:6px 10px;font-size:11px;font-weight:700;border-radius:9px;color:var(--efl-text-2)}
 .team-secondary-nav button[aria-pressed=true]{background:var(--efl-primary-soft);color:var(--efl-primary)}
-.team-tournaments .efl-league-tabs{margin-top:2px}
-.team-tournaments .efl-league-tabs button{min-height:40px;flex:1;white-space:nowrap}
-.team-tournaments .efl-league-tabs button>svg{width:15px;height:15px}
 .team-card-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .team-card-heading .team-competition-emblem{width:46px;height:50px;border-radius:12px}
 .team-tournaments .team-card-crests{padding:10px;background:var(--efl-surface-2);border-radius:10px;gap:12px;min-height:52px}
@@ -45,21 +42,10 @@
 .team-tournaments .tourney-task{border:1px solid var(--efl-border);border-radius:14px;background:var(--efl-surface);padding:14px;gap:8px}
 .team-tournaments .tourney-task h3{font-size:13px;font-weight:800}
 .team-tournaments .tourney-task p{font-size:11px}
-.team-matchday-picker{display:flex;align-items:center;gap:16px;border:1px solid var(--efl-border);background:var(--efl-surface);padding:12px;border-radius:16px;min-width:0}
-.team-matchday-arrows{display:flex;align-items:center;gap:10px;flex-shrink:0}
-.team-matchday-arrows button{display:flex;align-items:center;justify-content:center;width:32px;height:36px;background:var(--efl-surface-2);border:1px solid var(--efl-border);border-radius:10px;color:var(--efl-text)}
-.team-matchday-arrows>div{text-align:center;min-width:76px}
-.team-matchday-arrows span{display:block;font-size:14px;font-weight:900;color:var(--efl-text)}
-.team-matchday-arrows small{display:block;font-size:9px;color:var(--efl-text-2)}
-.team-round-pills{display:flex;gap:5px;overflow-x:auto;min-width:0;scrollbar-width:thin;padding:2px}
-.team-round-pills button{display:flex;align-items:center;justify-content:center;gap:3px;flex-shrink:0;min-width:30px;min-height:32px;background:var(--efl-surface-2);border-radius:8px;color:var(--efl-text-2);font-size:11px;font-weight:800}
-.team-round-pills button[aria-pressed=true]{background:var(--efl-primary);color:#fff}
 .team-fixture-filters{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .team-fixture-filters>div{display:flex;gap:4px;flex-wrap:wrap}
 .team-fixture-filters>div button{min-height:34px;padding:7px 10px;font-size:11px;font-weight:700;color:var(--efl-text-2);border-radius:9px}
 .team-fixture-filters button[aria-pressed=true]{background:var(--efl-primary-soft);color:var(--efl-primary)}
-.team-fixtures-grid{display:grid;gap:12px;grid-template-columns:repeat(2,minmax(0,1fr))}
-.team-fixtures-grid .team-match:has(.team-match-body){grid-column:1/-1}
 .team-tournaments .team-match{padding:0;overflow:hidden;gap:0}
 .team-match-caption{padding:9px 12px;border-bottom:1px solid var(--efl-border);background:var(--efl-surface-2);gap:6px;flex-wrap:wrap}
 .team-match-competition{display:flex;gap:5px;align-items:center;font-size:10px;font-weight:800;color:var(--efl-text-2);max-width:100%;overflow-wrap:anywhere}
@@ -104,8 +90,6 @@
 .team-tournaments .tourney-choice p{font-size:11px;line-height:1.5}
 .team-tournaments .tourney-choice[aria-pressed=true]{box-shadow:0 0 0 1px var(--efl-primary)}
 @media(max-width:600px){
- .team-tournaments .efl-league-tabs{overflow:visible;align-items:stretch;gap:5px}
- .team-tournaments .efl-league-tabs button{padding:8px 6px;font-size:11px;gap:5px;white-space:normal}
  .team-competition-banner{padding:14px!important}
  .team-competition-banner h1{font-size:19px}
  .team-competition-title{gap:10px}
@@ -114,10 +98,6 @@
  .team-competition-title p{font-size:10px;gap:5px}
  .team-competition-summary{gap:10px}
  .team-competition-summary>span{font-size:9px}
- .team-fixtures-grid{grid-template-columns:1fr}
- .team-matchday-picker{flex-direction:column;align-items:stretch;gap:10px}
- .team-matchday-arrows{justify-content:space-between}
- .team-round-pills{padding-top:8px;border-top:1px solid var(--efl-border)}
  .team-secondary-nav{gap:0;justify-content:space-between}
  .team-secondary-nav button{padding:6px 8px;font-size:10px}
  .team-tournaments .team-fixture{padding-top:16px;padding-bottom:12px}
@@ -174,7 +154,6 @@
 .team-next-round p{font-size:11px;margin:5px 0 0}
 .team-filter-toggle{justify-self:end}
 @media(max-width:600px){
- .team-tournaments .efl-league-tabs button{flex-direction:column;font-size:10px;min-height:48px;padding:7px 3px;gap:4px}
  .team-lineup-player{gap:6px}
  .team-lineup-player>b{font-size:11px}
  .team-lineup-player button{padding:6px 7px;font-size:10px}

@@ -113,6 +113,7 @@ jobs:
           node scripts/run-isolated-test.mjs src/server/tests/customTournamentManagementUiTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/tournamentUxRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/teamTournamentUxRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/competitionContentRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/customTournamentWorkflowRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/customTournamentCompletionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/legacyMembershipRepairRegressionTest.ts

@@ -1,0 +1,39 @@
+/* Content geometry comes from the domestic league, shared by every tournament. */
+.competition-fixture-teams{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;min-width:0;color:var(--efl-text)}
+button.competition-fixture-teams{border-radius:8px;min-height:44px;cursor:pointer}
+.competition-fixture-side{display:flex;align-items:center;gap:8px;flex:1;min-width:0;font-size:12px;font-weight:700}
+.competition-fixture-side>div,.competition-fixture-side>span{min-width:0}
+.competition-fixture-side b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:700}
+.competition-fixture-side small{display:block;font-size:10px;font-weight:500;color:var(--efl-muted);line-height:1.5}
+.competition-fixture-away{justify-content:flex-end;text-align:right}
+.competition-fixture-score{padding:6px 12px;border:1px solid var(--efl-border);border-radius:12px;background:var(--efl-surface-2);font-size:14px;font-weight:900;flex-shrink:0;text-align:center;font-variant-numeric:tabular-nums}
+.competition-fixture-score small{display:block;font-size:9px;font-weight:500;color:var(--efl-text-2)}
+.competition-fixture-status{flex-shrink:0;font-size:9px;font-weight:800;border:1px solid var(--efl-border);border-radius:999px;padding:2px 8px;background:var(--efl-surface-2)}
+.competition-fixture-caption>span:first-child{min-width:0;overflow-wrap:anywhere}
+.competition-fixture-card .team-crest{width:24px;height:24px;flex-shrink:0}
+.competition-fixture-card .team-match-progress{padding:0}
+.competition-fixture-card .team-match-footer{padding:10px 0 0}
+.competition-fixture-card .team-match-body{padding:0}
+.competition-standing-identity>div{min-width:0}
+.competition-standing-identity .team-crest{width:20px;height:20px;flex-shrink:0}
+.competition-standing-identity b,.competition-standing-identity>button{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:700;display:block;max-width:100%;text-align:left}
+.competition-standing-identity .efl-standings-club-name{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:700}
+.competition-empty{padding:32px 12px;text-align:center;font-size:12px;color:var(--efl-text-2);background:var(--efl-surface);border:1px solid var(--efl-border);border-radius:16px}
+.competition-standings{min-width:0;color:var(--efl-text)}
+.competition-standings .competition-points{color:var(--efl-primary);font-weight:900}
+.efl-custom-tournaments.competition-detail{max-width:none;gap:12px}
+.competition-detail .tourney-task{padding:14px;border-radius:16px;font-size:12px}
+.competition-detail .tourney-task h3{font-size:13px}
+.competition-detail .tourney-task p{font-size:11px}
+.competition-detail .tourney-surface{padding:16px;border-radius:16px}
+.competition-detail .tourney-button{min-height:38px;padding:8px 12px;font-size:12px}
+.competition-fixture-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.competition-standing-identity>button{display:flex;align-items:center;gap:6px;width:100%}
+@media(max-width:767px){.competition-fixture-grid{grid-template-columns:1fr}}
+
+.team-league-match .competition-fixture-away{flex-direction:row-reverse}
+.competition-fixture-card[tabindex]{cursor:pointer}
+.competition-fixture-card[tabindex]:focus-visible,button.competition-fixture-teams:focus-visible{outline:2px solid var(--efl-primary);outline-offset:3px}
+
+.competition-fixture-status--success{background:color-mix(in srgb,var(--efl-success,#10b981) 12%,transparent);color:var(--efl-success,#059669);border-color:color-mix(in srgb,var(--efl-success,#10b981) 30%,transparent)}
+.competition-fixture-status--warning{background:color-mix(in srgb,var(--efl-warning,#d97706) 12%,transparent);color:var(--efl-warning,#d97706);border-color:color-mix(in srgb,var(--efl-warning,#d97706) 30%,transparent)}
