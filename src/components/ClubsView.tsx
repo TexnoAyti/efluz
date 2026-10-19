@@ -1,3 +1,4 @@
+import {CompetitionRounds, CompetitionFixtureCard, CompetitionStandings} from './CompetitionContent';
 import {CompetitionBanner, CompetitionTabs} from './CompetitionChrome';
 import { isLeagueSelectionOpen } from '../lib/clubAdmission';
 import { EFL_2_DESIGN_ENABLED } from '../releaseDesign';
@@ -908,24 +909,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
         <div className="space-y-4">
           {/* Matchday Selector */}
           {matchdays.length > 0 && (
-            <div className="p-2.5 rounded-2xl bg-[var(--efl-surface)] border border-[var(--efl-border)] flex items-center gap-2 overflow-x-auto scrollbar-none shadow-xs">
-              <span className="text-[11px] font-black text-[var(--efl-text-2)] uppercase tracking-wider shrink-0 mr-1">
-                {EFL_2_DESIGN_ENABLED ? previewText.matchday : 'Matchday'}:
-              </span>
-              {matchdays.map((md) => (
-                <button
-                  key={md}
-                  onClick={() => setSelectedMatchday(md)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold shrink-0 transition-all min-h-[34px] border ${
-                    selectedMatchday === md
-                      ? 'bg-[var(--efl-primary)] text-white font-black shadow-xs border-transparent'
-                      : 'bg-[var(--efl-surface-2)] border-[var(--efl-border)] text-[var(--efl-text-2)] hover:bg-[var(--efl-surface)] hover:text-[var(--efl-text)]'
-                  }`}
-                >
-                  {EFL_2_DESIGN_ENABLED ? previewText.matchday : 'MD'} {md}
-                </button>
-              ))}
-            </div>
+            <CompetitionRounds<number> items={matchdays.map(md=>({id:md,label:`${EFL_2_DESIGN_ENABLED?previewText.matchday:'MD'} ${md}`}))} value={selectedMatchday} onChange={setSelectedMatchday} label={EFL_2_DESIGN_ENABLED?previewText.matchday:'Matchday'}/>
           )}
 
           {/* Fixtures List */}
@@ -946,35 +930,13 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                 const isUserClub = ownedClubs.some((club) => club.id === fix.homeClubId || club.id === fix.awayClubId);
 
                 return (
-                  <div
-                    key={fix.id}
-                    onClick={() => {
-                      if (!isConfirmed && fix.isPlayable !== false) {
-                        setSelectedFixtureForModal(fix);
-                      }
-                    }}
-                    className={`p-3.5 sm:p-4 rounded-2xl flex flex-col justify-between gap-3 shadow-xs bg-[var(--efl-surface)] border border-[var(--efl-border)] transition-colors ${
-                      !isConfirmed && fix.isPlayable !== false ? 'cursor-pointer hover:bg-[var(--efl-surface-2)]/60' : ''
-                    } ${isUserClub ? 'border-[var(--efl-primary)]/40 bg-[var(--efl-primary-soft)]/40' : ''}`}
-                  >
-                    <div className="flex items-center justify-between text-[11px] text-[var(--efl-text-2)] border-b border-[var(--efl-border)] pb-2">
-                      <span className="font-bold">{fix.roundName || `${EFL_2_DESIGN_ENABLED ? previewText.matchday : 'Matchday'} ${fix.matchday}`}</span>
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
-                          isConfirmed
-                            ? 'bg-emerald-500/15 text-emerald-600 efl-theme-emerald dark:text-emerald-400 border border-emerald-500/30'
-                            : fix.status === 'PENDING_CONFIRMATION'
-                            ? 'bg-amber-500/15 text-amber-600 efl-theme-amber dark:text-amber-400 border border-amber-500/30'
-                            : 'bg-[var(--efl-surface-2)] text-[var(--efl-text-2)] border border-[var(--efl-border)]'
-                        }`}
-                      >
-                        {EFL_2_DESIGN_ENABLED ? fixtureStatusText[fix.status || 'UPCOMING'] || fix.status || fixtureStatusText.UPCOMING : isConfirmed ? 'CONFIRMED' : fix.status || 'UPCOMING'}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between gap-2">
-                      {/* Home */}
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <CompetitionFixtureCard key={fix.id}
+                    highlighted={isUserClub}
+                    onOpen={!isConfirmed&&fix.isPlayable!==false?()=>setSelectedFixtureForModal(fix):undefined}
+                    caption={fix.roundName || `${EFL_2_DESIGN_ENABLED?previewText.matchday:'Matchday'} ${fix.matchday}`}
+                    statusTone={isConfirmed?'success':fix.status==='PENDING_CONFIRMATION'?'warning':'neutral'}
+                    status={EFL_2_DESIGN_ENABLED?fixtureStatusText[fix.status||'UPCOMING']||fix.status||fixtureStatusText.UPCOMING:isConfirmed?'CONFIRMED':fix.status||'UPCOMING'}
+                    home={<div className="flex items-center gap-2 flex-1 min-w-0">
                         <ClubCrest
                           clubId={fix.homeClub?.id}
                           logoUrl={fix.homeClub?.logoUrl}
@@ -1014,15 +976,8 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                             );
                           })()}
                         </div>
-                      </div>
-
-                      {/* Score / VS */}
-                      <div className="px-3 py-1.5 rounded-xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)] font-black text-xs sm:text-sm text-[var(--efl-text)] shrink-0 tabular-nums">
-                        {isConfirmed ? `${fix.homeScore} : ${fix.awayScore}` : 'vs'}
-                      </div>
-
-                      {/* Away */}
-                      <div className="flex items-center gap-2 flex-1 min-w-0 justify-end text-right">
+                      </div>}
+                    away={<div className="flex items-center gap-2 flex-1 min-w-0 justify-end text-right">
                         <div className="min-w-0 text-right">
                           <span className={`text-xs truncate block ${isUserClub && ownedClubs.some((c) => c.id === fix.awayClubId) ? 'font-black text-blue-600 efl-theme-blue dark:text-blue-400' : 'font-bold text-[var(--efl-text)]'}`}>
                             {fix.awayClub?.shortName || fix.awayClub?.name}
@@ -1062,9 +1017,11 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                           size="sm"
                           className="w-6 h-6 shrink-0"
                         />
-                      </div>
-                    </div>
-                  </div>
+                      </div>}
+                    score={isConfirmed?`${fix.homeScore} : ${fix.awayScore}`:'vs'}
+                  >
+                    {!isConfirmed&&fix.isPlayable!==false&&<button type="button" className="text-xs font-bold text-[var(--efl-primary)] text-right min-h-[34px]" onClick={()=>setSelectedFixtureForModal(fix)}>{language==='uz'?'Uchrashuvni ochish':language==='ru'?'Открыть матч':'Open match'}</button>}
+                  </CompetitionFixtureCard>
                 );
               })}
             </div>
@@ -1075,41 +1032,9 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
 
       {/* TAB C: STANDINGS TABLE */}
       {activeLeagueTab === 'STANDINGS' && (
-        <div className={`space-y-4 ${EFL_2_DESIGN_ENABLED ? `efl-standings efl-standings--${standingsView}` : ''}`}>
-          {EFL_2_DESIGN_ENABLED && (
-            <div className="efl-standings-toolbar">
-              <div role="group" aria-label={standingsLabels.view} className="efl-standings-view-switch">
-                {(['short', 'full', 'form'] as const).map((view) => (
-                  <button key={view} type="button" aria-pressed={standingsView === view} onClick={() => setStandingsView(view)}>
-                    {standingsLabels[view]}
-                  </button>
-                ))}
-              </div>
-              {standingsView === 'form' && <div className="efl-standings-form-legend">
-                <span className="efl-result-win">{standingsLabels.win}</span>
-                <span className="efl-result-draw">{standingsLabels.draw}</span>
-                <span className="efl-result-loss">{standingsLabels.loss}</span>
-              </div>}
-            </div>
-          )}
-          {isLoadingStandings && leagueStandings.length === 0 ? (
-            <div className="p-4 rounded-2xl bg-[var(--efl-surface)] border border-[var(--efl-border)] space-y-3 animate-pulse shadow-xs">
-              {[1, 2, 3, 4, 5, 6].map((i) => (
-                <div key={i} className="h-10 rounded-xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)]" />
-              ))}
-            </div>
-          ) : leagueStandings.length === 0 ? (
-            <div className="py-12 text-center rounded-2xl bg-[var(--efl-surface)] border border-[var(--efl-border)] text-[var(--efl-text-2)] text-xs shadow-xs">
-              {EFL_2_DESIGN_ENABLED ? previewText.emptyStandings : 'Standings are not available yet.'}
-            </div>
-          ) : (
-            <div className="preview-surface overflow-hidden shadow-sm rounded-2xl border border-[var(--efl-border)]">
-              <div className="flex flex-wrap items-center justify-between gap-2.5 p-3 bg-[var(--efl-surface-2)] border-b border-[var(--efl-border)] text-[10px]">
-                <div className="font-bold text-[var(--efl-text)]">
-                  {currentComp?.name || 'League Table'} • {totalLeagueMatchdays} Tur
-                </div>
-                <div className="efl-standings-qualification-legend flex flex-wrap items-center gap-2.5">
-                  <div className="flex items-center gap-1.5 text-[var(--efl-text-2)]">
+        <div className="space-y-4">
+          <CompetitionStandings title={`${currentComp?.name||'League Table'} • ${totalLeagueMatchdays} Tur`} view={standingsView} onViewChange={setStandingsView} labels={standingsLabels} clubLabel={t.club}
+            legend={<><div className="flex items-center gap-1.5 text-[var(--efl-text-2)]">
                     <span className="w-2 h-2 rounded-full bg-blue-500" />
                     <span>{t.uclZone} (1–{uclThreshold})</span>
                   </div>
@@ -1120,51 +1045,10 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                   <div className="flex items-center gap-1.5 text-[var(--efl-text-2)]">
                     <span className="w-2 h-2 rounded-full bg-rose-500" />
                     <span>{t.relegationZone} ({relThreshold}–{relThreshold === 16 ? 18 : 20})</span>
-                  </div>
-                </div>
-              </div>
-              <div className="overflow-x-auto scrollbar-none">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b border-[var(--efl-border)] bg-[var(--efl-surface-2)] text-[var(--efl-text-2)] font-bold uppercase text-[10px] tracking-wider">
-                      <th className="py-3 px-3 w-12 text-center">#</th>
-                      <th className="py-3 px-3">{t.club}</th>
-                      <th className="py-3 px-2 text-center font-bold text-[var(--efl-text)]">{EFL_2_DESIGN_ENABLED ? standingsLabels.played : 'P'}</th>
-                      <th className="efl-col-won py-3 px-2 text-center">{EFL_2_DESIGN_ENABLED ? standingsLabels.won : 'W'}</th>
-                      <th className="efl-col-drawn py-3 px-2 text-center">{EFL_2_DESIGN_ENABLED ? standingsLabels.drawn : 'D'}</th>
-                      <th className="efl-col-lost py-3 px-2 text-center">{EFL_2_DESIGN_ENABLED ? standingsLabels.lost : 'L'}</th>
-                      <th className="efl-col-goalsFor py-3 px-2 text-center hidden sm:table-cell">GF</th>
-                      <th className="efl-col-goalsAgainst py-3 px-2 text-center hidden sm:table-cell">GA</th>
-                      <th className="efl-col-goalDifference py-3 px-2 text-center">{EFL_2_DESIGN_ENABLED ? standingsLabels.difference : 'GD'}</th>
-                      {EFL_2_DESIGN_ENABLED && <th className="efl-col-form py-3 px-2 text-center">{standingsLabels.form}</th>}
-                      <th className="py-3 px-3 text-center font-black text-[var(--efl-primary)]">{EFL_2_DESIGN_ENABLED ? standingsLabels.points : 'PTS'}</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[var(--efl-border)]">
-                    {leagueStandings.map((row) => {
-                      const posStyle = getPositionStyle(row.position);
-                      const isMyClub = ownedClubs.some((club) => club.id === row.clubId);
-
-                      return (
-                        <tr
-                          key={row.clubId}
-                          className={`transition-colors ${
-                            isMyClub ? 'active-club-highlight bg-[var(--efl-primary-soft)] font-bold' : 'hover:bg-[var(--efl-surface-2)]'
-                          }`}
-                        >
-                          <td className="py-2.5 px-3 text-center">
-                            <div className="flex items-center justify-center gap-1">
-                              <span
-                                className={`w-1.5 h-4 rounded-full ${posStyle.barColor}`}
-                                title={posStyle.label}
-                              />
-                              <span className="font-black text-[var(--efl-text)] text-xs">{row.position}</span>
-                            </div>
-                          </td>
-
-                          <td className="py-2.5 px-3">
-                            <div className="flex items-center gap-2.5 min-w-[140px]">
-                              <ClubCrest
+                  </div></>}
+            rows={leagueStandings.map(row=>{
+              const posStyle=getPositionStyle(row.position),isMyClub=ownedClubs.some(club=>club.id===row.clubId);
+              return {...row,id:row.clubId,highlighted:isMyClub,form:row.form?.length?row.form:(row.recentForm||'').split('').filter(result=>/[WDL]/.test(result)),positionMarker:<span className={`w-1.5 h-4 rounded-full ${posStyle.barColor}`} title={posStyle.label}/>,identity:<><ClubCrest
                                 clubId={row.clubId}
                                 logoUrl={row.clubLogoUrl}
                                 name={row.clubName}
@@ -1218,40 +1102,9 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                                     </span>
                                   );
                                 })()}</div>
-                              </div>
-                            </div>
-                          </td>
-
-                          <td className="py-2.5 px-2 text-center font-semibold text-[var(--efl-text)]">{row.played}</td>
-                          <td className="efl-col-won py-2.5 px-2 text-center text-[var(--efl-text-2)] efl-result-win">{row.won}</td>
-                          <td className="efl-col-drawn py-2.5 px-2 text-center text-[var(--efl-text-2)] efl-result-draw">{row.drawn}</td>
-                          <td className="efl-col-lost py-2.5 px-2 text-center text-[var(--efl-text-2)] efl-result-loss">{row.lost}</td>
-                          <td className="efl-col-goalsFor py-2.5 px-2 text-center text-[var(--efl-text-2)] hidden sm:table-cell">{row.goalsFor}
-                          </td>
-                          <td className="efl-col-goalsAgainst py-2.5 px-2 text-center text-[var(--efl-text-2)] hidden sm:table-cell">{row.goalsAgainst}
-                          </td>
-                          <td className="efl-col-goalDifference py-2.5 px-2 text-center font-bold text-[var(--efl-text)]">
-                            {row.goalDifference > 0 ? `+${row.goalDifference}` : row.goalDifference}
-                          </td>
-                          {EFL_2_DESIGN_ENABLED && <td className="efl-col-form py-2.5 px-2 text-center">
-                            <div className="efl-standings-form">
-                              {(row.form?.length ? row.form : (row.recentForm || '').split('').filter((result): result is 'W' | 'D' | 'L' => result === 'W' || result === 'D' || result === 'L')).slice(-5).map((result, index) => (
-                                <span key={index} className={`efl-form-result efl-form-result--${result.toLowerCase()}`} title={result === 'W' ? standingsLabels.win : result === 'D' ? standingsLabels.draw : standingsLabels.loss}>
-                                  {result === 'W' ? standingsLabels.won : result === 'D' ? standingsLabels.drawn : standingsLabels.lost}
-                                </span>
-                              ))}
-                              {!row.form?.length && !/[WDL]/.test(row.recentForm || '') && <span className="text-[var(--efl-muted)]" title={standingsLabels.empty}>—</span>}
-                            </div>
-                          </td>}
-                          <td className="py-2.5 px-3 text-center font-black text-[var(--efl-primary)] text-sm">{row.points}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
+                              </div></>};
+            })}/>
+          {isLoadingStandings&&leagueStandings.length===0&&<p role="status" className="text-xs text-[var(--efl-muted)]">{language==='uz'?'Yuklanmoqda…':'Loading…'}</p>}
           <AdminTournamentImageExport competition={currentComp} kind="standings" disabled={isLoadingStandings} />
         </div>
       )}
