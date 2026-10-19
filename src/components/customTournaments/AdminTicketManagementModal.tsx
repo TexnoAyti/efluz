@@ -90,19 +90,19 @@ export const AdminTicketManagementModal: React.FC<AdminTicketManagementModalProp
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
-      <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-5 space-y-4 shadow-2xl">
-        <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+    <div className="efl-custom-tournaments fixed inset-0 z-50 flex items-center justify-center p-4 bg-[var(--efl-surface-2)]/80 backdrop-blur-sm animate-in fade-in">
+      <div className="w-full max-w-md bg-[var(--efl-surface)] border border-[var(--efl-border)] rounded-3xl p-5 space-y-4 shadow-2xl">
+        <div className="flex items-center justify-between pb-3 border-b border-[var(--efl-border)]">
           <div className="flex items-center gap-2">
             <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400">
               <Ticket className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-black text-slate-100 text-base leading-tight">Chiptalar Boshqaruvi</h3>
-              <p className="text-[11px] text-slate-400">Faqat Asosiy Admin (5209126900)</p>
+              <h3 className="font-black text-[var(--efl-text)] text-base leading-tight">Chiptalar Boshqaruvi</h3>
+              <p className="text-[11px] text-[var(--efl-text-2)]">Faqat Asosiy Admin (5209126900)</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1 rounded-lg text-slate-400 hover:text-slate-200">
+          <button onClick={onClose} className="p-1 rounded-lg text-[var(--efl-text-2)] hover:text-[var(--efl-text)]">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -110,7 +110,7 @@ export const AdminTicketManagementModal: React.FC<AdminTicketManagementModalProp
         {statusMsg && (
           <div
             className={`p-3 text-xs font-semibold rounded-xl flex items-center gap-2 ${
-              statusMsg.type === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+              statusMsg.type === 'success' ? 'bg-[var(--efl-primary)]/10 text-[var(--efl-primary)] border border-[var(--efl-primary)]/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
             }`}
           >
             {statusMsg.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}
@@ -119,11 +119,11 @@ export const AdminTicketManagementModal: React.FC<AdminTicketManagementModalProp
         )}
 
         {/* Tab switchers */}
-        <div className="flex border-b border-slate-800 bg-slate-950/60 p-1 rounded-xl gap-1">
+        <div className="flex border-b border-[var(--efl-border)] bg-[var(--efl-surface-2)]/60 p-1 rounded-xl gap-1">
           <button
             onClick={() => setActiveTab('grant')}
             className={`flex-1 py-1.5 px-3 text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 ${
-              activeTab === 'grant' ? 'bg-slate-800 text-slate-100' : 'text-slate-400 hover:text-slate-200'
+              activeTab === 'grant' ? 'bg-[var(--efl-surface-2)] text-[var(--efl-text)]' : 'text-[var(--efl-text-2)] hover:text-[var(--efl-text)]'
             }`}
           >
             <PlusCircle className="w-3.5 h-3.5" /> Chipta Berish
@@ -131,7 +131,7 @@ export const AdminTicketManagementModal: React.FC<AdminTicketManagementModalProp
           <button
             onClick={() => setActiveTab('refund')}
             className={`flex-1 py-1.5 px-3 text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 ${
-              activeTab === 'refund' ? 'bg-slate-800 text-slate-100' : 'text-slate-400 hover:text-slate-200'
+              activeTab === 'refund' ? 'bg-[var(--efl-surface-2)] text-[var(--efl-text)]' : 'text-[var(--efl-text-2)] hover:text-[var(--efl-text)]'
             }`}
           >
             <RotateCcw className="w-3.5 h-3.5" /> Qaytarish
@@ -142,7 +142,7 @@ export const AdminTicketManagementModal: React.FC<AdminTicketManagementModalProp
               fetchHistory();
             }}
             className={`flex-1 py-1.5 px-3 text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 ${
-              activeTab === 'history' ? 'bg-slate-800 text-slate-100' : 'text-slate-400 hover:text-slate-200'
+              activeTab === 'history' ? 'bg-[var(--efl-surface-2)] text-[var(--efl-text)]' : 'text-[var(--efl-text-2)] hover:text-[var(--efl-text)]'
             }`}
           >
             <History className="w-3.5 h-3.5" /> Tarix
@@ -153,50 +153,50 @@ export const AdminTicketManagementModal: React.FC<AdminTicketManagementModalProp
         {activeTab === 'grant' && (
           <div className="space-y-3">
             <div>
-              <label className="text-[11px] text-slate-400 block mb-1">Foydalanuvchi ID / Telegram ID / @username</label>
+              <label className="text-[11px] text-[var(--efl-text-2)] block mb-1">Foydalanuvchi ID / Telegram ID / @username</label>
               <input
                 type="text"
                 placeholder="Masalan: user-12345 yoki @username"
                 value={targetUserId}
                 onChange={(e) => setTargetUserId(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200"
+                className="w-full bg-[var(--efl-surface-2)] border border-[var(--efl-border)] rounded-xl px-3 py-2 text-xs text-[var(--efl-text)]"
               />
             </div>
             <div>
-              <label className="text-[11px] text-slate-400 block mb-1">Telegram ID (ixtiyoriy)</label>
+              <label className="text-[11px] text-[var(--efl-text-2)] block mb-1">Telegram ID (ixtiyoriy)</label>
               <input
                 type="text"
                 placeholder="Masalan: 12345678"
                 value={targetTelegramId}
                 onChange={(e) => setTargetTelegramId(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200"
+                className="w-full bg-[var(--efl-surface-2)] border border-[var(--efl-border)] rounded-xl px-3 py-2 text-xs text-[var(--efl-text)]"
               />
             </div>
             <div>
-              <label className="text-[11px] text-slate-400 block mb-1">Chiptalar soni</label>
+              <label className="text-[11px] text-[var(--efl-text-2)] block mb-1">Chiptalar soni</label>
               <input
                 type="number"
                 min="1"
                 value={amount}
                 onChange={(e) => setAmount(Number(e.target.value))}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 font-bold"
+                className="w-full bg-[var(--efl-surface-2)] border border-[var(--efl-border)] rounded-xl px-3 py-2 text-xs text-[var(--efl-text)] font-bold"
               />
             </div>
             <div>
-              <label className="text-[11px] text-slate-400 block mb-1">Izoh</label>
+              <label className="text-[11px] text-[var(--efl-text-2)] block mb-1">Izoh</label>
               <input
                 type="text"
                 placeholder="To‘lov tasdig‘i: 15 000 so‘m qabul qilindi"
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200"
+                className="w-full bg-[var(--efl-surface-2)] border border-[var(--efl-border)] rounded-xl px-3 py-2 text-xs text-[var(--efl-text)]"
               />
             </div>
 
             <button
               onClick={handleGrant}
               disabled={isLoading || !targetUserId.trim()}
-              className="w-full py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-black text-xs transition-colors"
+              className="w-full py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white font-black text-xs transition-colors"
             >
               {isLoading ? 'Berilmoqda...' : 'Chiptani Akkauntga Qo‘shish'}
             </button>
@@ -207,33 +207,33 @@ export const AdminTicketManagementModal: React.FC<AdminTicketManagementModalProp
         {activeTab === 'refund' && (
           <div className="space-y-3">
             <div>
-              <label className="text-[11px] text-slate-400 block mb-1">Foydalanuvchi IDsi</label>
+              <label className="text-[11px] text-[var(--efl-text-2)] block mb-1">Foydalanuvchi IDsi</label>
               <input
                 type="text"
                 placeholder="user-12345 yoki @username"
                 value={targetUserId}
                 onChange={(e) => setTargetUserId(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200"
+                className="w-full bg-[var(--efl-surface-2)] border border-[var(--efl-border)] rounded-xl px-3 py-2 text-xs text-[var(--efl-text)]"
               />
             </div>
             <div>
-              <label className="text-[11px] text-slate-400 block mb-1">Turnir IDsi</label>
+              <label className="text-[11px] text-[var(--efl-text-2)] block mb-1">Turnir IDsi</label>
               <input
                 type="text"
                 placeholder="ct_12345678_abcd"
                 value={tournamentId}
                 onChange={(e) => setTournamentId(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200"
+                className="w-full bg-[var(--efl-surface-2)] border border-[var(--efl-border)] rounded-xl px-3 py-2 text-xs text-[var(--efl-text)]"
               />
             </div>
             <div>
-              <label className="text-[11px] text-slate-400 block mb-1">Qaytarish sababi</label>
+              <label className="text-[11px] text-[var(--efl-text-2)] block mb-1">Qaytarish sababi</label>
               <input
                 type="text"
                 placeholder="Turnir bekor qilindi / qatnashuvchilar yig‘ilmadi"
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200"
+                className="w-full bg-[var(--efl-surface-2)] border border-[var(--efl-border)] rounded-xl px-3 py-2 text-xs text-[var(--efl-text)]"
               />
             </div>
 
@@ -251,26 +251,26 @@ export const AdminTicketManagementModal: React.FC<AdminTicketManagementModalProp
         {activeTab === 'history' && (
           <div className="space-y-2 max-h-60 overflow-y-auto">
             {loadingTx ? (
-              <p className="text-xs text-slate-400 text-center py-6">Yuklanmoqda...</p>
+              <p className="text-xs text-[var(--efl-text-2)] text-center py-6">Yuklanmoqda...</p>
             ) : transactions.length === 0 ? (
-              <p className="text-xs text-slate-500 italic text-center py-6">Tranzaksiyalar topilmadi.</p>
+              <p className="text-xs text-[var(--efl-muted)] italic text-center py-6">Tranzaksiyalar topilmadi.</p>
             ) : (
               transactions.map((tx) => (
                 <div
                   key={tx.id}
-                  className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800 text-xs space-y-1"
+                  className="p-2.5 rounded-xl bg-[var(--efl-surface-2)]/60 border border-[var(--efl-border)] text-xs space-y-1"
                 >
                   <div className="flex items-center justify-between">
                     <span
                       className={`font-bold ${
-                        tx.type === 'GRANT' ? 'text-emerald-400' : tx.type === 'REFUND' ? 'text-sky-400' : 'text-amber-400'
+                        tx.type === 'GRANT' ? 'text-[var(--efl-primary)]' : tx.type === 'REFUND' ? 'text-sky-400' : 'text-amber-400'
                       }`}
                     >
                       {tx.type} ({tx.amount})
                     </span>
-                    <span className="text-[10px] text-slate-500">{new Date(tx.createdAt).toLocaleDateString()}</span>
+                    <span className="text-[10px] text-[var(--efl-muted)]">{new Date(tx.createdAt).toLocaleDateString()}</span>
                   </div>
-                  <p className="text-[11px] text-slate-300 truncate">{tx.note || tx.idempotencyKey}</p>
+                  <p className="text-[11px] text-[var(--efl-text-2)] truncate">{tx.note || tx.idempotencyKey}</p>
                 </div>
               ))
             )}

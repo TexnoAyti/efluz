@@ -1,3 +1,4 @@
+import {CompetitionSteps} from '../CompetitionWorkspace';
 import {TournamentRulesSummary} from './TournamentRulesSummary';
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Trophy, Layers, CheckCircle2, Ticket, Sparkles, AlertCircle, HelpCircle } from 'lucide-react';
@@ -150,7 +151,7 @@ export const TournamentWizardModal: React.FC<TournamentWizardModalProps> = ({
     <section role="dialog" aria-modal="true" aria-label="Yangi turnir yaratish" className="tourney-dialog">
       <header><div><p className="tourney-eyebrow">{step} / 3 · {step===1?'Asosiy ma’lumot':step===2?'Qatnashish qoidalari':'Tekshirish'}</p><h2>Turnir yaratish</h2></div><button aria-label="Turnir yaratishni yopish" disabled={isLoading} onClick={onClose} className="tourney-button !p-2"><X size={18}/></button></header>
       <div className="tourney-dialog-body">
-        <div className="tourney-steps" aria-label="Yaratish bosqichlari">{[1,2,3].map(n=><span key={n} className={`tourney-step ${n<=step?'active':''}`}/>)}</div>
+        <CompetitionSteps step={step} labels={['Ma’lumotlar','Qatnashish qoidalari','Tasdiqlash']}/>
         {errorMessage&&<p role="alert" className="tourney-note error">{errorMessage}</p>}
         {step===1&&<>
           <label className="tourney-field">Turnir nomi<input autoFocus required maxLength={60} placeholder="Masalan: Do‘stlar kubogi" value={name} onChange={e=>setName(e.target.value)}/></label>
