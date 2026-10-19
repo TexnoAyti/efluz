@@ -1,3 +1,7 @@
+import {TeamLeagueDetail} from '../../components/teamLeaguePreview/TeamLeagueDetail';
+import {TeamTournamentWizard} from '../../components/teamLeaguePreview/TeamTournamentWizard';
+import type {TeamLeague,PreviewTeam} from '../../types/teamLeaguePreview';
+import {makeTeamSchedule} from '../../lib/teamLeagueEngine';
 import fs from 'node:fs';
 import path from 'node:path';
 import React from 'react';
@@ -23,6 +27,10 @@ export function writeTournamentDesignReview(){
  };
  for(const step of [1,2,3] as const)views['create'+step]=render(<TournamentWizardModal initialStep={step} isOpen onClose={()=>{}} onTournamentCreated={()=>{}}/>);
  for(const tab of ['overview','participants','matches','settings','history'] as const)views['manage-'+tab]=render(<TournamentAdminDrawer isOpen isOrganizer initialTab={tab} tournament={{...t,status:tab==='matches'?'IN_PROGRESS':'REGISTRATION_OPEN'}} participants={players} fixtures={[match]} onClose={()=>{}} onRefresh={()=>{}}/>);
+ const teamList:PreviewTeam[]=Array.from({length:4},(_,i)=>({id:'tp_reviewteam'+i,name:['Tashkent United','Samarqand Stars','Buxoro Legends','Farg‘ona City'][i],ownerId:'static-review',logo:'',members:Array.from({length:4},(_,m)=>({id:`tp_review${i}player${m}`,name:`O‘yinchi ${i+1}-${m+1}`})),captainMemberId:`tp_review${i}player0`,version:1,updatedAt:''}));
+ const teamLeague:TeamLeague={id:'tp_staticreview',name:'EFLUZ Team Championship',description:'Teamlar o‘rtasidagi liga va pley-off.',format:'LEAGUE_AND_PLAYOFF',qualifiers:2,teamIds:teamList.map(t=>t.id),ownerId:'static-review',starterCount:3,rounds:1,status:'ACTIVE',currentRound:1,totalRounds:4,fixtures:makeTeamSchedule('tp_staticreview',teamList.map(t=>t.id),1),teams:Object.fromEntries(teamList.map(t=>[t.id,t])),version:1,updatedAt:'',audit:[]};
+ for(const initialTab of ['overview','standings','fixtures','teams','players','rules','history'])views['team-'+initialTab]=render(<div className="efl-custom-tournaments tourney-page team-tournaments" style={{padding:16}}><TeamLeagueDetail league={teamLeague} teams={teamList} busy={false} act={()=>{}} edit={()=>{}} confirm={()=>{}} onBack={()=>{}} onRefresh={()=>{}} initialTab={initialTab} initialOpenFixtureId={teamLeague.fixtures[0].id}/></div>);
+ for(const initialStep of [1,2,3] as const)views['team-create'+initialStep]=render(<div className="efl-custom-tournaments team-tournaments tourney-dialog" style={{margin:0}}><header><h2>Team turniri yaratish</h2></header><div className="tourney-dialog-body"><TeamTournamentWizard league={teamLeague} teams={teamList} busy={false} save={()=>{}} initialStep={initialStep}/></div></div>);
  const css=fs.readdirSync('dist/assets').filter(x=>x.endsWith('.css')).map(x=>`<link rel="stylesheet" href="/assets/${x}">`).join('');
  const escape=(x:string)=>x.replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;');
  const docs=Object.fromEntries(Object.entries(views).map(([key,markup])=>[key,`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">${css}<style>body{margin:0} .efl-preview{min-height:100vh} button{cursor:default}</style></head><body><div class="efl-preview theme-light">${markup}</div></body></html>`]));

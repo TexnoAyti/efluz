@@ -6,7 +6,7 @@ import {getFirestoreDb} from '../firebase/admin';
 import {authMiddleware} from '../middleware/authMiddleware';
 import {createSessionToken} from '../auth/sessionToken';
 import {teamLeaguePreviewRouter} from '../routes/teamLeaguePreview.routes';
-import {makeTeamSchedule,teamFixtureScore,teamStandings} from '../../lib/teamLeagueEngine';
+import {makeTeamSchedule,teamFixtureScore,teamStandings,teamFixtureWinner,teamPlayerStats} from '../../lib/teamLeagueEngine';
 import type {TeamLeague} from '../../types/teamLeaguePreview';
 export async function verifyTeamLeaguePreview(failNextCommit:()=>void){
  for(let n=2;n<=16;n++)for(const legs of [1,2] as const){const ids=Array.from({length:n},(_,i)=>String(i));const schedule=makeTeamSchedule('test',ids,legs);assert.equal(schedule.length,n*(n-1)/2*legs);const pairs=new Map<string,number>();for(const f of schedule){assert.notEqual(f.homeTeamId,f.awayTeamId);const key=[f.homeTeamId,f.awayTeamId].sort().join(':');pairs.set(key,(pairs.get(key)||0)+1);}assert.ok([...pairs.values()].every(v=>v===legs));for(const r of new Set(schedule.map(f=>f.round))){const teams=schedule.filter(f=>f.round===r).flatMap(f=>[f.homeTeamId,f.awayTeamId]);assert.equal(new Set(teams).size,teams.length);}if(legs===2)for(const f of schedule)assert.equal(schedule.filter(g=>g.homeTeamId===f.awayTeamId&&g.awayTeamId===f.homeTeamId).length,1);}
@@ -44,6 +44,37 @@ export async function verifyTeamLeaguePreview(failNextCommit:()=>void){
   }
   assert.equal(league.status,'COMPLETED');assert.equal(teamStandings(league).reduce((sum,r)=>sum+r.points,0),9);const f=league.fixtures[0];for(const b of f.bouts)assert.equal((await act({action:'SCORE',fixtureId:f.id,boutId:b.id,homeScore:0,awayScore:1})).status,200);assert.equal(teamFixtureScore(league.fixtures[0]).away,2);assert.equal((await call()).body.data.leagues[0].version,league.version);
   const second={...draft,id:'tp_cancelledleague',version:0};assert.equal((await call('/leagues',second)).status,200);league=(await call('/leagues/'+second.id)).body.data;assert.equal((await act({action:'CANCEL'})).status,200);assert.equal((await act({action:'START'})).status,409);
-  console.log('PASS owner-only team preview HTTP, PNG/roster validation, all round-robin sizes, native transaction rollback, concurrent result exclusion, captain lineups, reserves, random bijections, rounds, score corrections and standings');
+  // Full knockout and league qualification lifecycles run against the same
+  // authenticated router and native PostgreSQL transaction harness.
+  for(let i=3;i<4;i++)assert.equal((await call('/teams',payload(i))).status,200);
+  for(const format of ['PLAYOFF','LEAGUE_AND_PLAYOFF'] as const){
+   const body={...draft,id:`tp_${format.toLowerCase()}test`,teamIds:[0,1,2,3].map(i=>payload(i).id),format,qualifiers:2,description:'Format lifecycle',starterCount:1,version:0};
+   assert.equal((await call('/leagues',{...body,teamIds:body.teamIds.slice(0,3),format:'PLAYOFF'})).status,400);
+   const created=await call('/leagues',body);assert.equal(created.status,200,JSON.stringify(created));league=created.body.data;
+   assert.equal((await act({action:'START'})).status,200);
+   const expectedRounds=format==='PLAYOFF'?2:4;assert.equal(league.totalRounds,expectedRounds);
+   for(let r=1;r<=expectedRounds;r++){
+    const fixtures=league.fixtures.filter(f=>f.round===r);
+    for(const fixture of fixtures){
+     for(const side of ['home','away'] as const){const t=league.teams[side==='home'?fixture.homeTeamId:fixture.awayTeamId];assert.equal((await act({action:'LINEUP',fixtureId:fixture.id,side,lineup:{starters:[t.members[0].id],reserves:[t.members[1].id]}})).status,200);}
+     assert.equal((await act({action:'PAIR',fixtureId:fixture.id})).status,200);const f=league.fixtures.find(f=>f.id===fixture.id)!;
+     const tied=f.stage==='PLAYOFF';assert.equal((await act({action:'SCORE',fixtureId:f.id,boutId:f.bouts[0].id,homeScore:2,awayScore:tied?2:0})).status,200);
+     if(tied){assert.equal(teamFixtureWinner(league.fixtures.find(g=>g.id===f.id)!),null);assert.equal(league.status,'ACTIVE');assert.equal((await act({action:'NEXT'})).status,409);assert.equal((await act({action:'TIEBREAK',fixtureId:f.id,winnerTeamId:'unknown',reason:'bad'})).status,400);assert.equal((await act({action:'TIEBREAK',fixtureId:f.id,winnerTeamId:f.homeTeamId,reason:'Hal qiluvchi o‘yin 2:1'})).status,200);}
+    }
+    if(r<expectedRounds){
+     const before=structuredClone(league),qualifiers=teamStandings(league).slice(0,2).map(r=>r.teamId);
+     assert.equal((await act({action:'NEXT'})).status,200);
+     if(format==='LEAGUE_AND_PLAYOFF'&&r===3){const final=league.fixtures.find(f=>f.round===4)!;assert.deepEqual([final.homeTeamId,final.awayTeamId],qualifiers);assert.equal(teamStandings(league).reduce((n,row)=>n+row.played,0),12);}
+     if(before.fixtures.some(f=>f.stage==='PLAYOFF')||(format==='LEAGUE_AND_PLAYOFF'&&r===3)){const old=before.fixtures.find(f=>f.round===r)!;assert.equal((await act({action:'SCORE',fixtureId:old.id,boutId:old.bouts[0].id,homeScore:0,awayScore:9})).status,409);}
+    }
+   }
+   assert.equal(league.status,'COMPLETED');const final=league.fixtures.at(-1)!;assert.ok(teamFixtureWinner(final));
+   // Correcting a final invalidates a previous decider and reopens the active
+   // tie. The champion cannot remain stale after a score change.
+   assert.equal((await act({action:'SCORE',fixtureId:final.id,boutId:final.bouts[0].id,homeScore:1,awayScore:1})).status,200);assert.equal(league.status,'ACTIVE');assert.equal(league.fixtures.at(-1)!.tieBreakWinnerId,undefined);
+   assert.equal((await act({action:'TIEBREAK',fixtureId:final.id,winnerTeamId:final.awayTeamId,reason:'Tuzatilgan hal qiluvchi o‘yin 0:1'})).status,200);assert.equal(league.status,'COMPLETED');
+   const stats=teamPlayerStats(league);assert.equal(stats.reduce((n,p)=>n+p.played,0),league.fixtures.reduce((n,f)=>n+f.bouts.length*2,0));
+  }
+  console.log('PASS owner-only team preview HTTP, PNG/roster validation, all round-robin sizes, native transaction rollback, concurrent result exclusion, captain lineups, reserves, random bijections, rounds, knockout ties/finals, league qualification, locked prior stages, player statistics and score corrections');
  }finally{await new Promise<void>((resolve,reject)=>server.close(e=>e?reject(e):resolve()));}
 }

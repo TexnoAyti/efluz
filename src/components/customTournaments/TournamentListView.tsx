@@ -1,3 +1,5 @@
+import {TeamLeaguePreviewView} from '../teamLeaguePreview/TeamLeaguePreviewView';
+import {canSeeTeamPreview} from '../../types/teamLeaguePreview';
 import React,{useState,useEffect,useRef} from 'react';
 import {Plus,Ticket,Search,SlidersHorizontal,Trophy,RefreshCw} from 'lucide-react';
 import type {CustomTournament} from '../../types/customTournament';
@@ -10,6 +12,8 @@ import {readTournamentLaunch} from '../../lib/customTournamentLinks';
 import {useAuth} from '../../context/AuthContext';
 export function TournamentListView(){
  const {user}=useAuth();
+ const [teamMode,setTeamMode]=useState(false);
+ const modeSwitch=canSeeTeamPreview(user?.telegramId)?<nav className="tourney-tabs" aria-label="Turnir o‘yin turi"><button aria-pressed={!teamMode} onClick={()=>setTeamMode(false)}>Yakka o‘yin</button><button aria-pressed={teamMode} onClick={()=>setTeamMode(true)}>Team vs Team</button></nav>:null;
  const [tab,setTab]=useState<'all'|'my'>(()=>{try{return sessionStorage.getItem(`efl:custom-tab:${user?.id}`)==='all'?'all':'my';}catch{return 'my';}});
  const [items,setItems]=useState<CustomTournament[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState('');
  const [balance,setBalance]=useState<number|null>(null),[ticketError,setTicketError]=useState('');
@@ -23,8 +27,10 @@ export function TournamentListView(){
  useEffect(()=>{tickets();},[user?.id]);
  const visible=items.filter(t=>`${t.name} ${t.description||''}`.toLowerCase().includes(search.trim().toLowerCase())&&(status==='ALL'||t.status===status)&&(format==='ALL'||t.format===format));
  const filtered=!!search.trim()||status!=='ALL'||format!=='ALL';
+ if(teamMode&&canSeeTeamPreview(user?.telegramId))return <div className="efl-custom-tournaments tourney-page !pb-0">{modeSwitch}<TeamLeaguePreviewView/></div>;
  if(selected)return <TournamentDetailView tournamentId={selected} inviteToken={token} onBack={()=>{setSelected(null);setToken(undefined);load();tickets();}}/>;
  return <div className="efl-custom-tournaments tourney-page">
+  {modeSwitch}
   <header className="tourney-heading"><div><p className="tourney-eyebrow">Do‘stlar bilan musobaqa</p><h1>O‘z turniringiz</h1></div><button className="tourney-button primary" onClick={()=>setWizard(true)}><Plus size={16}/>Yaratish</button></header>
   <div className="tourney-ticket"><Ticket size={15}/><span>Balans: <strong>{balance??'—'} ticket</strong></span><span>· Yaratish 1 ticket, qatnashish bepul</span>{user?.telegramId==='5209126900'&&<button className="underline min-h-[44px]" onClick={()=>setTicketAdmin(true)}>Ticket boshqaruvi</button>}</div>
   {ticketError&&<div role="alert" className="tourney-note error">{ticketError}<button className="tourney-button mt-2" onClick={tickets}>Qayta urinish</button></div>}
