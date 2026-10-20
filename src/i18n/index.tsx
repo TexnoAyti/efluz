@@ -1,3 +1,4 @@
+import { readBrowserStorage, writeBrowserStorage } from '../lib/browserStorage';
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
 export type Language = 'uz' | 'ru' | 'en';
@@ -1108,7 +1109,7 @@ const I18nContext = createContext<I18nContextType | undefined>(undefined);
 export const I18nProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [language, setLanguageState] = useState<Language>(() => {
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('efootball_lang') as Language;
+      const saved = readBrowserStorage('localStorage', 'efootball_lang') as Language;
       if (saved && ['uz', 'ru', 'en'].includes(saved)) {
         return saved;
       }
@@ -1119,7 +1120,7 @@ export const I18nProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const setLanguage = (lang: Language) => {
     setLanguageState(lang);
     if (typeof window !== 'undefined') {
-      localStorage.setItem('efootball_lang', lang);
+      writeBrowserStorage('localStorage', 'efootball_lang', lang);
     }
   };
 

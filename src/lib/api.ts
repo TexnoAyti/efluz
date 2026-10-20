@@ -1,3 +1,4 @@
+import { readBrowserStorage, writeBrowserStorage } from './browserStorage';
 import type { CupTieBreakScores } from './cupResult';
 import type { MatchdayControlAction, MatchdayControlOverview } from './matchdayState';
 import type { AdminPermissions } from '../types';
@@ -24,48 +25,26 @@ let currentSessionToken: string | null = null;
 
 export function setSessionToken(token: string | null) {
   currentSessionToken = token || null;
-  if (typeof window !== 'undefined') {
-    if (token) sessionStorage.setItem('efootball_session_token', token);
-    else sessionStorage.removeItem('efootball_session_token');
-  }
+  writeBrowserStorage('sessionStorage', 'efootball_session_token', currentSessionToken);
 }
 
 export function getSessionToken(): string | null {
-  if (currentSessionToken) return currentSessionToken;
-  if (typeof window !== 'undefined') {
-    currentSessionToken = sessionStorage.getItem('efootball_session_token');
-  }
+  if (!currentSessionToken) currentSessionToken = readBrowserStorage('sessionStorage', 'efootball_session_token');
   return currentSessionToken;
 }
 
 export function setDevUserId(id: string | null) {
   currentDevUserId = id;
-  if (typeof window !== 'undefined') {
-    if (id) {
-      localStorage.setItem('efootball_dev_user_id', id);
-    } else {
-      localStorage.removeItem('efootball_dev_user_id');
-    }
-  }
+  writeBrowserStorage('localStorage', 'efootball_dev_user_id', id);
 }
 
 export function getDevUserId(): string | null {
-  if (currentDevUserId) return currentDevUserId;
-  if (typeof window !== 'undefined') {
-    return localStorage.getItem('efootball_dev_user_id');
-  }
-  return null;
+  return currentDevUserId || readBrowserStorage('localStorage', 'efootball_dev_user_id');
 }
 
 export function setTelegramInitData(data: string | null) {
   currentTelegramInitData = data || null;
-  if (typeof window !== 'undefined') {
-    if (data) {
-      sessionStorage.setItem('efootball_tg_init_data', data);
-    } else {
-      sessionStorage.removeItem('efootball_tg_init_data');
-    }
-  }
+  writeBrowserStorage('sessionStorage', 'efootball_tg_init_data', currentTelegramInitData);
 }
 
 function clearTelegramLaunchCredentials() {
@@ -94,7 +73,7 @@ export function getTelegramInitData(): string {
     }
 
     // 3. SessionStorage cached during current tab session
-    const sessionData = sessionStorage.getItem('efootball_tg_init_data');
+    const sessionData = readBrowserStorage('sessionStorage', 'efootball_tg_init_data');
     if (sessionData) {
       currentTelegramInitData = sessionData;
       return sessionData;

@@ -276,27 +276,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // 1. Resolve Telegram Context
-      const tgCtx = await resolveTelegramContext(1200);
-
-      const isTgSdkPresent = tgCtx.sdkLoaded;
-      const isTgWebAppPresent = Boolean(tgCtx.tg);
-      const isTgInitDataPresent = Boolean(tgCtx.initData && tgCtx.initData.length > 0);
-
-      if (isMounted) {
-        setTelegramDiagnostics((prev) => ({
-          ...prev,
-          sdkLoaded: isTgSdkPresent,
-          webAppAvailable: isTgWebAppPresent,
-          platform: tgCtx.platform,
-          version: tgCtx.version,
-          initDataPresent: isTgInitDataPresent,
-          initDataUnsafeUser: tgCtx.unsafeUser,
-          isExpanded: Boolean(tgCtx.tg?.isExpanded),
-        }));
-      }
-
       try {
+        // 1. Resolve Telegram Context
+        const tgCtx = await resolveTelegramContext(1200);
+
+        const isTgSdkPresent = tgCtx.sdkLoaded;
+        const isTgWebAppPresent = Boolean(tgCtx.tg);
+        const isTgInitDataPresent = Boolean(tgCtx.initData && tgCtx.initData.length > 0);
+
+        if (isMounted) {
+          setTelegramDiagnostics((prev) => ({
+            ...prev,
+            sdkLoaded: isTgSdkPresent,
+            webAppAvailable: isTgWebAppPresent,
+            platform: tgCtx.platform,
+            version: tgCtx.version,
+            initDataPresent: isTgInitDataPresent,
+            initDataUnsafeUser: tgCtx.unsafeUser,
+            isExpanded: Boolean(tgCtx.tg?.isExpanded),
+          }));
+        }
+
         if (tgCtx.initData) setTelegramInitData(tgCtx.initData);
         let targetSeasonId = 'season-2026-27';
         const result = await loadLoginBootstrap(api, tgCtx.initData, getDevUserId() || 'user-dev-a', seasons => {
