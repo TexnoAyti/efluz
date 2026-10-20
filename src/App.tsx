@@ -1,3 +1,4 @@
+import { readBrowserStorage, writeBrowserStorage } from './lib/browserStorage';
 import React, { lazy, useState, useEffect, useMemo, useRef } from 'react';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -109,13 +110,13 @@ const AppContent: React.FC = () => {
   // EFL UZ Broadcast Redesign: Light and Dark mode only
   const [theme, setTheme] = useState<AppTheme>(() => {
     if (typeof window === 'undefined') return 'dark';
-    const saved = window.localStorage.getItem('efluz-theme-mode') as AppTheme | null;
+    const saved = readBrowserStorage('localStorage', 'efluz-theme-mode') as AppTheme | null;
     return saved === 'light' || saved === 'dark' ? saved : 'dark';
   });
 
   const changeTheme = (nextTheme: AppTheme) => {
     setTheme(nextTheme);
-    window.localStorage.setItem('efluz-theme-mode', nextTheme);
+    writeBrowserStorage('localStorage', 'efluz-theme-mode', nextTheme);
   };
 
   const setActiveTab = (tab: TabType) => {

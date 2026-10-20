@@ -1,6 +1,10 @@
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { I18nProvider, useI18n } from '../../i18n';
+import { readBrowserStorage, writeBrowserStorage } from '../../lib/browserStorage';
 import assert from 'node:assert/strict';
 import { loadLoginBootstrap } from '../../lib/loginBootstrap';
-import { api, invalidateClientCache, setDevUserId, setSessionToken, setTelegramInitData } from '../../lib/api';
+import { api, invalidateClientCache, setDevUserId, setSessionToken, setTelegramInitData, getSessionToken, getDevUserId, getTelegramInitData } from '../../lib/api';
 import type { Season } from '../../types';
 
 type Client = Parameters<typeof loadLoginBootstrap>[0];
@@ -125,4 +129,41 @@ try {
   globalThis.fetch = originalFetch;
   setSessionToken(null); setTelegramInitData(null); setDevUserId(null); invalidateClientCache();
 }
+// Blocked reads, writes and storage getters must not trap Telegram startup.
+const originalWindowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
+const blockedStore = {
+  getItem() { throw new DOMException('Storage denied', 'SecurityError'); },
+  setItem() { throw new DOMException('Storage full', 'QuotaExceededError'); },
+  removeItem() { throw new DOMException('Storage denied', 'SecurityError'); },
+};
+try {
+  const blockedWindow: any = {
+    localStorage: blockedStore, sessionStorage: blockedStore,
+    location: { hash: '#tgWebAppData=blocked-signed-launch', search: '', pathname: '/' },
+  };
+  Object.defineProperty(globalThis, 'window', { configurable: true, writable: true, value: blockedWindow });
+  setSessionToken(null); setTelegramInitData(null); setDevUserId(null);
+  assert.equal(readBrowserStorage('localStorage', 'theme'), null);
+  assert.doesNotThrow(() => writeBrowserStorage('localStorage', 'theme', 'dark'));
+  assert.equal(getTelegramInitData(), 'blocked-signed-launch', 'Signed launch hash remains readable when session storage is denied');
+  setSessionToken('verified-in-memory-token');
+  assert.equal(getSessionToken(), 'verified-in-memory-token', 'A failed persistence write cannot discard a verified session');
+  assert.equal(getDevUserId(), null);
+  const LanguageProbe = () => React.createElement('span', null, useI18n().language);
+  assert.equal(renderToStaticMarkup(React.createElement(I18nProvider, null, React.createElement(LanguageProbe))), '<span>uz</span>', 'Language provider mounts with denied storage');
+  for (const kind of ['localStorage', 'sessionStorage'] as const) {
+    Object.defineProperty(blockedWindow, kind, { configurable: true, get() { throw new DOMException('Storage getter denied', 'SecurityError'); } });
+    assert.equal(readBrowserStorage(kind, 'key'), null);
+    assert.doesNotThrow(() => writeBrowserStorage(kind, 'key', 'value'));
+    assert.doesNotThrow(() => writeBrowserStorage(kind, 'key', null));
+  }
+  setSessionToken(null); setTelegramInitData(null); setDevUserId(null);
+  assert.equal(getTelegramInitData(), 'blocked-signed-launch');
+  assert.equal(renderToStaticMarkup(React.createElement(I18nProvider, null, React.createElement(LanguageProbe))), '<span>uz</span>');
+} finally {
+  setSessionToken(null); setTelegramInitData(null); setDevUserId(null);
+  if (originalWindowDescriptor) Object.defineProperty(globalThis, 'window', originalWindowDescriptor);
+  else delete (globalThis as any).window;
+}
+console.log('PASS blocked WebView storage: signed launch hash, in-memory sessions, language mounting and throwing storage getters');
 console.log('PASS startup: slow/failed catalog does not block Telegram login, healthy login skips dev discovery, rejected identity stays rejected, explicit development fallback and session/anonymous modes work, auth bodies and private headers preserved');
