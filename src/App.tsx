@@ -1,3 +1,4 @@
+import { PreviewPanel } from './preview/PreviewPanel';
 import { readBrowserStorage, writeBrowserStorage } from './lib/browserStorage';
 import React, { lazy, useState, useEffect, useMemo, useRef } from 'react';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -75,6 +76,7 @@ const AppContent: React.FC = () => {
     if (welcomeCompletedFor === user.id) return true;
     // Force only the existing, build-gated visual preview; never bypass Telegram auth.
     if (isDesignPreview && new URLSearchParams(window.location.search).get('welcome') === '1') return false;
+    if (isDesignPreview && new URLSearchParams(window.location.search).get('welcome') !== '1') return true;
     try { return window.localStorage.getItem(`efluz-welcome-${WELCOME_STORAGE_VERSION}:${user.id}`) === 'done'; }
     catch { return false; }
   }, [user?.id, welcomeCompletedFor]);
@@ -181,7 +183,7 @@ const AppContent: React.FC = () => {
           : 'bg-slate-950 text-slate-100'
       }`}
     >
-      {isDesignPreview && <div className="sticky top-0 z-[60] bg-amber-100 px-3 py-1.5 text-center text-[11px] font-bold text-amber-950">DESIGN PREVIEW · test ko‘rinishi, hisobga kirilmagan</div>}
+      {isDesignPreview && <PreviewPanel theme={theme} onThemeChange={changeTheme} />}
       {toastMessage && (
         <div className="fixed top-14 right-4 z-50 animate-in slide-in-from-top-3 fade-in duration-200">
           <div

@@ -57,7 +57,8 @@
     "test:matchday-locks": "node scripts/run-isolated-test.mjs src/server/tests/verifyMatchdayLockRegression.ts",
     "test:read-after-write": "tsx src/server/tests/readAfterWriteConsistencyRegressionTest.ts",
     "test:matchday-reminder": "node scripts/run-isolated-test.mjs src/server/tests/matchdayReminderRegressionTest.ts",
-    "test:player-trophies": "node scripts/run-isolated-test.mjs src/server/tests/playerTrophyRegressionTest.ts"
+    "test:player-trophies": "node scripts/run-isolated-test.mjs src/server/tests/playerTrophyRegressionTest.ts",
+    "build:design-preview": "EFL_DESIGN_PREVIEW=1 vite build --mode design-preview && node scripts/package-design-preview.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
