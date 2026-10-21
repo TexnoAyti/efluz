@@ -1,3 +1,4 @@
+import { isDesignPreviewBuild } from '../designPreview';
 import { readBrowserStorage, writeBrowserStorage } from './browserStorage';
 import type { CupTieBreakScores } from './cupResult';
 import type { MatchdayControlAction, MatchdayControlOverview } from './matchdayState';
@@ -29,6 +30,7 @@ export function setSessionToken(token: string | null) {
 }
 
 export function getSessionToken(): string | null {
+  if (isDesignPreviewBuild) return null;
   if (!currentSessionToken) currentSessionToken = readBrowserStorage('sessionStorage', 'efootball_session_token');
   return currentSessionToken;
 }
@@ -58,6 +60,7 @@ function clearTelegramLaunchCredentials() {
 }
 
 export function getTelegramInitData(): string {
+  if (isDesignPreviewBuild) return "";
   if (typeof window !== 'undefined') {
     // 1. Direct Telegram WebApp SDK
     const tgSdkData = (window as any).Telegram?.WebApp?.initData;

@@ -10,3 +10,5 @@ artifacts/
 /recovery_backups/
 *recovery-backup*.json
 *status_correction*.json
+
+design-preview-static/

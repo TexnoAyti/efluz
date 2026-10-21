@@ -5,6 +5,7 @@ import { resolveActiveClub, saveActiveClub } from '../lib/activeClub';
 import { premiumApi } from '../lib/premiumApi';
 import { loadLoginBootstrap } from '../lib/loginBootstrap';
 import { isDesignPreview } from '../designPreview';
+import { previewUser, previewSeasons, previewClubs } from '../preview/data';
 
 function clubPreferenceStorage(): Storage | undefined {
   try { return window.localStorage; } catch { return undefined; }
@@ -260,17 +261,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (isDesignPreview) {
         // Visual inspection only. No Telegram identity, session token, or private API access.
         setSessionToken(null);
-        setUser({
-          id: 'design-preview', telegramId: '', username: 'design_preview',
-          firstName: 'Design Preview', isAdmin: true, isSuspended: false,
-          createdAt: '', updatedAt: '',
-        });
-        const season: Season = {
-          id: 'season-2026-27', name: '2026/27', status: 'active',
-          startDate: '2026-08-01', createdAt: '',
-        };
-        setSeasons([season]);
-        setCurrentSeason(season);
+        setUser(previewUser);
+        setOwnedClubs([previewClubs[0]]);
+        setCurrentClub(previewClubs[0]);
+        setSeasons(previewSeasons);
+        setCurrentSeason(previewSeasons[0]);
         setAuthStatus('AUTHENTICATED');
         setIsLoading(false);
         return;
@@ -400,7 +395,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Rotate the short-lived session token while the Telegram Mini App remains open.
   useEffect(() => {
-    if (authStatus !== 'AUTHENTICATED') return;
+    if (isDesignPreview || authStatus !== 'AUTHENTICATED') return;
     let lastRefreshAt = Date.now();
     let refreshing = false;
     const refreshToken = async () => {
