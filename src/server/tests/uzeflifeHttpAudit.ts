@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {deflateSync} from 'node:zlib';
 import express from 'express';
 import {once} from 'node:events';
 import {getFirestoreDb} from '../firebase/admin';
@@ -20,6 +21,23 @@ export async function verifyUzeflifeHttp(failNextCommit:()=>void){
   assert.equal((await call('superAdmin',{target:actors[1].telegramId})).status,200);
   assert.equal((await call('assistant',{target:actors[2].id,permissions:['channels']},actors[1])).status,200);
   assert.equal((await call('open',{},actors[2])).status,403);
+  const exportRevision=(await call()).data.revision;
+  const pngChunk=(type:string,data:Buffer)=>{const size=Buffer.alloc(4);size.writeUInt32BE(data.length);const payload=Buffer.concat([Buffer.from(type),data]);let crc=0xffffffff;for(const byte of payload){crc^=byte;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}const sum=Buffer.alloc(4);sum.writeUInt32BE((crc^0xffffffff)>>>0);return Buffer.concat([size,payload,sum]);};
+  const ihdr=Buffer.alloc(13);ihdr.writeUInt32BE(1080,0);ihdr.writeUInt32BE(100,4);ihdr[8]=8;ihdr[9]=2;
+  const png=Buffer.concat([Buffer.from('89504e470d0a1a0a','hex'),pngChunk('IHDR',ihdr),pngChunk('IDAT',deflateSync(Buffer.alloc((1080*3+1)*100))),pngChunk('IEND',Buffer.alloc(0))]);
+  const exportBody={pngBase64:png.toString('base64'),filename:'efluz-uzeflife-test.png'};
+  assert.equal((await call('image-export',exportBody,null)).status,401);
+  assert.equal((await call('image-export',exportBody,actors[3])).status,403);
+  assert.equal((await call('image-export',exportBody,actors[2])).status,403,'Channel assistants cannot export match images');
+  assert.equal((await call('image-export',{...exportBody,pngBase64:'invalid'},actors[1])).status,400);
+  const exportResponse=await call('image-export',exportBody,actors[1]);assert.equal(exportResponse.status,200);
+  assert.match(exportResponse.data.downloadPath,/^\/api\/image-exports\/[a-f0-9]{48}\.png$/);
+  assert.equal((await call()).data.revision,exportRevision,'Image preparation never modifies tournament state');
+  assert.equal((await call('assistant',{target:actors[4].id,permissions:['results']},actors[1])).status,200);
+  assert.equal((await call('image-export',exportBody,actors[4])).status,200,'Assigned tournament admins do not need platform admin privileges');
+  assert.equal((await call('removeAssistant',{target:actors[4].id},actors[1])).status,200);
+  assert.equal((await call('image-export',exportBody,actors[4])).status,403,'Revocation immediately blocks image preparation');
+
   assert.equal((await call('superAdmin',{target:actors[2].id},actors[1])).status,403);
   assert.equal((await call('customNavigation',{enabled:true},actors[1])).status,403);
   assert.equal((await call('subscriptions',{enabled:true},actors[2])).status,200);

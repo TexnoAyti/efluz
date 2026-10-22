@@ -157,3 +157,7 @@
  .uzeflife .u-admin-title{padding:12px}
  .uzeflife .u-admin-metrics{gap:8px}
 }
+
+.uzeflife .u-image-export{display:grid;gap:10px;border-top:1px solid var(--efl-border);padding-top:16px}
+.uzeflife .u-image-export>.competition-button{width:100%;min-height:44px}
+.uzeflife .u-export-image{display:block;width:100%;height:auto;border-radius:12px}
