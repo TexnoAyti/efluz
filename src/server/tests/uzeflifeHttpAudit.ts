@@ -7,14 +7,16 @@ import {authMiddleware} from '../middleware/authMiddleware';
 import {createSessionToken} from '../auth/sessionToken';
 import {uzeflifeRouter} from '../routes/uzeflife.routes';
 import {planUzeflifeTopicResult,executeUzeflifeTopicResult} from '../services/uzeflifeTopicResults';
-import {initialUState,generateUBracket} from '../services/uzeflifeService';
+import {processUNotices} from '../services/uzeflifeNotifications';
+import {createCanvas} from '@napi-rs/canvas';
+import {initialUState,generateUBracket,applyUAction} from '../services/uzeflifeService';
 export async function verifyUzeflifeHttp(failNextCommit:()=>void){
  process.env.SESSION_SECRET='isolated-uzeflife-session-secret-32bytes';const db=getFirestoreDb();
  const actors=Array.from({length:5},(_,i)=>({id:`uz-user-${i}`,telegramId:i===0?'5209126900':String(975000+i),username:`uz${i}`,firstName:`UZ ${i}`,isAdmin:false,isSuspended:false,createdAt:'',updatedAt:''}));
  for(const a of actors)await db.collection('users').doc(a.id).set(a);
  await db.collection('uzeflife').doc('championship').set(initialUState());
- const app=express();app.use(express.json());app.use(authMiddleware);app.use('/api/uzeflife',uzeflifeRouter);const server=app.listen(0,'127.0.0.1');await once(server,'listening');const base=`http://127.0.0.1:${(server.address() as any).port}/api/uzeflife`;
- const call=async(action='',body?:unknown,actor:any=actors[0])=>{const response=await fetch(base+(action?'/'+action:''),{method:body===undefined?'GET':'POST',headers:{'content-type':'application/json',...(actor?{authorization:`Bearer ${createSessionToken(actor)}`}:{})},body:body===undefined?undefined:JSON.stringify(body)});return {status:response.status,data:await response.json() as any};};
+ const app=express();app.use(express.json({limit:'600kb'}));app.use(authMiddleware);app.use('/api/uzeflife',uzeflifeRouter);const server=app.listen(0,'127.0.0.1');await once(server,'listening');const base=`http://127.0.0.1:${(server.address() as any).port}/api/uzeflife`;
+ const call=async(action='',body?:unknown,actor:any=actors[0])=>{if(action==='approveResult'&&body&&!Object.hasOwn(body as object,'expected')){const current=(await db.collection('uzeflife').doc('championship').get()).data()!;(body as any).expected=current.matches.find((m:any)=>m.id===(body as any).matchId)?.proposal;}const response=await fetch(base+(action?'/'+action:''),{method:body===undefined?'GET':'POST',headers:{'content-type':'application/json',...(actor?{authorization:`Bearer ${createSessionToken(actor)}`}:{})},body:body===undefined?undefined:JSON.stringify(body)});return {status:response.status,data:await response.json() as any};};
  try{
   assert.equal((await call()).status,200);assert.equal((await call('open',{},null)).status,401);
   assert.equal((await call('superAdmin',{target:actors[1].id},actors[2])).status,403);
@@ -88,12 +90,47 @@ export async function verifyUzeflifeHttp(failNextCommit:()=>void){
   const topicPlan=await planUzeflifeTopicResult('3:1',Number(actors[3].telegramId));assert.ok(topicPlan);
   const origin={chat:-100123,thread:7297,message:111};const auditBefore=(await db.collection('uzeflife_audit').get()).size;
   await assert.rejects(executeUzeflifeTopicResult(topicPlan.plan,Number(actors[2].telegramId),Number(actors[3].telegramId),origin));
+  const outboxBefore=(await db.collection('uzeflife_notifications').get()).size;
   failNextCommit();await assert.rejects(executeUzeflifeTopicResult(topicPlan.plan,Number(actors[1].telegramId),Number(actors[3].telegramId),origin));
   assert.equal((await call()).data.matches[0].winner,null);assert.equal((await db.collection('uzeflife_audit').get()).size,auditBefore,'Failed topic commit cannot leave score or audit behind');
+  assert.equal((await db.collection('uzeflife_notifications').get()).size,outboxBefore,'Failed result cannot leave a notification intent');
   const approved=await executeUzeflifeTopicResult(topicPlan.plan,Number(actors[1].telegramId),Number(actors[3].telegramId),origin);
   assert.equal(approved.data.fixture.homeScore,3);assert.equal(approved.data.fixture.winnerClubId,actors[3].id);
   assert.equal((await call()).data.matches.find((m:any)=>m.id==='r2m0').home,actors[3].id);
   await assert.rejects(executeUzeflifeTopicResult(topicPlan.plan,Number(actors[1].telegramId),Number(actors[3].telegramId),origin),/o‘zgargan/);
+  // Full participant workflow against actual PostgreSQL transactions and HTTP ACLs.
+  const workflow=initialUState();workflow.status='playing';workflow.round=1;workflow.superAdmin=actors[1].id;workflow.participants=topicState.participants;workflow.matches=generateUBracket(ids);await db.collection('uzeflife').doc('championship').set(workflow);
+  const m=workflow.matches[0],home=actors[3],away=actors[4];
+  assert.equal((await call('result',{matchId:m.id,home:2,away:1},home)).status,200);
+  const messages:any[]=[];await processUNotices(100,async notice=>{messages.push(notice);return true;});assert.ok(messages.some(n=>n.userId===away.id),'PostgreSQL JSON key ordering must not invalidate proposal notices');assert.ok(messages.some(n=>n.userId===actors[1].id),'Tournament-only results admin receives pending result notice');
+  assert.equal((await call('approveResult',{matchId:m.id},actors[2])).status,403);
+  const canvas=createCanvas(64,64);const jpeg=canvas.toBuffer('image/jpeg',75).toString('base64');
+  const evidenceBefore=(await db.collection('uzeflife_evidence').get()).size;
+  const proposalOutbox=(await db.collection('uzeflife_notifications').get()).size;
+  failNextCommit();assert.equal((await call('dispute',{matchId:m.id,reason:'Skrinshotda boshqa hisob',evidence:jpeg},away)).status,503);
+  assert.equal((await db.collection('uzeflife_evidence').get()).size,evidenceBefore);assert.equal((await db.collection('uzeflife_notifications').get()).size,proposalOutbox);
+  assert.equal((await call('dispute',{matchId:m.id,reason:'Skrinshotda boshqa hisob',evidence:jpeg},away)).status,200);
+  const dispute=(await call('',undefined,away)).data.matches[0].dispute;assert.ok(dispute.evidenceId);
+  const evidenceUrl=base+'/evidence/'+dispute.evidenceId;
+  for(const actor of [home,away,actors[1]]){const response=await fetch(evidenceUrl,{headers:{authorization:`Bearer ${createSessionToken(actor)}`}});assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'image/jpeg');assert.ok((await response.arrayBuffer()).byteLength>100);}
+  assert.equal((await fetch(evidenceUrl)).status,401);
+  assert.equal((await fetch(evidenceUrl,{headers:{authorization:`Bearer ${createSessionToken(actors[2])}`}})).status,403);
+  assert.equal((await call('',undefined,actors[2])).data.matches[0].dispute,null,'Other players cannot see private disputes');
+  assert.equal((await call('approveResult',{matchId:m.id},actors[1])).status,409);
+  assert.equal((await call('clearProposal',{matchId:m.id},actors[1])).status,409);
+  assert.equal((await call('resolveDispute',{matchId:m.id,resolution:'Skrinshot tekshirildi'},actors[2])).status,403);
+  assert.equal((await call('resolveDispute',{matchId:m.id,resolution:'Skrinshot tekshirildi, qayta yuboring.'},actors[1])).status,200);
+  assert.equal((await call('result',{matchId:m.id,home:3,away:1},home)).status,200);
+  const approvals=await Promise.all([call('approveResult',{matchId:m.id},actors[1]),call('approveResult',{matchId:m.id},actors[1])]);assert.equal(approvals.filter(r=>r.status===200).length,1,'Concurrent queue approvals commit exactly once');
+  const played=(await db.collection('uzeflife').doc('championship').get()).data() as any;
+  for(let round=1;round<=8;round++){for(const match of played.matches.filter((x:any)=>x.round===round&&!x.winner))applyUAction(played,actors[1] as any,'result',{matchId:match.id,home:1,away:0,penaltyHome:null,penaltyAway:null});if(round<8)applyUAction(played,actors[1] as any,'next',{});}
+  await db.collection('uzeflife').doc('championship').set(played);
+  const histories=(await db.collection('uzeflife_history').get()).size,finalOutbox=(await db.collection('uzeflife_notifications').get()).size;
+  failNextCommit();assert.equal((await call('complete',{},actors[1])).status,503);assert.equal((await db.collection('uzeflife_history').get()).size,histories);assert.equal((await db.collection('uzeflife_notifications').get()).size,finalOutbox);assert.equal((await call()).data.status,'playing');
+  assert.equal((await call('complete',{},actors[1])).status,200);const completed=(await call()).data;assert.equal(completed.history[0].matchCount,255);
+  const archived=await call('history/'+completed.history[0].id);assert.equal(archived.status,200);assert.equal(archived.data.archive.matches.length,255);assert.ok(archived.data.archive.matches.every((x:any)=>!x.proposal&&!x.dispute));
+  assert.equal((await call('complete',{},actors[1])).status,400);
+  console.log('PASS native PostgreSQL UZEFLIFE workflow: failed result/evidence/archive rollback, private image HTTP ACLs, dispute barriers, concurrent exactly-once queue approval, complete 255-match archive and champion notification intents.');
   console.log('PASS UZEFLIFE HTTP/PostgreSQL: owner assignment, granular assistants, Telegram fail-closed, pending privacy, revocation/suspension, audit durability, failed-commit rollback and concurrent updates.');
  }finally{server.close();}
 }

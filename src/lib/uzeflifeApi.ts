@@ -2,7 +2,7 @@ import {getAuthHeaders} from './customTournamentApi';
 import {isDesignPreview} from '../designPreview';
 import {uzeflifeDemo} from './uzeflifeDemo';
 import type {UState,UPermission} from '../types/uzeflife';
-export type UViewState = UState & {permissions:UPermission[];isSuper:boolean;isOwner:boolean};
+export type UViewState = UState & {topicResults?:{id:string;matchId:string;summary:string;home:number;away:number;penaltyHome:number|null;penaltyAway:number|null;url:string;expiresAt:number}[];permissions:UPermission[];isSuper:boolean;isOwner:boolean};
 export async function uzeflifeRequest(action='',body?:unknown):Promise<any> {
   if(isDesignPreview) {
     if(body!==undefined) throw new Error('Namoyish rejimida turnirni o‘zgartirib bo‘lmaydi.');
