@@ -1,21 +1,23 @@
+import {UzeflifeResultQueue} from './UzeflifeResultQueue';
 import React,{useState} from 'react';
 import {UzeflifeParticipants} from './UzeflifeParticipants';
-import {ArrowLeft,Settings,Users,CalendarDays,Shield,Radio,Megaphone} from 'lucide-react';
+import {ArrowLeft,Settings,Users,CalendarDays,Shield,Radio,Megaphone,RefreshCw} from 'lucide-react';
 import {CompetitionTabs} from '../CompetitionChrome';
 import {U_PERMISSION_LABELS,UZEFLIFE_PERMISSIONS,U_STATUS,type UPermission} from '../../types/uzeflife';
 import type {UViewState} from '../../lib/uzeflifeApi';
 
 export type UAct=(action:string,body?:unknown)=>Promise<boolean>;
-type AdminTab='tournament'|'participants'|'matches'|'channels'|'admins'|'announcements';
-export function UzeflifeAdmin({state:s,busy,act,onBack,onMatches}:{state:UViewState;busy:boolean;act:UAct;onBack:()=>void;onMatches:()=>void}) {
+type AdminTab='tournament'|'queue'|'participants'|'matches'|'channels'|'admins'|'announcements';
+export function UzeflifeAdmin({state:s,busy,act,onBack,onMatches,onRefresh,error=''}:{state:UViewState;busy:boolean;act:UAct;onBack:()=>void;onMatches:()=>void;onRefresh:()=>void;error?:string}) {
   const can=(p:UPermission)=>s.permissions.includes(p);
   const tabs=[
     {id:'tournament' as const,label:'Turnir',icon:Settings},
+    ...(can('results')?[{id:'queue' as const,label:`Natijalar (${s.matches.filter(m=>!m.winner&&(m.proposal||m.dispute?.status==='open')).length+(s.topicResults?.length||0)})`,icon:Shield}]:[]),
     ...(can('participants')?[{id:'participants' as const,label:'O‘yinchilar',icon:Users}]:[]),
     ...(can('matches')||can('results')||can('schedules')?[{id:'matches' as const,label:'O‘yinlar',icon:CalendarDays}]:[]),
     ...(can('channels')?[{id:'channels' as const,label:'Obuna',icon:Radio}]:[]),
     ...(s.isSuper?[{id:'admins' as const,label:'Adminlar',icon:Shield}]:[]),
-    ...(can('announcements')?[{id:'announcements' as const,label:'E’lonlar',icon:Megaphone}]:[]),
+    ...(can('announcements')?[{id:'announcements' as const,label:'E’lonlar',icon:Megaphone,RefreshCw}]:[]),
   ];
   const [tab,setTab]=useState<AdminTab>('tournament');
   const [editing,setEditing]=useState('');
@@ -24,7 +26,7 @@ export function UzeflifeAdmin({state:s,busy,act,onBack,onMatches}:{state:UViewSt
   const form=(action:string,fields:React.ReactNode,body:(f:FormData)=>unknown,label:string,key?:string)=><form key={key} className="space-y-3" onSubmit={async e=>{e.preventDefault();await act(action,body(new FormData(e.currentTarget)));}}>{fields}<button className="competition-button primary" type="submit">{label}</button></form>;
   const input=(name:string,label:string,type='text',value?:string)=><label className="competition-field">{label}<input name={name} type={type} required defaultValue={value}/></label>;
   return <>
-    <div className="competition-panel u-admin-title"><button className="competition-button !p-2" onClick={onBack} aria-label="Turnirga qaytish"><ArrowLeft size={17}/></button><div><h3>UZEFLIFE admin paneli</h3><p className="competition-muted">{s.isSuper?'Turnir administratori':'Yordamchi administrator'}</p></div></div>
+    <div className="competition-panel u-admin-title"><button className="competition-button !p-2" onClick={onBack} aria-label="Turnirga qaytish"><ArrowLeft size={17}/></button><div><h3>UZEFLIFE admin paneli</h3><p className="competition-muted">{s.isSuper?'Turnir administratori':'Yordamchi administrator'}</p></div><button className="competition-button" disabled={busy} onClick={onRefresh}><RefreshCw size={14}/>Yangilash</button></div>
     <CompetitionTabs<AdminTab> value={tabs.some(t=>t.id===tab)?tab:'tournament'} onChange={setTab} items={tabs} label="Turnir boshqaruvi bo‘limlari" layout="grid"/>
     <fieldset disabled={busy} className="min-w-0">
       {tab==='tournament'&&<div className="competition-panel u-admin-section">
@@ -32,9 +34,11 @@ export function UzeflifeAdmin({state:s,busy,act,onBack,onMatches}:{state:UViewSt
         {can('registrations')&&!s.matches.length&&<div className="u-registration"><div><strong>Ro‘yxatdan o‘tish</strong><p>{pending.length} ta ariza tasdiq kutmoqda.</p></div><button className="competition-button primary" onClick={()=>void act(s.status==='registration'?'close':'open')}>{s.status==='registration'?'Qabulni yopish':'Qabulni ochish'}</button></div>}
         {can('brackets')&&!s.matches.length&&<div className="u-dialog-section space-y-3"><h3>Turnirni boshlash</h3><p className="competition-muted">256 ishtirokchi tasdiqlangach qur’a tashlanadi. Ishtirokchilar 8 ta setkada musobaqani boshlaydi.</p><button className="competition-button" disabled={approved!==256} onClick={()=>{if(window.confirm('256 ishtirokchi o‘rtasida qur’a tashlab, UZEFLIFE turnirini boshlaysizmi?'))void act('generate');}}>Qur’a tashlash va turnirni boshlash</button></div>}
         <div className="competition-actions">{can('brackets')&&s.status==='playing'&&s.round<8&&<button className="competition-button primary" onClick={()=>void act('next')}>Keyingi bosqichni ochish</button>}{s.isSuper&&s.status==='playing'&&<button className="competition-button" onClick={()=>void act('pause')}>Turnirni to‘xtatish</button>}{s.isSuper&&s.status==='paused'&&<button className="competition-button primary" onClick={()=>void act('resume')}>Turnirni davom ettirish</button>}{s.isSuper&&s.status==='playing'&&s.matches.find(m=>m.round===8)?.winner&&<button className="competition-button" onClick={()=>void act('complete')}>Turnirni yakunlash</button>}</div>
+        {can('schedules')&&<details className="u-dialog-section"><summary className="text-xs font-bold cursor-pointer">O‘yin muddati va eslatmalar</summary><div className="mt-3">{form('roundSettings',<label className="competition-field">Har bosqich uchun soat<input name="hours" type="number" required min={24} max={168} defaultValue={s.roundHours||48}/></label>,f=>({hours:Number(f.get('hours'))}),'Muddatni saqlash')}<p className="competition-muted mt-3">Yangi bosqich ochilganda muddat avtomatik belgilanadi. Alohida o‘yinda o‘zgartirish mumkin. Eslatmalar kunlik tekshiruvda va ilova ochilganda navbatga qo‘yiladi. Texnik mag‘lubiyat avtomatik yozilmaydi.</p></div></details>}
         {s.isSuper&&<details className="u-dialog-section"><summary className="text-xs font-bold cursor-pointer">Turnir tavsifi</summary><div className="mt-3">{form('settings',<label className="competition-field">Turnir haqida<textarea name="description" maxLength={2000} defaultValue={s.description}/></label>,f=>({description:f.get('description')}),'Tavsifni saqlash')}</div></details>}
         {s.isOwner&&<details className="u-dialog-section"><summary className="text-xs font-bold cursor-pointer">Platforma menyusi</summary><p className="competition-muted mt-3">“O‘z turniringiz” bo‘limi {s.customNavigationEnabled?'ko‘rsatilmoqda':'vaqtincha yashirilgan'}. Eski turnirlar va ma’lumotlar saqlangan.</p><button className="competition-button mt-3" onClick={()=>void act('customNavigation',{enabled:!s.customNavigationEnabled})}>{s.customNavigationEnabled?'Bo‘limni yashirish':'Bo‘limni qayta ko‘rsatish'}</button></details>}
       </div>}
+      {tab==='queue'&&can('results')&&<UzeflifeResultQueue state={s} busy={busy} act={act} error={error}/>}
       {tab==='participants'&&can('participants')&&<UzeflifeParticipants state={s} busy={busy} act={act}/>}
       {tab==='matches'&&<div className="competition-panel u-admin-section"><h3>O‘yinlar boshqaruvi</h3><p className="competition-muted">O‘yinni tanlab, natijasini tekshiring yoki vaqtini belgilang. Hisob va vaqt uchun berilgan vakolatlar alohida tekshiriladi.</p><button className="competition-button primary justify-self-start" onClick={onMatches}>O‘yinlar jadvaliga o‘tish</button></div>}
       {tab==='channels'&&can('channels')&&<div className="competition-panel u-admin-section"><div className="u-registration"><div><h3>Majburiy obuna</h3><p>{s.subscriptionsEnabled?'Yoqilgan':'O‘chirilgan'} · {s.channels.length} ta kanal</p></div><button className="competition-button" onClick={()=>void act('subscriptions',{enabled:!s.subscriptionsEnabled})}>{s.subscriptionsEnabled?'O‘chirish':'Yoqish'}</button></div><p className="competition-muted">Bot har bir qo‘shilgan kanalda administrator bo‘lishi kerak.</p>{s.channels.map(c=><div className="u-admin-queue" key={c.id}><div><a href={c.url} target="_blank" rel="noreferrer"><strong>{c.title} ↗</strong></a><small>{c.id}</small></div><button className="competition-button" onClick={()=>void act('removeChannel',{id:c.id})}>Olib tashlash</button></div>)}<details className="u-dialog-section"><summary className="text-xs font-bold cursor-pointer">Kanal qo‘shish</summary><div className="mt-3">{form('addChannel',<>{input('id','Kanal ID yoki @username')}{input('title','Kanal nomi')}{input('url','Kanal havolasi (https://t.me/...)','url')}</>,f=>Object.fromEntries(f),'Kanalni saqlash')}</div></details></div>}

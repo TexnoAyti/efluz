@@ -9,6 +9,12 @@ export function inspectAiAdminOutcome(plan: AdminPlan, data: any): { state: 'que
   if (data?.authoritative === false || data?.isFallback === true) return {
     state: 'unverified', message: 'Server zaxira holatni qaytardi. Asosiy bazadagi yakuniy holat tasdiqlanmadi; qayta avtomatik bajarilmaydi.',
   };
+  if (plan.action === 'results_bulk_apply') {
+    const matches = data?.authoritative === true && data?.success === true && data?.appliedCount === plan.body.expectedCount &&
+      data?.competitionId === plan.targetId && ['seasonId','fromMatchday','toMatchday','homeScore','awayScore','previewHash'].every(k => data[k] === plan.body[k]);
+    return matches ? {state:'verified',message:`${data.appliedCount} ta o‘yinga ${data.homeScore}:${data.awayScore} natija saqlandi. Jadval va xabarnomalar yangilanmoqda.`}
+      : {state:'unverified',message:'Ommaviy natija javobi rejaga mos kelmadi. Auditni tekshiring; amal avtomatik takrorlanmaydi.'};
+  }
   if (['result_edit', 'result_approve', 'result_clear'].includes(plan.action)) {
     const fixture = data?.fixture;
     if (!fixture) return { state: 'accepted', message: 'Server amalni qabul qildi. Saqlangan o‘yin holati javobda qaytmadi; yakuniy holat qayta tekshirilmagan.' };

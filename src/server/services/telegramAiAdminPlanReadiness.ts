@@ -6,6 +6,7 @@ import { detectAiCupStage, fixtureMatchesAiCupStage } from './telegramAiCupStage
 import { requestedMatchday, findConversationCompetitions } from './telegramAiConversationCommands';
 
 const required: Record<string,string[]> = {
+  results_bulk_apply:['seasonId','fromMatchday','toMatchday','homeScore','awayScore','previewHash','expectedCount'],
   result_edit:['homeScore','awayScore'], result_approve:['homeScore','awayScore'], fixture_delete:['reason'], fixture_deadline:['deadlineAt'],
   club_assign:['targetUserId'], user_role:['isAdmin'], user_suspend:['isSuspended'], dispute_resolve:['action'],
   matchday_control:['action','matchday'], matchday_override:['overrideStatus'],

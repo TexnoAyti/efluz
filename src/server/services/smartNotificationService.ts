@@ -280,6 +280,7 @@ export async function enqueueSmartTelegramNotification(params: {
   title: string;
   body: string;
   replyMarkup?: any;
+  deferDrain?:boolean;
 }): Promise<boolean> {
   const event = inferSmartEvent(params.eventId);
   if (!(await isSmartNotificationEventEnabled(params.seasonId, event))) {
@@ -341,7 +342,7 @@ export async function enqueueSmartTelegramNotification(params: {
     const queued = await client.eval<unknown[], number>(SMART_ENQUEUE_SCRIPT, [dedupeKey, BROADCASTS_KEY, QUEUE_KEY], [SMART_DEDUPE_TTL_SECONDS, broadcastId, JSON.stringify(record), JSON.stringify(job)]);
     if (Number(queued) === 0) return false;
     if (Number(queued) !== 1) throw new Error('PRIMARY_QUEUE_WRITE_UNCONFIRMED');
-    scheduleNotificationQueueDrain();
+    if(!params.deferDrain)scheduleNotificationQueueDrain();
     console.info('[SMART_NOTIFY_QUEUED]', JSON.stringify({ eventId: params.eventId, userId: params.userId, broadcastId }));
     return true;
   } catch (error: any) {
@@ -350,7 +351,7 @@ export async function enqueueSmartTelegramNotification(params: {
       job.requiresRecipientLookup = true;
       if (await persistBackupNotification({ dedupeKey, broadcastId, record: JSON.stringify(record), job: JSON.stringify(job) })) {
         console.info('[SMART_NOTIFY_BACKUP_SAVED]', { broadcastId });
-        scheduleNotificationQueueDrain();
+        if(!params.deferDrain)scheduleNotificationQueueDrain();
         return true;
       }
     } catch (backupError: any) {

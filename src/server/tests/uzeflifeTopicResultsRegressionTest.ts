@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {initDatabase} from '../db';
 import {getFirestoreDb} from '../firebase/admin';
-import {handleTopicResultUpdate,planTopicResult} from '../services/telegramTopicResults';
+import {listUzeflifeTopicQueue,handleTopicResultUpdate,planTopicResult} from '../services/telegramTopicResults';
 import {planUzeflifeTopicResult,executeUzeflifeTopicResult,authorizeUzeflifeTopicResult,UZEFLIFE_RESULT_TOPIC} from '../services/uzeflifeTopicResults';
 import {initialUState,generateUBracket,readUState,mutateUState} from '../services/uzeflifeService';
 import {inspectAiAdminOutcome} from '../services/telegramAiAdminOutcome';
@@ -30,12 +30,12 @@ const callback=(message:any,token:string,actor=3001)=>({update_id:++sequence,cal
 globalThis.fetch=(async(input:any,init:any)=>{assert.ok(String(input).startsWith('https://api.telegram.org/'));const body=JSON.parse(init.body);if(body.callback_query_id)return Response.json({ok:true});body.botId=9000+sent.length;sent.push(body);return Response.json({ok:true,result:{message_id:body.botId}});}) as typeof fetch;
 try{
  const wrong=update('2:1');wrong.message.message_thread_id=7298;assert.equal((await handleTopicResultUpdate(wrong)).handled,false);
- const source=update('2:1');assert.equal((await handleTopicResultUpdate(source)).result,'proposal_sent');const preview=sent.at(-1),token=preview.reply_markup.inline_keyboard[0][0].callback_data;
+ const source=update('2:1');assert.equal((await handleTopicResultUpdate(source)).result,'proposal_sent');assert.equal((await listUzeflifeTopicQueue(await readUState())).length,1,'Telegram pending result is visible in the tournament admin queue');const preview=sent.at(-1),token=preview.reply_markup.inline_keyboard[0][0].callback_data;
  assert.ok(preview.text.includes('Azamat 2:1 Vali')&&preview.text.includes('UZEFLIFE'));assert.equal(preview.message_thread_id,7297);assert.equal((await readUState()).matches[0].winner,null);
  assert.equal((await handleTopicResultUpdate(callback(preview,token,1001))).result,'unauthorized');assert.equal((await handleTopicResultUpdate(callback(preview,token,3002))).result,'unauthorized');
  const cross=callback(preview,token);cross.callback_query.message.message_thread_id=3;assert.equal((await handleTopicResultUpdate(cross)).result,'invalid');
  const race=await Promise.all([handleTopicResultUpdate(callback(preview,token)),handleTopicResultUpdate(callback(preview,token))]);assert.equal(race.filter(r=>r.result==='executing').length,1);
- let stored=await readUState();assert.equal(stored.matches[0].winner,'player-0');assert.equal(stored.matches.find(m=>m.id==='r2m0')?.home,'player-0');assert.equal(stored.revision,1);
+ assert.equal((await listUzeflifeTopicQueue(await readUState())).length,0,'Handled topic proposals leave the unified queue');let stored=await readUState();assert.equal(stored.matches[0].winner,'player-0');assert.equal(stored.matches.find(m=>m.id==='r2m0')?.home,'player-0');assert.equal(stored.revision,1);
  assert.equal((await handleTopicResultUpdate(callback(preview,token))).result,'already_processed');
  assert.ok((await db.collection('uzeflife_audit').get()).docs.some(d=>d.data().details.thread===7297&&d.data().actor===assistant.id));
  const editable=update('2:1',1003);await handleTopicResultUpdate(editable);const old=sent.at(-1);await handleTopicResultUpdate({update_id:++sequence,edited_message:{...editable.message,text:'2:3'}});const current=sent.at(-1);

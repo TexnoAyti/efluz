@@ -7,7 +7,7 @@ export function isAiAdminActor(id: string | number | undefined | null): boolean 
   return isPrimaryOwner(id) || DELEGATED_AI_ADMIN_IDS.has(String(id));
 }
 const LEAGUE_OPERATIONS = new Set([
-  'result_edit','result_clear','result_approve','result_reject',
+  'results_bulk_preview','results_bulk_apply','result_edit','result_clear','result_approve','result_reject',
   'fixture_reopen','fixture_deadline','fixture_remind','club_assign','club_release',
   'matchday_control','matchday_advance','matchday_open_now','matchday_override','matchday_timer','matchday_remind',
   'standings_rebuild','cup_preview','cup_generate','cup_advance','cup_reconcile',

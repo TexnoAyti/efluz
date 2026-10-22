@@ -1,3 +1,4 @@
+import {verifyBulkLeagueResultsSql} from './bulkLeagueResultsSqlAudit';
 import {verifyUzeflifeHttp} from './uzeflifeHttpAudit';
 import {verifyTeamLeaguePreview} from './teamLeaguePreviewHttpAudit';
 import {verifyTournamentCreationHttp} from './customTournamentCreationHttpAudit';
@@ -36,7 +37,7 @@ await assert.rejects(pg.query("select public.efl_runtime_commit('preview','[]'::
 await pg.exec('set role service_role;');
 const originalFetch = globalThis.fetch;
 let conflicts = 0, legacyHttpCommits = 0, failAssignment = false, failPublish = false, failStartChunk = false, failClaimCommit = false;
-let failUzeflifeCommit=false;
+let failUzeflifeCommit=false, failBulkResultCommit=false;
 let failNotificationCommit = false, failTournamentCreate = false, failTeamPreviewCommit=false;
 const telegramDeliveries: string[] = [];
 let snapshotResponses: {bytes:number;ids:string[]}[]=[];
@@ -55,6 +56,7 @@ globalThis.fetch = (async (input: any, init: any) => {
     else if (name === 'efl_runtime_patch_snapshot') result = await pg.query('select public.efl_runtime_patch_snapshot($1,$2::text[],$3::jsonb,$4,$5,$6) as value', [body.p_space, body.p_ids, JSON.stringify(body.p_row), body.p_merge, body.p_ttl, body.p_version]);
     else if (name === 'efl_runtime_read') result = await pg.query('select public.efl_runtime_read($1,$2::jsonb) as value', [body.p_space, JSON.stringify(body.p_query)]);
     else if (name === 'efl_runtime_commit_safe') {
+      if(failBulkResultCommit && body.p_operations.some((op:any)=>op.path.startsWith('bulk_result_receipts/'))){failBulkResultCommit=false;body.p_operations.push({kind:'create',path:'users/user-bulk-sql',encoded:encodeValue({id:'must-rollback'})});}
       if(failUzeflifeCommit&&body.p_operations.some((op:any)=>op.path.startsWith('uzeflife/'))){failUzeflifeCommit=false;throw Error('UZ_COMMIT_UNAVAILABLE');}
       if(failTeamPreviewCommit&&body.p_operations.some((op:any)=>op.path.startsWith('team_league_preview_leagues/'))){failTeamPreviewCommit=false;throw Error('TEAM_PREVIEW_COMMIT_UNAVAILABLE');}
       if (failTournamentCreate && body.p_operations.some((op:any)=>op.path.startsWith('custom_tournaments/'))) { failTournamentCreate=false; throw Error('TOURNAMENT_CREATE_UNAVAILABLE'); }
@@ -226,6 +228,7 @@ try {
   await assert.rejects(claimTournamentClub(claim),/taklif havolasi/);
   await assert.rejects(claimTournamentClub({...claim,inviteToken:privateDraft.spectatorToken}),/taklif havolasi/);
   await claimTournamentClub({...claim,inviteToken:privateDraft.inviteToken});
+  await verifyBulkLeagueResultsSql(()=>{failBulkResultCommit=true;});
   await verifyTeamLeaguePreview(()=>{failTeamPreviewCommit=true;});
   await verifyPostgresClubClaimHttp(() => { failClaimCommit=true; });
   await verifyPostgresMatchdayNotifications(() => { failNotificationCommit=true; }, telegramDeliveries);

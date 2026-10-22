@@ -1,3 +1,5 @@
+import {UzeflifeHistory} from './UzeflifeHistory';
+import {readUzeflifeLaunch} from '../../lib/uzeflifeLinks';
 import React,{useState} from 'react';
 import {Trophy,Users,CalendarDays,GitBranch,Info,Shield,ClipboardList,RefreshCw,ChevronRight,CheckCircle2,Clock,ArrowLeft} from 'lucide-react';
 import {CompetitionBanner,CompetitionTabs,CompetitionHeading} from '../CompetitionChrome';
@@ -11,13 +13,13 @@ import {UzeflifeAdmin,type UAct} from './UzeflifeAdmin';
 import {UzeflifeImageExport} from './UzeflifeImageExport';
 import {UzeflifeMatchDialog} from './UzeflifeMatchDialog';
 
-type Tab='overview'|'fixtures'|'bracket'|'participants'|'results'|'standings';
+type Tab='overview'|'fixtures'|'bracket'|'participants'|'results'|'standings'|'history';
 export function UzeflifeChampionship({state:s,userId,busy,error,notice,missing,act,onRefresh,initialTab='overview',initialAdmin=false,seasonId}:{state:UViewState;userId?:string;busy:boolean;error:string;notice:string;missing:UChannel[];act:UAct;onRefresh:()=>void;initialTab?:Tab;initialAdmin?:boolean;seasonId?:string}) {
   const [tab,setTab]=useState<Tab>(initialTab),[admin,setAdmin]=useState(initialAdmin);
   const [bracket,setBracket]=useState(s.round>5?0:1),[round,setRound]=useState(0),[group,setGroup]=useState('all');
   const [standingsView,setStandingsView]=useState<StandingsView>('short');
   const [participantPage,setParticipantPage]=useState(0),[standingsPage,setStandingsPage]=useState(0);
-  const [search,setSearch]=useState(''),[page,setPage]=useState(0),[selected,setSelected]=useState<UMatch|null>(null);
+  const [search,setSearch]=useState(''),[page,setPage]=useState(0),[selected,setSelected]=useState<UMatch|null>(()=>s.matches.find(m=>m.id===readUzeflifeLaunch())||null);
   const approved=s.participants.filter(p=>p.status==='approved');
   const mine=s.participants.find(p=>p.id===userId);
   const champion=s.matches.find(m=>m.round===8)?.winner;
@@ -32,8 +34,8 @@ export function UzeflifeChampionship({state:s,userId,busy,error,notice,missing,a
     onClick={()=>openMatch(m)} highlighted={[m.home,m.away].includes(userId||'')}
     className="u-league-match"
     caption={`${m.bracket?`${m.bracket}-setka`:'Final bosqichi'} · ${uRoundLabel(m.round)}`}
-    status={m.winner?'Yakunlandi':m.proposal?'Tasdiq kutilmoqda':'Kutilmoqda'}
-    statusTone={m.winner?'success':m.proposal?'warning':'neutral'}
+    status={m.winner?'Yakunlandi':m.dispute?.status==='open'?'Bahsli natija':m.proposal?'Tasdiq kutilmoqda':'Kutilmoqda'}
+    statusTone={m.winner?'success':m.proposal||m.dispute?.status==='open'?'warning':'neutral'}
     home={<span className="u-match-identity" title={m.home?name(m.home):uSourceLabel(m,'home')}>{m.home?name(m.home):uSourceLabel(m,'home')}</span>}
     away={<span className="u-match-identity" title={m.away?name(m.away):uSourceLabel(m,'away')}>{m.away?name(m.away):uSourceLabel(m,'away')}</span>}
     score={<>{m.homeScore??'–'} : {m.awayScore??'–'}</>}
@@ -41,7 +43,7 @@ export function UzeflifeChampionship({state:s,userId,busy,error,notice,missing,a
     {m.penaltyHome!==null&&<p className="text-center text-[10px] text-[var(--efl-text-2)]">Penaltilar {m.penaltyHome} : {m.penaltyAway}</p>}
     <div className="u-match-footer"><span>{m.scheduledAt?new Date(m.scheduledAt).toLocaleString('uz-UZ',{timeZone:'Asia/Tashkent',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'Vaqti belgilanmagan'}</span><span>Tafsilotlar <ChevronRight size={12}/></span></div>
   </CompetitionFixtureCard>;
-  const tabs:{id:Tab;label:string;icon:typeof Trophy}[]=[{id:'overview',label:'Turnir',icon:Info},{id:'fixtures',label:'O‘yinlar',icon:CalendarDays},{id:'bracket',label:'Pley-off',icon:GitBranch},{id:'participants',label:'O‘yinchilar',icon:Users},{id:'results',label:'Natijalar',icon:Trophy},{id:'standings',label:'Jadval',icon:ClipboardList}];
+  const tabs:{id:Tab;label:string;icon:typeof Trophy}[]=[{id:'overview',label:'Turnir',icon:Info},{id:'fixtures',label:'O‘yinlar',icon:CalendarDays},{id:'bracket',label:'Pley-off',icon:GitBranch},{id:'participants',label:'O‘yinchilar',icon:Users},{id:'results',label:'Natijalar',icon:Trophy},{id:'standings',label:'Jadval',icon:ClipboardList},{id:'history',label:'Tarix',icon:Clock}];
   const selectedRound=round||s.round||1;
   const filteredMatches=s.matches.filter(m=>m.round===selectedRound&&(group==='all'||m.bracket===Number(group))&&(tab!=='results'||!!m.winner));
   const participants=s.participants.filter(p=>p.status==='approved'||p.status==='removed'&&s.matches.some(m=>m.home===p.id||m.away===p.id));
@@ -54,7 +56,7 @@ export function UzeflifeChampionship({state:s,userId,busy,error,notice,missing,a
   return <div className="competition-page uzeflife">
     {admin&&s.permissions.length>0?<>
       {(error||notice)&&<p role={error?'alert':'status'} className={`competition-note ${error?'error':''}`}>{error||notice}</p>}
-      <UzeflifeAdmin state={s} busy={busy} act={act} onBack={()=>setAdmin(false)} onMatches={()=>{setAdmin(false);navigate('fixtures');}}/>
+      <UzeflifeAdmin state={s} busy={busy} act={act} onRefresh={onRefresh} error={error} onBack={()=>setAdmin(false)} onMatches={()=>{setAdmin(false);navigate('fixtures');}}/>
     </>:<>
       <CompetitionBanner>
         <CompetitionHeading emblem={<Trophy className="w-10 h-10 text-[var(--efl-primary)]"/>} title="UZEFLIFE"
@@ -69,6 +71,7 @@ export function UzeflifeChampionship({state:s,userId,busy,error,notice,missing,a
       {(error||notice)&&<p role={error?'alert':'status'} className={`competition-note ${error?'error':''}`}>{error||notice}</p>}
       {tab==='overview'&&<>
         {champion&&<div className="competition-panel u-registration"><div className="flex gap-3 items-center"><Trophy size={26}/><div><h3>UZEFLIFE chempioni</h3><p>{name(champion)}</p></div></div><button className="competition-button" onClick={()=>navigate('results')}>Final natijasi</button></div>}
+        {s.status==='completed'&&champion&&<><div className="competition-panel"><h3>Finalchi</h3><p className="competition-muted">{name(s.matches.find(m=>m.round===8)?.home===champion?s.matches.find(m=>m.round===8)!.away!:s.matches.find(m=>m.round===8)!.home!)}</p></div><UzeflifeImageExport state={s} matches={s.matches.filter(m=>m.round===8)} seasonId={seasonId} champion/></>}
         {(!s.matches.length||mine?.status==='pending')&&<section className="competition-panel u-registration-panel" aria-label="Ro‘yxatdan o‘tish">
           <div className="u-registration"><div><h3>{mine?.status==='approved'?'Siz UZEFLIFE ishtirokchisisiz':mine?.status==='pending'?'Arizangiz qabul qilindi':'UZEFLIFE’da ishtirok eting'}</h3><p>{mine?.status==='approved'?'Raqib va o‘yin vaqti jadvalda ko‘rinadi.':mine?.status==='pending'?'Administrator tasdig‘ini kuting.':s.status==='registration'?'256 o‘rin uchun ro‘yxatdan o‘tish ochiq.':s.status==='draft'?'Ro‘yxatdan o‘tish boshlanishi shu yerda e’lon qilinadi.':'Turnir boshlangan. O‘yinlar va natijalarni kuzating.'}</p></div>{mine?.status==='approved'?<CheckCircle2 size={23} className="text-[var(--efl-primary)]"/>:mine?.status==='pending'?<Clock size={23}/>:s.status==='registration'&&<button className="competition-button primary" disabled={busy||!userId||approved.length>=256} onClick={()=>void act('register')}>Ro‘yxatdan o‘tish</button>}</div>
           {!s.matches.length&&<><div className="u-progress"><span style={{width:`${approved.length/256*100}%`}}/></div><p className="text-[10px] competition-muted">{approved.length} ishtirokchi tasdiqlangan · {256-approved.length} o‘rin</p></>}
@@ -96,6 +99,7 @@ export function UzeflifeChampionship({state:s,userId,busy,error,notice,missing,a
         {missing.length>0&&subscriptionNotice}
       </>}
       {tab==='participants'&&<><div className="u-section-heading"><h3>Ishtirokchilar</h3><span className="u-status">{approved.length} / 256</span></div>{approved.length>0&&<CompetitionToolbar value={search} onChange={v=>{setSearch(v);setParticipantPage(0);}} label="UZEFLIFE ishtirokchisini qidirish" placeholder="Ishtirokchi ismi"/>}<div className="competition-panel u-participant-list">{approved.length?visibleParticipants.slice(pp*20,(pp+1)*20).map((p,i)=><div className="u-participant" key={p.id}><span>{pp*20+i+1}</span><strong>{p.name}{p.id===userId?' · Siz':''}</strong><small>{s.matches.length?participantState(p.id):'Tasdiqlangan'}</small></div>):<div className="u-empty"><Users size={25}/><h3>Ishtirokchilar kutilmoqda</h3><p>Tasdiqlangan ishtirokchilar shu yerda ko‘rinadi.</p></div>}{approved.length>0&&visibleParticipants.length===0&&<p className="competition-empty">Nomi bo‘yicha ishtirokchi topilmadi.</p>}</div>{pagination(pp,visibleParticipants.length,setParticipantPage)}</>}
+      {tab==='history'&&<UzeflifeHistory state={s}/>}
       {tab==='standings'&&<><CompetitionStandings title="UZEFLIFE · Turnir jadvali" clubLabel="Ishtirokchi" view={standingsView} onViewChange={setStandingsView}
         labels={{played:'O‘',won:'G‘',drawn:'D',lost:'M',difference:'TF',points:'G‘alaba',form:'Forma',short:'Qisqa',full:'To‘liq',view:'Jadval ko‘rinishi',win:'G‘alaba',draw:'Durang',loss:'Mag‘lubiyat',empty:'Natija yo‘q'}}
         note="Pley-off jadvali g‘alabalar bo‘yicha tartiblanadi. Durang o‘yinda g‘olib penaltilar orqali aniqlanadi."

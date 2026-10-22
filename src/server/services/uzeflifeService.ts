@@ -5,8 +5,10 @@ import {getFirestoreDb} from '../firebase/admin';
 import {isPrimaryOwner} from './customTournamentTicketService';
 import {UZEFLIFE_PERMISSIONS, type UState, type UMatch, type UPermission, type UChannel} from '../../types/uzeflife';
 import type {User} from '../../types';
+import {writeUNotices,scheduleUNotices} from './uzeflifeNotifications';
+import {normalizeUEvidence} from './uzeflifeEvidence';
 
-export const initialUState=():UState=>({name:'UZEFLIFE',description:'256 ishtirokchi · 8 ta 32 kishilik saralash · 8 g‘olib o‘rtasida final bosqichi',status:'draft',round:0,superAdmin:null,assistants:{},channels:[],subscriptionsEnabled:false,customNavigationEnabled:false,participants:[],matches:[],announcements:[],revision:0});
+export const initialUState=():UState=>({name:'UZEFLIFE',description:'256 ishtirokchi · 8 ta 32 kishilik saralash · 8 g‘olib o‘rtasida final bosqichi',status:'draft',round:0,superAdmin:null,assistants:{},channels:[],subscriptionsEnabled:false,customNavigationEnabled:false,roundHours:48,history:[],participants:[],matches:[],announcements:[],revision:0});
 export function uError(message:string,statusCode=400){return Object.assign(new Error(message),{statusCode});}
 export function uPermissions(s:UState,u:User):UPermission[]{return isPrimaryOwner(u.telegramId)||s.superAdmin===u.id?[...UZEFLIFE_PERMISSIONS]:(Object.hasOwn(s.assistants,u.id)?s.assistants[u.id]:[]);}
 export function requireUPermission(s:UState,u:User,p:UPermission|'super'|'owner'){
@@ -20,6 +22,11 @@ export function generateUBracket(ids:string[]):UMatch[]{
 }
 const score=z.number().int().min(0).max(99);
 const schemas={
+ roundSettings:z.object({hours:z.number().int().min(24).max(168)}),
+ deadline:z.object({matchId:z.string(),deadlineAt:z.iso.datetime()}),
+ approveResult:z.object({matchId:z.string(),expected:z.object({by:z.string(),home:score,away:score,penaltyHome:score.nullable(),penaltyAway:score.nullable()})}),
+ dispute:z.object({matchId:z.string(),reason:z.string().trim().min(5).max(1000),evidence:z.string().max(400000).nullable().optional()}),
+ resolveDispute:z.object({matchId:z.string(),resolution:z.string().trim().min(5).max(1000)}),
  settings:z.object({description:z.string().trim().max(2000)}),
  superAdmin:z.object({target:z.string().min(1).max(100).nullable()}),
  assistant:z.object({target:z.string().min(1).max(100),permissions:z.array(z.enum(UZEFLIFE_PERMISSIONS)).max(8)}),
@@ -62,7 +69,18 @@ export async function checkUSubscriptions(s:UState,u:User){
 export function applyUAction(s:UState,u:User,action:UAction,d:any):void{
  const guard=(p:UPermission|'super'|'owner')=>requireUPermission(s,u,p);
  const beforeStart=()=>{if(!['draft','registration'].includes(s.status)||s.matches.length)throw uError('Turnir boshlangan.');};
+ const openRound=()=>{for(const m of s.matches.filter(m=>m.round===s.round&&!m.winner))m.deadlineAt=new Date(Date.now()+(s.roundHours||48)*3600000).toISOString();};
  switch(action){
+ case 'roundSettings':guard('schedules');s.roundHours=d.hours;break;
+ case 'deadline':guard('schedules');{const m=s.matches.find(m=>m.id===d.matchId);if(!m||m.winner||s.status==='completed')throw uError('O‘yin topilmadi yoki yakunlangan.');if(Date.parse(d.deadlineAt)<=Date.now()||Date.parse(d.deadlineAt)>Date.now()+30*86400000)throw uError('Kelajakdagi muddatni belgilang (30 kungacha).');m.deadlineAt=d.deadlineAt;}break;
+ case 'approveResult':{guard('results');const m=s.matches.find(m=>m.id===d.matchId);if(!m?.proposal)throw uError('Tasdiq kutayotgan natija topilmadi.',409);if(['by','home','away','penaltyHome','penaltyAway'].some(k=>m.proposal![k]!==d.expected[k]))throw uError('Hisob taklifi yangilangan. Ro‘yxatni yangilab qayta tekshiring.',409);if(m.dispute?.status==='open')throw uError('Avval e’tirozni hal qiling.',409);applyUAction(s,u,'result',{matchId:m.id,...m.proposal});return;}
+ case 'dispute':{
+  const m=s.matches.find(m=>m.id===d.matchId);if(!m||s.status!=='playing'||m.round!==s.round||m.winner||!m.proposal)throw uError('Bu o‘yin natijasiga e’tiroz qabul qilinmaydi.');
+  if(![m.home,m.away].includes(u.id)||s.participants.find(p=>p.id===u.id)?.status!=='approved')throw uError('Bu sizning o‘yiningiz emas.',403);
+  if(m.dispute?.status==='open')throw uError('E’tiroz allaqachon yuborilgan.');
+  m.dispute={by:u.id,reason:d.reason,at:new Date().toISOString(),evidenceId:d.evidenceId||null,status:'open'};break;
+ }
+ case 'resolveDispute':{guard('results');const m=s.matches.find(m=>m.id===d.matchId);if(!m||m.dispute?.status!=='open')throw uError('Ochiq e’tiroz topilmadi.',409);m.dispute={...m.dispute,status:'resolved',resolution:d.resolution,resolvedBy:u.id,resolvedAt:new Date().toISOString()};m.proposal=null;break;}
  case 'settings':guard('super');s.description=d.description;break;
  case 'customNavigation':guard('owner');s.customNavigationEnabled=d.enabled;break;
  case 'superAdmin':guard('owner');if(d.target===u.id)throw uError('Platforma egasiga alohida rol kerak emas.');s.superAdmin=d.target;if(d.target)delete s.assistants[d.target];break;
@@ -91,16 +109,17 @@ export function applyUAction(s:UState,u:User,action:UAction,d:any):void{
   break;
  }
  case 'review':guard('participants');if(d.status==='approved')beforeStart();if(s.status==='completed')throw uError('Turnir yakunlangan.');{const p=s.participants.find(p=>p.id===d.target);if(!p)throw uError('Ishtirokchi topilmadi.',404);if(d.status==='approved'&&p.status==='removed'&&s.participants.filter(p=>p.status!=='removed').length>=256)throw uError('Barcha 256 o‘rin band.');p.status=d.status;}break;
- case 'generate':guard('brackets');beforeStart();{const ids=s.participants.filter(p=>p.status==='approved').map(p=>p.id);for(let i=ids.length-1;i>0;i--){const j=randomInt(i+1);[ids[i],ids[j]]=[ids[j],ids[i]];}s.matches=generateUBracket(ids);s.status='playing';s.round=1;}break;
+ case 'generate':guard('brackets');beforeStart();{const ids=s.participants.filter(p=>p.status==='approved').map(p=>p.id);for(let i=ids.length-1;i>0;i--){const j=randomInt(i+1);[ids[i],ids[j]]=[ids[j],ids[i]];}s.matches=generateUBracket(ids);s.status='playing';s.round=1;openRound();}break;
  case 'pause':guard('super');if(s.status!=='playing')throw uError('Turnir davom etmayapti.');s.status='paused';break;
  case 'resume':guard('super');if(s.status!=='paused')throw uError('Turnir to‘xtatilmagan.');s.status='playing';break;
- case 'next':guard('brackets');if(s.status!=='playing'||s.round>=UZEFLIFE_CHAMPION_MATCHES||s.matches.some(m=>m.round===s.round&&!m.winner))throw uError('Joriy bosqich o‘yinlari tugamagan.');s.round++;break;
- case 'complete':guard('super');if(s.status!=='playing'||!s.matches.find(m=>m.round===8)?.winner)throw uError('Final yakunlanmagan.');s.status='completed';break;
- case 'clearProposal':guard('matches');{const m=s.matches.find(m=>m.id===d.matchId);if(!m||m.winner)throw uError('O‘yin topilmadi yoki yakunlangan.');m.proposal=null;}break;
+ case 'next':guard('brackets');if(s.status!=='playing'||s.round>=UZEFLIFE_CHAMPION_MATCHES||s.matches.some(m=>m.round===s.round&&!m.winner))throw uError('Joriy bosqich o‘yinlari tugamagan.');s.round++;openRound();break;
+ case 'complete':guard('super');if(s.status!=='playing'||!s.matches.find(m=>m.round===8)?.winner)throw uError('Final yakunlanmagan.');{const final=s.matches.find(m=>m.round===8)!;const runnerUp=final.winner===final.home?final.away!:final.home!;const player=(id:string)=>s.participants.find(p=>p.id===id)?.name||'Ishtirokchi';s.history=[{id:'uzeflife-'+randomUUID(),completedAt:new Date().toISOString(),champion:final.winner!,runnerUp,championName:player(final.winner!),runnerUpName:player(runnerUp),matchCount:s.matches.filter(m=>m.winner).length},...(s.history||[])].slice(0,20);}s.status='completed';break;
+ case 'clearProposal':if(!uPermissions(s,u).includes('results'))guard('matches');{const m=s.matches.find(m=>m.id===d.matchId);if(!m||m.winner)throw uError('O‘yin topilmadi yoki yakunlangan.');if(m.dispute?.status==='open')throw uError('Avval e’tirozni hal qiling.',409);m.proposal=null;}break;
  case 'schedule':guard('schedules');{const m=s.matches.find(m=>m.id===d.matchId);if(!m)throw uError('O‘yin topilmadi.',404);if(s.status==='completed'||m.winner)throw uError('O‘yin yakunlangan.');m.scheduledAt=d.scheduledAt;}break;
  case 'result':{
   const m=s.matches.find(m=>m.id===d.matchId);if(!m)throw uError('O‘yin topilmadi.',404);
   if(s.status!=='playing'||m.round!==s.round||!m.home||!m.away)throw uError('Bu o‘yin uchun natija qabul qilinmaydi.');
+  if(m.dispute?.status==='open')throw uError('Avval e’tirozni admin hal qilishi kerak.',409);
   const admin=uPermissions(s,u).includes('results');
   if(!admin&&s.participants.find(p=>p.id===u.id)?.status!=='approved')throw uError('Ishtirokingiz bekor qilingan.',403);
   if(!admin&&u.id!==m.home&&u.id!==m.away)throw uError('Bu sizning o‘yiningiz emas.',403);
@@ -148,7 +167,8 @@ export async function mutateUState(u:User,action:string,body:unknown){
   if(missing.length)throw uError('O‘yinchi avval barcha majburiy kanallarga obuna bo‘lishi kerak.',403);
   subscriptionRevision=current.revision;
  }
- if(action==='register'||action==='result'){
+ if(action==='dispute')d.evidence=await normalizeUEvidence(d.evidence);
+ if(action==='register'||action==='result'||action==='dispute'){
   const current=await readUState();
   if(action==='register'||!uPermissions(current,u).includes('results')){
    const missing=await checkUSubscriptions(current,u);if(missing.length)throw Object.assign(uError('Avval barcha majburiy kanallarga obuna bo‘ling.',403),{channels:missing});
@@ -166,12 +186,18 @@ export async function mutateUState(u:User,action:string,body:unknown){
    if(account.telegramId!==participantTelegramId)throw uError('O‘yinchi akkaunti yangilandi. Qayta urinib ko‘ring.',409);
    d.participant={id:target.id,name:(account.firstName||account.username||'Ishtirokchi').slice(0,100)};
   }
+  const before=structuredClone(s);
+  if(action==='dispute'&&d.evidence)d.evidenceId='evidence-'+auditId;
   applyUAction(s,u,parsed.action,d);
+  if(action==='dispute'&&d.evidence)tx.set(db.collection('uzeflife_evidence').doc(d.evidenceId),{matchId:d.matchId,by:u.id,jpegBase64:d.evidence,at:new Date().toISOString()});
+  writeUNotices(tx,before,s,auditId);
+  if(action==='complete'){const entry=s.history![0];tx.set(db.collection('uzeflife_history').doc(entry.id),{...entry,name:s.name,participants:s.participants.filter(p=>p.status==='approved'||s.matches.some(m=>[m.home,m.away].includes(p.id))),matches:s.matches.map(m=>({...m,proposal:null,dispute:null}))});}
   tx.set(ref,s);
-  tx.set(db.collection('uzeflife_audit').doc(auditId),{actor:u.id,action:parsed.action,details:d,revision:s.revision,at:new Date().toISOString()});
+  tx.set(db.collection('uzeflife_audit').doc(auditId),{actor:u.id,action:parsed.action,details:Object.fromEntries(Object.entries(d).filter(([k])=>k!=='evidence')),revision:s.revision,at:new Date().toISOString()});
  });
+ scheduleUNotices();
 }
 export function publicUState(s:UState,u?:User){
  const permissions=u?uPermissions(s,u):[];const participantAdmin=permissions.includes('participants')||permissions.includes('registrations');const resultAdmin=permissions.includes('results')||permissions.includes('matches');
- return {...s,superAdmin:u&&(isPrimaryOwner(u.telegramId)||s.superAdmin===u.id)?s.superAdmin:null,assistants:u&&(isPrimaryOwner(u.telegramId)||s.superAdmin===u.id)?s.assistants:{},participants:s.participants.filter(p=>p.status==='approved'||(p.status==='removed'&&s.matches.some(m=>m.home===p.id||m.away===p.id))||participantAdmin||p.id===u?.id),matches:s.matches.map(m=>({...m,proposal:resultAdmin||m.home===u?.id||m.away===u?.id?m.proposal:null})),permissions,isOwner:!!u&&isPrimaryOwner(u.telegramId),isSuper:!!u&&(isPrimaryOwner(u.telegramId)||s.superAdmin===u.id)};
+ return {...s,superAdmin:u&&(isPrimaryOwner(u.telegramId)||s.superAdmin===u.id)?s.superAdmin:null,assistants:u&&(isPrimaryOwner(u.telegramId)||s.superAdmin===u.id)?s.assistants:{},participants:s.participants.filter(p=>p.status==='approved'||(p.status==='removed'&&s.matches.some(m=>m.home===p.id||m.away===p.id))||participantAdmin||p.id===u?.id),matches:s.matches.map(m=>({...m,dispute:resultAdmin||m.home===u?.id||m.away===u?.id?m.dispute||null:null,proposal:resultAdmin||m.home===u?.id||m.away===u?.id?m.proposal:null})),permissions,isOwner:!!u&&isPrimaryOwner(u.telegramId),isSuper:!!u&&(isPrimaryOwner(u.telegramId)||s.superAdmin===u.id)};
 }
