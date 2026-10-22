@@ -1,3 +1,4 @@
+import { isBulkResultRequest } from './telegramAiBulkResultLanguage';
 import { normalizeAiEntity } from './telegramAiEntities';
 import { detectExtendedAdminControl } from './telegramAiControlLanguage';
 import { isAiHypotheticalQuestion } from './telegramAiMessageUnderstanding';
@@ -42,6 +43,7 @@ export function assertSingleNaturalAdminRequest(text: string): void {
 export function detectNaturalAdminAction(text: string): string|null {
   const command = text.replace(/^\/ai_(?:admin|read)(?:@[A-Za-z0-9_]+)?\s*/i, '').replace(/"[^"]*"|“[^”]*”/g, ' ').split(/(?:sarlavha|matn|sabab|izoh)\s*:/i)[0];
   const q = normalizeAiEntity(command.replace(/@\s*[A-Za-z0-9_]+/g, ' '));
+  if (isBulkResultRequest(command)) return 'results_bulk_apply';
   const extended = detectExtendedAdminControl(command);
   if (extended) return extended;
   if (/\b(?:no show|kelmaganlik\w*|kelmagan\w*)\b/.test(q) && /hal qil|hal et|texnik|rad et|resolve/.test(q)) return 'no_show_resolve';

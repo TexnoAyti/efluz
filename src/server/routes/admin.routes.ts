@@ -1,3 +1,4 @@
+import { previewBulkLeagueResults, applyBulkLeagueResults } from '../services/bulkLeagueResults';
 import { createHash } from 'node:crypto';
 import { readSharedAdminData } from '../services/adminReviewCache';
 import { canUseDangerZone, isLeagueAdmin, permittedAdminLeagues } from '../../lib/adminPermissions';
@@ -463,6 +464,16 @@ adminRouter.get('/fixtures', async (req: Request, res: Response) => {
       generatedAt: new Date().toISOString(),
     });
   }
+});
+
+// Bounded preview and atomic application of unplayed league results.
+adminRouter.get('/competitions/:id/bulk-results/preview', async (req: Request, res: Response) => {
+  try { res.json(await previewBulkLeagueResults(req.user!, req.params.id, req.query)); }
+  catch (err: any) { res.status(err.statusCode || (err.name === 'ZodError' ? 400 : 503)).json({error:'BULK_RESULT_PREVIEW_FAILED',message:err.statusCode ? err.message : 'O‘yinlar ro‘yxati ishonchli o‘qilmadi.'}); }
+});
+adminRouter.post('/competitions/:id/bulk-results/apply', async (req: Request, res: Response) => {
+  try { res.json(await applyBulkLeagueResults(req.user!, req.params.id, req.body, String(req.headers['x-idempotency-key'] || ''))); }
+  catch (err: any) { res.status(err.statusCode || (err.name === 'ZodError' ? 400 : 503)).json({error:'BULK_RESULT_APPLY_FAILED',message:err.statusCode ? err.message : 'Yakuniy holat tasdiqlanmadi. Auditni tekshiring; avtomatik takrorlanmaydi.'}); }
 });
 
 // Admin manually enter or edit fixture result
