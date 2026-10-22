@@ -40,6 +40,6 @@ export function UzeflifeBracket({state,bracket,onMatch}:{state:UState;bracket:nu
         })}
       </div>
     </div>
-    <p className="text-[10px] tourney-muted mt-3">Setkani ko‘rish uchun yon tomonga suring. O‘yin ustiga bosib tafsilotlarni oching.</p>
+    <p className="text-[10px] competition-muted mt-3">Setkani ko‘rish uchun yon tomonga suring. O‘yin ustiga bosib tafsilotlarni oching.</p>
   </section>;
 }

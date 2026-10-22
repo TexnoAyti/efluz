@@ -37,3 +37,44 @@ button.competition-fixture-teams{border-radius:8px;min-height:44px;cursor:pointe
 
 .competition-fixture-status--success{background:color-mix(in srgb,var(--efl-success,#10b981) 12%,transparent);color:var(--efl-success,#059669);border-color:color-mix(in srgb,var(--efl-success,#10b981) 30%,transparent)}
 .competition-fixture-status--warning{background:color-mix(in srgb,var(--efl-warning,#d97706) 12%,transparent);color:var(--efl-warning,#d97706);border-color:color-mix(in srgb,var(--efl-warning,#d97706) 30%,transparent)}
+
+/* League-scale controls, also used by the standalone UZEFLIFE championship. */
+.competition-page{display:flex;flex-direction:column;gap:24px;min-width:0;width:100%;padding-bottom:24px;color:var(--efl-text);font-size:12px;line-height:1.5}
+.competition-page>*,.competition-dialog>*{min-width:0;max-width:100%}
+.competition-panel{min-width:0;padding:16px;background:var(--efl-surface);border:1px solid var(--efl-border);border-radius:16px;box-shadow:var(--efl-shadow)}
+.competition-muted{font-size:11px;line-height:1.6;color:var(--efl-text-2)}
+.competition-button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:0;min-height:38px;padding:8px 12px;border:1px solid var(--efl-border);border-radius:12px;background:var(--efl-surface);color:var(--efl-text-2);font-size:12px;font-weight:700;line-height:1.4;text-align:center;cursor:pointer;transition:background-color .15s,border-color .15s,color .15s}
+.competition-button svg{flex-shrink:0}
+.competition-button:hover:not(:disabled){background:var(--efl-surface-2);color:var(--efl-text)}
+.competition-button.primary{background:var(--efl-primary);color:#fff;border-color:transparent}
+.competition-button.primary:hover:not(:disabled){background:var(--efl-primary-strong)}
+.competition-button:disabled{opacity:.45;cursor:default}
+.competition-button:focus-visible,.competition-panel:focus-visible{outline:2px solid var(--efl-primary);outline-offset:3px}
+.competition-field{display:block;min-width:0;font-size:11px;font-weight:700;color:var(--efl-text-2)}
+.competition-field :is(input,select,textarea){display:block;width:100%;max-width:100%;min-width:0;min-height:38px;margin-top:6px;padding:8px 10px;border:1px solid var(--efl-border);border-radius:12px;background:var(--efl-surface-2);color:var(--efl-text);font:inherit;font-size:12px;font-weight:500;line-height:1.5}
+.competition-field textarea{min-height:96px;resize:vertical}
+.competition-field :is(input,select,textarea):focus-visible{outline:2px solid var(--efl-primary);outline-offset:2px}
+.competition-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.competition-note{padding:12px;border:1px solid var(--efl-border);border-radius:12px;background:var(--efl-surface-2);font-size:11px;line-height:1.6;color:var(--efl-text-2);overflow-wrap:anywhere}
+.competition-note.error{border-color:color-mix(in srgb,var(--efl-danger) 30%,transparent);background:color-mix(in srgb,var(--efl-danger) 8%,var(--efl-surface));color:var(--efl-text)}
+.competition-eyebrow{font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--efl-text-2)}
+.efl-preview .competition-tabs-grid{display:grid;grid-template-columns:repeat(var(--competition-tab-count,3),minmax(0,1fr));gap:6px;align-items:stretch;overflow:visible}
+.efl-preview .competition-tabs-grid>button{min-width:0;min-height:38px;padding:8px 6px;gap:4px}
+.efl-preview .competition-tabs-grid>button>span{white-space:normal;overflow-wrap:normal;font-size:11px;line-height:1.4}
+.competition-dialog{padding:0;margin:auto;display:flex;flex-direction:column;width:min(500px,calc(100% - 24px));max-height:calc(100dvh - 24px);overflow:hidden;border:1px solid var(--efl-border);border-radius:20px;background:var(--efl-surface);color:var(--efl-text);box-shadow:var(--efl-shadow-lg);font-size:12px;line-height:1.5}
+.competition-dialog:not([open]){display:none}
+.competition-dialog::backdrop{background:rgba(2,6,23,.65)}
+.competition-dialog>header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:16px;border-bottom:1px solid var(--efl-border);flex-shrink:0}
+.competition-dialog h2{font-size:18px;font-weight:900;margin-top:3px}
+.competition-dialog-body{min-height:0;overflow-y:auto;display:grid;gap:16px;padding:16px}
+@media(max-width:600px){.efl-preview .competition-tabs-grid{grid-template-columns:repeat(var(--competition-mobile-tab-count,3),minmax(0,1fr))}}
+
+/* Search toolbar belongs to the shared competition workspace. */
+.competition-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;background:var(--efl-surface);border:1px solid var(--efl-border);border-radius:16px;box-shadow:var(--efl-shadow)}
+.competition-search{position:relative;display:flex;align-items:center;flex:1;min-width:0;max-width:360px}
+.competition-search>svg{position:absolute;left:12px;color:var(--efl-muted);pointer-events:none}
+.competition-search input{width:100%;min-width:0;min-height:38px;padding:8px 12px 8px 36px;border:1px solid var(--efl-border);border-radius:12px;background:var(--efl-surface-2);color:var(--efl-text);font-size:12px}
+.competition-search input:focus-visible{outline:2px solid var(--efl-primary);outline-offset:2px}
+.competition-search input::placeholder{color:var(--efl-muted)}
+.competition-toolbar-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
+@media(max-width:600px){.competition-toolbar{gap:8px;align-items:stretch}.competition-search{max-width:none}}

@@ -4,7 +4,6 @@ import {createRoot} from 'react-dom/client';
 import '../../index.css';
 import '../../admin-preview.css';
 import '../../components/competition-content.css';
-import '../../components/customTournaments/tournaments.css';
 import '../../components/uzeflife/uzeflife.css';
 import {UzeflifeChampionship} from '../../components/uzeflife/UzeflifeChampionship';
 import {uzeflifeDemo} from '../../lib/uzeflifeDemo';

@@ -1,5 +1,5 @@
 import {CompetitionRounds, CompetitionFixtureCard, CompetitionStandings} from './CompetitionContent';
-import {CompetitionBanner, CompetitionTabs} from './CompetitionChrome';
+import {CompetitionBanner, CompetitionTabs, CompetitionHeading} from './CompetitionChrome';
 import { isLeagueSelectionOpen } from '../lib/clubAdmission';
 import { EFL_2_DESIGN_ENABLED } from '../releaseDesign';
 import { AdminTournamentImageExport } from './AdminTournamentImageExport';
@@ -604,42 +604,33 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
       {currentLeague && (
         <CompetitionBanner>
           <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="efl-league-banner-content flex items-center gap-4">
-              <div className="efl-theme-league-logo w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-[var(--efl-surface-2)] p-2.5 border border-[var(--efl-border)] flex items-center justify-center shadow-xs shrink-0">
-                <img
-                  src={EFL_2_DESIGN_ENABLED && welcomeLeagueIcons[currentLeague.id] ? `/welcome/${welcomeLeagueIcons[currentLeague.id]}.svg` : currentLeague.logoUrl}
-                  alt={currentLeague.name}
-                  className="w-10 h-10 object-contain"
-                  onError={(e) => {
-                    (e.target as HTMLElement).style.display = 'none';
-                  }}
-                />
-              </div>
-
-              <div>
-                <div className="efl-fit-wrap flex items-center gap-2">
-                  <span className="text-xs font-bold text-[var(--efl-text-2)] uppercase tracking-wider">
-                    {currentLeague.country} • {EFL_2_DESIGN_ENABLED ? previewText.tier : 'Tier'} {currentLeague.tier}
-                  </span>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-[var(--efl-primary-soft)] text-[var(--efl-primary)] border border-[var(--efl-primary)]/20">
-                    2026/27 {EFL_2_DESIGN_ENABLED ? previewText.active : 'Active'}
-                  </span>
-                </div>
-                <h1 className="text-xl sm:text-2xl font-black text-[var(--efl-text)] tracking-tight mt-0.5">
-                  {currentLeague.name}
-                </h1>
-                <div className="efl-fit-wrap flex items-center gap-3 mt-1.5 text-xs text-[var(--efl-text-2)]">
-                  <span className="flex items-center gap-1 font-semibold">
-                    <Shield className="w-3.5 h-3.5 text-[var(--efl-primary)]" />
-                    <span>{clubs.length} {EFL_2_DESIGN_ENABLED ? previewText.clubs : 'Clubs'}</span>
-                  </span>
-                  <span>•</span>
-                  <span className="text-emerald-600 efl-theme-emerald dark:text-emerald-400 font-bold">{availableCount} {EFL_2_DESIGN_ENABLED ? previewText.available : 'Available'}</span>
-                  <span>•</span>
-                  <span className="text-blue-600 efl-theme-blue dark:text-blue-400 font-bold">{claimedCount} {EFL_2_DESIGN_ENABLED ? previewText.claimed : 'Claimed'}</span>
-                </div>
-              </div>
-            </div>
+            <CompetitionHeading
+              emblem={<img
+                src={EFL_2_DESIGN_ENABLED && welcomeLeagueIcons[currentLeague.id] ? `/welcome/${welcomeLeagueIcons[currentLeague.id]}.svg` : currentLeague.logoUrl}
+                alt={currentLeague.name}
+                className="w-10 h-10 object-contain"
+                onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+              />}
+              eyebrow={<>
+                <span className="text-xs font-bold text-[var(--efl-text-2)] uppercase tracking-wider">
+                  {currentLeague.country} • {EFL_2_DESIGN_ENABLED ? previewText.tier : 'Tier'} {currentLeague.tier}
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-[var(--efl-primary-soft)] text-[var(--efl-primary)] border border-[var(--efl-primary)]/20">
+                  2026/27 {EFL_2_DESIGN_ENABLED ? previewText.active : 'Active'}
+                </span>
+              </>}
+              title={currentLeague.name}
+              meta={<>
+                <span className="flex items-center gap-1 font-semibold">
+                  <Shield className="w-3.5 h-3.5 text-[var(--efl-primary)]" />
+                  <span>{clubs.length} {EFL_2_DESIGN_ENABLED ? previewText.clubs : 'Clubs'}</span>
+                </span>
+                <span>•</span>
+                <span className="text-emerald-600 efl-theme-emerald dark:text-emerald-400 font-bold">{availableCount} {EFL_2_DESIGN_ENABLED ? previewText.available : 'Available'}</span>
+                <span>•</span>
+                <span className="text-blue-600 efl-theme-blue dark:text-blue-400 font-bold">{claimedCount} {EFL_2_DESIGN_ENABLED ? previewText.claimed : 'Claimed'}</span>
+              </>}
+            />
 
             {/* User Active Club Badge if belongs to this league */}
             {ownedClubs.filter((owned) => owned.leagueId === selectedLeagueId).map((club) => (
