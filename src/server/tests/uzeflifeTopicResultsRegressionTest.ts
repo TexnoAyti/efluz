@@ -1,0 +1,57 @@
+import assert from 'node:assert/strict';
+import {initDatabase} from '../db';
+import {getFirestoreDb} from '../firebase/admin';
+import {handleTopicResultUpdate,planTopicResult} from '../services/telegramTopicResults';
+import {planUzeflifeTopicResult,executeUzeflifeTopicResult,authorizeUzeflifeTopicResult,UZEFLIFE_RESULT_TOPIC} from '../services/uzeflifeTopicResults';
+import {initialUState,generateUBracket,readUState,mutateUState} from '../services/uzeflifeService';
+import {inspectAiAdminOutcome} from '../services/telegramAiAdminOutcome';
+import type {User} from '../../types';
+
+await initDatabase();process.env.DATABASE_PROVIDER='supabase';process.env.SUPABASE_DATA_NAMESPACE='preview';process.env.TELEGRAM_BOT_TOKEN='777:uzeflife-topic-test';
+const db=getFirestoreDb(),ref=db.collection('uzeflife').doc('championship');
+const user=(id:string,tg:number):User=>({id,telegramId:String(tg),firstName:id,username:id,isAdmin:false,isSuspended:false,createdAt:'',updatedAt:''});
+const owner=user('custom-owner',5209126900),assistant=user('assistant',3001),channels=user('channels',3002),outsider=user('outsider',9999);
+for(const u of [owner,assistant,channels,outsider,...Array.from({length:10},(_,i)=>user('player-'+i,1001+i))])await db.collection('users').doc(u.id).set(u);
+const s=initialUState();s.status='playing';s.round=1;s.participants=Array.from({length:256},(_,i)=>({id:'player-'+i,name:i===0?'Azamat':i===1?'Vali':'Player '+i,status:'approved' as const}));s.matches=generateUBracket(s.participants.map(p=>p.id));s.assistants[assistant.id]=['results'];s.assistants[channels.id]=['channels'];await ref.set(s);
+assert.equal(UZEFLIFE_RESULT_TOPIC,7297);
+assert.equal((await planTopicResult('3:1',1002,7297,new AbortController().signal))?.plan.body.homeScore,1,'Bare score starts with the verified sender');
+assert.equal((await planUzeflifeTopicResult('Vali 4:1 Azamat',1002))?.plan.body.awayScore,4);
+const shootout=await planUzeflifeTopicResult('2:2 penalti 5:4',1002);assert.equal(shootout?.plan.body.homePenaltyScore,4);assert.equal(shootout?.plan.body.awayPenaltyScore,5);
+assert.equal((await planUzeflifeTopicResult('1-setka 1-o‘yin 2:1',3001))?.plan.targetId,'r1m0');
+await assert.rejects(planUzeflifeTopicResult('2:2',1001),/penalti/);
+for(const bad of ['-2:1','2:2 penalti -5:4','1.5:2','2:1.5','1-setka 1-o‘yin 200:1 penalti 5:4'])await assert.rejects(planUzeflifeTopicResult(bad,1001),/noto‘g‘ri/);
+await assert.rejects(planUzeflifeTopicResult('2:1',9999),/tasdiqlangan/);
+await assert.rejects(planUzeflifeTopicResult('Other 2:1 Person',1001),/bitta joriy/);
+assert.equal(await planUzeflifeTopicResult('Agar 2:1 bo‘lsa nima bo‘ladi?',1001),null);
+assert.equal(await authorizeUzeflifeTopicResult(3001),true);assert.equal(await authorizeUzeflifeTopicResult(3002),false);
+const originalFetch=globalThis.fetch,sent:any[]=[];let sequence=800000;const originalNow=Date.now;let clock=originalNow();Date.now=()=>clock;
+const update=(text:string,sender=1001)=>{clock+=61000;return {update_id:++sequence,message:{message_id:sequence,message_thread_id:7297,chat:{id:-100123,type:'supergroup',username:'efleagueuz'},from:{id:sender},text}};};
+const callback=(message:any,token:string,actor=3001)=>({update_id:++sequence,callback_query:{id:'cb-'+sequence,from:{id:actor},data:token,message:{message_id:message.botId,message_thread_id:7297,chat:{id:-100123},from:{id:777}}}});
+globalThis.fetch=(async(input:any,init:any)=>{assert.ok(String(input).startsWith('https://api.telegram.org/'));const body=JSON.parse(init.body);if(body.callback_query_id)return Response.json({ok:true});body.botId=9000+sent.length;sent.push(body);return Response.json({ok:true,result:{message_id:body.botId}});}) as typeof fetch;
+try{
+ const wrong=update('2:1');wrong.message.message_thread_id=7298;assert.equal((await handleTopicResultUpdate(wrong)).handled,false);
+ const source=update('2:1');assert.equal((await handleTopicResultUpdate(source)).result,'proposal_sent');const preview=sent.at(-1),token=preview.reply_markup.inline_keyboard[0][0].callback_data;
+ assert.ok(preview.text.includes('Azamat 2:1 Vali')&&preview.text.includes('UZEFLIFE'));assert.equal(preview.message_thread_id,7297);assert.equal((await readUState()).matches[0].winner,null);
+ assert.equal((await handleTopicResultUpdate(callback(preview,token,1001))).result,'unauthorized');assert.equal((await handleTopicResultUpdate(callback(preview,token,3002))).result,'unauthorized');
+ const cross=callback(preview,token);cross.callback_query.message.message_thread_id=3;assert.equal((await handleTopicResultUpdate(cross)).result,'invalid');
+ const race=await Promise.all([handleTopicResultUpdate(callback(preview,token)),handleTopicResultUpdate(callback(preview,token))]);assert.equal(race.filter(r=>r.result==='executing').length,1);
+ let stored=await readUState();assert.equal(stored.matches[0].winner,'player-0');assert.equal(stored.matches.find(m=>m.id==='r2m0')?.home,'player-0');assert.equal(stored.revision,1);
+ assert.equal((await handleTopicResultUpdate(callback(preview,token))).result,'already_processed');
+ assert.ok((await db.collection('uzeflife_audit').get()).docs.some(d=>d.data().details.thread===7297&&d.data().actor===assistant.id));
+ const editable=update('2:1',1003);await handleTopicResultUpdate(editable);const old=sent.at(-1);await handleTopicResultUpdate({update_id:++sequence,edited_message:{...editable.message,text:'2:3'}});const current=sent.at(-1);
+ assert.equal((await handleTopicResultUpdate(callback(old,old.reply_markup.inline_keyboard[0][0].callback_data))).result,'already_processed');
+ await handleTopicResultUpdate(callback(current,current.reply_markup.inline_keyboard[0][0].callback_data));stored=await readUState();assert.equal(stored.matches.find(m=>m.id==='r1m1')?.winner,'player-3');
+ const stale=update('2:1',1005);await handleTopicResultUpdate(stale);const stalePreview=sent.at(-1);
+ await mutateUState(owner,'schedule',{matchId:'r1m2',scheduledAt:'2026-10-23T12:00:00.000Z'});
+ await handleTopicResultUpdate(callback(stalePreview,stalePreview.reply_markup.inline_keyboard[0][0].callback_data));assert.ok(sent.at(-1).text.includes('taklifdan keyin o‘zgargan'));assert.equal((await readUState()).matches.find(m=>m.id==='r1m2')?.winner,null);
+ const retry=update('2:2 penalti 5:4',1005);assert.equal((await handleTopicResultUpdate(retry)).result,'proposal_sent');const retryPreview=sent.at(-1);await handleTopicResultUpdate(callback(retryPreview,retryPreview.reply_markup.inline_keyboard[0][0].callback_data));assert.equal((await readUState()).matches.find(m=>m.id==='r1m2')?.penaltyHome,5,'Known rejected proposals release their match lease for a new report');
+ const revoke=update('2:1',1007);await handleTopicResultUpdate(revoke);const revokePreview=sent.at(-1),revokeToken=revokePreview.reply_markup.inline_keyboard[0][0].callback_data;
+ await mutateUState(owner,'removeAssistant',{target:assistant.id});assert.equal((await handleTopicResultUpdate(callback(revokePreview,revokeToken))).result,'unauthorized');assert.equal((await readUState()).matches.find(m=>m.id==='r1m3')?.winner,null);
+ await mutateUState(owner,'assistant',{target:assistant.id,permissions:['results']});await db.collection('users').doc('player-6').update({isSuspended:true});
+ await handleTopicResultUpdate(callback(revokePreview,revokeToken));assert.ok(sent.at(-1).text.includes('Natija saqlanmadi'));assert.equal((await readUState()).matches.find(m=>m.id==='r1m3')?.winner,null);
+ assert.equal((await db.collection('users').doc(assistant.id).get()).data()?.isAdmin,false);
+ // A fresh admin-approved shootout is committed by the same scoring engine and verified receipt.
+ const penaltyPlan=await planUzeflifeTopicResult('2:2 penalti 5:4',1009);assert.ok(penaltyPlan);
+ const receipt=await executeUzeflifeTopicResult(penaltyPlan.plan,3001,1009,{chat:-100123,thread:7297,message:900001});assert.equal(inspectAiAdminOutcome(penaltyPlan.plan,receipt.data).state,'verified');assert.equal(receipt.data.fixture.homePenaltyScore,5);
+ console.log('PASS UZEFLIFE topic 7297: verified identity, sender-first orientation, named players, shootouts, topic binding, tournament-only result admins, approval, replay/race/edit protection, stale fixture/suspension/revocation checks, progression and audit; Telegram mocked.');
+}finally{globalThis.fetch=originalFetch;Date.now=originalNow;}

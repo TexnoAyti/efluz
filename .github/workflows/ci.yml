@@ -108,6 +108,7 @@ jobs:
           node scripts/run-isolated-test.mjs src/server/tests/postgresRuntimeServicesRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/uzeflifePresentationTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/uzeflifeRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/uzeflifeTopicResultsRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/postgresSqlIntegrationTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/ticketRecipientRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/centeredBracketRegressionTest.ts

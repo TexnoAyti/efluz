@@ -1,4 +1,5 @@
 import { randomBytes, createHash } from 'node:crypto';
+import {UZEFLIFE_RESULT_TOPIC,planUzeflifeTopicResult,authorizeUzeflifeTopicResult,executeUzeflifeTopicResult} from './uzeflifeTopicResults';
 import { getAiRedisClient, withinAiDeadline } from './telegramAiDeadline';
 import { createAiTournamentReader } from './telegramAiDataService';
 import { createAiSnapshotReader } from './telegramAiSnapshotReader';
@@ -20,7 +21,7 @@ import type { AdminPlan } from './telegramAiAdminCatalog';
 const season = 'season-2026-27', ttl = 86400, prefix = 'efluz:v1:telegram:topic-result:';
 const proposalKey = (token: string) => prefix + 'proposal:' + token;
 const sourceKey = (chat: number, thread: number, message: number) => `${prefix}source:${chat}:${thread}:${message}`;
-export type TopicResultProposal = { token: string; chat: number; thread: number; sourceMessage: number; submitter: number; updateId: number; expiresAt: number; state: string; plan: AdminPlan; deliveredMessage?: number; expectedFixture: any; summary?: string; originalSourceMessage?:number; originalSourceUpdateId?:number };
+export type TopicResultProposal = { token: string; chat: number; thread: number; sourceMessage: number; submitter: number; updateId: number; expiresAt: number; state: string; plan: AdminPlan; deliveredMessage?: number; expectedFixture: any; kind?:'uzeflife'; summary?: string; originalSourceMessage?:number; originalSourceUpdateId?:number };
 const editable = new Set(['SCHEDULED', 'POSTPONED', 'AWAITING_RESULT', 'PENDING_CONFIRMATION']);
 const roundLabel = (f: any) => f.roundName || (Number.isInteger(f.matchday) ? `${f.matchday}-tur` : 'Tur ma’lumoti yo‘q');
 const fixtureLabel = (f: any) => `${f.home} — ${f.away} · ${f.competition} · ${roundLabel(f)}`;
@@ -68,6 +69,10 @@ end
 if ARGV[1] ~= '' then redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[4]) end
 redis.call('SET', KEYS[2], ARGV[5], 'EX', ARGV[4])
 return 1`;
+export const TOPIC_RESULT_RELEASE = `-- EFL_TOPIC_RESULT_RELEASE_V1
+if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end
+redis.call('DEL', KEYS[1])
+return 1`;
 export const TOPIC_RESULT_CLAIM = `-- EFL_TOPIC_RESULT_CLAIM_V1
 local raw = redis.call('GET', KEYS[1])
 local source = redis.call('GET', KEYS[3])
@@ -99,6 +104,7 @@ async function authorize(id: number) {
 
 /** Planning reads verified public data; member identity comes only from Telegram. */
 export async function planTopicResult(text: string, sender: number, thread: number, signal: AbortSignal, resolution?:{fixtureId:string}) {
+  if(thread===UZEFLIFE_RESULT_TOPIC)return planUzeflifeTopicResult(text,sender,resolution);
   const scores = [...text.matchAll(/\b(\d{1,2})\s*[:–—−-]\s*(\d{1,2})\b/g)];
   if (scores.length !== 1 || isAiHypotheticalQuestion(text)) return null;
   const bare = /^\s*(?:(?:hisob|natija)\s*:?\s*)?\d{1,2}\s*[:–—−-]\s*\d{1,2}(?:\s+\d{1,3}\s*-?\s*tur)?[.! ]*$/i.test(text);
@@ -172,7 +178,7 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
     const callback = update.callback_query;
     if (typeof callback?.data === 'string' && /^rs:(approve|reject):[a-f0-9]{24}$/.test(callback.data)) {
       const message = callback.message, actor = callback.from?.id;
-      if (!Number.isSafeInteger(actor) || callback.from?.is_bot || !await authorize(actor)) {
+      if (!Number.isSafeInteger(actor) || callback.from?.is_bot) {
         await answerTelegramCallback(callback.id, 'Faqat vakolatli admin tasdiqlaydi.', true); return { handled: true, result: 'unauthorized' };
       }
       const client = getAiRedisClient(signal);
@@ -183,21 +189,26 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
       if (!p || message?.from?.id !== botId || message?.chat?.id !== p.chat || message.message_thread_id !== p.thread || message.message_id !== p.deliveredMessage || p.expiresAt <= Date.now()) {
         await answerTelegramCallback(callback.id, 'Taklif topilmadi yoki muddati o‘tgan.', true); return { handled: true, result: 'invalid' };
       }
+      const isUzeflife=p.kind==='uzeflife';
+      if(isUzeflife&&p.thread!==UZEFLIFE_RESULT_TOPIC||!isUzeflife&&p.thread===UZEFLIFE_RESULT_TOPIC){await answerTelegramCallback(callback.id,'Mavzu va turnir mos emas.',true);return {handled:true,result:'invalid'};}
+      if(!await (isUzeflife?authorizeUzeflifeTopicResult(actor):authorize(actor))){await answerTelegramCallback(callback.id,'Faqat vakolatli admin tasdiqlaydi.',true);return {handled:true,result:'unauthorized'};}
       const state = action === 'approve' ? 'executing' : 'cancelled';
-      const claimed = await client.eval(TOPIC_RESULT_CLAIM, [proposalKey(token), prefix+'fixture:'+p.plan.targetId, sourceKey(p.chat,p.thread,p.sourceMessage),sourceKey(p.chat,p.thread,p.originalSourceMessage||p.sourceMessage)], [Date.now(),p.chat,p.thread,p.deliveredMessage,state,ttl]);
+      const claimed = await client.eval(TOPIC_RESULT_CLAIM, [proposalKey(token), prefix+'fixture:'+(isUzeflife?'uzeflife:':'')+p.plan.targetId, sourceKey(p.chat,p.thread,p.sourceMessage),sourceKey(p.chat,p.thread,p.originalSourceMessage||p.sourceMessage)], [Date.now(),p.chat,p.thread,p.deliveredMessage,state,ttl]);
       if (Number(claimed) !== 1) { await answerTelegramCallback(callback.id, 'Taklif eskirgan yoki allaqachon ko‘rib chiqilgan.', true); return { handled: true, result: 'already_processed' }; }
       let reply = 'Taklif rad etildi. Natija o‘zgarmadi.';
       if (action === 'approve') {
         try {
-          const result = await withinAiDeadline(signal, () => (testDependencies.execute || executeAiAdminRoute)(p.plan,actor,'topic-result-'+token,signal));
+          const result = await withinAiDeadline(signal, () => isUzeflife?executeUzeflifeTopicResult(p.plan,actor,p.submitter,{chat:p.chat,thread:p.thread,message:p.sourceMessage}):(testDependencies.execute || executeAiAdminRoute)(p.plan,actor,'topic-result-'+token,signal));
           if (result.status >= 200 && result.status < 300 && result.data?.success !== false && !result.data?.error) {
             const outcome = inspectAiAdminOutcome(p.plan,result.data);
-            reply = outcome.state === 'verified' ? `Natija saqlandi:\n${p.summary || 'O‘yin: '+p.plan.targetId}\nHisob: ${p.plan.body.homeScore}:${p.plan.body.awayScore}.${result.data?.derivedPending ? '\nTurnir jadvali yangilanish navbatiga qo‘yildi.' : ''}` : outcome.message;
+            reply = outcome.state === 'verified' ? `Natija saqlandi:\n${p.summary || 'O‘yin: '+p.plan.targetId}\nHisob: ${p.plan.body.homeScore}:${p.plan.body.awayScore}.${p.plan.body.homePenaltyScore!=null?`\nPenaltilar: ${p.plan.body.homePenaltyScore}:${p.plan.body.awayPenaltyScore}.`:''}${result.data?.derivedPending ? '\nTurnir jadvali yangilanish navbatiga qo‘yildi.' : ''}` : outcome.message;
           } else reply = 'Natija saqlanmadi: ' + String(result.data?.message || result.data?.error || 'server rad etdi').slice(0,250);
           await client.set(proposalKey(token), { ...p, state: 'done', receipt: {status:result.status} }, {ex:ttl});
-        } catch {
-          await client.set(proposalKey(token), { ...p, state: 'unknown' }, {ex:ttl});
-          reply = 'Natijani saqlash yakuni tasdiqlanmadi. Admin panelda tekshiring; amal avtomatik qayta bajarilmaydi.';
+        } catch(error:any) {
+          const rejected=isUzeflife&&Number.isInteger(error?.statusCode)&&error.statusCode>=400&&error.statusCode<500;
+          await client.set(proposalKey(token), { ...p, state: rejected?'rejected':'unknown' }, {ex:ttl});
+          if(rejected)await client.eval(TOPIC_RESULT_RELEASE,[prefix+'fixture:uzeflife:'+p.plan.targetId],[token]);
+          reply = rejected?'Natija saqlanmadi: '+String(error.message).slice(0,250):'Natijani saqlash yakuni tasdiqlanmadi. Admin panelda tekshiring; amal avtomatik qayta bajarilmaydi.';
         }
       }
       await sendTelegramMessage(p.chat, reply, {parse_mode:null,message_thread_id:p.thread,reply_to_message_id:p.sourceMessage,signal});
@@ -205,7 +216,7 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
       return {handled:true,result:state};
     }
     const m = update.edited_message || update.message;
-    if (!m || m.chat?.username?.toLowerCase() !== 'efleagueuz' || ![2,3,4,5,6,7,8,2335].includes(m.message_thread_id) || !Number.isSafeInteger(m.from?.id) || m.from.id <= 0 || m.from.is_bot || m.sender_chat || m.forward_origin || m.forward_from || m.forward_from_chat) return {handled:false};
+    if (!m || m.chat?.username?.toLowerCase() !== 'efleagueuz' || ![2,3,4,5,6,7,8,2335,UZEFLIFE_RESULT_TOPIC].includes(m.message_thread_id) || !Number.isSafeInteger(m.from?.id) || m.from.id <= 0 || m.from.is_bot || m.sender_chat || m.forward_origin || m.forward_from || m.forward_from_chat) return {handled:false};
     let text = String(m.text || m.caption || '').trim();
     if (!text && !update.edited_message) return {handled:false};
     const client = getAiRedisClient(signal);
@@ -276,10 +287,10 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
     const old=await client.get<ResultContext>(ctxKey);
     if(old && old.updateId<=update.update_id)await client.eval(TOPIC_RESULT_CONTEXT,[ctxKey],['cancel',old.token]);
     const token = randomBytes(12).toString('hex'), f = planned.fixture;
-    const p: TopicResultProposal = {token,chat:m.chat.id,thread:m.message_thread_id,sourceMessage:m.message_id,submitter:m.from.id,updateId:update.update_id,expiresAt:Date.now()+ttl*1000,state:'pending',plan:planned.plan,expectedFixture:planned.expectedFixture,summary:fixtureLabel(f),...(continuation?{originalSourceMessage:continuation.sourceMessage,originalSourceUpdateId:continuation.sourceUpdateId}:{})};
+    const p: TopicResultProposal = {token,chat:m.chat.id,thread:m.message_thread_id,sourceMessage:m.message_id,submitter:m.from.id,updateId:update.update_id,expiresAt:Date.now()+ttl*1000,state:'pending',plan:planned.plan,expectedFixture:planned.expectedFixture,summary:fixtureLabel(f),...('kind' in planned&&planned.kind==='uzeflife'?{kind:'uzeflife' as const}:{}),...(continuation?{originalSourceMessage:continuation.sourceMessage,originalSourceUpdateId:continuation.sourceUpdateId}:{})};
     const published = await client.eval(TOPIC_RESULT_PUBLISH,[proposalKey(token),latestKey],[JSON.stringify(p),update.update_id,update.edited_message?'1':'0',ttl,JSON.stringify({token,updateId:update.update_id,hash:createHash('sha256').update(text).digest('hex')})]);
     if (Number(published) !== 1) return {handled:true,result:'duplicate_source'};
-    const reply = `Tasdiqlash uchun natija:\n${f.home} ${planned.plan.body.homeScore}:${planned.plan.body.awayScore} ${f.away}\n${f.competition} · ${f.roundName || f.matchday+'-tur'}\n\nHali bazaga yozilmadi. Faqat vakolatli admin tasdiqlaydi.\n24 soat amal qiladi.`;
+    const reply = `Tasdiqlash uchun natija:\n${f.home} ${planned.plan.body.homeScore}:${planned.plan.body.awayScore} ${f.away}\n${f.competition} · ${f.roundName || f.matchday+'-tur'}${planned.plan.body.homePenaltyScore!=null?`\nPenaltilar: ${planned.plan.body.homePenaltyScore}:${planned.plan.body.awayPenaltyScore}`:''}\n\nHali bazaga yozilmadi. Faqat vakolatli admin tasdiqlaydi.\n24 soat amal qiladi.`;
     const sent = await sendTelegramMessage(m.chat.id,reply,{parse_mode:null,message_thread_id:m.message_thread_id,reply_to_message_id:m.message_id,reply_markup:{inline_keyboard:[[{text:'Tasdiqlash',callback_data:'rs:approve:'+token},{text:'Rad etish',callback_data:'rs:reject:'+token}]]},signal});
     if (sent.ok && Number.isSafeInteger(sent.result?.message_id)) await client.set(proposalKey(token),{...p,deliveredMessage:sent.result.message_id},{ex:ttl});
     else await client.set(proposalKey(token),{...p,state:'delivery_unknown'},{ex:ttl});
