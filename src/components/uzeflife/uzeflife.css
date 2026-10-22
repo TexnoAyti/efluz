@@ -98,3 +98,7 @@
 }
 .uzeflife .u-hero-name .u-status { margin-top: 0; }
 .efl-preview .uzeflife .competition-standings .competition-points { width: 52px; }
+.u-dialog-scoreboard { display: grid; gap: 8px; padding: 8px 0; }
+.u-dialog-scoreboard > div { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px; border-radius: 10px; background: var(--efl-surface-2); }
+.u-dialog-scoreboard > div > span { min-width: 0; font-size: 12px; font-weight: 750; line-height: 1.6; overflow-wrap: anywhere; }
+.u-dialog-scoreboard > div > strong { flex-shrink: 0; font-size: 20px; font-variant-numeric: tabular-nums; }
