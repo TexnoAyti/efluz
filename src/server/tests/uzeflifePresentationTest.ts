@@ -41,12 +41,12 @@ assert.equal(slots.length,255);assert.ok(slots.every(m=>!m.home&&!m.away&&!m.win
 for(let b=1;b<=8;b++){
  const tree=renderToStaticMarkup(React.createElement(UzeflifeBracket,{state,bracket:b,onMatch:()=>{}}));
  assert.equal((tree.match(/class="u-tree-match[ "]/g)||[]).length,31);
- assert.equal((tree.match(/class="u-tree-lines">([\s\S]*?)<\/svg>/)![1].match(/<path /g)||[]).length,30);
+ assert.equal((tree.match(/class="u-tree-lines"[^>]*>([\s\S]*?)<\/svg>/)![1].match(/<path /g)||[]).length,30);
  assert.ok(!tree.includes('slot-'),'Display placeholders never masquerade as registered players');
 }
 const final=renderToStaticMarkup(React.createElement(UzeflifeBracket,{state,bracket:0,onMatch:()=>{}}));
 assert.equal((final.match(/class="u-tree-match[ "]/g)||[]).length,7);
-assert.equal((final.match(/class="u-tree-lines">([\s\S]*?)<\/svg>/)![1].match(/<path /g)||[]).length,6);
+assert.equal((final.match(/class="u-tree-lines"[^>]*>([\s\S]*?)<\/svg>/)![1].match(/<path /g)||[]).length,6);
 assert.ok(final.includes('1-setka g‘olibi')&&final.includes('8-setka g‘olibi'));
 assert.ok(uSourceLabel(slots.find(m=>m.id==='r3m8')!,'home').includes('1-o‘yin'));
 assert.ok(render(state,'fixtures').includes('Raqiblar qur’ada aniqlanadi'));
@@ -91,3 +91,15 @@ assert.ok(scored.includes('G‘olib: Abdurahmonov Muhammadazizbek')&&scored.incl
 const waiting=bracketMarkup({...detailed,matches:detailed.matches.map(m=>m.id===firstMatch.id?{...m,winner:null,homeScore:null,awayScore:null,penaltyHome:null,penaltyAway:null}:m)},1,'away');
 assert.ok(waiting.includes('is-current')&&waiting.includes('is-mine'));
 console.log('PASS playoff styling states and unchanged 32-player / eight-player tree geometry.');
+
+// Cup-style connections have an explicit no-fill SVG contract, even before CSS loads.
+const connectorSvg=compact.match(/class="u-tree-lines"[^>]*>([\s\S]*?)<\/svg>/)![1];
+const connections=[...connectorSvg.matchAll(/<path ([^>]+)>/g)].map(m=>m[1]);
+assert.equal(connections.length,30);
+for(const attributes of connections){assert.ok(attributes.includes('fill="none"')&&attributes.includes('stroke="url(#uzeflife-cup-line-'));assert.ok(/d="M [^"]+ C /.test(attributes),'Connections use the cup bracket curves instead of square elbows');}
+assert.ok(compact.includes('efl-theme-connector-start')&&compact.includes('efl-theme-connector-end'));
+assert.ok(compact.includes('u-tree-final efl-theme-final'),'Final shares the existing cup gold surface');
+const twoTrees=renderToStaticMarkup(React.createElement(React.Fragment,null,React.createElement(UzeflifeBracket,{state,bracket:1,onMatch:()=>{}}),React.createElement(UzeflifeBracket,{state,bracket:2,onMatch:()=>{}})));
+const gradientIds=[...twoTrees.matchAll(/<linearGradient id="([^"]+)"/g)].map(m=>m[1]);
+assert.equal(gradientIds.length,2);assert.equal(new Set(gradientIds).size,2,'Separate brackets never reference another SVG gradient');
+console.log('PASS cup gradient/curved connectors, explicit no-fill paths, gold final and unique SVG IDs.');
