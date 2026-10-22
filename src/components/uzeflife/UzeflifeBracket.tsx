@@ -1,10 +1,11 @@
-import React,{useMemo} from 'react';
+import React,{useMemo,useId} from 'react';
 import {Trophy,Check,UserRound,Clock3,ChevronRight} from 'lucide-react';
 import {layoutKnockout} from '../../lib/knockoutLayout';
 import {uDisplayMatches,uMatchNumber,uRoundLabel,uSourceLabel} from '../../lib/uzeflifePresentation';
 import type {UMatch,UState} from '../../types/uzeflife';
 
 export function UzeflifeBracket({state,bracket,onMatch,userId}:{state:UState;bracket:number;userId?:string;onMatch:(match:UMatch)=>void}) {
+  const gradientId='uzeflife-cup-line-'+useId().replace(/[^a-zA-Z0-9_-]/g,'');
   const fixtures=uDisplayMatches(state).filter(m=>m.bracket===bracket);
   const lastRound=bracket===0?8:5;
   const firstRound=bracket===0?6:1;
@@ -21,13 +22,14 @@ export function UzeflifeBracket({state,bracket,onMatch,userId}:{state:UState;bra
     <div className="u-section-heading"><div><h3>{bracket?`${bracket}-setka`:'Final bosqichi'}</h3><p>{bracket?'32 ishtirokchidan bittasi final bosqichiga chiqadi.':'8 setka g‘olibidan bitta chempion.'}</p></div><Trophy size={20}/></div>
     <div className="u-tree-scroll" tabIndex={0} aria-label="Pley-off setkasi, yon tomonga suring">
       <div className="u-tree" style={{width:layout.width,height:layout.height}}>
-        <svg width={layout.width} height={layout.height} aria-hidden="true" className="u-tree-lines">
+        <svg width={layout.width} height={layout.height} aria-hidden="true" className="u-tree-lines" fill="none">
+          <defs><linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0"><stop offset="0%" className="efl-theme-connector-start" stopColor="rgba(96,165,250,0.34)"/><stop offset="100%" className="efl-theme-connector-end" stopColor="rgba(251,191,36,0.42)"/></linearGradient></defs>
           {fixtures.map(m=>{
             const from=layout.positions.get(m.id);
             const to=layout.positions.get(`r${m.round+1}m${Math.floor(Number(m.id.split('m')[1])/2)}`);
             if(!from||!to||m.round===lastRound)return null;
             const right=to.x>from.x,x1=from.x+(right?200:0),x2=to.x+(right?0:200),y1=from.y+54,y2=to.y+54,mid=(x1+x2)/2;
-            return <path key={m.id} className={m.winner?'u-tree-link-complete':undefined} d={`M${x1},${y1}H${mid}V${y2}H${x2}`}/>;
+            return <path key={m.id} className={m.winner?'u-tree-link-complete':undefined} d={`M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`} fill="none" stroke={`url(#${gradientId})`} strokeWidth={m.winner?2.25:1.5} strokeLinecap="round" vectorEffect="non-scaling-stroke"/>;
           })}
         </svg>
         {layout.columns.map(c=><span className={`u-tree-heading ${Number(c.key)===state.round||c.key==='FINAL'&&state.round===lastRound?'is-current':''} ${c.key==='FINAL'?'is-final':''}`} style={{left:c.x,width:200}} key={`${c.key}-${c.side}`}>{c.key==='FINAL'?<Trophy size={12}/>:<span className="u-tree-round-dot"/>}{uRoundLabel(c.key==='FINAL'?lastRound:Number(c.key))}</span>)}
@@ -37,7 +39,7 @@ export function UzeflifeBracket({state,bracket,onMatch,userId}:{state:UState;bra
           const ready=!!m.home&&!!m.away;
           const current=ready&&!m.winner&&m.round===state.round&&state.status==='playing';
           const status=m.winner?'Yakunlandi':m.proposal?'Tasdiq kutilmoqda':!ready?'Raqib kutilmoqda':m.scheduledAt?new Date(m.scheduledAt).toLocaleTimeString('uz-UZ',{timeZone:'Asia/Tashkent',hour:'2-digit',minute:'2-digit'}):'Kutilmoqda';
-          return <button key={m.id} type="button" className={`u-tree-match ${m.round===lastRound?'u-tree-final':''} ${m.winner?'is-complete':current?'is-current':!ready?'is-placeholder':''} ${isMine?'is-mine':''}`} style={{left:pos.x,top:pos.y,width:200,height:108}} onClick={()=>onMatch(m)} aria-label={`${uRoundLabel(m.round)}, ${uMatchNumber(m)}-o‘yin: ${name(m,'home')} — ${name(m,'away')}. ${status}${m.winner?`. Hisob ${m.homeScore}:${m.awayScore}${m.penaltyHome!==null?`, penaltilar ${m.penaltyHome}:${m.penaltyAway}`:''}. G‘olib: ${state.participants.find(p=>p.id===m.winner)?.name||'Aniqlanmagan'}`:''}${isMine?'. Sizning o‘yiningiz':''}`}>
+          return <button key={m.id} type="button" className={`u-tree-match ${m.round===lastRound?'u-tree-final efl-theme-final':''} ${m.winner?'is-complete':current?'is-current':!ready?'is-placeholder':''} ${isMine?'is-mine':''}`} style={{left:pos.x,top:pos.y,width:200,height:108}} onClick={()=>onMatch(m)} aria-label={`${uRoundLabel(m.round)}, ${uMatchNumber(m)}-o‘yin: ${name(m,'home')} — ${name(m,'away')}. ${status}${m.winner?`. Hisob ${m.homeScore}:${m.awayScore}${m.penaltyHome!==null?`, penaltilar ${m.penaltyHome}:${m.penaltyAway}`:''}. G‘olib: ${state.participants.find(p=>p.id===m.winner)?.name||'Aniqlanmagan'}`:''}${isMine?'. Sizning o‘yiningiz':''}`}>
             <span className="u-tree-match-meta"><span className="u-tree-match-number">{m.round===lastRound?<Trophy size={11}/>:<span className="u-tree-match-dot"/>}{m.round===lastRound?'Final':`${uMatchNumber(m)}-o‘yin`}</span><span className="u-tree-match-state">{m.winner?<Check size={10}/>:m.proposal||m.scheduledAt?<Clock3 size={10}/>:null}{status}</span></span>
             {(['home','away'] as const).map(side=>{
               const winner=!!m[side]&&m.winner===m[side],playerName=name(m,side);
