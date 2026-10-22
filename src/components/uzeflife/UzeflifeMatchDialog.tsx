@@ -18,7 +18,7 @@ export function UzeflifeMatchDialog({match:m,state:s,userId,busy,error,subscript
   return createPortal(<dialog ref={dialog} className="efl-custom-tournaments tourney-dialog uzeflife u-native-dialog" onCancel={e=>{e.preventDefault();if(!busy)onClose();}} aria-labelledby="u-match-title">
     <header><div><p className="tourney-eyebrow">{m.bracket?`${m.bracket}-setka`:'Final bosqichi'} · {uRoundLabel(m.round)}</p><h2 id="u-match-title">{uMatchNumber(m)}-o‘yin</h2></div><button className="tourney-button !p-2" disabled={busy} onClick={onClose} aria-label="O‘yinni yopish"><X size={18}/></button></header>
     <div className="tourney-dialog-body">
-      <div className="u-match-teams u-dialog-score"><span>{name('home')}</span><strong className="u-match-score">{m.homeScore??'–'} : {m.awayScore??'–'}</strong><span>{name('away')}</span></div>
+      <div className="u-dialog-score u-dialog-scoreboard"><div><span>{name('home')}</span><strong>{m.homeScore??'–'}</strong></div><div><span>{name('away')}</span><strong>{m.awayScore??'–'}</strong></div></div>
       {m.penaltyHome!==null&&<p className="tourney-muted">Penaltilar: {m.penaltyHome} : {m.penaltyAway}</p>}
       <p className="tourney-muted">{m.winner?'Natija tasdiqlangan.':m.proposal?'Natija yuborilgan. Raqib yoki administrator tasdig‘i kutilmoqda.':real?'O‘yin hali yakunlanmagan.':'Qur’a tashlangach raqiblar shu yerda ko‘rinadi.'}</p>
       {m.scheduledAt&&<p className="flex items-center gap-2 text-xs"><CalendarDays size={14}/>{new Date(m.scheduledAt).toLocaleString('uz-UZ',{timeZone:'Asia/Tashkent',dateStyle:'medium',timeStyle:'short'})}</p>}

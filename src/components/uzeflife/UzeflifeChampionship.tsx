@@ -1,6 +1,7 @@
 import React,{useState} from 'react';
 import {Trophy,Users,CalendarDays,GitBranch,Info,Shield,ClipboardList,RefreshCw,ChevronRight,CheckCircle2,Clock,ArrowLeft} from 'lucide-react';
 import {CompetitionBanner,CompetitionTabs} from '../CompetitionChrome';
+import {CompetitionFixtureCard,CompetitionStandings,type StandingsView} from '../CompetitionContent';
 import {CompetitionToolbar} from '../CompetitionWorkspace';
 import {U_STATUS,type UChannel,type UMatch} from '../../types/uzeflife';
 import type {UViewState} from '../../lib/uzeflifeApi';
@@ -13,6 +14,8 @@ type Tab='overview'|'fixtures'|'bracket'|'participants'|'results'|'standings';
 export function UzeflifeChampionship({state:s,userId,busy,error,notice,missing,act,onRefresh,initialTab='overview'}:{state:UViewState;userId?:string;busy:boolean;error:string;notice:string;missing:UChannel[];act:UAct;onRefresh:()=>void;initialTab?:Tab}) {
   const [tab,setTab]=useState<Tab>(initialTab),[admin,setAdmin]=useState(false);
   const [bracket,setBracket]=useState(s.round>5?0:1),[round,setRound]=useState(0),[group,setGroup]=useState('all');
+  const [standingsView,setStandingsView]=useState<StandingsView>('short');
+  const [participantPage,setParticipantPage]=useState(0),[standingsPage,setStandingsPage]=useState(0);
   const [search,setSearch]=useState(''),[page,setPage]=useState(0),[selected,setSelected]=useState<UMatch|null>(null);
   const approved=s.participants.filter(p=>p.status==='approved');
   const mine=s.participants.find(p=>p.id===userId);
@@ -24,15 +27,27 @@ export function UzeflifeChampionship({state:s,userId,busy,error,notice,missing,a
   const navigate=(next:Tab)=>{setTab(next);setPage(0);};
   const subscriptionChannels=missing.length?missing:s.subscriptionsEnabled&&s.status==='registration'&&!mine?s.channels:[];
   const subscriptionNotice=subscriptionChannels.length>0?<div className="tourney-note space-y-3"><p>Ishtirok etish uchun quyidagi kanallarga obuna bo‘ling.</p><div className="tourney-action-row">{subscriptionChannels.map(c=><a key={c.id} className="tourney-button" href={c.url} target="_blank" rel="noreferrer">{c.title} ↗</a>)}</div><button className="tourney-button" disabled={busy} onClick={()=>void act('subscription-check')}>✅ Obunani tekshirish</button></div>:null;
-  const matchCard=(m:UMatch)=><button type="button" key={m.id} className={`u-match-card ${[m.home,m.away].includes(userId||'')?'is-mine':''}`} onClick={()=>openMatch(m)}>
-    <span className="u-match-meta"><span>{m.bracket?`${m.bracket}-setka`:'Final bosqichi'} · {uRoundLabel(m.round)}</span><span>{m.winner?'Yakunlandi':m.proposal?'Tasdiq kutilmoqda':m.scheduledAt?new Date(m.scheduledAt).toLocaleString('uz-UZ',{timeZone:'Asia/Tashkent',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'Vaqti belgilanmagan'}</span></span>
-    <span className="u-match-teams"><span>{m.home?name(m.home):uSourceLabel(m,'home')}</span><strong className="u-match-score">{m.homeScore??'–'} : {m.awayScore??'–'}</strong><span>{m.away?name(m.away):uSourceLabel(m,'away')}</span></span>
-    {m.penaltyHome!==null&&<span className="block text-center text-[10px] mt-1 tourney-muted">Penaltilar {m.penaltyHome} : {m.penaltyAway}</span>}
-  </button>;
+  const matchCard=(m:UMatch)=><CompetitionFixtureCard key={m.id}
+    onClick={()=>openMatch(m)} highlighted={[m.home,m.away].includes(userId||'')}
+    className="u-league-match"
+    caption={`${m.bracket?`${m.bracket}-setka`:'Final bosqichi'} · ${uRoundLabel(m.round)}`}
+    status={m.winner?'Yakunlandi':m.proposal?'Tasdiq kutilmoqda':'Kutilmoqda'}
+    statusTone={m.winner?'success':m.proposal?'warning':'neutral'}
+    home={<span className="u-match-identity" title={m.home?name(m.home):uSourceLabel(m,'home')}>{m.home?name(m.home):uSourceLabel(m,'home')}</span>}
+    away={<span className="u-match-identity" title={m.away?name(m.away):uSourceLabel(m,'away')}>{m.away?name(m.away):uSourceLabel(m,'away')}</span>}
+    score={<>{m.homeScore??'–'} : {m.awayScore??'–'}</>}
+  >
+    {m.penaltyHome!==null&&<p className="text-center text-[10px] text-[var(--efl-text-2)]">Penaltilar {m.penaltyHome} : {m.penaltyAway}</p>}
+    <div className="u-match-footer"><span>{m.scheduledAt?new Date(m.scheduledAt).toLocaleString('uz-UZ',{timeZone:'Asia/Tashkent',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'Vaqti belgilanmagan'}</span><span>Tafsilotlar <ChevronRight size={12}/></span></div>
+  </CompetitionFixtureCard>;
   const tabs:{id:Tab;label:string;icon:typeof Trophy}[]=[{id:'overview',label:'Turnir',icon:Info},{id:'fixtures',label:'O‘yinlar',icon:CalendarDays},{id:'bracket',label:'Pley-off',icon:GitBranch},{id:'participants',label:'Ishtirokchilar',icon:Users},{id:'results',label:'Natijalar',icon:Trophy},{id:'standings',label:'Jadval',icon:ClipboardList}];
   const selectedRound=round||s.round||1;
   const filteredMatches=s.matches.filter(m=>m.round===selectedRound&&(group==='all'||m.bracket===Number(group))&&(tab!=='results'||!!m.winner));
   const participants=s.participants.filter(p=>p.status==='approved'||p.status==='removed'&&s.matches.some(m=>m.home===p.id||m.away===p.id));
+  const visibleParticipants=approved.filter(p=>p.name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
+  const pp=Math.min(participantPage,Math.max(0,Math.ceil(visibleParticipants.length/20)-1));
+  const sp=Math.min(standingsPage,Math.max(0,Math.ceil(participants.length/20)-1));
+  const pagination=(current:number,total:number,set:(page:number)=>void)=>total>20?<nav className="u-page-controls" aria-label="Ro‘yxat sahifalari"><button className="tourney-button" disabled={current===0} onClick={()=>set(current-1)}>Oldingi</button><span>{current+1} / {Math.ceil(total/20)}</span><button className="tourney-button" disabled={(current+1)*20>=total} onClick={()=>set(current+1)}>Keyingi</button></nav>:null;
   const participantState=(id:string)=>champion===id?'Chempion':s.matches.some(m=>m.winner&&m.winner!==id&&[m.home,m.away].includes(id))||s.participants.find(p=>p.id===id)?.status==='removed'?'Musobaqani tark etgan':'Ishtirok etmoqda';
   const activeMatch=selected?(s.matches.find(m=>m.id===selected.id)||selected):null;
   return <div className="efl-custom-tournaments tourney-page uzeflife">
@@ -41,37 +56,56 @@ export function UzeflifeChampionship({state:s,userId,busy,error,notice,missing,a
       <UzeflifeAdmin state={s} busy={busy} act={act} onBack={()=>setAdmin(false)} onMatches={()=>{setAdmin(false);navigate('fixtures');}}/>
     </>:<>
       <CompetitionBanner>
-        <div className="u-hero-top"><span className="u-emblem"><Trophy size={27}/></span><div className="u-hero-name"><h2>UZEFLIFE</h2><p>EFLUZ chempionati</p><span className="u-status mt-2"><i className="u-status-dot"/>{U_STATUS[s.status]}</span></div><div className="u-tools"><button className="tourney-button" disabled={busy} aria-label="Turnirni yangilash" onClick={onRefresh}><RefreshCw size={15} className={busy?'animate-spin':''}/></button>{s.permissions.length>0&&<button className="tourney-button" onClick={()=>setAdmin(true)} aria-label="Turnir boshqaruvi"><Shield size={15}/></button>}</div></div>
-        <div className="u-stat-row"><div><strong>{approved.length}<small className="text-xs font-normal tourney-muted"> / 256</small></strong><span>Ishtirokchi</span></div><div><strong>8 × 32</strong><span>Saralash setkalari</span></div><div><strong>{s.round?uRoundLabel(s.round):'8 g‘olib'}</strong><span>{s.round?(s.round<=5?'Saralash bosqichi':'Final bosqichi'):'Final bosqichida'}</span></div></div>
+        <div className="u-hero-top">
+          <span className="efl-theme-league-logo u-emblem"><Trophy size={26}/></span>
+          <div className="u-hero-name">
+            <div className="efl-fit-wrap flex items-center gap-2"><span className="text-[10px] font-bold text-[var(--efl-text-2)] uppercase tracking-wider">EFLUZ chempionati</span><span className="u-status">{U_STATUS[s.status]}</span></div>
+            <h1 className="text-xl sm:text-2xl font-black text-[var(--efl-text)] tracking-tight mt-0.5">UZEFLIFE</h1>
+            <div className="efl-fit-wrap flex items-center gap-2 mt-1.5 text-[11px] text-[var(--efl-text-2)]"><span>{approved.length}/256 ishtirokchi</span><span>·</span><span>{s.round?uRoundLabel(s.round):'8 ta saralash setkasi'}</span></div>
+          </div>
+          <div className="u-tools"><button className="tourney-button" disabled={busy} aria-label="Turnirni yangilash" onClick={onRefresh}><RefreshCw size={15} className={busy?'animate-spin':''}/></button>{s.permissions.length>0&&<button className="tourney-button" onClick={()=>setAdmin(true)} aria-label="Turnir boshqaruvi"><Shield size={15}/></button>}</div>
+        </div>
       </CompetitionBanner>
       <CompetitionTabs<Tab> items={tabs} value={tab} onChange={navigate} label="UZEFLIFE turniri"/>
       {(error||notice)&&<p role={error?'alert':'status'} className={`tourney-note ${error?'error':''}`}>{error||notice}</p>}
       {tab==='overview'&&<>
         {champion&&<div className="tourney-surface u-registration"><div className="flex gap-3 items-center"><Trophy size={26}/><div><h3>UZEFLIFE chempioni</h3><p>{name(champion)}</p></div></div><button className="tourney-button" onClick={()=>navigate('results')}>Final natijasi</button></div>}
-        <section className="tourney-surface" aria-label="Ro‘yxatdan o‘tish">
+        {(!s.matches.length||mine?.status==='pending')&&<section className="tourney-surface" aria-label="Ro‘yxatdan o‘tish">
           <div className="u-registration"><div><h3>{mine?.status==='approved'?'Siz UZEFLIFE ishtirokchisisiz':mine?.status==='pending'?'Arizangiz qabul qilindi':'UZEFLIFE’da ishtirok eting'}</h3><p>{mine?.status==='approved'?'Raqib va o‘yin vaqti jadvalda ko‘rinadi.':mine?.status==='pending'?'Administrator tasdig‘ini kuting.':s.status==='registration'?'256 o‘rin uchun ro‘yxatdan o‘tish ochiq.':s.status==='draft'?'Ro‘yxatdan o‘tish boshlanishi shu yerda e’lon qilinadi.':'Turnir boshlangan. O‘yinlar va natijalarni kuzating.'}</p></div>{mine?.status==='approved'?<CheckCircle2 size={23} className="text-[var(--efl-primary)]"/>:mine?.status==='pending'?<Clock size={23}/>:s.status==='registration'&&<button className="tourney-button primary" disabled={busy||!userId||approved.length>=256} onClick={()=>void act('register')}>Ro‘yxatdan o‘tish</button>}</div>
           {!s.matches.length&&<><div className="u-progress"><span style={{width:`${approved.length/256*100}%`}}/></div><p className="text-[10px] tourney-muted">{approved.length} ishtirokchi tasdiqlangan · {256-approved.length} o‘rin</p></>}
           {subscriptionNotice&&<div className="mt-3">{subscriptionNotice}</div>}
-        </section>
+        </section>}
         {myNext&&<section><div className="u-section-heading"><h3>Sizning o‘yiningiz</h3></div>{matchCard(myNext)}</section>}
         <section><div className="u-section-heading"><div><h3>Saralash setkalari</h3><p>Har bir setkadan bittadan g‘olib final bosqichiga chiqadi.</p></div><span className="u-status">256 → 8</span></div><div className="u-bracket-grid">{Array.from({length:8},(_,i)=>{
           const id=i+1,winner=winnerOf(id),finished=s.matches.filter(m=>m.bracket===id&&m.winner).length;
-          return <button className="u-bracket-entry" key={id} onClick={()=>{setBracket(id);navigate('bracket');}}><span className="u-entry-title"><strong>{id}-setka</strong><ChevronRight size={15}/></span><span>{winner?name(winner):'32 ishtirokchi · 1 yo‘llanma'}</span>{s.matches.length>0&&<span>{winner?'G‘olib aniqlandi':`${finished}/31 o‘yin yakunlangan`}</span>}</button>;
+          return <button className="u-bracket-entry" key={id} onClick={()=>{setBracket(id);navigate('bracket');}}><span className="u-entry-title"><strong>{id}-setka</strong><ChevronRight size={15}/></span><span>{winner?name(winner):'32 ishtirokchi'}</span>{s.matches.length>0&&<span>{winner?'Final bosqichiga chiqdi':`${finished}/31 yakunlangan`}</span>}</button>;
         })}</div><button className="u-final-entry" onClick={()=>{setBracket(0);navigate('bracket');}}><Trophy size={23}/><span className="flex-1"><strong>Final bosqichi</strong><small>8 g‘olib · Chorak final → Yarim final → Final</small></span><ChevronRight size={18}/></button></section>
         {s.announcements.length>0&&<section className="tourney-surface"><h3>Turnir e’lonlari</h3>{s.announcements.map(a=><article key={a.id} className="u-announce"><p className="text-xs whitespace-pre-wrap">{a.text}</p><time>{new Date(a.at).toLocaleDateString('uz-UZ',{timeZone:'Asia/Tashkent'})}</time></article>)}</section>}
         <details className="tourney-surface"><summary className="text-xs font-bold cursor-pointer">Turnir haqida</summary><div className="space-y-3 mt-3 text-xs tourney-muted"><p>{s.description}</p><p>32 ishtirokchilik 8 setkada beshtadan pley-off bosqichi o‘ynaladi. Har bir setka g‘olibi final bosqichiga chiqadi. Final bosqichida chorak final, yarim final va final bor.</p><p>Chempionlik uchun 8 ta g‘alaba kerak. Durang natijada g‘olib penaltilar orqali aniqlanadi.</p></div></details>
       </>}
-      {tab==='bracket'&&<><nav className="u-pills" aria-label="UZEFLIFE setkalari">{Array.from({length:8},(_,i)=><button key={i+1} aria-pressed={bracket===i+1} onClick={()=>setBracket(i+1)}>{i+1}-setka</button>)}<button aria-pressed={bracket===0} onClick={()=>setBracket(0)}>Final bosqichi</button></nav><UzeflifeBracket state={s} bracket={bracket} onMatch={openMatch}/>{!s.matches.length&&<p className="tourney-muted">Turnir yo‘li belgilangan. Qur’adan so‘ng ishtirokchilar o‘z joylarida ko‘rinadi.</p>}</>}
+      {tab==='bracket'&&<><div className="u-bracket-picker"><label className="tourney-field">Saralash setkasi<select aria-label="UZEFLIFE setkasini tanlash" value={bracket} onChange={e=>setBracket(Number(e.target.value))}>{Array.from({length:8},(_,i)=><option key={i+1} value={i+1}>{i+1}-setka · 32 ishtirokchi</option>)}<option value={0}>Final bosqichi · 8 g‘olib</option></select></label>{bracket!==0&&<button className="tourney-button" onClick={()=>setBracket(0)}><Trophy size={14}/>Final bosqichi</button>}</div><UzeflifeBracket state={s} bracket={bracket} onMatch={openMatch}/>{!s.matches.length&&<p className="tourney-muted">Turnir yo‘li belgilangan. Qur’adan so‘ng ishtirokchilar o‘z joylarida ko‘rinadi.</p>}</>}
       {(tab==='fixtures'||tab==='results')&&<>
         {!s.matches.length?<div className="u-empty"><CalendarDays size={25}/><h3>{tab==='results'?'Natijalar hali yo‘q':'Raqiblar qur’ada aniqlanadi'}</h3><p>{tab==='results'?'Tasdiqlangan hisoblar shu yerda ko‘rinadi.':'Ro‘yxatdan o‘tish yakunlangach o‘yinlar va vaqtlari shu yerda chiqadi.'}</p><button className="tourney-button mt-4" onClick={()=>navigate('bracket')}>Turnir setkasini ko‘rish</button></div>:<>
-          <div className="flex items-center justify-between gap-3"><h3>{tab==='results'?'Natijalar':'O‘yinlar jadvali'}</h3><label className="text-xs tourney-muted">Setka <select aria-label="O‘yinlar setkasi" className="rounded-lg border border-[var(--efl-border)] bg-[var(--efl-surface)] px-2 py-2 text-[var(--efl-text)]" value={group} onChange={e=>{setGroup(e.target.value);setRound(e.target.value==='0'?6:1);setPage(0);}}><option value="all">Barchasi</option>{Array.from({length:8},(_,i)=><option key={i+1} value={i+1}>{i+1}-setka</option>)}<option value="0">Final bosqichi</option></select></label></div>
-          <nav className="u-pills" aria-label="O‘yinlar bosqichi">{Array.from({length:8},(_,i)=>i+1).filter(r=>group==='all'||(group==='0'?r>=6:r<=5)).map(r=><button key={r} aria-pressed={selectedRound===r} onClick={()=>{setRound(r);setPage(0);}}>{r<=5?`Saralash · ${U_QUALIFIER_ROUNDS[r-1]}`:U_FINAL_ROUNDS[r-6]}</button>)}</nav>
-          {filteredMatches.length?<><div className="u-match-list">{filteredMatches.slice(page*16,(page+1)*16).map(matchCard)}</div>{filteredMatches.length>16&&<div className="flex items-center justify-between text-xs"><button className="tourney-button" disabled={!page} onClick={()=>setPage(page-1)}>Oldingi</button><span>{page+1} / {Math.ceil(filteredMatches.length/16)}</span><button className="tourney-button" disabled={(page+1)*16>=filteredMatches.length} onClick={()=>setPage(page+1)}>Keyingi</button></div>}</>:<p className="u-empty">{tab==='results'?'Bu bosqichda hali tasdiqlangan natija yo‘q.':'Bu bosqichda o‘yin yo‘q.'}</p>}
+          <h3>{tab==='results'?'Natijalar':'O‘yinlar jadvali'}</h3>
+          <div className="u-fixture-filters">
+            <label className="tourney-field">Setka<select aria-label="O‘yinlar setkasi" value={group} onChange={e=>{setGroup(e.target.value);setRound(e.target.value==='0'?6:1);setPage(0);}}><option value="all">Barcha setkalar</option>{Array.from({length:8},(_,i)=><option key={i+1} value={i+1}>{i+1}-setka</option>)}<option value="0">Final bosqichi</option></select></label>
+            <label className="tourney-field">Bosqich<select aria-label="O‘yinlar bosqichi" value={selectedRound} onChange={e=>{setRound(Number(e.target.value));setPage(0);}}>{Array.from({length:8},(_,i)=>i+1).filter(r=>group==='all'||(group==='0'?r>=6:r<=5)).map(r=><option key={r} value={r}>{r<=5?`Saralash: ${U_QUALIFIER_ROUNDS[r-1]}`:`Final bosqichi: ${U_FINAL_ROUNDS[r-6]}`}</option>)}</select></label>
+          </div>
+          {filteredMatches.length?<><div className="competition-fixture-grid u-match-list">{filteredMatches.slice(page*8,(page+1)*8).map(matchCard)}</div>{filteredMatches.length>8&&<div className="flex items-center justify-between text-xs"><button className="tourney-button" disabled={!page} onClick={()=>setPage(page-1)}>Oldingi</button><span>{page+1} / {Math.ceil(filteredMatches.length/8)}</span><button className="tourney-button" disabled={(page+1)*8>=filteredMatches.length} onClick={()=>setPage(page+1)}>Keyingi</button></div>}</>:<p className="u-empty">{tab==='results'?'Bu bosqichda hali tasdiqlangan natija yo‘q.':'Bu bosqichda o‘yin yo‘q.'}</p>}
         </>}
         {missing.length>0&&subscriptionNotice}
       </>}
-      {tab==='participants'&&<><div className="u-section-heading"><h3>Ishtirokchilar</h3><span className="u-status">{approved.length} / 256</span></div>{approved.length>0&&<CompetitionToolbar value={search} onChange={setSearch} label="UZEFLIFE ishtirokchisini qidirish" placeholder="Ishtirokchi ismi"/>}<div className="tourney-surface u-participant-list">{approved.length?approved.filter(p=>p.name.toLowerCase().includes(search.trim().toLowerCase())).map((p,i)=><div className="u-participant" key={p.id}><span>{i+1}</span><strong>{p.name}{p.id===userId?' · Siz':''}</strong><small>{s.matches.length?participantState(p.id):'Tasdiqlangan'}</small></div>):<div className="u-empty"><Users size={25}/><h3>Ishtirokchilar kutilmoqda</h3><p>Tasdiqlangan ishtirokchilar shu yerda ko‘rinadi.</p></div>}</div></>}
-      {tab==='standings'&&<div className="tourney-surface overflow-x-auto"><div className="u-section-heading"><div><h3>Turnir jadvali</h3><p>Pley-offdagi g‘alabalar va ishtirok holati.</p></div></div>{participants.length?<table className="u-results-table"><thead><tr><th>№</th><th>Ishtirokchi</th><th>G‘alaba</th><th>Holat</th></tr></thead><tbody>{[...participants].sort((a,b)=>s.matches.filter(m=>m.winner===b.id).length-s.matches.filter(m=>m.winner===a.id).length).map((p,i)=><tr key={p.id}><td>{i+1}</td><td>{p.name}</td><td>{s.matches.filter(m=>m.winner===p.id).length}</td><td>{s.matches.length?participantState(p.id):'Turnir kutilmoqda'}</td></tr>)}</tbody></table>:<p className="u-empty">Jadval ishtirokchilar tasdiqlangach to‘ldiriladi.</p>}</div>}
+      {tab==='participants'&&<><div className="u-section-heading"><h3>Ishtirokchilar</h3><span className="u-status">{approved.length} / 256</span></div>{approved.length>0&&<CompetitionToolbar value={search} onChange={v=>{setSearch(v);setParticipantPage(0);}} label="UZEFLIFE ishtirokchisini qidirish" placeholder="Ishtirokchi ismi"/>}<div className="tourney-surface u-participant-list">{approved.length?visibleParticipants.slice(pp*20,(pp+1)*20).map((p,i)=><div className="u-participant" key={p.id}><span>{pp*20+i+1}</span><strong>{p.name}{p.id===userId?' · Siz':''}</strong><small>{s.matches.length?participantState(p.id):'Tasdiqlangan'}</small></div>):<div className="u-empty"><Users size={25}/><h3>Ishtirokchilar kutilmoqda</h3><p>Tasdiqlangan ishtirokchilar shu yerda ko‘rinadi.</p></div>}{approved.length>0&&visibleParticipants.length===0&&<p className="competition-empty">Nomi bo‘yicha ishtirokchi topilmadi.</p>}</div>{pagination(pp,visibleParticipants.length,setParticipantPage)}</>}
+      {tab==='standings'&&<><CompetitionStandings title="UZEFLIFE · Turnir jadvali" clubLabel="Ishtirokchi" view={standingsView} onViewChange={setStandingsView}
+        labels={{played:'O‘',won:'G‘',drawn:'D',lost:'M',difference:'TF',points:'G‘alaba',form:'Forma',short:'Qisqa',full:'To‘liq',view:'Jadval ko‘rinishi',win:'G‘alaba',draw:'Durang',loss:'Mag‘lubiyat',empty:'Natija yo‘q'}}
+        note="Pley-off jadvali g‘alabalar bo‘yicha tartiblanadi. Durang o‘yinda g‘olib penaltilar orqali aniqlanadi."
+        rows={[...participants].map(p=>{
+          const games=s.matches.filter(m=>m.winner&&[m.home,m.away].includes(p.id));
+          const won=games.filter(m=>m.winner===p.id).length;
+          const gf=games.reduce((n,m)=>n+(m.home===p.id?m.homeScore??0:m.awayScore??0),0);
+          const ga=games.reduce((n,m)=>n+(m.home===p.id?m.awayScore??0:m.homeScore??0),0);
+          return {id:p.id,position:0,identity:<div className="u-standing-identity"><strong title={p.name}>{p.name}</strong><small>{s.matches.length?participantState(p.id):'Turnir kutilmoqda'}</small></div>,played:games.length,won,drawn:0,lost:games.length-won,goalsFor:gf,goalsAgainst:ga,goalDifference:gf-ga,points:won,form:games.map(m=>m.winner===p.id?'W':'L'),highlighted:p.id===userId};
+        }).sort((a,b)=>b.won-a.won).map((p,i)=>({...p,position:i+1})).slice(sp*20,(sp+1)*20)}/>{pagination(sp,participants.length,setStandingsPage)}</>}
     </>}
     {activeMatch&&<UzeflifeMatchDialog key={activeMatch.id} match={activeMatch} state={s} userId={userId} busy={busy} error={error} subscriptionNotice={missing.length?subscriptionNotice:null} act={act} onClose={()=>setSelected(null)}/>}
   </div>;
