@@ -1,3 +1,4 @@
+import { isDesignPreview } from '../designPreview';
 import {CompetitionRounds, CompetitionFixtureCard, CompetitionStandings} from './CompetitionContent';
 import {CompetitionBanner, CompetitionTabs, CompetitionHeading} from './CompetitionChrome';
 import { isLeagueSelectionOpen } from '../lib/clubAdmission';
@@ -71,9 +72,11 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
   // League & Data states
   const [leagues, setLeagues] = useState<League[]>([]);
   const [selectedLeagueId, setSelectedLeagueId] = useState<string>(() => {
+    if (isDesignPreview) { const league = new URLSearchParams(location.search).get('previewLeague'); if (league) return league; }
     try { return EFL_2_DESIGN_ENABLED && sessionStorage.getItem('efl:preview-league') || 'league-premier-league'; } catch { return 'league-premier-league'; }
   });
   const [activeLeagueTab, setActiveLeagueTab] = useState<'CLUBS' | 'MATCHES' | 'STANDINGS'>(() => {
+    if (isDesignPreview) { const page = new URLSearchParams(location.search).get('previewPage'); if (page === 'standings' || page === 'fixtures') return page === 'standings' ? 'STANDINGS' : 'MATCHES'; }
     if (!EFL_2_DESIGN_ENABLED) return 'CLUBS';
     try {
       const target = sessionStorage.getItem('efl:preview-league-tab');

@@ -1,0 +1,10 @@
+import { cp, mkdir, rm, copyFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+if (process.env.VERCEL_ENV === 'production') throw new Error('Preview packaging forbidden in production');
+const target = resolve('build/design-preview-site');
+await rm(target, { recursive: true, force: true });
+await mkdir(target, { recursive: true });
+await cp(resolve('dist-design-preview'), target, { recursive: true });
+for (const file of ['telegram-ready.js', 'mobile-preview.html']) await rm(resolve(target, file), { force: true });
+await copyFile('vercel.design-preview.json', resolve(target, 'vercel.json'));
+console.log('Static preview package: build/design-preview-site (no server, API handlers or environment files)');

@@ -260,17 +260,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (isDesignPreview) {
         // Visual inspection only. No Telegram identity, session token, or private API access.
         setSessionToken(null);
-        setUser({
-          id: 'design-preview', telegramId: '', username: 'design_preview',
-          firstName: 'Design Preview', isAdmin: true, isSuspended: false,
-          createdAt: '', updatedAt: '',
-        });
-        const season: Season = {
-          id: 'season-2026-27', name: '2026/27', status: 'active',
-          startDate: '2026-08-01', createdAt: '',
-        };
-        setSeasons([season]);
+        const { previewUser, previewSeasons, previewClubs, previewAccountStats } = await import('../preview/data');
+        const requested = new URLSearchParams(window.location.search).get('previewSeason');
+        const season = previewSeasons.find(s => s.id === requested) || previewSeasons[0];
+        setUser(previewUser);
+        setOwnedClubs([previewClubs[0]]);
+        setCurrentClub(previewClubs[0]);
+        setUserStats(previewAccountStats(season.id));
+        setSeasons(previewSeasons);
         setCurrentSeason(season);
+        setActiveSeasonId(season.id);
         setAuthStatus('AUTHENTICATED');
         setIsLoading(false);
         return;
@@ -400,7 +399,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Rotate the short-lived session token while the Telegram Mini App remains open.
   useEffect(() => {
-    if (authStatus !== 'AUTHENTICATED') return;
+    if (authStatus !== 'AUTHENTICATED' || isDesignPreview) return;
     let lastRefreshAt = Date.now();
     let refreshing = false;
     const refreshToken = async () => {
