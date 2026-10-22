@@ -5,6 +5,7 @@ import { useI18n } from '../i18n';
 import { api } from '../lib/api';
 import { Club, Fixture } from '../types';
 import { ClubCrest } from './ClubCrest';
+import { initialSearchClubs, findSearchClubs, loadSearchClubs } from '../lib/clubSearch';
 
 interface GlobalSearchModalProps {
   isOpen: boolean;
@@ -39,7 +40,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
   const { activeSeasonId, devProfiles } = useAuth();
   const { language } = useI18n();
   const [query, setQuery] = useState('');
-  const [clubs, setClubs] = useState<Club[]>([]);
+  const [clubs, setClubs] = useState<Club[]>(initialSearchClubs);
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -56,32 +57,15 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
     let isMounted = true;
     setIsLoading(true);
 
-    const loadSearchData = async () => {
-      try {
-        const [leaguesRes, matchesRes] = await Promise.all([
-          api.getLeagues().catch(() => ({ leagues: [] })),
-          api.getMyMatches(activeSeasonId).catch(() => ({ fixtures: [] })),
-        ]);
-
-        if (!isMounted) return;
-        setFixtures(matchesRes.fixtures || []);
-
-        const leagues = leaguesRes.leagues || [];
-        const clubsResults = await Promise.all(
-          leagues.map((l) => api.getLeagueClubs(l.id, activeSeasonId).catch(() => ({ clubs: [] })))
-        );
-
-        if (!isMounted) return;
-        const allClubs = clubsResults.flatMap((r) => r.clubs || []);
-        setClubs(allClubs);
-      } catch {
-        // Safe fallback
-      } finally {
-        if (isMounted) setIsLoading(false);
-      }
-    };
-
-    void loadSearchData();
+    // Match history is optional and must never delay public club discovery.
+    setFixtures([]);
+    void api.getMyMatches(activeSeasonId)
+      .then(result => { if (isMounted) setFixtures(result.fixtures || []); })
+      .catch(() => {});
+    void loadSearchClubs(api, activeSeasonId, result => {
+      if (isMounted) setClubs(result);
+    }).catch(() => { /* Public catalog identities remain searchable offline. */ })
+      .finally(() => { if (isMounted) setIsLoading(false); });
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -97,16 +81,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
 
   const trimmed = query.trim().toLowerCase();
 
-  const filteredClubs = useMemo(() => {
-    if (!trimmed) return [];
-    return clubs
-      .filter(
-        (c) =>
-          c.name.toLowerCase().includes(trimmed) ||
-          (c.shortName && c.shortName.toLowerCase().includes(trimmed))
-      )
-      .slice(0, 5);
-  }, [clubs, trimmed]);
+  const filteredClubs = useMemo(() => findSearchClubs(clubs, query), [clubs, query]);
 
   const filteredCompetitions = useMemo(() => {
     if (!trimmed) return [];

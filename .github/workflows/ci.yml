@@ -66,6 +66,7 @@ jobs:
           bun run test:critical-safety
           bun run test:auth-quota
           bun run test:client-startup
+          node scripts/run-isolated-test.mjs src/server/tests/clubSearchRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/telegramFastOpeningTest.ts
           bun run test:security-http
           bun run test:european-safety
