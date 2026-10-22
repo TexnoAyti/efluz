@@ -13,7 +13,7 @@ const state:UViewState={...initialUState(),permissions:[],isOwner:false,isSuper:
 const render=(s=state,initialTab:any='overview',userId?:string)=>renderToStaticMarkup(React.createElement(UzeflifeChampionship,{state:s,userId,busy:false,error:'',notice:'',missing:[],act:async()=>true,onRefresh:()=>{},initialTab}));
 const html=render();
 assert.ok(html.includes('Saralash setkalari')&&html.includes('Final bosqichi'));
-assert.equal((html.match(/class="u-bracket-entry"/g)||[]).length,8);
+assert.equal((html.match(/class="competition-panel u-bracket-entry"/g)||[]).length,8);
 assert.ok(!html.includes('<form'),'Spectators see the championship, not setup forms');
 assert.ok(!html.includes('Yaratish')&&!html.includes('generator')&&!html.includes('Turnir admin paneli'));
 assert.ok(html.includes('Ro‘yxatdan o‘tish boshlanishi'));
@@ -64,3 +64,13 @@ console.log('PASS UZEFLIFE tournament experience: fixed eight-bracket overview, 
 const playersView=(s:UViewState)=>renderToStaticMarkup(React.createElement(UzeflifeParticipants,{state:s,busy:false,act:async()=>true}));
 const emptyPlayers=playersView(state);assert.ok(emptyPlayers.includes('O‘yinchini qo‘shish')&&emptyPlayers.includes('Telegram ID yoki EFLUZ akkaunt ID'));
 const adminPeople=playersView(played);assert.equal((adminPeople.match(/class="u-player-row"/g)||[]).length,20);assert.ok(adminPeople.includes('O‘yinchini qidirish'));assert.ok(!adminPeople.includes('O‘yinchini qo‘shish'),'Enrollment is closed after the draw');
+
+// Every championship state uses league primitives without organizer-workspace classes.
+for(const stage of [state,{...state,status:'registration' as const},played])for(const tab of ['overview','fixtures','bracket','participants','results','standings']){
+ const markup=render(stage,tab);
+ assert.ok(markup.includes('competition-page uzeflife')&&markup.includes('efl-league-banner-content'),'Championship shares league layout and heading');
+ assert.ok(markup.includes('competition-tabs-grid'),'Dense navigation retains the shared horizontal league tabs');
+ assert.ok(!markup.includes('tourney-')&&!markup.includes('efl-custom-tournaments'),'No organizer controls or layout inheritance in public championship');
+}
+assert.ok(!emptyPlayers.includes('tourney-'),'Player enrollment uses the league control scale');
+console.log('PASS shared league presentation across draft, registration, playing, six public sections, enrollment and management permissions.');

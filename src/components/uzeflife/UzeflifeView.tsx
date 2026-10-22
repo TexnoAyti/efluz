@@ -4,7 +4,7 @@ import {useAuth} from '../../context/AuthContext';
 import {uzeflifeRequest,type UViewState} from '../../lib/uzeflifeApi';
 import type {UChannel} from '../../types/uzeflife';
 import {UzeflifeChampionship} from './UzeflifeChampionship';
-import '../customTournaments/tournaments.css';
+import '../competition-content.css';
 import './uzeflife.css';
 
 export function UzeflifeView({management=false}:{management?:boolean}={}) {
@@ -32,7 +32,7 @@ export function UzeflifeView({management=false}:{management?:boolean}={}) {
     } catch(e:any){if(id===generation.current){setError(e.message);if(e.channels)setMissing(e.channels);}return false;}
     finally {if(id===generation.current)setBusy(false);}
   };
-  if(!state)return <div className="efl-custom-tournaments tourney-page uzeflife"><div className="u-loading" role="status">{error?<><p role="alert">{error}</p><button className="tourney-button" onClick={()=>void load()}>Qayta urinish</button></>:<><RefreshCw size={22} className="animate-spin"/><p>UZEFLIFE yuklanmoqda…</p></>}</div></div>;
-  if(management&&!state.permissions.length)return <div className="efl-custom-tournaments tourney-page uzeflife"><div className="tourney-surface" role="status"><h3>UZEFLIFE admin paneli</h3><p className="tourney-muted mt-2">Bu hisobga UZEFLIFE boshqaruv vakolati berilmagan. Turnir egasi yoki Super admindan ruxsat so‘rang.</p><button className="tourney-button mt-3" disabled={busy} onClick={()=>void load()}>Vakolatni qayta tekshirish</button></div></div>;
+  if(!state)return <div className="competition-page uzeflife"><div className="u-loading" role="status">{error?<><p role="alert">{error}</p><button className="competition-button" onClick={()=>void load()}>Qayta urinish</button></>:<><RefreshCw size={22} className="animate-spin"/><p>UZEFLIFE yuklanmoqda…</p></>}</div></div>;
+  if(management&&!state.permissions.length)return <div className="competition-page uzeflife"><div className="competition-panel" role="status"><h3>UZEFLIFE admin paneli</h3><p className="competition-muted mt-2">Bu hisobga UZEFLIFE boshqaruv vakolati berilmagan. Turnir egasi yoki Super admindan ruxsat so‘rang.</p><button className="competition-button mt-3" disabled={busy} onClick={()=>void load()}>Vakolatni qayta tekshirish</button></div></div>;
   return <UzeflifeChampionship initialAdmin={management} key={user?.id||'public'} state={state} userId={user?.id} busy={busy} error={error} notice={notice} missing={missing} act={act} onRefresh={()=>void load()}/>;
 }

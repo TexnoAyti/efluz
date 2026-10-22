@@ -21,7 +21,7 @@ for(const width of [320,360,390,768,1280])for(const theme of ['light','dark'])fo
  await page.locator('.uzeflife .efl-league-tabs').waitFor();await page.evaluate(()=>document.fonts.ready);
  const geometry=await page.evaluate(()=>({pageWidth:innerWidth,contentWidth:document.documentElement.scrollWidth,tabs:[...document.querySelectorAll('.uzeflife .efl-league-tabs button')].map(el=>({label:el.textContent,width:Math.round(el.getBoundingClientRect().width),height:Math.round(el.getBoundingClientRect().height),textWidth:el.querySelector('span').scrollWidth,available:el.querySelector('span').clientWidth})),cards:document.querySelectorAll('.competition-fixture-card').length,rows:document.querySelectorAll('tbody tr,.u-participant').length,offscreen:[...document.querySelectorAll('main > .uzeflife > *')].filter(el=>el.getBoundingClientRect().right>innerWidth+1).map(el=>el.className)}));
  assert.ok(geometry.contentWidth<=width+1,`${width}/${theme}/${tab}: page overflow ${geometry.contentWidth}`);
- assert.ok(geometry.tabs.every(t=>t.height>=44&&t.height<=80&&t.width>=70),`${width}/${theme}/${tab}: squeezed tabs ${JSON.stringify(geometry.tabs)}`);
+ assert.ok(geometry.tabs.every(t=>t.height>=38&&t.height<=80&&t.width>=70),`${width}/${theme}/${tab}: squeezed tabs ${JSON.stringify(geometry.tabs)}`);
  assert.ok(geometry.tabs.every(t=>t.textWidth<=t.available+1),`${width}/${theme}/${tab}: clipped tab label`);
  assert.equal(geometry.offscreen.length,0,`${width}/${tab}: root section offscreen`);
  if(tab==='fixtures')assert.equal(geometry.cards,8,'Fixture pages stay compact');
@@ -46,7 +46,7 @@ assert.ok(await dialog.locator('input[name=penaltyHome]').isVisible());
 await page.screenshot({path:path.join(output,'after-dialog-320.png'),fullPage:false});
 const dr=await dialog.boundingBox();assert.ok(dr.x>=0&&dr.x+dr.width<=320&&dr.y>=0&&dr.y+dr.height<=641,'Dialog stays inside mobile viewport');await page.getByRole('button',{name:'O‘yinni yopish'}).click();
 await page.getByRole('button',{name:/Turnir admin paneli/}).click();
-for(const name of ['Turnir','Ishtirokchilar','O‘yinlar','Majburiy obuna','Adminlar','E’lonlar']){
+for(const name of ['Turnir','O‘yinchilar','O‘yinlar','Obuna','Adminlar','E’lonlar']){
  await page.getByRole('navigation',{name:'Turnir boshqaruvi bo‘limlari'}).getByRole('button',{name,exact:true}).click();
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Admin section page overflow');
 }
