@@ -1,4 +1,4 @@
-import {createUzeflifeQualifier,createUzeflifeFinal,UZEFLIFE_CHAMPION_MATCHES} from '../../lib/uzeflifeBracket';
+import {createUzeflifeMatches,UZEFLIFE_CHAMPION_MATCHES} from '../../lib/uzeflifeBracket';
 import {randomUUID, randomInt} from 'node:crypto';
 import {z} from 'zod';
 import {getFirestoreDb} from '../firebase/admin';
@@ -16,17 +16,7 @@ export function requireUPermission(s:UState,u:User,p:UPermission|'super'|'owner'
 }
 export function generateUBracket(ids:string[]):UMatch[]{
  if(ids.length!==256||new Set(ids).size!==256)throw uError('256 ta tasdiqlangan ishtirokchi kerak.');
- const matches:UMatch[]=[];
- const rounds=[...createUzeflifeQualifier(ids),...createUzeflifeFinal(Array.from({length:8},(_,i)=>`qualifier-${i+1}`))];
- for(const stage of rounds){
-  const r=stage.stage==='QUALIFIER'?stage.round:stage.round+5;
-  for(let i=0;i<stage.matches.length;i++){
-   const index=stage.stage==='QUALIFIER'?(stage.group!-1)*(32/2**r)+i:i;
-   matches.push({id:`r${r}m${index}`,round:r,bracket:stage.group||0,home:r===1?stage.matches[i][0]:null,away:r===1?stage.matches[i][1]:null,winner:null,homeScore:null,awayScore:null,penaltyHome:null,penaltyAway:null,proposal:null,scheduledAt:null});
-  }
- }
- matches.sort((a,b)=>a.round-b.round||Number(a.id.split('m')[1])-Number(b.id.split('m')[1]));
- return matches;
+ return createUzeflifeMatches(ids);
 }
 const score=z.number().int().min(0).max(99);
 const schemas={
@@ -155,5 +145,5 @@ export async function mutateUState(u:User,action:string,body:unknown){
 }
 export function publicUState(s:UState,u?:User){
  const permissions=u?uPermissions(s,u):[];const participantAdmin=permissions.includes('participants')||permissions.includes('registrations');const resultAdmin=permissions.includes('results')||permissions.includes('matches');
- return {...s,superAdmin:u&&(isPrimaryOwner(u.telegramId)||s.superAdmin===u.id)?s.superAdmin:null,assistants:u&&(isPrimaryOwner(u.telegramId)||s.superAdmin===u.id)?s.assistants:{},participants:s.participants.filter(p=>p.status==='approved'||participantAdmin||p.id===u?.id),matches:s.matches.map(m=>({...m,proposal:resultAdmin||m.home===u?.id||m.away===u?.id?m.proposal:null})),permissions,isOwner:!!u&&isPrimaryOwner(u.telegramId),isSuper:!!u&&(isPrimaryOwner(u.telegramId)||s.superAdmin===u.id)};
+ return {...s,superAdmin:u&&(isPrimaryOwner(u.telegramId)||s.superAdmin===u.id)?s.superAdmin:null,assistants:u&&(isPrimaryOwner(u.telegramId)||s.superAdmin===u.id)?s.assistants:{},participants:s.participants.filter(p=>p.status==='approved'||(p.status==='removed'&&s.matches.some(m=>m.home===p.id||m.away===p.id))||participantAdmin||p.id===u?.id),matches:s.matches.map(m=>({...m,proposal:resultAdmin||m.home===u?.id||m.away===u?.id?m.proposal:null})),permissions,isOwner:!!u&&isPrimaryOwner(u.telegramId),isSuper:!!u&&(isPrimaryOwner(u.telegramId)||s.superAdmin===u.id)};
 }

@@ -27,3 +27,18 @@ export function createUzeflifeFinal(groupWinners: string[]): UzeflifeRound[] {
 }
 export const UZEFLIFE_TOTAL_MATCHES = 255;
 export const UZEFLIFE_CHAMPION_MATCHES = 8;
+
+/** Actual fixture slots shared by runtime and isolated browser demo. */
+export function createUzeflifeMatches(ids:string[]):import('../types/uzeflife').UMatch[]{
+ const matches:import('../types/uzeflife').UMatch[]=[];
+ const rounds=[...createUzeflifeQualifier(ids),...createUzeflifeFinal(Array.from({length:8},(_,i)=>`qualifier-${i+1}`))];
+ for(const stage of rounds){
+  const r=stage.stage==='QUALIFIER'?stage.round:stage.round+5;
+  for(let i=0;i<stage.matches.length;i++){
+   const index=stage.stage==='QUALIFIER'?(stage.group!-1)*(32/2**r)+i:i;
+   matches.push({id:`r${r}m${index}`,round:r,bracket:stage.group||0,home:r===1?stage.matches[i][0]:null,away:r===1?stage.matches[i][1]:null,winner:null,homeScore:null,awayScore:null,penaltyHome:null,penaltyAway:null,proposal:null,scheduledAt:null});
+  }
+ }
+ matches.sort((a,b)=>a.round-b.round||Number(a.id.split('m')[1])-Number(b.id.split('m')[1]));
+ return matches;
+}
