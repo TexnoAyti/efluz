@@ -67,19 +67,8 @@ export function getTelegramInitData(): string {
       return tgSdkData;
     }
 
-    // 2. In-memory cached
-    if (currentTelegramInitData) {
-      return currentTelegramInitData;
-    }
-
-    // 3. SessionStorage cached during current tab session
-    const sessionData = readBrowserStorage('sessionStorage', 'efootball_tg_init_data');
-    if (sessionData) {
-      currentTelegramInitData = sessionData;
-      return sessionData;
-    }
-
-    // 4. URL Hash parameter (#tgWebAppData=...)
+    // A fresh launch takes precedence over credentials retained by a reused WebView.
+    // Keep the hash available until the asynchronous Telegram SDK captures it.
     try {
       if (window.location.hash) {
         const hashStr = window.location.hash.startsWith('#')
@@ -98,7 +87,7 @@ export function getTelegramInitData(): string {
       // ignore
     }
 
-    // 5. URL Search query parameter (?tgWebAppData=... or ?initData=...)
+    // URL Search query parameter (?tgWebAppData=... or ?initData=...)
     try {
       if (window.location.search) {
         const searchParams = new URLSearchParams(window.location.search);
@@ -114,6 +103,17 @@ export function getTelegramInitData(): string {
       }
     } catch {
       // ignore
+    }
+    // Fall back to this tab only when the launch URL has no signed data.
+    if (currentTelegramInitData) {
+      return currentTelegramInitData;
+    }
+
+    // SessionStorage cached during current tab session
+    const sessionData = readBrowserStorage('sessionStorage', 'efootball_tg_init_data');
+    if (sessionData) {
+      currentTelegramInitData = sessionData;
+      return sessionData;
     }
   }
   return currentTelegramInitData || '';
