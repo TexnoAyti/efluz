@@ -153,7 +153,7 @@ export async function syncCompetitionTrophy(competitionId: string, seasonId: str
   }
 }
 
-export function mergePlayerTrophies(userId: string, live: TrophyRecord[], history: TrophyHistory, activeSeasonId: string): PlayerTrophy[] {
+function mergeTrophies(live: TrophyRecord[], history: TrophyHistory, activeSeasonId: string, belongsTo: (trophy: TrophyRecord) => boolean): PlayerTrophy[] {
   const all = new Map<string, TrophyRecord>();
   const archivedSeasons = new Set(history.archives.map(item => item.seasonId));
   for (const record of history.records) {
@@ -173,18 +173,35 @@ export function mergePlayerTrophies(userId: string, live: TrophyRecord[], histor
       if (trophy.seasonId === archive.seasonId) all.set(trophyId(trophy.seasonId, trophy.competitionId), trophy);
     }
   }
-  return [...all.entries()].filter(([, trophy]) => trophy.winnerUserId === userId)
+  return [...all.entries()].filter(([, trophy]) => belongsTo(trophy))
     .map(([id, trophy]) => ({ id, competitionId: trophy.competitionId, competitionName: trophy.competitionName,
       seasonId: trophy.seasonId, clubId: trophy.clubId, clubName: trophy.clubName, winnerUserId: trophy.winnerUserId,
       winnerUsername: trophy.winnerUsername, decidedBy: trophy.decidedBy, confirmedAt: trophy.confirmedAt }))
     .sort((a, b) => b.seasonId.localeCompare(a.seasonId) || a.competitionName.localeCompare(b.competitionName));
 }
 
-export async function getPlayerTrophyCabinet(userId: string, activeSeasonId: string): Promise<PlayerTrophyCabinet> {
+export function mergePlayerTrophies(userId: string, live: TrophyRecord[], history: TrophyHistory, activeSeasonId: string): PlayerTrophy[] {
+  return mergeTrophies(live, history, activeSeasonId, trophy => trophy.winnerUserId === userId);
+}
+
+export function mergeClubTrophies(clubId: string, live: TrophyRecord[], history: TrophyHistory, activeSeasonId: string): PlayerTrophy[] {
+  return mergeTrophies(live, history, activeSeasonId, trophy => trophy.clubId === clubId);
+}
+
+async function getTrophyCabinet(activeSeasonId: string, belongsTo: (trophy: TrophyRecord) => boolean): Promise<PlayerTrophyCabinet> {
   const [history, live] = await Promise.all([readHistory(), getSeasonTrophies(activeSeasonId).catch(() => null)]);
   const saved = history.data.records.filter(record => record.active && record.seasonId === activeSeasonId);
   const current = live ? [...live.trophies, ...saved.filter(record => live.unavailableCompetitions.includes(record.competitionId))] : saved;
-  return { trophies: mergePlayerTrophies(userId, current, history.data, activeSeasonId), stale: history.stale || !live || live.unavailableCompetitions.length > 0 || live.source === 'redis_stale' || live.source === 'sqlite' };
+  return { trophies: mergeTrophies(current, history.data, activeSeasonId, belongsTo), stale: history.stale || !live || live.unavailableCompetitions.length > 0 || live.source === 'redis_stale' || live.source === 'sqlite' };
+}
+
+export async function getPlayerTrophyCabinet(userId: string, activeSeasonId: string): Promise<PlayerTrophyCabinet> {
+  return getTrophyCabinet(activeSeasonId, trophy => trophy.winnerUserId === userId);
+}
+
+/** Club titles remain visible to every visitor, independently of who is logged in. */
+export async function getClubTrophyCabinet(clubId: string, activeSeasonId: string): Promise<PlayerTrophyCabinet> {
+  return getTrophyCabinet(activeSeasonId, trophy => trophy.clubId === clubId);
 }
 
 export async function preserveRecordedTrophyOwners(trophies: TrophyRecord[]): Promise<TrophyRecord[]> {

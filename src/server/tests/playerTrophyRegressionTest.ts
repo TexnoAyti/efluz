@@ -7,7 +7,7 @@ import { TrophyCabinetView } from '../../components/PlayerTrophyCabinet';
 import { SEED_CLUBS } from '../db/seed';
 import { getFirestoreDb } from '../firebase/admin';
 import { ReadModelKeys, redisSetRaw, resetMemoryRedisStore, refreshChangedFixtureReadModel, invalidateDataset } from '../readModel/readModelStore';
-import { clearMemoryTrophies, getPlayerTrophyCabinet, mergePlayerTrophies, reconcileTrophy, syncCompetitionTrophy } from '../services/playerTrophyService';
+import { clearMemoryTrophies, getPlayerTrophyCabinet, getClubTrophyCabinet, mergeClubTrophies, mergePlayerTrophies, reconcileTrophy, syncCompetitionTrophy } from '../services/playerTrophyService';
 import { getSeasonTrophies } from '../services/seasonInsightsService';
 import { seasonInsightsRouter } from '../routes/seasonInsights.routes';
 
@@ -123,7 +123,41 @@ async function main() {
   assert.ok(markup.includes('Sovrinlar') && markup.includes('2026/27') && markup.includes('2025/26'));
   assert.ok(markup.includes('FA Cup') && markup.includes('Barcha mavsumlar'));
   const laLigaMarkup = renderToStaticMarkup(createElement(TrophyCabinetView, { trophies: [{ ...league.trophies[0], id: trophyId(seasonId, leagueId) }], language: 'uz' }));
-  assert.ok(laLigaMarkup.includes('/export-emblems/la-liga.svg'));
+  assert.ok(laLigaMarkup.includes('/welcome/la-liga.svg'));
+  assert.ok(!laLigaMarkup.includes('bg-white/95'), 'Competition marks keep transparent backgrounds');
+  // Barcelona's confirmed Copa del Rey final must appear on the CLUB page,
+  // regardless of the viewer or subsequent ownership changes.
+  clearMemoryTrophies();
+  const barcelona = SEED_CLUBS.find(club => club.id === 'club-barcelona')!;
+  const copaId = 'comp-copa-del-rey-2026';
+  const copaFinal: Fixture = { ...fixture, id: 'barcelona-copa-final', competitionId: copaId,
+    homeClubId: barcelona.id, awayClubId: 'club-rayo-vallecano', homeScore: 2, awayScore: 0, winnerClubId: barcelona.id };
+  await redisSetRaw(ReadModelKeys.clubsWithOwners(seasonId), { data: [{ ...barcelona, ownerUserId: 'barcelona-winner' }] });
+  await redisSetRaw(ReadModelKeys.competitionFixtures(copaId, seasonId), { data: [copaFinal] });
+  await redisSetRaw(ReadModelKeys.adminFixtures(seasonId), { data: [copaFinal] });
+  await syncCompetitionTrophy(copaId, seasonId, copaFinal);
+  const clubCabinet = await getClubTrophyCabinet(barcelona.id, seasonId);
+  assert.equal(clubCabinet.trophies.length, 1);
+  assert.equal(clubCabinet.trophies[0].competitionName, 'Copa del Rey');
+  assert.equal((await getClubTrophyCabinet('club-rayo-vallecano', seasonId)).trophies.length, 0, 'Finalist must not receive the title');
+  assert.equal((await getClubTrophyCabinet('club-real-madrid', seasonId)).trophies.length, 0);
+  const clubEndpoint = (seasonInsightsRouter as any).stack.find((layer: any) => layer.route?.path === '/club/:clubId/trophies').route.stack[0].handle;
+  status = 200;
+  await clubEndpoint({ params: { clubId: barcelona.id }, query: { seasonId } }, res);
+  assert.equal(status, 200);
+  assert.equal(response.trophies[0].clubId, barcelona.id, 'Public endpoint needs no viewer identity');
+  assert.equal(headers['Cache-Control'], 'no-store');
+  const copaMarkup = renderToStaticMarkup(createElement(TrophyCabinetView, { trophies: response.trophies, language: 'uz' }));
+  for (const text of ['Sovrinlar', 'Copa del Rey', '2026/27', 'Chempion', '/competition-marks/copa-del-rey.svg']) assert.ok(copaMarkup.includes(text), text);
+  const copaRecord = reconcileTrophy(null, clubCabinet.trophies[0], fixture.updatedAt)!;
+  assert.equal(mergeClubTrophies(barcelona.id, [{ ...copaRecord, winnerUserId: 'new-owner' }], { records: [copaRecord], archives: [] }, seasonId)[0].winnerUserId, 'barcelona-winner');
+  assert.equal(mergeClubTrophies(barcelona.id, [], { records: [], archives: [{ seasonId, trophies: [copaRecord] }] }, 'season-2027-28').length, 1, 'Club history survives season rollover');
+  await redisSetRaw(ReadModelKeys.adminFixtures(seasonId), { data: [{ ...copaFinal, status: 'SCHEDULED', homeScore: null, awayScore: null, winnerClubId: null }] });
+  assert.equal((await getClubTrophyCabinet(barcelona.id, seasonId)).trophies.length, 0, 'Reopened final is not shown as a club title');
+  status = 200;
+  await clubEndpoint({ params: { clubId: barcelona.id }, query: { seasonId: 'invalid' } }, res);
+  assert.equal(status, 400);
+  console.log('PASS Barcelona Copa del Rey: confirmed 2–0 final, public club cabinet, champion only, season/archive, ownership isolation, reopening and transparent cup mark');
   const empty = renderToStaticMarkup(createElement(TrophyCabinetView, { trophies: [], language: 'uz' }));
   assert.ok(empty.includes('Hali sovrin yo‘q'));
   assert.equal(seasonLabel('season-2027-28'), '2027/28');

@@ -23,6 +23,7 @@ const fixtures=competitions.map((c,i)=>({id:`fixture-${i}`,competitionId:c.id,co
 const leagueTable=[{clubId:club.id,position:16,played:10,won:2,drawn:3,lost:5,goalsFor:9,goalsAgainst:15,goalDifference:-6,points:9},{clubId:away.id,position:7}];
 const data={club,fixtures,competitions,standing:leagueTable[0],leagueTable,seasonId:'season-2026-27'};
 const markup=renderToStaticMarkup(React.createElement(PublicClubProfile,{data,onBack:()=>{},onOwner:()=>{},onRetry:()=>{}}));
+assert.ok(markup.includes('Sovrinlar'), 'Public club profile includes the club trophy cabinet');
 for(const c of competitions)assert.ok(markup.includes(c.name),`Show ${c.name}`);
 for(const src of ['/welcome/premier-league.svg','/competition-marks/fa-cup.svg','/competition-marks/community-shield.svg','/competition-marks/europa-league.svg'])assert.ok(markup.includes(src),src);
 assert.ok(markup.includes('20:30'),'Kickoff uses Tashkent time without a timezone suffix');
