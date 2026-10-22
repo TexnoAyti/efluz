@@ -1,3 +1,4 @@
+import {scheduleUNotices,prepareUNotifications} from './services/uzeflifeNotifications';
 import { scheduleAiDailyReport } from './services/telegramAiDailyReport';
 import { adminImageExportsRouter, imageExportDownloadRouter } from './routes/tournamentImageDownload.routes';
 import express from 'express';
@@ -140,6 +141,7 @@ export function createApp() {
 
   app.use('/api/admin/image-exports', express.json({ limit: '1mb' }));
   app.use('/api/uzeflife/image-export', express.json({ limit: '1mb' }));
+  app.use('/api/uzeflife/dispute', express.json({ limit: '600kb' }));
   app.use(express.json({ limit: '256kb' }));
   app.use('/api', rateLimit('api-global', 300, 60));
   app.use('/api/image-exports', imageExportDownloadRouter);
@@ -155,8 +157,8 @@ export function createApp() {
     try {
       await ensureDbReady();
       if (hop === 0) { if (process.env.VERCEL === '1') scheduleAiDailyReport(); else await scheduleAiDailyReport(); }
-      if (process.env.VERCEL === '1') { scheduleMutationReconciliation(); scheduleNotificationQueueDrain(hop); res.status(202).json({ accepted: true }); }
-      else { await reconcileDurableMutations(); await drainNotificationQueue({ hop }); res.json({ drained: true }); }
+      if (process.env.VERCEL === '1') { scheduleMutationReconciliation(); scheduleUNotices(hop); scheduleNotificationQueueDrain(hop); res.status(202).json({ accepted: true }); }
+      else { await reconcileDurableMutations(); await prepareUNotifications().catch(()=>console.warn('[UZEFLIFE_OUTBOX_DEFERRED]')); await drainNotificationQueue({ hop }); res.json({ drained: true }); }
     } catch { res.status(503).json({ error: 'NOTIFICATION_WORKER_UNAVAILABLE' }); }
   });
 

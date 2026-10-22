@@ -1,3 +1,4 @@
+import {writeUNotices,scheduleUNotices} from './uzeflifeNotifications';
 import {randomUUID,createHash} from 'node:crypto';
 import {getFirestoreDb} from '../firebase/admin';
 import {getAuthoritativeUserForAuthorization} from '../firebase/firestoreStore';
@@ -20,7 +21,7 @@ async function account(telegramId:number):Promise<User|null>{
 }
 export async function authorizeUzeflifeTopicResult(telegramId:number){const user=await account(telegramId);return !!user&&uPermissions(await readUState(),user).includes('results');}
 export function uzeflifeMatchFingerprint(s:UState,m:UMatch){
- return createHash('sha256').update(JSON.stringify([s.status,s.round,m.id,m.bracket,m.round,m.home,m.away,m.winner,m.homeScore,m.awayScore,m.penaltyHome,m.penaltyAway,m.scheduledAt,m.proposal?[m.proposal.by,m.proposal.home,m.proposal.away,m.proposal.penaltyHome,m.proposal.penaltyAway]:null,[m.home,m.away].map(id=>s.participants.find(p=>p.id===id)?.status||null)])).digest('hex');
+ return createHash('sha256').update(JSON.stringify([s.status,s.round,m.id,m.bracket,m.round,m.home,m.away,m.winner,m.homeScore,m.awayScore,m.penaltyHome,m.penaltyAway,m.scheduledAt,m.deadlineAt||null,m.dispute?[m.dispute.at,m.dispute.status]:null,m.proposal?[m.proposal.by,m.proposal.home,m.proposal.away,m.proposal.penaltyHome,m.proposal.penaltyAway]:null,[m.home,m.away].map(id=>s.participants.find(p=>p.id===id)?.status||null)])).digest('hex');
 }
 export async function planUzeflifeTopicResult(text:string,sender:number,resolution?:{fixtureId:string}){
  if(isAiHypotheticalQuestion(text))return null;
@@ -84,9 +85,12 @@ export async function executeUzeflifeTopicResult(plan:AdminPlan,actorTelegramId:
   if(!match||match.winner||uzeflifeMatchFingerprint(state,match)!==expected.fingerprint)throw uError('O‘yin taklifdan keyin o‘zgargan. Natijani qayta yuboring.',409);
   if(!uPermissions(state,{...sender,id:submitter.id}).includes('results')&&(![match.home,match.away].includes(submitter.id)||state.participants.find(p=>p.id===submitter.id)?.status!=='approved'))throw uError('Ishtirokchi vakolati bekor qilingan.',403);
   if(JSON.stringify([state.subscriptionsEnabled,state.channels])!==channels)throw uError('Majburiy obuna sozlamalari o‘zgargan. Natijani qayta yuboring.',409);
+  const before=structuredClone(state);
   applyUAction(state,{...admin,id:actor.id},'result',data);
+  writeUNotices(tx,before,state,auditId);
   tx.set(ref,state);tx.set(db.collection('uzeflife_audit').doc(auditId),{actor:actor.id,action:'result',details:{...data,source:'telegram-topic',chat:source.chat,thread:source.thread,message:source.message,submitter:submitter.id},revision:state.revision,at:new Date().toISOString()});
   return {id:match.id,homeClubId:match.home,awayClubId:match.away,winnerClubId:match.winner,homeScore:match.homeScore,awayScore:match.awayScore,homePenaltyScore:match.penaltyHome,awayPenaltyScore:match.penaltyAway,status:match.winner?'CONFIRMED':'AWAITING_RESULT'};
  });
+ scheduleUNotices();
  return {status:200,data:{success:true,fixture:stored}};
 }
