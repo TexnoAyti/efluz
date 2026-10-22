@@ -21,6 +21,19 @@ await assert.rejects(verifyUChannels(s.channels,'1234','test-token',(async()=>{t
 await assert.rejects(verifyUChannels(s.channels,'','test-token'),/imkonsiz/);
 act(superAdmin,'removeAssistant',{target:assistant.id});assert.deepEqual(uPermissions(s,assistant),[]);
 assert.equal(publicUState(s,stranger).superAdmin,null);
+// Administrator enrollment: approval, restoration, capacity, and post-draw freeze.
+const enrollment=initialUState();enrollment.assistants[assistant.id]=['participants'];
+const add=(actor:User,id:string)=>applyUAction(enrollment,actor,'addParticipant',{participant:{id,name:'Verified '+id}});
+assert.throws(()=>add(stranger,'p0'),/ruxsat/);
+add(assistant,'p0');assert.equal(enrollment.participants[0].status,'approved');assert.throws(()=>add(owner,'p0'),/allaqachon/);
+enrollment.participants[0].status='pending';add(owner,'p0');assert.equal(enrollment.participants.length,1);
+enrollment.participants[0].status='removed';add(owner,'p0');assert.equal(enrollment.participants.length,1);
+for(let i=1;i<256;i++)add(owner,'p'+i);
+assert.throws(()=>add(owner,'overflow'),/256/);
+enrollment.participants.push({id:'removed',name:'Removed',status:'removed'});
+assert.throws(()=>applyUAction(enrollment,owner,'review',{target:'removed',status:'approved'}),/256/);
+enrollment.status='playing';assert.throws(()=>add(owner,'later'),/boshlangan/);
+assert.deepEqual(validateUAction('addParticipant',{target:' 12345 ',name:'Forged'}).data,{target:'12345'},'Enrollment accepts only an account reference, never caller-supplied player identity');
 act(owner,'open');for(let i=0;i<256;i++){const u=user(`p${i}`);act(u,'register');act(superAdmin,'review',{target:u.id,status:'approved'});}
 assert.throws(()=>act(stranger,'register'),/256/);assert.throws(()=>act(user('p0'),'register'),/allaqachon/);
 assert.throws(()=>generateUBracket(['p0']),/256/);

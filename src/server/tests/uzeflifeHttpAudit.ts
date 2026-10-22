@@ -31,13 +31,28 @@ export async function verifyUzeflifeHttp(failNextCommit:()=>void){
   globalThis.fetch=(async(input:any,init:any)=>{if(String(input).startsWith('https://api.telegram.org/')){if(telegramMode==='error')return Response.json({ok:false});return Response.json({ok:true,result:{status:telegramMode==='member'?'member':'left'}});}return original(input,init);}) as typeof fetch;
   try{
    assert.equal((await call('register',{},actors[3])).status,403);
-   telegramMode='error';assert.equal((await call('subscription-check',{},actors[3])).status,503);
+   assert.equal((await call('addParticipant',{target:actors[4].id},actors[1])).status,403,'Admin enrollment enforces target membership');
+   telegramMode='error';assert.equal((await call('addParticipant',{target:actors[4].id},actors[1])).status,503);assert.equal((await call('subscription-check',{},actors[3])).status,503);
    telegramMode='member';assert.equal((await call('subscription-check',{},actors[3])).data.subscribed,true);
    assert.equal((await call('register',{},actors[3])).status,200);
   }finally{globalThis.fetch=original;}
   assert.equal((await call('',undefined,actors[4])).data.participants.length,0,'Pending participants are private');
   assert.equal((await call('review',{target:actors[3].id,status:'approved'},actors[2])).status,403);
   assert.equal((await call('review',{target:actors[3].id,status:'approved'},actors[1])).status,200);
+  assert.equal((await call('addParticipant',{target:actors[4].id},actors[2])).status,403,'Channels permission cannot enroll players');
+  assert.equal((await call('subscriptions',{enabled:false},actors[1])).status,200);
+  assert.equal((await call('addParticipant',{target:'missing-account'},actors[1])).status,404);
+  await db.collection('users').doc(actors[4].id).update({isSuspended:true});
+  assert.equal((await call('addParticipant',{target:actors[4].id},actors[1])).status,404);
+  await db.collection('users').doc(actors[4].id).update({isSuspended:false});
+  failNextCommit();assert.equal((await call('addParticipant',{target:actors[4].id},actors[1])).status,503);
+  assert.ok(!(await call()).data.participants.some((p:any)=>p.id===actors[4].id),'Failed enrollment transaction rolls back');
+  const enrolled=await call('addParticipant',{target:actors[4].telegramId,name:'Forged name'},actors[1]);
+  assert.equal(enrolled.status,200);assert.deepEqual(enrolled.data.participants.find((p:any)=>p.id===actors[4].id),{id:actors[4].id,name:actors[4].firstName,status:'approved'});
+  assert.equal((await call('addParticipant',{target:actors[4].id},actors[1])).status,400);
+  assert.equal((await call('review',{target:actors[4].id,status:'removed'},actors[1])).status,200);
+  assert.equal((await call('addParticipant',{target:actors[4].id},actors[1])).status,200);
+  assert.equal((await call()).data.participants.filter((p:any)=>p.id===actors[4].id).length,1);
   assert.equal((await call('removeAssistant',{target:actors[2].id},actors[1])).status,200);
   assert.equal((await call('subscriptions',{enabled:false},actors[2])).status,403,'Revoked permissions apply immediately');
   await db.collection('users').doc(actors[1].id).update({isSuspended:true});assert.equal((await call('open',{},actors[1])).status,403);

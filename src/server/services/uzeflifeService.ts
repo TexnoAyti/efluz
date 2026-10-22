@@ -29,6 +29,7 @@ const schemas={
  subscriptions:z.object({enabled:z.boolean()}),
  addChannel:z.object({id:z.string().regex(/^(@[A-Za-z][A-Za-z0-9_]{4,31}|-100\d{5,17})$/),title:z.string().trim().min(1).max(100),url:z.url().refine(v=>{const u=new URL(v);return u.protocol==='https:'&&u.hostname==='t.me'&&!u.username&&!u.password;})}),
  removeChannel:z.object({id:z.string().min(1).max(100)}),
+ addParticipant:z.object({target:z.string().trim().min(1).max(100)}),
  register:z.object({}),review:z.object({target:z.string().min(1).max(100),status:z.enum(['approved','removed'])}),
  open:z.object({}),close:z.object({}),generate:z.object({}),pause:z.object({}),resume:z.object({}),next:z.object({}),complete:z.object({}),
  schedule:z.object({matchId:z.string(),scheduledAt:z.iso.datetime()}),
@@ -79,7 +80,17 @@ export function applyUAction(s:UState,u:User,action:UAction,d:any):void{
   if(s.participants.filter(p=>p.status!=='removed').length>=256)throw uError('Barcha 256 o‘rin band.');
   s.participants=s.participants.filter(p=>p.id!==u.id);s.participants.push({id:u.id,name:(u.firstName||u.username||'Ishtirokchi').slice(0,100),status:'pending'});break;
  }
- case 'review':guard('participants');if(d.status==='approved')beforeStart();if(s.status==='completed')throw uError('Turnir yakunlangan.');{const p=s.participants.find(p=>p.id===d.target);if(!p)throw uError('Ishtirokchi topilmadi.',404);p.status=d.status;}break;
+ case 'addParticipant':{
+  guard('participants');beforeStart();
+  const p=s.participants.find(p=>p.id===d.participant.id);
+  if(p?.status==='approved')throw uError('Bu o‘yinchi allaqachon qo‘shilgan.');
+  if((!p||p.status==='removed')&&s.participants.filter(p=>p.status!=='removed').length>=256)throw uError('Barcha 256 o‘rin band.');
+  if(!p&&s.participants.length>=512)throw uError('Arizalar chegarasiga yetildi.');
+  if(p){p.name=d.participant.name;p.status='approved';}
+  else s.participants.push({...d.participant,status:'approved'});
+  break;
+ }
+ case 'review':guard('participants');if(d.status==='approved')beforeStart();if(s.status==='completed')throw uError('Turnir yakunlangan.');{const p=s.participants.find(p=>p.id===d.target);if(!p)throw uError('Ishtirokchi topilmadi.',404);if(d.status==='approved'&&p.status==='removed'&&s.participants.filter(p=>p.status!=='removed').length>=256)throw uError('Barcha 256 o‘rin band.');p.status=d.status;}break;
  case 'generate':guard('brackets');beforeStart();{const ids=s.participants.filter(p=>p.status==='approved').map(p=>p.id);for(let i=ids.length-1;i>0;i--){const j=randomInt(i+1);[ids[i],ids[j]]=[ids[j],ids[i]];}s.matches=generateUBracket(ids);s.status='playing';s.round=1;}break;
  case 'pause':guard('super');if(s.status!=='playing')throw uError('Turnir davom etmayapti.');s.status='paused';break;
  case 'resume':guard('super');if(s.status!=='paused')throw uError('Turnir to‘xtatilmagan.');s.status='playing';break;
@@ -126,7 +137,17 @@ export async function mutateUState(u:User,action:string,body:unknown){
   requireUPermission(await readUState(),u,action==='superAdmin'?'owner':'super');
   if(d.target&&action!=='removeAssistant')d.target=await resolveTarget(d.target);
  }
- let subscriptionRevision:number|undefined;
+ let subscriptionRevision:number|undefined;let participantTelegramId:string|undefined;
+ if(action==='addParticipant'){
+  const current=await readUState();requireUPermission(current,u,'participants');
+  d.target=await resolveTarget(d.target);
+  const target=(await db.collection('users').doc(d.target).get()).data() as User|undefined;
+  if(!target||target.isSuspended||!target.telegramId)throw uError('Tasdiqlangan EFLUZ akkaunti topilmadi.',404);
+  participantTelegramId=target.telegramId;
+  const missing=await checkUSubscriptions(current,target);
+  if(missing.length)throw uError('O‘yinchi avval barcha majburiy kanallarga obuna bo‘lishi kerak.',403);
+  subscriptionRevision=current.revision;
+ }
  if(action==='register'||action==='result'){
   const current=await readUState();
   if(action==='register'||!uPermissions(current,u).includes('results')){
@@ -138,6 +159,13 @@ export async function mutateUState(u:User,action:string,body:unknown){
  await db.runTransaction(async tx=>{
   const snap=await tx.get(ref);const s=snap.exists?snap.data() as UState:initialUState();
   if(subscriptionRevision!==undefined&&subscriptionRevision!==s.revision)throw uError('Turnir yangilandi. Obunani qayta tekshiring.',409);
+  if(action==='addParticipant'){
+   requireUPermission(s,u,'participants');
+   const target=await tx.get(db.collection('users').doc(d.target));const account=target.data() as User|undefined;
+   if(!target.exists||!account||account.isSuspended||!account.telegramId)throw uError('Tasdiqlangan EFLUZ akkaunti topilmadi.',404);
+   if(account.telegramId!==participantTelegramId)throw uError('O‘yinchi akkaunti yangilandi. Qayta urinib ko‘ring.',409);
+   d.participant={id:target.id,name:(account.firstName||account.username||'Ishtirokchi').slice(0,100)};
+  }
   applyUAction(s,u,parsed.action,d);
   tx.set(ref,s);
   tx.set(db.collection('uzeflife_audit').doc(auditId),{actor:u.id,action:parsed.action,details:d,revision:s.revision,at:new Date().toISOString()});
