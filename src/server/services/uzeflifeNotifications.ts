@@ -64,11 +64,11 @@ export function validUNotice(n:UNotice,s:UState,ownerId?:string){
  if(n.kind==='dispute')return m.dispute?.status==='open';
  return n.kind!=='champion'||s.status==='completed';
 }
-export async function processUNotices(limit=25,enqueue=enqueueSmartTelegramNotification):Promise<boolean>{
+export async function processUNotices(limit=25,enqueue=enqueueSmartTelegramNotification,deadline=Infinity):Promise<boolean>{
  const db=getFirestoreDb();const jobs=await db.collection('uzeflife_notifications').where('status','==','pending').limit(3).get();
  let budget=limit;
  for(const job of jobs.docs){
-  if(!budget)break;const lease=randomUUID();
+  if(!budget||Date.now()>=deadline)break;const lease=randomUUID();
   const claimed=await db.runTransaction(async tx=>{const snap=await tx.get(db.collection('uzeflife_notifications').doc(job.id)),v=snap.data();if(!v||v.status!=='pending'||v.leaseUntil>Date.now())return null;tx.set(db.collection('uzeflife_notifications').doc(job.id),{...v,lease,leaseUntil:Date.now()+90000});return v;});
   if(!claimed)continue;
   let cursor=claimed.cursor as number;
@@ -76,7 +76,7 @@ export async function processUNotices(limit=25,enqueue=enqueueSmartTelegramNotif
    const s=(await db.collection('uzeflife').doc('championship').get()).data() as UState;
    const owner=await db.collection('users').where('telegramId','==','5209126900').limit(2).get();const ownerId=owner.docs.length===1?owner.docs[0].id:undefined;
    const notices=claimed.notices as UNotice[];
-   while(cursor<notices.length&&budget>0){
+   while(cursor<notices.length&&budget>0&&Date.now()<deadline){
     const raw=notices[cursor];const n=raw.userId==='@primary-owner'?{...raw,userId:ownerId||''}:raw;
     if(n.userId&&validUNotice(n,s,ownerId))await enqueue({userId:n.userId,seasonId:'season-2026-27',deferDrain:true,eventId:'uzeflife:'+hash([n.userId,n.kind,n.matchId,n.version]),title:n.title,body:n.body,replyMarkup:{inline_keyboard:[[{text:'O‘yin sahifasini ochish',url:uzeflifeMatchLink(n.matchId)}]]}});
     cursor++;budget--;
@@ -85,9 +85,19 @@ export async function processUNotices(limit=25,enqueue=enqueueSmartTelegramNotif
  }
  return !(await db.collection('uzeflife_notifications').where('status','==','pending').limit(1).get()).empty;
 }
-/** Wakes the existing durable Telegram worker; no direct Telegram sends here. */
-export function scheduleUNotices(){
+/** Prepare domain intents separately: the existing Telegram drain remains database-free. */
+export async function prepareUNotifications(){
+ if(process.env.MIGRATION_WRITE_FREEZE==='true'||process.env.DATABASE_PROVIDER==='supabase'&&process.env.SUPABASE_DATA_NAMESPACE==='preview')return false;
+ await sweepUDeadlines();
+ return processUNotices(60,enqueueSmartTelegramNotification,Date.now()+8000);
+}
+export function scheduleUNotices(hop=0){
  if(process.env.VERCEL!=='1'&&!process.env.K_SERVICE)return;
- const task=import('./telegramNotificationQueue').then(m=>m.scheduleNotificationQueueDrain()).catch(()=>{});
+ const task=(async()=>{
+  const queue=await import('./telegramNotificationQueue');
+  const pending=await prepareUNotifications();
+  queue.scheduleNotificationQueueDrain(hop);
+  if(pending&&hop<256){if(process.env.VERCEL==='1')await queue.triggerNotificationContinuation(hop+1);else scheduleUNotices(hop+1);}
+ })().catch(()=>console.warn('[UZEFLIFE_OUTBOX_DEFERRED]'));
  if(process.env.VERCEL==='1')waitUntil(task);else void task;
 }

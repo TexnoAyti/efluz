@@ -3,7 +3,7 @@ import {createCanvas,GlobalFonts} from '@napi-rs/canvas';
 import {initDatabase} from '../db';
 import {getFirestoreDb} from '../firebase/admin';
 import {initialUState,applyUAction,mutateUState,readUState,publicUState} from '../services/uzeflifeService';
-import {uTransitionNotices,processUNotices,sweepUDeadlines,validUNotice} from '../services/uzeflifeNotifications';
+import {uTransitionNotices,processUNotices,sweepUDeadlines,validUNotice,prepareUNotifications} from '../services/uzeflifeNotifications';
 import {normalizeUEvidence} from '../services/uzeflifeEvidence';
 import {paintUzeflifeChampion} from '../../lib/uzeflifeChampionImage';
 import {readUzeflifeLaunch,uzeflifeMatchLink} from '../../lib/uzeflifeLinks';
@@ -22,6 +22,7 @@ const beforeJob=(await jobs()).docs[0].data();assert.equal(beforeJob.notices.len
 const home={id:state.matches[0].home,telegramId:'10001',isAdmin:false,isSuspended:false} as User,away={id:state.matches[0].away,telegramId:'10002',isAdmin:false,isSuspended:false} as User;
 for(const u of [home,away])await db.collection('users').doc(u.id).set(u);
 const delivered:any[]=[];const enqueue=async(n:any)=>{delivered.push(n);return true;};
+assert.equal(await processUNotices(3,enqueue,Date.now()-1),true);assert.equal(delivered.length,0,'Expired worker budget preserves pending work');
 await Promise.all([processUNotices(3,enqueue),processUNotices(3,enqueue)]);assert.equal(delivered.length,3,'Concurrent workers respect the durable lease');
 assert.ok(delivered.every(n=>n.replyMarkup.inline_keyboard[0][0].url.startsWith('https://t.me/efluzbot?startapp=uze_r1m')));
 let attempt=0;await assert.rejects(processUNotices(3,async(n)=>{if(++attempt===2)throw Error('temporary queue outage');return enqueue(n);}),/outage/);
@@ -52,4 +53,6 @@ const image=createCanvas(1080,1350);paintUzeflifeChampion(image.getContext('2d')
 assert.throws(()=>paintUzeflifeChampion(image.getContext('2d') as any,{...state,status:'playing'},'season-2026-27'),/yakunlangach/);
 assert.equal(uzeflifeMatchLink('r8m0'),'https://t.me/efluzbot?startapp=uze_r8m0');assert.throws(()=>uzeflifeMatchLink('../admin'));
 const windowBefore=globalThis.window;(globalThis as any).window={location:{search:'?startapp=uze_r2m12'},Telegram:{WebApp:{}}};assert.equal(readUzeflifeLaunch(),'r2m12');(globalThis as any).window.location.search='?startapp=uze_../../admin';assert.equal(readUzeflifeLaunch(),null);(globalThis as any).window=windowBefore;
+const collectionBefore=db.collection;(db as any).collection=()=>{throw Error('No database access during freeze/preview');};
+try{process.env.MIGRATION_WRITE_FREEZE='true';assert.equal(await prepareUNotifications(),false);delete process.env.MIGRATION_WRITE_FREEZE;process.env.DATABASE_PROVIDER='supabase';process.env.SUPABASE_DATA_NAMESPACE='preview';assert.equal(await prepareUNotifications(),false);}finally{(db as any).collection=collectionBefore;delete process.env.MIGRATION_WRITE_FREEZE;delete process.env.DATABASE_PROVIDER;delete process.env.SUPABASE_DATA_NAMESPACE;}
 console.log('PASS UZEFLIFE: atomic opponent intents, leased/retry-safe outbox, match deep links, deadline reminders/deduplication, private screenshots, dispute blocking/resolution, admin result queue, 255-match archive and native EFL champion PNG. No Telegram messages sent.');

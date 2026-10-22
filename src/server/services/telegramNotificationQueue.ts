@@ -154,18 +154,15 @@ export async function drainNotificationQueue(options: {
   if (process.env.DATABASE_PROVIDER === 'supabase' && process.env.SUPABASE_DATA_NAMESPACE === 'preview') return;
   // Mutation reconciliation prepares matchday intents independently. Ready
   // messages must not wait behind a full round's recipient/card generation.
-  const uze=await import('./uzeflifeNotifications');
-  await uze.sweepUDeadlines().catch(()=>console.warn('[UZEFLIFE_REMINDERS_DEFERRED]'));
   const hop = options.hop || 0;
   const deadline = Math.min(options.deadline ?? Date.now() + DRAIN_BUDGET_MS,
     (getDeadline()?.getTime() ?? Infinity) - 15000);
   while (Date.now() + 12000 < deadline) {
-    const uzePending=await uze.processUNotices(10).catch(()=>{console.warn('[UZEFLIFE_OUTBOX_DEFERRED]');return false;});
     const result = await processNotificationQueue(25, deadline - 12000);
     // The active lock owner is responsible for continuation.
     if (result.locked) return;
     const state = await pendingQueueState();
-    if (!state.pending&&!uzePending) return;
+    if (!state.pending) return;
     const delay = Math.max(0, state.nextAt - Date.now());
     if (Date.now() + delay + 12000 >= deadline) {
       const wait = Math.max(0, deadline - Date.now() - 12000);
@@ -174,7 +171,7 @@ export async function drainNotificationQueue(options: {
     }
     if (delay) await new Promise(resolve => setTimeout(resolve, delay));
   }
-  if (!(await pendingQueueState()).pending&&!(await uze.processUNotices(1).catch(()=>false))) return;
+  if (!(await pendingQueueState()).pending) return;
   if (hop >= MAX_CONTINUATION_HOPS) {
     console.warn('[NOTIF_QUEUE] Continuation cap reached; pending jobs preserved for recovery');
     return;
