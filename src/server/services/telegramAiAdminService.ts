@@ -1,3 +1,5 @@
+import { parseBulkResultRequest } from './telegramAiBulkResultLanguage';
+import { findConversationCompetitions } from './telegramAiConversationCommands';
 import { limitAiReply } from './telegramAiResponsePolicy';
 import { getAiWorkflow, saveAiWorkflow, newAiWorkflow, splitAiWorkflow, isAiWorkflowControl, workflowHeading, type AiWorkflow } from './telegramAiWorkflow';
 import { createAiAdminRecordResolver } from './telegramAiAdminRecordResolver';
@@ -51,8 +53,31 @@ export async function getLatestDeliveredPlanToken(p: TelegramAiMessagePayload, s
   const record = await loadPending(latest.token, signal);
   return record?.state === 'pending' && record.expiresAt > Date.now() && record.chat === p.chatId && record.thread === p.threadId && record.owner === p.fromUser.id ? latest.token : null;
 }
+async function planBulkLeagueRequest(request: string, signal: AbortSignal): Promise<AdminPlan|null> {
+  const filters = parseBulkResultRequest(request);
+  if (!filters) return null;
+  const reader = createAiTournamentReader(signal);
+  const catalog: any = await reader.read({dataset:'competitions',limit:30});
+  if (catalog.error || catalog.complete === false || catalog.stale || !Array.isArray(catalog.data)) throw new Error('CLARIFY:Ligalar ro‘yxati hozir ishonchli o‘qilmadi. Hech narsa o‘zgarmadi.');
+  const competitions = findConversationCompetitions(request, catalog.data);
+  if (competitions.length !== 1) throw new Error('CLARIFY:Qaysi bitta liga? Liga nomini yozing; “9-turgacha” 1–9-turlarni, 9-turni ham o‘z ichiga oladi.');
+  const competition = competitions[0];
+  if (competition.type !== 'LEAGUE') throw new Error('CLARIFY:Ommaviy natija hozir faqat liga uchun. Kubokda har bir g‘olib alohida aniqlanadi.');
+  const clubs: any[] = [];
+  for (let offset=0; offset<1000; offset+=30) {
+    const page:any = await reader.read({dataset:'clubs',offset,limit:30});
+    if (page.error || page.complete === false) throw new Error('CLARIFY:Klublar ro‘yxati to‘liq o‘qilmadi. Hech narsa o‘zgarmadi.');
+    clubs.push(...(page.data||[]));
+    if (clubs.length >= page.total || !page.data?.length) break;
+  }
+  const named = resolveAiClubs(request, clubs);
+  if (named.clarification || named.clubs.length) throw new Error('CLARIFY:Bu ommaviy amal liganing barcha o‘ynalmagan o‘yinlari uchun. Klub bo‘yicha istisno yoki filtrni alohida aniqlashtiring.');
+  return adminPlanSchema.parse({action:'results_bulk_apply',targetId:competition.id,body:{seasonId:competition.seasonId,...filters}});
+}
+
 export function describeAiAdminPlan(plan: AdminPlan, label = ''): string {
   const b = plan.body;
+  if (plan.action === 'results_bulk_apply') return `Ommaviy natija: ${label || plan.targetId}.\n${b.seasonId}, ${b.fromMatchday}–${b.toMatchday}-turlar (oxirgi tur ham kiradi).\n${b.expectedCount} ta o‘yinga uy ${b.homeScore}:${b.awayScore} safar hisobi.\nFaqat natijasi va arizasi yo‘q SCHEDULED/POSTPONED o‘yinlar. Mavjud, tasdiq kutayotgan va bahsli natijalar saqlanadi.\nNatijalar bitta tranzaksiyada yoziladi; jadval va xabarnomalar keyin yangilanadi.`;
   const target = label || plan.targetId || '';
   if (plan.action === 'matchday_control' || plan.action === 'cup_round') {
     const verbs: Record<string,string> = { LOCK:'qulflash', OPEN:'ochish', SELECT:'tanlash', EXTEND:'muddatini uzaytirish', RESTART:'qayta boshlash' };
@@ -252,6 +277,7 @@ async function handleAiAdminCommandInternal(payload: TelegramAiMessagePayload, s
 • La Liga jadvalini tashla
 • Angliya Kubogi yarim final o‘yinlarini ko‘rsat
 • La Liga 10-turni qulflang
+• La Liga 9-turgacha o‘ynalmagan hamma o‘yinga 0-0 ber
 • Arsenal klubini @username ga biriktir
 • Inter — Milan 10-tur natijasini 2-1 qil
 • Inter — Milan 10-tur natijasini o‘chir
@@ -343,11 +369,26 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
     // Explicit test planners replace planning only in isolated tests; production always resolves cached club IDs.
     const plan = correctionSource && correction ? reviseAiAdminPlan(correctionSource.plan, correction, correctionSource.scoreHomeFirst)
       : testPlanner ? await planAiAdminAction(argument, facts, signal, payload)
-      : await contextualFixturePlan(argument,recentFixture?[recentFixture]:scope.selectedFixtureIds||[],signal)
+      : await planBulkLeagueRequest(argument,signal)
+        || await contextualFixturePlan(argument,recentFixture?[recentFixture]:scope.selectedFixtureIds||[],signal)
         || await contextualClubPlan(argument,scope.selectedClubIds||[],scope.previousUserQueries||[],signal)
         || await parseConversationClubAssignmentPlan(argument, signal)
         || await parseNaturalAdminPlan(argument, signal) || await parseConversationMatchdayPlan(argument, scope, signal) || await planAiAdminAction(argument, facts, signal, payload);
     assertAiAdminActionAllowed(payload.fromUser.id, plan);
+    let bulkLabel = '';
+    if (plan.action === 'results_bulk_apply') {
+      if (!privateChat) throw new Error('CLARIFY:Ommaviy natijani botning shaxsiy chatida so‘rang.');
+      // Re-parse explicit intent even for a semantic model proposal. A model cannot
+      // choose a broader league/range or fabricate the server preview receipt.
+      const explicit = await planBulkLeagueRequest(argument,signal);
+      if (!explicit || explicit.targetId !== plan.targetId || ['seasonId','fromMatchday','toMatchday','homeScore','awayScore'].some(k => explicit.body[k] !== plan.body[k])) throw new Error('CLARIFY:Ommaviy natija rejasi aniq topshiriqqa mos kelmadi. Liga, tur va hisobni qayta yozing.');
+      const preview = await withinAiDeadline(signal, () => (testExecutor || executeAiAdminRoute)({...explicit,action:'results_bulk_preview'},payload.fromUser.id,'ai-bulk-preview-'+payload.updateId,signal));
+      const data = preview.data;
+      if (preview.status !== 200 || data?.success !== true || !/^[a-f0-9]{64}$/.test(data.previewHash || '')) throw new Error('CLARIFY:'+String(data?.message || 'O‘yinlar ro‘yxati ishonchli o‘qilmadi. Hech narsa o‘zgarmadi.'));
+      if (!data.count) return 'Tanlangan liga va tur oralig‘ida natijasiz, arizasiz o‘yin topilmadi. Hech narsa o‘zgarmadi.';
+      plan.body = {...explicit.body,previewHash:data.previewHash,expectedCount:data.count};
+      bulkLabel = String(data.competitionName) + '\nTurlar bo‘yicha: ' + Object.entries(data.rounds || {}).map(([round,count])=>`${round}-tur: ${count}`).join(', ') + `.\nO‘zgarmaydi: ${data.skipped} ta.\nNamuna: ` + (data.sample || []).join('; ');
+    }
     assertAdminPlanReady(plan);
     await clearAiAdminDraft(payload, signal);
     if (AI_ADMIN_ACTIONS[plan.action].method === 'GET') {
@@ -356,7 +397,7 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
       if (result.status < 200 || result.status >= 300) return `Ma’lumotni o‘qib bo‘lmadi: ${String(result.data?.message || result.data?.error || 'server rad etdi').slice(0,400)}.`;
       return formatNaturalAdminRead(plan.action,result.data);
     }
-    let targetLabel = '';
+    let targetLabel = bulkLabel;
     let scoreHomeFirst = correctionSource?.scoreHomeFirst;
     const lookup = createAiTournamentReader(signal);
     const fixtureId = plan.secondaryId || (/^(fixture_|result_|cup_winner)/.test(plan.action) ? plan.targetId : undefined);
@@ -390,7 +431,7 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
     const token = randomBytes(12).toString('hex');
     const description = describeAiAdminPlan(plan, targetLabel.trim());
     const preview = `${correctionSource ? 'Reja tuzatildi. Oldingi tasdiqlash tugmasi bekor qilindi.\n' : ''}Reja: ${description}\n\nHali bajarilmadi. Tasdiqlaysizmi?\n/ai_confirm ${token}\n/ai_cancel ${token}\n5 daqiqa amal qiladi.`;
-    if (preview.length > 950) return 'Reja juda uzun. Buyruqni qisqartiring yoki admin paneldan bajaring; hech narsa o‘zgarmadi.';
+    if (preview.length > (plan.action === 'results_bulk_apply' ? 3000 : 950)) return 'Reja juda uzun. Buyruqni qisqartiring yoki admin paneldan bajaring; hech narsa o‘zgarmadi.';
     const record: Pending = { token, plan, owner: payload.fromUser.id, chat: payload.chatId, thread: payload.threadId, expiresAt: Date.now() + 300000, state: 'pending', description, ...(scoreHomeFirst !== undefined ? { scoreHomeFirst } : {}) };
     if (correctionSource) {
       if (!await replacePending(correctionSource, record, payload, signal)) return 'Oldingi reja allaqachon ishlatilgan yoki yangilangan. Tuzatish bajarilmadi; hozirgi holatni tekshirib, topshiriqni qayta yozing.';

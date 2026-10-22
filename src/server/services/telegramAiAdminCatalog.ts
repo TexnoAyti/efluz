@@ -4,6 +4,8 @@ type AdminAction = { method: 'GET'|'POST'|'PUT'|'PATCH'|'DELETE'; path: string; 
 const action = (method: AdminAction['method'], path: string, fields = ''): AdminAction => ({ method, path, fields });
 /** Fixed application endpoints only. No SQL, shell, arbitrary URL or collection access. */
 export const AI_ADMIN_ACTIONS: Record<string, AdminAction> = {
+  results_bulk_preview: action('GET', '/competitions/:id/bulk-results/preview', 'seasonId, fromMatchday, toMatchday, homeScore, awayScore'),
+  results_bulk_apply: action('POST', '/competitions/:id/bulk-results/apply', 'seasonId, fromMatchday, toMatchday, homeScore, awayScore, previewHash:server preview only, expectedCount:server preview only'),
   result_edit: action('POST', '/fixtures/:id/result', 'homeScore:number, awayScore:number, homePenaltyScore?:number|null, awayPenaltyScore?:number|null, homeExtraTimeScore?:number|null, awayExtraTimeScore?:number|null, status?:CONFIRMED|AWAITING_RESULT|SCHEDULED, notes?'),
   result_clear: action('POST', '/fixtures/:id/delete-result', 'deleteSubmissions?:boolean, notes?'),
   result_approve: action('POST', '/results/:id/approve', 'homeScore:number, awayScore:number, notes?'),
