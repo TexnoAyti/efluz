@@ -41,6 +41,7 @@ import { competitionConsistencyRouter, adminConsistencyRouter } from './routes/c
 import { seasonLifecycleRouter, adminSeasonLifecycleRouter } from './routes/seasonLifecycle.routes';
 import { adminAiConfigRouter } from './routes/adminAiConfig.routes';
 import {teamLeaguePreviewRouter} from './routes/teamLeaguePreview.routes';
+import {uzeflifeRouter} from './routes/uzeflife.routes';
 import { customTournamentsRouter } from './routes/customTournaments.routes';
 import { customTournamentTicketsRouter } from './routes/customTournamentTickets.routes';
 
@@ -180,6 +181,7 @@ export function createApp() {
     });
     next();
   });
+  app.use('/api/uzeflife', rateLimit('uzeflife', 90, 60));
   app.use('/api/auth', rateLimit('auth', 20, 600));
   app.use('/api/clubs/crest-proxy', rateLimit('crest-proxy', 60, 60));
   app.use('/api/health/probe', rateLimit('health-probe', 3, 600));
@@ -217,6 +219,7 @@ export function createApp() {
   app.use('/api/custom-tournaments/tickets', customTournamentTicketsRouter);
   app.use('/api/admin/custom-tournaments/tickets', customTournamentTicketsRouter);
   app.use('/api/custom-tournaments', customTournamentsRouter);
+  app.use('/api/uzeflife', uzeflifeRouter);
   app.use('/api/team-leagues-preview', teamLeaguePreviewRouter);
 
   app.use('/api/*', (req, res) => { res.status(404).json({ error: 'Endpoint not found', path: req.originalUrl }); });
