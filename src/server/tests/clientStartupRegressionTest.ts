@@ -165,5 +165,31 @@ try {
   if (originalWindowDescriptor) Object.defineProperty(globalThis, 'window', originalWindowDescriptor);
   else delete (globalThis as any).window;
 }
+// A reused WebView can retain an expired launch while the async SDK is loading.
+// The current signed URL must win over both tab memory and session storage.
+try {
+  const store = new Map<string, string>();
+  const launchWindow: any = {
+    sessionStorage: { getItem: (key: string) => store.get(key) || null, setItem: (key: string, value: string) => store.set(key, value), removeItem: (key: string) => store.delete(key) },
+    location: { hash: '#tgWebAppData=fresh-signed-launch', search: '', pathname: '/' },
+    history: { state: null, replaceState() {} },
+  };
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: launchWindow });
+  setTelegramInitData('expired-launch');
+  assert.equal(getTelegramInitData(), 'fresh-signed-launch', 'Current launch overrides stale tab memory');
+  setTelegramInitData(null);
+  store.set('efootball_tg_init_data', 'expired-session-launch');
+  assert.equal(getTelegramInitData(), 'fresh-signed-launch', 'Current launch overrides stale session storage');
+  launchWindow.location.hash = '';
+  launchWindow.location.search = '?tgWebAppData=fresh-query-launch';
+  assert.equal(getTelegramInitData(), 'fresh-query-launch', 'Query launches also override cached credentials');
+  launchWindow.location.search = '';
+  assert.equal(getTelegramInitData(), 'fresh-query-launch', 'Fresh credentials remain usable after URL cleanup');
+} finally {
+  setTelegramInitData(null);
+  if (originalWindowDescriptor) Object.defineProperty(globalThis, 'window', originalWindowDescriptor);
+  else delete (globalThis as any).window;
+}
+console.log('PASS reused WebView: fresh signed launches override stale memory and session credentials');
 console.log('PASS blocked WebView storage: signed launch hash, in-memory sessions, language mounting and throwing storage getters');
 console.log('PASS startup: slow/failed catalog does not block Telegram login, healthy login skips dev discovery, rejected identity stays rejected, explicit development fallback and session/anonymous modes work, auth bodies and private headers preserved');
