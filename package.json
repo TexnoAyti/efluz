@@ -57,7 +57,10 @@
     "test:matchday-locks": "node scripts/run-isolated-test.mjs src/server/tests/verifyMatchdayLockRegression.ts",
     "test:read-after-write": "tsx src/server/tests/readAfterWriteConsistencyRegressionTest.ts",
     "test:matchday-reminder": "node scripts/run-isolated-test.mjs src/server/tests/matchdayReminderRegressionTest.ts",
-    "test:player-trophies": "node scripts/run-isolated-test.mjs src/server/tests/playerTrophyRegressionTest.ts"
+    "test:player-trophies": "node scripts/run-isolated-test.mjs src/server/tests/playerTrophyRegressionTest.ts",
+    "build:design-preview": "vite build --mode design-preview && node scripts/package-design-preview.mjs",
+    "test:design-preview": "node --import tsx --test src/preview/preview.test.ts",
+    "test:design-preview:browser": "node scripts/test-design-preview-browser.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -96,6 +99,7 @@
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.3"
+    "vite": "^6.2.3",
+    "playwright": "^1.58.2"
   }
 }

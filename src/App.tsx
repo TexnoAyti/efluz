@@ -20,6 +20,8 @@ import { isDesignPreview } from './designPreview';
 import { EFL_2_DESIGN_ENABLED, WELCOME_STORAGE_VERSION } from './releaseDesign';
 import { Loader2, CheckCircle2, AlertCircle, Info } from 'lucide-react';
 
+const PreviewPanel = lazy(() => import('./preview/PreviewPanel'));
+
 const NotificationsView = lazy(() => import('./components/NotificationsView').then(module => ({ default: module.NotificationsView })));
 const AdminView = lazy(() => import('./components/AdminView').then(module => ({ default: module.AdminView })));
 const AdminMatchOperationsV4Panel = lazy(() => import('./components/admin/AdminMatchOperationsV4Panel').then(module => ({ default: module.AdminMatchOperationsV4Panel })));
@@ -75,7 +77,7 @@ const AppContent: React.FC = () => {
     if (!user) return false;
     if (welcomeCompletedFor === user.id) return true;
     // Force only the existing, build-gated visual preview; never bypass Telegram auth.
-    if (isDesignPreview && new URLSearchParams(window.location.search).get('welcome') === '1') return false;
+    if (isDesignPreview) return new URLSearchParams(window.location.search).get('welcome') !== '1';
     try { return window.localStorage.getItem(`efluz-welcome-${WELCOME_STORAGE_VERSION}:${user.id}`) === 'done'; }
     catch { return false; }
   }, [user?.id, welcomeCompletedFor]);
@@ -126,7 +128,9 @@ const AppContent: React.FC = () => {
     setActiveTabState(resolvedTab);
     if (typeof window !== 'undefined') {
       const url = resolvedTab === 'dashboard' ? '/' : `/${resolvedTab}`;
-      const nextUrl = isDesignPreview ? `${url}?designPreview=1` : url;
+      const previewParams = new URLSearchParams(window.location.search);
+      previewParams.delete('previewPage');
+      const nextUrl = isDesignPreview ? `${url}?${previewParams}` : url;
       if (window.location.pathname !== url) window.history.pushState({ tab: resolvedTab }, '', nextUrl);
     }
   };
@@ -182,7 +186,7 @@ const AppContent: React.FC = () => {
           : 'bg-slate-950 text-slate-100'
       }`}
     >
-      {isDesignPreview && <div className="sticky top-0 z-[60] bg-amber-100 px-3 py-1.5 text-center text-[11px] font-bold text-amber-950">DESIGN PREVIEW · test ko‘rinishi, hisobga kirilmagan</div>}
+      {isDesignPreview && <ContentBoundary><PreviewPanel theme={theme} onThemeChange={changeTheme} /></ContentBoundary>}
       {toastMessage && (
         <div className="fixed top-14 right-4 z-50 animate-in slide-in-from-top-3 fade-in duration-200">
           <div
@@ -243,7 +247,7 @@ const AppContent: React.FC = () => {
                 key={searchNavigationRevision}
                 onNavigateTab={setActiveTab}
                 initialSubTab={
-                  readUzeflifeLaunch()!==null ? 'uzeflife' : readTournamentLaunch() ? 'custom' : currentTab === 'cups'
+                  (isDesignPreview && new URLSearchParams(location.search).get('previewPage') === 'uzeflife') || readUzeflifeLaunch() !== null ? 'uzeflife' : readTournamentLaunch() ? 'custom' : currentTab === 'cups'
                     ? 'cups'
                     : currentTab === 'champions-league'
                     ? 'european'
@@ -275,7 +279,7 @@ const AppContent: React.FC = () => {
             )}
 
             {currentTab === 'notifications' && <NotificationsView onNavigateTab={setActiveTab} />}
-            {currentTab === 'admin' && user?.isAdmin && <AdminView />}
+            {currentTab === 'admin' && !isDesignPreview && user?.isAdmin && <AdminView />}
             </>}
           </ContentBoundary>
       </main>
@@ -288,7 +292,7 @@ const AppContent: React.FC = () => {
         onSelectClub={(club) => {
           setPublicClubId(club.id);
           const path = clubPagePath(club.id);
-          if (window.location.pathname !== path) window.history.pushState({ publicClub: true }, '', isDesignPreview ? `${path}?designPreview=1` : path);
+          if (window.location.pathname !== path) window.history.pushState({ publicClub: true }, '', isDesignPreview ? `${path}?${new URLSearchParams({designPreview: '1', previewSeason: activeSeasonId})}` : path);
         }}
         onNavigateTab={(tab) => {
           setSearchNavigationRevision((revision) => revision + 1);

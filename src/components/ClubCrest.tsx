@@ -1,4 +1,5 @@
 import React from 'react';
+import { isDesignPreview } from '../designPreview';
 import { usePremiumClubIds } from '../context/AuthContext';
 
 export interface ClubCrestProps {
@@ -87,7 +88,8 @@ export const ClubCrest: React.FC<ClubCrestProps> = ({
     : null;
 
   // Same-origin URL only; no direct third-party CDN requests
-  const currentSrc = clubCrestProxyUrl || genericCrestProxyUrl || null;
+  // Isolated static preview uses the same official catalogue asset, without a backend proxy.
+  const currentSrc = isDesignPreview ? directUrl : clubCrestProxyUrl || genericCrestProxyUrl || null;
 
   const containerSizeClass = SIZE_CONTAINER_CLASSES[size] || SIZE_CONTAINER_CLASSES.md;
   const textSizeClass = SIZE_TEXT_CLASSES[size] || SIZE_TEXT_CLASSES.md;
