@@ -7,7 +7,7 @@ import {UzeflifeChampionship} from './UzeflifeChampionship';
 import '../customTournaments/tournaments.css';
 import './uzeflife.css';
 
-export function UzeflifeView() {
+export function UzeflifeView({management=false}:{management?:boolean}={}) {
   const {user}=useAuth();
   const [state,setState]=useState<UViewState|null>(null),[busy,setBusy]=useState(false);
   const [error,setError]=useState(''),[notice,setNotice]=useState(''),[missing,setMissing]=useState<UChannel[]>([]);
@@ -33,5 +33,6 @@ export function UzeflifeView() {
     finally {if(id===generation.current)setBusy(false);}
   };
   if(!state)return <div className="efl-custom-tournaments tourney-page uzeflife"><div className="u-loading" role="status">{error?<><p role="alert">{error}</p><button className="tourney-button" onClick={()=>void load()}>Qayta urinish</button></>:<><RefreshCw size={22} className="animate-spin"/><p>UZEFLIFE yuklanmoqda…</p></>}</div></div>;
-  return <UzeflifeChampionship key={user?.id||'public'} state={state} userId={user?.id} busy={busy} error={error} notice={notice} missing={missing} act={act} onRefresh={()=>void load()}/>;
+  if(management&&!state.permissions.length)return <div className="efl-custom-tournaments tourney-page uzeflife"><div className="tourney-surface" role="status"><h3>UZEFLIFE admin paneli</h3><p className="tourney-muted mt-2">Bu hisobga UZEFLIFE boshqaruv vakolati berilmagan. Turnir egasi yoki Super admindan ruxsat so‘rang.</p><button className="tourney-button mt-3" disabled={busy} onClick={()=>void load()}>Vakolatni qayta tekshirish</button></div></div>;
+  return <UzeflifeChampionship initialAdmin={management} key={user?.id||'public'} state={state} userId={user?.id} busy={busy} error={error} notice={notice} missing={missing} act={act} onRefresh={()=>void load()}/>;
 }

@@ -45,7 +45,7 @@ assert.ok(await dialog.locator('input[name=home]').isVisible());await dialog.loc
 assert.ok(await dialog.locator('input[name=penaltyHome]').isVisible());
 await page.screenshot({path:path.join(output,'after-dialog-320.png'),fullPage:false});
 const dr=await dialog.boundingBox();assert.ok(dr.x>=0&&dr.x+dr.width<=320&&dr.y>=0&&dr.y+dr.height<=641,'Dialog stays inside mobile viewport');await page.getByRole('button',{name:'O‘yinni yopish'}).click();
-await page.getByRole('button',{name:'Turnir boshqaruvi',exact:true}).click();
+await page.getByRole('button',{name:/Turnir admin paneli/}).click();
 for(const name of ['Turnir','Ishtirokchilar','O‘yinlar','Majburiy obuna','Adminlar','E’lonlar']){
  await page.getByRole('navigation',{name:'Turnir boshqaruvi bo‘limlari'}).getByRole('button',{name,exact:true}).click();
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Admin section page overflow');

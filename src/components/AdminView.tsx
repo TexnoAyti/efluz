@@ -79,7 +79,9 @@ import { AdminClubIntegrityPanel } from './admin/AdminClubIntegrityPanel';
 import { AdminClubAdmissionPanel } from './admin/AdminClubAdmissionPanel';
 import { AdminTicketManagementModal } from './customTournaments/AdminTicketManagementModal';
 
-type AdminTab = 'overview' | 'clubs' | 'matches' | 'results' | 'competitions' | 'domestic_cups' | 'european' | 'telegram' | 'telegram_ai' | 'notifications' | 'users' | 'system';
+const UzeflifeAdminView = React.lazy(() => import('./uzeflife/UzeflifeView').then(m => ({default:m.UzeflifeView})));
+
+type AdminTab = 'uzeflife' | 'overview' | 'clubs' | 'matches' | 'results' | 'competitions' | 'domestic_cups' | 'european' | 'telegram' | 'telegram_ai' | 'notifications' | 'users' | 'system';
 
 interface PendingFixtureItem extends Fixture {
   submissions?: {
@@ -930,6 +932,10 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
           )}
         </button>)}
 
+        <button id="tab-admin-uzeflife" onClick={() => setActiveAdminTab('uzeflife')} className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap min-h-[40px] ${activeAdminTab === 'uzeflife' ? 'bg-emerald-500 text-slate-950' : 'glass-card text-slate-300 hover:text-white'}`}>
+          <Trophy className="w-4 h-4" /><span>UZEFLIFE</span>
+        </button>
+
         {/* 2. CLUBS */}
         <button
           id="tab-admin-clubs"
@@ -1093,6 +1099,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
       {/* ========================================================================= */}
       {/* 1. OVERVIEW SECTION */}
       {/* ========================================================================= */}
+      {activeAdminTab === 'uzeflife' && <React.Suspense fallback={<p role="status">UZEFLIFE yuklanmoqda…</p>}><UzeflifeAdminView management /></React.Suspense>}
       {activeAdminTab === 'overview' && (
         <div className="space-y-6">
           {/* Top KPI Metrics Grid */}
