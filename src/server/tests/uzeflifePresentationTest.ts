@@ -74,3 +74,20 @@ for(const stage of [state,{...state,status:'registration' as const},played])for(
 }
 assert.ok(!emptyPlayers.includes('tourney-'),'Player enrollment uses the league control scale');
 console.log('PASS shared league presentation across draft, registration, playing, six public sections, enrollment and management permissions.');
+
+// Keep the approved compact bracket geometry while presenting richer match states.
+const bracketMarkup=(s:UViewState,b=1,userId?:string)=>renderToStaticMarkup(React.createElement(UzeflifeBracket,{state:s,bracket:b,userId,onMatch:()=>{}}));
+const compact=bracketMarkup(state);
+assert.ok(compact.includes('width:1976px;height:1040px'),'32-player qualifier footprint is unchanged');
+assert.equal((compact.match(/width:200px;height:108px/g)||[]).length,31,'All match cards retain their exact dimensions');
+assert.ok(compact.includes('left:888px;top:482px;width:200px;height:108px'),'Final remains centered in the existing tree');
+assert.ok(bracketMarkup(state,0).includes('width:1088px;height:296px'),'Eight-player finals footprint is unchanged');
+const firstMatch=slots[0];
+const detailed={...state,status:'playing' as const,round:1,participants:[{id:'home',name:'Abdurahmonov Muhammadazizbek',status:'approved' as const},{id:'away',name:'Azamatjon Arslonov',status:'approved' as const}],matches:slots.map(m=>m.id===firstMatch.id?{...m,home:'home',away:'away',winner:'home',homeScore:2,awayScore:2,penaltyHome:5,penaltyAway:4}:m)};
+const scored=bracketMarkup(detailed,1,'home');
+assert.ok(scored.includes('u-tree-link-complete')&&scored.includes('u-tree-winner')&&scored.includes('u-tree-loser'));
+assert.ok(scored.includes('(5)')&&scored.includes('(4)')&&scored.includes('penaltilar 5:4'));
+assert.ok(scored.includes('G‘olib: Abdurahmonov Muhammadazizbek')&&scored.includes('Sizning o‘yiningiz'),'Match details remain accessible with full names, winner, scores and own-match context');
+const waiting=bracketMarkup({...detailed,matches:detailed.matches.map(m=>m.id===firstMatch.id?{...m,winner:null,homeScore:null,awayScore:null,penaltyHome:null,penaltyAway:null}:m)},1,'away');
+assert.ok(waiting.includes('is-current')&&waiting.includes('is-mine'));
+console.log('PASS playoff styling states and unchanged 32-player / eight-player tree geometry.');
