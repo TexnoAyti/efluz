@@ -1,52 +1,37 @@
-import React,{useEffect,useState} from 'react';
-import {Trophy,Users,CalendarDays,GitBranch,Info,Shield,ClipboardList} from 'lucide-react';
-import {CompetitionTabs,CompetitionBanner} from '../CompetitionChrome';
-import {getAuthHeaders} from '../../lib/customTournamentApi';
+import React,{useEffect,useRef,useState} from 'react';
+import {RefreshCw} from 'lucide-react';
 import {useAuth} from '../../context/AuthContext';
-import {U_PERMISSION_LABELS,UZEFLIFE_PERMISSIONS,U_STATUS,type UState,type UPermission,type UMatch,type UChannel} from '../../types/uzeflife';
+import {uzeflifeRequest,type UViewState} from '../../lib/uzeflifeApi';
+import type {UChannel} from '../../types/uzeflife';
+import {UzeflifeChampionship} from './UzeflifeChampionship';
 import '../customTournaments/tournaments.css';
-import {isDesignPreview} from '../../designPreview';
-import {uzeflifeDemo} from '../../lib/uzeflifeDemo';
-type ViewState=UState&{permissions:UPermission[];isSuper:boolean;isOwner:boolean};
-export async function uzeflifeRequest(action='',body?:unknown){
- if(isDesignPreview){if(body!==undefined)throw new Error('Bu namoyish rejimi. Amallar faqat Telegram orqali haqiqiy turnirda bajariladi.');return structuredClone(uzeflifeDemo);}
- const res=await fetch(`/api/uzeflife${action?`/${action}`:''}`,{method:body===undefined?'GET':'POST',headers:getAuthHeaders(),...(body===undefined?{}:{body:JSON.stringify(body)})});
- const data=await res.json();if(!res.ok||!data.ok)throw Object.assign(new Error(data.error||'Turnirni yuklab bo‘lmadi.'),{channels:data.channels});return data;
-}
-type Tab='about'|'register'|'participants'|'fixtures'|'bracket'|'results'|'standings'|'admin';
-export function UzeflifeView(){
- const [selectedRound,setSelectedRound]=useState(0);
- const {user}=useAuth();const [s,setS]=useState<ViewState|null>(null),[tab,setTab]=useState<Tab>('about'),[error,setError]=useState(''),[busy,setBusy]=useState(false),[missing,setMissing]=useState<UChannel[]>([]),[notice,setNotice]=useState('');
- const load=()=>uzeflifeRequest().then(setS).catch(e=>setError(e.message));
- useEffect(()=>{let live=true;setS(null);uzeflifeRequest().then(d=>{if(live)setS(d);}).catch(e=>{if(live)setError(e.message);});return()=>{live=false;};},[user?.id]);
- const act=async(action:string,body:unknown={})=>{setBusy(true);setError('');setNotice('');try{const data=await uzeflifeRequest(action,body);if(action==='subscription-check'){setMissing(data.channels);setNotice(data.subscribed?'Obuna tasdiqlandi. Ro‘yxatdan o‘tishingiz mumkin.':'Barcha kanallarga obuna bo‘ling.');}else{setS(data);setMissing([]);setNotice('Muvaffaqiyatli saqlandi.');}}catch(e:any){setError(e.message);if(e.channels)setMissing(e.channels);}finally{setBusy(false);}};
- const allowed=(p:UPermission)=>s?.permissions.includes(p);
- const form=(action:string,fields:React.ReactNode,body:(f:FormData)=>unknown,label='Saqlash')=><form className="tourney-surface space-y-3" onSubmit={e=>{e.preventDefault();void act(action,body(new FormData(e.currentTarget)));}}>{fields}<button className="tourney-button primary" disabled={busy}>{label}</button></form>;
- const input=(name:string,label:string,type='text',value?:string)=><label className="tourney-field">{label}<input name={name} type={type} required defaultValue={value}/></label>;
- if(!s)return <div className="efl-custom-tournaments tourney-page"><div className="tourney-empty" role="status">{error||'UZEFLIFE yuklanmoqda…'}{error&&<button className="tourney-button" onClick={()=>{setError('');void load();}}>Qayta urinish</button>}</div></div>;
- const approved=s.participants.filter(p=>p.status==='approved');const name=(id:string|null)=>s.participants.find(p=>p.id===id)?.name||'Aniqlanmagan';
- const match=(m:UMatch)=><article key={m.id} className="tourney-surface space-y-2"><p className="tourney-eyebrow">{m.bracket?`${m.bracket}-setka`:'Final bosqichi'} · {m.round}-bosqich · {m.id}</p><div className="flex justify-between gap-2 font-bold"><span>{name(m.home)}</span><span>{m.homeScore??'—'} : {m.awayScore??'—'}</span><span>{name(m.away)}</span></div>{m.penaltyHome!==null&&<p>Penaltilar: {m.penaltyHome} : {m.penaltyAway}</p>}{m.scheduledAt&&<p>{new Date(m.scheduledAt).toLocaleString('uz-UZ',{timeZone:'Asia/Tashkent'})}</p>}{m.winner&&<p>G‘olib: {name(m.winner)}</p>}{m.proposal&&<p>Tasdiq kutilmoqda: {m.proposal.home} : {m.proposal.away}</p>}{m.proposal&&allowed('matches')&&<button className="tourney-button" disabled={busy} onClick={()=>void act('clearProposal',{matchId:m.id})}>Natija arizasini qaytarish</button>}{s.status==='playing'&&m.round===s.round&&m.home&&m.away&&(allowed('results')||(!m.winner&&(m.home===user?.id||m.away===user?.id)))&&form('result',<><div className="grid grid-cols-2 gap-2">{input('home','Mezbon hisobi','number',String(m.proposal?.home??m.homeScore??0))}{input('away','Mehmon hisobi','number',String(m.proposal?.away??m.awayScore??0))}<label className="tourney-field">Mezbon penalti<input name="penaltyHome" type="number" min="0" max="99" defaultValue={m.proposal?.penaltyHome??m.penaltyHome??''}/></label><label className="tourney-field">Mehmon penalti<input name="penaltyAway" type="number" min="0" max="99" defaultValue={m.proposal?.penaltyAway??m.penaltyAway??''}/></label></div></>,f=>({matchId:m.id,home:Number(f.get('home')),away:Number(f.get('away')),penaltyHome:f.get('penaltyHome')===''?null:Number(f.get('penaltyHome')),penaltyAway:f.get('penaltyAway')===''?null:Number(f.get('penaltyAway'))}),allowed('results')?'Natijani tasdiqlash / tuzatish':'Natijani yuborish / tasdiqlash')}{allowed('schedules')&&!m.winner&&form('schedule',input('at','O‘yin vaqti (Toshkent)','datetime-local'),f=>({matchId:m.id,scheduledAt:new Date(`${f.get('at')}:00+05:00`).toISOString()}),'Vaqtni belgilash')}</article>;
- const tabs:{id:Tab;label:string;icon:typeof Trophy}[]=[{id:'about',label:'Turnir haqida',icon:Info},{id:'register',label:'Ro‘yxatdan o‘tish',icon:ClipboardList},{id:'participants',label:'Ishtirokchilar',icon:Users},{id:'fixtures',label:'O‘yinlar jadvali',icon:CalendarDays},{id:'bracket',label:'Pley-off',icon:GitBranch},{id:'results',label:'Natijalar',icon:Trophy},{id:'standings',label:'Turnir jadvali',icon:ClipboardList}];
- if(s.permissions.length)tabs.push({id:'admin',label:'Turnir admin paneli',icon:Shield});
- return <div className="efl-custom-tournaments tourney-page">
- <CompetitionBanner><p className="tourney-eyebrow">EFLUZ · Maxsus chempionat</p><h2 className="text-2xl font-black">UZEFLIFE</h2><p>{U_STATUS[s.status]} · {approved.length}/256 ishtirokchi{s.round?` · ${s.round}-bosqich`:''}</p></CompetitionBanner>
- <CompetitionTabs<Tab> items={tabs} value={tab} onChange={setTab} label="UZEFLIFE bo‘limlari"/>
- <button className="tourney-button justify-self-start" disabled={busy} onClick={()=>{setError('');void load();}}>Yangilash</button>
- {error&&<div role="alert" className="tourney-note error">{error}</div>}{notice&&<p role="status" className="tourney-note">{notice}</p>}
- {missing.length>0&&<div className="tourney-surface space-y-2"><p>Quyidagi kanallarga obuna bo‘ling:</p>{missing.map(c=><a className="tourney-button" key={c.id} href={c.url} target="_blank" rel="noreferrer">{c.title} ↗</a>)}<button className="tourney-button primary" disabled={busy} onClick={()=>void act('subscription-check',{})}>✅ Obunani tekshirish</button></div>}
- {tab==='about'&&<><div className="tourney-surface space-y-3"><h3>Turnir haqida</h3><p>{s.description}</p><p>Har bir saralash setkasida 5 bosqich. 8 g‘olib chorak final, yarim final va finalda kurashadi. Chempion 8 ta o‘yinda g‘alaba qozonadi.</p></div>{s.announcements.map(a=><article key={a.id} className="tourney-surface"><p className="whitespace-pre-wrap">{a.text}</p></article>)}</>}
- {tab==='register'&&<div className="tourney-surface space-y-3"><h3>Ro‘yxatdan o‘tish</h3>{s.participants.some(p=>p.id===user?.id&&p.status!=='removed')?<p>{s.participants.find(p=>p.id===user?.id)?.status==='approved'?'Ishtirokingiz tasdiqlangan.':'Arizangiz administrator tasdig‘ini kutmoqda.'}</p>:<><p>Ariza yuborishdan oldin majburiy kanallarga obuna bo‘ling. Arizani administrator tasdiqlaydi.</p>{s.subscriptionsEnabled&&s.channels.map(c=><a key={c.id} className="tourney-button" href={c.url} target="_blank" rel="noreferrer">{c.title} ↗</a>)}<div className="tourney-action-row"><button className="tourney-button" disabled={busy||!user} onClick={()=>void act('subscription-check',{})}>✅ Obunani tekshirish</button><button className="tourney-button primary" disabled={busy||!user||s.status!=='registration'} onClick={()=>void act('register',{})}>Ariza yuborish</button></div></>}</div>}
- {tab==='participants'&&<div className="tourney-surface">{approved.length?approved.map((p,i)=><p className="py-2 border-b border-[var(--efl-border)]" key={p.id}>{i+1}. {p.name}</p>):<p>Hali tasdiqlangan ishtirokchilar yo‘q.</p>}</div>}
- {['fixtures','results','bracket'].includes(tab)&&<><CompetitionTabs items={Array.from({length:8},(_,i)=>({id:String(i+1),label:i<5?`${i+1}-saralash`:['Chorak final','Yarim final','Final'][i-5],icon:GitBranch}))} value={String(selectedRound||s.round||1)} onChange={v=>setSelectedRound(Number(v))} label="Pley-off bosqichlari"/><div className="tourney-grid">{s.matches.filter(m=>m.round===(selectedRound||s.round||1)&&(tab!=='results'||m.winner)).map(match)}</div>{!s.matches.length&&<p className="tourney-empty">Pley-off hali shakllantirilmagan.</p>}</>}
- {tab==='standings'&&<div className="tourney-surface overflow-x-auto"><table className="w-full text-left"><thead><tr><th>Ishtirokchi</th><th>G‘alaba</th><th>Holat</th></tr></thead><tbody>{[...approved].sort((a,b)=>s.matches.filter(m=>m.winner===b.id).length-s.matches.filter(m=>m.winner===a.id).length).map(p=><tr key={p.id}><td className="py-2">{p.name}</td><td>{s.matches.filter(m=>m.winner===p.id).length}</td><td>{s.matches.find(m=>m.round===8)?.winner===p.id?'Chempion':s.matches.some(m=>m.winner&&m.winner!==p.id&&(m.home===p.id||m.away===p.id))?'Musobaqani tark etgan':'Ishtirok etmoqda'}</td></tr>)}</tbody></table></div>}
- {tab==='admin'&&s.permissions.length>0&&<fieldset disabled={busy} className="space-y-4 min-w-0">
- <section className="tourney-surface space-y-3"><h3>Turnir boshqaruvi</h3>{s.isSuper&&form('settings',<label className="tourney-field">Turnir haqida<textarea name="description" maxLength={2000} defaultValue={s.description}/></label>,f=>({description:f.get('description')}))}<div className="tourney-action-row">{allowed('registrations')&&['draft','registration'].includes(s.status)&&<button className="tourney-button" onClick={()=>void act(s.status==='registration'?'close':'open',{})}>{s.status==='registration'?'Qabulni yopish':'Qabulni ochish'}</button>}{allowed('brackets')&&!s.matches.length&&<button disabled={approved.length!==256} className="tourney-button primary" onClick={()=>{if(window.confirm('256 ishtirokchini tasodifiy 8 setkaga ajratib, turnirni boshlaysizmi?'))void act('generate',{});}}>Pley-offni yaratish va boshlash</button>}{allowed('brackets')&&s.status==='playing'&&s.round<8&&<button className="tourney-button" onClick={()=>void act('next',{})}>Keyingi bosqich</button>}{s.isSuper&&s.status==='playing'&&<button className="tourney-button" onClick={()=>void act('pause',{})}>To‘xtatish</button>}{s.isSuper&&s.status==='paused'&&<button className="tourney-button" onClick={()=>void act('resume',{})}>Davom ettirish</button>}{s.isSuper&&s.status==='playing'&&s.matches.find(m=>m.round===8)?.winner&&<button className="tourney-button" onClick={()=>void act('complete',{})}>Turnirni yakunlash</button>}</div></section>
- {allowed('participants')&&<section className="tourney-surface space-y-2"><h3>Ishtirokchilar boshqaruvi</h3>{s.participants.filter(p=>p.status!=='removed').map(p=><div className="tourney-action-row" key={p.id}><span>{p.name} · {p.status==='pending'?'Kutilmoqda':'Tasdiqlangan'}</span>{s.status!=='completed'&&<>{!s.matches.length&&p.status==='pending'&&<button className="tourney-button" onClick={()=>void act('review',{target:p.id,status:'approved'})}>Tasdiqlash</button>}<button className="tourney-button danger" onClick={()=>{if(window.confirm(`${p.name} ishtirokini bekor qilasizmi?`))void act('review',{target:p.id,status:'removed'});}}>Chiqarish</button></>}</div>)}</section>}
- {(allowed('results')||allowed('schedules')||allowed('matches'))&&<section className="tourney-surface space-y-2"><h3>O‘yinlar boshqaruvi</h3><p>Joriy bosqich o‘yinlarini jadvalda boshqaring.</p><button className="tourney-button" onClick={()=>setTab('fixtures')}>O‘yinlar jadvalini ochish</button></section>}
- {allowed('channels')&&<section className="tourney-surface space-y-3"><h3>Majburiy obuna</h3><p>Bot qo‘shilgan kanallarda administrator bo‘lishi kerak.</p><button className="tourney-button" onClick={()=>void act('subscriptions',{enabled:!s.subscriptionsEnabled})}>{s.subscriptionsEnabled?'Obunani o‘chirish':'Obunani yoqish'}</button>{s.channels.map(c=><div className="tourney-action-row" key={c.id}><a href={c.url} target="_blank" rel="noreferrer">{c.title} ({c.id})</a><button className="tourney-button danger" onClick={()=>void act('removeChannel',{id:c.id})}>Olib tashlash</button></div>)}{form('addChannel',<>{input('id','Kanal ID yoki @username')}{input('title','Kanal nomi')}{input('url','https://t.me/ havola','url')}</>,f=>Object.fromEntries(f),'Kanal qo‘shish')}</section>}
- {s.isSuper&&<section className="tourney-surface space-y-3"><h3>Adminlar boshqaruvi</h3><p>Super admin: {s.superAdmin||'Tayinlanmagan'}</p>{s.isOwner&&<>{form('superAdmin',input('target','Telegram ID yoki EFLUZ akkaunt ID'),f=>({target:f.get('target')}),'Super admin tayinlash')}{s.superAdmin&&<button className="tourney-button danger" onClick={()=>{if(window.confirm('Super admin vakolatini bekor qilasizmi?'))void act('superAdmin',{target:null});}}>Super adminni bekor qilish</button>}<button className="tourney-button" onClick={()=>void act('customNavigation',{enabled:!s.customNavigationEnabled})}>O‘z turniringiz: {s.customNavigationEnabled?'yashirish':'qayta ko‘rsatish'}</button></>}{Object.entries(s.assistants).map(([id,permissions])=><div className="tourney-surface space-y-2" key={id}><p>{id}: {permissions.map(p=>U_PERMISSION_LABELS[p]).join(', ')}</p><button className="tourney-button danger" onClick={()=>void act('removeAssistant',{target:id})}>Yordamchini olib tashlash</button></div>)}{form('assistant',<>{input('target','Telegram ID yoki EFLUZ akkaunt ID')}{UZEFLIFE_PERMISSIONS.map(p=><label key={p} className="flex gap-2 items-center"><input type="checkbox" name="permissions" value={p}/>{U_PERMISSION_LABELS[p]}</label>)}</>,f=>({target:f.get('target'),permissions:f.getAll('permissions')}),'Yordamchi qo‘shish / vakolatlarini yangilash')}</section>}
- {allowed('announcements')&&<section className="tourney-surface"><h3>E’lonlar</h3>{form('announce',<label className="tourney-field">E’lon matni<textarea name="text" required maxLength={2000}/></label>,f=>({text:f.get('text')}),'E’lonni chiqarish')}</section>}
- </fieldset>}
- </div>;
- // Round selection remains local and never mutates tournament progression.
+import './uzeflife.css';
+
+export function UzeflifeView() {
+  const {user}=useAuth();
+  const [state,setState]=useState<UViewState|null>(null),[busy,setBusy]=useState(false);
+  const [error,setError]=useState(''),[notice,setNotice]=useState(''),[missing,setMissing]=useState<UChannel[]>([]);
+  const generation=useRef(0);
+  const load=async()=>{
+    const id=++generation.current;setError('');setBusy(true);
+    try {const data=await uzeflifeRequest();if(id===generation.current)setState(data);}
+    catch(e:any){if(id===generation.current)setError(e.message);}
+    finally {if(id===generation.current)setBusy(false);}
+  };
+  useEffect(()=>{setState(null);setNotice('');setMissing([]);void load();return()=>{generation.current++;};},[user?.id]);
+  const act=async(action:string,body:unknown={})=>{
+    if(busy)return false;
+    const id=generation.current;setBusy(true);setError('');setNotice('');
+    try {
+      const data=await uzeflifeRequest(action,body);
+      if(id!==generation.current)return false;
+      if(action==='subscription-check'){
+        setMissing(data.channels);setNotice(data.subscribed?'Obuna tasdiqlandi. Ro‘yxatdan o‘tishingiz mumkin.':'Barcha kanallarga obuna bo‘ling.');
+      } else {setState(data);setMissing([]);setNotice(action==='register'?'Arizangiz qabul qilindi. Administrator tasdig‘ini kuting.':'Saqlandi.');}
+      return true;
+    } catch(e:any){if(id===generation.current){setError(e.message);if(e.channels)setMissing(e.channels);}return false;}
+    finally {if(id===generation.current)setBusy(false);}
+  };
+  if(!state)return <div className="efl-custom-tournaments tourney-page uzeflife"><div className="u-loading" role="status">{error?<><p role="alert">{error}</p><button className="tourney-button" onClick={()=>void load()}>Qayta urinish</button></>:<><RefreshCw size={22} className="animate-spin"/><p>UZEFLIFE yuklanmoqda…</p></>}</div></div>;
+  return <UzeflifeChampionship key={user?.id||'public'} state={state} userId={user?.id} busy={busy} error={error} notice={notice} missing={missing} act={act} onRefresh={()=>void load()}/>;
 }

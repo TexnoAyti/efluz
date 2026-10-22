@@ -1,6 +1,6 @@
 # UZEFLIFE championship
 
-A dedicated Uzbek competition workspace in the existing competition hub. Existing custom tournament records, links and APIs remain intact; its navigation entry defaults to hidden for ordinary users and is last in the navigation configuration. The platform owner can restore it from UZEFLIFE administration.
+A dedicated Uzbek competition workspace in the existing competition hub. Existing custom tournament records, links and APIs remain intact; its navigation entry defaults to hidden for everyone, including the platform owner, and is last in the navigation configuration. The platform owner can restore it from UZEFLIFE administration.
 
 ## Runtime and permissions
 
@@ -9,6 +9,10 @@ A dedicated Uzbek competition workspace in the existing competition hub. Existin
 Only primary owner Telegram ID 5209126900 can assign/revoke the tournament Super Admin or restore custom navigation. The Super Admin can grant/revoke eight assistant permissions. Verified existing account or Telegram IDs are resolved server side. Role checks repeat within the write transaction; suspended accounts are denied on each request. Maximum 32 assistants, 8 channels and 100 announcements bound the championship document.
 
 Channel membership is verified with `getChatMember`, concurrently with an eight-second timeout, for registration and participant result submission. Creator, administrator, member and restricted members with `is_member=true` pass. API errors, missing credentials and uncertain membership fail closed. Verification never applies to other tournament APIs. The bot must be administrator in each configured channel; configure TELEGRAM_BOT_TOKEN only on the server.
+
+## Championship interface
+
+UZEFLIFE is one fixed championship, not a creation wizard or tournament catalog. It sits between Cups and European competitions. The public overview shows registration status, eight qualifier brackets and the final stage. A connected bracket tree is available before the draw using presentation-only empty slots; these never enroll players or create database fixtures. Match reports and schedules open from a selected real match. Administrative forms are behind a separate management destination. Only the owner can explicitly restore custom tournament navigation from the collapsed platform-menu setting.
 
 ## Competition
 
@@ -24,6 +28,7 @@ Changes belong to a feature branch/PR. Do not merge or deploy production until h
 
 ## Verification
 
+- `node scripts/run-isolated-test.mjs src/server/tests/uzeflifePresentationTest.ts`
 - `npm run lint`
 - `node scripts/run-isolated-test.mjs src/server/tests/uzeflifeRegressionTest.ts`
 - `node scripts/run-isolated-test.mjs src/server/tests/postgresSqlIntegrationTest.ts` (includes UZEFLIFE HTTP with native PostgreSQL SQL, rollback, concurrent writes, role revocation and mocked Telegram)

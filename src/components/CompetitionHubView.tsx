@@ -1,11 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { lazy, Suspense, useState, useEffect } from 'react';
 import { useI18n } from '../i18n';
 import { ClubsView } from './ClubsView';
 import { CupBracketsView } from './CupBracketsView';
 import { ChampionsLeagueView } from './ChampionsLeagueView';
 import { SeasonHubView } from './SeasonHubView';
 import {useAuth} from '../context/AuthContext';
-import {UzeflifeView,uzeflifeRequest} from './uzeflife/UzeflifeView';
+import {uzeflifeRequest} from '../lib/uzeflifeApi';
+import {uCanSeeCustomNavigation} from '../lib/uzeflifePresentation';
+const UzeflifeView=lazy(()=>import('./uzeflife/UzeflifeView').then(m=>({default:m.UzeflifeView})));
 import { TournamentListView } from './customTournaments/TournamentListView';
 import { Trophy, Award, Globe2, CalendarDays, Sparkles } from 'lucide-react';
 
@@ -22,7 +24,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
   const {user}=useAuth();
   const [customEnabled,setCustomEnabled]=useState(false);
   useEffect(()=>{let live=true;uzeflifeRequest().then(s=>{if(live)setCustomEnabled(s.customNavigationEnabled);}).catch(()=>{});return()=>{live=false;};},[user?.id]);
-  const canSeeCustom=customEnabled||user?.telegramId==='5209126900';
+  const canSeeCustom=uCanSeeCustomNavigation(customEnabled);
   const [subTab, setSubTab] = useState<'leagues' | 'cups' | 'european' | 'season' | 'custom' | 'uzeflife'>(() => {
     try {
       const saved = sessionStorage.getItem('efl:competition-hub-subtab');
@@ -78,8 +80,8 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
   const navItems = [
     { id: 'leagues' as const, label: titles.domestic, icon: Trophy },
     { id: 'cups' as const, label: titles.cups, icon: Award },
-    { id: 'european' as const, label: titles.european, icon: Globe2 },
     { id: 'uzeflife' as const, label: 'UZEFLIFE', icon: Trophy },
+    { id: 'european' as const, label: titles.european, icon: Globe2 },
     { id: 'season' as const, label: titles.season, icon: CalendarDays },
     { id: 'custom' as const, label: titles.custom, icon: Sparkles },
   ];
@@ -97,7 +99,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
       <div className="p-1 rounded-2xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)] flex items-center gap-1 overflow-x-auto scrollbar-none shadow-xs">
         {navItems.filter(item=>item.id!=='custom'||canSeeCustom).map((item) => {
           const Icon = item.icon;
-          const isActive = subTab === item.id;
+          const isActive = (subTab==='custom'&&!canSeeCustom?'uzeflife':subTab) === item.id;
           return (
             <button
               key={item.id}
@@ -122,8 +124,8 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
         {subTab === 'cups' && <CupBracketsView onNavigateTab={onNavigateTab} />}
         {subTab === 'european' && <ChampionsLeagueView onNavigateTab={onNavigateTab} />}
         {subTab === 'season' && <SeasonHubView onNavigateTab={onNavigateTab} />}
-        {subTab === 'uzeflife' && <UzeflifeView />}
-        {subTab === 'custom' && (canSeeCustom?<TournamentListView />:<UzeflifeView />)}
+        {(subTab === 'uzeflife'||subTab === 'custom'&&!canSeeCustom)&&<Suspense fallback={<div className="p-8 text-center text-xs text-[var(--efl-text-2)]">UZEFLIFE yuklanmoqda…</div>}><UzeflifeView /></Suspense>}
+        {subTab === 'custom' && canSeeCustom && <TournamentListView />}
       </div>
     </div>
   );
