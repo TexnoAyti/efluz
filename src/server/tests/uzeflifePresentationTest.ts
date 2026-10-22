@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {UzeflifeChampionship} from '../../components/uzeflife/UzeflifeChampionship';
+import {UzeflifeImageExport} from '../../components/uzeflife/UzeflifeImageExport';
+import {canExportUzeflifeImage,uzeflifeImageModel} from '../../lib/uzeflifeImage';
 import {UzeflifeParticipants} from '../../components/uzeflife/UzeflifeParticipants';
 import {UzeflifeBracket} from '../../components/uzeflife/UzeflifeBracket';
 import {uDisplayMatches,uCanSeeCustomNavigation,uSourceLabel} from '../../lib/uzeflifePresentation';
@@ -103,3 +105,19 @@ const twoTrees=renderToStaticMarkup(React.createElement(React.Fragment,null,Reac
 const gradientIds=[...twoTrees.matchAll(/<linearGradient id="([^"]+)"/g)].map(m=>m[1]);
 assert.equal(gradientIds.length,2);assert.equal(new Set(gradientIds).size,2,'Separate brackets never reference another SVG gradient');
 console.log('PASS cup gradient/curved connectors, explicit no-fill paths, gold final and unique SVG IDs.');
+
+// The existing PNG export pipeline is exposed only to tournament match/result admins.
+for(const permissions of [[],['participants'],['channels'],['registrations']] as any[]){
+ assert.equal(canExportUzeflifeImage(permissions),false);
+ const hidden=renderToStaticMarkup(React.createElement(UzeflifeImageExport,{state:{...played,permissions},matches:played.matches.slice(0,8)}));
+ assert.equal(hidden,'','Players and unrelated assistants never receive an export control');
+}
+for(const permission of ['matches','results'] as const){
+ const visible=render({...played,permissions:[permission]},'fixtures');
+ assert.ok(visible.includes('O‘yinlar rasmini yuklab olish')&&visible.includes('shu sahifadagi 8 ta o‘yin'));
+}
+const exported=uzeflifeImageModel(detailed,[detailed.matches[0]],'season-2026-27');
+assert.equal(exported.identityKind,'players');assert.equal(exported.rows[0].name,'Abdurahmonov Muhammadazizbek');
+assert.equal(exported.rows[0].score,'2 : 2');assert.equal(exported.rows[0].winner,'home');assert.equal(exported.rows[0].status,'Pen: 5 : 4');assert.ok(exported.rows[0].detail?.includes('1-setka'));
+assert.throws(()=>uzeflifeImageModel(state,[slots[0]],'season-2026-27'),/haqiqiy/,'Display-only placeholders cannot be exported as scheduled matches');
+console.log('PASS admin-only game PNG control, page selection, verified scores/shootouts, player identities and no placeholder exports.');

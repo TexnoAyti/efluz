@@ -8,10 +8,11 @@ import type {UViewState} from '../../lib/uzeflifeApi';
 import {uDisplayMatches,uRoundLabel,uSourceLabel,U_QUALIFIER_ROUNDS,U_FINAL_ROUNDS} from '../../lib/uzeflifePresentation';
 import {UzeflifeBracket} from './UzeflifeBracket';
 import {UzeflifeAdmin,type UAct} from './UzeflifeAdmin';
+import {UzeflifeImageExport} from './UzeflifeImageExport';
 import {UzeflifeMatchDialog} from './UzeflifeMatchDialog';
 
 type Tab='overview'|'fixtures'|'bracket'|'participants'|'results'|'standings';
-export function UzeflifeChampionship({state:s,userId,busy,error,notice,missing,act,onRefresh,initialTab='overview',initialAdmin=false}:{state:UViewState;userId?:string;busy:boolean;error:string;notice:string;missing:UChannel[];act:UAct;onRefresh:()=>void;initialTab?:Tab;initialAdmin?:boolean}) {
+export function UzeflifeChampionship({state:s,userId,busy,error,notice,missing,act,onRefresh,initialTab='overview',initialAdmin=false,seasonId}:{state:UViewState;userId?:string;busy:boolean;error:string;notice:string;missing:UChannel[];act:UAct;onRefresh:()=>void;initialTab?:Tab;initialAdmin?:boolean;seasonId?:string}) {
   const [tab,setTab]=useState<Tab>(initialTab),[admin,setAdmin]=useState(initialAdmin);
   const [bracket,setBracket]=useState(s.round>5?0:1),[round,setRound]=useState(0),[group,setGroup]=useState('all');
   const [standingsView,setStandingsView]=useState<StandingsView>('short');
@@ -91,6 +92,7 @@ export function UzeflifeChampionship({state:s,userId,busy,error,notice,missing,a
           </div>
           {filteredMatches.length?<><div className="competition-fixture-grid u-match-list">{filteredMatches.slice(page*8,(page+1)*8).map(matchCard)}</div>{filteredMatches.length>8&&<div className="flex items-center justify-between text-xs"><button className="competition-button" disabled={!page} onClick={()=>setPage(page-1)}>Oldingi</button><span>{page+1} / {Math.ceil(filteredMatches.length/8)}</span><button className="competition-button" disabled={(page+1)*8>=filteredMatches.length} onClick={()=>setPage(page+1)}>Keyingi</button></div>}</>:<p className="u-empty">{tab==='results'?'Bu bosqichda hali tasdiqlangan natija yo‘q.':'Bu bosqichda o‘yin yo‘q.'}</p>}
         </>}
+        {filteredMatches.length>0&&<UzeflifeImageExport key={`${tab}:${group}:${selectedRound}:${page}`} state={s} matches={filteredMatches.slice(page*8,(page+1)*8)} seasonId={seasonId}/>}
         {missing.length>0&&subscriptionNotice}
       </>}
       {tab==='participants'&&<><div className="u-section-heading"><h3>Ishtirokchilar</h3><span className="u-status">{approved.length} / 256</span></div>{approved.length>0&&<CompetitionToolbar value={search} onChange={v=>{setSearch(v);setParticipantPage(0);}} label="UZEFLIFE ishtirokchisini qidirish" placeholder="Ishtirokchi ismi"/>}<div className="competition-panel u-participant-list">{approved.length?visibleParticipants.slice(pp*20,(pp+1)*20).map((p,i)=><div className="u-participant" key={p.id}><span>{pp*20+i+1}</span><strong>{p.name}{p.id===userId?' · Siz':''}</strong><small>{s.matches.length?participantState(p.id):'Tasdiqlangan'}</small></div>):<div className="u-empty"><Users size={25}/><h3>Ishtirokchilar kutilmoqda</h3><p>Tasdiqlangan ishtirokchilar shu yerda ko‘rinadi.</p></div>}{approved.length>0&&visibleParticipants.length===0&&<p className="competition-empty">Nomi bo‘yicha ishtirokchi topilmadi.</p>}</div>{pagination(pp,visibleParticipants.length,setParticipantPage)}</>}

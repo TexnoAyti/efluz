@@ -11,8 +11,9 @@ export const exportCopy = {
   en: { tableDownload: 'Download standings image', roundDownload: 'Download matchday image', download: 'Download image', busy: 'Preparing image…', save: 'Download PNG', share: 'Share', close: 'Close', standings: 'LEAGUE STANDINGS', matchday: 'MATCHDAY FIXTURES', round: 'Matchday', pending: 'Under review', scheduled: 'Scheduled', postponed: 'Postponed', created: 'Created', cached: 'Cached data', empty: 'No data available to export.', failed: 'Could not create the image.', club: 'Club', stats: ['P', 'W', 'D', 'L', 'GF', 'GA', 'GD', 'PTS'] },
 };
 export interface TournamentImageModel {
+  identityKind?:'clubs'|'players';
   kind: 'standings' | 'matchday'; title: string; seasonId: string; language: ExportLanguage; round?: string;
-  rows: Array<{ id: string; name: string; ownerUsername?: string; awayOwnerUsername?: string; position?: number; stats?: number[]; awayId?: string; awayName?: string; score?: string; status?: string; winner?: 'home' | 'away' }>;
+  rows: Array<{ id: string; name: string; ownerUsername?: string; awayOwnerUsername?: string; position?: number; stats?: number[]; awayId?: string; awayName?: string; score?: string; status?: string; detail?:string; winner?: 'home' | 'away' }>;
   createdAt: string; cached?: boolean; branding?:ImageBranding;
 }
 function imageOwnerUsername(club?: Club | null, fixtureUser?: Fixture['homeUser']): string | undefined {
@@ -98,8 +99,9 @@ export function paintTournamentImage(ctx: CanvasRenderingContext2D, model: Tourn
     }else{
       const center=y+(rowHeight-6)/2;
       crest(row.id,row.name,60,center-23,46);crest(row.awayId!,row.awayName!,974,center-23,46);
-      text(row.name,119,center-(row.ownerUsername?11:0),21,row.winner==='home'?'#6becbe':'#edf3fb','left',320);
-      text(row.awayName!,961,center-(row.awayOwnerUsername?11:0),21,row.winner==='away'?'#6becbe':'#edf3fb','right',320);
+      text(row.name,119,center-(row.ownerUsername?11:row.detail?8:0),21,row.winner==='home'?'#6becbe':'#edf3fb','left',320);
+      text(row.awayName!,961,center-(row.awayOwnerUsername?11:row.detail?8:0),21,row.winner==='away'?'#6becbe':'#edf3fb','right',320);
+      if(row.detail)text(row.detail,119,center+19,14,'#a8bdd3','left',320,500);
       if(row.ownerUsername)text(`@${row.ownerUsername}`,119,center+16,16,'#a8bdd3','left',320,500);
       if(row.awayOwnerUsername)text(`@${row.awayOwnerUsername}`,961,center+16,16,'#a8bdd3','right',320,500);
       const official=row.score!=='VS';
@@ -120,7 +122,7 @@ export function paintTournamentImage(ctx: CanvasRenderingContext2D, model: Tourn
 export async function tournamentImageBlob(model: TournamentImageModel): Promise<Blob> {
   const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d');
   if (!ctx || !model.rows.length) throw new Error(exportCopy[model.language].empty);
-  const ids = [...new Set(model.rows.flatMap(row => [row.id,row.awayId]).filter(Boolean) as string[])];
+  const ids = model.identityKind==='players'?[]:[...new Set(model.rows.flatMap(row => [row.id,row.awayId]).filter(Boolean) as string[])];
   const crests = new Map<string, CanvasImageSource>();
   if(model.branding?.emblemUrl){ids.push('__competition__');}
   await Promise.all(ids.map(id => new Promise<void>(resolve => {
