@@ -4,12 +4,14 @@ import { ClubsView } from './ClubsView';
 import { CupBracketsView } from './CupBracketsView';
 import { ChampionsLeagueView } from './ChampionsLeagueView';
 import { SeasonHubView } from './SeasonHubView';
+import {useAuth} from '../context/AuthContext';
+import {UzeflifeView,uzeflifeRequest} from './uzeflife/UzeflifeView';
 import { TournamentListView } from './customTournaments/TournamentListView';
 import { Trophy, Award, Globe2, CalendarDays, Sparkles } from 'lucide-react';
 
 interface CompetitionHubViewProps {
   onNavigateTab: (tab: any) => void;
-  initialSubTab?: 'leagues' | 'cups' | 'european' | 'season' | 'custom';
+  initialSubTab?: 'leagues' | 'cups' | 'european' | 'season' | 'custom' | 'uzeflife';
 }
 
 export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
@@ -17,10 +19,14 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
   initialSubTab = 'leagues',
 }) => {
   const { language } = useI18n();
-  const [subTab, setSubTab] = useState<'leagues' | 'cups' | 'european' | 'season' | 'custom'>(() => {
+  const {user}=useAuth();
+  const [customEnabled,setCustomEnabled]=useState(false);
+  useEffect(()=>{let live=true;uzeflifeRequest().then(s=>{if(live)setCustomEnabled(s.customNavigationEnabled);}).catch(()=>{});return()=>{live=false;};},[user?.id]);
+  const canSeeCustom=customEnabled||user?.telegramId==='5209126900';
+  const [subTab, setSubTab] = useState<'leagues' | 'cups' | 'european' | 'season' | 'custom' | 'uzeflife'>(() => {
     try {
       const saved = sessionStorage.getItem('efl:competition-hub-subtab');
-      if (saved === 'leagues' || saved === 'cups' || saved === 'european' || saved === 'season' || saved === 'custom') {
+      if (saved === 'leagues' || saved === 'cups' || saved === 'european' || saved === 'season' || saved === 'custom' || saved === 'uzeflife') {
         sessionStorage.removeItem('efl:competition-hub-subtab');
         return saved as any;
       }
@@ -73,6 +79,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
     { id: 'leagues' as const, label: titles.domestic, icon: Trophy },
     { id: 'cups' as const, label: titles.cups, icon: Award },
     { id: 'european' as const, label: titles.european, icon: Globe2 },
+    { id: 'uzeflife' as const, label: 'UZEFLIFE', icon: Trophy },
     { id: 'season' as const, label: titles.season, icon: CalendarDays },
     { id: 'custom' as const, label: titles.custom, icon: Sparkles },
   ];
@@ -88,7 +95,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
 
       {/* 2. Top-Level Category Segmented Bar */}
       <div className="p-1 rounded-2xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)] flex items-center gap-1 overflow-x-auto scrollbar-none shadow-xs">
-        {navItems.map((item) => {
+        {navItems.filter(item=>item.id!=='custom'||canSeeCustom).map((item) => {
           const Icon = item.icon;
           const isActive = subTab === item.id;
           return (
@@ -115,7 +122,8 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
         {subTab === 'cups' && <CupBracketsView onNavigateTab={onNavigateTab} />}
         {subTab === 'european' && <ChampionsLeagueView onNavigateTab={onNavigateTab} />}
         {subTab === 'season' && <SeasonHubView onNavigateTab={onNavigateTab} />}
-        {subTab === 'custom' && <TournamentListView />}
+        {subTab === 'uzeflife' && <UzeflifeView />}
+        {subTab === 'custom' && (canSeeCustom?<TournamentListView />:<UzeflifeView />)}
       </div>
     </div>
   );
