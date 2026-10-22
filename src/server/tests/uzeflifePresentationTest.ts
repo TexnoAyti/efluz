@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {UzeflifeChampionship} from '../../components/uzeflife/UzeflifeChampionship';
+import {UzeflifeParticipants} from '../../components/uzeflife/UzeflifeParticipants';
 import {UzeflifeBracket} from '../../components/uzeflife/UzeflifeBracket';
 import {uDisplayMatches,uCanSeeCustomNavigation,uSourceLabel} from '../../lib/uzeflifePresentation';
 import {initialUState,applyUAction} from '../services/uzeflifeService';
@@ -26,11 +27,11 @@ for(const role of [{isSuper:true,permissions:['brackets'] as const},{isSuper:fal
  const roleState={...state,...role,permissions:[...role.permissions]};
  assert.ok(render(roleState).includes('Turnir admin paneli</strong>'),'Assigned super admins and assistants can discover management without global admin status');
  const management=renderToStaticMarkup(React.createElement(UzeflifeChampionship,{state:roleState,busy:false,error:'',notice:'',missing:[],act:async()=>true,onRefresh:()=>{},initialAdmin:true}));
- assert.ok(management.includes('UZEFLIFE boshqaruvi'),'Admin entry opens management directly');
+ assert.ok(management.includes('UZEFLIFE admin paneli'),'Admin entry opens management directly');
  assert.equal(management.includes('Adminlar boshqaruvi'),false,'Role management is a separate section');
 }
 const denied=renderToStaticMarkup(React.createElement(UzeflifeChampionship,{state,busy:false,error:'',notice:'',missing:[],act:async()=>true,onRefresh:()=>{},initialAdmin:true}));
-assert.ok(!denied.includes('UZEFLIFE boshqaruvi'),'Initial admin request cannot grant missing permissions');
+assert.ok(!denied.includes('UZEFLIFE admin paneli'),'Initial admin request cannot grant missing permissions');
 assert.ok(!ownerView.includes('<form')&&!ownerView.includes('Qur’a tashlash va turnirni boshlash'),'Owner setup stays behind management');
 assert.equal(uCanSeeCustomNavigation(false),false,'Temporary hide also applies to owner');
 assert.equal(uCanSeeCustomNavigation(true),true,'Explicit restoration still works');
@@ -59,3 +60,7 @@ const fixturesHtml=render(played,'fixtures');assert.equal((fixturesHtml.match(/c
 const peopleHtml=render(played,'participants');assert.equal((peopleHtml.match(/class="u-participant"/g)||[]).length,20);
 const standingsHtml=render(played,'standings');assert.ok(standingsHtml.includes('competition-standings'));assert.equal((standingsHtml.match(/<tr/g)||[]).length,21);
 console.log('PASS UZEFLIFE tournament experience: fixed eight-bracket overview, 255 connected empty slots without database mutations, final qualifier sources, registration states, owner controls separated, custom navigation hidden until explicit restoration, and no phantom match actions.');
+
+const playersView=(s:UViewState)=>renderToStaticMarkup(React.createElement(UzeflifeParticipants,{state:s,busy:false,act:async()=>true}));
+const emptyPlayers=playersView(state);assert.ok(emptyPlayers.includes('O‘yinchini qo‘shish')&&emptyPlayers.includes('Telegram ID yoki EFLUZ akkaunt ID'));
+const adminPeople=playersView(played);assert.equal((adminPeople.match(/class="u-player-row"/g)||[]).length,20);assert.ok(adminPeople.includes('O‘yinchini qidirish'));assert.ok(!adminPeople.includes('O‘yinchini qo‘shish'),'Enrollment is closed after the draw');

@@ -108,3 +108,39 @@
 .uzeflife .u-admin-entry > span { flex:1; min-width:0; }
 .uzeflife .u-admin-entry strong { display:block; font-size:13px; }
 .uzeflife .u-admin-entry small { display:block; margin-top:3px; color:var(--u-muted); font-size:11px; font-weight:500; overflow-wrap:anywhere; }
+
+/* Tournament administration uses the same surfaces and primary color as league pages. */
+.uzeflife .u-admin-title { padding:16px; border:1px solid var(--u-line); border-radius:16px; background:var(--u-surface); }
+.uzeflife .u-admin-title h3 { font-size:16px; font-weight:850; }
+.uzeflife .u-admin-title p { font-size:11px; margin-top:3px; }
+.uzeflife .u-admin-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+.uzeflife .u-admin-metrics>div { min-width:0; display:grid; gap:7px; padding:14px 10px; border:1px solid var(--u-line); border-radius:13px; background:var(--u-surface); }
+.uzeflife .u-admin-metrics svg { color:var(--u-primary); }
+.uzeflife .u-admin-metrics strong { font-size:23px; line-height:1.2; font-variant-numeric:tabular-nums; }
+.uzeflife .u-admin-metrics small { font-size:11px; margin-left:4px; color:var(--u-muted); }
+.uzeflife .u-admin-metrics span { font-size:10px; color:var(--u-muted); overflow-wrap:anywhere; }
+.uzeflife .u-player-add h3,.uzeflife .u-player-filters label>span { display:flex; align-items:center; gap:7px; }
+.uzeflife .u-player-add form { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:end; gap:12px; }
+.uzeflife .u-player-add form>p { grid-column:1/-1; font-size:11px; line-height:1.6; }
+.uzeflife .u-player-add form>button { min-height:44px; }
+.uzeflife .u-player-filters { display:grid; grid-template-columns:minmax(0,2fr) minmax(0,1fr); gap:10px; margin-bottom:8px; }
+.uzeflife .u-player-row { display:flex; align-items:center; gap:10px; padding:15px 0; border-bottom:1px solid var(--u-line); }
+.uzeflife .u-player-row:last-child { border-bottom:0; }
+.uzeflife .u-player-number { width:28px; flex-shrink:0; text-align:center; font-size:11px; color:var(--u-muted); }
+.uzeflife .u-player-identity { min-width:0; flex:1; }
+.uzeflife .u-player-identity>strong { display:block; font-size:12px; overflow-wrap:anywhere; }
+.uzeflife .u-player-identity>small { display:block; color:var(--u-muted); font-size:10px; overflow-wrap:anywhere; margin:4px 0 7px; }
+.uzeflife .u-player-status { display:inline-block; border-radius:6px; padding:4px 7px; background:var(--u-soft); color:var(--u-muted); font-size:9px; }
+.uzeflife .u-player-status.is-approved { background:var(--efl-primary-soft); color:var(--u-primary); }
+.uzeflife .u-player-status.is-pending { background:rgba(245,158,11,.12); color:var(--efl-text); }
+.uzeflife .u-player-actions { display:flex; flex-wrap:wrap; gap:7px; }
+.uzeflife .u-danger-action { color:var(--efl-text-2); }
+.uzeflife .u-player-empty { display:grid; justify-items:center; gap:8px; padding:30px 12px; text-align:center; color:var(--u-muted); font-size:11px; }
+@media(max-width:600px) {
+ .uzeflife .u-player-add form,.uzeflife .u-player-filters { grid-template-columns:minmax(0,1fr); }
+ .uzeflife .u-player-add form>button { width:100%; justify-content:center; }
+ .uzeflife .u-player-row { flex-wrap:wrap; align-items:flex-start; }
+ .uzeflife .u-player-actions { width:100%; padding-left:38px; }
+ .uzeflife .u-player-actions>button { flex:1; justify-content:center; min-height:40px; }
+ .uzeflife .u-admin-title { padding:12px; }
+}
