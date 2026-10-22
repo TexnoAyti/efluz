@@ -6,7 +6,8 @@ import {getFirestoreDb} from '../firebase/admin';
 import {authMiddleware} from '../middleware/authMiddleware';
 import {createSessionToken} from '../auth/sessionToken';
 import {uzeflifeRouter} from '../routes/uzeflife.routes';
-import {initialUState} from '../services/uzeflifeService';
+import {planUzeflifeTopicResult,executeUzeflifeTopicResult} from '../services/uzeflifeTopicResults';
+import {initialUState,generateUBracket} from '../services/uzeflifeService';
 export async function verifyUzeflifeHttp(failNextCommit:()=>void){
  process.env.SESSION_SECRET='isolated-uzeflife-session-secret-32bytes';const db=getFirestoreDb();
  const actors=Array.from({length:5},(_,i)=>({id:`uz-user-${i}`,telegramId:i===0?'5209126900':String(975000+i),username:`uz${i}`,firstName:`UZ ${i}`,isAdmin:false,isSuspended:false,createdAt:'',updatedAt:''}));
@@ -80,6 +81,19 @@ export async function verifyUzeflifeHttp(failNextCommit:()=>void){
   const final=(await call()).data;assert.equal(final.announcements.length,2);assert.equal(final.revision,before+2);
   assert.ok((await db.collection('uzeflife_audit').get()).size>=10);
   assert.equal((await db.collection('users').doc(actors[1].id).get()).data()!.isAdmin,false,'Tournament roles never grant platform admin');
+  // Topic approval uses the same native PostgreSQL transaction and audit boundary.
+  const topicState=initialUState();topicState.status='playing';topicState.round=1;topicState.superAdmin=actors[1].id;
+  const ids=[actors[3].id,actors[4].id,...Array.from({length:254},(_,i)=>'topic-slot-'+i)];
+  topicState.participants=ids.map(id=>({id,name:id,status:'approved'}));topicState.matches=generateUBracket(ids);await db.collection('uzeflife').doc('championship').set(topicState);
+  const topicPlan=await planUzeflifeTopicResult('3:1',Number(actors[3].telegramId));assert.ok(topicPlan);
+  const origin={chat:-100123,thread:7297,message:111};const auditBefore=(await db.collection('uzeflife_audit').get()).size;
+  await assert.rejects(executeUzeflifeTopicResult(topicPlan.plan,Number(actors[2].telegramId),Number(actors[3].telegramId),origin));
+  failNextCommit();await assert.rejects(executeUzeflifeTopicResult(topicPlan.plan,Number(actors[1].telegramId),Number(actors[3].telegramId),origin));
+  assert.equal((await call()).data.matches[0].winner,null);assert.equal((await db.collection('uzeflife_audit').get()).size,auditBefore,'Failed topic commit cannot leave score or audit behind');
+  const approved=await executeUzeflifeTopicResult(topicPlan.plan,Number(actors[1].telegramId),Number(actors[3].telegramId),origin);
+  assert.equal(approved.data.fixture.homeScore,3);assert.equal(approved.data.fixture.winnerClubId,actors[3].id);
+  assert.equal((await call()).data.matches.find((m:any)=>m.id==='r2m0').home,actors[3].id);
+  await assert.rejects(executeUzeflifeTopicResult(topicPlan.plan,Number(actors[1].telegramId),Number(actors[3].telegramId),origin),/o‘zgargan/);
   console.log('PASS UZEFLIFE HTTP/PostgreSQL: owner assignment, granular assistants, Telegram fail-closed, pending privacy, revocation/suspension, audit durability, failed-commit rollback and concurrent updates.');
  }finally{server.close();}
 }

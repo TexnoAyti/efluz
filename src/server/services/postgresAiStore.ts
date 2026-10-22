@@ -6,6 +6,7 @@ export class PostgresAiStore extends PostgresKeyValueStore {
  async eval<T=any>(script:string,keys:string[],args:any[]):Promise<T>{
   return this.atomic(keys,(values,put)=>{
    const get=(key:string)=>parse(values.get(key)?.value);
+   if(script.includes('EFL_TOPIC_RESULT_RELEASE_V1')){if(get(keys[0])!==args[0])return 0;put(keys[0],null,0);return 1;}
    if(script.includes('EFL_TOPIC_RESULT_CONTEXT_V1')){
     const c=get(keys[0]);
     if(args[0]==='publish'){const next=parse(args[1]);if(c&&c.updateId>=next.updateId)return 0;put(keys[0],next,900);return 1;}
