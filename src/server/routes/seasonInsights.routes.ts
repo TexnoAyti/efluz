@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { getPlayerSeasonInsights, getSeasonInsights } from '../services/seasonInsightsService';
 import { getUserActiveClubFromReadModel } from '../readModel/readModelStore';
-import { getPlayerTrophyCabinet } from '../services/playerTrophyService';
+import { getPlayerTrophyCabinet, getClubTrophyCabinet } from '../services/playerTrophyService';
 
 export const seasonInsightsRouter = Router();
 
@@ -18,6 +18,21 @@ seasonInsightsRouter.get('/player/:userId/trophies', async (req: Request, res: R
   } catch (error: unknown) {
     console.warn('[PLAYER_TROPHIES_UNAVAILABLE]', error instanceof Error ? error.message : String(error));
     res.status(503).json({ error: 'PLAYER_TROPHIES_UNAVAILABLE' });
+  }
+});
+
+seasonInsightsRouter.get('/club/:clubId/trophies', async (req: Request, res: Response) => {
+  const clubId = String(req.params.clubId || '').trim();
+  const seasonId = String(req.query.seasonId || 'season-2026-27');
+  if (!/^club-[a-z0-9-]{1,100}$/.test(clubId) || !/^season-\d{4}-\d{2}$/.test(seasonId)) {
+    res.status(400).json({ error: 'INVALID_TROPHY_REQUEST' }); return;
+  }
+  try {
+    const cabinet = await getClubTrophyCabinet(clubId, seasonId);
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(cabinet);
+  } catch {
+    res.status(503).json({ error: 'CLUB_TROPHIES_UNAVAILABLE' });
   }
 });
 

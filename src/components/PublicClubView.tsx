@@ -10,6 +10,7 @@ import { nextSeasonFixture, sortSeasonFixtures } from '../lib/fixtureOrder';
 import type { Club, Competition, Fixture, StandingsRow } from '../types';
 import { ClubCrest } from './ClubCrest';
 import { CompetitionMark } from './CompetitionMark';
+import { ClubTrophyCabinet } from './PlayerTrophyCabinet';
 import './public-club.css';
 
 const labels = {
@@ -98,6 +99,7 @@ export function PublicClubProfile({ data, language = 'uz', onBack, onOwner, load
       </div>
       <div className="club-hero-footer"><div><UserRound size={15} /><span>{t.owner}</span>{owner.userId ? <button type="button" onClick={() => onOwner(owner.userId!)}>{owner.displayText}<ArrowUpRight size={14} /></button> : <strong>{owner.displayText}</strong>}</div><span><span className="club-season-dot" />{seasonName} · {t.season}</span></div>
     </header>
+    <ClubTrophyCabinet clubId={club.id} seasonId={seasonId} />
     {(partial || stale) && <div role="status" className="club-data-notice"><span>{partial ? t.matchesError : t.saved}</span><button type="button" onClick={onRetry}><RefreshCw size={13} />{t.retry}</button></div>}
     {standing && <section className="club-mobile-summary" aria-label={t.league}>{[[t.position, `#${standing.position}`], [t.points, standing.points], [t.played, standing.played], [t.goals, `${standing.goalsFor}:${standing.goalsAgainst}`]].map(([label, value]) => <div key={label}><strong>{value}</strong><span>{label}</span></div>)}</section>}
     <div className="club-profile-layout">
