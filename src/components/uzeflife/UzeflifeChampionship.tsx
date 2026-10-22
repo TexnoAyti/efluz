@@ -11,8 +11,8 @@ import {UzeflifeAdmin,type UAct} from './UzeflifeAdmin';
 import {UzeflifeMatchDialog} from './UzeflifeMatchDialog';
 
 type Tab='overview'|'fixtures'|'bracket'|'participants'|'results'|'standings';
-export function UzeflifeChampionship({state:s,userId,busy,error,notice,missing,act,onRefresh,initialTab='overview'}:{state:UViewState;userId?:string;busy:boolean;error:string;notice:string;missing:UChannel[];act:UAct;onRefresh:()=>void;initialTab?:Tab}) {
-  const [tab,setTab]=useState<Tab>(initialTab),[admin,setAdmin]=useState(false);
+export function UzeflifeChampionship({state:s,userId,busy,error,notice,missing,act,onRefresh,initialTab='overview',initialAdmin=false}:{state:UViewState;userId?:string;busy:boolean;error:string;notice:string;missing:UChannel[];act:UAct;onRefresh:()=>void;initialTab?:Tab;initialAdmin?:boolean}) {
+  const [tab,setTab]=useState<Tab>(initialTab),[admin,setAdmin]=useState(initialAdmin);
   const [bracket,setBracket]=useState(s.round>5?0:1),[round,setRound]=useState(0),[group,setGroup]=useState('all');
   const [standingsView,setStandingsView]=useState<StandingsView>('short');
   const [participantPage,setParticipantPage]=useState(0),[standingsPage,setStandingsPage]=useState(0);
@@ -63,9 +63,10 @@ export function UzeflifeChampionship({state:s,userId,busy,error,notice,missing,a
             <h1 className="text-xl sm:text-2xl font-black text-[var(--efl-text)] tracking-tight mt-0.5">UZEFLIFE</h1>
             <div className="efl-fit-wrap flex items-center gap-2 mt-1.5 text-[11px] text-[var(--efl-text-2)]"><span>{approved.length}/256 ishtirokchi</span><span>·</span><span>{s.round?uRoundLabel(s.round):'8 ta saralash setkasi'}</span></div>
           </div>
-          <div className="u-tools"><button className="tourney-button" disabled={busy} aria-label="Turnirni yangilash" onClick={onRefresh}><RefreshCw size={15} className={busy?'animate-spin':''}/></button>{s.permissions.length>0&&<button className="tourney-button" onClick={()=>setAdmin(true)} aria-label="Turnir boshqaruvi"><Shield size={15}/></button>}</div>
+          <div className="u-tools"><button className="tourney-button" disabled={busy} aria-label="Turnirni yangilash" onClick={onRefresh}><RefreshCw size={15} className={busy?'animate-spin':''}/></button></div>
         </div>
       </CompetitionBanner>
+      {s.permissions.length>0&&<button className="tourney-button u-admin-entry" onClick={()=>setAdmin(true)}><Shield size={20}/><span><strong>Turnir admin paneli</strong><small>{s.isSuper?'Turnir, ishtirokchilar va adminlarni boshqarish':'Sizga berilgan vakolatlar bo‘yicha boshqarish'}</small></span><ChevronRight size={18}/></button>}
       <CompetitionTabs<Tab> items={tabs} value={tab} onChange={navigate} label="UZEFLIFE turniri"/>
       {(error||notice)&&<p role={error?'alert':'status'} className={`tourney-note ${error?'error':''}`}>{error||notice}</p>}
       {tab==='overview'&&<>

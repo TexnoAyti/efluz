@@ -14,14 +14,23 @@ const html=render();
 assert.ok(html.includes('Saralash setkalari')&&html.includes('Final bosqichi'));
 assert.equal((html.match(/class="u-bracket-entry"/g)||[]).length,8);
 assert.ok(!html.includes('<form'),'Spectators see the championship, not setup forms');
-assert.ok(!html.includes('Yaratish')&&!html.includes('generator')&&!html.includes('Turnir boshqaruvi'));
+assert.ok(!html.includes('Yaratish')&&!html.includes('generator')&&!html.includes('Turnir admin paneli'));
 assert.ok(html.includes('Ro‘yxatdan o‘tish boshlanishi'));
 const registration=render({...state,status:'registration'},'overview','user1');
 assert.ok(registration.includes('Ro‘yxatdan o‘tish</button>'));
 const pending=render({...state,status:'registration',participants:[{id:'user1',name:'Sinov',status:'pending'}]},'overview','user1');
 assert.ok(pending.includes('Arizangiz qabul qilindi')&&!pending.includes('Ro‘yxatdan o‘tish</button>'));
 const ownerView=render({...state,isOwner:true,isSuper:true,permissions:['brackets','participants','registrations']});
-assert.ok(ownerView.includes('aria-label="Turnir boshqaruvi"'));
+assert.ok(ownerView.includes('Turnir admin paneli</strong>'),'Owner entry has a visible text label');
+for(const role of [{isSuper:true,permissions:['brackets'] as const},{isSuper:false,permissions:['participants'] as const}]){
+ const roleState={...state,...role,permissions:[...role.permissions]};
+ assert.ok(render(roleState).includes('Turnir admin paneli</strong>'),'Assigned super admins and assistants can discover management without global admin status');
+ const management=renderToStaticMarkup(React.createElement(UzeflifeChampionship,{state:roleState,busy:false,error:'',notice:'',missing:[],act:async()=>true,onRefresh:()=>{},initialAdmin:true}));
+ assert.ok(management.includes('UZEFLIFE boshqaruvi'),'Admin entry opens management directly');
+ assert.equal(management.includes('Adminlar boshqaruvi'),false,'Role management is a separate section');
+}
+const denied=renderToStaticMarkup(React.createElement(UzeflifeChampionship,{state,busy:false,error:'',notice:'',missing:[],act:async()=>true,onRefresh:()=>{},initialAdmin:true}));
+assert.ok(!denied.includes('UZEFLIFE boshqaruvi'),'Initial admin request cannot grant missing permissions');
 assert.ok(!ownerView.includes('<form')&&!ownerView.includes('Qur’a tashlash va turnirni boshlash'),'Owner setup stays behind management');
 assert.equal(uCanSeeCustomNavigation(false),false,'Temporary hide also applies to owner');
 assert.equal(uCanSeeCustomNavigation(true),true,'Explicit restoration still works');

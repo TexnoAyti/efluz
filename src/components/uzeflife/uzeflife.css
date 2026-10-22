@@ -102,3 +102,9 @@
 .u-dialog-scoreboard > div { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px; border-radius: 10px; background: var(--efl-surface-2); }
 .u-dialog-scoreboard > div > span { min-width: 0; font-size: 12px; font-weight: 750; line-height: 1.6; overflow-wrap: anywhere; }
 .u-dialog-scoreboard > div > strong { flex-shrink: 0; font-size: 20px; font-variant-numeric: tabular-nums; }
+
+.uzeflife .u-admin-entry { display:flex; width:100%; min-height:64px; padding:12px 14px; gap:12px; text-align:left; border-color:var(--u-primary); background:var(--efl-primary-soft); color:var(--u-primary); white-space:normal; }
+.uzeflife .u-admin-entry > svg { flex-shrink:0; }
+.uzeflife .u-admin-entry > span { flex:1; min-width:0; }
+.uzeflife .u-admin-entry strong { display:block; font-size:13px; }
+.uzeflife .u-admin-entry small { display:block; margin-top:3px; color:var(--u-muted); font-size:11px; font-weight:500; overflow-wrap:anywhere; }
