@@ -45,4 +45,8 @@ assert.ok(render(state,'results').includes('Natijalar hali yo‘q'));
 const owner={id:'owner',telegramId:'5209126900'} as User;
 assert.throws(()=>applyUAction(state,owner,'schedule',{matchId:slots[0].id,scheduledAt:new Date().toISOString()}),/topilmadi/);
 assert.equal(state.matches.length,0);
+const played={...state,status:'playing' as const,round:1,participants:Array.from({length:256},(_,i)=>({id:'qa-'+i,name:'Uzun ism '+i,status:'approved' as const})),matches:slots.map((m,i)=>({...m,home:m.round===1?'qa-'+(i*2):null,away:m.round===1?'qa-'+(i*2+1):null}))};
+const fixturesHtml=render(played,'fixtures');assert.equal((fixturesHtml.match(/competition-fixture-card /g)||[]).length,8);assert.ok(fixturesHtml.includes('aria-label="O‘yinlar bosqichi"'));
+const peopleHtml=render(played,'participants');assert.equal((peopleHtml.match(/class="u-participant"/g)||[]).length,20);
+const standingsHtml=render(played,'standings');assert.ok(standingsHtml.includes('competition-standings'));assert.equal((standingsHtml.match(/<tr/g)||[]).length,21);
 console.log('PASS UZEFLIFE tournament experience: fixed eight-bracket overview, 255 connected empty slots without database mutations, final qualifier sources, registration states, owner controls separated, custom navigation hidden until explicit restoration, and no phantom match actions.');

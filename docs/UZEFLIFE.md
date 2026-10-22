@@ -33,3 +33,9 @@ Changes belong to a feature branch/PR. Do not merge or deploy production until h
 - `node scripts/run-isolated-test.mjs src/server/tests/uzeflifeRegressionTest.ts`
 - `node scripts/run-isolated-test.mjs src/server/tests/postgresSqlIntegrationTest.ts` (includes UZEFLIFE HTTP with native PostgreSQL SQL, rollback, concurrent writes, role revocation and mocked Telegram)
 - `npm run build` (includes deployment self-check)
+
+## Responsive verification
+
+The championship uses the same fixture card and standings components as domestic leagues. Six public tabs use a scoped three-column mobile grid so league rules do not squeeze their labels. Setka and round selectors expose every option; fixture pages have eight matches, participant/standings pages have twenty rows. Full standings and the connected bracket retain their own horizontal scrolling.
+
+`node scripts/uzeflife-responsive-audit.mjs` runs sixty viewport/theme/tab combinations at 320, 360, 390, 768 and 1280 pixels against a local Vite-only fixture. It also exercises search, pagination, qualifier/final selection, the native result dialog and every admin section. Requires Playwright with an installed Chromium; optional EFL_PLAYWRIGHT_MODULE and EFL_CHROMIUM_EXECUTABLE override their locations. Screenshots and geometry reports go to a temporary directory (or EFL_UI_QA_DIR). The fixture uses synthetic users only and is excluded from production builds.
