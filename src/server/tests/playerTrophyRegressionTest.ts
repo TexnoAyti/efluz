@@ -123,7 +123,7 @@ async function main() {
   assert.ok(markup.includes('Sovrinlar') && markup.includes('2026/27') && markup.includes('2025/26'));
   assert.ok(markup.includes('FA Cup') && markup.includes('Barcha mavsumlar'));
   const laLigaMarkup = renderToStaticMarkup(createElement(TrophyCabinetView, { trophies: [{ ...league.trophies[0], id: trophyId(seasonId, leagueId) }], language: 'uz' }));
-  assert.ok(laLigaMarkup.includes('/welcome/la-liga.svg'));
+  assert.ok(!laLigaMarkup.includes('/welcome/la-liga.svg'), 'Trophy cards do not show competition logos');
   assert.ok(!laLigaMarkup.includes('bg-white/95'), 'Competition marks keep transparent backgrounds');
   // Barcelona's confirmed Copa del Rey final must appear on the CLUB page,
   // regardless of the viewer or subsequent ownership changes.
@@ -148,7 +148,10 @@ async function main() {
   assert.equal(response.trophies[0].clubId, barcelona.id, 'Public endpoint needs no viewer identity');
   assert.equal(headers['Cache-Control'], 'no-store');
   const copaMarkup = renderToStaticMarkup(createElement(TrophyCabinetView, { trophies: response.trophies, language: 'uz' }));
-  for (const text of ['Sovrinlar', 'Copa del Rey', '2026/27', 'Chempion', '/competition-marks/copa-del-rey.svg']) assert.ok(copaMarkup.includes(text), text);
+  for (const text of ['Sovrinlar', 'Copa del Rey', '2026/27', 'Chempion', '/trophies/copa-del-rey.svg']) assert.ok(copaMarkup.includes(text), text);
+  assert.ok(!copaMarkup.includes('/competition-marks/'), 'Copa del Rey shows its trophy instead of its logo');
+  assert.ok(copaMarkup.includes('MacMoreno') && copaMarkup.includes('CC BY-SA 4.0'), 'Trophy artwork attribution is available');
+  assert.ok(markup.includes('/trophies/fa-cup.svg'), 'FA Cup also uses its own trophy');
   const copaRecord = reconcileTrophy(null, clubCabinet.trophies[0], fixture.updatedAt)!;
   assert.equal(mergeClubTrophies(barcelona.id, [{ ...copaRecord, winnerUserId: 'new-owner' }], { records: [copaRecord], archives: [] }, seasonId)[0].winnerUserId, 'barcelona-winner');
   assert.equal(mergeClubTrophies(barcelona.id, [], { records: [], archives: [{ seasonId, trophies: [copaRecord] }] }, 'season-2027-28').length, 1, 'Club history survives season rollover');

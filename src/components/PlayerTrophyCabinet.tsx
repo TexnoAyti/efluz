@@ -1,4 +1,4 @@
-import { CompetitionMark } from './CompetitionMark';
+import { CompetitionTrophy } from './CompetitionTrophy';
 import { useEffect, useId, useState } from 'react';
 import { Trophy, RefreshCw } from 'lucide-react';
 import { useI18n, type Language } from '../i18n';
@@ -45,9 +45,8 @@ export function TrophyCabinetView({ trophies, language, stale = false }: { troph
           {visible.map(trophy => {
             return (
               <li key={trophy.id} className="min-w-0 rounded-2xl border border-[var(--efl-border,rgba(255,255,255,0.1))] bg-[var(--efl-surface-2,#171e2c)] p-3">
-                <div className="flex h-16 items-center justify-center gap-3 rounded-xl bg-amber-500/5">
-                  <Trophy aria-hidden="true" className="h-10 w-10 shrink-0 text-amber-500" strokeWidth={1.5} />
-                  <CompetitionMark competitionId={trophy.competitionId} className="h-8 w-8" />
+                <div className="flex h-36 items-center justify-center rounded-xl bg-amber-500/5">
+                  <CompetitionTrophy competitionId={trophy.competitionId} name={trophy.competitionName} />
                 </div>
                 <p className="mt-3 break-words text-xs font-black leading-5 text-[var(--efl-text,#f8fafc)]">{trophy.competitionName}</p>
                 <p className="mt-1 text-xs font-bold text-[var(--efl-text,#f8fafc)]">{seasonLabel(trophy.seasonId)} · {text.champion}</p>
