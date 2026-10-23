@@ -21,7 +21,7 @@ export function TeamProfile({data,onBack,onEdit,onRefresh,refreshing=false}:{dat
  const row=activeLeague&&activeLeague.status!=='DRAFT'&&activeLeague.format!=='PLAYOFF'?teamStandings(activeLeague).find(r=>r.teamId===team.id):undefined;
  const fixtureCard=({league:l,fixture:f}:typeof summary.matches[number])=>{
   const score=teamFixtureScore(f),complete=teamProfileFixtureComplete(f,l.starterCount);
-  const status=complete?'Yakunlangan':l.status==='CANCELLED'?'Turnir bekor qilingan':score.complete?'Hal qiluvchi o‘yin':f.round>l.currentRound?'Tur yopiq':score.played?'O‘yinlar ketmoqda':'Tarkib kutilmoqda';
+  const status=complete?'Yakunlangan':l.status==='CANCELLED'?'Turnir bekor qilingan':score.complete?'Hal qiluvchi o‘yin':f.round>l.currentRound?'Tur yopiq':f.bouts.length?'O‘yinlar ketmoqda':'Tarkib kutilmoqda';
   return <CompetitionFixtureCard key={`${l.id}:${f.id}`} caption={`${l.name} · ${f.round}-tur${f.stage==='PLAYOFF'?' · Pley-off':''}`} status={status} statusTone={complete?'success':score.complete?'warning':'neutral'}
    home={<button type="button" className="team-profile-link" onClick={()=>openTeamProfile(f.homeTeamId)}><TeamBadge team={identity(f.homeTeamId,l)}/><span>{identity(f.homeTeamId,l).name}</span></button>}
    away={<button type="button" className="team-profile-link" onClick={()=>openTeamProfile(f.awayTeamId)}><span>{identity(f.awayTeamId,l).name}</span><TeamBadge team={identity(f.awayTeamId,l)}/></button>}

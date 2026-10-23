@@ -21,6 +21,8 @@ const decided={...tied,tieBreakWinnerId:teams[0].id};
 const winner=teamProfileSummary({...data,leagues:[{...base,format:'PLAYOFF',fixtures:[decided]}]});assert.equal(winner.totals.won,1);assert.equal(winner.totals.drawn,0);assert.equal(winner.trophies.length,1);
 assert.equal(teamProfileSummary({...data,leagues:[{...base,format:'PLAYOFF',fixtures:[]}]}).trophies.length,0);
 assert.equal(teamProfileSummary({...data,leagues:[{...base,teamIds:['unrelated']}]}).matches.length,0);
+const minimized={...data,leagues:[{...base,teams:{...base.teams,[teams[1].id]:{...base.teams[teams[1].id],members:[],captainMemberId:''}}}]};
+assert.deepEqual(teamProfileSummary(minimized).players,summary.players,'Own career statistics do not depend on opponent roster disclosure');
 const html=render(React.createElement(TeamProfile,{data,onBack:()=>{},onEdit:()=>{}}));
 for(const label of ['Tashkent Team','Captain A','Team League','Sovrinlar','Teamni boshqarish','Faqat sizga','Uchrashuvni ochish'])assert.ok(html.includes(label),label);
 assert.equal(JSON.stringify(data),original,'Profile rendering does not mutate tournaments');

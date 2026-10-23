@@ -1,5 +1,5 @@
 import type {PreviewTeam,TeamLeague,TeamFixture} from '../types/teamLeaguePreview';
-import {teamFixtureScore,teamFixtureWinner,teamStandings,teamPlayerStats} from './teamLeagueEngine';
+import {teamFixtureScore,teamFixtureWinner,teamStandings} from './teamLeagueEngine';
 export interface TeamProfileData {team:PreviewTeam;leagues:TeamLeague[];teams:Array<Pick<PreviewTeam,'id'|'name'|'logo'>>}
 export function teamProfileFixtureComplete(f:TeamFixture,starterCount?:number){return (starterCount===undefined||f.bouts.length===starterCount)&&teamFixtureScore(f).complete&&(f.stage!=='PLAYOFF'||!!teamFixtureWinner(f));}
 export function teamProfileChampion(l:TeamLeague){
@@ -28,7 +28,13 @@ export function teamProfileSummary(data:TeamProfileData){
  // Tournament snapshots retain the careers of members removed from the current roster.
  const members=new Map(leagues.flatMap(l=>l.teams[team.id]?.members||[]).map(m=>[m.id,m]));
  team.members.forEach(member=>members.set(member.id,member));
- const allStats=leagues.flatMap(teamPlayerStats).filter(p=>p.teamId===team.id);
- const players=[...members.values()].map(member=>{const stats=allStats.filter(p=>p.memberId===member.id);return {...member,active:team.members.some(m=>m.id===member.id),played:stats.reduce((n,p)=>n+p.played,0),won:stats.reduce((n,p)=>n+p.won,0),drawn:stats.reduce((n,p)=>n+p.drawn,0),lost:stats.reduce((n,p)=>n+p.lost,0),goalsFor:stats.reduce((n,p)=>n+p.goalsFor,0),goalsAgainst:stats.reduce((n,p)=>n+p.goalsAgainst,0)};});
+ const players=[...members.values()].map(member=>({...member,active:team.members.some(m=>m.id===member.id),played:0,won:0,drawn:0,lost:0,goalsFor:0,goalsAgainst:0}));
+ const byId=new Map(players.map(player=>[player.id,player]));
+ for(const {fixture:f} of matches)for(const bout of f.bouts){
+  if(bout.homeScore==null||bout.awayScore==null)continue;
+  const home=f.homeTeamId===team.id,player=byId.get(home?bout.homeMemberId:bout.awayMemberId);if(!player)continue;
+  const own=home?bout.homeScore:bout.awayScore,other=home?bout.awayScore:bout.homeScore;
+  player.played++;player.goalsFor+=own;player.goalsAgainst+=other;if(own>other)player.won++;else if(own<other)player.lost++;else player.drawn++;
+ }
  return {leagues,matches,totals,trophies,next,players};
 }
