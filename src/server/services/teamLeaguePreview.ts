@@ -23,7 +23,9 @@ export async function getPreviewTeamProfile(ownerId:string,id:string){
  identifier(id);const db=getFirestoreDb();
  const team=owned((await db.collection(TEAM_COLLECTION).doc(id).get()).data() as PreviewTeam|undefined,ownerId);
  const [ls,ts]=await Promise.all([db.collection(LEAGUE_COLLECTION).where('ownerId','==',ownerId).limit(8).get(),db.collection(TEAM_COLLECTION).where('ownerId','==',ownerId).limit(32).get()]);
- return {team,leagues:ls.docs.map(d=>d.data() as TeamLeague).filter(l=>l.teamIds.includes(id)),teams:ts.docs.map(d=>d.data() as PreviewTeam)};
+ const leagues=ls.docs.map(d=>d.data() as TeamLeague).filter(l=>l.teamIds.includes(id));
+ const relevant=new Set([id,...leagues.flatMap(l=>l.teamIds)]);
+ return {team,leagues:leagues.map(l=>({...l,audit:[],teams:Object.fromEntries(Object.entries(l.teams).map(([teamId,snapshot])=>[teamId,teamId===id?snapshot:{id:snapshot.id,name:snapshot.name,members:[],captainMemberId:''}]))})),teams:ts.docs.map(d=>d.data() as PreviewTeam).filter(t=>relevant.has(t.id)).map(({id,name,logo})=>({id,name,logo}))};
 }
 export async function savePreviewTeam(ownerId:string,input:any){
  const id=identifier(input.id),name=text(input.name),image=await logo(input.logo??'');

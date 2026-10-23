@@ -136,7 +136,7 @@ const AppContent: React.FC = () => {
   };
 
   useEffect(() => {
-    const handlePopState = () => { setActiveTabState(getInitialTab()); setPublicClubId(readClubPageId(window.location.pathname));const id=readTeamPageId(window.location.pathname);setTeamRoute(id?{id}:/^\/teams\/?$/.test(window.location.pathname)?{}:null); };
+    const handlePopState = () => { setSearchNavigationRevision(n=>n+1);setActiveTabState(getInitialTab()); setPublicClubId(readClubPageId(window.location.pathname));const id=readTeamPageId(window.location.pathname);setTeamRoute(id?{id}:/^\/teams\/?$/.test(window.location.pathname)?{}:null); };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
@@ -147,7 +147,7 @@ const AppContent: React.FC = () => {
       if(target.kind==='profile'||target.kind==='directory'){const id=target.kind==='profile'?target.id:undefined;const path=teamPagePath(id);if(window.location.pathname!==path)window.history.pushState({teamProfile:true},'',path);setTeamRoute(id?{id}:{});}
       else if(target.kind==='tournament'||target.kind==='workspace'){
         try{sessionStorage.setItem(`efl:turnir-mode:${user.id}`,'team');sessionStorage.setItem(`efl:team-turnir:${user.id}`,target.kind==='tournament'?target.id:'');}catch{}
-        const params=new URLSearchParams(target.kind==='tournament'?{teamTournament:target.id}:{teamMode:'1'});if(target.kind==='tournament'&&target.fixtureId)params.set('teamFixture',target.fixtureId);
+        const params=new URLSearchParams(target.kind==='tournament'?{teamTournament:target.id}:{teamMode:'1'});if(target.kind==='tournament'&&target.fixtureId)params.set('teamFixture',target.fixtureId);if(target.kind==='tournament'&&target.tab)params.set('teamTab',target.tab);
         window.history.pushState({teamTournament:true},'',`/leagues?${params}`);setTeamRoute(null);setActiveTabState('leagues');setSearchNavigationRevision(n=>n+1);
       }
       window.scrollTo({top:0,behavior:'instant'});
