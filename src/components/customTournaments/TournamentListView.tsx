@@ -1,3 +1,4 @@
+import {isTeamWorkspaceLaunch} from '../../lib/teamNavigation';
 import {CompetitionToolbar} from '../CompetitionWorkspace';
 import {CompetitionTabs} from '../CompetitionChrome';
 import {TeamLeaguePreviewView} from '../teamLeaguePreview/TeamLeaguePreviewView';
@@ -14,7 +15,7 @@ import {readTournamentLaunch} from '../../lib/customTournamentLinks';
 import {useAuth} from '../../context/AuthContext';
 export function TournamentListView(){
  const {user}=useAuth();
- const [teamMode,setTeamMode]=useState(()=>{try{return canSeeTeamPreview(user?.telegramId)&&sessionStorage.getItem(`efl:turnir-mode:${user?.id}`)==='team';}catch{return false;}}),[teamDetail,setTeamDetail]=useState(false);
+ const [teamMode,setTeamMode]=useState(()=>{try{return canSeeTeamPreview(user?.telegramId)&&(isTeamWorkspaceLaunch()||sessionStorage.getItem(`efl:turnir-mode:${user?.id}`)==='team');}catch{return false;}}),[teamDetail,setTeamDetail]=useState(false);
  useEffect(()=>{try{sessionStorage.setItem(`efl:turnir-mode:${user?.id}`,teamMode?'team':'single');}catch{}},[teamMode,user?.id]);
  const modeSwitch=canSeeTeamPreview(user?.telegramId)&&!teamDetail?<CompetitionTabs value={teamMode?'team':'single'} onChange={id=>setTeamMode(id==='team')} label="Turnir o‘yin turi" items={[{id:'single',label:'Yakka o‘yin',icon:UserRound},{id:'team',label:'Team vs Team',icon:Users}]}/>:null;
  const [tab,setTab]=useState<'all'|'my'>(()=>{try{return sessionStorage.getItem(`efl:custom-tab:${user?.id}`)==='all'?'all':'my';}catch{return 'my';}});

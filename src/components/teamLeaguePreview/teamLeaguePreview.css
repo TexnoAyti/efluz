@@ -175,3 +175,25 @@
 .team-picker .team-crest{width:28px;height:28px}
 .team-picker strong{font-size:12px}
 .team-picker small{font-size:10px}
+
+/* Team identity is a profile link throughout fixtures and standings. */
+.team-profile-link{display:flex;align-items:center;gap:8px;min-width:0;text-align:inherit;color:inherit;max-width:100%;min-height:34px}
+.team-profile-link>span:last-child{min-width:0;overflow-wrap:anywhere}
+.team-profile-link:hover{color:var(--efl-primary)}
+.team-profile-link:focus-visible{outline:2px solid var(--efl-primary);outline-offset:3px;border-radius:6px}
+.team-league-match .competition-fixture-away .team-profile-link{flex-direction:row-reverse;text-align:right}
+.team-profile-page .club-hero-footer>button{display:flex;align-items:center;gap:6px;color:var(--efl-primary);font-size:11px;font-weight:800;min-height:34px}
+.team-profile-page .club-hero-identity{justify-content:flex-start;text-align:left}
+.team-profile-emblem .team-crest{width:88px;height:88px;background:transparent;border:0;border-radius:0}
+.team-profile-totals{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.team-profile-totals>div{display:grid;gap:4px;justify-items:center;padding:14px 8px;border:1px solid var(--efl-border);border-radius:14px;background:var(--efl-surface)}
+.team-profile-totals strong{font-size:21px;font-weight:900;color:var(--efl-text)}
+.team-profile-totals span{font-size:10px;color:var(--efl-text-2);text-align:center}
+.team-profile-trophies{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}
+.team-profile-trophies button{display:flex;gap:10px;align-items:center;text-align:left;min-width:0;padding:12px;border:1px solid var(--efl-border);border-radius:12px;background:var(--efl-surface-2)}
+.team-profile-trophies button>svg:first-child{color:var(--efl-primary);flex-shrink:0}
+.team-profile-trophies button>span{flex:1;min-width:0}
+.team-profile-trophies b{display:block;font-size:12px;overflow-wrap:anywhere}
+.team-profile-trophies small{display:block;font-size:10px;color:var(--efl-text-2)}
+.team-profile-page .club-competition-filters{padding:0 0 4px}
+@media(max-width:600px){.team-profile-emblem .team-crest{width:60px;height:60px}.team-profile-totals{gap:5px}.team-profile-totals>div{padding:10px 3px}.team-profile-totals strong{font-size:18px}.team-profile-totals span{font-size:9px}.team-profile-trophies{grid-template-columns:1fr}}
