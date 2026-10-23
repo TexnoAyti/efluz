@@ -1,3 +1,5 @@
+import {canSeeTeamPreview} from './types/teamLeaguePreview';
+import {TEAM_NAVIGATION_EVENT,readTeamPageId,teamPagePath,openTeamDirectory,readTeamTournamentLaunch,isTeamWorkspaceLaunch,type TeamNavigation} from './lib/teamNavigation';
 import { readBrowserStorage, writeBrowserStorage } from './lib/browserStorage';
 import React, { lazy, useState, useEffect, useMemo, useRef } from 'react';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -31,6 +33,7 @@ const ClubHubView = lazy(() => import('./components/ClubHubView').then(module =>
 const MatchOperationsV4Panel = lazy(() => import('./components/MatchOperationsV4Panel').then(module => ({ default: module.MatchOperationsV4Panel })));
 const SeasonLifecyclePanel = lazy(() => import('./components/SeasonLifecyclePanel').then(module => ({ default: module.SeasonLifecyclePanel })));
 const GlobalSearchModal = lazy(() => import('./components/GlobalSearchModal').then(module => ({ default: module.GlobalSearchModal })));
+const TeamProfileView = lazy(()=>import('./components/teamLeaguePreview/TeamProfileView').then(m=>({default:m.TeamProfileView})));
 const PublicClubView = lazy(() => import('./components/PublicClubView').then(module => ({ default: module.PublicClubView })));
 
 function getInitialTab(): TabType {
@@ -53,6 +56,7 @@ const AppContent: React.FC = () => {
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [publicClubId, setPublicClubId] = useState(() => readClubPageId(window.location.pathname));
+  const [teamRoute,setTeamRoute]=useState<{id?:string}|null>(()=>{const id=readTeamPageId(window.location.pathname);return id?{id}:/^\/teams\/?$/.test(window.location.pathname)?{}:null;});
   const [searchNavigationRevision, setSearchNavigationRevision] = useState(0);
   const [openDisputesCount, setOpenDisputesCount] = useState(0);
   const [adminAccess, setAdminAccess] = useState<{ userId: string; permissions: AdminPermissions } | null>(null);
@@ -121,25 +125,39 @@ const AppContent: React.FC = () => {
   };
 
   const setActiveTab = (tab: TabType) => {
-    setPublicClubId(null);
+    setPublicClubId(null);setTeamRoute(null);
     const resolvedTab = tab === 'home' ? 'dashboard' : tab;
     setActiveTabState(resolvedTab);
     if (typeof window !== 'undefined') {
       const url = resolvedTab === 'dashboard' ? '/' : `/${resolvedTab}`;
       const nextUrl = isDesignPreview ? `${url}?designPreview=1` : url;
-      if (window.location.pathname !== url) window.history.pushState({ tab: resolvedTab }, '', nextUrl);
+      if (window.location.pathname !== url||window.location.search!==(isDesignPreview?'?designPreview=1':'')) window.history.pushState({ tab: resolvedTab }, '', nextUrl);
     }
   };
 
   useEffect(() => {
-    const handlePopState = () => { setActiveTabState(getInitialTab()); setPublicClubId(readClubPageId(window.location.pathname)); };
+    const handlePopState = () => { setActiveTabState(getInitialTab()); setPublicClubId(readClubPageId(window.location.pathname));const id=readTeamPageId(window.location.pathname);setTeamRoute(id?{id}:/^\/teams\/?$/.test(window.location.pathname)?{}:null); };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
+  useEffect(()=>{
+    const navigate=(event:Event)=>{if(!user||!canSeeTeamPreview(user.telegramId))return;const target=(event as CustomEvent<TeamNavigation>).detail;if(!target)return;
+      setPublicClubId(null);
+      if(target.kind==='profile'||target.kind==='directory'){const id=target.kind==='profile'?target.id:undefined;const path=teamPagePath(id);if(window.location.pathname!==path)window.history.pushState({teamProfile:true},'',path);setTeamRoute(id?{id}:{});}
+      else if(target.kind==='tournament'||target.kind==='workspace'){
+        try{sessionStorage.setItem(`efl:turnir-mode:${user.id}`,'team');sessionStorage.setItem(`efl:team-turnir:${user.id}`,target.kind==='tournament'?target.id:'');}catch{}
+        const params=new URLSearchParams(target.kind==='tournament'?{teamTournament:target.id}:{teamMode:'1'});if(target.kind==='tournament'&&target.fixtureId)params.set('teamFixture',target.fixtureId);
+        window.history.pushState({teamTournament:true},'',`/leagues?${params}`);setTeamRoute(null);setActiveTabState('leagues');setSearchNavigationRevision(n=>n+1);
+      }
+      window.scrollTo({top:0,behavior:'instant'});
+    };
+    window.addEventListener(TEAM_NAVIGATION_EVENT,navigate);return()=>window.removeEventListener(TEAM_NAVIGATION_EVENT,navigate);
+  },[user?.id,user?.telegramId]);
+
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-  }, [activeTab, publicClubId]);
+  }, [activeTab, publicClubId,teamRoute]);
 
   useEffect(() => {
     if (!user) return;
@@ -218,8 +236,8 @@ const AppContent: React.FC = () => {
       <Navigation activeTab={currentTab} onTabChange={setActiveTab} openDisputesCount={openDisputesCount} />
       {!isDesignPreview && canUseGlobalAdminTools && <ContentBoundary><OfflineSyncBanner /></ContentBoundary>}
       <main data-preview-page={EFL_2_DESIGN_ENABLED ? currentTab : undefined} className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-4 md:px-6 py-4 sm:py-6 min-w-0">
-          <ContentBoundary key={publicClubId || currentTab}>
-            {publicClubId ? <PublicClubView clubId={publicClubId} onBack={() => {
+          <ContentBoundary key={teamRoute?.id || (teamRoute?'team-directory':publicClubId || currentTab)}>
+            {teamRoute ? canSeeTeamPreview(user?.telegramId)?<TeamProfileView key={`${user?.id}:${teamRoute.id||'directory'}`} teamId={teamRoute.id} onBack={()=>{if(window.history.state?.teamProfile)window.history.back();else setActiveTab('my-club');}}/>:<p className="competition-empty">Bu bo‘lim hozircha faqat loyiha egasiga ochiq.</p> : publicClubId ? <PublicClubView clubId={publicClubId} onBack={() => {
               if (window.history.state?.publicClub) window.history.back();
               else setActiveTab('leagues');
             }} /> : <>
@@ -243,7 +261,7 @@ const AppContent: React.FC = () => {
                 key={searchNavigationRevision}
                 onNavigateTab={setActiveTab}
                 initialSubTab={
-                  readUzeflifeLaunch()!==null ? 'uzeflife' : readTournamentLaunch() ? 'custom' : currentTab === 'cups'
+                  canSeeTeamPreview(user?.telegramId)&&isTeamWorkspaceLaunch()?'custom':readUzeflifeLaunch()!==null ? 'uzeflife' : readTournamentLaunch() ? 'custom' : currentTab === 'cups'
                     ? 'cups'
                     : currentTab === 'champions-league'
                     ? 'european'
@@ -257,6 +275,7 @@ const AppContent: React.FC = () => {
             {/* CLUB: Replaces Profile & Matches - Active Club, Switcher, Matches, Stats, Settings */}
             {(currentTab === 'my-club' || currentTab === 'profile' || currentTab === 'my-matches') && (
               <>
+              {canSeeTeamPreview(user?.telegramId)&&<button type="button" onClick={openTeamDirectory} className="preview-surface w-full rounded-2xl border border-[var(--efl-border)] p-4 mb-4 flex items-center justify-between text-left"><span><strong className="text-sm text-[var(--efl-text)]">Teamlarim</strong><span className="block text-xs text-[var(--efl-text-2)] mt-1">Team profili · Tarkib · O‘yinlar · Turnirlar</span></span><span className="text-xs text-[var(--efl-primary)]">Faqat sizga →</span></button>}
               <ClubHubView
                 onNavigateTab={setActiveTab}
                 onSelectFixtureForMatchCenter={(fix) => setSelectedFixture(fix)}
@@ -286,7 +305,7 @@ const AppContent: React.FC = () => {
         isOpen={isSearchOpen}
         onClose={() => setIsSearchOpen(false)}
         onSelectClub={(club) => {
-          setPublicClubId(club.id);
+          setTeamRoute(null);setPublicClubId(club.id);
           const path = clubPagePath(club.id);
           if (window.location.pathname !== path) window.history.pushState({ publicClub: true }, '', isDesignPreview ? `${path}?designPreview=1` : path);
         }}

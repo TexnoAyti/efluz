@@ -1,3 +1,4 @@
+import {canSeeTeamPreview} from '../types/teamLeaguePreview';
 import React, { lazy, Suspense, useState, useEffect } from 'react';
 import { useI18n } from '../i18n';
 import { ClubsView } from './ClubsView';
@@ -24,7 +25,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
   const {user}=useAuth();
   const [customEnabled,setCustomEnabled]=useState(false);
   useEffect(()=>{let live=true;uzeflifeRequest().then(s=>{if(live)setCustomEnabled(s.customNavigationEnabled);}).catch(()=>{});return()=>{live=false;};},[user?.id]);
-  const canSeeCustom=uCanSeeCustomNavigation(customEnabled);
+  const canSeeCustom=uCanSeeCustomNavigation(customEnabled)||canSeeTeamPreview(user?.telegramId);
   const [subTab, setSubTab] = useState<'leagues' | 'cups' | 'european' | 'season' | 'custom' | 'uzeflife'>(() => {
     try {
       const saved = sessionStorage.getItem('efl:competition-hub-subtab');

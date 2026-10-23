@@ -14,7 +14,7 @@ export async function verifyTeamLeaguePreview(failNextCommit:()=>void){
  const owner={id:'team-owner',telegramId:'5209126900',username:'owner',firstName:'Owner',lastName:'',photoUrl:'',isAdmin:true,isSuspended:false,createdAt:'',updatedAt:''},other={...owner,id:'team-other-admin',telegramId:'1234567'};
  await db.collection('users').doc(owner.id).set(owner);await db.collection('users').doc(other.id).set(other);
  const app=express();app.use(express.json({limit:'256kb'}));app.use(authMiddleware);app.use('/api/team-leagues-preview',teamLeaguePreviewRouter);const server=app.listen(0,'127.0.0.1');await once(server,'listening');const base=`http://127.0.0.1:${(server.address() as any).port}/api/team-leagues-preview`;
- const call=async(path='',body?:unknown,actor:any=owner)=>{const r=await fetch(base+path,{method:body===undefined?'GET':'POST',headers:{'content-type':'application/json',...(actor?{authorization:`Bearer ${createSessionToken(actor)}`}:{})},body:body===undefined?undefined:JSON.stringify(body)});return {status:r.status,body:await r.json() as any};};
+ const call=async(path='',body?:unknown,actor:any=owner)=>{const r=await fetch(base+path,{method:body===undefined?'GET':'POST',headers:{'content-type':'application/json',...(actor?{authorization:`Bearer ${createSessionToken(actor)}`}:{})},body:body===undefined?undefined:JSON.stringify(body)});return {status:r.status,cache:r.headers.get('cache-control'),body:await r.json() as any};};
  try{
   assert.equal((await call('',undefined,null)).status,401);assert.equal((await call('',undefined,other)).status,403);assert.equal((await call('',undefined,{...other,telegramId:owner.telegramId})).status,403);
   for(const path of ['/teams','/leagues','/leagues/tp_testleague/actions'])assert.equal((await call(path,{},other)).status,403);
@@ -23,11 +23,19 @@ export async function verifyTeamLeaguePreview(failNextCommit:()=>void){
   assert.equal((await call('/teams',{...payload(0),logo:'data:image/png;base64,bm90cG5n'})).status,400);
   assert.equal((await call('/teams',{...payload(0),captainMemberId:'unknown'})).status,400);
   for(let i=0;i<3;i++){const r=await call('/teams',payload(i));assert.equal(r.status,200,JSON.stringify(r));assert.equal((await call('/teams',payload(i))).body.data.version,1);}
+  const profile=await call('/teams/'+payload(0).id);assert.equal(profile.status,200);assert.equal(profile.cache,'no-store');assert.equal(profile.body.data.team.id,payload(0).id);assert.deepEqual(profile.body.data.leagues,[]);
+  assert.equal((await call('/teams/'+payload(0).id,undefined,null)).status,401);
+  assert.equal((await call('/teams/'+payload(0).id,undefined,other)).status,403);
+  assert.equal((await call('/teams/'+payload(0).id,undefined,{...other,telegramId:owner.telegramId})).status,403);
+  await db.collection('team_league_preview_teams').doc('tp_foreignteam').set({...payload(0),id:'tp_foreignteam',ownerId:other.id});
+  assert.equal((await call('/teams/tp_foreignteam')).status,404,'Even the preview owner cannot read another account’s team');
+  assert.equal((await call('/teams/tp_notfoundteam')).status,404);assert.equal((await call('/teams/invalid')).status,400);
+  await db.collection('users').doc(owner.id).update({isSuspended:true});assert.equal((await call('/teams/'+payload(0).id)).status,403);await db.collection('users').doc(owner.id).update({isSuspended:false});
   const draft={id:'tp_testleague',name:'Owner Test League',teamIds:[0,1,2].map(i=>payload(i).id),starterCount:2,rounds:1,version:0};assert.equal((await call('/leagues',{...draft,starterCount:4})).status,400);
   assert.equal((await call('/leagues',draft)).status,200);let league:TeamLeague=(await call('/leagues/'+draft.id)).body.data;
   const act=async(body:any)=>{const r=await call(`/leagues/${league.id}/actions`,{version:league.version,...body});if(r.status===200)league=r.body.data;return r;};
   failNextCommit();assert.ok((await act({action:'START'})).status>=500);assert.equal((await call()).body.data.leagues[0].version,league.version,'Failed transaction did not persist');
-  assert.equal((await act({action:'START'})).status,200);assert.equal(league.fixtures.length,3);assert.equal(league.totalRounds,3);
+  assert.equal((await act({action:'START'})).status,200);const activeProfile=await call('/teams/'+payload(0).id);assert.equal(activeProfile.body.data.leagues.length,1);assert.equal(activeProfile.body.data.leagues[0].fixtures.length,3);assert.equal(activeProfile.body.data.teams.some((t:any)=>t.id==='tp_foreignteam'),false);assert.equal(league.fixtures.length,3);assert.equal(league.totalRounds,3);
   assert.equal((await call('/teams',{...payload(0),name:'Changed',version:1})).status,409);
   assert.equal((await call('/leagues',{...draft,version:league.version})).status,409);
   assert.equal((await act({action:'NEXT'})).status,409);const future=league.fixtures.find(f=>f.round===2)!;assert.equal((await act({action:'PAIR',fixtureId:future.id})).status,409);

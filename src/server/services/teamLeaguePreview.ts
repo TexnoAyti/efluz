@@ -19,6 +19,12 @@ export async function getTeamPreview(ownerId:string){
  return {teams:ts.docs.map(d=>d.data() as PreviewTeam),leagues:ls.docs.map(d=>({...d.data() as TeamLeague,fixtures:[],teams:{},audit:[]}))};
 }
 export async function getPreviewLeague(ownerId:string,id:string){identifier(id);return owned((await getFirestoreDb().collection(LEAGUE_COLLECTION).doc(id).get()).data() as TeamLeague|undefined,ownerId);}
+export async function getPreviewTeamProfile(ownerId:string,id:string){
+ identifier(id);const db=getFirestoreDb();
+ const team=owned((await db.collection(TEAM_COLLECTION).doc(id).get()).data() as PreviewTeam|undefined,ownerId);
+ const [ls,ts]=await Promise.all([db.collection(LEAGUE_COLLECTION).where('ownerId','==',ownerId).limit(8).get(),db.collection(TEAM_COLLECTION).where('ownerId','==',ownerId).limit(32).get()]);
+ return {team,leagues:ls.docs.map(d=>d.data() as TeamLeague).filter(l=>l.teamIds.includes(id)),teams:ts.docs.map(d=>d.data() as PreviewTeam)};
+}
 export async function savePreviewTeam(ownerId:string,input:any){
  const id=identifier(input.id),name=text(input.name),image=await logo(input.logo??'');
  if(!Array.isArray(input.members)||input.members.length<1||input.members.length>30)throw error('Tarkibda 1–30 o‘yinchi bo‘lsin.');
