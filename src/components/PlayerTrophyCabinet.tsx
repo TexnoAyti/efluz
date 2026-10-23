@@ -18,14 +18,14 @@ export function TrophyCabinetView({ trophies, language, stale = false }: { troph
   const filter = seasons.includes(selectedSeason) ? selectedSeason : 'ALL';
   const visible = filter === 'ALL' ? trophies : trophies.filter(trophy => trophy.seasonId === filter);
   return (
-    <section aria-label={text.title} className="rounded-3xl border border-[var(--efl-border,rgba(255,255,255,0.1))] bg-[var(--efl-surface,#111722)] p-4 sm:p-5 text-left space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <section aria-label={text.title} className="efl-trophy-cabinet">
+      <div className="efl-trophy-heading">
         <div>
-          <h2 className="flex items-center gap-2 text-sm font-black text-[var(--efl-text,#f8fafc)]">
-            <Trophy aria-hidden="true" className="h-4 w-4 text-amber-500" />{text.title}
-            <span className="rounded-lg bg-amber-500/10 px-2 py-0.5 text-xs text-[var(--efl-text,#f8fafc)]">{trophies.length}</span>
+          <h2 className="efl-trophy-title">
+            <Trophy aria-hidden="true" className="efl-trophy-heading-icon" />{text.title}
+            <span className="efl-trophy-count">{trophies.length}</span>
           </h2>
-          <p className="mt-1 text-xs text-[var(--efl-text-2,#94a3b8)]">{text.description}</p>
+          <p className="efl-trophy-description">{text.description}</p>
         </div>
         {seasons.length > 1 && (
           <div>
@@ -41,16 +41,18 @@ export function TrophyCabinetView({ trophies, language, stale = false }: { troph
       {visible.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-[var(--efl-border,rgba(255,255,255,0.1))] p-5 text-xs leading-5 text-[var(--efl-text-2,#94a3b8)]">{text.empty}</p>
       ) : (
-        <ul className="grid max-h-96 grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-3">
+        <ul className="efl-trophy-list">
           {visible.map(trophy => {
             return (
-              <li key={trophy.id} className="min-w-0 rounded-2xl border border-[var(--efl-border,rgba(255,255,255,0.1))] bg-[var(--efl-surface-2,#171e2c)] p-3">
-                <div className="flex h-36 items-center justify-center rounded-xl bg-amber-500/5">
+              <li key={trophy.id} className="efl-trophy-item">
+                <div className="efl-trophy-art">
                   <CompetitionTrophy competitionId={trophy.competitionId} name={trophy.competitionName} />
                 </div>
-                <p className="mt-3 break-words text-xs font-black leading-5 text-[var(--efl-text,#f8fafc)]">{trophy.competitionName}</p>
-                <p className="mt-1 text-xs font-bold text-[var(--efl-text,#f8fafc)]">{seasonLabel(trophy.seasonId)} · {text.champion}</p>
-                <p className="mt-1 break-words text-[11px] text-[var(--efl-text-2,#94a3b8)]">{trophy.clubName}</p>
+                <div className="efl-trophy-details">
+                  <p className="efl-trophy-competition">{trophy.competitionName}</p>
+                  <p className="efl-trophy-season">{seasonLabel(trophy.seasonId)}<span aria-hidden="true"> · </span><span className="efl-trophy-champion">{text.champion}</span></p>
+                  <p className="efl-trophy-club">{trophy.clubName}</p>
+                </div>
               </li>
             );
           })}
@@ -82,7 +84,7 @@ function RemoteTrophyCabinet({ subjectId, kind, seasonId = 'season-2026-27' }: {
   const current = state.subjectId === subjectId && state.seasonId === seasonId;
   if (current && state.data) return <TrophyCabinetView key={subjectId} trophies={state.data.trophies} language={language} stale={state.data.stale} />;
   return (
-    <section aria-label={text.title} className="rounded-3xl border border-[var(--efl-border,rgba(255,255,255,0.1))] bg-[var(--efl-surface,#111722)] p-5 text-xs text-[var(--efl-text-2,#94a3b8)]">
+    <section aria-label={text.title} className="efl-trophy-cabinet efl-trophy-status">
       {current && state.error ? (
         <div role="alert" className="flex flex-wrap items-center justify-between gap-3">
           <span>{text.error}</span>

@@ -1,0 +1,36 @@
+/* One surface, matching the club profile. Artwork has no tile or backdrop. */
+.efl-trophy-cabinet {
+  padding:20px 22px;
+  border:1px solid var(--efl-border,rgba(255,255,255,.1));
+  border-radius:20px;
+  background:var(--efl-surface,#111722);
+  color:var(--efl-text,#f8fafc);
+  text-align:left;
+}
+.efl-club-profile > .efl-trophy-cabinet { margin-top:18px; }
+.efl-trophy-heading { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; }
+.efl-trophy-title { display:flex; align-items:center; gap:8px; margin:0; font-size:13px; line-height:1.5; font-weight:800; }
+.efl-trophy-heading-icon { width:16px; height:16px; color:var(--efl-primary,#60a5fa); }
+.efl-trophy-count { margin-left:2px; color:var(--efl-muted,#94a3b8); font-size:11px; font-weight:600; font-variant-numeric:tabular-nums; }
+.efl-trophy-description { margin:4px 0 0; font-size:11px; line-height:1.6; color:var(--efl-text-2,#94a3b8); }
+.efl-trophy-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr)); gap:8px 28px; margin:16px 0 0; padding:0; list-style:none; }
+.efl-trophy-item { display:flex; align-items:center; gap:22px; min-width:0; min-height:132px; padding:8px 0; }
+.efl-trophy-art { display:flex; align-items:center; justify-content:center; flex:0 0 88px; width:88px; height:116px; background:none; border:0; box-shadow:none; }
+.efl-trophy-image-link { display:flex; align-items:center; justify-content:center; width:100%; height:100%; background:none; border:0; border-radius:4px; box-shadow:none; }
+.efl-trophy-image-link:focus-visible { outline:2px solid var(--efl-primary,#60a5fa); outline-offset:4px; }
+.efl-trophy-image { display:block; width:80px; height:112px; max-width:100%; object-fit:contain; background:none; border:0; box-shadow:none; filter:none; }
+.efl-trophy-fallback { width:64px; height:72px; color:var(--efl-primary,#60a5fa); }
+.efl-trophy-details { min-width:0; }
+.efl-trophy-competition { margin:0; font-size:16px; line-height:1.35; font-weight:800; letter-spacing:-.3px; overflow-wrap:anywhere; }
+.efl-trophy-season { margin:7px 0 0; font-size:11px; line-height:1.6; color:var(--efl-text-2,#94a3b8); font-variant-numeric:tabular-nums; }
+.efl-trophy-season > [aria-hidden] { padding:0 3px; color:var(--efl-muted,#94a3b8); }
+.efl-trophy-champion { color:var(--efl-primary,#60a5fa); font-weight:700; }
+.efl-trophy-club { margin:5px 0 0; font-size:11px; line-height:1.6; color:var(--efl-muted,#94a3b8); overflow-wrap:anywhere; }
+.efl-trophy-status { font-size:12px; line-height:1.6; color:var(--efl-text-2,#94a3b8); }
+@media (max-width:480px) {
+  .efl-trophy-cabinet { padding:17px 18px; border-radius:18px; }
+  .efl-trophy-item { gap:18px; min-height:124px; }
+  .efl-trophy-art { flex-basis:72px; width:72px; height:108px; }
+  .efl-trophy-image { width:68px; height:104px; }
+  .efl-trophy-competition { font-size:15px; }
+}

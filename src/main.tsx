@@ -3,6 +3,7 @@ import {createRoot} from 'react-dom/client';
 import {Analytics} from '@vercel/analytics/react';
 import App from './App.tsx';
 import './index.css';
+import './components/trophy-cabinet.css';
 import './admin-preview.css';
 import './components/competition-content.css';
 import './components/customTournaments/tournaments.css';
