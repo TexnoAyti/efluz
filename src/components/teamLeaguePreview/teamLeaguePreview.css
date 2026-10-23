@@ -197,3 +197,10 @@
 .team-profile-trophies small{display:block;font-size:10px;color:var(--efl-text-2)}
 .team-profile-page .club-competition-filters{padding:0 0 4px}
 @media(max-width:600px){.team-profile-emblem .team-crest{width:60px;height:60px}.team-profile-totals{gap:5px}.team-profile-totals>div{padding:10px 3px}.team-profile-totals strong{font-size:18px}.team-profile-totals span{font-size:9px}.team-profile-trophies{grid-template-columns:1fr}}
+.team-profile-page .club-profile-layout{margin-top:0}
+.team-profile-competition-select{padding:12px 14px}
+.team-profile-cabinet>summary{cursor:pointer;min-height:30px;display:list-item;list-style-position:inside}
+.team-profile-notice{padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--efl-text-2);border:1px solid var(--efl-border);border-radius:12px;background:var(--efl-surface)}
+.team-profile-notice button{margin-left:8px;min-height:34px;color:var(--efl-primary);text-decoration:underline}
+.team-profile-page .team-content-switch{min-width:0;max-width:100%}
+.team-profile-page .club-match-list .team-profile-link{width:100%}

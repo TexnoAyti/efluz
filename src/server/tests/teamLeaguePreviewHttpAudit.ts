@@ -23,7 +23,7 @@ export async function verifyTeamLeaguePreview(failNextCommit:()=>void){
   assert.equal((await call('/teams',{...payload(0),logo:'data:image/png;base64,bm90cG5n'})).status,400);
   assert.equal((await call('/teams',{...payload(0),captainMemberId:'unknown'})).status,400);
   for(let i=0;i<3;i++){const r=await call('/teams',payload(i));assert.equal(r.status,200,JSON.stringify(r));assert.equal((await call('/teams',payload(i))).body.data.version,1);}
-  const profile=await call('/teams/'+payload(0).id);assert.equal(profile.status,200);assert.equal(profile.cache,'no-store');assert.equal(profile.body.data.team.id,payload(0).id);assert.deepEqual(profile.body.data.leagues,[]);
+  const profile=await call('/teams/'+payload(0).id);assert.equal(profile.status,200);assert.equal(profile.cache,'no-store');assert.equal(profile.body.data.team.id,payload(0).id);assert.deepEqual(profile.body.data.leagues,[]);assert.equal(profile.body.data.teams.length,1,'Unrelated teams are not included in a profile');assert.equal(profile.body.data.teams[0].members,undefined,'Opponent identities do not duplicate private rosters');
   assert.equal((await call('/teams/'+payload(0).id,undefined,null)).status,401);
   assert.equal((await call('/teams/'+payload(0).id,undefined,other)).status,403);
   assert.equal((await call('/teams/'+payload(0).id,undefined,{...other,telegramId:owner.telegramId})).status,403);
@@ -35,7 +35,7 @@ export async function verifyTeamLeaguePreview(failNextCommit:()=>void){
   assert.equal((await call('/leagues',draft)).status,200);let league:TeamLeague=(await call('/leagues/'+draft.id)).body.data;
   const act=async(body:any)=>{const r=await call(`/leagues/${league.id}/actions`,{version:league.version,...body});if(r.status===200)league=r.body.data;return r;};
   failNextCommit();assert.ok((await act({action:'START'})).status>=500);assert.equal((await call()).body.data.leagues[0].version,league.version,'Failed transaction did not persist');
-  assert.equal((await act({action:'START'})).status,200);const activeProfile=await call('/teams/'+payload(0).id);assert.equal(activeProfile.body.data.leagues.length,1);assert.equal(activeProfile.body.data.leagues[0].fixtures.length,3);assert.equal(activeProfile.body.data.teams.some((t:any)=>t.id==='tp_foreignteam'),false);assert.equal(league.fixtures.length,3);assert.equal(league.totalRounds,3);
+  assert.equal((await act({action:'START'})).status,200);const activeProfile=await call('/teams/'+payload(0).id);assert.equal(activeProfile.body.data.leagues.length,1);assert.equal(activeProfile.body.data.leagues[0].fixtures.length,3);assert.deepEqual(activeProfile.body.data.leagues[0].audit,[],'Profile responses omit management audit payloads');assert.equal(activeProfile.body.data.teams[0].ownerId,undefined);assert.equal(activeProfile.body.data.teams.some((t:any)=>t.id==='tp_foreignteam'),false);assert.equal(league.fixtures.length,3);assert.equal(league.totalRounds,3);
   assert.equal((await call('/teams',{...payload(0),name:'Changed',version:1})).status,409);
   assert.equal((await call('/leagues',{...draft,version:league.version})).status,409);
   assert.equal((await act({action:'NEXT'})).status,409);const future=league.fixtures.find(f=>f.round===2)!;assert.equal((await act({action:'PAIR',fixtureId:future.id})).status,409);
