@@ -29,23 +29,31 @@ export function clubMemberTagsEnabled(): boolean {
     process.env.TELEGRAM_CLUB_TAGS_ENABLED !== 'false' && /^\d+:.+/.test(process.env.TELEGRAM_BOT_TOKEN || '') && /^@[A-Za-z0-9_]{5,32}$/.test(group());
 }
 type Summary = {state:string;checkedAt:string;updated:number;unchanged:number;skipped:number;remaining:number;reason?:string};
-export async function clubMemberTagsStatus(): Promise<{enabled:boolean;lastRun?:Summary;taggedOwners?:number;skippedOwners?:number}> {
+export async function clubMemberTagsStatus(): Promise<{enabled:boolean;lastRun?:Summary;taggedOwners?:number;skippedOwners?:number;skippedReasons?:Record<string,number>;pendingDiagnostics?:number}> {
   if (!clubMemberTagsEnabled()) return {enabled:false};
   const lastRun=await state().get<Summary>(statusKey());
   const rows=await getFirestoreDb().collection(records).where('scope','==',scope()).limit(501).get();
   const taggedOwners=rows.docs.filter(d=>d.data().managed===true && d.data().clubId && !d.data().reason).length;
   const skippedOwners=rows.docs.filter(d=>d.data().reason).length;
-  return {enabled:true,taggedOwners,skippedOwners,...(lastRun ? {lastRun} : {})};
+  const skippedReasons:Record<string,number>={};
+  let pendingDiagnostics=0;
+  for (const row of rows.docs) {
+    const record=row.data();
+    if (!record.reason) continue;
+    skippedReasons[record.reason]=(skippedReasons[record.reason] || 0)+1;
+    if (record.diagnosticVersion !== 2) pendingDiagnostics++;
+  }
+  return {enabled:true,taggedOwners,skippedOwners,skippedReasons,pendingDiagnostics,...(lastRun ? {lastRun} : {})};
 }
 class TelegramTagError extends Error {
-  constructor(public code: number, public retryAfter = 0) { super('TELEGRAM_TAG_API_FAILED'); }
+  constructor(public code: number, public retryAfter = 0, public method = '', public detail = '') { super('TELEGRAM_TAG_API_FAILED'); }
 }
 async function telegram(method: string, body: Record<string,unknown>, signal: AbortSignal): Promise<any> {
   const response = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/${method}`, {
     method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal,
   });
   const data:any=await response.json();
-  if (!response.ok || !data.ok) throw new TelegramTagError(Number(data.error_code || response.status),Number(data.parameters?.retry_after || 0));
+  if (!response.ok || !data.ok) throw new TelegramTagError(Number(data.error_code || response.status),Number(data.parameters?.retry_after || 0),method,String(data.description || ''));
   return data.result;
 }
 
@@ -83,7 +91,7 @@ export async function reconcileClubMemberTags(): Promise<Summary|null> {
     // Old/changed owners first; all others are rechecked after at most six hours.
     const eligible=ids.filter(id=> {
       const old:any=prior.get(id);
-      return !old || old.seasonId !== seasonId || JSON.stringify([...(owners.get(id)||[])].sort()) !== old.ownershipKey || old.nextCheckAt <= now;
+      return !old || old.seasonId !== seasonId || JSON.stringify([...(owners.get(id)||[])].sort()) !== old.ownershipKey || old.nextCheckAt <= now || Boolean(old.reason && old.diagnosticVersion !== 2);
     }).sort((a,b)=>Number((prior.get(a) as any)?.nextCheckAt || 0)-Number((prior.get(b) as any)?.nextCheckAt || 0));
     summary.remaining=eligible.length;
     for (const userId of eligible.slice(0,24)) {
@@ -101,10 +109,18 @@ export async function reconcileClubMemberTags(): Promise<Summary|null> {
       }
       const desired=clubId ? clubMemberTag(clubs.get(clubId)!) : '';
       let reason='', appliedTag=old?.appliedTag || '', managed=old?.managed===true;
-      if (!Number.isSafeInteger(telegramId) || telegramId<=0 || user?.isSuspended || owned.length && !desired) reason='OWNER_UNRESOLVED';
+      if (!user && owned.length) reason='OWNER_ACCOUNT_MISSING';
+      else if (!Number.isSafeInteger(telegramId) || telegramId<=0) reason='TELEGRAM_ID_MISSING';
+      else if (user?.isSuspended) reason='ACCOUNT_SUSPENDED';
+      else if (owned.length>1 && !clubId) reason='PRIMARY_CLUB_UNRESOLVED';
+      else if (owned.length && !desired) reason='CLUB_TAG_UNAVAILABLE';
       else try {
         const member=await telegram('getChatMember',{chat_id:group(),user_id:telegramId},signal);
-        if (!['member','restricted'].includes(member.status) || member.status==='restricted' && member.is_member !== true || member.user?.is_bot) reason='NOT_REGULAR_MEMBER';
+        if (['creator','administrator'].includes(member.status)) reason='GROUP_ADMIN';
+        else if (member.status==='kicked') reason='BANNED_FROM_GROUP';
+        else if (member.status==='left' || member.status==='restricted' && member.is_member !== true) reason='NOT_IN_GROUP';
+        else if (member.user?.is_bot) reason='BOT_ACCOUNT';
+        else if (!['member','restricted'].includes(member.status)) reason='UNKNOWN_MEMBER_STATUS';
         else if (!desired && (!managed || member.tag !== appliedTag)) { reason='MANUAL_TAG_PRESERVED';managed=false; }
         else if ((member.tag || '') === desired) { summary.unchanged++;appliedTag=desired;managed=Boolean(desired); }
         else {
@@ -113,10 +129,12 @@ export async function reconcileClubMemberTags(): Promise<Summary|null> {
         }
       } catch (error) {
         if (!(error instanceof TelegramTagError) || error.code !== 400) throw error;
-        reason='MEMBER_UNAVAILABLE';
+        reason=error.method==='setChatMemberTag' ? 'TAG_REJECTED'
+          : /user_not_participant|not a member|not.*participant/i.test(error.detail) ? 'NOT_IN_GROUP'
+          : /user not found|user_id_invalid|participant_id_invalid/i.test(error.detail) ? 'TELEGRAM_USER_NOT_FOUND' : 'MEMBER_LOOKUP_FAILED';
       }
       if (reason) summary.skipped++;
-      await ref.set({scope:key,userId,telegramId:Number.isSafeInteger(telegramId)?telegramId:null,seasonId,clubId:clubId||null,ownershipKey:JSON.stringify([...owned].sort()),appliedTag,managed,reason,checkedAt:new Date().toISOString(),nextCheckAt:Date.now()+(reason?3600000:21600000)});
+      await ref.set({scope:key,userId,telegramId:Number.isSafeInteger(telegramId)?telegramId:null,seasonId,clubId:clubId||null,ownershipKey:JSON.stringify([...owned].sort()),appliedTag,managed,reason,diagnosticVersion:2,checkedAt:new Date().toISOString(),nextCheckAt:Date.now()+(reason?3600000:21600000)});
       summary.remaining--;
     }
     summary.state=summary.remaining ? 'pending' : 'synced';

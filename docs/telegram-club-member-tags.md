@@ -13,3 +13,5 @@ Ownership changes receive priority over the normal six-hour recheck. When a prev
 Reference: https://core.telegram.org/bots/api#setchatmembertag
 
 The isolated regression suite mocks Telegram and covers all catalog tag lengths, current versus previous season, primary premium club, transfer/release cleanup, preserved manual tags, distributed exclusion, regular/restricted/admin/nonmember behavior, permission and rate-limit backoff, preview isolation and migration freeze. No real users are modified by tests.
+
+Skip diagnostics distinguish group administrators, nonmembers, banned members, bot accounts, missing Telegram IDs, missing/suspended owner accounts, unresolved primary clubs, lookup failures and Telegram tag rejections. Public status exposes only reason counts and a pending-diagnostics count. Old grouped reasons are rechecked once under diagnostic version 2, even before their normal retry time; matching successful tags are not rewritten. This distinguishes a confirmed nonmember status from an unavailable Telegram lookup. Raw Telegram error descriptions and account identifiers never appear in public diagnostics.
