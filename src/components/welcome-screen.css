@@ -11,7 +11,7 @@
   background: var(--efl-bg);
   color: var(--efl-text);
   min-height: 100vh;
-  min-height: 100svh;
+  min-height: calc(var(--tg-viewport-stable-height,100svh) - var(--safe-top,0px) - var(--safe-bottom,0px));
   font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
   color-scheme: light;
 }
@@ -30,8 +30,8 @@
 .efl-welcome * { box-sizing: border-box; }
 .efl-welcome .welcome-layout {
   width: 100%; max-width: 430px; margin: 0 auto;
-  min-height: 100vh; min-height: 100svh;
-  padding: max(24px, env(safe-area-inset-top)) 24px max(20px, env(safe-area-inset-bottom));
+  min-height: 100vh; min-height: calc(var(--tg-viewport-stable-height,100svh) - var(--safe-top,0px) - var(--safe-bottom,0px));
+  padding: 24px 24px 20px;
   display: flex; flex-direction: column;
 }
 .efl-welcome .welcome-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }

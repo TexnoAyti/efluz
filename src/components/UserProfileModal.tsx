@@ -1,3 +1,5 @@
+import { DisciplinePanel } from './DisciplinePanel';
+import { useAuth } from '../context/AuthContext';
 import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { ClubCrest } from './ClubCrest';
@@ -53,6 +55,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   onClose,
   onSelectClub,
 }) => {
+  const { activeSeasonId } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [profileData, setProfileData] = useState<UserProfileData | null>(null);
@@ -96,7 +99,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
       : 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
+    <div className="efl-viewport-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
       <div
         className="w-full max-w-md max-h-[90dvh] glass-panel p-6 shadow-2xl relative border border-white/[0.1] bg-slate-900/95 overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
@@ -243,6 +246,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
               </div>
             </div>
 
+            <DisciplinePanel key={`${profileData.user.id}:${activeSeasonId}`} userId={profileData.user.id} seasonId={activeSeasonId} />
             <PlayerTrophyCabinet userId={profileData.user.id} />
 
             {/* Bottom Actions */}

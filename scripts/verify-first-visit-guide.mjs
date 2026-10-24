@@ -35,6 +35,12 @@ for(const width of [320,390,768,1440])for(const height of [220,568,844])for(cons
  assert.ok(p.left>=0&&p.left+p.width<=width,`card fits ${width}px screen`);
  assert.ok(p.top>=0&&p.top+Math.min(330,p.maxHeight)<=height,`card fits ${height}px viewport`);
 }
+// Native fullscreen controls and landscape notches stay outside the guide card.
+for (const [width,height,insets] of [[390,844,{top:84,bottom:34,left:0,right:0}],[844,390,{top:56,bottom:20,left:44,right:44}]]) {
+ const p=helper.guidePlacement(null,width,height,300,insets);
+ assert.ok(p.left>=insets.left && p.left+p.width<=width-insets.right);
+ assert.ok(p.top>=insets.top && p.top+Math.min(300,p.maxHeight)<=height-insets.bottom);
+}
 const mobileNav={left:70,top:760,width:90,height:50};
 const mobile=helper.guidePlacement(mobileNav,390,844,330);
 assert.ok(mobile.top+330<mobileNav.top,'The mobile sheet leaves the highlighted bottom navigation visible');

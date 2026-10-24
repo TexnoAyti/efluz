@@ -57,7 +57,7 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className={`sticky top-0 z-40 bg-[#06090e]/90 backdrop-blur-xl border-b border-white/[0.08] text-white ${EFL_2_DESIGN_ENABLED ? 'preview-app-header' : ''}`}>
+    <header className={`efl-app-header sticky top-0 z-40 bg-[#06090e]/90 backdrop-blur-xl border-b border-white/[0.08] text-white ${EFL_2_DESIGN_ENABLED ? 'preview-app-header' : ''}`}>
       {/* Sandbox Dev Switcher Banner (Collapsed & compact on mobile) */}
       {isDevMode && (
         <div className="bg-gradient-to-r from-emerald-950/80 via-slate-900/90 to-indigo-950/80 border-b border-emerald-500/20 px-3 py-1 text-xs backdrop-blur-md">

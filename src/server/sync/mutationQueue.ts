@@ -425,135 +425,39 @@ async function executeSingleMutationSync(db: FirebaseFirestore.Firestore, item: 
 
   switch (entityType) {
     case 'RESULT_SUBMISSION': {
-      // payload: { fixtureId, userId, userClubId, homeScore, awayScore, proofUrl, now, submissionId }
-      const fixRef = db.collection(COLLECTIONS.FIXTURES).doc(entityId);
-      const fixDoc = await fixRef.get();
-      if (!fixDoc.exists) {
-        throw new Error(`Fixture ${entityId} not found in Firestore.`);
-      }
-
-      const fixData = fixDoc.data()!;
-      if (isDomesticCup(fixData.competitionId)) {
-        if (fixData.status === 'CONFIRMED') break;
+      const current = await db.collection(COLLECTIONS.FIXTURES).doc(entityId).get();
+      if (!current.exists) throw new Error(`Fixture ${entityId} not found in Firestore.`);
+      const fixData = current.data()!;
+      let fixture: any = null;
+      if (fixData.status !== 'CONFIRMED') {
+        // Replay uses the same serializable participant, discipline and consensus
+        // guards as live results. A queued result cannot bypass a later red card.
         const { submitFixtureResultFirestore } = await import('../firebase/firestoreStore');
-        const fixture = await submitFixtureResultFirestore(payload.userId, entityId, payload.homeScore, payload.awayScore, payload.proofUrl || undefined, cupScoreMetadata(payload), { authoritativeOnly: true });
-        const { notifySmartResultLifecycle } = await import('../services/smartNotificationService');
-        await notifySmartResultLifecycle(fixture, payload.userId).catch(() => {});
-        break;
+        fixture = await submitFixtureResultFirestore(payload.userId, entityId, payload.homeScore, payload.awayScore, payload.proofUrl || undefined, cupScoreMetadata(payload), { authoritativeOnly: true });
       }
-      const subRef = db.collection(COLLECTIONS.RESULT_SUBMISSIONS).doc(payload.submissionId);
-
-      // Write submission doc
-      await subRef.set(
-        {
-          id: payload.submissionId,
-          fixtureId: entityId,
-          submittedByUserId: payload.userId,
-          clubId: payload.userClubId,
-          homeScore: payload.homeScore,
-          awayScore: payload.awayScore,
-          proofUrl: payload.proofUrl || null,
-          createdAt: payload.createdAt || new Date().toISOString(),
-        },
-        { merge: true }
-      );
-
-      // Check all submissions in Firestore for this fixture
-      const subsSnap = await db.collection(COLLECTIONS.RESULT_SUBMISSIONS).where('fixtureId', '==', entityId).get();
-      const subs = subsSnap.docs.map((d) => d.data());
-
-      let newStatus = fixData.status;
-      let confirmedHome: number | null = fixData.homeScore ?? null;
-      let confirmedAway: number | null = fixData.awayScore ?? null;
-      let winnerClubId: string | null = fixData.winnerClubId ?? null;
-      let confirmedAt: string | null = fixData.resultConfirmedAt ?? null;
-
-      if (subs.length >= 2) {
-        const [s1, s2] = subs;
-        if (s1.homeScore === s2.homeScore && s1.awayScore === s2.awayScore) {
-          newStatus = 'CONFIRMED';
-          confirmedHome = s1.homeScore;
-          confirmedAway = s1.awayScore;
-          confirmedAt = payload.updatedAt || new Date().toISOString();
-          if (confirmedHome > confirmedAway) winnerClubId = fixData.homeClubId;
-          else if (confirmedAway > confirmedHome) winnerClubId = fixData.awayClubId;
-        } else {
-          newStatus = 'DISPUTED';
-        }
-      } else if (subs.length === 1 && newStatus !== 'CONFIRMED') {
-        newStatus = 'PENDING_CONFIRMATION';
-      }
-
-      await fixRef.update({
-        status: newStatus,
-        homeScore: confirmedHome,
-        awayScore: confirmedAway,
-        winnerClubId,
-        resultConfirmedAt: confirmedAt,
-        updatedAt: new Date().toISOString(),
-      });
-
-      if (newStatus === 'CONFIRMED' && winnerClubId) {
-        try {
-          const { advanceKnockoutWinnerFirestore } = await import('../tournament/knockoutEngine');
-          await advanceKnockoutWinnerFirestore(entityId);
-        } catch (kErr) {
-          console.warn('[KNOCKOUT_ADVANCE] Non-blocking advance error in sync replay:', kErr);
-        }
-      }
-
-      if (newStatus === 'CONFIRMED' && fixData.competitionId) {
-        try {
-          const { rebuildCompetitionStandingsFirestore } = await import('../firebase/firestoreStore');
-          await rebuildCompetitionStandingsFirestore(fixData.competitionId);
-        } catch (sErr) {
-          console.warn('[STANDINGS_UPDATE] Non-blocking standings update in sync replay:', sErr);
-        }
-      }
-
-      // Replay-safe deterministic audit log
+      const newStatus = fixture?.status || fixData.status;
       const auditId = `audit_${item.mutationId}_submit`;
       await db.collection(COLLECTIONS.AUDIT_LOGS).doc(auditId).set({
-        id: auditId,
-        actorUserId: payload.userId,
-        action: 'SUBMIT_RESULT',
-        entityType: 'fixture',
-        entityId: entityId,
+        id: auditId, actorUserId: payload.userId, action: 'SUBMIT_RESULT', entityType: 'fixture', entityId,
         notes: `Result submitted: ${payload.homeScore}-${payload.awayScore} (status: ${newStatus})`,
         createdAt: payload.createdAt || new Date().toISOString(),
       }, { merge: true });
-
-      // Replay-safe deterministic opponent notification
+      if (!fixture) break;
       const opponentClubId = payload.userClubId === fixData.homeClubId ? fixData.awayClubId : fixData.homeClubId;
       if (opponentClubId && fixData.seasonId) {
-        try {
-          const notifId = `notif_${item.mutationId}_opponent`;
-          const opponentOcc = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${fixData.seasonId}_${opponentClubId}`).get();
-          if (opponentOcc.exists && opponentOcc.data()?.userId) {
-            const oppUserId = opponentOcc.data()!.userId;
-            await db.collection(COLLECTIONS.NOTIFICATIONS).doc(notifId).set({
-              id: notifId,
-              userId: oppUserId,
-              type: newStatus === 'CONFIRMED' ? 'RESULT_CONFIRMED' : 'RESULT_SUBMITTED',
-              title: newStatus === 'CONFIRMED' ? 'Match Result Confirmed' : 'Opponent Submitted Score',
-              message: `Match result: ${payload.homeScore}-${payload.awayScore}`,
-              fixtureId: entityId,
-              isRead: false,
-              createdAt: new Date().toISOString(),
-            }, { merge: true });
-          }
-        } catch {}
+        const occurrence = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${fixData.seasonId}_${opponentClubId}`).get();
+        if (occurrence.data()?.userId) {
+          const id=`notif_${item.mutationId}_opponent`;
+          await db.collection(COLLECTIONS.NOTIFICATIONS).doc(id).set({id,userId:occurrence.data()!.userId,type:newStatus==='CONFIRMED'?'RESULT_CONFIRMED':'RESULT_SUBMITTED',title:newStatus==='CONFIRMED'?'Match Result Confirmed':'Opponent Submitted Score',message:`Match result: ${payload.homeScore}-${payload.awayScore}`,fixtureId:entityId,isRead:false,createdAt:new Date().toISOString()},{merge:true});
+        }
       }
-
-      if (newStatus === 'CONFIRMED') {
-        try {
-          const { refreshChangedFixtureReadModel, invalidateFixtureReadModels, invalidateStandingsReadModels } = await import('../readModel/readModelStore');
-          await refreshChangedFixtureReadModel(entityId).catch(() => {});
-          if (fixData.competitionId) {
-            await invalidateFixtureReadModels(fixData.competitionId, fixData.seasonId || 'season-2026-27').catch(() => {});
-            await invalidateStandingsReadModels(fixData.competitionId, fixData.seasonId || 'season-2026-27').catch(() => {});
-          }
-        } catch {}
+      const { notifySmartResultLifecycle } = await import('../services/smartNotificationService');
+      await notifySmartResultLifecycle(fixture, payload.userId).catch(() => {});
+      if (newStatus==='CONFIRMED') {
+        const { refreshChangedFixtureReadModel, invalidateFixtureReadModels, invalidateStandingsReadModels } = await import('../readModel/readModelStore');
+        await refreshChangedFixtureReadModel(entityId).catch(()=>{});
+        await invalidateFixtureReadModels(fixture.competitionId,fixture.seasonId).catch(()=>{});
+        await invalidateStandingsReadModels(fixture.competitionId,fixture.seasonId).catch(()=>{});
       }
       break;
     }

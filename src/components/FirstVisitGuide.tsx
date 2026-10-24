@@ -36,6 +36,12 @@ const content = {
 const targets = ['[data-guide="nav-dashboard"]', '[data-guide="nav-leagues"]', '[data-guide="nav-my-club"]', '[data-guide="score-entry"], [data-guide="nav-my-club"]', '[data-guide="standings-entry"], [data-guide="nav-leagues"]', '#btn-global-search', '#btn-notifications'];
 const icons = [Compass, Trophy, Shield, Swords, ListOrdered, Search, Bell];
 
+function safeGuidePlacement(target: GuideRect | null, cardHeight: number) {
+  const style = typeof getComputedStyle === 'function' && document.body ? getComputedStyle(document.body) : null;
+  const inset = (value?: string) => Math.max(0,parseFloat(value || '') || 0);
+  return guidePlacement(target,window.innerWidth,window.innerHeight,cardHeight,{top:inset(style?.paddingTop),bottom:inset(style?.paddingBottom),left:inset(style?.paddingLeft),right:inset(style?.paddingRight)});
+}
+
 export function FirstVisitGuide({ onFinish, onShowScoreEntry, onShowStandings }: { onFinish: (status: GuideStatus) => void; onShowScoreEntry?: () => void; onShowStandings?: () => void }) {
   const { language } = useI18n();
   const c = content[language] || content.uz;
@@ -43,7 +49,7 @@ export function FirstVisitGuide({ onFinish, onShowScoreEntry, onShowStandings }:
   const [target, setTarget] = useState<GuideRect | null>(null);
   const [mobile, setMobile] = useState(() => window.innerWidth < 680);
   const [pointer, setPointer] = useState<{ side: 'top' | 'bottom'; left: number } | null>(null);
-  const [placement, setPlacement] = useState(() => guidePlacement(null, window.innerWidth, window.innerHeight, 300));
+  const [placement, setPlacement] = useState(() => safeGuidePlacement(null, 300));
   const layer = useRef<HTMLDivElement>(null), card = useRef<HTMLDivElement>(null), next = useRef<HTMLButtonElement>(null);
   const originalFocus = useRef(typeof document === 'undefined' ? null : document.activeElement as HTMLElement | null);
   const finish = useRef(onFinish); finish.current = onFinish;
@@ -69,7 +75,7 @@ export function FirstVisitGuide({ onFinish, onShowScoreEntry, onShowStandings }:
       const rect = r ? { top: r.top - 5, left: r.left - 5, width: r.width + 10, height: r.height + 10 } : null;
       setTarget(rect);
       const height = card.current?.offsetHeight || 300;
-      const position = guidePlacement(rect, window.innerWidth, window.innerHeight, height);
+      const position = safeGuidePlacement(rect, height);
       const isMobile = window.innerWidth < 680;
       setMobile(isMobile); setPlacement(position);
       const above = rect && position.top + Math.min(height, position.maxHeight) <= rect.top;
@@ -80,11 +86,15 @@ export function FirstVisitGuide({ onFinish, onShowScoreEntry, onShowStandings }:
     update(); next.current?.focus({ preventScroll: true });
     const observer = new ResizeObserver(schedule);
     if (card.current) observer.observe(card.current);
+    if (document.body) observer.observe(document.body);
     const mutation = new MutationObserver(schedule);
     const main = document.querySelector('main'); if (main) mutation.observe(main, { childList: true, subtree: true });
     window.addEventListener('resize', schedule); window.addEventListener('scroll', schedule, true);
     window.visualViewport?.addEventListener('resize', schedule);
-    return () => { cancelAnimationFrame(frame); observer.disconnect(); mutation.disconnect(); window.removeEventListener('resize', schedule); window.removeEventListener('scroll', schedule, true); window.visualViewport?.removeEventListener('resize', schedule); };
+    const telegram=(window as any).Telegram?.WebApp;
+    const safeEvents=['safeAreaChanged','contentSafeAreaChanged','fullscreenChanged'];
+    safeEvents.forEach(event=>telegram?.onEvent?.(event,schedule));
+    return () => { safeEvents.forEach(event=>telegram?.offEvent?.(event,schedule)); cancelAnimationFrame(frame); observer.disconnect(); mutation.disconnect(); window.removeEventListener('resize', schedule); window.removeEventListener('scroll', schedule, true); window.visualViewport?.removeEventListener('resize', schedule); };
   }, [step, language]);
 
   useEffect(() => {

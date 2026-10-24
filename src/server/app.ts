@@ -1,3 +1,4 @@
+import { disciplineRouter } from './routes/discipline.routes';
 import {scheduleUNotices,prepareUNotifications} from './services/uzeflifeNotifications';
 import { scheduleAiDailyReport } from './services/telegramAiDailyReport';
 import { adminImageExportsRouter, imageExportDownloadRouter } from './routes/tournamentImageDownload.routes';
@@ -208,6 +209,7 @@ export function createApp() {
   app.use('/api/me', meRouter);
   app.use('/api/users', usersRouter);
   app.use('/api/insights', seasonInsightsRouter);
+  app.use('/api/discipline', disciplineRouter);
   app.use('/api/admin/image-exports', adminImageExportsRouter);
   app.use('/api/admin/cups', adminCupDrawRouter);
   app.use('/api/admin/season-lifecycle', adminSeasonLifecycleRouter);

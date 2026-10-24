@@ -78,7 +78,7 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 dark:bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="efl-viewport-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 dark:bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
       <div
         className={`w-full max-w-md shadow-2xl overflow-hidden flex flex-col max-h-[85vh] ${
           user?.isAdmin

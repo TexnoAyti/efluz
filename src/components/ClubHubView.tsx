@@ -1,3 +1,4 @@
+import { DisciplinePanel } from './DisciplinePanel';
 import { nextSeasonFixture, sortSeasonFixtures } from '../lib/fixtureOrder';
 import { PlayerTrophyCabinet } from './PlayerTrophyCabinet';
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -487,6 +488,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
           <Shield className="w-4 h-4" />
           <span>{copy.exploreLeagues}</span>
         </button>
+        {user?.id && <DisciplinePanel key={`${user.id}:${activeSeasonId}`} userId={user.id} seasonId={activeSeasonId} />}
         {user?.id && <PlayerTrophyCabinet userId={user.id} seasonId={activeSeasonId} />}
       </div>
     );
@@ -1089,6 +1091,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
         </div>
       </section>
 
+      {user?.id && <DisciplinePanel key={`${user.id}:${activeSeasonId}`} userId={user.id} seasonId={activeSeasonId} />}
       {user?.id && <PlayerTrophyCabinet userId={user.id} seasonId={activeSeasonId} />}
 
       {/* ==============================================================
