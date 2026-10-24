@@ -30,7 +30,7 @@ for (const [text,action,body] of cases) {
  const plan=await planNaturalAdminRequest(text,deps);
  assert.equal(plan?.action,action,text);assert.equal(plan?.targetId,comp.id,text);assert.deepEqual(plan?.body,body,text);
 }
-for (const text of ['APL 11-turni 0 soatga ochgin','APL 11-turni -2 soatga ochgin','APL 11-turni 31 kunga ochgin','APL 11-turni yarim kunga ochgin','APL 11-turni 1 kun 30 soatga ochgin','APL 20-turni ochgin','APL 10-tur eslatma yuborma','APL joriy turni yopib qoyma','APL 10-turni 6 soatga chozma','APL 10-turni berkitma','APL 10-turni qayta boshlama','APL 10-turga eslatmang','APL va La Liga 10-turni ochgin','APL 11-tur keyingi turga otkaz'])
+for (const text of ['APL 11-turni 0 soatga ochgin','APL 11-turni -2 soatga ochgin','APL 11-turni −2 soatga ochgin','APL 11-turni - 2 soatga ochgin','APL 11-turni yigirma soatga ochgin','APL 11-turni ochgin yoki yop','APL 11-turni 31 kunga ochgin','APL 11-turni yarim kunga ochgin','APL 11-turni 1 kun 30 soatga ochgin','APL 20-turni ochgin','APL 10-tur eslatma yuborma','APL joriy turni yopib qoyma','APL 10-turni 6 soatga chozma','APL 10-turni berkitma','APL 10-turni qayta boshlama','APL 10-turga eslatmang','APL va La Liga 10-turni ochgin','APL 11-tur keyingi turga otkaz'])
  await assert.rejects(planNaturalAdminRequest(text,deps),/CLARIFY/,text);
 assert.equal(await planNaturalAdminRequest('APL 11-turni ochma',deps),null);
 assert.equal(matchdayDuration('APL 11-turni 2 kunga och'),48);

@@ -24,6 +24,7 @@ export function matchdayDuration(text:string):number|undefined {
  const head=matchdayCommandHead(text);
  if(/\b(?:daqiqa|minut|yarim)\b/i.test(head))throw Error('CLARIFY:Muddatni to‘liq soat yoki kun bilan yozing. Masalan: 24 soat yoki 2 kun.');
  const entries=[...head.matchAll(/(?:^|\s)(-?\d+(?:[.,]\d+)?)\s*(soat|kun)(?:ga|lik|dan)?\b/gi)];
+ if(/[-−–—]\s*\d+(?:[.,]\d+)?\s*(?:soat|kun)/i.test(head)||!entries.length&&/\b(?:soat|kun)(?:ga|lik|dan)?\b/i.test(head))throw Error('CLARIFY:Muddatni musbat son bilan yozing. Masalan: 24 soat yoki 2 kun.');
  if(!entries.length)return;
  const values=entries.map(m=>Number(m[1].replace(',','.'))*(m[2].toLowerCase()==='kun'?24:1));
  if(values.some(n=>!Number.isInteger(n)||n<1||n>720)||new Set(values).size!==1)throw Error('CLARIFY:Bitta aniq muddat yozing: 1–720 soat yoki 1–30 kun.');
