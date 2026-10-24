@@ -22,7 +22,7 @@ export const AI_ADMIN_ACTIONS: Record<string, AdminAction> = {
   user_delete: action('DELETE', '/users/:id', 'reason?'),
   dispute_resolve: action('POST', '/disputes/:id/resolve', 'action:CONFIRM_HOME_SUBMISSION|CONFIRM_AWAY_SUBMISSION|MANUAL_SCORE|CANCEL_MATCH, manualHomeScore?, manualAwayScore?, notes?; MANUAL_SCORE requires both scores'),
   matchday_control: action('POST', '/competitions/:id/matchday/control', 'action:SELECT|OPEN|LOCK|EXTEND|RESTART, matchday:number, durationHours?, expectedUpdatedAt?'),
-  matchday_advance: action('POST', '/competitions/:id/matchday/advance', 'durationHours?, seasonId?'),
+  matchday_advance: action('POST', '/competitions/:id/matchday/advance', 'durationHours?, seasonId?, expectedCurrentMatchday?:server snapshot, expectedUpdatedAt?:server snapshot'),
   matchday_open_now: action('POST', '/competitions/:id/matchday/open-now', 'durationHours?, matchday?, seasonId?'),
   matchday_override: action('POST', '/competitions/:id/matchday/override', 'overrideStatus:AUTO|FORCE_OPEN|FORCE_LOCKED|PAUSED, matchday?, durationHours?, seasonId?'),
   matchday_timer: action('POST', '/competitions/:id/matchday/set-timer', 'currentMatchday?, durationHours?, nextOpenAt?, overrideStatus?'),

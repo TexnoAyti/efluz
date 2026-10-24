@@ -2,7 +2,6 @@ import { Fixture } from '../../types';
 import {
   ReadModelKeys,
   redisGetFresh,
-  redisGetLkg,
 } from '../readModel/readModelStore';
 import { enqueueSmartTelegramNotification } from './smartNotificationService';
 
@@ -90,9 +89,60 @@ export function selectOutstandingOwnerIds(
 
 async function getCompetitionFixtureSnapshot(competitionId: string, seasonId: string): Promise<Fixture[]> {
   const key = ReadModelKeys.competitionFixtures(competitionId, seasonId);
-  const snapshot = (await redisGetFresh<Fixture[]>(key)) || (await redisGetLkg<Fixture[]>(key));
-  return Array.isArray(snapshot?.data) ? snapshot!.data : [];
+  const snapshot = await redisGetFresh<Fixture[]>(key);
+  if (!Array.isArray(snapshot?.data)) throw new Error('O‘yinlarning yangi holati mavjud emas. Eslatma yuborilmadi; ro‘yxatni yangilab qayta urinib ko‘ring.');
+  return snapshot.data;
 }
+
+
+/** Read current occupancy directly: a transferred club must never notify its former owner. */
+async function resolveReminderOwners(fixtures: Fixture[], seasonId: string): Promise<Fixture[]> {
+  const { getFirestoreDb } = await import('../firebase/admin');
+  const { COLLECTIONS } = await import('../firebase/collections');
+  const db = getFirestoreDb();
+  fixtures = await Promise.all(fixtures.map(async fixture => {
+    const doc = await db.collection(COLLECTIONS.FIXTURES).doc(fixture.id).get();
+    if (!doc.exists) throw new Error('O‘yin holati topilmadi. Eslatma yuborilmadi.');
+    const fresh = doc.data()!;
+    if (fresh.competitionId !== fixture.competitionId || fresh.seasonId !== seasonId || Number(fresh.matchday) !== Number(fixture.matchday)) throw new Error('O‘yin holati o‘zgardi. Ro‘yxatni yangilang.');
+    return {...fixture, ...fresh, id: fixture.id} as Fixture;
+  }));
+  fixtures = fixtures.filter(f => !['CONFIRMED','CANCELLED','POSTPONED'].includes(String(f.status).toUpperCase()));
+  const clubIds = [...new Set(fixtures.flatMap(f => [f.homeClubId, f.awayClubId]).filter(id => id && id !== 'TBD'))];
+  const owners = new Map(await Promise.all(clubIds.map(async id => {
+    const doc = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_${id}`).get();
+    const occupancy = doc.data();
+    const userId = doc.exists && occupancy?.status === 'active' ? occupancy.userId : null;
+    const user = userId ? (await db.collection(COLLECTIONS.USERS).doc(userId).get()).data() : null;
+    return [id, userId ? {userId, username: user?.username || ''} : null] as const;
+  })));
+  return fixtures.map(f => {
+    const home = owners.get(f.homeClubId), away = owners.get(f.awayClubId);
+    return {...f, homeOwnerId: home?.userId || null, awayOwnerId: away?.userId || null,
+      homeOwner: home || null, awayOwner: away || null, homeUser: home || null, awayUser: away || null,
+      homeClub: f.homeClub ? {...f.homeClub, claimedByUserId: home?.userId || null} : f.homeClub,
+      awayClub: f.awayClub ? {...f.awayClub, claimedByUserId: away?.userId || null} : f.awayClub} as unknown as Fixture;
+  });
+}
+
+export interface MatchdayReminderDependencies {
+  fixtures: typeof getCompetitionFixtureSnapshot;
+  owners: typeof resolveReminderOwners;
+  submissions: (fixtureId: string) => Promise<any[]>;
+  enqueue: typeof enqueueSmartTelegramNotification;
+}
+const reminderDependencies: MatchdayReminderDependencies = {
+  fixtures: getCompetitionFixtureSnapshot,
+  owners: resolveReminderOwners,
+  submissions: async fixtureId => {
+    const { getFirestoreDb } = await import('../firebase/admin');
+    const { COLLECTIONS } = await import('../firebase/collections');
+    const snapshot = await getFirestoreDb().collection(COLLECTIONS.RESULT_SUBMISSIONS).where('fixtureId','==',fixtureId).limit(100).get();
+    if (snapshot.docs.length === 100) throw new Error('Natijalar ro‘yxati to‘liq emas. Eslatma yuborilmadi.');
+    return snapshot.docs.map(doc => doc.data());
+  },
+  enqueue: enqueueSmartTelegramNotification,
+};
 
 async function replyMarkupFor(fixture: Fixture, userId: string): Promise<any> {
   const homeId = ownerId(fixture, 'home');
@@ -118,6 +168,7 @@ export interface MatchdayReminderResult {
   outstandingPlayers: number;
   queued: number;
   skipped: number;
+  failed: number;
 }
 
 export async function notifyOutstandingMatchdayOwners(params: {
@@ -125,11 +176,12 @@ export async function notifyOutstandingMatchdayOwners(params: {
   seasonId: string;
   matchday: number;
   deadlineAt?: string | null;
-}): Promise<MatchdayReminderResult> {
-  const fixtures = await getCompetitionFixtureSnapshot(params.competitionId, params.seasonId);
-  const current = fixtures.filter((fixture: any) =>
+}, deps: MatchdayReminderDependencies = reminderDependencies): Promise<MatchdayReminderResult> {
+  const fixtures = await deps.fixtures(params.competitionId, params.seasonId);
+  if (!Array.isArray(fixtures)) throw new Error('O‘yinlar manbasi o‘qilmadi. Eslatma yuborilmadi.');
+  let current = fixtures.filter((fixture: any) =>
     Number(fixture.matchday) === Number(params.matchday) &&
-    !['CONFIRMED', 'CANCELLED'].includes(String(fixture.status || '').toUpperCase())
+    !['CONFIRMED', 'CANCELLED', 'POSTPONED'].includes(String(fixture.status || '').toUpperCase())
   );
 
   if (current.length === 0) {
@@ -144,28 +196,25 @@ export async function notifyOutstandingMatchdayOwners(params: {
       outstandingPlayers: 0,
       queued: 0,
       skipped: 0,
+      failed: 0,
     };
   }
 
   // Manual/admin-triggered operation only. Queries are bounded to the current matchday
   // (9-10 fixtures for domestic leagues) and never run on normal user reads.
-  const { getResultSubmissions } = await import('./adminService');
-  const submissions = await Promise.all(
-    current.map(async (fixture) => {
-      try {
-        const rows = await getResultSubmissions({ fixtureId: fixture.id, limit: 4 });
-        return [fixture.id, rows] as const;
-      } catch {
-        return [fixture.id, [] as any[]] as const;
-      }
-    })
-  );
+  // Finish every source read before enqueueing the first message. Fail closed on read errors.
+  current = await deps.owners(current, params.seasonId);
+  const submissions = await Promise.all(current.map(async fixture => {
+    const rows = await deps.submissions(fixture.id);
+    if (!Array.isArray(rows)) throw new Error('Natijalar manbasi o‘qilmadi. Eslatma yuborilmadi.');
+    return [fixture.id, rows] as const;
+  }));
   const submissionsByFixture = new Map(submissions);
 
   const deadlineText = formatTashkentDeadline(params.deadlineAt);
   const deadlineMs = params.deadlineAt ? new Date(params.deadlineAt).getTime() : NaN;
   const overdue = Number.isFinite(deadlineMs) && Date.now() > deadlineMs;
-  const tasks: Array<Promise<boolean>> = [];
+  const tasks: Array<() => Promise<boolean>> = [];
   let outstandingPlayers = 0;
 
   for (const fixture of current) {
@@ -188,7 +237,7 @@ export async function notifyOutstandingMatchdayOwners(params: {
         ? 'Deadline o‘tgan. Natijani imkon qadar tez yuboring.'
         : 'Sizdan hali natija kelmagan.';
 
-      tasks.push(enqueueSmartTelegramNotification({
+      tasks.push(async () => deps.enqueue({
         userId,
         seasonId: params.seasonId,
         // Prefix intentionally maps this to the existing matchdayOpened smart setting.
@@ -200,7 +249,7 @@ export async function notifyOutstandingMatchdayOwners(params: {
     }
   }
 
-  const results = await Promise.allSettled(tasks);
+  const results = await Promise.allSettled(tasks.map(task => task()));
   const queued = results.filter((result) => result.status === 'fulfilled' && result.value).length;
 
   return {
@@ -213,6 +262,7 @@ export async function notifyOutstandingMatchdayOwners(params: {
     unfinishedFixtures: current.length,
     outstandingPlayers,
     queued,
-    skipped: Math.max(0, outstandingPlayers - queued),
+    skipped: results.filter(result => result.status === 'fulfilled' && !result.value).length,
+    failed: results.filter(result => result.status === 'rejected').length,
   };
 }

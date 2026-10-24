@@ -11,8 +11,8 @@ export function parseAiPlanRevision(text: string): AiPlanRevision | null {
   if (score) return { kind: 'score', first: Number(score[1]), second: Number(score[2]) };
   const round = /^(?:tur(?:ni)?\s*[:=]?\s*(\d{1,3})|(\d{1,3})\s*-?\s*tur(?:ni)?)$/i.exec(raw);
   if (round) return { kind: 'round', value: Number(round[1] || round[2]) };
-  const hours = /^(?:muddat(?:ni)?\s*[:=]?\s*)?(\d{1,3})\s*soat(?:ga)?$/i.exec(raw);
-  if (hours) return { kind: 'hours', value: Number(hours[1]) };
+  const hours = /^(?:muddat(?:ni)?\s*[:=]?\s*)?(\d{1,3})\s*(soat|kun)(?:ga)?$/i.exec(raw);
+  if (hours) return { kind: 'hours', value: Number(hours[1]) * (hours[2].toLowerCase() === 'kun' ? 24 : 1) };
   if (/^@[A-Za-z][A-Za-z0-9_]{4,31}$/.test(raw)) return { kind: 'username', value: raw };
   const body = /^(?:matn(?:ni)?)\s*[:=]?\s*(?:"([^"\n]+)"|“([^”\n]+)”)$/i.exec(raw);
   if (body) return { kind: 'message', value: body[1] || body[2] };
@@ -35,7 +35,7 @@ export function reviseAiAdminPlan(plan: AdminPlan, revision: AiPlanRevision, sco
     delete next.body.expectedUpdatedAt;
   } else if (revision.kind === 'hours') {
     if (revision.value < 1 || revision.value > 720) reject('Muddatni 1–720 orasida butun soat bilan yozing.');
-    if (plan.action !== 'matchday_timer' && !(plan.action === 'matchday_control' && ['EXTEND', 'RESTART'].includes(String(plan.body.action))))
+    if (!['matchday_timer','matchday_advance','matchday_open_now'].includes(plan.action) && !(plan.action === 'matchday_control' && ['OPEN','SELECT','EXTEND', 'RESTART'].includes(String(plan.body.action))))
       reject('Bu reja muddat belgilash uchun emas. Topshiriqni to‘liq yozing.');
     next.body.durationHours = revision.value;
   } else if (revision.kind === 'username') {

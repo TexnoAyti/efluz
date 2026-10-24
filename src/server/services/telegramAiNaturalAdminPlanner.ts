@@ -1,3 +1,4 @@
+import { planMatchdayRequest, bindMatchdaySnapshot } from './telegramAiMatchdayLanguage';
 import { parseAiMatchScore } from './telegramAiScore';
 import { detectNaturalAdminAction, assertSingleNaturalAdminRequest, isNaturalCupStart } from './telegramAiAdminLanguage';
 import { adminPlanSchema, type AdminPlan } from './telegramAiAdminCatalog';
@@ -70,6 +71,8 @@ export async function planNaturalAdminRequest(text: string, deps: NaturalPlanner
   const make = (action: string, targetId?: string, body: Record<string,unknown> = {}) => adminPlanSchema.parse({ action, ...(targetId ? { targetId } : {}), body });
   if (action !== 'ai_settings') {
     assertSingleNaturalAdminRequest(text);
+    const roundPlan = await planMatchdayRequest(text, deps.read);
+    if (roundPlan) return roundPlan;
     const extended = await planExtendedAdminControl(text, deps.read);
     if (extended) return extended;
   }
@@ -116,10 +119,13 @@ export async function planNaturalAdminRequest(text: string, deps: NaturalPlanner
     if (!title && !body && quoted.length === 1) { title = 'EFL UZ'; body = (quoted[0][1] || quoted[0][2]).trim(); }
     if (!title || !body) clarify('Xabar sarlavhasi, matni va kimga yuborishni yozing. Masalan: “Hammaga e’lon yubor\nSarlavha: Yangi tur\nMatn: 10-tur ochildi”.');
     const comps: Competition[] = await pages(deps.read, { dataset: 'competitions' });
-    const leagues = findConversationCompetitions(clean.split(/sarlavha\s*:/i)[0], comps).filter(c => c.type === 'LEAGUE');
-    const audience = /\bhammaga\b|\bbarcha foydalanuvchi\w*\b/.test(q) ? 'ALL_USERS' : leagues.length === 1 ? 'LEAGUE_OWNERS' : /\bklub egalari\w*\b/.test(q) ? 'CLUB_OWNERS' : null;
     const recipientHead = text.replace(/"[^"]*"|“[^”]*”/g, ' ').split(/(?:sarlavha|matn)\s*:/i)[0];
-    if (!audience && /@\s*[A-Za-z0-9_]+|\buser-\d+\b/.test(recipientHead)) {
+    const leagues = findConversationCompetitions(recipientHead, comps).filter(c => c.type === 'LEAGUE');
+    if (leagues.length > 1) clarify('Xabar uchun bitta ligani tanlang. Bir nechta liga oluvchilarini taxmin qilmayman.');
+    const recipients = normalizeAiEntity(recipientHead);
+    const audience = leagues.length === 1 ? 'LEAGUE_OWNERS' : /\bklub egalari\w*\b/.test(recipients) ? 'CLUB_OWNERS' : /\bhammaga\b|\bbarcha foydalanuvchi\w*\b/.test(recipients) ? 'ALL_USERS' : null;
+    if (/@\s*[A-Za-z0-9_]+|\buser-\d+\b/.test(recipientHead)) {
+      if (audience) clarify('Bitta odamgami yoki guruhgami? Qabul qiluvchini aniq yozing.');
       const head=recipientHead;
       const id=await userId(head,deps);
       const expectedUsername=/@\s*([A-Za-z0-9_]+)/.exec(head)?.[1];
@@ -218,6 +224,7 @@ export async function planNaturalAdminRequest(text: string, deps: NaturalPlanner
     if (!round || round > 100) clarify('Qaysi tur? 1–100 orasidagi tur raqamini yozing.');
     return make('matchday_control', comp.id, { action: 'SELECT', matchday: round });
   }
+  if (action === 'matchday_control' && !['LEAGUE','EUROPEAN_LEAGUE_PHASE'].includes(comp.type)) clarify('Kubok uchun bosqich raqami va ochish yoki qulflash amalini yozing.');
   if (action === 'fixtures_generate') return ['LEAGUE','EUROPEAN_LEAGUE_PHASE'].includes(comp.type) ? make(action, undefined, { competitionId: comp.id }) : make('cup_preview', comp.id);
   if (action === 'cup_preview' || action === 'cup_advance' || action === 'cup_reconcile') {
     if (['LEAGUE','EUROPEAN_LEAGUE_PHASE'].includes(comp.type)) clarify('Bu amal uchun kubok yoki pley-off musobaqasini yozing.');
@@ -229,12 +236,20 @@ export async function planNaturalAdminRequest(text: string, deps: NaturalPlanner
 
 export async function parseNaturalAdminPlan(text: string, signal: AbortSignal): Promise<AdminPlan|null> {
   if (!detectNaturalAdminAction(text)) return null;
-  return planNaturalAdminRequest(text, {
-    read: createAiTournamentReader(signal).read,
+  const reader = createAiTournamentReader(signal);
+  const plan = await planNaturalAdminRequest(text, {
+    read: reader.read,
     users: async () => {
       const cached = await createAiSnapshotReader(signal).read<User>('efluz:v1:admin:user-directory');
       if (cached.available) return cached.data;
       return withinAiDeadline(signal, () => getAdminUserDirectory());
     },
   });
+  if (plan?.targetId && ['matchday_control','matchday_advance','matchday_remind'].includes(plan.action)) {
+    const source:any = await reader.read({dataset:'competitions',competition:plan.targetId,limit:1});
+    if(source.error || source.complete===false || source.data?.length!==1)throw Error('CLARIFY:Tur holati ishonchli o‘qilmadi. Qayta urinib ko‘ring.');
+    return bindMatchdaySnapshot(plan,source.data[0]);
+  }
+  return plan;
+
 }

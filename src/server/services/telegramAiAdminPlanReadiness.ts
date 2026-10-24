@@ -62,6 +62,14 @@ export async function validateModelAdminPlan(plan: AdminPlan, request: string, s
     else if (/^(?:matchday_|cup_|standings_)/.test(plan.action)) await check(plan.targetId, 'competitions');
     else if (!request.includes(plan.targetId) && !verifiedTargets.has(`${plan.action}:${plan.targetId}`)) throw new Error('CLARIFY:Bu yopiq ma’lumot uchun aniq IDni yozing; uni taxmin qilmayman.');
   }
+  if (plan.targetId && plan.action.startsWith('matchday_')) {
+    const competitions:any = await reader.read({dataset:'competitions',limit:30});
+    if (competitions.error || competitions.complete === false || competitions.nextOffset) throw new Error('CLARIFY:Turnirlar holati to‘liq o‘qilmadi.');
+    const named = findConversationCompetitions(request, competitions.data || []);
+    const round = requestedMatchday(request);
+    if (named.length !== 1 || named[0].id !== plan.targetId || round && Number(plan.body.matchday ?? plan.body.currentMatchday) !== round)
+      throw new Error('CLARIFY:Rejadagi liga yoki tur siz yozgan so‘rovga mos kelmadi. Turnir va turni aniqlashtiring.');
+  }
   if (plan.targetId && /^club_|^fixture_|^result_/.test(plan.action)) {
     const roster: any[] = [];
     for (let offset = 0; offset < 300; offset += 30) {

@@ -1273,10 +1273,10 @@ adminRouter.post('/competitions/:id/matchday/override', async (req: Request, res
 
 adminRouter.post('/competitions/:id/matchday/advance', async (req: Request, res: Response) => {
   const competitionId = req.params.id;
-  const { durationHours, seasonId } = req.body;
+  const { durationHours, seasonId, expectedCurrentMatchday, expectedUpdatedAt } = req.body;
 
   try {
-    const result = await advanceCompetitionMatchdayFirestore(competitionId, { durationHours, seasonId });
+    const result = await advanceCompetitionMatchdayFirestore(competitionId, { durationHours, seasonId, ...(expectedCurrentMatchday !== undefined ? { expectedCurrentMatchday } : {}), ...(Object.hasOwn(req.body, 'expectedUpdatedAt') ? { expectedUpdatedAt } : {}) });
     let smartNotificationsQueued = (result as any).smartNotificationsQueued || 0;
     try {
       const resolvedMatchday = Number((result as any)?.currentMatchday || 0);
