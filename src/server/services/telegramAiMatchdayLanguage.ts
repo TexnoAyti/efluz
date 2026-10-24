@@ -51,7 +51,7 @@ export async function planMatchdayRequest(text:string,read:(q:any)=>Promise<any>
  if(!Number.isInteger(round)||round<1||round>100)throw Error('CLARIFY:Qaysi tur? Raqamini yoki “joriy tur” deb yozing.');
  const maximum=comp.type==='LEAGUE'?Number(comp.formatConfig?.totalClubs||(['league-bundesliga','league-ligue-1'].includes(comp.leagueId)?18:20))-1:Number(comp.totalMatchdays||100);
  if(round>maximum)throw Error(`CLARIFY:${comp.name}da ${maximum} ta tur bor. Mavjud tur raqamini yozing.`);
- if(intent==='REMIND')return {action:'matchday_remind',targetId:comp.id,body:{matchday:round}};
+ if(intent==='REMIND')return {action:'matchday_remind',targetId:comp.id,body:{matchday:round,...(/\b\d{1,3}\s*turgacha\b/.test(q)?{fromMatchday:1}:{})}};
  if(intent==='EXTEND'&&!durationHours)throw Error('CLARIFY:Necha soatga uzaytiray? Masalan: 6 soatga yoki 1 kunga.');
  if(intent==='OPEN'&&(/\b(?:hozir|majburiy)\b/.test(q)||/ochib ber/.test(q)))return {action:'matchday_open_now',targetId:comp.id,body:{matchday:round,...(durationHours?{durationHours}:{})}};
  return {action:'matchday_control',targetId:comp.id,body:{action:intent,matchday:round,...(durationHours?{durationHours}:{})}};

@@ -1,3 +1,4 @@
+import { isReplyReminderRequest } from './telegramAiReminderSelection';
 import { detectMatchdayIntent } from './telegramAiMatchdayLanguage';
 import { isBulkResultRequest } from './telegramAiBulkResultLanguage';
 import { normalizeAiEntity } from './telegramAiEntities';
@@ -32,7 +33,7 @@ export function assertSingleNaturalAdminRequest(text: string): void {
   if (new Set(rounds).size > 1) throw new Error('CLARIFY:Bir xabarda tur raqamlari bir-biriga mos kelmadi. Qaysi bitta tur bilan ishlaymiz?');
   const hours = [...q.matchAll(/\b(\d{1,3})\s*soat\w*\b/g)].map(m => Number(m[1]));
   if (new Set(hours).size > 1) throw new Error('CLARIFY:Muddatlar bir-biriga mos kelmadi. Necha soat bo‘lsin? Bitta qiymat yozing.');
-  if (/\b\d{1,3}\s*turgacha\b/.test(q))
+  if (/\b\d{1,3}\s*turgacha\b/.test(q) && detectMatchdayIntent(text) !== 'REMIND')
     throw new Error('CLARIFY:Bu buyruq bir nechta turga tegishli. O‘zgartirish uchun bitta aniq turni yozing; “turgacha” faqat ro‘yxatni ko‘rishda ishlaydi.');
   const negativeQuery = q.replace(/\b(?:kiritmagan|yubormagan|oynamagan|tasdiqlamagan|yakunlamagan)\w*\b/g, 'missing');
   if (/\b(?:qoyma\w*|chozma\w*|berkitma\w*|boshlama\w*|boshlatma\w*|eslatmang\w*|eslatmagin\w*|kiritma\w*|saqlama\w*|ochma\w*|yopma\w*|qulflama\w*|uzaytirma\w*|qilma\w*|ochirma\w*|yuborma\w*|biriktirma\w*|berma\w*|ulama\w*|boshatma\w*|chiqarma\w*|otkazma\w*|yozma\w*|toxtatma\w*|yangilama\w*|belgilama\w*|ozgartirma\w*|qaytarma\w*|tozalama\w*|tushirma\w*)\b/.test(negativeQuery) || /\b(?:do not|dont|never)\s+(?:assign|release|delete|remove|give)\b/.test(q) || /(?:^|\s)не\s+(?:назнач|удал|освобод)[\p{L}]*/u.test(negativeQuery) ||
@@ -45,6 +46,7 @@ export function assertSingleNaturalAdminRequest(text: string): void {
 export function detectNaturalAdminAction(text: string): string|null {
   const command = text.replace(/^\/ai_(?:admin|read)(?:@[A-Za-z0-9_]+)?\s*/i, '').replace(/"[^"]*"|“[^”]*”/g, ' ').split(/(?:sarlavha|matn|sabab|izoh)\s*:/i)[0];
   const q = normalizeAiEntity(command.replace(/@\s*[A-Za-z0-9_]+/g, ' '));
+  if (isReplyReminderRequest(command)) return 'matchday_remind';
   if (isBulkResultRequest(command)) return 'results_bulk_apply';
   const roundIntent = detectMatchdayIntent(command);
   if (roundIntent) return roundIntent === 'REMIND' ? 'matchday_remind' : roundIntent === 'ADVANCE' ? 'matchday_advance' : roundIntent === 'STATUS' ? 'matchday_status' : 'matchday_control';

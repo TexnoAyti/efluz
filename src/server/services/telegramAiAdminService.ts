@@ -1,3 +1,4 @@
+import { planReplyReminder } from './telegramAiReminderSelection';
 import { bindMatchdaySnapshot } from './telegramAiMatchdayLanguage';
 import { parseBulkResultRequest } from './telegramAiBulkResultLanguage';
 import { findConversationCompetitions } from './telegramAiConversationCommands';
@@ -108,7 +109,7 @@ export function describeAiAdminPlan(plan: AdminPlan, label = ''): string {
   if (plan.action === 'matchday_override') return `${target}: tur boshqaruvini ${({PAUSED:'pauzaga qo‘yish',AUTO:'avtomatik rejimga qaytarish',FORCE_OPEN:'majburiy ochish',FORCE_LOCKED:'majburiy qulflash'} as any)[String(b.overrideStatus)] || b.overrideStatus}.`;
   if (plan.action === 'matchday_timer') return `${target}: ${b.currentMatchday ? b.currentMatchday + '-tur, ' : ''}tur muddatini ${b.durationHours} soat qilib belgilash.`;
   if (plan.action === 'matchday_advance') return `${target}: ${Number.isInteger(b.expectedCurrentMatchday) ? `${b.expectedCurrentMatchday}-turdan ${Number(b.expectedCurrentMatchday)+1}-turga` : 'keyingi turga'} o‘tkazish${b.durationHours ? `, ${b.durationHours} soat` : ''}. Oldingi turdagi yakunlanmagan o‘yinlar tekshiriladi.`;
-  if (plan.action === 'matchday_remind') return `${target}: ${b.matchday}-turdagi o‘yini yakunlanmagan klub egalariga eslatma yuborish.`;
+  if (plan.action === 'matchday_remind') return `${target}: ${b.fromMatchday && b.fromMatchday !== b.matchday ? b.fromMatchday+'–'+b.matchday+'-turlar (oxirgi tur ham kiradi)' : b.matchday+'-tur'}${Array.isArray(b.fixtureIds)?', reply qilingan '+b.fixtureIds.length+' ta o‘yin doirasida':''}: natija yubormagan hozirgi klub egalariga eslatma yuborish.`;
   if (plan.action === 'broadcast_retry') return `${target}: yuborilmagan e’lon xabarlarini qayta jo‘natishga urinish.`;
   if (plan.action === 'recipients_refresh') return 'Telegram xabarnomalarining qabul qiluvchilar ro‘yxatini yangilash.';
   if (plan.action === 'metrics_reset') return 'O‘qish hisoblagichlarini nolga tushirish.';
@@ -380,7 +381,8 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
     // Explicit test planners replace planning only in isolated tests; production always resolves cached club IDs.
     let plan = correctionSource && correction ? reviseAiAdminPlan(correctionSource.plan, correction, correctionSource.scoreHomeFirst)
       : testPlanner ? await planAiAdminAction(argument, facts, signal, payload)
-      : await planBulkLeagueRequest(argument,signal)
+      : await planReplyReminder(argument,scope.replyReminderSelection,createAiTournamentReader(signal).read)
+        || await planBulkLeagueRequest(argument,signal)
         || await contextualFixturePlan(argument,recentFixture?[recentFixture]:scope.selectedFixtureIds||[],signal)
         || await contextualClubPlan(argument,scope.selectedClubIds||[],scope.previousUserQueries||[],signal)
         || await parseConversationClubAssignmentPlan(argument, signal)

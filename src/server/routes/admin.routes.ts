@@ -1346,13 +1346,14 @@ adminRouter.post('/competitions/:id/matchday/remind', async (req: Request, res: 
   const competitionId = req.params.id;
   const seasonId = typeof req.body?.seasonId === 'string' ? req.body.seasonId : 'season-2026-27';
   const matchday = Number(req.body?.matchday || 0);
+  const { fromMatchday, fixtureIds } = req.body;
   const deadlineAt = typeof req.body?.deadlineAt === 'string' ? req.body.deadlineAt : null;
-  if (!Number.isInteger(matchday) || matchday <= 0) {
+  if (!Number.isInteger(matchday) || matchday <= 0 || matchday > 100 || fromMatchday !== undefined && (!Number.isInteger(fromMatchday) || fromMatchday < 1 || fromMatchday > matchday) || fixtureIds !== undefined && (!Array.isArray(fixtureIds) || !fixtureIds.length || fixtureIds.length > 1000 || fixtureIds.some((id:any)=>typeof id !== 'string' || !id))) {
     res.status(400).json({ error: 'A positive integer matchday is required.', code: 'BAD_REQUEST' });
     return;
   }
   try {
-    const result = await notifyOutstandingMatchdayOwners({ competitionId, seasonId, matchday, deadlineAt });
+    const result = await notifyOutstandingMatchdayOwners({ competitionId, seasonId, matchday, fromMatchday, fixtureIds, deadlineAt });
     res.json({ success: true, ...result });
   } catch (err: any) {
     handleFirestoreError(res, err, `POST /api/admin/competitions/${competitionId}/matchday/remind`);
