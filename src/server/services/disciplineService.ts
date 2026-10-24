@@ -36,7 +36,7 @@ export async function getDisciplineFixtures(userId:string,seasonId:string) {
   return (await candidateFixtures(userId,seasonId)).map(f=>({id:f.id,status:f.status,competitionId:f.competitionId,competitionName:f.competitionName||competitionName(f.competitionId),roundName:f.roundName||'',matchday:f.matchday,homeClubId:f.homeClubId,awayClubId:f.awayClubId,scheduledAt:f.scheduledAt,
     eligible:eligible(f)}));
 }
-export async function issueDisciplineCard(adminId:string,userId:string,seasonId:string,input:Pick<DisciplineCard,'color'|'reason'|'note'|'incidentFixtureId'> & {requestId:string}) {
+export async function issueDisciplineCard(adminId:string,userId:string,seasonId:string,input:Pick<DisciplineCard,'color'|'reason'|'note'|'incidentFixtureId'> & {requestId:string;expectedSuspensionFixtureId?:string|null}) {
   const db=getFirestoreDb();
   const candidates=await candidateFixtures(userId,seasonId);
   if(input.incidentFixtureId&&!candidates.some(f=>f.id===input.incidentFixtureId)) fail('Bu o‘yin ishtirokchiga tegishli emas.','INVALID_INCIDENT_FIXTURE',400);
@@ -51,6 +51,7 @@ export async function issueDisciplineCard(adminId:string,userId:string,seasonId:
     const cards:DisciplineCard[]=current.data()?.cards||[];
     const old=cards.find(c=>c.id===id);
     if(old)return old;
+  if(Object.hasOwn(input,'expectedSuspensionFixtureId')&&(next?.id||null)!==input.expectedSuspensionFixtureId)fail('Chetlatish o‘yini reja tuzilgandan beri o‘zgardi. Yangi reja tuzing.','DISCIPLINE_PREVIEW_CHANGED');
     if(cards.length>=500)fail('Mavsumdagi kartochkalar chegarasiga yetildi.');
     if(next){
       const fixtureRef=db.collection('fixtures').doc(next.id),fixture=(await tx.get(fixtureRef)).data();
@@ -61,6 +62,7 @@ export async function issueDisciplineCard(adminId:string,userId:string,seasonId:
     tx.set(ref,{userId,seasonId,cards:[card,...cards],updatedAt:card.createdAt});
     const notificationId=`discipline_${id}`;
     tx.set(db.collection('notifications').doc(notificationId),{id:notificationId,userId,type:'SYSTEM',title:input.color==='RED'?'Qizil kartochka — bir o‘yinga chetlatish':'Sariq kartochka — ogohlantirish',message:`${disciplineReasons[input.reason]}. Tafsilotlar klub profilingizning Intizom bo‘limida.`,entityType:'user',entityId:userId,isRead:false,createdAt:card.createdAt});
+    tx.set(db.collection('audit_logs').doc(`discipline_issue_${id}`),{actorUserId:adminId,action:'ISSUE_DISCIPLINE_CARD',entityType:'discipline_card',entityId:id,newValueJson:JSON.stringify(card),createdAt:card.createdAt});
     return card;
   });
 }
@@ -76,6 +78,7 @@ export async function revokeDisciplineCard(adminId:string,userId:string,seasonId
     const now=new Date().toISOString();
     if(fixture)tx.update(matchRef,{disciplinaryHolds:(fixture.disciplinaryHolds||[]).filter((h:DisciplinaryHold)=>h.cardId!==cardId),updatedAt:now});
     tx.update(ref,{cards:cards.map(c=>c.id===cardId?{...c,status:'REVOKED',revokedAt:now,revokedBy:adminId,revokeReason:reason}:c),updatedAt:now});
+    tx.set(db.collection('audit_logs').doc(`discipline_revoke_${cardId}`),{actorUserId:adminId,action:'REVOKE_DISCIPLINE_CARD',entityType:'discipline_card',entityId:cardId,oldValueJson:JSON.stringify(card),newValueJson:JSON.stringify({status:'REVOKED',reason}),createdAt:now});
     const notificationId=`discipline_${cardId}_revoked`;
     tx.set(db.collection('notifications').doc(notificationId),{id:notificationId,userId,type:'SYSTEM',title:'Kartochka bekor qilindi',message:reason,entityType:'user',entityId:userId,isRead:false,createdAt:now});
   });

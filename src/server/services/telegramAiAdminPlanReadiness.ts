@@ -6,6 +6,12 @@ import { detectAiCupStage, fixtureMatchesAiCupStage } from './telegramAiCupStage
 import { requestedMatchday, findConversationCompetitions } from './telegramAiConversationCommands';
 
 const required: Record<string,string[]> = {
+  ai_test_query:['query'], custom_create:['name','format','leagueScope','maxParticipants'], custom_review:['action'],
+  custom_result:['homeScore','awayScore'], custom_correct:['homeScore','awayScore'], custom_assistant:['assistantUserId'],
+  ticket_grant:['targetUserId','amount'], ticket_refund:['targetUserId','tournamentId'],
+  team_save:['id','name','members','captainMemberId','version'], team_league_save:['id','name','teamIds','starterCount','rounds','version'], team_league_action:['action','version'],
+  discipline_issue:['seasonId','color','reason','note','requestId'], discipline_revoke:['seasonId','reason'],
+  admission_league:['seasonId','leagueId','open'], fixture_schedule:['seasonId','expected'],
   results_bulk_apply:['seasonId','fromMatchday','toMatchday','homeScore','awayScore','previewHash','expectedCount'],
   result_edit:['homeScore','awayScore'], result_approve:['homeScore','awayScore'], fixture_delete:['reason'], fixture_deadline:['deadlineAt'],
   club_assign:['targetUserId'], user_role:['isAdmin'], user_suspend:['isSuspended'], dispute_resolve:['action'],
@@ -31,6 +37,10 @@ export function assertAdminPlanReady(plan: AdminPlan) {
     const b=plan.body;
     if (plan.action !== 'result_edit' || b.homeScore !== b.awayScore || ![b.homePenaltyScore,b.awayPenaltyScore].every(n=>Number.isInteger(n)&&Number(n)>=0&&Number(n)<=99) || b.homePenaltyScore===b.awayPenaltyScore) throw new Error('CLARIFY:Penalti faqat durang kubok natijasi uchun, ikkala tomon va g‘olib bilan kiritiladi.');
   }
+  if(plan.action==='discipline_issue'&&(!['YELLOW','RED'].includes(String(plan.body.color))||!['ABUSE','DELAY','NO_SHOW','OTHER'].includes(String(plan.body.reason))||typeof plan.body.note!=='string'||plan.body.note.trim().length<3))throw new Error('CLARIFY:Kartochka rangi va aniq sababini yozing.');
+  if(plan.action==='discipline_revoke'&&(!plan.secondaryId||typeof plan.body.reason!=='string'||plan.body.reason.trim().length<3))throw new Error('CLARIFY:Qaysi kartochka va bekor qilish sababini yozing.');
+  if(plan.action==='admission_league'&&(typeof plan.body.open!=='boolean'||!Object.hasOwn(plan.body,'expectedRevision')))throw new Error('CLARIFY:Klub tanlash uchun joriy holat va ochish/yopishni aniqlang.');
+  if(plan.action==='fixture_schedule'&&(!Array.isArray(plan.body.expected)||!plan.body.expected.length||!Object.hasOwn(plan.body,'scheduledAt')))throw new Error('CLARIFY:Avval o‘yinlar vaqtini oldindan ko‘rish kerak.');
   const missing = (required[plan.action] || []).filter(key => plan.body[key] === undefined || plan.body[key] === null || plan.body[key] === '');
   if (missing.length) throw new Error('CLARIFY:Reja uchun quyidagini aniqlang: ' + missing.map(k => names[k] || k).join(', ') + '.');
   for (const key of ['homeScore','awayScore','matchday','roundNumber']) if (plan.body[key] !== undefined && (!Number.isInteger(plan.body[key]) || Number(plan.body[key]) < (key.includes('Score') ? 0 : 1))) throw new Error('CLARIFY:' + (names[key] || key) + ' uchun to‘g‘ri butun son yozing.');
@@ -116,7 +126,10 @@ export async function validateModelAdminPlan(plan: AdminPlan, request: string, s
     if ((score.homePenaltyScore != null || score.homeExtraTimeScore != null) && plan.action === 'result_approve') { plan.action = 'result_edit'; plan.body.status = 'CONFIRMED'; }
   }
   if (plan.body.competitionId) await check(String(plan.body.competitionId), 'competitions');
-  if (plan.secondaryId) await check(plan.secondaryId, 'fixtures');
+  if (plan.secondaryId) {
+    if(plan.action.startsWith('custom_')) {if(!request.includes(plan.secondaryId))throw new Error('CLARIFY:Turnirdagi aniq o‘yin yoki ishtirokchi IDni yozing.');}
+    else await check(plan.secondaryId, 'fixtures');
+  }
   if (AI_ADMIN_ACTIONS[plan.action].method === 'GET') return;
   // Batch reset/migration and season transitions need an explicit request, never a guessed repair.
   if (['fixtures_reset','migrate','season_archive','season_rollover'].includes(plan.action) && !/reset|barcha.*ochir|migratsiya|migrate|arxiv|keyingi mavsum|yangi mavsum/.test(q))

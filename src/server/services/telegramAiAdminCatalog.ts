@@ -1,9 +1,24 @@
+import { AI_PLATFORM_ACTIONS } from './telegramAiPlatformCatalog';
 import { z } from 'zod';
 
 type AdminAction = { method: 'GET'|'POST'|'PUT'|'PATCH'|'DELETE'; path: string; fields: string; };
 const action = (method: AdminAction['method'], path: string, fields = ''): AdminAction => ({ method, path, fields });
 /** Fixed application endpoints only. No SQL, shell, arbitrary URL or collection access. */
 export const AI_ADMIN_ACTIONS: Record<string, AdminAction> = {
+  ...AI_PLATFORM_ACTIONS,
+  ai_test_query: action('POST','/telegram-ai/test-query','query'), ai_daily_report: action('GET','/telegram-ai/daily-report'),
+  season_matchday_advance: action('POST','/season-ops/competitions/:id/advance','seasonId?, durationHours?'),
+  season_matchday_open: action('POST','/season-ops/competitions/:id/open-now','seasonId?, durationHours?, matchday?'),
+  season_no_show_resolve: action('POST','/season-ops/no-show/:id/resolve','action, notes?, deadlineAt?'),
+  discipline_view: action('GET','@discipline/users/:id','seasonId?'),
+  discipline_fixtures: action('GET','@discipline/users/:id/fixtures','seasonId?'),
+  discipline_issue: action('POST','@discipline/users/:id/cards','seasonId, color:YELLOW|RED, reason:ABUSE|DELAY|NO_SHOW|OTHER, note, incidentFixtureId:null or exact fixture ID, requestId:server UUID, expectedSuspensionFixtureId:server preview'),
+  discipline_revoke: action('POST','@discipline/users/:id/cards/:secondaryId/revoke','seasonId, reason'),
+  admission_league: action('POST','/clubs/admission/league','seasonId, leagueId, open:boolean, expectedRevision:server preview'),
+  fixture_schedules: action('GET','/fixture-schedules','seasonId, competitionId?, fixtureId?, category?, matchday?, includeCompleted?'),
+  fixture_schedule: action('POST','/fixture-schedules','seasonId, competitionId?, fixtureId?, category?, matchday?, scheduledAt:ISO or null, venue?:single fixture only, expected:server preview only'),
+  recipients: action('GET','/telegram-notifications/recipients'),
+  user_directory: action('GET','/users/directory'),
   results_bulk_preview: action('GET', '/competitions/:id/bulk-results/preview', 'seasonId, fromMatchday, toMatchday, homeScore, awayScore'),
   results_bulk_apply: action('POST', '/competitions/:id/bulk-results/apply', 'seasonId, fromMatchday, toMatchday, homeScore, awayScore, previewHash:server preview only, expectedCount:server preview only'),
   result_edit: action('POST', '/fixtures/:id/result', 'homeScore:number, awayScore:number, homePenaltyScore?:number|null, awayPenaltyScore?:number|null, homeExtraTimeScore?:number|null, awayExtraTimeScore?:number|null, status?:CONFIRMED|AWAITING_RESULT|SCHEDULED, notes?'),
@@ -108,7 +123,7 @@ export const adminPlanSchema = z.object({
   const spec = AI_ADMIN_ACTIONS[p.action];
   if (spec?.path.includes(':id') && !p.targetId) ctx.addIssue({ code: 'custom', message: 'Exact targetId required', path: ['targetId'] });
   if (spec?.path.includes(':secondaryId') && !p.secondaryId) ctx.addIssue({ code: 'custom', message: 'Exact secondaryId required', path: ['secondaryId'] });
-  if (JSON.stringify(p.body).length > 4000) ctx.addIssue({ code: 'custom', message: 'Body too large', path: ['body'] });
+  if (JSON.stringify(p.body).length > (p.action === 'fixture_schedule' ? 900000 : p.action === 'team_save' ? 16000 : 4000)) ctx.addIssue({ code: 'custom', message: 'Body too large', path: ['body'] });
 });
 export type AdminPlan = z.infer<typeof adminPlanSchema>;
 export function adminPlanPath(plan: AdminPlan): string {

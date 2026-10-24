@@ -65,7 +65,7 @@ export function resolveAdminScore(text: string, clubs: Club[], fixture: {homeClu
 export async function planNaturalAdminRequest(text: string, deps: NaturalPlannerDependencies): Promise<AdminPlan|null> {
   text = text.replace(/^\/ai_(?:admin|read)(?:@[A-Za-z0-9_]+)?\s*/i, '');
   const action = detectNaturalAdminAction(text);
-  if (!action || ['dispute_resolve', 'submission_delete', 'no_show_resolve'].includes(action)) return null;
+  if (!action || ['dispute_resolve', 'submission_delete', 'no_show_resolve','discipline_issue','discipline_revoke','discipline_view','admission_league','fixture_schedule','platform_admin'].includes(action)) return null;
   const clean = maskUser(text).replace(/"[^"]*"|“[^”]*”/g, ' ').split(/(?:sarlavha|matn|sabab|izoh)\s*:/i)[0];
   const q = normalizeAiEntity(clean), note = reason(text);
   const make = (action: string, targetId?: string, body: Record<string,unknown> = {}) => adminPlanSchema.parse({ action, ...(targetId ? { targetId } : {}), body });

@@ -1,3 +1,5 @@
+import { isPlatformAdminRequest } from './telegramAiPlatformCatalog';
+import { expandedAdminIntent } from './telegramAiExpandedAdmin';
 import { isReplyReminderRequest } from './telegramAiReminderSelection';
 import { detectMatchdayIntent } from './telegramAiMatchdayLanguage';
 import { isBulkResultRequest } from './telegramAiBulkResultLanguage';
@@ -46,6 +48,9 @@ export function assertSingleNaturalAdminRequest(text: string): void {
 export function detectNaturalAdminAction(text: string): string|null {
   const command = text.replace(/^\/ai_(?:admin|read)(?:@[A-Za-z0-9_]+)?\s*/i, '').replace(/"[^"]*"|“[^”]*”/g, ' ').split(/(?:sarlavha|matn|sabab|izoh)\s*:/i)[0];
   const q = normalizeAiEntity(command.replace(/@\s*[A-Za-z0-9_]+/g, ' '));
+  const expanded = expandedAdminIntent(command);
+  if (expanded) return expanded;
+  if (isPlatformAdminRequest(command)) return 'platform_admin';
   if (isReplyReminderRequest(command)) return 'matchday_remind';
   if (isBulkResultRequest(command)) return 'results_bulk_apply';
   const roundIntent = detectMatchdayIntent(command);

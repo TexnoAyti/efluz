@@ -24,14 +24,14 @@ disciplineRouter.get('/users/:id',wrap(async(req:any,res:any)=>{
  res.json({cards:await getDiscipline(req.params.id,season(req),privateView)});
 }));
 disciplineRouter.get('/users/:id/fixtures',requireAdmin,fullAdmin,wrap(async(req:any,res:any)=>res.json({fixtures:await getDisciplineFixtures(req.params.id,season(req))})));
-const issueSchema=z.object({seasonId:z.string().regex(/^season-\d{4}-\d{2}$/),color:z.enum(['YELLOW','RED']),reason:z.enum(['ABUSE','DELAY','NO_SHOW','OTHER']),note:z.string().trim().min(3).max(500),incidentFixtureId:z.string().trim().min(1).max(160).nullable(),requestId:z.string().uuid()}).strict();
+const issueSchema=z.object({seasonId:z.string().regex(/^season-\d{4}-\d{2}$/),color:z.enum(['YELLOW','RED']),reason:z.enum(['ABUSE','DELAY','NO_SHOW','OTHER']),note:z.string().trim().min(3).max(500),incidentFixtureId:z.string().trim().min(1).max(160).nullable(),requestId:z.string().uuid(),expectedSuspensionFixtureId:z.string().trim().min(1).max(160).nullable().optional()}).strict();
 disciplineRouter.post('/users/:id/cards',requireAdmin,fullAdmin,validateBody(issueSchema),wrap(async(req:any,res:any)=>{
  const card=await issueDisciplineCard(req.user.id,req.params.id,season(req),req.body);
  res.json({card});
 }));
 disciplineRouter.post('/users/:id/cards/:cardId/revoke',requireAdmin,fullAdmin,validateBody(z.object({seasonId:z.string().regex(/^season-\d{4}-\d{2}$/),reason:z.string().trim().min(3).max(500)}).strict()),wrap(async(req:any,res:any)=>{
  await revokeDisciplineCard(req.user.id,req.params.id,season(req),req.params.cardId,req.body.reason);
- res.json({success:true});
+ res.json({success:true,card:(await getDiscipline(req.params.id,season(req),true)).find(c=>c.id===req.params.cardId)});
 }));
 disciplineRouter.post('/fixtures/:id/check',wrap(async(req:any,res:any)=>{
  try { await assertDisciplineFixtureAllowed(req.params.id,req.user.id); }
