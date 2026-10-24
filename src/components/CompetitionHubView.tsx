@@ -6,11 +6,9 @@ import { CupBracketsView } from './CupBracketsView';
 import { ChampionsLeagueView } from './ChampionsLeagueView';
 import { SeasonHubView } from './SeasonHubView';
 import {useAuth} from '../context/AuthContext';
-import {uzeflifeRequest} from '../lib/uzeflifeApi';
-import {uCanSeeCustomNavigation} from '../lib/uzeflifePresentation';
 const UzeflifeView=lazy(()=>import('./uzeflife/UzeflifeView').then(m=>({default:m.UzeflifeView})));
-import { TournamentListView } from './customTournaments/TournamentListView';
-import { Trophy, Award, Globe2, CalendarDays, Sparkles } from 'lucide-react';
+import { TeamLeaguePreviewView } from './teamLeaguePreview/TeamLeaguePreviewView';
+import { Trophy, Award, Globe2, Users } from 'lucide-react';
 
 interface CompetitionHubViewProps {
   onNavigateTab: (tab: any) => void;
@@ -23,9 +21,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
 }) => {
   const { language } = useI18n();
   const {user}=useAuth();
-  const [customEnabled,setCustomEnabled]=useState(false);
-  useEffect(()=>{let live=true;uzeflifeRequest().then(s=>{if(live)setCustomEnabled(s.customNavigationEnabled);}).catch(()=>{});return()=>{live=false;};},[user?.id]);
-  const canSeeCustom=uCanSeeCustomNavigation(customEnabled)||canSeeTeamPreview(user?.telegramId);
+  const canSeeCustom=canSeeTeamPreview(user?.telegramId);
   const [subTab, setSubTab] = useState<'leagues' | 'cups' | 'european' | 'season' | 'custom' | 'uzeflife'>(() => {
     try {
       const saved = sessionStorage.getItem('efl:competition-hub-subtab');
@@ -51,7 +47,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
       cups: 'Kuboklar',
       european: 'Yevrokuboklar',
       season: 'Mavsum',
-      custom: 'O‘z turniringiz',
+      custom: 'TEAMS',
     },
     ru: {
       heading: 'Турниры',
@@ -59,7 +55,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
       cups: 'Кубки',
       european: 'Еврокубки',
       season: 'Сезон',
-      custom: 'Пользовательские',
+      custom: 'TEAMS',
     },
     en: {
       heading: 'Competitions',
@@ -67,7 +63,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
       cups: 'Cups',
       european: 'Europe',
       season: 'Season',
-      custom: 'Custom Tournaments',
+      custom: 'TEAMS',
     },
   }[language] || {
     heading: 'Competitions',
@@ -75,7 +71,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
     cups: 'Cups',
     european: 'Europe',
     season: 'Season',
-    custom: 'O‘z turniringiz',
+    custom: 'TEAMS',
   };
 
   const navItems = [
@@ -83,8 +79,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
     { id: 'cups' as const, label: titles.cups, icon: Award },
     { id: 'uzeflife' as const, label: 'UZEFLIFE', icon: Trophy },
     { id: 'european' as const, label: titles.european, icon: Globe2 },
-    { id: 'season' as const, label: titles.season, icon: CalendarDays },
-    { id: 'custom' as const, label: titles.custom, icon: Sparkles },
+    { id: 'custom' as const, label: titles.custom, icon: Users },
   ];
 
   return (
@@ -97,7 +92,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
       </div>
 
       {/* 2. Top-Level Category Segmented Bar */}
-      <div className="p-1 rounded-2xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)] flex items-center gap-1 overflow-x-auto scrollbar-none shadow-xs">
+      <div className="p-1 rounded-2xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)] grid grid-cols-6 items-stretch gap-1 shadow-xs">
         {navItems.filter(item=>item.id!=='custom'||canSeeCustom).map((item) => {
           const Icon = item.icon;
           const isActive = (subTab==='custom'&&!canSeeCustom?'uzeflife':subTab) === item.id;
@@ -106,7 +101,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
               key={item.id}
               type="button"
               onClick={() => setSubTab(item.id)}
-              className={`flex-1 min-w-[76px] flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl text-xs font-bold transition-all ${
+              className={`${item.id==='custom'?'col-span-2 col-start-3':'col-span-3'} min-w-0 min-h-[44px] flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl text-xs font-bold transition-all ${
                 isActive
                   ? 'bg-[var(--efl-surface)] text-[var(--efl-primary)] shadow-sm font-black'
                   : 'text-[var(--efl-text-2)] hover:text-[var(--efl-text)]'
@@ -126,7 +121,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
         {subTab === 'european' && <ChampionsLeagueView onNavigateTab={onNavigateTab} />}
         {subTab === 'season' && <SeasonHubView onNavigateTab={onNavigateTab} />}
         {(subTab === 'uzeflife'||subTab === 'custom'&&!canSeeCustom)&&<Suspense fallback={<div className="p-8 text-center text-xs text-[var(--efl-text-2)]">UZEFLIFE yuklanmoqda…</div>}><UzeflifeView /></Suspense>}
-        {subTab === 'custom' && canSeeCustom && <TournamentListView />}
+        {subTab === 'custom' && canSeeCustom && <TeamLeaguePreviewView />}
       </div>
     </div>
   );
