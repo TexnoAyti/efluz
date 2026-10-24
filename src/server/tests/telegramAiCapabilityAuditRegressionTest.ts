@@ -1,3 +1,4 @@
+import {planNaturalAdminRequest} from '../services/telegramAiNaturalAdminPlanner';
 import assert from 'node:assert/strict';
 import { AI_ADMIN_ACTIONS, adminPlanPath } from '../services/telegramAiAdminCatalog';
 import { aiAdminRequestUrl, isPlatformAdminRequest } from '../services/telegramAiPlatformCatalog';
@@ -6,6 +7,10 @@ import { assertAiAdminActionAllowed } from '../services/telegramAiAdminAccess';
 
 assert.equal(isPlatformAdminRequest('My favourite football team is Barcelona'),false);
 assert.equal(isPlatformAdminRequest('Team ligasini yarat'),true);
+const noReads:any={read:async()=>{throw Error('UNRELATED_READ');},users:async()=>[]};
+assert.equal((await planNaturalAdminRequest('Klub teglarini sinxronla',noReads))?.action,'club_member_tags_sync');
+assert.equal((await planNaturalAdminRequest('Klub teglari holatini ko‘rsat',noReads))?.action,'club_member_tags');
+await assert.rejects(planNaturalAdminRequest('Klub teglarini sinxronlama',noReads),/CLARIFY/);
 const routes=await getAiAdminMountedRoutes();
 function matches(pattern:string,path:string){const a=pattern.replace(/\/$/,'').split('/'),b=path.replace(/\/$/,'').split('/');return a.length===b.length&&a.every((part,i)=>part.startsWith(':')||part===b[i]);}
 for(const [name,spec] of Object.entries(AI_ADMIN_ACTIONS)) {

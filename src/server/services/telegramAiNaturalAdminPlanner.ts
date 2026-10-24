@@ -76,7 +76,7 @@ export async function planNaturalAdminRequest(text: string, deps: NaturalPlanner
     const extended = await planExtendedAdminControl(text, deps.read);
     if (extended) return extended;
   }
-  if (['users','ai_settings','premium_overview','broadcasts','notification_messages','health','season_control'].includes(action)) {
+  if (['club_member_tags','users','ai_settings','premium_overview','broadcasts','notification_messages','health','season_control'].includes(action)) {
     const search = /@\s*([A-Za-z0-9_]+)/.exec(text)?.[1];
     return make(action, undefined, action === 'users' ? { limit: 10, ...(search ? { search } : {}) } : {});
   }
@@ -98,7 +98,7 @@ export async function planNaturalAdminRequest(text: string, deps: NaturalPlanner
     return make('user_role', id, { ...identity, isAdmin: true, adminPermissions: { scope: all ? 'ALL' : 'LEAGUES', leagueIds: all ? [] : [...new Set(leagues.map(c => c.leagueId))] } });
   }
   if (action === 'ai_enable' || action === 'ai_disable') return make('ai_config', undefined, { enabled: action === 'ai_enable' });
-  if (['sync','notification_queue','read_model_rebuild','deadline_sweep'].includes(action)) return make(action);
+  if (['club_member_tags_sync','sync','notification_queue','read_model_rebuild','deadline_sweep'].includes(action)) return make(action);
   if (['european_rebuild','qualifications_evaluate'].includes(action)) return make(action);
   if (action === 'season_archive' || action === 'season_rollover') {
     const season = /\bseason-\d{4}-\d{2}\b/.exec(text)?.[0];

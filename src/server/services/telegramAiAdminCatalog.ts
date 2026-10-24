@@ -6,6 +6,8 @@ const action = (method: AdminAction['method'], path: string, fields = ''): Admin
 /** Fixed application endpoints only. No SQL, shell, arbitrary URL or collection access. */
 export const AI_ADMIN_ACTIONS: Record<string, AdminAction> = {
   ...AI_PLATFORM_ACTIONS,
+  club_member_tags: action('GET','/telegram-ai/club-member-tags'),
+  club_member_tags_sync: action('POST','/telegram-ai/club-member-tags/sync'),
   ai_test_query: action('POST','/telegram-ai/test-query','query'), ai_daily_report: action('GET','/telegram-ai/daily-report'),
   season_matchday_advance: action('POST','/season-ops/competitions/:id/advance','seasonId?, durationHours?'),
   season_matchday_open: action('POST','/season-ops/competitions/:id/open-now','seasonId?, durationHours?, matchday?'),

@@ -1,17 +1,17 @@
 # AI administrator capability audit
 
-The fixed action catalog contains 167 operations, each matched against an actually mounted application route by `telegramAiCapabilityAuditRegressionTest.ts`.
+The fixed action catalog contains 169 operations, each matched against an actually mounted application route by `telegramAiCapabilityAuditRegressionTest.ts`.
 
 | Area | Catalog operations |
 |---|---:|
-| EFL core management and diagnostics | 110 |
+| EFL core management and diagnostics | 112 |
 | Discipline | 4 |
 | Custom tournaments | 16 |
 | Tournament tickets | 4 |
 | Team league preview | 6 |
 | UZEFLIFE | 27 |
 
-This is route coverage, not a claim that 167 operations were run against production. Functional regressions use isolated data, original application routes and middleware; Telegram delivery is mocked. No real cards, tournament draws, ticket credits or messages are created for release verification.
+This is route coverage, not a claim that 169 operations were run against production. Functional regressions use isolated data, original application routes and middleware; Telegram delivery is mocked. No real cards, tournament draws, ticket credits or messages are created for release verification.
 
 ## Native administration
 
@@ -48,3 +48,5 @@ The separate engines remain separate: EFL discipline does not silently become a 
 - Real gateway integration tests cover ticket/custom idempotency, account binding, custom assistants, team creation/start, stale versions, notifications and actor revocation.
 - Full AI dispatch tests cover delivered preview, once-only confirmation, yellow/red/revoke receipts, result holds, audit writes, stale match/owner protection, scoped denial, admission, Tashkent scheduling and UZEFLIFE CAS.
 - Existing discipline, UZEFLIFE, schedule, club-admission and AI regression suites remain in CI alongside the new tests.
+
+The final merged-source audit also covers the concurrently introduced club-member-tag status and sync routes. Sync remains an explicit, owner-only, confirmed operation; release verification never runs it.
