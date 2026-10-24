@@ -149,6 +149,8 @@ async function resolveTarget(target:string):Promise<string>{
  return users.docs[0].id;
 }
 export async function mutateUState(u:User,action:string,body:unknown){
+ const expectedRevision=(body as any)?.expectedRevision;
+ if(expectedRevision!==undefined&&(!Number.isInteger(expectedRevision)||expectedRevision<0))throw uError('Turnir holati noto‘g‘ri.',400);
  const parsed=validateUAction(action,body),d=parsed.data;
  const db=getFirestoreDb(),ref=db.collection('uzeflife').doc('championship');
  // Resolve role targets only after permission checks. Never accept a caller-supplied identity.
@@ -178,6 +180,7 @@ export async function mutateUState(u:User,action:string,body:unknown){
  const auditId=randomUUID();
  await db.runTransaction(async tx=>{
   const snap=await tx.get(ref);const s=snap.exists?snap.data() as UState:initialUState();
+  if(expectedRevision!==undefined&&expectedRevision!==s.revision)throw uError('Turnir reja tuzilgandan beri yangilandi. Yangi reja tuzing.',409);
   if(subscriptionRevision!==undefined&&subscriptionRevision!==s.revision)throw uError('Turnir yangilandi. Obunani qayta tekshiring.',409);
   if(action==='addParticipant'){
    requireUPermission(s,u,'participants');

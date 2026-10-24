@@ -1,0 +1,63 @@
+import assert from 'node:assert/strict';
+import {initDatabase} from '../db';
+import {getFirestoreDb} from '../firebase/admin';
+import {ReadModelKeys,redisSetRaw} from '../readModel/readModelStore';
+import {executeAiAdminRoute} from '../services/telegramAiAdminGateway';
+import {AI_ADMIN_ACTIONS} from '../services/telegramAiAdminCatalog';
+import {handleTelegramAiMessage,clearTestAiState,setTestAiResponder} from '../services/telegramAiService';
+import {setTestAiAdminHooks} from '../services/telegramAiAdminService';
+import {setTestConfigOverride,DEFAULT_AI_CONFIG} from '../services/telegramAiConfigService';
+import {clearTestRateLimitState} from '../services/telegramAiRateLimitService';
+import {planExpandedAdminRequest} from '../services/telegramAiExpandedAdmin';
+import {getDiscipline,assertDisciplineFixtureAllowed} from '../services/disciplineService';
+import {inspectAiAdminOutcome} from '../services/telegramAiAdminOutcome';
+
+await initDatabase();process.env.DATABASE_PROVIDER='supabase';process.env.TELEGRAM_BOT_TOKEN='777:isolated-discipline-ai';
+const db=getFirestoreDb(),season='season-2026-27',owner='user-5209126900',player='user-12345',opponent='user-12346',comp='comp-premier-league-2026';
+const users=[{id:owner,telegramId:'5209126900',username:'owner_admin',isAdmin:true,isSuspended:false,adminPermissions:{scope:'ALL',leagueIds:[]}},{id:player,telegramId:'12345',username:'actual_player',isAdmin:false,isSuspended:false},{id:opponent,telegramId:'12346',username:'opponent_user',isAdmin:false,isSuspended:false},{id:'user-7573478198',telegramId:'7573478198',username:'delegate_admin',isAdmin:true,isSuspended:false,adminPermissions:{scope:'LEAGUES',leagueIds:['league-premier-league']}}];
+for(const user of users)await db.collection('users').doc(user.id).set(user);
+const competitions=[{id:comp,name:'Premier League',type:'LEAGUE',leagueId:'league-premier-league',seasonId:season,currentMatchday:9,updatedAt:'2026-10-24T00:00:00Z'}];
+await db.collection('competitions').doc(comp).set(competitions[0]);
+const clubs=[{id:'club-arsenal',name:'Arsenal',leagueId:'league-premier-league',ownerUserId:player,ownerUsername:'actual_player'},{id:'club-chelsea',name:'Chelsea',leagueId:'league-premier-league',ownerUserId:opponent,ownerUsername:'opponent_user'}];
+for(const [user,club]of[[player,'club-arsenal'],[opponent,'club-chelsea']]){await db.collection('user_memberships').doc(`${season}_${user}`).set({userId:user,seasonId:season,clubId:club,status:'active'});await db.collection('club_occupancies').doc(`${season}_${club}`).set({userId:user,seasonId:season,clubId:club,status:'active'});}
+const games=[9,10].map(matchday=>({id:'card-game-'+matchday,competitionId:comp,seasonId:season,matchday,status:'SCHEDULED',homeClubId:'club-arsenal',awayClubId:'club-chelsea',scheduledAt:`2026-10-${matchday===9?'26':'27'}T15:00:00Z`,createdAt:'2026-10-20T00:00:00Z',updatedAt:'2026-10-20T00:00:00Z'}));
+for(const game of games)await db.collection('fixtures').doc(game.id).set(game);
+await redisSetRaw(ReadModelKeys.competitions(season),{data:competitions});await redisSetRaw(ReadModelKeys.clubsWithOwners(season),{data:clubs});await redisSetRaw(ReadModelKeys.competitionFixtures(comp,season),{data:games});await redisSetRaw('efluz:v1:admin:user-directory',{data:users});
+const read:any=async(q:any)=>({data:q.dataset==='competitions'?competitions:q.dataset==='clubs'?clubs:games,complete:true,total:q.dataset==='competitions'?1:2});
+const deps={read,users:async()=>users,now:new Date('2026-10-24T01:00:00Z'),adminRead:(plan:any)=>executeAiAdminRoute(plan,5209126900,'pure-read')};
+for(const text of ['@actual_player ga kartochka ber','@actual_player ga sariq va qizil kartochka ber. Sabab: haqorat','@actual_player sariq kartochkasini bekor qil','@actual_player ga sariq kartochka ber','UZEFLIFE @actual_player ga sariq kartochka ber. Sabab: haqorat'])await assert.rejects(planExpandedAdminRequest(text,deps),/CLARIFY/,text);
+const schedule=await planExpandedAdminRequest('APL o‘yinlar vaqtini ertaga 20:00 ga o‘zgartir',deps);assert.equal(schedule?.body.scheduledAt,'2026-10-25T15:00:00.000Z');assert.equal((schedule?.body.expected as any[]).length,2);
+const venue=await planExpandedAdminRequest('fixture id: card-game-9 stadionini o‘zgartir. Stadion: Emirates Stadium',deps);assert.equal(venue?.body.venue,'Emirates Stadium');assert.equal(venue?.body.scheduledAt,games[0].scheduledAt.replace('Z','.000Z'));
+await assert.rejects(planExpandedAdminRequest('APL o‘yinlar vaqtini 2026-02-30 20:00 ga o‘zgartir',deps),/CLARIFY/);
+const admission=await planExpandedAdminRequest('APL klub tanlashni yop',deps);assert.equal(admission?.body.open,false);assert.ok(Object.hasOwn(admission!.body,'expectedRevision'));
+setTestConfigOverride({...DEFAULT_AI_CONFIG,enabled:true,allowedChatId:-1001,allowedThreadId:3503,rateLimitUserPerMin:20,rateLimitTopicPerMin:60});clearTestAiState();setTestAiResponder(async()=>{throw Error('MODEL_MUST_NOT_RUN');});
+const originalFetch=global.fetch,sent:any[]=[],writes:any[]=[];let id=910000;
+global.fetch=async(input:any,init?:any)=>{assert.match(String(input),/api.telegram.org/);sent.push(JSON.parse(init.body));return Response.json({ok:true,result:{message_id:9000+sent.length}});};
+setTestAiAdminHooks(async(plan,actor,operation,signal)=>{if(AI_ADMIN_ACTIONS[plan.action].method!=='GET')writes.push(structuredClone(plan));return executeAiAdminRoute(plan,actor,operation,signal);});
+const token=()=>sent.at(-1)?.reply_markup?.inline_keyboard?.[0]?.[0]?.callback_data?.split(':')[2];
+async function dispatch(text:string,user=5209126900){clearTestRateLimitState();assert.equal((await handleTelegramAiMessage({updateId:++id,messageId:id,chatId:user,threadId:0,fromUser:{id:user},text})).replySent,true);return sent.at(-1).text;}
+try{
+ await dispatch('@actual_player ga haqorat uchun sariq kartochka ber');assert.ok(token());assert.equal(writes.length,0);
+ const first=token();assert.match(await dispatch('/ai_confirm '+first),/Sariq kartochka saqlandi/);assert.equal(writes.length,1);
+ assert.equal((await getDiscipline(player,season,true)).length,1);await assertDisciplineFixtureAllowed(games[0].id,player);
+ await dispatch('/ai_confirm '+first);assert.equal(writes.length,1,'Once-only delivered confirmation');
+ assert.equal((await db.collection('audit_logs').where('action','==','ISSUE_DISCIPLINE_CARD').get()).size,1);
+ await dispatch('@actual_player ga qizil kartochka ber. Sabab: o‘yinni cho‘zdi');assert.ok(token());assert.match(sent.at(-1).text,/card-game-9/);
+ assert.match(await dispatch('/ai_confirm '+token()),/Qizil kartochka saqlandi/);assert.equal((await getDiscipline(player,season,true)).find(c=>c.color==='RED')?.suspensionFixtureId,games[0].id);
+ await assert.rejects(assertDisciplineFixtureAllowed(games[0].id,opponent),/Qizil kartochka/);
+ const redPlan=writes.at(-1);const retry=await executeAiAdminRoute(redPlan,5209126900,'same-red-retry');assert.equal(retry.status,200,JSON.stringify(retry));assert.equal((await getDiscipline(player,season,true)).length,2);
+ await dispatch('@actual_player qizil kartochkasini bekor qil. Sabab: Xato berilgan');assert.ok(token());assert.match(await dispatch('/ai_confirm '+token()),/Kartochka bekor qilindi/);await assertDisciplineFixtureAllowed(games[0].id,player);
+ await dispatch('@actual_player kartochkalarini ko‘rsat');assert.match(sent.at(-1).text,/Intizom kartochkalari/);assert.ok(!token());
+ await dispatch('@actual_player ga qizil kartochka ber. Sabab: vaqtida o‘ynamadi');const stale=token();assert.ok(stale);await db.collection('fixtures').doc(games[0].id).update({status:'CONFIRMED'});
+ assert.match(await dispatch('/ai_confirm '+stale),/409|o‘zgardi/);assert.equal((await getDiscipline(player,season,true)).length,2);
+ await db.collection('fixtures').doc(games[0].id).update({status:'SCHEDULED'});
+ await dispatch('Arsenal egasiga haqorat uchun sariq kartochka ber');const transfer=token();assert.ok(transfer);await db.collection('club_occupancies').doc(`${season}_club-arsenal`).update({userId:opponent});
+ assert.match(await dispatch('/ai_confirm '+transfer),/egasi o‘zgardi/);assert.equal((await getDiscipline(player,season,true)).length,2);
+ await dispatch('@actual_player ga haqorat uchun sariq kartochka ber',7573478198);assert.ok(!token());assert.match(sent.at(-1).text,/faqat asosiy admin|ruxsat/);
+ await dispatch('APL klub tanlashni yop');assert.ok(token());assert.match(await dispatch('/ai_confirm '+token()),/Klub tanlash yopildi/);
+ await dispatch('APL o‘yinlar vaqtini 2026-10-25 20:00 ga o‘zgartir');assert.ok(token());assert.match(await dispatch('/ai_confirm '+token()),/2 ta o‘yin vaqti/);assert.equal((await db.collection('fixtures').doc(games[1].id).get()).data()?.scheduledAt,'2026-10-25T15:00:00.000Z');
+ await dispatch('UZEFLIFE ro‘yxatni och');assert.ok(token());assert.match(await dispatch('/ai_confirm '+token()),/Bajarildi/);
+ await dispatch('UZEFLIFE ro‘yxatni yop');const staleU=token();assert.ok(staleU);await db.collection('uzeflife').doc('championship').update({revision:99});assert.match(await dispatch('/ai_confirm '+staleU),/409|yangilandi/);
+ assert.equal(inspectAiAdminOutcome({action:'uzeflife_open',body:{}},{ok:false}).state,'unverified');
+}finally{global.fetch=originalFetch;setTestAiAdminHooks();setTestAiResponder(null);setTestConfigOverride(null);clearTestAiState();}
+console.log('PASS actual AI Telegram dispatch → delivered preview → original authorized routes → verified yellow/red/revoke receipts, red result hold, audit/idempotency, stale match/club-owner guards, scoped-admin denial, admission CAS, Tashkent scheduling and UZEFLIFE revision CAS; isolated data and mocked Telegram only');

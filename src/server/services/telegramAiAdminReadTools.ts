@@ -63,6 +63,7 @@ export function createAiAdminReadTools(payload: TelegramAiMessagePayload, signal
       query: { type: 'object', additionalProperties: false, properties: {
         clubId: { type: 'string' }, seasonId: { type: 'string' }, leagueId: { type: 'string' }, competitionId: { type: 'string' },
         includeArchive: { type: 'string', enum: ['0', '1'] }, fixtureId: { type: 'string' }, userId: { type: 'string' }, search: { type: 'string' }, status: { type: 'string' }, cursor: { type: 'string' },
+        category: {type:'string',enum:['ALL','LEAGUE','KNOCKOUT','SUPER_CUP','EUROPEAN']}, includeCompleted:{type:'boolean'},
         matchday: { type: 'integer' }, page: { type: 'integer' }, pageSize: { type: 'integer' }, limit: { type: 'integer' },
       } },
     } },

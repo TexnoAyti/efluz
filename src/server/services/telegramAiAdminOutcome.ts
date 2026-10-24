@@ -9,6 +9,15 @@ export function inspectAiAdminOutcome(plan: AdminPlan, data: any): { state: 'que
   if (data?.authoritative === false || data?.isFallback === true) return {
     state: 'unverified', message: 'Server zaxira holatni qaytardi. Asosiy bazadagi yakuniy holat tasdiqlanmadi; qayta avtomatik bajarilmaydi.',
   };
+  if(['discipline_issue','discipline_revoke'].includes(plan.action)) {
+    const card=data?.card;
+    const matches=card?.userId===plan.targetId&&card?.seasonId===plan.body.seasonId&&(plan.action==='discipline_issue'
+      ? card.id==='card-'+plan.body.requestId&&card.status==='ACTIVE'&&card.color===plan.body.color&&card.reason===plan.body.reason&&card.note===plan.body.note&&card.incidentFixtureId===plan.body.incidentFixtureId&&(!Object.hasOwn(plan.body,'expectedSuspensionFixtureId')||card.suspensionFixtureId===plan.body.expectedSuspensionFixtureId)
+      : data.success===true&&card.id===plan.secondaryId&&card.status==='REVOKED'&&card.revokeReason===plan.body.reason);
+    return matches?{state:'verified',message:plan.action==='discipline_revoke'?'Kartochka bekor qilindi. Saqlangan holati tekshirildi.':card.color==='RED'?`Qizil kartochka saqlandi. ${card.suspensionFixtureId?'Bir o‘yinlik chetlatish bog‘landi.':'Chetlatish keyingi mos o‘yinga bog‘lanadi.'}`:'Sariq kartochka saqlandi — ogohlantirish.'}:{state:'unverified',message:'Kartochka javobi tasdiqlangan rejaga mos kelmadi. Intizom bo‘limini tekshiring; avtomatik takrorlanmaydi.'};
+  }
+  if(plan.action==='admission_league')return data?.admission?.leagueOverrides?.[String(plan.body.leagueId)]===plan.body.open?{state:'verified',message:`Klub tanlash ${plan.body.open?'ochildi':'yopildi'}. Saqlangan holati tekshirildi.`}:{state:'unverified',message:'Klub tanlashning yakuniy holati tasdiqlanmadi; avtomatik takrorlanmaydi.'};
+  if(plan.action==='fixture_schedule')return data?.success===true&&data?.partial===false&&data?.updated===(plan.body.expected as any[])?.length&&data?.scheduledAt===(plan.body.scheduledAt||'')&&(plan.body.venue===undefined||data.venue===plan.body.venue)?{state:'verified',message:`${data.updated} ta o‘yin vaqti/stadioni yangilandi.`}:{state:'unverified',message:'Jadval qisman o‘zgargan yoki javob rejaga mos kelmadi. Holatini tekshiring; avtomatik takrorlanmaydi.'};
   if (plan.action === 'results_bulk_apply') {
     const matches = data?.authoritative === true && data?.success === true && data?.appliedCount === plan.body.expectedCount &&
       data?.competitionId === plan.targetId && ['seasonId','fromMatchday','toMatchday','homeScore','awayScore','previewHash'].every(k => data[k] === plan.body[k]);
@@ -44,5 +53,6 @@ export function inspectAiAdminOutcome(plan: AdminPlan, data: any): { state: 'que
     if (!matches) return { state: 'unverified', message: 'Server qaytargan o‘yin holati tasdiqlangan rejaga mos kelmadi. Natijani admin panelda tekshiring; amal avtomatik takrorlanmaydi.' };
     return { state: 'verified', message: 'Bajarildi. Server qaytargan saqlangan natija reja bilan mosligi tekshirildi.' };
   }
+  if(data?.success===false||data?.ok===false||data?.partial===true||data?.error)return {state:'unverified',message:'Server amalning to‘liq bajarilganini tasdiqlamadi. Holatini tekshiring; avtomatik takrorlanmaydi.'};
   return { state: 'accepted', message: 'Bajarildi.' };
 }

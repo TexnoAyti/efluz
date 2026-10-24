@@ -1,3 +1,6 @@
+import { requestedMatchday } from './telegramAiConversationCommands';
+import { isPlatformAdminRequest } from './telegramAiPlatformCatalog';
+import { planExpandedAdminRequest, expandedAdminIntent } from './telegramAiExpandedAdmin';
 import { planReplyReminder } from './telegramAiReminderSelection';
 import { bindMatchdaySnapshot } from './telegramAiMatchdayLanguage';
 import { parseBulkResultRequest } from './telegramAiBulkResultLanguage';
@@ -18,7 +21,7 @@ import { resolveAiClubs, normalizeAiEntity } from './telegramAiEntities';
 import { createAiSnapshotReader } from './telegramAiSnapshotReader';
 import { getAdminUserDirectory } from './adminUserDirectory';
 import { assertSingleNaturalAdminRequest } from './telegramAiAdminLanguage';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { AI_ADMIN_ACTIONS, adminPlanSchema, type AdminPlan } from './telegramAiAdminCatalog';
 import { getAiRedisClient, withinAiDeadline } from './telegramAiDeadline';
 import { isAiAdminActor, assertAiAdminActionAllowed } from './telegramAiAdminAccess';
@@ -79,8 +82,14 @@ async function planBulkLeagueRequest(request: string, signal: AbortSignal): Prom
 
 export function describeAiAdminPlan(plan: AdminPlan, label = ''): string {
   const b = plan.body;
+  const target = label || (b.expectedUsername?'@'+b.expectedUsername:plan.targetId||'');
+  if(plan.action==='team_save')return `${b.name}: teamni saqlash. Tarkib: ${(b.members as any[])?.map(m=>m.name).join(', ')}. Sardor: ${(b.members as any[])?.find(m=>m.id===b.captainMemberId)?.name||b.captainMemberId}.`;
+  if(plan.action==='team_league_save')return `${b.name}: ${(b.teamIds as any[])?.length||0} ta team, ${b.starterCount} asosiy o‘yinchi, ${b.rounds} davra, ${b.format||'LEAGUE'} formatini saqlash.`;
+  if(plan.action==='discipline_issue')return `${target}: ${b.color==='RED'?'qizil kartochka — keyingi bitta EFL o‘yinidan chetlatish':'sariq kartochka — ogohlantirish'}.\nSabab: ${b.note}\n${b.color==='RED'?(b.expectedSuspensionFixtureId?'Chetlatish o‘yini: '+b.expectedSuspensionFixtureId:'Jadvalda mos o‘yin yo‘q; chetlatish keyingi mos o‘yinga bog‘lanadi.'):'Hisob kiritish bloklanmaydi.'}`;
+  if(plan.action==='discipline_revoke')return `${target}: ${plan.secondaryId} kartochkasini bekor qilish.\nSabab: ${b.reason}`;
+  if(plan.action==='admission_league')return `${b.leagueId}: klub tanlashni ${b.open?'ochish':'yopish'}.`;
+  if(plan.action==='fixture_schedule')return `${label||b.competitionId||b.fixtureId||b.category}: ${(b.expected as any[])?.length||0} ta o‘yin.\nVaqt: ${b.scheduledAt?new Intl.DateTimeFormat('uz-UZ',{timeZone:'Asia/Tashkent',dateStyle:'short',timeStyle:'short'}).format(new Date(String(b.scheduledAt))):'belgilanmagan'}${b.venue!==undefined?'\nStadion: '+(b.venue||'belgilanmagan'):''}. Mavjud holat o‘zgarsa reja rad etiladi.`;
   if (plan.action === 'results_bulk_apply') return `Ommaviy natija: ${label || plan.targetId}.\n${b.seasonId}, ${b.fromMatchday}–${b.toMatchday}-turlar (oxirgi tur ham kiradi).\n${b.expectedCount} ta o‘yinga uy ${b.homeScore}:${b.awayScore} safar hisobi.\nFaqat natijasi va arizasi yo‘q SCHEDULED/POSTPONED o‘yinlar. Mavjud, tasdiq kutayotgan va bahsli natijalar saqlanadi.\nNatijalar bitta tranzaksiyada yoziladi; jadval va xabarnomalar keyin yangilanadi.`;
-  const target = label || plan.targetId || '';
   if (plan.action === 'matchday_control' || plan.action === 'cup_round') {
     const verbs: Record<string,string> = { LOCK:'qulflash', OPEN:'ochish', SELECT:'tanlash', EXTEND:'muddatini uzaytirish', RESTART:'qayta boshlash' };
     return `${target}: ${b.matchday || b.roundNumber}-${plan.action === 'cup_round' ? 'bosqichni' : 'turni'} ${verbs[String(b.action)] || String(b.action)}${b.durationHours ? ', ' + b.durationHours + ' soat' : ''}.`;
@@ -187,6 +196,18 @@ async function finish(record: Pending, result?: Pending['result']) {
   if (client) await client.set(prefix + record.token, JSON.stringify(final)).catch(() => undefined);
   else if (process.env.NODE_ENV === 'test') testStore.set(record.token, final);
 }
+async function expandedNativePlan(request:string,payload:TelegramAiMessagePayload,signal:AbortSignal) {
+  if(!expandedAdminIntent(request))return null;
+  assertSingleNaturalAdminRequest(request);
+  return planExpandedAdminRequest(request,{
+    read:createAiTournamentReader(signal).read,
+    users:async()=>{const cached=await createAiSnapshotReader(signal).read<any>('efluz:v1:admin:user-directory');return cached.available?cached.data:withinAiDeadline(signal,()=>getAdminUserDirectory());},
+    adminRead:plan=>withinAiDeadline(signal,()=>(testExecutor||executeAiAdminRoute)(plan,payload.fromUser.id,'ai-expanded-read-'+payload.updateId,signal)),
+  });
+}
+async function platformSemanticPlan(request:string,payload:TelegramAiMessagePayload,signal:AbortSignal,facts:string) {
+  return isPlatformAdminRequest(request)?planAiAdminAction(request,facts,signal,payload):null;
+}
 export async function planAiAdminAction(request: string, facts: string, signal: AbortSignal, payload?: TelegramAiMessagePayload): Promise<AdminPlan> {
   if (request.trim().startsWith('{')) return adminPlanSchema.parse(JSON.parse(request));
   if (testPlanner) return adminPlanSchema.parse(await testPlanner(request));
@@ -223,12 +244,17 @@ export async function planAiAdminAction(request: string, facts: string, signal: 
   const raw = JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, '').trim());
   if (typeof raw.clarification === 'string') throw new Error('CLARIFY:' + raw.clarification.slice(0, 300));
   const plan = adminPlanSchema.parse(raw);
+  if (['discipline_issue','discipline_revoke','discipline_view','admission_league','fixture_schedule'].includes(plan.action)) {
+    const explicit=payload?await expandedNativePlan(request,payload,signal):null;
+    if(!explicit||explicit.action!==plan.action)throw new Error('CLARIFY:Bu amal uchun o‘yinchi, sabab yoki o‘zgartiriladigan parametrni aniq yozing.');
+    return explicit;
+  }
   if (plan.action === 'broadcast') {
     const explicit = await parseNaturalAdminPlan(request, signal);
     if (!explicit || explicit.action !== 'broadcast') throw new Error('CLARIFY:Xabar matni va qabul qiluvchini aniq yozing. Masalan: APL egalariga “11-tur ochildi” deb xabar yubor.');
     return explicit;
   }
-  const identity = String(plan.body.targetUserId || plan.body.userId || (/^user_/.test(plan.action) ? plan.targetId || '' : ''));
+  const identity = String(plan.body.targetUserId || plan.body.userId || plan.body.assistantUserId || (['uzeflife_participant_add','uzeflife_review','uzeflife_super_admin','uzeflife_assistant','uzeflife_assistant_remove'].includes(plan.action)?plan.body.target:'') || (['custom_review','custom_remove','custom_assistant_remove'].includes(plan.action)?plan.secondaryId:'') || (/^user_/.test(plan.action) ? plan.targetId || '' : ''));
   const supplied = [...new Set((request.match(/@\s*[A-Za-z0-9_]+|\buser-\d+\b/g) || []).map(ref => ref.replace(/\s/g, '').toLowerCase()))];
   delete plan.body.expectedUsername;
   if (identity && (!supplied.includes(identity.toLowerCase()) && !verifiedUsers.has(identity) || supplied.length !== 1))
@@ -255,6 +281,13 @@ export async function planAiAdminAction(request: string, facts: string, signal: 
     plan.body.manualHomeScore = score.homeScore;
     plan.body.manualAwayScore = score.awayScore;
     delete plan.body.homeScore; delete plan.body.awayScore;
+  }
+  if(payload&&plan.targetId&&/^(?:custom_|team_)/.test(plan.action)&&!request.includes(plan.targetId)) {
+    const readAction=plan.action.startsWith('custom_')?'custom_detail':plan.action==='team_profile'?'team_profile':'team_league';
+    const response=await withinAiDeadline(signal,()=>executeAiAdminRoute({action:readAction,targetId:plan.targetId,body:{}},payload.fromUser.id,'ai-platform-verify-'+payload.updateId,signal));
+    const entity=response.data?.tournament||response.data?.data;
+    if(response.status!==200||!entity?.name||!normalizeAiEntity(request).includes(normalizeAiEntity(entity.name)))throw new Error('CLARIFY:Qaysi aniq turnir yoki jamoa? Nom yoki IDni yozing.');
+    records.verifiedTargets.add(`${plan.action}:${plan.targetId}`);
   }
   await validateModelAdminPlan(plan, request + [...verifiedUsers.keys()].map(id => `\nServer verified user ID: ${id}`).join(''), signal, records.verifiedTargets);
   return plan;
@@ -295,6 +328,11 @@ async function handleAiAdminCommandInternal(payload: TelegramAiMessagePayload, s
 • @username ga premium ber
 • La Liga jadvalini qayta hisobla
 • APL ligasini pauzaga qo‘y / avtomatik rejimga qaytar
+• @username ga haqorat uchun sariq kartochka ber
+• @username ga qizil kartochka ber. Sabab: o‘yinni cho‘zdi
+• @username sariq kartochkasini bekor qil. Sabab: xato berilgan
+• APL klub tanlashni yop
+• APL o‘yinlar vaqtini 2026-10-25 20:00 ga o‘zgartir
 • APL 11-turni 2 kunga ochgin
 • APL keyingi turga 1 kunga o‘tkaz
 • APL 10-turda hisob kiritmaganlarga eslatma yubor
@@ -315,7 +353,7 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
     if (command === 'read') {
       if (!privateChat) return 'Yopiq admin ma’lumotlarini olish uchun botning shaxsiy chatida /ai_read ishlating.';
       const plan = argument.startsWith('{') ? adminPlanSchema.parse(JSON.parse(argument)) : await parseNaturalAdminPlan(argument, signal) || await planAiAdminAction(argument, facts, signal, payload);
-      assertAiAdminActionAllowed(payload.fromUser.id, plan);
+    assertAiAdminActionAllowed(payload.fromUser.id, plan);
       if (AI_ADMIN_ACTIONS[plan.action].method !== 'GET') return '/ai_read faqat o‘qish uchun.';
       const result = await withinAiDeadline(signal, () => (testExecutor || executeAiAdminRoute)(plan, payload.fromUser.id, 'ai-read-' + payload.updateId, signal));
       return `HTTP ${result.status}\n${JSON.stringify(result.data).slice(0, 850)}\nKatta ro‘yxat uchun search/page/limit filtrlarini body ichida kiriting.`;
@@ -381,12 +419,16 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
     // Explicit test planners replace planning only in isolated tests; production always resolves cached club IDs.
     let plan = correctionSource && correction ? reviseAiAdminPlan(correctionSource.plan, correction, correctionSource.scoreHomeFirst)
       : testPlanner ? await planAiAdminAction(argument, facts, signal, payload)
-      : await planReplyReminder(argument,scope.replyReminderSelection,createAiTournamentReader(signal).read)
+      : await expandedNativePlan(argument,payload,signal)
+        || await platformSemanticPlan(argument,payload,signal,facts)
+        || await planReplyReminder(argument,scope.replyReminderSelection,createAiTournamentReader(signal).read)
         || await planBulkLeagueRequest(argument,signal)
         || await contextualFixturePlan(argument,recentFixture?[recentFixture]:scope.selectedFixtureIds||[],signal)
         || await contextualClubPlan(argument,scope.selectedClubIds||[],scope.previousUserQueries||[],signal)
         || await parseConversationClubAssignmentPlan(argument, signal)
         || await parseNaturalAdminPlan(argument, signal) || await parseConversationMatchdayPlan(argument, scope, signal) || await planAiAdminAction(argument, facts, signal, payload);
+    const canonicalAction=({season_matchday_advance:'matchday_advance',season_matchday_open:'matchday_open_now',season_no_show_resolve:'no_show_resolve'} as Record<string,string>)[plan.action];
+    if(canonicalAction)plan={...plan,action:canonicalAction};
     assertAiAdminActionAllowed(payload.fromUser.id, plan);
     let bulkLabel = '';
     if (plan.action === 'results_bulk_apply') {
@@ -402,6 +444,31 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
       plan.body = {...explicit.body,previewHash:data.previewHash,expectedCount:data.count};
       bulkLabel = String(data.competitionName) + '\nTurlar bo‘yicha: ' + Object.entries(data.rounds || {}).map(([round,count])=>`${round}-tur: ${count}`).join(', ') + `.\nO‘zgarmaydi: ${data.skipped} ta.\nNamuna: ` + (data.sample || []).join('; ');
     }
+    if(['team_save','team_league_save'].includes(plan.action)&&!plan.body.id){plan.body.id='tp_'+randomUUID();plan.body.version=0;}
+    if(plan.action==='team_save'&&Array.isArray(plan.body.members)) {
+      plan.body.members=plan.body.members.map((member:any)=>({...member,id:member.id||'tp_'+randomUUID()}));
+      if(!plan.body.captainMemberId) {
+        const captains=(plan.body.members as any[]).filter((member:any)=>typeof plan.body.captainName==='string'&&member.name===plan.body.captainName);
+        if(captains.length!==1)throw new Error('CLARIFY:Team sardori qaysi o‘yinchi? Tarkibdagi aniq ismini yozing.');
+        plan.body.captainMemberId=captains[0].id;
+      }
+      delete plan.body.captainName;
+    }
+    if(plan.action.startsWith('uzeflife_')&&AI_ADMIN_ACTIONS[plan.action].method!=='GET') {
+      const current=await withinAiDeadline(signal,()=>(testExecutor||executeAiAdminRoute)({action:'uzeflife_state',body:{}},payload.fromUser.id,'ai-uzeflife-preview-'+payload.updateId,signal));
+      if(current.status!==200||current.data?.ok!==true||!Number.isInteger(current.data.revision))throw new Error('CLARIFY:UZEFLIFE joriy holati o‘qilmadi.');
+      if(plan.body.matchId&&!argument.includes(String(plan.body.matchId)))throw new Error('CLARIFY:UZEFLIFE uchun aniq o‘yin IDni yozing.');
+      const round=requestedMatchday(argument);
+      if(round&&(plan.action!=='uzeflife_next'||round!==current.data.round+1))throw new Error('CLARIFY:UZEFLIFE uchun so‘ralgan bosqich joriy holatga mos kelmadi.');
+      plan.body.expectedRevision=current.data.revision;
+      try{(await import('./uzeflifeService')).validateUAction(AI_ADMIN_ACTIONS[plan.action].path.split('/').at(-1)!,plan.body);}catch{throw new Error('CLARIFY:UZEFLIFE amali uchun kerakli parametrlar to‘liq yoki to‘g‘ri emas. O‘yin, ishtirokchi va parametrlarni aniqlashtiring.');}
+      if(plan.action==='uzeflife_approve') {
+        const proposal=current.data.matches?.find((m:any)=>m.id===plan.body.matchId)?.proposal;
+        if(!proposal)throw new Error('CLARIFY:Bu o‘yinda tasdiq kutayotgan natija yo‘q.');
+        plan.body.expected=proposal;
+      }
+    }
+    if(plan.action==='discipline_issue')plan.body.requestId=randomUUID();
     assertAdminPlanReady(plan);
     await clearAiAdminDraft(payload, signal);
     if (AI_ADMIN_ACTIONS[plan.action].method === 'GET') {
@@ -441,6 +508,10 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
         plan = bindMatchdaySnapshot(plan, found.data[0]);
       }
     }
+    if(plan.action==='fixture_schedule'&&plan.body.competitionId) {
+      const competition:any=await lookup.read({dataset:'competitions',competition:plan.body.competitionId,limit:1});
+      targetLabel=competition.data?.[0]?.name||String(plan.body.competitionId);
+    }
     if (/^user_/.test(plan.action)) {
       const username = /@\s*([A-Za-z0-9_]+)/.exec(argument.replace(/^\/ai_admin(?:@[A-Za-z0-9_]+)?\s*/i,''))?.[1];
       if (username) targetLabel = '@' + username + ' (' + plan.targetId + ')';
@@ -469,6 +540,10 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
 }
 
 function formatNaturalAdminRead(action: string, data: any): string {
+  if(action==='discipline_view'&&Array.isArray(data?.cards)) {
+    if(!data.cards.length)return 'Bu mavsumda kartochkalar yo‘q.';
+    return ['Intizom kartochkalari:',...data.cards.slice(0,10).map((c:any)=>`${c.color==='RED'?'🟥':'🟨'} ${c.status==='ACTIVE'?'Faol':'Bekor qilingan'} · ${c.id}\nSabab: ${c.note||c.reason}${c.color==='RED'?'\nChetlatish: '+(c.suspensionFixtureId||'keyingi mos o‘yin kutilmoqda'):''}`),...(data.cards.length>10?[`Yana ${data.cards.length-10} ta kartochka bor.`]:[])].join('\n\n').slice(0,3500);
+  }
   const titles: Record<string,string> = {users:'Foydalanuvchilar',ai_settings:'AI sozlamalari',premium_overview:'Premium holati',broadcasts:'Yuborilgan xabarlar',notification_messages:'Xabarnomalar',health:'Baza holati',season_control:'Mavsum holati',audit:'Admin amallari tarixi',overview:'Platforma holati',metrics:'O‘qish statistikasi',pending_results:'Tasdiq kutayotgan natijalar',disputes:'Bahsli natijalar',notification_types:'Xabarnoma turlari',admission:'Klublarni qabul qilish navbati',european_preview:'Yevropa saralashi oldindan ko‘rish',matchday_status:'Tur boshqaruvi holati',cup_health:'Kubok holati'};
   if (action === 'matchday_status' && Array.isArray(data?.rounds)) {
     const rounds = data.rounds.filter((r:any) => r.isOpen || r.matchday === data.currentMatchday);

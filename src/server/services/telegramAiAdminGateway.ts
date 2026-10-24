@@ -1,3 +1,4 @@
+import { aiAdminRequestUrl } from './telegramAiPlatformCatalog';
 import express from 'express';
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { Socket } from 'node:net';
@@ -5,24 +6,35 @@ import type { AdminPlan } from './telegramAiAdminCatalog';
 import { AI_ADMIN_ACTIONS, adminPlanPath, adminPlanSchema } from './telegramAiAdminCatalog';
 import { isAiAdminActor, assertAiAdminActionAllowed } from './telegramAiAdminAccess';
 
+const mountedRoutes:Array<{method:string;path:string}>=[];
+export async function getAiAdminMountedRoutes(){await getGateway();return mountedRoutes.map(row=>({...row}));}
 let gatewayPromise: Promise<ReturnType<typeof express>> | undefined;
 async function getGateway() {
   return gatewayPromise ||= (async () => {
-    const [cups, cupOps, matches, consistency, main, seasons, lifecycle, telegram, aiConfig] = await Promise.all([
+    const [cups, cupOps, matches, consistency, main, seasons, lifecycle, telegram, aiConfig, notifications, discipline, custom, tickets, team, uzeflife] = await Promise.all([
       import('../routes/adminCupDraw.routes'), import('../routes/adminCupOps.routes'),
       import('../routes/adminMatchControl.routes'), import('../routes/consistencyGuard.routes'),
       import('../routes/admin.routes'), import('../routes/seasonOperations.routes'),
-      import('../routes/seasonLifecycle.routes'), import('../routes/telegram.routes'), import('../routes/adminAiConfig.routes'),
+      import('../routes/seasonLifecycle.routes'), import('../routes/telegram.routes'), import('../routes/adminAiConfig.routes'), import('../routes/adminNotifications.routes'), import('../routes/discipline.routes'), import('../routes/customTournaments.routes'), import('../routes/customTournamentTickets.routes'), import('../routes/teamLeaguePreview.routes'), import('../routes/uzeflife.routes'),
     ]);
     const app = express();
     // Same routing order as production; preserves cup auto-progression and deletion guards.
-    app.use('/api/admin/telegram-ai', aiConfig.adminAiConfigRouter);
-    app.use('/api/admin/cups', cups.adminCupDrawRouter);
-    app.use('/api/admin/season-lifecycle', lifecycle.adminSeasonLifecycleRouter);
-    app.use('/api/admin/season-ops', seasons.adminSeasonOperationsRouter);
-    app.use('/api/admin', cupOps.adminCupOpsRouter, matches.adminMatchControlRouter, consistency.adminConsistencyRouter, main.adminRouter);
-    app.use('/api/telegram', telegram.telegramRouter);
-    app.use('/api/season-ops', seasons.seasonOperationsRouter);
+    const mounts:Array<[string,express.Router]>=[
+      ['/api/discipline',discipline.disciplineRouter],
+      ['/api/admin/telegram-ai',aiConfig.adminAiConfigRouter],['/api/admin/cups',cups.adminCupDrawRouter],
+      ['/api/admin/season-lifecycle',lifecycle.adminSeasonLifecycleRouter],['/api/admin/season-ops',seasons.adminSeasonOperationsRouter],
+      ['/api/admin',cupOps.adminCupOpsRouter],['/api/admin',matches.adminMatchControlRouter],['/api/admin',consistency.adminConsistencyRouter],['/api/admin',main.adminRouter],
+      ['/api/telegram',telegram.telegramRouter],['/api/season-ops',seasons.seasonOperationsRouter],
+      ['/api/admin/custom-tournaments/tickets',tickets.customTournamentTicketsRouter],['/api/custom-tournaments',custom.customTournamentsRouter],
+      ['/api/team-leagues-preview',team.teamLeaguePreviewRouter],['/api/uzeflife',uzeflife.uzeflifeRouter],
+    ];
+    for(const [prefix,router] of mounts){
+      app.use(prefix,router);
+      for(const layer of (router as any).stack||[]) {
+        if(layer.route)for(const method of Object.keys(layer.route.methods))mountedRoutes.push({method:method.toUpperCase(),path:prefix+(layer.route.path==='/'?'':layer.route.path)});
+        else if(layer.handle===notifications.adminNotificationsRouter)for(const child of (layer.handle as any).stack||[])if(child.route)for(const method of Object.keys(child.route.methods))mountedRoutes.push({method:method.toUpperCase(),path:prefix+'/notifications'+(child.route.path==='/'?'':child.route.path)});
+      }
+    }
     return app;
   })();
 }
@@ -40,7 +52,7 @@ export async function executeAiAdminRoute(plan: AdminPlan, ownerId: number, oper
   if (!realOwner || String(realOwner.telegramId) !== String(ownerId) || !realOwner.isAdmin || realOwner.isSuspended) throw new Error('OWNER_AUTHORIZATION_UNAVAILABLE');
   if (signal?.aborted) throw new Error('TIMEOUT_ABORTED');
   if (plan.body.expectedUsername !== undefined) {
-    const target = plan.action === 'club_assign' ? String(plan.body.targetUserId || '') : plan.targetId || String(plan.body.userId || (Array.isArray(plan.body.selectedUserIds) && plan.body.selectedUserIds.length === 1 ? plan.body.selectedUserIds[0] : '') || '');
+    const target = String(plan.body.targetUserId || plan.body.userId || plan.body.assistantUserId || (['uzeflife_participant_add','uzeflife_review','uzeflife_super_admin','uzeflife_assistant','uzeflife_assistant_remove'].includes(plan.action)?plan.body.target:'') || (['custom_review','custom_remove','custom_assistant_remove'].includes(plan.action)?plan.secondaryId:'') || plan.targetId || (Array.isArray(plan.body.selectedUserIds) && plan.body.selectedUserIds.length === 1 ? plan.body.selectedUserIds[0] : '') || '');
     let user;
     try { user = target === realOwner.id ? realOwner : await getAuthoritativeUserForAuthorization(target); }
     catch(error:any) { if (/RESOURCE_EXHAUSTED|quota|CIRCUIT_OPEN/i.test(error?.message || '')) throw new Error('ADMIN_DATABASE_QUOTA'); throw error; }
@@ -49,10 +61,16 @@ export async function executeAiAdminRoute(plan: AdminPlan, ownerId: number, oper
     plan = {...plan,body:{...plan.body}};
     delete plan.body.expectedUsername;
   }
+  if (plan.body.expectedClubId !== undefined) {
+    const { getFirestoreDb } = await import('../firebase/admin');
+    const occupancy=(await getFirestoreDb().collection('club_occupancies').doc(`${plan.body.seasonId}_${plan.body.expectedClubId}`).get()).data();
+    if (!occupancy || occupancy.status !== 'active' || occupancy.userId !== plan.targetId) return {status:409,data:{error:'CLUB_OWNER_CHANGED',message:'Klub egasi o‘zgardi. Yangi egasi bilan qayta reja tuzing.'}};
+    plan={...plan,body:{...plan.body}};delete plan.body.expectedClubId;
+  }
+  if(['ticket_grant','custom_create','custom_publish'].includes(plan.action))plan={...plan,body:{...plan.body,idempotencyKey:operationId}};
   const spec = AI_ADMIN_ACTIONS[plan.action];
   const path = adminPlanPath(plan);
-  const url = path.startsWith('@telegram') ? '/api/telegram' + path.slice('@telegram'.length)
-    : path.startsWith('@season') ? '/api/season-ops' + path.slice('@season'.length) : '/api/admin' + path;
+  const url = aiAdminRequestUrl(path);
   const app = await getGateway();
   if (signal?.aborted) throw new Error('TIMEOUT_ABORTED');
   return new Promise((resolve, reject) => {
