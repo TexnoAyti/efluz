@@ -66,8 +66,8 @@ clearProcessMemoryForTest();
 const db = getFirestoreDb(), original = db.collection;
 (db as any).collection = () => { throw new Error('Unexpected Firestore read for a fresh canonical snapshot'); };
 const results = await Promise.all(['league-premier-league','league-la-liga','league-serie-a','league-bundesliga','league-ligue-1'].map(id => getLeagueClubsFromReadModel(id, 'season-2026-27')));
-assert.deepEqual(results.map(item => item.clubs.length), [20,20,20,18,18]);
-assert.equal((await getAdminClubsFromReadModel('season-2026-27')).clubs.length, 96);
+assert.deepEqual(results.map(item => item.clubs.length), [20,20,20,18,0]);
+assert.equal((await getAdminClubsFromReadModel('season-2026-27')).clubs.length, 78);
 assert(results.every(item => item.clubs.every(club => (club as unknown as { ownerUserId: string }).ownerUserId === 'existing-owner')));
 (db as any).collection = original;
 // Ownership changes invalidate the canonical cache; parallel leagues rebuild once.

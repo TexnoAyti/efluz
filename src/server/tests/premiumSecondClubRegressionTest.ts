@@ -37,7 +37,7 @@ async function run() {
   );
   await claimClubAtomicFirestore(userId, 'club-real-madrid', seasonId, { authoritativeOnly: true });
   await assert.rejects(
-    () => claimClubAtomicFirestore(userId, 'club-psg', seasonId, { authoritativeOnly: true }),
+    () => claimClubAtomicFirestore(userId, 'club-inter', seasonId, { authoritativeOnly: true }),
     (error: any) => error.code === 'CLUB_SELECTION_LOCKED',
   );
 
@@ -79,11 +79,11 @@ async function run() {
   assert.equal(afterSecondaryRelease.data()?.status, 'active');
   assert.equal(afterSecondaryRelease.data()?.clubId, 'club-arsenal');
   assert.equal(afterSecondaryRelease.data()?.secondaryClubId, null);
-  await claimClubAtomicFirestore(userId, 'club-psg', seasonId, { authoritativeOnly: true });
+  await claimClubAtomicFirestore(userId, 'club-inter', seasonId, { authoritativeOnly: true });
   await adminReleaseClubFirestore('admin-test', 'club-arsenal', seasonId, { authoritativeOnly: true });
   const afterPrimaryRelease = await db.collection('user_memberships').doc(`${seasonId}_${userId}`).get();
   assert.equal(afterPrimaryRelease.data()?.status, 'active');
-  assert.equal(afterPrimaryRelease.data()?.clubId, 'club-psg');
+  assert.equal(afterPrimaryRelease.data()?.clubId, 'club-inter');
   assert.equal(afterPrimaryRelease.data()?.secondaryClubId, null);
   console.log('Premium second club regression: PASS');
 }
