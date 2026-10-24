@@ -48,6 +48,13 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
   const isHomeOwner = fixture.homeOwnerId === user?.id;
   const isAwayOwner = fixture.awayOwnerId === user?.id;
 
+  const [disciplineBlocked, setDisciplineBlocked] = useState(false);
+  const [disciplineChecked, setDisciplineChecked] = useState(false);
+  useEffect(() => {
+    let cancelled=false;setDisciplineChecked(false);setDisciplineBlocked(false);
+    api.checkFixtureDiscipline(fixture.id).then(result=>{if(!cancelled){setDisciplineBlocked(result.blocked);setDisciplineChecked(true);}}).catch(()=>{if(!cancelled)setDisciplineChecked(true);});
+    return()=>{cancelled=true;};
+  },[fixture.id]);
   const [homeScore, setHomeScore] = useState<number>(
     fixture.userSubmission ? fixture.userSubmission.homeScore : 0
   );
@@ -90,6 +97,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
     setErrorMsg(null);
 
     try {
+      if (disciplineBlocked) throw new Error('Qizil kartochka: bu o‘yin natijasini admin hal qiladi.');
       if (isCup) resolveCupResult({ homeScore, awayScore, ...cupScores }, fixture, true);
       const res = await api.submitFixtureResult(fixture.id, homeScore, awayScore, proofUrl.trim() || undefined, isCup ? cupScores : {});
 
@@ -125,7 +133,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 dark:bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+    <div className="efl-viewport-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 dark:bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
       <div
         className={`w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${
           EFL_2_DESIGN_ENABLED
@@ -398,6 +406,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
             </div>
           </div>
 
+          {disciplineBlocked && <p role="alert" className="rounded-xl border border-red-500/30 p-3 text-xs text-red-500">Qizil kartochka tufayli bir o‘yinlik chetlatish bor. Bu o‘yin natijasini admin hal qiladi.</p>}
           {isCup && <CupTieBreakFields value={cupScores} onChange={(value) => setCupScores(cupScoreMetadata(value))} homeScore={homeScore} awayScore={awayScore} homeLabel={fixture.homeClub?.name || "Home"} awayLabel={fixture.awayClub?.name || "Away"} />}
 
           {/* Screenshot / Proof URL */}
@@ -449,7 +458,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || disciplineBlocked || !disciplineChecked}
               id="btn-confirm-score-submit"
               className={`flex-1 py-2.5 px-4 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 transition-all shadow-xs ${
                 EFL_2_DESIGN_ENABLED

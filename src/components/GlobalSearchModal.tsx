@@ -208,7 +208,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-label="Global Search"
-      className="efl-theme-search-overlay fixed inset-0 z-[100] flex flex-col bg-slate-950/60 dark:bg-black/80 backdrop-blur-xl animate-in fade-in duration-200"
+      className="efl-theme-search-overlay efl-viewport-overlay fixed inset-0 z-[100] flex flex-col bg-slate-950/60 dark:bg-black/80 backdrop-blur-xl animate-in fade-in duration-200"
     >
       <div className="w-full max-w-2xl mx-auto px-4 pt-4 pb-3 sm:pt-6 flex flex-col h-full text-slate-900 efl-theme-text dark:text-white">
         {/* Search Input Bar */}

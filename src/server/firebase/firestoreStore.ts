@@ -1,3 +1,5 @@
+import { assertDisciplineFixtureAllowed, prepareFixtureDiscipline } from '../services/disciplineService';
+import { assertNoDisciplinaryHold } from '../../types/discipline';
 import { clubStadium } from '../../constants/clubStadiums';
 import { isDomesticCupResult as isResultCup } from '../../lib/cupResult';
 import { cupScoreMetadata, sameResultScores, type CupTieBreakScores, resolveCupResult } from '../../lib/cupResult';
@@ -3979,6 +3981,8 @@ export async function submitFixtureResultFirestore(
     throw new Error('Scores must be integers between 0 and 99.');
   }
 
+  await assertDisciplineFixtureAllowed(fixtureId, userId);
+
   const db = getFirestoreDb();
   const now = new Date().toISOString();
   const submissionId = `sub-${fixtureId}-${userId}`;
@@ -4170,6 +4174,7 @@ export async function submitFixtureResultFirestore(
 
       if (!txFixDoc.exists) throw new Error(`Fixture with ID '${fixtureId}' not found.`);
       const currentFixture = txFixDoc.data() as FirestoreFixtureDoc;
+      assertNoDisciplinaryHold(currentFixture as any);
       if (currentFixture.status === 'CONFIRMED') {
         throw Object.assign(new Error('This match result is already CONFIRMED and cannot be modified.'), { code: 'RESULT_ALREADY_CONFIRMED', statusCode: 409 });
       }
@@ -4319,7 +4324,7 @@ export async function submitFixtureResultFirestore(
 
     // If error is user-validation error, rethrow directly
     if (
-      options?.authoritativeOnly || firestoreErr?.code === 'INVALID_CUP_RESULT' ||
+      options?.authoritativeOnly || firestoreErr?.code === 'DISCIPLINARY_SUSPENSION' || firestoreErr?.code === 'INVALID_CUP_RESULT' ||
       firestoreErr?.code === 'SELF_OWNED_MATCH' ||
       errMsg.includes('not found') ||
       errMsg.includes('already CONFIRMED') ||
@@ -6432,6 +6437,7 @@ export async function adminEditFixtureResultFirestore(
   if (params.homeScore < 0 || params.awayScore < 0) {
     throw new Error('Scores must be non-negative integers.');
   }
+  await prepareFixtureDiscipline(fixtureId);
   const now = new Date().toISOString();
   const targetStatus = params.status || 'CONFIRMED';
   const mutationId =

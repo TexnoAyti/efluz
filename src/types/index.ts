@@ -184,6 +184,7 @@ export interface Fixture {
   awayOwner?: FixtureOwnerInfo | null;
   activeMatchday?: number;
   isPlayable?: boolean;
+  disciplinaryHolds?: import('./discipline').DisciplinaryHold[];
   nextMatchdayOpenAt?: string | null;
   matchdayOpenedAt?: string | null;
   homeOwnerId?: string;

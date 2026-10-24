@@ -811,7 +811,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 /* Reserve floating dock clearance once at the footer. */
 .efl-preview main { flex: 0 0 auto; padding-bottom: 16px; }
 .efl-preview main :is([class~="pb-20"], [class~="pb-24"]) { padding-bottom: 0; }
-.efl-preview footer { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
+.efl-preview footer { padding-bottom: calc(96px + var(--safe-bottom)); }
 
 /* Scoped legacy admin center neutral colors. */
 .efl-preview main[data-preview-page="admin"] [class~="bg-black/20"] { background-color: var(--efl-surface-2) !important; }

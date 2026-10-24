@@ -192,7 +192,7 @@ export const AdminEditResultModal: React.FC<EditResultModalProps> = ({ fixture, 
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4">
+    <div className="efl-viewport-overlay fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4">
       <div className="w-full max-w-4xl max-h-[94vh] overflow-hidden rounded-[26px] border border-emerald-400/25 bg-[radial-gradient(circle_at_8%_0%,rgba(16,185,129,0.12),transparent_28%),linear-gradient(155deg,#0f172a,#020617)] shadow-2xl animate-in zoom-in-95 duration-150">
         <div className="flex items-start justify-between gap-4 border-b border-white/[0.07] p-4 sm:p-5">
           <div className="min-w-0">
@@ -333,7 +333,7 @@ export const AdminDeleteResultModal: React.FC<DeleteResultModalProps> = ({ fixtu
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div className="efl-viewport-overlay fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="glass-panel p-5 max-w-md w-full rounded-2xl border-amber-500/40 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150">
         <div className="flex items-center justify-between border-b border-white/[0.08] pb-3"><div className="flex items-center gap-2"><div className="p-2 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20"><RotateCcw className="w-4 h-4" /></div><div><h3 className="text-sm font-black text-white">{t.adminResetResult}</h3><p className="text-[10px] text-slate-400">{t.adminResetResultHint}</p></div></div><button onClick={onClose} className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"><X className="w-4 h-4" /></button></div>
         <div className="p-3 rounded-xl bg-slate-900/60 border border-white/[0.04] text-center space-y-1"><div className="text-xs font-bold text-white">{fixture.homeClub?.name || fixture.homeClubId} vs {fixture.awayClub?.name || fixture.awayClubId}</div><div className="text-sm font-black text-amber-400 font-mono">{t.adminCurrentScore}: {fixture.homeScore ?? '-'} : {fixture.awayScore ?? '-'} ({fixture.status})</div></div>
@@ -378,7 +378,7 @@ export const AdminDeleteFixtureModal: React.FC<DeleteFixtureModalProps> = ({ fix
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div className="efl-viewport-overlay fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="glass-panel p-5 max-w-md w-full rounded-2xl border-rose-500/40 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150">
         <div className="flex items-center justify-between border-b border-white/[0.08] pb-3"><div className="flex items-center gap-2"><div className="p-2 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20"><Trash2 className="w-4 h-4" /></div><div><h3 className="text-sm font-black text-white">{t.adminDeleteFixture}</h3><p className="text-[10px] text-rose-400 font-bold">{t.adminDangerousAction}</p></div></div><button onClick={onClose} className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"><X className="w-4 h-4" /></button></div>
         <div className="p-3 rounded-xl bg-slate-900/60 border border-white/[0.04] text-xs text-slate-300 space-y-1"><p className="font-bold text-white">{fixture.homeClub?.name || fixture.homeClubId} vs {fixture.awayClub?.name || fixture.awayClubId}</p><p className="text-[11px] text-slate-400 font-mono">Competition: {fixture.competitionName || fixture.competitionId} | Matchday: {fixture.matchday || '—'}</p></div>

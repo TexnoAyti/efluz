@@ -42,6 +42,9 @@ export function parseFirestoreError(err: any): FormattedFirestoreError {
   if (['DOMESTIC_LEAGUES_INCOMPLETE','EUROPEAN_QUALIFICATION_NOT_FINAL','EUROPEAN_DRAW_NOT_PUBLISHED','FIXTURE_RETIRED'].includes(strCode)) {
     return { error: strCode, code: strCode, message: rawMsg, httpStatus: 409 };
   }
+  if (strCode === 'DISCIPLINARY_SUSPENSION') {
+    return { error: rawMsg, code: strCode, message: rawMsg, httpStatus: 409 };
+  }
   if (strCode === 'AUTHORITATIVE_WRITE_REQUIRED') {
     return { error: strCode, code: strCode, message: 'O‘zgarish saqlanmadi. Baza tiklangandan keyin qayta urinib ko‘ring.', httpStatus: 503 };
   }

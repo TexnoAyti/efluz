@@ -17,7 +17,16 @@ export function findGuideTarget(root: Pick<Document, 'querySelectorAll'>, select
   return selectors.split(',').flatMap(selector => Array.from(root.querySelectorAll<HTMLElement>(selector.trim())))
     .find(el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
 }
-export function guidePlacement(target: GuideRect | null, width: number, height: number, cardHeight: number) {
+export function guidePlacement(target: GuideRect | null, width: number, height: number, cardHeight: number, insets?: { top:number; bottom:number; left:number; right:number }) {
+  if (insets && Object.values(insets).some(value => value > 0)) {
+    const left = Math.min(Math.max(0,insets.left),Math.max(0,width-1));
+    const top = Math.min(Math.max(0,insets.top),Math.max(0,height-1));
+    const availableWidth = Math.max(1,width-left-Math.max(0,insets.right));
+    const availableHeight = Math.max(1,height-top-Math.max(0,insets.bottom));
+    const shifted = target ? {...target,left:target.left-left,top:target.top-top} : null;
+    const position = guidePlacement(shifted,availableWidth,availableHeight,cardHeight);
+    return {...position,left:position.left+left,top:position.top+top};
+  }
   const mobile = width < 680;
   const cardWidth = Math.min(mobile ? 400 : 380, Math.max(0, width - (mobile ? 24 : 32)));
   if (mobile) {

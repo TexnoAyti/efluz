@@ -320,6 +320,21 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
 const telegramAuthFlights = new Map<string, Promise<any>>();
 
 export const api = {
+  async getDiscipline(userId: string, seasonId: string): Promise<{ cards: import('../types/discipline').DisciplineCard[] }> {
+    return request(`/api/discipline/users/${encodeURIComponent(userId)}?seasonId=${encodeURIComponent(seasonId)}`, {skipCache:true,retries:0});
+  },
+  async getDisciplineFixtures(userId: string, seasonId: string): Promise<{fixtures: Array<{id:string;status:string;homeClubId:string;awayClubId:string;competitionId:string;competitionName?:string;roundName?:string;matchday:number;scheduledAt:string;eligible:boolean}>}> {
+    return request(`/api/discipline/users/${encodeURIComponent(userId)}/fixtures?seasonId=${encodeURIComponent(seasonId)}`,{skipCache:true,retries:0});
+  },
+  async issueDiscipline(userId:string,body:{seasonId:string;color:'YELLOW'|'RED';reason:import('../types/discipline').DisciplineReason;note:string;incidentFixtureId:string|null;requestId:string}) {
+    return request(`/api/discipline/users/${encodeURIComponent(userId)}/cards`,{method:'POST',body:JSON.stringify(body)});
+  },
+  async revokeDiscipline(userId:string,cardId:string,seasonId:string,reason:string) {
+    return request(`/api/discipline/users/${encodeURIComponent(userId)}/cards/${encodeURIComponent(cardId)}/revoke`,{method:'POST',body:JSON.stringify({seasonId,reason})});
+  },
+  async checkFixtureDiscipline(fixtureId:string):Promise<{blocked:boolean}> {
+    return request(`/api/discipline/fixtures/${encodeURIComponent(fixtureId)}/check`,{method:'POST',skipCache:true,retries:0});
+  },
   // Auth
   async authenticateTelegram(initData: string): Promise<{ success: boolean; user: User; currentClub: Club | null; ownedClubs?: Club[]; currentClubStatus?: 'resolved' | 'unavailable'; token: string; stats?: UserStats }> {
     const pending = telegramAuthFlights.get(initData);

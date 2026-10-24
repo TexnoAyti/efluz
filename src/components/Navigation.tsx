@@ -99,7 +99,7 @@ export const Navigation: React.FC<NavigationProps> = ({
   return (
     <>
       {/* Desktop Navigation */}
-      <nav className="hidden lg:block bg-[#080d16]/85 backdrop-blur-2xl border-b border-white/[0.08] sticky top-[61px] z-30 shadow-lg">
+      <nav className="efl-desktop-nav hidden lg:block bg-[#080d16]/85 backdrop-blur-2xl border-b border-white/[0.08] sticky top-[61px] z-30 shadow-lg">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="flex items-center space-x-1.5 py-2 overflow-x-auto scrollbar-none">
             {desktopNavItems.map((item) => {
@@ -152,7 +152,7 @@ export const Navigation: React.FC<NavigationProps> = ({
       {/* Mobile Navigation */}
         <nav
           aria-label="Mobile Navigation"
-          className="lg:hidden fixed bottom-3 sm:bottom-4 left-1/2 -translate-x-1/2 z-50 w-[min(90%,340px)] select-none pointer-events-auto pb-[env(safe-area-inset-bottom,0px)]"
+          className="efl-mobile-nav lg:hidden fixed bottom-3 sm:bottom-4 left-1/2 -translate-x-1/2 z-50 w-[min(90%,340px)] select-none pointer-events-auto"
         >
           <GlassSurface
             width="100%"

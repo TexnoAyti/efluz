@@ -119,6 +119,20 @@ const AppContent: React.FC = () => {
     return saved === 'light' || saved === 'dark' ? saved : 'dark';
   });
 
+  useEffect(() => {
+    document.body.dataset.eflTheme = theme;
+    const syncTelegramTheme = () => {
+      const app = (window as any).Telegram?.WebApp;
+      try { app?.setHeaderColor?.(theme === 'light' ? '#ffffff' : '#111722'); } catch {}
+      try { app?.setBackgroundColor?.(theme === 'light' ? '#f4f5f7' : '#080b12'); } catch {}
+      try { app?.setBottomBarColor?.(theme === 'light' ? '#f4f5f7' : '#080b12'); } catch {}
+    };
+    syncTelegramTheme();
+    const script = document.getElementById('telegram-web-app-sdk');
+    script?.addEventListener('load', syncTelegramTheme);
+    return () => script?.removeEventListener('load', syncTelegramTheme);
+  }, [theme]);
+
   const changeTheme = (nextTheme: AppTheme) => {
     setTheme(nextTheme);
     writeBrowserStorage('localStorage', 'efluz-theme-mode', nextTheme);
@@ -202,7 +216,7 @@ const AppContent: React.FC = () => {
     >
       {isDesignPreview && <div className="sticky top-0 z-[60] bg-amber-100 px-3 py-1.5 text-center text-[11px] font-bold text-amber-950">DESIGN PREVIEW · test ko‘rinishi, hisobga kirilmagan</div>}
       {toastMessage && (
-        <div className="fixed top-14 right-4 z-50 animate-in slide-in-from-top-3 fade-in duration-200">
+        <div className="efl-app-toast fixed top-14 right-4 z-50 animate-in slide-in-from-top-3 fade-in duration-200">
           <div
             className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-2xl text-xs font-bold border backdrop-blur-md ${
               EFL_2_DESIGN_ENABLED

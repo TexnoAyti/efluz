@@ -1,3 +1,5 @@
+import { DisciplinePanel } from '../DisciplinePanel';
+import { useAuth } from '../../context/AuthContext';
 import { ADMIN_LEAGUES } from '../../lib/adminPermissions';
 import type { AdminPermissions } from '../../types';
 import React, { useState, useEffect } from 'react';
@@ -39,6 +41,7 @@ export const AdminUserDetailModal: React.FC<UserDetailModalProps> = ({
   onToggleSuspend,
 }) => {
   const { t, language } = useI18n();
+  const { activeSeasonId, user: viewer } = useAuth();
   const [detailData, setDetailData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const copy = {
@@ -71,7 +74,7 @@ export const AdminUserDetailModal: React.FC<UserDetailModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div className="efl-viewport-overlay fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="glass-panel p-5 max-w-2xl w-full rounded-2xl border-emerald-500/40 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-150">
         <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
           <div className="flex items-center gap-2">
@@ -145,6 +148,7 @@ export const AdminUserDetailModal: React.FC<UserDetailModalProps> = ({
               </div>
             </div>
 
+            {viewer?.isAdmin && viewer.adminPermissions?.scope !== 'LEAGUES' && <DisciplinePanel key={`${user.id}:${activeSeasonId}`} userId={user.id} seasonId={activeSeasonId} admin />}
             {/* Submissions Section */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
@@ -295,7 +299,7 @@ export const AdminSetRoleModal: React.FC<SetRoleModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div className="efl-viewport-overlay fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="glass-panel p-5 max-w-md w-full rounded-2xl border-amber-500/40 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150">
         <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
           <div className="flex items-center gap-2">
@@ -398,7 +402,7 @@ export const AdminSuspendModal: React.FC<SuspendModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div className="efl-viewport-overlay fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="glass-panel p-5 max-w-md w-full rounded-2xl border-rose-500/40 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150">
         <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
           <div className="flex items-center gap-2">
@@ -506,7 +510,7 @@ export const AdminDeleteUserModal: React.FC<DeleteUserModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div className="efl-viewport-overlay fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="glass-panel p-5 max-w-md w-full rounded-2xl border-rose-500/40 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150">
         <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
           <div className="flex items-center gap-2">

@@ -1,0 +1,22 @@
+/* Telegram 8+ supplies and updates both system and content safe-area CSS values.
+   The SDK owns fullscreen mode; this stylesheet also works in normal launch mode. */
+body::before { content:''; position:fixed; top:0; left:0; right:0; height:var(--safe-top,0px); z-index:39; background:var(--efl-native-header,var(--bg-primary,#080c14)); pointer-events:none; }
+#root > .min-h-screen { min-height:calc(var(--tg-viewport-stable-height,100dvh) - var(--safe-top,0px) - var(--safe-bottom,0px)); }
+.efl-app-header { top:var(--safe-top,0px); }
+.efl-desktop-nav { top:calc(61px + var(--safe-top,0px)); }
+.efl-mobile-nav { bottom:calc(12px + var(--safe-bottom,0px)); width:min(90%,340px,calc(100vw - var(--safe-left,0px) - var(--safe-right,0px) - 24px)); }
+.efl-viewport-overlay {
+  padding-top:calc(16px + var(--safe-top,0px));
+  padding-bottom:calc(16px + var(--safe-bottom,0px));
+  padding-left:calc(16px + var(--safe-left,0px));
+  padding-right:calc(16px + var(--safe-right,0px));
+}
+.efl-viewport-overlay > :not(.fixed) { max-height:calc(var(--tg-viewport-height,100dvh) - var(--safe-top,0px) - var(--safe-bottom,0px) - 32px); }
+.efl-viewport-overlay .max-h-\[90vh\],.efl-viewport-overlay .max-h-\[90dvh\] { max-height:calc(var(--tg-viewport-height,100dvh) - var(--safe-top,0px) - var(--safe-bottom,0px) - 32px); }
+.efl-app-toast { top:calc(56px + var(--safe-top,0px)); right:calc(16px + var(--safe-right,0px)); }
+/* Tournament drawers occupy the usable viewport, including landscape notches. */
+:root .tourney-dialog-backdrop { top:var(--safe-top,0px); bottom:var(--safe-bottom,0px); left:var(--safe-left,0px); right:var(--safe-right,0px); }
+:root .tourney-dialog-backdrop .tourney-dialog { min-height:0; max-height:calc(var(--tg-viewport-height,100dvh) - var(--safe-top,0px) - var(--safe-bottom,0px)); }
+
+body[data-efl-theme="light"] { --efl-native-header:#ffffff; background-color:#f4f5f7; }
+body[data-efl-theme="dark"] { --efl-native-header:#111722; background-color:#080b12; }
