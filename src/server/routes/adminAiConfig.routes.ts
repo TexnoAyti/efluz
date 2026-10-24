@@ -1,4 +1,4 @@
-import { clubMemberTagsStatus, reconcileClubMemberTags } from '../services/telegramClubMemberTags';
+import { listMissingGroupClubOwners, clubMemberTagsStatus, reconcileClubMemberTags } from '../services/telegramClubMemberTags';
 import { buildAiDailyReport } from '../services/telegramAiDailyReport';
 import { getAiObservability } from '../services/telegramAiObservability';
 /**
@@ -173,4 +173,10 @@ adminAiConfigRouter.get('/club-member-tags', requireAdmin, requirePrimaryOwner, 
 });
 adminAiConfigRouter.post('/club-member-tags/sync', requireAdmin, requirePrimaryOwner, async (_req, res) => {
   try { res.json({result:await reconcileClubMemberTags(),...await clubMemberTagsStatus()}); } catch { res.status(503).json({error:'TAG_SYNC_UNAVAILABLE'}); }
+});
+
+adminAiConfigRouter.get('/club-member-tags/missing-owners', requireAdmin, requirePrimaryOwner, async (req, res) => {
+  res.setHeader('Cache-Control','private, no-store');
+  try { res.json(await listMissingGroupClubOwners(req.query)); }
+  catch (error:any) { res.status(error?.name==='ZodError'?400:503).json({error:'MEMBERSHIP_AUDIT_UNAVAILABLE',message:'Guruh a’zoligi tekshiruvi bajarilmadi. Bu hamma guruhda degani emas.'}); }
 });
