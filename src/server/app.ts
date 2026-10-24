@@ -1,3 +1,4 @@
+import { scheduleClubMemberTags } from './services/telegramClubMemberTags';
 import { disciplineRouter } from './routes/discipline.routes';
 import {scheduleUNotices,prepareUNotifications} from './services/uzeflifeNotifications';
 import { scheduleAiDailyReport } from './services/telegramAiDailyReport';
@@ -181,6 +182,7 @@ export function createApp() {
   app.use(authMiddleware);
   app.use('/api', (req, res, next) => {
     res.once('finish', () => {
+      if (res.statusCode < 400) scheduleClubMemberTags();
       if (req.user && res.statusCode < 400 && !req.originalUrl.split('?')[0].startsWith('/api/health')) scheduleMutationReconciliation();
     });
     next();

@@ -1,3 +1,4 @@
+import { clubMemberTagsStatus } from '../services/telegramClubMemberTags';
 import { randomUUID } from 'node:crypto';
 import { Router, Request, Response } from 'express';
 import {
@@ -303,6 +304,7 @@ telegramRouter.get('/status', async (req: Request, res: Response) => {
     connection,
     configured: hasToken,
     hasSticker,
+    clubMemberTags: await clubMemberTagsStatus().catch(()=>({enabled:false,unavailable:true})),
     group,
     webAppUrl,
   });
