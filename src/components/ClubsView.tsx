@@ -268,12 +268,12 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
     }
   }, [leagueCompetitions, selectedMatchday]);
 
-  // 3. Load all 5 domestic leagues & competitions list
+  // 3. Load the selected season’s active domestic leagues and competitions
   const loadLeaguesAndComps = useCallback(async () => {
     setError(null);
     try {
       const [leaguesRes, compsRes] = await Promise.all([
-        api.getLeagues(),
+        api.getLeagues(activeSeasonId),
         api.getCompetitions(activeSeasonId).catch(() => ({ competitions: [] })),
       ]);
 
