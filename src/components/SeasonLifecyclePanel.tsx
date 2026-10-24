@@ -69,7 +69,7 @@ export const SeasonLifecyclePanel: React.FC<{ seasonId?: string }> = ({ seasonId
         </button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
         {data.phases.map((phase, index) => {
           const activePhase = phase.status === 'ACTIVE';
           const complete = phase.status === 'COMPLETED';

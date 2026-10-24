@@ -3,7 +3,7 @@ import { initDatabase } from '../db';
 import { SEED_COMPETITIONS, SEED_CLUBS } from '../db/seed';
 import { getFirestoreDb } from '../firebase/admin';
 import { isSeasonCompetitionEnabled, isSeasonLeagueEnabled, filterSeasonFixtures } from '../../lib/seasonParticipationPolicy';
-import { withSeasonQualificationPolicy, SEASON_2026_27_ALLOCATION } from '../../lib/seasonQualificationPolicy';
+import { withSeasonQualificationPolicy, SEASON_2026_27_ALLOCATION, seasonQualificationRanges } from '../../lib/seasonQualificationPolicy';
 import { ReadModelKeys, redisSetRaw, getCompetitionsFromReadModel, getLeagueClubsFromReadModel, getAvailableClubsFromReadModel } from '../readModel/readModelStore';
 import { getFixtureByIdFirestore, claimClubAtomicFirestore, adminAssignClubFirestore, generateCompetitionFixturesFirestore, assertMatchdayPlayableFirestore } from '../firebase/firestoreStore';
 import { getSeasonLifecycle } from '../services/seasonLifecycleService';
@@ -58,3 +58,10 @@ await assert.rejects(assertMatchdayPlayableFirestore(seasonId,withdrawn,1),/olib
 await assert.rejects(controlCompetitionMatchday(withdrawn,{action:'OPEN',matchday:1}),/olib tashlangan/);
 assert.equal((await db.collection('fixtures').doc('france').get()).exists,true,'Historical source records are retained');
 console.log('PASS: four-league season, withdrawn France hidden from warm snapshots/lifecycle/scheduling/trophies, claims and progression blocked, history retained and other seasons unchanged');
+
+for (const id of Object.keys(SEASON_2026_27_ALLOCATION)) {
+  const cached={id,formatConfig:{qualificationSpots:7,europaQualificationSpots:7}};
+  assert.deepEqual(seasonQualificationRanges(cached,seasonId),{uclEnd:8,uelEnd:16});
+  assert.deepEqual(seasonQualificationRanges(cached,'season-2027-28'),{uclEnd:7,uelEnd:14},'Future-season allocations are preserved');
+}
+assert.deepEqual(seasonQualificationRanges({id:'comp-ligue-1-2027',formatConfig:{qualificationSpots:6,europaQualificationSpots:6}},'season-2027-28'),{uclEnd:6,uelEnd:12});

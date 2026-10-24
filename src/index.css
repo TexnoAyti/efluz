@@ -391,3 +391,7 @@
   .matchday-crest { width: 88px; height: 88px; }
   .matchday-league-card { min-width: 200px; }
 }
+
+.efl-upcoming-league { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid var(--efl-border); border-radius: 12px; background: var(--efl-surface); color: var(--efl-text-2); font-size: 11px; font-weight: 600; }
+.efl-upcoming-league img { width: 22px; height: 26px; object-fit: contain; }
+.efl-upcoming-league-season { margin-left: auto; text-align: right; font-size: 10px; font-weight: 500; }

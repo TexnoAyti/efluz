@@ -736,10 +736,12 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
   .efl-preview .efl-club-filters > button { min-width: 0; padding: 8px 4px; white-space: normal; overflow-wrap: anywhere; }
 }
 
-/* Reuse the welcome screen's five icon-only league marks in admin selection. */
+/* Equal-width active league marks, without a reserved slot for withdrawn leagues. */
 .efl-preview .efl-league-icon-selector {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: none;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   gap: 8px;
   overflow: visible;
 }

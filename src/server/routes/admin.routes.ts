@@ -1,3 +1,4 @@
+import { isSeasonCompetitionEnabled } from '../../lib/seasonParticipationPolicy';
 import { previewBulkLeagueResults, applyBulkLeagueResults } from '../services/bulkLeagueResults';
 import { createHash } from 'node:crypto';
 import { readSharedAdminData } from '../services/adminReviewCache';
@@ -1430,7 +1431,7 @@ adminRouter.get('/read-model/health', async (req: Request, res: Response) => {
 adminRouter.get('/cups', async (req: Request, res: Response) => {
   try {
     const allowedCupIds = new Set(permittedAdminLeagues(req.user!).map(league => league.cupCompetitionId));
-    const cups = Object.values(DOMESTIC_CUPS).filter(cup => !isLeagueAdmin(req.user!) || allowedCupIds.has(cup.id));
+    const cups = Object.values(DOMESTIC_CUPS).filter(cup => isSeasonCompetitionEnabled(cup.id,String(req.query.seasonId || 'season-2026-27')) && (!isLeagueAdmin(req.user!) || allowedCupIds.has(cup.id)));
     res.json({ cups });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

@@ -51,7 +51,7 @@
 .efl-welcome .welcome-accent { color: var(--welcome-accent); }
 .efl-welcome .welcome-description { margin: 0; max-width: 32ch; color: var(--efl-text-2); font-size: 14px; line-height: 1.6; }
 .efl-welcome .welcome-pitch { display: block; width: 100%; height: 68px; margin: 24px 0; stroke: var(--efl-border); stroke-width: 1.2; }
-.efl-welcome .welcome-league-icons { padding: 0; margin: 10px 0 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; list-style: none; }
+.efl-welcome .welcome-league-icons { padding: 0; margin: 10px 0 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 6px; list-style: none; }
 .efl-welcome .welcome-league-icons li { display: flex; justify-content: center; align-items: center; height: 68px; background: var(--efl-surface); border: 1px solid var(--efl-border); border-radius: 12px; }
 .efl-welcome .welcome-league-icons img { width: 36px; height: 42px; object-fit: contain; }
 .efl-welcome--dark .welcome-monochrome { filter: brightness(0) invert(1); }

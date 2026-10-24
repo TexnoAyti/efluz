@@ -14,3 +14,13 @@ export function withSeasonQualificationPolicy<T extends {id:string;formatConfig?
   }
   return competition;
 }
+
+/** Shared table thresholds; current-season overrides also correct old cached configs. */
+export function seasonQualificationRanges(
+  competition: {id: string; formatConfig?: any}, seasonId: string,
+): { uclEnd: number; uelEnd: number } {
+  const config = withSeasonQualificationPolicy(competition, seasonId).formatConfig || {};
+  const count = (value: unknown) => Number.isInteger(Number(value)) && Number(value) >= 0 ? Number(value) : 0;
+  const uclEnd = count(config.qualificationSpots);
+  return { uclEnd, uelEnd: uclEnd + count(config.europaQualificationSpots ?? config.qualificationSpots) };
+}

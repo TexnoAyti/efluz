@@ -1,3 +1,4 @@
+import { isSeasonCompetitionEnabled } from '../lib/seasonParticipationPolicy';
 import { canUseDangerZone } from '../lib/adminPermissions';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
@@ -542,7 +543,7 @@ export const SeasonHubView: React.FC<SeasonHubViewProps> = ({ onNavigateTab }) =
                 Matchday guard: unfinished fixture bo‘lsa advance bloklanadi.
               </p>
               <div className="flex flex-wrap gap-1.5">
-                {['comp-premier-league-2026', 'comp-la-liga-2026', 'comp-serie-a-2026', 'comp-bundesliga-2026', 'comp-ligue-1-2026'].map((id) => (
+                {['comp-premier-league-2026', 'comp-la-liga-2026', 'comp-serie-a-2026', 'comp-bundesliga-2026', 'comp-ligue-1-2026'].filter(id=>isSeasonCompetitionEnabled(id, activeSeasonId)).map((id) => (
                   <button
                     key={id}
                     onClick={() => adminAction(`advance-${id}`, () => seasonOpsApi.advance(id, activeSeasonId, 30), `${id} next matchday opened`)}
