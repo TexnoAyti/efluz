@@ -4,6 +4,8 @@ import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS } from '../firebase/collections';
 import { SEED_CLUBS } from '../db/seed';
 import { PostgresKeyValueStore } from './postgresKeyValueStore';
+import { FieldPath } from 'firebase-admin/firestore';
+import { z } from 'zod';
 
 const state = () => new PostgresKeyValueStore('telegram_member_tag_state');
 const group = () => (process.env.TELEGRAM_GROUP_USERNAME || '@efleagueuz').trim();
@@ -55,6 +57,72 @@ async function telegram(method: string, body: Record<string,unknown>, signal: Ab
   const data:any=await response.json();
   if (!response.ok || !data.ok) throw new TelegramTagError(Number(data.error_code || response.status),Number(data.parameters?.retry_after || 0),method,String(data.description || ''));
   return data.result;
+}
+
+export const missingGroupOwnersQuery = z.object({
+  page:z.coerce.number().int().min(1).max(50).default(1),
+  limit:z.coerce.number().int().min(1).max(30).default(20).transform(n=>Math.min(20,n)),
+}).strict();
+
+/** Owner-protected caller only. Fresh membership reads, no Telegram writes and
+ * no reuse of an old "missing" record after its club has changed owners. */
+export async function listMissingGroupClubOwners(input: unknown = {}) {
+  const {page,limit}=missingGroupOwnersQuery.parse(input);
+  if (!clubMemberTagsEnabled()) throw Error('MEMBERSHIP_AUDIT_UNAVAILABLE');
+  const db=getFirestoreDb();
+  const seasons=await db.collection(COLLECTIONS.SEASONS).where('status','in',['active','ACTIVE']).limit(2).get();
+  if (seasons.size !== 1) throw Error('ACTIVE_SEASON_UNAVAILABLE');
+  const seasonId=seasons.docs[0].id;
+  const occupancy=await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where('seasonId','==',seasonId).limit(501).get();
+  if (occupancy.size>500) throw Error('OWNER_LIST_INCOMPLETE');
+  const owners=new Map<string,string[]>();
+  for (const row of occupancy.docs) {
+    const o=row.data();
+    if(o.status==='active' && o.userId && clubs.has(o.clubId) && row.id===`${seasonId}_${o.clubId}`)
+      owners.set(o.userId,[...new Set([...(owners.get(o.userId)||[]),o.clubId])]);
+  }
+  const ids=[...owners.keys()].sort(), users=new Map<string,any>();
+  for(let offset=0;offset<ids.length;offset+=30) {
+    const rows=await db.collection(COLLECTIONS.USERS).where(FieldPath.documentId(),'in',ids.slice(offset,offset+30)).get();
+    rows.docs.forEach(row=>users.set(row.id,row.data()));
+  }
+  const stop=new AbortController();
+  const signal=AbortSignal.any([AbortSignal.timeout(18000),stop.signal]);
+  const self=await telegram('getChatMember',{chat_id:group(),user_id:Number(process.env.TELEGRAM_BOT_TOKEN!.split(':')[0])},signal);
+  if(self.status!=='administrator') throw Error('GROUP_ADMIN_REQUIRED');
+  const missing:Array<{userId:string;telegramId:number;username:string|null;displayName:string;clubNames:string[];reason:string;checkedAt:string}>=[];
+  let checkedOwners=0,unverifiedOwners=0,processed=0;
+  // Four concurrent reads; a short interval keeps even a fast Telegram response
+  // below thirty requests/second. An incomplete audit is never an empty proof.
+  for(let offset=0;offset<ids.length;offset+=4) {
+    if(signal.aborted) break;
+    await Promise.all(ids.slice(offset,offset+4).map(async userId=>{
+      processed++;
+      const user=users.get(userId),telegramId=Number(user?.telegramId);
+      if(!user || !Number.isSafeInteger(telegramId) || telegramId<=0){unverifiedOwners++;return;}
+      try {
+        const member=await telegram('getChatMember',{chat_id:group(),user_id:telegramId},signal);
+        if(!['creator','administrator','member','restricted','left','kicked'].includes(member.status) || member.user?.is_bot){unverifiedOwners++;return;}
+        checkedOwners++;
+        if(member.status!=='left' && member.status!=='kicked' && !(member.status==='restricted' && member.is_member!==true))return;
+        const username=String(user.username||'').replace(/^@/,'');
+        missing.push({userId,telegramId,username:/^[A-Za-z][A-Za-z0-9_]{4,31}$/.test(username)?username:null,
+          displayName:[user.firstName,user.lastName].filter(Boolean).join(' ').replace(/[\p{C}]/gu,'').slice(0,80),
+          clubNames:owners.get(userId)!.map(id=>clubs.get(id)!.name),
+          reason:member.status==='kicked'?'BANNED_FROM_GROUP':'NOT_IN_GROUP',checkedAt:new Date().toISOString()});
+      } catch(error) {
+        unverifiedOwners++;
+        if(error instanceof TelegramTagError && error.code===429)stop.abort();
+      }
+    }));
+    if(offset+4<ids.length && !signal.aborted)await new Promise(resolve=>setTimeout(resolve,150));
+  }
+  unverifiedOwners+=ids.length-processed;
+  missing.sort((a,b)=>a.clubNames.join().localeCompare(b.clubNames.join())||a.userId.localeCompare(b.userId));
+  const offset=(page-1)*limit;
+  return {success:true,seasonId,group:group(),generatedAt:new Date().toISOString(),complete:unverifiedOwners===0,
+    totalOwners:ids.length,checkedOwners,unverifiedOwners,totalMissing:missing.length,page,limit,
+    nextPage:offset+limit<missing.length?page+1:null,owners:missing.slice(offset,offset+limit)};
 }
 
 /** Production-only desired-state reconciliation. No messages, promotions or

@@ -1,3 +1,4 @@
+import { missingOwnersReadPlan, formatMissingGroupOwners } from './telegramAiMissingGroupOwners';
 import { requestedMatchday } from './telegramAiConversationCommands';
 import { isPlatformAdminRequest } from './telegramAiPlatformCatalog';
 import { planExpandedAdminRequest, expandedAdminIntent } from './telegramAiExpandedAdmin';
@@ -315,6 +316,7 @@ async function handleAiAdminCommandInternal(payload: TelegramAiMessagePayload, s
   try {
     if (command === 'actions' && !isPrimaryOwner(payload.fromUser.id)) return 'Liga va kubok bo‘yicha mavjud admin ruxsatlaringiz doirasida oddiy yozing: natijani kiritish/tasdiqlash, klub biriktirish, turni boshqarish, kubok qur’asini ko‘rish. Har bir o‘zgarish avval reja va sizning tasdig‘ingizni talab qiladi. Xavfli va umumiy tizim amallari faqat asosiy admin uchun.';
     if (command === 'actions') return `Oddiy yozishingiz mumkin:
+• Guruhda yo‘q klub egalarini ko‘rsat
 • La Liga jadvalini tashla
 • Angliya Kubogi yarim final o‘yinlarini ko‘rsat
 • La Liga 10-turni qulflang
@@ -419,7 +421,8 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
     // Explicit test planners replace planning only in isolated tests; production always resolves cached club IDs.
     let plan = correctionSource && correction ? reviseAiAdminPlan(correctionSource.plan, correction, correctionSource.scoreHomeFirst)
       : testPlanner ? await planAiAdminAction(argument, facts, signal, payload)
-      : await expandedNativePlan(argument,payload,signal)
+      : missingOwnersReadPlan(argument)
+        || await expandedNativePlan(argument,payload,signal)
         || await platformSemanticPlan(argument,payload,signal,facts)
         || await planReplyReminder(argument,scope.replyReminderSelection,createAiTournamentReader(signal).read)
         || await planBulkLeagueRequest(argument,signal)
@@ -540,6 +543,7 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
 }
 
 function formatNaturalAdminRead(action: string, data: any): string {
+  if(action==='group_missing_owners')return formatMissingGroupOwners(data);
   if(action==='discipline_view'&&Array.isArray(data?.cards)) {
     if(!data.cards.length)return 'Bu mavsumda kartochkalar yo‘q.';
     return ['Intizom kartochkalari:',...data.cards.slice(0,10).map((c:any)=>`${c.color==='RED'?'🟥':'🟨'} ${c.status==='ACTIVE'?'Faol':'Bekor qilingan'} · ${c.id}\nSabab: ${c.note||c.reason}${c.color==='RED'?'\nChetlatish: '+(c.suspensionFixtureId||'keyingi mos o‘yin kutilmoqda'):''}`),...(data.cards.length>10?[`Yana ${data.cards.length-10} ta kartochka bor.`]:[])].join('\n\n').slice(0,3500);
