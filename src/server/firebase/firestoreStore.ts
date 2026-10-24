@@ -3094,12 +3094,13 @@ export async function assertMatchdayPlayableFirestore(
 // COMPETITION MATCHDAY MANAGEMENT (ISOLATED)
 // ----------------------------------------------------
 
-export async function advanceCompetitionMatchdayFirestore(competitionId: string, options: { durationHours?: number; seasonId?: string } = {}) {
+export async function advanceCompetitionMatchdayFirestore(competitionId: string, options: { durationHours?: number; seasonId?: string; expectedCurrentMatchday?: number; expectedUpdatedAt?: string | null } = {}) {
   const db = getFirestoreDb();
   const doc = await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get();
   const comp = doc.data() as FirestoreCompetitionDoc;
   if (!doc.exists) throw new Error(`Competition '${competitionId}' not found.`);
   if (options.seasonId && options.seasonId !== comp.seasonId) throw Object.assign(new Error('Season mismatch'), { statusCode: 400 });
+  if (options.expectedCurrentMatchday !== undefined && options.expectedCurrentMatchday !== (comp.currentMatchday || 1) || Object.hasOwn(options, 'expectedUpdatedAt') && options.expectedUpdatedAt !== (comp.updatedAt || null)) throw Object.assign(new Error('Tur holati reja tuzilgandan beri o‘zgardi. Yangi holat bilan qayta reja tuzing.'), { statusCode: 409 });
   const limit = comp.leagueId === 'league-bundesliga' || comp.leagueId === 'league-ligue-1' ? 17 : 19;
   if (comp.type !== 'LEAGUE' || (comp.currentMatchday || 1) >= Math.min(limit, comp.totalMatchdays || limit)) throw new Error(`Cannot advance ${competitionId}: no next league matchday after ${comp.currentMatchday || 1}.`);
   const { controlCompetitionMatchday } = await import('../services/competitionMatchdayService');

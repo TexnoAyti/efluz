@@ -1,3 +1,4 @@
+import { bindMatchdaySnapshot } from './telegramAiMatchdayLanguage';
 import { parseBulkResultRequest } from './telegramAiBulkResultLanguage';
 import { findConversationCompetitions } from './telegramAiConversationCommands';
 import { limitAiReply } from './telegramAiResponsePolicy';
@@ -106,6 +107,7 @@ export function describeAiAdminPlan(plan: AdminPlan, label = ''): string {
   }
   if (plan.action === 'matchday_override') return `${target}: tur boshqaruvini ${({PAUSED:'pauzaga qo‘yish',AUTO:'avtomatik rejimga qaytarish',FORCE_OPEN:'majburiy ochish',FORCE_LOCKED:'majburiy qulflash'} as any)[String(b.overrideStatus)] || b.overrideStatus}.`;
   if (plan.action === 'matchday_timer') return `${target}: ${b.currentMatchday ? b.currentMatchday + '-tur, ' : ''}tur muddatini ${b.durationHours} soat qilib belgilash.`;
+  if (plan.action === 'matchday_advance') return `${target}: ${Number.isInteger(b.expectedCurrentMatchday) ? `${b.expectedCurrentMatchday}-turdan ${Number(b.expectedCurrentMatchday)+1}-turga` : 'keyingi turga'} o‘tkazish${b.durationHours ? `, ${b.durationHours} soat` : ''}. Oldingi turdagi yakunlanmagan o‘yinlar tekshiriladi.`;
   if (plan.action === 'matchday_remind') return `${target}: ${b.matchday}-turdagi o‘yini yakunlanmagan klub egalariga eslatma yuborish.`;
   if (plan.action === 'broadcast_retry') return `${target}: yuborilmagan e’lon xabarlarini qayta jo‘natishga urinish.`;
   if (plan.action === 'recipients_refresh') return 'Telegram xabarnomalarining qabul qiluvchilar ro‘yxatini yangilash.';
@@ -220,6 +222,11 @@ export async function planAiAdminAction(request: string, facts: string, signal: 
   const raw = JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, '').trim());
   if (typeof raw.clarification === 'string') throw new Error('CLARIFY:' + raw.clarification.slice(0, 300));
   const plan = adminPlanSchema.parse(raw);
+  if (plan.action === 'broadcast') {
+    const explicit = await parseNaturalAdminPlan(request, signal);
+    if (!explicit || explicit.action !== 'broadcast') throw new Error('CLARIFY:Xabar matni va qabul qiluvchini aniq yozing. Masalan: APL egalariga “11-tur ochildi” deb xabar yubor.');
+    return explicit;
+  }
   const identity = String(plan.body.targetUserId || plan.body.userId || (/^user_/.test(plan.action) ? plan.targetId || '' : ''));
   const supplied = [...new Set((request.match(/@\s*[A-Za-z0-9_]+|\buser-\d+\b/g) || []).map(ref => ref.replace(/\s/g, '').toLowerCase()))];
   delete plan.body.expectedUsername;
@@ -287,6 +294,10 @@ async function handleAiAdminCommandInternal(payload: TelegramAiMessagePayload, s
 • @username ga premium ber
 • La Liga jadvalini qayta hisobla
 • APL ligasini pauzaga qo‘y / avtomatik rejimga qaytar
+• APL 11-turni 2 kunga ochgin
+• APL keyingi turga 1 kunga o‘tkaz
+• APL 10-turda hisob kiritmaganlarga eslatma yubor
+• APL hozir nechanchi tur?
 • APL tur muddatini 30 soat qil
 • APL 11-turga eslatma yubor
 • AI foydalanuvchi limitini 5 qil
@@ -367,7 +378,7 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
     const recent=latest?await loadPending(latest.token,signal):null;
     const recentFixture=recent && recent.owner===payload.fromUser.id&&recent.chat===payload.chatId&&recent.thread===payload.threadId&&recent.expiresAt>Date.now()&&['pending','done'].includes(recent.state)&&/^(fixture_|result_)/.test(recent.plan.action)?recent.plan.targetId:undefined;
     // Explicit test planners replace planning only in isolated tests; production always resolves cached club IDs.
-    const plan = correctionSource && correction ? reviseAiAdminPlan(correctionSource.plan, correction, correctionSource.scoreHomeFirst)
+    let plan = correctionSource && correction ? reviseAiAdminPlan(correctionSource.plan, correction, correctionSource.scoreHomeFirst)
       : testPlanner ? await planAiAdminAction(argument, facts, signal, payload)
       : await planBulkLeagueRequest(argument,signal)
         || await contextualFixturePlan(argument,recentFixture?[recentFixture]:scope.selectedFixtureIds||[],signal)
@@ -423,6 +434,10 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
     } else if (plan.targetId && /^(club_|matchday_|cup_|standings_)/.test(plan.action)) {
       const found = await lookup.read(plan.action.startsWith('club_') ? { dataset: 'clubs', club: plan.targetId, limit: 1 } : { dataset: 'competitions', competition: plan.targetId, limit: 1 }) as any;
       if (found.data?.[0]?.name) targetLabel = found.data[0].name + '\n';
+      if (['matchday_control','matchday_advance','matchday_remind'].includes(plan.action)) {
+        if (found.error || found.complete === false || found.data?.length !== 1) throw new Error('CLARIFY:Tur holati ishonchli o‘qilmadi. Qayta urinib ko‘ring.');
+        plan = bindMatchdaySnapshot(plan, found.data[0]);
+      }
     }
     if (/^user_/.test(plan.action)) {
       const username = /@\s*([A-Za-z0-9_]+)/.exec(argument.replace(/^\/ai_admin(?:@[A-Za-z0-9_]+)?\s*/i,''))?.[1];
@@ -453,6 +468,10 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
 
 function formatNaturalAdminRead(action: string, data: any): string {
   const titles: Record<string,string> = {users:'Foydalanuvchilar',ai_settings:'AI sozlamalari',premium_overview:'Premium holati',broadcasts:'Yuborilgan xabarlar',notification_messages:'Xabarnomalar',health:'Baza holati',season_control:'Mavsum holati',audit:'Admin amallari tarixi',overview:'Platforma holati',metrics:'O‘qish statistikasi',pending_results:'Tasdiq kutayotgan natijalar',disputes:'Bahsli natijalar',notification_types:'Xabarnoma turlari',admission:'Klublarni qabul qilish navbati',european_preview:'Yevropa saralashi oldindan ko‘rish',matchday_status:'Tur boshqaruvi holati',cup_health:'Kubok holati'};
+  if (action === 'matchday_status' && Array.isArray(data?.rounds)) {
+    const rounds = data.rounds.filter((r:any) => r.isOpen || r.matchday === data.currentMatchday);
+    return [`Tur boshqaruvi: joriy ${data.currentMatchday}-tur`, ...rounds.map((r:any) => `${r.matchday}-tur: ${r.isOpen ? 'ochiq' : 'yopiq'} • ${r.fixtureCount} ta o‘yin • ${r.unfinished?.length || 0} ta yakunlanmagan${r.deadlineAt ? ` • Muddat: ${new Intl.DateTimeFormat('uz-UZ',{timeZone:'Asia/Tashkent',dateStyle:'short',timeStyle:'short'}).format(new Date(r.deadlineAt))}` : ''}`)].join('\n').slice(0,3500);
+  }
   const labels: Record<string,string> = {enabled:'Faol',allowedChatId:'Guruh ID',allowedThreadId:'Mavzu ID',rateLimitUserPerMin:'Foydalanuvchi limiti / daqiqa',rateLimitTopicPerMin:'Mavzu limiti / daqiqa',maxDailyRequests:'Kunlik AI limiti',total:'Jami',totalUsers:'Foydalanuvchilar soni',username:'Username',id:'ID',firstName:'Ism',isAdmin:'Admin',isSuspended:'Bloklangan',title:'Sarlavha',body:'Matn',status:'Holat',seasonId:'Mavsum',stage:'Bosqich',active:'Faol',revoked:'Bekor qilingan',generatedAt:'Yangilangan',redisAvailable:'Redis mavjud',stale:'Eskirgan nusxa'};
   const lines=[titles[action] || 'So‘ralgan ma’lumot'];
   const add=(value:any,depth=0)=>{

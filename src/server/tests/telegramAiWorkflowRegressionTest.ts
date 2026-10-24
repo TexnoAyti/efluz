@@ -1,3 +1,4 @@
+import { ReadModelKeys, redisSetRaw } from '../readModel/readModelStore';
 import {getFirestoreDb} from '../firebase/admin';
 import {contextualClubPlan} from '../services/telegramAiFixtureContext';
 import {AI_ADMIN_ACTIONS} from '../services/telegramAiAdminCatalog';
@@ -17,6 +18,9 @@ setTestConfigOverride({...DEFAULT_AI_CONFIG,enabled:true,allowedChatId:-1001,all
 setTestGroundingOverride({competitions:[],clubs:[],fixtures:{},standings:{}});
 const signal=new AbortController().signal;
 for(const [id,name] of [['comp-la-liga-2026','La Liga'],['comp-premier-league-2026','Premier League']])await getFirestoreDb().collection('competitions').doc(id).set({id,name,seasonId:'season-2026-27',type:'LEAGUE',currentMatchday:10});
+await redisSetRaw(ReadModelKeys.competitions('season-2026-27'), {data: (await getFirestoreDb().collection('competitions').get()).docs.map(d=>d.data())});
+await redisSetRaw(ReadModelKeys.clubsWithOwners('season-2026-27'), {data: []});
+const receipt=(plan:any)=>({success:true,competitionId:plan.targetId,matchday:plan.body.matchday,currentMatchday:plan.body.matchday,isMatchdayOpen:plan.body.action!=='LOCK'});
 const readClub:any=async()=>({complete:true,stale:false,data:[{id:'club-arsenal',name:'Arsenal'}]});
 assert.equal((await contextualClubPlan('shu klubni egasidan bo‘shat',['club-arsenal'],['Arsenal egasi kim?'],signal,readClub))?.targetId,'club-arsenal');
 await assert.rejects(contextualClubPlan('shu klubni egasidan bo‘shat',['club-arsenal','club-inter'],['Arsenal egasi kim?'],signal,readClub),/Qaysi klub/);
@@ -34,7 +38,7 @@ assert.equal(splitAiWorkflow('Hammaga \"APL\\\"; La Liga 10-turni qulfla\" yubor
 assert.equal(splitAiWorkflow('Agar La Liga 10-turni qulflasam; APL 11-turni ochsam nima bo‘ladi?'),null);
 assert.equal(splitAiWorkflow('La Liga 10-turni qulfla va APL 11-turni och'),null,'Ordinary va is not guessed as a task separator');
 assert.equal(splitAiWorkflow(Array(5).fill('La Liga 10-turni qulfla').join('; ')),null);
-setTestAiAdminHooks(async(plan)=>{writes++;executed.push(String(plan.body.action));return{status:200,data:{success:true}};},async(request)=>({action:'matchday_control',targetId:'comp-la-liga-2026',body:{action:/qulfla/.test(request)?'LOCK':'OPEN',matchday:/11/.test(request)?11:10}}));
+setTestAiAdminHooks(async(plan)=>{writes++;executed.push(String(plan.body.action));return{status:200,data:receipt(plan)};},async(request)=>({action:'matchday_control',targetId:'comp-la-liga-2026',body:{action:/qulfla/.test(request)?'LOCK':'OPEN',matchday:/11/.test(request)?11:10}}));
 const start=p('La Liga 10-turni qulfla; APL 11-turni och');
 const first=await handleAiAdminCommand(start,signal);assert.match(first,/Topshiriqlar/);assert.ok(token(first));assert.equal(writes,0);
 await rememberDeliveredAdminPlan(start,first,6001,signal);
@@ -81,7 +85,7 @@ assert.equal(semantic.mode,'admin');assert.equal(classifiers[0].config.tools,und
 assert.equal((await routeAiMessageMeaning('shu klubni sozlash kerak',[],signal,async()=>({text:'{"mode":"admin","targetId":"invented"}'}))).mode,'chat','Unknown model fields are refused');
 // Full Telegram dispatch preserves the buttons and exact next-step token.
 clearTestAiState();clearTestRateLimitState();setTestAiResponder(async()=> 'Suhbat');
-setTestAiAdminHooks(async()=>({status:200,data:{success:true}}),async()=>({action:'matchday_control',targetId:'comp-la-liga-2026',body:{action:'LOCK',matchday:10}}));
+setTestAiAdminHooks(async(plan)=>({status:200,data:receipt(plan)}),async()=>({action:'matchday_control',targetId:'comp-la-liga-2026',body:{action:'LOCK',matchday:10}}));
 const originalFetch=global.fetch;const sent:any[]=[];
 global.fetch=async(input:any,init?:any)=>{assert.match(String(input),/api.telegram.org/);sent.push(JSON.parse(init.body));return Response.json({ok:true,result:{message_id:7000+sent.length}});};
 try{

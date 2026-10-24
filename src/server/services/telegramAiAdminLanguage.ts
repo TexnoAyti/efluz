@@ -1,3 +1,4 @@
+import { detectMatchdayIntent } from './telegramAiMatchdayLanguage';
 import { isBulkResultRequest } from './telegramAiBulkResultLanguage';
 import { normalizeAiEntity } from './telegramAiEntities';
 import { detectExtendedAdminControl } from './telegramAiControlLanguage';
@@ -33,8 +34,9 @@ export function assertSingleNaturalAdminRequest(text: string): void {
   if (new Set(hours).size > 1) throw new Error('CLARIFY:Muddatlar bir-biriga mos kelmadi. Necha soat bo‘lsin? Bitta qiymat yozing.');
   if (/\b\d{1,3}\s*turgacha\b/.test(q))
     throw new Error('CLARIFY:Bu buyruq bir nechta turga tegishli. O‘zgartirish uchun bitta aniq turni yozing; “turgacha” faqat ro‘yxatni ko‘rishda ishlaydi.');
-  if (/\b(?:kiritma\w*|saqlama\w*|ochma\w*|yopma\w*|qulflama\w*|uzaytirma\w*|qilma\w*|ochirma\w*|yuborma\w*|biriktirma\w*|berma\w*|ulama\w*|boshatma\w*|chiqarma\w*|otkazma\w*|yozma\w*|toxtatma\w*|yangilama\w*|belgilama\w*|ozgartirma\w*|qaytarma\w*|tozalama\w*|tushirma\w*)\b/.test(q) || /\b(?:do not|dont|never)\s+(?:assign|release|delete|remove|give)\b/.test(q) || /(?:^|\s)не\s+(?:назнач|удал|освобод)[\p{L}]*/u.test(q) ||
-      /\b(?:och|yop|uzaytir|ochir|blokla|ber|yubor|biriktir|qulfla|yarat|hisobla|boshat|chiqar|ula|otkaz|qil|belgila|ozgartir|yangila|toxtat|qaytar|tozala|tushir)\w*\b.*\b(?:va|keyin|song|hamda)\s+.*\b(?:och|yop|uzaytir|ochir|blokla|ber|yubor|biriktir|qulfla|yarat|boshat|chiqar|ula|otkaz|qil|belgila|ozgartir|yangila|toxtat|qaytar|tozala|tushir)\w*\b/.test(q)) {
+  const negativeQuery = q.replace(/\b(?:kiritmagan|yubormagan|oynamagan|tasdiqlamagan|yakunlamagan)\w*\b/g, 'missing');
+  if (/\b(?:qoyma\w*|chozma\w*|berkitma\w*|boshlama\w*|boshlatma\w*|eslatmang\w*|eslatmagin\w*|kiritma\w*|saqlama\w*|ochma\w*|yopma\w*|qulflama\w*|uzaytirma\w*|qilma\w*|ochirma\w*|yuborma\w*|biriktirma\w*|berma\w*|ulama\w*|boshatma\w*|chiqarma\w*|otkazma\w*|yozma\w*|toxtatma\w*|yangilama\w*|belgilama\w*|ozgartirma\w*|qaytarma\w*|tozalama\w*|tushirma\w*)\b/.test(negativeQuery) || /\b(?:do not|dont|never)\s+(?:assign|release|delete|remove|give)\b/.test(q) || /(?:^|\s)не\s+(?:назнач|удал|освобод)[\p{L}]*/u.test(negativeQuery) ||
+      /\b(?:och|yop|uzaytir|ochir|blokla|ber|yubor|biriktir|qulfla|yarat|hisobla|boshat|chiqar|ula|otkaz|qil|belgila|ozgartir|yangila|toxtat|qaytar|tozala|tushir)\w*\b.*\b(?:va|yoki|keyin|song|hamda)\s+.*\b(?:och|yop|uzaytir|ochir|blokla|ber|yubor|biriktir|qulfla|yarat|boshat|chiqar|ula|otkaz|qil|belgila|ozgartir|yangila|toxtat|qaytar|tozala|tushir)\w*\b/.test(q)) {
     throw new Error('CLARIFY:Bitta aniq amalni yozing. Bir nechta yoki inkor qilingan amalni birgalikda bajarmayman.');
   }
 }
@@ -44,6 +46,8 @@ export function detectNaturalAdminAction(text: string): string|null {
   const command = text.replace(/^\/ai_(?:admin|read)(?:@[A-Za-z0-9_]+)?\s*/i, '').replace(/"[^"]*"|“[^”]*”/g, ' ').split(/(?:sarlavha|matn|sabab|izoh)\s*:/i)[0];
   const q = normalizeAiEntity(command.replace(/@\s*[A-Za-z0-9_]+/g, ' '));
   if (isBulkResultRequest(command)) return 'results_bulk_apply';
+  const roundIntent = detectMatchdayIntent(command);
+  if (roundIntent) return roundIntent === 'REMIND' ? 'matchday_remind' : roundIntent === 'ADVANCE' ? 'matchday_advance' : roundIntent === 'STATUS' ? 'matchday_status' : 'matchday_control';
   const extended = detectExtendedAdminControl(command);
   if (extended) return extended;
   if (/\b(?:no show|kelmaganlik\w*|kelmagan\w*)\b/.test(q) && /hal qil|hal et|texnik|rad et|resolve/.test(q)) return 'no_show_resolve';
@@ -99,7 +103,7 @@ export function detectNaturalAdminAction(text: string): string|null {
   if (/\b(?:tur\w*|matchday)\b/.test(q) && /\b(?:tanla\w*|qoy\w*|otkaz\w*)\b/.test(q)) return 'matchday_select';
   if (/\bai\b/.test(q) && /\b(?:yoq\w*|ochir\w*)\b/.test(q)) return /ochir/.test(q) ? 'ai_disable' : 'ai_enable';
   if (/\b(?:xabarnoma\w*|bildirishnoma\w*|notifikatsiya\w*|notification\w*)\b/.test(q) && /\b(?:yashir\w*|korsat\w*|ochir\w*)\b/.test(q)) return 'notification_control';
-  if (/\b(?:elon\w*|xabar\w*)\b/.test(q) && /\b(?:yubor\w*|jonat\w*)\b/.test(q) && !/eslat/.test(q)) return 'broadcast';
+  if (/\b(?:elon\w*|xabar\w*|bildirishnoma\w*|xabarnoma\w*)\b/.test(q) && /\b(?:yubor\w*|jonat\w*)\b/.test(q) && !/eslat/.test(q)) return 'broadcast';
   if (/\b(?:read model|kesh\w*|snapshot\w*)\b/.test(q) && /\b(?:yangila\w*|qayta qur\w*)\b/.test(q)) return 'read_model_rebuild';
   if (/\b(?:sinxronla\w*|sync qil\w*)\b/.test(q)) return 'sync';
   if (/\b(?:mavsum\w*)\b/.test(q) && /arxivla/.test(q)) return 'season_archive';

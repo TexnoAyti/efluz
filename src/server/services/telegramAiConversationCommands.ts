@@ -1,3 +1,4 @@
+import { detectMatchdayIntent } from './telegramAiMatchdayLanguage';
 import { aiPenaltySuffix } from './telegramAiScore';
 import { detectNaturalAdminAction, assertSingleNaturalAdminRequest } from './telegramAiAdminLanguage';
 import { normalizeAiEntity, resolveAiClubs, throwAiClubClarification, type AiClubChoice } from './telegramAiEntities';
@@ -44,6 +45,7 @@ export function getConversationIntent(text: string): ConversationIntent {
   if (/^(?:(?:shu|shuni|buni|uni|rejani|shu rejani|topshiriqni)\s+)?(?:bekor qil|bekor qiling|bekor qilish|cancel)$/.test(q)) return 'cancel';
   if (/^(?:yordam|buyruqlar|nima qila olasan|help)$/.test(q)) return 'help';
   if (isAiHypotheticalQuestion(text)) return 'chat';
+  if (detectMatchdayIntent(text)==='STATUS') return 'admin';
   if (/\b(?:nechanchi|qaysi\s+orinda|nima\s+uchun|nega|tahlil|taxmin|kim\s+yutadi)\b/.test(q)) return 'chat';
   if (detectNaturalAdminAction(text)) return 'admin';
   if (isSimpleConversationClubAssignmentRequest(text)) return 'admin';

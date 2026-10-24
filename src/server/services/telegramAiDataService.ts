@@ -102,7 +102,7 @@ export function createAiTournamentReader(signal?: AbortSignal) {
     const compIds = new Set(selectedComps.map(c => c.id));
     const clubIds = new Set(selectedClubs.map(c => c.id));
     const name = (id: string | null) => clubs.find(c => c.id === id)?.name || 'Raqib aniqlanmagan';
-    if (q.dataset === 'competitions') rows = selectedComps.map(c => project(c, ['id', 'name', 'type', 'status', 'seasonId', 'leagueId', 'formatConfig', 'currentMatchday', 'totalMatchdays', 'isMatchdayOpen', 'matchdayOpenedAt', 'matchdayDurationHours', 'nextMatchdayOpenAt', 'adminOverrideStatus']));
+    if (q.dataset === 'competitions') rows = selectedComps.map(c => project(c, ['id', 'name', 'type', 'status', 'seasonId', 'leagueId', 'formatConfig', 'currentMatchday', 'totalMatchdays', 'isMatchdayOpen', 'matchdayOpenedAt', 'matchdayDurationHours', 'nextMatchdayOpenAt', 'adminOverrideStatus', 'updatedAt']));
     if (q.dataset === 'clubs') {
       const fixtureClubIds = new Set<string>();
       if (q.competition && selectedComps.some(c => c.type !== 'LEAGUE')) {
