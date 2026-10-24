@@ -38,7 +38,7 @@ export function assertSingleNaturalAdminRequest(text: string): void {
   if (/\b\d{1,3}\s*turgacha\b/.test(q) && detectMatchdayIntent(text) !== 'REMIND')
     throw new Error('CLARIFY:Bu buyruq bir nechta turga tegishli. O‘zgartirish uchun bitta aniq turni yozing; “turgacha” faqat ro‘yxatni ko‘rishda ishlaydi.');
   const negativeQuery = q.replace(/\b(?:kiritmagan|yubormagan|oynamagan|tasdiqlamagan|yakunlamagan)\w*\b/g, 'missing');
-  if (/\b(?:qoyma\w*|chozma\w*|berkitma\w*|boshlama\w*|boshlatma\w*|eslatmang\w*|eslatmagin\w*|kiritma\w*|saqlama\w*|ochma\w*|yopma\w*|qulflama\w*|uzaytirma\w*|qilma\w*|ochirma\w*|yuborma\w*|biriktirma\w*|berma\w*|ulama\w*|boshatma\w*|chiqarma\w*|otkazma\w*|yozma\w*|toxtatma\w*|yangilama\w*|belgilama\w*|ozgartirma\w*|qaytarma\w*|tozalama\w*|tushirma\w*)\b/.test(negativeQuery) || /\b(?:do not|dont|never)\s+(?:assign|release|delete|remove|give)\b/.test(q) || /(?:^|\s)не\s+(?:назнач|удал|освобод)[\p{L}]*/u.test(negativeQuery) ||
+  if (/\b(?:sinxronlama\w*|qoyma\w*|chozma\w*|berkitma\w*|boshlama\w*|boshlatma\w*|eslatmang\w*|eslatmagin\w*|kiritma\w*|saqlama\w*|ochma\w*|yopma\w*|qulflama\w*|uzaytirma\w*|qilma\w*|ochirma\w*|yuborma\w*|biriktirma\w*|berma\w*|ulama\w*|boshatma\w*|chiqarma\w*|otkazma\w*|yozma\w*|toxtatma\w*|yangilama\w*|belgilama\w*|ozgartirma\w*|qaytarma\w*|tozalama\w*|tushirma\w*)\b/.test(negativeQuery) || /\b(?:do not|dont|never)\s+(?:assign|release|delete|remove|give)\b/.test(q) || /(?:^|\s)не\s+(?:назнач|удал|освобод)[\p{L}]*/u.test(negativeQuery) ||
       /\b(?:och|yop|uzaytir|ochir|blokla|ber|yubor|biriktir|qulfla|yarat|hisobla|boshat|chiqar|ula|otkaz|qil|belgila|ozgartir|yangila|toxtat|qaytar|tozala|tushir)\w*\b.*\b(?:va|yoki|keyin|song|hamda)\s+.*\b(?:och|yop|uzaytir|ochir|blokla|ber|yubor|biriktir|qulfla|yarat|boshat|chiqar|ula|otkaz|qil|belgila|ozgartir|yangila|toxtat|qaytar|tozala|tushir)\w*\b/.test(q)) {
     throw new Error('CLARIFY:Bitta aniq amalni yozing. Bir nechta yoki inkor qilingan amalni birgalikda bajarmayman.');
   }
@@ -50,6 +50,10 @@ export function detectNaturalAdminAction(text: string): string|null {
   const q = normalizeAiEntity(command.replace(/@\s*[A-Za-z0-9_]+/g, ' '));
   const expanded = expandedAdminIntent(command);
   if (expanded) return expanded;
+  if (/\b(?:teg\w*|tag\w*)\b/.test(q)&&/klub|guruh/.test(q)) {
+    if(/sinxron|yangila|sync/.test(q))return 'club_member_tags_sync';
+    if(/holati|korsat|tekshir|royxat/.test(q))return 'club_member_tags';
+  }
   if (isPlatformAdminRequest(command)) return 'platform_admin';
   if (isReplyReminderRequest(command)) return 'matchday_remind';
   if (isBulkResultRequest(command)) return 'results_bulk_apply';
