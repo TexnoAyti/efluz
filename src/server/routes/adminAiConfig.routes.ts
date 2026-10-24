@@ -1,3 +1,4 @@
+import { clubMemberTagsStatus, reconcileClubMemberTags } from '../services/telegramClubMemberTags';
 import { buildAiDailyReport } from '../services/telegramAiDailyReport';
 import { getAiObservability } from '../services/telegramAiObservability';
 /**
@@ -164,4 +165,12 @@ adminAiConfigRouter.post('/test-query', requireAdmin, requirePrimaryOwner, async
 adminAiConfigRouter.get('/daily-report', requireAdmin, requirePrimaryOwner, async (_req, res) => {
   try {res.json({success:true,...await buildAiDailyReport()});}
   catch {res.status(503).json({error:'REPORT_UNAVAILABLE'});}
+});
+
+// Tags use the fixed official group and current ownership, never caller-supplied identities.
+adminAiConfigRouter.get('/club-member-tags', requireAdmin, requirePrimaryOwner, async (_req, res) => {
+  try { res.json(await clubMemberTagsStatus()); } catch { res.status(503).json({error:'TAG_STATUS_UNAVAILABLE'}); }
+});
+adminAiConfigRouter.post('/club-member-tags/sync', requireAdmin, requirePrimaryOwner, async (_req, res) => {
+  try { res.json({result:await reconcileClubMemberTags(),...await clubMemberTagsStatus()}); } catch { res.status(503).json({error:'TAG_SYNC_UNAVAILABLE'}); }
 });
