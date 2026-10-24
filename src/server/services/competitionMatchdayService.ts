@@ -1,3 +1,4 @@
+import { assertSeasonCompetitionEnabled } from '../../lib/seasonParticipationPolicy';
 import {assertEuropeanDrawPublished,europeanDrawPublished,isEuropeanFixtureCompetition} from './europeanFixtureGate';
 import {MATCHDAY_NOTIFICATION_JOBS, processMatchdayNotificationJob} from './matchdayNotificationJobs';
 import { filterRetiredFixtures } from './retiredFixtureService';
@@ -25,6 +26,7 @@ async function loadCompetition(competitionId: string) {
   const doc = await ref.get();
   if (!doc.exists) throw new MatchdayControlError('COMPETITION_NOT_FOUND', 'Musobaqa topilmadi.', 404);
   const competition = { ...doc.data(), id: competitionId } as FirestoreCompetitionDoc;
+  assertSeasonCompetitionEnabled(competitionId,competition.seasonId);
   const fixtureDocs = await db.collection(COLLECTIONS.FIXTURES).where('competitionId', '==', competitionId).get();
   const fixtures = fixtureDocs.docs.filter(d => !d.data().seasonId || d.data().seasonId === competition.seasonId).map(d => ({ ...d.data(), id: d.id } as FirestoreFixtureDoc));
   return { db, ref, competition, fixtures: filterRetiredFixtures(fixtures, competition.seasonId) };

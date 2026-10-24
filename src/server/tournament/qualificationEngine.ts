@@ -1,3 +1,4 @@
+import { isSeasonCompetitionEnabled } from '../../lib/seasonParticipationPolicy';
 import {domesticSeasonComplete} from '../services/europeanFixtureGate';
 import { getRuntimeStateStore } from '../readModel/runtimeStateStore';
 import { withSeasonQualificationPolicy } from '../../lib/seasonQualificationPolicy';
@@ -210,7 +211,7 @@ export async function previewEuropeanQualificationSync(
     db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where('seasonId', '==', seasonId).get(),
   ]);
 
-  const allComps = compSnap.docs.map((d) => withSeasonQualificationPolicy(d.data() as FirestoreCompetitionDoc,seasonId));
+  const allComps = compSnap.docs.map((d) => withSeasonQualificationPolicy(d.data() as FirestoreCompetitionDoc,seasonId)).filter(c=>isSeasonCompetitionEnabled(c.id,seasonId));
   const leagues = allComps.filter((c) => c.type === 'LEAGUE');
   const allFixtures = fixSnap.docs.map((d) => d.data() as FirestoreFixtureDoc);
   const existingParts = partsSnap.docs.map((d) => d.data() as FirestoreCompetitionParticipantDoc);

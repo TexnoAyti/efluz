@@ -32,13 +32,13 @@ console.log('PASS full-table PNG layout, stable standings statistics, canonical 
 
 const league:any={seasonId:'season-2026-27',id:'comp-premier-league-2026',leagueId:'league-premier-league',type:'LEAGUE',formatConfig:{qualificationSpots:5}};
 const branding=tournamentImageBranding(league,[league],20);
-assert.deepEqual(branding.zones.map(z=>[z.label,z.start,z.end]),[['UCL',1,7],['UEL',8,14],['↓',18,20]]);
+assert.deepEqual(branding.zones.map(z=>[z.label,z.start,z.end]),[['UCL',1,8],['UEL',9,16],['↓',18,20]]);
 assert.equal(branding.emblemUrl,'/export-emblems/premier-league.svg');
 const overrides:any[]=[league,{id:'comp-champions-league-2026',formatConfig:{qualificationSlots:{[league.id]:7}}},{id:'comp-europa-league-2026',formatConfig:{qualificationSlots:{[league.id]:7}}}];
-assert.deepEqual(tournamentImageBranding(league,overrides,20).zones.slice(0,2).map(z=>[z.start,z.end]),[[1,7],[8,14]]);
+assert.deepEqual(tournamentImageBranding(league,overrides,20).zones.slice(0,2).map(z=>[z.start,z.end]),[[1,8],[9,16]]);
 assert.equal(tournamentImageBranding({...league,type:'KNOCKOUT'},[league],20).zones.length,0);
 assert.equal(tournamentImageBranding({...league,seasonId:'season-2027-28',formatConfig:{}},[],20).zones.some(z=>z.label==='UCL'),false);
-table.branding=branding;drawn.length=0;paintTournamentImage(ctx,table);assert.ok(drawn.includes('UCL 1–7'));assert.ok(drawn.includes('UEL 8–14'));
+table.branding=branding;drawn.length=0;paintTournamentImage(ctx,table);assert.ok(drawn.includes('UCL 1–8'));assert.ok(drawn.includes('UEL 9–16'));
 console.log('PASS PNG qualification zones follow engine config/overrides, no invented allocation, transparent emblem selection and visible zone legend');
 
 assert.equal(Object.values(SEASON_2026_27_ALLOCATION).reduce((a,b)=>a+b,0),32);
@@ -48,7 +48,7 @@ for(const [id,n] of Object.entries(SEASON_2026_27_ALLOCATION)){
  assert.equal(old.formatConfig.qualificationSpots,5,'Normalization must not mutate cached snapshots');
  assert.equal(withSeasonQualificationPolicy(old,'season-2027-28'),old,'Other seasons are unchanged');
 }
-console.log('PASS confirmed 7/7/6/6/6 zones, 32+32 totals, old-cache correction and season isolation');
+console.log('PASS confirmed 8/8/8/8 zones, 32+32 totals, old-cache correction and season isolation');
 
 // Ownership is joined by club ID, independently of row sorting and home/away orientation.
 const ownedClubs = [

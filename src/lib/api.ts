@@ -431,8 +431,8 @@ export const api = {
     return request('/api/seasons', { cacheTtlMs: 1800000, skipAuthentication: true });
   },
 
-  async getLeagues(): Promise<{ leagues: League[] }> {
-    return request('/api/leagues', { cacheTtlMs: 1800000 });
+  async getLeagues(seasonId = 'season-2026-27'): Promise<{ leagues: League[] }> {
+    return request(`/api/leagues?seasonId=${encodeURIComponent(seasonId)}`, { cacheTtlMs: 1800000 });
   },
 
   async getLeagueClubs(leagueId: string, seasonId = 'season-2026-27', skipCache = false): Promise<{ clubs: Club[] }> {

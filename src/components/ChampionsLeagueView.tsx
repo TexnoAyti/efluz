@@ -1,3 +1,4 @@
+import { SEASON_2026_27_ALLOCATION } from '../lib/seasonQualificationPolicy';
 import { AdminTournamentImageExport } from './AdminTournamentImageExport';
 import { canUseDangerZone } from '../lib/adminPermissions';
 import React, { useEffect, useState, useMemo } from 'react';
@@ -718,31 +719,23 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
         <div className="preview-surface p-5 sm:p-6 rounded-2xl border border-slate-200/80 efl-theme-border dark:border-white/10 shadow-xs space-y-4">
           <h3 className="text-sm sm:text-base font-black text-slate-900 efl-theme-text dark:text-white flex items-center gap-2">
             <Info className="w-4 h-4 text-blue-500 efl-theme-blue" />
-            <span>European Allocation Formula (32-Team Single League Phase)</span>
+            <span>Yevropa turnirlariga yo‘llanmalar (32 jamoa)</span>
           </h3>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 text-xs">
             <div className="p-4 rounded-xl border border-slate-200/80 efl-theme-border dark:border-white/10 bg-slate-50 efl-theme-surface-2 dark:bg-white/[0.03] space-y-2">
-              <div className="font-black text-blue-600 efl-theme-blue dark:text-blue-400 text-sm">UEFA Champions League (32 Clubs Total)</div>
+              <div className="font-black text-blue-600 efl-theme-blue dark:text-blue-400 text-sm">UEFA Champions League (32 jamoa)</div>
               <ul className="space-y-1.5 text-slate-600 efl-theme-text-2 dark:text-slate-400 text-xs">
-                <li>• Premier League: 7 spots (1st – 7th)</li>
-                <li>• La Liga: 7 spots (1st – 7th)</li>
-                <li>• Serie A: 6 spots (1st – 6th)</li>
-                <li>• Bundesliga: 6 spots (1st – 6th)</li>
-                <li>• Ligue 1: 6 spots (1st – 6th)</li>
+                {Object.entries(SEASON_2026_27_ALLOCATION).map(([id,count]) => <li key={id}>• {({'comp-premier-league-2026':'Premier League','comp-la-liga-2026':'La Liga','comp-serie-a-2026':'Serie A','comp-bundesliga-2026':'Bundesliga'} as Record<string,string>)[id]}: {count} ta joy (1–{count}-o‘rinlar)</li>)}
                 <li>• Format: 32-Team Single League Phase, 8 Matchdays (4H / 4A)</li>
                 <li>• Top 8: Direct to Round of 16 | 9th–24th: Knockout Play-offs | 25th–32nd: Eliminated</li>
               </ul>
             </div>
 
             <div className="p-4 rounded-xl border border-slate-200/80 efl-theme-border dark:border-white/10 bg-slate-50 efl-theme-surface-2 dark:bg-white/[0.03] space-y-2">
-              <div className="font-black text-indigo-600 efl-theme-indigo dark:text-indigo-400 text-sm">UEFA Europa League (32 Clubs Total)</div>
+              <div className="font-black text-indigo-600 efl-theme-indigo dark:text-indigo-400 text-sm">UEFA Europa League (32 jamoa)</div>
               <ul className="space-y-1.5 text-slate-600 efl-theme-text-2 dark:text-slate-400 text-xs">
-                <li>• Premier League: 7 spots (8th – 14th)</li>
-                <li>• La Liga: 7 spots (8th – 14th)</li>
-                <li>• Serie A: 6 spots (7th – 12th)</li>
-                <li>• Bundesliga: 6 spots (7th – 12th)</li>
-                <li>• Ligue 1: 6 spots (7th – 12th)</li>
+                {Object.entries(SEASON_2026_27_ALLOCATION).map(([id,count]) => <li key={id}>• {({'comp-premier-league-2026':'Premier League','comp-la-liga-2026':'La Liga','comp-serie-a-2026':'Serie A','comp-bundesliga-2026':'Bundesliga'} as Record<string,string>)[id]}: {count} ta joy ({count + 1}–{count * 2}-o‘rinlar)</li>)}
                 <li>• Format: 32-Team Single League Phase, 8 Matchdays (4H / 4A)</li>
                 <li>• Top 8: Direct to Round of 16 | 9th–24th: Knockout Play-offs | 25th–32nd: Eliminated</li>
               </ul>

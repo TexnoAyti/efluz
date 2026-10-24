@@ -1,3 +1,4 @@
+import { isSeasonLeagueEnabled } from '../../lib/seasonParticipationPolicy';
 import { Router, Request, Response } from 'express';
 import { getAllLeaguesFirestore } from '../firebase/firestoreStore';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
@@ -21,7 +22,7 @@ leaguesRouter.get('/', async (req: Request, res: Response) => {
   try {
     const leagues = await getAllLeaguesFirestore();
     res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
-    res.json({ leagues });
+    res.json({ leagues: leagues.filter(l=>isSeasonLeagueEnabled(l.id,String(req.query.seasonId || 'season-2026-27'))) });
   } catch (err: any) {
     handleFirestoreError(res, err, 'GET /api/leagues');
   }
@@ -31,7 +32,7 @@ leaguesRouter.get('/:id', async (req: Request, res: Response) => {
   try {
     const leagueId = resolveLeagueId(req.params.id);
     const leagues = await getAllLeaguesFirestore();
-    const league = leagues.find((l) => l.id === leagueId);
+    const league = leagues.find((l) => l.id === leagueId && isSeasonLeagueEnabled(l.id,String(req.query.seasonId || 'season-2026-27')));
     if (!league) {
       res.status(404).json({ error: 'League not found', code: 'NOT_FOUND', message: `League '${leagueId}' not found.` });
       return;

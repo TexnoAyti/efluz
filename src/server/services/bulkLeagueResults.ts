@@ -1,3 +1,4 @@
+import { assertSeasonCompetitionEnabled } from '../../lib/seasonParticipationPolicy';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { getFirestoreDb } from '../firebase/admin';
@@ -24,6 +25,7 @@ const hash = (value: unknown): string => createHash('sha256').update(JSON.string
 /** Authoritative, bounded transaction reads. Submitted, disputed, scored and
  * retired fixtures never count as unplayed. No read-model or offline fallback. */
 async function selection(tx: any, competitionId: string, p: Selection) {
+  assertSeasonCompetitionEnabled(competitionId,p.seasonId);
   const db = getFirestoreDb();
   const comp = await tx.get(db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId));
   if (!comp.exists || comp.data().type !== 'LEAGUE' || comp.data().seasonId !== p.seasonId)

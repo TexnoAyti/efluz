@@ -1,3 +1,4 @@
+import { isSeasonLeagueEnabled } from '../../lib/seasonParticipationPolicy';
 import { DisciplinePanel } from '../DisciplinePanel';
 import { useAuth } from '../../context/AuthContext';
 import { ADMIN_LEAGUES } from '../../lib/adminPermissions';
@@ -335,7 +336,7 @@ export const AdminSetRoleModal: React.FC<SetRoleModalProps> = ({
         <fieldset className="space-y-2 text-sm text-slate-200">
           <legend className="font-bold mb-2">Admin ruxsatlari</legend>
           <label className="flex gap-2"><input type="radio" name="admin-scope" checked={scope === 'LEAGUES'} onChange={() => setScope('LEAGUES')} />Faqat tanlangan ligalar</label>
-          {scope === 'LEAGUES' && ADMIN_LEAGUES.map(league => <label key={league.id} className="flex gap-2 pl-5"><input type="checkbox" checked={leagueIds.includes(league.id)} onChange={event => { const checked = event.target.checked; setLeagueIds(previous => checked ? [...previous, league.id] : previous.filter(id => id !== league.id)); }} />{league.name}</label>)}
+          {scope === 'LEAGUES' && ADMIN_LEAGUES.filter(league=>isSeasonLeagueEnabled(league.id)).map(league => <label key={league.id} className="flex gap-2 pl-5"><input type="checkbox" checked={leagueIds.includes(league.id)} onChange={event => { const checked = event.target.checked; setLeagueIds(previous => checked ? [...previous, league.id] : previous.filter(id => id !== league.id)); }} />{league.name}</label>)}
           <label className="flex gap-2"><input type="radio" name="admin-scope" checked={scope === 'ALL'} onChange={() => setScope('ALL')} />Barcha admin ruxsatlari</label>
           <p className="text-xs text-slate-400">Liga admini faqat tanlangan ligalarning klublari, o‘yinlari va turlarini boshqaradi.</p>
         </fieldset>

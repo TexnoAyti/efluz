@@ -218,7 +218,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               {t.selectYourClub}
             </h2>
             <p className="text-xs sm:text-sm text-slate-300 mb-4 leading-relaxed">
-              Select your club from Premier League, La Liga, Serie A, Bundesliga, or Ligue 1 to participate in matchdays and league tables.
+              Premier League, La Liga, Serie A yoki Bundesliga klublaridan birini tanlab, mavsumda qatnashing.
             </p>
             <button
               id="btn-claim-club-banner"

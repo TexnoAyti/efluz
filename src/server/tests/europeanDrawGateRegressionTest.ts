@@ -1,3 +1,4 @@
+import { isSeasonCompetitionEnabled } from '../../lib/seasonParticipationPolicy';
 import assert from 'node:assert/strict';
 import {getFirestoreDb} from '../firebase/admin';
 import {initDatabase} from '../db';
@@ -32,7 +33,7 @@ assert.equal((await db.collection('fixtures').doc(legacy.id).get()).exists,true,
 assert.equal((await previewEuropeanQualificationSync(seasonId,'final')).canApply,false);
 const provisional=await previewEuropeanQualificationSync(seasonId,'provisional');
 await applyEuropeanQualificationSync({previewToken:provisional.previewToken,seasonId,confirmation:true,adminUserId:'admin'});
-const domestic=SEED_COMPETITIONS.filter(c=>c.type==='LEAGUE');
+const domestic=SEED_COMPETITIONS.filter(c=>c.type==='LEAGUE' && isSeasonCompetitionEnabled(c.id,seasonId));
 const rows=domestic.flatMap(c=>generateRoundRobinSchedule(SEED_CLUBS.filter(t=>t.leagueId===c.leagueId).map(t=>t.id),{homeAndAway:false}).map((m,i)=>({...m,id:`domestic-${c.id}-${i}`,competitionId:c.id,seasonId,status:'CONFIRMED',homeScore:0,awayScore:0})));
 assert.equal(domesticSeasonComplete(domestic,rows,seasonId),true);
 assert.equal(domesticSeasonComplete(domestic,rows.slice(1),seasonId),false,'Missing domestic schedule cannot count as complete');

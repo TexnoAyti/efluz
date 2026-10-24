@@ -73,7 +73,7 @@ async function run() {
   const ucl = await buildAiGroundingContext('UCL jadvali');
   assert.ok(ucl.detectedCompetitions.includes(europe), 'Year-suffixed competition IDs resolve');
   const allocation = await buildAiGroundingContext('APL UCL zona qancha?');
-  assert.ok(allocation.factsSummary.includes('UCL joy: 7; UEL joy: 7'));
+  assert.ok(allocation.factsSummary.includes('UCL joy: 8; UEL joy: 8'));
   const blank = await buildAiGroundingContext('hamma bo‘sh klublar');
   assert.ok(blank.factsSummary.includes('SNAPSHOTDA BO‘SH KLUBLAR'));
   console.log('PASS all-tournament facts, compound lookup, season isolation, canonical upcoming order, full loss history, UCL/UEL and availability');
