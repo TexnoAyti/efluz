@@ -19,7 +19,7 @@ process.env.UPSTASH_REDIS_REST_TOKEN = 'isolated-test';
 resetUpstashClient(); resetMemoryRedisStore(); firestoreCircuitBreaker.reset(); resetFirestoreReadMetrics();
 try {
   const results = await Promise.all(['league-premier-league','league-la-liga','league-serie-a','league-bundesliga','league-ligue-1'].map(id => getLeagueClubsFromReadModel(id,'season-2026-27')));
-  assert.deepEqual(results.map(r => r.clubs.length),[20,20,20,18,18]);
+  assert.deepEqual(results.map(r => r.clubs.length),[20,20,20,18,0]);
   assert(results.every(r => r.degraded));
   const owner = results.flatMap(r => r.clubs).find(c => c.id === SEED_CLUBS[0].id) as any;
   assert.equal(owner.ownerUserId,'outage-owner');

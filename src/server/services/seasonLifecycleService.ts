@@ -1,3 +1,4 @@
+import { isSeasonCompetitionEnabled, assertSeasonCompetitionEnabled } from '../../lib/seasonParticipationPolicy';
 import { getFirestoreDb } from '../firebase/admin';
 import { getCompetitionFixturesFromReadModel } from '../readModel/readModelStore';
 import { filterTombstonedFixtures } from './fixtureTombstoneService';
@@ -117,7 +118,7 @@ export async function getSeasonLifecycle(seasonId = 'season-2026-27', force = fa
   if (!force && cached?.key === seasonId && cached.expiresAt > Date.now()) return cached.value;
 
   const [leagueFixtures, cupFixtures, europeFixtures, override] = await Promise.all([
-    fixturesFor(LEAGUES, seasonId), fixturesFor(CUPS, seasonId), fixturesFor(EUROPE, seasonId), readOverride(seasonId),
+    fixturesFor(LEAGUES.filter(id=>isSeasonCompetitionEnabled(id,seasonId)), seasonId), fixturesFor(CUPS.filter(id=>isSeasonCompetitionEnabled(id,seasonId)), seasonId), fixturesFor(EUROPE, seasonId), readOverride(seasonId),
   ]);
 
   const groups: Record<LifecyclePhaseId, Fixture[]> = {
@@ -138,7 +139,7 @@ export async function getSeasonLifecycle(seasonId = 'season-2026-27', force = fa
 
   const labels: Record<LifecyclePhaseId, [string, string]> = {
     LEAGUE_1_9: ['Liga 1–9-turlar', 'MD1 tugagach MD2 ochiladi; MD9 dan keyin kuboklar'],
-    DOMESTIC_CUPS: ['Milliy kuboklar', '5 ta milliy kubok bosqichi'],
+    DOMESTIC_CUPS: ['Milliy kuboklar', `${CUPS.filter(id=>isSeasonCompetitionEnabled(id,seasonId)).length} ta milliy kubok bosqichi`],
     LEAGUE_10_19: ['Liga 10–19-turlar', 'Bir davrali liga shu bosqichda MD19 bilan yakunlanadi'],
     EUROPE: ['UCL / UEL', 'MD19 dan keyin Yevropa liga bosqichi, turma-tur progression'],
   };
@@ -170,6 +171,7 @@ export async function getSeasonLifecycle(seasonId = 'season-2026-27', force = fa
 }
 
 export function fixtureLifecyclePhase(fixture: Fixture): LifecyclePhaseId | null {
+  if (!isSeasonCompetitionEnabled(fixture.competitionId, fixture.seasonId)) return null;
   const md = Number(fixture.matchday || 0);
   if (LEAGUES.includes(fixture.competitionId)) {
     if (md >= 1 && md <= 9) return 'LEAGUE_1_9';
@@ -182,6 +184,7 @@ export function fixtureLifecyclePhase(fixture: Fixture): LifecyclePhaseId | null
 }
 
 export async function assertFixtureLifecycleOpen(fixture: Fixture): Promise<void> {
+  assertSeasonCompetitionEnabled(fixture.competitionId, fixture.seasonId);
   const phase = fixtureLifecyclePhase(fixture);
   if (!phase) return;
   const lifecycle = await getSeasonLifecycle(fixture.seasonId || 'season-2026-27');

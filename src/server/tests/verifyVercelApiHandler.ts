@@ -48,7 +48,7 @@ async function testVercelHandler() {
     // 3. Test /api/leagues
     console.log('\n--- 3. Testing GET /api/leagues ---');
     const leagues = await fetchJson('/api/leagues');
-    if (leagues.status !== 200 || !Array.isArray(leagues.data.leagues) || leagues.data.leagues.length !== 5) {
+    if (leagues.status !== 200 || !Array.isArray(leagues.data.leagues) || leagues.data.leagues.length !== 4) {
       throw new Error(`Leagues endpoint failed: status=${leagues.status}, data=${JSON.stringify(leagues.data)}`);
     }
     console.log(`✅ PASS: /api/leagues -> HTTP 200, leagues count=${leagues.data.leagues.length}`);

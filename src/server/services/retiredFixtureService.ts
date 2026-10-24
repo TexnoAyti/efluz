@@ -1,3 +1,4 @@
+import { isSeasonCompetitionEnabled } from '../../lib/seasonParticipationPolicy';
 /** Explicit correction of a verified production duplicate, approved by the
  * tournament owner. Canonical round: Matchday 10. Original ID, score, proof and
  * submissions are preserved. Storage is retained for audit/recovery; the
@@ -29,7 +30,7 @@ export function hasFixtureMatchdayCorrection(competitionId: string, seasonId: st
 }
 
 export function filterRetiredFixtures<T extends { id: string; seasonId?: string }>(fixtures: T[], seasonId?: string): T[] {
-  return fixtures.filter(fixture => !isRetiredFixture(fixture.id, fixture.seasonId || seasonId)).map(fixture => correctFixtureMatchday(fixture, seasonId));
+  return fixtures.filter(fixture => isSeasonCompetitionEnabled((fixture as any).competitionId, fixture.seasonId || seasonId) && !isRetiredFixture(fixture.id, fixture.seasonId || seasonId)).map(fixture => correctFixtureMatchday(fixture, seasonId));
 }
 
 export function assertFixtureNotRetired(id: string): void {

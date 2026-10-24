@@ -1,3 +1,4 @@
+import { isSeasonCompetitionEnabled, CURRENT_SEASON_ID } from '../../lib/seasonParticipationPolicy';
 import {getFirestoreDb} from '../firebase/admin';
 import {SEED_COMPETITIONS, SEED_CLUBS} from '../db/seed';
 import {filterRetiredFixtures} from './retiredFixtureService';
@@ -12,8 +13,8 @@ function blocked(code: string, message: string): never {
 }
 /** A partial schedule (or one finished league) is not a finished domestic season. */
 export function domesticSeasonComplete(competitions: any[], fixtures: any[], seasonId: string): boolean {
-  const required = SEED_COMPETITIONS.filter(c => c.type === 'LEAGUE' && c.seasonId === seasonId);
-  if (required.length !== 5) return false;
+  const required = SEED_COMPETITIONS.filter(c => c.type === 'LEAGUE' && c.seasonId === seasonId && isSeasonCompetitionEnabled(c.id,seasonId));
+  if (required.length !== (seasonId === CURRENT_SEASON_ID ? 4 : 5)) return false;
   const canonical = filterRetiredFixtures(fixtures, seasonId);
   return required.every(seed => {
     const comp = competitions.find(c => c.id === seed.id && c.seasonId === seasonId);

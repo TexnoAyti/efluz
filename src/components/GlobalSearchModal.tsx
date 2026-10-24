@@ -69,7 +69,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
     const loadSearchData = async () => {
       try {
         const [leaguesRes, matchesRes] = await Promise.all([
-          api.getLeagues().catch(() => ({ leagues: [] })),
+          api.getLeagues(activeSeasonId).catch(() => ({ leagues: [] })),
           api.getMyMatches(activeSeasonId).catch(() => ({ fixtures: [] })),
         ]);
 

@@ -1,3 +1,4 @@
+import { assertSeasonCompetitionEnabled } from '../../lib/seasonParticipationPolicy';
 import {getFirestoreDb} from '../firebase/admin';
 import {europeanDrawPublished,isEuropeanFixtureCompetition} from '../services/europeanFixtureGate';
 import { Router, Request, Response } from 'express';
@@ -25,6 +26,12 @@ import {
 } from '../services/fixtureTombstoneService';
 
 export const competitionsRouter = Router();
+competitionsRouter.use('/:id', (req, res, next) => {
+  try {
+    assertSeasonCompetitionEnabled(req.params.id, String(req.query.seasonId || req.body?.seasonId || 'season-2026-27'));
+    next();
+  } catch (error: any) { res.status(error.statusCode || 409).json({error:error.message,code:error.code}); }
+});
 
 competitionsRouter.get('/', async (req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'private, no-store');

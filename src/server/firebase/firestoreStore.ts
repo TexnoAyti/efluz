@@ -1,3 +1,5 @@
+import { withSeasonQualificationPolicy } from '../../lib/seasonQualificationPolicy';
+import { isSeasonCompetitionEnabled, isSeasonLeagueEnabled, assertSeasonCompetitionEnabled, assertSeasonLeagueEnabled } from '../../lib/seasonParticipationPolicy';
 import { assertDisciplineFixtureAllowed, prepareFixtureDiscipline } from '../services/disciplineService';
 import { assertNoDisciplinaryHold } from '../../types/discipline';
 import { clubStadium } from '../../constants/clubStadiums';
@@ -725,13 +727,13 @@ export async function getAvailableClubsFirestore(
 ): Promise<Club[]> {
   const cacheKey = `firestore:clubs:available:${seasonId}`;
   const cached = getFromCache<Club[]>(cacheKey);
-  if (cached && cached.length > 0) return cached;
+  if (cached && cached.length > 0) return cached.filter(c=>isSeasonLeagueEnabled(c.leagueId,seasonId));
 
   try {
     const { clubOccupancyMap } = await getActiveOccupanciesForSeason(seasonId);
 
     // Filter from SEED_CLUBS directly (0 extra reads)
-    const availableClubs: Club[] = SEED_CLUBS.filter((c) => !clubOccupancyMap.has(c.id)).map((seed) => ({
+    const availableClubs: Club[] = SEED_CLUBS.filter((c) => isSeasonLeagueEnabled(c.leagueId,seasonId) && !clubOccupancyMap.has(c.id)).map((seed) => ({
       id: seed.id,
       name: seed.name,
       shortName: seed.shortName,
@@ -1006,6 +1008,7 @@ export async function claimClubAtomicFirestore(
   options?: { authoritativeOnly?: boolean; circuitProbeReserved?: boolean; requiresActiveUser?: boolean; verifiedProfile?: { id:string; telegramId:string; username?:string; firstName?:string; lastName?:string } }
 ): Promise<{ success: boolean; club: Club; authoritative?: boolean; isFallback?: boolean }> {
   assertNoSyntheticIdsInProduction('claimClubAtomicFirestore', [userId, clubId, seasonId]);
+  assertSeasonLeagueEnabled(SEED_CLUBS.find(c=>c.id===clubId)?.leagueId,seasonId);
   const now = new Date().toISOString();
 
   if (options?.circuitProbeReserved && firestoreCircuitBreaker.getStatus().state === 'HALF_OPEN' || firestoreCircuitBreaker.canExecute()) {
@@ -1056,6 +1059,7 @@ export async function claimClubAtomicFirestore(
           throw new ClubNotFoundError(`Club with ID '${clubId}' does not exist.`);
         }
         const clubData = clubDoc.data() as FirestoreClubDoc;
+        assertSeasonLeagueEnabled(clubData.leagueId,seasonId);
 
         // 2. Read user's existing membership for this season
         trackFirestoreRead(COLLECTIONS.CLUB_OCCUPANCIES, 1, 'claimClubAtomicFirestore:occupancy');
@@ -1257,17 +1261,17 @@ export async function getAllCompetitionsFirestore(seasonId = 'season-2026-27'): 
     const snapshot = await redisGetFresh<Competition[]>(ReadModelKeys.competitions(seasonId));
     if (snapshot?.data?.length) {
       for (const comp of snapshot.data) compOverrideMap.set(comp.id, comp as FirestoreCompetitionDoc);
-      return snapshot.data;
+      return snapshot.data.filter(c=>isSeasonCompetitionEnabled(c.id,seasonId)).map(c=>withSeasonQualificationPolicy(c,seasonId));
     }
   } catch {}
 
   const cached = getFromCache<Competition[]>(cacheKey);
-  if (cached && cached.length > 0) return cached;
+  if (cached && cached.length > 0) return cached.filter(c=>isSeasonCompetitionEnabled(c.id,seasonId)).map(c=>withSeasonQualificationPolicy(c,seasonId));
 
   // Serve static competitions from SEED_COMPETITIONS (ZERO Firestore reads)
   const validComps = SEED_COMPETITIONS.filter((c) => {
     return (
-      !c.id.includes('trophee-des-champions') &&
+      isSeasonCompetitionEnabled(c.id,seasonId) && !c.id.includes('trophee-des-champions') &&
       !c.id.includes('conference-league') &&
       !c.id.includes('uecl') &&
       !c.id.includes('efl-cup') &&
@@ -1321,7 +1325,7 @@ export async function getAllCompetitionsFirestore(seasonId = 'season-2026-27'): 
   });
 
   setInCache(cacheKey, competitions, 300000); // 5 min cache
-  return competitions;
+  return competitions.map(c=>withSeasonQualificationPolicy(c,seasonId));
 }
 
 export async function getCompetitionByIdFirestore(competitionId: string): Promise<Competition | null> {
@@ -2097,7 +2101,7 @@ export async function getAdminFixturesPagedFirestore(options: AdminFixturesQuery
 
 export async function getFixtureByIdFirestore(fixtureId: string, currentUserId?: string): Promise<Fixture | null> {
   const fixture = await getFixtureByIdFirestoreUncorrected(fixtureId, currentUserId);
-  return fixture && (await filterPublishedEuropeanFixtures([fixture])).length ? correctFixtureMatchday(fixture) : null;
+  return fixture && isSeasonCompetitionEnabled(fixture.competitionId,fixture.seasonId) && (await filterPublishedEuropeanFixtures([fixture])).length ? correctFixtureMatchday(fixture) : null;
 }
 
 async function getFixtureByIdFirestoreUncorrected(fixtureId: string, currentUserId?: string): Promise<Fixture | null> {
@@ -2470,6 +2474,7 @@ export async function generateCompetitionFixturesFirestore(
   competitionId: string,
   options: { force?: boolean } = {}
 ): Promise<{ generated: number; matchdays: number }> {
+  assertSeasonCompetitionEnabled(competitionId, SEED_COMPETITIONS.find(c=>c.id===competitionId)?.seasonId);
   const db = getFirestoreDb();
   const compDoc = await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get();
   // Test-only local fallback: the isolated regression suite intentionally uses
@@ -2962,6 +2967,7 @@ export function isMatchdayPlayableKey(
   matchday: number,
   compState?: { currentMatchday?: number; adminOverrideStatus?: string; isMatchdayOpen?: boolean; type?: string; nextMatchdayOpenAt?: string }
 ): boolean {
+  if (!isSeasonCompetitionEnabled(competitionId,seasonId)) return false;
   const key = getMatchdayLockKey(seasonId, competitionId, matchday);
   const lock = matchdayLocksCache.get(key);
 
@@ -2999,6 +3005,7 @@ export async function assertMatchdayPlayableFirestore(
   competitionId: string,
   matchday: number
 ): Promise<void> {
+  assertSeasonCompetitionEnabled(competitionId,seasonId);
   const key = getMatchdayLockKey(seasonId, competitionId, matchday);
   const lock = await getMatchdayLockFirestore(seasonId, competitionId, matchday, true);
 
@@ -4127,6 +4134,7 @@ export async function submitFixtureResultFirestore(
     }
 
     const fixture = fixDoc.data() as FirestoreFixtureDoc;
+    assertSeasonCompetitionEnabled(fixture.competitionId,fixture.seasonId);
 
 
     // Authoritative Server-Side Isolated Matchday Lock Check FIRST
@@ -4862,6 +4870,7 @@ export async function reopenFixtureFirestore(
         throw new Error(`Fixture '${fixtureId}' not found.`);
       }
 
+      assertSeasonCompetitionEnabled(fixDoc.data()?.competitionId,fixDoc.data()?.seasonId);
       // Reset fixture to SCHEDULED
       await fixRef.update({
         status: 'SCHEDULED',
@@ -5860,6 +5869,7 @@ export async function adminAssignClubFirestore(
   options?: { authoritativeOnly?: boolean }
 ): Promise<{ success: boolean; message: string; club: Club; authoritative?: boolean; isFallback?: boolean }> {
   assertNoSyntheticIdsInProduction('adminAssignClubFirestore', [adminUserId, clubId, targetUserId, seasonId]);
+  assertSeasonLeagueEnabled(SEED_CLUBS.find(c=>c.id===clubId)?.leagueId,seasonId);
   const now = new Date().toISOString();
   try {
     const db = getFirestoreDb();
@@ -5894,6 +5904,7 @@ export async function adminAssignClubFirestore(
     await db.runTransaction(async batch => {
     const currentClub = await batch.get(clubRef);
     if (!currentClub.exists) throw new ClubNotFoundError(`Club with ID '${clubId}' not found.`);
+    assertSeasonLeagueEnabled(currentClub.data()?.leagueId,seasonId);
     const currentOccupancy = await batch.get(clubOccRef);
     const currentMembership = await batch.get(membershipRef);
     for (const record of [currentOccupancy, currentMembership]) {
@@ -6131,6 +6142,7 @@ export async function adminApproveFixtureResultFirestore(
       }
 
       const fixture = fixDoc.data() as FirestoreFixtureDoc;
+      assertSeasonCompetitionEnabled(fixture.competitionId,fixture.seasonId);
       resolveCupResult({ homeScore, awayScore }, fixture, isResultCup(fixture.competitionId));
       if (homeScore > awayScore) winnerClubId = fixture.homeClubId;
       else if (awayScore > homeScore) winnerClubId = fixture.awayClubId;
@@ -6454,6 +6466,7 @@ export async function adminEditFixtureResultFirestore(
     const sqliteRow = queryGet<any>('SELECT * FROM fixtures WHERE id = ?', [fixtureId]);
     const seasonId = existingData?.seasonId || sqliteRow?.season_id || 'season-2026-27';
     const compId = existingData?.competitionId || sqliteRow?.competition_id || '';
+    assertSeasonCompetitionEnabled(compId,seasonId);
     const homeClubId = existingData?.homeClubId || sqliteRow?.home_club_id || null;
     const awayClubId = existingData?.awayClubId || sqliteRow?.away_club_id || null;
     const matchday = existingData?.matchday !== undefined ? existingData.matchday : (sqliteRow?.matchday ?? 1);
@@ -6572,6 +6585,7 @@ export async function adminEditFixtureResultFirestore(
     }
 
     const existing = fixDoc.data() as FirestoreFixtureDoc;
+    assertSeasonCompetitionEnabled(existing.competitionId,existing.seasonId);
     if (params.expectedFixture) {
       if (process.env.DATABASE_PROVIDER !== 'supabase') throw new Error('Guarded topic results require the PostgreSQL runtime.');
       assertTopicResultCurrent(existing, params.expectedFixture);
@@ -6738,6 +6752,7 @@ export async function adminDeleteFixtureResultFirestore(
     const sqliteRow = queryGet<any>('SELECT * FROM fixtures WHERE id = ?', [fixtureId]);
     const seasonId = existingData?.seasonId || sqliteRow?.season_id || 'season-2026-27';
     const compId = existingData?.competitionId || sqliteRow?.competition_id || '';
+    assertSeasonCompetitionEnabled(compId,seasonId);
     const homeClubId = existingData?.homeClubId || sqliteRow?.home_club_id || null;
     const awayClubId = existingData?.awayClubId || sqliteRow?.away_club_id || null;
     const matchday = existingData?.matchday !== undefined ? existingData.matchday : (sqliteRow?.matchday ?? 1);
@@ -6863,6 +6878,7 @@ export async function adminDeleteFixtureResultFirestore(
     }
 
     const existing = fixDoc.data() as FirestoreFixtureDoc;
+    assertSeasonCompetitionEnabled(existing.competitionId,existing.seasonId);
     const oldScore = {
       homeScore: existing.homeScore,
       awayScore: existing.awayScore,

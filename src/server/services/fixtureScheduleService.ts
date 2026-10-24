@@ -1,3 +1,4 @@
+import { isSeasonCompetitionEnabled } from '../../lib/seasonParticipationPolicy';
 import { randomUUID } from 'node:crypto';
 import type { User } from '../../types';
 import { isLeagueAdmin, permittedAdminCompetitionIds } from '../../lib/adminPermissions';
@@ -19,7 +20,7 @@ export async function previewFixtureSchedule(user: User, selector: ScheduleSelec
   const scoped = isLeagueAdmin(user) ? new Set(permittedAdminCompetitionIds(user)) : null;
   const competitions = await db.collection('competitions').where('seasonId', '==', selector.seasonId).get();
   const allowed = new Set(competitions.docs.map(doc => ({id:doc.id, ...doc.data()} as any)).filter(c =>
-    (!scoped || scoped.has(c.id)) && (!selector.competitionId || c.id === selector.competitionId) &&
+    isSeasonCompetitionEnabled(c.id,selector.seasonId) && (!scoped || scoped.has(c.id)) && (!selector.competitionId || c.id === selector.competitionId) &&
     (!selector.category || selector.category === 'ALL' || (selector.category === 'EUROPEAN' ? ['EUROPEAN_KNOCKOUT','EUROPEAN_LEAGUE_PHASE'].includes(c.type) : (selector.category === 'KNOCKOUT' ? ['KNOCKOUT','DOMESTIC_CUP'].includes(c.type) : c.type === selector.category)))
   ).map(c => c.id));
   if (selector.competitionId && scoped && !scoped.has(selector.competitionId)) fail('ADMIN_SCOPE_FORBIDDEN',403);

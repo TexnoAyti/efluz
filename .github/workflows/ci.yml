@@ -74,6 +74,7 @@ jobs:
           bun run test:security-http
           bun run test:european-safety
           node scripts/run-isolated-test.mjs src/server/tests/europeanDrawGateRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/seasonParticipationRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/cupResultRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/cupParticipantResultTest.ts
           bun run test:domestic-cup:isolated

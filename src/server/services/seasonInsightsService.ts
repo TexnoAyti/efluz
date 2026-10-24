@@ -1,3 +1,4 @@
+import { filterSeasonFixtures, isSeasonCompetitionEnabled } from '../../lib/seasonParticipationPolicy';
 import {loadPostgresSeasonFixtures, loadPostgresSeasonOwners} from './postgresSeasonRead';
 import { Fixture } from '../../types';
 import { queryAll } from '../db';
@@ -83,7 +84,7 @@ async function loadSeasonFixtures(seasonId: string): Promise<{ fixtures: Fixture
   const fresh = await redisGetFresh<Fixture[]>(key);
   const snapshot = fresh || (await redisGetLkg<Fixture[]>(key));
   if (Array.isArray(snapshot?.data) && snapshot!.data.length > 0) {
-    return { fixtures: snapshot!.data, source: process.env.DATABASE_PROVIDER === 'supabase' ? 'postgresql' : fresh ? 'redis' : 'redis_stale' };
+    return { fixtures: filterSeasonFixtures(snapshot!.data,seasonId), source: process.env.DATABASE_PROVIDER === 'supabase' ? 'postgresql' : fresh ? 'redis' : 'redis_stale' };
   }
 
   if (process.env.DATABASE_PROVIDER === 'supabase') return {fixtures: await loadPostgresSeasonFixtures(seasonId), source: 'postgresql'};
@@ -91,7 +92,7 @@ async function loadSeasonFixtures(seasonId: string): Promise<{ fixtures: Fixture
     `SELECT * FROM fixtures WHERE season_id = ? OR season_id IS NULL ORDER BY matchday ASC, scheduled_at ASC, id ASC`,
     [seasonId]
   );
-  return { fixtures: rows.map((row) => normalizeSqliteFixture(row, seasonId)), source: 'sqlite' };
+  return { fixtures: filterSeasonFixtures(rows.map((row) => normalizeSqliteFixture(row, seasonId)),seasonId), source: 'sqlite' };
 }
 
 async function loadOwners(seasonId: string): Promise<OwnerEntry[]> {
@@ -218,7 +219,7 @@ export function isConfirmedFinalFixture(fixture: Fixture): boolean {
 
 export async function getSeasonTrophies(seasonId = 'season-2026-27', options?: { fixtures: Fixture[]; competitionId: string }): Promise<{ trophies: TrophyRecord[]; source: string; unavailableCompetitions: string[] }> {
   const [{ fixtures, source }, owners] = await Promise.all([
-    options ? Promise.resolve({ fixtures: options.fixtures, source: 'redis' }) : loadSeasonFixtures(seasonId),
+    options ? Promise.resolve({ fixtures: filterSeasonFixtures(options.fixtures,seasonId), source: 'redis' }) : loadSeasonFixtures(seasonId),
     loadOwners(seasonId),
   ]);
   const ownerByClub = new Map(owners.map((owner) => [owner.id, owner]));
@@ -226,7 +227,7 @@ export async function getSeasonTrophies(seasonId = 'season-2026-27', options?: {
   for (const fixture of fixtures) {
     if (fixture.seasonId && fixture.seasonId !== seasonId) continue;
     if (options && fixture.competitionId !== options.competitionId) continue;
-    if (!fixture.competitionId) continue;
+    if (!fixture.competitionId || !isSeasonCompetitionEnabled(fixture.competitionId,seasonId)) continue;
     const list = grouped.get(fixture.competitionId) || [];
     list.push(fixture);
     grouped.set(fixture.competitionId, list);

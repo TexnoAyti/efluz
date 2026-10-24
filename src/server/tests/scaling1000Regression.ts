@@ -1,3 +1,4 @@
+import { isSeasonLeagueEnabled } from '../../lib/seasonParticipationPolicy';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import express from 'express';
@@ -25,9 +26,9 @@ export async function runScaling1000Regression() {
     isSuspended: false, createdAt: '', updatedAt: '',
   }));
   const tokens = users.map(user => createSessionToken(user));
-  const clubs = SEED_CLUBS.map((club, i) => ({ ...club, ownerUserId: users[i].id,
+  const clubs = SEED_CLUBS.filter(club => isSeasonLeagueEnabled(club.leagueId,season)).map((club, i) => ({ ...club, ownerUserId: users[i].id,
     ownerUsername: users[i].username, isOccupied: true, isTaken: true }));
-  assert.equal(clubs.length, 96);
+  assert.equal(clubs.length, 78);
   const leagueIds = [...new Set(clubs.map(club => club.leagueId))];
   const competitions = leagueIds.map(leagueId => ({
     id: `comp-${leagueId.replace(/^league-/, '')}-2026`, seasonId: season, leagueId,
@@ -57,7 +58,7 @@ export async function runScaling1000Regression() {
     })));
   }
   await quotaCachedRead(`deadlines:${season}`, 3600, async () => []);
-  await Promise.all(users.slice(0, 96).map(user => quotaCachedRead(`no-shows:${season}:${user.id}`, 900, async () => [])));
+  await Promise.all(users.slice(0, clubs.length).map(user => quotaCachedRead(`no-shows:${season}:${user.id}`, 900, async () => [])));
   clearProcessMemoryForTest(); // Redis must survive a process-cache cold start.
   const { createApp, ensureDbReady } = await import('../app');
   await ensureDbReady();
@@ -89,7 +90,7 @@ export async function runScaling1000Regression() {
           assert.equal(body.currentClub?.id || null, clubs[i]?.id || null);
           assert.equal(body.currentClubStatus, 'resolved');
         } else if (path === '/api/me/matches') {
-          assert.equal(body.fixtures.length, i < 96 ? 1 : 0, `User ${i}: ${JSON.stringify(body.fixtures.map((f: any) => ({ id: f.id, competitionId: f.competitionId })))}`);
+          assert.equal(body.fixtures.length, i < clubs.length ? 1 : 0, `User ${i}: ${JSON.stringify(body.fixtures.map((f: any) => ({ id: f.id, competitionId: f.competitionId })))}`);
           assert.ok(body.fixtures.every((f: any) => !f.userSubmission &&
             [f.homeClubId, f.awayClubId].includes(clubs[i]?.id)));
         } else if (path === '/api/me/notifications') {
@@ -110,7 +111,7 @@ export async function runScaling1000Regression() {
     assert.equal(firestoreCalls, 0, '7000 warm HTTP requests with a CLOSED breaker must make zero Firestore collection calls');
     assert.equal((await fetch(base + '/api/me')).status, 401);
     durations.sort((a, b) => a - b);
-    console.log(`PASS scaling HTTP: 1000 signed users on one IP, 96 owners + 904 spectators, 7000 successful requests, zero Firestore calls; local elapsed=${Math.round(performance.now() - started)}ms p95=${Math.round(durations[Math.floor(durations.length * .95)])}ms`);
+    console.log(`PASS scaling HTTP: 1000 signed users on one IP, 78 owners + 922 spectators, 7000 successful requests, zero Firestore calls; local elapsed=${Math.round(performance.now() - started)}ms p95=${Math.round(durations[Math.floor(durations.length * .95)])}ms`);
   } finally {
     await new Promise<void>(resolve => server.close(() => resolve()));
     db.collection = original;

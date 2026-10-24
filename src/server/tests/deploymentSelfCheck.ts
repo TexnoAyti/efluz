@@ -125,10 +125,18 @@ async function runDeploymentSelfCheck() {
 
     // 3.2 /api/leagues
     const leagues = await testEndpoint('/api/leagues');
-    if (leagues.status !== 200 || !leagues.isJson || !Array.isArray(leagues.json?.leagues) || leagues.json.leagues.length !== 5) {
+    if (leagues.status !== 200 || !leagues.isJson || !Array.isArray(leagues.json?.leagues) || leagues.json.leagues.length !== 4) {
       throw new Error(`FAILED [CHECK 3.2]: /api/leagues failed -> HTTP ${leagues.status}, leagues count=${leagues.json?.leagues?.length}`);
     }
     console.log(`✅ PASS [CHECK 3.2]: GET /api/leagues returned HTTP 200 JSON (${leagues.json.leagues.length} leagues)`);
+
+    const activeLeagueIds = leagues.json.leagues.map((league: any) => league.id).sort();
+    const expectedLeagueIds = ['league-premier-league', 'league-la-liga', 'league-serie-a', 'league-bundesliga'].sort();
+    if (JSON.stringify(activeLeagueIds) !== JSON.stringify(expectedLeagueIds)) throw new Error('Current season league membership is incorrect');
+    const archivedLeagues = await testEndpoint('/api/leagues?seasonId=season-2025-26');
+    if (archivedLeagues.status !== 200 || archivedLeagues.json?.leagues?.length !== 5) throw new Error('Historical league catalogue changed');
+    const withdrawnLeague = await testEndpoint('/api/leagues/league-ligue-1');
+    if (withdrawnLeague.status !== 404) throw new Error('Withdrawn league still accessible in current season');
 
     // 3.3 /api/leagues/league-premier-league/clubs
     const plClubs = await testEndpoint('/api/leagues/league-premier-league/clubs');

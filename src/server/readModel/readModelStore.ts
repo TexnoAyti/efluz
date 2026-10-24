@@ -1,3 +1,4 @@
+import { isSeasonCompetitionEnabled, isSeasonLeagueEnabled } from '../../lib/seasonParticipationPolicy';
 import { clubStadium } from '../../constants/clubStadiums';
 import {filterPublishedEuropeanFixtures} from '../services/europeanFixtureGate';
 import { withSeasonQualificationPolicy } from '../../lib/seasonQualificationPolicy';
@@ -1489,7 +1490,7 @@ export async function getCompetitionsFromReadModel(
   });
 
   return {
-    competitions: await (await import('../services/competitionFixtureCounts')).withVisibleFixtureCounts(result.data.map(c=>withSeasonQualificationPolicy(c,seasonId)), seasonId),
+    competitions: await (await import('../services/competitionFixtureCounts')).withVisibleFixtureCounts(result.data.filter(c=>isSeasonCompetitionEnabled(c.id,seasonId)).map(c=>withSeasonQualificationPolicy(c,seasonId)), seasonId),
     source: result.source,
     stale: Boolean(result.stale),
     degraded: Boolean(result.degraded),
@@ -1516,7 +1517,7 @@ export async function getAdminClubsFromReadModel(
     validateData: (data) => Array.isArray(data) && data.length > 0,
   });
 
-  let clubs = result.data;
+  let clubs = result.data.filter(c => isSeasonLeagueEnabled(c.leagueId, seasonId));
   if (leagueId && leagueId !== 'ALL') {
     clubs = clubs.filter((c) => c.leagueId === leagueId);
   }
@@ -1568,7 +1569,7 @@ export async function getLeagueClubsFromReadModel(
     validateData: data => Array.isArray(data) && data.length > 0,
   });
   return {
-    clubs: result.data.filter(c => c.leagueId === leagueId).map(c => enrichClubForUser(c, currentUserId)),
+    clubs: result.data.filter(c => c.leagueId === leagueId && isSeasonLeagueEnabled(c.leagueId, seasonId)).map(c => enrichClubForUser(c, currentUserId)),
     source: result.source, stale: Boolean(result.stale), degraded: Boolean(result.degraded),
     snapshotAt: result.generatedAt,
   };
@@ -1594,7 +1595,7 @@ export async function getAvailableClubsFromReadModel(
 
   // Filter out occupied/claimed clubs; claimed clubs NEVER become available!
   const availableClubs = result.data
-    .filter((c) => !c.ownerUserId && !c.isOccupied && !c.isTaken)
+    .filter((c) => isSeasonLeagueEnabled(c.leagueId, seasonId) && !c.ownerUserId && !c.isOccupied && !c.isTaken)
     .map((c) => enrichClubForUser(c, currentUserId));
 
   return {

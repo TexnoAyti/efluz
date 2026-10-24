@@ -1,3 +1,4 @@
+import { isSeasonCompetitionEnabled, isSeasonLeagueEnabled } from '../../lib/seasonParticipationPolicy';
 import { aiPenaltySuffix } from './telegramAiScore';
 /**
  * Telegram AI Grounding Service
@@ -116,9 +117,9 @@ export async function buildAiGroundingContext(
   ]);
   hasStaleData = compSnapshot.stale || clubSnapshot.stale;
   const competitions = (compSnapshot.data.length ? compSnapshot.data : SEED_COMPETITIONS as unknown as Competition[])
-    .filter(c => !c.seasonId || c.seasonId === seasonId).map(c => withSeasonQualificationPolicy(c, seasonId));
+    .filter(c => (!c.seasonId || c.seasonId === seasonId) && isSeasonCompetitionEnabled(c.id,seasonId)).map(c => withSeasonQualificationPolicy(c, seasonId));
   const clubs = (clubSnapshot.data.length ? clubSnapshot.data : SEED_CLUBS as unknown as Club[])
-    .filter(c => !(c as Club & { seasonId?: string }).seasonId || (c as Club & { seasonId?: string }).seasonId === seasonId);
+    .filter(c=>isSeasonLeagueEnabled(c.leagueId,seasonId)).filter(c => !(c as Club & { seasonId?: string }).seasonId || (c as Club & { seasonId?: string }).seasonId === seasonId);
   const requestedStage=detectAiCupStage(query);
   const finalistQuestion = /finalchi|finalist|finalga\s+(?:kim|qaysi\s+jamoa)|finalga\s+chiq/i.test(query);
   const selection = resolveAiClubs(query, clubs, options?.selectedClubIds, options?.previousUserQueries);

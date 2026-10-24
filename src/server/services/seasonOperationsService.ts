@@ -1,3 +1,4 @@
+import { isSeasonCompetitionEnabled } from '../../lib/seasonParticipationPolicy';
 import {loadPostgresSeasonFixtures} from './postgresSeasonRead';
 import { filterRetiredFixtures } from './retiredFixtureService';
 import { Fixture, Competition, StandingsRow } from '../../types';
@@ -281,7 +282,7 @@ export async function getQualificationTracker(seasonId = 'season-2026-27') {
   const competitionResult = await getCompetitionsFromReadModel(seasonId).catch(() => ({ competitions: [] as Competition[] } as any));
   const competitions = (competitionResult.competitions || []) as Competition[];
   const byId = new Map(competitions.map((competition) => [competition.id, competition]));
-  const leagues = await Promise.all(Array.from(DOMESTIC_LEAGUES).map(async (competitionId) => {
+  const leagues = await Promise.all(Array.from(DOMESTIC_LEAGUES).filter(id=>isSeasonCompetitionEnabled(id,seasonId)).map(async (competitionId) => {
     const standingsResult = await getCompetitionStandingsFromReadModel(competitionId, seasonId);
     const comp = byId.get(competitionId);
     const config: any = comp?.formatConfig || {};

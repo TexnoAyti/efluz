@@ -117,19 +117,19 @@ try {
   const claimed = await notifications.eval<any[], any>('EFL_NOTIFY_CLAIM_V1', ['queue', 'processing', 'worker'], ['owner', Date.now()]);
   assert.equal(claimed.jobId, 'job'); assert.deepEqual(await notifications.get('queue'), []);
   assert.equal(legacyHttpCommits, 0);
-  for (const id of ['club-toulouse','club-alaves','club-monaco']) await db.collection('clubs').doc(id).set({id,name:id,leagueId:'league-ligue-1',isActive:true});
-  await adminAssignClubFirestore('user-900001','club-toulouse','user-900002','season-2026-27',{authoritativeOnly:true});
+  for (const id of ['club-udinese','club-torino','club-monza']) await db.collection('clubs').doc(id).set({id,name:id,leagueId:'league-serie-a',isActive:true});
+  await adminAssignClubFirestore('user-900001','club-udinese','user-900002','season-2026-27',{authoritativeOnly:true});
   const ownershipSnapshot=async()=> (await pg.query("select collection_path,document_id,encoded from efl_runtime.documents where space='preview' and collection_path in ('clubs','club_occupancies','club_memberships','user_memberships','audit_logs') order by collection_path,document_id")).rows;
   const beforeFailure=await ownershipSnapshot();
   failAssignment=true;
-  await assert.rejects(adminAssignClubFirestore('user-900001','club-alaves','user-900002','season-2026-27',{authoritativeOnly:true}),/POSTGRES_RPC_HTTP_400/);
+  await assert.rejects(adminAssignClubFirestore('user-900001','club-torino','user-900002','season-2026-27',{authoritativeOnly:true}),/POSTGRES_RPC_HTTP_400/);
   failAssignment=false;
   assert.deepEqual(await ownershipSnapshot(),beforeFailure,'Failed assignment must not release the previous club');
-  await adminAssignClubFirestore('user-900001','club-alaves','user-900002','season-2026-27',{authoritativeOnly:true});
-  for(const collection of ['club_occupancies','club_memberships']) assert.equal((await db.collection(collection).doc('season-2026-27_club-toulouse').get()).data().status,'released');
-  assert.equal((await db.collection('user_memberships').doc('season-2026-27_user-900002').get()).data().clubId,'club-alaves');
-  await assert.rejects(adminAssignClubFirestore('user-900001','club-alaves','user-900003','season-2026-27',{authoritativeOnly:true}),/already belongs/);
-  const simultaneous=await Promise.allSettled(['user-900004','user-900005'].map(user=>adminAssignClubFirestore('user-900001','club-monaco',user,'season-2026-27',{authoritativeOnly:true})));
+  await adminAssignClubFirestore('user-900001','club-torino','user-900002','season-2026-27',{authoritativeOnly:true});
+  for(const collection of ['club_occupancies','club_memberships']) assert.equal((await db.collection(collection).doc('season-2026-27_club-udinese').get()).data().status,'released');
+  assert.equal((await db.collection('user_memberships').doc('season-2026-27_user-900002').get()).data().clubId,'club-torino');
+  await assert.rejects(adminAssignClubFirestore('user-900001','club-torino','user-900003','season-2026-27',{authoritativeOnly:true}),/already belongs/);
+  const simultaneous=await Promise.allSettled(['user-900004','user-900005'].map(user=>adminAssignClubFirestore('user-900001','club-monza',user,'season-2026-27',{authoritativeOnly:true})));
   assert.equal(simultaneous.filter(r=>r.status==='fulfilled').length,1,'Concurrent admin assignments must not overwrite a winner');
   console.log('PASS native PostgreSQL admin transfers: atomic failure preserves old club, previous membership releases, existing owner preserved, concurrent assignments have one winner');
   process.env.NODE_ENV='production'; // Exercise durable ticket paths, never memory fallback.
