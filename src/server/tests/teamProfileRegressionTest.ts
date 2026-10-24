@@ -24,7 +24,7 @@ assert.equal(teamProfileSummary({...data,leagues:[{...base,teamIds:['unrelated']
 const minimized={...data,leagues:[{...base,teams:{...base.teams,[teams[1].id]:{...base.teams[teams[1].id],members:[],captainMemberId:''}}}]};
 assert.deepEqual(teamProfileSummary(minimized).players,summary.players,'Own career statistics do not depend on opponent roster disclosure');
 const html=render(React.createElement(TeamProfile,{data,onBack:()=>{},onEdit:()=>{}}));
-for(const label of ['Tashkent Team','Captain A','Team League','Sovrinlar','Teamni boshqarish','Faqat sizga','Uchrashuvni ochish'])assert.ok(html.includes(label),label);
+for(const label of ['Tashkent Team','Captain A','Team League','Sovrinlar','Teamni boshqarish','TEAMS','Uchrashuvni ochish'])assert.ok(html.includes(label),label);
 assert.equal(JSON.stringify(data),original,'Profile rendering does not mutate tournaments');
 for(const team of teams)assert.equal(readTeamPageId(teamPagePath(team.id)),team.id);
 for(const path of ['/teams/../../admin','/teams/%','/teams/club-arsenal','/teams/tp_1','/clubs/tp_teamtest00'])assert.equal(readTeamPageId(path),null);
@@ -57,3 +57,6 @@ assert.equal(profileSearchTarget('Tashkent Team',[{id:'club-same',name:'Tashkent
 assert.deepEqual(profileSearchTarget('Arsenal',[{id:'club-arsenal',name:'Arsenal'}],[]),{kind:'club',id:'club-arsenal'});
 assert.equal(profileSearchTarget('Team',[],teams),null);
 console.log('PASS team profiles: champions require completed finals, former-member history, cancelled/upcoming/result filters, ordered fixtures, validated deep links, unambiguous club/team search, profile layout and immutable input.');
+
+const releasedProfile=render(React.createElement(TeamProfile,{data,onBack:()=>{}}));
+assert.equal(releasedProfile.includes('Teamni boshqarish'),false,'Spectators cannot open profile editing');

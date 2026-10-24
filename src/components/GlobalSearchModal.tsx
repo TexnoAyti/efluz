@@ -1,5 +1,5 @@
 import {TeamBadge} from './teamLeaguePreview/TeamBadge';
-import {canSeeTeamPreview,type PreviewTeam} from '../types/teamLeaguePreview';
+import {type PreviewTeam} from '../types/teamLeaguePreview';
 import {loadTeamPreview} from '../lib/teamLeaguePreviewApi';
 import {openTeamProfile,profileSearchTarget} from '../lib/teamNavigation';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
@@ -49,8 +49,8 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
   const [teamLoading,setTeamLoading]=useState(false),[teamError,setTeamError]=useState(''),[teamRetry,setTeamRetry]=useState(0);
   const hasTeamQuery=!!query.trim();
   const [teamSearch,setTeamSearch]=useState<{userId:string;teams:PreviewTeam[]}|null>(null);
-  useEffect(()=>{let cancelled=false;setTeamSearch(null);setTeamError('');setTeamLoading(false);if(!isOpen||!hasTeamQuery||!user||!canSeeTeamPreview(user.telegramId))return;
-    setTeamLoading(true);loadTeamPreview().then(data=>{if(!cancelled)setTeamSearch({userId:user.id,teams:data.teams});}).catch(()=>{if(!cancelled)setTeamError('Teamlarni yuklab bo‘lmadi.');}).finally(()=>{if(!cancelled)setTeamLoading(false);});return()=>{cancelled=true;};
+  useEffect(()=>{let cancelled=false;setTeamSearch(null);setTeamError('');setTeamLoading(false);if(!isOpen||!hasTeamQuery||!user)return;
+    setTeamLoading(true);loadTeamPreview(false).then(data=>{if(!cancelled)setTeamSearch({userId:user.id,teams:data.teams});}).catch(()=>{if(!cancelled)setTeamError('Teamlarni yuklab bo‘lmadi.');}).finally(()=>{if(!cancelled)setTeamLoading(false);});return()=>{cancelled=true;};
   },[isOpen,hasTeamQuery,user?.id,user?.telegramId,teamRetry]);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -155,7 +155,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
       .slice(0, 4);
   }, [fixtures, trimmed]);
 
-  const filteredTeams=canSeeTeamPreview(user?.telegramId)&&teamSearch?.userId===user?.id&&trimmed?teamSearch.teams.filter(t=>t.name.toLowerCase().includes(trimmed)).slice(0,8):[];
+  const filteredTeams=!!user&&teamSearch?.userId===user?.id&&trimmed?teamSearch.teams.filter(t=>t.name.toLowerCase().includes(trimmed)).slice(0,8):[];
   const hasResults =
     filteredTeams.length>0 || filteredClubs.length > 0 ||
     filteredCompetitions.length > 0 ||
@@ -304,8 +304,8 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
             </div>
           )}
 
-          {canSeeTeamPreview(user?.telegramId)&&trimmed&&teamLoading&&<p role="status" className="text-xs text-[var(--efl-text-2)] p-3">Teamlar qidirilmoqda…</p>}
-          {canSeeTeamPreview(user?.telegramId)&&trimmed&&teamError&&<div role="alert" className="text-xs text-[var(--efl-text-2)] p-3">{teamError}<button className="ml-2 underline min-h-[34px]" onClick={()=>setTeamRetry(n=>n+1)}>Qayta urinish</button></div>}
+          {!!user&&trimmed&&teamLoading&&<p role="status" className="text-xs text-[var(--efl-text-2)] p-3">Teamlar qidirilmoqda…</p>}
+          {!!user&&trimmed&&teamError&&<div role="alert" className="text-xs text-[var(--efl-text-2)] p-3">{teamError}<button className="ml-2 underline min-h-[34px]" onClick={()=>setTeamRetry(n=>n+1)}>Qayta urinish</button></div>}
           {/* Group 1: Clubs */}
           {filteredTeams.length>0&&<section className="mb-5"><h3 className="text-xs font-bold text-[var(--efl-text-2)] mb-2">Teamlar · Faqat sizga</h3><div className="space-y-2">{filteredTeams.map(team=><button type="button" key={team.id} onClick={()=>{openTeamProfile(team.id);onClose();}} className="w-full p-3 rounded-xl border border-[var(--efl-border)] bg-[var(--efl-surface)] flex items-center gap-3 text-left"><TeamBadge team={team} className="team-search-crest"/><span className="flex-1 min-w-0"><b className="text-xs text-[var(--efl-text)]">{team.name}</b><small className="block text-[10px] text-[var(--efl-text-2)]">{team.members.length} o‘yinchi · Team profili</small></span><ChevronRight size={14}/></button>)}</div></section>}
           {filteredClubs.length > 0 && (

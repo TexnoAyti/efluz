@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import {getFirestoreDb} from '../firebase/admin';
+import {TEAM_PREVIEW_OWNER} from '../../types/teamLeaguePreview';
 import type {PreviewTeam,TeamLeague,TeamLineup} from '../../types/teamLeaguePreview';
 import {makeTeamSchedule,teamFixtureScore,teamStandings,makeTeamPlayoffRound,teamFixtureWinner,teamFormatPreview} from '../../lib/teamLeagueEngine';
 export const TEAM_COLLECTION='team_league_preview_teams',LEAGUE_COLLECTION='team_league_preview_leagues';
@@ -40,7 +41,7 @@ export async function savePreviewTeam(ownerId:string,input:any){
   const leagues=await tx.get(db.collection(LEAGUE_COLLECTION).where('ownerId','==',ownerId));
   if(leagues.docs.some(d=>{const l=d.data() as TeamLeague;return l.status==='ACTIVE'&&l.teamIds.includes(id);}))throw error('Team faol turnirda qatnashyapti. Tarkib va logoni turnir tugagach tahrirlang.',409);
   const teams=await tx.get(db.collection(TEAM_COLLECTION).where('ownerId','==',ownerId));
-  if(!old&&teams.size>=32)throw error('Testda ko‘pi bilan 32 team yarating.');
+  if(!old&&teams.size>=32)throw error('Ko‘pi bilan 32 team yarating.');
   const payload={name,logo:image,members,captainMemberId:input.captainMemberId};
   if(old&&JSON.stringify({name:old.name,logo:old.logo,members:old.members,captainMemberId:old.captainMemberId})===JSON.stringify(payload))return old;
   if((old?.version??0)!==input.version)throw error('Team yangilangan. Yangilab qayta urining.',409);
@@ -61,7 +62,7 @@ export async function savePreviewLeague(ownerId:string,input:any){
  return db.runTransaction(async tx=>{
   const old=(await tx.get(ref)).data() as TeamLeague|undefined;if(old)owned(old,ownerId);
   const all=await tx.get(db.collection(LEAGUE_COLLECTION).where('ownerId','==',ownerId));
-  if(!old&&all.size>=8)throw error('Testda ko‘pi bilan 8 ta turnir yarating.');
+  if(!old&&all.size>=8)throw error('Ko‘pi bilan 8 ta turnir yarating.');
   if(old&&old.status!=='DRAFT')throw error('Boshlangan turnir reglamenti yopiq.',409);
   const snapshots=await Promise.all(ids.map((tid:string)=>tx.get(db.collection(TEAM_COLLECTION).doc(tid))));
   for(const doc of snapshots){const t=owned(doc.data() as PreviewTeam|undefined,ownerId);if(t.members.length<input.starterCount)throw error(`${t.name}: asosiy tarkib uchun o‘yinchi yetmaydi.`);}
@@ -137,4 +138,27 @@ export async function actOnTeamLeague(ownerId:string,id:string,input:any){
   l.version++;l.updatedAt=now();l.audit=[...l.audit,{at:l.updatedAt,action:input.action,detail:typeof input.fixtureId==='string'?input.fixtureId:l.name}].slice(-200);
   tx.set(ref,l);return l;
  });
+}
+
+// Public reads resolve the platform owner on the server; caller-supplied owner IDs
+// never select another workspace. Drafts and administrative metadata stay private.
+async function publishedTeams(){
+ const db=getFirestoreDb(),accounts=await db.collection('users').where('telegramId','==',TEAM_PREVIEW_OWNER).limit(2).get();
+ if(accounts.docs.length!==1||accounts.docs[0].data()?.isSuspended)return {teams:[] as PreviewTeam[],leagues:[] as TeamLeague[]};
+ const ownerId=accounts.docs[0].id;
+ const [ts,ls]=await Promise.all([db.collection(TEAM_COLLECTION).where('ownerId','==',ownerId).limit(32).get(),db.collection(LEAGUE_COLLECTION).where('ownerId','==',ownerId).limit(8).get()]);
+ const leagues=ls.docs.map(d=>d.data() as TeamLeague).filter(l=>l.status!=='DRAFT'&&l.currentRound>0).map(l=>({id:l.id,ownerId:'',name:l.name,description:l.description,format:l.format,qualifiers:l.qualifiers,teamIds:l.teamIds,starterCount:l.starterCount,rounds:l.rounds,status:l.status,currentRound:l.currentRound,totalRounds:l.totalRounds,fixtures:l.fixtures,teams:l.teams,version:0,updatedAt:l.updatedAt,audit:[]}));
+ const included=new Set(leagues.flatMap(l=>l.teamIds));
+ const teams=ts.docs.map(d=>d.data() as PreviewTeam).filter(t=>included.has(t.id)).map(t=>({id:t.id,ownerId:'',name:t.name,logo:t.logo,members:t.members,captainMemberId:t.captainMemberId,version:0,updatedAt:t.updatedAt}));
+ return {teams,leagues};
+}
+export async function getPublishedTeams(){const data=await publishedTeams();return {...data,leagues:data.leagues.map(l=>({...l,fixtures:[],teams:{}}))};}
+export async function getPublishedTeamLeague(id:string){identifier(id);const data=await publishedTeams(),league=data.leagues.find(l=>l.id===id);if(!league)throw error('Turnir topilmadi.',404);return league;}
+export async function getPublishedTeamProfile(id:string){identifier(id);const data=await publishedTeams(),team=data.teams.find(t=>t.id===id);if(!team)throw error('Team topilmadi.',404);const leagues=data.leagues.filter(l=>l.teamIds.includes(id)),ids=new Set([id,...leagues.flatMap(l=>l.teamIds)]);return {team,leagues,teams:data.teams.filter(t=>ids.has(t.id)).map(({id,name,logo})=>({id,name,logo}))};}
+export async function deletePreviewTeam(ownerId:string,id:string,version:number){
+ identifier(id);const db=getFirestoreDb(),ref=db.collection(TEAM_COLLECTION).doc(id);
+ return db.runTransaction(async tx=>{const team=owned((await tx.get(ref)).data() as PreviewTeam|undefined,ownerId);const leagues=await tx.get(db.collection(LEAGUE_COLLECTION).where('ownerId','==',ownerId));
+ if(team.version!==version)throw error('Team yangilangan. Qayta yuklang.',409);
+ if(leagues.docs.some(d=>(d.data() as TeamLeague).teamIds.includes(id)))throw error('Team turnirga biriktirilgan. Tarixni saqlash uchun o‘chirish yopiq; tayyorlanayotgan turnirdan avval chiqarib oling.',409);
+ tx.delete(ref);return {id};});
 }

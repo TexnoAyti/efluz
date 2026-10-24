@@ -1,11 +1,9 @@
-import {canSeeTeamPreview} from '../types/teamLeaguePreview';
 import React, { lazy, Suspense, useState, useEffect } from 'react';
 import { useI18n } from '../i18n';
 import { ClubsView } from './ClubsView';
 import { CupBracketsView } from './CupBracketsView';
 import { ChampionsLeagueView } from './ChampionsLeagueView';
 import { SeasonHubView } from './SeasonHubView';
-import {useAuth} from '../context/AuthContext';
 const UzeflifeView=lazy(()=>import('./uzeflife/UzeflifeView').then(m=>({default:m.UzeflifeView})));
 import { TeamLeaguePreviewView } from './teamLeaguePreview/TeamLeaguePreviewView';
 import { Trophy, Award, Globe2, Users } from 'lucide-react';
@@ -20,8 +18,6 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
   initialSubTab = 'leagues',
 }) => {
   const { language } = useI18n();
-  const {user}=useAuth();
-  const canSeeCustom=canSeeTeamPreview(user?.telegramId);
   const [subTab, setSubTab] = useState<'leagues' | 'cups' | 'european' | 'season' | 'custom' | 'uzeflife'>(() => {
     try {
       const saved = sessionStorage.getItem('efl:competition-hub-subtab');
@@ -93,9 +89,9 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
 
       {/* 2. Top-Level Category Segmented Bar */}
       <div className="p-1 rounded-2xl bg-[var(--efl-surface-2)] border border-[var(--efl-border)] grid grid-cols-6 items-stretch gap-1 shadow-xs">
-        {navItems.filter(item=>item.id!=='custom'||canSeeCustom).map((item) => {
+        {navItems.map((item) => {
           const Icon = item.icon;
-          const isActive = (subTab==='custom'&&!canSeeCustom?'uzeflife':subTab) === item.id;
+          const isActive = subTab === item.id;
           return (
             <button
               key={item.id}
@@ -120,8 +116,8 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
         {subTab === 'cups' && <CupBracketsView onNavigateTab={onNavigateTab} />}
         {subTab === 'european' && <ChampionsLeagueView onNavigateTab={onNavigateTab} />}
         {subTab === 'season' && <SeasonHubView onNavigateTab={onNavigateTab} />}
-        {(subTab === 'uzeflife'||subTab === 'custom'&&!canSeeCustom)&&<Suspense fallback={<div className="p-8 text-center text-xs text-[var(--efl-text-2)]">UZEFLIFE yuklanmoqda…</div>}><UzeflifeView /></Suspense>}
-        {subTab === 'custom' && canSeeCustom && <TeamLeaguePreviewView />}
+        {subTab === 'uzeflife'&&<Suspense fallback={<div className="p-8 text-center text-xs text-[var(--efl-text-2)]">UZEFLIFE yuklanmoqda…</div>}><UzeflifeView /></Suspense>}
+        {subTab === 'custom' && <TeamLeaguePreviewView />}
       </div>
     </div>
   );
