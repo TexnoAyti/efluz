@@ -9,6 +9,7 @@ import './admin-preview.css';
 import './telegram-viewport.css';
 import './components/competition-content.css';
 import './components/customTournaments/tournaments.css';
+import './components/teamLeaguePreview/teamCrest.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

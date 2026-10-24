@@ -113,7 +113,7 @@ export const ClubCrest: React.FC<ClubCrestProps> = ({
   // Primary rendering via same-origin CSS background-image
   return (
     <div
-      className={`relative inline-flex items-center justify-center shrink-0 overflow-hidden ${containerSizeClass} ${className}`}
+      className={`relative inline-flex items-center justify-center shrink-0 efl-club-crest ${containerSizeClass} ${className}`}
       title={name || shortName || 'Club Crest'}
       aria-label={alt || name || shortName || 'Club Crest'}
       role="img"

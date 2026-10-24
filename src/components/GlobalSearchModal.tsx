@@ -1,3 +1,4 @@
+import {TeamBadge} from './teamLeaguePreview/TeamBadge';
 import {canSeeTeamPreview,type PreviewTeam} from '../types/teamLeaguePreview';
 import {loadTeamPreview} from '../lib/teamLeaguePreviewApi';
 import {openTeamProfile,profileSearchTarget} from '../lib/teamNavigation';
@@ -306,7 +307,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
           {canSeeTeamPreview(user?.telegramId)&&trimmed&&teamLoading&&<p role="status" className="text-xs text-[var(--efl-text-2)] p-3">Teamlar qidirilmoqda…</p>}
           {canSeeTeamPreview(user?.telegramId)&&trimmed&&teamError&&<div role="alert" className="text-xs text-[var(--efl-text-2)] p-3">{teamError}<button className="ml-2 underline min-h-[34px]" onClick={()=>setTeamRetry(n=>n+1)}>Qayta urinish</button></div>}
           {/* Group 1: Clubs */}
-          {filteredTeams.length>0&&<section className="mb-5"><h3 className="text-xs font-bold text-[var(--efl-text-2)] mb-2">Teamlar · Faqat sizga</h3><div className="space-y-2">{filteredTeams.map(team=><button type="button" key={team.id} onClick={()=>{openTeamProfile(team.id);onClose();}} className="w-full p-3 rounded-xl border border-[var(--efl-border)] bg-[var(--efl-surface)] flex items-center gap-3 text-left"><span className="w-7 h-7 shrink-0 flex items-center justify-center">{team.logo?<img src={team.logo} alt="" className="w-full h-full object-contain"/>:<Shield size={22} className="text-[var(--efl-primary)]"/>}</span><span className="flex-1 min-w-0"><b className="text-xs text-[var(--efl-text)]">{team.name}</b><small className="block text-[10px] text-[var(--efl-text-2)]">{team.members.length} o‘yinchi · Team profili</small></span><ChevronRight size={14}/></button>)}</div></section>}
+          {filteredTeams.length>0&&<section className="mb-5"><h3 className="text-xs font-bold text-[var(--efl-text-2)] mb-2">Teamlar · Faqat sizga</h3><div className="space-y-2">{filteredTeams.map(team=><button type="button" key={team.id} onClick={()=>{openTeamProfile(team.id);onClose();}} className="w-full p-3 rounded-xl border border-[var(--efl-border)] bg-[var(--efl-surface)] flex items-center gap-3 text-left"><TeamBadge team={team} className="team-search-crest"/><span className="flex-1 min-w-0"><b className="text-xs text-[var(--efl-text)]">{team.name}</b><small className="block text-[10px] text-[var(--efl-text-2)]">{team.members.length} o‘yinchi · Team profili</small></span><ChevronRight size={14}/></button>)}</div></section>}
           {filteredClubs.length > 0 && (
             <div className="space-y-2">
               <div className="text-[11px] font-black uppercase tracking-wider text-slate-500 efl-theme-text-2 dark:text-slate-400 px-2 flex items-center gap-1.5">

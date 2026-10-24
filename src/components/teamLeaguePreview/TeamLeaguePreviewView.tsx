@@ -20,7 +20,17 @@ export function TeamPreviewDialog({title,onClose,children}:{title:string;onClose
 }
 async function readLogo(file:File){
  if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>8_000_000)throw Error('PNG, JPG yoki WebP tanlang (8 MB gacha).');
- const image=await createImageBitmap(file);try{const canvas=document.createElement('canvas');canvas.width=128;canvas.height=128;const ctx=canvas.getContext('2d');if(!ctx)throw Error('Rasmni tayyorlab bo‘lmadi.');const scale=Math.min(128/image.width,128/image.height);ctx.drawImage(image,(128-image.width*scale)/2,(128-image.height*scale)/2,image.width*scale,image.height*scale);const result=canvas.toDataURL('image/png');if(result.length>80022)throw Error('Kichikroq logo tanlang.');return result;}finally{image.close();}
+ const image=await createImageBitmap(file);
+ try{
+  const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d');if(!ctx)throw Error('Rasmni tayyorlab bo‘lmadi.');
+  for(const size of [256,192,128]){
+   canvas.width=size;canvas.height=size;ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+   const inset=Math.round(size*.04),scale=Math.min((size-inset*2)/image.width,(size-inset*2)/image.height);
+   ctx.drawImage(image,(size-image.width*scale)/2,(size-image.height*scale)/2,image.width*scale,image.height*scale);
+   const result=canvas.toDataURL('image/png');if(result.length<=80022)return result;
+  }
+  throw Error('Kichikroq logo tanlang.');
+ }finally{image.close();}
 }
 export function TeamForm({team,busy,save}:{team?:PreviewTeam;busy:boolean;save:(body:unknown)=>void}){
  const [id]=useState(team?.id||previewId),[name,setName]=useState(team?.name||''),[logo,setLogo]=useState(team?.logo||''),[members,setMembers]=useState(team?.members||[{id:previewId(),name:''}]),[captain,setCaptain]=useState(team?.captainMemberId||''),[error,setError]=useState(''),[reading,setReading]=useState(false),[bulk,setBulk]=useState('');
