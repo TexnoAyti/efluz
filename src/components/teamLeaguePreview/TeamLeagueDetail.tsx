@@ -1,3 +1,5 @@
+import {TeamBadge} from './TeamBadge';
+export {TeamBadge} from './TeamBadge';
 import {openTeamProfile,replaceTeamFixtureLocation} from '../../lib/teamNavigation';
 import {CompetitionRounds, CompetitionFixtureCard, CompetitionStandings, type StandingsView} from '../CompetitionContent';
 import {CompetitionBanner, CompetitionTabs} from '../CompetitionChrome';
@@ -6,7 +8,7 @@ import {ArrowLeft,ArrowRight,ChevronRight,Shield,Users,Trophy,Lock,Shuffle,Setti
 import type {PreviewTeam,TeamLeague,TeamFixture,TeamLineup} from '../../types/teamLeaguePreview';
 import {teamFixtureScore,teamStandings,teamFormatLabels,teamFormatPreview,teamPlayerStats,teamFixtureWinner} from '../../lib/teamLeagueEngine';
 const statusName={DRAFT:'Tayyorlanmoqda',ACTIVE:'Davom etmoqda',COMPLETED:'Yakunlangan',CANCELLED:'Bekor qilingan'};
-export function TeamBadge({team}:{team?:{name:string;logo?:string}}){return <span className="team-crest">{team?.logo?<img src={team.logo} alt=""/>:<Shield size={24}/>}</span>;}
+
 const Badge=TeamBadge;
 function LineupForm({league,fixture,side,busy,act}:{league:TeamLeague;fixture:TeamFixture;side:'home'|'away';busy:boolean;act:(body:any)=>void}){
  const team=league.teams[side==='home'?fixture.homeTeamId:fixture.awayTeamId],saved=side==='home'?fixture.homeLineup:fixture.awayLineup;
