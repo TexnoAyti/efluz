@@ -1,3 +1,5 @@
+import {selectedTeamLeague,orderedTeamLeagues,swipedTeamLeague} from '../../lib/teamLeagueBrowsing';
+import {TeamLeaguePager} from '../../components/teamLeaguePreview/TeamLeaguePager';
 import assert from 'node:assert/strict';
 import React from 'react';
 import {renderToStaticMarkup as render} from 'react-dom/server';
@@ -54,3 +56,27 @@ console.log('PASS released spectator tournament and direct management-link bound
 const scored=structuredClone(base);scored.fixtures[0].homeLineup={starters:[teams[0].members[0].id],reserves:[]};scored.fixtures[0].awayLineup={starters:[teams[1].members[0].id],reserves:[]};scored.fixtures[0].bouts=[{id:'tp_readonlybout',homeMemberId:teams[0].members[0].id,awayMemberId:teams[1].members[0].id,homeScore:2,awayScore:1}];
 const scoredHtml=render(React.createElement(TeamLeagueDetail,{...props,league:scored,initialOpenFixtureId:scored.fixtures[0].id,canManage:false}));
 assert.equal(scoredHtml.includes('team-score-form'),false);assert.equal(scoredHtml.includes('<input'),false);assert.equal(scoredHtml.includes('Tuzatish'),false);assert.ok(scoredHtml.includes('2 : 1'));
+
+const choices=[{...base,id:'tp_done0000',status:'COMPLETED' as const,name:'Old League'},{...base,id:'tp_active02',name:'Z League'},{...base,id:'tp_active01',name:'A League'}];
+assert.equal(selectedTeamLeague([base],''),base.id,'A single league opens directly');
+assert.equal(selectedTeamLeague(choices,''),'tp_active01','Active league opens before archived ones');
+assert.equal(selectedTeamLeague(choices,'tp_active02'),'tp_active02','Explicit and remembered selection wins');
+assert.equal(selectedTeamLeague(choices,'tp_removed0'),'tp_active01','Missing/hidden links recover to an available league');
+assert.equal(selectedTeamLeague([],''),'');
+assert.deepEqual(orderedTeamLeagues(choices).map(l=>l.id),['tp_active01','tp_active02','tp_done0000']);
+assert.equal(choices[0].id,'tp_done0000','Ordering never mutates API data');
+assert.equal(swipedTeamLeague(choices,'tp_active01',-90,10),'tp_active02');
+assert.equal(swipedTeamLeague(choices,'tp_active02',90,10),'tp_active01');
+assert.equal(swipedTeamLeague(choices,'tp_active01',90,10),'tp_active01','Do not wrap at the beginning');
+assert.equal(swipedTeamLeague(choices,'tp_done0000',-90,10),'tp_done0000','Do not wrap at the end');
+assert.equal(swipedTeamLeague(choices,'tp_active01',-20,0),'tp_active01','Small gestures do not navigate');
+assert.equal(swipedTeamLeague(choices,'tp_active01',-90,100),'tp_active01','Vertical scrolling does not navigate');
+const pager=render(React.createElement(TeamLeaguePager,{leagues:choices,selected:'tp_active01',onChange:()=>{},children:React.createElement('p',null,'League content')}));
+assert.ok(pager.includes('Keyingi liga'));assert.ok(pager.includes('aria-current="true"'));assert.ok(pager.includes('League content'));
+const single=render(React.createElement(TeamLeaguePager,{leagues:[base],selected:base.id,onChange:()=>{},children:React.createElement('p',null,'Direct content')}));
+assert.equal(single.includes('Keyingi liga'),false);assert.ok(single.includes('Direct content'));
+const direct=render(React.createElement(TeamLeagueDetail,{...props,league:base,canManage:false,hideDirectoryBack:true}));
+assert.equal(direct.includes('>Turnirlar</button>'),false,'Direct-open public league has no directory detour');
+console.log('PASS direct-open team leagues, remembered/deep-link selection, carousel controls, swipe boundaries and vertical-scroll protection');
+
+assert.equal(selectedTeamLeague(choices,'','tp_active02'),'tp_active02','Refresh preserves the already open league when another league is added');
