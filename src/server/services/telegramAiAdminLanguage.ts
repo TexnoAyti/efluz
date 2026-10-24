@@ -1,3 +1,4 @@
+import { isMissingGroupOwnersRequest } from './telegramAiMissingGroupOwners';
 import { isPlatformAdminRequest } from './telegramAiPlatformCatalog';
 import { expandedAdminIntent } from './telegramAiExpandedAdmin';
 import { isReplyReminderRequest } from './telegramAiReminderSelection';
@@ -48,6 +49,7 @@ export function assertSingleNaturalAdminRequest(text: string): void {
 export function detectNaturalAdminAction(text: string): string|null {
   const command = text.replace(/^\/ai_(?:admin|read)(?:@[A-Za-z0-9_]+)?\s*/i, '').replace(/"[^"]*"|“[^”]*”/g, ' ').split(/(?:sarlavha|matn|sabab|izoh)\s*:/i)[0];
   const q = normalizeAiEntity(command.replace(/@\s*[A-Za-z0-9_]+/g, ' '));
+  if(isMissingGroupOwnersRequest(command))return 'group_missing_owners';
   const expanded = expandedAdminIntent(command);
   if (expanded) return expanded;
   if (/\b(?:teg\w*|tag\w*)\b/.test(q)&&/klub|guruh/.test(q)) {
