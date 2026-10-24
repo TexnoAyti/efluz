@@ -25,9 +25,9 @@ export function inspectAiAdminOutcome(plan: AdminPlan, data: any): { state: 'que
     return {state:'verified',message:`${round}-tur ${locked ? 'yopildi' : 'ochildi'}.${data.nextMatchdayOpenAt ? ` Muddat: ${new Intl.DateTimeFormat('uz-UZ',{timeZone:'Asia/Tashkent',dateStyle:'short',timeStyle:'short'}).format(new Date(data.nextMatchdayOpenAt))}.` : ''} Bildirishnoma yetkazilgani bu javob bilan tasdiqlanmaydi.`};
   }
   if (plan.action === 'matchday_remind') {
-    if (data?.success !== true || data?.competitionId !== plan.targetId || data?.matchday !== plan.body.matchday || !['queued','skipped','outstandingPlayers'].every(k => Number.isInteger(data?.[k]) && data[k] >= 0))
+    if (data?.success !== true || data?.competitionId !== plan.targetId || data?.matchday !== plan.body.matchday || plan.body.fromMatchday !== undefined && data?.fromMatchday !== plan.body.fromMatchday || !['queued','skipped','outstandingPlayers'].every(k => Number.isInteger(data?.[k]) && data[k] >= 0))
       return {state:'unverified',message:'Eslatma javobi to‘liq yoki rejaga mos emas. Avtomatik qayta yuborilmaydi.'};
-    return {state:'queued',message:`${data.matchday}-tur: ${data.outstandingPlayers} ta yetishmayotgan natija uchun ${data.queued} ta eslatma navbatga qo‘yildi. ${data.skipped} ta o‘tkazib yuborildi, ${data.failed || 0} ta navbatga qo‘yilmadi. Bu yetkazilgan xabarlar soni emas.`};
+    return {state:'queued',message:`${data.fromMatchday && data.fromMatchday !== data.matchday ? data.fromMatchday+"–"+data.matchday+"-turlar" : data.matchday+"-tur"}: ${data.outstandingPlayers} ta yetishmayotgan natija uchun ${data.queued} ta eslatma navbatga qo‘yildi. ${data.skipped} ta o‘tkazib yuborildi, ${data.failed || 0} ta navbatga qo‘yilmadi. Bu yetkazilgan xabarlar soni emas.`};
   }
   if (plan.action === 'broadcast') {
     const total = data?.broadcast?.metrics?.totalRecipients;

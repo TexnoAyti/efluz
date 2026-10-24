@@ -1,3 +1,4 @@
+import type { ReminderSelection } from './telegramAiReminderSelection';
 import { detectMatchdayIntent } from './telegramAiMatchdayLanguage';
 import { aiPenaltySuffix } from './telegramAiScore';
 import { detectNaturalAdminAction, assertSingleNaturalAdminRequest } from './telegramAiAdminLanguage';
@@ -86,7 +87,7 @@ export function findConversationCompetitions(text: string, comps: Competition[])
   if (/\b(?:kub(?:ok|og)\w*|cup|copa|pokal)\b/.test(q)) return [];
   return comps.filter(c => c.type === 'LEAGUE' && Object.entries(countries).some(([word, prefix]) => c.id.startsWith(prefix) && new RegExp(`\\b${word}\\b`).test(q)));
 }
-export interface ConversationScope { previousUserQueries?: string[]; selectedClubIds?: string[]; selectedCompetitionIds?: string[]; selectedFixtureIds?: string[]; }
+export interface ConversationScope { replyReminderSelection?: ReminderSelection; previousUserQueries?: string[]; selectedClubIds?: string[]; selectedCompetitionIds?: string[]; selectedFixtureIds?: string[]; }
 
 /** Each requested table keeps its own space so a long first part cannot hide the second. */
 export async function buildConversationReadReply(text: string, intent: 'standings'|'fixtures', scope: ConversationScope, signal?: AbortSignal) {
@@ -100,6 +101,7 @@ export async function buildConversationReadReply(text: string, intent: 'standing
     competitionIds: [...new Set([...standings.competitionIds, ...fixtures.competitionIds])],
     clubIds: [...new Set([...(standings.clubIds || []), ...(fixtures.clubIds || [])])],
     fixtureIds: fixtures.fixtureIds || [],
+    reminderSelection: fixtures.reminderSelection,
   };
 }
 export async function resolveConversationCompetition(text: string, scope: ConversationScope, signal?: AbortSignal) {
@@ -139,7 +141,7 @@ export async function resolveConversationCompetition(text: string, scope: Conver
 }
 
 /** Exact table/list formatting, no Gemini call and no Firestore reads. */
-export async function buildConversationTableReply(text: string, intent: 'standings'|'fixtures', scope: ConversationScope, signal?: AbortSignal): Promise<{ text: string; competitionIds: string[]; fixtureIds?:string[]; clubIds?:string[]; clubChoices?:AiClubChoice[] }> {
+export async function buildConversationTableReply(text: string, intent: 'standings'|'fixtures', scope: ConversationScope, signal?: AbortSignal): Promise<{ text: string; competitionIds: string[]; fixtureIds?:string[]; clubIds?:string[]; clubChoices?:AiClubChoice[]; reminderSelection?:ReminderSelection }> {
   text = expandConversationReadFollowUp(text, scope);
   const resolved = await resolveConversationCompetition(text, scope, signal);
   const { reader, catalog } = resolved;
@@ -150,7 +152,7 @@ export async function buildConversationTableReply(text: string, intent: 'standin
     const f:any=await reader.read({dataset:'fixtures',fixtureId:ids[0],limit:1});
     if(f.error||f.data?.length!==1)return {text:'Oldingi o‘yin hozir bazada aniqlanmadi. Jamoalar va turni qayta yozing.',competitionIds:[],fixtureIds:[]};
     const row=f.data[0];
-    return {text:`${row.home} ${row.homeScore!==null?row.homeScore+':'+row.awayScore:'—'} ${row.away}${aiPenaltySuffix(row)} · ${row.competition} · ${row.roundName||row.matchday+'-tur'} · ${row.status}${f.stale?'\nOxirgi saqlangan ma’lumot.':''}`,competitionIds:[row.competitionId],fixtureIds:[row.id],clubIds:[row.homeClubId,row.awayClubId].filter(Boolean)};
+    return {text:`${row.home} ${row.homeScore!==null?row.homeScore+':'+row.awayScore:'—'} ${row.away}${aiPenaltySuffix(row)} · ${row.competition} · ${row.roundName||row.matchday+'-tur'} · ${row.status}${f.stale?'\nOxirgi saqlangan ma’lumot.':''}`,competitionIds:[row.competitionId],fixtureIds:[row.id],reminderSelection:{competitionId:row.competitionId,fromMatchday:row.matchday,toMatchday:row.matchday,fixtureIds:[row.id]},clubIds:[row.homeClubId,row.awayClubId].filter(Boolean)};
   }
   let competitions = resolved.competitions;
   if (intent === 'standings' && competitions.length > 1 && !findConversationCompetitions(text, catalog.data || []).length) { const league = competitions.filter(c => c.type === 'LEAGUE'); if (league.length === 1) competitions = league; }
@@ -202,7 +204,7 @@ export async function buildConversationTableReply(text: string, intent: 'standin
     if (shown < games.length) body += `\nJuftliklardan ${shown}/${games.length} tasi ko‘rsatildi. To‘liqroq ro‘yxat uchun tur raqamini yozing.`;
     if (!result.complete) body += '\nO‘yinlar manbasi to‘liq o‘qilmadi; ro‘yxat to‘liq bo‘lmasligi mumkin.';
     if (result.stale) body += '\nOxirgi saqlangan ma’lumot; joriy holat qayta tekshirilmagan.';
-    return { text: body.trim(), competitionIds: ids, fixtureIds: [], clubIds: [] };
+    return { text: body.trim(), competitionIds: ids, fixtureIds: [], clubIds: [], ...(result.complete && upper ? {reminderSelection:{competitionId:comp.id,fromMatchday:round||1,toMatchday:upper}} : {}) };
   }
   const standings = intent === 'standings' && ['LEAGUE', 'EUROPEAN_LEAGUE_PHASE'].includes(comp.type);
   const round = requestedMatchday(text), stage = detectAiCupStage(text);
@@ -222,7 +224,7 @@ export async function buildConversationTableReply(text: string, intent: 'standin
   if (shown < result.total) body += `\n${shown}/${result.total} ta ko‘rsatildi. Aniq tur yoki bosqichni yozing.\n`;
   if (result.stale) body += '\nOxirgi saqlangan ma’lumot; joriy holat qayta tekshirilmagan.';
   if (result.complete === false) body += '\nRo‘yxat saqlangan ma’lumotdan; manbalar to‘liq o‘qilmadi.';
-  return { text: body.trim(), competitionIds: ids, clubIds:resolved.clubIds, fixtureIds:!standings&&result.total===1?[result.data[0].id]:[] };
+  return { text: body.trim(), competitionIds: ids, ...(!standings && shown > 0 && result.complete !== false ? {reminderSelection:{competitionId:comp.id,fromMatchday:Math.min(...result.data.slice(0,shown).map((f:any)=>Number(f.matchday))),toMatchday:Math.max(...result.data.slice(0,shown).map((f:any)=>Number(f.matchday))),fixtureIds:result.data.slice(0,shown).map((f:any)=>f.id)}} : {}), clubIds:resolved.clubIds, fixtureIds:!standings&&result.total===1?[result.data[0].id]:[] };
 }
 
 /** Common matchday commands work without the model; ambiguous requests ask one question. */

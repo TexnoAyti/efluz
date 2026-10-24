@@ -26,7 +26,7 @@ export const AI_ADMIN_ACTIONS: Record<string, AdminAction> = {
   matchday_open_now: action('POST', '/competitions/:id/matchday/open-now', 'durationHours?, matchday?, seasonId?'),
   matchday_override: action('POST', '/competitions/:id/matchday/override', 'overrideStatus:AUTO|FORCE_OPEN|FORCE_LOCKED|PAUSED, matchday?, durationHours?, seasonId?'),
   matchday_timer: action('POST', '/competitions/:id/matchday/set-timer', 'currentMatchday?, durationHours?, nextOpenAt?, overrideStatus?'),
-  matchday_remind: action('POST', '/competitions/:id/matchday/remind', 'seasonId?, matchday?'),
+  matchday_remind: action('POST', '/competitions/:id/matchday/remind', 'seasonId?, matchday:inclusive end, fromMatchday?:inclusive start, fixtureIds?:verified reply selection'),
   standings_rebuild: action('POST', '/competitions/:id/rebuild-standings', 'seasonId?'),
   fixtures_generate: action('POST', '/fixtures/generate', 'competitionId, seasonId?'),
   fixtures_reset: action('POST', '/fixtures/reset', 'competitionId, confirmation:boolean'),

@@ -21,3 +21,11 @@ Manual reminders require an available fresh fixture snapshot and re-read candida
 Receipts distinguish queued messages from delivered messages. Matchday receipts verify the returned competition, round and open/locked state. Missing or mismatched receipts are reported as unverified and are never retried automatically. Read-only matchday status includes the current round, open rounds, deadlines in Tashkent time and unfinished fixture counts.
 
 Validation: all Telegram AI regression files, focused matchday control/advance/reminder tests, TypeScript checking and production build/self-check. The additional `telegramAiMatchdayNotificationsRegressionTest.ts` is included in CI. All tests use isolated data and block external network; no real Telegram broadcasts or reminders are sent.
+
+## Reply and inclusive reminders
+
+`Bundesliga 9 turgacha o'ynalmagan o'yinlarga Eslatma yubor` selects Bundesliga rounds 1–9, including round 9; it cannot select round 10 or another league. Other mutations still reject `turgacha`.
+
+Reply `Eslatma yubor` to a delivered AI fixture list to prepare a reminder for that exact message's selection. Recipient selection is stored with the Telegram bot-message index, bound to sender, chat, thread and bot message ID, rather than taken from the latest conversation. An older Bundesliga list remains Bundesliga even after a newer APL conversation. Single-match/list selections preserve exact fixture IDs; remaining-fixture summaries preserve their stated inclusive range. Missing or unverified reply context asks for the target and never guesses from history. Previously delivered bot lists can recover scope only from their fixed canonical competition/round header and unplayed-count summary, excluding incomplete or stale list warnings.
+
+The existing confirmation and once-only execution flow applies to the bounded range. All fixture, occupancy and submission reads across the range must succeed before any enqueue; each actual game retains its own round in notification text and deduplication keys.

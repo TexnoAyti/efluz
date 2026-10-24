@@ -161,6 +161,7 @@ export interface MatchdayReminderResult {
   competitionId: string;
   seasonId: string;
   matchday: number;
+  fromMatchday?: number;
   deadlineAt: string | null;
   overdue: boolean;
   fixturesChecked: number;
@@ -175,12 +176,20 @@ export async function notifyOutstandingMatchdayOwners(params: {
   competitionId: string;
   seasonId: string;
   matchday: number;
+  fromMatchday?: number;
+  fixtureIds?: string[];
   deadlineAt?: string | null;
 }, deps: MatchdayReminderDependencies = reminderDependencies): Promise<MatchdayReminderResult> {
+  const from = params.fromMatchday ?? params.matchday;
+  if (!Number.isInteger(from) || !Number.isInteger(params.matchday) || from < 1 || params.matchday < from || params.matchday > 100 || params.fixtureIds && (!Array.isArray(params.fixtureIds) || !params.fixtureIds.length || params.fixtureIds.length > 1000 || params.fixtureIds.some(id=>typeof id !== 'string' || !id))) throw new Error('Eslatma uchun tur oralig‘i yoki o‘yinlar ro‘yxati noto‘g‘ri.');
+  const selected = params.fixtureIds ? new Set(params.fixtureIds) : null;
   const fixtures = await deps.fixtures(params.competitionId, params.seasonId);
   if (!Array.isArray(fixtures)) throw new Error('O‘yinlar manbasi o‘qilmadi. Eslatma yuborilmadi.');
+  if (selected && [...selected].some(id=>!fixtures.some(f=>f.id===id && f.competitionId===params.competitionId && f.seasonId===params.seasonId && Number(f.matchday)>=from && Number(f.matchday)<=params.matchday))) throw new Error('Tanlangan o‘yinlar manbada to‘liq topilmadi. Ro‘yxatni yangilang.');
   let current = fixtures.filter((fixture: any) =>
-    Number(fixture.matchday) === Number(params.matchday) &&
+    fixture.competitionId === params.competitionId && fixture.seasonId === params.seasonId &&
+    Number(fixture.matchday) >= from && Number(fixture.matchday) <= params.matchday &&
+    (!selected || selected.has(fixture.id)) &&
     !['CONFIRMED', 'CANCELLED', 'POSTPONED'].includes(String(fixture.status || '').toUpperCase())
   );
 
@@ -189,6 +198,7 @@ export async function notifyOutstandingMatchdayOwners(params: {
       competitionId: params.competitionId,
       seasonId: params.seasonId,
       matchday: params.matchday,
+      ...(params.fromMatchday !== undefined ? {fromMatchday:from} : {}),
       deadlineAt: params.deadlineAt || null,
       overdue: Boolean(params.deadlineAt && Date.now() > new Date(params.deadlineAt).getTime()),
       fixturesChecked: 0,
@@ -200,8 +210,8 @@ export async function notifyOutstandingMatchdayOwners(params: {
     };
   }
 
-  // Manual/admin-triggered operation only. Queries are bounded to the current matchday
-  // (9-10 fixtures for domestic leagues) and never run on normal user reads.
+  // Manual/admin-triggered operation only, bounded to the selected competition,
+  // inclusive round range and optional exact reply fixture IDs. Never runs on normal reads.
   // Finish every source read before enqueueing the first message. Fail closed on read errors.
   current = await deps.owners(current, params.seasonId);
   const submissions = await Promise.all(current.map(async fixture => {
@@ -241,9 +251,9 @@ export async function notifyOutstandingMatchdayOwners(params: {
         userId,
         seasonId: params.seasonId,
         // Prefix intentionally maps this to the existing matchdayOpened smart setting.
-        eventId: `matchday-open:reminder:${params.competitionId}:${params.matchday}:${fixture.id}:${params.deadlineAt || 'manual'}:${userId}`,
+        eventId: `matchday-open:reminder:${params.competitionId}:${fixture.matchday}:${fixture.id}:${params.deadlineAt || 'manual'}:${userId}`,
         title: overdue ? '⛔ Match deadline o‘tdi' : '⏳ Match deadline eslatmasi',
-        body: `${competition} • Matchday ${params.matchday}\n\nRaqib klub: <b>${opponent}</b>${opponentUser ? `\nRaqib user: <b>@${escapeHtml(opponentUser)}</b>` : ''}${deadlineLine}\n\n${statusLine}`,
+        body: `${competition} • Matchday ${fixture.matchday}\n\nRaqib klub: <b>${opponent}</b>${opponentUser ? `\nRaqib user: <b>@${escapeHtml(opponentUser)}</b>` : ''}${deadlineLine}\n\n${statusLine}`,
         replyMarkup: await replyMarkupFor(fixture, userId),
       }));
     }
@@ -256,6 +266,7 @@ export async function notifyOutstandingMatchdayOwners(params: {
     competitionId: params.competitionId,
     seasonId: params.seasonId,
     matchday: params.matchday,
+      ...(params.fromMatchday !== undefined ? {fromMatchday:from} : {}),
     deadlineAt: params.deadlineAt || null,
     overdue,
     fixturesChecked: current.length,

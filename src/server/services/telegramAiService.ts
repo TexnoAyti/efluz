@@ -1,3 +1,5 @@
+import { reminderSelectionFromLegacyHeader, isReplyReminderRequest, type ReminderSelection } from './telegramAiReminderSelection';
+import { createAiTournamentReader } from './telegramAiDataService';
 import { needsAiMeaningRouter, routeAiMessageMeaning } from './telegramAiMeaningRouter';
 import { isAiWorkflowControl, getAiWorkflow } from './telegramAiWorkflow';
 import { recordAiObservation } from './telegramAiObservability';
@@ -118,7 +120,7 @@ export function getLastModelCallHistory(): ConversationTurn[] | null {
 // In-memory test store for delivery & context
 const testDeliveryStore = new Map<number, string>();
 const testContextStore = new Map<string, { turns: ConversationTurn[]; expiresAt: number }>();
-const testBotMessageStore = new Map<number, { chatId: number; threadId: number; userId: number; expiresAt: number }>();
+const testBotMessageStore = new Map<number, { chatId: number; threadId: number; userId: number; expiresAt: number; reminderSelection?:ReminderSelection }>();
 
 export function clearTestAiState(): void {
   testDeliveryStore.clear();
@@ -227,15 +229,16 @@ export async function indexBotSentMessage(
   chatId: number,
   threadId: number,
   targetUserId: number,
-  options?: { signal?: AbortSignal }
+  options?: { signal?: AbortSignal; reminderSelection?:ReminderSelection }
 ): Promise<void> {
   const client = getAiRedisClient(options?.signal);
   const key = `${KEY_PREFIX}:telegram:ai:botmsg:${chatId}:${threadId}:${messageId}`;
   const privateKey = privateAssistantContextKey(chatId, threadId, targetUserId);
-  const payload = JSON.stringify({ chatId, threadId, userId: targetUserId });
+  const payload = JSON.stringify({ chatId, threadId, userId: targetUserId, reminderSelection:options?.reminderSelection });
 
   if (!client) {
     testBotMessageStore.set(messageId, {
+      reminderSelection:options?.reminderSelection,
       chatId,
       threadId,
       userId: targetUserId,
@@ -627,6 +630,7 @@ async function handleTelegramAiMessageInternal(
     }
 
     // 9. Reply Context: verify reply is addressed specifically to our bot and belongs to this user & chat & thread
+    let replyReminderSelection:ReminderSelection|undefined;
     let history: ConversationTurn[] = payload.replyToMessage ? [] : await getConversationContext(
       payload.chatId, payload.threadId, payload.fromUser.id, { signal: rootController.signal }
     );
@@ -639,6 +643,13 @@ async function handleTelegramAiMessageInternal(
         { signal: rootController.signal }
       );
       if (isOurReply) {
+        if (isReplyReminderRequest(payload.text)) {
+          const client = getAiRedisClient(rootController.signal);
+          const indexed:any = client ? await client.get(`${KEY_PREFIX}:telegram:ai:botmsg:${payload.chatId}:${payload.threadId}:${payload.replyToMessage.message_id}`) : testBotMessageStore.get(payload.replyToMessage.message_id);
+          const record = typeof indexed === 'string' ? JSON.parse(indexed) : indexed;
+          replyReminderSelection = record?.reminderSelection;
+          if (!replyReminderSelection && payload.replyToMessage.text) replyReminderSelection = await reminderSelectionFromLegacyHeader(payload.replyToMessage.text,createAiTournamentReader(rootController.signal).read);
+        }
         history = await getConversationContext(payload.chatId, payload.threadId, payload.fromUser.id, {
           signal: rootController.signal,
         });
@@ -646,6 +657,7 @@ async function handleTelegramAiMessageInternal(
     }
 
     const scope = {
+      replyReminderSelection,
       previousUserQueries: history.filter(turn => turn.role === 'user').map(turn => turn.text),
       selectedClubIds: [...history].reverse().find(turn => turn.role === 'user' && turn.selectedClubIds !== undefined)?.selectedClubIds,
       selectedFixtureIds:[...history].reverse().find(turn=>turn.role==='user'&&turn.selectedFixtureIds!==undefined)?.selectedFixtureIds,
@@ -679,6 +691,7 @@ async function handleTelegramAiMessageInternal(
     if (intent === 'standings' || intent === 'fixtures') {
       const table = await buildConversationReadReply(payload.text, intent, scope, rootController.signal);
       const result = await dispatchTelegramAiReply(payload, table.text, rootController.signal, { parse_mode: null, maxChars: 4000 });
+      if (result.replySent && result.botMessageId && table.reminderSelection) await indexBotSentMessage(result.botMessageId,payload.chatId,payload.threadId,payload.fromUser.id,{signal:rootController.signal,reminderSelection:table.reminderSelection});
       if (result.replySent && result.botMessageId && table.clubChoices?.length) await saveDeliveredAiReadClubDraft(payload, table.text, table.clubChoices, result.botMessageId, rootController.signal);
       else if (result.replySent && activeReadDraft) await clearAiReadClubDraft(payload, rootController.signal);
       if (result.replySent) await saveConversationContext(payload.chatId, payload.threadId, payload.fromUser.id, expandConversationReadFollowUp(payload.text, scope), table.text, { signal: rootController.signal, history, selectedClubIds: table.clubIds||[], selectedCompetitionIds: table.competitionIds, selectedFixtureIds:table.fixtureIds });

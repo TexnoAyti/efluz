@@ -35,6 +35,7 @@ export function assertAdminPlanReady(plan: AdminPlan) {
   if (missing.length) throw new Error('CLARIFY:Reja uchun quyidagini aniqlang: ' + missing.map(k => names[k] || k).join(', ') + '.');
   for (const key of ['homeScore','awayScore','matchday','roundNumber']) if (plan.body[key] !== undefined && (!Number.isInteger(plan.body[key]) || Number(plan.body[key]) < (key.includes('Score') ? 0 : 1))) throw new Error('CLARIFY:' + (names[key] || key) + ' uchun to‘g‘ri butun son yozing.');
   for (const key of ['isAdmin','isSuspended','visible','enabled']) if (plan.body[key] !== undefined && typeof plan.body[key] !== 'boolean') throw new Error('CLARIFY:' + (names[key] || key) + ' holatini aniq belgilang.');
+  if (plan.action === 'matchday_remind' && plan.body.fromMatchday !== undefined && (!Number.isInteger(plan.body.fromMatchday) || Number(plan.body.fromMatchday) < 1 || Number(plan.body.fromMatchday) > Number(plan.body.matchday))) throw new Error('CLARIFY:Eslatma tur oralig‘i noto‘g‘ri.');
   if (plan.action === 'user_role' && plan.body.isAdmin === true) {
     const p = plan.body.adminPermissions as any;
     if (!p || !['ALL','LEAGUES'].includes(p.scope) || !Array.isArray(p.leagueIds) || p.scope === 'LEAGUES' && !p.leagueIds.length)
@@ -62,6 +63,7 @@ export async function validateModelAdminPlan(plan: AdminPlan, request: string, s
     else if (/^(?:matchday_|cup_|standings_)/.test(plan.action)) await check(plan.targetId, 'competitions');
     else if (!request.includes(plan.targetId) && !verifiedTargets.has(`${plan.action}:${plan.targetId}`)) throw new Error('CLARIFY:Bu yopiq ma’lumot uchun aniq IDni yozing; uni taxmin qilmayman.');
   }
+  if (plan.action === 'matchday_remind' && (plan.body.fixtureIds !== undefined || plan.body.fromMatchday !== (/\b\d{1,3}\s*turgacha\b/.test(q) ? 1 : undefined))) throw new Error('CLARIFY:Eslatma doirasi siz yozgan so‘rovga mos kelmadi.');
   if (plan.targetId && plan.action.startsWith('matchday_')) {
     const competitions:any = await reader.read({dataset:'competitions',limit:30});
     if (competitions.error || competitions.complete === false || competitions.nextOffset) throw new Error('CLARIFY:Turnirlar holati to‘liq o‘qilmadi.');
