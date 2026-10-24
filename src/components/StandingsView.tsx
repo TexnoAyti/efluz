@@ -1,3 +1,4 @@
+import { seasonQualificationRanges } from '../lib/seasonQualificationPolicy';
 import { AdminTournamentImageExport } from './AdminTournamentImageExport';
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -61,7 +62,7 @@ export const StandingsView: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await api.getCompetitionStandings(selectedCompetitionId, skipCache);
+      const res = await api.getCompetitionStandings(selectedCompetitionId, skipCache, activeSeasonId);
       setStandings(res.standings || []);
     } catch (err: any) {
       console.error('Failed to load standings:', err);
@@ -80,8 +81,9 @@ export const StandingsView: React.FC = () => {
   const activeComp = competitions.find((c) => c.id === selectedCompetitionId);
 
   const isPLOrLL = selectedCompetitionId.includes('premier-league') || selectedCompetitionId.includes('la-liga');
-  const uclThreshold = isPLOrLL ? 7 : 6;
-  const uelThreshold = isPLOrLL ? 14 : 12;
+  const { uclEnd: uclThreshold, uelEnd: uelThreshold } = seasonQualificationRanges(
+    activeComp || {id: selectedCompetitionId}, activeSeasonId,
+  );
   const totalMatchdays = standings.length === 20 ? 19 : standings.length === 18 ? 17 : activeComp?.formatConfig?.rounds || 19;
 
   const getPositionStyle = (position: number, totalTeams: number) => {

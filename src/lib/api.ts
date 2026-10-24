@@ -1153,8 +1153,8 @@ export const api = {
   // --------------------------------------------------------------------------
   // DOMESTIC CUP ADMINISTRATION
   // --------------------------------------------------------------------------
-  async getDomesticCups(): Promise<{ cups: Array<{ id: string; name: string; country: string; leagueId: string; expectedTeams: number }> }> {
-    return request('/api/admin/cups', { cacheTtlMs: 30000 });
+  async getDomesticCups(seasonId = 'season-2026-27'): Promise<{ cups: Array<{ id: string; name: string; country: string; leagueId: string; expectedTeams: number }> }> {
+    return request(`/api/admin/cups?seasonId=${encodeURIComponent(seasonId)}`, { cacheTtlMs: 30000 });
   },
 
   async getDomesticCupDetails(cupId: string, seasonId = 'season-2026-27'): Promise<any> {

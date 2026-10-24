@@ -1,4 +1,4 @@
-import { SEASON_2026_27_ALLOCATION } from '../lib/seasonQualificationPolicy';
+import { seasonQualificationRanges } from '../lib/seasonQualificationPolicy';
 import { AdminTournamentImageExport } from './AdminTournamentImageExport';
 import { canUseDangerZone } from '../lib/adminPermissions';
 import React, { useEffect, useState, useMemo } from 'react';
@@ -33,6 +33,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
   const { openUserProfile } = useUserProfile();
   const { t } = useI18n();
 
+  const [qualificationLeagues, setQualificationLeagues] = useState<Competition[]>([]);
   const [tournaments, setTournaments] = useState<Competition[]>([]);
   const [selectedTournament, setSelectedTournament] = useState<Competition | null>(null);
   const [standings, setStandings] = useState<StandingsRow[]>([]);
@@ -62,6 +63,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
     setError(null);
     try {
       const compsRes = await api.getCompetitions(activeSeasonId);
+      setQualificationLeagues((compsRes.competitions || []).filter(c=>c.type === 'LEAGUE'));
       const uefaComps = (compsRes.competitions || []).filter(
         (c) =>
           ((c.type === 'EUROPEAN_LEAGUE_PHASE' ||
@@ -95,7 +97,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
   const loadTournamentDetails = async (compId: string, loadFix = false) => {
     try {
       const promises: Promise<any>[] = [
-        api.getCompetitionStandings(compId).catch(() => ({ standings: [] })),
+        api.getCompetitionStandings(compId, false, activeSeasonId).catch(() => ({ standings: [] })),
         api.getCompetitionParticipants(compId).catch(() => ({ participants: [] })),
       ];
       if (loadFix || activeTab === 'BRACKET') {
@@ -726,7 +728,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
             <div className="p-4 rounded-xl border border-slate-200/80 efl-theme-border dark:border-white/10 bg-slate-50 efl-theme-surface-2 dark:bg-white/[0.03] space-y-2">
               <div className="font-black text-blue-600 efl-theme-blue dark:text-blue-400 text-sm">UEFA Champions League (32 jamoa)</div>
               <ul className="space-y-1.5 text-slate-600 efl-theme-text-2 dark:text-slate-400 text-xs">
-                {Object.entries(SEASON_2026_27_ALLOCATION).map(([id,count]) => <li key={id}>• {({'comp-premier-league-2026':'Premier League','comp-la-liga-2026':'La Liga','comp-serie-a-2026':'Serie A','comp-bundesliga-2026':'Bundesliga'} as Record<string,string>)[id]}: {count} ta joy (1–{count}-o‘rinlar)</li>)}
+                {qualificationLeagues.map(league => { const {uclEnd} = seasonQualificationRanges(league,activeSeasonId); return <li key={league.id}>• {league.name}: {uclEnd} ta joy (1–{uclEnd}-o‘rinlar)</li>; })}
                 <li>• Format: 32-Team Single League Phase, 8 Matchdays (4H / 4A)</li>
                 <li>• Top 8: Direct to Round of 16 | 9th–24th: Knockout Play-offs | 25th–32nd: Eliminated</li>
               </ul>
@@ -735,7 +737,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
             <div className="p-4 rounded-xl border border-slate-200/80 efl-theme-border dark:border-white/10 bg-slate-50 efl-theme-surface-2 dark:bg-white/[0.03] space-y-2">
               <div className="font-black text-indigo-600 efl-theme-indigo dark:text-indigo-400 text-sm">UEFA Europa League (32 jamoa)</div>
               <ul className="space-y-1.5 text-slate-600 efl-theme-text-2 dark:text-slate-400 text-xs">
-                {Object.entries(SEASON_2026_27_ALLOCATION).map(([id,count]) => <li key={id}>• {({'comp-premier-league-2026':'Premier League','comp-la-liga-2026':'La Liga','comp-serie-a-2026':'Serie A','comp-bundesliga-2026':'Bundesliga'} as Record<string,string>)[id]}: {count} ta joy ({count + 1}–{count * 2}-o‘rinlar)</li>)}
+                {qualificationLeagues.map(league => { const {uclEnd,uelEnd} = seasonQualificationRanges(league,activeSeasonId); return <li key={league.id}>• {league.name}: {uelEnd - uclEnd} ta joy ({uclEnd + 1}–{uelEnd}-o‘rinlar)</li>; })}
                 <li>• Format: 32-Team Single League Phase, 8 Matchdays (4H / 4A)</li>
                 <li>• Top 8: Direct to Round of 16 | 9th–24th: Knockout Play-offs | 25th–32nd: Eliminated</li>
               </ul>

@@ -42,10 +42,10 @@ context.exports = context.module.exports;
 vm.createContext(context);
 vm.runInContext(result.outputFiles[0].text, context);
 const App = context.module.exports.default;
-async function render({ id = 'player-1', admin = false, route = '/', completed = true, theme = 'dark', anonymous = false } = {}) {
+async function render({ id = 'player-1', admin = false, route = '/', completed = true, theme = 'dark', anonymous = false, seasonId = 'test-season' } = {}) {
   context.releaseAuth = { user: anonymous ? null : { id, username: 'testplayer', isAdmin: admin }, isLoading: false,
     authStatus: anonymous ? 'AUTH_ANONYMOUS' : 'AUTHENTICATED', unreadNotificationCount: 2,
-    seasons: [], activeSeasonId: 'test-season', devProfiles: [], currentClub: { id: 'club-test', name: 'Test club' }, isDevMode: false };
+    seasons: [], activeSeasonId: seasonId, devProfiles: [], currentClub: { id: 'club-test', name: 'Test club' }, isDevMode: false };
   context.window.location.pathname = route;
   storage.set('efluz-theme-mode', theme);
   if (completed !== 'stored') storage.delete(`efluz-welcome-v2:${id}`);
@@ -93,3 +93,18 @@ assert.doesNotMatch(await render({ id: 'player-2', completed: false }), /data-te
 assert.doesNotMatch(await render({ anonymous: true }), /efl-welcome|data-test-view="MatchdayHomeView"/);
 assert.doesNotMatch(await render({ anonymous: true }), /id="btn-first-visit-guide"/);
 console.log('PASS EFL 2.0: every role gets versioned welcome, public design/themes/navigation/routes; administrator routes remain restricted; anonymous auth remains intact.');
+
+for (const admin of [false, true]) {
+  const current = await render({admin,completed:false,seasonId:'season-2026-27'});
+  const icons = current.match(/<ul class="welcome-league-icons">([\s\S]*?)<\/ul>/)?.[1] || '';
+  assert.equal((icons.match(/<li/g) || []).length,4,'Current season has four active league icons');
+  assert.doesNotMatch(icons,/ligue-1/);
+  assert.match(current,/Keyingi mavsum/);
+  assert.match(current,/2027\/28/);
+  const next = await render({admin,completed:false,seasonId:'season-2027-28'});
+  const nextIcons = next.match(/<ul class="welcome-league-icons">([\s\S]*?)<\/ul>/)?.[1] || '';
+  assert.equal((nextIcons.match(/<li/g) || []).length,5,'Next season restores all five league icons');
+  assert.match(nextIcons,/ligue-1/);
+  assert.doesNotMatch(next,/Keyingi mavsum/);
+}
+console.log('PASS real welcome render: four active leagues plus next-season Ligue 1, five active leagues next season, both roles');

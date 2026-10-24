@@ -76,7 +76,7 @@ interface BracketPreview {
 }
 
 export const AdminDomesticCupsTab: React.FC<{ allowedCupIds?: string[]; canUseDangerZone?: boolean }> = ({ allowedCupIds, canUseDangerZone = false }) => {
-  const { showToast } = useAuth();
+  const { showToast, activeSeasonId } = useAuth();
   const [cups, setCups] = useState<CupItem[]>([]);
   const [selectedCupId, setSelectedCupId] = useState(allowedCupIds?.[0] || 'comp-fa-cup-2026');
   const [details, setDetails] = useState<CupDetails | null>(null);
@@ -96,7 +96,7 @@ export const AdminDomesticCupsTab: React.FC<{ allowedCupIds?: string[]; canUseDa
   );
 
   async function loadCups() {
-    const result = await api.getDomesticCups();
+    const result = await api.getDomesticCups(activeSeasonId);
     setCups((result.cups || []).filter((cup: CupItem) => !allowedCupIds || allowedCupIds.includes(cup.id)));
   }
 
@@ -258,7 +258,7 @@ export const AdminDomesticCupsTab: React.FC<{ allowedCupIds?: string[]; canUseDa
         </button>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-2.5">
         {cups.map((cup) => (
           <button key={cup.id} onClick={() => setSelectedCupId(cup.id)} className={`p-3 rounded-xl border text-left transition ${selectedCupId === cup.id ? 'bg-amber-500/10 border-amber-500/50' : 'bg-slate-900/60 border-slate-800'}`}>
             <div className="text-xs font-black text-white truncate">{cup.name}</div>

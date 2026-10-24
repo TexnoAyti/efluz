@@ -1,3 +1,4 @@
+import { CURRENT_SEASON_ID, isSeasonLeagueEnabled } from '../lib/seasonParticipationPolicy';
 import React, { useEffect } from 'react';
 import { ArrowRight, Globe2, Moon, Sun } from 'lucide-react';
 import { useI18n } from '../i18n';
@@ -7,21 +8,21 @@ import './welcome-screen.css';
 const copy = {
   uz: {
     eyebrow: 'EFOOTBALL HAMJAMIYATI', title: ['Sizning klubingiz.', 'Sizning', 'mavsumingiz.'],
-    description: 'Klub tanlang. O‘ynang. Natijangizni tasdiqlang.', leagues: 'TOP 5 LIGALAR',
+    description: 'Klub tanlang. O‘ynang. Natijangizni tasdiqlang.', leagues: 'MAVSUM LIGALARI',
     steps: ['Klubingizni tanlang', 'Raqib bilan o‘ynang', 'Natijani tasdiqlang'],
     start: 'Boshlash', footer: 'EFL UZ · eFootball hamjamiyati', language: 'Tilni tanlang',
     light: 'Light rejimga o‘tish', dark: 'Dark rejimga o‘tish',
   },
   ru: {
     eyebrow: 'СООБЩЕСТВО EFOOTBALL', title: ['Ваш клуб.', 'Ваш', 'сезон.'],
-    description: 'Выберите клуб. Играйте. Подтверждайте результат.', leagues: 'ТОП-5 ЛИГ',
+    description: 'Выберите клуб. Играйте. Подтверждайте результат.', leagues: 'ЛИГИ СЕЗОНА',
     steps: ['Выберите свой клуб', 'Сыграйте с соперником', 'Подтвердите результат'],
     start: 'Начать', footer: 'EFL UZ · Сообщество eFootball', language: 'Выберите язык',
     light: 'Светлая тема', dark: 'Тёмная тема',
   },
   en: {
     eyebrow: 'EFOOTBALL COMMUNITY', title: ['Your club.', 'Your', 'season.'],
-    description: 'Choose a club. Play. Confirm your result.', leagues: 'TOP 5 LEAGUES',
+    description: 'Choose a club. Play. Confirm your result.', leagues: 'SEASON LEAGUES',
     steps: ['Choose your club', 'Play your opponent', 'Confirm the result'],
     start: 'Get started', footer: 'EFL UZ · eFootball community', language: 'Choose language',
     light: 'Switch to light mode', dark: 'Switch to dark mode',
@@ -37,12 +38,13 @@ const leagues = [
 ];
 
 interface WelcomeScreenProps {
+  seasonId?: string;
   theme: AppTheme;
   onThemeChange: (theme: AppTheme) => void;
   onStart: () => void;
 }
 
-export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ theme, onThemeChange, onStart }) => {
+export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ theme, onThemeChange, onStart, seasonId = CURRENT_SEASON_ID }) => {
   const { language, setLanguage } = useI18n();
   const c = copy[language];
 
@@ -83,12 +85,16 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ theme, onThemeChan
           <section className="welcome-leagues" aria-labelledby="welcome-leagues-title">
             <h2 id="welcome-leagues-title">{c.leagues}</h2>
             <ul className="welcome-league-icons">
-              {leagues.map((league) => (
+              {leagues.filter(league => isSeasonLeagueEnabled('league-' + league.icon, seasonId)).map((league) => (
                 <li key={league.icon}>
                   <img src={`/welcome/${league.icon}.svg`} alt={league.name} className={league.monochrome ? 'welcome-monochrome' : undefined} width="40" height="44" />
                 </li>
               ))}
             </ul>
+            {seasonId === CURRENT_SEASON_ID && <div className="efl-upcoming-league mt-2">
+              <img src="/welcome/ligue-1.svg" alt="" aria-hidden="true" className="welcome-monochrome" />
+              <span>Ligue 1</span><span className="efl-upcoming-league-season">{language === 'uz' ? 'Keyingi mavsum' : language === 'ru' ? 'Следующий сезон' : 'Next season'} · 2027/28</span>
+            </div>}
           </section>
 
           <ol className="welcome-steps">

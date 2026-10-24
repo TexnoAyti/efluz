@@ -1,3 +1,5 @@
+import { seasonQualificationRanges } from '../lib/seasonQualificationPolicy';
+import { CURRENT_SEASON_ID } from '../lib/seasonParticipationPolicy';
 import {CompetitionRounds, CompetitionFixtureCard, CompetitionStandings} from './CompetitionContent';
 import {CompetitionBanner, CompetitionTabs, CompetitionHeading} from './CompetitionChrome';
 import { isLeagueSelectionOpen } from '../lib/clubAdmission';
@@ -238,16 +240,14 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
 
     setIsLoadingStandings(true);
     try {
-      const standRes = await api.getCompetitionStandings(matchingComp.id);
-      if (standRes.standings && standRes.standings.length > 0) {
-        setLeagueStandings(standRes.standings);
-      }
+      const standRes = await api.getCompetitionStandings(matchingComp.id, false, activeSeasonId);
+      setLeagueStandings(standRes.standings || []);
     } catch (err) {
       console.error('Failed to load league standings:', err);
     } finally {
       setIsLoadingStandings(false);
     }
-  }, [leagueCompetitions]);
+  }, [leagueCompetitions, activeSeasonId]);
 
   const loadLeagueFixtures = useCallback(async (leagueId: string, matchday?: number, compsList?: Competition[]) => {
     const list = compsList || leagueCompetitions;
@@ -449,10 +449,11 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
   const matchdays: number[] = Array.from({ length: totalLeagueMatchdays }, (_, i) => i + 1);
   const currentMatchdayFixtures = leagueFixtures.filter((f) => (Number(f.matchday) || 1) === selectedMatchday);
 
-  const isPLOrLL = selectedLeagueId.includes('premier-league') || selectedLeagueId.includes('la-liga');
-  const uclThreshold = isPLOrLL ? 7 : 6;
-  const uelThreshold = isPLOrLL ? 14 : 12;
-  const relThreshold = selectedLeagueId.includes('bundesliga') || selectedLeagueId.includes('ligue-1') ? 16 : 18;
+  const { uclEnd: uclThreshold, uelEnd: uelThreshold } = seasonQualificationRanges(
+    currentComp || {id: selectedLeagueId.replace('league-', 'comp-') + '-2026'}, activeSeasonId,
+  );
+  const leagueTeamCount = currentComp?.totalTeams || (selectedLeagueId.includes('bundesliga') || selectedLeagueId.includes('ligue-1') ? 18 : 20);
+  const relThreshold = Math.max(uelThreshold + 1, leagueTeamCount - 2);
 
   const getPositionStyle = (position: number) => {
     if (position <= uclThreshold) {
@@ -599,6 +600,13 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
           </div>
         )}
       </div>
+
+      {activeSeasonId === CURRENT_SEASON_ID && (
+        <div className="efl-upcoming-league">
+          <img src="/welcome/ligue-1.svg" alt="" aria-hidden="true" className="efl-league-icon-monochrome" />
+          <span>Ligue 1</span><span className="efl-upcoming-league-season">{language === 'uz' ? 'Keyingi mavsum' : language === 'ru' ? 'Следующий сезон' : 'Next season'} · 2027/28</span>
+        </div>
+      )}
 
       {/* 2. Dedicated Selected League Header Banner */}
       {currentLeague && (
@@ -1035,7 +1043,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                   </div>
                   <div className="flex items-center gap-1.5 text-[var(--efl-text-2)]">
                     <span className="w-2 h-2 rounded-full bg-rose-500" />
-                    <span>{t.relegationZone} ({relThreshold}–{relThreshold === 16 ? 18 : 20})</span>
+                    <span>{t.relegationZone} ({relThreshold}–{leagueTeamCount})</span>
                   </div></>}
             rows={leagueStandings.map(row=>{
               const posStyle=getPositionStyle(row.position),isMyClub=ownedClubs.some(club=>club.id===row.clubId);
