@@ -240,16 +240,14 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
 
     setIsLoadingStandings(true);
     try {
-      const standRes = await api.getCompetitionStandings(matchingComp.id);
-      if (standRes.standings && standRes.standings.length > 0) {
-        setLeagueStandings(standRes.standings);
-      }
+      const standRes = await api.getCompetitionStandings(matchingComp.id, false, activeSeasonId);
+      setLeagueStandings(standRes.standings || []);
     } catch (err) {
       console.error('Failed to load league standings:', err);
     } finally {
       setIsLoadingStandings(false);
     }
-  }, [leagueCompetitions]);
+  }, [leagueCompetitions, activeSeasonId]);
 
   const loadLeagueFixtures = useCallback(async (leagueId: string, matchday?: number, compsList?: Competition[]) => {
     const list = compsList || leagueCompetitions;

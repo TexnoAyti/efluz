@@ -62,7 +62,7 @@ export const StandingsView: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await api.getCompetitionStandings(selectedCompetitionId, skipCache);
+      const res = await api.getCompetitionStandings(selectedCompetitionId, skipCache, activeSeasonId);
       setStandings(res.standings || []);
     } catch (err: any) {
       console.error('Failed to load standings:', err);

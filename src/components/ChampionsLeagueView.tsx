@@ -97,7 +97,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
   const loadTournamentDetails = async (compId: string, loadFix = false) => {
     try {
       const promises: Promise<any>[] = [
-        api.getCompetitionStandings(compId).catch(() => ({ standings: [] })),
+        api.getCompetitionStandings(compId, false, activeSeasonId).catch(() => ({ standings: [] })),
         api.getCompetitionParticipants(compId).catch(() => ({ participants: [] })),
       ];
       if (loadFix || activeTab === 'BRACKET') {
