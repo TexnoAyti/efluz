@@ -45,6 +45,15 @@ try {
  assert.equal(writes.find(w=>w.user_id===101).tag,'Arsenal');
  assert.equal(writes.find(w=>w.user_id===104).tag,clubMemberTag(SEED_CLUBS.find(c=>c.id==='club-milan')!),'Premium member uses the verified primary club');
  assert.equal((await clubMemberTagsStatus()).lastRun?.updated,3);
+ assert.deepEqual((await clubMemberTagsStatus()).skippedReasons,{GROUP_ADMIN:1,NOT_IN_GROUP:1,TELEGRAM_USER_NOT_FOUND:1,ACCOUNT_SUSPENDED:1});
+ assert.equal((await clubMemberTagsStatus()).pendingDiagnostics,0);
+ const publicStatus=JSON.stringify(await clubMemberTagsStatus());assert.ok(!publicStatus.includes('user-102')&&!publicStatus.includes('club-man-city'),'Public diagnostics contain counts only, no account or club identities');
+ // Legacy grouped reasons must be rechecked even before their retry timer.
+ const legacy=(await db.collection('telegram_member_tags').where('userId','==','user-102').get()).docs[0];
+ await legacy.ref.update({reason:'NOT_REGULAR_MEMBER',diagnosticVersion:1,nextCheckAt:Date.now()+86400000});
+ assert.equal((await clubMemberTagsStatus()).pendingDiagnostics,1);
+ await clearCooldown();await reconcileClubMemberTags();assert.equal((await legacy.ref.get()).data()!.reason,'GROUP_ADMIN');
+ assert.equal((await clubMemberTagsStatus()).pendingDiagnostics,0);
  await clearCooldown();const count=writes.length;await reconcileClubMemberTags();assert.equal(writes.length,count,'Unchanged owners do not cause repeated Telegram writes');
  // Transfer triggers changes before the six-hour check interval.
  await db.collection('club_occupancies').doc(`${seasonId}_club-arsenal`).update({userId:'user-108'});
