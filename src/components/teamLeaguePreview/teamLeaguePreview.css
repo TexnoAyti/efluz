@@ -230,3 +230,14 @@
  .team-profile-totals span{font-size:9px;line-height:1.4}
 }
 @media(prefers-reduced-motion:reduce){.team-profile-cabinet>summary>svg{transition:none}}
+
+.team-league-pager{min-width:0;display:grid;gap:14px}
+.team-league-selector{display:flex;align-items:stretch;gap:6px;min-width:0}
+.team-league-arrow{flex:0 0 42px;justify-content:center;padding:8px!important}
+.team-league-strip{position:relative;display:flex;gap:8px;min-width:0;flex:1;overflow-x:auto;scroll-snap-type:x proximity;scrollbar-width:none;overscroll-behavior-x:contain}
+.team-league-strip::-webkit-scrollbar{display:none}
+.team-league-strip>button{flex:0 0 auto;max-width:85%;display:flex;align-items:center;gap:9px;min-height:48px;padding:10px 16px;border-radius:12px;border:1px solid var(--efl-border);background:var(--efl-surface);color:var(--efl-text-2);text-align:left;scroll-snap-align:center;font-size:12px;font-weight:700}
+.team-league-strip>button[aria-current="true"]{border-color:var(--efl-primary);color:var(--efl-primary);background:var(--efl-surface-2)}
+.team-league-strip>button>span{min-width:0;overflow-wrap:anywhere}
+.team-league-strip small{display:block;font-size:10px;color:var(--efl-muted);margin-top:3px}
+.team-league-slide{min-width:0;display:grid;gap:14px}
