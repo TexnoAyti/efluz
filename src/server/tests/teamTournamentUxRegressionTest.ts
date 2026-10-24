@@ -7,7 +7,7 @@ import {makeTeamSchedule,teamFormatPreview,teamStandings,teamPlayerStats} from '
 import type {PreviewTeam,TeamLeague} from '../../types/teamLeaguePreview';
 const teams:PreviewTeam[]=Array.from({length:4},(_,i)=>({id:`tp_uxteam0${i}`,name:['Tashkent United','Samarqand Stars','Buxoro Legends','Farg‘ona City'][i],ownerId:'test',logo:'',members:Array.from({length:4},(_,m)=>({id:`tp_player${i}00${m}`,name:`Player ${i}-${m}`})),captainMemberId:`tp_player${i}000`,version:1,updatedAt:''}));
 const base:TeamLeague={id:'tp_uxleague',name:'Team Cup',description:'Tarkiblar va turlar',format:'LEAGUE_AND_PLAYOFF',qualifiers:2,ownerId:'test',teamIds:teams.map(t=>t.id),starterCount:3,rounds:1,status:'ACTIVE',currentRound:1,totalRounds:4,fixtures:makeTeamSchedule('tp_uxleague',teams.map(t=>t.id),1),teams:Object.fromEntries(teams.map(t=>[t.id,t])),version:1,updatedAt:'',audit:[]};
-const props={teams,busy:false,act:()=>{},edit:()=>{},confirm:()=>{},onBack:()=>{},onRefresh:()=>{}};
+const props={teams,canManage:true,busy:false,act:()=>{},edit:()=>{},confirm:()=>{},onBack:()=>{},onRefresh:()=>{}};
 const view=(league:TeamLeague,tab?:string,open='')=>render(React.createElement(TeamLeagueDetail,{...props,league,initialTab:tab,initialOpenFixtureId:open}));
 const overview=view(base);assert.ok(overview.includes('1-TUR'));assert.ok(overview.includes('Tur tanlash'));assert.equal(overview.includes('team-secondary-nav'),false);assert.equal(overview.includes('Turnir reglamenti'),false);assert.ok(overview.includes('Boshqaruv'));assert.equal(overview.includes('TEAM <'),false,'No separate marketing hero inside the competition flow');
 assert.ok(overview.includes('competition-fixture-card'),'Team fixtures use the domestic league card');
@@ -42,3 +42,15 @@ assert.ok(wizardWithCreate.includes('Team qo‘shish'));assert.ok(wizardWithCrea
 assert.deepEqual(teamFormatPreview(4,'PLAYOFF'),{matches:3,rounds:2});assert.deepEqual(teamFormatPreview(4,'LEAGUE_AND_PLAYOFF',2,4),{matches:15,rounds:8});
 const legacy={...base,format:undefined,qualifiers:undefined};assert.ok(view(legacy,'standings').includes('Liga jadvali'));assert.equal(teamStandings(base).length,4);assert.equal(teamPlayerStats(base).length,16);
 console.log('PASS team tournament workspace: four main sections, focused fixture pages, sequential captain lineups, gated pairing, one pending result editor, reserves, inline team creation, wizard formats, qualification, statistics, cancellation and legacy rendering.');
+
+for(const initialTab of ['fixtures','manage','rules','history']){
+ const html=render(React.createElement(TeamLeagueDetail,{...props,league:base,initialTab,canManage:false}));
+ for(const forbidden of ['Boshqaruv','Turnirni boshlash','Turnirni bekor qilish','Sozlamalarni tahrirlash','Amallar tarixi'])assert.equal(html.includes(forbidden),false,`Public view hides ${forbidden}`);
+}
+const spectatorMatch=render(React.createElement(TeamLeagueDetail,{...props,league:base,initialOpenFixtureId:base.fixtures[0].id,canManage:false}));
+for(const forbidden of ['Tarkibni tasdiqlash','Juftliklarni tuzish','Zaxiradan almashtirish','Tarkiblarni qayta ochish','team-score-form'])assert.equal(spectatorMatch.includes(forbidden),false,`Spectator match hides ${forbidden}`);
+console.log('PASS released spectator tournament and direct management-link boundaries');
+
+const scored=structuredClone(base);scored.fixtures[0].homeLineup={starters:[teams[0].members[0].id],reserves:[]};scored.fixtures[0].awayLineup={starters:[teams[1].members[0].id],reserves:[]};scored.fixtures[0].bouts=[{id:'tp_readonlybout',homeMemberId:teams[0].members[0].id,awayMemberId:teams[1].members[0].id,homeScore:2,awayScore:1}];
+const scoredHtml=render(React.createElement(TeamLeagueDetail,{...props,league:scored,initialOpenFixtureId:scored.fixtures[0].id,canManage:false}));
+assert.equal(scoredHtml.includes('team-score-form'),false);assert.equal(scoredHtml.includes('<input'),false);assert.equal(scoredHtml.includes('Tuzatish'),false);assert.ok(scoredHtml.includes('2 : 1'));

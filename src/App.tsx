@@ -156,7 +156,7 @@ const AppContent: React.FC = () => {
   }, []);
 
   useEffect(()=>{
-    const navigate=(event:Event)=>{if(!user||!canSeeTeamPreview(user.telegramId))return;const target=(event as CustomEvent<TeamNavigation>).detail;if(!target)return;
+    const navigate=(event:Event)=>{if(!user)return;const target=(event as CustomEvent<TeamNavigation>).detail;if(!target)return;
       setPublicClubId(null);
       if(target.kind==='profile'||target.kind==='directory'){const id=target.kind==='profile'?target.id:undefined;const path=teamPagePath(id);if(window.location.pathname!==path)window.history.pushState({teamProfile:true},'',path);setTeamRoute(id?{id}:{});}
       else if(target.kind==='tournament'||target.kind==='workspace'){
@@ -251,7 +251,7 @@ const AppContent: React.FC = () => {
       {!isDesignPreview && canUseGlobalAdminTools && <ContentBoundary><OfflineSyncBanner /></ContentBoundary>}
       <main data-preview-page={EFL_2_DESIGN_ENABLED ? currentTab : undefined} className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-4 md:px-6 py-4 sm:py-6 min-w-0">
           <ContentBoundary key={teamRoute?.id || (teamRoute?'team-directory':publicClubId || currentTab)}>
-            {teamRoute ? canSeeTeamPreview(user?.telegramId)?<TeamProfileView key={`${user?.id}:${teamRoute.id||'directory'}`} teamId={teamRoute.id} onBack={()=>{if(window.history.state?.teamProfile)window.history.back();else setActiveTab('my-club');}}/>:<p className="competition-empty">Bu bo‘lim hozircha faqat loyiha egasiga ochiq.</p> : publicClubId ? <PublicClubView clubId={publicClubId} onBack={() => {
+            {teamRoute ? <TeamProfileView key={`${user?.id}:${teamRoute.id||'directory'}`} teamId={teamRoute.id} onBack={()=>{if(window.history.state?.teamProfile)window.history.back();else setActiveTab('my-club');}}/> : publicClubId ? <PublicClubView clubId={publicClubId} onBack={() => {
               if (window.history.state?.publicClub) window.history.back();
               else setActiveTab('leagues');
             }} /> : <>
@@ -275,7 +275,7 @@ const AppContent: React.FC = () => {
                 key={searchNavigationRevision}
                 onNavigateTab={setActiveTab}
                 initialSubTab={
-                  canSeeTeamPreview(user?.telegramId)&&isTeamWorkspaceLaunch()?'custom':readUzeflifeLaunch()!==null ? 'uzeflife' : readTournamentLaunch() ? 'custom' : currentTab === 'cups'
+                  isTeamWorkspaceLaunch()?'custom':readUzeflifeLaunch()!==null ? 'uzeflife' : readTournamentLaunch() ? 'custom' : currentTab === 'cups'
                     ? 'cups'
                     : currentTab === 'champions-league'
                     ? 'european'
