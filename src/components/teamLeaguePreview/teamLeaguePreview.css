@@ -108,3 +108,19 @@
 .team-dialog-body:has(>.team-tournament-management){grid-template-columns:minmax(0,1fr);align-content:start}.team-tournament-management>*{flex-shrink:0}.team-tournament-management .efl-league-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.team-tournament-management .efl-league-tabs>button{white-space:normal}@media(min-width:600px){.team-tournament-management .efl-league-tabs{grid-template-columns:repeat(4,minmax(0,1fr))}}
 @media(max-width:600px){.team-membership-toolbar>.competition-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.team-membership-toolbar .competition-button{width:100%;flex:initial;min-height:40px;white-space:normal;overflow-wrap:anywhere}}
 .team-rule-settings{display:grid;gap:12px}.team-rule-settings>.competition-muted{margin:0}.team-rule-presets{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}.team-count-presets{grid-template-columns:repeat(3,minmax(0,1fr))}.team-rule-presets .competition-button{padding:8px 5px}.team-points-settings{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}@media(max-width:380px){.team-points-settings{grid-template-columns:1fr}}
+
+/* Event registration uses the same competition surfaces and controls as EFL. */
+.clasico-event{display:grid;gap:16px;padding:20px;margin-bottom:20px;min-width:0}
+.clasico-event .team-section-title{display:flex;align-items:center;gap:8px}
+.clasico-sides{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.clasico-side{display:grid;align-content:start;gap:12px;padding:16px;min-width:0}
+.clasico-side ol{padding-left:22px;display:grid;gap:8px;overflow-wrap:anywhere}
+.clasico-subscription{display:flex;gap:12px;align-items:flex-start}
+.clasico-subscription p{margin:6px 0 12px}
+.clasico-bouts{display:grid;gap:10px}
+.clasico-bout{border:1px solid var(--efl-border);border-radius:14px;padding:12px;min-width:0}
+.clasico-pair{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center;overflow-wrap:anywhere}
+.clasico-pair>span:last-child{text-align:right}
+.clasico-score{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:end;margin-top:12px}
+.clasico-event .competition-actions{flex-wrap:wrap}
+@media(max-width:520px){.clasico-event{padding:14px}.clasico-sides{grid-template-columns:1fr}.clasico-score{grid-template-columns:1fr 1fr}.clasico-score>button{grid-column:1/-1}.clasico-pair{font-size:13px;gap:8px}}

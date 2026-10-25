@@ -1,3 +1,4 @@
+import {verifyElClasico} from './elClasicoHttpAudit';
 import {verifyTeamTournamentSettings} from './teamTournamentSettingsHttpAudit';
 import {verifyTeamTournamentAdmin} from './teamTournamentAdminHttpAudit';
 import {verifyAndroidAuth} from './androidAuthHttpAudit';
@@ -41,6 +42,7 @@ await assert.rejects(pg.query("select public.efl_runtime_commit('preview','[]'::
 await pg.exec('set role service_role;');
 const originalFetch = globalThis.fetch;
 let conflicts = 0, legacyHttpCommits = 0, failAssignment = false, failPublish = false, failStartChunk = false, failClaimCommit = false, failClubBanCommit=false;
+let failClasicoCommit=false;
 let failUzeflifeCommit=false, failBulkResultCommit=false,failAndroidLoginCommit=false;
 let failNotificationCommit = false, failTournamentCreate = false, failTeamPreviewCommit=false,failTeamMembershipCommit=false;
 const telegramDeliveries: string[] = [];
@@ -60,6 +62,7 @@ globalThis.fetch = (async (input: any, init: any) => {
     else if (name === 'efl_runtime_patch_snapshot') result = await pg.query('select public.efl_runtime_patch_snapshot($1,$2::text[],$3::jsonb,$4,$5,$6) as value', [body.p_space, body.p_ids, JSON.stringify(body.p_row), body.p_merge, body.p_ttl, body.p_version]);
     else if (name === 'efl_runtime_read') result = await pg.query('select public.efl_runtime_read($1,$2::jsonb) as value', [body.p_space, JSON.stringify(body.p_query)]);
     else if (name === 'efl_runtime_commit_safe') {
+      if(failClasicoCommit&&body.p_operations.some((op:any)=>op.path.startsWith('el_clasico_events/'))){failClasicoCommit=false;throw Error('CLASICO_COMMIT_UNAVAILABLE');}
       if(failAndroidLoginCommit&&body.p_operations.some((op:any)=>op.path.startsWith('android_login_sessions/'))){failAndroidLoginCommit=false;body.p_operations.push({kind:'create',path:'runtime_probes/team-membership-fault',encoded:encodeValue({mustRollback:true})});}
       if(failBulkResultCommit && body.p_operations.some((op:any)=>op.path.startsWith('bulk_result_receipts/'))){failBulkResultCommit=false;body.p_operations.push({kind:'create',path:'users/user-bulk-sql',encoded:encodeValue({id:'must-rollback'})});}
       if(failUzeflifeCommit&&body.p_operations.some((op:any)=>op.path.startsWith('uzeflife/'))){failUzeflifeCommit=false;throw Error('UZ_COMMIT_UNAVAILABLE');}
@@ -241,6 +244,7 @@ try {
   await verifyTeamMembership(()=>{failTeamMembershipCommit=true;});
   await verifyTeamTournamentAdmin(()=>{failTeamPreviewCommit=true;});
   await verifyTeamTournamentSettings(()=>{failTeamPreviewCommit=true;});
+  await verifyElClasico(()=>{failClasicoCommit=true;});
   await verifyAndroidAuth(()=>{failAndroidLoginCommit=true;});
   await verifyPostgresClubClaimHttp(() => { failClaimCommit=true; },()=>{failClubBanCommit=true;});
   await verifyPostgresMatchdayNotifications(() => { failNotificationCommit=true; }, telegramDeliveries);
