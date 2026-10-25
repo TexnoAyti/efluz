@@ -25,7 +25,7 @@ tools. Supply `EFL_ANDROID_KEYSTORE`, `EFL_ANDROID_KEY_ALIAS` and
 python3 android/build-apk.py
 ```
 
-The default output is `artifacts/android/EFLUZ-1.0.0.apk`. Keep the signing key
+The default output is `artifacts/android/EFLUZ-1.0.1.apk`. Keep the signing key
 and password backed up privately; every upgrade must use the same key and a
 higher manifest versionCode. Never commit signing material or environment files.
 

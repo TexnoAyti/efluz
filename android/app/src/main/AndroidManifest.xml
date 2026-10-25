@@ -1,4 +1,4 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="uz.efluz.app" android:versionCode="1" android:versionName="1.0.0">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="uz.efluz.app" android:versionCode="2" android:versionName="1.0.1">
   <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="35" />
   <uses-permission android:name="android.permission.INTERNET" />
   <application android:label="EFLUZ" android:icon="@drawable/ic_launcher" android:roundIcon="@drawable/ic_launcher" android:theme="@style/AppTheme" android:allowBackup="false" android:usesCleartextTraffic="false" android:supportsRtl="true">
