@@ -1,3 +1,4 @@
+import {readElClasicoLaunch} from './elClasicoLinks';
 export const TEAM_NAVIGATION_EVENT='efl:team-navigation';
 const valid=(id:string)=>/^tp_[a-zA-Z0-9_-]{8,80}$/.test(id);
 export function teamPagePath(id?:string){return id?`/teams/${encodeURIComponent(id)}`:'/teams';}
@@ -9,7 +10,7 @@ export function openTeamTournament(id:string,fixtureId?:string,tab?:'standings'|
 export function readTeamTournamentLaunch(search=typeof window==='undefined'?'':window.location.search){const params=new URLSearchParams(search),id=params.get('teamTournament');if(!id||!valid(id))return null;const fixtureId=params.get('teamFixture')||undefined;const tab=params.get('teamTab');return {id,fixtureId:fixtureId&&/^[a-zA-Z0-9_-]{1,160}$/.test(fixtureId)?fixtureId:undefined,...(tab&&['standings','fixtures','teams','manage'].includes(tab)?{tab}: {})};}
 
 export function openTeamWorkspace(){window.dispatchEvent(new CustomEvent<TeamNavigation>(TEAM_NAVIGATION_EVENT,{detail:{kind:'workspace'}}));}
-export function isTeamWorkspaceLaunch(){return !!readTeamTournamentLaunch()||(typeof window!=='undefined'&&new URLSearchParams(window.location.search).get('teamMode')==='1');}
+export function isTeamWorkspaceLaunch(){return readElClasicoLaunch()||!!readTeamTournamentLaunch()||(typeof window!=='undefined'&&new URLSearchParams(window.location.search).get('teamMode')==='1');}
 /** Keep a focused fixture restorable without adding a history entry for each tab click. */
 export function teamFixtureLocation(path:string,leagueId:string,fixtureId?:string){
  const url=new URL(path,'https://efl.local');

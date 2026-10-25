@@ -1,3 +1,5 @@
+import {EL_CLASICO_LINK,readElClasicoLaunch} from '../../lib/elClasicoLinks';
+import {isTeamWorkspaceLaunch} from '../../lib/teamNavigation';
 import assert from 'node:assert/strict';
 import React from 'react';
 import {renderToStaticMarkup as render} from 'react-dom/server';
@@ -60,3 +62,16 @@ console.log('PASS team profiles: champions require completed finals, former-memb
 
 const releasedProfile=render(React.createElement(TeamProfile,{data,onBack:()=>{}}));
 assert.equal(releasedProfile.includes('Teamni boshqarish'),false,'Spectators cannot open profile editing');
+
+const savedWindow=(globalThis as any).window;
+try{
+ assert.equal(EL_CLASICO_LINK,'https://t.me/efluzbot?startapp=el_clasico');
+ for(const query of ['?startapp=el_clasico','?tgWebAppStartParam=el_clasico','?teamEvent=el-clasico']){
+  (globalThis as any).window={location:{search:query}};
+  assert.equal(readElClasicoLaunch(),true);assert.equal(isTeamWorkspaceLaunch(),true,'Event deep link routes to TEAMS');
+ }
+ (globalThis as any).window={location:{search:''},Telegram:{WebApp:{initData:'start_param=el_clasico'}}};assert.equal(readElClasicoLaunch(),true);
+ (globalThis as any).window={location:{search:''},Telegram:{WebApp:{initDataUnsafe:{start_param:'el_clasico'}}}};assert.equal(readElClasicoLaunch(),true);
+ (globalThis as any).window={location:{search:'?startapp=el_clasico_wrong'}};assert.equal(readElClasicoLaunch(),false);
+}finally{if(savedWindow===undefined)delete (globalThis as any).window;else (globalThis as any).window=savedWindow;}
+console.log('PASS El-Clasico Telegram/direct links route to TEAMS without granting access');
