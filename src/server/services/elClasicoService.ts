@@ -1,3 +1,4 @@
+import {writeClasicoNotices} from './teamCompetitionNotices';
 import {getFirestoreDb} from '../firebase/admin';
 import {teamActor,readTeamActor,requireTeamGroup,teamGroupInfo,teamError,teamLeagueAdminName} from './teamAccess';
 import {canSeeTeamPreview} from '../../types/teamLeaguePreview';
@@ -25,6 +26,7 @@ export async function actElClasico(actorId:string,body:any){
   const fresh=await readTeamActor(tx,actorId);
   if(ownerAction&&!canSeeTeamPreview(fresh.telegramId))throw teamError('Boshqaruvga kirish yopiq.',403);
   const event=((await tx.get(ref)).data()||blank()) as ClasicoEvent;
+  const before=structuredClone(event);
   if(ownerAction&&event.version!==body.version)throw teamError('Event yangilandi. Qayta yuklang.',409);
   if(action==='JOIN'||action==='LEAVE'){
    if(event.status!=='REGISTRATION')throw teamError('Eventga yozilish yopilgan.',409);
@@ -51,6 +53,6 @@ export async function actElClasico(actorId:string,body:any){
    if(['CANCELLED','COMPLETED'].includes(event.status))throw teamError('Yakunlangan eventni bekor qilib bo‘lmaydi.',409);
    event.status='CANCELLED';
   }
-  event.version++;event.updatedAt=new Date().toISOString();tx.set(ref,event);return view(event,fresh.telegramId);
+  event.version++;event.updatedAt=new Date().toISOString();writeClasicoNotices(tx,before,event);tx.set(ref,event);return view(event,fresh.telegramId);
  });
 }

@@ -1,3 +1,4 @@
+import {scheduleUNotices} from '../services/uzeflifeNotifications';
 import {getElClasico,checkElClasicoSubscription,actElClasico} from '../services/elClasicoService';
 import {paginateTeamTransport,cachedTeamTransport,clearTeamTransportSnapshots} from '../services/teamTransport';
 import {teamActor} from '../services/teamAccess';
@@ -15,7 +16,7 @@ export const requireTeamPreviewOwner:RequestHandler=async(req,res,next)=>{
 };
 export const teamLeaguePreviewRouter=Router();
 teamLeaguePreviewRouter.use(requireAuth);
-const run=(handler:(req:any)=>Promise<unknown>):RequestHandler=>async(req,res)=>{try{res.setHeader('Cache-Control','no-store');if(req.query.teamSnapshot)await teamActor(req.user.id);const cached=req.method==='GET'&&!req.path.startsWith('/managed/')&&!req.path.startsWith('/events/')?cachedTeamTransport(req.user.id,req.path,req.query):undefined;const data=cached??await handler(req);if(req.method!=='GET')clearTeamTransportSnapshots();res.json({ok:true,data:paginateTeamTransport(req.user.id,req.path,req.method==='GET'?req.query:{},data)});}catch(e:any){res.status(e.statusCode||500).json({ok:false,error:e.statusCode?e.message:'So‘rov bajarilmadi. Qayta yuklab tekshiring.',code:e.code,groupUrl:e.groupUrl,groupName:e.groupName});}};
+const run=(handler:(req:any)=>Promise<unknown>):RequestHandler=>async(req,res)=>{try{res.setHeader('Cache-Control','no-store');if(req.query.teamSnapshot)await teamActor(req.user.id);const cached=req.method==='GET'&&!req.path.startsWith('/managed/')&&!req.path.startsWith('/events/')?cachedTeamTransport(req.user.id,req.path,req.query):undefined;const data=cached??await handler(req);if(req.method!=='GET'){clearTeamTransportSnapshots();scheduleUNotices();}res.json({ok:true,data:paginateTeamTransport(req.user.id,req.path,req.method==='GET'?req.query:{},data)});}catch(e:any){res.status(e.statusCode||500).json({ok:false,error:e.statusCode?e.message:'So‘rov bajarilmadi. Qayta yuklab tekshiring.',code:e.code,groupUrl:e.groupUrl,groupName:e.groupName});}};
 teamLeaguePreviewRouter.get('/events/el-clasico',run(req=>getElClasico(req.user.id)));
 teamLeaguePreviewRouter.post('/events/el-clasico/subscription',run(req=>checkElClasicoSubscription(req.user.id)));
 teamLeaguePreviewRouter.post('/events/el-clasico/actions',run(req=>actElClasico(req.user.id,req.body)));

@@ -139,3 +139,41 @@ START(version), SCORE(version,boutId,homeScore,awayScore), CANCEL(version).
 The singleton `el_clasico_events/el-clasico` is committed atomically through the
 existing document store; it is bounded at 22 players and 11 pairs. Fresh reads
 bypass transport snapshots. There is no client identity or role override.
+
+### Competition notifications and fullscreen layout
+
+Event and TEAMS mutations now commit bounded delivery intents in the same
+transaction as their domain change. The existing Telegram worker leases these
+jobs, writes deterministic in-app notifications, and enqueues the existing
+Telegram retry/deduplication transport. An interrupted retry preserves read
+status. Fresh account checks suppress suspended recipients; source guards skip
+obsolete pairing/result messages. Messages contain no private proof images or
+Telegram IDs.
+
+El-Clasico covers own registration/side change/leave, the owner's full-roster
+alert, individual opponent on start, scores/corrections, completion and
+cancellation. TEAMS covers new round/start, confirmed lineup/reserve status,
+pairing/substitution/reset, scores/team results, completion and cancellation.
+Only verified members with real accounts receive personal team messages.
+
+Custom tournaments cover registration/review/removal/leave, start, first-round
+or newly drawn opponents, pending confirmation/dispute/confirmed/corrected
+results, completion and cancellation. Deadline reminders and overdue notices
+use the existing worker wakeups and cron (no new paid or external scheduler).
+The sweep reads at most 40 recent due fixtures per page, resumes with a cursor,
+and never recreates an existing reminder intent. Expired advance reminders are
+skipped. Existing domestic/UZEFLIFE notification settings and pipelines remain.
+
+The notification list reads fresh user-scoped rows, applying existing visibility
+and read controls, with the prior resilient reader as an outage fallback. Team
+and event notifications open their matching workspace; custom tournament buttons
+open the existing authenticated Telegram tournament link. `tt1_` start parameters
+restore a team tournament and optional fixture without granting access.
+
+Fullscreen layout follows the visible WebView height and offset, Telegram
+viewport/safe-area events, keyboard changes, and actual header height. Shared
+legacy, team/event, native and tournament drawer dialogs stay inside device and
+Telegram safe insets. Keyboard mode hides the floating destination bar; inner
+form areas scroll so final actions remain reachable. Browser QA used actual
+Tailwind styles at 320/390/844/1280 widths, portrait/landscape safe insets and a
+live keyboard-height resize; no physical Telegram device test is claimed.

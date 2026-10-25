@@ -1,3 +1,4 @@
+import {writeTeamLeagueNotices} from './teamCompetitionNotices';
 import crypto from 'node:crypto';
 import {getFirestoreDb} from '../firebase/admin';
 import {canSeeTeamPreview,TEAM_PREVIEW_OWNER,TEAM_DIRECTORY_LIMIT,TEAM_LEAGUE_MAX_TEAMS,TEAM_PLAYOFF_SIZES,confirmedTeamMembers} from '../../types/teamLeaguePreview';
@@ -107,6 +108,7 @@ export async function actOnTeamLeague(actorId:string,id:string,input:any){
  await verifyTeamPlayers(checkedMembers,!!before.membershipRequired);
  return db.runTransaction(async tx=>{
   const currentActor=await readTeamActor(tx,actorId),l=(await tx.get(ref)).data() as TeamLeague|undefined;assertTeamLeagueManager(l,currentActor);
+  const noticeBefore=structuredClone(l);
   if(!['START','LINEUP','PAIR','RESET','SUBSTITUTE','SCORE','NEXT','CANCEL','TIEBREAK'].includes(input.action))throw error('Noma’lum amal.');
   if(l.version!==input.version||l.version!==before.version)throw error('Turnir holati o‘zgargan. Yangilab qayta urining.',409);
   for(let i=0;i<checkedMembers.length;i+=16)await Promise.all(checkedMembers.slice(i,i+16).filter(m=>m.userId).map(m=>readTeamActor(tx,m.userId!)));
@@ -166,7 +168,7 @@ export async function actOnTeamLeague(actorId:string,id:string,input:any){
   }
   if(['SCORE','TIEBREAK'].includes(input.action)&&l.currentRound===l.totalRounds&&l.fixtures.every(f=>teamFixtureScore(f).complete&&(f.stage!=='PLAYOFF'||!!teamFixtureWinner(f))))l.status='COMPLETED';
   l.version++;l.updatedAt=now();l.audit=[...l.audit,{at:l.updatedAt,actorId,action:input.action,detail:typeof input.fixtureId==='string'?input.fixtureId:l.name}].slice(-200);
-  tx.set(ref,l);return l;
+  writeTeamLeagueNotices(tx,noticeBefore,l,input.action,input.fixtureId);tx.set(ref,l);return l;
  });
 }
 

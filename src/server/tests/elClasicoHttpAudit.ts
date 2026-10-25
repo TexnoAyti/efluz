@@ -1,3 +1,4 @@
+import {COMPETITION_OUTBOX,noticeHash} from '../services/competitionNotices';
 import assert from 'node:assert/strict';
 import express from 'express';
 import {once} from 'node:events';
@@ -39,7 +40,7 @@ export async function verifyElClasico(failNextCommit:()=>void){
   assert.equal((await act(owner,{action:'START',version:event.version-1})).status,409);
   group.set(event.players[0].userId===users[0].id?users[0].telegramId:users.find(u=>u.id===event.players[0].userId)!.telegramId,'left');assert.equal((await act(owner,{action:'START',version:event.version})).status,403);group.clear();
   failNextCommit();assert.equal((await act(owner,{action:'START',version:event.version})).status,500);assert.equal((await call()).body.data.event.status,'REGISTRATION','Failed commit leaves no partial pairs');
-  const started=await act(owner,{action:'START',version:event.version});assert.equal(started.status,200,JSON.stringify(started.body));event=started.body.data.event;assert.equal(event.bouts.length,11);assert.equal(new Set(event.bouts.flatMap((b:any)=>[b.homeUserId,b.awayUserId])).size,22);
+  const started=await act(owner,{action:'START',version:event.version});assert.equal(started.status,200,JSON.stringify(started.body));event=started.body.data.event;assert.equal(event.bouts.length,11);const delivery=(await db.collection(COMPETITION_OUTBOX).doc(noticeHash(['clasico:'+event.version,0])).get()).data();assert.equal(delivery?.notices.filter((n:any)=>n.title.includes('O‘yin boshlandi')).length,22,'Actual HTTP START atomically saves all 22 personal opponent notices');assert.equal(new Set(event.bouts.flatMap((b:any)=>[b.homeUserId,b.awayUserId])).size,22);
   assert.equal((await act(users[0],{action:'LEAVE'})).status,409);assert.equal((await act(users[23],{action:'JOIN',side:'REAL'})).status,409);
   assert.equal((await act(users[0],{action:'SCORE',version:event.version,boutId:1,homeScore:9,awayScore:0})).status,403);
   assert.equal((await act(owner,{action:'SCORE',version:event.version,boutId:1,homeScore:'2',awayScore:0})).status,400);

@@ -117,7 +117,7 @@ export const Header: React.FC<HeaderProps> = ({
       )}
 
       {/* Main App Bar */}
-      <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 h-13 sm:h-15 flex items-center justify-between gap-2 sm:gap-4">
+      <div className="efl-header-row max-w-7xl mx-auto px-3 sm:px-4 md:px-6 h-13 sm:h-15 flex items-center justify-between gap-2 sm:gap-4">
         {/* Brand & Logo */}
         <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
           {EFL_2_DESIGN_ENABLED ? (
@@ -139,7 +139,7 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* Right Controls */}
-        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <div className="efl-header-actions flex items-center gap-1.5 sm:gap-2 shrink-0">
           {onOpenGuide && <button type="button" id="btn-first-visit-guide" onClick={onOpenGuide} title="Yo‘riqnoma" aria-label="Yo‘riqnomani ochish" className="preview-search-trigger p-2 rounded-xl flex items-center justify-center min-w-[34px] min-h-[38px] transition-colors"><CircleHelp className="w-4 h-4" /></button>}
           {EFL_2_DESIGN_ENABLED ? (
             <>

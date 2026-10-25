@@ -1,3 +1,4 @@
+import {getLiveUserNotifications} from '../services/liveNotifications';
 import { getLoginClubState } from '../services/loginClubState';
 import { Router, Request, Response } from 'express';
 import { requireAuth } from '../middleware/authMiddleware';
@@ -115,7 +116,7 @@ meRouter.post('/match-ops/no-show', requireAuth, async (req: Request, res: Respo
 meRouter.get('/notifications', requireAuth, async (req: Request, res: Response) => {
   const userId = req.user!.id;
   try {
-    const notifications = await getUserNotificationsFirestore(userId, 30);
+    const notifications = await getLiveUserNotifications(userId, 30);
     res.json({ notifications });
   } catch (err: any) {
     handleFirestoreError(res, err, 'GET /api/me/notifications');

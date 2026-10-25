@@ -97,7 +97,7 @@ export function TournamentAdminDrawer({isOpen,onClose,tournament:t,participants,
   };
   const tabs=[{id:'overview',label:'Umumiy',Icon:Play},{id:'participants',label:'Qatnashchilar',Icon:Users},{id:'matches',label:'O‘yinlar',Icon:Swords},{id:'settings',label:'Sozlamalar',Icon:Settings},{id:'history',label:'Tarix',Icon:History}] as const;
   return <div className="efl-custom-tournaments tourney-dialog-backdrop tourney-management-overlay !p-0 fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex justify-end">
-    <section ref={dialog} role="dialog" aria-modal="true" aria-labelledby="tournament-management-title" className="tourney-dialog !rounded-none !max-h-none !h-[100dvh] !max-w-xl w-full min-w-0 sm:max-w-xl h-[100dvh] bg-[var(--efl-surface)] border-l border-[var(--efl-border)] flex flex-col overflow-hidden shadow-2xl">
+    <section ref={dialog} role="dialog" aria-modal="true" aria-labelledby="tournament-management-title" className="tourney-dialog !rounded-none  !max-w-xl w-full min-w-0 sm:max-w-xl h-full bg-[var(--efl-surface)] border-l border-[var(--efl-border)] flex flex-col overflow-hidden shadow-2xl">
       <header className="shrink-0 flex items-start gap-3 p-4 border-b border-[var(--efl-border)]">
         <Shield className="w-5 h-5 text-[var(--efl-primary)] shrink-0 mt-1" />
         <div className="min-w-0 flex-1"><h2 id="tournament-management-title" className="text-base font-bold text-[var(--efl-text)]">Turnir boshqaruvi</h2><p className="text-sm text-[var(--efl-text-2)] break-words [overflow-wrap:anywhere]">{t.name}</p><p className="text-xs text-[var(--efl-primary)] mt-1">{isOrganizer?'Tashkilotchi':'Yordamchi'} · {tournamentStatusLabel[t.status]}</p></div>
