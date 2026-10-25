@@ -11,7 +11,7 @@ export function TeamTournamentWizard({league,teams,busy,save,initialStep=1,onCre
  const [id]=useState(league?.id||previewId),[step,setStep]=useState(initialStep);
  const [name,setName]=useState(league?.name||''),[description,setDescription]=useState(league?.description||'');
  const [kind,setKind]=useState<TeamTournamentKind>(league?.competitionType||'CUSTOM'),[format,setFormat]=useState<TeamTournamentFormat>(league?.format||'LEAGUE');
- const [ids,setIds]=useState(league?.teamIds||[]),[countText,setCountText]=useState(String(league?.starterCount||1)),[targetText,setTargetText]=useState(String(league?.teamIds.length||2));
+ const [ids,setIds]=useState(league?.teamIds||[]),[countText,setCountText]=useState(String(league?.starterCount||1)),[targetText,setTargetText]=useState(String(league?.competitionType==='SINGLE_MATCH'?2:league?.teamIds.length||2));
  const [reserveText,setReserveText]=useState(String(league?.reserveLimit??(league?Math.min(3,30-league.starterCount):0))),[rounds,setRounds]=useState<1|2>(league?.rounds||1),[qualifiers,setQualifiers]=useState(league?.qualifiers||2),[search,setSearch]=useState('');
  const initialPoints=teamPoints(league||{}),[winText,setWinText]=useState(String(initialPoints.win)),[drawText,setDrawText]=useState(String(initialPoints.draw)),[lossText,setLossText]=useState(String(initialPoints.loss));
  const [administrator,setAdministrator]=useState<TournamentAdministrator|null>(league?.adminUserId&&league.adminUserId!==league.ownerId?{id:league.adminUserId,name:league.adminName||league.adminUserId}:null);

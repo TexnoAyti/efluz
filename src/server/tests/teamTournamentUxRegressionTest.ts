@@ -87,3 +87,5 @@ const ownerDelete=render(React.createElement(TeamLeagueDetail,{...props,league:b
 const spectatorDelete=render(React.createElement(TeamLeagueDetail,{...props,league:base,onDelete:()=>{},canManage:false}));assert.equal(spectatorDelete.includes('Ligani o‘chirish'),false);
 
 const noReserves=view({...base,reserveLimit:0},'fixtures',fixture.id);assert.match(noReserves,/disabled=""[^>]*>Zaxira<\/button>/,'A tournament with no reserves cannot select a reserve player');
+
+const incompleteSingle=render(React.createElement(TeamTournamentWizard,{league:{...base,status:'DRAFT',format:'PLAYOFF',competitionType:'SINGLE_MATCH',teamIds:[teams[0].id],starterCount:1},teams,busy:false,save:()=>{}}));assert.match(incompleteSingle,/aria-label="Qatnashuvchi teamlar soni"[^>]*value="2"/,'A single-match draft with a removed team still requires two teams so a replacement can be selected');
