@@ -10,3 +10,10 @@ artifacts/
 /recovery_backups/
 *recovery-backup*.json
 *status_correction*.json
+
+# Android output and private signing credentials
+android/local.properties
+android/.gradle/
+*.jks
+*.keystore
+*.p12

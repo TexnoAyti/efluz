@@ -1,3 +1,4 @@
+import {isAndroidApp,androidLogout} from '../lib/androidApp';
 import React, { lazy, Suspense, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n, Language } from '../i18n';
@@ -27,6 +28,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigateTab }) => {
   const { user, currentClub, ownedClubs, selectCurrentClub, activeSeasonId, isDevMode, devProfiles, switchDevUser } = useAuth();
   const { language, setLanguage, t } = useI18n();
   const [showSandbox, setShowSandbox] = useState(false);
+  const [logoutError,setLogoutError]=useState(''),[loggingOut,setLoggingOut]=useState(false);
 
   const languagesList: { code: Language; label: string; flag: string }[] = [
     { code: 'uz', label: 'O‘zbekcha', flag: '🇺🇿' },
@@ -79,6 +81,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigateTab }) => {
           <ChevronRight className="w-4 h-4 text-sky-400 group-hover:translate-x-1 transition-transform shrink-0" />
         </div>
       </button>
+
+      {isAndroidApp&&<div className="competition-panel"><button type="button" className="competition-button" disabled={loggingOut} onClick={async()=>{setLoggingOut(true);setLogoutError('');try{await androidLogout();}catch(e:any){setLogoutError(e.message);setLoggingOut(false);}}}>{loggingOut?'Chiqilmoqda…':'Akkauntdan chiqish'}</button>{logoutError&&<p role="alert" className="competition-note error mt-3">{logoutError}</p>}</div>}
 
       {user?.isAdmin && (
         <div id="card-admin-access" onClick={() => onNavigateTab('admin')} className="glass-panel p-5 sm:p-6 shadow-xl border-amber-500/30 bg-gradient-to-r from-amber-950/20 via-slate-900/40 to-slate-900/80 cursor-pointer hover:border-amber-500/50 transition-all group">

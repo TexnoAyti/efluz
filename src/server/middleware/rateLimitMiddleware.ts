@@ -15,7 +15,8 @@ function subjectFor(req: Request): string {
   let identity = req.user?.telegramId;
   try {
     const bearer = req.get('authorization');
-    const token = bearer?.startsWith('Bearer ') ? bearer.slice(7).trim() : req.get('x-session-token');
+    const cookieAccess=String(req.headers.cookie||'').split(';').map(v=>v.trim()).filter(v=>v.startsWith('__Host-efluz_android_access='));
+    const token = bearer?.startsWith('Bearer ') ? bearer.slice(7).trim() : req.get('x-session-token')||(cookieAccess.length===1?cookieAccess[0].slice('__Host-efluz_android_access='.length):undefined);
     if (!identity && token) {
       const verified = verifySessionToken(token);
       if (verified.isValid) identity = verified.claims?.telegramId;

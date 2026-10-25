@@ -1,3 +1,4 @@
+import {isAndroidApp} from '../lib/androidApp';
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { User, Club, Season, Notification } from '../types';
 import { api, getDevUserId, setDevUserId, getTelegramInitData, setTelegramInitData, setSessionToken, getSessionToken } from '../lib/api';
@@ -308,7 +309,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setActiveSeasonId(season.id);
             setCurrentSeason(season);
           }
-        }, Boolean(getSessionToken()));
+        }, Boolean(getSessionToken())||isAndroidApp);
         if (!isMounted) return;
 
         setDevProfiles(result.profiles);

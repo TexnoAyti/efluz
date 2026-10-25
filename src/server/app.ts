@@ -1,3 +1,4 @@
+import {androidAuthRouter} from './routes/androidAuth.routes';
 import {processTeamInvitationNotices} from './services/teamMembershipService';
 import { scheduleClubMemberTags } from './services/telegramClubMemberTags';
 import { disciplineRouter } from './routes/discipline.routes';
@@ -189,7 +190,9 @@ export function createApp() {
     next();
   });
   app.use('/api/uzeflife', rateLimit('uzeflife', 90, 60));
-  app.use('/api/auth', rateLimit('auth', 20, 600));
+  app.use('/api/auth/android/status',rateLimit('android-login-poll',120,60));
+  const authRateLimit=rateLimit('auth',20,600);
+  app.use('/api/auth',(req,res,next)=>req.path==='/android/status'?next():authRateLimit(req,res,next));
   app.use('/api/clubs/crest-proxy', rateLimit('crest-proxy', 60, 60));
   app.use('/api/health/probe', rateLimit('health-probe', 3, 600));
   app.use('/api/telegram/webhook', rateLimit('telegram-webhook', 120, 60));
@@ -198,6 +201,7 @@ export function createApp() {
   app.use('/api/season-ops/no-show', rateLimit('season-no-show', 8, 600));
 
   app.use('/api/health', healthRouter);
+  app.use('/api/auth/android',androidAuthRouter);
   app.use('/api/auth', authRouter);
   app.use('/api/seasons', seasonsRouter);
   app.use('/api/season-lifecycle', seasonLifecycleRouter);

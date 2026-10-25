@@ -1,3 +1,4 @@
+import {verifyAndroidAuth} from './androidAuthHttpAudit';
 import {verifyTeamMembership} from './teamMembershipHttpAudit';
 import {verifyBulkLeagueResultsSql} from './bulkLeagueResultsSqlAudit';
 import {verifyUzeflifeHttp} from './uzeflifeHttpAudit';
@@ -38,7 +39,7 @@ await assert.rejects(pg.query("select public.efl_runtime_commit('preview','[]'::
 await pg.exec('set role service_role;');
 const originalFetch = globalThis.fetch;
 let conflicts = 0, legacyHttpCommits = 0, failAssignment = false, failPublish = false, failStartChunk = false, failClaimCommit = false, failClubBanCommit=false;
-let failUzeflifeCommit=false, failBulkResultCommit=false;
+let failUzeflifeCommit=false, failBulkResultCommit=false,failAndroidLoginCommit=false;
 let failNotificationCommit = false, failTournamentCreate = false, failTeamPreviewCommit=false,failTeamMembershipCommit=false;
 const telegramDeliveries: string[] = [];
 let snapshotResponses: {bytes:number;ids:string[]}[]=[];
@@ -57,6 +58,7 @@ globalThis.fetch = (async (input: any, init: any) => {
     else if (name === 'efl_runtime_patch_snapshot') result = await pg.query('select public.efl_runtime_patch_snapshot($1,$2::text[],$3::jsonb,$4,$5,$6) as value', [body.p_space, body.p_ids, JSON.stringify(body.p_row), body.p_merge, body.p_ttl, body.p_version]);
     else if (name === 'efl_runtime_read') result = await pg.query('select public.efl_runtime_read($1,$2::jsonb) as value', [body.p_space, JSON.stringify(body.p_query)]);
     else if (name === 'efl_runtime_commit_safe') {
+      if(failAndroidLoginCommit&&body.p_operations.some((op:any)=>op.path.startsWith('android_login_sessions/'))){failAndroidLoginCommit=false;body.p_operations.push({kind:'create',path:'runtime_probes/team-membership-fault',encoded:encodeValue({mustRollback:true})});}
       if(failBulkResultCommit && body.p_operations.some((op:any)=>op.path.startsWith('bulk_result_receipts/'))){failBulkResultCommit=false;body.p_operations.push({kind:'create',path:'users/user-bulk-sql',encoded:encodeValue({id:'must-rollback'})});}
       if(failUzeflifeCommit&&body.p_operations.some((op:any)=>op.path.startsWith('uzeflife/'))){failUzeflifeCommit=false;throw Error('UZ_COMMIT_UNAVAILABLE');}
       if(failTeamMembershipCommit&&body.p_operations.some((op:any)=>/^(team_creation_tickets|team_membership_invitations|team_membership_receipts)\//.test(op.path))){failTeamMembershipCommit=false;body.p_operations.push({kind:'create',path:'runtime_probes/team-membership-fault',encoded:encodeValue({mustRollback:true})});}
@@ -235,6 +237,7 @@ try {
   await verifyTeamLeaguePreview(()=>{failTeamPreviewCommit=true;});
   await db.collection('runtime_probes').doc('team-membership-fault').set({existing:true});
   await verifyTeamMembership(()=>{failTeamMembershipCommit=true;});
+  await verifyAndroidAuth(()=>{failAndroidLoginCommit=true;});
   await verifyPostgresClubClaimHttp(() => { failClaimCommit=true; },()=>{failClubBanCommit=true;});
   await verifyPostgresMatchdayNotifications(() => { failNotificationCommit=true; }, telegramDeliveries);
   await verifyTournamentCreationHttp(() => { failTournamentCreate = true; });
