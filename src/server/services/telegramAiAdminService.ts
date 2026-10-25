@@ -1,3 +1,4 @@
+import {prepareMissingOwnerBanControls,type BanReadOutput} from './clubSelectionBan';
 import { missingOwnersReadPlan, formatMissingGroupOwners } from './telegramAiMissingGroupOwners';
 import { requestedMatchday } from './telegramAiConversationCommands';
 import { isPlatformAdminRequest } from './telegramAiPlatformCatalog';
@@ -126,6 +127,7 @@ export function describeAiAdminPlan(plan: AdminPlan, label = ''): string {
   if (plan.action === 'metrics_reset') return 'O‘qish hisoblagichlarini nolga tushirish.';
   if (plan.action === 'broadcast') return `Xabar yuborish: ${b.title}\n${String(b.body)}\nQabul qiluvchilar: ${b.targetAudience === 'ALL_USERS' ? 'barcha foydalanuvchilar' : b.targetAudience === 'LEAGUE_OWNERS' ? b.targetLeagueId : b.targetAudience === 'CLUB_OWNERS' ? 'klub egalari' : (b.selectedUserIds as string[] || []).join(', ')}.`;
   if (plan.action === 'user_role') return `${target}: ${b.isAdmin ? 'admin ruxsatini berish' : 'admin ruxsatini olib tashlash'}. Ruxsat: ${(b.adminPermissions as any)?.scope === 'ALL' ? 'barcha ligalar' : ((b.adminPermissions as any)?.leagueIds || []).map((id:string) => ({'league-premier-league':'Premier League','league-la-liga':'La Liga','league-serie-a':'Serie A','league-bundesliga':'Bundesliga','league-ligue-1':'Ligue 1'} as any)[id] || id).join(', ') || 'liga ko‘rsatilmagan'}.`;
+  if(plan.action==='club_selection_ban')return `${target}: ${b.isBanned?'barcha ligalarda klub tanlashga ban berish':'klub tanlash banini olib tashlash'}.${b.reason?' Sabab: '+b.reason:''}`;
   if (plan.action === 'user_suspend') return `${target}: ${b.isSuspended ? 'bloklash' : 'blokdan chiqarish'}.`;
   const names: Record<string,string> = { result_reject:'Natijani rad etish', fixture_reopen:'Uchrashuvni qayta ochish', fixture_deadline:'O‘yin muddatini o‘zgartirish', fixture_remind:'O‘yin eslatmasini yuborish', user_delete:'Foydalanuvchini o‘chirish', premium_grant:'Premium berish', premium_revoke:'Premiumni bekor qilish', notification_message:'Xabarnoma ko‘rinishini o‘zgartirish', notification_type:'Xabarnoma turini boshqarish', broadcast:'Xabar yuborish', cup_generate:'Kubok qur’asini yaratish', cup_advance:'Kubokni keyingi bosqichga o‘tkazish', cup_round:'Kubok bosqichini ochish/qulflash', cup_winner_advance:'Kubok g‘olibini o‘tkazish', matchday_advance:'Keyingi turga o‘tkazish', matchday_open_now:'Joriy turni ochish', fixtures_generate:'O‘yinlar jadvalini yaratish', fixtures_restore:'Yetishmayotgan juftliklarni tiklash', fixtures_reset:'Jadvalni qayta yaratish', knockout_generate:'Pley-off o‘yinlarini yaratish', european_rebuild:'Yevropa jadvalini qayta hisoblash', qualifications_evaluate:'Saralashni hisoblash', sync:'Saqlangan o‘zgarishlarni sinxronlash', read_model_rebuild:'Saqlangan bazaviy ma’lumotlarni yangilash', notification_queue:'Xabarnoma navbatini ishlash', deadline_sweep:'O‘yin muddatlarini tekshirish', cup_reconcile:'Kubok juftliklarini moslashtirish', standings_rebuild:'Jadvalni qayta hisoblash', season_archive:'Mavsumni arxivlash', season_rollover:'Keyingi mavsumni yaratish' };
   return `${names[plan.action] || 'Admin amali'}${target ? ': ' + target : ''}.\n${Object.entries(b).map(([key,value]) => `${({expectedUsername:'Username',reason:'Sabab',notes:'Izoh',homeScore:'Uy hisobi',awayScore:'Safar hisobi',title:'Sarlavha',body:'Xabar',userId:'Foydalanuvchi',visibility:'Ko‘rinishi',deadlineAt:'Muddat'} as any)[key] || key}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`).join('\n')}`;
@@ -297,7 +299,7 @@ export async function planAiAdminAction(request: string, facts: string, signal: 
 
 /** Caller has already verified the webhook, allowed topic/owner DM, and rate limit.
  * Authority is derived from Telegram sender ID, never username, model text or chat admin status. */
-async function handleAiAdminCommandInternal(payload: TelegramAiMessagePayload, signal: AbortSignal, facts = '', scope: ConversationScope = {}): Promise<string> {
+async function handleAiAdminCommandInternal(payload: TelegramAiMessagePayload, signal: AbortSignal, facts = '', scope: ConversationScope = {}, output?:BanReadOutput): Promise<string> {
   if (!isAiAdminActor(payload.fromUser.id) || !Number.isSafeInteger(payload.fromUser.id) || payload.fromUser.is_bot || payload.senderChat || payload.forwarded)
     return 'AI orqali admin buyruqlari faqat ruxsat berilgan adminlar uchun.';
   const { config, redisAvailable } = await getTelegramAiConfig({ signal });
@@ -327,6 +329,8 @@ async function handleAiAdminCommandInternal(payload: TelegramAiMessagePayload, s
 • Inter — Milan 10-tur natijasini o‘chir
 • Heidenheim klubini egasidan bo‘shat
 • @username faqat La Liga uchun admin qil
+• @username ga klub tanlashga ban ber. Sabab: o‘yinlarni o‘ynamadi
+• @username klub tanlash banini olib tashla
 • @username ni blokla / blokdan chiqar
 • @username ga premium ber
 • @username team ochish uchun 1 ticket ber
@@ -427,7 +431,7 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
       : testPlanner ? await planAiAdminAction(argument, facts, signal, payload)
       : missingOwnersReadPlan(argument)
         || await expandedNativePlan(argument,payload,signal)
-        || (detectNaturalAdminAction(argument)?.startsWith('team_ticket_')?await parseNaturalAdminPlan(argument,signal):null)
+        || ((detectNaturalAdminAction(argument)?.startsWith('team_ticket_')||detectNaturalAdminAction(argument)==='club_selection_ban')?await parseNaturalAdminPlan(argument,signal):null)
         || await platformSemanticPlan(argument,payload,signal,facts)
         || await planReplyReminder(argument,scope.replyReminderSelection,createAiTournamentReader(signal).read)
         || await planBulkLeagueRequest(argument,signal)
@@ -483,7 +487,8 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
       if (!privateChat) return 'Yopiq admin ma’lumotlarini botning shaxsiy chatida so‘rang. Ommaviy jadval uchun liga nomini yozing.';
       const result = await withinAiDeadline(signal, () => (testExecutor || executeAiAdminRoute)(plan,payload.fromUser.id,'ai-read-'+payload.updateId,signal));
       if (result.status < 200 || result.status >= 300) return `Ma’lumotni o‘qib bo‘lmadi: ${String(result.data?.message || result.data?.error || 'server rad etdi').slice(0,400)}.`;
-      return formatNaturalAdminRead(plan.action,result.data);
+      if(output&&plan.action==='group_missing_owners')output.banControls=await prepareMissingOwnerBanControls(payload,result.data);
+      return formatNaturalAdminRead(plan.action,result.data)+(output?.banControls?'\n\nHar bir tugma faqat unda ko‘rsatilgan o‘yinchiga ta’sir qiladi. Tugmalar 1 soat amal qiladi.':'');
     }
     let targetLabel = bulkLabel;
     let scoreHomeFirst = correctionSource?.scoreHomeFirst;
@@ -508,7 +513,7 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
         if (!named.clarification && named.clubs.length === 2) scoreHomeFirst = named.clubs[0].id === f.homeClubId;
         else if (/^(?:endi\s+)?(?:shu|shuni|buni|osha|uning|uni|hisobni|natijani)\b/.test(normalizeAiEntity(argument))) scoreHomeFirst = true;
       }
-    } else if (plan.targetId && /^(club_|matchday_|cup_|standings_)/.test(plan.action)) {
+    } else if (plan.targetId && plan.action!=='club_selection_ban' && /^(club_|matchday_|cup_|standings_)/.test(plan.action)) {
       const found = await lookup.read(plan.action.startsWith('club_') ? { dataset: 'clubs', club: plan.targetId, limit: 1 } : { dataset: 'competitions', competition: plan.targetId, limit: 1 }) as any;
       if (found.data?.[0]?.name) targetLabel = found.data[0].name + '\n';
       if (['matchday_control','matchday_advance','matchday_remind'].includes(plan.action)) {
@@ -520,7 +525,7 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
       const competition:any=await lookup.read({dataset:'competitions',competition:plan.body.competitionId,limit:1});
       targetLabel=competition.data?.[0]?.name||String(plan.body.competitionId);
     }
-    if (/^user_/.test(plan.action)) {
+    if (/^user_/.test(plan.action)||plan.action==='club_selection_ban') {
       const username = /@\s*([A-Za-z0-9_]+)/.exec(argument.replace(/^\/ai_admin(?:@[A-Za-z0-9_]+)?\s*/i,''))?.[1];
       if (username) targetLabel = '@' + username + ' (' + plan.targetId + ')';
     }
@@ -575,10 +580,10 @@ function formatNaturalAdminRead(action: string, data: any): string {
 }
 
 /** A queue holds requests, never unconfirmed execution rights. Each step keeps existing authorization and approval. */
-export async function handleAiAdminCommand(payload: TelegramAiMessagePayload, signal: AbortSignal, facts = '', scope: ConversationScope = {}): Promise<string> {
-  if (!isOwnerAdminPrivateChat(payload) || payload.fromUser.is_bot) return handleAiAdminCommandInternal(payload,signal,facts,scope);
+export async function handleAiAdminCommand(payload: TelegramAiMessagePayload, signal: AbortSignal, facts = '', scope: ConversationScope = {}, output?:BanReadOutput): Promise<string> {
+  if (!isOwnerAdminPrivateChat(payload) || payload.fromUser.is_bot) return handleAiAdminCommandInternal(payload,signal,facts,scope,output);
   const {config,redisAvailable}=await getTelegramAiConfig({signal});
-  if(!config.enabled || process.env.NODE_ENV==='production'&&!redisAvailable)return handleAiAdminCommandInternal(payload,signal,facts,scope);
+  if(!config.enabled || process.env.NODE_ENV==='production'&&!redisAvailable)return handleAiAdminCommandInternal(payload,signal,facts,scope,output);
   const steps=splitAiWorkflow(payload.text);
   let workflow=await getAiWorkflow(payload,signal);
   const control=isAiWorkflowControl(payload.text);
@@ -599,7 +604,7 @@ export async function handleAiAdminCommand(payload: TelegramAiMessagePayload, si
           return 'Topshiriqlar · '+(w.index+1)+'-qadam tekshirildi.\n'+limitAiReply(answer,350)+'\n\n'+(next.state==='done'?'Topshiriqlar tugadi · '+next.steps.length+'/'+next.steps.length:await prepare(next));
         }
       }
-      const answer=await handleAiAdminCommandInternal({...payload,text:'/ai_admin '+w.steps[w.index],replyToMessage:undefined},signal,facts,scope);
+      const answer=await handleAiAdminCommandInternal({...payload,text:'/ai_admin '+w.steps[w.index],replyToMessage:undefined},signal,facts,scope,output);
       const token=/\/ai_confirm ([a-f0-9]{24})/.exec(answer)?.[1]||null;
       const next=await change(w,{token,state:token?'waiting':'blocked'});
       return next?workflowHeading(next)+'\n\n'+answer:answer+'\nNavbat yangilangan. “Topshiriqlar holati” deb tekshiring.';
@@ -647,7 +652,7 @@ export async function handleAiAdminCommand(payload: TelegramAiMessagePayload, si
   const revision=Boolean(workflow?.token===latest&&parseAiPlanRevision(payload.text));
   const cancelQueue=Boolean(cancelling&&workflow&&!['done','cancelled'].includes(workflow.state)&&(!explicit||token===workflow.token));
   const innerPayload=cancelQueue&&workflow?.token?{...payload,text:'/ai_cancel '+workflow.token}:payload;
-  const answer=await handleAiAdminCommandInternal(innerPayload,signal,facts,scope);
+  const answer=await handleAiAdminCommandInternal(innerPayload,signal,facts,scope,output);
   if(!workflow||['done','cancelled'].includes(workflow.state))return answer;
   if(cancelQueue){await change(workflow,{state:'cancelled'});return answer+'\nQolgan topshiriqlar navbati ham bekor qilindi.';}
   const replacement=/\/ai_confirm ([a-f0-9]{24})/.exec(answer)?.[1];

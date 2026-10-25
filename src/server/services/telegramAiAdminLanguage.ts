@@ -39,7 +39,7 @@ export function assertSingleNaturalAdminRequest(text: string): void {
   if (/\b\d{1,3}\s*turgacha\b/.test(q) && detectMatchdayIntent(text) !== 'REMIND')
     throw new Error('CLARIFY:Bu buyruq bir nechta turga tegishli. O‘zgartirish uchun bitta aniq turni yozing; “turgacha” faqat ro‘yxatni ko‘rishda ishlaydi.');
   const negativeQuery = q.replace(/\b(?:kiritmagan|yubormagan|oynamagan|tasdiqlamagan|yakunlamagan)\w*\b/g, 'missing');
-  if (/\b(?:sinxronlama\w*|qoyma\w*|chozma\w*|berkitma\w*|boshlama\w*|boshlatma\w*|eslatmang\w*|eslatmagin\w*|kiritma\w*|saqlama\w*|ochma\w*|yopma\w*|qulflama\w*|uzaytirma\w*|qilma\w*|ochirma\w*|yuborma\w*|biriktirma\w*|berma\w*|ulama\w*|boshatma\w*|chiqarma\w*|otkazma\w*|yozma\w*|toxtatma\w*|yangilama\w*|belgilama\w*|ozgartirma\w*|qaytarma\w*|tozalama\w*|tushirma\w*)\b/.test(negativeQuery) || /\b(?:do not|dont|never)\s+(?:assign|release|delete|remove|give)\b/.test(q) || /(?:^|\s)не\s+(?:назнач|удал|освобод)[\p{L}]*/u.test(negativeQuery) ||
+  if (/\b(?:sinxronlama\w*|qoyma\w*|chozma\w*|berkitma\w*|boshlama\w*|boshlatma\w*|eslatmang\w*|eslatmagin\w*|kiritma\w*|saqlama\w*|ochma\w*|yopma\w*|qulflama\w*|uzaytirma\w*|qilma\w*|banlama\w*|ochirma\w*|yuborma\w*|biriktirma\w*|berma\w*|ulama\w*|boshatma\w*|chiqarma\w*|otkazma\w*|yozma\w*|toxtatma\w*|yangilama\w*|belgilama\w*|ozgartirma\w*|qaytarma\w*|tozalama\w*|tushirma\w*)\b/.test(negativeQuery) || /\b(?:do not|dont|never)\s+(?:assign|release|delete|remove|give)\b/.test(q) || /(?:^|\s)не\s+(?:назнач|удал|освобод)[\p{L}]*/u.test(negativeQuery) ||
       /\b(?:och|yop|uzaytir|ochir|blokla|ber|yubor|biriktir|qulfla|yarat|hisobla|boshat|chiqar|ula|otkaz|qil|belgila|ozgartir|yangila|toxtat|qaytar|tozala|tushir)\w*\b.*\b(?:va|yoki|keyin|song|hamda)\s+.*\b(?:och|yop|uzaytir|ochir|blokla|ber|yubor|biriktir|qulfla|yarat|boshat|chiqar|ula|otkaz|qil|belgila|ozgartir|yangila|toxtat|qaytar|tozala|tushir)\w*\b/.test(q)) {
     throw new Error('CLARIFY:Bitta aniq amalni yozing. Bir nechta yoki inkor qilingan amalni birgalikda bajarmayman.');
   }
@@ -54,6 +54,7 @@ export function detectNaturalAdminAction(text: string): string|null {
     if(/\b(?:ber\w*|ajrat\w*|qosh\w*|grant)\b/.test(q))return 'team_ticket_grant';
     if(/tekshir\w*|korsat\w*|balans\w*|qolgan\w*|nechta/.test(q))return 'team_ticket_check';
   }
+  if(/\b(?:ban\w*|bann\w*|unban)\b/.test(q)&&/\b(?:olib tashla\w*|bekor qil\w*|och\w*|chiqar\w*|unban|banla\w*|ber\w*|qoy\w*|qil\w*)\b/.test(q))return 'club_selection_ban';
   if(isMissingGroupOwnersRequest(command))return 'group_missing_owners';
   const expanded = expandedAdminIntent(command);
   if (expanded) return expanded;

@@ -36,6 +36,7 @@ export const AI_ADMIN_ACTIONS: Record<string, AdminAction> = {
   club_assign: action('POST', '/clubs/:id/assign', 'targetUserId:exact @username or user-id, seasonId?'),
   club_release: action('POST', '/clubs/:id/release', 'seasonId?'),
   user_role: action('POST', '/users/:id/role', 'isAdmin:boolean, adminPermissions:{scope:ALL|LEAGUES,leagueIds:string[]}'),
+  club_selection_ban: action('POST','/telegram-ai/club-selection-ban/:id','isBanned:boolean, reason?'),
   user_suspend: action('POST', '/users/:id/suspend', 'isSuspended:boolean, reason?'),
   user_delete: action('DELETE', '/users/:id', 'reason?'),
   dispute_resolve: action('POST', '/disputes/:id/resolve', 'action:CONFIRM_HOME_SUBMISSION|CONFIRM_AWAY_SUBMISSION|MANUAL_SCORE|CANCEL_MATCH, manualHomeScore?, manualAwayScore?, notes?; MANUAL_SCORE requires both scores'),

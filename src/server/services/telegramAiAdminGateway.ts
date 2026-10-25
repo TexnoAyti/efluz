@@ -59,7 +59,7 @@ export async function executeAiAdminRoute(plan: AdminPlan, ownerId: number, oper
     if (!user || (user.username || '').replace(/^@/,'').toLowerCase() !== String(plan.body.expectedUsername).toLowerCase())
       return {status:409,data:{error:'USER_REFERENCE_CHANGED',message:'Username yoki akkaunt o‘zgargan. Amal bajarilmadi; username orqali yangi reja tayyorlang.'}};
     plan = {...plan,body:{...plan.body}};
-    if(!plan.action.startsWith('team_ticket_'))delete plan.body.expectedUsername;
+    if(!plan.action.startsWith('team_ticket_')&&plan.action!=='club_selection_ban')delete plan.body.expectedUsername;
   }
   if (plan.body.expectedClubId !== undefined) {
     const { getFirestoreDb } = await import('../firebase/admin');
@@ -67,7 +67,7 @@ export async function executeAiAdminRoute(plan: AdminPlan, ownerId: number, oper
     if (!occupancy || occupancy.status !== 'active' || occupancy.userId !== plan.targetId) return {status:409,data:{error:'CLUB_OWNER_CHANGED',message:'Klub egasi o‘zgardi. Yangi egasi bilan qayta reja tuzing.'}};
     plan={...plan,body:{...plan.body}};delete plan.body.expectedClubId;
   }
-  if(['ticket_grant','team_ticket_grant','team_ticket_revoke','custom_create','custom_publish'].includes(plan.action))plan={...plan,body:{...plan.body,idempotencyKey:operationId}};
+  if(['club_selection_ban','ticket_grant','team_ticket_grant','team_ticket_revoke','custom_create','custom_publish'].includes(plan.action))plan={...plan,body:{...plan.body,idempotencyKey:operationId}};
   const spec = AI_ADMIN_ACTIONS[plan.action];
   const path = adminPlanPath(plan);
   const url = aiAdminRequestUrl(path);

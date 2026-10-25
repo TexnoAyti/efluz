@@ -15,7 +15,7 @@ const required: Record<string,string[]> = {
   admission_league:['seasonId','leagueId','open'], fixture_schedule:['seasonId','expected'],
   results_bulk_apply:['seasonId','fromMatchday','toMatchday','homeScore','awayScore','previewHash','expectedCount'],
   result_edit:['homeScore','awayScore'], result_approve:['homeScore','awayScore'], fixture_delete:['reason'], fixture_deadline:['deadlineAt'],
-  club_assign:['targetUserId'], user_role:['isAdmin'], user_suspend:['isSuspended'], dispute_resolve:['action'],
+  club_selection_ban:['isBanned'], club_assign:['targetUserId'], user_role:['isAdmin'], user_suspend:['isSuspended'], dispute_resolve:['action'],
   matchday_control:['action','matchday'], matchday_override:['overrideStatus'],
   matchday_remind:['matchday'],
   fixtures_generate:['competitionId'], fixtures_restore:['competitionId'], fixtures_reset:['competitionId','confirmation'], knockout_generate:['competitionId'],
@@ -46,7 +46,7 @@ export function assertAdminPlanReady(plan: AdminPlan) {
   const missing = (required[plan.action] || []).filter(key => plan.body[key] === undefined || plan.body[key] === null || plan.body[key] === '');
   if (missing.length) throw new Error('CLARIFY:Reja uchun quyidagini aniqlang: ' + missing.map(k => names[k] || k).join(', ') + '.');
   for (const key of ['homeScore','awayScore','matchday','roundNumber']) if (plan.body[key] !== undefined && (!Number.isInteger(plan.body[key]) || Number(plan.body[key]) < (key.includes('Score') ? 0 : 1))) throw new Error('CLARIFY:' + (names[key] || key) + ' uchun to‘g‘ri butun son yozing.');
-  for (const key of ['isAdmin','isSuspended','visible','enabled']) if (plan.body[key] !== undefined && typeof plan.body[key] !== 'boolean') throw new Error('CLARIFY:' + (names[key] || key) + ' holatini aniq belgilang.');
+  for (const key of ['isBanned','isAdmin','isSuspended','visible','enabled']) if (plan.body[key] !== undefined && typeof plan.body[key] !== 'boolean') throw new Error('CLARIFY:' + (names[key] || key) + ' holatini aniq belgilang.');
   if (plan.action === 'matchday_remind' && plan.body.fromMatchday !== undefined && (!Number.isInteger(plan.body.fromMatchday) || Number(plan.body.fromMatchday) < 1 || Number(plan.body.fromMatchday) > Number(plan.body.matchday))) throw new Error('CLARIFY:Eslatma tur oralig‘i noto‘g‘ri.');
   if (plan.action === 'user_role' && plan.body.isAdmin === true) {
     const p = plan.body.adminPermissions as any;

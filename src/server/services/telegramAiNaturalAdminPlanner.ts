@@ -100,10 +100,11 @@ export async function planNaturalAdminRequest(text: string, deps: NaturalPlanner
     if(amount<1||amount>100)clarify('Ticket soni 1–100 oralig‘ida bo‘lsin.');
     return make(action,undefined,{targetUserId:id,amount,...(expectedUsername?{expectedUsername}:{}),...(note?{note}:{})});
   }
-  if (['user_role','user_role_remove','user_suspend','user_unsuspend','user_delete','premium_grant','premium_revoke'].includes(action)) {
+  if (['club_selection_ban','user_role','user_role_remove','user_suspend','user_unsuspend','user_delete','premium_grant','premium_revoke'].includes(action)) {
     const id = await userId(text, deps);
     const expectedUsername = /@\s*([A-Za-z0-9_]+)/.exec(text)?.[1];
     const identity = expectedUsername ? { expectedUsername } : {};
+    if(action==='club_selection_ban'){if(/\b\d+\s*(?:kun|soat|oy|hafta)\w*\b/.test(q))clarify('Bu ban asosiy admin olib tashlaguncha amal qiladi. Vaqtinchalik ban hali yo‘q.');return make(action,id,{...identity,isBanned:!/olib tashla\w*|bekor qil\w*|bandan chiqar\w*|banni och\w*|unban/.test(q),...(note?{reason:note}:{})});}
     if (action.startsWith('premium_')) return make(action, undefined, { userId: id, ...identity, ...(note ? { note } : {}) });
     if (action === 'user_delete') return make(action, id, { ...identity, ...(note ? { reason: note } : {}) });
     if (action === 'user_suspend' || action === 'user_unsuspend') return make('user_suspend', id, { ...identity, isSuspended: action === 'user_suspend', ...(note ? { reason: note } : {}) });

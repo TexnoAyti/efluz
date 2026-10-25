@@ -3,6 +3,10 @@ import type { AdminPlan } from './telegramAiAdminCatalog';
 /** Interpret the server receipt, including durable queued writes. Result routes already
  * read the stored fixture back; compare that receipt without another Firestore query. */
 export function inspectAiAdminOutcome(plan: AdminPlan, data: any): { state: 'queued' | 'verified' | 'accepted' | 'unverified'; message: string } {
+  if(plan.action==='club_selection_ban'){
+    if(data?.success!==true||data?.ban?.userId!==plan.targetId||data.ban.isBanned!==plan.body.isBanned||!Number.isInteger(data.ban.revision))return {state:'unverified',message:'Ban saqlangani tasdiqlanmadi. Holatni tekshiring.'};
+    return {state:'verified',message:data.ban.isBanned?'Klub tanlashga ban saqlandi. Foydalanuvchi boshqa klub tanlay olmaydi.':'Klub tanlash bani olib tashlandi.'};
+  }
   if (data?.pendingSync === true || data?.fixture?.pendingSync === true || data?.result?.pendingSync === true || data?.result?.fixture?.pendingSync === true) return {
     state: 'queued', message: 'Amal sinxronlash navbatiga saqlandi. Asosiy bazaga yozilishi hali tasdiqlanmagan; qayta yuborish shart emas.',
   };

@@ -1,3 +1,4 @@
+import {setClubSelectionBan} from '../services/clubSelectionBan';
 import { listMissingGroupClubOwners, clubMemberTagsStatus, reconcileClubMemberTags } from '../services/telegramClubMemberTags';
 import { buildAiDailyReport } from '../services/telegramAiDailyReport';
 import { getAiObservability } from '../services/telegramAiObservability';
@@ -179,4 +180,9 @@ adminAiConfigRouter.get('/club-member-tags/missing-owners', requireAdmin, requir
   res.setHeader('Cache-Control','private, no-store');
   try { res.json(await listMissingGroupClubOwners(req.query)); }
   catch (error:any) { res.status(error?.name==='ZodError'?400:503).json({error:'MEMBERSHIP_AUDIT_UNAVAILABLE',message:'Guruh a’zoligi tekshiruvi bajarilmadi. Bu hamma guruhda degani emas.'}); }
+});
+
+adminAiConfigRouter.post('/club-selection-ban/:id',requireAdmin,requirePrimaryOwner,async(req,res)=>{
+ try{res.setHeader('Cache-Control','private, no-store');res.json(await setClubSelectionBan(req.user!.id,req.params.id,{...req.body,requestId:req.headers['x-idempotency-key']||req.body.requestId}));}
+ catch(e:any){res.status(e.statusCode||503).json({success:false,error:'CLUB_SELECTION_BAN_FAILED',message:e.statusCode?e.message:'Ban saqlanmadi. Qayta tekshiring.'});}
 });
