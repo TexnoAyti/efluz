@@ -9,6 +9,7 @@ export function inspectAiAdminOutcome(plan: AdminPlan, data: any): { state: 'que
   if (data?.authoritative === false || data?.isFallback === true) return {
     state: 'unverified', message: 'Server zaxira holatni qaytardi. Asosiy bazadagi yakuniy holat tasdiqlanmadi; qayta avtomatik bajarilmaydi.',
   };
+  if(['team_ticket_grant','team_ticket_revoke'].includes(plan.action)){const receipt=data?.data,account=receipt?.account;return receipt?.transactionId&&account?.userId===plan.body.targetUserId&&Number.isSafeInteger(account.balance)&&account.balance>=0?{state:'verified',message:`Team ticketi ${plan.action==='team_ticket_grant'?'berildi':'qaytarib olindi'}. Balans: ${account.balance}.`}:{state:'unverified',message:'Team ticketining saqlangan holati tasdiqlanmadi. Balansni tekshiring; avtomatik takrorlanmaydi.'};}
   if(['discipline_issue','discipline_revoke'].includes(plan.action)) {
     const card=data?.card;
     const matches=card?.userId===plan.targetId&&card?.seasonId===plan.body.seasonId&&(plan.action==='discipline_issue'

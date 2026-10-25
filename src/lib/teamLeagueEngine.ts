@@ -33,7 +33,7 @@ export function teamFixtureWinner(f:TeamFixture):string|null {
  return [f.homeTeamId,f.awayTeamId].includes(f.tieBreakWinnerId||'')?f.tieBreakWinnerId!:null;
 }
 export function makeTeamPlayoffRound(id:string,seeds:string[],round:number):TeamFixture[]{
- if(seeds.length<2||!Number.isInteger(Math.log2(seeds.length)))throw Error('Pley-off uchun 2, 4, 8 yoki 16 team kerak.');
+ if(seeds.length<2||!Number.isInteger(Math.log2(seeds.length)))throw Error('Pley-off uchun 2, 4, 8, 16, 32 yoki 64 team kerak.');
  return Array.from({length:seeds.length/2},(_,i)=>({id:`${id}_p${round}_m${i}`,stage:'PLAYOFF' as const,round,homeTeamId:seeds[i],awayTeamId:seeds[seeds.length-1-i],homeLineup:null,awayLineup:null,bouts:[]}));
 }
 export function teamFormatPreview(count:number,format:TeamLeague['format']='LEAGUE',rounds:1|2=1,qualifiers=4){

@@ -1,6 +1,6 @@
 import type {PreviewTeam,TeamLeague,TeamFixture} from '../types/teamLeaguePreview';
 import {teamFixtureScore,teamFixtureWinner,teamStandings} from './teamLeagueEngine';
-export interface TeamProfileData {team:PreviewTeam;leagues:TeamLeague[];teams:Array<Pick<PreviewTeam,'id'|'name'|'logo'>>}
+export interface TeamProfileData {canManageTeam?:boolean;team:PreviewTeam;leagues:TeamLeague[];teams:Array<Pick<PreviewTeam,'id'|'name'|'logo'>>}
 export function teamProfileFixtureComplete(f:TeamFixture,starterCount?:number){return (starterCount===undefined||f.bouts.length===starterCount)&&teamFixtureScore(f).complete&&(f.stage!=='PLAYOFF'||!!teamFixtureWinner(f));}
 export function teamProfileChampion(l:TeamLeague){
  if(l.status!=='COMPLETED'||!l.fixtures.length||!l.fixtures.every(f=>teamProfileFixtureComplete(f,l.starterCount)))return null;

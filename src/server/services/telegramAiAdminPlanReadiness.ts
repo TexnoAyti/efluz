@@ -8,6 +8,7 @@ import { requestedMatchday, findConversationCompetitions } from './telegramAiCon
 const required: Record<string,string[]> = {
   ai_test_query:['query'], custom_create:['name','format','leagueScope','maxParticipants'], custom_review:['action'],
   custom_result:['homeScore','awayScore'], custom_correct:['homeScore','awayScore'], custom_assistant:['assistantUserId'],
+  team_ticket_grant:['targetUserId','amount'],team_ticket_revoke:['targetUserId','amount'],team_ticket_check:['reference'],
   ticket_grant:['targetUserId','amount'], ticket_refund:['targetUserId','tournamentId'],
   team_save:['id','name','members','captainMemberId','version'], team_league_save:['id','name','teamIds','starterCount','rounds','version'], team_league_action:['action','version'],
   discipline_issue:['seasonId','color','reason','note','requestId'], discipline_revoke:['seasonId','reason'],
@@ -25,6 +26,7 @@ const required: Record<string,string[]> = {
 };
 const names: Record<string,string> = {homeScore:'uy jamoasi hisobi',awayScore:'safar jamoasi hisobi',reason:'sabab',deadlineAt:'sana/vaqt va vaqt zonasi',targetUserId:'foydalanuvchi @username yoki ID',isAdmin:'admin berish yoki olib tashlash',isSuspended:'bloklash yoki blokdan chiqarish',action:'amal turi',matchday:'tur raqami',competitionId:'turnir',drawSeed:'server bergan qura kodi',previewToken:'server bergan oldindan ko‘rish kodi',title:'sarlavha',body:'xabar matni',targetAudience:'qabul qiluvchilar',userId:'foydalanuvchi ID',seasonId:'mavsum ID',confirmation:'shu amal uchun aniq tasdiq',roundNumber:'bosqich raqami'};
 export function assertAdminPlanReady(plan: AdminPlan) {
+  if(['team_ticket_grant','team_ticket_revoke'].includes(plan.action)&&(!Number.isInteger(plan.body.amount)||Number(plan.body.amount)<1||Number(plan.body.amount)>100))throw new Error('CLARIFY:Team ticketi soni 1–100 orasida bo‘lsin.');
   if (['dispute_resolve','match_dispute_resolve'].includes(plan.action) && plan.body.action === 'MANUAL_SCORE' && ['manualHomeScore','manualAwayScore'].some(key => !Number.isInteger(plan.body[key]) || Number(plan.body[key]) < 0)) throw new Error('CLARIFY:Nizoni qo‘lda hal qilish uchun ikkala jamoa hisobini aniq yozing.');
   if (plan.action === 'ai_config') {
     if (!Object.keys(plan.body).some(k => ['enabled','allowedChatId','allowedThreadId','rateLimitUserPerMin','rateLimitTopicPerMin','maxDailyRequests'].includes(k))) throw new Error('CLARIFY:Qaysi AI sozlamasini o‘zgartiray?');
