@@ -2,17 +2,17 @@ import {writeClasicoNotices} from './teamCompetitionNotices';
 import {getFirestoreDb} from '../firebase/admin';
 import {teamActor,readTeamActor,requireTeamGroup,teamGroupInfo,teamError,teamLeagueAdminName} from './teamAccess';
 import {canSeeTeamPreview} from '../../types/teamLeaguePreview';
-import {CLASICO_SIDE_SIZE,type ClasicoEvent,type ClasicoView} from '../../types/elClasico';
+import {CLASICO_SIDE_SIZE,clasicoSides,type ClasicoEvent,type ClasicoView} from '../../types/elClasico';
 export const CLASICO_COLLECTION='el_clasico_events';
 const blank=():ClasicoEvent=>({id:'el-clasico',status:'REGISTRATION',players:[],bouts:[],version:0,updatedAt:''});
 const view=(event:ClasicoEvent,telegramId:string):ClasicoView=>({event,canManage:canSeeTeamPreview(telegramId),...teamGroupInfo()});
 export async function getElClasico(actorId:string){const actor=await teamActor(actorId),event=(await getFirestoreDb().collection(CLASICO_COLLECTION).doc('el-clasico').get()).data() as ClasicoEvent|undefined;return view(event||blank(),actor.telegramId);}
-export async function checkElClasicoSubscription(actorId:string){const actor=await teamActor(actorId);await requireTeamGroup(actor.telegramId);return {eligible:true};}
+export async function checkElClasicoSubscription(actorId:string){const actor=await teamActor(actorId);if(!canSeeTeamPreview(actor.telegramId))await requireTeamGroup(actor.telegramId);return {eligible:true};}
 export async function actElClasico(actorId:string,body:any){
  const actor=await teamActor(actorId),action=body?.action;
- if(!['JOIN','LEAVE','START','SCORE','CANCEL'].includes(action))throw teamError('Event amali noto‘g‘ri.');
- if(action==='JOIN'){if(!['REAL','BARCA'].includes(body.side))throw teamError('Real Madrid yoki Barcelonani tanlang.');await requireTeamGroup(actor.telegramId);}
- const ownerAction=['START','SCORE','CANCEL'].includes(action);
+ if(!['JOIN','LEAVE','START','SCORE','CANCEL','REMOVE','MOVE'].includes(action))throw teamError('Event amali noto‘g‘ri.');
+ if(action==='JOIN'){if(!['REAL','BARCA'].includes(body.side))throw teamError('Real Madrid yoki Barcelonani tanlang.');if(!canSeeTeamPreview(actor.telegramId))await requireTeamGroup(actor.telegramId);}
+ const ownerAction=['START','SCORE','CANCEL','REMOVE','MOVE'].includes(action);
  if(ownerAction&&!canSeeTeamPreview(actor.telegramId))throw teamError('Eventni faqat loyiha egasi boshqaradi.',403);
  const db=getFirestoreDb(),ref=db.collection(CLASICO_COLLECTION).doc('el-clasico');
  // Verify every selected account and its live subscription before starting; the
@@ -20,7 +20,7 @@ export async function actElClasico(actorId:string,body:any){
  if(action==='START'){
   const before=(await ref.get()).data() as ClasicoEvent|undefined;
   if(!before||before.version!==body.version)throw teamError('Ro‘yxat yangilandi. Qayta yuklang.',409);
-  for(let i=0;i<before.players.length;i+=6)await Promise.all(before.players.slice(i,i+6).map(async p=>{const user=await teamActor(p.userId);await requireTeamGroup(user.telegramId);}));
+  for(let i=0;i<before.players.length;i+=6)await Promise.all(before.players.slice(i,i+6).map(async p=>{try{const user=await teamActor(p.userId);if(!canSeeTeamPreview(user.telegramId))await requireTeamGroup(user.telegramId);}catch(e:any){throw teamError(`${clasicoSides[p.side]} · ${p.name}: ${e.message}`,e.statusCode||503,e.code||'TEAM_ACCOUNT_UNAVAILABLE');}}));
  }
  return db.runTransaction(async tx=>{
   const fresh=await readTeamActor(tx,actorId);
@@ -37,6 +37,17 @@ export async function actElClasico(actorId:string,body:any){
     event.players=event.players.filter(p=>p.userId!==actorId);
     event.players.push({userId:actorId,name:teamLeagueAdminName(fresh),side:body.side});
    }else event.players=event.players.filter(p=>p.userId!==actorId);
+  }else if(action==='REMOVE'||action==='MOVE'){
+   if(event.status!=='REGISTRATION')throw teamError('Tarkibni faqat event boshlanishidan oldin boshqarish mumkin.',409);
+   const player=event.players.find(p=>p.userId===body.userId);
+   if(!player)throw teamError('O‘yinchi ro‘yxatda topilmadi.',404);
+   if(action==='REMOVE')event.players=event.players.filter(p=>p.userId!==player.userId);
+   else{
+    if(!['REAL','BARCA'].includes(body.side))throw teamError('Real Madrid yoki Barcelonani tanlang.');
+    if(player.side===body.side)return view(event,fresh.telegramId);
+    if(event.players.filter(p=>p.side===body.side).length>=CLASICO_SIDE_SIZE)throw teamError(`Bu tomonda ${CLASICO_SIDE_SIZE} ta o‘rin to‘lgan.`,409);
+    player.side=body.side;
+   }
   }else if(action==='START'){
    if(event.status!=='REGISTRATION'||event.players.filter(p=>p.side==='REAL').length!==CLASICO_SIDE_SIZE||event.players.filter(p=>p.side==='BARCA').length!==CLASICO_SIDE_SIZE)throw teamError(`Boshlash uchun har ikki tomonda ${CLASICO_SIDE_SIZE} tadan o‘yinchi bo‘lsin.`,409);
    // Recheck account suspension atomically too; clients never supply identities.
