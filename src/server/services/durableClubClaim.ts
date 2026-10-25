@@ -1,4 +1,3 @@
-import {isClubSelectionBanned} from './clubSelectionBan';
 import { randomUUID } from 'node:crypto';
 import { getUpstashClient, KEY_PREFIX, ReadModelKeys, redisGetFresh, redisGetLkg, invalidateClubReadModels, invalidateUserMembershipReadModel, type OwnerNeutralClub } from '../readModel/readModelStore';
 import { OUTBOX_KEYS, getDurableMutation, DurablePersistenceUnavailableError, type DurableOutboxMutation } from '../outbox/redisOutbox';
@@ -42,7 +41,7 @@ function receipt(record: DurableOutboxMutation<any>): ClubClaimReceipt {
   const pendingSync = ['PENDING','SYNCING'].includes(record.status);
   const error = String(record.lastError || '');
   return { id: record.mutationId, clubId: record.entityId, clubName: record.payload.clubName || record.entityId, status: record.status, pendingSync, createdAt: record.createdAt,
-    message: pendingSync ? 'Klub tanlash so‘rovi saqlandi. Tasdiqlash kutilmoqda; yakuniy egalik hali biriktirilmagan.' : record.status === 'SYNCED' ? 'Klub sizga biriktirildi.' : /CLUB_OCCUPIED|already been selected/.test(error) ? 'Klub boshqa foydalanuvchiga tegishli. Boshqa klubni tanlang.' : /CLUB_ADMISSION|qabul/.test(error) ? 'Klub qabuli yopilgan. So‘rov bajarilmadi.' : /CLUB_SELECTION_BANNED/.test(error) ? 'Sizga klub tanlash taqiqlangan. Asosiy adminga murojaat qiling.' : /SUSPENDED|AUTHORIZATION/.test(error) ? 'Hisob ruxsati o‘zgargan. So‘rov bajarilmadi.' : 'Klub tanlash so‘rovi bajarilmadi. Holatni yangilang yoki administratorga murojaat qiling.' };
+    message: pendingSync ? 'Klub tanlash so‘rovi saqlandi. Tasdiqlash kutilmoqda; yakuniy egalik hali biriktirilmagan.' : record.status === 'SYNCED' ? 'Klub sizga biriktirildi.' : /CLUB_OCCUPIED|already been selected/.test(error) ? 'Klub boshqa foydalanuvchiga tegishli. Boshqa klubni tanlang.' : /CLUB_ADMISSION|qabul/.test(error) ? 'Klub qabuli yopilgan. So‘rov bajarilmadi.' : /CLUB_SELECTION_BANNED|klub tanlash taqiqlangan/.test(error) ? 'Sizga klub tanlash taqiqlangan. Asosiy adminga murojaat qiling.' : /SUSPENDED|AUTHORIZATION/.test(error) ? 'Hisob ruxsati o‘zgargan. So‘rov bajarilmadi.' : 'Klub tanlash so‘rovi bajarilmadi. Holatni yangilang yoki administratorga murojaat qiling.' };
 }
 export async function getClubClaimReceipt(userId: string, seasonId: string): Promise<ClubClaimReceipt|null> {
   // Cutover excluded the old Redis outbox; online PostgreSQL claims commit directly.
@@ -73,7 +72,6 @@ export async function requestDurableClubClaim(userId: string, clubId: string, se
     ]);
     return { club: result.club, pendingSync: false, request: undefined };
   }
-  if(await isClubSelectionBanned({get:(ref:any)=>ref.get()},userId))throw new ClubConflictError('Sizga klub tanlash taqiqlangan. Asosiy adminga murojaat qiling.','CLUB_SELECTION_BANNED');
   const client = getUpstashClient();
   if (!client) throw new DurablePersistenceUnavailableError('Klub tanlash so‘rovi saqlanmadi: doimiy saqlash xizmati ulanmagan.');
   const last = await getClubClaimReceipt(userId,seasonId);
