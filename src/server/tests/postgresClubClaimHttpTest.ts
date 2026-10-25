@@ -1,3 +1,5 @@
+import {setClubSelectionBan} from '../services/clubSelectionBan';
+import {claimClubAtomicFirestore,adminAssignClubFirestore} from '../firebase/firestoreStore';
 import assert from 'node:assert/strict';
 import express from 'express';
 import {once} from 'node:events';
@@ -9,7 +11,7 @@ import {getUpstashClient} from '../readModel/readModelStore';
 import {SEED_CLUBS} from '../db/seed';
 
 /** Real signed HTTP controller with native PostgreSQL writes; Telegram transport is mocked by the caller. */
-export async function verifyPostgresClubClaimHttp(failNextCommit:()=>void) {
+export async function verifyPostgresClubClaimHttp(failNextCommit:()=>void,failNextBanCommit:()=>void) {
   const db=getFirestoreDb(), season='season-2026-27';
   const candidates=SEED_CLUBS.slice(4,9);
   for(const club of candidates) await db.collection('clubs').doc(club.id).set({...club,logo:club.logoUrl,isActive:true});
@@ -54,6 +56,22 @@ export async function verifyPostgresClubClaimHttp(failNextCommit:()=>void) {
     await db.collection('users').doc(actors[4].id).update({isSuspended:true});
     const suspended=await claim(4,candidates[3].id);
     assert.equal(suspended.status,409);assert.equal(suspended.body.code,'CLAIM_AUTHORIZATION_REVOKED','Suspension is rechecked in the claim transaction even with an older signed token');
+    const ownerId='user-5209126900',savedOwner=(await db.collection('users').doc(ownerId).get()).data();
+    await db.collection('users').doc(ownerId).set({id:ownerId,telegramId:'5209126900',isAdmin:true,isSuspended:false});
+    try{
+      await db.collection('users').doc(actors[4].id).update({isSuspended:false});
+      const body={isBanned:true,reason:'O‘yinlarni o‘ynamadi',requestId:'native-club-ban-0001'};
+      failNextBanCommit();await assert.rejects(setClubSelectionBan(ownerId,actors[4].id,body));assert.equal((await db.collection('club_selection_bans').doc(actors[4].id).get()).exists,false,'SQL failure rolls back ban and audit');
+      await setClubSelectionBan(ownerId,actors[4].id,body);await setClubSelectionBan(ownerId,actors[4].id,body);
+      assert.equal((await db.collection('club_selection_bans').doc(actors[4].id).get()).data().revision,1,'Ban retries apply once');
+      const banned=await claim(4,candidates[3].id);assert.equal(banned.status,409);assert.equal(banned.body.code,'CLUB_SELECTION_BANNED','Old signed sessions cannot bypass the authoritative ban');
+      await assert.rejects(claimClubAtomicFirestore(actors[4].id,candidates[3].id,season),(e:any)=>e.code==='CLUB_SELECTION_BANNED','Direct/replayed claims are also blocked without options');
+      await assert.rejects(adminAssignClubFirestore(ownerId,candidates[3].id,actors[4].id,season),(e:any)=>e.code==='CLUB_SELECTION_BANNED','Administrator assignment cannot bypass the ban');
+      assert.equal((await db.collection('club_occupancies').doc(`${season}_${candidates[3].id}`).get()).exists,false);
+      await assert.rejects(setClubSelectionBan(actors[0].id,actors[4].id,{...body,requestId:'foreign-club-ban'}),(e:any)=>e.statusCode===403);
+      await setClubSelectionBan(ownerId,actors[4].id,{isBanned:false,requestId:'native-club-unban-0001'});
+      assert.equal((await claim(4,candidates[3].id)).status,200,'Unban restores selection');
+    }finally{if(savedOwner)await db.collection('users').doc(ownerId).set(savedOwner);else await db.collection('users').doc(ownerId).delete();}
     const status=await fetch(`${base}/api/clubs/claim-status`,{headers:{authorization:`Bearer ${createSessionToken(actors[0])}`}});
     assert.equal(status.status,200);assert.deepEqual(await status.json(),{request:null});
     console.log('PASS signed club HTTP + native PostgreSQL: no Redis/snapshot requirement, committed 200 response, four durable records, retries, simultaneous exclusion, club limit, admission, suspension, failed-commit rollback and recovery.');

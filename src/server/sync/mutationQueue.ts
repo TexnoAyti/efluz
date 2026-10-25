@@ -370,7 +370,7 @@ export async function processPendingMutations(options: { deadline?: number } = {
       } catch (err: any) {
         const isQuota = firestoreCircuitBreaker.isQuotaExhaustedError(err);
         const isOwnershipMismatch = err.message?.includes('OWNERSHIP_MISMATCH');
-        const isTerminalError = isOwnershipMismatch || item.entityType === 'CLUB_CLAIM' && (['CLUB_OCCUPIED','CLUB_SELECTION_LOCKED','CLUB_LEAGUE_LIMIT','OWNERSHIP_INCONSISTENT','CLUB_ADMISSION_CLOSED','CLAIM_AUTHORIZATION_REVOKED'].includes(err.code) || err.name === 'ClubNotFoundError' || /CLAIM_AUTHORIZATION_REVOKED/.test(err.message || ''));
+        const isTerminalError = isOwnershipMismatch || item.entityType === 'CLUB_CLAIM' && (['CLUB_SELECTION_BANNED','CLUB_OCCUPIED','CLUB_SELECTION_LOCKED','CLUB_LEAGUE_LIMIT','OWNERSHIP_INCONSISTENT','CLUB_ADMISSION_CLOSED','CLAIM_AUTHORIZATION_REVOKED'].includes(err.code) || err.name === 'ClubNotFoundError' || /CLAIM_AUTHORIZATION_REVOKED/.test(err.message || ''));
         if (isTerminalError) firestoreCircuitBreaker.recordSuccess();
         else firestoreCircuitBreaker.recordFailure(err);
 

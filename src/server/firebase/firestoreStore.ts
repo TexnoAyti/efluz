@@ -1,3 +1,4 @@
+import {isClubSelectionBanned} from '../services/clubSelectionBan';
 import { withSeasonQualificationPolicy } from '../../lib/seasonQualificationPolicy';
 import { isSeasonCompetitionEnabled, isSeasonLeagueEnabled, assertSeasonCompetitionEnabled, assertSeasonLeagueEnabled } from '../../lib/seasonParticipationPolicy';
 import { assertDisciplineFixtureAllowed, prepareFixtureDiscipline } from '../services/disciplineService';
@@ -1034,6 +1035,7 @@ export async function claimClubAtomicFirestore(
       }
 
       const claimResult = await db.runTransaction(async (transaction) => {
+        if(await isClubSelectionBanned(transaction,userId))throw new ClubConflictError('Sizga klub tanlash taqiqlangan. Banni olib tashlash uchun asosiy adminga murojaat qiling.','CLUB_SELECTION_BANNED');
         let newVerifiedActor: Record<string, unknown> | undefined;
         if (options?.requiresActiveUser) {
           const actor = await transaction.get(db.collection(COLLECTIONS.USERS).doc(userId));
@@ -5902,6 +5904,7 @@ export async function adminAssignClubFirestore(
     // Read ownership and commit the release/assignment together. PostgreSQL's
     // namespace generation also protects these reads from concurrent claims.
     await db.runTransaction(async batch => {
+    if(await isClubSelectionBanned(batch,targetUserId))throw new ClubConflictError('Bu foydalanuvchiga klub tanlash taqiqlangan. Avval banni olib tashlang.','CLUB_SELECTION_BANNED');
     const currentClub = await batch.get(clubRef);
     if (!currentClub.exists) throw new ClubNotFoundError(`Club with ID '${clubId}' not found.`);
     assertSeasonLeagueEnabled(currentClub.data()?.leagueId,seasonId);
@@ -5999,7 +6002,7 @@ export async function adminAssignClubFirestore(
       isFallback: false,
     };
   } catch (err: any) {
-    if (options?.authoritativeOnly || isHostedEnvironment()) {
+    if (err instanceof ClubConflictError && err.code==='CLUB_SELECTION_BANNED' || options?.authoritativeOnly || isHostedEnvironment()) {
       throw err;
     }
     console.warn('[FIRESTORE FALLBACK] adminAssignClubFirestore:', err.message);

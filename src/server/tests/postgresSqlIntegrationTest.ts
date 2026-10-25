@@ -37,7 +37,7 @@ assert.deepEqual(privilege, { anonymous: false, authenticated: false, service: t
 await assert.rejects(pg.query("select public.efl_runtime_commit('preview','[]'::jsonb,'-1')"), (error:any) => error.code === 'PT409', 'Legacy CAS conflicts must not trigger PostgREST serialization retries');
 await pg.exec('set role service_role;');
 const originalFetch = globalThis.fetch;
-let conflicts = 0, legacyHttpCommits = 0, failAssignment = false, failPublish = false, failStartChunk = false, failClaimCommit = false;
+let conflicts = 0, legacyHttpCommits = 0, failAssignment = false, failPublish = false, failStartChunk = false, failClaimCommit = false, failClubBanCommit=false;
 let failUzeflifeCommit=false, failBulkResultCommit=false;
 let failNotificationCommit = false, failTournamentCreate = false, failTeamPreviewCommit=false,failTeamMembershipCommit=false;
 const telegramDeliveries: string[] = [];
@@ -64,6 +64,7 @@ globalThis.fetch = (async (input: any, init: any) => {
       if (failTournamentCreate && body.p_operations.some((op:any)=>op.path.startsWith('custom_tournaments/'))) { failTournamentCreate=false; throw Error('TOURNAMENT_CREATE_UNAVAILABLE'); }
       if (failNotificationCommit && body.p_operations.some((op:any)=>op.path.startsWith('telegram_ai_state/'))) { failNotificationCommit=false; throw Error('NOTIFICATION_COMMIT_UNAVAILABLE'); }
       if (failStartChunk && body.p_operations.filter((op:any)=>op.path.startsWith('custom_tournament_fixtures/')).length === 200) { failStartChunk = false; throw Error('START_CHUNK_UNAVAILABLE'); }
+      if(failClubBanCommit&&body.p_operations.some((op:any)=>op.path.startsWith('club_selection_bans/'))){failClubBanCommit=false;body.p_operations.push({kind:'create',path:'runtime_probes/team-membership-fault',encoded:encodeValue({mustRollback:true})});}
       if (failClaimCommit && body.p_operations.some((op:any)=>op.path.startsWith('club_occupancies/'))) { failClaimCommit=false; throw Error('CLAIM_COMMIT_UNAVAILABLE'); }
       if (failAssignment && body.p_operations.some((op: any) => op.path.startsWith('audit_logs/'))) throw Error('ASSIGNMENT_COMMIT_UNAVAILABLE');
       if (failPublish && body.p_operations.some((op:any)=>op.path.startsWith('custom_tournaments/'))) {
@@ -234,7 +235,7 @@ try {
   await verifyTeamLeaguePreview(()=>{failTeamPreviewCommit=true;});
   await db.collection('runtime_probes').doc('team-membership-fault').set({existing:true});
   await verifyTeamMembership(()=>{failTeamMembershipCommit=true;});
-  await verifyPostgresClubClaimHttp(() => { failClaimCommit=true; });
+  await verifyPostgresClubClaimHttp(() => { failClaimCommit=true; },()=>{failClubBanCommit=true;});
   await verifyPostgresMatchdayNotifications(() => { failNotificationCommit=true; }, telegramDeliveries);
   await verifyTournamentCreationHttp(() => { failTournamentCreate = true; });
   await verifyCustomTournamentLifecycle(() => { failStartChunk = true; });

@@ -92,6 +92,13 @@ await db.collection(COLLECTIONS.USERS).doc('claim-suspended').set({id:'claim-sus
 firestoreCircuitBreaker.forceState('CLOSED');await processPendingMutations();
 assert.equal((await getClubClaimReceipt('claim-suspended',season))?.status,'FAILED');
 assert.equal((await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${season}_${clubs[2]}`).get()).exists,false);
+await requestDurableClubClaim('claim-banned',clubs[2],season);
+await db.collection(COLLECTIONS.USERS).doc('claim-banned').set({id:'claim-banned',isSuspended:false});
+await db.collection('club_selection_bans').doc('claim-banned').set({isBanned:true});
+firestoreCircuitBreaker.forceState('CLOSED');await processPendingMutations();
+assert.equal((await getClubClaimReceipt('claim-banned',season))?.status,'FAILED','Ban while pending becomes terminal on replay');
+assert.match((await getClubClaimReceipt('claim-banned',season))!.message,/taqiqlangan/);
+assert.equal((await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${season}_${clubs[2]}`).get()).exists,false,'Queued intentions never bypass a later ban');
 console.log('PASS authoritative occupied-club conflict and revoked user become terminal; no ownership overwritten, no fake success or endless retry');
 firestoreCircuitBreaker.forceState('CLOSED');
 

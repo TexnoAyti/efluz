@@ -1,3 +1,4 @@
+import {markBanControlsDelivered,type BanReadOutput} from './clubSelectionBan';
 import { reminderSelectionFromLegacyHeader, isReplyReminderRequest, type ReminderSelection } from './telegramAiReminderSelection';
 import { createAiTournamentReader } from './telegramAiDataService';
 import { needsAiMeaningRouter, routeAiMessageMeaning } from './telegramAiMeaningRouter';
@@ -699,10 +700,12 @@ async function handleTelegramAiMessageInternal(
     }
     if (isAiAdminCommand(payload.text) || ['admin','confirm','cancel'].includes(intent) || replyConfirmation || intent === 'help' && owner) {
       await clearAiReadClubDraft(payload, rootController.signal);
-      const text = await handleAiAdminCommand(semanticAdminRequest ? {...payload,text:'/ai_admin '+payload.text} : payload, rootController.signal, JSON.stringify(scope), scope);
+      const banOutput:BanReadOutput={};
+      const text = await handleAiAdminCommand(semanticAdminRequest ? {...payload,text:'/ai_admin '+payload.text} : payload, rootController.signal, JSON.stringify(scope), scope,banOutput);
       const token = /\/ai_confirm ([a-f0-9]{24})/.exec(text)?.[1];
       const visible = token ? text.replace(/\n\/ai_(?:confirm|cancel) [a-f0-9]{24}/g, '') + '\n“Tasdiqlash” tugmasini bosing yoki “tasdiqlayman” deb yozing.' : text;
-      const result = await dispatchTelegramAiReply(payload, visible, rootController.signal, { parse_mode: null, maxChars: /^Guruhda yo‘q klub egalari:/.test(text) || /^Reja: Ommaviy natija:/.test(text) || /^Topshiriqlar/.test(text) || isAiWorkflowControl(payload.text) || intent === 'help' || /^\/ai_actions(?:@|\s|$)/i.test(payload.text) ? 4000 : 1000, reply_markup: token ? { inline_keyboard: [[{ text: 'Tasdiqlash', callback_data: 'ai:confirm:' + token }, { text: 'Bekor qilish', callback_data: 'ai:cancel:' + token }]] } : undefined });
+      const result = await dispatchTelegramAiReply(payload, visible, rootController.signal, { parse_mode: null, maxChars: /^Guruhda yo‘q klub egalari:/.test(text) || /^Reja: Ommaviy natija:/.test(text) || /^Topshiriqlar/.test(text) || isAiWorkflowControl(payload.text) || intent === 'help' || /^\/ai_actions(?:@|\s|$)/i.test(payload.text) ? 4000 : 1000, reply_markup: token ? { inline_keyboard: [[{ text: 'Tasdiqlash', callback_data: 'ai:confirm:' + token }, { text: 'Bekor qilish', callback_data: 'ai:cancel:' + token }]] } : banOutput.banControls?.replyMarkup });
+      if(result.replySent&&result.botMessageId&&banOutput.banControls)await markBanControlsDelivered(banOutput.banControls.tokens,result.botMessageId);
       if (result.replySent && token && result.botMessageId) await rememberDeliveredAdminPlan(payload, text, result.botMessageId, rootController.signal);
       if (result.replySent && !token && result.botMessageId && owner) await rememberDeliveredAiAdminDraft(payload, text, result.botMessageId, rootController.signal);
       if (result.replySent && intent === 'admin') await saveConversationContext(payload.chatId, payload.threadId, payload.fromUser.id, payload.text, visible, { signal: rootController.signal, history, selectedClubIds: scope.selectedClubIds, selectedCompetitionIds: scope.selectedCompetitionIds });
