@@ -1,3 +1,5 @@
+import {sweepCustomCompetitionDeadlines} from './customCompetitionNotices';
+import {processCompetitionNotices} from './competitionNotices';
 import {createHash,randomUUID} from 'node:crypto';
 import type {Transaction} from 'firebase-admin/firestore';
 import {waitUntil} from '@vercel/functions';
@@ -88,15 +90,19 @@ export async function processUNotices(limit=25,enqueue=enqueueSmartTelegramNotif
 /** Prepare domain intents separately: the existing Telegram drain remains database-free. */
 export async function prepareUNotifications(){
  if(process.env.MIGRATION_WRITE_FREEZE==='true'||process.env.DATABASE_PROVIDER==='supabase'&&process.env.SUPABASE_DATA_NAMESPACE==='preview')return false;
+ const deadlinePending=await sweepCustomCompetitionDeadlines();
+ const competitionPending=await processCompetitionNotices(40,enqueueSmartTelegramNotification,Date.now()+7000);
  await sweepUDeadlines();
- return processUNotices(60,enqueueSmartTelegramNotification,Date.now()+8000);
+ return (await processUNotices(60,enqueueSmartTelegramNotification,Date.now()+8000))||competitionPending||deadlinePending;
 }
 export function scheduleUNotices(hop=0){
  if(process.env.VERCEL!=='1'&&!process.env.K_SERVICE)return;
  const task=(async()=>{
   const queue=await import('./telegramNotificationQueue');
-  const pending=await prepareUNotifications();
-  queue.scheduleNotificationQueueDrain(hop);
+  let pending=false;
+  try{pending=await prepareUNotifications();}
+  catch(error){if(hop<3&&process.env.VERCEL==='1')await queue.triggerNotificationContinuation(hop+1);throw error;}
+  finally{queue.scheduleNotificationQueueDrain(hop);}
   if(pending&&hop<256){if(process.env.VERCEL==='1')await queue.triggerNotificationContinuation(hop+1);else scheduleUNotices(hop+1);}
  })().catch(()=>console.warn('[UZEFLIFE_OUTBOX_DEFERRED]'));
  if(process.env.VERCEL==='1')waitUntil(task);else void task;

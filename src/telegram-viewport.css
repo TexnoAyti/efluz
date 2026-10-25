@@ -1,22 +1,60 @@
-/* Telegram 8+ supplies and updates both system and content safe-area CSS values.
-   The SDK owns fullscreen mode; this stylesheet also works in normal launch mode. */
-body::before { content:''; position:fixed; top:0; left:0; right:0; height:var(--safe-top,0px); z-index:39; background:var(--efl-native-header,var(--bg-primary,#080c14)); pointer-events:none; }
-#root > .min-h-screen { min-height:calc(var(--tg-viewport-stable-height,100dvh) - var(--safe-top,0px) - var(--safe-bottom,0px)); }
-.efl-app-header { top:var(--safe-top,0px); }
-.efl-desktop-nav { top:calc(61px + var(--safe-top,0px)); }
-.efl-mobile-nav { bottom:calc(12px + var(--safe-bottom,0px)); width:min(90%,340px,calc(100vw - var(--safe-left,0px) - var(--safe-right,0px) - 24px)); }
-.efl-viewport-overlay {
-  padding-top:calc(16px + var(--safe-top,0px));
-  padding-bottom:calc(16px + var(--safe-bottom,0px));
-  padding-left:calc(16px + var(--safe-left,0px));
-  padding-right:calc(16px + var(--safe-right,0px));
+/* Safe insets are additive: device UI + Telegram content controls. The SDK
+   owns those variables; the visible height also follows the virtual keyboard. */
+:root {
+  --efl-viewport-height:var(--tg-viewport-height,100dvh);
+  --efl-viewport-top:0px;
+  --efl-header-height:61px;
+  --efl-usable-height:max(0px,calc(var(--efl-viewport-height) - var(--safe-top,0px) - var(--safe-bottom,0px)));
+  --efl-dialog-height:max(0px,calc(var(--efl-usable-height) - 24px));
 }
-.efl-viewport-overlay > :not(.fixed) { max-height:calc(var(--tg-viewport-height,100dvh) - var(--safe-top,0px) - var(--safe-bottom,0px) - 32px); }
-.efl-viewport-overlay .max-h-\[90vh\],.efl-viewport-overlay .max-h-\[90dvh\] { max-height:calc(var(--tg-viewport-height,100dvh) - var(--safe-top,0px) - var(--safe-bottom,0px) - 32px); }
-.efl-app-toast { top:calc(56px + var(--safe-top,0px)); right:calc(16px + var(--safe-right,0px)); }
-/* Tournament drawers occupy the usable viewport, including landscape notches. */
-:root .tourney-dialog-backdrop { top:var(--safe-top,0px); bottom:var(--safe-bottom,0px); left:var(--safe-left,0px); right:var(--safe-right,0px); }
-:root .tourney-dialog-backdrop .tourney-dialog { min-height:0; max-height:calc(var(--tg-viewport-height,100dvh) - var(--safe-top,0px) - var(--safe-bottom,0px)); }
-
-body[data-efl-theme="light"] { --efl-native-header:#ffffff; background-color:#f4f5f7; }
-body[data-efl-theme="dark"] { --efl-native-header:#111722; background-color:#080b12; }
+body::before {content:'';position:fixed;top:0;left:0;right:0;height:var(--safe-top,0px);z-index:39;background:var(--efl-native-header,var(--bg-primary,#080c14));pointer-events:none}
+#root > .min-h-screen {min-height:calc(var(--tg-viewport-stable-height,100dvh) - var(--safe-top,0px) - var(--safe-bottom,0px))}
+.efl-app-header {top:var(--safe-top,0px)}
+.efl-desktop-nav {top:calc(var(--efl-header-height) + var(--safe-top,0px))}
+.efl-mobile-nav {
+ bottom:calc(12px + var(--safe-bottom,0px));
+ left:calc((100% + var(--safe-left,0px) - var(--safe-right,0px))/2);
+ width:min(90%,340px,calc(100vw - var(--safe-left,0px) - var(--safe-right,0px) - 24px));
+}
+/* Hide the floating destination bar while typing; form actions use the space. */
+:root[data-efl-keyboard="open"] .efl-mobile-nav {visibility:hidden;pointer-events:none}
+.efl-header-row {min-width:0}
+@media(max-width:380px){
+ .efl-header-row {gap:6px;padding-left:10px;padding-right:10px}
+ .efl-header-actions {gap:4px}
+ .efl-preview .preview-brand-logo {width:clamp(56px,calc(100vw - var(--safe-left,0px) - var(--safe-right,0px) - 196px),110px);flex-shrink:1}
+}
+/* Existing admin and club overlays also share the same visible bounds. */
+:root :is(.efl-viewport-overlay,.efl-preview .fixed.inset-0):not(.tourney-dialog-backdrop) {
+ top:var(--efl-viewport-top);bottom:auto;height:var(--efl-viewport-height);
+ padding-top:calc(12px + var(--safe-top,0px));padding-bottom:calc(12px + var(--safe-bottom,0px));
+ padding-left:calc(12px + var(--safe-left,0px));padding-right:calc(12px + var(--safe-right,0px));
+ box-sizing:border-box;min-width:0;
+}
+:root :is(.efl-viewport-overlay,.efl-preview .fixed.inset-0):not(.tourney-dialog-backdrop)>:not(.fixed) {
+ max-height:var(--efl-dialog-height);min-height:0;min-width:0;overflow-y:auto;overscroll-behavior:contain;
+}
+.efl-app-toast {top:calc(56px + var(--safe-top,0px));right:calc(16px + var(--safe-right,0px));max-width:calc(100vw - var(--safe-left,0px) - var(--safe-right,0px) - 32px)}
+/* Team/event dialogs and tournament drawers used to keep a raw 100dvh height. */
+:root :is(.team-dialog-backdrop,.tourney-dialog-backdrop) {
+ top:calc(var(--efl-viewport-top) + var(--safe-top,0px));bottom:auto;height:var(--efl-usable-height);
+ left:var(--safe-left,0px);right:var(--safe-right,0px);box-sizing:border-box;
+}
+:root .team-dialog-backdrop .team-dialog {max-height:100%;min-height:0;overflow:hidden}
+:root .team-dialog>header {flex-shrink:0}
+:root .tourney-dialog-backdrop .tourney-dialog {min-height:0;max-height:100%}
+:root .tourney-management-overlay>.tourney-dialog {height:100%!important;max-height:100%!important}
+:root .tourney-dialog-backdrop :is(.tourney-dialog-body,footer) {min-height:0}
+:root .tourney-dialog-backdrop footer {padding-bottom:12px}
+:root .efl-match-dialog {display:flex;flex-direction:column}
+:root .efl-match-dialog>:first-child {flex-shrink:0}
+:root .efl-match-dialog-body {min-height:0;max-height:none;overflow-y:auto}
+/* Native <dialog> lives in the top layer, outside the regular overlay layout. */
+:root dialog.competition-dialog {
+ top:calc(var(--efl-viewport-top) + var(--safe-top,0px) + 12px);
+ bottom:calc(100dvh - var(--efl-viewport-top) - var(--efl-viewport-height) + var(--safe-bottom,0px) + 12px);
+ left:var(--safe-left,0px);right:var(--safe-right,0px);
+ width:min(500px,calc(100vw - var(--safe-left,0px) - var(--safe-right,0px) - 24px));max-height:var(--efl-dialog-height);
+}
+body[data-efl-theme="light"] {--efl-native-header:#ffffff;background-color:#f4f5f7}
+body[data-efl-theme="dark"] {--efl-native-header:#111722;background-color:#080b12}

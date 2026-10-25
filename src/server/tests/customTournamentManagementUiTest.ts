@@ -1,3 +1,4 @@
+import {readFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
@@ -13,7 +14,8 @@ function render(tab:'overview'|'participants'|'matches'|'settings'|'history',own
 }
 for(const tab of ['overview','participants','matches','settings','history'] as const){
  const html=render(tab,true,tab==='matches'?'IN_PROGRESS':'REGISTRATION_OPEN');
- assert.ok(html.includes('role="dialog"')&&html.includes('100dvh'));
+ assert.ok(html.includes('role="dialog"')&&html.includes('h-full'));
+ assert.equal(html.includes('h-[100dvh]'),false,'The drawer must fit its safe viewport container, including the keyboard');
  assert.ok(html.includes('overflow-x-auto')&&html.includes('overflow-x-hidden')&&html.includes('min-w-0'));
  const visible=html.replace(/<[^>]*>/g,'');
  for(const code of ['PUBLIC_MODERATED','IN_PROGRESS','PENDING_CONFIRMATION','DISPUTED','Foydalanuvchi IDsi'])assert.equal(visible.includes(code),false,tab+': raw internal labels');
@@ -34,3 +36,7 @@ assert.equal(wizard.includes('Faqat tashkilotchi bo‘laman'),false);
 assert.equal(wizard.includes('Klub qidirish'),false);
 assert.ok(wizard.includes('boshqalar kabi klub tanlab qo‘shilasiz'));
 console.log('PASS management UI: owner/assistant controls, lifecycle locks, qualifier start blocker, readable labels, responsive structural constraints, and creation without a club. SSR checks do not prove browser layout.');
+
+const viewportCss=readFileSync('src/telegram-viewport.css','utf8');
+assert.ok(viewportCss.includes('.tourney-management-overlay>.tourney-dialog {height:100%!important;max-height:100%!important}'));
+assert.ok(viewportCss.includes('height:var(--efl-usable-height)')&&viewportCss.includes('var(--efl-viewport-top) + var(--safe-top,0px)'));

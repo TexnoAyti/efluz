@@ -1,3 +1,4 @@
+import {scheduleUNotices} from '../services/uzeflifeNotifications';
 import {tournamentRulesError} from '../../lib/customTournamentRules';
 /**
  * Custom Tournaments Express Router
@@ -27,6 +28,7 @@ import {
 import { generateTournamentPreview } from '../services/customTournamentEngine';
 
 export const customTournamentsRouter = Router();
+customTournamentsRouter.use((req,res,next)=>{if(req.method==='POST'||req.method==='GET'&&req.user)res.on('finish',()=>{if(res.statusCode<300)scheduleUNotices();});next();});
 
 // GET /api/custom-tournaments - public catalog (strictly hides private tournaments)
 customTournamentsRouter.get('/', async (req: Request, res: Response) => {

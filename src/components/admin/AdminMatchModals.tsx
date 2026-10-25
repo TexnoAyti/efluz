@@ -193,7 +193,7 @@ export const AdminEditResultModal: React.FC<EditResultModalProps> = ({ fixture, 
 
   return (
     <div className="efl-viewport-overlay fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4">
-      <div className="w-full max-w-4xl max-h-[94vh] overflow-hidden rounded-[26px] border border-emerald-400/25 bg-[radial-gradient(circle_at_8%_0%,rgba(16,185,129,0.12),transparent_28%),linear-gradient(155deg,#0f172a,#020617)] shadow-2xl animate-in zoom-in-95 duration-150">
+      <div className="efl-match-dialog w-full max-w-4xl max-h-[94vh] overflow-hidden rounded-[26px] border border-emerald-400/25 bg-[radial-gradient(circle_at_8%_0%,rgba(16,185,129,0.12),transparent_28%),linear-gradient(155deg,#0f172a,#020617)] shadow-2xl animate-in zoom-in-95 duration-150">
         <div className="flex items-start justify-between gap-4 border-b border-white/[0.07] p-4 sm:p-5">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-emerald-400"><Activity className="w-3.5 h-3.5" /> {copy.title}</div>
@@ -203,7 +203,7 @@ export const AdminEditResultModal: React.FC<EditResultModalProps> = ({ fixture, 
           <button onClick={onClose} className="p-2 rounded-xl hover:bg-white/[0.06] text-slate-400 hover:text-white"><X className="w-4 h-4" /></button>
         </div>
 
-        <div className="overflow-y-auto max-h-[calc(94vh-80px)] p-4 sm:p-5 space-y-4">
+        <div className="efl-match-dialog-body overflow-y-auto max-h-[calc(94vh-80px)] p-4 sm:p-5 space-y-4">
           <div className="grid gap-3 md:grid-cols-[1fr_auto_1fr] md:items-center rounded-2xl border border-white/[0.07] bg-black/20 p-4">
             <div className="flex items-center gap-3 min-w-0">
               <ClubCrest clubId={fixture.homeClubId} logoUrl={fixture.homeClub?.logoUrl} name={fixture.homeClub?.name} size="md" />

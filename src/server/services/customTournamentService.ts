@@ -1,3 +1,4 @@
+import {writeCustomRegistration,writeCustomLifecycleNotices} from './customCompetitionNotices';
 import {tournamentRulesError,canonicalTournamentRules} from '../../lib/customTournamentRules';
 import {customMatchNeedsPenalties} from '../../lib/customTournamentMatches';
 /**
@@ -387,6 +388,7 @@ export async function claimTournamentClub(params: {
 
     const log=managementLog({...tournament,updatedAt:now},params.userId,'PARTICIPANT_JOINED',{clubName:seedClub.name});
     transaction.set(db.collection('custom_tournament_audit_logs').doc(log.id),log);
+    writeCustomRegistration(transaction,tournament,params.userId,participant.status==='PENDING_APPROVAL'?'Ariza yuborildi':'Turnirga qo‘shildingiz',seedClub.name+' tanlandi.',log.id);
     return participant;
   });
 }
@@ -439,6 +441,7 @@ export async function startTournament(params: {tournamentId:string;userId:string
   const next={...t,status:'IN_PROGRESS' as const,startedAt:t.startingAt,updatedAt:new Date().toISOString(),maxParticipants:players.length,currentParticipantsCount:players.length,expectedFixturesCount:fixtures.filter(f=>f.status!=='BYE_AUTO_ADVANCED').length,confirmedFixturesCount:0,phase:t.format==='PLAYOFF'?'PLAYOFF' as const:'LEAGUE' as const};
   delete next.startParticipants;
   for(const part of players)tx.set(db.collection('custom_tournament_participants').doc(part.id),part);
+  writeCustomLifecycleNotices(tx,t,next,[],fixtures,players);
   tx.set(ref,next);
   const log:CustomTournamentAuditLog={id:`start_${t.id}`,tournamentId:t.id,action:'TOURNAMENT_STARTED',performedByUserId:params.userId,createdAt:next.updatedAt,details:{participants:players.length,fixtures:fixtures.length}};
   tx.set(db.collection('custom_tournament_audit_logs').doc(log.id),log);
@@ -465,9 +468,11 @@ async function mutateResult<T>(tournamentId:string,fixtureId:string,apply:(state
   else{const f=(await tx.get(db.collection('custom_tournament_fixtures').doc(fixtureId))).data() as CustomTournamentFixture|undefined;fixtures=f?[f]:[];}
   const parts=completeRead?(await tx.get(db.collection('custom_tournament_participants').where('tournamentId','==',tournamentId))).docs.map(d=>d.data() as CustomTournamentParticipant):[];
   if(t.expectedFixturesCount===undefined){t.expectedFixturesCount=fixtures.filter(f=>f.status!=='BYE_AUTO_ADVANCED').length;t.confirmedFixturesCount=fixtures.filter(f=>f.status==='CONFIRMED').length;}
+  const beforeTournament=structuredClone(t),beforeFixtures=structuredClone(fixtures);
   const previous=new Map(fixtures.map(f=>[f.id,JSON.stringify(f)]));
   const state:LifecycleState={tournament:t,participants:parts,fixtures,logs:[]};const result=apply(state);
   for(const f of state.fixtures)if(previous.get(f.id)!==JSON.stringify(f))tx.set(db.collection('custom_tournament_fixtures').doc(f.id),f);
+  writeCustomLifecycleNotices(tx,beforeTournament,state.tournament,beforeFixtures,state.fixtures,state.participants);
   tx.set(ref,state.tournament);
   for(const log of state.logs)tx.set(db.collection('custom_tournament_audit_logs').doc(log.id),log);
   return result;
@@ -742,6 +747,7 @@ export async function leaveTournamentClub(params: {
 
     const log=managementLog({...tournament,updatedAt:now},params.userId,'PARTICIPANT_LEFT',{clubId:freedClubId});
     transaction.set(db.collection('custom_tournament_audit_logs').doc(log.id),log);
+    writeCustomRegistration(transaction,tournament,params.userId,'Ro‘yxatdan chiqdingiz','Klubingiz uchun joy bo‘shatildi.',log.id);
     return { success: true, freedClubId };
   });
 }
@@ -829,6 +835,7 @@ export async function reviewTournamentParticipant(params:{tournamentId:string;ta
   const partRef=db.collection('custom_tournament_participants').doc(`${t.id}_${clubId}`),p=validate((await tx.get(partRef)).data() as CustomTournamentParticipant|undefined);
   if(params.action==='APPROVE')tx.update(partRef,{status:'REGISTERED'});
   else{tx.delete(partRef);tx.delete(claim);tx.delete(db.collection('custom_tournament_claims').doc(`${t.id}_club_${clubId}`));tx.update(ref,{currentParticipantsCount:Math.max(0,t.currentParticipantsCount-1),updatedAt:now});}
+  writeCustomRegistration(tx,t,p.userId,params.action==='APPROVE'?'Ariza tasdiqlandi':'Ariza rad etildi',p.clubName,log.id);
   tx.set(db.collection('custom_tournament_audit_logs').doc(log.id),log);return {success:true};
  });
 }
@@ -864,8 +871,11 @@ async function mutateAdministration<T>(tournamentId: string, actorId: string, ow
   return db.runTransaction(async tx => {
     const t = authorize((await tx.get(ref)).data() as CustomTournament | undefined);
     const before = (await tx.get(db.collection('custom_tournament_participants').where('tournamentId', '==', tournamentId))).docs.map(d => d.data() as CustomTournamentParticipant);
+    const beforeTournament=structuredClone(t);
     const players = structuredClone(before), logs: CustomTournamentAuditLog[] = [];
     const result = apply(t, players, logs);
+    writeCustomLifecycleNotices(tx,beforeTournament,t,[],[],before);
+    for(const p of before)if(!players.some(n=>n.id===p.id))writeCustomRegistration(tx,t,p.userId,'Turnirdan chiqarildingiz',p.clubName+' uchun joy bo‘shatildi.',t.id+':remove:'+p.userId+':'+t.updatedAt);
     tx.set(ref, t);
     for (const p of before) if (!players.some(row => row.id === p.id)) {
       tx.delete(db.collection('custom_tournament_participants').doc(p.id));

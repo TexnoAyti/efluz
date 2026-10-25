@@ -161,9 +161,9 @@ const AppContent: React.FC = () => {
     const navigate=(event:Event)=>{if(!user)return;const target=(event as CustomEvent<TeamNavigation>).detail;if(!target)return;
       setPublicClubId(null);
       if(target.kind==='profile'||target.kind==='directory'){const id=target.kind==='profile'?target.id:undefined;const path=teamPagePath(id);if(window.location.pathname!==path)window.history.pushState({teamProfile:true},'',path);setTeamRoute(id?{id}:{});}
-      else if(target.kind==='tournament'||target.kind==='workspace'){
+      else if(target.kind==='tournament'||target.kind==='workspace'||target.kind==='event'){
         try{sessionStorage.setItem(`efl:turnir-mode:${user.id}`,'team');sessionStorage.setItem(`efl:team-turnir:${user.id}`,target.kind==='tournament'?target.id:'');}catch{}
-        const params=new URLSearchParams(target.kind==='tournament'?{teamTournament:target.id}:{teamMode:'1'});if(target.kind==='tournament'&&target.fixtureId)params.set('teamFixture',target.fixtureId);if(target.kind==='tournament'&&target.tab)params.set('teamTab',target.tab);
+        const params=new URLSearchParams(target.kind==='tournament'?{teamTournament:target.id}:target.kind==='event'?{teamEvent:'el-clasico'}:{teamMode:'1'});if(target.kind==='tournament'&&target.fixtureId)params.set('teamFixture',target.fixtureId);if(target.kind==='tournament'&&target.tab)params.set('teamTab',target.tab);
         window.history.pushState({teamTournament:true},'',`/leagues?${params}`);setTeamRoute(null);setActiveTabState('leagues');setSearchNavigationRevision(n=>n+1);
       }
       window.scrollTo({top:0,behavior:'instant'});

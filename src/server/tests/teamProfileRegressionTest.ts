@@ -1,3 +1,4 @@
+import {teamTournamentTelegramLink} from '../../lib/teamNavigation';
 import {EL_CLASICO_LINK,readElClasicoLaunch} from '../../lib/elClasicoLinks';
 import {isTeamWorkspaceLaunch} from '../../lib/teamNavigation';
 import assert from 'node:assert/strict';
@@ -75,3 +76,6 @@ try{
  (globalThis as any).window={location:{search:'?startapp=el_clasico_wrong'}};assert.equal(readElClasicoLaunch(),false);
 }finally{if(savedWindow===undefined)delete (globalThis as any).window;else (globalThis as any).window=savedWindow;}
 console.log('PASS El-Clasico Telegram/direct links route to TEAMS without granting access');
+
+const savedTeamWindow=(globalThis as any).window;
+try{const link=teamTournamentTelegramLink('tp_deeplink_team','fixture_123');(globalThis as any).window={location:{search:'?'+link.split('?')[1]}};assert.deepEqual(readTeamTournamentLaunch(),{id:'tp_deeplink_team',fixtureId:'fixture_123'});assert.equal(isTeamWorkspaceLaunch(),true);}finally{if(savedTeamWindow===undefined)delete (globalThis as any).window;else (globalThis as any).window=savedTeamWindow;}

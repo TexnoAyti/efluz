@@ -1,3 +1,4 @@
+import {verifyCompetitionNotices} from './competitionNoticesHttpAudit';
 import {verifyElClasico} from './elClasicoHttpAudit';
 import {verifyTeamTournamentSettings} from './teamTournamentSettingsHttpAudit';
 import {verifyTeamTournamentAdmin} from './teamTournamentAdminHttpAudit';
@@ -245,6 +246,7 @@ try {
   await verifyTeamTournamentAdmin(()=>{failTeamPreviewCommit=true;});
   await verifyTeamTournamentSettings(()=>{failTeamPreviewCommit=true;});
   await verifyElClasico(()=>{failClasicoCommit=true;});
+  await verifyCompetitionNotices(()=>{failClasicoCommit=true;});
   await verifyAndroidAuth(()=>{failAndroidLoginCommit=true;});
   await verifyPostgresClubClaimHttp(() => { failClaimCommit=true; },()=>{failClubBanCommit=true;});
   await verifyPostgresMatchdayNotifications(() => { failNotificationCommit=true; }, telegramDeliveries);
