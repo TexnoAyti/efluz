@@ -35,6 +35,7 @@ import { handleTelegramAiMessage, escapeTelegramHtml } from '../services/telegra
 import { isAiAdminCommand } from '../services/telegramAiAdminCatalog';
 import { archiveCommunityMessage, communityPost, communitySourceStats } from '../services/telegramAiCommunitySources';
 import { extractAiCustomEmoji, saveAiCustomEmoji } from '../services/telegramAiCustomEmoji';
+import { respondToTeamInvitation } from '../services/teamService';
 
 export const telegramRouter = Router();
 // A processing lease is separate from acknowledgement: failed work remains retryable.
@@ -147,6 +148,36 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
         await answerTelegramCallback(callback.id, isPrimaryOwner(callback.from.id) ? result.replySent ? 'Javob yuborildi' : 'Buyruq bajarilishi tasdiqlanmadi. Bot holatini tekshiring.' : 'Bu tugma faqat asosiy admin uchun.', !isPrimaryOwner(callback.from.id));
         console.info('[TELEGRAM_AI_OUTCOME]', JSON.stringify({ handled: result.handled, replySent: result.replySent, ignored: result.ignored, error: result.error }));
         response = { ok: true, handled: 'ai_admin_callback', result };
+      }
+    } else if (typeof update.callback_query?.data === 'string' && /^team_invite:(accept|reject):([a-zA-Z0-9_:-]+)$/.test(update.callback_query.data)) {
+      const match = /^team_invite:(accept|reject):([a-zA-Z0-9_:-]+)$/.exec(update.callback_query.data);
+      const callback = update.callback_query;
+      if (match && callback.from) {
+        const actionType = match[1];
+        const invitationId = match[2];
+        try {
+          const result = await respondToTeamInvitation({
+            invitationId,
+            telegramId: callback.from.id,
+            accept: actionType === 'accept',
+          });
+          await answerTelegramCallback(callback.id, result.message, false);
+          if (callback.message?.chat?.id && callback.message?.message_id) {
+            await sendTelegramMessage(callback.message.chat.id, result.message, {
+              reply_to_message_id: callback.message.message_id,
+              parse_mode: 'HTML',
+            }).catch(() => undefined);
+          }
+          response = { ok: true, handled: 'team_invite_callback', result };
+        } catch (err: any) {
+          const errorMsg = err.code === 'TELEGRAM_GROUP_MEMBERSHIP_REQUIRED'
+            ? "Jamoaga qo‘shilish uchun avval @efleagueuz guruhiga a’zo bo‘ling: https://t.me/efleagueuz"
+            : (err.message || 'Xatolik yuz berdi.');
+          await answerTelegramCallback(callback.id, errorMsg, true);
+          response = { ok: true, handled: 'team_invite_callback_error', error: err.message };
+        }
+      } else {
+        response = { ok: true, ignored: 'invalid_team_invite_callback' };
       }
     } else if (update.pre_checkout_query) {
       const result = await answerPremiumPreCheckout(update.pre_checkout_query);

@@ -75,6 +75,15 @@ export async function planNaturalAdminRequest(text: string, deps: NaturalPlanner
   }
   // Explicitly contradictory or multiple writes must not silently become the first action.
   assertSingleNaturalAdminRequest(text);
+  if (['team_ticket_grant','team_ticket_revoke','team_ticket_check'].includes(action)) {
+    const id = await userId(text, deps);
+    const expectedUsername = /@\s*([A-Za-z0-9_]+)/.exec(text)?.[1];
+    const identity = expectedUsername ? { expectedUsername } : {};
+    if (action === 'team_ticket_check') return make('team_ticket_check', id, { ...identity });
+    const amountMatch = /\b(\d+)\s*(?:ta\s*)?ticket/i.exec(text);
+    const amount = amountMatch ? parseInt(amountMatch[1], 10) : 1;
+    return make(action, undefined, { targetUserId: id, amount, ...identity, ...(note ? { note } : {}) });
+  }
   if (['user_role','user_role_remove','user_suspend','user_unsuspend','user_delete','premium_grant','premium_revoke'].includes(action)) {
     const id = await userId(text, deps);
     const expectedUsername = /@\s*([A-Za-z0-9_]+)/.exec(text)?.[1];

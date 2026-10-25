@@ -41,6 +41,7 @@ import { seasonLifecycleRouter, adminSeasonLifecycleRouter } from './routes/seas
 import { adminAiConfigRouter } from './routes/adminAiConfig.routes';
 import { customTournamentsRouter } from './routes/customTournaments.routes';
 import { customTournamentTicketsRouter } from './routes/customTournamentTickets.routes';
+import { teamsRouter } from './routes/teams.routes';
 
 let dbInitPromise: Promise<void> | null = null;
 let dbReady = false;
@@ -192,6 +193,7 @@ export function createApp() {
   app.use('/api/custom-tournaments/tickets', customTournamentTicketsRouter);
   app.use('/api/admin/custom-tournaments/tickets', customTournamentTicketsRouter);
   app.use('/api/custom-tournaments', customTournamentsRouter);
+  app.use('/api/teams', teamsRouter);
 
   app.use('/api/*', (req, res) => { res.status(404).json({ error: 'Endpoint not found', path: req.originalUrl }); });
   app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => { console.error('[SERVER] Unhandled error:', err); res.status(err.status || 500).json({ error: err.message || 'Internal Server Error', status: err.status || 500 }); });

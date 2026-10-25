@@ -4,12 +4,12 @@ import { ClubsView } from './ClubsView';
 import { CupBracketsView } from './CupBracketsView';
 import { ChampionsLeagueView } from './ChampionsLeagueView';
 import { SeasonHubView } from './SeasonHubView';
-import { TournamentListView } from './customTournaments/TournamentListView';
-import { Trophy, Award, Globe2, CalendarDays, Sparkles } from 'lucide-react';
+import { TeamsView } from './teams/TeamsView';
+import { Trophy, Award, Globe2, CalendarDays, Shield, Sparkles } from 'lucide-react';
 
 interface CompetitionHubViewProps {
   onNavigateTab: (tab: any) => void;
-  initialSubTab?: 'leagues' | 'cups' | 'european' | 'season' | 'custom';
+  initialSubTab?: 'leagues' | 'cups' | 'european' | 'season' | 'teams' | 'custom';
 }
 
 export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
@@ -17,12 +17,12 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
   initialSubTab = 'leagues',
 }) => {
   const { language } = useI18n();
-  const [subTab, setSubTab] = useState<'leagues' | 'cups' | 'european' | 'season' | 'custom'>(() => {
+  const [subTab, setSubTab] = useState<'leagues' | 'cups' | 'european' | 'season' | 'teams' | 'custom'>(() => {
     try {
       const saved = sessionStorage.getItem('efl:competition-hub-subtab');
-      if (saved === 'leagues' || saved === 'cups' || saved === 'european' || saved === 'season' || saved === 'custom') {
+      if (saved === 'leagues' || saved === 'cups' || saved === 'european' || saved === 'season' || saved === 'teams' || saved === 'custom') {
         sessionStorage.removeItem('efl:competition-hub-subtab');
-        return saved as any;
+        return (saved === 'custom' ? 'teams' : saved) as any;
       }
     } catch {}
     return initialSubTab;
@@ -42,7 +42,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
       cups: 'Kuboklar',
       european: 'Yevrokuboklar',
       season: 'Mavsum',
-      custom: 'Jamoa turnirlari',
+      teams: 'TEAMS',
     },
     ru: {
       heading: 'Турниры',
@@ -50,7 +50,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
       cups: 'Кубки',
       european: 'Еврокубки',
       season: 'Сезон',
-      custom: 'Пользовательские',
+      teams: 'TEAMS',
     },
     en: {
       heading: 'Competitions',
@@ -58,7 +58,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
       cups: 'Cups',
       european: 'Europe',
       season: 'Season',
-      custom: 'Custom Tournaments',
+      teams: 'TEAMS',
     },
   }[language] || {
     heading: 'Competitions',
@@ -66,7 +66,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
     cups: 'Cups',
     european: 'Europe',
     season: 'Season',
-    custom: 'Jamoa turnirlari',
+    teams: 'TEAMS',
   };
 
   const navItems = [
@@ -74,7 +74,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
     { id: 'cups' as const, label: titles.cups, icon: Award },
     { id: 'european' as const, label: titles.european, icon: Globe2 },
     { id: 'season' as const, label: titles.season, icon: CalendarDays },
-    { id: 'custom' as const, label: titles.custom, icon: Sparkles },
+    { id: 'teams' as const, label: titles.teams, icon: Shield },
   ];
 
   return (
@@ -115,7 +115,25 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
         {subTab === 'cups' && <CupBracketsView onNavigateTab={onNavigateTab} />}
         {subTab === 'european' && <ChampionsLeagueView onNavigateTab={onNavigateTab} />}
         {subTab === 'season' && <SeasonHubView onNavigateTab={onNavigateTab} />}
-        {subTab === 'custom' && <TournamentListView />}
+        {subTab === 'teams' && <TeamsView />}
+        {subTab === 'custom' && (
+          <div className="p-8 text-center rounded-3xl bg-slate-950/60 border border-slate-800 space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 mx-auto">
+              <Sparkles className="w-6 h-6" />
+            </div>
+            <h3 className="text-sm font-bold text-slate-200">Shaxsiy turnirlar bo‘limi hozircha yopiq</h3>
+            <p className="text-xs text-slate-400 max-w-sm mx-auto">
+              Hozirda TEAMS (Jamoalar) ekotizimi faol. O‘z jamoangizni tuzib, do‘stlaringizni taklif qilishingiz mumkin.
+            </p>
+            <button
+              type="button"
+              onClick={() => setSubTab('teams')}
+              className="py-2.5 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition-colors"
+            >
+              TEAMS bo‘limiga o‘tish
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

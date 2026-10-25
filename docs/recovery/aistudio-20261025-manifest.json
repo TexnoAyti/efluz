@@ -1,0 +1,95 @@
+{
+  "source_archive_sha256": "28105053d5719ed9f9c90e76c02f10c198554be4d72a75fd25dd1e3846b4f249",
+  "baseline": "0befe39c64257b9b0f57d4e46fcd663046e2211e",
+  "current_main_at_recovery": "6d38e00d988342539d803ea5f8ea0a0b507ef147",
+  "source_files": [
+    {
+      "path": "src/components/CompetitionHubView.tsx",
+      "sha256": "1bd954d31a62eec9d20be54accc4ae59154c694c1db2ce2f45efb657321bcb38"
+    },
+    {
+      "path": "src/server/app.ts",
+      "sha256": "3cf3a12ee044d7cfec6c27c177365bfe2a9b49567914810c599d191d7f1be38a"
+    },
+    {
+      "path": "src/lib/customTournamentEngine.ts",
+      "sha256": "35276864cbbde8e2a7a479a145a35cd60987a428b18a5d00aa036720fa0e3a89"
+    },
+    {
+      "path": "src/server/routes/telegram.routes.ts",
+      "sha256": "3413520bad903d398593225b769f468dbe9acbe5f3d297d7b29a085f0061281b"
+    },
+    {
+      "path": "src/server/services/telegramAiAdminService.ts",
+      "sha256": "74b7efb1755629e5bb50b0f2d7133ba55774f5ae94bb7133453c1f8a32a8803e"
+    },
+    {
+      "path": "src/server/services/telegramAiAdminCatalog.ts",
+      "sha256": "d49287e450e48b2808b43327d2fc1b7fe91ef1bd6db911f39374d4df8a03576c"
+    },
+    {
+      "path": "src/server/services/adminUserDirectory.ts",
+      "sha256": "662a350688a48b26cc45ab0151e8ba96b6f4320f0d9328a63049df66a1ed3909"
+    },
+    {
+      "path": "src/server/services/customTournamentEngine.ts",
+      "sha256": "a533a99b5ab85ca4fdea64a8215a5b325188f12fed54bd32ca8cf95a5580b6f7"
+    },
+    {
+      "path": "src/server/services/telegramAiAdminPlanReadiness.ts",
+      "sha256": "499f5180759a808c1c6c95aeaf320c6a399cb647898e06f4ccc2826fe2a81e11"
+    },
+    {
+      "path": "src/server/services/telegramAiNaturalAdminPlanner.ts",
+      "sha256": "c6db797f66225ab9889135ae26936e955cc93d264d11a6818ad0297a8e7c73e7"
+    },
+    {
+      "path": "src/server/services/telegramAiAdminGateway.ts",
+      "sha256": "c86d1afdd5eaad9ab07782738578d4101c22084131ac03e273c51ab461e1aab6"
+    },
+    {
+      "path": "src/types/team.ts",
+      "sha256": "4239692e5c29ee3de23d34a0f34e3f71a8f90f1b28aed0801c64b3caeb09d444"
+    },
+    {
+      "path": "src/lib/teamsApi.ts",
+      "sha256": "254bfd3d8f799f4698c8219f987ea3240d8d9eb9a94be80eda9407c964f0dec6"
+    },
+    {
+      "path": "src/components/teams/UserInvitationsModal.tsx",
+      "sha256": "7a550ab38cd3fb505fb1123c15af77b40720ff71172ae169f1300b6dba139f56"
+    },
+    {
+      "path": "src/components/teams/TeamCreationModal.tsx",
+      "sha256": "800158ae3243f1f106179a59a7e84e7482d0c38c3e8ce334ef3b5972cebd21eb"
+    },
+    {
+      "path": "src/components/teams/TeamDetailModal.tsx",
+      "sha256": "91ee6f5d4f2abcd9f453510b51fc8a5d84ef83dca2afc45c124c4a2fdd7a209c"
+    },
+    {
+      "path": "src/components/teams/TeamsView.tsx",
+      "sha256": "4381b964f5797e31c6c812388223a819931d455af6c8f6d759aae4ba9c5690f0"
+    },
+    {
+      "path": "src/components/teams/TeamInviteModal.tsx",
+      "sha256": "5bd62b8dd7745252ca9373450f00769c1fc281142f3eadfc855ce6ae2381a0da"
+    },
+    {
+      "path": "src/server/tests/teamsEcosystemRegressionTest.ts",
+      "sha256": "fe3e04177c9957a642973b0fd4c352ae14b3f0902ee988dff19e77ae1a7ba1b8"
+    },
+    {
+      "path": "src/server/routes/teams.routes.ts",
+      "sha256": "cdebca25b40e080ac2cd1aee2de41c838dd23bfd790d7229ce668dfc42882d25"
+    },
+    {
+      "path": "src/server/services/teamTicketService.ts",
+      "sha256": "d4d4423063da9b79eec27e2307863baf0ee318936753fbaf4eecb9ac1b6c9883"
+    },
+    {
+      "path": "src/server/services/teamService.ts",
+      "sha256": "b89fa5ec4087037e8818caaf29abf709674c8397e5c10c6d71c875eab8d77ff9"
+    }
+  ]
+}

@@ -16,7 +16,7 @@ export function generateTournamentPreview(
   participantsCount: number,
   rules: Partial<CustomTournamentRulesConfig> = {}
 ): TournamentFormatPreview {
-  const n = Math.max(4, Math.min(32, participantsCount));
+  const n = Math.max(3, Math.min(64, participantsCount));
   const roundsCount = rules.roundsCount || 1;
   const playoffLegMode = rules.playoffLegMode || 'SINGLE_LEG';
   const legMultiplier = playoffLegMode === 'TWO_LEG' ? 2 : 1;
@@ -33,7 +33,7 @@ export function generateTournamentPreview(
       participantsCount: n,
       totalMatches,
       totalStagesOrRounds: totalRounds,
-      stagesDescription: `${roundsCount} davrali liga: ${totalRounds} ta tur, har bir qatnashchi ${totalRounds} ta uchrashuv o'tkazadi`,
+      stagesDescription: `${roundsCount} davrali liga: ${totalRounds} ta tur, har bir qatnashchi ${totalRounds} ta uchrashuv o'tkazadi${isOdd ? ' (har turda 1 ta team dam oladi)' : ''}`,
       byeCount: isOdd ? 1 : 0,
     };
   }
@@ -49,8 +49,10 @@ export function generateTournamentPreview(
 
     let stageName = 'Chorak final (QF)';
     if (powerOfTwo === 4) stageName = 'Yarim final (SF)';
+    if (powerOfTwo === 8) stageName = 'Chorak final (QF)';
     if (powerOfTwo === 16) stageName = '1/8 final (R16)';
     if (powerOfTwo === 32) stageName = '1/16 final (R32)';
+    if (powerOfTwo === 64) stageName = '1/32 final (R64)';
 
     return {
       format: 'PLAYOFF',
@@ -65,7 +67,10 @@ export function generateTournamentPreview(
   }
 
   // LEAGUE_AND_PLAYOFF
-  const qualifiers = rules.playoffQualifiersCount || (n >= 16 ? 8 : 4);
+  let qualifiers = rules.playoffQualifiersCount || (n >= 32 ? 16 : n >= 16 ? 8 : n >= 8 ? 4 : 2);
+  while (qualifiers > n && qualifiers > 2) {
+    qualifiers = Math.floor(qualifiers / 2);
+  }
   const groupMode = rules.groupStageMode || 'SINGLE_TABLE';
   const groupsCount = rules.groupsCount || 2;
 

@@ -80,3 +80,37 @@ export async function resolveAdminUserReference(reference: string): Promise<stri
   if (found.size !== 1) throw new Error(found.size ? 'AMBIGUOUS_USER_REFERENCE' : 'USER_NOT_FOUND');
   return [...found.keys()][0];
 }
+
+export async function findAdminUserBySelector(selector: string): Promise<{ id: string; telegramId: string; username?: string; displayName?: string } | null> {
+  const raw = String(selector || '').trim();
+  if (!raw) return null;
+  try {
+    const userId = await resolveAdminUserReference(raw);
+    const directory = await getAdminUserDirectory().catch(() => []);
+    const match = directory.find(u => u.id === userId);
+    if (match) {
+      return {
+        id: match.id,
+        telegramId: match.telegramId,
+        username: match.username,
+        displayName: [match.firstName, match.lastName].filter(Boolean).join(' ') || match.username || `User ${match.telegramId}`,
+      };
+    }
+    const db = getFirestoreDb();
+    if (db) {
+      const snap = await db.collection(COLLECTIONS.USERS).doc(userId).get();
+      if (snap.exists) {
+        const d = snap.data()!;
+        return {
+          id: snap.id,
+          telegramId: String(d.telegramId || ''),
+          username: d.username,
+          displayName: [d.firstName, d.lastName].filter(Boolean).join(' ') || d.username || `User ${d.telegramId}`,
+        };
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}

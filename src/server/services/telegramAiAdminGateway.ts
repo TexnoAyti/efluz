@@ -8,11 +8,12 @@ import { isAiAdminActor, assertAiAdminActionAllowed } from './telegramAiAdminAcc
 let gatewayPromise: Promise<ReturnType<typeof express>> | undefined;
 async function getGateway() {
   return gatewayPromise ||= (async () => {
-    const [cups, cupOps, matches, consistency, main, seasons, lifecycle, telegram, aiConfig] = await Promise.all([
+    const [cups, cupOps, matches, consistency, main, seasons, lifecycle, telegram, aiConfig, teams] = await Promise.all([
       import('../routes/adminCupDraw.routes'), import('../routes/adminCupOps.routes'),
       import('../routes/adminMatchControl.routes'), import('../routes/consistencyGuard.routes'),
       import('../routes/admin.routes'), import('../routes/seasonOperations.routes'),
       import('../routes/seasonLifecycle.routes'), import('../routes/telegram.routes'), import('../routes/adminAiConfig.routes'),
+      import('../routes/teams.routes'),
     ]);
     const app = express();
     // Same routing order as production; preserves cup auto-progression and deletion guards.
@@ -23,6 +24,7 @@ async function getGateway() {
     app.use('/api/admin', cupOps.adminCupOpsRouter, matches.adminMatchControlRouter, consistency.adminConsistencyRouter, main.adminRouter);
     app.use('/api/telegram', telegram.telegramRouter);
     app.use('/api/season-ops', seasons.seasonOperationsRouter);
+    app.use('/api/teams', teams.teamsRouter);
     return app;
   })();
 }
@@ -52,7 +54,8 @@ export async function executeAiAdminRoute(plan: AdminPlan, ownerId: number, oper
   const spec = AI_ADMIN_ACTIONS[plan.action];
   const path = adminPlanPath(plan);
   const url = path.startsWith('@telegram') ? '/api/telegram' + path.slice('@telegram'.length)
-    : path.startsWith('@season') ? '/api/season-ops' + path.slice('@season'.length) : '/api/admin' + path;
+    : path.startsWith('@season') ? '/api/season-ops' + path.slice('@season'.length)
+    : path.startsWith('@teams') ? '/api/teams' + path.slice('@teams'.length) : '/api/admin' + path;
   const app = await getGateway();
   if (signal?.aborted) throw new Error('TIMEOUT_ABORTED');
   return new Promise((resolve, reject) => {
