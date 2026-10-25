@@ -59,6 +59,12 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
     }
   }
 
+  // Android uses same-origin HttpOnly cookies after explicit Telegram approval.
+  if(String(req.headers.cookie||'').includes('__Host-efluz_android_')&&!String(req.originalUrl||req.url||'').split('?')[0].startsWith('/api/auth/android/')&&!req.headers['x-telegram-init-data']&&!req.query.initData){
+    try{const {authenticateAndroidCookies}=await import('../services/androidAuth');const user=await authenticateAndroidCookies(req,res);if(user){req.user=user;return next();}}
+    catch(error:any){if(error.statusCode===403){res.status(403).json({error:error.message});return;}}
+  }
+
   // 2. Check Telegram InitData header or query
   const initData = (req.headers['x-telegram-init-data'] || req.query.initData) as string;
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
