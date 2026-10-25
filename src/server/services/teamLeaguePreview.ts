@@ -3,7 +3,7 @@ import {getFirestoreDb} from '../firebase/admin';
 import {TEAM_PREVIEW_OWNER,TEAM_DIRECTORY_LIMIT,TEAM_LEAGUE_MAX_TEAMS,TEAM_PLAYOFF_SIZES,confirmedTeamMembers} from '../../types/teamLeaguePreview';
 import type {PreviewTeam,TeamLeague,TeamLineup} from '../../types/teamLeaguePreview';
 import {makeTeamSchedule,teamFixtureScore,teamStandings,makeTeamPlayoffRound,teamFixtureWinner,teamFormatPreview} from '../../lib/teamLeagueEngine';
-import {TEAM_COLLECTION,LEAGUE_COLLECTION,validateTeamLogo as logo,verifyTeamPlayers,readTeamActor,teamActor,requireTeamGroup} from './teamAccess';
+import {TEAM_COLLECTION,LEAGUE_COLLECTION,validateTeamLogo as logo,verifyTeamPlayers,readTeamActor,teamActor,requireTeamGroup,assertExclusiveTeamRosters} from './teamAccess';
 export {TEAM_COLLECTION,LEAGUE_COLLECTION} from './teamAccess';
 const error=(message:string,statusCode=400)=>Object.assign(new Error(message),{statusCode});
 const text=(v:unknown,max=60)=>{if(typeof v!=='string'||!v.trim()||v.trim().length>max)throw error('Nom yoki matn noto‘g‘ri.');return v.trim();};
@@ -98,6 +98,7 @@ export async function actOnTeamLeague(ownerId:string,id:string,input:any){
   if(input.action==='START'){
    if(l.status!=='DRAFT')throw error('Turnir allaqachon boshlangan.',409);
    const docs=await Promise.all(l.teamIds.map(tid=>tx.get(db.collection(TEAM_COLLECTION).doc(tid))));
+   if(l.membershipRequired)await assertExclusiveTeamRosters(tx,docs.map(doc=>owned(doc.data() as PreviewTeam|undefined,ownerId)));
    for(const doc of docs){const t=owned(doc.data() as PreviewTeam|undefined,ownerId);if(l.membershipRequired&&preparedTeams.find(p=>p.id===t.id)?.version!==t.version)throw error('Team tarkibi yangilangan. Qayta boshlang.',409);const eligible=l.membershipRequired?confirmedTeamMembers(t):t.members;if(eligible.length<l.starterCount)throw error(`${t.name}: o‘yinchi yetmaydi.`);l.teams[t.id]={id:t.id,name:t.name,members:eligible,captainMemberId:t.captainMemberId};}
    l.fixtures=l.format==='PLAYOFF'?makeTeamPlayoffRound(l.id,shuffled(l.teamIds),1):makeTeamSchedule(l.id,l.teamIds,l.rounds);l.totalRounds=teamFormatPreview(l.teamIds.length,l.format,l.rounds,l.qualifiers??2).rounds;l.currentRound=1;l.status='ACTIVE';
   }else if(input.action==='CANCEL'){

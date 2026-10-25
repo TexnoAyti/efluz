@@ -38,3 +38,31 @@ export async function validateTeamLogo(value:unknown){
  if(bytes.length<24||bytes.length>60000||bytes.subarray(0,8).toString('hex')!=='89504e470d0a1a0a'||bytes.readUInt32BE(16)>512||bytes.readUInt32BE(20)>512)throw teamError('Logo 512×512 va 60 KB dan oshmasin.');
  try{const {loadImage}=await import('@napi-rs/canvas');await loadImage(bytes);}catch{throw teamError('Logo rasmini o‘qib bo‘lmadi.');}return value;
 }
+
+// Read the roster itself so pre-index teams are covered too. Call inside the
+// membership transaction; the per-account document serializes cross-team joins.
+export async function assertSingleTeamMembership(tx:any,userId:string,teamId:string){
+ const rows=await tx.get(getFirestoreDb().collection(TEAM_COLLECTION));
+ const other=rows.docs.find((row:any)=>row.id!==teamId&&(row.data() as PreviewTeam).members.some(m=>m.verified&&m.userId===userId));
+ if(other)throw teamError('Bu o‘yinchi boshqa team tarkibida. Avval hozirgi team tarkibidan chiqarilishi kerak.',409,'TEAM_MEMBER_ALREADY_ASSIGNED');
+}
+export async function prepareSingleTeamMembership(tx:any,userId:string,teamId:string){
+ const ref=getFirestoreDb().collection('team_membership_claims').doc(userId);
+ await tx.get(ref);
+ await assertSingleTeamMembership(tx,userId,teamId);
+ // This is a concurrency guard, not a cached source of membership truth.
+ return ()=>tx.set(ref,{userId,teamId,updatedAt:new Date().toISOString()});
+}
+
+export async function assertExclusiveTeamRosters(tx:any,teams:PreviewTeam[]){
+ const rows=await tx.get(getFirestoreDb().collection(TEAM_COLLECTION));
+ const memberships=new Map<string,Set<string>>();
+ for(const row of rows.docs)for(const member of (row.data() as PreviewTeam).members){
+  if(!member.verified||!member.userId)continue;
+  const ids=memberships.get(member.userId)||new Set<string>();ids.add(row.id);memberships.set(member.userId,ids);
+ }
+ for(const team of teams)for(const member of team.members){
+  if(member.verified&&member.userId&&[...(memberships.get(member.userId)||[])].some(id=>id!==team.id))
+   throw teamError('Bir o‘yinchi bir nechta team tarkibida. Turnirni boshlashdan oldin tarkiblarni to‘g‘rilang.',409,'TEAM_MEMBER_ALREADY_ASSIGNED');
+ }
+}

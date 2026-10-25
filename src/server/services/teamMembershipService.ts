@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import {getFirestoreDb} from '../firebase/admin';
 import {TEAM_PREVIEW_OWNER,TEAM_DIRECTORY_LIMIT,TEAM_LEAGUE_MAX_TEAMS,canSeeTeamPreview,type PreviewTeam,type TeamInvitation,type TeamTicketAccount} from '../../types/teamLeaguePreview';
-import {TEAM_COLLECTION,LEAGUE_COLLECTION,teamError,teamId,teamText,readTeamActor,teamActor,assertTeamManager,requireTeamGroup,teamGroupInfo,validateTeamLogo} from './teamAccess';
+import {TEAM_COLLECTION,LEAGUE_COLLECTION,teamError,teamId,teamText,readTeamActor,teamActor,assertTeamManager,requireTeamGroup,teamGroupInfo,validateTeamLogo,assertSingleTeamMembership,prepareSingleTeamMembership} from './teamAccess';
 import {resolveAdminUserReference} from './adminUserDirectory';
 const TICKETS='team_creation_tickets',LEDGER='team_ticket_transactions',INVITES='team_membership_invitations',RECEIPTS='team_membership_receipts';
 const hash=(value:string)=>createHash('sha256').update(value).digest('hex');
@@ -43,13 +43,14 @@ export async function createMembershipTeam(actorId:string,body:any){
   const old=(await tx.get(receipt)).data(),existing=(await tx.get(ref)).data() as PreviewTeam|undefined;
   const current=account(actorId,(await tx.get(ticketRef)).data() as TeamTicketAccount|undefined);
   if(old){if(old.digest!==digest||!existing)throw teamError('Bu so‘rov kodi boshqa team uchun ishlatilgan.',409);return existing;}
+  const claimMembership=await prepareSingleTeamMembership(tx,actorId,id);
   const teams=await tx.get(db.collection(TEAM_COLLECTION).where('ownerId','==',owner.id).limit(TEAM_DIRECTORY_LIMIT+1));
   if(teams.size>=TEAM_DIRECTORY_LIMIT)throw teamError('Jamoalar bo‘limi to‘lgan. Loyiha egasiga murojaat qiling.',409);
   const free=canSeeTeamPreview(creator.telegramId);if(!free&&current.balance<1)throw teamError('Team yaratish uchun 1 ta team ticketi kerak. Loyiha egasidan ticket oling.',402,'TEAM_TICKET_REQUIRED');
   const member={id:'tp_'+hash(actorId).slice(0,32),name:display(creator),userId:actorId,verified:true};
   const team:PreviewTeam={id,ownerId:owner.id,adminUserId:actorId,memberUserIds:[actorId],membershipRequired:true,name,logo,members:[member],captainMemberId:member.id,version:1,updatedAt:new Date().toISOString()};
   if(!free){tx.set(ticketRef,{...current,balance:current.balance-1,totalSpent:current.totalSpent+1,updatedAt:team.updatedAt});tx.set(db.collection(LEDGER).doc('tt_'+hash(actorId+':create:'+key).slice(0,40)),{userId:actorId,actorId,kind:'SPEND',amount:1,teamId:id,createdAt:team.updatedAt});}
-  tx.set(ref,team);tx.set(receipt,{digest,teamId:id});return team;
+  claimMembership();tx.set(ref,team);tx.set(receipt,{digest,teamId:id});return team;
  });
 }
 export async function getTeamMembershipWorkspace(actorId:string){
@@ -78,6 +79,7 @@ export async function inviteTeamMember(actorId:string,id:string,body:any){
   const prior=(await tx.get(invRef)).data() as TeamInvitation|undefined;
   if(prior){if(prior.inviteeId!==target.id||prior.legacyMemberId!==(body.legacyMemberId||undefined))throw teamError('Bu so‘rov kodi boshqa taklif uchun ishlatilgan.',409);return prior;}
   if(team.members.some(m=>m.userId===target.id&&m.verified))throw teamError('Bu o‘yinchi team tarkibida bor.',409);
+  await assertSingleTeamMembership(tx,target.id,id);
   const legacy=body.legacyMemberId?team.members.find(m=>m.id===body.legacyMemberId&&!m.verified&&!m.userId):undefined;
   if(body.legacyMemberId&&!legacy)throw teamError('Eski tarkib joyi band yoki o‘zgargan.',409);
   if(!legacy&&team.members.length>=30)throw teamError('Tarkibda ko‘pi bilan 30 o‘yinchi bo‘lsin.',409);
@@ -103,7 +105,7 @@ export async function respondTeamInvitation(actorId:string,id:string,accept:bool
   if(inv.status==='ACCEPTED'||inv.status==='REJECTED'){if((inv.status==='ACCEPTED')!==accept)throw teamError('Taklifga avval boshqa javob berilgan.',409);return inv;}
   if(inv.status!=='PENDING'||Date.parse(inv.expiresAt)<=Date.now())throw teamError('Taklif bekor qilingan yoki muddati tugagan.',409,'TEAM_INVITATION_CLOSED');
   const teamRef=db.collection(TEAM_COLLECTION).doc(inv.teamId),team=(await tx.get(teamRef)).data() as PreviewTeam|undefined;if(!team)throw teamError('Team topilmadi.',404);
-  if(accept){await activeRosterLock(tx,team);
+  if(accept){await activeRosterLock(tx,team);const claimMembership=await prepareSingleTeamMembership(tx,actorId,team.id);
    if(!team.members.some(m=>m.userId===actorId&&m.verified)){
     const index=inv.legacyMemberId?team.members.findIndex(m=>m.id===inv.legacyMemberId&&!m.verified&&!m.userId):-1;
     if(inv.legacyMemberId&&index<0)throw teamError('Eski tarkib joyi endi mavjud emas. Yangi taklif so‘rang.',409);
@@ -111,6 +113,7 @@ export async function respondTeamInvitation(actorId:string,id:string,accept:bool
     const member={id:index>=0?team.members[index].id:'tp_'+hash(actorId).slice(0,32),name:display(user),userId:actorId,verified:true};if(index>=0)team.members[index]=member;else team.members.push(member);
     team.memberUserIds=[...new Set(team.members.filter(m=>m.verified&&m.userId).map(m=>m.userId!))];team.version++;team.updatedAt=new Date().toISOString();tx.set(teamRef,team);
    }
+   claimMembership();
   }
   const updated={...inv,status:accept?'ACCEPTED' as const:'REJECTED' as const,respondedAt:new Date().toISOString(),noticePending:false};tx.set(ref,updated);return updated;
  });
