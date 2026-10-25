@@ -66,3 +66,9 @@ export async function assertExclusiveTeamRosters(tx:any,teams:PreviewTeam[]){
    throw teamError('Bir o‘yinchi bir nechta team tarkibida. Turnirni boshlashdan oldin tarkiblarni to‘g‘rilang.',409,'TEAM_MEMBER_ALREADY_ASSIGNED');
  }
 }
+
+export function assertTeamLeagueManager(league:import('../../types/teamLeaguePreview').TeamLeague|undefined,user:User):asserts league is import('../../types/teamLeaguePreview').TeamLeague{
+ if(!league)throw teamError('Turnir topilmadi.',404);
+ if(!(canSeeTeamPreview(user.telegramId)&&league.ownerId===user.id)&&league.adminUserId!==user.id)throw teamError('Bu turnirni faqat tayinlangan admin yoki loyiha egasi boshqaradi.',403);
+}
+export const teamLeagueAdminName=(user:User)=>[user.firstName,user.lastName].filter(Boolean).join(' ').trim().slice(0,100)||user.username||user.id;

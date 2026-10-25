@@ -4,7 +4,7 @@ import {Router,type RequestHandler} from 'express';
 import {requireAuth} from '../middleware/authMiddleware';
 import {getAuthoritativeUserForAuthorization} from '../firebase/firestoreStore';
 import {canSeeTeamPreview} from '../../types/teamLeaguePreview';
-import {getTeamPreview,getPreviewLeague,getPreviewTeamProfile,savePreviewTeam,savePreviewLeague,actOnTeamLeague,getPublishedTeams,getPublishedTeamLeague,getPublishedTeamProfile,deletePreviewTeam,deletePreviewLeague} from '../services/teamLeaguePreview';
+import {getManagedLeagueTeams,assignTeamLeagueAdministrator,getTeamPreview,getPreviewLeague,getPreviewTeamProfile,savePreviewTeam,savePreviewLeague,actOnTeamLeague,getPublishedTeams,getPublishedTeamLeague,getPublishedTeamProfile,deletePreviewTeam,deletePreviewLeague} from '../services/teamLeaguePreview';
 import {getTeamMembershipWorkspace,createMembershipTeam,getManagedTeam,updateMembershipTeam,inviteTeamMember,respondTeamInvitation,cancelTeamInvitation,getTeamTicketBalance,changeTeamTickets,resolveTeamUser,processTeamInvitationNotices} from '../services/teamMembershipService';
 export const requireTeamPreviewOwner:RequestHandler=async(req,res,next)=>{
  if(!canSeeTeamPreview(req.user?.telegramId)){res.status(403).json({ok:false,error:'TEAMS boshqaruvi faqat loyiha egasi uchun.'});return;}
@@ -14,7 +14,7 @@ export const requireTeamPreviewOwner:RequestHandler=async(req,res,next)=>{
 };
 export const teamLeaguePreviewRouter=Router();
 teamLeaguePreviewRouter.use(requireAuth);
-const run=(handler:(req:any)=>Promise<unknown>):RequestHandler=>async(req,res)=>{try{res.setHeader('Cache-Control','no-store');if(req.query.teamSnapshot)await teamActor(req.user.id);const cached=req.method==='GET'?cachedTeamTransport(req.user.id,req.path,req.query):undefined;const data=cached??await handler(req);if(req.method!=='GET')clearTeamTransportSnapshots();res.json({ok:true,data:paginateTeamTransport(req.user.id,req.path,req.method==='GET'?req.query:{},data)});}catch(e:any){res.status(e.statusCode||500).json({ok:false,error:e.statusCode?e.message:'So‘rov bajarilmadi. Qayta yuklab tekshiring.',code:e.code,groupUrl:e.groupUrl,groupName:e.groupName});}};
+const run=(handler:(req:any)=>Promise<unknown>):RequestHandler=>async(req,res)=>{try{res.setHeader('Cache-Control','no-store');if(req.query.teamSnapshot)await teamActor(req.user.id);const cached=req.method==='GET'&&!req.path.startsWith('/managed/')?cachedTeamTransport(req.user.id,req.path,req.query):undefined;const data=cached??await handler(req);if(req.method!=='GET')clearTeamTransportSnapshots();res.json({ok:true,data:paginateTeamTransport(req.user.id,req.path,req.method==='GET'?req.query:{},data)});}catch(e:any){res.status(e.statusCode||500).json({ok:false,error:e.statusCode?e.message:'So‘rov bajarilmadi. Qayta yuklab tekshiring.',code:e.code,groupUrl:e.groupUrl,groupName:e.groupName});}};
 teamLeaguePreviewRouter.get('/published',run(()=>getPublishedTeams()));
 teamLeaguePreviewRouter.get('/published/leagues/:id',run(req=>getPublishedTeamLeague(req.params.id)));
 teamLeaguePreviewRouter.get('/published/teams/:id',run(req=>getPublishedTeamProfile(req.params.id,req.user.id)));
@@ -25,7 +25,13 @@ teamLeaguePreviewRouter.post('/membership/teams/:id/update',run(req=>updateMembe
 teamLeaguePreviewRouter.post('/membership/teams/:id/invitations',run(async req=>{const invitation=await inviteTeamMember(req.user.id,req.params.id,req.body);try{await processTeamInvitationNotices(1,undefined,invitation.id);}catch{console.warn('[TEAM_INVITATION_NOTICE_DEFERRED]');}return invitation;}));
 teamLeaguePreviewRouter.post('/membership/invitations/:id/respond',run(req=>respondTeamInvitation(req.user.id,req.params.id,req.body.accept)));
 teamLeaguePreviewRouter.post('/membership/invitations/:id/cancel',run(req=>cancelTeamInvitation(req.user.id,req.params.id)));
+teamLeaguePreviewRouter.get('/managed/leagues/:id',run(req=>getPreviewLeague(req.user.id,req.params.id)));
+teamLeaguePreviewRouter.get('/managed/leagues/:id/teams',run(req=>getManagedLeagueTeams(req.user.id,req.params.id)));
+teamLeaguePreviewRouter.post('/managed/leagues/:id/actions',run(req=>actOnTeamLeague(req.user.id,req.params.id,req.body)));
+teamLeaguePreviewRouter.post('/managed/leagues/:id/update',run(req=>savePreviewLeague(req.user.id,{...req.body,id:req.params.id})));
 teamLeaguePreviewRouter.use(requireTeamPreviewOwner);
+teamLeaguePreviewRouter.get('/administrators/resolve',run(async req=>{const user=await resolveTeamUser(req.query.reference);return {id:user.id,name:[user.firstName,user.lastName].filter(Boolean).join(' ')||user.username,username:user.username};}));
+teamLeaguePreviewRouter.post('/leagues/:id/administrator',run(req=>assignTeamLeagueAdministrator(req.user.id,req.params.id,req.body)));
 teamLeaguePreviewRouter.get('/tickets/balance',run(async req=>getTeamTicketBalance(req.user.id,req.query.reference?(await resolveTeamUser(req.query.reference)).id:req.user.id)));
 teamLeaguePreviewRouter.post('/tickets/grant',run(req=>changeTeamTickets(req.user.id,req.body,'GRANT')));
 teamLeaguePreviewRouter.post('/tickets/revoke',run(req=>changeTeamTickets(req.user.id,req.body,'REVOKE')));

@@ -1,3 +1,4 @@
+import {verifyTeamTournamentAdmin} from './teamTournamentAdminHttpAudit';
 import {verifyAndroidAuth} from './androidAuthHttpAudit';
 import {verifyTeamMembership} from './teamMembershipHttpAudit';
 import {verifyBulkLeagueResultsSql} from './bulkLeagueResultsSqlAudit';
@@ -237,6 +238,7 @@ try {
   await verifyTeamLeaguePreview(()=>{failTeamPreviewCommit=true;});
   await db.collection('runtime_probes').doc('team-membership-fault').set({existing:true});
   await verifyTeamMembership(()=>{failTeamMembershipCommit=true;});
+  await verifyTeamTournamentAdmin(()=>{failTeamPreviewCommit=true;});
   await verifyAndroidAuth(()=>{failAndroidLoginCommit=true;});
   await verifyPostgresClubClaimHttp(() => { failClaimCommit=true; },()=>{failClubBanCommit=true;});
   await verifyPostgresMatchdayNotifications(() => { failNotificationCommit=true; }, telegramDeliveries);
