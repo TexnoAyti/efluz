@@ -1,3 +1,4 @@
+import {respondTeamTelegramInvitation} from '../services/teamMembershipService';
 import { clubMemberTagsStatus } from '../services/telegramClubMemberTags';
 import { randomUUID } from 'node:crypto';
 import { Router, Request, Response } from 'express';
@@ -98,6 +99,11 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
     const topicResult = await handleTopicResultUpdate(update);
     if (topicResult.handled) {
       response = {ok:true,handled:'topic_result',result:topicResult.result};
+    } else if(typeof update.callback_query?.data==='string'&&/^team_invite:(accept|reject):ti_[a-f0-9]{32}$/.test(update.callback_query.data)){
+      const callback=update.callback_query,[,choice,id]=callback.data.split(':');
+      if(!Number.isSafeInteger(callback.from?.id))response={ok:true,ignored:'invalid_team_invitation_actor'};
+      else try{const result=await respondTeamTelegramInvitation(callback.from.id,id,choice==='accept');await answerTelegramCallback(callback.id,result.status==='ACCEPTED'?'Teamga qo‘shildingiz.':'Taklif rad etildi.');response={ok:true,handled:'team_invitation'};}
+      catch(error:any){await answerTelegramCallback(callback.id,error.statusCode?error.message:'Javob saqlanmadi. Qayta urinib ko‘ring.',true);if(error.groupUrl)await sendTelegramMessage(callback.from.id,error.message,{reply_markup:{inline_keyboard:[[{text:'Guruhga qo‘shilish',url:error.groupUrl}],[{text:'A’zolikni qayta tekshirish',callback_data:callback.data}]]}});response={ok:true,handled:'team_invitation',accepted:false};}
     } else if (typeof update.callback_query?.data === 'string' && /^ai:(confirm|cancel):[a-f0-9]{24}$/.test(update.callback_query.data)) {
       const callback = update.callback_query;
       const message = callback.message;

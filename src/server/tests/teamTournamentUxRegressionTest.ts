@@ -5,7 +5,7 @@ import React from 'react';
 import {renderToStaticMarkup as render} from 'react-dom/server';
 import {TeamLeagueDetail} from '../../components/teamLeaguePreview/TeamLeagueDetail';
 import {TeamTournamentWizard} from '../../components/teamLeaguePreview/TeamTournamentWizard';
-import {makeTeamSchedule,teamFormatPreview,teamStandings,teamPlayerStats} from '../../lib/teamLeagueEngine';
+import {makeTeamPlayoffRound,makeTeamSchedule,teamFormatPreview,teamStandings,teamPlayerStats} from '../../lib/teamLeagueEngine';
 import type {PreviewTeam,TeamLeague} from '../../types/teamLeaguePreview';
 const teams:PreviewTeam[]=Array.from({length:4},(_,i)=>({id:`tp_uxteam0${i}`,name:['Tashkent United','Samarqand Stars','Buxoro Legends','Farg‘ona City'][i],ownerId:'test',logo:'',members:Array.from({length:4},(_,m)=>({id:`tp_player${i}00${m}`,name:`Player ${i}-${m}`})),captainMemberId:`tp_player${i}000`,version:1,updatedAt:''}));
 const base:TeamLeague={id:'tp_uxleague',name:'Team Cup',description:'Tarkiblar va turlar',format:'LEAGUE_AND_PLAYOFF',qualifiers:2,ownerId:'test',teamIds:teams.map(t=>t.id),starterCount:3,rounds:1,status:'ACTIVE',currentRound:1,totalRounds:4,fixtures:makeTeamSchedule('tp_uxleague',teams.map(t=>t.id),1),teams:Object.fromEntries(teams.map(t=>[t.id,t])),version:1,updatedAt:'',audit:[]};
@@ -23,7 +23,7 @@ assert.ok(view(base,'standings').includes('Birinchi 2 team pley-offga chiqadi'))
 for(const step of [1,2,3] as const){const html=render(React.createElement(TeamTournamentWizard,{league:{...base,status:'DRAFT'},teams,busy:false,save:()=>{},initialStep:step}));assert.ok(html.includes(`${step}/3`));if(step===1)for(const label of ['Liga','Pley-off','Liga + pley-off'])assert.ok(html.includes(label));if(step===2)assert.ok(html.includes('Samarqand Stars'));if(step===3){assert.ok(html.includes('7'));assert.ok(html.includes('21'));assert.ok(html.includes('4'));assert.ok(html.includes('O‘zgarishlarni saqlash'));}}
 
 const shortRoster=render(React.createElement(TeamLeagueDetail,{...props,teams:teams.map((t,i)=>i===0?{...t,members:t.members.slice(0,1)}:t),league:{...base,status:'DRAFT'}}));
-assert.ok(shortRoster.includes('Tarkib yetarli emas:'));assert.match(shortRoster,/disabled=""[^>]*>Turnirni boshlash/,'A draft with an undersized roster cannot be started from the client');
+assert.ok(shortRoster.includes('Tarkib yoki sardor yetarli emas:'));assert.match(shortRoster,/disabled=""[^>]*>Turnirni boshlash/,'A draft with an undersized roster cannot be started from the client');
 const homeTeam=teams.find(t=>t.id===fixture.homeTeamId)!,awayTeam=teams.find(t=>t.id===fixture.awayTeamId)!;
 const line=(team:PreviewTeam)=>({starters:team.members.slice(0,3).map(m=>m.id),reserves:[team.members[3].id]});
 const homeReady={...fixture,homeLineup:line(homeTeam)};
@@ -80,3 +80,5 @@ assert.equal(direct.includes('>Turnirlar</button>'),false,'Direct-open public le
 console.log('PASS direct-open team leagues, remembered/deep-link selection, carousel controls, swipe boundaries and vertical-scroll protection');
 
 assert.equal(selectedTeamLeague(choices,'','tp_active02'),'tp_active02','Refresh preserves the already open league when another league is added');
+
+for(const n of [32,64]){let seeds=Array.from({length:n},(_,i)=>'tp_seed_'+i),round=1,matches=0;while(seeds.length>1){const fixtures=makeTeamPlayoffRound('tp_largeplayoff',seeds,round++);matches+=fixtures.length;assert.equal(new Set(fixtures.flatMap(f=>[f.homeTeamId,f.awayTeamId])).size,seeds.length);seeds=fixtures.map(f=>f.homeTeamId);}assert.equal(matches,n-1);assert.equal(round-1,Math.log2(n));}

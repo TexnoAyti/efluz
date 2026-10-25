@@ -21,6 +21,8 @@ const assistant=await call('custom_assistant',{assistantUserId:target,expectedUs
 assert.equal((await call('custom_detail',{},tournament.id)).status,200);
 for(const [id,name]of[['tp_aiteamone','First Team'],['tp_aiteamtwo','Second Team']])assert.equal((await call('team_save',{id,name,members:[{id:'tp_member_'+id,name:'Captain'}],captainMemberId:'tp_member_'+id,version:0})).status,200);
 const league=await call('team_league_save',{id:'tp_aiteamleague',name:'AI League',teamIds:['tp_aiteamone','tp_aiteamtwo'],starterCount:1,rounds:1,version:0,format:'LEAGUE'});assert.equal(league.status,200,JSON.stringify(league));
+assert.equal((await call('team_league_action',{action:'START',version:1},'tp_aiteamleague')).status,409,'New tournaments require confirmed account-linked captains');
+for(const [id,userId]of[['tp_aiteamone',target],['tp_aiteamtwo',owner]]){const ref=db.collection('team_league_preview_teams').doc(id),team=(await ref.get()).data()!;await ref.update({members:team.members.map((m:any)=>({...m,userId,verified:true})),memberUserIds:[userId]});}
 assert.equal((await call('team_league_action',{action:'START',version:1},'tp_aiteamleague')).status,200);
 assert.equal((await call('team_league_action',{action:'START',version:1},'tp_aiteamleague')).status,409,'Team stale version cannot restart the draw');
 const notifications=await call('notification_messages');assert.equal(notifications.status,200,JSON.stringify(notifications));

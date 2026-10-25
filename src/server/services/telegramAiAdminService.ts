@@ -21,7 +21,7 @@ import { parseAiPlanRevision, reviseAiAdminPlan, AI_ADMIN_PLAN_REPLACE_LUA } fro
 import { resolveAiClubs, normalizeAiEntity } from './telegramAiEntities';
 import { createAiSnapshotReader } from './telegramAiSnapshotReader';
 import { getAdminUserDirectory } from './adminUserDirectory';
-import { assertSingleNaturalAdminRequest } from './telegramAiAdminLanguage';
+import { assertSingleNaturalAdminRequest,detectNaturalAdminAction } from './telegramAiAdminLanguage';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { AI_ADMIN_ACTIONS, adminPlanSchema, type AdminPlan } from './telegramAiAdminCatalog';
 import { getAiRedisClient, withinAiDeadline } from './telegramAiDeadline';
@@ -84,6 +84,7 @@ async function planBulkLeagueRequest(request: string, signal: AbortSignal): Prom
 export function describeAiAdminPlan(plan: AdminPlan, label = ''): string {
   const b = plan.body;
   const target = label || (b.expectedUsername?'@'+b.expectedUsername:plan.targetId||'');
+  if(plan.action.startsWith('team_ticket_'))return `${b.expectedUsername?'@'+b.expectedUsername:b.targetUserId||b.reference}: ${plan.action==='team_ticket_check'?'team ticket balansini tekshirish':`${b.amount} ta team ticketini ${plan.action==='team_ticket_grant'?'berish':'qaytarib olish'}`}.`;
   if(plan.action==='team_save')return `${b.name}: teamni saqlash. Tarkib: ${(b.members as any[])?.map(m=>m.name).join(', ')}. Sardor: ${(b.members as any[])?.find(m=>m.id===b.captainMemberId)?.name||b.captainMemberId}.`;
   if(plan.action==='team_league_save')return `${b.name}: ${(b.teamIds as any[])?.length||0} ta team, ${b.starterCount} asosiy o‘yinchi, ${b.rounds} davra, ${b.format||'LEAGUE'} formatini saqlash.`;
   if(plan.action==='discipline_issue')return `${target}: ${b.color==='RED'?'qizil kartochka — keyingi bitta EFL o‘yinidan chetlatish':'sariq kartochka — ogohlantirish'}.\nSabab: ${b.note}\n${b.color==='RED'?(b.expectedSuspensionFixtureId?'Chetlatish o‘yini: '+b.expectedSuspensionFixtureId:'Jadvalda mos o‘yin yo‘q; chetlatish keyingi mos o‘yinga bog‘lanadi.'):'Hisob kiritish bloklanmaydi.'}`;
@@ -328,6 +329,9 @@ async function handleAiAdminCommandInternal(payload: TelegramAiMessagePayload, s
 • @username faqat La Liga uchun admin qil
 • @username ni blokla / blokdan chiqar
 • @username ga premium ber
+• @username team ochish uchun 1 ticket ber
+• @username team ticketini tekshir
+• @username dan 1 team ticketini qaytarib ol
 • La Liga jadvalini qayta hisobla
 • APL ligasini pauzaga qo‘y / avtomatik rejimga qaytar
 • @username ga haqorat uchun sariq kartochka ber
@@ -423,6 +427,7 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
       : testPlanner ? await planAiAdminAction(argument, facts, signal, payload)
       : missingOwnersReadPlan(argument)
         || await expandedNativePlan(argument,payload,signal)
+        || (detectNaturalAdminAction(argument)?.startsWith('team_ticket_')?await parseNaturalAdminPlan(argument,signal):null)
         || await platformSemanticPlan(argument,payload,signal,facts)
         || await planReplyReminder(argument,scope.replyReminderSelection,createAiTournamentReader(signal).read)
         || await planBulkLeagueRequest(argument,signal)
@@ -543,6 +548,7 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
 }
 
 function formatNaturalAdminRead(action: string, data: any): string {
+  if(action==='team_ticket_check'){const account=data?.data;return account&&Number.isSafeInteger(account.balance)?`${account.userId} · Team ticketlari\nBalans: ${account.balance}\nBerilgan: ${account.totalGranted} · Sarflangan: ${account.totalSpent} · Qaytarilgan: ${account.totalRevoked}`:'Team ticketi balansi qaytmadi. Qayta tekshiring.';}
   if(action==='group_missing_owners')return formatMissingGroupOwners(data);
   if(action==='discipline_view'&&Array.isArray(data?.cards)) {
     if(!data.cards.length)return 'Bu mavsumda kartochkalar yo‘q.';

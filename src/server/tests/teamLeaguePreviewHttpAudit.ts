@@ -9,12 +9,13 @@ import {teamLeaguePreviewRouter} from '../routes/teamLeaguePreview.routes';
 import {makeTeamSchedule,teamFixtureScore,teamStandings,teamFixtureWinner,teamPlayerStats} from '../../lib/teamLeagueEngine';
 import type {TeamLeague} from '../../types/teamLeaguePreview';
 export async function verifyTeamLeaguePreview(failNextCommit:()=>void){
+ const savedBotToken=process.env.TELEGRAM_BOT_TOKEN;process.env.TELEGRAM_BOT_TOKEN='isolated-claim-test';
  for(let n=2;n<=16;n++)for(const legs of [1,2] as const){const ids=Array.from({length:n},(_,i)=>String(i));const schedule=makeTeamSchedule('test',ids,legs);assert.equal(schedule.length,n*(n-1)/2*legs);const pairs=new Map<string,number>();for(const f of schedule){assert.notEqual(f.homeTeamId,f.awayTeamId);const key=[f.homeTeamId,f.awayTeamId].sort().join(':');pairs.set(key,(pairs.get(key)||0)+1);}assert.ok([...pairs.values()].every(v=>v===legs));for(const r of new Set(schedule.map(f=>f.round))){const teams=schedule.filter(f=>f.round===r).flatMap(f=>[f.homeTeamId,f.awayTeamId]);assert.equal(new Set(teams).size,teams.length);}if(legs===2)for(const f of schedule)assert.equal(schedule.filter(g=>g.homeTeamId===f.awayTeamId&&g.awayTeamId===f.homeTeamId).length,1);}
  process.env.SESSION_SECRET='isolated-team-preview-secret-32bytes';const db=getFirestoreDb();
  const owner={id:'team-owner',telegramId:'5209126900',username:'owner',firstName:'Owner',lastName:'',photoUrl:'',isAdmin:true,isSuspended:false,createdAt:'',updatedAt:''},other={...owner,id:'team-other-admin',telegramId:'1234567'};
  await db.collection('users').doc(owner.id).set(owner);await db.collection('users').doc(other.id).set(other);
  const app=express();app.use(express.json({limit:'256kb'}));app.use(authMiddleware);app.use('/api/team-leagues-preview',teamLeaguePreviewRouter);const server=app.listen(0,'127.0.0.1');await once(server,'listening');const base=`http://127.0.0.1:${(server.address() as any).port}/api/team-leagues-preview`;
- const call=async(path='',body?:unknown,actor:any=owner)=>{const r=await fetch(base+path,{method:body===undefined?'GET':'POST',headers:{'content-type':'application/json',...(actor?{authorization:`Bearer ${createSessionToken(actor)}`}:{})},body:body===undefined?undefined:JSON.stringify(body)});return {status:r.status,cache:r.headers.get('cache-control'),body:await r.json() as any};};
+ const call=async(path='',body?:unknown,actor:any=owner)=>{const r=await fetch(base+path,{method:body===undefined?'GET':'POST',headers:{'content-type':'application/json',...(actor?{authorization:`Bearer ${createSessionToken(actor)}`}:{})},body:body===undefined?undefined:JSON.stringify(body)});const result=await r.json() as any;if(path==='/leagues'&&r.status===200){/* This suite exercises pre-membership tournaments; the new membership HTTP audit covers new tournaments. */await db.collection('team_league_preview_leagues').doc(result.data.id).update({membershipRequired:false});result.data.membershipRequired=false;}return {status:r.status,cache:r.headers.get('cache-control'),body:result};};
  try{
   assert.equal((await call('',undefined,null)).status,401);assert.equal((await call('',undefined,other)).status,403);assert.equal((await call('',undefined,{...other,telegramId:owner.telegramId})).status,403);
   for(const path of ['/teams','/leagues','/leagues/tp_testleague/actions'])assert.equal((await call(path,{},other)).status,403);
@@ -97,5 +98,5 @@ export async function verifyTeamLeaguePreview(failNextCommit:()=>void){
    const stats=teamPlayerStats(league);assert.equal(stats.reduce((n,p)=>n+p.played,0),league.fixtures.reduce((n,f)=>n+f.bouts.length*2,0));
   }
   console.log('PASS owner-only team preview HTTP, PNG/roster validation, all round-robin sizes, native transaction rollback, concurrent result exclusion, captain lineups, reserves, random bijections, rounds, knockout ties/finals, league qualification, locked prior stages, player statistics and score corrections');
- }finally{await new Promise<void>((resolve,reject)=>server.close(e=>e?reject(e):resolve()));}
+ }finally{if(savedBotToken===undefined)delete process.env.TELEGRAM_BOT_TOKEN;else process.env.TELEGRAM_BOT_TOKEN=savedBotToken;await new Promise<void>((resolve,reject)=>server.close(e=>e?reject(e):resolve()));}
 }

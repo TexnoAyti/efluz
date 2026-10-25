@@ -1,3 +1,4 @@
+import {processTeamInvitationNotices} from './services/teamMembershipService';
 import { scheduleClubMemberTags } from './services/telegramClubMemberTags';
 import { disciplineRouter } from './routes/discipline.routes';
 import {scheduleUNotices,prepareUNotifications} from './services/uzeflifeNotifications';
@@ -160,7 +161,7 @@ export function createApp() {
       await ensureDbReady();
       if (hop === 0) { if (process.env.VERCEL === '1') scheduleAiDailyReport(); else await scheduleAiDailyReport(); }
       if (process.env.VERCEL === '1') { scheduleMutationReconciliation(); scheduleUNotices(hop); scheduleNotificationQueueDrain(hop); res.status(202).json({ accepted: true }); }
-      else { await reconcileDurableMutations(); await prepareUNotifications().catch(()=>console.warn('[UZEFLIFE_OUTBOX_DEFERRED]')); await drainNotificationQueue({ hop }); res.json({ drained: true }); }
+      else { await reconcileDurableMutations(); await prepareUNotifications().catch(()=>console.warn('[UZEFLIFE_OUTBOX_DEFERRED]')); await processTeamInvitationNotices().catch(()=>console.warn('[TEAM_INVITATION_OUTBOX_DEFERRED]')); await drainNotificationQueue({ hop }); res.json({ drained: true }); }
     } catch { res.status(503).json({ error: 'NOTIFICATION_WORKER_UNAVAILABLE' }); }
   });
 

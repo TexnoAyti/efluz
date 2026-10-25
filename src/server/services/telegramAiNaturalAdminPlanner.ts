@@ -85,6 +85,21 @@ export async function planNaturalAdminRequest(text: string, deps: NaturalPlanner
   }
   // Explicitly contradictory or multiple writes must not silently become the first action.
   assertSingleNaturalAdminRequest(text);
+  if(action.startsWith('team_ticket_')){
+    const raw=maskUser(text).replace(/\buser-\d+\b/g,' '),numeric=[...raw.matchAll(/\b\d{5,20}\b/g)].map(m=>m[0]);
+    let id:string;
+    if(!/@\s*[A-Za-z0-9_]+|\buser-\d+\b/.test(text)&&numeric.length===1){const users=await deps.users(),matches=users.filter(u=>String(u.telegramId)===numeric[0]);if(matches.length!==1)clarify('Telegram ID bo‘yicha bitta aniq akkaunt topilmadi. EFLUZ IDni yozing.');id=matches[0].id;}
+    else id=await userId(text,deps);
+    const expectedUsername=/@\s*([A-Za-z0-9_]+)/.exec(text)?.[1];
+    if(action==='team_ticket_check')return make(action,undefined,{targetUserId:id,reference:id,...(expectedUsername?{expectedUsername}:{})});
+    if(/[-−]\s*\d+/.test(raw.replace(/user-\d+/g,'')))clarify('Ticket soni musbat bo‘lsin.');
+    if(/\b\d+[.,]\d+\b/.test(q))clarify('Ticket soni butun bo‘lsin.');
+    const amounts=[...q.matchAll(/\b(\d{1,8})\s*(?:ta\s*)?(?:team\s*)?(?:ticket|chipta)|\b(\d{1,8})\s*ta(?:sini|sidan)?\b|\b(?:ticket|chipta)\w*\s+(\d{1,8})\b/g)].map(m=>Number(m[1]||m[2]||m[3]));
+    const words:Record<string,number>={bitta:1,bir:1,ikkita:2,ikki:2,uchta:3,uch:3,tortta:4,tort:4,beshta:5,besh:5};for(const match of q.matchAll(/\b(bitta|bir|ikkita|ikki|uchta|uch|tortta|tort|beshta|besh)\s*(?:team\s*)?(?:ticket|chipta)/g))amounts.push(words[match[1]]);
+    if(new Set(amounts).size>1)clarify('Bitta aniq ticket sonini yozing.');const amount=amounts[0]??1;
+    if(amount<1||amount>100)clarify('Ticket soni 1–100 oralig‘ida bo‘lsin.');
+    return make(action,undefined,{targetUserId:id,amount,...(expectedUsername?{expectedUsername}:{}),...(note?{note}:{})});
+  }
   if (['user_role','user_role_remove','user_suspend','user_unsuspend','user_delete','premium_grant','premium_revoke'].includes(action)) {
     const id = await userId(text, deps);
     const expectedUsername = /@\s*([A-Za-z0-9_]+)/.exec(text)?.[1];
