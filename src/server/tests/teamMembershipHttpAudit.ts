@@ -48,7 +48,7 @@ export async function verifyTeamMembership(failNextCommit:()=>void){
   const created=await Promise.all([call('/membership/teams',payload),call('/membership/teams',payload)]);assert.ok(created.every(r=>r.status===200),JSON.stringify(created));let team=created[0].body.data as PreviewTeam;
   assert.equal(created[1].body.data.id,team.id,'One team per repeated create request');assert.equal(team.adminUserId,creator.id);assert.equal(team.members[0].userId,creator.id);assert.equal(team.members[0].verified,true);assert.equal((await call('/membership')).body.data.tickets.balance,1);
   assert.equal((await call('/membership/teams',{...payload,name:'Changed payload'})).status,409);
-  const competingCreates=await Promise.all([call('/membership/teams',{...payload,requestId:'competing-create-one'}),call('/membership/teams',{...payload,requestId:'competing-create-two'})]);assert.deepEqual(competingCreates.map(r=>r.status).sort(),[200,402]);assert.equal((await call('/membership')).body.data.tickets.balance,0,'One remaining ticket cannot fund two concurrent creates');
+  const competingCreates=await Promise.all([call('/membership/teams',{...payload,requestId:'competing-create-one'}),call('/membership/teams',{...payload,requestId:'competing-create-two'})]);assert.deepEqual(competingCreates.map(r=>r.status).sort(),[409,409]);assert.ok(competingCreates.every(r=>r.body.code==='TEAM_MEMBER_ALREADY_ASSIGNED'));assert.equal((await call('/membership')).body.data.tickets.balance,1,'Existing membership blocks another team without spending tickets');
   assert.equal((await call('/membership/teams/'+team.id,undefined,other)).status,403);
   assert.equal((await call('/membership/teams/'+team.id,undefined,globalAdmin)).status,403);
   assert.equal((await call('/leagues',{id:'tp_unauthorizedleague'},creator)).status,403);
@@ -86,12 +86,35 @@ export async function verifyTeamMembership(failNextCommit:()=>void){
   team=(await call('/membership/teams/'+team.id)).body.data.team;assert.equal((await call(`/membership/teams/${team.id}/update`,{adminUserId:other.id,version:team.version})).status,403);assert.equal((await call(`/membership/teams/${team.id}/update`,{adminUserId:other.id,version:team.version},owner)).status,200);assert.equal((await call('/membership/teams/'+team.id)).status,403);const transferred=(await call('/membership/teams/'+team.id,undefined,other)).body.data.team;assert.equal((await call(`/membership/teams/${team.id}/update`,{adminUserId:creator.id,version:transferred.version},owner)).status,200);
   // Link a legacy slot while preserving its member ID and historical snapshot.
   const legacyId='tp_membershiplegacy',legacyMember='tp_membershipslot';await db.collection('team_league_preview_teams').doc(legacyId).set({id:legacyId,ownerId:owner.id,name:'Legacy team',logo:'',members:[{id:legacyMember,name:'Old manual name'}],captainMemberId:legacyMember,version:1,updatedAt:''});
+  assert.equal((await call(`/membership/teams/${legacyId}/invitations`,{targetUserId:other.id,requestId:'already-member-invite'},owner)).status,409);
+  team=(await call('/membership/teams/'+team.id)).body.data.team;
+  assert.equal((await call(`/membership/teams/${team.id}/update`,{version:team.version,removeMemberId:team.members.find(m=>m.userId===other.id)!.id})).status,200,'Removing a member permits transfer');
+  // Different team documents must still serialize membership for the same account.
+  const raceUser=makeUser('870008','singleteamrace'),createRaceUser=makeUser('870009','singlecreaterace');
+  for(const user of [raceUser,createRaceUser])await db.collection('users').doc(user.id).set(user);
+  const alternateId='tp_singlealternate';await db.collection('team_league_preview_teams').doc(alternateId).set({id:alternateId,ownerId:owner.id,name:'Alternate',logo:'',members:[{id:'tp_alternateslot',name:'Manual captain'}],captainMemberId:'tp_alternateslot',version:1,updatedAt:''});
+  const inviteTo=async(id:string,user:any,key:string)=>{const result=await call(`/membership/teams/${id}/invitations`,{targetUserId:user.id,requestId:key},owner);assert.equal(result.status,200,JSON.stringify(result));return result.body.data;};
+  const exclusiveInvites=await Promise.all([inviteTo(legacyId,raceUser,'exclusive-legacy-invite'),inviteTo(alternateId,raceUser,'exclusive-alternate-invite')]);
+  const exclusiveResults=await Promise.all(exclusiveInvites.map(inv=>call(`/membership/invitations/${inv.id}/respond`,{accept:true},raceUser)));
+  assert.deepEqual(exclusiveResults.map(r=>r.status).sort(),[200,409],'Concurrent accepts into different teams allow only one');
+  const winner=exclusiveInvites[exclusiveResults.findIndex(r=>r.status===200)],loser=exclusiveInvites[exclusiveResults.findIndex(r=>r.status===409)];
+  assert.equal((await db.collection('team_membership_invitations').doc(loser.id).get()).data().status,'PENDING','Failed acceptance never changes the invitation');
+  const winningTeam=(await call('/membership/teams/'+winner.teamId,undefined,owner)).body.data.team;
+  assert.equal((await call(`/membership/teams/${winner.teamId}/update`,{version:winningTeam.version,removeMemberId:winningTeam.members.find((m:any)=>m.userId===raceUser.id).id},owner)).status,200);
+  assert.equal((await call(`/membership/invitations/${loser.id}/respond`,{accept:true},raceUser)).status,200,'Transfer succeeds after removal despite old concurrency guard');
+  await ticket(createRaceUser,1,'single-create-race-ticket');const createRaceInvite=await inviteTo(alternateId,createRaceUser,'single-create-race-invite');
+  const createRace=await Promise.all([call('/membership/teams',{name:'Race creation',requestId:'single-create-race-key'},createRaceUser),call(`/membership/invitations/${createRaceInvite.id}/respond`,{accept:true},createRaceUser)]);
+  assert.deepEqual(createRace.map(r=>r.status).sort(),[200,409],'Creating and joining concurrently cannot yield two teams');
+  assert.equal((await call('/membership',undefined,createRaceUser)).body.data.tickets.balance,createRace[0].status===200?0:1,'Blocked creation never consumes a ticket');
   const linked=(await call(`/membership/teams/${legacyId}/invitations`,{targetUserId:other.id,legacyMemberId:legacyMember,requestId:'legacy-link-0001'},owner)).body.data;assert.equal((await call(`/membership/invitations/${linked.id}/respond`,{accept:true},other)).status,200);const legacy=(await db.collection('team_league_preview_teams').doc(legacyId).get()).data() as PreviewTeam;assert.equal(legacy.members[0].id,legacyMember);assert.equal(legacy.members[0].userId,other.id);
   // New leagues require confirmed accounts. Manual rows are never silently verified.
   const manualId='tp_unconfirmedteam';await db.collection('team_league_preview_teams').doc(manualId).set({...legacy,id:manualId,members:[{id:legacyMember,name:'Unconfirmed'}]});
   let league=(await call('/leagues',{id:'tp_membershipleague',name:'Membership league',teamIds:[team.id,manualId],starterCount:1,rounds:1,version:0},owner)).body.data as TeamLeague;
   assert.equal((await call(`/leagues/${league.id}/actions`,{action:'START',version:league.version},owner)).status,409);
   const savedLeague=await call('/leagues',{...league,teamIds:[team.id,legacyId]},owner);assert.equal(savedLeague.status,200);league=savedLeague.body.data;
+  const duplicateId='tp_duplicateexisting';await db.collection('team_league_preview_teams').doc(duplicateId).set({...team,id:duplicateId,memberUserIds:[]});
+  assert.equal((await call(`/leagues/${league.id}/actions`,{action:'START',version:league.version},owner)).body.code,'TEAM_MEMBER_ALREADY_ASSIGNED','Existing duplicate rosters cannot start a new tournament even with stale membership indexes');
+  await db.collection('team_league_preview_teams').doc(duplicateId).delete();
   const started=await call(`/leagues/${league.id}/actions`,{action:'START',version:league.version},owner);assert.equal(started.status,200,JSON.stringify(started));league=started.body.data;
   const snapshot=structuredClone(league.teams),fixture=league.fixtures[0],creatorSide=fixture.homeTeamId===team.id?'home':'away',creatorMember=team.members.find(m=>m.userId===creator.id)!;
   group.set(creator.telegramId,'left');assert.equal((await call(`/leagues/${league.id}/actions`,{action:'LINEUP',version:league.version,fixtureId:fixture.id,side:creatorSide,lineup:{starters:[creatorMember.id],reserves:[]}},owner)).status,403);
@@ -114,7 +137,7 @@ export async function verifyTeamMembership(failNextCommit:()=>void){
   const grantPlan=await planNaturalAdminRequest('@teamcreator team ochish uchun 1 ticket ber',deps);const aiBefore=(await call('/membership')).body.data.tickets.balance;
   const result=await executeAiAdminRoute(grantPlan!,Number(owner.telegramId),'team-ai-grant-0001');assert.equal(result.status,200,JSON.stringify(result));await executeAiAdminRoute(grantPlan!,Number(owner.telegramId),'team-ai-grant-0001');assert.equal((await call('/membership')).body.data.tickets.balance,aiBefore+1);
   await assert.rejects(executeAiAdminRoute(grantPlan!,7573478198,'team-ai-forbidden-0001'),/asosiy admin|OWNER_ONLY/);
-  console.log('PASS native PostgreSQL TEAMS membership: atomic tickets/team creation, group fail-closed/recheck, cancelled/expired/foreign invitations, concurrent joins, exact roster linking, Telegram callbacks, owner/team-admin revocation, immutable snapshots, real 64-team leagues and AI ticket commands');
+  console.log('PASS native PostgreSQL TEAMS membership: atomic tickets/team creation, group fail-closed/recheck, cancelled/expired/foreign invitations, concurrent joins, exclusive cross-team membership/create races and transfers, exact roster linking, Telegram callbacks, owner/team-admin revocation, immutable snapshots, real 64-team leagues and AI ticket commands');
  }finally{
   await new Promise<void>((resolve,reject)=>server.close(e=>e?reject(e):resolve()));globalThis.fetch=fetchBefore;clearTelegramMembershipCache();
   if(envBefore.token===undefined)delete process.env.TELEGRAM_BOT_TOKEN;else process.env.TELEGRAM_BOT_TOKEN=envBefore.token;if(envBefore.secret===undefined)delete process.env.TELEGRAM_WEBHOOK_SECRET;else process.env.TELEGRAM_WEBHOOK_SECRET=envBefore.secret;
