@@ -85,3 +85,5 @@ for(const n of [32,64]){let seeds=Array.from({length:n},(_,i)=>'tp_seed_'+i),rou
 
 const ownerDelete=render(React.createElement(TeamLeagueDetail,{...props,league:base,onDelete:()=>{}}));assert.ok(ownerDelete.includes('Ligani o‘chirish'));assert.ok(ownerDelete.includes('efl-theme-league-logo'));assert.equal(ownerDelete.includes('tourney-button'),false,'TEAMS uses shared EFL controls without legacy tournament overrides');
 const spectatorDelete=render(React.createElement(TeamLeagueDetail,{...props,league:base,onDelete:()=>{},canManage:false}));assert.equal(spectatorDelete.includes('Ligani o‘chirish'),false);
+
+const noReserves=view({...base,reserveLimit:0},'fixtures',fixture.id);assert.match(noReserves,/disabled=""[^>]*>Zaxira<\/button>/,'A tournament with no reserves cannot select a reserve player');
