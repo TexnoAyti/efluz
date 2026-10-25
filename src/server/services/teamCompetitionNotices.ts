@@ -1,7 +1,7 @@
 import type {Transaction} from 'firebase-admin/firestore';
 import type {TeamLeague} from '../../types/teamLeaguePreview';
 import type {ClasicoEvent} from '../../types/elClasico';
-import {clasicoSides} from '../../types/elClasico';
+import {CLASICO_SIDE_SIZE,clasicoSides} from '../../types/elClasico';
 import {EL_CLASICO_LINK} from '../../lib/elClasicoLinks';
 import {teamTournamentTelegramLink} from '../../lib/teamNavigation';
 import {teamFixtureScore,teamFixtureWinner} from '../../lib/teamLeagueEngine';
@@ -11,7 +11,8 @@ export function writeClasicoNotices(tx:Transaction,before:ClasicoEvent,after:Cla
  const add=(users:string[],title:string,body:string,paths:string[])=>{for(const userId of new Set(users))notices.push({userId,title:'El‑Clasico · '+title,body,url:EL_CLASICO_LINK,entityType:'team-event',entityId:'el-clasico',guard:noticeGuard('el_clasico_events',after.id,paths,after)});};
  for(const p of after.players){const old=before.players.find(o=>o.userId===p.userId);if(old?.side!==p.side)add([p.userId],old?'Tomoningiz o‘zgardi':'Ro‘yxatga qo‘shildingiz',`${clasicoSides[p.side]} tomonida o‘ynaysiz. O‘yin boshlanganda raqibingiz yuboriladi.`,[`players.${after.players.indexOf(p)}`]);}
  for(const p of before.players)if(!after.players.some(n=>n.userId===p.userId))add([p.userId],'Ro‘yxatdan chiqdingiz','El‑Clasico eventidagi o‘rningiz bo‘shatildi.',['players']);
- if(after.players.length===22&&before.players.length!==22)add(['@owner'],'22 o‘rin to‘ldi','Har ikki tomonda 11 tadan o‘yinchi tayyor. Eventni boshlashingiz mumkin.',['players','status']);
+ const full=(event:ClasicoEvent)=>(['REAL','BARCA'] as const).every(side=>event.players.filter(p=>p.side===side).length===CLASICO_SIDE_SIZE);
+ if(full(after)&&!full(before))add(['@owner'],`${CLASICO_SIDE_SIZE*2} o‘rin to‘ldi`,`Har ikki tomonda ${CLASICO_SIDE_SIZE} tadan o‘yinchi tayyor. Eventni boshlashingiz mumkin.`,['players','status']);
  for(const [i,b] of after.bouts.entries()){
   const old=before.bouts.find(o=>o.id===b.id);
   if(!old&&after.status==='ACTIVE')for(const userId of [b.homeUserId,b.awayUserId])add([userId],'O‘yin boshlandi',`${b.id}‑juftlik.\nRaqibingiz: ${name(userId===b.homeUserId?b.awayUserId:b.homeUserId)}.\nTomoningiz: ${clasicoSides[after.players.find(p=>p.userId===userId)!.side]}.`,[`bouts.${i}`,'status']);
@@ -19,7 +20,7 @@ export function writeClasicoNotices(tx:Transaction,before:ClasicoEvent,after:Cla
  }
  if(after.status==='COMPLETED'&&before.status!=='COMPLETED'){
   const real=after.bouts.filter(b=>b.homeScore!>b.awayScore!).length,barca=after.bouts.filter(b=>b.awayScore!>b.homeScore!).length;
-  add([...after.players.map(p=>p.userId),'@owner'],'Event yakunlandi',`Real Madrid ${real}:${barca} Barcelona.\nBarcha 11 ta o‘yin yakunlandi.`,['status','bouts']);
+  add([...after.players.map(p=>p.userId),'@owner'],'Event yakunlandi',`Real Madrid ${real}:${barca} Barcelona.\nBarcha ${after.bouts.length} ta o‘yin yakunlandi.`,['status','bouts']);
  }
  if(after.status==='CANCELLED'&&before.status!=='CANCELLED')add([...after.players.map(p=>p.userId),'@owner'],'Event bekor qilindi','El‑Clasico eventi tashkilotchi tomonidan bekor qilindi.',['status']);
  writeCompetitionNotices(tx,'clasico:'+after.version,notices);return notices;

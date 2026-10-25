@@ -2,7 +2,7 @@ import {writeClasicoNotices} from './teamCompetitionNotices';
 import {getFirestoreDb} from '../firebase/admin';
 import {teamActor,readTeamActor,requireTeamGroup,teamGroupInfo,teamError,teamLeagueAdminName} from './teamAccess';
 import {canSeeTeamPreview} from '../../types/teamLeaguePreview';
-import type {ClasicoEvent,ClasicoView} from '../../types/elClasico';
+import {CLASICO_SIDE_SIZE,type ClasicoEvent,type ClasicoView} from '../../types/elClasico';
 export const CLASICO_COLLECTION='el_clasico_events';
 const blank=():ClasicoEvent=>({id:'el-clasico',status:'REGISTRATION',players:[],bouts:[],version:0,updatedAt:''});
 const view=(event:ClasicoEvent,telegramId:string):ClasicoView=>({event,canManage:canSeeTeamPreview(telegramId),...teamGroupInfo()});
@@ -33,12 +33,12 @@ export async function actElClasico(actorId:string,body:any){
    const existing=event.players.find(p=>p.userId===actorId);
    if(action==='JOIN'){
     if(existing?.side===body.side)return view(event,fresh.telegramId);
-    if(event.players.filter(p=>p.side===body.side).length>=11)throw teamError('Bu tomonda 11 ta o‘rin to‘lgan. Boshqa tomonni tanlang.',409);
+    if(event.players.filter(p=>p.side===body.side).length>=CLASICO_SIDE_SIZE)throw teamError(`Bu tomonda ${CLASICO_SIDE_SIZE} ta o‘rin to‘lgan. Boshqa tomonni tanlang.`,409);
     event.players=event.players.filter(p=>p.userId!==actorId);
     event.players.push({userId:actorId,name:teamLeagueAdminName(fresh),side:body.side});
    }else event.players=event.players.filter(p=>p.userId!==actorId);
   }else if(action==='START'){
-   if(event.status!=='REGISTRATION'||event.players.filter(p=>p.side==='REAL').length!==11||event.players.filter(p=>p.side==='BARCA').length!==11)throw teamError('Boshlash uchun har ikki tomonda 11 tadan o‘yinchi bo‘lsin.',409);
+   if(event.status!=='REGISTRATION'||event.players.filter(p=>p.side==='REAL').length!==CLASICO_SIDE_SIZE||event.players.filter(p=>p.side==='BARCA').length!==CLASICO_SIDE_SIZE)throw teamError(`Boshlash uchun har ikki tomonda ${CLASICO_SIDE_SIZE} tadan o‘yinchi bo‘lsin.`,409);
    // Recheck account suspension atomically too; clients never supply identities.
    for(const player of event.players)await readTeamActor(tx,player.userId);
    const real=event.players.filter(p=>p.side==='REAL'),barca=event.players.filter(p=>p.side==='BARCA');

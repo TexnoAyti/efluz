@@ -1,3 +1,4 @@
+export const CLASICO_SIDE_SIZE=9;
 export type ClasicoSide='REAL'|'BARCA';
 export const clasicoSides:Record<ClasicoSide,string>={REAL:'Real Madrid',BARCA:'Barcelona'};
 export interface ClasicoPlayer {userId:string;name:string;side:ClasicoSide}
