@@ -5,7 +5,7 @@ import type { AdminPlan } from './telegramAiAdminCatalog';
 export function inspectAiAdminOutcome(plan: AdminPlan, data: any): { state: 'queued' | 'verified' | 'accepted' | 'unverified'; message: string } {
   if(plan.action==='club_selection_ban'){
     if(data?.success!==true||data?.ban?.userId!==plan.targetId||data.ban.isBanned!==plan.body.isBanned||!Number.isInteger(data.ban.revision))return {state:'unverified',message:'Ban saqlangani tasdiqlanmadi. Holatni tekshiring.'};
-    return {state:'verified',message:data.ban.isBanned?'Klub tanlashga ban saqlandi. Foydalanuvchi boshqa klub tanlay olmaydi.':'Klub tanlash bani olib tashlandi.'};
+    return {state:'verified',message:data.ban.isBanned?`Klub tanlashga ban saqlandi.${Array.isArray(data.releasedClubs)&&data.releasedClubs.length?' Bo‘shatildi: '+data.releasedClubs.map((c:any)=>c.name).join(', ')+'.':''} Foydalanuvchi boshqa klub tanlay olmaydi.`:'Klub tanlash bani olib tashlandi.'};
   }
   if (data?.pendingSync === true || data?.fixture?.pendingSync === true || data?.result?.pendingSync === true || data?.result?.fixture?.pendingSync === true) return {
     state: 'queued', message: 'Amal sinxronlash navbatiga saqlandi. Asosiy bazaga yozilishi hali tasdiqlanmagan; qayta yuborish shart emas.',

@@ -1,247 +1,102 @@
-/* Team-specific football views reuse the shared tournament surfaces, dialogs,
-   buttons, tabs, fields, cards and design tokens from tournaments.css. */
-.team-tournaments .team-section-title{font-size:15px;font-weight:750;margin:0;overflow-wrap:anywhere}.team-row,.team-between{display:flex;align-items:center;gap:10px;min-width:0}.team-between{justify-content:space-between;flex-wrap:wrap}.team-row>input{flex:1}.team-card-crests{display:flex;gap:6px;align-items:center}.team-card-crests .team-crest{width:34px;height:34px;}.team-tournaments .team-tabs{overflow:auto;max-width:100%;flex-wrap:nowrap}.team-tabs button{flex:1 0 auto;white-space:nowrap;min-width:72px}.team-tab-count{display:inline-flex;margin-left:4px;font-size:10px;min-width:18px;justify-content:center;background:var(--t-line);border-radius:4px}.team-detail-heading{display:grid;gap:16px}.team-detail-heading h1{font-size:24px;line-height:1.3;font-weight:800;overflow-wrap:anywhere;margin:0}.team-two-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.team-tournaments .team-field{display:block;width:100%;min-width:0;min-height:44px;border:1px solid var(--t-line);border-radius:11px;background:var(--t-soft);color:var(--t-text);padding:10px 12px;font:inherit;font-size:13px}.team-field:focus-visible{outline:2px solid var(--t-brand);outline-offset:2px}.team-form,.team-form fieldset{display:grid;gap:16px}.team-form fieldset{border:0;padding:0;margin:0;min-width:0}.team-form fieldset:disabled{opacity:.6}.team-number{flex-shrink:0;font-size:11px;color:var(--t-muted);min-width:20px;font-variant-numeric:tabular-nums}.team-captain{display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:850;width:18px;height:18px;border-radius:5px;color:var(--t-brand);background:var(--efl-primary-soft);flex-shrink:0}.team-upload{position:relative;overflow:hidden;cursor:pointer}.team-upload input{position:absolute;inset:0;width:100%;opacity:0;cursor:pointer}.team-wizard-body{display:grid;gap:18px}.team-wizard-footer{position:sticky;bottom:-20px;background:var(--t-bg);margin:18px -20px -20px;padding:14px 20px!important}.team-choice-check{margin-left:auto;color:var(--t-brand)}.team-picker{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--t-line);border-radius:12px;cursor:pointer}.team-picker.selected{border-color:var(--t-brand);background:var(--efl-primary-soft)}.team-picker input{width:18px;height:18px;accent-color:var(--t-brand);flex-shrink:0}.team-picker>span:last-child{display:grid;gap:4px}.team-picker strong{font-size:13px}.team-picker small{font-size:11px;color:var(--t-muted);overflow-wrap:anywhere}.team-pick-list{display:grid;gap:8px}.team-error-text,.team-tournaments .team-danger{color:#dc4848!important}.team-lineup{display:grid;gap:12px}.team-lineup h4{font-size:14px;font-weight:750}.team-lineup .team-row{justify-content:space-between}.team-lineup .team-row>span{font-size:12px;overflow-wrap:anywhere}.team-lineup select{max-width:145px;flex-shrink:0}.team-bout{display:grid;gap:12px;background:var(--t-soft);padding:14px;border-radius:12px}.team-pair{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;text-align:center;font-size:13px;overflow-wrap:anywhere}.team-pair>span{color:var(--t-muted);font-size:10px}.team-score-form{display:flex;align-items:center;justify-content:center;gap:8px}.team-score-form .team-field{max-width:68px;background:var(--t-bg);font-size:20px;font-weight:800;text-align:center}.team-match{display:grid;gap:14px}.team-fixture{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px;width:100%;padding:10px 0;color:var(--t-text);border:0;background:transparent;cursor:pointer}.team-fixture>span{display:grid;justify-items:center;gap:9px;min-width:0}.team-fixture b{font-size:13px;overflow-wrap:anywhere}.team-fixture>strong{font-size:28px;font-weight:850;letter-spacing:-.5px;text-align:center;white-space:nowrap}.team-fixture small{display:block;color:var(--t-muted);font-size:10px;letter-spacing:0;font-weight:500;margin-top:5px}.team-match-body{display:grid;gap:14px;border-top:1px solid var(--t-line);padding-top:16px}.team-bench{padding:12px;border-radius:10px;background:var(--t-soft);font-size:12px}.team-bench strong{font-size:11px}.team-bench p{margin:6px 0 0;color:var(--t-muted);line-height:1.6}.team-table-scroll{overflow:auto;margin-top:14px}.team-table{width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap}.team-table th{font-size:10px;font-weight:650;color:var(--t-muted);background:var(--t-soft);padding:12px 9px;text-align:center}.team-table td{padding:13px 9px;border-bottom:1px solid var(--t-line);text-align:center}.team-table th:nth-child(2),.team-table td:nth-child(2){text-align:left}.team-table td strong{font-weight:850;color:var(--t-brand);font-size:15px}.team-table-team{display:flex;align-items:center;gap:8px;min-height:32px}.team-table .team-crest{width:28px;height:28px;}.team-qualifier{width:5px;height:14px;background:var(--t-brand);border-radius:2px;margin-left:5px}.team-roster{margin-top:14px}.team-roster>div{display:flex;align-items:center;gap:9px;padding:12px 0;border-bottom:1px solid var(--t-line);font-size:12px}.team-roster b{flex:1;overflow-wrap:anywhere}.team-roster small{color:var(--t-muted);font-size:10px;white-space:nowrap}.team-history{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:14px 0;border-bottom:1px solid var(--t-line);font-size:12px}.team-history small{display:block;font-size:11px;margin-top:4px;color:var(--t-muted)}.team-history time{font-size:10px;color:var(--t-muted);white-space:nowrap}.team-bracket{display:flex;gap:24px;overflow-x:auto;padding:18px 0}.team-bracket>div{flex:0 0 240px;display:flex;flex-direction:column;justify-content:space-around;gap:16px}.team-bracket-match{display:grid;gap:1px;border:1px solid var(--t-line);border-radius:12px;background:var(--t-line);overflow:hidden;text-align:left;min-height:86px}.team-bracket-match>span{display:flex;align-items:center;gap:8px;padding:10px;background:var(--t-bg);font-size:12px}.team-bracket-match .team-crest{width:25px;height:25px;}.team-bracket-match b{flex:1;overflow-wrap:anywhere}.team-bracket-match .winner{color:var(--t-brand);background:var(--efl-primary-soft)}.team-overview-stats>div{display:grid;grid-template-columns:1fr auto;align-items:center;gap:8px}.team-overview-stats svg{grid-column:2;grid-row:1/3;color:var(--t-brand)}.team-overview-stats small{font-size:11px;color:var(--t-muted)}.team-overview-stats strong{font-size:18px}.team-winner{display:flex;align-items:center;gap:14px}.team-winner>svg{color:var(--t-brand);flex-shrink:0}.team-winner>div{flex:1}.team-member-preview{display:flex;padding:3px 0}.team-member-preview>span{position:relative;display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:50%;background:var(--t-soft);border:2px solid var(--t-bg);color:var(--t-muted);margin-left:-5px;font-size:11px;font-weight:750}.team-member-preview>span:first-child{margin-left:0}.team-member-preview small{position:absolute;right:-2px;bottom:-3px;font-size:7px;background:var(--t-brand);color:#fff;border-radius:3px;padding:1px 3px}.team-round-toolbar{display:flex;align-items:end;gap:12px}.team-round-toolbar>label{flex:1}.team-tournaments button:focus-visible{outline:2px solid var(--t-brand);outline-offset:3px}.team-tournaments button:disabled{opacity:.45;cursor:default}
-@media(max-width:600px){.team-two-columns{grid-template-columns:1fr}.team-detail-heading h1{font-size:22px}.team-fixture>strong{font-size:24px}.team-fixture{gap:8px}.team-wizard-footer{bottom:-18px;margin:18px -18px -18px}.team-tournaments.tourney-dialog-backdrop{z-index:1000}.team-score-form .team-field{max-width:60px}.team-lineup select{max-width:140px}}
-
-.team-detail-heading>p{overflow-wrap:anywhere}.team-tournaments.tourney-dialog-backdrop{z-index:1000}
-
-/* Domestic EFL competition hierarchy: banner → league tabs → matchday/table.
-   CompetitionChrome is also rendered by ClubsView; tokens follow the app theme. */
-.team-tournaments.tourney-page{max-width:none;gap:12px;padding-bottom:24px}
-.team-tournaments .tourney-heading h1{font-size:20px;font-weight:900}
-.team-tournaments .tourney-eyebrow{letter-spacing:.05em;font-size:10px}
-.team-tournaments .tourney-button{min-height:38px;font-size:12px;border-radius:12px;padding:8px 12px}
-.team-tournaments .tourney-surface,.team-tournaments .tourney-card{box-shadow:var(--efl-shadow);border-radius:16px;padding:14px}
-.team-tournaments .tourney-card{gap:12px}
-.team-tournaments .tourney-card h3{font-size:14px;font-weight:900}
-
-
-.team-tournaments .tourney-ticket{font-size:10px;justify-content:flex-end;color:var(--efl-muted)}
-.team-competition-title{display:flex;gap:14px;align-items:center}
-.team-competition-title>div:last-child{flex:1;min-width:0}
-.team-competition-emblem{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:3px;width:60px;height:64px;flex-shrink:0;border:1px solid var(--efl-border);border-radius:16px;color:var(--efl-primary);background:var(--efl-surface-2)}
-.team-competition-emblem>span,.team-competition-emblem>small{font-size:8px;font-weight:900;letter-spacing:.15em}
-.team-competition-kicker{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:10px;font-weight:800;text-transform:uppercase;color:var(--efl-text-2)}
-.team-competition-banner h1{font-size:22px;line-height:1.25;font-weight:900;letter-spacing:-.5px;margin:5px 0;overflow-wrap:anywhere}
-.team-competition-title p{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0;font-size:11px;font-weight:600;color:var(--efl-text-2)}
-.team-competition-title p>span{color:var(--efl-muted)}
-.team-competition-summary{display:flex;gap:16px;flex-wrap:wrap;border-top:1px solid var(--efl-border);padding-top:12px;margin-top:14px}
-.team-competition-summary>span{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--efl-text-2)}
-.team-competition-summary b{color:var(--efl-text);font-weight:800}
-.team-competition-summary svg{color:var(--efl-primary)}
-.team-competition-description{font-size:12px;color:var(--efl-text-2);margin:12px 0 0}
-.team-secondary-nav{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
-.team-secondary-nav button{display:flex;align-items:center;gap:5px;min-height:34px;padding:6px 10px;font-size:11px;font-weight:700;border-radius:9px;color:var(--efl-text-2)}
-.team-secondary-nav button[aria-pressed=true]{background:var(--efl-primary-soft);color:var(--efl-primary)}
-.team-card-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}
-.team-card-heading .team-competition-emblem{width:46px;height:50px;border-radius:12px}
-.team-tournaments .team-card-crests{padding:10px;background:var(--efl-surface-2);border-radius:10px;gap:12px;min-height:52px}
-.team-card-crests small{font-size:11px;font-weight:800;color:var(--efl-muted)}
-.team-tournaments .team-overview-stats{gap:8px}
-.team-overview-stats .tourney-surface{padding:12px}
-.team-tournaments .tourney-task{border:1px solid var(--efl-border);border-radius:14px;background:var(--efl-surface);padding:14px;gap:8px}
-.team-tournaments .tourney-task h3{font-size:13px;font-weight:800}
-.team-tournaments .tourney-task p{font-size:11px}
-.team-fixture-filters{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
-.team-fixture-filters>div{display:flex;gap:4px;flex-wrap:wrap}
-.team-fixture-filters>div button{min-height:34px;padding:7px 10px;font-size:11px;font-weight:700;color:var(--efl-text-2);border-radius:9px}
-.team-fixture-filters button[aria-pressed=true]{background:var(--efl-primary-soft);color:var(--efl-primary)}
-.team-tournaments .team-match{padding:0;overflow:hidden;gap:0}
-.team-match-caption{padding:9px 12px;border-bottom:1px solid var(--efl-border);background:var(--efl-surface-2);gap:6px;flex-wrap:wrap}
-.team-match-competition{display:flex;gap:5px;align-items:center;font-size:10px;font-weight:800;color:var(--efl-text-2);max-width:100%;overflow-wrap:anywhere}
-.team-match-caption .tourney-chip{font-size:9px;padding:3px 6px}
-.team-tournaments .team-fixture{padding:18px 12px 12px;gap:8px}
-.team-fixture .team-crest{width:44px;height:44px}
-.team-fixture>span{gap:5px}
-.team-fixture b{font-size:12px;font-weight:800;line-height:1.4}
-.team-fixture>span>small{font-size:10px;color:var(--efl-text-2);margin-top:0}
-.team-fixture>strong{font-size:26px;color:var(--efl-primary)}
-.team-fixture>strong small{font-size:10px;color:var(--efl-text-2);font-weight:600;margin-top:7px}
-.team-match-progress{display:flex;justify-content:center;gap:4px;flex-wrap:wrap;padding:0 12px 12px}
-.team-match-progress>span{display:flex;justify-content:center;align-items:center;min-width:28px;min-height:20px;border-radius:5px;font-size:9px;font-weight:800;background:var(--efl-surface-2);color:var(--efl-muted)}
-.team-match-progress>.home{background:var(--efl-primary-soft);color:var(--efl-primary)}
-.team-match-progress>.away{background:color-mix(in srgb,var(--efl-danger) 10%,transparent);color:var(--efl-danger)}
-.team-match-progress>.draw{background:color-mix(in srgb,var(--efl-warning) 12%,transparent);color:var(--efl-text-2)}
-.team-match>.team-between:last-of-type{padding:10px 12px;border-top:1px solid var(--efl-border)}
-.team-match>.team-between:last-of-type>.tourney-muted{font-size:10px}
-.team-match-body{padding:14px}
-.team-tournaments .team-standings{padding:0;overflow:hidden}
-.team-standings .efl-standings-toolbar{padding:12px}
-.team-table-caption{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;padding:10px 12px;background:var(--efl-surface-2);border-top:1px solid var(--efl-border);border-bottom:1px solid var(--efl-border);font-size:10px;color:var(--efl-text-2);font-weight:700}
-.team-tournaments .team-table-scroll{margin:0}
-.team-tournaments .team-standings .team-table{font-size:11px}
-.team-tournaments .team-standings .team-table th{height:30px;padding:6px 5px;font-size:9px}
-.team-tournaments .team-standings .team-table td{height:42px;padding:6px 5px}
-.team-tournaments .team-table-team{gap:7px;text-align:left;white-space:normal;line-height:1.3}
-.team-tournaments .team-table-team b{overflow-wrap:anywhere;font-size:11px}
-.team-standings .team-table-team .team-crest{width:22px;height:22px}
-.team-standings>p{padding:0 12px 12px;font-size:10px;margin:10px 0 0}
-.team-standings .team-table td:first-child{font-weight:800;color:var(--efl-muted)}
-.team-standings .team-table tr:first-child td:first-child{color:var(--efl-primary)}
-.team-creation-heading{display:flex;gap:12px;align-items:center;padding-bottom:16px;border-bottom:1px solid var(--efl-border)}
-.team-creation-heading .team-competition-emblem{width:44px;height:44px;border-radius:12px}
-.team-creation-heading>div{flex:1;min-width:0}
-.team-creation-heading h3{margin:2px 0 0;font-size:17px;font-weight:900}
-.team-step-labels{display:flex;gap:8px;margin-top:-10px}
-.team-step-labels span{flex:1;font-size:9px;color:var(--efl-muted);font-weight:700}
-.team-step-labels .active{color:var(--efl-primary)}
-@media(max-width:600px){
- .team-competition-banner{padding:14px!important}
- .team-competition-banner h1{font-size:19px}
- .team-competition-title{gap:10px}
- .team-competition-emblem{width:48px;height:54px;border-radius:12px}
- .team-competition-kicker{font-size:9px;gap:4px}
- .team-competition-title p{font-size:10px;gap:5px}
- .team-competition-summary{gap:10px}
- .team-competition-summary>span{font-size:9px}
- .team-secondary-nav{gap:0;justify-content:space-between}
- .team-secondary-nav button{padding:6px 8px;font-size:10px}
- .team-tournaments .team-fixture{padding-top:16px;padding-bottom:12px}
- .team-tournaments .team-fixture>strong{font-size:26px}
- .team-standings .team-table-team{max-width:100%}
- .team-tournaments .team-standings.efl-standings--full table{min-width:420px}
-}
-.team-mode-page.tourney-page{max-width:none;gap:12px}
-
-/* Task-focused workspace: one tournament navigation, one fixture at a time. */
+/* TEAMS uses the same competition primitives as domestic leagues and UZEFLIFE.
+   Keep only team-specific content here; buttons, fields, tabs and panels are shared. */
+.team-tournaments{min-width:0;color:var(--efl-text)}
+.team-tournaments *{box-sizing:border-box;min-width:0}
 .team-tournaments [hidden]{display:none!important}
-.team-fixture-page,.team-inline-create{display:grid;gap:14px;min-width:0}
-.team-fixture-page .team-match{overflow:visible}
-.team-fixture-page .team-match-caption{border-radius:15px 15px 0 0}
-.team-tournaments .team-fixture{cursor:default}
-.team-match-footer{padding:10px 12px;border-top:1px solid var(--efl-border)}
-.team-match-footer>.tourney-muted{font-size:10px}
-.team-match-steps{display:flex;gap:6px;padding-bottom:4px}
-.team-match-steps>span{flex:1;font-size:10px;font-weight:700;color:var(--efl-muted);padding:8px 4px;border-bottom:2px solid var(--efl-border);text-align:center}
-.team-match-steps>.active{border-color:var(--efl-primary);color:var(--efl-primary)}
-.team-match-steps>.done{border-color:var(--efl-success);color:var(--efl-success)}
-.team-match-section-nav,.team-content-switch{display:flex;gap:4px;padding:4px;background:var(--efl-surface-2);border-radius:12px;border:1px solid var(--efl-border)}
-.team-match-section-nav button,.team-content-switch button{display:flex;align-items:center;justify-content:center;gap:4px;flex:1;padding:9px 7px;min-height:38px;font-size:11px;line-height:1.3;font-weight:700;color:var(--efl-text-2);border-radius:8px;overflow-wrap:anywhere}
-.team-match-section-nav button[aria-pressed=true],.team-content-switch button[aria-pressed=true]{background:var(--efl-surface);color:var(--efl-primary);box-shadow:var(--efl-shadow)}
-.team-lineup-picks{border-top:1px solid var(--efl-border)}
-.team-lineup-player{display:flex;align-items:center;gap:8px;padding:12px 0;border-bottom:1px solid var(--efl-border)}
-.team-lineup-player>b{flex:1;overflow-wrap:anywhere;font-size:12px;font-weight:700;display:flex;align-items:center;gap:5px;flex-wrap:wrap}
-.team-lineup-player>div{display:flex;gap:3px;flex-shrink:0}
-.team-lineup-player button{font-size:10px;font-weight:700;min-height:34px;padding:6px 9px;border-radius:8px;background:var(--efl-surface-2);color:var(--efl-text-2);border:1px solid transparent}
-.team-lineup-player button[aria-pressed=true]{background:var(--efl-primary-soft);color:var(--efl-primary);border-color:var(--efl-primary)}
-.team-lineup-save{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:12px 0;background:var(--efl-surface);position:sticky;bottom:calc(76px + env(safe-area-inset-bottom));z-index:2;border-top:1px solid var(--efl-border)}
-.team-lineup-save>.tourney-muted{font-size:10px}
-.team-pairing-action{display:grid;justify-items:center;gap:10px;text-align:center;padding:24px 12px}
-.team-pairing-action>svg{color:var(--efl-primary)}
-.team-pairing-action h3{font-size:15px;font-weight:800;margin:0}
-.team-pairing-action p{margin:0;max-width:340px}
-.team-individual-result{border:1px solid var(--efl-border);border-radius:12px;overflow:hidden}
-.team-individual-result>summary{list-style:none;display:flex;align-items:center;gap:8px;padding:13px 10px;cursor:pointer;font-size:11px}
-.team-individual-result>summary::-webkit-details-marker{display:none}
-.team-individual-result>summary>span:nth-child(2){flex:1;font-weight:700;overflow-wrap:anywhere}
-.team-individual-result>summary small{font-size:9px;font-weight:400;color:var(--efl-muted)}
-.team-individual-result>summary>b{white-space:nowrap;color:var(--efl-primary)}
-.team-individual-result[open]>summary{border-bottom:1px solid var(--efl-border);background:var(--efl-surface-2)}
-.team-individual-result[open]>summary>svg{transform:rotate(90deg)}
-.team-individual-result .team-bout{border-radius:0;background:var(--efl-surface)}
-.team-management-details>summary{cursor:pointer;font-size:12px;font-weight:750;color:var(--efl-text)}
-.team-management-details>summary+*{margin-top:14px}
-.team-start-checklist{display:grid;gap:12px}
-.team-start-checklist>p{margin:0}
-.team-start-checklist ul{display:grid;gap:10px;list-style:none;margin:0;padding:2px 0;font-size:12px}
-.team-start-checklist li{display:flex;align-items:center;gap:7px}
-.team-start-checklist li svg{color:var(--efl-primary);flex-shrink:0}
-.team-next-round{display:grid;gap:10px}
-.team-next-round p{font-size:11px;margin:5px 0 0}
-.team-filter-toggle{justify-self:end}
-@media(max-width:600px){
- .team-lineup-player{gap:6px}
- .team-lineup-player>b{font-size:11px}
- .team-lineup-player button{padding:6px 7px;font-size:10px}
- .team-match-section-nav button{font-size:10px;padding:8px 5px}
- .team-lineup-save{align-items:stretch}
- .team-lineup-save .tourney-button{flex:1}
- .team-lineup-save>.tourney-muted{width:100%}
- .team-individual-result>summary{font-size:10px;gap:6px}
-}
-.team-wizard-fields{border:0;padding:0;margin:0;min-width:0}
-
-/* Match the shared dialog padding and league roster/table density. */
-.team-tournaments .team-field{min-height:38px;font-size:12px;padding:8px 10px;border-radius:12px}
-.team-wizard-body,.team-form,.team-form fieldset{gap:14px}
-.team-wizard-footer{bottom:-16px;margin:14px -16px -16px;padding:12px 16px!important}
-.team-tournaments .team-section-title{font-size:13px;font-weight:800}
-.team-roster>div{padding:9px 0}
-.team-table th{padding:8px 4px}
-.team-table td{padding:5px 4px;height:32px}
-.team-table td strong{font-size:12px}
-.team-table-team .team-crest{width:20px;height:20px}
-.team-picker{padding:10px;gap:8px}
-.team-picker .team-crest{width:28px;height:28px}
-.team-picker strong{font-size:12px}
-.team-picker small{font-size:10px}
-
-/* Team identity is a profile link throughout fixtures and standings. */
-.team-profile-link{display:flex;align-items:center;gap:8px;min-width:0;text-align:inherit;color:inherit;max-width:100%;min-height:34px}
-.team-profile-link>span:last-child{min-width:0;overflow-wrap:anywhere}
-.team-profile-link:hover{color:var(--efl-primary)}
-.team-profile-link:focus-visible{outline:2px solid var(--efl-primary);outline-offset:3px;border-radius:6px}
-.team-league-match .competition-fixture-away .team-profile-link{flex-direction:row-reverse;text-align:right}
-.team-profile-page .club-hero-footer>button{display:flex;align-items:center;gap:6px;color:var(--efl-primary);font-size:11px;font-weight:800;min-height:34px}
-.team-profile-page .club-hero-identity{justify-content:flex-start;text-align:left}
-
-
-
-.team-profile-totals strong{font-size:21px;font-weight:900;color:var(--efl-text)}
-.team-profile-totals span{font-size:10px;color:var(--efl-text-2);text-align:center}
-.team-profile-trophies{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}
-.team-profile-trophies button{display:flex;gap:10px;align-items:center;text-align:left;min-width:0;padding:12px;border:1px solid var(--efl-border);border-radius:12px;background:var(--efl-surface-2)}
-.team-profile-trophies button>svg:first-child{color:var(--efl-primary);flex-shrink:0}
-.team-profile-trophies button>span{flex:1;min-width:0}
-.team-profile-trophies b{display:block;font-size:12px;overflow-wrap:anywhere}
-.team-profile-trophies small{display:block;font-size:10px;color:var(--efl-text-2)}
-.team-profile-page .club-competition-filters{padding:0 0 4px}
-@media(max-width:600px){.team-profile-totals strong{font-size:18px}.team-profile-totals span{font-size:9px}.team-profile-trophies{grid-template-columns:1fr}}
-.team-profile-page .club-profile-layout{margin-top:0}
-.team-profile-competition-select{padding:12px 14px}
-
-.team-profile-notice{padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--efl-text-2);border:1px solid var(--efl-border);border-radius:12px;background:var(--efl-surface)}
-.team-profile-notice button{margin-left:8px;min-height:34px;color:var(--efl-primary);text-decoration:underline}
-.team-profile-page .team-content-switch{min-width:0;max-width:100%}
-.team-profile-page .club-match-list .team-profile-link{width:100%}
-
-/* Club-profile proportions, with the crest's silhouette kept independent of the card. */
-.team-profile-emblem{display:grid;place-items:center;flex:0 0 104px;width:104px;height:112px;overflow:visible}
-.team-profile-emblem .team-crest{width:96px;height:104px}
-.team-profile-page .club-hero-identity{gap:24px;padding:30px}
-.team-profile-page .club-hero-footer>div{min-width:0;flex-wrap:wrap}
-.team-profile-totals{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:0;overflow:hidden;border:1px solid var(--efl-border);border-radius:16px;background:var(--efl-surface)}
-.team-profile-totals>div{display:grid;gap:5px;justify-items:center;padding:16px 8px;border:0;border-radius:0;background:transparent}
-.team-profile-totals>div+div{border-left:1px solid var(--efl-border)}
-.team-profile-page .team-profile-layout-single{grid-template-columns:minmax(0,1fr)}
-.team-profile-cabinet>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;list-style:none;cursor:pointer;min-height:30px}
-.team-profile-cabinet>summary::-webkit-details-marker{display:none}
-.team-profile-cabinet>summary>span{display:flex;align-items:center;gap:8px}
-.team-profile-cabinet>summary b{font-size:10px;font-weight:700;padding:3px 7px;border-radius:6px;background:var(--efl-surface-2);color:var(--efl-text-2)}
-.team-profile-cabinet>summary>svg{transition:transform .18s ease;color:var(--efl-muted)}
-.team-profile-cabinet[open]>summary>svg{transform:rotate(90deg)}
-.team-search-crest{width:28px;height:28px}
-@media(max-width:600px){
- .team-profile-page .club-hero-identity{padding:22px 18px;gap:16px}
- .team-profile-emblem{flex-basis:76px;width:76px;height:88px}
- .team-profile-emblem .team-crest{width:72px;height:84px}
- .team-profile-totals>div{padding:12px 3px;gap:4px}
- .team-profile-totals strong{font-size:18px}
- .team-profile-totals span{font-size:9px;line-height:1.4}
-}
-@media(prefers-reduced-motion:reduce){.team-profile-cabinet>summary>svg{transition:none}}
-
-.team-league-pager{min-width:0;display:grid;gap:14px}
+.team-tournaments button:focus-visible,.team-tournaments summary:focus-visible{outline:2px solid var(--efl-primary);outline-offset:3px}
+.team-tournaments button:disabled{opacity:.45;cursor:default}
+.team-tournaments .competition-empty svg{margin:0 auto 12px;color:var(--efl-primary)}
+.team-tournaments .competition-empty h3{margin:0 0 6px;font-size:14px;font-weight:800;color:var(--efl-text)}
+.team-tournaments .competition-empty p{margin:0;font-size:12px;line-height:1.6}
+.team-tournaments .competition-empty .competition-actions{margin-top:16px}
+.team-section-title{font-size:13px;font-weight:800;line-height:1.5;margin:0;overflow-wrap:anywhere}
+.team-row,.team-between{display:flex;align-items:center;gap:10px;min-width:0}.team-between{justify-content:space-between;flex-wrap:wrap}.team-row>input,.team-row>span:first-child{min-width:0}
+.team-page-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.team-page-heading h1{font-size:20px;font-weight:900;margin:0}
+.team-page-heading>div:empty{display:none}
+.team-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.team-owner-label{display:flex;align-items:center;gap:6px;font-size:10px;font-weight:700;color:var(--efl-text-2)}
+.team-statuses{display:flex;gap:6px;flex-wrap:wrap}
+.team-status{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border:1px solid var(--efl-border);border-radius:999px;background:var(--efl-surface-2);color:var(--efl-text-2);font-size:10px;font-weight:700;line-height:1.5}
+.team-status.live,.team-status.open{background:var(--efl-primary-soft);color:var(--efl-primary);border-color:color-mix(in srgb,var(--efl-primary) 25%,transparent)}
+.team-league-pager,.team-league-slide{display:grid;gap:24px;min-width:0}
 .team-league-selector{display:flex;align-items:stretch;gap:6px;min-width:0}
-.team-league-arrow{flex:0 0 42px;justify-content:center;padding:8px!important}
-.team-league-strip{position:relative;display:flex;gap:8px;min-width:0;flex:1;overflow-x:auto;scroll-snap-type:x proximity;scrollbar-width:none;overscroll-behavior-x:contain}
+.team-league-arrow{flex:0 0 36px;padding:6px!important}
+.team-league-strip{position:relative;display:flex;gap:8px;min-width:0;flex:1;overflow:auto;scrollbar-width:none;scroll-snap-type:x proximity;overscroll-behavior-x:contain}
 .team-league-strip::-webkit-scrollbar{display:none}
-.team-league-strip>button{flex:0 0 auto;max-width:85%;display:flex;align-items:center;gap:9px;min-height:48px;padding:10px 16px;border-radius:12px;border:1px solid var(--efl-border);background:var(--efl-surface);color:var(--efl-text-2);text-align:left;scroll-snap-align:center;font-size:12px;font-weight:700}
-.team-league-strip>button[aria-current="true"]{border-color:var(--efl-primary);color:var(--efl-primary);background:var(--efl-surface-2)}
-.team-league-strip>button>span{min-width:0;overflow-wrap:anywhere}
-.team-league-strip small{display:block;font-size:10px;color:var(--efl-muted);margin-top:3px}
-.team-league-slide{min-width:0;display:grid;gap:14px}
-.team-membership-panel{min-width:0}
-.team-membership-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:12px;border:1px solid var(--efl-border);border-radius:14px;background:var(--efl-surface)}
-.team-membership-toolbar strong{font-size:12px;color:var(--efl-text)}
-.team-membership-toolbar .tourney-button{font-size:11px;min-height:40px}
+.team-league-strip>button{flex:0 0 auto;max-width:85%;display:flex;align-items:center;gap:8px;padding:8px 12px;min-height:38px;border-radius:12px;border:1px solid var(--efl-border);background:var(--efl-surface);color:var(--efl-text-2);font-size:12px;font-weight:700;scroll-snap-align:center;text-align:left}
+.team-league-strip>button[aria-current=true]{background:var(--efl-primary-soft);border-color:color-mix(in srgb,var(--efl-primary) 30%,transparent);color:var(--efl-primary)}
+.team-league-strip small{font-size:10px;margin-left:8px;color:var(--efl-muted)}
+.team-membership-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.team-membership-toolbar .competition-actions{gap:6px}
+.team-membership-toolbar .competition-button{font-size:11px;min-height:36px;padding:7px 10px}
+.team-membership-count{font-size:10px;min-width:18px;text-align:center;border-radius:5px;background:var(--efl-surface-2);color:var(--efl-primary);padding:1px 4px}
+.team-directory-card{display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--efl-border);border-radius:16px;background:var(--efl-surface);box-shadow:var(--efl-shadow)}
+.team-directory-card .competition-entry{border:0;border-radius:0;box-shadow:none;flex:1;padding:16px;gap:12px}
+.team-directory-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;border-top:1px solid var(--efl-border);background:var(--efl-surface-2)}
+.team-directory-actions .competition-button{border-color:transparent;background:transparent;font-size:11px;min-height:32px;padding:4px 6px}
+.team-card-crests{display:flex;align-items:center;gap:10px;padding:8px 0}.team-card-crests .team-crest{width:28px;height:28px}.team-card-crests small{font-size:10px;color:var(--efl-muted)}
+.team-directory-card .competition-entry-emblem>.team-crest{width:40px;height:40px}
+.team-filter-fields,.team-two-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.team-filter-toggle{align-self:flex-end}
+.team-danger,.team-error-text{color:var(--efl-danger)!important}
+.team-delete-zone{border-top:1px solid var(--efl-border);padding-top:16px;margin-top:16px;display:grid;gap:10px}
+.team-delete-zone p{margin:0}
+.team-summary-row{display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:10px 0;border-bottom:1px solid var(--efl-border);font-size:11px}
+.team-summary-row>span{color:var(--efl-text-2)}.team-summary-row>strong{text-align:right;font-weight:700;overflow-wrap:anywhere}
+.team-dialog-backdrop{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:12px;background:rgba(2,6,23,.65);backdrop-filter:blur(4px)}
+.team-dialog{display:flex;flex-direction:column;width:min(540px,100%);max-height:calc(100dvh - 24px);border:1px solid var(--efl-border);border-radius:20px;background:var(--efl-surface);color:var(--efl-text);box-shadow:var(--efl-shadow-lg);font-size:12px;line-height:1.5;outline:none}
+.team-dialog>header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:16px;border-bottom:1px solid var(--efl-border)}
+.team-dialog h2{font-size:18px;font-weight:900;line-height:1.4;margin:3px 0 0}.team-dialog header p{margin:0}
+.team-dialog-body{min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:16px;display:grid;gap:16px}
+.team-form,.team-form fieldset,.team-wizard-body,.team-inline-create{display:grid;gap:16px}
+.team-form fieldset,.team-wizard-fields{padding:0;margin:0;border:0;min-width:0}.team-form fieldset:disabled{opacity:.6}
+.team-field{display:block;width:100%;min-height:38px;padding:8px 10px;border:1px solid var(--efl-border);border-radius:12px;background:var(--efl-surface-2);color:var(--efl-text);font:inherit;font-size:12px}
+.team-field:focus-visible{outline:2px solid var(--efl-primary);outline-offset:2px}
+.team-form .team-row>input{flex:1}
+.team-upload{position:relative;overflow:hidden;cursor:pointer}.team-upload input{position:absolute;inset:0;width:100%;opacity:0;cursor:pointer}
+.team-number{font-size:10px;flex-shrink:0;min-width:18px;color:var(--efl-muted);font-variant-numeric:tabular-nums}
+.team-captain{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;flex-shrink:0;border-radius:5px;color:var(--efl-primary);background:var(--efl-primary-soft);font-size:9px;font-weight:900}
+.team-tournaments .team-wizard-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;position:sticky;bottom:-16px;margin:16px -16px -16px;padding:12px 16px max(12px,env(safe-area-inset-bottom));background:var(--efl-surface);border-top:1px solid var(--efl-border)}
+.team-format-options{display:grid;gap:8px;margin-top:12px}
+.team-format-option{display:flex;align-items:center;gap:12px;text-align:left;padding:12px;border:1px solid var(--efl-border);border-radius:12px;background:var(--efl-surface);color:var(--efl-text)}
+.team-format-option>svg{color:var(--efl-primary);flex-shrink:0}.team-format-option>span{flex:1}.team-format-option strong{font-size:12px}.team-format-option p{margin:4px 0 0;font-size:11px;line-height:1.5;color:var(--efl-text-2)}
+.team-format-option[aria-pressed=true],.team-picker.selected{background:var(--efl-primary-soft);border-color:var(--efl-primary)}
+.team-picker{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--efl-border);border-radius:12px;cursor:pointer}
+.team-picker input{width:18px;height:18px;accent-color:var(--efl-primary);flex-shrink:0}.team-picker .team-crest{width:28px;height:28px}.team-picker>span:last-child{display:grid;gap:3px}.team-picker strong{font-size:12px}.team-picker small{font-size:10px;color:var(--efl-text-2)}.team-pick-list{display:grid;gap:8px}
+.team-task{display:grid;gap:12px;padding:14px;border:1px solid var(--efl-border);border-radius:16px;background:var(--efl-surface-2)}.team-task h3{font-size:13px;font-weight:800;margin:0}.team-task p{font-size:11px;line-height:1.6;color:var(--efl-text-2);margin:0}
+.team-fixture-filters,.team-content-switch,.team-match-section-nav{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.team-fixture-filters{justify-content:space-between}.team-fixture-filters>div{display:flex;gap:4px;flex-wrap:wrap}
+.team-fixture-filters>div button,.team-content-switch button,.team-match-section-nav button{min-height:34px;padding:6px 10px;font-size:11px;font-weight:700;border:1px solid var(--efl-border);border-radius:10px;background:var(--efl-surface);color:var(--efl-text-2)}
+.team-fixture-filters button[aria-pressed=true],.team-content-switch button[aria-pressed=true],.team-match-section-nav button[aria-pressed=true]{background:var(--efl-primary-soft);color:var(--efl-primary);border-color:color-mix(in srgb,var(--efl-primary) 30%,transparent)}
+.team-content-switch,.team-match-section-nav{gap:6px}.team-match-section-nav{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.team-match-section-nav button{white-space:normal;display:flex;align-items:center;justify-content:center;gap:4px}
+.team-fixture-page,.team-match-body,.team-lineup{display:grid;gap:16px}
+.team-match-body{border-top:1px solid var(--efl-border);padding-top:16px!important}
+.team-profile-link{display:flex;align-items:center;gap:8px;min-width:0;max-width:100%;min-height:34px;color:inherit;text-align:inherit}.team-profile-link:hover{color:var(--efl-primary)}
+.team-profile-link>span:last-child{min-width:0;overflow-wrap:anywhere}
+.team-league-match .competition-fixture-away .team-profile-link{flex-direction:row-reverse;text-align:right}
+.team-match-progress{display:flex;justify-content:center;gap:4px;flex-wrap:wrap}
+.team-match-progress>span{display:flex;align-items:center;justify-content:center;min-width:26px;min-height:20px;border-radius:5px;background:var(--efl-surface-2);color:var(--efl-muted);font-size:9px;font-weight:800}
+.team-match-progress>.home{background:var(--efl-primary-soft);color:var(--efl-primary)}.team-match-progress>.away{background:color-mix(in srgb,var(--efl-danger) 10%,transparent);color:var(--efl-danger)}.team-match-progress>.draw{background:color-mix(in srgb,var(--efl-warning) 12%,transparent);color:var(--efl-text-2)}
+.team-match-footer{border-top:1px solid var(--efl-border);padding-top:10px;gap:8px}.team-match-footer .competition-button{min-height:32px;padding:5px 8px;font-size:11px}
+.team-match-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.team-match-steps>span{padding:8px 4px;border-bottom:2px solid var(--efl-border);text-align:center;font-size:10px;font-weight:700;color:var(--efl-muted)}.team-match-steps>.active{border-color:var(--efl-primary);color:var(--efl-primary)}.team-match-steps>.done{border-color:var(--efl-success);color:var(--efl-success)}
+.team-lineup-player{display:flex;align-items:center;gap:8px;padding:12px 0;border-bottom:1px solid var(--efl-border)}.team-lineup-player>b{flex:1;font-size:12px;display:flex;align-items:center;gap:5px;flex-wrap:wrap;overflow-wrap:anywhere}.team-lineup-player>div{display:flex;gap:3px;flex-shrink:0}.team-lineup-player button{padding:6px 8px;min-height:34px;border:1px solid var(--efl-border);border-radius:8px;font-size:10px;background:var(--efl-surface);color:var(--efl-text-2)}.team-lineup-player button[aria-pressed=true]{background:var(--efl-primary-soft);color:var(--efl-primary);border-color:var(--efl-primary)}
+.team-lineup-save{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;position:sticky;bottom:calc(76px + env(safe-area-inset-bottom));z-index:2;padding:12px 0;border-top:1px solid var(--efl-border);background:var(--efl-surface)}
+.team-pairing-action{display:grid;justify-items:center;text-align:center;gap:10px;padding:24px 12px}.team-pairing-action>svg{color:var(--efl-primary)}.team-pairing-action h3{font-size:14px;font-weight:800;margin:0}.team-pairing-action p{max-width:340px;margin:0}
+.team-individual-result{border:1px solid var(--efl-border);border-radius:12px;overflow:hidden}.team-individual-result>summary{display:flex;align-items:center;gap:8px;padding:12px;list-style:none;font-size:11px;cursor:pointer}.team-individual-result>summary::-webkit-details-marker{display:none}.team-individual-result>summary>span:nth-child(2){flex:1;font-weight:700;overflow-wrap:anywhere}.team-individual-result>summary small{font-size:9px;color:var(--efl-muted)}.team-individual-result>summary>b{color:var(--efl-primary);white-space:nowrap}.team-individual-result[open]>summary{background:var(--efl-surface-2);border-bottom:1px solid var(--efl-border)}.team-individual-result[open]>summary>svg{transform:rotate(90deg)}
+.team-bout{display:grid;gap:12px;padding:14px}.team-pair{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;text-align:center;gap:10px;font-size:12px}.team-pair>span{color:var(--efl-muted);font-size:10px}.team-score-form{display:flex;align-items:center;justify-content:center;gap:8px}.team-score-form .team-field{max-width:64px;text-align:center;font-size:20px;font-weight:800}
+.team-table-scroll{overflow:auto;margin-top:12px}.team-table{width:100%;border-collapse:collapse;white-space:nowrap;font-size:11px}.team-table th{padding:10px 8px;background:var(--efl-surface-2);color:var(--efl-text-2);font-size:10px;font-weight:700;text-align:center}.team-table td{padding:10px 8px;border-bottom:1px solid var(--efl-border);text-align:center}.team-table th:nth-child(2),.team-table td:nth-child(2){text-align:left}.team-table td strong{font-weight:800;color:var(--efl-primary)}
+.team-roster{margin-top:12px}.team-roster>div{display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--efl-border);font-size:12px}.team-roster b,.team-roster>div>span:not(.team-number):first-child{flex:1;overflow-wrap:anywhere}.team-roster small{font-size:10px;color:var(--efl-text-2)}
+.team-bracket{display:flex;gap:24px;overflow:auto;padding:16px 0}.team-bracket>div{flex:0 0 230px;display:flex;flex-direction:column;justify-content:space-around;gap:16px}.team-bracket-match{display:grid;text-align:left;border:1px solid var(--efl-border);border-radius:12px;overflow:hidden;background:var(--efl-surface)}.team-bracket-match>span{display:flex;align-items:center;gap:8px;padding:10px;border-bottom:1px solid var(--efl-border);font-size:12px}.team-bracket-match>span:last-child{border:0}.team-bracket-match .team-crest{width:24px;height:24px}.team-bracket-match b{flex:1;overflow-wrap:anywhere}.team-bracket-match .winner{background:var(--efl-primary-soft);color:var(--efl-primary)}
+.team-start-checklist,.team-next-round{display:grid;gap:12px}.team-start-checklist ul{display:grid;gap:10px;list-style:none;padding:0;margin:0;font-size:12px}.team-start-checklist li{display:flex;align-items:center;gap:7px}.team-start-checklist li svg{color:var(--efl-primary);flex-shrink:0}.team-next-round p{margin:6px 0 0}
+.team-management-details>summary{font-size:12px;font-weight:800;cursor:pointer}.team-management-details[open]>summary{margin-bottom:12px}.team-history{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--efl-border);font-size:12px}.team-history small{display:block;font-size:10px;color:var(--efl-text-2);margin-top:4px}.team-history time{font-size:10px;color:var(--efl-muted);white-space:nowrap}
+/* The team profile keeps the domestic club profile's geometry. */
+.team-profile-emblem{display:grid;place-items:center;flex:0 0 104px;width:104px;height:112px;overflow:visible}.team-profile-emblem .team-crest{width:96px;height:104px}
+.team-profile-page .club-hero-identity{gap:24px;padding:30px;justify-content:flex-start;text-align:left}
+.team-profile-page .club-hero-footer>button{display:flex;align-items:center;gap:6px;min-height:34px;font-size:11px;font-weight:800;color:var(--efl-primary)}
+.team-profile-totals{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));border:1px solid var(--efl-border);border-radius:16px;background:var(--efl-surface);overflow:hidden}.team-profile-totals>div{display:grid;justify-items:center;gap:5px;padding:16px 8px}.team-profile-totals>div+div{border-left:1px solid var(--efl-border)}.team-profile-totals strong{font-size:21px;font-weight:900}.team-profile-totals span{font-size:10px;text-align:center;color:var(--efl-text-2)}
+.team-profile-cabinet>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:30px;list-style:none;cursor:pointer}.team-profile-cabinet>summary::-webkit-details-marker{display:none}.team-profile-cabinet>summary>span{display:flex;align-items:center;gap:8px}.team-profile-cabinet>summary b{font-size:10px;padding:3px 7px;border-radius:6px;background:var(--efl-surface-2)}.team-profile-cabinet[open]>summary>svg{transform:rotate(90deg)}
+.team-profile-trophies{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}.team-profile-trophies button{display:flex;align-items:center;gap:10px;padding:12px;border:1px solid var(--efl-border);border-radius:12px;background:var(--efl-surface-2);text-align:left}.team-profile-trophies button>svg:first-child{color:var(--efl-primary);flex-shrink:0}.team-profile-trophies button>span{flex:1}.team-profile-trophies b{display:block;font-size:12px;overflow-wrap:anywhere}.team-profile-trophies small{display:block;font-size:10px;color:var(--efl-text-2)}
+.team-profile-competition-select{padding:12px 14px}.team-profile-page .club-profile-layout{margin-top:0}.team-profile-page .team-profile-layout-single{grid-template-columns:minmax(0,1fr)}.team-profile-page .club-match-list .team-profile-link{width:100%}.team-profile-notice{padding:12px;margin-bottom:16px;border:1px solid var(--efl-border);border-radius:12px;background:var(--efl-surface);font-size:12px;color:var(--efl-text-2)}.team-profile-notice button{margin-left:8px;color:var(--efl-primary);text-decoration:underline}.team-search-crest{width:28px;height:28px}
+@media(max-width:600px){.team-grid,.team-filter-fields,.team-two-columns,.team-profile-trophies{grid-template-columns:1fr}.team-membership-toolbar .competition-actions{flex:1}.team-membership-toolbar .competition-button{flex:1}.team-lineup-player{gap:6px}.team-lineup-player>b{font-size:11px}.team-lineup-player button{padding:6px}.team-lineup-save .competition-button{flex:1}.team-lineup-save>.competition-muted{width:100%}.team-profile-page .club-hero-identity{padding:22px 18px;gap:16px}.team-profile-emblem{flex-basis:76px;width:76px;height:88px}.team-profile-emblem .team-crest{width:72px;height:84px}.team-profile-totals>div{padding:12px 3px}.team-profile-totals strong{font-size:18px}.team-profile-totals span{font-size:9px}.team-match-section-nav button{font-size:10px;padding:8px 5px}}
+@media(prefers-reduced-motion:reduce){.team-tournaments *{scroll-behavior:auto!important}}

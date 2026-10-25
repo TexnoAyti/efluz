@@ -97,6 +97,31 @@ export async function verifyTeamLeaguePreview(failNextCommit:()=>void){
    assert.equal((await act({action:'TIEBREAK',fixtureId:final.id,winnerTeamId:final.awayTeamId,reason:'Tuzatilgan hal qiluvchi o‘yin 0:1'})).status,200);assert.equal(league.status,'COMPLETED');
    const stats=teamPlayerStats(league);assert.equal(stats.reduce((n,p)=>n+p.played,0),league.fixtures.reduce((n,f)=>n+f.bouts.length*2,0));
   }
+  // Owner deletion is available for leagues and teams without erasing historical snapshots.
+  const extra=payload(10);assert.equal((await call('/teams',extra)).status,200);
+  const deletionDraft=(await call('/leagues',{id:'tp_deletiondraft',name:'Delete draft',teamIds:[payload(0).id,extra.id],starterCount:1,rounds:1,version:0})).body.data;
+  await db.collection('team_membership_invitations').doc('ti_deleted_team_pending').set({teamId:extra.id,status:'PENDING',noticePending:true});
+  assert.equal((await call('/teams/'+extra.id+'/delete',{version:0})).status,409);
+  assert.equal((await call('/teams/'+extra.id+'/delete',{version:1})).status,200,'Draft references no longer prevent team deletion');
+  assert.equal((await call('/teams/'+extra.id+'/delete',{version:1})).status,200,'Deleted-team retries are idempotent');
+  assert.equal((await db.collection('team_league_deleted_teams').doc(extra.id).get()).data().name,extra.name);
+  assert.equal((await db.collection('team_membership_invitations').doc('ti_deleted_team_pending').get()).data().status,'CANCELLED');
+  const afterDetach=(await call('/leagues/'+deletionDraft.id)).body.data;assert.deepEqual(afterDetach.teamIds,[payload(0).id]);assert.equal(afterDetach.version,deletionDraft.version+1);
+  assert.equal((await call('/leagues/'+deletionDraft.id+'/actions',{action:'START',version:afterDetach.version})).status,409,'A draft with fewer than two remaining teams cannot start');
+  assert.equal((await call('/leagues/'+deletionDraft.id+'/delete',{version:afterDetach.version},other)).status,403);
+  assert.equal((await call('/leagues/'+deletionDraft.id+'/delete',{version:deletionDraft.version})).status,409);
+  assert.equal((await call('/leagues/'+deletionDraft.id+'/delete',{version:afterDetach.version})).status,200);
+  assert.equal((await call('/leagues/'+deletionDraft.id)).status,404);
+  const deleting={...league,id:'tp_deleteactive',status:'ACTIVE' as const};await db.collection('team_league_preview_leagues').doc(deleting.id).set(deleting);
+  failNextCommit();assert.ok((await call('/leagues/'+deleting.id+'/delete',{version:deleting.version})).status>=500);assert.equal((await db.collection('team_league_preview_leagues').doc(deleting.id).get()).exists,true,'Failed SQL archive/delete is atomic');assert.equal((await db.collection('team_league_deleted_leagues').doc(deleting.id).get()).exists,false);
+  assert.equal((await call('/leagues/'+deleting.id+'/delete',{version:deleting.version})).status,200,'Owner can delete an active league');
+  assert.equal((await call('/leagues/'+deleting.id+'/delete',{version:deleting.version})).status,200);
+  assert.deepEqual((await db.collection('team_league_deleted_leagues').doc(deleting.id).get()).data().fixtures,deleting.fixtures);
+  assert.equal((await call('/published/leagues/'+deleting.id,undefined,other)).status,404);
+  const retained=await db.collection('team_league_preview_leagues').get();const histories=retained.docs.map(d=>({id:d.id,data:d.data()}));
+  const currentTeam=(await call('/teams/'+payload(0).id)).body.data.team;
+  assert.equal((await call('/teams/'+currentTeam.id+'/delete',{version:currentTeam.version})).status,200,'Completed or cancelled league history does not block team deletion');
+  for(const row of histories)assert.deepEqual((await db.collection('team_league_preview_leagues').doc(row.id).get()).data(),row.data,'Historical leagues are never rewritten when deleting a team');
   console.log('PASS owner-only team preview HTTP, PNG/roster validation, all round-robin sizes, native transaction rollback, concurrent result exclusion, captain lineups, reserves, random bijections, rounds, knockout ties/finals, league qualification, locked prior stages, player statistics and score corrections');
  }finally{if(savedBotToken===undefined)delete process.env.TELEGRAM_BOT_TOKEN;else process.env.TELEGRAM_BOT_TOKEN=savedBotToken;await new Promise<void>((resolve,reject)=>server.close(e=>e?reject(e):resolve()));}
 }

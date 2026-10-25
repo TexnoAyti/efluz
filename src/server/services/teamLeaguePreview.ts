@@ -97,6 +97,7 @@ export async function actOnTeamLeague(ownerId:string,id:string,input:any){
   for(let i=0;i<checkedMembers.length;i+=16)await Promise.all(checkedMembers.slice(i,i+16).filter(m=>m.userId).map(m=>readTeamActor(tx,m.userId!)));
   if(input.action==='START'){
    if(l.status!=='DRAFT')throw error('Turnir allaqachon boshlangan.',409);
+   if(l.teamIds.length<2)throw error('Boshlash uchun kamida 2 team tanlang.',409);
    const docs=await Promise.all(l.teamIds.map(tid=>tx.get(db.collection(TEAM_COLLECTION).doc(tid))));
    if(l.membershipRequired)await assertExclusiveTeamRosters(tx,docs.map(doc=>owned(doc.data() as PreviewTeam|undefined,ownerId)));
    for(const doc of docs){const t=owned(doc.data() as PreviewTeam|undefined,ownerId);if(l.membershipRequired&&preparedTeams.find(p=>p.id===t.id)?.version!==t.version)throw error('Team tarkibi yangilangan. Qayta boshlang.',409);const eligible=l.membershipRequired?confirmedTeamMembers(t):t.members;if(eligible.length<l.starterCount)throw error(`${t.name}: o‘yinchi yetmaydi.`);l.teams[t.id]={id:t.id,name:t.name,members:eligible,captainMemberId:t.captainMemberId};}
@@ -181,11 +182,29 @@ export async function getPublishedTeamProfile(id:string,viewerId?:string){
   leagues:leagues.map(l=>({...l,teams:Object.fromEntries(Object.entries(l.teams).map(([teamId,snapshot])=>[teamId,teamId===id?snapshot:{id:snapshot.id,name:snapshot.name,members:[],captainMemberId:''}]))})),
   teams:data.teams.filter(t=>ids.has(t.id)).map(({id,name,logo})=>({id,name,logo}))};
 }
+// Deleted records remain in a private archive; immutable league snapshots survive.
+export async function deletePreviewLeague(ownerId:string,id:string,version:number){
+ identifier(id);const db=getFirestoreDb(),ref=db.collection(LEAGUE_COLLECTION).doc(id),archive=db.collection('team_league_deleted_leagues').doc(id);
+ return db.runTransaction(async tx=>{
+  const record=(await tx.get(ref)).data() as TeamLeague|undefined,deleted=(await tx.get(archive)).data();
+  if(!record){if(deleted?.ownerId===ownerId&&deleted.version===version)return {id};throw error('Liga topilmadi.',404);}
+  const league=owned(record,ownerId);if(league.version!==version)throw error('Liga yangilangan. Qayta yuklang.',409);
+  tx.set(archive,{...league,deletedAt:now(),deletedBy:ownerId});tx.delete(ref);return {id};
+ });
+}
 export async function deletePreviewTeam(ownerId:string,id:string,version:number){
- identifier(id);const db=getFirestoreDb(),ref=db.collection(TEAM_COLLECTION).doc(id);
- return db.runTransaction(async tx=>{const team=owned((await tx.get(ref)).data() as PreviewTeam|undefined,ownerId);const leagues=await tx.get(db.collection(LEAGUE_COLLECTION).where('ownerId','==',ownerId));
- if(team.version!==version)throw error('Team yangilangan. Qayta yuklang.',409);
- if(leagues.docs.some(d=>(d.data() as TeamLeague).teamIds.includes(id)))throw error('Team turnirga biriktirilgan. Tarixni saqlash uchun o‘chirish yopiq; tayyorlanayotgan turnirdan avval chiqarib oling.',409);
- const pending=await tx.get(db.collection('team_membership_invitations').where('teamId','==',id).where('status','==','PENDING').limit(200));for(const row of pending.docs)tx.update(row.ref,{status:'CANCELLED',noticePending:false});
- tx.delete(ref);return {id};});
+ identifier(id);const db=getFirestoreDb(),ref=db.collection(TEAM_COLLECTION).doc(id),archive=db.collection('team_league_deleted_teams').doc(id);
+ return db.runTransaction(async tx=>{
+  const record=(await tx.get(ref)).data() as PreviewTeam|undefined,deleted=(await tx.get(archive)).data();
+  if(!record){if(deleted?.ownerId===ownerId&&deleted.version===version)return {id};throw error('Team topilmadi.',404);}
+  const team=owned(record,ownerId),leagues=await tx.get(db.collection(LEAGUE_COLLECTION).where('ownerId','==',ownerId));
+  if(team.version!==version)throw error('Team yangilangan. Qayta yuklang.',409);
+  const active=leagues.docs.map(d=>d.data() as TeamLeague).filter(l=>l.status==='ACTIVE'&&l.teamIds.includes(id));
+  if(active.length)throw error(`Team faol ligada qatnashyapti: ${active.map(l=>l.name).join(', ')}. Avval shu ligani yakunlang, bekor qiling yoki o‘chiring.`,409);
+  const pending=await tx.get(db.collection('team_membership_invitations').where('teamId','==',id).where('status','==','PENDING').limit(200));
+  const at=now();
+  for(const row of pending.docs)tx.update(row.ref,{status:'CANCELLED',noticePending:false});
+  for(const row of leagues.docs){const l=row.data() as TeamLeague;if(l.status==='DRAFT'&&l.teamIds.includes(id))tx.update(row.ref,{teamIds:l.teamIds.filter(t=>t!==id),version:l.version+1,updatedAt:at});}
+  tx.set(archive,{...team,deletedAt:at,deletedBy:ownerId});tx.delete(ref);return {id};
+ });
 }
