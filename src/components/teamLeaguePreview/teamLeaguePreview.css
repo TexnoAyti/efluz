@@ -102,3 +102,8 @@
 @media(prefers-reduced-motion:reduce){.team-tournaments *{scroll-behavior:auto!important}}
 
 .team-personal-teams{display:grid;gap:10px;margin:12px 0 16px}.team-personal-card{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.team-personal-card .team-profile-link{flex:1;min-width:160px;text-align:left}.team-personal-card .team-profile-link>span{display:grid;gap:3px}.team-personal-card .team-crest{width:44px;height:52px}.team-personal-card .competition-button{flex-shrink:0}
+
+.team-admin-picker{display:grid;gap:12px}.team-admin-picker>.competition-muted{margin:0;line-height:1.6}
+
+.team-dialog-body:has(>.team-tournament-management){grid-template-columns:minmax(0,1fr);align-content:start}.team-tournament-management>*{flex-shrink:0}.team-tournament-management .efl-league-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.team-tournament-management .efl-league-tabs>button{white-space:normal}@media(min-width:600px){.team-tournament-management .efl-league-tabs{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(max-width:600px){.team-membership-toolbar>.competition-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.team-membership-toolbar .competition-button{width:100%;flex:initial;min-height:40px;white-space:normal;overflow-wrap:anywhere}}

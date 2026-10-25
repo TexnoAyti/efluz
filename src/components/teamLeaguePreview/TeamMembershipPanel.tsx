@@ -1,3 +1,4 @@
+import {TeamTournamentCreator,TeamTournamentManager} from './TeamTournamentManager';
 import React,{useEffect,useRef,useState} from 'react';
 import {Plus,Ticket,Users,Mail,RefreshCw,Shield,Upload,X} from 'lucide-react';
 import {useAuth} from '../../context/AuthContext';
@@ -8,11 +9,12 @@ import {TeamPreviewDialog,readLogo} from './TeamLeaguePreviewView';
 import {TeamBadge} from './TeamBadge';
 const statusNames={PENDING:'Javob kutilmoqda',ACCEPTED:'Qabul qilingan',REJECTED:'Rad etilgan',CANCELLED:'Bekor qilingan',EXPIRED:'Muddati tugagan'};
 function Failure({error}:{error:any}){return error?<div role="alert" className="competition-note error"><p>{error.message}</p>{error.groupUrl&&<><a className="competition-button mt-2" href={error.groupUrl} target="_blank" rel="noreferrer">Guruhga qo‘shilish</a><p className="competition-muted mt-2">Guruhga kirgach, shu amalni qayta bosing — a’zolik qayta tekshiriladi.</p></>}</div>:null;}
-export function TeamMembershipPanel({management=false}:{management?:boolean}){
- const {user}=useAuth(),[workspace,setWorkspace]=useState<TeamMembershipWorkspace|null>(null),[dialog,setDialog]=useState<'create'|'teams'|'invites'|'tickets'|null>(null),[managed,setManaged]=useState<string|null>(null),[error,setError]=useState<any>(null),[busy,setBusy]=useState(false),[loading,setLoading]=useState(false);
+export function TeamMembershipPanel({management=false,onTournamentChange}:{management?:boolean;onTournamentChange?:()=>void}){
+ const {user}=useAuth(),[workspace,setWorkspace]=useState<TeamMembershipWorkspace|null>(null),[dialog,setDialog]=useState<'create'|'teams'|'invites'|'tickets'|'leagues'|'tournament-create'|null>(null),[managed,setManaged]=useState<string|null>(null),[error,setError]=useState<any>(null),[busy,setBusy]=useState(false),[loading,setLoading]=useState(false);
+ const [managedLeague,setManagedLeague]=useState<string|null>(null);
  const mounted=useRef(false),scope=useRef(user?.id),lock=useRef(false);scope.current=user?.id;
  const load=async()=>{const started=scope.current;const data=await teamPreviewRequest<TeamMembershipWorkspace>('/membership');if(mounted.current&&scope.current===started)setWorkspace(data);};
- useEffect(()=>{mounted.current=true;let cancelled=false;setWorkspace(null);setDialog(null);setManaged(null);setError(null);setLoading(true);load().catch(e=>{if(!cancelled)setError(e);}).finally(()=>{if(!cancelled)setLoading(false);});return()=>{cancelled=true;mounted.current=false;};},[user?.id]);
+ useEffect(()=>{mounted.current=true;let cancelled=false;setWorkspace(null);setDialog(null);setManaged(null);setManagedLeague(null);setError(null);setLoading(true);load().catch(e=>{if(!cancelled)setError(e);}).finally(()=>{if(!cancelled)setLoading(false);});return()=>{cancelled=true;mounted.current=false;};},[user?.id]);
  const respond=async(inv:TeamInvitation,accept:boolean)=>{if(lock.current)return;lock.current=true;setBusy(true);setError(null);try{await teamPreviewRequest(`/membership/invitations/${inv.id}/respond`,{accept});await load();}catch(e){setError(e);}finally{lock.current=false;if(mounted.current)setBusy(false);}};
  const canManageTeam=(team:PreviewTeam)=>!!workspace?.isOwner||(team.adminUserId||team.ownerId)===user?.id;
  const openTeam=(team:PreviewTeam)=>{setDialog(null);setError(null);if(canManageTeam(team))setManaged(team.id);else openTeamProfile(team.id);};
@@ -21,6 +23,8 @@ export function TeamMembershipPanel({management=false}:{management?:boolean}){
    <button className="competition-button" onClick={()=>{setError(null);setDialog('teams');void load().catch(setError);}}><Users size={14}/>Mening teamim{workspace&&workspace.teams.length>0&&<span className="team-membership-count">{workspace.teams.length}</span>}</button>
    <button className="competition-button" onClick={()=>{setError(null);setDialog('invites');void load().catch(setError);}}><Mail size={14}/>Takliflar{workspace&&workspace.invitations.some(i=>i.status==='PENDING')&&<span className="team-membership-count">{workspace.invitations.filter(i=>i.status==='PENDING').length}</span>}</button>
    <button className="competition-button primary" disabled={!workspace} onClick={()=>{setError(null);setDialog('create');}}><Plus size={14}/>Yangi team</button>
+   {workspace?.isOwner&&<button className="competition-button primary" onClick={()=>{setError(null);setDialog('tournament-create');}}><Plus size={14}/>Turnir yaratish</button>}
+   {!!workspace?.managedLeagues?.length&&<button className="competition-button" onClick={()=>{setError(null);setDialog('leagues');void load().catch(setError);}}><Shield size={14}/>Turnir boshqaruvi ({workspace.managedLeagues.length})</button>}
    {management&&workspace?.isOwner&&<button className="competition-button" onClick={()=>{setError(null);setDialog('tickets');}}><Ticket size={14}/>Ticketlar</button>}
   </div></div>
   {!dialog&&<Failure error={error}/>}
@@ -30,7 +34,10 @@ export function TeamMembershipPanel({management=false}:{management?:boolean}){
   {dialog==='create'&&workspace&&<CreateTeam workspace={workspace} onClose={()=>setDialog(null)} onRefresh={load} onCreated={async team=>{await load();setDialog(null);setManaged(team.id);}}/>}
   {dialog==='teams'&&<TeamPreviewDialog title="Mening teamlarim" onClose={()=>setDialog(null)}><Failure error={error}/><div className="team-grid">{workspace?.teams.map(team=><button type="button" className="competition-panel team-row" key={team.id} onClick={()=>openTeam(team)}><TeamBadge team={team}/><span><strong>{team.name}</strong><small className="block competition-muted">{team.members.length} o‘yinchi · {workspace?.isOwner||(team.adminUserId||team.ownerId)===user?.id?'Boshqarish':'Profilni ochish'}</small></span></button>)}</div>{workspace&&!workspace.teams.length&&<p className="competition-note">Hali team yaratmagansiz. Team yaratish uchun loyiha egasidan ticket oling.</p>}</TeamPreviewDialog>}
   {dialog==='invites'&&<TeamPreviewDialog title="Teamga takliflar" onClose={()=>{if(!busy)setDialog(null);}}><Failure error={error}/>{workspace?.invitations.map(inv=><article className="competition-panel mb-3" key={inv.id}><h3 className="team-section-title">{inv.teamName}</h3><p className="competition-muted">{inv.inviterName} sizni jamoaga taklif qilyapti.</p><p className="competition-muted">{statusNames[inv.status]} · {new Date(inv.expiresAt).toLocaleDateString('uz-UZ')} gacha</p><div className="competition-actions mt-3"><button className="competition-button" onClick={()=>openTeamProfile(inv.teamId)}>Team profilini ochish</button>{inv.status==='PENDING'&&<><button className="competition-button primary" disabled={busy} onClick={()=>void respond(inv,true)}>Qabul qilish / a’zolikni tekshirish</button><button className="competition-button" disabled={busy} onClick={()=>void respond(inv,false)}>Rad etish</button></>}</div></article>)}{!workspace?.invitations.length&&<p className="competition-note">Hozircha taklif yo‘q.</p>}</TeamPreviewDialog>}
-  {dialog==='tickets'&&workspace?.isOwner&&<TeamTicketManager onClose={()=>setDialog(null)}/>}
+  {dialog==='tournament-create'&&workspace?.isOwner&&<TeamTournamentCreator onClose={()=>setDialog(null)} onCreated={id=>{setDialog(null);setManagedLeague(id);void load().catch(setError);}}/>}
+  {dialog==='leagues'&&<TeamPreviewDialog title="Men boshqaradigan turnirlar" onClose={()=>setDialog(null)}><Failure error={error}/><div className="team-grid">{workspace?.managedLeagues?.map(league=><button type="button" className="competition-panel team-row" key={league.id} onClick={()=>{setDialog(null);setManagedLeague(league.id);}}><Shield size={22}/><span><strong>{league.name}</strong><small className="block competition-muted">Turnirni boshqarish</small></span></button>)}</div>{!workspace?.managedLeagues?.length&&<p className="competition-note">Sizga turnir tayinlanmagan.</p>}</TeamPreviewDialog>}
+  {managedLeague&&<TeamTournamentManager leagueId={managedLeague} onClose={()=>{setManagedLeague(null);void load().catch(setError);onTournamentChange?.();}}/>}
+  {dialog==='tickets' &&workspace?.isOwner&&<TeamTicketManager onClose={()=>setDialog(null)}/>}
   {managed&&<TeamMemberManager teamId={managed} onClose={()=>{setManaged(null);void load().catch(setError);}}/>}
  </div>;
 }

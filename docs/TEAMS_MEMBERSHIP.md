@@ -61,3 +61,36 @@ Each confirmed account may belong to only one current team. Creating a second te
 TEAMS uses the shared EFL competition heading, tabs, panels, buttons, fields and creation steps. Its own stylesheet contains team roster, pairing, score, profile and bracket geometry. The legacy custom tournament appearance no longer wraps TEAMS.
 
 Owner-only Delete buttons are present on each team/league directory card and the league detail header. League deletion removes the live record and archives its complete snapshot privately in `team_league_deleted_leagues`; deleting an active league closes live play. Team deletion archives the team in `team_league_deleted_teams`, cancels pending invites, and removes it from draft leagues with version increments. A draft with fewer than two teams cannot start. Completed/cancelled league snapshots are not rewritten. An active league blocks team deletion with its name and instructions to finish, cancel or delete that league first. Deletion requests check versions and are idempotent for the same deleted version.
+
+## Team tournaments and delegated administrators
+
+The primary owner can create tournaments directly from **TEAMS → Turnir yaratish**
+or from the admin panel. Presets are Liga, Kubok, Chempionlar ligasi, and custom.
+The Champions League preset uses the existing round-robin league phase followed
+by playoffs; it does not reproduce UEFA's opponent-selection rules. Choose the
+number of qualifiers and one/two league legs in the wizard.
+
+The owner selects a registered, active account by username/Telegram ID/EFLUZ ID.
+`ownerId` stays the platform owner; `adminUserId` delegates only that tournament.
+The administrator discovers drafts and active tournaments through **TEAMS →
+Turnir boshqaruvi**, also available in the personal profile. They can edit a draft
+using its current participants, start it, manage lineups/pairings/results, advance
+rounds, settle playoff ties and cancel it. Team membership/tickets, unrelated
+private teams, tournament deletion, creating tournaments and assigning admins
+remain owner operations. Team-admin and tournament-admin roles are independent.
+
+The owner can replace/remove an administrator even after the tournament starts,
+without changing rosters or past results. Each managed read/page checks the fresh
+account and assignment; each mutation rechecks both inside the transaction. A
+cached fixture page cannot bypass revocation. Audit entries record the actor ID.
+Public responses include the competition type but omit administrator account IDs.
+
+API routes (under `/api/team-leagues-preview`):
+- GET `/administrators/resolve?reference=...` (owner only; minimal account data)
+- POST `/leagues/:id/administrator` (`adminUserId`, `version`; owner only)
+- GET `/managed/leagues/:id` and `/managed/leagues/:id/teams`
+- POST `/managed/leagues/:id/update` and `/managed/leagues/:id/actions`
+
+The native PostgreSQL HTTP audit exercises a Champions League from creation to
+final, role boundaries, revocation/suspension, transaction rollback, version
+conflicts and pagination with a fresh ACL on every page.

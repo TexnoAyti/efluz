@@ -12,7 +12,7 @@ export async function hydrateTeamTransport<T>(data:T,get:(path:string)=>Promise<
  for(const [field,pageField] of [['teams','teamPage'],['fixtures','fixturePage']]){
   if(!value[pageField])continue;
   const first=value[pageField],items=[...(value[field]||[])];let next=first.next,pages=0;
-  while(next){if(++pages>100||typeof next!=='string'||!/^\/(?:published\/)?(?:leagues\/tp_[A-Za-z0-9_-]+|teams\/tp_[A-Za-z0-9_-]+|membership)?\?/.test(next)&&!/^\/published\?/.test(next)&&!/^\/\?/.test(next))throw Error('Team sahifasi manzili noto‘g‘ri.');
+  while(next){if(++pages>100||typeof next!=='string'||!/^\/(?:(?:published|managed)\/)?(?:leagues\/tp_[A-Za-z0-9_-]+(?:\/teams)?|teams\/tp_[A-Za-z0-9_-]+|membership)?\?/.test(next)&&!/^\/published\?/.test(next)&&!/^\/\?/.test(next))throw Error('Team sahifasi manzili noto‘g‘ri.');
    const result=await get(next),page=result[pageField];if(!page||page.snapshot!==first.snapshot||page.total!==first.total||!Array.isArray(result[field]))throw Error('Team ma’lumotlari yangilandi. Qayta yuklang.');items.push(...result[field]);next=page.next;
   }
   if(items.length!==first.total)throw Error('Team ma’lumotlari to‘liq yuklanmadi. Qayta urinib ko‘ring.');value[field]=items;delete value[pageField];
