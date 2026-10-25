@@ -164,8 +164,9 @@ The sweep reads at most 40 recent due fixtures per page, resumes with a cursor,
 and never recreates an existing reminder intent. Expired advance reminders are
 skipped. Existing domestic/UZEFLIFE notification settings and pipelines remain.
 
-The notification list reads fresh user-scoped rows, applying existing visibility
-and read controls, with the prior resilient reader as an outage fallback. Team
+Delivery publishes a shared user-scoped notification projection. Polling reads
+that projection with existing visibility/read controls and the prior resilient
+reader as an outage fallback, avoiding a database query for each viewer. Team
 and event notifications open their matching workspace; custom tournament buttons
 open the existing authenticated Telegram tournament link. `tt1_` start parameters
 restore a team tournament and optional fixture without granting access.

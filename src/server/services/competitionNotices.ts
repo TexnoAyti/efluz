@@ -1,3 +1,4 @@
+import {publishLiveUserNotifications} from './liveNotifications';
 import {createHash,randomUUID} from 'node:crypto';
 import type {Transaction} from 'firebase-admin/firestore';
 import {getFirestoreDb} from '../firebase/admin';
@@ -34,6 +35,7 @@ export async function processCompetitionNotices(limit=40,enqueue=enqueueSmartTel
      const id='competition-'+noticeHash([job.id,cursor,userId]),notification=db.collection('notifications').doc(id);
      // A delivery retry must never turn an already-read in-app item unread.
      await db.runTransaction(async tx=>{if(!(await tx.get(notification)).exists)tx.set(notification,{id,userId,type:'COMPETITION_UPDATE',title:notice.title,message:notice.body,entityType:notice.entityType,entityId:notice.entityId,...(notice.fixtureId?{fixtureId:notice.fixtureId}:{}),isRead:false,createdAt:claimed.createdAt});});
+     await publishLiveUserNotifications(userId);
      invalidateFirestoreCache(`firestore:notifications:${userId}`);
      await enqueue({userId,seasonId:'season-2026-27',eventId:id,title:notice.title,body:escape(notice.body),deferDrain:true,replyMarkup:{inline_keyboard:[[{text:'O‘yin / turnirni ochish',url:notice.url}]]}});
     }
