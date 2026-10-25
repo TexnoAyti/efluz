@@ -50,21 +50,27 @@ export async function savePreviewTeam(ownerId:string,input:any){
 export async function savePreviewLeague(actorId:string,input:any){
  const id=identifier(input.id),name=text(input.name),ids=input.teamIds;
  const competitionType=input.competitionType;
- if(competitionType!==undefined&&!['CUSTOM','LEAGUE','CUP','CHAMPIONS_LEAGUE'].includes(competitionType))throw error('Turnir turi noto‘g‘ri.');
+ if(competitionType!==undefined&&!['CUSTOM','LEAGUE','CUP','CHAMPIONS_LEAGUE','SINGLE_MATCH'].includes(competitionType))throw error('Turnir turi noto‘g‘ri.');
  const format=input.format??'LEAGUE',description=typeof input.description==='string'?input.description.trim():'';
  if(!['LEAGUE','PLAYOFF','LEAGUE_AND_PLAYOFF'].includes(format)||description.length>1000)throw error('Format yoki tavsif noto‘g‘ri.');
  const qualifiers=format==='LEAGUE_AND_PLAYOFF'?input.qualifiers:2;
  if(!Array.isArray(ids)||ids.length<2||ids.length>TEAM_LEAGUE_MAX_TEAMS||new Set(ids).size!==ids.length)throw error(`2–${TEAM_LEAGUE_MAX_TEAMS} ta turli team tanlang.`);
+ if(input.teamCount!==undefined&&(!Number.isInteger(input.teamCount)||input.teamCount!==ids.length))throw error('Tanlangan teamlar soni belgilangan songa mos bo‘lsin.');
  ids.forEach(identifier);
  if(format==='PLAYOFF'&&!TEAM_PLAYOFF_SIZES.includes(ids.length))throw error('Pley-off uchun 2, 4, 8, 16, 32 yoki 64 team tanlang.');
  if(format==='LEAGUE_AND_PLAYOFF'&&(!TEAM_PLAYOFF_SIZES.includes(qualifiers)||qualifiers>ids.length))throw error('Pley-offga chiqadigan teamlar sonini to‘g‘ri tanlang.');
- if(!Number.isInteger(input.starterCount)||input.starterCount<1||input.starterCount>16||![1,2].includes(input.rounds))throw error('Asosiy tarkib 1–16 o‘yinchi, davra 1 yoki 2 bo‘lsin.');
+ if(!Number.isInteger(input.starterCount)||input.starterCount<1||input.starterCount>30||![1,2].includes(input.rounds))throw error('Asosiy tarkib 1–30 o‘yinchi, davra 1 yoki 2 bo‘lsin.');
  const db=getFirestoreDb(),ref=db.collection(LEAGUE_COLLECTION).doc(id);
  return db.runTransaction(async tx=>{
   const freshActor=await readTeamActor(tx,actorId),old=(await tx.get(ref)).data() as TeamLeague|undefined;
   if(old)assertTeamLeagueManager(old,freshActor);else if(!canSeeTeamPreview(freshActor.telegramId))throw error('Turnirni faqat loyiha egasi yaratadi.',403);
   const effectiveKind=competitionType??old?.competitionType??'CUSTOM';
   if(effectiveKind==='CHAMPIONS_LEAGUE'&&format!=='LEAGUE_AND_PLAYOFF'||effectiveKind==='CUP'&&format!=='PLAYOFF'||effectiveKind==='LEAGUE'&&format!=='LEAGUE')throw error('Turnir turi va formati mos emas.');
+  if(effectiveKind==='SINGLE_MATCH'&&(format!=='PLAYOFF'||ids.length!==2||input.rounds!==1))throw error('Bitta uchrashuv uchun aynan 2 team, pley-off va 1 uchrashuv tanlang.');
+  const reserveLimit=input.reserveLimit===undefined?old?.reserveLimit:input.reserveLimit;
+  if(reserveLimit!==undefined&&(!Number.isInteger(reserveLimit)||reserveLimit<0||reserveLimit>30-input.starterCount))throw error('Zaxira limiti 0 dan asosiy tarkib bilan birga 30 o‘yinchigacha bo‘lsin.');
+  const points=input.points===undefined?old?.points:input.points;
+  if(points!==undefined&&(!points||typeof points!=='object'||Array.isArray(points)||![points.win,points.draw,points.loss].every(n=>Number.isInteger(n)&&n>=0&&n<=10)||points.win<=points.draw||points.draw<points.loss))throw error('Ochko qoidasi: g‘alaba > durang ≥ mag‘lubiyat; har biri 0–10.');
   const ownerId=old?.ownerId||actorId;
   if(!canSeeTeamPreview(freshActor.telegramId)&&(input.adminUserId!==undefined||ids.some((tid:string)=>!old!.teamIds.includes(tid))))throw error('Administrator va yangi qatnashchilarni faqat loyiha egasi tayinlaydi.',403);
   const administrator=await readTeamActor(tx,input.adminUserId===undefined?(old?.adminUserId||ownerId):input.adminUserId||ownerId);
@@ -73,13 +79,13 @@ export async function savePreviewLeague(actorId:string,input:any){
   if(old&&old.status!=='DRAFT')throw error('Boshlangan turnir reglamenti yopiq.',409);
   const snapshots=await Promise.all(ids.map((tid:string)=>tx.get(db.collection(TEAM_COLLECTION).doc(tid))));
   for(const doc of snapshots){const t=owned(doc.data() as PreviewTeam|undefined,ownerId);if(t.members.length<input.starterCount)throw error(`${t.name}: asosiy tarkib uchun o‘yinchi yetmaydi.`);}
-  if(old&&(old.competitionType||'CUSTOM')===(competitionType??old.competitionType??'CUSTOM')&&(old.adminUserId||old.ownerId)===administrator.id&&(old.format??'LEAGUE')===format&&(old.description??'')===description&&(old.qualifiers??2)===qualifiers&&old.name===name&&old.starterCount===input.starterCount&&old.rounds===input.rounds&&JSON.stringify(old.teamIds)===JSON.stringify(ids))return old;
+  if(old&&old.reserveLimit===reserveLimit&&JSON.stringify(old.points)===JSON.stringify(points)&&(old.competitionType||'CUSTOM')===(competitionType??old.competitionType??'CUSTOM')&&(old.adminUserId||old.ownerId)===administrator.id&&(old.format??'LEAGUE')===format&&(old.description??'')===description&&(old.qualifiers??2)===qualifiers&&old.name===name&&old.starterCount===input.starterCount&&old.rounds===input.rounds&&JSON.stringify(old.teamIds)===JSON.stringify(ids))return old;
   if((old?.version??0)!==input.version)throw error('Turnir yangilangan. Qayta yuklang.',409);
-  const l:TeamLeague={id,ownerId,adminUserId:administrator.id,adminName:teamLeagueAdminName(administrator),competitionType:effectiveKind,membershipRequired:old?.membershipRequired??true,name,format,description,qualifiers,teamIds:ids,starterCount:input.starterCount,rounds:input.rounds,status:'DRAFT',currentRound:0,totalRounds:0,fixtures:[],teams:{},version:(old?.version??0)+1,updatedAt:now(),audit:old?.audit??[]};tx.set(ref,l);return l;
+  const l:TeamLeague={id,ownerId,...(reserveLimit!==undefined?{reserveLimit}:{}),...(points!==undefined?{points:{win:points.win,draw:points.draw,loss:points.loss}}:{}),adminUserId:administrator.id,adminName:teamLeagueAdminName(administrator),competitionType:effectiveKind,membershipRequired:old?.membershipRequired??true,name,format,description,qualifiers,teamIds:ids,starterCount:input.starterCount,rounds:input.rounds,status:'DRAFT',currentRound:0,totalRounds:0,fixtures:[],teams:{},version:(old?.version??0)+1,updatedAt:now(),audit:old?.audit??[]};tx.set(ref,l);return l;
  });
 }
-function lineup(value:any,members:string[],count:number):TeamLineup{
- if(!value||!Array.isArray(value.starters)||!Array.isArray(value.reserves)||value.starters.length!==count||value.reserves.length>30)throw error(`Aynan ${count} asosiy o‘yinchi tanlang.`);
+function lineup(value:any,members:string[],count:number,reserveLimit=30):TeamLineup{
+ if(!value||!Array.isArray(value.starters)||!Array.isArray(value.reserves)||value.starters.length!==count||value.reserves.length>reserveLimit)throw error(`Aynan ${count} asosiy, ko‘pi bilan ${reserveLimit} zaxira o‘yinchi tanlang.`);
  const all=[...value.starters,...value.reserves];if(all.some(id=>!members.includes(id))||new Set(all).size!==all.length)throw error('Asosiy tarkib va zaxira takrorlanmasin, faqat team a’zolari tanlansin.');
  return {starters:[...value.starters],reserves:[...value.reserves]};
 }
@@ -106,6 +112,7 @@ export async function actOnTeamLeague(actorId:string,id:string,input:any){
   for(let i=0;i<checkedMembers.length;i+=16)await Promise.all(checkedMembers.slice(i,i+16).filter(m=>m.userId).map(m=>readTeamActor(tx,m.userId!)));
   if(input.action==='START'){
    if(l.status!=='DRAFT')throw error('Turnir allaqachon boshlangan.',409);
+   if(l.competitionType==='SINGLE_MATCH'&&(l.teamIds.length!==2||l.format!=='PLAYOFF'||l.rounds!==1))throw error('Bitta uchrashuv reglamenti noto‘g‘ri.',409);
    if(l.teamIds.length<2)throw error('Boshlash uchun kamida 2 team tanlang.',409);
    const docs=await Promise.all(l.teamIds.map(tid=>tx.get(db.collection(TEAM_COLLECTION).doc(tid))));
    if(l.membershipRequired)await assertExclusiveTeamRosters(tx,docs.map(doc=>owned(doc.data() as PreviewTeam|undefined,ownerId)));
@@ -132,7 +139,7 @@ export async function actOnTeamLeague(actorId:string,id:string,input:any){
     if(f.bouts.length)throw error('Juftliklar tayyor. Avval tarkibni qayta oching yoki zaxiradan almashtiring.',409);
     if(!['home','away'].includes(input.side))throw error('Team tomoni noto‘g‘ri.');
     const team=l.teams[input.side==='home'?f.homeTeamId:f.awayTeamId];
-    f[input.side==='home'?'homeLineup':'awayLineup']=lineup(input.lineup,team.members.map(p=>p.id),l.starterCount);
+    f[input.side==='home'?'homeLineup':'awayLineup']=lineup(input.lineup,team.members.map(p=>p.id),l.starterCount,l.reserveLimit??30);
    }else if(input.action==='PAIR'){
     if(f.bouts.length||!f.homeLineup||!f.awayLineup)throw error('Ikki sardor ham tarkib tanlashi kerak. Juftliklar bir marta tuziladi.',409);
     const h=shuffled(f.homeLineup.starters),a=shuffled(f.awayLineup.starters);
@@ -170,7 +177,7 @@ async function publishedTeams(){
  if(accounts.docs.length!==1||accounts.docs[0].data()?.isSuspended)return {teams:[] as PreviewTeam[],leagues:[] as TeamLeague[]};
  const ownerId=accounts.docs[0].id;
  const [ts,ls]=await Promise.all([db.collection(TEAM_COLLECTION).where('ownerId','==',ownerId).limit(TEAM_DIRECTORY_LIMIT).get(),db.collection(LEAGUE_COLLECTION).where('ownerId','==',ownerId).limit(8).get()]);
- const leagues=ls.docs.map(d=>d.data() as TeamLeague).filter(l=>l.status!=='DRAFT'&&l.currentRound>0).map(l=>({id:l.id,membershipRequired:l.membershipRequired,ownerId:'',name:l.name,description:l.description,competitionType:l.competitionType,format:l.format,qualifiers:l.qualifiers,teamIds:l.teamIds,starterCount:l.starterCount,rounds:l.rounds,status:l.status,currentRound:l.currentRound,totalRounds:l.totalRounds,fixtures:l.fixtures,teams:l.teams,version:0,updatedAt:l.updatedAt,audit:[]}));
+ const leagues=ls.docs.map(d=>d.data() as TeamLeague).filter(l=>l.status!=='DRAFT'&&l.currentRound>0).map(l=>({id:l.id,membershipRequired:l.membershipRequired,ownerId:'',name:l.name,description:l.description,reserveLimit:l.reserveLimit,points:l.points,competitionType:l.competitionType,format:l.format,qualifiers:l.qualifiers,teamIds:l.teamIds,starterCount:l.starterCount,rounds:l.rounds,status:l.status,currentRound:l.currentRound,totalRounds:l.totalRounds,fixtures:l.fixtures,teams:l.teams,version:0,updatedAt:l.updatedAt,audit:[]}));
  const included=new Set(leagues.flatMap(l=>l.teamIds));
  const teams=ts.docs.map(d=>d.data() as PreviewTeam).filter(t=>included.has(t.id)).map(t=>({id:t.id,ownerId:'',name:t.name,logo:t.logo,members:t.members,captainMemberId:t.captainMemberId,version:0,updatedAt:t.updatedAt}));
  return {teams,leagues};

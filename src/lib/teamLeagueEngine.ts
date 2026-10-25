@@ -17,11 +17,13 @@ export function teamFixtureScore(f:TeamFixture){
  for(const b of f.bouts)if(b.homeScore!=null&&b.awayScore!=null){played++;if(b.homeScore>b.awayScore)home++;else if(b.homeScore<b.awayScore)away++;else draws++;}
  return {home,away,draws,played,complete:f.bouts.length>0&&played===f.bouts.length};
 }
+export const teamPoints=(l:Pick<TeamLeague,'points'>)=>l.points??{win:3,draw:1,loss:0};
 export function teamStandings(l:TeamLeague):TeamStanding[]{
+ const points=teamPoints(l);
  const rows=new Map(l.teamIds.map(teamId=>[teamId,{teamId,name:l.teams[teamId]?.name||teamId,position:0,played:0,won:0,drawn:0,lost:0,winsFor:0,winsAgainst:0,points:0}]));
  for(const f of l.fixtures){if(f.stage==='PLAYOFF')continue;const s=teamFixtureScore(f);if(!s.complete)continue;const h=rows.get(f.homeTeamId)!,a=rows.get(f.awayTeamId)!;
   h.played++;a.played++;h.winsFor+=s.home;h.winsAgainst+=s.away;a.winsFor+=s.away;a.winsAgainst+=s.home;
-  if(s.home>s.away){h.won++;h.points+=3;a.lost++;}else if(s.home<s.away){a.won++;a.points+=3;h.lost++;}else{h.drawn++;a.drawn++;h.points++;a.points++;}
+  if(s.home>s.away){h.won++;h.points+=points.win;a.lost++;a.points+=points.loss;}else if(s.home<s.away){a.won++;a.points+=points.win;h.lost++;h.points+=points.loss;}else{h.drawn++;a.drawn++;h.points+=points.draw;a.points+=points.draw;}
  }
  return [...rows.values()].sort((a,b)=>b.points-a.points||(b.winsFor-b.winsAgainst)-(a.winsFor-a.winsAgainst)||b.winsFor-a.winsFor||a.name.localeCompare(b.name)).map((r,i)=>({...r,position:i+1}));
 }

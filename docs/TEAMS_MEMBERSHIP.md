@@ -94,3 +94,24 @@ API routes (under `/api/team-leagues-preview`):
 The native PostgreSQL HTTP audit exercises a Champions League from creation to
 final, role boundaries, revocation/suspension, transaction rollback, version
 conflicts and pagination with a fresh ACL on every page.
+
+## Tournament creation settings
+
+The first step now exposes the match size directly: quick 1v1/2v2/3v3/etc.
+choices plus a numeric 1–30 starter count, and an exact 2–64 participating-team
+count. Step two selects those teams and configures reserves, league legs,
+qualification and scoring; the final step shows both team fixtures and individual
+games before saving.
+
+`SINGLE_MATCH` is a dedicated type: exactly two teams, PLAYOFF, one leg. With one
+starter per team it produces one fixture and one individual game. More starters
+produce that many individual games inside the same team fixture. Knockout ties
+still need an explicitly confirmed winner; league home/away is configured with
+`rounds` 1 or 2. This does not add two-legged knockout ties.
+
+Optional `reserveLimit` is enforced on each submitted lineup and cannot exceed
+30 minus the starter count. Zero disables reserves. Optional `points` contains
+integer `win`, `draw`, `loss` values from 0–10 with win > draw >= loss; standings
+and league-phase qualifiers use these values. Existing records without those
+fields retain the prior reserve behavior and 3/1/0 scoring. Started tournament
+rules remain immutable. Optional request `teamCount` must equal `teamIds.length`.
