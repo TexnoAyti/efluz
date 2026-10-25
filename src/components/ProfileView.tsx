@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { lazy, Suspense, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n, Language } from '../i18n';
 import { ClubCrest } from './ClubCrest';
@@ -16,6 +16,8 @@ import {
   SlidersHorizontal,
   CalendarDays,
 } from 'lucide-react';
+
+const MyTeamsPanel=lazy(()=>import('./teamLeaguePreview/TeamMembershipPanel').then(m=>({default:m.TeamMembershipPanel})));
 
 interface ProfileViewProps {
   onNavigateTab: (tab: any) => void;
@@ -62,6 +64,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigateTab }) => {
           </div>
         </div>
       </div>
+
+      {user?.id&&<section className="competition-page team-tournaments" aria-label="Mening teamim"><h2 className="team-section-title">Mening teamim</h2><Suspense fallback={<p role="status">Team yuklanmoqda…</p>}><MyTeamsPanel/></Suspense></section>}
 
       {user?.id && <PlayerTrophyCabinet userId={user.id} seasonId={activeSeasonId} />}
       {user?.id && <PlayerSeasonProfile userId={user.id} seasonId={activeSeasonId} />}

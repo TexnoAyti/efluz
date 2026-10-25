@@ -33,6 +33,12 @@ export async function verifyTeamMembership(failNextCommit:()=>void){
   assert.equal((await call('/membership',undefined,null)).status,401);
   assert.equal((await call('/membership')).cache,'no-store');assert.equal((await call('/membership')).body.data.tickets.balance,0);
   assert.equal((await call('/membership/teams',payload)).status,402);
+  const legacyOwnerTeam:PreviewTeam={id:'tp_ownerlegacy01',ownerId:owner.id,name:'Owner legacy team',logo:'',members:[{id:'tp_ownerlegacyplayer',name:'Legacy player'}],captainMemberId:'tp_ownerlegacyplayer',version:1,updatedAt:new Date().toISOString()};
+  await db.collection('team_league_preview_teams').doc(legacyOwnerTeam.id).set(legacyOwnerTeam);
+  assert.ok((await call('/membership',undefined,owner)).body.data.teams.some((t:PreviewTeam)=>t.id===legacyOwnerTeam.id),'Owner-created teams without adminUserId appear in My teams');
+  assert.equal((await call('/membership/teams/'+legacyOwnerTeam.id,undefined,owner)).status,200,'Visible legacy team opens its owner manager');
+  assert.equal((await call('/membership')).body.data.teams.some((t:PreviewTeam)=>t.id===legacyOwnerTeam.id),false,'Another user never receives an owner-only team');
+  await db.collection('team_league_preview_teams').doc(legacyOwnerTeam.id).delete();
   for(const actor of [creator,globalAdmin])assert.equal((await ticket(creator,1,'forbidden-ticket-0001','grant',actor)).status,403);
   assert.equal((await ticket(creator,0,'invalid-amount-0001')).status,400);assert.equal((await ticket(creator,-1,'negative-amount-0001')).status,400);
   const grants=await Promise.all([ticket(creator,3,'grant-creator-0001'),ticket(creator,3,'grant-creator-0001')]);assert.ok(grants.every(r=>r.status===200));assert.equal((await call('/membership')).body.data.tickets.balance,3,'Repeated grant credits once');
@@ -47,6 +53,7 @@ export async function verifyTeamMembership(failNextCommit:()=>void){
   failNextCommit();assert.ok((await call('/membership/teams',payload)).status>=500);assert.equal((await call('/membership')).body.data.tickets.balance,2,'Native SQL failed team write restores debit and receipt');
   const created=await Promise.all([call('/membership/teams',payload),call('/membership/teams',payload)]);assert.ok(created.every(r=>r.status===200),JSON.stringify(created));let team=created[0].body.data as PreviewTeam;
   assert.equal(created[1].body.data.id,team.id,'One team per repeated create request');assert.equal(team.adminUserId,creator.id);assert.equal(team.members[0].userId,creator.id);assert.equal(team.members[0].verified,true);assert.equal((await call('/membership')).body.data.tickets.balance,1);
+  assert.equal((await call('/membership')).body.data.teams.filter((t:PreviewTeam)=>t.id===team.id).length,1,'Creator/admin/member indexes deduplicate their team');
   assert.equal((await call('/membership/teams',{...payload,name:'Changed payload'})).status,409);
   const competingCreates=await Promise.all([call('/membership/teams',{...payload,requestId:'competing-create-one'}),call('/membership/teams',{...payload,requestId:'competing-create-two'})]);assert.deepEqual(competingCreates.map(r=>r.status).sort(),[409,409]);assert.ok(competingCreates.every(r=>r.body.code==='TEAM_MEMBER_ALREADY_ASSIGNED'));assert.equal((await call('/membership')).body.data.tickets.balance,1,'Existing membership blocks another team without spending tickets');
   assert.equal((await call('/membership/teams/'+team.id,undefined,other)).status,403);
