@@ -9,9 +9,9 @@ export function TeamLeaguePager({leagues,selected,onChange,children}:Props){
  useEffect(()=>{const active=strip.current?.querySelector<HTMLElement>('[aria-current="true"]');if(active&&strip.current){const el=strip.current;el.scrollTo({left:active.offsetLeft-(el.clientWidth-active.clientWidth)/2,behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});}},[selected]);
  return <div className="team-league-pager">
   {ordered.length>1&&<nav className="team-league-selector" aria-label="TEAMS ligalarini almashtirish">
-   <button type="button" className="tourney-button team-league-arrow" aria-label="Oldingi liga" disabled={index<=0} onClick={()=>onChange(ordered[index-1].id)}><ChevronLeft size={18}/></button>
+   <button type="button" className="competition-button team-league-arrow" aria-label="Oldingi liga" disabled={index<=0} onClick={()=>onChange(ordered[index-1].id)}><ChevronLeft size={18}/></button>
    <div className="team-league-strip" ref={strip}>{ordered.map((league,i)=><button type="button" key={league.id} aria-current={league.id===selected?'true':undefined} onClick={()=>onChange(league.id)}><Trophy size={15}/><span>{league.name}<small>{i+1} / {ordered.length}</small></span></button>)}</div>
-   <button type="button" className="tourney-button team-league-arrow" aria-label="Keyingi liga" disabled={index<0||index>=ordered.length-1} onClick={()=>onChange(ordered[index+1].id)}><ChevronRight size={18}/></button>
+   <button type="button" className="competition-button team-league-arrow" aria-label="Keyingi liga" disabled={index<0||index>=ordered.length-1} onClick={()=>onChange(ordered[index+1].id)}><ChevronRight size={18}/></button>
   </nav>}
   <div className="team-league-slide" onTouchStart={event=>{
    start.current=null;if(event.touches.length!==1||ordered.length<2)return;

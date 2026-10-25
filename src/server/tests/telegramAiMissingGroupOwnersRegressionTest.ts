@@ -75,7 +75,7 @@ try {
  await assert.rejects(applyBanControl({...callback,from:{id:7573478198}}),(e:any)=>e.statusCode===403);
  await assert.rejects(applyBanControl({...callback,message:{...callback.message,chat:{id:-1001,type:'supergroup'}}}));
  await assert.rejects(applyBanControl({...callback,message:{...callback.message,message_id:9999}}));
- const clicked=await applyBanControl(callback);assert.equal(clicked.isBanned,true);assert.equal(clicked.targetId,control.targetId);assert.equal((await db.collection('club_selection_bans').get()).size,1,'Only the chosen account is banned');
+ const clicked=await applyBanControl(callback);assert.equal(clicked.isBanned,true);assert.equal(clicked.targetId,control.targetId);assert.ok(clicked.releasedClubs.length>=1,'The button releases current clubs in the same ban transaction');assert.equal((await db.collection('club_selection_bans').get()).size,1,'Only the chosen account is banned');
  assert.equal((await applyBanControl(callback)).replayed,true);
  const newOutput=await prepareMissingOwnerBanControls(p('list'),fresh);assert.ok(newOutput);await assert.rejects(applyBanControl({...callback,data:'clubban:'+newOutput!.tokens[0]}),'Undelivered controls cannot mutate');
  await setClubSelectionBan(owner.id,control.targetId,{isBanned:false,requestId:'remove-list-ban-0001'});assert.equal((await applyBanControl(callback)).replayed,true);assert.equal((await db.collection('club_selection_bans').doc(control.targetId).get()).data().isBanned,false,'Old consumed button cannot reban after unban');
@@ -90,8 +90,8 @@ try {
   await db.collection('users').doc(owner.id).update({isSuspended:true});await assert.rejects(applyBanControl({...callback,data:'clubban:'+freshControls!.tokens[0],message:{...callback.message,message_id:9000}}),(e:any)=>e.statusCode===403);await db.collection('users').doc(owner.id).update({isSuspended:false});
   const hookUrl=`http://127.0.0.1:${(server.address() as any).port}/api/telegram/webhook`;
   const hook=await originalFetch(hookUrl,{method:'POST',headers:{'content-type':'application/json','x-telegram-bot-api-secret-token':process.env.TELEGRAM_WEBHOOK_SECRET},body:JSON.stringify({update_id:++update,callback_query:{...callback,data:'clubban:'+freshControls!.tokens[0],message:{...callback.message,message_id:9000}}})});assert.equal(hook.status,200);assert.equal((await hook.json()).handled,'club_selection_ban');
-  const response=await originalFetch(url,{headers:{'x-test-actor':'owner'}});assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'private, no-store');assert.equal((await response.json()).totalMissing,4);
+  const response=await originalFetch(url,{headers:{'x-test-actor':'owner'}});assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'private, no-store');assert.equal((await response.json()).totalMissing,3,'Banned owners are released and disappear from the current club-owner audit');
  }finally{server.closeAllConnections();await new Promise<void>(r=>server.close(()=>r()));}
  assert.equal((await db.collection('telegram_member_tags').get()).size,2,'Audit never changes tag records or membership');
- console.log('PASS fresh missing-group owner roster: current season/ownership, deduplicated clubs, admin/member exclusion, rejoin/transfer, partial-error truth, pagination, native no-model planning, protected gateway/HTTP and private Telegram dispatch; no membership mutations, Telegram mocked');
+ console.log('PASS fresh missing-group owner roster: current season/ownership, deduplicated clubs, admin/member exclusion, rejoin/transfer, partial-error truth, pagination, native no-model planning, protected gateway/HTTP and private Telegram dispatch; no Telegram membership mutations, Telegram mocked');
 }finally{global.fetch=originalFetch;setTestAiAdminHooks();setTestConfigOverride(null);setTestGroundingOverride(null);setTestAiResponder(null);clearTestAiState();}

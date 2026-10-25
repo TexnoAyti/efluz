@@ -65,7 +65,7 @@ assert.ok(desktop.top>=110,'Desktop coachmark sits beside its target rather than
 const globalCss=readFileSync(path.join(root,'src/admin-preview.css'),'utf8');
 const dialogSelectors=globalCss.match(/[^{}]*\[role="dialog"\][^{}]*\{/g)||[];
 assert.ok(dialogSelectors.length>0);
-assert.ok(dialogSelectors.every(selector=>selector.includes('[role="dialog"]:not(:where(.efl-guide-card))')),'The overlay theme must never paint the solid coachmark as a transparent backdrop');
+assert.ok(dialogSelectors.every(selector=>selector.includes('[role="dialog"]:not(:where(.efl-guide-card,.team-dialog))')),'The overlay theme must never paint a solid coachmark or TEAMS dialog as a transparent backdrop');
 for(const language of ['uz','ru','en']){
  component.guideLanguage=language; component.guideStep=0; component.guideStateIndex=0;
  const html=renderToStaticMarkup(React.createElement(component.module.exports.FirstVisitGuide,{onFinish:()=>{throw new Error('Rendering never changes data');}}));

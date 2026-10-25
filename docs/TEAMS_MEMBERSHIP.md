@@ -55,3 +55,9 @@ The native PostgreSQL HTTP audit covers failed-write rollback, concurrent create
 Tests use isolated accounts, a native local PostgreSQL engine, blocked external networking and mocked Telegram responses. No real recipients or production records are used for tests.
 
 Each confirmed account may belong to only one current team. Creating a second team, inviting an existing member of another team, and accepting a conflicting invitation return 409 `TEAM_MEMBER_ALREADY_ASSIGNED`. Cross-team acceptance and creation share a transactional per-account concurrency guard. Actual rosters remain the source of truth, including teams without membership indexes. Removing a player permits joining another team; historical tournament snapshots remain unchanged.
+
+## Owner deletion and EFL appearance
+
+TEAMS uses the shared EFL competition heading, tabs, panels, buttons, fields and creation steps. Its own stylesheet contains team roster, pairing, score, profile and bracket geometry. The legacy custom tournament appearance no longer wraps TEAMS.
+
+Owner-only Delete buttons are present on each team/league directory card and the league detail header. League deletion removes the live record and archives its complete snapshot privately in `team_league_deleted_leagues`; deleting an active league closes live play. Team deletion archives the team in `team_league_deleted_teams`, cancels pending invites, and removes it from draft leagues with version increments. A draft with fewer than two teams cannot start. Completed/cancelled league snapshots are not rewritten. An active league blocks team deletion with its name and instructions to finish, cancel or delete that league first. Deletion requests check versions and are idempotent for the same deleted version.

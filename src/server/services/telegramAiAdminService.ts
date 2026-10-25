@@ -127,7 +127,7 @@ export function describeAiAdminPlan(plan: AdminPlan, label = ''): string {
   if (plan.action === 'metrics_reset') return 'O‘qish hisoblagichlarini nolga tushirish.';
   if (plan.action === 'broadcast') return `Xabar yuborish: ${b.title}\n${String(b.body)}\nQabul qiluvchilar: ${b.targetAudience === 'ALL_USERS' ? 'barcha foydalanuvchilar' : b.targetAudience === 'LEAGUE_OWNERS' ? b.targetLeagueId : b.targetAudience === 'CLUB_OWNERS' ? 'klub egalari' : (b.selectedUserIds as string[] || []).join(', ')}.`;
   if (plan.action === 'user_role') return `${target}: ${b.isAdmin ? 'admin ruxsatini berish' : 'admin ruxsatini olib tashlash'}. Ruxsat: ${(b.adminPermissions as any)?.scope === 'ALL' ? 'barcha ligalar' : ((b.adminPermissions as any)?.leagueIds || []).map((id:string) => ({'league-premier-league':'Premier League','league-la-liga':'La Liga','league-serie-a':'Serie A','league-bundesliga':'Bundesliga','league-ligue-1':'Ligue 1'} as any)[id] || id).join(', ') || 'liga ko‘rsatilmagan'}.`;
-  if(plan.action==='club_selection_ban')return `${target}: ${b.isBanned?'barcha ligalarda klub tanlashga ban berish':'klub tanlash banini olib tashlash'}.${b.reason?' Sabab: '+b.reason:''}`;
+  if(plan.action==='club_selection_ban')return `${target}: ${b.isBanned?'hozirgi klub(lar)dan bo‘shatish va barcha ligalarda klub tanlashga ban berish':'klub tanlash banini olib tashlash'}.${b.reason?' Sabab: '+b.reason:''}`;
   if (plan.action === 'user_suspend') return `${target}: ${b.isSuspended ? 'bloklash' : 'blokdan chiqarish'}.`;
   const names: Record<string,string> = { result_reject:'Natijani rad etish', fixture_reopen:'Uchrashuvni qayta ochish', fixture_deadline:'O‘yin muddatini o‘zgartirish', fixture_remind:'O‘yin eslatmasini yuborish', user_delete:'Foydalanuvchini o‘chirish', premium_grant:'Premium berish', premium_revoke:'Premiumni bekor qilish', notification_message:'Xabarnoma ko‘rinishini o‘zgartirish', notification_type:'Xabarnoma turini boshqarish', broadcast:'Xabar yuborish', cup_generate:'Kubok qur’asini yaratish', cup_advance:'Kubokni keyingi bosqichga o‘tkazish', cup_round:'Kubok bosqichini ochish/qulflash', cup_winner_advance:'Kubok g‘olibini o‘tkazish', matchday_advance:'Keyingi turga o‘tkazish', matchday_open_now:'Joriy turni ochish', fixtures_generate:'O‘yinlar jadvalini yaratish', fixtures_restore:'Yetishmayotgan juftliklarni tiklash', fixtures_reset:'Jadvalni qayta yaratish', knockout_generate:'Pley-off o‘yinlarini yaratish', european_rebuild:'Yevropa jadvalini qayta hisoblash', qualifications_evaluate:'Saralashni hisoblash', sync:'Saqlangan o‘zgarishlarni sinxronlash', read_model_rebuild:'Saqlangan bazaviy ma’lumotlarni yangilash', notification_queue:'Xabarnoma navbatini ishlash', deadline_sweep:'O‘yin muddatlarini tekshirish', cup_reconcile:'Kubok juftliklarini moslashtirish', standings_rebuild:'Jadvalni qayta hisoblash', season_archive:'Mavsumni arxivlash', season_rollover:'Keyingi mavsumni yaratish' };
   return `${names[plan.action] || 'Admin amali'}${target ? ': ' + target : ''}.\n${Object.entries(b).map(([key,value]) => `${({expectedUsername:'Username',reason:'Sabab',notes:'Izoh',homeScore:'Uy hisobi',awayScore:'Safar hisobi',title:'Sarlavha',body:'Xabar',userId:'Foydalanuvchi',visibility:'Ko‘rinishi',deadlineAt:'Muddat'} as any)[key] || key}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`).join('\n')}`;
@@ -231,7 +231,7 @@ export async function planAiAdminAction(request: string, facts: string, signal: 
       parametersJsonSchema: { type: 'object', required: ['reference'], additionalProperties: false, properties: { reference: { type: 'string' } } },
     }, run: async (args: any) => {
       const reference = typeof args?.reference === 'string' ? args.reference.trim() : '';
-      const supplied = request.match(/@\s*[A-Za-z0-9_]+|\buser-\d+\b/g) || [];
+      const supplied: string[] = request.match(/@\s*[A-Za-z0-9_]+|\buser-\d+\b/g) || [];
       if (!/^@[A-Za-z][A-Za-z0-9_]{4,31}$|^user-\d+$/.test(reference) || !supplied.some(ref => ref.replace(/\s/g, '').toLowerCase() === reference.toLowerCase()))
         return { error: 'EXPLICIT_USER_REFERENCE_REQUIRED' };
       const cached = await createAiSnapshotReader(signal).read<any>('efluz:v1:admin:user-directory');
@@ -329,7 +329,7 @@ async function handleAiAdminCommandInternal(payload: TelegramAiMessagePayload, s
 • Inter — Milan 10-tur natijasini o‘chir
 • Heidenheim klubini egasidan bo‘shat
 • @username faqat La Liga uchun admin qil
-• @username ga klub tanlashga ban ber. Sabab: o‘yinlarni o‘ynamadi
+• @username ga klub tanlashga ban ber (sabab ixtiyoriy)
 • @username klub tanlash banini olib tashla
 • @username ni blokla / blokdan chiqar
 • @username ga premium ber

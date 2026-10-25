@@ -102,7 +102,7 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
       response = {ok:true,handled:'topic_result',result:topicResult.result};
     } else if(typeof update.callback_query?.data==='string'&&/^clubban:[a-f0-9]{32}$/.test(update.callback_query.data)){
       const callback=update.callback_query;
-      try{const result=await applyBanControl(callback);await answerTelegramCallback(callback.id,result.replayed?'Bu tugma avval ishlatilgan. Ro‘yxatni yangilang.':result.isBanned?'Klub tanlashga ban qo‘yildi.':'Klub tanlash bani olib tashlandi.',true);response={ok:true,handled:'club_selection_ban'};}
+      try{const result=await applyBanControl(callback);await answerTelegramCallback(callback.id,result.replayed?'Bu tugma avval ishlatilgan. Ro‘yxatni yangilang.':result.isBanned?`Ban qo‘yildi.${result.releasedClubs?.length?' Klubdan ham bo‘shatildi.':''}`:'Klub tanlash bani olib tashlandi.',true);response={ok:true,handled:'club_selection_ban'};}
       catch(error:any){await answerTelegramCallback(callback.id,error.statusCode?error.message:'Ban holatini saqlab bo‘lmadi. Qayta tekshiring.',true);response={ok:true,handled:'club_selection_ban',applied:false};}
     } else if(typeof update.callback_query?.data==='string'&&/^team_invite:(accept|reject):ti_[a-f0-9]{32}$/.test(update.callback_query.data)){
       const callback=update.callback_query,[,choice,id]=callback.data.split(':');

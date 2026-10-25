@@ -4,7 +4,7 @@ import {Router,type RequestHandler} from 'express';
 import {requireAuth} from '../middleware/authMiddleware';
 import {getAuthoritativeUserForAuthorization} from '../firebase/firestoreStore';
 import {canSeeTeamPreview} from '../../types/teamLeaguePreview';
-import {getTeamPreview,getPreviewLeague,getPreviewTeamProfile,savePreviewTeam,savePreviewLeague,actOnTeamLeague,getPublishedTeams,getPublishedTeamLeague,getPublishedTeamProfile,deletePreviewTeam} from '../services/teamLeaguePreview';
+import {getTeamPreview,getPreviewLeague,getPreviewTeamProfile,savePreviewTeam,savePreviewLeague,actOnTeamLeague,getPublishedTeams,getPublishedTeamLeague,getPublishedTeamProfile,deletePreviewTeam,deletePreviewLeague} from '../services/teamLeaguePreview';
 import {getTeamMembershipWorkspace,createMembershipTeam,getManagedTeam,updateMembershipTeam,inviteTeamMember,respondTeamInvitation,cancelTeamInvitation,getTeamTicketBalance,changeTeamTickets,resolveTeamUser,processTeamInvitationNotices} from '../services/teamMembershipService';
 export const requireTeamPreviewOwner:RequestHandler=async(req,res,next)=>{
  if(!canSeeTeamPreview(req.user?.telegramId)){res.status(403).json({ok:false,error:'TEAMS boshqaruvi faqat loyiha egasi uchun.'});return;}
@@ -29,6 +29,7 @@ teamLeaguePreviewRouter.use(requireTeamPreviewOwner);
 teamLeaguePreviewRouter.get('/tickets/balance',run(async req=>getTeamTicketBalance(req.user.id,req.query.reference?(await resolveTeamUser(req.query.reference)).id:req.user.id)));
 teamLeaguePreviewRouter.post('/tickets/grant',run(req=>changeTeamTickets(req.user.id,req.body,'GRANT')));
 teamLeaguePreviewRouter.post('/tickets/revoke',run(req=>changeTeamTickets(req.user.id,req.body,'REVOKE')));
+teamLeaguePreviewRouter.post('/leagues/:id/delete',run(req=>deletePreviewLeague(req.user.id,req.params.id,req.body.version)));
 teamLeaguePreviewRouter.post('/teams/:id/delete',run(req=>deletePreviewTeam(req.user.id,req.params.id,req.body.version)));
 teamLeaguePreviewRouter.get('/',run(req=>getTeamPreview(req.user.id)));
 teamLeaguePreviewRouter.get('/leagues/:id',run(req=>getPreviewLeague(req.user.id,req.params.id)));

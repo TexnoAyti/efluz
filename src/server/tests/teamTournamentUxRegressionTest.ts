@@ -82,3 +82,6 @@ console.log('PASS direct-open team leagues, remembered/deep-link selection, caro
 assert.equal(selectedTeamLeague(choices,'','tp_active02'),'tp_active02','Refresh preserves the already open league when another league is added');
 
 for(const n of [32,64]){let seeds=Array.from({length:n},(_,i)=>'tp_seed_'+i),round=1,matches=0;while(seeds.length>1){const fixtures=makeTeamPlayoffRound('tp_largeplayoff',seeds,round++);matches+=fixtures.length;assert.equal(new Set(fixtures.flatMap(f=>[f.homeTeamId,f.awayTeamId])).size,seeds.length);seeds=fixtures.map(f=>f.homeTeamId);}assert.equal(matches,n-1);assert.equal(round-1,Math.log2(n));}
+
+const ownerDelete=render(React.createElement(TeamLeagueDetail,{...props,league:base,onDelete:()=>{}}));assert.ok(ownerDelete.includes('Ligani o‘chirish'));assert.ok(ownerDelete.includes('efl-theme-league-logo'));assert.equal(ownerDelete.includes('tourney-button'),false,'TEAMS uses shared EFL controls without legacy tournament overrides');
+const spectatorDelete=render(React.createElement(TeamLeagueDetail,{...props,league:base,onDelete:()=>{},canManage:false}));assert.equal(spectatorDelete.includes('Ligani o‘chirish'),false);

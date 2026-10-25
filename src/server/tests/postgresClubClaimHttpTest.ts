@@ -1,3 +1,4 @@
+import {getClubOccupantUserIdLocally} from '../firebase/occupancySnapshot';
 import {setClubSelectionBan} from '../services/clubSelectionBan';
 import {claimClubAtomicFirestore,adminAssignClubFirestore} from '../firebase/firestoreStore';
 import assert from 'node:assert/strict';
@@ -58,6 +59,7 @@ export async function verifyPostgresClubClaimHttp(failNextCommit:()=>void,failNe
     assert.equal(suspended.status,409);assert.equal(suspended.body.code,'CLAIM_AUTHORIZATION_REVOKED','Suspension is rechecked in the claim transaction even with an older signed token');
     const ownerId='user-5209126900',savedOwner=(await db.collection('users').doc(ownerId).get()).data();
     await db.collection('users').doc(ownerId).set({id:ownerId,telegramId:'5209126900',isAdmin:true,isSuspended:false});
+    const priorCurrentSeason=(await db.collection('seasons').doc(season).get()).data(),priorActiveSeasons=await db.collection('seasons').where('status','in',['active','ACTIVE']).get();
     try{
       await db.collection('users').doc(actors[4].id).update({isSuspended:false});
       const body={isBanned:true,reason:'O‘yinlarni o‘ynamadi',requestId:'native-club-ban-0001'};
@@ -71,7 +73,28 @@ export async function verifyPostgresClubClaimHttp(failNextCommit:()=>void,failNe
       await assert.rejects(setClubSelectionBan(actors[0].id,actors[4].id,{...body,requestId:'foreign-club-ban'}),(e:any)=>e.statusCode===403);
       await setClubSelectionBan(ownerId,actors[4].id,{isBanned:false,requestId:'native-club-unban-0001'});
       assert.equal((await claim(4,candidates[3].id)).status,200,'Unban restores selection');
-    }finally{if(savedOwner)await db.collection('users').doc(ownerId).set(savedOwner);else await db.collection('users').doc(ownerId).delete();}
+      for(const row of priorActiveSeasons.docs)if(row.id!==season)await row.ref.update({status:'completed'});
+      await db.collection('seasons').doc(season).set({id:season,status:'active'});
+      const currentOwner=actors[0],second=candidates[4],secondOccupancy=`${season}_${second.id}`;
+      await db.collection('clubs').doc(second.id).update({claimedByUserId:currentOwner.id,isTaken:true});
+      await db.collection('club_occupancies').doc(secondOccupancy).set({seasonId:season,clubId:second.id,userId:currentOwner.id,status:'active'});
+      await db.collection('club_memberships').doc(secondOccupancy).set({seasonId:season,clubId:second.id,userId:currentOwner.id,status:'active'});
+      await db.collection('user_memberships').doc(`${season}_${currentOwner.id}`).update({secondaryClubId:second.id,secondaryLeagueId:second.leagueId});
+      const historicalId='season-2025-26_'+candidates[0].id,historical={seasonId:'season-2025-26',clubId:candidates[0].id,userId:currentOwner.id,status:'active'};
+      await db.collection('club_occupancies').doc(historicalId).set(historical);
+      const oldFixture={id:'ban-keeps-history',homeClubId:candidates[0].id,awayClubId:candidates[1].id,homeScore:2,awayScore:1,status:'CONFIRMED'};await db.collection('fixtures').doc(oldFixture.id).set(oldFixture);
+      const releaseBody={isBanned:true,requestId:'native-ban-release-0001'};
+      failNextBanCommit();await assert.rejects(setClubSelectionBan(ownerId,currentOwner.id,releaseBody));
+      assert.equal((await db.collection('club_occupancies').doc(`${season}_${candidates[0].id}`).get()).data().userId,currentOwner.id,'Failed ban/release rolls back ownership too');assert.equal((await db.collection('club_selection_bans').doc(currentOwner.id).get()).exists,false);
+      const released=await setClubSelectionBan(ownerId,currentOwner.id,releaseBody);assert.equal(released.releasedClubs.length,2,'Primary and premium secondary clubs are released together');
+      for(const club of [candidates[0],second]){assert.equal((await db.collection('club_occupancies').doc(`${season}_${club.id}`).get()).data().status,'released');assert.equal((await db.collection('club_memberships').doc(`${season}_${club.id}`).get()).data().status,'released');assert.equal((await db.collection('clubs').doc(club.id).get()).data().claimedByUserId,null);}
+      assert.equal((await db.collection('user_memberships').doc(`${season}_${currentOwner.id}`).get()).data().status,'released');assert.equal((await db.collection('user_memberships').doc(`${season}_${currentOwner.id}`).get()).data().secondaryClubId,null);
+      assert.deepEqual((await db.collection('club_occupancies').doc(historicalId).get()).data(),historical);assert.deepEqual((await db.collection('fixtures').doc(oldFixture.id).get()).data(),oldFixture,'Previous results survive a ban');
+      const replacement={...actors[1],id:'user-810009',telegramId:'810009'};actors.push(replacement);await db.collection('users').doc(replacement.id).set(replacement);assert.equal((await claim(actors.length-1,candidates[0].id)).status,200,'A released club is immediately selectable by another player');
+      await setClubSelectionBan(ownerId,currentOwner.id,releaseBody);assert.equal((await db.collection('club_occupancies').doc(`${season}_${candidates[0].id}`).get()).data().userId,replacement.id,'Old ban receipt never releases a replacement owner');assert.equal(getClubOccupantUserIdLocally(season,candidates[0].id),replacement.id,'Replaying a ban cannot remove the replacement from the local ownership mirror');
+      await setClubSelectionBan(ownerId,currentOwner.id,{isBanned:false,requestId:'native-release-unban-0001'});assert.equal((await db.collection('club_occupancies').doc(`${season}_${candidates[0].id}`).get()).data().userId,replacement.id,'Unban does not restore old ownership');
+
+    }finally{for(const row of priorActiveSeasons.docs)await row.ref.set(row.data());if(priorCurrentSeason)await db.collection('seasons').doc(season).set(priorCurrentSeason);else await db.collection('seasons').doc(season).delete();if(savedOwner)await db.collection('users').doc(ownerId).set(savedOwner);else await db.collection('users').doc(ownerId).delete();}
     const status=await fetch(`${base}/api/clubs/claim-status`,{headers:{authorization:`Bearer ${createSessionToken(actors[0])}`}});
     assert.equal(status.status,200);assert.deepEqual(await status.json(),{request:null});
     console.log('PASS signed club HTTP + native PostgreSQL: no Redis/snapshot requirement, committed 200 response, four durable records, retries, simultaneous exclusion, club limit, admission, suspension, failed-commit rollback and recovery.');

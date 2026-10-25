@@ -349,7 +349,7 @@
 }
 
 /* Modal Dialog and Overlays */
-.efl-preview [role="dialog"]:not(:where(.efl-guide-card)),
+.efl-preview [role="dialog"]:not(:where(.efl-guide-card,.team-dialog)),
 .efl-preview .fixed.inset-0.z-50,
 .efl-preview .fixed.inset-0.z-\[100\] {
   background-color: rgba(0, 0, 0, 0.45) !important;
@@ -357,7 +357,7 @@
   -webkit-backdrop-filter: blur(8px) !important;
 }
 
-.efl-preview.theme-dark [role="dialog"]:not(:where(.efl-guide-card)),
+.efl-preview.theme-dark [role="dialog"]:not(:where(.efl-guide-card,.team-dialog)),
 .efl-preview.theme-dark .fixed.inset-0.z-50,
 .efl-preview.theme-dark .fixed.inset-0.z-\[100\] {
   background-color: rgba(0, 0, 0, 0.75) !important;

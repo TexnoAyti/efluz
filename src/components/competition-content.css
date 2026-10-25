@@ -78,3 +78,22 @@ button.competition-fixture-teams{border-radius:8px;min-height:44px;cursor:pointe
 .competition-search input::placeholder{color:var(--efl-muted)}
 .competition-toolbar-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
 @media(max-width:600px){.competition-toolbar{gap:8px;align-items:stretch}.competition-search{max-width:none}}
+
+/* Directory entries stand on the same tokens as league panels, without legacy tournament CSS. */
+.competition-entry{display:grid;gap:12px;width:100%;padding:16px;text-align:left;border:1px solid var(--efl-border);border-radius:16px;background:var(--efl-surface);color:var(--efl-text);box-shadow:var(--efl-shadow);cursor:pointer;transition:border-color .15s}
+.competition-entry:hover{border-color:var(--efl-primary)}
+.competition-entry:focus-visible{outline:2px solid var(--efl-primary);outline-offset:3px}
+.competition-entry h3{font-size:14px;font-weight:800;line-height:1.4;overflow-wrap:anywhere;margin:0}
+.competition-entry-heading{display:flex;align-items:center;gap:12px;min-width:0}
+.competition-entry-emblem{display:flex;align-items:center;justify-content:center;flex-shrink:0;width:44px;height:44px;color:var(--efl-primary)}
+.competition-entry-title{flex:1;min-width:0}.competition-entry-meta,.competition-entry-description{display:block;margin-top:4px;font-size:11px;line-height:1.5;color:var(--efl-text-2)}
+.competition-entry-status{flex-shrink:0}.competition-entry-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:12px;border-top:1px solid var(--efl-border);font-size:11px;color:var(--efl-text-2)}
+@media(max-width:420px){.competition-entry-heading{flex-wrap:wrap}.competition-entry-title{flex-basis:calc(100% - 56px)}.competition-entry-status{margin-left:56px}}
+
+.competition-steps{display:flex;gap:8px;list-style:none;padding:0;margin:0}
+.competition-steps li{display:flex;flex:1;gap:6px;align-items:center;padding:8px 0 10px;border-bottom:2px solid var(--efl-border);color:var(--efl-muted);min-width:0}
+.competition-steps li>span{display:flex;align-items:center;justify-content:center;width:22px;height:22px;flex-shrink:0;border-radius:7px;background:var(--efl-surface-2);font-size:10px;font-weight:800}
+.competition-steps li>b{font-size:10px;font-weight:700;overflow-wrap:anywhere}
+.competition-steps li.active{border-color:var(--efl-primary);color:var(--efl-primary)}
+.competition-steps li.active>span{background:var(--efl-primary-soft)}
+@media(max-width:600px){.competition-steps{gap:6px}.competition-steps li{flex-direction:column;align-items:flex-start;gap:5px}}
