@@ -24,12 +24,12 @@ async function prepareBanClubRelease(tx:any,targetId:string,actorId:string,at:st
   if(membership?.status==='active')tx.set(memberRef,{status:'released',secondaryClubId:null,secondaryLeagueId:null,releasedAt:at,updatedAt:at},{merge:true});
  }};
 }
-async function refreshReleasedClubCaches<T extends {releasedClubs?:ReleasedClub[]}>(result:T,targetId:string):Promise<T>{
- if(!result.releasedClubs?.length)return result;
+async function refreshReleasedClubCaches<T extends {releasedClubs?:ReleasedClub[];replayed?:boolean}>(result:T,targetId:string):Promise<T>{
+ if(result.replayed||!result.releasedClubs?.length)return result;
  // The committed transaction is authoritative; cache maintenance is best effort.
  await Promise.allSettled(result.releasedClubs.map(async club=>{
-  const [{invalidateClubReadModels,invalidateUserMembershipReadModel},{invalidateFirestoreCache},{removeOccupancyRecord},{queryRun}]=await Promise.all([import('../readModel/readModelStore'),import('../firebase/firestoreStore'),import('../firebase/occupancySnapshot'),import('../db')]);
-  invalidateFirestoreCache();removeOccupancyRecord(club.seasonId,club.clubId);try{queryRun("UPDATE club_memberships SET status = 'released', updated_at = ? WHERE club_id = ? AND season_id = ? AND user_id = ? AND status = 'active'",[new Date().toISOString(),club.clubId,club.seasonId,targetId]);}catch{}
+  const [{invalidateClubReadModels,invalidateUserMembershipReadModel},{invalidateFirestoreCache},{removeOccupancyRecord,getClubOccupantUserIdLocally},{queryRun}]=await Promise.all([import('../readModel/readModelStore'),import('../firebase/firestoreStore'),import('../firebase/occupancySnapshot'),import('../db')]);
+  invalidateFirestoreCache();if(getClubOccupantUserIdLocally(club.seasonId,club.clubId)===targetId)removeOccupancyRecord(club.seasonId,club.clubId);try{queryRun("UPDATE club_memberships SET status = 'released', updated_at = ? WHERE club_id = ? AND season_id = ? AND user_id = ? AND status = 'active'",[new Date().toISOString(),club.clubId,club.seasonId,targetId]);}catch{}
   await Promise.allSettled([invalidateClubReadModels(club.seasonId),invalidateUserMembershipReadModel(targetId,club.seasonId)]);
  }));return result;
 }

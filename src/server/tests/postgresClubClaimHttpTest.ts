@@ -1,3 +1,4 @@
+import {getClubOccupantUserIdLocally} from '../firebase/occupancySnapshot';
 import {setClubSelectionBan} from '../services/clubSelectionBan';
 import {claimClubAtomicFirestore,adminAssignClubFirestore} from '../firebase/firestoreStore';
 import assert from 'node:assert/strict';
@@ -90,7 +91,7 @@ export async function verifyPostgresClubClaimHttp(failNextCommit:()=>void,failNe
       assert.equal((await db.collection('user_memberships').doc(`${season}_${currentOwner.id}`).get()).data().status,'released');assert.equal((await db.collection('user_memberships').doc(`${season}_${currentOwner.id}`).get()).data().secondaryClubId,null);
       assert.deepEqual((await db.collection('club_occupancies').doc(historicalId).get()).data(),historical);assert.deepEqual((await db.collection('fixtures').doc(oldFixture.id).get()).data(),oldFixture,'Previous results survive a ban');
       const replacement={...actors[1],id:'user-810009',telegramId:'810009'};actors.push(replacement);await db.collection('users').doc(replacement.id).set(replacement);assert.equal((await claim(actors.length-1,candidates[0].id)).status,200,'A released club is immediately selectable by another player');
-      await setClubSelectionBan(ownerId,currentOwner.id,releaseBody);assert.equal((await db.collection('club_occupancies').doc(`${season}_${candidates[0].id}`).get()).data().userId,replacement.id,'Old ban receipt never releases a replacement owner');
+      await setClubSelectionBan(ownerId,currentOwner.id,releaseBody);assert.equal((await db.collection('club_occupancies').doc(`${season}_${candidates[0].id}`).get()).data().userId,replacement.id,'Old ban receipt never releases a replacement owner');assert.equal(getClubOccupantUserIdLocally(season,candidates[0].id),replacement.id,'Replaying a ban cannot remove the replacement from the local ownership mirror');
       await setClubSelectionBan(ownerId,currentOwner.id,{isBanned:false,requestId:'native-release-unban-0001'});assert.equal((await db.collection('club_occupancies').doc(`${season}_${candidates[0].id}`).get()).data().userId,replacement.id,'Unban does not restore old ownership');
 
     }finally{for(const row of priorActiveSeasons.docs)await row.ref.set(row.data());if(priorCurrentSeason)await db.collection('seasons').doc(season).set(priorCurrentSeason);else await db.collection('seasons').doc(season).delete();if(savedOwner)await db.collection('users').doc(ownerId).set(savedOwner);else await db.collection('users').doc(ownerId).delete();}
