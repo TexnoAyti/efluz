@@ -40,7 +40,7 @@ const PublicClubView = lazy(() => import('./components/PublicClubView').then(mod
 
 function getInitialTab(): TabType {
   if (typeof window !== 'undefined') {
-    if (readTournamentLaunch()||readUzeflifeLaunch()!==null) return 'leagues';
+    if (isTeamWorkspaceLaunch()||readTournamentLaunch()||readUzeflifeLaunch()!==null) return 'leagues';
     const path = window.location.pathname.replace(/^\/+/, '').split('/')[0] || window.location.hash.replace(/^#\/?/, '');
     const validTabs: TabType[] = ['dashboard','home','my-club','my-matches','leagues','cups','champions-league','standings','season-hub','notifications','profile','admin'];
     if (path === 'home') return 'dashboard';
