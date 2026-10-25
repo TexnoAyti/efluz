@@ -120,15 +120,15 @@ rules remain immutable. Optional request `teamCount` must equal `teamIds.length`
 
 TEAMS has a separate El-Clasico event entry. Registration is open by default;
 players first verify the existing mandatory Telegram group subscription, then
-choose Real Madrid or Barcelona (11 slots each). Joining and switching recheck
+choose Real Madrid or Barcelona (9 slots each). Joining and switching recheck
 subscription server-side; one authenticated account holds at most one event
 slot. An event side is temporary and does not change permanent team membership,
 club ownership, tickets or league results.
 
-The primary owner starts the event after all 22 slots fill. Start verifies fresh
-accounts and subscriptions and freezes the roster; the 11 individual pairs use
+The primary owner starts the event after all 18 slots fill. Start verifies fresh
+accounts and subscriptions and freezes the roster; the 9 individual pairs use
 registration order within each side. The owner enters/corrects scores (0–99),
-with version conflict protection. The event completes after all 11 results.
+with version conflict protection. The event completes after all 9 results.
 The headline score counts individual wins; draws appear separately. Cancellation
 requires confirmation and preserves registrations/results. No automatic bot
 messages are sent.
@@ -137,7 +137,7 @@ Authenticated endpoints below `/api/team-leagues-preview/events/el-clasico`:
 GET event; POST `/subscription`; POST `/actions` with JOIN(side), LEAVE,
 START(version), SCORE(version,boutId,homeScore,awayScore), CANCEL(version).
 The singleton `el_clasico_events/el-clasico` is committed atomically through the
-existing document store; it is bounded at 22 players and 11 pairs. Fresh reads
+existing document store; it is bounded at 18 players and 9 pairs. Fresh reads
 bypass transport snapshots. There is no client identity or role override.
 
 ### Competition notifications and fullscreen layout
