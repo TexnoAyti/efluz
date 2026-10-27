@@ -15,7 +15,9 @@ export function writeClasicoNotices(tx:Transaction,before:ClasicoEvent,after:Cla
  if(full(after)&&!full(before))add(['@owner'],`${CLASICO_SIDE_SIZE*2} o‘rin to‘ldi`,`Har ikki tomonda ${CLASICO_SIDE_SIZE} tadan o‘yinchi tayyor. Eventni boshlashingiz mumkin.`,['players','status']);
  for(const [i,b] of after.bouts.entries()){
   const old=before.bouts.find(o=>o.id===b.id);
-  if(!old&&after.status==='ACTIVE')for(const userId of [b.homeUserId,b.awayUserId])add([userId],'O‘yin boshlandi',`${b.id}‑juftlik.\nRaqibingiz: ${name(userId===b.homeUserId?b.awayUserId:b.homeUserId)}.\nTomoningiz: ${clasicoSides[after.players.find(p=>p.userId===userId)!.side]}.`,[`bouts.${i}`,'status']);
+  if(b.pendingResult&&noticeHash(b.pendingResult)!==noticeHash(old?.pendingResult))add([b.pendingResult.submittedBy===b.homeUserId?b.awayUserId:b.homeUserId],'Hisobni tasdiqlang',`${name(b.homeUserId)} ${b.pendingResult.homeScore}:${b.pendingResult.awayScore} ${name(b.awayUserId)}. Eventni ochib tasdiqlang yoki rad eting.`,[`bouts.${i}`]);
+  if(b.disputed&&!old?.disputed)add([b.homeUserId,b.awayUserId,'@owner'],'Natija rad etildi',`${b.id}‑juftlik hisobida kelishmovchilik bor.`,[`bouts.${i}`]);
+  if(!old&&after.status==='ACTIVE')for(const userId of [b.homeUserId,b.awayUserId])add([userId],'O‘yin boshlandi',`${b.id}‑juftlik.\nRaqibingiz: ${name(userId===b.homeUserId?b.awayUserId:b.homeUserId)}.\nTelegram: ${after.players.find(p=>p.userId===(userId===b.homeUserId?b.awayUserId:b.homeUserId))?.contactUrl||'Event sahifasini oching'}.\nO‘yin tugagach eventda hisobni kiriting; raqibingiz tasdiqlaydi.\nTomoningiz: ${clasicoSides[after.players.find(p=>p.userId===userId)!.side]}.`,[`bouts.${i}`,'status']);
   if(b.homeScore!==null&&b.awayScore!==null&&(old?.homeScore!==b.homeScore||old?.awayScore!==b.awayScore))add([b.homeUserId,b.awayUserId],old?.homeScore==null?'Natija kiritildi':'Natija tuzatildi',`${name(b.homeUserId)} ${b.homeScore}:${b.awayScore} ${name(b.awayUserId)}`, [`bouts.${i}`]);
  }
  if(after.status==='COMPLETED'&&before.status!=='COMPLETED'){

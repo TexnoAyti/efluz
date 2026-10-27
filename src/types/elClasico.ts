@@ -1,7 +1,7 @@
 export const CLASICO_SIDE_SIZE=9;
 export type ClasicoSide='REAL'|'BARCA';
 export const clasicoSides:Record<ClasicoSide,string>={REAL:'Real Madrid',BARCA:'Barcelona'};
-export interface ClasicoPlayer {userId:string;name:string;side:ClasicoSide}
-export interface ClasicoBout {id:number;homeUserId:string;awayUserId:string;homeScore:number|null;awayScore:number|null}
+export interface ClasicoPlayer {userId:string;name:string;side:ClasicoSide;contactUrl?:string}
+export interface ClasicoBout {id:number;homeUserId:string;awayUserId:string;homeScore:number|null;awayScore:number|null;pendingResult?:{homeScore:number;awayScore:number;submittedBy:string};disputed?:boolean}
 export interface ClasicoEvent {id:'el-clasico';status:'REGISTRATION'|'ACTIVE'|'COMPLETED'|'CANCELLED';players:ClasicoPlayer[];bouts:ClasicoBout[];version:number;updatedAt:string}
-export interface ClasicoView {event:ClasicoEvent;canManage:boolean;groupUrl:string;groupName:string}
+export interface ClasicoView {event:ClasicoEvent;available:boolean;canManage:boolean;groupUrl:string;groupName:string}
