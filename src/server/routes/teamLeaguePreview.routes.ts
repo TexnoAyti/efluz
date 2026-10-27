@@ -1,3 +1,4 @@
+import {getTeamPlayerMatches,actTeamPlayerMatch} from '../services/teamPlayerMatches';
 import {scheduleUNotices} from '../services/uzeflifeNotifications';
 import {getElClasico,checkElClasicoSubscription,actElClasico} from '../services/elClasicoService';
 import {paginateTeamTransport,cachedTeamTransport,clearTeamTransportSnapshots} from '../services/teamTransport';
@@ -20,6 +21,8 @@ const run=(handler:(req:any)=>Promise<unknown>):RequestHandler=>async(req,res)=>
 teamLeaguePreviewRouter.get('/events/el-clasico',run(req=>getElClasico(req.user.id)));
 teamLeaguePreviewRouter.post('/events/el-clasico/subscription',run(req=>checkElClasicoSubscription(req.user.id)));
 teamLeaguePreviewRouter.post('/events/el-clasico/actions',run(req=>actElClasico(req.user.id,req.body)));
+teamLeaguePreviewRouter.get('/player/leagues/:id/matches',run(req=>getTeamPlayerMatches(req.user.id,req.params.id)));
+teamLeaguePreviewRouter.post('/player/leagues/:id/matches',run(req=>actTeamPlayerMatch(req.user.id,req.params.id,req.body)));
 teamLeaguePreviewRouter.get('/published',run(()=>getPublishedTeams()));
 teamLeaguePreviewRouter.get('/published/leagues/:id',run(req=>getPublishedTeamLeague(req.params.id)));
 teamLeaguePreviewRouter.get('/published/teams/:id',run(req=>getPublishedTeamProfile(req.params.id,req.user.id)));

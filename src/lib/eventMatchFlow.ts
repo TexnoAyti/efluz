@@ -2,7 +2,7 @@ import type {ClasicoBout} from '../types/elClasico';
 export function eventContactUrl(telegramId:string,username?:string){
  return username&&/^[A-Za-z0-9_]{5,32}$/.test(username)?`https://t.me/${username}`:`tg://user?id=${telegramId}`;
 }
-export function applyEventResult(bout:ClasicoBout,actorId:string,action:string,body:any){
+export function applyEventResult(bout:Omit<ClasicoBout,'id'>,actorId:string,action:string,body:any){
  const fail=(message:string,statusCode=409):never=>{throw Object.assign(new Error(message),{statusCode});};
  if(![bout.homeUserId,bout.awayUserId].includes(actorId))fail('Bu sizning o‘yiningiz emas.',403);
  if(bout.homeScore!==null||bout.awayScore!==null)fail('Natija allaqachon tasdiqlangan.');
