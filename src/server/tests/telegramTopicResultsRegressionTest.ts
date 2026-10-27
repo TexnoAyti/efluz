@@ -42,6 +42,16 @@ for (const [leagueId,name,thread] of [['league-premier-league','Premier League',
     assert.match(String(error),/5-tur.*shu turda o‘yin topilmadi/s); assert.match(String(error),/Monza — Torino.*6-tur/s); return true;
   });
   assert.equal((await planTopicResult('Torino 4-3 Monza 6-tur',1001,thread,signal))?.plan.targetId,games[0].id);
+  for (const text of ['4-3', '4-3 5-tur']) {
+    await assert.rejects(planTopicResult(text,1001,thread,signal),error => {
+      assert.match(String(error),/shu turda o‘yin topilmadi.*Monza — Torino.*6-tur.*Variant raqamini/s);
+      return true;
+    });
+  }
+  const bareRound=await planTopicResult('4-3 6-tur',1001,thread,signal);
+  assert.equal(bareRound?.plan.targetId,games[0].id);
+  assert.equal(bareRound?.plan.body.homeScore,3);
+  assert.equal(bareRound?.plan.body.awayScore,4);
   games.push({...games[0],id:'return-leg-'+leagueId,matchday:25});
   await assert.rejects(planTopicResult('Torino 4-3 Monza',1001,thread,signal),error => {
     assert.match(String(error),/Bir nechta.*6-tur.*25-tur/s); return true;
