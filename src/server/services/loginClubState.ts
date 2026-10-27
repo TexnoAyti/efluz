@@ -4,7 +4,7 @@ import { getOptionalCurrentClub } from '../readModel/readModelStore';
 const unavailable = () => ({ currentClub: null, ownedClubs: [], currentClubStatus: 'unavailable' as const, degraded: true });
 
 /** Club metadata must never hold a verified identity behind a database refresh. */
-export async function getLoginClubState(userId: string, budgetMs = 1200, seasonId = 'season-2026-27') {
+export async function getLoginClubState(userId: string, budgetMs = 350, seasonId = 'season-2026-27') {
   const lookup = getOptionalCurrentClub(userId, seasonId).catch(() => unavailable());
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {

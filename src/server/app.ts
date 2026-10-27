@@ -171,7 +171,7 @@ export function createApp() {
     // Static catalog and PostgreSQL identity verification do not use SQLite.
     // All fixture/mutation routes keep their existing initialization boundary.
     const staticRead = req.method === 'GET' && ['/api/health', '/api/health/', '/api/seasons', '/api/seasons/active', '/api/leagues', '/api/auth/dev-profiles'].includes(req.path);
-    const postgresClubRead = process.env.DATABASE_PROVIDER === 'supabase' && req.method === 'GET' && ['/api/me/club', '/api/me/bootstrap'].includes(req.path);
+    const postgresClubRead = process.env.DATABASE_PROVIDER === 'supabase' && req.method === 'GET' && ['/api/me/club', '/api/me/bootstrap', '/api/me/matches'].includes(req.path);
     const postgresLogin = process.env.DATABASE_PROVIDER === 'supabase' && req.method === 'POST' && req.path === '/api/auth/telegram';
     try {
       if (!staticRead && !postgresLogin && !postgresClubRead) await ensureDbReady();

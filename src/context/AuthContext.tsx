@@ -473,7 +473,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     >
       {clubUnavailable && user && (
         <div role="status" className="bg-amber-950 text-amber-100 px-4 py-2 text-sm">
-          Akkauntga kirildi. Klub ma’lumotlari vaqtincha yuklanmadi; bu klubingiz bo‘shatilganini anglatmaydi.
+          Klub ma’lumotlari tekshirilmoqda…
         </div>
       )}
       {children}

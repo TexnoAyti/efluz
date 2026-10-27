@@ -102,10 +102,11 @@ export async function getVisibleCompetitionFixtures(
 export async function rebuildStandingsSnapshotFromFixtures(
   competitionId: string,
   seasonId: string,
-  fixtures: Fixture[]
+  fixtures: Fixture[],
+  options: { persist?: boolean; baseRows?: StandingsRow[] } = {}
 ): Promise<StandingsRow[] | null> {
   const standingsKey = ReadModelKeys.standings(competitionId, seasonId);
-  const current = (await redisGetFresh<StandingsRow[]>(standingsKey)) || (await redisGetLkg<StandingsRow[]>(standingsKey));
+  const current = options.baseRows ? {data:options.baseRows} : (await redisGetFresh<StandingsRow[]>(standingsKey)) || (await redisGetLkg<StandingsRow[]>(standingsKey));
   if (!Array.isArray(current?.data) || current!.data.length === 0) return null;
 
   const byClub = new Map<string, StandingsRow>();
@@ -152,7 +153,7 @@ export async function rebuildStandingsSnapshotFromFixtures(
   rows.sort((a, b) => b.points - a.points || b.goalDifference - a.goalDifference || b.goalsFor - a.goalsFor || a.clubName.localeCompare(b.clubName));
   rows.forEach((row, index) => { row.position = index + 1; });
 
-  await redisSetRaw(standingsKey, {
+  if (options.persist !== false) await redisSetRaw(standingsKey, {
     sourceVersion: 'fixture-derived-recomputed',
     expectedCount: rows.length,
     data: rows,

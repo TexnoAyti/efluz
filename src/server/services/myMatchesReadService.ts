@@ -1,7 +1,8 @@
+import { readPostgresOwnedFixtures } from './postgresOwnedFixtures';
 import {filterPublishedEuropeanFixtures} from './europeanFixtureGate';
 import type { Club, Competition, Fixture } from '../../types';
 import { SEED_COMPETITIONS } from '../db/seed';
-import { ReadModelKeys, redisGetFresh, redisGetLkg, normalizeFixtureSnapshot, ReadModelSnapshot, ReadModelNotWarmedError, getPostgresFixtureReadModel } from '../readModel/readModelStore';
+import { ReadModelKeys, redisGetFresh, redisGetLkg, normalizeFixtureSnapshot, ReadModelSnapshot, ReadModelNotWarmedError } from '../readModel/readModelStore';
 import { getFixturesFirestore, enrichFixturesWithAuthoritativeOwners, refreshFixtureMatchdayRules, getAllCompetitionsFirestore } from '../firebase/firestoreStore';
 import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
 import { filterTombstonedFixtures } from './fixtureTombstoneService';
@@ -20,18 +21,16 @@ export async function getMyMatchesResilient(userId: string, ownedClubs: Club[], 
   if (!ownedClubs.length) return { fixtures: [] as Fixture[], stale: false, degraded: false, source: 'no-club' };
   const ids = new Set(ownedClubs.map(c => c.id));
   if (process.env.DATABASE_PROVIDER === 'supabase') {
-    // One complete, refreshed season read replaces serial fresh/LKG probes for
-    // every possible competition. Filter by verified ownership before enrichment.
-    const result = await getPostgresFixtureReadModel(seasonId);
-    let rows = result.data.filter(f => ids.has(f.homeClubId || '') || ids.has(f.awayClubId || ''));
+    // Bounded authoritative queries avoid transferring every other club's games.
+    let rows = await readPostgresOwnedFixtures(seasonId,[...ids]);
     rows = await filterPublishedEuropeanFixtures(rows);
     rows = await filterTombstonedFixtures(rows, seasonId);
     rows = await enrichFixturesWithAuthoritativeOwners(rows, seasonId);
     rows = await refreshFixtureMatchdayRules(rows, seasonId);
     rows = rows.map(({userSubmission, opponentSubmission, ...fixture}) => fixture);
     if (status) rows = rows.filter(f => f.status === status);
-    return { fixtures: sortSeasonFixtures(rows), stale: Boolean(result.stale), degraded: Boolean(result.degraded),
-      partial: false, source: 'postgresql', snapshotAt: result.generatedAt };
+    return { fixtures: sortSeasonFixtures(rows), stale: false, degraded: false,
+      partial: false, source: 'postgresql', snapshotAt: new Date().toISOString() };
   }
 
   const [admin, catalog] = await Promise.all([

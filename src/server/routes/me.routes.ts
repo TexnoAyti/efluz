@@ -32,7 +32,7 @@ meRouter.use((req: Request, res: Response, next) => {
 meRouter.get('/bootstrap', requireAuth, async (req: Request, res: Response) => {
   const seasonId = String(req.query.seasonId || 'season-2026-27');
   if (!/^season-[a-z0-9-]+$/.test(seasonId)) { res.status(400).json({ code: 'INVALID_SEASON_ID' }); return; }
-  res.json({ authenticated: true, user: req.user!, ...await getLoginClubState(req.user!.id, 1200, seasonId) });
+  res.json({ authenticated: true, user: req.user!, ...await getLoginClubState(req.user!.id, 350, seasonId) });
 });
 
 // The opening screen can hydrate ownership without rebuilding league statistics.
@@ -63,14 +63,20 @@ meRouter.get('/matches', requireAuth, async (req: Request, res: Response) => {
   const status = req.query.status as string | undefined;
 
   try {
+    const started = performance.now();
+    const timings: string[] = [];
     const clubState = await getOptionalCurrentClub(userId, seasonId);
     if (clubState.currentClubStatus === 'unavailable') throw new ReadModelNotWarmedError('MY_MATCHES_OWNERSHIP_UNAVAILABLE');
+    timings.push(`ownership;dur=${(performance.now()-started).toFixed(1)}`);
+    const matchesStarted = performance.now();
     const result = await getMyMatchesResilient(userId, clubState.ownedClubs, seasonId, status);
-    // PostgreSQL already returns the refreshed, gated authoritative season snapshot.
+    timings.push(`matches;dur=${(performance.now()-matchesStarted).toFixed(1)}`);
+    // PostgreSQL already returns fresh, gated fixtures scoped to the verified clubs.
     // Re-reading every club's cup repeats ownership/rule enrichment and Redis probes.
     const canonicalFixtures = result.source === 'postgresql' ? result.fixtures : await canonicalizeMyDomesticCupFixtures(result.fixtures, clubState.ownedClubs, seasonId);
     const safeFixtures = canonicalFixtures.map(({ userSubmission, opponentSubmission, ...fixture }) => fixture);
     const statusFiltered = status ? safeFixtures.filter((fixture) => fixture.status === status) : safeFixtures;
+    res.setHeader('Server-Timing',[res.getHeader('Server-Timing'),...timings].filter(Boolean).join(', '));
     res.json({ ...result, fixtures: sortSeasonFixtures(statusFiltered) });
   } catch (err: any) {
     handleFirestoreError(res, err, 'GET /api/me/matches');

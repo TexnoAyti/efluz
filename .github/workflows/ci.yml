@@ -72,6 +72,7 @@ jobs:
           bun run test:auth-quota
           bun run test:client-startup
           node scripts/run-isolated-test.mjs src/server/tests/startupLoadingRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/homeDataLatencyRegressionTest.ts
           bun run test:player-trophies
           node scripts/run-isolated-test.mjs src/server/tests/disciplineRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/telegramFastOpeningTest.ts

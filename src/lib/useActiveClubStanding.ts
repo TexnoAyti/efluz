@@ -3,10 +3,10 @@ import { api } from './api';
 import { Club, StandingsRow } from '../types';
 
 export async function loadActiveClubStanding(clubId: string, leagueId: string, seasonId: string, client: Pick<typeof api, 'getCompetitions' | 'getCompetitionStandings'> = api): Promise<StandingsRow | null> {
-  const { competitions } = await client.getCompetitions(seasonId);
+  const { competitions } = await client.getCompetitions(seasonId, false, 'league-summary');
   const competition = competitions.find((entry) => entry.type === 'LEAGUE' && entry.leagueId === leagueId);
   if (!competition) return null;
-  const { standings } = await client.getCompetitionStandings(competition.id, false, seasonId);
+  const { standings } = await client.getCompetitionStandings(competition.id, false, seasonId, 'league-summary');
   return standings.find((row) => row.clubId === clubId) || null;
 }
 

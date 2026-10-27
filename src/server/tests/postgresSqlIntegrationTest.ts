@@ -1,3 +1,4 @@
+import {readPostgresOwnedFixtures} from '../services/postgresOwnedFixtures';
 import {verifyTeamPlayerMatches} from './teamPlayerMatchesAudit';
 import {verifyCompetitionNotices} from './competitionNoticesHttpAudit';
 import {verifyElClasico} from './elClasicoHttpAudit';
@@ -94,6 +95,14 @@ process.env.DATABASE_PROVIDER = 'supabase'; process.env.SUPABASE_DATA_NAMESPACE 
 process.env.SUPABASE_URL = 'https://isolated-postgres.invalid'; process.env.SUPABASE_SERVICE_ROLE_KEY = 'isolated-only';
 try {
   const db = getFirestoreDb();
+  const latencySeason='season-native-home-latency';
+  for(const fixture of [
+    {id:'native-home-latency',homeClubId:'club-arsenal',awayClubId:'club-chelsea'},
+    {id:'native-unrelated-latency',homeClubId:'club-liverpool',awayClubId:'club-everton'},
+  ])await db.collection('fixtures').doc(fixture.id).set({...fixture,seasonId:latencySeason,competitionId:'comp-premier-league-2026',matchday:1,status:'SCHEDULED'});
+  const ownFixtures=await readPostgresOwnedFixtures(latencySeason,['club-arsenal','club-chelsea']);
+  assert.deepEqual(ownFixtures.map(f=>f.id),['native-home-latency'],'Native SQL scopes both home/away queries by verified club IDs');
+
   const stores = [new PostgresRuntimeStore(), new PostgresRuntimeStore()];
   const claims = await Promise.all(Array.from({ length: 12 }, (_, i) => stores[i % 2].set('same-lease', 'owner-' + i, { nx: true, ex: 60 })));
   assert.equal(claims.filter(Boolean).length, 1); assert.ok(conflicts > 0, 'Exercise native CAS conflict responses and client retries');

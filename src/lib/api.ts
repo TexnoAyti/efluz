@@ -483,12 +483,12 @@ export const api = {
   },
 
   // Competitions (Static Catalog - 30 minutes TTL)
-  async getCompetitions(seasonId = 'season-2026-27', skipCache = false): Promise<{ competitions: Competition[] }> {
-    return request(`/api/competitions?seasonId=${seasonId}`, { cacheTtlMs: 15000, skipCache });
+  async getCompetitions(seasonId = 'season-2026-27', skipCache = false, view?: 'league-summary'): Promise<{ competitions: Competition[] }> {
+    return request(`/api/competitions?seasonId=${seasonId}${view ? `&view=${view}` : ''}`, { cacheTtlMs: 15000, skipCache });
   },
 
-  async getCompetitionStandings(competitionId: string, skipCache = false, seasonId?: string): Promise<{ standings: StandingsRow[] }> {
-    return request(`/api/competitions/${competitionId}/standings${seasonId ? `?seasonId=${encodeURIComponent(seasonId)}` : ''}`, { cacheTtlMs: 120000, skipCache });
+  async getCompetitionStandings(competitionId: string, skipCache = false, seasonId?: string, view?: 'league-summary'): Promise<{ standings: StandingsRow[] }> {
+    return request(`/api/competitions/${competitionId}/standings${seasonId ? `?seasonId=${encodeURIComponent(seasonId)}` : ''}${view ? `${seasonId ? '&' : '?'}view=${view}` : ''}`, { cacheTtlMs: 120000, skipCache });
   },
 
   async getCompetitionParticipants(competitionId: string, skipCache = false): Promise<{ participants: any[] }> {

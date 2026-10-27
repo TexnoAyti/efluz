@@ -68,6 +68,14 @@ try {
  assert.equal((await fetch(base+'/api/me/bootstrap')).status,401);
  assert.equal(fixtureReads,0,'Ownership hydration and session opening never load statistics');
  assert.throws(()=>queryAll('select 1'),'Lightweight PostgreSQL session and club hydration must not initialize SQLite');
+ db.collection=originalCollection;
+ await db.collection('fixtures').doc('own-fast-fixture').set({id:'own-fast-fixture',seasonId:'season-2026-27',competitionId:'comp-premier-league-2026',matchday:1,status:'SCHEDULED',homeClubId:'club-arsenal',awayClubId:'club-chelsea'});
+ await redisSetRaw('matchday-state:season-2026-27:comp-premier-league-2026',{data:{competition:{id:'comp-premier-league-2026',seasonId:'season-2026-27',type:'LEAGUE',currentMatchday:1,isMatchdayOpen:true},locks:[]}});
+ const ownResponse=await fetch(base+'/api/me/matches',{headers:{authorization:'Bearer '+result.token}});
+ assert.equal(ownResponse.status,200);assert.ok((await ownResponse.json()).fixtures.some((f:any)=>f.id==='own-fast-fixture'));
+ assert.match(ownResponse.headers.get('server-timing')||'',/ownership;dur=.*matches;dur=/);
+ assert.throws(()=>queryAll('select 1'),'Initial PostgreSQL home match reads must not initialize SQLite');
+ assert.equal((await fetch(base+'/api/me/matches')).status,401);
  db.collection=((name:string)=>{
   if(['fixtures','standings'].includes(name)){fixtureReads++;throw Error('Statistics must not run during login');}
   return originalCollection(name);
