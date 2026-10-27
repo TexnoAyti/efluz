@@ -133,9 +133,9 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
   };
 
   return (
-    <div className="efl-viewport-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 dark:bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+    <div className="efl-competition-overlay efl-viewport-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 dark:bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
       <div
-        className={`w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${
+        className={`efl-competition-panel w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${
           EFL_2_DESIGN_ENABLED
             ? 'preview-surface rounded-3xl border border-slate-200/80 efl-theme-border dark:border-white/10 text-slate-900 efl-theme-text dark:text-white shadow-2xl'
             : 'glass-modal text-white efl-theme-text'
@@ -177,7 +177,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
         </div>
 
         {/* Content Body */}
-        <form onChange={() => { formChanged.current = true; }} onSubmit={handleSubmit} className="p-5 overflow-y-auto space-y-4">
+        <form onChange={() => { formChanged.current = true; }} onSubmit={handleSubmit} className="efl-competition-body p-5 overflow-y-auto space-y-4">
           {/* Match Teams Banner */}
           <div
             className={`p-4 rounded-2xl border ${

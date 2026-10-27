@@ -11,6 +11,7 @@ import './telegram-viewport.css';
 import './components/competition-content.css';
 import './components/customTournaments/tournaments.css';
 import './components/teamLeaguePreview/teamCrest.css';
+import './components/competition-dialog-layout.css';
 
 installTelegramViewport();
 
