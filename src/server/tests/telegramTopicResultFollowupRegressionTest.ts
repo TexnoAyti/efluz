@@ -27,6 +27,19 @@ try{
   assert.match(sent.at(-1).text,/Real Madrid 2:1 Barcelona.*25-tur/s);
   assert.equal((await handleTopicResultUpdate(choice)).handled,false,'consumed context cannot repeat');
   games=[game(6)];
+  const bare=update(-2011,'2-1',1002);
+  assert.equal((await handleTopicResultUpdate(bare)).result,'clarification');
+  const barePrompt=sent.at(-1);
+  assert.match(barePrompt.text,/shu turda o‘yin topilmadi.*Real Madrid — Barcelona.*6-tur/s);
+  assert.equal((await handleTopicResultUpdate(update(-2011,'ha',1002,barePrompt.botId))).result,'proposal_sent');
+  assert.match(sent.at(-1).text,/Real Madrid 1:2 Barcelona.*6-tur/s);
+  games=[game(6),game(25)];
+  assert.equal((await handleTopicResultUpdate(update(-2012,'3-2'))).result,'clarification');
+  const bareChoices=sent.at(-1);
+  assert.match(bareChoices.text,/6-tur.*25-tur/s);
+  assert.equal((await handleTopicResultUpdate(update(-2012,'2',1001,bareChoices.botId))).result,'proposal_sent');
+  assert.match(sent.at(-1).text,/Real Madrid 3:2 Barcelona.*25-tur/s);
+  games=[game(6)];
   for(const [chat,answer] of [[-2002,'ha'],[-2003,'6-tur'],[-2004,'1']] as const){
     assert.equal((await handleTopicResultUpdate(update(chat,'Real Madrid 4-3 Barca 5-tur'))).result,'clarification');
     const p=sent.at(-1);assert.equal((await handleTopicResultUpdate(update(chat,answer,1001,p.botId))).result,'proposal_sent');

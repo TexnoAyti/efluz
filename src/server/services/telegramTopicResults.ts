@@ -150,7 +150,9 @@ export async function planTopicResult(text: string, sender: number, thread: numb
     rounds.set(c.id, round);
     const stage = detectAiCupStage(text);
     // Keep verified other rounds for diagnosis; never silently change an explicit round.
-    const filter = { dataset: 'fixtures', competition: c.id, ...(round && !selected.clubs.length ? { matchday: round } : {}), ...(stage ? {stage} : {}), ...(selected.clubs.length ? { club: selected.clubs[0].id, opponent: selected.clubs[1].id } : {}), limit: 30 };
+    // Apply the round below, after reading: a bare score must also be able to
+    // offer verified fixtures from other rounds when the current round is empty.
+    const filter = { dataset: 'fixtures', competition: c.id, ...(stage ? {stage} : {}), ...(selected.clubs.length ? { club: selected.clubs[0].id, opponent: selected.clubs[1].id } : {}), limit: 30 };
     let offset = 0;
     do {
       const page: any = await reader.read({ ...filter, offset });
