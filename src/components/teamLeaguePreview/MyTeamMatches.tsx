@@ -1,13 +1,12 @@
 import {Swords,MessageCircle,Clock3,CheckCircle2,AlertCircle,Send,ShieldCheck} from 'lucide-react';
 import React,{useEffect,useRef,useState} from 'react';
-import {useAuth} from '../../context/AuthContext';
 import {teamPreviewRequest} from '../../lib/teamLeaguePreviewApi';
 type Match={fixtureId:string;boutId:string;round:number;homeName:string;awayName:string;opponentName:string;contactUrl?:string;homeScore:number|null;awayScore:number|null;pendingResult?:{homeScore:number;awayScore:number;mine:boolean};disputed:boolean;canPlay:boolean};
 type View={version:number;matches:Match[]};
-export function MyTeamMatches({leagueId,onRefresh}:{leagueId:string;onRefresh:()=>void}){
- const {user}=useAuth(),[view,setView]=useState<View|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
+export function MyTeamMatches({leagueId,userId,onRefresh}:{leagueId:string;userId:string;onRefresh:()=>void}){
+ const [view,setView]=useState<View|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
  const epoch=useRef(0),lock=useRef(false);const path=`/player/leagues/${leagueId}/matches`;
- useEffect(()=>{const current=++epoch.current;setView(null);setBusy(false);setError('');const load=()=>{if(lock.current||document.visibilityState==='hidden')return;void teamPreviewRequest<View>(path).then(v=>{if(current===epoch.current){setView(old=>old&&old.version>v.version?old:v);setError('');}}).catch(e=>{if(current===epoch.current)setError(e.message);});};load();const timer=setInterval(load,20000);return()=>{epoch.current++;clearInterval(timer);};},[leagueId,user?.id]);
+ useEffect(()=>{const current=++epoch.current;setView(null);setBusy(false);setError('');const load=()=>{if(lock.current||document.visibilityState==='hidden')return;void teamPreviewRequest<View>(path).then(v=>{if(current===epoch.current){setView(old=>old&&old.version>v.version?old:v);setError('');}}).catch(e=>{if(current===epoch.current)setError(e.message);});};load();const timer=setInterval(load,20000);return()=>{epoch.current++;clearInterval(timer);};},[leagueId,userId]);
  const act=async(m:Match,action:string,scores?:{homeScore:number;awayScore:number})=>{if(lock.current||!view)return;lock.current=true;setBusy(true);setError('');const current=epoch.current;try{const next=await teamPreviewRequest<View>(path,{action,version:view.version,fixtureId:m.fixtureId,boutId:m.boutId,...scores});if(current===epoch.current){setView(next);onRefresh();}}catch(e:any){if(current===epoch.current){setError(e.message);try{const next=await teamPreviewRequest<View>(path);if(current===epoch.current)setView(next);}catch{}}}finally{lock.current=false;if(current===epoch.current)setBusy(false);}};
  if(!view?.matches.length&&!error)return null;
  return <section className="competition-panel team-my-matches" aria-label="Mening team o‘yinlarim">
