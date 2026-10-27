@@ -1,8 +1,8 @@
 import React, { Suspense } from 'react';
-import { Loader2 } from 'lucide-react';
+import { AppLoading, type LoadingMode } from './AppLoading';
 
 /** Keep the app navigation available while a section downloads or fails. */
-export class ContentBoundary extends React.Component<{ children: React.ReactNode }, { failed: boolean }> {
+export class ContentBoundary extends React.Component<{ children: React.ReactNode; loadingMode?: LoadingMode }, { failed: boolean }> {
   state = { failed: false };
 
   static getDerivedStateFromError() { return { failed: true }; }
@@ -14,9 +14,6 @@ export class ContentBoundary extends React.Component<{ children: React.ReactNode
         <button type="button" onClick={() => window.location.reload()} className="mt-3 min-h-11 rounded-xl bg-emerald-400 px-5 font-bold text-slate-950">Qayta yuklash</button>
       </div>;
     }
-    return <Suspense fallback={<div role="status" aria-live="polite" className="flex min-h-32 items-center justify-center gap-2 text-sm">
-      <Loader2 aria-hidden="true" className="h-5 w-5 animate-spin text-emerald-500" />
-      <span>Yuklanmoqda…</span>
-    </div>}>{this.props.children}</Suspense>;
+    return <Suspense fallback={<AppLoading mode={this.props.loadingMode} />}>{this.props.children}</Suspense>;
   }
 }

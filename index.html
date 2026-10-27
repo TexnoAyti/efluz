@@ -5,16 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#020617" />
     <meta name="color-scheme" content="dark" />
-    <title>eFootball Tournament Platform</title>
+    <title>EFL UZ</title>
     <meta name="description" content="Telegram Mini App &amp; competitive eFootball tournament management system with real leagues, automated fixtures, live results, standings, knockout cups, and admin dispute center." />
     <meta property="og:title" content="eFootball Tournament Platform" />
     <meta property="og:description" content="Telegram Mini App &amp; competitive eFootball tournament management system with real leagues, automated fixtures, live results, standings, knockout cups, and admin dispute center." />
+    <link rel="stylesheet" href="/app-loading.css" />
+    <link rel="preload" href="/efluz-logo.png" as="image" />
     <link rel="preconnect" href="https://telegram.org" />
     <script defer src="/telegram-ready.js"></script>
     <script id="telegram-web-app-sdk" async src="https://telegram.org/js/telegram-web-app.js"></script>
   </head>
   <body class="bg-slate-950 text-slate-100 antialiased">
-    <div id="root"><div role="status" aria-label="EFL UZ yuklanmoqda" style="min-height:100dvh;display:grid;place-items:center;background:#080b12;color:#e2e8f0;font:600 14px system-ui"><div style="display:grid;justify-items:center;gap:20px"><img src="/efluz-logo.png" alt="EFL UZ" width="120" height="44" style="object-fit:contain" /><span>Yuklanmoqda…</span></div></div></div>
+    <div id="root"><div class="efl-loading efl-loading--screen" role="status" aria-live="polite" aria-label="EFL UZ yuklanmoqda"><div class="efl-loading-content"><div class="efl-loading-brand"><img class="efl-loading-logo-dark" src="/efluz-logo.png" alt="EFL UZ" width="144" height="52" /><img class="efl-loading-logo-light" src="/efluz-logo-light.png" alt="" aria-hidden="true" width="144" height="52" /></div><div class="efl-loading-track" aria-hidden="true"><span></span></div><span class="efl-loading-label">Yuklanmoqda<span aria-hidden="true">…</span></span></div></div></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
