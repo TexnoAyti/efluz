@@ -242,25 +242,37 @@ export const MatchdayHomeView: React.FC<Props> = ({
   } : null;
   const activeClubFixtures = useMemo(() => sortSeasonFixtures(fixturesForClub(fixtures, activeClub?.id)), [fixtures, activeClub?.id]);
   const loadRequest = useRef(0);
+  const hasFixtures = useRef(false);
+  const recoveryAttempts = useRef(0);
+  const recoverable=useRef(true);
   const loadData = useCallback(async () => {
     const request = ++loadRequest.current;
-    void refreshStanding();
     setLoading(true);
     setError(false);
     try {
       const res = await api.getMyMatches(activeSeasonId);
-      if (request === loadRequest.current) { setFixtures(res.fixtures || []); setStale(Boolean(res.stale || res.degraded)); }
-    } catch {
-      if (request === loadRequest.current) setError(true);
+      if (request === loadRequest.current) { setFixtures(res.fixtures || []); hasFixtures.current=true; recoveryAttempts.current=0; setStale(Boolean(res.stale || res.degraded)); void refreshStanding(); }
+    } catch (e:any) {
+      if (request === loadRequest.current) {recoverable.current=!e.httpStatus||e.httpStatus>=500||e.httpStatus===429;setError(true);setStale(hasFixtures.current);}
     } finally {
       if (request === loadRequest.current) setLoading(false);
     }
   }, [activeSeasonId, user?.id, refreshStanding]);
 
   useEffect(() => {
+    hasFixtures.current=false;recoveryAttempts.current=0;setFixtures([]);setStale(false);
     void loadData();
     return () => { loadRequest.current++; };
   }, [loadData]);
+
+  // Recover transient cold-start/network failures without a reload or parallel retry storm.
+  useEffect(()=>{
+    if(!error||loading||!recoverable.current)return;
+    const recover=()=>{if(document.visibilityState==='visible'&&navigator.onLine!==false)void loadData();};
+    const timer=recoveryAttempts.current<3?setTimeout(()=>{recoveryAttempts.current++;recover();},Math.min(2000*2**recoveryAttempts.current,8000)):undefined;
+    window.addEventListener('online',recover);document.addEventListener('visibilitychange',recover);
+    return()=>{clearTimeout(timer);window.removeEventListener('online',recover);document.removeEventListener('visibilitychange',recover);};
+  },[error,loading,loadData]);
 
   // Fixtures partition
   const pendingFixtures = useMemo(
@@ -495,7 +507,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
             <div className="h-16 w-3/4 bg-[var(--efl-surface-2)] rounded-xl mx-auto" />
             <div className="h-9 w-40 bg-[var(--efl-surface-2)] rounded-xl mx-auto" />
           </div>
-        ) : heroMatch && homeTeam && awayTeam ? (
+        ) : error&&!hasFixtures.current ? null : heroMatch && homeTeam && awayTeam ? (
           <div className="p-4 sm:p-5 rounded-2xl bg-[var(--efl-surface)] border border-[var(--efl-border)] shadow-xs relative overflow-hidden">
             <div className="flex items-center gap-2 mb-3 text-xs font-black text-[var(--efl-text)]">
               <CompetitionMark competitionId={heroMatch.competitionId} className="h-6 w-6" />

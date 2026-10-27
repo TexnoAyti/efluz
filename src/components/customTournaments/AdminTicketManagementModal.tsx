@@ -90,8 +90,8 @@ export const AdminTicketManagementModal: React.FC<AdminTicketManagementModalProp
   };
 
   return (
-    <div className="efl-custom-tournaments fixed inset-0 z-50 flex items-center justify-center p-4 bg-[var(--efl-surface-2)]/80 backdrop-blur-sm animate-in fade-in">
-      <div className="w-full max-w-md bg-[var(--efl-surface)] border border-[var(--efl-border)] rounded-3xl p-5 space-y-4 shadow-2xl">
+    <div className="efl-custom-tournaments efl-competition-overlay efl-viewport-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-[var(--efl-surface-2)]/80 backdrop-blur-sm animate-in fade-in">
+      <div className="efl-competition-panel w-full max-w-md bg-[var(--efl-surface)] border border-[var(--efl-border)] rounded-3xl p-5 space-y-4 shadow-2xl">
         <div className="flex items-center justify-between pb-3 border-b border-[var(--efl-border)]">
           <div className="flex items-center gap-2">
             <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400">

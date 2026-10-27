@@ -66,7 +66,9 @@ meRouter.get('/matches', requireAuth, async (req: Request, res: Response) => {
     const clubState = await getOptionalCurrentClub(userId, seasonId);
     if (clubState.currentClubStatus === 'unavailable') throw new ReadModelNotWarmedError('MY_MATCHES_OWNERSHIP_UNAVAILABLE');
     const result = await getMyMatchesResilient(userId, clubState.ownedClubs, seasonId, status);
-    const canonicalFixtures = await canonicalizeMyDomesticCupFixtures(result.fixtures, clubState.ownedClubs, seasonId);
+    // PostgreSQL already returns the refreshed, gated authoritative season snapshot.
+    // Re-reading every club's cup repeats ownership/rule enrichment and Redis probes.
+    const canonicalFixtures = result.source === 'postgresql' ? result.fixtures : await canonicalizeMyDomesticCupFixtures(result.fixtures, clubState.ownedClubs, seasonId);
     const safeFixtures = canonicalFixtures.map(({ userSubmission, opponentSubmission, ...fixture }) => fixture);
     const statusFiltered = status ? safeFixtures.filter((fixture) => fixture.status === status) : safeFixtures;
     res.json({ ...result, fixtures: sortSeasonFixtures(statusFiltered) });

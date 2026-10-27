@@ -147,11 +147,11 @@ export async function actOnTeamLeague(actorId:string,id:string,input:any){
     const h=shuffled(f.homeLineup.starters),a=shuffled(f.awayLineup.starters);
     f.bouts=h.map((member,i)=>({id:`${f.id}_b${i}`,homeMemberId:member,awayMemberId:a[i],homeScore:null,awayScore:null}));
    }else if(input.action==='RESET'){
-    if(f.bouts.some(b=>b.homeScore!=null))throw error('Natijalar bor. Tarkiblarni qayta ochib bo‘lmaydi.',409);f.bouts=[];f.homeLineup=null;f.awayLineup=null;
+    if(f.bouts.some(b=>b.homeScore!=null||b.pendingResult||b.disputed))throw error('Natijalar bor. Tarkiblarni qayta ochib bo‘lmaydi.',409);f.bouts=[];f.homeLineup=null;f.awayLineup=null;
    }else if(input.action==='SUBSTITUTE'){
     if(!['home','away'].includes(input.side))throw error('Team tomoni noto‘g‘ri.');
     const b=f.bouts.find(b=>b.id===input.boutId),line=input.side==='home'?f.homeLineup:f.awayLineup;
-    if(!b||!line||b.homeScore!=null||!line.reserves.includes(input.memberId))throw error('Faqat o‘ynalmagan juftlikda zaxiradan almashtirish mumkin.',409);
+    if(!b||!line||b.homeScore!=null||b.pendingResult||b.disputed||!line.reserves.includes(input.memberId))throw error('Faqat o‘ynalmagan juftlikda zaxiradan almashtirish mumkin.',409);
     const key=input.side==='home'?'homeMemberId':'awayMemberId',old=b[key];
     line.starters=line.starters.map(p=>p===old?input.memberId:p);line.reserves=line.reserves.map(p=>p===input.memberId?old:p);b[key]=input.memberId;
    }else if(input.action==='TIEBREAK'){
@@ -163,7 +163,7 @@ export async function actOnTeamLeague(actorId:string,id:string,input:any){
 
     const b=f.bouts.find(b=>b.id===input.boutId);if(!b)throw error('Juftlik tuzilmagan.',409);
     if(![input.homeScore,input.awayScore].every(n=>Number.isInteger(n)&&n>=0&&n<=99))throw error('Hisob 0–99 oralig‘idagi butun son bo‘lsin.');
-    b.homeScore=input.homeScore;b.awayScore=input.awayScore;if(f.stage==='PLAYOFF')l.status='ACTIVE';delete f.tieBreakWinnerId;delete f.tieBreakReason;
+    b.homeScore=input.homeScore;b.awayScore=input.awayScore;delete b.pendingResult;delete b.disputed;if(f.stage==='PLAYOFF')l.status='ACTIVE';delete f.tieBreakWinnerId;delete f.tieBreakReason;
    }
   }
   if(['SCORE','TIEBREAK'].includes(input.action)&&l.currentRound===l.totalRounds&&l.fixtures.every(f=>teamFixtureScore(f).complete&&(f.stage!=='PLAYOFF'||!!teamFixtureWinner(f))))l.status='COMPLETED';
@@ -179,7 +179,7 @@ async function publishedTeams(){
  if(accounts.docs.length!==1||accounts.docs[0].data()?.isSuspended)return {teams:[] as PreviewTeam[],leagues:[] as TeamLeague[]};
  const ownerId=accounts.docs[0].id;
  const [ts,ls]=await Promise.all([db.collection(TEAM_COLLECTION).where('ownerId','==',ownerId).limit(TEAM_DIRECTORY_LIMIT).get(),db.collection(LEAGUE_COLLECTION).where('ownerId','==',ownerId).limit(8).get()]);
- const leagues=ls.docs.map(d=>d.data() as TeamLeague).filter(l=>l.status!=='DRAFT'&&l.currentRound>0).map(l=>({id:l.id,membershipRequired:l.membershipRequired,ownerId:'',name:l.name,description:l.description,reserveLimit:l.reserveLimit,points:l.points,competitionType:l.competitionType,format:l.format,qualifiers:l.qualifiers,teamIds:l.teamIds,starterCount:l.starterCount,rounds:l.rounds,status:l.status,currentRound:l.currentRound,totalRounds:l.totalRounds,fixtures:l.fixtures,teams:l.teams,version:0,updatedAt:l.updatedAt,audit:[]}));
+ const leagues=ls.docs.map(d=>d.data() as TeamLeague).filter(l=>l.status!=='DRAFT'&&l.currentRound>0).map(l=>({id:l.id,membershipRequired:l.membershipRequired,ownerId:'',name:l.name,description:l.description,reserveLimit:l.reserveLimit,points:l.points,competitionType:l.competitionType,format:l.format,qualifiers:l.qualifiers,teamIds:l.teamIds,starterCount:l.starterCount,rounds:l.rounds,status:l.status,currentRound:l.currentRound,totalRounds:l.totalRounds,fixtures:l.fixtures.map(f=>({...f,bouts:f.bouts.map(({pendingResult,disputed,...b})=>b)})),teams:l.teams,version:0,updatedAt:l.updatedAt,audit:[]}));
  const included=new Set(leagues.flatMap(l=>l.teamIds));
  const teams=ts.docs.map(d=>d.data() as PreviewTeam).filter(t=>included.has(t.id)).map(t=>({id:t.id,ownerId:'',name:t.name,logo:t.logo,members:t.members,captainMemberId:t.captainMemberId,version:0,updatedAt:t.updatedAt}));
  return {teams,leagues};

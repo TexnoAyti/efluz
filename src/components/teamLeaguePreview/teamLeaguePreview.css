@@ -124,3 +124,28 @@
 .clasico-score{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:end;margin-top:12px}
 .clasico-event .competition-actions{flex-wrap:wrap}
 @media(max-width:520px){.clasico-event{padding:14px}.clasico-sides{grid-template-columns:1fr}.clasico-score{grid-template-columns:1fr 1fr}.clasico-score>button{grid-column:1/-1}.clasico-pair{font-size:13px;gap:8px}}
+
+/* Player match cards share the league palette in both light and dark themes. */
+.team-my-matches{display:grid;gap:16px;margin-bottom:16px}
+.team-my-matches p{margin:0}.team-my-matches .competition-eyebrow{margin:0 0 3px}
+.team-my-match-icon{width:42px;height:42px;display:grid;place-items:center;flex-shrink:0;border:1px solid var(--efl-border);border-radius:12px;background:var(--efl-primary-soft);color:var(--efl-primary)}
+.team-my-match-list{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));align-items:start}
+.team-my-match-card{display:grid;gap:16px;padding:16px;border:1px solid var(--efl-border);border-radius:14px;background:var(--efl-surface);overflow-wrap:anywhere}
+.team-my-match-state{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:700;color:var(--efl-text-2)}
+.team-my-match-state.confirmed{color:var(--efl-primary)}.team-my-match-state.disputed{color:var(--efl-danger)}
+.team-my-match-pair{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:10px;align-items:center;text-align:center;padding:12px 0}
+.team-my-match-pair>b{font-size:12px;line-height:1.5}.team-my-match-pair small{display:block;margin-top:4px;color:var(--efl-muted);font-size:10px;font-weight:500}
+.team-my-match-pair>strong{display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 12px;border:1px solid var(--efl-border);border-radius:12px;background:var(--efl-surface-2);font-size:24px;line-height:1.1;font-variant-numeric:tabular-nums}
+.team-my-match-pair>strong>span{color:var(--efl-muted);font-size:16px}
+.team-my-match-contact{width:100%;min-height:46px;background:var(--efl-primary-soft);color:var(--efl-primary)}
+.team-my-match-contact span{overflow-wrap:anywhere}.team-my-match-contact small{display:block;font-weight:500;font-size:10px;margin-top:2px}
+.team-my-match-score,.team-my-match-pending{display:grid;gap:12px;padding-top:16px;border-top:1px solid var(--efl-border)}
+.team-my-match-score-fields{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:12px;align-items:end}
+.team-my-match-score-fields>span{padding-bottom:13px;color:var(--efl-muted)}
+.team-my-match-score-fields label{overflow-wrap:anywhere}.team-my-match-score-fields input{min-height:50px;text-align:center;font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+.team-my-match-score>.competition-button{width:100%;min-height:44px}.team-my-match-score>.team-row{align-items:flex-start;font-size:10px;line-height:1.5}.team-my-match-score>.team-row>svg{flex-shrink:0;margin-top:1px}
+.team-my-match-pending>.team-row{align-items:flex-start;color:var(--efl-primary)}.team-my-match-pending>.team-row>svg{flex-shrink:0;margin-top:2px}
+.team-my-match-pending b{font-size:12px}.team-my-match-pending p{font-size:11px;line-height:1.6;color:var(--efl-text-2)}.team-my-match-pending strong{white-space:nowrap;color:var(--efl-text)}
+.team-my-match-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.team-my-match-actions button{min-height:44px}
+.team-my-matches a:focus-visible{outline:2px solid var(--efl-primary);outline-offset:3px}
+@media(max-width:380px){.team-my-matches{padding:12px}.team-my-match-card{padding:12px;gap:12px}.team-my-match-pair{gap:6px}.team-my-match-pair>strong{font-size:20px;padding:9px}.team-my-match-actions{grid-template-columns:1fr}}

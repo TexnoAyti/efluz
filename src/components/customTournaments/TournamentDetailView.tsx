@@ -350,8 +350,8 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
 
       {/* CLUB PICKER MODAL */}
       {showClubPickerModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
-          <div role="dialog" aria-modal="true" aria-label="Turnir klubini tanlash" className="w-full max-w-md bg-[var(--efl-surface)] border border-[var(--efl-border)] rounded-3xl p-5 space-y-4 shadow-2xl max-h-[85vh] flex flex-col">
+        <div className="efl-competition-overlay efl-viewport-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+          <div role="dialog" aria-modal="true" aria-label="Turnir klubini tanlash" className="efl-competition-panel w-full max-w-md bg-[var(--efl-surface)] border border-[var(--efl-border)] rounded-3xl p-5 space-y-4 shadow-2xl max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between pb-3 border-b border-[var(--efl-border)]">
               <h3 className="font-black text-[var(--efl-text)] text-base">Bo‘sh Klubni Tanlang</h3>
               <button
@@ -375,8 +375,8 @@ export const TournamentDetailView: React.FC<TournamentDetailViewProps> = ({
 
       {/* SCORE SUBMISSION MODAL */}
       {selectedMatchForScore && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
-          <div role="dialog" aria-modal="true" aria-label="O‘yin natijasi" className="w-full max-w-sm max-h-[90dvh] overflow-y-auto bg-[var(--efl-surface)] border border-[var(--efl-border)] rounded-3xl p-5 space-y-4 shadow-2xl">
+        <div className="efl-competition-overlay efl-viewport-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+          <div role="dialog" aria-modal="true" aria-label="O‘yin natijasi" className="efl-competition-panel w-full max-w-sm max-h-[90dvh] overflow-y-auto bg-[var(--efl-surface)] border border-[var(--efl-border)] rounded-3xl p-5 space-y-4 shadow-2xl">
             {scoreError&&<p role="alert" className="text-sm text-rose-400">{scoreError}</p>}
             <div className="flex items-center justify-between pb-3 border-b border-[var(--efl-border)]">
               <h3 className="font-black text-[var(--efl-text)] text-base">O‘yin Natijasi</h3>

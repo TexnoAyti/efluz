@@ -6,7 +6,7 @@ export interface TeamMember {id:string;name:string;userId?:string;verified?:bool
 export function confirmedTeamMembers(team:{members:TeamMember[]}){return team.members.filter(m=>m.verified===true&&!!m.userId);}
 export interface PreviewTeam {id:string;ownerId:string;adminUserId?:string;memberUserIds?:string[];membershipRequired?:boolean;name:string;logo:string;members:TeamMember[];captainMemberId:string;version:number;updatedAt:string}
 export interface TeamLineup {starters:string[];reserves:string[]}
-export interface TeamBout {id:string;homeMemberId:string;awayMemberId:string;homeScore:number|null;awayScore:number|null}
+export interface TeamBout {id:string;homeMemberId:string;awayMemberId:string;homeScore:number|null;awayScore:number|null;pendingResult?:{homeScore:number;awayScore:number;submittedBy:string};disputed?:boolean}
 export type TeamTournamentKind='CUSTOM'|'LEAGUE'|'CUP'|'CHAMPIONS_LEAGUE'|'SINGLE_MATCH';
 export const teamTournamentKinds={SINGLE_MATCH:'Bitta uchrashuv',CUSTOM:'Boshqa turnir',LEAGUE:'Liga',CUP:'Kubok',CHAMPIONS_LEAGUE:'Chempionlar ligasi'};
 export type TeamTournamentFormat='LEAGUE'|'PLAYOFF'|'LEAGUE_AND_PLAYOFF';

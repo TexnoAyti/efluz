@@ -187,7 +187,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
   const cacheTtl = options.cacheTtlMs ?? (isGet ? 15000 : 0); // Default 15s cache for GETs to conserve free-tier quota
   const timeoutMs = options.timeoutMs ?? 14000;
 
-  const authCacheIdentity = options.skipAuthentication ? 'public' : getSessionToken()?.slice(0, 32) || getTelegramInitData().slice(0, 32);
+  const authCacheIdentity = options.skipAuthentication ? 'public' : getSessionToken() || getTelegramInitData();
   const cacheKey = `${endpoint}::${options.skipAuthentication ? '' : getDevUserId() || ''}::${authCacheIdentity}`;
 
   // 1. Check in-memory cache for GET
@@ -280,9 +280,10 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
 
         // Stale cache preservation: If we have existing cached data for this GET request,
         // preserve and return it on network timeout or quota exhaustion rather than crashing the view
-        if (isGet) {
+        const transient = !err.httpStatus || err.httpStatus >= 500 || err.httpStatus === 429 || err.name === 'AbortError';
+        if (isGet && transient) {
           const staleCached = memoryCache.get(cacheKey);
-          if (staleCached && staleCached.data) {
+          if (staleCached && staleCached.data && Date.now() - staleCached.timestamp < 5 * 60 * 1000) {
             console.warn(`[API CACHE PRESERVED] Returning cached data for ${endpoint} due to error:`, err.message);
             return staleCached.data as T;
           }

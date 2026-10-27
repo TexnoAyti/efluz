@@ -9,6 +9,7 @@ import {teamLeaguePreviewRouter} from '../routes/teamLeaguePreview.routes';
 import {clearTelegramMembershipCache} from '../services/telegramBotService';
 import {CLASICO_COLLECTION} from '../services/elClasicoService';
 export async function verifyElClasico(failNextCommit:()=>void){
+ const savedEnabled=process.env.EL_CLASICO_ENABLED;process.env.EL_CLASICO_ENABLED='true';
  const db=getFirestoreDb(),ref=db.collection(CLASICO_COLLECTION).doc('el-clasico'),prior=(await ref.get()).data();await ref.delete();
  const users=Array.from({length:25},(_,i)=>({id:'user-clasico-'+i,telegramId:String(881000+i),username:'clasico'+i,firstName:'Player '+i,isAdmin:i===23,isSuspended:false,createdAt:'',updatedAt:''}));
  const owner={...users[24],isAdmin:true,telegramId:'5209126900'};for(const u of users)await db.collection('users').doc(u.id).set(u);await db.collection('users').doc(owner.id).set(owner);
@@ -54,6 +55,18 @@ export async function verifyElClasico(failNextCommit:()=>void){
   failNextCommit();assert.equal((await act(owner,{action:'START',version:event.version})).status,500);assert.equal((await call()).body.data.event.status,'REGISTRATION','Failed commit leaves no partial pairs');
   const started=await act(owner,{action:'START',version:event.version});assert.equal(started.status,200,JSON.stringify(started.body));event=started.body.data.event;assert.equal(event.bouts.length,9);const delivery=(await db.collection(COMPETITION_OUTBOX).doc(noticeHash(['clasico:'+event.version,0])).get()).data();assert.equal(delivery?.notices.filter((n:any)=>n.title.includes('O‘yin boshlandi')).length,18,'Actual HTTP START atomically saves all 18 personal opponent notices');assert.equal(new Set(event.bouts.flatMap((b:any)=>[b.homeUserId,b.awayUserId])).size,18);
   assert.equal((await act(owner,{action:'REMOVE',userId:owner.id,version:event.version})).status,409,'Started roster is locked');assert.equal((await act(owner,{action:'MOVE',userId:owner.id,side:'BARCA',version:event.version})).status,409);
+  const first=event.bouts[0],home=[...users,owner].find(u=>u.id===first.homeUserId)!,away=[...users,owner].find(u=>u.id===first.awayUserId)!;
+  assert.ok(event.players.every((p:any)=>p.contactUrl),'Every participant has a Telegram contact link');
+  assert.equal((await act(users[23],{action:'SUBMIT_RESULT',version:event.version,boutId:first.id,homeScore:1,awayScore:0})).status,403);
+  event=(await act(home,{action:'SUBMIT_RESULT',version:event.version,boutId:first.id,homeScore:1,awayScore:0})).body.data.event;
+  assert.equal(event.bouts[0].homeScore,null);
+  assert.equal((await act(home,{action:'CONFIRM_RESULT',version:event.version,boutId:first.id})).status,403);
+  assert.equal((await act(away,{action:'CONFIRM_RESULT',version:event.version-1,boutId:first.id})).status,409);
+  event=(await act(away,{action:'DISPUTE_RESULT',version:event.version,boutId:first.id})).body.data.event;
+  assert.equal(event.bouts[0].disputed,true);
+  event=(await act(home,{action:'SUBMIT_RESULT',version:event.version,boutId:first.id,homeScore:2,awayScore:1})).body.data.event;
+  event=(await act(away,{action:'CONFIRM_RESULT',version:event.version,boutId:first.id})).body.data.event;
+  assert.equal(event.bouts[0].homeScore,2);
   assert.equal((await act(users[0],{action:'LEAVE'})).status,409);assert.equal((await act(users[23],{action:'JOIN',side:'REAL'})).status,409);
   assert.equal((await act(users[0],{action:'SCORE',version:event.version,boutId:1,homeScore:9,awayScore:0})).status,403);
   assert.equal((await act(owner,{action:'SCORE',version:event.version,boutId:1,homeScore:'2',awayScore:0})).status,400);
@@ -61,6 +74,7 @@ export async function verifyElClasico(failNextCommit:()=>void){
   assert.equal(event.status,'COMPLETED');assert.equal((await act(owner,{action:'CANCEL',version:event.version})).status,409);
   assert.equal((await act(owner,{action:'SCORE',version:event.version-1,boutId:1,homeScore:1,awayScore:2})).status,409);
   assert.equal((await call()).body.data.event.bouts[0].homeScore,2);
+  delete process.env.EL_CLASICO_ENABLED;assert.equal((await call()).body.data.available,false);assert.equal((await act(home,{action:'JOIN',side:'REAL'})).status,410);assert.equal((await act(owner,{action:'START',version:event.version})).status,410);
   console.log('PASS El-Clasico HTTP/native PostgreSQL: fail-closed fresh subscription, authenticated self-selection, concurrent slot cap, atomic switching, owner ACL, roster locking, 9 unique pairs, rollback and completion');
- }finally{await new Promise<void>(resolve=>server.close(()=>resolve()));globalThis.fetch=before;if(savedToken===undefined)delete process.env.TELEGRAM_BOT_TOKEN;else process.env.TELEGRAM_BOT_TOKEN=savedToken;clearTelegramMembershipCache();await ref.delete();if(prior)await ref.set(prior);for(const u of users)await db.collection('users').doc(u.id).delete();}
+ }finally{if(savedEnabled===undefined)delete process.env.EL_CLASICO_ENABLED;else process.env.EL_CLASICO_ENABLED=savedEnabled;await new Promise<void>(resolve=>server.close(()=>resolve()));globalThis.fetch=before;if(savedToken===undefined)delete process.env.TELEGRAM_BOT_TOKEN;else process.env.TELEGRAM_BOT_TOKEN=savedToken;clearTelegramMembershipCache();await ref.delete();if(prior)await ref.set(prior);for(const u of users)await db.collection('users').doc(u.id).delete();}
 }

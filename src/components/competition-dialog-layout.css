@@ -1,0 +1,32 @@
+/* Shared geometry for domestic/international cups, custom tournaments,
+   TEAMS, UZEFLIFE and participant/admin result dialogs. */
+:root{--competition-dialog-radius:16px;--competition-dialog-space:16px;--competition-dialog-width:560px}
+:root .efl-competition-overlay{background:rgba(2,6,23,.65);overscroll-behavior:contain;isolation:isolate}
+:root .efl-competition-panel{width:100%;max-height:var(--efl-dialog-height);min-width:0;min-height:0;border:1px solid var(--efl-border);border-radius:var(--competition-dialog-radius);background:var(--efl-surface);color:var(--efl-text);box-shadow:var(--efl-shadow-lg);overscroll-behavior:contain}
+:root .efl-competition-panel.efl-match-dialog{max-width:960px;overflow:hidden}
+:root .efl-competition-body,:root .efl-match-dialog-body{min-height:0;overflow-y:auto;overscroll-behavior:contain;scroll-padding-block:16px;-webkit-overflow-scrolling:touch}
+:root .efl-competition-panel :is(input,select,textarea){max-width:100%;min-width:0;scroll-margin-block:24px}
+:root .efl-competition-panel :is(button,a){touch-action:manipulation}
+:root :is(.team-dialog,.tourney-dialog,dialog.competition-dialog){border-radius:var(--competition-dialog-radius);border-color:var(--efl-border);color:var(--efl-text);background:var(--efl-surface);box-shadow:var(--efl-shadow-lg)}
+:root .team-dialog{width:min(var(--competition-dialog-width),100%)}
+:root .team-dialog:has(.team-league-match),:root .team-dialog:has(.team-tournament-management){width:min(960px,100%)}
+:root .tourney-dialog:not(.tourney-management-overlay>.tourney-dialog){width:min(720px,100%)}
+:root dialog.competition-dialog{width:min(var(--competition-dialog-width),calc(100vw - var(--safe-left,0px) - var(--safe-right,0px) - 24px))}
+:root :is(.team-dialog,.tourney-dialog,dialog.competition-dialog)>header{padding:var(--competition-dialog-space);gap:12px;align-items:flex-start;flex-shrink:0;border-bottom:1px solid var(--efl-border)}
+:root :is(.team-dialog,.tourney-dialog,dialog.competition-dialog)>header :is(h2,h3){font-size:18px;line-height:1.4;font-weight:900;overflow-wrap:anywhere}
+:root :is(.team-dialog-body,.tourney-dialog-body,.competition-dialog-body){padding:var(--competition-dialog-space);gap:16px;min-height:0;overscroll-behavior:contain;scroll-padding-block:16px}
+:root :is(.team-dialog,.tourney-dialog,dialog.competition-dialog) :is(input,select,textarea){scroll-margin-block:24px;max-width:100%}
+:root :is(.team-dialog,.tourney-dialog,dialog.competition-dialog) button[aria-label]{flex-shrink:0}
+@media(max-width:600px){
+ :root :is(.team-dialog-backdrop,.tourney-dialog-backdrop){padding:0;align-items:stretch}
+ :root .team-dialog-backdrop>.team-dialog,:root .tourney-dialog-backdrop>.tourney-dialog{width:100%;max-width:none;max-height:100%;height:100%;min-height:0;border-radius:0}
+ :root .efl-competition-overlay{align-items:stretch}
+ :root .efl-competition-overlay>.efl-competition-panel{align-self:center;max-height:var(--efl-dialog-height);border-radius:var(--competition-dialog-radius)}
+ :root .efl-competition-panel :is(button,input,select){min-height:44px}
+ :root :is(.team-dialog,.tourney-dialog,dialog.competition-dialog) :is(.competition-button,.tourney-button){min-height:44px}
+ :root :is(.team-dialog-body,.tourney-dialog-body,.competition-dialog-body){padding:14px;gap:14px}
+ :root :is(.team-dialog,.tourney-dialog) footer{flex-wrap:wrap;gap:8px}
+}
+@media(prefers-reduced-motion:reduce){:root .efl-competition-overlay,:root .efl-competition-panel{animation:none;transition:none}}
+:root .efl-competition-image-overlay{top:var(--efl-viewport-top)!important;bottom:auto!important;height:var(--efl-viewport-height);padding-top:calc(12px + var(--safe-top,0px))!important;padding-bottom:calc(12px + var(--safe-bottom,0px))!important;padding-left:calc(12px + var(--safe-left,0px))!important;padding-right:calc(12px + var(--safe-right,0px))!important;box-sizing:border-box;color:var(--efl-text)}
+:root .efl-competition-image-overlay button{min-height:44px;border:1px solid var(--efl-border)}
