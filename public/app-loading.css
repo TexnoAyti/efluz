@@ -1,0 +1,18 @@
+/* Critical startup UI: available before the application bundle, without web fonts. */
+.efl-loading{--loading-bg:#080b12;--loading-text:#8c9aad;--loading-line:rgba(120,170,255,.12);--loading-accent:#78aaff;display:grid;place-items:center;color:var(--loading-text);font:500 12px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.efl-loading--screen{position:fixed;inset:0;z-index:100;min-height:100vh;min-height:var(--efl-viewport-height,100dvh);box-sizing:border-box;padding:32px 24px;background:radial-gradient(ellipse at 50% 45%,rgba(59,130,246,.055),transparent 55%),var(--loading-bg)}
+.efl-loading-content{display:flex;flex-direction:column;align-items:center;gap:16px;width:160px}
+.efl-loading-brand{display:grid;place-items:center;height:64px;margin-bottom:8px}
+.efl-loading-brand img{width:144px;height:52px;object-fit:contain}
+.efl-loading-logo-light{display:none}
+.efl-loading-track{height:3px;width:100%;overflow:hidden;border-radius:99px;background:var(--loading-line)}
+.efl-loading-track span{display:block;width:45%;height:100%;border-radius:inherit;background:linear-gradient(90deg,transparent,var(--loading-accent),transparent);animation:efl-loading-glide 1.7s cubic-bezier(.4,0,.2,1) infinite}
+.efl-loading-label{letter-spacing:.025em}
+.efl-loading--section{min-height:128px}
+.efl-loading--section .efl-loading-content,.efl-loading--overlay .efl-loading-content{width:112px;gap:12px}
+.efl-loading--overlay{position:fixed;inset:0;z-index:110;background:rgba(8,11,18,.8);backdrop-filter:blur(8px)}
+html[data-efl-boot-theme="light"] .efl-loading,.theme-light .efl-loading{--loading-bg:#f4f5f7;--loading-text:#667085;--loading-line:rgba(37,99,235,.12);--loading-accent:#2563eb}
+html[data-efl-boot-theme="light"] .efl-loading-logo-dark{display:none}
+html[data-efl-boot-theme="light"] .efl-loading-logo-light{display:block}
+@keyframes efl-loading-glide{0%{transform:translateX(-110%)}100%{transform:translateX(330%)}}
+@media(prefers-reduced-motion:reduce){.efl-loading-track span{animation:none;transform:translateX(60%);background:var(--loading-accent);opacity:.7}}

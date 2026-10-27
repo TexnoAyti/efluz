@@ -39,7 +39,9 @@ jobs:
         env:
           FIREBASE_FORCE_LOCAL_FALLBACK: "true"
           NODE_ENV: "test"
-        run: bun run build
+        run: |
+          bun run build
+          node scripts/verify-startup-build.mjs
 
       - name: Run Vercel Self-Check & Verification Suites
         timeout-minutes: 8
@@ -69,6 +71,7 @@ jobs:
           bun run test:critical-safety
           bun run test:auth-quota
           bun run test:client-startup
+          node scripts/run-isolated-test.mjs src/server/tests/startupLoadingRegressionTest.ts
           bun run test:player-trophies
           node scripts/run-isolated-test.mjs src/server/tests/disciplineRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/telegramFastOpeningTest.ts

@@ -1,7 +1,7 @@
 import { clubStadium } from '../constants/clubStadiums';
 import { SCHEDULE_TIME_ZONE } from '../lib/fixtureScheduling';
 import { nextSeasonFixture, sortSeasonFixtures } from '../lib/fixtureOrder';
-import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import React, { lazy, useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import {
   ArrowRight,
   ChevronRight,
@@ -28,7 +28,8 @@ import { Fixture } from '../types';
 import { ClubCrest } from './ClubCrest';
 import { CompetitionMark } from './CompetitionMark';
 import { isValidTelegramUsername, openTelegramChat } from '../lib/telegramUtils';
-import { ResultSubmissionModal } from './ResultSubmissionModal';
+import { ContentBoundary } from './ContentBoundary';
+const ResultSubmissionModal = lazy(() => import('./ResultSubmissionModal').then(module => ({ default: module.ResultSubmissionModal })));
 
 interface Props {
   onNavigateTab: (tab: any) => void;
@@ -991,7 +992,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
 
       {/* Result Submission Modal */}
       {selectedFixtureForSubmit && fixturesForClub([selectedFixtureForSubmit], activeClub?.id).length > 0 && (
-        <ResultSubmissionModal
+        <ContentBoundary loadingMode="overlay"><ResultSubmissionModal
           fixture={selectedFixtureForSubmit}
           isOpen={true}
           onClose={() => setSelectedFixtureForSubmit(null)}
@@ -999,7 +1000,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
             setSelectedFixtureForSubmit(null);
             void loadData();
           }}
-        />
+        /></ContentBoundary>
       )}
     </div>
   );

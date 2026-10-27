@@ -1,3 +1,4 @@
+import { resolveTelegramContext } from '../lib/telegramContext';
 import {isAndroidApp} from '../lib/androidApp';
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { User, Club, Season, Notification } from '../types';
@@ -78,62 +79,6 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function usePremiumClubIds(): string[] {
   const context = useContext(AuthContext);
   return context?.user?.isAdmin ? context.premiumClubIds : [];
-}
-
-// Helper to poll for Telegram WebApp readiness in mobile/desktop webviews
-async function resolveTelegramContext(maxWaitMs = 1200): Promise<{
-  tg: any | null;
-  initData: string;
-  unsafeUser: any | null;
-  platform: string;
-  version: string;
-  sdkLoaded: boolean;
-}> {
-  const startTime = Date.now();
-  let sdkLoaded = typeof window !== 'undefined' && Boolean((window as any).Telegram);
-  let tg = typeof window !== 'undefined' ? (window as any).Telegram?.WebApp : null;
-  let initData = getTelegramInitData();
-
-  if (tg) {
-    try {
-      tg.ready();
-      tg.expand();
-    } catch {
-      // ignore
-    }
-  }
-
-  // If Telegram is partially loaded or might be initializing, wait briefly for handshake
-  while ((!tg || !initData) && Date.now() - startTime < maxWaitMs) {
-    if (typeof window !== 'undefined') {
-      sdkLoaded = Boolean((window as any).Telegram);
-      tg = (window as any).Telegram?.WebApp;
-      if (tg) {
-        try {
-          tg.ready();
-          tg.expand();
-        } catch {
-          // ignore
-        }
-      }
-      initData = getTelegramInitData();
-      if (initData) break;
-    }
-    await new Promise((r) => setTimeout(r, 60));
-  }
-
-  const unsafeUser = tg?.initDataUnsafe?.user || null;
-  const platform = tg?.platform || (typeof window !== 'undefined' ? 'web-browser' : 'unknown');
-  const version = tg?.version || '1.0';
-
-  return {
-    tg,
-    initData,
-    unsafeUser,
-    platform,
-    version,
-    sdkLoaded,
-  };
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -279,7 +224,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       try {
         // 1. Resolve Telegram Context
-        const tgCtx = await resolveTelegramContext(1200);
+        const hasSession = Boolean(getSessionToken()) || isAndroidApp;
+        // URL/SDK launch data is checked synchronously even with an existing session.
+        // Session verification does not depend on the optional Telegram SDK download.
+        const tgCtx = await resolveTelegramContext(hasSession ? 0 : 1200);
 
         const isTgSdkPresent = tgCtx.sdkLoaded;
         const isTgWebAppPresent = Boolean(tgCtx.tg);
@@ -309,7 +257,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setActiveSeasonId(season.id);
             setCurrentSeason(season);
           }
-        }, Boolean(getSessionToken())||isAndroidApp);
+        }, hasSession);
         if (!isMounted) return;
 
         setDevProfiles(result.profiles);
