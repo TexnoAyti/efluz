@@ -8,6 +8,9 @@ export function isSeasonLeagueEnabled(leagueId: string | undefined, seasonId = C
   return seasonId !== CURRENT_SEASON_ID || !['league-ligue-1', 'league-ligue1'].includes(leagueId || '');
 }
 export function isSeasonCompetitionEnabled(competitionId: string | undefined, seasonId = CURRENT_SEASON_ID): boolean {
+  // EFL/Carabao Cup was removed from the official calendar in every season.
+  // Apply at read time too: older durable/client snapshots can still contain it.
+  if (/efl[-_ ]?cup|carabao/i.test(competitionId || '')) return false;
   return seasonId !== CURRENT_SEASON_ID || !WITHDRAWN_COMPETITIONS.has(competitionId || '');
 }
 export function filterSeasonFixtures<T extends { competitionId?: string; seasonId?: string }>(fixtures: T[], seasonId = CURRENT_SEASON_ID): T[] {

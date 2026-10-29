@@ -1,3 +1,4 @@
+import { isSeasonCompetitionEnabled } from './seasonParticipationPolicy';
 import { readBrowserStorage, writeBrowserStorage } from './browserStorage';
 import type { CupTieBreakScores } from './cupResult';
 import type { MatchdayControlAction, MatchdayControlOverview } from './matchdayState';
@@ -484,7 +485,8 @@ export const api = {
 
   // Competitions (Static Catalog - 30 minutes TTL)
   async getCompetitions(seasonId = 'season-2026-27', skipCache = false, view?: 'league-summary'): Promise<{ competitions: Competition[] }> {
-    return request(`/api/competitions?seasonId=${seasonId}${view ? `&view=${view}` : ''}`, { cacheTtlMs: 15000, skipCache });
+    const result = await request<{ competitions: Competition[] }>(`/api/competitions?seasonId=${seasonId}${view ? `&view=${view}` : ''}`, { cacheTtlMs: 15000, skipCache });
+    return { ...result, competitions: result.competitions.filter(c => isSeasonCompetitionEnabled(c.id, seasonId)) };
   },
 
   async getCompetitionStandings(competitionId: string, skipCache = false, seasonId?: string, view?: 'league-summary'): Promise<{ standings: StandingsRow[] }> {
