@@ -133,7 +133,7 @@ export async function planTopicResult(text: string, sender: number, thread: numb
   if (!allowed.length) return null;
   const named = findConversationCompetitions(text, catalog.data);
   if (named.some(c => !allowed.some(a => a.id === c.id))) throw Error('CLARIFY:Bu natija boshqa turnirga tegishli. Uni o‘sha turnir mavzusiga yuboring.');
-  const competitions = named.length ? allowed.filter(c => named.some(n => n.id === c.id)) : allowed;
+  let competitions = named.length ? allowed.filter(c => named.some(n => n.id === c.id)) : allowed;
   const ownership = testDependencies.ownership ? await testDependencies.ownership() : await createAiSnapshotReader(signal).read<OwnerNeutralClub>(ReadModelKeys.clubsWithOwners(season));
   if (!ownership.available || ownership.stale) throw Error('CLARIFY:Klub egaligi hozir tasdiqlanmadi. Natija rejasini taxmin qilib ochmayman.');
   const own = ownership.data.filter(c => c.ownerUserId === `user-${sender}`);
@@ -141,6 +141,15 @@ export async function planTopicResult(text: string, sender: number, thread: numb
   if (selected.clarification) askResult(selected.clarification,'clubs');
   if (selected.clubs.length && selected.clubs.length !== 2) askResult(`${selected.clubs[0].name} tushunildi. Raqib nomini shu xabarga javob qilib yozing; hisobni qayta yozish shart emas.`,'clubs');
   if (!own.length && !isAiAdminActor(sender)) throw Error('CLARIFY:Bu akkauntga klub biriktirilganligi topilmadi. Natijani o‘yin ishtirokchisi yuborsin.');
+  // The shared cup topic contains several countries. Do not make a German
+  // result depend on the freshness/availability of an unrelated country's cup.
+  // Explicit competition names remain authoritative; competitions without a
+  // league scope are retained rather than guessed away.
+  if (!named.length) {
+    const clubs = selected.clubs.length ? selected.clubs : own;
+    const leagues = new Set(clubs.map(c => c.leagueId).filter(Boolean));
+    if (leagues.size && clubs.every(c => c.leagueId)) competitions = competitions.filter(c => !c.leagueId || leagues.has(c.leagueId));
+  }
   const games: any[] = [], rounds = new Map<string, number | undefined>();
   for (const c of competitions) {
     // Named opponents identify the fixture across rounds, including reports played
