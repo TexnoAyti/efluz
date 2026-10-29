@@ -25,7 +25,8 @@ export function isShorthandAiResultRequest(text: string): boolean {
   if (text.length > 200 || /[\n;?@"“”]/.test(text) ||
       /\b(?:taxmin\w*|prediction|predict\w*|boladimi|bolsa|mumkin|emas|nega|nima|qanday|kim|korsat\w*|tushuntir\w*|yozma\w*|kiritma\w*|saqlama\w*|dont|not|if)\b/.test(q)) return false;
   // Both sides must contain names; timestamps and bare “1-1” are not match tasks.
-  return /^[\p{L}][\p{L}\p{N} .’'_-]*?\s+\d{1,2}\s*[:–—−-]\s*\d{1,2}\s+[\p{L}][\p{L}\p{N} .’'_-]*$/u.test(text.trim());
+  // German club names can start with an ordinal: "1. FC Union Berlin".
+  return /^(?:\d{1,2}\.?\s+)?[\p{L}][\p{L}\p{N} .’'_-]*?\s+\d{1,2}\s*[:–—−-]\s*\d{1,2}\s+(?:\d{1,2}\.?\s+)?[\p{L}][\p{L}\p{N} .’'_-]*$/u.test(text.trim());
 }
 
 /** Applies before EVERY native write parser, including club assignment. */
