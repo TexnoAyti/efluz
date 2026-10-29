@@ -10,9 +10,9 @@ export async function loadFixtureClubPositions(fixture: Fixture, seasonId: strin
     const club = side === 'home' ? fixture.homeClub : fixture.awayClub;
     return { id, leagueId: club?.leagueId || TOP5_CLUBS.find(c => c.id === id)?.leagueId };
   });
-  const { competitions } = await client.getCompetitions(seasonId);
+  const { competitions } = await client.getCompetitions(seasonId, false, 'league-summary');
   const leagues = competitions.filter(c => c.seasonId === seasonId && c.type === 'LEAGUE' && clubs.some(club => club.leagueId === c.leagueId));
-  const tables = await Promise.allSettled(leagues.map(c => client.getCompetitionStandings(c.id, false, seasonId)));
+  const tables = await Promise.allSettled(leagues.map(c => client.getCompetitionStandings(c.id, false, seasonId, 'league-summary')));
   const result: Record<string, number> = {};
   for (let index = 0; index < tables.length; index++) {
     const table = tables[index];

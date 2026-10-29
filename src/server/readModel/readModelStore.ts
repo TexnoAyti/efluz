@@ -1476,7 +1476,8 @@ export async function buildStandingsSnapshot(
  * Reads competitions catalog from durable read model.
  */
 export async function getCompetitionsFromReadModel(
-  seasonId = 'season-2026-27'
+  seasonId = 'season-2026-27',
+  options: { leagueSummary?: boolean } = {}
 ): Promise<{ competitions: Competition[]; source: string; stale: boolean; degraded: boolean; snapshotAt: string }> {
   const result = await readThroughReadModel<Competition[]>({
     key: ReadModelKeys.competitions(seasonId),
@@ -1489,8 +1490,9 @@ export async function getCompetitionsFromReadModel(
     validateData: (data) => Array.isArray(data) && data.length > 0,
   });
 
+  const competitions = result.data.filter(c=>isSeasonCompetitionEnabled(c.id,seasonId)).map(c=>withSeasonQualificationPolicy(c,seasonId));
   return {
-    competitions: await (await import('../services/competitionFixtureCounts')).withVisibleFixtureCounts(result.data.filter(c=>isSeasonCompetitionEnabled(c.id,seasonId)).map(c=>withSeasonQualificationPolicy(c,seasonId)), seasonId),
+    competitions: options.leagueSummary ? competitions.filter(c=>c.type === 'LEAGUE') : await (await import('../services/competitionFixtureCounts')).withVisibleFixtureCounts(competitions, seasonId),
     source: result.source,
     stale: Boolean(result.stale),
     degraded: Boolean(result.degraded),
@@ -1681,7 +1683,8 @@ export async function getOptionalCurrentClub(userId: string, seasonId = 'season-
  */
 export async function getCompetitionStandingsFromReadModel(
   competitionId: string,
-  seasonId = 'season-2026-27'
+  seasonId = 'season-2026-27',
+  options: { footballOnly?: boolean } = {}
 ): Promise<{
   standings: StandingsRow[];
   source: string;
@@ -1702,6 +1705,11 @@ export async function getCompetitionStandingsFromReadModel(
     },
     validateData: (rows) => Array.isArray(rows) && rows.length > 0,
   });
+
+  if (options.footballOnly) return {
+    standings: result.data.map(({managerUserId,managerUsername,managerFirstName,managerLastName,managerDisplayName,...row})=>row),
+    source: result.source, stale: Boolean(result.stale), degraded: Boolean(result.degraded), snapshotAt: result.generatedAt,
+  };
 
   let clubsResult: any = null;
   try {
@@ -1816,7 +1824,7 @@ export async function getPostgresFixtureReadModel(seasonId: string, competitionI
 
 export async function getCompetitionFixturesFromReadModel(
   competitionId: string,
-  optionsOrMatchday: number | { matchday?: number; status?: string; seasonId?: string; allowFirestore?: boolean } = {},
+  optionsOrMatchday: number | { matchday?: number; status?: string; seasonId?: string; allowFirestore?: boolean; footballOnly?: boolean } = {},
   fallbackSeasonId = 'season-2026-27'
 ): Promise<{ fixtures: Fixture[]; source: string; stale: boolean; degraded: boolean; snapshotAt: string }> {
   const options = typeof optionsOrMatchday === 'number'
@@ -1955,6 +1963,10 @@ export async function getCompetitionFixturesFromReadModel(
       fixtures = leaguePhaseFixtures;
     }
   }
+
+  // Internal table projection does not need managers, opponents or playable-round decoration.
+  // Publication and retirement gates above, plus tombstones in the caller, still apply.
+  if (options.footballOnly) return {fixtures,source,stale,degraded,snapshotAt:generatedAt};
 
   let clubsResult: any = null;
   try {

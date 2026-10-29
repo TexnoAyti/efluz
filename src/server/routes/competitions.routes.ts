@@ -17,6 +17,7 @@ import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
 import { withVisibleFixtureCounts } from '../services/competitionFixtureCounts';
 import {
   getCompetitionsFromReadModel,
+  DOMESTIC_LEAGUE_CONFIG,
   getCompetitionStandingsFromReadModel,
   getCompetitionFixturesFromReadModel,
 } from '../readModel/readModelStore';
@@ -37,7 +38,9 @@ competitionsRouter.get('/', async (req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'private, no-store');
   const seasonId = (req.query.seasonId as string) || 'season-2026-27';
   try {
-    const result = await getCompetitionsFromReadModel(seasonId);
+    const started = performance.now();
+    const result = await getCompetitionsFromReadModel(seasonId,{leagueSummary:req.query.view === 'league-summary'});
+    res.setHeader('Server-Timing',[res.getHeader('Server-Timing'),`catalog;dur=${(performance.now()-started).toFixed(1)}`].filter(Boolean).join(', '));
     res.json({
       competitions: result.competitions,
       source: result.source,
@@ -78,20 +81,24 @@ competitionsRouter.get('/:id/participants', async (req: Request, res: Response) 
 competitionsRouter.get('/:id/standings', async (req: Request, res: Response) => {
   const seasonId = (req.query.seasonId as string) || 'season-2026-27';
   try {
+    const started = performance.now();
     if (isEuropeanFixtureCompetition(req.params.id) && !europeanDrawPublished((await getFirestoreDb().collection('competitions').doc(req.params.id).get()).data())) {
       res.json({standings:[],source:'european-draw-pending',stale:false,degraded:false}); return;
     }
+    const summary = req.query.view === 'league-summary' && Boolean(DOMESTIC_LEAGUE_CONFIG[req.params.id]);
     const [result, fixtureResult] = await Promise.all([
-      getCompetitionStandingsFromReadModel(req.params.id, seasonId),
-      getCompetitionFixturesFromReadModel(req.params.id, { seasonId }),
+      getCompetitionStandingsFromReadModel(req.params.id, seasonId, {footballOnly:summary}),
+      getCompetitionFixturesFromReadModel(req.params.id, { seasonId, footballOnly:summary }),
     ]);
     const visibleFixtures = await filterTombstonedFixtures(fixtureResult.fixtures, seasonId);
     const recomputed = await rebuildStandingsSnapshotFromFixtures(
       req.params.id,
       seasonId,
-      visibleFixtures
+      visibleFixtures,
+      {persist:false,baseRows:result.standings}
     ).catch(() => null);
 
+    res.setHeader('Server-Timing',[res.getHeader('Server-Timing'),`table;dur=${(performance.now()-started).toFixed(1)}`].filter(Boolean).join(', '));
     res.setHeader('Cache-Control', 'private, no-store, max-age=0');
     res.setHeader('Pragma', 'no-cache');
     res.json({
