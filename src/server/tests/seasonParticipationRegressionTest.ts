@@ -19,6 +19,10 @@ const withdrawn='comp-ligue-1-2026', cup='comp-coupe-de-france-2026';
 assert.equal(isSeasonLeagueEnabled('league-ligue-1'),false);
 assert.equal(isSeasonLeagueEnabled('league-ligue-1','season-2027-28'),true);
 assert.equal(isSeasonCompetitionEnabled(cup),false);
+for (const season of [seasonId, 'season-2027-28', 'season-2025-26']) {
+ for (const id of ['comp-efl-cup-2026', 'comp-carabao-cup-2027']) assert.equal(isSeasonCompetitionEnabled(id,season),false);
+ assert.equal(isSeasonCompetitionEnabled('comp-fa-cup-2026',season),true);
+}
 assert.equal(isSeasonCompetitionEnabled(withdrawn,'season-2025-26'),true);
 assert.equal(Object.keys(SEASON_2026_27_ALLOCATION).length,4);
 assert.equal(Object.values(SEASON_2026_27_ALLOCATION).reduce((a,b)=>a+b,0),32);
@@ -34,12 +38,14 @@ assert.deepEqual(filterRetiredFixtures(rows).map(f=>f.id),['england']);
 assert.equal(filterSeasonFixtures(rows.map(f=>({...f,seasonId:'season-2025-26'}))).length,3);
 for(const c of SEED_COMPETITIONS) await db.collection('competitions').doc(c.id).set(c);
 for(const f of rows) await db.collection('fixtures').doc(f.id).set(f);
-await redisSetRaw(ReadModelKeys.competitions(seasonId),{data:SEED_COMPETITIONS},3600);
+await redisSetRaw(ReadModelKeys.competitions(seasonId),{data:[...SEED_COMPETITIONS,{...SEED_COMPETITIONS.find(c=>c.id==='comp-fa-cup-2026')!,id:'comp-efl-cup-2026',name:'EFL Cup'}]},3600);
 await redisSetRaw(ReadModelKeys.adminFixtures(seasonId),{data:rows},3600);
 await redisSetRaw(ReadModelKeys.clubsWithOwners(seasonId),{data:SEED_CLUBS.map(c=>({...c,isOccupied:false}))},3600);
 for(const c of SEED_COMPETITIONS) await redisSetRaw(ReadModelKeys.competitionFixtures(c.id,seasonId),{data:rows.some(f=>f.competitionId===c.id)?rows.filter(f=>f.competitionId===c.id):[{id:'empty-'+c.id,competitionId:c.id,seasonId,status:'SCHEDULED',matchday:1}],actualCount:1},3600);
 for(const c of SEED_COMPETITIONS.filter(c=>c.type==='LEAGUE')) await redisSetRaw(ReadModelKeys.standings(c.id,seasonId),{data:[{clubId:'club-check',position:1}]},3600);
 const comps=(await getCompetitionsFromReadModel(seasonId)).competitions;
+assert.equal(comps.some(c=>c.id==='comp-efl-cup-2026'),false,'A warm catalog cannot resurrect the retired EFL Cup');
+assert.ok(comps.some(c=>c.id==='comp-fa-cup-2026'),'FA Cup stays available');
 assert.equal(comps.some(c=>c.id===withdrawn || c.id===cup),false,'Warm snapshots cannot re-enable withdrawn competitions');
 assert.equal((await getLeagueClubsFromReadModel('league-ligue-1',seasonId)).clubs.length,0);
 assert.equal((await getAvailableClubsFromReadModel(seasonId)).clubs.some(c=>c.leagueId==='league-ligue-1'),false);
