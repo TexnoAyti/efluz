@@ -22,6 +22,10 @@ export function parseFirestoreError(err: any): FormattedFirestoreError {
     return { error: 'READ_MODEL_NOT_WARMED', code: 'READ_MODEL_NOT_WARMED',
       message: 'Ma’lumotlar vaqtincha mavjud emas. Keyinroq qayta urinib ko‘ring.', httpStatus: 503 };
   }
+  if (['TimeoutError','AbortError'].includes(err.name) || ['57014','PGRST003'].includes(err.databaseCode) || /^POSTGRES_RPC_HTTP_5\d\d$/.test(err.message || '')) {
+    return {error:'DATABASE_TEMPORARILY_UNAVAILABLE',code:'DATABASE_TEMPORARILY_UNAVAILABLE',
+      message:'Baza vaqtincha javob bermayapti. Qayta urinib ko‘ring.',httpStatus:503};
+  }
   if (err.code === 'INVALID_CUP_RESULT') return { error: err.code, code: err.code, message: err.message, httpStatus: err.statusCode };
   const rawCode = err.code ?? (err.status ?? '');
   const rawMsg = err.message || String(err);

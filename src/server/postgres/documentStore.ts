@@ -45,14 +45,14 @@ export function runtimeRpc(): RuntimeRpc {
       if(error.code==='40001') throw conflict();
       const safe=['RUNTIME_FROZEN','DOCUMENT_NOT_FOUND','DOCUMENT_ALREADY_EXISTS','INVALID_QUERY','UNKNOWN_RUNTIME_SPACE'];
       const code=safe.includes(error.message)?error.message:`POSTGRES_RPC_HTTP_${response.status}`;
-      throw Object.assign(new Error(code),{code:error.message==='DOCUMENT_NOT_FOUND'?5:error.message==='DOCUMENT_ALREADY_EXISTS'?6:undefined});
+      throw Object.assign(new Error(code),{code:error.message==='DOCUMENT_NOT_FOUND'?5:error.message==='DOCUMENT_ALREADY_EXISTS'?6:undefined, databaseCode:typeof error.code==='string' && /^[A-Z0-9_]{2,32}$/.test(error.code)?error.code:undefined, httpStatus:response.status});
     }
     const result = await response.json();
     if (result?.conflict === true) throw conflict();
     if (Date.now()-started > 2000) console.warn('[POSTGRES_RPC_SLOW]', {name,target,ms:Date.now()-started});
     return result;
     } catch (error: any) {
-      if (error?.code !== 10) console.error('[POSTGRES_RPC_FAILED]', {name,target,ms:Date.now()-started,message:error?.message});
+      if (error?.code !== 10) console.error('[POSTGRES_RPC_FAILED]', {name,target,ms:Date.now()-started,message:error?.message,databaseCode:error?.databaseCode,httpStatus:error?.httpStatus});
       throw error;
     }
   };

@@ -176,8 +176,10 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
           else try{const offer=await offerAndroidLogin(androidStart[1],message.from);const sent=await sendTelegramMessage(message.chat.id,`EFLUZ Android’ga kirish\n\nIlovadagi kod: ${offer.code}\n\nKod APK ekranidagi kod bilan bir xil bo‘lsagina tasdiqlang. Bu tugma so‘rovni boshlagan qurilmaga akkauntingizga kirish huquqini beradi. Agar siz boshlamagan bo‘lsangiz, rad eting.`,{parse_mode:null,reply_markup:{inline_keyboard:[[{text:'Kirishni tasdiqlash',callback_data:'android_login:approve:'+offer.challengeId},{text:'Rad etish',callback_data:'android_login:deny:'+offer.challengeId}]]}});if(!sent.ok)throw new Error('ANDROID_LOGIN_OFFER_NOT_SENT');await markAndroidOfferDelivered(offer.challengeId,message.from.id,sent.result?.message_id);response={ok:true,handled:'android_login_offer'};}catch(error:any){if(!error.statusCode)throw error;await sendTelegramMessage(message.chat.id,error.message,{parse_mode:null});response={ok:true,handled:'android_login_offer',offered:false};}
         } else if (command === 'start') {
           const result = await handleTelegramStart(message.chat.id, message.from, { message_thread_id: message.message_thread_id, reply_to_message_id: message.message_id });
-          if (!result.ok || !result.messageSent) throw new Error('START_MESSAGE_NOT_SENT: ' + (result.error || 'unknown')); 
-          response = { ok: true, handled: 'start', result };
+          if ((!result.ok || !result.messageSent) && !result.terminalDeliveryFailure) throw new Error('START_MESSAGE_NOT_SENT: ' + (result.error || 'unknown'));
+          // Telegram cannot deliver to a blocked/deactivated private recipient.
+          // Settle this update honestly, instead of triggering endless retries.
+          response = { ok: true, handled: 'start', result, ...(result.terminalDeliveryFailure ? {delivery:'recipient-unavailable'} : {}) };
         } else if (command === 'help' || command === 'paysupport') {
           const group = (process.env.TELEGRAM_GROUP_USERNAME || '@efleagueuz').trim().replace(/^@/, '');
           const text = command === 'paysupport'

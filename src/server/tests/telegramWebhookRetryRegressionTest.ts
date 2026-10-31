@@ -4,12 +4,13 @@ process.env.TELEGRAM_BOT_TOKEN='123456:isolated-audit-fake-token';
 process.env.TELEGRAM_WEBHOOK_SECRET='isolated-audit-secret';
 const originalFetch=globalThis.fetch;
 let rejectSend=false;
+let permanentSendError: {error_code:number;description:string}|null=null;
 const telegramCalls:any[]=[];
 globalThis.fetch=async (input:any, options:any={})=>{
  const url=String(input);
  if(new URL(url).hostname==='api.telegram.org'){
   const body=JSON.parse(options.body||'{}');telegramCalls.push({method:url.split('/').pop(),body});
-  return new Response(JSON.stringify(rejectSend?{ok:false,error_code:503,description:'Mock Telegram unavailable'}:{ok:true,result:true}),{status:200,headers:{'content-type':'application/json'}});
+  return new Response(JSON.stringify(permanentSendError?{ok:false,...permanentSendError}:rejectSend?{ok:false,error_code:503,description:'Mock Telegram unavailable'}:{ok:true,result:true}),{status:200,headers:{'content-type':'application/json'}});
  }
  return originalFetch(input,options);
 };
@@ -41,6 +42,20 @@ try{
  rejectSend=false;
  const b=await post(failure);assert.equal(b.status,200);assert.equal(b.body.result.messageSent,true);
  console.log('PASS failed /start is retried successfully with the same update ID.');
+ for (const [index,description] of ['Forbidden: bot was blocked by the user','Forbidden: user is deactivated'].entries()) {
+  permanentSendError={error_code:403,description};
+  const blocked={...start,update_id:110+index};
+  const response=await post(blocked);assert.equal(response.status,200);assert.equal(response.body.delivery,'recipient-unavailable');
+  assert.equal(response.body.result.messageSent,false,'Do not claim delivery');
+  const calls=telegramCalls.length;assert.equal((await post(blocked)).body.ignored,'duplicate_update');assert.equal(telegramCalls.length,calls);
+ }
+ permanentSendError={error_code:429,description:'Too Many Requests: retry after 1'};
+ const limited={...start,update_id:112};assert.equal((await post(limited)).status,503);
+ permanentSendError={error_code:403,description:'Forbidden: bot is not a member of the channel chat'};
+ const recoverable={...start,update_id:113};assert.equal((await post(recoverable)).status,503,'Other permission errors remain retryable');
+ permanentSendError=null;
+ assert.equal((await post(limited)).body.result.messageSent,true);assert.equal((await post(recoverable)).body.result.messageSent,true);
+ console.log('PASS private blocked/deactivated recipients settle once without claiming delivery; 429/503 and other permission errors still retry.');
  const prefix={...start,update_id:102,message:{...start.message,text:'/starter'}};
  assert.equal((await post(prefix)).body.ignored,'unhandled_update_type');
  console.log('PASS /starter is not parsed as /start.');
