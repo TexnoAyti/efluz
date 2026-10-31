@@ -1,5 +1,9 @@
 name: UZEFLIFE first-round delivery trigger
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/uzeflife-delivery-trigger.yml'
   workflow_dispatch:
   schedule:
     - cron: '17 * * * *'
