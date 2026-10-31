@@ -21,6 +21,7 @@ export const AI_PLATFORM_ACTIONS={
  team_save:op('POST','@team/teams','id?:exact tp_ ID for edit or server generated for creation, name, members:array of name and optional existing tp_ id, captainName:explicit member name for new team or captainMemberId, version:current server version for edit, logo?'),
  team_league_save:op('POST','@team/leagues','id?:exact tp_ ID for edit or server generated for creation, name, teamIds:existing exact tp_ IDs, starterCount, rounds:1|2, version:current server version for edit, format?:LEAGUE|PLAYOFF|LEAGUE_AND_PLAYOFF, qualifiers?, description?'),
  team_league_action:op('POST','@team/leagues/:id/actions','version:current server version, action:START|CANCEL|NEXT|LINEUP|PAIR|RESET|SUBSTITUTE|TIEBREAK|SCORE; other fields depend on action; read current league first'),
+ uzeflife_round_post:op('POST','@uzeflife/publish-round','round:current active round, expectedRevision:server state'),
  uzeflife_state:op('GET','@uzeflife'),uzeflife_history:op('GET','@uzeflife/history/:id'),
  uzeflife_open:op('POST','@uzeflife/open'),uzeflife_close:op('POST','@uzeflife/close'),
  uzeflife_generate:op('POST','@uzeflife/generate'),uzeflife_pause:op('POST','@uzeflife/pause'),uzeflife_resume:op('POST','@uzeflife/resume'),

@@ -6,6 +6,7 @@ import type { AdminPlan } from './telegramAiAdminCatalog';
 export function expandedAdminIntent(text:string):string|null {
   const q=normalizeAiEntity(text.split(/(?:sabab|izoh|matn)\s*:/i)[0]);
   if(/\buzeflife\b/.test(q)&&!/kartochka|card/.test(q)) {
+    if(/(?:kanal|@uzeflife_turner).*(?:tashla|yubor|joyla|elon|post)|(?:tashla|yubor|joyla|elon|post).*(?:kanal|@uzeflife_turner)/.test(q))return 'uzeflife_round_post';
     if(/keyingi.*(?:bosqich|tur).*(?:otkaz|och)|keyingi bosqichga/.test(q))return 'uzeflife_next';
     if(/pauza|toxtat/.test(q))return 'uzeflife_pause';
     if(/davom ettir|davom et|qayta ishga/.test(q))return 'uzeflife_resume';

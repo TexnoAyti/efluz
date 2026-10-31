@@ -30,4 +30,31 @@ uzeflifeRouter.post('/image-export',requireAuth,async(req,res)=>{
   res.json({ok:true,...download});
  }catch(e:any){const invalid=String(e.message).startsWith('INVALID_');res.status(e.statusCode||(invalid?400:503)).json({ok:false,error:e.statusCode?e.message:invalid?'PNG rasm ma’lumotlari noto‘g‘ri.':'Rasmni saqlashga tayyorlab bo‘lmadi. Qayta urinib ko‘ring.'});}
 });
+// AI uses this fixed destination through the ordinary authenticated, owner-only gateway.
+uzeflifeRouter.post('/publish-round',requireAuth,async(req,res)=>{
+ try{
+  const {isPrimaryOwner}=await import('../services/customTournamentTicketService');
+  if(!isPrimaryOwner(req.user!.telegramId))throw uError('Kanalga e’lonni faqat asosiy admin yubora oladi.',403);
+  const state=await readUState(),round=req.body?.round;
+  if(state.format!=='LEAGUE'||state.status!=='playing'||!Number.isInteger(round)||round!==state.round||!state.matches.some(m=>m.round===round))throw uError('Faqat boshlangan liganing joriy turi e’lon qilinadi.',409);
+  if(!Number.isInteger(req.body?.expectedRevision)||req.body.expectedRevision!==state.revision)throw uError('Turnir yangilangan. E’lonni qayta tasdiqlang.',409);
+  const token=process.env.TELEGRAM_BOT_TOKEN;
+  if(!token)throw uError('Telegram bot tokeni sozlanmagan.',503);
+  const db=getFirestoreDb(),ref=db.collection('uzeflife_channel_posts').doc('round-'+round);
+  try{await ref.create({round,channel:'@uzeflife_turner',state:'sending',requestedBy:req.user!.id,at:new Date().toISOString()});}
+  catch(e:any){if(e?.code===6||/ALREADY_EXISTS/i.test(String(e?.message||'')))throw uError('Bu tur e’loni avval yuborilgan yoki yuborish jarayonida. Takror yuborilmadi.',409);throw e;}
+  const html='🏆 <b>UZEFLIFE - '+round+' tur o‘yinlari ma’lum</b>\\n\\n⚠️ <b>Deadline:</b>\\n1 kun\\n\\n📃 <b>Reglament:</b>\\nhttps://t.me/efluz_cards/16\\n\\n📊 <b>Natijalar bu yerga tashlanadi:</b>\\nhttps://t.me/efleagueuz/8989\\n\\n👉 @uzeflife_turner';
+  try{
+   const response=await fetch('https://api.telegram.org/bot'+token+'/sendMessage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:'@uzeflife_turner',text:html,parse_mode:'HTML',link_preview_options:{is_disabled:true}}),signal:AbortSignal.timeout(10000)});
+   const result=await response.json() as any;
+   if(!response.ok||!result.ok||!result.result?.message_id)throw new Error(String(result.description||'Telegram xabari tasdiqlanmadi.'));
+   await ref.set({round,channel:'@uzeflife_turner',state:'sent',telegramMessageId:result.result.message_id,requestedBy:req.user!.id,at:new Date().toISOString()});
+   res.json({ok:true,round,channel:'@uzeflife_turner',messageId:result.result.message_id});
+  }catch(e:any){
+   // Preserve the reservation if delivery is uncertain: never blindly double-post.
+   await ref.set({round,channel:'@uzeflife_turner',state:'unverified',error:String(e.message||e).slice(0,200),at:new Date().toISOString()}).catch(()=>{});
+   throw uError('Kanalga yuborish tasdiqlanmadi. Takror yuborishdan oldin kanalni tekshiring.',503);
+  }
+ }catch(e:any){res.status(e.statusCode||503).json({ok:false,error:e.statusCode?e.message:'E’lonni yuborib bo‘lmadi.'});}
+});
 uzeflifeRouter.post('/:action',requireAuth,async(req,res)=>{try{await mutateUState(req.user!,req.params.action,req.body);res.json({ok:true,...await viewState(req.user)});}catch(e:any){res.status(e.statusCode||503).json({ok:false,error:e.statusCode?e.message:'Amalni saqlab bo‘lmadi. Qayta urinib ko‘ring.',channels:e.channels});}});
