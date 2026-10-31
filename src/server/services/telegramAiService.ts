@@ -43,6 +43,7 @@ import { isAiAdminCommand } from './telegramAiAdminCatalog';
 import { decorateAiCustomEmoji } from './telegramAiCustomEmoji';
 import { handleAiAdminCommand, isOwnerAdminPrivateChat, rememberDeliveredAdminPlan, getLatestDeliveredPlanToken } from './telegramAiAdminService';
 import { isAiAdminActor } from './telegramAiAdminAccess';
+import { expandedAdminIntent } from './telegramAiExpandedAdmin';
 import { createAiAdminReadTools } from './telegramAiAdminReadTools';
 import { isPersonalFixtureQuestion, buildPersonalFixtureReply } from './telegramAiPersonalFixtureService';
 import { detectNaturalAdminAction } from './telegramAiAdminLanguage';
@@ -438,9 +439,7 @@ async function dispatchTelegramAiReply(
   if (
     !freshConfig.enabled ||
     (process.env.NODE_ENV === 'production' && !freshRedis) ||
-    freshConfig.allowedChatId === null ||
-    freshConfig.allowedThreadId === null ||
-    (Number(freshConfig.allowedChatId) !== Number(payload.chatId) || Number(freshConfig.allowedThreadId) !== Number(payload.threadId)) && !(isOwnerAdminPrivateChat(payload))
+    (!isOwnerAdminPrivateChat(payload) && (freshConfig.allowedChatId === null || freshConfig.allowedThreadId === null || Number(freshConfig.allowedChatId) !== Number(payload.chatId) || Number(freshConfig.allowedThreadId) !== Number(payload.threadId)))
   ) {
     console.warn('[AI DISPATCH] Pre-send re-check failed; aborting send to Telegram');
     await claimDeliveryState(payload.updateId, 'sent', { signal });
@@ -526,9 +525,7 @@ async function handleTelegramAiMessageInternal(
     console.info('[TELEGRAM_AI_SCOPE]', JSON.stringify({ topicMatched: payload.chatId === config.allowedChatId && payload.threadId === config.allowedThreadId, privateAdmin: isOwnerAdminPrivateChat(payload), enabled: config.enabled }));
     // 4. Strict Boundary Validation: Chat ID and Thread ID must match configured allowed topic
     if (
-      config.allowedChatId === null ||
-      config.allowedThreadId === null ||
-      (Number(payload.chatId) !== Number(config.allowedChatId) || Number(payload.threadId) !== Number(config.allowedThreadId)) && !(isOwnerAdminPrivateChat(payload))
+      (!isOwnerAdminPrivateChat(payload) && (config.allowedChatId === null || config.allowedThreadId === null || Number(payload.chatId) !== Number(config.allowedChatId) || Number(payload.threadId) !== Number(config.allowedThreadId)))
     ) {
       return { ok: true, handled: false, ignored: 'topic_not_authorized' };
     }
@@ -680,6 +677,10 @@ async function handleTelegramAiMessageInternal(
           return {ok:result.ok,handled:true,replySent:result.replySent};
         }
       } catch { /* Provider classification failure falls back to the existing read-only conversation. */ }
+    }
+    // Explicit, owner-only UZEFLIFE operations bypass uncertain AI intent classification, not confirmation or authorization.
+    if (isOwnerAdminPrivateChat(payload) && expandedAdminIntent(payload.text) === 'uzeflife_round_post') {
+      intent = 'admin'; semanticAdminRequest = true;
     }
     if (isPersonalFixtureQuestion(payload.text) && !hasMultipleAiReadAspects(payload.text) && !['admin','confirm','cancel','help'].includes(intent)) {
       const personal = payload.senderChat || payload.forwarded
