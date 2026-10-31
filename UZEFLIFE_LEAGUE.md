@@ -2,7 +2,7 @@
 
 The owner requested a single league while preserving the original eight group lists and their slot numbers. The source roster from 21 October is retained verbatim in `src/data/uzeflifeRoster20261021.ts`: 256 slots, 242 unique usernames, 14 duplicate occurrences. Matching is case insensitive. The first occurrence stays; later occurrences become empty slots with their original name and first location recorded. No participant is moved to another source group.
 
-Only an empty draft/registration is automatically configured. The previous configuration is atomically backed up to `uzeflife_config_history/league-roster-20261021`. Existing participants, games, roles, channels and archives are preserved; existing participants/games prevent the empty-state migration. El Clasico remains disabled.
+Only an unstarted draft/registration without approved entrants is automatically configured. Pending applications are retained and upgrade only when their authenticated owner links a matching reserved slot. The previous configuration is atomically backed up to `uzeflife_config_history/league-roster-20261021`. Existing participants, games, roles, channels and archives are preserved; approved entrants or any games prevent this migration. El Clasico remains disabled.
 
 Roster entries reserve positions, not Telegram identities. A real authenticated user with a matching username links their position using the registration button after mandatory subscriptions. An authorized administrator can link an existing account or edit an unclaimed slot; usernames and accounts cannot occupy two slots. No Telegram IDs or deliverable accounts are fabricated from usernames.
 

@@ -17,8 +17,8 @@ export async function verifyUzeflifeLeague(){
  const users=roster.slice(0,16).map((r,i)=>({id:'uze-league-'+i,telegramId:String(884000+i),username:r.username!,firstName:r.username!,isSuspended:false,isAdmin:false,createdAt:'',updatedAt:''}));
  for(const u of [owner,...users])await db.collection('users').doc(u.id).set(u);
  try{
-  const empty=initialUState();empty.status='registration';empty.channels=[{id:'@savedchannel',title:'Saved',url:'https://t.me/savedchannel'}];await ref.set(empty);
-  const migrated=await migrateUzeLeagueRegistration(db,ref,initialUState);assert.equal(migrated.format,'LEAGUE');assert.equal(migrated.roster?.length,256);assert.deepEqual(migrated.channels,empty.channels);assert.equal(migrated.totalRounds,15);
+  const empty=initialUState();empty.status='registration';empty.participants=[{id:users[0].id,name:'Pending original application',status:'pending'}];empty.channels=[{id:'@savedchannel',title:'Saved',url:'https://t.me/savedchannel'}];await ref.set(empty);
+  const migrated=await migrateUzeLeagueRegistration(db,ref,initialUState);assert.equal(migrated.format,'LEAGUE');assert.equal(migrated.roster?.length,256);assert.deepEqual(migrated.channels,empty.channels);assert.equal(migrated.totalRounds,15);assert.deepEqual(migrated.participants,empty.participants,'The existing pending application is retained during configuration');
   assert.equal((await migrateUzeLeagueRegistration(db,ref,initialUState)).revision,migrated.revision,'Migration is idempotent');
   assert.ok((await db.collection('uzeflife_config_history').doc('league-roster-20261021').get()).exists);
   await assert.rejects(()=>mutateUState(owner,'generate',{}),/ulamagan/);
