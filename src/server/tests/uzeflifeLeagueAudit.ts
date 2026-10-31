@@ -22,7 +22,7 @@ export async function verifyUzeflifeLeague(){
   const migrated=await migrateUzeLeagueRegistration(db,ref,initialUState);assert.equal(migrated.format,'LEAGUE');assert.equal(migrated.roster?.length,256);assert.deepEqual(migrated.channels,empty.channels);assert.equal(migrated.totalRounds,15);assert.deepEqual(migrated.participants,empty.participants,'The existing pending application is retained during configuration');
   assert.equal((await migrateUzeLeagueRegistration(db,ref,initialUState)).revision,migrated.revision,'Migration is idempotent');
   assert.ok((await db.collection('uzeflife_config_history').doc('league-roster-20261021').get()).exists);
-  await assert.rejects(()=>mutateUState(owner,'generate',{}),/ulamagan/);
+  await mutateUState(owner,'generate',{});assert.equal((await readUState()).matches.length,1815,'All 242 Telegram usernames can be drawn without account claims');
   // Use a small real-account league to exercise all 15 rounds through the same mutation path.
   migrated.roster=migrated.roster!.map((r,i)=>i<16?r:{...r,username:null,userId:null});await ref.set(migrated);
   const outsider={...users[0],id:'outsider',username:'not_listed'};await assert.rejects(()=>mutateUState(outsider,'register',{}),/242 kishilik/);assert.equal((await readUState()).roster?.filter(r=>r.username).length,16,'Test fixture keeps only the sixteen original linked names');
