@@ -43,13 +43,30 @@ uzeflifeRouter.post('/publish-round',requireAuth,async(req,res)=>{
   const db=getFirestoreDb(),ref=db.collection('uzeflife_channel_posts').doc('round-'+round);
   try{await ref.create({round,channel:'@uzeflife_turner',state:'sending',requestedBy:req.user!.id,at:new Date().toISOString()});}
   catch(e:any){if(e?.code===6||/ALREADY_EXISTS/i.test(String(e?.message||'')))throw uError('Bu tur e’loni avval yuborilgan yoki yuborish jarayonida. Takror yuborilmadi.',409);throw e;}
-  const html='🏆 <b>UZEFLIFE - '+round+' tur o‘yinlari ma’lum</b>\\n\\n⚠️ <b>Deadline:</b>\\n1 kun\\n\\n📃 <b>Reglament:</b>\\nhttps://t.me/efluz_cards/16\\n\\n📊 <b>Natijalar bu yerga tashlanadi:</b>\\nhttps://t.me/efleagueuz/8989\\n\\n👉 @uzeflife_turner';
+  const caption='🏆 <b>UZEFLIFE - '+round+' tur o‘yinlari ma’lum</b>\n\n⚠️ <b>Deadline:</b>\n1 kun\n\n📃 <b>Reglament:</b>\nhttps://t.me/efluz_cards/16\n\n📊 <b>Natijalar bu yerga tashlanadi:</b>\nhttps://t.me/efleagueuz/8989\n\n👉 @uzeflife_turner';
   try{
-   const response=await fetch('https://api.telegram.org/bot'+token+'/sendMessage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:'@uzeflife_turner',text:html,parse_mode:'HTML',link_preview_options:{is_disabled:true}}),signal:AbortSignal.timeout(10000)});
-   const result=await response.json() as any;
-   if(!response.ok||!result.ok||!result.result?.message_id)throw new Error(String(result.description||'Telegram xabari tasdiqlanmadi.'));
-   await ref.set({round,channel:'@uzeflife_turner',state:'sent',telegramMessageId:result.result.message_id,requestedBy:req.user!.id,at:new Date().toISOString()});
-   res.json({ok:true,round,channel:'@uzeflife_turner',messageId:result.result.message_id});
+   const {renderUzeflifeRoundPages}=await import('../services/uzeflifeRoundImages');
+   const pages=await renderUzeflifeRoundPages(state,round);
+   const total=state.matches.filter(m=>m.round===round).length;
+   if(pages.reduce((n,p)=>n+p.count,0)!==total)throw new Error('O‘yinlar to‘liq rasmga aylantirilmadi.');
+   const allIds:number[]=[];
+   for(let start=0;start<pages.length;start+=10){
+    const batch=pages.slice(start,start+10),form=new FormData();
+    form.set('chat_id','@uzeflife_turner');
+    const media=batch.map((page,index)=>{
+     const key='page'+index;
+     form.append(key,new Blob([new Uint8Array(page.buffer)],{type:'image/png'}),'uzeflife-'+round+'-'+page.first+'.png');
+     return {type:'photo',media:'attach://'+key,caption,parse_mode:'HTML'};
+    });
+    form.set('media',JSON.stringify(media));
+    const response=await fetch('https://api.telegram.org/bot'+token+'/sendMediaGroup',{method:'POST',body:form,signal:AbortSignal.timeout(20000)});
+    const result=await response.json() as any;
+    if(!response.ok||!result.ok||!Array.isArray(result.result)||result.result.length!==batch.length||result.result.some((m:any)=>!m.message_id))throw new Error(String(result.description||'Telegram albomi tasdiqlanmadi.'));
+    const ids=result.result.map((m:any)=>m.message_id as number);allIds.push(...ids);
+    await ref.set({round,channel:'@uzeflife_turner',state:'sending',requestedBy:req.user!.id,at:new Date().toISOString(),sentPages:start+batch.length,totalPages:pages.length,telegramMessageIds:allIds});
+   }
+   await ref.set({round,channel:'@uzeflife_turner',state:'sent',telegramMessageIds:allIds,matchCount:total,imageCount:pages.length,requestedBy:req.user!.id,at:new Date().toISOString()});
+   res.json({ok:true,round,channel:'@uzeflife_turner',matchCount:total,imageCount:pages.length,messageIds:allIds});
   }catch(e:any){
    // Preserve the reservation if delivery is uncertain: never blindly double-post.
    await ref.set({round,channel:'@uzeflife_turner',state:'unverified',error:String(e.message||e).slice(0,200),at:new Date().toISOString()}).catch(()=>{});
