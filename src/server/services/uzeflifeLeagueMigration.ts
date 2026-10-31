@@ -8,7 +8,7 @@ export async function migrateUzeLeagueRegistration(db:any,ref:any,fallback:()=>U
   const snap=await tx.get(ref),s:UState=snap.exists?snap.data():fallback();
   if(s.rosterSource||s.matches.length||s.participants.some(p=>p.status==='approved')||!['draft','registration'].includes(s.status))return s;
   const before=structuredClone(s);
-  Object.assign(s,{format:'LEAGUE',totalRounds:UZEFLIFE_LEAGUE_ROUNDS,rosterSource:UZEFLIFE_ROSTER_SOURCE,roster:initialUzeflifeRoster(),description:'15 turlik umumiy liga · 3/1/0 ochko · asl 8 setka va o‘rinlar ro‘yxatda saqlanadi',revision:s.revision+1});
+  Object.assign(s,{format:'LEAGUE',totalRounds:UZEFLIFE_LEAGUE_ROUNDS,rosterSource:UZEFLIFE_ROSTER_SOURCE,roster:initialUzeflifeRoster(),description:'242 ishtirokchi · 15 tur · 121 o‘yin/tur · 3/1/0 ochko · 14 takroriy joy hisobga olinmaydi',revision:s.revision+1});
   tx.set(db.collection('uzeflife_config_history').doc('league-roster-20261021'),{at:new Date().toISOString(),reason:'Owner requested shared 15-round league with original roster positions',before});
   tx.set(ref,s);return s;
  });
