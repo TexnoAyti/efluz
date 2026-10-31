@@ -32,9 +32,9 @@ export class PostgresKeyValueStore {
     return keys.map(key => { const entry = values.get(documentId(key)); return entry ? parseStoredValue(entry.value) : null; }) as T;
   }
 
-  protected async atomic<T>(keys: string[], operation: (values: Map<string, Entry>, put: (key: string, value: any, seconds?: number) => void) => T): Promise<T> {
+  protected async atomic<T>(keys: string[], operation: (values: Map<string, Entry>, put: (key: string, value: any, seconds?: number) => void) => T, database?: ReturnType<typeof getFirestoreDb>): Promise<T> {
     this.check();
-    const db = getFirestoreDb();
+    const db = database || getFirestoreDb();
     return db.runTransaction(async tx => {
       this.check();
       const rows = await tx.get(db.collection(this.collectionName).where(FieldPath.documentId(), 'in', [...new Set(keys.map(documentId))]));
@@ -48,7 +48,7 @@ export class PostgresKeyValueStore {
         writes.set(key, { value, expiresAt: seconds === undefined ? null : Date.now() + seconds * 1000 });
       });
       this.check();
-      writes.forEach((value, key) => tx.set(this.ref(key), value));
+      writes.forEach((value, key) => tx.set(db.collection(this.collectionName).doc(documentId(key)), value));
       return result;
     });
   }

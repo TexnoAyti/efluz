@@ -1,3 +1,5 @@
+import { getFirestoreDb } from '../firebase/admin';
+import { batchRateIncrement } from './rateIncrementBatch';
 import { waitUntil } from '@vercel/functions';
 import { PostgresKeyValueStore, parseStoredValue as parse } from './postgresKeyValueStore';
 
@@ -20,17 +22,32 @@ export class PostgresRuntimeStore extends PostgresKeyValueStore {
   }
 
   async eval<T = any>(script: string, keys: string[], args: any[]): Promise<T> {
+    if (script.includes('EFL_RATE_LIMIT_V1')) {
+      const db = getFirestoreDb();
+      return batchRateIncrement(db, keys[0], Number(args[0]), entries => this.atomic(
+        [...new Set(entries.map(entry => entry.key))],
+        (values, put) => {
+          const counts = new Map<string, number>();
+          const ttl = new Map<string, number>();
+          const results = entries.map(entry => {
+            const next = (counts.get(entry.key) ?? Number(parse(values.get(entry.key)?.value) || 0)) + 1;
+            counts.set(entry.key, next);
+            if (!ttl.has(entry.key)) {
+              const expiry = values.get(entry.key)?.expiresAt;
+              ttl.set(entry.key, expiry ? Math.max(.001, (expiry-Date.now())/1000) : entry.seconds);
+            }
+            return next;
+          });
+          for (const [key, count] of counts) put(key, count, ttl.get(key));
+          return results;
+        }, db
+      )) as Promise<T>;
+    }
     return this.atomic(keys, (values, put) => {
       const get = (key: string) => parse(values.get(key)?.value);
       if (script.includes('EFL_STATE_RELEASE_V1')) {
         if (get(keys[0]) !== args[0]) return 0;
         put(keys[0], null, 0); return 1;
-      }
-      if (script.includes('EFL_RATE_LIMIT_V1')) {
-        const next = Number(get(keys[0]) || 0) + 1;
-        const expiresAt = values.get(keys[0])?.expiresAt;
-        put(keys[0], next, expiresAt ? Math.max(.001, (expiresAt - Date.now()) / 1000) : Number(args[0]));
-        return next;
       }
       if (script.includes('EFL_QUOTA_CACHE_INVALIDATE_V1')) {
         put(keys[1], Number(get(keys[1]) || 0) + 1);
