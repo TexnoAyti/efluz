@@ -1,7 +1,9 @@
+import { usesPostgresSnapshots, readPostgresMetadataPair } from '../readModel/postgresSnapshots';
 import { filterRetiredFixtures, isRetiredFixture } from './retiredFixtureService';
 import { Fixture, StandingsRow } from '../../types';
 import {
   ReadModelKeys,
+  getFreshKey, getLkgKey,
   redisGetFresh,
   redisGetLkg,
   redisSetRaw,
@@ -26,7 +28,8 @@ function tombstoneKey(seasonId: string): string {
 
 async function getAllFixtureTombstones(seasonId = 'season-2026-27'): Promise<FixtureTombstone[]> {
   const key = tombstoneKey(seasonId);
-  const snap = (await redisGetFresh<FixtureTombstone[]>(key)) || (await redisGetLkg<FixtureTombstone[]>(key));
+  const snap = usesPostgresSnapshots() ? await readPostgresMetadataPair(getFreshKey(key), getLkgKey(key))
+    : (await redisGetFresh<FixtureTombstone[]>(key)) || (await redisGetLkg<FixtureTombstone[]>(key));
   return Array.isArray(snap?.data) ? snap!.data : [];
 }
 

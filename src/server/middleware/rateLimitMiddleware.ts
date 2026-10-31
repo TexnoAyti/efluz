@@ -42,6 +42,8 @@ function subjectFor(req: Request): string {
 
 export function rateLimit(name: string, limit: number, windowSeconds: number) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const started = performance.now();
+    const recordTiming = () => res.setHeader('Server-Timing', [res.getHeader('Server-Timing'), `rate_limit;dur=${(performance.now()-started).toFixed(1)}`].filter(Boolean).join(', '));
     const windowId = Math.floor(Date.now() / (windowSeconds * 1000));
     const key = `${KEY_PREFIX}:ratelimit:${name}:${subjectFor(req)}:${windowId}`;
     let count = 0;
@@ -70,9 +72,11 @@ export function rateLimit(name: string, limit: number, windowSeconds: number) {
       }
     } catch {
       // Availability fallback: do not turn a Redis outage into a full API outage.
+      recordTiming();
       return next();
     }
 
+    recordTiming();
     res.setHeader('RateLimit-Limit', String(limit));
     res.setHeader('RateLimit-Remaining', String(Math.max(0, limit - count)));
     if (count > limit) {

@@ -1,3 +1,4 @@
+import { readNativeLeagueTable } from '../services/nativeLeagueTable';
 import { assertSeasonCompetitionEnabled } from '../../lib/seasonParticipationPolicy';
 import {getFirestoreDb} from '../firebase/admin';
 import {europeanDrawPublished,isEuropeanFixtureCompetition} from '../services/europeanFixtureGate';
@@ -5,6 +6,7 @@ import { Router, Request, Response } from 'express';
 import { requireAdmin } from '../middleware/authMiddleware';
 import {
   getAllCompetitionsFirestore,
+  enrichStandingsWithActiveOwners,
   getCompetitionByIdFirestore,
   getCompetitionParticipantsFirestore,
   calculateCompetitionStandingsFirestore,
@@ -86,6 +88,14 @@ competitionsRouter.get('/:id/standings', async (req: Request, res: Response) => 
       res.json({standings:[],source:'european-draw-pending',stale:false,degraded:false}); return;
     }
     const summary = req.query.view === 'league-summary' && Boolean(DOMESTIC_LEAGUE_CONFIG[req.params.id]);
+    const native = await readNativeLeagueTable(req.params.id, seasonId);
+    if (native) {
+      const standings = summary ? native.standings : await enrichStandingsWithActiveOwners(native.standings, seasonId);
+      res.setHeader('Server-Timing',[res.getHeader('Server-Timing'),`table;dur=${(performance.now()-started).toFixed(1)}`].filter(Boolean).join(', '));
+      res.setHeader('Cache-Control','private, no-store, max-age=0');
+      res.json({...native, standings, source:'native-league-fixture-truth', stale:false, degraded:false});
+      return;
+    }
     const [result, fixtureResult] = await Promise.all([
       getCompetitionStandingsFromReadModel(req.params.id, seasonId, {footballOnly:summary}),
       getCompetitionFixturesFromReadModel(req.params.id, { seasonId, footballOnly:summary }),
