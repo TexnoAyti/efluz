@@ -473,7 +473,7 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
       const round=requestedMatchday(argument);
       if(round&&(plan.action!=='uzeflife_next'||round!==current.data.round+1))throw new Error('CLARIFY:UZEFLIFE uchun so‘ralgan bosqich joriy holatga mos kelmadi.');
       plan.body.expectedRevision=current.data.revision;
-      try{(await import('./uzeflifeService')).validateUAction(AI_ADMIN_ACTIONS[plan.action].path.split('/').at(-1)!,plan.body);}catch{throw new Error('CLARIFY:UZEFLIFE amali uchun kerakli parametrlar to‘liq yoki to‘g‘ri emas. O‘yin, ishtirokchi va parametrlarni aniqlashtiring.');}
+      if(plan.action==='uzeflife_round_post'){if(current.data.status!=='playing'||!current.data.matches?.length)throw new Error('CLARIFY:UZEFLIFE qur’asi boshlanmagan.');if(round&&round!==current.data.round)throw new Error('CLARIFY:Kanalga faqat joriy tur e’loni yuboriladi.');plan.body.round=current.data.round;}else try{(await import('./uzeflifeService')).validateUAction(AI_ADMIN_ACTIONS[plan.action].path.split('/').at(-1)!,plan.body);}catch{throw new Error('CLARIFY:UZEFLIFE amali uchun kerakli parametrlar to‘liq yoki to‘g‘ri emas. O‘yin, ishtirokchi va parametrlarni aniqlashtiring.');}
       if(plan.action==='uzeflife_approve') {
         const proposal=current.data.matches?.find((m:any)=>m.id===plan.body.matchId)?.proposal;
         if(!proposal)throw new Error('CLARIFY:Bu o‘yinda tasdiq kutayotgan natija yo‘q.');
