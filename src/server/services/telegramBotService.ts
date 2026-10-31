@@ -254,7 +254,7 @@ export async function handleTelegramStart(
   chatId: number | string,
   fromUser?: { id: number | string; first_name?: string; last_name?: string; username?: string },
   options: TelegramSendMessageOptions = {}
-): Promise<{ ok: boolean; stickerSent?: boolean; messageSent: boolean; error?: string }> {
+): Promise<{ ok: boolean; stickerSent?: boolean; messageSent: boolean; error?: string; terminalDeliveryFailure?: boolean }> {
   const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
   if (!botToken) {
     console.warn('[TELEGRAM BOT /start] Missing TELEGRAM_BOT_TOKEN');
@@ -331,6 +331,8 @@ Quyidagi tugma orqali ilovani oching va o‘z klubingizni band qiling!`;
     stickerSent,
     messageSent: msgRes.ok,
     error: msgRes.error,
+    terminalDeliveryFailure: !msgRes.ok && Number(chatId) > 0 && msgRes.error_code === 403 &&
+      /bot was blocked by the user|user is deactivated/i.test(msgRes.error || ''),
   };
 }
 

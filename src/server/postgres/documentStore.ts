@@ -45,14 +45,14 @@ export function runtimeRpc(): RuntimeRpc {
       if(error.code==='40001') throw conflict();
       const safe=['RUNTIME_FROZEN','DOCUMENT_NOT_FOUND','DOCUMENT_ALREADY_EXISTS','INVALID_QUERY','UNKNOWN_RUNTIME_SPACE'];
       const code=safe.includes(error.message)?error.message:`POSTGRES_RPC_HTTP_${response.status}`;
-      throw Object.assign(new Error(code),{code:error.message==='DOCUMENT_NOT_FOUND'?5:error.message==='DOCUMENT_ALREADY_EXISTS'?6:undefined});
+      throw Object.assign(new Error(code),{code:error.message==='DOCUMENT_NOT_FOUND'?5:error.message==='DOCUMENT_ALREADY_EXISTS'?6:undefined, databaseCode:typeof error.code==='string' && /^[A-Z0-9_]{2,32}$/.test(error.code)?error.code:undefined, httpStatus:response.status});
     }
     const result = await response.json();
     if (result?.conflict === true) throw conflict();
     if (Date.now()-started > 2000) console.warn('[POSTGRES_RPC_SLOW]', {name,target,ms:Date.now()-started});
     return result;
     } catch (error: any) {
-      if (error?.code !== 10) console.error('[POSTGRES_RPC_FAILED]', {name,target,ms:Date.now()-started,message:error?.message});
+      if (error?.code !== 10) console.error('[POSTGRES_RPC_FAILED]', {name,target,ms:Date.now()-started,message:error?.message,databaseCode:error?.databaseCode,httpStatus:error?.httpStatus});
       throw error;
     }
   };
@@ -132,7 +132,14 @@ export class PostgresDocumentStore {
   doc(path:string){return new DocRef(this,path);}
   batch(){return new Writes(this);}
   async read(query:QuerySpec){
-    const result=await this.rpc('efl_runtime_read',{p_space:this.databaseId,p_query:query});
+    // The generic __name__ filter wraps document_id in to_jsonb and scans a
+    // collection prefix. A singleton ID can use the existing primary-key path
+    // branch instead, including the same generation for transaction CAS.
+    const filter=query.filters?.length===1?query.filters[0]:null;
+    const id=filter?.field==='__name__' && filter.op==='in' && Array.isArray(filter.value) && filter.value.length===1?filter.value[0]:null;
+    const point=query.collection && typeof id==='string' && id.length>0 && !id.includes('/') && !query.count && !query.cursor && !query.orders?.length && (query.limit===undefined || Number.isInteger(query.limit) && query.limit>=1 && query.limit<=10000);
+    const wire=point?{path:`${query.collection}/${id}`}:query;
+    const result=await this.rpc('efl_runtime_read',{p_space:this.databaseId,p_query:wire});
     // Fail closed at the server bound instead of silently omitting documents.
     if(query.limit===undefined&&!query.count&&result.documents?.length>=10000) throw new Error('QUERY_REQUIRES_PAGINATION');
     return result;
