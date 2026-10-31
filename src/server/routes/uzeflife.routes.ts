@@ -30,6 +30,16 @@ uzeflifeRouter.post('/image-export',requireAuth,async(req,res)=>{
   res.json({ok:true,...download});
  }catch(e:any){const invalid=String(e.message).startsWith('INVALID_');res.status(e.statusCode||(invalid?400:503)).json({ok:false,error:e.statusCode?e.message:invalid?'PNG rasm ma’lumotlari noto‘g‘ri.':'Rasmni saqlashga tayyorlab bo‘lmadi. Qayta urinib ko‘ring.'});}
 });
+// Read-only owner diagnostics: explain why automatic Telegram channel publication is blocked.
+uzeflifeRouter.get('/publish-status',requireAuth,async(req,res)=>{
+ try{
+  const {isPrimaryOwner}=await import('../services/customTournamentTicketService');
+  if(!isPrimaryOwner(req.user!.telegramId))throw uError('Faqat asosiy admin tekshirishi mumkin.',403);
+  const state=await readUState(),round=1,record=(await getFirestoreDb().collection('uzeflife_channel_posts').doc('round-1').get()).data();
+  const fixtures=state.matches.filter(m=>m.round===round).length;
+  res.json({ok:true,round,channel:'@uzeflife_turner',status:state.status,format:state.format||null,currentRound:state.round,fixtures,expectedFixtures:121,tokenConfigured:!!process.env.TELEGRAM_BOT_TOKEN,delivery:record?{state:record.state||'unknown',sentPages:record.sentPages||0,totalPages:record.totalPages||16,error:record.error||null,messageIds:record.telegramMessageIds||[]}:null,ready:state.format==='LEAGUE'&&state.status==='playing'&&state.round===1&&fixtures===121&&!record});
+ }catch(e:any){res.status(e.statusCode||503).json({ok:false,error:e.statusCode?e.message:'Yuborish holati olinmadi.'});}
+});
 // AI uses this fixed destination through the ordinary authenticated, owner-only gateway.
 uzeflifeRouter.post('/publish-round',requireAuth,async(req,res)=>{
  try{
