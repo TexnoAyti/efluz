@@ -24,7 +24,7 @@ export async function verifyUzeflifeLeague(){
   await assert.rejects(()=>mutateUState(owner,'generate',{}),/ulamagan/);
   // Use a small real-account league to exercise all 15 rounds through the same mutation path.
   migrated.roster=migrated.roster!.map((r,i)=>i<16?r:{...r,username:null,userId:null});await ref.set(migrated);
-  const outsider={...users[0],id:'outsider',username:'not_listed'};await mutateUState(outsider,'register',{});let outsiderState=await readUState();assert.equal(outsiderState.participants.find(p=>p.id===outsider.id)?.status,'pending');assert.equal(outsiderState.roster?.some(r=>r.userId===outsider.id),false);await mutateUState(owner,'review',{target:outsider.id,status:'approved'});outsiderState=await readUState();assert.equal(outsiderState.roster?.find(r=>r.userId===outsider.id)?.username,null);await mutateUState(owner,'review',{target:outsider.id,status:'removed'});
+  const outsider={...users[0],id:'outsider',username:'not_listed'};await assert.rejects(()=>mutateUState(outsider,'register',{}),/242 kishilik/);assert.equal((await readUState()).roster?.filter(r=>r.username).length,16,'Test fixture keeps only the sixteen original linked names');
   for(const u of users)await mutateUState(u,'register',{});
   let s=await readUState();assert.equal(s.participants.filter(p=>p.status==='approved').length,16);assert.equal(s.roster![0].userId,users[0].id);assert.equal(s.roster![0].group,1);assert.equal(s.roster![0].slot,1);
   await assert.rejects(()=>mutateUState(users[0],'rosterSlot',{group:2,slot:21,username:'new_player'}),/ruxsat/);
