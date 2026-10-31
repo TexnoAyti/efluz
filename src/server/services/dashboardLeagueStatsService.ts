@@ -1,3 +1,4 @@
+import { readNativeLeagueTable } from './nativeLeagueTable';
 import { Club } from '../../types';
 import {
   getCompetitionFixturesFromReadModel,
@@ -56,14 +57,23 @@ export async function getDashboardLeagueStats(
   // Durable tombstones are applied before standings are calculated, so deleted
   // phantom fixtures cannot keep Home POS/PTS/W-D-L stale after cold starts.
   try {
-    const fixtureResult = await getCompetitionFixturesFromReadModel(competitionId, { seasonId });
+    const native = await readNativeLeagueTable(competitionId, seasonId);
+    if (native) {
+      const row = native.standings.find(standing => standing.clubId === currentClub.id);
+      return row ? applyStandingRow(stats, row) : stats;
+    }
+    const [fixtureResult, base] = await Promise.all([
+      getCompetitionFixturesFromReadModel(competitionId, { seasonId, footballOnly:true }),
+      getCompetitionStandingsFromReadModel(competitionId, seasonId, {footballOnly:true}),
+    ]);
     const visibleFixtures = await filterTombstonedFixtures(fixtureResult.fixtures, seasonId);
     const standings = await rebuildStandingsSnapshotFromFixtures(
       competitionId,
       seasonId,
-      visibleFixtures
+      visibleFixtures,
+      {persist:false, baseRows:base.standings}
     );
-    const row = standings.find((standing) => standing.clubId === currentClub.id);
+    const row = standings?.find((standing) => standing.clubId === currentClub.id);
     if (row) return applyStandingRow(stats, row);
   } catch (error: any) {
     console.warn('[DASHBOARD_STATS] visible fixture truth unavailable:', error?.message || error);
@@ -72,7 +82,7 @@ export async function getDashboardLeagueStats(
   // Resilient fallback: use the durable standings snapshot. This keeps login and
   // /api/me available during a temporary fixture-read failure.
   try {
-    const result = await getCompetitionStandingsFromReadModel(competitionId, seasonId);
+    const result = await getCompetitionStandingsFromReadModel(competitionId, seasonId, {footballOnly:true});
     const row = result.standings.find((standing) => standing.clubId === currentClub.id);
     if (row) return applyStandingRow(stats, row);
   } catch (error: any) {

@@ -73,6 +73,8 @@ jobs:
           bun run test:client-startup
           node scripts/run-isolated-test.mjs src/server/tests/startupLoadingRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/homeDataLatencyRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/nativeLeagueReadRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/reconciliationBurstRegressionTest.ts
           bun run test:player-trophies
           node scripts/run-isolated-test.mjs src/server/tests/disciplineRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/telegramFastOpeningTest.ts

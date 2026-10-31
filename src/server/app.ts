@@ -175,7 +175,7 @@ export function createApp() {
     const postgresLogin = process.env.DATABASE_PROVIDER === 'supabase' && req.method === 'POST' && req.path === '/api/auth/telegram';
     try {
       if (!staticRead && !postgresLogin && !postgresClubRead) await ensureDbReady();
-      res.setHeader('Server-Timing', `bootstrap;dur=${(performance.now()-started).toFixed(1)}`);
+      res.setHeader('Server-Timing', [res.getHeader('Server-Timing'), `bootstrap;dur=${(performance.now()-started).toFixed(1)}`].filter(Boolean).join(', '));
       next();
     }
     catch (err: any) { console.error('[SERVER] Database initialization failed on request:', err); res.status(500).json({ error: 'Database initialization failed', details: err.message }); }

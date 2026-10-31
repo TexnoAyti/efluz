@@ -88,6 +88,20 @@ export async function readPostgresSnapshotBundle(fresh: string, lkg: string, dir
   const visible = async (snapshot:any) => keyFixtures(fresh) && Array.isArray(snapshot?.data) ? {...snapshot,data:await filterPublishedEuropeanFixtures(snapshot.data)} : snapshot;
   return { fresh: await visible(overlay(snapshots[0], changes)), lkg: await visible(fallback), dirty: snapshots[1] };
 }
+/** Read fresh and fallback together for small metadata (for example tombstones).
+ * No process-TTL shortcut: every call verifies the durable versions. */
+export async function readPostgresMetadataPair(fresh: string, lkg: string): Promise<any | null> {
+  const ids = [fresh, lkg].map(key => createHash('sha256').update(key).digest('hex'));
+  const rows = await snapshotDocuments(ids);
+  for (const id of ids) {
+    const value = rows.get(id);
+    if (value && (value.expiresAt === null || value.expiresAt > Date.now())) {
+      const snapshot = unpack(value);
+      if (snapshot?.data !== undefined) return snapshot;
+    }
+  }
+  return null;
+}
 export async function readPostgresSnapshot(key: string): Promise<any | null> {
   const id=createHash('sha256').update(key).digest('hex');
   const [documents,changes] = await Promise.all([snapshotDocuments([id]),fixtureOverrides(key)]);
