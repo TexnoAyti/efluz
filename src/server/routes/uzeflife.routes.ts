@@ -14,7 +14,7 @@ export const uzeflifeRouter=Router();
 uzeflifeRouter.use((_req,res,next)=>{res.setHeader('Cache-Control','private, no-store');next();});
 // Refresh account identity/suspension on every authenticated request; no stale admin claims.
 uzeflifeRouter.use(async(req,res,next)=>{try{if(req.user){const u=await getAuthoritativeUserForAuthorization(req.user.id);if(!u||u.isSuspended){res.status(403).json({ok:false,error:'Akkauntga kirish cheklangan.'});return;}req.user=u;}next();}catch{res.status(503).json({ok:false,error:'Akkauntni tekshirish imkonsiz.'});}});
-uzeflifeRouter.get('/',async(req,res)=>{try{res.json({ok:true,...await viewState(req.user)});if(req.user)scheduleUNotices();}catch{res.status(503).json({ok:false,error:'Turnirni yuklab bo‘lmadi.'});}});
+uzeflifeRouter.get('/',async(req,res)=>{try{res.json({ok:true,...await viewState(req.user)});scheduleUNotices();}catch{res.status(503).json({ok:false,error:'Turnirni yuklab bo‘lmadi.'});}});
 uzeflifeRouter.get('/history/:id',async(req,res)=>{
  try{if(!/^uzeflife-[a-f0-9-]{36}$/.test(req.params.id))throw uError('Turnir tarixi topilmadi.',404);const snap=await getFirestoreDb().collection('uzeflife_history').doc(req.params.id).get();if(!snap.exists)throw uError('Turnir tarixi topilmadi.',404);res.json({ok:true,archive:snap.data()});}catch(e:any){res.status(e.statusCode||503).json({ok:false,error:e.statusCode?e.message:'Tarixni yuklab bo‘lmadi.'});}
 });
