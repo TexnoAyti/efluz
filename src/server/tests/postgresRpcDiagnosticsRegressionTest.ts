@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import {runtimeRpc} from '../postgres/documentStore';
+import {runtimeRpc,PostgresDocumentStore} from '../postgres/documentStore';
+import {FieldPath} from 'firebase-admin/firestore';
+import {encodeValue} from '../migration/firestoreArchive';
 import {parseFirestoreError} from '../firebase/firestoreErrorHandler';
 process.env.SUPABASE_URL='https://isolated-diagnostics.invalid';process.env.SUPABASE_SERVICE_ROLE_KEY='do-not-log-private-key';
 const fetchOriginal=globalThis.fetch, logOriginal=console.error, logs:any[]=[];
@@ -17,3 +19,31 @@ try {
  assert.equal(parseFirestoreError({code:5,message:'NOT_FOUND'}).httpStatus,404);
 }finally{globalThis.fetch=fetchOriginal;console.error=logOriginal;}
 console.log('PASS read-only RPC diagnostics: SQLSTATE/http status retained, private key/document/error contents excluded, timeout and upstream outage return honest 503, not-found preserved');
+
+// Real adapter queries: singleton reads retain their generation and document
+// shape while avoiding the generic collection filter. Other query semantics stay.
+const calls:any[]=[];
+const store=new PostgresDocumentStore(async(name,body)=>{
+ calls.push({name,body});
+ return {generation:'42',documents:[{id:'counter',encoded:encodeValue({value:7})}]};
+},'preview');
+const selected=await store.collection('runtime_state').where(FieldPath.documentId(),'in',['counter']).get();
+assert.equal(selected.docs[0].data().value,7);assert.equal(calls[0].body.p_query.path,'runtime_state/counter');
+assert.equal(calls[0].body.p_query.collection,undefined);
+for(const query of [
+ store.collection('runtime_state').where(FieldPath.documentId(),'in',['counter','other']),
+ store.collection('runtime_state').where(FieldPath.documentId(),'in',['counter']).where('value','==',7),
+ store.collection('runtime_state').where(FieldPath.documentId(),'in',['counter']).orderBy('value'),
+ store.collection('runtime_state').where(FieldPath.documentId(),'in',['counter']).startAfter('counter'),
+ store.collection('runtime_state').where(FieldPath.documentId(),'in',['counter']).limit(10001),
+]){await query.get();assert.equal(calls.at(-1).body.p_query.collection,'runtime_state');}
+await store.collection('runtime_state').where(FieldPath.documentId(),'in',['counter']).count().get();
+assert.equal(calls.at(-1).body.p_query.count,true);assert.equal(calls.at(-1).body.p_query.path,undefined);
+await store.runTransaction(async tx=>{
+ const rows=await tx.get(store.collection('runtime_state').where(FieldPath.documentId(),'in',['counter']));
+ assert.equal(rows.docs[0].data().value,7);
+ tx.set(store.collection('runtime_state').doc('counter'),{value:8});
+});
+assert.equal(calls.at(-2).body.p_query.path,'runtime_state/counter');
+assert.equal(calls.at(-1).body.p_generation,'42','Optimistic transaction generation must survive the indexed read');
+console.log('PASS indexed singleton document-ID reads: real query shape/results, unchanged multi-ID/filter/order/cursor queries and transaction generation');

@@ -132,7 +132,14 @@ export class PostgresDocumentStore {
   doc(path:string){return new DocRef(this,path);}
   batch(){return new Writes(this);}
   async read(query:QuerySpec){
-    const result=await this.rpc('efl_runtime_read',{p_space:this.databaseId,p_query:query});
+    // The generic __name__ filter wraps document_id in to_jsonb and scans a
+    // collection prefix. A singleton ID can use the existing primary-key path
+    // branch instead, including the same generation for transaction CAS.
+    const filter=query.filters?.length===1?query.filters[0]:null;
+    const id=filter?.field==='__name__' && filter.op==='in' && Array.isArray(filter.value) && filter.value.length===1?filter.value[0]:null;
+    const point=query.collection && typeof id==='string' && id.length>0 && !id.includes('/') && !query.count && !query.cursor && !query.orders?.length && (query.limit===undefined || Number.isInteger(query.limit) && query.limit>=1 && query.limit<=10000);
+    const wire=point?{path:`${query.collection}/${id}`}:query;
+    const result=await this.rpc('efl_runtime_read',{p_space:this.databaseId,p_query:wire});
     // Fail closed at the server bound instead of silently omitting documents.
     if(query.limit===undefined&&!query.count&&result.documents?.length>=10000) throw new Error('QUERY_REQUIRES_PAGINATION');
     return result;
