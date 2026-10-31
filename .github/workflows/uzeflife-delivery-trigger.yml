@@ -1,0 +1,26 @@
+name: UZEFLIFE first-round delivery trigger
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 * * * *'
+permissions:
+  contents: read
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Wake UZEFLIFE notification delivery
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 35 --retry 2 \
+            --header 'Cache-Control: no-cache' \
+            'https://efluz.vercel.app/api/uzeflife' > /tmp/uzeflife-response.json
+          python3 - <<'PY'
+          import json
+          with open('/tmp/uzeflife-response.json',encoding='utf-8') as f:
+              data=json.load(f)
+          if data.get('ok') is not True:
+              raise SystemExit('UZEFLIFE backend did not confirm readiness')
+          print('UZEFLIFE backend responded; background delivery check scheduled')
+          PY
