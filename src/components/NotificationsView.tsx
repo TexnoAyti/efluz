@@ -1,3 +1,4 @@
+import {openUzeflifeMatch} from '../lib/uzeflifeLinks';
 import {openElClasico,openTeamTournament} from '../lib/teamNavigation';
 import { EFL_2_DESIGN_ENABLED } from '../releaseDesign';
 import React, { useState, useEffect } from 'react';
@@ -70,6 +71,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
     if (!notif.isRead) {
       markNotificationAsRead(notif.id);
     }
+    if(notif.entityType==='uzeflife'&&notif.entityId){try{openUzeflifeMatch(notif.entityId);}catch{/* Ignore invalid navigation metadata. */}return;}
     if(notif.entityType==='team-event'){openElClasico();return;}
     if(notif.entityType==='team-tournament'&&notif.entityId){openTeamTournament(notif.entityId,notif.fixtureId);return;}
     if(notif.entityType==='custom-tournament'&&notif.entityId){if(/^https:\/\/t\.me\/efluzbot\?startapp=ct1_[A-Za-z0-9_-]+$/.test(notif.entityId)){const app=(window as any).Telegram?.WebApp;if(app?.openTelegramLink)app.openTelegramLink(notif.entityId);else window.open(notif.entityId,'_blank','noopener,noreferrer');}return;}

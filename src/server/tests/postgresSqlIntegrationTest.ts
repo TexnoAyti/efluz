@@ -1,3 +1,4 @@
+import {verifyUzeflifeNotificationDelivery} from './uzeflifeNotificationAudit';
 import {verifyUzeflifeLeague} from './uzeflifeLeagueAudit';
 import {readPostgresOwnedFixtures} from '../services/postgresOwnedFixtures';
 import {verifyTeamPlayerMatches} from './teamPlayerMatchesAudit';
@@ -258,6 +259,7 @@ try {
   await verifyTeamTournamentSettings(()=>{failTeamPreviewCommit=true;});
   await verifyTeamPlayerMatches();await verifyElClasico(()=>{failClasicoCommit=true;});
   await verifyUzeflifeLeague();
+  await verifyUzeflifeNotificationDelivery();
   await verifyCompetitionNotices(()=>{failClasicoCommit=true;});
   await verifyAndroidAuth(()=>{failAndroidLoginCommit=true;});
   await verifyPostgresClubClaimHttp(() => { failClaimCommit=true; },()=>{failClubBanCommit=true;});

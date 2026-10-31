@@ -1,9 +1,9 @@
-import {publishLiveUserNotifications} from './liveNotifications';
+import {NotificationOutboxCursor} from './notificationOutboxCursor';
+import {publishLiveUserNotifications,persistLiveUserNotification} from './liveNotifications';
 import {createHash,randomUUID} from 'node:crypto';
 import type {Transaction} from 'firebase-admin/firestore';
 import {getFirestoreDb} from '../firebase/admin';
 import {enqueueSmartTelegramNotification} from './smartNotificationService';
-import {invalidateFirestoreCache} from '../firebase/firestoreStore';
 export const COMPETITION_OUTBOX='competition_notification_intents';
 export const noticeHash=(v:unknown)=>createHash('sha256').update(JSON.stringify(v??null)).digest('hex');
 type Guard={collection:string;id:string;paths:string[];hash:string};
@@ -21,10 +21,12 @@ export async function processCompetitionNotices(limit=40,enqueue=enqueueSmartTel
  for(const job of jobs.docs){
   if(!budget||Date.now()>=deadline)break;const ref=job.ref,lease=randomUUID();
   const claimed=await db.runTransaction(async tx=>{const value=(await tx.get(ref)).data();if(!value||value.status!=='pending'||value.leaseUntil>Date.now())return null;tx.set(ref,{...value,lease,leaseUntil:Date.now()+90000});return value;});if(!claimed)continue;
-  let cursor=claimed.cursor as number;const sources=new Map<string,any>(),signatures=new Map<string,string>();
+  const progress=new NotificationOutboxCursor(claimed.notices.length,claimed.cursor,claimed.retryIndices),sources=new Map<string,any>(),signatures=new Map<string,string>();
   try{
-   while(cursor<claimed.notices.length&&budget>0&&Date.now()<deadline){
-    const notice=claimed.notices[cursor] as CompetitionNotice;let userId=notice.userId;
+   while(budget>0&&Date.now()<deadline){
+    const index=progress.next();if(index===null)break;
+    try{
+    const notice=claimed.notices[index] as CompetitionNotice;let userId=notice.userId;
     if(userId==='@owner'){const owners=await db.collection('users').where('telegramId','==','5209126900').limit(2).get();userId=owners.size===1?owners.docs[0].id:'';}
     const actor=userId?(await db.collection('users').doc(userId).get()).data():null;
     let valid=!!actor&&!actor.isSuspended&&(!notice.expiresAt||notice.expiresAt>Date.now());
@@ -32,18 +34,18 @@ export async function processCompetitionNotices(limit=40,enqueue=enqueueSmartTel
      if(!valid)break;const key=g.collection+'/'+g.id;if(!sources.has(key))sources.set(key,(await db.collection(g.collection).doc(g.id).get()).data());const value=sources.get(key),signatureKey=key+':'+JSON.stringify(g.paths);if(!signatures.has(signatureKey))signatures.set(signatureKey,noticeHash(g.paths.map(p=>at(value,p))));valid=!!value&&signatures.get(signatureKey)===g.hash&&!(value.status==='CANCELLED'&&!g.paths.includes('status'))&&!(g.collection==='el_clasico_events'&&g.id==='el-clasico'&&process.env.EL_CLASICO_ENABLED!=='true');
     }
     if(valid){
-     const id='competition-'+noticeHash([job.id,cursor,userId]),notification=db.collection('notifications').doc(id);
+     const id='competition-'+noticeHash([job.id,index,userId]);
      // A delivery retry must never turn an already-read in-app item unread.
-     await db.runTransaction(async tx=>{if(!(await tx.get(notification)).exists)tx.set(notification,{id,userId,type:'COMPETITION_UPDATE',title:notice.title,message:notice.body,entityType:notice.entityType,entityId:notice.entityId,...(notice.fixtureId?{fixtureId:notice.fixtureId}:{}),isRead:false,createdAt:claimed.createdAt});});
-     invalidateFirestoreCache(`firestore:notifications:${userId}`);
+     await persistLiveUserNotification({id,userId,type:'COMPETITION_UPDATE',title:notice.title,message:notice.body,entityType:notice.entityType,entityId:notice.entityId,...(notice.fixtureId?{fixtureId:notice.fixtureId}:{}),isRead:false,createdAt:claimed.createdAt});
      await enqueue({userId,seasonId:'season-2026-27',eventId:id,title:notice.title,body:escape(notice.body),deferDrain:true,replyMarkup:{inline_keyboard:[[{text:'O‘yin / turnirni ochish',url:notice.url}]]}});
      // Queue bot delivery before the optional live projection. A projection
      // outage retains this cursor; the stable event ID makes its retry safe.
      await publishLiveUserNotifications(userId);
     }
-    cursor++;budget--;
+    }catch(error){progress.retry(index);failures.push(error);}
+    budget--;
    }
-  }catch(error){failures.push(error);}finally{await db.runTransaction(async tx=>{const value=(await tx.get(ref)).data();if(value?.lease===lease)tx.set(ref,{...value,cursor,leaseUntil:0,status:cursor>=value.notices.length?'done':'pending',...(cursor>=value.notices.length?{completedAt:new Date().toISOString(),notices:[]}: {})});});}
+  }catch(error){failures.push(error);}finally{await db.runTransaction(async tx=>{const value=(await tx.get(ref)).data();if(value?.lease===lease)tx.set(ref,{...value,cursor:progress.cursor,retryIndices:progress.retryIndices,leaseUntil:0,status:progress.done?'done':'pending',...(progress.done?{completedAt:new Date().toISOString(),notices:[]}: {})});});}
  }
  if(failures.length)throw new AggregateError(failures,'Competition notification delivery deferred');
  return !(await db.collection(COMPETITION_OUTBOX).where('status','==','pending').limit(1).get()).empty;

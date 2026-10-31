@@ -11,3 +11,9 @@ export function uzeflifeMatchLink(id:string){
  if(!/^(?:r[1-8]|l(?:[1-9]|1[0-5]))m\d{1,3}$/.test(id))throw Error('INVALID_UZEFLIFE_MATCH');
  return `https://t.me/efluzbot?startapp=uze_${id}`;
 }
+
+/** Notification data is untrusted navigation input, never a URL to open directly. */
+export function openUzeflifeMatch(id:string){
+ const url=uzeflifeMatchLink(id),app=(window as any).Telegram?.WebApp;
+ if(app?.openTelegramLink)app.openTelegramLink(url);else window.open(url,'_blank','noopener,noreferrer');
+}
