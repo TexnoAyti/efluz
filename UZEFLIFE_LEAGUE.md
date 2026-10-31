@@ -13,3 +13,11 @@ A win earns 3 points, a draw 1, a loss 0. Sorting uses points, goal difference, 
 The public league uses shared EFL match cards, round navigation and standings; lists are paginated. Source group filters retain all 32 original slots, including vacancies. Telegram deep links cover rounds 1–15. Result dialogs support rival contact, player submissions, confirmation/disputes, administrative scoring and scheduling.
 
 Notification repairs preserve opponent announcements across score submissions while still rejecting changed pairings/cancellations. Bot delivery is queued before the live in-app projection. An interrupted job does not block unrelated jobs, and an unrelated deadline sweep does not prevent another tournament's outbox from preparing. Existing queue deduplication and read-state preservation remain in effect. No production participant notifications were manually sent during development.
+
+## Notification delivery follow-up
+
+UZEFLIFE opponent, result, dispute, reminder and completion messages now also create private in-app notifications. Both channels retain the same validated match destination. The live projection publishes only on delivery; viewing the notification list does not add database reads to warm polls.
+
+Retries preserve notification read status and original timestamps. New outbox jobs distinguish a new occurrence (for example, resubmitting the same score after rejection) from retrying an existing occurrence. Older jobs retain their previous Telegram queue identity. Failed recipients are retained as durable retry indices while later recipients in the same job continue. Missing/suspended accounts, revoked admin roles and unrelated players do not receive private match notices.
+
+The existing request/continuation/cron wakeups and notification settings remain in use. Isolated tests simulate Telegram enqueueing; no production participant messages were manually sent for verification.

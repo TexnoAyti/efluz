@@ -47,7 +47,7 @@ export async function verifyCompetitionNotices(failNextCommit:()=>void){
   (db as any).collection=function(name:string){const ref=collectionBefore.call(db,name);return name==='notifications'?new Proxy(ref,{get(target,key){if(key==='where')return ()=>{throw Error('isolated projection outage');};const value=(target as any)[key];return typeof value==='function'?value.bind(target):value;}}):ref;};
   let queuedBeforeProjection=false;
   try{await assert.rejects(process(projection,async()=>{queuedBeforeProjection=true;return true;}),AggregateError);}finally{(db as any).collection=collectionBefore;}
-  assert.equal(queuedBeforeProjection,true,'Telegram was queued before the projection failed');assert.equal((await db.collection(COMPETITION_OUTBOX).doc(projection).get()).data()?.cursor,0,'Failed projection remains resumable');
+  assert.equal(queuedBeforeProjection,true,'Telegram was queued before the projection failed');assert.equal((await db.collection(COMPETITION_OUTBOX).doc(projection).get()).data()?.retryIndices?.[0],0,'Failed projection remains resumable');
   await process(projection,send);
   const bad=await put('audit-isolated-bad',[{...base,title:'Fail isolated job'}]),good=await put('audit-isolated-good',[{...base,title:'Deliver other job'}]);
   for(const id of [bad,good])await db.collection(COMPETITION_OUTBOX).doc(id).update({createdAt:'1900-01-01T00:00:00.000Z'});
@@ -56,6 +56,7 @@ export async function verifyCompetitionNotices(failNextCommit:()=>void){
   assert.ok(attempted.includes('Deliver other job'),'One failed job cannot starve another tournament');
   assert.equal((await db.collection(COMPETITION_OUTBOX).doc(good).get()).data()?.status,'done');
   await process(bad,send);
+  const mixed=await put('audit-same-job-isolation',[{...base,title:'Broken first'},{...base,title:'Healthy second'}]);const sameJob:string[]=[];await assert.rejects(process(mixed,async p=>{sameJob.push(p.title);if(p.title==='Broken first')throw Error('one recipient fails');return true;}),AggregateError);assert.deepEqual(sameJob,['Broken first','Healthy second']);assert.deepEqual((await db.collection(COMPETITION_OUTBOX).doc(mixed).get()).data()?.retryIndices,[0]);await process(mixed,send);
   console.log('PASS competition notifications HTTP/native PostgreSQL: durable atomic intents, lease concurrency, escaped Telegram text, stable deep links, delivery retry, read preservation, stale and suspended suppression, bounded cursors and fresh in-app reads');
  }finally{await source.delete();await db.collection('users').doc(actor.id).delete();}
 }

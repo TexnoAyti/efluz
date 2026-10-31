@@ -14,6 +14,7 @@ await initDatabase();const db=getFirestoreDb();
 const owner={id:'canonical-owner',telegramId:'5209126900',isAdmin:false,isSuspended:false,firstName:'Owner'} as User;
 const other={id:'outsider',telegramId:'99999',isAdmin:false,isSuspended:false} as User;
 const s=initialUState();s.status='registration';s.participants=Array.from({length:256},(_,i)=>({id:'p'+i,name:i===0?'Muhammadazizbek Abdurahmonov':'Ishtirokchi '+i,status:'approved'}));
+for(const [i,p] of s.participants.entries())await db.collection('users').doc(p.id).set({id:p.id,telegramId:String(600000+i),firstName:p.name,isSuspended:false});
 await db.collection('users').doc(owner.id).set(owner);await db.collection('uzeflife').doc('championship').set(s);
 await mutateUState(owner,'roundSettings',{hours:72});await mutateUState(owner,'generate',{});
 let state=await readUState();assert.equal(state.matches.filter(m=>m.deadlineAt).length,128);assert.ok(Date.parse(state.matches[0].deadlineAt!)>Date.now()+71*3600000);
@@ -26,7 +27,7 @@ assert.equal(await processUNotices(3,enqueue,Date.now()-1),true);assert.equal(de
 await Promise.all([processUNotices(3,enqueue),processUNotices(3,enqueue)]);assert.equal(delivered.length,3,'Concurrent workers respect the durable lease');
 assert.ok(delivered.every(n=>n.replyMarkup.inline_keyboard[0][0].url.startsWith('https://t.me/efluzbot?startapp=uze_r1m')));
 let attempt=0;await assert.rejects(processUNotices(3,async(n)=>{if(++attempt===2)throw Error('temporary queue outage');return enqueue(n);}),/outage/);
-assert.equal((await jobs()).docs[0].data().cursor,4,'Only durably accepted events advance the cursor');
+assert.equal((await jobs()).docs[0].data().cursor,6,'A failed recipient cannot stop the next recipient');assert.deepEqual((await jobs()).docs[0].data().retryIndices,[4],'The failed recipient is durably retained for retry');
 while(await processUNotices(50,enqueue)){}assert.equal(delivered.length,256);assert.equal(new Set(delivered.map(n=>n.eventId)).size,256);assert.equal(await processUNotices(50,enqueue),false);
 const match=state.matches[0];
 const approve=async(actor:User)=>mutateUState(actor,'approveResult',{matchId:match.id,expected:(await readUState()).matches[0].proposal||{by:home.id,home:3,away:1,penaltyHome:null,penaltyAway:null}});

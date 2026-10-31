@@ -1,10 +1,16 @@
-import {getUserNotificationsFirestore} from '../firebase/firestoreStore';
+import {getUserNotificationsFirestore,invalidateFirestoreCache} from '../firebase/firestoreStore';
 import {getFirestoreDb} from '../firebase/admin';
 import {getNotificationReadState,applyNotificationReadState} from './notificationReadState';
 import {getNotificationControls,notificationVisible} from './notificationVisibility';
 import {redisGetFresh,redisGetLkg,redisSetRaw} from '../readModel/readModelStore';
 import type {Notification} from '../../types';
 const key=(userId:string,limit:number)=>`efluz:v1:user:${userId}:notifications:${limit}`;
+/** Retrying delivery must preserve the original timestamp and read status. */
+export async function persistLiveUserNotification(notification:Notification){
+ const ref=getFirestoreDb().collection('notifications').doc(notification.id);
+ await getFirestoreDb().runTransaction(async tx=>{if(!(await tx.get(ref)).exists)tx.set(ref,notification);});
+ invalidateFirestoreCache(`firestore:notifications:${notification.userId}`);
+}
 /** Publish on delivery, rather than querying the database on every viewer poll. */
 export async function publishLiveUserNotifications(userId:string){
  const generatedAt=new Date().toISOString();
