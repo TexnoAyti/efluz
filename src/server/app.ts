@@ -147,7 +147,10 @@ export function createApp() {
   app.use('/api/uzeflife/image-export', express.json({ limit: '1mb' }));
   app.use('/api/uzeflife/dispute', express.json({ limit: '600kb' }));
   app.use(express.json({ limit: '256kb' }));
-  app.use('/api', rateLimit('api-global', 300, 60));
+  // The broad traffic guard must not perform a database transaction before
+  // every read/identity check. Auth and action-specific guards below retain
+  // their shared durable budgets; this per-instance guard bounds all traffic.
+  app.use('/api', rateLimit('api-global', 300, 60, { distributed: false }));
   app.use('/api/image-exports', imageExportDownloadRouter);
 
   app.all('/api/internal/telegram-worker', async (req, res) => {

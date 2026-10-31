@@ -8,6 +8,7 @@ import { verifyTelegramWebAppData } from '../auth/telegramAuth';
 
 type LocalCounter = { count: number; resetAt: number };
 const localCounters = new Map<string, LocalCounter>();
+let nextLocalPruneAt = 0;
 
 function subjectFor(req: Request): string {
   // This limiter also runs BEFORE authMiddleware. Resolve only cryptographically
@@ -40,7 +41,21 @@ function subjectFor(req: Request): string {
   return crypto.createHash('sha256').update(raw).digest('hex').slice(0, 24);
 }
 
-export function rateLimit(name: string, limit: number, windowSeconds: number) {
+function incrementLocal(key: string, limit: number, windowSeconds: number): number {
+  const now = Date.now();
+  const current = localCounters.get(key);
+  if (current && current.resetAt > now) return ++current.count;
+  if (localCounters.size >= 5000 && now >= nextLocalPruneAt) {
+    nextLocalPruneAt = now + 15000;
+    for (const [oldKey, value] of localCounters) if (value.resetAt <= now) localCounters.delete(oldKey);
+  }
+  // Bound memory without evicting an active subject's used budget.
+  if (localCounters.size >= 10000) return limit + 1;
+  localCounters.set(key, {count: 1, resetAt: now + windowSeconds * 1000});
+  return 1;
+}
+
+export function rateLimit(name: string, limit: number, windowSeconds: number, options: { distributed?: boolean } = {}) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const started = performance.now();
     const recordTiming = () => res.setHeader('Server-Timing', [res.getHeader('Server-Timing'), `rate_limit;dur=${(performance.now()-started).toFixed(1)}`].filter(Boolean).join(', '));
@@ -49,7 +64,7 @@ export function rateLimit(name: string, limit: number, windowSeconds: number) {
     let count = 0;
 
     try {
-      const client = getRuntimeStateStore();
+      const client = options.distributed === false ? null : getRuntimeStateStore();
       if (client) {
         count = Number(await client.eval(
           "-- EFL_RATE_LIMIT_V1\nlocal n=redis.call('INCR',KEYS[1]); if n==1 then redis.call('EXPIRE',KEYS[1],ARGV[1]) end; return n",
@@ -57,23 +72,12 @@ export function rateLimit(name: string, limit: number, windowSeconds: number) {
           [windowSeconds]
         ));
       } else {
-        const now = Date.now();
-        const current = localCounters.get(key);
-        if (!current || current.resetAt <= now) {
-          count = 1;
-          localCounters.set(key, { count, resetAt: now + windowSeconds * 1000 });
-        } else {
-          current.count += 1;
-          count = current.count;
-        }
-        if (localCounters.size > 5000) {
-          for (const [localKey, value] of localCounters) if (value.resetAt <= now) localCounters.delete(localKey);
-        }
+        count = incrementLocal(key, limit, windowSeconds);
       }
     } catch {
-      // Availability fallback: do not turn a Redis outage into a full API outage.
-      recordTiming();
-      return next();
+      // Storage outages retain a bounded local budget instead of allowing an
+      // unlimited stream or turning the outage into a complete API outage.
+      count = incrementLocal(key, limit, windowSeconds);
     }
 
     recordTiming();
