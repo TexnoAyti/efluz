@@ -27,10 +27,17 @@ export async function reconcileDurableMutations(): Promise<SyncResult | null> {
   return processPendingMutations({ deadline: Date.now() + 8000 });
 }
 
+let nextScheduleAt = 0;
+let scheduled = false;
 export function scheduleMutationReconciliation(): void {
+  // A dashboard opens several endpoints at once. Do not start the same workers
+  // for each successful read; cron and explicit recovery remain independent.
+  if (scheduled || Date.now() < nextScheduleAt) return;
+  scheduled = true;
+  nextScheduleAt = Date.now() + 60000;
   const work = reconcileDurableMutations().catch(error => {
     console.warn('[MUTATION_RECOVERY] Deferred; durable records retained:', error?.message || error);
-  });
+  }).finally(() => { scheduled = false; });
   if (process.env.VERCEL === '1') waitUntil(work);
   else void work;
 }

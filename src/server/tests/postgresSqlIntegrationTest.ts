@@ -1,3 +1,4 @@
+import {verifyNativeLeagueRead} from './nativeLeagueReadAudit';
 import {verifyUzeflifeLeague} from './uzeflifeLeagueAudit';
 import {readPostgresOwnedFixtures} from '../services/postgresOwnedFixtures';
 import {verifyTeamPlayerMatches} from './teamPlayerMatchesAudit';
@@ -96,6 +97,7 @@ process.env.DATABASE_PROVIDER = 'supabase'; process.env.SUPABASE_DATA_NAMESPACE 
 process.env.SUPABASE_URL = 'https://isolated-postgres.invalid'; process.env.SUPABASE_SERVICE_ROLE_KEY = 'isolated-only';
 try {
   const db = getFirestoreDb();
+  await verifyNativeLeagueRead();
   const latencySeason='season-native-home-latency';
   for(const fixture of [
     {id:'native-home-latency',homeClubId:'club-arsenal',awayClubId:'club-chelsea'},
