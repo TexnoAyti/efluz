@@ -18,7 +18,7 @@ export function UzeflifeResultQueue({state:s,busy,act,error=''}:{state:UViewStat
   {filter!=='disputes'&&s.topicResults?.map(p=><article key={p.id} className="u-dialog-section space-y-3"><p className="competition-muted">Telegram mavzusidan · {p.summary}</p><strong>{p.home} : {p.away}{p.penaltyHome!=null?` · Penaltilar ${p.penaltyHome}:${p.penaltyAway}`:''}</strong><p className="competition-muted">Hisobni yuborilgan mavzudagi admin tugmasi orqali tasdiqlang yoki rad eting.</p><a className="competition-button" href={p.url} target="_blank" rel="noreferrer">Mavzuda tekshirish</a></article>)}
   {!matches.length&&!s.topicResults?.length&&<p className="competition-muted">Bu ro‘yxatda kutilayotgan natija yo‘q.</p>}
   {matches.slice(current*10,(current+1)*10).map(m=><article key={m.id} className="u-dialog-section space-y-3">
-   <p className="competition-muted">{m.bracket?`${m.bracket}-setka · `:''}{uRoundLabel(m.round)} · {uMatchNumber(m)}-o‘yin</p>
+   <p className="competition-muted">{m.bracket?`${m.bracket}-setka · `:''}{uRoundLabel(m.round,s.format)} · {uMatchNumber(m)}-o‘yin</p>
    <strong className="block break-words">{name(m.home)} {m.proposal?`${m.proposal.home} : ${m.proposal.away}`:'—'} {name(m.away)}</strong>
    {m.proposal?.penaltyHome!=null&&<p className="competition-muted">Penaltilar: {m.proposal.penaltyHome} : {m.proposal.penaltyAway}</p>}
    {m.dispute?.status==='open'&&<p className="competition-note"><AlertTriangle size={14}/> E’tiroz: {m.dispute.reason}</p>}

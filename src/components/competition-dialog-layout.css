@@ -9,7 +9,7 @@
 :root .efl-competition-panel :is(button,a){touch-action:manipulation}
 :root :is(.team-dialog,.tourney-dialog,dialog.competition-dialog){border-radius:var(--competition-dialog-radius);border-color:var(--efl-border);color:var(--efl-text);background:var(--efl-surface);box-shadow:var(--efl-shadow-lg)}
 :root .team-dialog{width:min(var(--competition-dialog-width),100%)}
-:root .team-dialog:has(.team-league-match),:root .team-dialog:has(.team-tournament-management){width:min(960px,100%)}
+:root .team-dialog:has(.team-league-match),:root .team-dialog:has(.team-tournament-management),:root .team-dialog:has(.team-my-matches),:root .team-dialog:has(.clasico-event){width:min(960px,100%)}
 :root .tourney-dialog:not(.tourney-management-overlay>.tourney-dialog){width:min(720px,100%)}
 :root dialog.competition-dialog{width:min(var(--competition-dialog-width),calc(100vw - var(--safe-left,0px) - var(--safe-right,0px) - 24px))}
 :root :is(.team-dialog,.tourney-dialog,dialog.competition-dialog)>header{padding:var(--competition-dialog-space);gap:12px;align-items:flex-start;flex-shrink:0;border-bottom:1px solid var(--efl-border)}

@@ -1,3 +1,4 @@
+import {CompetitionFixtureCard} from '../CompetitionContent';
 import {Swords,MessageCircle,Clock3,CheckCircle2,AlertCircle,Send,ShieldCheck} from 'lucide-react';
 import React,{useEffect,useRef,useState} from 'react';
 import {teamPreviewRequest} from '../../lib/teamLeaguePreviewApi';
@@ -14,12 +15,14 @@ export function MyTeamMatches({leagueId,userId,onRefresh}:{leagueId:string;userI
   <p className="competition-muted">Raqib bilan bog‘laning. O‘yindan keyin hisobni yuboring va tasdiqlang.</p>
   {error&&<p role="alert" className="competition-note error">{error}</p>}
   <div className="team-my-match-list">{view?.matches.map(m=>{const done=m.homeScore!==null&&m.awayScore!==null,Icon=done?CheckCircle2:m.disputed?AlertCircle:m.pendingResult?Clock3:Swords;
-   return <article className="team-my-match-card" key={`${m.fixtureId}:${m.boutId}`}>
-    <div className="team-between"><span className="competition-eyebrow">{m.round}-TUR</span><span className={`team-my-match-state ${done?'confirmed':m.disputed?'disputed':''}`}><Icon size={13} aria-hidden="true"/>{done?'Tasdiqlangan':m.disputed?'Hisob rad etilgan':m.pendingResult?'Tasdiq kutilmoqda':m.canPlay?'O‘ynash uchun tayyor':'Tur ochilishini kuting'}</span></div>
-    <div className="team-my-match-pair"><b>{m.homeName}<small>Uy</small></b><strong aria-label={`Hisob ${m.homeScore??'kiritilmagan'} : ${m.awayScore??'kiritilmagan'}`}>{m.homeScore??'—'}<span>:</span>{m.awayScore??'—'}</strong><b>{m.awayName}<small>Safar</small></b></div>
+   return <CompetitionFixtureCard className="team-my-match-card" key={`${m.fixtureId}:${m.boutId}`} caption={`${m.round}-TUR`} statusTone={done?'success':m.pendingResult||m.disputed?'warning':'neutral'}
+    status={<span className={`team-my-match-state ${done?'confirmed':m.disputed?'disputed':''}`}><Icon size={13} aria-hidden="true"/>{done?'Tasdiqlangan':m.disputed?'Hisob rad etilgan':m.pendingResult?'Tasdiq kutilmoqda':m.canPlay?'O‘ynash uchun tayyor':'Tur ochilishini kuting'}</span>}
+    home={<span className="team-my-match-identity"><b>{m.homeName}</b><small>Uy</small></span>}
+    away={<span className="team-my-match-identity"><b>{m.awayName}</b><small>Safar</small></span>}
+    score={<strong aria-label={`Hisob ${m.homeScore??'kiritilmagan'} : ${m.awayScore??'kiritilmagan'}`}>{m.homeScore??'—'} : {m.awayScore??'—'}</strong>}>
     {m.contactUrl?<a className="competition-button team-my-match-contact" href={m.contactUrl} target="_blank" rel="noreferrer"><MessageCircle size={16} aria-hidden="true"/><span>Raqibga yozish<small>{m.opponentName}</small></span></a>:<p className="competition-note">Raqib profili ochilmadi. Administratorga murojaat qiling.</p>}
     {m.canPlay&&<>{m.disputed&&<p className="competition-note error">Hisob rad etildi. Kelishib qayta yuboring yoki administratorga murojaat qiling.</p>}{m.pendingResult?<div className="team-my-match-pending" role="status"><div className="team-row"><Clock3 size={17} aria-hidden="true"/><div><b>Yuborilgan hisob</b><p>{m.homeName} <strong>{m.pendingResult.homeScore} : {m.pendingResult.awayScore}</strong> {m.awayName}</p></div></div>{m.pendingResult.mine?<p className="competition-muted">Raqib tasdig‘i kutilmoqda. Tasdiqlangach natija jadvalga qo‘shiladi.</p>:<div className="team-my-match-actions"><button disabled={busy} className="competition-button primary" onClick={()=>void act(m,'CONFIRM_RESULT')}><CheckCircle2 size={16} aria-hidden="true"/>Tasdiqlash</button><button disabled={busy} className="competition-button" onClick={()=>void act(m,'DISPUTE_RESULT')}>Hisob noto‘g‘ri</button></div>}</div>:<PlayerScore key={`${view.version}:${m.boutId}`} match={m} busy={busy} save={scores=>void act(m,'SUBMIT_RESULT',scores)}/>}</>}
-   </article>;
+   </CompetitionFixtureCard>;
   })}</div>
  </section>;
 }

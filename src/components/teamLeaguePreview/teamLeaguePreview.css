@@ -149,3 +149,10 @@
 .team-my-match-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.team-my-match-actions button{min-height:44px}
 .team-my-matches a:focus-visible{outline:2px solid var(--efl-primary);outline-offset:3px}
 @media(max-width:380px){.team-my-matches{padding:12px}.team-my-match-card{padding:12px;gap:12px}.team-my-match-pair{gap:6px}.team-my-match-pair>strong{font-size:20px;padding:9px}.team-my-match-actions{grid-template-columns:1fr}}
+
+/* Participant games use the same match card as domestic EFL fixtures. */
+.team-my-match-card.competition-fixture-card{min-width:0;align-content:start}
+.team-my-match-identity{display:grid;gap:4px;min-width:0;overflow-wrap:anywhere}
+.team-my-match-identity small{font-size:10px;font-weight:500;color:var(--efl-muted)}
+.team-my-match-card .competition-fixture-score strong{white-space:nowrap;font-variant-numeric:tabular-nums}
+.team-my-match-card .competition-fixture-caption{flex-wrap:wrap}

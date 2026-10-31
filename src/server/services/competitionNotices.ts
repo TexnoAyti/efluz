@@ -17,7 +17,7 @@ export function writeCompetitionNotices(tx:Transaction,key:string,notices:Compet
 }
 const escape=(v:string)=>v.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 export async function processCompetitionNotices(limit=40,enqueue=enqueueSmartTelegramNotification,deadline=Date.now()+8000,onlyId?:string){
- const db=getFirestoreDb(),jobs=onlyId?{docs:[await db.collection(COMPETITION_OUTBOX).doc(onlyId).get()]}:await db.collection(COMPETITION_OUTBOX).where('status','==','pending').orderBy('createdAt','asc').limit(4).get();let budget=limit;
+ const db=getFirestoreDb(),jobs=onlyId?{docs:[await db.collection(COMPETITION_OUTBOX).doc(onlyId).get()]}:await db.collection(COMPETITION_OUTBOX).where('status','==','pending').orderBy('createdAt','asc').limit(4).get();let budget=limit;const failures:unknown[]=[];
  for(const job of jobs.docs){
   if(!budget||Date.now()>=deadline)break;const ref=job.ref,lease=randomUUID();
   const claimed=await db.runTransaction(async tx=>{const value=(await tx.get(ref)).data();if(!value||value.status!=='pending'||value.leaseUntil>Date.now())return null;tx.set(ref,{...value,lease,leaseUntil:Date.now()+90000});return value;});if(!claimed)continue;
@@ -29,19 +29,22 @@ export async function processCompetitionNotices(limit=40,enqueue=enqueueSmartTel
     const actor=userId?(await db.collection('users').doc(userId).get()).data():null;
     let valid=!!actor&&!actor.isSuspended&&(!notice.expiresAt||notice.expiresAt>Date.now());
     for(const g of [notice.guard,...(notice.guards||[])].filter((g):g is Guard=>!!g)){
-     if(!valid)break;const key=g.collection+'/'+g.id;if(!sources.has(key))sources.set(key,(await db.collection(g.collection).doc(g.id).get()).data());const value=sources.get(key),signatureKey=key+':'+JSON.stringify(g.paths);if(!signatures.has(signatureKey))signatures.set(signatureKey,noticeHash(g.paths.map(p=>at(value,p))));valid=!!value&&signatures.get(signatureKey)===g.hash&&!(value.status==='CANCELLED'&&!g.paths.includes('status'));
+     if(!valid)break;const key=g.collection+'/'+g.id;if(!sources.has(key))sources.set(key,(await db.collection(g.collection).doc(g.id).get()).data());const value=sources.get(key),signatureKey=key+':'+JSON.stringify(g.paths);if(!signatures.has(signatureKey))signatures.set(signatureKey,noticeHash(g.paths.map(p=>at(value,p))));valid=!!value&&signatures.get(signatureKey)===g.hash&&!(value.status==='CANCELLED'&&!g.paths.includes('status'))&&!(g.collection==='el_clasico_events'&&g.id==='el-clasico'&&process.env.EL_CLASICO_ENABLED!=='true');
     }
     if(valid){
      const id='competition-'+noticeHash([job.id,cursor,userId]),notification=db.collection('notifications').doc(id);
      // A delivery retry must never turn an already-read in-app item unread.
      await db.runTransaction(async tx=>{if(!(await tx.get(notification)).exists)tx.set(notification,{id,userId,type:'COMPETITION_UPDATE',title:notice.title,message:notice.body,entityType:notice.entityType,entityId:notice.entityId,...(notice.fixtureId?{fixtureId:notice.fixtureId}:{}),isRead:false,createdAt:claimed.createdAt});});
-     await publishLiveUserNotifications(userId);
      invalidateFirestoreCache(`firestore:notifications:${userId}`);
      await enqueue({userId,seasonId:'season-2026-27',eventId:id,title:notice.title,body:escape(notice.body),deferDrain:true,replyMarkup:{inline_keyboard:[[{text:'O‘yin / turnirni ochish',url:notice.url}]]}});
+     // Queue bot delivery before the optional live projection. A projection
+     // outage retains this cursor; the stable event ID makes its retry safe.
+     await publishLiveUserNotifications(userId);
     }
     cursor++;budget--;
    }
-  }finally{await db.runTransaction(async tx=>{const value=(await tx.get(ref)).data();if(value?.lease===lease)tx.set(ref,{...value,cursor,leaseUntil:0,status:cursor>=value.notices.length?'done':'pending',...(cursor>=value.notices.length?{completedAt:new Date().toISOString(),notices:[]}: {})});});}
+  }catch(error){failures.push(error);}finally{await db.runTransaction(async tx=>{const value=(await tx.get(ref)).data();if(value?.lease===lease)tx.set(ref,{...value,cursor,leaseUntil:0,status:cursor>=value.notices.length?'done':'pending',...(cursor>=value.notices.length?{completedAt:new Date().toISOString(),notices:[]}: {})});});}
  }
+ if(failures.length)throw new AggregateError(failures,'Competition notification delivery deferred');
  return !(await db.collection(COMPETITION_OUTBOX).where('status','==','pending').limit(1).get()).empty;
 }
