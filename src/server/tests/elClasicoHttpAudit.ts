@@ -1,4 +1,4 @@
-import {COMPETITION_OUTBOX,noticeHash} from '../services/competitionNotices';
+import {COMPETITION_OUTBOX,noticeHash,processCompetitionNotices} from '../services/competitionNotices';
 import assert from 'node:assert/strict';
 import express from 'express';
 import {once} from 'node:events';
@@ -60,6 +60,14 @@ export async function verifyElClasico(failNextCommit:()=>void){
   assert.equal((await act(users[23],{action:'SUBMIT_RESULT',version:event.version,boutId:first.id,homeScore:1,awayScore:0})).status,403);
   event=(await act(home,{action:'SUBMIT_RESULT',version:event.version,boutId:first.id,homeScore:1,awayScore:0})).body.data.event;
   assert.equal(event.bouts[0].homeScore,null);
+  const opponentMessages:any[]=[];
+  const startJob=noticeHash(['clasico:'+started.body.data.event.version,0]);
+  await processCompetitionNotices(40,async p=>{opponentMessages.push(p);return true;},Date.now()+15000,startJob);
+  assert.equal(opponentMessages.length,18,'All actual START opponent notices deliver even after a player submits a result');
+  assert.ok(opponentMessages.every(p=>p.body.includes('Raqibingiz:')&&p.replyMarkup.inline_keyboard[0][0].url.includes('el_clasico')));
+  await processCompetitionNotices(40,async p=>{opponentMessages.push(p);return true;},Date.now()+15000,startJob);
+  assert.equal(opponentMessages.length,18,'A completed opponent job never sends a second time');
+
   assert.equal((await act(home,{action:'CONFIRM_RESULT',version:event.version,boutId:first.id})).status,403);
   assert.equal((await act(away,{action:'CONFIRM_RESULT',version:event.version-1,boutId:first.id})).status,409);
   event=(await act(away,{action:'DISPUTE_RESULT',version:event.version,boutId:first.id})).body.data.event;

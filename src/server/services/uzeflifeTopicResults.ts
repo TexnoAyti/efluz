@@ -1,3 +1,4 @@
+import {uMatchFinished,isULeague} from '../../lib/uzeflifeLeague';
 import {writeUNotices,scheduleUNotices} from './uzeflifeNotifications';
 import {randomUUID,createHash} from 'node:crypto';
 import {getFirestoreDb} from '../firebase/admin';
@@ -38,31 +39,32 @@ export async function planUzeflifeTopicResult(text:string,sender:number,resoluti
  if(!admin&&!own)clarify('UZEFLIFE natijasini faqat tasdiqlangan ishtirokchi yoki natijalar admini yuborishi mumkin.');
  const a=Number(scores[0][1]),b=Number(scores[0][2]);
  const pa=scores[1]?Number(scores[1][1]):null,pb=scores[1]?Number(scores[1][2]):null;
- if(a===b&&(pa===null||pb===null||pa===pb))clarify('Durangda penaltilarni ham yozing: 2:2 penalti 5:4.');
+ if(!isULeague(state)&&a===b&&(pa===null||pb===null||pa===pb))clarify('Durangda penaltilarni ham yozing: 2:2 penalti 5:4.');
+ if(isULeague(state)&&scores.length===2)clarify('Liga o‘yinida penaltilar bo‘lmaydi.');
  if(a!==b&&scores.length===2)clarify('Asosiy hisob durang emas. Penalti hisobini olib tashlab qayta yuboring.');
  let remaining=text;for(const score of [...scores].reverse())remaining=remaining.slice(0,score.index)+remaining.slice(score.index!+score[0].length);
  if(/\d+\s*[:–—−-]\s*[−-]?\d+/.test(remaining))clarify('Hisoblar noto‘g‘ri yozilgan. Masalan: 2:1 yoki 2:2 penalti 5:4.');
  const normalized=normalizeAiEntity(remaining);
- const setka=/\b([1-8])\s*-?\s*setka\b/i.exec(text),game=/\b(\d{1,2})\s*-?\s*o[‘’ʻʼ']?yin\b/i.exec(text);
+ const setka=/\b([1-8])\s*-?\s*setka\b/i.exec(text),game=/\b(\d{1,3})\s*-?\s*o[‘’ʻʼ']?yin\b/i.exec(text);
  const named=(id:string|null)=>{const name=normalizeAiEntity(state.participants.find(p=>p.id===id)?.name||'');const position=name?(` ${normalized} `).indexOf(` ${name} `):-1;return {name,position};};
  let games=state.matches.filter(m=>m.round===state.round&&m.home&&m.away);
  if(!admin)games=games.filter(m=>[m.home,m.away].includes(user.id));
  if(resolution)games=games.filter(m=>m.id===resolution.fixtureId);
- if(setka)games=games.filter(m=>m.bracket===Number(setka[1]));
+ if(setka)games=games.filter(m=>isULeague(state)?[m.home,m.away].some(id=>state.roster?.some(r=>r.userId===id&&r.group===Number(setka[1]))):m.bracket===Number(setka[1]));
  if(game)games=games.filter(m=>uMatchNumber(m)===Number(game[1]));
  const bare=/^\s*(?:(?:hisob|natija)\s*:?\s*)?\d{1,2}\s*[:–—−-]\s*\d{1,2}(?:\s*(?:penalti\w*|penalty|penalties|пенальти)\s*\d{1,2}\s*[:–—−-]\s*\d{1,2})?[.! ]*$/i.test(text);
  const explicitGame=!!setka&&!!game;
  if(!bare&&!explicitGame)games=games.filter(m=>{const h=named(m.home),a=named(m.away);return h.position>=0&&a.position>=0&&h.name!==a.name;});
  if(admin&&bare)games=games.filter(m=>[m.home,m.away].includes(user.id));
  if(games.length!==1)clarify('UZEFLIFE’da bitta joriy o‘yin aniqlanmadi. O‘zingizning o‘yiningiz uchun “2:1”, yoki ikki o‘yinchi nomini hisob bilan yozing. Admin “1-setka 1-o‘yin 2:1” deb ham yuborishi mumkin.');
- const m=games[0];if(m.winner)clarify('Bu UZEFLIFE o‘yini allaqachon tasdiqlangan. Tuzatish uchun admin paneldan foydalaning.');
+ const m=games[0];if(uMatchFinished(m))clarify('Bu UZEFLIFE o‘yini allaqachon tasdiqlangan. Tuzatish uchun admin paneldan foydalaning.');
  const home=named(m.home),away=named(m.away);
  const homeFirst=home.position>=0&&away.position>=0&&home.name!==away.name?home.position<away.position:bare?m.home===user.id:explicitGame?true:null;
  if(homeFirst===null)clarify('Hisob tartibi noaniq. O‘zingizning hisobingizni birinchi qilib “2:1” deb yuboring.');
  if(!admin){const missing=await checkUSubscriptions(state,user);if(missing.length)clarify('Avval UZEFLIFE majburiy kanallariga obuna bo‘ling.');}
  const body={homeScore:homeFirst?a:b,awayScore:homeFirst?b:a,homePenaltyScore:homeFirst?pa:pb,awayPenaltyScore:homeFirst?pb:pa,status:'CONFIRMED',expectedFixture:{kind:'uzeflife',fingerprint:uzeflifeMatchFingerprint(state,m),submitter:user.id,telegramId:String(sender)}};
  const player=(id:string)=>state.participants.find(p=>p.id===id)?.name||id;
- return {kind:'uzeflife' as const,expectedFixture:body.expectedFixture,fixture:{id:m.id,home:player(m.home!),away:player(m.away!),competition:'UZEFLIFE',roundName:`${m.bracket?`${m.bracket}-setka`:'Final bosqichi'} · ${uRoundLabel(m.round)} · ${uMatchNumber(m)}-o‘yin`,matchday:m.round},plan:{action:'result_edit',targetId:m.id,body} as AdminPlan};
+ return {kind:'uzeflife' as const,expectedFixture:body.expectedFixture,fixture:{id:m.id,home:player(m.home!),away:player(m.away!),competition:'UZEFLIFE',roundName:`${isULeague(state)?'Umumiy liga':m.bracket?`${m.bracket}-setka`:'Final bosqichi'} · ${uRoundLabel(m.round,state.format)} · ${uMatchNumber(m)}-o‘yin`,matchday:m.round},plan:{action:'result_edit',targetId:m.id,body} as AdminPlan};
 }
 
 export async function executeUzeflifeTopicResult(plan:AdminPlan,actorTelegramId:number,submitterTelegramId:number,source:{chat:number;thread:number;message:number}){
@@ -82,14 +84,14 @@ export async function executeUzeflifeTopicResult(plan:AdminPlan,actorTelegramId:
   if(!state||!admin||!sender||admin.isSuspended||sender.isSuspended||String(admin.telegramId)!==String(actorTelegramId)||String(sender.telegramId)!==String(submitterTelegramId))throw uError('Akkaunt vakolati o‘zgargan.',403);
   requireUPermission(state,{...admin,id:actor.id},'results');
   const match=state.matches.find(m=>m.id===plan.targetId);
-  if(!match||match.winner||uzeflifeMatchFingerprint(state,match)!==expected.fingerprint)throw uError('O‘yin taklifdan keyin o‘zgargan. Natijani qayta yuboring.',409);
+  if(!match||uMatchFinished(match)||uzeflifeMatchFingerprint(state,match)!==expected.fingerprint)throw uError('O‘yin taklifdan keyin o‘zgargan. Natijani qayta yuboring.',409);
   if(!uPermissions(state,{...sender,id:submitter.id}).includes('results')&&(![match.home,match.away].includes(submitter.id)||state.participants.find(p=>p.id===submitter.id)?.status!=='approved'))throw uError('Ishtirokchi vakolati bekor qilingan.',403);
   if(JSON.stringify([state.subscriptionsEnabled,state.channels])!==channels)throw uError('Majburiy obuna sozlamalari o‘zgargan. Natijani qayta yuboring.',409);
   const before=structuredClone(state);
   applyUAction(state,{...admin,id:actor.id},'result',data);
   writeUNotices(tx,before,state,auditId);
   tx.set(ref,state);tx.set(db.collection('uzeflife_audit').doc(auditId),{actor:actor.id,action:'result',details:{...data,source:'telegram-topic',chat:source.chat,thread:source.thread,message:source.message,submitter:submitter.id},revision:state.revision,at:new Date().toISOString()});
-  return {id:match.id,homeClubId:match.home,awayClubId:match.away,winnerClubId:match.winner,homeScore:match.homeScore,awayScore:match.awayScore,homePenaltyScore:match.penaltyHome,awayPenaltyScore:match.penaltyAway,status:match.winner?'CONFIRMED':'AWAITING_RESULT'};
+  return {id:match.id,homeClubId:match.home,awayClubId:match.away,winnerClubId:match.winner,homeScore:match.homeScore,awayScore:match.awayScore,homePenaltyScore:match.penaltyHome,awayPenaltyScore:match.penaltyAway,status:uMatchFinished(match)?'CONFIRMED':'AWAITING_RESULT'};
  });
  scheduleUNotices();
  return {status:200,data:{success:true,fixture:stored}};

@@ -1,3 +1,4 @@
+import {UzeflifeLeagueChampionship} from './UzeflifeLeagueChampionship';
 import React,{useEffect,useRef,useState} from 'react';
 import {RefreshCw} from 'lucide-react';
 import {useAuth} from '../../context/AuthContext';
@@ -34,5 +35,6 @@ export function UzeflifeView({management=false}:{management?:boolean}={}) {
   };
   if(!state)return <div className="competition-page uzeflife"><div className="u-loading" role="status">{error?<><p role="alert">{error}</p><button className="competition-button" onClick={()=>void load()}>Qayta urinish</button></>:<><RefreshCw size={22} className="animate-spin"/><p>UZEFLIFE yuklanmoqda…</p></>}</div></div>;
   if(management&&!state.permissions.length)return <div className="competition-page uzeflife"><div className="competition-panel" role="status"><h3>UZEFLIFE admin paneli</h3><p className="competition-muted mt-2">Bu hisobga UZEFLIFE boshqaruv vakolati berilmagan. Turnir egasi yoki Super admindan ruxsat so‘rang.</p><button className="competition-button mt-3" disabled={busy} onClick={()=>void load()}>Vakolatni qayta tekshirish</button></div></div>;
+  if(state.format==='LEAGUE')return <UzeflifeLeagueChampionship seasonId={activeSeasonId} initialAdmin={management} key={user?.id||'public'} state={state} userId={user?.id} busy={busy} error={error} notice={notice} missing={missing} act={act} onRefresh={()=>void load()}/>;
   return <UzeflifeChampionship seasonId={activeSeasonId} initialAdmin={management} key={user?.id||'public'} state={state} userId={user?.id} busy={busy} error={error} notice={notice} missing={missing} act={act} onRefresh={()=>void load()}/>;
 }

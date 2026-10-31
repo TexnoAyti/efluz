@@ -1,3 +1,4 @@
+import {UzeflifeRoster} from './UzeflifeRoster';
 import React,{useState} from 'react';
 import {UserPlus,Search,Users,CheckCircle2,Clock} from 'lucide-react';
 import type {UViewState} from '../../lib/uzeflifeApi';
@@ -11,6 +12,7 @@ export function UzeflifeParticipants({state:s,busy,act}:{state:UViewState;busy:b
  const filtered=s.participants.filter(p=>(filter==='all'||p.status===filter)&&`${p.name} ${p.id}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())).sort((a,b)=>Number(b.status==='pending')-Number(a.status==='pending'));
  const pages=Math.max(1,Math.ceil(filtered.length/20)),current=Math.min(page,pages-1);
  return <div className="u-admin-section">
+  {s.format==='LEAGUE'&&<UzeflifeRoster state={s} busy={busy} act={act}/>}
   <div className="u-admin-metrics"><div><Users size={18}/><strong>{approved}<small>/ 256</small></strong><span>Tasdiqlangan</span></div><div><Clock size={18}/><strong>{pending}</strong><span>Kutilayotgan arizalar</span></div><div><CheckCircle2 size={18}/><strong>{Math.max(0,256-approved-pending)}</strong><span>Bo‘sh o‘rinlar</span></div></div>
   <section className="competition-panel u-player-add" aria-label="O‘yinchi qo‘shish">
    <div className="u-section-heading"><div><h3><UserPlus size={17}/>O‘yinchi qo‘shish</h3><p>{canAdd?'EFLUZ akkauntini tanlab, turnirga tasdiqlangan ishtirokchi qo‘shing.':'Turnir boshlangan. Yangi o‘yinchi qo‘shish yopilgan.'}</p></div></div>

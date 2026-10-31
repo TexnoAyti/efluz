@@ -1,3 +1,4 @@
+import {uMatchFinished} from '../../lib/uzeflifeLeague';
 import {getFirestoreDb} from '../firebase/admin';
 import type {UState} from '../../types/uzeflife';
 import { randomBytes, createHash } from 'node:crypto';
@@ -34,7 +35,7 @@ export async function listUzeflifeTopicQueue(state:UState){
   const source=p?await client.get<any>(sourceKey(p.chat,p.thread,p.sourceMessage)):null;
   const origin=p?.originalSourceMessage?await client.get<any>(sourceKey(p.chat,p.thread,p.originalSourceMessage)):null;
   const m=state.matches.find(m=>m.id===p?.plan.targetId);
-  if(!p||p.kind!=='uzeflife'||p.state!=='pending'||p.expiresAt<=Date.now()||!p.deliveredMessage||source?.token!==p.token||(origin&&origin.updateId>(p.originalSourceUpdateId||0))||!m||m.winner||uzeflifeMatchFingerprint(state,m)!==(p.plan.body.expectedFixture as any)?.fingerprint){await db.collection('uzeflife_topic_queue').doc(row.id).set({status:'done'});return null;}
+  if(!p||p.kind!=='uzeflife'||p.state!=='pending'||p.expiresAt<=Date.now()||!p.deliveredMessage||source?.token!==p.token||(origin&&origin.updateId>(p.originalSourceUpdateId||0))||!m||uMatchFinished(m)||uzeflifeMatchFingerprint(state,m)!==(p.plan.body.expectedFixture as any)?.fingerprint){await db.collection('uzeflife_topic_queue').doc(row.id).set({status:'done'});return null;}
   return {id:row.id,matchId:p.plan.targetId,summary:p.summary||'UZEFLIFE',home:p.plan.body.homeScore as number,away:p.plan.body.awayScore as number,penaltyHome:p.plan.body.homePenaltyScore as number|null,penaltyAway:p.plan.body.awayPenaltyScore as number|null,url:`https://t.me/efleagueuz/${p.deliveredMessage}`,expiresAt:p.expiresAt};
  }));return entries.filter((v):v is NonNullable<typeof v>=>v!==null);
 }

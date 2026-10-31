@@ -1,0 +1,19 @@
+/** Original 21 October roster. Array index is the original setka/slot; never shuffle this source. */
+export const UZEFLIFE_ROSTER_SOURCE='2026-10-21';
+export const UZEFLIFE_ROSTER_GROUPS = [
+`Its_jasurr Abdullajon9229 Efb_Lingard qurbonqulov_19 co1ns_admin qurbonboyev_oo6 sattorov7v Shojahon1 s7ress xakimov0711 Omadbek_0214 sherzod_ashuro rstmvst nal4399 Efb_James hasanov_student h_jkaudh azizbekvc09 Gulomjon4652 MUHAMMADAMINZIBABA zxmywe Pesser_1 Berdiyor_17 Muhammad_ali0133 Maruf0308 zokirovpes jovo_9009 OTABEK_7 shohrukh_2008 Old_The_Kings_Back Pedri_8_20 efootball_uzb_123`,
+`ongarbaev15 uzssss7 muhammadjonov_1772 xudoynazarovvvvv Nematov_Firdavsbek_oo9 Farruxbeeekk shoximans khujamurodov_010 MQ_PRIME Akhm_22 mustapi17 Xolmatov03 Elashmurodov_09 buriyev_official Noshirov_Nizomjon user_op ilxomovabu beehrruuz unbreakablee_7 JMLDDNW Farruxbeeekk P_ckl1 Bekzodjon120 asan1aevv dr_muzaffarov1ch urmanov14 Javdari mshavkatovich09596 iozodbe TALHA_n17 Pesseruz_01 FaxriddinovAkmal`,
+`baqoyev_06_28 a_shokhjahon Abdulaziz15000 Norbek_7 MuhammadUmar0601 oliytabaqaliy EF_ALISHER Fazl1dd1nQ Jamolch1k_007 Zuhriddin201012 Continuousodiseykigm Behruzbek_21 CreatorTohirov Diyorbek_1276 waxzod77 TEMURXON_432 amir_xan_03 sarvar2124 khaalif MUXAMMADJON_77 muhammadziyo_yusupjonov Pahlovon0 ilxmy MuhammadUmar0601 janibekovvvv eldos_20 Feruz_0043 pesser280101 Qiyomov_bobur bobomurod_1909 YNWA11FAN asilbek_200777`,
+`Pesser_oo doxidik Azizllo0901 rrvvv_b az1yzzzzz Pesser_00007 Bekhruz1o Sharifov_0720 Usmonov_A0000 you_winn1 az1yzzzzz UZB_PES_UZB K1ng_01_1 ELASHMURODOV Kuzataman sherali_murodullayev_07 qaxxorovec mixliyev_0210 best5411 saidaxmatov1 Mukhammad_here Shirinboyev_Jamolbek Fontamas_96 Shahzod_Alfa nurmamatov_me MuhammadUmar0601 Abduraxmonov_Komronbek_Official Haseeyn Mekhrovar_1 yoldashev2007 MR_Umirzoq Asil_bek_707`,
+`Kamron347 ahmataliyev_019 ef_user_1 sherzodovich_sd xxo_102 Poni_011 wooooooooooxx grxxso cnffly dr_begali Mekhrovar_1 akbar_220102 dr_begali OGASH6669 akbar_220102 Rasulov_rs temur_435 Elyor_Nurillayev01 abdumalik_o_07 azamat1994_11 Izzatbek1999 Diyorbek_Dilshodogli Blkbw meppo_m Nurmuhamad1218 aliyv_013 only_elshod xasanov_e Baxodirov1705 Jasurbek_060 muhibulloev_009 the_abduvakhobov`,
+`Abduraxmon_11 abu0214 Nodrbek9899 Asrorbek_o8 sadykjanov527 Rasulov_Hurshidbek_06 Kim_Hech Bekmuhamedovv otamirzaevv gdkxnbs CreatorTohirov Samariddinefo nuridinov_7 Nurulloh02008 Operatir_PPP akramjonovcs umidbek0106 Efgarand_admin ffraesrr mosayevvvv arabjonov_01 ilxomovabu karol_FF ogabek_0316 mosayevvvv akhrnvc_06 Behruz_esports1 mnnpv77 Shaxrizod_2003 Kuvasay_717 aeeviss farhadovv`,
+`Azizbek_Aminov_2006 Kurbanovv09 matkarimov_1409 Abduxalilovv yoldawvv UMIDBEK_777 azizbek_tukhtasinov rkhmv_97 u_u_s_e_r_n_a_m_e Axmadjanof17 tg_Reo11 a_sidikov77 sirojiddin_0400 Srm_022 Ef_fergana ef_sae Ibroxmvich mahammadovvv7 Buxgalter_14 nnnn7777n7 solanacommerce hikmatulloh_mahamadjonov jvr021 DilbekQobilov fifaworldcub_2027 Umrvvc_1 nurmaxamadov Jabborov_0222 ef_makhmudov Asrorbek2801_28 Turdiyev_5510 xodjiboyev_11`,
+`ElyorbekSattorov erkinoovv_7 rstmvst Efuz_Blaze Sabrpro02 farhodov_v Olimov_Ahrorjon Abdulaziz975 Xojiakbarov_17 Diyorbek_Dilshodogli oybekkk_21 jabborovf1 Jon_9020 abo_914 Nozimjon9r Sanjarkhan mardiyev_0864 arabjonov_10 se7en_lll ibosh010 only_elshod Venom777pubgm Muhriddin_03_06 bayernmunxen Val1djanov the_firdavss aziz_kibr_0829 umarov510 j_rakhmat0v Farruxbeeekk abdumitalov777 JAVOHIR_16_07`,
+].map(group=>group.split(' '));
+export function initialUzeflifeRoster(){
+ const first=new Map<string,{group:number;slot:number}>();
+ return UZEFLIFE_ROSTER_GROUPS.flatMap((group,i)=>group.map((username,j)=>{
+  const key=username.toLowerCase(),duplicateOf=first.get(key);if(!duplicateOf)first.set(key,{group:i+1,slot:j+1});
+  return {group:i+1,slot:j+1,originalUsername:username,username:duplicateOf?null:username,userId:null as string|null,...(duplicateOf?{duplicateOf}:{})};
+ }));
+}

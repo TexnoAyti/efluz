@@ -24,11 +24,38 @@ export async function verifyCompetitionNotices(failNextCommit:()=>void){
   const other={...actor,id:'user-notice-opponent',telegramId:'882002'};await db.collection('users').doc(other.id).set(other);
   const league:any={id:'tp_notices_audit',name:'Team notices',ownerId:actor.id,teamIds:['tp_team_audit_a','tp_team_audit_b'],teams:{tp_team_audit_a:{id:'tp_team_audit_a',name:'Team A',members:[{id:'memberA',userId:actor.id,verified:true,name:'Player A'}]},tp_team_audit_b:{id:'tp_team_audit_b',name:'Team B',members:[{id:'memberB',userId:other.id,verified:true,name:'Player B'}]}},status:'ACTIVE',currentRound:1,totalRounds:1,version:1,fixtures:[{id:'notice_fixture',round:1,homeTeamId:'tp_team_audit_a',awayTeamId:'tp_team_audit_b',bouts:[{id:'bout',homeMemberId:'memberA',awayMemberId:'memberB',homeScore:null,awayScore:null}]}]};
   let teamNotices:any[]=[];await db.runTransaction(async tx=>{teamNotices=writeTeamLeagueNotices(tx,{...league,status:'DRAFT',fixtures:[]},league,'START');tx.set(db.collection('team_league_preview_leagues').doc(league.id),league);});assert.equal(teamNotices.filter(n=>n.title.includes('Raqibingiz')).length,2);assert.ok(teamNotices.some(n=>n.userId===actor.id&&n.body.includes('Player B')));
+  const pairing=teamNotices.filter(n=>n.title.includes('Raqibingiz'));
+  league.fixtures[0].bouts[0].pendingResult={homeScore:1,awayScore:0,submittedBy:actor.id};
+  await db.collection('team_league_preview_leagues').doc(league.id).set(league);
+  let delivered=0;const sendPair=async()=>{delivered++;return true;};
+  const pairId=await put('team-pair-after-proposal',pairing);await process(pairId,sendPair);assert.equal(delivered,2,'Score proposals cannot invalidate the opponent announcement');
+  league.fixtures[0].bouts[0].homeMemberId='replacement';await db.collection('team_league_preview_leagues').doc(league.id).set(league);
+  await process(await put('team-old-pair',pairing),sendPair);assert.equal(delivered,2,'Replacing a player still invalidates the old opponent notice');
+  league.fixtures[0].bouts[0].homeMemberId='memberA';league.status='CANCELLED';await db.collection('team_league_preview_leagues').doc(league.id).set(league);
+  await process(await put('team-cancelled-pair',pairing),sendPair);assert.equal(delivered,2,'Cancelled tournaments never announce opponents');
   const ct:any={id:'ct_notice_audit',name:'Custom audit',organizerUserId:actor.id,assistantAdminIds:['user-notice-helper'],inviteToken:'noticeinvite',status:'IN_PROGRESS',updatedAt:new Date().toISOString()};const fixture:any={id:'cf_notice_audit',tournamentId:ct.id,homeUserId:actor.id,awayUserId:other.id,homeClubId:'club-a',awayClubId:'club-b',homeClubName:'Club A',awayClubName:'Club B',status:'SCHEDULED',roundOrMatchday:1,deadlineAt:new Date(Date.now()+3600000).toISOString()};
   let custom:any[]=[];await db.runTransaction(async tx=>{custom=writeCustomLifecycleNotices(tx,{...ct,status:'REGISTRATION_OPEN'},ct,[],[fixture],[{userId:actor.id,status:'REGISTERED'},{userId:other.id,status:'REGISTERED'}] as any);tx.set(db.collection('custom_tournaments').doc(ct.id),ct);tx.set(db.collection('custom_tournament_fixtures').doc(fixture.id),fixture);});assert.equal(custom.filter(n=>n.title.includes('Raqibingiz')).length,2);assert.ok(custom.every(n=>n.url.startsWith('https://t.me/efluzbot?startapp=ct1_')));assert.ok(custom.some(n=>n.userId==='user-notice-helper'&&n.guards?.some((g:any)=>g.paths.includes('assistantAdminIds'))),'Private administrator messages recheck the current assignment');
+  const customPair=custom.filter(n=>n.title.includes('Raqibingiz'));
+  await db.collection('custom_tournament_fixtures').doc(fixture.id).update({status:'PENDING_CONFIRMATION',homeScore:2,awayScore:1});
+  await process(await put('custom-pair-after-score',customPair),sendPair);assert.equal(delivered,4,'Custom opponents survive a pending result');
+  await db.collection('custom_tournament_fixtures').doc(fixture.id).set(fixture);
   await db.collection('competition_notification_worker').doc('deadlines').set({nextAt:0});const now=Date.now();await sweepCustomCompetitionDeadlines(now);const reminderKey='custom-deadline:'+fixture.id+':'+fixture.deadlineAt+':reminder',reminderRef=db.collection(COMPETITION_OUTBOX).doc(noticeHash([reminderKey,0]));const reminder=(await reminderRef.get()).data();assert.equal(reminder?.notices.length,2);await process(reminderRef.id,send);await sweepCustomCompetitionDeadlines(now+6000);assert.equal((await reminderRef.get()).data()?.status,'done','Repeated sweeps do not recreate delivered reminders');
   await sweepCustomCompetitionDeadlines(now+7200000);assert.ok((await db.collection(COMPETITION_OUTBOX).doc(noticeHash(['custom-deadline:'+fixture.id+':'+fixture.deadlineAt+':overdue',0])).get()).exists,'A separate overdue alert is durable');
   await db.collection('users').doc(other.id).delete();await db.collection('custom_tournaments').doc(ct.id).delete();await db.collection('custom_tournament_fixtures').doc(fixture.id).delete();
+  // The bot queue must remain available when the live in-app projection fails.
+  const projection=await put('audit-projection-failure');const collectionBefore=db.collection;
+  (db as any).collection=function(name:string){const ref=collectionBefore.call(db,name);return name==='notifications'?new Proxy(ref,{get(target,key){if(key==='where')return ()=>{throw Error('isolated projection outage');};const value=(target as any)[key];return typeof value==='function'?value.bind(target):value;}}):ref;};
+  let queuedBeforeProjection=false;
+  try{await assert.rejects(process(projection,async()=>{queuedBeforeProjection=true;return true;}),AggregateError);}finally{(db as any).collection=collectionBefore;}
+  assert.equal(queuedBeforeProjection,true,'Telegram was queued before the projection failed');assert.equal((await db.collection(COMPETITION_OUTBOX).doc(projection).get()).data()?.cursor,0,'Failed projection remains resumable');
+  await process(projection,send);
+  const bad=await put('audit-isolated-bad',[{...base,title:'Fail isolated job'}]),good=await put('audit-isolated-good',[{...base,title:'Deliver other job'}]);
+  for(const id of [bad,good])await db.collection(COMPETITION_OUTBOX).doc(id).update({createdAt:'1900-01-01T00:00:00.000Z'});
+  const attempted:string[]=[];
+  await assert.rejects(processCompetitionNotices(40,async p=>{attempted.push(p.title);if(p.title==='Fail isolated job')throw Error('isolated delivery outage');return true;},Date.now()+15000),AggregateError);
+  assert.ok(attempted.includes('Deliver other job'),'One failed job cannot starve another tournament');
+  assert.equal((await db.collection(COMPETITION_OUTBOX).doc(good).get()).data()?.status,'done');
+  await process(bad,send);
   console.log('PASS competition notifications HTTP/native PostgreSQL: durable atomic intents, lease concurrency, escaped Telegram text, stable deep links, delivery retry, read preservation, stale and suspended suppression, bounded cursors and fresh in-app reads');
  }finally{await source.delete();await db.collection('users').doc(actor.id).delete();}
 }

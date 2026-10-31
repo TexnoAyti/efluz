@@ -3,7 +3,7 @@ import type {UMatch, UState} from '../types/uzeflife';
 
 export const U_QUALIFIER_ROUNDS = ['1/16 final', '1/8 final', 'Chorak final', 'Yarim final', 'Setka finali'];
 export const U_FINAL_ROUNDS = ['Chorak final', 'Yarim final', 'Final'];
-export const uRoundLabel = (round:number) => round <= 5 ? U_QUALIFIER_ROUNDS[round-1] : U_FINAL_ROUNDS[round-6];
+export const uRoundLabel = (round:number,format?:UState['format']) => format==='LEAGUE'?`${round}-tur`:round <= 5 ? U_QUALIFIER_ROUNDS[round-1] : U_FINAL_ROUNDS[round-6];
 
 // The fixed championship structure is visible before the draw, without enrolling
 // fictitious players or writing placeholder fixtures to the database.

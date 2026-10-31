@@ -3,7 +3,7 @@ import {createCanvas,GlobalFonts} from '@napi-rs/canvas';
 import {initDatabase} from '../db';
 import {getFirestoreDb} from '../firebase/admin';
 import {initialUState,applyUAction,mutateUState,readUState,publicUState} from '../services/uzeflifeService';
-import {uTransitionNotices,processUNotices,sweepUDeadlines,validUNotice,prepareUNotifications} from '../services/uzeflifeNotifications';
+import {uTransitionNotices,processUNotices,sweepUDeadlines,validUNotice,prepareUNotifications,runNoticePreparations} from '../services/uzeflifeNotifications';
 import {normalizeUEvidence} from '../services/uzeflifeEvidence';
 import {paintUzeflifeChampion} from '../../lib/uzeflifeChampionImage';
 import {readUzeflifeLaunch,uzeflifeMatchLink} from '../../lib/uzeflifeLinks';
@@ -56,3 +56,14 @@ const windowBefore=globalThis.window;(globalThis as any).window={location:{searc
 const collectionBefore=db.collection;(db as any).collection=()=>{throw Error('No database access during freeze/preview');};
 try{process.env.MIGRATION_WRITE_FREEZE='true';assert.equal(await prepareUNotifications(),false);delete process.env.MIGRATION_WRITE_FREEZE;process.env.DATABASE_PROVIDER='supabase';process.env.SUPABASE_DATA_NAMESPACE='preview';assert.equal(await prepareUNotifications(),false);}finally{(db as any).collection=collectionBefore;delete process.env.MIGRATION_WRITE_FREEZE;delete process.env.DATABASE_PROVIDER;delete process.env.SUPABASE_DATA_NAMESPACE;}
 console.log('PASS UZEFLIFE: atomic opponent intents, leased/retry-safe outbox, match deep links, deadline reminders/deduplication, private screenshots, dispute blocking/resolution, admin result queue, 255-match archive and native EFL champion PNG. No Telegram messages sent.');
+
+const attempts:string[]=[];
+await assert.rejects(runNoticePreparations([
+ async()=>{attempts.push('competition');throw Error('isolated competition outage');},
+ async()=>{attempts.push('custom');return true;},
+ async()=>{attempts.push('deadlines');throw Error('isolated deadline index outage');},
+ async()=>{attempts.push('uzeflife');return false;},
+]),AggregateError);
+assert.deepEqual(attempts,['competition','custom','deadlines','uzeflife'],'An unrelated outbox or deadline error cannot prevent other tournaments from preparing messages');
+assert.equal(await runNoticePreparations([async()=>true,async()=>false]),true,'Keep continuation work even if the final phase is empty');
+console.log('PASS notification phase failure isolation and continuation propagation');
