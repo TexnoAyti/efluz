@@ -1,6 +1,6 @@
 import {androidAuthRouter} from './routes/androidAuth.routes';
 import {processTeamInvitationNotices} from './services/teamMembershipService';
-import { scheduleClubMemberTags } from './services/telegramClubMemberTags';
+import { requestMaintenance } from './middleware/requestMaintenance';
 import { disciplineRouter } from './routes/discipline.routes';
 import {scheduleUNotices,prepareUNotifications} from './services/uzeflifeNotifications';
 import { scheduleAiDailyReport } from './services/telegramAiDailyReport';
@@ -131,7 +131,7 @@ export function createApp() {
     if (origin && allowedOrigins.has(origin)) res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-session-token, x-dev-user-id, x-telegram-init-data');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-session-token, x-dev-user-id, x-telegram-init-data, x-telegram-launch-data');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
@@ -185,13 +185,7 @@ export function createApp() {
   });
 
   app.use(authMiddleware);
-  app.use('/api', (req, res, next) => {
-    res.once('finish', () => {
-      if (res.statusCode < 400) scheduleClubMemberTags();
-      if (req.user && res.statusCode < 400 && !req.originalUrl.split('?')[0].startsWith('/api/health')) scheduleMutationReconciliation();
-    });
-    next();
-  });
+  app.use('/api', requestMaintenance());
   app.use('/api/uzeflife', rateLimit('uzeflife', 90, 60));
   app.use('/api/auth/android/status',rateLimit('android-login-poll',120,60));
   const authRateLimit=rateLimit('auth',20,600);

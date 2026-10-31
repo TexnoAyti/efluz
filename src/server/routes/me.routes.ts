@@ -1,3 +1,4 @@
+import { verifyTelegramWebAppData } from '../auth/telegramAuth';
 import {getLiveUserNotifications} from '../services/liveNotifications';
 import { getLoginClubState } from '../services/loginClubState';
 import { Router, Request, Response } from 'express';
@@ -32,6 +33,16 @@ meRouter.use((req: Request, res: Response, next) => {
 meRouter.get('/bootstrap', requireAuth, async (req: Request, res: Response) => {
   const seasonId = String(req.query.seasonId || 'season-2026-27');
   if (!/^season-[a-z0-9-]+$/.test(seasonId)) { res.status(400).json({ code: 'INVALID_SEASON_ID' }); return; }
+  const launch = req.get('x-telegram-launch-data');
+  if (launch !== undefined) {
+    const verified = launch.length <= 16384 ? verifyTelegramWebAppData(launch, process.env.TELEGRAM_BOT_TOKEN || '') : {isValid:false};
+    if (!verified.isValid || !verified.user || !Number.isSafeInteger(Number(verified.user.id)) ||
+        Number(verified.user.id) <= 0 || String(verified.user.id) !== String(req.user!.telegramId) ||
+        !verified.authDate || verified.authDate > Math.floor(Date.now()/1000)+60) {
+      res.status(401).json({error:'UNAUTHORIZED',code:'SESSION_LAUNCH_MISMATCH'});return;
+    }
+  }
+
   res.json({ authenticated: true, user: req.user!, ...await getLoginClubState(req.user!.id, 350, seasonId) });
 });
 

@@ -24,9 +24,24 @@ export async function loadLoginBootstrap(client: LoginApi, initData: string, dev
 
   if (initData) {
     try {
-      identity = await client.authenticateTelegram(initData);
-      mode = 'telegram';
-    } catch (error) {
+      if (hasSession && initData.length <= 4096) {
+        try {
+          // The server verifies the fresh launch signature and binds its user
+          // to the signed session. No client-side identity parsing or trust.
+          identity = await client.getSessionBootstrap(seasonId, initData);
+          mode = 'session';
+        } catch (error: any) {
+          if (error?.httpStatus !== 401 && error?.httpStatus !== 403) throw error;
+        }
+      }
+      if (!identity) {
+        identity = await client.authenticateTelegram(initData);
+        mode = 'telegram';
+      }
+    } catch (error: any) {
+      // A slow/unavailable session service must not start another identity
+      // write or development-discovery request while the database is down.
+      if (hasSession && error?.httpStatus !== 401 && error?.httpStatus !== 403) throw error;
       // A development fallback still requires explicit permission from the server.
       if (!(await discoverDevProfiles())) throw error;
       identity = await client.authenticateDev(devUserId);

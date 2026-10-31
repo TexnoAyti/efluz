@@ -58,6 +58,20 @@ assert.deepEqual(storedSession.calls, ['session-bootstrap']);
 const noSessionCatalog = makeClient({getSeasons: () => sessionCatalog.promise});
 assert.equal((await loadLoginBootstrap(noSessionCatalog.client, '', 'dev', () => {})).mode, 'session', 'Optional season data never blocks session verification');
 sessionCatalog.resolve({seasons:[season]});
+const reused=makeClient({authenticateTelegram:async()=>{throw Error('Database login must not run for a server-bound valid session');}});
+assert.equal((await loadLoginBootstrap(reused.client,'fresh-signed-launch','dev',()=>{},true)).mode,'session');
+assert.ok(reused.calls.includes('session-bootstrap'));assert.ok(!reused.calls.includes('dev-profiles'));
+const largeLaunch=makeClient();
+assert.equal((await loadLoginBootstrap(largeLaunch.client,'x'.repeat(4097),'dev',()=>{},true)).mode,'telegram');
+assert.ok(!largeLaunch.calls.includes('session-bootstrap'),'Large launch data stays in the POST body instead of exceeding proxy header limits');
+const switched=makeClient({getSessionBootstrap:async(_season,launch)=>{assert.equal(launch,'other-signed-launch');throw Object.assign(Error('Session launch mismatch'),{httpStatus:401});}});
+assert.equal((await loadLoginBootstrap(switched.client,'other-signed-launch','dev',()=>{},true)).mode,'telegram');
+assert.ok(switched.calls.includes('telegram'),'A different/expired session must use fresh signed authentication');
+const sessionOutage=Object.assign(Error('Database temporarily unavailable'),{httpStatus:503});
+const stalled=makeClient({getSessionBootstrap:async()=>{throw sessionOutage;}});
+await assert.rejects(loadLoginBootstrap(stalled.client,'signed-launch','dev',()=>{},true),error=>error===sessionOutage);
+assert.ok(!stalled.calls.includes('telegram')&&!stalled.calls.includes('dev-profiles'),'Transient resume failure must not start redundant auth/database work');
+
 
 let verifiedSeason='';
 const anotherSeason=makeClient({getSeasons:async()=>({seasons:[{...season,id:'season-2027-28'}]}),getMe:async id=>{verifiedSeason=id;return identity;}});
@@ -108,7 +122,7 @@ try {
   await api.getMe(season.id, true);
   for (const { path, options } of requests.slice(0, 4)) {
     const headers = new Headers(options.headers);
-    for (const header of ['authorization', 'x-session-token', 'x-telegram-init-data', 'x-dev-user-id']) {
+    for (const header of ['authorization', 'x-session-token', 'x-telegram-init-data', 'x-telegram-launch-data', 'x-dev-user-id']) {
       assert.equal(headers.has(header), false, path + ' unexpectedly carried ' + header);
     }
   }
