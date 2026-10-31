@@ -118,6 +118,7 @@ export async function prepareUNotifications(){
   ()=>processCompetitionNotices(40,enqueueSmartTelegramNotification,Date.now()+7000),
   ()=>sweepCustomCompetitionDeadlines(),
   ()=>sweepUDeadlines(),
+  async()=>{const {autoPublishUzeflifeFirstRound}=await import('./uzeflifeAutoRoundPost');return autoPublishUzeflifeFirstRound();},
   ()=>processUNotices(60,enqueueSmartTelegramNotification,Date.now()+8000),
  ]);
 }
