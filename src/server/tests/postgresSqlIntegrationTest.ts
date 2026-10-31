@@ -52,6 +52,7 @@ let failClasicoCommit=false;
 let failUzeflifeCommit=false, failBulkResultCommit=false,failAndroidLoginCommit=false;
 let failNotificationCommit = false, failTournamentCreate = false, failTeamPreviewCommit=false,failTeamMembershipCommit=false;
 const telegramDeliveries: string[] = [];
+let countRateCommits=false, rateCommits=0;
 let snapshotResponses: {bytes:number;ids:string[]}[]=[];
 globalThis.fetch = (async (input: any, init: any) => {
   const url = new URL(String(input));
@@ -68,6 +69,7 @@ globalThis.fetch = (async (input: any, init: any) => {
     else if (name === 'efl_runtime_patch_snapshot') result = await pg.query('select public.efl_runtime_patch_snapshot($1,$2::text[],$3::jsonb,$4,$5,$6) as value', [body.p_space, body.p_ids, JSON.stringify(body.p_row), body.p_merge, body.p_ttl, body.p_version]);
     else if (name === 'efl_runtime_read') result = await pg.query('select public.efl_runtime_read($1,$2::jsonb) as value', [body.p_space, JSON.stringify(body.p_query)]);
     else if (name === 'efl_runtime_commit_safe') {
+      if(countRateCommits && body.p_operations.some((op:any)=>op.path.startsWith('runtime_state/'))) rateCommits++;
       if(failClasicoCommit&&body.p_operations.some((op:any)=>op.path.startsWith('el_clasico_events/'))){failClasicoCommit=false;throw Error('CLASICO_COMMIT_UNAVAILABLE');}
       if(failAndroidLoginCommit&&body.p_operations.some((op:any)=>op.path.startsWith('android_login_sessions/'))){failAndroidLoginCommit=false;body.p_operations.push({kind:'create',path:'runtime_probes/team-membership-fault',encoded:encodeValue({mustRollback:true})});}
       if(failBulkResultCommit && body.p_operations.some((op:any)=>op.path.startsWith('bulk_result_receipts/'))){failBulkResultCommit=false;body.p_operations.push({kind:'create',path:'users/user-bulk-sql',encoded:encodeValue({id:'must-rollback'})});}
@@ -110,8 +112,11 @@ try {
   const stores = [new PostgresRuntimeStore(), new PostgresRuntimeStore()];
   const claims = await Promise.all(Array.from({ length: 12 }, (_, i) => stores[i % 2].set('same-lease', 'owner-' + i, { nx: true, ex: 60 })));
   assert.equal(claims.filter(Boolean).length, 1); assert.ok(conflicts > 0, 'Exercise native CAS conflict responses and client retries');
+  countRateCommits=true;
   const counter = await Promise.all(Array.from({ length: 4 }, (_, i) => stores[i % 2].eval('EFL_RATE_LIMIT_V1', ['native-budget'], [60])));
+  countRateCommits=false;
   assert.deepEqual(counter.sort(), [1, 2, 3, 4]);
+  assert.equal(rateCommits,1,'Concurrent increments share one native SQL transaction without losing budget');
   await stores[0].set('empty-value', []); assert.deepEqual(await stores[1].get('empty-value'), []);
   await stores[0].set('expired', 'image', { ex: .01 });
   await new Promise(resolve => setTimeout(resolve, 20)); assert.equal(await stores[1].get('expired'), null);
