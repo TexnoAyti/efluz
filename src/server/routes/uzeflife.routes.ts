@@ -56,7 +56,7 @@ uzeflifeRouter.post('/publish-round',requireAuth,async(req,res)=>{
     const media=batch.map((page,index)=>{
      const key='page'+index;
      form.append(key,new Blob([new Uint8Array(page.buffer)],{type:'image/png'}),'uzeflife-'+round+'-'+page.first+'.png');
-     return {type:'photo',media:'attach://'+key,{caption,parse_mode:'HTML'}};
+     return {type:'photo',media:'attach://'+key,caption,parse_mode:'HTML'};
     });
     form.set('media',JSON.stringify(media));
     const response=await fetch('https://api.telegram.org/bot'+token+'/sendMediaGroup',{method:'POST',body:form,signal:AbortSignal.timeout(20000)});
