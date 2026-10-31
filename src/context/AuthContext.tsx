@@ -6,6 +6,7 @@ import { api, getDevUserId, setDevUserId, getTelegramInitData, setTelegramInitDa
 import { resolveActiveClub, saveActiveClub } from '../lib/activeClub';
 import { premiumApi } from '../lib/premiumApi';
 import { loadLoginBootstrap } from '../lib/loginBootstrap';
+import { sessionRefreshDue } from '../lib/sessionRefresh';
 import { isDesignPreview } from '../designPreview';
 
 function clubPreferenceStorage(): Storage | undefined {
@@ -352,23 +353,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (authStatus !== 'AUTHENTICATED') return;
     let lastRefreshAt = Date.now();
     let refreshing = false;
+    let nextAttemptAt = 0;
     const refreshToken = async () => {
-      if (document.visibilityState !== 'visible' || refreshing || Date.now() - lastRefreshAt < 9 * 60 * 1000) return;
+      if (document.visibilityState !== 'visible' || refreshing || Date.now() < nextAttemptAt || !sessionRefreshDue(getSessionToken(), lastRefreshAt)) return;
       const initData = getTelegramInitData();
       if (!initData) return;
       refreshing = true;
+      nextAttemptAt = Date.now() + 60_000;
       try {
         const authRes = await api.authenticateTelegram(initData);
         setSessionToken(authRes.token);
         lastRefreshAt = Date.now();
+        nextAttemptAt = 0;
       } catch (err: any) {
+        nextAttemptAt = Date.now() + 120_000;
         console.warn('Session refresh failed:', err?.message || 'unknown error');
       } finally {
         refreshing = false;
       }
     };
     const onVisible = () => { if (document.visibilityState === 'visible') void refreshToken(); };
-    const interval = window.setInterval(refreshToken, 10 * 60 * 1000);
+    void refreshToken();
+    const interval = window.setInterval(refreshToken, 30_000);
     document.addEventListener('visibilitychange', onVisible);
     return () => { window.clearInterval(interval); document.removeEventListener('visibilitychange', onVisible); };
   }, [authStatus]);

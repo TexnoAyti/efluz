@@ -180,6 +180,7 @@ interface RequestOptions extends RequestInit {
   retries?: number;
   timeoutMs?: number;
   skipAuthentication?: boolean;
+  dedupeKey?: string;
 }
 
 async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
@@ -189,7 +190,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
   const timeoutMs = options.timeoutMs ?? 14000;
 
   const authCacheIdentity = options.skipAuthentication ? 'public' : getSessionToken() || getTelegramInitData();
-  const cacheKey = `${endpoint}::${options.skipAuthentication ? '' : getDevUserId() || ''}::${authCacheIdentity}`;
+  const cacheKey = `${endpoint}::${options.skipAuthentication ? '' : getDevUserId() || ''}::${authCacheIdentity}${options.dedupeKey ? `::${options.dedupeKey}` : ''}`;
 
   // 1. Check in-memory cache for GET
   if (isGet && !options.skipCache && cacheTtl > 0) {
@@ -371,8 +372,8 @@ export const api = {
   },
 
   // Me
-  async getSessionBootstrap(seasonId = 'season-2026-27'): Promise<{ stats?: UserStats; user: User; currentClub: Club | null; ownedClubs: Club[]; currentClubStatus: 'resolved' | 'unavailable' }> {
-    return request(`/api/me/bootstrap?seasonId=${encodeURIComponent(seasonId)}`, { skipCache: true, retries: 0 });
+  async getSessionBootstrap(seasonId = 'season-2026-27', launchInitData?: string): Promise<{ stats?: UserStats; user: User; currentClub: Club | null; ownedClubs: Club[]; currentClubStatus: 'resolved' | 'unavailable' }> {
+    return request(`/api/me/bootstrap?seasonId=${encodeURIComponent(seasonId)}`, { skipCache: true, cacheTtlMs:0, retries: 0, dedupeKey:launchInitData, ...(launchInitData ? {headers:{'x-telegram-launch-data':launchInitData}} : {}) });
   },
 
   async getMyClubState(seasonId = 'season-2026-27'): Promise<{ currentClub: Club | null; ownedClubs: Club[]; currentClubStatus: 'resolved' | 'unavailable'; degraded: boolean }> {
