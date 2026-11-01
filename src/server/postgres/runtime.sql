@@ -23,10 +23,11 @@ create index if not exists runtime_docs_season on efl_runtime.documents(space,co
 create index if not exists runtime_docs_user on efl_runtime.documents(space,collection_path,(data->>'userId'));
 
 create or replace function efl_runtime.decode(v jsonb) returns jsonb language plpgsql immutable set search_path='' as $$
-declare answer jsonb; entry record; t text:=v->>'type';
+declare answer jsonb; t text:=v->>'type';
 begin
  if t='map' then
-  answer:='{}';for entry in select * from jsonb_each(v->'value') loop answer:=answer||jsonb_build_object(entry.key,efl_runtime.decode(entry.value));end loop;return answer;
+  -- Build maps once: repeated concatenation copies every preceding entry.
+  select coalesce(jsonb_object_agg(entry.key,efl_runtime.decode(entry.value)),'{}') into answer from jsonb_each(v->'value') entry;return answer;
  elsif t='array' then select coalesce(jsonb_agg(efl_runtime.decode(value)),'[]') into answer from jsonb_array_elements(v->'value');return answer;
  elsif t='null' then return 'null';
  elsif t in ('number','integer') then return to_jsonb((v->>'value')::numeric);
@@ -98,6 +99,10 @@ begin
   if op in ('==','!=','>','>=','<','<=') then
    where_sql:=where_sql||format(' and %s is not null and %s %s %s',expr,expr,case op when '==' then '=' when '!=' then '<>' else op end,value_sql);
    if op='!=' then where_sql:=where_sql||format(' and %s<>''null''::jsonb',expr);end if;
+  elsif op='in' and f->>'field'='__name__' then
+   -- Keep ID lookups on the text primary key; JSONB casts scan the collection.
+   -- Only JSON strings can equal to_jsonb(document_id), preserving filter types.
+   where_sql:=where_sql||format(' and document_id = any(array(select ids.value #>> ''{}'' from jsonb_array_elements(%s) as ids(value) where jsonb_typeof(ids.value)=''string''))',value_sql);
   elsif op in ('in','not-in') then
    where_sql:=where_sql||format(' and %s is not null and %s exists(select 1 from jsonb_array_elements(%s) v where v=%s)',expr,case when op='not-in' then 'not' else '' end,value_sql,expr);
   elsif op='array-contains' then where_sql:=where_sql||format(' and %s @> jsonb_build_array(%s)',expr,value_sql);

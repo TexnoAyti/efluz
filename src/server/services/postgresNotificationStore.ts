@@ -7,6 +7,11 @@ const parse=(value:any)=>{try{return typeof value==='string'?JSON.parse(value):v
 /** Queue and receipt changes share one PostgreSQL transaction. The worker's
  * existing lease and uncertain-delivery policy remain authoritative. */
 export class PostgresNotificationStore extends PostgresAiStore {
+ // These are opaque Redis-compatible payloads: field-level database queries are
+ // never used. A JSON string avoids recursively tagging/decoding every receipt
+ // whenever one job changes. Existing object rows remain readable via parse().
+ protected storedValue(value:any):any{return value!==null&&typeof value==='object'?JSON.stringify(value):value;}
+
  async get<T=any>(key:string):Promise<T|null>{
   const season=key.match(/:private:recipient-directory:([^:]+)$/)?.[1];
   if(!season)return super.get<T>(key);
