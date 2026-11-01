@@ -35,9 +35,9 @@ uzeflifeRouter.get('/publish-status',requireAuth,async(req,res)=>{
  try{
   const {isPrimaryOwner}=await import('../services/customTournamentTicketService');
   if(!isPrimaryOwner(req.user!.telegramId))throw uError('Faqat asosiy admin tekshirishi mumkin.',403);
-  const state=await readUState(),round=Number(req.query.round||state.round);
-  const {getRoundPostStatus,scheduleRoundPost}=await import('../services/uzeflifeRoundPost');
-  const delivery=await getRoundPostStatus(state,round);
+  const round=Number(req.query.round||1);
+  const {getSavedRoundPostStatus,scheduleRoundPost}=await import('../services/uzeflifeRoundPost');
+  const delivery=await getSavedRoundPostStatus(round);
   res.json({ok:true,...delivery,tokenConfigured:!!process.env.TELEGRAM_BOT_TOKEN});
   if(delivery.state==='pending')scheduleRoundPost(round);
  }catch(e:any){res.status(e.statusCode||503).json({ok:false,error:e.statusCode?e.message:'Yuborish holati olinmadi.'});}
