@@ -35,13 +35,18 @@ import {
   updateTelegramAiConfig,
 } from '../services/telegramAiConfigService';
 import { getAiRateLimitMetrics } from '../services/telegramAiRateLimitService';
-import { handleTelegramAiMessage, escapeTelegramHtml } from '../services/telegramAiService';
+import { handleTelegramAiMessage as processTelegramAiMessage, escapeTelegramHtml } from '../services/telegramAiService';
 import { handleTopicResultUpdate } from '../services/telegramTopicResults';
 import { isAiAdminCommand } from '../services/telegramAiAdminCatalog';
 import { archiveCommunityMessage, communityPost, communitySourceStats } from '../services/telegramAiCommunitySources';
 import { extractAiCustomEmoji, saveAiCustomEmoji } from '../services/telegramAiCustomEmoji';
 
 export const telegramRouter = Router();
+async function handleTelegramAiMessage(payload: Parameters<typeof processTelegramAiMessage>[0]) {
+  const result = await processTelegramAiMessage(payload);
+  if (result.retryable) throw new Error('AI_ADMISSION_UNAVAILABLE');
+  return result;
+}
 function normalizedSeasonId(value: unknown): string {
   return typeof value === 'string' && value.trim() ? value.trim() : PREMIUM_DEFAULT_SEASON_ID;
 }
@@ -251,6 +256,13 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
             response = { ok: true, handled: 'ai_status', rejected: 'unauthorized_owner_only' };
           } else {
             const { config, redisAvailable } = await getTelegramAiConfig();
+            if (!redisAvailable) {
+              const sent = await sendTelegramMessage(message.chat.id,
+                'AI holati bazasiga ulanish vaqtincha ishlamayapti. AI yoqilgan yoki o‘chirilganini hozir tekshirib bo‘lmadi. Baza uzilgan paytda yangi vazifa bajarilmaydi; qabul bosqichida qolgan xabarlarni Telegram qayta yuborishi mumkin.',
+                { message_thread_id: message.message_thread_id, reply_to_message_id: message.message_id, parse_mode: null });
+              if (!sent.ok) throw new Error('AI_STATUS_NOT_SENT');
+              response = { ok: true, handled: 'ai_status', databaseAvailable: false };
+            } else {
             const rateMetrics = await getAiRateLimitMetrics();
             const sources = await communitySourceStats();
             const connection = await inspectTelegramConnection(config.allowedChatId, config.allowedThreadId);
@@ -275,6 +287,7 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
               parse_mode: 'HTML',
             });
             response = { ok: true, handled: 'ai_status' };
+            }
           }
         } else if (!command && (Number.isSafeInteger(message.message_thread_id) || isPrimaryOwner(message.from.id) && message.chat.id === message.from.id)) {
           // Regular user message in a forum topic thread: delegate to AI assistant

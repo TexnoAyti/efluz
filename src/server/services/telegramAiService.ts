@@ -492,7 +492,7 @@ async function dispatchTelegramAiReply(
  */
 async function handleTelegramAiMessageInternal(
   payload: TelegramAiMessagePayload
-): Promise<{ ok: boolean; handled: boolean; replySent?: boolean; error?: string; ignored?: string }> {
+): Promise<{ ok: boolean; handled: boolean; replySent?: boolean; error?: string; ignored?: string; retryable?: boolean }> {
   // 1. Basic filter: ignore bot messages, empty text, or invalid IDs
   if (payload.fromUser.is_bot || !payload.text?.trim()) {
     return { ok: true, handled: false, ignored: 'bot_or_empty' };
@@ -511,15 +511,18 @@ async function handleTelegramAiMessageInternal(
   const requestBudget = owner || process.env.DATABASE_PROVIDER === 'supabase' ? 30000 : GLOBAL_TIMEOUT_MS;
   const deadlineAt = Date.now() + requestBudget;
   const globalTimeout = setTimeout(() => rootController.abort(), requestBudget);
+  // Only failures before rate-limit admission are safe to replay automatically:
+  // no model, admin execution or Telegram reply has run at this point.
+  let admitted = false;
 
   try {
     // 3. Load configuration under deadline with fail-closed guarantee
     const { config, redisAvailable } = await getTelegramAiConfig({ signal: rootController.signal });
+    if (!redisAvailable) {
+      return { ok: false, handled: false, ignored: 'redis_unavailable_prod', retryable: true };
+    }
     if (!config.enabled) {
       return { ok: true, handled: false, ignored: 'ai_disabled' };
-    }
-    if (!redisAvailable && process.env.NODE_ENV === 'production') {
-      return { ok: true, handled: false, ignored: 'redis_unavailable_prod' };
     }
 
     console.info('[TELEGRAM_AI_SCOPE]', JSON.stringify({ topicMatched: payload.chatId === config.allowedChatId && payload.threadId === config.allowedThreadId, privateAdmin: isOwnerAdminPrivateChat(payload), enabled: config.enabled }));
@@ -559,9 +562,10 @@ async function handleTelegramAiMessageInternal(
     const initDelivery = await claimDeliveryState(payload.updateId, 'pending', { signal: rootController.signal });
     if (initDelivery !== 'ok') {
       return {
-        ok: true,
+        ok: initDelivery === 'already_handled',
         handled: false,
         ignored: initDelivery === 'already_handled' ? 'already_delivered' : 'delivery_claim_redis_error_fail_closed',
+        retryable: initDelivery === 'redis_error',
       };
     }
 
@@ -579,6 +583,11 @@ async function handleTelegramAiMessageInternal(
     });
 
     if (!rateLimit.allowed) {
+      // A transport outage is not a quota denial. In particular, never mark
+      // this update sent: Telegram must be able to retry it after recovery.
+      if (rateLimit.reason === 'REDIS_UNAVAILABLE') {
+        return { ok: false, handled: false, ignored: rateLimit.reason, retryable: true };
+      }
       if (rateLimit.shouldNotifyUser) {
         // Cooldown warning dispatched via unified dispatch path
         await dispatchTelegramAiReply(
@@ -592,6 +601,7 @@ async function handleTelegramAiMessageInternal(
       }
       return { ok: true, handled: true, ignored: rateLimit.reason };
     }
+    admitted = true;
 
     if (payload.photoFileId) {
       if (!nativePrivate) return { ok: true, handled: false, ignored: 'photo_owner_dm_only' };
@@ -848,6 +858,9 @@ async function handleTelegramAiMessageInternal(
     }
   } catch (err: any) {
     console.error('[AI HANDLER ERROR]', aiProviderFailureKind(err));
+    if (!admitted) {
+      return { ok: false, handled: false, error: 'AI_ADMISSION_UNAVAILABLE', retryable: true };
+    }
     await claimDeliveryState(payload.updateId, 'unknown_timeout', { signal: rootController.signal });
     return { ok: false, handled: false, error: err?.message || 'UNKNOWN_ERROR' };
   } finally {
@@ -859,6 +872,6 @@ async function handleTelegramAiMessageInternal(
 export async function handleTelegramAiMessage(payload: TelegramAiMessagePayload) {
   const started = Date.now();
   const result = await handleTelegramAiMessageInternal(payload);
-  if (result.replySent || result.error) await recordAiObservation(payload.updateId, result.replySent ? 'reply' : 'failed', Date.now()-started);
+  if (!result.retryable && (result.replySent || result.error)) await recordAiObservation(payload.updateId, result.replySent ? 'reply' : 'failed', Date.now()-started);
   return result;
 }
