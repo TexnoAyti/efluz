@@ -191,8 +191,8 @@ begin
  if not found or d->>'version' is distinct from '2' then return null;end if;
  n:=coalesce((d->>'sentPages')::integer,0);total:=(d->>'totalPages')::integer;
  if p_action='claim' then
-  if d->>'state'='sending' and d#>>'{inFlight,lease}'=p_token then return jsonb_build_object('inFlight',d->'inFlight');end if;
-  if d->>'state' is distinct from 'pending' or d->>'fingerprint' is distinct from p_payload->>'fingerprint' or n is distinct from (p_payload->>'sentPages')::integer or n<0 or total is null or n>=total then return null;end if;
+  if d->>'state'='sending' and d#>>'{inFlight,lease}'=p_token then return d;end if;
+  if d->>'state' is distinct from 'pending' or (p_payload?'fingerprint' and d->>'fingerprint' is distinct from p_payload->>'fingerprint') or (p_payload?'sentPages' and n is distinct from (p_payload->>'sentPages')::integer) or n<0 or total is null or n>=total then return null;end if;
   patch:=jsonb_build_object('state','sending','leaseUntil',millis+90000,'inFlight',jsonb_build_object('start',n,'count',1,'lease',p_token),'at',stamp);
   if jsonb_typeof(d->'snapshot')='object' and not d?'snapshotJson' then patch:=patch||jsonb_build_object('snapshotJson',(d->'snapshot')::text,'snapshot',null);end if;
  elsif p_action='ack' then
@@ -221,7 +221,7 @@ begin
  end loop;
  update efl_runtime.documents set encoded=e,data=d||patch where space=p_space and collection_path='uzeflife_channel_posts' and document_id='round-'||p_round;
  update efl_runtime.spaces set generation=generation+1 where name=p_space;
- if p_action='claim' then return jsonb_build_object('inFlight',patch->'inFlight');end if;
+ if p_action='claim' then return d||patch;end if;
  return jsonb_build_object('applied',true,'pending',coalesce(pending,false));
 end $$;
 revoke all on function public.efl_runtime_round_photo(text,integer,text,text,jsonb) from public,anon,authenticated;

@@ -40,7 +40,7 @@ import { readPostgresSnapshotBundle, clearPostgresSnapshotCache } from '../readM
 // The HTTP envelope is simulated; this cannot prove hosted PostgREST latency.
 const pg = new PGlite();
 await pg.exec('create role anon; create role authenticated; create role service_role bypassrls;');
-for (const path of ['20261009044907_postgres_document_runtime.sql', '20261009125000_nonblocking_runtime_reads.sql', '20261009134500_patch_snapshot_rows.sql', '20261010091409_application_runtime_commit_conflicts.sql', '20261010161456_stop_postgrest_conflict_retries.sql', '20261010172440_conditional_snapshot_reads.sql', '20261101122224_indexed_document_id_filters.sql', '20261101122430_linear_runtime_map_decode.sql', '20261101122842_compact_notification_payloads.sql', '20261101133936_atomic_round_photo_transitions.sql']) {
+for (const path of ['20261009044907_postgres_document_runtime.sql', '20261009125000_nonblocking_runtime_reads.sql', '20261009134500_patch_snapshot_rows.sql', '20261010091409_application_runtime_commit_conflicts.sql', '20261010161456_stop_postgrest_conflict_retries.sql', '20261010172440_conditional_snapshot_reads.sql', '20261101122224_indexed_document_id_filters.sql', '20261101122430_linear_runtime_map_decode.sql', '20261101122842_compact_notification_payloads.sql', '20261101133936_atomic_round_photo_transitions.sql', '20261101135340_round_photo_claim_snapshot.sql']) {
   await pg.exec(await readFile('supabase/migrations/' + path, 'utf8'));
 }
 const photoGrants=(await pg.query(`select has_function_privilege('anon','public.efl_runtime_round_photo(text,integer,text,text,jsonb)','execute') as anon,

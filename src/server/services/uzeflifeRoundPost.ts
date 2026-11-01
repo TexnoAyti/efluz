@@ -116,15 +116,16 @@ export async function sendUzeflifeRoundPages(pages:Pages,round:number):Promise<n
 }
 /** One separately captioned photo per lease/request. The in-flight checkpoint is persisted BEFORE sending. */
 export async function processRoundPost(round:number,deps:Dependencies={}):Promise<boolean> {
- const db=getFirestoreDb(),ref=refFor(round),old=(await ref.get()).data();
- if(!old||old.version!==2||old.state!=='pending')return false;
+ const db=getFirestoreDb(),ref=refFor(round),native=(db as any).transitionRoundPhoto?.bind(db),lease=randomUUID();
  if(process.env.MIGRATION_WRITE_FREEZE==='true'||process.env.DATABASE_PROVIDER==='supabase'&&process.env.SUPABASE_DATA_NAMESPACE==='preview'&&!(process.env.NODE_ENV==='test'&&deps.send))return false;
+ // The private atomic claim returns the immutable render input too. It does
+ // not depend on a separate generic document read or a stale generation.
+ const old=native?await native(round,'claim',lease,{}):(await ref.get()).data();
+ if(!old||old.version!==2||old.state!==(native?'sending':'pending'))return false;
  let pages:Pages;
  try{pages=await (deps.render||renderUzeflifeRoundPages)(old.snapshotJson?JSON.parse(old.snapshotJson):old.snapshot,round);if(pages.length!==old.totalPages||pages.reduce((n,p)=>n+p.count,0)!==old.matchCount)throw Error('INCOMPLETE_IMAGES');}
- catch{await db.runTransaction(async tx=>{const current=(await tx.get(ref)).data();if(current?.state==='pending'&&current.fingerprint===old.fingerprint)tx.update(ref,{state:'failed',error:'Rasmlarni tayyorlab bo‘lmadi. Qayta urinib ko‘ring.'});});return false;}
- const lease=randomUUID();
- const native=(db as any).transitionRoundPhoto?.bind(db);
- const claimed=native?await native(round,'claim',lease,{fingerprint:old.fingerprint,sentPages:old.sentPages}):await db.runTransaction(async tx=>{
+ catch{if(native){await native(round,'reject',lease,{rejected:true,error:'Rasmlarni tayyorlab bo‘lmadi. Qayta urinib ko‘ring.'});return false;}await db.runTransaction(async tx=>{const current=(await tx.get(ref)).data();if(current?.state==='pending'&&current.fingerprint===old.fingerprint)tx.update(ref,{state:'failed',error:'Rasmlarni tayyorlab bo‘lmadi. Qayta urinib ko‘ring.'});});return false;}
+ const claimed=native?old:await db.runTransaction(async tx=>{
   const current=(await tx.get(ref)).data();
   if(!current||current.state!=='pending'||current.sentPages!==old.sentPages||current.fingerprint!==old.fingerprint)return null;
   const start=current.sentPages,count=Math.min(1,pages.length-start);
