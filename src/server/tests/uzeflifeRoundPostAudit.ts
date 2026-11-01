@@ -40,20 +40,23 @@ export async function verifyUzeflifeRoundPosts(){
   finally{db.collection=collection;}
   await Promise.all([requestRoundPost(state,1,users[0].id),requestRoundPost(state,1,users[0].id)]);
   await Promise.all([processRoundPost(1,{render:fakeRender,send}),processRoundPost(1,{render:fakeRender,send})]);
-  assert.equal(attempts,1,'Two workers lease a single album once');
-  let view=await getRoundPostStatus(state,1);assert.equal(view.sentPages,10);assert.equal(view.state,'pending');
+  assert.equal(attempts,1,'Two workers lease one separately captioned photo once');
+  let view=await getRoundPostStatus(state,1);assert.equal(view.sentPages,1);assert.equal(view.state,'pending');
   await processRoundPost(1,{render:fakeRender,send:async()=>{throw Error('isolated connection lost after Telegram may accept');}});
-  view=await getRoundPostStatus(state,1);assert.equal(view.state,'unverified');assert.equal(view.sentPages,10);
+  view=await getRoundPostStatus(state,1);assert.equal(view.state,'unverified');assert.equal(view.sentPages,1);
   await assert.rejects(requestRoundPost(state,1,users[0].id),/tekshirib/);
-  await assert.rejects(reconcileRoundPost(state,1,users[0].id,'stale',10),/yangilangan/);
-  await assert.rejects(reconcileRoundPost(state,1,users[0].id,view.checkpoint!,11),/to‘liq/);
-  assert.equal((await call('publish-reconcile',{round:1,checkpoint:view.checkpoint,confirmedPages:10,checkedChannel:true},users[1])).status,403);
-  assert.equal((await call('publish-reconcile',{round:1,checkpoint:view.checkpoint,confirmedPages:10})).status,400);
-  assert.equal((await call('publish-reconcile',{round:1,checkpoint:view.checkpoint,confirmedPages:10,checkedChannel:true})).status,200);
-  let remaining=0;await processRoundPost(1,{render:fakeRender,send:async pages=>{remaining=pages.length;return send(pages);}});assert.equal(remaining,6);
+  await assert.rejects(reconcileRoundPost(state,1,users[0].id,'stale',1),/yangilangan/);
+  await assert.rejects(reconcileRoundPost(state,1,users[0].id,view.checkpoint!,3),/noto‘g‘ri/);
+  assert.equal((await call('publish-reconcile',{round:1,checkpoint:view.checkpoint,confirmedPages:1,checkedChannel:true},users[1])).status,403);
+  assert.equal((await call('publish-reconcile',{round:1,checkpoint:view.checkpoint,confirmedPages:1})).status,400);
+  assert.equal((await call('publish-reconcile',{round:1,checkpoint:view.checkpoint,confirmedPages:1,checkedChannel:true})).status,200);
+  for(let sent=1;sent<16;sent++){
+   await processRoundPost(1,{render:fakeRender,send:async pages=>{assert.equal(pages.length,1);return send(pages);}});
+   assert.equal((await getRoundPostStatus(state,1)).sentPages,sent+1);
+  }
   view=await getRoundPostStatus(state,1);assert.equal(view.state,'sent');assert.equal(view.sentPages,16);
   assert.equal((await call('publish-round',{round:1,expectedRevision:778})).data.alreadySent,true);
-  await processRoundPost(1,{render:fakeRender,send});assert.equal(attempts,2,'A successful round is never reposted');
+  await processRoundPost(1,{render:fakeRender,send});assert.equal(attempts,16,'A successful round is never reposted');
   // Definite Telegram rejection is retryable, while every photo shares its round caption.
   let reject=true;const methods:string[]=[],captions:string[]=[];
   globalThis.fetch=async(input:any,init?:any)=>{
@@ -67,6 +70,8 @@ export async function verifyUzeflifeRoundPosts(){
   await requestRoundPost(state,2,users[0].id);await processRoundPost(2,{render:fakeRender,send:sendUzeflifeRoundPages});
   assert.equal((await getRoundPostStatus(state,2)).state,'failed');
   reject=false;await requestRoundPost(state,2,users[0].id);await processRoundPost(2,{render:fakeRender,send:sendUzeflifeRoundPages});
+  assert.equal((await getRoundPostStatus(state,2)).state,'pending');
+  await processRoundPost(2,{render:fakeRender,send:sendUzeflifeRoundPages});
   assert.equal((await getRoundPostStatus(state,2)).state,'sent');assert.equal(captions.length,2);assert.equal(captions[0],captions[1]);assert.ok(captions[0].includes('2 tur'));
   await requestRoundPost(state,3,users[0].id);await processRoundPost(3,{render:fakeRender,send:sendUzeflifeRoundPages});assert.equal(methods.at(-1),'sendPhoto');assert.equal((await getRoundPostStatus(state,3)).state,'sent');
   // Telegram accepted the photo, but the database checkpoint failed afterwards.
@@ -92,8 +97,8 @@ export async function verifyUzeflifeRoundPosts(){
   view=await getRoundPostStatus(state,1);assert.equal(view.sentPages,0);assert.equal(view.state,'pending');
   await processRoundPost(1,{render:fakeRender,send});
   assert.equal(await repairLegacyFirstRoundImages(),false,'Never reset progress after the replacement starts');
-  assert.equal((await getRoundPostStatus(state,1)).sentPages,10);
-  await processRoundPost(1,{render:fakeRender,send});
+  assert.equal((await getRoundPostStatus(state,1)).sentPages,1);
+  for(let i=1;i<16;i++)await processRoundPost(1,{render:fakeRender,send});
   assert.equal((await getRoundPostStatus(state,1)).state,'sent');
   assert.equal(await repairLegacyFirstRoundImages(),false,'A completed replacement never sends again');
   const pngs=await renderUzeflifeRoundPages(state,1);assert.equal(pngs.length,16);assert.equal(pngs.reduce((n,p)=>n+p.count,0),121);assert.ok(pngs.every(p=>p.buffer.subarray(0,8).equals(Buffer.from('89504e470d0a1a0a','hex'))));
@@ -108,14 +113,21 @@ export async function verifyUzeflifeRoundPosts(){
     assert.ok(bright>50,'Each fixture must have visible text, not a blank dark rectangle');
    }
   }
-  let uploaded=0;
+  let uploaded=0;const uploadedHashes=new Set<string>(),uploadedCaptions:string[]=[];
   globalThis.fetch=async(input:any,init?:any)=>{
    if(!String(input).startsWith('https://api.telegram.org/'))return originalFetch(input,init);
-   const form=init.body as FormData,media=JSON.parse(String(form.get('media'))),hashes=new Set<string>();
-   for(const item of media){const file=form.get(item.media.replace('attach://','')) as File;assert.ok(file);const bytes=Buffer.from(await file.arrayBuffer());const hash=createHash('sha256').update(bytes).digest('hex');assert.equal(hashes.has(hash),false,'Album attachments must not reuse one image');hashes.add(hash);assert.deepEqual(bytes,pngs[uploaded++].buffer);}
-   return Response.json({ok:true,result:media.map((_:any,i:number)=>({message_id:44000+uploaded+i}))});
+   assert.ok(String(input).endsWith('/sendPhoto'),'Every image is a separate Telegram message');
+   const form=init.body as FormData;assert.equal(form.has('media'),false);
+   const file=form.get('photo') as File;assert.ok(file);
+   const bytes=Buffer.from(await file.arrayBuffer()),hash=createHash('sha256').update(bytes).digest('hex');
+   assert.equal(uploadedHashes.has(hash),false,'Separate posts must not reuse one image');uploadedHashes.add(hash);
+   assert.deepEqual(bytes,pngs[uploaded++].buffer);uploadedCaptions.push(String(form.get('caption')));
+   return Response.json({ok:true,result:{message_id:44000+uploaded}});
   };
-  await sendUzeflifeRoundPages(pngs.slice(0,10),1);await sendUzeflifeRoundPages(pngs.slice(10),1);assert.equal(uploaded,16);
+  for(const page of pngs)await sendUzeflifeRoundPages([page],1);
+  assert.equal(uploaded,16);assert.equal(uploadedCaptions.length,16);assert.equal(new Set(uploadedCaptions).size,1);
+  assert.ok(uploadedCaptions.every(text=>text.includes('1 tur')&&text.includes('https://t.me/efleagueuz/8989')));
+  await assert.rejects(sendUzeflifeRoundPages(pngs.slice(0,2),1),/alohida/);
   console.log('PASS UZEFLIFE channel posts: owner HTTP ACL, 121 games/16 PNGs, separate rounds, concurrent leases, partial resume, uncertain reconciliation, legacy repair, 429 retry, shared captions and single-photo delivery; no real Telegram messages');
  }finally{
   await new Promise<void>(r=>server.close(()=>r()));globalThis.fetch=originalFetch;

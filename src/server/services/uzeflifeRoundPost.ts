@@ -71,7 +71,7 @@ export async function reconcileRoundPost(state:UState,round:number,requestedBy:s
   if(!view.canReconcile||view.checkpoint!==checkpoint)throw uError('Yuborish holati yangilangan. Qayta tekshiring.',409);
   if(!Number.isInteger(confirmedPages)||confirmedPages<view.minConfirmed!||confirmedPages>view.maxConfirmed!)throw uError('Tasdiqlangan rasmlar soni noto‘g‘ri.',400);
   // A new album is acknowledged as a whole; never split an uncertain album.
-  if(old?.version===2&&old.inFlight&&![view.minConfirmed,view.maxConfirmed].includes(confirmedPages))throw uError('Oxirgi albom to‘liq yuborilgan yoki yuborilmagan deb tasdiqlanadi.',400);
+  if(old?.version===2&&old.inFlight&&![view.minConfirmed,view.maxConfirmed].includes(confirmedPages))throw uError('Oxirgi yuborish to‘liq bajarilgan yoki bajarilmagan deb tasdiqlanadi.',400);
   const next={...old,...data,version:2,round,channel:U_POST_CHANNEL,state:confirmedPages===data.totalPages?'sent':'pending',sentPages:confirmedPages,requestedBy,leaseUntil:0,inFlight:null,error:null,reconciledAt:new Date().toISOString(),at:new Date().toISOString()};
   tx.set(ref,next);return next;
  });
@@ -92,7 +92,7 @@ export async function repairLegacyFirstRoundImages():Promise<boolean> {
   if(!state||state.format!=='LEAGUE'||state.round<1||!['playing','paused','completed'].includes(state.status))return false;
   const data=roundData(state,1);if(data.matchCount!==121||data.totalPages!==16)return false;
   const at=new Date().toISOString();
-  tx.create(repair,{ownerTelegramId:'5209126900',reason:'Owner reported blank/identical images and explicitly requested corrected repost',previous:old,at});
+  tx.set(repair,{ownerTelegramId:'5209126900',reason:'Owner reported blank/identical images and explicitly requested corrected repost',previous:old,at});
   tx.set(ref,{...data,version:2,round:1,channel:U_POST_CHANNEL,state:'pending',sentPages:0,telegramMessageIds:[],requestedBy:'owner-authorized-repair-20261101',repairId:repair.id,leaseUntil:0,inFlight:null,error:null,at});
   return true;
  });
@@ -103,17 +103,18 @@ class RejectedPost extends Error {}
 export async function sendUzeflifeRoundPages(pages:Pages,round:number):Promise<number[]> {
  const token=process.env.TELEGRAM_BOT_TOKEN;
  if(!token)throw new RejectedPost('Bot tokeni sozlanmagan.');
- const single=pages.length===1,form=new FormData();form.set('chat_id',U_POST_CHANNEL);
- const media=pages.map((page,index)=>{const key='page'+index;form.append(key,new Blob([new Uint8Array(page.buffer)],{type:'image/png'}),'uzeflife-'+round+'-'+page.first+'.png');return {type:'photo',media:'attach://'+key,caption:caption(round),parse_mode:'HTML'};});
- if(single){form.set('photo','attach://page0');form.set('caption',caption(round));form.set('parse_mode','HTML');}else form.set('media',JSON.stringify(media));
- const response=await fetch('https://api.telegram.org/bot'+token+(single?'/sendPhoto':'/sendMediaGroup'),{method:'POST',body:form,signal:AbortSignal.timeout(15000)});
+ if(pages.length!==1)throw new RejectedPost('Har bir rasm alohida yuborilishi kerak.');
+ const page=pages[0],form=new FormData();form.set('chat_id',U_POST_CHANNEL);
+ form.set('photo',new Blob([new Uint8Array(page.buffer)],{type:'image/png'}),'uzeflife-'+round+'-'+page.first+'.png');
+ form.set('caption',caption(round));form.set('parse_mode','HTML');
+ const response=await fetch('https://api.telegram.org/bot'+token+'/sendPhoto',{method:'POST',body:form,signal:AbortSignal.timeout(15000)});
  const result=await response.json() as any;
  if(result?.ok===false&&[400,401,403,404,429].includes(Number(result.error_code)))throw new RejectedPost(result.error_code===429?'Telegram limiti. Birozdan keyin davom ettiring.':'Telegram kanalga yuborishni rad etdi. Botning kanaldagi admin huquqini tekshiring.');
- const messages=single?[result.result]:result.result;
+ const messages=[result.result];
  if(!response.ok||result.ok!==true||!Array.isArray(messages)||messages.length!==pages.length||messages.some((m:any)=>!Number.isSafeInteger(m?.message_id)||m.message_id<1))throw Error('TELEGRAM_DELIVERY_UNCERTAIN');
  return messages.map((m:any)=>m.message_id);
 }
-/** One album per lease/request. The in-flight checkpoint is persisted BEFORE sending. */
+/** One separately captioned photo per lease/request. The in-flight checkpoint is persisted BEFORE sending. */
 export async function processRoundPost(round:number,deps:Dependencies={}):Promise<boolean> {
  const db=getFirestoreDb(),ref=refFor(round),old=(await ref.get()).data();
  if(!old||old.version!==2||old.state!=='pending')return false;
@@ -125,7 +126,7 @@ export async function processRoundPost(round:number,deps:Dependencies={}):Promis
  const claimed=await db.runTransaction(async tx=>{
   const current=(await tx.get(ref)).data();
   if(!current||current.state!=='pending'||current.sentPages!==old.sentPages||current.fingerprint!==old.fingerprint)return null;
-  const start=current.sentPages,count=Math.min(10,pages.length-start);
+  const start=current.sentPages,count=Math.min(1,pages.length-start);
   if(count<=0){tx.update(ref,{state:'sent'});return null;}
   const next={...current,state:'sending',leaseUntil:Date.now()+90000,inFlight:{start,count,lease},at:new Date().toISOString()};tx.set(ref,next);return next;
  });
@@ -138,7 +139,7 @@ export async function processRoundPost(round:number,deps:Dependencies={}):Promis
   return false;
  }
  // A failed checkpoint write leaves the durable in-flight marker untouched.
- // The next request shows "unverified" rather than sending the same album again.
+ // The next request shows "unverified" rather than sending the same photo again.
  return db.runTransaction(async tx=>{
   const current=(await tx.get(ref)).data();if(current?.inFlight?.lease!==lease)return false;
   const sentPages=claimed.inFlight.start+claimed.inFlight.count,pending=sentPages<pages.length;
