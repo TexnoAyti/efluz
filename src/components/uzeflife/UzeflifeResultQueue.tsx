@@ -1,22 +1,31 @@
-import React,{useState} from 'react';
+import React,{useEffect,useState} from 'react';
 import {ClipboardCheck,AlertTriangle} from 'lucide-react';
-import type {UViewState} from '../../lib/uzeflifeApi';
+import {uzeflifeRequest,type UViewState} from '../../lib/uzeflifeApi';
 import {uRoundLabel,uMatchNumber} from '../../lib/uzeflifePresentation';
 import type {UAct} from './UzeflifeAdmin';
 import {UzeflifeMatchDialog} from './UzeflifeMatchDialog';
 
 export function UzeflifeResultQueue({state:s,busy,act,error=''}:{state:UViewState;busy:boolean;act:UAct;error?:string}){
  const [filter,setFilter]=useState('all'),[selected,setSelected]=useState('');
+ const [topicResults,setTopicResults]=useState<NonNullable<UViewState['topicResults']>>([]),[topicError,setTopicError]=useState(''),[topicLoading,setTopicLoading]=useState(true),[refresh,setRefresh]=useState(0);
+ useEffect(()=>{
+  const controller=new AbortController();let live=true;
+  setTopicResults([]);setTopicLoading(true);setTopicError('');
+  uzeflifeRequest('topic-results',undefined,{signal:controller.signal,timeoutMs:15000}).then(data=>{if(live)setTopicResults(data.topicResults);},e=>{if(live)setTopicError(e.message);}).finally(()=>{if(live)setTopicLoading(false);});
+  return()=>{live=false;controller.abort();};
+ },[s.revision,refresh]);
  const pending=s.matches.filter(m=>!m.winner&&(m.proposal||m.dispute?.status==='open'));
  const matches=pending.filter(m=>filter==='all'||(filter==='disputes'?m.dispute?.status==='open':m.dispute?.status!=='open'));
  const [page,setPage]=useState(0);const current=Math.min(page,Math.max(0,Math.ceil(matches.length/10)-1));
  const name=(id:string|null)=>s.participants.find(p=>p.id===id)?.name||'Ishtirokchi';
  const active=s.matches.find(m=>m.id===selected);
  return <section className="competition-panel u-admin-section">
-  <div className="u-section-heading"><h3><ClipboardCheck size={17}/> Natijalar navbati</h3><span className="u-status">{pending.length+(s.topicResults?.length||0)} ta</span></div>
+  <div className="u-section-heading"><h3><ClipboardCheck size={17}/> Natijalar navbati</h3><span className="u-status">{pending.length+topicResults.length} ta</span></div>
+  {topicLoading&&<p className="competition-muted" role="status">Telegram natijalari yuklanmoqda…</p>}
+  {topicError&&<p className="competition-note error" role="alert">{topicError} <button className="competition-button" onClick={()=>setRefresh(v=>v+1)}>Qayta urinish</button></p>}
   <label className="competition-field">Ko‘rsatish<select value={filter} onChange={e=>{setFilter(e.target.value);setPage(0);}}><option value="all">Barcha kutilayotgan natijalar</option><option value="pending">Tasdiq kutayotganlar</option><option value="disputes">Bahsli natijalar</option></select></label>
-  {filter!=='disputes'&&s.topicResults?.map(p=><article key={p.id} className="u-dialog-section space-y-3"><p className="competition-muted">Telegram mavzusidan · {p.summary}</p><strong>{p.home} : {p.away}{p.penaltyHome!=null?` · Penaltilar ${p.penaltyHome}:${p.penaltyAway}`:''}</strong><p className="competition-muted">Hisobni yuborilgan mavzudagi admin tugmasi orqali tasdiqlang yoki rad eting.</p><a className="competition-button" href={p.url} target="_blank" rel="noreferrer">Mavzuda tekshirish</a></article>)}
-  {!matches.length&&!s.topicResults?.length&&<p className="competition-muted">Bu ro‘yxatda kutilayotgan natija yo‘q.</p>}
+  {filter!=='disputes'&&topicResults.map(p=><article key={p.id} className="u-dialog-section space-y-3"><p className="competition-muted">Telegram mavzusidan · {p.summary}</p><strong>{p.home} : {p.away}{p.penaltyHome!=null?` · Penaltilar ${p.penaltyHome}:${p.penaltyAway}`:''}</strong><p className="competition-muted">Hisobni yuborilgan mavzudagi admin tugmasi orqali tasdiqlang yoki rad eting.</p><a className="competition-button" href={p.url} target="_blank" rel="noreferrer">Mavzuda tekshirish</a></article>)}
+  {!matches.length&&!topicResults.length&&!topicLoading&&!topicError&&<p className="competition-muted">Bu ro‘yxatda kutilayotgan natija yo‘q.</p>}
   {matches.slice(current*10,(current+1)*10).map(m=><article key={m.id} className="u-dialog-section space-y-3">
    <p className="competition-muted">{m.bracket?`${m.bracket}-setka · `:''}{uRoundLabel(m.round,s.format)} · {uMatchNumber(m)}-o‘yin</p>
    <strong className="block break-words">{name(m.home)} {m.proposal?`${m.proposal.home} : ${m.proposal.away}`:'—'} {name(m.away)}</strong>

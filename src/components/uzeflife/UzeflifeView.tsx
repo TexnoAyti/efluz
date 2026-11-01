@@ -15,7 +15,7 @@ export function UzeflifeView({management=false}:{management?:boolean}={}) {
   const generation=useRef(0);
   const load=async()=>{
     const id=++generation.current;setError('');setBusy(true);
-    try {const data=await uzeflifeRequest();if(id===generation.current)setState(data);}
+    try {const data=await uzeflifeRequest('',undefined,{timeoutMs:20000});if(id===generation.current)setState(data);}
     catch(e:any){if(id===generation.current)setError(e.message);}
     finally {if(id===generation.current)setBusy(false);}
   };

@@ -9,16 +9,24 @@ import {uzeflifeRouter} from '../routes/uzeflife.routes';
 import {planUzeflifeTopicResult,executeUzeflifeTopicResult} from '../services/uzeflifeTopicResults';
 import {processUNotices} from '../services/uzeflifeNotifications';
 import {createCanvas} from '@napi-rs/canvas';
-import {initialUState,generateUBracket,applyUAction} from '../services/uzeflifeService';
+import {initialUState,generateUBracket,applyUAction,readUState} from '../services/uzeflifeService';
 export async function verifyUzeflifeHttp(failNextCommit:()=>void){
  process.env.SESSION_SECRET='isolated-uzeflife-session-secret-32bytes';const db=getFirestoreDb();
  const actors=Array.from({length:5},(_,i)=>({id:`uz-user-${i}`,telegramId:i===0?'5209126900':String(975000+i),username:`uz${i}`,firstName:`UZ ${i}`,isAdmin:false,isSuspended:false,createdAt:'',updatedAt:''}));
  for(const a of actors)await db.collection('users').doc(a.id).set(a);
  await db.collection('uzeflife').doc('championship').set(initialUState());
+ assert.deepEqual(await readUState(),initialUState(),'Compact read equals the authoritative encoded document');
+ const dbAny=db as any,originalCollection=dbAny.collection.bind(dbAny);let queueReads=0;
+ dbAny.collection=(path:string)=>{if(path==='uzeflife_topic_queue'){queueReads++;throw Error('OPTIONAL_QUEUE_UNAVAILABLE');}return originalCollection(path);};
  const app=express();app.use(express.json({limit:'600kb'}));app.use(authMiddleware);app.use('/api/uzeflife',uzeflifeRouter);const server=app.listen(0,'127.0.0.1');await once(server,'listening');const base=`http://127.0.0.1:${(server.address() as any).port}/api/uzeflife`;
  const call=async(action='',body?:unknown,actor:any=actors[0])=>{if(action==='approveResult'&&body&&!Object.hasOwn(body as object,'expected')){const current=(await db.collection('uzeflife').doc('championship').get()).data()!;(body as any).expected=current.matches.find((m:any)=>m.id===(body as any).matchId)?.proposal;}const response=await fetch(base+(action?'/'+action:''),{method:body===undefined?'GET':'POST',headers:{'content-type':'application/json',...(actor?{authorization:`Bearer ${createSessionToken(actor)}`}:{})},body:body===undefined?undefined:JSON.stringify(body)});return {status:response.status,data:await response.json() as any};};
  try{
-  assert.equal((await call()).status,200);assert.equal((await call('open',{},null)).status,401);
+  assert.equal((await call()).status,200);assert.equal(queueReads,0,'Opening must not read the optional Telegram queue');
+  assert.equal((await call('topic-results')).status,503,'Queue failure is isolated and retryable');
+  assert.equal((await call('topic-results',undefined,actors[3])).status,403);
+  assert.equal((await call('topic-results',undefined,null)).status,401);
+  dbAny.collection=originalCollection;
+  assert.equal((await call('topic-results')).status,200);assert.equal((await call('open',{},null)).status,401);
   assert.equal((await call('superAdmin',{target:actors[1].id},actors[2])).status,403);
   assert.equal((await call('superAdmin',{target:actors[1].id},{...actors[2],telegramId:actors[0].telegramId})).status,403,'Account lookup prevents forged/stale owner claims');
   assert.equal((await call('superAdmin',{target:actors[1].telegramId})).status,200);
@@ -123,6 +131,7 @@ export async function verifyUzeflifeHttp(failNextCommit:()=>void){
   assert.equal((await call('result',{matchId:m.id,home:3,away:1},home)).status,200);
   const approvals=await Promise.all([call('approveResult',{matchId:m.id},actors[1]),call('approveResult',{matchId:m.id},actors[1])]);assert.equal(approvals.filter(r=>r.status===200).length,1,'Concurrent queue approvals commit exactly once');
   const played=(await db.collection('uzeflife').doc('championship').get()).data() as any;
+  assert.deepEqual(await readUState(),played,'Compact reads see newly committed scores without a cache');
   for(let round=1;round<=8;round++){for(const match of played.matches.filter((x:any)=>x.round===round&&!x.winner))applyUAction(played,actors[1] as any,'result',{matchId:match.id,home:1,away:0,penaltyHome:null,penaltyAway:null});if(round<8)applyUAction(played,actors[1] as any,'next',{});}
   await db.collection('uzeflife').doc('championship').set(played);
   const histories=(await db.collection('uzeflife_history').get()).size,finalOutbox=(await db.collection('uzeflife_notifications').get()).size;
@@ -132,5 +141,5 @@ export async function verifyUzeflifeHttp(failNextCommit:()=>void){
   assert.equal((await call('complete',{},actors[1])).status,400);
   console.log('PASS native PostgreSQL UZEFLIFE workflow: failed result/evidence/archive rollback, private image HTTP ACLs, dispute barriers, concurrent exactly-once queue approval, complete 255-match archive and champion notification intents.');
   console.log('PASS UZEFLIFE HTTP/PostgreSQL: owner assignment, granular assistants, Telegram fail-closed, pending privacy, revocation/suspension, audit durability, failed-commit rollback and concurrent updates.');
- }finally{server.close();}
+ }finally{dbAny.collection=originalCollection;server.close();}
 }

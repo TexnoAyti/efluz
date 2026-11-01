@@ -1,5 +1,7 @@
 import {scheduleRoundPost} from '../services/uzeflifeRoundPost';
 import type {User} from '../../types';
+import type {Request} from 'express';
+import type {UState} from '../../types/uzeflife';
 import {listUzeflifeTopicQueue} from '../services/telegramTopicResults';
 import {Router} from 'express';
 import {getFirestoreDb} from '../firebase/admin';
@@ -10,17 +12,32 @@ import {readUState,publicUState,mutateUState,checkUSubscriptions,uPermissions,uE
 import {canExportUzeflifeImage} from '../../lib/uzeflifeImage';
 import {createTournamentImageDownloadService} from '../services/tournamentImageDownload';
 const imageDownloads=createTournamentImageDownloadService();
-async function viewState(user?:User){const state=await readUState();const topicResults=user&&uPermissions(state,user).includes('results')?await listUzeflifeTopicQueue(state).catch(()=>[]):[];return {...publicUState(state,user),topicResults};}
+async function viewState(user?:User,state?:UState){return publicUState(state||await readUState(),user);}
+async function refreshUser(req:Request){
+ if(!req.user)return;
+ let user:User|null;
+ try{user=await getAuthoritativeUserForAuthorization(req.user.id);}catch{throw uError('Akkauntni tekshirish imkonsiz.',503);}
+ if(!user||user.isSuspended)throw uError('Akkauntga kirish cheklangan.',403);
+ req.user=user;
+}
 export const uzeflifeRouter=Router();
 uzeflifeRouter.use((_req,res,next)=>{res.setHeader('Cache-Control','private, no-store');next();});
 // Refresh account identity/suspension on every authenticated request; no stale admin claims.
-uzeflifeRouter.use(async(req,res,next)=>{try{if(req.user){const u=await getAuthoritativeUserForAuthorization(req.user.id);if(!u||u.isSuspended){res.status(403).json({ok:false,error:'Akkauntga kirish cheklangan.'});return;}req.user=u;}next();}catch{res.status(503).json({ok:false,error:'Akkauntni tekshirish imkonsiz.'});}});
+uzeflifeRouter.use(async(req,res,next)=>{if(req.method==='GET'&&req.path==='/'){next();return;}try{await refreshUser(req);next();}catch(e:any){res.status(e.statusCode||503).json({ok:false,error:e.message});}});
 let roundPostWakeAt=0;
 uzeflifeRouter.get('/',async(req,res)=>{
  // Wake the already-authorized first-round job independently of the large
  // tournament read. The worker cannot create or reset a publication.
- if(Date.now()-roundPostWakeAt>30000){roundPostWakeAt=Date.now();scheduleRoundPost(1);}
- try{res.json({ok:true,...await viewState(req.user)});scheduleUNotices();}catch{res.status(503).json({ok:false,error:'Turnirni yuklab bo‘lmadi.'});}
+ if(Date.now()-roundPostWakeAt>30000){roundPostWakeAt=Date.now();scheduleRoundPost(1);scheduleUNotices();}
+ try{
+  const [,state]=await Promise.all([refreshUser(req),readUState()]);
+  res.json({ok:true,...await viewState(req.user,state)});
+ }catch(e:any){res.status(e.statusCode||503).json({ok:false,error:e.statusCode?e.message:'Turnirni yuklab bo‘lmadi.'});}
+});
+// Optional Telegram proposals belong to the admin queue, not the opening path.
+uzeflifeRouter.get('/topic-results',requireAuth,async(req,res)=>{
+ try{const state=await readUState();if(!uPermissions(state,req.user!).includes('results'))throw uError('Natijalar navbatiga ruxsat yo‘q.',403);res.json({ok:true,topicResults:await listUzeflifeTopicQueue(state)});}
+ catch(e:any){res.status(e.statusCode||503).json({ok:false,error:e.statusCode?e.message:'Telegram natijalarini yuklab bo‘lmadi. Qayta urinib ko‘ring.'});}
 });
 uzeflifeRouter.get('/history/:id',async(req,res)=>{
  try{if(!/^uzeflife-[a-f0-9-]{36}$/.test(req.params.id))throw uError('Turnir tarixi topilmadi.',404);const snap=await getFirestoreDb().collection('uzeflife_history').doc(req.params.id).get();if(!snap.exists)throw uError('Turnir tarixi topilmadi.',404);res.json({ok:true,archive:snap.data()});}catch(e:any){res.status(e.statusCode||503).json({ok:false,error:e.statusCode?e.message:'Tarixni yuklab bo‘lmadi.'});}

@@ -31,7 +31,7 @@ export function runtimeRpc(): RuntimeRpc {
   if(!url||!key||new URL(url).protocol!=='https:') throw new Error('SUPABASE_SERVER_CONFIG_REQUIRED');
   const execute: RuntimeRpc = async(name,body)=>{
     const started = Date.now();
-    const target = body.p_round ? 'uzeflife_channel_posts' : body.p_ids ? 'durable_read_snapshots' : body.p_operations?.map((op: any) => op.path.split('/').slice(0,-1).join('/')).filter((value: string, index: number, values: string[]) => values.indexOf(value) === index).join(',') || body.p_query?.collection || body.p_query?.path?.split('/').slice(0,-1).join('/') || 'commit';
+    const target = name==='efl_runtime_uzeflife_read'?'uzeflife':body.p_round ? 'uzeflife_channel_posts' : body.p_ids ? 'durable_read_snapshots' : body.p_operations?.map((op: any) => op.path.split('/').slice(0,-1).join('/')).filter((value: string, index: number, values: string[]) => values.indexOf(value) === index).join(',') || body.p_query?.collection || body.p_query?.path?.split('/').slice(0,-1).join('/') || 'commit';
     try {
     // Generation mismatch is an application CAS conflict. Returning it as SQL
     // 40001 caused the HTTP database layer to repeatedly retry the same stale
@@ -154,6 +154,10 @@ export class PostgresDocumentStore {
   collection(path:string){return new Query(this,path);}
   doc(path:string){return new DocRef(this,path);}
   batch(){return new Writes(this);}
+  // UZEFLIFE contains plain JSON only. Read its already-decoded authoritative
+  // projection directly, avoiding a megabyte of typed archive wrappers. CAS
+  // transactions still use read() and its generation/encoded representation.
+  async readUzeflifeState(){const raw=await this.rpc('efl_runtime_uzeflife_read',{p_space:this.databaseId});return raw===null?null:JSON.parse(raw);}
   async read(query:QuerySpec){
     // The generic __name__ filter wraps document_id in to_jsonb and scans a
     // collection prefix. A singleton ID can use the existing primary-key path

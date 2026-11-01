@@ -14,7 +14,7 @@ export function UzeflifeAdmin({state:s,busy,act,onBack,onMatches,onRefresh,error
   const can=(p:UPermission)=>s.permissions.includes(p);
   const tabs=[
     {id:'tournament' as const,label:'Turnir',icon:Settings},
-    ...(can('results')?[{id:'queue' as const,label:`Natijalar (${s.matches.filter(m=>!m.winner&&(m.proposal||m.dispute?.status==='open')).length+(s.topicResults?.length||0)})`,icon:Shield}]:[]),
+    ...(can('results')?[{id:'queue' as const,label:'Natijalar',icon:Shield}]:[]),
     ...(can('participants')?[{id:'participants' as const,label:'O‘yinchilar',icon:Users}]:[]),
     ...(can('matches')||can('results')||can('schedules')?[{id:'matches' as const,label:'O‘yinlar',icon:CalendarDays}]:[]),
     ...(can('channels')?[{id:'channels' as const,label:'Obuna',icon:Radio}]:[]),
