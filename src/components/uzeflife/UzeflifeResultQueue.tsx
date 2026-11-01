@@ -11,7 +11,7 @@ export function UzeflifeResultQueue({state:s,busy,act,error=''}:{state:UViewStat
  useEffect(()=>{
   const controller=new AbortController();let live=true;
   setTopicResults([]);setTopicLoading(true);setTopicError('');
-  uzeflifeRequest('topic-results',undefined,{signal:controller.signal,timeoutMs:15000}).then(data=>{if(live)setTopicResults(data.topicResults);},e=>{if(live)setTopicError(e.message);}).finally(()=>{if(live)setTopicLoading(false);});
+  uzeflifeRequest('topic-results',undefined,{signal:controller.signal,timeoutMs:15000}).then(data=>{if(live)setTopicResults(Array.isArray(data.topicResults)?data.topicResults:[]);},e=>{if(live)setTopicError(e.message);}).finally(()=>{if(live)setTopicLoading(false);});
   return()=>{live=false;controller.abort();};
  },[s.revision,refresh]);
  const pending=s.matches.filter(m=>!m.winner&&(m.proposal||m.dispute?.status==='open'));
