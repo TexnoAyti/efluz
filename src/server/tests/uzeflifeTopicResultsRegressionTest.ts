@@ -19,6 +19,7 @@ const s=initialUState();s.status='playing';s.round=1;s.participants=Array.from({
 assert.equal(UZEFLIFE_RESULT_TOPIC,8989);
 assert.equal(UZEFLIFE_RESULT_TOPIC_URL,'https://t.me/efleagueuz/8989');
 assert.equal((await planTopicResult('3:1',1002,8989,new AbortController().signal))?.plan.body.homeScore,1,'Bare score starts with the verified sender');
+for(const text of ['2-1','2 - 1','hisob 2-1']){const parsed=await planTopicResult(text,1002,8989,new AbortController().signal);assert.equal(parsed?.plan.body.homeScore,1);assert.equal(parsed?.plan.body.awayScore,2);}
 assert.equal((await planUzeflifeTopicResult('Vali 4:1 Azamat',1002))?.plan.body.awayScore,4);
 const shootout=await planUzeflifeTopicResult('2:2 penalti 5:4',1002);assert.equal(shootout?.plan.body.homePenaltyScore,4);assert.equal(shootout?.plan.body.awayPenaltyScore,5);
 assert.equal((await planUzeflifeTopicResult('1-setka 1-o‘yin 2:1',3001))?.plan.targetId,'r1m0');
@@ -35,7 +36,7 @@ globalThis.fetch=(async(input:any,init:any)=>{assert.ok(String(input).startsWith
 try{
  const wrong=update('2:1');wrong.message.message_thread_id=7298;assert.equal((await handleTopicResultUpdate(wrong)).handled,false);
  const oldTopic=update('2:1');oldTopic.message.message_thread_id=7297;assert.equal((await handleTopicResultUpdate(oldTopic)).handled,false,'Retired topic cannot ingest UZEFLIFE scores');
- const source=update('2:1');assert.equal((await handleTopicResultUpdate(source)).result,'proposal_sent');assert.equal((await listUzeflifeTopicQueue(await readUState())).length,1,'Telegram pending result is visible in the tournament admin queue');const preview=sent.at(-1),token=preview.reply_markup.inline_keyboard[0][0].callback_data;
+ const source=update('2-1');assert.equal((await handleTopicResultUpdate(source)).result,'proposal_sent');assert.equal((await listUzeflifeTopicQueue(await readUState())).length,1,'Telegram pending result is visible in the tournament admin queue');const preview=sent.at(-1),token=preview.reply_markup.inline_keyboard[0][0].callback_data;
  assert.ok(preview.text.includes('Azamat 2:1 Vali')&&preview.text.includes('UZEFLIFE'));assert.equal(preview.message_thread_id,8989);assert.equal((await readUState()).matches[0].winner,null);
  assert.equal((await handleTopicResultUpdate(callback(preview,token,1001))).result,'unauthorized');assert.equal((await handleTopicResultUpdate(callback(preview,token,3002))).result,'unauthorized');
  const cross=callback(preview,token);cross.callback_query.message.message_thread_id=3;assert.equal((await handleTopicResultUpdate(cross)).result,'invalid');

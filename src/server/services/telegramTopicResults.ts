@@ -201,7 +201,9 @@ export async function planTopicResult(text: string, sender: number, thread: numb
 
 /** Called only after the webhook secret and shared update lease are verified. */
 export async function handleTopicResultUpdate(update: any): Promise<{ handled: boolean; result?: string }> {
-  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 25000), signal = controller.signal;
+  const source=update.edited_message||update.message||update.callback_query?.message;
+  const uzeflifeTopic=source?.message_thread_id===UZEFLIFE_RESULT_TOPIC;
+  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), uzeflifeTopic?45000:25000), signal = controller.signal;
   try {
     const callback = update.callback_query;
     if (typeof callback?.data === 'string' && /^rs:(approve|reject):[a-f0-9]{24}$/.test(callback.data)) {
@@ -248,6 +250,7 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
     if (!m || m.chat?.username?.toLowerCase() !== 'efleagueuz' || ![2,3,4,5,6,7,8,2335,UZEFLIFE_RESULT_TOPIC].includes(m.message_thread_id) || !Number.isSafeInteger(m.from?.id) || m.from.id <= 0 || m.from.is_bot || m.sender_chat || m.forward_origin || m.forward_from || m.forward_from_chat) return {handled:false};
     let text = String(m.text || m.caption || '').trim();
     if (!text && !update.edited_message) return {handled:false};
+    if(uzeflifeTopic&&!update.edited_message&&!/\d{1,2}\s*[:–—−-]\s*\d{1,2}/.test(text))return {handled:false};
     const client = getAiRedisClient(signal);
     if (!client) throw Error('RESULT_STATE_UNAVAILABLE');
     const ctxKey = contextKey(m.chat.id,m.message_thread_id,m.from.id);
@@ -289,8 +292,12 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
     if (!text || !/\d{1,2}\s*[:–—−-]\s*\d{1,2}/.test(text)) return {handled:false};
     const previous: any = await client.get(latestKey);
     if (previous?.token || previous?.updateId > update.update_id) return {handled:true,result:'duplicate_source'};
+    // Overlap read-only fixture planning with quota admission. Publishing
+    // remains gated by a successful quota result.
+    const planning=uzeflifeTopic&&!continuation?planTopicResult(text,m.from.id,m.message_thread_id,signal,resolution).then(value=>({value}),error=>({error})):null;
     const rate = await checkAndIncrementAiRateLimits({ chatId:m.chat.id,threadId:m.message_thread_id,userId:m.from.id,userLimitPerMin:5,topicLimitPerMin:60,maxDailyRequests:500,countDaily:false,signal });
     if (!rate.allowed) {
+      if(planning)await planning;
       if(rate.reason==='REDIS_UNAVAILABLE')throw Error('RESULT_STATE_UNAVAILABLE');
       return {handled:true,result:'rate_limited'};
     }
@@ -299,7 +306,7 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
       if(Number(claimed)!==1)return {handled:true,result:'context_expired'};
     }
     let planned;
-    try { planned = await planTopicResult(text,m.from.id,m.message_thread_id,signal,resolution); }
+    try { if(planning){const result=await planning;if('error' in result)throw result.error;planned=result.value;}else planned = await planTopicResult(text,m.from.id,m.message_thread_id,signal,resolution); }
     catch (error: any) {
       if (!String(error.message).startsWith('CLARIFY:')) throw error;
       let context:ResultContext|undefined;
@@ -307,7 +314,7 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
         context={token:randomBytes(12).toString('hex'),state:'awaiting',text,kind:error.followup.kind,choices:error.followup.choices,sourceMessage:continuation?.sourceMessage||m.message_id,sourceUpdateId:continuation?.sourceUpdateId||update.update_id,updateId:update.update_id,expiresAt:Date.now()+900000};
         const published=await client.eval(TOPIC_RESULT_CONTEXT,[ctxKey],['publish',JSON.stringify(context)]);
         if (Number(published)!==1) return {handled:true,result:'duplicate_source'};
-      } else {
+      } else if(!uzeflifeTopic) {
         const old=await client.get<ResultContext>(ctxKey);
         if(old && old.updateId<=update.update_id)await client.eval(TOPIC_RESULT_CONTEXT,[ctxKey],['cancel',old.token]);
       }
@@ -316,8 +323,10 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
       return {handled:true,result:'clarification'};
     }
     if (!planned) return {handled:false};
-    const old=await client.get<ResultContext>(ctxKey);
-    if(old && old.updateId<=update.update_id)await client.eval(TOPIC_RESULT_CONTEXT,[ctxKey],['cancel',old.token]);
+    if(!uzeflifeTopic){
+     const old=await client.get<ResultContext>(ctxKey);
+     if(old && old.updateId<=update.update_id)await client.eval(TOPIC_RESULT_CONTEXT,[ctxKey],['cancel',old.token]);
+    }
     const token = randomBytes(12).toString('hex'), f = planned.fixture;
     const p: TopicResultProposal = {token,chat:m.chat.id,thread:m.message_thread_id,sourceMessage:m.message_id,submitter:m.from.id,updateId:update.update_id,expiresAt:Date.now()+ttl*1000,state:'pending',plan:planned.plan,expectedFixture:planned.expectedFixture,summary:fixtureLabel(f),...('kind' in planned&&planned.kind==='uzeflife'?{kind:'uzeflife' as const}:{}),...(continuation?{originalSourceMessage:continuation.sourceMessage,originalSourceUpdateId:continuation.sourceUpdateId}:{})};
     const published = await client.eval(TOPIC_RESULT_PUBLISH,[proposalKey(token),latestKey],[JSON.stringify(p),update.update_id,update.edited_message?'1':'0',ttl,JSON.stringify({token,updateId:update.update_id,hash:createHash('sha256').update(text).digest('hex')})]);

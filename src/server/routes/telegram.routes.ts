@@ -1,3 +1,4 @@
+import {UZEFLIFE_RESULT_TOPIC} from '../../lib/uzeflifeResultTopic';
 import {offerAndroidLogin,markAndroidOfferDelivered,answerAndroidLogin} from '../services/androidAuth';
 import {applyBanControl} from '../services/clubSelectionBan';
 import {respondTeamTelegramInvitation} from '../services/teamMembershipService';
@@ -92,8 +93,11 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
     }
 
     const sourceMessage = update.channel_post || update.edited_channel_post || update.edited_message || update.message;
+    console.info('[TELEGRAM_UPDATE_RECEIVED]', JSON.stringify({ updateId: update.update_id, kind: update.callback_query ? 'callback' : update.message ? 'message' : Object.keys(update).filter(key => key !== 'update_id').join(','), chatId: update.message?.chat?.id ?? update.callback_query?.message?.chat?.id ?? null, threadId: update.message?.message_thread_id ?? update.callback_query?.message?.message_thread_id ?? null, hasText: typeof update.message?.text === 'string', command: /^\/([a-z_]+)/i.exec(update.message?.text || '')?.[1] || null, anonymous: Boolean(update.message?.sender_chat) }));
+    // Result ingestion must not wait for the optional community archive.
+    const earlyTopicResult=sourceMessage?.chat?.username?.toLowerCase()==='efleagueuz'&&sourceMessage.message_thread_id===UZEFLIFE_RESULT_TOPIC?await handleTopicResultUpdate(update):undefined;
     let archivedCommunityPost: Awaited<ReturnType<typeof archiveCommunityMessage>> = null;
-    if (sourceMessage) {
+    if (sourceMessage&&!earlyTopicResult?.handled) {
       try { archivedCommunityPost = await archiveCommunityMessage(sourceMessage); }
       catch (error) {
         console.warn('[AI_COMMUNITY_ARCHIVE_UNAVAILABLE]');
@@ -101,10 +105,11 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
         if (communityPost(sourceMessage) && (update.channel_post || update.edited_channel_post || sourceMessage.chat?.type === 'private')) throw error;
       }
     }
-    console.info('[TELEGRAM_UPDATE_RECEIVED]', JSON.stringify({ updateId: update.update_id, kind: update.callback_query ? 'callback' : update.message ? 'message' : Object.keys(update).filter(key => key !== 'update_id').join(','), chatId: update.message?.chat?.id ?? update.callback_query?.message?.chat?.id ?? null, threadId: update.message?.message_thread_id ?? update.callback_query?.message?.message_thread_id ?? null, hasText: typeof update.message?.text === 'string', command: /^\/([a-z_]+)/i.exec(update.message?.text || '')?.[1] || null, anonymous: Boolean(update.message?.sender_chat) }));
+
     let response: Record<string, unknown> = { ok: true, ignored: 'unhandled_update_type' };
-    const topicResult = await handleTopicResultUpdate(update);
+    const topicResult = earlyTopicResult || await handleTopicResultUpdate(update);
     if (topicResult.handled) {
+      console.info('[TELEGRAM_TOPIC_RESULT_OUTCOME]',JSON.stringify({updateId:update.update_id,threadId:sourceMessage?.message_thread_id??update.callback_query?.message?.message_thread_id,result:topicResult.result}));
       response = {ok:true,handled:'topic_result',result:topicResult.result};
     } else if(typeof update.callback_query?.data==='string'&&/^android_login:(approve|deny):[a-f0-9]{32}$/.test(update.callback_query.data)){
       const callback=update.callback_query;try{const result=await answerAndroidLogin(callback);await answerTelegramCallback(callback.id,result.status==='APPROVED'?'Kirish tasdiqlandi. EFLUZ ilovasiga qayting.':'Kirish rad etildi.',true);response={ok:true,handled:'android_login_callback'};}catch(error:any){await answerTelegramCallback(callback.id,error.statusCode?error.message:'Kirish tasdiqlanmadi. Qayta urinib ko‘ring.',true);response={ok:true,handled:'android_login_callback',approved:false};}
