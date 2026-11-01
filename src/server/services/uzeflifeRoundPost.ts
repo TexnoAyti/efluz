@@ -32,6 +32,16 @@ export async function getRoundPostStatus(state:UState,round:number) {
  const data=roundData(state,round),record=(await refFor(round).get()).data();
  return roundPostView(record,round,data.totalPages,data.matchCount);
 }
+/** Owner-only polling needs the job receipt, not all 1,815 tournament fixtures. */
+export async function getSavedRoundPostStatus(round:number) {
+ if(!Number.isInteger(round)||round<1||round>15)throw uError('Tur raqami noto‘g‘ri.',400);
+ const record=(await refFor(round).get()).data();
+ const pages=record?.totalPages??record?.imageCount;
+ const totalPages=Number.isInteger(pages)&&pages>0?pages:null;
+ const matchCount=Number.isInteger(record?.matchCount)&&record.matchCount>0?record.matchCount:null;
+ const view=roundPostView(record,round,totalPages??16,matchCount??0);
+ return {...view,totalPages,matchCount,...(totalPages===null&&record?.version!==2?{maxConfirmed:null}:{})};
+}
 export async function requestRoundPost(state:UState,round:number,requestedBy:string) {
  if(process.env.MIGRATION_WRITE_FREEZE==='true')throw uError('Yuborish vaqtincha to‘xtatilgan.',503);
  if(!process.env.TELEGRAM_BOT_TOKEN)throw uError('Telegram bot tokeni sozlanmagan.',503);

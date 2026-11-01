@@ -32,6 +32,10 @@ export async function verifyUzeflifeRoundPosts(){
   assert.equal((await call('publish-round',{round:1,expectedRevision:777})).status,409);
   assert.equal((await call('publish-round',{round:4,expectedRevision:778})).status,409);
   const queued=await call('publish-round',{round:1,expectedRevision:778});assert.equal(queued.status,202);assert.equal(queued.data.totalPages,16);assert.equal(attempts,0,'HTTP enqueue never waits for Telegram');
+  const collection=db.collection;
+  db.collection=((path:string)=>{assert.notEqual(path,'uzeflife','Status polling must not load the complete tournament');return collection.call(db,path);}) as any;
+  try{const light=await call('publish-status?round=1');assert.equal(light.status,200);assert.equal(light.data.state,'pending');assert.equal(light.data.matchCount,121);assert.equal('snapshot' in light.data,false);}
+  finally{db.collection=collection;}
   await Promise.all([requestRoundPost(state,1,users[0].id),requestRoundPost(state,1,users[0].id)]);
   await Promise.all([processRoundPost(1,{render:fakeRender,send}),processRoundPost(1,{render:fakeRender,send})]);
   assert.equal(attempts,1,'Two workers lease a single album once');
