@@ -117,11 +117,27 @@ export async function processRoundPost(round:number,deps:Dependencies={}):Promis
 export async function processPendingRoundPost():Promise<boolean> {
  const jobs=await getFirestoreDb().collection(collection).where('state','==','pending').limit(1).get();
  if(jobs.empty)return false;
+ if(process.env.VERCEL==='1'){await triggerRoundPostWorker(jobs.docs[0].data().round,0);return false;}
  await processRoundPost(jobs.docs[0].data().round);
  return true;
 }
+export async function triggerRoundPostWorker(round:number,hop=0) {
+ if(!Number.isInteger(round)||round<1||round>15||!Number.isInteger(hop)||hop<0||hop>32)throw Error('INVALID_ROUND_POST_WORKER_REQUEST');
+ const host=process.env.VERCEL_ENV==='production'?process.env.VERCEL_PROJECT_PRODUCTION_URL||process.env.VERCEL_URL:process.env.VERCEL_URL;
+ const secret=process.env.CRON_SECRET;
+ if(!host||!/^[a-zA-Z0-9.-]+\.vercel\.app$/.test(host)||!secret)throw Error('ROUND_POST_WORKER_CONFIG_REQUIRED');
+ const headers:Record<string,string>={authorization:'Bearer '+secret};
+ if(process.env.VERCEL_AUTOMATION_BYPASS_SECRET)headers['x-vercel-protection-bypass']=process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+ const response=await fetch(`https://${host}/api/internal/uzeflife-post-worker?round=${round}&hop=${hop}`,{method:'POST',headers,redirect:'error',signal:AbortSignal.timeout(5000)});
+ if(!response.ok)throw Error('ROUND_POST_WORKER_UNAVAILABLE');
+}
+/** A fresh function invocation supplies the complete time budget for one album. */
+export async function runRoundPostWorker(round:number,hop=0):Promise<void> {
+ const pending=await processRoundPost(round);
+ if(pending&&hop<32){if(process.env.VERCEL==='1')await triggerRoundPostWorker(round,hop+1);else await runRoundPostWorker(round,hop+1);}
+}
 export function scheduleRoundPost(round:number) {
  if(process.env.VERCEL!=='1'&&!process.env.K_SERVICE)return;
- const work=processRoundPost(round).then(async pending=>{if(pending){const {triggerNotificationContinuation}=await import('./telegramNotificationQueue');await triggerNotificationContinuation(1);}}).catch(()=>console.warn('[UZEFLIFE_CHANNEL_POST_DEFERRED]'));
+ const work=(process.env.VERCEL==='1'?triggerRoundPostWorker(round):runRoundPostWorker(round)).catch(()=>console.warn('[UZEFLIFE_CHANNEL_POST_DEFERRED]'));
  if(process.env.VERCEL==='1')waitUntil(work);else void work;
 }
