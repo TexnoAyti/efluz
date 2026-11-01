@@ -123,7 +123,8 @@ export async function processRoundPost(round:number,deps:Dependencies={}):Promis
  try{pages=await (deps.render||renderUzeflifeRoundPages)(old.snapshotJson?JSON.parse(old.snapshotJson):old.snapshot,round);if(pages.length!==old.totalPages||pages.reduce((n,p)=>n+p.count,0)!==old.matchCount)throw Error('INCOMPLETE_IMAGES');}
  catch{await db.runTransaction(async tx=>{const current=(await tx.get(ref)).data();if(current?.state==='pending'&&current.fingerprint===old.fingerprint)tx.update(ref,{state:'failed',error:'Rasmlarni tayyorlab bo‘lmadi. Qayta urinib ko‘ring.'});});return false;}
  const lease=randomUUID();
- const claimed=await db.runTransaction(async tx=>{
+ const native=(db as any).transitionRoundPhoto?.bind(db);
+ const claimed=native?await native(round,'claim',lease,{fingerprint:old.fingerprint,sentPages:old.sentPages}):await db.runTransaction(async tx=>{
   const current=(await tx.get(ref)).data();
   if(!current||current.state!=='pending'||current.sentPages!==old.sentPages||current.fingerprint!==old.fingerprint)return null;
   const start=current.sentPages,count=Math.min(1,pages.length-start);
@@ -136,11 +137,13 @@ export async function processRoundPost(round:number,deps:Dependencies={}):Promis
  try{ids=await (deps.send||sendUzeflifeRoundPages)(pages.slice(claimed.inFlight.start,claimed.inFlight.start+claimed.inFlight.count),round);}
  catch(error){
   const rejected=error instanceof RejectedPost;
+  if(native){await native(round,'reject',lease,{rejected,error:rejected?error.message:'Telegram javobi tasdiqlanmadi. Takror yuborishdan oldin kanalni tekshiring.'});return false;}
   await db.runTransaction(async tx=>{const current=(await tx.get(ref)).data();if(current?.inFlight?.lease!==lease)return;tx.update(ref,{state:rejected?'failed':'unverified',leaseUntil:0,...(rejected?{inFlight:null}:{}),error:rejected?error.message:'Telegram javobi tasdiqlanmadi. Takror yuborishdan oldin kanalni tekshiring.'});});
   return false;
  }
  // A failed checkpoint write leaves the durable in-flight marker untouched.
  // The next request shows "unverified" rather than sending the same photo again.
+ if(native){const result=await native(round,'ack',lease,{ids});return result?.pending===true;}
  return db.runTransaction(async tx=>{
   const current=(await tx.get(ref)).data();if(current?.inFlight?.lease!==lease)return false;
   const sentPages=claimed.inFlight.start+claimed.inFlight.count,pending=sentPages<pages.length;

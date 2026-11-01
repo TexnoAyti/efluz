@@ -31,7 +31,7 @@ export function runtimeRpc(): RuntimeRpc {
   if(!url||!key||new URL(url).protocol!=='https:') throw new Error('SUPABASE_SERVER_CONFIG_REQUIRED');
   const execute: RuntimeRpc = async(name,body)=>{
     const started = Date.now();
-    const target = body.p_ids ? 'durable_read_snapshots' : body.p_operations?.map((op: any) => op.path.split('/').slice(0,-1).join('/')).filter((value: string, index: number, values: string[]) => values.indexOf(value) === index).join(',') || body.p_query?.collection || body.p_query?.path?.split('/').slice(0,-1).join('/') || 'commit';
+    const target = body.p_round ? 'uzeflife_channel_posts' : body.p_ids ? 'durable_read_snapshots' : body.p_operations?.map((op: any) => op.path.split('/').slice(0,-1).join('/')).filter((value: string, index: number, values: string[]) => values.indexOf(value) === index).join(',') || body.p_query?.collection || body.p_query?.path?.split('/').slice(0,-1).join('/') || 'commit';
     try {
     // Generation mismatch is an application CAS conflict. Returning it as SQL
     // 40001 caused the HTTP database layer to repeatedly retry the same stale
@@ -177,6 +177,16 @@ export class PostgresDocumentStore {
   }
   patchSnapshot(ids: string[], row: any, merge: boolean, ttl: number, version: string): Promise<boolean> {
     return this.rpc('efl_runtime_patch_snapshot', {p_space:this.databaseId,p_ids:ids,p_row:clean(row),p_merge:merge,p_ttl:ttl,p_version:version});
+  }
+  transitionRoundPhoto(round:number,action:string,token:string,payload:Record<string,any>){
+    const body={p_space:this.databaseId,p_round:round,p_action:action,p_token:token,p_payload:payload};
+    // Repeating the same token is safe for claims and acknowledgements, even
+    // when the first database response is lost after its transaction commits.
+    const call=async()=>{try{return await this.rpc('efl_runtime_round_photo',body);}catch(error:any){
+      if(error.httpStatus&&error.httpStatus<500||error.message==='RUNTIME_FROZEN')throw error;
+      return this.rpc('efl_runtime_round_photo',body);
+    }};
+    return call();
   }
   async runTransaction<T>(callback:(transaction:Transaction)=>Promise<T>):Promise<T>{
     for(let attempt=0;attempt<7;attempt++){
