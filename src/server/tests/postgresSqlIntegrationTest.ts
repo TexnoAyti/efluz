@@ -40,9 +40,14 @@ import { readPostgresSnapshotBundle, clearPostgresSnapshotCache } from '../readM
 // The HTTP envelope is simulated; this cannot prove hosted PostgREST latency.
 const pg = new PGlite();
 await pg.exec('create role anon; create role authenticated; create role service_role bypassrls;');
-for (const path of ['20261009044907_postgres_document_runtime.sql', '20261009125000_nonblocking_runtime_reads.sql', '20261009134500_patch_snapshot_rows.sql', '20261010091409_application_runtime_commit_conflicts.sql', '20261010161456_stop_postgrest_conflict_retries.sql', '20261010172440_conditional_snapshot_reads.sql', '20261101122224_indexed_document_id_filters.sql', '20261101122430_linear_runtime_map_decode.sql', '20261101122842_compact_notification_payloads.sql']) {
+for (const path of ['20261009044907_postgres_document_runtime.sql', '20261009125000_nonblocking_runtime_reads.sql', '20261009134500_patch_snapshot_rows.sql', '20261010091409_application_runtime_commit_conflicts.sql', '20261010161456_stop_postgrest_conflict_retries.sql', '20261010172440_conditional_snapshot_reads.sql', '20261101122224_indexed_document_id_filters.sql', '20261101122430_linear_runtime_map_decode.sql', '20261101122842_compact_notification_payloads.sql', '20261101133936_atomic_round_photo_transitions.sql']) {
   await pg.exec(await readFile('supabase/migrations/' + path, 'utf8'));
 }
+const photoGrants=(await pg.query(`select has_function_privilege('anon','public.efl_runtime_round_photo(text,integer,text,text,jsonb)','execute') as anon,
+ has_function_privilege('authenticated','public.efl_runtime_round_photo(text,integer,text,text,jsonb)','execute') as authenticated,
+ has_function_privilege('service_role','public.efl_runtime_round_photo(text,integer,text,text,jsonb)','execute') as service,
+ (select prosecdef from pg_proc where oid='public.efl_runtime_round_photo(text,integer,text,text,jsonb)'::regprocedure) as definer`)).rows[0];
+assert.deepEqual(photoGrants,{anon:false,authenticated:false,service:true,definer:false});
 await verifyIndexedDocumentIds(pg);
 await verifyLinearRuntimeDecode(pg);
 await verifyCompactNotificationMigration(pg,'supabase/migrations/20261101122842_compact_notification_payloads.sql');
@@ -72,7 +77,8 @@ globalThis.fetch = (async (input: any, init: any) => {
   const name = url.pathname.split('/').at(-1), body = JSON.parse(init.body);
   try {
     let result;
-    if(name==='efl_runtime_snapshot_read') result=await pg.query('select public.efl_runtime_snapshot_read($1,$2::jsonb,$3::jsonb) as value',[body.p_space,JSON.stringify(body.p_ids),JSON.stringify(body.p_versions)]);
+    if(name==='efl_runtime_round_photo') result=await pg.query('select public.efl_runtime_round_photo($1,$2,$3,$4,$5::jsonb) as value',[body.p_space,body.p_round,body.p_action,body.p_token,JSON.stringify(body.p_payload)]);
+    else if(name==='efl_runtime_snapshot_read') result=await pg.query('select public.efl_runtime_snapshot_read($1,$2::jsonb,$3::jsonb) as value',[body.p_space,JSON.stringify(body.p_ids),JSON.stringify(body.p_versions)]);
     else if (name === 'efl_runtime_patch_snapshot') result = await pg.query('select public.efl_runtime_patch_snapshot($1,$2::text[],$3::jsonb,$4,$5,$6) as value', [body.p_space, body.p_ids, JSON.stringify(body.p_row), body.p_merge, body.p_ttl, body.p_version]);
     else if (name === 'efl_runtime_read') result = await pg.query('select public.efl_runtime_read($1,$2::jsonb) as value', [body.p_space, JSON.stringify(body.p_query)]);
     else if (name === 'efl_runtime_commit_safe') {
@@ -95,8 +101,12 @@ globalThis.fetch = (async (input: any, init: any) => {
       result = await pg.query('select public.efl_runtime_commit_safe($1,$2::jsonb,$3) as value', [body.p_space, JSON.stringify(body.p_operations), body.p_generation]);
     }
     else { legacyHttpCommits++; throw Error('LEGACY_COMMIT_ENDPOINT_FORBIDDEN'); }
+    if(name==='efl_runtime_round_photo'){
+      const row=(await pg.query<{consistent:boolean}>(`select data=efl_runtime.decode(encoded) as consistent from efl_runtime.documents where space=$1 and collection_path='uzeflife_channel_posts' and document_id=$2`,[body.p_space,'round-'+body.p_round])).rows[0];
+      if(row)assert.equal(row.consistent,true,'Native photo metadata must preserve encoded/data equivalence');
+    }
     const value: any = result.rows[0].value;
-    if (value.conflict) conflicts++;
+    if (value?.conflict) conflicts++;
     if(name==='efl_runtime_snapshot_read')snapshotResponses.push({bytes:Buffer.byteLength(JSON.stringify(value)),ids:body.p_ids});
     return new Response(JSON.stringify(value), { status: 200 });
   } catch (error: any) { return new Response(JSON.stringify({ code: error.code, message: error.message }), { status: 400 }); }

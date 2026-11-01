@@ -45,8 +45,15 @@ export async function verifyUzeflifeRoundPosts(){
   await Promise.all([requestRoundPost(state,1,users[0].id),requestRoundPost(state,1,users[0].id)]);
   await Promise.all([processRoundPost(1,{render:fakeRender,send}),processRoundPost(1,{render:fakeRender,send})]);
   assert.equal(attempts,1,'Two workers lease one separately captioned photo once');
-  assert.equal(typeof (await refs[1].get()).data()?.snapshotJson,'string');assert.equal((await refs[1].get()).data()?.snapshot,undefined);
+  assert.equal(typeof (await refs[1].get()).data()?.snapshotJson,'string');assert.equal((await refs[1].get()).data()?.snapshot==null,true);
   let view=await getRoundPostStatus(state,1);assert.equal(view.sentPages,1);assert.equal(view.state,'pending');
+  if((db as any).transitionRoundPhoto){
+   const receipt=(await refs[1].get()).data()!;
+   assert.equal((await (db as any).transitionRoundPhoto(1,'ack',receipt.lastAcknowledgedLease,{ids:receipt.telegramMessageIds.slice(-1)})).pending,true);
+   assert.equal((await getRoundPostStatus(state,1)).sentPages,1,'A repeated acknowledgement cannot advance twice');
+   await assert.rejects((db as any).transitionRoundPhoto(1,'ack',receipt.lastAcknowledgedLease,{ids:[-1]}));
+  }
+
   await processRoundPost(1,{render:fakeRender,send:async()=>{throw Error('isolated connection lost after Telegram may accept');}});
   view=await getRoundPostStatus(state,1);assert.equal(view.state,'unverified');assert.equal(view.sentPages,1);
   await assert.rejects(requestRoundPost(state,1,users[0].id),/tekshirib/);
@@ -81,10 +88,11 @@ export async function verifyUzeflifeRoundPosts(){
   await requestRoundPost(state,3,users[0].id);await processRoundPost(3,{render:fakeRender,send:sendUzeflifeRoundPages});assert.equal(methods.at(-1),'sendPhoto');assert.equal((await getRoundPostStatus(state,3)).state,'sent');
   // Telegram accepted the photo, but the database checkpoint failed afterwards.
   await refs[3].delete();await requestRoundPost(state,3,users[0].id);
-  const runTransaction=db.runTransaction;let loseCheckpoint=false;
+  const runTransaction=db.runTransaction,nativeTransition=(db as any).transitionRoundPhoto;let loseCheckpoint=false;
+  if(nativeTransition)(db as any).transitionRoundPhoto=async function(round:number,action:string,...args:any[]){if(loseCheckpoint&&action==='ack'){loseCheckpoint=false;throw Error('ISOLATED_ACK_CHECKPOINT_FAILURE');}return nativeTransition.call(db,round,action,...args);};
   db.runTransaction=(async function(callback:any,...options:any[]){if(loseCheckpoint){loseCheckpoint=false;throw Error('ISOLATED_ACK_CHECKPOINT_FAILURE');}return (runTransaction as any).call(db,callback,...options);}) as any;
   try{await assert.rejects(processRoundPost(3,{render:fakeRender,send:async pages=>{loseCheckpoint=true;return pages.map(()=>33000);}}),/ACK_CHECKPOINT/);}
-  finally{db.runTransaction=runTransaction;}
+  finally{db.runTransaction=runTransaction;if(nativeTransition)(db as any).transitionRoundPhoto=nativeTransition;}
   assert.equal((await getRoundPostStatus(state,3)).state,'sending');
   await processRoundPost(3,{render:fakeRender,send:async()=>{throw Error('MUST_NOT_RESEND_ACKNOWLEDGED_PHOTO');}});
   await refs[3].update({leaseUntil:Date.now()-1});
