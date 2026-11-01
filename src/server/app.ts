@@ -153,6 +153,22 @@ export function createApp() {
   app.use('/api', rateLimit('api-global', 300, 60, { distributed: false }));
   app.use('/api/image-exports', imageExportDownloadRouter);
 
+  app.all('/api/internal/uzeflife-post-worker',async(req,res)=>{
+    const secret=process.env.CRON_SECRET,actual=Buffer.from(req.headers.authorization||''),expected=Buffer.from(`Bearer ${secret||''}`);
+    if(!secret||actual.length!==expected.length||!timingSafeEqual(actual,expected)){res.status(401).json({error:'UNAUTHORIZED'});return;}
+    if(!['GET','POST'].includes(req.method)){res.sendStatus(405);return;}
+    const round=Number(req.query.round),hop=Number(req.query.hop||0);
+    if(!Number.isInteger(round)||round<1||round>15||!Number.isInteger(hop)||hop<0||hop>32){res.sendStatus(400);return;}
+    try{
+      const {runRoundPostWorker}=await import('./services/uzeflifeRoundPost');
+      if(process.env.VERCEL==='1'){
+        const {waitUntil}=await import('@vercel/functions');
+        waitUntil(runRoundPostWorker(round,hop).catch(()=>console.warn('[UZEFLIFE_CHANNEL_POST_DEFERRED]')));
+        res.status(202).json({accepted:true});
+      }else{await runRoundPostWorker(round,hop);res.json({processed:true});}
+    }catch{res.status(503).json({error:'ROUND_POST_WORKER_UNAVAILABLE'});}
+  });
+
   app.all('/api/internal/telegram-worker', async (req, res) => {
     const secret = process.env.CRON_SECRET;
     const actual = Buffer.from(req.headers.authorization || '');
