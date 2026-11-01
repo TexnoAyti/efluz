@@ -2,7 +2,6 @@ import {uMatchFinished,isULeague} from '../../lib/uzeflifeLeague';
 import {writeUNotices,scheduleUNotices} from './uzeflifeNotifications';
 import {randomUUID,createHash} from 'node:crypto';
 import {getFirestoreDb} from '../firebase/admin';
-import {getAuthoritativeUserForAuthorization} from '../firebase/firestoreStore';
 import {readUState,uPermissions,requireUPermission,applyUAction,validateUAction,checkUSubscriptions,uError} from './uzeflifeService';
 import {normalizeAiEntity} from './telegramAiEntities';
 import {assertSingleNaturalAdminRequest} from './telegramAiAdminLanguage';
@@ -18,10 +17,13 @@ const clarify=(message:string):never=>{throw Error('CLARIFY:'+message);};
 async function account(telegramId:number):Promise<User|null>{
  const matches=await getFirestoreDb().collection('users').where('telegramId','==',String(telegramId)).limit(2).get();
  if(matches.docs.length!==1)return null;
- const user=await getAuthoritativeUserForAuthorization(matches.docs[0].id);
- return user&&!user.isSuspended&&String(user.telegramId)===String(telegramId)?user:null;
+ // The unique query is a fresh database read. Execution rechecks these
+ // identities inside the result transaction before changing any score.
+ const doc=matches.docs[0],data=doc.data();
+ const user:User={id:doc.id,telegramId:String(data.telegramId||''),username:data.username||'',firstName:data.firstName||'',lastName:data.lastName||'',photoUrl:data.photoUrl||'',adminPermissions:data.adminPermissions,isAdmin:data.isAdmin===true,isSuspended:data.isSuspended===true,createdAt:data.createdAt||'',updatedAt:data.updatedAt||''};
+ return !user.isSuspended&&user.telegramId===String(telegramId)?user:null;
 }
-export async function authorizeUzeflifeTopicResult(telegramId:number){const user=await account(telegramId);return !!user&&uPermissions(await readUState(),user).includes('results');}
+export async function authorizeUzeflifeTopicResult(telegramId:number){const [user,state]=await Promise.all([account(telegramId),readUState()]);return !!user&&uPermissions(state,user).includes('results');}
 export function uzeflifeMatchFingerprint(s:UState,m:UMatch){
  return createHash('sha256').update(JSON.stringify([s.status,s.round,m.id,m.bracket,m.round,m.home,m.away,m.winner,m.homeScore,m.awayScore,m.penaltyHome,m.penaltyAway,m.scheduledAt,m.deadlineAt||null,m.dispute?[m.dispute.at,m.dispute.status]:null,m.proposal?[m.proposal.by,m.proposal.home,m.proposal.away,m.proposal.penaltyHome,m.proposal.penaltyAway]:null,[m.home,m.away].map(id=>s.participants.find(p=>p.id===id)?.status||null)])).digest('hex');
 }
@@ -32,7 +34,7 @@ export async function planUzeflifeTopicResult(text:string,sender:number,resoluti
  assertSingleNaturalAdminRequest(text);
  if(scores.length>2||scores.some(score=>/[−-]\s*$|\d[.,]\s*$/.test(text.slice(0,score.index))||/^[.,]\d/.test(text.slice(score.index!+score[0].length))))clarify('Hisob noto‘g‘ri. Masalan: 2:1 yoki 2:2 penalti 5:4.');
  if(scores.length===2&&!/(?:penalti\w*|penalty|penalties|пенальти)/i.test(text.slice(scores[0].index!+scores[0][0].length,scores[1].index)))clarify('Ikkinchi hisob penaltilar bo‘lsa, “2:2 penalti 5:4” deb yozing.');
- const state=await readUState(),user=await account(sender);
+ const [state,user]=await Promise.all([readUState(),account(sender)]);
  if(!user)clarify('Avval EFLUZ akkauntingizga kiring. Telegram hisobingiz tasdiqlanmadi.');
  const admin=uPermissions(state,user).includes('results');
  if(state.status!=='playing')clarify('UZEFLIFE hozir o‘ynalayotgan holatda emas. Natija saqlanmadi.');
@@ -71,16 +73,16 @@ export async function planUzeflifeTopicResult(text:string,sender:number,resoluti
 export async function executeUzeflifeTopicResult(plan:AdminPlan,actorTelegramId:number,submitterTelegramId:number,source:{chat:number;thread:number;message:number}){
  const expected=plan.body.expectedFixture as {kind?:string;fingerprint?:string;submitter?:string;telegramId?:string}|undefined;
  if(plan.action!=='result_edit'||source.thread!==UZEFLIFE_RESULT_TOPIC||expected?.kind!=='uzeflife'||!expected.fingerprint||!/^[a-f0-9]{64}$/.test(expected.fingerprint))throw uError('UZEFLIFE mavzusi yoki taklifi noto‘g‘ri.',403);
- const actor=await account(actorTelegramId),submitter=await account(submitterTelegramId);
+ const [actor,submitter,current]=await Promise.all([account(actorTelegramId),account(submitterTelegramId),readUState()]);
  if(!actor||!submitter)throw uError('Akkauntni tekshirib bo‘lmadi.',403);
  if(submitter.id!==expected.submitter||String(submitter.telegramId)!==expected.telegramId)throw uError('Natija yuboruvchisi o‘zgargan.',403);
- const current=await readUState();requireUPermission(current,actor,'results');
+ requireUPermission(current,actor,'results');
  if(!uPermissions(current,submitter).includes('results')&&(await checkUSubscriptions(current,submitter)).length)throw uError('Natija yuboruvchining majburiy obunasi tasdiqlanmadi.',403);
  const channels=JSON.stringify([current.subscriptionsEnabled,current.channels]);
  const {data}=validateUAction('result',{matchId:plan.targetId,home:plan.body.homeScore,away:plan.body.awayScore,penaltyHome:plan.body.homePenaltyScore,penaltyAway:plan.body.awayPenaltyScore});
  const db=getFirestoreDb(),ref=db.collection('uzeflife').doc('championship'),auditId=randomUUID();
  const stored=await db.runTransaction(async tx=>{
-  const snapshot=await tx.get(ref),actorDoc=await tx.get(db.collection('users').doc(actor.id)),senderDoc=await tx.get(db.collection('users').doc(submitter.id));
+  const [snapshot,actorDoc,senderDoc]=await Promise.all([tx.get(ref),tx.get(db.collection('users').doc(actor.id)),tx.get(db.collection('users').doc(submitter.id))]);
   const state=snapshot.data() as UState|undefined,admin=actorDoc.data() as User|undefined,sender=senderDoc.data() as User|undefined;
   if(!state||!admin||!sender||admin.isSuspended||sender.isSuspended||String(admin.telegramId)!==String(actorTelegramId)||String(sender.telegramId)!==String(submitterTelegramId))throw uError('Akkaunt vakolati o‘zgargan.',403);
   requireUPermission(state,{...admin,id:actor.id},'results');
