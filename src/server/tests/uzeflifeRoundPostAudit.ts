@@ -34,6 +34,10 @@ export async function verifyUzeflifeRoundPosts(){
   assert.equal((await call('publish-round',{round:1,expectedRevision:777})).status,409);
   assert.equal((await call('publish-round',{round:4,expectedRevision:778})).status,409);
   const queued=await call('publish-round',{round:1,expectedRevision:778});assert.equal(queued.status,202);assert.equal(queued.data.totalPages,16);assert.equal(attempts,0,'HTTP enqueue never waits for Telegram');
+  const compactReceipt=(await refs[1].get()).data()!;
+  assert.equal(typeof compactReceipt.snapshotJson,'string');assert.equal(compactReceipt.snapshot,undefined);
+  // Existing nested-snapshot jobs remain readable and compact on the first claim.
+  const {snapshotJson,...legacyV2}=compactReceipt;await refs[1].set({...legacyV2,snapshot:JSON.parse(snapshotJson)});
   const collection=db.collection;
   db.collection=((path:string)=>{assert.notEqual(path,'uzeflife','Status polling must not load the complete tournament');return collection.call(db,path);}) as any;
   try{const light=await call('publish-status?round=1');assert.equal(light.status,200);assert.equal(light.data.state,'pending');assert.equal(light.data.matchCount,121);assert.equal('snapshot' in light.data,false);}
@@ -41,6 +45,7 @@ export async function verifyUzeflifeRoundPosts(){
   await Promise.all([requestRoundPost(state,1,users[0].id),requestRoundPost(state,1,users[0].id)]);
   await Promise.all([processRoundPost(1,{render:fakeRender,send}),processRoundPost(1,{render:fakeRender,send})]);
   assert.equal(attempts,1,'Two workers lease one separately captioned photo once');
+  assert.equal(typeof (await refs[1].get()).data()?.snapshotJson,'string');assert.equal((await refs[1].get()).data()?.snapshot,undefined);
   let view=await getRoundPostStatus(state,1);assert.equal(view.sentPages,1);assert.equal(view.state,'pending');
   await processRoundPost(1,{render:fakeRender,send:async()=>{throw Error('isolated connection lost after Telegram may accept');}});
   view=await getRoundPostStatus(state,1);assert.equal(view.state,'unverified');assert.equal(view.sentPages,1);
