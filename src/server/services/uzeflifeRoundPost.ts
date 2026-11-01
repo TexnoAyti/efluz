@@ -16,7 +16,7 @@ function roundData(state:UState,round:number) {
  const matches=state.matches.filter(m=>m.round===round);
  if(!matches.length)throw uError('Bu turda o‘yinlar yo‘q.',409);
  const snapshot:UState={...state,matches:matches.map(m=>({...m,proposal:null,dispute:null})),participants:state.participants.map(p=>({id:p.id,name:p.name,status:p.status})),assistants:{},channels:[],announcements:[]};
- return {snapshot,totalPages:Math.ceil(matches.length/8),matchCount:matches.length,fingerprint:digest(matches.map(m=>[m.id,m.home,m.away]))};
+ return {snapshotJson:JSON.stringify(snapshot),totalPages:Math.ceil(matches.length/8),matchCount:matches.length,fingerprint:digest(matches.map(m=>[m.id,m.home,m.away]))};
 }
 const progress=(record:any,total:number)=>Math.min(total,Math.max(0,Number((record?.sentPages??(record?.state==='sent'?total:record?.telegramMessageIds?.length))||0)));
 export function roundPostView(record:any,round:number,totalPages:number,matchCount:number) {
@@ -120,7 +120,7 @@ export async function processRoundPost(round:number,deps:Dependencies={}):Promis
  if(!old||old.version!==2||old.state!=='pending')return false;
  if(process.env.MIGRATION_WRITE_FREEZE==='true'||process.env.DATABASE_PROVIDER==='supabase'&&process.env.SUPABASE_DATA_NAMESPACE==='preview'&&!(process.env.NODE_ENV==='test'&&deps.send))return false;
  let pages:Pages;
- try{pages=await (deps.render||renderUzeflifeRoundPages)(old.snapshot,round);if(pages.length!==old.totalPages||pages.reduce((n,p)=>n+p.count,0)!==old.matchCount)throw Error('INCOMPLETE_IMAGES');}
+ try{pages=await (deps.render||renderUzeflifeRoundPages)(old.snapshotJson?JSON.parse(old.snapshotJson):old.snapshot,round);if(pages.length!==old.totalPages||pages.reduce((n,p)=>n+p.count,0)!==old.matchCount)throw Error('INCOMPLETE_IMAGES');}
  catch{await db.runTransaction(async tx=>{const current=(await tx.get(ref)).data();if(current?.state==='pending'&&current.fingerprint===old.fingerprint)tx.update(ref,{state:'failed',error:'Rasmlarni tayyorlab bo‘lmadi. Qayta urinib ko‘ring.'});});return false;}
  const lease=randomUUID();
  const claimed=await db.runTransaction(async tx=>{
@@ -128,7 +128,8 @@ export async function processRoundPost(round:number,deps:Dependencies={}):Promis
   if(!current||current.state!=='pending'||current.sentPages!==old.sentPages||current.fingerprint!==old.fingerprint)return null;
   const start=current.sentPages,count=Math.min(1,pages.length-start);
   if(count<=0){tx.update(ref,{state:'sent'});return null;}
-  const next={...current,state:'sending',leaseUntil:Date.now()+90000,inFlight:{start,count,lease},at:new Date().toISOString()};tx.set(ref,next);return next;
+  const {snapshot,...compact}=current;
+  const next={...compact,snapshotJson:current.snapshotJson||JSON.stringify(snapshot),state:'sending',leaseUntil:Date.now()+90000,inFlight:{start,count,lease},at:new Date().toISOString()};tx.set(ref,next);return next;
  });
  if(!claimed)return false;
  let ids:number[];
