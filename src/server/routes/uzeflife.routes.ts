@@ -30,58 +30,39 @@ uzeflifeRouter.post('/image-export',requireAuth,async(req,res)=>{
   res.json({ok:true,...download});
  }catch(e:any){const invalid=String(e.message).startsWith('INVALID_');res.status(e.statusCode||(invalid?400:503)).json({ok:false,error:e.statusCode?e.message:invalid?'PNG rasm ma’lumotlari noto‘g‘ri.':'Rasmni saqlashga tayyorlab bo‘lmadi. Qayta urinib ko‘ring.'});}
 });
-// Read-only owner diagnostics: explain why automatic Telegram channel publication is blocked.
+// Channel publication is independent of AI and preserves one durable checkpoint per round.
 uzeflifeRouter.get('/publish-status',requireAuth,async(req,res)=>{
  try{
   const {isPrimaryOwner}=await import('../services/customTournamentTicketService');
   if(!isPrimaryOwner(req.user!.telegramId))throw uError('Faqat asosiy admin tekshirishi mumkin.',403);
-  const state=await readUState(),round=1,record=(await getFirestoreDb().collection('uzeflife_channel_posts').doc('round-1').get()).data();
-  const fixtures=state.matches.filter(m=>m.round===round).length;
-  res.json({ok:true,round,channel:'@uzeflife_turner',status:state.status,format:state.format||null,currentRound:state.round,fixtures,expectedFixtures:121,tokenConfigured:!!process.env.TELEGRAM_BOT_TOKEN,delivery:record?{state:record.state||'unknown',sentPages:record.sentPages||0,totalPages:record.totalPages||16,error:record.error||null,messageIds:record.telegramMessageIds||[]}:null,ready:state.format==='LEAGUE'&&state.status==='playing'&&state.round===1&&fixtures===121&&!record});
+  const state=await readUState(),round=Number(req.query.round||state.round);
+  const {getRoundPostStatus,scheduleRoundPost}=await import('../services/uzeflifeRoundPost');
+  const delivery=await getRoundPostStatus(state,round);
+  res.json({ok:true,...delivery,tokenConfigured:!!process.env.TELEGRAM_BOT_TOKEN});
+  if(delivery.state==='pending')scheduleRoundPost(round);
  }catch(e:any){res.status(e.statusCode||503).json({ok:false,error:e.statusCode?e.message:'Yuborish holati olinmadi.'});}
 });
-// AI uses this fixed destination through the ordinary authenticated, owner-only gateway.
 uzeflifeRouter.post('/publish-round',requireAuth,async(req,res)=>{
  try{
   const {isPrimaryOwner}=await import('../services/customTournamentTicketService');
   if(!isPrimaryOwner(req.user!.telegramId))throw uError('Kanalga e’lonni faqat asosiy admin yubora oladi.',403);
-  const state=await readUState(),round=req.body?.round;
-  if(state.format!=='LEAGUE'||state.status!=='playing'||!Number.isInteger(round)||round!==state.round||!state.matches.some(m=>m.round===round))throw uError('Faqat boshlangan liganing joriy turi e’lon qilinadi.',409);
+  const state=await readUState();
   if(!Number.isInteger(req.body?.expectedRevision)||req.body.expectedRevision!==state.revision)throw uError('Turnir yangilangan. E’lonni qayta tasdiqlang.',409);
-  const token=process.env.TELEGRAM_BOT_TOKEN;
-  if(!token)throw uError('Telegram bot tokeni sozlanmagan.',503);
-  const db=getFirestoreDb(),ref=db.collection('uzeflife_channel_posts').doc('round-'+round);
-  try{await ref.create({round,channel:'@uzeflife_turner',state:'sending',requestedBy:req.user!.id,at:new Date().toISOString()});}
-  catch(e:any){if(e?.code===6||/ALREADY_EXISTS/i.test(String(e?.message||'')))throw uError('Bu tur e’loni avval yuborilgan yoki yuborish jarayonida. Takror yuborilmadi.',409);throw e;}
-  const caption='🏆 <b>UZEFLIFE - '+round+' tur o‘yinlari ma’lum</b>\n\n⚠️ <b>Deadline:</b>\n1 kun\n\n📃 <b>Reglament:</b>\nhttps://t.me/efluz_cards/16\n\n📊 <b>Natijalar bu yerga tashlanadi:</b>\nhttps://t.me/efleagueuz/8989\n\n👉 @uzeflife_turner';
-  try{
-   const {renderUzeflifeRoundPages}=await import('../services/uzeflifeRoundImages');
-   const pages=await renderUzeflifeRoundPages(state,round);
-   const total=state.matches.filter(m=>m.round===round).length;
-   if(pages.reduce((n,p)=>n+p.count,0)!==total)throw new Error('O‘yinlar to‘liq rasmga aylantirilmadi.');
-   const allIds:number[]=[];
-   for(let start=0;start<pages.length;start+=10){
-    const batch=pages.slice(start,start+10),form=new FormData();
-    form.set('chat_id','@uzeflife_turner');
-    const media=batch.map((page,index)=>{
-     const key='page'+index;
-     form.append(key,new Blob([new Uint8Array(page.buffer)],{type:'image/png'}),'uzeflife-'+round+'-'+page.first+'.png');
-     return {type:'photo',media:'attach://'+key,caption,parse_mode:'HTML'};
-    });
-    form.set('media',JSON.stringify(media));
-    const response=await fetch('https://api.telegram.org/bot'+token+'/sendMediaGroup',{method:'POST',body:form,signal:AbortSignal.timeout(20000)});
-    const result=await response.json() as any;
-    if(!response.ok||!result.ok||!Array.isArray(result.result)||result.result.length!==batch.length||result.result.some((m:any)=>!m.message_id))throw new Error(String(result.description||'Telegram albomi tasdiqlanmadi.'));
-    const ids=result.result.map((m:any)=>m.message_id as number);allIds.push(...ids);
-    await ref.set({round,channel:'@uzeflife_turner',state:'sending',requestedBy:req.user!.id,at:new Date().toISOString(),sentPages:start+batch.length,totalPages:pages.length,telegramMessageIds:allIds});
-   }
-   await ref.set({round,channel:'@uzeflife_turner',state:'sent',telegramMessageIds:allIds,matchCount:total,imageCount:pages.length,requestedBy:req.user!.id,at:new Date().toISOString()});
-   res.json({ok:true,round,channel:'@uzeflife_turner',matchCount:total,imageCount:pages.length,messageIds:allIds});
-  }catch(e:any){
-   // Preserve the reservation if delivery is uncertain: never blindly double-post.
-   await ref.set({round,channel:'@uzeflife_turner',state:'unverified',error:String(e.message||e).slice(0,200),at:new Date().toISOString()}).catch(()=>{});
-   throw uError('Kanalga yuborish tasdiqlanmadi. Takror yuborishdan oldin kanalni tekshiring.',503);
-  }
- }catch(e:any){res.status(e.statusCode||503).json({ok:false,error:e.statusCode?e.message:'E’lonni yuborib bo‘lmadi.'});}
+  const {requestRoundPost,scheduleRoundPost}=await import('../services/uzeflifeRoundPost');
+  const delivery=await requestRoundPost(state,req.body?.round,req.user!.id);
+  res.status(delivery.state==='sent'?200:202).json({ok:true,...delivery,queued:delivery.state!=='sent',alreadySent:delivery.state==='sent'});
+  if(delivery.state==='pending')scheduleRoundPost(delivery.round);
+ }catch(e:any){res.status(e.statusCode||503).json({ok:false,error:e.statusCode?e.message:'E’lonni navbatga qo‘shib bo‘lmadi.'});}
+});
+uzeflifeRouter.post('/publish-reconcile',requireAuth,async(req,res)=>{
+ try{
+  const {isPrimaryOwner}=await import('../services/customTournamentTicketService');
+  if(!isPrimaryOwner(req.user!.telegramId))throw uError('Faqat asosiy admin tasdiqlashi mumkin.',403);
+  if(req.body?.checkedChannel!==true)throw uError('Avval kanaldagi rasmlarni tekshiring.',400);
+  const {reconcileRoundPost,scheduleRoundPost}=await import('../services/uzeflifeRoundPost');
+  const delivery=await reconcileRoundPost(await readUState(),req.body.round,req.user!.id,req.body.checkpoint,req.body.confirmedPages);
+  res.json({ok:true,...delivery});
+  if(delivery.state==='pending')scheduleRoundPost(delivery.round);
+ }catch(e:any){res.status(e.statusCode||503).json({ok:false,error:e.statusCode?e.message:'Yuborish holatini saqlab bo‘lmadi.'});}
 });
 uzeflifeRouter.post('/:action',requireAuth,async(req,res)=>{try{await mutateUState(req.user!,req.params.action,req.body);res.json({ok:true,...await viewState(req.user)});}catch(e:any){res.status(e.statusCode||503).json({ok:false,error:e.statusCode?e.message:'Amalni saqlab bo‘lmadi. Qayta urinib ko‘ring.',channels:e.channels});}});

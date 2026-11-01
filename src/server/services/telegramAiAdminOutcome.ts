@@ -3,6 +3,11 @@ import type { AdminPlan } from './telegramAiAdminCatalog';
 /** Interpret the server receipt, including durable queued writes. Result routes already
  * read the stored fixture back; compare that receipt without another Firestore query. */
 export function inspectAiAdminOutcome(plan: AdminPlan, data: any): { state: 'queued' | 'verified' | 'accepted' | 'unverified'; message: string } {
+  if(plan.action==='uzeflife_round_post') {
+    if(data?.ok!==true||data.channel!=='@uzeflife_turner'||data.round!==plan.body.round)return {state:'unverified',message:'Tur e’lonining holati tasdiqlanmadi. UZEFLIFE → Admin → E’lonlar → Xabar yuborish bo‘limini tekshiring.'};
+    if(data.state==='sent')return {state:'verified',message:`${data.round}-tur rasmlari kanalga yuborilgan. Takror yuborilmadi.`};
+    return {state:'queued',message:`${data.round}-tur rasmlari yuborish navbatiga saqlandi. ${data.sentPages}/${data.totalPages} ta rasm tasdiqlangan. Holati: UZEFLIFE → Admin → E’lonlar → Xabar yuborish.`};
+  }
   if(plan.action==='club_selection_ban'){
     if(data?.success!==true||data?.ban?.userId!==plan.targetId||data.ban.isBanned!==plan.body.isBanned||!Number.isInteger(data.ban.revision))return {state:'unverified',message:'Ban saqlangani tasdiqlanmadi. Holatni tekshiring.'};
     return {state:'verified',message:data.ban.isBanned?`Klub tanlashga ban saqlandi.${Array.isArray(data.releasedClubs)&&data.releasedClubs.length?' Bo‘shatildi: '+data.releasedClubs.map((c:any)=>c.name).join(', ')+'.':''} Foydalanuvchi boshqa klub tanlay olmaydi.`:'Klub tanlash bani olib tashlandi.'};
