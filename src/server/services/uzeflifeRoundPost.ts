@@ -3,13 +3,14 @@ import {waitUntil} from '@vercel/functions';
 import {getFirestoreDb} from '../firebase/admin';
 import type {UState} from '../../types/uzeflife';
 import {uError} from './uzeflifeService';
+import {UZEFLIFE_RESULT_TOPIC_URL} from '../../lib/uzeflifeResultTopic';
 import {renderUzeflifeRoundPages} from './uzeflifeRoundImages';
 
 export const U_POST_CHANNEL='@uzeflife_turner';
 const collection='uzeflife_channel_posts';
 const refFor=(round:number)=>getFirestoreDb().collection(collection).doc('round-'+round);
 const digest=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
-const caption=(round:number)=>'🏆 <b>UZEFLIFE - '+round+' tur o‘yinlari ma’lum</b>\n\n⚠️ <b>Deadline:</b>\n1 kun\n\n📃 <b>Reglament:</b>\nhttps://t.me/efluz_cards/16\n\n📊 <b>Natijalar bu yerga tashlanadi:</b>\nhttps://t.me/efleagueuz/8989\n\n👉 '+U_POST_CHANNEL;
+const caption=(round:number)=>'🏆 <b>UZEFLIFE - '+round+' tur o‘yinlari ma’lum</b>\n\n⚠️ <b>Deadline:</b>\n1 kun\n\n📃 <b>Reglament:</b>\nhttps://t.me/efluz_cards/16\n\n📊 <b>Natijalar bu yerga tashlanadi:</b>\n'+UZEFLIFE_RESULT_TOPIC_URL+'\n\n👉 '+U_POST_CHANNEL;
 function roundData(state:UState,round:number) {
  if(state.format!=='LEAGUE'||!['playing','paused','completed'].includes(state.status)||!Number.isInteger(round)||round<1||round>state.round)throw uError('Faqat ochilgan liga turini yuborish mumkin.',409);
  const matches=state.matches.filter(m=>m.round===round);

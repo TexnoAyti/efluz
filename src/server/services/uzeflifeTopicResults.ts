@@ -11,8 +11,9 @@ import {uRoundLabel,uMatchNumber} from '../../lib/uzeflifePresentation';
 import type {User} from '../../types';
 import type {UState,UMatch} from '../../types/uzeflife';
 import type {AdminPlan} from './telegramAiAdminCatalog';
+export {UZEFLIFE_RESULT_TOPIC} from '../../lib/uzeflifeResultTopic';
+import {UZEFLIFE_RESULT_TOPIC} from '../../lib/uzeflifeResultTopic';
 
-export const UZEFLIFE_RESULT_TOPIC=7297;
 const clarify=(message:string):never=>{throw Error('CLARIFY:'+message);};
 async function account(telegramId:number):Promise<User|null>{
  const matches=await getFirestoreDb().collection('users').where('telegramId','==',String(telegramId)).limit(2).get();
