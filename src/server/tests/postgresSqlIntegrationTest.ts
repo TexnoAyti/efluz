@@ -109,8 +109,7 @@ globalThis.fetch = (async (input: any, init: any) => {
       result = await pg.query('select public.efl_runtime_commit_safe($1,$2::jsonb,$3) as value', [body.p_space, JSON.stringify(body.p_operations), body.p_generation]);
     }
     else { legacyHttpCommits++; throw Error('LEGACY_COMMIT_ENDPOINT_FORBIDDEN'); }
-    if(name==='efl_runtime_uzeflife_read') result=await pg.query('select public.efl_runtime_uzeflife_read($1) as value',[body.p_space]);
-    else if(name==='efl_runtime_round_photo'){
+    if(name==='efl_runtime_round_photo'){
       const row=(await pg.query<{consistent:boolean}>(`select data=efl_runtime.decode(encoded) as consistent from efl_runtime.documents where space=$1 and collection_path='uzeflife_channel_posts' and document_id=$2`,[body.p_space,'round-'+body.p_round])).rows[0];
       if(row)assert.equal(row.consistent,true,'Native photo metadata must preserve encoded/data equivalence');
     }
