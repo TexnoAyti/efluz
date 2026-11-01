@@ -4,6 +4,7 @@ import {createUzeflifeMatches,UZEFLIFE_CHAMPION_MATCHES} from '../../lib/uzeflif
 import {randomUUID, randomInt} from 'node:crypto';
 import {z} from 'zod';
 import {getFirestoreDb} from '../firebase/admin';
+import {PostgresDocumentStore} from '../postgres/documentStore';
 import {isPrimaryOwner} from './customTournamentTicketService';
 import {UZEFLIFE_PERMISSIONS, type UState, type UMatch, type UPermission, type UChannel} from '../../types/uzeflife';
 import type {User} from '../../types';
@@ -147,7 +148,13 @@ export function applyUAction(s:UState,u:User,action:UAction,d:any):void{
  }
  s.revision++;
 }
-export async function readUState():Promise<UState>{const snap=await getFirestoreDb().collection('uzeflife').doc('championship').get();const state=snap.exists?snap.data() as UState:initialUState();if(process.env.NODE_ENV!=='test'&&process.env.FIREBASE_FORCE_LOCAL_FALLBACK!=='true'&&process.env.MIGRATION_WRITE_FREEZE!=='true'&&process.env.SUPABASE_DATA_NAMESPACE!=='preview'&&!state.rosterSource&&!state.matches.length&&!state.participants.some(p=>p.status==='approved'))return migrateUzeLeagueRegistration(getFirestoreDb(),snap.ref,initialUState);return state;}
+export async function readUState():Promise<UState>{
+ const db=getFirestoreDb(),ref=db.collection('uzeflife').doc('championship');
+ const state=(db instanceof PostgresDocumentStore?await db.readUzeflifeState():(await ref.get()).data()) as UState|undefined;
+ const current=state||initialUState();
+ if(process.env.NODE_ENV!=='test'&&process.env.FIREBASE_FORCE_LOCAL_FALLBACK!=='true'&&process.env.MIGRATION_WRITE_FREEZE!=='true'&&process.env.SUPABASE_DATA_NAMESPACE!=='preview'&&!current.rosterSource&&!current.matches.length&&!current.participants.some(p=>p.status==='approved'))return migrateUzeLeagueRegistration(db,ref,initialUState);
+ return current;
+}
 async function resolveTarget(target:string):Promise<string>{
  const db=getFirestoreDb();const doc=await db.collection('users').doc(target).get();
  if(doc.exists&&!doc.data()?.isSuspended&&doc.data()?.telegramId)return doc.id;
