@@ -115,10 +115,10 @@ export async function runNoticePreparations(phases:readonly (()=>Promise<boolean
 export async function prepareUNotifications(){
  if(process.env.MIGRATION_WRITE_FREEZE==='true'||process.env.DATABASE_PROVIDER==='supabase'&&process.env.SUPABASE_DATA_NAMESPACE==='preview')return false;
  return runNoticePreparations([
+  async()=>{const {autoPublishUzeflifeFirstRound}=await import('./uzeflifeAutoRoundPost');return autoPublishUzeflifeFirstRound();},
   ()=>processCompetitionNotices(40,enqueueSmartTelegramNotification,Date.now()+7000),
   ()=>sweepCustomCompetitionDeadlines(),
   ()=>sweepUDeadlines(),
-  async()=>{const {autoPublishUzeflifeFirstRound}=await import('./uzeflifeAutoRoundPost');return autoPublishUzeflifeFirstRound();},
   ()=>processUNotices(60,enqueueSmartTelegramNotification,Date.now()+8000),
  ]);
 }
