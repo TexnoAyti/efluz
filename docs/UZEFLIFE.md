@@ -1,5 +1,7 @@
 # UZEFLIFE championship
 
+Telegram results use `https://t.me/efleagueuz/8989`. The ingestion topic, match link and round-image captions share `src/lib/uzeflifeResultTopic.ts`; retired topic 7297 is not accepted. A linked, approved participant can post their own score first (`2:1`), or name both players (`@player_one 2:1 @player_two`). Scores written in an image caption use the same parser; an image without a written score is not OCR processed. Results remain pending until an authorized UZEFLIFE results admin approves them. League draws are allowed, without penalties. Database rate-limit transport errors propagate for webhook retry rather than being acknowledged as quota denials.
+
 A dedicated Uzbek competition workspace in the existing competition hub. Existing custom tournament records, links and APIs remain intact; its navigation entry defaults to hidden for everyone, including the platform owner, and is last in the navigation configuration. The platform owner can restore it from UZEFLIFE administration.
 
 ## Runtime and permissions

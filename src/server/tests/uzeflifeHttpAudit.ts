@@ -88,7 +88,7 @@ export async function verifyUzeflifeHttp(failNextCommit:()=>void){
   const ids=[actors[3].id,actors[4].id,...Array.from({length:254},(_,i)=>'topic-slot-'+i)];
   topicState.participants=ids.map(id=>({id,name:id,status:'approved'}));topicState.matches=generateUBracket(ids);await db.collection('uzeflife').doc('championship').set(topicState);
   const topicPlan=await planUzeflifeTopicResult('3:1',Number(actors[3].telegramId));assert.ok(topicPlan);
-  const origin={chat:-100123,thread:7297,message:111};const auditBefore=(await db.collection('uzeflife_audit').get()).size;
+  const origin={chat:-100123,thread:8989,message:111};const auditBefore=(await db.collection('uzeflife_audit').get()).size;
   await assert.rejects(executeUzeflifeTopicResult(topicPlan.plan,Number(actors[2].telegramId),Number(actors[3].telegramId),origin));
   const outboxBefore=(await db.collection('uzeflife_notifications').get()).size;
   failNextCommit();await assert.rejects(executeUzeflifeTopicResult(topicPlan.plan,Number(actors[1].telegramId),Number(actors[3].telegramId),origin));

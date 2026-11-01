@@ -290,7 +290,10 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
     const previous: any = await client.get(latestKey);
     if (previous?.token || previous?.updateId > update.update_id) return {handled:true,result:'duplicate_source'};
     const rate = await checkAndIncrementAiRateLimits({ chatId:m.chat.id,threadId:m.message_thread_id,userId:m.from.id,userLimitPerMin:5,topicLimitPerMin:60,maxDailyRequests:500,countDaily:false,signal });
-    if (!rate.allowed) return {handled:true,result:'rate_limited'};
+    if (!rate.allowed) {
+      if(rate.reason==='REDIS_UNAVAILABLE')throw Error('RESULT_STATE_UNAVAILABLE');
+      return {handled:true,result:'rate_limited'};
+    }
     if(continuation){
       const claimed=await client.eval(TOPIC_RESULT_CONTEXT,[ctxKey,sourceKey(m.chat.id,m.message_thread_id,continuation.sourceMessage)],['claim',continuation.token,Date.now()]);
       if(Number(claimed)!==1)return {handled:true,result:'context_expired'};
