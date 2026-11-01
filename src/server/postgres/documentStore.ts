@@ -29,7 +29,7 @@ function pathCheck(path: string, document: boolean) {
 export function runtimeRpc(): RuntimeRpc {
   const url=process.env.SUPABASE_URL,key=process.env.SUPABASE_SERVICE_ROLE_KEY;
   if(!url||!key||new URL(url).protocol!=='https:') throw new Error('SUPABASE_SERVER_CONFIG_REQUIRED');
-  return async(name,body)=>{
+  const execute: RuntimeRpc = async(name,body)=>{
     const started = Date.now();
     const target = body.p_ids ? 'durable_read_snapshots' : body.p_operations?.map((op: any) => op.path.split('/').slice(0,-1).join('/')).filter((value: string, index: number, values: string[]) => values.indexOf(value) === index).join(',') || body.p_query?.collection || body.p_query?.path?.split('/').slice(0,-1).join('/') || 'commit';
     try {
@@ -55,6 +55,25 @@ export function runtimeRpc(): RuntimeRpc {
       if (error?.code !== 10) console.error('[POSTGRES_RPC_FAILED]', {name,target,ms:Date.now()-started,message:error?.message,databaseCode:error?.databaseCode,httpStatus:error?.httpStatus});
       throw error;
     }
+  };
+  // Share only overlapping, identical reads. Never retain a completed result.
+  // Every mutation cuts the sharing boundary both before and after its request,
+  // so a read after a write cannot attach to an older in-flight snapshot.
+  const reads = new Map<string, Promise<any>>();
+  return async (name, body) => {
+    if (name !== 'efl_runtime_read' && name !== 'efl_runtime_snapshot_read') {
+      reads.clear();
+      try { return await execute(name, body); }
+      finally { reads.clear(); }
+    }
+    const key = JSON.stringify([name, body]);
+    let pending = reads.get(key);
+    if (!pending) {
+      pending = execute(name, body);
+      if (reads.size < 128 && key.length <= 65536) reads.set(key, pending);
+    }
+    try { return structuredClone(await pending); }
+    finally { if (reads.get(key) === pending) reads.delete(key); }
   };
 }
 

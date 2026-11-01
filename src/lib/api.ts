@@ -292,7 +292,10 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
         }
 
         const isNetworkOr5xx = !err.httpStatus || err.httpStatus >= 500 || err.name === 'AbortError';
-        if (attempt <= maxRetries && isNetworkOr5xx) {
+        // An explicit database outage already consumed the server timeout.
+        // Repeating it immediately doubles the spinner and database pressure.
+        const databaseUnavailable = err.httpStatus === 503 && err.data?.code === 'DATABASE_TEMPORARILY_UNAVAILABLE';
+        if (attempt <= maxRetries && isNetworkOr5xx && !databaseUnavailable) {
           const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 2500);
           console.warn(`[API RETRY ${attempt}/${maxRetries}] ${endpoint} failed (${err.message}). Retrying in ${backoffMs}ms...`);
           await new Promise((r) => setTimeout(r, backoffMs));
