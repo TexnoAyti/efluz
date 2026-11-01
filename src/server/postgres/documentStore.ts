@@ -66,6 +66,10 @@ export function runtimeRpc(): RuntimeRpc {
       try { return await execute(name, body); }
       finally { reads.clear(); }
     }
+    const collection = body.p_query?.collection || body.p_query?.path?.split('/').slice(0, -1).join('/');
+    // Authorization accounts and other security records must be re-read for
+    // each request. Coalescing is limited to opening/cache/fixture reads.
+    if (name !== 'efl_runtime_snapshot_read' && !['runtime_state', 'durable_read_snapshots', 'fixtures', 'durable_fixture_overrides'].includes(collection)) return execute(name, body);
     const key = JSON.stringify([name, body]);
     let pending = reads.get(key);
     if (!pending) {

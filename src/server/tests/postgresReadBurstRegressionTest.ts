@@ -9,7 +9,7 @@ const originalFetch=globalThis.fetch;
 const originalError=console.error;
 const calls:Array<{name:string,body:any,resolve:(response:Response)=>void}>=[];
 const reply=(index:number,value:any)=>calls[index].resolve(Response.json(value));
-const read={p_space:'preview',p_query:{path:'users/account'}};
+const read={p_space:'preview',p_query:{path:'runtime_state/account'}};
 console.error=()=>{};
 globalThis.fetch=((input:any,options:any)=>new Promise<Response>(resolve=>{
  calls.push({name:String(input).split('/').at(-1)!,body:JSON.parse(options.body),resolve});
@@ -26,7 +26,7 @@ try {
  reply(1,{generation:'11',documents:[]});assert.equal((await fresh).generation,'11');
  const a=rpc('efl_runtime_read',read);
  const b=rpc('efl_runtime_read',{...read,p_space:'production'});
- const c=rpc('efl_runtime_read',{...read,p_query:{path:'users/other'}});
+ const c=rpc('efl_runtime_read',{...read,p_query:{path:'runtime_state/other'}});
  const separate=runtimeRpc()('efl_runtime_read',read);
  assert.equal(calls.length,6,'Namespaces, queries and independently configured transports cannot share reads');
  for(let i=2;i<6;i++)reply(i,{generation:'12',documents:[]});await Promise.all([a,b,c,separate]);
@@ -34,7 +34,7 @@ try {
  assert.equal(calls.length,7);reply(6,{documents:[]});await Promise.all(snapshots);
  // A stale read remains in flight while a real write starts and completes.
  const old=rpc('efl_runtime_read',read);
- const write=rpc('efl_runtime_commit',{p_space:'preview',p_generation:'12',p_operations:[{path:'users/account',kind:'set',encoded:{value:'new'}}]});
+ const write=rpc('efl_runtime_commit',{p_space:'preview',p_generation:'12',p_operations:[{path:'runtime_state/account',kind:'set',encoded:{value:'new'}}]});
  const during=rpc('efl_runtime_read',read);
  assert.equal(calls.length,10);assert.equal(calls[8].name,'efl_runtime_commit_safe');
  reply(8,{generation:'13'});await write;
@@ -61,6 +61,9 @@ try {
  calls[17].resolve(Response.json({code:'57014',message:'cancelled'},{status:500}));await rejectedWrite;
  const afterFailure=rpc('efl_runtime_read',read);assert.equal(calls.length,20,'Failed/uncertain mutations also break read sharing');
  for(const i of [16,18,19])reply(i,{generation:'16',documents:[]});await Promise.all([beforeFailure,duringFailure,afterFailure]);
+ const accounts=[rpc('efl_runtime_read',{p_space:'preview',p_query:{path:'users/administrator'}}),rpc('efl_runtime_read',{p_space:'preview',p_query:{path:'users/administrator'}})];
+ assert.equal(calls.length,22,'Authoritative account authorization must independently re-read each request');
+ reply(20,{generation:'16',documents:[]});reply(21,{generation:'16',documents:[]});await Promise.all(accounts);
  console.log('PASS RPC burst isolation: 40 readers/one request, no completed cache, mutable result isolation, namespace/query/transport separation, snapshot sharing, write boundaries and failure recovery');
  // A confirmed database outage must not trigger the client's immediate second timeout.
  invalidateClientCache();setSessionToken('isolated');setTelegramInitData(null);
