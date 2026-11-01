@@ -13,6 +13,7 @@ const live = (entry: Entry | undefined) => entry && (entry.expiresAt === null ||
  * changes use the document adapter's optimistic PostgreSQL transaction. */
 export class PostgresKeyValueStore {
   constructor(private collectionName: string, private signal?: AbortSignal) {}
+  protected storedValue(value: any): any { return value; }
   protected check() { if (this.signal?.aborted) throw Error('TIMEOUT_ABORTED'); }
   private ref(key: string) { return getFirestoreDb().collection(this.collectionName).doc(documentId(key)); }
 
@@ -45,7 +46,7 @@ export class PostgresKeyValueStore {
       this.check();
       const result = operation(values, (key, value, seconds) => {
         if (!keys.includes(key)) throw Error('POSTGRES_STATE_UNREAD_KEY');
-        writes.set(key, { value, expiresAt: seconds === undefined ? null : Date.now() + seconds * 1000 });
+        writes.set(key, { value: this.storedValue(value), expiresAt: seconds === undefined ? null : Date.now() + seconds * 1000 });
       });
       this.check();
       writes.forEach((value, key) => tx.set(db.collection(this.collectionName).doc(documentId(key)), value));
@@ -60,7 +61,7 @@ export class PostgresKeyValueStore {
       if (values.has(key)) return null;
       put(key, value, options.ex); return 'OK';
     });
-    await this.ref(key).set({ value, expiresAt: options?.ex === undefined ? null : Date.now() + options.ex * 1000 });
+    await this.ref(key).set({ value: this.storedValue(value), expiresAt: options?.ex === undefined ? null : Date.now() + options.ex * 1000 });
     this.check();
     return 'OK';
   }

@@ -1,3 +1,6 @@
+import {verifyCompactNotificationMigration} from './compactNotificationMigrationAudit';
+import {verifyLinearRuntimeDecode} from './linearRuntimeDecodeAudit';
+import {verifyIndexedDocumentIds} from './indexedDocumentIdsAudit';
 import {verifyUzeflifeNotificationDelivery} from './uzeflifeNotificationAudit';
 import {verifyUzeflifeRoundPosts} from './uzeflifeRoundPostAudit';
 import {verifyNativeLeagueRead} from './nativeLeagueReadAudit';
@@ -37,9 +40,12 @@ import { readPostgresSnapshotBundle, clearPostgresSnapshotCache } from '../readM
 // The HTTP envelope is simulated; this cannot prove hosted PostgREST latency.
 const pg = new PGlite();
 await pg.exec('create role anon; create role authenticated; create role service_role bypassrls;');
-for (const path of ['20261009044907_postgres_document_runtime.sql', '20261009125000_nonblocking_runtime_reads.sql', '20261009134500_patch_snapshot_rows.sql', '20261010091409_application_runtime_commit_conflicts.sql', '20261010161456_stop_postgrest_conflict_retries.sql', '20261010172440_conditional_snapshot_reads.sql']) {
+for (const path of ['20261009044907_postgres_document_runtime.sql', '20261009125000_nonblocking_runtime_reads.sql', '20261009134500_patch_snapshot_rows.sql', '20261010091409_application_runtime_commit_conflicts.sql', '20261010161456_stop_postgrest_conflict_retries.sql', '20261010172440_conditional_snapshot_reads.sql', '20261101122224_indexed_document_id_filters.sql', '20261101122430_linear_runtime_map_decode.sql', '20261101122842_compact_notification_payloads.sql']) {
   await pg.exec(await readFile('supabase/migrations/' + path, 'utf8'));
 }
+await verifyIndexedDocumentIds(pg);
+await verifyLinearRuntimeDecode(pg);
+await verifyCompactNotificationMigration(pg,'supabase/migrations/20261101122842_compact_notification_payloads.sql');
 const privilege: any = (await pg.query(`select has_function_privilege('anon','public.efl_runtime_commit_safe(text,jsonb,text)','execute') as anonymous,
   has_function_privilege('authenticated','public.efl_runtime_commit_safe(text,jsonb,text)','execute') as authenticated,
   has_function_privilege('service_role','public.efl_runtime_commit_safe(text,jsonb,text)','execute') as service,
@@ -144,6 +150,20 @@ try {
   assert.equal(await notifications.eval(SMART_ENQUEUE_SCRIPT, ['dedupe', 'records', 'queue'], [60, 'event', JSON.stringify({ id: 'event' }), JSON.stringify({ jobId: 'job', availableAt: 0 })]), 1);
   assert.equal(await notifications.eval(SMART_ENQUEUE_SCRIPT, ['dedupe', 'records', 'queue'], [60, 'event', '{}', '{}']), 0);
   assert.equal(await notifications.hexists('records', 'event'), 1);
+  const notificationRef=(key:string)=>db.collection('telegram_ai_state').doc(createHash('sha256').update(key).digest('hex'));
+  assert.equal(typeof (await notificationRef('records').get()).data()?.value,'string','Notification maps must remain opaque compact JSON');
+  await notificationRef('legacy-records').set({value:{old:{id:'old'}},expiresAt:null});
+  assert.deepEqual(await notifications.hget('legacy-records','old'),{id:'old'});
+  await notifications.hset('legacy-records',{new:{id:'new'}});
+  assert.deepEqual(await notifications.hgetall('legacy-records'),{old:{id:'old'},new:{id:'new'}});
+  assert.equal(typeof (await notificationRef('legacy-records').get()).data()?.value,'string','A legacy map converts on its next write');
+  await notifications.hdel('legacy-records','old');
+  assert.equal(await notifications.hexists('legacy-records','old'),0);
+  assert.deepEqual(await notifications.mget('legacy-records','missing-notification'),[{new:{id:'new'}},null]);
+  await notifications.set('opaque-list',[{id:1},null,'2']);
+  assert.deepEqual(await notifications.get('opaque-list'),[{id:1},null,'2']);
+  assert.equal(typeof (await notificationRef('opaque-list').get()).data()?.value,'string');
+
   await notifications.set('worker', 'owner', { ex: 60 });
   const claimed = await notifications.eval<any[], any>('EFL_NOTIFY_CLAIM_V1', ['queue', 'processing', 'worker'], ['owner', Date.now()]);
   assert.equal(claimed.jobId, 'job'); assert.deepEqual(await notifications.get('queue'), []);
