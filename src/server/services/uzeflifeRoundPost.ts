@@ -77,6 +77,26 @@ export async function reconcileRoundPost(state:UState,round:number,requestedBy:s
  });
  return roundPostView(record,round,data.totalPages,data.matchCount);
 }
+/** Owner explicitly requested replacement of the historical blank first-round
+ * album. Archive its receipt and reset once; retries never reset live progress. */
+export async function repairLegacyFirstRoundImages():Promise<boolean> {
+ if(process.env.MIGRATION_WRITE_FREEZE==='true'||process.env.DATABASE_PROVIDER==='supabase'&&process.env.SUPABASE_DATA_NAMESPACE==='preview'&&process.env.NODE_ENV!=='test')return false;
+ const db=getFirestoreDb(),ref=refFor(1),repair=db.collection('uzeflife_channel_post_repairs').doc('first-round-20261101-font-fix');
+ return db.runTransaction(async tx=>{
+  const old=(await tx.get(ref)).data();
+  // Match only the exact legacy publication reported by the owner. New jobs,
+  // partial deliveries and other rounds never qualify for this replacement.
+  if(!old||old.version===2||old.at!=='2026-10-31T18:05:20.617Z'||old.sentPages!==16||old.totalPages!==16||!Array.isArray(old.telegramMessageIds)||old.telegramMessageIds.length!==16)return false;
+  if((await tx.get(repair)).exists)return false;
+  const state=(await tx.get(db.collection('uzeflife').doc('championship'))).data() as UState|undefined;
+  if(!state||state.format!=='LEAGUE'||state.round<1||!['playing','paused','completed'].includes(state.status))return false;
+  const data=roundData(state,1);if(data.matchCount!==121||data.totalPages!==16)return false;
+  const at=new Date().toISOString();
+  tx.create(repair,{ownerTelegramId:'5209126900',reason:'Owner reported blank/identical images and explicitly requested corrected repost',previous:old,at});
+  tx.set(ref,{...data,version:2,round:1,channel:U_POST_CHANNEL,state:'pending',sentPages:0,telegramMessageIds:[],requestedBy:'owner-authorized-repair-20261101',repairId:repair.id,leaseUntil:0,inFlight:null,error:null,at});
+  return true;
+ });
+}
 type Pages=Awaited<ReturnType<typeof renderUzeflifeRoundPages>>;
 type Dependencies={render?:(state:UState,round:number)=>Promise<Pages>;send?:(pages:Pages,round:number)=>Promise<number[]>};
 class RejectedPost extends Error {}

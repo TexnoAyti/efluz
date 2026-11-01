@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
+import {createCanvas,loadImage,GlobalFonts} from '@napi-rs/canvas';
 import express from 'express';
 import {once} from 'node:events';
 import {getFirestoreDb} from '../firebase/admin';
 import {initialUState} from '../services/uzeflifeService';
-import {getRoundPostStatus,requestRoundPost,reconcileRoundPost,processRoundPost,sendUzeflifeRoundPages} from '../services/uzeflifeRoundPost';
+import {getRoundPostStatus,requestRoundPost,reconcileRoundPost,processRoundPost,sendUzeflifeRoundPages,repairLegacyFirstRoundImages} from '../services/uzeflifeRoundPost';
 import {renderUzeflifeRoundPages} from '../services/uzeflifeRoundImages';
 import {authMiddleware} from '../middleware/authMiddleware';
 import {createSessionToken} from '../auth/sessionToken';
@@ -11,7 +13,7 @@ import {uzeflifeRouter} from '../routes/uzeflife.routes';
 import type {UState,UMatch} from '../../types/uzeflife';
 
 export async function verifyUzeflifeRoundPosts(){
- const db=getFirestoreDb(),refs=[db.collection('uzeflife').doc('championship'),...[1,2,3].map(r=>db.collection('uzeflife_channel_posts').doc('round-'+r))];
+ const db=getFirestoreDb(),refs=[db.collection('uzeflife').doc('championship'),...[1,2,3].map(r=>db.collection('uzeflife_channel_posts').doc('round-'+r)),db.collection('uzeflife_channel_post_repairs').doc('first-round-20261101-font-fix')];
  const before=await Promise.all(refs.map(r=>r.get())),originalFetch=globalThis.fetch,oldToken=process.env.TELEGRAM_BOT_TOKEN,oldSecret=process.env.SESSION_SECRET,oldNodeEnv=process.env.NODE_ENV;
  process.env.NODE_ENV='test';
  process.env.TELEGRAM_BOT_TOKEN='777:isolated-round-post';process.env.SESSION_SECRET='isolated-round-post-session-secret-32bytes';
@@ -82,7 +84,38 @@ export async function verifyUzeflifeRoundPosts(){
   await refs[1].set({state:'unverified',round:1,sentPages:10,telegramMessageIds:Array.from({length:10},(_,i)=>i+1)});
   view=await getRoundPostStatus(state,1);assert.equal(view.legacy,true);
   await reconcileRoundPost(state,1,users[0].id,view.checkpoint!,16);assert.equal((await getRoundPostStatus(state,1)).state,'sent');
+  const legacy={state:'sending',round:1,sentPages:16,totalPages:16,at:'2026-10-31T18:05:20.617Z',telegramMessageIds:Array.from({length:16},(_,i)=>86+i)};
+  await refs[1].set(legacy);
+  const repairs=await Promise.all([repairLegacyFirstRoundImages(),repairLegacyFirstRoundImages()]);
+  assert.equal(repairs.filter(Boolean).length,1,'The owner-authorized legacy replacement resets once under concurrent workers');
+  assert.deepEqual((await refs[4].get()).data()?.previous,legacy,'Preserve the original publication receipt');
+  view=await getRoundPostStatus(state,1);assert.equal(view.sentPages,0);assert.equal(view.state,'pending');
+  await processRoundPost(1,{render:fakeRender,send});
+  assert.equal(await repairLegacyFirstRoundImages(),false,'Never reset progress after the replacement starts');
+  assert.equal((await getRoundPostStatus(state,1)).sentPages,10);
+  await processRoundPost(1,{render:fakeRender,send});
+  assert.equal((await getRoundPostStatus(state,1)).state,'sent');
+  assert.equal(await repairLegacyFirstRoundImages(),false,'A completed replacement never sends again');
   const pngs=await renderUzeflifeRoundPages(state,1);assert.equal(pngs.length,16);assert.equal(pngs.reduce((n,p)=>n+p.count,0),121);assert.ok(pngs.every(p=>p.buffer.subarray(0,8).equals(Buffer.from('89504e470d0a1a0a','hex'))));
+  assert.equal(GlobalFonts.has('Arial'),true,'Use bundled EFL fonts on servers without system fonts');
+  assert.equal(new Set(pngs.map(p=>createHash('sha256').update(p.buffer).digest('hex'))).size,16,'Every page contains its own fixtures');
+  for(const page of pngs){
+   const img=await loadImage(page.buffer),canvas=createCanvas(img.width,img.height),ctx=canvas.getContext('2d');ctx.drawImage(img,0,0);
+   assert.equal(img.width,1080);
+   for(let row=0;row<page.count;row++){
+    const pixels=ctx.getImageData(119,234+row*92,320,60).data;let bright=0;
+    for(let i=0;i<pixels.length;i+=4)if(pixels[i]>180&&pixels[i+1]>180&&pixels[i+2]>180&&pixels[i+3]>0)bright++;
+    assert.ok(bright>50,'Each fixture must have visible text, not a blank dark rectangle');
+   }
+  }
+  let uploaded=0;
+  globalThis.fetch=async(input:any,init?:any)=>{
+   if(!String(input).startsWith('https://api.telegram.org/'))return originalFetch(input,init);
+   const form=init.body as FormData,media=JSON.parse(String(form.get('media'))),hashes=new Set<string>();
+   for(const item of media){const file=form.get(item.media.replace('attach://','')) as File;assert.ok(file);const bytes=Buffer.from(await file.arrayBuffer());const hash=createHash('sha256').update(bytes).digest('hex');assert.equal(hashes.has(hash),false,'Album attachments must not reuse one image');hashes.add(hash);assert.deepEqual(bytes,pngs[uploaded++].buffer);}
+   return Response.json({ok:true,result:media.map((_:any,i:number)=>({message_id:44000+uploaded+i}))});
+  };
+  await sendUzeflifeRoundPages(pngs.slice(0,10),1);await sendUzeflifeRoundPages(pngs.slice(10),1);assert.equal(uploaded,16);
   console.log('PASS UZEFLIFE channel posts: owner HTTP ACL, 121 games/16 PNGs, separate rounds, concurrent leases, partial resume, uncertain reconciliation, legacy repair, 429 retry, shared captions and single-photo delivery; no real Telegram messages');
  }finally{
   await new Promise<void>(r=>server.close(()=>r()));globalThis.fetch=originalFetch;
