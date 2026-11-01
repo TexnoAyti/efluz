@@ -20,7 +20,7 @@ export function UzeflifeResultQueue({state:s,busy,act,error=''}:{state:UViewStat
  const name=(id:string|null)=>s.participants.find(p=>p.id===id)?.name||'Ishtirokchi';
  const active=s.matches.find(m=>m.id===selected);
  return <section className="competition-panel u-admin-section">
-  <div className="u-section-heading"><h3><ClipboardCheck size={17}/> Natijalar navbati</h3><span className="u-status">{pending.length+topicResults.length} ta</span></div>
+  <div className="u-section-heading"><h3><ClipboardCheck size={17}/> Natijalar navbati</h3><span className="u-status">{pending.length+topicResults.length} ta</span><button className="competition-button" disabled={topicLoading} onClick={()=>setRefresh(v=>v+1)}>Yangilash</button></div>
   {topicLoading&&<p className="competition-muted" role="status">Telegram natijalari yuklanmoqda…</p>}
   {topicError&&<p className="competition-note error" role="alert">{topicError} <button className="competition-button" onClick={()=>setRefresh(v=>v+1)}>Qayta urinish</button></p>}
   <label className="competition-field">Ko‘rsatish<select value={filter} onChange={e=>{setFilter(e.target.value);setPage(0);}}><option value="all">Barcha kutilayotgan natijalar</option><option value="pending">Tasdiq kutayotganlar</option><option value="disputes">Bahsli natijalar</option></select></label>
