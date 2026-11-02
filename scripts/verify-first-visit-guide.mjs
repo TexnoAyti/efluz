@@ -96,3 +96,9 @@ for(const language of ['uz','ru','en']) {
  assert.doesNotMatch(html,/balans|pullik|to‘lov|payment|billing|balance|платёж|баланс/i);
 }
 console.log('PASS public FAQ: 11 localized questions, one expanded answer, linked accessible controls and no billing content.');
+
+assert.equal(helper.guideViewport(390,844,{width:390,height:420,offsetLeft:0,offsetTop:70},700).height,420,'Keyboard viewport wins over full browser height');
+assert.equal(helper.guideViewport(390,844,null,600).height,600,'Telegram visible height wins over browser height');
+assert.equal(helper.guideViewport(390,844,null,0).height,844,'Ignore a not-yet-ready Telegram viewport');
+assert.equal(helper.guideViewport(390,844,{width:350,height:500,offsetLeft:20,offsetTop:60}).top,60,'Preserve visual viewport offset');
+console.log('PASS guide viewport: keyboard, Telegram viewport and shifted visible area.');

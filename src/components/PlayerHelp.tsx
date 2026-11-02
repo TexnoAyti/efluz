@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ChevronDown, CircleHelp, X } from 'lucide-react';
+import { ArrowRight, ChevronDown, CircleHelp } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { playerFaq } from '../content/playerFaq';
 import type { GuideStatus } from '../lib/firstVisitGuide';
@@ -46,7 +46,7 @@ export function PlayerHelp({ onFinish }: { onFinish: (status: GuideStatus) => vo
     <div ref={card} className="efl-guide-card efl-help-card" role="dialog" aria-modal="true" aria-labelledby="efl-help-title" aria-describedby="efl-help-intro">
       <header className="efl-help-header">
         <span className="efl-help-icon"><CircleHelp size={24} strokeWidth={1.8} /></span>
-        <button ref={close} type="button" className="efl-help-close" aria-label={c.close} onClick={() => onFinish('skipped')}><X size={20} /></button>
+        <button ref={close} type="button" className="efl-help-close" aria-label={c.close} onClick={() => onFinish('skipped')}><ArrowRight size={20} /></button>
         <h2 id="efl-help-title">{c.title}</h2>
         <p id="efl-help-intro">{c.intro}</p>
       </header>

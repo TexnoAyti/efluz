@@ -3,8 +3,8 @@ export const playerFaq = {
   uz: {
     title: 'EFLUZ qanday ishlaydi?',
     intro: 'Boshlashdan oldin kerakli javoblarni toping. Savol ustiga bosing.',
-    done: 'Tushundim, boshlash', close: 'Yopish',
-    hint: 'Bu javoblarni yuqoridagi “?” tugmasidan yana ochishingiz mumkin.',
+    done: 'Keyingi: tugmalar bilan tanishish', close: 'Tugmalar bilan tanishishga o‘tish',
+    hint: 'Keyin asosiy tugmalarni birma-bir ko‘rsatamiz. Bu yordamni “?” orqali qayta ochishingiz mumkin.',
     items: [
       ['EFLUZ nima?', 'eFootball o‘yinchilari turnirlarga qo‘shilib, bir-biri bilan bellashadigan platforma. Bu yerda raqibingizni, o‘yinlaringizni va natijalaringizni ko‘rasiz.'],
       ['Qayerdan boshlayman?', 'Ochiq turnirni tanlang va undagi qo‘shilish shartlarini ko‘ring. Ishtirokingiz tasdiqlanib, qur’a tuzilgach, o‘yinlaringiz shu turnir ichida chiqadi.'],
@@ -21,7 +21,7 @@ export const playerFaq = {
   },
   ru: {
     title: 'Как работает EFLUZ?', intro: 'Нажмите на вопрос, чтобы прочитать ответ.',
-    done: 'Понятно, начнём', close: 'Закрыть', hint: 'Эти ответы можно снова открыть кнопкой «?» вверху.',
+    done: 'Далее: знакомство с кнопками', close: 'Перейти к знакомству с кнопками', hint: 'Далее покажем основные кнопки по шагам. Помощь можно снова открыть через «?». ',
     items: [
       ['Что такое EFLUZ?', 'Платформа турниров для игроков eFootball. Здесь вы находите соперников, свои матчи и результаты.'],
       ['С чего начать?', 'Выберите открытый турнир и прочитайте условия участия. После подтверждения участия и жеребьёвки ваши матчи появятся внутри турнира.'],
@@ -38,7 +38,7 @@ export const playerFaq = {
   },
   en: {
     title: 'How does EFLUZ work?', intro: 'Tap a question to find the answer before you start.',
-    done: 'Got it, let’s start', close: 'Close', hint: 'Open these answers again using “?” at the top.',
+    done: 'Next: explore the buttons', close: 'Continue to the guided tour', hint: 'Next, we will highlight the main buttons step by step. Reopen help using “?” at the top.',
     items: [
       ['What is EFLUZ?', 'A tournament platform for eFootball players. Find your opponents, matches and results here.'],
       ['Where do I start?', 'Choose an open tournament and read its entry requirements. Your matches appear inside it after your entry is approved and the draw is made.'],

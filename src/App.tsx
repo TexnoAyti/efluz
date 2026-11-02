@@ -25,6 +25,7 @@ import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
 
 const loadHome = () => import('./components/MatchdayHomeView').then(module => ({ default: module.MatchdayHomeView }));
 const MatchdayHomeView = lazy(loadHome);
+const FirstVisitGuide = lazy(() => import('./components/FirstVisitGuide').then(module => ({ default: module.FirstVisitGuide })));
 const PlayerHelp = lazy(() => import('./components/PlayerHelp').then(module => ({ default: module.PlayerHelp })));
 
 const NotificationsView = lazy(() => import('./components/NotificationsView').then(module => ({ default: module.NotificationsView })));
@@ -83,6 +84,7 @@ const AppContent: React.FC = () => {
 
   const [welcomeCompletedFor, setWelcomeCompletedFor] = useState<string | null>(null);
   const [guideUserId, setGuideUserId] = useState<string | null>(null);
+  const [guidePhase, setGuidePhase] = useState<'questions' | 'tour'>('questions');
   const guideSeenInSession = useRef(new Set<string>());
   const welcomeCompleted = useMemo(() => {
     if (!user) return false;
@@ -105,7 +107,7 @@ const AppContent: React.FC = () => {
     guideSeenInSession.current.add(user.id);
     let status: GuideStatus | null = null;
     try { status = readGuideStatus(user.id, window.localStorage); } catch {}
-    if (!status) setGuideUserId(user.id);
+    if (!status) { setGuidePhase('questions'); setGuideUserId(user.id); }
   }, [user?.id, isLoading, authStatus, welcomeCompleted]);
 
   const finishGuide = (status: GuideStatus) => {
@@ -118,6 +120,7 @@ const AppContent: React.FC = () => {
   const openGuide = () => {
     if (!user) return;
     setIsSearchOpen(false); setIsNotificationOpen(false); setIsDiagnosticsOpen(false);
+    setGuidePhase('questions');
     setGuideUserId(user.id);
   };
 
@@ -342,7 +345,9 @@ const AppContent: React.FC = () => {
           setActiveTab('my-club');
         }}
       /></ContentBoundary>}
-      {user && guideUserId === user.id && <Suspense fallback={null}><PlayerHelp key={user.id} onFinish={finishGuide} /></Suspense>}
+      {user && guideUserId === user.id && <Suspense fallback={null}>{guidePhase === 'questions'
+        ? <PlayerHelp key={`${user.id}:questions`} onFinish={() => setGuidePhase('tour')} />
+        : <FirstVisitGuide key={`${user.id}:tour`} onFinish={finishGuide} onShowScoreEntry={() => setActiveTab('my-club')} onShowStandings={() => setActiveTab('dashboard')} />}</Suspense>}
     </div>
   );
 };

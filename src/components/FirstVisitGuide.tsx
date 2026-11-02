@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, Compass, Search, Shield, Trophy, Bell, Swords, ListOrdered, X } from 'lucide-react';
 import { useI18n } from '../i18n';
-import { findGuideTarget, guidePlacement, type GuideRect, type GuideStatus } from '../lib/firstVisitGuide';
+import { findGuideTarget, guidePlacement, guideViewport, type GuideRect, type GuideStatus } from '../lib/firstVisitGuide';
 import './first-visit-guide.css';
 
 const content = {
@@ -36,10 +36,17 @@ const content = {
 const targets = ['[data-guide="nav-dashboard"]', '[data-guide="nav-leagues"]', '[data-guide="nav-my-club"]', '[data-guide="score-entry"], [data-guide="nav-my-club"]', '[data-guide="standings-entry"], [data-guide="nav-leagues"]', '#btn-global-search', '#btn-notifications'];
 const icons = [Compass, Trophy, Shield, Swords, ListOrdered, Search, Bell];
 
+function visibleViewport() {
+  return guideViewport(window.innerWidth, window.innerHeight, window.visualViewport, (window as any).Telegram?.WebApp?.viewportHeight);
+}
+
 function safeGuidePlacement(target: GuideRect | null, cardHeight: number) {
   const style = typeof getComputedStyle === 'function' && document.body ? getComputedStyle(document.body) : null;
   const inset = (value?: string) => Math.max(0,parseFloat(value || '') || 0);
-  return guidePlacement(target,window.innerWidth,window.innerHeight,cardHeight,{top:inset(style?.paddingTop),bottom:inset(style?.paddingBottom),left:inset(style?.paddingLeft),right:inset(style?.paddingRight)});
+  const view = visibleViewport();
+  const localTarget = target ? {...target, left: target.left - view.left, top: target.top - view.top} : null;
+  const position = guidePlacement(localTarget,view.width,view.height,cardHeight,{top:inset(style?.paddingTop),bottom:inset(style?.paddingBottom),left:inset(style?.paddingLeft),right:inset(style?.paddingRight)});
+  return {...position, left: position.left + view.left, top: position.top + view.top};
 }
 
 export function FirstVisitGuide({ onFinish, onShowScoreEntry, onShowStandings }: { onFinish: (status: GuideStatus) => void; onShowScoreEntry?: () => void; onShowStandings?: () => void }) {
@@ -47,6 +54,7 @@ export function FirstVisitGuide({ onFinish, onShowScoreEntry, onShowStandings }:
   const c = content[language] || content.uz;
   const [step, setStep] = useState(0);
   const [target, setTarget] = useState<GuideRect | null>(null);
+  const [targetKind, setTargetKind] = useState('');
   const [mobile, setMobile] = useState(() => window.innerWidth < 680);
   const [pointer, setPointer] = useState<{ side: 'top' | 'bottom'; left: number } | null>(null);
   const [placement, setPlacement] = useState(() => safeGuidePlacement(null, 300));
@@ -65,36 +73,52 @@ export function FirstVisitGuide({ onFinish, onShowScoreEntry, onShowStandings }:
   useLayoutEffect(() => {
     let frame = 0;
     let scrolled: HTMLElement | undefined;
+    let observed: HTMLElement | undefined;
     const update = () => {
       const candidate = findGuideTarget(document, targets[step]);
-      if (candidate && candidate !== scrolled && ['score-entry', 'standings-entry'].includes(candidate.dataset.guide || '')) {
+      const view = visibleViewport();
+      const bounds = candidate?.getBoundingClientRect();
+      const outside = bounds && (bounds.top < view.top || bounds.bottom > view.top + view.height || bounds.left < view.left || bounds.right > view.left + view.width);
+      if (candidate && candidate !== scrolled && (outside || ['score-entry', 'standings-entry'].includes(candidate.dataset.guide || ''))) {
         scrolled = candidate;
         candidate.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
       }
+      if (candidate !== observed) {
+        if (observed) observer.unobserve(observed);
+        observed = candidate;
+        if (observed) observer.observe(observed);
+      }
       const r = candidate?.getBoundingClientRect();
-      const rect = r ? { top: r.top - 5, left: r.left - 5, width: r.width + 10, height: r.height + 10 } : null;
+      const visible = r && r.bottom > view.top && r.top < view.top + view.height && r.right > view.left && r.left < view.left + view.width;
+      const rect = r && visible ? { top: r.top - 5, left: r.left - 5, width: r.width + 10, height: r.height + 10 } : null;
       setTarget(rect);
-      const height = card.current?.offsetHeight || 300;
+      setTargetKind(candidate?.dataset.guide || candidate?.id || '');
+      // Measure full content, not the height constrained by the previous step.
+      const height = (card.current?.firstElementChild as HTMLElement | null)?.scrollHeight || 300;
       const position = safeGuidePlacement(rect, height);
-      const isMobile = window.innerWidth < 680;
+      const isMobile = view.width < 680;
       setMobile(isMobile); setPlacement(position);
       const above = rect && position.top + Math.min(height, position.maxHeight) <= rect.top;
       const below = rect && position.top >= rect.top + rect.height;
       setPointer(rect && (above || below) ? { side: above ? 'bottom' : 'top', left: Math.max(24, Math.min(position.width - 24, rect.left + rect.width / 2 - position.left)) } : null);
     };
     const schedule = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(update); };
-    update(); next.current?.focus({ preventScroll: true });
     const observer = new ResizeObserver(schedule);
+    update(); next.current?.focus({ preventScroll: true });
     if (card.current) observer.observe(card.current);
     if (document.body) observer.observe(document.body);
-    const mutation = new MutationObserver(schedule);
-    const main = document.querySelector('main'); if (main) mutation.observe(main, { childList: true, subtree: true });
+    const mutation = new MutationObserver(records => {
+      if (records.some(record => !layer.current?.contains(record.target))) schedule();
+    });
+    const root = layer.current?.parentElement;
+    if (root) mutation.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'hidden'] });
     window.addEventListener('resize', schedule); window.addEventListener('scroll', schedule, true);
     window.visualViewport?.addEventListener('resize', schedule);
+    window.visualViewport?.addEventListener('scroll', schedule);
     const telegram=(window as any).Telegram?.WebApp;
-    const safeEvents=['safeAreaChanged','contentSafeAreaChanged','fullscreenChanged'];
+    const safeEvents=['viewportChanged','safeAreaChanged','contentSafeAreaChanged','fullscreenChanged'];
     safeEvents.forEach(event=>telegram?.onEvent?.(event,schedule));
-    return () => { safeEvents.forEach(event=>telegram?.offEvent?.(event,schedule)); cancelAnimationFrame(frame); observer.disconnect(); mutation.disconnect(); window.removeEventListener('resize', schedule); window.removeEventListener('scroll', schedule, true); window.visualViewport?.removeEventListener('resize', schedule); };
+    return () => { safeEvents.forEach(event=>telegram?.offEvent?.(event,schedule)); cancelAnimationFrame(frame); observer.disconnect(); mutation.disconnect(); window.removeEventListener('resize', schedule); window.removeEventListener('scroll', schedule, true); window.visualViewport?.removeEventListener('resize', schedule); window.visualViewport?.removeEventListener('scroll', schedule); };
   }, [step, language]);
 
   useEffect(() => {
@@ -115,12 +139,18 @@ export function FirstVisitGuide({ onFinish, onShowScoreEntry, onShowStandings }:
     return () => { document.removeEventListener('keydown', keydown, true); document.body.style.overflow = overflow; siblings.forEach((el, index) => { el.inert = previous[index]; }); if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true }); };
   }, []);
 
+  const fallbackDescription = step === 3 && targetKind !== 'score-entry'
+    ? ({uz: 'O‘yinlaringizni “Klub” bo‘limidan oching. O‘ynash mumkin bo‘lgan uchrashuvda hisob kiritish tugmasi chiqadi. Hozir u tugma ko‘rinmagani uchun klub bo‘limini ko‘rsatyapmiz.', ru: 'Откройте свои матчи в разделе «Клуб». В доступном матче появится ввод счёта. Сейчас эта кнопка не видна, поэтому показываем раздел клуба.', en: 'Open your matches under Club. A playable match will offer score entry. That button is not visible now, so we are showing the Club section.'}[language])
+    : step === 4 && targetKind !== 'standings-entry'
+    ? ({uz: '“Turnirlar”dan kerakli ligani oching va “Jadval” bo‘limini tanlang. Bu yerda o‘rin, ochkolar va natijalarni ko‘rasiz.', ru: 'В разделе турниров откройте нужную лигу и её таблицу, чтобы увидеть места, очки и результаты.', en: 'Open your league under Competitions, then open its standings to see positions, points and results.'}[language])
+    : c.steps[step][1];
+
   return <div ref={layer} className="efl-guide-layer" data-layout={mobile ? 'sheet' : 'anchored'}>
     {target ? <div className="efl-guide-spotlight" style={target} aria-hidden="true" /> : <div className="efl-guide-backdrop" aria-hidden="true" />}
     <div ref={card} role="dialog" aria-modal="true" aria-labelledby="efl-guide-title" aria-describedby="efl-guide-description" aria-label={c.label} className="efl-guide-card" data-pointer={pointer?.side} style={{ ...placement, '--guide-arrow-x': `${pointer?.left || 24}px` } as React.CSSProperties}>
       <div className="efl-guide-card-scroll" style={{ maxHeight: Math.max(1, placement.maxHeight - 2) }}>
         <div className="efl-guide-topline"><span className="efl-guide-brand" role="img" aria-label="EFL UZ"><img className="efl-guide-logo-dark" src="/efluz-logo.png" alt="" /><img className="efl-guide-logo-light" src="/efluz-logo-light.png" alt="" /></span><span className="efl-guide-counter">{String(step + 1).padStart(2, '0')}<span>/ {String(targets.length).padStart(2, '0')}</span></span><button type="button" onClick={() => onFinish('skipped')} aria-label={c.skip}><X size={18} /></button></div>
-        <div className="efl-guide-copy" aria-live="polite" aria-atomic="true"><div className="efl-guide-eyebrow"><Icon size={15} strokeWidth={1.8} /><span>{language === 'ru' ? 'Знакомство' : language === 'en' ? 'Quick tour' : 'Qisqa tanishtiruv'}</span></div><h2 id="efl-guide-title">{c.steps[step][0]}</h2><p id="efl-guide-description">{c.steps[step][1]}</p></div>
+        <div className="efl-guide-copy" aria-live="polite" aria-atomic="true"><div className="efl-guide-eyebrow"><Icon size={15} strokeWidth={1.8} /><span>{language === 'ru' ? 'Знакомство' : language === 'en' ? 'Quick tour' : 'Qisqa tanishtiruv'}</span></div><h2 id="efl-guide-title">{c.steps[step][0]}</h2><p id="efl-guide-description">{fallbackDescription}</p></div>
         <div className="efl-guide-bottom"><div className="efl-guide-progress" aria-label={`${step + 1} / ${targets.length} ${c.step}`}>{targets.map((_, index) => <span key={index} data-active={index === step} data-complete={index < step} />)}</div><div className="efl-guide-actions"><button type="button" onClick={() => step ? setStep(step - 1) : onFinish('skipped')} className="efl-guide-back">{step ? <><ArrowLeft size={15} />{c.back}</> : c.skip}</button><button ref={next} type="button" className="efl-guide-next btn-glass-primary" onClick={() => step === targets.length - 1 ? onFinish('completed') : setStep(step + 1)}>{step === targets.length - 1 ? <>{c.done}<Check size={16} /></> : <>{c.next}<ArrowRight size={16} /></>}</button></div></div>
         {step === targets.length - 1 && <p className="efl-guide-replay-hint">{c.again}</p>}
       </div>
