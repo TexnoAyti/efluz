@@ -12,7 +12,7 @@ for(const key of initial){const data=readFileSync(path.join(output,manifest[key]
 // Before this change: 504,427 bytes / 149,825 gzip. Enforce the smaller startup path.
 assert.ok(bytes<400000,`Initial JS exceeded budget: ${bytes}`);
 assert.ok(gzipBytes<125000,`Initial gzip JS exceeded budget: ${gzipBytes}`);
-for(const name of ['MatchdayHomeView','PlayerHelp','ResultSubmissionModal']){
+for(const name of ['MatchdayHomeView','PlayerHelp','FirstVisitGuide','ResultSubmissionModal']){
  const matches=Object.keys(manifest).filter(key=>key.includes(name));
  assert.ok(matches.length,`${name} must remain independently downloadable`);
  assert.ok(matches.every(key=>!initial.has(key)),`${name} must not block the initial application bundle`);
