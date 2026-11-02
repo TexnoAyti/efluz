@@ -11,6 +11,12 @@ export function saveGuideStatus(userId: string, status: GuideStatus, storage?: G
 }
 
 export type GuideRect = { top: number; left: number; width: number; height: number };
+/** Visible coordinates, shared by spotlight bounds and card placement. */
+export function guideViewport(width: number, height: number, visual?: {width:number; height:number; offsetLeft:number; offsetTop:number} | null, telegramHeight?: number) {
+  const heights = [height, visual?.height, telegramHeight].filter((value): value is number => typeof value === 'number' && Number.isFinite(value) && value > 0);
+  return { left: visual?.offsetLeft || 0, top: visual?.offsetTop || 0, width: Math.min(width, visual?.width || width), height: Math.min(...heights) };
+}
+
 // Prefer the real control even when it needs scrolling; a visible navigation fallback
 // must not steal the score step from its actual button.
 export function findGuideTarget(root: Pick<Document, 'querySelectorAll'>, selectors: string) {

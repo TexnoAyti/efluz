@@ -1,6 +1,6 @@
 /* Coachmarks share the app's broadcast surfaces, font and cobalt actions. */
 .efl-guide-layer { position:fixed; inset:0; z-index:160; isolation:isolate; pointer-events:auto; }
-.efl-guide-spotlight { position:fixed; border-radius:14px; border:1.5px solid var(--efl-primary); box-shadow:0 0 0 9999px rgba(3,7,18,.58),0 0 0 4px rgba(59,130,246,.13); pointer-events:none; }
+.efl-guide-spotlight { position:fixed; border-radius:14px; border:2px solid var(--efl-primary); box-shadow:0 0 0 2px #fff,0 0 0 9999px rgba(3,7,18,.68),inset 0 0 0 1px #fff8; pointer-events:none; }
 .efl-guide-backdrop { position:absolute; inset:0; background:rgba(3,7,18,.58); }
 .efl-guide-card { position:fixed; box-sizing:border-box; overflow:visible; border-radius:20px; background:var(--efl-surface); color:var(--efl-text); border:1px solid var(--efl-border); box-shadow:var(--efl-shadow-lg),0 24px 64px #0002; font-family:var(--efl-font-ui,inherit); }
 .efl-guide-card-scroll { box-sizing:border-box; padding:22px; overflow-y:auto; overscroll-behavior:contain; border-radius:inherit; scrollbar-width:thin; }
