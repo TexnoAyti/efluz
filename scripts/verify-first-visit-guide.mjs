@@ -8,7 +8,7 @@ import {readFileSync,writeFileSync} from 'node:fs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const require=createRequire(path.join(root,'package.json'));
 const React=require('react'),{renderToStaticMarkup}=require('react-dom/server');
-const result=await build({absWorkingDir:root,entryPoints:['src/components/FirstVisitGuide.tsx','src/lib/firstVisitGuide.ts'],outdir:'test-guide',bundle:true,write:false,platform:'node',format:'cjs',packages:'external',loader:{'.css':'empty'},plugins:[{name:'guide-isolated-i18n',setup(build){
+const result=await build({absWorkingDir:root,entryPoints:['src/components/FirstVisitGuide.tsx','src/components/PlayerHelp.tsx','src/lib/firstVisitGuide.ts'],outdir:'test-guide',bundle:true,write:false,platform:'node',format:'cjs',packages:'external',loader:{'.css':'empty'},plugins:[{name:'guide-isolated-i18n',setup(build){
  build.onResolve({filter:/\/i18n$/},()=>({path:'i18n',namespace:'guide-test'}));
  build.onLoad({filter:/.*/,namespace:'guide-test'},()=>({contents:'export const useI18n=()=>({language:globalThis.guideLanguage});'}));
 }}]});
@@ -84,3 +84,15 @@ for(const language of ['uz','ru','en']){
  if(language==='uz'&&process.env.EFL_GUIDE_REVIEW_HTML)writeFileSync(process.env.EFL_GUIDE_REVIEW_HTML,html);
 }
 console.log('PASS first-visit guide: account-isolated completed/skipped state, blocked storage, card placement on mobile/desktop/short viewports, accessible localized modal and public-only instructions.');
+
+const help=module(result.outputFiles.find(f=>f.path.endsWith('/PlayerHelp.js')));
+for(const language of ['uz','ru','en']) {
+ help.guideLanguage=language;help.guideStateIndex=0;help.guideStep=0;
+ const html=renderToStaticMarkup(React.createElement(help.module.exports.PlayerHelp,{onFinish:()=>{throw new Error('Rendering must not complete help');}}));
+ assert.match(html,/role="dialog"/);assert.match(html,/aria-modal="true"/);
+ assert.equal((html.match(/aria-expanded=/g)||[]).length,11);
+ assert.equal((html.match(/aria-expanded="true"/g)||[]).length,1);
+ assert.equal((html.match(/hidden=""/g)||[]).length,10);
+ assert.doesNotMatch(html,/balans|pullik|to‘lov|payment|billing|balance|платёж|баланс/i);
+}
+console.log('PASS public FAQ: 11 localized questions, one expanded answer, linked accessible controls and no billing content.');
