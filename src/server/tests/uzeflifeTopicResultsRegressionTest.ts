@@ -3,7 +3,7 @@ import {initDatabase} from '../db';
 import {getFirestoreDb} from '../firebase/admin';
 import {listUzeflifeTopicQueue,handleTopicResultUpdate,planTopicResult} from '../services/telegramTopicResults';
 import {planUzeflifeTopicResult,executeUzeflifeTopicResult,authorizeUzeflifeTopicResult,UZEFLIFE_RESULT_TOPIC} from '../services/uzeflifeTopicResults';
-import {initialUState,generateUBracket,readUState,mutateUState} from '../services/uzeflifeService';
+import {initialUState,generateUBracket,readUState,mutateUState,applyUAction} from '../services/uzeflifeService';
 import {inspectAiAdminOutcome} from '../services/telegramAiAdminOutcome';
 import type {User} from '../../types';
 import {createULeagueMatches,uLeagueStandings,uMatchFinished} from '../../lib/uzeflifeLeague';
@@ -37,7 +37,7 @@ try{
  const wrong=update('2:1');wrong.message.message_thread_id=7298;assert.equal((await handleTopicResultUpdate(wrong)).handled,false);
  const oldTopic=update('2:1');oldTopic.message.message_thread_id=7297;assert.equal((await handleTopicResultUpdate(oldTopic)).handled,false,'Retired topic cannot ingest UZEFLIFE scores');
  const source=update('2-1');assert.equal((await handleTopicResultUpdate(source)).result,'proposal_sent');assert.equal((await listUzeflifeTopicQueue(await readUState())).length,1,'Telegram pending result is visible in the tournament admin queue');const preview=sent.at(-1),token=preview.reply_markup.inline_keyboard[0][0].callback_data;
- assert.ok(preview.text.includes('Azamat 2:1 Vali')&&preview.text.includes('UZEFLIFE'));assert.equal(preview.message_thread_id,8989);assert.equal((await readUState()).matches[0].winner,null);
+ assert.ok(preview.text.includes('Azamat 2:1 Vali')&&preview.text.includes('UZEFLIFE'));assert.match(preview.text,/Bu 1-tur o‘yinimi\?/);assert.equal(preview.message_thread_id,8989);assert.equal((await readUState()).matches[0].winner,null);
  assert.equal((await handleTopicResultUpdate(callback(preview,token,1001))).result,'unauthorized');assert.equal((await handleTopicResultUpdate(callback(preview,token,3002))).result,'unauthorized');
  const cross=callback(preview,token);cross.callback_query.message.message_thread_id=3;assert.equal((await handleTopicResultUpdate(cross)).result,'invalid');
  const race=await Promise.all([handleTopicResultUpdate(callback(preview,token)),handleTopicResultUpdate(callback(preview,token))]);assert.equal(race.filter(r=>r.result==='executing').length,1);
@@ -78,5 +78,28 @@ try{
  assert.equal((await handleTopicResultUpdate(callback(leaguePreview,leaguePreview.reply_markup.inline_keyboard[0][0].callback_data))).result,'executing');
  const confirmed=await readUState(),match=confirmed.matches.find(m=>m.id===currentGame.id)!;assert.equal(match.homeScore,2);assert.equal(match.awayScore,2);assert.equal(uMatchFinished(match),true);
  const table=uLeagueStandings(confirmed);assert.equal(table.find(row=>row.id===currentGame.home)?.points,1);assert.equal(table.find(row=>row.id===currentGame.away)?.points,1);
- console.log('PASS UZEFLIFE topic 8989: verified identity, sender-first orientation, named players, shootouts, topic binding, tournament-only result admins, approval, replay/race/edit protection, stale fixture/suspension/revocation checks, progression and audit; Telegram mocked.');
+ // Explicit rounds select the sender's different opponent, without advancing
+ // the tournament or weakening public action/current-playoff-round guards.
+ const otherGame=confirmed.matches.find(m=>m.round===3&&[m.home,m.away].includes('player-0'))!;
+ for(const text of ['3-tur 2-1','3 tur 2 - 1','tur 3 2:1','3chi tur 2-1','2-1 3-tur']){
+  const p=await planUzeflifeTopicResult(text,1001);assert.equal(p?.plan.targetId,otherGame.id);assert.equal(p?.plan.body[otherGame.home==='player-0'?'homeScore':'awayScore'],2);
+ }
+ for(const text of ['0-tur 2-1','16-tur 2-1','3-tur 4-tur 2-1'])await assert.rejects(planUzeflifeTopicResult(text,1001),/Tur noto‘g‘ri|bitta turni|bitta tur bilan/);
+ const byAdmin=await planUzeflifeTopicResult('3-tur @player_0 2-1',3001);assert.equal(byAdmin?.plan.targetId,otherGame.id);assert.equal(byAdmin?.plan.body[otherGame.home==='player-0'?'homeScore':'awayScore'],2);
+ await assert.rejects(planUzeflifeTopicResult('3-tur @player_0 @unknown_player 2-1',3001),/username’i topilmadi/);
+ await assert.rejects(planUzeflifeTopicResult('3-tur 2-1',3001),/username/,'A nonplaying admin must identify a player');
+ await assert.rejects(planUzeflifeTopicResult('3-tur @player_0 2-1',3002),/tasdiqlangan/,'Channel assistants cannot submit as result admins');
+ assert.throws(()=>applyUAction(structuredClone(confirmed),assistant,'result',{matchId:otherGame.id,home:2,away:1,penaltyHome:null,penaltyAway:null}),/qabul qilinmaydi/);
+ const report=update('3-tur 2-1');assert.equal((await handleTopicResultUpdate(report)).result,'proposal_sent');
+ const otherPreview=sent.at(-1),otherToken=otherPreview.reply_markup.inline_keyboard[0][0].callback_data;
+ assert.match(otherPreview.text,/Bu 3-tur o‘yinimi\?/);assert.ok(otherPreview.text.includes(named(otherGame.home!))&&otherPreview.text.includes(named(otherGame.away!)));
+ assert.equal((await readUState()).matches.find(m=>m.id===otherGame.id)?.homeScore,null);
+ assert.equal((await handleTopicResultUpdate(callback(otherPreview,otherToken,3002))).result,'unauthorized');
+ assert.equal((await handleTopicResultUpdate(callback(otherPreview,otherToken))).result,'executing');
+ const otherStored=await readUState(),otherMatch=otherStored.matches.find(m=>m.id===otherGame.id)!;
+ assert.equal(otherStored.round,2);assert.equal(otherMatch[otherGame.home==='player-0'?'homeScore':'awayScore'],2);assert.equal(uMatchFinished(otherMatch),true);
+ await assert.rejects(planUzeflifeTopicResult('3-tur 2-1',1001),/allaqachon/);
+ const past=await planUzeflifeTopicResult('1-tur 1-0',1001);assert.ok(past);await executeUzeflifeTopicResult(past.plan,3001,1001,{chat:-100123,thread:8989,message:990001});assert.equal((await readUState()).round,2);
+ await ref.set(s);await assert.rejects(planUzeflifeTopicResult('2-tur 2-1',1001),/Pley-off/);
+ console.log('PASS UZEFLIFE topic 8989: current-round question, explicit past/future round selection, single-username admin reports, unchanged active round and public/playoff guards, verified identity, sender-first orientation, named players, shootouts, topic binding, tournament-only result admins, approval, replay/race/edit protection, stale fixture/suspension/revocation checks, progression and audit; Telegram mocked.');
 }finally{globalThis.fetch=originalFetch;Date.now=originalNow;}
