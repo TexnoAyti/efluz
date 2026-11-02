@@ -50,7 +50,7 @@ assert.throws(()=>act(h,'result',{matchId:first.id,home:-1,away:0}),/noto‘g‘
 act(h,'result',{matchId:first.id,home:2,away:1});assert.equal(first.winner,null);
 assert.throws(()=>act(h,'result',{matchId:first.id,home:2,away:1}),/kut/);
 assert.equal(publicUState(s,stranger).matches[0].proposal,null);
-assert.throws(()=>act(a,'result',{matchId:first.id,home:1,away:0}),/mos kelmadi/);
+const mismatched=structuredClone(s);applyUAction(mismatched,a,'result',{matchId:first.id,home:1,away:0,penaltyHome:null,penaltyAway:null});assert.equal(mismatched.matches.find(m=>m.id===first.id)?.dispute?.status,'open');assert.equal(mismatched.matches.find(m=>m.id===first.id)?.homeScore,null);
 act(a,'result',{matchId:first.id,home:2,away:1});assert.equal(first.winner,h.id);
 act(superAdmin,'pause');assert.throws(()=>act(h,'result',{matchId:first.id,home:3,away:1}),/qabul qilinmaydi/);act(superAdmin,'resume');
 for(let r=1;r<=8;r++){

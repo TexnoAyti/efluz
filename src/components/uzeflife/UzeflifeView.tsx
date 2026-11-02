@@ -28,7 +28,7 @@ export function UzeflifeView({management=false}:{management?:boolean}={}) {
       if(id!==generation.current)return false;
       if(action==='subscription-check'){
         setMissing(data.channels);setNotice(data.subscribed?'Obuna tasdiqlandi. Ro‘yxatdan o‘tishingiz mumkin.':'Barcha kanallarga obuna bo‘ling.');
-      } else {setState(data);setMissing([]);setNotice(action==='register'?'Arizangiz qabul qilindi. Administrator tasdig‘ini kuting.':'Saqlandi.');}
+      } else {setState(data);setMissing([]);setNotice(action==='register'?'Arizangiz qabul qilindi. Administrator tasdig‘ini kuting.':action==='result'&&data.matches?.find((m:any)=>m.id===(body as any)?.matchId)?.dispute?.status==='open'?'Hisoblar mos kelmadi. Admin tekshirishi uchun e’tiroz ochildi.':'Saqlandi.');}
       return true;
     } catch(e:any){if(id===generation.current){setError(e.message);if(e.channels)setMissing(e.channels);}return false;}
     finally {if(id===generation.current)setBusy(false);}

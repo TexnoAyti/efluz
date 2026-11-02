@@ -1,3 +1,4 @@
+import {uSummaryStatus,reconcileUSummary} from '../services/uzeflifeRoundSummary';
 import {scheduleRoundPost} from '../services/uzeflifeRoundPost';
 import type {User} from '../../types';
 import type {Request} from 'express';
@@ -39,6 +40,8 @@ uzeflifeRouter.get('/topic-results',requireAuth,async(req,res)=>{
  try{const state=await readUState();if(!uPermissions(state,req.user!).includes('results'))throw uError('Natijalar navbatiga ruxsat yo‘q.',403);res.json({ok:true,topicResults:await listUzeflifeTopicQueue(state)});}
  catch(e:any){res.status(e.statusCode||503).json({ok:false,error:e.statusCode?e.message:'Telegram natijalarini yuklab bo‘lmadi. Qayta urinib ko‘ring.'});}
 });
+uzeflifeRouter.get('/summary-status',requireAuth,async(req,res)=>{try{if(!uPermissions(await readUState(),req.user!).includes('announcements'))throw uError('E’lonlarni boshqarishga ruxsat yo‘q.',403);res.json({ok:true,jobs:await uSummaryStatus()});}catch(e:any){res.status(e.statusCode||503).json({ok:false,error:e.message});}});
+uzeflifeRouter.post('/summary-reconcile',requireAuth,async(req,res)=>{try{if(!uPermissions(await readUState(),req.user!).includes('announcements'))throw uError('E’lonlarni boshqarishga ruxsat yo‘q.',403);await reconcileUSummary(req.body.id,req.body.cursor,req.body.lease,req.body.delivered);res.json({ok:true});scheduleUNotices();}catch(e:any){res.status(e.statusCode||503).json({ok:false,error:e.message});}});
 uzeflifeRouter.get('/history/:id',async(req,res)=>{
  try{if(!/^uzeflife-[a-f0-9-]{36}$/.test(req.params.id))throw uError('Turnir tarixi topilmadi.',404);const snap=await getFirestoreDb().collection('uzeflife_history').doc(req.params.id).get();if(!snap.exists)throw uError('Turnir tarixi topilmadi.',404);res.json({ok:true,archive:snap.data()});}catch(e:any){res.status(e.statusCode||503).json({ok:false,error:e.statusCode?e.message:'Tarixni yuklab bo‘lmadi.'});}
 });

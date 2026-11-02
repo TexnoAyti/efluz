@@ -24,9 +24,46 @@ async function account(telegramId:number):Promise<User|null>{
  const user:User={id:doc.id,telegramId:String(data.telegramId||''),username:data.username||'',firstName:data.firstName||'',lastName:data.lastName||'',photoUrl:data.photoUrl||'',adminPermissions:data.adminPermissions,isAdmin:data.isAdmin===true,isSuspended:data.isSuspended===true,createdAt:data.createdAt||'',updatedAt:data.updatedAt||''};
  return !user.isSuspended&&user.telegramId===String(telegramId)?user:null;
 }
-export async function authorizeUzeflifeTopicResult(telegramId:number){const [user,state]=await Promise.all([account(telegramId),readUState()]);return !!user&&uPermissions(state,user).includes('results');}
+export async function authorizeUzeflifeTopicResult(telegramId:number,plan?:AdminPlan){const [user,state]=await Promise.all([account(telegramId),readUState()]);if(!user)return false;if(uPermissions(state,user).includes('results'))return true;const m=state.matches.find(m=>m.id===plan?.targetId);return !!m?.proposal&&m.proposal.by!==user.id&&[m.home,m.away].includes(user.id)&&state.participants.some(p=>p.id===user.id&&p.status==='approved');}
+/** A reported score is a pending proposal, never a confirmed result. The same
+ * atomic outbox used by the app alerts the opponent even if Telegram's preview fails. */
+export async function prepareUzeflifeTopicResult(plan:AdminPlan,senderTelegramId:number){
+ const [user,current]=await Promise.all([account(senderTelegramId),readUState()]);if(!user)throw uError('Akkaunt tasdiqlanmadi.',403);
+ if(uPermissions(current,user).includes('results'))return {expectedFixture:plan.body.expectedFixture,disputed:false};
+ if((await checkUSubscriptions(current,user)).length)throw uError('Avval majburiy kanallarga obuna bo‘ling.',403);
+ const channels=JSON.stringify([current.subscriptionsEnabled,current.channels]),expected=plan.body.expectedFixture as any;
+ const db=getFirestoreDb(),ref=db.collection('uzeflife').doc('championship'),id=randomUUID();
+ return db.runTransaction(async tx=>{
+  const [snap,doc]=await Promise.all([tx.get(ref),tx.get(db.collection('users').doc(user.id))]);const s=snap.data() as UState,a=doc.data();
+  if(!s||!a||a.isSuspended||String(a.telegramId)!==String(senderTelegramId)||expected.submitter!==user.id)throw uError('Ishtirokchi vakolati o‘zgargan.',403);
+  const m=s.matches.find(m=>m.id===plan.targetId);
+  if(!m||s.status!=='playing'||uMatchFinished(m)||m.dispute?.status==='open'||uzeflifeMatchFingerprint(s,m)!==expected.fingerprint)throw uError('O‘yin o‘zgargan. Hisobni qayta yuboring.',409);
+  if(![m.home,m.away].includes(user.id)||!s.participants.some(p=>p.id===user.id&&p.status==='approved'))throw uError('Bu sizning o‘yiningiz emas.',403);
+  if(JSON.stringify([s.subscriptionsEnabled,s.channels])!==channels)throw uError('Obuna sozlamalari o‘zgargan. Qayta yuboring.',409);
+  const parsed=validateUAction('result',{matchId:m.id,home:plan.body.homeScore,away:plan.body.awayScore,penaltyHome:plan.body.homePenaltyScore,penaltyAway:plan.body.awayPenaltyScore}).data,proposed={version:randomUUID(),by:user.id,home:parsed.home,away:parsed.away,penaltyHome:parsed.penaltyHome,penaltyAway:parsed.penaltyAway},before=structuredClone(s);
+  const equal=m.proposal&&['home','away','penaltyHome','penaltyAway'].every(k=>m.proposal![k]===proposed[k]);
+  if(!equal){
+   if(m.proposal&&m.proposal.by!==user.id)m.dispute={by:user.id,reason:`Hisoblar mos kelmadi: ${m.proposal.home}:${m.proposal.away}${m.proposal.penaltyHome!==null?' (penalti '+m.proposal.penaltyHome+':'+m.proposal.penaltyAway+')':''} va ${proposed.home}:${proposed.away}${proposed.penaltyHome!==null?' (penalti '+proposed.penaltyHome+':'+proposed.penaltyAway+')':''}. Admin tekshirsin.`,at:new Date().toISOString(),evidenceId:null,status:'open'};
+   else m.proposal=proposed;
+   s.revision++;writeUNotices(tx,before,s,id);tx.set(ref,s);tx.set(db.collection('uzeflife_audit').doc(id),{actor:user.id,action:m.dispute?.status==='open'?'dispute':'proposal',details:{matchId:m.id,source:'telegram-topic'},revision:s.revision,at:new Date().toISOString()});
+  }
+  return {expectedFixture:{...expected,fingerprint:uzeflifeMatchFingerprint(s,m)},disputed:m.dispute?.status==='open'};
+ });
+}
+export async function rejectUzeflifeTopicResult(plan:AdminPlan,telegramId:number){
+ const actor=await account(telegramId);if(!actor)throw uError('Akkaunt tasdiqlanmadi.',403);
+ const db=getFirestoreDb(),ref=db.collection('uzeflife').doc('championship');
+ await db.runTransaction(async tx=>{const [snap,doc]=await Promise.all([tx.get(ref),tx.get(db.collection('users').doc(actor.id))]);const s=snap.data() as UState,a=doc.data();
+  if(!s||!a||a.isSuspended||String(a.telegramId)!==String(telegramId))throw uError('Admin vakolati o‘zgargan.',403);requireUPermission(s,{...a,id:actor.id} as User,'results');
+  const m=s.matches.find(m=>m.id===plan.targetId);if(!m?.proposal)return;
+  if(uzeflifeMatchFingerprint(s,m)!==(plan.body.expectedFixture as any)?.fingerprint)throw uError('Hisob taklifi yangilangan. Admin paneldan tekshiring.',409);
+  if(['home','away','penaltyHome','penaltyAway'].some((k,i)=>m.proposal![k]!==plan.body[['homeScore','awayScore','homePenaltyScore','awayPenaltyScore'][i]]))return;
+  if(m.dispute?.status==='open')throw uError('Avval e’tirozni hal qiling.',409);
+  m.proposal=null;s.revision++;tx.set(ref,s);tx.set(db.collection('uzeflife_audit').doc(randomUUID()),{actor:actor.id,action:'clearProposal',details:{matchId:m.id,source:'telegram-topic'},revision:s.revision,at:new Date().toISOString()});
+ });
+}
 export function uzeflifeMatchFingerprint(s:UState,m:UMatch){
- return createHash('sha256').update(JSON.stringify([s.status,s.round,m.id,m.bracket,m.round,m.home,m.away,m.winner,m.homeScore,m.awayScore,m.penaltyHome,m.penaltyAway,m.scheduledAt,m.deadlineAt||null,m.dispute?[m.dispute.at,m.dispute.status]:null,m.proposal?[m.proposal.by,m.proposal.home,m.proposal.away,m.proposal.penaltyHome,m.proposal.penaltyAway]:null,[m.home,m.away].map(id=>s.participants.find(p=>p.id===id)?.status||null)])).digest('hex');
+ return createHash('sha256').update(JSON.stringify([s.status,s.round,m.id,m.bracket,m.round,m.home,m.away,m.winner,m.homeScore,m.awayScore,m.penaltyHome,m.penaltyAway,m.scheduledAt,m.deadlineAt||null,m.dispute?[m.dispute.at,m.dispute.status]:null,m.proposal?[m.proposal.by,m.proposal.home,m.proposal.away,m.proposal.penaltyHome,m.proposal.penaltyAway,m.proposal.version||null]:null,[m.home,m.away].map(id=>s.participants.find(p=>p.id===id)?.status||null)])).digest('hex');
 }
 export async function planUzeflifeTopicResult(text:string,sender:number,resolution?:{fixtureId:string}){
  if(isAiHypotheticalQuestion(text))return null;
@@ -85,7 +122,8 @@ export async function executeUzeflifeTopicResult(plan:AdminPlan,actorTelegramId:
  const [actor,submitter,current]=await Promise.all([account(actorTelegramId),account(submitterTelegramId),readUState()]);
  if(!actor||!submitter)throw uError('Akkauntni tekshirib bo‘lmadi.',403);
  if(submitter.id!==expected.submitter||String(submitter.telegramId)!==expected.telegramId)throw uError('Natija yuboruvchisi o‘zgargan.',403);
- requireUPermission(current,actor,'results');
+ if(!uPermissions(current,actor).includes('results')&&!await authorizeUzeflifeTopicResult(actorTelegramId,plan))throw uError('Faqat raqib yoki natijalar admini tasdiqlaydi.',403);
+ if(!uPermissions(current,actor).includes('results')&&(await checkUSubscriptions(current,actor)).length)throw uError('Avval majburiy kanallarga obuna bo‘ling.',403);
  if(!uPermissions(current,submitter).includes('results')&&(await checkUSubscriptions(current,submitter)).length)throw uError('Natija yuboruvchining majburiy obunasi tasdiqlanmadi.',403);
  const channels=JSON.stringify([current.subscriptionsEnabled,current.channels]);
  const {data}=validateUAction('result',{matchId:plan.targetId,home:plan.body.homeScore,away:plan.body.awayScore,penaltyHome:plan.body.homePenaltyScore,penaltyAway:plan.body.awayPenaltyScore});
@@ -94,12 +132,14 @@ export async function executeUzeflifeTopicResult(plan:AdminPlan,actorTelegramId:
   const [snapshot,actorDoc,senderDoc]=await Promise.all([tx.get(ref),tx.get(db.collection('users').doc(actor.id)),tx.get(db.collection('users').doc(submitter.id))]);
   const state=snapshot.data() as UState|undefined,admin=actorDoc.data() as User|undefined,sender=senderDoc.data() as User|undefined;
   if(!state||!admin||!sender||admin.isSuspended||sender.isSuspended||String(admin.telegramId)!==String(actorTelegramId)||String(sender.telegramId)!==String(submitterTelegramId))throw uError('Akkaunt vakolati o‘zgargan.',403);
-  requireUPermission(state,{...admin,id:actor.id},'results');
   const match=state.matches.find(m=>m.id===plan.targetId);
+  const actorIsAdmin=uPermissions(state,{...admin,id:actor.id}).includes('results');
+  if(!actorIsAdmin&&(!match?.proposal||match.proposal.by===actor.id||![match.home,match.away].includes(actor.id)||!state.participants.some(p=>p.id===actor.id&&p.status==='approved')))throw uError('Faqat raqib yoki natijalar admini tasdiqlaydi.',403);
   if(!match||uMatchFinished(match)||uzeflifeMatchFingerprint(state,match)!==expected.fingerprint)throw uError('O‘yin taklifdan keyin o‘zgargan. Natijani qayta yuboring.',409);
   if(!uPermissions(state,{...sender,id:submitter.id}).includes('results')&&(![match.home,match.away].includes(submitter.id)||state.participants.find(p=>p.id===submitter.id)?.status!=='approved'))throw uError('Ishtirokchi vakolati bekor qilingan.',403);
   if(JSON.stringify([state.subscriptionsEnabled,state.channels])!==channels)throw uError('Majburiy obuna sozlamalari o‘zgargan. Natijani qayta yuboring.',409);
   const before=structuredClone(state);
+  if(!actorIsAdmin&&['home','away','penaltyHome','penaltyAway'].some(k=>match.proposal![k]!==data[k]))throw uError('Hisob taklifi o‘zgargan.',409);
   applyUAction(state,{...admin,id:actor.id},'result',data,{authorizedLeagueRound:expected.requestedRound});
   writeUNotices(tx,before,state,auditId);
   tx.set(ref,state);tx.set(db.collection('uzeflife_audit').doc(auditId),{actor:actor.id,action:'result',details:{...data,source:'telegram-topic',chat:source.chat,thread:source.thread,message:source.message,submitter:submitter.id},revision:state.revision,at:new Date().toISOString()});

@@ -18,6 +18,7 @@ const match=state.matches[0],sender=state.participants.find(p=>p.id===match.away
 const admin={id:'topic-webhook-admin',telegramId:'33000',username:'assistant',firstName:'Assigned results admin',isAdmin:false,isSuspended:false,createdAt:'',updatedAt:''};
 state.assistants[admin.id]=['results'];
 await db.collection('users').doc(admin.id).set(admin);
+await db.collection('users').doc(match.home!).set({id:match.home!,telegramId:'10151',username:'opponent',firstName:'Opponent',isAdmin:false,isSuspended:false,createdAt:'',updatedAt:''});
 await db.collection('users').doc(sender.id).set({id:sender.id,telegramId:'10150',username:'participant',firstName:'Player',isAdmin:false,isSuspended:false,createdAt:'',updatedAt:''});
 await db.collection('uzeflife').doc('championship').set(state);
 const originalFetch=globalThis.fetch,collection=db.collection,sent:any[]=[];
@@ -40,7 +41,8 @@ try{
  const preview=sent.at(-1);assert.match(preview.text,/Bu 1-tur o‘yinimi\?/);assert.ok(preview.text.includes('1:2'));assert.equal(preview.message_thread_id,UZEFLIFE_RESULT_TOPIC);
  assert.equal((await readUState()).matches[0].homeScore,null,'A score message does not bypass admin approval');
  const before=sent.length;assert.equal((await post(incoming)).body.ignored,'duplicate_update');assert.equal(sent.length,before);
- const callback={update_id:930002,callback_query:{id:'topic-webhook-approve',from:{id:33000},data:preview.reply_markup.inline_keyboard[0][0].callback_data,message:{message_id:9500+sent.length,message_thread_id:UZEFLIFE_RESULT_TOPIC,chat:{id:-100123,type:'supergroup'},from:{id:777}}}};
+ const callback={update_id:930002,callback_query:{id:'topic-webhook-approve',from:{id:10151},data:preview.reply_markup.inline_keyboard[0][0].callback_data,message:{message_id:9500+sent.length,message_thread_id:UZEFLIFE_RESULT_TOPIC,chat:{id:-100123,type:'supergroup'},from:{id:777}}}};
+ const self=structuredClone(callback);self.update_id=930006;self.callback_query.from.id=10150;self.callback_query.id='self-confirm';assert.equal((await post(self)).body.result,'unauthorized');
  const approved=await post(callback);assert.equal(approved.status,200);assert.equal(approved.body.result,'executing');
  const stored=await readUState();assert.equal(stored.matches[0].homeScore,1);assert.equal(stored.matches[0].awayScore,2);
  assert.equal(uLeagueStandings(stored).find(p=>p.id===sender.id)?.points,3);assert.equal(archiveReads,0);
@@ -48,7 +50,7 @@ try{
  const explicit=structuredClone(incoming);explicit.update_id=930003;explicit.message.message_id=940003;explicit.message.text='3-tur 2-1';
  assert.equal((await post(explicit)).body.result,'proposal_sent');const nextPreview=sent.at(-1);assert.match(nextPreview.text,/Bu 3-tur o‘yinimi\?/);
  assert.equal((await readUState()).matches.find(m=>m.id===later.id)?.homeScore,null);
- const nextCallback=structuredClone(callback);nextCallback.update_id=930004;nextCallback.callback_query.id='other-round-approve';nextCallback.callback_query.data=nextPreview.reply_markup.inline_keyboard[0][0].callback_data;nextCallback.callback_query.message.message_id=9500+sent.length;
+ const nextCallback=structuredClone(callback);nextCallback.update_id=930004;nextCallback.callback_query.id='other-round-approve';nextCallback.callback_query.from.id=33000;nextCallback.callback_query.data=nextPreview.reply_markup.inline_keyboard[0][0].callback_data;nextCallback.callback_query.message.message_id=9500+sent.length;
  assert.equal((await post(nextCallback)).body.result,'executing');const final=await readUState();assert.equal(final.round,1);
  assert.equal(final.matches.find(m=>m.id===later.id)?.[later.home===sender.id?'homeScore':'awayScore'],2);assert.equal(uLeagueStandings(final).find(p=>p.id===sender.id)?.points,6);assert.equal(archiveReads,0);
  console.log('PASS signed UZEFLIFE webhook: plain 2-1/current-round question, explicit round 3, assigned nonglobal admin approval, sender-first orientation, optional archive isolation, proposal/admin approval, standings and replay protection; Telegram mocked.');

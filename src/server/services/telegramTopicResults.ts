@@ -2,7 +2,7 @@ import {uMatchFinished} from '../../lib/uzeflifeLeague';
 import {getFirestoreDb} from '../firebase/admin';
 import type {UState} from '../../types/uzeflife';
 import { randomBytes, createHash } from 'node:crypto';
-import {UZEFLIFE_RESULT_TOPIC,planUzeflifeTopicResult,authorizeUzeflifeTopicResult,executeUzeflifeTopicResult,uzeflifeMatchFingerprint} from './uzeflifeTopicResults';
+import {UZEFLIFE_RESULT_TOPIC,planUzeflifeTopicResult,prepareUzeflifeTopicResult,rejectUzeflifeTopicResult,authorizeUzeflifeTopicResult,executeUzeflifeTopicResult,uzeflifeMatchFingerprint} from './uzeflifeTopicResults';
 import { getAiRedisClient, withinAiDeadline } from './telegramAiDeadline';
 import { createAiTournamentReader } from './telegramAiDataService';
 import { createAiSnapshotReader } from './telegramAiSnapshotReader';
@@ -221,11 +221,12 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
       }
       const isUzeflife=p.kind==='uzeflife';
       if(isUzeflife&&p.thread!==UZEFLIFE_RESULT_TOPIC||!isUzeflife&&p.thread===UZEFLIFE_RESULT_TOPIC){await answerTelegramCallback(callback.id,'Mavzu va turnir mos emas.',true);return {handled:true,result:'invalid'};}
-      if(!await (isUzeflife?authorizeUzeflifeTopicResult(actor):authorize(actor))){await answerTelegramCallback(callback.id,'Faqat vakolatli admin tasdiqlaydi.',true);return {handled:true,result:'unauthorized'};}
+      if(!await (isUzeflife?authorizeUzeflifeTopicResult(actor,action==='approve'?p.plan:undefined):authorize(actor))){await answerTelegramCallback(callback.id,'Faqat raqib yoki vakolatli admin tasdiqlaydi.',true);return {handled:true,result:'unauthorized'};}
       const state = action === 'approve' ? 'executing' : 'cancelled';
       const claimed = await client.eval(TOPIC_RESULT_CLAIM, [proposalKey(token), prefix+'fixture:'+(isUzeflife?'uzeflife:':'')+p.plan.targetId, sourceKey(p.chat,p.thread,p.sourceMessage),sourceKey(p.chat,p.thread,p.originalSourceMessage||p.sourceMessage)], [Date.now(),p.chat,p.thread,p.deliveredMessage,state,ttl]);
       if (Number(claimed) !== 1) { await answerTelegramCallback(callback.id, 'Taklif eskirgan yoki allaqachon ko‘rib chiqilgan.', true); return { handled: true, result: 'already_processed' }; }
       let reply = 'Taklif rad etildi. Natija o‘zgarmadi.';
+      if(action==='reject'&&isUzeflife){try{await rejectUzeflifeTopicResult(p.plan,actor);reply='Hisob taklifi rad etildi. O‘yinchilar qayta yuborishi mumkin.';}catch(error:any){reply='Hisob taklifi tozalanmadi: '+String(error.message).slice(0,250);}}
       if (action === 'approve') {
         try {
           const result = await withinAiDeadline(signal, () => isUzeflife?executeUzeflifeTopicResult(p.plan,actor,p.submitter,{chat:p.chat,thread:p.thread,message:p.sourceMessage}):(testDependencies.execute || executeAiAdminRoute)(p.plan,actor,'topic-result-'+token,signal));
@@ -323,6 +324,12 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
       return {handled:true,result:'clarification'};
     }
     if (!planned) return {handled:false};
+    if(uzeflifeTopic){
+     try{const prepared=await prepareUzeflifeTopicResult(planned.plan,m.from.id);planned.plan.body.expectedFixture=prepared.expectedFixture;planned.expectedFixture=prepared.expectedFixture;
+      const {scheduleUNotices}=await import('./uzeflifeNotifications');scheduleUNotices();
+      if(prepared.disputed){await sendTelegramMessage(m.chat.id,'Hisoblar mos kelmadi. Natija saqlanmadi; admin tekshirishi uchun e’tiroz ochildi.',{parse_mode:null,message_thread_id:m.message_thread_id,reply_to_message_id:m.message_id,signal});return {handled:true,result:'disputed'};}
+     }catch(error:any){if(!error.statusCode||error.statusCode>=500)throw error;await sendTelegramMessage(m.chat.id,error.message,{parse_mode:null,message_thread_id:m.message_thread_id,reply_to_message_id:m.message_id,signal});return {handled:true,result:'clarification'};}
+    }
     if(!uzeflifeTopic){
      const old=await client.get<ResultContext>(ctxKey);
      if(old && old.updateId<=update.update_id)await client.eval(TOPIC_RESULT_CONTEXT,[ctxKey],['cancel',old.token]);
@@ -332,7 +339,7 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
     const published = await client.eval(TOPIC_RESULT_PUBLISH,[proposalKey(token),latestKey],[JSON.stringify(p),update.update_id,update.edited_message?'1':'0',ttl,JSON.stringify({token,updateId:update.update_id,hash:createHash('sha256').update(text).digest('hex')})]);
     if (Number(published) !== 1) return {handled:true,result:'duplicate_source'};
     const heading='confirmationQuestion' in planned?planned.confirmationQuestion:'Tasdiqlash uchun natija:';
-    const reply = `${heading}\n${f.home} ${planned.plan.body.homeScore}:${planned.plan.body.awayScore} ${f.away}\n${f.competition} · ${f.roundName || f.matchday+'-tur'}${planned.plan.body.homePenaltyScore!=null?`\nPenaltilar: ${planned.plan.body.homePenaltyScore}:${planned.plan.body.awayPenaltyScore}`:''}\n\nHali bazaga yozilmadi. Faqat vakolatli admin tasdiqlaydi.${p.kind==='uzeflife'?'\nBoshqa tur bo‘lsa, masalan “2-tur 2-1” deb yuboring. Birinchi hisob — yozgan o‘yinchiniki; username yozilsa, o‘sha o‘yinchiniki.':''}\n24 soat amal qiladi.`;
+    const reply = `${heading}\n${f.home} ${planned.plan.body.homeScore}:${planned.plan.body.awayScore} ${f.away}\n${f.competition} · ${f.roundName || f.matchday+'-tur'}${planned.plan.body.homePenaltyScore!=null?`\nPenaltilar: ${planned.plan.body.homePenaltyScore}:${planned.plan.body.awayPenaltyScore}`:''}\n\n${p.kind==='uzeflife'?'Yakuniy hisob hali saqlanmadi. Raqib yoki vakolatli admin tasdiqlaydi.':'Hali bazaga yozilmadi. Faqat vakolatli admin tasdiqlaydi.'}${p.kind==='uzeflife'?'\nBoshqa tur bo‘lsa, masalan “2-tur 2-1” deb yuboring. Birinchi hisob — yozgan o‘yinchiniki; username yozilsa, o‘sha o‘yinchiniki.':''}\n24 soat amal qiladi.`;
     const sent = await sendTelegramMessage(m.chat.id,reply,{parse_mode:null,message_thread_id:m.message_thread_id,reply_to_message_id:m.message_id,reply_markup:{inline_keyboard:[[{text:'Tasdiqlash',callback_data:'rs:approve:'+token},{text:'Rad etish',callback_data:'rs:reject:'+token}]]},signal});
     if (sent.ok && Number.isSafeInteger(sent.result?.message_id)) {await client.set(proposalKey(token),{...p,deliveredMessage:sent.result.message_id},{ex:ttl});if(p.kind==='uzeflife')await getFirestoreDb().collection('uzeflife_topic_queue').doc(token).set({status:'pending'}).catch(()=>console.warn('[UZEFLIFE_TOPIC_QUEUE_DEFERRED]'));}
     else await client.set(proposalKey(token),{...p,state:'delivery_unknown'},{ex:ttl});

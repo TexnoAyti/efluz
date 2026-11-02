@@ -1,3 +1,4 @@
+import {UzeflifeMyMatch} from './UzeflifeMyMatch';
 import {UzeflifeHistory} from './UzeflifeHistory';
 import {readUzeflifeLaunch} from '../../lib/uzeflifeLinks';
 import React,{useState} from 'react';
@@ -69,6 +70,7 @@ export function UzeflifeChampionship({state:s,userId,busy,error,notice,missing,a
       </CompetitionBanner>
       <CompetitionTabs<Tab> items={tabs} value={tab} onChange={navigate} label="UZEFLIFE turniri" layout="grid"/>
       {(error||notice)&&<p role={error?'alert':'status'} className={`competition-note ${error?'error':''}`}>{error||notice}</p>}
+      {tab==='overview'&&<UzeflifeMyMatch state={s} userId={userId} onOpen={id=>setSelected(s.matches.find(m=>m.id===id)||null)}/>}
       {tab==='overview'&&<>
         {champion&&<div className="competition-panel u-registration"><div className="flex gap-3 items-center"><Trophy size={26}/><div><h3>UZEFLIFE chempioni</h3><p>{name(champion)}</p></div></div><button className="competition-button" onClick={()=>navigate('results')}>Final natijasi</button></div>}
         {s.status==='completed'&&champion&&<><div className="competition-panel"><h3>Finalchi</h3><p className="competition-muted">{name(s.matches.find(m=>m.round===8)?.home===champion?s.matches.find(m=>m.round===8)!.away!:s.matches.find(m=>m.round===8)!.home!)}</p></div><UzeflifeImageExport state={s} matches={s.matches.filter(m=>m.round===8)} seasonId={seasonId} champion/></>}

@@ -15,7 +15,7 @@ export function createULeagueMatches(ids:string[]):UMatch[]{
  return matches;
 }
 export function uLeagueStandings(s:Pick<UState,'participants'|'matches'|'roster'>){
- const rows=new Map(s.participants.filter(p=>p.status==='approved'||s.matches.some(m=>m.home===p.id||m.away===p.id)).map((p,i)=>[p.id,{id:p.id,name:p.name,position:0,played:0,won:0,drawn:0,lost:0,goalsFor:0,goalsAgainst:0,goalDifference:0,points:0,form:[] as string[],order:s.roster?.findIndex(slot=>slot.userId===p.id)??i}]));
+ const rows=new Map(s.participants.filter(p=>p.status==='approved'||s.matches.some(m=>m.home===p.id||m.away===p.id)).map((p,i)=>[p.id,{id:p.id,name:p.name,position:0,played:0,won:0,drawn:0,lost:0,goalsFor:0,goalsAgainst:0,goalDifference:0,points:0,form:[] as string[],order:s.roster?.findIndex(slot=>slot.userId===p.id||`uze-slot-${slot.group}-${slot.slot}`===p.id)??i}]));
  for(const m of s.matches){if(!uMatchFinished(m))continue;const home=rows.get(m.home!),away=rows.get(m.away!);if(!home||!away)continue;
   for(const [a,b,gf,ga] of [[home,away,m.homeScore!,m.awayScore!],[away,home,m.awayScore!,m.homeScore!]] as const){a.played++;a.goalsFor+=gf;a.goalsAgainst+=ga;const result=gf>ga?'W':gf===ga?'D':'L';a.form.push(result);if(result==='W'){a.won++;a.points+=3;}else if(result==='D'){a.drawn++;a.points++;}else a.lost++;a.goalDifference=a.goalsFor-a.goalsAgainst;}
  }
