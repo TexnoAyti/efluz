@@ -2,7 +2,7 @@
 
 The authenticated existing notification workers now prepare one daily digest per current player and domestic league. The existing Supabase ten-minute worker and Vercel Telegram worker both use `prepareUNotifications`; ordinary page reads never prepare these digests. No additional cron, migration or credential is required.
 
-The worker runs between 09:00 and 21:00 Asia/Tashkent. It considers all scheduled or pending-confirmation fixtures from round 1 through the competition's current round, even without an individual deadline. Finished, cancelled, postponed, disputed, future, retired and withdrawn fixtures are excluded. Closed/draft competitions are excluded. Pending scores are labelled as awaiting confirmation rather than presented as a request to play again.
+The worker runs between 09:00 and 21:00 Asia/Tashkent. It considers all scheduled or pending-confirmation fixtures from round 1 through the competition's current round, even without an individual deadline. Finished, cancelled, postponed, disputed, future, retired and withdrawn fixtures are excluded. Closed/draft competitions are excluded. Pending scores are labelled as awaiting confirmation rather than presented as a request to play again. Older rounds explicitly direct players to the administrator with the round, opponent and score; existing phase/matchday submission locks remain enforced.
 
 Current occupancies and user records authorize recipients. Embedded fixture owners and caches are ignored. Contacts use validated Telegram usernames; the group/admin fallback and Mini App action remain available without a username. Long calendars/text are bounded to fit Telegram; the Mini App contains the full list.
 

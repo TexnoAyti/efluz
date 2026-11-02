@@ -29,7 +29,7 @@ export async function verifyLeagueBacklogReminders(){
     let data=(await loadLeagueBacklog(competitionId,season))!;
     assert.equal(data.fixtures.length,7,'Current round 19 retains seven old unfinished matches, excluding terminal, postponed, disputed and future fixtures');
     const message=leagueBacklogMessage(data,home)!;
-    assert.match(message.body,/<b>7<\/b>/);assert.match(message.body,/1-tur/);assert.match(message.body,/7-tur/);assert.match(message.body,/tasdiqlanishi kutilmoqda/);
+    assert.match(message.body,/<b>7<\/b>/);assert.match(message.body,/1-tur/);assert.match(message.body,/7-tur/);assert.match(message.body,/eski tur: admin yordami/);assert.match(message.body,/tur raqami, raqib va hisobni/);assert.match(message.body,/tasdiqlanishi kutilmoqda/);
     assert.equal(message.replyMarkup.inline_keyboard.filter(r=>r[0].url==='https://t.me/audit_away').length,1,'One usable opponent contact, not seven duplicate buttons');
     assert.ok(message.body.length<3900);assert.equal(leagueBacklogMessage(data,'historical-wrong-owner'),null);
     assert.equal(await processLeagueBacklogReminders({now:Date.parse(reminderDay()+'T22:00:00Z')}),false,'Nighttime does not enqueue');
