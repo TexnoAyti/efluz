@@ -1,3 +1,4 @@
+import {verifyUzeflifeFourFeatures} from './uzeflifeFourFeaturesAudit';
 import {verifyCompactNotificationMigration} from './compactNotificationMigrationAudit';
 import {verifyLinearRuntimeDecode} from './linearRuntimeDecodeAudit';
 import {verifyIndexedDocumentIds} from './indexedDocumentIdsAudit';
@@ -305,6 +306,7 @@ try {
   await verifyTeamTournamentSettings(()=>{failTeamPreviewCommit=true;});
   await verifyTeamPlayerMatches();await verifyElClasico(()=>{failClasicoCommit=true;});
   await verifyUzeflifeLeague();
+await verifyUzeflifeFourFeatures();
   await verifyUzeflifeNotificationDelivery();
   await verifyUzeflifeRoundPosts();
   await verifyCompetitionNotices(()=>{failClasicoCommit=true;});

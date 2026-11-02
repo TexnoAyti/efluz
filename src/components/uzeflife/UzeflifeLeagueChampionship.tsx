@@ -1,4 +1,5 @@
 import {UzeflifeHistory} from './UzeflifeHistory';
+import {UzeflifeMyMatch} from './UzeflifeMyMatch';
 import React,{useState} from 'react';
 import {ArrowLeft,CalendarDays,Users,Trophy,Shield,RefreshCw,History} from 'lucide-react';
 import {CompetitionBanner,CompetitionHeading,CompetitionTabs} from '../CompetitionChrome';
@@ -11,9 +12,9 @@ import {UzeflifeAdmin,type UAct} from './UzeflifeAdmin';
 import {UzeflifeMatchDialog} from './UzeflifeMatchDialog';
 import {UzeflifeRoster} from './UzeflifeRoster';
 import {UzeflifeImageExport} from './UzeflifeImageExport';
-type Tab='fixtures'|'standings'|'roster'|'history';
+type Tab='mine'|'fixtures'|'standings'|'roster'|'history';
 export function UzeflifeLeagueChampionship({state:s,userId,busy,error,notice,missing,act,onRefresh,initialAdmin,seasonId}:{state:UViewState;userId?:string;busy:boolean;error:string;notice:string;missing:UChannel[];act:UAct;onRefresh:()=>void;initialAdmin:boolean;seasonId:string}){
- const [tab,setTab]=useState<Tab>('fixtures'),[admin,setAdmin]=useState(initialAdmin),[round,setRound]=useState(s.round||1),[selected,setSelected]=useState(readUzeflifeLaunch),[page,setPage]=useState(0),[tablePage,setTablePage]=useState(0),[view,setView]=useState<StandingsView>('short'),[mineOnly,setMineOnly]=useState(false);
+ const [tab,setTab]=useState<Tab>(userId&&s.participants.some(p=>p.id===userId&&p.status==='approved')?'mine':'fixtures'),[admin,setAdmin]=useState(initialAdmin),[round,setRound]=useState(s.round||1),[selected,setSelected]=useState(readUzeflifeLaunch),[page,setPage]=useState(0),[tablePage,setTablePage]=useState(0),[view,setView]=useState<StandingsView>('short'),[mineOnly,setMineOnly]=useState(false);
  const names=new Map(s.participants.map(p=>[p.id,p.name])),roster=new Map(s.roster?.filter(r=>r.userId).map(r=>[r.userId!,r]));
  const slotLabel=(id:string|null)=>{const r=roster.get(id||'');return r?`${r.group}-setka · ${r.slot}-o‘rin`:'';};
  const games=s.matches.filter(m=>m.round===round&&(!mineOnly||[m.home,m.away].includes(userId||''))),pages=Math.max(1,Math.ceil(games.length/8)),current=Math.min(page,pages-1);
@@ -22,10 +23,11 @@ export function UzeflifeLeagueChampionship({state:s,userId,busy,error,notice,mis
  return <div className="competition-page uzeflife u-league-page">
  {admin?<UzeflifeAdmin state={s} busy={busy} act={act} error={error} onRefresh={onRefresh} onBack={()=>setAdmin(false)} onMatches={()=>{setAdmin(false);setTab('fixtures');setRound(s.round||1);}}/>:<>
  <CompetitionBanner><CompetitionHeading emblem={<Trophy size={30}/>} eyebrow="UZEFLIFE · UMUMIY LIGA" title="UZEFLIFE" meta={<><span>15 tur</span><span>{count} username</span><span>{U_STATUS[s.status]}</span></>}/><div className="u-banner-actions">{s.permissions.length>0&&<button className="competition-button" onClick={()=>setAdmin(true)}><Shield size={16}/>Liga boshqaruvi</button>}<button className="competition-button" disabled={busy} onClick={onRefresh}><RefreshCw size={16}/>Yangilash</button></div></CompetitionBanner>
- <CompetitionTabs<Tab> value={tab} onChange={setTab} label="UZEFLIFE liga bo‘limlari" items={[{id:'fixtures',label:'O‘yinlar',icon:CalendarDays},{id:'standings',label:'Jadval',icon:Trophy},{id:'roster',label:'Setkalar ro‘yxati',icon:Users},{id:'history',label:'Tarix',icon:History}]}/>
+ <CompetitionTabs<Tab> value={tab} onChange={setTab} label="UZEFLIFE liga bo‘limlari" layout="grid" items={[{id:'mine',label:'Mening o‘yinim',icon:CalendarDays},{id:'fixtures',label:'O‘yinlar',icon:CalendarDays},{id:'standings',label:'Jadval',icon:Trophy},{id:'roster',label:'Setkalar ro‘yxati',icon:Users},{id:'history',label:'Tarix',icon:History}]}/>
  {(error||notice)&&<p role={error?'alert':'status'} className={`competition-note ${error?'error':''}`}>{error||notice}</p>}
  {subscriptionNotice}
- {(s.status==='registration'||s.status==='playing')&&<section className="competition-panel"><h3>Ro‘yxatdagi akkauntingizni ulang</h3><p className="competition-muted">@username’ingiz asl ro‘yxatda bo‘lishi kerak. Ulangan o‘yinchi raqib bildirishnomalarini botda oladi va hisob kiritishi mumkin.</p><button className="competition-button primary" disabled={busy||!userId||mine?.status==='approved'} onClick={()=>void act('register')}>{mine?.status==='approved'?'Akkaunt ulangan':'Ro‘yxatdagi o‘rnimni ulash'}</button><p className="competition-muted">{s.participants.filter(p=>p.status==='approved').length}/{count} akkaunt ulangan</p></section>}
+ {(s.status==='registration'||s.status==='playing')&&mine?.status!=='approved'&&<section className="competition-panel"><h3>Ro‘yxatdagi akkauntingizni ulang</h3><p className="competition-muted">@username’ingiz asl ro‘yxatda bo‘lishi kerak. Ulangan o‘yinchi raqib bildirishnomalarini botda oladi va hisob kiritishi mumkin.</p><button className="competition-button primary" disabled={busy||!userId} onClick={()=>void act('register')}>Ro‘yxatdagi o‘rnimni ulash</button><p className="competition-muted">{s.roster?.filter(r=>r.userId).length||0}/{count} akkaunt ulangan</p></section>}
+ {tab==='mine'&&<UzeflifeMyMatch state={s} userId={userId} onOpen={id=>setSelected(id)}/>}
  {tab==='history'&&<UzeflifeHistory state={s}/>}
  {tab==='roster'&&<UzeflifeRoster state={s}/>}
  {tab==='fixtures'&&<><CompetitionRounds items={Array.from({length:15},(_,i)=>({id:i+1,label:`${i+1}-TUR`}))} value={round} onChange={r=>{setRound(r);setPage(0);}}/><div className="competition-actions"><button className="competition-button" aria-pressed={mineOnly} disabled={!userId} onClick={()=>{setMineOnly(!mineOnly);setPage(0);}}>{mineOnly?'Barcha o‘yinlar':'Mening o‘yinlarim'}</button><button className="competition-button" onClick={()=>{setRound(s.round||1);setPage(0);}}>Joriy tur</button><span className="competition-muted">{round}-tur · {games.length} o‘yin</span></div>

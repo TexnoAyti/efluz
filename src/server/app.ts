@@ -1,3 +1,4 @@
+import {createUzeflifeWorkerRouter} from './routes/uzeflifeWorker.routes';
 import {androidAuthRouter} from './routes/androidAuth.routes';
 import {processTeamInvitationNotices} from './services/teamMembershipService';
 import { requestMaintenance } from './middleware/requestMaintenance';
@@ -152,6 +153,8 @@ export function createApp() {
   // their shared durable budgets; this per-instance guard bounds all traffic.
   app.use('/api', rateLimit('api-global', 300, 60, { distributed: false }));
   app.use('/api/image-exports', imageExportDownloadRouter);
+
+  app.use('/api/internal/uzeflife-worker',createUzeflifeWorkerRouter(ensureDbReady));
 
   app.all('/api/internal/uzeflife-post-worker',async(req,res)=>{
     const secret=process.env.CRON_SECRET,actual=Buffer.from(req.headers.authorization||''),expected=Buffer.from(`Bearer ${secret||''}`);

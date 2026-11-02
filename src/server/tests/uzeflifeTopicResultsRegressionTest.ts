@@ -41,7 +41,7 @@ try{
  assert.equal((await handleTopicResultUpdate(callback(preview,token,1001))).result,'unauthorized');assert.equal((await handleTopicResultUpdate(callback(preview,token,3002))).result,'unauthorized');
  const cross=callback(preview,token);cross.callback_query.message.message_thread_id=3;assert.equal((await handleTopicResultUpdate(cross)).result,'invalid');
  const race=await Promise.all([handleTopicResultUpdate(callback(preview,token)),handleTopicResultUpdate(callback(preview,token))]);assert.equal(race.filter(r=>r.result==='executing').length,1);
- assert.equal((await listUzeflifeTopicQueue(await readUState())).length,0,'Handled topic proposals leave the unified queue');let stored=await readUState();assert.equal(stored.matches[0].winner,'player-0');assert.equal(stored.matches.find(m=>m.id==='r2m0')?.home,'player-0');assert.equal(stored.revision,1);
+ assert.equal((await listUzeflifeTopicQueue(await readUState())).length,0,'Handled topic proposals leave the unified queue');let stored=await readUState();assert.equal(stored.matches[0].winner,'player-0');assert.equal(stored.matches.find(m=>m.id==='r2m0')?.home,'player-0');assert.equal(stored.revision,2);
  assert.equal((await handleTopicResultUpdate(callback(preview,token))).result,'already_processed');
  assert.ok((await db.collection('uzeflife_audit').get()).docs.some(d=>d.data().details.thread===8989&&d.data().actor===assistant.id));
  const editable=update('2:1',1003);await handleTopicResultUpdate(editable);const old=sent.at(-1);await handleTopicResultUpdate({update_id:++sequence,edited_message:{...editable.message,text:'2:3'}});const current=sent.at(-1);

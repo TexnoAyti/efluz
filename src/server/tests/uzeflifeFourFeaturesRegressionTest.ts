@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import express from 'express';
+import {once} from 'node:events';
+import {initDatabase} from '../db';
+import {verifyUzeflifeFourFeatures} from './uzeflifeFourFeaturesAudit';
+await initDatabase();await verifyUzeflifeFourFeatures();
+
+const {createUzeflifeWorkerRouter}=await import('../routes/uzeflifeWorker.routes');
+const secret=process.env.UZEFLIFE_WORKER_SECRET,namespace=process.env.SUPABASE_DATA_NAMESPACE,provider=process.env.DATABASE_PROVIDER;process.env.UZEFLIFE_WORKER_SECRET='isolated-worker-secret';process.env.DATABASE_PROVIDER='supabase';process.env.SUPABASE_DATA_NAMESPACE='preview';let initialized=0;
+const app=express();app.use('/worker',createUzeflifeWorkerRouter(async()=>{initialized++;throw Error('isolated init failure');}));const server=app.listen(0,'127.0.0.1');await once(server,'listening');const url=`http://127.0.0.1:${(server.address() as any).port}/worker`;
+try{assert.equal((await fetch(url,{method:'POST'})).status,401);assert.equal(initialized,0);assert.equal((await fetch(url,{method:'POST',headers:{authorization:'Bearer isolated-worker-secret'}})).status,503);assert.equal(initialized,0,'Preview never starts a production worker');process.env.SUPABASE_DATA_NAMESPACE='production';assert.equal((await fetch(url,{method:'POST',headers:{authorization:'Bearer isolated-worker-secret'}})).status,503);assert.equal(initialized,1);console.log('PASS scoped worker: bearer guard before initialization, preview block and retryable startup failure.');}finally{await new Promise<void>(r=>server.close(()=>r()));for(const [key,value] of Object.entries({UZEFLIFE_WORKER_SECRET:secret,SUPABASE_DATA_NAMESPACE:namespace,DATABASE_PROVIDER:provider})){if(value===undefined)delete process.env[key];else process.env[key]=value;}}

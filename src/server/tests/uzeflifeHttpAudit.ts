@@ -26,7 +26,7 @@ export async function verifyUzeflifeHttp(failNextCommit:()=>void){
   assert.equal((await call('topic-results',undefined,actors[3])).status,403);
   assert.equal((await call('topic-results',undefined,null)).status,401);
   dbAny.collection=originalCollection;
-  assert.equal((await call('topic-results')).status,200);assert.equal((await call('open',{},null)).status,401);
+  assert.equal((await call('topic-results')).status,200);assert.equal((await call('summary-status',undefined,null)).status,401);assert.equal((await call('summary-status',undefined,actors[3])).status,403);assert.equal((await call('summary-status')).status,200);assert.equal((await call('summary-reconcile',{id:'../outside',cursor:0,lease:'x',delivered:false})).status,400);assert.equal((await call('open',{},null)).status,401);
   assert.equal((await call('superAdmin',{target:actors[1].id},actors[2])).status,403);
   assert.equal((await call('superAdmin',{target:actors[1].id},{...actors[2],telegramId:actors[0].telegramId})).status,403,'Account lookup prevents forged/stale owner claims');
   assert.equal((await call('superAdmin',{target:actors[1].telegramId})).status,200);

@@ -1,3 +1,4 @@
+import {writeURoundSummaries,processURoundSummary,sweepURoundSummaries} from './uzeflifeRoundSummary';
 import {NotificationOutboxCursor} from './notificationOutboxCursor';
 import {persistLiveUserNotification,publishLiveUserNotifications} from './liveNotifications';
 import {isULeague,uMatchFinished,uLeagueStandings} from '../../lib/uzeflifeLeague';
@@ -13,12 +14,12 @@ import {uRoundLabel,uMatchNumber} from '../../lib/uzeflifePresentation';
 import {enqueueSmartTelegramNotification} from './smartNotificationService';
 
 type Kind='opponent'|'proposal'|'confirmed'|'dispute'|'reminder'|'overdue'|'champion';
-export type UNotice={userId:string;kind:Kind;matchId:string;version:string;adminOnly?:boolean;title:string;body:string;};
+export type UNotice={userId:string;kind:Kind;matchId:string;version:string;adminOnly?:boolean;reminderStage?:'24h'|'3h'|'1h';title:string;body:string;};
 const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value??null)).digest('hex');
 export const uNoticeText=(v:string)=>v.replace(/<[^>]*>/g,'').replace(/&(amp|lt|gt|quot|#39);/g,(_,key:string)=>({amp:'&',lt:'<',gt:'>',quot:'"','#39':"'"}[key]!));
 const html=(v:string)=>v.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 const admins=(s:UState)=>[...new Set(['@primary-owner',s.superAdmin,...Object.keys(s.assistants).filter(id=>s.assistants[id].includes('results'))].filter((v):v is string=>!!v))];
-export function uNoticeVersion(kind:Kind,m:UMatch){return hash([m.home,m.away,...(kind==='proposal'?[m.proposal?[m.proposal.by,m.proposal.home,m.proposal.away,m.proposal.penaltyHome,m.proposal.penaltyAway]:null]:kind==='dispute'?[m.dispute?.at]:kind==='confirmed'||kind==='champion'?[m.homeScore,m.awayScore,m.penaltyHome,m.penaltyAway,m.winner]:[m.deadlineAt||null,...(kind==='opponent'?[m.scheduledAt]:[])])]);}
+export function uNoticeVersion(kind:Kind,m:UMatch){return hash([m.home,m.away,...(kind==='proposal'?[m.proposal?[m.proposal.by,m.proposal.home,m.proposal.away,m.proposal.penaltyHome,m.proposal.penaltyAway,...(m.proposal.version?[m.proposal.version]:[])]:null]:kind==='dispute'?[m.dispute?.at]:kind==='confirmed'||kind==='champion'?[m.homeScore,m.awayScore,m.penaltyHome,m.penaltyAway,m.winner]:[m.deadlineAt||null,...(kind==='opponent'?[m.scheduledAt]:[])])]);}
 export function uTransitionNotices(before:UState,after:UState):UNotice[]{
  const events:UNotice[]=[];const player=(id:string|null)=>html(after.participants.find(p=>p.id===id)?.name||'Ishtirokchi');
  const add=(m:UMatch,kind:Kind,ids:(string|null)[],title:string,body:string,adminOnly=false)=>{for(const id of new Set(ids))if(id)events.push({userId:id,kind,matchId:m.id,version:uNoticeVersion(kind,m),title,body,...(adminOnly?{adminOnly:true}:{})});};
@@ -34,7 +35,7 @@ export function uTransitionNotices(before:UState,after:UState):UNotice[]{
    add(m,'proposal',admins(after),'UZEFLIFE · Hisob tasdiq kutmoqda',body,true);
   }
   if(uMatchFinished(m)&&(!old||!uMatchFinished(old)||uNoticeVersion('confirmed',old)!==uNoticeVersion('confirmed',m)))add(m,'confirmed',[m.home,m.away],'UZEFLIFE · Natija tasdiqlandi',`${label}\n${player(m.home)} ${m.homeScore}:${m.awayScore} ${player(m.away)}${m.penaltyHome!==null?'\nPenaltilar: '+m.penaltyHome+':'+m.penaltyAway:''}${m.winner?'\nG‘olib: <b>'+player(m.winner)+'</b>':'\nDurang · har ikkala o‘yinchiga 1 ochko'}`);
-  if(m.dispute?.status==='open'&&old?.dispute?.at!==m.dispute.at){const body=`${label}\n${player(m.home)} — ${player(m.away)}\nNatijaga e’tiroz yuborildi. Admin tekshirishi kerak.`;add(m,'dispute',[m.home,m.away],'UZEFLIFE · Bahsli natija',body);add(m,'dispute',admins(after),'UZEFLIFE · E’tirozni tekshiring',body,true);}
+  if(m.dispute?.status==='open'&&old?.dispute?.at!==m.dispute.at){const body=`${label}\n${player(m.home)} — ${player(m.away)}\n${html(m.dispute.reason)}\nAdmin tekshirishi kerak.`;add(m,'dispute',[m.home,m.away],'UZEFLIFE · Bahsli natija',body);add(m,'dispute',admins(after),'UZEFLIFE · E’tirozni tekshiring',body,true);}
   if(!isULeague(after)&&after.status==='completed'&&before.status!=='completed'&&m.round===8&&m.winner)add(m,'champion',after.participants.filter(p=>p.status==='approved').map(p=>p.id),'UZEFLIFE · Turnir yakunlandi',`Chempion: <b>${player(m.winner)}</b>\nFinalchi: ${player(m.winner===m.home?m.away:m.home)}\nFinal hisobi: ${m.homeScore}:${m.awayScore}\nBarcha natijalar turnir tarixida saqlandi.`);
  }
  if(isULeague(after)&&after.status==='completed'&&before.status!=='completed'){const champion=uLeagueStandings(after)[0],m=after.matches.at(-1);if(m&&champion)add(m,'champion',after.participants.filter(p=>p.status==='approved').map(p=>p.id),'UZEFLIFE · Liga yakunlandi',`15 tur yakunlandi. Chempion: ${html(champion.name)} · ${champion.points} ochko. Yakuniy jadvalni oching.`);}
@@ -42,22 +43,30 @@ export function uTransitionNotices(before:UState,after:UState):UNotice[]{
 }
 /** Stored in the same transaction as the draw/result: rollback cannot send a message. */
 export function writeUNotices(tx:Transaction,before:UState,after:UState,id:string){
+ writeURoundSummaries(tx,before,after);
  const notices=uTransitionNotices(before,after);
  if(notices.length)tx.set(getFirestoreDb().collection('uzeflife_notifications').doc(id),{status:'pending',cursor:0,leaseUntil:0,createdAt:new Date().toISOString(),deliveryVersion:2,notices});
 }
 export async function sweepUDeadlines(now=Date.now()){
  const db=getFirestoreDb(),ref=db.collection('uzeflife').doc('championship'),checkpoint=db.collection('uzeflife_worker').doc('reminders');
+ // Repeated outbox continuations do not need to read the large tournament
+ // when the next scheduled sweep has not arrived. The transaction rechecks.
+ if(Number((await checkpoint.get()).data()?.nextAt||0)>now)return;
  await db.runTransaction(async tx=>{
   const [snap,check]=await Promise.all([tx.get(ref),tx.get(checkpoint)]);const s=snap.data() as UState|undefined;
   if(!s||s.status!=='playing'||Number(check.data()?.nextAt||0)>now)return;
   const notices:UNotice[]=[];const seen=new Set<string>(check.data()?.seen||[]);
   for(const m of s.matches){const deadline=Date.parse(m.deadlineAt||'');if(m.round!==s.round||uMatchFinished(m)||m.proposal||m.dispute?.status==='open'||!m.home||!m.away||!Number.isFinite(deadline)||deadline-now>86400000)continue;
    const kind=deadline>now?'reminder':'overdue';
-   const body=`${uRoundLabel(m.round,s.format)} · ${uMatchNumber(m)}-o‘yin\nHisob topshirish muddati: ${new Date(deadline).toLocaleString('uz-UZ',{timeZone:'Asia/Tashkent'})}\n${kind==='reminder'?'Hisobni kiritishni unutmang.':'Muddat tugadi. Raqib yoki admin bilan bog‘laning.'}`;
-   for(const userId of [m.home,m.away]){const version=uNoticeVersion(kind,m),key=hash([userId,kind,m.id,version]);if(!seen.has(key)){notices.push({userId,kind,matchId:m.id,version,title:kind==='reminder'?'UZEFLIFE · O‘yin eslatmasi':'UZEFLIFE · O‘yin muddati tugadi',body});seen.add(key);}}
+   const reminderStage=kind==='reminder'?(deadline-now<=3600000?'1h':deadline-now<=10800000?'3h':'24h'):undefined;
+   for(const userId of [m.home,m.away]){const version=uNoticeVersion(kind,m),key=hash([userId,kind,m.id,version,reminderStage||null]);if(!seen.has(key)&&!((reminderStage==='24h'||kind==='overdue')&&seen.has(hash([userId,kind,m.id,version])))){
+    const opponent=s.participants.find(p=>p.id===(m.home===userId?m.away:m.home))?.name||'Raqib';
+    const body=`${uRoundLabel(m.round,s.format)} · ${uMatchNumber(m)}-o‘yin\nRaqibingiz: ${html(opponent)}\nHisob topshirish muddati: ${new Date(deadline).toLocaleString('uz-UZ',{timeZone:'Asia/Tashkent'})}\n${kind==='reminder'?`${reminderStage==='1h'?'1 soatdan':reminderStage==='3h'?'3 soatdan':'24 soatdan'} kam qoldi. Hisobni kiriting.`:'Muddat tugadi. Raqib yoki admin bilan bog‘laning.'}`;
+    notices.push({userId,kind,matchId:m.id,version,...(reminderStage?{reminderStage}:{}),title:kind==='reminder'?'UZEFLIFE · O‘yin eslatmasi':'UZEFLIFE · O‘yin muddati tugadi',body});seen.add(key);
+   }}
   }
-  tx.set(checkpoint,{nextAt:now+3600000,seen:[...seen].slice(-2048)});
-  if(notices.length)tx.set(db.collection('uzeflife_notifications').doc('reminder-'+hash(notices.map(n=>[n.userId,n.kind,n.matchId,n.version]))),{status:'pending',cursor:0,leaseUntil:0,createdAt:new Date().toISOString(),deliveryVersion:2,notices});
+  tx.set(checkpoint,{nextAt:now+10*60000,seen:[...seen].slice(-2048)});
+  if(notices.length)tx.set(db.collection('uzeflife_notifications').doc('reminder-'+hash(notices.map(n=>[n.userId,n.kind,n.matchId,n.version,n.reminderStage||null]))),{status:'pending',cursor:0,leaseUntil:0,createdAt:new Date().toISOString(),deliveryVersion:2,notices});
  });
 }
 export function validUNotice(n:UNotice,s:UState,ownerId?:string){
@@ -65,6 +74,7 @@ export function validUNotice(n:UNotice,s:UState,ownerId?:string){
  if(n.adminOnly&&!(n.userId===ownerId||n.userId===s.superAdmin||s.assistants[n.userId]?.includes('results')===true))return false;
  if(!n.adminOnly&&(!s.participants.some(p=>p.id===n.userId&&p.status==='approved')||n.kind!=='champion'&&![m.home,m.away].includes(n.userId)))return false;
  if(n.kind==='reminder'&&(Date.parse(m.deadlineAt||'')<=Date.now()||m.proposal||m.dispute?.status==='open'))return false;
+ if(n.kind==='reminder'&&n.reminderStage){const hours=(Date.parse(m.deadlineAt||'')-Date.now())/3600000;if((hours<=1?'1h':hours<=3?'3h':'24h')!==n.reminderStage)return false;}
  if(n.kind==='overdue'&&(Date.parse(m.deadlineAt||'')>Date.now()||m.proposal||m.dispute?.status==='open'))return false;
  if(['opponent','reminder','overdue'].includes(n.kind))return s.status==='playing'&&m.round===s.round&&!uMatchFinished(m);
  if(n.kind==='proposal')return !!m.proposal&&!uMatchFinished(m)&&m.dispute?.status!=='open';
@@ -80,7 +90,7 @@ export async function processUNotices(limit=25,enqueue=enqueueSmartTelegramNotif
   if(!claimed)continue;
   const progress=new NotificationOutboxCursor(claimed.notices.length,claimed.cursor,claimed.retryIndices);
   try{
-   const s=(await db.collection('uzeflife').doc('championship').get()).data() as UState;
+   const {readUState}=await import('./uzeflifeService');const s=await readUState();
    const owner=await db.collection('users').where('telegramId','==','5209126900').limit(2).get();const ownerId=owner.docs.length===1?owner.docs[0].id:undefined;
    const notices=claimed.notices as UNotice[];
    while(budget>0&&Date.now()<deadline){
@@ -120,6 +130,8 @@ export async function prepareUNotifications(){
   ()=>sweepCustomCompetitionDeadlines(),
   ()=>sweepUDeadlines(),
   ()=>processUNotices(60,enqueueSmartTelegramNotification,Date.now()+8000),
+  ()=>sweepURoundSummaries(),
+  ()=>processURoundSummary(),
  ]);
 }
 export function scheduleUNotices(hop=0){
