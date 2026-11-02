@@ -19,6 +19,53 @@ export function requireUPermission(s:UState,u:User,p:UPermission|'super'|'owner'
  if(p==='owner'?owner:p==='super'?(owner||s.superAdmin===u.id):uPermissions(s,u).includes(p))return;
  throw uError('Bu amal uchun ruxsatingiz yo‘q.',403);
 }
+// Identity linking does not grant membership: only the fixed roster can be claimed.
+// Use an authoritative Telegram account, never a username from an action body.
+function claimableURoster(s:UState,u:User){
+ if(!isULeague(s)||!['registration','playing','paused'].includes(s.status)||!u.telegramId||u.isSuspended)return null;
+ if(s.roster?.some(r=>r.userId===u.id))return null;
+ const username=String(u.username||'').replace(/^@/,'').toLowerCase();
+ const slots=s.roster?.filter(r=>r.username?.replace(/^@/,'').toLowerCase()===username)||[];
+ if(!username||slots.length!==1)return null;
+ const slot=slots[0],placeholder=`uze-slot-${slot.group}-${slot.slot}`;
+ if(slot.userId||s.participants.some(p=>[u.id,placeholder].includes(p.id)&&p.status==='removed'))return null;
+ return slot;
+}
+function linkURoster(s:UState,u:User):boolean{
+ const slot=claimableURoster(s,u);if(!slot)return false;
+ const placeholder=`uze-slot-${slot.group}-${slot.slot}`;
+ slot.userId=u.id;
+ for(const m of s.matches){
+  if(m.home===placeholder)m.home=u.id;if(m.away===placeholder)m.away=u.id;if(m.winner===placeholder)m.winner=u.id;
+  if(m.proposal?.by===placeholder)m.proposal.by=u.id;
+  if(m.dispute?.by===placeholder)m.dispute.by=u.id;
+ }
+ s.participants=s.participants.filter(p=>p.id!==placeholder);
+ const existing=s.participants.find(p=>p.id===u.id);
+ if(existing){existing.name='@'+slot.username;existing.status='approved';}
+ else s.participants.push({id:u.id,name:'@'+slot.username,status:'approved'});
+ return true;
+}
+export async function ensureUPlayerLinked(u:User,state?:UState):Promise<UState>{
+ const current=state||await readUState();
+ // Already linked and non-roster visitors keep the compact read-only path.
+ if(!claimableURoster(current,u))return current;
+ const db=getFirestoreDb(),ref=db.collection('uzeflife').doc('championship');
+ return db.runTransaction(async tx=>{
+  const [snap,doc]=await Promise.all([tx.get(ref),tx.get(db.collection('users').doc(u.id))]);
+  const s=snap.data() as UState,a=doc.data();
+  if(!s)return current;
+  if(!a||a.isSuspended||!a.telegramId||String(a.telegramId)!==String(u.telegramId))throw uError('Akkaunt vakolati o‘zgargan.',403);
+  const before=structuredClone(s);
+  if(linkURoster(s,{...a,id:u.id} as User)){
+   // Recreate an undeliverable placeholder recipient's pending proposal notice.
+   for(const m of before.matches)if(m.proposal&&m.proposal.by!==u.id&&[m.home,m.away].some(id=>id?.startsWith('uze-slot-'))&&s.matches.find(n=>n.id===m.id&&[n.home,n.away].includes(u.id)))m.proposal=null;
+   s.revision++;writeUNotices(tx,before,s,randomUUID());tx.set(ref,s);
+   tx.set(db.collection('uzeflife_audit').doc(randomUUID()),{actor:u.id,action:'autoLinkRoster',revision:s.revision,at:new Date().toISOString()});
+  }
+  return s;
+ });
+}
 export function generateUBracket(ids:string[]):UMatch[]{
  if(ids.length!==256||new Set(ids).size!==256)throw uError('256 ta tasdiqlangan ishtirokchi kerak.');
  return createUzeflifeMatches(ids);
@@ -176,6 +223,7 @@ export async function mutateUState(u:User,action:string,body:unknown){
  const expectedRevision=(body as any)?.expectedRevision;
  if(expectedRevision!==undefined&&(!Number.isInteger(expectedRevision)||expectedRevision<0))throw uError('Turnir holati noto‘g‘ri.',400);
  const parsed=validateUAction(action,body),d=parsed.data;
+ if(['result','confirmResult','dispute'].includes(action))await ensureUPlayerLinked(u);
  const db=getFirestoreDb(),ref=db.collection('uzeflife').doc('championship');
  // Resolve role targets only after permission checks. Never accept a caller-supplied identity.
  if(['superAdmin','assistant','removeAssistant'].includes(action)){
