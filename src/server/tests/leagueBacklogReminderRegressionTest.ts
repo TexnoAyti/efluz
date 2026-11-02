@@ -6,6 +6,7 @@ import {getFirestoreDb} from '../firebase/admin';
 import {CURRENT_SEASON_ID as season} from '../../lib/seasonParticipationPolicy';
 import {loadLeagueBacklog,leagueBacklogMessage,processLeagueBacklogReminders,freshLeagueReminder,reminderDay,BACKLOG_STATE_COLLECTION} from '../services/leagueBacklogReminders';
 import {enqueueSmartTelegramNotification} from '../services/smartNotificationService';
+import {PostgresNotificationStore} from '../services/postgresNotificationStore';
 import {getNotificationStore} from '../services/postgresNotificationStore';
 import {KEY_PREFIX} from '../readModel/readModelStore';
 import {processNotificationQueue} from '../services/telegramNotificationQueue';
@@ -92,6 +93,11 @@ export async function verifyLeagueBacklogReminders(){
       const response=await fetch(url,{headers:{'x-test-user':'backlog-health-admin'}});assert.equal(response.status,200);
       const health=await response.json();assert.equal(health.delivery.sent,1);assert.equal(health.delivery.skipped,2);assert.equal(health.delivery.pending,0);
       assert.ok(!JSON.stringify(health).includes('700002'));assert.equal(health.cursors,undefined,'Health endpoint never exposes private recipients');
+      const hgetall=PostgresNotificationStore.prototype.hgetall;
+      PostgresNotificationStore.prototype.hgetall=async()=>{throw Error('SYNTHETIC_RECEIPT_OUTAGE');};
+      try{assert.equal((await fetch(url,{headers:{'x-test-user':'backlog-health-admin'}})).status,500,'Health must not report false zero deliveries during a receipt outage');}
+      finally{PostgresNotificationStore.prototype.hgetall=hgetall;}
+
     }finally{server.close();}
     const deadlineSeason='backlog-deadline-audit';
     await db.collection('match_deadlines').doc('partial-deadline').set({fixtureId:'partial-deadline',seasonId:deadlineSeason,deadlineAt:new Date(Date.now()-1000).toISOString()});

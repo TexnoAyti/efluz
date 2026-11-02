@@ -12,8 +12,12 @@ adminNotificationsRouter.get('/league-reminder-health', async (_req, res) => {
     const {getFirestoreDb} = await import('../firebase/admin');
     const {CURRENT_SEASON_ID} = await import('../../lib/seasonParticipationPolicy');
     const state = (await getFirestoreDb().collection('league_reminder_workers').doc(CURRENT_SEASON_ID).get()).data();
-    const {getBroadcastHistory} = await import('../services/telegramNotificationQueue');
-    const records = state ? (await getBroadcastHistory(Number.MAX_SAFE_INTEGER)).filter(r => r.leagueReminder?.day === state.day && r.leagueReminder?.seasonId === CURRENT_SEASON_ID) : [];
+    const {getNotificationStore} = await import('../services/postgresNotificationStore');
+    const store = getNotificationStore();
+    if (!store) throw new Error('NOTIFICATION_HEALTH_UNAVAILABLE');
+    // The history helper has a memory fallback; health must report source failure instead of false zeroes.
+    const receipts = state ? await store.hgetall<Record<string, import('../services/telegramNotificationQueue').TelegramBroadcastRecord>>('efluz:v1:telegram:broadcasts') : {};
+    const records = Object.values(receipts || {}).filter(r => r.leagueReminder?.day === state?.day && r.leagueReminder?.seasonId === CURRENT_SEASON_ID);
     const delivery = {sent:0,failed:0,pending:0,skipped:0,uncertain:0};
     for (const r of records) for (const recipient of r.recipients) {
       if (recipient.status === 'SENT') delivery.sent++;
