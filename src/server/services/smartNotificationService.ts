@@ -1,3 +1,4 @@
+import type {LeagueReminderGuard} from './leagueBacklogReminders';
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {FieldPath} from 'firebase-admin/firestore';
 import {getFirestoreDb} from '../firebase/admin';
@@ -36,6 +37,7 @@ interface SmartRecipientStatus {
 }
 
 interface SmartBroadcastRecord {
+  leagueReminder?: LeagueReminderGuard;
   id: string;
   seasonId: string;
   title: string;
@@ -53,6 +55,7 @@ interface SmartBroadcastRecord {
 }
 
 interface SmartQueueJob {
+  leagueReminder?: LeagueReminderGuard;
   jobId: string;
   broadcastId: string;
   userId: string;
@@ -281,6 +284,7 @@ export async function enqueueSmartTelegramNotification(params: {
   body: string;
   replyMarkup?: any;
   deferDrain?:boolean;
+  leagueReminder?: LeagueReminderGuard;
 }): Promise<boolean> {
   const event = inferSmartEvent(params.eventId);
   if (!(await isSmartNotificationEventEnabled(params.seasonId, event))) {
@@ -301,6 +305,7 @@ export async function enqueueSmartTelegramNotification(params: {
   const dedupeKey = `${SMART_DEDUPE_PREFIX}:${digest}`;
   const now = new Date().toISOString();
   const record: SmartBroadcastRecord = {
+    leagueReminder: params.leagueReminder,
     id: broadcastId,
     seasonId: params.seasonId,
     title: params.title,
@@ -317,6 +322,7 @@ export async function enqueueSmartTelegramNotification(params: {
     replyMarkup: params.replyMarkup,
   };
   const job: SmartQueueJob = {
+    leagueReminder: params.leagueReminder,
     jobId,
     broadcastId,
     userId: recipient?.userId || params.userId,
