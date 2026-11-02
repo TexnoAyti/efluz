@@ -1,5 +1,6 @@
 import { getFirestoreDb } from '../firebase/admin';
 import { batchRateIncrement } from './rateIncrementBatch';
+import { batchReadCostIncrement } from './readCostIncrementBatch';
 import { waitUntil } from '@vercel/functions';
 import { PostgresKeyValueStore, parseStoredValue as parse } from './postgresKeyValueStore';
 
@@ -43,6 +44,28 @@ export class PostgresRuntimeStore extends PostgresKeyValueStore {
         }, db
       )) as Promise<T>;
     }
+    if (script.includes('EFL_READ_COST_INCREMENT_V1')) {
+      if (keys.length !== 1 || args.length % 2 || args.length > 8192) throw Error('INVALID_READ_COST_INCREMENT');
+      const fields: Array<readonly [string, number]> = [];
+      for (let i = 0; i < args.length; i += 2) {
+        const field = String(args[i]), amount = Number(args[i + 1]);
+        if (!Number.isSafeInteger(amount)) throw Error('INVALID_READ_COST_INCREMENT');
+        fields.push([field, amount]);
+      }
+      const db = getFirestoreDb();
+      return batchReadCostIncrement(db, keys[0], fields, entries => this.atomic(
+        [...new Set(entries.map(entry => entry.key))],
+        (values, put) => {
+          const hashes = new Map<string, Record<string, number>>();
+          for (const entry of entries) {
+            let hash = hashes.get(entry.key);
+            if (!hash) { hash = {...(parse(values.get(entry.key)?.value) || {})}; hashes.set(entry.key, hash); }
+            for (const [field, amount] of entry.fields) hash[field] = Number(hash[field] || 0) + amount;
+          }
+          for (const [key, hash] of hashes) put(key, hash, 604800);
+        }, db
+      )) as Promise<T>;
+    }
     return this.atomic(keys, (values, put) => {
       const get = (key: string) => parse(values.get(key)?.value);
       if (script.includes('EFL_STATE_RELEASE_V1')) {
@@ -63,11 +86,6 @@ export class PostgresRuntimeStore extends PostgresKeyValueStore {
         put(keys[1], parse(args[1]), Number(args[2]));
         put(keys[2], parse(args[1]), Number(args[3]));
         put(keys[0], null, 0); return 1;
-      }
-      if (script.includes('EFL_READ_COST_INCREMENT_V1')) {
-        const hash = { ...(get(keys[0]) || {}) };
-        for (let i = 0; i < args.length; i += 2) hash[args[i]] = Number(hash[args[i]] || 0) + Number(args[i + 1]);
-        put(keys[0], hash, 604800); return 1;
       }
       throw Error('UNSUPPORTED_POSTGRES_RUNTIME_OPERATION');
     }) as Promise<T>;
