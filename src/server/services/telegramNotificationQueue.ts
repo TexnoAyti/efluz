@@ -60,6 +60,7 @@ export interface BroadcastRecipientStatus {
 }
 
 export interface TelegramBroadcastRecord {
+  leagueReminder?: import('./leagueBacklogReminders').LeagueReminderGuard;
   id: string;
   seasonId: string;
   title: string;
@@ -83,6 +84,7 @@ export interface TelegramBroadcastRecord {
 }
 
 export interface NotificationQueueJob {
+  leagueReminder?: import('./leagueBacklogReminders').LeagueReminderGuard;
   photoModel?: TournamentImageModel;
   jobId: string;
   broadcastId: string;
@@ -538,9 +540,9 @@ export async function processNotificationQueue(batchSize = 25, stopClaimingAt = 
     const abandoned = await client.hgetall<Record<string, NotificationQueueJob & { claimedAt?: number }>>(PROCESSING_KEY);
     for (const job of Object.values(abandoned || {})) {
       if ((job.claimedAt || 0) + 120000 > Date.now()) continue;
-      const photoRecord = job.photoModel ? await getBroadcastDetails(job.broadcastId) : null;
-      const photoNotDispatched = Boolean(photoRecord?.recipients.find(r => r.userId === job.userId && r.status === 'PENDING'));
-      if (job.requiresRecipientLookup || photoNotDispatched) {
+      const abandonedRecord = job.photoModel || job.leagueReminder ? await getBroadcastDetails(job.broadcastId) : null;
+      const notDispatched = Boolean(abandonedRecord?.recipients.find(r => r.userId === job.userId && r.status === 'PENDING'));
+      if (job.requiresRecipientLookup || notDispatched) {
         job.availableAt = Date.now() + 300000;
         await client.rpush(QUEUE_KEY, JSON.stringify(job));
       } else {
@@ -578,6 +580,25 @@ export async function processNotificationQueue(batchSize = 25, stopClaimingAt = 
         await updateBroadcastRecipientState(job.broadcastId, job.userId, 'FAILED', 'DELIVERY_UNKNOWN: interrupted send');
         await client.hdel(PROCESSING_KEY, job.jobId);
         continue;
+      }
+      if (job.leagueReminder) {
+        const {freshLeagueReminder} = await import('./leagueBacklogReminders');
+        let message;
+        try { message = await freshLeagueReminder(job.leagueReminder, job.userId); }
+        catch {
+          // No Telegram call has started. Preserve this job for a fresh-source retry.
+          job.requiresRecipientLookup = true; job.availableAt = Date.now() + 60000;
+          await client.rpush(QUEUE_KEY, JSON.stringify(job));
+          await client.hdel(PROCESSING_KEY, job.jobId);
+          console.warn('[LEAGUE_REMINDER_FRESHNESS_DEFERRED]');
+          continue;
+        }
+        if (!message) {
+          await updateBroadcastRecipientState(job.broadcastId, job.userId, 'SKIPPED_NO_TELEGRAM', 'REMINDER_OBSOLETE');
+          await client.hdel(PROCESSING_KEY, job.jobId);
+          continue;
+        }
+        job.title = message.title; job.body = message.body; job.replyMarkup = message.replyMarkup;
       }
       if (job.requiresRecipientLookup || (process.env.DATABASE_PROVIDER === 'supabase' && !job.photoModel)) {
         const entries = process.env.DATABASE_PROVIDER === 'supabase' ? null : await client.get<RecipientDirectoryEntry[]>(`${RECIPIENT_DIR_KEY}:${job.seasonId || record.seasonId}`);

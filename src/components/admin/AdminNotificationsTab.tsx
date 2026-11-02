@@ -28,6 +28,10 @@ export function AdminNotificationsTab() {
   const { language } = useI18n();
   const c = copy[language] || copy.uz;
   const [data, setData] = useState<Awaited<ReturnType<typeof api.getAdminNotifications>> | null>(null);
+  const [reminderHealth, setReminderHealth] = useState<Awaited<ReturnType<typeof api.getLeagueReminderHealth>> | null>(null);
+  const [healthError, setHealthError] = useState(false);
+  const loadHealth = useCallback(async () => { try { setReminderHealth(await api.getLeagueReminderHealth()); setHealthError(false); } catch { setHealthError(true); } }, []);
+  useEffect(() => { void loadHealth(); }, [loadHealth]);
   const [search, setSearch] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState(false);
@@ -47,9 +51,21 @@ export function AdminNotificationsTab() {
   const notifications = data?.notifications.filter(n => [n.title, n.message].some(value => value?.toLowerCase().includes(search.toLowerCase()))) || [];
   return <section className="space-y-5">
     <div className="glass-card p-5 rounded-2xl">
-      <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-bold flex items-center gap-2"><Bell size={20} />{c.title}</h2><button aria-label={c.refresh} disabled={!!busy} onClick={() => act('refresh', load)} className="p-2 rounded-xl glass-card"><RefreshCw size={18} /></button></div>
+      <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-bold flex items-center gap-2"><Bell size={20} />{c.title}</h2><button aria-label={c.refresh} disabled={!!busy} onClick={() => act('refresh', async () => { await Promise.all([load(), loadHealth()]); })} className="p-2 rounded-xl glass-card"><RefreshCw size={18} /></button></div>
       <p className="text-sm text-slate-400 mt-2">{c.note}</p>
       {error && <p role="alert" className="mt-3 text-red-400">{c.error}</p>}
+    </div>
+    <div className="glass-card p-5 rounded-2xl space-y-2">
+      <h3 className="font-bold">{language === 'ru' ? 'Напоминания о старых играх' : language === 'en' ? 'Outstanding game reminders' : 'Eski o‘yinlar eslatmalari'}</h3>
+      <p className="text-sm text-slate-400">{language === 'ru' ? 'Ежедневно, 09:00–21:00 по Ташкенту. Одно сообщение на игрока в каждой лиге.' : language === 'en' ? 'Daily, 09:00–21:00 Tashkent. One message per player in each league.' : 'Har kuni 09:00–21:00 (Toshkent). Har bir ligada o‘yinchiga bitta yig‘ma xabar.'}</p>
+      {healthError ? <p role="alert" className="text-red-400 text-sm">{c.error}</p> : reminderHealth ? <>
+        <p className="text-sm">{({uz:{DONE:'Navbatga qo‘yish tugadi',PENDING:'Davom etmoqda',RETRY_PENDING:'Xato: qayta urinish kutilmoqda',NOT_RUN:'Hali ishga tushmagan'},ru:{DONE:'Постановка в очередь завершена',PENDING:'Выполняется',RETRY_PENDING:'Ожидается повтор после ошибки',NOT_RUN:'Ещё не запускалось'},en:{DONE:'Enqueue complete',PENDING:'In progress',RETRY_PENDING:'Retry pending after error',NOT_RUN:'Not run yet'}}[language] as Record<string,string>)[reminderHealth.status] || reminderHealth.status}</p>
+        <p className="text-xs text-slate-400">{language === 'uz' ? 'Navbatga qo‘yildi' : language === 'ru' ? 'В очереди' : 'Queued'}: {reminderHealth.queued || 0} · {language === 'uz' ? 'Takror / o‘chirilgan' : language === 'ru' ? 'Дубликат / отключено' : 'Duplicate / disabled'}: {reminderHealth.skipped || 0}</p>
+        {reminderHealth.delivery && <p className="text-xs text-slate-400">{language === 'ru' ? 'Доставлено / Ошибки / Ожидают / Пропущено' : language === 'en' ? 'Delivered / Failed / Pending / Skipped' : 'Yetkazildi / Xato / Kutilmoqda / O‘tkazildi'}: {reminderHealth.delivery.sent} / {reminderHealth.delivery.failed} / {reminderHealth.delivery.pending} / {reminderHealth.delivery.skipped}</p>}
+        {!!reminderHealth.delivery?.uncertain && <p role="alert" className="text-amber-400 text-sm">{language === 'ru' ? 'Доставка не подтверждена. Проверьте Telegram перед повтором.' : language === 'en' ? 'Delivery uncertain. Check Telegram before retrying.' : 'Yetkazilgani noma’lum. Qayta yuborishdan oldin Telegramni tekshiring.'}</p>}
+        {reminderHealth.updatedAt && <p className="text-xs text-slate-400">{new Date(reminderHealth.updatedAt).toLocaleString(language === 'uz' ? 'uz-UZ' : language, {timeZone:'Asia/Tashkent'})} · {reminderHealth.lastSliceMs || 0} ms</p>}
+        {reminderHealth.lastError && <p role="alert" className="text-red-400 text-sm">{reminderHealth.lastError}</p>}
+      </> : <RefreshCw className="animate-spin" aria-label={c.refresh} />}
     </div>
     <div className="glass-card p-5 rounded-2xl space-y-3">
       <h3 className="font-bold">{c.types}</h3>

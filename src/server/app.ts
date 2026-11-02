@@ -1,3 +1,4 @@
+import {operationTiming} from './middleware/operationTiming';
 import {createUzeflifeWorkerRouter} from './routes/uzeflifeWorker.routes';
 import {androidAuthRouter} from './routes/androidAuth.routes';
 import {processTeamInvitationNotices} from './services/teamMembershipService';
@@ -117,6 +118,7 @@ export function createApp() {
     }
     next();
   });
+  app.use(operationTiming);
   app.use(readCostMiddleware);
   const localDevHost = 'local' + 'host';
 

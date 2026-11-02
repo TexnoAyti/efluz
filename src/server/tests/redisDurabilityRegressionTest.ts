@@ -246,6 +246,25 @@ async function main() {
     assert.match(details?.recipients[0].error || '',/DELIVERY_UNKNOWN/);
     assert.equal(sends,1);
 
+    // Only guarded league digests add proven-before-dispatch recovery. Legacy
+    // broadcasts retain the conservative unknown-delivery behavior above.
+    const guarded=await queue.enqueueTelegramBroadcast({...params,requestId:'guarded-pre-dispatch',selectedUserIds:['recipient-two']});
+    const beforeDispatch:any=await client.lpop(`${model.KEY_PREFIX}:telegram:queue`);
+    beforeDispatch.leagueReminder={competitionId:'guarded-audit',seasonId,day:'2026-11-03'};
+    await client.hset(`${model.KEY_PREFIX}:telegram:processing`,{[beforeDispatch.jobId]:{...beforeDispatch,claimedAt:Date.now()-130000}});
+    await queue.processNotificationQueue();
+    assert.equal((await queue.getBroadcastDetails(guarded.id))?.recipients[0].status,'PENDING','Guarded PENDING digest is known not to have dispatched');
+    assert.equal(sends,1);
+    const resumed:any=await client.lpop(`${model.KEY_PREFIX}:telegram:queue`);
+    assert.equal(resumed.jobId,beforeDispatch.jobId);assert.ok(resumed.availableAt>Date.now());
+    const guardedRecord=(await queue.getBroadcastDetails(guarded.id))!;
+    guardedRecord.recipients[0].status='SENDING';
+    await client.hset(`${model.KEY_PREFIX}:telegram:broadcasts`,{[guarded.id]:guardedRecord});
+    await client.hset(`${model.KEY_PREFIX}:telegram:processing`,{[beforeDispatch.jobId]:{...beforeDispatch,claimedAt:Date.now()-130000}});
+    await queue.processNotificationQueue();
+    assert.match((await queue.getBroadcastDetails(guarded.id))?.recipients[0].error||'',/DELIVERY_UNKNOWN/,'Even guarded digests never blindly resend after SENDING');
+    assert.equal(sends,1);
+
     // More than one batch, with a future retry at the head of the same queue.
     const ids = Array.from({length: 61}, (_, i) => `bulk-${i}`);
     for (let i=0; i<ids.length; i++) await db.collection(COLLECTIONS.USERS).doc(ids[i]).set({username:ids[i],telegramId:String(2000+i)});

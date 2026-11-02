@@ -304,27 +304,28 @@ function reminderKind(deadline: any): '24h' | '6h' | 'overdue' | null {
 }
 
 async function sendDeadlineReminder(deadline: any, kind: '24h' | '6h' | 'overdue') {
-  const fixture: any = await getFixtureByIdFirestore(deadline.fixtureId).catch(() => null);
-  if (!fixture || ['CONFIRMED', 'CANCELLED'].includes(String(fixture.status))) return { attempted: false, queued: 0 };
+  const fixture: any = await getFixtureByIdFirestore(deadline.fixtureId);
+  if (!fixture || ['CONFIRMED', 'CANCELLED', 'POSTPONED'].includes(String(fixture.status))) return { attempted: false, queued: 0, failed: 0 };
   const owners = [ownerId(fixture, 'home'), ownerId(fixture, 'away')].filter(Boolean) as string[];
-  if (owners.length === 0) return { attempted: false, queued: 0 };
+  if (owners.length === 0) return { attempted: false, queued: 0, failed: 0 };
   const competition = fixture.competitionName || fixture.competitionId || 'EFL UZ';
   const title = kind === 'overdue' ? '⛔ Match deadline o‘tdi' : kind === '6h' ? '⏳ 6 soat qoldi' : '⏰ 24 soat qoldi';
   const deadlineText = formatTashkent(deadline.deadlineAt);
   const body = `<b>${competition}</b> • ${fixture.roundName || `Matchday ${fixture.matchday || 1}`}\n\n⚽ <b>${fixtureClubName(fixture, 'home')}</b> vs <b>${fixtureClubName(fixture, 'away')}</b>\n⏳ Deadline: <b>${deadlineText}</b>\n\n${kind === 'overdue' ? 'Muddat tugadi. Natijani yuboring yoki no-show holatini EFL UZ ichida belgilang.' : 'O‘yinni kelishib, muddatdan oldin natijani yuboring.'}`;
-  const results = await Promise.allSettled(owners.map((userId) => enqueueSmartTelegramNotification({
+  const results: PromiseSettledResult<boolean>[] = [];
+  for (const userId of [...new Set(owners)]) results.push(...await Promise.allSettled([enqueueSmartTelegramNotification({
     userId,
     seasonId: deadline.seasonId || 'season-2026-27',
     eventId: `matchday-open:deadline:${kind}:${deadline.fixtureId}:${deadline.deadlineAt}`,
     title,
     body,
     replyMarkup: { inline_keyboard: [[telegramMiniAppButton('🏟 Mening o‘yinlarim')]] },
-  })));
+  })]));
   const queued = results.filter((item) => item.status === 'fulfilled' && item.value).length;
-  return { attempted: true, queued };
+  return { attempted: true, queued, failed: results.filter(item => item.status === 'rejected').length };
 }
 
-export async function runDeadlineSweep(seasonId = 'season-2026-27', force = false) {
+export async function runDeadlineSweep(seasonId = 'season-2026-27', force = false, send = sendDeadlineReminder) {
   const client = getRuntimeStateStore();
   if (!client) return { skipped: true, reason: 'REDIS_REQUIRED', checked: 0, reminders: 0 };
   const lockKey = `${SWEEP_LOCK_PREFIX}:${seasonId}`;
@@ -341,12 +342,12 @@ export async function runDeadlineSweep(seasonId = 'season-2026-27', force = fals
     const kind = reminderKind(deadline);
     if (!kind) continue;
     checked++;
-    const result = await sendDeadlineReminder(deadline, kind);
+    const result = await send(deadline, kind);
     if (!result.attempted) continue;
     // If delivery could not be queued (recipient directory/settings), leave the
     // marker empty so the next hourly event-driven sweep can retry safely. Smart
     // notification event IDs are deterministic, so successful recipients dedupe.
-    if (result.queued <= 0) continue;
+    if (result.queued <= 0 || result.failed > 0) continue;
     reminders += result.queued;
     const field = kind === '24h' ? 'reminder24SentAt' : kind === '6h' ? 'reminder6SentAt' : 'overdueSentAt';
     await db.collection(DEADLINE_COLLECTION).doc(deadline.fixtureId).set({ [field]: new Date().toISOString(), updatedAt: new Date().toISOString() }, { merge: true });

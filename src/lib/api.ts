@@ -406,6 +406,10 @@ export const api = {
     return request(url, { cacheTtlMs: 15000, skipCache });
   },
 
+  async getLeagueReminderHealth(): Promise<{delivery?:{sent:number;failed:number;pending:number;skipped:number;uncertain:number};status:string;day?:string;queued?:number;skipped?:number;updatedAt?:string;lastSliceMs?:number;lastError?:string|null;finishedAt?:string}> {
+    return request('/api/admin/notifications/league-reminder-health', {skipCache:true});
+  },
+
   async getAdminNotifications(cursor?: string): Promise<{ notifications: Array<{ id: string; type: string; title: string; message: string; createdAt: string; recipientCount: number; visibility: 'visible' | 'hidden' }>; types: Array<{ type: string; visible: boolean }>; limit: number; nextCursor: string | null }> {
     return request('/api/admin/notifications/messages' + (cursor ? '?cursor=' + encodeURIComponent(cursor) : ''), { skipCache: true });
   },
