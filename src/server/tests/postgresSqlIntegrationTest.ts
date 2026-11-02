@@ -1,3 +1,4 @@
+import {verifyUzeflifeAutoLink} from './uzeflifeAutoLinkAudit';
 import {verifyUzeflifeFourFeatures} from './uzeflifeFourFeaturesAudit';
 import {verifyCompactNotificationMigration} from './compactNotificationMigrationAudit';
 import {verifyLinearRuntimeDecode} from './linearRuntimeDecodeAudit';
@@ -306,7 +307,7 @@ try {
   await verifyTeamTournamentSettings(()=>{failTeamPreviewCommit=true;});
   await verifyTeamPlayerMatches();await verifyElClasico(()=>{failClasicoCommit=true;});
   await verifyUzeflifeLeague();
-await verifyUzeflifeFourFeatures();
+await verifyUzeflifeAutoLink();await verifyUzeflifeFourFeatures();
   await verifyUzeflifeNotificationDelivery();
   await verifyUzeflifeRoundPosts();
   await verifyCompetitionNotices(()=>{failClasicoCommit=true;});

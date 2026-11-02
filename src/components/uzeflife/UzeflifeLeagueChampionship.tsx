@@ -18,7 +18,7 @@ export function UzeflifeLeagueChampionship({state:s,userId,busy,error,notice,mis
  const names=new Map(s.participants.map(p=>[p.id,p.name])),roster=new Map(s.roster?.filter(r=>r.userId).map(r=>[r.userId!,r]));
  const slotLabel=(id:string|null)=>{const r=roster.get(id||'');return r?`${r.group}-setka · ${r.slot}-o‘rin`:'';};
  const games=s.matches.filter(m=>m.round===round&&(!mineOnly||[m.home,m.away].includes(userId||''))),pages=Math.max(1,Math.ceil(games.length/8)),current=Math.min(page,pages-1);
- const standings=uLeagueStandings(s),active=s.matches.find(m=>m.id===selected),mine=s.participants.find(p=>p.id===userId),count=s.roster?.filter(r=>r.username).length||0;
+ const standings=uLeagueStandings(s),active=s.matches.find(m=>m.id===selected),count=s.roster?.filter(r=>r.username).length||0;
  const subscriptionNotice=missing.length?<div className="competition-note"><p>Barcha majburiy kanallarga obuna bo‘ling.</p>{missing.map(c=><a key={c.id} className="competition-button" href={c.url} target="_blank" rel="noreferrer">{c.title}</a>)}<button className="competition-button" disabled={busy} onClick={()=>void act('subscription-check')}>Obunani tekshirish</button></div>:null;
  return <div className="competition-page uzeflife u-league-page">
  {admin?<UzeflifeAdmin state={s} busy={busy} act={act} error={error} onRefresh={onRefresh} onBack={()=>setAdmin(false)} onMatches={()=>{setAdmin(false);setTab('fixtures');setRound(s.round||1);}}/>:<>
@@ -26,7 +26,6 @@ export function UzeflifeLeagueChampionship({state:s,userId,busy,error,notice,mis
  <CompetitionTabs<Tab> value={tab} onChange={setTab} label="UZEFLIFE liga bo‘limlari" layout="grid" items={[{id:'mine',label:'Mening o‘yinim',icon:CalendarDays},{id:'fixtures',label:'O‘yinlar',icon:CalendarDays},{id:'standings',label:'Jadval',icon:Trophy},{id:'roster',label:'Setkalar ro‘yxati',icon:Users},{id:'history',label:'Tarix',icon:History}]}/>
  {(error||notice)&&<p role={error?'alert':'status'} className={`competition-note ${error?'error':''}`}>{error||notice}</p>}
  {subscriptionNotice}
- {(s.status==='registration'||s.status==='playing')&&mine?.status!=='approved'&&<section className="competition-panel"><h3>Ro‘yxatdagi akkauntingizni ulang</h3><p className="competition-muted">@username’ingiz asl ro‘yxatda bo‘lishi kerak. Ulangan o‘yinchi raqib bildirishnomalarini botda oladi va hisob kiritishi mumkin.</p><button className="competition-button primary" disabled={busy||!userId} onClick={()=>void act('register')}>Ro‘yxatdagi o‘rnimni ulash</button><p className="competition-muted">{s.roster?.filter(r=>r.userId).length||0}/{count} akkaunt ulangan</p></section>}
  {tab==='mine'&&<UzeflifeMyMatch state={s} userId={userId} onOpen={id=>setSelected(id)}/>}
  {tab==='history'&&<UzeflifeHistory state={s}/>}
  {tab==='roster'&&<UzeflifeRoster state={s}/>}

@@ -9,7 +9,7 @@ import {getFirestoreDb} from '../firebase/admin';
 import {scheduleUNotices} from '../services/uzeflifeNotifications';
 import {requireAuth} from '../middleware/authMiddleware';
 import {getAuthoritativeUserForAuthorization} from '../firebase/firestoreStore';
-import {readUState,publicUState,mutateUState,checkUSubscriptions,uPermissions,uError} from '../services/uzeflifeService';
+import {readUState,ensureUPlayerLinked,publicUState,mutateUState,checkUSubscriptions,uPermissions,uError} from '../services/uzeflifeService';
 import {canExportUzeflifeImage} from '../../lib/uzeflifeImage';
 import {createTournamentImageDownloadService} from '../services/tournamentImageDownload';
 const imageDownloads=createTournamentImageDownloadService();
@@ -32,7 +32,7 @@ uzeflifeRouter.get('/',async(req,res)=>{
  if(Date.now()-roundPostWakeAt>30000){roundPostWakeAt=Date.now();scheduleRoundPost(1);scheduleUNotices();}
  try{
   const [,state]=await Promise.all([refreshUser(req),readUState()]);
-  res.json({ok:true,...await viewState(req.user,state)});
+  res.json({ok:true,...await viewState(req.user,req.user?await ensureUPlayerLinked(req.user,state):state)});
  }catch(e:any){res.status(e.statusCode||503).json({ok:false,error:e.statusCode?e.message:'Turnirni yuklab bo‘lmadi.'});}
 });
 // Optional Telegram proposals belong to the admin queue, not the opening path.
