@@ -540,7 +540,7 @@ export async function processNotificationQueue(batchSize = 25, stopClaimingAt = 
     const abandoned = await client.hgetall<Record<string, NotificationQueueJob & { claimedAt?: number }>>(PROCESSING_KEY);
     for (const job of Object.values(abandoned || {})) {
       if ((job.claimedAt || 0) + 120000 > Date.now()) continue;
-      const abandonedRecord = await getBroadcastDetails(job.broadcastId);
+      const abandonedRecord = job.photoModel || job.leagueReminder ? await getBroadcastDetails(job.broadcastId) : null;
       const notDispatched = Boolean(abandonedRecord?.recipients.find(r => r.userId === job.userId && r.status === 'PENDING'));
       if (job.requiresRecipientLookup || notDispatched) {
         job.availableAt = Date.now() + 300000;
