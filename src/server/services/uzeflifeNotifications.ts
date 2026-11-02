@@ -49,6 +49,9 @@ export function writeUNotices(tx:Transaction,before:UState,after:UState,id:strin
 }
 export async function sweepUDeadlines(now=Date.now()){
  const db=getFirestoreDb(),ref=db.collection('uzeflife').doc('championship'),checkpoint=db.collection('uzeflife_worker').doc('reminders');
+ // Repeated outbox continuations do not need to read the large tournament
+ // when the next scheduled sweep has not arrived. The transaction rechecks.
+ if(Number((await checkpoint.get()).data()?.nextAt||0)>now)return;
  await db.runTransaction(async tx=>{
   const [snap,check]=await Promise.all([tx.get(ref),tx.get(checkpoint)]);const s=snap.data() as UState|undefined;
   if(!s||s.status!=='playing'||Number(check.data()?.nextAt||0)>now)return;
@@ -87,7 +90,7 @@ export async function processUNotices(limit=25,enqueue=enqueueSmartTelegramNotif
   if(!claimed)continue;
   const progress=new NotificationOutboxCursor(claimed.notices.length,claimed.cursor,claimed.retryIndices);
   try{
-   const s=(await db.collection('uzeflife').doc('championship').get()).data() as UState;
+   const {readUState}=await import('./uzeflifeService');const s=await readUState();
    const owner=await db.collection('users').where('telegramId','==','5209126900').limit(2).get();const ownerId=owner.docs.length===1?owner.docs[0].id:undefined;
    const notices=claimed.notices as UNotice[];
    while(budget>0&&Date.now()<deadline){
