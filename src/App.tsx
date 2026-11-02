@@ -25,7 +25,7 @@ import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
 
 const loadHome = () => import('./components/MatchdayHomeView').then(module => ({ default: module.MatchdayHomeView }));
 const MatchdayHomeView = lazy(loadHome);
-const FirstVisitGuide = lazy(() => import('./components/FirstVisitGuide').then(module => ({ default: module.FirstVisitGuide })));
+const PlayerHelp = lazy(() => import('./components/PlayerHelp').then(module => ({ default: module.PlayerHelp })));
 
 const NotificationsView = lazy(() => import('./components/NotificationsView').then(module => ({ default: module.NotificationsView })));
 const AdminView = lazy(() => import('./components/AdminView').then(module => ({ default: module.AdminView })));
@@ -342,7 +342,7 @@ const AppContent: React.FC = () => {
           setActiveTab('my-club');
         }}
       /></ContentBoundary>}
-      {user && guideUserId === user.id && <Suspense fallback={null}><FirstVisitGuide key={user.id} onFinish={finishGuide} onShowScoreEntry={() => setActiveTab('my-club')} onShowStandings={() => setActiveTab('dashboard')} /></Suspense>}
+      {user && guideUserId === user.id && <Suspense fallback={null}><PlayerHelp key={user.id} onFinish={finishGuide} /></Suspense>}
     </div>
   );
 };

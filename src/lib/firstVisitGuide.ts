@@ -1,4 +1,4 @@
-export const GUIDE_VERSION = 'v1';
+export const GUIDE_VERSION = 'v2-faq';
 export type GuideStatus = 'completed' | 'skipped';
 type GuideStorage = Pick<Storage, 'getItem' | 'setItem'>;
 export function guideStorageKey(userId: string) { return `efluz-guide-${GUIDE_VERSION}:${userId}`; }
