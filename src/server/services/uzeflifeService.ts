@@ -70,7 +70,7 @@ export async function checkUSubscriptions(s:UState,u:User){
  if(!s.subscriptionsEnabled||!s.channels.length)return [];
  return verifyUChannels(s.channels,u.telegramId||'');
 }
-export function applyUAction(s:UState,u:User,action:UAction,d:any):void{
+export function applyUAction(s:UState,u:User,action:UAction,d:any,options?:{authorizedLeagueRound?:number}):void{
  const guard=(p:UPermission|'super'|'owner')=>requireUPermission(s,u,p);
  const beforeStart=()=>{if(!['draft','registration'].includes(s.status)||s.matches.length)throw uError('Turnir boshlangan.');};
  const openRound=()=>{for(const m of s.matches.filter(m=>m.round===s.round&&!uMatchFinished(m)))m.deadlineAt=new Date(Date.now()+(s.roundHours||48)*3600000).toISOString();};
@@ -125,9 +125,11 @@ export function applyUAction(s:UState,u:User,action:UAction,d:any):void{
  case 'schedule':guard('schedules');{const m=s.matches.find(m=>m.id===d.matchId);if(!m)throw uError('O‘yin topilmadi.',404);if(s.status==='completed'||uMatchFinished(m))throw uError('O‘yin yakunlangan.');m.scheduledAt=d.scheduledAt;}break;
  case 'result':{
   const m=s.matches.find(m=>m.id===d.matchId);if(!m)throw uError('O‘yin topilmadi.',404);
-  if(s.status!=='playing'||m.round!==s.round||!m.home||!m.away)throw uError('Bu o‘yin uchun natija qabul qilinmaydi.');
-  if(m.dispute?.status==='open')throw uError('Avval e’tirozni admin hal qilishi kerak.',409);
   const admin=uPermissions(s,u).includes('results');
+  // Only the verified topic plan can explicitly select another league round.
+  // Public actions and every playoff action retain the current-round guard.
+  if(s.status!=='playing'||m.round!==s.round&&!(admin&&isULeague(s)&&options?.authorizedLeagueRound===m.round)||!m.home||!m.away)throw uError('Bu o‘yin uchun natija qabul qilinmaydi.');
+  if(m.dispute?.status==='open')throw uError('Avval e’tirozni admin hal qilishi kerak.',409);
   if(!admin&&s.participants.find(p=>p.id===u.id)?.status!=='approved')throw uError('Ishtirokingiz bekor qilingan.',403);
   if(!admin&&u.id!==m.home&&u.id!==m.away)throw uError('Bu sizning o‘yiningiz emas.',403);
   if(uMatchFinished(m)&&!admin)throw uError('Natija allaqachon tasdiqlangan.');
