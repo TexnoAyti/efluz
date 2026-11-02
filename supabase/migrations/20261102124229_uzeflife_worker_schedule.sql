@@ -4,12 +4,18 @@ begin;
 create extension if not exists pg_cron with schema pg_catalog;
 create extension if not exists pg_net with schema extensions;
 revoke all on table net.http_request_queue,net._http_response from public,anon,authenticated;
-select cron.schedule('efluz-uzeflife-10min','*/10 * * * *', $job$
+do $scheduler$
+declare scheduled_job bigint;
+begin
+ if not exists(select 1 from cron.job where jobname='efluz-uzeflife-10min') then
+ select cron.schedule('efluz-uzeflife-10min','*/10 * * * *', $job$
  select net.http_post(
   url:='https://efluz.vercel.app/api/internal/uzeflife-worker',
   headers:=jsonb_build_object('Content-Type','application/json','Authorization','Bearer '||(select decrypted_secret from vault.decrypted_secrets where name='efluz_uzeflife_worker')),
   body:='{}'::jsonb,timeout_milliseconds:=20000
  ) where exists(select 1 from vault.secrets where name='efluz_uzeflife_worker');
-$job$);
-select cron.alter_job(jobid,active:=false) from cron.job where jobname='efluz-uzeflife-10min';
+$job$) into scheduled_job;
+ perform cron.alter_job(scheduled_job,active:=false);
+ end if;
+end $scheduler$;
 commit;
