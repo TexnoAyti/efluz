@@ -18,8 +18,10 @@ export async function verifyReadCostBatch() {
   const more=await Promise.all(Array.from({length:65},(_,i)=>stores[0].eval(READ_COST_INCREMENT_LUA,['capacity-hour-'+i],['totalReads',1])));
   assert.ok(more.every(value=>value===1));assert.equal(commits,7,'Distinct hour keys stay within 30-key database reads');
   fail=true;
-  const rejected=await Promise.allSettled([stores[0].eval(READ_COST_INCREMENT_LUA,[key],['totalReads',7]),stores[1].eval(READ_COST_INCREMENT_LUA,[key],['totalReads',9])]);
+  const beforeFailure=commits;
+  const rejected=await Promise.allSettled(Array.from({length:1000},(_,i)=>stores[i%2].eval(READ_COST_INCREMENT_LUA,[key],['totalReads',7])));
   assert.ok(rejected.every(r=>r.status==='rejected'));
+  assert.equal(commits-beforeFailure,1,'A database outage drops the diagnostic backlog after one failed attempt instead of repeating timeout batches');
   fail=false;await stores[0].eval(READ_COST_INCREMENT_LUA,[key],['totalReads',1]);
   assert.equal((await stores[1].hgetall(key)).totalReads,3001,'Failed writes must not be counted or acknowledged');
   const one={},two={};let separate=0;

@@ -34,7 +34,9 @@ update. The PostgreSQL runtime now collects only current telemetry updates in a
 4096 field-pair batch bound and a 4096-entry pending-queue bound. The database
 object scopes each queue. Each caller completes only after the shared commit;
 a failed commit rejects every affected caller and leaves no acknowledged count.
-The observability caller already treats failure as best effort.
+After one failed batch, the remaining diagnostic backlog is rejected without
+repeating timeout transactions. The observability caller already treats failure
+as best effort.
 
 1000 parallel updates to one hourly counter produce four commits instead of
 1000, preserving total reads, request counts and individual endpoint totals.

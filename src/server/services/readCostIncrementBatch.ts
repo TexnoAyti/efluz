@@ -28,7 +28,12 @@ async function drain(queue: Queue): Promise<void> {
       }
       const entries = queue.entries.splice(0, size);
       try { await entries[0].commit(entries); entries.forEach(entry => entry.resolve()); }
-      catch (error) { entries.forEach(entry => entry.reject(error)); }
+      catch (error) {
+        // Telemetry is best effort. An outage must not turn the remaining
+        // diagnostic queue into repeated slow transactions behind the failure.
+        [...entries, ...queue.entries.splice(0)].forEach(entry => entry.reject(error));
+        return;
+      }
     }
   } finally { queue.active = false; }
 }
