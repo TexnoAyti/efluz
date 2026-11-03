@@ -445,6 +445,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
             type="button"
             onClick={() => onNavigateTab('my-club')}
             className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-[var(--efl-surface)] border border-[var(--efl-border)] shadow-xs hover:border-[var(--efl-primary)] transition-all shrink-0 max-w-[170px]"
+            data-munfiz-control="club-open"
             title="Active Club Hub"
           >
             <div className="w-5 h-5 rounded-md flex items-center justify-center shrink-0">
@@ -707,7 +708,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
             </h3>
           </div>
 
-          <div className="flex items-center gap-1 p-0.5 rounded-xl bg-[var(--efl-surface-2)]">
+          <div data-munfiz-control="match-filter" className="flex items-center gap-1 p-0.5 rounded-xl bg-[var(--efl-surface-2)]">
             <button
               type="button"
               onClick={() => setMatchTab('upcoming')}

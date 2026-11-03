@@ -229,7 +229,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
 
       {/* Filter Tabs */}
       {notifications.length > 0 && (
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+        <div data-munfiz-control="notification-filter" className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
           <button
             onClick={() => setActiveFilter('all')}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap min-h-[34px] touch-manipulation ${

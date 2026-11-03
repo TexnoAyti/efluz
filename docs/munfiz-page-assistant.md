@@ -1,42 +1,26 @@
-# Munfiz page assistant
+# Munfiz: direct page walkthrough
 
-A floating, draggable samurai provides local help after authentication and the welcome screen. It uses the account's own minimized state and completed contextual-tour history. It makes no API calls, submits no scores and changes no permissions.
+Tapping the samurai starts guidance immediately. The first card contains one short sentence explaining the current page/selected section. Show proceeds to the actual controls. Tapping a highlighted area or Next advances; Got it closes the last step. The floating character has no explanation/catalog/questions menu. Existing first-visit onboarding remains separate and unchanged.
 
-Tap the character to see the current destination's explanation, a tour of actual available controls, and the existing public FAQ. Competition categories publish semantic markers; common competition tabs expose their own controls. The tour reuses FirstVisitGuide with explicit steps and does not navigate away from the user's current page. Missing/disabled controls are excluded. The existing first-visit FAQ plus global seven-step tour remain intact.
+Tutorial taps are read-only overlays. They do not navigate, submit results, confirm scores, modify settings or run the underlying button's handler. Escape and the close control end guidance. Focus containment and background inert/scroll restoration use the shared FirstVisitGuide implementation.
 
-The character considers visible actionable controls when choosing an edge, yields on outside control interaction, supports dragging and minimizes to a small button. It yields to dialogs and existing guides. The help panel and character occupy different areas. Idle walking pauses for reduced motion, hidden documents, open help, minimized state and other dialogs. Reduced motion uses a static render, including inside the contextual tour.
+## Coverage and context
 
-## Character provenance
+The route, current competition category and selected inner section determine the purpose. Known local action markers supply short, explicit control descriptions. Steps are deduplicated and uncapped; the currently selected section is already explained by the purpose card. Disabled controls remain explainable with a clear unavailable note. Parent categories are omitted when local tabs exist, avoiding a global menu loop. Unknown controls are not assigned fabricated instructions. Controls that disappear during a walkthrough are skipped after a brief recheck.
 
-Frames were rendered from the user's Munfiz 0.21.0 Android source, specifically SamuraiScene.java (meshes and articulated poses), Mat4.java, EmotionCatalog.java and the exact SamuraiRenderer.java GLES shaders, via the source project's render_samurai.py. No replacement character or generated imitation was used. The web assets are transparent 192px renders cropped and resized to 96x132, 12 frames per two-second loop, WebP quality75. States used: idle, walk, point and wave; still.webp is the reduced-motion fallback. Native shaders and poses were rendered in software GLES and baked for the web to avoid a persistent WebGL context inside the Mini App. This is a web rendering adaptation, not the Android overlay service.
+Additional semantic markers cover league selection, opening clubs/cards/match details, notification and match filters, and authorized team management. Fixture-open guidance prefers an explicitly highlighted own fixture when available. The walkthrough does not click into new sections or change permissions.
+
+Cards choose above, below or—on wide short screens—a side placement so they do not cover the highlighted tap target. Short descriptions, a hand marker and a single Next/Show action keep the flow compact. The original global tour also benefits from non-overlapping placement.
+
+## Character
+
+The floating character remains draggable/minimizable per account and yields to dialogs and walkthroughs. The existing HD original-samurai WebP assets and reduced-motion static fallback are retained. Rendering and source provenance are from the user's Munfiz Android meshes, articulated poses and GLES shaders; these are web adaptations rather than the native Android overlay service. No voice or free-text AI is introduced.
 
 ## Validation
 
-- TypeScript lint; production build and startup bundle budget.
-- Existing localized FAQ/global tour checks plus a contextual-step render check.
-- Munfiz placement tests for 320/390/844 widths, short screens, obstacle avoidance and page category isolation.
-- Local Chromium tests of the actual React component on 320x568, 390x844 and 844x390: character tap and drag, panel/tour bounds, character clear of panel, minimize/restore, Escape and context switch; no browser errors.
+- TypeScript lint, production build/deployment checks and startup bundle budget.
+- Existing FAQ/global tour checks plus direct-purpose, empty-selector, deduplication, uncapped-control and locked-state regressions.
+- Geometry checks covering mobile and short landscape target separation.
+- Actual React component in Chromium at DPR3 on 320x568, 390x844 and 844x390: one character tap opens the purpose, no help menu appears, target taps advance through distinct controls, the underlying page receives zero clicks, Next stays on screen, closing restores background interaction and changing to standings gives its own purpose. No browser errors.
 
-Physical Android Telegram appearance and touch behavior remain unverified. Free-text AI and voice interaction are not part of this component.
-
-
-## Clarity and contextual-help revision
-
-The HD set under public/munfiz/v2 is rendered at 768px and cropped/resampled to 252x346: three source pixels per displayed pixel at the normal 84px character width. The static lossless frame loads first (~22KB). Nine animated poses use 48 frames over two seconds at 24fps: idle, walk, point, wave, sit, look, think, bow and victory. They load on demand. Reduced motion uses the HD static frame. Walking now follows actual displacement and direction; a persistent pose sequence survives walk-timer restarts. Opening help briefly waves, then thinks; finishing a contextual tour celebrates once.
-
-Context includes the selected inner competition section, not just the top-level route. Default page tours include only known local actions, omit disabled controls and deduplicate controls by semantic key and target. A separate section-navigation tour explains other local tabs, excluding the active tab and avoiding the global category menu when local tabs exist. Global navigation remains in the first-visit tour only. Unknown controls receive no fabricated instructions. Each section has explicit explanations, relevant questions and, where appropriate, a checklist. Tour history is stored per account and per selected section.
-
-The help panel keeps its main actions visible while long explanations and questions scroll. Current section changes reset the explanation and tour context. Match contacts, result review, table columns, view switches, round selection, local search and notifications now expose semantic help markers. Merely reading notifications is explicitly distinguished from confirming results.
-
-Regression checks cover local-vs-global selection, active/disabled tabs, duplicate targets, route fallback and distinct localized explanations. Chromium at device scale factor3 was used on 320x568, 390x844 and 844x390 to verify HD images, changed explanations when switching fixtures/standings, unique local tour topics, on-screen Next actions and reduced motion without browser errors. Physical Telegram remains unverified.
-
-
-## Roomy help and complete action catalog
-
-The helper now opens as a modal sheet that uses the visible viewport and Telegram safe insets (up to 720px wide on desktop). It no longer subtracts 322px for a separate floating character. The character appears in the sheet header while the floating button is hidden. Background scrolling and interaction are paused, keyboard focus stays inside, and closing restores the background.
-
-Three tabs separate explanation, all currently documented page controls, and related questions. The action catalog includes selected tabs and disabled controls with status labels, supports searching titles/descriptions and can highlight one chosen control. The main tours retain their page/section filtering but no longer truncate after five actions or six sections. Repeated instances of the same semantic action remain deduplicated. This exposes every documented control on the current rendered page; it does not invent instructions for unannotated controls or bypass permissions.
-
-Validation adds 14-action/section regression cases and viewport-safe sheet bounds. Chromium checks cover 320x400, 390x600 and 844x390, 20px text, reaching the last catalog row, search, disabled-control explanations, focus trapping and background restoration. Previous DPR3 contextual tour tests also pass. Physical Telegram remains unverified.
-
-The open sheet also reflows on browser/visual viewport resize and scroll, Telegram viewport changes, safe-area updates and fullscreen changes. Chromium verified shrinking an already-open sheet to a 380px viewport and restoring it without losing the catalog or pushing controls off-screen.
+Physical Telegram behavior remains unverified.

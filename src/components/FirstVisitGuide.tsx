@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, Compass, Search, Shield, Trophy, Bell, Swords, ListOrdered, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Compass, Search, Shield, Trophy, Bell, Swords, ListOrdered, MousePointerClick, X } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { findGuideTarget, guidePlacement, guideViewport, type GuideRect, type GuideStatus, type GuideStep } from '../lib/firstVisitGuide';
 import './first-visit-guide.css';
@@ -49,7 +49,7 @@ function safeGuidePlacement(target: GuideRect | null, cardHeight: number) {
   return {...position, left: position.left + view.left, top: position.top + view.top};
 }
 
-export function FirstVisitGuide({ onFinish, onShowScoreEntry, onShowStandings, steps: customSteps, mascot=false }: { steps?: GuideStep[]; mascot?: boolean; onFinish: (status: GuideStatus) => void; onShowScoreEntry?: () => void; onShowStandings?: () => void }) {
+export function FirstVisitGuide({ onFinish, onShowScoreEntry, onShowStandings, steps: customSteps, mascot=false, direct=false }: { steps?: GuideStep[]; mascot?: boolean; direct?: boolean; onFinish: (status: GuideStatus) => void; onShowScoreEntry?: () => void; onShowStandings?: () => void }) {
   const { language } = useI18n();
   const c = content[language] || content.uz;
   const targets = customSteps?.map(item => item.target) || defaultTargets;
@@ -66,6 +66,9 @@ export function FirstVisitGuide({ onFinish, onShowScoreEntry, onShowStandings, s
   const showScoreEntry = useRef(onShowScoreEntry); showScoreEntry.current = onShowScoreEntry;
   const showStandings = useRef(onShowStandings); showStandings.current = onShowStandings;
   const Icon = icons[step] || Compass;
+  const advance=()=>step===targets.length-1?onFinish('completed'):setStep(value=>value+1);
+  const nextLabel=direct?(step===targets.length-1?({uz:'Tushundim',ru:'Понятно',en:'Got it'}[language]):!targets[step]?({uz:'Ko‘rsat',ru:'Показать',en:'Show me'}[language]):c.next):step===targets.length-1?c.done:c.next;
+  const tapHint={uz:'Yoritilgan joyga tegib keyingisiga o‘ting.',ru:'Нажмите на подсвеченное место, чтобы продолжить.',en:'Tap the highlighted area to continue.'}[language];
 
   useEffect(() => {
     if (!customSteps && step === 3 && !findGuideTarget(document, '[data-guide="score-entry"]')) showScoreEntry.current?.();
@@ -76,8 +79,11 @@ export function FirstVisitGuide({ onFinish, onShowScoreEntry, onShowStandings, s
     let frame = 0;
     let scrolled: HTMLElement | undefined;
     let observed: HTMLElement | undefined;
+    let missingTimer: ReturnType<typeof setTimeout> | undefined;
     const update = () => {
       const candidate = findGuideTarget(document, targets[step]);
+      if(direct&&targets[step]&&!candidate&&!missingTimer)missingTimer=setTimeout(()=>{if(step===targets.length-1)finish.current('completed');else setStep(value=>value===step?value+1:value);},500);
+      if(candidate&&missingTimer){clearTimeout(missingTimer);missingTimer=undefined;}
       const view = visibleViewport();
       const bounds = candidate?.getBoundingClientRect();
       const outside = bounds && (bounds.top < view.top || bounds.bottom > view.top + view.height || bounds.left < view.left || bounds.right > view.left + view.width);
@@ -122,7 +128,7 @@ export function FirstVisitGuide({ onFinish, onShowScoreEntry, onShowStandings, s
     const telegram=(window as any).Telegram?.WebApp;
     const safeEvents=['viewportChanged','safeAreaChanged','contentSafeAreaChanged','fullscreenChanged'];
     safeEvents.forEach(event=>telegram?.onEvent?.(event,schedule));
-    return () => { safeEvents.forEach(event=>telegram?.offEvent?.(event,schedule)); cancelAnimationFrame(frame); observer.disconnect(); mutation.disconnect(); window.removeEventListener('resize', schedule); window.removeEventListener('scroll', schedule, true); window.visualViewport?.removeEventListener('resize', schedule); window.visualViewport?.removeEventListener('scroll', schedule); };
+    return () => { if(missingTimer)clearTimeout(missingTimer); safeEvents.forEach(event=>telegram?.offEvent?.(event,schedule)); cancelAnimationFrame(frame); observer.disconnect(); mutation.disconnect(); window.removeEventListener('resize', schedule); window.removeEventListener('scroll', schedule, true); window.visualViewport?.removeEventListener('resize', schedule); window.visualViewport?.removeEventListener('scroll', schedule); };
   }, [step, language]);
 
   useEffect(() => {
@@ -149,14 +155,15 @@ export function FirstVisitGuide({ onFinish, onShowScoreEntry, onShowStandings, s
     ? ({uz: '“Turnirlar”dan kerakli ligani oching va “Jadval” bo‘limini tanlang. Bu yerda o‘rin, ochkolar va natijalarni ko‘rasiz.', ru: 'В разделе турниров откройте нужную лигу и её таблицу, чтобы увидеть места, очки и результаты.', en: 'Open your league under Competitions, then open its standings to see positions, points and results.'}[language])
     : stepContent[step][1];
 
-  return <div ref={layer} className="efl-guide-layer" data-layout={mobile ? 'sheet' : 'anchored'}>
+  return <div ref={layer} className="efl-guide-layer" data-layout={mobile ? 'sheet' : 'anchored'} data-direct={direct}>
     {target ? <div className="efl-guide-spotlight" style={target} aria-hidden="true" /> : <div className="efl-guide-backdrop" aria-hidden="true" />}
+    {direct&&target&&<button type="button" tabIndex={-1} className="efl-guide-target-tap" aria-label={tapHint} style={target} onClick={advance}><span className="efl-guide-tap-hand" aria-hidden="true"><MousePointerClick size={20}/></span></button>}
     <div ref={card} role="dialog" aria-modal="true" aria-labelledby="efl-guide-title" aria-describedby="efl-guide-description" aria-label={c.label} className="efl-guide-card" data-compact={placement.maxHeight < 300} data-pointer={pointer?.side} style={{ ...placement, '--guide-arrow-x': `${pointer?.left || 24}px` } as React.CSSProperties}>
       <div className="efl-guide-card-scroll" style={{ maxHeight: Math.max(1, placement.maxHeight - 2) }}>
-        <div className="efl-guide-topline"><span className="efl-guide-brand" role="img" aria-label={mascot?"Munfiz":"EFL UZ"}>{mascot&&<picture><source media="(prefers-reduced-motion: reduce)" srcSet="/munfiz/v2/still.webp"/><img src="/munfiz/v2/point.webp" alt="" style={{height:60,width:44}}/></picture>}<span hidden={mascot} style={{display:mascot?'none':'contents'}}><img className="efl-guide-logo-dark" src="/efluz-logo.png" alt="" /><img className="efl-guide-logo-light" src="/efluz-logo-light.png" alt="" /></span></span><span className="efl-guide-counter">{String(step + 1).padStart(2, '0')}<span>/ {String(targets.length).padStart(2, '0')}</span></span><button type="button" onClick={() => onFinish('skipped')} aria-label={c.skip}><X size={18} /></button></div>
-        <div className="efl-guide-copy" aria-live="polite" aria-atomic="true"><div className="efl-guide-eyebrow"><Icon size={15} strokeWidth={1.8} /><span>{language === 'ru' ? 'Знакомство' : language === 'en' ? 'Quick tour' : 'Qisqa tanishtiruv'}</span></div><h2 id="efl-guide-title">{stepContent[step][0]}</h2><p id="efl-guide-description">{fallbackDescription}</p></div>
-        <div className="efl-guide-bottom"><div className="efl-guide-progress" aria-label={`${step + 1} / ${targets.length} ${c.step}`}>{targets.map((_, index) => <span key={index} data-active={index === step} data-complete={index < step} />)}</div><div className="efl-guide-actions"><button type="button" onClick={() => step ? setStep(step - 1) : onFinish('skipped')} className="efl-guide-back">{step ? <><ArrowLeft size={15} />{c.back}</> : c.skip}</button><button ref={next} type="button" className="efl-guide-next btn-glass-primary" onClick={() => step === targets.length - 1 ? onFinish('completed') : setStep(step + 1)}>{step === targets.length - 1 ? <>{c.done}<Check size={16} /></> : <>{c.next}<ArrowRight size={16} /></>}</button></div></div>
-        {step === targets.length - 1 && <p className="efl-guide-replay-hint">{c.again}</p>}
+        <div className="efl-guide-topline"><span className="efl-guide-brand" role="img" aria-label={mascot?"Munfiz":"EFL UZ"}>{mascot&&<picture><source media="(prefers-reduced-motion: reduce)" srcSet="/munfiz/v2/still.webp"/><img src={direct&&step===0?"/munfiz/v2/wave.webp":"/munfiz/v2/point.webp"} alt="" style={{height:60,width:44}}/></picture>}<span hidden={mascot} style={{display:mascot?'none':'contents'}}><img className="efl-guide-logo-dark" src="/efluz-logo.png" alt="" /><img className="efl-guide-logo-light" src="/efluz-logo-light.png" alt="" /></span></span><span className="efl-guide-counter">{String(step + 1).padStart(2, '0')}<span>/ {String(targets.length).padStart(2, '0')}</span></span><button type="button" onClick={() => onFinish('skipped')} aria-label={c.skip}><X size={18} /></button></div>
+        <div className="efl-guide-copy" aria-live="polite" aria-atomic="true"><div className="efl-guide-eyebrow"><Icon size={15} strokeWidth={1.8} /><span>{language === 'ru' ? 'Знакомство' : language === 'en' ? 'Quick tour' : 'Qisqa tanishtiruv'}</span></div><h2 id="efl-guide-title">{stepContent[step][0]}</h2><p id="efl-guide-description">{fallbackDescription}</p>{direct&&target&&<p className="efl-guide-tap-hint">{tapHint}</p>}</div>
+        <div className="efl-guide-bottom"><div hidden={direct} className="efl-guide-progress" aria-label={`${step + 1} / ${targets.length} ${c.step}`}>{targets.map((_, index) => <span key={index} data-active={index === step} data-complete={index < step} />)}</div><div className="efl-guide-actions"><button type="button" onClick={() => step ? setStep(step - 1) : onFinish('skipped')} className="efl-guide-back">{step ? <><ArrowLeft size={15} />{c.back}</> : c.skip}</button><button ref={next} type="button" className="efl-guide-next btn-glass-primary" onClick={advance}>{step===targets.length-1?<>{nextLabel}<Check size={16}/></>:<>{nextLabel}<ArrowRight size={16}/></>}</button></div></div>
+        {!direct && step === targets.length - 1 && <p className="efl-guide-replay-hint">{c.again}</p>}
       </div>
     </div>
   </div>;

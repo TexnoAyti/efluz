@@ -75,6 +75,13 @@ export function munfizQuestionIndexes(page:string,section:string){
 
 export function munfizControlTitle(id:string,fallback:string,language:string){
  const titles:Record<string,Localized>={
+  'entry-open':['Kartani ochish','Открыть карточку','Open this card'],
+  'league-picker':['Ligani tanlash','Выбор лиги','Choose a league'],
+  'club-open':['Klubingizni ochish','Открыть свой клуб','Open your club'],
+  'match-actions':['O‘yin tafsilotlari','Сведения о матче','Match details'],
+  'notification-filter':['Xabarlarni saralash','Фильтр сообщений','Filter notifications'],
+  'match-filter':['O‘yinlar va natijalar','Матчи и результаты','Matches and results'],
+  'team-manage':['Teamni boshqarish','Управление командой','Manage the team'],
   'round-picker':['Ko‘riladigan turni tanlash','Выбор тура для просмотра','Choose a round to view'],
   'table-columns':['Jadval ustunlarini o‘qish','Как читать столбцы','Read the table columns'],
   'table-view':['Jadval ko‘rinishini almashtirish','Вид таблицы','Switch table views'],
@@ -100,4 +107,54 @@ export function munfizChecklist(page:string,section:string,language:string):stri
  };
  const key=s==='mine'?'fixtures':lists[s]?s:lists[page]?page:page==='my-club'||page==='club'?'fixtures':'';
  return lists[key]?.[lang]||[];
+}
+
+/** The first sentence in the direct tour answers only what this page is for. */
+export function munfizPagePurpose(page:string,section:string,language:string){
+ const key=normalizedMunfizSection(section)||page;
+ const copy:Record<string,Localized>={
+  tournaments:['Bu bo‘limda turnirlar ro‘yxatini ochasiz.','Здесь список турниров.','Open the tournament list here.'],
+  manage:['Bu bo‘limda sizga ruxsat berilgan boshqaruv amallari bor.','Здесь доступные вам действия управления.','This section has the management actions available to you.'],
+  settings:['Bu bo‘limda sozlamalarni tekshirasiz.','Здесь настройки.','Check settings here.'],
+  season:['Bu yerda mavsum holati va bosqichlarini ko‘rasiz.','Здесь состояние и этапы сезона.','See the season status and stages here.'],
+  dashboard:['Bu yerda navbatdagi o‘yiningiz va so‘nggi natijalaringizni ko‘rasiz.','Здесь ближайший матч и последние результаты.','See your next match and recent results here.'],
+  fixtures:['Bu bo‘limda turdagi juftliklarni topib, o‘z o‘yiningizni ochasiz.','Здесь пары тура и вход в свой матч.','Find this round’s pairings and open your match here.'],
+  mine:['Bu yerda o‘z o‘yiningiz, raqibingiz va natija holatini ko‘rasiz.','Здесь ваш матч, соперник и статус результата.','See your own match, opponent and result status here.'],
+  standings:['Bu bo‘limda o‘rinlar, ochkolar va o‘yin natijalarini solishtirasiz.','Здесь места, очки и результаты команд.','Compare positions, points and results here.'],
+  clubs:['Bu yerda liga klublari, ularning egalari va tanlash holatini ko‘rasiz.','Здесь клубы лиги, их владельцы и доступность выбора.','See league clubs, their owners and selection availability here.'],
+  participants:['Bu bo‘limda turnir ishtirokchilari va ularning holatini topasiz.','Здесь участники турнира и их статусы.','Find tournament participants and their status here.'],
+  teams:['Bu yerda teamlar va ularning tarkibini ko‘rasiz.','Здесь команды и их составы.','See teams and their rosters here.'],
+  team:['Bu sahifada team tarkibi, sardori va jamoa ma’lumotlari bor.','Здесь состав, капитан и сведения о команде.','This page shows the team roster, captain and information.'],
+  bracket:['Bu yerda juftliklar va g‘oliblarning keyingi bosqichga o‘tish yo‘lini ko‘rasiz.','Здесь пары и путь победителей по этапам.','See pairings and how winners progress through stages here.'],
+  results:['Bu bo‘limda yakunlangan o‘yinlar hisoblarini tekshirasiz.','Здесь результаты завершённых матчей.','Check completed match scores here.'],
+  rules:['Bu yerda turnir muddati va o‘yin qoidalarini o‘qiysiz.','Здесь сроки и правила турнира.','Read the tournament deadlines and rules here.'],
+  history:['Bu bo‘limda turnirdagi oldingi amallar va o‘zgarishlar bor.','Здесь предыдущие действия и изменения турнира.','Review previous tournament actions and changes here.'],
+  notifications:['Bu yerda o‘yin va natijalarga oid xabarlarni ko‘rasiz.','Здесь сообщения о матчах и результатах.','See match and result notifications here.'],
+  leagues:['Bu sahifadan liga va turnirni tanlab ochasiz.','Здесь можно выбрать и открыть лигу или турнир.','Choose and open a league or tournament here.'],
+  cups:['Bu yerda kubok bosqichlari va juftliklarini ko‘rasiz.','Здесь этапы кубка и пары.','See cup stages and pairings here.'],
+  european:['Bu yerda yevrokubok musobaqalarini ochasiz.','Здесь открываются еврокубки.','Open European competitions here.'],
+  uzeflife:['Bu sahifada UZEFLIFE o‘yinlari va turnir holatini kuzatasiz.','Здесь матчи и состояние UZEFLIFE.','Follow UZEFLIFE matches and tournament status here.'],
+  custom:['Bu yerda TEAMS jamoaviy turnirlarini ochasiz.','Здесь командные турниры TEAMS.','Open TEAMS team competitions here.'],
+  'my-club':['Bu sahifada klubingiz, o‘yinlaringiz va statistikangiz bor.','Здесь ваш клуб, матчи и статистика.','This page has your club, matches and statistics.'],
+  club:['Bu yerda tanlangan klubning o‘yinlari va natijalarini ko‘rasiz.','Здесь матчи и результаты выбранного клуба.','See the selected club’s matches and results here.'],
+  admin:['Bu yerda sizga berilgan boshqaruv amallari joylashgan.','Здесь доступные вам действия управления.','This page contains the management actions available to you.'],
+ };
+ const value=copy[key]||copy[page]||copy[page==='profile'?'my-club':page==='my-matches'?'fixtures':''];
+ return value?.[language==='ru'?1:language==='en'?2:0]||({uz:'Munfiz bu sahifadagi mavjud tugmalarni birma-bir ko‘rsatadi.',ru:'Мунфиз покажет доступные кнопки этой страницы.',en:'Munfiz will point out the controls available on this page.'}[language]||'');
+}
+export function munfizBriefControl(id:string,language:string){
+ const extra:Record<string,Localized>={
+  'entry-open':['Bu kartadan tanlangan turnir yoki team sahifasini ochasiz.','Эта карточка открывает выбранный турнир или команду.','This card opens the selected tournament or team.'],
+  'league-picker':['Shu qatordan kerakli ligani tanlaysiz.','В этой строке выберите нужную лигу.','Choose the league you want from this row.'],
+  'club-open':['Bu tugma klubingizning o‘yinlari va ma’lumotlarini ochadi.','Эта кнопка открывает матчи и сведения вашего клуба.','This button opens your club’s matches and information.'],
+  'match-actions':['Bu tugma o‘yin tafsilotlari va mavjud amallarni ochadi.','Эта кнопка открывает сведения о матче и доступные действия.','This button opens match details and available actions.'],
+  'notification-filter':['Bu tugmalar barcha yoki faqat o‘qilmagan xabarlarni ko‘rsatadi.','Эти кнопки показывают все или только непрочитанные сообщения.','These buttons show all or only unread notifications.'],
+  'match-filter':['Bu yerdan kelgusi o‘yinlar yoki natijalarni tanlaysiz.','Здесь переключаются будущие матчи и результаты.','Switch between upcoming matches and results here.'],
+  'team-manage':['Bu tugma sizga ruxsat berilgan team boshqaruvini ochadi.','Эта кнопка открывает доступное вам управление командой.','This button opens the team management available to your role.'],
+ };
+ if(extra[id])return extra[id][language==='ru'?1:language==='en'?2:0];
+ if(id.startsWith('section-'))return munfizPagePurpose('',id.slice(8),language);
+ if(id.startsWith('category-'))return munfizPagePurpose(id.slice(9),'',language);
+ const text=munfizControlDescription(id,language);
+ return text?text.match(/^.*?[.!?](?:\s|$)/)?.[0].trim()||text:null;
 }
