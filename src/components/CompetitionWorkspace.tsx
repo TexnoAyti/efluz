@@ -12,7 +12,7 @@ export function CompetitionEntry({emblem,title,meta,status,description,preview,f
 }
 
 export function CompetitionToolbar({value,onChange,label,placeholder='Nomi bo‘yicha qidirish',children}:{value:string;onChange:(value:string)=>void;label:string;placeholder?:string;children?:React.ReactNode}) {
- return <div className="competition-toolbar"><label className="competition-search"><Search size={16} aria-hidden="true"/><input type="search" aria-label={label} value={value} onChange={event=>onChange(event.target.value)} placeholder={placeholder}/></label>{children&&<div className="competition-toolbar-actions">{children}</div>}</div>;
+ return <div className="competition-toolbar"><label data-munfiz-control="local-search" className="competition-search"><Search size={16} aria-hidden="true"/><input type="search" aria-label={label} value={value} onChange={event=>onChange(event.target.value)} placeholder={placeholder}/></label>{children&&<div className="competition-toolbar-actions">{children}</div>}</div>;
 }
 
 export function CompetitionSteps({step,labels}:{step:number;labels:readonly string[]}) {

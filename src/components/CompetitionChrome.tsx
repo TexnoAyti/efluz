@@ -7,7 +7,7 @@ export function CompetitionBanner({children,className=''}:{children:React.ReactN
 }
 
 export function CompetitionTabs<T extends string>({items,value,onChange,label,disabled=false,layout='row'}:{items:readonly {id:T;label:string;icon:LucideIcon}[];value:T;onChange:(id:T)=>void;label:string;disabled?:boolean;layout?:'row'|'grid'}){
- return <nav className={`efl-league-tabs flex items-center gap-2 border-b border-[var(--efl-border)] pb-2 overflow-x-auto scrollbar-none ${layout==='grid'?'competition-tabs-grid':''}`} style={layout==='grid'?{'--competition-tab-count':items.length,'--competition-mobile-tab-count':Math.min(3,items.length)} as React.CSSProperties:undefined} aria-label={label}>
+ return <nav data-munfiz-section={value} className={`efl-league-tabs flex items-center gap-2 border-b border-[var(--efl-border)] pb-2 overflow-x-auto scrollbar-none ${layout==='grid'?'competition-tabs-grid':''}`} style={layout==='grid'?{'--competition-tab-count':items.length,'--competition-mobile-tab-count':Math.min(3,items.length)} as React.CSSProperties:undefined} aria-label={label}>
   {items.map(({id,label,icon:Icon})=><button key={id} data-munfiz-control={`section-${id}`} type="button" disabled={disabled} aria-pressed={value===id} onClick={()=>onChange(id)} className={`flex shrink-0 whitespace-nowrap items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all min-h-[38px] border ${value===id?'bg-[var(--efl-primary-soft)] border-[var(--efl-primary)]/30 text-[var(--efl-primary)] font-black shadow-xs':'bg-[var(--efl-surface)] border-[var(--efl-border)] text-[var(--efl-text-2)] hover:bg-[var(--efl-surface-2)] hover:text-[var(--efl-text)]'}`}><Icon className="w-4 h-4"/><span>{label}</span></button>)}
  </nav>;
 }

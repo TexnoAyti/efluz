@@ -718,6 +718,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
               <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  data-munfiz-control="result-confirm"
                   disabled={isSubmittingQuick}
                   onClick={() =>
                     handleQuickConfirm(
@@ -732,6 +733,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
                 </button>
                 <button
                   type="button"
+                  data-munfiz-control="result-dispute"
                   onClick={() => setSelectedFixtureForModal(heroMatch)}
                   className="px-3.5 py-2 rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 text-xs font-bold transition-all"
                 >
@@ -772,6 +774,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
             {opponentTelegram && (
               <button
                 type="button"
+                data-guide="opponent-chat"
                 onClick={() => openTelegramChat(opponentTelegram)}
                 className="py-2.5 px-4 rounded-xl text-xs font-bold bg-sky-500/10 hover:bg-sky-500/20 text-sky-600 dark:text-sky-400 border border-sky-500/20 flex items-center justify-center gap-1.5 transition-all min-h-[40px]"
                 title={`Telegram @${opponentTelegram}`}
