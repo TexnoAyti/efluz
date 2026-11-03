@@ -43,6 +43,7 @@ export function inspectAiAdminOutcome(plan: AdminPlan, data: any): { state: 'que
       return {state:'unverified',message:'Server qaytargan tur holati rejaga mos kelmadi. Admin panelni tekshiring; amal avtomatik takrorlanmaydi.'};
     return {state:'verified',message:`${round}-tur ${locked ? 'yopildi' : 'ochildi'}.${data.nextMatchdayOpenAt ? ` Muddat: ${new Intl.DateTimeFormat('uz-UZ',{timeZone:'Asia/Tashkent',dateStyle:'short',timeStyle:'short'}).format(new Date(data.nextMatchdayOpenAt))}.` : ''} Bildirishnoma yetkazilgani bu javob bilan tasdiqlanmaydi.`};
   }
+  if(plan.action==='backlog_remind')return data?.success===true&&/^[a-f0-9]{64}$/.test(data.requestId||'')&&['PENDING','DONE'].includes(data.status)&&data.scope?.category===plan.body.category&&(data.scope?.competitionId||null)===(plan.body.competitionId||null)?{state:'queued',message:'Eski o‘yinlar eslatmalari uchun vazifa saqlandi. Kunlik takrorlar yuborilmaydi. Haqiqiy yetkazish holatini Bildirishnomalar bo‘limidan tekshiring.'}:{state:'unverified',message:'Eslatma vazifasining saqlangani tasdiqlanmadi. Avtomatik takrorlanmaydi.'};
   if (plan.action === 'matchday_remind') {
     if (data?.success !== true || data?.competitionId !== plan.targetId || data?.matchday !== plan.body.matchday || plan.body.fromMatchday !== undefined && data?.fromMatchday !== plan.body.fromMatchday || !['queued','skipped','outstandingPlayers'].every(k => Number.isInteger(data?.[k]) && data[k] >= 0))
       return {state:'unverified',message:'Eslatma javobi to‘liq yoki rejaga mos emas. Avtomatik qayta yuborilmaydi.'};

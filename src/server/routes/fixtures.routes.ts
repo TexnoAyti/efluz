@@ -12,6 +12,7 @@ import { isDomesticCup, advanceDomesticCupWinnerSafe } from '../tournament/domes
 import { reconcileDomesticCupSourceFixture } from '../tournament/domesticCupRoundOps';
 import { notifySmartResultLifecycle } from '../services/smartNotificationService';
 import { assertFixtureLifecycleOpen } from '../services/seasonLifecycleService';
+import {readBacklogResultAccess} from '../services/backlogResultEntry';
 
 export const fixturesRouter = Router();
 export const fixturesResilientRouter = fixturesRouter;
@@ -54,7 +55,7 @@ fixturesRouter.post('/:id/result', requireAuth, validateBody(resultSubmissionSch
       res.status(404).json({ error: 'Fixture not found', code: 'NOT_FOUND' });
       return;
     }
-    await assertFixtureLifecycleOpen(existingFixture);
+    if (!await readBacklogResultAccess(existingFixture)) await assertFixtureLifecycleOpen(existingFixture);
 
     const updatedFixture = await submitFixtureResultFirestore(userId, fixtureId, homeScore, awayScore, proofUrl, { homeExtraTimeScore, awayExtraTimeScore, homePenaltyScore, awayPenaltyScore });
 

@@ -12,6 +12,7 @@ import { getAdminUserDirectory } from './adminUserDirectory';
 import { withinAiDeadline } from './telegramAiDeadline';
 import type { Club, Competition, User } from '../../types';
 import { planExtendedAdminControl } from './telegramAiControlLanguage';
+import {planBacklogReminder} from './telegramAiBacklogReminder';
 
 const clarify = (message: string): never => { throw new Error('CLARIFY:' + message); };
 const maskUser = (text: string) => text.replace(/@\s*[A-Za-z0-9_]+/g, ' ');
@@ -74,6 +75,8 @@ export async function planNaturalAdminRequest(text: string, deps: NaturalPlanner
   const make = (action: string, targetId?: string, body: Record<string,unknown> = {}) => adminPlanSchema.parse({ action, ...(targetId ? { targetId } : {}), body });
   if (action !== 'ai_settings') {
     assertSingleNaturalAdminRequest(text);
+    const backlogPlan=await planBacklogReminder(text,deps.read);
+    if(backlogPlan)return backlogPlan;
     const roundPlan = await planMatchdayRequest(text, deps.read);
     if (roundPlan) return roundPlan;
     const extended = await planExtendedAdminControl(text, deps.read);

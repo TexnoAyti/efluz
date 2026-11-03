@@ -289,8 +289,10 @@ export async function setDomesticCupRoundStateSafe(
   }
 
   const now = new Date().toISOString();
+  const previousProgress=(await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get()).data();
   await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).set({
     currentMatchday: roundNumber,
+    ...(action==='OPEN'&&Number.isInteger(previousProgress?.resultEntryThroughMatchday)?{resultEntryThroughMatchday:Math.max(previousProgress!.resultEntryThroughMatchday,Number(previousProgress?.currentMatchday)||0,roundNumber)}:{}),
     isMatchdayOpen: action === 'OPEN',
     adminOverrideStatus: action === 'OPEN' ? 'FORCE_OPEN' : 'FORCE_LOCKED',
     updatedAt: now,

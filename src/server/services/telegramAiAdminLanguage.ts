@@ -7,6 +7,7 @@ import { isBulkResultRequest } from './telegramAiBulkResultLanguage';
 import { normalizeAiEntity } from './telegramAiEntities';
 import { detectExtendedAdminControl } from './telegramAiControlLanguage';
 import { isAiHypotheticalQuestion } from './telegramAiMessageUnderstanding';
+import {isBacklogReminderRequest} from './telegramAiBacklogReminder';
 
 function adminCommandText(text: string): string {
   return normalizeAiEntity(text.replace(/^\/ai_(?:admin|read)(?:@[A-Za-z0-9_]+)?\s*/i, '')
@@ -65,6 +66,7 @@ export function detectNaturalAdminAction(text: string): string|null {
   }
   if (isPlatformAdminRequest(command)) return 'platform_admin';
   if (isReplyReminderRequest(command)) return 'matchday_remind';
+  if (isBacklogReminderRequest(command)) return 'backlog_remind';
   if (isBulkResultRequest(command)) return 'results_bulk_apply';
   const roundIntent = detectMatchdayIntent(command);
   if (roundIntent) return roundIntent === 'REMIND' ? 'matchday_remind' : roundIntent === 'ADVANCE' ? 'matchday_advance' : roundIntent === 'STATUS' ? 'matchday_status' : 'matchday_control';

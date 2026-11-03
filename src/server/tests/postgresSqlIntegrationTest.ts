@@ -1,4 +1,5 @@
 import {verifyLeagueBacklogReminders} from './leagueBacklogReminderRegressionTest';
+import {verifyAllCompetitionBacklog} from './allCompetitionBacklogAudit';
 import {verifyUzeflifeAutoLink} from './uzeflifeAutoLinkAudit';
 import {verifyUzeflifeFourFeatures} from './uzeflifeFourFeaturesAudit';
 import {verifyCompactNotificationMigration} from './compactNotificationMigrationAudit';
@@ -319,6 +320,7 @@ await verifyUzeflifeAutoLink();await verifyUzeflifeFourFeatures();
   await verifyCustomTournamentLifecycle(() => { failStartChunk = true; });
   await verifyUzeflifeHttp(()=>{failUzeflifeCommit=true;});
   await verifyLeagueBacklogReminders();
+  await verifyAllCompetitionBacklog();
   console.log('PASS native PostgreSQL draft reopen/assistant discovery, publication, private invitation versus spectator access and atomic authorized claim');
   console.log('PASS native PostgreSQL ticket publication: actual batch failure restores wallet and draft; parallel different-key publishes spend exactly once');
   console.log('PASS native PostgreSQL SQL: private invoker grants, 12 concurrent NX attempts, atomic counters, cache invalidation, conflict retry with no stale writes, double-spend exclusion, full batch rollback, queue dedupe and worker claim; HTTP transport simulated');

@@ -7,6 +7,16 @@ import { listAdminNotifications, listAdminNotificationMessages, setBroadcastVisi
 export const adminNotificationsRouter = Router();
 adminNotificationsRouter.use(requireAdmin);
 adminNotificationsRouter.use((_req, res, next) => { res.setHeader('Cache-Control', 'private, no-store'); next(); });
+adminNotificationsRouter.post('/backlog-reminders',async(req,res)=>{
+  const input=z.object({category:z.enum(['ALL','LEAGUES','CUPS']),competitionId:z.string().regex(/^[a-zA-Z0-9_-]{1,150}$/).optional()}).strict().safeParse(req.body);
+  if(!input.success){res.status(400).json({error:'INVALID_REMINDER_SCOPE'});return;}
+  try{
+    const {requestBacklogReminders}=await import('../services/backlogReminderRequests');
+    const receipt=await requestBacklogReminders(input.data,req.user!.id);
+    const {scheduleUNotices}=await import('../services/uzeflifeNotifications');scheduleUNotices();
+    res.status(202).json(receipt);
+  }catch(error){handleFirestoreError(res,error,'POST backlog reminders');}
+});
 adminNotificationsRouter.get('/league-reminder-health', async (_req, res) => {
   try {
     const {getFirestoreDb} = await import('../firebase/admin');
