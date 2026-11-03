@@ -1,0 +1,24 @@
+.munfiz-root { position:fixed; inset:0; z-index:75; pointer-events:none; }
+.munfiz-root[hidden] { display:none; }
+.munfiz-avatar { position:absolute; left:0; top:0; width:72px; height:104px; pointer-events:none; transition:transform .85s ease-in-out; }
+.munfiz-avatar[data-dragging=true],.munfiz-root[data-reduced=true] .munfiz-avatar { transition:none; }
+.munfiz-character { display:block; width:72px; height:104px; padding:0; border:0; border-radius:20px; background:transparent; pointer-events:auto; touch-action:none; cursor:grab; filter:drop-shadow(0 4px 4px #0003); }
+.munfiz-character img { display:block; width:72px; height:99px; object-fit:contain; pointer-events:none; }
+.munfiz-character.is-small { width:44px; height:44px; overflow:hidden; border:1px solid var(--efl-border); border-radius:50%; background:var(--efl-surface); }
+.munfiz-character.is-small img { width:44px; height:61px; object-position:top; }
+.munfiz-minimize { position:absolute; right:-3px; top:-5px; z-index:1; width:26px; height:26px; display:grid; place-items:center; pointer-events:auto; color:var(--efl-text-2); border:1px solid var(--efl-border); border-radius:50%; background:var(--efl-surface); cursor:pointer; }
+.munfiz-panel { position:fixed; box-sizing:border-box; pointer-events:auto; overflow:auto; overscroll-behavior:contain; padding:18px; border:1px solid var(--efl-border); border-radius:20px; color:var(--efl-text); background:var(--efl-surface); box-shadow:0 16px 54px #0004; font-family:inherit; }
+.munfiz-panel header { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+.munfiz-panel header strong { font-size:17px; }
+.munfiz-panel header button { width:36px; height:36px; display:grid; place-items:center; background:var(--efl-surface-2); color:var(--efl-text-2); border:0; border-radius:10px; cursor:pointer; }
+.munfiz-panel h2 { font-size:14px; line-height:1.5; font-weight:750; margin:16px 0 6px; }
+.munfiz-panel p { font-size:13px; line-height:1.7; color:var(--efl-text-2); margin:8px 0 14px; }
+.munfiz-panel .munfiz-intro,.munfiz-panel .munfiz-muted { font-size:11px; color:var(--efl-muted); }
+.munfiz-action { display:flex; align-items:center; gap:9px; width:100%; min-height:46px; padding:10px 12px; margin-top:8px; border:1px solid var(--efl-border); border-radius:12px; background:var(--efl-surface-2); color:var(--efl-text); font-size:13px; font-weight:700; text-align:left; cursor:pointer; }
+.munfiz-action.primary { background:var(--efl-primary); color:white; border-color:var(--efl-primary); }
+.munfiz-action svg:last-child { margin-left:auto; }
+.munfiz-faq>div { border-bottom:1px solid var(--efl-border); }
+.munfiz-faq button { display:flex; align-items:center; gap:8px; min-height:44px; padding:10px 0; border:0; text-align:left; background:transparent; color:var(--efl-text); font-size:12px; line-height:1.6; cursor:pointer; }
+.munfiz-faq svg { flex-shrink:0; }
+.munfiz-root button:focus-visible { outline:2px solid var(--efl-primary); outline-offset:3px; }
+@media(prefers-reduced-motion:reduce) { .munfiz-avatar { transition:none; } }

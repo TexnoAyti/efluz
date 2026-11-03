@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, Compass, Search, Shield, Trophy, Bell, Swords, ListOrdered, X } from 'lucide-react';
 import { useI18n } from '../i18n';
-import { findGuideTarget, guidePlacement, guideViewport, type GuideRect, type GuideStatus } from '../lib/firstVisitGuide';
+import { findGuideTarget, guidePlacement, guideViewport, type GuideRect, type GuideStatus, type GuideStep } from '../lib/firstVisitGuide';
 import './first-visit-guide.css';
 
 const content = {
@@ -33,7 +33,7 @@ const content = {
     ['Important notifications', 'Result confirmations, match updates and tournament news appear here. Check your messages for the next action.'],
   ] },
 };
-const targets = ['[data-guide="nav-dashboard"]', '[data-guide="nav-leagues"]', '[data-guide="nav-my-club"]', '[data-guide="score-entry"], [data-guide="nav-my-club"]', '[data-guide="standings-entry"], [data-guide="nav-leagues"]', '#btn-global-search', '#btn-notifications'];
+const defaultTargets = ['[data-guide="nav-dashboard"]', '[data-guide="nav-leagues"]', '[data-guide="nav-my-club"]', '[data-guide="score-entry"], [data-guide="nav-my-club"]', '[data-guide="standings-entry"], [data-guide="nav-leagues"]', '#btn-global-search', '#btn-notifications'];
 const icons = [Compass, Trophy, Shield, Swords, ListOrdered, Search, Bell];
 
 function visibleViewport() {
@@ -49,9 +49,11 @@ function safeGuidePlacement(target: GuideRect | null, cardHeight: number) {
   return {...position, left: position.left + view.left, top: position.top + view.top};
 }
 
-export function FirstVisitGuide({ onFinish, onShowScoreEntry, onShowStandings }: { onFinish: (status: GuideStatus) => void; onShowScoreEntry?: () => void; onShowStandings?: () => void }) {
+export function FirstVisitGuide({ onFinish, onShowScoreEntry, onShowStandings, steps: customSteps, mascot=false }: { steps?: GuideStep[]; mascot?: boolean; onFinish: (status: GuideStatus) => void; onShowScoreEntry?: () => void; onShowStandings?: () => void }) {
   const { language } = useI18n();
   const c = content[language] || content.uz;
+  const targets = customSteps?.map(item => item.target) || defaultTargets;
+  const stepContent = customSteps?.map(item => [item.title,item.description]) || c.steps;
   const [step, setStep] = useState(0);
   const [target, setTarget] = useState<GuideRect | null>(null);
   const [targetKind, setTargetKind] = useState('');
@@ -63,11 +65,11 @@ export function FirstVisitGuide({ onFinish, onShowScoreEntry, onShowStandings }:
   const finish = useRef(onFinish); finish.current = onFinish;
   const showScoreEntry = useRef(onShowScoreEntry); showScoreEntry.current = onShowScoreEntry;
   const showStandings = useRef(onShowStandings); showStandings.current = onShowStandings;
-  const Icon = icons[step];
+  const Icon = icons[step] || Compass;
 
   useEffect(() => {
-    if (step === 3 && !findGuideTarget(document, '[data-guide="score-entry"]')) showScoreEntry.current?.();
-    if (step === 4 && !findGuideTarget(document, '[data-guide="standings-entry"]')) showStandings.current?.();
+    if (!customSteps && step === 3 && !findGuideTarget(document, '[data-guide="score-entry"]')) showScoreEntry.current?.();
+    if (!customSteps && step === 4 && !findGuideTarget(document, '[data-guide="standings-entry"]')) showStandings.current?.();
   }, [step]);
 
   useLayoutEffect(() => {
@@ -139,18 +141,18 @@ export function FirstVisitGuide({ onFinish, onShowScoreEntry, onShowStandings }:
     return () => { document.removeEventListener('keydown', keydown, true); document.body.style.overflow = overflow; siblings.forEach((el, index) => { el.inert = previous[index]; }); if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true }); };
   }, []);
 
-  const fallbackDescription = step === 3 && targetKind !== 'score-entry'
+  const fallbackDescription = !customSteps && step === 3 && targetKind !== 'score-entry'
     ? ({uz: 'O‘yinlaringizni “Klub” bo‘limidan oching. O‘ynash mumkin bo‘lgan uchrashuvda hisob kiritish tugmasi chiqadi. Hozir u tugma ko‘rinmagani uchun klub bo‘limini ko‘rsatyapmiz.', ru: 'Откройте свои матчи в разделе «Клуб». В доступном матче появится ввод счёта. Сейчас эта кнопка не видна, поэтому показываем раздел клуба.', en: 'Open your matches under Club. A playable match will offer score entry. That button is not visible now, so we are showing the Club section.'}[language])
-    : step === 4 && targetKind !== 'standings-entry'
+    : !customSteps && step === 4 && targetKind !== 'standings-entry'
     ? ({uz: '“Turnirlar”dan kerakli ligani oching va “Jadval” bo‘limini tanlang. Bu yerda o‘rin, ochkolar va natijalarni ko‘rasiz.', ru: 'В разделе турниров откройте нужную лигу и её таблицу, чтобы увидеть места, очки и результаты.', en: 'Open your league under Competitions, then open its standings to see positions, points and results.'}[language])
-    : c.steps[step][1];
+    : stepContent[step][1];
 
   return <div ref={layer} className="efl-guide-layer" data-layout={mobile ? 'sheet' : 'anchored'}>
     {target ? <div className="efl-guide-spotlight" style={target} aria-hidden="true" /> : <div className="efl-guide-backdrop" aria-hidden="true" />}
-    <div ref={card} role="dialog" aria-modal="true" aria-labelledby="efl-guide-title" aria-describedby="efl-guide-description" aria-label={c.label} className="efl-guide-card" data-pointer={pointer?.side} style={{ ...placement, '--guide-arrow-x': `${pointer?.left || 24}px` } as React.CSSProperties}>
+    <div ref={card} role="dialog" aria-modal="true" aria-labelledby="efl-guide-title" aria-describedby="efl-guide-description" aria-label={c.label} className="efl-guide-card" data-compact={placement.maxHeight < 300} data-pointer={pointer?.side} style={{ ...placement, '--guide-arrow-x': `${pointer?.left || 24}px` } as React.CSSProperties}>
       <div className="efl-guide-card-scroll" style={{ maxHeight: Math.max(1, placement.maxHeight - 2) }}>
-        <div className="efl-guide-topline"><span className="efl-guide-brand" role="img" aria-label="EFL UZ"><img className="efl-guide-logo-dark" src="/efluz-logo.png" alt="" /><img className="efl-guide-logo-light" src="/efluz-logo-light.png" alt="" /></span><span className="efl-guide-counter">{String(step + 1).padStart(2, '0')}<span>/ {String(targets.length).padStart(2, '0')}</span></span><button type="button" onClick={() => onFinish('skipped')} aria-label={c.skip}><X size={18} /></button></div>
-        <div className="efl-guide-copy" aria-live="polite" aria-atomic="true"><div className="efl-guide-eyebrow"><Icon size={15} strokeWidth={1.8} /><span>{language === 'ru' ? 'Знакомство' : language === 'en' ? 'Quick tour' : 'Qisqa tanishtiruv'}</span></div><h2 id="efl-guide-title">{c.steps[step][0]}</h2><p id="efl-guide-description">{fallbackDescription}</p></div>
+        <div className="efl-guide-topline"><span className="efl-guide-brand" role="img" aria-label={mascot?"Munfiz":"EFL UZ"}>{mascot&&<picture><source media="(prefers-reduced-motion: reduce)" srcSet="/munfiz/still.webp"/><img src="/munfiz/point.webp" alt="" style={{height:60,width:44}}/></picture>}<span hidden={mascot} style={{display:mascot?'none':'contents'}}><img className="efl-guide-logo-dark" src="/efluz-logo.png" alt="" /><img className="efl-guide-logo-light" src="/efluz-logo-light.png" alt="" /></span></span><span className="efl-guide-counter">{String(step + 1).padStart(2, '0')}<span>/ {String(targets.length).padStart(2, '0')}</span></span><button type="button" onClick={() => onFinish('skipped')} aria-label={c.skip}><X size={18} /></button></div>
+        <div className="efl-guide-copy" aria-live="polite" aria-atomic="true"><div className="efl-guide-eyebrow"><Icon size={15} strokeWidth={1.8} /><span>{language === 'ru' ? 'Знакомство' : language === 'en' ? 'Quick tour' : 'Qisqa tanishtiruv'}</span></div><h2 id="efl-guide-title">{stepContent[step][0]}</h2><p id="efl-guide-description">{fallbackDescription}</p></div>
         <div className="efl-guide-bottom"><div className="efl-guide-progress" aria-label={`${step + 1} / ${targets.length} ${c.step}`}>{targets.map((_, index) => <span key={index} data-active={index === step} data-complete={index < step} />)}</div><div className="efl-guide-actions"><button type="button" onClick={() => step ? setStep(step - 1) : onFinish('skipped')} className="efl-guide-back">{step ? <><ArrowLeft size={15} />{c.back}</> : c.skip}</button><button ref={next} type="button" className="efl-guide-next btn-glass-primary" onClick={() => step === targets.length - 1 ? onFinish('completed') : setStep(step + 1)}>{step === targets.length - 1 ? <>{c.done}<Check size={16} /></> : <>{c.next}<ArrowRight size={16} /></>}</button></div></div>
         {step === targets.length - 1 && <p className="efl-guide-replay-hint">{c.again}</p>}
       </div>

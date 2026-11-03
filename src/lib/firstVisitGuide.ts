@@ -40,7 +40,7 @@ export function guidePlacement(target: GuideRect | null, width: number, height: 
     if (target) {
       const above = Math.max(1, target.top - 34);
       const belowTop = target.top + target.height + 18;
-      const below = Math.max(1, height - safeBottom - belowTop);
+      const below = Math.max(1, height - 16 - belowTop);
       if (above >= cardHeight || above >= below) {
         const maxHeight = above;
         return { left: (width - cardWidth) / 2, top: Math.max(16, target.top - 18 - Math.min(cardHeight, maxHeight)), width: cardWidth, maxHeight };
@@ -55,3 +55,5 @@ export function guidePlacement(target: GuideRect | null, width: number, height: 
   const preferred = target && below + cardHeight > height - 16 ? target.top - cardHeight - 18 : below;
   return { left, top: Math.min(Math.max(16, preferred), maxTop), width: cardWidth, maxHeight: Math.max(1, height - 32) };
 }
+
+export type GuideStep = {title:string;description:string;target:string};
