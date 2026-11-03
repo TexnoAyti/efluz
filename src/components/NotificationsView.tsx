@@ -194,6 +194,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
           {unreadNotificationCount > 0 && (
             <button
               id="btn-mark-all-notifications-read"
+              data-munfiz-control="notifications-read"
               onClick={handleMarkAllAsRead}
               disabled={isMarkingAll}
               className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold active:scale-95 transition-all min-h-[38px] touch-manipulation border ${

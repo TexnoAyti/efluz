@@ -105,5 +105,5 @@ console.log('PASS guide viewport: keyboard, Telegram viewport and shifted visibl
 
 component.guideLanguage='uz';component.guideStateIndex=0;component.guideStep=0;
 const contextual=renderToStaticMarkup(React.createElement(component.module.exports.FirstVisitGuide,{steps:[{title:'Faqat shu sahifa',description:'Shu tugmaning izohi',target:'[data-guide="score-entry"]'}],mascot:true,onFinish:()=>{}}));
-assert.match(contextual,/Faqat shu sahifa/);assert.match(contextual,/Shu tugmaning izohi/);assert.match(contextual,/munfiz\/point.webp/);
+assert.match(contextual,/Faqat shu sahifa/);assert.match(contextual,/Shu tugmaning izohi/);assert.match(contextual,/munfiz\/v2\/point.webp/);
 assert.equal((contextual.match(/data-active=/g)||[]).length,1,'Contextual tour uses its own controls, not seven global steps');

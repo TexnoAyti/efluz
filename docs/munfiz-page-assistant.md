@@ -18,3 +18,14 @@ Frames were rendered from the user's Munfiz 0.21.0 Android source, specifically 
 - Local Chromium tests of the actual React component on 320x568, 390x844 and 844x390: character tap and drag, panel/tour bounds, character clear of panel, minimize/restore, Escape and context switch; no browser errors.
 
 Physical Android Telegram appearance and touch behavior remain unverified. Free-text AI and voice interaction are not part of this component.
+
+
+## Clarity and contextual-help revision
+
+The HD set under public/munfiz/v2 is rendered at 768px and cropped/resampled to 252x346: three source pixels per displayed pixel at the normal 84px character width. The static lossless frame loads first (~22KB). Nine animated poses use 48 frames over two seconds at 24fps: idle, walk, point, wave, sit, look, think, bow and victory. They load on demand. Reduced motion uses the HD static frame. Walking now follows actual displacement and direction; a persistent pose sequence survives walk-timer restarts. Opening help briefly waves, then thinks; finishing a contextual tour celebrates once.
+
+Context includes the selected inner competition section, not just the top-level route. Default page tours include only known local actions, omit disabled controls and deduplicate controls by semantic key and target. A separate section-navigation tour explains other local tabs, excluding the active tab and avoiding the global category menu when local tabs exist. Global navigation remains in the first-visit tour only. Unknown controls receive no fabricated instructions. Each section has explicit explanations, relevant questions and, where appropriate, a checklist. Tour history is stored per account and per selected section.
+
+The help panel keeps its main actions visible while long explanations and questions scroll. Current section changes reset the explanation and tour context. Match contacts, result review, table columns, view switches, round selection, local search and notifications now expose semantic help markers. Merely reading notifications is explicitly distinguished from confirming results.
+
+Regression checks cover local-vs-global selection, active/disabled tabs, duplicate targets, route fallback and distinct localized explanations. Chromium at device scale factor3 was used on 320x568, 390x844 and 844x390 to verify HD images, changed explanations when switching fixtures/standings, unique local tour topics, on-screen Next actions and reduced motion without browser errors. Physical Telegram remains unverified.
