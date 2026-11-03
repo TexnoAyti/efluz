@@ -26,5 +26,13 @@ export function selectMunfizControls(controls:MunfizControl[],mode:'page'|'secti
   if(mode==='sections'&&item.selected)return false;
   if(seen.has(item.target)||seen.has(item.id.toLowerCase()))return false;
   seen.add(item.target);seen.add(item.id.toLowerCase());return true;
- }).slice(0,mode==='sections'?6:5);
+ });
+}
+
+/** Help owns the visible screen while open; do not reserve a second area for the floating avatar. */
+export function munfizHelpLayout(width:number,height:number,offsetTop=0,insets={top:0,bottom:0,left:0,right:0}){
+ const gap=width<680?8:16;
+ const availableWidth=Math.max(1,width-insets.left-insets.right-gap*2);
+ const panelWidth=Math.min(720,availableWidth);
+ return {left:insets.left+gap+(availableWidth-panelWidth)/2,top:offsetTop+insets.top+gap,width:panelWidth,height:Math.max(1,height-insets.top-insets.bottom-gap*2)};
 }

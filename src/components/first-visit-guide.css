@@ -45,3 +45,5 @@
 .efl-guide-card[data-compact=true] .efl-guide-bottom { margin-top:12px; }
 .efl-guide-card[data-compact=true] .efl-guide-progress { margin-bottom:10px; }
 .efl-guide-card[data-compact=true] .efl-guide-replay-hint { display:none; }
+
+.efl-guide-progress { height:auto; min-height:7px; flex-wrap:wrap; }

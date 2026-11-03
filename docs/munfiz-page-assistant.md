@@ -29,3 +29,12 @@ Context includes the selected inner competition section, not just the top-level 
 The help panel keeps its main actions visible while long explanations and questions scroll. Current section changes reset the explanation and tour context. Match contacts, result review, table columns, view switches, round selection, local search and notifications now expose semantic help markers. Merely reading notifications is explicitly distinguished from confirming results.
 
 Regression checks cover local-vs-global selection, active/disabled tabs, duplicate targets, route fallback and distinct localized explanations. Chromium at device scale factor3 was used on 320x568, 390x844 and 844x390 to verify HD images, changed explanations when switching fixtures/standings, unique local tour topics, on-screen Next actions and reduced motion without browser errors. Physical Telegram remains unverified.
+
+
+## Roomy help and complete action catalog
+
+The helper now opens as a modal sheet that uses the visible viewport and Telegram safe insets (up to 720px wide on desktop). It no longer subtracts 322px for a separate floating character. The character appears in the sheet header while the floating button is hidden. Background scrolling and interaction are paused, keyboard focus stays inside, and closing restores the background.
+
+Three tabs separate explanation, all currently documented page controls, and related questions. The action catalog includes selected tabs and disabled controls with status labels, supports searching titles/descriptions and can highlight one chosen control. The main tours retain their page/section filtering but no longer truncate after five actions or six sections. Repeated instances of the same semantic action remain deduplicated. This exposes every documented control on the current rendered page; it does not invent instructions for unannotated controls or bypass permissions.
+
+Validation adds 14-action/section regression cases and viewport-safe sheet bounds. Chromium checks cover 320x400, 390x600 and 844x390, 20px text, reaching the last catalog row, search, disabled-control explanations, focus trapping and background restoration. Previous DPR3 contextual tour tests also pass. Physical Telegram remains unverified.
