@@ -79,6 +79,8 @@ export async function verifyAllCompetitionBacklog(){
   }
   const named=await planNaturalAdminRequest('La Liga qolgan o‘yinlariga eslatma yubor',deps);
   assert.equal(named?.body.competitionId,'comp-la-liga-2026');
+  const broadcast=await planNaturalAdminRequest('La Liga hammaga “Salom” deb bildirishnoma yubor',deps);
+  assert.equal(broadcast?.action,'broadcast');assert.equal(broadcast?.body.targetAudience,'LEAGUE_OWNERS','A custom broadcast is not a backlog reminder');
   assert.throws(()=>assertSingleNaturalAdminRequest('Barcha kuboklarga eslatma yuborma'),/CLARIFY/);
   const receipt=await requestBacklogReminders({category:'CUPS'},'backlog-audit-admin');
   assert.equal((await requestBacklogReminders({category:'CUPS'},'backlog-audit-admin')).requestId,receipt.requestId,'Retries reuse the same durable daily request');

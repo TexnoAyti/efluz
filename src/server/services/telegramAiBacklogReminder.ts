@@ -3,6 +3,7 @@ import {matchesAiCompetition} from './telegramAiDataService';
 import type {AdminPlan} from './telegramAiAdminCatalog';
 export function isBacklogReminderRequest(text:string){
   const q=normalizeAiEntity(text.replace(/"[^"\n]*"|“[^”\n]*”/g,' ').split(/(?:sarlavha|matn|sabab|izoh)\s*:/i)[0]);
+  if(!/\beslat\w*\b/.test(q)&&!/\b(?:qolgan\w*|eski\w*|oynalmagan\w*|oynamagan\w*|tugamagan\w*|yakunlanmagan\w*)\b/.test(q))return false;
   return /\b(?:eslat\w*|bildirishnoma\w*|xabarnoma\w*)\b/.test(q)&&/\b(?:yubor\w*|jonat\w*|eslat(?:gin|ing)?)\b/.test(q)&&
     !/\b\d{1,3}\s*tur\w*|joriy\s+tur\w*/.test(q)&&/\b(?:hamma\w*|barcha\w*|qolgan\w*|eski\w*|oynalmagan\w*|oynamagan\w*|tugamagan\w*|yakunlanmagan\w*|kubok\w*|kubog\w*|chempionat\w*)\b/.test(q);
 }
