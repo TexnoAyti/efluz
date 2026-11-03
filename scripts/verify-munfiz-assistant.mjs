@@ -39,3 +39,5 @@ for(const language of ['uz','ru','en']){
  assert.notEqual(api.munfizSectionDescription('uzeflife','standings',language),api.munfizSectionDescription('uzeflife','fixtures',language),'Switching a section must change its explanation');
 }
 console.log('PASS contextual help: page-specific steps, local sections, unique targets and explicit explanations in three languages.');
+
+assert.deepEqual(Array.from(help.module.exports.munfizQuestionIndexes('leagues','standings')),[4,8,9,10],'Selected section overrides generic parent-page questions');

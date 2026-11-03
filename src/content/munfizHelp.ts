@@ -65,11 +65,14 @@ export function munfizControlDescription(id:string,language:string):string|null 
 }
 export function munfizQuestionIndexes(page:string,section:string){
  const s=normalizedMunfizSection(section);
- if(['fixtures','mine','results'].includes(s)||['my-club','club','matches'].includes(page))return [3,4,5,6,7,8,9];
- if(['participants','clubs','teams'].includes(s)||['team','custom','leagues'].includes(page))return [1,3,4,10];
  if(s==='standings'||s==='bracket')return [4,8,9,10];
+ if(['fixtures','mine','results'].includes(s))return [3,4,5,6,7,8,9];
+ if(['participants','clubs','teams'].includes(s))return [1,3,4,10];
+ if(['my-club','club','matches'].includes(page))return [3,4,5,6,7,8,9];
+ if(['team','custom','leagues'].includes(page))return [1,3,4,10];
  return [3,4,9,10];
 }
+
 export function munfizControlTitle(id:string,fallback:string,language:string){
  const titles:Record<string,Localized>={
   'round-picker':['Ko‘riladigan turni tanlash','Выбор тура для просмотра','Choose a round to view'],
