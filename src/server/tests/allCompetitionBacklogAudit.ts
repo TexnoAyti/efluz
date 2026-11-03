@@ -74,7 +74,7 @@ export async function verifyAllCompetitionBacklog(){
   assert.equal((await loadLeagueBacklog(euro,seasonId))?.fixtures.length,1);
   const catalog=[{id:'comp-la-liga-2026',name:'La Liga',type:'LEAGUE'},{id:'comp-copa-del-rey-2026',name:'Copa del Rey',type:'KNOCKOUT'}];
   const deps={read:async()=>({data:catalog,complete:true,total:catalog.length}),users:async()=>[]};
-  for(const [text,category] of [['Barcha chempionatlarga eslatma yubor','ALL'],['Barcha kuboklarga eslatma yubor','CUPS'],['Barcha ligalar va kuboklarga eslatma yubor','ALL']] as const){
+  for(const [text,category] of [['Barcha chempionatlarga eslatma yubor','ALL'],['Barcha kuboklarga eslatma yubor','CUPS'],['Barcha ligalar va kuboklarga eslatma yubor','ALL'],['Barcha chempionatlar va kuboklarga eslatma yubor','ALL']] as const){
     const plan=await planNaturalAdminRequest(text,deps);assert.equal(plan?.action,'backlog_remind');assert.equal(plan?.body.category,category);
   }
   const named=await planNaturalAdminRequest('La Liga qolgan o‘yinlariga eslatma yubor',deps);

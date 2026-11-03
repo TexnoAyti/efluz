@@ -17,5 +17,7 @@ export async function planBacklogReminder(text:string,read:(q:any)=>Promise<any>
   if(found.length>1)throw Error('CLARIFY:Bitta turnir nomini yoki barcha musobaqalar deb yozing.');
   if(!/\b(?:hamma\w*|barcha\w*)\b/.test(q)||!/\b(?:chempionat\w*|musobaqa\w*|turnir\w*|liga\w*|kubok\w*|kubog\w*)\b/.test(q))throw Error('CLARIFY:Qaysi turnirga? Masalan: “La Liga qolgan o‘yinlariga eslatma yubor” yoki “barcha kuboklarga eslatma yubor”.');
   const cups=/\b(?:kubok\w*|kubog\w*|cup\w*)\b/.test(q),leagues=/\bliga(?:lar\w*)?\b/.test(q);
+  const allCompetitions=/\b(?:hamma\w*|barcha\w*)\s+(?:faol\s+)?(?:chempionat\w*|musobaqa\w*|turnir\w*)\b/.test(q);
+  if(allCompetitions)return {action:'backlog_remind',body:{category:'ALL'}};
   return {action:'backlog_remind',body:{category:cups&&!leagues?'CUPS':leagues&&!cups?'LEAGUES':'ALL'}};
 }
