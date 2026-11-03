@@ -1,5 +1,5 @@
 .munfiz-root { position:fixed; inset:0; z-index:75; pointer-events:none; }
-.munfiz-root[hidden] { display:none; }
+.munfiz-root[hidden],.munfiz-avatar[hidden] { display:none; }
 .munfiz-avatar { position:absolute; left:0; top:0; width:84px; height:120px; pointer-events:none; transition:transform .85s ease-in-out; }
 .munfiz-avatar[data-dragging=true],.munfiz-root[data-reduced=true] .munfiz-avatar { transition:none; }
 .munfiz-character { display:block; width:84px; height:120px; padding:0; border:0; border-radius:20px; background:transparent; pointer-events:auto; touch-action:none; cursor:grab; filter:drop-shadow(0 4px 4px #0003); }
@@ -7,28 +7,39 @@
 .munfiz-character.is-small { width:44px; height:44px; overflow:hidden; border:1px solid var(--efl-border); border-radius:50%; background:var(--efl-surface); }
 .munfiz-character.is-small img { width:44px; height:61px; object-position:top; }
 .munfiz-minimize { position:absolute; right:-3px; top:-5px; z-index:1; width:26px; height:26px; display:grid; place-items:center; pointer-events:auto; color:var(--efl-text-2); border:1px solid var(--efl-border); border-radius:50%; background:var(--efl-surface); cursor:pointer; }
-.munfiz-panel { position:fixed; box-sizing:border-box; pointer-events:auto; overflow:auto; overscroll-behavior:contain; padding:18px; border:1px solid var(--efl-border); border-radius:20px; color:var(--efl-text); background:var(--efl-surface); box-shadow:0 16px 54px #0004; font-family:inherit; }
-.munfiz-panel header { display:flex; justify-content:space-between; align-items:center; gap:12px; }
-.munfiz-panel header strong { font-size:17px; }
-.munfiz-panel header button { width:36px; height:36px; display:grid; place-items:center; background:var(--efl-surface-2); color:var(--efl-text-2); border:0; border-radius:10px; cursor:pointer; }
-.munfiz-panel h2 { font-size:14px; line-height:1.5; font-weight:750; margin:16px 0 6px; }
-.munfiz-panel p { font-size:14px; line-height:1.75; color:var(--efl-text-2); margin:8px 0 14px; }
-.munfiz-panel .munfiz-intro,.munfiz-panel .munfiz-muted { font-size:12px; color:var(--efl-text-2); }
-.munfiz-action { display:flex; align-items:center; gap:9px; width:100%; min-height:46px; padding:10px 12px; margin-top:8px; border:1px solid var(--efl-border); border-radius:12px; background:var(--efl-surface-2); color:var(--efl-text); font-size:13px; font-weight:700; text-align:left; cursor:pointer; }
+.munfiz-backdrop { position:fixed; inset:0; background:#03071299; pointer-events:auto; }
+.munfiz-panel { position:fixed; display:flex; flex-direction:column; min-width:0; min-height:0; box-sizing:border-box; pointer-events:auto; overflow:hidden; padding:20px; border:1px solid var(--efl-border); border-radius:24px; color:var(--efl-text); background:var(--efl-surface); box-shadow:0 16px 54px #0004; font-family:inherit; }
+/* The global dialog rule paints overlays; this element is the solid content sheet. */
+.efl-preview .munfiz-panel[role=dialog] { background:var(--efl-surface)!important; backdrop-filter:none!important; -webkit-backdrop-filter:none!important; }
+.munfiz-panel header { display:flex; align-items:center; gap:12px; flex-shrink:0; }
+.munfiz-panel header>div { min-width:0; flex:1; }
+.munfiz-panel header strong { font-size:20px; }
+.munfiz-panel .munfiz-context-label { margin:3px 0 0; font-size:13px; line-height:1.4; overflow-wrap:anywhere; }
+.munfiz-help-portrait { flex-shrink:0; width:40px; height:55px; object-fit:contain; }
+.munfiz-panel-close { width:44px; height:44px; flex-shrink:0; display:grid; place-items:center; background:var(--efl-surface-2); color:var(--efl-text-2); border:0; border-radius:12px; cursor:pointer; }
+.munfiz-help-tabs { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:4px; flex-shrink:0; margin:16px 0 12px; padding:4px; border-radius:14px; background:var(--efl-surface-2); }
+.munfiz-help-tabs button { min-height:44px; padding:8px 4px; color:var(--efl-text-2); font-size:13px; font-weight:700; line-height:1.4; overflow-wrap:anywhere; background:transparent; border:0; border-radius:10px; cursor:pointer; }
+.munfiz-help-tabs button[aria-pressed=true] { color:var(--efl-primary); background:var(--efl-surface); box-shadow:0 1px 5px #0001; }
+.munfiz-panel-copy { flex:1 1 auto; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; padding:0 6px 12px 0; }
+.munfiz-panel h2 { font-size:17px; line-height:1.5; font-weight:750; margin:12px 0 8px; }
+.munfiz-panel p { font-size:15px; line-height:1.8; color:var(--efl-text-2); margin:8px 0 16px; }
+.munfiz-panel-actions { flex-shrink:0; padding-top:10px; border-top:1px solid var(--efl-border); display:flex; flex-wrap:wrap; gap:8px; }
+.munfiz-action { display:flex; align-items:center; gap:9px; width:100%; min-height:46px; padding:10px 12px; border:1px solid var(--efl-border); border-radius:12px; background:var(--efl-surface-2); color:var(--efl-text); font-size:14px; font-weight:700; line-height:1.5; text-align:left; cursor:pointer; }
 .munfiz-action.primary { background:var(--efl-primary); color:white; border-color:var(--efl-primary); }
+.munfiz-action svg { flex-shrink:0; }
 .munfiz-action svg:last-child { margin-left:auto; }
 .munfiz-faq>div { border-bottom:1px solid var(--efl-border); }
-.munfiz-faq button { display:flex; align-items:center; gap:8px; min-height:44px; padding:10px 0; border:0; text-align:left; background:transparent; color:var(--efl-text); font-size:12px; line-height:1.6; cursor:pointer; }
+.munfiz-faq button { display:flex; align-items:center; gap:10px; width:100%; min-height:48px; padding:14px 0; border:0; text-align:left; background:transparent; color:var(--efl-text); font-size:15px; line-height:1.6; cursor:pointer; }
 .munfiz-faq svg { flex-shrink:0; }
-.munfiz-root button:focus-visible { outline:2px solid var(--efl-primary); outline-offset:3px; }
+.munfiz-root button:focus-visible,.munfiz-root input:focus-visible { outline:2px solid var(--efl-primary); outline-offset:3px; }
+.munfiz-state { padding:12px; border:1px solid var(--efl-border); border-radius:12px; background:var(--efl-surface-2); }
+.munfiz-checklist { margin:12px 0 18px; padding-left:24px; color:var(--efl-text); font-size:15px; line-height:1.8; }
+.munfiz-checklist li { margin:10px 0; padding-left:4px; }
+.munfiz-catalog-search { display:flex; flex-direction:column; gap:6px; font-size:13px; font-weight:700; color:var(--efl-text-2); margin-bottom:14px; }
+.munfiz-catalog-search input { min-height:46px; width:100%; padding:10px 12px; border:1px solid var(--efl-border); border-radius:12px; background:var(--efl-surface-2); color:var(--efl-text); font:inherit; }
+.munfiz-catalog article { padding:12px 0 18px; border-bottom:1px solid var(--efl-border); }
+.munfiz-state-label { display:inline-flex; padding:4px 8px; border-radius:8px; font-size:12px; color:var(--efl-text-2); background:var(--efl-surface-2); }
+@media(max-width:679px) { .munfiz-panel { padding:16px; border-radius:20px; } .munfiz-help-tabs button { font-size:12px; } }
+@media(min-width:680px) { .munfiz-panel-actions .munfiz-action { flex:1; width:auto; } }
+@media(max-height:440px) { .munfiz-panel { padding:12px 16px; } .munfiz-help-portrait { width:30px; height:40px; } .munfiz-help-tabs { margin:8px 0; } .munfiz-panel-actions { padding-top:8px; } }
 @media(prefers-reduced-motion:reduce) { .munfiz-avatar { transition:none; } }
-
-.munfiz-state { padding:10px; border:1px solid var(--efl-border); border-radius:10px; background:var(--efl-surface-2); }
-
-.munfiz-checklist { margin:12px 0 18px; padding-left:22px; color:var(--efl-text); font-size:13px; line-height:1.75; }
-.munfiz-checklist li { margin:6px 0; padding-left:3px; }
-
-.munfiz-panel { display:flex; flex-direction:column; overflow:hidden; }
-.munfiz-panel header,.munfiz-panel-actions { flex-shrink:0; }
-.munfiz-panel-copy { flex:1 1 auto; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; }
-.munfiz-panel-actions { padding-top:6px; border-top:1px solid var(--efl-border); }
