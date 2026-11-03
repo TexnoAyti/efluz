@@ -20,6 +20,8 @@
     "test:season-operations-v3": "node scripts/run-isolated-test.mjs src/server/tests/seasonOperationsV3ContractTest.ts",
     "test:match-operations-v4": "node scripts/run-isolated-test.mjs src/server/tests/matchOperationsV4ContractTest.ts",
     "test:telegram-ai:all": "node scripts/run-telegram-ai-tests.mjs",
+    "telegram:userbot": "tsx workers/telegram-userbot.ts",
+    "telegram:userbot:session": "tsx scripts/createTelegramUserSession.ts",
     "test:telegram-ai": "node scripts/run-isolated-test.mjs src/server/tests/telegramAiAssistantRegressionTest.ts",
     "test:custom-tournaments": "tsx --test src/server/tests/customTournamentsRegressionTest.ts",
     "dev": "tsx server.ts",
@@ -83,6 +85,7 @@
     "sql.js": "^1.14.2",
     "tailwind-merge": "^3.6.0",
     "three": "^0.180.0",
+    "teleproto": "^1.230.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
