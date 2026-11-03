@@ -127,6 +127,7 @@ jobs:
           node scripts/run-isolated-test.mjs src/server/tests/operationTimingRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/leagueBacklogReminderRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/allCompetitionBacklogAudit.ts
+          node scripts/run-isolated-test.mjs src/server/tests/playerMatchPermissionFreshnessTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/roundProgressReconciliationSqlTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/adminResultNotificationTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/postgresAdminColdStartTest.ts

@@ -5,6 +5,7 @@ import { validateBody } from '../middleware/validationMiddleware';
 import {
   getFixtureByIdFirestore,
   submitFixtureResultFirestore,
+  refreshFixtureMatchdayRules,
 } from '../firebase/firestoreStore';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
 import { invalidateFixtureReadModels, refreshChangedFixtureReadModel } from '../readModel/readModelStore';
@@ -38,7 +39,8 @@ fixturesRouter.get('/:id', async (req: Request, res: Response) => {
       res.status(404).json({ error: 'Fixture not found', code: 'NOT_FOUND', message: `Fixture '${req.params.id}' not found` });
       return;
     }
-    res.json({ fixture });
+    const current=process.env.DATABASE_PROVIDER==='supabase'?(await refreshFixtureMatchdayRules([fixture],fixture.seasonId||'season-2026-27'))[0]:fixture;
+    res.json({ fixture:current });
   } catch (err: any) {
     handleFirestoreError(res, err, `GET /api/fixtures/${req.params.id}`);
   }
