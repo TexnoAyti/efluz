@@ -47,3 +47,10 @@
 .efl-guide-card[data-compact=true] .efl-guide-replay-hint { display:none; }
 
 .efl-guide-progress { height:auto; min-height:7px; flex-wrap:wrap; }
+
+.efl-guide-target-tap { position:fixed; z-index:1; padding:0!important; border:0!important; border-radius:14px; background:transparent!important; box-shadow:none!important; cursor:pointer; pointer-events:auto; }
+.efl-guide-tap-hand { position:absolute; right:-6px; bottom:-12px; display:grid; place-items:center; width:30px; height:30px; background:var(--efl-primary); color:white; border:2px solid var(--efl-surface); border-radius:50%; }
+.efl-guide-layer[data-direct=true] .efl-guide-card { z-index:2; }
+.efl-guide-layer[data-direct=true] .efl-guide-progress { display:none; }
+.efl-guide-layer[data-direct=true] .efl-guide-card h2 { font-size:21px; letter-spacing:-.4px; }
+.efl-guide-tap-hint { color:var(--efl-primary); font-size:11px; line-height:1.6; margin:12px 0 0; }

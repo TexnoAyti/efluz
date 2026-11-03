@@ -107,3 +107,16 @@ component.guideLanguage='uz';component.guideStateIndex=0;component.guideStep=0;
 const contextual=renderToStaticMarkup(React.createElement(component.module.exports.FirstVisitGuide,{steps:[{title:'Faqat shu sahifa',description:'Shu tugmaning izohi',target:'[data-guide="score-entry"]'}],mascot:true,onFinish:()=>{}}));
 assert.match(contextual,/Faqat shu sahifa/);assert.match(contextual,/Shu tugmaning izohi/);assert.match(contextual,/munfiz\/v2\/point.webp/);
 assert.equal((contextual.match(/data-active=/g)||[]).length,1,'Contextual tour uses its own controls, not seven global steps');
+
+assert.equal(helper.findGuideTarget({querySelectorAll(){throw new Error('Intro must not query an empty selector');}},''),undefined);
+component.guideStep=0;component.guideStateIndex=0;
+const introduction=renderToStaticMarkup(React.createElement(component.module.exports.FirstVisitGuide,{steps:[{title:'O‘yinlar',description:'Qisqa maqsad',target:''},{title:'Hisob',description:'Hisobni yuborish',target:'[data-guide="score-entry"]'}],mascot:true,direct:true,onFinish:()=>{}}));
+assert.match(introduction,/Qisqa maqsad/);assert.match(introduction,/Ko‘rsat/);assert.match(introduction,/data-direct="true"/);
+assert.doesNotMatch(introduction,/munfiz-help-tabs|munfiz-catalog|efl-guide-target-tap/,'A character tap opens the purpose directly, without a help menu or premature target');
+console.log('PASS direct coachmark: purpose intro, show action and no empty-selector query.');
+
+for(const [width,height,target] of [[844,390,{left:130,top:180,width:110,height:44}],[844,390,{left:20,top:170,width:800,height:44}],[390,844,{left:12,top:340,width:340,height:50}]]){
+ const p=helper.guidePlacement(target,width,height,320),right=p.left+p.width,bottom=p.top+Math.min(320,p.maxHeight);
+ assert.ok(right<=target.left||p.left>=target.left+target.width||bottom<=target.top||p.top>=target.top+target.height,'The explanation must not intercept a highlighted target');
+}
+console.log('PASS target tap geometry: short landscape and mobile guide cards leave their target clear.');

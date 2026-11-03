@@ -544,7 +544,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
         </div>
 
         {leagues.length > 0 && (
-          <div className={`flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none ${EFL_2_DESIGN_ENABLED ? 'efl-league-icon-selector' : ''}`}>
+          <div data-munfiz-control="league-picker" className={`flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none ${EFL_2_DESIGN_ENABLED ? 'efl-league-icon-selector' : ''}`}>
             {leagues.map((league) => {
               const isSelected = selectedLeagueId === league.id;
               const welcomeIcon = EFL_2_DESIGN_ENABLED ? welcomeLeagueIcons[league.id] : undefined;

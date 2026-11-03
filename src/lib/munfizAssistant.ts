@@ -36,3 +36,13 @@ export function munfizHelpLayout(width:number,height:number,offsetTop=0,insets={
  const panelWidth=Math.min(720,availableWidth);
  return {left:insets.left+gap+(availableWidth-panelWidth)/2,top:offsetTop+insets.top+gap,width:panelWidth,height:Math.max(1,height-insets.top-insets.bottom-gap*2)};
 }
+
+/** One tap opens the page purpose, then every distinct documented local control, without a menu. */
+export function buildMunfizDirectTour(title:string,purpose:string,controls:MunfizControl[],lockedNote:string){
+ const seen=new Set<string>();
+ const hasInner=controls.some(item=>item.id.startsWith('section-'));
+ return [{title,description:purpose,target:''},...controls.filter(item=>{
+  if(!item.description||item.id.startsWith('nav-')||item.id.startsWith('btn-')||(hasInner&&item.id.startsWith('category-'))||(item.selected&&item.id.startsWith('section-')))return false;
+  const key=item.id.toLowerCase();if(seen.has(key)||seen.has(item.target))return false;seen.add(key);seen.add(item.target);return true;
+ }).map(item=>({title:item.title,description:item.description+(item.disabled?' '+lockedNote:''),target:item.target}))];
+}

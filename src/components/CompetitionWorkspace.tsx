@@ -3,7 +3,7 @@ import {Search,ChevronRight} from 'lucide-react';
 
 /** Compact directory card following the domestic club card hierarchy. */
 export function CompetitionEntry({emblem,title,meta,status,description,preview,footer,onClick}:{emblem:React.ReactNode;title:string;meta:React.ReactNode;status?:React.ReactNode;description?:string;preview?:React.ReactNode;footer:React.ReactNode;onClick:()=>void}) {
- return <button type="button" className="competition-entry" onClick={onClick}>
+ return <button data-munfiz-control="entry-open" type="button" className="competition-entry" onClick={onClick}>
   <span className="competition-entry-heading"><span className="competition-entry-emblem">{emblem}</span><span className="competition-entry-title"><h3>{title}</h3><span className="competition-entry-meta">{meta}</span></span>{status&&<span className="competition-entry-status">{status}</span>}</span>
   {description&&<span className="competition-entry-description line-clamp-2">{description}</span>}
   {preview&&<span className="competition-entry-preview">{preview}</span>}

@@ -5,7 +5,7 @@ import vm from 'node:vm';
 const require=createRequire(import.meta.url);
 const compiled=await build({entryPoints:['src/lib/munfizAssistant.ts','src/content/munfizHelp.ts'],outdir:'test-munfiz',bundle:true,write:false,platform:'node',format:'cjs'});
 const context={module:{exports:{}},exports:{}};context.exports=context.module.exports;vm.runInNewContext(compiled.outputFiles.find(f=>f.path.endsWith('/munfizAssistant.js')).text,context);
-const {parkMunfiz,assistantPage,selectMunfizControls,munfizHelpLayout,MUNFIZ_SIZE}=context.module.exports;
+const {parkMunfiz,assistantPage,selectMunfizControls,munfizHelpLayout,MUNFIZ_SIZE,buildMunfizDirectTour}=context.module.exports;
 for(const [w,h] of [[320,568],[390,844],[844,390],[320,240]]){
  const result=parkMunfiz(w,h,[],{x:2000,y:2000});
  assert.ok(result.x>=0&&result.x+MUNFIZ_SIZE.width<=w);assert.ok(result.y>=0&&result.y+MUNFIZ_SIZE.height<=h);
@@ -52,3 +52,19 @@ for(const [width,height] of [[320,568],[390,844],[844,390]]){
  assert.ok(p.height>=height-72,'The sheet uses the viewport rather than reserving 322px for the avatar');
 }
 console.log('PASS roomy help: full available-action lists, viewport/safe-area bounds and no avatar-space deduction.');
+
+const direct=buildMunfizDirectTour('O‘yinlar','Shu sahifaning qisqa maqsadi',controls,'Hozir yopiq');
+assert.equal(direct[0].target,'','Direct help starts with the page purpose before highlighting anything');
+assert.equal(direct[0].description,'Shu sahifaning qisqa maqsadi');
+assert.ok(direct.some(step=>step.description.includes('Hozir yopiq')),'Disabled controls are explained instead of silently omitted');
+assert.ok(!direct.some(step=>step.target==='global'||step.target==='category'),'No global-menu loop when local controls exist');
+assert.equal(direct.filter(step=>step.target==='score'||step.target==='other-selector').length,1);
+assert.equal(buildMunfizDirectTour('Page','Purpose',many,'Locked').length,15,'The direct flow does not cap documented controls');
+for(const language of ['uz','ru','en']){
+ assert.notEqual(help.module.exports.munfizPagePurpose('uzeflife','fixtures',language),help.module.exports.munfizPagePurpose('uzeflife','standings',language));
+ assert.ok(help.module.exports.munfizBriefControl('league-picker',language));
+ assert.ok(help.module.exports.munfizBriefControl('entry-open',language));
+}
+console.log('PASS direct help: purpose first, no menus, every distinct local control and locked-state explanations.');
+
+for(const language of ['uz','ru','en'])for(const id of ['entry-open','league-picker','club-open','match-actions','notification-filter','match-filter','team-manage'])assert.ok(help.module.exports.munfizBriefControl(id,language),id+' needs a specific brief explanation');
