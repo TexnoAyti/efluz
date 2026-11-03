@@ -9,6 +9,7 @@ import {telegramMiniAppButton} from './telegramMiniAppButton';
 import {SEED_CLUBS} from '../db/seed';
 
 export const BACKLOG_STATE_COLLECTION = 'league_reminder_workers';
+export const BACKLOG_SCAN_VERSION = 2;
 export interface LeagueReminderGuard {competitionId: string; seasonId: string; day: string}
 const html = (s: unknown) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 export const reminderDay = (now = Date.now()) => new Date(now + 5 * 3600000).toISOString().slice(0,10);
@@ -29,15 +30,24 @@ export async function loadLeagueBacklog(competitionId: string, seasonId: string)
   const competition={...doc.data(),id:doc.id} as any;
   if (!doc.exists || competition.seasonId !== seasonId || !enabled(competition)) return null;
   const rows=await db.collection('fixtures').where('competitionId','==',competitionId).where('seasonId','==',seasonId).get();
-  const fixtures=filterRetiredFixtures(rows.docs.map(d=>({...d.data(),id:d.id}) as any),seasonId)
-    .filter(f=>Number.isInteger(Number(f.matchday)) && Number(f.matchday)>0 && Number(f.matchday)<=competition.currentMatchday && ['SCHEDULED','PENDING_CONFIRMATION'].includes(f.status) && f.homeClubId && f.awayClubId && f.homeClubId!=='TBD' && f.awayClubId!=='TBD')
+  const seasonFixtures=filterRetiredFixtures(rows.docs.map(d=>({...d.data(),id:d.id}) as any),seasonId);
+  const locks=await db.collection('matchday_locks').where('competitionId','==',competitionId).where('seasonId','==',seasonId).get();
+  // Admins can select an earlier round again. The selected round is not a
+  // history boundary: confirmed results and actual opening records prove that
+  // later rounds have already been reached. A future scheduled date alone does not.
+  const validRound=(n:unknown)=>Number.isInteger(Number(n)) && Number(n)>0 && Number(n)<=100;
+  const reachedMatchday=Math.max(competition.currentMatchday,
+    ...seasonFixtures.filter(f=>['CONFIRMED','PENDING_CONFIRMATION'].includes(f.status) && validRound(f.matchday)).map(f=>Number(f.matchday)),
+    ...locks.docs.map(d=>d.data()).filter(l=>validRound(l.matchday) && Number.isFinite(Date.parse(l.openedAt)) && Date.parse(l.openedAt)<=Date.now()).map(l=>Number(l.matchday)));
+  const fixtures=seasonFixtures
+    .filter(f=>Number.isInteger(Number(f.matchday)) && Number(f.matchday)>0 && Number(f.matchday)<=reachedMatchday && ['SCHEDULED','PENDING_CONFIRMATION'].includes(f.status) && f.homeClubId && f.awayClubId && f.homeClubId!=='TBD' && f.awayClubId!=='TBD')
     .sort((a,b)=>Number(a.matchday)-Number(b.matchday)||a.id.localeCompare(b.id));
   const clubIds=[...new Set(fixtures.flatMap(f=>[f.homeClubId,f.awayClubId]))] as string[];
   const occupancies=await byIds('club_occupancies',clubIds.map(id=>`${seasonId}_${id}`));
   const owners=new Map<string,string>();
   for(const clubId of clubIds){const o=occupancies.get(`${seasonId}_${clubId}`);if(o?.status==='active' && o.userId)owners.set(clubId,o.userId);}
   const users=await byIds('users',[...new Set(owners.values())]);
-  return {competition,fixtures,owners,users};
+  return {competition,reachedMatchday,fixtures,owners,users};
 }
 
 export function leagueBacklogMessage(data: NonNullable<Awaited<ReturnType<typeof loadLeagueBacklog>>>, userId: string) {
@@ -55,7 +65,7 @@ export function leagueBacklogMessage(data: NonNullable<Awaited<ReturnType<typeof
     const validUsername=/^[A-Za-z0-9_]{5,32}$/.test(username)?username:'';
     const name=SEED_CLUBS.find(c=>c.id===opponentClub)?.name || opponentClub;
     const who=validUsername?`@${validUsername}`:opponent?[opponent.firstName,opponent.lastName].filter(Boolean).join(' ').slice(0,45)||'Guruhda admin orqali bog‘laning':'Klub egasi hali yo‘q';
-    const line=`${Number(f.matchday)}-tur · <b>${html(String(name).slice(0,50))}</b> · ${html(who)}${f.status==='PENDING_CONFIRMATION'?' · ⏳ hisob tasdiqlanishi kutilmoqda':''}${Number(f.matchday)<data.competition.currentMatchday?' · eski tur: admin yordami':''}`;
+    const line=`${Number(f.matchday)}-tur · <b>${html(String(name).slice(0,50))}</b> · ${html(who)}${f.status==='PENDING_CONFIRMATION'?' · ⏳ hisob tasdiqlanishi kutilmoqda':''}${Number(f.matchday)!==data.competition.currentMatchday?' · eski tur: admin yordami':''}`;
     if(lines.join('\n').length+line.length>3000)break;
     lines.push(line);
     if(validUsername&&!contacts.has(validUsername)){contacts.add(validUsername);buttons.push([{text:`${Number(f.matchday)}-tur · @${validUsername}`,url:`https://t.me/${validUsername}`}]);}
@@ -84,7 +94,7 @@ export async function processLeagueBacklogReminders(options: {now?:number; deadl
   let state:any;
   try{
     const day=reminderDay(options.now),saved=(await ref.get()).data();
-    state=saved?.day===day?saved:{day,completed:[],cursors:{},queued:0,skipped:0,status:'PENDING'};
+    state=saved?.day===day && saved.scanVersion===BACKLOG_SCAN_VERSION?saved:{day,scanVersion:BACKLOG_SCAN_VERSION,completed:[],cursors:{},queued:0,skipped:0,status:'PENDING'};
     if(state.status==='DONE')return false;
     const rows=await db.collection('competitions').where('seasonId','==',CURRENT_SEASON_ID).get();
     const competitions=rows.docs.map(d=>({...d.data(),id:d.id})).filter(enabled).sort((a,b)=>a.id.localeCompare(b.id));

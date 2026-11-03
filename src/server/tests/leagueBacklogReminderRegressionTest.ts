@@ -4,7 +4,7 @@ import {adminNotificationsRouter} from '../routes/adminNotifications.routes';
 import {runDeadlineSweep} from '../services/matchOperationsV4Service';
 import {getFirestoreDb} from '../firebase/admin';
 import {CURRENT_SEASON_ID as season} from '../../lib/seasonParticipationPolicy';
-import {loadLeagueBacklog,leagueBacklogMessage,processLeagueBacklogReminders,freshLeagueReminder,reminderDay,BACKLOG_STATE_COLLECTION} from '../services/leagueBacklogReminders';
+import {loadLeagueBacklog,leagueBacklogMessage,processLeagueBacklogReminders,freshLeagueReminder,reminderDay,BACKLOG_STATE_COLLECTION,BACKLOG_SCAN_VERSION} from '../services/leagueBacklogReminders';
 import {enqueueSmartTelegramNotification} from '../services/smartNotificationService';
 import {PostgresNotificationStore} from '../services/postgresNotificationStore';
 import {getNotificationStore} from '../services/postgresNotificationStore';
@@ -32,6 +32,23 @@ export async function verifyLeagueBacklogReminders(){
     assert.match(message.body,/<b>7<\/b>/);assert.match(message.body,/1-tur/);assert.match(message.body,/7-tur/);assert.match(message.body,/eski tur: admin yordami/);assert.match(message.body,/tur raqami, raqib va hisobni/);assert.match(message.body,/tasdiqlanishi kutilmoqda/);
     assert.equal(message.replyMarkup.inline_keyboard.filter(r=>r[0].url==='https://t.me/audit_away').length,1,'One usable opponent contact, not seven duplicate buttons');
     assert.ok(message.body.length<3900);assert.equal(leagueBacklogMessage(data,'historical-wrong-owner'),null);
+    // Production selected round 9 again, after results already reached round 19.
+    // Its old scanner marked DONE/zero and silently dropped every later backlog.
+    await db.collection('competitions').doc(competitionId).update({currentMatchday:9});
+    for(let i=1;i<=7;i++)await db.collection('fixtures').doc('backlog-game-'+i).update({matchday:i+9});
+    await db.collection('fixtures').doc('backlog-proof').set({seasonId:season,competitionId,matchday:19,status:'CONFIRMED',homeClubId:'backlog-club-home',awayClubId:'backlog-club-away'});
+    data=(await loadLeagueBacklog(competitionId,season))!;
+    assert.equal(data.reachedMatchday,19);assert.equal(data.fixtures.length,7,'Selecting round 9 must retain unfinished rounds 10–16 after round 19 results');
+    assert.match(leagueBacklogMessage(data,home)!.body,/10-tur/);
+    await db.collection('fixtures').doc('backlog-proof').delete();
+    await db.collection('fixtures').doc('backlog-game-7').update({status:'SCHEDULED'});
+    await db.collection('matchday_locks').doc('backlog-opened').set({seasonId:season,competitionId,matchday:19,openedAt:'2026-10-01T00:00:00Z',isOpen:false,isLocked:true});
+    assert.equal((await loadLeagueBacklog(competitionId,season))!.fixtures.length,7,'Previously opened round remains reached after locking it');
+    await db.collection('matchday_locks').doc('backlog-opened').update({openedAt:'2099-01-01T00:00:00Z'});
+    assert.equal((await loadLeagueBacklog(competitionId,season))!.fixtures.length,0,'A future opening timestamp does not authorize future-round reminders');
+    await db.collection('matchday_locks').doc('backlog-opened').delete();
+    await db.collection('competitions').doc(competitionId).update({currentMatchday:19});
+    for(let i=1;i<=7;i++)await db.collection('fixtures').doc('backlog-game-'+i).update({matchday:i,status:i===7?'PENDING_CONFIRMATION':'SCHEDULED'});
     assert.equal(await processLeagueBacklogReminders({now:Date.parse(reminderDay()+'T22:00:00Z')}),false,'Nighttime does not enqueue');
     const state=db.collection(BACKLOG_STATE_COLLECTION).doc(season);await state.delete();
     // Isolate this synthetic league from other native-suite fixtures without touching their scores.
@@ -42,12 +59,19 @@ export async function verifyLeagueBacklogReminders(){
     };
     // Other native audits may have leagues; seed the completed list for this run.
     const all=await db.collection('competitions').where('seasonId','==',season).get();
-    await state.set({day:reminderDay(now),completed:all.docs.filter(d=>d.id!==competitionId).map(d=>d.id),cursors:{},queued:0,skipped:0,status:'PENDING'});
+    await state.set({day:reminderDay(now),scanVersion:BACKLOG_SCAN_VERSION,completed:all.docs.filter(d=>d.id!==competitionId).map(d=>d.id),cursors:{},queued:0,skipped:0,status:'PENDING'});
     await assert.rejects(processLeagueBacklogReminders({now,enqueue}),/SYNTHETIC_ENQUEUE_OUTAGE/);
     assert.equal((await state.get()).data()?.status,'RETRY_PENDING');
     for(let i=0;i<6;i++)if(!await processLeagueBacklogReminders({now,enqueue}))break;
     assert.equal((await state.get()).data()?.status,'DONE');assert.equal(events,2,'Partial failure resumes without re-enqueueing successful player');
     assert.equal(await processLeagueBacklogReminders({now,enqueue}),false);assert.equal(events,2,'Repeated daily worker is a no-op');
+    const oldState={...(await state.get()).data()};delete oldState.scanVersion;
+    await state.set({...oldState,status:'DONE',queued:0});
+    const rescanned=new Set<string>();
+    for(let i=0;i<100;i++)if(!await processLeagueBacklogReminders({now,enqueue:async params=>{rescanned.add(params.userId);return false;}}))break;
+    assert.ok(rescanned.has(home)&&rescanned.has(away),'Pre-fix DONE/zero state is rescanned the same day');
+    assert.equal((await state.get()).data()?.scanVersion,BACKLOG_SCAN_VERSION);
+    assert.equal((await state.get()).data()?.status,'DONE');
     const queue:any[]=await getNotificationStore()!.get(`${KEY_PREFIX}:telegram:queue`)||[];
     const jobs=queue.filter(j=>j.leagueReminder?.competitionId===competitionId);assert.equal(jobs.length,2,'One durable digest per current owner');
     assert.equal(await enqueueSmartTelegramNotification({userId:home,seasonId:season,eventId:`matchday-open:backlog:${competitionId}:${reminderDay(now)}`,...message,deferDrain:true}),false,'Lost checkpoint retry uses stable queue dedupe');
