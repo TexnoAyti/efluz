@@ -1403,13 +1403,15 @@ export function checkFixturePlayability(
   homeClubId?: string | null,
   awayClubId?: string | null,
   compData?: Partial<FirestoreCompetitionDoc> | null,
-  preloadedLock?: FirestoreMatchdayLockDoc | null
+  preloadedLock?: FirestoreMatchdayLockDoc | null,
+  authoritativeRules = false
 ): { isPlayable: boolean; activeMatchday: number } {
   let resolvedComp = compData;
   if (!resolvedComp && competitionId) {
     resolvedComp = compOverrideMap.get(competitionId) || null;
   }
   const activeMatchday = resolvedComp?.currentMatchday || 1;
+  if (authoritativeRules && !compData) return {isPlayable:false,activeMatchday};
 
   if (fixtureStatus === 'CONFIRMED') {
     return { isPlayable: false, activeMatchday };
@@ -1422,7 +1424,7 @@ export function checkFixturePlayability(
   const key = getMatchdayLockKey(seasonId, competitionId, matchday);
   let lock: FirestoreMatchdayLockDoc | null = preloadedLock || null;
 
-  if (!lock) {
+  if (!lock && !authoritativeRules) {
     if (matchdayLocksCache.has(key)) {
       lock = matchdayLocksCache.get(key) || null;
     } else {
@@ -2780,11 +2782,21 @@ const matchdayLocksCache = new Map<string, FirestoreMatchdayLockDoc>();
 
 export async function refreshFixtureMatchdayRules(fixtures: Fixture[], seasonId: string): Promise<Fixture[]> {
   if (process.env.DATABASE_PROVIDER === 'supabase') {
+    const db=getFirestoreDb(),competitions=new Map<string,FirestoreCompetitionDoc>();
     const ids=[...new Set(fixtures.map(f=>f.competitionId))];
     for(let i=0;i<ids.length;i+=30){
-      const docs=await getFirestoreDb().collection(COLLECTIONS.COMPETITIONS).where(FieldPath.documentId(),'in',ids.slice(i,i+30)).get();
-      for(const doc of docs.docs)compOverrideMap.set(doc.id,{...doc.data(),id:doc.id} as FirestoreCompetitionDoc);
+      const docs=await db.collection(COLLECTIONS.COMPETITIONS).where(FieldPath.documentId(),'in',ids.slice(i,i+30)).get();
+      for(const doc of docs.docs)competitions.set(doc.id,{...doc.data(),id:doc.id} as FirestoreCompetitionDoc);
     }
+    // Permission reads must not consult a round snapshot: loading it can replace
+    // the fresh competition with an older version and resurrect old SQLite locks.
+    const rules=new Map<string,Map<number,FirestoreMatchdayLockDoc>>();
+    await Promise.all(ids.map(async id=>{
+      const rows=await db.collection(COLLECTIONS.MATCHDAY_LOCKS).where('competitionId','==',id).where('seasonId','==',seasonId).get();
+      rules.set(id,new Map(rows.docs.map(d=>{const lock=d.data() as FirestoreMatchdayLockDoc;return [Number(lock.matchday),lock];})));
+    }));
+    for(const [id,c]of competitions)compOverrideMap.set(id,c);
+    return fixtures.map(f=>({...f,...checkFixturePlayability(f.competitionId,f.seasonId||seasonId,f.matchday,f.status,f.homeClubId,f.awayClubId,competitions.get(f.competitionId),rules.get(f.competitionId)?.get(Number(f.matchday))||null,true)}));
   }
   const rules = new Map<string, Record<number, FirestoreMatchdayLockDoc>>();
   await Promise.all([...new Set(fixtures.map(f => f.competitionId))].map(async id => {
