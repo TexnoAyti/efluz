@@ -45,7 +45,7 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
   const c = user?.isAdmin ? previewCopy : null;
 
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
-  const [activeFilter, setActiveFilter] = useState<'ALL' | 'PENDING' | 'CONFIRMED' | 'DISPUTED'>('ALL');
+  const [activeFilter, setActiveFilter] = useState<'ALL' | 'PENDING' | 'CONFIRMED' | 'DISPUTED'>('PENDING');
   const [selectedFixtureForModal, setSelectedFixtureForModal] = useState<Fixture | null>(
     initialSelectedFixture || null
   );
@@ -64,7 +64,7 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
       if (res.fixtures && res.fixtures.length > 0) {
         // If currently focused fixture is in the new list, update it, otherwise pick next upcoming
         const match = focusedFixture ? res.fixtures.find((f) => f.id === focusedFixture.id) : null;
-        const next = match || res.fixtures.find((f) => f.status !== 'CONFIRMED') || res.fixtures[0];
+        const next = match || res.fixtures.find((f) => ['SCHEDULED','PENDING_CONFIRMATION'].includes(f.status) && f.isPlayable !== false) || res.fixtures.find((f) => f.status !== 'CONFIRMED') || res.fixtures[0];
         setFocusedFixture(next);
       } else {
         setFocusedFixture(null);
@@ -142,7 +142,7 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
           </div>
           <h2 className="text-xl sm:text-2xl font-black text-white">{t.navMyMatches}</h2>
           <p className="text-xs text-slate-400 mt-1">
-            {c?.intro || 'Play your fixtures in eFootball and submit/confirm verified match scores.'}
+            {language==='uz'?'Kerakli uchrashuvni tanlang va hisobni kiriting. Oldingi turlardagi qolgan o‘yinlarni ham tanlash mumkin; raqibingiz hisobni tasdiqlaydi.':language==='ru'?'Выберите нужный матч и внесите счёт. Доступны и оставшиеся матчи прошлых туров; соперник подтверждает результат.':'Choose the match and enter its score. Unfinished earlier rounds are available too; your opponent confirms the result.'}
           </p>
         </div>
 

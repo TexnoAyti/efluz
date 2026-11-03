@@ -101,7 +101,8 @@ export async function controlCompetitionMatchday(competitionId: string, params: 
       ...(isOpen ? { openedAt: params.action === 'EXTEND' ? previousLock?.openedAt || now : now, expiresAt: deadline! } : { lockedAt: now }),
       ...(params.adminUserId ? { updatedByUserId: params.adminUserId } : {}),
     };
-    const changes: Partial<FirestoreCompetitionDoc> = { updatedAt: now };
+    const changes: Partial<FirestoreCompetitionDoc> & {resultEntryThroughMatchday?:number} = { updatedAt: now };
+    if (isOpen && Number.isInteger((comp as any).resultEntryThroughMatchday)) changes.resultEntryThroughMatchday=Math.max((comp as any).resultEntryThroughMatchday,current,target);
     const locks = [lock];
     if (params.action === 'SELECT' && target !== current) {
       locks.push({ id: key(current), seasonId, competitionId, matchday: current, overrideStatus: 'FORCE_LOCKED', isOpen: false, isLocked: true, durationHours: hours, lockedAt: now, updatedAt: now, ...(params.adminUserId ? { updatedByUserId: params.adminUserId } : {}) });

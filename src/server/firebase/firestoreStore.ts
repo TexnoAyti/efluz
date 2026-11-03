@@ -13,6 +13,7 @@ import { invalidateSharedAdminData } from '../services/adminReviewCache';
 import { filterRetiredFixtures, isRetiredFixture, assertFixtureNotRetired, RETIRED_FIXTURES, correctFixtureMatchday, hasFixtureMatchdayCorrection } from '../services/retiredFixtureService';
 import { recordDurableRead } from '../services/durableReadCosts';
 import { resolveMatchdayGate } from '../../lib/matchdayState';
+import {backlogResultAllowed,readBacklogResultAccess} from '../services/backlogResultEntry';
 import { Firestore, FieldValue, FieldPath } from 'firebase-admin/firestore';
 import { getNotificationControls, notificationVisible } from '../services/notificationVisibility';
 import { getNotificationReadState, applyNotificationReadState, persistNotificationReadState } from '../services/notificationReadState';
@@ -1451,6 +1452,7 @@ export function checkFixturePlayability(
     }
   }
 
+  if (backlogResultAllowed({seasonId,competitionId,matchday,status:fixtureStatus,homeClubId,awayClubId},resolvedComp,lock)) return {isPlayable:true,activeMatchday};
   const explicitGate = resolveMatchdayGate(lock);
   if (explicitGate !== null) return { isPlayable: explicitGate, activeMatchday };
 
@@ -2777,6 +2779,13 @@ export function getMatchdayLockKey(seasonId: string, competitionId: string, matc
 const matchdayLocksCache = new Map<string, FirestoreMatchdayLockDoc>();
 
 export async function refreshFixtureMatchdayRules(fixtures: Fixture[], seasonId: string): Promise<Fixture[]> {
+  if (process.env.DATABASE_PROVIDER === 'supabase') {
+    const ids=[...new Set(fixtures.map(f=>f.competitionId))];
+    for(let i=0;i<ids.length;i+=30){
+      const docs=await getFirestoreDb().collection(COLLECTIONS.COMPETITIONS).where(FieldPath.documentId(),'in',ids.slice(i,i+30)).get();
+      for(const doc of docs.docs)compOverrideMap.set(doc.id,{...doc.data(),id:doc.id} as FirestoreCompetitionDoc);
+    }
+  }
   const rules = new Map<string, Record<number, FirestoreMatchdayLockDoc>>();
   await Promise.all([...new Set(fixtures.map(f => f.competitionId))].map(async id => {
     rules.set(id, await getCompetitionMatchdayLocksFirestore(seasonId, id));
@@ -4140,7 +4149,8 @@ export async function submitFixtureResultFirestore(
 
 
     // Authoritative Server-Side Isolated Matchday Lock Check FIRST
-    if (fixture.competitionId && fixture.matchday) {
+    const backlogEntry = await readBacklogResultAccess({...fixture,id:fixtureId});
+    if (!backlogEntry && fixture.competitionId && fixture.matchday) {
       await assertMatchdayPlayableFirestore(
         fixture.seasonId || 'season-2026-27',
         fixture.competitionId,
@@ -4185,6 +4195,9 @@ export async function submitFixtureResultFirestore(
 
       if (!txFixDoc.exists) throw new Error(`Fixture with ID '${fixtureId}' not found.`);
       const currentFixture = txFixDoc.data() as FirestoreFixtureDoc;
+      if (backlogEntry && !await readBacklogResultAccess(currentFixture,transaction)) {
+        throw Object.assign(new Error('MATCHDAY_LOCKED: O‘yin yoki tur holati o‘zgardi. Yangilab qayta urinib ko‘ring.'),{code:'MATCHDAY_LOCKED',statusCode:403});
+      }
       assertNoDisciplinaryHold(currentFixture as any);
       if (currentFixture.status === 'CONFIRMED') {
         throw Object.assign(new Error('This match result is already CONFIRMED and cannot be modified.'), { code: 'RESULT_ALREADY_CONFIRMED', statusCode: 409 });

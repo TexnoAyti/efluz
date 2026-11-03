@@ -7,13 +7,16 @@ import {CURRENT_SEASON_ID, isSeasonCompetitionEnabled} from '../../lib/seasonPar
 import {enqueueSmartTelegramNotification} from './smartNotificationService';
 import {telegramMiniAppButton} from './telegramMiniAppButton';
 import {SEED_CLUBS} from '../db/seed';
+import {filterPublishedEuropeanFixtures} from './europeanFixtureGate';
+import {backlogResultAllowed} from './backlogResultEntry';
 
 export const BACKLOG_STATE_COLLECTION = 'league_reminder_workers';
-export const BACKLOG_SCAN_VERSION = 2;
+export const BACKLOG_SCAN_VERSION = 3;
 export interface LeagueReminderGuard {competitionId: string; seasonId: string; day: string}
 const html = (s: unknown) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 export const reminderDay = (now = Date.now()) => new Date(now + 5 * 3600000).toISOString().slice(0,10);
-const enabled = (c: any) => c.type === 'LEAGUE' && !['completed','cancelled','archived','draft'].includes(String(c.status || '').toLowerCase()) && Number.isInteger(c.currentMatchday) && c.currentMatchday > 0 && c.currentMatchday <= 100 && isSeasonCompetitionEnabled(c.id,c.seasonId);
+export const backlogCompetitionEnabled = (c: any) => ['LEAGUE','KNOCKOUT','SUPER_CUP','EUROPEAN_LEAGUE_PHASE','EUROPEAN_KNOCKOUT'].includes(c.type) && !c.hidden && !['completed','cancelled','archived','draft','inactive','upcoming'].includes(String(c.status || '').toLowerCase()) && isSeasonCompetitionEnabled(c.id,c.seasonId);
+const enabled=backlogCompetitionEnabled;
 
 async function byIds(collection: string, ids: string[]) {
   const result = new Map<string, any>();
@@ -30,17 +33,18 @@ export async function loadLeagueBacklog(competitionId: string, seasonId: string)
   const competition={...doc.data(),id:doc.id} as any;
   if (!doc.exists || competition.seasonId !== seasonId || !enabled(competition)) return null;
   const rows=await db.collection('fixtures').where('competitionId','==',competitionId).where('seasonId','==',seasonId).get();
-  const seasonFixtures=filterRetiredFixtures(rows.docs.map(d=>({...d.data(),id:d.id}) as any),seasonId);
+  const seasonFixtures=await filterPublishedEuropeanFixtures(filterRetiredFixtures(rows.docs.map(d=>({...d.data(),id:d.id}) as any),seasonId));
   const locks=await db.collection('matchday_locks').where('competitionId','==',competitionId).where('seasonId','==',seasonId).get();
   // Admins can select an earlier round again. The selected round is not a
   // history boundary: confirmed results and actual opening records prove that
   // later rounds have already been reached. A future scheduled date alone does not.
   const validRound=(n:unknown)=>Number.isInteger(Number(n)) && Number(n)>0 && Number(n)<=100;
-  const reachedMatchday=Math.max(competition.currentMatchday,
+  const reachedMatchday=validRound(competition.resultEntryThroughMatchday)?Number(competition.resultEntryThroughMatchday):Math.max(Number(competition.currentMatchday)||1,
     ...seasonFixtures.filter(f=>['CONFIRMED','PENDING_CONFIRMATION'].includes(f.status) && validRound(f.matchday)).map(f=>Number(f.matchday)),
     ...locks.docs.map(d=>d.data()).filter(l=>validRound(l.matchday) && Number.isFinite(Date.parse(l.openedAt)) && Date.parse(l.openedAt)<=Date.now()).map(l=>Number(l.matchday)));
   const fixtures=seasonFixtures
-    .filter(f=>Number.isInteger(Number(f.matchday)) && Number(f.matchday)>0 && Number(f.matchday)<=reachedMatchday && ['SCHEDULED','PENDING_CONFIRMATION'].includes(f.status) && f.homeClubId && f.awayClubId && f.homeClubId!=='TBD' && f.awayClubId!=='TBD')
+    .filter(f=>Number.isInteger(Number(f.matchday)) && Number(f.matchday)>0 && (['KNOCKOUT','SUPER_CUP','EUROPEAN_KNOCKOUT'].includes(competition.type) || Number(f.matchday)<=reachedMatchday) && ['SCHEDULED','PENDING_CONFIRMATION'].includes(f.status) && f.homeClubId && f.awayClubId && f.homeClubId!=='TBD' && f.awayClubId!=='TBD')
+    .map(f=>({...f,canEnterBacklogResult:backlogResultAllowed(f,competition,locks.docs.find(d=>Number(d.data().matchday)===Number(f.matchday))?.data())}))
     .sort((a,b)=>Number(a.matchday)-Number(b.matchday)||a.id.localeCompare(b.id));
   const clubIds=[...new Set(fixtures.flatMap(f=>[f.homeClubId,f.awayClubId]))] as string[];
   const occupancies=await byIds('club_occupancies',clubIds.map(id=>`${seasonId}_${id}`));
@@ -71,7 +75,8 @@ export function leagueBacklogMessage(data: NonNullable<Awaited<ReturnType<typeof
     if(validUsername&&!contacts.has(validUsername)){contacts.add(validUsername);buttons.push([{text:`${Number(f.matchday)}-tur · @${validUsername}`,url:`https://t.me/${validUsername}`}]);}
   }
   buttons.push([{text:'💬 Raqibni topish / admin yordami',url:'https://t.me/efleagueuz'}],[telegramMiniAppButton('⚽ O‘yinlar va hisob yuborish')]);
-  return {title:'⚽ O‘ynalmagan o‘yinlaringiz',body:`<b>${html(String(data.competition.name||data.competition.id).slice(0,80))}</b> · Joriy tur: ${data.competition.currentMatchday}\nSizda <b>${fixtures.length}</b> ta yakunlanmagan o‘yin bor.\n\n${lines.join('\n')}${fixtures.length>lines.length?'\nQolgan o‘yinlar ilovada.':''}\n\nRaqibga yozib vaqtni kelishing. Hisob allaqachon yuborilgan bo‘lsa, ilovada tasdiqlash holatini tekshiring. Eski tur hisobini topshirish uchun guruhdagi adminga tur raqami, raqib va hisobni yozing. Raqib topilmasa ham admin yordam beradi.`,replyMarkup:{inline_keyboard:buttons}};
+  const entry=fixtures.some(f=>f.canEnterBacklogResult)?'Hisob uchun: ilova → Mening o‘yinlarim → kerakli uchrashuv → Hisob kiritish. Eski o‘yinni ham tanlashingiz mumkin. Raqib bir xil hisobni tasdiqlaydi. Admin qulflagan o‘yin uchun admin yordamini so‘rang.':'Eski tur hisobini topshirish uchun guruhdagi adminga tur raqami, raqib va hisobni yozing.';
+  return {title:'⚽ O‘ynalmagan o‘yinlaringiz',body:`<b>${html(String(data.competition.name||data.competition.id).slice(0,80))}</b>${data.competition.currentMatchday?' · Joriy tur: '+data.competition.currentMatchday:''}\nSizda <b>${fixtures.length}</b> ta yakunlanmagan o‘yin bor.\n\n${lines.join('\n')}${fixtures.length>lines.length?'\nQolgan o‘yinlar ilovada.':''}\n\nRaqibga yozib vaqtni kelishing. Hisob allaqachon yuborilgan bo‘lsa, ilovada tasdiqlash holatini tekshiring. ${entry} Raqib topilmasa ham admin yordam beradi.`,replyMarkup:{inline_keyboard:buttons}};
 }
 
 /** Rebuild immediately before dispatch: scores, transfers, suspensions and withdrawn leagues can change while queued. */
@@ -83,21 +88,21 @@ export async function freshLeagueReminder(guard: LeagueReminderGuard,userId: str
 
 /** Daily, resumable digest: one message per player/league/day, never seven separate game messages.
  * Only explicit authenticated workers call this; ordinary page reads do not. */
-export async function processLeagueBacklogReminders(options: {now?:number; deadline?:number; enqueue?:typeof enqueueSmartTelegramNotification}={}) {
+export async function processLeagueBacklogReminders(options: {now?:number; deadline?:number; enqueue?:typeof enqueueSmartTelegramNotification; requestId?:string; scope?:{category:'ALL'|'LEAGUES'|'CUPS';competitionId?:string}}={}) {
   if(process.env.MIGRATION_WRITE_FREEZE==='true'||process.env.DATABASE_PROVIDER!=='supabase'||process.env.SUPABASE_DATA_NAMESPACE!=='production')return false;
   const hour=new Date((options.now??Date.now())+5*3600000).getUTCHours();
   if(hour<9 || hour>=21)return false;
   const store=getRuntimeStateStore();if(!store)throw Error('LEAGUE_REMINDER_STORAGE_UNAVAILABLE');
   const token=randomUUID(),lock='efluz:v1:league-backlog-worker';
   if(!await store.set(lock,token,{nx:true,ex:120}))return false;
-  const db=getFirestoreDb(),ref=db.collection(BACKLOG_STATE_COLLECTION).doc(CURRENT_SEASON_ID),started=Date.now();
+  const db=getFirestoreDb(),ref=db.collection(BACKLOG_STATE_COLLECTION).doc(options.requestId?'request-'+options.requestId:CURRENT_SEASON_ID),started=Date.now();
   let state:any;
   try{
     const day=reminderDay(options.now),saved=(await ref.get()).data();
     state=saved?.day===day && saved.scanVersion===BACKLOG_SCAN_VERSION?saved:{day,scanVersion:BACKLOG_SCAN_VERSION,completed:[],cursors:{},queued:0,skipped:0,status:'PENDING'};
     if(state.status==='DONE')return false;
     const rows=await db.collection('competitions').where('seasonId','==',CURRENT_SEASON_ID).get();
-    const competitions=rows.docs.map(d=>({...d.data(),id:d.id})).filter(enabled).sort((a,b)=>a.id.localeCompare(b.id));
+    const competitions=rows.docs.map(d=>({...d.data(),id:d.id}) as any).filter(enabled).filter(c=>!options.scope || (!options.scope.competitionId || c.id===options.scope.competitionId) && (options.scope.category==='ALL'||options.scope.category==='LEAGUES'&&['LEAGUE','EUROPEAN_LEAGUE_PHASE'].includes(c.type)||options.scope.category==='CUPS'&&!['LEAGUE','EUROPEAN_LEAGUE_PHASE'].includes(c.type))).sort((a,b)=>a.id.localeCompare(b.id));
     const competition=competitions.find(c=>!state.completed.includes(c.id));
     if(!competition){await ref.set({...state,status:'DONE',finishedAt:new Date().toISOString(),lastError:null});return false;}
     const data=await loadLeagueBacklog(competition.id,CURRENT_SEASON_ID);

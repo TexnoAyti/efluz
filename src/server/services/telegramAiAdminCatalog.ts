@@ -94,6 +94,7 @@ export const AI_ADMIN_ACTIONS: Record<string, AdminAction> = {
   matchday_status: action('GET', '/competitions/:id/matchday/control'), cup_details: action('GET', '/cups/:id'),
   cup_health: action('GET', '/cups/:id/health'), health: action('GET', '/read-model/health', 'seasonId?'),
   league_reminder_health: action('GET', '/notifications/league-reminder-health', ''),
+  backlog_remind: action('POST','/notifications/backlog-reminders','category:ALL|LEAGUES|CUPS, competitionId?:one exact verified competition'),
   notification_messages: action('GET', '/notifications/messages', 'cursor?'), notification_types: action('GET', '/notifications', 'cursor?'),
   broadcasts: action('GET', '/telegram-notifications/broadcasts', 'limit?'),
   admission: action('GET', '/clubs/admission', 'seasonId?'),
