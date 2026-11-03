@@ -8,6 +8,7 @@ import {playerFaq} from '../content/playerFaq';
 import './munfiz-assistant.css';
 const Guide=lazy(()=>import('./FirstVisitGuide').then(m=>({default:m.FirstVisitGuide})));
 const visible=(el:Element)=>{const r=el.getBoundingClientRect();return r.width>0&&r.height>0;};
+const readViewport=()=>typeof window==='undefined'?{width:390,height:844,top:0,left:0}:guideViewport(window.innerWidth||390,window.innerHeight||844,window.visualViewport,(window as any).Telegram?.WebApp?.viewportHeight);
 
 export function MunfizAssistant({userId,page}:{userId:string;page:string}){
  const {language}=useI18n();const c=munfizCopy[language]||munfizCopy.uz;
@@ -17,6 +18,7 @@ export function MunfizAssistant({userId,page}:{userId:string;page:string}){
  const [minimized,setMinimized]=useState(()=>{try{return localStorage.getItem(`efl:munfiz:${userId}`)==='small';}catch{return false;}});
  const [position,setPosition]=useState<AssistantPoint>({x:8,y:160}),[walking,setWalking]=useState(false),[dragging,setDragging]=useState(false),[blocked,setBlocked]=useState(false),[reduced,setReduced]=useState(false);
  const [tour,setTour]=useState<GuideStep[]|null>(null),[message,setMessage]=useState(''),[seen,setSeen]=useState(false);
+ const [viewport,setViewport]=useState(readViewport);
  const [helpTab,setHelpTab]=useState<'explain'|'actions'|'questions'>('explain'),[catalog,setCatalog]=useState<MunfizControl[]>([]),[query,setQuery]=useState('');
  const root=useRef<HTMLDivElement>(null),avatar=useRef<HTMLButtonElement>(null),pos=useRef(position),drag=useRef<{x:number;y:number;origin:AssistantPoint;moved:boolean}|null>(null);
  const poseIndex=useRef(0);
@@ -26,7 +28,7 @@ export function MunfizAssistant({userId,page}:{userId:string;page:string}){
  const checklist=munfizChecklist(pageKey,section,language);
  const localQuestions=munfizQuestionIndexes(pageKey,section).map(index=>faq.items[index]);
  const sectionsLabel={uz:'Boshqa bo‘limlar nima uchun?',ru:'Для чего другие разделы?',en:'What are the other sections for?'}[language];
- const view=()=>guideViewport(window.innerWidth,window.innerHeight,window.visualViewport,(window as any).Telegram?.WebApp?.viewportHeight);
+ const view=readViewport;
  const move=(avoid:AssistantRect[]=[],preferred?:AssistantPoint,animate=true)=>{
   const v=view(),style=getComputedStyle(document.body),n=(s:string)=>parseFloat(s)||0;
   const controls=Array.from(document.querySelectorAll('main button,main a,nav button,.efl-app-header button')).filter(el=>!root.current?.contains(el)&&visible(el)).map(el=>el.getBoundingClientRect()).filter(r=>r.bottom>v.top&&r.top<v.top+v.height);
@@ -62,6 +64,7 @@ export function MunfizAssistant({userId,page}:{userId:string;page:string}){
  },[page,language]);
  useEffect(()=>{
   const resize=()=>{
+   setViewport(view());
    if(!open)move([],pos.current,false);
   };resize();
   const avoidClick=(event:PointerEvent)=>{
@@ -70,9 +73,9 @@ export function MunfizAssistant({userId,page}:{userId:string;page:string}){
    const control=element.closest('button,a,input,select,textarea');if(control)move([control.getBoundingClientRect()],pos.current);
   };
   const timer=setInterval(()=>{if(document.hidden||open||blocked||minimized||drag.current||reduced)return;move([], {x:pos.current.x<window.innerWidth/2?window.innerWidth:0,y:pos.current.y});},14000);
-  document.addEventListener('pointerdown',avoidClick,true);window.addEventListener('resize',resize);window.visualViewport?.addEventListener('resize',resize);
-  const app=(window as any).Telegram?.WebApp;app?.onEvent?.('viewportChanged',resize);app?.onEvent?.('safeAreaChanged',resize);
-  return()=>{clearInterval(timer);document.removeEventListener('pointerdown',avoidClick,true);window.removeEventListener('resize',resize);window.visualViewport?.removeEventListener('resize',resize);app?.offEvent?.('viewportChanged',resize);app?.offEvent?.('safeAreaChanged',resize);if(motionTimer.current)clearTimeout(motionTimer.current);};
+  document.addEventListener('pointerdown',avoidClick,true);window.addEventListener('resize',resize);window.visualViewport?.addEventListener('resize',resize);window.visualViewport?.addEventListener('scroll',resize);
+  const app=(window as any).Telegram?.WebApp;app?.onEvent?.('viewportChanged',resize);app?.onEvent?.('safeAreaChanged',resize);app?.onEvent?.('contentSafeAreaChanged',resize);app?.onEvent?.('fullscreenChanged',resize);
+  return()=>{clearInterval(timer);document.removeEventListener('pointerdown',avoidClick,true);window.removeEventListener('resize',resize);window.visualViewport?.removeEventListener('resize',resize);window.visualViewport?.removeEventListener('scroll',resize);app?.offEvent?.('viewportChanged',resize);app?.offEvent?.('safeAreaChanged',resize);app?.offEvent?.('contentSafeAreaChanged',resize);app?.offEvent?.('fullscreenChanged',resize);if(motionTimer.current)clearTimeout(motionTimer.current);};
  },[open,blocked,minimized,reduced]);
  useEffect(()=>{root.current?.querySelector('.munfiz-panel-copy')?.scrollTo({top:0});},[helpTab]);
  useEffect(()=>{
@@ -129,7 +132,7 @@ export function MunfizAssistant({userId,page}:{userId:string;page:string}){
   setMessage('');setTour(steps);setOpen(false);
  };
  const small=(value:boolean)=>{setMinimized(value);setOpen(false);try{localStorage.setItem(`efl:munfiz:${userId}`,value?'small':'full');}catch{}};
- const v=typeof window==='undefined'?{width:390,height:844,top:0}:view();
+ const v=viewport;
  const style=typeof document==='undefined'?null:getComputedStyle(document.body),inset=(value?:string)=>parseFloat(value||'')||0;
  const panel=munfizHelpLayout(v.width,v.height,v.top,{top:inset(style?.paddingTop),bottom:inset(style?.paddingBottom),left:inset(style?.paddingLeft),right:inset(style?.paddingRight)});
  const labels=language==='ru'?{about:'Пояснение',actions:'Все действия',questions:'Вопросы',find:'Найти действие',show:'Показать',locked:'Недоступно',current:'Вы здесь',empty:'Нет совпадений. Очистите поиск.'}:language==='en'?{about:'Explanation',actions:'All actions',questions:'Questions',find:'Find an action',show:'Show me',locked:'Unavailable',current:'You are here',empty:'No matches. Clear your search.'}:{about:'Tushuntirish',actions:'Barcha amallar',questions:'Savollar',find:'Amalni qidirish',show:'Ko‘rsat',locked:'Hozir yopiq',current:'Shu bo‘limdasiz',empty:'Mos amal topilmadi. Qidiruvni tozalang.'};
