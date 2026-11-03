@@ -79,7 +79,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
   ];
 
   return (
-    <div className="space-y-4 pb-20 animate-in fade-in duration-200">
+    <div data-munfiz-page={subTab} className="space-y-4 pb-20 animate-in fade-in duration-200">
       {/* 1. Single Top Page Title */}
       <div className="flex items-center justify-between pt-1">
         <h1 className="text-xl sm:text-2xl font-black text-[var(--efl-text)] tracking-tight">
@@ -95,6 +95,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
           return (
             <button
               key={item.id}
+              data-munfiz-control={`category-${item.id}`}
               type="button"
               onClick={() => setSubTab(item.id)}
               className={`${item.id==='custom'?'col-span-2 col-start-3':'col-span-3'} min-w-0 min-h-[44px] flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl text-xs font-bold transition-all ${

@@ -102,3 +102,8 @@ assert.equal(helper.guideViewport(390,844,null,600).height,600,'Telegram visible
 assert.equal(helper.guideViewport(390,844,null,0).height,844,'Ignore a not-yet-ready Telegram viewport');
 assert.equal(helper.guideViewport(390,844,{width:350,height:500,offsetLeft:20,offsetTop:60}).top,60,'Preserve visual viewport offset');
 console.log('PASS guide viewport: keyboard, Telegram viewport and shifted visible area.');
+
+component.guideLanguage='uz';component.guideStateIndex=0;component.guideStep=0;
+const contextual=renderToStaticMarkup(React.createElement(component.module.exports.FirstVisitGuide,{steps:[{title:'Faqat shu sahifa',description:'Shu tugmaning izohi',target:'[data-guide="score-entry"]'}],mascot:true,onFinish:()=>{}}));
+assert.match(contextual,/Faqat shu sahifa/);assert.match(contextual,/Shu tugmaning izohi/);assert.match(contextual,/munfiz\/point.webp/);
+assert.equal((contextual.match(/data-active=/g)||[]).length,1,'Contextual tour uses its own controls, not seven global steps');

@@ -35,3 +35,13 @@
 .efl-guide-layer[data-layout=sheet] .efl-guide-card { border-radius:22px; }
 @media(max-width:400px) { .efl-guide-card-scroll { padding:21px 20px; } .efl-guide-card h2 { font-size:23px; } .efl-guide-actions { gap:8px; } .efl-guide-actions button { font-size:11px; } .efl-guide-next { padding:0 15px; } }
 @media(prefers-reduced-motion:no-preference) { .efl-guide-card { animation:efl-guide-enter .2s ease-out; } .efl-guide-progress>span { transition:width .18s ease,opacity .18s ease; } @keyframes efl-guide-enter { from { opacity:0; translate:0 7px; } to { opacity:1; translate:0 0; } } }
+
+/* Keep Back/Next reachable even when the target leaves little room. */
+.efl-guide-card-scroll { display:flex; flex-direction:column; overflow:hidden; }
+.efl-guide-topline,.efl-guide-bottom { flex-shrink:0; }
+.efl-guide-copy { min-height:0; overflow-y:auto; overscroll-behavior:contain; flex:1 1 auto; }
+.efl-guide-card[data-compact=true] .efl-guide-card-scroll { padding:14px; }
+.efl-guide-card[data-compact=true] .efl-guide-topline { margin-bottom:10px; }
+.efl-guide-card[data-compact=true] .efl-guide-bottom { margin-top:12px; }
+.efl-guide-card[data-compact=true] .efl-guide-progress { margin-bottom:10px; }
+.efl-guide-card[data-compact=true] .efl-guide-replay-hint { display:none; }

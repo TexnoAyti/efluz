@@ -34,6 +34,7 @@ jobs:
           node scripts/verify-design-release.mjs
           node scripts/verify-club-profile.mjs
           node scripts/verify-first-visit-guide.mjs
+          node scripts/verify-munfiz-assistant.mjs
 
       - name: Run Build
         env:

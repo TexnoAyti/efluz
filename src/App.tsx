@@ -26,6 +26,7 @@ import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
 const loadHome = () => import('./components/MatchdayHomeView').then(module => ({ default: module.MatchdayHomeView }));
 const MatchdayHomeView = lazy(loadHome);
 const FirstVisitGuide = lazy(() => import('./components/FirstVisitGuide').then(module => ({ default: module.FirstVisitGuide })));
+const MunfizAssistant = lazy(() => import('./components/MunfizAssistant').then(module => ({default:module.MunfizAssistant})));
 const PlayerHelp = lazy(() => import('./components/PlayerHelp').then(module => ({ default: module.PlayerHelp })));
 
 const NotificationsView = lazy(() => import('./components/NotificationsView').then(module => ({ default: module.NotificationsView })));
@@ -345,6 +346,7 @@ const AppContent: React.FC = () => {
           setActiveTab('my-club');
         }}
       /></ContentBoundary>}
+      {user && welcomeCompleted && <Suspense fallback={null}><MunfizAssistant key={user.id} userId={user.id} page={teamRoute?'team':publicClubId?'club':currentTab}/></Suspense>}
       {user && guideUserId === user.id && <Suspense fallback={null}>{guidePhase === 'questions'
         ? <PlayerHelp key={`${user.id}:questions`} onFinish={() => setGuidePhase('tour')} />
         : <FirstVisitGuide key={`${user.id}:tour`} onFinish={finishGuide} onShowScoreEntry={() => setActiveTab('my-club')} onShowStandings={() => setActiveTab('dashboard')} />}</Suspense>}
