@@ -1,10 +1,12 @@
+import {verifyUzeflifeCompactSnapshot} from './uzeflifeCompactSnapshotTest';
+import {verifyUzeflifeRoundAdvance} from './uzeflifeRoundAdvanceAudit';
 import {verifyUzeflifeAutoLink} from './uzeflifeAutoLinkAudit';
 import assert from 'node:assert/strict';
 import express from 'express';
 import {once} from 'node:events';
 import {initDatabase} from '../db';
 import {verifyUzeflifeFourFeatures} from './uzeflifeFourFeaturesAudit';
-await initDatabase();await verifyUzeflifeAutoLink();await verifyUzeflifeFourFeatures();
+await initDatabase();await verifyUzeflifeCompactSnapshot();await verifyUzeflifeRoundAdvance();await verifyUzeflifeAutoLink();await verifyUzeflifeFourFeatures();
 
 const {createUzeflifeWorkerRouter}=await import('../routes/uzeflifeWorker.routes');
 const secret=process.env.UZEFLIFE_WORKER_SECRET,namespace=process.env.SUPABASE_DATA_NAMESPACE,provider=process.env.DATABASE_PROVIDER;process.env.UZEFLIFE_WORKER_SECRET='isolated-worker-secret';process.env.DATABASE_PROVIDER='supabase';process.env.SUPABASE_DATA_NAMESPACE='preview';let initialized=0;

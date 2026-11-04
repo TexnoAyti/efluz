@@ -90,7 +90,7 @@ const schemas={
  removeChannel:z.object({id:z.string().min(1).max(100)}),
  addParticipant:z.object({target:z.string().trim().min(1).max(100)}),
  register:z.object({}),review:z.object({target:z.string().min(1).max(100),status:z.enum(['approved','removed'])}),
- open:z.object({}),close:z.object({}),generate:z.object({}),pause:z.object({}),resume:z.object({}),next:z.object({}),complete:z.object({}),
+ open:z.object({}),close:z.object({}),generate:z.object({}),pause:z.object({}),resume:z.object({}),next:z.object({expectedRound:z.number().int().min(1).max(15).optional()}),complete:z.object({}),
  schedule:z.object({matchId:z.string(),scheduledAt:z.iso.datetime()}),
  result:z.object({matchId:z.string(),home:score,away:score,penaltyHome:score.nullable().default(null),penaltyAway:score.nullable().default(null)}),
  announce:z.object({text:z.string().trim().min(1).max(2000)}),
@@ -174,16 +174,24 @@ export function applyUAction(s:UState,u:User,action:UAction,d:any,options?:{auth
  case 'generate':guard('brackets');beforeStart();{const ids=s.participants.filter(p=>p.status==='approved').map(p=>p.id);for(let i=isULeague(s)?0:ids.length-1;i>0;i--){const j=randomInt(i+1);[ids[i],ids[j]]=[ids[j],ids[i]];}if(isULeague(s)){const slots=s.roster!.filter(r=>r.username);if(slots.length<16||slots.length>256||slots.length%2)throw uError('Qur’a uchun 16–256 ta juft sonli noyob Telegram username talab qilinadi.');const fixtureIds=slots.map(r=>r.userId||`uze-slot-${r.group}-${r.slot}`);if(new Set(fixtureIds).size!==slots.length)throw uError('Ro‘yxatda takrorlangan akkauntlar mavjud.');for(const [i,r] of slots.entries())if(!r.userId&&!s.participants.some(p=>p.id===fixtureIds[i]))s.participants.push({id:fixtureIds[i],name:'@'+r.username,status:'approved'});s.matches=createULeagueMatches(fixtureIds);}else s.matches=generateUBracket(ids);s.status='playing';s.round=1;openRound();}break;
  case 'pause':guard('super');if(s.status!=='playing')throw uError('Turnir davom etmayapti.');s.status='paused';break;
  case 'resume':guard('super');if(s.status!=='paused')throw uError('Turnir to‘xtatilmagan.');s.status='playing';break;
- case 'next':guard('brackets');if(s.status!=='playing'||s.round>=(isULeague(s)?UZEFLIFE_LEAGUE_ROUNDS:UZEFLIFE_CHAMPION_MATCHES)||s.matches.some(m=>m.round===s.round&&!uMatchFinished(m)))throw uError('Joriy bosqich o‘yinlari tugamagan.');s.round++;openRound();break;
+ case 'next':{
+  guard('brackets');
+  if(d.expectedRound!==undefined&&d.expectedRound!==s.round)throw uError('Tur allaqachon o‘zgargan. Holatni yangilang.',409);
+  if(s.status!=='playing'||s.round>=(isULeague(s)?UZEFLIFE_LEAGUE_ROUNDS:UZEFLIFE_CHAMPION_MATCHES))throw uError('Joriy bosqich o‘yinlari tugamagan yoki oxirgi turga yetilgan.');
+  // A league schedule can advance while postponed games remain open. The
+  // reviewed round prevents a retry/double click from skipping another round.
+  if((!isULeague(s)||d.expectedRound===undefined)&&s.matches.some(m=>m.round===s.round&&!uMatchFinished(m)))throw uError('Joriy bosqich o‘yinlari tugamagan.');
+  s.round++;openRound();break;
+ }
  case 'complete':guard('super');if(isULeague(s)){if(s.status!=='playing'||s.round!==UZEFLIFE_LEAGUE_ROUNDS||!s.matches.length||s.matches.some(m=>!uMatchFinished(m)))throw uError('Barcha 15 tur o‘yinlari yakunlanmagan.');const [champion,runner]=uLeagueStandings(s);s.history=[{format:'LEAGUE' as const,totalRounds:15,id:'uzeflife-'+randomUUID(),completedAt:new Date().toISOString(),champion:champion.id,runnerUp:runner.id,championName:champion.name,runnerUpName:runner.name,matchCount:s.matches.length},...(s.history||[])].slice(0,20);s.status='completed';break;}if(s.status!=='playing'||!s.matches.find(m=>m.round===8)?.winner)throw uError('Final yakunlanmagan.');{const final=s.matches.find(m=>m.round===8)!;const runnerUp=final.winner===final.home?final.away!:final.home!;const player=(id:string)=>s.participants.find(p=>p.id===id)?.name||'Ishtirokchi';s.history=[{id:'uzeflife-'+randomUUID(),completedAt:new Date().toISOString(),champion:final.winner!,runnerUp,championName:player(final.winner!),runnerUpName:player(runnerUp),matchCount:s.matches.filter(m=>m.winner).length},...(s.history||[])].slice(0,20);}s.status='completed';break;
  case 'clearProposal':if(!uPermissions(s,u).includes('results'))guard('matches');{const m=s.matches.find(m=>m.id===d.matchId);if(!m||uMatchFinished(m))throw uError('O‘yin topilmadi yoki yakunlangan.');if(m.dispute?.status==='open')throw uError('Avval e’tirozni hal qiling.',409);m.proposal=null;}break;
  case 'schedule':guard('schedules');{const m=s.matches.find(m=>m.id===d.matchId);if(!m)throw uError('O‘yin topilmadi.',404);if(s.status==='completed'||uMatchFinished(m))throw uError('O‘yin yakunlangan.');m.scheduledAt=d.scheduledAt;}break;
  case 'result':{
   const m=s.matches.find(m=>m.id===d.matchId);if(!m)throw uError('O‘yin topilmadi.',404);
   const admin=uPermissions(s,u).includes('results');
-  // Only the verified topic plan can explicitly select another league round.
-  // Public actions and every playoff action retain the current-round guard.
-  if(s.status!=='playing'||m.round!==s.round&&!(isULeague(s)&&options?.authorizedLeagueRound===m.round&&(admin||m.proposal&&m.proposal.by!==u.id&&[m.home,m.away].includes(u.id)))||!m.home||!m.away)throw uError('Bu o‘yin uchun natija qabul qilinmaydi.');
+  // Only the verified topic plan can explicitly select a future league round.
+  // Opened league rounds remain reportable; future rounds still need a verified topic plan.
+  if(s.status!=='playing'||m.round!==s.round&&!(isULeague(s)&&m.round<s.round)&&!(isULeague(s)&&options?.authorizedLeagueRound===m.round&&(admin||m.proposal&&m.proposal.by!==u.id&&[m.home,m.away].includes(u.id)))||!m.home||!m.away)throw uError('Bu o‘yin uchun natija qabul qilinmaydi.');
   if(m.dispute?.status==='open')throw uError('Avval e’tirozni admin hal qilishi kerak.',409);
   if(!admin&&s.participants.find(p=>p.id===u.id)?.status!=='approved')throw uError('Ishtirokingiz bekor qilingan.',403);
   if(!admin&&u.id!==m.home&&u.id!==m.away)throw uError('Bu sizning o‘yiningiz emas.',403);
@@ -223,7 +231,7 @@ export async function mutateUState(u:User,action:string,body:unknown){
  const expectedRevision=(body as any)?.expectedRevision;
  if(expectedRevision!==undefined&&(!Number.isInteger(expectedRevision)||expectedRevision<0))throw uError('Turnir holati noto‘g‘ri.',400);
  const parsed=validateUAction(action,body),d=parsed.data;
- if(['result','confirmResult','dispute'].includes(action))await ensureUPlayerLinked(u);
+ const actorState=['result','confirmResult','dispute'].includes(action)?await ensureUPlayerLinked(u):undefined;
  const db=getFirestoreDb(),ref=db.collection('uzeflife').doc('championship');
  // Resolve role targets only after permission checks. Never accept a caller-supplied identity.
  if(['superAdmin','assistant','removeAssistant'].includes(action)){
@@ -243,14 +251,14 @@ export async function mutateUState(u:User,action:string,body:unknown){
  }
  if(action==='dispute')d.evidence=await normalizeUEvidence(d.evidence);
  if(action==='register'||action==='result'||action==='confirmResult'||action==='dispute'){
-  const current=await readUState();
+  const current=actorState||await readUState();
   if(action==='register'||!uPermissions(current,u).includes('results')){
    const missing=await checkUSubscriptions(current,u);if(missing.length)throw Object.assign(uError('Avval barcha majburiy kanallarga obuna bo‘ling.',403),{channels:missing});
    subscriptionRevision=current.revision;
   }
  }
  const auditId=randomUUID();
- await db.runTransaction(async tx=>{
+ const committed=await db.runTransaction(async tx=>{
   const snap=await tx.get(ref);const s=snap.exists?snap.data() as UState:initialUState();
   if(expectedRevision!==undefined&&expectedRevision!==s.revision)throw uError('Turnir reja tuzilgandan beri yangilandi. Yangi reja tuzing.',409);
   if(subscriptionRevision!==undefined&&subscriptionRevision!==s.revision)throw uError('Turnir yangilandi. Obunani qayta tekshiring.',409);
@@ -270,8 +278,10 @@ export async function mutateUState(u:User,action:string,body:unknown){
   if(action==='complete'){const entry=s.history![0];tx.set(db.collection('uzeflife_history').doc(entry.id),{...entry,name:s.name,...(isULeague(s)?{format:s.format,totalRounds:s.totalRounds,roster:s.roster}:{}),participants:s.participants.filter(p=>p.status==='approved'||s.matches.some(m=>[m.home,m.away].includes(p.id))),matches:s.matches.map(m=>({...m,proposal:null,dispute:null}))});}
   tx.set(ref,s);
   tx.set(db.collection('uzeflife_audit').doc(auditId),{actor:u.id,action:parsed.action,details:Object.fromEntries(Object.entries(d).filter(([k])=>k!=='evidence')),revision:s.revision,at:new Date().toISOString()});
+  return s;
  });
  scheduleUNotices();
+ return committed;
 }
 export function publicUState(s:UState,u?:User){
  const permissions=u?uPermissions(s,u):[];const participantAdmin=permissions.includes('participants')||permissions.includes('registrations');const resultAdmin=permissions.includes('results')||permissions.includes('matches');

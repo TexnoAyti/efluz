@@ -57,7 +57,7 @@ export function UzeflifeChampionship({state:s,userId,busy,error,notice,missing,a
   return <div className="competition-page uzeflife">
     {admin&&s.permissions.length>0?<>
       {(error||notice)&&<p role={error?'alert':'status'} className={`competition-note ${error?'error':''}`}>{error||notice}</p>}
-      <UzeflifeAdmin state={s} busy={busy} act={act} onRefresh={onRefresh} error={error} onBack={()=>setAdmin(false)} onMatches={()=>{setAdmin(false);navigate('fixtures');}}/>
+      <UzeflifeAdmin state={s} busy={busy} act={act} onRefresh={onRefresh} error={error} notice={notice} onBack={()=>setAdmin(false)} onMatches={()=>{setAdmin(false);navigate('fixtures');}}/>
     </>:<>
       <CompetitionBanner>
         <CompetitionHeading emblem={<Trophy className="w-10 h-10 text-[var(--efl-primary)]"/>} title="UZEFLIFE"

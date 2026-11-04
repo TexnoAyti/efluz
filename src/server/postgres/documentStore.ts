@@ -31,7 +31,7 @@ export function runtimeRpc(): RuntimeRpc {
   if(!url||!key||new URL(url).protocol!=='https:') throw new Error('SUPABASE_SERVER_CONFIG_REQUIRED');
   const execute: RuntimeRpc = async(name,body)=>{
     const started = Date.now();
-    const target = name==='efl_runtime_uzeflife_read'?'uzeflife':body.p_round ? 'uzeflife_channel_posts' : body.p_ids ? 'durable_read_snapshots' : body.p_operations?.map((op: any) => op.path.split('/').slice(0,-1).join('/')).filter((value: string, index: number, values: string[]) => values.indexOf(value) === index).join(',') || body.p_query?.collection || body.p_query?.path?.split('/').slice(0,-1).join('/') || 'commit';
+    const target = ['efl_runtime_uzeflife_read','efl_runtime_uzeflife_snapshot'].includes(name)?'uzeflife':body.p_round ? 'uzeflife_channel_posts' : body.p_ids ? 'durable_read_snapshots' : body.p_operations?.map((op: any) => op.path.split('/').slice(0,-1).join('/')).filter((value: string, index: number, values: string[]) => values.indexOf(value) === index).join(',') || body.p_query?.collection || body.p_query?.path?.split('/').slice(0,-1).join('/') || 'commit';
     try {
     // Generation mismatch is an application CAS conflict. Returning it as SQL
     // 40001 caused the HTTP database layer to repeatedly retry the same stale
@@ -61,7 +61,8 @@ export function runtimeRpc(): RuntimeRpc {
   // so a read after a write cannot attach to an older in-flight snapshot.
   const reads = new Map<string, Promise<any>>();
   return async (name, body) => {
-    if (name !== 'efl_runtime_read' && name !== 'efl_runtime_snapshot_read') {
+    const uzeflifeRead=['efl_runtime_uzeflife_read','efl_runtime_uzeflife_snapshot'].includes(name);
+    if (!uzeflifeRead && name !== 'efl_runtime_read' && name !== 'efl_runtime_snapshot_read') {
       reads.clear();
       try { return await execute(name, body); }
       finally { reads.clear(); }
@@ -69,7 +70,7 @@ export function runtimeRpc(): RuntimeRpc {
     const collection = body.p_query?.collection || body.p_query?.path?.split('/').slice(0, -1).join('/');
     // Authorization accounts and other security records must be re-read for
     // each request. Coalescing is limited to opening/cache/fixture reads.
-    if (name !== 'efl_runtime_snapshot_read' && !['runtime_state', 'durable_read_snapshots', 'fixtures', 'durable_fixture_overrides'].includes(collection)) return execute(name, body);
+    if (!uzeflifeRead && name !== 'efl_runtime_snapshot_read' && !['runtime_state', 'durable_read_snapshots', 'fixtures', 'durable_fixture_overrides'].includes(collection)) return execute(name, body);
     const key = JSON.stringify([name, body]);
     let pending = reads.get(key);
     if (!pending) {
@@ -87,13 +88,19 @@ class Snapshot {
   data(){return this.exists?safeIntegers(decodeValue(this.encoded)):undefined;}
   get(field:string){return field.split('.').reduce((v,k)=>v?.[k],this.data());}
 }
+class PlainSnapshot {
+ readonly id:string;readonly exists:boolean;
+ constructor(public ref:DocRef,private value:any){this.id=ref.id;this.exists=value!==null;}
+ data(){return this.exists?structuredClone(this.value):undefined;}
+ get(field:string){return field.split('.').reduce((v,k)=>v?.[k],this.data());}
+}
 class DocRef {
   readonly id:string;readonly parent:Query;
   constructor(public firestore:PostgresDocumentStore,public path:string){
     pathCheck(path,true);this.id=path.split('/').at(-1)!;this.parent=firestore.collection(path.split('/').slice(0,-1).join('/'));
   }
   collection(path:string){return this.firestore.collection(`${this.path}/${path}`);}
-  async get(){const result=await this.firestore.read({path:this.path});return new Snapshot(this,result.documents[0]?.encoded??null);}
+  async get(){if(this.path==='uzeflife/championship')return new PlainSnapshot(this,(await this.firestore.readUzeflifeSnapshot()).data);const result=await this.firestore.read({path:this.path});return new Snapshot(this,result.documents[0]?.encoded??null);}
   set(data:any,options?:{merge?:boolean}){return this.firestore.write([{path:this.path,kind:'set',encoded:encodeValue(clean(data)),merge:options?.merge===true}]);}
   update(data:any){return this.firestore.write([{path:this.path,kind:'update',encoded:encodeValue(clean(data))}]);}
   create(data:any){return this.firestore.write([{path:this.path,kind:'create',encoded:encodeValue(clean(data))}]);}
@@ -138,10 +145,11 @@ class Transaction extends Writes {
   generation:string|undefined;
   async get(target:DocRef|Query):Promise<any>{
     if(this.operations.length)throw new Error('TRANSACTION_READ_AFTER_WRITE');
-    const result=await this.db.read(target instanceof DocRef?{path:target.path}:{...target.spec,collection:target.path});
+    const compact=target instanceof DocRef&&target.path==='uzeflife/championship';
+    const result=compact?await this.db.readUzeflifeSnapshot():await this.db.read(target instanceof DocRef?{path:target.path}:{...target.spec,collection:target.path});
     if(this.generation!==undefined&&this.generation!==result.generation)throw conflict();
     this.generation=result.generation;
-    return target instanceof DocRef?new Snapshot(target,result.documents[0]?.encoded??null):target.snapshot(result);
+    return compact?new PlainSnapshot(target,result.data):target instanceof DocRef?new Snapshot(target,result.documents[0]?.encoded??null):target.snapshot(result);
   }
   commit(){return this.db.write(this.operations,this.generation);}
 }
@@ -156,8 +164,13 @@ export class PostgresDocumentStore {
   batch(){return new Writes(this);}
   // UZEFLIFE contains plain JSON only. Read its already-decoded authoritative
   // projection directly, avoiding a megabyte of typed archive wrappers. CAS
-  // transactions still use read() and its generation/encoded representation.
+  // transactions use a plain snapshot carrying the same generation CAS.
   async readUzeflifeState(){const raw=await this.rpc('efl_runtime_uzeflife_read',{p_space:this.databaseId});return raw===null?null:JSON.parse(raw);}
+  async readUzeflifeSnapshot(){
+    const result=JSON.parse(await this.rpc('efl_runtime_uzeflife_snapshot',{p_space:this.databaseId}));
+    if(!result||typeof result.generation!=='string'||!/^\d+$/.test(result.generation)||!Object.hasOwn(result,'data')||result.data!==null&&(typeof result.data!=='object'||Array.isArray(result.data)))throw new Error('INVALID_UZEFLIFE_SNAPSHOT');
+    return result;
+  }
   async read(query:QuerySpec){
     // The generic __name__ filter wraps document_id in to_jsonb and scans a
     // collection prefix. A singleton ID can use the existing primary-key path
