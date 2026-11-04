@@ -2,13 +2,14 @@ import { CupTieBreakFields, CupScoreSummary } from './CupTieBreakFields';
 import { cupScoreMetadata, resolveCupResult, isDomesticCupResult } from '../lib/cupResult';
 import { CupMatchModal } from './CupMatchModal';
 import { EFL_2_DESIGN_ENABLED } from '../releaseDesign';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { Fixture } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
 import { useI18n } from '../i18n';
 import confetti from 'canvas-confetti';
 import { ClubCrest } from './ClubCrest';
+import './result-submission.css';
 import {
   X,
   CheckCircle2,
@@ -38,11 +39,13 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
   const { user, showToast, ownedClubs } = useAuth();
   const { language } = useI18n();
   const previewCopy = {
-    uz: { title: 'Natijani kiritish', matchday: 'tur', you: 'Siz', claimed: 'Tanlangan', unclaimed: 'Egasi yo‘q', opponent: 'Raqib kiritgan natija', opponentHint: 'Hisoblar bir xil bo‘lsa natija tasdiqlanadi. Farq qilsa nizo ko‘rib chiqiladi.', score: 'eFootball o‘yinidagi yakuniy hisob', proof: 'O‘yin skrinshoti havolasi (ixtiyoriy)', proofHint: 'Skrinshot kelishmovchilik bo‘lsa natijani tekshirishga yordam beradi.', cancel: 'Bekor qilish', sending: 'Yuborilmoqda...', submit: 'Hisobni yuborish', confirmed: 'Natija tasdiqlandi va jadval yangilandi.', disputed: 'Hisoblar farq qildi. Nizo adminga yuborildi.', pending: 'Natija yuborildi. Raqib tasdig‘i kutilmoqda.', failed: 'Natijani yuborib bo‘lmadi.' },
-    ru: { title: 'Ввести результат', matchday: 'тур', you: 'Вы', claimed: 'Занят', unclaimed: 'Свободен', opponent: 'Результат соперника', opponentHint: 'Если счета совпадут, результат подтвердится. Разные счета отправятся на рассмотрение.', score: 'Итоговый счёт в eFootball', proof: 'Ссылка на скриншот (необязательно)', proofHint: 'Скриншот поможет проверить результат при споре.', cancel: 'Отмена', sending: 'Отправка...', submit: 'Отправить счёт', confirmed: 'Результат подтверждён, таблица обновлена.', disputed: 'Счета не совпали. Спор отправлен администратору.', pending: 'Результат отправлен. Ожидаем подтверждения соперника.', failed: 'Не удалось отправить результат.' },
-    en: { title: 'Submit match result', matchday: 'Matchday', you: 'You', claimed: 'Claimed', unclaimed: 'Unclaimed', opponent: 'Opponent submitted', opponentHint: 'Matching scores confirm the result. Different scores go to dispute review.', score: 'Final score from eFootball', proof: 'Screenshot link (optional)', proofHint: 'A screenshot helps resolve a score dispute.', cancel: 'Cancel', sending: 'Submitting...', submit: 'Submit score', confirmed: 'Result confirmed and standings updated.', disputed: 'Scores differ. Dispute sent to admin.', pending: 'Score submitted. Awaiting opponent confirmation.', failed: 'Failed to submit score.' },
+    uz: { title: 'Natijani kiritish', matchday: 'tur', you: 'Siz', claimed: 'Raqib', unclaimed: 'Egasi yo‘q', opponent: 'Raqib kiritgan natija', opponentHint: 'Hisoblar bir xil bo‘lsa natija tasdiqlanadi. Farq qilsa nizo ko‘rib chiqiladi.', score: 'eFootball o‘yinidagi yakuniy hisob', proof: 'O‘yin skrinshoti havolasi (ixtiyoriy)', proofHint: 'Skrinshot kelishmovchilik bo‘lsa natijani tekshirishga yordam beradi.', cancel: 'Bekor qilish', sending: 'Yuborilmoqda...', submit: 'Hisobni yuborish', confirmed: 'Natija tasdiqlandi va jadval yangilandi.', disputed: 'Hisoblar farq qildi. Nizo adminga yuborildi.', pending: 'Natija yuborildi. Raqib tasdig‘i kutilmoqda.', failed: 'Natijani yuborib bo‘lmadi.' },
+    ru: { title: 'Ввести результат', matchday: 'тур', you: 'Вы', claimed: 'Соперник', unclaimed: 'Свободен', opponent: 'Результат соперника', opponentHint: 'Если счета совпадут, результат подтвердится. Разные счета отправятся на рассмотрение.', score: 'Итоговый счёт в eFootball', proof: 'Ссылка на скриншот (необязательно)', proofHint: 'Скриншот поможет проверить результат при споре.', cancel: 'Отмена', sending: 'Отправка...', submit: 'Отправить счёт', confirmed: 'Результат подтверждён, таблица обновлена.', disputed: 'Счета не совпали. Спор отправлен администратору.', pending: 'Результат отправлен. Ожидаем подтверждения соперника.', failed: 'Не удалось отправить результат.' },
+    en: { title: 'Submit match result', matchday: 'Matchday', you: 'You', claimed: 'Opponent', unclaimed: 'Unclaimed', opponent: 'Opponent submitted', opponentHint: 'Matching scores confirm the result. Different scores go to dispute review.', score: 'Final score from eFootball', proof: 'Screenshot link (optional)', proofHint: 'A screenshot helps resolve a score dispute.', cancel: 'Cancel', sending: 'Submitting...', submit: 'Submit score', confirmed: 'Result confirmed and standings updated.', disputed: 'Scores differ. Dispute sent to admin.', pending: 'Score submitted. Awaiting opponent confirmation.', failed: 'Failed to submit score.' },
   }[language];
   const c = EFL_2_DESIGN_ENABLED ? previewCopy : null;
+  const titleId = useId();
+  const roundLabel = fixture.roundName && !/^matchday\s*\d+$/i.test(fixture.roundName) ? fixture.roundName : language === 'uz' ? `${fixture.matchday}-tur` : `${c?.matchday || 'Matchday'} ${fixture.matchday}`;
 
   // Determine whether current user is Home or Away
   const isHomeOwner = fixture.homeOwnerId === user?.id;
@@ -125,17 +128,19 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
   };
 
   const handleScoreAdjust = (team: 'home' | 'away', delta: number) => {
+    formChanged.current = true;
     if (team === 'home') {
-      setHomeScore((prev) => Math.max(0, prev + delta));
+      setHomeScore((prev) => Math.min(99, Math.max(0, prev + delta)));
     } else {
-      setAwayScore((prev) => Math.max(0, prev + delta));
+      setAwayScore((prev) => Math.min(99, Math.max(0, prev + delta)));
     }
   };
 
   return (
-    <div className="efl-competition-overlay efl-viewport-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 dark:bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+    <div className="efl-result-overlay efl-competition-overlay efl-viewport-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 dark:bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
       <div
-        className={`efl-competition-panel w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${
+        role="dialog" aria-modal="true" aria-labelledby={titleId}
+        className={`efl-result-dialog efl-competition-panel w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${
           EFL_2_DESIGN_ENABLED
             ? 'preview-surface rounded-3xl border border-slate-200/80 efl-theme-border dark:border-white/10 text-slate-900 efl-theme-text dark:text-white shadow-2xl'
             : 'glass-modal text-white efl-theme-text'
@@ -154,11 +159,11 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
               <Shield className="w-4 h-4" />
             </div>
             <div>
-              <h3 className={`font-bold text-sm sm:text-base ${EFL_2_DESIGN_ENABLED ? 'text-slate-900 efl-theme-text dark:text-white' : 'text-slate-100 efl-theme-text'}`}>
+              <h3 id={titleId} className={`font-bold text-sm sm:text-base ${EFL_2_DESIGN_ENABLED ? 'text-slate-900 efl-theme-text dark:text-white' : 'text-slate-100 efl-theme-text'}`}>
                 {c?.title || 'Submit Match Result'}
               </h3>
               <p className="text-[11px] text-slate-500 efl-theme-text-2 dark:text-slate-400">
-                {fixture.competitionName} • {fixture.roundName || `${c?.matchday || 'Matchday'} ${fixture.matchday}`}
+                {fixture.competitionName} • {roundLabel}
               </p>
             </div>
           </div>
@@ -188,7 +193,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
           >
             <div className="grid grid-cols-5 items-center gap-2 text-center">
               {/* Home Team */}
-              <div className="col-span-2 flex flex-col items-center">
+              <div className="min-w-0 col-span-2 flex flex-col items-center">
                 <div
                   className={`w-14 h-14 rounded-2xl p-2 border flex items-center justify-center mb-2 ${
                     EFL_2_DESIGN_ENABLED
@@ -206,7 +211,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
                   />
                 </div>
                 <div
-                  className={`font-black text-xs sm:text-sm truncate max-w-full ${
+                  className={`result-team-name font-black text-xs sm:text-sm max-w-full ${
                     EFL_2_DESIGN_ENABLED ? 'text-slate-900 efl-theme-text dark:text-white' : 'text-slate-100 efl-theme-text'
                   }`}
                 >
@@ -231,7 +236,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
               </div>
 
               {/* Away Team */}
-              <div className="col-span-2 flex flex-col items-center">
+              <div className="min-w-0 col-span-2 flex flex-col items-center">
                 <div
                   className={`w-14 h-14 rounded-2xl p-2 border flex items-center justify-center mb-2 ${
                     EFL_2_DESIGN_ENABLED
@@ -249,7 +254,7 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
                   />
                 </div>
                 <div
-                  className={`font-black text-xs sm:text-sm truncate max-w-full ${
+                  className={`result-team-name font-black text-xs sm:text-sm max-w-full ${
                     EFL_2_DESIGN_ENABLED ? 'text-slate-900 efl-theme-text dark:text-white' : 'text-slate-100 efl-theme-text'
                   }`}
                 >
@@ -302,107 +307,29 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
               {isCup ? (language === 'uz' ? 'Asosiy vaqt hisobi' : language === 'ru' ? 'Счёт основного времени' : 'Regulation time score') : c?.score || 'Official Match Score'}
             </label>
             <div
-              className={`grid grid-cols-2 gap-3 p-4 rounded-2xl border ${
+              className={`result-score-grid grid grid-cols-2 gap-3 p-4 rounded-2xl border ${
                 EFL_2_DESIGN_ENABLED
                   ? 'bg-slate-50 efl-theme-surface-2 dark:bg-white/5 border-slate-200/80 efl-theme-border dark:border-white/10 shadow-xs'
                   : 'glass-panel'
               }`}
             >
-              {/* Home Score Stepper */}
-              <div className="flex flex-col items-center">
-                <span
-                  className={`text-xs font-bold mb-2 truncate max-w-full ${
-                    EFL_2_DESIGN_ENABLED ? 'text-slate-700 efl-theme-text-2 dark:text-slate-300' : 'text-slate-300 efl-theme-text-2'
-                  }`}
-                >
-                  {fixture.homeClub?.shortName || 'HOME'}
-                </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleScoreAdjust('home', -1)}
-                    className={`w-10 h-10 font-bold text-lg flex items-center justify-center select-none rounded-xl transition-all ${
-                      EFL_2_DESIGN_ENABLED
-                        ? 'bg-white efl-theme-surface dark:bg-[#171e2c] border border-slate-200/80 efl-theme-border dark:border-white/10 text-slate-700 efl-theme-text-2 dark:text-slate-200 hover:text-slate-900 efl-theme-hover-text dark:hover:text-white shadow-xs'
-                        : 'glass-button text-slate-200 efl-theme-text'
-                    }`}
-                  >
-                    -
-                  </button>
-                  <input
-                    type="number"
-                    min="0"
-                    max="99"
-                    value={homeScore}
-                    onChange={(e) => setHomeScore(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                    aria-label={fixture.homeClub?.name || 'Home score'}
-                    className={`w-16 h-12 rounded-xl text-center text-2xl font-black tabular-nums focus:outline-none ${
-                      EFL_2_DESIGN_ENABLED
-                        ? 'bg-white efl-theme-surface dark:bg-[#111722] border border-slate-200/80 efl-theme-border dark:border-white/10 text-slate-900 efl-theme-text dark:text-white shadow-xs focus:border-blue-500'
-                        : 'glass-input text-white efl-theme-text'
-                    }`}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => handleScoreAdjust('home', 1)}
-                    className={`w-10 h-10 font-bold text-lg flex items-center justify-center select-none rounded-xl transition-all ${
-                      EFL_2_DESIGN_ENABLED
-                        ? 'bg-white efl-theme-surface dark:bg-[#171e2c] border border-slate-200/80 efl-theme-border dark:border-white/10 text-slate-700 efl-theme-text-2 dark:text-slate-200 hover:text-slate-900 efl-theme-hover-text dark:hover:text-white shadow-xs'
-                        : 'glass-button text-slate-200 efl-theme-text'
-                    }`}
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-
-              {/* Away Score Stepper */}
-              <div className="flex flex-col items-center">
-                <span
-                  className={`text-xs font-bold mb-2 truncate max-w-full ${
-                    EFL_2_DESIGN_ENABLED ? 'text-slate-700 efl-theme-text-2 dark:text-slate-300' : 'text-slate-300 efl-theme-text-2'
-                  }`}
-                >
-                  {fixture.awayClub?.shortName || 'AWAY'}
-                </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleScoreAdjust('away', -1)}
-                    className={`w-10 h-10 font-bold text-lg flex items-center justify-center select-none rounded-xl transition-all ${
-                      EFL_2_DESIGN_ENABLED
-                        ? 'bg-white efl-theme-surface dark:bg-[#171e2c] border border-slate-200/80 efl-theme-border dark:border-white/10 text-slate-700 efl-theme-text-2 dark:text-slate-200 hover:text-slate-900 efl-theme-hover-text dark:hover:text-white shadow-xs'
-                        : 'glass-button text-slate-200 efl-theme-text'
-                    }`}
-                  >
-                    -
-                  </button>
-                  <input
-                    type="number"
-                    min="0"
-                    max="99"
-                    value={awayScore}
-                    onChange={(e) => setAwayScore(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                    aria-label={fixture.awayClub?.name || 'Away score'}
-                    className={`w-16 h-12 rounded-xl text-center text-2xl font-black tabular-nums focus:outline-none ${
-                      EFL_2_DESIGN_ENABLED
-                        ? 'bg-white efl-theme-surface dark:bg-[#111722] border border-slate-200/80 efl-theme-border dark:border-white/10 text-slate-900 efl-theme-text dark:text-white shadow-xs focus:border-blue-500'
-                        : 'glass-input text-white efl-theme-text'
-                    }`}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => handleScoreAdjust('away', 1)}
-                    className={`w-10 h-10 font-bold text-lg flex items-center justify-center select-none rounded-xl transition-all ${
-                      EFL_2_DESIGN_ENABLED
-                        ? 'bg-white efl-theme-surface dark:bg-[#171e2c] border border-slate-200/80 efl-theme-border dark:border-white/10 text-slate-700 efl-theme-text-2 dark:text-slate-200 hover:text-slate-900 efl-theme-hover-text dark:hover:text-white shadow-xs'
-                        : 'glass-button text-slate-200 efl-theme-text'
-                    }`}
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
+              {(['home', 'away'] as const).map(team => {
+                const club = team === 'home' ? fixture.homeClub : fixture.awayClub;
+                const value = team === 'home' ? homeScore : awayScore;
+                const name = club?.name || team;
+                const decrease = language === 'uz' ? `${name} hisobini kamaytirish` : language === 'ru' ? `Уменьшить счёт ${name}` : `Decrease ${name} score`;
+                const increase = language === 'uz' ? `${name} hisobini oshirish` : language === 'ru' ? `Увеличить счёт ${name}` : `Increase ${name} score`;
+                return <div key={team} className="result-score-stepper" data-score-team={team}>
+                  <label htmlFor={`${titleId}-${team}`} className="text-xs font-bold text-slate-700 efl-theme-text-2 dark:text-slate-300">{club?.shortName || name}</label>
+                  <input id={`${titleId}-${team}`} type="number" inputMode="numeric" min="0" max="99" value={value} aria-label={name}
+                    onChange={e => { const score = Math.min(99, Math.max(0, parseInt(e.target.value, 10) || 0)); team === 'home' ? setHomeScore(score) : setAwayScore(score); }}
+                    className="result-score-value rounded-xl text-center text-2xl font-black tabular-nums focus:outline-none efl-theme-surface efl-theme-text" />
+                  <div className="result-score-buttons">
+                    <button type="button" aria-label={decrease} disabled={value <= 0} onClick={() => handleScoreAdjust(team, -1)} className="rounded-xl border efl-theme-border efl-theme-surface efl-theme-text font-bold text-lg disabled:opacity-40">−</button>
+                    <button type="button" aria-label={increase} disabled={value >= 99} onClick={() => handleScoreAdjust(team, 1)} className="rounded-xl border efl-theme-border efl-theme-surface efl-theme-text font-bold text-lg disabled:opacity-40">+</button>
+                  </div>
+                </div>;
+              })}
             </div>
           </div>
 
