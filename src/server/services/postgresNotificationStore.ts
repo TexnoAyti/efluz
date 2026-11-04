@@ -1,12 +1,12 @@
+import {createHash} from 'node:crypto';
+import {runtimeRpc, type RuntimeRpc} from '../postgres/documentStore';
 import {Redis} from '@upstash/redis';
-import {getFirestoreDb} from '../firebase/admin';
+import {getFirestoreDb, getFirebaseStatus} from '../firebase/admin';
 import {getUpstashClient} from '../readModel/readModelStore';
 import {PostgresAiStore} from './postgresAiStore';
 
 const parse=(value:any)=>{try{return typeof value==='string'?JSON.parse(value):value;}catch{return value;}};
-/** Queue and receipt changes share one PostgreSQL transaction. The worker's
- * existing lease and uncertain-delivery policy remain authoritative. */
-export class PostgresNotificationStore extends PostgresAiStore {
+class LegacyNotificationStore extends PostgresAiStore {
  // These are opaque Redis-compatible payloads: field-level database queries are
  // never used. A JSON string avoids recursively tagging/decoding every receipt
  // whenever one job changes. Existing object rows remain readable via parse().
@@ -52,6 +52,40 @@ export class PostgresNotificationStore extends PostgresAiStore {
    }
    throw Error('UNSUPPORTED_POSTGRES_NOTIFICATION_OPERATION');
   }) as Promise<TResult>;
+ }
+}
+
+/** Native PostgreSQL transitions have no read/write CAS gap. The legacy adapter
+ * remains for the isolated in-memory document tests only. Production never
+ * falls back after an RPC error. */
+export class PostgresNotificationStore extends LegacyNotificationStore {
+ constructor(private notificationRpc?: RuntimeRpc) { super(); }
+ private native(){return Boolean(this.notificationRpc)||getFirebaseStatus().authMode==='supabase';}
+ private call<T=any>(action:string,keys:string[],args:any[]):Promise<T>{
+  return (this.notificationRpc||runtimeRpc())('efl_runtime_notification',{
+   p_space:this.notificationRpc?process.env.SUPABASE_DATA_NAMESPACE:getFirestoreDb().databaseId,p_action:action,
+   p_ids:keys.map(key=>createHash('sha256').update(key).digest('hex')),p_args:args,
+  });
+ }
+ async set(key:string,value:any,options?:{nx?:boolean;ex?:number}){
+  if(!this.native()||!options?.nx)return super.set(key,value,options);
+  if(options.ex!==undefined&&(!Number.isFinite(options.ex)||options.ex<=0))throw Error('INVALID_STATE_TTL');
+  return this.call('nx',[key],[value,options.ex??null]);
+ }
+ async hget<T=any>(key:string,field:string):Promise<T|null>{return this.native()?this.call('hget',[key],[field]):super.hget<T>(key,field);}
+ async hgetall<T=any>(key:string):Promise<T|null>{return super.get<T>(key);}
+ async hexists(key:string,field:string):Promise<number>{return Number(await this.hget(key,field)!==null);}
+ async hset(key:string,fields:Record<string,any>){return this.native()?this.call('hset',[key],[fields]):super.hset(key,fields);}
+ async hdel(key:string,field:string){return this.native()?this.call('hdel',[key],[field]):super.hdel(key,field);}
+ async rpush(key:string,value:any){return this.native()?this.call('rpush',[key],[parse(value)]):super.rpush(key,value);}
+ async eval<TArgs extends unknown[]=unknown[],TResult=any>(script:string,keys:string[],args:TArgs):Promise<TResult>{
+  if(!this.native())return super.eval<TArgs,TResult>(script,keys,args);
+  if(script.includes('EFL_NOTIFY_PENDING_V1'))return this.call('pending',keys,[]);
+  if(script.includes('EFL_NOTIFY_ENQUEUE_V1'))return this.call('enqueue',keys,[args[0],parse(args[1]),parse(args[2])]);
+  if(script.includes('EFL_NOTIFY_SMART_ENQUEUE_V1'))return this.call('smart_enqueue',keys,[args[0],args[1],parse(args[2]),parse(args[3])]);
+  if(script.includes('EFL_NOTIFY_CLAIM_V1'))return this.call('claim',keys,args);
+  if(script.includes('EFL_NOTIFY_RELEASE_V1'))return this.call('release',keys,args);
+  throw Error('UNSUPPORTED_POSTGRES_NOTIFICATION_OPERATION');
  }
 }
 export function getNotificationStore():Redis|null{

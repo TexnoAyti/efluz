@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {PGlite} from '@electric-sql/pglite';
 import express from 'express';
 import {once} from 'node:events';
-import {encodeValue,decodeValue} from '../migration/firestoreArchive';
 import {getFirestoreDb,resetFirebaseAdminCache} from '../firebase/admin';
 import {authMiddleware,requireAdmin} from '../middleware/authMiddleware';
 import {createSessionToken} from '../auth/sessionToken';
@@ -21,7 +22,7 @@ import {enqueueSmartTelegramNotification} from '../services/smartNotificationSer
 import {processNotificationQueue,getBroadcastHistory} from '../services/telegramNotificationQueue';
 import {getNotificationStore} from '../services/postgresNotificationStore';
 
-// Real PostgreSQL adapter and service transactions, isolated RPC transport.
+// Native PostgreSQL SQL and service transactions, isolated HTTP transport.
 delete process.env.FIREBASE_FORCE_LOCAL_FALLBACK;
 process.env.NODE_ENV='production';
 process.env.DATABASE_PROVIDER='supabase';
@@ -30,8 +31,13 @@ process.env.SUPABASE_URL='https://ticket.test.invalid';
 process.env.SUPABASE_SERVICE_ROLE_KEY='isolated-key';
 process.env.SESSION_SECRET='isolated-ticket-auth-secret-32bytes';
 resetFirebaseAdminCache();
-let generation=0;
-let rows=new Map<string,any>();
+const pg=new PGlite();
+await pg.exec('create role anon; create role authenticated; create role service_role bypassrls;');
+for(const file of ['20261009044907_postgres_document_runtime.sql','20261009125000_nonblocking_runtime_reads.sql',
+ '20261009134500_patch_snapshot_rows.sql','20261010091409_application_runtime_commit_conflicts.sql',
+ '20261010161456_stop_postgrest_conflict_retries.sql','20261010172440_conditional_snapshot_reads.sql',
+ '20261104143845_atomic_notification_operations.sql'])await pg.exec(await readFile('supabase/migrations/'+file,'utf8'));
+await pg.exec('set role service_role');
 const originalFetch=globalThis.fetch;
 let telegramRequests=0;
 let telegramReject=true;
@@ -44,26 +50,15 @@ globalThis.fetch=async(input:any,init?:any)=>{
  }
  if(url.origin!=='https://ticket.test.invalid')return originalFetch(input,init);
  const body=JSON.parse(init.body);
- if(url.pathname.endsWith('/efl_runtime_snapshot_read')){
-  return Response.json({documents:body.p_ids.map((id:string)=>({id,version:String(generation),value:rows.has('durable_read_snapshots/'+id)?decodeValue(rows.get('durable_read_snapshots/'+id)):null}))});
- }
- if(url.pathname.endsWith('/efl_runtime_read')){
-  const q=body.p_query;
-  let documents=[...rows].filter(([path])=>q.path?path===q.path:path.split('/').slice(0,-1).join('/')===q.collection).map(([path,encoded])=>({id:path.split('/').at(-1)!,encoded}));
-  for(const f of q.filters||[])documents=documents.filter(d=>{const value=f.field==='__name__'?d.id:decodeValue(d.encoded)[f.field];return f.op==='in'?f.value.includes(value):f.op==='!='?value!==f.value:f.op==='array-contains'?Array.isArray(value)&&value.includes(f.value):value===f.value;});
-  if(q.limit)documents=documents.slice(0,q.limit);
-  return Response.json({generation:String(generation),documents,count:documents.length});
- }
- if(url.pathname.endsWith('/efl_runtime_commit_safe')){
-  if(body.p_generation!==null&&body.p_generation!==String(generation))return Response.json({conflict:true});
-  const next=new Map(rows);
-  for(const op of body.p_operations){
-   if(op.kind==='delete')next.delete(op.path);
-   else next.set(op.path,op.merge||op.kind==='update'?encodeValue({...decodeValue(next.get(op.path)||encodeValue({})),...decodeValue(op.encoded)}):op.encoded);
-  }
-  rows=next;if(body.p_operations.length)generation++;return Response.json({generation:String(generation)});
- }
- throw Error('UNEXPECTED_RPC');
+ try{
+  const name=url.pathname.split('/').at(-1);let result;
+  if(name==='efl_runtime_notification')result=await pg.query('select public.efl_runtime_notification($1,$2,$3::text[],$4::jsonb) value',[body.p_space,body.p_action,body.p_ids,JSON.stringify(body.p_args)]);
+  else if(name==='efl_runtime_snapshot_read')result=await pg.query('select public.efl_runtime_snapshot_read($1,$2::jsonb,$3::jsonb) value',[body.p_space,JSON.stringify(body.p_ids),JSON.stringify(body.p_versions)]);
+  else if(name==='efl_runtime_read')result=await pg.query('select public.efl_runtime_read($1,$2::jsonb) value',[body.p_space,JSON.stringify(body.p_query)]);
+  else if(name==='efl_runtime_commit_safe')result=await pg.query('select public.efl_runtime_commit_safe($1,$2::jsonb,$3) value',[body.p_space,JSON.stringify(body.p_operations),body.p_generation]);
+  else throw Error('UNEXPECTED_RPC');
+  return Response.json(result.rows[0].value);
+ }catch(error:any){return Response.json({code:error.code,message:error.message},{status:400});}
 };
 const db=getFirestoreDb();
 const user=(id:string,telegramId:string,isAdmin=false)=>({id,telegramId,isAdmin,isSuspended:false,username:'recipient',firstName:'Test',createdAt:'',updatedAt:''});
@@ -183,4 +178,4 @@ try{
   (globalThis as any).sessionStorage=savedSession;
   (globalThis as any).localStorage=savedLocal;
  }
-}finally{server.close();globalThis.fetch=originalFetch;}
+}finally{server.close();globalThis.fetch=originalFetch;await pg.close();}
