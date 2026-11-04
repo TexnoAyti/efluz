@@ -8,6 +8,8 @@ export async function uzeflifeRequest(action='',body?:unknown,options?:{signal?:
     if(body!==undefined) throw new Error('Namoyish rejimida turnirni o‘zgartirib bo‘lmaydi.');
     return structuredClone(uzeflifeDemo);
   }
+  const mutation=body!==undefined;
+  const timeoutMs=options?.timeoutMs??(mutation?30000:20000);
   const controller=new AbortController();
   const run=async()=>{
     const res=await fetch(`/api/uzeflife${action?`/${action}`:''}`,{
@@ -15,7 +17,7 @@ export async function uzeflifeRequest(action='',body?:unknown,options?:{signal?:
       ...(body===undefined?{}:{body:JSON.stringify(body)}),
     });
     const data=await res.json().catch(()=>{throw Error('Serverdan to‘g‘ri javob kelmadi. Holatni yangilang.');});
-    if(!res.ok||!data.ok) throw Object.assign(new Error(data.error||'Turnirni yuklab bo‘lmadi.'),{channels:data.channels});
+    if(!res.ok||!data.ok) throw Object.assign(new Error(data.error||'Turnirni yuklab bo‘lmadi.'),{channels:data.channels,knownRejection:res.status<500});
     return data;
   };
   // Bound fetch and body parsing even when the transport ignores abort.
@@ -27,7 +29,7 @@ export async function uzeflifeRequest(action='',body?:unknown,options?:{signal?:
     const abort=()=>finish(new DOMException('So‘rov bekor qilindi.','AbortError'));
     if(options?.signal?.aborted){abort();return;}
     options?.signal?.addEventListener('abort',abort,{once:true});
-    if(options?.timeoutMs!==undefined)timer=setTimeout(()=>finish(Object.assign(new Error('So‘rov cho‘zilib ketdi. Holatni yangilab, qayta urinib ko‘ring.'),{code:'UZEFLIFE_REQUEST_TIMEOUT'})),Math.max(1,options.timeoutMs));
-    run().then(value=>finish(null,value),error=>finish(error));
+    timer=setTimeout(()=>finish(Object.assign(new Error(mutation?'Javob kechikdi. Amal bajarilgan bo‘lishi mumkin. Holatni yangilang.':'So‘rov cho‘zilib ketdi. Holatni yangilab, qayta urinib ko‘ring.'),{code:'UZEFLIFE_REQUEST_TIMEOUT',uncertain:mutation})),Math.max(1,timeoutMs));
+    run().then(value=>finish(null,value),error=>{if(mutation&&!error.knownRejection&&error.name!=='AbortError')error.uncertain=true;finish(error);});
   });
 }
