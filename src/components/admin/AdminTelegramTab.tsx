@@ -192,11 +192,13 @@ export const AdminTelegramTab: React.FC = () => {
   const deliveryHealth = useMemo(() => broadcasts.reduce((acc, item) => {
     acc.total += Number(item.metrics?.totalRecipients || 0);
     acc.sent += Number(item.metrics?.sentCount || 0);
-    acc.failed += Number(item.metrics?.failedCount || 0);
+    const uncertain = (item.recipients || []).filter(r => r.status === 'FAILED' && r.error?.includes('DELIVERY_UNKNOWN')).length;
+    acc.uncertain += uncertain;
+    acc.failed += Math.max(0, Number(item.metrics?.failedCount || 0) - uncertain);
     acc.skipped += Number(item.metrics?.skippedCount || 0);
     acc.pending += Math.max(0, Number(item.metrics?.totalRecipients || 0) - Number(item.metrics?.sentCount || 0) - Number(item.metrics?.failedCount || 0) - Number(item.metrics?.skippedCount || 0));
     return acc;
-  }, { total: 0, sent: 0, failed: 0, skipped: 0, pending: 0 }), [broadcasts]);
+  }, { total: 0, sent: 0, failed: 0, skipped: 0, pending: 0, uncertain: 0 }), [broadcasts]);
 
   // Filtered visible recipients
   const filteredRecipients = useMemo(() => {
@@ -655,8 +657,8 @@ export const AdminTelegramTab: React.FC = () => {
 
       <div className="glass-panel p-4 rounded-2xl border-slate-800 space-y-3">
         <div className="flex items-center justify-between"><div><h3 className="text-sm font-black text-white">{loc('Yuborish holati', 'Состояние доставки', 'Delivery Health')}</h3><p className="text-[10px] text-slate-500">{loc('Oxirgi yuborishlar • qayta urinish muvaffaqiyatli oluvchilarga qayta yubormaydi', 'Последние рассылки • повторная попытка не затрагивает успешно доставленные сообщения', 'Recent broadcasts • retry never resends successful deliveries')}</p></div><button onClick={handleProcessQueue} className="px-3 py-1.5 rounded-xl bg-sky-500/10 border border-sky-500/30 text-sky-300 text-[10px] font-black">{loc('Navbatni bajarish', 'Обработать очередь', 'Process Queue')}</button></div>
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-          {[[loc('Jami', 'Всего', 'Total'), deliveryHealth.total, 'text-white'], [loc('Yuborildi', 'Отправлено', 'Sent'), deliveryHealth.sent, 'text-emerald-300'], [loc('Kutilmoqda', 'Ожидает', 'Pending'), deliveryHealth.pending, 'text-sky-300'], [loc('Xato', 'Ошибки', 'Failed'), deliveryHealth.failed, 'text-rose-300'], [loc('O‘tkazildi', 'Пропущено', 'Skipped'), deliveryHealth.skipped, 'text-slate-400']].map(([label, value, cls]) => <div key={String(label)} className="rounded-xl bg-slate-950/60 border border-white/[0.05] p-3"><div className={`text-lg font-black font-mono ${cls}`}>{value}</div><div className="text-[9px] uppercase font-bold text-slate-500">{label}</div></div>)}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {[[loc('Jami', 'Всего', 'Total'), deliveryHealth.total, 'text-white'], [loc('Yuborildi', 'Отправлено', 'Sent'), deliveryHealth.sent, 'text-emerald-300'], [loc('Kutilmoqda', 'Ожидает', 'Pending'), deliveryHealth.pending, 'text-sky-300'], [loc('Xato', 'Ошибки', 'Failed'), deliveryHealth.failed, 'text-rose-300'], [loc('Yetkazilishi noma’lum', 'Доставка неизвестна', 'Delivery unknown'), deliveryHealth.uncertain, 'text-amber-300'], [loc('O‘tkazildi', 'Пропущено', 'Skipped'), deliveryHealth.skipped, 'text-slate-400']].map(([label, value, cls]) => <div key={String(label)} className="rounded-xl bg-slate-950/60 border border-white/[0.05] p-3"><div className={`text-lg font-black font-mono ${cls}`}>{value}</div><div className="text-[9px] uppercase font-bold text-slate-500">{label}</div></div>)}
         </div>
       </div>
 
@@ -669,7 +671,7 @@ export const AdminTelegramTab: React.FC = () => {
               <span>{loc('Yuborish tarixi va ko‘rsatkichlar', 'История и показатели рассылок', 'Broadcast Delivery History & Metrics')}</span>
             </h3>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              {loc('Redisda saqlangan tekshiriladigan navbat yozuvlari', 'Проверяемые записи очереди в Redis', 'Audited queue records tracked in Redis storage')}
+              {loc('Saqlangan yuborish yozuvlari. Yetkazilishi noma’lum xabarlar qayta yuborilmaydi.', 'Сохранённые записи доставки. Неизвестные доставки не повторяются.', 'Stored delivery receipts. Unknown deliveries are excluded from retries.')}
             </p>
           </div>
           <button
@@ -726,7 +728,8 @@ export const AdminTelegramTab: React.FC = () => {
                       {b.metrics?.skippedCount || 0}
                     </td>
                     <td className="py-2 px-2 text-center font-mono font-bold text-rose-400">
-                      {b.metrics?.failedCount || 0}
+                      {(b.recipients || []).filter(r => r.status === 'FAILED' && !r.error?.includes('DELIVERY_UNKNOWN')).length}
+                      {(b.recipients || []).some(r => r.error?.includes('DELIVERY_UNKNOWN')) && <div className="text-[9px] text-amber-300">{loc('Yetkazilishi noma’lum', 'Доставка неизвестна', 'Delivery unknown')}: {(b.recipients || []).filter(r => r.status === 'FAILED' && r.error?.includes('DELIVERY_UNKNOWN')).length}</div>}
                     </td>
                     <td className="py-2 px-3 text-right">
                       <span
@@ -740,7 +743,7 @@ export const AdminTelegramTab: React.FC = () => {
                       >
                         {b.status}
                       </span>
-                      {(b.metrics?.failedCount || 0) > 0 && (
+                      {(b.recipients || []).some(r => r.status === 'FAILED' && !r.error?.includes('DELIVERY_UNKNOWN')) && (
                         <button
                           onClick={() => handleRetryFailed(b.id)}
                           disabled={retryingBroadcastId === b.id}

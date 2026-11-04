@@ -789,6 +789,12 @@ export async function retryFailedBroadcastRecipients(
   let retried = 0;
   let skipped = 0;
   for (const recipient of targets) {
+    // A manual bulk retry is not evidence that a timed-out send failed.
+    // Preserve uncertain receipts until an operator verifies delivery.
+    if (recipient.error?.includes('DELIVERY_UNKNOWN')) {
+      skipped++;
+      continue;
+    }
     const directoryEntry = byUser.get(recipient.userId);
     if (!directoryEntry?.messageable || !directoryEntry.telegramId) {
       skipped++;
@@ -837,6 +843,9 @@ export async function retryFailedBroadcastRecipients(
  */
 export async function getBroadcastDetails(broadcastId: string): Promise<TelegramBroadcastRecord | null> {
   const client = getNotificationStore();
+  // A stale process-memory receipt must never authorize a second Telegram send
+  // when the authoritative database cannot be read. Keep the durable claim.
+  if (client && process.env.DATABASE_PROVIDER === 'supabase') return client.hget<TelegramBroadcastRecord>(BROADCASTS_KEY, broadcastId);
   if (client) {
     try {
       const record = await client.hget<TelegramBroadcastRecord>(BROADCASTS_KEY, broadcastId);

@@ -1,6 +1,13 @@
 import http from 'http';
 import handler from '../../../api/index.js';
 
+// Keep the process alive while promises are pending. An unref'ed server handle
+// must not make a partially executed test silently exit successfully.
+const completionDeadline = setTimeout(() => {
+  console.error('VERCEL HANDLER TEST FAILED: completion deadline exceeded');
+  process.exit(1);
+}, 90000);
+
 async function testVercelHandler() {
   console.log('====================================================');
   console.log('    TESTING VERCEL SERVERLESS HANDLER (api/index)   ');
@@ -23,7 +30,7 @@ async function testVercelHandler() {
   const baseUrl = `http://127.0.0.1:${port}`;
 
   async function fetchJson(path: string, headers: Record<string, string> = {}) {
-    const res = await fetch(`${baseUrl}${path}`, { headers });
+    const res = await fetch(`${baseUrl}${path}`, { headers, signal: AbortSignal.timeout(15000) });
     const data = await res.json();
     return { status: res.status, data };
   }
@@ -119,7 +126,7 @@ async function testVercelHandler() {
   }
 }
 
-testVercelHandler().catch((err) => {
+testVercelHandler().then(() => clearTimeout(completionDeadline)).catch((err) => {
   console.error('\n❌ VERCEL HANDLER TEST FAILED:', err);
   process.exit(1);
 });

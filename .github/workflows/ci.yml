@@ -24,7 +24,7 @@ jobs:
 
       - name: Install dependencies
         timeout-minutes: 3
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Run Lint
         run: bun run lint
@@ -78,6 +78,8 @@ jobs:
           node scripts/run-isolated-test.mjs src/server/tests/reconciliationBurstRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/rateIncrementBatchRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/readCostBatchRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/notificationUncertainRetryTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/notificationAtomicSqlTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/postgresCapacityRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/nonblockingRequestGateRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/telegramWebhookRetryRegressionTest.ts
