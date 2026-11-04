@@ -1,3 +1,4 @@
+import {verifyUzeflifeRoundAdvance} from './uzeflifeRoundAdvanceAudit';
 import {verifyLeagueBacklogReminders} from './leagueBacklogReminderRegressionTest';
 import {verifyAllCompetitionBacklog} from './allCompetitionBacklogAudit';
 import {verifyPlayerMatchPermissionFreshness} from './playerMatchPermissionFreshnessTest';
@@ -45,7 +46,7 @@ import { readPostgresSnapshotBundle, clearPostgresSnapshotCache } from '../readM
 // The HTTP envelope is simulated; this cannot prove hosted PostgREST latency.
 const pg = new PGlite();
 await pg.exec('create role anon; create role authenticated; create role service_role bypassrls;');
-for (const path of ['20261009044907_postgres_document_runtime.sql', '20261009125000_nonblocking_runtime_reads.sql', '20261009134500_patch_snapshot_rows.sql', '20261010091409_application_runtime_commit_conflicts.sql', '20261010161456_stop_postgrest_conflict_retries.sql', '20261010172440_conditional_snapshot_reads.sql', '20261101122224_indexed_document_id_filters.sql', '20261101122430_linear_runtime_map_decode.sql', '20261101122842_compact_notification_payloads.sql', '20261101133936_atomic_round_photo_transitions.sql', '20261101135340_round_photo_claim_snapshot.sql', '20261101181243_uzeflife_compact_read.sql', '20261104143845_atomic_notification_operations.sql']) {
+for (const path of ['20261009044907_postgres_document_runtime.sql', '20261009125000_nonblocking_runtime_reads.sql', '20261009134500_patch_snapshot_rows.sql', '20261010091409_application_runtime_commit_conflicts.sql', '20261010161456_stop_postgrest_conflict_retries.sql', '20261010172440_conditional_snapshot_reads.sql', '20261101122224_indexed_document_id_filters.sql', '20261101122430_linear_runtime_map_decode.sql', '20261101122842_compact_notification_payloads.sql', '20261101133936_atomic_round_photo_transitions.sql', '20261101135340_round_photo_claim_snapshot.sql', '20261101181243_uzeflife_compact_read.sql', '20261104143845_atomic_notification_operations.sql','20261104194914_uzeflife_transaction_snapshot.sql']) {
   await pg.exec(await readFile('supabase/migrations/' + path, 'utf8'));
 }
 const photoGrants=(await pg.query(`select has_function_privilege('anon','public.efl_runtime_round_photo(text,integer,text,text,jsonb)','execute') as anon,
@@ -58,6 +59,10 @@ const compactGrants=(await pg.query(`select has_function_privilege('anon','publi
  has_function_privilege('service_role','public.efl_runtime_uzeflife_read(text)','execute') as service,
  (select prosecdef from pg_proc where oid='public.efl_runtime_uzeflife_read(text)'::regprocedure) as definer`)).rows[0];
 assert.deepEqual(compactGrants,{anon:false,authenticated:false,service:true,definer:false});
+const snapshotGrants=(await pg.query(`select has_function_privilege('anon','public.efl_runtime_uzeflife_snapshot(text)','execute') as anon,has_function_privilege('authenticated','public.efl_runtime_uzeflife_snapshot(text)','execute') as authenticated,has_function_privilege('service_role','public.efl_runtime_uzeflife_snapshot(text)','execute') as service,(select prosecdef from pg_proc where oid='public.efl_runtime_uzeflife_snapshot(text)'::regprocedure) as definer`)).rows[0];
+assert.deepEqual(snapshotGrants,{anon:false,authenticated:false,service:true,definer:false});
+await assert.rejects(pg.query("select public.efl_runtime_uzeflife_snapshot('missing-space')"),/UNKNOWN_RUNTIME_SPACE/);
+const emptySnapshot=JSON.parse((await pg.query<{value:string}>("select public.efl_runtime_uzeflife_snapshot('preview') as value")).rows[0].value);assert.equal(emptySnapshot.data,null);assert.match(emptySnapshot.generation,/^\d+$/);
 await assert.rejects(pg.query("select public.efl_runtime_uzeflife_read('missing-space')"),/UNKNOWN_RUNTIME_SPACE/);
 assert.equal((await pg.query<{value:string|null}>("select public.efl_runtime_uzeflife_read('preview') as value")).rows[0].value,null);
 await verifyIndexedDocumentIds(pg);
@@ -93,6 +98,7 @@ globalThis.fetch = (async (input: any, init: any) => {
       if(failNotificationCommit && body.p_action==='smart_enqueue'){failNotificationCommit=false;throw Error('NOTIFICATION_COMMIT_UNAVAILABLE');}
       result=await pg.query('select public.efl_runtime_notification($1,$2,$3::text[],$4::jsonb) as value',[body.p_space,body.p_action,body.p_ids,JSON.stringify(body.p_args)]);
     }
+    else if(name==='efl_runtime_uzeflife_snapshot') result=await pg.query('select public.efl_runtime_uzeflife_snapshot($1) as value',[body.p_space]);
     else if(name==='efl_runtime_uzeflife_read') result=await pg.query('select public.efl_runtime_uzeflife_read($1) as value',[body.p_space]);
     else if(name==='efl_runtime_round_photo') result=await pg.query('select public.efl_runtime_round_photo($1,$2,$3,$4,$5::jsonb) as value',[body.p_space,body.p_round,body.p_action,body.p_token,JSON.stringify(body.p_payload)]);
     else if(name==='efl_runtime_snapshot_read') result=await pg.query('select public.efl_runtime_snapshot_read($1,$2::jsonb,$3::jsonb) as value',[body.p_space,JSON.stringify(body.p_ids),JSON.stringify(body.p_versions)]);
@@ -314,7 +320,7 @@ try {
   await verifyTeamTournamentSettings(()=>{failTeamPreviewCommit=true;});
   await verifyTeamPlayerMatches();await verifyElClasico(()=>{failClasicoCommit=true;});
   await verifyUzeflifeLeague();
-await verifyUzeflifeAutoLink();await verifyUzeflifeFourFeatures();
+await verifyUzeflifeRoundAdvance();await verifyUzeflifeAutoLink();await verifyUzeflifeFourFeatures();
   await verifyUzeflifeNotificationDelivery();
   await verifyUzeflifeRoundPosts();
   await verifyCompetitionNotices(()=>{failClasicoCommit=true;});

@@ -125,13 +125,14 @@ export async function runNoticePreparations(phases:readonly (()=>Promise<boolean
 export async function prepareUNotifications(){
  if(process.env.MIGRATION_WRITE_FREEZE==='true'||process.env.DATABASE_PROVIDER==='supabase'&&process.env.SUPABASE_DATA_NAMESPACE==='preview')return false;
  return runNoticePreparations([
+  // Prepare reminders before draining, then handle UZEFLIFE before other competitions.
+  ()=>sweepUDeadlines(),
+  ()=>processUNotices(60,enqueueSmartTelegramNotification,Date.now()+8000),
   async()=>{const {processRequestedBacklogReminders}=await import('./backlogReminderRequests');return processRequestedBacklogReminders();},
   async()=>{const {processLeagueBacklogReminders}=await import('./leagueBacklogReminders');return processLeagueBacklogReminders();},
   async()=>{const {autoPublishUzeflifeFirstRound}=await import('./uzeflifeAutoRoundPost');return autoPublishUzeflifeFirstRound();},
   ()=>processCompetitionNotices(40,enqueueSmartTelegramNotification,Date.now()+7000),
   ()=>sweepCustomCompetitionDeadlines(),
-  ()=>sweepUDeadlines(),
-  ()=>processUNotices(60,enqueueSmartTelegramNotification,Date.now()+8000),
   ()=>sweepURoundSummaries(),
   ()=>processURoundSummary(),
  ]);

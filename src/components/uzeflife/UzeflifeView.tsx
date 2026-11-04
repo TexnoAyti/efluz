@@ -37,7 +37,7 @@ export function UzeflifeView({management=false}:{management?:boolean}={}) {
       if(request.current!==operation)return false;
       if(action==='subscription-check'){
         setMissing(data.channels);setNotice(data.subscribed?'Obuna tasdiqlandi. Ro‘yxatdan o‘tishingiz mumkin.':'Barcha kanallarga obuna bo‘ling.');
-      } else {setState(data);setMissing([]);setNotice(action==='register'?'Arizangiz qabul qilindi. Administrator tasdig‘ini kuting.':action==='result'&&data.matches?.find((m:any)=>m.id===(body as any)?.matchId)?.dispute?.status==='open'?'Hisoblar mos kelmadi. Admin tekshirishi uchun e’tiroz ochildi.':'Saqlandi.');}
+      } else {setState(data);setMissing([]);setNotice(action==='next'?`${data.round}-tur ochildi. Raqiblar haqidagi bildirishnomalar navbatga qo‘yildi.`:action==='register'?'Arizangiz qabul qilindi. Administrator tasdig‘ini kuting.':action==='result'&&data.matches?.find((m:any)=>m.id===(body as any)?.matchId)?.dispute?.status==='open'?'Hisoblar mos kelmadi. Admin tekshirishi uchun e’tiroz ochildi.':'Saqlandi.');}
       return true;
     } catch(e:any){if(request.current===operation){setError(e.message);if(e.channels)setMissing(e.channels);if(e.uncertain){recovery.current=true;setRecoveryRequired(true);}}return false;}
     finally {if(request.current===operation){request.current=null;setBusy(false);}}

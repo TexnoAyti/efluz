@@ -92,4 +92,4 @@ uzeflifeRouter.post('/publish-reconcile',requireAuth,async(req,res)=>{
   if(delivery.state==='pending')scheduleRoundPost(delivery.round);
  }catch(e:any){res.status(e.statusCode||503).json({ok:false,error:e.statusCode?e.message:'Yuborish holatini saqlab bo‘lmadi.'});}
 });
-uzeflifeRouter.post('/:action',requireAuth,async(req,res)=>{try{await mutateUState(req.user!,req.params.action,req.body);res.json({ok:true,...await viewState(req.user)});}catch(e:any){res.status(e.statusCode||503).json({ok:false,error:e.statusCode?e.message:'Amalni saqlab bo‘lmadi. Qayta urinib ko‘ring.',channels:e.channels});}});
+uzeflifeRouter.post('/:action',requireAuth,async(req,res)=>{try{const state=await mutateUState(req.user!,req.params.action,req.body);res.json({ok:true,...await viewState(req.user,state)});}catch(e:any){res.status(e.statusCode||503).json({ok:false,error:e.statusCode?e.message:'Amalni saqlab bo‘lmadi. Qayta urinib ko‘ring.',channels:e.channels});}});

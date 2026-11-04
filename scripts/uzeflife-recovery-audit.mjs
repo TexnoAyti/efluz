@@ -31,4 +31,25 @@ for(const width of [320,393,844]){
  await page.evaluate(()=>window.uMode='hang-read');await page.getByRole('button',{name:'Yangilash',exact:true}).click();const before=await page.evaluate(()=>window.uAborts);await page.click('#leave-u');assert.ok(await page.evaluate(()=>window.uAborts)>before);await page.evaluate(()=>window.uMode='success');await page.click('#return-u');await page.getByRole('navigation',{name:'UZEFLIFE liga bo‘limlari'}).waitFor();
  assert.deepEqual(errors,[]);console.log('PASS '+width+'px: stalled mutation/body recovery, single-flight submit, close/nav while pending, no automatic resend, authoritative refresh, stalled read retry, unmount abort');await page.close();
 }
+const adminPage=await context.newPage();await adminPage.setViewportSize({width:393,height:800});await adminPage.goto(base);
+await adminPage.evaluate(()=>{window.uMode='success';window.uState.permissions=['brackets'];});
+await adminPage.getByRole('button',{name:'Yangilash',exact:true}).click();await adminPage.getByRole('button',{name:'Liga boshqaruvi'}).click();
+await adminPage.getByText(/1-turda 1 ta o‘yin yakunlanmagan/).waitFor();
+await adminPage.evaluate(()=>window.uMode='reject');await adminPage.getByRole('button',{name:'Keyingi turni ochish'}).click();
+await adminPage.getByRole('alert').filter({hasText:'Known rejection'}).waitFor();
+assert.deepEqual(await adminPage.evaluate(()=>window.uCalls.at(-1).body),{expectedRound:1});
+await adminPage.evaluate(()=>{
+ window.uMode='success';const previous=window.fetch;window.fetch=async(url,init)=>{
+  if(String(url).endsWith('/next')&&init.method==='POST'){window.uState.round=2;window.uState.revision++;}
+  return previous(url,init);
+ };
+});
+await adminPage.getByRole('button',{name:'Keyingi turni ochish'}).click();
+await adminPage.getByRole('status').filter({hasText:'2-tur ochildi.'}).waitFor();await adminPage.getByText(/Davom etmoqda · 2-tur/).waitFor();
+await adminPage.getByRole('button',{name:'Turnirga qaytish'}).click();await adminPage.getByRole('navigation',{name:'UZEFLIFE liga bo‘limlari'}).getByRole('button',{name:'O‘yinlar',exact:true}).click();
+await adminPage.getByText('Tester',{exact:true}).first().click();
+const oldDialog=adminPage.getByRole('dialog');await oldDialog.waitFor();assert.equal(await oldDialog.getByRole('button',{name:'Hisob kiritish',exact:true}).isVisible(),true,'A previous-round player can still enter their score');
+assert.equal(await adminPage.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
+console.log('PASS 393px admin: unfinished count, visible rejection, reviewed-round payload, visible successful round/notice, previous-round result entry and no horizontal overflow');await adminPage.close();
+
 } finally {await browser.close();server.close();rmSync(qaDir,{recursive:true,force:true});}
