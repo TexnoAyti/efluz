@@ -107,6 +107,9 @@ function parseAllowedCrestUrl(value: string): URL | null {
   try {
     const parsed = new URL(value);
     if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port) return null;
+    // Racing's old numeric CDN ID belongs to US Orléans. Allow only this
+    // exact official asset, not arbitrary proxy URLs on another host.
+    if (parsed.href === 'https://www.realracingclub.es/svg/logos/logo.svg') return parsed;
     if (!ALLOWED_CREST_HOSTS.has(parsed.hostname.toLowerCase())) return null;
     return parsed;
   } catch {

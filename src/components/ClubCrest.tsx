@@ -81,7 +81,7 @@ export const ClubCrest: React.FC<ClubCrestProps> = ({
   const premiumClubIds = usePremiumClubIds();
   const premium = Boolean(clubId && premiumClubIds.includes(clubId));
   const directUrl = logoUrl?.trim() || null;
-  const clubCrestProxyUrl = clubId ? `/api/clubs/${clubId}/crest` : null;
+  const clubCrestProxyUrl = clubId ? `/api/clubs/${clubId}/crest${clubId === 'club-racing-santander' ? '?v=official-20261104' : ''}` : null;
   const genericCrestProxyUrl = directUrl
     ? `/api/clubs/crest-proxy?url=${encodeURIComponent(directUrl)}`
     : null;

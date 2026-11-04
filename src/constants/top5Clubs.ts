@@ -91,7 +91,7 @@ export const TOP5_CLUBS: Top5Club[] = [
   { id: 'club-malaga', name: 'Málaga CF', shortName: 'MCF', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://crests.football-data.org/84.png' },
   { id: 'club-mallorca', name: 'RCD Mallorca', shortName: 'MLL', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://crests.football-data.org/89.png' },
   { id: 'club-osasuna', name: 'CA Osasuna', shortName: 'OSA', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://crests.football-data.org/79.png' },
-  { id: 'club-racing-santander', name: 'Racing Santander', shortName: 'RAC', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://crests.football-data.org/742.png' },
+  { id: 'club-racing-santander', name: 'Racing Santander', shortName: 'RAC', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://www.realracingclub.es/svg/logos/logo.svg' },
   { id: 'club-rayo-vallecano', name: 'Rayo Vallecano', shortName: 'RAY', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://crests.football-data.org/87.png' },
   { id: 'club-real-betis', name: 'Real Betis', shortName: 'BET', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://crests.football-data.org/90.png' },
   { id: 'club-real-madrid', name: 'Real Madrid', shortName: 'RMA', country: 'Spain', leagueId: 'league-la-liga', logoUrl: 'https://crests.football-data.org/86.png' },
