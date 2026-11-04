@@ -10,6 +10,7 @@ import { useI18n } from '../i18n';
 import confetti from 'canvas-confetti';
 import { ClubCrest } from './ClubCrest';
 import './result-submission.css';
+import {FixtureOpponentContact} from './FixtureOpponentContact';
 import {
   X,
   CheckCircle2,
@@ -266,6 +267,8 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
               </div>
             </div>
           </div>
+
+          {isParticipant && <FixtureOpponentContact fixture={fixture} clubId={isHomeOwner ? fixture.homeClubId : isAwayOwner ? fixture.awayClubId : ownedClubs.find(club => club.id === fixture.homeClubId || club.id === fixture.awayClubId)?.id} />}
 
           {/* Opponent Submission Status Notification */}
           {opponentSubmission && (

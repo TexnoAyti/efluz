@@ -11,6 +11,7 @@ import { api } from '../lib/api';
 import { Fixture, Club, Competition } from '../types';
 import { ClubCrest } from './ClubCrest';
 import { CompetitionMark } from './CompetitionMark';
+import { FixtureOpponentContact } from './FixtureOpponentContact';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
 import { MatchdayCountdown } from './MatchdayCountdown';
 import { FluidGlassExperiment } from './FluidGlassExperiment';
@@ -83,7 +84,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
       nextMatchAction: 'Keyingi o‘yin / Harakat kerak',
       actionRequired: 'Harakat talab etiladi',
       matches: 'O‘yinlar',
-      upcoming: 'Kelgusi',
+      upcoming: 'Qolgan',
       results: 'Natijalar',
       noMatches: 'O‘yinlar mavjud emas',
       seasonSnapshot: 'Mavsum statistikasi',
@@ -132,7 +133,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
       nextMatchAction: 'Следующий матч / Требуется действие',
       actionRequired: 'Требуется действие',
       matches: 'Матчи',
-      upcoming: 'Предстоящие',
+      upcoming: 'Не сыграны',
       results: 'Результаты',
       noMatches: 'Матчи не найдены',
       seasonSnapshot: 'Статистика сезона',
@@ -181,7 +182,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
       nextMatchAction: 'Next Match / Action Required',
       actionRequired: 'Action Required',
       matches: 'Matches',
-      upcoming: 'Upcoming',
+      upcoming: 'Unplayed',
       results: 'Results',
       noMatches: 'No matches found',
       seasonSnapshot: 'Season Snapshot',
@@ -230,7 +231,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
     nextMatchAction: 'Next Match / Action Required',
     actionRequired: 'Action Required',
     matches: 'Matches',
-    upcoming: 'Upcoming',
+    upcoming: 'Unplayed',
     results: 'Results',
     noMatches: 'No matches found',
     seasonSnapshot: 'Season Snapshot',
@@ -833,7 +834,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
               {copy.noMatches}
             </div>
           ) : (
-            (matchTab === 'upcoming' ? pendingFixtures : confirmedFixtures).slice(0, 10).map((fixture) => {
+            (matchTab === 'upcoming' ? pendingFixtures : confirmedFixtures.slice(0, 10)).map((fixture) => {
               const isHome = fixture.homeClubId === activeClub?.id || fixture.homeClub?.id === activeClub?.id;
               const isAway = fixture.awayClubId === activeClub?.id || fixture.awayClub?.id === activeClub?.id;
               const resultOutcome = fixture.status === 'CONFIRMED' && (isHome || isAway)
@@ -843,14 +844,14 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
                 : null;
 
               return (
+                <div key={fixture.id} data-club-fixture={fixture.id} className="p-3 sm:p-4 space-y-2">
                 <div
-                  key={fixture.id}
                   onClick={() => {
                     if (fixture.status !== 'CONFIRMED' && fixture.isPlayable !== false) {
                       setSelectedFixtureForModal(fixture);
                     }
                   }}
-                  className="p-3 sm:p-4 hover:bg-[var(--efl-surface-2)] transition-colors cursor-pointer flex items-center justify-between gap-2 text-xs"
+                  className="hover:bg-[var(--efl-surface-2)] transition-colors cursor-pointer flex items-center justify-between gap-2 text-xs"
                 >
                   {/* Home Team */}
                   <div className="flex-1 flex items-center justify-end gap-2 text-right min-w-0">
@@ -924,6 +925,8 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
                       <ChevronRight className="w-3.5 h-3.5 text-[var(--efl-muted)]" />
                     )}
                   </div>
+                </div>
+                {fixture.status !== 'CONFIRMED' && <FixtureOpponentContact fixture={fixture} clubId={activeClub?.id} />}
                 </div>
               );
             })
