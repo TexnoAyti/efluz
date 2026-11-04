@@ -69,7 +69,7 @@ export async function rejectUzeflifeTopicResult(plan:AdminPlan,telegramId:number
 }
 export function uzeflifeMatchFingerprint(s:UState,m:UMatch){
  const identity=(id:string|null)=>{const r=isULeague(s)&&s.roster?.find(r=>r.userId===id&&id);return r?`uze-slot-${r.group}-${r.slot}`:id;};
- return createHash('sha256').update(JSON.stringify([s.status,s.round,m.id,m.bracket,m.round,identity(m.home),identity(m.away),identity(m.winner),m.homeScore,m.awayScore,m.penaltyHome,m.penaltyAway,m.scheduledAt,m.deadlineAt||null,m.dispute?[m.dispute.at,m.dispute.status]:null,m.proposal?[identity(m.proposal.by),m.proposal.home,m.proposal.away,m.proposal.penaltyHome,m.proposal.penaltyAway,...(m.proposal.version?[m.proposal.version]:[])]:null,[m.home,m.away].map(id=>s.participants.find(p=>p.id===id)?.status||null)])).digest('hex');
+ return createHash('sha256').update(JSON.stringify([s.status,isULeague(s)?m.round:s.round,m.id,m.bracket,m.round,identity(m.home),identity(m.away),identity(m.winner),m.homeScore,m.awayScore,m.penaltyHome,m.penaltyAway,m.scheduledAt,m.deadlineAt||null,m.dispute?[m.dispute.at,m.dispute.status]:null,m.proposal?[identity(m.proposal.by),m.proposal.home,m.proposal.away,m.proposal.penaltyHome,m.proposal.penaltyAway,...(m.proposal.version?[m.proposal.version]:[])]:null,[m.home,m.away].map(id=>s.participants.find(p=>p.id===id)?.status||null)])).digest('hex');
 }
 export async function planUzeflifeTopicResult(text:string,sender:number,resolution?:{fixtureId:string}){
  if(isAiHypotheticalQuestion(text))return null;
