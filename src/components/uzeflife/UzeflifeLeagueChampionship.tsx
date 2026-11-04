@@ -1,6 +1,6 @@
 import {UzeflifeHistory} from './UzeflifeHistory';
 import {UzeflifeMyMatch} from './UzeflifeMyMatch';
-import React,{useState} from 'react';
+import React,{useMemo,useState} from 'react';
 import {ArrowLeft,CalendarDays,Users,Trophy,Shield,RefreshCw,History} from 'lucide-react';
 import {CompetitionBanner,CompetitionHeading,CompetitionTabs} from '../CompetitionChrome';
 import {CompetitionFixtureCard,CompetitionRounds,CompetitionStandings,type StandingsView} from '../CompetitionContent';
@@ -15,10 +15,11 @@ import {UzeflifeImageExport} from './UzeflifeImageExport';
 type Tab='mine'|'fixtures'|'standings'|'roster'|'history';
 export function UzeflifeLeagueChampionship({state:s,userId,busy,error,notice,missing,act,onRefresh,initialAdmin,seasonId}:{state:UViewState;userId?:string;busy:boolean;error:string;notice:string;missing:UChannel[];act:UAct;onRefresh:()=>void;initialAdmin:boolean;seasonId:string}){
  const [tab,setTab]=useState<Tab>(userId&&s.participants.some(p=>p.id===userId&&p.status==='approved')?'mine':'fixtures'),[admin,setAdmin]=useState(initialAdmin),[round,setRound]=useState(s.round||1),[selected,setSelected]=useState(readUzeflifeLaunch),[page,setPage]=useState(0),[tablePage,setTablePage]=useState(0),[view,setView]=useState<StandingsView>('short'),[mineOnly,setMineOnly]=useState(false);
- const names=new Map(s.participants.map(p=>[p.id,p.name])),roster=new Map(s.roster?.filter(r=>r.userId).map(r=>[r.userId!,r]));
+ const names=useMemo(()=>new Map(s.participants.map(p=>[p.id,p.name])),[s.participants]);
+ const roster=useMemo(()=>new Map(s.roster?.filter(r=>r.userId).map(r=>[r.userId!,r])),[s.roster]);
  const slotLabel=(id:string|null)=>{const r=roster.get(id||'');return r?`${r.group}-setka · ${r.slot}-o‘rin`:'';};
  const games=s.matches.filter(m=>m.round===round&&(!mineOnly||[m.home,m.away].includes(userId||''))),pages=Math.max(1,Math.ceil(games.length/8)),current=Math.min(page,pages-1);
- const standings=uLeagueStandings(s),active=s.matches.find(m=>m.id===selected),count=s.roster?.filter(r=>r.username).length||0;
+ const standings=useMemo(()=>uLeagueStandings(s),[s.participants,s.matches,s.roster]),active=s.matches.find(m=>m.id===selected),count=s.roster?.filter(r=>r.username).length||0;
  const subscriptionNotice=missing.length?<div className="competition-note"><p>Barcha majburiy kanallarga obuna bo‘ling.</p>{missing.map(c=><a key={c.id} className="competition-button" href={c.url} target="_blank" rel="noreferrer">{c.title}</a>)}<button className="competition-button" disabled={busy} onClick={()=>void act('subscription-check')}>Obunani tekshirish</button></div>:null;
  return <div className="competition-page uzeflife u-league-page">
  {admin?<UzeflifeAdmin state={s} busy={busy} act={act} error={error} onRefresh={onRefresh} onBack={()=>setAdmin(false)} onMatches={()=>{setAdmin(false);setTab('fixtures');setRound(s.round||1);}}/>:<>

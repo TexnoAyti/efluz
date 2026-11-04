@@ -14,7 +14,7 @@ import type {UAct} from './UzeflifeAdmin';
 export function UzeflifeMatchDialog({match:m,state:s,userId,busy,error,subscriptionNotice,act,onClose}:{match:UMatch;state:UViewState;userId?:string;busy:boolean;error:string;subscriptionNotice:React.ReactNode;act:UAct;onClose:()=>void}) {
   const dialog=useRef<HTMLDialogElement>(null);
   const [report,setReport]=useState(false);
-  useEffect(()=>{dialog.current?.showModal();},[]);
+  useEffect(()=>{const element=dialog.current;element?.showModal();return()=>{if(element?.open)element.close();};},[]);
   const real=s.matches.some(f=>f.id===m.id);
   const canResult=s.permissions.includes('results');
   const isPlayer=[m.home,m.away].includes(userId||'')&&s.participants.find(p=>p.id===userId)?.status==='approved';
@@ -22,8 +22,8 @@ export function UzeflifeMatchDialog({match:m,state:s,userId,busy,error,subscript
   const opponentId=m.home===userId?m.away:m.home,opponentUsername=isPlayer?uzeflifeOpponentUsername(s,opponentId):null;
   const canConfirm=!!(real&&s.status==='playing'&&m.proposal&&!uMatchFinished(m)&&m.dispute?.status!=='open'&&(canResult||isPlayer&&m.proposal.by!==userId));
   const name=(side:'home'|'away')=>s.participants.find(p=>p.id===m[side])?.name||uSourceLabel(m,side);
-  return createPortal(<dialog ref={dialog} className="competition-dialog uzeflife u-native-dialog" onCancel={e=>{e.preventDefault();if(!busy)onClose();}} aria-labelledby="u-match-title">
-    <header><div><p className="competition-eyebrow">{isULeague(s)?'Umumiy liga':m.bracket?`${m.bracket}-setka`:'Final bosqichi'} · {uRoundLabel(m.round,s.format)}</p><h2 id="u-match-title">{uMatchNumber(m)}-o‘yin</h2></div><button className="competition-button !p-2" disabled={busy} onClick={onClose} aria-label="O‘yinni yopish"><X size={18}/></button></header>
+  return createPortal(<dialog ref={dialog} className="competition-dialog uzeflife u-native-dialog" onCancel={e=>{e.preventDefault();onClose();}} aria-labelledby="u-match-title">
+    <header><div><p className="competition-eyebrow">{isULeague(s)?'Umumiy liga':m.bracket?`${m.bracket}-setka`:'Final bosqichi'} · {uRoundLabel(m.round,s.format)}</p><h2 id="u-match-title">{uMatchNumber(m)}-o‘yin</h2></div><button type="button" className="competition-button !p-2" onClick={onClose} aria-label="O‘yinni yopish"><X size={18}/></button></header>
     <div className="competition-dialog-body">
       <div className="u-dialog-score u-dialog-scoreboard"><div><span>{name('home')}</span><strong>{m.homeScore??'–'}</strong></div><div><span>{name('away')}</span><strong>{m.awayScore??'–'}</strong></div></div>
       {opponentUsername&&<a className="competition-button primary" href={`https://t.me/${opponentUsername}`} target="_blank" rel="noreferrer"><MessageSquare size={16}/>Raqibga yozish · @{opponentUsername}</a>}
@@ -37,7 +37,7 @@ export function UzeflifeMatchDialog({match:m,state:s,userId,busy,error,subscript
       {canReport&&m.dispute?.status!=='open'&&!uMatchFinished(m)&&<div className="competition-note space-y-2"><a className="competition-button" href={UZEFLIFE_RESULT_TOPIC_URL} target="_blank" rel="noreferrer"><MessageSquare size={14}/>Mavzuda hisob kiritish</a><p>{isPlayer?(isULeague(s)?'O‘z hisobingiz birinchi: 2:1. Durang: 2:2.':'O‘z hisobingiz birinchi: 2:1. Durang bo‘lsa: 2:2 penalti 5:4.'):`Admin uchun: ${m.bracket?`${m.bracket}-setka `:''}${uMatchNumber(m)}-o‘yin va ikkala o‘yinchi nomini hisob bilan yozing.`} Natija raqib yoki admin tasdig‘idan keyin saqlanadi.</p></div>}
       {canReport&&m.dispute?.status!=='open'&&!report&&<button className="competition-button primary" disabled={busy||!canResult&&m.proposal?.by===userId} onClick={()=>setReport(true)}>{canResult?(uMatchFinished(m)?'Hisobni tuzatish':'Natijani tasdiqlash'):m.proposal?.by===userId?'Tasdiq kutilmoqda':m.proposal?'Hisobni tekshirish':'Hisob kiritish'}</button>}
       {canReport&&m.dispute?.status!=='open'&&report&&<form className="space-y-3 u-dialog-section" onSubmit={async e=>{e.preventDefault();const f=new FormData(e.currentTarget);const ok=await act('result',{matchId:m.id,home:Number(f.get('home')),away:Number(f.get('away')),penaltyHome:!f.get('penaltyHome')?null:Number(f.get('penaltyHome')),penaltyAway:!f.get('penaltyAway')?null:Number(f.get('penaltyAway'))});if(ok)setReport(false);}}>
-        <div className="grid grid-cols-2 gap-3">{(['home','away'] as const).map(side=><label key={side} className="competition-field">{name(side)}<input type="number" name={side} min={0} max={99} required defaultValue={m.proposal?.[side]??m[`${side}Score`]??0}/></label>)}</div>
+        <div className="grid grid-cols-2 gap-3">{(['home','away'] as const).map(side=><label key={side} className="competition-field">{name(side)}<input type="number" name={side} min={0} max={99} required disabled={busy} defaultValue={m.proposal?.[side]??m[`${side}Score`]??0}/></label>)}</div>
         {!isULeague(s)&&<details open={m.proposal?.penaltyHome!==null&&!!m.proposal||m.penaltyHome!==null}><summary className="text-xs cursor-pointer">Durang bo‘lsa — penaltilar</summary><div className="grid grid-cols-2 gap-3 mt-3">{(['home','away'] as const).map(side=><label key={side} className="competition-field">{name(side)}<input type="number" name={side==='home'?'penaltyHome':'penaltyAway'} min={0} max={99} defaultValue={m.proposal?.[side==='home'?'penaltyHome':'penaltyAway']??m[side==='home'?'penaltyHome':'penaltyAway']??''}/></label>)}</div></details>}
         <button className="competition-button primary" disabled={busy}>Hisobni {m.proposal&&m.proposal.by!==userId?'tasdiqlash':'yuborish'}</button>
       </form>}
