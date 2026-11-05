@@ -19,6 +19,11 @@ for(const code of ['UCL','UEL','UECL'] as EuropeanCode[]){
   assert.throws(()=>generatePreparedEuropeanDraw(code,clubs.map(c=>({...c,association:'ALL'})),'x'),/UNSATISFIABLE/);
   assert.throws(()=>generatePreparedEuropeanDraw(code,clubs.map(c=>({...c,pot:1})),'x'),/INVALID_POT_COUNTS/);
 }
+for(const code of ['UCL','UEL','UECL'] as EuropeanCode[]){
+  const pots=code==='UECL'?6:4;
+  const distribution=Array.from({length:36},(_,i)=>({id:'distribution-'+i,association:'ASSOC'+(i%12),pot:Math.floor(i/(36/pots))+1}));
+  for(let seed=0;seed<3;seed++)validatePreparedEuropeanDraw(code,distribution,generatePreparedEuropeanDraw(code,distribution,'distribution-'+seed));
+}
 const realistic=Array.from({length:36},(_,i)=>({id:'club-'+i,association:'ASSOC'+(i%12),pot:Math.floor(i/9)+1}));
 validatePreparedEuropeanDraw('UCL',realistic,generatePreparedEuropeanDraw('UCL',realistic,'associations-12'));
 assert.throws(()=>previewPreparedEuropeanCompetition('UCL',realistic.map(c=>({...c,name:c.id,qualification:{route:'DOMESTIC' as const,source:'https://uefa.com.evil.example/proof'}})),'x'),/PROVENANCE/);
@@ -56,6 +61,9 @@ assert.equal(saved.package?.revision,1);assert.equal(saved.package?.current,true
 assert.equal((await stageSeasonPreparationPackage(actor,{expectedRevision:0,expectedDraftRevision:1})).package?.revision,1,'Retry is idempotent');
 await saveSeasonPreparationDraft(actor,{expectedRevision:1,startDate:'2027-01-10'});
 await assert.rejects(stageSeasonPreparationPackage(actor,{expectedRevision:1,expectedDraftRevision:1}),/OUTDATED/);
+assert.equal((await readSeasonPreparationWorkflow(actor)).package?.current,false,'A changed draft makes the staged package stale');
+assert.equal((await stageSeasonPreparationPackage(actor,{expectedRevision:1,expectedDraftRevision:2})).package?.revision,2);
+assert.equal((await db.collection('season_preparation_packages').doc(EFL_SECOND_SEASON.id).get()).data()?.startDate,'2027-01-10');
 assert.equal((await db.collection('seasons').doc(EFL_SECOND_SEASON.id).get()).exists,false);
 assert.equal((await db.collection('fixtures').doc('live-sentinel').get()).data()?.homeScore,4);
 assert.equal((await db.collection('seasons').doc(EFL_SECOND_SEASON.sourceSeasonId).get()).data()?.sentinel,'preserved');

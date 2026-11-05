@@ -51,7 +51,7 @@ export async function readSeasonPreparationWorkflow(actor:User) {
   const draft=draftDoc.exists?draftDoc.data():null;
   const sourceArchived=archiveDoc.exists&&archiveDoc.data()?.status==='ARCHIVED'&&(!sourceDoc.exists||['archived','completed'].includes(String(sourceDoc.data()?.status).toLowerCase()));
   const staged=packageDoc.exists?packageDoc.data():null;
-  return {package:staged?{revision:staged.revision,summary:staged.summary,fingerprint:staged.fingerprint,planFingerprint:staged.planFingerprint,current:staged.planFingerprint===preparedPlanFingerprint(),updatedAt:staged.updatedAt}:null,draft:draft?{revision:draft.revision,startDate:draft.startDate,updatedAt:draft.updatedAt,updatedBy:draft.updatedBy,fingerprint:draft.fingerprint}:null,readiness:preparationReadiness({sourceArchived,startDate:draft?.startDate,draftFingerprint:draft?.fingerprint})};
+  return {package:staged?{revision:staged.revision,summary:staged.summary,fingerprint:staged.fingerprint,planFingerprint:staged.planFingerprint,current:staged.planFingerprint===preparedPlanFingerprint()&&staged.draftRevision===draft?.revision,updatedAt:staged.updatedAt}:null,draft:draft?{revision:draft.revision,startDate:draft.startDate,updatedAt:draft.updatedAt,updatedBy:draft.updatedBy,fingerprint:draft.fingerprint}:null,readiness:preparationReadiness({sourceArchived,startDate:draft?.startDate,draftFingerprint:draft?.fingerprint})};
 }
 
 /** Writes only a versioned preparation document. It cannot close, start or reset a season. */
@@ -80,9 +80,9 @@ export async function stageSeasonPreparationPackage(actor:User,input:{expectedRe
     const draft=await tx.get(db.collection('season_preparation_drafts').doc(EFL_SECOND_SEASON.id));
     const doc=await tx.get(ref),previous=doc.exists?doc.data():null;
     if(!draft.exists||draft.data()?.fingerprint!==planFingerprint||draft.data()?.revision!==input.expectedDraftRevision)throw Object.assign(new Error('DRAFT_NOT_SAVED_OR_OUTDATED'),{statusCode:409});
-    if(previous?.fingerprint===payload.fingerprint&&previous?.planFingerprint===planFingerprint)return;
+    if(previous?.fingerprint===payload.fingerprint&&previous?.planFingerprint===planFingerprint&&previous?.draftRevision===input.expectedDraftRevision)return;
     if(Number(previous?.revision||0)!==input.expectedRevision)throw Object.assign(new Error('DRAFT_REVISION_CONFLICT'),{statusCode:409});
-    tx.set(ref,{...payload,revision:input.expectedRevision+1,planFingerprint,draftRevision:input.expectedDraftRevision,updatedBy:actor.id,updatedAt:new Date().toISOString()});
+    tx.set(ref,{...payload,startDate:draft.data()?.startDate??null,revision:input.expectedRevision+1,planFingerprint,draftRevision:input.expectedDraftRevision,updatedBy:actor.id,updatedAt:new Date().toISOString()});
   });
   return readSeasonPreparationWorkflow(actor);
 }
