@@ -37,7 +37,7 @@ export function buildAdminTasks(input:{competitions:any[];fixtures:any[];operati
    if(f.status==='CONFIRMED'&&Number.isInteger(f.homeScore)&&f.homeScore===f.awayScore&&!f.winnerClubId&&['KNOCKOUT','SUPER_CUP','EUROPEAN_KNOCKOUT'].includes(c.type))add('cup_winner',f.id,'URGENT',pair,'Kubok o‘yini durang, g‘olib belgilanmagan.','Qo‘shimcha vaqt yoki penaltilar hisobini tekshirib, g‘olibni belgilang.','Admin → Kuboklar');
   }
   for(const oldRound of new Set(unfinished.filter(f=>f.matchday!==round).map(f=>f.matchday))){const count=unfinished.filter(f=>f.matchday===oldRound).length;add('round_backlog',c.id+':'+oldRound,'HIGH',`${label} · ${oldRound}-turdan ${count} o‘yin`, 'Oldin ochilgan turdagi natijalar yakunlanmagan.','Qolgan juftliklarni ko‘rib chiqing; har bir o‘yinning holatini aniqlang.','Admin → O‘yinlar');}
-  if(fresh&&current.length&&current.every(f=>f.status==='CONFIRMED')&&String(c.status).toLowerCase()==='active'){
+  if(fresh&&current.length&&current.every(f=>f.status==='CONFIRMED'&&(!['KNOCKOUT','SUPER_CUP','EUROPEAN_KNOCKOUT'].includes(c.type)||f.homeScore!==f.awayScore||!!f.winnerClubId))&&String(c.status).toLowerCase()==='active'){
    if(round<Number(c.totalMatchdays))add('round_ready',c.id,'NORMAL',label+' · keyingi tur','Joriy turning barcha o‘yinlari tasdiqlangan.','Jadval va muddatni tekshirib, keyingi turni ochishni ko‘rib chiqing.','Admin → Tur boshqaruvi');
    else if(Number(c.totalMatchdays)>0&&all.every(f=>['CONFIRMED','CANCELLED'].includes(f.status)))add('season_review',c.id,'NORMAL',label+' · yakuniy tekshiruv','Rejadagi turlar yakunlangan.','Yakuniy jadval, g‘olib va saralash joylarini tekshiring.','Admin → Mavsum');
   }
@@ -58,7 +58,7 @@ export function buildAdminTasks(input:{competitions:any[];fixtures:any[];operati
   if(unlinked)add('uze_link','accounts','NORMAL',`${unlinked} ishtirokchi akkauntini ulashi kerak`,'Username ro‘yxatda bor, lekin ilova akkaunti hali ulanmagan.','Ishtirokchilarni o‘z username’i bilan botga kirishga yo‘naltiring.','UZEFLIFE → Ishtirokchilar',{verified:true});
   if(current.some(m=>!uMatchFinished(m)&&!m.deadlineAt))add('uze_deadline',String(s.round),'NORMAL','UZEFLIFE · tur muddatlarini tekshirish','Joriy turda muddatsiz o‘yinlar bor.','Jadvalda o‘yin muddatlarini belgilang.','UZEFLIFE → Jadval',{verified:true});
   const last=isULeague(s)?15:8;
-  if(current.length&&current.every(uMatchFinished)&&s.status==='playing'){
+  if(current.length&&current.every(m=>uMatchFinished(m)&&!m.proposal&&m.dispute?.status!=='open'&&(isULeague(s)||!!m.winner))&&s.status==='playing'){
    if(s.round<last)add('uze_next',String(s.round),'NORMAL','UZEFLIFE · keyingi tur','Joriy tur natijalari yakunlangan.','Qolgan eski o‘yinlar va jadvalni tekshirib, keyingi turni ochishni ko‘rib chiqing.','UZEFLIFE → Boshqaruv',{verified:true});
    else if(!unfinished.length)add('uze_complete',String(s.round),'NORMAL','UZEFLIFE · turnir yakuni','Ochilgan o‘yinlarning natijalari yakunlangan.','Yakuniy jadval va chempionni tekshirib, turnirni yakunlang.','UZEFLIFE → Boshqaruv',{verified:true});
   }
@@ -69,7 +69,7 @@ export function buildAdminTasks(input:{competitions:any[];fixtures:any[];operati
    for(const b of f.bouts||[]){if(b.disputed)add('team_dispute',t.id+':'+f.id+':'+b.id,'URGENT',label+' · bahsli juftlik','Juftlik hisobida e’tiroz bor.','Ikki tomon dalillarini tekshiring.','TEAMS → O‘yin',extra);else if(b.pendingResult)add('team_review',t.id+':'+f.id+':'+b.id,'HIGH',label+' · natija tasdig‘i','Juftlik natijasi tasdiq kutmoqda.','Raqib yoki turnir admini natijani tekshirsin.','TEAMS → O‘yin',extra);}
    if(f.round===t.currentRound&&(!f.homeLineup||!f.awayLineup))add('team_lineup',t.id+':'+f.id,'NORMAL',label+' · tarkiblar','Joriy juftlikning bir yoki ikkala tarkibi topshirilmagan.','Jamoa sardorlari tarkibni kiritsin.','TEAMS → Tarkib',extra);
   }
-  if(current.length&&current.every(f=>f.bouts?.length&&f.bouts.every(b=>b.homeScore!==null&&b.awayScore!==null&&!b.pendingResult&&!b.disputed))&&t.currentRound<t.totalRounds)add('team_next',t.id,'NORMAL',text(t.name)+' · keyingi tur','Joriy tur juftliklari yakunlangan.','Turnir boshqaruvida keyingi tur holatini tekshiring.','TEAMS → Boshqaruv',{verified:true});
+  if(current.length&&current.every(f=>f.bouts?.length&&f.bouts.every(b=>Number.isInteger(b.homeScore)&&Number.isInteger(b.awayScore)&&b.homeScore>=0&&b.awayScore>=0&&!b.pendingResult&&!b.disputed))&&t.currentRound<t.totalRounds)add('team_next',t.id,'NORMAL',text(t.name)+' · keyingi tur','Joriy tur juftliklari yakunlangan.','Turnir boshqaruvida keyingi tur holatini tekshiring.','TEAMS → Boshqaruv',{verified:true});
  }
  const event=ops.clasico;
  if(event&&event.status==='ACTIVE')for(const b of event.bouts||[])if(b.disputed||b.pendingResult)add('clasico_review',String(b.id),b.disputed?'URGENT':'HIGH','El-Clasico · '+b.id+'-juftlik',b.disputed?'Hisob bo‘yicha e’tiroz bor.':'Hisob tasdiq kutmoqda.','Event sahifasida dalil va hisobni tekshiring.','TEAMS → El-Clasico',{verified:true});

@@ -30,6 +30,8 @@ assert.deepEqual(buildAdminTasks(input).map(t=>t.id),tasks.map(t=>t.id),'Stable 
 const done=structuredClone(input);done.fixtures=done.fixtures.filter(f=>f.id!=='dispute');assert.ok(!buildAdminTasks(done).some(t=>t.id==='result_dispute:dispute'),'Resolved issues disappear from the refreshed list');
 const ready={...structuredClone(input),fixtures:[fixture('ready','CONFIRMED')],operations:{...structuredClone(input.operations),uzeflife:null}};
 assert.ok(buildAdminTasks(ready).some(t=>t.kind==='round_ready'));
+const cupReady={...structuredClone(ready),competitions:[{...ready.competitions[0],type:'KNOCKOUT'}],fixtures:[fixture('tied','CONFIRMED',2,{homeScore:1,awayScore:1})]};assert.ok(!buildAdminTasks(cupReady).some(t=>t.kind==='round_ready'),'A confirmed cup draw without a winner must not suggest advancing');
+const unfinishedTeam={...structuredClone(ready),operations:{unavailable:[],teams:[{id:'team',status:'ACTIVE',currentRound:1,totalRounds:2,fixtures:[{id:'f',round:1,bouts:[{id:'b'}]}]}]}};assert.ok(!buildAdminTasks(unfinishedTeam).some(t=>t.kind==='team_next'),'Missing scores never mean a team round is complete');
 assert.ok(!buildAdminTasks({...ready,stale:true}).some(t=>t.kind==='round_ready'),'Stale data never claims a round is ready');
 const partial=buildAdminTasks({...ready,complete:false,operations:{unavailable:['TEAMS']}});assert.ok(partial.some(t=>t.kind==='source_unavailable'));assert.ok(partial.some(t=>t.kind==='source_stale'));
 const deps={read:async()=>{throw Error('Task reads must not resolve arbitrary fixtures');},users:async()=>[]};
