@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import {initDatabase} from '../db';import {getFirestoreDb} from '../firebase/admin';
 import {initialUState,readUState} from '../services/uzeflifeService';
 import {createULeagueMatches} from '../../lib/uzeflifeLeague';
-import {planUzeflifeTopicResult,UZEFLIFE_RESULT_TOPIC} from '../services/uzeflifeTopicResults';
+import {planUzeflifeTopicResult,executeUzeflifeTopicResult,UZEFLIFE_RESULT_TOPIC} from '../services/uzeflifeTopicResults';
 import {handleTopicResultUpdate,planTopicResult,setTestTopicResultDependencies} from '../services/telegramTopicResults';
 import {findResultScores,separateResultIdentities} from '../services/telegramResultText';
+import {orientAnonymousPhotoScore} from '../services/telegramResultPhotoIdentity';
 import {parseAiMatchScore} from '../services/telegramAiScore';
 
 assert.equal(parseAiMatchScore('Salom hisob2：1rahmat 🙏 soat20:15').homeScore,2);
@@ -30,6 +31,17 @@ await assert.rejects(planUzeflifeTopicResult('@Jasurbek_060 2-1 @unknown_person'
 const realFetch=globalThis.fetch,realNow=Date.now;let clock=realNow(),sequence=600000,visions=0;const sent:any[]=[];Date.now=()=>clock;
 globalThis.fetch=(async(input:any,init:any)=>{const url=String(input);assert.ok(url.includes('api.telegram.org/'),'No external model requests in this suite');const body=JSON.parse(init?.body||'{}');if(url.endsWith('/sendMessage')){const result={...body,message_id:++sequence};sent.push(result);return Response.json({ok:true,result:{message_id:result.message_id}});}return Response.json({ok:true,result:true});}) as typeof fetch;
 const image={home:'@Jasurbek_060',away:'@pesser280101',homeScore:2,awayScore:1,homePenaltyScore:null,awayPenaltyScore:null,competition:null,stage:null};
+const anonymous={...image,home:'Brazil',away:'botlarni ajali',homeScore:3,awayScore:1};
+const reported='@pesser280101 vs @the_abduvakhobov\n@the_abduvakhobov win✅';
+assert.ok(orientAnonymousPhotoScore(reported,anonymous)?.endsWith(' 1:3'),'Exact screenshot example: second named player won 3:1, despite unmatched game labels');
+assert.ok(orientAnonymousPhotoScore(reported,{...anonymous,homeScore:1,awayScore:3})?.endsWith(' 1:3'));
+assert.ok(orientAnonymousPhotoScore('@pesser280101 vs @the_abduvakhobov @pesser280101 win',anonymous)?.endsWith(' 3:1'));
+for(const caption of ['@pesser280101 vs @the_abduvakhobov','@pesser280101 vs @the_abduvakhobov @unknown_player win','@pesser280101 win @the_abduvakhobov win','@pesser280101 vs @the_abduvakhobov @third_player @pesser280101 win'])assert.equal(orientAnonymousPhotoScore(caption,anonymous),null);
+assert.equal(orientAnonymousPhotoScore(reported,{...anonymous,homeScore:1,awayScore:1}),null);
+assert.equal(orientAnonymousPhotoScore(reported,{...anonymous,home:'@pesser280101'}),null);
+assert.equal(orientAnonymousPhotoScore(reported,{...anonymous,home:'pesser280101'}),null);
+assert.ok(orientAnonymousPhotoScore(reported,{...anonymous,homeScore:1,awayScore:1,homePenaltyScore:5,awayPenaltyScore:4})?.endsWith(' 1:1 penalti 4:5'));
+
 setTestTopicResultDependencies({vision:async()=>{visions++;return image;}});
 let updateId=900000;const update=(text:string,extra:any={})=>{clock+=90000;return {update_id:++updateId,message:{message_id:updateId,chat:{id:-1001,username:'efleagueuz'},from:{id:1001},message_thread_id:UZEFLIFE_RESULT_TOPIC,text,...extra}};};
 try{
@@ -40,6 +52,21 @@ try{
  const document=update('',{text:undefined,caption:'@Jasurbek_060 vs @pesser280101',document:{file_id:'mock-document',mime_type:'image/png',file_size:100}});assert.equal((await handleTopicResultUpdate(document)).result,'proposal_sent');
  await ref.set(s);assert.equal((await handleTopicResultUpdate(update('',{text:undefined,caption:'@pesser280101 vs @Jasurbek_060',photo:[{file_id:'reversed-caption'}]}))).result,'proposal_sent');assert.equal((await readUState()).matches.find(m=>m.id===game.id)?.proposal?.home,1,'The image side order overrides a reversed scoreless caption');
  await ref.set(s);setTestTopicResultDependencies({vision:async()=>({...image,home:'Unknown left',away:'Unknown right'})});assert.equal((await handleTopicResultUpdate(update('',{text:undefined,caption:'@Jasurbek_060 vs @pesser280101',photo:[{file_id:'unmapped-sides'}]}))).result,'photo_identity_ambiguous');assert.equal((await readUState()).matches.find(m=>m.id===game.id)?.proposal,null,'Unknown image-to-user mapping is never guessed');
+ await ref.set(s);setTestTopicResultDependencies({vision:async()=>anonymous});
+ assert.equal((await handleTopicResultUpdate(update('',{text:undefined,caption:win,photo:[{file_id:'anonymous-winner'}]}))).result,'proposal_sent');
+ assert.equal((await readUState()).matches.find(m=>m.id===game.id)?.proposal?.[game.home===ids[15]?'home':'away'],3,'The named winner receives the larger score');
+ assert.equal((await readUState()).matches.find(m=>m.id===game.id)?.homeScore,null,'Winner orientation still requires approval');assert.match(sent.at(-1).text,/yozilgan g‘olib asosida/);
+ const advanced={...s,round:2};await ref.set(advanced);
+ assert.equal((await handleTopicResultUpdate(update('',{text:undefined,caption:win,photo:[{file_id:'past-round-anonymous-winner'}]}))).result,'proposal_sent');
+ assert.match(sent.at(-1).text,/Bu 1-tur o‘yinimi/);assert.match(sent.at(-1).text,/oldingi turdan topildi/);
+ assert.equal((await readUState()).round,2);assert.equal((await readUState()).matches.find(m=>m.id===game.id)?.homeScore,null);
+ const pastPlan=await planUzeflifeTopicResult(win+' 1:3',1001);assert.equal((pastPlan?.plan.body.expectedFixture as any)?.requestedRound,1);
+ await assert.rejects(planUzeflifeTopicResult(win+' 1:3',1002),/joriy o‘yin/,'An unrelated participant cannot submit another pair’s past match');
+ await executeUzeflifeTopicResult(pastPlan!.plan,1016,1001,{chat:-1001,thread:UZEFLIFE_RESULT_TOPIC,message:updateId});assert.equal((await readUState()).matches.find(m=>m.id===game.id)?.[game.home===ids[15]?'homeScore':'awayScore'],3,'Opponent approval saves the oriented score to the past fixture');assert.equal((await readUState()).round,2,'Past approval does not change the active round');
+ await ref.set(s);
+ const future=s.matches.find(m=>m.round===3&&[m.home,m.away].includes(ids[0]))!;const futureNames=[future.home,future.away].map(id=>s.participants.find(p=>p.id===id)!.name).join(' vs ');
+ await assert.rejects(planUzeflifeTopicResult(futureNames+' 2:1',1001),/joriy o‘yin/,'Future rounds require an explicit round');
+ await ref.set(s);assert.equal((await handleTopicResultUpdate(update('',{text:undefined,caption:'@Jasurbek_060 vs @unknown_person @unknown_person win',photo:[{file_id:'unknown-winner'}]}))).result,'clarification');assert.equal((await readUState()).matches.find(m=>m.id===game.id)?.proposal,null,'Unknown usernames cannot bypass fixture validation');
  setTestTopicResultDependencies({vision:async()=>{visions++;return image;}});
  await ref.set(s);const before=visions;const forwarded=update('',{text:undefined,photo:[{file_id:'mock-image'}],forward_origin:{type:'hidden_user',sender_user_name:'untrusted'}});assert.equal((await handleTopicResultUpdate(forwarded)).result,'proposal_sent');assert.equal(visions,before+1);assert.equal((await readUState()).matches.find(m=>m.id===game.id)?.homeScore,null,'Forwarding is not approval');
  await ref.set(s);const automatic=update('',{text:undefined,photo:[{file_id:'automatic'}],is_automatic_forward:true,forward_origin:{type:'channel'}});assert.equal((await handleTopicResultUpdate(automatic)).handled,false);assert.equal(visions,before+1,'Automatic channel forwards cannot invoke OCR');
