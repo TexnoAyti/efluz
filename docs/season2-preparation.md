@@ -38,7 +38,7 @@ Format EFL Yevropa UCL kabi: liga bosqichida har klubga 8 o‘yin; 1–8 to‘g�
 
 Welcome, ligalar sahifasi va Season Hub bir xil katalogdan foydalanadi. Har liga ochilganda barcha klublar, real mavsum, tekshirish sanasi, o‘yin/tur soni va rasmiy manba ko‘rinadi. UZ/RU/EN mavjud, ro‘yxat qirqilmaydi.
 
-Tarkiblar, jamoa sonlari, ikki davrali format va ACL rejasi tayyor. **2-mavsum ishga tushirishga hali tayyor emas**: milliy kuboklar, har liganing teng ochko qoidalari, Yevropa saralashi, boshlanish sanasi va mavsumga tegishli haqiqiy yozuvlarni yaratish/yoqish qolgan. Yangi emblemalarni yetkazish ushbu ro‘yxat tekshiruvida bajarilmagan. Reja 1-mavsumning klublari, egalari, natijalari va Ligue 1 cheklovini o‘zgartirmaydi. O‘yin natijalari, ochkolar yoki amaldagi egalik real futbol jadvalidan import qilinmaydi.
+Tarkiblar, ikki davrali format, 9 liga reyting qoidalari, 9 ta EFL milliy kubogi, 9 superkubok va ACL rejasi tayyor. Faol mavsumga o‘tish hali bloklangan: jonli kataloglar seedga bog‘langan, haqiqiy UEFA access list/saralash vakillari hali yakunlanmagan va 1-mavsum davom etmoqda. Egalik va natijalar ko‘chirilmaydi.
 
 Tekshiruvlar: preparation regressioni barcha 168 klub, yangilangan/chiqarilgan klublar, manbalar, 2984 o‘yin uy/safar balansi va 1-mavsum saqlanishini tekshiradi. Welcome renderi ro‘yxatlar, manbalar, sonlar va uch tildagi ACLni tekshiradi. TypeScript, build/self-check va startup budjeti bajariladi. Haqiqiy Telegram qurilmasida tekshirilmadi.
 
@@ -51,11 +51,11 @@ Tekshiruvlar: preparation regressioni barcha 168 klub, yangilangan/chiqarilgan k
 
 Barcha 9 profilning asosiy qoidalari rasmiy manbalar bilan tekshirildi. Italiya uchun FIGC 244/A (27.05.2026) titulda bitta, 17–18-o‘rinda ikkita pley-off o‘yini talab qiladi; pley-off vakillaridan biri UEFA finalchisi bo‘lsa mini-jadval istisnosi qo‘llanadi. Finalchi holati berilmasa yakuniy reyting bloklanadi. O‘zbekistonning tasdiqlangan 2026 reglamenti 7-bobi va texnik mag‘lubiyat istisnosi ishlatiladi; har o‘zaro uchrashuvning texnik holati noma’lum bo‘lsa mezon o‘tkazib yuborilmaydi. Teng qolgan vaziyat uchun haqiqiy qur’a/pley-off/U19/intizom qarorlari hali alohida rasmiylashtirilishi kerak; ular avtomatik uydirilmaydi.
 
-Tashkilotchi Yevropa uchun haqiqiy UEFA tizimini tanladi: UCL/UEL/UECLning har biri 36 klub. UCL va UEL: 8 raqib, 4 uy/4 safar, 144 o‘yin; UECL: 6 raqib, 3 uy/3 safar, 108 o‘yin. 1–8 R16, 9–24 o‘tish pley-offi, 25–36 chiqadi. Potlar, bir assotsiatsiyadan raqib olmaslik va boshqa assotsiatsiyadan ko‘pi bilan ikki raqib kabi qur’a talablari rejada belgilangan. **36 klubni eski 32 klubli generatorga uzatish bajarilmagan**; yangi qur’a/generatsiya integratsiyasi hali qolgan.
+Tashkilotchi Yevropa uchun haqiqiy UEFA tizimini tanladi: UCL/UEL/UECLning har biri 36 klub. UCL va UEL: 8 raqib, 4 uy/4 safar, 144 o‘yin; UECL: 6 raqib, 3 uy/3 safar, 108 o‘yin. 1–8 R16, 9–24 o‘tish pley-offi, 25–36 chiqadi. Potlar, bir assotsiatsiyadan raqib olmaslik va boshqa assotsiatsiyadan ko‘pi bilan ikki raqib kabi qur’a talablari rejada belgilangan. 36 klub uchun alohida, eski 32 klubli yo‘lga tegmaydigan qur’a simulyatori qo‘shildi. Haqiqiy ishga tushirish yo‘llariga ulash hali qolgan.
 
 Yevropa yo‘llanmalari 5 EFL ligasiga uydirma taqsimlanmaydi. Rasmiy UEFA access list, chempionlik yo‘llari, titul egalari, qo‘shimcha kvotalar, tashqi assotsiatsiyalar vakillari va kirish bosqichlari hali to‘liq kiritilmagan. `qualificationSlots:null` va bo‘sh qatnashchilar bu holatni aniq aks ettiradi. Oldingi mavsumning haqiqiy natijalari EFL yangi mavsum natijalari sifatida ko‘chirilmaydi. Osiyo uchun oldin tasdiqlangan EFL 32 klubli tartib o‘zgartirilmagan.
 
-9 milliy kubok uchun alohida manifest qo‘shildi. Rasmiy manbada tasdiqlangan qatnashchi sonlari: FA Cup 743, Coppa Italia 44, DFB-Pokal 64, Emperor’s Cup 88. Copa del Reyning asosiy bosqichi 116 klub; oldingi hududiy saralash bilan umumiy soni bir xil tushuncha emas. Barcha kuboklarda to‘liq quyi liga ro‘yxatlari yetishmaydi; ular uchun 20/18 klubli yolg‘on to‘liq kubok yaratilmaydi. Noma’lum sonlar `null`; tekshirish tugamagan formatlar `REVIEW_REQUIRED`. Superkuboklar ham alohida kelgusi konfiguratsiyani talab qiladi.
+9 milliy kubok tashkilotchi tanlagan EFL formatida: faqat tegishli liga klublari. 20 klub: 13–20 saralash, 1–12 bevosita R16; 18 klub: 15–18 saralash, 1–14 bevosita R16; 16 klub: to‘g‘ridan-to‘g‘ri R16. Har juftlik bitta o‘yin. Quyi ligalar va haqiqiy federatsiya kubogining umumiy qatnashchi soni talab qilinmaydi. Superkuboklar: kubok finalchilari va liga yetakchilari, takroriy klublar keyingi liga o‘rni bilan to‘ldiriladi. To‘rt klub, ikki yarim final va final; faqat to‘liq yakuniy natijalardan saralanadi.
 
 Admin panelining egaga ochiq bo‘limi: **EFL · 2-mavsumni tayyorlash**. Sana ixtiyoriy reja sifatida saqlanadi, yetishmayotgan shartlar ko‘rinadi. Server faqat asosiy adminni qabul qiladi. `GET /api/admin/season-ops/preparation`; `POST /api/admin/season-ops/preparation/draft` faqat `startDate` va `expectedRevision` qabul qiladi. Draft `season_preparation_drafts/season-2027-28`ga tranzaksiya orqali versiyalanadi. Bir xil qayta urinish idempotent, parallel tahrirlashda eskirgan versiya 409. Mijoz `status:active` yoki begona reja yubora olmaydi.
 
@@ -68,3 +68,28 @@ Yangi regressiya: `node scripts/run-isolated-test.mjs src/server/tests/seasonPre
 Qo‘shimcha manbalar: Italiya — https://files.figc.it/version/c%3AZmUzYzk0MzUtMzU0Zi00%3AYTk3YzZiZGEtYmExYi00/244%20-%20Deroga%20art.%2051%20NOIF%20-%20Determinazione%20classifica%20Campionato%20Serie%20A%20ss%202026%20-%202027.pdf ; O‘zbekiston — https://cdn.pfl.uz/match/c5574713-d7df-49c5-9df1-2f9af1f72d6c-d2d68ce4-4914-4bdf-937f-312761843a85.pdf .
 
 AI gateway katalogida `season_preparation`, `season_preparation_save`, `season_preparation_standings_preview` haqiqiy yo‘llarga bog‘langan. Uchalasiga ham faqat asosiy admin kira oladi; delegatsiyadagi liga adminiga ruxsat kengaytirilmagan. Hisoblash previewsi uchun kattaroq, lekin chegaralangan body limiti bor; endpoint 400 natijadan ko‘pini qabul qilmaydi.
+
+## Superkuboklar, UEFA qur’asi va tayyorgarlik paketi
+
+Asosiy admin uchun yangi yo‘llar:
+- GET /api/admin/season-ops/preparation/package — butun qayta yaratiladigan paketni ko‘rish.
+- POST /api/admin/season-ops/preparation/package — expectedRevision, expectedDraftRevision bilan izolyatsiyalangan paketni saqlash.
+- POST /api/admin/season-ops/preparation/european-draw-preview — UCL/UEL/UECL, seed va 36 ta manbali qatnashchi bilan qur’a sinovi.
+- POST /api/admin/season-ops/preparation/super-cup-preview — liga yakuniy natijalari va tasdiqlangan kubok finalidan 4 klubni ajratish.
+
+Paket season_preparation_packages/season-2027-28 hujjatiga yoziladi: 9 liga, 168 klub, 2984 liga uchrashuvi, 159 kubok uchrashuvi sxemasi, 9 superkubok konfiguratsiyasi. Faol kolleksiyalarga yozilmaydi.
+Avval joriy draft saqlanishi talab qilinadi; eskirgan draft rad etiladi. Takroriy so‘rov idempotent, versiyalar tranzaksiya bilan tekshiriladi. Maksimal paket hajmi tekshiriladi.
+
+UEFA simulyatori 36 klub va pot sonini tekshiradi. UCL/UEL: 4x9 pot, har potdan ikki raqib, bittasi uyda/bittasi safarda. UECL: 6x6 pot, har potdan bitta raqib; 1/2, 3/4, 5/6 juft potlaridan uy/safar muvozanatli. Bir assotsiatsiya o‘zaro tushmaydi; boshqa assotsiatsiyadan ko‘pi bilan ikki raqib. 8 yoki 6 to‘liq tur, takroriy raqib yo‘q. Qidirish chegaralangan; yechim bo‘lmasa ochiq xato qaytaradi va qoidani bo‘shatmaydi.
+Bu EFL qur’a simulyatsiyasi, UEFAning rasmiy qur’asi yoki avtomatik tasdiqlangan access list emas. Manba URL tekshiruvi saralash haqiqiyligini mustaqil isbotlamaydi. Natijalar avtomatik yozilmaydi.
+
+Rasmiy tekshirilgan asos: UEFA 2026/27 Article 16 (UCL, UECL) va Article 3/Annex A.
+https://documents.uefa.com/r/Regulations-of-the-UEFA-Champions-League-2026/27/Article-16-Draw-system-league-phase-Online
+https://documents.uefa.com/r/Regulations-of-the-UEFA-Conference-League-2026/27/Article-16-Draw-system-league-phase-Online
+https://documents.uefa.com/r/Regulations-of-the-UEFA-Champions-League-2026/27/Article-3-Entries-for-the-competition-Online
+
+Muhim: package saqlash jonli katalogni almashtirmaydi. RUNTIME_TRANSITION_REQUIRED bloki saqlangan.
+
+### Mavsumga mos klub katalogi
+
+Server katalogi 2-mavsum so‘ralganda 9 liga va 168 klubdan foydalanadi; joriy mavsumning 96 klubli seedini o‘zgartirmaydi. Read-model qatnashchi soni endi mavsumga mos, Superliga 16 va yangi Osiyo ligalari alohida hisoblanadi. Kelgusi mavsum uchun eskirgan klub/egalik ro‘yxati ko‘chirilmaydi. 2-mavsum qabuli hujjat bo‘lmaganda yopiq; uni ochish uchun mavsumning registration/active holati va registrationOpen:true talab qilinadi. Bu o‘zgarish faol mavsumni avtomatik almashtirmaydi.

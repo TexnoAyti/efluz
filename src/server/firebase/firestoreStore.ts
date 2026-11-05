@@ -1,3 +1,4 @@
+import {seasonLeagues} from '../services/seasonCatalog';
 import {isClubSelectionBanned} from '../services/clubSelectionBan';
 import { withSeasonQualificationPolicy } from '../../lib/seasonQualificationPolicy';
 import { isSeasonCompetitionEnabled, isSeasonLeagueEnabled, assertSeasonCompetitionEnabled, assertSeasonLeagueEnabled } from '../../lib/seasonParticipationPolicy';
@@ -397,13 +398,13 @@ export async function getAllSeasonsFirestore(): Promise<Season[]> {
   }));
 }
 
-export async function getAllLeaguesFirestore(): Promise<League[]> {
-  const cacheKey = 'firestore:all_leagues';
+export async function getAllLeaguesFirestore(seasonId = 'season-2026-27'): Promise<League[]> {
+  const cacheKey = 'firestore:all_leagues:'+seasonId;
   const cached = getFromCache<League[]>(cacheKey);
   if (cached) return cached;
 
   // Use canonical SEED_LEAGUES directly to achieve ZERO Firestore reads
-  const res: League[] = SEED_LEAGUES.map((l) => ({
+  const res: League[] = seasonLeagues(seasonId).map((l) => ({
     id: l.id,
     name: l.name,
     country: l.country,
@@ -1036,6 +1037,10 @@ export async function claimClubAtomicFirestore(
       }
 
       const claimResult = await db.runTransaction(async (transaction) => {
+        if(seasonId==='season-2027-28'){
+          const targetSeason=await transaction.get(db.collection('seasons').doc(seasonId));
+          if(!['registration','active'].includes(String(targetSeason.data()?.status).toLowerCase())||targetSeason.data()?.registrationOpen!==true)throw new ClubConflictError('2-mavsum hali ochilmagan.','SEASON_NOT_OPEN');
+        }
         if(await isClubSelectionBanned(transaction,userId))throw new ClubConflictError('Sizga klub tanlash taqiqlangan. Banni olib tashlash uchun asosiy adminga murojaat qiling.','CLUB_SELECTION_BANNED');
         let newVerifiedActor: Record<string, unknown> | undefined;
         if (options?.requiresActiveUser) {

@@ -72,6 +72,10 @@ export function SeasonPreparationCard({ compact = false }: { compact?: boolean }
     <details className="season-preparation-regulations"><summary>{labels.cups}</summary>
       <ul>{EFL_SECOND_SEASON.domesticCups.map(cup=><li key={cup.id} className="season-preparation-rule-entry"><strong>{cup.name}</strong><span>{`${cupCopy.custom} · ${cup.expectedEntrants} ${labels.entries} · ${cup.totalFixtures} ${labels.matches}`}</span><span>{cupCopy.single}</span><span>{cup.preliminaryMatches?`${cupCopy.bye}: 1–${cup.byeThroughPosition}; ${cupCopy.playIn}: ${cup.playInFromPosition}–${cup.expectedEntrants} (${cup.preliminaryMatches} ${labels.matches})`:cupCopy.direct}</span><span>{cupCopy.pending}</span><a href={cup.source} target="_blank" rel="noopener noreferrer">{cupCopy.source}</a></li>)}</ul>
     </details>
+    <details className="season-preparation-regulations"><summary>{language==='uz'?'Superkuboklar':language==='ru'?'Суперкубки':'Super cups'} · {EFL_SECOND_SEASON.superCups.length}</summary>
+      <p className="season-preparation-note">{language==='uz'?'Mavsum oxirida: kubok g‘olibi va finalchisi, liga yetakchilari. Bir klub takrorlansa, keyingi liga o‘rni olinadi. 4 klub, ikki yarim final va final.':language==='ru'?'В конце сезона: финалисты кубка и лидеры лиги. При совпадении — следующий клуб по таблице. Четыре клуба, два полуфинала и финал.':'At season end: cup finalists and league leaders. Duplicates pass to the next league position. Four clubs, two semi-finals and a final.'}</p>
+      <ul>{EFL_SECOND_SEASON.superCups.map(cup=><li key={cup.id} className="season-preparation-rule-entry"><strong>{cup.name}</strong><span>{cup.totalTeams} {labels.clubs} · {cup.totalFixtures} {labels.matches}</span></li>)}</ul>
+    </details>
     <p className="season-preparation-pending">{c.pending}</p>
   </>;
 

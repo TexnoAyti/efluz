@@ -59,3 +59,11 @@ export const PREPARED_UEFA_COMPETITIONS = [
   {id:'comp-europa-league-2027',code:'UEL',name:'UEFA Europa League',matchesPerTeam:8,pots:4,source:'https://documents.uefa.com/r/Regulations-of-the-UEFA-Europa-League-2026/27/Article-17-Match-system-league-phase-Online'},
   {id:'comp-conference-league-2027',code:'UECL',name:'UEFA Conference League',matchesPerTeam:6,pots:6,source:'https://documents.uefa.com/r/Regulations-of-the-UEFA-Conference-League-2026/27/Article-17-Match-system-league-phase-Online'},
 ].map(comp=>({...comp,totalTeams:36,homeMatches:comp.matchesPerTeam/2,awayMatches:comp.matchesPerTeam/2,totalFixtures:36*comp.matchesPerTeam/2,directQualifiers:8,playoffPlaces:[9,24],eliminatedPlaces:[25,36],qualificationMode:'UEFA_ACCESS_LIST',qualificationSlots:null,participantClubIds:[] as string[],requiresExternalAssociations:true,noSameAssociation:true,maxOpponentsPerOtherAssociation:2}));
+
+/** EFL four-club super cups; participants are resolved only from completed season-two results. */
+export const PREPARED_SUPER_CUPS=PREPARED_DOMESTIC_CUPS.map(cup=>({
+  id:cup.id.replace('-2027','-super-2027'),leagueId:cup.leagueId,cupId:cup.id,
+  name:cup.name+' · Superkubok',format:'EFL_FINAL_FOUR' as const,totalTeams:4,totalFixtures:3,
+  legsPerTie:1,qualification:['CUP_WINNER','CUP_RUNNER_UP','LEAGUE_FIRST','LEAGUE_SECOND'],
+  duplicatePolicy:'NEXT_LEAGUE_POSITION' as const,trigger:'SEASON_END' as const,
+}));

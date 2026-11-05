@@ -1,4 +1,4 @@
-import { PREPARED_TIE_RULES, PREPARED_DOMESTIC_CUPS, PREPARED_UEFA_COMPETITIONS } from '../content/season2Rules';
+import { PREPARED_TIE_RULES, PREPARED_DOMESTIC_CUPS, PREPARED_UEFA_COMPETITIONS, PREPARED_SUPER_CUPS } from '../content/season2Rules';
 import { SEASON_TWO_ROSTERS } from '../content/season2Rosters';
 import { CURRENT_SEASON_ID } from './seasonParticipationPolicy';
 
@@ -40,6 +40,7 @@ export const EFL_SECOND_SEASON = {
     };
   }),
   domesticCups: PREPARED_DOMESTIC_CUPS,
+  superCups: PREPARED_SUPER_CUPS,
   europeanCompetitions: PREPARED_UEFA_COMPETITIONS,
   internationalCompetitions: [
     {
